@@ -45,6 +45,39 @@ public partial class Item : TestNode
     public string CurrentText => Text;
 }
 
+[Composable]
+public partial class GenericGroup<T>
+    where T : notnull
+{
+    [ComposeParameter]
+    private T? Value { get; set; }
+
+    [ComposeContent]
+    private IReadOnlyList<T> Children { get; set; } = [];
+
+    public T? CurrentValue => Value;
+
+    public IReadOnlyList<T> CurrentChildren => Children;
+}
+
+[Composable]
+public partial class RequiredItem
+{
+    [ComposeParameter]
+    public required string Text { get; init; }
+
+    public string CurrentText => Text;
+}
+
+[Composable]
+public partial class InitItem
+{
+    [ComposeParameter]
+    private string Text { get; init; } = "default";
+
+    public string CurrentText => Text;
+}
+
 public sealed class CompositionTests
 {
     [Fact]
@@ -90,5 +123,38 @@ public sealed class CompositionTests
         Assert.Equal(8, group.CurrentSpacing);
         Assert.Equal("root", group.CurrentName);
         Assert.False(group.IsEnabled);
+    }
+
+    [Fact]
+    public void GenericFactoryAndIndexerPreserveTheirType()
+    {
+        GenericGroup<int> group = GenericGroup<int>(value: 3)[5, 8];
+
+        Assert.Equal(3, group.CurrentValue);
+        Assert.Equal([5, 8], group.CurrentChildren);
+    }
+
+    [Fact]
+    public void FactoryAppliesRequiredParameter()
+    {
+        RequiredItem item = RequiredItem("required");
+
+        Assert.Equal("required", item.CurrentText);
+    }
+
+    [Fact]
+    public void OmittedInitParameterKeepsDeclaredDefault()
+    {
+        InitItem item = InitItem();
+
+        Assert.Equal("default", item.CurrentText);
+    }
+
+    [Fact]
+    public void FactoryAppliesOptionalInitParameter()
+    {
+        InitItem item = InitItem(text: "configured");
+
+        Assert.Equal("configured", item.CurrentText);
     }
 }

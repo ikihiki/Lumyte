@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Core\Lumyte.Core.csproj" />
+    <ProjectReference Include="..\Lumyte.Composition\Lumyte.Composition.csproj" />
+    <ProjectReference Include="..\Lumyte.Composition.Generators\Lumyte.Composition.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

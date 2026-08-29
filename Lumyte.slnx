@@ -3,5 +3,8 @@
   <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
   <Project Path="Lumyte.Composition/Lumyte.Composition.csproj" />
   <Project Path="Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
+  <Project Path="Lumyte.Composition.Generators.Tests/Lumyte.Composition.Generators.Tests.csproj" />
   <Project Path="Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
+  <Project Path="Lumyte.Animation/Lumyte.Animation.csproj" />
+  <Project Path="Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
 </Solution>

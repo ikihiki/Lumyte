@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
@@ -59,30 +58,20 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         IncrementalValuesProvider<INamedTypeSymbol> components = context.SyntaxProvider.ForAttributeWithMetadataName(
             ComposableAttribute,
             static (node, _) => node is ClassDeclarationSyntax,
-            static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
+            static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol)
+            .WithComparer(ComponentSymbolComparer.Instance)
+            .WithTrackingName("ComposableTypes");
 
-        IncrementalValueProvider<(ImmutableArray<INamedTypeSymbol> Components, Compilation Compilation)> input =
-            components.Collect().Combine(context.CompilationProvider);
+        IncrementalValueProvider<string> defaultFactory = context.CompilationProvider
+            .Select(static (compilation, _) => GetDefaultFactory(compilation) ?? "Compose")
+            .WithComparer(StringComparer.Ordinal)
+            .WithTrackingName("DefaultFactory");
+        IncrementalValuesProvider<(INamedTypeSymbol Component, string DefaultFactory)> inputs =
+            components.Combine(defaultFactory)
+                .WithTrackingName("CompositionInputs");
 
-        context.RegisterSourceOutput(input, static (spc, value) => Execute(spc, value.Components, value.Compilation));
-    }
-
-    private static void Execute(
-        SourceProductionContext context,
-        ImmutableArray<INamedTypeSymbol> components,
-        Compilation compilation)
-    {
-        string defaultFactory = GetDefaultFactory(compilation) ?? "Compose";
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (INamedTypeSymbol component in components)
-        {
-            if (!seen.Add(component.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
-            {
-                continue;
-            }
-
-            GenerateComponent(context, component, defaultFactory);
-        }
+        context.RegisterSourceOutput(inputs, static (spc, input) =>
+            GenerateComponent(spc, input.Component, input.DefaultFactory));
     }
 
     private static void GenerateComponent(
@@ -201,16 +190,58 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             sb.Append("namespace ").Append(ns).AppendLine(";").AppendLine();
         }
 
-        sb.Append(Accessibility(component)).Append(" partial class ").Append(component.Name).AppendLine();
+        sb.Append(Accessibility(component)).Append(" partial class ").Append(component.Name)
+            .Append(TypeParameterList(component)).AppendLine();
+        AppendConstraintClauses(sb, component, string.Empty);
         sb.AppendLine("{");
-        sb.Append("    internal static ").Append(type).Append(" __CreateComposed() => new ").Append(type).AppendLine("();");
+        sb.AppendLine("    private readonly struct __CompositionConstructor;");
+        sb.AppendLine();
+        sb.AppendLine("    [global::System.Diagnostics.CodeAnalysis.SetsRequiredMembers]");
+        sb.Append("    private ").Append(component.Name).Append("(__CompositionConstructor _");
         for (int index = 0; index < parameters.Count; index++)
         {
-            ISymbol parameter = parameters[index];
-            sb.Append("    internal void __SetComposed").Append(index).Append('(')
-                .Append(TypeName(MemberType(parameter))).Append(" value) => this.")
-                .Append(Escape(parameter.Name)).AppendLine(" = value;");
+            sb.Append(", ");
+            AppendFactoryParameter(sb, parameters[index]);
         }
+        sb.Append(')');
+        if (component.InstanceConstructors.Any(static constructor =>
+            constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared))
+        {
+            sb.Append(" : this()");
+        }
+        sb.AppendLine();
+        sb.AppendLine("    {");
+        for (int index = 0; index < parameters.Count; index++)
+        {
+            string name = ParameterName(parameters[index]);
+            if (IsRequired(parameters[index]))
+            {
+                sb.Append("        this.").Append(Escape(parameters[index].Name)).Append(" = ")
+                    .Append(name).AppendLine(";");
+            }
+            else
+            {
+                sb.Append("        if (").Append(name).Append(".HasValue) this.")
+                    .Append(Escape(parameters[index].Name)).Append(" = ").Append(name).AppendLine(".Value;");
+            }
+        }
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.Append("    internal static ").Append(type).Append(" __CreateComposed(");
+        for (int index = 0; index < parameters.Count; index++)
+        {
+            if (index > 0)
+            {
+                sb.Append(", ");
+            }
+            AppendFactoryParameter(sb, parameters[index]);
+        }
+        sb.Append(") => new(default");
+        foreach (ISymbol parameter in parameters)
+        {
+            sb.Append(", ").Append(ParameterName(parameter));
+        }
+        sb.AppendLine(");");
 
         if (content is not null && contentItem is not null)
         {
@@ -230,7 +261,8 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
         sb.Append("public static partial class ").Append(Escape(factory)).AppendLine();
         sb.AppendLine("{");
-        sb.Append("    public static ").Append(type).Append(' ').Append(Escape(method)).Append('(');
+        sb.Append("    public static ").Append(type).Append(' ').Append(Escape(method))
+            .Append(TypeParameterList(component)).Append('(');
         for (int index = 0; index < parameters.Count; index++)
         {
             if (index > 0)
@@ -239,19 +271,23 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             }
 
             ITypeSymbol parameterType = MemberType(parameters[index]);
-            sb.Append("global::Lumyte.Composition.Optional<").Append(TypeName(parameterType)).Append("> ")
-                .Append(Escape(Camel(parameters[index].Name.TrimStart('_')))).Append(" = default");
+            AppendFactoryParameter(sb, parameters[index]);
         }
         sb.AppendLine(")");
+        AppendConstraintClauses(sb, component, "    ");
         sb.AppendLine("    {");
-        sb.Append("        ").Append(type).Append(" value = ").Append(type).AppendLine(".__CreateComposed();");
+        sb.Append("        ").Append(type).Append(" __composed = ").Append(type)
+            .Append(".__CreateComposed(");
         for (int index = 0; index < parameters.Count; index++)
         {
-            string name = Escape(Camel(parameters[index].Name.TrimStart('_')));
-            sb.Append("        if (").Append(name).Append(".HasValue) value.__SetComposed")
-                .Append(index).Append('(').Append(name).AppendLine(".Value);");
+            if (index > 0)
+            {
+                sb.Append(", ");
+            }
+            sb.Append(ParameterName(parameters[index]));
         }
-        sb.AppendLine("        return value;");
+        sb.AppendLine(");");
+        sb.AppendLine("        return __composed;");
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return sb.ToString();
@@ -271,7 +307,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
     private static bool IsWritable(ISymbol member) => member switch
     {
         IFieldSymbol field => !field.IsReadOnly && !field.IsConst,
-        IPropertySymbol property => property.SetMethod is not null && !property.SetMethod.IsInitOnly,
+        IPropertySymbol property => property.SetMethod is not null,
         _ => false,
     };
 
@@ -322,6 +358,31 @@ public sealed class CompositionGenerator : IIncrementalGenerator
     private static bool HasAttribute(ISymbol symbol, string name)
         => symbol.GetAttributes().Any(a => SymbolName(a.AttributeClass) == name);
 
+    private static bool IsRequired(ISymbol symbol) => symbol switch
+    {
+        IFieldSymbol field => field.IsRequired,
+        IPropertySymbol property => property.IsRequired,
+        _ => false,
+    };
+
+    private static string ParameterName(ISymbol parameter)
+        => Escape(Camel(parameter.Name.TrimStart('_')));
+
+    private static void AppendFactoryParameter(StringBuilder builder, ISymbol parameter)
+    {
+        string type = TypeName(MemberType(parameter));
+        string name = ParameterName(parameter);
+        if (IsRequired(parameter))
+        {
+            builder.Append(type).Append(' ').Append(name);
+        }
+        else
+        {
+            builder.Append("global::Lumyte.Composition.Optional<").Append(type).Append("> ")
+                .Append(name).Append(" = default");
+        }
+    }
+
     private static string SymbolName(INamedTypeSymbol? symbol) => symbol?.ToDisplayString() ?? string.Empty;
 
     private static string? NamedString(AttributeData attribute, string name)
@@ -332,6 +393,52 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
     private static string TypeName(ITypeSymbol type)
         => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    private static string TypeParameterList(INamedTypeSymbol type)
+        => type.TypeParameters.Length == 0
+            ? string.Empty
+            : "<" + string.Join(", ", type.TypeParameters.Select(parameter => Escape(parameter.Name))) + ">";
+
+    private static void AppendConstraintClauses(
+        StringBuilder builder,
+        INamedTypeSymbol type,
+        string indentation)
+    {
+        foreach (ITypeParameterSymbol parameter in type.TypeParameters)
+        {
+            var constraints = new List<string>();
+            if (parameter.HasUnmanagedTypeConstraint)
+            {
+                constraints.Add("unmanaged");
+            }
+            else if (parameter.HasValueTypeConstraint)
+            {
+                constraints.Add("struct");
+            }
+            else if (parameter.HasReferenceTypeConstraint)
+            {
+                constraints.Add(parameter.ReferenceTypeConstraintNullableAnnotation == NullableAnnotation.Annotated
+                    ? "class?"
+                    : "class");
+            }
+            else if (parameter.HasNotNullConstraint)
+            {
+                constraints.Add("notnull");
+            }
+
+            constraints.AddRange(parameter.ConstraintTypes.Select(TypeName));
+            if (parameter.HasConstructorConstraint)
+            {
+                constraints.Add("new()");
+            }
+
+            if (constraints.Count > 0)
+            {
+                builder.Append(indentation).Append("where ").Append(Escape(parameter.Name)).Append(" : ")
+                    .AppendLine(string.Join(", ", constraints));
+            }
+        }
+    }
 
     private static string Accessibility(INamedTypeSymbol type)
         => type.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public ? "public" : "internal";
@@ -344,5 +451,61 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             || SyntaxFacts.GetContextualKeywordKind(value) != SyntaxKind.None ? "@" + value : value;
 
     private static string SafeHint(INamedTypeSymbol type)
-        => type.ToDisplayString().Replace('<', '_').Replace('>', '_').Replace('.', '_');
+        => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            .Replace("global::", string.Empty)
+            .Replace('<', '_')
+            .Replace('>', '_')
+            .Replace(',', '_')
+            .Replace('.', '_');
+
+    private sealed class ComponentSymbolComparer : IEqualityComparer<INamedTypeSymbol>
+    {
+        public static ComponentSymbolComparer Instance { get; } = new();
+
+        public bool Equals(INamedTypeSymbol? x, INamedTypeSymbol? y)
+            => ReferenceEquals(x, y)
+                || (x is not null && y is not null
+                    && string.Equals(Fingerprint(x), Fingerprint(y), StringComparison.Ordinal));
+
+        public int GetHashCode(INamedTypeSymbol obj)
+            => StringComparer.Ordinal.GetHashCode(Fingerprint(obj));
+
+        private static string Fingerprint(INamedTypeSymbol component)
+        {
+            var builder = new StringBuilder();
+            for (INamedTypeSymbol? type = component;
+                 type is not null && type.SpecialType != SpecialType.System_Object;
+                 type = type.BaseType)
+            {
+                builder.Append(type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).Append('|');
+                foreach (SyntaxReference declaration in type.DeclaringSyntaxReferences)
+                {
+                    builder.Append(declaration.GetSyntax().ToFullString()).Append('|');
+                }
+
+                foreach (ISymbol member in type.GetMembers()
+                    .Where(static member => member is IFieldSymbol or IPropertySymbol)
+                    .OrderBy(static member => SourcePosition(member)))
+                {
+                    builder.Append(member.Name).Append(':')
+                        .Append(TypeName(MemberType(member))).Append(':')
+                        .Append(member.DeclaredAccessibility).Append(':')
+                        .Append(IsWritable(member)).Append(':');
+                    foreach (AttributeData attribute in member.GetAttributes())
+                    {
+                        builder.Append(attribute.ToString()).Append(',');
+                    }
+
+                    builder.Append('|');
+                }
+            }
+
+            foreach (AttributeData attribute in component.GetAttributes())
+            {
+                builder.Append(attribute.ToString()).Append('|');
+            }
+
+            return builder.ToString();
+        }
+    }
 }
