@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -18,37 +19,37 @@ public sealed class CompositionGenerator : IIncrementalGenerator
     private const string ContentAttribute = "Lumyte.Composition.ComposeContentAttribute";
     private const string DefaultsAttribute = "Lumyte.Composition.CompositionDefaultsAttribute";
 
-    private static readonly DiagnosticDescriptor MustBePartial = new(
+    private static readonly DiagnosticDescriptor s_mustBePartial = new(
         "LYC001", "Composable type must be partial",
         "Composable type '{0}' must be declared partial", "Lumyte.Composition",
         DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor ConstructorRequired = new(
+    private static readonly DiagnosticDescriptor s_constructorRequired = new(
         "LYC002", "Parameterless constructor required",
         "Composable type '{0}' must have a parameterless constructor", "Lumyte.Composition",
         DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor MemberMustBeWritable = new(
+    private static readonly DiagnosticDescriptor s_memberMustBeWritable = new(
         "LYC003", "Composition member must be writable",
         "Composition member '{0}' must be writable from its declaring type", "Lumyte.Composition",
         DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor UnsupportedContent = new(
+    private static readonly DiagnosticDescriptor s_unsupportedContent = new(
         "LYC004", "Unsupported content collection",
         "Content member '{0}' must be an array or a supported generic collection interface", "Lumyte.Composition",
         DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor MultipleContent = new(
+    private static readonly DiagnosticDescriptor s_multipleContent = new(
         "LYC005", "Only one content member is supported",
         "Composable type '{0}' declares more than one content member", "Lumyte.Composition",
         DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor InaccessibleInheritedMember = new(
+    private static readonly DiagnosticDescriptor s_inaccessibleInheritedMember = new(
         "LYC006", "Inherited composition member is inaccessible",
         "Inherited composition member '{0}' must be accessible from '{1}'", "Lumyte.Composition",
         DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor DuplicateParameter = new(
+    private static readonly DiagnosticDescriptor s_duplicateParameter = new(
         "LYC007", "Composition parameter name is duplicated",
         "Composition parameter name '{0}' is declared more than once in the inheritance chain of '{1}'",
         "Lumyte.Composition", DiagnosticSeverity.Error, isEnabledByDefault: true);
@@ -75,7 +76,11 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (INamedTypeSymbol component in components)
         {
-            if (!seen.Add(component.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))) continue;
+            if (!seen.Add(component.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+            {
+                continue;
+            }
+
             GenerateComponent(context, component, defaultFactory);
         }
     }
@@ -88,13 +93,13 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         Location location = component.Locations.FirstOrDefault() ?? Location.None;
         if (!IsPartial(component))
         {
-            context.ReportDiagnostic(Diagnostic.Create(MustBePartial, location, component.Name));
+            context.ReportDiagnostic(Diagnostic.Create(s_mustBePartial, location, component.Name));
             return;
         }
 
         if (!component.InstanceConstructors.Any(static ctor => ctor.Parameters.Length == 0))
         {
-            context.ReportDiagnostic(Diagnostic.Create(ConstructorRequired, location, component.Name));
+            context.ReportDiagnostic(Diagnostic.Create(s_constructorRequired, location, component.Name));
             return;
         }
 
@@ -114,14 +119,21 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 .ToArray();
             foreach (ISymbol member in declared)
             {
-                if (HasAttribute(member, ParameterAttribute)) parameters.Add(member);
-                if (HasAttribute(member, ContentAttribute)) contents.Add(member);
+                if (HasAttribute(member, ParameterAttribute))
+                {
+                    parameters.Add(member);
+                }
+
+                if (HasAttribute(member, ContentAttribute))
+                {
+                    contents.Add(member);
+                }
             }
         }
 
         if (contents.Count > 1)
         {
-            context.ReportDiagnostic(Diagnostic.Create(MultipleContent, location, component.Name));
+            context.ReportDiagnostic(Diagnostic.Create(s_multipleContent, location, component.Name));
             return;
         }
 
@@ -129,7 +141,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         {
             if (!IsWritable(member))
             {
-                context.ReportDiagnostic(Diagnostic.Create(MemberMustBeWritable,
+                context.ReportDiagnostic(Diagnostic.Create(s_memberMustBeWritable,
                     member.Locations.FirstOrDefault() ?? location, member.Name));
                 return;
             }
@@ -137,7 +149,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             if (!SymbolEqualityComparer.Default.Equals(member.ContainingType, component)
                 && !IsAccessibleFromDerived(member, component))
             {
-                context.ReportDiagnostic(Diagnostic.Create(InaccessibleInheritedMember,
+                context.ReportDiagnostic(Diagnostic.Create(s_inaccessibleInheritedMember,
                     member.Locations.FirstOrDefault() ?? location, member.Name, component.Name));
                 return;
             }
@@ -147,8 +159,12 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         foreach (ISymbol parameter in parameters)
         {
             string parameterName = Camel(parameter.Name.TrimStart('_'));
-            if (parameterNames.Add(parameterName)) continue;
-            context.ReportDiagnostic(Diagnostic.Create(DuplicateParameter,
+            if (parameterNames.Add(parameterName))
+            {
+                continue;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(s_duplicateParameter,
                 parameter.Locations.FirstOrDefault() ?? location, parameterName, component.Name));
             return;
         }
@@ -156,7 +172,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         ITypeSymbol? contentItem = contents.Count == 0 ? null : GetContentItemType(MemberType(contents[0]));
         if (contents.Count == 1 && contentItem is null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(UnsupportedContent,
+            context.ReportDiagnostic(Diagnostic.Create(s_unsupportedContent,
                 contents[0].Locations.FirstOrDefault() ?? location, contents[0].Name));
             return;
         }
@@ -180,7 +196,10 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated />");
         sb.AppendLine("#nullable enable");
-        if (ns.Length > 0) sb.Append("namespace ").Append(ns).AppendLine(";").AppendLine();
+        if (ns.Length > 0)
+        {
+            sb.Append("namespace ").Append(ns).AppendLine(";").AppendLine();
+        }
 
         sb.Append(Accessibility(component)).Append(" partial class ").Append(component.Name).AppendLine();
         sb.AppendLine("{");
@@ -214,7 +233,11 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         sb.Append("    public static ").Append(type).Append(' ').Append(Escape(method)).Append('(');
         for (int index = 0; index < parameters.Count; index++)
         {
-            if (index > 0) sb.Append(", ");
+            if (index > 0)
+            {
+                sb.Append(", ");
+            }
+
             ITypeSymbol parameterType = MemberType(parameters[index]);
             sb.Append("global::Lumyte.Composition.Optional<").Append(TypeName(parameterType)).Append("> ")
                 .Append(Escape(Camel(parameters[index].Name.TrimStart('_')))).Append(" = default");
@@ -276,8 +299,16 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
     private static ITypeSymbol? GetContentItemType(ITypeSymbol collection)
     {
-        if (collection is IArrayTypeSymbol array) return array.ElementType;
-        if (collection is not INamedTypeSymbol named || named.TypeArguments.Length != 1) return null;
+        if (collection is IArrayTypeSymbol array)
+        {
+            return array.ElementType;
+        }
+
+        if (collection is not INamedTypeSymbol named || named.TypeArguments.Length != 1)
+        {
+            return null;
+        }
+
         string definition = named.ConstructedFrom.ToDisplayString();
         return definition is "System.Collections.Generic.IEnumerable<T>"
             or "System.Collections.Generic.IReadOnlyCollection<T>"

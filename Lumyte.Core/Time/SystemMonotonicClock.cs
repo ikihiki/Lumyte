@@ -5,13 +5,13 @@ namespace Lumyte.Core.Time;
 /// <summary>A process-local monotonic clock backed by <see cref="Stopwatch"/>.</summary>
 public sealed class SystemMonotonicClock : IMonotonicClock
 {
-    private readonly long _origin = Stopwatch.GetTimestamp();
+    private readonly long origin = Stopwatch.GetTimestamp();
 
     public TimePoint Now
     {
         get
         {
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(_origin, Stopwatch.GetTimestamp());
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(origin, Stopwatch.GetTimestamp());
             return TimePoint.FromTicks(elapsed.Ticks);
         }
     }

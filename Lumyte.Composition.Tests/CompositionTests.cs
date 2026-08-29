@@ -1,4 +1,5 @@
 using Lumyte.Composition;
+
 using static Lumyte.Composition.Tests.TestKit;
 
 [assembly: CompositionDefaults("TestKit")]
