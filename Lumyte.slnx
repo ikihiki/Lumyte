@@ -1,6 +1,8 @@
 <Solution>
   <Project Path="Lumyte.Core/Lumyte.Core.csproj" />
   <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
+  <Project Path="Lumyte.StateMachine/Lumyte.StateMachine.csproj" />
+  <Project Path="Lumyte.StateMachine.Tests/Lumyte.StateMachine.Tests.csproj" />
   <Project Path="Lumyte.Composition/Lumyte.Composition.csproj" />
   <Project Path="Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
   <Project Path="Lumyte.Composition.Generators.Tests/Lumyte.Composition.Generators.Tests.csproj" />

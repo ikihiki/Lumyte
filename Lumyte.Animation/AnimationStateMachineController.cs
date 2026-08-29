@@ -1,10 +1,12 @@
 using Lumyte.Core.Time;
+using Lumyte.StateMachine;
 
 namespace Lumyte.Animation;
 
-public sealed class AnimationStateMachineController
+public sealed class AnimationStateMachineController<TContext, TTrigger>
 {
-    private readonly AnimationStateMachine machine;
+    private readonly StateMachineInstance<TContext, TTrigger> machine;
+    private readonly AnimationStateMachineBinding<TContext, TTrigger> binding;
     private readonly AnimationPlayer player;
     private readonly AnimationTarget target;
     private PlaybackHandle? playback;
@@ -14,17 +16,19 @@ public sealed class AnimationStateMachineController
     };
 
     public AnimationStateMachineController(
-        AnimationStateMachine machine,
+        StateMachineInstance<TContext, TTrigger> machine,
+        AnimationStateMachineBinding<TContext, TTrigger> binding,
         AnimationPlayer player,
         AnimationTarget target)
     {
         this.machine = machine ?? throw new ArgumentNullException(nameof(machine));
+        this.binding = binding ?? throw new ArgumentNullException(nameof(binding));
         this.player = player ?? throw new ArgumentNullException(nameof(player));
         this.target = target ?? throw new ArgumentNullException(nameof(target));
-        CurrentState = machine.InitialState;
+        machine.Transitioned += OnTransitioned;
     }
 
-    public AnimationState CurrentState { get; private set; }
+    public State<TContext> CurrentState => machine.CurrentState;
 
     public PlaybackHandle Start(PlaybackOptions? options = null)
     {
@@ -33,54 +37,47 @@ public sealed class AnimationStateMachineController
             LoopMode = PlaybackLoopMode.Repeat,
         };
         playback?.Stop();
-        playback = player.Play(CurrentState.Timeline, target, statePlaybackOptions);
+        playback = player.Play(binding.TimelineFor(CurrentState), target, statePlaybackOptions);
         return playback;
     }
 
-    public bool Fire(string trigger)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(trigger);
-        AnimationTransition? transition = machine.FindTransition(CurrentState, trigger);
-        if (transition is null)
-        {
-            return false;
-        }
+    public bool Fire(TTrigger trigger) => machine.Fire(trigger);
 
-        AnimationSample from = CurrentSample();
+    private void OnTransitioned(Transition<TContext, TTrigger> transition)
+    {
+        AnimationSample from = CurrentSample(transition.From);
         playback?.Stop();
-        CurrentState = transition.To;
-        if (transition.Duration == Duration.Zero)
+        AnimationTransition animation = binding.TransitionFor(transition);
+        IAnimationTimeline destination = binding.TimelineFor(transition.To);
+        if (animation.Duration == Duration.Zero)
         {
-            playback = player.Play(CurrentState.Timeline, target, statePlaybackOptions);
-            return true;
+            playback = player.Play(destination, target, statePlaybackOptions);
+            return;
         }
 
         var crossfade = new CrossfadeTimeline(
             from,
-            CurrentState.Timeline,
-            transition.Duration,
-            transition.Blend!,
-            transition.Curve);
+            destination,
+            animation.Duration,
+            animation.Blend!,
+            animation.Curve);
         PlaybackHandle transitionPlayback = player.Play(crossfade, target);
         transitionPlayback.Completed += CompleteTransition;
         playback = transitionPlayback;
-        return true;
     }
 
-    private AnimationSample CurrentSample()
+    private AnimationSample CurrentSample(State<TContext> previous)
     {
-        if (playback is null)
-        {
-            return CurrentState.Timeline.Sample(Duration.Zero);
-        }
-
-        return playback.Timeline.Sample(playback.Position);
+        IAnimationTimeline timeline = binding.TimelineFor(previous);
+        return playback is null
+            ? timeline.Sample(Duration.Zero)
+            : playback.Timeline.Sample(playback.Position);
     }
 
     private void CompleteTransition(PlaybackHandle completed)
     {
         completed.Completed -= CompleteTransition;
-        playback = player.Play(CurrentState.Timeline, target, statePlaybackOptions);
+        playback = player.Play(binding.TimelineFor(CurrentState), target, statePlaybackOptions);
         Duration continuation = completed.Timeline.Duration;
         if (continuation > Duration.Zero)
         {
