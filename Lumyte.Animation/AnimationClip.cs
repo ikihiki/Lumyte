@@ -4,7 +4,7 @@ using Lumyte.Composition;
 namespace Lumyte.Animation;
 
 [Composable(Factory = "AnimationKit", Name = "Clip")]
-public sealed partial class AnimationClip
+public sealed partial class AnimationClip : IAnimationTimeline
 {
     private string name = string.Empty;
     private AnimationTrack[] tracks = [];
@@ -21,6 +21,8 @@ public sealed partial class AnimationClip
     }
 
     public IReadOnlyList<AnimationTrack> Tracks => tracks;
+
+    public IReadOnlyCollection<AnimationChannel> Channels => tracks.Select(track => track.UntypedChannel).ToArray();
 
     public Duration Duration { get; private set; }
 
@@ -43,7 +45,7 @@ public sealed partial class AnimationClip
 
     public AnimationSample Sample(Duration time)
     {
-        var values = tracks.ToDictionary(track => track, track => track.SampleObject(time));
+        var values = tracks.ToDictionary(track => track.UntypedChannel, track => track.SampleObject(time));
         return new AnimationSample(this, time, values);
     }
 
@@ -54,12 +56,14 @@ public sealed partial class AnimationClip
             throw new ArgumentException("Animation clips cannot contain a null track.", nameof(tracks));
         }
 
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        var channels = new HashSet<AnimationChannel>();
         foreach (var track in tracks)
         {
-            if (!names.Add(track.Name))
+            if (!channels.Add(track.UntypedChannel))
             {
-                throw new ArgumentException($"Animation track names must be unique. The name '{track.Name}' is duplicated.", nameof(tracks));
+                throw new ArgumentException(
+                    $"Animation channels must be unique. The channel '{track.Name}' is duplicated.",
+                    nameof(tracks));
             }
         }
     }

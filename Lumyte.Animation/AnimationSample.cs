@@ -4,30 +4,42 @@ namespace Lumyte.Animation;
 
 public sealed class AnimationSample
 {
-    private readonly IReadOnlyDictionary<AnimationTrack, object?> values;
+    private readonly IReadOnlyDictionary<AnimationChannel, object?> values;
 
     internal AnimationSample(
-        AnimationClip clip,
+        IAnimationTimeline timeline,
         Duration time,
-        IReadOnlyDictionary<AnimationTrack, object?> values)
+        IReadOnlyDictionary<AnimationChannel, object?> values)
     {
-        Clip = clip;
+        Timeline = timeline;
         Time = time;
         this.values = values;
     }
 
-    public AnimationClip Clip { get; }
+    public IAnimationTimeline Timeline { get; }
+
+    public AnimationClip? Clip => Timeline as AnimationClip;
 
     public Duration Time { get; }
 
     public T Get<T>(AnimationTrack<T> track)
     {
         ArgumentNullException.ThrowIfNull(track);
-        if (!values.TryGetValue(track, out var value))
+        return Get(track.Channel);
+    }
+
+    public T Get<T>(AnimationChannel<T> channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        if (!values.TryGetValue(channel, out var value))
         {
-            throw new ArgumentException("The track does not belong to this animation sample.", nameof(track));
+            throw new ArgumentException("The channel does not belong to this animation sample.", nameof(channel));
         }
 
         return (T)value!;
     }
+
+    internal object? GetObject(AnimationChannel channel) => values[channel];
+
+    internal IReadOnlyDictionary<AnimationChannel, object?> Values => values;
 }

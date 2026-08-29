@@ -16,7 +16,7 @@ public sealed class AnimationTrackTests
     [InlineData(2, 10)]
     public void TrackSamplesAndClampsItsTimeline(double seconds, float expected)
     {
-        var track = Track("Opacity", Interpolators.Float)[
+        var track = Track(Channel<float>("Opacity"), Interpolators.Float)[
             Keyframe(Duration.Zero, 0f),
             Keyframe(Duration.FromSeconds(1), 10f)
         ];
@@ -29,7 +29,7 @@ public sealed class AnimationTrackTests
     [Fact]
     public void TrackInterpolatesVectorValues()
     {
-        var track = Track("Position", Interpolators.Vector2)[
+        var track = Track(Channel<Vector2>("Position"), Interpolators.Vector2)[
             Keyframe(Duration.Zero, new Vector2(0f, 20f)),
             Keyframe(Duration.FromSeconds(0.4), Vector2.Zero)
         ];
@@ -42,7 +42,7 @@ public sealed class AnimationTrackTests
     [Fact]
     public void DiscreteInterpolationHoldsThePreviousValue()
     {
-        var track = Track("Visible", Interpolators.Discrete<bool>())[
+        var track = Track(Channel<bool>("Visible"), Interpolators.Discrete<bool>())[
             Keyframe(Duration.Zero, false),
             Keyframe(Duration.FromSeconds(1), true)
         ];
@@ -55,7 +55,7 @@ public sealed class AnimationTrackTests
     [Fact]
     public void TrackRejectsDuplicateKeyframeTimes()
     {
-        var track = Track("Opacity", Interpolators.Float);
+        var track = Track(Channel<float>("Opacity"), Interpolators.Float);
         var keyframes = new[]
         {
             Keyframe(Duration.Zero, 0f),
@@ -71,7 +71,7 @@ public sealed class AnimationTrackTests
     [Fact]
     public void EmptyTrackCannotBeSampled()
     {
-        var track = Track("Opacity", Interpolators.Float);
+        var track = Track(Channel<float>("Opacity"), Interpolators.Float);
 
         var exception = Assert.Throws<InvalidOperationException>(() => track.Sample(Duration.Zero));
 

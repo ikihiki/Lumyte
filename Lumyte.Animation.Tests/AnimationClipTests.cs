@@ -11,11 +11,11 @@ public sealed class AnimationClipTests
     [Fact]
     public void ClipSamplesTypedTracksFromTheIndexerDsl()
     {
-        var opacity = Track("Opacity", Interpolators.Float)[
+        var opacity = Track(Channel<float>("Opacity"), Interpolators.Float)[
             Keyframe(Duration.Zero, 0f),
             Keyframe(Duration.FromSeconds(0.25), 1f)
         ];
-        var position = Track("Position", Interpolators.Vector2)[
+        var position = Track(Channel<Vector2>("Position"), Interpolators.Vector2)[
             Keyframe(Duration.Zero, new Vector2(0f, 20f)),
             Keyframe(Duration.FromSeconds(0.4), Vector2.Zero)
         ];
@@ -41,8 +41,8 @@ public sealed class AnimationClipTests
     [Fact]
     public void ClipRejectsDuplicateTrackNames()
     {
-        var first = Track("Value", Interpolators.Float)[Keyframe(Duration.Zero, 0f)];
-        var second = Track("Value", Interpolators.Float)[Keyframe(Duration.Zero, 1f)];
+        var first = Track(Channel<float>("Value"), Interpolators.Float)[Keyframe(Duration.Zero, 0f)];
+        var second = Track(Channel<float>("Value"), Interpolators.Float)[Keyframe(Duration.Zero, 1f)];
         var clip = Clip("Duplicate names");
 
         var exception = Assert.Throws<ArgumentException>(() => _ = clip[first, second]);
@@ -54,13 +54,13 @@ public sealed class AnimationClipTests
     [Fact]
     public void SampleRejectsATrackFromAnotherClip()
     {
-        var included = Track("Included", Interpolators.Float)[Keyframe(Duration.Zero, 1f)];
-        var external = Track("External", Interpolators.Float)[Keyframe(Duration.Zero, 2f)];
+        var included = Track(Channel<float>("Included"), Interpolators.Float)[Keyframe(Duration.Zero, 1f)];
+        var external = Track(Channel<float>("External"), Interpolators.Float)[Keyframe(Duration.Zero, 2f)];
         var sample = Clip("One track")[included].Sample(Duration.Zero);
 
         var exception = Assert.Throws<ArgumentException>(() => sample.Get(external));
 
-        Assert.Equal("track", exception.ParamName);
+        Assert.Equal("channel", exception.ParamName);
         Assert.Contains("does not belong", exception.Message, StringComparison.Ordinal);
     }
 }

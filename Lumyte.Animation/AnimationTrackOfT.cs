@@ -6,21 +6,22 @@ namespace Lumyte.Animation;
 [Composable(Factory = "AnimationKit", Name = "Track")]
 public sealed partial class AnimationTrack<T> : AnimationTrack
 {
-    private string name = string.Empty;
+    private AnimationChannel<T> channel = null!;
     private IInterpolator<T> interpolator = null!;
     private ICurve curve = Curves.Linear;
     private Keyframe<T>[] keyframes = [];
 
     [ComposeParameter]
-    public required override string Name
+    public required AnimationChannel<T> Channel
     {
-        get => name;
+        get => channel;
         init
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(value);
-            name = value;
+            channel = value ?? throw new ArgumentNullException(nameof(value));
         }
     }
+
+    public override AnimationChannel UntypedChannel => Channel;
 
     [ComposeParameter]
     public required IInterpolator<T> Interpolator

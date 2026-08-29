@@ -4,7 +4,9 @@ namespace Lumyte.Animation;
 
 public abstract class AnimationTrack
 {
-    public abstract string Name { get; init; }
+    public string Name => UntypedChannel.Name;
+
+    public abstract AnimationChannel UntypedChannel { get; }
 
     public abstract Duration Duration { get; }
 
