@@ -54,4 +54,28 @@ public sealed class WindowsMouseTests
         Assert.NotNull(change);
         Assert.Equal(new Vector2(1, -2), change.Delta);
     }
+
+    [Fact]
+    public void RawMovementReportsDeviceDeltaWithoutChangingPosition()
+    {
+        var mouse = new WindowsMouse();
+        RawMouseMovedEventArgs? movement = null;
+        mouse.RawMoved += (_, eventArgs) => movement = eventArgs;
+        mouse.Move(new(10, 20));
+
+        mouse.MoveRaw(new(4, -3));
+
+        Assert.NotNull(movement);
+        Assert.Equal(new Vector2(4, -3), movement.Delta);
+        Assert.Equal(new Vector2(10, 20), mouse.Position);
+    }
+
+    [Fact]
+    public void CursorSettingsAreRetainedWithoutANativeWindow()
+    {
+        var mouse = new WindowsMouse { IsCursorVisible = false, CursorMode = CursorMode.Relative };
+
+        Assert.False(mouse.IsCursorVisible);
+        Assert.Equal(CursorMode.Relative, mouse.CursorMode);
+    }
 }

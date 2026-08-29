@@ -12,7 +12,7 @@ public sealed class WindowsWindowInput : IWindowInput
     {
         Window = window;
         Keyboard = new();
-        Mouse = new();
+        Mouse = new(window);
         Touchscreen = new();
         TextInput = new(window);
         keyboards = [Keyboard];
@@ -40,5 +40,9 @@ public sealed class WindowsWindowInput : IWindowInput
 
     public IReadOnlyList<ITouchscreen> Touchscreens => touchscreens;
 
-    internal void Dispose() => TextInput.Dispose();
+    internal void Dispose()
+    {
+        Mouse.Dispose();
+        TextInput.Dispose();
+    }
 }

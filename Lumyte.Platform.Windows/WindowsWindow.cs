@@ -1,10 +1,11 @@
-using System.ComponentModel;
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Drawing;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 using Lumyte.Input;
+
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -396,6 +397,13 @@ public sealed class WindowsWindow : IWindow
             case PInvoke.WM_MOUSEMOVE:
                 WindowInput.Mouse.Move(GetMousePosition(lParam));
                 return default;
+            case 0x00ff:
+                if (WindowsCursor.TryReadDelta(lParam.Value, out int rawX, out int rawY))
+                {
+                    WindowInput.Mouse.MoveRaw(new(rawX, rawY));
+                }
+
+                return default;
             case PInvoke.WM_LBUTTONDOWN:
                 WindowInput.Mouse.ChangeButton(MouseButton.Left, true, GetMousePosition(lParam));
                 return default;
@@ -448,12 +456,15 @@ public sealed class WindowsWindow : IWindow
                 Resized?.Invoke(this, new WindowResizedEventArgs(new(width, height)));
                 return default;
             case PInvoke.WM_MOVE:
+                WindowInput.Mouse.UpdateCursorState();
                 Moved?.Invoke(this, new(Position));
                 return default;
             case PInvoke.WM_SETFOCUS:
+                WindowInput.Mouse.UpdateCursorState();
                 FocusChanged?.Invoke(this, new(true));
                 return default;
             case PInvoke.WM_KILLFOCUS:
+                WindowInput.Mouse.UpdateCursorState();
                 WindowInput.Touchscreen.CancelAll();
                 FocusChanged?.Invoke(this, new(false));
                 return default;
