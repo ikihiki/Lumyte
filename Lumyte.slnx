@@ -2,6 +2,8 @@
   <Project Path="Lumyte.Core/Lumyte.Core.csproj" />
   <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
   <Project Path="Lumyte.Input/Lumyte.Input.csproj" />
+  <Project Path="Lumyte.Interaction/Lumyte.Interaction.csproj" />
+  <Project Path="Lumyte.Interaction.Tests/Lumyte.Interaction.Tests.csproj" />
   <Project Path="Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
   <Project Path="Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />
   <Project Path="Lumyte.Platform/Lumyte.Platform.csproj" />
