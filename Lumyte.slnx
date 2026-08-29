@@ -8,6 +8,8 @@
   <Project Path="Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />
   <Project Path="Lumyte.Platform/Lumyte.Platform.csproj" />
   <Project Path="Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
+  <Project Path="Lumyte.Platform.Silk/Lumyte.Platform.Silk.csproj" />
+  <Project Path="Lumyte.Platform.Silk.Tests/Lumyte.Platform.Silk.Tests.csproj" />
   <Project Path="Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
   <Project Path="Lumyte.Platform.Windows.Tests/Lumyte.Platform.Windows.Tests.csproj" />
   <Project Path="Lumyte.StateMachine/Lumyte.StateMachine.csproj" />

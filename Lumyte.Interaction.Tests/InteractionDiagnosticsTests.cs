@@ -58,7 +58,7 @@ public sealed class InteractionDiagnosticsTests
     [Fact]
     public void KeybindingInvocationProducesAnActivityAndMetric()
     {
-        Activity? stopped = null;
+        var stopped = new ConcurrentQueue<(string Operation, object? Command)>();
         using var activityListener = new ActivityListener
         {
             ShouldListenTo = source =>
@@ -69,7 +69,9 @@ public sealed class InteractionDiagnosticsTests
             {
                 if (activity.OperationName == "KeybindingRuntime.Invoke")
                 {
-                    stopped = activity;
+                    stopped.Enqueue((
+                        activity.OperationName,
+                        activity.GetTagItem("interaction.command.id")));
                 }
             },
         };
@@ -90,9 +92,11 @@ public sealed class InteractionDiagnosticsTests
         keyboard.Press(Key.LeftControl);
         keyboard.Press(Key.S);
 
-        Assert.NotNull(stopped);
-        Assert.Equal("KeybindingRuntime.Invoke", stopped.OperationName);
-        Assert.Equal("editor.save", stopped.GetTagItem("interaction.command.id"));
+        Assert.Contains(
+            stopped,
+            activity =>
+                activity.Operation == "KeybindingRuntime.Invoke"
+                && Equals(activity.Command, "editor.save"));
         Assert.Contains(
             measurements,
             measurement =>

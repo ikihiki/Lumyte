@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Silk.NET implementation of Lumyte platform contracts.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Platform.Silk.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Input\Lumyte.Input.csproj" />
+    <ProjectReference Include="..\Lumyte.Platform\Lumyte.Platform.csproj" />
+    <PackageReference Include="Silk.NET.Input" />
+    <PackageReference Include="Silk.NET.Windowing" />
+  </ItemGroup>
+</Project>
