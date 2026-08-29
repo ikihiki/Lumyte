@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Portable input contracts for Lumyte applications.</Description>
+  </PropertyGroup>
+</Project>

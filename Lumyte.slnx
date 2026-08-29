@@ -1,8 +1,13 @@
 <Solution>
   <Project Path="Lumyte.Core/Lumyte.Core.csproj" />
   <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
+  <Project Path="Lumyte.Input/Lumyte.Input.csproj" />
   <Project Path="Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
   <Project Path="Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />
+  <Project Path="Lumyte.Platform/Lumyte.Platform.csproj" />
+  <Project Path="Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
+  <Project Path="Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+  <Project Path="Lumyte.Platform.Windows.Tests/Lumyte.Platform.Windows.Tests.csproj" />
   <Project Path="Lumyte.StateMachine/Lumyte.StateMachine.csproj" />
   <Project Path="Lumyte.StateMachine.Tests/Lumyte.StateMachine.Tests.csproj" />
   <Project Path="Lumyte.Composition/Lumyte.Composition.csproj" />
