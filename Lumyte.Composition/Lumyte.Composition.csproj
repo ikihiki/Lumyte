@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Contracts for Lumyte's indexer-based declarative composition DSL.</Description>
+  </PropertyGroup>
+</Project>

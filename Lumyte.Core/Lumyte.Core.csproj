@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Portable primitives shared by Lumyte subsystems.</Description>
+  </PropertyGroup>
+</Project>

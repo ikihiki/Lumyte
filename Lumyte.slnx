@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Lumyte.Core/Lumyte.Core.csproj" />
+  <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
+  <Project Path="Lumyte.Composition/Lumyte.Composition.csproj" />
+  <Project Path="Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
+  <Project Path="Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
+</Solution>
