@@ -29,4 +29,13 @@ public sealed class DelayTimeline : IAnimationTimeline
         Duration childTime = clamped <= delay ? Duration.Zero : clamped - delay;
         return new AnimationSample(this, clamped, child.Sample(childTime).Values);
     }
+
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
+        Duration childTime = clamped <= delay ? Duration.Zero : clamped - delay;
+        child.SampleInto(childTime, buffer);
+        buffer.Complete(this, clamped);
+    }
 }

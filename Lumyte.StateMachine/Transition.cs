@@ -44,7 +44,18 @@ public sealed class Transition<TContext, TTrigger>
         return this;
     }
 
-    internal bool CanTake(TContext context) => guards.All(guard => guard(context));
+    internal bool CanTake(TContext context)
+    {
+        foreach (Func<TContext, bool> guard in guards)
+        {
+            if (!guard(context))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     internal void ApplyEffects(TContext context)
     {

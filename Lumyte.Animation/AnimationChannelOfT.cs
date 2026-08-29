@@ -8,4 +8,6 @@ public sealed record AnimationChannel<T> : AnimationChannel
     }
 
     public override Type ValueType => typeof(T);
+
+    internal override IAnimationValueSlot CreateValueSlot() => new AnimationValueSlot<T>();
 }

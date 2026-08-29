@@ -13,4 +13,6 @@ public abstract class AnimationTrack
     public abstract Type ValueType { get; }
 
     internal abstract object? SampleObject(Duration time);
+
+    internal abstract void SampleInto(Duration time, AnimationSampleBuffer buffer);
 }

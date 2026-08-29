@@ -83,6 +83,9 @@ public sealed partial class AnimationTrack<T> : AnimationTrack
 
     internal override object? SampleObject(Duration time) => Sample(time);
 
+    internal override void SampleInto(Duration time, AnimationSampleBuffer buffer) =>
+        buffer.Set(Channel, Sample(time));
+
     private int FindUpperKeyframe(Duration time)
     {
         var lower = 1;

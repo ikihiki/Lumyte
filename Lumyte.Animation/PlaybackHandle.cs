@@ -6,6 +6,7 @@ public sealed class PlaybackHandle
 {
     private readonly IMonotonicClock clock;
     private readonly AnimationTarget target;
+    private readonly AnimationSampleBuffer sampleBuffer;
     private TimePoint anchorClock;
     private Duration anchorPosition;
     private Duration remainingDelay;
@@ -23,6 +24,7 @@ public sealed class PlaybackHandle
         this.clock = clock;
         this.target = target;
         Timeline = timeline;
+        sampleBuffer = new(timeline);
         Options = options;
         anchorClock = clock.Now + options.Delay;
         State = options.Delay > Duration.Zero ? PlaybackState.Scheduled : PlaybackState.Playing;
@@ -216,7 +218,8 @@ public sealed class PlaybackHandle
             return;
         }
 
-        target.Apply(Timeline.Sample(time));
+        Timeline.SampleInto(time, sampleBuffer);
+        target.Apply(sampleBuffer);
         lastAppliedTime = time;
         hasApplied = true;
     }

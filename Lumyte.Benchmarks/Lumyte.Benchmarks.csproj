@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Description>Performance benchmarks for Lumyte hot paths.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Animation\Lumyte.Animation.csproj" />
+    <ProjectReference Include="..\Lumyte.Interaction\Lumyte.Interaction.csproj" />
+    <ProjectReference Include="..\Lumyte.StateMachine\Lumyte.StateMachine.csproj" />
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+</Project>

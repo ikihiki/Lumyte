@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 
@@ -179,14 +180,14 @@ public sealed class ActionBindingDocumentTests
             }
         ];
         ActionBindingDocument document = ActionBindingDocument.Create([map]);
-        var stopped = new List<Activity>();
+        var stopped = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source =>
                 source.Name == InteractionDiagnostics.ActivitySourceName,
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
                 ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = stopped.Add,
+            ActivityStopped = stopped.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
         const string json =

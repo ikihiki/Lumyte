@@ -11,4 +11,6 @@ public abstract record AnimationChannel
     public string Name { get; }
 
     public abstract Type ValueType { get; }
+
+    internal abstract IAnimationValueSlot CreateValueSlot();
 }

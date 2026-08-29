@@ -16,4 +16,12 @@ public sealed class ReverseTimeline(IAnimationTimeline child) : IAnimationTimeli
         Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
         return new AnimationSample(this, clamped, child.Sample(Duration - clamped).Values);
     }
+
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
+        child.SampleInto(Duration - clamped, buffer);
+        buffer.Complete(this, clamped);
+    }
 }

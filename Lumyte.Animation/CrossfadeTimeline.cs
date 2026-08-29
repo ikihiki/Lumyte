@@ -8,6 +8,7 @@ public sealed class CrossfadeTimeline : IAnimationTimeline
     private readonly IAnimationTimeline to;
     private readonly AnimationBlend blend;
     private readonly ICurve curve;
+    private readonly AnimationChannel[] channels;
 
     public CrossfadeTimeline(
         AnimationSample from,
@@ -24,8 +25,8 @@ public sealed class CrossfadeTimeline : IAnimationTimeline
             throw new ArgumentOutOfRangeException(nameof(duration), "Crossfade duration must be positive.");
         }
 
-        HashSet<AnimationChannel> channels = [.. from.Timeline.Channels];
-        if (!channels.SetEquals(to.Channels))
+        HashSet<AnimationChannel> sourceChannels = [.. from.Timeline.Channels];
+        if (!sourceChannels.SetEquals(to.Channels))
         {
             throw new ArgumentException("Crossfade timelines must define the same channels.", nameof(to));
         }
@@ -34,8 +35,9 @@ public sealed class CrossfadeTimeline : IAnimationTimeline
         this.to = to;
         this.blend = blend;
         this.curve = curve ?? Curves.Linear;
+        channels = [.. to.Channels];
         Duration = duration;
-        Channels = to.Channels;
+        Channels = channels;
     }
 
     public Duration Duration { get; }
@@ -48,9 +50,24 @@ public sealed class CrossfadeTimeline : IAnimationTimeline
         float progress = curve.Transform((float)clamped.Ticks / Duration.Ticks);
         Duration destinationTime = clamped > to.Duration ? to.Duration : clamped;
         AnimationSample destination = to.Sample(destinationTime);
-        var values = Channels.ToDictionary(
+        var values = channels.ToDictionary(
             channel => channel,
             channel => blend.Interpolate(channel, from.GetObject(channel), destination.GetObject(channel), progress));
         return new AnimationSample(this, clamped, values);
+    }
+
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
+        float progress = curve.Transform((float)clamped.Ticks / Duration.Ticks);
+        Duration destinationTime = clamped > to.Duration ? to.Duration : clamped;
+        to.SampleInto(destinationTime, buffer);
+        foreach (AnimationChannel channel in channels)
+        {
+            blend.InterpolateInto(channel, from, buffer, progress);
+        }
+
+        buffer.Complete(this, clamped);
     }
 }

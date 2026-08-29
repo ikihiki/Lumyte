@@ -43,6 +43,27 @@ public sealed class SequenceTimeline : IAnimationTimeline
         throw new InvalidOperationException("The sequence could not resolve its sample.");
     }
 
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        Duration clamped = Clamp(time);
+        Duration offset = Duration.Zero;
+        foreach (IAnimationTimeline child in children)
+        {
+            Duration end = offset + child.Duration;
+            if (clamped <= end || ReferenceEquals(child, children[^1]))
+            {
+                child.SampleInto(clamped - offset, buffer);
+                buffer.Complete(this, clamped);
+                return;
+            }
+
+            offset = end;
+        }
+
+        throw new InvalidOperationException("The sequence could not resolve its sample.");
+    }
+
     private Duration Clamp(Duration time)
     {
         if (time < Duration.Zero)

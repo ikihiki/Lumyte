@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="Lumyte.Benchmarks/Lumyte.Benchmarks.csproj" />
   <Project Path="Lumyte.Core/Lumyte.Core.csproj" />
   <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
   <Project Path="Lumyte.Input/Lumyte.Input.csproj" />

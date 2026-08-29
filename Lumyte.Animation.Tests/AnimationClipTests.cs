@@ -63,4 +63,36 @@ public sealed class AnimationClipTests
         Assert.Equal("channel", exception.ParamName);
         Assert.Contains("does not belong", exception.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ReusableBufferUpdatesTypedValuesAcrossSamples()
+    {
+        AnimationChannel<float> opacity = Channel<float>("Opacity");
+        AnimationTrack<float> track = Track(opacity, Interpolators.Float)[
+            Keyframe(Duration.Zero, 0f),
+            Keyframe(Duration.FromSeconds(1), 1f)
+        ];
+        AnimationClip clip = Clip("Fade")[track];
+        var buffer = new AnimationSampleBuffer(clip);
+
+        clip.SampleInto(Duration.FromSeconds(0.25), buffer);
+        float first = buffer.Get(opacity);
+        clip.SampleInto(Duration.FromSeconds(0.75), buffer);
+
+        var actual = new
+        {
+            First = first,
+            Second = buffer.Get(opacity),
+            buffer.Timeline,
+            buffer.Time,
+        };
+        var expected = new
+        {
+            First = 0.25f,
+            Second = 0.75f,
+            Timeline = (IAnimationTimeline)clip,
+            Time = Duration.FromSeconds(0.75),
+        };
+        Assert.Equal(expected, actual);
+    }
 }

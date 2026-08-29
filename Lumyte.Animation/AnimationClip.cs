@@ -49,6 +49,17 @@ public sealed partial class AnimationClip : IAnimationTimeline
         return new AnimationSample(this, time, values);
     }
 
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        foreach (AnimationTrack track in tracks)
+        {
+            track.SampleInto(time, buffer);
+        }
+
+        buffer.Complete(this, time);
+    }
+
     private static void Validate(AnimationTrack[] tracks)
     {
         if (tracks.Any(track => track is null))

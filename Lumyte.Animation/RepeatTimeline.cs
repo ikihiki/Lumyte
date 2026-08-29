@@ -27,16 +27,25 @@ public sealed class RepeatTimeline : IAnimationTimeline
     public AnimationSample Sample(Duration time)
     {
         Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
-        Duration childTime;
+        Duration childTime = ChildTime(clamped);
+        return new AnimationSample(this, clamped, child.Sample(childTime).Values);
+    }
+
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
+        child.SampleInto(ChildTime(clamped), buffer);
+        buffer.Complete(this, clamped);
+    }
+
+    private Duration ChildTime(Duration clamped)
+    {
         if (child.Duration == Duration.Zero || clamped == Duration)
         {
-            childTime = child.Duration;
-        }
-        else
-        {
-            childTime = Duration.FromTicks(clamped.Ticks % child.Duration.Ticks);
+            return child.Duration;
         }
 
-        return new AnimationSample(this, clamped, child.Sample(childTime).Values);
+        return Duration.FromTicks(clamped.Ticks % child.Duration.Ticks);
     }
 }

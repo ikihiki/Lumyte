@@ -592,31 +592,63 @@ public sealed class ActionRuntime : IDisposable
 
     private T Aggregate<T>(InputAction<T> action)
     {
-        T[] actionValues =
-        [.. contributions
-            .Where(pair => ReferenceEquals(pair.Key.Action, action))
-            .Select(pair => (T)pair.Value)];
         if (typeof(T) == typeof(Vector2))
         {
-            Vector2[] vectors = [.. actionValues.Cast<Vector2>()];
-            Vector2 result = action.Aggregation == ActionValueAggregation.Cumulative
-                ? vectors.Aggregate(Vector2.Zero, (sum, value) => sum + value)
-                : vectors.Aggregate(Vector2.Zero, (best, value) =>
-                    value.LengthSquared() > best.LengthSquared() ? value : best);
+            Vector2 result = Vector2.Zero;
+            foreach ((ContributionKey key, object value) in contributions)
+            {
+                if (!ReferenceEquals(key.Action, action))
+                {
+                    continue;
+                }
+
+                var vector = (Vector2)value;
+                if (action.Aggregation == ActionValueAggregation.Cumulative)
+                {
+                    result += vector;
+                }
+                else if (vector.LengthSquared() > result.LengthSquared())
+                {
+                    result = vector;
+                }
+            }
+
             return (T)(object)result;
         }
 
         if (typeof(T) == typeof(float))
         {
-            float[] scalars = [.. actionValues.Cast<float>()];
-            float result = action.Aggregation == ActionValueAggregation.Cumulative
-                ? scalars.Sum()
-                : scalars.Aggregate(0f, (best, value) =>
-                    MathF.Abs(value) > MathF.Abs(best) ? value : best);
+            float result = 0;
+            foreach ((ContributionKey key, object value) in contributions)
+            {
+                if (!ReferenceEquals(key.Action, action))
+                {
+                    continue;
+                }
+
+                var scalar = (float)value;
+                if (action.Aggregation == ActionValueAggregation.Cumulative)
+                {
+                    result += scalar;
+                }
+                else if (MathF.Abs(scalar) > MathF.Abs(result))
+                {
+                    result = scalar;
+                }
+            }
+
             return (T)(object)result;
         }
 
-        return actionValues.FirstOrDefault()!;
+        foreach ((ContributionKey key, object value) in contributions)
+        {
+            if (ReferenceEquals(key.Action, action))
+            {
+                return (T)value;
+            }
+        }
+
+        return default!;
     }
 
     private CompositeMatch? ResolveComposite(

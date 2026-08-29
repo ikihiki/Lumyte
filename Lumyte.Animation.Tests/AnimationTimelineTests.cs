@@ -97,6 +97,67 @@ public sealed class AnimationTimelineTests
         Assert.Equal(0.75f, quarter);
     }
 
+    [Fact]
+    public void ReusableBufferCombinesNestedTimelines()
+    {
+        AnimationChannel<float> opacity = Channel<float>("Opacity");
+        AnimationChannel<float> scale = Channel<float>("Scale");
+        var parallel = new ParallelTimeline(
+            Delay(
+                CreateClip("Fade", opacity, 0f, 1f),
+                Duration.FromSeconds(0.5)),
+            Reverse(CreateClip("Shrink", scale, 1f, 3f)));
+        var buffer = new AnimationSampleBuffer(parallel);
+
+        parallel.SampleInto(Duration.FromSeconds(0.75), buffer);
+
+        var actual = new
+        {
+            Opacity = buffer.Get(opacity),
+            Scale = buffer.Get(scale),
+            buffer.Timeline,
+            buffer.Time,
+        };
+        var expected = new
+        {
+            Opacity = 0.25f,
+            Scale = 1.5f,
+            Timeline = (IAnimationTimeline)parallel,
+            Time = Duration.FromSeconds(0.75),
+        };
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void ReusableBufferAdvancesThroughRepeatedSequenceChildren()
+    {
+        AnimationChannel<float> opacity = Channel<float>("Opacity");
+        var sequence = new SequenceTimeline(
+            Repeat(CreateClip("Pulse", opacity, 0f, 1f), 2),
+            CreateClip("Finish", opacity, 1f, 3f));
+        var buffer = new AnimationSampleBuffer(sequence);
+
+        sequence.SampleInto(Duration.FromSeconds(1.5), buffer);
+        float repeated = buffer.Get(opacity);
+        sequence.SampleInto(Duration.FromSeconds(2.5), buffer);
+
+        var actual = new
+        {
+            Repeated = repeated,
+            Finished = buffer.Get(opacity),
+            buffer.Timeline,
+            buffer.Time,
+        };
+        var expected = new
+        {
+            Repeated = 0.5f,
+            Finished = 2f,
+            Timeline = (IAnimationTimeline)sequence,
+            Time = Duration.FromSeconds(2.5),
+        };
+        Assert.Equal(expected, actual);
+    }
+
     private static AnimationClip CreateClip(
         string name,
         AnimationChannel<float> channel,

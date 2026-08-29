@@ -36,13 +36,25 @@ public sealed class AnimationTarget
         }
     }
 
+    internal void Apply(AnimationSampleBuffer buffer)
+    {
+        foreach (AnimationChannel channel in buffer.ChannelList)
+        {
+            bindings[channel].Apply(buffer);
+        }
+    }
+
     private interface IBinding
     {
         void Apply(AnimationSample sample);
+
+        void Apply(AnimationSampleBuffer buffer);
     }
 
     private sealed class Binding<T>(AnimationChannel<T> channel, Action<T> apply) : IBinding
     {
         public void Apply(AnimationSample sample) => apply(sample.Get(channel));
+
+        public void Apply(AnimationSampleBuffer buffer) => apply(buffer.Get(channel));
     }
 }

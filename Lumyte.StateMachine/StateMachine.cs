@@ -62,17 +62,26 @@ public sealed partial class StateMachine<TContext, TTrigger>
     internal Transition<TContext, TTrigger>? FindTransition(
         State<TContext> state,
         TTrigger trigger,
-        TContext context) =>
-        transitions
-            .Select((transition, index) => (transition, index))
-            .Where(candidate =>
-                ReferenceEquals(candidate.transition.From, state)
-                && EqualityComparer<TTrigger>.Default.Equals(candidate.transition.Trigger, trigger)
-                && candidate.transition.CanTake(context))
-            .OrderByDescending(candidate => candidate.transition.Priority)
-            .ThenBy(candidate => candidate.index)
-            .Select(candidate => candidate.transition)
-            .FirstOrDefault();
+        TContext context)
+    {
+        Transition<TContext, TTrigger>? selected = null;
+        foreach (Transition<TContext, TTrigger> transition in transitions)
+        {
+            if (!ReferenceEquals(transition.From, state)
+                || !EqualityComparer<TTrigger>.Default.Equals(transition.Trigger, trigger)
+                || !transition.CanTake(context))
+            {
+                continue;
+            }
+
+            if (selected is null || transition.Priority > selected.Priority)
+            {
+                selected = transition;
+            }
+        }
+
+        return selected;
+    }
 
     private void Validate(IReadOnlyList<Transition<TContext, TTrigger>> candidate)
     {

@@ -44,4 +44,17 @@ public sealed class ParallelTimeline : IAnimationTimeline
 
         return new AnimationSample(this, clamped, values);
     }
+
+    public void SampleInto(Duration time, AnimationSampleBuffer buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        Duration clamped = time < Duration.Zero ? Duration.Zero : time > Duration ? Duration : time;
+        foreach (IAnimationTimeline child in children)
+        {
+            Duration childTime = clamped > child.Duration ? child.Duration : clamped;
+            child.SampleInto(childTime, buffer);
+        }
+
+        buffer.Complete(this, clamped);
+    }
 }
