@@ -10,4 +10,9 @@ public sealed class ContextKey<T> : ContextKey
     public ContextCondition Is(T value) => ContextCondition.Equal(this, value);
 
     public ContextCondition IsNot(T value) => !Is(value);
+
+    public override Type ValueType => typeof(T);
+
+    internal override ContextCondition EqualObject(object? value) =>
+        ContextCondition.Equal(this, (T?)value!);
 }

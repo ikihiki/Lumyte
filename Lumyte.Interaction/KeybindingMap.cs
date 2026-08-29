@@ -18,4 +18,13 @@ public sealed partial class KeybindingMap
         get => bindings;
         set => bindings = [.. value];
     }
+
+    internal static KeybindingMap CreateEffective(
+        string name,
+        IReadOnlyList<Keybinding> bindings)
+    {
+        KeybindingMap map = InteractionKit.KeybindingMap(name);
+        map.ComposedBindings = bindings;
+        return map;
+    }
 }

@@ -10,7 +10,11 @@ public abstract class ContextKey
 
     public string Name { get; }
 
+    public abstract Type ValueType { get; }
+
     public static ContextKey<T> Create<T>(string name) => new(name);
 
     public override string ToString() => Name;
+
+    internal abstract ContextCondition EqualObject(object? value);
 }
