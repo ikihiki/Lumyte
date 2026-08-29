@@ -11,4 +11,6 @@ public abstract class ActionBinding
     public InteractionIntent Action { get; }
 
     public object Control { get; }
+
+    public string? BindingId { get; init; }
 }

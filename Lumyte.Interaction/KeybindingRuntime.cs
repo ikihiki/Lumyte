@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 using Lumyte.Core.Time;
 using Lumyte.Input;
 
@@ -132,6 +134,9 @@ public sealed class KeybindingRuntime : IDisposable
         Keybinding[] best = [.. candidates.Where(binding => binding.Priority == priority)];
         if (best.Length != 1)
         {
+            InteractionDiagnostics.KeybindingResolutions.Add(
+                1,
+                [new("outcome", "conflict")]);
             ConflictDetected?.Invoke(this, new(best));
             return null;
         }
@@ -139,8 +144,16 @@ public sealed class KeybindingRuntime : IDisposable
         return best[0];
     }
 
-    private void Invoke(Keybinding binding) =>
+    private void Invoke(Keybinding binding)
+    {
+        using Activity? activity = InteractionDiagnostics.Activities.StartActivity(
+            "KeybindingRuntime.Invoke");
+        activity?.SetTag("interaction.command.id", binding.Command.Id);
+        InteractionDiagnostics.KeybindingResolutions.Add(
+            1,
+            [new("outcome", "invoked")]);
         CommandInvoked?.Invoke(this, new(binding.Command));
+    }
 
     private void ResetSequence()
     {

@@ -9,7 +9,7 @@ public sealed record SwipeGesture : GestureBinding
         float minimumVelocity = 100,
         TimeSpan? maximumDuration = null,
         int fingerCount = 1)
-        : base(intent, GestureKind.Swipe)
+        : base(intent, GestureKind.Swipe, typeof(System.Numerics.Vector2))
     {
         if (fingerCount <= 0)
         {

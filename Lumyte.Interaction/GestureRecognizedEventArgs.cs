@@ -10,7 +10,8 @@ public sealed class GestureRecognizedEventArgs(
     Vector2 delta = default,
     float scale = 1,
     Vector2 velocity = default,
-    Duration duration = default) : EventArgs
+    Duration duration = default,
+    int fingerCount = 1) : EventArgs
 {
     public InteractionIntent Intent { get; } = intent;
 
@@ -23,4 +24,6 @@ public sealed class GestureRecognizedEventArgs(
     public Vector2 Velocity { get; } = velocity;
 
     public Duration Duration { get; } = duration;
+
+    public int FingerCount { get; } = fingerCount;
 }

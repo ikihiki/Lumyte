@@ -24,4 +24,14 @@ public sealed partial class ActionMap
         get => bindings;
         set => bindings = [.. value];
     }
+
+    internal static ActionMap CreateEffective(
+        string name,
+        ContextCondition when,
+        int priority,
+        IReadOnlyList<ActionBinding> bindings)
+    {
+        ActionMap map = InteractionKit.ActionMap(name, when, priority);
+        return map[bindings.ToArray()];
+    }
 }

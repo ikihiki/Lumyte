@@ -10,4 +10,5 @@ public readonly record struct GestureRecognition(
     Vector2 Delta = default,
     float Scale = 1,
     Vector2 Velocity = default,
-    Duration Duration = default);
+    Duration Duration = default,
+    int FingerCount = 1);

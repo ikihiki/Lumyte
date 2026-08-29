@@ -4,6 +4,8 @@ public interface IGamepad
 {
     event EventHandler<GamepadStateChangedEventArgs>? StateChanged;
 
+    GamepadId Id { get; }
+
     string Name { get; }
 
     GamepadState State { get; }

@@ -3,7 +3,7 @@ namespace Lumyte.Interaction;
 public sealed record PinchGesture : GestureBinding
 {
     public PinchGesture(InteractionIntent intent, float minimumScaleChange = 0.01f)
-        : base(intent, GestureKind.Pinch)
+        : base(intent, GestureKind.Pinch, typeof(float))
     {
         MinimumScaleChange = minimumScaleChange;
     }

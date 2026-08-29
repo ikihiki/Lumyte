@@ -6,7 +6,7 @@ public sealed record DoubleTapGesture : GestureBinding
         InteractionIntent intent,
         float maximumMovement = 10,
         TimeSpan? maximumInterval = null)
-        : base(intent, GestureKind.DoubleTap)
+        : base(intent, GestureKind.DoubleTap, typeof(bool))
     {
         MaximumMovement = maximumMovement;
         MaximumInterval = maximumInterval ?? TimeSpan.FromMilliseconds(300);

@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Diagnostics;
 
 using Lumyte.Core.Time;
 using Lumyte.Input;
@@ -10,6 +11,7 @@ public sealed class GestureRuntime : IDisposable
     private readonly GestureArena arena;
     private readonly IMonotonicClock clock;
     private readonly ITouchscreen touchscreen;
+    private IDisposable? ownedSource;
     private readonly Dictionary<long, TouchTrack> touches = [];
     private float? pinchStartDistance;
     private bool disposed;
@@ -27,7 +29,25 @@ public sealed class GestureRuntime : IDisposable
         touchscreen.TouchChanged += OnTouchChanged;
     }
 
+    public GestureRuntime(
+        IMouse mouse,
+        InteractionContext context,
+        IMonotonicClock clock,
+        MouseButton button = MouseButton.Left,
+        params ReadOnlySpan<GestureMap> maps)
+        : this(new MouseGestureSource(mouse, button), context, clock, maps)
+    {
+        ownedSource = (IDisposable)touchscreen;
+    }
+
     public event EventHandler<GestureRecognizedEventArgs>? Recognized;
+
+    public void Cancel()
+    {
+        touches.Clear();
+        pinchStartDistance = null;
+        arena.Reset();
+    }
 
     public void Dispose()
     {
@@ -38,7 +58,9 @@ public sealed class GestureRuntime : IDisposable
 
         disposed = true;
         touchscreen.TouchChanged -= OnTouchChanged;
-        arena.Reset();
+        ownedSource?.Dispose();
+        ownedSource = null;
+        Cancel();
     }
 
     private void OnTouchChanged(object? sender, TouchChangedEventArgs eventArgs)
@@ -102,6 +124,15 @@ public sealed class GestureRuntime : IDisposable
         if (arena.Process(input) is ArenaMatch match)
         {
             GestureRecognition recognition = match.Recognition;
+            using Activity? activity = InteractionDiagnostics.Activities.StartActivity(
+                "GestureRuntime.Recognize");
+            activity?.SetTag("interaction.gesture.kind", recognition.Kind.ToString());
+            activity?.SetTag("interaction.gesture.intent", match.Binding.Intent.Id);
+            activity?.SetTag("interaction.gesture.finger_count", recognition.FingerCount);
+            InteractionDiagnostics.GesturesRecognized.Add(
+                1,
+                new("gesture_kind", recognition.Kind.ToString()),
+                new("value_type", GetValueTypeName(match.Binding.ValueType)));
             Recognized?.Invoke(
                 this,
                 new(
@@ -110,7 +141,8 @@ public sealed class GestureRuntime : IDisposable
                     recognition.Delta,
                     recognition.Scale,
                     recognition.Velocity,
-                    recognition.Duration));
+                    recognition.Duration,
+                    recognition.FingerCount));
         }
 
         if (touch.Phase is TouchPhase.Ended or TouchPhase.Cancelled)
@@ -119,6 +151,12 @@ public sealed class GestureRuntime : IDisposable
             pinchStartDistance = touches.Count == 2 ? GetTouchDistance() : null;
         }
     }
+
+    private static string GetValueTypeName(Type type) => type == typeof(bool)
+        ? "button"
+        : type == typeof(float)
+            ? "scalar"
+            : type == typeof(Vector2) ? "vector2" : "other";
 
     private float? GetPinchScale()
     {

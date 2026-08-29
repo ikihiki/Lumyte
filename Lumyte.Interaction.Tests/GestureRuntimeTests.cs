@@ -167,6 +167,69 @@ public sealed class GestureRuntimeTests
     }
 
     [Fact]
+    public void ThreeFingersMovingTogetherRecognizeSwipe()
+    {
+        var switchWorkspace = new Command("editor.switchWorkspace");
+        GestureMap map = GestureMap("Editor")[
+            new SwipeGesture(
+                switchWorkspace,
+                direction: SwipeDirection.Right,
+                minimumDistance: 50,
+                minimumVelocity: 500,
+                maximumDuration: TimeSpan.FromMilliseconds(300),
+                fingerCount: 3)
+        ];
+        var touchscreen = new VirtualTouchscreen();
+        var clock = new ManualClock();
+        using var runtime = new GestureRuntime(
+            touchscreen,
+            new InteractionContext(),
+            clock,
+            map);
+        GestureRecognizedEventArgs? recognized = null;
+        runtime.Recognized += (_, eventArgs) => recognized = eventArgs;
+
+        touchscreen.Begin(1, new(10, 10));
+        touchscreen.Begin(2, new(10, 30));
+        touchscreen.Begin(3, new(10, 50));
+        clock.Advance(Duration.FromTimeSpan(TimeSpan.FromMilliseconds(100)));
+        touchscreen.End(1, new(90, 10));
+        touchscreen.End(2, new(90, 30));
+        touchscreen.End(3, new(90, 50));
+
+        Assert.NotNull(recognized);
+        Assert.Same(switchWorkspace, recognized.Intent);
+        Assert.Equal(GestureKind.Swipe, recognized.Gesture);
+        Assert.Equal(3, recognized.FingerCount);
+        Assert.Equal(new Vector2(80, 0), recognized.Delta);
+        Assert.Equal(new Vector2(800, 0), recognized.Velocity);
+    }
+
+    [Fact]
+    public void OpposingFingerMovementDoesNotRecognizeSwipe()
+    {
+        var switchWorkspace = new Command("editor.switchWorkspace");
+        GestureMap map = GestureMap("Editor")[
+            new SwipeGesture(
+                switchWorkspace,
+                direction: SwipeDirection.Right,
+                minimumDistance: 50,
+                fingerCount: 2)
+        ];
+        var touchscreen = new VirtualTouchscreen();
+        using var runtime = CreateRuntime(touchscreen, map);
+        var recognized = new List<GestureRecognizedEventArgs>();
+        runtime.Recognized += (_, eventArgs) => recognized.Add(eventArgs);
+
+        touchscreen.Begin(1, new(0, 10));
+        touchscreen.Begin(2, new(100, 30));
+        touchscreen.End(1, new(80, 10));
+        touchscreen.End(2, new(20, 30));
+
+        Assert.Empty(recognized);
+    }
+
+    [Fact]
     public void CustomRecognizerParticipatesWithoutChangingTheRuntime()
     {
         var inspect = new Command("editor.inspect");
@@ -185,6 +248,32 @@ public sealed class GestureRuntimeTests
         Assert.Equal(TouchBeginGesture.GestureType, recognized.Gesture);
     }
 
+    [Fact]
+    public void EmulatedMouseDragUsesTheSameRecognizerAsTouch()
+    {
+        var pan = new Command("editor.pan");
+        GestureMap map = GestureMap("Viewport")[
+            new DragGesture(pan, minimumDistance: 5)
+        ];
+        var mouse = new VirtualMouse();
+        using var runtime = new GestureRuntime(
+            mouse,
+            new InteractionContext(),
+            new ManualClock(),
+            maps: map);
+        GestureRecognizedEventArgs? recognized = null;
+        runtime.Recognized += (_, eventArgs) => recognized = eventArgs;
+
+        mouse.Press(Lumyte.Input.MouseButton.Left);
+        mouse.Move(new(20, 10));
+        mouse.Release(Lumyte.Input.MouseButton.Left);
+
+        Assert.NotNull(recognized);
+        Assert.Same(pan, recognized.Intent);
+        Assert.Equal(GestureKind.Drag, recognized.Gesture);
+        Assert.Equal(new Vector2(20, 10), recognized.Delta);
+    }
+
     private static GestureRuntime CreateRuntime(
         VirtualTouchscreen touchscreen,
         GestureMap map) =>
@@ -195,7 +284,7 @@ public sealed class GestureRuntimeTests
         public static GestureKind GestureType { get; } = new("TouchBegin");
 
         public TouchBeginGesture(InteractionIntent intent)
-            : base(intent, GestureType)
+            : base(intent, GestureType, typeof(bool))
         {
         }
 

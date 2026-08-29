@@ -9,6 +9,15 @@ namespace Lumyte.Platform.Windows.Tests;
 public sealed class WindowsGamepadTests
 {
     [Fact]
+    public void DeviceIdUsesTheXInputUserSlot()
+    {
+        var gamepad = new WindowsGamepad(2);
+
+        Assert.Equal(new GamepadId("xinput:2"), gamepad.Id);
+        Assert.Equal("XInput Gamepad 3", gamepad.Name);
+    }
+
+    [Fact]
     public void ConvertsNativeStateToPortableState()
     {
         var nativeState = new XINPUT_STATE

@@ -10,6 +10,8 @@ public sealed class WindowsGamepad(uint userIndex) : IGamepad
 {
     public event EventHandler<GamepadStateChangedEventArgs>? StateChanged;
 
+    public GamepadId Id { get; } = new($"xinput:{userIndex}");
+
     public string Name { get; } = $"XInput Gamepad {userIndex + 1}";
 
     public GamepadState State { get; private set; }
