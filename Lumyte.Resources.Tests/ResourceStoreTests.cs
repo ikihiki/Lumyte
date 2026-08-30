@@ -133,6 +133,39 @@ public sealed class ResourceStoreTests
     }
 
     [Fact]
+    public async Task SelectsMultipleResourcesFromOneAssetAddress()
+    {
+        RecordingResolver resolver = new("package data");
+        ResourceStore store = CreateStore(resolver, new PackageItemLoader());
+        AssetKey<PackageItem> bodyKey = Asset.From<PackageItem>(
+            "memory:robot.package",
+            new PackageItemSelector("Body"));
+        AssetKey<PackageItem> headKey = Asset.From<PackageItem>(
+            "memory:robot.package",
+            new PackageItemSelector("Head"));
+
+        ResourceHandle<PackageItem> body = await store.LoadAsync(bodyKey);
+        ResourceHandle<PackageItem> head = await store.LoadAsync(headKey);
+
+        Assert.Equal(new PackageItem("Body", 10), body.Value);
+        Assert.Equal(new PackageItem("Head", 20), head.Value);
+    }
+
+    [Fact]
+    public async Task ReportsMissingSubresource()
+    {
+        ResourceStore store = CreateStore(
+            new RecordingResolver("package data"),
+            new PackageItemLoader());
+        AssetKey<PackageItem> key = Asset.From<PackageItem>(
+            "memory:robot.package",
+            new PackageItemSelector("Missing"));
+
+        await Assert.ThrowsAsync<ResourceNotFoundException>(
+            async () => await store.LoadAsync(key));
+    }
+
+    [Fact]
     public async Task TracksDependenciesLoadedThroughContext()
     {
         RecordingResolver resolver = new("hello");
@@ -190,6 +223,51 @@ public sealed class ResourceStoreTests
         new(resolvers, loaders);
 
     private sealed record TextResource(string Text, string Selector);
+
+    private sealed record PackageItem(string Name, int Value);
+
+    private readonly record struct PackageItemSelector(string Name)
+        : IResourceSelector<PackageItem>
+    {
+        public void WriteTo(ResourceSelectorBuilder builder)
+        {
+            builder.WriteSegment("item");
+            builder.WriteSegment(Name);
+        }
+    }
+
+    private sealed class PackageItemLoader : IResourceLoader<PackageItem>
+    {
+        private static readonly IReadOnlyDictionary<string, PackageItem> s_items =
+            new Dictionary<string, PackageItem>(StringComparer.Ordinal)
+            {
+                ["Body"] = new PackageItem("Body", 10),
+                ["Head"] = new PackageItem("Head", 20)
+            };
+
+        public ValueTask<PackageItem> LoadAsync(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResourceSelector.Enumerator segments = context.Selector.GetEnumerator();
+            if (!segments.MoveNext()
+                || !segments.Current.Span.SequenceEqual("item")
+                || !segments.MoveNext())
+            {
+                throw new ResourceNotFoundException("The package item selector is invalid.");
+            }
+
+            string name = segments.Current.ToString();
+            if (segments.MoveNext() || !s_items.TryGetValue(name, out PackageItem? item))
+            {
+                throw new ResourceNotFoundException(
+                    $"The package does not contain the '{name}' item.");
+            }
+
+            return ValueTask.FromResult(item);
+        }
+    }
 
     private sealed record ParentResource(
         TextResource FirstChild,

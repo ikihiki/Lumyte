@@ -11,7 +11,7 @@ public sealed class ResourceLoadContext
         ResourceLoadPath path)
     {
         Data = data;
-        Selector = keyText.AsMemory(selectorStart);
+        Selector = new ResourceSelector(keyText.AsMemory(selectorStart));
         this.store = store;
         this.path = path;
     }
@@ -24,7 +24,7 @@ public sealed class ResourceLoadContext
 
     public Stream Content => Data.Content;
 
-    public ReadOnlyMemory<char> Selector { get; }
+    public ResourceSelector Selector { get; }
 
     public async ValueTask<ResourceHandle<T>> LoadAsync<T>(
         AssetKey<T> key,
