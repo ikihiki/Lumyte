@@ -4,16 +4,20 @@ namespace Lumyte.Resources;
 public readonly record struct ResourceHandle<T>
     where T : notnull
 {
-    internal ResourceHandle(AssetKey<T> key, T value, uint slot)
+    internal ResourceHandle(AssetKey<T> key, T value, uint slot, uint generation)
     {
         Key = key;
         Value = value;
         Slot = slot;
+        Generation = generation;
     }
 
     public AssetKey<T> Key { get; }
 
     public T Value { get; }
+
+    /// <summary>Gets the generation loaded for this handle.</summary>
+    public uint Generation { get; }
 
     internal uint Slot { get; }
 }

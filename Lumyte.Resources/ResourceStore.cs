@@ -9,6 +9,7 @@ public sealed class ResourceStore : IAsyncDisposable
     private readonly IReadOnlyDictionary<Type, IResourceLoader> loaders;
     private readonly ResourceKeyTable keys = new();
     private readonly ConcurrentDictionary<uint, Lazy<Task<IResourceRecord>>> resources = new();
+    private readonly ConcurrentDictionary<uint, SemaphoreSlim> reloadLocks = new();
     private readonly List<IResourceRecord> completedResources = [];
     private readonly Lock completedResourcesLock = new();
     private int disposed;
@@ -58,6 +59,46 @@ public sealed class ResourceStore : IAsyncDisposable
         where T : notnull =>
         LoadAsync(key, path: null, cancellationToken);
 
+    /// <summary>Loads a new generation and atomically makes it current.</summary>
+    public async ValueTask<ResourceHandle<T>> ReloadAsync<T>(
+        AssetKey<T> key,
+        CancellationToken cancellationToken = default)
+        where T : notnull
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+
+        ResourceKeyEntry entry = keys.GetOrAdd(key);
+        SemaphoreSlim reloadLock = reloadLocks.GetOrAdd(entry.Slot, _ => new SemaphoreSlim(1, 1));
+        await reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            uint generation = 0;
+            if (resources.TryGetValue(entry.Slot, out Lazy<Task<IResourceRecord>>? current))
+            {
+                IResourceRecord currentRecord = await current.Value
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                generation = checked(((ResourceRecord<T>)currentRecord).Generation + 1);
+            }
+
+            ResourceLoadPath path = new(entry.Slot, parent: null);
+            IResourceRecord untypedRecord = await LoadCoreAsync<T>(
+                key,
+                entry,
+                path,
+                generation).ConfigureAwait(false);
+            ResourceRecord<T> record = (ResourceRecord<T>)untypedRecord;
+            resources[entry.Slot] = new Lazy<Task<IResourceRecord>>(
+                () => Task.FromResult(untypedRecord),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+            return new ResourceHandle<T>(key, record.Value, entry.Slot, record.Generation);
+        }
+        finally
+        {
+            reloadLock.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)
@@ -91,6 +132,12 @@ public sealed class ResourceStore : IAsyncDisposable
         }
 
         resources.Clear();
+        foreach (SemaphoreSlim reloadLock in reloadLocks.Values)
+        {
+            reloadLock.Dispose();
+        }
+
+        reloadLocks.Clear();
     }
 
     internal ValueTask<ResourceHandle<T>> LoadDependencyAsync<T>(
@@ -135,7 +182,7 @@ public sealed class ResourceStore : IAsyncDisposable
         Lazy<Task<IResourceRecord>> pending = resources.GetOrAdd(
             entry.Slot,
             _ => new Lazy<Task<IResourceRecord>>(
-                () => LoadCoreAsync<T>(key, entry, currentPath),
+                () => LoadCoreAsync<T>(key, entry, currentPath, generation: 0),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
         try
@@ -144,7 +191,7 @@ public sealed class ResourceStore : IAsyncDisposable
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
             ResourceRecord<T> record = (ResourceRecord<T>)untypedRecord;
-            return new ResourceHandle<T>(key, record.Value, entry.Slot);
+            return new ResourceHandle<T>(key, record.Value, entry.Slot, record.Generation);
         }
         catch
         {
@@ -160,7 +207,8 @@ public sealed class ResourceStore : IAsyncDisposable
     private async Task<IResourceRecord> LoadCoreAsync<T>(
         AssetKey<T> key,
         ResourceKeyEntry entry,
-        ResourceLoadPath path)
+        ResourceLoadPath path,
+        uint generation)
         where T : notnull
     {
         if (!resolvers.TryGetValue(entry.Scheme, out IAssetResolver? resolver))
@@ -196,6 +244,7 @@ public sealed class ResourceStore : IAsyncDisposable
 
             ResourceRecord<T> record = new(
                 entry.Slot,
+                generation,
                 resource,
                 context.GetDependencies());
             lock (completedResourcesLock)

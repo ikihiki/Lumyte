@@ -47,6 +47,42 @@ public sealed class ResourceStoreTests
     }
 
     [Fact]
+    public async Task ReloadReplacesTheCurrentGeneration()
+    {
+        MutableResolver resolver = new("first");
+        ResourceStore store = CreateStore(resolver, new TextResourceLoader());
+        AssetKey<TextResource> key = Asset.From<TextResource>("memory:item");
+        ResourceHandle<TextResource> first = await store.LoadAsync(key);
+        resolver.Content = "second";
+
+        ResourceHandle<TextResource> second = await store.ReloadAsync(key);
+        ResourceHandle<TextResource> current = await store.LoadAsync(key);
+
+        Assert.Equal("first", first.Value.Text);
+        Assert.Equal("second", second.Value.Text);
+        Assert.Equal(second, current);
+        Assert.Equal(0u, first.Generation);
+        Assert.Equal(1u, second.Generation);
+    }
+
+    [Fact]
+    public async Task FailedReloadKeepsTheCurrentGeneration()
+    {
+        MutableResolver resolver = new("first");
+        ResourceStore store = CreateStore(resolver, new TextResourceLoader());
+        AssetKey<TextResource> key = Asset.From<TextResource>("memory:item");
+        ResourceHandle<TextResource> first = await store.LoadAsync(key);
+        resolver.Failure = new IOException("Unavailable test asset.");
+
+        await Assert.ThrowsAsync<AssetSourceException>(
+            async () => await store.ReloadAsync(key));
+        ResourceHandle<TextResource> current = await store.LoadAsync(key);
+
+        Assert.Equal(first, current);
+        Assert.Equal(0u, current.Generation);
+    }
+
+    [Fact]
     public async Task RejectsUnregisteredScheme()
     {
         ResourceStore store = CreateStore(
@@ -414,6 +450,31 @@ public sealed class ResourceStoreTests
                 new AssetData(
                     open(),
                     new AssetLocation("memory", LastAddress)));
+        }
+    }
+
+    private sealed class MutableResolver(string content) : IAssetResolver
+    {
+        public string Scheme => "memory";
+
+        public string Content { get; set; } = content;
+
+        public Exception? Failure { get; set; }
+
+        public ValueTask<AssetData> OpenAsync(
+            AssetAddress address,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Failure is not null)
+            {
+                throw new AssetSourceException("The test asset could not be opened.", Failure);
+            }
+
+            return ValueTask.FromResult(
+                new AssetData(
+                    new MemoryStream(Encoding.UTF8.GetBytes(Content)),
+                    new AssetLocation("memory", address.ToString())));
         }
     }
 

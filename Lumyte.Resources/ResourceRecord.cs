@@ -11,11 +11,14 @@ internal interface IResourceRecord
 
 internal sealed class ResourceRecord<T>(
     uint slot,
+    uint generation,
     T value,
     uint[] dependencies) : IResourceRecord
     where T : notnull
 {
     internal T Value { get; } = value;
+
+    internal uint Generation { get; } = generation;
 
     public uint Slot { get; } = slot;
 
