@@ -44,8 +44,99 @@ public sealed class ResourceLifetimeTests
         await store.CollectAsync(ResourceCollectionMode.AllUnused);
 
         Assert.Equal(
-            [ResourceExecutionLane.Cpu, ResourceExecutionLane.Graphics],
+            [
+                ResourceExecutionLane.Default,
+                ResourceExecutionLane.Cpu,
+                ResourceExecutionLane.Graphics
+            ],
             dispatcher.Lanes);
+    }
+
+    [Fact]
+    public async Task ConfigurationOverridesEveryExecutionLane()
+    {
+        ResourceExecutionLane openLane = new("configured-open");
+        ResourceExecutionLane loadLane = new("configured-load");
+        ResourceExecutionLane disposalLane = new("configured-disposal");
+        var dispatcher = new RecordingDispatcher();
+        ResourceStore store = new(
+            new ResourceStoreConfiguration
+            {
+                Resolvers =
+                [
+                    new ResourceResolverRegistration(
+                        new ContentResolver(),
+                        openLane)
+                ],
+                Loaders =
+                [
+                    new ResourceLoaderRegistration(
+                        new LaneResourceLoader(),
+                        loadLane,
+                        disposalLane)
+                ],
+                Dispatcher = dispatcher
+            });
+        await store.LoadAsync(Asset.From<LaneResource>("memory:item"));
+
+        await store.CollectAsync(ResourceCollectionMode.AllUnused);
+
+        Assert.Equal([openLane, loadLane, disposalLane], dispatcher.Lanes);
+    }
+
+    [Fact]
+    public async Task RoutingDispatcherUsesTheConfiguredLaneTarget()
+    {
+        ResourceExecutionLane routedLane = new("routed");
+        var routed = new RecordingDispatcher();
+        var fallback = new RecordingDispatcher();
+        RoutingResourceDispatcher dispatcher = new(
+            new Dictionary<ResourceExecutionLane, IResourceDispatcher>
+            {
+                [routedLane] = routed
+            },
+            fallback);
+
+        await dispatcher.InvokeAsync(
+            routedLane,
+            () => ValueTask.CompletedTask);
+        await dispatcher.InvokeAsync(
+            ResourceExecutionLane.Default,
+            () => ValueTask.CompletedTask);
+
+        Assert.Equal([routedLane], routed.Lanes);
+        Assert.Equal([ResourceExecutionLane.Default], fallback.Lanes);
+    }
+
+    [Fact]
+    public async Task ThreadPoolDispatcherRunsWorkOnTheThreadPool()
+    {
+        ThreadPoolResourceDispatcher dispatcher = new();
+
+        bool isThreadPoolThread = await dispatcher.InvokeAsync(
+            ResourceExecutionLane.Cpu,
+            _ => ValueTask.FromResult(Thread.CurrentThread.IsThreadPoolThread));
+
+        Assert.True(isThreadPoolThread);
+    }
+
+    [Fact]
+    public async Task SynchronizationContextDispatcherPostsWorkToItsContext()
+    {
+        var context = new RecordingSynchronizationContext();
+        SynchronizationContextResourceDispatcher dispatcher = new(context);
+        bool invoked = false;
+
+        await dispatcher.InvokeAsync(
+            ResourceExecutionLane.Graphics,
+            () =>
+            {
+                invoked = true;
+                return ValueTask.CompletedTask;
+            });
+
+        Assert.True(invoked);
+        Assert.Equal(1, context.PostCount);
     }
 
     [Fact]
@@ -175,6 +266,17 @@ public sealed class ResourceLifetimeTests
         {
             Lanes.Add(lane);
             return operation();
+        }
+    }
+
+    private sealed class RecordingSynchronizationContext : SynchronizationContext
+    {
+        public int PostCount { get; private set; }
+
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            PostCount++;
+            callback(state);
         }
     }
 }

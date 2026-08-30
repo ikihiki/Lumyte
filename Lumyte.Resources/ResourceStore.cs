@@ -6,8 +6,8 @@ namespace Lumyte.Resources;
 /// <summary>Coordinates resource loading, caching, dependencies, and lifetime.</summary>
 public sealed class ResourceStore : IAsyncDisposable
 {
-    private readonly IReadOnlyDictionary<string, IAssetResolver> resolvers;
-    private readonly IReadOnlyDictionary<Type, IResourceLoader> loaders;
+    private readonly IReadOnlyDictionary<string, ResourceResolverRegistration> resolvers;
+    private readonly IReadOnlyDictionary<Type, ResourceLoaderRegistration> loaders;
     private readonly ResourceStoreOptions options;
     private readonly IResourceDispatcher dispatcher;
     private readonly ResourceLoadScheduler scheduler;
@@ -25,16 +25,42 @@ public sealed class ResourceStore : IAsyncDisposable
         IEnumerable<IResourceLoader> loaders,
         ResourceStoreOptions? options = null,
         IResourceDispatcher? dispatcher = null)
+        : this(
+            CreateResolverRegistrations(resolvers),
+            CreateLoaderRegistrations(loaders),
+            options ?? new ResourceStoreOptions(),
+            dispatcher ?? new InlineResourceDispatcher())
+    {
+    }
+
+    public ResourceStore(ResourceStoreConfiguration configuration)
+        : this(
+            (configuration ?? throw new ArgumentNullException(nameof(configuration))).Resolvers,
+            configuration.Loaders,
+            configuration.Options,
+            configuration.Dispatcher)
+    {
+    }
+
+    private ResourceStore(
+        IEnumerable<ResourceResolverRegistration> resolvers,
+        IEnumerable<ResourceLoaderRegistration> loaders,
+        ResourceStoreOptions options,
+        IResourceDispatcher dispatcher)
     {
         ArgumentNullException.ThrowIfNull(resolvers);
         ArgumentNullException.ThrowIfNull(loaders);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(dispatcher);
 
-        Dictionary<string, IAssetResolver> registeredResolvers = new(StringComparer.Ordinal);
-        foreach (IAssetResolver resolver in resolvers)
+        Dictionary<string, ResourceResolverRegistration> registeredResolvers =
+            new(StringComparer.Ordinal);
+        foreach (ResourceResolverRegistration registration in resolvers)
         {
-            ArgumentNullException.ThrowIfNull(resolver);
+            ArgumentNullException.ThrowIfNull(registration);
+            IAssetResolver resolver = registration.Resolver;
             string scheme = AssetKey.NormalizeScheme(resolver.Scheme);
-            if (!registeredResolvers.TryAdd(scheme, resolver))
+            if (!registeredResolvers.TryAdd(scheme, registration))
             {
                 throw new ArgumentException(
                     $"An asset resolver is already registered for the '{scheme}' scheme.",
@@ -42,12 +68,13 @@ public sealed class ResourceStore : IAsyncDisposable
             }
         }
 
-        Dictionary<Type, IResourceLoader> registeredLoaders = [];
-        foreach (IResourceLoader loader in loaders)
+        Dictionary<Type, ResourceLoaderRegistration> registeredLoaders = [];
+        foreach (ResourceLoaderRegistration registration in loaders)
         {
-            ArgumentNullException.ThrowIfNull(loader);
+            ArgumentNullException.ThrowIfNull(registration);
+            IResourceLoader loader = registration.Loader;
             Type resourceType = loader.ResourceType;
-            if (!registeredLoaders.TryAdd(resourceType, loader))
+            if (!registeredLoaders.TryAdd(resourceType, registration))
             {
                 throw new ArgumentException(
                     $"A resource loader is already registered for '{resourceType}'.",
@@ -57,8 +84,8 @@ public sealed class ResourceStore : IAsyncDisposable
 
         this.resolvers = registeredResolvers;
         this.loaders = registeredLoaders;
-        this.options = options ?? new ResourceStoreOptions();
-        this.dispatcher = dispatcher ?? new InlineResourceDispatcher();
+        this.options = options;
+        this.dispatcher = dispatcher;
         scheduler = new ResourceLoadScheduler(this.options.Scheduling);
         foreach ((ResourceMemoryPool pool, long budget) in this.options.MemoryBudgets)
         {
@@ -69,6 +96,20 @@ public sealed class ResourceStore : IAsyncDisposable
                     nameof(options));
             }
         }
+    }
+
+    private static IEnumerable<ResourceResolverRegistration> CreateResolverRegistrations(
+        IEnumerable<IAssetResolver> resolvers)
+    {
+        ArgumentNullException.ThrowIfNull(resolvers);
+        return resolvers.Select(resolver => new ResourceResolverRegistration(resolver));
+    }
+
+    private static IEnumerable<ResourceLoaderRegistration> CreateLoaderRegistrations(
+        IEnumerable<IResourceLoader> loaders)
+    {
+        ArgumentNullException.ThrowIfNull(loaders);
+        return loaders.Select(loader => new ResourceLoaderRegistration(loader));
     }
 
     internal int InternedKeyCount => keys.Count;
@@ -586,7 +627,7 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         ResourceKeyEntry entry = keys.GetOrAdd(key);
         ResourceLoadPath path = new(entry.Slot, parent: null);
-        return await LoadCoreAsync<T>(
+        return await LoadTrackedCoreAsync<T>(
             key,
             entry,
             path,
@@ -624,7 +665,7 @@ public sealed class ResourceStore : IAsyncDisposable
             ? new ResourceLoadPath(entry.Slot, parent: null)
             : path.Add(entry.Slot);
         Lazy<Task<IResourceRecord>> candidate = new(
-                () => LoadCoreAsync<T>(
+                () => LoadTrackedCoreAsync<T>(
                     key,
                     entry,
                     currentPath,
@@ -635,7 +676,8 @@ public sealed class ResourceStore : IAsyncDisposable
                 LazyThreadSafetyMode.ExecutionAndPublication);
         Lazy<Task<IResourceRecord>> pending = resources.GetOrAdd(entry.Slot, candidate);
         bool cacheHit = !ReferenceEquals(candidate, pending);
-        if (cacheHit)
+        if (cacheHit
+            && (!pending.IsValueCreated || !pending.Value.IsCompleted))
         {
             scheduler.Promote(entry.Slot, loadOptions.Priority);
         }
@@ -679,6 +721,34 @@ public sealed class ResourceStore : IAsyncDisposable
         }
     }
 
+    private async Task<IResourceRecord> LoadTrackedCoreAsync<T>(
+        AssetKey<T> key,
+        ResourceKeyEntry entry,
+        ResourceLoadPath path,
+        uint generation,
+        IReadOnlyDictionary<uint, IResourceRecord>? candidates,
+        ResourceLoadOptions loadOptions,
+        CancellationToken cancellationToken)
+        where T : notnull
+    {
+        try
+        {
+            return await LoadCoreAsync(
+                    key,
+                    entry,
+                    path,
+                    generation,
+                    candidates,
+                    loadOptions,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            scheduler.CompleteRequest(entry.Slot);
+        }
+    }
+
     private async Task<IResourceRecord> LoadCoreAsync<T>(
         AssetKey<T> key,
         ResourceKeyEntry entry,
@@ -689,13 +759,17 @@ public sealed class ResourceStore : IAsyncDisposable
         CancellationToken cancellationToken)
         where T : notnull
     {
-        if (!resolvers.TryGetValue(entry.Scheme, out IAssetResolver? resolver))
+        if (!resolvers.TryGetValue(
+                entry.Scheme,
+                out ResourceResolverRegistration? resolverRegistration))
         {
             throw new AssetResolutionException(
                 $"No asset resolver is registered for the '{entry.Scheme}' scheme.");
         }
 
-        if (!loaders.TryGetValue(typeof(T), out IResourceLoader? loader))
+        if (!loaders.TryGetValue(
+                typeof(T),
+                out ResourceLoaderRegistration? loaderRegistration))
         {
             throw new ResourceLoaderNotFoundException(
                 $"No resource loader is registered for '{typeof(T)}'.");
@@ -703,80 +777,99 @@ public sealed class ResourceStore : IAsyncDisposable
 
         if (path.IsDependency)
         {
-            return await LoadAdmittedAsync(cancellationToken).ConfigureAwait(false);
+            return await LoadPipelineAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return await scheduler.ScheduleAsync(
                 entry.Slot,
-                loader.LoadLane,
+                loaderRegistration.LoadLane,
                 loadOptions.Priority,
-                LoadAdmittedAsync,
+                LoadPipelineAsync,
                 cancellationToken)
             .ConfigureAwait(false);
 
-        async ValueTask<IResourceRecord> LoadAdmittedAsync(CancellationToken token)
+        async ValueTask<IResourceRecord> LoadPipelineAsync(CancellationToken pipelineToken)
         {
-            await using AssetData data = await resolver
-                .OpenAsync(entry.Address, token)
+            IAssetResolver resolver = resolverRegistration.Resolver;
+            IResourceLoader loader = loaderRegistration.Loader;
+            AssetData data = await RunStageAsync(
+                resolverRegistration.OpenLane,
+                token => resolver.OpenAsync(entry.Address, token),
+                pipelineToken)
                 .ConfigureAwait(false);
-            ResourceLoadContext context = new(
-                data,
-                entry.Text,
-                entry.SelectorStart,
-                this,
-                path,
-                candidates,
-                loadOptions);
-
-            try
+            await using (data.ConfigureAwait(false))
             {
-                T resource = await dispatcher
-                    .InvokeAsync(
-                        loader.LoadLane,
-                        innerToken => loader.LoadAsync<T>(context, innerToken),
-                        token)
-                    .ConfigureAwait(false);
-                if (resource is null)
+                ResourceLoadContext context = new(
+                    data,
+                    entry.Text,
+                    entry.SelectorStart,
+                    this,
+                    path,
+                    candidates,
+                    loadOptions);
+
+                try
                 {
+                    T resource = await RunStageAsync(
+                            loaderRegistration.LoadLane,
+                            token => loader.LoadAsync<T>(context, token),
+                            pipelineToken)
+                        .ConfigureAwait(false);
+                    if (resource is null)
+                    {
+                        throw new ResourceLoadException(
+                            $"The resource loader returned null for '{key}'.");
+                    }
+
+                    ResourceMemoryCost[] memoryCosts = [.. loader.Measure(resource)];
+                    ValidateMemoryCosts(memoryCosts);
+                    AddMemoryUsage(memoryCosts);
+                    ResourceRecord<T> record = new(
+                        key,
+                        entry.Slot,
+                        generation,
+                        resource,
+                        context.TakeDependencies(),
+                        memoryCosts,
+                        loader.EvictionPriority,
+                        dispatcher,
+                        loaderRegistration.DisposalLane,
+                        RemoveMemoryUsage);
+                    record.Touch(Interlocked.Increment(ref accessSequence));
+
+                    if (generation == 0)
+                    {
+                        ResourcesDiagnostics.LoadedResources.Add(1);
+                    }
+
+                    return record;
+                }
+                catch (ResourceException)
+                {
+                    await context.ReleaseDependenciesAsync().ConfigureAwait(false);
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    await context.ReleaseDependenciesAsync().ConfigureAwait(false);
                     throw new ResourceLoadException(
-                        $"The resource loader returned null for '{key}'.");
+                        $"The resource '{key}' could not be loaded.",
+                        exception);
                 }
-
-                ResourceMemoryCost[] memoryCosts = [.. loader.Measure(resource)];
-                ValidateMemoryCosts(memoryCosts);
-                AddMemoryUsage(memoryCosts);
-                ResourceRecord<T> record = new(
-                    key,
-                    entry.Slot,
-                    generation,
-                    resource,
-                    context.TakeDependencies(),
-                    memoryCosts,
-                    loader.EvictionPriority,
-                    dispatcher,
-                    loader.DisposalLane,
-                    RemoveMemoryUsage);
-                record.Touch(Interlocked.Increment(ref accessSequence));
-
-                if (generation == 0)
-                {
-                    ResourcesDiagnostics.LoadedResources.Add(1);
-                }
-
-                return record;
             }
-            catch (ResourceException)
-            {
-                await context.ReleaseDependenciesAsync().ConfigureAwait(false);
-                throw;
-            }
-            catch (Exception exception)
-            {
-                await context.ReleaseDependenciesAsync().ConfigureAwait(false);
-                throw new ResourceLoadException(
-                    $"The resource '{key}' could not be loaded.",
-                    exception);
-            }
+        }
+
+        async ValueTask<TResult> RunStageAsync<TResult>(
+            ResourceExecutionLane lane,
+            Func<CancellationToken, ValueTask<TResult>> operation,
+            CancellationToken token)
+        {
+            ValueTask<TResult> DispatchAsync(CancellationToken innerToken) =>
+                dispatcher.InvokeAsync(lane, operation, innerToken);
+            return path.IsDependency
+                ? await DispatchAsync(token).ConfigureAwait(false)
+                : await scheduler.RunStageAsync(lane, DispatchAsync, token)
+                    .ConfigureAwait(false);
         }
     }
 

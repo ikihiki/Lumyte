@@ -7,7 +7,9 @@ internal sealed class ResourceLoadScheduler
     private readonly Lock gate = new();
     private readonly int maxConcurrentLoads;
     private readonly IReadOnlyDictionary<ResourceExecutionLane, int> laneLimits;
+    private readonly IReadOnlyDictionary<ResourceExecutionLane, SemaphoreSlim> laneGates;
     private readonly Dictionary<ResourceExecutionLane, int> activeByLane = [];
+    private readonly Dictionary<uint, ResourceLoadPriority> priorityHints = [];
     private readonly List<WorkItem> pending = [];
     private long sequence;
     private int active;
@@ -18,7 +20,8 @@ internal sealed class ResourceLoadScheduler
         maxConcurrentLoads = options.MaxConcurrentLoads;
         laneLimits = new Dictionary<ResourceExecutionLane, int>(
             options.MaxConcurrentLoadsPerLane);
-        foreach ((ResourceExecutionLane lane, int limit) in laneLimits)
+        var configuredLaneGates = new Dictionary<ResourceExecutionLane, SemaphoreSlim>();
+        foreach ((ResourceExecutionLane lane, int limit) in options.MaxConcurrentLoadsPerLane)
         {
             if (string.IsNullOrWhiteSpace(lane.Name) || limit < 1)
             {
@@ -26,7 +29,12 @@ internal sealed class ResourceLoadScheduler
                     "Resource scheduling lanes require a name and a positive limit.",
                     nameof(options));
             }
+
+            configuredLaneGates.Add(lane, new SemaphoreSlim(limit, limit));
         }
+
+
+        laneGates = configuredLaneGates;
     }
 
     internal ValueTask<T> ScheduleAsync<T>(
@@ -47,6 +55,12 @@ internal sealed class ResourceLoadScheduler
             this);
         lock (gate)
         {
+            if (priorityHints.TryGetValue(slot, out ResourceLoadPriority hint)
+                && hint > item.Priority)
+            {
+                item.Priority = hint;
+            }
+
             pending.Add(item);
             ResourcesDiagnostics.QueuedLoads.Add(
                 1,
@@ -62,6 +76,12 @@ internal sealed class ResourceLoadScheduler
     {
         lock (gate)
         {
+            if (!priorityHints.TryGetValue(slot, out ResourceLoadPriority current)
+                || current < priority)
+            {
+                priorityHints[slot] = priority;
+            }
+
             foreach (WorkItem item in pending)
             {
                 if (item.Slot == slot && item.Priority < priority)
@@ -71,6 +91,35 @@ internal sealed class ResourceLoadScheduler
             }
 
             Pump();
+        }
+    }
+
+    internal void CompleteRequest(uint slot)
+    {
+        lock (gate)
+        {
+            priorityHints.Remove(slot);
+        }
+    }
+
+    internal async ValueTask<T> RunStageAsync<T>(
+        ResourceExecutionLane lane,
+        Func<CancellationToken, ValueTask<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        if (!laneGates.TryGetValue(lane, out SemaphoreSlim? laneGate))
+        {
+            return await operation(cancellationToken).ConfigureAwait(false);
+        }
+
+        await laneGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await operation(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            laneGate.Release();
         }
     }
 
