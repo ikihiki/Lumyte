@@ -1,9 +1,6 @@
-using System.Text.Json.Serialization;
-
 namespace Lumyte.Resources;
 
 /// <summary>Identifies a typed resource using canonical text and its component positions.</summary>
-[JsonConverter(typeof(AssetKeyJsonConverterFactory))]
 public readonly record struct AssetKey<T>
 {
     private readonly string text;

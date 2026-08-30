@@ -1,11 +1,11 @@
 namespace Lumyte.Resources;
 
-/// <summary>Maps one asset address scheme to a physical asset location.</summary>
+/// <summary>Opens asset data for one address scheme.</summary>
 public interface IAssetResolver
 {
     string Scheme { get; }
 
-    ValueTask<AssetLocation> ResolveAsync(
+    ValueTask<AssetData> OpenAsync(
         AssetAddress address,
         CancellationToken cancellationToken = default);
 }

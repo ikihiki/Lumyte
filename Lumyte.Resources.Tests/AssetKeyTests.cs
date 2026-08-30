@@ -81,10 +81,12 @@ public sealed class AssetKeyTests
         AssetKey<TestResource> expected = Asset.Id<TestResource>(
             "character.robot",
             new NamedSelector("Body"));
+        JsonSerializerOptions options = new();
+        options.Converters.Add(new AssetKeyJsonConverter<TestResource>());
 
-        string json = JsonSerializer.Serialize(expected);
+        string json = JsonSerializer.Serialize(expected, options);
         AssetKey<TestResource> actual =
-            JsonSerializer.Deserialize<AssetKey<TestResource>>(json);
+            JsonSerializer.Deserialize<AssetKey<TestResource>>(json, options);
 
         Assert.Equal("\"asset:character.robot#part/name/Body\"", json);
         Assert.Equal(expected, actual);

@@ -13,7 +13,7 @@ public sealed class FileAssetResolver : IAssetResolver
 
     public string Scheme => "file";
 
-    public ValueTask<AssetLocation> ResolveAsync(
+    public ValueTask<AssetData> OpenAsync(
         AssetAddress address,
         CancellationToken cancellationToken = default)
     {
@@ -32,6 +32,35 @@ public sealed class FileAssetResolver : IAssetResolver
                 "The asset file address escapes its configured source root.");
         }
 
-        return ValueTask.FromResult(new AssetLocation("file", fullPath));
+        try
+        {
+            Stream content = new FileStream(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            return ValueTask.FromResult(
+                new AssetData(content, new AssetLocation("file", fullPath)));
+        }
+        catch (FileNotFoundException exception)
+        {
+            throw new AssetNotFoundException(
+                $"The asset file '{fullPath}' was not found.",
+                exception);
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            throw new AssetNotFoundException(
+                $"The asset file '{fullPath}' was not found.",
+                exception);
+        }
+        catch (IOException exception)
+        {
+            throw new AssetSourceException(
+                $"The asset file '{fullPath}' could not be opened.",
+                exception);
+        }
     }
 }
