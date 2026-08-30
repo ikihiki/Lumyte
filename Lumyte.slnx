@@ -13,6 +13,8 @@
   <Project Path="Lumyte.Platform.Silk.Tests/Lumyte.Platform.Silk.Tests.csproj" />
   <Project Path="Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
   <Project Path="Lumyte.Platform.Windows.Tests/Lumyte.Platform.Windows.Tests.csproj" />
+  <Project Path="Lumyte.Resources/Lumyte.Resources.csproj" />
+  <Project Path="Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj" />
   <Project Path="Lumyte.StateMachine/Lumyte.StateMachine.csproj" />
   <Project Path="Lumyte.StateMachine.Tests/Lumyte.StateMachine.Tests.csproj" />
   <Project Path="Lumyte.Composition/Lumyte.Composition.csproj" />

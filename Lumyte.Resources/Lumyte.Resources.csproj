@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Typed resource loading and lifetime management for Lumyte.</Description>
+  </PropertyGroup>
+</Project>
