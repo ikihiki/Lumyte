@@ -280,6 +280,36 @@ public sealed class ResourceStoreTests
     }
 
     [Fact]
+    public async Task FailedDependentReloadKeepsEveryCurrentGeneration()
+    {
+        AddressedResolver resolver = new(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["parent"] = "parent",
+                ["first-child"] = "first",
+                ["second-child"] = "second"
+            });
+        FailingReloadParentResourceLoader parentLoader = new();
+        ResourceStore store = CreateStore(
+            [resolver],
+            [new TextResourceLoader(), parentLoader]);
+        AssetKey<ParentResource> parentKey = Asset.From<ParentResource>("memory:parent");
+        AssetKey<TextResource> childKey = Asset.From<TextResource>("memory:first-child");
+        ResourceHandle<ParentResource> parent = await store.LoadAsync(parentKey);
+        ResourceHandle<TextResource> child = await store.LoadAsync(childKey);
+        resolver.Set("first-child", "updated");
+        parentLoader.Fail = true;
+
+        await Assert.ThrowsAsync<ResourceLoadException>(
+            async () => await store.ReloadAsync(childKey));
+
+        Assert.Equal("first", child.Value.Text);
+        Assert.Equal(0u, child.Generation);
+        Assert.Equal("first", parent.Value.FirstChild.Text);
+        Assert.Equal(0u, parent.Generation);
+    }
+
+    [Fact]
     public async Task RejectsDependencyCycles()
     {
         ResourceStore storeWithBothLoaders = CreateStore(
@@ -289,6 +319,69 @@ public sealed class ResourceStoreTests
         await Assert.ThrowsAsync<ResourceDependencyCycleException>(
             async () => await storeWithBothLoaders.LoadAsync(
                 Asset.From<FirstCycleResource>("memory:first")));
+    }
+
+    [Fact]
+    public async Task ScopeKeepsResourcesLoadedUntilReleased()
+    {
+        ResourceStore store = CreateStore(
+            new RecordingResolver("value"),
+            new TextResourceLoader());
+        ResourceScope firstScope = store.CreateScope(
+            new ResourceScopeOptions { UnloadUnusedOnDispose = true });
+        ResourceScope secondScope = store.CreateScope(
+            new ResourceScopeOptions { UnloadUnusedOnDispose = true });
+        AssetKey<TextResource> key = Asset.From<TextResource>("memory:item");
+        ResourceHandle<TextResource> handle = await firstScope.LoadAsync(key);
+        await secondScope.LoadAsync(key);
+
+        await firstScope.DisposeAsync();
+
+        Assert.True(handle.TryGetValue(out _));
+
+        await secondScope.DisposeAsync();
+
+        Assert.False(handle.TryGetValue(out _));
+    }
+
+    [Fact]
+    public async Task SnapshotDelaysCollectionOfItsGeneration()
+    {
+        ResourceStore store = CreateStore(
+            new RecordingResolver("value"),
+            new TextResourceLoader());
+        ResourceHandle<TextResource> handle = await store.LoadAsync(
+            Asset.From<TextResource>("memory:item"));
+        ResourceSnapshot snapshot = store.CreateSnapshot();
+
+        ResourceCollectionReport whileRetained = await store.CollectAsync(
+            ResourceCollectionMode.AllUnused);
+        await snapshot.DisposeAsync();
+        ResourceCollectionReport afterRelease = await store.CollectAsync(
+            ResourceCollectionMode.AllUnused);
+
+        Assert.Equal(0, whileRetained.UnloadedResourceCount);
+        Assert.Equal(1, afterRelease.UnloadedResourceCount);
+        Assert.False(handle.TryGetValue(out _));
+    }
+
+    [Fact]
+    public async Task ScopeOwnsDependenciesLoadedByItsResources()
+    {
+        ResourceStore store = CreateStore(
+            [new RecordingResolver("value")],
+            [new TextResourceLoader(), new ParentResourceLoader()]);
+        ResourceScope scope = store.CreateScope(
+            new ResourceScopeOptions { UnloadUnusedOnDispose = true });
+        ResourceHandle<ParentResource> parent = await scope.LoadAsync(
+            Asset.From<ParentResource>("memory:parent"));
+        ResourceHandle<TextResource> child = await store.LoadAsync(
+            Asset.From<TextResource>("memory:first-child"));
+
+        await scope.DisposeAsync();
+
+        Assert.False(parent.TryGetValue(out _));
+        Assert.False(child.TryGetValue(out _));
     }
 
     [Fact]
@@ -376,12 +469,36 @@ public sealed class ResourceStoreTests
             ResourceLoadContext context,
             CancellationToken cancellationToken = default)
         {
-            ResourceHandle<TextResource> firstChild = await context.LoadAsync(
+            ResourceDependency<TextResource> firstChild = await context.LoadAsync(
                 Asset.From<TextResource>("memory:first-child"),
                 cancellationToken);
-            ResourceHandle<TextResource> secondChild = await context.LoadAsync(
+            ResourceDependency<TextResource> secondChild = await context.LoadAsync(
                 Asset.From<TextResource>("memory:second-child"),
                 cancellationToken);
+            return new ParentResource(firstChild.Value, secondChild.Value);
+        }
+    }
+
+    private sealed class FailingReloadParentResourceLoader
+        : IResourceLoader<ParentResource>
+    {
+        public bool Fail { get; set; }
+
+        public async ValueTask<ParentResource> LoadAsync(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+        {
+            ResourceDependency<TextResource> firstChild = await context.LoadAsync(
+                Asset.From<TextResource>("memory:first-child"),
+                cancellationToken);
+            ResourceDependency<TextResource> secondChild = await context.LoadAsync(
+                Asset.From<TextResource>("memory:second-child"),
+                cancellationToken);
+            if (Fail)
+            {
+                throw new InvalidDataException("Invalid parent test data.");
+            }
+
             return new ParentResource(firstChild.Value, secondChild.Value);
         }
     }

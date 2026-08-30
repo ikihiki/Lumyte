@@ -8,16 +8,22 @@ public sealed class ResourceStore : IAsyncDisposable
 {
     private readonly IReadOnlyDictionary<string, IAssetResolver> resolvers;
     private readonly IReadOnlyDictionary<Type, IResourceLoader> loaders;
+    private readonly ResourceStoreOptions options;
+    private readonly IResourceDispatcher dispatcher;
     private readonly ResourceKeyTable keys = new();
     private readonly ConcurrentDictionary<uint, Lazy<Task<IResourceRecord>>> resources = new();
     private readonly ConcurrentDictionary<uint, SemaphoreSlim> reloadLocks = new();
-    private readonly List<IResourceRecord> completedResources = [];
-    private readonly Lock completedResourcesLock = new();
+    private readonly ConcurrentDictionary<uint, int> strongReferences = new();
+    private readonly ConcurrentDictionary<ResourceMemoryPool, long> memoryUsage = new();
+    private readonly Lock generationLock = new();
+    private long accessSequence;
     private int disposed;
 
     public ResourceStore(
         IEnumerable<IAssetResolver> resolvers,
-        IEnumerable<IResourceLoader> loaders)
+        IEnumerable<IResourceLoader> loaders,
+        ResourceStoreOptions? options = null,
+        IResourceDispatcher? dispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(resolvers);
         ArgumentNullException.ThrowIfNull(loaders);
@@ -50,9 +56,33 @@ public sealed class ResourceStore : IAsyncDisposable
 
         this.resolvers = registeredResolvers;
         this.loaders = registeredLoaders;
+        this.options = options ?? new ResourceStoreOptions();
+        this.dispatcher = dispatcher ?? new InlineResourceDispatcher();
+        foreach ((ResourceMemoryPool pool, long budget) in this.options.MemoryBudgets)
+        {
+            if (string.IsNullOrWhiteSpace(pool.Name) || budget < 0)
+            {
+                throw new ArgumentException(
+                    "Resource memory budgets require a named pool and a non-negative size.",
+                    nameof(options));
+            }
+        }
     }
 
     internal int InternedKeyCount => keys.Count;
+
+    public ResourceScope CreateScope(ResourceScopeOptions? options = null) =>
+        new(this, options ?? new ResourceScopeOptions());
+
+    public async ValueTask<ResourcePin<T>> PinAsync<T>(
+        AssetKey<T> key,
+        CancellationToken cancellationToken = default)
+        where T : notnull
+    {
+        ResourceHandle<T> handle = await LoadAsync(key, cancellationToken)
+            .ConfigureAwait(false);
+        return new ResourcePin<T>(this, handle);
+    }
 
     public ValueTask<ResourceHandle<T>> LoadAsync<T>(
         AssetKey<T> key,
@@ -65,16 +95,19 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(disposed != 0, this);
 
-        Dictionary<uint, IResourceRecord> snapshot = [];
-        foreach ((uint slot, Lazy<Task<IResourceRecord>> pending) in resources)
+        lock (generationLock)
         {
-            if (pending.IsValueCreated && pending.Value.IsCompletedSuccessfully)
+            Dictionary<uint, IResourceRecord> snapshot = [];
+            foreach ((uint slot, Lazy<Task<IResourceRecord>> pending) in resources)
             {
-                snapshot.Add(slot, pending.Value.Result);
+                if (pending.IsValueCreated && pending.Value.IsCompletedSuccessfully)
+                {
+                    snapshot.Add(slot, pending.Value.Result);
+                }
             }
-        }
 
-        return new ResourceSnapshot(this, snapshot);
+            return new ResourceSnapshot(this, snapshot);
+        }
     }
 
     /// <summary>Loads a new generation and atomically makes it current.</summary>
@@ -108,9 +141,61 @@ public sealed class ResourceStore : IAsyncDisposable
             }
 
             uint[] reloadOrder = GetDependentReloadOrder(entry.Slot);
-            foreach (uint slot in reloadOrder)
+            SemaphoreSlim[] acquiredLocks = await AcquireReloadLocksAsync(
+                reloadOrder,
+                cancellationToken).ConfigureAwait(false);
+            var candidates = new Dictionary<uint, IResourceRecord>();
+            IResourceRecord[] previous = new IResourceRecord[reloadOrder.Length];
+            try
             {
-                await ReloadCurrentAsync(slot, cancellationToken).ConfigureAwait(false);
+                for (int index = 0; index < reloadOrder.Length; index++)
+                {
+                    uint slot = reloadOrder[index];
+                    IResourceRecord current = await resources[slot].Value
+                        .WaitAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    previous[index] = current;
+                    candidates.Add(
+                        slot,
+                        await current
+                            .ReloadAsync(this, candidates, cancellationToken)
+                            .ConfigureAwait(false));
+                }
+
+                lock (generationLock)
+                {
+                    foreach ((uint slot, IResourceRecord candidate) in candidates)
+                    {
+                        Lazy<Task<IResourceRecord>> replacement = new(
+                            () => Task.FromResult(candidate),
+                            LazyThreadSafetyMode.ExecutionAndPublication);
+                        _ = replacement.Value;
+                        resources[slot] = replacement;
+                    }
+                }
+
+                foreach (IResourceRecord oldRecord in previous)
+                {
+                    await oldRecord.ReleaseAsync().ConfigureAwait(false);
+                }
+
+                ResourcesDiagnostics.ReloadedResources.Add(candidates.Count);
+            }
+            catch
+            {
+                foreach (IResourceRecord candidate in candidates.Values.Reverse())
+                {
+                    await candidate.ReleaseAsync().ConfigureAwait(false);
+                }
+
+                throw;
+            }
+            finally
+            {
+                for (int index = acquiredLocks.Length - 1; index >= 0; index--)
+                {
+                    acquiredLocks[index].Release();
+                }
             }
 
             ResourceHandle<T> handle = new(key, this, entry.Slot);
@@ -155,16 +240,13 @@ public sealed class ResourceStore : IAsyncDisposable
             // Failed loads do not own a completed resource.
         }
 
-        IResourceRecord[] completed;
-        lock (completedResourcesLock)
+        IResourceRecord[] current = resources.Values
+            .Where(pending => pending.IsValueCreated && pending.Value.IsCompletedSuccessfully)
+            .Select(pending => pending.Value.Result)
+            .ToArray();
+        for (int index = current.Length - 1; index >= 0; index--)
         {
-            completed = [.. completedResources];
-            completedResources.Clear();
-        }
-
-        for (int index = completed.Length - 1; index >= 0; index--)
-        {
-            await completed[index].DisposeAsync().ConfigureAwait(false);
+            await current[index].ReleaseAsync().ConfigureAwait(false);
         }
 
         int loadedResourceCount = resources.Values.Count(
@@ -178,14 +260,171 @@ public sealed class ResourceStore : IAsyncDisposable
         }
 
         reloadLocks.Clear();
+        strongReferences.Clear();
     }
 
-    internal ValueTask<ResourceHandle<T>> LoadDependencyAsync<T>(
+    public async ValueTask<ResourceCollectionReport> CollectAsync(
+        ResourceCollectionMode mode = ResourceCollectionMode.Budget,
+        CancellationToken cancellationToken = default) =>
+        await CollectAsync(mode, slots: null, cancellationToken).ConfigureAwait(false);
+
+    internal async ValueTask<ResourceCollectionReport> CollectUnusedAsync(
+        IReadOnlyCollection<uint> slots,
+        CancellationToken cancellationToken = default) =>
+        await CollectAsync(
+            ResourceCollectionMode.AllUnused,
+            slots.ToHashSet(),
+            cancellationToken).ConfigureAwait(false);
+
+    private async ValueTask<ResourceCollectionReport> CollectAsync(
+        ResourceCollectionMode mode,
+        IReadOnlySet<uint>? slots,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+
+        using Activity? activity = ResourcesDiagnostics.Activities.StartActivity(
+            "ResourceStore.Collect",
+            ActivityKind.Internal);
+        activity?.SetTag("resource.collection.mode", mode.ToString());
+
+        int unloaded = 0;
+        bool removed;
+        do
+        {
+            removed = false;
+            IResourceRecord[] candidates = resources.Values
+                .Where(pending => pending.IsValueCreated && pending.Value.IsCompletedSuccessfully)
+                .Select(pending => pending.Value.Result)
+                .Where(record => GetStrongReferenceCount(record.Slot) == 0)
+                .Where(record => slots is null || slots.Contains(record.Slot))
+                .OrderBy(record => record.EvictionPriority)
+                .ThenBy(record => record.LastAccessSequence)
+                .ToArray();
+            foreach (IResourceRecord record in candidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (mode == ResourceCollectionMode.Budget && !RelievesPressure(record))
+                {
+                    continue;
+                }
+
+                uint slot = record.Slot;
+                if (!resources.TryGetValue(slot, out Lazy<Task<IResourceRecord>>? pending))
+                {
+                    continue;
+                }
+
+                bool didRemove;
+                lock (generationLock)
+                {
+                    didRemove = record.ReferenceCount == 1
+                        && resources.TryRemove(
+                            new KeyValuePair<uint, Lazy<Task<IResourceRecord>>>(slot, pending));
+                }
+
+                if (!didRemove)
+                {
+                    continue;
+                }
+
+                await record.ReleaseAsync().ConfigureAwait(false);
+                ResourcesDiagnostics.LoadedResources.Add(-1);
+                unloaded++;
+                removed = true;
+            }
+        }
+        while (removed);
+
+        activity?.SetTag("resource.collection.unloaded", unloaded);
+        ResourcesDiagnostics.CollectionOperations.Add(
+            1,
+            new KeyValuePair<string, object?>("mode", mode.ToString()));
+        ResourcesDiagnostics.UnloadedResources.Add(unloaded);
+        return new ResourceCollectionReport(unloaded);
+    }
+
+    internal uint[] GetDependencyClosure(uint rootSlot)
+    {
+        List<uint> result = [];
+        HashSet<uint> visited = [];
+        Add(rootSlot);
+        return [.. result];
+
+        void Add(uint slot)
+        {
+            if (!visited.Add(slot))
+            {
+                return;
+            }
+
+            result.Add(slot);
+            if (!resources.TryGetValue(slot, out Lazy<Task<IResourceRecord>>? pending)
+                || !pending.IsValueCreated
+                || !pending.Value.IsCompletedSuccessfully)
+            {
+                return;
+            }
+
+            foreach (uint dependency in pending.Value.Result.Dependencies.Span)
+            {
+                Add(dependency);
+            }
+        }
+    }
+
+    public async ValueTask UnloadAsync<T>(
+        ResourceId<T> id,
+        CancellationToken cancellationToken = default)
+        where T : notnull
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!resources.TryGetValue(id.Slot, out Lazy<Task<IResourceRecord>>? pending))
+        {
+            return;
+        }
+
+        IResourceRecord record = await pending.Value
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (GetStrongReferenceCount(id.Slot) != 0 || record.ReferenceCount != 1)
+        {
+            throw new ResourceInUseException(
+                $"The resource slot '{id.Slot}' is still in use.");
+        }
+
+        bool didRemove;
+        lock (generationLock)
+        {
+            didRemove = resources.TryRemove(
+                new KeyValuePair<uint, Lazy<Task<IResourceRecord>>>(id.Slot, pending));
+        }
+
+        if (didRemove)
+        {
+            await record.ReleaseAsync().ConfigureAwait(false);
+            ResourcesDiagnostics.LoadedResources.Add(-1);
+        }
+    }
+
+    internal async ValueTask<ResourceRecord<T>> LoadDependencyRecordAsync<T>(
         AssetKey<T> key,
         ResourceLoadPath path,
+        IReadOnlyDictionary<uint, IResourceRecord>? candidates,
         CancellationToken cancellationToken)
-        where T : notnull =>
-        LoadAsync(key, path, cancellationToken);
+        where T : notnull
+    {
+        ResourceKeyEntry entry = keys.GetOrAdd(key);
+        if (candidates?.TryGetValue(entry.Slot, out IResourceRecord? candidate) == true)
+        {
+            return (ResourceRecord<T>)candidate;
+        }
+
+        ResourceHandle<T> handle = await LoadAsync(key, path, cancellationToken)
+            .ConfigureAwait(false);
+        return GetCurrent(handle.Id);
+    }
 
     internal int GetDependencyCount<T>(AssetKey<T> key)
         where T : notnull
@@ -213,12 +452,118 @@ public sealed class ResourceStore : IAsyncDisposable
                 $"The resource slot '{id.Slot}' is not currently loaded.");
         }
 
-        return (ResourceRecord<T>)pending.Value.Result;
+        ResourceRecord<T> record = (ResourceRecord<T>)pending.Value.Result;
+        record.Touch(Interlocked.Increment(ref accessSequence));
+        return record;
+    }
+
+    internal bool TryGetCurrent<T>(ResourceId<T> id, out ResourceRecord<T>? record)
+        where T : notnull
+    {
+        if (disposed == 0
+            && resources.TryGetValue(id.Slot, out Lazy<Task<IResourceRecord>>? pending)
+            && pending.IsValueCreated
+            && pending.Value.IsCompletedSuccessfully)
+        {
+            record = (ResourceRecord<T>)pending.Value.Result;
+            record.Touch(Interlocked.Increment(ref accessSequence));
+            return true;
+        }
+
+        record = null;
+        return false;
+    }
+
+    internal void AddStrongReference(uint slot) =>
+        strongReferences.AddOrUpdate(slot, 1, static (_, count) => checked(count + 1));
+
+    internal void RemoveStrongReference(uint slot)
+    {
+        while (strongReferences.TryGetValue(slot, out int count))
+        {
+            if (count <= 0)
+            {
+                throw new InvalidOperationException("The resource slot was released too many times.");
+            }
+
+            if (count == 1)
+            {
+                if (strongReferences.TryRemove(
+                    new KeyValuePair<uint, int>(slot, count)))
+                {
+                    return;
+                }
+            }
+            else if (strongReferences.TryUpdate(slot, count - 1, count))
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException("The resource slot is not retained.");
+    }
+
+    private int GetStrongReferenceCount(uint slot) =>
+        strongReferences.TryGetValue(slot, out int count) ? count : 0;
+
+    private bool RelievesPressure(IResourceRecord record)
+    {
+        foreach (ResourceMemoryCost cost in record.MemoryCosts.Span)
+        {
+            if (options.MemoryBudgets.TryGetValue(cost.Pool, out long budget)
+                && memoryUsage.GetValueOrDefault(cost.Pool) > budget)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void AddMemoryUsage(ReadOnlySpan<ResourceMemoryCost> costs)
+    {
+        foreach (ResourceMemoryCost cost in costs)
+        {
+            memoryUsage.AddOrUpdate(
+                cost.Pool,
+                cost.Bytes,
+                (_, value) => checked(value + cost.Bytes));
+            ResourcesDiagnostics.MemoryUsage.Add(
+                cost.Bytes,
+                new KeyValuePair<string, object?>("pool", cost.Pool.Name));
+        }
+    }
+
+    private void RemoveMemoryUsage(ReadOnlyMemory<ResourceMemoryCost> costs)
+    {
+        foreach (ResourceMemoryCost cost in costs.Span)
+        {
+            memoryUsage.AddOrUpdate(
+                cost.Pool,
+                0,
+                (_, value) => checked(value - cost.Bytes));
+            ResourcesDiagnostics.MemoryUsage.Add(
+                -cost.Bytes,
+                new KeyValuePair<string, object?>("pool", cost.Pool.Name));
+        }
+    }
+
+    private static void ValidateMemoryCosts(ReadOnlySpan<ResourceMemoryCost> costs)
+    {
+        foreach (ResourceMemoryCost cost in costs)
+        {
+            if (cost.Bytes < 0)
+            {
+                throw new ResourceLoadException(
+                    "A resource loader reported a negative memory cost.");
+            }
+        }
     }
 
     internal async ValueTask<IResourceRecord> LoadNextGenerationAsync<T>(
         AssetKey<T> key,
         uint generation,
+        IReadOnlyDictionary<uint, IResourceRecord> candidates,
         CancellationToken cancellationToken)
         where T : notnull
     {
@@ -229,6 +574,7 @@ public sealed class ResourceStore : IAsyncDisposable
             entry,
             path,
             generation,
+            candidates,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -264,6 +610,7 @@ public sealed class ResourceStore : IAsyncDisposable
                     entry,
                     currentPath,
                     generation: 0,
+                    candidates: null,
                     CancellationToken.None),
                 LazyThreadSafetyMode.ExecutionAndPublication);
         Lazy<Task<IResourceRecord>> pending = resources.GetOrAdd(entry.Slot, candidate);
@@ -313,6 +660,7 @@ public sealed class ResourceStore : IAsyncDisposable
         ResourceKeyEntry entry,
         ResourceLoadPath path,
         uint generation,
+        IReadOnlyDictionary<uint, IResourceRecord>? candidates,
         CancellationToken cancellationToken)
         where T : notnull
     {
@@ -336,12 +684,16 @@ public sealed class ResourceStore : IAsyncDisposable
             entry.Text,
             entry.SelectorStart,
             this,
-            path);
+            path,
+            candidates);
 
         try
         {
-            T resource = await loader
-                .LoadAsync<T>(context, cancellationToken)
+            T resource = await dispatcher
+                .InvokeAsync(
+                    loader.LoadLane,
+                    token => loader.LoadAsync<T>(context, token),
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (resource is null)
             {
@@ -349,16 +701,21 @@ public sealed class ResourceStore : IAsyncDisposable
                     $"The resource loader returned null for '{key}'.");
             }
 
+            ResourceMemoryCost[] memoryCosts = [.. loader.Measure(resource)];
+            ValidateMemoryCosts(memoryCosts);
+            AddMemoryUsage(memoryCosts);
             ResourceRecord<T> record = new(
                 key,
                 entry.Slot,
                 generation,
                 resource,
-                context.GetDependencies());
-            lock (completedResourcesLock)
-            {
-                completedResources.Add(record);
-            }
+                context.TakeDependencies(),
+                memoryCosts,
+                loader.EvictionPriority,
+                dispatcher,
+                loader.DisposalLane,
+                RemoveMemoryUsage);
+            record.Touch(Interlocked.Increment(ref accessSequence));
 
             if (generation == 0)
             {
@@ -369,10 +726,12 @@ public sealed class ResourceStore : IAsyncDisposable
         }
         catch (ResourceException)
         {
+            await context.ReleaseDependenciesAsync().ConfigureAwait(false);
             throw;
         }
         catch (Exception exception)
         {
+            await context.ReleaseDependenciesAsync().ConfigureAwait(false);
             throw new ResourceLoadException(
                 $"The resource '{key}' could not be loaded.",
                 exception);
@@ -390,69 +749,95 @@ public sealed class ResourceStore : IAsyncDisposable
             }
         }
 
-        List<uint> order = [];
-        HashSet<uint> visited = [];
-        AddDependents(rootSlot);
-        return [.. order];
-
-        void AddDependents(uint slot)
+        HashSet<uint> affected = [];
+        Queue<uint> pendingSlots = new();
+        pendingSlots.Enqueue(rootSlot);
+        while (pendingSlots.TryDequeue(out uint slot))
         {
-            if (!visited.Add(slot))
+            if (!affected.Add(slot))
             {
-                return;
+                continue;
             }
 
-            order.Add(slot);
             foreach ((uint candidateSlot, IResourceRecord candidate) in current)
             {
                 if (candidate.Dependencies.Span.Contains(slot))
                 {
-                    AddDependents(candidateSlot);
+                    pendingSlots.Enqueue(candidateSlot);
                 }
             }
         }
-    }
 
-    private async ValueTask ReloadCurrentAsync(
-        uint slot,
-        CancellationToken cancellationToken)
-    {
-        using Activity? activity = ResourcesDiagnostics.Activities.StartActivity(
-            "ResourceStore.ReloadResource",
-            ActivityKind.Internal);
-        activity?.SetTag("resource.slot", slot);
-        SemaphoreSlim reloadLock = reloadLocks.GetOrAdd(slot, _ => new SemaphoreSlim(1, 1));
-        await reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        List<uint> order = new(affected.Count);
+        HashSet<uint> ordered = [];
+        while (order.Count < affected.Count)
         {
-            if (!resources.TryGetValue(slot, out Lazy<Task<IResourceRecord>>? current))
+            bool progressed = false;
+            foreach (uint slot in affected)
             {
-                return;
+                if (ordered.Contains(slot))
+                {
+                    continue;
+                }
+
+                ReadOnlySpan<uint> dependencies = current[slot].Dependencies.Span;
+                bool hasPendingDependency = false;
+                foreach (uint dependency in dependencies)
+                {
+                    if (affected.Contains(dependency) && !ordered.Contains(dependency))
+                    {
+                        hasPendingDependency = true;
+                        break;
+                    }
+                }
+
+                if (hasPendingDependency)
+                {
+                    continue;
+                }
+
+                ordered.Add(slot);
+                order.Add(slot);
+                progressed = true;
             }
 
-            IResourceRecord currentRecord = await current.Value
-                .WaitAsync(cancellationToken)
-                .ConfigureAwait(false);
-            IResourceRecord replacementRecord = await currentRecord
-                .ReloadAsync(this, cancellationToken)
-                .ConfigureAwait(false);
-            activity?.SetTag("resource.generation", replacementRecord.Generation);
-            Lazy<Task<IResourceRecord>> replacement = new(
-                () => Task.FromResult(replacementRecord),
-                LazyThreadSafetyMode.ExecutionAndPublication);
-            _ = replacement.Value;
-            resources[slot] = replacement;
-            ResourcesDiagnostics.ReloadedResources.Add(1);
+            if (!progressed)
+            {
+                throw new ResourceDependencyCycleException(
+                    "The resource dependency graph contains a cycle.");
+            }
         }
-        catch (Exception exception)
+
+        return [.. order];
+    }
+
+    private async ValueTask<SemaphoreSlim[]> AcquireReloadLocksAsync(
+        IEnumerable<uint> slots,
+        CancellationToken cancellationToken)
+    {
+        SemaphoreSlim[] locks = slots
+            .Order()
+            .Select(slot => reloadLocks.GetOrAdd(slot, _ => new SemaphoreSlim(1, 1)))
+            .ToArray();
+        int acquired = 0;
+        try
         {
-            activity?.SetStatus(ActivityStatusCode.Error);
-            activity?.SetTag("error.type", exception.GetType().FullName);
+            foreach (SemaphoreSlim reloadLock in locks)
+            {
+                await reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                acquired++;
+            }
+
+            return locks;
+        }
+        catch
+        {
+            for (int index = acquired - 1; index >= 0; index--)
+            {
+                locks[index].Release();
+            }
+
             throw;
-        }
-        finally
-        {
-            reloadLock.Release();
         }
     }
 }

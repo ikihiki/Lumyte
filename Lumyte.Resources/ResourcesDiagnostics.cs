@@ -37,4 +37,15 @@ public static class ResourcesDiagnostics
         Metrics.CreateHistogram<long>(
             "lumyte.resources.reload.propagated",
             unit: "{resource}");
+
+    internal static Counter<long> CollectionOperations { get; } =
+        Metrics.CreateCounter<long>("lumyte.resources.collection.operations");
+
+    internal static Counter<long> UnloadedResources { get; } =
+        Metrics.CreateCounter<long>("lumyte.resources.collection.unloaded");
+
+    internal static UpDownCounter<long> MemoryUsage { get; } =
+        Metrics.CreateUpDownCounter<long>(
+            "lumyte.resources.memory.usage",
+            unit: "By");
 }

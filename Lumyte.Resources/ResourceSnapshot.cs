@@ -1,10 +1,11 @@
 namespace Lumyte.Resources;
 
 /// <summary>Provides a stable view of all loaded resource generations at one point in time.</summary>
-public sealed class ResourceSnapshot
+public sealed class ResourceSnapshot : IAsyncDisposable
 {
     private readonly ResourceStore store;
     private readonly IReadOnlyDictionary<uint, IResourceRecord> records;
+    private int disposed;
 
     internal ResourceSnapshot(
         ResourceStore store,
@@ -12,6 +13,10 @@ public sealed class ResourceSnapshot
     {
         this.store = store;
         this.records = records;
+        foreach (IResourceRecord record in records.Values)
+        {
+            record.AddReference();
+        }
     }
 
     public T Get<T>(ResourceId<T> id)
@@ -34,14 +39,14 @@ public sealed class ResourceSnapshot
         where T : notnull
     {
         ResourceRecord<T> record = GetRecord(id);
-        return new ResourceLease<T>(record.Value, record.Generation);
+        return new ResourceLease<T>(record);
     }
 
     public ResourceLease<T> Lease<T>(ResourceHandle<T> handle)
         where T : notnull
     {
         ResourceRecord<T> record = GetRecord(handle);
-        return new ResourceLease<T>(record.Value, record.Generation);
+        return new ResourceLease<T>(record);
     }
 
     private ResourceRecord<T> GetRecord<T>(ResourceHandle<T> handle)
@@ -60,6 +65,7 @@ public sealed class ResourceSnapshot
     private ResourceRecord<T> GetRecord<T>(ResourceId<T> id)
         where T : notnull
     {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
         if (!records.TryGetValue(id.Slot, out IResourceRecord? record))
         {
             throw new ResourceNotFoundException(
@@ -67,5 +73,18 @@ public sealed class ResourceSnapshot
         }
 
         return (ResourceRecord<T>)record;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        foreach (IResourceRecord record in records.Values.Reverse())
+        {
+            await record.ReleaseAsync().ConfigureAwait(false);
+        }
     }
 }

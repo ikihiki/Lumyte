@@ -22,5 +22,18 @@ public readonly record struct ResourceHandle<T>
     /// <summary>Gets the generation loaded for this handle.</summary>
     public uint Generation => store.GetCurrent(Id).Generation;
 
+    public bool TryGetValue(out T? value)
+    {
+        if (store.TryGetCurrent(Id, out ResourceRecord<T>? record)
+            && record is not null)
+        {
+            value = record.Value;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
     internal ResourceStore Store => store;
 }
