@@ -11,9 +11,9 @@ public sealed class ResourceStoreTests
         ResourceStore store = CreateStore(resolver, new TextResourceLoader());
         AssetKey<TextResource> key = Asset.From<TextResource>("memory:documents/readme");
 
-        TextResource resource = await store.LoadAsync(key);
+        ResourceHandle<TextResource> handle = await store.LoadAsync(key);
 
-        Assert.Equal(new TextResource("hello", string.Empty), resource);
+        Assert.Equal(new TextResource("hello", string.Empty), handle.Value);
         Assert.Equal("documents/readme", resolver.LastAddress);
     }
 
@@ -25,16 +25,17 @@ public sealed class ResourceStoreTests
         AssetKey<TextResource> key = AssetKey<TextResource>.Parse(
             "memory:documents/readme#section/introduction");
 
-        TextResource resource = await store.LoadAsync(key);
+        ResourceHandle<TextResource> handle = await store.LoadAsync(key);
 
-        Assert.Equal(new TextResource("hello", "section/introduction"), resource);
+        Assert.Equal(new TextResource("hello", "section/introduction"), handle.Value);
     }
 
     [Fact]
     public async Task InternsRepeatedKeysOnce()
     {
+        RecordingResolver resolver = new("hello");
         ResourceStore store = CreateStore(
-            new RecordingResolver("hello"),
+            resolver,
             new TextResourceLoader());
         AssetKey<TextResource> key = Asset.From<TextResource>("memory:documents/readme");
 
@@ -42,6 +43,7 @@ public sealed class ResourceStoreTests
         await store.LoadAsync(key);
 
         Assert.Equal(1, store.InternedKeyCount);
+        Assert.Equal(1, resolver.OpenCount);
     }
 
     [Fact]
@@ -124,10 +126,56 @@ public sealed class ResourceStoreTests
             });
         ResourceStore store = CreateStore(resolver, new TextResourceLoader());
 
-        TextResource actual = await store.LoadAsync(
+        ResourceHandle<TextResource> actual = await store.LoadAsync(
             Asset.Id<TextResource>("character.robot"));
 
-        Assert.Equal(new TextResource("robot", string.Empty), actual);
+        Assert.Equal(new TextResource("robot", string.Empty), actual.Value);
+    }
+
+    [Fact]
+    public async Task TracksDependenciesLoadedThroughContext()
+    {
+        RecordingResolver resolver = new("hello");
+        ResourceStore store = CreateStore(
+            [resolver],
+            [new TextResourceLoader(), new ParentResourceLoader()]);
+        AssetKey<ParentResource> parentKey = Asset.From<ParentResource>("memory:parent");
+
+        ResourceHandle<ParentResource> parent = await store.LoadAsync(parentKey);
+
+        Assert.Equal("hello", parent.Value.Child.Text);
+        Assert.Equal(1, store.GetDependencyCount(parentKey));
+        Assert.Equal(2, resolver.OpenCount);
+    }
+
+    [Fact]
+    public async Task RejectsDependencyCycles()
+    {
+        ResourceStore storeWithBothLoaders = CreateStore(
+            [new RecordingResolver("cycle")],
+            [new FirstCycleResourceLoader(), new SecondCycleResourceLoader()]);
+
+        await Assert.ThrowsAsync<ResourceDependencyCycleException>(
+            async () => await storeWithBothLoaders.LoadAsync(
+                Asset.From<FirstCycleResource>("memory:first")));
+    }
+
+    [Fact]
+    public async Task DisposesDependentsBeforeDependencies()
+    {
+        List<string> disposalOrder = [];
+        ResourceStore store = CreateStore(
+            [new RecordingResolver("value")],
+            [
+                new DisposableChildLoader(disposalOrder),
+                new DisposableParentLoader(disposalOrder)
+            ]);
+
+        await store.LoadAsync(Asset.From<DisposableParent>("memory:parent"));
+
+        await store.DisposeAsync();
+
+        Assert.Equal(["parent", "child"], disposalOrder);
     }
 
     private static ResourceStore CreateStore(
@@ -141,6 +189,92 @@ public sealed class ResourceStoreTests
         new(resolvers, loaders);
 
     private sealed record TextResource(string Text, string Selector);
+
+    private sealed record ParentResource(TextResource Child);
+
+    private sealed class ParentResourceLoader : IResourceLoader<ParentResource>
+    {
+        public async ValueTask<T> LoadAsync<T>(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+            where T : notnull
+        {
+            ResourceHandle<TextResource> child = await context.LoadAsync(
+                Asset.From<TextResource>("memory:child"),
+                cancellationToken);
+            return (T)(object)new ParentResource(child.Value);
+        }
+    }
+
+    private sealed class FirstCycleResource;
+
+    private sealed class SecondCycleResource;
+
+    private sealed class FirstCycleResourceLoader : IResourceLoader<FirstCycleResource>
+    {
+        public async ValueTask<T> LoadAsync<T>(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+            where T : notnull
+        {
+            await context.LoadAsync(
+                Asset.From<SecondCycleResource>("memory:second"),
+                cancellationToken);
+            return (T)(object)new FirstCycleResource();
+        }
+    }
+
+    private sealed class SecondCycleResourceLoader : IResourceLoader<SecondCycleResource>
+    {
+        public async ValueTask<T> LoadAsync<T>(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+            where T : notnull
+        {
+            await context.LoadAsync(
+                Asset.From<FirstCycleResource>("memory:first"),
+                cancellationToken);
+            return (T)(object)new SecondCycleResource();
+        }
+    }
+
+    private abstract class DisposableResource(
+        string name,
+        List<string> disposalOrder) : IDisposable
+    {
+        public void Dispose() => disposalOrder.Add(name);
+    }
+
+    private sealed class DisposableChild(List<string> disposalOrder)
+        : DisposableResource("child", disposalOrder);
+
+    private sealed class DisposableParent(List<string> disposalOrder)
+        : DisposableResource("parent", disposalOrder);
+
+    private sealed class DisposableChildLoader(List<string> disposalOrder)
+        : IResourceLoader<DisposableChild>
+    {
+        public ValueTask<T> LoadAsync<T>(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+            where T : notnull =>
+            ValueTask.FromResult((T)(object)new DisposableChild(disposalOrder));
+    }
+
+    private sealed class DisposableParentLoader(List<string> disposalOrder)
+        : IResourceLoader<DisposableParent>
+    {
+        public async ValueTask<T> LoadAsync<T>(
+            ResourceLoadContext context,
+            CancellationToken cancellationToken = default)
+            where T : notnull
+        {
+            await context.LoadAsync(
+                Asset.From<DisposableChild>("memory:child"),
+                cancellationToken);
+            return (T)(object)new DisposableParent(disposalOrder);
+        }
+    }
 
     private sealed class TextResourceLoader : IResourceLoader<TextResource>
     {
