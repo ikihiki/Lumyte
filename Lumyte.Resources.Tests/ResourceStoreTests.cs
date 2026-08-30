@@ -22,7 +22,7 @@ public sealed class ResourceStoreTests
     {
         RecordingResolver resolver = new("hello");
         ResourceStore store = CreateStore(resolver, new TextResourceLoader());
-        AssetKey<TextResource> key = AssetKey<TextResource>.Parse(
+        var key = AssetKey<TextResource>.Parse(
             "memory:documents/readme#section/introduction");
 
         ResourceHandle<TextResource> handle = await store.LoadAsync(key);
@@ -122,7 +122,7 @@ public sealed class ResourceStoreTests
     public async Task RejectsUnregisteredScheme()
     {
         ResourceStore store = CreateStore(
-            Array.Empty<IAssetResolver>(),
+            [],
             [new TextResourceLoader()]);
         AssetKey<TextResource> key = Asset.From<TextResource>("unknown:item");
 
@@ -178,7 +178,7 @@ public sealed class ResourceStoreTests
         ResourceStore store = CreateStore(
             new FileAssetResolver(root),
             new TextResourceLoader());
-        AssetKey<TextResource> key = AssetKey<TextResource>.Parse("file:%2E%2E/secret.bin");
+        var key = AssetKey<TextResource>.Parse("file:%2E%2E/secret.bin");
 
         await Assert.ThrowsAsync<AssetResolutionException>(
             async () => await store.LoadAsync(key));

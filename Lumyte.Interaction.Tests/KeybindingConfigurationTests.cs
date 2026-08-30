@@ -26,8 +26,8 @@ public sealed class KeybindingConfigurationTests
     [Fact]
     public void ParsedWhenConditionUsesRegisteredTypedKeys()
     {
-        ContextKey<string?> editor = ContextKey.Create<string?>("editor.active");
-        ContextKey<bool> textInput = ContextKey.Create<bool>("ui.textInputFocused");
+        var editor = ContextKey.Create<string?>("editor.active");
+        var textInput = ContextKey.Create<bool>("ui.textInputFocused");
         var registry = new ContextKeyRegistry();
         registry.Register(editor);
         registry.Register(textInput);

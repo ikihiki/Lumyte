@@ -17,7 +17,7 @@ public sealed class KeybindingRuntimeTests
             new Keybinding(save, KeyChordParser.Parse("ctrl+s"))
         ];
         var keyboard = new VirtualKeyboard();
-        using var runtime = CreateRuntime(keyboard, map);
+        using KeybindingRuntime runtime = CreateRuntime(keyboard, map);
         Command? invoked = null;
         runtime.CommandInvoked += (_, eventArgs) => invoked = eventArgs.Command;
 
@@ -35,7 +35,7 @@ public sealed class KeybindingRuntimeTests
             new Keybinding(comment, KeyChordParser.Parse("ctrl+k ctrl+c"))
         ];
         var keyboard = new VirtualKeyboard();
-        using var runtime = CreateRuntime(keyboard, map);
+        using KeybindingRuntime runtime = CreateRuntime(keyboard, map);
         var invoked = new List<Command>();
         runtime.CommandInvoked += (_, eventArgs) => invoked.Add(eventArgs.Command);
 
@@ -52,7 +52,7 @@ public sealed class KeybindingRuntimeTests
     [Fact]
     public void InactiveWhenConditionPreventsInvocation()
     {
-        ContextKey<bool> textInputFocused = ContextKey.Create<bool>("ui.textInputFocused");
+        var textInputFocused = ContextKey.Create<bool>("ui.textInputFocused");
         var save = new Command("editor.save");
         KeybindingMap map = KeybindingMap("Editor")[
             new Keybinding(save, KeyChordParser.Parse("ctrl+s"))
@@ -114,7 +114,7 @@ public sealed class KeybindingRuntimeTests
             new Keybinding(save, KeyChordParser.Parse("ctrl+s"))
         ];
         var keyboard = new VirtualKeyboard();
-        using var runtime = CreateRuntime(keyboard, map);
+        using KeybindingRuntime runtime = CreateRuntime(keyboard, map);
         var invoked = new List<Command>();
         runtime.CommandInvoked += (_, eventArgs) => invoked.Add(eventArgs.Command);
 
@@ -135,7 +135,7 @@ public sealed class KeybindingRuntimeTests
             new Keybinding(longer, KeyChordParser.Parse("ctrl+k ctrl+c"))
         ];
         var keyboard = new VirtualKeyboard();
-        using var runtime = CreateRuntime(keyboard, map);
+        using KeybindingRuntime runtime = CreateRuntime(keyboard, map);
         var invoked = new List<Command>();
         runtime.CommandInvoked += (_, eventArgs) => invoked.Add(eventArgs.Command);
 
@@ -155,7 +155,7 @@ public sealed class KeybindingRuntimeTests
             new Keybinding(comment, KeyChordParser.Parse("ctrl+k ctrl+c"))
         ];
         var keyboard = new VirtualKeyboard();
-        using var runtime = CreateRuntime(keyboard, map);
+        using KeybindingRuntime runtime = CreateRuntime(keyboard, map);
         var invoked = new List<Command>();
         runtime.CommandInvoked += (_, eventArgs) => invoked.Add(eventArgs.Command);
 

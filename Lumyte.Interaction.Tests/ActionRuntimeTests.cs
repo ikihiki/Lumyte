@@ -1,5 +1,6 @@
-using Lumyte.Input;
 using System.Numerics;
+
+using Lumyte.Input;
 
 using Xunit;
 
@@ -211,7 +212,7 @@ public sealed class ActionRuntimeTests
     [Fact]
     public void EmulatedInputOnlyUsesMapsWhoseContextIsActive()
     {
-        ContextKey<bool> gameRunning = ContextKey.Create<bool>("game.running");
+        var gameRunning = ContextKey.Create<bool>("game.running");
         var jump = new InputAction<bool>("game.jump");
         ActionMap gameplay = ActionMap("Gameplay", gameRunning.Is(true))[
             new ActionBinding<bool>(jump, InputControls.Key(Key.Space))

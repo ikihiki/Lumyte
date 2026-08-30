@@ -284,7 +284,7 @@ public sealed class ResourceSchedulingTests
         private readonly ConcurrentDictionary<string, TaskCompletionSource> starts = [];
         private readonly TaskCompletionSource release =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly object orderGate = new();
+        private readonly Lock orderGate = new();
         private readonly List<string> startOrder = [];
 
         public IReadOnlyList<string> StartOrder

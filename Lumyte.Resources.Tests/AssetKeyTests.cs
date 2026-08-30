@@ -6,10 +6,7 @@ namespace Lumyte.Resources.Tests;
 public sealed class AssetKeyTests
 {
     [Fact]
-    public void StoresOneReferenceAndTwoPositions()
-    {
-        Assert.Equal(IntPtr.Size + (sizeof(int) * 2), Unsafe.SizeOf<AssetKey<TestResource>>());
-    }
+    public void StoresOneReferenceAndTwoPositions() => Assert.Equal(IntPtr.Size + (sizeof(int) * 2), Unsafe.SizeOf<AssetKey<TestResource>>());
 
     [Fact]
     public void ExposesCanonicalComponentsWithoutParsingAgain()
@@ -50,7 +47,7 @@ public sealed class AssetKeyTests
     [Fact]
     public void AllowsUnrestrictedNonemptySchemes()
     {
-        AssetKey<TestResource> key = AssetKey<TestResource>.Parse(
+        var key = AssetKey<TestResource>.Parse(
             "1 CUSTOM:resource");
 
         Assert.Equal("1 custom", key.Scheme);
@@ -60,7 +57,7 @@ public sealed class AssetKeyTests
     [Fact]
     public void LeavesAddressTextValidationToResolversAndLoaders()
     {
-        AssetKey<TestResource> key = AssetKey<TestResource>.Parse(
+        var key = AssetKey<TestResource>.Parse(
             "custom:raw path\\with%invalid");
 
         Assert.Equal("raw path\\with%invalid", key.Address);
@@ -69,7 +66,7 @@ public sealed class AssetKeyTests
     [Fact]
     public void LeavesSelectorValidationToLoaders()
     {
-        AssetKey<TestResource> key = AssetKey<TestResource>.Parse(
+        var key = AssetKey<TestResource>.Parse(
             "custom:resource#//part#detail/");
 
         Assert.Equal("//part#detail/", key.Selector);

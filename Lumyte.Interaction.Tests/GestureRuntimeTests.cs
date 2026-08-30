@@ -18,7 +18,7 @@ public sealed class GestureRuntimeTests
             new TapGesture(select)
         ];
         var touchscreen = new VirtualTouchscreen();
-        using var runtime = CreateRuntime(touchscreen, map);
+        using GestureRuntime runtime = CreateRuntime(touchscreen, map);
         GestureRecognizedEventArgs? recognized = null;
         runtime.Recognized += (_, eventArgs) => recognized = eventArgs;
 
@@ -38,7 +38,7 @@ public sealed class GestureRuntimeTests
             new DragGesture(pan, minimumDistance: 5)
         ];
         var touchscreen = new VirtualTouchscreen();
-        using var runtime = CreateRuntime(touchscreen, map);
+        using GestureRuntime runtime = CreateRuntime(touchscreen, map);
         GestureRecognizedEventArgs? recognized = null;
         runtime.Recognized += (_, eventArgs) => recognized = eventArgs;
 
@@ -59,7 +59,7 @@ public sealed class GestureRuntimeTests
             new PinchGesture(zoom)
         ];
         var touchscreen = new VirtualTouchscreen();
-        using var runtime = CreateRuntime(touchscreen, map);
+        using GestureRuntime runtime = CreateRuntime(touchscreen, map);
         GestureRecognizedEventArgs? recognized = null;
         runtime.Recognized += (_, eventArgs) => recognized = eventArgs;
 
@@ -217,7 +217,7 @@ public sealed class GestureRuntimeTests
                 fingerCount: 2)
         ];
         var touchscreen = new VirtualTouchscreen();
-        using var runtime = CreateRuntime(touchscreen, map);
+        using GestureRuntime runtime = CreateRuntime(touchscreen, map);
         var recognized = new List<GestureRecognizedEventArgs>();
         runtime.Recognized += (_, eventArgs) => recognized.Add(eventArgs);
 
@@ -237,7 +237,7 @@ public sealed class GestureRuntimeTests
             new TouchBeginGesture(inspect)
         ];
         var touchscreen = new VirtualTouchscreen();
-        using var runtime = CreateRuntime(touchscreen, map);
+        using GestureRuntime runtime = CreateRuntime(touchscreen, map);
         GestureRecognizedEventArgs? recognized = null;
         runtime.Recognized += (_, eventArgs) => recognized = eventArgs;
 

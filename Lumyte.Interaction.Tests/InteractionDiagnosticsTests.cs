@@ -1,6 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Collections.Concurrent;
 
 using Lumyte.Core.Time;
 using Lumyte.Input;
@@ -17,7 +17,7 @@ public sealed class InteractionDiagnosticsTests
     public void ActionAndGestureMetricsDescribeObservableInputOutcomes()
     {
         var measurements = new ConcurrentQueue<Measurement>();
-        using var listener = CreateMeterListener(measurements);
+        using MeterListener listener = CreateMeterListener(measurements);
         var jump = new InputAction<bool>("game.jump");
         ActionMap actions = ActionMap("Gameplay")[
             new ActionBinding<bool>(jump, InputControls.Key(Key.Space))
@@ -63,7 +63,7 @@ public sealed class InteractionDiagnosticsTests
         {
             ShouldListenTo = source =>
                 source.Name == InteractionDiagnostics.ActivitySourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) =>
+            Sample = (ref _) =>
                 ActivitySamplingResult.AllData,
             ActivityStopped = activity =>
             {
@@ -77,7 +77,7 @@ public sealed class InteractionDiagnosticsTests
         };
         ActivitySource.AddActivityListener(activityListener);
         var measurements = new ConcurrentQueue<Measurement>();
-        using var meterListener = CreateMeterListener(measurements);
+        using MeterListener meterListener = CreateMeterListener(measurements);
         var save = new Command("editor.save");
         KeybindingMap map = KeybindingMap("Editor")[
             new Keybinding(save, KeyChordParser.Parse("ctrl+s"))

@@ -16,14 +16,14 @@ public sealed class InteractionResolverTests
 
         InteractionResolution<string> result = new InteractionResolver().Resolve(candidates, context);
 
-        var match = Assert.IsType<InteractionResolution<string>.Match>(result);
+        InteractionResolution<string>.Match match = Assert.IsType<InteractionResolution<string>.Match>(result);
         Assert.Equal("preferred", match.Candidate.Value);
     }
 
     [Fact]
     public void IneligibleCandidatesDoNotParticipate()
     {
-        ContextKey<bool> enabled = ContextKey.Create<bool>("enabled");
+        var enabled = ContextKey.Create<bool>("enabled");
         var context = new InteractionContext();
         InteractionCandidate<string>[] candidates =
         [
@@ -33,7 +33,7 @@ public sealed class InteractionResolverTests
 
         InteractionResolution<string> result = new InteractionResolver().Resolve(candidates, context);
 
-        var match = Assert.IsType<InteractionResolution<string>.Match>(result);
+        InteractionResolution<string>.Match match = Assert.IsType<InteractionResolution<string>.Match>(result);
         Assert.Equal("fallback", match.Candidate.Value);
     }
 
@@ -45,7 +45,7 @@ public sealed class InteractionResolverTests
         InteractionResolution<string> result =
             new InteractionResolver().Resolve(candidates, new InteractionContext());
 
-        var conflict = Assert.IsType<InteractionResolution<string>.Conflict>(result);
+        InteractionResolution<string>.Conflict conflict = Assert.IsType<InteractionResolution<string>.Conflict>(result);
         Assert.Equal(["first", "second"], conflict.Candidates.Select(candidate => candidate.Value));
     }
 }

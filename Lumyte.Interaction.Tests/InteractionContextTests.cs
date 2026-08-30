@@ -7,8 +7,8 @@ public sealed class InteractionContextTests
     [Fact]
     public void TypedValuesDriveComposedConditions()
     {
-        ContextKey<bool> running = ContextKey.Create<bool>("game.running");
-        ContextKey<string?> editor = ContextKey.Create<string?>("editor.active");
+        var running = ContextKey.Create<bool>("game.running");
+        var editor = ContextKey.Create<string?>("editor.active");
         var context = new InteractionContext();
         context.Set(running, true);
         context.Set(editor, "scene");
@@ -22,7 +22,7 @@ public sealed class InteractionContextTests
     [Fact]
     public void SettingAChangedValuePublishesItsKeyAndValues()
     {
-        ContextKey<bool> focused = ContextKey.Create<bool>("ui.focused");
+        var focused = ContextKey.Create<bool>("ui.focused");
         var context = new InteractionContext();
         ContextValueChangedEventArgs? change = null;
         context.ValueChanged += (_, eventArgs) => change = eventArgs;
@@ -39,8 +39,8 @@ public sealed class InteractionContextTests
     [Fact]
     public void ConditionsHaveAStableConfigurationExpression()
     {
-        ContextKey<string?> editor = ContextKey.Create<string?>("editor.active");
-        ContextKey<bool> textInput = ContextKey.Create<bool>("ui.textInputFocused");
+        var editor = ContextKey.Create<string?>("editor.active");
+        var textInput = ContextKey.Create<bool>("ui.textInputFocused");
         ContextCondition condition = editor.Is("scene") & textInput.IsNot(true);
 
         string expression = condition.ToExpression();

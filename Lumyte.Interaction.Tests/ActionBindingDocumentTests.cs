@@ -26,7 +26,7 @@ public sealed class ActionBindingDocumentTests
             new ActionBinding<Vector2>(move, InputControls.GamepadLeftStick())
         ];
 
-        ActionBindingDocument document = ActionBindingDocument.Create([map]);
+        var document = ActionBindingDocument.Create([map]);
 
         Assert.Collection(
             document.Slots,
@@ -50,7 +50,7 @@ public sealed class ActionBindingDocumentTests
             new ActionBinding<bool>(jump, InputControls.Key(Key.Space)),
             new ActionBinding<bool>(interact, InputControls.Key(Key.E))
         ];
-        ActionBindingDocument document = ActionBindingDocument.Create([map]);
+        var document = ActionBindingDocument.Create([map]);
         ActionBindingSlot jumpSlot = Assert.Single(
             document.Slots,
             slot => slot.ActionId == jump.Id);
@@ -74,7 +74,7 @@ public sealed class ActionBindingDocumentTests
         ActionMap map = ActionMap("Gameplay")[
             new ActionBinding<bool>(jump, InputControls.Key(Key.Space))
         ];
-        ActionBindingDocument document = ActionBindingDocument.Create([map]);
+        var document = ActionBindingDocument.Create([map]);
         ActionBindingSlot slot = Assert.Single(document.Slots);
         RebindingSession session = document.BeginRebinding(slot.Id);
 
@@ -92,7 +92,7 @@ public sealed class ActionBindingDocumentTests
         ActionMap map = ActionMap("Gameplay")[
             new ActionBinding<bool>(jump, InputControls.Key(Key.Space))
         ];
-        ActionBindingDocument document = ActionBindingDocument.Create([map]);
+        var document = ActionBindingDocument.Create([map]);
         RebindingSession session = document.BeginRebinding(Assert.Single(document.Slots).Id);
 
         bool accepted = session.TryOffer(
@@ -110,14 +110,14 @@ public sealed class ActionBindingDocumentTests
         ActionMap map = ActionMap("Gameplay")[
             new ActionBinding<bool>(jump, InputControls.Key(Key.Space))
         ];
-        ActionBindingDocument source = ActionBindingDocument.Create([map]);
+        var source = ActionBindingDocument.Create([map]);
         ActionBindingSlot sourceSlot = Assert.Single(source.Slots);
         RebindingSession session = source.BeginRebinding(sourceSlot.Id);
         session.TryOffer(RebindingCandidate.From(InputControls.Key(Key.J)));
         session.Confirm();
 
         string json = source.SaveOverrides();
-        ActionBindingDocument restored = ActionBindingDocument.Create([map]);
+        var restored = ActionBindingDocument.Create([map]);
         restored.LoadOverrides(json);
         ActionBindingSlot restoredSlot = Assert.Single(restored.Slots);
 
@@ -141,7 +141,7 @@ public sealed class ActionBindingDocumentTests
                 BindingId = "interact-keyboard",
             }
         ];
-        ActionBindingDocument source = ActionBindingDocument.Create([original]);
+        var source = ActionBindingDocument.Create([original]);
         ActionBindingSlot jumpSlot = Assert.Single(
             source.Slots,
             slot => slot.ActionId == jump.Id);
@@ -160,7 +160,7 @@ public sealed class ActionBindingDocumentTests
             }
         ];
 
-        ActionBindingDocument restored = ActionBindingDocument.Create([reordered]);
+        var restored = ActionBindingDocument.Create([reordered]);
         restored.LoadOverrides(json);
 
         ActionBindingSlot restoredJump = Assert.Single(
@@ -179,13 +179,13 @@ public sealed class ActionBindingDocumentTests
                 BindingId = "jump-keyboard",
             }
         ];
-        ActionBindingDocument document = ActionBindingDocument.Create([map]);
+        var document = ActionBindingDocument.Create([map]);
         var stopped = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source =>
                 source.Name == InteractionDiagnostics.ActivitySourceName,
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+            Sample = static (ref _) =>
                 ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = stopped.Enqueue,
         };

@@ -87,7 +87,7 @@ public sealed class PlayerInputBindingApplicationTests
 
     private static string CreateOverrideJson(ActionMap map, Key key)
     {
-        ActionBindingDocument document = ActionBindingDocument.Create([map]);
+        var document = ActionBindingDocument.Create([map]);
         RebindingSession session = document.BeginRebinding(Assert.Single(document.Slots).Id);
         session.TryOffer(RebindingCandidate.From(InputControls.Key(key)));
         session.Confirm();
