@@ -5,6 +5,58 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourceHotReloadTests
 {
     [Fact]
+    public void FileChangeSourceMapsPathsToPortableAssetAddresses()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"Lumyte-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        using var source = new FileAssetChangeSource(root);
+        var changes = new List<AssetChange>();
+        source.Changed += changes.Add;
+
+        source.PublishChange(Path.Combine(root, "models", "character.glb"));
+        source.PublishChange(Path.Combine(root, "..", "outside.glb"));
+
+        AssetChange change = Assert.Single(changes);
+        Assert.Equal("file", change.Scheme);
+        Assert.Equal("models/character.glb", change.Address);
+        Directory.Delete(root);
+    }
+
+    [Fact]
+    public async Task FileChangeReloadsTheCurrentResource()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"Lumyte-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        string path = Path.Combine(root, "message.txt");
+        await File.WriteAllTextAsync(path, "old");
+        try
+        {
+            ResourceStore store = new([new FileAssetResolver(root)], [new TextResourceLoader()]);
+            ResourceHandle<TextResource> handle = await store.LoadAsync(
+                Asset.From<TextResource>("file:message.txt"));
+            using var source = new FileAssetChangeSource(root);
+            await using ResourceHotReloadManager hotReload = new(
+                store, [source], new ResourceHotReloadOptions { DebounceDelay = TimeSpan.Zero });
+            var reloaded = new TaskCompletionSource<ResourceHotReloadResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            hotReload.Reloaded += result => reloaded.TrySetResult(result);
+            hotReload.Start();
+            await File.WriteAllTextAsync(path, "updated");
+
+            source.PublishChange(path);
+            ResourceHotReloadResult result = await reloaded.Task;
+
+            Assert.Equal(1, result.ReloadedResourceCount);
+            Assert.Equal("updated", handle.Value.Text);
+            Assert.InRange(handle.Generation, 1u, uint.MaxValue);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task CoalescesChangesAndReloadsAllTypesAndDependents()
     {
         var resolver = new MutableResolver("old");
