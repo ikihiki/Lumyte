@@ -85,37 +85,18 @@ public sealed class ResourceStore : IAsyncDisposable
         ObjectDisposedException.ThrowIf(disposed != 0, this);
 
         ResourceKeyEntry entry = keys.GetOrAdd(key);
-        SemaphoreSlim reloadLock = reloadLocks.GetOrAdd(entry.Slot, _ => new SemaphoreSlim(1, 1));
-        await reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        if (!resources.ContainsKey(entry.Slot))
         {
-            uint generation = 0;
-            if (resources.TryGetValue(entry.Slot, out Lazy<Task<IResourceRecord>>? current))
-            {
-                IResourceRecord currentRecord = await current.Value
-                    .WaitAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                generation = checked(((ResourceRecord<T>)currentRecord).Generation + 1);
-            }
+            return await LoadAsync(key, cancellationToken).ConfigureAwait(false);
+        }
 
-            ResourceLoadPath path = new(entry.Slot, parent: null);
-            IResourceRecord untypedRecord = await LoadCoreAsync<T>(
-                key,
-                entry,
-                path,
-                generation).ConfigureAwait(false);
-            ResourceRecord<T> record = (ResourceRecord<T>)untypedRecord;
-            Lazy<Task<IResourceRecord>> replacement = new(
-                () => Task.FromResult(untypedRecord),
-                LazyThreadSafetyMode.ExecutionAndPublication);
-            _ = replacement.Value;
-            resources[entry.Slot] = replacement;
-            return new ResourceHandle<T>(key, this, entry.Slot);
-        }
-        finally
+        uint[] reloadOrder = GetDependentReloadOrder(entry.Slot);
+        foreach (uint slot in reloadOrder)
         {
-            reloadLock.Release();
+            await ReloadCurrentAsync(slot, cancellationToken).ConfigureAwait(false);
         }
+
+        return new ResourceHandle<T>(key, this, entry.Slot);
     }
 
     public async ValueTask DisposeAsync()
@@ -195,6 +176,22 @@ public sealed class ResourceStore : IAsyncDisposable
         return (ResourceRecord<T>)pending.Value.Result;
     }
 
+    internal async ValueTask<IResourceRecord> LoadNextGenerationAsync<T>(
+        AssetKey<T> key,
+        uint generation,
+        CancellationToken cancellationToken)
+        where T : notnull
+    {
+        ResourceKeyEntry entry = keys.GetOrAdd(key);
+        ResourceLoadPath path = new(entry.Slot, parent: null);
+        return await LoadCoreAsync<T>(
+            key,
+            entry,
+            path,
+            generation,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async ValueTask<ResourceHandle<T>> LoadAsync<T>(
         AssetKey<T> key,
         ResourceLoadPath? path,
@@ -216,7 +213,12 @@ public sealed class ResourceStore : IAsyncDisposable
         Lazy<Task<IResourceRecord>> pending = resources.GetOrAdd(
             entry.Slot,
             _ => new Lazy<Task<IResourceRecord>>(
-                () => LoadCoreAsync<T>(key, entry, currentPath, generation: 0),
+                () => LoadCoreAsync<T>(
+                    key,
+                    entry,
+                    currentPath,
+                    generation: 0,
+                    CancellationToken.None),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
         try
@@ -242,7 +244,8 @@ public sealed class ResourceStore : IAsyncDisposable
         AssetKey<T> key,
         ResourceKeyEntry entry,
         ResourceLoadPath path,
-        uint generation)
+        uint generation,
+        CancellationToken cancellationToken)
         where T : notnull
     {
         if (!resolvers.TryGetValue(entry.Scheme, out IAssetResolver? resolver))
@@ -258,7 +261,7 @@ public sealed class ResourceStore : IAsyncDisposable
         }
 
         await using AssetData data = await resolver
-            .OpenAsync(entry.Address)
+            .OpenAsync(entry.Address, cancellationToken)
             .ConfigureAwait(false);
         ResourceLoadContext context = new(
             data,
@@ -269,7 +272,9 @@ public sealed class ResourceStore : IAsyncDisposable
 
         try
         {
-            T resource = await loader.LoadAsync<T>(context).ConfigureAwait(false);
+            T resource = await loader
+                .LoadAsync<T>(context, cancellationToken)
+                .ConfigureAwait(false);
             if (resource is null)
             {
                 throw new ResourceLoadException(
@@ -277,6 +282,7 @@ public sealed class ResourceStore : IAsyncDisposable
             }
 
             ResourceRecord<T> record = new(
+                key,
                 entry.Slot,
                 generation,
                 resource,
@@ -297,6 +303,71 @@ public sealed class ResourceStore : IAsyncDisposable
             throw new ResourceLoadException(
                 $"The resource '{key}' could not be loaded.",
                 exception);
+        }
+    }
+
+    private uint[] GetDependentReloadOrder(uint rootSlot)
+    {
+        Dictionary<uint, IResourceRecord> current = [];
+        foreach ((uint slot, Lazy<Task<IResourceRecord>> pending) in resources)
+        {
+            if (pending.IsValueCreated && pending.Value.IsCompletedSuccessfully)
+            {
+                current.Add(slot, pending.Value.Result);
+            }
+        }
+
+        List<uint> order = [];
+        HashSet<uint> visited = [];
+        AddDependents(rootSlot);
+        return [.. order];
+
+        void AddDependents(uint slot)
+        {
+            if (!visited.Add(slot))
+            {
+                return;
+            }
+
+            order.Add(slot);
+            foreach ((uint candidateSlot, IResourceRecord candidate) in current)
+            {
+                if (candidate.Dependencies.Span.Contains(slot))
+                {
+                    AddDependents(candidateSlot);
+                }
+            }
+        }
+    }
+
+    private async ValueTask ReloadCurrentAsync(
+        uint slot,
+        CancellationToken cancellationToken)
+    {
+        SemaphoreSlim reloadLock = reloadLocks.GetOrAdd(slot, _ => new SemaphoreSlim(1, 1));
+        await reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!resources.TryGetValue(slot, out Lazy<Task<IResourceRecord>>? current))
+            {
+                return;
+            }
+
+            IResourceRecord currentRecord = await current.Value
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            IResourceRecord replacementRecord = await currentRecord
+                .ReloadAsync(this, cancellationToken)
+                .ConfigureAwait(false);
+            Lazy<Task<IResourceRecord>> replacement = new(
+                () => Task.FromResult(replacementRecord),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+            _ = replacement.Value;
+            resources[slot] = replacement;
+        }
+        finally
+        {
+            reloadLock.Release();
         }
     }
 }

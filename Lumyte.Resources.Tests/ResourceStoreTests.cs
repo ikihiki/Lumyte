@@ -255,6 +255,31 @@ public sealed class ResourceStoreTests
     }
 
     [Fact]
+    public async Task ReloadsDependentsAfterTheirDependency()
+    {
+        AddressedResolver resolver = new(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["parent"] = "parent",
+                ["first-child"] = "first",
+                ["second-child"] = "second"
+            });
+        ResourceStore store = CreateStore(
+            [resolver],
+            [new TextResourceLoader(), new ParentResourceLoader()]);
+        AssetKey<ParentResource> parentKey = Asset.From<ParentResource>("memory:parent");
+        AssetKey<TextResource> childKey = Asset.From<TextResource>("memory:first-child");
+        ResourceHandle<ParentResource> parent = await store.LoadAsync(parentKey);
+        resolver.Set("first-child", "updated");
+
+        await store.ReloadAsync(childKey);
+
+        Assert.Equal("updated", parent.Value.FirstChild.Text);
+        Assert.Equal("second", parent.Value.SecondChild.Text);
+        Assert.Equal(1u, parent.Generation);
+    }
+
+    [Fact]
     public async Task RejectsDependencyCycles()
     {
         ResourceStore storeWithBothLoaders = CreateStore(
@@ -511,6 +536,25 @@ public sealed class ResourceStoreTests
                 new AssetData(
                     new MemoryStream(Encoding.UTF8.GetBytes(Content)),
                     new AssetLocation("memory", address.ToString())));
+        }
+    }
+
+    private sealed class AddressedResolver(Dictionary<string, string> content) : IAssetResolver
+    {
+        public string Scheme => "memory";
+
+        public void Set(string address, string value) => content[address] = value;
+
+        public ValueTask<AssetData> OpenAsync(
+            AssetAddress address,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string text = address.ToString();
+            return ValueTask.FromResult(
+                new AssetData(
+                    new MemoryStream(Encoding.UTF8.GetBytes(content[text])),
+                    new AssetLocation("memory", text)));
         }
     }
 
