@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace Lumyte.Resources;
 
@@ -84,19 +85,54 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(disposed != 0, this);
 
-        ResourceKeyEntry entry = keys.GetOrAdd(key);
-        if (!resources.ContainsKey(entry.Slot))
-        {
-            return await LoadAsync(key, cancellationToken).ConfigureAwait(false);
-        }
+        using Activity? activity = ResourcesDiagnostics.Activities.StartActivity(
+            "ResourceStore.Reload",
+            ActivityKind.Internal);
+        activity?.SetTag("resource.type", typeof(T).FullName);
+        activity?.SetTag("asset.scheme", key.Scheme.ToString());
 
-        uint[] reloadOrder = GetDependentReloadOrder(entry.Slot);
-        foreach (uint slot in reloadOrder)
+        try
         {
-            await ReloadCurrentAsync(slot, cancellationToken).ConfigureAwait(false);
-        }
+            ResourceKeyEntry entry = keys.GetOrAdd(key);
+            if (!resources.ContainsKey(entry.Slot))
+            {
+                ResourceHandle<T> loaded = await LoadAsync(key, cancellationToken)
+                    .ConfigureAwait(false);
+                activity?.SetTag("resource.generation", loaded.Generation);
+                activity?.SetTag("resource.reload.propagated", 0);
+                ResourcesDiagnostics.ReloadOperations.Add(
+                    1,
+                    new KeyValuePair<string, object?>("outcome", "loaded"));
+                ResourcesDiagnostics.ReloadPropagation.Record(0);
+                return loaded;
+            }
 
-        return new ResourceHandle<T>(key, this, entry.Slot);
+            uint[] reloadOrder = GetDependentReloadOrder(entry.Slot);
+            foreach (uint slot in reloadOrder)
+            {
+                await ReloadCurrentAsync(slot, cancellationToken).ConfigureAwait(false);
+            }
+
+            ResourceHandle<T> handle = new(key, this, entry.Slot);
+            int propagated = reloadOrder.Length - 1;
+            activity?.SetTag("resource.generation", handle.Generation);
+            activity?.SetTag("resource.reload.propagated", propagated);
+            ResourcesDiagnostics.ReloadOperations.Add(
+                1,
+                new KeyValuePair<string, object?>("outcome", "succeeded"));
+            ResourcesDiagnostics.ReloadPropagation.Record(propagated);
+            return handle;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("error.type", exception.GetType().FullName);
+            ResourcesDiagnostics.ReloadOperations.Add(
+                1,
+                new("outcome", "failed"),
+                new("error.type", exception.GetType().Name));
+            throw;
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -130,6 +166,10 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             await completed[index].DisposeAsync().ConfigureAwait(false);
         }
+
+        int loadedResourceCount = resources.Values.Count(
+            pending => pending.IsValueCreated && pending.Value.IsCompletedSuccessfully);
+        ResourcesDiagnostics.LoadedResources.Add(-loadedResourceCount);
 
         resources.Clear();
         foreach (SemaphoreSlim reloadLock in reloadLocks.Values)
@@ -200,6 +240,14 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(disposed != 0, this);
 
+        long started = Stopwatch.GetTimestamp();
+        using Activity? activity = ResourcesDiagnostics.Activities.StartActivity(
+            "ResourceStore.Load",
+            ActivityKind.Internal);
+        activity?.SetTag("resource.type", typeof(T).FullName);
+        activity?.SetTag("asset.scheme", key.Scheme.ToString());
+        ResourcesDiagnostics.ActiveLoads.Add(1);
+
         ResourceKeyEntry entry = keys.GetOrAdd(key);
         if (path?.Contains(entry.Slot) == true)
         {
@@ -210,16 +258,17 @@ public sealed class ResourceStore : IAsyncDisposable
         ResourceLoadPath currentPath = path is null
             ? new ResourceLoadPath(entry.Slot, parent: null)
             : path.Add(entry.Slot);
-        Lazy<Task<IResourceRecord>> pending = resources.GetOrAdd(
-            entry.Slot,
-            _ => new Lazy<Task<IResourceRecord>>(
+        Lazy<Task<IResourceRecord>> candidate = new(
                 () => LoadCoreAsync<T>(
                     key,
                     entry,
                     currentPath,
                     generation: 0,
                     CancellationToken.None),
-                LazyThreadSafetyMode.ExecutionAndPublication));
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        Lazy<Task<IResourceRecord>> pending = resources.GetOrAdd(entry.Slot, candidate);
+        bool cacheHit = !ReferenceEquals(candidate, pending);
+        activity?.SetTag("resource.cache.hit", cacheHit);
 
         try
         {
@@ -227,16 +276,35 @@ public sealed class ResourceStore : IAsyncDisposable
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
             ResourceRecord<T> record = (ResourceRecord<T>)untypedRecord;
+            activity?.SetTag("resource.generation", record.Generation);
+            ResourcesDiagnostics.LoadRequests.Add(
+                1,
+                new("outcome", "succeeded"),
+                new("cache.hit", cacheHit));
             return new ResourceHandle<T>(key, this, entry.Slot);
         }
-        catch
+        catch (Exception exception)
         {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("error.type", exception.GetType().FullName);
+            ResourcesDiagnostics.LoadRequests.Add(
+                1,
+                new("outcome", "failed"),
+                new("cache.hit", cacheHit),
+                new("error.type", exception.GetType().Name));
             if (pending.IsValueCreated && pending.Value.IsFaulted)
             {
                 resources.TryRemove(entry.Slot, out _);
             }
 
             throw;
+        }
+        finally
+        {
+            ResourcesDiagnostics.ActiveLoads.Add(-1);
+            ResourcesDiagnostics.LoadDuration.Record(
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                new KeyValuePair<string, object?>("cache.hit", cacheHit));
         }
     }
 
@@ -292,6 +360,11 @@ public sealed class ResourceStore : IAsyncDisposable
                 completedResources.Add(record);
             }
 
+            if (generation == 0)
+            {
+                ResourcesDiagnostics.LoadedResources.Add(1);
+            }
+
             return record;
         }
         catch (ResourceException)
@@ -344,6 +417,10 @@ public sealed class ResourceStore : IAsyncDisposable
         uint slot,
         CancellationToken cancellationToken)
     {
+        using Activity? activity = ResourcesDiagnostics.Activities.StartActivity(
+            "ResourceStore.ReloadResource",
+            ActivityKind.Internal);
+        activity?.SetTag("resource.slot", slot);
         SemaphoreSlim reloadLock = reloadLocks.GetOrAdd(slot, _ => new SemaphoreSlim(1, 1));
         await reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -359,11 +436,19 @@ public sealed class ResourceStore : IAsyncDisposable
             IResourceRecord replacementRecord = await currentRecord
                 .ReloadAsync(this, cancellationToken)
                 .ConfigureAwait(false);
+            activity?.SetTag("resource.generation", replacementRecord.Generation);
             Lazy<Task<IResourceRecord>> replacement = new(
                 () => Task.FromResult(replacementRecord),
                 LazyThreadSafetyMode.ExecutionAndPublication);
             _ = replacement.Value;
             resources[slot] = replacement;
+            ResourcesDiagnostics.ReloadedResources.Add(1);
+        }
+        catch (Exception exception)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("error.type", exception.GetType().FullName);
+            throw;
         }
         finally
         {
