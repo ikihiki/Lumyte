@@ -143,9 +143,10 @@ public sealed class ResourceStoreTests
 
         ResourceHandle<ParentResource> parent = await store.LoadAsync(parentKey);
 
-        Assert.Equal("hello", parent.Value.Child.Text);
-        Assert.Equal(1, store.GetDependencyCount(parentKey));
-        Assert.Equal(2, resolver.OpenCount);
+        Assert.Equal("hello", parent.Value.FirstChild.Text);
+        Assert.Equal("hello", parent.Value.SecondChild.Text);
+        Assert.Equal(2, store.GetDependencyCount(parentKey));
+        Assert.Equal(3, resolver.OpenCount);
     }
 
     [Fact]
@@ -190,19 +191,23 @@ public sealed class ResourceStoreTests
 
     private sealed record TextResource(string Text, string Selector);
 
-    private sealed record ParentResource(TextResource Child);
+    private sealed record ParentResource(
+        TextResource FirstChild,
+        TextResource SecondChild);
 
     private sealed class ParentResourceLoader : IResourceLoader<ParentResource>
     {
-        public async ValueTask<T> LoadAsync<T>(
+        public async ValueTask<ParentResource> LoadAsync(
             ResourceLoadContext context,
             CancellationToken cancellationToken = default)
-            where T : notnull
         {
-            ResourceHandle<TextResource> child = await context.LoadAsync(
-                Asset.From<TextResource>("memory:child"),
+            ResourceHandle<TextResource> firstChild = await context.LoadAsync(
+                Asset.From<TextResource>("memory:first-child"),
                 cancellationToken);
-            return (T)(object)new ParentResource(child.Value);
+            ResourceHandle<TextResource> secondChild = await context.LoadAsync(
+                Asset.From<TextResource>("memory:second-child"),
+                cancellationToken);
+            return new ParentResource(firstChild.Value, secondChild.Value);
         }
     }
 
@@ -212,29 +217,27 @@ public sealed class ResourceStoreTests
 
     private sealed class FirstCycleResourceLoader : IResourceLoader<FirstCycleResource>
     {
-        public async ValueTask<T> LoadAsync<T>(
+        public async ValueTask<FirstCycleResource> LoadAsync(
             ResourceLoadContext context,
             CancellationToken cancellationToken = default)
-            where T : notnull
         {
             await context.LoadAsync(
                 Asset.From<SecondCycleResource>("memory:second"),
                 cancellationToken);
-            return (T)(object)new FirstCycleResource();
+            return new FirstCycleResource();
         }
     }
 
     private sealed class SecondCycleResourceLoader : IResourceLoader<SecondCycleResource>
     {
-        public async ValueTask<T> LoadAsync<T>(
+        public async ValueTask<SecondCycleResource> LoadAsync(
             ResourceLoadContext context,
             CancellationToken cancellationToken = default)
-            where T : notnull
         {
             await context.LoadAsync(
                 Asset.From<FirstCycleResource>("memory:first"),
                 cancellationToken);
-            return (T)(object)new SecondCycleResource();
+            return new SecondCycleResource();
         }
     }
 
@@ -254,52 +257,46 @@ public sealed class ResourceStoreTests
     private sealed class DisposableChildLoader(List<string> disposalOrder)
         : IResourceLoader<DisposableChild>
     {
-        public ValueTask<T> LoadAsync<T>(
+        public ValueTask<DisposableChild> LoadAsync(
             ResourceLoadContext context,
-            CancellationToken cancellationToken = default)
-            where T : notnull =>
-            ValueTask.FromResult((T)(object)new DisposableChild(disposalOrder));
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new DisposableChild(disposalOrder));
     }
 
     private sealed class DisposableParentLoader(List<string> disposalOrder)
         : IResourceLoader<DisposableParent>
     {
-        public async ValueTask<T> LoadAsync<T>(
+        public async ValueTask<DisposableParent> LoadAsync(
             ResourceLoadContext context,
             CancellationToken cancellationToken = default)
-            where T : notnull
         {
             await context.LoadAsync(
                 Asset.From<DisposableChild>("memory:child"),
                 cancellationToken);
-            return (T)(object)new DisposableParent(disposalOrder);
+            return new DisposableParent(disposalOrder);
         }
     }
 
     private sealed class TextResourceLoader : IResourceLoader<TextResource>
     {
-        public async ValueTask<T> LoadAsync<T>(
+        public async ValueTask<TextResource> LoadAsync(
             ResourceLoadContext context,
             CancellationToken cancellationToken = default)
-            where T : notnull
         {
-            Assert.Equal(typeof(TextResource), typeof(T));
             using StreamReader reader = new(
                 context.Content,
                 Encoding.UTF8,
                 leaveOpen: true);
             string text = await reader.ReadToEndAsync(cancellationToken);
-            TextResource resource = new(text, context.Selector.ToString());
-            return (T)(object)resource;
+            return new TextResource(text, context.Selector.ToString());
         }
     }
 
     private sealed class FailingResourceLoader : IResourceLoader<TextResource>
     {
-        public ValueTask<T> LoadAsync<T>(
+        public ValueTask<TextResource> LoadAsync(
             ResourceLoadContext context,
-            CancellationToken cancellationToken = default)
-            where T : notnull =>
+            CancellationToken cancellationToken = default) =>
             throw new InvalidDataException("Invalid test data.");
     }
 
