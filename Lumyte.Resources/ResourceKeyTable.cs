@@ -24,6 +24,13 @@ internal sealed class ResourceKeyTable
             (Table: this, Key: key));
     }
 
+    internal ResourceKeyEntry[] Find(string scheme, string address) =>
+        entries.Values
+            .Where(entry =>
+                string.Equals(entry.Scheme, scheme, StringComparison.Ordinal)
+                && string.Equals(entry.Address.ToString(), address, StringComparison.Ordinal))
+            .ToArray();
+
     private readonly record struct ResourceKeyIdentity(
         string Text,
         RuntimeTypeHandle ResultType);

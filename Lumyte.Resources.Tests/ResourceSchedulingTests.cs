@@ -149,6 +149,60 @@ public sealed class ResourceSchedulingTests
         Assert.Equal("child", parent.Value.Child.Name);
     }
 
+    [Fact]
+    public async Task WaitingLoadAgesAheadOfNewerWork()
+    {
+        var timeProvider = new ManualTimeProvider();
+        LoadCoordinator coordinator = new("blocker");
+        ResourceStore store = CreateStore(
+            coordinator,
+            new ResourceSchedulingOptions
+            {
+                MaxConcurrentLoads = 1,
+                AgingInterval = TimeSpan.FromSeconds(1),
+                TimeProvider = timeProvider
+            });
+        Task blockerStarted = coordinator.ExpectStart("blocker");
+        Task<ResourceHandle<TestResource>> blocker = store.LoadAsync(
+            Asset.From<TestResource>("memory:blocker")).AsTask();
+        await blockerStarted;
+        Task<ResourceHandle<TestResource>> aged = store.LoadAsync(
+            Asset.From<TestResource>("memory:aged"),
+            new ResourceLoadOptions { Priority = ResourceLoadPriority.Low }).AsTask();
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        Task<ResourceHandle<TestResource>> newer = store.LoadAsync(
+            Asset.From<TestResource>("memory:newer")).AsTask();
+
+        coordinator.ReleaseBlocker();
+        await Task.WhenAll(blocker, aged, newer);
+
+        Assert.Equal(["blocker", "aged", "newer"], coordinator.StartOrder);
+    }
+
+    [Fact]
+    public async Task LastCanceledWaiterRemovesQueuedLoad()
+    {
+        LoadCoordinator coordinator = new("blocker");
+        ResourceStore store = CreateStore(
+            coordinator,
+            new ResourceSchedulingOptions { MaxConcurrentLoads = 1 });
+        Task blockerStarted = coordinator.ExpectStart("blocker");
+        Task<ResourceHandle<TestResource>> blocker = store.LoadAsync(
+            Asset.From<TestResource>("memory:blocker")).AsTask();
+        await blockerStarted;
+        using CancellationTokenSource cancellation = new();
+        Task<ResourceHandle<TestResource>> canceled = store.LoadAsync(
+            Asset.From<TestResource>("memory:canceled"),
+            cancellation.Token).AsTask();
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await canceled);
+        coordinator.ReleaseBlocker();
+        await blocker;
+
+        Assert.DoesNotContain("canceled", coordinator.StartOrder);
+    }
+
     private static ResourceStore CreateStore(
         LoadCoordinator coordinator,
         ResourceSchedulingOptions scheduling) =>
@@ -285,5 +339,17 @@ public sealed class ResourceSchedulingTests
                     new MemoryStream(Encoding.UTF8.GetBytes(name)),
                     new AssetLocation("memory", name)));
         }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Volatile.Read(ref timestamp);
+
+        public void Advance(TimeSpan duration) =>
+            Interlocked.Add(ref timestamp, duration.Ticks);
     }
 }

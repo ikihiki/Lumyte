@@ -44,6 +44,9 @@ public static class ResourcesDiagnostics
     internal static Counter<long> ReloadedResources { get; } =
         Metrics.CreateCounter<long>("lumyte.resources.reload.resources");
 
+    internal static Counter<long> HotReloadOperations { get; } =
+        Metrics.CreateCounter<long>("lumyte.resources.hot_reload.operations");
+
     internal static Histogram<long> ReloadPropagation { get; } =
         Metrics.CreateHistogram<long>(
             "lumyte.resources.reload.propagated",

@@ -8,6 +8,8 @@ internal sealed class ResourceLoadScheduler
     private readonly int maxConcurrentLoads;
     private readonly IReadOnlyDictionary<ResourceExecutionLane, int> laneLimits;
     private readonly IReadOnlyDictionary<ResourceExecutionLane, SemaphoreSlim> laneGates;
+    private readonly TimeSpan agingInterval;
+    private readonly TimeProvider timeProvider;
     private readonly Dictionary<ResourceExecutionLane, int> activeByLane = [];
     private readonly Dictionary<uint, ResourceLoadPriority> priorityHints = [];
     private readonly List<WorkItem> pending = [];
@@ -17,7 +19,11 @@ internal sealed class ResourceLoadScheduler
     internal ResourceLoadScheduler(ResourceSchedulingOptions options)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxConcurrentLoads, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.AgingInterval, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(options.TimeProvider);
         maxConcurrentLoads = options.MaxConcurrentLoads;
+        agingInterval = options.AgingInterval;
+        timeProvider = options.TimeProvider;
         laneLimits = new Dictionary<ResourceExecutionLane, int>(
             options.MaxConcurrentLoadsPerLane);
         var configuredLaneGates = new Dictionary<ResourceExecutionLane, SemaphoreSlim>();
@@ -52,6 +58,7 @@ internal sealed class ResourceLoadScheduler
             Interlocked.Increment(ref sequence),
             operation,
             cancellationToken,
+            timeProvider.GetTimestamp(),
             this);
         lock (gate)
         {
@@ -66,6 +73,7 @@ internal sealed class ResourceLoadScheduler
                 1,
                 new("lane", lane.Name),
                 new("priority", priority.ToString()));
+            item.RegisterCancellation();
             Pump();
         }
 
@@ -129,7 +137,7 @@ internal sealed class ResourceLoadScheduler
         {
             WorkItem? next = pending
                 .Where(CanRun)
-                .OrderByDescending(item => item.Priority)
+                .OrderByDescending(GetEffectivePriority)
                 .ThenBy(item => item.Sequence)
                 .FirstOrDefault();
             if (next is null)
@@ -143,7 +151,7 @@ internal sealed class ResourceLoadScheduler
                 new("lane", next.Lane.Name),
                 new("priority", next.Priority.ToString()));
             ResourcesDiagnostics.SchedulingWaitDuration.Record(
-                Stopwatch.GetElapsedTime(next.EnqueuedAt).TotalMilliseconds,
+                timeProvider.GetElapsedTime(next.EnqueuedAt).TotalMilliseconds,
                 new("lane", next.Lane.Name),
                 new("priority", next.Priority.ToString()));
             active++;
@@ -153,6 +161,15 @@ internal sealed class ResourceLoadScheduler
                 new KeyValuePair<string, object?>("lane", next.Lane.Name));
             next.Start();
         }
+    }
+
+    private int GetEffectivePriority(WorkItem item)
+    {
+        long boosts = timeProvider.GetElapsedTime(item.EnqueuedAt).Ticks
+            / agingInterval.Ticks;
+        return (int)Math.Min(
+            (long)ResourceLoadPriority.Critical,
+            (long)item.Priority + boosts);
     }
 
     private bool CanRun(WorkItem item) =>
@@ -172,23 +189,75 @@ internal sealed class ResourceLoadScheduler
         }
     }
 
-    private abstract class WorkItem(
-        uint slot,
-        ResourceExecutionLane lane,
-        ResourceLoadPriority priority,
-        long sequence)
+    private void CancelPending(WorkItem item)
     {
-        internal uint Slot { get; } = slot;
+        lock (gate)
+        {
+            if (!pending.Remove(item))
+            {
+                return;
+            }
 
-        internal ResourceExecutionLane Lane { get; } = lane;
+            ResourcesDiagnostics.QueuedLoads.Add(
+                -1,
+                new("lane", item.Lane.Name),
+                new("priority", item.Priority.ToString()));
+            item.SetCanceled();
+            Pump();
+        }
+    }
 
-        internal ResourceLoadPriority Priority { get; set; } = priority;
+    private abstract class WorkItem
+    {
+        protected WorkItem(
+            uint slot,
+            ResourceExecutionLane lane,
+            ResourceLoadPriority priority,
+            long sequence,
+            CancellationToken cancellationToken,
+            long enqueuedAt,
+            ResourceLoadScheduler owner)
+        {
+            Slot = slot;
+            Lane = lane;
+            Priority = priority;
+            Sequence = sequence;
+            CancellationToken = cancellationToken;
+            EnqueuedAt = enqueuedAt;
+            Owner = owner;
+        }
 
-        internal long Sequence { get; } = sequence;
+        internal uint Slot { get; }
 
-        internal long EnqueuedAt { get; } = Stopwatch.GetTimestamp();
+        internal ResourceExecutionLane Lane { get; }
+
+        internal ResourceLoadPriority Priority { get; set; }
+
+        internal long Sequence { get; }
+
+        private CancellationTokenRegistration cancellationRegistration;
+
+        internal long EnqueuedAt { get; }
+
+        protected CancellationToken CancellationToken { get; }
+
+        protected ResourceLoadScheduler Owner { get; }
+
+        internal void RegisterCancellation() => cancellationRegistration =
+            CancellationToken.Register(
+                static state =>
+                {
+                    WorkItem item = (WorkItem)state!;
+                    item.Owner.CancelPending(item);
+                },
+                this);
+
+        internal void DisposeCancellationRegistration() => cancellationRegistration.Dispose();
 
         internal abstract void Start();
+
+        internal abstract void SetCanceled();
+
     }
 
     private sealed class WorkItem<T>(
@@ -198,26 +267,44 @@ internal sealed class ResourceLoadScheduler
         long sequence,
         Func<CancellationToken, ValueTask<T>> operation,
         CancellationToken cancellationToken,
+        long enqueuedAt,
         ResourceLoadScheduler owner)
-        : WorkItem(slot, lane, priority, sequence)
+        : WorkItem(
+            slot,
+            lane,
+            priority,
+            sequence,
+            cancellationToken,
+            enqueuedAt,
+            owner)
     {
         private readonly TaskCompletionSource<T> completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal Task<T> Task => completion.Task;
 
-        internal override void Start() => _ = RunAsync();
+        internal override void Start()
+        {
+            DisposeCancellationRegistration();
+            _ = RunAsync();
+        }
+
+        internal override void SetCanceled()
+        {
+            DisposeCancellationRegistration();
+            completion.TrySetCanceled(CancellationToken);
+        }
 
         private async Task RunAsync()
         {
             try
             {
                 completion.TrySetResult(
-                    await operation(cancellationToken).ConfigureAwait(false));
+                    await operation(CancellationToken).ConfigureAwait(false));
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (CancellationToken.IsCancellationRequested)
             {
-                completion.TrySetCanceled(cancellationToken);
+                completion.TrySetCanceled(CancellationToken);
             }
             catch (Exception exception)
             {
@@ -225,7 +312,7 @@ internal sealed class ResourceLoadScheduler
             }
             finally
             {
-                owner.Complete(this);
+                Owner.Complete(this);
             }
         }
     }
