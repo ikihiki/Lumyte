@@ -19,10 +19,18 @@ public sealed class ResourceScope : IAsyncDisposable
         AssetKey<T> key,
         CancellationToken cancellationToken = default)
         where T : notnull
+        => await LoadAsync(key, new ResourceLoadOptions(), cancellationToken)
+            .ConfigureAwait(false);
+
+    public async ValueTask<ResourceHandle<T>> LoadAsync<T>(
+        AssetKey<T> key,
+        ResourceLoadOptions loadOptions,
+        CancellationToken cancellationToken = default)
+        where T : notnull
     {
         ObjectDisposedException.ThrowIf(disposed != 0, this);
         ResourceHandle<T> handle = await store
-            .LoadAsync(key, cancellationToken)
+            .LoadAsync(key, loadOptions, cancellationToken)
             .ConfigureAwait(false);
         uint[] retainedSlots = store.GetDependencyClosure(handle.Id.Slot);
         lock (slotsLock)
@@ -38,6 +46,22 @@ public sealed class ResourceScope : IAsyncDisposable
         }
 
         return handle;
+    }
+
+    public ValueTask<ResourceLoadBatchResult> LoadBatchAsync(
+        ResourceLoadBatch batch,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+        if (!ReferenceEquals(batch.Store, store))
+        {
+            throw new ArgumentException(
+                "The resource load batch belongs to a different store.",
+                nameof(batch));
+        }
+
+        return batch.LoadAsync(this, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

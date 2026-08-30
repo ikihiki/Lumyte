@@ -9,18 +9,21 @@ public sealed class ResourceLoadContext
         int selectorStart,
         ResourceStore store,
         ResourceLoadPath path,
-        IReadOnlyDictionary<uint, IResourceRecord>? candidates)
+        IReadOnlyDictionary<uint, IResourceRecord>? candidates,
+        ResourceLoadOptions loadOptions)
     {
         Data = data;
         Selector = new ResourceSelector(keyText.AsMemory(selectorStart));
         this.store = store;
         this.path = path;
         this.candidates = candidates;
+        this.loadOptions = loadOptions;
     }
 
     private readonly ResourceStore store;
     private readonly ResourceLoadPath path;
     private readonly IReadOnlyDictionary<uint, IResourceRecord>? candidates;
+    private readonly ResourceLoadOptions loadOptions;
     private readonly List<IResourceRecord> dependencies = [];
 
     public AssetData Data { get; }
@@ -35,7 +38,12 @@ public sealed class ResourceLoadContext
         where T : notnull
     {
         ResourceRecord<T> record = await store
-            .LoadDependencyRecordAsync(key, path, candidates, cancellationToken)
+            .LoadDependencyRecordAsync(
+                key,
+                path,
+                candidates,
+                loadOptions,
+                cancellationToken)
             .ConfigureAwait(false);
         record.AddReference();
         dependencies.Add(record);

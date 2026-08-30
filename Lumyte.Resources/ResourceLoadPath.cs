@@ -13,6 +13,8 @@ internal sealed class ResourceLoadPath
 
     internal ResourceLoadPath Add(uint childSlot) => new(childSlot, this);
 
+    internal bool IsDependency => parent is not null;
+
     internal bool Contains(uint candidate)
     {
         for (ResourceLoadPath? current = this; current is not null; current = current.parent)

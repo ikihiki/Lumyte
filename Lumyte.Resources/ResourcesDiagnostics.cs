@@ -24,6 +24,17 @@ public static class ResourcesDiagnostics
     internal static UpDownCounter<long> ActiveLoads { get; } =
         Metrics.CreateUpDownCounter<long>("lumyte.resources.load.active");
 
+    internal static UpDownCounter<long> QueuedLoads { get; } =
+        Metrics.CreateUpDownCounter<long>("lumyte.resources.load.queued");
+
+    internal static UpDownCounter<long> ScheduledLoads { get; } =
+        Metrics.CreateUpDownCounter<long>("lumyte.resources.load.scheduled");
+
+    internal static Histogram<double> SchedulingWaitDuration { get; } =
+        Metrics.CreateHistogram<double>(
+            "lumyte.resources.load.scheduling_wait",
+            unit: "ms");
+
     internal static UpDownCounter<long> LoadedResources { get; } =
         Metrics.CreateUpDownCounter<long>("lumyte.resources.loaded");
 
