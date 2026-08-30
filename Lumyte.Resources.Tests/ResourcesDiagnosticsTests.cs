@@ -8,6 +8,20 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourcesDiagnosticsTests
 {
     [Fact]
+    public async Task DiagnosticSnapshotDescribesLoadedResource()
+    {
+        ResourceStore store = CreateStore();
+        await store.LoadAsync(Asset.From<TestResource>("memory:item"));
+
+        ResourceDiagnosticEntry entry = Assert.Single(store.GetDiagnosticSnapshot().Resources);
+
+        Assert.Equal("memory:item", entry.Key);
+        Assert.Equal(ResourceDiagnosticState.Loaded, entry.State);
+        Assert.Equal(0u, entry.Generation);
+        Assert.Null(entry.Error);
+    }
+
+    [Fact]
     public async Task LoadReportsCacheOutcomeAndActivityTags()
     {
         var activities = new ConcurrentQueue<Activity>();
@@ -69,7 +83,7 @@ public sealed class ResourcesDiagnosticsTests
         var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == ResourcesDiagnostics.ActivitySourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) =>
+            Sample = (ref _) =>
                 ActivitySamplingResult.AllData,
             ActivityStopped = activities.Enqueue,
         };

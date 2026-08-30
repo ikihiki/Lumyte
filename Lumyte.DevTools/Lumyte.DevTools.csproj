@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Transport-independent typed RPC and event infrastructure for Lumyte development tools.</Description>
+  </PropertyGroup>
+</Project>

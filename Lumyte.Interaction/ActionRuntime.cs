@@ -15,6 +15,7 @@ public sealed class ActionRuntime : IDisposable
     private readonly Dictionary<(object Source, Vector2CompositeBinding Binding), CompositeButtonState> compositeStates = [];
     private readonly Dictionary<ContributionKey, object> contributions = [];
     private BindingEntry[] bindings;
+    private ActionMap[] configuredMaps;
     private readonly List<IGamepad> gamepads = [];
     private readonly Dictionary<IGamepad, int> gamepadPlayers = [];
     private readonly List<IKeyboard> keyboards = [];
@@ -45,7 +46,8 @@ public sealed class ActionRuntime : IDisposable
     {
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         ArgumentNullException.ThrowIfNull(maps);
-        bindings = CompileBindings(maps);
+        configuredMaps = maps.ToArray();
+        bindings = CompileBindings(configuredMaps);
         foreach (IKeyboard keyboard in keyboards ?? [])
         {
             AddKeyboard(keyboard);
@@ -68,6 +70,24 @@ public sealed class ActionRuntime : IDisposable
     public event EventHandler<ActionValueChangedEventArgs>? ValueChanged;
 
     public event EventHandler<ActionPhaseChangedEventArgs>? PhaseChanged;
+    public ActionRuntimeSnapshot GetSnapshot()
+    {
+        ActionMapSnapshot[] mapSnapshots = configuredMaps.Select(map => new ActionMapSnapshot(
+            map.Name,
+            map.Priority,
+            map.Bindings.Select(binding => new ActionBindingSnapshot(
+                binding.Action.Id,
+                binding.BindingId,
+                binding.Control.ToString() ?? binding.Control.GetType().Name,
+                binding.Action.GetType().IsGenericType ? binding.Action.GetType().GetGenericArguments()[0].Name : "Unknown")).ToArray())).ToArray();
+        ActionStateSnapshot[] actionSnapshots = configuredMaps.SelectMany(map => map.Bindings)
+            .Select(binding => binding.Action).Distinct().Select(action => new ActionStateSnapshot(
+                action.Id,
+                action.GetType().IsGenericType ? action.GetType().GetGenericArguments()[0].Name : "Unknown",
+                values.GetValueOrDefault(action),
+                phases.GetValueOrDefault(action, ActionPhase.Waiting))).ToArray();
+        return new ActionRuntimeSnapshot(mapSnapshots, actionSnapshots);
+    }
 
     public T GetValue<T>(InputAction<T> action)
     {
@@ -138,6 +158,7 @@ public sealed class ActionRuntime : IDisposable
         transientGestureActions.Clear();
         performedActions.Clear();
         bindings = replacement;
+        configuredMaps = maps.ToArray();
         ResampleDevices();
     }
 

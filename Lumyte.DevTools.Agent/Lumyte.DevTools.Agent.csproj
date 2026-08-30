@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>MagicOnion client agent for connecting Lumyte hosts to DevTools servers.</Description></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Lumyte.DevTools/Lumyte.DevTools.csproj" /><PackageReference Include="MagicOnion.Client" /><PackageReference Include="Grpc.Net.Client" /></ItemGroup>
+</Project>

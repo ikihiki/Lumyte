@@ -2,6 +2,14 @@
   <Project Path="Lumyte.Benchmarks/Lumyte.Benchmarks.csproj" />
   <Project Path="Lumyte.Core/Lumyte.Core.csproj" />
   <Project Path="Lumyte.Core.Tests/Lumyte.Core.Tests.csproj" />
+  <Project Path="Lumyte.DevTools.Agent.Tests/Lumyte.DevTools.Agent.Tests.csproj" />
+  <Project Path="Lumyte.DevTools.Agent/Lumyte.DevTools.Agent.csproj" />
+  <Project Path="Lumyte.DevTools.Host.Tests/Lumyte.DevTools.Host.Tests.csproj" />
+  <Project Path="Lumyte.DevTools.Host/Lumyte.DevTools.Host.csproj" />
+  <Project Path="Lumyte.DevTools.Server.Tests/Lumyte.DevTools.Server.Tests.csproj" />
+  <Project Path="Lumyte.DevTools.Server/Lumyte.DevTools.Server.csproj" />
+  <Project Path="Lumyte.DevTools.Tests/Lumyte.DevTools.Tests.csproj" />
+  <Project Path="Lumyte.DevTools/Lumyte.DevTools.csproj" />
   <Project Path="Lumyte.Input/Lumyte.Input.csproj" />
   <Project Path="Lumyte.Interaction/Lumyte.Interaction.csproj" />
   <Project Path="Lumyte.Interaction.Tests/Lumyte.Interaction.Tests.csproj" />

@@ -7,3 +7,5 @@ artifacts/
 *.suo
 TestResults/
 BenchmarkDotNet.Artifacts/
+node_modules/
+Lumyte.DevTools.Server/wwwroot/

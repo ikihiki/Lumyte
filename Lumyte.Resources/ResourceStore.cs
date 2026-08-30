@@ -145,6 +145,25 @@ public sealed class ResourceStore : IAsyncDisposable
         LoadAsync(key, path: null, options, cancellationToken);
 
     /// <summary>Captures the currently loaded generations as one stable view.</summary>
+    public ResourceStoreDiagnosticSnapshot GetDiagnosticSnapshot()
+    {
+        ResourceDiagnosticEntry[] entries = resources.Select(pair =>
+        {
+            ResourceKeyEntry? key = keys.FindBySlot(pair.Key);
+            Lazy<Task<IResourceRecord>> pending = pair.Value;
+            if (!pending.IsValueCreated || !pending.Value.IsCompleted)
+            {
+                return new ResourceDiagnosticEntry(pair.Key, key?.Text ?? pair.Key.ToString(), key is null ? "Unknown" : Type.GetTypeFromHandle(key.ResultType)?.FullName ?? "Unknown", 0, ResourceDiagnosticState.Loading, 0, [], [], null);
+            }
+            if (pending.Value.IsFaulted)
+            {
+                return new ResourceDiagnosticEntry(pair.Key, key?.Text ?? pair.Key.ToString(), key is null ? "Unknown" : Type.GetTypeFromHandle(key.ResultType)?.FullName ?? "Unknown", 0, ResourceDiagnosticState.Faulted, 0, [], [], pending.Value.Exception?.GetBaseException().Message);
+            }
+            IResourceRecord record = pending.Value.Result;
+            return new ResourceDiagnosticEntry(record.Slot, key?.Text ?? record.Slot.ToString(), key is null ? "Unknown" : Type.GetTypeFromHandle(key.ResultType)?.FullName ?? "Unknown", record.Generation, ResourceDiagnosticState.Loaded, record.ReferenceCount, record.MemoryCosts.ToArray(), record.Dependencies.ToArray(), null);
+        }).OrderBy(entry => entry.Id).ToArray();
+        return new ResourceStoreDiagnosticSnapshot(entries);
+    }
     public ResourceSnapshot CreateSnapshot()
     {
         ObjectDisposedException.ThrowIf(disposed != 0, this);

@@ -24,6 +24,8 @@ internal sealed class ResourceKeyTable
             (Table: this, Key: key));
     }
 
+    internal ResourceKeyEntry? FindBySlot(uint slot) => entries.Values.FirstOrDefault(entry => entry.Slot == slot);
+
     internal ResourceKeyEntry[] Find(string scheme, string address) =>
         entries.Values
             .Where(entry =>
