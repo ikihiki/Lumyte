@@ -59,6 +59,23 @@ public sealed class ResourceStore : IAsyncDisposable
         where T : notnull =>
         LoadAsync(key, path: null, cancellationToken);
 
+    /// <summary>Captures the currently loaded generations as one stable view.</summary>
+    public ResourceSnapshot CreateSnapshot()
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+
+        Dictionary<uint, IResourceRecord> snapshot = [];
+        foreach ((uint slot, Lazy<Task<IResourceRecord>> pending) in resources)
+        {
+            if (pending.IsValueCreated && pending.Value.IsCompletedSuccessfully)
+            {
+                snapshot.Add(slot, pending.Value.Result);
+            }
+        }
+
+        return new ResourceSnapshot(this, snapshot);
+    }
+
     /// <summary>Loads a new generation and atomically makes it current.</summary>
     public async ValueTask<ResourceHandle<T>> ReloadAsync<T>(
         AssetKey<T> key,
@@ -88,10 +105,12 @@ public sealed class ResourceStore : IAsyncDisposable
                 path,
                 generation).ConfigureAwait(false);
             ResourceRecord<T> record = (ResourceRecord<T>)untypedRecord;
-            resources[entry.Slot] = new Lazy<Task<IResourceRecord>>(
+            Lazy<Task<IResourceRecord>> replacement = new(
                 () => Task.FromResult(untypedRecord),
                 LazyThreadSafetyMode.ExecutionAndPublication);
-            return new ResourceHandle<T>(key, record.Value, entry.Slot, record.Generation);
+            _ = replacement.Value;
+            resources[entry.Slot] = replacement;
+            return new ResourceHandle<T>(key, this, entry.Slot);
         }
         finally
         {
@@ -161,6 +180,21 @@ public sealed class ResourceStore : IAsyncDisposable
         return lazy.Value.Result.DependencyCount;
     }
 
+    internal ResourceRecord<T> GetCurrent<T>(ResourceId<T> id)
+        where T : notnull
+    {
+        ObjectDisposedException.ThrowIf(disposed != 0, this);
+        if (!resources.TryGetValue(id.Slot, out Lazy<Task<IResourceRecord>>? pending)
+            || !pending.IsValueCreated
+            || !pending.Value.IsCompletedSuccessfully)
+        {
+            throw new ResourceNotFoundException(
+                $"The resource slot '{id.Slot}' is not currently loaded.");
+        }
+
+        return (ResourceRecord<T>)pending.Value.Result;
+    }
+
     private async ValueTask<ResourceHandle<T>> LoadAsync<T>(
         AssetKey<T> key,
         ResourceLoadPath? path,
@@ -191,7 +225,7 @@ public sealed class ResourceStore : IAsyncDisposable
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
             ResourceRecord<T> record = (ResourceRecord<T>)untypedRecord;
-            return new ResourceHandle<T>(key, record.Value, entry.Slot, record.Generation);
+            return new ResourceHandle<T>(key, this, entry.Slot);
         }
         catch
         {

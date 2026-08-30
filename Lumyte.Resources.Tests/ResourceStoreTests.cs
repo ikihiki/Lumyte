@@ -47,7 +47,7 @@ public sealed class ResourceStoreTests
     }
 
     [Fact]
-    public async Task ReloadReplacesTheCurrentGeneration()
+    public async Task HandleTracksTheCurrentGeneration()
     {
         MutableResolver resolver = new("first");
         ResourceStore store = CreateStore(resolver, new TextResourceLoader());
@@ -58,11 +58,47 @@ public sealed class ResourceStoreTests
         ResourceHandle<TextResource> second = await store.ReloadAsync(key);
         ResourceHandle<TextResource> current = await store.LoadAsync(key);
 
-        Assert.Equal("first", first.Value.Text);
+        Assert.Equal("second", first.Value.Text);
         Assert.Equal("second", second.Value.Text);
         Assert.Equal(second, current);
-        Assert.Equal(0u, first.Generation);
+        Assert.Equal(1u, first.Generation);
         Assert.Equal(1u, second.Generation);
+    }
+
+    [Fact]
+    public async Task SnapshotKeepsOneGenerationStable()
+    {
+        MutableResolver resolver = new("first");
+        ResourceStore store = CreateStore(resolver, new TextResourceLoader());
+        AssetKey<TextResource> key = Asset.From<TextResource>("memory:item");
+        ResourceHandle<TextResource> handle = await store.LoadAsync(key);
+        ResourceSnapshot firstSnapshot = store.CreateSnapshot();
+        resolver.Content = "second";
+
+        await store.ReloadAsync(key);
+        ResourceSnapshot secondSnapshot = store.CreateSnapshot();
+
+        Assert.Equal("first", firstSnapshot.Get(handle).Text);
+        Assert.Equal(0u, firstSnapshot.GetGeneration(handle));
+        Assert.Equal("second", secondSnapshot.Get(handle.Id).Text);
+        Assert.Equal(1u, secondSnapshot.GetGeneration(handle.Id));
+    }
+
+    [Fact]
+    public async Task LeaseKeepsTheSelectedGeneration()
+    {
+        MutableResolver resolver = new("first");
+        ResourceStore store = CreateStore(resolver, new TextResourceLoader());
+        AssetKey<TextResource> key = Asset.From<TextResource>("memory:item");
+        ResourceHandle<TextResource> handle = await store.LoadAsync(key);
+        ResourceLease<TextResource> lease = store.CreateSnapshot().Lease(handle);
+        resolver.Content = "second";
+
+        await store.ReloadAsync(key);
+
+        Assert.Equal("first", lease.Value.Text);
+        Assert.Equal(0u, lease.Generation);
+        Assert.Equal("second", handle.Value.Text);
     }
 
     [Fact]

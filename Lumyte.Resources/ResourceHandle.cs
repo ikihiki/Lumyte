@@ -1,23 +1,26 @@
 namespace Lumyte.Resources;
 
-/// <summary>Provides typed access to one resource owned by a resource store.</summary>
+/// <summary>Provides typed access to the current generation of one resource.</summary>
 public readonly record struct ResourceHandle<T>
     where T : notnull
 {
-    internal ResourceHandle(AssetKey<T> key, T value, uint slot, uint generation)
+    private readonly ResourceStore store;
+
+    internal ResourceHandle(AssetKey<T> key, ResourceStore store, uint slot)
     {
         Key = key;
-        Value = value;
-        Slot = slot;
-        Generation = generation;
+        this.store = store;
+        Id = new ResourceId<T>(slot);
     }
 
     public AssetKey<T> Key { get; }
 
-    public T Value { get; }
+    public ResourceId<T> Id { get; }
+
+    public T Value => store.GetCurrent(Id).Value;
 
     /// <summary>Gets the generation loaded for this handle.</summary>
-    public uint Generation { get; }
+    public uint Generation => store.GetCurrent(Id).Generation;
 
-    internal uint Slot { get; }
+    internal ResourceStore Store => store;
 }

@@ -34,7 +34,7 @@ public sealed class ResourceLoadContext
         ResourceHandle<T> handle = await store
             .LoadDependencyAsync(key, path, cancellationToken)
             .ConfigureAwait(false);
-        dependencies.Add(handle.Slot);
+        dependencies.Add(handle.Id.Slot);
         return handle;
     }
 
