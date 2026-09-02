@@ -2,9 +2,9 @@ using System.Runtime.InteropServices;
 
 using Silk.NET.Shaderc;
 
-namespace Lumyte.Graphics.Vulkan.Triangle;
+namespace Lumyte.Graphics.Vulkan.Samples;
 
-internal static unsafe class TriangleShaderCompiler
+internal static unsafe class SampleShaderCompiler
 {
     internal static byte[] Compile(string source, ShaderKind kind)
     {
@@ -15,7 +15,7 @@ internal static unsafe class TriangleShaderCompiler
         {
             CompilationResult* result = api.CompileIntoSpv(compiler, source,
                 checked((nuint)System.Text.Encoding.UTF8.GetByteCount(source)), kind,
-                "triangle.glsl", "main", null);
+                "vulkan-sample.glsl", "main", null);
             try
             {
                 if (api.ResultGetCompilationStatus(result) != CompilationStatus.Success)

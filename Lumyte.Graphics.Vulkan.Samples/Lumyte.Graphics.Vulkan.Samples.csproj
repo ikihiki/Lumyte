@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Vulkan\Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="..\Lumyte.Input\Lumyte.Input.csproj" />
     <ProjectReference Include="..\Lumyte.Platform\Lumyte.Platform.csproj" />
     <ProjectReference Include="..\Lumyte.Platform.Silk\Lumyte.Platform.Silk.csproj" />
     <ProjectReference Include="..\Lumyte.Shaders\Lumyte.Shaders.csproj" />

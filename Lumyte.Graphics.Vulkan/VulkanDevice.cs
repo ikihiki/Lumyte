@@ -267,10 +267,17 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         return new(new(id), texture, new(description.Format));
     }
 
-    internal void UnregisterSwapchainImage(GpuTextureView view)
+    internal ImageView UnregisterSwapchainImage(GpuTextureView view)
     {
-        views.Remove(view.Id.Value);
-        images.Remove(view.Texture.Value);
+        if (!views.Remove(view.Id.Value, out ImageView nativeView)
+            || !images.Remove(view.Texture.Value))
+        {
+            throw new ArgumentException(
+                "Swapchain view does not belong to this Vulkan device.",
+                nameof(view));
+        }
+
+        return nativeView;
     }
 
     internal ImageView ResolveImageView(GpuTextureView view)

@@ -29,4 +29,28 @@ public sealed class SilkPlatformTests
         Assert.NotEqual(nint.Zero, window.Native.Handle);
         Assert.NotEmpty(platform.Displays);
     }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void ClosingWindowDisposesAfterEventPump()
+    {
+        using var platform = new SilkPlatform();
+        using SilkWindow window = platform.CreateWindow(new()
+        {
+            ClientSize = new Size(320, 200),
+            IsVisible = false,
+            Title = "Lumyte Silk close test",
+        });
+        bool callbackObservedOpenWindow = false;
+        window.CloseRequested += (_, _) =>
+            callbackObservedOpenWindow = !window.IsClosed;
+
+        window.Close();
+        bool running = platform.PumpEvents();
+
+        Assert.True(callbackObservedOpenWindow);
+        Assert.True(window.IsCloseRequested);
+        Assert.True(window.IsClosed);
+        Assert.False(running);
+    }
 }

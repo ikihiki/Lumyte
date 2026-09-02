@@ -18,7 +18,7 @@
   <Project Path="Lumyte.Graphics.WebGPU.Tests/Lumyte.Graphics.WebGPU.Tests.csproj" />
   <Project Path="Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
   <Project Path="Lumyte.Graphics.Vulkan.Tests/Lumyte.Graphics.Vulkan.Tests.csproj" />
-  <Project Path="Lumyte.Graphics.Vulkan.Triangle/Lumyte.Graphics.Vulkan.Triangle.csproj" />
+  <Project Path="Lumyte.Graphics.Vulkan.Samples/Lumyte.Graphics.Vulkan.Samples.csproj" />
   <Project Path="Lumyte.Shaders/Lumyte.Shaders.csproj" />
   <Project Path="Lumyte.Shaders.Tests/Lumyte.Shaders.Tests.csproj" />
   <Project Path="Lumyte.Input/Lumyte.Input.csproj" />

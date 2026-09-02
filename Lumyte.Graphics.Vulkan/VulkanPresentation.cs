@@ -217,8 +217,8 @@ public sealed unsafe class VulkanPresentation : IDisposable
     {
         foreach (GpuTextureView view in views)
         {
-            owner.UnregisterSwapchainImage(view);
-            owner.Api.DestroyImageView(owner.Device, owner.ResolveImageView(view), null);
+            ImageView nativeView = owner.UnregisterSwapchainImage(view);
+            owner.Api.DestroyImageView(owner.Device, nativeView, null);
         }
         views = [];
     }

@@ -69,6 +69,10 @@ public sealed class SilkPlatform : IPlatform
         foreach (SilkWindow window in windows.ToArray())
         {
             window.DoEvents();
+            if (window.IsCloseRequested)
+            {
+                window.Dispose();
+            }
         }
 
         return windows.Count > 0;

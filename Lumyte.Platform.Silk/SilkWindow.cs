@@ -116,8 +116,12 @@ public sealed class SilkWindow : IWindow
 
     private void OnClosing()
     {
+        if (closeRequested)
+        {
+            return;
+        }
+
         closeRequested = true;
         CloseRequested?.Invoke(this, EventArgs.Empty);
-        Dispose();
     }
 }
