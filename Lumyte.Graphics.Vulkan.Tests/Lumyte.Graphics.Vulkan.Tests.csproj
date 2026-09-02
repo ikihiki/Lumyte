@@ -22,4 +22,8 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
+    <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
+  </ItemGroup>
 </Project>

@@ -8,6 +8,7 @@ using Silk.NET.Shaderc;
 
 namespace Lumyte.Graphics.Vulkan.Tests;
 
+[Collection("GpuBackend")]
 public sealed class VulkanDeviceConformanceTests
 {
     [Fact]

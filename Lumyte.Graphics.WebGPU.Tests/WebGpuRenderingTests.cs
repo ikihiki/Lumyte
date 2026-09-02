@@ -5,7 +5,7 @@ using Lumyte.Shaders;
 
 namespace Lumyte.Graphics.WebGPU.Tests;
 
-[Collection("WebGPU")]
+[Collection("GpuBackend")]
 public sealed class WebGpuRenderingTests
 {
     private const uint TargetWidth = 64;

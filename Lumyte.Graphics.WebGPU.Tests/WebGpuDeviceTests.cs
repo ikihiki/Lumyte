@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.WebGPU.Tests;
 
-[Collection("WebGPU")]
+[Collection("GpuBackend")]
 public sealed class WebGpuDeviceTests
 {
     [Fact]

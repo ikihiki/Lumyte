@@ -1,5 +1,6 @@
 namespace Lumyte.Graphics.DirectX12.Tests;
 
+[Collection("GpuBackend")]
 public sealed class DirectX12DeviceTests
 {
     [Fact]

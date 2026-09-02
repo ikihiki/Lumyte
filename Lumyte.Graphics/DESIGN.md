@@ -140,6 +140,34 @@ There is intentionally no `CreateRenderTarget` owning shortcut. The application 
 retain the texture, view, and attachment descriptions independently. `VerifyEmpty` is a shutdown assertion; it
 prevents silently freeing resources whose GPU fence has not completed.
 
+## Render graph planning layer
+
+`GpuRenderGraph` is a backend-independent planner for imported resources and graph-local transient textures and
+buffers. `CreateTexture` and `CreateBuffer` declare resources whose physical allocation is deferred until execution.
+Pass callbacks receive a `GpuRenderGraphPassContext`, resolve only resources declared in that pass, and record
+ordinary commands through its `Commands` property. Imported resources are borrowed and are never destroyed by the
+graph.
+
+Passes declare each used resource once with `Read`, `Write`, or `ReadWrite`, plus its `GpuStage` and exceptional
+`GpuBarrierHazards`. Declaration order defines successive versions of a resource. `Write` means a complete overwrite
+and therefore does not keep an earlier producer alive; `ReadWrite` consumes the previous version before producing the
+next one. A pass may be retained by a marked output or by `NeverCull`. Compilation walks backward from those roots,
+removes unused passes, preserves read-after-write/write-after-read/write-after-write ordering among live passes, and
+emits an immutable execution plan.
+
+The common command contract has global stage barriers rather than resource-specific state enums. Accordingly, the
+planner tracks the last live access per logical resource, omits read-to-read barriers, and merges all required
+transitions before a pass into one stage-to-stage barrier. Imported-only plans can still be recorded for caller-owned
+submission. Plans with transient resources use `Execute(IGpuBackend)`, which allocates only resources referenced by
+live passes, records and submits one command buffer, waits for completion, and releases non-exported resources.
+
+Transient handles are intentionally unavailable before execution and are valid only through the pass context.
+`ExportTexture` and `ExportBuffer` make a graph-created result a compilation root and retain its physical allocation
+in `GpuRenderGraphExecution`. The resulting exported object carries the public handle, description, owning backend,
+and execution lifetime needed for a later graph to import it safely. Importing is borrowing: the producer execution
+remains the sole owner and must outlive every consumer execution. This makes export/import the explicit boundary for
+cross-graph resource sharing. Memory aliasing and multi-queue scheduling remain future work.
+
 ## Vulkan device and offscreen conformance slice
 
 `Lumyte.Graphics.Vulkan.VulkanDevice` implements the narrow resource port directly. It creates a Vulkan 1.3 device

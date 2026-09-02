@@ -1,4 +1,6 @@
+using Lumyte.Graphics.Tests;
+
 namespace Lumyte.Graphics.WebGPU.Tests;
 
-[CollectionDefinition("WebGPU", DisableParallelization = true)]
-public sealed class WebGpuTestCollection;
+[CollectionDefinition("GpuBackend", DisableParallelization = true)]
+public sealed class WebGpuTestCollection : ICollectionFixture<GpuBackendTestGate>;

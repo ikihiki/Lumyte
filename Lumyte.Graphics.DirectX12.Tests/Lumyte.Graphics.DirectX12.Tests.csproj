@@ -10,6 +10,10 @@
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
+    <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxc.exe" Link="dxc.exe" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
