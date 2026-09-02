@@ -10,6 +10,17 @@
   <Project Path="Lumyte.DevTools.Server/Lumyte.DevTools.Server.csproj" />
   <Project Path="Lumyte.DevTools.Tests/Lumyte.DevTools.Tests.csproj" />
   <Project Path="Lumyte.DevTools/Lumyte.DevTools.csproj" />
+  <Project Path="Lumyte.Graphics/Lumyte.Graphics.csproj" />
+  <Project Path="Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
+  <Project Path="Lumyte.Graphics.DirectX12/Lumyte.Graphics.DirectX12.csproj" />
+  <Project Path="Lumyte.Graphics.DirectX12.Tests/Lumyte.Graphics.DirectX12.Tests.csproj" />
+  <Project Path="Lumyte.Graphics.WebGPU/Lumyte.Graphics.WebGPU.csproj" />
+  <Project Path="Lumyte.Graphics.WebGPU.Tests/Lumyte.Graphics.WebGPU.Tests.csproj" />
+  <Project Path="Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+  <Project Path="Lumyte.Graphics.Vulkan.Tests/Lumyte.Graphics.Vulkan.Tests.csproj" />
+  <Project Path="Lumyte.Graphics.Vulkan.Triangle/Lumyte.Graphics.Vulkan.Triangle.csproj" />
+  <Project Path="Lumyte.Shaders/Lumyte.Shaders.csproj" />
+  <Project Path="Lumyte.Shaders.Tests/Lumyte.Shaders.Tests.csproj" />
   <Project Path="Lumyte.Input/Lumyte.Input.csproj" />
   <Project Path="Lumyte.Interaction/Lumyte.Interaction.csproj" />
   <Project Path="Lumyte.Interaction.Tests/Lumyte.Interaction.Tests.csproj" />

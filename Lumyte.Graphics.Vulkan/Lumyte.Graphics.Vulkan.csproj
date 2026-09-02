@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Minimal Vulkan implementation of Lumyte manual GPU resources.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <PackageReference Include="Silk.NET.Vulkan" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
+  </ItemGroup>
+</Project>

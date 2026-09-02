@@ -30,12 +30,18 @@ public sealed class SilkPlatform : IPlatform
     IReadOnlyList<IDisplay> IPlatform.Displays => Displays;
 
     public SilkWindow CreateWindow(Lumyte.Platform.WindowOptions options)
+        => CreateWindow(options, GraphicsAPI.None);
+
+    public SilkWindow CreateVulkanWindow(Lumyte.Platform.WindowOptions options)
+        => CreateWindow(options, GraphicsAPI.DefaultVulkan);
+
+    private SilkWindow CreateWindow(Lumyte.Platform.WindowOptions options, GraphicsAPI graphicsApi)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(options);
         Silk.NET.Windowing.WindowOptions nativeOptions = Silk.NET.Windowing.WindowOptions.Default with
         {
-            API = GraphicsAPI.None,
+            API = graphicsApi,
             IsVisible = options.IsVisible,
             Size = new(options.ClientSize.Width, options.ClientSize.Height),
             WindowState = SilkConversions.ToSilk(options.State),

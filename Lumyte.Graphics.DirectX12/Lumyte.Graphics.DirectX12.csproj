@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AllowUnsafeBlocks>true</AllowUnsafeBlocks><Description>Direct3D 12 implementation of Lumyte Graphics.</Description></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <PackageReference Include="Silk.NET.Direct3D12" />
+    <PackageReference Include="Silk.NET.DXGI" />
+  </ItemGroup>
+</Project>

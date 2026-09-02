@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Deterministic shader package build tooling.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <PackageReference Include="MessagePack" />
+  </ItemGroup>
+</Project>

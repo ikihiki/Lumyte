@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>WebGPU implementation of Lumyte Graphics.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <PackageReference Include="Silk.NET.WebGPU" />
+    <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" />
+    <PackageReference Include="Silk.NET.WebGPU.Extensions.WGPU" />
+  </ItemGroup>
+</Project>
