@@ -1,4 +1,5 @@
 using Lumyte.Graphics;
+using Lumyte.Graphics.RenderGraph;
 
 namespace Lumyte.Graphics.Tests;
 

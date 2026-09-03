@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Tests;
+using Lumyte.Graphics.RenderGraph;
 
 namespace Lumyte.Graphics.WebGPU.Tests;
 

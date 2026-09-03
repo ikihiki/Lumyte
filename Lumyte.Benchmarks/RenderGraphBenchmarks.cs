@@ -1,5 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Graphics;
+using Lumyte.Graphics.RenderGraph;
 
 namespace Lumyte.Benchmarks;
 
