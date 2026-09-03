@@ -120,10 +120,11 @@ or byte range without changing ownership of the underlying resource.
 
 Native descriptor heaps, Vulkan descriptor sets, and WebGPU bind groups are backend implementation details.
 DirectX 12 maps the three logical arrays to register spaces and Vulkan maps them to descriptor sets. Both currently
-materialize transient native tables for a command buffer. WebGPU is a compatibility backend: it translates texture
-and sampler indices into reserved native binding ranges and does not yet implement the logical shader-buffer array.
-Its bind groups are cached by table identity, native layout, and `Revision`; writing the same logical resource
-preserves the cache, while a changed descriptor index or destroyed registered resource invalidates it.
+materialize transient native tables for a command buffer. WebGPU is a compatibility backend: it translates texture,
+sampler, and buffer indices into reserved native binding ranges. Its buffers use device-owned allocation while
+`BufferId` still identifies a byte-range view. Bind groups are cached by table identity, native layout, and
+`Revision`; writing the same logical resource preserves the cache, while a changed descriptor index or destroyed
+registered resource invalidates it.
 
 `GpuPersistentArena` owns long-lived native memory blocks and returns aligned `GpuMemoryAllocation` regions carrying
 the backing allocation ID, byte offset, size, memory kind, and mapped CPU address when available. Requirements expose
@@ -289,6 +290,7 @@ The raster-state conformance suite uses the same observable cases on Direct3D 12
 | Front/back culling and front-face winding | Reversing front-face winding reverses back-cull output; front-cull output is its complement. |
 | Depth format | The fixed `LessEqual` test with depth writes keeps the near triangle for both draw orders. |
 | Stencil format | A cleared combined depth-stencil attachment is bound while color output is rendered and read back. |
+| Bindless buffer identity | A `BufferId` is placed in the resource table, read by a pixel shader, and verified through the rendered RGBA pixel. |
 | Multiple color targets | Direct3D 12 writes distinct fragment outputs to two targets; Vulkan and WebGPU reject the option. |
 
 Depth compare, depth-write enable, stencil compare/reference, and stencil operations are not configurable through

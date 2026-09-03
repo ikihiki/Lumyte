@@ -10,7 +10,10 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
 {
     private const int MaximumRasterTextureDescriptors = 64;
     private const int MaximumRasterSamplerDescriptors = 64;
+    private const int MaximumRasterBufferDescriptors = 64;
     private const int NativeSamplerBindingOffset = MaximumRasterTextureDescriptors;
+    private const int NativeBufferBindingOffset =
+        MaximumRasterTextureDescriptors + MaximumRasterSamplerDescriptors;
 
     private static readonly Lazy<Silk.NET.WebGPU.WebGPU> SharedApi = new(Silk.NET.WebGPU.WebGPU.GetApi);
     private readonly Silk.NET.WebGPU.WebGPU api;
@@ -19,6 +22,8 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private readonly Dictionary<ulong, TextureRecord> textures = [];
     private readonly Dictionary<ulong, TextureViewRecord> textureViews = [];
     private readonly Dictionary<ulong, nint> samplers = [];
+    private readonly Dictionary<ulong, BufferRecord> buffers = [];
+    private readonly Dictionary<ulong, GpuBufferView> bufferViews = [];
     private readonly Dictionary<ulong, RasterPipelineRecord> rasterPipelines = [];
     private readonly Dictionary<ResourceTableCacheKey, CachedBindGroup> bindGroups = [];
     private Instance* instance;
@@ -28,6 +33,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private string? failure;
     private ulong nextResourceId = 1;
     private ulong nextTextureId = 1;
+    private ulong nextBufferId = 1;
     private ulong nextPipelineId = 1;
     private int bindGroupCreationCount;
     private bool disposed;
@@ -216,15 +222,11 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(table);
         if (table.TextureSlotCount > MaximumRasterTextureDescriptors
-            || table.SamplerSlotCount > MaximumRasterSamplerDescriptors)
+            || table.SamplerSlotCount > MaximumRasterSamplerDescriptors
+            || table.BufferSlotCount > MaximumRasterBufferDescriptors)
         {
             throw new NotSupportedException(
                 "The current WebGPU bind-group translation supports at most 64 indices per resource kind.");
-        }
-        if (table.BufferSlotCount != 0)
-        {
-            throw new NotSupportedException(
-                "The current WebGPU raster backend does not yet translate the logical shader-buffer array.");
         }
         if (nativeLayout == 0) { throw new ArgumentException("Bind group layout cannot be null.", nameof(nativeLayout)); }
 
@@ -244,6 +246,10 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         for (int slot = 0; slot < table.SamplerSlotCount; slot++)
         {
             if (!table.GetSampler(slot).IsNull) { entryCount++; }
+        }
+        for (int slot = 0; slot < table.BufferSlotCount; slot++)
+        {
+            if (!table.GetBuffer(slot).IsNull) { entryCount++; }
         }
         if (entryCount == 0) { throw new ArgumentException("Resource table is empty.", nameof(table)); }
         var entries = new BindGroupEntry[entryCount];
@@ -274,6 +280,25 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
             {
                 Binding = checked((uint)(NativeSamplerBindingOffset + slot)),
                 Sampler = (Sampler*)sampler,
+            };
+        }
+        for (int slot = 0; slot < table.BufferSlotCount; slot++)
+        {
+            BufferId id = table.GetBuffer(slot);
+            if (id.IsNull) { continue; }
+            if (!bufferViews.TryGetValue(id.Value, out GpuBufferView view)
+                || !buffers.TryGetValue(view.Buffer.Value, out BufferRecord? buffer))
+            {
+                throw new ArgumentException(
+                    $"Buffer index {slot} belongs to another WebGPU device.",
+                    nameof(table));
+            }
+            entries[entryIndex++] = new BindGroupEntry
+            {
+                Binding = checked((uint)(NativeBufferBindingOffset + slot)),
+                Buffer = (WgpuBuffer*)buffer.Handle,
+                Offset = view.Description.Offset,
+                Size = view.Description.Length,
             };
         }
 
@@ -540,6 +565,9 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         textures.Clear();
         foreach (nint sampler in samplers.Values) { api.SamplerRelease((Sampler*)sampler); }
         samplers.Clear();
+        bufferViews.Clear();
+        foreach (BufferRecord buffer in buffers.Values) { api.BufferRelease((WgpuBuffer*)buffer.Handle); }
+        buffers.Clear();
         if (queue is not null) { api.QueueRelease(queue); queue = null; }
         if (device is not null) { api.DeviceRelease(device); device = null; }
         if (adapter is not null) { api.AdapterRelease(adapter); adapter = null; }
@@ -559,4 +587,5 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private sealed record CachedBindGroup(nint Handle, ulong Revision);
     private sealed record TextureRecord(nint Handle, GpuTextureDescription Description);
     private sealed record TextureViewRecord(nint Handle, GpuTextureHandle Texture);
+    private sealed record BufferRecord(nint Handle, GpuBufferDescription Description);
 }

@@ -50,6 +50,16 @@ internal static unsafe class TriangleShaders
         }
         """;
 
+    internal const string BufferPixelSource = """
+        #version 450
+        layout(set = 2, binding = 0, std430) readonly buffer ShaderBuffer
+        {
+            vec4 color;
+        } shaderBuffers[64];
+        layout(location = 0) out vec4 outputColor;
+        void main() { outputColor = shaderBuffers[0].color; }
+        """;
+
     internal const string ComputeSource = """
         #version 450
         layout(local_size_x = 8, local_size_y = 1, local_size_z = 1) in;

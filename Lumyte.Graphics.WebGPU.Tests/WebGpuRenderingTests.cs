@@ -125,6 +125,29 @@ public sealed class WebGpuRenderingTests
         }
         """;
 
+    private const string BufferShader = """
+        struct ShaderColor {
+            value: vec4<f32>,
+        }
+
+        @group(0) @binding(128) var<storage, read> shaderColor: ShaderColor;
+
+        @vertex
+        fn bufferVertex(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
+            var positions = array<vec2<f32>, 3>(
+                vec2<f32>(-0.8, -0.8),
+                vec2<f32>( 0.8, -0.8),
+                vec2<f32>( 0.0,  0.8)
+            );
+            return vec4<f32>(positions[vertexIndex], 0.0, 1.0);
+        }
+
+        @fragment
+        fn bufferFragment() -> @location(0) vec4<f32> {
+            return shaderColor.value;
+        }
+        """;
+
     [Fact]
     [Trait("Category", "WebGpuConformance")]
     public void RasterizedTriangleCanBeReadBack()
@@ -208,6 +231,51 @@ public sealed class WebGpuRenderingTests
         backend.DestroyTextureView(targetView);
         backend.DestroyTexture(texture);
         backend.DestroyTexture(target);
+    }
+
+    [Fact]
+    [Trait("Category", "WebGpuConformance")]
+    public void BufferIdCanBeReadByAFragmentShader()
+    {
+        using IGpuBackend backend = WebGpuBackend.Create();
+        var description = new GpuBufferDescription(
+            16,
+            GpuBufferUsage.ShaderData | GpuBufferUsage.CopyDestination);
+        GpuBufferHandle buffer = backend.CreateBuffer(description);
+        GpuBufferView view = backend.CreateBufferView(buffer, default);
+        byte[] color =
+        [
+            .. BitConverter.GetBytes(1f),
+            .. BitConverter.GetBytes(0.25f),
+            .. BitConverter.GetBytes(0.5f),
+            .. BitConverter.GetBytes(1f),
+        ];
+        backend.WriteBuffer(buffer, color);
+        var resources = new GpuResourceTable(0, 0, 1);
+        resources.SetBuffer(0, view.Id);
+        byte[] abiHash = GpuShaderBindingConvention.AbiHash.ToArray();
+        GpuShaderPackage package = CreatePackage(
+            BufferShader,
+            "bufferVertex",
+            "bufferFragment",
+            abiHash);
+        GpuTextureHandle target = CreateTarget(backend);
+        GpuTextureView targetView = backend.CreateTextureView(target, new(GpuFormat.Rgba8Unorm));
+        GpuRasterPipelineHandle pipeline = backend.CreateRasterPipeline(
+            new GpuRasterPipelineDescription([new(GpuFormat.Rgba8Unorm)]),
+            package,
+            "bufferVertex",
+            "bufferFragment",
+            abiHash);
+
+        Draw(backend, targetView, pipeline, resources, 3);
+        byte[] pixels = ReadTarget(backend, target);
+
+        AssertPixelNear(pixels, 32, 32, 255, 64, 128, 255);
+
+        DestroyTarget(backend, target, targetView, pipeline);
+        backend.DestroyBufferView(view);
+        backend.DestroyBuffer(buffer);
     }
 
     [Fact]

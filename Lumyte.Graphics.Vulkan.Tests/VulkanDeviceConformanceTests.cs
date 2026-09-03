@@ -263,6 +263,93 @@ public sealed class VulkanDeviceConformanceTests
 
     [Fact]
     [Trait("Category", "VulkanConformance")]
+    public void BufferIdCanBeReadByAPixelShader()
+    {
+        using VulkanDevice device = VulkanDevice.Create();
+        var textureArena = new GpuPersistentArena(device);
+        var bufferArena = new GpuPersistentArena(device);
+        var textures = new GpuManualTextureAllocator(device, textureArena);
+        var buffers = new GpuManualBufferAllocator(device, bufferArena);
+        var shaderDescription = new GpuBufferDescription(
+            16,
+            GpuBufferUsage.ShaderData | GpuBufferUsage.CopySource);
+        GpuMemoryAllocation shaderMemory = buffers.AllocateMemory(
+            shaderDescription,
+            GpuMemoryKind.HostMapped);
+        GpuBufferHandle shaderBuffer = buffers.CreatePlacedBuffer(shaderDescription, shaderMemory);
+        GpuBufferView shaderView = buffers.CreateView(shaderBuffer);
+        byte[] color =
+        [
+            .. BitConverter.GetBytes(1f),
+            .. BitConverter.GetBytes(0.25f),
+            .. BitConverter.GetBytes(0.5f),
+            .. BitConverter.GetBytes(1f),
+        ];
+        color.CopyTo(shaderMemory.MappedBytes());
+        var resources = new GpuResourceTable(0, 0, 1);
+        resources.SetBuffer(0, shaderView.Id);
+
+        var targetDescription = new GpuTextureDescription(
+            64, 64, GpuFormat.Rgba8Unorm,
+            GpuTextureUsage.ColorAttachment | GpuTextureUsage.CopySource);
+        GpuMemoryAllocation targetMemory = textures.AllocateMemory(targetDescription);
+        GpuTextureHandle target = textures.CreatePlacedTexture(targetDescription, targetMemory);
+        GpuTextureView targetView = textures.CreateView(target, new(GpuFormat.Rgba8Unorm));
+        var readbackDescription = new GpuBufferDescription(64 * 64 * 4, GpuBufferUsage.CopyDestination);
+        GpuMemoryAllocation readbackMemory = buffers.AllocateMemory(
+            readbackDescription,
+            GpuMemoryKind.HostCached);
+        GpuBufferHandle readback = buffers.CreatePlacedBuffer(readbackDescription, readbackMemory);
+        byte[] abiHash = GpuShaderBindingConvention.AbiHash.ToArray();
+        GpuShaderPackage package = GpuShaderPackage.Read(GpuShaderPackageWriter.Write([
+            new(GpuShaderCodeFormat.SpirV, GpuShaderStage.Vertex, "triangleVertex",
+                "vulkan", "spirv1.3", "", abiHash,
+                TriangleShaders.Compile(TriangleShaders.VertexSource, ShaderKind.VertexShader)),
+            new(GpuShaderCodeFormat.SpirV, GpuShaderStage.Pixel, "bufferPixel",
+                "vulkan", "spirv1.3", "", abiHash,
+                TriangleShaders.Compile(TriangleShaders.BufferPixelSource, ShaderKind.FragmentShader)),
+        ]));
+        GpuRasterPipelineHandle pipeline = device.CreateRasterPipeline(
+            new GpuRasterPipelineDescription([new(GpuFormat.Rgba8Unorm)]),
+            package,
+            "triangleVertex",
+            "bufferPixel",
+            abiHash);
+
+        GpuCommandBuffer commands = device.MainQueue.StartCommandRecording()
+            .Barrier(GpuStage.None, GpuStage.ColorOutput)
+            .BeginRendering([
+                new(targetView, GpuAttachmentLoadOperation.Clear, GpuAttachmentStoreOperation.Store,
+                    new(0, 0, 0, 1)),
+            ])
+            .SetPipeline(pipeline)
+            .SetResourceTable(resources)
+            .SetViewportAndScissor(new(0, 0, 64, 64), new(0, 0, 64, 64))
+            .Draw(3)
+            .EndRendering()
+            .Barrier(GpuStage.ColorOutput, GpuStage.Copy)
+            .CopyTextureToMemory(target, buffers.AddressOf(readback), new(64, 64, 4, 256));
+        using GpuSemaphore completion = device.MainQueue.CreateSemaphore();
+        device.MainQueue.Submit([commands], completion, 1);
+        device.MainQueue.Wait(completion, 1);
+        byte[] pixels = readbackMemory.MappedBytes().ToArray();
+
+        AssertPixelNear(pixels, 64, 32, 32, 255, 64, 128, 255);
+
+        device.DestroyRasterPipeline(pipeline);
+        device.DestroyBufferView(shaderView);
+        buffers.Retire(shaderBuffer, shaderMemory, new(1));
+        buffers.Retire(readback, readbackMemory, new(1));
+        buffers.Collect(new(1));
+        bufferArena.VerifyEmpty();
+        device.DestroyTextureView(targetView);
+        textures.Retire(target, targetMemory, new(1));
+        textures.Collect(new(1));
+        textures.VerifyEmpty();
+    }
+
+    [Fact]
+    [Trait("Category", "VulkanConformance")]
     public void UnsupportedPipelineOptionsAreRejected()
     {
         using VulkanDevice device = VulkanDevice.Create();
@@ -292,5 +379,16 @@ public sealed class VulkanDeviceConformanceTests
     {
         int offset = (y * width + x) * 4;
         Assert.Equal(new byte[] { red, green, blue, alpha }, pixels.Slice(offset, 4).ToArray());
+    }
+
+    private static void AssertPixelNear(
+        ReadOnlySpan<byte> pixels, int width, int x, int y,
+        byte red, byte green, byte blue, byte alpha)
+    {
+        int offset = (y * width + x) * 4;
+        Assert.InRange(pixels[offset], red - 1, red);
+        Assert.InRange(pixels[offset + 1], green - 1, green);
+        Assert.InRange(pixels[offset + 2], blue - 1, blue);
+        Assert.InRange(pixels[offset + 3], alpha - 1, alpha);
     }
 }
