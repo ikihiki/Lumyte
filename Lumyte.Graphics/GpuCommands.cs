@@ -31,9 +31,24 @@ public readonly record struct GpuTextureCopyFootprint(
     }
 }
 
+internal readonly record struct GpuAliasingResource(
+    GpuTextureHandle Texture,
+    GpuBufferHandle Buffer)
+{
+    public static GpuAliasingResource FromTexture(GpuTextureHandle texture) => new(texture, default);
+    public static GpuAliasingResource FromBuffer(GpuBufferHandle buffer) => new(default, buffer);
+}
+
 internal interface IGpuCommandRecorder
 {
     void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards);
+    void AliasingBarrier(
+        GpuAliasingResource beforeResource,
+        GpuAliasingResource afterResource,
+        GpuStage before,
+        GpuStage after,
+        GpuBarrierHazards hazards)
+        => Barrier(before, after, hazards);
     void BeginRendering(IReadOnlyList<GpuColorAttachment> colors, GpuDepthStencilAttachment? depth);
     void EndRendering();
     void SetPipeline(GpuRasterPipelineHandle pipeline);
@@ -227,6 +242,18 @@ public sealed class GpuCommandBuffer
 
     internal IGpuCommandRecorder Recorder => recorder;
 
+    internal void AliasingBarrier(
+        GpuAliasingResource beforeResource,
+        GpuAliasingResource afterResource,
+        GpuStage before,
+        GpuStage after,
+        GpuBarrierHazards hazards)
+    {
+        VerifyOpen();
+        if (rendering) { throw new InvalidOperationException("An aliasing barrier cannot be recorded inside rendering."); }
+        recorder.AliasingBarrier(beforeResource, afterResource, before, after, hazards);
+    }
+
     private void VerifyOpen()
     {
         if (submitted) { throw new InvalidOperationException("Transient command buffer has already been submitted."); }
@@ -244,4 +271,10 @@ public interface IGpuQueue
     GpuSemaphore CreateSemaphore(ulong initialValue = 0);
     void Submit(ReadOnlySpan<GpuCommandBuffer> commandBuffers, GpuSemaphore signalSemaphore, ulong signalValue);
     void Wait(GpuSemaphore semaphore, ulong value);
+
+    /// <summary>
+    /// Returns whether the semaphore has reached <paramref name="value"/> without blocking.
+    /// Backends should also release command-recording resources for completed submissions.
+    /// </summary>
+    bool IsComplete(GpuSemaphore semaphore, ulong value) => false;
 }

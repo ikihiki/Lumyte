@@ -37,9 +37,9 @@ public readonly record struct GpuMemoryAllocation(
             throw new ArgumentOutOfRangeException(nameof(Alignment));
         }
 
-        if (MemoryAddress.IsNull || MemoryAddress.Offset != 0 || MemoryAddress.Length < Size)
+        if (MemoryAddress.IsNull || MemoryAddress.Length < Size || MemoryAddress.Offset % Alignment != 0)
         {
-            throw new ArgumentException("Allocation address must identify its base.", nameof(MemoryAddress));
+            throw new ArgumentException("Allocation address must identify an aligned region large enough for the allocation.", nameof(MemoryAddress));
         }
 
         if (Kind == GpuMemoryKind.DeviceLocal && CpuAddress != 0)
@@ -88,6 +88,11 @@ public readonly record struct GpuBufferDescription(ulong Size, GpuBufferUsage Us
 
 public readonly record struct GpuBufferMemoryRequirements(ulong Size, ulong Alignment)
 {
+    public GpuBufferMemoryRequirements(ulong size, ulong alignment, ulong compatibility)
+        : this(size, alignment) => Compatibility = compatibility;
+
+    public ulong Compatibility { get; init; }
+
     public GpuBufferMemoryRequirements Validate()
     {
         if (Size == 0 || Alignment == 0 || !System.Numerics.BitOperations.IsPow2(Alignment))
@@ -148,6 +153,11 @@ public readonly record struct GpuTextureDescription(
 
 public readonly record struct GpuTextureMemoryRequirements(ulong Size, ulong Alignment)
 {
+    public GpuTextureMemoryRequirements(ulong size, ulong alignment, ulong compatibility)
+        : this(size, alignment) => Compatibility = compatibility;
+
+    public ulong Compatibility { get; init; }
+
     public GpuTextureMemoryRequirements Validate()
     {
         if (Size == 0 || Alignment == 0 || !System.Numerics.BitOperations.IsPow2(Alignment))

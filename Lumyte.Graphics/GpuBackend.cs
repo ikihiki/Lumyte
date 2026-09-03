@@ -7,6 +7,7 @@ public enum GpuBackendCapabilities
     ExplicitPlacement = 1 << 0,
     RasterPipeline = 1 << 1,
     DeviceOwnedResources = 1 << 2,
+    MemoryAliasing = 1 << 3,
 }
 
 /// <summary>
@@ -23,6 +24,38 @@ public interface IGpuBackend : IDisposable
 
     GpuMemoryAllocation AllocateMemory(ulong size, ulong alignment, GpuMemoryKind kind)
         => throw Unsupported(nameof(AllocateMemory));
+
+    GpuMemoryAllocation AllocateMemory(
+        ulong size,
+        ulong alignment,
+        GpuMemoryKind kind,
+        ulong compatibility)
+    {
+        if (compatibility != 0)
+        {
+            throw Unsupported($"{nameof(AllocateMemory)} with a compatibility key");
+        }
+        return AllocateMemory(size, alignment, kind);
+    }
+
+    /// <summary>
+    /// Combines two native memory-requirement compatibility values. The default treats them as
+    /// opaque exact-match keys; bit-mask backends may return a non-empty intersection.
+    /// </summary>
+    bool TryCombineMemoryCompatibility(ulong left, ulong right, out ulong combined)
+    {
+        combined = left;
+        return left == right;
+    }
+
+    /// <summary>Returns the stable arena block key selected for a compatibility requirement.</summary>
+    ulong GetMemoryCompatibilityKey(GpuMemoryKind kind, ulong compatibility) => compatibility;
+
+    bool IsMemoryCompatibilityKeyCompatible(
+        GpuMemoryKind kind,
+        ulong allocationKey,
+        ulong requirement)
+        => allocationKey == GetMemoryCompatibilityKey(kind, requirement);
 
     void FreeMemory(GpuMemoryAllocation allocation)
         => throw Unsupported(nameof(FreeMemory));

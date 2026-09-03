@@ -108,6 +108,15 @@ public sealed unsafe partial class WebGpuDevice
             }
             semaphore.Wait(value);
         }
+
+        public bool IsComplete(GpuSemaphore signalSemaphore, ulong value)
+        {
+            if (signalSemaphore is not WebGpuSemaphore semaphore || semaphore.Owner != owner)
+            {
+                throw new ArgumentException("Semaphore belongs to another backend.", nameof(signalSemaphore));
+            }
+            return semaphore.IsComplete(value);
+        }
     }
 
     private sealed class WebGpuCommandRecorder : IGpuCommandRecorder
@@ -297,6 +306,27 @@ public sealed unsafe partial class WebGpuDevice
                 extensions.DevicePoll(Owner.device, true, null);
                 completedValue = lastSignalValue;
             }
+            ReleaseCompleted();
+        }
+
+        public bool IsComplete(ulong value)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (value > lastSignalValue) { throw new ArgumentOutOfRangeException(nameof(value)); }
+            if (value > completedValue)
+            {
+                var extensions = new Wgpu(Owner.api.Context);
+                if (extensions.DevicePoll(Owner.device, false, null))
+                {
+                    completedValue = lastSignalValue;
+                }
+            }
+            ReleaseCompleted();
+            return value <= completedValue;
+        }
+
+        private void ReleaseCompleted()
+        {
             foreach (ulong key in pending.Keys.TakeWhile(key => key <= completedValue).ToArray())
             {
                 foreach (nint command in pending[key]) { Owner.api.CommandBufferRelease((CommandBuffer*)command); }

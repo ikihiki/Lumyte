@@ -21,7 +21,9 @@ public sealed class DirectX12DeviceTests
         IGpuBackend backend = device;
 
         Assert.Equal(
-            GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.RasterPipeline,
+            GpuBackendCapabilities.ExplicitPlacement
+            | GpuBackendCapabilities.RasterPipeline
+            | GpuBackendCapabilities.MemoryAliasing,
             backend.Capabilities);
     }
 
@@ -81,5 +83,66 @@ public sealed class DirectX12DeviceTests
         textures.Retire(texture, textureMemory, new(1));
         textures.Collect(new(1));
         textures.VerifyEmpty();
+    }
+
+    [Fact]
+    [Trait("Category", "DirectX12Conformance")]
+    public void NativeHeapClassesRemainExact()
+    {
+        using DirectX12Device device = DirectX12Device.Create();
+        IGpuBackend backend = device;
+        GpuBufferMemoryRequirements buffer = device.GetBufferMemoryRequirements(
+            new(64, GpuBufferUsage.ShaderData));
+        GpuTextureMemoryRequirements sampled = device.GetTextureMemoryRequirements(
+            new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled));
+        GpuTextureMemoryRequirements attachment = device.GetTextureMemoryRequirements(
+            new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
+
+        bool bufferAndTexture = backend.TryCombineMemoryCompatibility(
+            buffer.Compatibility,
+            sampled.Compatibility,
+            out _);
+        bool sampledAndAttachment = backend.TryCombineMemoryCompatibility(
+            sampled.Compatibility,
+            attachment.Compatibility,
+            out _);
+
+        Assert.False(bufferAndTexture);
+        Assert.False(sampledAndAttachment);
+        Assert.NotEqual(buffer.Compatibility, sampled.Compatibility);
+        Assert.NotEqual(sampled.Compatibility, attachment.Compatibility);
+    }
+
+    [Fact]
+    [Trait("Category", "DirectX12Conformance")]
+    public void PlacedTextureRejectsAMisalignedRegion()
+    {
+        using DirectX12Device device = DirectX12Device.Create();
+        var description = new GpuTextureDescription(
+            4,
+            4,
+            GpuFormat.Rgba8Unorm,
+            GpuTextureUsage.Sampled);
+        GpuTextureMemoryRequirements requirements = device.GetTextureMemoryRequirements(description);
+        GpuMemoryAllocation backing = device.AllocateMemory(
+            checked(requirements.Size + requirements.Alignment),
+            requirements.Alignment,
+            GpuMemoryKind.DeviceLocal,
+            requirements.Compatibility);
+        var misaligned = new GpuMemoryAllocation(
+            requirements.Size,
+            requirements.Alignment,
+            GpuMemoryKind.DeviceLocal,
+            0,
+            new(
+                backing.MemoryAddress.AllocationId,
+                1,
+                requirements.Size));
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(
+            () => device.CreatePlacedTexture(description, misaligned));
+
+        Assert.Equal("MemoryAddress", exception.ParamName);
+        device.FreeMemory(backing);
     }
 }

@@ -1,12 +1,20 @@
 namespace Lumyte.Graphics;
 
-public sealed class GpuRenderGraphPassContext
+/// <summary>Low-allocation render-graph callback with explicit state.</summary>
+public delegate void GpuRenderGraphPassAction<TState>(
+    GpuRenderGraphPassContextView context,
+    TState state);
+
+/// <summary>
+/// Stack-only pass context used by render-graph callbacks without allocating a context object.
+/// </summary>
+public readonly ref struct GpuRenderGraphPassContextView
 {
     private readonly IGpuBackend? backend;
     private readonly IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources;
     private readonly IReadOnlySet<GpuRenderGraphResource> allowedResources;
 
-    internal GpuRenderGraphPassContext(
+    internal GpuRenderGraphPassContextView(
         GpuCommandBuffer commands,
         IGpuBackend? backend,
         IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
@@ -99,14 +107,36 @@ public sealed class GpuRenderGraphExecution : IDisposable
 {
     private IGpuBackend? backend;
     private readonly Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> exported;
+    private readonly GpuPersistentArena? arena;
+    private readonly GpuMemoryAllocation[] retainedAllocations;
+    private readonly bool ownsArena;
+    private readonly GpuRetirementQueue? retirementQueue;
+    private int importLeaseCount;
+    private IReadOnlyList<Action>? deferredDisposal;
 
     internal GpuRenderGraphExecution(
         IGpuBackend backend,
-        Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> exported)
+        Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> exported,
+        GpuPersistentArena? arena,
+        GpuMemoryAllocation[] retainedAllocations,
+        bool ownsArena,
+        GpuRetirementQueue? retirementQueue = null,
+        GpuSubmissionToken completion = default)
     {
         this.backend = backend;
         this.exported = exported;
+        this.arena = arena;
+        this.retainedAllocations = retainedAllocations;
+        this.ownsArena = ownsArena;
+        this.retirementQueue = retirementQueue;
+        Completion = completion;
     }
+
+    /// <summary>The GPU submission associated with this execution. Synchronous executions are already complete.</summary>
+    public GpuSubmissionToken Completion { get; }
+    public bool IsComplete => Completion.IsComplete;
+
+    public void WaitForCompletion() => Completion.Wait();
 
     public GpuRenderGraphExportedTexture GetTexture(GpuRenderGraphResource resource)
     {
@@ -131,16 +161,71 @@ public sealed class GpuRenderGraphExecution : IDisposable
     public void Dispose()
     {
         if (backend is not { } owner) { return; }
-        foreach (GpuRenderGraphResourceRuntime runtime in exported.Values)
-        {
-            runtime.Dispose(owner);
-        }
+        GpuRenderGraphResourceRuntime[] resources = exported.Values.ToArray();
         exported.Clear();
         backend = null;
+
+        var releases = new List<Action>();
+        foreach (GpuRenderGraphResourceRuntime runtime in resources)
+        {
+            releases.Add(() => runtime.Dispose(owner));
+        }
+        if (arena is not null)
+        {
+            foreach (GpuMemoryAllocation allocation in retainedAllocations)
+            {
+                releases.Add(() => arena.Release(allocation));
+            }
+            if (ownsArena) { releases.Add(arena.Dispose); }
+        }
+
+        if (importLeaseCount == 0) { ScheduleDisposal(releases); }
+        else { deferredDisposal = releases; }
     }
 
     internal void RequireAlive()
         => ObjectDisposedException.ThrowIf(backend is null, this);
+
+    internal IDisposable AcquireImportLease()
+    {
+        RequireAlive();
+        importLeaseCount++;
+        return new GpuRenderGraphImportLease(this);
+    }
+
+    private void ReleaseImportLease()
+    {
+        if (importLeaseCount <= 0)
+        {
+            throw new InvalidOperationException("Render-graph import lease was released more than once.");
+        }
+        importLeaseCount--;
+        if (importLeaseCount == 0 && deferredDisposal is { } releases)
+        {
+            deferredDisposal = null;
+            ScheduleDisposal(releases);
+        }
+    }
+
+    private void ScheduleDisposal(IReadOnlyList<Action> releases)
+    {
+        if (retirementQueue is null)
+        {
+            foreach (Action release in releases) { release(); }
+        }
+        else { retirementQueue.Retire(Completion, releases); }
+    }
+
+    private sealed class GpuRenderGraphImportLease(GpuRenderGraphExecution owner) : IDisposable
+    {
+        private GpuRenderGraphExecution? owner = owner;
+
+        public void Dispose()
+        {
+            GpuRenderGraphExecution? current = Interlocked.Exchange(ref owner, null);
+            current?.ReleaseImportLease();
+        }
+    }
 
     private GpuRenderGraphResourceRuntime RequireExport(
         GpuRenderGraphResource resource,
@@ -194,6 +279,12 @@ public sealed class GpuRenderGraphExportedTexture
                 "An exported texture must be imported by its owning backend.");
         }
     }
+
+    internal IDisposable AcquireImportLease(IGpuBackend candidate)
+    {
+        RequireBackend(candidate);
+        return execution.AcquireImportLease();
+    }
 }
 
 public sealed class GpuRenderGraphExportedBuffer
@@ -226,6 +317,12 @@ public sealed class GpuRenderGraphExportedBuffer
             throw new InvalidOperationException(
                 "An exported buffer must be imported by its owning backend.");
         }
+    }
+
+    internal IDisposable AcquireImportLease(IGpuBackend candidate)
+    {
+        RequireBackend(candidate);
+        return execution.AcquireImportLease();
     }
 }
 
@@ -266,6 +363,38 @@ internal sealed class GpuRenderGraphResourceRuntime
             else
             {
                 result.CreateBuffer(backend);
+            }
+            return result;
+        }
+        catch
+        {
+            result.Dispose(backend);
+            throw;
+        }
+    }
+
+    public static GpuRenderGraphResourceRuntime Create(
+        IGpuBackend backend,
+        GpuRenderGraphResourceInfo info,
+        GpuMemoryAllocation allocation)
+    {
+        var result = new GpuRenderGraphResourceRuntime(info)
+        {
+            ownsResource = true,
+        };
+        try
+        {
+            if (info.Kind == GpuRenderGraphResourceKind.Texture)
+            {
+                GpuTextureDescription description = info.TextureDescription
+                    ?? throw new InvalidOperationException("Transient texture has no description.");
+                result.Texture = backend.CreatePlacedTexture(description, allocation);
+            }
+            else
+            {
+                GpuBufferDescription description = info.BufferDescription
+                    ?? throw new InvalidOperationException("Transient buffer has no description.");
+                result.Buffer = backend.CreatePlacedBuffer(description, allocation);
             }
             return result;
         }

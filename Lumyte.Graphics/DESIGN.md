@@ -114,6 +114,16 @@ backend implementation details. DirectX 12 and Vulkan materialize transient nati
 WebGPU translates a logical table to a bind group and caches it by table identity, native layout, and `Revision`;
 writing the same logical ID preserves the cache, while a changed slot or destroyed registered resource invalidates it.
 
+`GpuPersistentArena` owns long-lived native memory blocks and returns aligned `GpuMemoryAllocation` regions carrying
+the backing allocation ID, byte offset, size, memory kind, and mapped CPU address when available. Requirements expose
+backend memory compatibility data. Direct3D 12 treats heap classes as exact keys. Vulkan intersects native memory-type
+bit sets when planning aliases, then records the selected physical memory type as a one-bit arena block key. A block
+is reused only when its memory kind and selected key satisfy the new request, its own alignment guarantee is at least
+as strong as the request, and one free region has enough bytes after alignment padding. Otherwise the arena allocates
+a separate native block. This permits a smaller compatible resource to reuse a released larger region without
+mixing incompatible heap classes or memory types. `Release` returns a known-idle region immediately, fence-based
+`Retire`/`Collect` delays reuse, and `Trim` releases completely unused native blocks.
+
 ```csharp
 var arena = new GpuPersistentArena(backend);
 var textures = new GpuManualTextureAllocator(backend, arena);
@@ -144,9 +154,28 @@ prevents silently freeing resources whose GPU fence has not completed.
 
 `GpuRenderGraph` is a backend-independent planner for imported resources and graph-local transient textures and
 buffers. `CreateTexture` and `CreateBuffer` declare resources whose physical allocation is deferred until execution.
-Pass callbacks receive a `GpuRenderGraphPassContext`, resolve only resources declared in that pass, and record
-ordinary commands through its `Commands` property. Imported resources are borrowed and are never destroyed by the
-graph.
+Pass callbacks use `AddPass(name, state, static (context, state) => ...)`. Explicit state is stored directly in the
+pass declaration, and the stack-only `GpuRenderGraphPassContextView` resolves only resources declared in that pass
+and records ordinary commands through its `Commands` property. This avoids closure and per-record context
+allocations while preserving declared-resource checks. Imported resources are borrowed and are never destroyed by
+the graph.
+
+`GpuRenderGraphFrameBuilder` is the multi-system registration layer above this low-level graph. Systems register a
+named contribution with an explicit integer order. Enabled contributions run serially by `(order, ordinal name)`, so
+the resulting declaration order is independent of system update order. Each contribution receives a
+`GpuRenderGraphContributionContext`; local resource and pass names are qualified as `contributor::local`, allowing
+multiple cameras or views to use the same local names. `PublishResource` and `GetResource` form the intentional
+cross-contributor boundary, and duplicate contributor or shared-resource names fail during registration.
+
+`GpuRenderGraphPlanCache` keys plans by exact graph structure: qualified names, declaration order, resource kinds and
+descriptions, output/export state, enabled passes, access modes, stages, and hazards. A hit reuses dependency order,
+culling, barriers, transient lifetimes, and reuse slots, then rebinds the current frame's native imports, exported
+owners, resource IDs, and pass callbacks. Consequently camera constants and other callback-captured frame data are
+never retained by the cache. Resolution, format, usage, pass enablement, or any other structural change produces a
+miss and recompilation. Structure lookup computes an allocation-free 64-bit hash, then compares every structural
+field against the retained snapshot before accepting a hit, so a hash collision cannot reuse the wrong plan. The
+cache is bounded and evicts the oldest structural entry at capacity. Frame contributors likewise use explicit state,
+and frame building sorts its snapshot in place without LINQ iterator chains.
 
 Passes declare each used resource once with `Read`, `Write`, or `ReadWrite`, plus its `GpuStage` and exceptional
 `GpuBarrierHazards`. Declaration order defines successive versions of a resource. `Write` means a complete overwrite
@@ -166,7 +195,41 @@ Transient handles are intentionally unavailable before execution and are valid o
 in `GpuRenderGraphExecution`. The resulting exported object carries the public handle, description, owning backend,
 and execution lifetime needed for a later graph to import it safely. Importing is borrowing: the producer execution
 remains the sole owner and must outlive every consumer execution. This makes export/import the explicit boundary for
-cross-graph resource sharing. Memory aliasing and multi-queue scheduling remain future work.
+cross-graph resource sharing.
+An asynchronous consumer acquires an internal import lease while preparing its submission and releases that lease
+only when the consumer token completes. Disposing the producer execution immediately invalidates new imports, but
+native export destruction waits for all already-submitted consumers. This preserves the same producer-outlives-
+consumer rule that synchronous execution previously obtained from its blocking wait.
+
+Compilation reports the first and last live pass for every live transient resource. Exported resource lifetimes are
+extended to the end of the plan because their contents survive execution. The compiler also assigns conservative
+logical reuse slots: resources may share a slot only when their lifetimes do not overlap and their resource kind,
+memory kind, and complete description match. This backend-independent result is also the cacheable structural plan.
+On a backend advertising `MemoryAliasing`, execution specializes those lifetimes into a physical memory plan by
+querying every live resource's native size, alignment, and compatibility requirement. Non-overlapping resources with
+different descriptions may share one physical slot when their resource kind and memory kind match and the backend can
+combine their compatibility requirements. The slot takes the maximum required size and alignment and the combined
+compatibility value, so every occupant is created from a region that satisfies its own requirements. Overlapping
+lifetimes, texture/buffer mixtures, different memory kinds, disjoint Vulkan memory-type masks, and distinct Direct3D
+12 heap classes always produce separate physical slots. Execution allocates one `GpuPersistentArena` region per
+physical slot, creates every occupant at that allocation ID and offset, and records an alias barrier between
+consecutive occupants. Direct3D 12 uses a native aliasing resource barrier; Vulkan uses alias-capable images and a
+stage memory barrier. Backends without the capability, including WebGPU, retain per-resource device-owned allocation.
+The current synchronous execution waits before returning regions to the arena; asynchronous generation uses
+`ExecuteAsync(backend, retirementQueue)` or its caller-owned-arena overload. A `GpuRetirementQueue` owns one monotonic
+submission semaphore, exposes `GpuSubmissionToken` completion, supports non-blocking `Collect`, and limits the number
+of submissions in flight. The backend reports completion and releases only its internal command-recording resources.
+RenderGraph owns the deferred destruction of transient native resources and texture views; the resource system owns
+exported-resource lifetime and arena-region recycling. Multi-queue scheduling remains future work.
+
+`Execute(backend, arena)` accepts a caller-owned arena so backing GPU heaps can be reused across graph executions.
+The compatibility overload `Execute(backend)` owns a temporary arena for that execution. Exported resources retain
+their arena regions through `GpuRenderGraphExecution`; disposing the execution destroys placed resources before
+returning those regions, while a caller-owned arena remains alive until its owner trims or disposes it.
+For asynchronous execution, disposing an export relinquishes its logical ownership immediately but schedules native
+destruction and region recycling after the submission token. If GPU work completes first, the export remains alive
+until its execution is disposed. `WaitForCompletion` and `GpuRetirementQueue.WaitIdle` provide explicit blocking
+boundaries for readback and shutdown.
 
 ## Vulkan device and offscreen conformance slice
 

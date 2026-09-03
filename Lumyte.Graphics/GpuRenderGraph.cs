@@ -1,5 +1,27 @@
 namespace Lumyte.Graphics;
 
+internal interface IGpuRenderGraphPassRecorder
+{
+    void Record(
+        GpuCommandBuffer commands,
+        IGpuBackend? backend,
+        IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
+        IReadOnlySet<GpuRenderGraphResource> allowedResources);
+}
+
+internal sealed class GpuRenderGraphNoopPassRecorder : IGpuRenderGraphPassRecorder
+{
+    public static GpuRenderGraphNoopPassRecorder Instance { get; } = new();
+
+    private GpuRenderGraphNoopPassRecorder() { }
+
+    public void Record(
+        GpuCommandBuffer commands,
+        IGpuBackend? backend,
+        IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
+        IReadOnlySet<GpuRenderGraphResource> allowedResources) { }
+}
+
 public enum GpuRenderGraphResourceKind
 {
     Texture,
@@ -86,51 +108,183 @@ public sealed class GpuRenderGraphBarrierPlan
     public IReadOnlyList<GpuRenderGraphResource> Resources { get; }
 }
 
+/// <summary>
+/// Lifetime and logical reuse-slot assignment for one live graph-created resource.
+/// A reuse slot is a compile-time plan and does not by itself imply native memory aliasing.
+/// </summary>
+public sealed record GpuRenderGraphTransientResourcePlan(
+    GpuRenderGraphResource Resource,
+    GpuTransientLifetime Lifetime,
+    int ReuseSlot);
+
+/// <summary>
+/// A conservative group of compatible transient resources whose lifetimes do not overlap.
+/// Resources are compatible only when their kind, memory kind, and complete description match.
+/// </summary>
+public sealed class GpuRenderGraphTransientSlotPlan
+{
+    internal GpuRenderGraphTransientSlotPlan(
+        int slot,
+        GpuRenderGraphResourceKind kind,
+        GpuMemoryKind memoryKind,
+        GpuTextureDescription? textureDescription,
+        GpuBufferDescription? bufferDescription,
+        GpuRenderGraphResource[] resources)
+    {
+        Slot = slot;
+        Kind = kind;
+        MemoryKind = memoryKind;
+        TextureDescription = textureDescription;
+        BufferDescription = bufferDescription;
+        Resources = Array.AsReadOnly(resources);
+    }
+
+    public int Slot { get; }
+    public GpuRenderGraphResourceKind Kind { get; }
+    public GpuMemoryKind MemoryKind { get; }
+    public GpuTextureDescription? TextureDescription { get; }
+    public GpuBufferDescription? BufferDescription { get; }
+    public IReadOnlyList<GpuRenderGraphResource> Resources { get; }
+}
+
+public sealed class GpuRenderGraphAliasBarrierPlan
+{
+    internal GpuRenderGraphAliasBarrierPlan(
+        string destinationPass,
+        int reuseSlot,
+        GpuRenderGraphResource beforeResource,
+        GpuRenderGraphResource afterResource,
+        GpuStage before,
+        GpuStage after,
+        GpuBarrierHazards hazards)
+    {
+        DestinationPass = destinationPass;
+        ReuseSlot = reuseSlot;
+        BeforeResource = beforeResource;
+        AfterResource = afterResource;
+        Before = before;
+        After = after;
+        Hazards = hazards;
+    }
+
+    public string DestinationPass { get; }
+    public int ReuseSlot { get; }
+    public GpuRenderGraphResource BeforeResource { get; }
+    public GpuRenderGraphResource AfterResource { get; }
+    public GpuStage Before { get; }
+    public GpuStage After { get; }
+    public GpuBarrierHazards Hazards { get; }
+}
+
 public sealed class GpuRenderGraphPlan
 {
-    private readonly Action<GpuRenderGraphPassContext>[] recorders;
+    private readonly IGpuRenderGraphPassRecorder[] recorders;
     private readonly IReadOnlyDictionary<int, GpuRenderGraphBarrierPlan> barriersByPass;
+    private readonly IReadOnlyDictionary<int, GpuRenderGraphAliasBarrierPlan[]> aliasBarriersByPass;
+    private readonly bool hasTransientResources;
+    private IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime>? importedRuntimes;
+    private IReadOnlySet<GpuRenderGraphResource>[]? allowedResourcesByPass;
 
     internal GpuRenderGraphPlan(
         GpuRenderGraphResourceInfo[] resources,
         GpuRenderGraphPassPlan[] passes,
         GpuRenderGraphBarrierPlan[] barriers,
-        Action<GpuRenderGraphPassContext>[] recorders)
+        GpuRenderGraphTransientResourcePlan[] transientResources,
+        GpuRenderGraphTransientSlotPlan[] transientSlots,
+        GpuRenderGraphAliasBarrierPlan[] aliasBarriers,
+        IGpuRenderGraphPassRecorder[] recorders)
     {
         Resources = Array.AsReadOnly(resources);
         Passes = Array.AsReadOnly(passes);
         Barriers = Array.AsReadOnly(barriers);
+        TransientResources = Array.AsReadOnly(transientResources);
+        TransientSlots = Array.AsReadOnly(transientSlots);
+        AliasBarriers = Array.AsReadOnly(aliasBarriers);
         this.recorders = recorders;
+        hasTransientResources = resources.Any(static resource => resource.IsTransient);
         barriersByPass = barriers.ToDictionary(
             barrier => Array.FindIndex(passes, pass => pass.Name == barrier.DestinationPass));
+        aliasBarriersByPass = aliasBarriers
+            .GroupBy(barrier => Array.FindIndex(passes, pass => pass.Name == barrier.DestinationPass))
+            .ToDictionary(group => group.Key, group => group.ToArray());
     }
 
     public IReadOnlyList<GpuRenderGraphResourceInfo> Resources { get; }
     public IReadOnlyList<GpuRenderGraphPassPlan> Passes { get; }
     public IReadOnlyList<GpuRenderGraphBarrierPlan> Barriers { get; }
+    public IReadOnlyList<GpuRenderGraphTransientResourcePlan> TransientResources { get; }
+    public IReadOnlyList<GpuRenderGraphTransientSlotPlan> TransientSlots { get; }
+    public IReadOnlyList<GpuRenderGraphAliasBarrierPlan> AliasBarriers { get; }
+
+    /// <summary>Specializes transient placement using this backend's native memory requirements.</summary>
+    public GpuRenderGraphMemoryPlan CreateMemoryPlan(IGpuBackend backend)
+        => GpuRenderGraphMemoryPlan.Create(this, backend);
 
     public GpuCommandBuffer Record(IGpuQueue queue)
     {
         ArgumentNullException.ThrowIfNull(queue);
-        if (Resources.Any(resource => resource.IsTransient))
+        if (hasTransientResources)
         {
             throw new InvalidOperationException(
                 "Plans with transient resources require Execute(IGpuBackend).");
         }
 
-        Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> runtimes =
-            Resources.ToDictionary(
-                resource => resource.Resource,
-                GpuRenderGraphResourceRuntime.Import);
         GpuCommandBuffer commands = queue.StartCommandRecording();
-        RecordCommands(commands, null, runtimes);
+        RecordCommands(commands, null, GetImportedRuntimes());
         return commands;
     }
 
     public GpuRenderGraphExecution Execute(IGpuBackend backend)
+        => Execute(backend, null, ownsArena: true, null);
+
+    public GpuRenderGraphExecution Execute(IGpuBackend backend, GpuPersistentArena arena)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        ArgumentNullException.ThrowIfNull(arena);
+        arena.RequireBackend(backend);
+        return Execute(backend, arena, ownsArena: false, null);
+    }
+
+    /// <summary>
+    /// Submits the graph without waiting for the GPU. Transient resources are retired through
+    /// <paramref name="retirementQueue"/> after the returned completion token finishes.
+    /// </summary>
+    public GpuRenderGraphExecution ExecuteAsync(
+        IGpuBackend backend,
+        GpuRetirementQueue retirementQueue)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        ArgumentNullException.ThrowIfNull(retirementQueue);
+        retirementQueue.RequireBackend(backend);
+        return Execute(backend, null, ownsArena: true, retirementQueue);
+    }
+
+    /// <summary>Submits the graph without waiting, using a caller-owned persistent arena.</summary>
+    public GpuRenderGraphExecution ExecuteAsync(
+        IGpuBackend backend,
+        GpuPersistentArena arena,
+        GpuRetirementQueue retirementQueue)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        ArgumentNullException.ThrowIfNull(arena);
+        ArgumentNullException.ThrowIfNull(retirementQueue);
+        arena.RequireBackend(backend);
+        retirementQueue.RequireBackend(backend);
+        return Execute(backend, arena, ownsArena: false, retirementQueue);
+    }
+
+    private GpuRenderGraphExecution Execute(
+        IGpuBackend backend,
+        GpuPersistentArena? arena,
+        bool ownsArena,
+        GpuRetirementQueue? retirementQueue)
     {
         ArgumentNullException.ThrowIfNull(backend);
         var runtimes = new Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime>();
+        var slotAllocations = new Dictionary<int, GpuMemoryAllocation>();
+        var releasedSlots = new HashSet<int>();
+        var importLeases = new List<IDisposable>();
+        bool ownershipTransferred = false;
         try
         {
             HashSet<GpuRenderGraphResource> required = Passes
@@ -140,43 +294,169 @@ public sealed class GpuRenderGraphPlan
                     .Where(resource => resource.IsExported)
                     .Select(resource => resource.Resource))
                 .ToHashSet();
+            bool usesPlacedResources = (backend.Capabilities
+                    & (GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.MemoryAliasing))
+                == (GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.MemoryAliasing)
+                && TransientResources.Count != 0;
+            GpuRenderGraphMemoryPlan? memoryPlan = null;
+            if (usesPlacedResources)
+            {
+                memoryPlan = CreateMemoryPlan(backend);
+                arena ??= new(backend);
+                foreach (GpuRenderGraphPhysicalSlotPlan slot in memoryPlan.Slots)
+                {
+                    slotAllocations.Add(
+                        slot.Slot,
+                        arena.Allocate(
+                            slot.Size,
+                            slot.Alignment,
+                            slot.MemoryKind,
+                            slot.Compatibility));
+                }
+            }
+            IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphPhysicalResourcePlan>? physicalResources =
+                memoryPlan?.Resources.ToDictionary(resource => resource.Resource);
             foreach (GpuRenderGraphResourceInfo resource in Resources.Where(
                 resource => required.Contains(resource.Resource)))
             {
-                resource.ImportedTexture?.RequireBackend(backend);
-                resource.ImportedBuffer?.RequireBackend(backend);
+                if (resource.ImportedTexture is { } importedTexture)
+                {
+                    importLeases.Add(importedTexture.AcquireImportLease(backend));
+                }
+                if (resource.ImportedBuffer is { } importedBuffer)
+                {
+                    importLeases.Add(importedBuffer.AcquireImportLease(backend));
+                }
                 GpuRenderGraphResourceRuntime runtime = resource.IsTransient
-                    ? GpuRenderGraphResourceRuntime.Create(backend, resource)
+                    ? usesPlacedResources
+                        ? GpuRenderGraphResourceRuntime.Create(
+                            backend,
+                            resource,
+                            slotAllocations[physicalResources![resource.Resource].ReuseSlot])
+                        : GpuRenderGraphResourceRuntime.Create(backend, resource)
                     : GpuRenderGraphResourceRuntime.Import(resource);
                 runtimes.Add(resource.Resource, runtime);
             }
 
             IGpuQueue queue = backend.MainQueue;
             GpuCommandBuffer commands = queue.StartCommandRecording();
-            RecordCommands(commands, backend, runtimes);
-            using GpuSemaphore completion = queue.CreateSemaphore();
-            queue.Submit([commands], completion, 1);
-            queue.Wait(completion, 1);
-            DestroyViews(backend, runtimes.Values);
-
+            IReadOnlyDictionary<string, int> passIndices = Passes
+                .Select((pass, index) => (pass.Name, index))
+                .ToDictionary(pair => pair.Name, pair => pair.index, StringComparer.Ordinal);
+            IReadOnlyDictionary<int, GpuRenderGraphAliasBarrierPlan[]>? physicalAliasBarriers =
+                memoryPlan?.AliasBarriers
+                    .GroupBy(barrier => passIndices[barrier.DestinationPass])
+                    .ToDictionary(group => group.Key, group => group.ToArray());
+            RecordCommands(commands, backend, runtimes, physicalAliasBarriers);
             Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> exported =
                 runtimes
                     .Where(pair => pair.Value.Info.IsExported)
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
-            foreach (GpuRenderGraphResourceRuntime runtime in runtimes.Values.Where(
-                runtime => !runtime.Info.IsExported))
+            GpuRenderGraphResourceRuntime[] nonExported = runtimes.Values
+                .Where(runtime => !runtime.Info.IsExported)
+                .ToArray();
+            var retainedAllocations = new List<GpuMemoryAllocation>();
+            var releasableAllocations = new List<(int Slot, GpuMemoryAllocation Allocation)>();
+            if (arena is not null)
             {
-                runtime.Dispose(backend);
+                HashSet<int> exportedSlots = (physicalResources?.Values
+                        ?? Enumerable.Empty<GpuRenderGraphPhysicalResourcePlan>())
+                    .Where(plan => exported.ContainsKey(plan.Resource))
+                    .Select(plan => plan.ReuseSlot)
+                    .ToHashSet();
+                foreach ((int slot, GpuMemoryAllocation allocation) in slotAllocations)
+                {
+                    if (exportedSlots.Contains(slot)) { retainedAllocations.Add(allocation); }
+                    else { releasableAllocations.Add((slot, allocation)); }
+                }
             }
-            return new(backend, exported);
+
+            if (retirementQueue is null)
+            {
+                using GpuSemaphore completion = queue.CreateSemaphore();
+                queue.Submit([commands], completion, 1);
+                queue.Wait(completion, 1);
+                DestroyViews(backend, runtimes.Values);
+                foreach (GpuRenderGraphResourceRuntime runtime in nonExported)
+                {
+                    runtime.Dispose(backend);
+                }
+                if (arena is not null)
+                {
+                    foreach ((int slot, GpuMemoryAllocation allocation) in releasableAllocations)
+                    {
+                        arena.Release(allocation);
+                        releasedSlots.Add(slot);
+                    }
+                    if (retainedAllocations.Count == 0)
+                    {
+                        if (ownsArena) { arena.Dispose(); }
+                        arena = null;
+                    }
+                }
+                foreach (IDisposable lease in importLeases) { lease.Dispose(); }
+                importLeases.Clear();
+                return new(backend, exported, arena, [.. retainedAllocations], ownsArena);
+            }
+
+            GpuRenderGraphResourceRuntime[] allRuntimes = runtimes.Values.ToArray();
+            GpuPersistentArena? submittedArena = arena;
+            var completionActions = new List<Action>();
+            foreach (GpuRenderGraphResourceRuntime runtime in allRuntimes)
+            {
+                if (runtime.View is not null)
+                {
+                    completionActions.Add(() => DestroyView(backend, runtime));
+                }
+            }
+            foreach (GpuRenderGraphResourceRuntime runtime in nonExported)
+            {
+                completionActions.Add(() => runtime.Dispose(backend));
+            }
+            if (submittedArena is not null)
+            {
+                foreach ((int _, GpuMemoryAllocation allocation) in releasableAllocations)
+                {
+                    completionActions.Add(() => submittedArena.Release(allocation));
+                }
+                if (ownsArena && retainedAllocations.Count == 0)
+                {
+                    completionActions.Add(submittedArena.Dispose);
+                }
+            }
+            foreach (IDisposable lease in importLeases)
+            {
+                completionActions.Add(lease.Dispose);
+            }
+            GpuSubmissionToken submission = retirementQueue.Submit(commands, completionActions);
+            ownershipTransferred = true;
+            if (retainedAllocations.Count == 0) { arena = null; }
+            return new(
+                backend,
+                exported,
+                arena,
+                [.. retainedAllocations],
+                ownsArena,
+                retirementQueue,
+                submission);
         }
         catch
         {
+            if (ownershipTransferred) { throw; }
             DestroyViews(backend, runtimes.Values);
             foreach (GpuRenderGraphResourceRuntime runtime in runtimes.Values)
             {
                 runtime.Dispose(backend);
             }
+            if (arena is not null)
+            {
+                foreach ((int slot, GpuMemoryAllocation allocation) in slotAllocations)
+                {
+                    if (!releasedSlots.Contains(slot)) { arena.Release(allocation); }
+                }
+                if (ownsArena) { arena.Dispose(); }
+            }
+            foreach (IDisposable lease in importLeases) { lease.Dispose(); }
             throw;
         }
     }
@@ -195,26 +475,89 @@ public sealed class GpuRenderGraphPlan
         }
     }
 
+    private static void DestroyView(
+        IGpuBackend backend,
+        GpuRenderGraphResourceRuntime runtime)
+    {
+        if (runtime.View is not { } view) { return; }
+        backend.DestroyTextureView(view);
+        runtime.View = null;
+    }
+
     private void RecordCommands(
         GpuCommandBuffer commands,
         IGpuBackend? backend,
-        IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> runtimes)
+        IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> runtimes,
+        IReadOnlyDictionary<int, GpuRenderGraphAliasBarrierPlan[]>? physicalAliasBarriers = null)
     {
+        IReadOnlyDictionary<int, GpuRenderGraphAliasBarrierPlan[]> aliasesByPass =
+            physicalAliasBarriers ?? aliasBarriersByPass;
+        IReadOnlySet<GpuRenderGraphResource>[] allowedResources = GetAllowedResources();
         for (int index = 0; index < Passes.Count; index++)
         {
+            if (backend is not null
+                && (backend.Capabilities
+                        & (GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.MemoryAliasing))
+                    == (GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.MemoryAliasing)
+                && aliasesByPass.TryGetValue(index, out GpuRenderGraphAliasBarrierPlan[]? aliasBarriers))
+            {
+                foreach (GpuRenderGraphAliasBarrierPlan alias in aliasBarriers)
+                {
+                    commands.AliasingBarrier(
+                        AliasingResource(runtimes[alias.BeforeResource]),
+                        AliasingResource(runtimes[alias.AfterResource]),
+                        alias.Before,
+                        alias.After,
+                        alias.Hazards);
+                }
+            }
             if (barriersByPass.TryGetValue(index, out GpuRenderGraphBarrierPlan? barrier))
             {
                 commands.Barrier(barrier.Before, barrier.After, barrier.Hazards);
             }
-            IReadOnlySet<GpuRenderGraphResource> allowedResources = Passes[index].Accesses
-                .Select(access => access.Resource)
-                .ToHashSet();
-            recorders[index](new(commands, backend, runtimes, allowedResources));
+            recorders[index].Record(commands, backend, runtimes, allowedResources[index]);
         }
     }
+
+    private IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> GetImportedRuntimes()
+    {
+        IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime>? current =
+            Volatile.Read(ref importedRuntimes);
+        if (current is not null) { return current; }
+
+        var created = new Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime>(Resources.Count);
+        foreach (GpuRenderGraphResourceInfo resource in Resources)
+        {
+            created.Add(resource.Resource, GpuRenderGraphResourceRuntime.Import(resource));
+        }
+        return Interlocked.CompareExchange(ref importedRuntimes, created, null) ?? created;
+    }
+
+    private IReadOnlySet<GpuRenderGraphResource>[] GetAllowedResources()
+    {
+        IReadOnlySet<GpuRenderGraphResource>[]? current = Volatile.Read(ref allowedResourcesByPass);
+        if (current is not null) { return current; }
+
+        var created = new IReadOnlySet<GpuRenderGraphResource>[Passes.Count];
+        for (int index = 0; index < Passes.Count; index++)
+        {
+            var resources = new HashSet<GpuRenderGraphResource>();
+            foreach (GpuRenderGraphResourceAccess access in Passes[index].Accesses)
+            {
+                resources.Add(access.Resource);
+            }
+            created[index] = resources;
+        }
+        return Interlocked.CompareExchange(ref allowedResourcesByPass, created, null) ?? created;
+    }
+
+    private static GpuAliasingResource AliasingResource(GpuRenderGraphResourceRuntime runtime)
+        => runtime.Info.Kind == GpuRenderGraphResourceKind.Texture
+            ? GpuAliasingResource.FromTexture(runtime.Texture)
+            : GpuAliasingResource.FromBuffer(runtime.Buffer);
 }
 
-public sealed class GpuRenderGraph
+public sealed partial class GpuRenderGraph
 {
     private static int s_nextResourceId;
     private const GpuStage AllStages = GpuStage.DrawIndirect | GpuStage.VertexShader | GpuStage.PixelShader
@@ -330,13 +673,30 @@ public sealed class GpuRenderGraph
             null);
     }
 
-    public GpuRenderGraphPassBuilder AddPass(
+    /// <summary>
+    /// Adds a pass whose static callback receives explicit state and a stack-only context.
+    /// This avoids closure and per-record context allocations.
+    /// </summary>
+    public GpuRenderGraphPassBuilder AddPass<TState>(
         string name,
-        Action<GpuRenderGraphPassContext> record,
+        TState state,
+        GpuRenderGraphPassAction<TState> record,
         GpuRenderGraphPassFlags flags = GpuRenderGraphPassFlags.None)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(record);
+        ValidatePass(name, flags);
+        return AddPass(new StatefulPassDeclaration<TState>(name, state, record, flags));
+    }
+
+    private GpuRenderGraphPassBuilder AddPass(PassDeclaration declaration)
+    {
+        passes.Add(declaration);
+        return new(this, declaration);
+    }
+
+    private void ValidatePass(string name, GpuRenderGraphPassFlags flags)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if ((flags & ~GpuRenderGraphPassFlags.NeverCull) != 0)
         {
             throw new ArgumentOutOfRangeException(nameof(flags));
@@ -345,10 +705,6 @@ public sealed class GpuRenderGraph
         {
             throw new ArgumentException($"A pass named '{name}' already exists.", nameof(name));
         }
-
-        var declaration = new PassDeclaration(name, record, flags);
-        passes.Add(declaration);
-        return new(this, declaration);
     }
 
     public GpuRenderGraph MarkOutput(GpuRenderGraphResource resource)
@@ -364,7 +720,15 @@ public sealed class GpuRenderGraph
     public GpuRenderGraphResource ExportBuffer(GpuRenderGraphResource resource)
         => Export(resource, GpuRenderGraphResourceKind.Buffer);
 
-    public GpuRenderGraphPlan Compile()
+    public GpuRenderGraphPlan Compile() => CompileUncached();
+
+    public GpuRenderGraphPlan Compile(GpuRenderGraphPlanCache cache)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        return cache.Compile(this);
+    }
+
+    internal GpuRenderGraphPlan CompileUncached()
     {
         var dataDependencies = new HashSet<int>[passes.Count];
         for (int index = 0; index < passes.Count; index++) { dataDependencies[index] = []; }
@@ -417,14 +781,24 @@ public sealed class GpuRenderGraph
             passes[index].Name,
             index,
             [.. passes[index].Accesses])).ToArray();
-        Action<GpuRenderGraphPassContext>[] recorders = ordered
-            .Select(index => passes[index].Record)
+        IGpuRenderGraphPassRecorder[] recorders = ordered
+            .Select(index => (IGpuRenderGraphPassRecorder)passes[index])
             .ToArray();
         GpuRenderGraphBarrierPlan[] barriers = PlanBarriers(ordered);
+        (GpuRenderGraphTransientResourcePlan[] transientResources,
+            GpuRenderGraphTransientSlotPlan[] transientSlots,
+            GpuRenderGraphAliasBarrierPlan[] aliasBarriers) = PlanTransients(ordered);
         GpuRenderGraphResourceInfo[] resourceInfos = resources
             .Select(resource => resource.Info with { })
             .ToArray();
-        return new(resourceInfos, passPlans, barriers, recorders);
+        return new(
+            resourceInfos,
+            passPlans,
+            barriers,
+            transientResources,
+            transientSlots,
+            aliasBarriers,
+            recorders);
     }
 
     internal void AddAccess(
@@ -662,17 +1036,144 @@ public sealed class GpuRenderGraph
         return [.. result];
     }
 
+    private (
+        GpuRenderGraphTransientResourcePlan[] Resources,
+        GpuRenderGraphTransientSlotPlan[] Slots,
+        GpuRenderGraphAliasBarrierPlan[] AliasBarriers) PlanTransients(int[] ordered)
+    {
+        var candidates = new List<TransientCandidate>();
+        for (int resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
+        {
+            GpuRenderGraphResourceInfo info = resources[resourceIndex].Info;
+            if (!info.IsTransient) { continue; }
+
+            int firstPass = int.MaxValue;
+            int lastPass = -1;
+            for (int executionIndex = 0; executionIndex < ordered.Length; executionIndex++)
+            {
+                if (passes[ordered[executionIndex]].Accesses.Any(access => access.Resource == info.Resource))
+                {
+                    firstPass = Math.Min(firstPass, executionIndex);
+                    lastPass = executionIndex;
+                }
+            }
+            if (lastPass < 0) { continue; }
+            if (info.IsExported) { lastPass = ordered.Length - 1; }
+
+            candidates.Add(new(
+                resourceIndex,
+                info,
+                new GpuTransientLifetime(firstPass, lastPass)));
+        }
+
+        var slots = new List<TransientSlot>();
+        var plans = new List<GpuRenderGraphTransientResourcePlan>(candidates.Count);
+        foreach (TransientCandidate candidate in candidates
+            .OrderBy(candidate => candidate.Lifetime.FirstPass)
+            .ThenBy(candidate => candidate.DeclarationIndex))
+        {
+            TransientSlot? slot = slots.FirstOrDefault(existing =>
+                existing.IsCompatible(candidate.Info)
+                && existing.Lifetimes.All(lifetime => !lifetime.Overlaps(candidate.Lifetime)));
+            if (slot is null)
+            {
+                slot = new(slots.Count, candidate.Info);
+                slots.Add(slot);
+            }
+            slot.Resources.Add(candidate.Info.Resource);
+            slot.Lifetimes.Add(candidate.Lifetime);
+            plans.Add(new(candidate.Info.Resource, candidate.Lifetime, slot.Index));
+        }
+
+        var aliasBarriers = new List<GpuRenderGraphAliasBarrierPlan>();
+        foreach (TransientSlot slot in slots)
+        {
+            TransientCandidate[] assigned = slot.Resources
+                .Select(resource => candidates.Single(candidate => candidate.Info.Resource == resource))
+                .OrderBy(candidate => candidate.Lifetime.FirstPass)
+                .ToArray();
+            for (int index = 1; index < assigned.Length; index++)
+            {
+                TransientCandidate before = assigned[index - 1];
+                TransientCandidate after = assigned[index];
+                GpuRenderGraphResourceAccess beforeAccess = passes[ordered[before.Lifetime.LastPass]].Accesses
+                    .Single(access => access.Resource == before.Info.Resource);
+                GpuRenderGraphResourceAccess afterAccess = passes[ordered[after.Lifetime.FirstPass]].Accesses
+                    .Single(access => access.Resource == after.Info.Resource);
+                aliasBarriers.Add(new(
+                    passes[ordered[after.Lifetime.FirstPass]].Name,
+                    slot.Index,
+                    before.Info.Resource,
+                    after.Info.Resource,
+                    beforeAccess.Stage,
+                    afterAccess.Stage,
+                    beforeAccess.Hazards | afterAccess.Hazards));
+            }
+        }
+
+        return (
+            [.. plans],
+            [.. slots.Select(slot => new GpuRenderGraphTransientSlotPlan(
+                slot.Index,
+                slot.Kind,
+                slot.MemoryKind,
+                slot.TextureDescription,
+                slot.BufferDescription,
+                [.. slot.Resources]))],
+            [.. aliasBarriers]);
+    }
+
     private sealed record ResourceDeclaration(GpuRenderGraphResourceInfo Info);
 
-    internal sealed class PassDeclaration(
+    private sealed record TransientCandidate(
+        int DeclarationIndex,
+        GpuRenderGraphResourceInfo Info,
+        GpuTransientLifetime Lifetime);
+
+    private sealed class TransientSlot(int index, GpuRenderGraphResourceInfo resource)
+    {
+        public int Index { get; } = index;
+        public GpuRenderGraphResourceKind Kind { get; } = resource.Kind;
+        public GpuMemoryKind MemoryKind { get; } = resource.MemoryKind;
+        public GpuTextureDescription? TextureDescription { get; } = resource.TextureDescription;
+        public GpuBufferDescription? BufferDescription { get; } = resource.BufferDescription;
+        public List<GpuRenderGraphResource> Resources { get; } = [];
+        public List<GpuTransientLifetime> Lifetimes { get; } = [];
+
+        public bool IsCompatible(GpuRenderGraphResourceInfo candidate)
+            => Kind == candidate.Kind
+                && MemoryKind == candidate.MemoryKind
+                && TextureDescription == candidate.TextureDescription
+                && BufferDescription == candidate.BufferDescription;
+    }
+
+    internal abstract class PassDeclaration(
         string name,
-        Action<GpuRenderGraphPassContext> record,
-        GpuRenderGraphPassFlags flags)
+        GpuRenderGraphPassFlags flags) : IGpuRenderGraphPassRecorder
     {
         public string Name { get; } = name;
-        public Action<GpuRenderGraphPassContext> Record { get; } = record;
         public GpuRenderGraphPassFlags Flags { get; } = flags;
         public List<GpuRenderGraphResourceAccess> Accesses { get; } = [];
+
+        public abstract void Record(
+            GpuCommandBuffer commands,
+            IGpuBackend? backend,
+            IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
+            IReadOnlySet<GpuRenderGraphResource> allowedResources);
+    }
+
+    private sealed class StatefulPassDeclaration<TState>(
+        string name,
+        TState state,
+        GpuRenderGraphPassAction<TState> record,
+        GpuRenderGraphPassFlags flags) : PassDeclaration(name, flags)
+    {
+        public override void Record(
+            GpuCommandBuffer commands,
+            IGpuBackend? backend,
+            IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
+            IReadOnlySet<GpuRenderGraphResource> allowedResources)
+            => record(new(commands, backend, resources, allowedResources), state);
     }
 }
 

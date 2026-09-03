@@ -6,18 +6,25 @@ public readonly record struct GpuFenceValue(ulong Value) : IComparable<GpuFenceV
 }
 
 /// <summary>
-/// Persistent allocation owner. Allocations are released only after a reported completed fence.
+/// Persistent GPU heap owner and free-region manager. Fence collection returns regions to
+/// their arena blocks; <see cref="Trim"/> releases completely unused native blocks.
 /// </summary>
-public sealed class GpuPersistentArena
+public sealed class GpuPersistentArena : IDisposable
 {
+    private const ulong DefaultBlockSize = 4 * 1024 * 1024;
     private readonly IGpuBackend backend;
+    private readonly ulong blockSize;
+    private readonly List<Block> blocks = [];
     private readonly HashSet<GpuMemoryAllocation> liveAllocations = [];
     private readonly SortedDictionary<ulong, List<GpuMemoryAllocation>> retiredAllocations = [];
+    private bool disposed;
 
-    public GpuPersistentArena(IGpuBackend backend)
+    public GpuPersistentArena(IGpuBackend backend, ulong blockSize = DefaultBlockSize)
     {
         this.backend = backend ?? throw new ArgumentNullException(nameof(backend));
         RequireExplicitPlacement(backend);
+        if (blockSize == 0) { throw new ArgumentOutOfRangeException(nameof(blockSize)); }
+        this.blockSize = blockSize;
     }
 
     public int LiveAllocationCount => liveAllocations.Count;
@@ -26,36 +33,68 @@ public sealed class GpuPersistentArena
     public GpuMemoryAllocation Allocate(
         ulong size,
         ulong alignment = 16,
-        GpuMemoryKind kind = GpuMemoryKind.HostMapped)
+        GpuMemoryKind kind = GpuMemoryKind.HostMapped,
+        ulong compatibility = 0)
     {
-        if (size == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(size));
-        }
-
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (size == 0) { throw new ArgumentOutOfRangeException(nameof(size)); }
         if (alignment == 0 || !System.Numerics.BitOperations.IsPow2(alignment))
         {
             throw new ArgumentOutOfRangeException(nameof(alignment));
         }
 
-        GpuMemoryAllocation allocation = backend.AllocateMemory(size, alignment, kind).Validate();
-        if (allocation.Size < size || allocation.Alignment < alignment)
+        ulong compatibilityKey = backend.GetMemoryCompatibilityKey(kind, compatibility);
+
+        foreach (Block block in blocks)
         {
-            backend.FreeMemory(allocation);
-            throw new InvalidOperationException("Backend allocation does not satisfy the requested size and alignment.");
+            if (block.Kind == kind
+                && backend.IsMemoryCompatibilityKeyCompatible(kind, block.Compatibility, compatibility)
+                && block.TryAllocate(size, alignment, out GpuMemoryAllocation allocation))
+            {
+                liveAllocations.Add(allocation);
+                return allocation;
+            }
         }
 
-        if (!liveAllocations.Add(allocation))
+        ulong requestedBlockSize = Math.Max(blockSize, Align(size, alignment));
+        GpuMemoryAllocation backing = backend.AllocateMemory(
+            requestedBlockSize,
+            alignment,
+            kind,
+            compatibility).Validate();
+        if (backing.Size < size || backing.Alignment < alignment
+            || backing.MemoryAddress.Offset != 0 || backing.MemoryAddress.Length < backing.Size)
         {
-            backend.FreeMemory(allocation);
-            throw new InvalidOperationException("Backend returned a duplicate live allocation.");
+            backend.FreeMemory(backing);
+            throw new InvalidOperationException("Backend allocation does not satisfy the requested arena block.");
         }
 
-        return allocation;
+        var created = new Block(backing, compatibilityKey);
+        blocks.Add(created);
+        if (!created.TryAllocate(size, alignment, out GpuMemoryAllocation result)
+            || !liveAllocations.Add(result))
+        {
+            blocks.Remove(created);
+            backend.FreeMemory(backing);
+            throw new InvalidOperationException("The arena could not suballocate a newly created block.");
+        }
+        return result;
+    }
+
+    /// <summary>Immediately returns a region that is known to be idle.</summary>
+    public void Release(GpuMemoryAllocation allocation)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (!liveAllocations.Remove(allocation))
+        {
+            throw new ArgumentException("Allocation is not live in this arena.", nameof(allocation));
+        }
+        ReleaseRegion(allocation);
     }
 
     public void Retire(GpuMemoryAllocation allocation, GpuFenceValue afterFence)
     {
+        ObjectDisposedException.ThrowIf(disposed, this);
         if (!liveAllocations.Remove(allocation))
         {
             throw new ArgumentException("Allocation is not live in this arena.", nameof(allocation));
@@ -66,38 +105,78 @@ public sealed class GpuPersistentArena
             values = [];
             retiredAllocations.Add(afterFence.Value, values);
         }
-
         values.Add(allocation);
     }
 
     public int Collect(GpuFenceValue completedFence)
     {
+        ObjectDisposedException.ThrowIf(disposed, this);
         ulong[] completedKeys = retiredAllocations.Keys
             .TakeWhile(value => value <= completedFence.Value)
             .ToArray();
         int freed = 0;
-
         foreach (ulong key in completedKeys)
         {
             foreach (GpuMemoryAllocation allocation in retiredAllocations[key])
             {
-                backend.FreeMemory(allocation);
+                ReleaseRegion(allocation);
                 freed++;
             }
-
             retiredAllocations.Remove(key);
         }
-
         return freed;
+    }
+
+    public int Trim()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        Block[] unused = blocks.Where(block => block.IsEmpty).ToArray();
+        foreach (Block block in unused)
+        {
+            backend.FreeMemory(block.Backing);
+            blocks.Remove(block);
+        }
+        return unused.Length;
     }
 
     public void VerifyEmpty()
     {
+        ObjectDisposedException.ThrowIf(disposed, this);
         if (liveAllocations.Count != 0 || retiredAllocations.Count != 0)
         {
             throw new InvalidOperationException("Arena still owns live or fence-pending allocations.");
         }
+        Trim();
     }
+
+    public void Dispose()
+    {
+        if (disposed) { return; }
+        VerifyEmpty();
+        disposed = true;
+    }
+
+    internal void RequireBackend(IGpuBackend candidate)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (!ReferenceEquals(backend, candidate))
+        {
+            throw new ArgumentException("Arena belongs to another GPU backend.", nameof(candidate));
+        }
+    }
+
+    private void ReleaseRegion(GpuMemoryAllocation allocation)
+    {
+        Block? owner = blocks.SingleOrDefault(
+            block => block.Backing.MemoryAddress.AllocationId == allocation.MemoryAddress.AllocationId);
+        if (owner is null || !owner.Release(allocation))
+        {
+            throw new InvalidOperationException("Allocation does not identify a live arena region.");
+        }
+    }
+
+    private static ulong Align(ulong value, ulong alignment)
+        => checked((value + alignment - 1) & ~(alignment - 1));
 
     private static void RequireExplicitPlacement(IGpuBackend backend)
     {
@@ -105,6 +184,88 @@ public sealed class GpuPersistentArena
         {
             throw new ArgumentException("Backend does not support explicit resource placement.", nameof(backend));
         }
+    }
+
+    private sealed class Block
+    {
+        private readonly List<Region> free = [];
+
+        public Block(GpuMemoryAllocation backing, ulong compatibility)
+        {
+            Backing = backing;
+            Compatibility = compatibility;
+            free.Add(new(0, backing.Size));
+        }
+
+        public GpuMemoryAllocation Backing { get; }
+        public ulong Compatibility { get; }
+        public GpuMemoryKind Kind => Backing.Kind;
+        public bool IsEmpty => free.Count == 1 && free[0] == new Region(0, Backing.Size);
+
+        public bool TryAllocate(ulong size, ulong alignment, out GpuMemoryAllocation allocation)
+        {
+            if (Backing.Alignment < alignment)
+            {
+                allocation = default;
+                return false;
+            }
+
+            for (int index = 0; index < free.Count; index++)
+            {
+                Region region = free[index];
+                ulong offset = Align(region.Offset, alignment);
+                if (offset < region.Offset || offset - region.Offset > region.Size
+                    || size > region.Size - (offset - region.Offset))
+                {
+                    continue;
+                }
+
+                free.RemoveAt(index);
+                ulong prefix = offset - region.Offset;
+                ulong suffixOffset = checked(offset + size);
+                ulong suffix = region.Size - prefix - size;
+                if (suffix != 0) { free.Insert(index, new(suffixOffset, suffix)); }
+                if (prefix != 0) { free.Insert(index, new(region.Offset, prefix)); }
+                nint cpuAddress = Backing.CpuAddress == 0
+                    ? 0
+                    : checked(Backing.CpuAddress + (nint)offset);
+                allocation = new(
+                    size,
+                    alignment,
+                    Backing.Kind,
+                    cpuAddress,
+                    new(Backing.MemoryAddress.AllocationId, offset, size));
+                return true;
+            }
+
+            allocation = default;
+            return false;
+        }
+
+        public bool Release(GpuMemoryAllocation allocation)
+        {
+            if (allocation.Kind != Backing.Kind
+                || allocation.MemoryAddress.AllocationId != Backing.MemoryAddress.AllocationId
+                || allocation.MemoryAddress.Offset > Backing.Size
+                || allocation.Size > Backing.Size - allocation.MemoryAddress.Offset)
+            {
+                return false;
+            }
+
+            free.Add(new(allocation.MemoryAddress.Offset, allocation.Size));
+            free.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
+            for (int index = free.Count - 1; index > 0; index--)
+            {
+                Region previous = free[index - 1];
+                Region current = free[index];
+                if (previous.Offset + previous.Size != current.Offset) { continue; }
+                free[index - 1] = new(previous.Offset, checked(previous.Size + current.Size));
+                free.RemoveAt(index);
+            }
+            return true;
+        }
+
+        private readonly record struct Region(ulong Offset, ulong Size);
     }
 }
 
@@ -133,7 +294,11 @@ public sealed class GpuManualTextureAllocator
     public GpuMemoryAllocation AllocateMemory(GpuTextureDescription description)
     {
         GpuTextureMemoryRequirements requirements = GetMemoryRequirements(description);
-        return arena.Allocate(requirements.Size, requirements.Alignment, GpuMemoryKind.DeviceLocal);
+        return arena.Allocate(
+            requirements.Size,
+            requirements.Alignment,
+            GpuMemoryKind.DeviceLocal,
+            requirements.Compatibility);
     }
 
     public GpuTextureHandle CreatePlacedTexture(
@@ -289,7 +454,7 @@ public sealed class GpuManualBufferAllocator
         GpuMemoryKind kind)
     {
         GpuBufferMemoryRequirements requirements = GetMemoryRequirements(description);
-        return arena.Allocate(requirements.Size, requirements.Alignment, kind);
+        return arena.Allocate(requirements.Size, requirements.Alignment, kind, requirements.Compatibility);
     }
 
     public GpuBufferHandle CreatePlacedBuffer(

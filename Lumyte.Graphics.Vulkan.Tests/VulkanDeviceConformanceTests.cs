@@ -19,8 +19,43 @@ public sealed class VulkanDeviceConformanceTests
         IGpuBackend backend = device;
 
         Assert.Equal(
-            GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.RasterPipeline,
+            GpuBackendCapabilities.ExplicitPlacement
+            | GpuBackendCapabilities.RasterPipeline
+            | GpuBackendCapabilities.MemoryAliasing,
             backend.Capabilities);
+    }
+
+    [Fact]
+    [Trait("Category", "VulkanConformance")]
+    public void MemoryTypeMasksSelectACommonArenaKey()
+    {
+        using VulkanDevice device = VulkanDevice.Create();
+        IGpuBackend backend = device;
+        GpuTextureMemoryRequirements sampled = device.GetTextureMemoryRequirements(
+            new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled));
+        GpuTextureMemoryRequirements attachment = device.GetTextureMemoryRequirements(
+            new(8, 8, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
+
+        bool compatible = backend.TryCombineMemoryCompatibility(
+            sampled.Compatibility,
+            attachment.Compatibility,
+            out ulong combined);
+        ulong allocationKey = backend.GetMemoryCompatibilityKey(
+            GpuMemoryKind.DeviceLocal,
+            combined);
+
+        Assert.True(compatible);
+        Assert.NotEqual(0ul, combined);
+        Assert.True(System.Numerics.BitOperations.IsPow2(allocationKey));
+        Assert.True(backend.IsMemoryCompatibilityKeyCompatible(
+            GpuMemoryKind.DeviceLocal,
+            allocationKey,
+            sampled.Compatibility));
+        Assert.True(backend.IsMemoryCompatibilityKeyCompatible(
+            GpuMemoryKind.DeviceLocal,
+            allocationKey,
+            attachment.Compatibility));
+        Assert.False(backend.TryCombineMemoryCompatibility(0b0001, 0b0010, out _));
     }
 
     [Fact]

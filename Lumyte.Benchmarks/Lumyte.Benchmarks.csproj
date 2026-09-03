@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Animation\Lumyte.Animation.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
     <ProjectReference Include="..\Lumyte.Interaction\Lumyte.Interaction.csproj" />
     <ProjectReference Include="..\Lumyte.StateMachine\Lumyte.StateMachine.csproj" />
     <PackageReference Include="BenchmarkDotNet" />

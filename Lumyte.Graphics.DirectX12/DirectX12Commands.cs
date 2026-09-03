@@ -68,8 +68,23 @@ public sealed unsafe partial class DirectX12Device
         {
             throw new ArgumentException("Semaphore belongs to another backend.", nameof(semaphore));
         }
+        semaphore.ValidateWait(value);
         while (semaphore.Fence.GetCompletedValue() < value) { Thread.Yield(); }
         semaphore.ReleaseCompleted(value);
+    }
+
+    private bool IsComplete(DirectX12Semaphore semaphore, ulong value)
+    {
+        VerifyNotDisposed();
+        if (semaphore.Owner != this)
+        {
+            throw new ArgumentException("Semaphore belongs to another backend.", nameof(semaphore));
+        }
+        semaphore.ValidateWait(value);
+        ulong completed = semaphore.Fence.GetCompletedValue();
+        if (completed < value) { return false; }
+        semaphore.ReleaseCompleted(completed);
+        return true;
     }
 
     private void Transition(
@@ -128,6 +143,15 @@ public sealed unsafe partial class DirectX12Device
             }
             owner.Wait(native, value);
         }
+
+        public bool IsComplete(GpuSemaphore semaphore, ulong value)
+        {
+            if (semaphore is not DirectX12Semaphore native)
+            {
+                throw new ArgumentException("Semaphore belongs to another backend.", nameof(semaphore));
+            }
+            return owner.IsComplete(native, value);
+        }
     }
 
     private sealed class DirectX12Recorder : IGpuCommandRecorder, IDisposable
@@ -159,6 +183,27 @@ public sealed unsafe partial class DirectX12Device
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards)
         {
             Owner.VerifyNotDisposed();
+        }
+
+        public void AliasingBarrier(
+            GpuAliasingResource beforeResource,
+            GpuAliasingResource afterResource,
+            GpuStage before,
+            GpuStage after,
+            GpuBarrierHazards hazards)
+        {
+            Owner.VerifyNotDisposed();
+            ID3D12Resource* beforeNative = NativeResource(beforeResource);
+            ID3D12Resource* afterNative = NativeResource(afterResource);
+            if (beforeNative == afterNative) { return; }
+            var alias = new ResourceAliasingBarrier(beforeNative, afterNative);
+            var barrier = new ResourceBarrier(
+                ResourceBarrierType.Aliasing,
+                ResourceBarrierFlags.None,
+                null,
+                null,
+                alias);
+            Commands.ResourceBarrier(1, in barrier);
         }
 
         public void BeginRendering(IReadOnlyList<GpuColorAttachment> colors, GpuDepthStencilAttachment? depth)
@@ -431,6 +476,11 @@ public sealed unsafe partial class DirectX12Device
             return record;
         }
 
+        private ID3D12Resource* NativeResource(GpuAliasingResource resource)
+            => !resource.Texture.IsNull
+                ? Owner.RequireTexture(resource.Texture).Resource.Handle
+                : Owner.RequireBuffer(resource.Buffer).Resource.Handle;
+
         private MemoryRecord RequireMemory(GpuMemoryAddress address, GpuMemoryKind kind)
         {
             if (!Owner.memories.TryGetValue(address.AllocationId, out MemoryRecord? memory)
@@ -521,6 +571,15 @@ public sealed unsafe partial class DirectX12Device
             if (value <= lastSignalValue)
             {
                 throw new ArgumentOutOfRangeException(nameof(value), "Signal values must increase monotonically.");
+            }
+        }
+
+        public void ValidateWait(ulong value)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (value > lastSignalValue)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "Cannot wait for an unsignaled value.");
             }
         }
 

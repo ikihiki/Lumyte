@@ -190,34 +190,40 @@ internal sealed class VulkanSampleRenderer : IDisposable
             "swapchain-back-buffer",
             frame.View.Texture,
             backBufferDescription);
-        graph.AddPass("scene", context => context.Commands
+        graph.AddPass(
+                "scene",
+                (View: frame.View, Pipeline: scenePipeline, RootData: lightingRootData, Width: width, Height: height),
+                static (context, state) => context.Commands
                 .BeginRendering([
                     new(
-                        frame.View,
+                        state.View,
                         GpuAttachmentLoadOperation.Clear,
                         GpuAttachmentStoreOperation.Store,
                         new(0.01f, 0.02f, 0.05f, 1)),
                 ])
-                .SetPipeline(scenePipeline)
-                .SetRootData(lightingRootData)
+                .SetPipeline(state.Pipeline)
+                .SetRootData(state.RootData)
                 .SetViewportAndScissor(
-                    new(0, 0, width, height),
-                    new(0, 0, width, height))
+                    new(0, 0, state.Width, state.Height),
+                    new(0, 0, state.Width, state.Height))
                 .Draw(6)
                 .EndRendering())
             .Write(backBuffer, GpuStage.ColorOutput);
-        graph.AddPass("additive-light", context => context.Commands
+        graph.AddPass(
+                "additive-light",
+                (View: frame.View, Pipeline: lightPipeline, RootData: lightingRootData, Width: width, Height: height),
+                static (context, state) => context.Commands
                 .BeginRendering([
                     new(
-                        frame.View,
+                        state.View,
                         GpuAttachmentLoadOperation.Load,
                         GpuAttachmentStoreOperation.Store),
                 ])
-                .SetPipeline(lightPipeline)
-                .SetRootData(lightingRootData)
+                .SetPipeline(state.Pipeline)
+                .SetRootData(state.RootData)
                 .SetViewportAndScissor(
-                    new(0, 0, width, height),
-                    new(0, 0, width, height))
+                    new(0, 0, state.Width, state.Height),
+                    new(0, 0, state.Width, state.Height))
                 .Draw(6)
                 .EndRendering())
             .ReadWrite(backBuffer, GpuStage.ColorOutput);

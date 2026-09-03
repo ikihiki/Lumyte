@@ -59,6 +59,7 @@ public sealed class GpuManualTextureAllocatorTests
         textures.Retire(texture, memory, new(7));
         int beforeFence = textures.Collect(new(6));
         int atFence = textures.Collect(new(7));
+        textures.VerifyEmpty();
 
         Assert.Equal(0, beforeFence);
         Assert.Equal(1, atFence);
@@ -66,7 +67,6 @@ public sealed class GpuManualTextureAllocatorTests
             backend.ReleaseEvents,
             value => Assert.Equal($"texture:{texture.Value}", value),
             value => Assert.Equal($"memory:{memory.MemoryAddress.AllocationId}", value));
-        textures.VerifyEmpty();
     }
 
     [Fact]
@@ -108,6 +108,87 @@ public sealed class GpuManualTextureAllocatorTests
     }
 
     [Fact]
+    public void ArenaSuballocatesAndReusesReleasedRegions()
+    {
+        var backend = new RecordingResourceBackend();
+        using var arena = new GpuPersistentArena(backend, 1024);
+        GpuMemoryAllocation first = arena.Allocate(128, 64, GpuMemoryKind.DeviceLocal);
+        GpuMemoryAllocation second = arena.Allocate(128, 64, GpuMemoryKind.DeviceLocal);
+
+        arena.Release(first);
+        GpuMemoryAllocation reused = arena.Allocate(64, 64, GpuMemoryKind.DeviceLocal);
+
+        Assert.Equal(1, backend.AllocationCount);
+        Assert.Equal(first.MemoryAddress.AllocationId, second.MemoryAddress.AllocationId);
+        Assert.Equal(first.MemoryAddress.Offset, reused.MemoryAddress.Offset);
+        Assert.Equal(128ul, second.MemoryAddress.Offset);
+        arena.Release(second);
+        arena.Release(reused);
+    }
+
+    [Fact]
+    public void ArenaSeparatesIncompatibleHeapClasses()
+    {
+        var backend = new RecordingResourceBackend();
+        using var arena = new GpuPersistentArena(backend, 1024);
+        GpuMemoryAllocation first = arena.Allocate(64, 16, GpuMemoryKind.DeviceLocal, 1);
+        GpuMemoryAllocation second = arena.Allocate(64, 16, GpuMemoryKind.DeviceLocal, 2);
+
+        Assert.Equal(2, backend.AllocationCount);
+        Assert.NotEqual(first.MemoryAddress.AllocationId, second.MemoryAddress.AllocationId);
+        arena.Release(first);
+        arena.Release(second);
+    }
+
+    [Fact]
+    public void ArenaReusesALargerCompatibleReleasedRegion()
+    {
+        var backend = new RecordingResourceBackend();
+        using var arena = new GpuPersistentArena(backend, 1024);
+        GpuMemoryAllocation large = arena.Allocate(256, 64, GpuMemoryKind.DeviceLocal, 7);
+        arena.Release(large);
+
+        GpuMemoryAllocation small = arena.Allocate(64, 16, GpuMemoryKind.DeviceLocal, 7);
+
+        Assert.Equal(1, backend.AllocationCount);
+        Assert.Equal(large.MemoryAddress.AllocationId, small.MemoryAddress.AllocationId);
+        Assert.Equal(large.MemoryAddress.Offset, small.MemoryAddress.Offset);
+        arena.Release(small);
+    }
+
+    [Fact]
+    public void ArenaUsesANewBlockWhenFreeRegionsAreTooSmall()
+    {
+        var backend = new RecordingResourceBackend();
+        using var arena = new GpuPersistentArena(backend, 128);
+        GpuMemoryAllocation first = arena.Allocate(96, 16, GpuMemoryKind.DeviceLocal);
+
+        GpuMemoryAllocation second = arena.Allocate(64, 16, GpuMemoryKind.DeviceLocal);
+
+        Assert.Equal(2, backend.AllocationCount);
+        Assert.NotEqual(first.MemoryAddress.AllocationId, second.MemoryAddress.AllocationId);
+        arena.Release(first);
+        arena.Release(second);
+    }
+
+    [Fact]
+    public void ArenaUsesANewBlockForAStrongerAlignmentRequirement()
+    {
+        var backend = new RecordingResourceBackend();
+        using var arena = new GpuPersistentArena(backend, 256);
+        GpuMemoryAllocation weaklyAligned = arena.Allocate(16, 16, GpuMemoryKind.DeviceLocal);
+
+        GpuMemoryAllocation stronglyAligned = arena.Allocate(64, 64, GpuMemoryKind.DeviceLocal);
+
+        Assert.Equal(2, backend.AllocationCount);
+        Assert.NotEqual(
+            weaklyAligned.MemoryAddress.AllocationId,
+            stronglyAligned.MemoryAddress.AllocationId);
+        arena.Release(weaklyAligned);
+        arena.Release(stronglyAligned);
+    }
+
+    [Fact]
     public void BufferAddressValidatesRangeAndRetirement()
     {
         var backend = new RecordingResourceBackend();
@@ -132,15 +213,24 @@ public sealed class GpuManualTextureAllocatorTests
         private readonly Dictionary<ulong, ulong> bufferAllocations = [];
 
         public List<string> ReleaseEvents { get; } = [];
+        public int AllocationCount { get; private set; }
         public GpuBackendCapabilities Capabilities => GpuBackendCapabilities.ExplicitPlacement;
 
         public GpuMemoryAllocation AllocateMemory(ulong size, ulong alignment, GpuMemoryKind kind)
         {
+            AllocationCount++;
             ulong address = nextAddress;
             nextAddress += Align(size, alignment);
             nint cpuAddress = kind == GpuMemoryKind.DeviceLocal ? 0 : checked((nint)(address + 0x100000));
             return new(size, alignment, kind, cpuAddress, new(address, 0, size));
         }
+
+        public GpuMemoryAllocation AllocateMemory(
+            ulong size,
+            ulong alignment,
+            GpuMemoryKind kind,
+            ulong compatibility)
+            => AllocateMemory(size, alignment, kind);
 
         public void FreeMemory(GpuMemoryAllocation allocation)
             => ReleaseEvents.Add($"memory:{allocation.MemoryAddress.AllocationId}");

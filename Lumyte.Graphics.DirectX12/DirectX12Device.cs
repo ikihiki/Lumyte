@@ -61,6 +61,7 @@ public sealed unsafe partial class DirectX12Device :
     public IGpuQueue MainQueue { get; private set; } = null!;
     public GpuBackendCapabilities Capabilities =>
         GpuBackendCapabilities.ExplicitPlacement
+        | GpuBackendCapabilities.MemoryAliasing
         | GpuBackendCapabilities.RasterPipeline;
 
     public byte[] RoundTripBuffer(ReadOnlySpan<byte> source)

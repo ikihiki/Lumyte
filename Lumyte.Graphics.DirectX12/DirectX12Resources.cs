@@ -7,6 +7,9 @@ namespace Lumyte.Graphics.DirectX12;
 public sealed unsafe partial class DirectX12Device
 {
     private const ulong HeapAlignment = D3D12.DefaultResourcePlacementAlignment;
+    private const ulong BufferHeapCompatibility = 1;
+    private const ulong TextureHeapCompatibility = 2;
+    private const ulong RenderTargetHeapCompatibility = 3;
 
     public GpuTextureMemoryRequirements GetTextureMemoryRequirements(GpuTextureDescription description)
     {
@@ -19,7 +22,12 @@ public sealed unsafe partial class DirectX12Device
             throw new NotSupportedException("Direct3D 12 rejected the texture description.");
         }
 
-        return new(info.SizeInBytes, info.Alignment);
+        bool renderTarget = (description.Usage
+            & (GpuTextureUsage.ColorAttachment | GpuTextureUsage.DepthStencilAttachment)) != 0;
+        return new(
+            info.SizeInBytes,
+            info.Alignment,
+            renderTarget ? RenderTargetHeapCompatibility : TextureHeapCompatibility);
     }
 
     public GpuBufferMemoryRequirements GetBufferMemoryRequirements(GpuBufferDescription description)
@@ -28,10 +36,17 @@ public sealed unsafe partial class DirectX12Device
         description.Validate();
         ResourceDesc native = BufferDescription(description.Size);
         ResourceAllocationInfo info = device.GetResourceAllocationInfo(0, 1, in native);
-        return new(info.SizeInBytes, info.Alignment);
+        return new(info.SizeInBytes, info.Alignment, BufferHeapCompatibility);
     }
 
     public GpuMemoryAllocation AllocateMemory(ulong size, ulong alignment, GpuMemoryKind kind)
+        => AllocateMemory(size, alignment, kind, 0);
+
+    public GpuMemoryAllocation AllocateMemory(
+        ulong size,
+        ulong alignment,
+        GpuMemoryKind kind,
+        ulong compatibility)
     {
         VerifyNotDisposed();
         if (size == 0) { throw new ArgumentOutOfRangeException(nameof(size)); }
@@ -54,7 +69,18 @@ public sealed unsafe partial class DirectX12Device
             GpuMemoryKind.HostCached => HeapType.Readback,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        HeapFlags flags = kind == GpuMemoryKind.DeviceLocal ? HeapFlags.None : HeapFlags.AllowOnlyBuffers;
+        HeapFlags flags = kind == GpuMemoryKind.DeviceLocal
+            ? compatibility switch
+            {
+                0 => HeapFlags.None,
+                BufferHeapCompatibility => HeapFlags.AllowOnlyBuffers,
+                TextureHeapCompatibility => HeapFlags.AllowOnlyNonRTDSTextures,
+                RenderTargetHeapCompatibility => HeapFlags.AllowOnlyRTDSTextures,
+                _ => throw new ArgumentOutOfRangeException(nameof(compatibility)),
+            }
+            : compatibility is 0 or BufferHeapCompatibility
+                ? HeapFlags.AllowOnlyBuffers
+                : throw new ArgumentOutOfRangeException(nameof(compatibility));
         ComPtr<ID3D12Heap> heap = CreateHeap(heapType, actualSize, flags, actualAlignment);
         ComPtr<ID3D12Resource> mappedResource = default;
         nint cpuAddress = 0;
@@ -82,7 +108,13 @@ public sealed unsafe partial class DirectX12Device
             }
 
             ulong id = NextHandle();
-            var record = new MemoryRecord(heap, mappedResource, kind, actualSize, cpuAddress);
+            var record = new MemoryRecord(
+                heap,
+                mappedResource,
+                kind,
+                actualSize,
+                cpuAddress,
+                compatibility);
             memories.Add(id, record);
             return new(actualSize, actualAlignment, kind, cpuAddress, new(id, 0, actualSize));
         }
@@ -100,7 +132,7 @@ public sealed unsafe partial class DirectX12Device
         VerifyNotDisposed();
         allocation.Validate();
         ulong id = allocation.MemoryAddress.AllocationId;
-        if (!memories.TryGetValue(id, out MemoryRecord? record) || !record.Matches(allocation))
+        if (!memories.TryGetValue(id, out MemoryRecord? record) || !record.MatchesRoot(allocation))
         {
             throw new ArgumentException("Allocation does not belong to this Direct3D 12 device.", nameof(allocation));
         }
@@ -123,11 +155,11 @@ public sealed unsafe partial class DirectX12Device
             throw new ArgumentException("Textures require device-local memory.", nameof(allocation));
         }
         MemoryRecord memory = RequireMemory(allocation);
-        if (memory.BoundResourceCount != 0)
-        {
-            throw new InvalidOperationException("This allocation is already bound to a resource.");
-        }
         GpuTextureMemoryRequirements requirements = GetTextureMemoryRequirements(description);
+        if (!memory.IsCompatible(requirements.Compatibility))
+        {
+            throw new ArgumentException("Allocation uses an incompatible Direct3D 12 heap class.", nameof(allocation));
+        }
         ValidatePlacement(allocation, requirements.Size, requirements.Alignment);
 
         ResourceDesc native = TextureDescription(description);
@@ -135,9 +167,18 @@ public sealed unsafe partial class DirectX12Device
         try
         {
             SilkMarshal.ThrowHResult(device.CreatePlacedResource<ID3D12Heap, ID3D12Resource>(
-                memory.Heap, 0, in native, ResourceStates.Common, null, out resource));
+                memory.Heap,
+                allocation.MemoryAddress.Offset,
+                in native,
+                ResourceStates.Common,
+                null,
+                out resource));
             ulong id = NextHandle();
-            textures.Add(id, new(resource, description, allocation.MemoryAddress.AllocationId));
+            textures.Add(id, new(
+                resource,
+                description,
+                allocation.MemoryAddress.AllocationId,
+                allocation.MemoryAddress.Offset));
             memory.BoundResourceCount++;
             return new(id);
         }
@@ -257,11 +298,11 @@ public sealed unsafe partial class DirectX12Device
         description.Validate();
         allocation.Validate();
         MemoryRecord memory = RequireMemory(allocation);
-        if (memory.BoundResourceCount != 0)
-        {
-            throw new InvalidOperationException("This allocation is already bound to a resource.");
-        }
         GpuBufferMemoryRequirements requirements = GetBufferMemoryRequirements(description);
+        if (!memory.IsCompatible(requirements.Compatibility))
+        {
+            throw new ArgumentException("Allocation uses an incompatible Direct3D 12 heap class.", nameof(allocation));
+        }
         ValidatePlacement(allocation, requirements.Size, requirements.Alignment);
         if (allocation.Kind == GpuMemoryKind.HostMapped && (description.Usage & GpuBufferUsage.CopySource) == 0)
         {
@@ -283,10 +324,20 @@ public sealed unsafe partial class DirectX12Device
                     ? ResourceStates.CopyDest
                     : ResourceStates.Common;
                 SilkMarshal.ThrowHResult(device.CreatePlacedResource<ID3D12Heap, ID3D12Resource>(
-                    memory.Heap, 0, in native, initial, null, out resource));
+                    memory.Heap,
+                    allocation.MemoryAddress.Offset,
+                    in native,
+                    initial,
+                    null,
+                    out resource));
             }
             ulong id = NextHandle();
-            buffers.Add(id, new(resource, description, allocation.MemoryAddress.AllocationId, ownsResource));
+            buffers.Add(id, new(
+                resource,
+                description,
+                allocation.MemoryAddress.AllocationId,
+                allocation.MemoryAddress.Offset,
+                ownsResource));
             memory.BoundResourceCount++;
             return new(id, description.Size);
         }
@@ -305,7 +356,7 @@ public sealed unsafe partial class DirectX12Device
         {
             throw new ArgumentOutOfRangeException(nameof(offset));
         }
-        return new(record.AllocationId, offset, length);
+        return new(record.AllocationId, checked(record.AllocationOffset + offset), length);
     }
 
     public void DestroyBuffer(GpuBufferHandle buffer)
@@ -331,7 +382,7 @@ public sealed unsafe partial class DirectX12Device
     private MemoryRecord RequireMemory(GpuMemoryAllocation allocation)
     {
         if (!memories.TryGetValue(allocation.MemoryAddress.AllocationId, out MemoryRecord? record)
-            || !record.Matches(allocation))
+            || !record.MatchesRegion(allocation))
         {
             throw new ArgumentException("Allocation does not belong to this Direct3D 12 device.", nameof(allocation));
         }
@@ -358,7 +409,9 @@ public sealed unsafe partial class DirectX12Device
 
     private static void ValidatePlacement(GpuMemoryAllocation allocation, ulong size, ulong alignment)
     {
-        if (allocation.Size < size || allocation.Alignment < alignment)
+        if (allocation.Size < size
+            || allocation.Alignment < alignment
+            || allocation.MemoryAddress.Offset % alignment != 0)
         {
             throw new ArgumentException("Allocation does not satisfy resource memory requirements.", nameof(allocation));
         }
@@ -437,11 +490,13 @@ public sealed unsafe partial class DirectX12Device
         ComPtr<ID3D12Resource> mappedResource,
         GpuMemoryKind kind,
         ulong size,
-        nint cpuAddress) : IDisposable
+        nint cpuAddress,
+        ulong compatibility) : IDisposable
     {
         private readonly GpuMemoryKind memoryKind = kind;
         private readonly ulong allocationSize = size;
         private readonly nint mappedAddress = cpuAddress;
+        private readonly ulong heapCompatibility = compatibility;
         public ComPtr<ID3D12Heap> Heap = heap;
         public ComPtr<ID3D12Resource> MappedResource = mappedResource;
         public GpuMemoryKind Kind => memoryKind;
@@ -449,9 +504,20 @@ public sealed unsafe partial class DirectX12Device
         public nint CpuAddress => mappedAddress;
         public int BoundResourceCount;
 
-        public bool Matches(GpuMemoryAllocation allocation) =>
+        public bool IsCompatible(ulong required) => heapCompatibility == 0 || heapCompatibility == required;
+
+        public bool MatchesRoot(GpuMemoryAllocation allocation) =>
             allocation.Size == allocationSize && allocation.Kind == memoryKind && allocation.CpuAddress == mappedAddress
             && allocation.MemoryAddress.Offset == 0 && allocation.MemoryAddress.Length == allocationSize;
+
+        public bool MatchesRegion(GpuMemoryAllocation allocation) =>
+            allocation.Kind == memoryKind
+            && allocation.MemoryAddress.Offset <= allocationSize
+            && allocation.Size <= allocationSize - allocation.MemoryAddress.Offset
+            && allocation.MemoryAddress.Length >= allocation.Size
+            && allocation.CpuAddress == (mappedAddress == 0
+                ? 0
+                : checked(mappedAddress + (nint)allocation.MemoryAddress.Offset));
 
         public void Dispose()
         {
@@ -470,11 +536,13 @@ public sealed unsafe partial class DirectX12Device
     private sealed class TextureRecord(
         ComPtr<ID3D12Resource> resource,
         GpuTextureDescription description,
-        ulong allocationId) : IDisposable
+        ulong allocationId,
+        ulong allocationOffset) : IDisposable
     {
         public ComPtr<ID3D12Resource> Resource = resource;
         public GpuTextureDescription Description { get; } = description;
         public ulong AllocationId { get; } = allocationId;
+        public ulong AllocationOffset { get; } = allocationOffset;
         public ResourceStates State { get; set; } = ResourceStates.Common;
         public void Dispose() => Resource.Dispose();
     }
@@ -496,11 +564,13 @@ public sealed unsafe partial class DirectX12Device
         ComPtr<ID3D12Resource> resource,
         GpuBufferDescription description,
         ulong allocationId,
+        ulong allocationOffset,
         bool ownsResource) : IDisposable
     {
         public ComPtr<ID3D12Resource> Resource = resource;
         public GpuBufferDescription Description { get; } = description;
         public ulong AllocationId { get; } = allocationId;
+        public ulong AllocationOffset { get; } = allocationOffset;
         public ResourceStates State { get; set; } = description.Usage.HasFlag(GpuBufferUsage.CopyDestination)
             ? ResourceStates.CopyDest
             : description.Usage.HasFlag(GpuBufferUsage.CopySource) && !ownsResource

@@ -16,7 +16,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     private Queue queue;
     private CommandPool commandPool;
     private PhysicalDeviceMemoryProperties memoryProperties;
-    private readonly Dictionary<ulong, DeviceMemory> memories = [];
+    private readonly Dictionary<ulong, MemoryRecord> memories = [];
     private readonly Dictionary<ulong, ImageRecord> images = [];
     private readonly Dictionary<ulong, ImageView> views = [];
     private readonly Dictionary<ulong, BufferRecord> buffers = [];
@@ -42,7 +42,9 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     public IGpuQueue MainQueue { get; private set; } = null!;
     public nint InstanceHandle => instance.Handle;
     public GpuBackendCapabilities Capabilities =>
-        GpuBackendCapabilities.ExplicitPlacement | GpuBackendCapabilities.RasterPipeline;
+        GpuBackendCapabilities.ExplicitPlacement
+        | GpuBackendCapabilities.MemoryAliasing
+        | GpuBackendCapabilities.RasterPipeline;
 
     public static VulkanDevice Create()
         => Create(0, null);
@@ -74,12 +76,12 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     {
         VerifyNotDisposed();
         description.Validate();
-        Image image = CreateImage(description);
+        Image image = CreateImage(description, aliasable: true);
         try
         {
             vk.GetImageMemoryRequirements(device, image, out MemoryRequirements requirements);
             lastImageMemoryTypeBits = requirements.MemoryTypeBits;
-            return new(requirements.Size, requirements.Alignment);
+            return new(requirements.Size, requirements.Alignment, requirements.MemoryTypeBits);
         }
         finally
         {
@@ -89,6 +91,21 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
     public GpuMemoryAllocation AllocateMemory(ulong size, ulong alignment, GpuMemoryKind kind)
     {
+        uint compatibleTypes = kind switch
+        {
+            GpuMemoryKind.DeviceLocal => lastImageMemoryTypeBits,
+            GpuMemoryKind.HostMapped or GpuMemoryKind.HostCached => lastBufferMemoryTypeBits,
+            _ => uint.MaxValue,
+        };
+        return AllocateMemory(size, alignment, kind, compatibleTypes);
+    }
+
+    public GpuMemoryAllocation AllocateMemory(
+        ulong size,
+        ulong alignment,
+        GpuMemoryKind kind,
+        ulong compatibility)
+    {
         VerifyNotDisposed();
         MemoryPropertyFlags flags = kind switch
         {
@@ -97,12 +114,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             GpuMemoryKind.HostCached => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCachedBit,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        uint compatibleTypes = kind switch
-        {
-            GpuMemoryKind.DeviceLocal => lastImageMemoryTypeBits,
-            GpuMemoryKind.HostMapped or GpuMemoryKind.HostCached => lastBufferMemoryTypeBits,
-            _ => uint.MaxValue,
-        };
+        uint compatibleTypes = compatibility == 0
+            ? uint.MaxValue
+            : compatibility <= uint.MaxValue
+                ? (uint)compatibility
+                : throw new ArgumentOutOfRangeException(nameof(compatibility));
         uint memoryType = FindMemoryType(compatibleTypes, flags);
         var createInfo = new MemoryAllocateInfo
         {
@@ -111,7 +127,6 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             MemoryTypeIndex = memoryType,
         };
         Check(vk.AllocateMemory(device, in createInfo, null, out DeviceMemory memory), "vkAllocateMemory");
-        memories.Add(memory.Handle, memory);
         nint cpuAddress = 0;
         if (kind != GpuMemoryKind.DeviceLocal)
         {
@@ -120,23 +135,70 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             cpuAddress = (nint)mapped;
         }
 
+        memories.Add(memory.Handle, new(memory, size, kind, cpuAddress, memoryType));
         return new(size, alignment, kind, cpuAddress, new(memory.Handle, 0, size));
+    }
+
+    public bool TryCombineMemoryCompatibility(ulong left, ulong right, out ulong combined)
+    {
+        if (left > uint.MaxValue || right > uint.MaxValue)
+        {
+            combined = 0;
+            return false;
+        }
+        ulong leftMask = left == 0 ? uint.MaxValue : left;
+        ulong rightMask = right == 0 ? uint.MaxValue : right;
+        combined = leftMask & rightMask;
+        return combined != 0;
+    }
+
+    public ulong GetMemoryCompatibilityKey(GpuMemoryKind kind, ulong compatibility)
+    {
+        VerifyNotDisposed();
+        if (compatibility == 0) { return 0; }
+        if (compatibility > uint.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(compatibility));
+        }
+        MemoryPropertyFlags flags = kind switch
+        {
+            GpuMemoryKind.DeviceLocal => MemoryPropertyFlags.DeviceLocalBit,
+            GpuMemoryKind.HostMapped => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
+            GpuMemoryKind.HostCached => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCachedBit,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        uint memoryType = FindMemoryType((uint)compatibility, flags);
+        return 1UL << checked((int)memoryType);
+    }
+
+    public bool IsMemoryCompatibilityKeyCompatible(
+        GpuMemoryKind kind,
+        ulong allocationKey,
+        ulong requirement)
+    {
+        if (requirement == 0) { return true; }
+        if (requirement > uint.MaxValue || allocationKey > uint.MaxValue)
+        {
+            return false;
+        }
+        return (allocationKey & requirement) != 0;
     }
 
     public void FreeMemory(GpuMemoryAllocation allocation)
     {
         VerifyNotDisposed();
-        if (!memories.Remove(allocation.MemoryAddress.AllocationId, out DeviceMemory memory))
+        if (!memories.TryGetValue(allocation.MemoryAddress.AllocationId, out MemoryRecord? memory)
+            || !memory.MatchesRoot(allocation))
         {
             throw new ArgumentException("Allocation does not belong to this Vulkan device.", nameof(allocation));
         }
-
-        if (allocation.CpuAddress != 0)
+        if (memory.BoundResourceCount != 0)
         {
-            vk.UnmapMemory(device, memory);
+            throw new InvalidOperationException("Allocation still has a live placed resource.");
         }
-
-        vk.FreeMemory(device, memory, null);
+        memories.Remove(allocation.MemoryAddress.AllocationId);
+        if (memory.CpuAddress != 0) { vk.UnmapMemory(device, memory.Memory); }
+        vk.FreeMemory(device, memory.Memory, null);
     }
 
     public GpuTextureHandle CreatePlacedTexture(
@@ -144,23 +206,33 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         GpuMemoryAllocation allocation)
     {
         VerifyNotDisposed();
-        if (!memories.TryGetValue(allocation.MemoryAddress.AllocationId, out DeviceMemory memory))
+        allocation.Validate();
+        if (!memories.TryGetValue(allocation.MemoryAddress.AllocationId, out MemoryRecord? memory)
+            || !memory.MatchesRegion(allocation))
         {
             throw new ArgumentException("Allocation does not belong to this Vulkan device.", nameof(allocation));
         }
 
-        Image image = CreateImage(description);
+        Image image = CreateImage(description, aliasable: true);
         try
         {
             vk.GetImageMemoryRequirements(device, image, out MemoryRequirements requirements);
-            if (allocation.Size < requirements.Size)
+            if (allocation.Size < requirements.Size
+                || allocation.MemoryAddress.Offset % requirements.Alignment != 0
+                || (requirements.MemoryTypeBits & (1u << checked((int)memory.MemoryType))) == 0)
             {
-                throw new ArgumentException("Allocation is smaller than Vulkan image requirements.", nameof(allocation));
+                throw new ArgumentException("Allocation is incompatible with Vulkan image requirements.", nameof(allocation));
             }
 
-            Check(vk.BindImageMemory(device, image, memory, 0), "vkBindImageMemory");
+            Check(vk.BindImageMemory(device, image, memory.Memory, allocation.MemoryAddress.Offset), "vkBindImageMemory");
             var handle = new GpuTextureHandle(image.Handle);
-            images.Add(handle.Value, new(image, description, ImageLayout.Undefined, true));
+            images.Add(handle.Value, new(
+                image,
+                description,
+                ImageLayout.Undefined,
+                true,
+                allocation.MemoryAddress.AllocationId));
+            memory.BoundResourceCount++;
             return handle;
         }
         catch
@@ -178,7 +250,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Texture does not belong to this Vulkan device.", nameof(texture));
         }
 
-        if (record.Owned) { vk.DestroyImage(device, record.Image, null); }
+        if (record.Owned)
+        {
+            vk.DestroyImage(device, record.Image, null);
+            memories[record.AllocationId].BoundResourceCount--;
+        }
     }
 
     public GpuTextureView CreateTextureView(
@@ -313,7 +389,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         {
             vk.GetBufferMemoryRequirements(device, buffer, out MemoryRequirements requirements);
             lastBufferMemoryTypeBits = requirements.MemoryTypeBits;
-            return new(requirements.Size, requirements.Alignment);
+            return new(requirements.Size, requirements.Alignment, requirements.MemoryTypeBits);
         }
         finally
         {
@@ -326,7 +402,9 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         GpuMemoryAllocation allocation)
     {
         VerifyNotDisposed();
-        if (!memories.TryGetValue(allocation.MemoryAddress.AllocationId, out DeviceMemory memory))
+        allocation.Validate();
+        if (!memories.TryGetValue(allocation.MemoryAddress.AllocationId, out MemoryRecord? memory)
+            || !memory.MatchesRegion(allocation))
         {
             throw new ArgumentException("Allocation does not belong to this Vulkan device.", nameof(allocation));
         }
@@ -335,14 +413,21 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         try
         {
             vk.GetBufferMemoryRequirements(device, buffer, out MemoryRequirements requirements);
-            if (allocation.Size < requirements.Size)
+            if (allocation.Size < requirements.Size
+                || allocation.MemoryAddress.Offset % requirements.Alignment != 0
+                || (requirements.MemoryTypeBits & (1u << checked((int)memory.MemoryType))) == 0)
             {
-                throw new ArgumentException("Allocation is smaller than Vulkan buffer requirements.", nameof(allocation));
+                throw new ArgumentException("Allocation is incompatible with Vulkan buffer requirements.", nameof(allocation));
             }
 
-            Check(vk.BindBufferMemory(device, buffer, memory, 0), "vkBindBufferMemory");
+            Check(vk.BindBufferMemory(device, buffer, memory.Memory, allocation.MemoryAddress.Offset), "vkBindBufferMemory");
             var handle = new GpuBufferHandle(buffer.Handle, description.Size);
-            buffers.Add(handle.Value, new(buffer, description, allocation.MemoryAddress.AllocationId));
+            buffers.Add(handle.Value, new(
+                buffer,
+                description,
+                allocation.MemoryAddress.AllocationId,
+                allocation.MemoryAddress.Offset));
+            memory.BoundResourceCount++;
             return handle;
         }
         catch
@@ -361,6 +446,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         }
 
         vk.DestroyBuffer(device, record.Buffer, null);
+        memories[record.AllocationId].BoundResourceCount--;
     }
 
     public GpuRasterPipelineHandle CreateRasterPipeline(
@@ -647,7 +733,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentOutOfRangeException(nameof(offset));
         }
 
-        return new(record.AllocationId, offset, length);
+        return new(record.AllocationId, checked(record.AllocationOffset + offset), length);
     }
 
     private void Submit(ReadOnlySpan<GpuCommandBuffer> commands, VulkanSemaphore signal, ulong signalValue)
@@ -698,6 +784,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     private void Wait(VulkanSemaphore semaphore, ulong value)
     {
         VerifyNotDisposed();
+        semaphore.ValidateWait(value);
         VkSemaphore handle = semaphore.Handle;
         var wait = new SemaphoreWaitInfo
         {
@@ -708,6 +795,17 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         };
         Check(vk.WaitSemaphores(device, in wait, ulong.MaxValue), "vkWaitSemaphores");
         semaphore.ReleaseCompleted(value);
+    }
+
+    private bool IsComplete(VulkanSemaphore semaphore, ulong value)
+    {
+        VerifyNotDisposed();
+        semaphore.ValidateWait(value);
+        Check(vk.GetSemaphoreCounterValue(device, semaphore.Handle, out ulong completed),
+            "vkGetSemaphoreCounterValue");
+        if (completed < value) { return false; }
+        semaphore.ReleaseCompleted(completed);
+        return true;
     }
 
     private void RecordBarrier(CommandBuffer commandBuffer, GpuStage before, GpuStage after, GpuBarrierHazards hazards)
@@ -836,15 +934,21 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Copy texture does not belong to this Vulkan device.", nameof(source));
         }
 
-        BufferRecord? buffer = buffers.Values.SingleOrDefault(candidate => candidate.AllocationId == destination.AllocationId);
+        BufferRecord? buffer = buffers.Values.FirstOrDefault(candidate =>
+            candidate.AllocationId == destination.AllocationId
+            && destination.Offset >= candidate.AllocationOffset
+            && destination.Offset - candidate.AllocationOffset < candidate.Description.Size
+            && destination.Length <= candidate.Description.Size
+                - (destination.Offset - candidate.AllocationOffset));
         if (buffer is null)
         {
             throw new ArgumentException("Destination address is not backed by a live buffer.", nameof(destination));
         }
 
-        if (destination.Offset > buffer.Description.Size
+        ulong bufferOffset = destination.Offset - buffer.AllocationOffset;
+        if (bufferOffset > buffer.Description.Size
             || footprint.RequiredBytes > destination.Length
-            || footprint.RequiredBytes > buffer.Description.Size - destination.Offset)
+            || footprint.RequiredBytes > buffer.Description.Size - bufferOffset)
         {
             throw new ArgumentOutOfRangeException(nameof(destination));
         }
@@ -861,7 +965,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
         var region = new BufferImageCopy
         {
-            BufferOffset = destination.Offset,
+            BufferOffset = bufferOffset,
             BufferRowLength = checked((uint)(footprint.RowPitch / footprint.BytesPerPixel)),
             ImageSubresource = new(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new(footprint.Width, footprint.Height, 1),
@@ -876,14 +980,20 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Destination texture does not belong to this Vulkan device.", nameof(destination));
         }
 
-        BufferRecord? buffer = buffers.Values.SingleOrDefault(candidate => candidate.AllocationId == source.AllocationId);
+        BufferRecord? buffer = buffers.Values.FirstOrDefault(candidate =>
+            candidate.AllocationId == source.AllocationId
+            && source.Offset >= candidate.AllocationOffset
+            && source.Offset - candidate.AllocationOffset < candidate.Description.Size
+            && source.Length <= candidate.Description.Size
+                - (source.Offset - candidate.AllocationOffset));
         if (buffer is null)
         {
             throw new ArgumentException("Source address is not backed by a live buffer.", nameof(source));
         }
-        if (source.Offset > buffer.Description.Size
+        ulong bufferOffset = source.Offset - buffer.AllocationOffset;
+        if (bufferOffset > buffer.Description.Size
             || footprint.RequiredBytes > source.Length
-            || footprint.RequiredBytes > buffer.Description.Size - source.Offset)
+            || footprint.RequiredBytes > buffer.Description.Size - bufferOffset)
         {
             throw new ArgumentOutOfRangeException(nameof(source));
         }
@@ -897,7 +1007,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit);
         var region = new BufferImageCopy
         {
-            BufferOffset = source.Offset,
+            BufferOffset = bufferOffset,
             BufferRowLength = checked((uint)(footprint.RowPitch / footprint.BytesPerPixel)),
             ImageSubresource = new(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new(footprint.Width, footprint.Height, 1),
@@ -1094,7 +1204,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         MainQueue = new QueueAdapter(this);
     }
 
-    private Image CreateImage(GpuTextureDescription description)
+    private Image CreateImage(GpuTextureDescription description, bool aliasable = false)
     {
         var createInfo = new ImageCreateInfo
         {
@@ -1109,6 +1219,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             Usage = ToVulkanUsage(description.Usage),
             SharingMode = SharingMode.Exclusive,
             InitialLayout = ImageLayout.Undefined,
+            Flags = aliasable ? ImageCreateFlags.CreateAliasBit : 0,
         };
         Check(vk.CreateImage(device, in createInfo, null, out Image image), "vkCreateImage");
         return image;
@@ -1460,8 +1571,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             {
                 if (image.Owned) { vk.DestroyImage(device, image.Image, null); }
             }
-            foreach (DeviceMemory memory in memories.Values)
-            { vk.FreeMemory(device, memory, null); }
+            foreach (MemoryRecord memory in memories.Values)
+            {
+                if (memory.CpuAddress != 0) { vk.UnmapMemory(device, memory.Memory); }
+                vk.FreeMemory(device, memory.Memory, null);
+            }
             if (descriptorPool.Handle != 0)
             { vk.DestroyDescriptorPool(device, descriptorPool, null); }
             if (textureDescriptorLayout.Handle != 0)
@@ -1483,9 +1597,42 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         Image Image,
         GpuTextureDescription Description,
         ImageLayout Layout,
-        bool Owned);
+        bool Owned,
+        ulong AllocationId = 0);
 
-    private sealed record BufferRecord(VkBuffer Buffer, GpuBufferDescription Description, ulong AllocationId);
+    private sealed record BufferRecord(
+        VkBuffer Buffer,
+        GpuBufferDescription Description,
+        ulong AllocationId,
+        ulong AllocationOffset);
+
+    private sealed class MemoryRecord(
+        DeviceMemory memory,
+        ulong size,
+        GpuMemoryKind kind,
+        nint cpuAddress,
+        uint memoryType)
+    {
+        public DeviceMemory Memory { get; } = memory;
+        public ulong Size { get; } = size;
+        public GpuMemoryKind Kind { get; } = kind;
+        public nint CpuAddress { get; } = cpuAddress;
+        public uint MemoryType { get; } = memoryType;
+        public int BoundResourceCount { get; set; }
+
+        public bool MatchesRoot(GpuMemoryAllocation allocation) =>
+            allocation.Size == Size && allocation.Kind == Kind && allocation.CpuAddress == CpuAddress
+            && allocation.MemoryAddress.Offset == 0 && allocation.MemoryAddress.Length == Size;
+
+        public bool MatchesRegion(GpuMemoryAllocation allocation) =>
+            allocation.Kind == Kind
+            && allocation.MemoryAddress.Offset <= Size
+            && allocation.Size <= Size - allocation.MemoryAddress.Offset
+            && allocation.MemoryAddress.Length >= allocation.Size
+            && allocation.CpuAddress == (CpuAddress == 0
+                ? 0
+                : checked(CpuAddress + (nint)allocation.MemoryAddress.Offset));
+    }
     private sealed record PipelineRecord(VkPipeline Pipeline, PipelineLayout Layout);
     private sealed class QueueAdapter(VulkanDevice owner) : IGpuQueue
     {
@@ -1512,6 +1659,16 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
             owner.Wait(native, value);
         }
+
+        public bool IsComplete(GpuSemaphore semaphore, ulong value)
+        {
+            if (semaphore is not VulkanSemaphore native || native.Owner != owner)
+            {
+                throw new ArgumentException("Semaphore belongs to another backend.", nameof(semaphore));
+            }
+
+            return owner.IsComplete(native, value);
+        }
     }
 
     private sealed class VulkanRecorder(VulkanDevice owner, CommandBuffer commandBuffer) : IGpuCommandRecorder
@@ -1522,6 +1679,12 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         public VulkanDevice Owner { get; } = owner;
         public CommandBuffer CommandBuffer { get; } = commandBuffer;
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) => Owner.RecordBarrier(CommandBuffer, before, after, hazards);
+        public void AliasingBarrier(
+            GpuAliasingResource beforeResource,
+            GpuAliasingResource afterResource,
+            GpuStage before,
+            GpuStage after,
+            GpuBarrierHazards hazards) => Owner.RecordBarrier(CommandBuffer, before, after, hazards);
         public void BeginRendering(IReadOnlyList<GpuColorAttachment> colors, GpuDepthStencilAttachment? depth) => Owner.RecordBeginRendering(CommandBuffer, colors, depth);
         public void EndRendering() => Owner.vk.CmdEndRendering(CommandBuffer);
         public void SetPipeline(GpuRasterPipelineHandle pipeline)
@@ -1743,6 +1906,18 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             if (value <= lastSignalValue)
             {
                 throw new ArgumentOutOfRangeException(nameof(value), "Signal values must increase monotonically.");
+            }
+        }
+
+        public void ValidateWait(ulong value)
+        {
+            if (disposed)
+            {
+                throw new ObjectDisposedException(nameof(VulkanSemaphore));
+            }
+            if (value > lastSignalValue)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "Cannot wait for an unsignaled value.");
             }
         }
 

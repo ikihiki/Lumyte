@@ -26,6 +26,36 @@ public sealed class GpuResourceModelTests
     }
 
     [Fact]
+    public void ArenaRegionPreservesOffsetAndMappedSpan()
+    {
+        unsafe
+        {
+            byte* storage = stackalloc byte[32];
+            var allocation = new GpuMemoryAllocation(
+                8,
+                8,
+                GpuMemoryKind.HostMapped,
+                (nint)(storage + 8),
+                new(0x1000, 8, 8));
+
+            Span<byte> bytes = allocation.Validate().MappedBytes();
+            bytes[0] = 42;
+
+            Assert.Equal(42, storage[8]);
+        }
+    }
+
+    [Fact]
+    public void MemoryRequirementsKeepTwoValueDeconstruction()
+    {
+        var requirements = new GpuBufferMemoryRequirements(64, 16, 7);
+
+        (ulong size, ulong alignment) = requirements;
+
+        Assert.Equal((64ul, 16ul, 7ul), (size, alignment, requirements.Compatibility));
+    }
+
+    [Fact]
     public void DisjointTransientLifetimesCanAlias()
     {
         var first = new GpuTransientLifetime(0, 2);
