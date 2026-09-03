@@ -4,4 +4,5 @@ public enum GpuRenderGraphResourceKind
 {
     Texture,
     Buffer,
+    Dependency,
 }

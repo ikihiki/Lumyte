@@ -56,14 +56,20 @@ public sealed class GpuRenderGraphFrameBuilder
         });
 
         var graph = new GpuRenderGraph();
-        var sharedResources = new Dictionary<string, GpuRenderGraphResource>(StringComparer.Ordinal);
+        var sharedTextures = new Dictionary<string, GpuRenderGraphTexture>(StringComparer.Ordinal);
+        var sharedBuffers = new Dictionary<string, GpuRenderGraphBuffer>(StringComparer.Ordinal);
+        var sharedDependencies = new Dictionary<string, GpuRenderGraphDependency>(StringComparer.Ordinal);
+        var sharedNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (GpuRenderGraphContribution contribution in snapshot)
         {
             if (!contribution.Enabled) { continue; }
             var context = new GpuRenderGraphContributionContext(
                 graph,
                 contribution.Name,
-                sharedResources);
+                sharedTextures,
+                sharedBuffers,
+                sharedDependencies,
+                sharedNames);
             try { contribution.Invoke(context); }
             finally { context.Close(); }
         }

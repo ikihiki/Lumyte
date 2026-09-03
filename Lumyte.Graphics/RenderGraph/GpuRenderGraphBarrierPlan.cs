@@ -20,5 +20,6 @@ public sealed class GpuRenderGraphBarrierPlan
     public GpuStage Before { get; }
     public GpuStage After { get; }
     public GpuBarrierHazards Hazards { get; }
-    public IReadOnlyList<GpuRenderGraphResource> Resources { get; }
+    public int ResourceCount => Resources.Count;
+    internal IReadOnlyList<GpuRenderGraphResource> Resources { get; }
 }

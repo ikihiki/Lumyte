@@ -15,22 +15,35 @@ public sealed partial class GpuRenderGraph
     private readonly HashSet<GpuRenderGraphResource> outputs = [];
     private readonly HashSet<string> passNames = new(StringComparer.Ordinal);
 
-    public GpuRenderGraphResource ImportTexture(string name, GpuTextureHandle texture)
-        => ImportTexture(name, texture, null);
-
-    public GpuRenderGraphResource ImportTexture(
+    public GpuRenderGraphTexture ImportTexture(
         string name,
         GpuTextureHandle texture,
         GpuTextureDescription description)
-        => ImportTexture(name, texture, (GpuTextureDescription?)description);
+    {
+        if (texture.IsNull) { throw new ArgumentException("Texture cannot be null.", nameof(texture)); }
+        description.Validate();
+        GpuRenderGraphResource resource = Import(
+            name,
+            GpuRenderGraphResourceKind.Texture,
+            texture.Value,
+            texture,
+            default,
+            description,
+            null,
+            GpuMemoryKind.DeviceLocal,
+            false,
+            null,
+            null);
+        return new(resource, description);
+    }
 
-    public GpuRenderGraphResource ImportTexture(
+    public GpuRenderGraphTexture ImportTexture(
         string name,
         GpuRenderGraphExportedTexture texture)
     {
         ArgumentNullException.ThrowIfNull(texture);
         texture.RequireAlive();
-        return Import(
+        GpuRenderGraphResource resource = Import(
             name,
             GpuRenderGraphResourceKind.Texture,
             texture.Texture.Value,
@@ -42,24 +55,38 @@ public sealed partial class GpuRenderGraph
             false,
             texture,
             null);
+        return new(resource, texture.Description);
     }
 
-    public GpuRenderGraphResource ImportBuffer(string name, GpuBufferHandle buffer)
-        => ImportBuffer(name, buffer, null);
-
-    public GpuRenderGraphResource ImportBuffer(
+    public GpuRenderGraphBuffer ImportBuffer(
         string name,
         GpuBufferHandle buffer,
         GpuBufferDescription description)
-        => ImportBuffer(name, buffer, (GpuBufferDescription?)description);
+    {
+        if (buffer.IsNull) { throw new ArgumentException("Buffer cannot be null.", nameof(buffer)); }
+        description.Validate();
+        GpuRenderGraphResource resource = Import(
+            name,
+            GpuRenderGraphResourceKind.Buffer,
+            buffer.Value,
+            default,
+            buffer,
+            null,
+            description,
+            GpuMemoryKind.DeviceLocal,
+            false,
+            null,
+            null);
+        return new(resource, description);
+    }
 
-    public GpuRenderGraphResource ImportBuffer(
+    public GpuRenderGraphBuffer ImportBuffer(
         string name,
         GpuRenderGraphExportedBuffer buffer)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         buffer.RequireAlive();
-        return Import(
+        GpuRenderGraphResource resource = Import(
             name,
             GpuRenderGraphResourceKind.Buffer,
             buffer.Buffer.Value,
@@ -71,14 +98,15 @@ public sealed partial class GpuRenderGraph
             false,
             null,
             buffer);
+        return new(resource, buffer.Description);
     }
 
-    public GpuRenderGraphResource CreateTexture(
+    public GpuRenderGraphTexture CreateTexture(
         string name,
         GpuTextureDescription description)
     {
         description.Validate();
-        return Import(
+        GpuRenderGraphResource resource = Import(
             name,
             GpuRenderGraphResourceKind.Texture,
             0,
@@ -90,9 +118,10 @@ public sealed partial class GpuRenderGraph
             true,
             null,
             null);
+        return new(resource, description);
     }
 
-    public GpuRenderGraphResource CreateBuffer(
+    public GpuRenderGraphBuffer CreateBuffer(
         string name,
         GpuBufferDescription description,
         GpuMemoryKind memoryKind = GpuMemoryKind.DeviceLocal)
@@ -102,7 +131,7 @@ public sealed partial class GpuRenderGraph
         {
             throw new ArgumentOutOfRangeException(nameof(memoryKind));
         }
-        return Import(
+        GpuRenderGraphResource resource = Import(
             name,
             GpuRenderGraphResourceKind.Buffer,
             0,
@@ -114,6 +143,24 @@ public sealed partial class GpuRenderGraph
             true,
             null,
             null);
+        return new(resource, description);
+    }
+
+    public GpuRenderGraphDependency CreateDependency(string name)
+    {
+        GpuRenderGraphResource resource = Import(
+            name,
+            GpuRenderGraphResourceKind.Dependency,
+            0,
+            default,
+            default,
+            null,
+            null,
+            GpuMemoryKind.DeviceLocal,
+            false,
+            null,
+            null);
+        return new(resource);
     }
 
     /// <summary>
@@ -150,10 +197,24 @@ public sealed partial class GpuRenderGraph
         }
     }
 
-    public GpuRenderGraph MarkOutput(GpuRenderGraphResource resource)
+    public GpuRenderGraph MarkOutput(GpuRenderGraphTexture texture)
     {
-        RequireResource(resource);
-        outputs.Add(resource);
+        RequireResource(texture.Resource, GpuRenderGraphResourceKind.Texture);
+        outputs.Add(texture.Resource);
+        return this;
+    }
+
+    public GpuRenderGraph MarkOutput(GpuRenderGraphBuffer buffer)
+    {
+        RequireResource(buffer.Resource, GpuRenderGraphResourceKind.Buffer);
+        outputs.Add(buffer.Resource);
+        return this;
+    }
+
+    public GpuRenderGraph MarkOutput(GpuRenderGraphDependency dependency)
+    {
+        RequireResource(dependency.Resource, GpuRenderGraphResourceKind.Dependency);
+        outputs.Add(dependency.Resource);
         return this;
     }
 
@@ -168,11 +229,31 @@ public sealed partial class GpuRenderGraph
         return declaration;
     }
 
-    public GpuRenderGraphResource ExportTexture(GpuRenderGraphResource resource)
-        => Export(resource, GpuRenderGraphResourceKind.Texture);
+    private GpuRenderGraphResourceDeclaration RequireResource(
+        GpuRenderGraphResource resource,
+        GpuRenderGraphResourceKind kind)
+    {
+        GpuRenderGraphResourceDeclaration declaration = RequireResource(resource);
+        if (declaration.Info.Kind != kind)
+        {
+            throw new ArgumentException(
+                $"Resource is not a {kind.ToString().ToLowerInvariant()}.",
+                nameof(resource));
+        }
+        return declaration;
+    }
 
-    public GpuRenderGraphResource ExportBuffer(GpuRenderGraphResource resource)
-        => Export(resource, GpuRenderGraphResourceKind.Buffer);
+    public GpuRenderGraphTexture ExportTexture(GpuRenderGraphTexture texture)
+    {
+        Export(texture.Resource, GpuRenderGraphResourceKind.Texture);
+        return texture;
+    }
+
+    public GpuRenderGraphBuffer ExportBuffer(GpuRenderGraphBuffer buffer)
+    {
+        Export(buffer.Resource, GpuRenderGraphResourceKind.Buffer);
+        return buffer;
+    }
 
     public GpuRenderGraphPlan Compile() => CompileUncached();
 
@@ -262,12 +343,21 @@ public sealed partial class GpuRenderGraph
         GpuStage stage,
         GpuBarrierHazards hazards)
     {
-        RequireResource(resource);
+        GpuRenderGraphResourceDeclaration declaration = RequireResource(resource);
         if (access is not (GpuRenderGraphAccess.Read or GpuRenderGraphAccess.Write or GpuRenderGraphAccess.ReadWrite))
         {
             throw new ArgumentOutOfRangeException(nameof(access));
         }
-        if (stage == GpuStage.None || (stage & ~AllStages) != 0)
+        if (declaration.Info.Kind == GpuRenderGraphResourceKind.Dependency)
+        {
+            if (stage != GpuStage.None || hazards != GpuBarrierHazards.None)
+            {
+                throw new ArgumentException(
+                    "Ordering dependencies cannot declare GPU stages or hazards.",
+                    nameof(stage));
+            }
+        }
+        else if (stage == GpuStage.None || (stage & ~AllStages) != 0)
         {
             throw new ArgumentOutOfRangeException(nameof(stage));
         }
@@ -280,48 +370,6 @@ public sealed partial class GpuRenderGraph
             throw new InvalidOperationException("A pass may declare each resource once; use ReadWrite for combined access.");
         }
         pass.Accesses.Add(new(resource, access, stage, hazards));
-    }
-
-    private GpuRenderGraphResource ImportTexture(
-        string name,
-        GpuTextureHandle texture,
-        GpuTextureDescription? description)
-    {
-        if (texture.IsNull) { throw new ArgumentException("Texture cannot be null.", nameof(texture)); }
-        if (description is { } value) { value.Validate(); }
-        return Import(
-            name,
-            GpuRenderGraphResourceKind.Texture,
-            texture.Value,
-            texture,
-            default,
-            description,
-            null,
-            GpuMemoryKind.DeviceLocal,
-            false,
-            null,
-            null);
-    }
-
-    private GpuRenderGraphResource ImportBuffer(
-        string name,
-        GpuBufferHandle buffer,
-        GpuBufferDescription? description)
-    {
-        if (buffer.IsNull) { throw new ArgumentException("Buffer cannot be null.", nameof(buffer)); }
-        if (description is { } value) { value.Validate(); }
-        return Import(
-            name,
-            GpuRenderGraphResourceKind.Buffer,
-            buffer.Value,
-            default,
-            buffer,
-            null,
-            description,
-            GpuMemoryKind.DeviceLocal,
-            false,
-            null,
-            null);
     }
 
     private GpuRenderGraphResource Import(
@@ -342,7 +390,9 @@ public sealed partial class GpuRenderGraph
         {
             throw new ArgumentException($"A resource named '{name}' already exists.", nameof(name));
         }
-        if (!isTransient && importedResources.ContainsKey((kind, nativeValue)))
+        if (!isTransient
+            && kind != GpuRenderGraphResourceKind.Dependency
+            && importedResources.ContainsKey((kind, nativeValue)))
         {
             throw new ArgumentException("The native resource is already imported.", nameof(nativeValue));
         }
@@ -359,11 +409,14 @@ public sealed partial class GpuRenderGraph
         };
         resources.Add(new(info));
         resourcesByName.Add(name, resource);
-        if (!isTransient) { importedResources.Add((kind, nativeValue), resource); }
+        if (!isTransient && kind != GpuRenderGraphResourceKind.Dependency)
+        {
+            importedResources.Add((kind, nativeValue), resource);
+        }
         return resource;
     }
 
-    private GpuRenderGraphResource Export(
+    private void Export(
         GpuRenderGraphResource resource,
         GpuRenderGraphResourceKind kind)
     {
@@ -380,7 +433,6 @@ public sealed partial class GpuRenderGraph
         }
         declaration.Info.IsExported = true;
         outputs.Add(resource);
-        return resource;
     }
 
     private int[] OrderLivePasses(HashSet<int> live)
@@ -454,6 +506,10 @@ public sealed partial class GpuRenderGraph
             var transitioned = new List<GpuRenderGraphResource>();
             foreach (GpuRenderGraphResourceAccess current in passes[passIndex].Accesses)
             {
+                if (RequireResource(current.Resource).Info.Kind == GpuRenderGraphResourceKind.Dependency)
+                {
+                    continue;
+                }
                 bool requiresBarrier = !previous.TryGetValue(current.Resource, out GpuRenderGraphResourceAccess? prior)
                     || (prior.Access & GpuRenderGraphAccess.Write) != 0
                     || (current.Access & GpuRenderGraphAccess.Write) != 0;
@@ -488,7 +544,7 @@ public sealed partial class GpuRenderGraph
         for (int resourceIndex = 0; resourceIndex < resources.Count; resourceIndex++)
         {
             GpuRenderGraphResourceInfo info = resources[resourceIndex].Info;
-            if (!info.IsTransient) { continue; }
+            if (!info.IsTransient || info.Kind == GpuRenderGraphResourceKind.Dependency) { continue; }
 
             int firstPass = int.MaxValue;
             int lastPass = -1;

@@ -27,5 +27,5 @@ public sealed class GpuRenderGraphTransientSlotPlan
     public GpuMemoryKind MemoryKind { get; }
     public GpuTextureDescription? TextureDescription { get; }
     public GpuBufferDescription? BufferDescription { get; }
-    public IReadOnlyList<GpuRenderGraphResource> Resources { get; }
+    internal IReadOnlyList<GpuRenderGraphResource> Resources { get; }
 }

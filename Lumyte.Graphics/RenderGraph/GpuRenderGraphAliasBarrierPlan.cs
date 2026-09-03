@@ -22,8 +22,8 @@ public sealed class GpuRenderGraphAliasBarrierPlan
 
     public string DestinationPass { get; }
     public int ReuseSlot { get; }
-    public GpuRenderGraphResource BeforeResource { get; }
-    public GpuRenderGraphResource AfterResource { get; }
+    internal GpuRenderGraphResource BeforeResource { get; }
+    internal GpuRenderGraphResource AfterResource { get; }
     public GpuStage Before { get; }
     public GpuStage After { get; }
     public GpuBarrierHazards Hazards { get; }

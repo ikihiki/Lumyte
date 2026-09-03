@@ -16,7 +16,7 @@ public sealed class GpuRenderGraphMemoryPlan
         AliasBarriers = Array.AsReadOnly(aliasBarriers);
     }
 
-    public IReadOnlyList<GpuRenderGraphPhysicalResourcePlan> Resources { get; }
+    internal IReadOnlyList<GpuRenderGraphPhysicalResourcePlan> Resources { get; }
     public IReadOnlyList<GpuRenderGraphPhysicalSlotPlan> Slots { get; }
     public IReadOnlyList<GpuRenderGraphAliasBarrierPlan> AliasBarriers { get; }
 

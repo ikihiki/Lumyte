@@ -11,6 +11,8 @@
   <Project Path="Lumyte.DevTools.Tests/Lumyte.DevTools.Tests.csproj" />
   <Project Path="Lumyte.DevTools/Lumyte.DevTools.csproj" />
   <Project Path="Lumyte.Graphics/Lumyte.Graphics.csproj" />
+  <Project Path="Lumyte.Graphics.RenderGraph.Common/Lumyte.Graphics.RenderGraph.Common.csproj" />
+  <Project Path="Lumyte.Graphics.RenderGraph.Common.Tests/Lumyte.Graphics.RenderGraph.Common.Tests.csproj" />
   <Project Path="Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   <Project Path="Lumyte.Graphics.DirectX12/Lumyte.Graphics.DirectX12.csproj" />
   <Project Path="Lumyte.Graphics.DirectX12.Tests/Lumyte.Graphics.DirectX12.Tests.csproj" />

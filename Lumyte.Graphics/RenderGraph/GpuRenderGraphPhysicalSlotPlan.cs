@@ -26,5 +26,5 @@ public sealed class GpuRenderGraphPhysicalSlotPlan
     public ulong Size { get; }
     public ulong Alignment { get; }
     public ulong Compatibility { get; }
-    public IReadOnlyList<GpuRenderGraphResource> Resources { get; }
+    internal IReadOnlyList<GpuRenderGraphResource> Resources { get; }
 }

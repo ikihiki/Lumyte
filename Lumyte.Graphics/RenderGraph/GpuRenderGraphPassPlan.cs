@@ -11,5 +11,5 @@ public sealed class GpuRenderGraphPassPlan
 
     public string Name { get; }
     public int DeclarationIndex { get; }
-    public IReadOnlyList<GpuRenderGraphResourceAccess> Accesses { get; }
+    internal IReadOnlyList<GpuRenderGraphResourceAccess> Accesses { get; }
 }

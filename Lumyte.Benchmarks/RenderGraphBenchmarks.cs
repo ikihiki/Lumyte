@@ -58,7 +58,7 @@ public class RenderGraphBenchmarks
                 index,
                 static (context, contributorIndex) =>
                 {
-                    GpuRenderGraphResource resource = context.CreateBuffer(
+                    GpuRenderGraphBuffer resource = context.CreateBuffer(
                         "buffer",
                         new(64, GpuBufferUsage.ShaderData));
                     context.AddPass(
@@ -90,7 +90,7 @@ public class RenderGraphBenchmarks
         var graph = new GpuRenderGraph();
         for (int index = 0; index < passCount; index++)
         {
-            GpuRenderGraphResource resource = graph.CreateBuffer(
+            GpuRenderGraphBuffer resource = graph.CreateBuffer(
                 $"buffer-{index}",
                 new(size + (ulong)index, GpuBufferUsage.ShaderData));
             graph.AddPass(
@@ -108,9 +108,11 @@ public class RenderGraphBenchmarks
         var graph = new GpuRenderGraph();
         for (int index = 0; index < passCount; index++)
         {
-            GpuRenderGraphResource resource = graph.ImportBuffer(
+            var description = new GpuBufferDescription(64, GpuBufferUsage.ShaderData);
+            GpuRenderGraphBuffer resource = graph.ImportBuffer(
                 $"buffer-{index}",
-                new GpuBufferHandle((ulong)index + 1, 64));
+                new GpuBufferHandle((ulong)index + 1, 64),
+                description);
             graph.AddPass(
                     $"pass-{index}",
                     resource,

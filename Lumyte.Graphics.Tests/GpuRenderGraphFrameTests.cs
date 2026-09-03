@@ -6,22 +6,54 @@ namespace Lumyte.Graphics.Tests;
 public sealed class GpuRenderGraphFrameTests
 {
     [Fact]
+    public void PublishedDependencyOrdersIndependentContributors()
+    {
+        var builder = new GpuRenderGraphFrameBuilder();
+        builder.AddContributor("scene", 0, static (context, _) =>
+        {
+            GpuRenderGraphDependency complete = context.CreateDependency("complete");
+            context.PublishDependency("scene-complete", complete);
+            context.AddPass("draw-3d", 0, static (_, _) => { }).Write(complete);
+        }, order: 10);
+        builder.AddContributor("ui", 0, static (context, _) =>
+        {
+            GpuRenderGraphDependency sceneComplete = context.GetDependency("scene-complete");
+            context.AddPass(
+                    "draw-ui",
+                    0,
+                    static (_, _) => { },
+                    GpuRenderGraphPassFlags.NeverCull)
+                .Read(sceneComplete);
+        }, order: 20);
+
+        GpuRenderGraphPlan plan = builder.Compile();
+
+        Assert.Collection(
+            plan.Passes,
+            pass => Assert.Equal("scene::draw-3d", pass.Name),
+            pass => Assert.Equal("ui::draw-ui", pass.Name));
+        Assert.Equal(1, plan.DependencyCount);
+        Assert.Empty(plan.Barriers);
+        Assert.Empty(plan.TransientSlots);
+    }
+
+    [Fact]
     public void ContributorsBuildInExplicitDeterministicOrder()
     {
         var builder = new GpuRenderGraphFrameBuilder();
         builder.AddContributor("post", 0, static (context, _) =>
         {
-            GpuRenderGraphResource color = context.GetResource("main-color");
+            var color = context.GetTexture("main-color");
             context.AddPass("composite", color, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Read(color, GpuStage.PixelShader);
         }, order: 20);
         builder.AddContributor("scene", 0, static (context, _) =>
         {
-            GpuRenderGraphResource color = context.ImportTexture(
+            var color = context.ImportTexture(
                 "color",
                 new GpuTextureHandle(1),
                 ColorDescription());
-            context.PublishResource("main-color", color);
+            context.PublishTexture("main-color", color);
             context.AddPass("draw", color, static (_, _) => { }).Write(color, GpuStage.ColorOutput);
         }, order: 10);
 
@@ -40,13 +72,13 @@ public sealed class GpuRenderGraphFrameTests
         var builder = new GpuRenderGraphFrameBuilder();
         builder.AddContributor("camera/main", 0, static (context, _) =>
         {
-            GpuRenderGraphResource color = context.CreateTexture("color", ColorDescription());
+            var color = context.CreateTexture("color", ColorDescription());
             context.AddPass("draw", color, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Write(color, GpuStage.ColorOutput);
         });
         builder.AddContributor("camera/reflection", 0, static (context, _) =>
         {
-            GpuRenderGraphResource color = context.CreateTexture("color", ColorDescription());
+            var color = context.CreateTexture("color", ColorDescription());
             context.AddPass("draw", color, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Write(color, GpuStage.ColorOutput);
         });
@@ -67,13 +99,13 @@ public sealed class GpuRenderGraphFrameTests
         var builder = new GpuRenderGraphFrameBuilder();
         builder.AddContributor("z-system", 0, static (context, _) =>
         {
-            GpuRenderGraphResource resource = context.CreateTexture("color", ColorDescription());
+            var resource = context.CreateTexture("color", ColorDescription());
             context.AddPass("draw", resource, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Write(resource, GpuStage.ColorOutput);
         });
         builder.AddContributor("a-system", 0, static (context, _) =>
         {
-            GpuRenderGraphResource resource = context.CreateTexture("color", ColorDescription());
+            var resource = context.CreateTexture("color", ColorDescription());
             context.AddPass("draw", resource, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Write(resource, GpuStage.ColorOutput);
         });
@@ -97,13 +129,13 @@ public sealed class GpuRenderGraphFrameTests
         var duplicateShared = new GpuRenderGraphFrameBuilder()
             .AddContributor("first", 0, static (context, _) =>
             {
-                GpuRenderGraphResource resource = context.CreateTexture("color", ColorDescription());
-                context.PublishResource("color", resource);
+                var resource = context.CreateTexture("color", ColorDescription());
+                context.PublishTexture("color", resource);
             })
             .AddContributor("second", 0, static (context, _) =>
             {
-                GpuRenderGraphResource resource = context.CreateTexture("color", ColorDescription());
-                context.PublishResource("color", resource);
+                var resource = context.CreateTexture("color", ColorDescription());
+                context.PublishTexture("color", resource);
             });
 
         Assert.Throws<ArgumentException>(duplicateShared.BuildGraph);
@@ -150,11 +182,11 @@ public sealed class GpuRenderGraphFrameTests
     public void StatefulPassCannotResolveAnUndeclaredResource()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource declared = graph.ImportTexture(
+        var declared = graph.ImportTexture(
             "declared",
             new GpuTextureHandle(1),
             ColorDescription());
-        GpuRenderGraphResource undeclared = graph.ImportTexture(
+        var undeclared = graph.ImportTexture(
             "undeclared",
             new GpuTextureHandle(2),
             ColorDescription());
@@ -179,7 +211,7 @@ public sealed class GpuRenderGraphFrameTests
             new ContributorState("color", "draw"),
             static (context, state) =>
             {
-                GpuRenderGraphResource resource = context.CreateTexture(
+                var resource = context.CreateTexture(
                     state.ResourceName,
                     ColorDescription());
                 context.AddPass(
@@ -250,7 +282,7 @@ public sealed class GpuRenderGraphFrameTests
         Action record)
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource resource = graph.ImportTexture("color", texture, ColorDescription());
+        var resource = graph.ImportTexture("color", texture, ColorDescription());
         graph.AddPass(
                 "draw",
                 record,
@@ -265,7 +297,7 @@ public sealed class GpuRenderGraphFrameTests
         List<ulong> recorded)
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource resource = graph.ImportTexture("color", texture, ColorDescription());
+        var resource = graph.ImportTexture("color", texture, ColorDescription());
         graph.AddPass(
                 "draw",
                 new PassState(resource, recorded),
@@ -283,8 +315,8 @@ public sealed class GpuRenderGraphFrameTests
             64,
             format,
             GpuTextureUsage.ColorAttachment);
-        GpuRenderGraphResource first = graph.CreateTexture("first", description);
-        GpuRenderGraphResource second = graph.CreateTexture("second", description);
+        var first = graph.CreateTexture("first", description);
+        var second = graph.CreateTexture("second", description);
         graph.AddPass("first", first, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Write(first, GpuStage.ColorOutput);
         graph.AddPass("second", second, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -297,13 +329,13 @@ public sealed class GpuRenderGraphFrameTests
         var builder = new GpuRenderGraphFrameBuilder();
         builder.AddContributor("scene", 0, static (context, _) =>
         {
-            GpuRenderGraphResource color = context.CreateTexture("color", ColorDescription());
+            var color = context.CreateTexture("color", ColorDescription());
             context.AddPass("draw", color, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Write(color, GpuStage.ColorOutput);
         });
         builder.AddContributor("debug", 0, static (context, _) =>
         {
-            GpuRenderGraphResource color = context.CreateTexture("color", ColorDescription());
+            var color = context.CreateTexture("color", ColorDescription());
             context.AddPass("draw", color, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
                 .Write(color, GpuStage.ColorOutput);
         }, enabled: enabled);
@@ -317,7 +349,7 @@ public sealed class GpuRenderGraphFrameTests
         GpuTextureUsage.ColorAttachment);
 
     private readonly record struct PassState(
-        GpuRenderGraphResource Resource,
+        GpuRenderGraphTexture Resource,
         List<ulong> Recorded);
 
     private readonly record struct ContributorState(string ResourceName, string PassName);

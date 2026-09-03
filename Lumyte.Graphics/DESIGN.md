@@ -164,8 +164,11 @@ the graph.
 named contribution with an explicit integer order. Enabled contributions run serially by `(order, ordinal name)`, so
 the resulting declaration order is independent of system update order. Each contribution receives a
 `GpuRenderGraphContributionContext`; local resource and pass names are qualified as `contributor::local`, allowing
-multiple cameras or views to use the same local names. `PublishResource` and `GetResource` form the intentional
-cross-contributor boundary, and duplicate contributor or shared-resource names fail during registration.
+multiple cameras or views to use the same local names. Typed `PublishTexture`/`GetTexture`,
+`PublishBuffer`/`GetBuffer`, and `PublishDependency`/`GetDependency` methods form the intentional
+cross-contributor boundary, and duplicate contributor or shared-value names fail during registration. A dependency
+is a virtual scheduling token: it creates data-flow and culling edges without allocating GPU memory or emitting a
+barrier.
 
 `GpuRenderGraphPlanCache` keys plans by exact graph structure: qualified names, declaration order, resource kinds and
 descriptions, output/export state, enabled passes, access modes, stages, and hazards. A hit reuses dependency order,
@@ -261,8 +264,9 @@ Presentation and shader pipelines are layered onto this allocation slice below.
 
 The raster command surface adds only backend-ready vertex/pixel shader binaries, attachment-format pipeline state,
 dynamic viewport/scissor, pipeline binding, and non-indexed draw. The triangle sample uses `gl_VertexIndex`, so no
-vertex-buffer binding abstraction is introduced. Pipeline state remains limited to state that can affect shader
-microcode or render-target compatibility.
+vertex-buffer binding abstraction is introduced. `Lumyte.Graphics.RenderGraph.Common` demonstrates this bufferless path as a
+stateful RenderGraph contribution. Pipeline state remains limited to state that can affect shader microcode or
+render-target compatibility.
 
 The raster-state conformance suite uses the same observable cases on Direct3D 12, Vulkan, and WebGPU:
 

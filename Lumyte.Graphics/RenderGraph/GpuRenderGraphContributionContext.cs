@@ -4,61 +4,65 @@ namespace Lumyte.Graphics.RenderGraph;
 public sealed class GpuRenderGraphContributionContext
 {
     private readonly GpuRenderGraph graph;
-    private readonly IReadOnlyDictionary<string, GpuRenderGraphResource> readableSharedResources;
-    private readonly Dictionary<string, GpuRenderGraphResource> sharedResources;
+    private readonly Dictionary<string, GpuRenderGraphTexture> sharedTextures;
+    private readonly Dictionary<string, GpuRenderGraphBuffer> sharedBuffers;
+    private readonly Dictionary<string, GpuRenderGraphDependency> sharedDependencies;
+    private readonly HashSet<string> sharedNames;
     private bool open = true;
 
     internal GpuRenderGraphContributionContext(
         GpuRenderGraph graph,
         string name,
-        Dictionary<string, GpuRenderGraphResource> sharedResources)
+        Dictionary<string, GpuRenderGraphTexture> sharedTextures,
+        Dictionary<string, GpuRenderGraphBuffer> sharedBuffers,
+        Dictionary<string, GpuRenderGraphDependency> sharedDependencies,
+        HashSet<string> sharedNames)
     {
         this.graph = graph;
         Name = name;
-        this.sharedResources = sharedResources;
-        readableSharedResources = sharedResources;
+        this.sharedTextures = sharedTextures;
+        this.sharedBuffers = sharedBuffers;
+        this.sharedDependencies = sharedDependencies;
+        this.sharedNames = sharedNames;
     }
 
     public string Name { get; }
 
-    public GpuRenderGraphResource ImportTexture(string name, GpuTextureHandle texture)
-        => graph.ImportTexture(Qualify(name), texture);
-
-    public GpuRenderGraphResource ImportTexture(
+    public GpuRenderGraphTexture ImportTexture(
         string name,
         GpuTextureHandle texture,
         GpuTextureDescription description)
         => graph.ImportTexture(Qualify(name), texture, description);
 
-    public GpuRenderGraphResource ImportTexture(
+    public GpuRenderGraphTexture ImportTexture(
         string name,
         GpuRenderGraphExportedTexture texture)
         => graph.ImportTexture(Qualify(name), texture);
 
-    public GpuRenderGraphResource ImportBuffer(string name, GpuBufferHandle buffer)
-        => graph.ImportBuffer(Qualify(name), buffer);
-
-    public GpuRenderGraphResource ImportBuffer(
+    public GpuRenderGraphBuffer ImportBuffer(
         string name,
         GpuBufferHandle buffer,
         GpuBufferDescription description)
         => graph.ImportBuffer(Qualify(name), buffer, description);
 
-    public GpuRenderGraphResource ImportBuffer(
+    public GpuRenderGraphBuffer ImportBuffer(
         string name,
         GpuRenderGraphExportedBuffer buffer)
         => graph.ImportBuffer(Qualify(name), buffer);
 
-    public GpuRenderGraphResource CreateTexture(
+    public GpuRenderGraphTexture CreateTexture(
         string name,
         GpuTextureDescription description)
         => graph.CreateTexture(Qualify(name), description);
 
-    public GpuRenderGraphResource CreateBuffer(
+    public GpuRenderGraphBuffer CreateBuffer(
         string name,
         GpuBufferDescription description,
         GpuMemoryKind memoryKind = GpuMemoryKind.DeviceLocal)
         => graph.CreateBuffer(Qualify(name), description, memoryKind);
+
+    public GpuRenderGraphDependency CreateDependency(string name)
+        => graph.CreateDependency(Qualify(name));
 
     public GpuRenderGraphPassBuilder AddPass<TState>(
         string name,
@@ -67,50 +71,96 @@ public sealed class GpuRenderGraphContributionContext
         GpuRenderGraphPassFlags flags = GpuRenderGraphPassFlags.None)
         => graph.AddPass(Qualify(name), state, record, flags);
 
-    public GpuRenderGraphContributionContext MarkOutput(GpuRenderGraphResource resource)
+    public GpuRenderGraphContributionContext MarkOutput(GpuRenderGraphTexture texture)
     {
         VerifyOpen();
-        graph.MarkOutput(resource);
+        graph.MarkOutput(texture);
         return this;
     }
 
-    public GpuRenderGraphResource ExportTexture(GpuRenderGraphResource resource)
+    public GpuRenderGraphContributionContext MarkOutput(GpuRenderGraphBuffer buffer)
     {
         VerifyOpen();
-        return graph.ExportTexture(resource);
+        graph.MarkOutput(buffer);
+        return this;
     }
 
-    public GpuRenderGraphResource ExportBuffer(GpuRenderGraphResource resource)
+    public GpuRenderGraphContributionContext MarkOutput(GpuRenderGraphDependency dependency)
     {
         VerifyOpen();
-        return graph.ExportBuffer(resource);
+        graph.MarkOutput(dependency);
+        return this;
     }
 
-    /// <summary>Publishes a resource for contributors that execute later in registration order.</summary>
-    public GpuRenderGraphResource PublishResource(
+    public GpuRenderGraphTexture ExportTexture(GpuRenderGraphTexture texture)
+    {
+        VerifyOpen();
+        return graph.ExportTexture(texture);
+    }
+
+    public GpuRenderGraphBuffer ExportBuffer(GpuRenderGraphBuffer buffer)
+    {
+        VerifyOpen();
+        return graph.ExportBuffer(buffer);
+    }
+
+    /// <summary>Publishes a texture for contributors that execute later in registration order.</summary>
+    public GpuRenderGraphTexture PublishTexture(string name, GpuRenderGraphTexture texture)
+    {
+        VerifyOpen();
+        ValidateSharedName(name);
+        graph.RequireOwnedTexture(texture);
+        sharedTextures.Add(name, texture);
+        return texture;
+    }
+
+    /// <summary>Publishes a buffer for contributors that execute later in registration order.</summary>
+    public GpuRenderGraphBuffer PublishBuffer(string name, GpuRenderGraphBuffer buffer)
+    {
+        VerifyOpen();
+        ValidateSharedName(name);
+        graph.RequireOwnedBuffer(buffer);
+        sharedBuffers.Add(name, buffer);
+        return buffer;
+    }
+
+    /// <summary>Publishes an ordering dependency for contributors registered later.</summary>
+    public GpuRenderGraphDependency PublishDependency(
         string name,
-        GpuRenderGraphResource resource)
+        GpuRenderGraphDependency dependency)
     {
         VerifyOpen();
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        graph.RequireOwnedResource(resource);
-        if (!sharedResources.TryAdd(name, resource))
-        {
-            throw new ArgumentException(
-                $"A shared render-graph resource named '{name}' is already published.",
-                nameof(name));
-        }
-        return resource;
+        ValidateSharedName(name);
+        graph.RequireOwnedDependency(dependency);
+        sharedDependencies.Add(name, dependency);
+        return dependency;
     }
 
-    public GpuRenderGraphResource GetResource(string name)
+    public GpuRenderGraphTexture GetTexture(string name)
     {
         VerifyOpen();
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        return readableSharedResources.TryGetValue(name, out GpuRenderGraphResource resource)
-            ? resource
-            : throw new KeyNotFoundException(
-                $"Shared render-graph resource '{name}' has not been published by an earlier contributor.");
+        return sharedTextures.TryGetValue(name, out GpuRenderGraphTexture texture)
+            ? texture
+            : throw MissingSharedValue(name, "texture");
+    }
+
+    public GpuRenderGraphBuffer GetBuffer(string name)
+    {
+        VerifyOpen();
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return sharedBuffers.TryGetValue(name, out GpuRenderGraphBuffer buffer)
+            ? buffer
+            : throw MissingSharedValue(name, "buffer");
+    }
+
+    public GpuRenderGraphDependency GetDependency(string name)
+    {
+        VerifyOpen();
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return sharedDependencies.TryGetValue(name, out GpuRenderGraphDependency dependency)
+            ? dependency
+            : throw MissingSharedValue(name, "dependency");
     }
 
     internal void Close() => open = false;
@@ -125,6 +175,20 @@ public sealed class GpuRenderGraphContributionContext
         }
         return $"{Name}::{localName}";
     }
+
+    private void ValidateSharedName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (!sharedNames.Add(name))
+        {
+            throw new ArgumentException(
+                $"A shared render-graph value named '{name}' is already published.",
+                nameof(name));
+        }
+    }
+
+    private static KeyNotFoundException MissingSharedValue(string name, string kind)
+        => new($"Shared render-graph {kind} '{name}' has not been published by an earlier contributor.");
 
     private void VerifyOpen()
         => ObjectDisposedException.ThrowIf(!open, this);

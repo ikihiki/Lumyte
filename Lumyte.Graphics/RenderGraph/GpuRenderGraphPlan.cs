@@ -33,10 +33,13 @@ public sealed class GpuRenderGraphPlan
             .ToDictionary(group => group.Key, group => group.ToArray());
     }
 
-    public IReadOnlyList<GpuRenderGraphResourceInfo> Resources { get; }
+    internal IReadOnlyList<GpuRenderGraphResourceInfo> Resources { get; }
     public IReadOnlyList<GpuRenderGraphPassPlan> Passes { get; }
     public IReadOnlyList<GpuRenderGraphBarrierPlan> Barriers { get; }
-    public IReadOnlyList<GpuRenderGraphTransientResourcePlan> TransientResources { get; }
+    public int TextureCount => Resources.Count(static resource => resource.Kind == GpuRenderGraphResourceKind.Texture);
+    public int BufferCount => Resources.Count(static resource => resource.Kind == GpuRenderGraphResourceKind.Buffer);
+    public int DependencyCount => Resources.Count(static resource => resource.Kind == GpuRenderGraphResourceKind.Dependency);
+    internal IReadOnlyList<GpuRenderGraphTransientResourcePlan> TransientResources { get; }
     public IReadOnlyList<GpuRenderGraphTransientSlotPlan> TransientSlots { get; }
     public IReadOnlyList<GpuRenderGraphAliasBarrierPlan> AliasBarriers { get; }
 

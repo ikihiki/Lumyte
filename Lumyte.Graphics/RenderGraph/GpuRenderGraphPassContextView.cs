@@ -23,16 +23,16 @@ public readonly ref struct GpuRenderGraphPassContextView
 
     public GpuCommandBuffer Commands { get; }
 
-    public GpuTextureHandle GetTexture(GpuRenderGraphResource resource)
-        => RequireResource(resource, GpuRenderGraphResourceKind.Texture).Texture;
+    public GpuTextureHandle GetTexture(GpuRenderGraphTexture texture)
+        => RequireResource(texture.Resource, GpuRenderGraphResourceKind.Texture).Texture;
 
-    public GpuBufferHandle GetBuffer(GpuRenderGraphResource resource)
-        => RequireResource(resource, GpuRenderGraphResourceKind.Buffer).Buffer;
+    public GpuBufferHandle GetBuffer(GpuRenderGraphBuffer buffer)
+        => RequireResource(buffer.Resource, GpuRenderGraphResourceKind.Buffer).Buffer;
 
-    public GpuTextureView GetTextureView(GpuRenderGraphResource resource)
+    public GpuTextureView GetTextureView(GpuRenderGraphTexture texture)
     {
         GpuRenderGraphResourceRuntime runtime = RequireResource(
-            resource,
+            texture.Resource,
             GpuRenderGraphResourceKind.Texture);
         if (runtime.View is { } view) { return view; }
         if (backend is null)
@@ -40,21 +40,18 @@ public readonly ref struct GpuRenderGraphPassContextView
             throw new InvalidOperationException(
                 "Texture views for graph resources require Execute(IGpuBackend).");
         }
-        GpuTextureDescription description = runtime.Info.TextureDescription
-            ?? throw new InvalidOperationException(
-                "The imported texture has no description for view creation.");
-        view = backend.CreateTextureView(runtime.Texture, new(description.Format));
+        view = backend.CreateTextureView(runtime.Texture, new(texture.Description.Format));
         runtime.View = view;
         return view;
     }
 
     public GpuMemoryAddress GetBufferMemoryAddress(
-        GpuRenderGraphResource resource,
+        GpuRenderGraphBuffer buffer,
         ulong offset = 0,
         ulong length = 0)
     {
         GpuRenderGraphResourceRuntime runtime = RequireResource(
-            resource,
+            buffer.Resource,
             GpuRenderGraphResourceKind.Buffer);
         if (backend is null)
         {

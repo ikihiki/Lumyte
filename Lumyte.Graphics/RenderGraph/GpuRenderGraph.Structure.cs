@@ -4,7 +4,14 @@ public sealed partial class GpuRenderGraph
 {
     private Dictionary<GpuRenderGraphResource, int>? structureResourceIndices;
 
-    internal void RequireOwnedResource(GpuRenderGraphResource resource) => RequireResource(resource);
+    internal void RequireOwnedTexture(GpuRenderGraphTexture texture)
+        => RequireResource(texture.Resource, GpuRenderGraphResourceKind.Texture);
+
+    internal void RequireOwnedBuffer(GpuRenderGraphBuffer buffer)
+        => RequireResource(buffer.Resource, GpuRenderGraphResourceKind.Buffer);
+
+    internal void RequireOwnedDependency(GpuRenderGraphDependency dependency)
+        => RequireResource(dependency.Resource, GpuRenderGraphResourceKind.Dependency);
 
     internal ulong CreateStructureHash()
     {

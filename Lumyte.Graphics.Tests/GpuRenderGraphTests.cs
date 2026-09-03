@@ -6,12 +6,58 @@ namespace Lumyte.Graphics.Tests;
 public sealed class GpuRenderGraphTests
 {
     [Fact]
+    public void TypedResourcesCarryTheirDescriptions()
+    {
+        var graph = new GpuRenderGraph();
+        GpuTextureDescription textureDescription = TextureDescription();
+        GpuBufferDescription bufferDescription = BufferDescription(128);
+
+        GpuRenderGraphTexture texture = graph.CreateTexture("texture", textureDescription);
+        GpuRenderGraphBuffer buffer = graph.ImportBuffer(
+            "buffer",
+            new GpuBufferHandle(1, bufferDescription.Size),
+            bufferDescription);
+
+        Assert.Equal(textureDescription, texture.Description);
+        Assert.Equal(bufferDescription, buffer.Description);
+    }
+
+    [Fact]
+    public void DependencyOrdersPassesWithoutCreatingAGpuBarrier()
+    {
+        var graph = new GpuRenderGraph();
+        GpuRenderGraphDependency sceneComplete = graph.CreateDependency("scene-complete");
+        GpuRenderGraphTexture target = graph.ImportTexture(
+            "target",
+            new GpuTextureHandle(1),
+            TextureDescription());
+        graph.AddPass("scene", 0, static (_, _) => { }).Write(sceneComplete);
+        graph.AddPass("ui", 0, static (_, _) => { })
+            .Read(sceneComplete)
+            .Write(target, GpuStage.ColorOutput);
+        graph.MarkOutput(target);
+
+        GpuRenderGraphPlan plan = graph.Compile();
+
+        Assert.Collection(
+            plan.Passes,
+            pass => Assert.Equal("scene", pass.Name),
+            pass => Assert.Equal("ui", pass.Name));
+        Assert.Equal(1, plan.DependencyCount);
+        GpuRenderGraphBarrierPlan barrier = Assert.Single(plan.Barriers);
+        Assert.Equal("ui", barrier.DestinationPass);
+        Assert.Equal(GpuStage.None, barrier.Before);
+        Assert.Equal(GpuStage.ColorOutput, barrier.After);
+        Assert.Equal(1, barrier.ResourceCount);
+    }
+
+    [Fact]
     public void CompileKeepsTransitiveProducersAndCullsUnusedPasses()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource upload = graph.ImportBuffer("upload", new GpuBufferHandle(1, 256));
-        GpuRenderGraphResource color = graph.ImportTexture("color", new GpuTextureHandle(2));
-        GpuRenderGraphResource unused = graph.ImportBuffer("unused", new GpuBufferHandle(3, 256));
+        var upload = graph.ImportBuffer("upload", new GpuBufferHandle(1, 256), BufferDescription(256));
+        var color = graph.ImportTexture("color", new GpuTextureHandle(2), TextureDescription());
+        var unused = graph.ImportBuffer("unused", new GpuBufferHandle(3, 256), BufferDescription(256));
         graph.AddPass("upload", upload, static (_, _) => { }).Write(upload, GpuStage.Copy);
         graph.AddPass("draw", color, static (_, _) => { })
             .Read(upload, GpuStage.PixelShader)
@@ -31,7 +77,7 @@ public sealed class GpuRenderGraphTests
     public void FullOverwriteCullsAnEarlierUnusedWriter()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource color = graph.ImportTexture("color", new GpuTextureHandle(1));
+        var color = graph.ImportTexture("color", new GpuTextureHandle(1), TextureDescription());
         graph.AddPass("obsolete", color, static (_, _) => { }).Write(color, GpuStage.ColorOutput);
         graph.AddPass("final", color, static (_, _) => { }).Write(color, GpuStage.ColorOutput);
         graph.MarkOutput(color);
@@ -46,7 +92,7 @@ public sealed class GpuRenderGraphTests
     public void ReadWriteKeepsThePreviousResourceProducer()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource color = graph.ImportTexture("color", new GpuTextureHandle(1));
+        var color = graph.ImportTexture("color", new GpuTextureHandle(1), TextureDescription());
         graph.AddPass("base", color, static (_, _) => { }).Write(color, GpuStage.ColorOutput);
         graph.AddPass("composite", color, static (_, _) => { }).ReadWrite(color, GpuStage.ColorOutput);
         graph.MarkOutput(color);
@@ -63,7 +109,7 @@ public sealed class GpuRenderGraphTests
     public void NeverCullPassKeepsItsInputProducer()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource buffer = graph.ImportBuffer("readback", new GpuBufferHandle(1, 64));
+        var buffer = graph.ImportBuffer("readback", new GpuBufferHandle(1, 64), BufferDescription(64));
         graph.AddPass("copy", buffer, static (_, _) => { }).Write(buffer, GpuStage.Copy);
         graph.AddPass("notify", buffer, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Read(buffer, GpuStage.Copy);
@@ -80,8 +126,8 @@ public sealed class GpuRenderGraphTests
     public void BarriersCoverInitialAndWriteDependentTransitions()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource upload = graph.ImportBuffer("upload", new GpuBufferHandle(1, 64));
-        GpuRenderGraphResource color = graph.ImportTexture("color", new GpuTextureHandle(2));
+        var upload = graph.ImportBuffer("upload", new GpuBufferHandle(1, 64), BufferDescription(64));
+        var color = graph.ImportTexture("color", new GpuTextureHandle(2), TextureDescription());
         graph.AddPass("upload", upload, static (_, _) => { })
             .Write(upload, GpuStage.Copy, GpuBarrierHazards.Descriptors);
         graph.AddPass("draw", color, static (_, _) => { })
@@ -99,7 +145,7 @@ public sealed class GpuRenderGraphTests
                 Assert.Equal(GpuStage.None, barrier.Before);
                 Assert.Equal(GpuStage.Copy, barrier.After);
                 Assert.Equal(GpuBarrierHazards.Descriptors, barrier.Hazards);
-                Assert.Equal([upload], barrier.Resources);
+                Assert.Equal([upload.Resource], barrier.Resources);
             },
             barrier =>
             {
@@ -107,7 +153,7 @@ public sealed class GpuRenderGraphTests
                 Assert.Equal(GpuStage.Copy, barrier.Before);
                 Assert.Equal(GpuStage.PixelShader | GpuStage.ColorOutput, barrier.After);
                 Assert.Equal(GpuBarrierHazards.Descriptors, barrier.Hazards);
-                Assert.Equal([upload, color], barrier.Resources);
+                Assert.Equal([upload.Resource, color.Resource], barrier.Resources);
             });
     }
 
@@ -115,7 +161,7 @@ public sealed class GpuRenderGraphTests
     public void ConsecutiveReadsDoNotAddAnotherBarrier()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.ImportTexture("texture", new GpuTextureHandle(1));
+        var texture = graph.ImportTexture("texture", new GpuTextureHandle(1), TextureDescription());
         graph.AddPass("upload", texture, static (_, _) => { }).Write(texture, GpuStage.Copy);
         graph.AddPass("pixel-read", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Read(texture, GpuStage.PixelShader);
@@ -133,7 +179,7 @@ public sealed class GpuRenderGraphTests
         var events = new List<string>();
         var recorder = new RecordingCommandRecorder(events);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource color = graph.ImportTexture("color", new GpuTextureHandle(1));
+        var color = graph.ImportTexture("color", new GpuTextureHandle(1), TextureDescription());
         graph.AddPass("dead", events, static (_, state) => state.Add("dead")).Write(color, GpuStage.ComputeShader);
         graph.AddPass("draw", events, static (_, state) => state.Add("draw")).Write(color, GpuStage.ColorOutput);
         graph.MarkOutput(color);
@@ -148,7 +194,7 @@ public sealed class GpuRenderGraphTests
     public void PassRequiresReadWriteForCombinedResourceAccess()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.ImportTexture("texture", new GpuTextureHandle(1));
+        var texture = graph.ImportTexture("texture", new GpuTextureHandle(1), TextureDescription());
         GpuRenderGraphPassBuilder pass = graph.AddPass("composite", texture, static (_, _) => { })
             .Read(texture, GpuStage.PixelShader);
 
@@ -163,7 +209,7 @@ public sealed class GpuRenderGraphTests
     {
         var first = new GpuRenderGraph();
         var second = new GpuRenderGraph();
-        GpuRenderGraphResource foreign = first.ImportTexture("foreign", new GpuTextureHandle(1));
+        var foreign = first.ImportTexture("foreign", new GpuTextureHandle(1), TextureDescription());
 
         ArgumentException exception = Assert.Throws<ArgumentException>(
             () => second.AddPass("draw", foreign, static (_, _) => { }).Read(foreign, GpuStage.PixelShader));
@@ -175,10 +221,10 @@ public sealed class GpuRenderGraphTests
     public void ImportedNativeResourceCanOnlyAppearOnce()
     {
         var graph = new GpuRenderGraph();
-        graph.ImportBuffer("first", new GpuBufferHandle(7, 64));
+        graph.ImportBuffer("first", new GpuBufferHandle(7, 64), BufferDescription(64));
 
         ArgumentException exception = Assert.Throws<ArgumentException>(
-            () => graph.ImportBuffer("second", new GpuBufferHandle(7, 64)));
+            () => graph.ImportBuffer("second", new GpuBufferHandle(7, 64), BufferDescription(64)));
 
         Assert.Equal("nativeValue", exception.ParamName);
     }
@@ -193,8 +239,8 @@ public sealed class GpuRenderGraphTests
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment);
         var producer = new GpuRenderGraph();
-        GpuRenderGraphResource output = producer.CreateTexture("output", description);
-        GpuRenderGraphResource unused = producer.CreateTexture("unused", description);
+        var output = producer.CreateTexture("output", description);
+        var unused = producer.CreateTexture("unused", description);
         producer.AddPass("unused", unused, static (_, _) => { }).Write(unused, GpuStage.ColorOutput);
         producer.AddPass("output", output, static (_, _) => { }).Write(output, GpuStage.ColorOutput);
         producer.ExportTexture(output);
@@ -203,7 +249,7 @@ public sealed class GpuRenderGraphTests
         GpuRenderGraphExecution producerExecution = producerPlan.Execute(backend);
         GpuRenderGraphExportedTexture exported = producerExecution.GetTexture(output);
         var consumer = new GpuRenderGraph();
-        GpuRenderGraphResource imported = consumer.ImportTexture("imported", exported);
+        var imported = consumer.ImportTexture("imported", exported);
         consumer.AddPass("consume", imported, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Read(imported, GpuStage.PixelShader);
 
@@ -228,9 +274,10 @@ public sealed class GpuRenderGraphTests
     public void OnlyGraphCreatedResourcesCanBeExported()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource imported = graph.ImportTexture(
+        var imported = graph.ImportTexture(
             "imported",
-            new GpuTextureHandle(1));
+            new GpuTextureHandle(1),
+            TextureDescription());
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
             () => graph.ExportTexture(imported));
@@ -242,7 +289,7 @@ public sealed class GpuRenderGraphTests
     public void ExportedTransientRequiresAWriter()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "output",
             new(1, 1, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.ExportTexture(texture);
@@ -256,7 +303,7 @@ public sealed class GpuRenderGraphTests
     public void TransientPlansRequireBackendExecution()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "output",
             new(1, 1, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }).Write(texture, GpuStage.ColorOutput);
@@ -278,9 +325,9 @@ public sealed class GpuRenderGraphTests
             4,
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment | GpuTextureUsage.Sampled);
-        GpuRenderGraphResource intermediate = graph.CreateTexture("intermediate", description);
-        GpuRenderGraphResource output = graph.CreateTexture("output", description);
-        GpuRenderGraphResource unused = graph.CreateTexture("unused", description);
+        var intermediate = graph.CreateTexture("intermediate", description);
+        var output = graph.CreateTexture("output", description);
+        var unused = graph.CreateTexture("unused", description);
         graph.AddPass("produce", intermediate, static (_, _) => { }).Write(intermediate, GpuStage.ColorOutput);
         graph.AddPass("unused", unused, static (_, _) => { }).Write(unused, GpuStage.ColorOutput);
         graph.AddPass("consume", output, static (_, _) => { })
@@ -294,15 +341,15 @@ public sealed class GpuRenderGraphTests
             plan.TransientResources,
             resource =>
             {
-                Assert.Equal(intermediate, resource.Resource);
+                Assert.Equal(intermediate.Resource, resource.Resource);
                 Assert.Equal(new GpuTransientLifetime(0, 1), resource.Lifetime);
             },
             resource =>
             {
-                Assert.Equal(output, resource.Resource);
+                Assert.Equal(output.Resource, resource.Resource);
                 Assert.Equal(new GpuTransientLifetime(1, 1), resource.Lifetime);
             });
-        Assert.DoesNotContain(plan.TransientResources, resource => resource.Resource == unused);
+        Assert.DoesNotContain(plan.TransientResources, resource => resource.Resource == unused.Resource);
     }
 
     [Fact]
@@ -310,8 +357,8 @@ public sealed class GpuRenderGraphTests
     {
         var graph = new GpuRenderGraph();
         var description = new GpuBufferDescription(64, GpuBufferUsage.ShaderData);
-        GpuRenderGraphResource first = graph.CreateBuffer("first", description);
-        GpuRenderGraphResource second = graph.CreateBuffer("second", description);
+        var first = graph.CreateBuffer("first", description);
+        var second = graph.CreateBuffer("second", description);
         graph.AddPass("first", first, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Write(first, GpuStage.ComputeShader);
         graph.AddPass("second", second, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -320,14 +367,14 @@ public sealed class GpuRenderGraphTests
         GpuRenderGraphPlan plan = graph.Compile();
 
         GpuRenderGraphTransientSlotPlan slot = Assert.Single(plan.TransientSlots);
-        Assert.Equal([first, second], slot.Resources);
+        Assert.Equal([first.Resource, second.Resource], slot.Resources);
         Assert.All(plan.TransientResources, resource => Assert.Equal(slot.Slot, resource.ReuseSlot));
         Assert.Equal(GpuRenderGraphResourceKind.Buffer, slot.Kind);
         Assert.Equal(description, slot.BufferDescription);
         GpuRenderGraphAliasBarrierPlan alias = Assert.Single(plan.AliasBarriers);
         Assert.Equal("second", alias.DestinationPass);
-        Assert.Equal(first, alias.BeforeResource);
-        Assert.Equal(second, alias.AfterResource);
+        Assert.Equal(first.Resource, alias.BeforeResource);
+        Assert.Equal(second.Resource, alias.AfterResource);
     }
 
     [Fact]
@@ -335,8 +382,8 @@ public sealed class GpuRenderGraphTests
     {
         var graph = new GpuRenderGraph();
         var description = new GpuBufferDescription(64, GpuBufferUsage.ShaderData);
-        GpuRenderGraphResource first = graph.CreateBuffer("first", description);
-        GpuRenderGraphResource second = graph.CreateBuffer("second", description);
+        var first = graph.CreateBuffer("first", description);
+        var second = graph.CreateBuffer("second", description);
         graph.AddPass("produce-first", first, static (_, _) => { }).Write(first, GpuStage.ComputeShader);
         graph.AddPass("produce-second", second, static (_, _) => { }).Write(second, GpuStage.ComputeShader);
         graph.AddPass("consume", first, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -347,18 +394,18 @@ public sealed class GpuRenderGraphTests
 
         Assert.Equal(2, plan.TransientSlots.Count);
         Assert.NotEqual(
-            plan.TransientResources.Single(resource => resource.Resource == first).ReuseSlot,
-            plan.TransientResources.Single(resource => resource.Resource == second).ReuseSlot);
+            plan.TransientResources.Single(resource => resource.Resource == first.Resource).ReuseSlot,
+            plan.TransientResources.Single(resource => resource.Resource == second.Resource).ReuseSlot);
     }
 
     [Fact]
     public void IncompatibleTransientDescriptionsUseDifferentReuseSlots()
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource small = graph.CreateBuffer(
+        var small = graph.CreateBuffer(
             "small",
             new(64, GpuBufferUsage.ShaderData));
-        GpuRenderGraphResource large = graph.CreateBuffer(
+        var large = graph.CreateBuffer(
             "large",
             new(128, GpuBufferUsage.ShaderData));
         graph.AddPass("small", small, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -383,10 +430,10 @@ public sealed class GpuRenderGraphTests
         using var retirements = new GpuRetirementQueue(backend);
         var cache = new GpuRenderGraphPlanCache();
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource small = graph.CreateTexture(
+        var small = graph.CreateTexture(
             "small",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
-        GpuRenderGraphResource large = graph.CreateTexture(
+        var large = graph.CreateTexture(
             "large",
             new(8, 8, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("small", small, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -423,10 +470,10 @@ public sealed class GpuRenderGraphTests
         var backend = new AliasingTrackingBackend(description =>
             new(64, 16, description.Usage == GpuTextureUsage.Sampled ? 1ul : 2ul));
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource sampled = graph.CreateTexture(
+        var sampled = graph.CreateTexture(
             "sampled",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled));
-        GpuRenderGraphResource attachment = graph.CreateTexture(
+        var attachment = graph.CreateTexture(
             "attachment",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("sampled", sampled, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -450,10 +497,10 @@ public sealed class GpuRenderGraphTests
                 description.Usage == GpuTextureUsage.Sampled ? 0b0110ul : 0b1010ul),
             intersectsCompatibilityMasks: true);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource sampled = graph.CreateTexture(
+        var sampled = graph.CreateTexture(
             "sampled",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled));
-        GpuRenderGraphResource attachment = graph.CreateTexture(
+        var attachment = graph.CreateTexture(
             "attachment",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("sampled", sampled, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -473,17 +520,17 @@ public sealed class GpuRenderGraphTests
     {
         var backend = new AliasingTrackingBackend();
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.Storage));
-        GpuRenderGraphResource deviceBuffer = graph.CreateBuffer(
+        var deviceBuffer = graph.CreateBuffer(
             "device-buffer",
             new(64, GpuBufferUsage.ShaderData));
-        GpuRenderGraphResource upload = graph.CreateBuffer(
+        var upload = graph.CreateBuffer(
             "upload",
             new(64, GpuBufferUsage.CopySource),
             GpuMemoryKind.HostMapped);
-        GpuRenderGraphResource readback = graph.CreateBuffer(
+        var readback = graph.CreateBuffer(
             "readback",
             new(64, GpuBufferUsage.CopyDestination),
             GpuMemoryKind.HostCached);
@@ -506,11 +553,11 @@ public sealed class GpuRenderGraphTests
     {
         var graph = new GpuRenderGraph();
         var description = new GpuBufferDescription(64, GpuBufferUsage.CopyDestination);
-        GpuRenderGraphResource upload = graph.CreateBuffer(
+        var upload = graph.CreateBuffer(
             "upload",
             description,
             GpuMemoryKind.HostMapped);
-        GpuRenderGraphResource readback = graph.CreateBuffer(
+        var readback = graph.CreateBuffer(
             "readback",
             description,
             GpuMemoryKind.HostCached);
@@ -537,8 +584,8 @@ public sealed class GpuRenderGraphTests
             4,
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment);
-        GpuRenderGraphResource exported = graph.CreateTexture("exported", description);
-        GpuRenderGraphResource scratch = graph.CreateTexture("scratch", description);
+        var exported = graph.CreateTexture("exported", description);
+        var scratch = graph.CreateTexture("scratch", description);
         graph.AddPass("export", exported, static (_, _) => { }).Write(exported, GpuStage.ColorOutput);
         graph.AddPass("scratch", scratch, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Write(scratch, GpuStage.ColorOutput);
@@ -547,9 +594,9 @@ public sealed class GpuRenderGraphTests
         GpuRenderGraphPlan plan = graph.Compile();
 
         GpuRenderGraphTransientResourcePlan exportedPlan = plan.TransientResources.Single(
-            resource => resource.Resource == exported);
+            resource => resource.Resource == exported.Resource);
         GpuRenderGraphTransientResourcePlan scratchPlan = plan.TransientResources.Single(
-            resource => resource.Resource == scratch);
+            resource => resource.Resource == scratch.Resource);
         Assert.Equal(new GpuTransientLifetime(0, 1), exportedPlan.Lifetime);
         Assert.NotEqual(exportedPlan.ReuseSlot, scratchPlan.ReuseSlot);
     }
@@ -564,8 +611,8 @@ public sealed class GpuRenderGraphTests
             4,
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment);
-        GpuRenderGraphResource first = graph.CreateTexture("first", description);
-        GpuRenderGraphResource second = graph.CreateTexture("second", description);
+        var first = graph.CreateTexture("first", description);
+        var second = graph.CreateTexture("second", description);
         graph.AddPass("first", first, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Write(first, GpuStage.ColorOutput);
         graph.AddPass("second", second, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -591,7 +638,7 @@ public sealed class GpuRenderGraphTests
         var backend = new AliasingTrackingBackend();
         using var arena = new GpuPersistentArena(backend, 1024);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -613,7 +660,7 @@ public sealed class GpuRenderGraphTests
         var backend = new TrackingBackend();
         using var retirements = new GpuRetirementQueue(backend);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -640,7 +687,7 @@ public sealed class GpuRenderGraphTests
         var backend = new TrackingBackend();
         using var retirements = new GpuRetirementQueue(backend);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }).Write(texture, GpuStage.ColorOutput);
@@ -667,7 +714,7 @@ public sealed class GpuRenderGraphTests
         var backend = new TrackingBackend();
         using var retirements = new GpuRetirementQueue(backend);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }).Write(texture, GpuStage.ColorOutput);
@@ -693,7 +740,7 @@ public sealed class GpuRenderGraphTests
         var backend = new TrackingBackend();
         using var retirements = new GpuRetirementQueue(backend, maximumFramesInFlight: 1);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -718,7 +765,7 @@ public sealed class GpuRenderGraphTests
         using var arena = new GpuPersistentArena(backend, 1024);
         using var retirements = new GpuRetirementQueue(backend);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "texture",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         graph.AddPass("write", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -744,7 +791,7 @@ public sealed class GpuRenderGraphTests
         var backend = new TrackingBackend();
         using var retirements = new GpuRetirementQueue(backend);
         var producer = new GpuRenderGraph();
-        GpuRenderGraphResource produced = producer.CreateTexture(
+        var produced = producer.CreateTexture(
             "produced",
             new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
         producer.AddPass("produce", produced, static (_, _) => { }).Write(produced, GpuStage.ColorOutput);
@@ -754,7 +801,7 @@ public sealed class GpuRenderGraphTests
         GpuRenderGraphExportedTexture exported = producerExecution.GetTexture(produced);
 
         var consumer = new GpuRenderGraph();
-        GpuRenderGraphResource imported = consumer.ImportTexture("imported", exported);
+        var imported = consumer.ImportTexture("imported", exported);
         consumer.AddPass("consume", imported, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Read(imported, GpuStage.PixelShader);
         using GpuRenderGraphExecution consumerExecution =
@@ -771,6 +818,23 @@ public sealed class GpuRenderGraphTests
 
         Assert.Equal(1, backend.DestroyedTextureCount);
     }
+
+    private static GpuTextureDescription TextureDescription() => new(
+        1,
+        1,
+        GpuFormat.Rgba8Unorm,
+        GpuTextureUsage.Sampled
+            | GpuTextureUsage.Storage
+            | GpuTextureUsage.ColorAttachment
+            | GpuTextureUsage.CopySource
+            | GpuTextureUsage.CopyDestination);
+
+    private static GpuBufferDescription BufferDescription(ulong size) => new(
+        size,
+        GpuBufferUsage.CopySource
+            | GpuBufferUsage.CopyDestination
+            | GpuBufferUsage.ShaderData
+            | GpuBufferUsage.IndirectArguments);
 
     private sealed class RecordingQueue(RecordingCommandRecorder recorder) : IGpuQueue
     {

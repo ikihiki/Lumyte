@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.RenderGraph;
 
-public sealed record GpuRenderGraphPhysicalResourcePlan(
+internal sealed record GpuRenderGraphPhysicalResourcePlan(
     GpuRenderGraphResource Resource,
     GpuTransientLifetime Lifetime,
     int ReuseSlot,

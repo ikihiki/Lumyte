@@ -35,20 +35,20 @@ public sealed class GpuRenderGraphExecution : IDisposable
 
     public void WaitForCompletion() => Completion.Wait();
 
-    public GpuRenderGraphExportedTexture GetTexture(GpuRenderGraphResource resource)
+    public GpuRenderGraphExportedTexture GetTexture(GpuRenderGraphTexture texture)
     {
         GpuRenderGraphResourceRuntime runtime = RequireExport(
-            resource,
+            texture.Resource,
             GpuRenderGraphResourceKind.Texture);
         GpuTextureDescription description = runtime.Info.TextureDescription
             ?? throw new InvalidOperationException("The exported texture has no description.");
         return new(this, backend!, runtime.Texture, description);
     }
 
-    public GpuRenderGraphExportedBuffer GetBuffer(GpuRenderGraphResource resource)
+    public GpuRenderGraphExportedBuffer GetBuffer(GpuRenderGraphBuffer buffer)
     {
         GpuRenderGraphResourceRuntime runtime = RequireExport(
-            resource,
+            buffer.Resource,
             GpuRenderGraphResourceKind.Buffer);
         GpuBufferDescription description = runtime.Info.BufferDescription
             ?? throw new InvalidOperationException("The exported buffer has no description.");

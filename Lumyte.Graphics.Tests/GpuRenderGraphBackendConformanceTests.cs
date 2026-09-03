@@ -34,7 +34,7 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using IGpuBackend backend = CreateBackend();
         using var retirements = new GpuRetirementQueue(backend);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "transient",
             new(
                 PixelWidth,
@@ -87,8 +87,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using var output = TestTexture.Create(backend);
         var executed = new List<string>();
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource sourceResource = graph.ImportTexture("source", source.Handle);
-        GpuRenderGraphResource outputResource = graph.ImportTexture("output", output.Handle);
+        var sourceResource = graph.ImportTexture("source", source.Handle, source.Description);
+        var outputResource = graph.ImportTexture("output", output.Handle, output.Description);
         graph.AddPass("produce", executed, static (_, state) => state.Add("produce"))
             .Write(sourceResource, GpuStage.Copy);
         graph.AddPass("consume", executed, static (_, state) => state.Add("consume"))
@@ -115,8 +115,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using var unused = TestTexture.Create(backend);
         var executed = new List<string>();
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource outputResource = graph.ImportTexture("output", output.Handle);
-        GpuRenderGraphResource unusedResource = graph.ImportTexture("unused", unused.Handle);
+        var outputResource = graph.ImportTexture("output", output.Handle, output.Description);
+        var unusedResource = graph.ImportTexture("unused", unused.Handle, unused.Description);
         graph.AddPass("unused", executed, static (_, state) => state.Add("unused"))
             .Write(unusedResource, GpuStage.ComputeShader);
         graph.AddPass("output", executed, static (_, state) => state.Add("output"))
@@ -139,7 +139,7 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using var texture = TestTexture.Create(backend);
         var executed = new List<string>();
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource resource = graph.ImportTexture("shared", texture.Handle);
+        var resource = graph.ImportTexture("shared", texture.Handle, texture.Description);
         graph.AddPass("initial-write", executed, static (_, state) => state.Add("initial-write"))
             .Write(resource, GpuStage.Copy);
         graph.AddPass("read", executed, static (_, state) => state.Add("read"), GpuRenderGraphPassFlags.NeverCull)
@@ -167,8 +167,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using var source = TestTexture.Create(backend);
         using var output = TestTexture.Create(backend);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource sourceResource = graph.ImportTexture("source", source.Handle);
-        GpuRenderGraphResource outputResource = graph.ImportTexture("output", output.Handle);
+        var sourceResource = graph.ImportTexture("source", source.Handle, source.Description);
+        var outputResource = graph.ImportTexture("output", output.Handle, output.Description);
         graph.AddPass("copy", sourceResource, static (_, _) => { })
             .Write(sourceResource, GpuStage.Copy, GpuBarrierHazards.Descriptors);
         graph.AddPass("draw", outputResource, static (_, _) => { })
@@ -187,15 +187,14 @@ public abstract class GpuRenderGraphBackendConformanceTests
                 GpuStage.None,
                 GpuStage.Copy,
                 GpuBarrierHazards.Descriptors,
-                sourceResource),
+                resourceCount: 1),
             barrier => AssertBarrier(
                 barrier,
                 "draw",
                 GpuStage.Copy,
                 GpuStage.PixelShader | GpuStage.ColorOutput,
                 GpuBarrierHazards.Descriptors,
-                sourceResource,
-                outputResource));
+                resourceCount: 2));
     }
 
     [Fact]
@@ -209,8 +208,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment | GpuTextureUsage.CopySource);
         var producer = new GpuRenderGraph();
-        GpuRenderGraphResource transient = producer.CreateTexture("transient", description);
-        GpuRenderGraphResource unused = producer.CreateTexture("unused", description);
+        var transient = producer.CreateTexture("transient", description);
+        var unused = producer.CreateTexture("unused", description);
         producer.AddPass("unused", unused, static (context, state) => context.Commands
                 .BeginRendering([
                     new(
@@ -246,7 +245,7 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using GpuRenderGraphExecution producerExecution = producerPlan.Execute(backend);
         GpuRenderGraphExportedTexture exported = producerExecution.GetTexture(transient);
         var consumer = new GpuRenderGraph();
-        GpuRenderGraphResource imported = consumer.ImportTexture("imported", exported);
+        var imported = consumer.ImportTexture("imported", exported);
         consumer.AddPass("consume", imported, static (context, state) => context.Commands
                 .BeginRendering([
                     new(
@@ -280,8 +279,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment | GpuTextureUsage.CopySource);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource first = graph.CreateTexture("first", description);
-        GpuRenderGraphResource second = graph.CreateTexture("second", description);
+        var first = graph.CreateTexture("first", description);
+        var second = graph.CreateTexture("second", description);
         graph.AddPass("first", first, static (context, state) => context.Commands
                 .BeginRendering([
                     new(
@@ -320,14 +319,14 @@ public abstract class GpuRenderGraphBackendConformanceTests
     {
         using IGpuBackend backend = CreateBackend();
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource small = graph.CreateTexture(
+        var small = graph.CreateTexture(
             "small",
             new(
                 PixelWidth / 2,
                 PixelHeight / 2,
                 GpuFormat.Rgba8Unorm,
                 GpuTextureUsage.ColorAttachment | GpuTextureUsage.CopySource));
-        GpuRenderGraphResource large = graph.CreateTexture(
+        var large = graph.CreateTexture(
             "large",
             new(
                 PixelWidth,
@@ -387,8 +386,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
             GpuFormat.Rgba8Unorm,
             GpuTextureUsage.ColorAttachment | GpuTextureUsage.CopySource);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource first = graph.CreateTexture("first", description);
-        GpuRenderGraphResource second = graph.CreateTexture("second", description);
+        var first = graph.CreateTexture("first", description);
+        var second = graph.CreateTexture("second", description);
         graph.AddPass("first", first, static (context, state) => context.Commands
                 .BeginRendering([
                     new(
@@ -429,8 +428,8 @@ public abstract class GpuRenderGraphBackendConformanceTests
         using IGpuBackend backend = CreateBackend();
         var graph = new GpuRenderGraph();
         var description = new GpuBufferDescription(256, GpuBufferUsage.ShaderData);
-        GpuRenderGraphResource first = graph.CreateBuffer("first", description);
-        GpuRenderGraphResource second = graph.CreateBuffer("second", description);
+        var first = graph.CreateBuffer("first", description);
+        var second = graph.CreateBuffer("second", description);
         graph.AddPass("first", first, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
             .Write(first, GpuStage.ComputeShader);
         graph.AddPass("second", second, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
@@ -451,7 +450,7 @@ public abstract class GpuRenderGraphBackendConformanceTests
     private static GpuRenderGraph CreateClearGraph(GpuClearColor clearColor)
     {
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource texture = graph.CreateTexture(
+        var texture = graph.CreateTexture(
             "transient",
             new(
                 PixelWidth,
@@ -488,13 +487,13 @@ public abstract class GpuRenderGraphBackendConformanceTests
         GpuStage before,
         GpuStage after,
         GpuBarrierHazards hazards,
-        params GpuRenderGraphResource[] resources)
+        int resourceCount)
     {
         Assert.Equal(destinationPass, barrier.DestinationPass);
         Assert.Equal(before, barrier.Before);
         Assert.Equal(after, barrier.After);
         Assert.Equal(hazards, barrier.Hazards);
-        Assert.Equal(resources, barrier.Resources);
+        Assert.Equal(resourceCount, barrier.ResourceCount);
     }
 
     private static void AssertPixelNear(
@@ -566,14 +565,17 @@ public abstract class GpuRenderGraphBackendConformanceTests
         private TestTexture(
             IGpuBackend backend,
             GpuTextureHandle handle,
+            GpuTextureDescription description,
             GpuMemoryAllocation? allocation)
         {
             this.backend = backend;
             Handle = handle;
+            Description = description;
             this.allocation = allocation;
         }
 
         public GpuTextureHandle Handle { get; }
+        public GpuTextureDescription Description { get; }
 
         public static TestTexture Create(IGpuBackend backend)
         {
@@ -581,11 +583,13 @@ public abstract class GpuRenderGraphBackendConformanceTests
                 1,
                 1,
                 GpuFormat.Rgba8Unorm,
-                GpuTextureUsage.CopySource | GpuTextureUsage.CopyDestination);
+                GpuTextureUsage.ColorAttachment
+                    | GpuTextureUsage.CopySource
+                    | GpuTextureUsage.CopyDestination);
 
             if ((backend.Capabilities & GpuBackendCapabilities.DeviceOwnedResources) != 0)
             {
-                return new(backend, backend.CreateTexture(description), null);
+                return new(backend, backend.CreateTexture(description), description, null);
             }
             if ((backend.Capabilities & GpuBackendCapabilities.ExplicitPlacement) != 0)
             {
@@ -596,7 +600,7 @@ public abstract class GpuRenderGraphBackendConformanceTests
                     GpuMemoryKind.DeviceLocal);
                 try
                 {
-                    return new(backend, backend.CreatePlacedTexture(description, allocation), allocation);
+                    return new(backend, backend.CreatePlacedTexture(description, allocation), description, allocation);
                 }
                 catch
                 {

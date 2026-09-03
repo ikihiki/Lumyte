@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.RenderGraph;
 
-public sealed record GpuRenderGraphResourceAccess(
+internal sealed record GpuRenderGraphResourceAccess(
     GpuRenderGraphResource Resource,
     GpuRenderGraphAccess Access,
     GpuStage Stage,

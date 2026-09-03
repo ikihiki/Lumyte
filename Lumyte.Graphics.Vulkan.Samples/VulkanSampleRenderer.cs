@@ -187,7 +187,7 @@ internal sealed class VulkanSampleRenderer : IDisposable
             colorFormat,
             GpuTextureUsage.ColorAttachment);
         var graph = new GpuRenderGraph();
-        GpuRenderGraphResource backBuffer = graph.ImportTexture(
+        GpuRenderGraphTexture backBuffer = graph.ImportTexture(
             "swapchain-back-buffer",
             frame.View.Texture,
             backBufferDescription);

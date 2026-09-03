@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.RenderGraph;
 
-public sealed record GpuRenderGraphResourceInfo(
+internal sealed record GpuRenderGraphResourceInfo(
     GpuRenderGraphResource Resource,
     string Name,
     GpuRenderGraphResourceKind Kind,
