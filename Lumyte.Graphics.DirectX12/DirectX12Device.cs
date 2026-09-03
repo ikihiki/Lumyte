@@ -15,6 +15,7 @@ public sealed unsafe partial class DirectX12Device :
     private ComPtr<ID3D12CommandQueue> queue;
     private readonly Dictionary<ulong, MemoryRecord> memories = [];
     private readonly Dictionary<ulong, BufferRecord> buffers = [];
+    private readonly Dictionary<ulong, BufferViewRecord> bufferViews = [];
     private readonly Dictionary<ulong, TextureRecord> textures = [];
     private readonly Dictionary<ulong, TextureViewRecord> textureViews = [];
     private readonly Dictionary<ulong, GpuSamplerDescription> samplers = [];

@@ -231,7 +231,7 @@ public sealed class GpuRenderGraphPlan
             var completionActions = new List<Action>();
             foreach (GpuRenderGraphResourceRuntime runtime in allRuntimes)
             {
-                if (runtime.View is not null)
+                if (runtime.View is not null || runtime.BufferViews.Count != 0)
                 {
                     completionActions.Add(() => DestroyView(backend, runtime));
                 }
@@ -299,6 +299,11 @@ public sealed class GpuRenderGraphPlan
                 backend.DestroyTextureView(view);
                 runtime.View = null;
             }
+            foreach (GpuBufferView bufferView in runtime.BufferViews.Values)
+            {
+                backend.DestroyBufferView(bufferView);
+            }
+            runtime.BufferViews.Clear();
         }
     }
 
@@ -306,9 +311,16 @@ public sealed class GpuRenderGraphPlan
         IGpuBackend backend,
         GpuRenderGraphResourceRuntime runtime)
     {
-        if (runtime.View is not { } view) { return; }
-        backend.DestroyTextureView(view);
-        runtime.View = null;
+        if (runtime.View is { } view)
+        {
+            backend.DestroyTextureView(view);
+            runtime.View = null;
+        }
+        foreach (GpuBufferView bufferView in runtime.BufferViews.Values)
+        {
+            backend.DestroyBufferView(bufferView);
+        }
+        runtime.BufferViews.Clear();
     }
 
     private void RecordCommands(

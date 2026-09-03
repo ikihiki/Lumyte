@@ -44,9 +44,15 @@ public static class DrawRenderGraphExtensions
             draw.Material,
             (localName, texture) => graph.ImportTexture(localName, texture.Texture, texture.Description),
             name);
-        AddPass(graph.AddPass, name, draw, target, targetResource, sampledResources);
+        GpuRenderGraphBuffer[] bufferResources = ImportShaderBuffers(
+            draw.Material,
+            (localName, buffer) => graph.ImportBuffer(localName, buffer.Buffer, buffer.Description),
+            name);
+        GpuRenderGraphShaderBindings? bindings = CreateShaderBindings(
+            draw.Material, sampledResources, bufferResources);
+        AddPass(graph.AddPass, name, draw, target, targetResource, bindings);
         if (markOutput) { graph.MarkOutput(targetResource); }
-        return new(targetResource, sampledResources);
+        return new(targetResource, sampledResources, bufferResources);
     }
 
     public static DrawRenderPassResources AddDraw(
@@ -85,9 +91,15 @@ public static class DrawRenderGraphExtensions
             draw.Material,
             (localName, texture) => context.ImportTexture(localName, texture.Texture, texture.Description),
             name);
-        AddPass(context.AddPass, name, draw, target, targetResource, sampledResources);
+        GpuRenderGraphBuffer[] bufferResources = ImportShaderBuffers(
+            draw.Material,
+            (localName, buffer) => context.ImportBuffer(localName, buffer.Buffer, buffer.Description),
+            name);
+        GpuRenderGraphShaderBindings? bindings = CreateShaderBindings(
+            draw.Material, sampledResources, bufferResources);
+        AddPass(context.AddPass, name, draw, target, targetResource, bindings);
         if (markOutput) { context.MarkOutput(targetResource); }
-        return new(targetResource, sampledResources);
+        return new(targetResource, sampledResources, bufferResources);
     }
 
     private static void AddPass(
@@ -96,21 +108,15 @@ public static class DrawRenderGraphExtensions
         DrawData draw,
         DrawRenderTarget target,
         GpuRenderGraphTexture targetResource,
-        GpuRenderGraphTexture[] sampledResources)
+        GpuRenderGraphShaderBindings? bindings)
     {
-        var state = new PassState(draw, target);
+        var state = new PassState(draw, target, bindings);
         GpuRenderGraphPassBuilder builder = addPass(
             name,
             state,
             static (context, state) => Record(context, state),
             GpuRenderGraphPassFlags.None);
-        for (int index = 0; index < sampledResources.Length; index++)
-        {
-            builder.Read(
-                sampledResources[index],
-                draw.Material.SampledTextures[index].Stages,
-                GpuBarrierHazards.Descriptors);
-        }
+        if (bindings is not null) { builder.UseShaderBindings(bindings); }
         if (target.LoadOperation == GpuAttachmentLoadOperation.Load)
         {
             builder.ReadWrite(targetResource, GpuStage.ColorOutput);
@@ -132,9 +138,9 @@ public static class DrawRenderGraphExtensions
                     state.Target.ClearColor),
             ])
             .SetPipeline(state.Draw.Material.Pipeline);
-        if (state.Draw.Material.Resources is { } resources)
+        if (state.Bindings is { } bindings)
         {
-            commands.SetResourceTable(resources);
+            context.BindShaderResources(bindings);
         }
 
         Span<byte> transforms = stackalloc byte[128];
@@ -165,6 +171,56 @@ public static class DrawRenderGraphExtensions
         return result;
     }
 
+    private static GpuRenderGraphShaderBindings? CreateShaderBindings(
+        DrawMaterial material,
+        GpuRenderGraphTexture[] sampledResources,
+        GpuRenderGraphBuffer[] bufferResources)
+    {
+        if (material.Resources is not { } resources) { return null; }
+        var textures = new GpuRenderGraphShaderTextureBinding[sampledResources.Length];
+        for (int index = 0; index < textures.Length; index++)
+        {
+            textures[index] = new(
+                index,
+                sampledResources[index],
+                material.SampledTextures[index].Stages,
+                resources.GetTexture(index));
+        }
+        var samplers = new List<GpuRenderGraphShaderSamplerBinding>();
+        for (int index = 0; index < resources.SamplerSlotCount; index++)
+        {
+            SamplerId sampler = resources.GetSampler(index);
+            if (!sampler.IsNull) { samplers.Add(new(index, sampler)); }
+        }
+        var buffers = new GpuRenderGraphShaderBufferBinding[bufferResources.Length];
+        for (int index = 0; index < buffers.Length; index++)
+        {
+            DrawShaderBuffer buffer = material.ShaderBuffers[index];
+            buffers[index] = new(
+                buffer.Index,
+                bufferResources[index],
+                buffer.Stages,
+                resources.GetBuffer(buffer.Index));
+        }
+        return textures.Length == 0 && samplers.Count == 0 && buffers.Length == 0
+            ? null
+            : new(textures, samplers, buffers);
+    }
+
+    private static GpuRenderGraphBuffer[] ImportShaderBuffers(
+        DrawMaterial material,
+        Func<string, DrawShaderBuffer, GpuRenderGraphBuffer> import,
+        string passName)
+    {
+        var result = new GpuRenderGraphBuffer[material.ShaderBuffers.Count];
+        for (int index = 0; index < result.Length; index++)
+        {
+            DrawShaderBuffer buffer = material.ShaderBuffers[index];
+            result[index] = import($"{passName}-material-buffer-{buffer.Index}", buffer);
+        }
+        return result;
+    }
+
     private static void RequireMatchingTarget(
         DrawRenderTarget target,
         GpuRenderGraphTexture targetResource)
@@ -183,5 +239,8 @@ public static class DrawRenderGraphExtensions
         GpuRenderGraphPassAction<PassState> record,
         GpuRenderGraphPassFlags flags);
 
-    private readonly record struct PassState(DrawData Draw, DrawRenderTarget Target);
+    private readonly record struct PassState(
+        DrawData Draw,
+        DrawRenderTarget Target,
+        GpuRenderGraphShaderBindings? Bindings);
 }

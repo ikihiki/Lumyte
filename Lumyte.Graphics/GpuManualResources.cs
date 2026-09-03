@@ -497,6 +497,17 @@ public sealed class GpuManualBufferAllocator
         return backend.GetBufferMemoryAddress(buffer, offset, requestedLength);
     }
 
+    public GpuBufferView CreateView(
+        GpuBufferHandle buffer,
+        GpuBufferViewDescription description = default)
+    {
+        if (!liveBuffers.Contains(buffer))
+        {
+            throw new ArgumentException("Buffer is not live in this allocator.", nameof(buffer));
+        }
+        return backend.CreateBufferView(buffer, description);
+    }
+
     public void Retire(GpuBufferHandle buffer, GpuMemoryAllocation allocation, GpuFenceValue afterFence)
     {
         if (!liveBuffers.Contains(buffer))

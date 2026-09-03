@@ -103,6 +103,22 @@ public sealed unsafe partial class DirectX12Device
         texture.State = target;
     }
 
+    private void Transition(
+        ComPtr<ID3D12GraphicsCommandList> commands,
+        BufferRecord buffer,
+        ResourceStates target)
+    {
+        if (buffer.State == target) { return; }
+        ResourceTransitionBarrier transition = new(
+            buffer.Resource,
+            D3D12.ResourceBarrierAllSubresources,
+            buffer.State,
+            target);
+        ResourceBarrier barrier = new(ResourceBarrierType.Transition, ResourceBarrierFlags.None, null, transition);
+        commands.ResourceBarrier(1, in barrier);
+        buffer.State = target;
+    }
+
     private ComPtr<ID3D12Resource> CreateCommittedBuffer(HeapType heapType, ulong size, ResourceStates state)
     {
         HeapProperties properties = new(heapType);
@@ -160,9 +176,12 @@ public sealed unsafe partial class DirectX12Device
         private readonly List<ComPtr<ID3D12DescriptorHeap>> temporaryDescriptorHeaps = [];
         private readonly List<Action> completionActions = [];
         private PipelineRecord? currentPipeline;
-        private ComPtr<ID3D12DescriptorHeap> textureHeap;
+        private ComPtr<ID3D12DescriptorHeap> resourceHeap;
         private ComPtr<ID3D12DescriptorHeap> samplerHeap;
-        private bool hasTextureHeap;
+        private bool hasResourceHeap;
+        private int textureDescriptorCount;
+        private int bufferDescriptorOffset;
+        private int bufferDescriptorCount;
         private bool hasSamplerHeap;
         private bool disposed;
 
@@ -373,20 +392,27 @@ public sealed unsafe partial class DirectX12Device
         {
             Owner.VerifyNotDisposed();
             ArgumentNullException.ThrowIfNull(table);
-            if (table.TextureSlotCount > 64 || table.SamplerSlotCount > 64)
+            if (table.TextureSlotCount > MaximumRasterTextureDescriptors
+                || table.SamplerSlotCount > MaximumRasterSamplerDescriptors
+                || table.BufferSlotCount > MaximumRasterBufferDescriptors)
             {
-                throw new NotSupportedException("Direct3D 12 raster pipelines support at most 64 logical texture and sampler slots.");
+                throw new NotSupportedException(
+                    "The current Direct3D 12 descriptor tables support at most 64 indices per resource kind.");
             }
 
-            hasTextureHeap = false;
+            hasResourceHeap = false;
+            textureDescriptorCount = table.TextureSlotCount;
+            bufferDescriptorOffset = table.TextureSlotCount;
+            bufferDescriptorCount = table.BufferSlotCount;
             hasSamplerHeap = false;
 
-            if (table.TextureSlotCount != 0)
+            int resourceDescriptorCount = checked(table.TextureSlotCount + table.BufferSlotCount);
+            if (resourceDescriptorCount != 0)
             {
-                textureHeap = Owner.CreateDescriptorHeap(
-                    DescriptorHeapType.CbvSrvUav, checked((uint)table.TextureSlotCount), true);
-                temporaryDescriptorHeaps.Add(textureHeap);
-                hasTextureHeap = true;
+                resourceHeap = Owner.CreateDescriptorHeap(
+                    DescriptorHeapType.CbvSrvUav, checked((uint)resourceDescriptorCount), true);
+                temporaryDescriptorHeaps.Add(resourceHeap);
+                hasResourceHeap = true;
                 for (int slot = 0; slot < table.TextureSlotCount; slot++)
                 {
                     TextureId id = table.GetTexture(slot);
@@ -396,15 +422,43 @@ public sealed unsafe partial class DirectX12Device
                         throw new ArgumentException($"Texture slot {slot} does not belong to this Direct3D 12 device.", nameof(table));
                     }
                     TextureRecord texture = Owner.RequireTexture(view.Texture);
-                    Owner.Transition(Commands, texture, ResourceStates.PixelShaderResource);
+                    Owner.Transition(Commands, texture, ResourceStates.AllShaderResource);
                     CpuDescriptorHandle destination = Owner.Offset(
-                        textureHeap.GetCPUDescriptorHandleForHeapStart(), checked((uint)slot), DescriptorHeapType.CbvSrvUav);
+                        resourceHeap.GetCPUDescriptorHandleForHeapStart(), checked((uint)slot), DescriptorHeapType.CbvSrvUav);
                     var srv = new ShaderResourceViewDesc(
                         ToDxgiFormat(view.View.Description.Format),
                         SrvDimension.Texture2D,
                         DefaultShaderComponentMapping,
                         texture2D: new Tex2DSrv(view.View.Description.BaseMip, view.View.Description.MipCount, 0, 0));
                     Owner.device.CreateShaderResourceView(texture.Resource, in srv, destination);
+                }
+                for (int slot = 0; slot < table.BufferSlotCount; slot++)
+                {
+                    BufferId id = table.GetBuffer(slot);
+                    if (id.IsNull) { continue; }
+                    if (!Owner.bufferViews.TryGetValue(id.Value, out BufferViewRecord? registeredView))
+                    {
+                        throw new ArgumentException(
+                            $"Buffer index {slot} does not belong to this Direct3D 12 device.",
+                            nameof(table));
+                    }
+                    GpuBufferView view = registeredView.View;
+                    BufferRecord buffer = Owner.RequireBuffer(view.Buffer);
+                    Owner.Transition(Commands, buffer, ResourceStates.AllShaderResource);
+                    CpuDescriptorHandle destination = Owner.Offset(
+                        resourceHeap.GetCPUDescriptorHandleForHeapStart(),
+                        checked((uint)(bufferDescriptorOffset + slot)),
+                        DescriptorHeapType.CbvSrvUav);
+                    var srv = new ShaderResourceViewDesc(
+                        Format.FormatR32Typeless,
+                        SrvDimension.Buffer,
+                        DefaultShaderComponentMapping,
+                        buffer: new BufferSrv(
+                            view.Description.Offset / 4,
+                            checked((uint)(view.Description.Length / 4)),
+                            0,
+                            BufferSrvFlags.Raw));
+                    Owner.device.CreateShaderResourceView(buffer.Resource, in srv, destination);
                 }
             }
 
@@ -444,7 +498,7 @@ public sealed unsafe partial class DirectX12Device
             }
             fixed (byte* pointer = data)
             {
-                Commands.SetGraphicsRoot32BitConstants(2, checked((uint)data.Length / 4), pointer, 0);
+                Commands.SetGraphicsRoot32BitConstants(3, checked((uint)data.Length / 4), pointer, 0);
             }
         }
 
@@ -505,16 +559,24 @@ public sealed unsafe partial class DirectX12Device
             if (currentPipeline is null) { return; }
             ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2];
             uint count = 0;
-            if (hasTextureHeap) { heaps[count++] = textureHeap.Handle; }
+            if (hasResourceHeap) { heaps[count++] = resourceHeap.Handle; }
             if (hasSamplerHeap) { heaps[count++] = samplerHeap.Handle; }
             if (count != 0) { Commands.SetDescriptorHeaps(count, heaps); }
-            if (hasTextureHeap)
+            if (hasResourceHeap && textureDescriptorCount != 0)
             {
-                Commands.SetGraphicsRootDescriptorTable(0, textureHeap.GetGPUDescriptorHandleForHeapStart());
+                Commands.SetGraphicsRootDescriptorTable(0, resourceHeap.GetGPUDescriptorHandleForHeapStart());
             }
             if (hasSamplerHeap)
             {
                 Commands.SetGraphicsRootDescriptorTable(1, samplerHeap.GetGPUDescriptorHandleForHeapStart());
+            }
+            if (hasResourceHeap && bufferDescriptorCount != 0)
+            {
+                GpuDescriptorHandle start = Owner.Offset(
+                    resourceHeap.GetGPUDescriptorHandleForHeapStart(),
+                    checked((uint)bufferDescriptorOffset),
+                    DescriptorHeapType.CbvSrvUav);
+                Commands.SetGraphicsRootDescriptorTable(2, start);
             }
         }
 

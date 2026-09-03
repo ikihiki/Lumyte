@@ -366,9 +366,40 @@ public sealed unsafe partial class DirectX12Device
         {
             throw new ArgumentException("Buffer does not belong to this Direct3D 12 device.", nameof(buffer));
         }
+        if (bufferViews.Values.Any(view => view.View.Buffer == buffer))
+        {
+            throw new InvalidOperationException("Buffer still has a live view.");
+        }
         buffers.Remove(buffer.Value);
         record.Dispose();
         memories[record.AllocationId].BoundResourceCount--;
+    }
+
+    public GpuBufferView CreateBufferView(
+        GpuBufferHandle buffer,
+        GpuBufferViewDescription description)
+    {
+        VerifyNotDisposed();
+        BufferRecord record = RequireBuffer(buffer);
+        if ((record.Description.Usage & GpuBufferUsage.ShaderData) == 0)
+        {
+            throw new ArgumentException("Buffer views require ShaderData usage.", nameof(buffer));
+        }
+        GpuBufferViewDescription normalized = description.Normalize(buffer);
+        ulong id = NextHandle();
+        var view = new GpuBufferView(new(id), buffer, normalized);
+        bufferViews.Add(id, new(view));
+        return view;
+    }
+
+    public void DestroyBufferView(GpuBufferView view)
+    {
+        VerifyNotDisposed();
+        if (!bufferViews.Remove(view.Id.Value, out BufferViewRecord? record) || record.View != view)
+        {
+            if (record is not null) { bufferViews.Add(view.Id.Value, record); }
+            throw new ArgumentException("Buffer view does not belong to this Direct3D 12 device.", nameof(view));
+        }
     }
 
     private ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(DescriptorHeapType type, uint capacity, bool shaderVisible)
@@ -578,5 +609,7 @@ public sealed unsafe partial class DirectX12Device
                 : ResourceStates.Common;
         public void Dispose() { if (ownsResource) { Resource.Dispose(); } }
     }
+
+    private sealed record BufferViewRecord(GpuBufferView View);
 
 }

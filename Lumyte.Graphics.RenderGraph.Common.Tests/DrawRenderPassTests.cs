@@ -13,8 +13,10 @@ public sealed class DrawRenderPassTests
     public void PassDeclaresMaterialAndTargetAccesses()
     {
         var graph = new GpuRenderGraph();
+        var resourceTable = new GpuResourceTable(1, 0);
+        resourceTable.SetTexture(0, new(141));
         DrawData draw = DrawData(
-            resources: new(1, 0),
+            resources: resourceTable,
             sampledTexture: new(
                 new(41),
                 new(16, 16, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled),
@@ -33,6 +35,64 @@ public sealed class DrawRenderPassTests
         Assert.Equal(GpuBarrierHazards.Descriptors, barrier.Hazards);
         Assert.Equal(2, barrier.ResourceCount);
         Assert.Single(resources.SampledTextures);
+    }
+
+    [Fact]
+    public void PassDeclaresShaderBufferAtItsDescriptorIndex()
+    {
+        var graph = new GpuRenderGraph();
+        var resourceTable = new GpuResourceTable(0, 0, 5);
+        resourceTable.SetBuffer(4, new(44));
+        var shaderBuffer = new DrawShaderBuffer(
+            4,
+            new(52, 64),
+            new(64, GpuBufferUsage.ShaderData),
+            GpuStage.VertexShader);
+
+        DrawRenderPassResources resources = graph.AddDraw(
+            "buffered",
+            DrawData(resources: resourceTable, shaderBuffer: shaderBuffer),
+            Target());
+        GpuRenderGraphPlan plan = graph.Compile();
+
+        GpuRenderGraphBarrierPlan barrier = Assert.Single(plan.Barriers);
+        Assert.Equal(GpuStage.VertexShader | GpuStage.ColorOutput, barrier.After);
+        Assert.Equal(GpuBarrierHazards.Descriptors, barrier.Hazards);
+        Assert.Equal(2, barrier.ResourceCount);
+        Assert.Single(resources.ShaderBuffers);
+    }
+
+    [Fact]
+    public void PassRecordsBorrowedDescriptorsWithoutABackend()
+    {
+        var graph = new GpuRenderGraph();
+        var resourceTable = new GpuResourceTable(1, 1, 1);
+        var textureId = new TextureId(141);
+        var samplerId = new SamplerId(142);
+        var bufferId = new BufferId(143);
+        resourceTable.SetTexture(0, textureId);
+        resourceTable.SetSampler(0, samplerId);
+        resourceTable.SetBuffer(0, bufferId);
+        DrawData draw = DrawData(
+            resources: resourceTable,
+            sampledTexture: new(
+                new(41),
+                new(16, 16, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled),
+                GpuStage.PixelShader),
+            shaderBuffer: new(
+                0,
+                new(52, 64),
+                new(64, GpuBufferUsage.ShaderData),
+                GpuStage.VertexShader));
+        graph.AddDraw("borrowed", draw, Target());
+        var recorder = new RecordingCommandRecorder();
+
+        graph.Compile().Record(new RecordingQueue(recorder));
+
+        GpuResourceTable recorded = Assert.IsType<GpuResourceTable>(recorder.Resources);
+        Assert.Equal(textureId, recorded.GetTexture(0));
+        Assert.Equal(samplerId, recorded.GetSampler(0));
+        Assert.Equal(bufferId, recorded.GetBuffer(0));
     }
 
     [Fact]
@@ -98,7 +158,7 @@ public sealed class DrawRenderPassTests
     }
 
     [Fact]
-    public void MaterialRequiresEveryTextureSlotToBeDeclared()
+    public void MaterialRequiresEveryTextureIndexToBeDeclared()
     {
         var resources = new GpuResourceTable(1, 0);
 
@@ -115,9 +175,11 @@ public sealed class DrawRenderPassTests
         uint vertexCount)
     {
         var graph = new GpuRenderGraph();
+        var resources = new GpuResourceTable(0, 1);
+        resources.SetSampler(0, new(1));
         graph.AddDraw(
             "draw",
-            DrawData(pipelineId, vertexCount: vertexCount, resources: new(0, 1)),
+            DrawData(pipelineId, vertexCount: vertexCount, resources: resources),
             Target(targetId));
         return graph.Compile(cache);
     }
@@ -126,11 +188,13 @@ public sealed class DrawRenderPassTests
         ulong pipelineId = 3,
         uint vertexCount = 6,
         GpuResourceTable? resources = null,
-        DrawSampledTexture? sampledTexture = null)
+        DrawSampledTexture? sampledTexture = null,
+        DrawShaderBuffer? shaderBuffer = null)
     {
         DrawSampledTexture[] textures = sampledTexture is { } texture ? [texture] : [];
+        DrawShaderBuffer[] buffers = shaderBuffer is { } buffer ? [buffer] : [];
         return new(
-            new(new(pipelineId), resources, textures),
+            new(new(pipelineId), resources, textures, buffers),
             new(vertexCount),
             new(Matrix4x4.CreateTranslation(1, 2, 3), Matrix4x4.CreateScale(2)));
     }
@@ -162,6 +226,7 @@ public sealed class DrawRenderPassTests
         public List<string> Events { get; } = [];
         public Matrix4x4 World { get; private set; }
         public Matrix4x4 ViewProjection { get; private set; }
+        public GpuResourceTable? Resources { get; private set; }
 
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) =>
             Events.Add($"barrier:{before}->{after}");
@@ -176,7 +241,11 @@ public sealed class DrawRenderPassTests
             => throw new NotSupportedException();
         public void CopyTextureToMemory(GpuTextureHandle source, GpuMemoryAddress destination, GpuTextureCopyFootprint footprint)
             => throw new NotSupportedException();
-        public void SetResourceTable(GpuResourceTable table) => Events.Add("resources");
+        public void SetResourceTable(GpuResourceTable table)
+        {
+            Resources = table;
+            Events.Add("resources");
+        }
         public void SetRootData(ReadOnlySpan<byte> data)
         {
             Events.Add($"root:{data.Length}");

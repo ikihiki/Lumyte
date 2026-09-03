@@ -196,6 +196,12 @@ public readonly record struct SamplerId(ulong Value)
     public bool IsNull => Value == 0;
 }
 
+/// <summary>Device-issued logical identifier for a shader-visible buffer view.</summary>
+public readonly record struct BufferId(ulong Value)
+{
+    public bool IsNull => Value == 0;
+}
+
 public enum GpuSamplerFilter { Nearest, Linear }
 public enum GpuSamplerAddressMode { ClampToEdge, Repeat }
 
@@ -227,6 +233,33 @@ public readonly record struct GpuTextureView(
     TextureId Id,
     GpuTextureHandle Texture,
     GpuTextureViewDescription Description);
+
+public readonly record struct GpuBufferViewDescription(
+    ulong Offset = 0,
+    ulong Length = 0)
+{
+    public GpuBufferViewDescription Normalize(GpuBufferHandle buffer)
+    {
+        if (buffer.IsNull) { throw new ArgumentException("Buffer cannot be null.", nameof(buffer)); }
+        if (Offset >= buffer.Size)
+        {
+            throw new ArgumentException("Buffer view offset must be inside the buffer.", nameof(buffer));
+        }
+        ulong resolvedLength = Length == 0 ? buffer.Size - Offset : Length;
+        if (resolvedLength > buffer.Size - Offset || (Offset & 3) != 0 || (resolvedLength & 3) != 0)
+        {
+            throw new ArgumentException(
+                "Buffer view range must fit the buffer and use four-byte alignment.",
+                nameof(buffer));
+        }
+        return this with { Length = resolvedLength };
+    }
+}
+
+public readonly record struct GpuBufferView(
+    BufferId Id,
+    GpuBufferHandle Buffer,
+    GpuBufferViewDescription Description);
 
 public enum GpuAttachmentLoadOperation { Load, Clear, Discard }
 public enum GpuAttachmentStoreOperation { Store, Discard }

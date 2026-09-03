@@ -29,6 +29,31 @@ public readonly ref struct GpuRenderGraphPassContextView
     public GpuBufferHandle GetBuffer(GpuRenderGraphBuffer buffer)
         => RequireResource(buffer.Resource, GpuRenderGraphResourceKind.Buffer).Buffer;
 
+    public GpuBufferView GetBufferView(
+        GpuRenderGraphBuffer buffer,
+        GpuBufferViewDescription description = default)
+    {
+        GpuRenderGraphResourceRuntime runtime = RequireResource(
+            buffer.Resource,
+            GpuRenderGraphResourceKind.Buffer);
+        if (runtime.BufferViews.TryGetValue(description, out GpuBufferView view)) { return view; }
+        if (backend is null)
+        {
+            throw new InvalidOperationException(
+                "Buffer views for graph resources require Execute(IGpuBackend).");
+        }
+        view = backend.CreateBufferView(runtime.Buffer, description);
+        runtime.BufferViews.Add(description, view);
+        return view;
+    }
+
+    /// <summary>Resolves declared graph resources into the bindless shader ABI.</summary>
+    public GpuCommandBuffer BindShaderResources(GpuRenderGraphShaderBindings bindings)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+        return Commands.SetResourceTable(bindings.Resolve(this));
+    }
+
     public GpuTextureView GetTextureView(GpuRenderGraphTexture texture)
     {
         GpuRenderGraphResourceRuntime runtime = RequireResource(

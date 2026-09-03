@@ -8,6 +8,10 @@ namespace Lumyte.Graphics.DirectX12;
 
 public sealed unsafe partial class DirectX12Device
 {
+    private const int MaximumRasterTextureDescriptors = 64;
+    private const int MaximumRasterSamplerDescriptors = 64;
+    private const int MaximumRasterBufferDescriptors = 64;
+
     public GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
         GpuShaderPackage package,
@@ -117,21 +121,40 @@ public sealed unsafe partial class DirectX12Device
 
     private ComPtr<ID3D12RootSignature> CreateStandardRootSignature()
     {
-        DescriptorRange* ranges = stackalloc DescriptorRange[2];
-        ranges[0] = new(DescriptorRangeType.Srv, 64, 0, 0, D3D12.DescriptorRangeOffsetAppend);
-        ranges[1] = new(DescriptorRangeType.Sampler, 64, 0, 1, D3D12.DescriptorRangeOffsetAppend);
-        RootParameter* parameters = stackalloc RootParameter[3];
+        DescriptorRange* ranges = stackalloc DescriptorRange[3];
+        ranges[0] = new(
+            DescriptorRangeType.Srv,
+            MaximumRasterTextureDescriptors,
+            0,
+            0,
+            D3D12.DescriptorRangeOffsetAppend);
+        ranges[1] = new(
+            DescriptorRangeType.Sampler,
+            MaximumRasterSamplerDescriptors,
+            0,
+            1,
+            D3D12.DescriptorRangeOffsetAppend);
+        ranges[2] = new(
+            DescriptorRangeType.Srv,
+            MaximumRasterBufferDescriptors,
+            0,
+            2,
+            D3D12.DescriptorRangeOffsetAppend);
+        RootParameter* parameters = stackalloc RootParameter[4];
         parameters[0] = new(
-            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.Pixel,
+            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
             new RootDescriptorTable(1, &ranges[0]), null, null);
         parameters[1] = new(
-            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.Pixel,
+            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
             new RootDescriptorTable(1, &ranges[1]), null, null);
         parameters[2] = new(
+            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
+            new RootDescriptorTable(1, &ranges[2]), null, null);
+        parameters[3] = new(
             RootParameterType.Type32BitConstants, null, ShaderVisibility.All,
-            null, new RootConstants(0, 0, 32), null);
+            null, new RootConstants(0, 0, GpuShaderBindingConvention.RootDataSize / sizeof(uint)), null);
         var description = new RootSignatureDesc(
-            3,
+            4,
             parameters,
             0,
             null,

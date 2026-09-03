@@ -86,4 +86,12 @@ public sealed class GpuRenderGraphPassBuilder
         owner.AddAccess(pass, buffer.Resource, GpuRenderGraphAccess.ReadWrite, stage, hazards);
         return this;
     }
+
+    /// <summary>Declares graph resources referenced by bindless shader-array indices.</summary>
+    public GpuRenderGraphPassBuilder UseShaderBindings(GpuRenderGraphShaderBindings bindings)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+        bindings.DeclareOn(this);
+        return this;
+    }
 }

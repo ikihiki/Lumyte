@@ -120,6 +120,14 @@ public interface IGpuBackend : IDisposable
     void DestroyBuffer(GpuBufferHandle buffer)
         => throw Unsupported(nameof(DestroyBuffer));
 
+    GpuBufferView CreateBufferView(
+        GpuBufferHandle buffer,
+        GpuBufferViewDescription description)
+        => throw Unsupported(nameof(CreateBufferView));
+
+    void DestroyBufferView(GpuBufferView view)
+        => throw Unsupported(nameof(DestroyBufferView));
+
     GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
         GpuShaderPackage package,

@@ -17,8 +17,9 @@ alive through graph execution. Graph-created transient resources remain owned an
 ## Public data
 
 - `DrawMaterial` contains the raster pipeline, an optional `GpuResourceTable`, and sampled texture handles plus
-  their vertex/pixel stages so they are visible to RenderGraph dependency planning. Every texture table slot must
-  have one corresponding `DrawSampledTexture`; sampler-only tables may use an empty texture list.
+  their vertex/pixel stages so they are visible to RenderGraph dependency planning. Every texture descriptor index must
+  have one corresponding `DrawSampledTexture`; sampler-only tables may use an empty texture list. `DrawShaderBuffer`
+  performs the same mapping for a shader-data buffer and an explicit buffer-array index.
 - `ProceduralGeometry` contains `VertexCount` and `InstanceCount` for the existing non-indexed `Draw` command.
 - `DrawTransforms` contains `World` and `ViewProjection`.
 - `DrawRenderTarget` contains the target view, description, load/store operations, and clear color.
@@ -27,6 +28,14 @@ alive through graph execution. Graph-created transient resources remain owned an
 
 The two matrices occupy the existing 128-byte root-data contract in `World`, `ViewProjection` order, using the
 in-memory `System.Numerics.Matrix4x4` layout.
+
+## Shader binding convention
+
+Render-graph shaders see one logical descriptor array per resource kind: textures, samplers, and shader-data
+buffers. The array bindings are fixed by `GpuShaderBindingConvention`; individual resources are selected by indices
+stored in root data. `GpuRenderGraphShaderBindings` maps those indices to typed graph textures and buffers so pass
+reads, stages, ordering, and descriptor hazards remain visible to graph compilation. Descriptor counts such as the
+current native limit of 64 per kind are backend limits, not part of the common shader ABI.
 
 ## Add a draw
 

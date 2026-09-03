@@ -193,10 +193,7 @@ public sealed class GpuCommandBuffer
     {
         VerifyOpen();
         if (!rendering) { throw new InvalidOperationException("Root data can only be set inside rendering."); }
-        if (data.IsEmpty || data.Length > 128 || (data.Length & 3) != 0)
-        {
-            throw new ArgumentException("Root data must contain 4 to 128 bytes in 4-byte units.", nameof(data));
-        }
+        GpuShaderBindingConvention.ValidateRootData(data);
         recorder.SetRootData(data);
         return this;
     }

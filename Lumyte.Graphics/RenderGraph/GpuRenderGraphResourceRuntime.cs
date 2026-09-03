@@ -16,6 +16,7 @@ internal sealed class GpuRenderGraphResourceRuntime
     public GpuTextureHandle Texture { get; private set; }
     public GpuBufferHandle Buffer { get; private set; }
     public GpuTextureView? View { get; set; }
+    public Dictionary<GpuBufferViewDescription, GpuBufferView> BufferViews { get; } = [];
 
     public static GpuRenderGraphResourceRuntime Import(GpuRenderGraphResourceInfo info)
         => new(info);

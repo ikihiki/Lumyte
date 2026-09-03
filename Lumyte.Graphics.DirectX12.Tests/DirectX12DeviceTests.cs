@@ -41,6 +41,30 @@ public sealed class DirectX12DeviceTests
 
     [Fact]
     [Trait("Category", "DirectX12Conformance")]
+    public void BufferViewOwnsASeparateShaderDescriptorIdentity()
+    {
+        using DirectX12Device device = DirectX12Device.Create();
+        using var arena = new GpuPersistentArena(device);
+        var buffers = new GpuManualBufferAllocator(device, arena);
+        var description = new GpuBufferDescription(64, GpuBufferUsage.ShaderData);
+        GpuMemoryAllocation memory = buffers.AllocateMemory(description, GpuMemoryKind.DeviceLocal);
+        GpuBufferHandle buffer = buffers.CreatePlacedBuffer(description, memory);
+
+        GpuBufferView view = buffers.CreateView(buffer, new(16, 32));
+
+        Assert.False(view.Id.IsNull);
+        Assert.Equal(buffer, view.Buffer);
+        Assert.Equal(new GpuBufferViewDescription(16, 32), view.Description);
+        Assert.Throws<InvalidOperationException>(() => device.DestroyBuffer(buffer));
+
+        device.DestroyBufferView(view);
+        buffers.Retire(buffer, memory, new(0));
+        buffers.Collect(new(0));
+        arena.VerifyEmpty();
+    }
+
+    [Fact]
+    [Trait("Category", "DirectX12Conformance")]
     public void PlacedTextureTransferPreservesPixels()
     {
         using DirectX12Device device = DirectX12Device.Create();

@@ -5,17 +5,19 @@ namespace Lumyte.Graphics.Tests;
 public sealed class GpuResourceTableTests
 {
     [Fact]
-    public void LogicalResourcesOccupyFixedIndependentSlots()
+    public void LogicalResourcesOccupyIndependentDescriptorIndices()
     {
-        var table = new GpuResourceTable(2, 1);
+        var table = new GpuResourceTable(2, 1, 3);
 
         table.SetTexture(1, new(12));
         table.SetSampler(0, new(23));
+        table.SetBuffer(2, new(34));
 
         Assert.Equal(default, table.GetTexture(0));
         Assert.Equal(new TextureId(12), table.GetTexture(1));
         Assert.Equal(new SamplerId(23), table.GetSampler(0));
-        Assert.Equal((ulong)2, table.Revision);
+        Assert.Equal(new BufferId(34), table.GetBuffer(2));
+        Assert.Equal((ulong)3, table.Revision);
     }
 
     [Fact]
@@ -51,6 +53,24 @@ public sealed class GpuResourceTableTests
 
         Assert.Equal(default, table.GetSampler(0));
         Assert.Equal(revision, table.Revision);
+    }
+
+    [Fact]
+    public void BufferDescriptorChangesAdvanceRevisionOnlyWhenItsValueChanges()
+    {
+        var table = new GpuResourceTable(0, 0, 1);
+        var buffer = new BufferId(34);
+        table.SetBuffer(0, buffer);
+        ulong populatedRevision = table.Revision;
+
+        table.SetBuffer(0, buffer);
+        table.ClearBuffer(0);
+        ulong clearedRevision = table.Revision;
+        table.ClearBuffer(0);
+
+        Assert.Equal(populatedRevision + 1, clearedRevision);
+        Assert.Equal(clearedRevision, table.Revision);
+        Assert.Equal(default, table.GetBuffer(0));
     }
 
     [Fact]

@@ -8,6 +8,10 @@ namespace Lumyte.Graphics.WebGPU;
 /// <summary>Owns a native WebGPU instance, selected adapter, device, and queue.</summary>
 public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
 {
+    private const int MaximumRasterTextureDescriptors = 64;
+    private const int MaximumRasterSamplerDescriptors = 64;
+    private const int NativeSamplerBindingOffset = MaximumRasterTextureDescriptors;
+
     private static readonly Lazy<Silk.NET.WebGPU.WebGPU> SharedApi = new(Silk.NET.WebGPU.WebGPU.GetApi);
     private readonly Silk.NET.WebGPU.WebGPU api;
     private readonly PfnRequestAdapterCallback adapterCallback;
@@ -211,6 +215,17 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(table);
+        if (table.TextureSlotCount > MaximumRasterTextureDescriptors
+            || table.SamplerSlotCount > MaximumRasterSamplerDescriptors)
+        {
+            throw new NotSupportedException(
+                "The current WebGPU bind-group translation supports at most 64 indices per resource kind.");
+        }
+        if (table.BufferSlotCount != 0)
+        {
+            throw new NotSupportedException(
+                "The current WebGPU raster backend does not yet translate the logical shader-buffer array.");
+        }
         if (nativeLayout == 0) { throw new ArgumentException("Bind group layout cannot be null.", nameof(nativeLayout)); }
 
         var key = new ResourceTableCacheKey(table, nativeLayout);
@@ -221,29 +236,43 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
             bindGroups.Remove(key);
         }
 
-        int entryCount = checked(table.TextureSlotCount + table.SamplerSlotCount);
+        int entryCount = 0;
+        for (int slot = 0; slot < table.TextureSlotCount; slot++)
+        {
+            if (!table.GetTexture(slot).IsNull) { entryCount++; }
+        }
+        for (int slot = 0; slot < table.SamplerSlotCount; slot++)
+        {
+            if (!table.GetSampler(slot).IsNull) { entryCount++; }
+        }
         if (entryCount == 0) { throw new ArgumentException("Resource table is empty.", nameof(table)); }
         var entries = new BindGroupEntry[entryCount];
+        int entryIndex = 0;
         for (int slot = 0; slot < table.TextureSlotCount; slot++)
         {
             TextureId id = table.GetTexture(slot);
-            if (id.IsNull || !textureViews.TryGetValue(id.Value, out TextureViewRecord? view))
+            if (id.IsNull) { continue; }
+            if (!textureViews.TryGetValue(id.Value, out TextureViewRecord? view))
             {
-                throw new ArgumentException($"Texture slot {slot} is empty or belongs to another WebGPU device.", nameof(table));
+                throw new ArgumentException($"Texture index {slot} belongs to another WebGPU device.", nameof(table));
             }
-            entries[slot] = new BindGroupEntry { Binding = checked((uint)slot), TextureView = (TextureView*)view.Handle };
+            entries[entryIndex++] = new BindGroupEntry
+            {
+                Binding = checked((uint)slot),
+                TextureView = (TextureView*)view.Handle,
+            };
         }
         for (int slot = 0; slot < table.SamplerSlotCount; slot++)
         {
             SamplerId id = table.GetSampler(slot);
-            if (id.IsNull || !samplers.TryGetValue(id.Value, out nint sampler))
+            if (id.IsNull) { continue; }
+            if (!samplers.TryGetValue(id.Value, out nint sampler))
             {
-                throw new ArgumentException($"Sampler slot {slot} is empty or belongs to another WebGPU device.", nameof(table));
+                throw new ArgumentException($"Sampler index {slot} belongs to another WebGPU device.", nameof(table));
             }
-            int index = table.TextureSlotCount + slot;
-            entries[index] = new BindGroupEntry
+            entries[entryIndex++] = new BindGroupEntry
             {
-                Binding = checked((uint)index),
+                Binding = checked((uint)(NativeSamplerBindingOffset + slot)),
                 Sampler = (Sampler*)sampler,
             };
         }

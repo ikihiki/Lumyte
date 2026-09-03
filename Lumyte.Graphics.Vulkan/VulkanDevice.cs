@@ -9,6 +9,10 @@ namespace Lumyte.Graphics.Vulkan;
 /// <summary>A Vulkan device for explicit queues, resources, logical resource tables, and pipelines.</summary>
 public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 {
+    private const int MaximumRasterTextureDescriptors = 64;
+    private const int MaximumRasterSamplerDescriptors = 64;
+    private const int MaximumRasterBufferDescriptors = 64;
+
     private readonly Vk vk;
     private Instance instance;
     private PhysicalDevice physicalDevice;
@@ -20,11 +24,13 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     private readonly Dictionary<ulong, ImageRecord> images = [];
     private readonly Dictionary<ulong, ImageView> views = [];
     private readonly Dictionary<ulong, BufferRecord> buffers = [];
+    private readonly Dictionary<ulong, GpuBufferView> bufferViews = [];
     private readonly Dictionary<ulong, PipelineRecord> pipelines = [];
     private readonly Dictionary<ulong, Sampler> samplers = [];
     private readonly Dictionary<nint, List<DescriptorSet>> commandDescriptorSets = [];
     private DescriptorSetLayout textureDescriptorLayout;
     private DescriptorSetLayout samplerDescriptorLayout;
+    private DescriptorSetLayout shaderBufferDescriptorLayout;
     private DescriptorSetLayout computeBufferDescriptorLayout;
     private DescriptorPool descriptorPool;
     private uint lastImageMemoryTypeBits = uint.MaxValue;
@@ -440,13 +446,48 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     public void DestroyBuffer(GpuBufferHandle buffer)
     {
         VerifyNotDisposed();
-        if (!buffers.Remove(buffer.Value, out BufferRecord? record))
+        if (!buffers.TryGetValue(buffer.Value, out BufferRecord? record))
         {
             throw new ArgumentException("Buffer does not belong to this Vulkan device.", nameof(buffer));
         }
+        if (bufferViews.Values.Any(view => view.Buffer == buffer))
+        {
+            throw new InvalidOperationException("Buffer still has a live view.");
+        }
 
+        buffers.Remove(buffer.Value);
         vk.DestroyBuffer(device, record.Buffer, null);
         memories[record.AllocationId].BoundResourceCount--;
+    }
+
+    public GpuBufferView CreateBufferView(
+        GpuBufferHandle buffer,
+        GpuBufferViewDescription description)
+    {
+        VerifyNotDisposed();
+        if (!buffers.TryGetValue(buffer.Value, out BufferRecord? record)
+            || record.Description.Size != buffer.Size)
+        {
+            throw new ArgumentException("Buffer does not belong to this Vulkan device.", nameof(buffer));
+        }
+        if ((record.Description.Usage & GpuBufferUsage.ShaderData) == 0)
+        {
+            throw new ArgumentException("Buffer views require ShaderData usage.", nameof(buffer));
+        }
+        GpuBufferViewDescription normalized = description.Normalize(buffer);
+        var view = new GpuBufferView(new(NextResourceId()), buffer, normalized);
+        bufferViews.Add(view.Id.Value, view);
+        return view;
+    }
+
+    public void DestroyBufferView(GpuBufferView view)
+    {
+        VerifyNotDisposed();
+        if (!bufferViews.Remove(view.Id.Value, out GpuBufferView registered) || registered != view)
+        {
+            if (!registered.Id.IsNull) { bufferViews.Add(registered.Id.Value, registered); }
+            throw new ArgumentException("Buffer view does not belong to this Vulkan device.", nameof(view));
+        }
     }
 
     public GpuRasterPipelineHandle CreateRasterPipeline(
@@ -480,16 +521,20 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         PipelineLayout layout = default;
         try
         {
-            DescriptorSetLayout* descriptorLayouts = stackalloc DescriptorSetLayout[2]
+            DescriptorSetLayout* descriptorLayouts = stackalloc DescriptorSetLayout[3]
             {
                 textureDescriptorLayout,
                 samplerDescriptorLayout,
+                shaderBufferDescriptorLayout,
             };
-            var pushConstantRange = new PushConstantRange(ShaderStageFlags.AllGraphics, 0, 128);
+            var pushConstantRange = new PushConstantRange(
+                ShaderStageFlags.AllGraphics,
+                0,
+                GpuShaderBindingConvention.RootDataSize);
             var layoutInfo = new PipelineLayoutCreateInfo
             {
                 SType = StructureType.PipelineLayoutCreateInfo,
-                SetLayoutCount = 2,
+                SetLayoutCount = 3,
                 PSetLayouts = descriptorLayouts,
                 PushConstantRangeCount = 1,
                 PPushConstantRanges = &pushConstantRange,
@@ -1135,8 +1180,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         {
             Binding = 0,
             DescriptorType = DescriptorType.SampledImage,
-            DescriptorCount = 64,
-            StageFlags = ShaderStageFlags.FragmentBit,
+            DescriptorCount = MaximumRasterTextureDescriptors,
+            StageFlags = ShaderStageFlags.AllGraphics,
         };
         var textureLayoutInfo = new DescriptorSetLayoutCreateInfo
         {
@@ -1149,8 +1194,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         {
             Binding = 0,
             DescriptorType = DescriptorType.Sampler,
-            DescriptorCount = 64,
-            StageFlags = ShaderStageFlags.FragmentBit,
+            DescriptorCount = MaximumRasterSamplerDescriptors,
+            StageFlags = ShaderStageFlags.AllGraphics,
         };
         var samplerLayoutInfo = new DescriptorSetLayoutCreateInfo
         {
@@ -1159,6 +1204,22 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             PBindings = &samplerBinding,
         };
         Check(vk.CreateDescriptorSetLayout(device, in samplerLayoutInfo, null, out samplerDescriptorLayout), "vkCreateDescriptorSetLayout");
+        var shaderBufferBinding = new DescriptorSetLayoutBinding
+        {
+            Binding = 0,
+            DescriptorType = DescriptorType.StorageBuffer,
+            DescriptorCount = MaximumRasterBufferDescriptors,
+            StageFlags = ShaderStageFlags.AllGraphics,
+        };
+        var shaderBufferLayoutInfo = new DescriptorSetLayoutCreateInfo
+        {
+            SType = StructureType.DescriptorSetLayoutCreateInfo,
+            BindingCount = 1,
+            PBindings = &shaderBufferBinding,
+        };
+        Check(vk.CreateDescriptorSetLayout(
+            device, in shaderBufferLayoutInfo, null, out shaderBufferDescriptorLayout),
+            "vkCreateDescriptorSetLayout");
         DescriptorSetLayoutBinding* computeBindings = stackalloc DescriptorSetLayoutBinding[4];
         for (uint binding = 0; binding < 4; binding++)
         {
@@ -1582,6 +1643,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             { vk.DestroyDescriptorSetLayout(device, textureDescriptorLayout, null); }
             if (samplerDescriptorLayout.Handle != 0)
             { vk.DestroyDescriptorSetLayout(device, samplerDescriptorLayout, null); }
+            if (shaderBufferDescriptorLayout.Handle != 0)
+            { vk.DestroyDescriptorSetLayout(device, shaderBufferDescriptorLayout, null); }
             if (computeBufferDescriptorLayout.Handle != 0)
             { vk.DestroyDescriptorSetLayout(device, computeBufferDescriptorLayout, null); }
             if (commandPool.Handle != 0)
@@ -1714,9 +1777,12 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 throw new InvalidOperationException("A raster pipeline must be bound before a resource table.");
             }
             ArgumentNullException.ThrowIfNull(table);
-            if (table.TextureSlotCount > 64 || table.SamplerSlotCount > 64)
+            if (table.TextureSlotCount > MaximumRasterTextureDescriptors
+                || table.SamplerSlotCount > MaximumRasterSamplerDescriptors
+                || table.BufferSlotCount > MaximumRasterBufferDescriptors)
             {
-                throw new NotSupportedException("Vulkan raster pipelines support at most 64 logical texture and sampler slots.");
+                throw new NotSupportedException(
+                    "The current Vulkan descriptor sets support at most 64 indices per resource kind.");
             }
 
             if (table.TextureSlotCount != 0)
@@ -1773,6 +1839,46 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 }
                 Owner.vk.CmdBindDescriptorSets(
                     CommandBuffer, PipelineBindPoint.Graphics, currentPipeline.Layout, 1, 1, in samplerSet, 0, null);
+            }
+
+            if (table.BufferSlotCount != 0)
+            {
+                DescriptorSet bufferSet = Allocate(Owner.shaderBufferDescriptorLayout);
+                for (int slot = 0; slot < table.BufferSlotCount; slot++)
+                {
+                    BufferId id = table.GetBuffer(slot);
+                    if (id.IsNull) { continue; }
+                    if (!Owner.bufferViews.TryGetValue(id.Value, out GpuBufferView view)
+                        || !Owner.buffers.TryGetValue(view.Buffer.Value, out BufferRecord? buffer))
+                    {
+                        throw new ArgumentException(
+                            $"Buffer index {slot} does not belong to this Vulkan device.",
+                            nameof(table));
+                    }
+                    if ((buffer.Description.Usage & GpuBufferUsage.ShaderData) == 0)
+                    {
+                        throw new ArgumentException(
+                            $"Buffer index {slot} requires ShaderData usage.",
+                            nameof(table));
+                    }
+                    var bufferInfo = new DescriptorBufferInfo(
+                        buffer.Buffer,
+                        view.Description.Offset,
+                        view.Description.Length);
+                    var write = new WriteDescriptorSet
+                    {
+                        SType = StructureType.WriteDescriptorSet,
+                        DstSet = bufferSet,
+                        DstBinding = 0,
+                        DstArrayElement = checked((uint)slot),
+                        DescriptorCount = 1,
+                        DescriptorType = DescriptorType.StorageBuffer,
+                        PBufferInfo = &bufferInfo,
+                    };
+                    Owner.vk.UpdateDescriptorSets(Owner.device, 1, in write, 0, null);
+                }
+                Owner.vk.CmdBindDescriptorSets(
+                    CommandBuffer, PipelineBindPoint.Graphics, currentPipeline.Layout, 2, 1, in bufferSet, 0, null);
             }
         }
         public void SetRootData(ReadOnlySpan<byte> data)
