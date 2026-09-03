@@ -21,7 +21,7 @@ public sealed unsafe partial class WebGpuDevice
         }
         if (footprint.Width > record.Description.Width
             || footprint.Height > record.Description.Height
-            || footprint.BytesPerPixel != GpuFormatInfo.BytesPerPixel(record.Description.Format)
+            || footprint.BytesPerPixel != GpuBackendCommands.BytesPerPixel(record.Description.Format)
             || checked((ulong)source.Length) != footprint.RequiredBytes)
         {
             throw new ArgumentException("Source and footprint are incompatible with the texture.", nameof(footprint));
@@ -54,7 +54,7 @@ public sealed unsafe partial class WebGpuDevice
         }
         if (footprint.Width > record.Description.Width
             || footprint.Height > record.Description.Height
-            || footprint.BytesPerPixel != GpuFormatInfo.BytesPerPixel(record.Description.Format))
+            || footprint.BytesPerPixel != GpuBackendCommands.BytesPerPixel(record.Description.Format))
         {
             throw new ArgumentException("Footprint is incompatible with the texture.", nameof(footprint));
         }

@@ -363,7 +363,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
     internal CommandBuffer PreparePresent(GpuCommandBuffer commands, GpuTextureHandle texture)
     {
-        if (commands.Recorder is not VulkanRecorder recorder || recorder.Owner != this)
+        if (GpuBackendCommands.GetRecorder(commands) is not VulkanRecorder recorder || recorder.Owner != this)
         {
             throw new ArgumentException("Command buffer belongs to another backend.", nameof(commands));
         }
@@ -749,7 +749,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         for (int index = 0; index < commands.Length; index++)
         {
             ArgumentNullException.ThrowIfNull(commands[index]);
-            if (commands[index].Finish() is not VulkanRecorder recorder || recorder.Owner != this)
+            if (GpuBackendCommands.Finish(commands[index]) is not VulkanRecorder recorder || recorder.Owner != this)
             {
                 throw new ArgumentException("Command buffer belongs to another backend.", nameof(commands));
             }
@@ -910,8 +910,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                         depthAttachment.ClearValue.Stencil),
                 },
             };
-            if (GpuFormatInfo.HasDepth(depthFormat)) { depthPointer = &nativeDepthAttachment; }
-            if (GpuFormatInfo.HasStencil(depthFormat)) { stencilPointer = &nativeDepthAttachment; }
+            if (GpuBackendCommands.HasDepth(depthFormat)) { depthPointer = &nativeDepthAttachment; }
+            if (GpuBackendCommands.HasStencil(depthFormat)) { stencilPointer = &nativeDepthAttachment; }
         }
 
         var rendering = new RenderingInfo
@@ -1636,7 +1636,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     private sealed record PipelineRecord(VkPipeline Pipeline, PipelineLayout Layout);
     private sealed class QueueAdapter(VulkanDevice owner) : IGpuQueue
     {
-        public GpuCommandBuffer StartCommandRecording() => new(new VulkanRecorder(owner, owner.BeginCommands()));
+        public GpuCommandBuffer StartCommandRecording()
+            => GpuBackendCommands.CreateCommandBuffer(new VulkanRecorder(owner, owner.BeginCommands()));
 
         public GpuSemaphore CreateSemaphore(ulong initialValue = 0) => new VulkanSemaphore(owner, initialValue);
 

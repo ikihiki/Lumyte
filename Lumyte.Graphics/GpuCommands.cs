@@ -31,7 +31,7 @@ public readonly record struct GpuTextureCopyFootprint(
     }
 }
 
-internal readonly record struct GpuAliasingResource(
+public readonly record struct GpuAliasingResource(
     GpuTextureHandle Texture,
     GpuBufferHandle Buffer)
 {
@@ -39,7 +39,7 @@ internal readonly record struct GpuAliasingResource(
     public static GpuAliasingResource FromBuffer(GpuBufferHandle buffer) => new(default, buffer);
 }
 
-internal interface IGpuCommandRecorder
+public interface IGpuCommandRecorder
 {
     void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards);
     void AliasingBarrier(

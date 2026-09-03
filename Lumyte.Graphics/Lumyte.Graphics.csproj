@@ -4,11 +4,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Lumyte.Benchmarks" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
-    <InternalsVisibleTo Include="Lumyte.Graphics.Vulkan" />
-    <InternalsVisibleTo Include="Lumyte.Graphics.DirectX12" />
-    <InternalsVisibleTo Include="Lumyte.Graphics.WebGPU" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="MessagePack" />

@@ -123,7 +123,8 @@ public class RenderGraphBenchmarks
 
     private sealed class NullQueue : IGpuQueue
     {
-        public GpuCommandBuffer StartCommandRecording() => new(new NullRecorder());
+        public GpuCommandBuffer StartCommandRecording()
+            => GpuBackendCommands.CreateCommandBuffer(new NullRecorder());
         public GpuSemaphore CreateSemaphore(ulong initialValue = 0) => throw new NotSupportedException();
         public void Submit(
             ReadOnlySpan<GpuCommandBuffer> commandBuffers,
@@ -172,7 +173,8 @@ public class RenderGraphBenchmarks
 
     private sealed class ImmediateQueue : IGpuQueue
     {
-        public GpuCommandBuffer StartCommandRecording() => new(new NullRecorder());
+        public GpuCommandBuffer StartCommandRecording()
+            => GpuBackendCommands.CreateCommandBuffer(new NullRecorder());
         public GpuSemaphore CreateSemaphore(ulong initialValue = 0) => new ImmediateSemaphore();
 
         public void Submit(
@@ -180,7 +182,10 @@ public class RenderGraphBenchmarks
             GpuSemaphore signalSemaphore,
             ulong signalValue)
         {
-            foreach (GpuCommandBuffer commandBuffer in commandBuffers) { commandBuffer.Finish(); }
+            foreach (GpuCommandBuffer commandBuffer in commandBuffers)
+            {
+                GpuBackendCommands.Finish(commandBuffer);
+            }
         }
 
         public void Wait(GpuSemaphore semaphore, ulong value) { }

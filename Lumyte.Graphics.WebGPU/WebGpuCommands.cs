@@ -73,7 +73,7 @@ public sealed unsafe partial class WebGpuDevice
 
     private sealed class WebGpuQueue(WebGpuDevice owner) : IGpuQueue
     {
-        public GpuCommandBuffer StartCommandRecording() => new(owner.BeginCommands());
+        public GpuCommandBuffer StartCommandRecording() => GpuBackendCommands.CreateCommandBuffer(owner.BeginCommands());
 
         public GpuSemaphore CreateSemaphore(ulong initialValue = 0) => new WebGpuSemaphore(owner, initialValue);
 
@@ -89,7 +89,7 @@ public sealed unsafe partial class WebGpuDevice
             var records = new nint[commandBuffers.Length];
             for (int index = 0; index < commandBuffers.Length; index++)
             {
-                if (commandBuffers[index].Finish() is not WebGpuCommandRecorder recorder || recorder.Owner != owner)
+                if (GpuBackendCommands.Finish(commandBuffers[index]) is not WebGpuCommandRecorder recorder || recorder.Owner != owner)
                 {
                     throw new ArgumentException("Command buffer belongs to another backend.", nameof(commandBuffers));
                 }
@@ -182,22 +182,22 @@ public sealed unsafe partial class WebGpuDevice
                 nativeDepth = new()
                 {
                     View = (TextureView*)depthView.Handle,
-                    DepthLoadOp = GpuFormatInfo.HasDepth(depthAttachment.View.Description.Format)
+                    DepthLoadOp = GpuBackendCommands.HasDepth(depthAttachment.View.Description.Format)
                         ? ToLoadOp(depthAttachment.LoadOperation)
                         : LoadOp.Undefined,
-                    DepthStoreOp = GpuFormatInfo.HasDepth(depthAttachment.View.Description.Format)
+                    DepthStoreOp = GpuBackendCommands.HasDepth(depthAttachment.View.Description.Format)
                         ? ToStoreOp(depthAttachment.StoreOperation)
                         : StoreOp.Undefined,
                     DepthClearValue = depthAttachment.ClearValue.Depth,
-                    DepthReadOnly = !GpuFormatInfo.HasDepth(depthAttachment.View.Description.Format),
-                    StencilLoadOp = GpuFormatInfo.HasStencil(depthAttachment.View.Description.Format)
+                    DepthReadOnly = !GpuBackendCommands.HasDepth(depthAttachment.View.Description.Format),
+                    StencilLoadOp = GpuBackendCommands.HasStencil(depthAttachment.View.Description.Format)
                         ? ToLoadOp(depthAttachment.LoadOperation)
                         : LoadOp.Undefined,
-                    StencilStoreOp = GpuFormatInfo.HasStencil(depthAttachment.View.Description.Format)
+                    StencilStoreOp = GpuBackendCommands.HasStencil(depthAttachment.View.Description.Format)
                         ? ToStoreOp(depthAttachment.StoreOperation)
                         : StoreOp.Undefined,
                     StencilClearValue = depthAttachment.ClearValue.Stencil,
-                    StencilReadOnly = !GpuFormatInfo.HasStencil(depthAttachment.View.Description.Format),
+                    StencilReadOnly = !GpuBackendCommands.HasStencil(depthAttachment.View.Description.Format),
                 };
                 description.DepthStencilAttachment = &nativeDepth;
             }

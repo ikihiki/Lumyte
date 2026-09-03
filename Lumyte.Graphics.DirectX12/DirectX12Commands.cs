@@ -48,7 +48,7 @@ public sealed unsafe partial class DirectX12Device
         for (int index = 0; index < commandBuffers.Length; index++)
         {
             ArgumentNullException.ThrowIfNull(commandBuffers[index]);
-            if (commandBuffers[index].Finish() is not DirectX12Recorder recorder || recorder.Owner != this)
+            if (GpuBackendCommands.Finish(commandBuffers[index]) is not DirectX12Recorder recorder || recorder.Owner != this)
             {
                 throw new ArgumentException("Command buffer belongs to another backend.", nameof(commandBuffers));
             }
@@ -116,7 +116,7 @@ public sealed unsafe partial class DirectX12Device
 
     private sealed class QueueAdapter(DirectX12Device owner) : IGpuQueue
     {
-        public GpuCommandBuffer StartCommandRecording() => new(owner.BeginCommands());
+        public GpuCommandBuffer StartCommandRecording() => GpuBackendCommands.CreateCommandBuffer(owner.BeginCommands());
 
         public GpuSemaphore CreateSemaphore(ulong initialValue = 0)
         {
@@ -245,7 +245,7 @@ public sealed unsafe partial class DirectX12Device
                 {
                     GpuFormat format = depthAttachment.View.Description.Format;
                     ClearFlags flags = ClearFlags.Depth;
-                    if (GpuFormatInfo.HasStencil(format)) { flags |= ClearFlags.Stencil; }
+                    if (GpuBackendCommands.HasStencil(format)) { flags |= ClearFlags.Stencil; }
                     Commands.ClearDepthStencilView(
                         depthHandle,
                         flags,
@@ -494,7 +494,7 @@ public sealed unsafe partial class DirectX12Device
         private static void ValidateFootprint(TextureRecord texture, GpuTextureCopyFootprint footprint)
         {
             if (footprint.Width > texture.Description.Width || footprint.Height > texture.Description.Height
-                || footprint.BytesPerPixel != GpuFormatInfo.BytesPerPixel(texture.Description.Format))
+                || footprint.BytesPerPixel != GpuBackendCommands.BytesPerPixel(texture.Description.Format))
             {
                 throw new ArgumentException("Copy footprint is incompatible with the texture.", nameof(footprint));
             }

@@ -83,7 +83,7 @@ public sealed unsafe class VulkanPresentation : IDisposable
 
         native.ValidateSignal(value);
         CommandBuffer commandBuffer = owner.PreparePresent(commands, frame.View.Texture);
-        commands.Finish();
+        GpuBackendCommands.Finish(commands);
         ulong* waitValues = stackalloc ulong[1] { 0 };
         ulong* signalValues = stackalloc ulong[2] { value, 0 };
         var timelineInfo = new TimelineSemaphoreSubmitInfo
