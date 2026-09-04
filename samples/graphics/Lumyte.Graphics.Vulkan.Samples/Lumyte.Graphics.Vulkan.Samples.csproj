@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\graphics\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <ProjectReference Include="..\..\..\src\graphics\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" />
+    <ProjectReference Include="..\..\..\src\graphics\Lumyte.Graphics.Vulkan\Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="..\..\..\Lumyte.Input\Lumyte.Input.csproj" />
+    <ProjectReference Include="..\..\..\Lumyte.Platform\Lumyte.Platform.csproj" />
+    <ProjectReference Include="..\..\..\Lumyte.Platform.Silk\Lumyte.Platform.Silk.csproj" />
+    <ProjectReference Include="..\..\..\src\graphics\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
+    <PackageReference Include="Silk.NET.Shaderc" />
+    <PackageReference Include="Silk.NET.Vulkan" />
+  </ItemGroup>
+</Project>

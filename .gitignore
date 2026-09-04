@@ -8,4 +8,5 @@ artifacts/
 TestResults/
 BenchmarkDotNet.Artifacts/
 node_modules/
+.packages/
 Lumyte.DevTools.Server/wwwroot/

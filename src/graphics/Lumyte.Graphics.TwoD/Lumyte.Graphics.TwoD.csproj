@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Reusable two-dimensional rendering components for Lumyte.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" />
+  </ItemGroup>
+</Project>

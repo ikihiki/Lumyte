@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Common draw and effect contributions for the Lumyte render graph.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Import Project="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
+</Project>

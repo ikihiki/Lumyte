@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Browser host integration for the Lumyte WebGPU backend.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.WebGPU\Lumyte.Graphics.WebGPU.csproj" />
+  </ItemGroup>
+</Project>

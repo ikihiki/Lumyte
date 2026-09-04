@@ -1,0 +1,31 @@
+<Project>
+  <PropertyGroup>
+    <LumyteSlangCache Condition="'$(LumyteSlangCache)' == ''">$(LumyteRepositoryRoot).packages\slang</LumyteSlangCache>
+    <LumyteSlangTool Condition="'$(LumyteSlangTool)' == ''">$(MSBuildThisFileDirectory)bin\$(Configuration)\net10.0\Lumyte.Graphics.Shader.Offline.dll</LumyteSlangTool>
+    <LumyteSlangOutputDirectory Condition="'$(LumyteSlangOutputDirectory)' == ''">$(MSBuildProjectDirectory)\obj\$(Configuration)\$(TargetFramework)\Slang</LumyteSlangOutputDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SlangCompile Include="$(MSBuildProjectDirectory)\**\*.slang"
+                  Exclude="$(MSBuildProjectDirectory)\bin\**;$(MSBuildProjectDirectory)\obj\**"
+                  Condition="'$(EnableDefaultSlangCompileItems)' != 'false'" />
+    <SlangCompile Update="@(SlangCompile)">
+      <PackagePath>$(LumyteSlangOutputDirectory)\%(RecursiveDir)%(Filename).lshp</PackagePath>
+    </SlangCompile>
+    <SlangCompile Update="@(SlangCompile)">
+      <LogicalName>$(RootNamespace).$([System.String]::Copy('%(RecursiveDir)').Replace('\', '.').Replace('/', '.'))%(Filename).lshp</LogicalName>
+    </SlangCompile>
+    <EmbeddedResource Include="@(SlangCompile->'%(PackagePath)')" />
+  </ItemGroup>
+
+  <Target Name="CompileLumyteSlang"
+          BeforeTargets="PrepareResources"
+          DependsOnTargets="ResolveProjectReferences"
+          Condition="'@(SlangCompile)' != ''"
+          Inputs="@(SlangCompile);$(LumyteSlangTool)"
+          Outputs="@(SlangCompile->'%(PackagePath)')">
+    <MakeDir Directories="@(SlangCompile->'$([System.IO.Path]::GetDirectoryName(&quot;%(PackagePath)&quot;))')" />
+    <Exec Command="dotnet &quot;$(LumyteSlangTool)&quot; --source &quot;%(SlangCompile.FullPath)&quot; --output &quot;%(SlangCompile.PackagePath)&quot; --cache &quot;$(LumyteSlangCache)&quot;" />
+  </Target>
+
+</Project>

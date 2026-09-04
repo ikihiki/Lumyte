@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Description>Cross-platform Slang shader precompiler.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
+    <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" />
+  </ItemGroup>
+  <Target Name="CopyDxcForSlang" AfterTargets="Build">
+    <ItemGroup>
+      <DxcRuntime Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxcompiler.dll"
+                  Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+      <DxcRuntime Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxil.dll"
+                  Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DxcRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

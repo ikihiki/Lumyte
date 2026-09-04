@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <Description>Common draw and effect contributions for the Lumyte render graph.</Description>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
-  </ItemGroup>
-</Project>
