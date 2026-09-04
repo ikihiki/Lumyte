@@ -27,6 +27,31 @@ public static class SlangPackageCompiler
             var artifacts = new List<GpuShaderArtifactSource>();
             foreach ((GpuShaderCodeFormat format, string target, string profile, string capability) in s_targets)
             {
+                if (format == GpuShaderCodeFormat.Wgsl)
+                {
+                    string modulePath = Path.Combine(temporaryDirectory, $"{format}-module.wgsl");
+                    await CompileModuleAsync(
+                        compiler,
+                        source,
+                        modulePath,
+                        target,
+                        cancellationToken);
+                    byte[] module = await File.ReadAllBytesAsync(modulePath, cancellationToken);
+                    foreach (SlangEntryPoint entryPoint in entryPoints)
+                    {
+                        artifacts.Add(new(
+                            format,
+                            entryPoint.Stage,
+                            entryPoint.Name,
+                            target,
+                            profile,
+                            capability,
+                            GpuShaderBindingConvention.AbiHash,
+                            module));
+                    }
+                    continue;
+                }
+
                 foreach (SlangEntryPoint entryPoint in entryPoints)
                 {
                     string effectiveProfile = entryPoint.Stage == GpuShaderStage.Mesh && profile.Length > 0 ? "sm_6_5" : profile;
@@ -130,9 +155,25 @@ public static class SlangPackageCompiler
             arguments.Add("-profile");
             arguments.Add(profile);
         }
+        if (target == "spirv")
+        {
+            arguments.Add("-fvk-invert-y");
+        }
 
         return RunAsync(compiler, arguments, $"{target}/{entryPoint.SlangStage}", cancellationToken);
     }
+
+    private static Task CompileModuleAsync(
+        string compiler,
+        string source,
+        string output,
+        string target,
+        CancellationToken cancellationToken)
+        => RunAsync(
+            compiler,
+            [source, "-target", target, "-o", output],
+            $"{target}/module",
+            cancellationToken);
 
     private static async Task RunAsync(
         string compiler,

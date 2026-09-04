@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.WebGPU\Lumyte.Graphics.WebGPU.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
@@ -16,5 +17,6 @@
   <ItemGroup>
     <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
+    <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
-    <ProjectReference Include="..\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Import Project="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
 </Project>

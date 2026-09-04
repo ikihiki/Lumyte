@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.WGPU;
@@ -39,7 +40,7 @@ public sealed unsafe partial class WebGpuDevice
             throw new InvalidOperationException("WebGPU vertex and pixel artifacts must contain the same WGSL module.");
         }
 
-        string source = Encoding.UTF8.GetString(vertex.Payload.Span);
+        string source = TranslateLogicalBindings(Encoding.UTF8.GetString(vertex.Payload.Span));
         nint native = CreateNativeRasterPipeline(
             source,
             vertexEntryPoint,
@@ -49,6 +50,38 @@ public sealed unsafe partial class WebGpuDevice
         rasterPipelines.Add(handle.Value, new(native));
         return handle;
     }
+
+    private static string TranslateLogicalBindings(string source)
+    {
+        source = LogicalBindingFirstPattern().Replace(source, static match => TranslateBinding(match));
+        return LogicalGroupFirstPattern().Replace(source, static match => TranslateBinding(match));
+    }
+
+    private static string TranslateBinding(Match match)
+    {
+        int binding = int.Parse(match.Groups["binding"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        int group = int.Parse(match.Groups["group"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        if (group is GpuShaderBindingConvention.SamplerTable or GpuShaderBindingConvention.BufferTable
+            && binding >= MaximumRasterSamplerDescriptors)
+        {
+            throw new NotSupportedException(
+                $"WebGPU logical shader group {group} cannot address binding {binding}.");
+        }
+        int nativeBinding = group switch
+        {
+            GpuShaderBindingConvention.TextureTable => binding,
+            GpuShaderBindingConvention.SamplerTable => checked(NativeSamplerBindingOffset + binding),
+            GpuShaderBindingConvention.BufferTable => checked(NativeBufferBindingOffset + binding),
+            _ => throw new NotSupportedException($"WebGPU cannot translate logical shader group {group}."),
+        };
+        return $"@binding({nativeBinding}) @group(0)";
+    }
+
+    [GeneratedRegex(@"@binding\((?<binding>\d+)\)\s+@group\((?<group>\d+)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex LogicalBindingFirstPattern();
+
+    [GeneratedRegex(@"@group\((?<group>\d+)\)\s+@binding\((?<binding>\d+)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex LogicalGroupFirstPattern();
 
     public void DestroyRasterPipeline(GpuRasterPipelineHandle pipeline)
     {

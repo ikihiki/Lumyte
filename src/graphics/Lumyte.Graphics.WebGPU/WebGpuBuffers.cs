@@ -17,6 +17,12 @@ public sealed unsafe partial class WebGpuDevice
     }
 
     public void WriteBuffer(GpuBufferHandle buffer, ReadOnlySpan<byte> source)
+        => WriteBuffer(buffer, 0, source);
+
+    public void WriteBuffer(
+        GpuBufferHandle buffer,
+        ulong destinationOffset,
+        ReadOnlySpan<byte> source)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         BufferRecord record = RequireBuffer(buffer);
@@ -24,13 +30,24 @@ public sealed unsafe partial class WebGpuDevice
         {
             throw new ArgumentException("Buffer does not support copy destination usage.", nameof(buffer));
         }
-        if (source.IsEmpty || checked((ulong)source.Length) > buffer.Size || (source.Length & 3) != 0)
+        if (source.IsEmpty
+            || (destinationOffset & 3) != 0
+            || (source.Length & 3) != 0
+            || destinationOffset > buffer.Size
+            || checked((ulong)source.Length) > buffer.Size - destinationOffset)
         {
-            throw new ArgumentException("Source must be non-empty, four-byte aligned, and fit the buffer.", nameof(source));
+            throw new ArgumentException(
+                "The destination and source must be non-empty, four-byte aligned, and fit the buffer.",
+                nameof(source));
         }
         fixed (byte* bytes = source)
         {
-            api.QueueWriteBuffer(queue, (WgpuBuffer*)record.Handle, 0, bytes, checked((nuint)source.Length));
+            api.QueueWriteBuffer(
+                queue,
+                (WgpuBuffer*)record.Handle,
+                destinationOffset,
+                bytes,
+                checked((nuint)source.Length));
         }
     }
 

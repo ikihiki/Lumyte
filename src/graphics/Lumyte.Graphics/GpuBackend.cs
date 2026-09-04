@@ -111,6 +111,19 @@ public interface IGpuBackend : IDisposable
     void WriteBuffer(GpuBufferHandle buffer, ReadOnlySpan<byte> source)
         => throw Unsupported(nameof(WriteBuffer));
 
+    /// <summary>Writes a four-byte-aligned range without replacing unaffected buffer bytes.</summary>
+    void WriteBuffer(
+        GpuBufferHandle buffer,
+        ulong destinationOffset,
+        ReadOnlySpan<byte> source)
+    {
+        if (destinationOffset != 0)
+        {
+            throw Unsupported($"{nameof(WriteBuffer)} with a destination offset");
+        }
+        WriteBuffer(buffer, source);
+    }
+
     byte[] ReadBuffer(GpuBufferHandle buffer)
         => throw Unsupported(nameof(ReadBuffer));
 

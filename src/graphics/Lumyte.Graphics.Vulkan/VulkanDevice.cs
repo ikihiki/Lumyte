@@ -460,6 +460,40 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         memories[record.AllocationId].BoundResourceCount--;
     }
 
+    public void WriteBuffer(GpuBufferHandle buffer, ReadOnlySpan<byte> source)
+        => WriteBuffer(buffer, 0, source);
+
+    public void WriteBuffer(
+        GpuBufferHandle buffer,
+        ulong destinationOffset,
+        ReadOnlySpan<byte> source)
+    {
+        VerifyNotDisposed();
+        if (!buffers.TryGetValue(buffer.Value, out BufferRecord? record)
+            || record.Description.Size != buffer.Size)
+        {
+            throw new ArgumentException("Buffer does not belong to this Vulkan device.", nameof(buffer));
+        }
+        MemoryRecord memory = memories[record.AllocationId];
+        if (memory.Kind != GpuMemoryKind.HostMapped)
+        {
+            throw new ArgumentException("Buffer memory is not host writable.", nameof(buffer));
+        }
+        if (source.IsEmpty
+            || (destinationOffset & 3) != 0
+            || (source.Length & 3) != 0
+            || destinationOffset > record.Description.Size
+            || checked((ulong)source.Length) > record.Description.Size - destinationOffset)
+        {
+            throw new ArgumentException(
+                "The destination and source must be non-empty, four-byte aligned, and fit the buffer.",
+                nameof(source));
+        }
+
+        nint address = checked(memory.CpuAddress + (nint)record.AllocationOffset + (nint)destinationOffset);
+        source.CopyTo(new Span<byte>((void*)address, source.Length));
+    }
+
     public GpuBufferView CreateBufferView(
         GpuBufferHandle buffer,
         GpuBufferViewDescription description)
