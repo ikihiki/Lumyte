@@ -1,7 +1,7 @@
 namespace Lumyte.Graphics.TwoD;
 
 /// <summary>GPU-ready immutable data. Keep it alive until graph execution completes.</summary>
-public sealed class PreparedDisplayList : IDisposable
+public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
 {
     private OwnedBuffer? primitiveBuffer;
     private OwnedBuffer? polygonBuffer;
@@ -35,6 +35,12 @@ public sealed class PreparedDisplayList : IDisposable
     internal OwnedBuffer? PrimitiveBuffer => RequireAlive(primitiveBuffer);
     internal OwnedBuffer? PolygonBuffer => RequireAlive(polygonBuffer);
 
+    Renderer IPreparedDrawing.Owner => Owner;
+    IReadOnlyList<PreparedBatch> IPreparedDrawing.Batches => Batches;
+    IReadOnlyList<PreparedImage> IPreparedDrawing.Images => Images;
+    OwnedBuffer? IPreparedDrawing.PrimitiveBuffer => PrimitiveBuffer;
+    OwnedBuffer? IPreparedDrawing.PolygonBuffer => PolygonBuffer;
+
     public void Dispose()
     {
         if (disposed) { return; }
@@ -46,6 +52,8 @@ public sealed class PreparedDisplayList : IDisposable
     }
 
     internal void VerifyAlive() => ObjectDisposedException.ThrowIf(disposed, this);
+
+    void IPreparedDrawing.VerifyAlive() => VerifyAlive();
 
     private T? RequireAlive<T>(T? value) where T : class
     {

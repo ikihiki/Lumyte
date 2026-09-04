@@ -11,10 +11,13 @@ public sealed class Renderer : IDisposable
 
     private readonly IGpuBackend backend;
     private readonly Dictionary<ImageId, RegisteredImage> images = [];
+    private readonly Dictionary<DistanceFieldAtlas, ImageId> distanceFieldAtlases = [];
     private readonly Dictionary<(GpuFormat Format, PreparedBatchKind Kind), GpuRasterPipelineHandle> pipelines = [];
     private GpuShaderPackage? shaders;
     private ulong nextImageId = 1;
     private bool disposed;
+
+    internal IGpuBackend Backend => backend;
 
     public Renderer(IGpuBackend backend)
     {
@@ -100,12 +103,15 @@ public sealed class Renderer : IDisposable
             }
             else
             {
-                int imageIndex = command.Kind == DrawCommandKind.Image
+                int imageIndex = command.Kind is DrawCommandKind.Image or DrawCommandKind.DistanceField
                     ? GetImageIndex(command.Image, preparedImages, imageIndices)
                     : -1;
-                PreparedBatchKind kind = command.Kind == DrawCommandKind.Image
-                    ? PreparedBatchKind.Image
-                    : PreparedBatchKind.Primitive;
+                PreparedBatchKind kind = command.Kind switch
+                {
+                    DrawCommandKind.Image => PreparedBatchKind.Image,
+                    DrawCommandKind.DistanceField => PreparedBatchKind.DistanceField,
+                    _ => PreparedBatchKind.Primitive,
+                };
                 ulong commandOffset = checked((ulong)gpuCommands.Count * GpuDrawCommand.Size);
                 if (!CanAppendBatch(batches, kind, commandOffset, clip.Value, imageIndex))
                 {
@@ -158,6 +164,18 @@ public sealed class Renderer : IDisposable
         }
     }
 
+    public SceneSnapshot Prepare(Scene scene, GpuTextureDescription targetDescription)
+    {
+        VerifyAlive();
+        ArgumentNullException.ThrowIfNull(scene);
+        targetDescription.Validate();
+        if ((targetDescription.Usage & GpuTextureUsage.ColorAttachment) == 0)
+        {
+            throw new ArgumentException("The target requires color-attachment usage.", nameof(targetDescription));
+        }
+        return new(this, scene, targetDescription);
+    }
+
     public void Dispose()
     {
         if (disposed) { return; }
@@ -166,6 +184,7 @@ public sealed class Renderer : IDisposable
             backend.DestroyRasterPipeline(pipeline);
         }
         pipelines.Clear();
+        distanceFieldAtlases.Clear();
         images.Clear();
         disposed = true;
     }
@@ -176,6 +195,22 @@ public sealed class Renderer : IDisposable
         return !image.IsNull && images.TryGetValue(image, out RegisteredImage value)
             ? value
             : throw new ArgumentException("Image is not registered with this renderer.", nameof(image));
+    }
+
+    internal ImageId RequireDistanceField(DistanceField field)
+    {
+        VerifyAlive();
+        DistanceFieldAtlas atlas = field.Owner
+            ?? throw new ArgumentException("Distance field cannot be null.", nameof(field));
+        atlas.Require(field);
+        if (!ReferenceEquals(atlas.Backend, backend))
+        {
+            throw new ArgumentException("Distance field belongs to another GPU backend.", nameof(field));
+        }
+        if (distanceFieldAtlases.TryGetValue(atlas, out ImageId image)) { return image; }
+        image = RegisterImage(atlas.Texture, atlas.Description, atlas.Sampler);
+        distanceFieldAtlases.Add(atlas, image);
+        return image;
     }
 
     internal GpuRasterPipelineHandle GetPipeline(GpuFormat format, PreparedBatchKind kind)
@@ -191,9 +226,10 @@ public sealed class Renderer : IDisposable
             PreparedBatchKind.Primitive => ("primitiveVertex", "primitivePixel"),
             PreparedBatchKind.Image => ("imageVertex", "imagePixel"),
             PreparedBatchKind.Polygon => ("polygonVertex", "polygonPixel"),
+            PreparedBatchKind.DistanceField => ("distanceFieldVertex", "distanceFieldPixel"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        shaders ??= StandardShaders.Load();
+        shaders ??= StandardShaders.LoadPhaseOne();
         var description = new GpuRasterPipelineDescription([new(format)])
         {
             EmbeddedBlend = new(
@@ -225,13 +261,13 @@ public sealed class Renderer : IDisposable
         return index;
     }
 
-    private static GpuDrawCommand CreateGpuCommand(
+    internal static GpuDrawCommand CreateGpuCommand(
         RecordedCommand command,
         GpuTextureDescription target)
     {
         Matrix3x2 transform = command.Transform;
         CornerRadius radius = command.CornerRadius;
-        return new()
+        var result = new GpuDrawCommand
         {
             Header = new((uint)command.Kind, 0, 0, 0),
             Bounds = new(command.Bounds.X, command.Bounds.Y, command.Bounds.Width, command.Bounds.Height),
@@ -251,11 +287,22 @@ public sealed class Renderer : IDisposable
                 ? new(command.LineWidth, 0, 0, 0)
                 : default,
             TextureRegion = command.Kind == DrawCommandKind.Image
+                || command.Kind == DrawCommandKind.DistanceField
                 ? new(command.Source.X, command.Source.Y, command.Source.Width, command.Source.Height)
                 : default,
             Transform0 = new(transform.M11, transform.M12, transform.M21, transform.M22),
             Transform1 = new(transform.M31, transform.M32, target.Width, target.Height),
         };
+        if (command.Kind == DrawCommandKind.DistanceField)
+        {
+            DistanceFieldEntry entry = command.DistanceField.Owner!.Require(command.DistanceField);
+            result.Parameters0 = new(
+                entry.DistanceRange,
+                (float)entry.Encoding,
+                entry.Region.Width,
+                entry.Region.Height);
+        }
+        return result;
     }
 
     private static void AddBatch(

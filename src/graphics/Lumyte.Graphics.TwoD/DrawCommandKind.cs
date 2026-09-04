@@ -8,4 +8,5 @@ internal enum DrawCommandKind : uint
     Line = 4,
     Image = 5,
     Polygon = 6,
+    DistanceField = 7,
 }

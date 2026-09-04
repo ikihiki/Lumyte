@@ -8,6 +8,110 @@ public static class RenderGraphExtensions
         this GpuRenderGraph graph,
         string name,
         Renderer renderer,
+        SceneSnapshot snapshot,
+        RenderTarget target,
+        bool markOutput = true)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        snapshot.Update();
+        target.Validate();
+        GpuRenderGraphTexture resource = graph.ImportTexture(
+            $"{name}-target", target.Texture, target.Description);
+        return Add(
+            graph.AddPass,
+            graph.ImportBuffer,
+            graph.ImportTexture,
+            texture => { graph.MarkOutput(texture); },
+            name,
+            renderer,
+            snapshot,
+            resource,
+            new(target.LoadOperation, target.StoreOperation, target.ClearColor),
+            markOutput);
+    }
+
+    public static RenderPassResources AddTwoD(
+        this GpuRenderGraphContributionContext context,
+        string name,
+        Renderer renderer,
+        SceneSnapshot snapshot,
+        RenderTarget target,
+        bool markOutput = true)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        snapshot.Update();
+        target.Validate();
+        GpuRenderGraphTexture resource = context.ImportTexture(
+            $"{name}-target", target.Texture, target.Description);
+        return Add(
+            context.AddPass,
+            context.ImportBuffer,
+            context.ImportTexture,
+            texture => { context.MarkOutput(texture); },
+            name,
+            renderer,
+            snapshot,
+            resource,
+            new(target.LoadOperation, target.StoreOperation, target.ClearColor),
+            markOutput);
+    }
+
+    public static RenderPassResources AddTwoD(
+        this GpuRenderGraph graph,
+        string name,
+        Renderer renderer,
+        SceneSnapshot snapshot,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions options = default,
+        bool markOutput = true)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        snapshot.Update();
+        return Add(
+            graph.AddPass,
+            graph.ImportBuffer,
+            graph.ImportTexture,
+            texture => { graph.MarkOutput(texture); },
+            name,
+            renderer,
+            snapshot,
+            target,
+            options,
+            markOutput);
+    }
+
+    public static RenderPassResources AddTwoD(
+        this GpuRenderGraphContributionContext context,
+        string name,
+        Renderer renderer,
+        SceneSnapshot snapshot,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions options = default,
+        bool markOutput = true)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        snapshot.Update();
+        return Add(
+            context.AddPass,
+            context.ImportBuffer,
+            context.ImportTexture,
+            texture => { context.MarkOutput(texture); },
+            name,
+            renderer,
+            snapshot,
+            target,
+            options,
+            markOutput);
+    }
+
+    public static RenderPassResources AddTwoD(
+        this GpuRenderGraph graph,
+        string name,
+        Renderer renderer,
         PreparedDisplayList displayList,
         RenderTarget target,
         bool markOutput = true)
@@ -99,7 +203,7 @@ public static class RenderGraphExtensions
         Action<GpuRenderGraphTexture> markOutput,
         string name,
         Renderer renderer,
-        PreparedDisplayList displayList,
+        IPreparedDrawing displayList,
         GpuRenderGraphTexture target,
         RenderTargetOptions options,
         bool shouldMarkOutput)
@@ -203,7 +307,7 @@ public static class RenderGraphExtensions
                 resource,
                 new(batch.BufferOffset, batch.BufferLength));
             GpuResourceTable table;
-            if (batch.Kind == PreparedBatchKind.Image)
+            if (batch.Kind is PreparedBatchKind.Image or PreparedBatchKind.DistanceField)
             {
                 PreparedImage image = state.DisplayList.Images[batch.ImageIndex];
                 table = new(1, 1, 1);
@@ -262,7 +366,7 @@ public static class RenderGraphExtensions
 
     private readonly record struct PassState(
         Renderer Renderer,
-        PreparedDisplayList DisplayList,
+        IPreparedDrawing DisplayList,
         GpuRenderGraphTexture Target,
         RenderTargetOptions Options,
         GpuRenderGraphBuffer PrimitiveBuffer,

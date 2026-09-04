@@ -29,9 +29,30 @@ internal sealed class OwnedBuffer : IDisposable
             throw new ArgumentException("GPU buffer data must be non-empty and four-byte aligned.", nameof(bytes));
         }
 
+        OwnedBuffer result = Create(backend, checked((ulong)bytes.Length));
+        try
+        {
+            result.Write(0, bytes);
+            return result;
+        }
+        catch
+        {
+            result.Dispose();
+            throw;
+        }
+    }
+
+    public static OwnedBuffer Create(IGpuBackend backend, ulong size)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        if (size == 0 || (size & 3) != 0)
+        {
+            throw new ArgumentException("GPU buffer size must be non-zero and four-byte aligned.", nameof(size));
+        }
+
         bool placed = (backend.Capabilities & GpuBackendCapabilities.ExplicitPlacement) != 0;
         var description = new GpuBufferDescription(
-            checked((ulong)bytes.Length),
+            size,
             GpuBufferUsage.ShaderData
                 | (placed ? GpuBufferUsage.CopySource : GpuBufferUsage.CopyDestination));
         GpuMemoryAllocation allocation = default;
@@ -54,8 +75,6 @@ internal sealed class OwnedBuffer : IDisposable
             {
                 buffer = backend.CreateBuffer(description);
             }
-
-            backend.WriteBuffer(buffer, bytes);
             return new(backend, buffer, description, allocation);
         }
         catch
@@ -64,6 +83,17 @@ internal sealed class OwnedBuffer : IDisposable
             if (!allocation.MemoryAddress.IsNull) { backend.FreeMemory(allocation); }
             throw;
         }
+    }
+
+    public void Write(ulong destinationOffset, ReadOnlySpan<byte> bytes)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (bytes.IsEmpty || (bytes.Length & 3) != 0 || (destinationOffset & 3) != 0
+            || checked(destinationOffset + (ulong)bytes.Length) > Description.Size)
+        {
+            throw new ArgumentException("GPU buffer writes must be aligned and fit the buffer.", nameof(bytes));
+        }
+        backend.WriteBuffer(Buffer, destinationOffset, bytes);
     }
 
     public void Dispose()

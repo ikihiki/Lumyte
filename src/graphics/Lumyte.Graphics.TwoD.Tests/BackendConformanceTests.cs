@@ -179,6 +179,118 @@ public abstract class BackendConformanceTests
         Assert.Equal(expected, actual);
     }
 
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void RetainedSceneUploadsOnlyChangedNodeAndRendersLatestState()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        var scene = new Scene();
+        NodeId left = scene.CreateNode();
+        scene.SetContent(left, SceneContent.Rectangle(new(0, 0, 32, Height), Brush.Solid(new(1, 0, 0))));
+        NodeId right = scene.CreateNode();
+        scene.SetContent(right, SceneContent.Rectangle(new(32, 0, 32, Height), Brush.Solid(new(0, 0, 1))));
+        using SceneSnapshot snapshot = renderer.Prepare(scene, target.Description);
+        SceneUpdateStatistics initial = snapshot.LastUpdate;
+
+        scene.SetContent(right, SceneContent.Rectangle(new(32, 0, 32, Height), Brush.Solid(new(0, 1, 0))));
+        SceneUpdateStatistics changed = snapshot.Update();
+        SceneUpdateStatistics unchanged = snapshot.Update();
+        scene.SetOrder(left, 10);
+        SceneUpdateStatistics reordered = snapshot.Update();
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "retained",
+            renderer,
+            snapshot,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        Assert.Equal(new(2, 256, true), initial);
+        Assert.Equal(new(1, 128, false), changed);
+        Assert.Equal(default, unchanged);
+        Assert.Equal(default, reordered);
+        AssertPixelNear(pixels, 16, 32, 255, 0, 0, 255);
+        AssertPixelNear(pixels, 48, 32, 0, 255, 0, 255);
+    }
+
+    [Theory]
+    [InlineData(DistanceFieldEncoding.Coverage)]
+    [InlineData(DistanceFieldEncoding.SignedDistance)]
+    [Trait("Category", "TwoDConformance")]
+    public void GpuRasterizedDistanceFieldRendersThroughExplicitRoute(DistanceFieldEncoding encoding)
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var atlas = new DistanceFieldAtlas(backend, 64, 64);
+        using var rasterizer = new DistanceFieldRasterizer(backend, atlas);
+        PathGeometry path = new PathBuilder()
+            .MoveTo(new(0, 0))
+            .LineTo(new(1, 0))
+            .LineTo(new(1, 1))
+            .LineTo(new(0, 1))
+            .Close()
+            .Build();
+        DistanceField field = rasterizer.Rasterize(
+            path,
+            32,
+            32,
+            new() { Encoding = encoding });
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawDistanceField(field, new(8, 8, 48, 48), Brush.Solid(new(1, 0.5f, 0)));
+        DisplayList displayList = encoder.Finish();
+        using PreparedDisplayList prepared = renderer.Prepare(displayList, target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "distance-field",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 255, 128, 0, 255, tolerance: 3);
+        AssertPixelNear(pixels, 9, 9, 0, 0, 0, 0, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void AtlasWaitsForFenceBeforeCollectingReleasedRegion()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var atlas = new DistanceFieldAtlas(backend, 32, 32);
+        using var rasterizer = new DistanceFieldRasterizer(backend, atlas);
+        PathGeometry path = new PathBuilder()
+            .MoveTo(new(0, 0))
+            .LineTo(new(1, 0))
+            .LineTo(new(0, 1))
+            .Close()
+            .Build();
+        DistanceField field = rasterizer.Rasterize(path, 16, 16);
+
+        atlas.Release(field, new(5));
+        int early = atlas.Collect(new(4));
+        int completed = atlas.Collect(new(5));
+
+        Assert.Equal(0, early);
+        Assert.Equal(1, completed);
+        Assert.Equal(0, atlas.PendingRetirementCount);
+        Assert.False(atlas.IsAlive(field));
+        Assert.Throws<ArgumentException>(() => encoderUse(field));
+
+        void encoderUse(DistanceField stale)
+        {
+            using var renderer = new Renderer(backend);
+            using CommandEncoder encoder = renderer.CreateCommandEncoder();
+            encoder.DrawDistanceField(stale, new(0, 0, 8, 8), Brush.Solid(Color.White));
+        }
+    }
+
     protected abstract IGpuBackend CreateBackend();
 
     private static GpuTextureDescription TargetDescription() => new(

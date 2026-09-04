@@ -151,6 +151,26 @@ float4 imagePixel(PrimitiveVertexOutput input) : SV_Target0
         sampled.a * input.color.a) * coverage;
 }
 
+[shader("vertex")]
+PrimitiveVertexOutput distanceFieldVertex(
+    uint vertexIndex : SV_VertexID,
+    uint instanceIndex : SV_InstanceID)
+{
+    return readPrimitive(vertexIndex, instanceIndex);
+}
+
+[shader("fragment")]
+float4 distanceFieldPixel(PrimitiveVertexOutput input) : SV_Target0
+{
+    float2 relative = (input.localPosition - input.bounds.xy) / input.bounds.zw;
+    float2 uv = input.textureRegion.xy + relative * input.textureRegion.zw;
+    float value = imageTexture.Sample(imageSampler, uv).r;
+    float coverage = input.parameters0.y == 0.0
+        ? value
+        : saturate((value - 0.5) / max(fwidth(value), 0.0001) + 0.5);
+    return input.color * coverage;
+}
+
 struct PolygonVertexOutput
 {
     float4 position : SV_Position;

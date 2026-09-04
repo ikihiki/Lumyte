@@ -5,4 +5,5 @@ internal enum PreparedBatchKind
     Primitive,
     Image,
     Polygon,
+    DistanceField,
 }

@@ -121,6 +121,28 @@ public sealed class CommandEncoder : IDisposable
             Source: sourceRectangle));
     }
 
+    /// <summary>Adds a caller-selected coverage or SDF atlas route.</summary>
+    public void DrawDistanceField(DistanceField field, Rect destination, Brush brush)
+    {
+        ImageId image = renderer.RequireDistanceField(field);
+        DistanceFieldEntry entry = field.Owner!.Require(field);
+        GpuTextureDescription atlas = field.Owner.Description;
+        Rect source = new(
+            (float)entry.Region.X / atlas.Width,
+            (float)entry.Region.Y / atlas.Height,
+            (float)entry.Region.Width / atlas.Width,
+            (float)entry.Region.Height / atlas.Height);
+        Add(new(
+            DrawCommandKind.DistanceField,
+            destination.Validate(),
+            brush.Validate(),
+            state.Transform,
+            state.Clip,
+            Image: image,
+            Source: source,
+            DistanceField: field));
+    }
+
     public void DrawGeometry(PolygonGeometry geometry, Matrix3x2 transform, Brush brush)
     {
         ArgumentNullException.ThrowIfNull(geometry);

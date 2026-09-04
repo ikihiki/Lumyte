@@ -14,4 +14,5 @@ internal readonly record struct RecordedCommand(
     float LineWidth = 0,
     ImageId Image = default,
     Rect Source = default,
-    PolygonGeometry? Geometry = null);
+    PolygonGeometry? Geometry = null,
+    DistanceField DistanceField = default);
