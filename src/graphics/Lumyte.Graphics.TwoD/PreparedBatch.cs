@@ -6,4 +6,6 @@ internal readonly record struct PreparedBatch(
     ulong BufferLength,
     uint DrawCount,
     Rect Clip,
-    int ImageIndex = -1);
+    int ImageIndex = -1,
+    int LayerId = 0,
+    int Sequence = 0);

@@ -77,6 +77,43 @@ public sealed class CommandEncoderTests
     }
 
     [Fact]
+    public void FinishRequiresBalancedLayers()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new() { Opacity = 0.5f });
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(encoder.Finish);
+
+        Assert.Contains("popped", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LayerCreatesTransientRenderAndCompositePasses()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new() { Opacity = 0.5f });
+        encoder.FillRectangle(new(0, 0, 16, 16), Brush.Solid(Color.White));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), TargetDescription);
+        var graph = new GpuRenderGraph();
+
+        graph.AddTwoD(
+            "ui",
+            renderer,
+            prepared,
+            new RenderTarget(new(91), TargetDescription, GpuAttachmentLoadOperation.Clear));
+        GpuRenderGraphPlan plan = graph.Compile();
+
+        Assert.Equal(2, plan.Passes.Count);
+        Assert.Equal(2, plan.TextureCount);
+        Assert.Contains(plan.Passes, pass => pass.Name.Contains("composite", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ConvexPolygonExpandsToTriangleList()
     {
         PolygonGeometry geometry = PolygonGeometry.FromConvexPolygon([

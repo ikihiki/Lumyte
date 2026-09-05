@@ -88,6 +88,182 @@ public abstract class BackendConformanceTests
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
+    public void IsolatedLayerCompositesOpacityAcrossTheBackend()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new() { Opacity = 0.5f });
+        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0)));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "two-d-layer",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear,
+                ClearColor: new(0, 0, 1, 1)));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 128, 0, 127, 255, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void LayerMaskControlsCompositeCoverageAcrossTheBackend()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        var maskDescription = new GpuTextureDescription(
+            2,
+            2,
+            GpuFormat.Rgba8Unorm,
+            GpuTextureUsage.Sampled | GpuTextureUsage.CopyDestination);
+        using var mask = BackendTexture.Create(backend, maskDescription);
+        UploadTexture(backend, mask.Handle, mask.Description, [
+            0, 0, 0, 128, 0, 0, 0, 128,
+            0, 0, 0, 128, 0, 0, 0, 128,
+        ]);
+        SamplerId sampler = backend.CreateSampler(new(
+            GpuSamplerFilter.Linear,
+            GpuSamplerFilter.Linear));
+        try
+        {
+            using var renderer = new Renderer(backend);
+            ImageId maskId = renderer.RegisterImage(mask.Handle, mask.Description, sampler);
+            using CommandEncoder encoder = renderer.CreateCommandEncoder();
+            encoder.PushLayer(new() { Mask = maskId });
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0)));
+            encoder.PopLayer();
+            using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+            var graph = new GpuRenderGraph();
+            graph.AddTwoD(
+                "two-d-mask",
+                renderer,
+                prepared,
+                new RenderTarget(
+                    target.Handle,
+                    target.Description,
+                    GpuAttachmentLoadOperation.Clear,
+                    ClearColor: new(0, 0, 1, 1)));
+
+            using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+            byte[] pixels = ReadPixels(backend, target.Handle);
+
+            AssertPixelNear(pixels, 32, 32, 128, 0, 127, 255, tolerance: 3);
+        }
+        finally
+        {
+            backend.DestroySampler(sampler);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void LayerShadowUsesTheBlurAndOffsetAcrossTheBackend()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new()
+        {
+            Shadow = new(new(24, 0), new(1, 0, 0), 1),
+        });
+        encoder.FillRectangle(new(8, 8, 16, 16), Brush.Solid(Color.White));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "two-d-shadow",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear,
+                ClearColor: new(0, 0, 0, 0)));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 16, 16, 255, 255, 255, 255, tolerance: 3);
+        AssertPixelNear(pixels, 40, 16, 255, 0, 0, 255, tolerance: 4);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void AdditiveLayerUsesItsBlendModeAcrossTheBackend()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new() { BlendMode = BlendMode.Additive });
+        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0, 0.5f)));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "two-d-additive",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear,
+                ClearColor: new(0, 0, 1, 1)));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 128, 0, 255, 255, tolerance: 3);
+    }
+
+    [Theory]
+    [InlineData(BlendMode.Multiply, 51, 51, 38)]
+    [InlineData(BlendMode.Screen, 217, 179, 204)]
+    [Trait("Category", "TwoDConformance")]
+    public void LayerUsesSeparableBlendModesAcrossTheBackend(
+        BlendMode blendMode,
+        byte red,
+        byte green,
+        byte blue)
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new() { BlendMode = blendMode });
+        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0.8f, 0.4f, 0.2f)));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "two-d-blend",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear,
+                ClearColor: new(0.25f, 0.5f, 0.75f, 1)));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, red, green, blue, 255, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
     public void ImageRouteUsesPremultipliedSourceOverBlending()
     {
         using IGpuBackend backend = CreateBackend();
@@ -220,12 +396,16 @@ public abstract class BackendConformanceTests
     [Theory]
     [InlineData(DistanceFieldEncoding.Coverage)]
     [InlineData(DistanceFieldEncoding.SignedDistance)]
+    [InlineData(DistanceFieldEncoding.MultiChannelSignedDistance)]
     [Trait("Category", "TwoDConformance")]
     public void GpuRasterizedDistanceFieldRendersThroughExplicitRoute(DistanceFieldEncoding encoding)
     {
         using IGpuBackend backend = CreateBackend();
         using var target = BackendTexture.Create(backend, TargetDescription());
-        using var atlas = new DistanceFieldAtlas(backend, 64, 64);
+        GpuFormat atlasFormat = encoding == DistanceFieldEncoding.MultiChannelSignedDistance
+            ? GpuFormat.Rgba8Unorm
+            : GpuFormat.R8Unorm;
+        using var atlas = new DistanceFieldAtlas(backend, 64, 64, atlasFormat);
         using var rasterizer = new DistanceFieldRasterizer(backend, atlas);
         PathGeometry path = new PathBuilder()
             .MoveTo(new(0, 0))

@@ -19,4 +19,5 @@ internal readonly record struct RecordedCommand(
     PathGeometry? Path = null,
     FillRule FillRule = FillRule.NonZero,
     StrokeStyle? Stroke = null,
-    PathClip? PathClip = null);
+    PathClip? PathClip = null,
+    int LayerId = 0);

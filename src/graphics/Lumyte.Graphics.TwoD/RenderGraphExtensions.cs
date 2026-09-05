@@ -22,6 +22,7 @@ public static class RenderGraphExtensions
             graph.AddPass,
             graph.ImportBuffer,
             graph.ImportTexture,
+            graph.CreateTexture,
             texture => { graph.MarkOutput(texture); },
             name,
             renderer,
@@ -49,6 +50,7 @@ public static class RenderGraphExtensions
             context.AddPass,
             context.ImportBuffer,
             context.ImportTexture,
+            context.CreateTexture,
             texture => { context.MarkOutput(texture); },
             name,
             renderer,
@@ -74,6 +76,7 @@ public static class RenderGraphExtensions
             graph.AddPass,
             graph.ImportBuffer,
             graph.ImportTexture,
+            graph.CreateTexture,
             texture => { graph.MarkOutput(texture); },
             name,
             renderer,
@@ -99,6 +102,7 @@ public static class RenderGraphExtensions
             context.AddPass,
             context.ImportBuffer,
             context.ImportTexture,
+            context.CreateTexture,
             texture => { context.MarkOutput(texture); },
             name,
             renderer,
@@ -143,6 +147,7 @@ public static class RenderGraphExtensions
             graph.AddPass,
             graph.ImportBuffer,
             graph.ImportTexture,
+            graph.CreateTexture,
             texture => { graph.MarkOutput(texture); },
             name,
             renderer,
@@ -187,6 +192,7 @@ public static class RenderGraphExtensions
             context.AddPass,
             context.ImportBuffer,
             context.ImportTexture,
+            context.CreateTexture,
             texture => { context.MarkOutput(texture); },
             name,
             renderer,
@@ -200,6 +206,7 @@ public static class RenderGraphExtensions
         AddPassDelegate addPass,
         ImportBufferDelegate importBuffer,
         ImportTextureDelegate importTexture,
+        CreateTextureDelegate createTexture,
         Action<GpuRenderGraphTexture> markOutput,
         string name,
         Renderer renderer,
@@ -224,7 +231,7 @@ public static class RenderGraphExtensions
                 nameof(target));
         }
 
-        var buffers = new List<GpuRenderGraphBuffer>(3);
+        var buffers = new List<GpuRenderGraphBuffer>(4);
         GpuRenderGraphBuffer primitive = default;
         if (displayList.PrimitiveBuffer is { } primitiveBuffer)
         {
@@ -246,6 +253,13 @@ public static class RenderGraphExtensions
                 $"{name}-paths", pathBuffer.Buffer, pathBuffer.Description);
             buffers.Add(path);
         }
+        GpuRenderGraphBuffer layer = default;
+        if (displayList.LayerBuffer is { } layerBuffer)
+        {
+            layer = importBuffer(
+                $"{name}-layers", layerBuffer.Buffer, layerBuffer.Description);
+            buffers.Add(layer);
+        }
 
         var images = new GpuRenderGraphTexture[displayList.Images.Count];
         for (int index = 0; index < images.Length; index++)
@@ -255,39 +269,373 @@ public static class RenderGraphExtensions
                 $"{name}-image-{index}", image.Texture, image.Description);
         }
 
-        var state = new PassState(
+        var resources = new PassResources(
             renderer,
             displayList,
-            target,
-            options,
             primitive,
             polygon,
             path,
+            layer,
             images);
+        int passIndex = 0;
+        if (displayList.Layers.Count == 0)
+        {
+            AddDrawPass(addPass, name, resources, target, options, displayList.Batches, ref passIndex);
+        }
+        else
+        {
+            if (target.Description.SampleCount != 1)
+            {
+                throw new NotSupportedException("Isolated 2D layers require a single-sample render target.");
+            }
+            AddLayerContent(
+                addPass,
+                createTexture,
+                name,
+                resources,
+                0,
+                target,
+                options,
+                ref passIndex);
+        }
+
+        if (shouldMarkOutput) { markOutput(target); }
+        return new(target, buffers, images);
+    }
+
+    private static bool AddLayerContent(
+        AddPassDelegate addPass,
+        CreateTextureDelegate createTexture,
+        string name,
+        PassResources resources,
+        int layerId,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions initialOptions,
+        ref int passIndex)
+    {
+        PreparedBatch[] directBatches = resources.DisplayList.Batches
+            .Where(batch => batch.LayerId == layerId)
+            .ToArray();
+        PreparedLayer[] children = resources.DisplayList.Layers
+            .Where(layer => layer.ParentId == layerId && HasContent(resources.DisplayList, layer.Id))
+            .ToArray();
+        var items = new List<LayerItem>(directBatches.Length + children.Length);
+        items.AddRange(directBatches.Select(static batch => new LayerItem(batch.Sequence, batch, null)));
+        items.AddRange(children.Select(static layer => new LayerItem(layer.Sequence, null, layer)));
+        items.Sort(static (left, right) => left.Sequence.CompareTo(right.Sequence));
+
+        if (items.Count == 0)
+        {
+            if (layerId == 0)
+            {
+                AddDrawPass(addPass, name, resources, target, initialOptions, [], ref passIndex);
+                return true;
+            }
+            return false;
+        }
+
+        bool wroteTarget = false;
+        int itemIndex = 0;
+        while (itemIndex < items.Count)
+        {
+            LayerItem item = items[itemIndex];
+            bool lastItem = itemIndex == items.Count - 1;
+            if (item.Batch is { } firstBatch)
+            {
+                var group = new List<PreparedBatch> { firstBatch };
+                while (itemIndex + 1 < items.Count && items[itemIndex + 1].Batch is { } nextBatch)
+                {
+                    group.Add(nextBatch);
+                    itemIndex++;
+                }
+                lastItem = itemIndex == items.Count - 1;
+                AddDrawPass(
+                    addPass,
+                    name,
+                    resources,
+                    target,
+                    TargetOptions(initialOptions, wroteTarget, lastItem),
+                    group,
+                    ref passIndex);
+                wroteTarget = true;
+                itemIndex++;
+                continue;
+            }
+
+            PreparedLayer child = item.Layer!.Value;
+            GpuRenderGraphTexture childTarget = createTexture(
+                $"{name}-layer-{child.Id}",
+                LayerDescription(target.Description));
+            AddLayerContent(
+                addPass,
+                createTexture,
+                name,
+                resources,
+                child.Id,
+                childTarget,
+                new(GpuAttachmentLoadOperation.Clear, GpuAttachmentStoreOperation.Store, default),
+                ref passIndex);
+
+            if (child.MaskImageIndex >= 0)
+            {
+                AddMaskPass(
+                    addPass,
+                    name,
+                    resources,
+                    resources.Images[child.MaskImageIndex],
+                    childTarget,
+                    ref passIndex);
+            }
+
+            if (child.Options.Shadow is { } shadow)
+            {
+                GpuRenderGraphTexture shadowSource = shadow.BlurRadius > 0
+                    ? AddBlur(
+                        addPass,
+                        createTexture,
+                        name,
+                        resources,
+                        childTarget,
+                        child.ShadowHorizontalBlurParametersOffset,
+                        child.ShadowVerticalBlurParametersOffset,
+                        ref passIndex)
+                    : childTarget;
+                AddCompositePass(
+                    addPass,
+                    name,
+                    resources,
+                    shadowSource,
+                    target,
+                    TargetOptions(initialOptions, wroteTarget, false),
+                    child.ShadowParametersOffset,
+                    child.MaskImageIndex,
+                    BlendMode.SourceOver,
+                    ref passIndex);
+                wroteTarget = true;
+            }
+
+            GpuRenderGraphTexture layerSource = child.Options.BlurRadius > 0
+                ? AddBlur(
+                    addPass,
+                    createTexture,
+                    name,
+                    resources,
+                    childTarget,
+                    child.HorizontalBlurParametersOffset,
+                    child.VerticalBlurParametersOffset,
+                    ref passIndex)
+                : childTarget;
+            AddCompositePass(
+                addPass,
+                name,
+                resources,
+                layerSource,
+                target,
+                TargetOptions(initialOptions, wroteTarget, lastItem),
+                child.MainParametersOffset,
+                child.MaskImageIndex,
+                child.Options.BlendMode,
+                ref passIndex);
+            wroteTarget = true;
+            itemIndex++;
+        }
+        return wroteTarget;
+    }
+
+    private static bool HasContent(IPreparedDrawing drawing, int layerId)
+        => drawing.Batches.Any(batch => batch.LayerId == layerId)
+            || drawing.Layers.Any(layer => layer.ParentId == layerId && HasContent(drawing, layer.Id));
+
+    private static RenderTargetOptions TargetOptions(
+        RenderTargetOptions requested,
+        bool alreadyWritten,
+        bool finalWrite)
+        => new(
+            alreadyWritten ? GpuAttachmentLoadOperation.Load : requested.LoadOperation,
+            finalWrite ? requested.StoreOperation : GpuAttachmentStoreOperation.Store,
+            requested.ClearColor);
+
+    private static GpuTextureDescription LayerDescription(GpuTextureDescription target)
+        => target with
+        {
+            Usage = GpuTextureUsage.ColorAttachment | GpuTextureUsage.Sampled,
+            MipCount = 1,
+            LayerCount = 1,
+            SampleCount = 1,
+        };
+
+    private static GpuRenderGraphTexture AddBlur(
+        AddPassDelegate addPass,
+        CreateTextureDelegate createTexture,
+        string name,
+        PassResources resources,
+        GpuRenderGraphTexture source,
+        ulong horizontalParameters,
+        ulong verticalParameters,
+        ref int passIndex)
+    {
+        GpuTextureDescription description = LayerDescription(source.Description);
+        GpuRenderGraphTexture horizontal = createTexture($"{name}-blur-{passIndex}-horizontal", description);
+        AddFilterPass(addPass, name, resources, source, horizontal, horizontalParameters, ref passIndex);
+        GpuRenderGraphTexture vertical = createTexture($"{name}-blur-{passIndex}-vertical", description);
+        AddFilterPass(addPass, name, resources, horizontal, vertical, verticalParameters, ref passIndex);
+        return vertical;
+    }
+
+    private static void AddDrawPass(
+        AddPassDelegate addPass,
+        string name,
+        PassResources resources,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions options,
+        IReadOnlyList<PreparedBatch> batches,
+        ref int passIndex)
+    {
+        string passName = passIndex == 0 ? name : $"{name}-draw-{passIndex}";
+        passIndex++;
+        var state = new PassState(
+            PassKind.Draw,
+            resources,
+            target,
+            options,
+            batches.ToArray(),
+            default,
+            0,
+            -1,
+            BlendMode.SourceOver);
         GpuRenderGraphPassBuilder builder = addPass(
-            name,
+            passName,
             state,
             static (context, value) => Record(context, value),
             GpuRenderGraphPassFlags.None);
-        if (!primitive.IsNull)
+        DeclareDrawReads(builder, resources);
+        DeclareTarget(builder, target, options);
+    }
+
+    private static void AddCompositePass(
+        AddPassDelegate addPass,
+        string name,
+        PassResources resources,
+        GpuRenderGraphTexture source,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions options,
+        ulong parametersOffset,
+        int maskImageIndex,
+        BlendMode blendMode,
+        ref int passIndex)
+    {
+        var state = new PassState(
+            PassKind.Composite,
+            resources,
+            target,
+            options,
+            [],
+            source,
+            parametersOffset,
+            maskImageIndex,
+            blendMode);
+        GpuRenderGraphPassBuilder builder = addPass(
+            $"{name}-composite-{passIndex++}",
+            state,
+            static (context, value) => Record(context, value),
+            GpuRenderGraphPassFlags.None);
+        builder.Read(source, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        builder.Read(resources.LayerBuffer, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        DeclareTarget(builder, target, options);
+    }
+
+    private static void AddMaskPass(
+        AddPassDelegate addPass,
+        string name,
+        PassResources resources,
+        GpuRenderGraphTexture mask,
+        GpuRenderGraphTexture target,
+        ref int passIndex)
+    {
+        var options = new RenderTargetOptions(
+            GpuAttachmentLoadOperation.Load,
+            GpuAttachmentStoreOperation.Store,
+            default);
+        var state = new PassState(
+            PassKind.Mask,
+            resources,
+            target,
+            options,
+            [],
+            mask,
+            0,
+            -1,
+            BlendMode.SourceOver);
+        GpuRenderGraphPassBuilder builder = addPass(
+            $"{name}-mask-{passIndex++}",
+            state,
+            static (context, value) => Record(context, value),
+            GpuRenderGraphPassFlags.None);
+        builder.Read(mask, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        builder.ReadWrite(target, GpuStage.ColorOutput);
+    }
+
+    private static void AddFilterPass(
+        AddPassDelegate addPass,
+        string name,
+        PassResources resources,
+        GpuRenderGraphTexture source,
+        GpuRenderGraphTexture target,
+        ulong parametersOffset,
+        ref int passIndex)
+    {
+        var options = new RenderTargetOptions(
+            GpuAttachmentLoadOperation.Clear,
+            GpuAttachmentStoreOperation.Store,
+            default);
+        var state = new PassState(
+            PassKind.Blur,
+            resources,
+            target,
+            options,
+            [],
+            source,
+            parametersOffset,
+            -1,
+            BlendMode.SourceOver);
+        GpuRenderGraphPassBuilder builder = addPass(
+            $"{name}-blur-{passIndex++}",
+            state,
+            static (context, value) => Record(context, value),
+            GpuRenderGraphPassFlags.None);
+        builder.Read(source, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        builder.Read(resources.LayerBuffer, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        builder.Write(target, GpuStage.ColorOutput);
+    }
+
+    private static void DeclareDrawReads(GpuRenderGraphPassBuilder builder, PassResources resources)
+    {
+        if (!resources.PrimitiveBuffer.IsNull)
         {
-            builder.Read(primitive, GpuStage.VertexShader, GpuBarrierHazards.Descriptors);
+            builder.Read(resources.PrimitiveBuffer, GpuStage.VertexShader, GpuBarrierHazards.Descriptors);
         }
-        if (!polygon.IsNull)
+        if (!resources.PolygonBuffer.IsNull)
         {
-            builder.Read(polygon, GpuStage.VertexShader, GpuBarrierHazards.Descriptors);
+            builder.Read(resources.PolygonBuffer, GpuStage.VertexShader, GpuBarrierHazards.Descriptors);
         }
-        if (!path.IsNull)
+        if (!resources.PathBuffer.IsNull)
         {
             builder.Read(
-                path,
+                resources.PathBuffer,
                 GpuStage.VertexShader | GpuStage.PixelShader,
                 GpuBarrierHazards.Descriptors);
         }
-        foreach (GpuRenderGraphTexture image in images)
+        foreach (GpuRenderGraphTexture image in resources.Images)
         {
             builder.Read(image, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
         }
+    }
+
+    private static void DeclareTarget(
+        GpuRenderGraphPassBuilder builder,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions options)
+    {
         if (options.LoadOperation == GpuAttachmentLoadOperation.Load)
         {
             builder.ReadWrite(target, GpuStage.ColorOutput);
@@ -296,15 +644,12 @@ public static class RenderGraphExtensions
         {
             builder.Write(target, GpuStage.ColorOutput);
         }
-
-        if (shouldMarkOutput) { markOutput(target); }
-        return new(target, buffers, images);
     }
 
     private static void Record(GpuRenderGraphPassContextView context, PassState state)
     {
-        state.DisplayList.VerifyAlive();
-        GpuTextureDescription target = state.DisplayList.TargetDescription;
+        state.Resources.DisplayList.VerifyAlive();
+        GpuTextureDescription target = state.Target.Description;
         GpuCommandBuffer commands = context.Commands.BeginRendering([
             new(
                 context.GetTextureView(state.Target),
@@ -313,33 +658,80 @@ public static class RenderGraphExtensions
                 state.Options.ClearColor),
         ]);
 
-        foreach (PreparedBatch batch in state.DisplayList.Batches)
+        if (state.Kind == PassKind.Draw)
         {
-            GpuRenderGraphBuffer resource = batch.Kind switch
-            {
-                PreparedBatchKind.Polygon => state.PolygonBuffer,
-                PreparedBatchKind.Path => state.PathBuffer,
-                _ => state.PrimitiveBuffer,
-            };
-            GpuBufferView view = context.GetBufferView(
-                resource,
-                new(batch.BufferOffset, batch.BufferLength));
+            RecordDraw(context, commands, state, target);
+        }
+        else if (state.Kind == PassKind.Mask)
+        {
+            var table = new GpuResourceTable(1, 1);
+            table.SetTexture(0, context.GetTextureView(state.Source).Id);
+            table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
+            commands
+                .SetPipeline(state.Resources.Renderer.GetMaskPipeline(target.Format))
+                .SetResourceTable(table)
+                .SetViewportAndScissor(
+                    new(0, 0, target.Width, target.Height),
+                    new(0, 0, target.Width, target.Height))
+                .Draw(6);
+        }
+        else
+        {
+            GpuBufferView parameters = context.GetBufferView(
+                state.Resources.LayerBuffer,
+                new(state.ParametersOffset, GpuLayerCommand.Size));
             GpuResourceTable table;
-            if (batch.Kind is PreparedBatchKind.Image or PreparedBatchKind.DistanceField)
+            GpuRasterPipelineHandle pipeline;
+            if (state.Kind == PassKind.Blur)
             {
-                PreparedImage image = state.DisplayList.Images[batch.ImageIndex];
                 table = new(1, 1, 1);
-                table.SetTexture(0, context.GetTextureView(state.Images[batch.ImageIndex]).Id);
-                table.SetSampler(0, image.Sampler);
+                table.SetTexture(0, context.GetTextureView(state.Source).Id);
+                table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
+                pipeline = state.Resources.Renderer.GetBlurPipeline(target.Format);
             }
             else
             {
-                table = new(0, 0, 1);
+                table = new(1, 1, 1);
+                TextureId source = context.GetTextureView(state.Source).Id;
+                table.SetTexture(0, source);
+                table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
+                pipeline = state.Resources.Renderer.GetLayerPipeline(target.Format, state.BlendMode);
             }
+            table.SetBuffer(0, parameters.Id);
+            commands
+                .SetPipeline(pipeline)
+                .SetResourceTable(table)
+                .SetViewportAndScissor(
+                    new(0, 0, target.Width, target.Height),
+                    new(0, 0, target.Width, target.Height))
+                .Draw(6);
+        }
+
+        commands.EndRendering();
+    }
+
+    private static void RecordDraw(
+        GpuRenderGraphPassContextView context,
+        GpuCommandBuffer commands,
+        PassState state,
+        GpuTextureDescription target)
+    {
+        foreach (PreparedBatch batch in state.Batches)
+        {
+            GpuRenderGraphBuffer resource = batch.Kind switch
+            {
+                PreparedBatchKind.Polygon => state.Resources.PolygonBuffer,
+                PreparedBatchKind.Path => state.Resources.PathBuffer,
+                _ => state.Resources.PrimitiveBuffer,
+            };
+            GpuBufferView view = context.GetBufferView(resource, new(batch.BufferOffset, batch.BufferLength));
+            GpuResourceTable table = batch.Kind is PreparedBatchKind.Image or PreparedBatchKind.DistanceField
+                ? ImageTable(context, state.Resources, batch, view)
+                : new(0, 0, 1);
             table.SetBuffer(0, view.Id);
 
             commands
-                .SetPipeline(state.Renderer.GetPipeline(target.Format, batch.Kind))
+                .SetPipeline(state.Resources.Renderer.GetPipeline(target.Format, batch.Kind))
                 .SetResourceTable(table)
                 .SetViewportAndScissor(
                     new(0, 0, target.Width, target.Height),
@@ -353,8 +745,20 @@ public static class RenderGraphExtensions
                 commands.Draw(6, batch.DrawCount);
             }
         }
+    }
 
-        commands.EndRendering();
+    private static GpuResourceTable ImageTable(
+        GpuRenderGraphPassContextView context,
+        PassResources resources,
+        PreparedBatch batch,
+        GpuBufferView view)
+    {
+        PreparedImage image = resources.DisplayList.Images[batch.ImageIndex];
+        var table = new GpuResourceTable(1, 1, 1);
+        table.SetTexture(0, context.GetTextureView(resources.Images[batch.ImageIndex]).Id);
+        table.SetSampler(0, image.Sampler);
+        table.SetBuffer(0, view.Id);
+        return table;
     }
 
     private static GpuScissorRect ToScissor(Rect clip, GpuTextureDescription target)
@@ -382,13 +786,40 @@ public static class RenderGraphExtensions
         GpuTextureHandle texture,
         GpuTextureDescription description);
 
+    private delegate GpuRenderGraphTexture CreateTextureDelegate(
+        string name,
+        GpuTextureDescription description);
+
     private readonly record struct PassState(
-        Renderer Renderer,
-        IPreparedDrawing DisplayList,
+        PassKind Kind,
+        PassResources Resources,
         GpuRenderGraphTexture Target,
         RenderTargetOptions Options,
+        PreparedBatch[] Batches,
+        GpuRenderGraphTexture Source,
+        ulong ParametersOffset,
+        int MaskImageIndex,
+        BlendMode BlendMode);
+
+    private readonly record struct PassResources(
+        Renderer Renderer,
+        IPreparedDrawing DisplayList,
         GpuRenderGraphBuffer PrimitiveBuffer,
         GpuRenderGraphBuffer PolygonBuffer,
         GpuRenderGraphBuffer PathBuffer,
+        GpuRenderGraphBuffer LayerBuffer,
         GpuRenderGraphTexture[] Images);
+
+    private readonly record struct LayerItem(
+        int Sequence,
+        PreparedBatch? Batch,
+        PreparedLayer? Layer);
+
+    private enum PassKind
+    {
+        Draw,
+        Composite,
+        Blur,
+        Mask,
+    }
 }

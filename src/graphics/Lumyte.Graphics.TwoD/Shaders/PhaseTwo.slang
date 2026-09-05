@@ -55,13 +55,17 @@ float4 distanceFieldRasterPixel(RasterVertexOutput input) : SV_Target0
     uint fillRule = uint(rasterData[2].x);
     uint encoding = uint(rasterData[2].y);
     float minimumDistance = 1000000.0;
+    float3 channelDistance = float3(1000000.0, 1000000.0, 1000000.0);
     int winding = 0;
     bool odd = false;
 
     for (uint index = 0; index < edgeCount; index++)
     {
-        float4 edge = rasterData[4 + index];
-        minimumDistance = min(minimumDistance, edgeDistance(input.localPosition, edge));
+        float4 edge = rasterData[4 + index * 2];
+        uint edgeChannel = uint(rasterData[5 + index * 2].x);
+        float distance = edgeDistance(input.localPosition, edge);
+        minimumDistance = min(minimumDistance, distance);
+        channelDistance[edgeChannel] = min(channelDistance[edgeChannel], distance);
         bool crosses = (edge.y > input.localPosition.y) != (edge.w > input.localPosition.y);
         float crossX = edge.x + (input.localPosition.y - edge.y)
             * (edge.z - edge.x) / max(abs(edge.w - edge.y), 0.000001)
@@ -77,6 +81,13 @@ float4 distanceFieldRasterPixel(RasterVertexOutput input) : SV_Target0
     float signedDistance = inside ? -minimumDistance : minimumDistance;
     float coverage = saturate(0.5 - signedDistance / max(fwidth(signedDistance), 0.0001));
     float encodedDistance = saturate(0.5 - signedDistance / (2.0 * distanceRange));
+    if (encoding == 2)
+    {
+        float sign = inside ? -1.0 : 1.0;
+        float3 encodedChannels = saturate(
+            0.5 - sign * channelDistance / (2.0 * distanceRange));
+        return float4(encodedChannels, 1.0);
+    }
     float value = encoding == 0 ? coverage : encodedDistance;
     return float4(value, value, value, 1.0);
 }

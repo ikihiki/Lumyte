@@ -4,4 +4,5 @@ public enum DistanceFieldEncoding
 {
     Coverage,
     SignedDistance,
+    MultiChannelSignedDistance,
 }

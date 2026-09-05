@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.TwoD;
 
-/// <summary>Owns an R8 atlas and delays physical region reuse until a caller-provided fence completes.</summary>
+/// <summary>Owns a distance-field atlas and delays physical region reuse until a caller-provided fence completes.</summary>
 public sealed class DistanceFieldAtlas : IDisposable
 {
     private readonly IGpuBackend backend;
@@ -13,17 +13,25 @@ public sealed class DistanceFieldAtlas : IDisposable
     private int nextSlot;
     private bool disposed;
 
-    public DistanceFieldAtlas(IGpuBackend backend, uint width = 1024, uint height = 1024)
+    public DistanceFieldAtlas(
+        IGpuBackend backend,
+        uint width = 1024,
+        uint height = 1024,
+        GpuFormat format = GpuFormat.R8Unorm)
     {
         this.backend = backend ?? throw new ArgumentNullException(nameof(backend));
         if (width == 0 || height == 0)
         {
             throw new ArgumentOutOfRangeException(nameof(width));
         }
+        if (format is not GpuFormat.R8Unorm and not GpuFormat.Rgba8Unorm)
+        {
+            throw new ArgumentOutOfRangeException(nameof(format), "Distance-field atlases use R8 or RGBA8 format.");
+        }
         Description = new(
             width,
             height,
-            GpuFormat.R8Unorm,
+            format,
             GpuTextureUsage.Sampled | GpuTextureUsage.ColorAttachment);
         texture = OwnedTexture.Create(backend, Description);
         try

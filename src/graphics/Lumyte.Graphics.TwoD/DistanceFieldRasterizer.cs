@@ -37,6 +37,11 @@ public sealed class DistanceFieldRasterizer : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(width), "Distance fields require at least two pixels per dimension.");
         }
+        if (options.Encoding == DistanceFieldEncoding.MultiChannelSignedDistance
+            && atlas.Description.Format != GpuFormat.Rgba8Unorm)
+        {
+            throw new ArgumentException("Multi-channel distance fields require an RGBA8 atlas.", nameof(options));
+        }
 
         DistanceField field = atlas.Allocate(width, height, options.DistanceRange, options.Encoding);
         try
@@ -47,7 +52,7 @@ public sealed class DistanceFieldRasterizer : IDisposable
             GpuBufferView view = backend.CreateBufferView(buffer.Buffer, default);
             GpuTextureView atlasView = backend.CreateTextureView(
                 atlas.Texture,
-                new(GpuFormat.R8Unorm));
+                new(atlas.Description.Format));
             try
             {
                 var table = new GpuResourceTable(0, 0, 1);
@@ -101,7 +106,7 @@ public sealed class DistanceFieldRasterizer : IDisposable
         if (!pipeline.IsNull) { return pipeline; }
         shaders ??= StandardShaders.LoadPhaseTwo();
         pipeline = backend.CreateRasterPipeline(
-            new GpuRasterPipelineDescription([new(GpuFormat.R8Unorm)]),
+            new GpuRasterPipelineDescription([new(atlas.Description.Format)]),
             shaders,
             "distanceFieldRasterVertex",
             "distanceFieldRasterPixel",
@@ -130,13 +135,14 @@ public sealed class DistanceFieldRasterizer : IDisposable
             throw new ArgumentException("Path does not contain drawable edges.", nameof(path));
         }
 
-        var result = new Vector4[4 + edges.Count];
+        var result = new Vector4[4 + edges.Count * 2];
         result[0] = new(entry.Region.X, entry.Region.Y, entry.Region.Width, entry.Region.Height);
         result[1] = new(atlas.Width, atlas.Height, edges.Count, options.DistanceRange);
         result[2] = new((float)options.FillRule, (float)options.Encoding, 0, 0);
         foreach ((FlattenedEdge edge, int index) in edges.Select((value, index) => (value, index)))
         {
-            result[4 + index] = new(edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y);
+            result[4 + index * 2] = new(edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y);
+            result[5 + index * 2] = new(edge.Channel, 0, 0, 0);
         }
         return result;
     }
@@ -151,6 +157,7 @@ public sealed class DistanceFieldRasterizer : IDisposable
         Vector2 current = default;
         Vector2 figureStart = default;
         bool hasCurrent = false;
+        int edgeChannel = 0;
         foreach (PathSegment segment in path.Segments)
         {
             switch (segment.Kind)
@@ -158,20 +165,31 @@ public sealed class DistanceFieldRasterizer : IDisposable
                 case PathSegmentKind.Move:
                     current = figureStart = Map(segment.Point);
                     hasCurrent = true;
+                    edgeChannel = 0;
                     break;
                 case PathSegmentKind.Line:
                 case PathSegmentKind.Close:
                     AddLine(Map(segment.Point));
+                    edgeChannel = (edgeChannel + 1) % 3;
                     break;
                 case PathSegmentKind.Quadratic:
                     Vector2 quadraticEnd = Map(segment.Point);
-                    FlattenQuadratic(current, Map(segment.Control0), quadraticEnd, edges, 0);
+                    FlattenQuadratic(current, Map(segment.Control0), quadraticEnd, edges, edgeChannel, 0);
                     current = quadraticEnd;
+                    edgeChannel = (edgeChannel + 1) % 3;
                     break;
                 case PathSegmentKind.Cubic:
                     Vector2 cubicEnd = Map(segment.Point);
-                    FlattenCubic(current, Map(segment.Control0), Map(segment.Control1), cubicEnd, edges, 0);
+                    FlattenCubic(
+                        current,
+                        Map(segment.Control0),
+                        Map(segment.Control1),
+                        cubicEnd,
+                        edges,
+                        edgeChannel,
+                        0);
                     current = cubicEnd;
+                    edgeChannel = (edgeChannel + 1) % 3;
                     break;
             }
         }
@@ -186,7 +204,7 @@ public sealed class DistanceFieldRasterizer : IDisposable
             if (!hasCurrent) { throw new InvalidOperationException("Path segment has no active figure."); }
             if (Vector2.DistanceSquared(current, end) > 1e-8f)
             {
-                edges.Add(new(current, end));
+                edges.Add(new(current, end, edgeChannel));
             }
             current = end;
             if (segmentIsClose(end)) { current = figureStart; }
@@ -200,18 +218,19 @@ public sealed class DistanceFieldRasterizer : IDisposable
         Vector2 control,
         Vector2 end,
         List<FlattenedEdge> edges,
+        int channel,
         int depth)
     {
         if (depth >= 10 || DistanceToLine(control, start, end) <= 0.25f)
         {
-            edges.Add(new(start, end));
+            edges.Add(new(start, end, channel));
             return;
         }
         Vector2 first = (start + control) * 0.5f;
         Vector2 second = (control + end) * 0.5f;
         Vector2 middle = (first + second) * 0.5f;
-        FlattenQuadratic(start, first, middle, edges, depth + 1);
-        FlattenQuadratic(middle, second, end, edges, depth + 1);
+        FlattenQuadratic(start, first, middle, edges, channel, depth + 1);
+        FlattenQuadratic(middle, second, end, edges, channel, depth + 1);
     }
 
     private static void FlattenCubic(
@@ -220,6 +239,7 @@ public sealed class DistanceFieldRasterizer : IDisposable
         Vector2 control1,
         Vector2 end,
         List<FlattenedEdge> edges,
+        int channel,
         int depth)
     {
         float error = MathF.Max(
@@ -227,7 +247,7 @@ public sealed class DistanceFieldRasterizer : IDisposable
             DistanceToLine(control1, start, end));
         if (depth >= 10 || error <= 0.25f)
         {
-            edges.Add(new(start, end));
+            edges.Add(new(start, end, channel));
             return;
         }
         Vector2 p01 = (start + control0) * 0.5f;
@@ -236,8 +256,8 @@ public sealed class DistanceFieldRasterizer : IDisposable
         Vector2 p012 = (p01 + p12) * 0.5f;
         Vector2 p123 = (p12 + p23) * 0.5f;
         Vector2 middle = (p012 + p123) * 0.5f;
-        FlattenCubic(start, p01, p012, middle, edges, depth + 1);
-        FlattenCubic(middle, p123, p23, end, edges, depth + 1);
+        FlattenCubic(start, p01, p012, middle, edges, channel, depth + 1);
+        FlattenCubic(middle, p123, p23, end, edges, channel, depth + 1);
     }
 
     private static float DistanceToLine(Vector2 point, Vector2 start, Vector2 end)

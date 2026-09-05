@@ -164,7 +164,10 @@ float4 distanceFieldPixel(PrimitiveVertexOutput input) : SV_Target0
 {
     float2 relative = (input.localPosition - input.bounds.xy) / input.bounds.zw;
     float2 uv = input.textureRegion.xy + relative * input.textureRegion.zw;
-    float value = imageTexture.Sample(imageSampler, uv).r;
+    float4 distanceSample = imageTexture.Sample(imageSampler, uv);
+    float value = input.parameters0.y == 2.0
+        ? max(min(distanceSample.r, distanceSample.g), min(max(distanceSample.r, distanceSample.g), distanceSample.b))
+        : distanceSample.r;
     float coverage = input.parameters0.y == 0.0
         ? value
         : saturate((value - 0.5) / max(fwidth(value), 0.0001) + 0.5);

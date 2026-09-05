@@ -7,6 +7,8 @@ public sealed class CommandEncoder : IDisposable
 {
     private readonly Renderer renderer;
     private readonly List<RecordedCommand> commands = [];
+    private readonly List<RecordedLayer> layers = [];
+    private readonly Stack<int> activeLayers = [];
     private readonly Stack<State> states = [];
     private State state = new(Matrix3x2.Identity, null, false);
     private bool finished;
@@ -14,6 +16,28 @@ public sealed class CommandEncoder : IDisposable
     internal CommandEncoder(Renderer renderer) => this.renderer = renderer;
 
     public int Count => commands.Count;
+
+    /// <summary>Begins an isolated compositing group. Calls may be nested.</summary>
+    public void PushLayer(LayerOptions options = default)
+    {
+        VerifyOpen();
+        options = options == default ? new LayerOptions() : options;
+        options = options.Validate(renderer, nameof(options));
+        int id = checked(layers.Count + 1);
+        int parentId = activeLayers.TryPeek(out int parent) ? parent : 0;
+        layers.Add(new(id, parentId, commands.Count, options));
+        activeLayers.Push(id);
+    }
+
+    /// <summary>Ends the innermost isolated compositing group.</summary>
+    public void PopLayer()
+    {
+        VerifyOpen();
+        if (!activeLayers.TryPop(out _))
+        {
+            throw new InvalidOperationException("There is no active 2D layer to pop.");
+        }
+    }
 
     public void Save()
     {
@@ -214,8 +238,12 @@ public sealed class CommandEncoder : IDisposable
         {
             throw new InvalidOperationException("Every saved 2D state must be restored before finishing.");
         }
+        if (activeLayers.Count != 0)
+        {
+            throw new InvalidOperationException("Every pushed 2D layer must be popped before finishing.");
+        }
         finished = true;
-        return new(renderer, commands.ToArray());
+        return new(renderer, commands.ToArray(), layers.ToArray());
     }
 
     public void Dispose() => finished = true;
@@ -226,7 +254,11 @@ public sealed class CommandEncoder : IDisposable
     private void Add(RecordedCommand command)
     {
         VerifyOpen();
-        if (!state.ClippedOut) { commands.Add(command); }
+        if (!state.ClippedOut)
+        {
+            int layerId = activeLayers.TryPeek(out int active) ? active : 0;
+            commands.Add(command with { LayerId = layerId });
+        }
     }
 
     private void VerifyOpen()
