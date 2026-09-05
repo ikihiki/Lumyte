@@ -7,6 +7,44 @@ namespace Lumyte.Graphics.DirectX12;
 
 public sealed unsafe partial class DirectX12Device
 {
+    private ComPtr<ID3D12DescriptorHeap> RentShaderVisibleDescriptorHeap(
+        DescriptorHeapType type,
+        uint capacity)
+    {
+        lock (descriptorHeapPoolSync)
+        {
+            if (descriptorHeapPool.TryGetValue((type, capacity), out Stack<ComPtr<ID3D12DescriptorHeap>>? heaps)
+                && heaps.TryPop(out ComPtr<ID3D12DescriptorHeap> heap))
+            {
+                descriptorHeapReuseCount++;
+                return heap;
+            }
+            descriptorHeapCreationCount++;
+        }
+        return CreateDescriptorHeap(type, capacity, true);
+    }
+
+    private void ReturnShaderVisibleDescriptorHeap(
+        DescriptorHeapType type,
+        uint capacity,
+        ComPtr<ID3D12DescriptorHeap> heap)
+    {
+        lock (descriptorHeapPoolSync)
+        {
+            if (disposed)
+            {
+                heap.Dispose();
+                return;
+            }
+            if (!descriptorHeapPool.TryGetValue((type, capacity), out Stack<ComPtr<ID3D12DescriptorHeap>>? heaps))
+            {
+                heaps = new();
+                descriptorHeapPool.Add((type, capacity), heaps);
+            }
+            heaps.Push(heap);
+        }
+    }
+
     private DirectX12Recorder BeginCommands()
     {
         VerifyNotDisposed();
@@ -183,8 +221,9 @@ public sealed unsafe partial class DirectX12Device
     private sealed class DirectX12Recorder : IGpuCommandRecorder, IDisposable
     {
         private readonly List<ComPtr<ID3D12Resource>> temporaryResources = [];
-        private readonly List<ComPtr<ID3D12DescriptorHeap>> temporaryDescriptorHeaps = [];
+        private readonly List<(ComPtr<ID3D12DescriptorHeap> Heap, DescriptorHeapType Type, uint Capacity)> temporaryDescriptorHeaps = [];
         private readonly List<Action> completionActions = [];
+        private readonly Dictionary<(GpuResourceTable Table, ulong Revision), DescriptorBinding> descriptorTables = [];
         private PipelineRecord? currentPipeline;
         private ComputePipelineRecord? currentComputePipeline;
         private ComPtr<ID3D12DescriptorHeap> resourceHeap;
@@ -487,6 +526,24 @@ public sealed unsafe partial class DirectX12Device
                     "The current Direct3D 12 descriptor tables support at most 64 indices per resource kind.");
             }
 
+            var cacheKey = (table, table.Revision);
+            if (descriptorTables.TryGetValue(cacheKey, out DescriptorBinding cached))
+            {
+                resourceHeap = cached.ResourceHeap;
+                samplerHeap = cached.SamplerHeap;
+                hasResourceHeap = cached.HasResourceHeap;
+                hasSamplerHeap = cached.HasSamplerHeap;
+                textureDescriptorCount = cached.TextureDescriptorCount;
+                bufferDescriptorOffset = cached.BufferDescriptorOffset;
+                bufferDescriptorCount = cached.BufferDescriptorCount;
+                storageTextureDescriptorOffset = cached.StorageTextureDescriptorOffset;
+                storageTextureDescriptorCount = cached.StorageTextureDescriptorCount;
+                writableBufferDescriptorOffset = cached.WritableBufferDescriptorOffset;
+                writableBufferDescriptorCount = cached.WritableBufferDescriptorCount;
+                BindDescriptorHeaps(compute);
+                return;
+            }
+
             hasResourceHeap = false;
             textureDescriptorCount = table.TextureSlotCount;
             bufferDescriptorOffset = table.TextureSlotCount;
@@ -504,9 +561,9 @@ public sealed unsafe partial class DirectX12Device
                 + table.WritableBufferSlotCount);
             if (resourceDescriptorCount != 0)
             {
-                resourceHeap = Owner.CreateDescriptorHeap(
-                    DescriptorHeapType.CbvSrvUav, checked((uint)resourceDescriptorCount), true);
-                temporaryDescriptorHeaps.Add(resourceHeap);
+                uint resourceCapacity = checked((uint)resourceDescriptorCount);
+                resourceHeap = Owner.RentShaderVisibleDescriptorHeap(DescriptorHeapType.CbvSrvUav, resourceCapacity);
+                temporaryDescriptorHeaps.Add((resourceHeap, DescriptorHeapType.CbvSrvUav, resourceCapacity));
                 hasResourceHeap = true;
                 for (int slot = 0; slot < table.TextureSlotCount; slot++)
                 {
@@ -623,9 +680,9 @@ public sealed unsafe partial class DirectX12Device
 
             if (table.SamplerSlotCount != 0)
             {
-                samplerHeap = Owner.CreateDescriptorHeap(
-                    DescriptorHeapType.Sampler, checked((uint)table.SamplerSlotCount), true);
-                temporaryDescriptorHeaps.Add(samplerHeap);
+                uint samplerCapacity = checked((uint)table.SamplerSlotCount);
+                samplerHeap = Owner.RentShaderVisibleDescriptorHeap(DescriptorHeapType.Sampler, samplerCapacity);
+                temporaryDescriptorHeaps.Add((samplerHeap, DescriptorHeapType.Sampler, samplerCapacity));
                 hasSamplerHeap = true;
                 for (int slot = 0; slot < table.SamplerSlotCount; slot++)
                 {
@@ -646,6 +703,18 @@ public sealed unsafe partial class DirectX12Device
                     Owner.device.CreateSampler(in native, destination);
                 }
             }
+            descriptorTables.Add(cacheKey, new(
+                resourceHeap,
+                samplerHeap,
+                hasResourceHeap,
+                hasSamplerHeap,
+                textureDescriptorCount,
+                bufferDescriptorOffset,
+                bufferDescriptorCount,
+                storageTextureDescriptorOffset,
+                storageTextureDescriptorCount,
+                writableBufferDescriptorOffset,
+                writableBufferDescriptorCount));
             BindDescriptorHeaps(compute);
         }
 
@@ -709,7 +778,10 @@ public sealed unsafe partial class DirectX12Device
             if (disposed) { return; }
             disposed = true;
             foreach (ComPtr<ID3D12Resource> resource in temporaryResources) { resource.Dispose(); }
-            foreach (ComPtr<ID3D12DescriptorHeap> heap in temporaryDescriptorHeaps) { heap.Dispose(); }
+            foreach (var heap in temporaryDescriptorHeaps)
+            {
+                Owner.ReturnShaderVisibleDescriptorHeap(heap.Type, heap.Capacity, heap.Heap);
+            }
             Commands.Dispose();
             Allocator.Dispose();
         }
@@ -825,6 +897,19 @@ public sealed unsafe partial class DirectX12Device
                 staging.Unmap(0, &written);
             }
         }
+
+        private readonly record struct DescriptorBinding(
+            ComPtr<ID3D12DescriptorHeap> ResourceHeap,
+            ComPtr<ID3D12DescriptorHeap> SamplerHeap,
+            bool HasResourceHeap,
+            bool HasSamplerHeap,
+            int TextureDescriptorCount,
+            int BufferDescriptorOffset,
+            int BufferDescriptorCount,
+            int StorageTextureDescriptorOffset,
+            int StorageTextureDescriptorCount,
+            int WritableBufferDescriptorOffset,
+            int WritableBufferDescriptorCount);
     }
 
     private sealed class DirectX12Semaphore : GpuSemaphore

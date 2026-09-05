@@ -5,6 +5,11 @@ using System.Runtime.InteropServices;
 
 namespace Lumyte.Graphics.DirectX12;
 
+public readonly record struct DirectX12DescriptorHeapPoolStatistics(
+    int PooledHeapCount,
+    int CreationCount,
+    int ReuseCount);
+
 /// <summary>Owns a native Direct3D 12 device and its direct command queue.</summary>
 public sealed unsafe partial class DirectX12Device :
     IGpuBackend,
@@ -21,6 +26,10 @@ public sealed unsafe partial class DirectX12Device :
     private readonly Dictionary<ulong, GpuSamplerDescription> samplers = [];
     private readonly Dictionary<ulong, PipelineRecord> pipelines = [];
     private readonly Dictionary<ulong, ComputePipelineRecord> computePipelines = [];
+    private readonly Dictionary<(DescriptorHeapType Type, uint Capacity), Stack<ComPtr<ID3D12DescriptorHeap>>> descriptorHeapPool = [];
+    private readonly object descriptorHeapPoolSync = new();
+    private int descriptorHeapCreationCount;
+    private int descriptorHeapReuseCount;
     private bool disposed;
 
     private DirectX12Device(D3D12 api, ComPtr<ID3D12Device> device, ComPtr<ID3D12CommandQueue> queue)
@@ -67,6 +76,20 @@ public sealed unsafe partial class DirectX12Device :
         | GpuBackendCapabilities.ComputePipeline;
 
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Dxil;
+
+    public DirectX12DescriptorHeapPoolStatistics DescriptorHeapPoolStatistics
+    {
+        get
+        {
+            lock (descriptorHeapPoolSync)
+            {
+                return new(
+                    descriptorHeapPool.Values.Sum(static heaps => heaps.Count),
+                    descriptorHeapCreationCount,
+                    descriptorHeapReuseCount);
+            }
+        }
+    }
 
     public byte[] RoundTripBuffer(ReadOnlySpan<byte> source)
     {
@@ -170,6 +193,14 @@ public sealed unsafe partial class DirectX12Device :
         foreach (TextureRecord texture in textures.Values) { texture.Dispose(); }
         foreach (BufferRecord buffer in buffers.Values) { buffer.Dispose(); }
         foreach (MemoryRecord memory in memories.Values) { memory.Dispose(); }
+        lock (descriptorHeapPoolSync)
+        {
+            foreach (Stack<ComPtr<ID3D12DescriptorHeap>> heaps in descriptorHeapPool.Values)
+            {
+                while (heaps.TryPop(out ComPtr<ID3D12DescriptorHeap> heap)) { heap.Dispose(); }
+            }
+            descriptorHeapPool.Clear();
+        }
         queue.Dispose();
         device.Dispose();
         api.Dispose();

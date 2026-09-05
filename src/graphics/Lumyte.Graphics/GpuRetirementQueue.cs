@@ -17,6 +17,13 @@ public readonly struct GpuSubmissionToken : IEquatable<GpuSubmissionToken>
 
     public void Wait() => owner?.Wait(this);
 
+    /// <summary>
+    /// Waits without occupying a thread. Cancellation stops only the CPU wait; it does not cancel
+    /// the submitted GPU work or release resources retained by it.
+    /// </summary>
+    public ValueTask WaitAsync(CancellationToken cancellationToken = default) =>
+        owner is null ? ValueTask.CompletedTask : owner.WaitAsync(this, cancellationToken);
+
     public bool Equals(GpuSubmissionToken other) =>
         ReferenceEquals(owner, other.owner) && Value == other.Value;
 
@@ -190,6 +197,19 @@ public sealed class GpuRetirementQueue : IDisposable
         if (token.Value <= completedValue || disposed) { return; }
         WaitForValue(token.Value);
         CompleteThrough(token.Value);
+    }
+
+    internal async ValueTask WaitAsync(
+        GpuSubmissionToken token,
+        CancellationToken cancellationToken)
+    {
+        RequireToken(token, allowDisposed: true);
+        while (token.Value > completedValue && !disposed)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (IsComplete(token)) { return; }
+            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private void WaitForValue(ulong value)

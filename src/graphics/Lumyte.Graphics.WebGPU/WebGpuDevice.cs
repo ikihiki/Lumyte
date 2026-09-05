@@ -4,6 +4,13 @@ using WgpuBuffer = Silk.NET.WebGPU.Buffer;
 
 namespace Lumyte.Graphics.WebGPU;
 
+public readonly record struct WebGpuBindGroupCacheStatistics(
+    int EntryCount,
+    int CreationCount,
+    int HitCount,
+    int EvictionCount,
+    int Capacity);
+
 /// <summary>Owns a native WebGPU instance, selected adapter, device, and queue.</summary>
 public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
 {
@@ -12,6 +19,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private const int NativeBufferBindingOffset = MaximumShaderDescriptors * 2;
     private const int NativeStorageTextureBindingOffset = MaximumShaderDescriptors * 3;
     private const int NativeWritableBufferBindingOffset = MaximumShaderDescriptors * 4;
+    private const int MaximumCachedBindGroups = 256;
 
 
     private readonly ModernWebGpuApi api;
@@ -28,6 +36,9 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private Device* device;
     private Queue* queue;
     private int bindGroupCreationCount;
+    private long bindGroupAccessSequence;
+    private int bindGroupCacheHitCount;
+    private int bindGroupCacheEvictionCount;
     private bool disposed;
 
     private WebGpuDevice(ModernWebGpuApi api) => this.api = api;
@@ -76,6 +87,15 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
 
     internal int CachedBindGroupCount => bindGroups.Count;
     internal int BindGroupCreationCount => bindGroupCreationCount;
+    internal int BindGroupCacheHitCount => bindGroupCacheHitCount;
+    internal int BindGroupCacheEvictionCount => bindGroupCacheEvictionCount;
+
+    public WebGpuBindGroupCacheStatistics BindGroupCacheStatistics => new(
+        bindGroups.Count,
+        bindGroupCreationCount,
+        bindGroupCacheHitCount,
+        bindGroupCacheEvictionCount,
+        MaximumCachedBindGroups);
 
     /// <summary>Creates a WebGPU-owned texture without pretending to expose placed memory.</summary>
     public GpuTextureHandle CreateTexture(GpuTextureDescription description)
@@ -179,7 +199,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Texture view does not belong to this WebGPU device.", nameof(view));
         }
         textureViews.Remove(view.Id.Value);
-        InvalidateBindGroups();
+        InvalidateBindGroups(key => key.ContainsTexture(view.Id));
         api.TextureViewRelease((TextureView*)record.Handle);
     }
 
@@ -209,7 +229,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         {
             throw new ArgumentException("Sampler ID does not belong to this WebGPU device.", nameof(id));
         }
-        InvalidateBindGroups();
+        InvalidateBindGroups(key => key.ContainsSampler(id));
         api.SamplerRelease((Sampler*)sampler);
     }
 
@@ -228,12 +248,12 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         }
         if (nativeLayout == 0) { throw new ArgumentException("Bind group layout cannot be null.", nameof(nativeLayout)); }
 
-        var key = new ResourceTableCacheKey(table, nativeLayout);
+        ResourceTableCacheKey key = ResourceTableCacheKey.Create(table, nativeLayout);
         if (bindGroups.TryGetValue(key, out CachedBindGroup? cached))
         {
-            if (cached.Revision == table.Revision) { return cached.Handle; }
-            api.BindGroupRelease((BindGroup*)cached.Handle);
-            bindGroups.Remove(key);
+            cached.LastAccess = ++bindGroupAccessSequence;
+            bindGroupCacheHitCount++;
+            return cached.Handle;
         }
 
         int entryCount = 0;
@@ -360,7 +380,15 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
             };
             BindGroup* bindGroup = api.DeviceCreateBindGroup(device, in description);
             if (bindGroup is null) { throw new InvalidOperationException("WebGPU bind group creation failed."); }
-            var result = new CachedBindGroup((nint)bindGroup, table.Revision);
+            if (bindGroups.Count == MaximumCachedBindGroups)
+            {
+                KeyValuePair<ResourceTableCacheKey, CachedBindGroup> oldest = bindGroups.MinBy(
+                    static pair => pair.Value.LastAccess);
+                api.BindGroupRelease((BindGroup*)oldest.Value.Handle);
+                bindGroups.Remove(oldest.Key);
+                bindGroupCacheEvictionCount++;
+            }
+            var result = new CachedBindGroup((nint)bindGroup, ++bindGroupAccessSequence);
             bindGroups.Add(key, result);
             bindGroupCreationCount++;
             return result.Handle;
@@ -611,8 +639,102 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         bindGroups.Clear();
     }
 
-    private readonly record struct ResourceTableCacheKey(GpuResourceTable Table, nint Layout);
-    private sealed record CachedBindGroup(nint Handle, ulong Revision);
+    private void InvalidateBindGroups(Func<ResourceTableCacheKey, bool> predicate)
+    {
+        foreach (ResourceTableCacheKey key in bindGroups.Keys.Where(predicate).ToArray())
+        {
+            api.BindGroupRelease((BindGroup*)bindGroups[key].Handle);
+            bindGroups.Remove(key);
+        }
+    }
+
+    private sealed class ResourceTableCacheKey : IEquatable<ResourceTableCacheKey>
+    {
+        private readonly ulong[] textures;
+        private readonly ulong[] samplers;
+        private readonly ulong[] buffers;
+        private readonly ulong[] storageTextures;
+        private readonly ulong[] writableBuffers;
+        private readonly int hashCode;
+
+        private ResourceTableCacheKey(
+            nint layout,
+            ulong[] textures,
+            ulong[] samplers,
+            ulong[] buffers,
+            ulong[] storageTextures,
+            ulong[] writableBuffers)
+        {
+            Layout = layout;
+            this.textures = textures;
+            this.samplers = samplers;
+            this.buffers = buffers;
+            this.storageTextures = storageTextures;
+            this.writableBuffers = writableBuffers;
+            var hash = new HashCode();
+            hash.Add(layout);
+            Add(ref hash, textures);
+            Add(ref hash, samplers);
+            Add(ref hash, buffers);
+            Add(ref hash, storageTextures);
+            Add(ref hash, writableBuffers);
+            hashCode = hash.ToHashCode();
+        }
+
+        private nint Layout { get; }
+
+        public static ResourceTableCacheKey Create(GpuResourceTable table, nint layout)
+        {
+            return new(
+                layout,
+                Copy(table.TextureSlotCount, table.GetTexture),
+                Copy(table.SamplerSlotCount, table.GetSampler),
+                Copy(table.BufferSlotCount, table.GetBuffer),
+                Copy(table.StorageTextureSlotCount, table.GetStorageTexture),
+                Copy(table.WritableBufferSlotCount, table.GetWritableBuffer));
+        }
+
+        public bool ContainsTexture(TextureId id) => textures.Contains(id.Value) || storageTextures.Contains(id.Value);
+        public bool ContainsSampler(SamplerId id) => samplers.Contains(id.Value);
+        public bool ContainsBuffer(BufferId id) => buffers.Contains(id.Value) || writableBuffers.Contains(id.Value);
+        public bool Equals(ResourceTableCacheKey? other) => other is not null
+            && Layout == other.Layout
+            && textures.AsSpan().SequenceEqual(other.textures)
+            && samplers.AsSpan().SequenceEqual(other.samplers)
+            && buffers.AsSpan().SequenceEqual(other.buffers)
+            && storageTextures.AsSpan().SequenceEqual(other.storageTextures)
+            && writableBuffers.AsSpan().SequenceEqual(other.writableBuffers);
+        public override bool Equals(object? obj) => obj is ResourceTableCacheKey other && Equals(other);
+        public override int GetHashCode() => hashCode;
+
+        private static ulong[] Copy<T>(int count, Func<int, T> getValue) where T : struct
+        {
+            var result = new ulong[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = getValue(i) switch
+                {
+                    TextureId id => id.Value,
+                    SamplerId id => id.Value,
+                    BufferId id => id.Value,
+                    _ => throw new InvalidOperationException("Unsupported resource identifier type."),
+                };
+            }
+            return result;
+        }
+
+        private static void Add(ref HashCode hash, ulong[] values)
+        {
+            hash.Add(values.Length);
+            foreach (ulong value in values) { hash.Add(value); }
+        }
+    }
+
+    private sealed class CachedBindGroup(nint handle, long lastAccess)
+    {
+        public nint Handle { get; } = handle;
+        public long LastAccess { get; set; } = lastAccess;
+    }
     private sealed record TextureRecord(nint Handle, GpuTextureDescription Description);
     private sealed record TextureViewRecord(nint Handle, GpuTextureView View);
     private sealed record BufferRecord(nint Handle, GpuBufferDescription Description);

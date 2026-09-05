@@ -34,7 +34,7 @@ public sealed class GpuRenderContext : IDisposable
     internal GpuRenderGraphExecution Submit(GpuRenderGraph graph)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        return graph.Compile(PlanCache).ExecuteAsync(backend, retirementQueue);
+        return graph.Compile(PlanCache).Submit(backend, retirementQueue);
     }
 
     public void Dispose()

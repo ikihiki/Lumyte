@@ -100,7 +100,7 @@ public sealed unsafe partial class WebGpuDevice
             if (!registered.Id.IsNull) { bufferViews.Add(registered.Id.Value, registered); }
             throw new ArgumentException("Buffer view does not belong to this WebGPU device.", nameof(view));
         }
-        InvalidateBindGroups();
+        InvalidateBindGroups(key => key.ContainsBuffer(view.Id));
     }
 
     public void DestroyBuffer(GpuBufferHandle buffer)
@@ -112,7 +112,6 @@ public sealed unsafe partial class WebGpuDevice
             throw new InvalidOperationException("Buffer still has a live view.");
         }
         buffers.Remove(buffer.Value);
-        InvalidateBindGroups();
         api.BufferRelease((WgpuBuffer*)record.Handle);
     }
 

@@ -323,10 +323,32 @@ public sealed class CommandEncoderTests
         Assert.Equal(1, plan.TextureCount);
     }
 
+    [Fact]
+    public void PreparedDrawingLeaseDefersBufferDestruction()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.FillRectangle(new(0, 0, 16, 16), Brush.Solid(Color.White));
+        PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), TargetDescription);
+        IDisposable lease = prepared.AcquireLease();
+        int allocatedBufferCount = backend.BufferCount;
+
+        prepared.Dispose();
+
+        Assert.True(allocatedBufferCount > 0);
+        Assert.Equal(allocatedBufferCount, backend.BufferCount);
+
+        lease.Dispose();
+        Assert.Equal(0, backend.BufferCount);
+    }
+
     private sealed class BufferBackend : IGpuBackend
     {
         private readonly Dictionary<ulong, byte[]> buffers = [];
         private ulong nextBuffer = 1;
+
+        public int BufferCount => buffers.Count;
 
         public GpuBackendCapabilities Capabilities =>
             GpuBackendCapabilities.DeviceOwnedResources | GpuBackendCapabilities.RasterPipeline;

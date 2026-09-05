@@ -34,6 +34,29 @@ public sealed class GpuRenderGraphTests
         Assert.Equal(1, adapter.DiscardCount);
         Assert.Equal(0, adapter.PresentCount);
     }
+
+    [Fact]
+    public void FrameLeaseIsReleasedAfterGpuCompletion()
+    {
+        var backend = new TrackingBackend();
+        var adapter = new TrackingPresentationAdapter();
+        using var context = new GpuRenderContext(backend);
+        using GpuFrame frame = context.BeginFrame(adapter);
+        var lease = new TrackingLease();
+        frame.Retain(lease);
+        frame.Graph.AddPass("present", 0, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
+            .Write(frame.TargetResource, GpuStage.ColorOutput);
+
+        GpuRenderGraphExecution execution = frame.Submit();
+        execution.Dispose();
+
+        Assert.False(lease.IsDisposed);
+
+        backend.Queue.Complete(execution.Completion.Value);
+        context.BeginFrame(adapter).Dispose();
+        Assert.True(lease.IsDisposed);
+    }
+
     [Fact]
     public void TypedResourcesCarryTheirDescriptions()
     {
@@ -217,6 +240,25 @@ public sealed class GpuRenderGraphTests
 
         Assert.NotNull(commands);
         Assert.Equal(["barrier:None>ColorOutput:None", "draw"], events);
+    }
+
+    [Fact]
+    public void TextureUploadOrdersCopyComputeAndDrawInOneSubmission()
+    {
+        var events = new List<string>();
+        var recorder = new RecordingCommandRecorder(events);
+        var graph = new GpuRenderGraph();
+        var texture = graph.ImportTexture("texture", new GpuTextureHandle(7), TextureDescription());
+        graph.AddTextureUpload("upload", new(3, 0, 4), texture, new(1, 1, 4, 4));
+        graph.AddPass("compute", events, static (_, state) => state.Add("compute"))
+            .ReadWrite(texture, GpuStage.ComputeShader);
+        graph.AddPass("draw", events, static (_, state) => state.Add("draw"), GpuRenderGraphPassFlags.NeverCull)
+            .Read(texture, GpuStage.PixelShader);
+
+        using GpuCommandBuffer commands = graph.Compile().Record(new RecordingQueue(recorder));
+
+        Assert.Equal(["upload", "compute", "draw"], events.Where(value => !value.StartsWith("barrier:", StringComparison.Ordinal)));
+        Assert.Equal(3, events.Count(value => value.StartsWith("barrier:", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -892,7 +934,7 @@ public sealed class GpuRenderGraphTests
         public void SetViewportAndScissor(GpuViewport viewport, GpuScissorRect scissor) => throw new NotSupportedException();
         public void Draw(uint vertexCount, uint instanceCount) => throw new NotSupportedException();
         public void CopyMemoryToTexture(GpuMemoryAddress source, GpuTextureHandle destination, GpuTextureCopyFootprint footprint) =>
-            throw new NotSupportedException();
+            events.Add("upload");
         public void CopyTextureToMemory(GpuTextureHandle source, GpuMemoryAddress destination, GpuTextureCopyFootprint footprint) =>
             throw new NotSupportedException();
         public void SetResourceTable(GpuResourceTable table) => throw new NotSupportedException();
@@ -920,6 +962,30 @@ public sealed class GpuRenderGraphTests
         Assert.IsType<InvalidOperationException>(failure.InnerException);
         Assert.False(failure.Completion.IsComplete);
         failure.Completion.Wait();
+        Assert.Equal(1, backend.DestroyedTextureCount);
+    }
+
+    [Fact]
+    public async Task CompletionCanBeAwaitedWithoutReleasingOnCancellation()
+    {
+        var backend = new TrackingBackend();
+        using var retirements = new GpuRetirementQueue(backend);
+        var graph = new GpuRenderGraph();
+        var texture = graph.CreateTexture(
+            "texture",
+            new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
+        graph.AddPass("write", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
+            .Write(texture, GpuStage.ColorOutput);
+        using GpuRenderGraphExecution execution = graph.Compile().ExecuteAsync(backend, retirements);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await execution.WaitForCompletionAsync(cancellation.Token));
+
+        Assert.Equal(0, backend.DestroyedTextureCount);
+        backend.Queue.Complete(execution.Completion.Value);
+        await execution.WaitForCompletionAsync();
         Assert.Equal(1, backend.DestroyedTextureCount);
     }
 
@@ -993,6 +1059,12 @@ public sealed class GpuRenderGraphTests
             _ = target.Validate();
             DiscardCount++;
         }
+    }
+
+    private sealed class TrackingLease : IDisposable
+    {
+        public bool IsDisposed { get; private set; }
+        public void Dispose() => IsDisposed = true;
     }
 
     private sealed class TrackingQueue : IGpuQueue

@@ -10,6 +10,7 @@ public sealed class GpuRenderGraphExecution : IDisposable
     private readonly GpuRetirementQueue? retirementQueue;
     private int importLeaseCount;
     private IReadOnlyList<Action>? deferredDisposal;
+    private readonly List<IDisposable> retainedLeases = [];
 
     internal GpuRenderGraphExecution(
         IGpuBackend backend,
@@ -34,6 +35,13 @@ public sealed class GpuRenderGraphExecution : IDisposable
     public bool IsComplete => Completion.IsComplete;
 
     public void WaitForCompletion() => Completion.Wait();
+
+    /// <summary>
+    /// Waits for GPU completion without occupying a thread. Cancellation does not cancel the
+    /// already submitted work and does not shorten retained-resource lifetimes.
+    /// </summary>
+    public ValueTask WaitForCompletionAsync(CancellationToken cancellationToken = default) =>
+        Completion.WaitAsync(cancellationToken);
 
     public GpuRenderGraphExportedTexture GetExportedTexture(GpuRenderGraphTexture texture)
     {
@@ -63,6 +71,12 @@ public sealed class GpuRenderGraphExecution : IDisposable
     public GpuRenderGraphExportedBuffer GetBuffer(GpuRenderGraphBuffer buffer)
         => GetExportedBuffer(buffer);
 
+    internal void Retain(IEnumerable<IDisposable> leases)
+    {
+        RequireAlive();
+        retainedLeases.AddRange(leases);
+    }
+
     public void Dispose()
     {
         if (backend is not { } owner) { return; }
@@ -83,6 +97,8 @@ public sealed class GpuRenderGraphExecution : IDisposable
             }
             if (ownsArena) { releases.Add(arena.Dispose); }
         }
+        foreach (IDisposable lease in retainedLeases) { releases.Add(lease.Dispose); }
+        retainedLeases.Clear();
 
         if (importLeaseCount == 0) { ScheduleDisposal(releases); }
         else { deferredDisposal = releases; }

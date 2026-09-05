@@ -1958,6 +1958,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     {
         private PipelineRecord? currentPipeline;
         private PipelineRecord? currentComputePipeline;
+        private readonly Dictionary<(GpuResourceTable Table, ulong Revision), DescriptorSet[]> descriptorTables = [];
         public VulkanDevice Owner { get; } = owner;
         public CommandBuffer CommandBuffer { get; } = commandBuffer;
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) => Owner.RecordBarrier(CommandBuffer, before, after, hazards);
@@ -2016,9 +2017,26 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                     "The current Vulkan descriptor sets support at most 64 indices per resource kind.");
             }
 
+            var cacheKey = (table, table.Revision);
+            if (descriptorTables.TryGetValue(cacheKey, out DescriptorSet[]? cachedSets))
+            {
+                for (uint index = 0; index < cachedSets.Length; index++)
+                {
+                    DescriptorSet cachedSet = cachedSets[index];
+                    if (cachedSet.Handle != 0)
+                    {
+                        Owner.vk.CmdBindDescriptorSets(
+                            CommandBuffer, bindPoint, pipeline.Layout, index, 1, in cachedSet, 0, null);
+                    }
+                }
+                return;
+            }
+            var allocatedSets = new DescriptorSet[5];
+
             if (table.TextureSlotCount != 0)
             {
                 DescriptorSet textureSet = Allocate(Owner.textureDescriptorLayout);
+                allocatedSets[0] = textureSet;
                 for (int slot = 0; slot < table.TextureSlotCount; slot++)
                 {
                     TextureId id = table.GetTexture(slot);
@@ -2063,6 +2081,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             if (table.SamplerSlotCount != 0)
             {
                 DescriptorSet samplerSet = Allocate(Owner.samplerDescriptorLayout);
+                allocatedSets[1] = samplerSet;
                 for (int slot = 0; slot < table.SamplerSlotCount; slot++)
                 {
                     SamplerId id = table.GetSampler(slot);
@@ -2091,6 +2110,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             if (table.BufferSlotCount != 0)
             {
                 DescriptorSet bufferSet = Allocate(Owner.shaderBufferDescriptorLayout);
+                allocatedSets[2] = bufferSet;
                 for (int slot = 0; slot < table.BufferSlotCount; slot++)
                 {
                     BufferId id = table.GetBuffer(slot);
@@ -2135,6 +2155,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             if (table.StorageTextureSlotCount != 0)
             {
                 DescriptorSet textureSet = Allocate(Owner.storageTextureDescriptorLayout);
+                allocatedSets[3] = textureSet;
                 for (int slot = 0; slot < table.StorageTextureSlotCount; slot++)
                 {
                     TextureId id = table.GetStorageTexture(slot);
@@ -2182,6 +2203,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             if (table.WritableBufferSlotCount != 0)
             {
                 DescriptorSet bufferSet = Allocate(Owner.writableBufferDescriptorLayout);
+                allocatedSets[4] = bufferSet;
                 for (int slot = 0; slot < table.WritableBufferSlotCount; slot++)
                 {
                     BufferId id = table.GetWritableBuffer(slot);
@@ -2213,6 +2235,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 Owner.vk.CmdBindDescriptorSets(
                     CommandBuffer, bindPoint, pipeline.Layout, 4, 1, in bufferSet, 0, null);
             }
+            descriptorTables.Add(cacheKey, allocatedSets);
         }
         public void SetRootData(ReadOnlySpan<byte> data)
         {

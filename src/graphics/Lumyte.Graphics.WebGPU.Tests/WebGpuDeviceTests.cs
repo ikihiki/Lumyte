@@ -112,7 +112,7 @@ public sealed class WebGpuDeviceTests
     [Trait("Category", "WebGpuConformance")]
     public void ComputeWritesStorageResourcesThroughCommonResourceTable()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using WebGpuDevice backend = WebGpuDevice.Create();
         var description = new GpuTextureDescription(
             2,
             2,
@@ -142,24 +142,44 @@ public sealed class WebGpuDeviceTests
             package,
             "writeStorageTexture",
             abiHash);
-        var resources = new GpuResourceTable(0, 0, 0, 1, 1);
-        resources.SetStorageTexture(0, view.Id);
-        resources.SetWritableBuffer(0, writableView.Id);
-
         GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording()
-            .SetComputePipeline(pipeline)
-            .SetComputeResourceTable(resources)
+            .SetComputePipeline(pipeline);
+        for (int i = 0; i < 10_000; i++)
+        {
+            var resources = new GpuResourceTable(0, 0, 0, 1, 1);
+            resources.SetStorageTexture(0, view.Id);
+            resources.SetWritableBuffer(0, writableView.Id);
+            commands.SetComputeResourceTable(resources);
+        }
+        var additionalViews = new List<GpuBufferView>();
+        for (int i = 0; i < 256; i++)
+        {
+            GpuBufferView additionalView = backend.CreateBufferView(
+                writable,
+                new(Access: GpuBufferViewAccess.ReadWrite));
+            additionalViews.Add(additionalView);
+            var resources = new GpuResourceTable(0, 0, 0, 1, 1);
+            resources.SetStorageTexture(0, view.Id);
+            resources.SetWritableBuffer(0, additionalView.Id);
+            commands.SetComputeResourceTable(resources);
+        }
+        commands
             .Dispatch(2, 2)
             .Barrier(GpuStage.ComputeShader, GpuStage.Copy);
         using GpuSemaphore completion = backend.MainQueue.CreateSemaphore();
         backend.MainQueue.Submit([commands], completion, 1);
         backend.MainQueue.Wait(completion, 1);
         byte[] actual = backend.ReadTexture(texture, new(2, 2, 4, 8));
+        WebGpuBindGroupCacheStatistics cache = backend.BindGroupCacheStatistics;
 
         backend.DestroyComputePipeline(pipeline);
         backend.DestroyTextureView(view);
         backend.DestroyTexture(texture);
         backend.DestroyBufferView(writableView);
+        foreach (GpuBufferView additionalView in additionalViews)
+        {
+            backend.DestroyBufferView(additionalView);
+        }
         backend.DestroyBuffer(writable);
 
         byte[] expected = Enumerable.Repeat(new byte[] { 64, 128, 191, 255 }, 4)
@@ -168,5 +188,11 @@ public sealed class WebGpuDeviceTests
         Assert.True(
             actual.Zip(expected).All(pair => Math.Abs(pair.First - pair.Second) <= 1),
             $"Expected [{string.Join(", ", expected)}] within 1, but was [{string.Join(", ", actual)}].");
+        Assert.Equal(256, cache.EntryCount);
+        Assert.Equal(257, cache.CreationCount);
+        Assert.Equal(9_999, cache.HitCount);
+        Assert.Equal(1, cache.EvictionCount);
+        Assert.Equal(256, cache.Capacity);
+        Assert.Equal(0, backend.BindGroupCacheStatistics.EntryCount);
     }
 }

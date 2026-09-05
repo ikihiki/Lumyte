@@ -3,11 +3,14 @@ namespace Lumyte.Graphics.TwoD;
 /// <summary>GPU-ready immutable data. Keep it alive until graph execution completes.</summary>
 public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
 {
+    private readonly object sync = new();
     private OwnedBuffer? primitiveBuffer;
     private OwnedBuffer? polygonBuffer;
     private OwnedBuffer? pathBuffer;
     private OwnedBuffer? layerBuffer;
     private bool disposed;
+    private int leaseCount;
+    private bool disposeRequested;
 
     internal PreparedDisplayList(
         Renderer owner,
@@ -57,6 +60,37 @@ public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
 
     public void Dispose()
     {
+        lock (sync)
+        {
+            if (disposeRequested) { return; }
+            disposeRequested = true;
+            if (leaseCount != 0) { return; }
+            DestroyBuffers();
+        }
+    }
+
+    public IDisposable AcquireLease()
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposeRequested, this);
+            leaseCount++;
+            return new Lease(this);
+        }
+    }
+
+    private void ReleaseLease()
+    {
+        lock (sync)
+        {
+            if (leaseCount <= 0) { throw new InvalidOperationException("Prepared drawing lease was released more than once."); }
+            leaseCount--;
+            if (leaseCount == 0 && disposeRequested) { DestroyBuffers(); }
+        }
+    }
+
+    private void DestroyBuffers()
+    {
         if (disposed) { return; }
         pathBuffer?.Dispose();
         layerBuffer?.Dispose();
@@ -77,5 +111,11 @@ public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
     {
         VerifyAlive();
         return value;
+    }
+
+    private sealed class Lease(PreparedDisplayList owner) : IDisposable
+    {
+        private PreparedDisplayList? owner = owner;
+        public void Dispose() => Interlocked.Exchange(ref owner, null)?.ReleaseLease();
     }
 }

@@ -7,8 +7,8 @@
 - SubmitはCPU上の記録をGPU queueへ提出し、completionを返す操作とする。戻った時点ではGPU完了を保証しない。
 - ExecuteAndWaitは提出と同期的な完了待機を明示する名前とする。
 - WaitForCompletionAsyncはCPU threadを占有せず完了を待つ契約とする。CancellationTokenは呼び出し側の待機を取り消すだけで、GPU処理を取り消さず、資源も解放しない。
-- E2時点の既存APIは、GpuRenderGraphPlan.Executeが同期実行、ExecuteAsyncがGpuRetirementQueueへ提出する入口。ExecuteAsyncはTaskを返す真の非同期待機APIではなく、in-flight上限で同期的に待つことがある。E4までこの制限を維持する。
-- E2では名前だけのTask.Runラッパーや完了前のDisposeを追加しない。E2b/E4で上記の名前と所有権を型として公開する。
+- E4で `Submit`、`ExecuteAndWait`、`WaitForCompletionAsync` を公開した。互換APIの `Execute` と `ExecuteAsync` は維持する。in-flight上限に達した提出は、空きが生じるまで同期的に待つ。
+- `WaitForCompletionAsync` は `Task.Run` で同期Waitを包まず、completionをpollしてCPU threadを占有しない。
 
 ## 寿命
 

@@ -238,8 +238,8 @@ lifetimes, texture/buffer mixtures, different memory kinds, disjoint Vulkan memo
 physical slot, creates every occupant at that allocation ID and offset, and records an alias barrier between
 consecutive occupants. Direct3D 12 uses a native aliasing resource barrier; Vulkan uses alias-capable images and a
 stage memory barrier. Backends without the capability, including WebGPU, retain per-resource device-owned allocation.
-The current synchronous execution waits before returning regions to the arena; asynchronous generation uses
-`ExecuteAsync(backend, retirementQueue)` or its caller-owned-arena overload. A `GpuRetirementQueue` owns one monotonic
+The synchronous execution uses `ExecuteAndWait`; submission without a GPU wait uses
+`Submit(backend, retirementQueue)` or its caller-owned-arena overload. A `GpuRetirementQueue` owns one monotonic
 submission semaphore, exposes `GpuSubmissionToken` completion, supports non-blocking `Collect`, and limits the number
 of submissions in flight. The backend reports completion and releases only its internal command-recording resources.
 RenderGraph owns the deferred destruction of transient native resources and texture views; the resource system owns
@@ -251,8 +251,9 @@ their arena regions through `GpuRenderGraphExecution`; disposing the execution d
 returning those regions, while a caller-owned arena remains alive until its owner trims or disposes it.
 For asynchronous execution, disposing an export relinquishes its logical ownership immediately but schedules native
 destruction and region recycling after the submission token. If GPU work completes first, the export remains alive
-until its execution is disposed. `WaitForCompletion` and `GpuRetirementQueue.WaitIdle` provide explicit blocking
-boundaries for readback and shutdown.
+until its execution is disposed. `WaitForCompletionAsync` waits without occupying a thread; cancellation stops only
+that CPU wait. `WaitForCompletion` and `GpuRetirementQueue.WaitIdle` provide explicit blocking boundaries for readback
+and shutdown.
 
 ## Vulkan device and offscreen conformance slice
 

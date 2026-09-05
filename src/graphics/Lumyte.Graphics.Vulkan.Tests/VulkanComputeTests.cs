@@ -16,8 +16,10 @@ public sealed class VulkanComputeTests
     [InlineData(16)]
     [InlineData(17)]
     [InlineData(64)]
+    [InlineData(1_000)]
+    [InlineData(10_000)]
     [Trait("Category", "VulkanConformance")]
-    public void DescriptorPagesGrowAndAreReusedAfterCompletionAndAbort(int bindCount)
+    public void DescriptorTablesAreReusedWithinRecordingAndAfterCompletion(int bindCount)
     {
         using VulkanDevice device = VulkanDevice.Create();
         var arena = new GpuPersistentArena(device);
@@ -41,7 +43,7 @@ public sealed class VulkanComputeTests
         {
             using (GpuCommandBuffer aborted = Record()) { aborted.Abort(); }
             int pages = device.DescriptorPoolPageCount;
-            Assert.True(pages >= (bindCount * 2 + 15) / 16, "Both storage-buffer tables must consume page capacity.");
+            Assert.Equal(1, pages);
             for (ulong frame = 1; frame <= 2; frame++)
             {
                 using GpuCommandBuffer commands = Record();

@@ -764,7 +764,7 @@ E2の実装済み契約・移行手順・検証結果は[E2 shader ABI](2026-09-
 | E2a: CommandEncoder再設計（完了） | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす。実装記録は[E2a/E2b ADR](2026-09-06-phase-e2a-e2b-api-adr.md) |
 | E2b: 利用者向けAPIの統合（完了） | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる。実装記録は[E2a/E2b ADR](2026-09-06-phase-e2a-e2b-api-adr.md) |
 | E3: 配置と依存の整理（完了） | 3–6人日 | E2 | src/tools/samples配置統一、RenderGraph抽出、shader containerとIR境界、DevTools.Protocol分離。runtimeにcompiler/server依存が入らないことを検証。実装記録は[フェーズ3 ADR](2026-09-06-phase-3-project-boundaries.md) |
-| E4: descriptorとGPU実行 | 6–10人日 | E1/E2 | pool/heap page再利用、WebGPU有界cache、upload/compute/draw統合、U01の送信・非同期待機・lease/retirementを実装。1k/10k batchと複数frameで容量枯渇せず、生成・待機回数とGPU完了までの寿命を検証 |
+| E4: descriptorとGPU実行（完了） | 6–10人日 | E1/E2 | pool/heap page再利用、WebGPU有界cache、upload/compute/draw統合、U01の送信・非同期待機・lease/retirementを実装。1k/10k batchと複数frameで容量枯渇せず、生成・待機回数とGPU完了までの寿命を検証。実装記録は[E4 ADR](2026-09-06-phase-4-gpu-execution-adr.md) |
 | E5: 2D/Textの再利用とメモリ | 5–9人日 | E4のretirement契約、上位接続はE2b | font共有、atlas予算/eviction/fallback、Scene dirty/sort/batch、allocator接続に加え、U07のTextMetrics・ShapedText再利用・通常描画の入口を整備。長時間利用で予算内に収束し、表示内容を維持 |
 | E6: その他hot pathと配布 | 3–5人日 | E0/E3、API公開例はE2a/E2b/E5 | Interaction/Resourcesを測定して改善。U08/U09のidentity・freeze・graph診断、各APIの独立consumer/Quick Start、CI、SDK/toolchain固定、runtime配布、performance記録を整備 |
 | E7: Browserの完成（必要な場合） | 8–15人日 | E2/E3、E4の非同期契約 | JS/WASM adapter、非同期初期化・completion/readback、canvas表示、device lostを実装。E2と同じ共通契約・サンプルでbrowser conformanceを実行 |

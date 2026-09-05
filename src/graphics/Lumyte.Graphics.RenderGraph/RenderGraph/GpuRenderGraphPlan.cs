@@ -84,6 +84,29 @@ public sealed class GpuRenderGraphPlan
         return Execute(backend, arena, ownsArena: false, null);
     }
 
+    /// <summary>Records, submits, and waits synchronously for GPU completion.</summary>
+    public GpuRenderGraphExecution ExecuteAndWait(IGpuBackend backend) => Execute(backend);
+
+    /// <summary>Records, submits, and waits synchronously using a caller-owned persistent arena.</summary>
+    public GpuRenderGraphExecution ExecuteAndWait(IGpuBackend backend, GpuPersistentArena arena)
+        => Execute(backend, arena);
+
+    /// <summary>
+    /// Submits the graph and returns immediately. GPU-owned resources remain retained by
+    /// <paramref name="retirementQueue"/> until the returned completion token finishes.
+    /// </summary>
+    public GpuRenderGraphExecution Submit(
+        IGpuBackend backend,
+        GpuRetirementQueue retirementQueue)
+        => ExecuteAsync(backend, retirementQueue);
+
+    /// <summary>Submits without waiting, using a caller-owned persistent arena.</summary>
+    public GpuRenderGraphExecution Submit(
+        IGpuBackend backend,
+        GpuPersistentArena arena,
+        GpuRetirementQueue retirementQueue)
+        => ExecuteAsync(backend, arena, retirementQueue);
+
     /// <summary>
     /// Submits the graph without waiting for the GPU. Transient resources are retired through
     /// <paramref name="retirementQueue"/> after the returned completion token finishes.

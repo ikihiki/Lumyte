@@ -76,7 +76,7 @@ frame.AddContributor(
 
 GpuRenderGraphPlan plan = frame.Compile(planCache);
 using GpuRenderGraphExecution execution =
-    plan.ExecuteAsync(backend, transientArena, retirementQueue);
+    plan.Submit(backend, transientArena, retirementQueue);
 ```
 
 `AddTo` imports and borrows the supplied target and material textures. It declares each sampled texture at its

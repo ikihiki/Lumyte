@@ -371,14 +371,25 @@ public sealed class DirectX12RenderingTests
         resources.SetWritableBuffer(0, writableView.Id);
 
         GpuCommandBuffer commands = device.MainQueue.StartCommandRecording()
-            .SetComputePipeline(pipeline)
-            .SetComputeResourceTable(resources)
+            .SetComputePipeline(pipeline);
+        for (int i = 0; i < 10_000; i++)
+        {
+            commands.SetComputeResourceTable(resources);
+        }
+        commands
             .Dispatch(2, 2)
             .Barrier(GpuStage.ComputeShader, GpuStage.Copy)
             .CopyTextureToMemory(texture, buffers.AddressOf(readback), new(2, 2, 4, 8));
         using GpuSemaphore completion = device.MainQueue.CreateSemaphore();
         device.MainQueue.Submit([commands], completion, 1);
         device.MainQueue.Wait(completion, 1);
+        GpuCommandBuffer nextFrame = device.MainQueue.StartCommandRecording()
+            .SetComputePipeline(pipeline)
+            .SetComputeResourceTable(resources)
+            .Dispatch(2, 2);
+        device.MainQueue.Submit([nextFrame], completion, 2);
+        device.MainQueue.Wait(completion, 2);
+        DirectX12DescriptorHeapPoolStatistics heapPool = device.DescriptorHeapPoolStatistics;
         byte[] actual = readbackMemory.MappedBytes()[..16].ToArray();
 
         device.DestroyComputePipeline(pipeline);
@@ -392,6 +403,9 @@ public sealed class DirectX12RenderingTests
         textures.VerifyEmpty();
 
         AssertSolidStorageTexture(actual);
+        Assert.Equal(1, heapPool.CreationCount);
+        Assert.Equal(1, heapPool.ReuseCount);
+        Assert.Equal(1, heapPool.PooledHeapCount);
     }
 
     [Fact]
