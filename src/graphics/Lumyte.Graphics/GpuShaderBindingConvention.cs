@@ -9,12 +9,14 @@ namespace Lumyte.Graphics;
 public static class GpuShaderBindingConvention
 {
     private static readonly byte[] s_abiHash = SHA256.HashData(
-        "Lumyte.RenderGraph.ShaderBindings.v1;texture-table=0;sampler-table=1;buffer-table=2;descriptor-index=uint32;root-data=128"u8);
+        "Lumyte.RenderGraph.ShaderBindings.v2;texture-table=0;sampler-table=1;buffer-table=2;storage-texture-table=3;writable-buffer-table=4;descriptor-index=uint32;root-data=128"u8);
 
-    public const int Version = 1;
+    public const int Version = 2;
     public const int TextureTable = 0;
     public const int SamplerTable = 1;
     public const int BufferTable = 2;
+    public const int StorageTextureTable = 3;
+    public const int WritableBufferTable = 4;
     public const int RootDataSize = 128;
 
     /// <summary>SHA-256 identity passed to shader packages and pipeline creation.</summary>

@@ -8,6 +8,7 @@ public enum GpuBackendCapabilities
     RasterPipeline = 1 << 1,
     DeviceOwnedResources = 1 << 2,
     MemoryAliasing = 1 << 3,
+    ComputePipeline = 1 << 4,
 }
 
 /// <summary>

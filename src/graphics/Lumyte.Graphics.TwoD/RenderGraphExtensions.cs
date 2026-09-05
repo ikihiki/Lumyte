@@ -224,7 +224,7 @@ public static class RenderGraphExtensions
                 nameof(target));
         }
 
-        var buffers = new List<GpuRenderGraphBuffer>(2);
+        var buffers = new List<GpuRenderGraphBuffer>(3);
         GpuRenderGraphBuffer primitive = default;
         if (displayList.PrimitiveBuffer is { } primitiveBuffer)
         {
@@ -238,6 +238,13 @@ public static class RenderGraphExtensions
             polygon = importBuffer(
                 $"{name}-polygons", polygonBuffer.Buffer, polygonBuffer.Description);
             buffers.Add(polygon);
+        }
+        GpuRenderGraphBuffer path = default;
+        if (displayList.PathBuffer is { } pathBuffer)
+        {
+            path = importBuffer(
+                $"{name}-paths", pathBuffer.Buffer, pathBuffer.Description);
+            buffers.Add(path);
         }
 
         var images = new GpuRenderGraphTexture[displayList.Images.Count];
@@ -255,6 +262,7 @@ public static class RenderGraphExtensions
             options,
             primitive,
             polygon,
+            path,
             images);
         GpuRenderGraphPassBuilder builder = addPass(
             name,
@@ -268,6 +276,13 @@ public static class RenderGraphExtensions
         if (!polygon.IsNull)
         {
             builder.Read(polygon, GpuStage.VertexShader, GpuBarrierHazards.Descriptors);
+        }
+        if (!path.IsNull)
+        {
+            builder.Read(
+                path,
+                GpuStage.VertexShader | GpuStage.PixelShader,
+                GpuBarrierHazards.Descriptors);
         }
         foreach (GpuRenderGraphTexture image in images)
         {
@@ -300,9 +315,12 @@ public static class RenderGraphExtensions
 
         foreach (PreparedBatch batch in state.DisplayList.Batches)
         {
-            GpuRenderGraphBuffer resource = batch.Kind == PreparedBatchKind.Polygon
-                ? state.PolygonBuffer
-                : state.PrimitiveBuffer;
+            GpuRenderGraphBuffer resource = batch.Kind switch
+            {
+                PreparedBatchKind.Polygon => state.PolygonBuffer,
+                PreparedBatchKind.Path => state.PathBuffer,
+                _ => state.PrimitiveBuffer,
+            };
             GpuBufferView view = context.GetBufferView(
                 resource,
                 new(batch.BufferOffset, batch.BufferLength));
@@ -371,5 +389,6 @@ public static class RenderGraphExtensions
         RenderTargetOptions Options,
         GpuRenderGraphBuffer PrimitiveBuffer,
         GpuRenderGraphBuffer PolygonBuffer,
+        GpuRenderGraphBuffer PathBuffer,
         GpuRenderGraphTexture[] Images);
 }

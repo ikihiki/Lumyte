@@ -33,12 +33,14 @@ public sealed class SceneSnapshot : IDisposable, IPreparedDrawing
     internal IReadOnlyList<PreparedImage> Images => images;
     internal OwnedBuffer? PrimitiveBuffer => RequireAlive(primitiveBuffer);
     internal OwnedBuffer? PolygonBuffer => null;
+    internal OwnedBuffer? PathBuffer => null;
 
     Renderer IPreparedDrawing.Owner => Owner;
     IReadOnlyList<PreparedBatch> IPreparedDrawing.Batches => Batches;
     IReadOnlyList<PreparedImage> IPreparedDrawing.Images => Images;
     OwnedBuffer? IPreparedDrawing.PrimitiveBuffer => PrimitiveBuffer;
     OwnedBuffer? IPreparedDrawing.PolygonBuffer => null;
+    OwnedBuffer? IPreparedDrawing.PathBuffer => null;
 
     public SceneUpdateStatistics Update()
     {

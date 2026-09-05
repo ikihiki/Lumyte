@@ -59,15 +59,49 @@ public static class ComputeRenderGraphExtensions
 
     private static void Record(GpuRenderGraphPassContextView context, ComputeData compute)
     {
-        GpuCommandBuffer commands = context.Commands.SetComputePipeline(compute.Pipeline);
+        int readOnlySlotCount = RequiredSlotCount(compute.Buffers, writable: false);
+        int writableSlotCount = RequiredSlotCount(compute.Buffers, writable: true);
+        var resources = new GpuResourceTable(
+            textureSlotCount: 0,
+            samplerSlotCount: 0,
+            bufferSlotCount: readOnlySlotCount,
+            storageTextureSlotCount: 0,
+            writableBufferSlotCount: writableSlotCount);
         foreach (ComputeBufferBinding buffer in compute.Buffers)
         {
-            commands.SetComputeBuffer(buffer.Slot, context.GetBuffer(buffer.Buffer));
+            bool writable = buffer.Access != GpuRenderGraphAccess.Read;
+            GpuBufferView view = context.GetBufferView(
+                buffer.Buffer,
+                new(Access: writable ? GpuBufferViewAccess.ReadWrite : GpuBufferViewAccess.ReadOnly));
+            if (writable)
+            {
+                resources.SetWritableBuffer(checked((int)buffer.Slot), view.Id);
+            }
+            else
+            {
+                resources.SetBuffer(checked((int)buffer.Slot), view.Id);
+            }
         }
-        commands.Dispatch(
-            compute.Dispatch.GroupCountX,
-            compute.Dispatch.GroupCountY,
-            compute.Dispatch.GroupCountZ);
+        context.Commands
+            .SetComputePipeline(compute.Pipeline)
+            .SetComputeResourceTable(resources)
+            .Dispatch(
+                compute.Dispatch.GroupCountX,
+                compute.Dispatch.GroupCountY,
+                compute.Dispatch.GroupCountZ);
+    }
+
+    private static int RequiredSlotCount(
+        IReadOnlyList<ComputeBufferBinding> buffers,
+        bool writable)
+    {
+        uint? maximum = null;
+        foreach (ComputeBufferBinding buffer in buffers)
+        {
+            if ((buffer.Access != GpuRenderGraphAccess.Read) != writable) { continue; }
+            maximum = maximum is null ? buffer.Slot : Math.Max(maximum.Value, buffer.Slot);
+        }
+        return maximum is null ? 0 : checked((int)maximum.Value + 1);
     }
 
     private delegate GpuRenderGraphPassBuilder AddPassDelegate(

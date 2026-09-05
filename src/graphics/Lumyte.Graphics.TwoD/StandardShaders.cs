@@ -8,6 +8,9 @@ internal static class StandardShaders
     public static GpuShaderPackage LoadPhaseTwo()
         => Load("Lumyte.Graphics.TwoD.Shaders.PhaseTwo.lshp");
 
+    public static GpuShaderPackage LoadPhaseThree()
+        => Load("Lumyte.Graphics.TwoD.Shaders.PhaseThree.lshp");
+
     private static GpuShaderPackage Load(string resourceName)
     {
         using Stream stream = typeof(StandardShaders).Assembly.GetManifestResourceStream(resourceName)

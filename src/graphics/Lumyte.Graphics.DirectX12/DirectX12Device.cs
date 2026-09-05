@@ -20,6 +20,7 @@ public sealed unsafe partial class DirectX12Device :
     private readonly Dictionary<ulong, TextureViewRecord> textureViews = [];
     private readonly Dictionary<ulong, GpuSamplerDescription> samplers = [];
     private readonly Dictionary<ulong, PipelineRecord> pipelines = [];
+    private readonly Dictionary<ulong, ComputePipelineRecord> computePipelines = [];
     private ulong nextHandle = 1;
     private bool disposed;
 
@@ -63,7 +64,8 @@ public sealed unsafe partial class DirectX12Device :
     public GpuBackendCapabilities Capabilities =>
         GpuBackendCapabilities.ExplicitPlacement
         | GpuBackendCapabilities.MemoryAliasing
-        | GpuBackendCapabilities.RasterPipeline;
+        | GpuBackendCapabilities.RasterPipeline
+        | GpuBackendCapabilities.ComputePipeline;
 
     public byte[] RoundTripBuffer(ReadOnlySpan<byte> source)
     {
@@ -161,6 +163,7 @@ public sealed unsafe partial class DirectX12Device :
     {
         if (disposed) { return; }
         disposed = true;
+        foreach (ComputePipelineRecord pipeline in computePipelines.Values) { pipeline.Dispose(); }
         foreach (PipelineRecord pipeline in pipelines.Values) { pipeline.Dispose(); }
         foreach (TextureViewRecord view in textureViews.Values) { view.Dispose(); }
         foreach (TextureRecord texture in textures.Values) { texture.Dispose(); }

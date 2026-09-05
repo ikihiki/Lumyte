@@ -60,8 +60,10 @@ public interface IGpuCommandRecorder
     void SetRootData(ReadOnlySpan<byte> data);
     void SetComputePipeline(GpuComputePipelineHandle pipeline)
         => throw new NotSupportedException("Compute pipelines are not implemented by this backend.");
-    void SetComputeBuffer(uint slot, GpuBufferHandle buffer)
-        => throw new NotSupportedException("Compute buffers are not implemented by this backend.");
+    void SetComputeResourceTable(GpuResourceTable table)
+        => throw new NotSupportedException("Compute resource tables are not implemented by this backend.");
+    void SetComputeRootData(ReadOnlySpan<byte> data)
+        => throw new NotSupportedException("Compute root data is not implemented by this backend.");
     void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
         => throw new NotSupportedException("Compute dispatch is not implemented by this backend.");
     void End();
@@ -207,12 +209,21 @@ public sealed class GpuCommandBuffer
         return this;
     }
 
-    public GpuCommandBuffer SetComputeBuffer(uint slot, GpuBufferHandle buffer)
+    public GpuCommandBuffer SetComputeResourceTable(GpuResourceTable table)
     {
         VerifyOpen();
-        if (rendering) { throw new InvalidOperationException("A compute buffer cannot be bound inside rendering."); }
-        if (buffer.IsNull) { throw new ArgumentException("Buffer cannot be null.", nameof(buffer)); }
-        recorder.SetComputeBuffer(slot, buffer);
+        if (rendering) { throw new InvalidOperationException("A compute resource table cannot be bound inside rendering."); }
+        ArgumentNullException.ThrowIfNull(table);
+        recorder.SetComputeResourceTable(table);
+        return this;
+    }
+
+    public GpuCommandBuffer SetComputeRootData(ReadOnlySpan<byte> data)
+    {
+        VerifyOpen();
+        if (rendering) { throw new InvalidOperationException("Compute root data cannot be set inside rendering."); }
+        GpuShaderBindingConvention.ValidateRootData(data);
+        recorder.SetComputeRootData(data);
         return this;
     }
 

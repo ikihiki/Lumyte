@@ -15,4 +15,8 @@ internal readonly record struct RecordedCommand(
     ImageId Image = default,
     Rect Source = default,
     PolygonGeometry? Geometry = null,
-    DistanceField DistanceField = default);
+    DistanceField DistanceField = default,
+    PathGeometry? Path = null,
+    FillRule FillRule = FillRule.NonZero,
+    StrokeStyle? Stroke = null,
+    PathClip? PathClip = null);

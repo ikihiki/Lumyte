@@ -347,18 +347,23 @@ shader は共通 bindless table の `TextureId`、`SamplerId`、`BufferId` を�
 
 resource 本体の handle や可変長データを root data に入れない。
 
-## Graphics 基盤に必要な追加
+## Graphics 基盤の compute 書き込み ABI
 
-現状の `GpuCommandBuffer` と Render Graph だけでは、GPU path/SDF の全工程を効率よく表現できない。TwoD 実装に先立って、または第一段階と並行して次を追加する。
+GPU path が使用する compute 書き込み ABI は Graphics 共通層へ実装済みであり、TwoD 専用のバッファ直結 API は持たない。
 
-1. compute pipeline でも共通 `GpuResourceTable` と root data を設定できる API。
-2. read-write ShaderData buffer と storage texture の graph access 宣言。
-3. buffer の部分更新、buffer-to-buffer copy、再利用可能な upload ring。
-4. prefix sum 結果を使う indirect dispatch。後から indirect draw も追加する。
-5. compute、vertex、pixel 間の正確な resource state と barrier。
-6. fence-safe な永続 buffer/atlas の拡張と破棄。
+1. raster と compute は同じ `GpuResourceTable` を使い、read-only texture、sampler、read-only buffer、storage texture、writable buffer の五つの論理 table を共有する。
+2. `GpuBufferViewAccess.ReadWrite` と `GpuTextureViewAccess.ReadWrite` で書き込み可能 view を明示し、書き込み table はその view だけを受け付ける。
+3. Render Graph の `Read`、`Write`、`ReadWrite` 宣言から適切な view と table を生成する。
+4. DirectX 12、Vulkan、WebGPU の compute pipeline は同じ table 番号と shader ABI hash を使う。
 
-WebGPU では sampled texture と storage texture の binding 制約が異なるため、同じ `TextureId` で無理に同一配列へ混在させない。共通規約に storage view table を追加するか、初期 SDF/path coverage を read-write buffer に置くかを基盤実装時に決定する。公開 TwoD API はこの差を露出しない。
+残る基盤拡張は次のとおり。
+
+1. buffer-to-buffer copy と再利用可能な upload ring。
+2. prefix sum 結果を使う indirect dispatch。後から indirect draw も追加する。
+3. compute、vertex、pixel 間のより細かな resource state と barrier。
+4. fence-safe な永続 buffer/atlas の拡張と破棄。
+
+WebGPU では sampled texture と storage texture の binding 制約が異なるため、read-only texture table と storage texture table を分離する。公開 TwoD API はこの差を露出しない。
 
 ## メモリと差分更新
 

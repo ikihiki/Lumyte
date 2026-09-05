@@ -156,6 +156,57 @@ public sealed class CommandEncoder : IDisposable
             Geometry: geometry));
     }
 
+    public void DrawPath(
+        PathGeometry path,
+        Matrix3x2 transform,
+        Brush brush,
+        FillRule fillRule = FillRule.NonZero,
+        PathClip? clip = null)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (path.IsEmpty) { throw new ArgumentException("Path cannot be empty.", nameof(path)); }
+        ValidateTransform(transform);
+        if (!Enum.IsDefined(fillRule)) { throw new ArgumentOutOfRangeException(nameof(fillRule)); }
+        Add(new(
+            DrawCommandKind.Path,
+            path.Bounds,
+            brush.Validate(),
+            transform * state.Transform,
+            state.Clip,
+            Path: path,
+            FillRule: fillRule,
+            PathClip: clip?.Validate()));
+    }
+
+    public void StrokePath(
+        PathGeometry path,
+        Matrix3x2 transform,
+        StrokeStyle stroke,
+        Brush brush,
+        PathClip? clip = null)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(stroke);
+        if (path.IsEmpty) { throw new ArgumentException("Path cannot be empty.", nameof(path)); }
+        ValidateTransform(transform);
+        float halfWidth = stroke.Width * 0.5f;
+        Rect bounds = path.Bounds;
+        bounds = new(
+            bounds.X - halfWidth,
+            bounds.Y - halfWidth,
+            bounds.Width + stroke.Width,
+            bounds.Height + stroke.Width);
+        Add(new(
+            DrawCommandKind.Path,
+            bounds,
+            brush.Validate(),
+            transform * state.Transform,
+            state.Clip,
+            Path: path,
+            Stroke: stroke,
+            PathClip: clip?.Validate()));
+    }
+
     public DisplayList Finish()
     {
         VerifyOpen();

@@ -37,24 +37,32 @@ public sealed class CommonPassExtensionsTests
     public void ComputeBindsDeclaredBuffersAndDispatches()
     {
         var graph = new GpuRenderGraph();
-        var description = new GpuBufferDescription(64, GpuBufferUsage.ShaderData);
-        GpuRenderGraphBuffer input = graph.ImportBuffer("input", new(11, 64), description);
-        GpuRenderGraphBuffer output = graph.ImportBuffer("output", new(12, 64), description);
+        GpuRenderGraphBuffer input = graph.ImportBuffer(
+            "input",
+            new(11, 64),
+            new(64, GpuBufferUsage.ShaderData));
+        GpuRenderGraphBuffer output = graph.ImportBuffer(
+            "output",
+            new(12, 64),
+            new(64, GpuBufferUsage.Storage));
         var compute = new ComputeData(
             new(9),
             new(2, 3, 4),
             [
                 new(0, input, GpuRenderGraphAccess.Read),
-                new(1, output, GpuRenderGraphAccess.Write),
+                new(0, output, GpuRenderGraphAccess.Write),
             ]);
         var recorder = new RecordingCommandRecorder();
+        using var backend = new RecordingBackend(recorder);
 
         graph.AddCompute("compute", compute);
         GpuRenderGraphPlan plan = graph.Compile();
-        plan.Record(new RecordingQueue(recorder));
+        using GpuRenderGraphExecution execution = plan.Execute(backend);
 
         Assert.Equal(new GpuComputePipelineHandle(9), recorder.ComputePipeline);
-        Assert.Equal([(0u, 11ul), (1u, 12ul)], recorder.ComputeBuffers);
+        Assert.NotNull(recorder.ComputeResources);
+        Assert.Equal(new BufferId(1), recorder.ComputeResources.GetBuffer(0));
+        Assert.Equal(new BufferId(2), recorder.ComputeResources.GetWritableBuffer(0));
         Assert.Equal((2u, 3u, 4u), recorder.RecordedDispatch);
         Assert.Equal(2, Assert.Single(plan.Barriers).ResourceCount);
     }
@@ -108,13 +116,35 @@ public sealed class CommonPassExtensionsTests
             new(0.1f, 0.2f, 0.3f, 1));
     }
 
+    private sealed class RecordingBackend : IGpuBackend
+    {
+        private ulong nextView;
+
+        public RecordingBackend(RecordingCommandRecorder recorder) => MainQueue = new RecordingQueue(recorder);
+
+        public GpuBackendCapabilities Capabilities => GpuBackendCapabilities.DeviceOwnedResources;
+        public IGpuQueue MainQueue { get; }
+
+        public GpuBufferView CreateBufferView(GpuBufferHandle buffer, GpuBufferViewDescription description)
+            => new(new(++nextView), buffer, description.Normalize(buffer));
+
+        public void DestroyBufferView(GpuBufferView view) { }
+    }
+
     private sealed class RecordingQueue(RecordingCommandRecorder recorder) : IGpuQueue
     {
         public GpuCommandBuffer StartCommandRecording() => GpuBackendCommands.CreateCommandBuffer(recorder);
-        public GpuSemaphore CreateSemaphore(ulong initialValue = 0) => throw new NotSupportedException();
+        public GpuSemaphore CreateSemaphore(ulong initialValue = 0) => new RecordingSemaphore();
         public void Submit(ReadOnlySpan<GpuCommandBuffer> commandBuffers, GpuSemaphore signalSemaphore, ulong signalValue)
-            => throw new NotSupportedException();
-        public void Wait(GpuSemaphore semaphore, ulong value) => throw new NotSupportedException();
+        {
+            foreach (GpuCommandBuffer commandBuffer in commandBuffers) { GpuBackendCommands.Finish(commandBuffer); }
+        }
+        public void Wait(GpuSemaphore semaphore, ulong value) { }
+    }
+
+    private sealed class RecordingSemaphore : GpuSemaphore
+    {
+        public override void Dispose() { }
     }
 
     private sealed class RecordingCommandRecorder : IGpuCommandRecorder
@@ -124,7 +154,7 @@ public sealed class CommonPassExtensionsTests
         public GpuClearColor ClearColor { get; private set; }
         public (uint VertexCount, uint InstanceCount) RecordedDraw { get; private set; }
         public GpuComputePipelineHandle ComputePipeline { get; private set; }
-        public List<(uint Slot, ulong Buffer)> ComputeBuffers { get; } = [];
+        public GpuResourceTable? ComputeResources { get; private set; }
         public (uint X, uint Y, uint Z) RecordedDispatch { get; private set; }
 
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) => Events.Add("barrier");
@@ -146,7 +176,7 @@ public sealed class CommonPassExtensionsTests
         public void SetResourceTable(GpuResourceTable table) { }
         public void SetRootData(ReadOnlySpan<byte> data) { }
         public void SetComputePipeline(GpuComputePipelineHandle pipeline) => ComputePipeline = pipeline;
-        public void SetComputeBuffer(uint slot, GpuBufferHandle buffer) => ComputeBuffers.Add((slot, buffer.Value));
+        public void SetComputeResourceTable(GpuResourceTable table) => ComputeResources = table;
         public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ) =>
             RecordedDispatch = (groupCountX, groupCountY, groupCountZ);
         public void End() { }

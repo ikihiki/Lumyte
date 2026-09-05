@@ -74,6 +74,7 @@ public enum GpuBufferUsage
     CopyDestination = 1 << 1,
     ShaderData = 1 << 2,
     IndirectArguments = 1 << 3,
+    Storage = 1 << 4,
 }
 
 public readonly record struct GpuBufferDescription(ulong Size, GpuBufferUsage Usage)
@@ -227,7 +228,14 @@ public readonly record struct GpuTextureViewDescription(
     uint BaseMip = 0,
     uint MipCount = uint.MaxValue,
     uint BaseLayer = 0,
-    uint LayerCount = uint.MaxValue);
+    uint LayerCount = uint.MaxValue,
+    GpuTextureViewAccess Access = GpuTextureViewAccess.ReadOnly);
+
+public enum GpuTextureViewAccess
+{
+    ReadOnly,
+    ReadWrite,
+}
 
 public readonly record struct GpuTextureView(
     TextureId Id,
@@ -236,11 +244,19 @@ public readonly record struct GpuTextureView(
 
 public readonly record struct GpuBufferViewDescription(
     ulong Offset = 0,
-    ulong Length = 0)
+    ulong Length = 0,
+    GpuBufferViewAccess Access = GpuBufferViewAccess.ReadOnly)
 {
     public GpuBufferViewDescription Normalize(GpuBufferHandle buffer)
     {
         if (buffer.IsNull) { throw new ArgumentException("Buffer cannot be null.", nameof(buffer)); }
+        if (!Enum.IsDefined(Access))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(buffer),
+                Access,
+                "Buffer view access is invalid.");
+        }
         if (Offset >= buffer.Size)
         {
             throw new ArgumentException("Buffer view offset must be inside the buffer.", nameof(buffer));
@@ -254,6 +270,12 @@ public readonly record struct GpuBufferViewDescription(
         }
         return this with { Length = resolvedLength };
     }
+}
+
+public enum GpuBufferViewAccess
+{
+    ReadOnly,
+    ReadWrite,
 }
 
 public readonly record struct GpuBufferView(

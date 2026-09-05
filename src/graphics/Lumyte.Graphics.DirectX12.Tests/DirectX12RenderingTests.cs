@@ -76,6 +76,19 @@ public sealed class DirectX12RenderingTests
         }
         """;
 
+    private const string StorageTextureComputeSource = """
+        RWTexture2D<float4> storageTextures[64] : register(u0, space3);
+        RWByteAddressBuffer writableBuffers[64] : register(u0, space4);
+
+        [numthreads(1, 1, 1)]
+        void writeStorageTexture(uint3 threadId : SV_DispatchThreadID)
+        {
+            uint offset = (threadId.y * 2 + threadId.x) * 16;
+            writableBuffers[0].Store4(offset, asuint(float4(0.25, 0.5, 0.75, 1.0)));
+            storageTextures[0][threadId.xy] = asfloat(writableBuffers[0].Load4(offset));
+        }
+        """;
+
     [Fact]
     [Trait("Category", "DirectX12Conformance")]
     public void RasterizedTriangleCanBeReadBack()
@@ -314,6 +327,75 @@ public sealed class DirectX12RenderingTests
 
     [Fact]
     [Trait("Category", "DirectX12Conformance")]
+    public void ComputeWritesStorageResourcesThroughCommonResourceTable()
+    {
+        using DirectX12Device device = DirectX12Device.Create();
+        using var textureArena = new GpuPersistentArena(device);
+        using var bufferArena = new GpuPersistentArena(device);
+        var textures = new GpuManualTextureAllocator(device, textureArena);
+        var buffers = new GpuManualBufferAllocator(device, bufferArena);
+        var textureDescription = new GpuTextureDescription(
+            2,
+            2,
+            GpuFormat.Rgba8Unorm,
+            GpuTextureUsage.Storage | GpuTextureUsage.CopySource);
+        GpuMemoryAllocation textureMemory = textures.AllocateMemory(textureDescription);
+        GpuTextureHandle texture = textures.CreatePlacedTexture(textureDescription, textureMemory);
+        GpuTextureView view = textures.CreateView(
+            texture,
+            new(GpuFormat.Rgba8Unorm, Access: GpuTextureViewAccess.ReadWrite));
+        var readbackDescription = new GpuBufferDescription(16, GpuBufferUsage.CopyDestination);
+        GpuMemoryAllocation readbackMemory = buffers.AllocateMemory(
+            readbackDescription,
+            GpuMemoryKind.HostCached);
+        GpuBufferHandle readback = buffers.CreatePlacedBuffer(readbackDescription, readbackMemory);
+        var writableDescription = new GpuBufferDescription(64, GpuBufferUsage.Storage);
+        GpuMemoryAllocation writableMemory = buffers.AllocateMemory(
+            writableDescription,
+            GpuMemoryKind.DeviceLocal);
+        GpuBufferHandle writable = buffers.CreatePlacedBuffer(writableDescription, writableMemory);
+        GpuBufferView writableView = buffers.CreateView(
+            writable,
+            new(Access: GpuBufferViewAccess.ReadWrite));
+        byte[] abiHash = GpuShaderBindingConvention.AbiHash.ToArray();
+        GpuShaderPackage package = CreateComputePackage(
+            abiHash,
+            StorageTextureComputeSource,
+            "writeStorageTexture");
+        GpuComputePipelineHandle pipeline = device.CreateComputePipeline(
+            package,
+            "writeStorageTexture",
+            abiHash);
+        var resources = new GpuResourceTable(0, 0, 0, 1, 1);
+        resources.SetStorageTexture(0, view.Id);
+        resources.SetWritableBuffer(0, writableView.Id);
+
+        GpuCommandBuffer commands = device.MainQueue.StartCommandRecording()
+            .SetComputePipeline(pipeline)
+            .SetComputeResourceTable(resources)
+            .Dispatch(2, 2)
+            .Barrier(GpuStage.ComputeShader, GpuStage.Copy)
+            .CopyTextureToMemory(texture, buffers.AddressOf(readback), new(2, 2, 4, 8));
+        using GpuSemaphore completion = device.MainQueue.CreateSemaphore();
+        device.MainQueue.Submit([commands], completion, 1);
+        device.MainQueue.Wait(completion, 1);
+        byte[] actual = readbackMemory.MappedBytes()[..16].ToArray();
+
+        device.DestroyComputePipeline(pipeline);
+        device.DestroyTextureView(view);
+        device.DestroyBufferView(writableView);
+        buffers.Retire(writable, writableMemory, new(1));
+        buffers.Retire(readback, readbackMemory, new(1));
+        buffers.Collect(new(1));
+        textures.Retire(texture, textureMemory, new(1));
+        textures.Collect(new(1));
+        textures.VerifyEmpty();
+
+        AssertSolidStorageTexture(actual);
+    }
+
+    [Fact]
+    [Trait("Category", "DirectX12Conformance")]
     public void UnsupportedDualSourceBlendIsRejected()
     {
         using DirectX12Device device = DirectX12Device.Create();
@@ -346,6 +428,25 @@ public sealed class DirectX12RenderingTests
             new(GpuShaderCodeFormat.Dxil, GpuShaderStage.Pixel, pixelEntryPoint, "directx12", "ps_6_0", "", abiHash, pixel),
         ]);
         return GpuShaderPackage.Read(bytes);
+    }
+
+    private static GpuShaderPackage CreateComputePackage(
+        byte[] abiHash,
+        string source,
+        string entryPoint)
+    {
+        byte[] compute = Compile(source, entryPoint, "cs_6_0");
+        return GpuShaderPackage.Read(GpuShaderPackageWriter.Write([
+            new(
+                GpuShaderCodeFormat.Dxil,
+                GpuShaderStage.Compute,
+                entryPoint,
+                "directx12",
+                "cs_6_0",
+                "",
+                abiHash,
+                compute),
+        ]));
     }
 
     private static byte[] Compile(string source, string entryPoint, string profile)
@@ -391,6 +492,18 @@ public sealed class DirectX12RenderingTests
     {
         int offset = (y * width + x) * 4;
         Assert.Equal(new byte[] { red, green, blue, alpha }, pixels.Slice(offset, 4).ToArray());
+    }
+
+    private static void AssertSolidStorageTexture(ReadOnlySpan<byte> actual)
+    {
+        byte[] expected = Enumerable.Repeat(new byte[] { 64, 128, 191, 255 }, 4)
+            .SelectMany(static value => value)
+            .ToArray();
+        bool matches = actual.Length == expected.Length
+            && actual.ToArray().Zip(expected).All(pair => Math.Abs(pair.First - pair.Second) <= 1);
+        Assert.True(
+            matches,
+            $"Expected [{string.Join(", ", expected)}] within 1, but was [{string.Join(", ", actual.ToArray())}].");
     }
 
     private static void AssertPixelNear(

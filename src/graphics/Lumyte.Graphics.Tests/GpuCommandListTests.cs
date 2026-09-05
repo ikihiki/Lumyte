@@ -95,6 +95,21 @@ public sealed class GpuCommandBufferTests
         Assert.Equal(["upload:2+0:16", "barrier:Copy>PixelShader:None", "begin", "pipeline", "resources", "root:4", "draw:6:1", "end"], recorder.Events);
     }
 
+    [Fact]
+    public void ComputeUsesTheSharedResourceTableOutsideRendering()
+    {
+        var recorder = new RecordingCommandRecorder();
+        var table = new GpuResourceTable(0, 0, 1, 0, 1);
+
+        new GpuCommandBuffer(recorder)
+            .SetComputePipeline(new(9))
+            .SetComputeResourceTable(table)
+            .SetComputeRootData(BitConverter.GetBytes(4u))
+            .Dispatch(2, 3, 1);
+
+        Assert.Equal(["compute-pipeline", "compute-resources", "compute-root:4", "dispatch:2:3:1"], recorder.Events);
+    }
+
     private sealed class RecordingCommandRecorder : IGpuCommandRecorder
     {
         public List<string> Events { get; } = [];
@@ -109,6 +124,11 @@ public sealed class GpuCommandBufferTests
         public void CopyTextureToMemory(GpuTextureHandle source, GpuMemoryAddress destination, GpuTextureCopyFootprint footprint) => Events.Add($"copy:{destination.AllocationId}+{destination.Offset}:{footprint.RequiredBytes}");
         public void SetResourceTable(GpuResourceTable table) => Events.Add("resources");
         public void SetRootData(ReadOnlySpan<byte> data) => Events.Add($"root:{data.Length}");
+        public void SetComputePipeline(GpuComputePipelineHandle pipeline) => Events.Add("compute-pipeline");
+        public void SetComputeResourceTable(GpuResourceTable table) => Events.Add("compute-resources");
+        public void SetComputeRootData(ReadOnlySpan<byte> data) => Events.Add($"compute-root:{data.Length}");
+        public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ) =>
+            Events.Add($"dispatch:{groupCountX}:{groupCountY}:{groupCountZ}");
         public void End() => EndCount++;
     }
 }

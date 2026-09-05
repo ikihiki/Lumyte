@@ -82,4 +82,18 @@ public sealed class GpuResourceTableTests
         Assert.Contains(nameof(IGpuBackend.CreateTextureView), methodNames);
         Assert.Contains(nameof(IGpuBackend.CreateSampler), methodNames);
     }
+
+    [Fact]
+    public void WritableResourcesOccupyIndependentDescriptorIndices()
+    {
+        var table = new GpuResourceTable(0, 0, 0, 2, 3);
+
+        table.SetStorageTexture(1, new(45));
+        table.SetWritableBuffer(2, new(56));
+
+        Assert.Equal(default, table.GetStorageTexture(0));
+        Assert.Equal(new TextureId(45), table.GetStorageTexture(1));
+        Assert.Equal(new BufferId(56), table.GetWritableBuffer(2));
+        Assert.Equal((ulong)2, table.Revision);
+    }
 }

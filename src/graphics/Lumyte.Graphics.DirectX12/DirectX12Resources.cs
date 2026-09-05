@@ -34,7 +34,7 @@ public sealed unsafe partial class DirectX12Device
     {
         VerifyNotDisposed();
         description.Validate();
-        ResourceDesc native = BufferDescription(description.Size);
+        ResourceDesc native = BufferDescription(description.Size, description.Usage);
         ResourceAllocationInfo info = device.GetResourceAllocationInfo(0, 1, in native);
         return new(info.SizeInBytes, info.Alignment, BufferHeapCompatibility);
     }
@@ -209,6 +209,15 @@ public sealed unsafe partial class DirectX12Device
     {
         VerifyNotDisposed();
         TextureRecord record = RequireTexture(texture);
+        if (!Enum.IsDefined(description.Access))
+        {
+            throw new ArgumentOutOfRangeException(nameof(description));
+        }
+        if (description.Access == GpuTextureViewAccess.ReadWrite
+            && (record.Description.Usage & GpuTextureUsage.Storage) == 0)
+        {
+            throw new ArgumentException("Writable texture views require Storage usage.", nameof(description));
+        }
         uint mipCount = description.MipCount == uint.MaxValue
             ? record.Description.MipCount - description.BaseMip
             : description.MipCount;
@@ -319,7 +328,7 @@ public sealed unsafe partial class DirectX12Device
         {
             if (ownsResource)
             {
-                ResourceDesc native = BufferDescription(description.Size);
+                ResourceDesc native = BufferDescription(description.Size, description.Usage);
                 ResourceStates initial = (description.Usage & GpuBufferUsage.CopyDestination) != 0
                     ? ResourceStates.CopyDest
                     : ResourceStates.Common;
@@ -411,9 +420,14 @@ public sealed unsafe partial class DirectX12Device
     {
         VerifyNotDisposed();
         BufferRecord record = RequireBuffer(buffer);
-        if ((record.Description.Usage & GpuBufferUsage.ShaderData) == 0)
+        GpuBufferUsage requiredUsage = description.Access == GpuBufferViewAccess.ReadWrite
+            ? GpuBufferUsage.Storage
+            : GpuBufferUsage.ShaderData;
+        if ((record.Description.Usage & requiredUsage) == 0)
         {
-            throw new ArgumentException("Buffer views require ShaderData usage.", nameof(buffer));
+            throw new ArgumentException(
+                $"{description.Access} buffer views require {requiredUsage} usage.",
+                nameof(buffer));
         }
         GpuBufferViewDescription normalized = description.Normalize(buffer);
         ulong id = NextHandle();
@@ -478,9 +492,12 @@ public sealed unsafe partial class DirectX12Device
         }
     }
 
-    private static ResourceDesc BufferDescription(ulong size) => new(
+    private static ResourceDesc BufferDescription(ulong size, GpuBufferUsage usage = GpuBufferUsage.None) => new(
         ResourceDimension.Buffer, 0, size, 1, 1, 1, Format.FormatUnknown,
-        new SampleDesc(1, 0), TextureLayout.LayoutRowMajor, ResourceFlags.None);
+        new SampleDesc(1, 0), TextureLayout.LayoutRowMajor,
+        (usage & GpuBufferUsage.Storage) != 0
+            ? ResourceFlags.AllowUnorderedAccess
+            : ResourceFlags.None);
 
     private static ResourceDesc TextureDescription(GpuTextureDescription description) => new(
         ResourceDimension.Texture2D,

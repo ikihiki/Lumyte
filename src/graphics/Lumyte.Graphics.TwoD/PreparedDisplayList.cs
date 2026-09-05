@@ -5,6 +5,7 @@ public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
 {
     private OwnedBuffer? primitiveBuffer;
     private OwnedBuffer? polygonBuffer;
+    private OwnedBuffer? pathBuffer;
     private bool disposed;
 
     internal PreparedDisplayList(
@@ -14,7 +15,8 @@ public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
         PreparedBatch[] batches,
         PreparedImage[] images,
         OwnedBuffer? primitiveBuffer,
-        OwnedBuffer? polygonBuffer)
+        OwnedBuffer? polygonBuffer,
+        OwnedBuffer? pathBuffer)
     {
         Owner = owner;
         TargetDescription = targetDescription;
@@ -23,6 +25,7 @@ public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
         Images = images;
         this.primitiveBuffer = primitiveBuffer;
         this.polygonBuffer = polygonBuffer;
+        this.pathBuffer = pathBuffer;
     }
 
     public int CommandCount { get; }
@@ -34,19 +37,23 @@ public sealed class PreparedDisplayList : IDisposable, IPreparedDrawing
     internal IReadOnlyList<PreparedImage> Images { get; }
     internal OwnedBuffer? PrimitiveBuffer => RequireAlive(primitiveBuffer);
     internal OwnedBuffer? PolygonBuffer => RequireAlive(polygonBuffer);
+    internal OwnedBuffer? PathBuffer => RequireAlive(pathBuffer);
 
     Renderer IPreparedDrawing.Owner => Owner;
     IReadOnlyList<PreparedBatch> IPreparedDrawing.Batches => Batches;
     IReadOnlyList<PreparedImage> IPreparedDrawing.Images => Images;
     OwnedBuffer? IPreparedDrawing.PrimitiveBuffer => PrimitiveBuffer;
     OwnedBuffer? IPreparedDrawing.PolygonBuffer => PolygonBuffer;
+    OwnedBuffer? IPreparedDrawing.PathBuffer => PathBuffer;
 
     public void Dispose()
     {
         if (disposed) { return; }
+        pathBuffer?.Dispose();
         polygonBuffer?.Dispose();
         primitiveBuffer?.Dispose();
         polygonBuffer = null;
+        pathBuffer = null;
         primitiveBuffer = null;
         disposed = true;
     }

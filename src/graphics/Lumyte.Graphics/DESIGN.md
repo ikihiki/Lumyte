@@ -107,21 +107,23 @@ There is no `CreateRenderTarget` ownership shortcut in the core API.
 explicit placement and raster pipelines. Vulkan and DirectX 12 expose explicit placement; WebGPU does not emulate
 independent allocations. Consumers must select the capability required by their path before invoking it.
 
-Shader resources use one bindless-style public contract on every backend. The ABI exposes exactly one logical array
-for each resource kind: textures, samplers, and shader-data buffers. Root data carries descriptor-array indices;
-an index is not a separate shader binding. `GpuResourceTable` supplies the resources currently stored at those
-indices, and `SetResourceTable` activates all three arrays. Array capacity is deliberately absent from
+Shader resources use one bindless-style public contract on every backend. The ABI exposes five logical arrays:
+read-only textures, samplers, read-only shader-data buffers, read-write storage textures, and read-write storage
+buffers. Root data carries descriptor-array indices; an index is not a separate shader binding.
+`GpuResourceTable` supplies the resources currently stored at those indices. `SetResourceTable` and
+`SetComputeResourceTable` activate the same five-array ABI for raster and compute work. Array capacity is deliberately absent from
 `GpuShaderBindingConvention`: it is a backend implementation limit and cannot change the shader ABI hash.
 
 Resource lifetime handles and shader descriptor identities remain separate. `GpuTextureHandle` and
 `GpuBufferHandle` identify the allocations used by copies and graph lifetime tracking. Shader tables contain
 `TextureId`, `SamplerId`, and `BufferId`; texture and buffer IDs identify views and can therefore select a subresource
-or byte range without changing ownership of the underlying resource.
+or byte range without changing ownership of the underlying resource. Writable tables accept only views created with
+`ReadWrite` access, so read/write intent cannot be lost between Render Graph declaration and native binding.
 
 Native descriptor heaps, Vulkan descriptor sets, and WebGPU bind groups are backend implementation details.
-DirectX 12 maps the three logical arrays to register spaces and Vulkan maps them to descriptor sets. Both currently
+DirectX 12 maps the five logical arrays to register spaces and Vulkan maps them to descriptor sets. Both currently
 materialize transient native tables for a command buffer. WebGPU is a compatibility backend: it translates texture,
-sampler, and buffer indices into reserved native binding ranges. Its buffers use device-owned allocation while
+sampler, read-only buffer, storage-texture, and writable-buffer indices into reserved native binding ranges. Its buffers use device-owned allocation while
 `BufferId` still identifies a byte-range view. Bind groups are cached by table identity, native layout, and
 `Revision`; writing the same logical resource preserves the cache, while a changed descriptor index or destroyed
 registered resource invalidates it.

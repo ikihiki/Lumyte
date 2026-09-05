@@ -8,5 +8,6 @@ internal interface IPreparedDrawing
     IReadOnlyList<PreparedImage> Images { get; }
     OwnedBuffer? PrimitiveBuffer { get; }
     OwnedBuffer? PolygonBuffer { get; }
+    OwnedBuffer? PathBuffer { get; }
     void VerifyAlive();
 }

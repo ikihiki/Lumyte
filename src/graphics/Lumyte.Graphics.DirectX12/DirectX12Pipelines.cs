@@ -8,9 +8,7 @@ namespace Lumyte.Graphics.DirectX12;
 
 public sealed unsafe partial class DirectX12Device
 {
-    private const int MaximumRasterTextureDescriptors = 64;
-    private const int MaximumRasterSamplerDescriptors = 64;
-    private const int MaximumRasterBufferDescriptors = 64;
+    private const int MaximumShaderDescriptors = 64;
 
     public GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
@@ -119,28 +117,87 @@ public sealed unsafe partial class DirectX12Device
         record.Dispose();
     }
 
+    public GpuComputePipelineHandle CreateComputePipeline(
+        GpuShaderPackage package,
+        string entryPoint,
+        ReadOnlyMemory<byte> expectedAbiHash)
+    {
+        VerifyNotDisposed();
+        ArgumentNullException.ThrowIfNull(package);
+        GpuShaderArtifact compute = package.Select(
+            GpuShaderCodeFormat.Dxil, GpuShaderStage.Compute, entryPoint, expectedAbiHash.Span);
+        ComPtr<ID3D12RootSignature> rootSignature = default;
+        ComPtr<ID3D12PipelineState> pipeline = default;
+        try
+        {
+            rootSignature = CreateStandardRootSignature();
+            ReadOnlySpan<byte> bytes = compute.Payload.Span;
+            fixed (byte* pointer = bytes)
+            {
+                var native = new ComputePipelineStateDesc
+                {
+                    PRootSignature = rootSignature.Handle,
+                    CS = new ShaderBytecode(pointer, checked((nuint)bytes.Length)),
+                };
+                SilkMarshal.ThrowHResult(device.CreateComputePipelineState<ID3D12PipelineState>(in native, out pipeline));
+            }
+
+            ulong id = NextHandle();
+            computePipelines.Add(id, new(pipeline, rootSignature));
+            return new(id);
+        }
+        catch
+        {
+            pipeline.Dispose();
+            rootSignature.Dispose();
+            throw;
+        }
+    }
+
+    public void DestroyComputePipeline(GpuComputePipelineHandle pipeline)
+    {
+        VerifyNotDisposed();
+        if (!computePipelines.Remove(pipeline.Value, out ComputePipelineRecord? record))
+        {
+            throw new ArgumentException("Pipeline does not belong to this Direct3D 12 device.", nameof(pipeline));
+        }
+        record.Dispose();
+    }
+
     private ComPtr<ID3D12RootSignature> CreateStandardRootSignature()
     {
-        DescriptorRange* ranges = stackalloc DescriptorRange[3];
+        DescriptorRange* ranges = stackalloc DescriptorRange[5];
         ranges[0] = new(
             DescriptorRangeType.Srv,
-            MaximumRasterTextureDescriptors,
+            MaximumShaderDescriptors,
             0,
             0,
             D3D12.DescriptorRangeOffsetAppend);
         ranges[1] = new(
             DescriptorRangeType.Sampler,
-            MaximumRasterSamplerDescriptors,
+            MaximumShaderDescriptors,
             0,
             1,
             D3D12.DescriptorRangeOffsetAppend);
         ranges[2] = new(
             DescriptorRangeType.Srv,
-            MaximumRasterBufferDescriptors,
+            MaximumShaderDescriptors,
             0,
             2,
             D3D12.DescriptorRangeOffsetAppend);
-        RootParameter* parameters = stackalloc RootParameter[4];
+        ranges[3] = new(
+            DescriptorRangeType.Uav,
+            MaximumShaderDescriptors,
+            0,
+            3,
+            D3D12.DescriptorRangeOffsetAppend);
+        ranges[4] = new(
+            DescriptorRangeType.Uav,
+            MaximumShaderDescriptors,
+            0,
+            4,
+            D3D12.DescriptorRangeOffsetAppend);
+        RootParameter* parameters = stackalloc RootParameter[6];
         parameters[0] = new(
             RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
             new RootDescriptorTable(1, &ranges[0]), null, null);
@@ -151,10 +208,16 @@ public sealed unsafe partial class DirectX12Device
             RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
             new RootDescriptorTable(1, &ranges[2]), null, null);
         parameters[3] = new(
+            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
+            new RootDescriptorTable(1, &ranges[3]), null, null);
+        parameters[4] = new(
+            RootParameterType.TypeDescriptorTable, null, ShaderVisibility.All,
+            new RootDescriptorTable(1, &ranges[4]), null, null);
+        parameters[5] = new(
             RootParameterType.Type32BitConstants, null, ShaderVisibility.All,
             null, new RootConstants(0, 0, GpuShaderBindingConvention.RootDataSize / sizeof(uint)), null);
         var description = new RootSignatureDesc(
-            4,
+            6,
             parameters,
             0,
             null,
@@ -264,6 +327,19 @@ public sealed unsafe partial class DirectX12Device
         public ComPtr<ID3D12PipelineState> Pipeline = pipeline;
         public ComPtr<ID3D12RootSignature> RootSignature = rootSignature;
         public GpuPrimitiveTopology Topology { get; } = topology;
+        public void Dispose()
+        {
+            Pipeline.Dispose();
+            RootSignature.Dispose();
+        }
+    }
+
+    private sealed class ComputePipelineRecord(
+        ComPtr<ID3D12PipelineState> pipeline,
+        ComPtr<ID3D12RootSignature> rootSignature) : IDisposable
+    {
+        public ComPtr<ID3D12PipelineState> Pipeline = pipeline;
+        public ComPtr<ID3D12RootSignature> RootSignature = rootSignature;
         public void Dispose()
         {
             Pipeline.Dispose();

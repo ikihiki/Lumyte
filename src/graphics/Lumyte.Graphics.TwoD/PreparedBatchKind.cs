@@ -6,4 +6,5 @@ internal enum PreparedBatchKind
     Image,
     Polygon,
     DistanceField,
+    Path,
 }

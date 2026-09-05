@@ -77,9 +77,14 @@ public sealed unsafe partial class WebGpuDevice
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         BufferRecord record = RequireBuffer(buffer);
-        if ((record.Description.Usage & GpuBufferUsage.ShaderData) == 0)
+        GpuBufferUsage requiredUsage = description.Access == GpuBufferViewAccess.ReadWrite
+            ? GpuBufferUsage.Storage
+            : GpuBufferUsage.ShaderData;
+        if ((record.Description.Usage & requiredUsage) == 0)
         {
-            throw new ArgumentException("Buffer views require ShaderData usage.", nameof(buffer));
+            throw new ArgumentException(
+                $"{description.Access} buffer views require {requiredUsage} usage.",
+                nameof(buffer));
         }
         GpuBufferViewDescription normalized = description.Normalize(buffer);
         var view = new GpuBufferView(new(nextResourceId++), buffer, normalized);
@@ -126,7 +131,7 @@ public sealed unsafe partial class WebGpuDevice
         BufferUsage result = 0;
         if ((usage & GpuBufferUsage.CopySource) != 0) { result |= BufferUsage.CopySrc; }
         if ((usage & GpuBufferUsage.CopyDestination) != 0) { result |= BufferUsage.CopyDst; }
-        if ((usage & GpuBufferUsage.ShaderData) != 0) { result |= BufferUsage.Storage; }
+        if ((usage & (GpuBufferUsage.ShaderData | GpuBufferUsage.Storage)) != 0) { result |= BufferUsage.Storage; }
         if ((usage & GpuBufferUsage.IndirectArguments) != 0) { result |= BufferUsage.Indirect; }
         return result;
     }

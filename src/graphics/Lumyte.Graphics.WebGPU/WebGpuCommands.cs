@@ -51,6 +51,54 @@ public sealed unsafe partial class WebGpuDevice
         return handle;
     }
 
+    public GpuComputePipelineHandle CreateComputePipeline(
+        GpuShaderPackage package,
+        string entryPoint,
+        ReadOnlyMemory<byte> expectedAbiHash)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(package);
+        GpuShaderArtifact artifact = package.Select(
+            GpuShaderCodeFormat.Wgsl, GpuShaderStage.Compute, entryPoint, expectedAbiHash.Span);
+        string source = TranslateLogicalBindings(Encoding.UTF8.GetString(artifact.Payload.Span));
+        ShaderModule* shader = CreateNativeShaderModule(source);
+        try
+        {
+            byte[] entryBytes = Encoding.UTF8.GetBytes(entryPoint + '\0');
+            fixed (byte* nativeEntry = entryBytes)
+            {
+                var description = new ComputePipelineDescriptor
+                {
+                    Compute = new ProgrammableStageDescriptor
+                    {
+                        Module = shader,
+                        EntryPoint = nativeEntry,
+                    },
+                };
+                ComputePipeline* native = api.DeviceCreateComputePipeline(device, in description);
+                if (native is null) { throw new InvalidOperationException("WebGPU compute pipeline creation failed."); }
+                var handle = new GpuComputePipelineHandle(nextPipelineId++);
+                computePipelines.Add(handle.Value, new((nint)native));
+                return handle;
+            }
+        }
+        finally
+        {
+            api.ShaderModuleRelease(shader);
+        }
+    }
+
+    public void DestroyComputePipeline(GpuComputePipelineHandle pipeline)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (!computePipelines.Remove(pipeline.Value, out ComputePipelineRecord? record))
+        {
+            throw new ArgumentException("Pipeline does not belong to this WebGPU device.", nameof(pipeline));
+        }
+        InvalidateBindGroups();
+        record.Dispose(api);
+    }
+
     private static string TranslateLogicalBindings(string source)
     {
         source = LogicalBindingFirstPattern().Replace(source, static match => TranslateBinding(match));
@@ -61,8 +109,11 @@ public sealed unsafe partial class WebGpuDevice
     {
         int binding = int.Parse(match.Groups["binding"].Value, System.Globalization.CultureInfo.InvariantCulture);
         int group = int.Parse(match.Groups["group"].Value, System.Globalization.CultureInfo.InvariantCulture);
-        if (group is GpuShaderBindingConvention.SamplerTable or GpuShaderBindingConvention.BufferTable
-            && binding >= MaximumRasterSamplerDescriptors)
+        if (group == GpuShaderBindingConvention.TextureTable && binding >= MaximumShaderDescriptors)
+        {
+            return match.Value;
+        }
+        if (binding >= MaximumShaderDescriptors)
         {
             throw new NotSupportedException(
                 $"WebGPU logical shader group {group} cannot address binding {binding}.");
@@ -72,6 +123,8 @@ public sealed unsafe partial class WebGpuDevice
             GpuShaderBindingConvention.TextureTable => binding,
             GpuShaderBindingConvention.SamplerTable => checked(NativeSamplerBindingOffset + binding),
             GpuShaderBindingConvention.BufferTable => checked(NativeBufferBindingOffset + binding),
+            GpuShaderBindingConvention.StorageTextureTable => checked(NativeStorageTextureBindingOffset + binding),
+            GpuShaderBindingConvention.WritableBufferTable => checked(NativeWritableBufferBindingOffset + binding),
             _ => throw new NotSupportedException($"WebGPU cannot translate logical shader group {group}."),
         };
         return $"@binding({nativeBinding}) @group(0)";
@@ -156,7 +209,9 @@ public sealed unsafe partial class WebGpuDevice
     {
         private CommandEncoder* encoder;
         private RenderPassEncoder* pass;
+        private ComputePassEncoder* computePass;
         private RasterPipelineRecord? pipeline;
+        private ComputePipelineRecord? computePipeline;
 
         public WebGpuCommandRecorder(WebGpuDevice owner, CommandEncoder* encoder)
         {
@@ -167,17 +222,19 @@ public sealed unsafe partial class WebGpuDevice
         public WebGpuDevice Owner { get; }
         public CommandBuffer* Commands { get; private set; }
 
-        public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) { }
+        public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards)
+            => EndComputePass();
 
         public void BeginRendering(IReadOnlyList<GpuColorAttachment> colors, GpuDepthStencilAttachment? depth)
         {
+            EndComputePass();
             if (colors.Count != 1)
             {
                 throw new NotSupportedException("The current WebGPU raster slice supports one color attachment.");
             }
             GpuColorAttachment attachment = colors[0];
             if (!Owner.textureViews.TryGetValue(attachment.View.Id.Value, out TextureViewRecord? view)
-                || view.Texture != attachment.View.Texture)
+                || view.View != attachment.View)
             {
                 throw new ArgumentException("Attachment view does not belong to this WebGPU device.", nameof(colors));
             }
@@ -208,7 +265,7 @@ public sealed unsafe partial class WebGpuDevice
             if (depth is { } depthAttachment)
             {
                 if (!Owner.textureViews.TryGetValue(depthAttachment.View.Id.Value, out TextureViewRecord? depthView)
-                    || depthView.Texture != depthAttachment.View.Texture)
+                    || depthView.View != depthAttachment.View)
                 {
                     throw new ArgumentException("Depth-stencil view does not belong to this WebGPU device.", nameof(depth));
                 }
@@ -283,13 +340,69 @@ public sealed unsafe partial class WebGpuDevice
         public void SetRootData(ReadOnlySpan<byte> data)
             => throw new NotSupportedException("WebGPU root data mapping is not implemented.");
 
+        public void SetComputePipeline(GpuComputePipelineHandle handle)
+        {
+            if (!Owner.computePipelines.TryGetValue(handle.Value, out ComputePipelineRecord? record))
+            {
+                throw new ArgumentException("Pipeline does not belong to this WebGPU device.", nameof(handle));
+            }
+            if (computePass is null)
+            {
+                var description = new ComputePassDescriptor();
+                computePass = Owner.api.CommandEncoderBeginComputePass(encoder, in description);
+                if (computePass is null) { throw new InvalidOperationException("WebGPU compute pass creation failed."); }
+            }
+            computePipeline = record;
+            Owner.api.ComputePassEncoderSetPipeline(computePass, (ComputePipeline*)record.Handle);
+        }
+
+        public void SetComputeResourceTable(GpuResourceTable table)
+        {
+            if (computePipeline is null || computePass is null)
+            {
+                throw new InvalidOperationException("A compute pipeline must be bound before a compute resource table.");
+            }
+            computePipeline.Layout = computePipeline.Layout == 0
+                ? (nint)Owner.api.ComputePipelineGetBindGroupLayout((ComputePipeline*)computePipeline.Handle, 0)
+                : computePipeline.Layout;
+            if (computePipeline.Layout == 0)
+            {
+                throw new InvalidOperationException("WebGPU did not expose compute bind group layout zero.");
+            }
+            nint bindGroup = Owner.GetOrCreateBindGroup(table, computePipeline.Layout);
+            Owner.api.ComputePassEncoderSetBindGroup(computePass, 0, (BindGroup*)bindGroup, 0, null);
+        }
+
+        public void SetComputeRootData(ReadOnlySpan<byte> data)
+            => throw new NotSupportedException(
+                "WebGPU has no push constants; compute parameters must use the read-only buffer table.");
+
+        public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
+        {
+            if (computePipeline is null || computePass is null)
+            {
+                throw new InvalidOperationException("A compute pipeline must be bound before dispatch.");
+            }
+            Owner.api.ComputePassEncoderDispatchWorkgroups(computePass, groupCountX, groupCountY, groupCountZ);
+        }
+
         public void End()
         {
+            EndComputePass();
             var description = new CommandBufferDescriptor();
             Commands = Owner.api.CommandEncoderFinish(encoder, in description);
             Owner.api.CommandEncoderRelease(encoder);
             encoder = null;
             if (Commands is null) { throw new InvalidOperationException("WebGPU command buffer creation failed."); }
+        }
+
+        private void EndComputePass()
+        {
+            if (computePass is null) { return; }
+            Owner.api.ComputePassEncoderEnd(computePass);
+            Owner.api.ComputePassEncoderRelease(computePass);
+            computePass = null;
+            computePipeline = null;
         }
 
         private static LoadOp ToLoadOp(GpuAttachmentLoadOperation operation) => operation switch
@@ -383,6 +496,18 @@ public sealed unsafe partial class WebGpuDevice
         {
             if (Layout != 0) { api.BindGroupLayoutRelease((BindGroupLayout*)Layout); }
             api.RenderPipelineRelease((RenderPipeline*)Handle);
+        }
+    }
+
+    private sealed class ComputePipelineRecord(nint handle)
+    {
+        public nint Handle { get; } = handle;
+        public nint Layout { get; set; }
+
+        public void Dispose(Silk.NET.WebGPU.WebGPU api)
+        {
+            if (Layout != 0) { api.BindGroupLayoutRelease((BindGroupLayout*)Layout); }
+            api.ComputePipelineRelease((ComputePipeline*)Handle);
         }
     }
 }

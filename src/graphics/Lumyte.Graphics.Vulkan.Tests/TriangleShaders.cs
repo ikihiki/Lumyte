@@ -63,11 +63,27 @@ internal static unsafe class TriangleShaders
     internal const string ComputeSource = """
         #version 450
         layout(local_size_x = 8, local_size_y = 1, local_size_z = 1) in;
-        layout(set = 0, binding = 0) buffer OutputBuffer { uint values[]; } outputBuffer;
+        layout(set = 4, binding = 0) buffer OutputBuffer { uint values[]; } outputBuffer;
         void main()
         {
             uint index = gl_GlobalInvocationID.x;
             outputBuffer.values[index] = 0x5a000000u | (index * 17u + 3u);
+        }
+        """;
+
+    internal const string StorageTextureComputeSource = """
+        #version 450
+        layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+        layout(set = 3, binding = 0, rgba8) uniform writeonly image2D outputImage;
+        layout(set = 4, binding = 0, std430) buffer ScratchBuffer { vec4 colors[]; } scratchBuffer;
+        void main()
+        {
+            uint index = gl_GlobalInvocationID.y * 2 + gl_GlobalInvocationID.x;
+            scratchBuffer.colors[index] = vec4(0.25, 0.5, 0.75, 1.0);
+            imageStore(
+                outputImage,
+                ivec2(gl_GlobalInvocationID.xy),
+                scratchBuffer.colors[index]);
         }
         """;
 

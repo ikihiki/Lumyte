@@ -21,7 +21,8 @@ public sealed class VulkanDeviceConformanceTests
         Assert.Equal(
             GpuBackendCapabilities.ExplicitPlacement
             | GpuBackendCapabilities.RasterPipeline
-            | GpuBackendCapabilities.MemoryAliasing,
+            | GpuBackendCapabilities.MemoryAliasing
+            | GpuBackendCapabilities.ComputePipeline,
             backend.Capabilities);
     }
 

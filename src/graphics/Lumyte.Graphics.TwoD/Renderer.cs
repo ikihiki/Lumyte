@@ -13,7 +13,9 @@ public sealed class Renderer : IDisposable
     private readonly Dictionary<ImageId, RegisteredImage> images = [];
     private readonly Dictionary<DistanceFieldAtlas, ImageId> distanceFieldAtlases = [];
     private readonly Dictionary<(GpuFormat Format, PreparedBatchKind Kind), GpuRasterPipelineHandle> pipelines = [];
-    private GpuShaderPackage? shaders;
+    private GpuComputePipelineHandle pathPreparationPipeline;
+    private GpuShaderPackage? phaseOneShaders;
+    private GpuShaderPackage? phaseThreeShaders;
     private ulong nextImageId = 1;
     private bool disposed;
 
@@ -80,6 +82,9 @@ public sealed class Renderer : IDisposable
 
         var gpuCommands = new List<GpuDrawCommand>(displayList.Count);
         var polygonBytes = new ArrayBufferWriter<byte>();
+        var pathInputBytes = new ArrayBufferWriter<byte>();
+        var pathJobs = new List<PathComputeJob>();
+        ulong pathOutputLength = 0;
         var batches = new List<PreparedBatch>();
         var preparedImages = new List<PreparedImage>();
         var imageIndices = new Dictionary<ImageId, int>();
@@ -100,6 +105,17 @@ public sealed class Renderer : IDisposable
             if (command.Kind == DrawCommandKind.Polygon)
             {
                 AddPolygon(command, clip.Value, targetDescription, polygonBytes, batches);
+            }
+            else if (command.Kind == DrawCommandKind.Path)
+            {
+                AddPath(
+                    command,
+                    clip.Value,
+                    targetDescription,
+                    pathInputBytes,
+                    batches,
+                    pathJobs,
+                    ref pathOutputLength);
             }
             else
             {
@@ -136,6 +152,7 @@ public sealed class Renderer : IDisposable
 
         OwnedBuffer? primitiveBuffer = null;
         OwnedBuffer? polygonBuffer = null;
+        OwnedBuffer? pathBuffer = null;
         try
         {
             if (gpuCommands.Count != 0)
@@ -147,6 +164,12 @@ public sealed class Renderer : IDisposable
             {
                 polygonBuffer = OwnedBuffer.Create(backend, polygonBytes.WrittenSpan);
             }
+            if (pathInputBytes.WrittenCount != 0)
+            {
+                using OwnedBuffer input = OwnedBuffer.Create(backend, pathInputBytes.WrittenSpan);
+                pathBuffer = OwnedBuffer.CreateStorage(backend, pathOutputLength);
+                PreparePaths(input, pathBuffer, pathJobs);
+            }
             return new(
                 this,
                 targetDescription,
@@ -154,10 +177,12 @@ public sealed class Renderer : IDisposable
                 batches.ToArray(),
                 preparedImages.ToArray(),
                 primitiveBuffer,
-                polygonBuffer);
+                polygonBuffer,
+                pathBuffer);
         }
         catch
         {
+            pathBuffer?.Dispose();
             polygonBuffer?.Dispose();
             primitiveBuffer?.Dispose();
             throw;
@@ -182,6 +207,11 @@ public sealed class Renderer : IDisposable
         foreach (GpuRasterPipelineHandle pipeline in pipelines.Values)
         {
             backend.DestroyRasterPipeline(pipeline);
+        }
+        if (!pathPreparationPipeline.IsNull)
+        {
+            backend.DestroyComputePipeline(pathPreparationPipeline);
+            pathPreparationPipeline = default;
         }
         pipelines.Clear();
         distanceFieldAtlases.Clear();
@@ -227,9 +257,12 @@ public sealed class Renderer : IDisposable
             PreparedBatchKind.Image => ("imageVertex", "imagePixel"),
             PreparedBatchKind.Polygon => ("polygonVertex", "polygonPixel"),
             PreparedBatchKind.DistanceField => ("distanceFieldVertex", "distanceFieldPixel"),
+            PreparedBatchKind.Path => ("pathVertex", "pathPixel"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        shaders ??= StandardShaders.LoadPhaseOne();
+        GpuShaderPackage package = kind == PreparedBatchKind.Path
+            ? phaseThreeShaders ??= StandardShaders.LoadPhaseThree()
+            : phaseOneShaders ??= StandardShaders.LoadPhaseOne();
         var description = new GpuRasterPipelineDescription([new(format)])
         {
             EmbeddedBlend = new(
@@ -240,12 +273,71 @@ public sealed class Renderer : IDisposable
         };
         pipeline = backend.CreateRasterPipeline(
             description,
-            shaders,
+            package,
             vertex,
             pixel,
             GpuShaderBindingConvention.AbiHash);
         pipelines.Add((format, kind), pipeline);
         return pipeline;
+    }
+
+    private GpuComputePipelineHandle GetPathPreparationPipeline()
+    {
+        if (!pathPreparationPipeline.IsNull) { return pathPreparationPipeline; }
+        phaseThreeShaders ??= StandardShaders.LoadPhaseThree();
+        pathPreparationPipeline = backend.CreateComputePipeline(
+            phaseThreeShaders,
+            "preparePath",
+            GpuShaderBindingConvention.AbiHash);
+        return pathPreparationPipeline;
+    }
+
+    private void PreparePaths(
+        OwnedBuffer input,
+        OwnedBuffer output,
+        IReadOnlyList<PathComputeJob> jobs)
+    {
+        var views = new List<GpuBufferView>(jobs.Count * 2);
+        try
+        {
+            GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
+            for (int index = 0; index < jobs.Count; index++)
+            {
+                PathComputeJob job = jobs[index];
+                GpuBufferView inputView = backend.CreateBufferView(
+                    input.Buffer,
+                    new(job.InputOffset, job.InputLength));
+                GpuBufferView outputView = backend.CreateBufferView(
+                    output.Buffer,
+                    new(job.OutputOffset, job.OutputLength, GpuBufferViewAccess.ReadWrite));
+                views.Add(inputView);
+                views.Add(outputView);
+                var resources = new GpuResourceTable(0, 0, 1, 0, 1);
+                resources.SetBuffer(0, inputView.Id);
+                resources.SetWritableBuffer(0, outputView.Id);
+                commands
+                    .SetComputePipeline(GetPathPreparationPipeline())
+                    .SetComputeResourceTable(resources)
+                    .Dispatch(1)
+                    .Barrier(
+                        GpuStage.ComputeShader,
+                        index + 1 == jobs.Count
+                            ? GpuStage.VertexShader | GpuStage.PixelShader
+                            : GpuStage.ComputeShader,
+                        GpuBarrierHazards.Descriptors);
+            }
+
+            using GpuSemaphore completion = backend.MainQueue.CreateSemaphore();
+            backend.MainQueue.Submit([commands], completion, 1);
+            backend.MainQueue.Wait(completion, 1);
+        }
+        finally
+        {
+            foreach (GpuBufferView view in views)
+            {
+                backend.DestroyBufferView(view);
+            }
+        }
     }
 
     private int GetImageIndex(
@@ -390,6 +482,44 @@ public sealed class Renderer : IDisposable
             checked((uint)geometry.Vertices.Length),
             clip));
     }
+
+    private static void AddPath(
+        RecordedCommand command,
+        Rect clip,
+        GpuTextureDescription target,
+        ArrayBufferWriter<byte> inputBytes,
+        List<PreparedBatch> batches,
+        List<PathComputeJob> jobs,
+        ref ulong outputLength)
+    {
+        int padding = (ShaderBufferOffsetAlignment - inputBytes.WrittenCount % ShaderBufferOffsetAlignment)
+            % ShaderBufferOffsetAlignment;
+        if (padding != 0)
+        {
+            inputBytes.GetSpan(padding)[..padding].Clear();
+            inputBytes.Advance(padding);
+        }
+        int inputOffset = inputBytes.WrittenCount;
+        PathBatchData data = PathBatchCompiler.Compile(command, target);
+        data.InputBytes.CopyTo(inputBytes.GetSpan(data.InputBytes.Length));
+        inputBytes.Advance(data.InputBytes.Length);
+        ulong outputOffset = Align(outputLength, ShaderBufferOffsetAlignment);
+        outputLength = checked(outputOffset + data.OutputLength);
+        batches.Add(new(
+            PreparedBatchKind.Path,
+            outputOffset,
+            data.OutputLength,
+            1,
+            clip));
+        jobs.Add(new(
+            checked((ulong)inputOffset),
+            checked((ulong)data.InputBytes.Length),
+            outputOffset,
+            data.OutputLength));
+    }
+
+    private static ulong Align(ulong value, ulong alignment)
+        => checked((value + alignment - 1) & ~(alignment - 1));
 
     private void VerifyAlive() => ObjectDisposedException.ThrowIf(disposed, this);
 }

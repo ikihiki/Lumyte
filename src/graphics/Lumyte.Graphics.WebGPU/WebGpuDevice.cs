@@ -8,12 +8,11 @@ namespace Lumyte.Graphics.WebGPU;
 /// <summary>Owns a native WebGPU instance, selected adapter, device, and queue.</summary>
 public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
 {
-    private const int MaximumRasterTextureDescriptors = 64;
-    private const int MaximumRasterSamplerDescriptors = 64;
-    private const int MaximumRasterBufferDescriptors = 64;
-    private const int NativeSamplerBindingOffset = MaximumRasterTextureDescriptors;
-    private const int NativeBufferBindingOffset =
-        MaximumRasterTextureDescriptors + MaximumRasterSamplerDescriptors;
+    private const int MaximumShaderDescriptors = 64;
+    private const int NativeSamplerBindingOffset = MaximumShaderDescriptors;
+    private const int NativeBufferBindingOffset = MaximumShaderDescriptors * 2;
+    private const int NativeStorageTextureBindingOffset = MaximumShaderDescriptors * 3;
+    private const int NativeWritableBufferBindingOffset = MaximumShaderDescriptors * 4;
 
     private static readonly Lazy<Silk.NET.WebGPU.WebGPU> SharedApi = new(Silk.NET.WebGPU.WebGPU.GetApi);
     private readonly Silk.NET.WebGPU.WebGPU api;
@@ -25,6 +24,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private readonly Dictionary<ulong, BufferRecord> buffers = [];
     private readonly Dictionary<ulong, GpuBufferView> bufferViews = [];
     private readonly Dictionary<ulong, RasterPipelineRecord> rasterPipelines = [];
+    private readonly Dictionary<ulong, ComputePipelineRecord> computePipelines = [];
     private readonly Dictionary<ResourceTableCacheKey, CachedBindGroup> bindGroups = [];
     private Instance* instance;
     private Adapter* adapter;
@@ -86,7 +86,9 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     public nint NativeQueue => (nint)queue;
     public IGpuQueue MainQueue { get; private set; } = null!;
     public GpuBackendCapabilities Capabilities =>
-        GpuBackendCapabilities.DeviceOwnedResources | GpuBackendCapabilities.RasterPipeline;
+        GpuBackendCapabilities.DeviceOwnedResources
+        | GpuBackendCapabilities.RasterPipeline
+        | GpuBackendCapabilities.ComputePipeline;
 
     internal int CachedBindGroupCount => bindGroups.Count;
     internal int BindGroupCreationCount => bindGroupCreationCount;
@@ -119,6 +121,15 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         {
             throw new ArgumentException("Texture does not belong to this WebGPU device.", nameof(texture));
         }
+        if (!Enum.IsDefined(description.Access))
+        {
+            throw new ArgumentOutOfRangeException(nameof(description));
+        }
+        if (description.Access == GpuTextureViewAccess.ReadWrite
+            && (record.Description.Usage & GpuTextureUsage.Storage) == 0)
+        {
+            throw new ArgumentException("Writable texture views require Storage usage.", nameof(description));
+        }
         uint mipCount = description.MipCount == uint.MaxValue
             ? record.Description.MipCount - description.BaseMip
             : description.MipCount;
@@ -147,8 +158,9 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         if (nativeView is null) { throw new InvalidOperationException("WebGPU texture view creation failed."); }
         var id = new TextureId(nextResourceId++);
         var normalized = description with { MipCount = mipCount, LayerCount = layerCount };
-        textureViews.Add(id.Value, new((nint)nativeView, texture));
-        return new(id, texture, normalized);
+        var result = new GpuTextureView(id, texture, normalized);
+        textureViews.Add(id.Value, new((nint)nativeView, result));
+        return result;
     }
 
     public SamplerId CreateSampler(GpuSamplerDescription description)
@@ -178,7 +190,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (!textureViews.TryGetValue(view.Id.Value, out TextureViewRecord? record)
-            || record.Texture != view.Texture)
+            || record.View != view)
         {
             throw new ArgumentException("Texture view does not belong to this WebGPU device.", nameof(view));
         }
@@ -190,7 +202,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     public void DestroyTexture(GpuTextureHandle texture)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        if (textureViews.Values.Any(view => view.Texture == texture))
+        if (textureViews.Values.Any(view => view.View.Texture == texture))
         {
             throw new InvalidOperationException("Texture still has a live view.");
         }
@@ -221,9 +233,11 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(table);
-        if (table.TextureSlotCount > MaximumRasterTextureDescriptors
-            || table.SamplerSlotCount > MaximumRasterSamplerDescriptors
-            || table.BufferSlotCount > MaximumRasterBufferDescriptors)
+        if (table.TextureSlotCount > MaximumShaderDescriptors
+            || table.SamplerSlotCount > MaximumShaderDescriptors
+            || table.BufferSlotCount > MaximumShaderDescriptors
+            || table.StorageTextureSlotCount > MaximumShaderDescriptors
+            || table.WritableBufferSlotCount > MaximumShaderDescriptors)
         {
             throw new NotSupportedException(
                 "The current WebGPU bind-group translation supports at most 64 indices per resource kind.");
@@ -251,6 +265,14 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         {
             if (!table.GetBuffer(slot).IsNull) { entryCount++; }
         }
+        for (int slot = 0; slot < table.StorageTextureSlotCount; slot++)
+        {
+            if (!table.GetStorageTexture(slot).IsNull) { entryCount++; }
+        }
+        for (int slot = 0; slot < table.WritableBufferSlotCount; slot++)
+        {
+            if (!table.GetWritableBuffer(slot).IsNull) { entryCount++; }
+        }
         if (entryCount == 0) { throw new ArgumentException("Resource table is empty.", nameof(table)); }
         var entries = new BindGroupEntry[entryCount];
         int entryIndex = 0;
@@ -258,7 +280,8 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         {
             TextureId id = table.GetTexture(slot);
             if (id.IsNull) { continue; }
-            if (!textureViews.TryGetValue(id.Value, out TextureViewRecord? view))
+            if (!textureViews.TryGetValue(id.Value, out TextureViewRecord? view)
+                || view.View.Description.Access != GpuTextureViewAccess.ReadOnly)
             {
                 throw new ArgumentException($"Texture index {slot} belongs to another WebGPU device.", nameof(table));
             }
@@ -293,9 +316,50 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
                     $"Buffer index {slot} belongs to another WebGPU device.",
                     nameof(table));
             }
+            if (view.Description.Access != GpuBufferViewAccess.ReadOnly)
+            {
+                throw new ArgumentException($"Buffer index {slot} requires a read-only view.", nameof(table));
+            }
             entries[entryIndex++] = new BindGroupEntry
             {
                 Binding = checked((uint)(NativeBufferBindingOffset + slot)),
+                Buffer = (WgpuBuffer*)buffer.Handle,
+                Offset = view.Description.Offset,
+                Size = view.Description.Length,
+            };
+        }
+        for (int slot = 0; slot < table.StorageTextureSlotCount; slot++)
+        {
+            TextureId id = table.GetStorageTexture(slot);
+            if (id.IsNull) { continue; }
+            if (!textureViews.TryGetValue(id.Value, out TextureViewRecord? view)
+                || view.View.Description.Access != GpuTextureViewAccess.ReadWrite)
+            {
+                throw new ArgumentException(
+                    $"Storage texture index {slot} does not identify a writable view on this WebGPU device.",
+                    nameof(table));
+            }
+            entries[entryIndex++] = new BindGroupEntry
+            {
+                Binding = checked((uint)(NativeStorageTextureBindingOffset + slot)),
+                TextureView = (TextureView*)view.Handle,
+            };
+        }
+        for (int slot = 0; slot < table.WritableBufferSlotCount; slot++)
+        {
+            BufferId id = table.GetWritableBuffer(slot);
+            if (id.IsNull) { continue; }
+            if (!bufferViews.TryGetValue(id.Value, out GpuBufferView view)
+                || view.Description.Access != GpuBufferViewAccess.ReadWrite
+                || !buffers.TryGetValue(view.Buffer.Value, out BufferRecord? buffer))
+            {
+                throw new ArgumentException(
+                    $"Writable buffer index {slot} does not identify a writable view on this WebGPU device.",
+                    nameof(table));
+            }
+            entries[entryIndex++] = new BindGroupEntry
+            {
+                Binding = checked((uint)(NativeWritableBufferBindingOffset + slot)),
                 Buffer = (WgpuBuffer*)buffer.Handle,
                 Offset = view.Description.Offset,
                 Size = view.Description.Length,
@@ -557,6 +621,8 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         if (disposed) { return; }
         disposed = true;
         InvalidateBindGroups();
+        foreach (ComputePipelineRecord pipeline in computePipelines.Values) { pipeline.Dispose(api); }
+        computePipelines.Clear();
         foreach (RasterPipelineRecord pipeline in rasterPipelines.Values) { pipeline.Dispose(api); }
         rasterPipelines.Clear();
         foreach (TextureViewRecord view in textureViews.Values) { api.TextureViewRelease((TextureView*)view.Handle); }
@@ -586,6 +652,6 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private readonly record struct ResourceTableCacheKey(GpuResourceTable Table, nint Layout);
     private sealed record CachedBindGroup(nint Handle, ulong Revision);
     private sealed record TextureRecord(nint Handle, GpuTextureDescription Description);
-    private sealed record TextureViewRecord(nint Handle, GpuTextureHandle Texture);
+    private sealed record TextureViewRecord(nint Handle, GpuTextureView View);
     private sealed record BufferRecord(nint Handle, GpuBufferDescription Description);
 }

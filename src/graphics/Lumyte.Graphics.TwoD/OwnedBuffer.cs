@@ -85,6 +85,48 @@ internal sealed class OwnedBuffer : IDisposable
         }
     }
 
+    public static OwnedBuffer CreateStorage(IGpuBackend backend, ulong size)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        if (size == 0 || (size & 3) != 0)
+        {
+            throw new ArgumentException("GPU buffer size must be non-zero and four-byte aligned.", nameof(size));
+        }
+
+        var description = new GpuBufferDescription(
+            size,
+            GpuBufferUsage.ShaderData | GpuBufferUsage.Storage);
+        bool placed = (backend.Capabilities & GpuBackendCapabilities.ExplicitPlacement) != 0;
+        GpuMemoryAllocation allocation = default;
+        GpuBufferHandle buffer = default;
+        try
+        {
+            if (placed)
+            {
+                GpuBufferMemoryRequirements requirements = backend
+                    .GetBufferMemoryRequirements(description)
+                    .Validate();
+                allocation = backend.AllocateMemory(
+                    requirements.Size,
+                    requirements.Alignment,
+                    GpuMemoryKind.DeviceLocal,
+                    requirements.Compatibility);
+                buffer = backend.CreatePlacedBuffer(description, allocation);
+            }
+            else
+            {
+                buffer = backend.CreateBuffer(description);
+            }
+            return new(backend, buffer, description, allocation);
+        }
+        catch
+        {
+            if (!buffer.IsNull) { backend.DestroyBuffer(buffer); }
+            if (!allocation.MemoryAddress.IsNull) { backend.FreeMemory(allocation); }
+            throw;
+        }
+    }
+
     public void Write(ulong destinationOffset, ReadOnlySpan<byte> bytes)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
