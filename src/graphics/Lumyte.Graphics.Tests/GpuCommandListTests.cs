@@ -92,7 +92,7 @@ public sealed class GpuCommandBufferTests
             .Draw(6)
             .EndRendering();
 
-        Assert.Equal(["upload:2+0:16", "barrier:Copy>PixelShader:None", "begin", "pipeline", "resources", "root:4", "draw:6:1", "end"], recorder.Events);
+        Assert.Equal(["upload:2+0:16", "barrier:Copy>PixelShader:None", "begin", "pipeline", "resources", "root:64", "draw:6:1", "end"], recorder.Events);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class GpuCommandBufferTests
             .SetComputeRootData(BitConverter.GetBytes(4u))
             .Dispatch(2, 3, 1);
 
-        Assert.Equal(["compute-pipeline", "compute-resources", "compute-root:4", "dispatch:2:3:1"], recorder.Events);
+        Assert.Equal(["compute-pipeline", "compute-resources", "compute-root:64", "dispatch:2:3:1"], recorder.Events);
     }
 
     [Fact]

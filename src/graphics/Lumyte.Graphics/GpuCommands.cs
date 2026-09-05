@@ -78,6 +78,8 @@ public sealed class GpuCommandBuffer : IDisposable
 {
     private readonly IGpuCommandRecorder recorder;
     private bool rendering;
+    private bool rasterPipelineBound;
+    private bool computePipelineBound;
     public GpuCommandBufferState State { get; private set; }
 
     internal GpuCommandBuffer(IGpuCommandRecorder recorder) =>
@@ -91,6 +93,7 @@ public sealed class GpuCommandBuffer : IDisposable
         VerifyOpen();
         if (rendering) { throw new InvalidOperationException("A barrier cannot be recorded inside rendering."); }
         recorder.Barrier(before, after, hazards);
+        computePipelineBound = false;
         return this;
     }
 
@@ -105,8 +108,12 @@ public sealed class GpuCommandBuffer : IDisposable
         {
             throw new ArgumentException("Rendering requires an attachment.", nameof(colorAttachments));
         }
+        if (colorAttachments.Count != GpuCommonLimits.ColorAttachments)
+        { throw new NotSupportedException("The common raster profile requires one color attachment."); }
         recorder.BeginRendering(colorAttachments.ToArray(), depthStencilAttachment);
         rendering = true;
+        rasterPipelineBound = false;
+        computePipelineBound = false;
         return this;
     }
 
@@ -116,6 +123,7 @@ public sealed class GpuCommandBuffer : IDisposable
         if (!rendering) { throw new InvalidOperationException("Rendering has not begun."); }
         recorder.EndRendering();
         rendering = false;
+        rasterPipelineBound = false;
         return this;
     }
 
@@ -125,6 +133,7 @@ public sealed class GpuCommandBuffer : IDisposable
         if (!rendering) { throw new InvalidOperationException("A raster pipeline can only be bound inside rendering."); }
         if (pipeline.IsNull) { throw new ArgumentException("Pipeline cannot be null.", nameof(pipeline)); }
         recorder.SetPipeline(pipeline);
+        rasterPipelineBound = true;
         return this;
     }
 
@@ -145,6 +154,7 @@ public sealed class GpuCommandBuffer : IDisposable
     {
         VerifyOpen();
         if (!rendering) { throw new InvalidOperationException("Draw can only be recorded inside rendering."); }
+        if (!rasterPipelineBound) { throw new InvalidOperationException("Bind a raster pipeline in the current rendering pass first."); }
         if (vertexCount == 0 || instanceCount == 0) { throw new ArgumentOutOfRangeException(nameof(vertexCount)); }
         recorder.Draw(vertexCount, instanceCount);
         return this;
@@ -190,6 +200,7 @@ public sealed class GpuCommandBuffer : IDisposable
     {
         VerifyOpen();
         if (!rendering) { throw new InvalidOperationException("A resource table can only be bound inside rendering."); }
+        if (!rasterPipelineBound) { throw new InvalidOperationException("Bind a raster pipeline in the current rendering pass first."); }
         ArgumentNullException.ThrowIfNull(table);
         recorder.SetResourceTable(table);
         return this;
@@ -199,8 +210,12 @@ public sealed class GpuCommandBuffer : IDisposable
     {
         VerifyOpen();
         if (!rendering) { throw new InvalidOperationException("Root data can only be set inside rendering."); }
+        if (!rasterPipelineBound) { throw new InvalidOperationException("Bind a raster pipeline in the current rendering pass first."); }
         GpuShaderBindingConvention.ValidateRootData(data);
-        recorder.SetRootData(data);
+        Span<byte> snapshot = stackalloc byte[GpuShaderBindingConvention.RootDataSize];
+        snapshot.Clear();
+        data.CopyTo(snapshot);
+        recorder.SetRootData(snapshot);
         return this;
     }
 
@@ -210,6 +225,7 @@ public sealed class GpuCommandBuffer : IDisposable
         if (rendering) { throw new InvalidOperationException("A compute pipeline cannot be bound inside rendering."); }
         if (pipeline.IsNull) { throw new ArgumentException("Pipeline cannot be null.", nameof(pipeline)); }
         recorder.SetComputePipeline(pipeline);
+        computePipelineBound = true;
         return this;
     }
 
@@ -217,6 +233,7 @@ public sealed class GpuCommandBuffer : IDisposable
     {
         VerifyOpen();
         if (rendering) { throw new InvalidOperationException("A compute resource table cannot be bound inside rendering."); }
+        if (!computePipelineBound) { throw new InvalidOperationException("Bind a compute pipeline after the most recent rendering or barrier operation first."); }
         ArgumentNullException.ThrowIfNull(table);
         recorder.SetComputeResourceTable(table);
         return this;
@@ -226,8 +243,12 @@ public sealed class GpuCommandBuffer : IDisposable
     {
         VerifyOpen();
         if (rendering) { throw new InvalidOperationException("Compute root data cannot be set inside rendering."); }
+        if (!computePipelineBound) { throw new InvalidOperationException("Bind a compute pipeline after the most recent rendering or barrier operation first."); }
         GpuShaderBindingConvention.ValidateRootData(data);
-        recorder.SetComputeRootData(data);
+        Span<byte> snapshot = stackalloc byte[GpuShaderBindingConvention.RootDataSize];
+        snapshot.Clear();
+        data.CopyTo(snapshot);
+        recorder.SetComputeRootData(snapshot);
         return this;
     }
 
@@ -235,7 +256,9 @@ public sealed class GpuCommandBuffer : IDisposable
     {
         VerifyOpen();
         if (rendering) { throw new InvalidOperationException("Compute cannot be dispatched inside rendering."); }
-        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0)
+        if (!computePipelineBound) { throw new InvalidOperationException("Bind a compute pipeline after the most recent rendering or barrier operation first."); }
+        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0
+            || groupCountX > GpuCommonLimits.DispatchGroups || groupCountY > GpuCommonLimits.DispatchGroups || groupCountZ > GpuCommonLimits.DispatchGroups)
         {
             throw new ArgumentOutOfRangeException(nameof(groupCountX));
         }

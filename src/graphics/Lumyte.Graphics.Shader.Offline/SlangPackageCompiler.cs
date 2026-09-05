@@ -36,7 +36,8 @@ public static class SlangPackageCompiler
                         modulePath,
                         target,
                         cancellationToken);
-                    byte[] module = await File.ReadAllBytesAsync(modulePath, cancellationToken);
+                    byte[] module = System.Text.Encoding.UTF8.GetBytes(UseImmediateRootData(
+                        await File.ReadAllTextAsync(modulePath, cancellationToken)));
                     foreach (SlangEntryPoint entryPoint in entryPoints)
                     {
                         artifacts.Add(new(
@@ -148,7 +149,7 @@ public static class SlangPackageCompiler
     {
         var arguments = new List<string>
         {
-            source, "-entry", entryPoint.Name, "-stage", entryPoint.SlangStage, "-target", target, "-o", output,
+            source, "-matrix-layout-row-major", "-entry", entryPoint.Name, "-stage", entryPoint.SlangStage, "-target", target, "-o", output,
         };
         if (profile.Length > 0)
         {
@@ -175,12 +176,19 @@ public static class SlangPackageCompiler
             $"{target}/module",
             cancellationToken);
 
+    // Slang's reserved b0/space6 declaration is an ABI marker, never a runtime uniform binding.
+    // The emitted WGSL uses native immediate storage for both graphics and compute.
+    internal static string UseImmediateRootData(string source)
+        => System.Text.RegularExpressions.Regex.Replace(source,
+            @"(?:@binding\(0\)\s+@group\(6\)|@group\(6\)\s+@binding\(0\))\s+var<uniform>",
+            "var<immediate>", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     internal static IReadOnlyList<string> CreateModuleArguments(
         string source,
         string output,
         string target)
     {
-        var arguments = new List<string> { source, "-target", target };
+        var arguments = new List<string> { source, "-matrix-layout-row-major", "-target", target };
         if (target == "wgsl")
         {
             arguments.Add("-DLUMYTE_SHADER_TARGET_WGSL=1");

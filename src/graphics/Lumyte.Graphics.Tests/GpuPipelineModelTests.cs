@@ -24,7 +24,7 @@ public sealed class GpuPipelineModelTests
     }
 
     [Fact]
-    public void MultisampleStateRemainsContractOnlyUntilResolveCommandsExist()
+    public void MultisampleStateIsRejectedUntilCommonResolveCommandsExist()
     {
         var description = new GpuRasterPipelineDescription([new(GpuFormat.Rgba8Unorm)])
         {
@@ -32,7 +32,7 @@ public sealed class GpuPipelineModelTests
             AlphaToCoverage = true,
         };
 
-        description.Validate();
+        Assert.Throws<NotSupportedException>(() => description.Validate());
 
         Assert.Equal(4u, description.SampleCount);
         Assert.True(description.AlphaToCoverage);
@@ -55,7 +55,7 @@ public sealed class GpuPipelineModelTests
     }
 
     [Fact]
-    public void ValidatePreservesEveryConfigurableOption()
+    public void ValidatePreservesEveryCommonConfigurableOption()
     {
         var blend = new GpuBlendDescription(
             GpuBlendOperation.ReverseSubtract,
@@ -73,9 +73,9 @@ public sealed class GpuPipelineModelTests
             Topology = GpuPrimitiveTopology.TriangleStrip,
             CullMode = GpuCullMode.Front,
             FrontFace = GpuFrontFace.Clockwise,
-            SampleCount = 4,
-            AlphaToCoverage = true,
-            SupportsDualSourceBlending = true,
+            SampleCount = 1,
+            AlphaToCoverage = false,
+            SupportsDualSourceBlending = false,
             EmbeddedBlend = blend,
         };
 
@@ -92,9 +92,9 @@ public sealed class GpuPipelineModelTests
         Assert.Equal(GpuPrimitiveTopology.TriangleStrip, result.Topology);
         Assert.Equal(GpuCullMode.Front, result.CullMode);
         Assert.Equal(GpuFrontFace.Clockwise, result.FrontFace);
-        Assert.Equal(4u, result.SampleCount);
-        Assert.True(result.AlphaToCoverage);
-        Assert.True(result.SupportsDualSourceBlending);
+        Assert.Equal(1u, result.SampleCount);
+        Assert.False(result.AlphaToCoverage);
+        Assert.False(result.SupportsDualSourceBlending);
         Assert.Equal(blend, result.EmbeddedBlend);
     }
 

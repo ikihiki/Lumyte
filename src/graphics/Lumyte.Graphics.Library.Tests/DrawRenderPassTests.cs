@@ -111,13 +111,12 @@ public sealed class DrawRenderPassTests
             "begin:24",
             "pipeline:23",
             "resources",
-            "root:128",
+            "root:64",
             "viewport:64x48",
             "draw:36x1",
             "end-rendering",
         ], recorder.Events);
-        Assert.Equal(Matrix4x4.CreateTranslation(1, 2, 3), recorder.World);
-        Assert.Equal(Matrix4x4.CreateScale(2), recorder.ViewProjection);
+        Assert.Equal(Matrix4x4.CreateTranslation(1, 2, 3) * Matrix4x4.CreateScale(2), recorder.WorldViewProjection);
     }
 
     [Fact]
@@ -224,8 +223,7 @@ public sealed class DrawRenderPassTests
     private sealed class RecordingCommandRecorder : IGpuCommandRecorder
     {
         public List<string> Events { get; } = [];
-        public Matrix4x4 World { get; private set; }
-        public Matrix4x4 ViewProjection { get; private set; }
+        public Matrix4x4 WorldViewProjection { get; private set; }
         public GpuResourceTable? Resources { get; private set; }
 
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) =>
@@ -249,8 +247,7 @@ public sealed class DrawRenderPassTests
         public void SetRootData(ReadOnlySpan<byte> data)
         {
             Events.Add($"root:{data.Length}");
-            World = MemoryMarshal.Read<Matrix4x4>(data);
-            ViewProjection = MemoryMarshal.Read<Matrix4x4>(data[64..]);
+            WorldViewProjection = MemoryMarshal.Read<Matrix4x4>(data);
         }
         public void End() => Events.Add("end");
     }

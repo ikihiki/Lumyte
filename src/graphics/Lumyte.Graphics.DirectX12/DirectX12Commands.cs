@@ -366,6 +366,7 @@ public sealed unsafe partial class DirectX12Device
             currentPipeline = record;
             Commands.SetPipelineState(record.Pipeline);
             Commands.SetGraphicsRootSignature(record.RootSignature);
+            SetRootData(new byte[GpuShaderBindingConvention.RootDataSize]);
             Commands.IASetPrimitiveTopology(record.Topology switch
             {
                 GpuPrimitiveTopology.TriangleList => D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist,
@@ -669,6 +670,7 @@ public sealed unsafe partial class DirectX12Device
             currentComputePipeline = record;
             Commands.SetPipelineState(record.Pipeline);
             Commands.SetComputeRootSignature(record.RootSignature);
+            SetComputeRootData(new byte[GpuShaderBindingConvention.RootDataSize]);
             BindDescriptorHeaps(compute: true);
         }
 

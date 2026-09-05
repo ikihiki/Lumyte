@@ -20,8 +20,7 @@
     <PackageVersion Include="Silk.NET.Direct3D12" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.DXGI" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.WebGPU" Version="2.23.0" />
-    <PackageVersion Include="Silk.NET.WebGPU.Native.WGPU" Version="2.23.0" />
-    <PackageVersion Include="Silk.NET.WebGPU.Extensions.WGPU" Version="2.23.0" />
+    <PackageVersion Include="WebGPUSharp" Version="0.5.7" />
     <PackageVersion Include="Microsoft.Direct3D.DXC" Version="1.9.2602.24" />
     <PackageVersion Include="HarfBuzzSharp" Version="14.2.1.102" />
     <PackageVersion Include="HarfBuzzSharp.NativeAssets.Linux" Version="14.2.1.102" />

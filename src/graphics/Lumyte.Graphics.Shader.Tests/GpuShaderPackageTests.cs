@@ -10,6 +10,26 @@ public sealed class GpuShaderPackageTests
 {
     private static readonly byte[] s_abi = SHA256.HashData("abi-v1"u8);
 
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void LegacyBindingAbiIsRejectedWithRegenerationInstructions(int version)
+    {
+        byte[] legacy = version == 2
+            ? SHA256.HashData("Lumyte.RenderGraph.ShaderBindings.v2;texture-table=0;sampler-table=1;buffer-table=2;storage-texture-table=3;writable-buffer-table=4;descriptor-index=uint32;root-data=128"u8)
+            : SHA256.HashData("Lumyte.RenderGraph.ShaderBindings.v3;texture-table=0;sampler-table=1;buffer-table=2;storage-texture-table=3;writable-buffer-table=4;descriptor-index=uint32;root-data=64;root-transport=immediate;parameter-table=5;parameter-data=16384;matrix=row-major;short-write=zero-fill"u8);
+        var package = GpuShaderPackage.Read(GpuShaderPackageWriter.Write([
+            new(GpuShaderCodeFormat.Wgsl, GpuShaderStage.Compute, "main", "webgpu", "wgsl", "",
+                legacy, "@compute @workgroup_size(1) fn main() {}"u8.ToArray()),
+        ]));
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            package.Select(GpuShaderCodeFormat.Wgsl, GpuShaderStage.Compute, "main", legacy));
+
+        Assert.Contains("ABI v2/v3", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Lumyte.Graphics.Shader.Offline", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RoundtripSelectsMultipleFormatsAndStages()
     {

@@ -22,4 +22,10 @@
     <Compile Include="..\Lumyte.Graphics.Text.Tests\TestFontData.cs" Link="TestFontData.cs" />
     <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" />
+    <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputRaster.slang" />
+    <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputCompute.slang" />
+  </ItemGroup>
+  <Import Project="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
 </Project>

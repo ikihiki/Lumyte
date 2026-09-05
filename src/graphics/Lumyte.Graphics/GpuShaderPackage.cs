@@ -152,9 +152,14 @@ public sealed class GpuShaderPackage
             throw new InvalidOperationException($"Expected one {format}/{stage}/{entryPoint} artifact, found {matches.Length}.");
         }
 
+        byte[] legacyV2 = SHA256.HashData("Lumyte.RenderGraph.ShaderBindings.v2;texture-table=0;sampler-table=1;buffer-table=2;storage-texture-table=3;writable-buffer-table=4;descriptor-index=uint32;root-data=128"u8);
+        byte[] legacyV3 = SHA256.HashData("Lumyte.RenderGraph.ShaderBindings.v3;texture-table=0;sampler-table=1;buffer-table=2;storage-texture-table=3;writable-buffer-table=4;descriptor-index=uint32;root-data=64;root-transport=immediate;parameter-table=5;parameter-data=16384;matrix=row-major;short-write=zero-fill"u8);
+        if (CryptographicOperations.FixedTimeEquals(matches[0].AbiHash.Span, legacyV2)
+            || CryptographicOperations.FixedTimeEquals(matches[0].AbiHash.Span, legacyV3))
+        { throw new InvalidOperationException("Shader binding ABI v2/v3 is obsolete. Rebuild the Slang source with Lumyte.Graphics.Shader.Offline to regenerate all DXIL, SPIR-V and WGSL artifacts for ABI v4."); }
         if (!expectedAbiHash.IsEmpty && !CryptographicOperations.FixedTimeEquals(matches[0].AbiHash.Span, expectedAbiHash))
         {
-            throw new InvalidOperationException($"Shader ABI hash mismatch for {entryPoint}.");
+            throw new InvalidOperationException($"Shader ABI hash mismatch for {entryPoint}. Rebuild the Slang source with Lumyte.Graphics.Shader.Offline.");
         }
 
         return matches[0];

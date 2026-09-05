@@ -1,5 +1,4 @@
 using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Extensions.WGPU;
 using System.Runtime.InteropServices;
 using WgpuBuffer = Silk.NET.WebGPU.Buffer;
 
@@ -14,10 +13,8 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private const int NativeStorageTextureBindingOffset = MaximumShaderDescriptors * 3;
     private const int NativeWritableBufferBindingOffset = MaximumShaderDescriptors * 4;
 
-    private static readonly Lazy<Silk.NET.WebGPU.WebGPU> SharedApi = new(Silk.NET.WebGPU.WebGPU.GetApi);
-    private readonly Silk.NET.WebGPU.WebGPU api;
-    private readonly PfnRequestAdapterCallback adapterCallback;
-    private readonly PfnRequestDeviceCallback deviceCallback;
+
+    private readonly ModernWebGpuApi api;
     private readonly Dictionary<ulong, TextureRecord> textures = [];
     private readonly Dictionary<ulong, TextureViewRecord> textureViews = [];
     private readonly Dictionary<ulong, nint> samplers = [];
@@ -30,42 +27,31 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private Adapter* adapter;
     private Device* device;
     private Queue* queue;
-    private string? failure;
     private int bindGroupCreationCount;
     private bool disposed;
 
-    private WebGpuDevice(Silk.NET.WebGPU.WebGPU api)
-    {
-        this.api = api;
-        adapterCallback = new((status, value, message, _) =>
-        {
-            if (status == RequestAdapterStatus.Success) { adapter = value; }
-            else { failure = $"WebGPU adapter request failed: {status}."; }
-        });
-        deviceCallback = new((status, value, message, _) =>
-        {
-            if (status == RequestDeviceStatus.Success) { device = value; }
-            else { failure = $"WebGPU device request failed: {status}."; }
-        });
-    }
+    private WebGpuDevice(ModernWebGpuApi api) => this.api = api;
 
     public static WebGpuDevice Create()
     {
-        Silk.NET.WebGPU.WebGPU api = SharedApi.Value;
+        var api = new ModernWebGpuApi();
         var result = new WebGpuDevice(api);
         try
         {
-            var instanceDescription = new InstanceDescriptor();
-            result.instance = api.CreateInstance(in instanceDescription);
-            if (result.instance is null) { throw new InvalidOperationException("wgpuCreateInstance returned null."); }
-
-            var options = new RequestAdapterOptions { PowerPreference = PowerPreference.HighPerformance };
-            api.InstanceRequestAdapter(result.instance, in options, result.adapterCallback, null);
-            if (result.adapter is null) { throw new InvalidOperationException(result.failure ?? "WebGPU adapter request did not complete."); }
-
-            var deviceDescription = new DeviceDescriptor();
-            api.AdapterRequestDevice(result.adapter, in deviceDescription, result.deviceCallback, null);
-            if (result.device is null) { throw new InvalidOperationException(result.failure ?? "WebGPU device request did not complete."); }
+            result.instance = api.CreateInstance();
+            if (result.instance is null) { throw new InvalidOperationException("WebGPU instance creation failed."); }
+            result.adapter = api.RequestAdapter();
+            result.device = api.RequestDevice(result.adapter);
+            SupportedLimits supported = default;
+            if (!api.DeviceGetLimits(result.device, ref supported)
+                || supported.Limits.MaxTextureDimension2D < GpuCommonLimits.TextureDimension
+                || supported.Limits.MaxBindGroups < 1
+                || supported.Limits.MaxStorageBuffersPerShaderStage < GpuCommonLimits.StorageBuffers
+                || supported.Limits.MaxSampledTexturesPerShaderStage < GpuCommonLimits.SampledTextures
+                || supported.Limits.MaxSamplersPerShaderStage < GpuCommonLimits.Samplers
+                || supported.Limits.MaxStorageTexturesPerShaderStage < GpuCommonLimits.StorageTextures
+                || supported.Limits.MaxBufferSize < GpuCommonLimits.BufferSize)
+            { throw new NotSupportedException("WebGPU device does not meet Lumyte's common desktop limits (ABI v4)."); }
             result.queue = api.DeviceGetQueue(result.device);
             if (result.queue is null) { throw new InvalidOperationException("wgpuDeviceGetQueue returned null."); }
             result.MainQueue = new WebGpuQueue(result);
@@ -540,29 +526,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         }
     }
 
-    private byte[] MapReadback(WgpuBuffer* buffer, nuint size)
-    {
-        bool completed = false;
-        BufferMapAsyncStatus mapStatus = default;
-        var callback = new PfnBufferMapCallback((status, _) => { mapStatus = status; completed = true; });
-        api.BufferMapAsync(buffer, MapMode.Read, 0, size, callback, null);
-        var extensions = new Wgpu(api.Context);
-        while (!completed) { extensions.DevicePoll(device, true, null); }
-        if (mapStatus != BufferMapAsyncStatus.Success) { throw new InvalidOperationException($"WebGPU map failed: {mapStatus}."); }
-        void* mapped = api.BufferGetConstMappedRange(buffer, 0, size);
-        if (mapped is null) { throw new InvalidOperationException("WebGPU returned a null mapped buffer range."); }
-        try
-        {
-            byte[] result = new byte[checked((int)size)];
-            Marshal.Copy((nint)mapped, result, 0, result.Length);
-            return result;
-        }
-        finally
-        {
-            api.BufferUnmap(buffer);
-            GC.KeepAlive(callback);
-        }
-    }
+    private byte[] MapReadback(WgpuBuffer* buffer, nuint size) => api.ReadMapped(buffer, size);
 
     private static uint Align(uint value, uint alignment)
         => checked((value + alignment - 1) & ~(alignment - 1));

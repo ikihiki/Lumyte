@@ -85,7 +85,7 @@ No Graphics API の主旨は、メモリ・所有権・小さいハンドル・s
 | --- | --- | --- |
 | allocation と texture/view | 分離済み。persistent arena、alias plan も存在 | 所有権の分離を維持し、標準経路は共通allocatorに接続。明示placement/aliasingは拡張に置き、共通経路はbackend内部で適切な資源生成を選ぶ |
 | WebGPU の memory model | DeviceOwnedResources を明示し、placed allocation を偽装していない | 維持。WebGPU でのメモリ削減は descriptor/resource の再利用、pool、使用期間短縮を中心にする |
-| root input | 128-byte inline data が ABI に含まれる。GpuDeviceAddress は型のみで入力経路なし | raster/compute共通で最大64 bytesに制限。大きい入力は共通parameter bufferへ移行し、各backendの転送方式を内部で吸収する |
+| root input | 128-byte inline data が ABI に含まれる。GpuDeviceAddress は型のみで入力経路なし | raster/compute共通で最大64 bytesに制限。大きい入力は通常bufferへ置き、root dataのindex/offsetから参照する |
 | shader resource | 5種類の論理 table があるが Native も都度 native table を構築 | 論理indexと種類ごとの共通上限を定義。Nativeはpersistent descriptor/ページ再利用、WebGPUはtable/layout変換で同じ契約を実現する |
 | shader input | Backend の pipeline 作成が複数ターゲット入り GpuShaderPackage を受け取る | package の読込・選択を上位へ移し、backend-ready IR を受け取る |
 | graphics state | GpuDepthStencilState は公開されるが recorder に設定経路がない。CullMode 等は pipeline に入る | 全backendで成立するstate、attachment、sample、format/usageの契約を定義。動的stateとPSOの違いは内部で吸収し、共通範囲外は共通validationで拒否する |
@@ -193,22 +193,22 @@ Graphics.Library.AddDrawはworld/view-projection行列を128-byte root dataに�
 | 対象 | 採用する方針 |
 | --- | --- |
 | root data | raster/computeとも最大64 bytes、4-byte単位に統一。現在の128-byte契約を縮小し、backendの上限が大きくても共通APIの上限は増やさない |
-| 64 bytesを超える入力 | 共通のparameter bufferと論理bindingで渡す。上位APIがupload、binding、graph依存、GPU完了までの寿命を管理する |
+| 64 bytesを超える入力 | 通常のresource-table bufferへ置き、root data内のelement index/byte offsetからshaderが参照位置を算出する。command APIはparameter dataを特別扱いしない |
 | attachment、MSAA、format/usage、binding個数 | 対象環境すべてで保証する組合せと上限を固定する。実装を揃えるか共通descriptionを制限し、範囲外は共通validationで同じ段階・理由で拒否する |
 | shaderの入力・state | 同じ論理宣言と意味を維持し、shader出力、native binding、動的stateとpipeline stateの違いはbackend/toolchain内部で変換する |
 | capabilities/実device limits | backendの初期化・内部最適化・診断・明示的な拡張に使用する。標準描画の呼出し側に問い合わせや分岐を要求しない |
 
-root dataの64-byte制限はAPI側の共通契約である。WebGPUにはImmediatesが追加され、maxImmediateSizeの仕様既定値も64 bytesだが、64 bytesに制限するだけで旧runtimeや採用中のSilk.NET/WGPUが対応するわけではない。backendは必要なbindingとcompilerの対応を検証し、Immediatesを使えない環境ではuniform buffer + dynamic offsetで同じ64-byte契約を提供する。方式選択を利用者に公開する必要はない。[Chrome公式のImmediates解説](https://developer.chrome.com/blog/new-in-webgpu-149-150#immediates)、[WebGPU limits](https://gpuweb.github.io/gpuweb/#limits)、[WebGPU buffer binding layout](https://gpuweb.github.io/types/interfaces/GPUBufferBindingLayout.html)
+root dataの64-byte制限はAPI側の共通契約である。E2実装時の利用者指定により、全backendで直接渡し、bufferへのフォールバックは禁止する。DX12はroot constants、Vulkanはpush constants、WebGPUはImmediatesを使用する。WebGPUのnative runtimeをWebGPUSharp/Dawnへ更新し、必要な64-byte immediate dataを利用できない環境は初期化時に拒否する。実装済みの契約と再生成手順は[E2 shader ABI](2026-09-05-phase-2-shader-abi.md)、実行・所有権は[E2 ADR](2026-09-05-phase-2-execution-adr.md)を参照。
 
-既存AddDrawのWorldとViewProjectionは合計128 bytesなので、両行列を共通parameter bufferへ移す。root dataには必要な論理index/offsetなど64 bytes以内の小さい入力を置き、DrawTransformsを渡す利用者のbackend非依存な使い方を保つ。Worldを個別に使うshaderもあるため、移行時に無条件で1つの行列へ合成しない。合成済み行列だけを使う専用shaderは、別途明示した入力契約で64 bytesへ収められる。[現在の行列入力](E:/Lumyte/src/graphics/Lumyte.Graphics.Library/DrawRenderGraphExtensions.cs:146)
+既存AddDrawのWorldとViewProjectionはCPU側でWorld × ViewProjectionへ合成し、64-byte root dataとして渡す。より大きい入力や個別の行列を必要とするshaderは通常のresource-table bufferを使い、root dataのelement index/byte offsetから参照位置を算出する。[現在の行列入力](E:/Lumyte/src/graphics/Lumyte.Graphics.Library/DrawRenderGraphExtensions.cs:146)
 
 実装工程と完了条件:
 
 1. 対応対象の最低device/runtime要件と共通の機能・値の範囲をADRに定義する。backend名による違いが残るdescriptionや操作を棚卸しし、共通化、内部変換、共通制限、拡張への分離のいずれかに決める。共通要件を満たさない環境はdevice初期化時に診断する。
 2. RootDataSizeを64へ変更し、共通validation、shader ABIのversion/hash、DXIL/SPIR-V/WGSL生成、pipeline layoutを一緒に更新する。配置、行列layout、短い書込み、pass開始・pipeline切替時の状態を共通契約にする。旧ABIのshader packageはpipeline作成時に明確に拒否し、再生成手順を示す。
-3. 共通parameter bufferとその所有権を実装し、AddDraw、shader、サンプルを移行する。root dataとparameter bufferをVulkan、DirectX12、WebGPUのraster/compute双方に接続する。数値の上限だけを変えて既存AddDrawを失敗させる状態で工程を終えない。
-4. backend内部の転送領域とbind groupを再利用する。uniform経路はminUniformBufferOffsetAlignmentに従い、各入力のsnapshotをGPU完了まで保持する。同じ領域の上書きによる値の混同、drawごとのbuffer生成やGPU待機を避ける。公開データサイズ64 bytesと内部allocationのstrideを区別する。[WebGPU dynamic offsets](https://gpuweb.github.io/gpuweb/#dom-gpubindingcommandsmixin-setbindgroup)
-5. 共通xUnit consumer/conformance testで、4/64 bytesの成功、68/128 bytesの共通validationによる拒否、不正な単位、短い書込みの契約、異なる入力の複数draw/dispatch、pipeline切替、複数submissionの寿命を確認する。移行したAddDrawは両行列の意味を維持することを確認する。単なる例外の有無ではなく描画結果とcompute出力を検証し、浮動小数点差の許容条件も共通化する。
+3. command固有のparameter data経路を設けず、64 bytesを超える入力は通常のresource-table bufferへ置く。root dataからelement index/byte offsetを算出するshader ABIへAddDraw、shader、サンプルを移行する。
+4. resource-table bufferのupload、binding、graph依存、GPU完了までの寿命を既存のresource契約で管理する。root dataやparameter data専用の転送buffer、bind group、command-owned pageを作らない。
+5. 共通xUnit consumer/conformance testで、4/64 bytesの成功、68/128 bytesの共通validationによる拒否、不正な単位、短い書込みの契約、異なるroot入力の複数draw/dispatch、pipeline切替、複数submissionを確認する。移行したAddDrawは合成行列の意味を維持することを確認する。単なる例外の有無ではなく描画結果とcompute出力を検証し、浮動小数点差の許容条件も共通化する。
 6. 標準サンプルはbackend生成・ホスト接続だけを差し替えて3backendで実行する。描画・computeコードにbackend名の分岐やcapability判定を足さず、共通機能に関するNotSupportedExceptionが起きないことを受入条件にする。Browserは完成時に同じ契約と試験を適用し、未実装の現時点で対応済みとは扱わない。
 
 GPUアドレス、明示placement、aliasingなど、全backendで同じ意味を保証できない操作は明示的な拡張に置く。標準のLibrary/TwoD/Textからその拡張を利用者に要求しない。共通契約は機能と意味を保証するものであり、同一の実行時間や内部メモリ量を保証するものではない。
@@ -387,7 +387,7 @@ CPU bytes、GPU bytes、page 数の予算を定め、LRUとfont単位の無効�
 
 RasterPipeline/ComputePipeline フラグだけでは、attachment数、MSAA、root data、binding個数、format usageを判定できない。WebGPU の SetRootData と SetComputeRootData は例外。Vulkan/WebGPU の raster 作成は1 color/1 sampleに制限される。一方、共通descriptionはより広い値を受け取る。[capabilities](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuBackend.cs:4)、[WebGPU root data](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:340)、[Vulkan raster](E:/Lumyte/src/graphics/Lumyte.Graphics.Vulkan/VulkanDevice.cs:552)
 
-共通APIで受け付ける操作と値を全対応backendで保証する。最大64-byteのroot data、共通parameter bufferへのAddDraw移行、shader ABI更新、共通validation、WebGPU内部の転送方式を含む実装・受入条件は [U02](#u02) に集約する。ここで挙げたattachment、MSAA、format/usage、binding個数も同じ共通契約の棚卸し対象とする。
+共通APIで受け付ける操作と値を全対応backendで保証する。最大64-byteのroot data、rootから参照する通常buffer、AddDraw移行、shader ABI更新、共通validationを含む実装・受入条件は [U02](#u02) に集約する。ここで挙げたattachment、MSAA、format/usage、binding個数も同じ共通契約の棚卸し対象とする。
 
 ### R07 / P2 / 実装差分: WebGPU Native と Browser の完成度を区別する
 
@@ -752,13 +752,15 @@ Editor側ではツリー、画像、Inspectorの選択連動と内部bridgeの�
 
 E1の実装内容・寿命の契約・回帰試験は [E1実装記録](2026-09-05-phase-1-implementation.md) を参照。本書の初回レビュー結果とは区別する。
 
+E2の実装済み契約・移行手順・検証結果は[E2 shader ABI](2026-09-05-phase-2-shader-abi.md)、U01/U09の契約は[E2実行・寿命ADR](2026-09-05-phase-2-execution-adr.md)を参照。root dataは全backendで直接渡し、bufferへフォールバックしない。
+
 工数は1人が実装・レビュー対応・テスト整備を行う場合の粗い人日。既存APIの互換性、対象GPU/OS/ブラウザの範囲が未確定なため見積りには幅を持たせる。日程の約束ではなく、各工程の完了時に見直す。
 
 | 工程 | 目安 | 依存 | 成果物と完了条件 |
 | --- | ---: | --- | --- |
 | E0: 再現・基準線 | 2–3人日 | なし | R01の競合、17以上のtable bind、recording例外、2deviceのID、2host切替を個別に再現。テスト分類とCPU/GPU計測シナリオを記録 |
 | E1: 正しさと寿命 | 5–9人日 | E0 | R01/R03/R04/R13を修正。Vulkan pool容量対策を先行。callback失敗・誤使用でリーク/追跡外submissionなし。全体テスト成功 |
-| E2: backend非依存の共通API | 6–10人日 | E1 | U01/U02/U09の非同期・寿命・共通上限・state・graph契約をADR化し、64-byte root data、parameter buffer、shader ABI、AddDrawを実装・移行。共通範囲外は共通validationで拒否。同じ標準描画・computeコードがbackend別の分岐なしで3backendで成功する |
+| E2: backend非依存の共通API | 6–10人日 | E1 | U01/U02/U09の非同期・寿命・共通上限・state・graph契約をADR化し、64-byte root data、root参照のresource buffer、shader ABI、AddDrawを実装・移行。共通範囲外は共通validationで拒否。同じ標準描画・computeコードがbackend別の分岐なしで3backendで成功する |
 | E2a: CommandEncoder再設計 | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす |
 | E2b: 利用者向けAPIの統合 | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる |
 | E3: 配置と依存の整理 | 3–6人日 | E2 | src/tools/samples配置統一、RenderGraph抽出、shader containerとIR境界、DevTools.Protocol分離。runtimeにcompiler/server依存が入らないことを検証 |
@@ -795,7 +797,7 @@ API評価の改善順序を工程表へ対応付ける。契約をE2で確定し
 3. CommandBuffer のabort/所有権とsubmission全件事前検証＋異常系試験。
 4. deviceをまたぐID検証＋2device試験。
 5. DevTools host選択の明示化＋hookの挙動テスト。
-6. backend非依存の共通上限・64-byte root data・parameter buffer・lifetimeのADRと、同じconsumerを3backendで実行する試験計画。
+6. backend非依存の共通上限・64-byte root data・root参照buffer・lifetimeのADRと、同じconsumerを3backendで実行する試験計画。
 7. root data、shader ABI、WebGPUの転送、AddDrawを一貫して移行するPR。64-byte境界、既存の2行列、複数draw/dispatchを共通conformanceで検証。
 8. CommandEncoderのscope/state/clip/layerを再設計し、旧APIと利用箇所を移行するPR。例外時の状態復元とclip/layerの描画結果を回帰テストで検証。
 9. 配置だけを変更するPR。その後、RenderGraph・shader・Protocolの抽出を各PRに分離。
@@ -851,7 +853,7 @@ API評価の改善順序を工程表へ対応付ける。契約をE2で確定し
 - clean build、incremental build、publish、pack後のconsumer buildを分ける。Shader.Offlineはbuild toolingとして配り、slang import/includeとtool version/optionsの変更がincremental inputsに入るか確認する。
 - frontendは既存のlint、型検査、VitestをCIで実行する。csprojのbuildだけでfrontendの挙動テストが通ったと扱わない。
 - DevToolsはProtocol/Runtime/C# Clientの決定的なconsumer testと、実MagicOnion・GPU capture/pick・OTLP Collector・DAPの相互運用試験を分ける。v1移行とv2 profileの共有C#契約・MessagePack互換性を確認する。TypeScript/bridgeはEditor内部のテストとして扱い、[D0–D6の異常系・負荷条件](#devtools-roadmap)をgateに加える。
-- API migrationでは、backend生成・ホスト接続だけを差し替える共通consumer sampleを先に作る。64-byte root dataとparameter buffer、syncとasync、所有と借用の使い方を説明する。native固有機能は明示的な拡張の例に置き、共通サンプルは内部の転送方式を選択しない。
+- API migrationでは、backend生成・ホスト接続だけを差し替える共通consumer sampleを先に作る。64-byte root dataとroot参照buffer、syncとasync、所有と借用の使い方を説明する。native固有機能は明示的な拡張の例に置き、共通サンプルは内部の転送方式を選択しない。
 
 ## 10. 当面保留するもの
 

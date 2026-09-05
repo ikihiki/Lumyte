@@ -39,16 +39,18 @@ Every raster extension has overloads for an imported target and for a target alr
 component. Written resources are marked as graph outputs by default; disable that option for intermediate passes
 that are consumed later in the same graph.
 
-The two matrices occupy the existing 128-byte root-data contract in `World`, `ViewProjection` order, using the
-in-memory `System.Numerics.Matrix4x4` layout.
+`AddDraw` multiplies `World` and `ViewProjection` on the CPU and places the resulting row-major matrix in
+64-byte root data. Root data is passed directly as DX12 root constants, Vulkan push constants, or WebGPU
+immediate data; it never falls back to a buffer. Larger shader inputs use ordinary resource-table buffers,
+selected by indices and offsets carried in root data.
 
 ## Shader binding convention
 
 Render-graph shaders see one logical descriptor array per resource kind: textures, samplers, and shader-data
 buffers. The array bindings are fixed by `GpuShaderBindingConvention`; individual resources are selected by indices
 stored in root data. `GpuRenderGraphShaderBindings` maps those indices to typed graph textures and buffers so pass
-reads, stages, ordering, and descriptor hazards remain visible to graph compilation. Descriptor counts such as the
-current native limit of 64 per kind are backend limits, not part of the common shader ABI.
+reads, stages, ordering, and descriptor hazards remain visible to graph compilation. The common profile permits
+16 textures, 16 samplers, eight buffers total across read-only and writable bindings, and four storage textures.
 
 ## Add a draw
 

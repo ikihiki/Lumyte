@@ -15,7 +15,7 @@ public sealed class GpuShaderBindingConventionTests
         Assert.Equal(2, GpuShaderBindingConvention.BufferTable);
         Assert.Equal(3, GpuShaderBindingConvention.StorageTextureTable);
         Assert.Equal(4, GpuShaderBindingConvention.WritableBufferTable);
-        Assert.Equal(128, GpuShaderBindingConvention.RootDataSize);
+        Assert.Equal(64, GpuShaderBindingConvention.RootDataSize);
         Assert.Equal(SHA256.HashSizeInBytes, GpuShaderBindingConvention.AbiHash.Length);
     }
 

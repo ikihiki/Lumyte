@@ -81,6 +81,7 @@ public sealed class GpuRasterPipelineDescription
             throw new ArgumentOutOfRangeException(nameof(SampleCount));
         }
 
+        GpuCommonLimits.ValidatePipeline(this);
         EmbeddedBlend?.Validate();
         return this;
     }

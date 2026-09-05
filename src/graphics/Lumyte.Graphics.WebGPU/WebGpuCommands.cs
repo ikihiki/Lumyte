@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Extensions.WGPU;
 
 namespace Lumyte.Graphics.WebGPU;
 
@@ -41,14 +40,15 @@ public sealed unsafe partial class WebGpuDevice
         }
 
         string source = TranslateLogicalBindings(Encoding.UTF8.GetString(vertex.Payload.Span));
-        nint native = CreateNativeRasterPipeline(
-            source,
-            vertexEntryPoint,
-            pixelEntryPoint,
-            description);
-        var handle = new GpuRasterPipelineHandle(GpuHandleIds.Allocate());
-        rasterPipelines.Add(handle.Value, new(native));
-        return handle;
+        ShaderInputLayout? inputs = CreateShaderInputLayout(source);
+        try
+        {
+            nint native = CreateNativeRasterPipeline(source, vertexEntryPoint, pixelEntryPoint, description, inputs?.Pipeline ?? 0);
+            var handle = new GpuRasterPipelineHandle(GpuHandleIds.Allocate());
+            rasterPipelines.Add(handle.Value, new(native) { Inputs = inputs });
+            return handle;
+        }
+        catch { inputs?.Dispose(api); throw; }
     }
 
     public GpuComputePipelineHandle CreateComputePipeline(
@@ -61,14 +61,17 @@ public sealed unsafe partial class WebGpuDevice
         GpuShaderArtifact artifact = package.Select(
             GpuShaderCodeFormat.Wgsl, GpuShaderStage.Compute, entryPoint, expectedAbiHash.Span);
         string source = TranslateLogicalBindings(Encoding.UTF8.GetString(artifact.Payload.Span));
-        ShaderModule* shader = CreateNativeShaderModule(source);
+        ShaderInputLayout? inputs = CreateShaderInputLayout(source);
+        ShaderModule* shader = null;
         try
         {
+            shader = CreateNativeShaderModule(source);
             byte[] entryBytes = Encoding.UTF8.GetBytes(entryPoint + '\0');
             fixed (byte* nativeEntry = entryBytes)
             {
                 var description = new ComputePipelineDescriptor
                 {
+                    Layout = (PipelineLayout*)(inputs?.Pipeline ?? 0),
                     Compute = new ProgrammableStageDescriptor
                     {
                         Module = shader,
@@ -78,13 +81,14 @@ public sealed unsafe partial class WebGpuDevice
                 ComputePipeline* native = api.DeviceCreateComputePipeline(device, in description);
                 if (native is null) { throw new InvalidOperationException("WebGPU compute pipeline creation failed."); }
                 var handle = new GpuComputePipelineHandle(GpuHandleIds.Allocate());
-                computePipelines.Add(handle.Value, new((nint)native));
+                computePipelines.Add(handle.Value, new((nint)native) { Inputs = inputs });
                 return handle;
             }
         }
+        catch { inputs?.Dispose(api); throw; }
         finally
         {
-            api.ShaderModuleRelease(shader);
+            if (shader != null) { api.ShaderModuleRelease(shader); }
         }
     }
 
@@ -109,6 +113,10 @@ public sealed unsafe partial class WebGpuDevice
     {
         int binding = int.Parse(match.Groups["binding"].Value, System.Globalization.CultureInfo.InvariantCulture);
         int group = int.Parse(match.Groups["group"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        if (group == GpuShaderBindingConvention.RootDataTable)
+        { throw new InvalidOperationException("Root data must use var<immediate>. Regenerate the shader package with Lumyte.Graphics.Shader.Offline; uniform fallback is disabled."); }
+        if (group == 5)
+        { throw new InvalidOperationException("Parameter bindings were removed in shader ABI v4. Derive shader inputs from root data or use a regular resource-table buffer."); }
         if (group == GpuShaderBindingConvention.TextureTable && binding >= MaximumShaderDescriptors)
         {
             return match.Value;
@@ -174,16 +182,17 @@ public sealed unsafe partial class WebGpuDevice
             WebGpuCommandRecorder[] recorders = GpuBackendCommands.PrepareSubmission<WebGpuCommandRecorder>(
                 commandBuffers, recorder => recorder.Owner == owner);
             CommandBuffer** native = stackalloc CommandBuffer*[commandBuffers.Length];
-            var records = new nint[commandBuffers.Length];
+
             for (int index = 0; index < commandBuffers.Length; index++)
             {
                 WebGpuCommandRecorder recorder = recorders[index];
                 native[index] = recorder.Commands;
-                records[index] = (nint)recorder.Commands;
+
             }
-            semaphore.Track(signalValue, records);
+            semaphore.Track(signalValue, recorders);
             GpuBackendCommands.MarkSubmitted(commandBuffers);
             owner.api.QueueSubmit(owner.queue, checked((nuint)commandBuffers.Length), native);
+            semaphore.Schedule(signalValue);
         }
 
         public void Wait(GpuSemaphore signalSemaphore, ulong value)
@@ -310,6 +319,7 @@ public sealed unsafe partial class WebGpuDevice
             }
             pipeline = record;
             Owner.api.RenderPassEncoderSetPipeline(pass, (RenderPipeline*)record.Handle);
+            SetRootData(new byte[GpuShaderBindingConvention.RootDataSize]);
         }
 
         public void SetViewportAndScissor(GpuViewport viewport, GpuScissorRect scissor)
@@ -319,13 +329,16 @@ public sealed unsafe partial class WebGpuDevice
         }
 
         public void Draw(uint vertexCount, uint instanceCount)
-            => Owner.api.RenderPassEncoderDraw(pass, vertexCount, instanceCount, 0, 0);
+        {
+            BindEmptyResources(pipeline?.Inputs, false);
+            Owner.api.RenderPassEncoderDraw(pass, vertexCount, instanceCount, 0, 0);
+        }
 
         public void SetResourceTable(GpuResourceTable table)
         {
             if (pipeline is null) { throw new InvalidOperationException("A raster pipeline must be bound before a resource table."); }
             pipeline.Layout = pipeline.Layout == 0
-                ? Owner.GetNativeBindGroupLayout(pipeline.Handle)
+                ? (pipeline.Inputs is { } inputLayout ? RetainLayout(inputLayout.Resources) : Owner.GetNativeBindGroupLayout(pipeline.Handle))
                 : pipeline.Layout;
             nint bindGroup = Owner.GetOrCreateBindGroup(table, pipeline.Layout);
             Owner.api.RenderPassEncoderSetBindGroup(pass, 0, (BindGroup*)bindGroup, 0, null);
@@ -338,7 +351,28 @@ public sealed unsafe partial class WebGpuDevice
             => throw new NotSupportedException("WebGPU uses device-owned texture reads.");
 
         public void SetRootData(ReadOnlySpan<byte> data)
-            => throw new NotSupportedException("WebGPU root data mapping is not implemented.");
+        {
+            if (pipeline is null) { throw new InvalidOperationException("Bind a raster pipeline before root data."); }
+            if (pipeline.Inputs is not null) { Owner.api.RenderPassEncoderSetImmediates(pass, data); }
+        }
+        private nint RetainLayout(nint layout)
+        {
+            Owner.api.BindGroupLayoutReference((BindGroupLayout*)layout);
+            return layout;
+        }
+        private void BindEmptyResources(ShaderInputLayout? layout, bool compute)
+        {
+            if (layout is null || !layout.Empty) { return; }
+            nint group = layout.GetEmptyGroup(Owner);
+            if (compute)
+            {
+                Owner.api.ComputePassEncoderSetBindGroup(computePass, 0, (BindGroup*)group, 0, null);
+            }
+            else
+            {
+                Owner.api.RenderPassEncoderSetBindGroup(pass, 0, (BindGroup*)group, 0, null);
+            }
+        }
 
         public void SetComputePipeline(GpuComputePipelineHandle handle)
         {
@@ -354,6 +388,7 @@ public sealed unsafe partial class WebGpuDevice
             }
             computePipeline = record;
             Owner.api.ComputePassEncoderSetPipeline(computePass, (ComputePipeline*)record.Handle);
+            SetComputeRootData(new byte[GpuShaderBindingConvention.RootDataSize]);
         }
 
         public void SetComputeResourceTable(GpuResourceTable table)
@@ -363,7 +398,7 @@ public sealed unsafe partial class WebGpuDevice
                 throw new InvalidOperationException("A compute pipeline must be bound before a compute resource table.");
             }
             computePipeline.Layout = computePipeline.Layout == 0
-                ? (nint)Owner.api.ComputePipelineGetBindGroupLayout((ComputePipeline*)computePipeline.Handle, 0)
+                ? (computePipeline.Inputs is { } inputLayout ? RetainLayout(inputLayout.Resources) : (nint)Owner.api.ComputePipelineGetBindGroupLayout((ComputePipeline*)computePipeline.Handle, 0))
                 : computePipeline.Layout;
             if (computePipeline.Layout == 0)
             {
@@ -374,8 +409,10 @@ public sealed unsafe partial class WebGpuDevice
         }
 
         public void SetComputeRootData(ReadOnlySpan<byte> data)
-            => throw new NotSupportedException(
-                "WebGPU has no push constants; compute parameters must use the read-only buffer table.");
+        {
+            if (computePipeline is null) { throw new InvalidOperationException("Bind a compute pipeline before root data."); }
+            if (computePipeline.Inputs is not null) { Owner.api.ComputePassEncoderSetImmediates(computePass, data); }
+        }
 
         public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
         {
@@ -383,6 +420,7 @@ public sealed unsafe partial class WebGpuDevice
             {
                 throw new InvalidOperationException("A compute pipeline must be bound before dispatch.");
             }
+            BindEmptyResources(computePipeline.Inputs, true);
             Owner.api.ComputePassEncoderDispatchWorkgroups(computePass, groupCountX, groupCountY, groupCountZ);
         }
 
@@ -431,8 +469,10 @@ public sealed unsafe partial class WebGpuDevice
 
     private sealed class WebGpuSemaphore(WebGpuDevice owner, ulong initialValue) : GpuSemaphore
     {
-        private readonly SortedDictionary<ulong, List<nint>> pending = [];
+        private readonly SortedDictionary<ulong, List<WebGpuCommandRecorder>> pending = [];
+        private readonly SortedDictionary<ulong, ModernWebGpuApi.CallbackState> completions = [];
         private ulong completedValue = initialValue;
+        public void Schedule(ulong value) => completions.Add(value, Owner.api.Completion(Owner.queue));
         private ulong lastSignalValue = initialValue;
         private bool disposed;
 
@@ -444,7 +484,7 @@ public sealed unsafe partial class WebGpuDevice
             if (value <= lastSignalValue) { throw new ArgumentOutOfRangeException(nameof(value)); }
         }
 
-        public void Track(ulong value, nint[] commands)
+        public void Track(ulong value, WebGpuCommandRecorder[] commands)
         {
             pending.Add(value, [.. commands]);
             lastSignalValue = value;
@@ -456,9 +496,10 @@ public sealed unsafe partial class WebGpuDevice
             if (value > lastSignalValue) { throw new ArgumentOutOfRangeException(nameof(value)); }
             if (value > completedValue)
             {
-                var extensions = new Wgpu(Owner.api.Context);
-                extensions.DevicePoll(Owner.device, true, null);
-                completedValue = lastSignalValue;
+                var signal = completions.First(pair => pair.Key >= value);
+                try { Owner.api.Wait(signal.Value); }
+                catch (GpuDeviceLostException) { completedValue = lastSignalValue; ReleaseCompleted(); throw; }
+                completedValue = signal.Key;
             }
             ReleaseCompleted();
         }
@@ -469,11 +510,9 @@ public sealed unsafe partial class WebGpuDevice
             if (value > lastSignalValue) { throw new ArgumentOutOfRangeException(nameof(value)); }
             if (value > completedValue)
             {
-                var extensions = new Wgpu(Owner.api.Context);
-                if (extensions.DevicePoll(Owner.device, false, null))
-                {
-                    completedValue = lastSignalValue;
-                }
+                var signal = completions.First(pair => pair.Key >= value);
+                try { if (Owner.api.Poll(signal.Value)) { completedValue = signal.Key; } }
+                catch (GpuDeviceLostException) { completedValue = lastSignalValue; ReleaseCompleted(); throw; }
             }
             ReleaseCompleted();
             return value <= completedValue;
@@ -483,8 +522,12 @@ public sealed unsafe partial class WebGpuDevice
         {
             foreach (ulong key in pending.Keys.TakeWhile(key => key <= completedValue).ToArray())
             {
-                foreach (nint command in pending[key]) { Owner.api.CommandBufferRelease((CommandBuffer*)command); }
+                // Deliver and retire callbacks for earlier signal values as well.
+                try { Owner.api.Wait(completions[key]); }
+                catch (GpuDeviceLostException) { }
+                foreach (WebGpuCommandRecorder command in pending[key]) { command.Abort(); }
                 pending.Remove(key);
+                completions.Remove(key);
             }
         }
 
@@ -499,10 +542,12 @@ public sealed unsafe partial class WebGpuDevice
     {
         public nint Handle { get; } = handle;
         public nint Layout { get; set; }
+        public ShaderInputLayout? Inputs { get; init; }
 
-        public void Dispose(Silk.NET.WebGPU.WebGPU api)
+        public void Dispose(ModernWebGpuApi api)
         {
             if (Layout != 0) { api.BindGroupLayoutRelease((BindGroupLayout*)Layout); }
+            Inputs?.Dispose(api);
             api.RenderPipelineRelease((RenderPipeline*)Handle);
         }
     }
@@ -511,10 +556,12 @@ public sealed unsafe partial class WebGpuDevice
     {
         public nint Handle { get; } = handle;
         public nint Layout { get; set; }
+        public ShaderInputLayout? Inputs { get; init; }
 
-        public void Dispose(Silk.NET.WebGPU.WebGPU api)
+        public void Dispose(ModernWebGpuApi api)
         {
             if (Layout != 0) { api.BindGroupLayoutRelease((BindGroupLayout*)Layout); }
+            Inputs?.Dispose(api);
             api.ComputePipelineRelease((ComputePipeline*)Handle);
         }
     }

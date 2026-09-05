@@ -143,14 +143,12 @@ public static class DrawRenderGraphExtensions
             context.BindShaderResources(bindings);
         }
 
-        Span<byte> transforms = stackalloc byte[128];
-        Matrix4x4 world = state.Draw.Transforms.World;
-        Matrix4x4 viewProjection = state.Draw.Transforms.ViewProjection;
-        MemoryMarshal.Write(transforms, in world);
-        MemoryMarshal.Write(transforms[64..], in viewProjection);
+        Span<byte> rootData = stackalloc byte[GpuShaderBindingConvention.RootDataSize];
+        Matrix4x4 worldViewProjection = state.Draw.Transforms.World * state.Draw.Transforms.ViewProjection;
+        MemoryMarshal.Write(rootData, in worldViewProjection);
 
         commands
-            .SetRootData(transforms)
+            .SetRootData(rootData)
             .SetViewportAndScissor(
                 new(0, 0, state.Target.Description.Width, state.Target.Description.Height),
                 new(0, 0, state.Target.Description.Width, state.Target.Description.Height))

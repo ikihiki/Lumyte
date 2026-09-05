@@ -1,5 +1,11 @@
 # Lumyte GPU design
 
+The historical design directions below are superseded for shader inputs and the common backend profile by
+the [E2 shader ABI](../../../docs/reviews/2026-09-05-phase-2-shader-abi.md) and
+[E2 execution contract](../../../docs/reviews/2026-09-05-phase-2-execution-adr.md).
+Root data is now up to 64 bytes of inline constants on every backend, with no buffer fallback.
+Larger inputs use ordinary resource-table buffers selected from root data; commands have no parameter-data path.
+
 This design follows Sebastian Aaltonen's [No Graphics API](https://www.sebastianaaltonen.com/blog/no-graphics-api)
 as a direction for modern bindless hardware. Luxel is an implementation reference, not the API contract.
 

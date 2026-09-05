@@ -209,7 +209,7 @@ public sealed unsafe partial class WebGpuDevice
         string shaderSource,
         string vertexEntryPoint,
         string fragmentEntryPoint,
-        GpuRasterPipelineDescription pipelineDescription)
+        GpuRasterPipelineDescription pipelineDescription, nint pipelineLayout = 0)
     {
         ShaderModule* shader = CreateNativeShaderModule(shaderSource);
         try
@@ -270,6 +270,7 @@ public sealed unsafe partial class WebGpuDevice
                 };
                 var description = new RenderPipelineDescriptor
                 {
+                    Layout = (PipelineLayout*)pipelineLayout,
                     Vertex = new VertexState { Module = shader, EntryPoint = vertexEntry },
                     Primitive = new PrimitiveState
                     {

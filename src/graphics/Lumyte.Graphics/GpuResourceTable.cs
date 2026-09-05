@@ -19,11 +19,11 @@ public sealed class GpuResourceTable
         int storageTextureSlotCount = 0,
         int writableBufferSlotCount = 0)
     {
-        if (textureSlotCount < 0) { throw new ArgumentOutOfRangeException(nameof(textureSlotCount)); }
-        if (samplerSlotCount < 0) { throw new ArgumentOutOfRangeException(nameof(samplerSlotCount)); }
-        if (bufferSlotCount < 0) { throw new ArgumentOutOfRangeException(nameof(bufferSlotCount)); }
-        if (storageTextureSlotCount < 0) { throw new ArgumentOutOfRangeException(nameof(storageTextureSlotCount)); }
-        if (writableBufferSlotCount < 0) { throw new ArgumentOutOfRangeException(nameof(writableBufferSlotCount)); }
+        if (textureSlotCount < 0 || textureSlotCount > GpuCommonLimits.SampledTextures) { throw new ArgumentOutOfRangeException(nameof(textureSlotCount)); }
+        if (samplerSlotCount < 0 || samplerSlotCount > GpuCommonLimits.Samplers) { throw new ArgumentOutOfRangeException(nameof(samplerSlotCount)); }
+        if (bufferSlotCount < 0 || bufferSlotCount > GpuCommonLimits.StorageBuffers) { throw new ArgumentOutOfRangeException(nameof(bufferSlotCount)); }
+        if (storageTextureSlotCount < 0 || storageTextureSlotCount > GpuCommonLimits.StorageTextures) { throw new ArgumentOutOfRangeException(nameof(storageTextureSlotCount)); }
+        if (writableBufferSlotCount < 0 || writableBufferSlotCount > GpuCommonLimits.StorageBuffers - bufferSlotCount) { throw new ArgumentOutOfRangeException(nameof(writableBufferSlotCount)); }
         if (textureSlotCount == 0 && samplerSlotCount == 0 && bufferSlotCount == 0
             && storageTextureSlotCount == 0 && writableBufferSlotCount == 0)
         {

@@ -23,4 +23,10 @@
     <None Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64\dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" />
+    <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputRaster.slang" />
+    <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputCompute.slang" />
+  </ItemGroup>
+  <Import Project="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
 </Project>

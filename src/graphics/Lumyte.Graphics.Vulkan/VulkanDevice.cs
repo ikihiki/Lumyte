@@ -1226,6 +1226,12 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         queueFamilyIndex = queueFamily;
         vk.GetPhysicalDeviceMemoryProperties(physicalDevice, out memoryProperties);
         vk.GetPhysicalDeviceProperties(physicalDevice, out PhysicalDeviceProperties physicalProperties);
+        if (physicalProperties.Limits.MaxPushConstantsSize < GpuShaderBindingConvention.RootDataSize
+            || physicalProperties.Limits.MaxBoundDescriptorSets < 5
+            || physicalProperties.Limits.MaxImageDimension2D < GpuCommonLimits.TextureDimension
+            || physicalProperties.Limits.MaxPerStageDescriptorStorageBuffers < GpuCommonLimits.StorageBuffers
+            || physicalProperties.Limits.MaxPerStageDescriptorStorageImages < GpuCommonLimits.StorageTextures)
+        { throw new NotSupportedException("Vulkan device does not meet Lumyte's common desktop limits (ABI v4, five descriptor sets)."); }
         byte* name = physicalProperties.DeviceName;
         DeviceName = System.Text.Encoding.UTF8.GetString(name, 256).TrimEnd('\0');
 
@@ -1978,6 +1984,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             }
             Owner.vk.CmdBindPipeline(CommandBuffer, PipelineBindPoint.Graphics, record.Pipeline);
             currentPipeline = record;
+            SetRootData(new byte[GpuShaderBindingConvention.RootDataSize]);
         }
         public void SetViewportAndScissor(GpuViewport viewport, GpuScissorRect scissor)
         {
@@ -2233,6 +2240,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             }
             Owner.vk.CmdBindPipeline(CommandBuffer, PipelineBindPoint.Compute, record.Pipeline);
             currentComputePipeline = record;
+            SetComputeRootData(new byte[GpuShaderBindingConvention.RootDataSize]);
         }
         public void SetComputeRootData(ReadOnlySpan<byte> data)
         {

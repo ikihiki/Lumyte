@@ -16,4 +16,5 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup><ProjectReference Include="..\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" /></ItemGroup>
 </Project>

@@ -6,7 +6,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
     <PackageReference Include="Silk.NET.WebGPU" />
-    <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" />
-    <PackageReference Include="Silk.NET.WebGPU.Extensions.WGPU" />
+    <PackageReference Include="WebGPUSharp" />
   </ItemGroup>
 </Project>

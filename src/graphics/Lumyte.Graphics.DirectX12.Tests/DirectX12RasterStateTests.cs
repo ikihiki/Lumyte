@@ -224,22 +224,14 @@ public sealed class DirectX12RasterStateTests
 
     [Fact]
     [Trait("Category", "DirectX12Conformance")]
-    public void MultipleColorTargetsReceiveDistinctShaderOutputs()
+    public void MultipleColorTargetsAreRejectedByTheCommonProfile()
     {
         using var fixture = new RenderFixture();
-        (GpuTextureHandle secondTarget, GpuTextureView secondView) = fixture.CreateAdditionalTarget();
-        GpuRasterPipelineHandle pipeline = fixture.CreatePipeline(
+        var exception = Assert.Throws<NotSupportedException>(() => fixture.CreatePipeline(
             new([new(GpuFormat.Rgba8Unorm), new(GpuFormat.Rgba8Unorm)]),
-            TriangleVertex,
-            MultipleTargetPixel);
+            TriangleVertex, MultipleTargetPixel));
 
-        fixture.RenderTargets([fixture.TargetView, secondView], commands =>
-            commands.SetPipeline(pipeline).Draw(3));
-        byte[] firstPixels = fixture.ReadTarget(fixture.Target);
-        byte[] secondPixels = fixture.ReadTarget(secondTarget);
-
-        AssertPixelNear(firstPixels, 255, 0, 0, 255);
-        AssertPixelNear(secondPixels, 0, 255, 0, 255);
+        Assert.Contains("common raster profile", exception.Message, StringComparison.Ordinal);
     }
 
     private static bool IsCenterColored(ReadOnlySpan<byte> pixels)

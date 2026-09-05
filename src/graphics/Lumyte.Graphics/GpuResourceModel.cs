@@ -81,8 +81,8 @@ public readonly record struct GpuBufferDescription(ulong Size, GpuBufferUsage Us
 {
     public GpuBufferDescription Validate()
     {
-        if (Size == 0) { throw new ArgumentOutOfRangeException(nameof(Size)); }
-        if (Usage == GpuBufferUsage.None) { throw new ArgumentOutOfRangeException(nameof(Usage)); }
+        if (Size == 0 || Size > GpuCommonLimits.BufferSize) { throw new ArgumentOutOfRangeException(nameof(Size)); }
+        if (Usage == GpuBufferUsage.None || (Usage & ~(GpuBufferUsage)31) != 0) { throw new ArgumentOutOfRangeException(nameof(Usage)); }
         return this;
     }
 }
@@ -133,6 +133,7 @@ public readonly record struct GpuTextureDescription(
 {
     public GpuTextureDescription Validate()
     {
+        GpuCommonLimits.ValidateTexture(this);
         if (Width == 0 || Height == 0)
         {
             throw new ArgumentOutOfRangeException(nameof(Width));
