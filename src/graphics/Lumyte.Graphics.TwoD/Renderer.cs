@@ -14,7 +14,10 @@ public sealed class Renderer : IDisposable
     private readonly Dictionary<ImageId, RegisteredImage> images = [];
     private readonly Dictionary<DistanceFieldAtlas, ImageId> distanceFieldAtlases = [];
     private readonly Dictionary<(GpuFormat Format, PreparedBatchKind Kind), GpuRasterPipelineHandle> pipelines = [];
-    private readonly Dictionary<(GpuFormat Format, BlendMode Mode), GpuRasterPipelineHandle> layerPipelines = [];
+    private readonly Dictionary<(GpuFormat Format, CompositeMode Mode), GpuRasterPipelineHandle> layerPipelines = [];
+    private readonly Dictionary<GpuFormat, GpuRasterPipelineHandle> clippedLayerPipelines = [];
+    private readonly Dictionary<GpuFormat, GpuRasterPipelineHandle> compositePipelines = [];
+    private readonly Dictionary<GpuFormat, GpuRasterPipelineHandle> copyPipelines = [];
     private readonly Dictionary<GpuFormat, GpuRasterPipelineHandle> blurPipelines = [];
     private readonly Dictionary<GpuFormat, GpuRasterPipelineHandle> maskPipelines = [];
     private GpuComputePipelineHandle pathPreparationPipeline;
@@ -25,8 +28,6 @@ public sealed class Renderer : IDisposable
     private ulong nextImageId = 1;
     private bool disposed;
 
-    internal IGpuBackend Backend => backend;
-
     public Renderer(IGpuBackend backend)
     {
         this.backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -34,6 +35,24 @@ public sealed class Renderer : IDisposable
         {
             throw new ArgumentException("The backend does not support raster pipelines.", nameof(backend));
         }
+    }
+
+    /// <summary>The GPU backend used to allocate resources consumed by this renderer.</summary>
+    public IGpuBackend Backend
+    {
+        get
+        {
+            VerifyAlive();
+            return backend;
+        }
+    }
+
+    /// <summary>Returns whether a command encoder was created by this renderer.</summary>
+    public bool Owns(CommandEncoder encoder)
+    {
+        VerifyAlive();
+        ArgumentNullException.ThrowIfNull(encoder);
+        return ReferenceEquals(encoder.Owner, this);
     }
 
     public CommandEncoder CreateCommandEncoder()
@@ -98,9 +117,20 @@ public sealed class Renderer : IDisposable
         int acceptedCommands = 0;
 
         ReadOnlySpan<RecordedCommand> recordedCommands = displayList.Commands;
-        for (int sequence = 0; sequence < recordedCommands.Length; sequence++)
+        for (int index = 0; index < recordedCommands.Length; index++)
         {
-            RecordedCommand command = recordedCommands[sequence];
+            RecordedCommand command = recordedCommands[index];
+            int sequence = command.Sequence;
+            if (!command.Brush.UsesLegacyGpuLayout && command.Kind != DrawCommandKind.Path)
+            {
+                throw new NotSupportedException(
+                    "Extended gradients currently require the GPU path drawing route.");
+            }
+            if (command.ClipStack?.RequiresCoverage == true && command.Kind != DrawCommandKind.Path)
+            {
+                throw new NotSupportedException(
+                    "Path and transformed rectangle clips currently require the GPU path drawing route.");
+            }
             Rect? clip = command.Clip is { } requestedClip
                 ? Rect.Intersect(targetBounds, requestedClip)
                 : targetBounds;
@@ -144,7 +174,8 @@ public sealed class Renderer : IDisposable
                     commandOffset,
                     clip.Value,
                     imageIndex,
-                    command.LayerId))
+                    command.LayerId,
+                    sequence))
                 {
                     while (commandOffset % ShaderBufferOffsetAlignment != 0)
                     {
@@ -167,6 +198,16 @@ public sealed class Renderer : IDisposable
             acceptedCommands++;
         }
 
+        PreparedLayer[] preparedLayers = PrepareLayers(
+            displayList.Layers,
+            targetDescription,
+            preparedImages,
+            imageIndices,
+            pathInputBytes,
+            pathJobs,
+            ref pathOutputLength,
+            out byte[] layerBytes);
+
         OwnedBuffer? primitiveBuffer = null;
         OwnedBuffer? polygonBuffer = null;
         OwnedBuffer? pathBuffer = null;
@@ -188,12 +229,6 @@ public sealed class Renderer : IDisposable
                 pathBuffer = OwnedBuffer.CreateStorage(backend, pathOutputLength);
                 PreparePaths(input, pathBuffer, pathJobs);
             }
-            PreparedLayer[] preparedLayers = PrepareLayers(
-                displayList.Layers,
-                targetDescription,
-                preparedImages,
-                imageIndices,
-                out byte[] layerBytes);
             if (layerBytes.Length != 0)
             {
                 layerBuffer = OwnedBuffer.Create(backend, layerBytes);
@@ -235,11 +270,29 @@ public sealed class Renderer : IDisposable
     public void Dispose()
     {
         if (disposed) { return; }
+        foreach (DistanceFieldAtlas atlas in distanceFieldAtlases.Keys)
+        {
+            atlas.Disposing -= OnDistanceFieldAtlasDisposing;
+        }
+        distanceFieldAtlases.Clear();
+        images.Clear();
         foreach (GpuRasterPipelineHandle pipeline in pipelines.Values)
         {
             backend.DestroyRasterPipeline(pipeline);
         }
         foreach (GpuRasterPipelineHandle pipeline in layerPipelines.Values)
+        {
+            backend.DestroyRasterPipeline(pipeline);
+        }
+        foreach (GpuRasterPipelineHandle pipeline in clippedLayerPipelines.Values)
+        {
+            backend.DestroyRasterPipeline(pipeline);
+        }
+        foreach (GpuRasterPipelineHandle pipeline in compositePipelines.Values)
+        {
+            backend.DestroyRasterPipeline(pipeline);
+        }
+        foreach (GpuRasterPipelineHandle pipeline in copyPipelines.Values)
         {
             backend.DestroyRasterPipeline(pipeline);
         }
@@ -258,6 +311,9 @@ public sealed class Renderer : IDisposable
         }
         pipelines.Clear();
         layerPipelines.Clear();
+        clippedLayerPipelines.Clear();
+        compositePipelines.Clear();
+        copyPipelines.Clear();
         blurPipelines.Clear();
         maskPipelines.Clear();
         if (!layerSampler.IsNull)
@@ -265,8 +321,6 @@ public sealed class Renderer : IDisposable
             backend.DestroySampler(layerSampler);
             layerSampler = default;
         }
-        distanceFieldAtlases.Clear();
-        images.Clear();
         disposed = true;
     }
 
@@ -290,8 +344,26 @@ public sealed class Renderer : IDisposable
         }
         if (distanceFieldAtlases.TryGetValue(atlas, out ImageId image)) { return image; }
         image = RegisterImage(atlas.Texture, atlas.Description, atlas.Sampler);
-        distanceFieldAtlases.Add(atlas, image);
+        try
+        {
+            distanceFieldAtlases.Add(atlas, image);
+            atlas.Disposing += OnDistanceFieldAtlasDisposing;
+        }
+        catch
+        {
+            distanceFieldAtlases.Remove(atlas);
+            images.Remove(image);
+            throw;
+        }
         return image;
+    }
+
+    private void OnDistanceFieldAtlasDisposing(DistanceFieldAtlas atlas)
+    {
+        if (distanceFieldAtlases.Remove(atlas, out ImageId image))
+        {
+            images.Remove(image);
+        }
     }
 
     internal GpuRasterPipelineHandle GetPipeline(GpuFormat format, PreparedBatchKind kind)
@@ -344,9 +416,15 @@ public sealed class Renderer : IDisposable
         return layerSampler;
     }
 
-    internal GpuRasterPipelineHandle GetLayerPipeline(GpuFormat format, BlendMode mode)
+    internal GpuRasterPipelineHandle GetLayerPipeline(GpuFormat format, CompositeMode mode)
     {
         VerifyAlive();
+        if (RequiresBackdropSampling(mode))
+        {
+            throw new ArgumentException(
+                $"Composite mode {mode} requires the backdrop-sampling pipeline.",
+                nameof(mode));
+        }
         if (layerPipelines.TryGetValue((format, mode), out GpuRasterPipelineHandle pipeline))
         {
             return pipeline;
@@ -363,6 +441,64 @@ public sealed class Renderer : IDisposable
             "layerPixel",
             GpuShaderBindingConvention.AbiHash);
         layerPipelines.Add((format, mode), pipeline);
+        return pipeline;
+    }
+
+    internal GpuRasterPipelineHandle GetCompositePipeline(GpuFormat format)
+    {
+        VerifyAlive();
+        if (compositePipelines.TryGetValue(format, out GpuRasterPipelineHandle pipeline))
+        {
+            return pipeline;
+        }
+        phaseFourShaders ??= StandardShaders.LoadPhaseFour();
+        pipeline = backend.CreateRasterPipeline(
+            new GpuRasterPipelineDescription([new(format)]),
+            phaseFourShaders,
+            "layerVertex",
+            "compositePixel",
+            GpuShaderBindingConvention.AbiHash);
+        compositePipelines.Add(format, pipeline);
+        return pipeline;
+    }
+
+    internal GpuRasterPipelineHandle GetClippedLayerPipeline(GpuFormat format)
+    {
+        VerifyAlive();
+        if (clippedLayerPipelines.TryGetValue(format, out GpuRasterPipelineHandle pipeline))
+        {
+            return pipeline;
+        }
+        phaseFourShaders ??= StandardShaders.LoadPhaseFour();
+        var description = new GpuRasterPipelineDescription([new(format)])
+        {
+            EmbeddedBlend = Blend(CompositeMode.SourceOver),
+        };
+        pipeline = backend.CreateRasterPipeline(
+            description,
+            phaseFourShaders,
+            "layerVertex",
+            "clippedLayerPixel",
+            GpuShaderBindingConvention.AbiHash);
+        clippedLayerPipelines.Add(format, pipeline);
+        return pipeline;
+    }
+
+    internal GpuRasterPipelineHandle GetCopyPipeline(GpuFormat format)
+    {
+        VerifyAlive();
+        if (copyPipelines.TryGetValue(format, out GpuRasterPipelineHandle pipeline))
+        {
+            return pipeline;
+        }
+        phaseFourShaders ??= StandardShaders.LoadPhaseFour();
+        pipeline = backend.CreateRasterPipeline(
+            new GpuRasterPipelineDescription([new(format)]),
+            phaseFourShaders,
+            "layerVertex",
+            "copyPixel",
+            GpuShaderBindingConvention.AbiHash);
+        copyPipelines.Add(format, pipeline);
         return pipeline;
     }
 
@@ -410,30 +546,64 @@ public sealed class Renderer : IDisposable
         return pipeline;
     }
 
-    private static GpuBlendDescription Blend(BlendMode mode) => mode switch
+    private static GpuBlendDescription Blend(CompositeMode mode) => mode switch
     {
-        BlendMode.SourceOver => new(
+        CompositeMode.Clear => PorterDuff(GpuBlendFactor.Zero, GpuBlendFactor.Zero),
+        CompositeMode.Source => PorterDuff(GpuBlendFactor.One, GpuBlendFactor.Zero),
+        CompositeMode.Destination => PorterDuff(GpuBlendFactor.Zero, GpuBlendFactor.One),
+        CompositeMode.SourceOver => new(
             SourceColorFactor: GpuBlendFactor.One,
             DestinationColorFactor: GpuBlendFactor.OneMinusSourceAlpha,
             SourceAlphaFactor: GpuBlendFactor.One,
             DestinationAlphaFactor: GpuBlendFactor.OneMinusSourceAlpha),
-        BlendMode.Additive => new(
+        CompositeMode.DestinationOver => PorterDuff(
+            GpuBlendFactor.OneMinusDestinationAlpha,
+            GpuBlendFactor.One),
+        CompositeMode.SourceIn => PorterDuff(
+            GpuBlendFactor.DestinationAlpha,
+            GpuBlendFactor.Zero),
+        CompositeMode.DestinationIn => PorterDuff(
+            GpuBlendFactor.Zero,
+            GpuBlendFactor.SourceAlpha),
+        CompositeMode.SourceOut => PorterDuff(
+            GpuBlendFactor.OneMinusDestinationAlpha,
+            GpuBlendFactor.Zero),
+        CompositeMode.DestinationOut => PorterDuff(
+            GpuBlendFactor.Zero,
+            GpuBlendFactor.OneMinusSourceAlpha),
+        CompositeMode.SourceAtop => PorterDuff(
+            GpuBlendFactor.DestinationAlpha,
+            GpuBlendFactor.OneMinusSourceAlpha),
+        CompositeMode.DestinationAtop => PorterDuff(
+            GpuBlendFactor.OneMinusDestinationAlpha,
+            GpuBlendFactor.SourceAlpha),
+        CompositeMode.Xor => PorterDuff(
+            GpuBlendFactor.OneMinusDestinationAlpha,
+            GpuBlendFactor.OneMinusSourceAlpha),
+        CompositeMode.Plus => new(
             SourceColorFactor: GpuBlendFactor.One,
             DestinationColorFactor: GpuBlendFactor.One,
             SourceAlphaFactor: GpuBlendFactor.One,
             DestinationAlphaFactor: GpuBlendFactor.One),
-        BlendMode.Multiply => new(
-            SourceColorFactor: GpuBlendFactor.DestinationColor,
-            DestinationColorFactor: GpuBlendFactor.OneMinusSourceAlpha,
-            SourceAlphaFactor: GpuBlendFactor.One,
-            DestinationAlphaFactor: GpuBlendFactor.OneMinusSourceAlpha),
-        BlendMode.Screen => new(
+        CompositeMode.Screen => new(
             SourceColorFactor: GpuBlendFactor.OneMinusDestinationColor,
             DestinationColorFactor: GpuBlendFactor.One,
             SourceAlphaFactor: GpuBlendFactor.One,
             DestinationAlphaFactor: GpuBlendFactor.OneMinusSourceAlpha),
         _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
+
+    internal static bool RequiresBackdropSampling(CompositeMode mode)
+        => mode >= CompositeMode.Overlay && mode <= CompositeMode.HslLuminosity;
+
+    private static GpuBlendDescription PorterDuff(
+        GpuBlendFactor source,
+        GpuBlendFactor destination)
+        => new(
+            SourceColorFactor: source,
+            DestinationColorFactor: destination,
+            SourceAlphaFactor: source,
+            DestinationAlphaFactor: destination);
 
     private GpuComputePipelineHandle GetPathPreparationPipeline()
     {
@@ -512,6 +682,9 @@ public sealed class Renderer : IDisposable
         GpuTextureDescription target,
         List<PreparedImage> images,
         Dictionary<ImageId, int> imageIndices,
+        ArrayBufferWriter<byte> pathInputBytes,
+        List<PathComputeJob> pathJobs,
+        ref ulong pathOutputLength,
         out byte[] bytes)
     {
         if (recorded.IsEmpty)
@@ -523,10 +696,40 @@ public sealed class Renderer : IDisposable
         int stride = checked(ShaderBufferOffsetAlignment * LayerParameterSlots);
         bytes = new byte[checked(recorded.Length * stride)];
         var prepared = new PreparedLayer[recorded.Length];
+        var targetBounds = new Rect(0, 0, target.Width, target.Height);
         for (int index = 0; index < recorded.Length; index++)
         {
             RecordedLayer layer = recorded[index];
             LayerOptions options = layer.Options;
+            Rect? compositeClip = ResolveLayerClip(layer, targetBounds);
+            PreparedBatch? coverageBatch = null;
+            if (compositeClip is { } coverageBounds
+                && layer.ClipStack?.RequiresCoverage == true)
+            {
+                Rect geometryBounds = Expand(coverageBounds, targetBounds, 2);
+                var coverageBatches = new List<PreparedBatch>(1);
+                var coverageCommand = new RecordedCommand(
+                    DrawCommandKind.Path,
+                    geometryBounds,
+                    Brush.Solid(Color.White),
+                    Matrix3x2.Identity,
+                    coverageBounds,
+                    Path: RectanglePath(geometryBounds),
+                    FillRule: FillRule.NonZero,
+                    LayerId: -layer.Id,
+                    ClipStack: layer.ClipStack,
+                    Sequence: layer.Sequence);
+                AddPath(
+                    coverageCommand,
+                    coverageBounds,
+                    target,
+                    pathInputBytes,
+                    coverageBatches,
+                    pathJobs,
+                    ref pathOutputLength,
+                    layer.Sequence);
+                coverageBatch = coverageBatches[0];
+            }
             int maskImageIndex = options.Mask.IsNull
                 ? -1
                 : GetImageIndex(options.Mask, images, imageIndices);
@@ -540,16 +743,26 @@ public sealed class Renderer : IDisposable
 
             WriteLayerCommand(bytes, mainOffset, new()
             {
-                Settings = new(options.Opacity, maskImageIndex >= 0 ? 1 : 0, 0, 0),
+                Settings = new(
+                    options.Opacity,
+                    maskImageIndex >= 0 ? 1 : 0,
+                    0,
+                    (float)options.CompositeMode),
                 Tint = Color.White.Premultiplied(),
                 OffsetAndTargetSize = new(0, 0, target.Width, target.Height),
+                Direction = new(0, 0, coverageBatch.HasValue ? 1 : 0, 0),
             });
             ShadowOptions shadow = options.Shadow ?? default;
             WriteLayerCommand(bytes, shadowOffset, new()
             {
-                Settings = new(options.Opacity, maskImageIndex >= 0 ? 1 : 0, 1, 0),
+                Settings = new(
+                    options.Opacity,
+                    maskImageIndex >= 0 ? 1 : 0,
+                    1,
+                    (float)CompositeMode.SourceOver),
                 Tint = shadow.Color.Premultiplied(),
                 OffsetAndTargetSize = new(shadow.Offset, target.Width, target.Height),
+                Direction = new(0, 0, coverageBatch.HasValue ? 1 : 0, 0),
             });
             WriteLayerCommand(bytes, horizontalOffset, new()
             {
@@ -586,10 +799,42 @@ public sealed class Renderer : IDisposable
                 horizontalOffset,
                 verticalOffset,
                 shadowHorizontalOffset,
-                shadowVerticalOffset);
+                shadowVerticalOffset,
+                compositeClip,
+                coverageBatch);
         }
         return prepared;
     }
+
+    private static Rect? ResolveLayerClip(RecordedLayer layer, Rect targetBounds)
+    {
+        if (layer.ClippedOut) { return null; }
+        Rect? result = layer.Clip is { } stateClip
+            ? Rect.Intersect(targetBounds, stateClip)
+            : targetBounds;
+        if (result is null || layer.ClipStack is null) { return result; }
+        return layer.ClipStack.Bounds is { } scopedBounds
+            ? Rect.Intersect(result.Value, scopedBounds)
+            : null;
+    }
+
+    private static Rect Expand(Rect rectangle, Rect bounds, float amount)
+    {
+        float left = MathF.Max(bounds.X, rectangle.X - amount);
+        float top = MathF.Max(bounds.Y, rectangle.Y - amount);
+        float right = MathF.Min(bounds.Right, rectangle.Right + amount);
+        float bottom = MathF.Min(bounds.Bottom, rectangle.Bottom + amount);
+        return new(left, top, right - left, bottom - top);
+    }
+
+    private static PathGeometry RectanglePath(Rect rectangle)
+        => new PathBuilder()
+            .MoveTo(new(rectangle.X, rectangle.Y))
+            .LineTo(new(rectangle.Right, rectangle.Y))
+            .LineTo(new(rectangle.Right, rectangle.Bottom))
+            .LineTo(new(rectangle.X, rectangle.Bottom))
+            .Close()
+            .Build();
 
     private static void WriteLayerCommand(byte[] bytes, ulong offset, GpuLayerCommand command)
     {
@@ -658,17 +903,19 @@ public sealed class Renderer : IDisposable
                 && previous.Clip == clip
                 && previous.ImageIndex == imageIndex
                 && previous.LayerId == layerId
+                && previous.LastSequence + 1 == sequence
                 && previous.BufferOffset + previous.BufferLength == offset)
             {
                 batches[^1] = previous with
                 {
                     BufferLength = checked(previous.BufferLength + length),
                     DrawCount = checked(previous.DrawCount + 1),
+                    LastSequence = sequence,
                 };
                 return;
             }
         }
-        batches.Add(new(kind, offset, length, 1, clip, imageIndex, layerId, sequence));
+        batches.Add(new(kind, offset, length, 1, clip, imageIndex, layerId, sequence, sequence));
     }
 
     private static bool CanAppendBatch(
@@ -677,7 +924,8 @@ public sealed class Renderer : IDisposable
         ulong offset,
         Rect clip,
         int imageIndex,
-        int layerId)
+        int layerId,
+        int sequence)
     {
         if (batches.Count == 0) { return false; }
         PreparedBatch previous = batches[^1];
@@ -685,6 +933,7 @@ public sealed class Renderer : IDisposable
             && previous.Clip == clip
             && previous.ImageIndex == imageIndex
             && previous.LayerId == layerId
+            && previous.LastSequence + 1 == sequence
             && previous.BufferOffset + previous.BufferLength == offset;
     }
 
@@ -732,7 +981,8 @@ public sealed class Renderer : IDisposable
             checked((uint)geometry.Vertices.Length),
             clip,
             LayerId: command.LayerId,
-            Sequence: sequence));
+            Sequence: sequence,
+            LastSequence: sequence));
     }
 
     private static void AddPath(
@@ -765,7 +1015,8 @@ public sealed class Renderer : IDisposable
             1,
             clip,
             LayerId: command.LayerId,
-            Sequence: sequence));
+            Sequence: sequence,
+            LastSequence: sequence));
         jobs.Add(new(
             checked((ulong)inputOffset),
             checked((ulong)data.InputBytes.Length),

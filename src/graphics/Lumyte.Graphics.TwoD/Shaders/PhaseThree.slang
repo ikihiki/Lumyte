@@ -1,10 +1,21 @@
 StructuredBuffer<float4> pathData : register(t0, space2);
 RWStructuredBuffer<float4> preparedPathData : register(u0, space4);
 
+static const uint HeaderVectorCount = 16;
+static const uint BrushSolid = 0;
+static const uint BrushLinearGradient = 1;
+static const uint BrushRadialGradient = 2;
+static const uint BrushSweepGradient = 3;
+static const uint ExtendPad = 0;
+static const uint ExtendRepeat = 1;
+static const uint ExtendReflect = 2;
+static const float Pi = 3.14159265358979323846;
+
 float pointLineDistance(float2 point, float2 start, float2 end)
 {
     float2 segment = end - start;
-    float denominator = max(dot(segment, segment), 0.000001);
+    float denominator = dot(segment, segment);
+    if (denominator == 0.0) return length(point - start);
     float amount = saturate(dot(point - start, segment) / denominator);
     return length(point - start - segment * amount);
 }
@@ -17,7 +28,8 @@ uint subdivisionCount(uint kind, float2 start, float2 end, float4 controls, floa
         : max(
             pointLineDistance(controls.xy, start, end),
             pointLineDistance(controls.zw, start, end));
-    return min(max(uint(ceil(sqrt(max(error / max(tolerance, 0.0001), 1.0)))), 1u), 64u);
+    float ratio = tolerance > 0.0 ? error / tolerance : error;
+    return min(max(uint(ceil(sqrt(max(ratio, 1.0)))), 1u), 64u);
 }
 
 float2 evaluateSegment(
@@ -78,7 +90,7 @@ uint expandSegments(
                 end,
                 controls,
                 float(step) / float(subdivisions));
-            if (dot(next - previous, next - previous) > 0.00000001 && outputCount < outputCapacity)
+            if (any(next != previous) && outputCount < outputCapacity)
             {
                 preparedPathData[outputStart + outputCount] = float4(previous, next);
                 outputCount++;
@@ -108,43 +120,59 @@ void preparePath(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     if (any(dispatchThreadId != uint3(0))) return;
 
-    float4 parameters = pathData[5];
+    float4 parameters = pathData[3];
     float4 tileGrid = pathData[7];
-    float4 clipMetadata = pathData[8];
-    float4 sourceOffsets = pathData[9];
-    float4 capacities = pathData[10];
-    float4 stroke = pathData[11];
-    uint edgeStart = 10;
+    float4 outputMetadata = pathData[8];
+    float4 inputMetadata = pathData[9];
+    float4 auxiliaryOffsets = pathData[10];
     uint mainCount = expandSegments(
-        uint(sourceOffsets.w),
+        uint(inputMetadata.x),
         uint(parameters.x),
-        edgeStart,
-        uint(capacities.x),
-        capacities.w);
-    uint clipCount = expandSegments(
-        uint(capacities.z),
-        uint(clipMetadata.z),
-        uint(clipMetadata.y),
-        uint(capacities.y),
-        capacities.w);
+        uint(outputMetadata.y),
+        uint(outputMetadata.z),
+        inputMetadata.y);
 
-    preparedPathData[0] = pathData[0];
-    preparedPathData[1] = pathData[1];
-    preparedPathData[2] = pathData[2];
-    preparedPathData[3] = pathData[3];
-    preparedPathData[4] = pathData[4];
-    preparedPathData[5] = float4(mainCount, parameters.yzw);
-    preparedPathData[6] = pathData[6];
-    preparedPathData[7] = tileGrid;
-    preparedPathData[8] = float4(clipMetadata.xy, clipCount, clipMetadata.w);
-    preparedPathData[9] = float4(sourceOffsets.xy, edgeStart, 0.0);
+    for (uint index = 0; index < HeaderVectorCount; index++)
+    {
+        preparedPathData[index] = pathData[index];
+    }
+    preparedPathData[8] = float4(outputMetadata.xy, float(mainCount), outputMetadata.w);
+
+    uint clipCount = uint(inputMetadata.z);
+    uint clipInputStart = uint(inputMetadata.w);
+    uint clipOutputStart = uint(auxiliaryOffsets.x);
+    for (uint clipIndex = 0; clipIndex < clipCount; clipIndex++)
+    {
+        float4 descriptor = pathData[clipInputStart + clipIndex * 2];
+        float4 placement = pathData[clipInputStart + clipIndex * 2 + 1];
+        uint expandedCount = expandSegments(
+            uint(descriptor.x),
+            uint(descriptor.y),
+            uint(placement.x),
+            uint(descriptor.z),
+            placement.z);
+        preparedPathData[clipOutputStart + clipIndex] = float4(
+            placement.x,
+            float(expandedCount),
+            descriptor.w,
+            placement.y);
+    }
+
+    uint gradientCount = uint(pathData[6].w);
+    uint gradientInputStart = uint(auxiliaryOffsets.z);
+    uint gradientOutputStart = uint(auxiliaryOffsets.y);
+    for (uint index = 0; index < gradientCount * 2; index++)
+    {
+        preparedPathData[gradientOutputStart + index] = pathData[gradientInputStart + index];
+    }
 
     uint columns = uint(tileGrid.x);
     uint rows = uint(tileGrid.y);
-    uint tileCount = uint(stroke.w);
+    uint tileCount = uint(outputMetadata.w);
     uint tableStart = uint(tileGrid.w);
-    uint indexStart = uint(clipMetadata.x);
-    float4 bounds = pathData[2];
+    uint indexStart = uint(outputMetadata.x);
+    uint edgeStart = uint(outputMetadata.y);
+    float4 bounds = pathData[0];
     float expansion = max(parameters.z * 0.5 + 1.0, 1.0);
     for (uint tileIndex = 0; tileIndex < tileCount; tileIndex++)
     {
@@ -165,7 +193,7 @@ void preparePath(uint3 dispatchThreadId : SV_DispatchThreadID)
                 count++;
             }
         }
-        preparedPathData[tableStart + tileIndex] = float4(0.0, count, 0.0, 0.0);
+        preparedPathData[tableStart + tileIndex] = float4(0.0, float(count), 0.0, 0.0);
     }
 
     uint indexCount = 0;
@@ -173,7 +201,7 @@ void preparePath(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         uint tableIndex = tableStart + tileIndex;
         float4 tile = preparedPathData[tableIndex];
-        preparedPathData[tableIndex] = float4(indexStart + indexCount, tile.y, 0.0, 0.0);
+        preparedPathData[tableIndex] = float4(float(indexStart + indexCount), tile.y, 0.0, 0.0);
         indexCount += uint(tile.y);
     }
 
@@ -204,6 +232,7 @@ struct PathVertexOutput
 {
     float4 position : SV_Position;
     float2 localPosition : TEXCOORD0;
+    float2 worldPosition : TEXCOORD1;
 };
 
 float2 pathQuadCoordinate(uint vertexIndex)
@@ -217,9 +246,9 @@ float2 pathQuadCoordinate(uint vertexIndex)
 [shader("vertex")]
 PathVertexOutput pathVertex(uint vertexIndex : SV_VertexID)
 {
-    float4 bounds = pathData[2];
-    float4 transform0 = pathData[3];
-    float4 transform1 = pathData[4];
+    float4 bounds = pathData[0];
+    float4 transform0 = pathData[1];
+    float4 transform1 = pathData[2];
     float2 coordinate = pathQuadCoordinate(vertexIndex);
     float2 local = bounds.xy + coordinate * bounds.zw;
     float2 world = float2(
@@ -233,13 +262,15 @@ PathVertexOutput pathVertex(uint vertexIndex : SV_VertexID)
         0.0,
         1.0);
     output.localPosition = local;
+    output.worldPosition = world;
     return output;
 }
 
 float segmentDistance(float2 point, float4 edge)
 {
     float2 segment = edge.zw - edge.xy;
-    float denominator = max(dot(segment, segment), 0.000001);
+    float denominator = dot(segment, segment);
+    if (denominator == 0.0) return length(point - edge.xy);
     float amount = saturate(dot(point - edge.xy, segment) / denominator);
     return length(point - edge.xy - segment * amount);
 }
@@ -253,26 +284,28 @@ void includeEdge(
 {
     minimumDistance = min(minimumDistance, segmentDistance(point, edge));
     bool crosses = (edge.y > point.y) != (edge.w > point.y);
-    float direction = edge.w >= edge.y ? 1.0 : -1.0;
-    float crossX = edge.x + (point.y - edge.y)
-        * (edge.z - edge.x) / max(abs(edge.w - edge.y), 0.000001) * direction;
-    if (crosses && crossX > point.x)
+    if (crosses)
     {
-        odd = !odd;
-        winding += edge.w > edge.y ? 1 : -1;
+        float crossX = edge.x + (point.y - edge.y)
+            * (edge.z - edge.x) / (edge.w - edge.y);
+        if (crossX > point.x)
+        {
+            odd = !odd;
+            winding += edge.w > edge.y ? 1 : -1;
+        }
     }
 }
 
 float pathCoverage(float2 point)
 {
-    float4 parameters = pathData[5];
+    float4 parameters = pathData[3];
     float4 tileGrid = pathData[7];
-    float4 indices = pathData[8];
-    float4 origin = pathData[9];
+    float4 outputMetadata = pathData[8];
+    float4 bounds = pathData[0];
     uint columns = uint(tileGrid.x);
     uint rows = uint(tileGrid.y);
-    uint tileX = min(uint(max(floor((point.x - origin.x) / tileGrid.z), 0.0)), columns - 1);
-    uint tileY = min(uint(max(floor((point.y - origin.y) / tileGrid.z), 0.0)), rows - 1);
+    uint tileX = min(uint(max(floor((point.x - bounds.x) / tileGrid.z), 0.0)), columns - 1);
+    uint tileY = min(uint(max(floor((point.y - bounds.y) / tileGrid.z), 0.0)), rows - 1);
     float4 tile = pathData[uint(tileGrid.w) + tileY * columns + tileX];
     float minimumDistance = 1000000.0;
     int winding = 0;
@@ -280,7 +313,7 @@ float pathCoverage(float2 point)
     for (uint item = 0; item < uint(tile.y); item++)
     {
         uint edgeIndex = uint(pathData[uint(tile.x) + item].x);
-        includeEdge(point, pathData[uint(origin.z) + edgeIndex], minimumDistance, winding, odd);
+        includeEdge(point, pathData[uint(outputMetadata.y) + edgeIndex], minimumDistance, winding, odd);
     }
     bool inside = uint(parameters.y) == 1 ? odd : winding != 0;
     float distance = parameters.z > 0.0
@@ -289,41 +322,203 @@ float pathCoverage(float2 point)
     return saturate(0.5 - distance / max(fwidth(distance), 0.0001));
 }
 
-float clipCoverage(float2 point)
+float oneClipCoverage(float2 point, float4 descriptor)
 {
-    float4 metadata = pathData[8];
-    uint count = uint(metadata.z);
-    if (count == 0) return 1.0;
+    uint count = uint(descriptor.y);
+    if (count == 0) return 0.0;
     float minimumDistance = 1000000.0;
     int winding = 0;
     bool odd = false;
     for (uint index = 0; index < count; index++)
     {
-        includeEdge(point, pathData[uint(metadata.y) + index], minimumDistance, winding, odd);
+        includeEdge(point, pathData[uint(descriptor.x) + index], minimumDistance, winding, odd);
     }
-    bool inside = uint(metadata.w) == 1 ? odd : winding != 0;
+    bool inside = uint(descriptor.z) == 1 ? odd : winding != 0;
     float distance = inside ? -minimumDistance : minimumDistance;
     return saturate(0.5 - distance / max(fwidth(distance), 0.0001));
 }
 
+float clipCoverage(float2 localPoint, float2 worldPoint)
+{
+    uint count = uint(pathData[9].z);
+    uint descriptorStart = uint(pathData[10].x);
+    float coverage = 1.0;
+    for (uint index = 0; index < count; index++)
+    {
+        float4 descriptor = pathData[descriptorStart + index];
+        float2 point = descriptor.w != 0.0 ? worldPoint : localPoint;
+        coverage *= oneClipCoverage(point, descriptor);
+    }
+    return coverage;
+}
+
+float2 applyExtend(float value, uint mode)
+{
+    uint stopCount = uint(pathData[6].w);
+    if (stopCount <= 1) return float2(value, 1.0);
+    uint stopStart = uint(pathData[10].y);
+    float first = pathData[stopStart].x;
+    float last = pathData[stopStart + (stopCount - 1) * 2].x;
+    if (mode == ExtendPad) return float2(value, 1.0);
+
+    float width = last - first;
+    if (width <= 0.0) return float2(0.0, 0.0);
+    if (value >= first && value <= last) return float2(value, 1.0);
+
+    float normalized = (value - first) / width;
+    if (mode == ExtendRepeat)
+    {
+        float repeated = normalized - floor(normalized);
+        // The defined and repeated intervals are closed on their upper edge.
+        if (value > last && repeated == 0.0) repeated = 1.0;
+        return float2(first + repeated * width, 1.0);
+    }
+    if (mode == ExtendReflect)
+    {
+        float period = normalized - floor(normalized * 0.5) * 2.0;
+        float reflected = period <= 1.0 ? period : 2.0 - period;
+        return float2(first + reflected * width, 1.0);
+    }
+    return float2(value, 1.0);
+}
+
+float4 readGradientStop(uint start, uint index)
+{
+    float4 offsetAndRgb = pathData[start + index * 2];
+    float alpha = pathData[start + index * 2 + 1].x;
+    return float4(offsetAndRgb.yzw, alpha);
+}
+
+float4 evaluateColorLine(float value)
+{
+    uint stopCount = uint(pathData[6].w);
+    if (stopCount == 0) return pathData[11];
+
+    uint stopStart = uint(pathData[10].y);
+    float firstOffset = pathData[stopStart].x;
+    float4 firstColor = readGradientStop(stopStart, 0);
+    if (stopCount == 1 || value < firstOffset) return firstColor;
+
+    float previousOffset = firstOffset;
+    float4 previousColor = firstColor;
+    for (uint index = 1; index < stopCount; index++)
+    {
+        float currentOffset = pathData[stopStart + index * 2].x;
+        float4 currentColor = readGradientStop(stopStart, index);
+        if (value < currentOffset)
+        {
+            float width = currentOffset - previousOffset;
+            if (width <= 0.0) return currentColor;
+            return lerp(previousColor, currentColor, saturate((value - previousOffset) / width));
+        }
+        previousOffset = currentOffset;
+        previousColor = currentColor;
+    }
+    return previousColor;
+}
+
+float2 linearGradientParameter(float2 point)
+{
+    float4 anchors = pathData[4];
+    float2 point0 = anchors.xy;
+    float2 point1 = anchors.zw;
+    float2 point2 = pathData[5].xy;
+    float2 projectionDirection = float2(-(point2.y - point0.y), point2.x - point0.x);
+    float denominator = dot(point1 - point0, projectionDirection);
+    if (denominator == 0.0) return float2(0.0, 0.0);
+    return float2(dot(point - point0, projectionDirection) / denominator, 1.0);
+}
+
+float2 radialGradientParameter(float2 point)
+{
+    float4 circles = pathData[4];
+    float4 radii = pathData[5];
+    float2 center0 = circles.xy;
+    float2 centerDelta = circles.zw - center0;
+    float radius0 = radii.z;
+    float radiusDelta = radii.w - radius0;
+    float2 relative = point - center0;
+    if (all(centerDelta == 0.0) && radiusDelta == 0.0)
+    {
+        return float2(0.0, 0.0);
+    }
+    if (radius0 == 0.0 && radii.w == 0.0)
+    {
+        return float2(0.0, 0.0);
+    }
+    float a = dot(centerDelta, centerDelta) - radiusDelta * radiusDelta;
+    float b = -2.0 * (dot(relative, centerDelta) + radius0 * radiusDelta);
+    float c = dot(relative, relative) - radius0 * radius0;
+
+    if (a == 0.0)
+    {
+        if (b == 0.0)
+        {
+            return c == 0.0 ? float2(0.0, 1.0) : float2(0.0, 0.0);
+        }
+        float value = -c / b;
+        return float2(value, radius0 + value * radiusDelta >= 0.0 ? 1.0 : 0.0);
+    }
+
+    float discriminant = b * b - 4.0 * a * c;
+    if (discriminant < 0.0) return float2(0.0, 0.0);
+    float root = sqrt(max(discriminant, 0.0));
+    float first = (-b - root) / (2.0 * a);
+    float second = (-b + root) / (2.0 * a);
+    bool firstValid = radius0 + first * radiusDelta >= 0.0;
+    bool secondValid = radius0 + second * radiusDelta >= 0.0;
+    if (!firstValid && !secondValid) return float2(0.0, 0.0);
+    if (!firstValid) return float2(second, 1.0);
+    if (!secondValid) return float2(first, 1.0);
+    return float2(max(first, second), 1.0);
+}
+
+float2 sweepGradientParameter(float2 point)
+{
+    float2 center = pathData[4].xy;
+    float2 angles = pathData[6].xy;
+    float span = angles.y - angles.x;
+    uint extendMode = uint(pathData[6].z);
+    // COLRv1 angles are counter-clockwise in its y-up design space. The text
+    // reader mirrors that space into our y-down coordinates, so one sampled
+    // revolution is represented by (-2pi, 0]. Do not lift the 0-degree ray to
+    // another revolution: ranges such as 330..400 intentionally stay clipped
+    // at the 360-degree drawing boundary.
+    float angle = atan2(point.y - center.y, point.x - center.x);
+    if (angle > 0.0) angle -= 2.0 * Pi;
+    if (span == 0.0)
+    {
+        if (extendMode != ExtendPad) return float2(0.0, 0.0);
+        return float2(angle > angles.x ? -1.0 : 1.0, 1.0);
+    }
+    return float2((angle - angles.x) / span, 1.0);
+}
+
 float4 evaluateBrush(float2 point)
 {
-    float4 first = pathData[0];
-    float4 second = pathData[1];
-    float4 parameters = pathData[5];
-    float4 geometry = pathData[6];
-    if (uint(parameters.w) == 1)
+    uint kind = uint(pathData[3].w);
+    if (kind == BrushSolid) return pathData[11];
+
+    float2 parameter;
+    if (kind == BrushLinearGradient)
     {
-        float2 direction = geometry.zw - geometry.xy;
-        float amount = saturate(dot(point - geometry.xy, direction) / max(dot(direction, direction), 0.000001));
-        return lerp(first, second, amount);
+        parameter = linearGradientParameter(point);
     }
-    if (uint(parameters.w) == 2)
+    else if (kind == BrushRadialGradient)
     {
-        float amount = saturate(length(point - geometry.xy) / max(geometry.z, 0.000001));
-        return lerp(first, second, amount);
+        parameter = radialGradientParameter(point);
     }
-    return first;
+    else if (kind == BrushSweepGradient)
+    {
+        parameter = sweepGradientParameter(point);
+    }
+    else
+    {
+        return float4(0.0);
+    }
+    if (parameter.y == 0.0) return float4(0.0);
+    float2 extended = applyExtend(parameter.x, uint(pathData[6].z));
+    return extended.y == 0.0 ? float4(0.0) : evaluateColorLine(extended.x);
 }
 
 [shader("fragment")]
@@ -331,5 +526,5 @@ float4 pathPixel(PathVertexOutput input) : SV_Target0
 {
     return evaluateBrush(input.localPosition)
         * pathCoverage(input.localPosition)
-        * clipCoverage(input.localPosition);
+        * clipCoverage(input.localPosition, input.worldPosition);
 }

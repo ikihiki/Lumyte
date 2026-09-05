@@ -5,4 +5,5 @@ public enum BrushKind
     Solid,
     LinearGradient,
     RadialGradient,
+    SweepGradient,
 }

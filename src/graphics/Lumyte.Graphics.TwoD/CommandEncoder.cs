@@ -8,25 +8,43 @@ public sealed class CommandEncoder : IDisposable
     private readonly Renderer renderer;
     private readonly List<RecordedCommand> commands = [];
     private readonly List<RecordedLayer> layers = [];
-    private readonly Stack<int> activeLayers = [];
+    private readonly Stack<ActiveLayer> activeLayers = [];
     private readonly Stack<State> states = [];
+    private RecordedClipStack? activeClips;
     private State state = new(Matrix3x2.Identity, null, false);
+    private int nextSequence;
     private bool finished;
 
     internal CommandEncoder(Renderer renderer) => this.renderer = renderer;
 
+    internal Renderer Owner => renderer;
+
     public int Count => commands.Count;
+    /// <summary>The number of scoped clips that still require a matching <see cref="PopClip"/>.</summary>
+    public int ClipDepth => activeClips?.Depth ?? 0;
 
     /// <summary>Begins an isolated compositing group. Calls may be nested.</summary>
-    public void PushLayer(LayerOptions options = default)
+    public void PushLayer() => PushLayer(new LayerOptions());
+
+    /// <summary>Begins an isolated compositing group with explicit options. Calls may be nested.</summary>
+    public void PushLayer(LayerOptions options)
     {
         VerifyOpen();
-        options = options == default ? new LayerOptions() : options;
         options = options.Validate(renderer, nameof(options));
         int id = checked(layers.Count + 1);
-        int parentId = activeLayers.TryPeek(out int parent) ? parent : 0;
-        layers.Add(new(id, parentId, commands.Count, options));
-        activeLayers.Push(id);
+        int parentId = activeLayers.TryPeek(out ActiveLayer parent) ? parent.Id : 0;
+        RecordedClipStack? layerClips = ClipsAbove(
+            activeClips,
+            parentId == 0 ? null : parent.ClipBoundary);
+        layers.Add(new(
+            id,
+            parentId,
+            TakeSequence(),
+            options,
+            state.Clip,
+            layerClips,
+            state.ClippedOut || layerClips is { Bounds: null }));
+        activeLayers.Push(new(id, activeClips));
     }
 
     /// <summary>Ends the innermost isolated compositing group.</summary>
@@ -66,6 +84,49 @@ public sealed class CommandEncoder : IDisposable
         VerifyOpen();
         ValidateTransform(transform);
         state = state with { Transform = state.Transform * transform };
+    }
+
+    /// <summary>Pushes an exact transformed rectangle clip until <see cref="PopClip"/> is called.</summary>
+    public void PushClip(Rect rectangle)
+    {
+        VerifyOpen();
+        rectangle.Validate();
+        activeClips = new(
+            activeClips,
+            new(RecordedClipKind.Rectangle, rectangle, null, state.Transform, FillRule.NonZero));
+    }
+
+    /// <summary>Pushes a path clip in the current coordinate system.</summary>
+    public void PushClip(PathGeometry path, FillRule fillRule = FillRule.NonZero)
+        => PushClip(path, Matrix3x2.Identity, fillRule);
+
+    /// <summary>Pushes a transformed path clip until <see cref="PopClip"/> is called.</summary>
+    public void PushClip(PathGeometry path, Matrix3x2 transform, FillRule fillRule = FillRule.NonZero)
+    {
+        VerifyOpen();
+        ArgumentNullException.ThrowIfNull(path);
+        if (path.IsEmpty) { throw new ArgumentException("Clip path cannot be empty.", nameof(path)); }
+        ValidateTransform(transform);
+        if (!Enum.IsDefined(fillRule)) { throw new ArgumentOutOfRangeException(nameof(fillRule)); }
+        activeClips = new(
+            activeClips,
+            new(
+                RecordedClipKind.Path,
+                default,
+                path,
+                transform * state.Transform,
+                fillRule));
+    }
+
+    /// <summary>Removes the most recently pushed rectangle or path clip.</summary>
+    public void PopClip()
+    {
+        VerifyOpen();
+        if (activeClips is null)
+        {
+            throw new InvalidOperationException("There is no active 2D clip to pop.");
+        }
+        activeClips = activeClips.Parent;
     }
 
     /// <summary>Intersects the current target-space clip with a transformed local rectangle.</summary>
@@ -242,6 +303,10 @@ public sealed class CommandEncoder : IDisposable
         {
             throw new InvalidOperationException("Every pushed 2D layer must be popped before finishing.");
         }
+        if (activeClips is not null)
+        {
+            throw new InvalidOperationException("Every pushed 2D clip must be popped before finishing.");
+        }
         finished = true;
         return new(renderer, commands.ToArray(), layers.ToArray());
     }
@@ -256,9 +321,71 @@ public sealed class CommandEncoder : IDisposable
         VerifyOpen();
         if (!state.ClippedOut)
         {
-            int layerId = activeLayers.TryPeek(out int active) ? active : 0;
-            commands.Add(command with { LayerId = layerId });
+            int layerId = 0;
+            RecordedClipStack? commandClips = activeClips;
+            if (activeLayers.TryPeek(out ActiveLayer active))
+            {
+                layerId = active.Id;
+                commandClips = ClipsAbove(activeClips, active.ClipBoundary);
+            }
+            if (commandClips is { Bounds: null })
+            {
+                return;
+            }
+            Rect? clip = command.Clip;
+            if (commandClips?.Bounds is { } scopedBounds)
+            {
+                clip = clip is { } stateBounds
+                    ? Rect.Intersect(stateBounds, scopedBounds)
+                    : scopedBounds;
+                if (clip is null)
+                {
+                    return;
+                }
+            }
+            commands.Add(command with
+            {
+                LayerId = layerId,
+                Clip = clip,
+                ClipStack = commandClips,
+                Sequence = TakeSequence(),
+            });
         }
+    }
+
+    private static RecordedClipStack? ClipsAbove(
+        RecordedClipStack? current,
+        RecordedClipStack? boundary)
+    {
+        if (boundary is null) { return current; }
+
+        var boundaryAncestors = new HashSet<RecordedClipStack>();
+        for (RecordedClipStack? item = boundary; item is not null; item = item.Parent)
+        {
+            boundaryAncestors.Add(item);
+        }
+
+        var additions = new Stack<RecordedClip>();
+        RecordedClipStack? cursor = current;
+        while (cursor is not null && !boundaryAncestors.Contains(cursor))
+        {
+            additions.Push(cursor.Clip);
+            cursor = cursor.Parent;
+        }
+
+        RecordedClipStack? result = null;
+        while (additions.TryPop(out RecordedClip clip))
+        {
+            result = new(result, clip);
+        }
+        return result;
+    }
+
+    private int TakeSequence()
+    {
+        int sequence = nextSequence;
+        nextSequence = checked(nextSequence + 1);
+        return sequence;
     }
 
     private void VerifyOpen()
@@ -299,4 +426,6 @@ public sealed class CommandEncoder : IDisposable
     }
 
     private readonly record struct State(Matrix3x2 Transform, Rect? Clip, bool ClippedOut);
+
+    private readonly record struct ActiveLayer(int Id, RecordedClipStack? ClipBoundary);
 }

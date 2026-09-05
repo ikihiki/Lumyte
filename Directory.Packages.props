@@ -23,6 +23,9 @@
     <PackageVersion Include="Silk.NET.WebGPU.Native.WGPU" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.WebGPU.Extensions.WGPU" Version="2.23.0" />
     <PackageVersion Include="Microsoft.Direct3D.DXC" Version="1.9.2602.24" />
+    <PackageVersion Include="HarfBuzzSharp" Version="14.2.1.102" />
+    <PackageVersion Include="HarfBuzzSharp.NativeAssets.Linux" Version="14.2.1.102" />
+    <PackageVersion Include="HarfBuzzSharp.NativeAssets.WebAssembly" Version="14.2.1.102" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>

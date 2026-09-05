@@ -171,9 +171,24 @@ public static class SlangPackageCompiler
         CancellationToken cancellationToken)
         => RunAsync(
             compiler,
-            [source, "-target", target, "-o", output],
+            CreateModuleArguments(source, output, target),
             $"{target}/module",
             cancellationToken);
+
+    internal static IReadOnlyList<string> CreateModuleArguments(
+        string source,
+        string output,
+        string target)
+    {
+        var arguments = new List<string> { source, "-target", target };
+        if (target == "wgsl")
+        {
+            arguments.Add("-DLUMYTE_SHADER_TARGET_WGSL=1");
+        }
+        arguments.Add("-o");
+        arguments.Add(output);
+        return arguments;
+    }
 
     private static async Task RunAsync(
         string compiler,

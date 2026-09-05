@@ -288,22 +288,56 @@ public static class RenderGraphExtensions
             {
                 throw new NotSupportedException("Isolated 2D layers require a single-sample render target.");
             }
-            AddLayerContent(
+            bool rootNeedsBackdrop = displayList.Layers.Any(layer =>
+                layer.ParentId == 0
+                && layer.CompositeClip is not null
+                && (Renderer.RequiresBackdropSampling(layer.Options.CompositeMode)
+                    || (layer.CoverageBatch.HasValue
+                        && layer.Options.CompositeMode != CompositeMode.SourceOver)));
+            GpuRenderGraphTexture layerTarget = target;
+            RenderTargetOptions layerOptions = options;
+            if (rootNeedsBackdrop
+                && (target.Description.Usage & GpuTextureUsage.Sampled) == 0)
+            {
+                if (options.LoadOperation == GpuAttachmentLoadOperation.Load)
+                {
+                    throw new NotSupportedException(
+                        "Backdrop-sampling composite modes require sampled target usage when preserving existing target contents.");
+                }
+                layerTarget = createTexture($"{name}-root-layer", LayerDescription(target.Description));
+                layerOptions = options with { StoreOperation = GpuAttachmentStoreOperation.Store };
+            }
+
+            GpuRenderGraphTexture result = AddLayerContent(
                 addPass,
                 createTexture,
                 name,
                 resources,
                 0,
-                target,
-                options,
+                layerTarget,
+                layerOptions,
                 ref passIndex);
+            if (result != target)
+            {
+                AddCopyPass(
+                    addPass,
+                    name,
+                    resources,
+                    result,
+                    target,
+                    new(
+                        GpuAttachmentLoadOperation.Discard,
+                        options.StoreOperation,
+                        default),
+                    ref passIndex);
+            }
         }
 
         if (shouldMarkOutput) { markOutput(target); }
         return new(target, buffers, images);
     }
 
-    private static bool AddLayerContent(
+    private static GpuRenderGraphTexture AddLayerContent(
         AddPassDelegate addPass,
         CreateTextureDelegate createTexture,
         string name,
@@ -317,7 +351,7 @@ public static class RenderGraphExtensions
             .Where(batch => batch.LayerId == layerId)
             .ToArray();
         PreparedLayer[] children = resources.DisplayList.Layers
-            .Where(layer => layer.ParentId == layerId && HasContent(resources.DisplayList, layer.Id))
+            .Where(layer => layer.ParentId == layerId && layer.CompositeClip is not null)
             .ToArray();
         var items = new List<LayerItem>(directBatches.Length + children.Length);
         items.AddRange(directBatches.Select(static batch => new LayerItem(batch.Sequence, batch, null)));
@@ -326,15 +360,12 @@ public static class RenderGraphExtensions
 
         if (items.Count == 0)
         {
-            if (layerId == 0)
-            {
-                AddDrawPass(addPass, name, resources, target, initialOptions, [], ref passIndex);
-                return true;
-            }
-            return false;
+            AddDrawPass(addPass, name, resources, target, initialOptions, [], ref passIndex);
+            return target;
         }
 
         bool wroteTarget = false;
+        GpuRenderGraphTexture currentTarget = target;
         int itemIndex = 0;
         while (itemIndex < items.Count)
         {
@@ -353,8 +384,11 @@ public static class RenderGraphExtensions
                     addPass,
                     name,
                     resources,
-                    target,
-                    TargetOptions(initialOptions, wroteTarget, lastItem),
+                    currentTarget,
+                    TargetOptions(
+                        initialOptions,
+                        wroteTarget,
+                        lastItem && currentTarget == target),
                     group,
                     ref passIndex);
                 wroteTarget = true;
@@ -363,10 +397,33 @@ public static class RenderGraphExtensions
             }
 
             PreparedLayer child = item.Layer!.Value;
+            if (child.CompositeClip is not { } compositeClip)
+            {
+                itemIndex++;
+                continue;
+            }
+            GpuRenderGraphTexture coverage = default;
+            if (child.CoverageBatch is { } coverageBatch)
+            {
+                coverage = createTexture(
+                    $"{name}-layer-{child.Id}-coverage",
+                    LayerDescription(currentTarget.Description));
+                AddDrawPass(
+                    addPass,
+                    name,
+                    resources,
+                    coverage,
+                    new(
+                        GpuAttachmentLoadOperation.Clear,
+                        GpuAttachmentStoreOperation.Store,
+                        default),
+                    [coverageBatch],
+                    ref passIndex);
+            }
             GpuRenderGraphTexture childTarget = createTexture(
                 $"{name}-layer-{child.Id}",
-                LayerDescription(target.Description));
-            AddLayerContent(
+                LayerDescription(currentTarget.Description));
+            GpuRenderGraphTexture childResult = AddLayerContent(
                 addPass,
                 createTexture,
                 name,
@@ -383,7 +440,7 @@ public static class RenderGraphExtensions
                     name,
                     resources,
                     resources.Images[child.MaskImageIndex],
-                    childTarget,
+                    childResult,
                     ref passIndex);
             }
 
@@ -395,21 +452,24 @@ public static class RenderGraphExtensions
                         createTexture,
                         name,
                         resources,
-                        childTarget,
+                        childResult,
                         child.ShadowHorizontalBlurParametersOffset,
                         child.ShadowVerticalBlurParametersOffset,
                         ref passIndex)
-                    : childTarget;
-                AddCompositePass(
+                    : childResult;
+                currentTarget = AddCompositePass(
                     addPass,
+                    createTexture,
                     name,
                     resources,
                     shadowSource,
-                    target,
+                    currentTarget,
                     TargetOptions(initialOptions, wroteTarget, false),
                     child.ShadowParametersOffset,
                     child.MaskImageIndex,
-                    BlendMode.SourceOver,
+                    CompositeMode.SourceOver,
+                    coverage,
+                    compositeClip,
                     ref passIndex);
                 wroteTarget = true;
             }
@@ -420,31 +480,33 @@ public static class RenderGraphExtensions
                     createTexture,
                     name,
                     resources,
-                    childTarget,
+                    childResult,
                     child.HorizontalBlurParametersOffset,
                     child.VerticalBlurParametersOffset,
                     ref passIndex)
-                : childTarget;
-            AddCompositePass(
+                : childResult;
+            currentTarget = AddCompositePass(
                 addPass,
+                createTexture,
                 name,
                 resources,
                 layerSource,
-                target,
-                TargetOptions(initialOptions, wroteTarget, lastItem),
+                currentTarget,
+                TargetOptions(
+                    initialOptions,
+                    wroteTarget,
+                    lastItem && currentTarget == target),
                 child.MainParametersOffset,
                 child.MaskImageIndex,
-                child.Options.BlendMode,
+                child.Options.CompositeMode,
+                coverage,
+                compositeClip,
                 ref passIndex);
             wroteTarget = true;
             itemIndex++;
         }
-        return wroteTarget;
+        return currentTarget;
     }
-
-    private static bool HasContent(IPreparedDrawing drawing, int layerId)
-        => drawing.Batches.Any(batch => batch.LayerId == layerId)
-            || drawing.Layers.Any(layer => layer.ParentId == layerId && HasContent(drawing, layer.Id));
 
     private static RenderTargetOptions TargetOptions(
         RenderTargetOptions requested,
@@ -502,7 +564,8 @@ public static class RenderGraphExtensions
             default,
             0,
             -1,
-            BlendMode.SourceOver);
+            CompositeMode.SourceOver,
+            default);
         GpuRenderGraphPassBuilder builder = addPass(
             passName,
             state,
@@ -512,8 +575,9 @@ public static class RenderGraphExtensions
         DeclareTarget(builder, target, options);
     }
 
-    private static void AddCompositePass(
+    private static GpuRenderGraphTexture AddCompositePass(
         AddPassDelegate addPass,
+        CreateTextureDelegate createTexture,
         string name,
         PassResources resources,
         GpuRenderGraphTexture source,
@@ -521,9 +585,60 @@ public static class RenderGraphExtensions
         RenderTargetOptions options,
         ulong parametersOffset,
         int maskImageIndex,
-        BlendMode blendMode,
+        CompositeMode blendMode,
+        GpuRenderGraphTexture coverage,
+        Rect compositeClip,
         ref int passIndex)
     {
+        if (Renderer.RequiresBackdropSampling(blendMode)
+            || (!coverage.IsNull && blendMode != CompositeMode.SourceOver))
+        {
+            if (options.LoadOperation != GpuAttachmentLoadOperation.Load)
+            {
+                AddDrawPass(
+                    addPass,
+                    name,
+                    resources,
+                    target,
+                    options with { StoreOperation = GpuAttachmentStoreOperation.Store },
+                    [],
+                    ref passIndex);
+            }
+
+            GpuRenderGraphTexture result = createTexture(
+                $"{name}-composite-{passIndex}-result",
+                LayerDescription(target.Description));
+            var shaderState = new PassState(
+                PassKind.ShaderComposite,
+                resources,
+                result,
+                new(
+                    GpuAttachmentLoadOperation.Discard,
+                    GpuAttachmentStoreOperation.Store,
+                    default),
+                [],
+                source,
+                parametersOffset,
+                maskImageIndex,
+                blendMode,
+                target,
+                coverage);
+            GpuRenderGraphPassBuilder shaderBuilder = addPass(
+                $"{name}-composite-{passIndex++}",
+                shaderState,
+                static (context, value) => Record(context, value),
+                GpuRenderGraphPassFlags.None);
+            shaderBuilder.Read(source, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+            shaderBuilder.Read(target, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+            if (!coverage.IsNull)
+            {
+                shaderBuilder.Read(coverage, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+            }
+            shaderBuilder.Read(resources.LayerBuffer, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+            shaderBuilder.Write(result, GpuStage.ColorOutput);
+            return result;
+        }
+
         var state = new PassState(
             PassKind.Composite,
             resources,
@@ -533,14 +648,51 @@ public static class RenderGraphExtensions
             source,
             parametersOffset,
             maskImageIndex,
-            blendMode);
+            blendMode,
+            default,
+            coverage,
+            compositeClip);
         GpuRenderGraphPassBuilder builder = addPass(
             $"{name}-composite-{passIndex++}",
             state,
             static (context, value) => Record(context, value),
             GpuRenderGraphPassFlags.None);
         builder.Read(source, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        if (!coverage.IsNull)
+        {
+            builder.Read(coverage, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        }
         builder.Read(resources.LayerBuffer, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
+        DeclareTarget(builder, target, options);
+        return target;
+    }
+
+    private static void AddCopyPass(
+        AddPassDelegate addPass,
+        string name,
+        PassResources resources,
+        GpuRenderGraphTexture source,
+        GpuRenderGraphTexture target,
+        RenderTargetOptions options,
+        ref int passIndex)
+    {
+        var state = new PassState(
+            PassKind.Copy,
+            resources,
+            target,
+            options,
+            [],
+            source,
+            0,
+            -1,
+            CompositeMode.Source,
+            default);
+        GpuRenderGraphPassBuilder builder = addPass(
+            $"{name}-copy-{passIndex++}",
+            state,
+            static (context, value) => Record(context, value),
+            GpuRenderGraphPassFlags.None);
+        builder.Read(source, GpuStage.PixelShader, GpuBarrierHazards.Descriptors);
         DeclareTarget(builder, target, options);
     }
 
@@ -565,7 +717,8 @@ public static class RenderGraphExtensions
             mask,
             0,
             -1,
-            BlendMode.SourceOver);
+            CompositeMode.SourceOver,
+            default);
         GpuRenderGraphPassBuilder builder = addPass(
             $"{name}-mask-{passIndex++}",
             state,
@@ -597,7 +750,8 @@ public static class RenderGraphExtensions
             source,
             parametersOffset,
             -1,
-            BlendMode.SourceOver);
+            CompositeMode.SourceOver,
+            default);
         GpuRenderGraphPassBuilder builder = addPass(
             $"{name}-blur-{passIndex++}",
             state,
@@ -662,6 +816,19 @@ public static class RenderGraphExtensions
         {
             RecordDraw(context, commands, state, target);
         }
+        else if (state.Kind == PassKind.Copy)
+        {
+            var table = new GpuResourceTable(1, 1);
+            table.SetTexture(0, context.GetTextureView(state.Source).Id);
+            table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
+            commands
+                .SetPipeline(state.Resources.Renderer.GetCopyPipeline(target.Format))
+                .SetResourceTable(table)
+                .SetViewportAndScissor(
+                    new(0, 0, target.Width, target.Height),
+                    new(0, 0, target.Width, target.Height))
+                .Draw(6);
+        }
         else if (state.Kind == PassKind.Mask)
         {
             var table = new GpuResourceTable(1, 1);
@@ -689,21 +856,50 @@ public static class RenderGraphExtensions
                 table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
                 pipeline = state.Resources.Renderer.GetBlurPipeline(target.Format);
             }
+            else if (state.Kind == PassKind.ShaderComposite)
+            {
+                table = new(3, 1, 1);
+                table.SetTexture(0, context.GetTextureView(state.Source).Id);
+                table.SetTexture(1, context.GetTextureView(state.Backdrop).Id);
+                table.SetTexture(
+                    2,
+                    context.GetTextureView(
+                        state.Coverage.IsNull ? state.Source : state.Coverage).Id);
+                table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
+                pipeline = state.Resources.Renderer.GetCompositePipeline(target.Format);
+            }
             else
             {
-                table = new(1, 1, 1);
                 TextureId source = context.GetTextureView(state.Source).Id;
-                table.SetTexture(0, source);
+                if (state.Coverage.IsNull)
+                {
+                    table = new(1, 1, 1);
+                    table.SetTexture(0, source);
+                    pipeline = state.Resources.Renderer.GetLayerPipeline(
+                        target.Format,
+                        state.BlendMode);
+                }
+                else
+                {
+                    table = new(3, 1, 1);
+                    table.SetTexture(0, source);
+                    table.SetTexture(1, source);
+                    table.SetTexture(2, context.GetTextureView(state.Coverage).Id);
+                    pipeline = state.Resources.Renderer.GetClippedLayerPipeline(target.Format);
+                }
                 table.SetSampler(0, state.Resources.Renderer.GetLayerSampler());
-                pipeline = state.Resources.Renderer.GetLayerPipeline(target.Format, state.BlendMode);
             }
             table.SetBuffer(0, parameters.Id);
+            GpuScissorRect scissor = state.Kind == PassKind.Composite
+                && state.CompositeClip is { } compositeClip
+                    ? ToScissor(compositeClip, target)
+                    : new(0, 0, target.Width, target.Height);
             commands
                 .SetPipeline(pipeline)
                 .SetResourceTable(table)
                 .SetViewportAndScissor(
                     new(0, 0, target.Width, target.Height),
-                    new(0, 0, target.Width, target.Height))
+                    scissor)
                 .Draw(6);
         }
 
@@ -799,7 +995,10 @@ public static class RenderGraphExtensions
         GpuRenderGraphTexture Source,
         ulong ParametersOffset,
         int MaskImageIndex,
-        BlendMode BlendMode);
+        CompositeMode BlendMode,
+        GpuRenderGraphTexture Backdrop,
+        GpuRenderGraphTexture Coverage = default,
+        Rect? CompositeClip = null);
 
     private readonly record struct PassResources(
         Renderer Renderer,
@@ -819,6 +1018,8 @@ public static class RenderGraphExtensions
     {
         Draw,
         Composite,
+        ShaderComposite,
+        Copy,
         Blur,
         Mask,
     }

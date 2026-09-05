@@ -20,4 +20,6 @@ internal readonly record struct RecordedCommand(
     FillRule FillRule = FillRule.NonZero,
     StrokeStyle? Stroke = null,
     PathClip? PathClip = null,
-    int LayerId = 0);
+    int LayerId = 0,
+    RecordedClipStack? ClipStack = null,
+    int Sequence = 0);

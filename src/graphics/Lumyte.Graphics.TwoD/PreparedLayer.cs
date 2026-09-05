@@ -11,4 +11,6 @@ internal readonly record struct PreparedLayer(
     ulong HorizontalBlurParametersOffset,
     ulong VerticalBlurParametersOffset,
     ulong ShadowHorizontalBlurParametersOffset,
-    ulong ShadowVerticalBlurParametersOffset);
+    ulong ShadowVerticalBlurParametersOffset,
+    Rect? CompositeClip,
+    PreparedBatch? CoverageBatch);

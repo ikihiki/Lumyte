@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Vulkan\Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -26,6 +27,8 @@
   <ItemGroup>
     <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
+    <Compile Include="..\Lumyte.Graphics.Text.Tests\TextBackendConformanceTests.cs" Link="TextBackendConformanceTests.cs" />
+    <Compile Include="..\Lumyte.Graphics.Text.Tests\TestFontData.cs" Link="TestFontData.cs" />
     <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />
     <Compile Include="..\..\..\samples\graphics\Lumyte.Graphics.Vulkan.Samples\SampleShaders.cs" Link="SampleShaders.cs" />
   </ItemGroup>

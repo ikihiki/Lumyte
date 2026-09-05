@@ -13,6 +13,8 @@ public sealed class DistanceFieldAtlas : IDisposable
     private int nextSlot;
     private bool disposed;
 
+    internal event Action<DistanceFieldAtlas>? Disposing;
+
     public DistanceFieldAtlas(
         IGpuBackend backend,
         uint width = 1024,
@@ -100,12 +102,39 @@ public sealed class DistanceFieldAtlas : IDisposable
     public void Dispose()
     {
         if (disposed) { return; }
-        backend.DestroySampler(Sampler);
-        texture.Dispose();
-        live.Clear();
-        retired.Clear();
-        freeRectangles.Clear();
         disposed = true;
+
+        Exception? notificationFailure = null;
+        Delegate[] handlers = Disposing?.GetInvocationList() ?? [];
+        foreach (Action<DistanceFieldAtlas> handler in handlers.Cast<Action<DistanceFieldAtlas>>())
+        {
+            try
+            {
+                handler(this);
+            }
+            catch (Exception exception)
+            {
+                notificationFailure ??= exception;
+            }
+        }
+        Disposing = null;
+
+        try
+        {
+            backend.DestroySampler(Sampler);
+        }
+        finally
+        {
+            texture.Dispose();
+            live.Clear();
+            retired.Clear();
+            freeRectangles.Clear();
+        }
+
+        if (notificationFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(notificationFailure).Throw();
+        }
     }
 
     internal DistanceField Allocate(

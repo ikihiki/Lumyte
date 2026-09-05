@@ -303,6 +303,379 @@ public abstract class BackendConformanceTests
         AssertPixelNear(pixels, 32, 32, red, green, blue, 255, tolerance: 3);
     }
 
+    [Theory]
+    [InlineData(CompositeMode.Clear)]
+    [InlineData(CompositeMode.Source)]
+    [InlineData(CompositeMode.Destination)]
+    [InlineData(CompositeMode.SourceOver)]
+    [InlineData(CompositeMode.DestinationOver)]
+    [InlineData(CompositeMode.SourceIn)]
+    [InlineData(CompositeMode.DestinationIn)]
+    [InlineData(CompositeMode.SourceOut)]
+    [InlineData(CompositeMode.DestinationOut)]
+    [InlineData(CompositeMode.SourceAtop)]
+    [InlineData(CompositeMode.DestinationAtop)]
+    [InlineData(CompositeMode.Xor)]
+    [InlineData(CompositeMode.Plus)]
+    [InlineData(CompositeMode.Screen)]
+    [InlineData(CompositeMode.Overlay)]
+    [InlineData(CompositeMode.Darken)]
+    [InlineData(CompositeMode.Lighten)]
+    [InlineData(CompositeMode.ColorDodge)]
+    [InlineData(CompositeMode.ColorBurn)]
+    [InlineData(CompositeMode.HardLight)]
+    [InlineData(CompositeMode.SoftLight)]
+    [InlineData(CompositeMode.Difference)]
+    [InlineData(CompositeMode.Exclusion)]
+    [InlineData(CompositeMode.Multiply)]
+    [InlineData(CompositeMode.HslHue)]
+    [InlineData(CompositeMode.HslSaturation)]
+    [InlineData(CompositeMode.HslColor)]
+    [InlineData(CompositeMode.HslLuminosity)]
+    [Trait("Category", "TwoDConformance")]
+    public void CompositeModesMatchPremultipliedReferenceAcrossTheBackend(CompositeMode mode)
+    {
+        var backdrop = new Color(0.2f, 0.6f, 0.8f, 0.7f);
+        var source = new Color(0.9f, 0.3f, 0.1f, 0.6f);
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(backdrop));
+        encoder.PushLayer(new() { CompositeMode = mode });
+        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(source));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "composite-mode",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+        Vector4 expected = CompositeReference(mode, Premultiply(source), Premultiply(backdrop));
+
+        AssertPixelNear(
+            pixels,
+            32,
+            32,
+            ToByte(expected.X),
+            ToByte(expected.Y),
+            ToByte(expected.Z),
+            ToByte(expected.W),
+            tolerance: 4);
+    }
+
+    [Theory]
+    [InlineData(CompositeMode.Clear)]
+    [InlineData(CompositeMode.Source)]
+    [InlineData(CompositeMode.SourceIn)]
+    [InlineData(CompositeMode.DestinationIn)]
+    [InlineData(CompositeMode.DestinationAtop)]
+    [Trait("Category", "TwoDConformance")]
+    public void EmptyCompositeLayerPreservesItsTransparentSourceSemantics(CompositeMode mode)
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 1, 0)));
+            encoder.PushLayer(new() { CompositeMode = mode });
+            encoder.PopLayer();
+        });
+
+        AssertPixelNear(pixels, 32, 32, 0, 0, 0, 0);
+    }
+
+    [Theory]
+    [InlineData(CompositeMode.Clear)]
+    [InlineData(CompositeMode.Source)]
+    [Trait("Category", "TwoDConformance")]
+    public void EmptyCompositeLayerRemainsBetweenCompatibleDraws(CompositeMode mode)
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 1, 0)));
+            encoder.PushLayer(new() { CompositeMode = mode });
+            encoder.PopLayer();
+            encoder.FillRectangle(new(0, 0, 16, 16), Brush.Solid(new(1, 0, 0)));
+        });
+
+        AssertPixelNear(pixels, 8, 8, 255, 0, 0, 255);
+        AssertPixelNear(pixels, 32, 32, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void MultipleEmptyCompositeLayersRemainBeforeTheFollowingDraw()
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 1, 0)));
+            encoder.PushLayer(new() { CompositeMode = CompositeMode.Clear });
+            encoder.PopLayer();
+            encoder.PushLayer(new() { CompositeMode = CompositeMode.Source });
+            encoder.PopLayer();
+            encoder.FillRectangle(new(0, 0, 16, 16), Brush.Solid(new(1, 0, 0)));
+        });
+
+        AssertPixelNear(pixels, 8, 8, 255, 0, 0, 255);
+        AssertPixelNear(pixels, 32, 32, 0, 0, 0, 0);
+    }
+
+    [Theory]
+    [InlineData(CompositeMode.Clear)]
+    [InlineData(CompositeMode.Source)]
+    [InlineData(CompositeMode.SourceIn)]
+    [Trait("Category", "TwoDConformance")]
+    public void EmptyUnboundedCompositeIsRestrictedByAPathClip(CompositeMode mode)
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 1, 0)));
+            encoder.PushClip(RectanglePath(16, 16, 32, 32));
+            encoder.PushLayer(new() { CompositeMode = mode });
+            encoder.PopLayer();
+            encoder.PopClip();
+        });
+
+        AssertPixelNear(pixels, 32, 32, 0, 0, 0, 0);
+        AssertPixelNear(pixels, 8, 8, 0, 255, 0, 255);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void EmptyClearCompositeUsesExactRotatedRectangleClipCoverage()
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 1, 0)));
+            encoder.SetTransform(Matrix3x2.CreateRotation(MathF.PI / 4, new(32, 32)));
+            encoder.PushClip(new Rect(20, 20, 24, 24));
+            encoder.SetTransform(Matrix3x2.Identity);
+            encoder.PushLayer(new() { CompositeMode = CompositeMode.Clear });
+            encoder.PopLayer();
+            encoder.PopClip();
+        });
+
+        AssertPixelNear(pixels, 32, 32, 0, 0, 0, 0);
+        AssertPixelNear(pixels, 20, 20, 0, 255, 0, 255, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void PathClippedClearCompositeAppliesEdgeCoverageOnce()
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 1, 0)));
+            encoder.PushClip(RectanglePath(16.25f, 16.25f, 31.5f, 31.5f));
+            encoder.PushLayer(new() { CompositeMode = CompositeMode.Clear });
+            encoder.PopLayer();
+            encoder.PopClip();
+        });
+
+        AssertPixelNear(pixels, 16, 32, 0, 64, 0, 64, tolerance: 10);
+        AssertPixelNear(pixels, 15, 32, 0, 255, 0, 255, tolerance: 3);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "TwoDConformance")]
+    public void PathClippedSourceOverAppliesEdgeCoverageOnce(bool nested)
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.PushClip(RectanglePath(16.25f, 16.25f, 31.5f, 31.5f));
+            encoder.PushLayer();
+            if (nested) { encoder.PushLayer(); }
+            encoder.DrawPath(
+                RectanglePath(0, 0, Width, Height),
+                Matrix3x2.Identity,
+                Brush.Solid(Color.White));
+            if (nested) { encoder.PopLayer(); }
+            encoder.PopLayer();
+            encoder.PopClip();
+        });
+
+        AssertPixelNear(pixels, 16, 32, 191, 191, 191, 191, tolerance: 10);
+        AssertPixelNear(pixels, 15, 32, 0, 0, 0, 0, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void PathClippedSourceOverLoadsANonSampledBackdrop()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder backgroundEncoder = renderer.CreateCommandEncoder();
+        backgroundEncoder.FillRectangle(
+            new(0, 0, Width, Height),
+            Brush.Solid(new(0, 0, 1)));
+        using PreparedDisplayList background = renderer.Prepare(
+            backgroundEncoder.Finish(),
+            target.Description);
+        using CommandEncoder foregroundEncoder = renderer.CreateCommandEncoder();
+        foregroundEncoder.PushClip(RectanglePath(16.25f, 16.25f, 31.5f, 31.5f));
+        foregroundEncoder.PushLayer();
+        foregroundEncoder.DrawPath(
+            RectanglePath(0, 0, Width, Height),
+            Matrix3x2.Identity,
+            Brush.Solid(new(1, 0, 0)));
+        foregroundEncoder.PopLayer();
+        foregroundEncoder.PopClip();
+        using PreparedDisplayList foreground = renderer.Prepare(
+            foregroundEncoder.Finish(),
+            target.Description);
+        var graph = new GpuRenderGraph();
+        GpuRenderGraphTexture graphTarget = graph.ImportTexture(
+            "non-sampled-target",
+            target.Handle,
+            target.Description);
+        graph.AddTwoD(
+            "background",
+            renderer,
+            background,
+            graphTarget,
+            new(GpuAttachmentLoadOperation.Clear, GpuAttachmentStoreOperation.Store),
+            markOutput: false);
+        graph.AddTwoD(
+            "path-clipped-source-over",
+            renderer,
+            foreground,
+            graphTarget,
+            new(GpuAttachmentLoadOperation.Load, GpuAttachmentStoreOperation.Store));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 255, 0, 0, 255, tolerance: 3);
+        AssertPixelNear(pixels, 16, 32, 191, 0, 64, 255, tolerance: 10);
+        AssertPixelNear(pixels, 15, 32, 0, 0, 255, 255, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void PathClippedLayerShadowUsesSourceOverComposition()
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.PushClip(RectanglePath(4, 4, 56, 56));
+            encoder.PushLayer(new()
+            {
+                Shadow = new(new(24, 0), new(1, 0, 0)),
+            });
+            encoder.DrawPath(
+                RectanglePath(8, 8, 16, 16),
+                Matrix3x2.Identity,
+                Brush.Solid(Color.White));
+            encoder.PopLayer();
+            encoder.PopClip();
+        });
+
+        AssertPixelNear(pixels, 16, 16, 255, 255, 255, 255, tolerance: 3);
+        AssertPixelNear(pixels, 40, 16, 255, 0, 0, 255, tolerance: 4);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "TwoDConformance")]
+    public void ClippedOutLayerStillHonorsTheRequestedRootClear(bool nested)
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        if (nested) { encoder.PushLayer(); }
+        encoder.PushClip(RectanglePath(80, 80, 16, 16));
+        encoder.PushLayer(new() { CompositeMode = CompositeMode.Clear });
+        encoder.PopLayer();
+        encoder.PopClip();
+        if (nested) { encoder.PopLayer(); }
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "clipped-out-layer",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear,
+                ClearColor: new(0, 0, 1, 1)));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 0, 0, 255, 255);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void ExplicitZeroOpacityLayerRemainsTransparent()
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 0, 1)));
+            LayerOptions transparent = default;
+            encoder.PushLayer(transparent);
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0)));
+            encoder.PopLayer();
+        });
+
+        AssertPixelNear(pixels, 32, 32, 0, 0, 255, 255);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void PlusCompositeSaturatesPremultipliedColorAndAlpha()
+    {
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(
+                new(0, 0, Width, Height),
+                Brush.Solid(new(0.9f, 0.8f, 0.1f, 0.8f)));
+            encoder.PushLayer(new() { CompositeMode = CompositeMode.Plus });
+            encoder.FillRectangle(
+                new(0, 0, Width, Height),
+                Brush.Solid(new(0.8f, 0.7f, 0.95f, 0.75f)));
+            encoder.PopLayer();
+        });
+
+        AssertPixelNear(pixels, 32, 32, 255, 255, 202, 255, tolerance: 3);
+    }
+
+    [Theory]
+    [InlineData(CompositeMode.ColorDodge)]
+    [InlineData(CompositeMode.ColorBurn)]
+    [Trait("Category", "TwoDConformance")]
+    public void ColorBlendBoundaryPairsFollowW3cBranchOrder(CompositeMode mode)
+    {
+        Color backdrop = mode == CompositeMode.ColorDodge
+            ? new(0, 0, 0)
+            : new(1, 1, 1);
+        Color source = mode == CompositeMode.ColorDodge
+            ? new(1, 1, 1)
+            : new(0, 0, 0);
+        byte expected = mode == CompositeMode.ColorDodge ? (byte)0 : (byte)255;
+
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(backdrop));
+            encoder.PushLayer(new() { CompositeMode = mode });
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(source));
+            encoder.PopLayer();
+        });
+
+        AssertPixelNear(pixels, 32, 32, expected, expected, expected, 255, tolerance: 2);
+    }
+
     [Fact]
     [Trait("Category", "TwoDConformance")]
     public void ImageRouteUsesPremultipliedSourceOverBlending()
@@ -514,6 +887,29 @@ public abstract class BackendConformanceTests
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
+    public void DisposedDistanceFieldAtlasIsUnregisteredBeforePreparing()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var atlas = new DistanceFieldAtlas(backend, 32, 32);
+        using var rasterizer = new DistanceFieldRasterizer(backend, atlas);
+        DistanceField field = rasterizer.Rasterize(RectanglePath(0, 0, 1, 1), 16, 16);
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawDistanceField(field, new(0, 0, 16, 16), Brush.Solid(Color.White));
+        DisplayList displayList = encoder.Finish();
+
+        atlas.Dispose();
+        ArgumentException exception = Assert.Throws<ArgumentException>(() =>
+        {
+            using PreparedDisplayList _ = renderer.Prepare(displayList, TargetDescription());
+        });
+
+        Assert.Equal("image", exception.ParamName);
+        Assert.Contains("not registered", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
     public void VectorPathRendersLinearGradientThroughTiledCoverage()
     {
         using IGpuBackend backend = CreateBackend();
@@ -567,6 +963,301 @@ public abstract class BackendConformanceTests
 
         AssertPixelNear(pixels, 32, 32, 255, 0, 0, 255, tolerance: 7);
         AssertPixelNear(pixels, 53, 32, 64, 0, 191, 255, tolerance: 7);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void VectorPathRepeatsAnArbitraryColorLine()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawPath(
+            RectanglePath(4, 4, 56, 56),
+            Matrix3x2.Identity,
+            Brush.LinearGradient(
+                new(8, 8),
+                new(24, 8),
+                new(8, 24),
+                [
+                    new(0, new(1, 0, 0)),
+                    new(0.5f, new(0, 1, 0)),
+                    new(1, new(0, 0, 1)),
+                ],
+                GradientExtendMode.Repeat));
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "repeated-color-line",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 12, 32, 112, 143, 0, 255, tolerance: 5);
+        AssertPixelNear(pixels, 28, 32, 112, 143, 0, 255, tolerance: 5);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void VectorPathReflectsATwoCircleRadialGradient()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            Brush.RadialGradient(
+                new(32, 32),
+                8,
+                new(32, 32),
+                24,
+                [
+                    new(0, new(1, 0, 0)),
+                    new(0.5f, new(0, 1, 0)),
+                    new(1, new(0, 0, 1)),
+                ],
+                GradientExtendMode.Reflect));
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "reflected-radial-gradient",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 40, 32, 247, 8, 0, 255, tolerance: 9);
+        AssertPixelNear(pixels, 60, 32, 0, 144, 111, 255, tolerance: 9);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void VectorPathRendersASweepGradient()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawPath(
+            RectanglePath(4, 4, 56, 56),
+            Matrix3x2.Identity,
+            Brush.SweepGradient(
+                new(32.5f, 32.5f),
+                0,
+                -MathF.Tau,
+                [
+                    new(0, new(1, 0, 0)),
+                    new(0.5f, new(0, 1, 0)),
+                    new(1, new(0, 0, 1)),
+                ]));
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "sweep-gradient",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 52, 32, 253, 2, 0, 255, tolerance: 8);
+        AssertPixelNear(pixels, 12, 32, 2, 253, 0, 255, tolerance: 8);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void SweepGradientSamplesAColrPartialRangeAfterYDownConversion()
+    {
+        Brush brush = Brush.SweepGradient(
+            new(32.5f, 32.5f),
+            Degrees(-110),
+            Degrees(-230),
+            [new(0, new(1, 0, 0)), new(1, new(0, 0, 1))]);
+
+        byte[] pixels = Render(encoder => encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            brush));
+
+        AssertPixelNear(pixels, 52, 32, 255, 0, 0, 255, tolerance: 3);
+        AssertPixelNear(pixels, 12, 32, 106, 0, 149, 255, tolerance: 4);
+        AssertPixelNear(pixels, 32, 52, 0, 0, 255, 255, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void SweepGradientDoesNotLiftTheZeroDegreeRayIntoTheNextRevolution()
+    {
+        Brush brush = Brush.SweepGradient(
+            new(32.5f, 32.5f),
+            Degrees(-330),
+            Degrees(-400),
+            [new(0, new(1, 0, 0)), new(1, new(0, 0, 1))]);
+
+        byte[] pixels = Render(encoder => encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            brush));
+
+        AssertPixelNear(pixels, 52, 32, 255, 0, 0, 255, tolerance: 3);
+        AssertPixelNear(pixels, 52, 36, 187, 0, 68, 255, tolerance: 6);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void SweepGradientSupportsDescendingColrAnglesAfterYDownConversion()
+    {
+        Brush brush = Brush.SweepGradient(
+            new(32.5f, 32.5f),
+            Degrees(-210),
+            Degrees(-110),
+            [new(0, new(1, 0, 0)), new(1, new(0, 0, 1))]);
+
+        byte[] pixels = Render(encoder => encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            brush));
+
+        AssertPixelNear(pixels, 32, 52, 255, 0, 0, 255, tolerance: 3);
+        AssertPixelNear(pixels, 12, 32, 179, 0, 77, 255, tolerance: 4);
+        AssertPixelNear(pixels, 32, 12, 0, 0, 255, 255, tolerance: 3);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void EqualAnglePadSweepKeepsItsSharpColorTransition()
+    {
+        Brush brush = Brush.SweepGradient(
+            new(32.5f, 32.5f),
+            -MathF.PI,
+            -MathF.PI,
+            [new(0, new(1, 0, 0)), new(1, new(0, 0, 1))]);
+
+        byte[] pixels = Render(encoder => encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            brush));
+
+        AssertPixelNear(pixels, 52, 32, 255, 0, 0, 255, tolerance: 3);
+        AssertPixelNear(pixels, 12, 32, 0, 0, 255, 255, tolerance: 3);
+    }
+
+    [Theory]
+    [InlineData(GradientExtendMode.Repeat)]
+    [InlineData(GradientExtendMode.Reflect)]
+    [Trait("Category", "TwoDConformance")]
+    public void EqualAnglePeriodicSweepDrawsNothing(GradientExtendMode extendMode)
+    {
+        Brush brush = Brush.SweepGradient(
+            new(32.5f, 32.5f),
+            -MathF.PI,
+            -MathF.PI,
+            [new(0, new(1, 0, 0)), new(1, new(0, 0, 1))],
+            extendMode);
+
+        byte[] pixels = Render(encoder => encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            brush));
+
+        AssertPixelNear(pixels, 52, 32, 0, 0, 0, 0);
+        AssertPixelNear(pixels, 12, 32, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void NestedPathClipsIntersectOnTheGpu()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushClip(new Rect(8, 8, 48, 48));
+        encoder.PushClip(
+            RectanglePath(0, 0, 24, 24),
+            Matrix3x2.CreateTranslation(24, 16));
+        encoder.DrawPath(
+            RectanglePath(0, 0, 64, 64),
+            Matrix3x2.Identity,
+            Brush.Solid(new(0, 1, 0)));
+        encoder.PopClip();
+        encoder.PopClip();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "nested-clips",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 0, 255, 0, 255);
+        AssertPixelNear(pixels, 16, 32, 0, 0, 0, 0);
+        AssertPixelNear(pixels, 32, 8, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void TargetSpaceClipCurvesKeepSubpixelSubdivisionUnderASmallPathTransform()
+    {
+        PathGeometry curvedClip = new PathBuilder()
+            .MoveTo(new(8, 56))
+            .CubicTo(new(8, 8), new(56, 8), new(56, 56))
+            .LineTo(new(8, 56))
+            .Close()
+            .Build();
+
+        byte[] pixels = Render(encoder =>
+        {
+            encoder.PushClip(curvedClip, Matrix3x2.Identity);
+            encoder.DrawPath(
+                RectanglePath(0, 0, 64_000, 64_000),
+                Matrix3x2.CreateScale(0.001f),
+                Brush.Solid(new(0, 1, 0)));
+            encoder.PopClip();
+        });
+
+        AssertPixelNear(pixels, 32, 40, 0, 255, 0, 255, tolerance: 4);
+        AssertPixelNear(pixels, 32, 12, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void SourceInKeepsOnlyTheOverlapAcrossTheBackend()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.FillRectangle(new(8, 8, 32, 32), Brush.Solid(new(0, 1, 0)));
+        encoder.PushLayer(new() { CompositeMode = CompositeMode.SourceIn });
+        encoder.FillRectangle(new(24, 24, 32, 32), Brush.Solid(new(1, 0, 0)));
+        encoder.PopLayer();
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "source-in",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 255, 0, 0, 255);
+        AssertPixelNear(pixels, 16, 16, 0, 0, 0, 0);
+        AssertPixelNear(pixels, 48, 48, 0, 0, 0, 0);
     }
 
     [Fact]
@@ -729,6 +1420,8 @@ public abstract class BackendConformanceTests
             .Close()
             .Build();
 
+    private static float Degrees(float value) => value * MathF.PI / 180;
+
     private static GpuTextureDescription TargetDescription() => new(
         Width,
         Height,
@@ -866,6 +1559,168 @@ public abstract class BackendConformanceTests
         backend.MainQueue.Submit([commands], completion, 1);
         backend.MainQueue.Wait(completion, 1);
     }
+
+    private static Vector4 Premultiply(Color color)
+        => new(
+            color.Red * color.Alpha,
+            color.Green * color.Alpha,
+            color.Blue * color.Alpha,
+            color.Alpha);
+
+    private static Vector4 CompositeReference(
+        CompositeMode mode,
+        Vector4 source,
+        Vector4 backdrop)
+    {
+        float sourceAlpha = source.W;
+        float backdropAlpha = backdrop.W;
+        return mode switch
+        {
+            CompositeMode.Clear => Vector4.Zero,
+            CompositeMode.Source => source,
+            CompositeMode.Destination => backdrop,
+            CompositeMode.SourceOver => source + backdrop * (1 - sourceAlpha),
+            CompositeMode.DestinationOver => source * (1 - backdropAlpha) + backdrop,
+            CompositeMode.SourceIn => source * backdropAlpha,
+            CompositeMode.DestinationIn => backdrop * sourceAlpha,
+            CompositeMode.SourceOut => source * (1 - backdropAlpha),
+            CompositeMode.DestinationOut => backdrop * (1 - sourceAlpha),
+            CompositeMode.SourceAtop => source * backdropAlpha + backdrop * (1 - sourceAlpha),
+            CompositeMode.DestinationAtop => source * (1 - backdropAlpha) + backdrop * sourceAlpha,
+            CompositeMode.Xor => source * (1 - backdropAlpha) + backdrop * (1 - sourceAlpha),
+            CompositeMode.Plus => Vector4.Min(Vector4.One, source + backdrop),
+            _ => BlendReference(mode, source, backdrop),
+        };
+    }
+
+    private static Vector4 BlendReference(
+        CompositeMode mode,
+        Vector4 source,
+        Vector4 backdrop)
+    {
+        float sourceAlpha = source.W;
+        float backdropAlpha = backdrop.W;
+        Vector3 sourceColor = sourceAlpha > 0
+            ? new Vector3(source.X, source.Y, source.Z) / sourceAlpha
+            : default;
+        Vector3 backdropColor = backdropAlpha > 0
+            ? new Vector3(backdrop.X, backdrop.Y, backdrop.Z) / backdropAlpha
+            : default;
+        Vector3 blended = mode switch
+        {
+            CompositeMode.Screen => Vector3.One - (Vector3.One - backdropColor) * (Vector3.One - sourceColor),
+            CompositeMode.Overlay => PerComponent(
+                backdropColor,
+                sourceColor,
+                static (backdrop, source) => backdrop <= 0.5f
+                    ? 2 * backdrop * source
+                    : 1 - 2 * (1 - backdrop) * (1 - source)),
+            CompositeMode.Darken => Vector3.Min(backdropColor, sourceColor),
+            CompositeMode.Lighten => Vector3.Max(backdropColor, sourceColor),
+            CompositeMode.ColorDodge => PerComponent(
+                backdropColor,
+                sourceColor,
+                static (backdrop, source) => backdrop <= 0
+                    ? 0
+                    : source >= 1
+                    ? 1
+                    : MathF.Min(1, backdrop / (1 - source))),
+            CompositeMode.ColorBurn => PerComponent(
+                backdropColor,
+                sourceColor,
+                static (backdrop, source) => backdrop >= 1
+                    ? 1
+                    : source <= 0
+                    ? 0
+                    : 1 - MathF.Min(1, (1 - backdrop) / source)),
+            CompositeMode.HardLight => PerComponent(
+                backdropColor,
+                sourceColor,
+                static (backdrop, source) => source <= 0.5f
+                    ? 2 * backdrop * source
+                    : 1 - 2 * (1 - backdrop) * (1 - source)),
+            CompositeMode.SoftLight => PerComponent(
+                backdropColor,
+                sourceColor,
+                static (backdrop, source) => source <= 0.5f
+                    ? backdrop - (1 - 2 * source) * backdrop * (1 - backdrop)
+                    : backdrop + (2 * source - 1) * (SoftLightReference(backdrop) - backdrop)),
+            CompositeMode.Difference => Vector3.Abs(backdropColor - sourceColor),
+            CompositeMode.Exclusion => backdropColor + sourceColor - 2 * backdropColor * sourceColor,
+            CompositeMode.Multiply => backdropColor * sourceColor,
+            CompositeMode.HslHue => SetLuminosityReference(
+                SetSaturationReference(sourceColor, SaturationReference(backdropColor)),
+                LuminosityReference(backdropColor)),
+            CompositeMode.HslSaturation => SetLuminosityReference(
+                SetSaturationReference(backdropColor, SaturationReference(sourceColor)),
+                LuminosityReference(backdropColor)),
+            CompositeMode.HslColor => SetLuminosityReference(
+                sourceColor,
+                LuminosityReference(backdropColor)),
+            CompositeMode.HslLuminosity => SetLuminosityReference(
+                backdropColor,
+                LuminosityReference(sourceColor)),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+        Vector3 result = new Vector3(source.X, source.Y, source.Z) * (1 - backdropAlpha)
+            + new Vector3(backdrop.X, backdrop.Y, backdrop.Z) * (1 - sourceAlpha)
+            + blended * (sourceAlpha * backdropAlpha);
+        float alpha = sourceAlpha + backdropAlpha - sourceAlpha * backdropAlpha;
+        return new(result, alpha);
+    }
+
+    private static Vector3 PerComponent(
+        Vector3 backdrop,
+        Vector3 source,
+        Func<float, float, float> blend)
+        => new(
+            blend(backdrop.X, source.X),
+            blend(backdrop.Y, source.Y),
+            blend(backdrop.Z, source.Z));
+
+    private static float SoftLightReference(float backdrop)
+        => backdrop <= 0.25f
+            ? ((16 * backdrop - 12) * backdrop + 4) * backdrop
+            : MathF.Sqrt(backdrop);
+
+    private static float LuminosityReference(Vector3 color)
+        => 0.3f * color.X + 0.59f * color.Y + 0.11f * color.Z;
+
+    private static float SaturationReference(Vector3 color)
+        => MathF.Max(color.X, MathF.Max(color.Y, color.Z))
+            - MathF.Min(color.X, MathF.Min(color.Y, color.Z));
+
+    private static Vector3 SetSaturationReference(Vector3 color, float saturation)
+    {
+        float minimum = MathF.Min(color.X, MathF.Min(color.Y, color.Z));
+        float maximum = MathF.Max(color.X, MathF.Max(color.Y, color.Z));
+        float range = maximum - minimum;
+        return range > 0 ? (color - new Vector3(minimum)) * saturation / range : default;
+    }
+
+    private static Vector3 SetLuminosityReference(Vector3 color, float luminosity)
+        => ClipColorReference(color + new Vector3(luminosity - LuminosityReference(color)));
+
+    private static Vector3 ClipColorReference(Vector3 color)
+    {
+        float luminosity = LuminosityReference(color);
+        float minimum = MathF.Min(color.X, MathF.Min(color.Y, color.Z));
+        float maximum = MathF.Max(color.X, MathF.Max(color.Y, color.Z));
+        if (minimum < 0)
+        {
+            color = new Vector3(luminosity)
+                + (color - new Vector3(luminosity)) * luminosity / (luminosity - minimum);
+        }
+        if (maximum > 1)
+        {
+            color = new Vector3(luminosity)
+                + (color - new Vector3(luminosity)) * (1 - luminosity) / (maximum - luminosity);
+        }
+        return color;
+    }
+
+    private static byte ToByte(float value)
+        => checked((byte)Math.Clamp((int)MathF.Round(value * 255), 0, 255));
 
     private static void AssertPixelNear(
         ReadOnlySpan<byte> pixels,

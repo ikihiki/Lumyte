@@ -4,6 +4,22 @@ namespace Lumyte.Graphics.Shader.Offline.Tests;
 
 public sealed class SlangReleaseTests
 {
+    [Fact]
+    public void WgslModuleDefinesItsTargetSpecificShaderBranch()
+    {
+        IReadOnlyList<string> wgsl = SlangPackageCompiler.CreateModuleArguments(
+            "shader.slang",
+            "shader.wgsl",
+            "wgsl");
+        IReadOnlyList<string> spirv = SlangPackageCompiler.CreateModuleArguments(
+            "shader.slang",
+            "shader.spv",
+            "spirv");
+
+        Assert.Contains("-DLUMYTE_SHADER_TARGET_WGSL=1", wgsl);
+        Assert.DoesNotContain("-DLUMYTE_SHADER_TARGET_WGSL=1", spirv);
+    }
+
     [Theory]
     [InlineData("windows", Architecture.X64, "slang-2026.7.1-windows-x86_64.zip")]
     [InlineData("linux", Architecture.Arm64, "slang-2026.7.1-linux-aarch64.zip")]

@@ -3,10 +3,28 @@ namespace Lumyte.Graphics.TwoD;
 /// <summary>Describes an isolated group that is composited after its children are rendered.</summary>
 public readonly record struct LayerOptions
 {
+    private readonly CompositeMode? compositeMode;
+
     public LayerOptions() { }
 
     public float Opacity { get; init; } = 1;
     public BlendMode BlendMode { get; init; } = BlendMode.SourceOver;
+    /// <summary>
+    /// Gets or sets the full Porter-Duff or W3C composition mode. When this property is not set,
+    /// the legacy <see cref="BlendMode"/> value is mapped to its equivalent composition mode.
+    /// </summary>
+    public CompositeMode CompositeMode
+    {
+        get => compositeMode ?? BlendMode switch
+        {
+            BlendMode.SourceOver => CompositeMode.SourceOver,
+            BlendMode.Additive => CompositeMode.Plus,
+            BlendMode.Multiply => CompositeMode.Multiply,
+            BlendMode.Screen => CompositeMode.Screen,
+            _ => throw new ArgumentOutOfRangeException(nameof(BlendMode)),
+        };
+        init => compositeMode = value;
+    }
     /// <summary>An image whose alpha is sampled in normalized target coordinates.</summary>
     public ImageId Mask { get; init; }
     /// <summary>Blur radius in target pixels.</summary>
@@ -22,6 +40,10 @@ public readonly record struct LayerOptions
         if (!Enum.IsDefined(BlendMode))
         {
             throw new ArgumentOutOfRangeException(parameterName, "Layer blend mode is unknown.");
+        }
+        if (!Enum.IsDefined(CompositeMode))
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Layer composite mode is unknown.");
         }
         if (!float.IsFinite(BlurRadius) || BlurRadius < 0)
         {

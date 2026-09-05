@@ -4,6 +4,9 @@
     <Description>Cross-platform Slang shader precompiler.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Graphics.Shader.Offline.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
     <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" />
   </ItemGroup>

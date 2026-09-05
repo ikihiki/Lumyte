@@ -2,6 +2,7 @@
   <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.DirectX12\Lumyte.Graphics.DirectX12.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
     <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" />
@@ -13,6 +14,8 @@
   <ItemGroup>
     <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
+    <Compile Include="..\Lumyte.Graphics.Text.Tests\TextBackendConformanceTests.cs" Link="TextBackendConformanceTests.cs" />
+    <Compile Include="..\Lumyte.Graphics.Text.Tests\TestFontData.cs" Link="TestFontData.cs" />
     <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />
   </ItemGroup>
   <ItemGroup>

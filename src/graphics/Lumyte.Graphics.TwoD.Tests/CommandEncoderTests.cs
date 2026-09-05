@@ -57,6 +57,138 @@ public sealed class CommandEncoderTests
     }
 
     [Fact]
+    public void NestedRectangleAndPathClipsAreScopedIndependently()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        PathGeometry path = new PathBuilder()
+            .MoveTo(new(0, 0))
+            .LineTo(new(16, 0))
+            .LineTo(new(8, 16))
+            .Close()
+            .Build();
+
+        encoder.PushClip(new Rect(0, 0, 32, 32));
+        encoder.PushClip(path, Matrix3x2.CreateTranslation(4, 4), FillRule.EvenOdd);
+        encoder.DrawPath(path, Matrix3x2.Identity, Brush.Solid(Color.White));
+        Assert.Equal(2, encoder.ClipDepth);
+        encoder.PopClip();
+        encoder.PopClip();
+        DisplayList displayList = encoder.Finish();
+
+        Assert.Equal(1, displayList.Count);
+        Assert.Equal(0, encoder.ClipDepth);
+    }
+
+    [Fact]
+    public void FinishRequiresBalancedScopedClips()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushClip(new Rect(0, 0, 8, 8));
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(encoder.Finish);
+
+        Assert.Contains("clip", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DisjointNestedClipBoundsDiscardCommands()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushClip(new Rect(0, 0, 8, 8));
+        encoder.PushClip(new Rect(16, 16, 8, 8));
+        encoder.FillRectangle(new(0, 0, 32, 32), Brush.Solid(Color.White));
+        encoder.PopClip();
+        encoder.PopClip();
+
+        DisplayList displayList = encoder.Finish();
+
+        Assert.Equal(0, displayList.Count);
+    }
+
+    [Fact]
+    public void NestedAxisAlignedRectangleClipsUseTheirIntersectionDuringPreparation()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushClip(new Rect(0, 0, 16, 16));
+        encoder.PushClip(new Rect(8, 8, 16, 16));
+        encoder.FillRectangle(new(0, 0, 32, 32), Brush.Solid(Color.White));
+        encoder.PopClip();
+        encoder.PopClip();
+        DisplayList displayList = encoder.Finish();
+
+        using PreparedDisplayList prepared = renderer.Prepare(displayList, TargetDescription);
+
+        Assert.Equal(1, prepared.CommandCount);
+    }
+
+    [Fact]
+    public void PathClipIsRetainedForGpuPreparation()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        PathGeometry path = new PathBuilder()
+            .MoveTo(new(0, 0))
+            .LineTo(new(16, 0))
+            .LineTo(new(8, 16))
+            .Close()
+            .Build();
+        encoder.PushClip(path);
+        encoder.DrawPath(path, Matrix3x2.Identity, Brush.Solid(Color.White));
+        encoder.PopClip();
+        DisplayList displayList = encoder.Finish();
+
+        Assert.Equal(1, displayList.Count);
+    }
+
+    [Fact]
+    public void ExtendedGradientIsRetainedForGpuPreparation()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        PathGeometry path = new PathBuilder()
+            .MoveTo(new(0, 0))
+            .LineTo(new(16, 0))
+            .LineTo(new(8, 16))
+            .Close()
+            .Build();
+        Brush brush = Brush.SweepGradient(
+            new(8, 8),
+            0,
+            MathF.PI * 2,
+            [new(0, Color.White), new(1, Color.Transparent)]);
+        encoder.DrawPath(path, Matrix3x2.Identity, brush);
+        DisplayList displayList = encoder.Finish();
+
+        Assert.Equal(1, displayList.Count);
+    }
+
+    [Fact]
+    public void PorterDuffCompositeCanBePrepared()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.PushLayer(new() { CompositeMode = CompositeMode.SourceIn });
+        encoder.FillRectangle(new(0, 0, 16, 16), Brush.Solid(Color.White));
+        encoder.PopLayer();
+        DisplayList displayList = encoder.Finish();
+
+        using PreparedDisplayList prepared = renderer.Prepare(displayList, TargetDescription);
+
+        Assert.Equal(1, prepared.CommandCount);
+    }
+
+    [Fact]
     public void LayerCreatesTransientRenderAndCompositePasses()
     {
         using var backend = new BufferBackend();

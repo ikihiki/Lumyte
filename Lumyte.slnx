@@ -21,6 +21,8 @@
   <Project Path="src/graphics/Lumyte.Graphics.WebGPU.Browser/Lumyte.Graphics.WebGPU.Browser.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.TwoD/Lumyte.Graphics.TwoD.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.TwoD.Tests/Lumyte.Graphics.TwoD.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Shader/Lumyte.Graphics.Shader.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Shader.Tests/Lumyte.Graphics.Shader.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Shader.Browser/Lumyte.Graphics.Shader.Browser.csproj" />

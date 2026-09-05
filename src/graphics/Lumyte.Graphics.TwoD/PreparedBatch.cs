@@ -8,4 +8,5 @@ internal readonly record struct PreparedBatch(
     Rect Clip,
     int ImageIndex = -1,
     int LayerId = 0,
-    int Sequence = 0);
+    int Sequence = 0,
+    int LastSequence = 0);
