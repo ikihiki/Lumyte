@@ -199,7 +199,12 @@ public sealed class GpuRenderGraphFrameTests
 
         GpuRenderGraphPlan plan = graph.Compile();
 
-        Assert.Throws<InvalidOperationException>(() => plan.Record(new RecordingQueue()));
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => plan.Record(new RecordingQueue()));
+
+        Assert.Contains("draw", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("undeclared", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("ReadWrite", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -11,5 +11,5 @@ internal sealed class GpuRenderGraphStatefulPassDeclaration<TState>(
         IGpuBackend? backend,
         IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
         IReadOnlySet<GpuRenderGraphResource> allowedResources)
-        => record(new(commands, backend, resources, allowedResources), state);
+        => record(new(commands, backend, resources, allowedResources, Name), state);
 }

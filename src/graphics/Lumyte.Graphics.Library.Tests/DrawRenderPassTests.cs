@@ -167,6 +167,34 @@ public sealed class DrawRenderPassTests
         Assert.Equal("sampledTextures", exception.ParamName);
     }
 
+    [Fact]
+    public void UnifiedBindingsCreateDescriptorsAndGraphDependencies()
+    {
+        var textureDescription = new GpuTextureDescription(
+            16, 16, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled);
+        var bufferDescription = new GpuBufferDescription(64, GpuBufferUsage.ShaderData);
+        var bindings = new DrawMaterialBindings(
+            textures: [new(0, new(41), textureDescription, new(141), GpuStage.PixelShader)],
+            samplers: [new(0, new SamplerId(142))],
+            buffers: [new(2, new(52, 64), bufferDescription, new(143), GpuStage.VertexShader)]);
+        var material = new DrawMaterial(new(3), bindings);
+        var graph = new GpuRenderGraph();
+
+        DrawRenderPassResources resources = graph.AddDraw(
+            "unified",
+            new(material, new(3), DrawTransforms.Identity),
+            Target());
+        GpuRenderGraphPlan plan = graph.Compile();
+
+        Assert.Same(bindings, material.Bindings);
+        Assert.Equal(new TextureId(141), material.Resources!.GetTexture(0));
+        Assert.Equal(new SamplerId(142), material.Resources.GetSampler(0));
+        Assert.Equal(new BufferId(143), material.Resources.GetBuffer(2));
+        Assert.Single(resources.SampledTextures);
+        Assert.Single(resources.ShaderBuffers);
+        Assert.Equal(3, Assert.Single(plan.Barriers).ResourceCount);
+    }
+
     private static GpuRenderGraphPlan CreatePlan(
         GpuRenderGraphPlanCache cache,
         ulong pipelineId,

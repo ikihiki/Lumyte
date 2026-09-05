@@ -5,6 +5,45 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourceLifetimeTests
 {
     [Fact]
+    public void DefaultHandleFailsTryOperationsWithoutThrowing()
+    {
+        ResourceHandle<SizedResource> handle = default;
+
+        bool found = handle.TryGetValue(out SizedResource? value);
+        bool leased = handle.TryAcquireLease(out ResourceLease<SizedResource>? lease);
+
+        Assert.False(handle.IsValid);
+        Assert.False(found);
+        Assert.Null(value);
+        Assert.False(leased);
+        Assert.Null(lease);
+        Assert.Throws<InvalidOperationException>(() => handle.Value);
+    }
+
+    [Fact]
+    public async Task CurrentGenerationLeaseSurvivesReload()
+    {
+        var disposed = new List<int>();
+        var loader = new DisposableGenerationLoader(disposed);
+        await using ResourceStore store = new([new ContentResolver()], [loader]);
+        AssetKey<DisposableGeneration> key = Asset.From<DisposableGeneration>("memory:item");
+        ResourceHandle<DisposableGeneration> handle = await store.LoadAsync(key);
+
+        bool acquired = handle.TryAcquireLease(out ResourceLease<DisposableGeneration>? lease);
+        await store.ReloadAsync(key);
+
+        Assert.True(acquired);
+        Assert.NotNull(lease);
+        Assert.Equal(0u, lease.Generation);
+        Assert.Equal(1, lease.Value.Generation);
+        Assert.Empty(disposed);
+
+        await lease.DisposeAsync();
+
+        Assert.Equal([1], disposed);
+    }
+
+    [Fact]
     public async Task BudgetCollectionEvictsTheLeastRecentlyUsedResource()
     {
         ResourceStoreOptions options = new()

@@ -18,16 +18,89 @@ public sealed class CommandEncoderTests
         using var backend = new BufferBackend();
         using var renderer = new Renderer(backend);
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
-        encoder.Save();
-        encoder.Clip(new(0, 0, 8, 8));
-        encoder.FillRectangle(new(32, 32, 8, 8), Brush.Solid(Color.White));
-        encoder.Restore();
+        using (encoder.BeginClip(new Rect(0, 0, 8, 8)))
+        {
+            encoder.FillRectangle(new(32, 32, 8, 8), Brush.Solid(Color.White));
+        }
         encoder.FillRectangle(new(4, 4, 8, 8), Brush.Solid(Color.White));
         DisplayList displayList = encoder.Finish();
 
         using PreparedDisplayList prepared = renderer.Prepare(displayList, TargetDescription);
 
         Assert.Equal(1, prepared.CommandCount);
+    }
+
+    [Fact]
+    public void ScopeRestoresDrawingStateAfterException()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+
+        Assert.Throws<InvalidOperationException>((Action)(() =>
+        {
+            using CommandEncoderScope scope = encoder.BeginState();
+            encoder.Transform(Matrix3x2.CreateTranslation(64, 0));
+            using CommandEncoderScope clip = encoder.BeginClip(new Rect(0, 0, 4, 4));
+            throw new InvalidOperationException("drawing failed");
+        }));
+        encoder.FillRectangle(new(0, 0, 8, 8), Brush.Solid(Color.White));
+
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), TargetDescription);
+
+        Assert.Equal(1, prepared.CommandCount);
+        Assert.Equal(0, encoder.ClipDepth);
+    }
+
+    [Fact]
+    public void OutOfOrderScopeDisposalPreservesState()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        CommandEncoderScope outer = encoder.BeginState();
+        CommandEncoderScope inner = encoder.BeginClip(new Rect(0, 0, 8, 8));
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(outer.Dispose);
+
+        Assert.Contains("reverse order", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, encoder.ClipDepth);
+        inner.Dispose();
+        outer.Dispose();
+        _ = encoder.Finish();
+    }
+
+    [Fact]
+    public void DuplicateScopeDisposalCannotCloseParentScope()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        CommandEncoderScope outer = encoder.BeginState();
+        CommandEncoderScope inner = encoder.BeginClip(new Rect(0, 0, 8, 8));
+
+        inner.Dispose();
+        inner.Dispose();
+
+        Assert.Throws<InvalidOperationException>(encoder.Finish);
+        outer.Dispose();
+        _ = encoder.Finish();
+    }
+
+    [Fact]
+    public void FailedFinishLeavesEncoderRecording()
+    {
+        using var backend = new BufferBackend();
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        CommandEncoderScope scope = encoder.BeginLayer(new() { Opacity = 0.5f });
+
+        _ = Assert.Throws<InvalidOperationException>(encoder.Finish);
+        scope.Dispose();
+        encoder.FillRectangle(new(0, 0, 8, 8), Brush.Solid(Color.White));
+
+        Assert.Equal(1, encoder.Finish().Count);
+        Assert.Throws<InvalidOperationException>(encoder.Finish);
     }
 
     [Fact]

@@ -4,7 +4,7 @@ namespace Lumyte.Resources;
 public readonly record struct ResourceHandle<T>
     where T : notnull
 {
-    private readonly ResourceStore store;
+    private readonly ResourceStore? store;
 
     internal ResourceHandle(AssetKey<T> key, ResourceStore store, uint slot)
     {
@@ -17,14 +17,18 @@ public readonly record struct ResourceHandle<T>
 
     public ResourceId<T> Id { get; }
 
-    public T Value => store.GetCurrent(Id).Value;
+    /// <summary>Whether this handle was created by a resource store.</summary>
+    public bool IsValid => store is not null;
+
+    public T Value => RequireStore().GetCurrent(Id).Value;
 
     /// <summary>Gets the generation loaded for this handle.</summary>
-    public uint Generation => store.GetCurrent(Id).Generation;
+    public uint Generation => RequireStore().GetCurrent(Id).Generation;
 
     public bool TryGetValue(out T? value)
     {
-        if (store.TryGetCurrent(Id, out ResourceRecord<T>? record)
+        if (store is not null
+            && store.TryGetCurrent(Id, out ResourceRecord<T>? record)
             && record is not null)
         {
             value = record.Value;
@@ -35,5 +39,16 @@ public readonly record struct ResourceHandle<T>
         return false;
     }
 
-    internal ResourceStore Store => store;
+    /// <summary>Tries to retain the currently loaded generation without snapshotting the store.</summary>
+    public bool TryAcquireLease(out ResourceLease<T>? lease)
+    {
+        if (store is not null) { return store.TryAcquireLease(Id, out lease); }
+        lease = null;
+        return false;
+    }
+
+    internal ResourceStore? Store => store;
+
+    private ResourceStore RequireStore() => store
+        ?? throw new InvalidOperationException("The resource handle is not initialized.");
 }

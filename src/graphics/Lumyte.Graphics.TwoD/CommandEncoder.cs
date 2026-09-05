@@ -8,68 +8,99 @@ public sealed class CommandEncoder : IDisposable
     private readonly Renderer renderer;
     private readonly List<RecordedCommand> commands = [];
     private readonly List<RecordedLayer> layers = [];
-    private readonly Stack<ActiveLayer> activeLayers = [];
-    private readonly Stack<State> states = [];
-    private RecordedClipStack? activeClips;
-    private State state = new(Matrix3x2.Identity, null, false);
+    private readonly List<ScopeFrame> scopes = [];
+    private State state = new(Matrix3x2.Identity, null, false, 0, null, null);
     private int nextSequence;
-    private bool finished;
+    private int nextScopeId;
+    private EncoderStatus status;
 
     internal CommandEncoder(Renderer renderer) => this.renderer = renderer;
 
     internal Renderer Owner => renderer;
 
     public int Count => commands.Count;
-    /// <summary>The number of scoped clips that still require a matching <see cref="PopClip"/>.</summary>
-    public int ClipDepth => activeClips?.Depth ?? 0;
+    /// <summary>The number of exact clips active in the current scope.</summary>
+    public int ClipDepth => state.Clips?.Depth ?? 0;
+
+    /// <summary>Begins a state scope which restores transform, clip, and layer state when disposed.</summary>
+    public CommandEncoderScope BeginState() => BeginScope(ScopeKind.State);
+
+    /// <summary>Begins an exact rectangle clip fixed using the current transform.</summary>
+    public CommandEncoderScope BeginClip(Rect rectangle)
+    {
+        rectangle.Validate();
+        CommandEncoderScope scope = BeginScope(ScopeKind.Clip);
+        state = state with
+        {
+            Clips = new(state.Clips, new(RecordedClipKind.Rectangle, rectangle, null, state.Transform, FillRule.NonZero)),
+        };
+        return scope;
+    }
+
+    /// <summary>Begins an exact path clip fixed using the current transform.</summary>
+    public CommandEncoderScope BeginClip(PathGeometry path, FillRule fillRule = FillRule.NonZero)
+        => BeginClip(path, Matrix3x2.Identity, fillRule);
+
+    /// <summary>Begins an exact path clip using an additional local transform.</summary>
+    public CommandEncoderScope BeginClip(PathGeometry path, Matrix3x2 transform, FillRule fillRule = FillRule.NonZero)
+    {
+        VerifyOpen();
+        ArgumentNullException.ThrowIfNull(path);
+        if (path.IsEmpty) { throw new ArgumentException("Clip path cannot be empty.", nameof(path)); }
+        ValidateTransform(transform);
+        if (!Enum.IsDefined(fillRule)) { throw new ArgumentOutOfRangeException(nameof(fillRule)); }
+        CommandEncoderScope scope = BeginScope(ScopeKind.Clip);
+        state = state with
+        {
+            Clips = new(state.Clips, new(RecordedClipKind.Path, default, path, transform * state.Transform, fillRule)),
+        };
+        return scope;
+    }
+
+    /// <summary>Begins an isolated compositing layer and restores all drawing state when disposed.</summary>
+    public CommandEncoderScope BeginLayer() => BeginLayer(new LayerOptions());
+
+    /// <summary>Begins an isolated compositing layer with explicit options.</summary>
+    public CommandEncoderScope BeginLayer(LayerOptions options)
+    {
+        VerifyOpen();
+        options = options.Validate(renderer, nameof(options));
+        CommandEncoderScope scope = BeginScope(ScopeKind.Layer);
+        int id = checked(layers.Count + 1);
+        RecordedClipStack? layerClips = ClipsAbove(state.Clips, state.LayerClipBoundary);
+        layers.Add(new(
+            id,
+            state.LayerId,
+            TakeSequence(),
+            options,
+            null,
+            layerClips,
+            layerClips is { Bounds: null }));
+        state = state with { LayerId = id, LayerClipBoundary = state.Clips };
+        return scope;
+    }
 
     /// <summary>Begins an isolated compositing group. Calls may be nested.</summary>
-    public void PushLayer() => PushLayer(new LayerOptions());
+    public void PushLayer() => BeginLayer();
 
     /// <summary>Begins an isolated compositing group with explicit options. Calls may be nested.</summary>
     public void PushLayer(LayerOptions options)
     {
         VerifyOpen();
-        options = options.Validate(renderer, nameof(options));
-        int id = checked(layers.Count + 1);
-        int parentId = activeLayers.TryPeek(out ActiveLayer parent) ? parent.Id : 0;
-        RecordedClipStack? layerClips = ClipsAbove(
-            activeClips,
-            parentId == 0 ? null : parent.ClipBoundary);
-        layers.Add(new(
-            id,
-            parentId,
-            TakeSequence(),
-            options,
-            state.Clip,
-            layerClips,
-            state.ClippedOut || layerClips is { Bounds: null }));
-        activeLayers.Push(new(id, activeClips));
+        _ = BeginLayer(options);
     }
 
     /// <summary>Ends the innermost isolated compositing group.</summary>
     public void PopLayer()
     {
-        VerifyOpen();
-        if (!activeLayers.TryPop(out _))
-        {
-            throw new InvalidOperationException("There is no active 2D layer to pop.");
-        }
+        EndLegacyScope(ScopeKind.Layer, "There is no active 2D layer to pop.");
     }
 
-    public void Save()
-    {
-        VerifyOpen();
-        states.Push(state);
-    }
+    public void Save() => _ = BeginState();
 
     public void Restore()
     {
-        VerifyOpen();
-        if (!states.TryPop(out state))
-        {
-            throw new InvalidOperationException("There is no saved 2D state to restore.");
-        }
+        EndLegacyScope(ScopeKind.State, "There is no saved 2D state to restore.");
     }
 
     public void SetTransform(Matrix3x2 transform)
@@ -91,9 +122,7 @@ public sealed class CommandEncoder : IDisposable
     {
         VerifyOpen();
         rectangle.Validate();
-        activeClips = new(
-            activeClips,
-            new(RecordedClipKind.Rectangle, rectangle, null, state.Transform, FillRule.NonZero));
+        _ = BeginClip(rectangle);
     }
 
     /// <summary>Pushes a path clip in the current coordinate system.</summary>
@@ -103,30 +132,13 @@ public sealed class CommandEncoder : IDisposable
     /// <summary>Pushes a transformed path clip until <see cref="PopClip"/> is called.</summary>
     public void PushClip(PathGeometry path, Matrix3x2 transform, FillRule fillRule = FillRule.NonZero)
     {
-        VerifyOpen();
-        ArgumentNullException.ThrowIfNull(path);
-        if (path.IsEmpty) { throw new ArgumentException("Clip path cannot be empty.", nameof(path)); }
-        ValidateTransform(transform);
-        if (!Enum.IsDefined(fillRule)) { throw new ArgumentOutOfRangeException(nameof(fillRule)); }
-        activeClips = new(
-            activeClips,
-            new(
-                RecordedClipKind.Path,
-                default,
-                path,
-                transform * state.Transform,
-                fillRule));
+        _ = BeginClip(path, transform, fillRule);
     }
 
     /// <summary>Removes the most recently pushed rectangle or path clip.</summary>
     public void PopClip()
     {
-        VerifyOpen();
-        if (activeClips is null)
-        {
-            throw new InvalidOperationException("There is no active 2D clip to pop.");
-        }
-        activeClips = activeClips.Parent;
+        EndLegacyScope(ScopeKind.Clip, "There is no active 2D clip to pop.");
     }
 
     /// <summary>Intersects the current target-space clip with a transformed local rectangle.</summary>
@@ -134,12 +146,10 @@ public sealed class CommandEncoder : IDisposable
     {
         VerifyOpen();
         rectangle.Validate();
-        if (state.ClippedOut) { return; }
-        Rect transformed = rectangle.TransformBounds(state.Transform);
-        Rect? clip = state.Clip is { } current ? Rect.Intersect(current, transformed) : transformed;
-        state = clip is null
-            ? state with { Clip = null, ClippedOut = true }
-            : state with { Clip = clip };
+        state = state with
+        {
+            Clips = new(state.Clips, new(RecordedClipKind.Rectangle, rectangle, null, state.Transform, FillRule.NonZero)),
+        };
     }
 
     public void FillRectangle(Rect rectangle, Brush brush)
@@ -295,23 +305,32 @@ public sealed class CommandEncoder : IDisposable
     public DisplayList Finish()
     {
         VerifyOpen();
-        if (states.Count != 0)
+        if (scopes.Count != 0)
         {
-            throw new InvalidOperationException("Every saved 2D state must be restored before finishing.");
+            string requirement = scopes[^1].Kind switch
+            {
+                ScopeKind.State => "Every saved 2D state must be restored before finishing.",
+                ScopeKind.Clip => "Every 2D clip scope must be disposed before finishing.",
+                ScopeKind.Layer => "Every pushed 2D layer must be popped before finishing.",
+                _ => "Every 2D scope must be disposed before finishing.",
+            };
+            throw new InvalidOperationException(requirement);
         }
-        if (activeLayers.Count != 0)
-        {
-            throw new InvalidOperationException("Every pushed 2D layer must be popped before finishing.");
-        }
-        if (activeClips is not null)
-        {
-            throw new InvalidOperationException("Every pushed 2D clip must be popped before finishing.");
-        }
-        finished = true;
+        status = EncoderStatus.Finished;
         return new(renderer, commands.ToArray(), layers.ToArray());
     }
 
-    public void Dispose() => finished = true;
+    public void Dispose()
+    {
+        if (status == EncoderStatus.Disposed) { return; }
+        if (status == EncoderStatus.Recording)
+        {
+            commands.Clear();
+            layers.Clear();
+            scopes.Clear();
+        }
+        status = EncoderStatus.Disposed;
+    }
 
     private void AddShape(DrawCommandKind kind, Rect bounds, Brush brush)
         => Add(new(kind, bounds.Validate(), brush.Validate(), state.Transform, state.Clip));
@@ -321,13 +340,8 @@ public sealed class CommandEncoder : IDisposable
         VerifyOpen();
         if (!state.ClippedOut)
         {
-            int layerId = 0;
-            RecordedClipStack? commandClips = activeClips;
-            if (activeLayers.TryPeek(out ActiveLayer active))
-            {
-                layerId = active.Id;
-                commandClips = ClipsAbove(activeClips, active.ClipBoundary);
-            }
+            int layerId = state.LayerId;
+            RecordedClipStack? commandClips = ClipsAbove(state.Clips, state.LayerClipBoundary);
             if (commandClips is { Bounds: null })
             {
                 return;
@@ -388,8 +402,48 @@ public sealed class CommandEncoder : IDisposable
         return sequence;
     }
 
+    internal void EndScope(int scopeId)
+    {
+        VerifyOpen();
+        int index = scopes.Count - 1;
+        if (index < 0 || scopes[index].Id != scopeId)
+        {
+            if (!scopes.Exists(frame => frame.Id == scopeId)) { return; }
+            throw new InvalidOperationException("2D scopes must be disposed in reverse order.");
+        }
+        state = scopes[index].SavedState;
+        scopes.RemoveAt(index);
+    }
+
+    private CommandEncoderScope BeginScope(ScopeKind kind)
+    {
+        VerifyOpen();
+        int id = checked(++nextScopeId);
+        scopes.Add(new(id, kind, state));
+        return new(this, id);
+    }
+
+    private void EndLegacyScope(ScopeKind kind, string emptyMessage)
+    {
+        VerifyOpen();
+        if (scopes.Count == 0) { throw new InvalidOperationException(emptyMessage); }
+        ScopeFrame frame = scopes[^1];
+        if (frame.Kind != kind)
+        {
+            throw new InvalidOperationException("2D scopes must be disposed in reverse order.");
+        }
+        EndScope(frame.Id);
+    }
+
     private void VerifyOpen()
-        => ObjectDisposedException.ThrowIf(finished, this);
+    {
+        if (status == EncoderStatus.Recording) { return; }
+        if (status == EncoderStatus.Finished)
+        {
+            throw new InvalidOperationException("The 2D command encoder has already been finished.");
+        }
+        throw new ObjectDisposedException(nameof(CommandEncoder));
+    }
 
     private static void ValidateTransform(Matrix3x2 transform)
     {
@@ -425,7 +479,16 @@ public sealed class CommandEncoder : IDisposable
         return new Rect(left, top, right - left, bottom - top).Validate();
     }
 
-    private readonly record struct State(Matrix3x2 Transform, Rect? Clip, bool ClippedOut);
+    private readonly record struct State(
+        Matrix3x2 Transform,
+        Rect? Clip,
+        bool ClippedOut,
+        int LayerId,
+        RecordedClipStack? LayerClipBoundary,
+        RecordedClipStack? Clips);
 
-    private readonly record struct ActiveLayer(int Id, RecordedClipStack? ClipBoundary);
+    private readonly record struct ScopeFrame(int Id, ScopeKind Kind, State SavedState);
+
+    private enum ScopeKind { State, Clip, Layer }
+    private enum EncoderStatus { Recording, Finished, Disposed }
 }

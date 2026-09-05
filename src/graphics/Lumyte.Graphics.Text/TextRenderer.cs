@@ -130,8 +130,7 @@ public sealed class TextRenderer : IDisposable
             1,
             ushort.MaxValue));
 
-        encoder.Save();
-        try
+        using (encoder.BeginState())
         {
             encoder.Transform(options.Transform);
             foreach (ShapedGlyph glyph in text.Glyphs.Span)
@@ -212,10 +211,6 @@ public sealed class TextRenderer : IDisposable
                 pen.Y -= glyph.YAdvance * scale;
             }
         }
-        finally
-        {
-            encoder.Restore();
-        }
 
         return new(
             pen - baseline,
@@ -243,12 +238,15 @@ public sealed class TextRenderer : IDisposable
         Matrix3x2 currentTransform = Matrix3x2.Identity;
         var transforms = new Stack<Matrix3x2>();
         var clips = new Stack<PaintClip>();
-        var groups = new Stack<CompositeMode>();
+        var groups = new Stack<CommandEncoderScope>();
+        var encoderScopes = new Stack<CommandEncoderScope>();
 
-        for (int index = 0; index < glyph.Operations.Count; index++)
+        try
         {
-            switch (glyph.Operations[index])
+            for (int index = 0; index < glyph.Operations.Count; index++)
             {
+                switch (glyph.Operations[index])
+                {
                 case ColorPaintPushTransform pushTransform:
                     transforms.Push(currentTransform);
                     // HarfBuzz uses column-vector CTM multiplication (current * nested).
@@ -267,6 +265,7 @@ public sealed class TextRenderer : IDisposable
                         pushGlyph.Path,
                         currentTransform,
                         placement);
+                    if (clips.Peek().IsRecorded) { encoderScopes.Push(clips.Peek().Scope); }
                     break;
 
                 case ColorPaintPushClipRectangle pushRectangle:
@@ -283,6 +282,7 @@ public sealed class TextRenderer : IDisposable
                             RectanglePath(pushRectangle.Rectangle),
                             currentTransform,
                             placement);
+                        if (clips.Peek().IsRecorded) { encoderScopes.Push(clips.Peek().Scope); }
                     }
                     break;
 
@@ -290,20 +290,22 @@ public sealed class TextRenderer : IDisposable
                     PaintClip poppedClip = clips.Pop();
                     if (poppedClip.IsRecorded)
                     {
-                        encoder.PopClip();
+                        poppedClip.Scope.Dispose();
+                        _ = encoderScopes.Pop();
                     }
                     break;
 
                 case ColorPaintPushGroup pushGroup:
                     CompositeMode mode = (CompositeMode)(pushGroup.CompositeMode
                         ?? FindGroupMode(glyph.Operations, index));
-                    encoder.PushLayer(new() { CompositeMode = mode });
-                    groups.Push(mode);
+                    CommandEncoderScope group = encoder.BeginLayer(new() { CompositeMode = mode });
+                    groups.Push(group);
+                    encoderScopes.Push(group);
                     break;
 
                 case ColorPaintPopGroup:
-                    encoder.PopLayer();
-                    groups.Pop();
+                    groups.Pop().Dispose();
+                    _ = encoderScopes.Pop();
                     break;
 
                 case ColorPaintSolid solid:
@@ -372,7 +374,13 @@ public sealed class TextRenderer : IDisposable
                                 (GradientExtendMode)sweep.Gradient.ExtendMode));
                     }
                     break;
+                }
             }
+        }
+        catch
+        {
+            while (encoderScopes.TryPop(out CommandEncoderScope scope)) { scope.Dispose(); }
+            throw;
         }
 
         return true;
@@ -549,12 +557,12 @@ public sealed class TextRenderer : IDisposable
             return;
         }
 
-        clips.Push(new(bounds.Value, true));
-        encoder.PushClip(path, transform * placement);
+        CommandEncoderScope scope = encoder.BeginClip(path, transform * placement);
+        clips.Push(new(bounds.Value, true, scope));
     }
 
     private static void PushEmptyPaintClip(Stack<PaintClip> clips)
-        => clips.Push(new(null, false));
+        => clips.Push(new(null, false, default));
 
     private static bool IsSupportedCompositeMode(CompositeMode mode)
         => Enum.IsDefined(mode);
@@ -978,7 +986,10 @@ public sealed class TextRenderer : IDisposable
         uint Height,
         ColorBitmapContentId ContentId);
 
-    private readonly record struct PaintClip(Rect? Bounds, bool IsRecorded);
+    private readonly record struct PaintClip(
+        Rect? Bounds,
+        bool IsRecorded,
+        CommandEncoderScope Scope);
 
     private readonly record struct CachedColorBitmap(ImageId Image, ColorBitmapTexture Texture);
 

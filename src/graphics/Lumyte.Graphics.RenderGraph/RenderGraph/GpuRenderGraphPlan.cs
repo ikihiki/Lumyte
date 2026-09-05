@@ -47,6 +47,10 @@ public sealed class GpuRenderGraphPlan
     public GpuRenderGraphMemoryPlan CreateMemoryPlan(IGpuBackend backend)
         => GpuRenderGraphMemoryPlan.Create(this, backend);
 
+    /// <summary>
+    /// Records a plan containing imported resources only. Pass callbacks may resolve raw handles,
+    /// but creating texture or buffer views requires <see cref="Execute(IGpuBackend)"/>.
+    /// </summary>
     public GpuCommandBuffer Record(IGpuQueue queue)
     {
         ArgumentNullException.ThrowIfNull(queue);

@@ -92,10 +92,10 @@ public abstract class BackendConformanceTests
         using var renderer = new Renderer(backend);
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
         encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0)));
-        encoder.Save();
-        encoder.Clip(new(0, 0, 32, Height));
-        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 0, 1)));
-        encoder.Restore();
+        using (encoder.BeginClip(new Rect(0, 0, 32, Height)))
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(0, 0, 1)));
+        }
         DisplayList displayList = encoder.Finish();
         using PreparedDisplayList prepared = renderer.Prepare(displayList, target.Description);
         var graph = new GpuRenderGraph();
@@ -120,9 +120,10 @@ public abstract class BackendConformanceTests
         using var target = BackendTexture.Create(backend, TargetDescription());
         using var renderer = new Renderer(backend);
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
-        encoder.PushLayer(new() { Opacity = 0.5f });
-        encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0)));
-        encoder.PopLayer();
+        using (encoder.BeginLayer(new() { Opacity = 0.5f }))
+        {
+            encoder.FillRectangle(new(0, 0, Width, Height), Brush.Solid(new(1, 0, 0)));
+        }
         using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
         var graph = new GpuRenderGraph();
         graph.AddTwoD(
@@ -1181,16 +1182,16 @@ public abstract class BackendConformanceTests
         using var target = BackendTexture.Create(backend, TargetDescription());
         using var renderer = new Renderer(backend);
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
-        encoder.PushClip(new Rect(8, 8, 48, 48));
-        encoder.PushClip(
+        using (encoder.BeginClip(new Rect(8, 8, 48, 48)))
+        using (encoder.BeginClip(
             RectanglePath(0, 0, 24, 24),
-            Matrix3x2.CreateTranslation(24, 16));
-        encoder.DrawPath(
-            RectanglePath(0, 0, 64, 64),
-            Matrix3x2.Identity,
-            Brush.Solid(new(0, 1, 0)));
-        encoder.PopClip();
-        encoder.PopClip();
+            Matrix3x2.CreateTranslation(24, 16)))
+        {
+            encoder.DrawPath(
+                RectanglePath(0, 0, 64, 64),
+                Matrix3x2.Identity,
+                Brush.Solid(new(0, 1, 0)));
+        }
         using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
         var graph = new GpuRenderGraph();
         graph.AddTwoD(

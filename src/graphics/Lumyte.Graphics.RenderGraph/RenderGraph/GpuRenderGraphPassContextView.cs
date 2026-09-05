@@ -8,17 +8,20 @@ public readonly ref struct GpuRenderGraphPassContextView
     private readonly IGpuBackend? backend;
     private readonly IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources;
     private readonly IReadOnlySet<GpuRenderGraphResource> allowedResources;
+    private readonly string passName;
 
     internal GpuRenderGraphPassContextView(
         GpuCommandBuffer commands,
         IGpuBackend? backend,
         IReadOnlyDictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime> resources,
-        IReadOnlySet<GpuRenderGraphResource> allowedResources)
+        IReadOnlySet<GpuRenderGraphResource> allowedResources,
+        string passName)
     {
         Commands = commands;
         this.backend = backend;
         this.resources = resources;
         this.allowedResources = allowedResources;
+        this.passName = passName;
     }
 
     public GpuCommandBuffer Commands { get; }
@@ -101,8 +104,12 @@ public readonly ref struct GpuRenderGraphPassContextView
     {
         if (!allowedResources.Contains(resource))
         {
+            string resourceName = resources.TryGetValue(resource, out GpuRenderGraphResourceRuntime? declared)
+                ? declared.Info.Name
+                : $"resource-{resource.Value}";
             throw new InvalidOperationException(
-                "A pass may only resolve resources declared in its access list.");
+                $"Pass '{passName}' cannot resolve resource '{resourceName}': expected a declared " +
+                "Read, Write, or ReadWrite access, but the resource is undeclared for this pass.");
         }
         if (!resources.TryGetValue(resource, out GpuRenderGraphResourceRuntime? runtime))
         {

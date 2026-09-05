@@ -174,7 +174,7 @@ public static class DrawRenderGraphExtensions
         GpuRenderGraphTexture[] sampledResources,
         GpuRenderGraphBuffer[] bufferResources)
     {
-        if (material.Resources is not { } resources) { return null; }
+        if (material.GetResourceTable() is not { } resources) { return null; }
         var textures = new GpuRenderGraphShaderTextureBinding[sampledResources.Length];
         for (int index = 0; index < textures.Length; index++)
         {

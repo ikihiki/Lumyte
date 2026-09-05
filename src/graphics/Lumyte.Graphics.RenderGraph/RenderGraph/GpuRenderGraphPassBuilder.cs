@@ -11,6 +11,7 @@ public sealed class GpuRenderGraphPassBuilder
         this.pass = pass;
     }
 
+    /// <summary>Declares that the pass observes the previous resource contents.</summary>
     public GpuRenderGraphPassBuilder Read(
         GpuRenderGraphTexture texture,
         GpuStage stage,
@@ -40,6 +41,7 @@ public sealed class GpuRenderGraphPassBuilder
         return this;
     }
 
+    /// <summary>Declares a full overwrite which does not require previous contents.</summary>
     public GpuRenderGraphPassBuilder Write(
         GpuRenderGraphTexture texture,
         GpuStage stage,
@@ -69,6 +71,7 @@ public sealed class GpuRenderGraphPassBuilder
         return this;
     }
 
+    /// <summary>Declares a read followed by a write. Use this for load-preserving attachments.</summary>
     public GpuRenderGraphPassBuilder ReadWrite(
         GpuRenderGraphTexture texture,
         GpuStage stage,

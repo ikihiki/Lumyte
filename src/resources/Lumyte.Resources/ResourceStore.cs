@@ -576,6 +576,21 @@ public sealed class ResourceStore : IAsyncDisposable
         return false;
     }
 
+    internal bool TryAcquireLease<T>(ResourceId<T> id, out ResourceLease<T>? lease)
+        where T : notnull
+    {
+        lock (generationLock)
+        {
+            if (TryGetCurrent(id, out ResourceRecord<T>? record) && record is not null)
+            {
+                lease = new ResourceLease<T>(record);
+                return true;
+            }
+        }
+        lease = null;
+        return false;
+    }
+
     internal void AddStrongReference(uint slot) =>
         strongReferences.AddOrUpdate(slot, 1, static (_, count) => checked(count + 1));
 

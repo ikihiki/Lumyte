@@ -5,6 +5,17 @@ public sealed class DrawMaterial
     private readonly DrawSampledTexture[] sampledTextures;
     private readonly DrawShaderBuffer[] shaderBuffers;
 
+    /// <summary>Creates an immutable material from single-source binding declarations.</summary>
+    public DrawMaterial(GpuRasterPipelineHandle pipeline, DrawMaterialBindings bindings)
+        : this(
+            pipeline,
+            (bindings ?? throw new ArgumentNullException(nameof(bindings))).CreateResourceTable(),
+            bindings.CreateTextures(),
+            bindings.CreateBuffers())
+    {
+        Bindings = bindings;
+    }
+
     public DrawMaterial(
         GpuRasterPipelineHandle pipeline,
         GpuResourceTable? resources = null,
@@ -51,6 +62,7 @@ public sealed class DrawMaterial
 
     public GpuRasterPipelineHandle Pipeline { get; }
     public GpuResourceTable? Resources { get; }
+    public DrawMaterialBindings? Bindings { get; }
 
     /// <summary>
     /// Texture handles referenced by <see cref="Resources"/>. They are listed separately so the
@@ -58,6 +70,8 @@ public sealed class DrawMaterial
     /// </summary>
     public IReadOnlyList<DrawSampledTexture> SampledTextures => sampledTextures;
     public IReadOnlyList<DrawShaderBuffer> ShaderBuffers => shaderBuffers;
+
+    internal GpuResourceTable? GetResourceTable() => Bindings?.CreateResourceTable() ?? Resources;
 
     private static void ValidateShaderBuffers(
         GpuResourceTable resources,

@@ -6,6 +6,35 @@ namespace Lumyte.Graphics.Tests;
 public sealed class GpuRenderGraphTests
 {
     [Fact]
+    public void RenderContextSubmitsAndPresentsAFrame()
+    {
+        var backend = new TrackingBackend();
+        var adapter = new TrackingPresentationAdapter();
+        using var context = new GpuRenderContext(backend);
+        using GpuFrame frame = context.BeginFrame(adapter);
+        frame.Graph.AddPass("present", 0, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
+            .Write(frame.TargetResource, GpuStage.ColorOutput);
+
+        using GpuRenderGraphExecution execution = frame.Submit();
+
+        Assert.Equal(1, adapter.PresentCount);
+        Assert.Equal(execution.Completion, adapter.Completion);
+        Assert.Throws<InvalidOperationException>(frame.Submit);
+    }
+
+    [Fact]
+    public void UnsubmittedFrameReturnsItsPresentationTarget()
+    {
+        var backend = new TrackingBackend();
+        var adapter = new TrackingPresentationAdapter();
+        using var context = new GpuRenderContext(backend);
+
+        context.BeginFrame(adapter).Dispose();
+
+        Assert.Equal(1, adapter.DiscardCount);
+        Assert.Equal(0, adapter.PresentCount);
+    }
+    [Fact]
     public void TypedResourcesCarryTheirDescriptions()
     {
         var graph = new GpuRenderGraph();
@@ -936,6 +965,33 @@ public sealed class GpuRenderGraphTests
         {
             Assert.True(textures.Remove(texture), $"Texture {texture.Value} was destroyed more than once.");
             DestroyedTextureCount++;
+        }
+    }
+
+    private sealed class TrackingPresentationAdapter : IGpuPresentationAdapter
+    {
+        private static readonly GpuTextureDescription Description = new(
+            32, 24, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment);
+
+        public int PresentCount { get; private set; }
+        public int DiscardCount { get; private set; }
+        public GpuSubmissionToken Completion { get; private set; }
+
+        public GpuPresentationTarget AcquireNextTarget() => new(
+            new(new(91), new(81), new(Description.Format)),
+            Description);
+
+        public void Present(GpuPresentationTarget target, GpuSubmissionToken completion)
+        {
+            _ = target.Validate();
+            PresentCount++;
+            Completion = completion;
+        }
+
+        public void Discard(GpuPresentationTarget target)
+        {
+            _ = target.Validate();
+            DiscardCount++;
         }
     }
 

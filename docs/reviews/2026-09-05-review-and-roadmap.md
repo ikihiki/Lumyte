@@ -761,8 +761,8 @@ E2の実装済み契約・移行手順・検証結果は[E2 shader ABI](2026-09-
 | E0: 再現・基準線 | 2–3人日 | なし | R01の競合、17以上のtable bind、recording例外、2deviceのID、2host切替を個別に再現。テスト分類とCPU/GPU計測シナリオを記録 |
 | E1: 正しさと寿命 | 5–9人日 | E0 | R01/R03/R04/R13を修正。Vulkan pool容量対策を先行。callback失敗・誤使用でリーク/追跡外submissionなし。全体テスト成功 |
 | E2: backend非依存の共通API | 6–10人日 | E1 | U01/U02/U09の非同期・寿命・共通上限・state・graph契約をADR化し、64-byte root data、root参照のresource buffer、shader ABI、AddDrawを実装・移行。共通範囲外は共通validationで拒否。同じ標準描画・computeコードがbackend別の分岐なしで3backendで成功する |
-| E2a: CommandEncoder再設計 | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす |
-| E2b: 利用者向けAPIの統合 | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる |
+| E2a: CommandEncoder再設計（完了） | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす。実装記録は[E2a/E2b ADR](2026-09-06-phase-e2a-e2b-api-adr.md) |
+| E2b: 利用者向けAPIの統合（完了） | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる。実装記録は[E2a/E2b ADR](2026-09-06-phase-e2a-e2b-api-adr.md) |
 | E3: 配置と依存の整理（完了） | 3–6人日 | E2 | src/tools/samples配置統一、RenderGraph抽出、shader containerとIR境界、DevTools.Protocol分離。runtimeにcompiler/server依存が入らないことを検証。実装記録は[フェーズ3 ADR](2026-09-06-phase-3-project-boundaries.md) |
 | E4: descriptorとGPU実行 | 6–10人日 | E1/E2 | pool/heap page再利用、WebGPU有界cache、upload/compute/draw統合、U01の送信・非同期待機・lease/retirementを実装。1k/10k batchと複数frameで容量枯渇せず、生成・待機回数とGPU完了までの寿命を検証 |
 | E5: 2D/Textの再利用とメモリ | 5–9人日 | E4のretirement契約、上位接続はE2b | font共有、atlas予算/eviction/fallback、Scene dirty/sort/batch、allocator接続に加え、U07のTextMetrics・ShapedText再利用・通常描画の入口を整備。長時間利用で予算内に収束し、表示内容を維持 |
