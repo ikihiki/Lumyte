@@ -12,14 +12,13 @@ public sealed unsafe partial class DirectX12Device
 
     public GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
-        GpuShaderPackage package,
-        string vertexEntryPoint,
-        string pixelEntryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary vertexShader,
+        GpuShaderBinary pixelShader)
     {
         VerifyNotDisposed();
         ArgumentNullException.ThrowIfNull(description);
-        ArgumentNullException.ThrowIfNull(package);
+        vertexShader.ValidateFor(GpuShaderCodeFormat.Dxil, GpuShaderStage.Vertex);
+        pixelShader.ValidateFor(GpuShaderCodeFormat.Dxil, GpuShaderStage.Pixel);
         description.Validate();
         if (description.ColorTargets.Count > D3D12.SimultaneousRenderTargetCount)
         {
@@ -34,17 +33,13 @@ public sealed unsafe partial class DirectX12Device
             throw new NotSupportedException("Direct3D 12 requires depth and stencil aspects to use one attachment format.");
         }
 
-        GpuShaderArtifact vertex = package.Select(
-            GpuShaderCodeFormat.Dxil, GpuShaderStage.Vertex, vertexEntryPoint, expectedAbiHash.Span);
-        GpuShaderArtifact pixel = package.Select(
-            GpuShaderCodeFormat.Dxil, GpuShaderStage.Pixel, pixelEntryPoint, expectedAbiHash.Span);
         ComPtr<ID3D12RootSignature> rootSignature = default;
         ComPtr<ID3D12PipelineState> pipeline = default;
         try
         {
             rootSignature = CreateStandardRootSignature();
-            ReadOnlySpan<byte> vertexBytes = vertex.Payload.Span;
-            ReadOnlySpan<byte> pixelBytes = pixel.Payload.Span;
+            ReadOnlySpan<byte> vertexBytes = vertexShader.Bytes.Span;
+            ReadOnlySpan<byte> pixelBytes = pixelShader.Bytes.Span;
             fixed (byte* vertexPointer = vertexBytes)
             fixed (byte* pixelPointer = pixelBytes)
             {
@@ -118,20 +113,16 @@ public sealed unsafe partial class DirectX12Device
     }
 
     public GpuComputePipelineHandle CreateComputePipeline(
-        GpuShaderPackage package,
-        string entryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary computeShader)
     {
         VerifyNotDisposed();
-        ArgumentNullException.ThrowIfNull(package);
-        GpuShaderArtifact compute = package.Select(
-            GpuShaderCodeFormat.Dxil, GpuShaderStage.Compute, entryPoint, expectedAbiHash.Span);
+        computeShader.ValidateFor(GpuShaderCodeFormat.Dxil, GpuShaderStage.Compute);
         ComPtr<ID3D12RootSignature> rootSignature = default;
         ComPtr<ID3D12PipelineState> pipeline = default;
         try
         {
             rootSignature = CreateStandardRootSignature();
-            ReadOnlySpan<byte> bytes = compute.Payload.Span;
+            ReadOnlySpan<byte> bytes = computeShader.Bytes.Span;
             fixed (byte* pointer = bytes)
             {
                 var native = new ComputePipelineStateDesc

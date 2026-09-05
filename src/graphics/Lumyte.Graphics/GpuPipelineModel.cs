@@ -166,4 +166,16 @@ public readonly struct GpuShaderBinary
     public GpuShaderStage Stage { get; }
     public string EntryPoint { get; }
     public ReadOnlyMemory<byte> AbiHash { get; }
+
+    public void ValidateFor(GpuShaderCodeFormat format, GpuShaderStage stage)
+    {
+        if (Format != format)
+        {
+            throw new ArgumentException($"Shader format must be {format}.", nameof(format));
+        }
+        if (Stage != stage)
+        {
+            throw new ArgumentException($"Shader stage must be {stage}.", nameof(stage));
+        }
+    }
 }

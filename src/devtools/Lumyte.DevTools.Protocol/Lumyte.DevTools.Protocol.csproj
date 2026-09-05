@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Shared MagicOnion wire contracts for Lumyte development tools.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MagicOnion.Abstractions" />
+    <PackageReference Include="MessagePack" />
+  </ItemGroup>
+</Project>

@@ -262,11 +262,11 @@ FillRectangle自体は十分読みやすい。負担は周囲のencoder/display 
 | ResourceSnapshot | その時点のロード済み世代全体を保持 | 1資源を読むためでも他の世代を保持する |
 | ResourceLease<T> | 特定の1世代を保持 | 現在の取得入口はsnapshot.Lease |
 
-この区別は能力として有用である。型を1個に統合する必要はない。ただしクイックスタートではscope.LoadAsyncを標準経路として示し、直接store.LoadAsyncはborrowedな参照であると説明したい。[Handle](E:/Lumyte/Lumyte.Resources/ResourceHandle.cs:3)、[Scope](E:/Lumyte/Lumyte.Resources/ResourceScope.cs:3)、[Snapshot](E:/Lumyte/Lumyte.Resources/ResourceSnapshot.cs:3)
+この区別は能力として有用である。型を1個に統合する必要はない。ただしクイックスタートではscope.LoadAsyncを標準経路として示し、直接store.LoadAsyncはborrowedな参照であると説明したい。[Handle](E:/Lumyte/src/resources/Lumyte.Resources/ResourceHandle.cs:3)、[Scope](E:/Lumyte/src/resources/Lumyte.Resources/ResourceScope.cs:3)、[Snapshot](E:/Lumyte/src/resources/Lumyte.Resources/ResourceSnapshot.cs:3)
 
 単一の現在世代を固定したい場合に、全資源のsnapshotを経由しないLease取得APIを検討する。ValueとGenerationを別々に読むとhot reloadをまたぎ得るため、同じ世代を必要とする処理はlease/snapshotを使うことも明示する。
 
-default(ResourceHandle<T>)にはstoreがなく、TryGetValueでもNullReferenceExceptionになる経路がある。公開value型としてIsValidとTry系の失敗契約を整え、破棄後・未初期化・未ロードを区別すると扱いやすい。[TryGetValue](E:/Lumyte/Lumyte.Resources/ResourceHandle.cs:26)
+default(ResourceHandle<T>)にはstoreがなく、TryGetValueでもNullReferenceExceptionになる経路がある。公開value型としてIsValidとTry系の失敗契約を整え、破棄後・未初期化・未ロードを区別すると扱いやすい。[TryGetValue](E:/Lumyte/src/resources/Lumyte.Resources/ResourceHandle.cs:26)
 
 <a id="u06"></a>
 
@@ -329,9 +329,9 @@ machine.Fire(Trigger.Activate);
 
 Context、Trigger、contextは利用者が定義し、StateMachineKitをstatic importする前提の断片。definition/instance分離とWhen/Fireは読みやすく、維持したい。
 
-一方、indexerで内容を設定するDSLは、通常の配列参照とは異なる。StateMachineは組立て時にstate/transitionをFreezeするが、ActionMapのcontent設定は配列を置き換える。文法が共通でも、再利用・変更可能性は共通ではない。[StateMachine](E:/Lumyte/Lumyte.StateMachine/StateMachine.cs:17)、[ActionMap](E:/Lumyte/Lumyte.Interaction/ActionMap.cs:21)
+一方、indexerで内容を設定するDSLは、通常の配列参照とは異なる。StateMachineは組立て時にstate/transitionをFreezeするが、ActionMapのcontent設定は配列を置き換える。文法が共通でも、再利用・変更可能性は共通ではない。[StateMachine](E:/Lumyte/src/interaction/Lumyte.StateMachine/StateMachine.cs:17)、[ActionMap](E:/Lumyte/src/interaction/Lumyte.Interaction/ActionMap.cs:21)
 
-identityもInputAction<T>/Stateは参照に基づき、AnimationChannel<T>はrecordの値等価である。同じ文字列IDのInputActionを作り直してGetValueすると、元のactionとは別物なので通常default値が返る。未登録と「登録済みでまだ入力なし」が見分けにくい。[InputAction](E:/Lumyte/Lumyte.Interaction/InputAction.cs:3)、[GetValue](E:/Lumyte/Lumyte.Interaction/ActionRuntime.cs:92)、[AnimationChannel](E:/Lumyte/Lumyte.Animation/AnimationChannel.cs:3)
+identityもInputAction<T>/Stateは参照に基づき、AnimationChannel<T>はrecordの値等価である。同じ文字列IDのInputActionを作り直してGetValueすると、元のactionとは別物なので通常default値が返る。未登録と「登録済みでまだ入力なし」が見分けにくい。[InputAction](E:/Lumyte/src/interaction/Lumyte.Interaction/InputAction.cs:3)、[GetValue](E:/Lumyte/src/interaction/Lumyte.Interaction/ActionRuntime.cs:92)、[AnimationChannel](E:/Lumyte/src/interaction/Lumyte.Animation/AnimationChannel.cs:3)
 
 identityを一律に変えるより、Name/Idが診断名なのかキーなのかを明示し、共有するaction/channelの定義例を示す。必要ならIsRegistered/TryGetValue等を加える。DSLの別名を多数増やすより、組立てを完了する時点とfreeze規則を揃える。
 
@@ -353,7 +353,7 @@ P1 は最初に扱う障害・寿命・容量問題、P2 は API/構造/性能�
 
 ### R01 / P1 / 再現済み: HotReload の通知と終了が競合する
 
-OnChanged は lock の外で state を確認し、lock 内で shutdown.Token を取得する。確認後に DisposeAsync が進むと、83行で破棄した CTS にアクセスできる。イベント購読解除だけでは、すでに開始した callback を止められない。今回の全体テストで実際に未処理例外となった。[OnChanged](E:/Lumyte/Lumyte.Resources/ResourceHotReloadManager.cs:86)、[DisposeAsync](E:/Lumyte/Lumyte.Resources/ResourceHotReloadManager.cs:49)
+OnChanged は lock の外で state を確認し、lock 内で shutdown.Token を取得する。確認後に DisposeAsync が進むと、83行で破棄した CTS にアクセスできる。イベント購読解除だけでは、すでに開始した callback を止められない。今回の全体テストで実際に未処理例外となった。[OnChanged](E:/Lumyte/src/resources/Lumyte.Resources/ResourceHotReloadManager.cs:86)、[DisposeAsync](E:/Lumyte/src/resources/Lumyte.Resources/ResourceHotReloadManager.cs:49)
 
 対策は state、work 登録、停止開始の同期範囲を統一し、終了時に全作業と登録途中の callback の扱いを確定すること。debounce で辞書から外した旧 work も drain 対象にする必要があるか確認する。例外を握りつぶす修正では不十分。回帰テストは fake change source と明示的な同期で順序を制御し、実 FileSystemWatcher の試験は integration として分離する。
 
@@ -763,7 +763,7 @@ E2の実装済み契約・移行手順・検証結果は[E2 shader ABI](2026-09-
 | E2: backend非依存の共通API | 6–10人日 | E1 | U01/U02/U09の非同期・寿命・共通上限・state・graph契約をADR化し、64-byte root data、root参照のresource buffer、shader ABI、AddDrawを実装・移行。共通範囲外は共通validationで拒否。同じ標準描画・computeコードがbackend別の分岐なしで3backendで成功する |
 | E2a: CommandEncoder再設計 | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす |
 | E2b: 利用者向けAPIの統合 | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる |
-| E3: 配置と依存の整理 | 3–6人日 | E2 | src/tools/samples配置統一、RenderGraph抽出、shader containerとIR境界、DevTools.Protocol分離。runtimeにcompiler/server依存が入らないことを検証 |
+| E3: 配置と依存の整理（完了） | 3–6人日 | E2 | src/tools/samples配置統一、RenderGraph抽出、shader containerとIR境界、DevTools.Protocol分離。runtimeにcompiler/server依存が入らないことを検証。実装記録は[フェーズ3 ADR](2026-09-06-phase-3-project-boundaries.md) |
 | E4: descriptorとGPU実行 | 6–10人日 | E1/E2 | pool/heap page再利用、WebGPU有界cache、upload/compute/draw統合、U01の送信・非同期待機・lease/retirementを実装。1k/10k batchと複数frameで容量枯渇せず、生成・待機回数とGPU完了までの寿命を検証 |
 | E5: 2D/Textの再利用とメモリ | 5–9人日 | E4のretirement契約、上位接続はE2b | font共有、atlas予算/eviction/fallback、Scene dirty/sort/batch、allocator接続に加え、U07のTextMetrics・ShapedText再利用・通常描画の入口を整備。長時間利用で予算内に収束し、表示内容を維持 |
 | E6: その他hot pathと配布 | 3–5人日 | E0/E3、API公開例はE2a/E2b/E5 | Interaction/Resourcesを測定して改善。U08/U09のidentity・freeze・graph診断、各APIの独立consumer/Quick Start、CI、SDK/toolchain固定、runtime配布、performance記録を整備 |
@@ -808,7 +808,7 @@ API評価の改善順序を工程表へ対応付ける。契約をE2で確定し
 
 ### 8.1. 性能・メモリ
 
-既存 [Benchmarks README](E:/Lumyte/Lumyte.Benchmarks/README.md:27) は2026-09-03のShortRunとして、RenderGraph cache hit 4.105 µs / 6.42 KB、8-pass record 114.6 ns / 56 Bを記録している。今回再計測した値ではない。no-op recorder/immediate backendによるCPU計測なので、実機GPU描画全体の性能を示さない。
+既存 [Benchmarks README](E:/Lumyte/benchmarks/Lumyte.Benchmarks/README.md:27) は2026-09-03のShortRunとして、RenderGraph cache hit 4.105 µs / 6.42 KB、8-pass record 114.6 ns / 56 Bを記録している。今回再計測した値ではない。no-op recorder/immediate backendによるCPU計測なので、実機GPU描画全体の性能を示さない。
 
 | シナリオ | 主な計測値 | 初期の受入条件 |
 | --- | --- | --- |

@@ -37,5 +37,5 @@
     <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputRaster.slang" />
     <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputCompute.slang" />
   </ItemGroup>
-  <Import Project="..\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
+  <Import Project="..\..\..\tools\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
 </Project>

@@ -72,6 +72,8 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         | GpuBackendCapabilities.RasterPipeline
         | GpuBackendCapabilities.ComputePipeline;
 
+    public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Wgsl;
+
     internal int CachedBindGroupCount => bindGroups.Count;
     internal int BindGroupCreationCount => bindGroupCreationCount;
 

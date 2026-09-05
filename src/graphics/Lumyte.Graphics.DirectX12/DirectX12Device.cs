@@ -66,6 +66,8 @@ public sealed unsafe partial class DirectX12Device :
         | GpuBackendCapabilities.RasterPipeline
         | GpuBackendCapabilities.ComputePipeline;
 
+    public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Dxil;
+
     public byte[] RoundTripBuffer(ReadOnlySpan<byte> source)
     {
         ObjectDisposedException.ThrowIf(disposed, this);

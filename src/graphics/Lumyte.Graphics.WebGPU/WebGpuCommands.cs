@@ -9,14 +9,13 @@ public sealed unsafe partial class WebGpuDevice
 {
     public GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
-        GpuShaderPackage package,
-        string vertexEntryPoint,
-        string pixelEntryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary vertexShader,
+        GpuShaderBinary pixelShader)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         description.Validate();
-        ArgumentNullException.ThrowIfNull(package);
+        vertexShader.ValidateFor(GpuShaderCodeFormat.Wgsl, GpuShaderStage.Vertex);
+        pixelShader.ValidateFor(GpuShaderCodeFormat.Wgsl, GpuShaderStage.Pixel);
         if (description.ColorTargets.Count != 1 || description.SampleCount != 1)
         {
             throw new NotSupportedException("The current WebGPU raster slice supports one single-sampled color target.");
@@ -30,20 +29,16 @@ public sealed unsafe partial class WebGpuDevice
             throw new NotSupportedException("WebGPU requires depth and stencil aspects to use one attachment format.");
         }
 
-        GpuShaderArtifact vertex = package.Select(
-            GpuShaderCodeFormat.Wgsl, GpuShaderStage.Vertex, vertexEntryPoint, expectedAbiHash.Span);
-        GpuShaderArtifact pixel = package.Select(
-            GpuShaderCodeFormat.Wgsl, GpuShaderStage.Pixel, pixelEntryPoint, expectedAbiHash.Span);
-        if (!vertex.Payload.Span.SequenceEqual(pixel.Payload.Span))
+        if (!vertexShader.Bytes.Span.SequenceEqual(pixelShader.Bytes.Span))
         {
             throw new InvalidOperationException("WebGPU vertex and pixel artifacts must contain the same WGSL module.");
         }
 
-        string source = TranslateLogicalBindings(Encoding.UTF8.GetString(vertex.Payload.Span));
+        string source = TranslateLogicalBindings(Encoding.UTF8.GetString(vertexShader.Bytes.Span));
         ShaderInputLayout? inputs = CreateShaderInputLayout(source);
         try
         {
-            nint native = CreateNativeRasterPipeline(source, vertexEntryPoint, pixelEntryPoint, description, inputs?.Pipeline ?? 0);
+            nint native = CreateNativeRasterPipeline(source, vertexShader.EntryPoint, pixelShader.EntryPoint, description, inputs?.Pipeline ?? 0);
             var handle = new GpuRasterPipelineHandle(GpuHandleIds.Allocate());
             rasterPipelines.Add(handle.Value, new(native) { Inputs = inputs });
             return handle;
@@ -52,21 +47,17 @@ public sealed unsafe partial class WebGpuDevice
     }
 
     public GpuComputePipelineHandle CreateComputePipeline(
-        GpuShaderPackage package,
-        string entryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary computeShader)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        ArgumentNullException.ThrowIfNull(package);
-        GpuShaderArtifact artifact = package.Select(
-            GpuShaderCodeFormat.Wgsl, GpuShaderStage.Compute, entryPoint, expectedAbiHash.Span);
-        string source = TranslateLogicalBindings(Encoding.UTF8.GetString(artifact.Payload.Span));
+        computeShader.ValidateFor(GpuShaderCodeFormat.Wgsl, GpuShaderStage.Compute);
+        string source = TranslateLogicalBindings(Encoding.UTF8.GetString(computeShader.Bytes.Span));
         ShaderInputLayout? inputs = CreateShaderInputLayout(source);
         ShaderModule* shader = null;
         try
         {
             shader = CreateNativeShaderModule(source);
-            byte[] entryBytes = Encoding.UTF8.GetBytes(entryPoint + '\0');
+            byte[] entryBytes = Encoding.UTF8.GetBytes(computeShader.EntryPoint + '\0');
             fixed (byte* nativeEntry = entryBytes)
             {
                 var description = new ComputePipelineDescriptor

@@ -55,6 +55,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         | GpuBackendCapabilities.RasterPipeline
         | GpuBackendCapabilities.ComputePipeline;
 
+    public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
+
     public static VulkanDevice Create()
         => Create(0, null);
 
@@ -555,14 +557,13 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
     public GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
-        GpuShaderPackage package,
-        string vertexEntryPoint,
-        string pixelEntryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary vertexShader,
+        GpuShaderBinary pixelShader)
     {
         VerifyNotDisposed();
         description.Validate();
-        ArgumentNullException.ThrowIfNull(package);
+        vertexShader.ValidateFor(GpuShaderCodeFormat.SpirV, GpuShaderStage.Vertex);
+        pixelShader.ValidateFor(GpuShaderCodeFormat.SpirV, GpuShaderStage.Pixel);
         if (description.ColorTargets.Count != 1 || description.SampleCount != 1)
         {
             throw new NotSupportedException("The current Vulkan raster slice supports one single-sampled color target.");
@@ -575,10 +576,6 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         {
             throw new NotSupportedException("Vulkan uses one combined depth-stencil attachment in this raster slice.");
         }
-        GpuShaderBinary vertexShader = package.Select(
-            GpuShaderCodeFormat.SpirV, GpuShaderStage.Vertex, vertexEntryPoint, expectedAbiHash.Span).ToBinary();
-        GpuShaderBinary pixelShader = package.Select(
-            GpuShaderCodeFormat.SpirV, GpuShaderStage.Pixel, pixelEntryPoint, expectedAbiHash.Span).ToBinary();
         ShaderModule vertex = CreateShaderModule(vertexShader.Bytes.Span);
         ShaderModule pixel = CreateShaderModule(pixelShader.Bytes.Span);
         PipelineLayout layout = default;
@@ -765,15 +762,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     }
 
     public GpuComputePipelineHandle CreateComputePipeline(
-        GpuShaderPackage package,
-        string entryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary computeShader)
     {
         VerifyNotDisposed();
-        ArgumentNullException.ThrowIfNull(package);
-        GpuShaderBinary shader = package.Select(
-            GpuShaderCodeFormat.SpirV, GpuShaderStage.Compute, entryPoint, expectedAbiHash.Span).ToBinary();
-        ShaderModule module = CreateShaderModule(shader.Bytes.Span);
+        computeShader.ValidateFor(GpuShaderCodeFormat.SpirV, GpuShaderStage.Compute);
+        ShaderModule module = CreateShaderModule(computeShader.Bytes.Span);
         PipelineLayout layout = default;
         try
         {

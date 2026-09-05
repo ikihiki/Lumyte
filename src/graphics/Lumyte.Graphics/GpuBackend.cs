@@ -21,6 +21,9 @@ public interface IGpuBackend : IDisposable
 
     GpuBackendCapabilities Capabilities { get; }
 
+    /// <summary>The backend-ready shader representation accepted by this device.</summary>
+    GpuShaderCodeFormat ShaderCodeFormat => throw Unsupported(nameof(ShaderCodeFormat));
+
     IGpuQueue MainQueue => throw Unsupported(nameof(MainQueue));
 
     GpuMemoryAllocation AllocateMemory(ulong size, ulong alignment, GpuMemoryKind kind)
@@ -144,19 +147,15 @@ public interface IGpuBackend : IDisposable
 
     GpuRasterPipelineHandle CreateRasterPipeline(
         GpuRasterPipelineDescription description,
-        GpuShaderPackage package,
-        string vertexEntryPoint,
-        string pixelEntryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary vertexShader,
+        GpuShaderBinary pixelShader)
         => throw Unsupported(nameof(CreateRasterPipeline));
 
     void DestroyRasterPipeline(GpuRasterPipelineHandle pipeline)
         => throw Unsupported(nameof(DestroyRasterPipeline));
 
     GpuComputePipelineHandle CreateComputePipeline(
-        GpuShaderPackage package,
-        string entryPoint,
-        ReadOnlyMemory<byte> expectedAbiHash)
+        GpuShaderBinary computeShader)
         => throw Unsupported(nameof(CreateComputePipeline));
 
     void DestroyComputePipeline(GpuComputePipelineHandle pipeline)

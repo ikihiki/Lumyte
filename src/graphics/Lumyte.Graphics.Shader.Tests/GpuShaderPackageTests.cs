@@ -59,12 +59,12 @@ public sealed class GpuShaderPackageTests
     }
 
     [Fact]
-    public void RuntimeAssemblyDoesNotDependOnTooling()
+    public void ContainerRuntimeDoesNotDependOnOfflineCompiler()
     {
         string[] references = typeof(GpuShaderPackage).Assembly.GetReferencedAssemblies()
             .Select(reference => reference.Name ?? string.Empty).ToArray();
 
-        Assert.DoesNotContain("Lumyte.Graphics.Shader", references);
+        Assert.DoesNotContain("Lumyte.Graphics.Shader.Offline", references);
     }
 
     [Fact]
