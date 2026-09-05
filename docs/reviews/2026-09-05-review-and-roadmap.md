@@ -1,10 +1,12 @@
 # Lumyte レビューと改善工程
 
-レビュー日: 2026-09-05 / 構造・性能の確認対象: c9b9839 / API評価の確認対象: b2b9eaf（レビュー文書追加後の HEAD）。その後の共通API・CommandEncoderの方針変更を本書に統合した。
+レビュー日: 2026-09-05 / 構造・性能の確認対象: c9b9839 / API評価の確認対象: b2b9eaf / DevTools追加評価の確認対象: 191afeb。共通API・CommandEncoderの方針変更と、MagicOnionを基盤とするリモート編集・ツリー/画像選択・デバッグ・OpenTelemetryの設計案を本書に統合した。
 
 優先すべきなのは、Resources の終了競合、GPU コマンドの失敗時の寿命管理、descriptor の容量・再利用、Text キャッシュの上限である。その後に API の対応範囲を定義し、プロジェクト境界を整理する。既存の arena、RenderGraph、明示的な resource/view の分離を土台に改善する。
 
 本書はプロジェクト構造・性能・メモリとAPIの使いやすさの評価、および改善工程をまとめたもの。製品コードの変更は含まない。全53プロジェクトの定義・依存関係を確認し、主要な公開 API、実行経路、寿命管理、テスト、ベンチマークを重点的に読んだ。すべてのメソッドを網羅する監査ではない。性能の指摘は、今回計測した数値と、ソースから判断した改善候補を区別する。
+
+DevToolsは[第6章](#devtools-design)で、MagicOnionを基盤としたゲーム側の編集サービス、エディタとの状態同期、[OpenTelemetryによる観測](#devtools-opentelemetry)を設計する。TypeScriptはエディタ内部の実装として扱う。[D0–D6の工程](#devtools-roadmap)のうち、D3の「UI・シーンのobjectを[ツリーと画像の両方](#devtools-selection)から選択・編集し、再接続後も結果照会・undoできること」を最初の実用的な到達点にする。
 
 ## 1. 検証結果と現在地
 
@@ -49,7 +51,7 @@ Graphics は src/graphics、その他の本体・テストはリポジトリ直�
 | Text | 48ファイル5376行。TextRenderer 1005行 | FontData/Shaping と Rasterization/Cache/TwoDAdapter を内部で分離。GPUを使わない shaping 消費者が必要になった時点で Font/Shaping assembly を抽出 |
 | Shader / Offline | Shader は70行の package build tooling、Offline は実行ファイル | Shader runtime/container と build tooling の名前・責務を明確化。低レベル backend は選択済み GpuShaderBinary を受け取る |
 | Browser 2プロジェクト | csproj と参照だけで実装ソース0 | WebGPU Native と Browser のホスト実装を区別。未完成状態を README と build target に明記し、browser publish/run の gate を設ける |
-| DevTools | Hub、Agent、Server、Host を分離済み。ただし Server が Agent の wire contract を参照し、Host にデモと収集機構が混在 | 通信契約を DevTools.Protocol に抽出。再利用する runtime hosting と samples/devtools のデモを分離 |
+| DevTools | Hub、Agent、Server、Host を分離済み。ただし Server が Agent の wire contract を参照し、Host にデモと収集機構が混在 | MagicOnionの共有契約をProtocol、ゲーム処理をRuntime、接続をC# Clientへ分離。TypeScript/表示用bridgeはEditor内部へ。UI・シーンの階層/画像選択、OTel、hostingはadapterで接続する。[詳細](#devtools-design) |
 
 行数は bin/obj を除いたプロジェクト配下の C# ソースの概数。リンクされた共通テストは二重加算していない。行数は調査の入口であり、分割理由は依存方向・所有権・変更理由・独立配布で判断する。
 
@@ -62,7 +64,7 @@ src/
   interaction/  Interaction, StateMachine, Animation
   resources/    Resources
   graphics/     Graphics, RenderGraph, Shader runtime, 各backend, Library, TwoD, Text
-  devtools/     DevTools, Protocol, Agent, Server, 再利用するHosting
+  devtools/     DevTools, Protocol, Runtime, Client, Agent, Server, Hosting, OTel統合
 tools/          Shader.Offline
 samples/        graphics, devtools
 benchmarks/     Lumyte.Benchmarks
@@ -153,7 +155,7 @@ No Graphics API由来のallocation/resource/viewの分離や、小さいhandle�
 | TwoD | 命令4/5・統合2/5 | FillRectangle、DrawImage、DrawPathが直接的 | 描画前後の組立て、CommandEncoderの状態・clip・layerの再設計、Scene更新の副作用 |
 | Text | 3/5 | string/再利用ShapedTextの両経路、Auto rendering | renderer引数の重複、metrics/単位、shapingとlayoutの境界 |
 | Platform | 3/5 | 小さいIPlatform/IWindow、client/framebufferの区別 | 実用的なGPU表示にはnative surface操作が必要。presentation adapterの入口がほしい |
-| DevTools | 4/5 | 型付きquery/command/event、登録解除をIDisposableで表現 | domainの複数登録をまとめるscope、transport/host設定の最短例 |
+| DevTools（現行の監視・domain操作） | 4/5 | 型付きquery/command/event、登録解除をIDisposableで表現 | 登録scopeと最短例に加え、session・schema・ツリー/画像選択・安全な編集・状態同期をC# ClientとRuntimeで提供。リモートEditor用途は未実装として[別途評価](#devtools-design) |
 
 根拠となる良い使用例: [Input](E:/Lumyte/Lumyte.Interaction.Tests/ActionRuntimeTests.cs:14)、[StateMachine](E:/Lumyte/Lumyte.StateMachine.Tests/StateMachineTests.cs:13)、[Animation](E:/Lumyte/Lumyte.Animation.Tests/AnimationPlayerTests.cs:13)、[2D](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD.Tests/BackendConformanceTests.cs:20)、[DevTools](E:/Lumyte/Lumyte.DevTools.Host/DemoCounterDomain.cs:21)。
 
@@ -437,7 +439,7 @@ connectに希望hostを明示的に渡し、全async結果の反映前に世代�
 
 ActionRuntime は contributions をobjectで保持し、値更新で全contributionを走査する。float/Vector2のboxingとaction数に応じた走査が候補。ResourceStore.CollectAsyncは候補を全件抽出・sortする処理を、依存解放が進むたびに繰り返す。ResourceLoadSchedulerも選出時にpendingを走査する。[ActionRuntime](E:/Lumyte/Lumyte.Interaction/ActionRuntime.cs:596)、[collection](E:/Lumyte/Lumyte.Resources/ResourceStore.cs:376)、[scheduler](E:/Lumyte/Lumyte.Resources/ResourceLoadScheduler.cs:135)
 
-Action別のtyped slot/index、依存解放のwork queue、lane別のqueueを計測後に検討する。agingや優先度変更を無視した単純heap化は避ける。DevToolsのPublishAsyncはlistenerを順にawaitするため、remote購読が実処理を遅らせる場合は上限付きqueue/coalescingをtransport境界に導入する。[PublishAsync](E:/Lumyte/Lumyte.DevTools/DevToolsHub.cs:134)
+Action別のtyped slot/index、依存解放のwork queue、lane別のqueueを計測後に検討する。agingや優先度変更を無視した単純heap化は避ける。DevToolsのPublishAsyncはlistenerを順にawaitするため、remote購読が実処理を遅らせる場合は上限付きqueueをtransport境界に導入する。coalescingは最新値への置換が可能な観測に限り、編集結果や順序付き差分は[第6章の配信保証](#devtools-design)に従う。[PublishAsync](E:/Lumyte/Lumyte.DevTools/DevToolsHub.cs:134)
 
 ### R15 / P2 / 設計改善: CommandEncoderの状態・clip・layerの規則を統一する
 
@@ -445,7 +447,308 @@ CommandEncoderはSave/Restore、PushClip/PopClip、PushLayer/PopLayerを別管�
 
 公開APIと内部状態モデルを作り直し、単一のscope規則、正確なclip、layerの合成境界、記録の終了契約を揃える。旧APIの移行・廃止を含む設計と検証条件は [U06](#u06) に集約する。コメントやwrapperの追加だけでは完了としない。
 
-## 6. 改善工程
+## 6. DevToolsをリモート編集・デバッグ基盤へ発展させる
+
+<a id="devtools-design"></a>
+
+確認対象: 191afeb / 2026-09-05。以下は既存コードと公開仕様に基づく設計提案であり、リモート編集・DAP・OpenTelemetry SDKの接続を実装・検証した結果ではない。
+
+**到達点は、エディタから実行中のゲームへ接続し、UI・シーンのオブジェクトをツリーと描画画像の両方から選択・編集し、安全な更新境界で反映し、停止・ステップ実行・診断まで行えること。** DevToolsHubの型付きquery/command/eventを土台に、MagicOnionの共有C#契約でセッション、schema、状態同期、編集transaction、実行制御を提供する。TypeScriptはエディタ側の内部実装とし、DevToolsの公開protocolには含めない。OpenTelemetryはエディタの操作からゲーム内の処理までを結ぶ観測基盤として組み込む。
+
+### 6.1. 現在の強みと、編集基盤にする際の不足
+
+現在の接続は、Browser → WebSocket → Server → MagicOnion / named pipe → Agent → DevToolsHub → 各domainである。Serverはlocalhost、Agentは同一マシンのnamed pipeを使う。別マシン上のゲームへ接続するtransportや、ゲームのWorldを編集する契約はこれからの設計対象になる。[Server起動](E:/Lumyte/Lumyte.DevTools.Server/Program.cs:10)、[Agent接続](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgent.cs:39)
+
+型付きの登録、登録解除のlifetime、Resources/Inputの操作例、Activity/Meterの計測点は再利用できる。既存4/5評価は監視・domain操作の入口に対するもの。以下の編集・同期・デバッグ基盤まで完成している評価ではない。
+
+| 所見 | 現在の根拠 | 編集・デバッグに向けた改善 |
+| --- | --- | --- |
+| DT01 / 最優先: 通信callbackからhandlerへ直接到達する | Agent Receiverがhub.InvokeAsyncを呼ぶ。Hubはhandlerの実行threadやフレーム境界を規定しない。[Receiver](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgent.cs:95)、[Hub](E:/Lumyte/Lumyte.DevTools/DevToolsHub.cs:79) | game thread上の適用とsnapshot取得をdispatcherで管理。各domainに任意のlock対応を委ねない |
+| DT02 / 最優先: 接続と実行結果の契約が弱い | wire DTOには呼出しIDと結果/文字列errorがあるが、runtime世代、編集revision、重複抑止ID、deadlineがない。[wire契約](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgentContract.cs:1) | 再接続・再起動・結果不明を区別し、操作の再送による二重編集を防ぐ |
+| DT03 / 高: 送受信の寿命と上限を統一する必要がある | Agentのevent callbackはPublishEventAsyncを非待機で直接呼ぶ。一方で接続ごとに未使用channelのreader taskを起動し、切断時に停止・awaitする処理がない。[Agent](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgent.cs:56) | 接続scopeに送信queue、受信、実行中taskを所属させ、終了時にcancel・回収。全queueとpending要求に件数・bytes上限を設ける |
+| DT04 / 高: 長い操作が同じ接続の次の要求を塞ぐ | remote WebSocketの受信loopがProcessAsyncの完了を待ち、fragmentも拒否する。[endpoint](E:/Lumyte/Lumyte.DevTools.Server/DevToolsRemoteWebSocketEndpoint.cs:27) | 受信・dispatch・送信を分離し、長い編集/reload中もcancel、status、heartbeatを処理。messageを上限内で再構成する |
+| DT05 / 高: browserのcancelがゲームまで届かない | AbortSignalはclientのpendingを除くだけ。Registryのtokenは応答待機を止めるが、Agent Invokeに伝わらない。remote_errorにはretryableが付く。[client](E:/Lumyte/Lumyte.DevTools.Server/ClientApp/src/protocol/transport.ts:8)、[Registry](E:/Lumyte/Lumyte.DevTools.Server/DevToolsHostRegistry.cs:56)、[error](E:/Lumyte/Lumyte.DevTools.Server/DevToolsRemoteJsonSession.cs:148) | 待機キャンセルと編集取消を分け、結果不明の更新を自動再実行しない。operationの状態をゲーム側に照会する |
+| DT06 / 高: 型名だけではInspectorを構築できない | discoveryはCLR型名を返し、Agentのcatalogは構築時のsnapshot。更新可能fieldやschema更新の契約がない。[Feature](E:/Lumyte/Lumyte.DevTools/DevToolsFeature.cs:10)、[catalog](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgent.cs:25) | 安定したtype/field ID、値型、制約、権限、revision付きschemaを共有C# DTOで提供。TypeScript向けview modelの変換・生成はEditor内部で行う |
+| DT07 / 高: snapshotとeventの連続性がない | browserはrefreshしてからsubscribeし、eventにrevision/sequenceがない。途中の更新欠落や旧hostのeventを識別する契約が不足する。[state](E:/Lumyte/Lumyte.DevTools.Server/ClientApp/src/state/useDevTools.ts:5) | snapshotと差分の境界を一体で発行し、gap・再接続時は再同期。R13のhost切替修正も同時に適用 |
+| DT08 / 高: protocolの実装差と役割が混在する | local/remoteのJSON sessionが別実装で、交渉・error・fragmentの扱いが異なる。ServerがAgent assemblyのwire契約を参照する。[local](E:/Lumyte/Lumyte.DevTools.Server/DevToolsJsonSession.cs:9)、[remote](E:/Lumyte/Lumyte.DevTools.Server/DevToolsRemoteJsonSession.cs:20)、[参照](E:/Lumyte/Lumyte.DevTools.Server/Lumyte.DevTools.Server.csproj:4) | 公開契約をMagicOnionへ統一し、既存Browser bridgeはEditor内部へ移す。共有Protocol、接続session、UI、ゲーム処理の責務を分離 |
+| DT09 / 高: 独自Collectorと標準テレメトリの意味が揃っていない | 全対象ActivityにAllDataAndRecordedを要求し、active Activityを参照保持する。Gaugeも非Histogram経路のCurrent += valueで集計する。属性をすべてstringへ変換する。[Collector](E:/Lumyte/Lumyte.DevTools.Host/DiagnosticsCollector.cs:25)、[集計](E:/Lumyte/Lumyte.DevTools.Host/DiagnosticsCollector.cs:91) | SDKによるsampling・型付き属性・instrument別集計を採用。ライブ表示の保持上限、active記録、exportの責務を分ける |
+| DT10 / 高: 階層と画像から同じ編集対象へ辿る契約がない | 現行wireはdomain/feature/bytes中心で、階層、frame、pickの型付き契約がない。TwoDのSceneNodeStateは描画状態を持つが、親子や編集ownerの情報は持たない。[wire契約](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgentContract.cs:1)、[SceneNodeState](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/SceneNodeState.cs:5) | UI/Scene adapterがObjectRefと階層・描画要素の対応を提供。表示frameに対するpickとツリー選択を同じInspectorへ接続する |
+
+DT09のGaugeは同じ値7を再観測すると14へ加算され得るという静的所見。既存のGaugeテストは1回のsnapshot取得なので、この継続観測を検証していない。[既存テスト](E:/Lumyte/Lumyte.DevTools.Host.Tests/DiagnosticsCollectorTests.cs:27)。未完了Activity、source/instrumentのcatalogにも独立した上限が必要。今回これらを新しい実行試験で再現したとは扱わない。
+
+### 6.2. 内部構造と責務
+
+下図は処理経路を示す。実行時の状態はゲームが、永続的なscene/assetの編集文書とviewの選択状態はエディタがそれぞれ管理する。ゲーム内UIのツリーは検査対象であり、Editor UIのDOMとは別である。BrokerはMagicOnion接続の中継と認証を担う。
+
+~~~mermaid
+flowchart LR
+  subgraph EditorProcess[Editor]
+    View[Tree / Image / Inspector UI] --> Bridge[Internal UI bridge]
+    Bridge --> Editor[Editor model / Selection]
+    Editor --> Client[C# DevTools Client]
+  end
+  Client -->|MagicOnion| Broker[Server / Broker]
+  Broker -->|MagicOnion| Agent[Game Agent / Session]
+  Agent --> Dispatcher[Game Dispatcher]
+  Dispatcher --> Adapters[UI / Scene / Resources / Input adapters]
+  Adapters --> Game[Game runtime]
+  Editor --> DAP[External Debug Adapter]
+  DAP --> Game
+  Client -. telemetry .-> OTEL[OpenTelemetry SDK / OTLP]
+  Broker -. telemetry .-> OTEL
+  Agent -. telemetry .-> OTEL
+  Game -. telemetry .-> OTEL
+  OTEL --> Collector[Optional OpenTelemetry Collector]
+  OTEL --> Live[Bounded local diagnostics store]
+~~~
+
+| 単位（新しい名前は仮案） | 責務と依存 |
+| --- | --- |
+| Lumyte.DevTools | 型付きdomain登録、feature descriptor、登録scope。通信、Editor UI、ゲームの具体的Worldへ依存させない |
+| Lumyte.DevTools.Protocol | MagicOnionのHub/service/receiver interface、MessagePack DTO、schema、ID、error、revisionと互換性fixture。MagicOnion.Abstractions/MessagePackの契約依存を許容し、Client/Serverの実装、Editor、TypeScriptへ依存させない |
+| Lumyte.DevTools.Runtime | object registry、階層/snapshot/delta、frameとpickの対応、operation台帳、編集transaction、game dispatcherへの接続。ゲーム側のadapterを注入する |
+| Lumyte.DevTools.Agent | MagicOnionの接続・再接続、認証情報、session。game stateの変更判断を持たずRuntimeへ渡す |
+| Lumyte.DevTools.Server | MagicOnionのruntime登録、editor session、route、接続権限。game stateを独自に書き換えない。現在同梱するClientApp/表示用bridgeはEditor側の責務として切り出す |
+| Lumyte.DevTools.Client（C#） | 共有Protocolから生成するMagicOnion clientを利用し、negotiation、target選択、operation、schema cache、subscriptionとmirror storeを管理する |
+| Editor model / UI bridge / TypeScript | 選択状態、ツリー展開、画像表示、Inspector、workspace保存を管理。TypeScriptを使うviewとのbridgeと型はEditor内で閉じ、DevToolsのwireや公開SDKの定義元にしない |
+| 任意のOpenTelemetry統合層 | SDK/provider、propagator、OTLP exporter、ライブ診断storeへのadapterを構成。既存DiagnosticsCollectorから再利用部分を抽出し、OpenTelemetry Collectorとの名称混同も解消する |
+| Host / adapters / samples | 再利用するGeneric Host接続を抽出し、現在のdemo domain/windowはsampleへ。UI/Scene adapterはゲームの表示階層・描画要素・Entity/Component構造を変換し、特定UI frameworkやECSの採用を要求しない |
+
+最初の物理分割はProtocol、Runtime、C# Clientを中心とする。現在AgentにあるIStreamingHub/receiverとMessagePack DTOはProtocolへ抽出し、Editor用契約を追加する。通信契約の正本は共有C# interface/DTOとし、JSON-RPCやTypeScript用のDevTools protocolを別に定義しない。各製品のxUnit projectは隣接配置にする。
+
+Editor内部のbridgeはC# Clientを呼び、表示に必要なview modelへ変換する。WebSocket/WebView IPCなどの選択、TypeScript型の生成、JSONでの数値表現はEditorの実装判断とし、game/Agentはその方式へ依存しない。C# Clientを直接使うconsumerも同じDevTools機能を利用できる。
+
+Runtime内部では、SessionManager、SchemaRegistry、ObjectRegistry、HierarchyService、SnapshotStore、FrameStore、PickingService、EditService、OperationStore、ExecutionController、TelemetryBridgeに責務を分ける。小さいinterfaceでgame dispatcherと各moduleを注入し、すべてをDevToolsHubや1つのserviceへ集約しない。Network callbackは入力検証とenqueueまで、domain操作はadapterが明示した実行contextで行う。これらは内部サービスの分割案であり、個別assembly化は要求しない。
+
+### 6.3. MagicOnionを基盤とするprotocol v2の契約
+
+公開protocolはMagicOnionの共有C# interfaceとMessagePack DTOを基盤とする。双方向sessionと変更通知にはStreamingHubを使い、独立したschema/page取得やbinary chunk取得には必要に応じてMagicOnionのUnary serviceを使う。標準機能の編集・階層・画像・pickは型付きmethod/DTOとして定義する。ゲーム固有featureもfeature IDと登録済みschema/codecで扱い、任意JSONのmethod名やCLR型名を公開契約にしない。[MagicOnionの共有interface](https://cysharp.github.io/MagicOnion/streaminghub/define-interface)、[Unary/StreamingHub](https://cysharp.github.io/MagicOnion/fundamentals/unary-or-streaminghub)
+
+同一マシンでは現在のnamed pipe接続を活かし、別マシンでは認証付きHTTP/2/TLS接続を用意する。EditorのC# ClientとGame AgentがBrokerへ接続し、Brokerはtargetに対応するAgentへ中継する。DevTools protocol v2、MagicOnionのversion、domain version、schema revisionは別に管理する。採用中のMagicOnion 7.10.2 / MessagePack 3.1.8を基準に、旧新client/serverの互換性を試験する。[現在の参照](E:/Lumyte/Directory.Packages.props:8)、[MagicOnion互換性](https://cysharp.github.io/MagicOnion/fundamentals/version-compatibility)
+
+MagicOnionは同じHub instanceのmethodを逐次処理する。そのためHub methodは短い検証・受付・enqueueまでにし、game処理、snapshot構築、pick、GPU readback、reloadの完了を待たない。接続scopeのworkerが要求をRuntimeへ渡し、receiver通知と結果照会で完了を伝える。受理済み編集の実行と台帳はRuntimeの寿命で管理し、接続scopeの終了を編集rollbackと同一視しない。Hub内でAgentの結果を待ちながら同じHubへの完了通知を待つ循環も作らない。[Hubの処理順序](https://cysharp.github.io/MagicOnion/streaminghub/fundamentals)
+
+編集側Hubの形を示す抜粋。DTO名とmethod名は未実装の設計案であり、完全なAPI定義ではない。Agent登録・中継用Hubは別の役割としてProtocol内に定義する。
+
+~~~csharp
+public interface IDevToolsEditorHub
+    : IStreamingHub<IDevToolsEditorHub, IDevToolsEditorReceiver>
+{
+    ValueTask<RequestSubmission> OpenViewAsync(OpenViewRequest request);
+    ValueTask<RequestSubmission> PickAsync(PickRequest request);
+    ValueTask<EditSubmission> ApplyEditsAsync(EditRequest request);
+    ValueTask<OperationStatus> GetOperationAsync(OperationQuery request);
+    ValueTask<CancelResult> CancelOperationAsync(CancelOperationRequest request);
+}
+
+public interface IDevToolsEditorReceiver
+{
+    void OnRequestCompleted(RequestCompletion completion);
+    void OnOperationChanged(OperationUpdate update);
+    void OnHierarchyChanged(HierarchyDelta delta);
+    void OnFrameAvailable(FrameDescriptor frame);
+}
+~~~
+
+RequestSubmission/EditSubmissionは受付拒否または受付IDを表す。OpenView/Pickのような読取jobの受付IDは接続内のrequestId、編集の受付IDは再接続可能なoperationIdと区別し、結果DTOも型を分ける。RequestCompletionは登録済みのOpenView/Pick等の結果unionを持つ。GetOperationは時刻・世代付きの台帳mirrorを短時間で返し、Agentへの再照会が必要なら読取jobへ回す。Agentでの受理・適用状況をBrokerの転送受付と混同しない。operation台帳はHubの寿命の外でRuntimeが保持する。
+
+C# Clientは受付と結果通知の照合を内部で行い、通常のpickは結果をawaitできる入口、編集は状態照会・完了待機・明示的な取消を持つOperationHandleとして提供する。Editorの各viewがHub receiver、再送、revision検証を個別に実装しない。待機のcancelと編集自体のcancelは別の操作としてAPIに表す。
+
+| 契約 | 方針 |
+| --- | --- |
+| 初期化 | 接続認証 → Initialize/Attach → schema取得 → ready。version範囲と必要profileを交渉し、ready前に編集を受け付けない。heartbeat、deadline、message/queue上限も実装と一致する値を返す |
+| 必須と拡張 | observationを基本profileとし、object inspection/selection、runtime editing、simulation control、source debugging、asset transferはversion付きprofile。編集profileは対象UI/Sceneのツリー・画像選択を含むselection profileを必須とし、両経路を保証する |
+| target | projectId、runtimeId、runtimeEpoch、worldId、worldEpochを明示。接続し直しただけか、プロセス/Worldが再生成されたかを区別する。更新要求で暗黙に別hostを選ばない |
+| 要求と操作 | MagicOnionの応答照合IDと、BrokerをまたぐrequestId、接続をまたぐ論理更新のoperationIdを区別する。認証済みclientIdと正規化した要求内容hashを保存し、同じoperationIdで異なる更新は拒否する。hashに再送時のtrace等は含めない |
+| 版 | schemaRevision、object/fieldRevision、changeSetRevision、subscription sequenceを区別。simulation tickは編集のversionとして流用しない |
+| キャンセル | CancelRequest/CancelOperationを明示的なmethod/DTOとしてAgentまで中継する。待機停止、queueからの取消、commit済みを区別する。deadline超過をrollback完了として返さない |
+| error | gRPC/MagicOnionの接続・RPC失敗と、型付きdomain errorを分ける。DTOにtarget、operationId、field、期待/実際のrevision、適用結果を載せる。Conflict、StaleTarget、OutcomeUnknown、QueueFull、FrameExpired、ReadOnlyなどを区別 |
+| serialization | MessagePackの型付きDTOを使い、64-bit ID/revisionは整数精度を維持する。値はbool/数値/string/enum/vector/参照などの明示したunionとし、許可していない型をreflectionで復元しない。TypeScript向けの文字列等への変換はEditor bridge内に置く |
+| 互換性 | MessagePack Key/union tag、enum値、公開methodの識別を固定し、既存番号を再利用しない。追加fieldの既定値・unknown field/enumの扱いを定義し、破壊変更はversion/profileを更新する |
+| 配信 | Hubの受付処理と長いjobを分離する。receiverは短いenqueueまでとし、送信は順序を管理するwriterと上限付きqueueに集約。binary転送は別枠で制限し、cancel/status・操作結果・状態差分を塞がない |
+
+MagicOnionのClient ResultsにCancellationTokenを渡しても、相手で実行中の処理へのcancel伝播にはならない。DevTools側の取消methodとphase検証を省略しない。StreamingHubの接続順序だけで、複数clientや切断後の二重適用を防げるとは扱わない。[Client Resultsのcancel](https://cysharp.github.io/MagicOnion/streaminghub/client-results)
+
+編集operationの状態はAccepted → Queued → Applying → Committed / Rejected / Failed / Canceledとし、実行結果を確認できないclientの状態をOutcomeUnknownとする。Acceptedはゲーム側Runtimeが受理した時点であり、Brokerだけが転送を受け付けた状態はForwardingとして区別する。Committedはauthority側の適用と結果記録が完了した時点であり、エディタの保存完了やGPU表示完了は別のreceiptとする。snapshot/pickなどの読取jobはSucceeded等の読取用結果を返し、編集commitと同一の状態機械にはしない。
+
+再接続ではoperationIdで結果を照会し、同じruntimeEpochで保持期間内なら同じreceiptを返す。重複抑止をゲーム側の適用箇所まで到達させ、同じoperationを同時に受け取っても1回だけ適用する。台帳の件数・bytes・保持期間を公開し、期限切れやプロセス再起動後はOutcomeUnknown/StaleTargetとして再同期を要求する。永続journalなしでクラッシュをまたぐexactly-onceを保証しない。
+
+### 6.4. object schemaと状態同期
+
+Inspectorには型名に加えて編集用のschemaが必要になる。typeId/fieldId、表示名、値型、nullable、enum、単位、範囲、読み書き可否、適用phase、永続化可否を共有DTOに含める。vector/rotation/matrixでは軸、角度単位、行列の配置を固定する。ゲーム固有のdescriptorとaccessorを登録し、必要ならsource generatorで生成する。protocol/UIが任意のCLR propertyを走査・実行する構造にしない。
+
+実行中の参照はObjectRef(target, objectId, generation)で表す。targetはruntime/worldのIDとepochを含み、1つの要求内で共有する場合も所属を省略して解釈しない。名前、ツリー内の位置、メモリアドレスを識別子にしない。保存文書のasset/entity IDとは別にし、永続化可能なobjectだけauthoring IDへの対応を持つ。削除・再生成時はtombstone/世代更新を通知する。
+
+snapshotと購読は1つのopenSubscription操作で開始する。ゲームの安全な読取境界で基準revision Rを確定し、そのsnapshotとRより後の差分を一続きとして提供する。大きいsnapshotは固定revisionに対するcursorでページ化し、pinする世代と差分bufferに上限・有効期限を設ける。上限超過時は途中の差分を黙って落とさず、ResetRequiredで取り直す。
+
+差分はsubscriptionId、targetの世代、sequence、baseRevision、newRevisionを持ち、作成・更新・削除・並替えを表す。clientは重複を無視し、gapまたはbaseRevision不一致を検出したらsnapshotを再取得する。snapshotの応答前にeventが到着する場合もSDK内で順序を整える。query/filterが変わった場合は購読世代も更新する。
+
+選択中object、表示中の階層page、watch対象だけを購読する。field mask、深さ、件数、byte数、更新頻度の上限を持ち、参照循環をinline展開しない。ゲーム側は変更通知/accessorによるdirty記録を基本にし、未対応domainのsamplingも範囲と頻度を制限する。全Worldを毎フレームJSON化して差分比較しない。
+
+### 6.5. UI・シーンをツリーと画像の2経路で選択する
+
+<a id="devtools-selection"></a>
+
+編集対象は、ツリーの行と描画画像内の領域のどちらから選んでも同じObjectRefに解決する。UIとシーンをそれぞれ対象にし、画像選択をD5の付加機能へ先送りしない。D2で両経路を用意し、D3ではどちらで選んだobjectも同じInspector・編集・undoを利用できることを受入条件にする。
+
+| 対象 | ツリーから選ぶ経路 | 画像から選ぶ経路 |
+| --- | --- | --- |
+| ゲーム内UI | window/canvas/rootと実際の表示階層をadapterから取得。表示名、種類、表示/有効状態、編集可否、子の有無を表示する | ゲームのUI描画画像をクリックし、transform、clip/mask、重なり順を反映した表示要素を選ぶ。disabledや入力透過のUIも検査対象にできる |
+| シーン内object | World/sceneとobjectの親子をadapterから取得。描画batchの並びをゲームobjectの親子と見なさない | camera/viewportの描画画像をクリックし、見えている描画要素から編集ownerを解決する。UI/Scene/Allの対象filterと、重なった候補の選択を提供する |
+
+UI/Scene adapterが、ObjectRef、階層node、描画primitive/instance、編集ownerの対応を登録する。1つのobjectが複数描画要素を持つ場合や、同じassetから複数instanceが生まれる場合もruntime instanceを識別する。draw indexや一時的なGPU IDを永続的なobject IDにしない。編集対象を持たない補助描画は非選択とするか、登録されたownerへ解決する。
+
+階層はHierarchyIdとTreeNodeIdを持つprojectionとし、実体のObjectRefと分ける。group行には実体がない場合もある。同じobjectが複数のツリーに現れる場合は、PickResultに対応する階層と祖先pathの手掛かりを返してreveal先を定める。子はpage単位で取得し、reparent・順序変更・削除もrevision付き差分で同期する。循環参照は子として再帰展開しない。画像に映らない非表示objectもツリーから検査できる。
+
+#### 表示したframeに対してpickする
+
+FrameDescriptorにはtarget、viewportId/世代、frameId、capture時のtick/stateRevision、画像のpixel寸法、切出し領域・向き、camera/UI layoutの世代を含める。画像本体と、同じ描画状態から作ったpick用情報をframeIdで対応付ける。画像の非同期圧縮やGPU readbackで到着順が変わっても、この対応を変えない。
+
+EditorはDPI、zoom、余白、表示変換を除いてクリック位置を元画像のpixel座標へ変換する。protocol上は左上原点、x右向き・y下向きの整数pixel indexとし、0 ≤ x < width、0 ≤ y < height、評価点はpixel中心(x + 0.5, y + 0.5)に固定する。余白や画像外のクリックを別のpixelへ丸めない。PickRequestはtarget、viewport世代、frameId、pixel、対象filter、候補取得modeを含み、現在の最新frameで代用しない。
+
+RuntimeはそのframeのID bufferまたは固定したhit-test snapshotからPickResultを作り、元のframeId、選ばれたObjectRef、順序付き候補、編集owner、画像上の領域を返す。frameの保持期限切れはFrameExpired、対象の削除・世代変更はStaleObjectとして返す。Editorは再取得を案内し、古いクリックを新frameで自動再実行しない。frameが示す値と現在のInspector値の差を識別できるようにし、編集時は現在のrevisionで再検証する。
+
+| MagicOnionの型付き契約（名称は仮案） | 返す情報・用途 |
+| --- | --- |
+| OpenView / HierarchyPage | 検査対象UI/Scene、階層snapshot/cursor、revision、後続差分の購読 |
+| FrameDescriptor / GetFrameChunk | frameと描画状態の対応、画像形式、寸法、期限、binary本体の取得 |
+| PickRequest / PickResult | 表示frameのpixelをObjectRefへ解決。UI/Sceneの候補順とownerを明示 |
+| ResolveObjectPath | 画像で選んだobjectのツリー内の位置を取得し、必要な祖先pageだけを開く |
+| GetSelectionGeometry | ツリーで選んだobjectを、指定した表示frame上で強調するための輪郭/領域。非表示・画面外・該当frameなしも結果として区別 |
+
+Hub methodはこれらの長い処理の受付までにし、読取jobの結果通知・照会とbounded binary転送を使う。画像、pick、階層の各要求は同じtargetと閲覧権限を検証する。
+
+#### 判定と選択状態の規則
+
+標準pickは最前面の見えている編集対象を選ぶ。UIではclip/mask、描画順、表示領域を、Sceneでは実際のcoverageとdepthを反映し、矩形boundsだけで見えていないobjectを確定しない。透過・alpha test・text/pathのedgeを含むcoverageの閾値を契約化し、拡大boundsによる補助選択は別modeにする。disabled/入力透過UIを選べるよう、ゲーム入力のhit testをそのまま編集用の判定にしない。UI/Scene/Allのfilterと候補の巡回で背後のobjectも選べるようにする。
+
+背面を含む候補modeには、同じframeの固定したgeometry/表示順などの候補用情報を保持する。候補はUIの描画順またはSceneのdepthと安定したtie-breakで並べ、上限件数と打切りの有無を返す。最前面のIDを返す標準modeと、遮蔽されたobjectも含む候補modeの結果を区別する。
+
+backend共通のpick結果をrenderer adapterが提供する。GPU ID passなら表示画像と同じtransform/clip/depth/coverageを使い、CPU判定なら同じframeの固定snapshotを使う。方式選択は内部に置き、EditorがVulkan/WebGPU/DirectX12で判定方式を分岐しない。3Dに拡張する場合もこの契約を使い、raycastのbounds候補だけを可視pixelの結果として返さない。
+
+Editorはselected ObjectRef集合、active ObjectRef、selectionRevisionを持つ1つのSelectionModelを使う。画像クリックでツリーの該当行とInspectorを更新し、ツリー選択で画像上の領域を強調する。hoverはcommitした選択から分ける。展開状態やショートカット、複数選択の操作方法はEditor内部とし、選択操作でゲームの通常入力を送信しない。
+
+選択はeditor sessionごとに独立させ、複数observerが互いの選択を奪わない。選択・highlightは原則として閲覧権限で使え、編集controller leaseの取得とは分ける。object削除やtarget世代変更時は選択を無効化する。同じslotに新しいobjectができても自動的に選び直さず、遅いpick/highlight応答はtarget・frame・selectionRevisionで検証してから反映する。古いframe由来のoutlineを別frameへ重ねない。
+
+画像、ID map、hit-test snapshot、圧縮bufferはFrameStoreで件数・bytes・保持期間を制限する。閲覧中viewportだけを必要な解像度/頻度で取得し、非同期readbackと小領域pickを使う。保持中のframeは対応するpick情報と一緒に解放し、解放済み情報への要求には期限切れを返す。capture中もcancel/status/編集結果を処理でき、画像の購読停止・切断でGPU/CPU資源を回収する。
+
+### 6.6. リモート編集、undo、保存
+
+最初の編集契約は、1つのWorld内の登録済みfieldをtransactionとして更新することに絞る。型・値域・schema・target世代・編集権限・expectedRevisionを検証し、適用直前にgame threadで再検証する。必要な変更を準備してから一括commitし、失敗なら変更0件を保証できるadapterだけをtransaction対応として登録する。任意のcommandやI/Oを同じ原子的transactionに含めない。
+
+ApplyEditsAsyncのEditRequestは、target、operationId、schemaRevision、変更配列、適用phaseを持つMessagePack DTOとする。各変更はObjectRef、fieldId、expectedRevision、型付きの新しい値を持つ。たとえばtransform.positionを(1, 2, 0)へ変更する場合、ツリーと画像のどちらで選んでも同じObjectRefと現在のfieldRevisionから要求を組み立てる。画像のpixelやTreeNodeIdを編集先のIDにはしない。
+
+Brokerの受付後、Runtimeで受理したAcceptedとoperationIdを通知・照会可能にする。実際の適用後に、Committed、appliedTick、newRevision、正規化後の値、undo用のchangeSetIdを返す。値の競合は相手の更新を上書きせずConflictにする。expectedRevisionの範囲は編集対象field/objectとし、別objectの毎フレーム更新で全編集が衝突するglobal revisionだけの設計を避ける。
+
+初期は複数observer＋1つの編集controller leaseを標準にする。leaseのowner/期限と、接続断時に入力captureやpreviewを解除する処理を実装する。ゲーム自身による更新との競合はleaseだけでは解決しないため、revision検証は維持する。将来の複数writerは同じtransaction/競合モデルの上に追加し、最初からCRDTを導入しない。
+
+undoは適用済みchangeSetに対する新しい条件付き編集とする。更新後に他者やゲームが値を変えていれば競合として返し、無条件に過去の値へ戻さない。ドラッグ操作はgesture単位にまとめ、previewとcommitを分離する。undo履歴、previewの保持時間、差分bytesに上限を設ける。entity生成・削除・reparentは専用adapterと参照整合性を準備してから追加する。
+
+実行時の変更とscene/assetファイルへの保存は別commandにする。エディタが保存文書のrevisionとruntimeのchangeSetを突き合わせ、適用可能な変更だけをworkspaceへ保存する。動的に生成されたobjectなど対応先のない変更を暗黙に保存しない。reloadはビルド・validation後に安全な境界で世代を切り替え、失敗時は旧世代を維持する。GPU資源の旧世代は既存のretirement設計に従う。コンパイル・ファイル転送・GPU待機でgame threadを占有しない。
+
+### 6.7. 停止・ステップ実行とソースデバッグ
+
+ゲームの実行制御はRunning、PauseRequested、Paused、Stepping、Stoppingの状態機械とする。Pauseは安全なsimulation境界で成立したときに応答し、Stepは定義済みのsimulation tickを指定数だけ進める。render、UI/入力、wall-clock、simulation clockの扱いを分け、停止中もtransport、編集用dispatcher、status照会を処理できるようにする。任意threadの強制停止を実装方法にしない。
+
+ゲーム上のwatch、StateMachineの遷移、Resourcesのload/reload、frame/tickの停止条件はdomain adapterから観測・制御する。watch式は副作用のない登録済みaccessorと評価予算に限定する。pauseとreload/editが重なったときの適用phase、入力captureの解除、controller離脱後の継続/停止方針も契約に含める。
+
+ソースのbreakpoint、stack、locals、step-in/over/outは外部Debug AdapterとDAPで連携する。DAPは開発ツールとdebug adapter間の標準を定め、機能交渉と停止時の変数取得を持つ。採用する.NET debuggerのruntime/OS対応と配布条件をD6で確認し、DevTools自身に汎用debuggerを実装しない。[DAP概要](https://microsoft.github.io/debug-adapter-protocol/overview)
+
+プロセス全体がdebuggerで止まると、ゲーム内Agentも処理できなくなる。外部adapter/Brokerは接続状態を保持し、UIにはDebuggerStoppedと取得済みsnapshotの時刻を示す。停止中のruntime RPCは有限deadlineで拒否/保留方針を明示し、resume後に古い編集を自動適用しない。DAPの停止中variable referenceと、runtime/world世代内で安定したObjectRefを同一視しない。ソースdebuggerの停止・再開をEditor sessionへ関連付けるが、DAP messageを編集transactionへ変換しない。
+
+### 6.8. OpenTelemetryを標準の観測経路にする
+
+<a id="devtools-opentelemetry"></a>
+
+.NET側は既存のActivitySource/ActivityとMeterを維持し、構造化logにはILoggerのadapterを使う。SDK/provider/exporterの構成はgame/editor/serverのcomposition rootに置き、ResourcesやInteractionからSDKやCollectorへ直接依存させない。現在の計測名・単位は継続し、変更が必要ならversion付きの移行として扱う。[既存Resources計測](E:/Lumyte/Lumyte.Resources/ResourcesDiagnostics.cs:6)、[Interaction計測](E:/Lumyte/Lumyte.Interaction/InteractionDiagnostics.cs:6)、[OpenTelemetry .NET](https://opentelemetry.io/docs/languages/dotnet/instrumentation/)
+
+通信と観測の役割を次のように分ける。
+
+| 経路 | 役割と保証 |
+| --- | --- |
+| DevTools control | 編集、operation結果、pause/step、schema、権限。操作のreceiptを持ち、結果不明を区別する |
+| DevTools state sync | Inspectorのsnapshot/delta。sequenceとrevisionで連続性を検証し、欠落時に再同期する |
+| OpenTelemetry / OTLP | trace、metric、logの収集・export。samplingや欠落を許容し、編集成功やundoの唯一の記録として使わない |
+| bulk / capture | asset、スクリーンショット、GPU capture、profile添付。参照IDとmetadataはcontrolで送り、本体はchunk化した別の転送枠を使う |
+
+OTLPはテレメトリの転送仕様であり、編集commandの信頼性を保証するプロトコルとして流用しない。各SDKから任意のOpenTelemetry CollectorへOTLPで送り、processor/exporterで保存先へ接続する。Collectorなしでもローカルの上限付きstoreとDiagnostics UIを使える構成を用意する。[OTLP仕様](https://opentelemetry.io/docs/specs/otlp/)、[Collector構造](https://opentelemetry.io/docs/collector/architecture/)
+
+#### traceを操作単位で伝播する
+
+MagicOnion StreamingHub接続を開始した時のtraceだけでは、その後の個々の編集を関連付けられない。各logical requestの共有RequestContext DTOにW3C traceparent/tracestateを載せ、SDKのpropagatorでextract/injectする。接続headerだけに頼らず、EditorのC# Client → Broker → Agentでmethod単位に中継する。TypeScript viewからの相関情報もEditor内のbridgeでC#側へ渡す。trace metadataは任意であり、無効化・不正値・未記録でも編集の意味を変えない。[context propagation](https://opentelemetry.io/docs/concepts/context-propagation/)
+
+基本の因果関係はEditor操作 → client RPC → Broker route → Agent受理 → queue待ち → game threadでの適用 → resource reloadなどの子処理とする。要求をqueueへ入れる時点でActivityContextを値として保持し、dispatcherで明示的に復元する。Activity.Currentを通信threadから後で参照したり、長いWebSocket sessionをすべてのframeの親にしたりしない。
+
+受理応答と実際のcommitは別spanにし、後で実行される処理は保存したcontextと結ぶ。複数の要求をまとめるbatchや、独立したframeとの関係はActivityLinkで表し、1つのframeを任意の1編集の子へ押し込まない。再送ごとに通信spanを持てるが、重複抑止された編集のapply spanを再発行しない。[Tracing APIのparent/link](https://opentelemetry.io/docs/specs/otel/trace/api/)
+
+operationId、runtimeEpoch、world、appliedTick、変更対象の識別はDevToolsの契約として保持し、traceId/spanIdは任意の相関情報としてreceipt/logに添える。samplingでtraceが残らなくても、操作結果とundoは照会可能にする。ILoggerの構造化logは有効なActivityに関連付け、UIから操作・trace・logを相互に辿れるようにする。[.NET log correlation](https://opentelemetry.io/docs/languages/dotnet/logs/correlation/)
+
+#### metric、sampling、保持上限
+
+| 項目 | 方針 |
+| --- | --- |
+| instrumentの意味 | Counter/UpDownCounterは累積または増減、Gaugeは観測値、Histogramは分布としてSDKで集計する。ObservableCounterの累積観測を再加算しない |
+| 時間と集計 | monotonic clockでqueue待ち/適用時間を測る。OTLPではtemporality、start time、bucketを保持し、UI表示用の有限窓percentileを標準Histogramの代わりにexportしない |
+| 属性 | string/bool/numberなど型を保持する。operationId、objectId、frame番号、assetの完全pathはtrace/logへ記録し、metric labelへ入れない。resource metadataもservice/instance等の安定した識別に限定し、操作ごとに増やさない |
+| 計測候補 | queue depth/bytes、pending操作数、queue待ち、edit適用時間、競合/重複抑止、snapshot bytes、resync、frame時間、export/drop数。method種別や結果など制限した分類で集計 |
+| sampling | composition rootでsourceごとの方針とcapture期間を定める。毎object・毎draw・毎frameの全量traceを常時要求しない。通常はSDKのsamplingに従い、詳細captureは期間・件数・bytesを制限する |
+| ライブ表示 | sampled span/metric/logのcompactなコピーをstoreへ流す。未完了operationの表示はRuntimeのoperation台帳から得る。Activity本体や任意object graphを無制限に保持しない |
+| 負荷と寿命 | game thread上のlistener/processorは短いコピー・enqueueまで。serialize/export/通信はworkerへ。queue満杯はtelemetryのdropと件数通知で処理し、gameやcontrolを待たせない |
+| UI操作 | 画面のPause/Clearはそのview/storeを対象にする。全体sampling・exportの停止は別権限の設定にし、UIのclearでSDKの累積metricを初期化しない |
+
+標準のmetric集計とexportにはSDKを使い、必要なViewで属性やHistogram境界を制御する。[OpenTelemetry .NET metrics](https://opentelemetry.io/docs/languages/dotnet/metrics/)。現在の独自ActivityListenerが常時AllDataAndRecordedを要求する構成は、SDKのsamplingとは別に全件の詳細生成を要求するため見直す。ライブstoreはSDKのprocessor/exporter adapterを基本とし、SDKなしの軽量経路を残すなら別modeとして明示し、二重収集・二重exportを防ぐ。
+
+process間の時間差を無視して受信時刻から処理時間を計算しない。サービス名・version・instance、runtimeEpochを識別できるmetadataと、spanの親子・link、各process内のdurationを使う。ゲームのsimulation clockをtelemetryの時刻へ流用しない。trace/baggageには編集payload、認証token、任意のasset内容を自動転記せず、転送するmetadataを制限する。
+
+OTLP送信の失敗・再送・部分成功はSDK/exporterの仕様に従う。DevToolsのoperationをOTLPの再送に連動させない。export先停止、Collector未接続、shutdown時も上限付きで処理し、flushの完了を無期限にgame終了の条件にしない。OTLPは転送先での検索用の標準query APIではないため、履歴検索はTelemetryQuery adapterでローカルstoreまたは保存先のquery APIへ接続する。
+
+### 6.9. transport、権限、メモリ
+
+MagicOnionの共有契約を維持して、同一マシンのpipeとネットワークのHTTP/2/TLS接続を切り替える。targetごとのobserve/edit/simulation-control/source-debug/persist権限をattach時に確定する。Editor内部でBrowser bridgeを提供する場合もOrigin検証とsession認証を設け、hostIdを知るだけで編集できる形にしない。release構成でリモート編集を有効にするかはcompositionで明示する。
+
+schema accessorsの登録範囲だけを編集可能にし、任意のmethod実行・file pathへの書込みを汎用RPCとして公開しない。ログやtelemetryが漏れなく残ることに編集権限を依存させない。必要な編集履歴はサンプリングされないchangeSet/operation台帳で管理する。
+
+制御要求、状態差分、telemetry、bulkは別の予算を持つ。操作結果は台帳から回復可能にし、満杯なら受付時に拒否する。状態差分はgap通知と再snapshot、telemetryは集約/drop、bulkは中断・再開で対処する。単にすべてを無制限queueへ入れる構造を避ける。
+
+ProtocolではMessagePack DTOと登録済みcodecを使い、現在のbyte[]内のJSONやJsonElement → JsonNode → string → UTF-8の反復を解消する。schemaとfeature lookupはrevision付きcache、snapshotはページ化と差分を使う。frame captureは必要な解像度/頻度だけを非同期readbackし、GPU完了tokenに従ってbufferを再利用する。画像・asset・profile本体はMagicOnionの別service/streamでbounded chunkとして転送し、control用Hubの巨大な通知に詰め込まない。Editor bridgeでもbase64への反復変換を避ける。
+
+### 6.10. 段階的な実装工程と受入条件
+
+<a id="devtools-roadmap"></a>
+
+| 工程 | 内容 | 完了条件 |
+| --- | --- | --- |
+| D0: 契約と最小sample | MagicOnionの共有C#契約、Protocol/Runtime/C# ClientとEditor内部bridgeの境界、target・operation・schema・trace contextをADR化。UI/Scene adapterとframe/pickの対応を定義 | UIとSceneそれぞれで「同じobjectをツリー/画像から選ぶ」consumerを設計し、TypeScriptや特定UI framework/ECSなしでも契約を試せる |
+| D1: 接続の信頼性とOTel基礎 | DT02–DT05/DT08、R13を修正。MagicOnion Hub/receiver/DTOをProtocolへ抽出し、短い受付とjob実行を分離。session/世代、bounded queue、cancel/deadline、task回収、v2交渉、trace伝播 | 長い要求中もstatus/cancelを処理でき、切断時にtask/購読/pendingが残らない。旧接続の結果を新接続に混ぜず、TypeScriptが公開protocolの依存に入らない |
+| D2: ツリー・画像選択とInspector | DT06/DT07/DT10を対象に、schema、階層page/差分、ObjectRef、C# mirror store、UI/Scene画像、frameに対応するpick、reveal/highlightを実装 | sampleのUIとSceneをそれぞれ両経路から選ぶと同じInspectorへ到達する。DPI・重なり・clip・古いframe・削除・gap・再接続を正しく扱う |
+| D3: リモート編集の最小実用版 | game dispatcher、条件付きtransaction、operation台帳、controller lease、gesture/undo。両選択経路を編集へ接続し、Editor操作から適用までtrace/logを関連付ける | UI/Scene双方でツリーまたは画像から選択して変更・undoできる。失敗時は変更0、応答消失後の再送は二重適用0。runtime変更と保存は区別される |
+| D4: 実行制御と観測 | pause/step/watch、SDKによるmetric/log/trace、上限付きライブstore、OTLP、collector/export障害の隔離。DT09を修正 | 1tick進行後の状態を検査でき、停止中も編集/controlが応答する。Collectorなし/低速/停止中でもゲーム処理と編集結果が成立する |
+| D5: 永続編集とasset連携 | authoring ID対応、scene/UI文書の差分保存、resource reload、artifact転送、世代切替。必要に応じて動画・高解像度captureを追加 | 保存revisionの競合を検出し、再起動後も保存した内容を再現。reload失敗時に旧資源を維持し、captureがcontrolを塞がない。基本の画像選択はD2で完了済み |
+| D6: ソースデバッグと拡張 | 外部DAP adapter、source mapping、breakpoint/locals、停止状態の統合。必要なゲームで複数writerや高度な編集を追加 | process全停止中のAgent不応答を正常に扱い、adapterから再開できる。runtime IDと停止中variable referenceが混同されない |
+
+D3を最初の実用的な到達点とする。最初から全エディタ機能を実装する前提にはせず、1つの実ゲームまたはsampleでUI adapterとScene adapterの両方を通す。D2の画像・pickは共通capture/readbackと資源寿命の契約を先に確認し、単なる最新画像の表示だけで完了としない。OTelのtrace伝播はD1から入れ、後からrequest/operationを識別し直す手戻りを避ける。
+
+旧Agent契約はMagicOnionの移行adapterで段階的に更新し、既存Browserの接続はEditor内部bridgeへ移す。新しい編集profileはv2だけで提供し、named pipe/ネットワークのC# client/serverで同じprotocol conformanceを使う。TypeScriptの型・bridge・view挙動はEditorのテスト対象とし、DevTools protocolの互換性matrixへ含めない。現行の型付きdomain handlerはadapterで接続できるが、編集可能schema・適用phase・transaction対応は明示的な登録を追加する。
+
+xUnitのC# protocol/runtime/client consumer testでは、ManualClock/TimeProvider、fake dispatcher、frame/pick adapter、制御可能なtransport、in-memory exporterで次を検証する。
+
+- 同一operationの同時再送、応答消失、台帳期限切れ、runtime再起動、別targetへの誤送信。
+- snapshot境界の更新、sequence gap、旧購読の遅延event、schema変更、object削除/再生成。
+- MagicOnionの短い受付と結果通知、同じHubを経由する完了・cancelの循環待ち防止、旧新DTOの追加field/unknown値とmethod互換性。全DTOの巨大snapshotではなく、維持すべき少数のwire契約を検証する。
+- UI/Scene各objectのツリー選択と画像pickが同じObjectRefへ到達し、画像選択から祖先pageを開け、ツリー選択から対応する画像領域を強調できること。
+- DPI/zoom/余白/resizeの座標変換、clip/mask・重なり・disabled/入力透過UI、UI/Scene filter、同一assetの複数instance、非表示objectのツリー選択。
+- 表示frameとpick情報の一致、FrameExpired、対象削除/再生成、遅いpick/highlight応答、frame切替中のoutline、複数editorの独立選択、選択時にゲーム入力を発生させないこと。
+- 2writerまたはgame更新とのrevision競合、commit直前のcancel、undo競合、transaction途中のvalidation失敗。
+- game thread以外からの適用防止、pause中の処理、tick数、接続断後のinput/preview lease解除。
+- Editor → Broker → Agent → dispatcherでのtrace parent/link、traceがsamplingで除外されても成立するreceipt、重複抑止時のapply span非重複。
+- Gauge/ObservableCounterの繰返し観測、Histogramのbucket/temporality、型付き属性、metric cardinality、logsとtraceの相関。
+- telemetry飽和時のdrop、export失敗/再送、未完了operationの保持上限、shutdownの回収。UIのPause/Clearが他のclientやOTLP exportを止めないこと。
+
+OS transport、実ゲームthread、GPU capture/pick、DAP、実Collectorとの相互運用はintegration/conformanceとして分ける。実MagicOnion client/serverで長いjob実行中のcancel/statusを確認し、fake transportだけでHubの逐次実行を検証済みとしない。描画conformanceでは複数frameの画像とpick結果を対応付け、3backendの同じ可視objectへ到達することを確かめる。小さいCollectorの設定と実OTLP受信までを検証し、SDK内のfake exporterだけで相互運用済みとしない。
+
+Editor側ではツリー、画像、Inspectorの選択連動と内部bridgeの数値変換をVitest/Testing Library等で検証する。性能は接続なし、監視のみ、差分同期、画像購読/連続pick、連続drag、遅いclient、export先停止の各条件でCPU p95、allocated bytes/frame、queue/frame store bytes、帯域、pick応答時間、GPU待機を比較する。編集の正しさと観測の負荷を両方受入条件にする。
+
+## 7. 改善工程
 
 工数は1人が実装・レビュー対応・テスト整備を行う場合の粗い人日。既存APIの互換性、対象GPU/OS/ブラウザの範囲が未確定なため見積りには幅を持たせる。日程の約束ではなく、各工程の完了時に見直す。
 
@@ -461,8 +764,11 @@ CommandEncoderはSave/Restore、PushClip/PopClip、PushLayer/PopLayerを別管�
 | E5: 2D/Textの再利用とメモリ | 5–9人日 | E4のretirement契約、上位接続はE2b | font共有、atlas予算/eviction/fallback、Scene dirty/sort/batch、allocator接続に加え、U07のTextMetrics・ShapedText再利用・通常描画の入口を整備。長時間利用で予算内に収束し、表示内容を維持 |
 | E6: その他hot pathと配布 | 3–5人日 | E0/E3、API公開例はE2a/E2b/E5 | Interaction/Resourcesを測定して改善。U08/U09のidentity・freeze・graph診断、各APIの独立consumer/Quick Start、CI、SDK/toolchain固定、runtime配布、performance記録を整備 |
 | E7: Browserの完成（必要な場合） | 8–15人日 | E2/E3、E4の非同期契約 | JS/WASM adapter、非同期初期化・completion/readback、canvas表示、device lostを実装。E2と同じ共通契約・サンプルでbrowser conformanceを実行 |
+| E8: DevToolsのリモートEditor基盤 | 要見積り | D0/D1は独立着手可。Protocol抽出はE3と共有、D2のcapture/pickはE2/E4のGPU契約と調整 | [D0–D6](#devtools-roadmap)に分け、MagicOnion/C#契約でD2のUI・Sceneツリー/画像選択、D3の条件付き編集・再接続・undoを実現。D1からOTel相関を組み込み、実行制御・OTLP・保存・DAPへ拡張する |
 
-既存工程の概算はE0–E6（E2aを含み、E2bを除く）で約33–57人日、Browserを含めて約41–72人日。API評価の統合で追加したE2bは別途見積りが必要であり、E2/E4/E5/E6へ追加したAPI契約・実装・公開例の工数も棚卸し後に見直す。この数値を統合後の全作業の総額として扱わない。最初に予算を確保すべき単位はE0/E1。E3の配置変更とE2a/E2b/E4の実装変更は同じファイルを触りやすいため、同時進行するなら変更範囲を分ける。
+既存工程の概算はE0–E6（E2aを含み、E2bを除く）で約33–57人日、Browserを含めて約41–72人日。API評価の統合で追加したE2bとDevToolsのE8は別途見積りが必要であり、E2/E4/E5/E6へ追加したAPI契約・実装・公開例の工数も棚卸し後に見直す。この数値を統合後の全作業の総額として扱わない。最初に予算を確保すべき単位はE0/E1。E3の配置変更とE2a/E2b/E4の実装変更は同じファイルを触りやすいため、同時進行するなら変更範囲を分ける。
+
+E8はGraphicsの全工程完了を待たず進める。R13のhost切替修正はE1/D1、Protocol抽出はE3/D1で共有し、二重に実装しない。D0の契約・小さいsample、D1の接続とtrace伝播、D2のツリー/画像選択・状態同期、D3の編集をそれぞれ独立PRにする。基本capture/pickに必要な非同期readbackとGPU寿命はD2の前提として整備し、D5のreload・大容量転送ではResourcesの停止競合修正とGPUのretirementを利用する。
 
 ### API改善と工程の対応
 
@@ -494,9 +800,9 @@ API評価の改善順序を工程表へ対応付ける。契約をE2で確定し
 
 各バグ修正にはxUnit回帰テストを付ける。Frontendの挙動は既存Vitest/Testing Library経路で検証する。生成物全体のsnapshotやCSS class/属性順によるchange-detectorテストを増やさず、observable behaviorを検証する。
 
-## 7. 評価方法と受入条件
+## 8. 評価方法と受入条件
 
-### 7.1. 性能・メモリ
+### 8.1. 性能・メモリ
 
 既存 [Benchmarks README](E:/Lumyte/Lumyte.Benchmarks/README.md:27) は2026-09-03のShortRunとして、RenderGraph cache hit 4.105 µs / 6.42 KB、8-pass record 114.6 ns / 56 Bを記録している。今回再計測した値ではない。no-op recorder/immediate backendによるCPU計測なので、実機GPU描画全体の性能を示さない。
 
@@ -509,11 +815,13 @@ API評価の改善順序を工程表へ対応付ける。契約をE2で確定し
 | Graph反復/resize | compile hit/miss、requirements照会、物理plan作成、peak GPU bytes | 同じdevice/構造で不要なnative照会を削減。resize後は必要なcacheだけ無効化 |
 | Resource load/reload/collect | queue長、lock待ち、依存数、収集時間、保持bytes | 1/100/10k件の規模別に計測し、キャンセル/優先度/依存寿命の既存挙動を維持 |
 | Input/Animation | allocated B/update、1/4player、binding/channel数別CPU時間 | 経路別のbaselineを作り、boxing等の削減効果を確認してから採用 |
+| DevTools/OTel: 未接続・監視・編集・低速client/export先停止 | game CPU p95、allocated B/frame、queue/store bytes、帯域、drop/resync、操作待ち時間 | 各予算内へ収束し、通信・export待ちでgame threadを停止させない。traceが欠落しても編集結果の照会・重複抑止が成立する |
+| DevTools画像選択: UI/Scene・viewport切替・連続pick・低速受信 | frame/ID map/snapshot bytes、readback/圧縮時間、転送量、pick応答時間、GPU待機 | 表示画像とpick対象が一致し、期限切れは明示される。保持量が予算内へ戻り、captureがcancel/status・編集結果を塞がない |
 | 長時間実行 | managed/native/GPU bytes、retired bytes、frame p50/p95/p99 | 解放後の利用量が定常上限へ戻り、cacheやdescriptorが単調増加しない |
 
 最初から「全描画0 allocation」「一律30%高速化」を目標にしない。cold start、cache hit、cache miss、resize、device lostを分ける。CPUはBenchmarkDotNet、GCはallocation profiler/counters、GPUは各backendのtimestamp・validation・frame captureで測る。ハードウェア、driver、Release設定、解像度、入力、warmupを記録し、時間比較は同一環境で行う。
 
-### 7.2. APIの使いやすさ
+### 8.2. APIの使いやすさ
 
 人に試してもらうときは、次の課題を新規consumer projectから実行してもらう。
 
@@ -525,21 +833,25 @@ API評価の改善順序を工程表へ対応付ける。契約をE2で確定し
 6. 入力actionでanimation/state transitionを起動する。
 7. backend生成・ホスト接続だけを差し替え、同じ描画・computeコードを別backendで実行する。共通範囲の入力には追加のcapability判定や代替コードが不要であることを確認する。
 8. CommandEncoderで変換・矩形/path clip・layerを入れ子にし、scope内で例外が起きても、外側の描画が元の状態で継続できることを確認する。
+9. C# DevTools ClientとEditorでtargetを選び、UIとSceneの各objectをツリー・画像の両方から選択して、同じInspectorの値を編集・undoする。画像選択でツリーの該当行が開き、ツリー選択で画像の対象が強調されることも確認する。
+10. ゲームをpauseして1tick進め、変更した値と処理結果を調べる。Editor操作からgame処理のtrace/logへ辿り、Collector未接続時にも編集とローカル診断を使えることを確認する。
+11. 遅延した画像の期限切れ、object削除、target切替、応答前の切断を試す。新しいobjectの誤選択・誤編集を防ぎ、同じoperationの結果を再接続後に確認できることを検証する。
 
 初回成功までの時間、必要な概念数、書き直した箇所、実行時例外、実装ソースを読んだ回数を記録する。性能も同時に確認し、短くなったコードが毎フレームのallocation・同期を増やしていないことを検証する。
 
 既存のconsumer/conformance testを基盤にし、テスト専用helperを知らずに使えるQuick Startを作る。コード例は独立consumerとしてcompileする。公開例だけで標準用途を完結できることを確認し、DESIGN文書は内部理解の補助として位置付ける。
 
-## 8. テスト・ビルド・配布の整備
+## 9. テスト・ビルド・配布の整備
 
 - 純粋なunit、OS integration、GPU conformance、browser、performanceを明示して実行する。現在のCategory traitと共通test sourceは活用できる。GPU無しのCIで失敗を隠す自動returnや無条件skipを増やさない。
 - リポジトリ内にCI定義・global.jsonが見当たらない。SDK、Slang、Node、package lockの再現条件と、Windows/Linux/browserで実行するjobを明文化する。外部CIの有無は今回確認していない。
 - native conformanceでは小さい画像の正しさだけでなく、容量境界、失敗途中、再利用、複数device、複数frame、resizeを追加する。実画像全体を固定snapshotにせず、必要な画素領域・描画結果・資源寿命を検証する。
 - clean build、incremental build、publish、pack後のconsumer buildを分ける。Shader.Offlineはbuild toolingとして配り、slang import/includeとtool version/optionsの変更がincremental inputsに入るか確認する。
 - frontendは既存のlint、型検査、VitestをCIで実行する。csprojのbuildだけでfrontendの挙動テストが通ったと扱わない。
+- DevToolsはProtocol/Runtime/C# Clientの決定的なconsumer testと、実MagicOnion・GPU capture/pick・OTLP Collector・DAPの相互運用試験を分ける。v1移行とv2 profileの共有C#契約・MessagePack互換性を確認する。TypeScript/bridgeはEditor内部のテストとして扱い、[D0–D6の異常系・負荷条件](#devtools-roadmap)をgateに加える。
 - API migrationでは、backend生成・ホスト接続だけを差し替える共通consumer sampleを先に作る。64-byte root dataとparameter buffer、syncとasync、所有と借用の使い方を説明する。native固有機能は明示的な拡張の例に置き、共通サンプルは内部の転送方式を選択しない。
 
-## 9. 当面保留するもの
+## 10. 当面保留するもの
 
 全領域の細かいinterface化、全classの別assembly化、全面的なECS化、マルチqueue、全面的なunsafe/pooling化、native pointerを全backendで共通化する設計は、この段階では採用しない。現在の正しさ・利用規模・測定値に対して必要性を判断する。
 
@@ -547,7 +859,7 @@ No Graphics API由来の責務分離とWebGPUの明示的な互換経路は維�
 
 ## 検証補記
 
-本書のテスト結果は初回の構造・性能レビュー時に実行したもの。API評価、方針の改訂、本書への統合は文書のみの変更であり、製品コードの変更やテストの再実行は行っていない。実装変更時にはAGENTS.mdに従い、回帰テストとdotnet test Lumyte.slnxを実行する。
+本書のテスト結果は初回の構造・性能レビュー時に実行したもの。API評価、方針の改訂、DevTools/OpenTelemetryの追加評価と本書への統合は文書のみの変更であり、製品コードの変更やテストの再実行は行っていない。実装変更時にはAGENTS.mdに従い、回帰テストとdotnet test Lumyte.slnxを実行する。
 
 - Frontend型検査: tsconfig.app.json / tsconfig.node.jsonをそれぞれ noEmit、incremental falseで検証し成功。
 - ESLint: 成功。
