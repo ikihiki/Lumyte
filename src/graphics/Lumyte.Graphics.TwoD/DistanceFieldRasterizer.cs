@@ -58,8 +58,8 @@ public sealed class DistanceFieldRasterizer : IDisposable
                 var table = new GpuResourceTable(0, 0, 1);
                 table.SetBuffer(0, view.Id);
                 AtlasRectangle region = entry.Region;
-                GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording()
-                    .Barrier(GpuStage.PixelShader, GpuStage.ColorOutput)
+                using GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
+                commands.Barrier(GpuStage.PixelShader, GpuStage.ColorOutput)
                     .BeginRendering([
                         new(
                             atlasView,

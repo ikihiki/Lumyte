@@ -42,23 +42,40 @@ public sealed unsafe partial class DirectX12Device
         {
             throw new ArgumentException("Semaphore belongs to another backend.", nameof(signal));
         }
+        if (signal.RetrySignalValue != 0) { RecoverSignal(signal); }
         signal.ValidateSignal(signalValue);
 
-        var recorders = new DirectX12Recorder[commandBuffers.Length];
-        for (int index = 0; index < commandBuffers.Length; index++)
+        var textureStates = new Dictionary<TextureRecord, ResourceStates>();
+        var bufferStates = new Dictionary<BufferRecord, ResourceStates>();
+        DirectX12Recorder[] recorders = GpuBackendCommands.PrepareSubmission<DirectX12Recorder>(
+            commandBuffers, recorder => recorder.Owner == this && recorder.ValidateStates(textureStates, bufferStates));
+        // Acquire every native interface before any list can execute.
+        var executables = new ComPtr<ID3D12CommandList>[recorders.Length];
+        try
         {
-            ArgumentNullException.ThrowIfNull(commandBuffers[index]);
-            if (GpuBackendCommands.Finish(commandBuffers[index]) is not DirectX12Recorder recorder || recorder.Owner != this)
+            for (int index = 0; index < commandBuffers.Length; index++)
             {
-                throw new ArgumentException("Command buffer belongs to another backend.", nameof(commandBuffers));
+                executables[index] = recorders[index].Commands.QueryInterface<ID3D12CommandList>();
             }
-            recorders[index] = recorder;
-            ComPtr<ID3D12CommandList> executable = recorder.Commands.QueryInterface<ID3D12CommandList>();
-            try { queue.ExecuteCommandLists(1, ref executable); }
-            finally { executable.Dispose(); }
+            signal.Track(signalValue, recorders);
+            GpuBackendCommands.MarkSubmitted(commandBuffers);
+            foreach (ComPtr<ID3D12CommandList> executable in executables)
+            {
+                var native = executable;
+                queue.ExecuteCommandLists(1, ref native);
+            }
+            foreach (DirectX12Recorder recorder in recorders) { recorder.CommitStates(); }
+            int signalResult = queue.Signal(signal.Fence, signalValue);
+            if (signalResult < 0)
+            {
+                signal.RetrySignalValue = signalValue;
+                SilkMarshal.ThrowHResult(signalResult);
+            }
         }
-        SilkMarshal.ThrowHResult(queue.Signal(signal.Fence, signalValue));
-        signal.Track(signalValue, recorders);
+        finally
+        {
+            foreach (ComPtr<ID3D12CommandList> executable in executables) { executable.Dispose(); }
+        }
     }
 
     private void Wait(DirectX12Semaphore semaphore, ulong value)
@@ -69,7 +86,13 @@ public sealed unsafe partial class DirectX12Device
             throw new ArgumentException("Semaphore belongs to another backend.", nameof(semaphore));
         }
         semaphore.ValidateWait(value);
-        while (semaphore.Fence.GetCompletedValue() < value) { Thread.Yield(); }
+        RecoverSignal(semaphore);
+        while (semaphore.Fence.GetCompletedValue() < value)
+        {
+            CheckDeviceLost(semaphore);
+            Thread.Yield();
+        }
+        CheckDeviceLost(semaphore);
         semaphore.ReleaseCompleted(value);
     }
 
@@ -81,42 +104,29 @@ public sealed unsafe partial class DirectX12Device
             throw new ArgumentException("Semaphore belongs to another backend.", nameof(semaphore));
         }
         semaphore.ValidateWait(value);
+        RecoverSignal(semaphore);
+        CheckDeviceLost(semaphore);
         ulong completed = semaphore.Fence.GetCompletedValue();
         if (completed < value) { return false; }
         semaphore.ReleaseCompleted(completed);
         return true;
     }
 
-    private void Transition(
-        ComPtr<ID3D12GraphicsCommandList> commands,
-        TextureRecord texture,
-        ResourceStates target)
+    private void RecoverSignal(DirectX12Semaphore semaphore)
     {
-        if (texture.State == target) { return; }
-        ResourceTransitionBarrier transition = new(
-            texture.Resource,
-            D3D12.ResourceBarrierAllSubresources,
-            texture.State,
-            target);
-        ResourceBarrier barrier = new(ResourceBarrierType.Transition, ResourceBarrierFlags.None, null, transition);
-        commands.ResourceBarrier(1, in barrier);
-        texture.State = target;
+        CheckDeviceLost(semaphore);
+        if (semaphore.RetrySignalValue == 0) { return; }
+        int result = queue.Signal(semaphore.Fence, semaphore.RetrySignalValue);
+        if (result < 0) { CheckDeviceLost(semaphore); SilkMarshal.ThrowHResult(result); }
+        semaphore.RetrySignalValue = 0;
     }
 
-    private void Transition(
-        ComPtr<ID3D12GraphicsCommandList> commands,
-        BufferRecord buffer,
-        ResourceStates target)
+    private void CheckDeviceLost(DirectX12Semaphore semaphore)
     {
-        if (buffer.State == target) { return; }
-        ResourceTransitionBarrier transition = new(
-            buffer.Resource,
-            D3D12.ResourceBarrierAllSubresources,
-            buffer.State,
-            target);
-        ResourceBarrier barrier = new(ResourceBarrierType.Transition, ResourceBarrierFlags.None, null, transition);
-        commands.ResourceBarrier(1, in barrier);
-        buffer.State = target;
+        int reason = device.GetDeviceRemovedReason();
+        if (reason >= 0) { return; }
+        semaphore.AbortPending();
+        throw new GpuDeviceLostException($"Direct3D 12 device was removed (0x{reason:X8}).");
     }
 
     private ComPtr<ID3D12Resource> CreateCommittedBuffer(HeapType heapType, ulong size, ResourceStates state)
@@ -189,6 +199,8 @@ public sealed unsafe partial class DirectX12Device
         private int writableBufferDescriptorCount;
         private bool hasSamplerHeap;
         private bool disposed;
+        private readonly Dictionary<TextureRecord, (ResourceStates Initial, ResourceStates Current)> textureStates = [];
+        private readonly Dictionary<BufferRecord, (ResourceStates Initial, ResourceStates Current)> bufferStates = [];
 
         public DirectX12Recorder(
             DirectX12Device owner,
@@ -203,6 +215,55 @@ public sealed unsafe partial class DirectX12Device
         public DirectX12Device Owner { get; }
         public ComPtr<ID3D12CommandAllocator> Allocator;
         public ComPtr<ID3D12GraphicsCommandList> Commands;
+
+        private void Transition(TextureRecord texture, ResourceStates target)
+        {
+            var state = textureStates.GetValueOrDefault(texture, (Initial: texture.State, Current: texture.State));
+            RecordTransition(texture.Resource, state.Current, target);
+            textureStates[texture] = (state.Initial, target);
+        }
+
+        private void Transition(BufferRecord buffer, ResourceStates target)
+        {
+            var state = bufferStates.GetValueOrDefault(buffer, (Initial: buffer.State, Current: buffer.State));
+            RecordTransition(buffer.Resource, state.Current, target);
+            bufferStates[buffer] = (state.Initial, target);
+        }
+
+        private void RecordTransition(ComPtr<ID3D12Resource> resource, ResourceStates before, ResourceStates after)
+        {
+            if (before == after) { return; }
+            ResourceTransitionBarrier transition = new(resource, D3D12.ResourceBarrierAllSubresources, before, after);
+            ResourceBarrier barrier = new(ResourceBarrierType.Transition, ResourceBarrierFlags.None, null, transition);
+            Commands.ResourceBarrier(1, in barrier);
+        }
+
+        public bool ValidateStates(Dictionary<TextureRecord, ResourceStates> textures, Dictionary<BufferRecord, ResourceStates> buffers)
+        {
+            foreach (var (texture, state) in textureStates)
+            {
+                if (textures.GetValueOrDefault(texture, texture.State) != state.Initial)
+                {
+                    throw new InvalidOperationException("Texture state changed since recording. Record the command buffer again.");
+                }
+                textures[texture] = state.Current;
+            }
+            foreach (var (buffer, state) in bufferStates)
+            {
+                if (buffers.GetValueOrDefault(buffer, buffer.State) != state.Initial)
+                {
+                    throw new InvalidOperationException("Buffer state changed since recording. Record the command buffer again.");
+                }
+                buffers[buffer] = state.Current;
+            }
+            return true;
+        }
+
+        public void CommitStates()
+        {
+            foreach (var (texture, state) in textureStates) { texture.State = state.Current; }
+            foreach (var (buffer, state) in bufferStates) { buffer.State = state.Current; }
+        }
 
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards)
         {
@@ -256,7 +317,7 @@ public sealed unsafe partial class DirectX12Device
                 GpuColorAttachment attachment = colors[index];
                 TextureViewRecord view = RequireView(attachment.View, DescriptorHeapType.Rtv);
                 TextureRecord texture = Owner.RequireTexture(attachment.View.Texture);
-                Owner.Transition(Commands, texture, ResourceStates.RenderTarget);
+                Transition(texture, ResourceStates.RenderTarget);
                 colorHandles[index] = view.AttachmentHandle;
                 if (attachment.LoadOperation == GpuAttachmentLoadOperation.Clear)
                 {
@@ -274,7 +335,7 @@ public sealed unsafe partial class DirectX12Device
             {
                 TextureViewRecord view = RequireView(depthAttachment.View, DescriptorHeapType.Dsv);
                 TextureRecord texture = Owner.RequireTexture(depthAttachment.View.Texture);
-                Owner.Transition(Commands, texture, ResourceStates.DepthWrite);
+                Transition(texture, ResourceStates.DepthWrite);
                 depthHandle = view.AttachmentHandle;
                 depthPointer = &depthHandle;
                 if (depthAttachment.LoadOperation == GpuAttachmentLoadOperation.Clear)
@@ -363,7 +424,7 @@ public sealed unsafe partial class DirectX12Device
                 staging.Unmap(0, (Silk.NET.Direct3D12.Range*)null);
             }
 
-            Owner.Transition(Commands, texture, ResourceStates.CopyDest);
+            Transition(texture, ResourceStates.CopyDest);
             var placed = new PlacedSubresourceFootprint(
                 0,
                 new SubresourceFootprint(
@@ -390,7 +451,7 @@ public sealed unsafe partial class DirectX12Device
             ComPtr<ID3D12Resource> staging = Owner.CreateCommittedBuffer(
                 HeapType.Readback, stagingSize, ResourceStates.CopyDest);
             temporaryResources.Add(staging);
-            Owner.Transition(Commands, texture, ResourceStates.CopySource);
+            Transition(texture, ResourceStates.CopySource);
             var placed = new PlacedSubresourceFootprint(
                 0,
                 new SubresourceFootprint(
@@ -459,7 +520,7 @@ public sealed unsafe partial class DirectX12Device
                         throw new ArgumentException($"Texture slot {slot} requires a read-only view.", nameof(table));
                     }
                     TextureRecord texture = Owner.RequireTexture(view.Texture);
-                    Owner.Transition(Commands, texture, ResourceStates.AllShaderResource);
+                    Transition(texture, ResourceStates.AllShaderResource);
                     CpuDescriptorHandle destination = Owner.Offset(
                         resourceHeap.GetCPUDescriptorHandleForHeapStart(), checked((uint)slot), DescriptorHeapType.CbvSrvUav);
                     var srv = new ShaderResourceViewDesc(
@@ -485,7 +546,7 @@ public sealed unsafe partial class DirectX12Device
                         throw new ArgumentException($"Buffer slot {slot} requires a read-only view.", nameof(table));
                     }
                     BufferRecord buffer = Owner.RequireBuffer(view.Buffer);
-                    Owner.Transition(Commands, buffer, ResourceStates.AllShaderResource);
+                    Transition(buffer, ResourceStates.AllShaderResource);
                     CpuDescriptorHandle destination = Owner.Offset(
                         resourceHeap.GetCPUDescriptorHandleForHeapStart(),
                         checked((uint)(bufferDescriptorOffset + slot)),
@@ -513,7 +574,7 @@ public sealed unsafe partial class DirectX12Device
                             nameof(table));
                     }
                     TextureRecord texture = Owner.RequireTexture(view.Texture);
-                    Owner.Transition(Commands, texture, ResourceStates.UnorderedAccess);
+                    Transition(texture, ResourceStates.UnorderedAccess);
                     CpuDescriptorHandle destination = Owner.Offset(
                         resourceHeap.GetCPUDescriptorHandleForHeapStart(),
                         checked((uint)(storageTextureDescriptorOffset + slot)),
@@ -539,7 +600,7 @@ public sealed unsafe partial class DirectX12Device
                     }
                     GpuBufferView view = registeredView.View;
                     BufferRecord buffer = Owner.RequireBuffer(view.Buffer);
-                    Owner.Transition(Commands, buffer, ResourceStates.UnorderedAccess);
+                    Transition(buffer, ResourceStates.UnorderedAccess);
                     CpuDescriptorHandle destination = Owner.Offset(
                         resourceHeap.GetCPUDescriptorHandleForHeapStart(),
                         checked((uint)(writableBufferDescriptorOffset + slot)),
@@ -633,11 +694,12 @@ public sealed unsafe partial class DirectX12Device
         }
 
         public void End() => SilkMarshal.ThrowHResult(Commands.Close());
+        public void Abort() => Dispose();
 
         public void Complete()
         {
-            foreach (Action action in completionActions) { action(); }
-            Dispose();
+            try { foreach (Action action in completionActions) { action(); } }
+            finally { Dispose(); }
         }
 
         public void Dispose()
@@ -778,6 +840,17 @@ public sealed unsafe partial class DirectX12Device
 
         public DirectX12Device Owner { get; }
         public ComPtr<ID3D12Fence> Fence;
+        public ulong RetrySignalValue;
+
+        public void AbortPending()
+        {
+            foreach (var records in pending.Values)
+            {
+                foreach (DirectX12Recorder recorder in records) { recorder.Abort(); }
+            }
+            pending.Clear();
+            RetrySignalValue = 0;
+        }
 
         public void ValidateSignal(ulong value)
         {
@@ -799,17 +872,23 @@ public sealed unsafe partial class DirectX12Device
 
         public void Track(ulong value, DirectX12Recorder[] recorders)
         {
-            lastSignalValue = value;
             pending.Add(value, [.. recorders]);
+            lastSignalValue = value;
         }
 
         public void ReleaseCompleted(ulong value)
         {
+            List<Exception>? failures = null;
             foreach (ulong key in pending.Keys.TakeWhile(key => key <= value).ToArray())
             {
-                foreach (DirectX12Recorder recorder in pending[key]) { recorder.Complete(); }
-                pending.Remove(key);
+                pending.Remove(key, out var records);
+                foreach (DirectX12Recorder recorder in records!)
+                {
+                    try { recorder.Complete(); }
+                    catch (Exception error) { (failures ??= []).Add(error); }
+                }
             }
+            if (failures is not null) { throw new AggregateException(failures); }
         }
 
         public override void Dispose()

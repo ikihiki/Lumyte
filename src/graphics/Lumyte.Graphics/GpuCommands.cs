@@ -67,14 +67,18 @@ public interface IGpuCommandRecorder
     void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ)
         => throw new NotSupportedException("Compute dispatch is not implemented by this backend.");
     void End();
+    /// <summary>Releases an unsubmitted recording without executing completion actions.</summary>
+    void Abort() { }
 }
 
+public enum GpuCommandBufferState { Recording, Finished, Submitted, Aborted }
+
 /// <summary>An explicit, RenderGraph-independent sequence of GPU commands.</summary>
-public sealed class GpuCommandBuffer
+public sealed class GpuCommandBuffer : IDisposable
 {
     private readonly IGpuCommandRecorder recorder;
     private bool rendering;
-    private bool submitted;
+    public GpuCommandBufferState State { get; private set; }
 
     internal GpuCommandBuffer(IGpuCommandRecorder recorder) =>
         this.recorder = recorder ?? throw new ArgumentNullException(nameof(recorder));
@@ -243,10 +247,32 @@ public sealed class GpuCommandBuffer
     {
         VerifyOpen();
         if (rendering) { throw new InvalidOperationException("Rendering must be ended before submission."); }
-        recorder.End();
-        submitted = true;
+        try { recorder.End(); }
+        catch { Dispose(); throw; }
+        State = GpuCommandBufferState.Finished;
         return recorder;
     }
+
+    internal void ValidateSubmission()
+    {
+        if (State is not (GpuCommandBufferState.Recording or GpuCommandBufferState.Finished))
+        {
+            throw new InvalidOperationException($"Cannot submit a command buffer in state {State}.");
+        }
+        if (rendering) { throw new InvalidOperationException("Rendering must be ended before submission."); }
+    }
+
+    internal void MarkSubmitted() => State = GpuCommandBufferState.Submitted;
+
+    /// <summary>Releases unsubmitted native recording resources. Submitted work is owned by its queue.</summary>
+    public void Dispose()
+    {
+        if (State is GpuCommandBufferState.Submitted or GpuCommandBufferState.Aborted) { return; }
+        State = GpuCommandBufferState.Aborted;
+        recorder.Abort();
+    }
+
+    public void Abort() => Dispose();
 
     internal IGpuCommandRecorder Recorder => recorder;
 
@@ -264,7 +290,10 @@ public sealed class GpuCommandBuffer
 
     private void VerifyOpen()
     {
-        if (submitted) { throw new InvalidOperationException("Transient command buffer has already been submitted."); }
+        if (State != GpuCommandBufferState.Recording)
+        {
+            throw new InvalidOperationException($"Cannot record a command buffer in state {State}.");
+        }
     }
 }
 

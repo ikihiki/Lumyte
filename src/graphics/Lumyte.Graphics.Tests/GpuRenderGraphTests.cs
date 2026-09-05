@@ -871,6 +871,47 @@ public sealed class GpuRenderGraphTests
         public void End() { }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SubmittedFailureRetainsResourcesUntilCompletion(bool synchronous)
+    {
+        var backend = new TrackingBackend();
+        using var retirements = new GpuRetirementQueue(backend);
+        var graph = new GpuRenderGraph();
+        var texture = graph.CreateTexture("export", new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
+        graph.AddPass("write", texture, static (_, _) => { }).Write(texture, GpuStage.ColorOutput);
+        graph.ExportTexture(texture);
+        backend.Queue.FailAfterSubmission = true;
+
+        using GpuSubmissionException failure = Assert.Throws<GpuSubmissionException>(() =>
+            synchronous ? graph.Compile().Execute(backend) : graph.Compile().ExecuteAsync(backend, retirements));
+
+        Assert.Equal(0, backend.DestroyedTextureCount);
+        Assert.IsType<InvalidOperationException>(failure.InnerException);
+        Assert.False(failure.Completion.IsComplete);
+        failure.Completion.Wait();
+        Assert.Equal(1, backend.DestroyedTextureCount);
+    }
+
+    [Fact]
+    public void DeviceLossReleasesAllRetiredResources()
+    {
+        var backend = new TrackingBackend();
+        using var retirements = new GpuRetirementQueue(backend);
+        var graph = new GpuRenderGraph();
+        var texture = graph.CreateTexture("transient", new(4, 4, GpuFormat.Rgba8Unorm, GpuTextureUsage.ColorAttachment));
+        graph.AddPass("write", texture, static (_, _) => { }, GpuRenderGraphPassFlags.NeverCull)
+            .Write(texture, GpuStage.ColorOutput);
+        using GpuRenderGraphExecution execution = graph.Compile().ExecuteAsync(backend, retirements);
+        backend.Queue.DeviceLost = true;
+
+        Assert.Throws<GpuDeviceLostException>(execution.WaitForCompletion);
+
+        Assert.Equal(1, backend.DestroyedTextureCount);
+        Assert.Equal(0, retirements.InFlightSubmissionCount);
+    }
+
     private sealed class TrackingBackend : IGpuBackend
     {
         private readonly HashSet<GpuTextureHandle> textures = [];
@@ -907,6 +948,8 @@ public sealed class GpuRenderGraphTests
         public TrackingQueue(IGpuCommandRecorder recorder) => this.recorder = recorder;
 
         public int WaitCount { get; private set; }
+        public bool FailAfterSubmission { get; set; }
+        public bool DeviceLost { get; set; }
 
         public GpuCommandBuffer StartCommandRecording() => new(recorder);
 
@@ -922,10 +965,13 @@ public sealed class GpuRenderGraphTests
             var semaphore = (TrackingSemaphore)signalSemaphore;
             semaphore.Value = signalValue;
             lastSubmitted = semaphore;
+            GpuBackendCommands.MarkSubmitted(commandBuffers);
+            if (FailAfterSubmission) { throw new InvalidOperationException("Injected failure after submission."); }
         }
 
         public void Wait(GpuSemaphore semaphore, ulong value)
         {
+            if (DeviceLost) { throw new GpuDeviceLostException("Injected device loss."); }
             var tracked = (TrackingSemaphore)semaphore;
             Assert.True(tracked.Value >= value);
             WaitCount++;

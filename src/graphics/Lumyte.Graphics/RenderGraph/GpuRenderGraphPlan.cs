@@ -57,8 +57,16 @@ public sealed class GpuRenderGraphPlan
         }
 
         GpuCommandBuffer commands = queue.StartCommandRecording();
-        RecordCommands(commands, null, GetImportedRuntimes());
-        return commands;
+        try
+        {
+            RecordCommands(commands, null, GetImportedRuntimes());
+            return commands;
+        }
+        catch
+        {
+            commands.Dispose();
+            throw;
+        }
     }
 
     public GpuRenderGraphExecution Execute(IGpuBackend backend)
@@ -107,9 +115,37 @@ public sealed class GpuRenderGraphPlan
         GpuRetirementQueue? retirementQueue)
     {
         ArgumentNullException.ThrowIfNull(backend);
+        if (retirementQueue is null)
+        {
+            var ownedQueue = new GpuRetirementQueue(backend);
+            GpuRenderGraphExecution? execution = null;
+            try
+            {
+                execution = Execute(backend, arena, ownsArena, ownedQueue);
+                execution.WaitForCompletion();
+                ownedQueue.Dispose();
+                return execution;
+            }
+            catch (GpuSubmissionException failure)
+            {
+                failure.OwnQueue(ownedQueue);
+                throw;
+            }
+            catch (Exception error)
+            {
+                execution?.Dispose();
+                if (execution is not null && ownedQueue.InFlightSubmissionCount != 0)
+                {
+                    var failure = new GpuSubmissionException(execution.Completion, error);
+                    failure.OwnQueue(ownedQueue);
+                    throw failure;
+                }
+                ownedQueue.Dispose();
+                throw;
+            }
+        }
         var runtimes = new Dictionary<GpuRenderGraphResource, GpuRenderGraphResourceRuntime>();
         var slotAllocations = new Dictionary<int, GpuMemoryAllocation>();
-        var releasedSlots = new HashSet<int>();
         var importLeases = new List<IDisposable>();
         bool ownershipTransferred = false;
         try
@@ -166,7 +202,7 @@ public sealed class GpuRenderGraphPlan
             }
 
             IGpuQueue queue = backend.MainQueue;
-            GpuCommandBuffer commands = queue.StartCommandRecording();
+            using GpuCommandBuffer commands = queue.StartCommandRecording();
             IReadOnlyDictionary<string, int> passIndices = Passes
                 .Select((pass, index) => (pass.Name, index))
                 .ToDictionary(pair => pair.Name, pair => pair.index, StringComparer.Ordinal);
@@ -198,34 +234,6 @@ public sealed class GpuRenderGraphPlan
                 }
             }
 
-            if (retirementQueue is null)
-            {
-                using GpuSemaphore completion = queue.CreateSemaphore();
-                queue.Submit([commands], completion, 1);
-                queue.Wait(completion, 1);
-                DestroyViews(backend, runtimes.Values);
-                foreach (GpuRenderGraphResourceRuntime runtime in nonExported)
-                {
-                    runtime.Dispose(backend);
-                }
-                if (arena is not null)
-                {
-                    foreach ((int slot, GpuMemoryAllocation allocation) in releasableAllocations)
-                    {
-                        arena.Release(allocation);
-                        releasedSlots.Add(slot);
-                    }
-                    if (retainedAllocations.Count == 0)
-                    {
-                        if (ownsArena) { arena.Dispose(); }
-                        arena = null;
-                    }
-                }
-                foreach (IDisposable lease in importLeases) { lease.Dispose(); }
-                importLeases.Clear();
-                return new(backend, exported, arena, [.. retainedAllocations], ownsArena);
-            }
-
             GpuRenderGraphResourceRuntime[] allRuntimes = runtimes.Values.ToArray();
             GpuPersistentArena? submittedArena = arena;
             var completionActions = new List<Action>();
@@ -255,7 +263,17 @@ public sealed class GpuRenderGraphPlan
             {
                 completionActions.Add(lease.Dispose);
             }
-            GpuSubmissionToken submission = retirementQueue.Submit(commands, completionActions);
+            GpuSubmissionToken submission;
+            try { submission = retirementQueue.Submit(commands, completionActions); }
+            catch (GpuSubmissionException failure)
+            {
+                ownershipTransferred = true;
+                var failedExecution = new GpuRenderGraphExecution(
+                    backend, exported, retainedAllocations.Count == 0 ? null : arena,
+                    [.. retainedAllocations], ownsArena, retirementQueue, failure.Completion);
+                failedExecution.Dispose();
+                throw;
+            }
             ownershipTransferred = true;
             if (retainedAllocations.Count == 0) { arena = null; }
             return new(
@@ -279,7 +297,7 @@ public sealed class GpuRenderGraphPlan
             {
                 foreach ((int slot, GpuMemoryAllocation allocation) in slotAllocations)
                 {
-                    if (!releasedSlots.Contains(slot)) { arena.Release(allocation); }
+                    arena.Release(allocation);
                 }
                 if (ownsArena) { arena.Dispose(); }
             }

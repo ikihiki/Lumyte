@@ -559,7 +559,7 @@ public sealed unsafe partial class DirectX12Device
     private GpuDescriptorHandle Offset(GpuDescriptorHandle start, uint index, DescriptorHeapType type)
         => new(start.Ptr + checked((ulong)index * device.GetDescriptorHandleIncrementSize(type)));
 
-    private ulong NextHandle() => nextHandle++;
+    private ulong NextHandle() => GpuHandleIds.Allocate();
     private static ulong Align(ulong value, ulong alignment) => checked((value + alignment - 1) & ~(alignment - 1));
     private void VerifyNotDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
 

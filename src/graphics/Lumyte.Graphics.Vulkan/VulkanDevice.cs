@@ -20,6 +20,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     private PhysicalDeviceMemoryProperties memoryProperties;
     private readonly Dictionary<ulong, MemoryRecord> memories = [];
     private readonly Dictionary<ulong, ImageRecord> images = [];
+    private readonly Dictionary<nint, Dictionary<ulong, (ImageLayout Initial, ImageRecord Current)>> recordedImages = [];
     private readonly Dictionary<ulong, ImageView> views = [];
     private readonly Dictionary<ulong, GpuTextureView> textureViews = [];
     private readonly Dictionary<ulong, BufferRecord> buffers = [];
@@ -32,11 +33,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     private DescriptorSetLayout shaderBufferDescriptorLayout;
     private DescriptorSetLayout storageTextureDescriptorLayout;
     private DescriptorSetLayout writableBufferDescriptorLayout;
-    private DescriptorPool descriptorPool;
+    private readonly List<DescriptorPoolPage> descriptorPoolPages = [];
+    private readonly Dictionary<ulong, DescriptorPoolPage> descriptorSetPages = [];
     private uint lastImageMemoryTypeBits = uint.MaxValue;
     private uint lastBufferMemoryTypeBits = uint.MaxValue;
     private uint queueFamilyIndex;
-    private ulong nextResourceId = 1;
     private bool disposed;
 
     private VulkanDevice(Vk vk)
@@ -45,6 +46,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     }
 
     public string DeviceName { get; private set; } = string.Empty;
+    public int DescriptorPoolPageCount => descriptorPoolPages.Count;
     public IGpuQueue MainQueue { get; private set; } = null!;
     public nint InstanceHandle => instance.Handle;
     public GpuBackendCapabilities Capabilities =>
@@ -142,8 +144,9 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             cpuAddress = (nint)mapped;
         }
 
-        memories.Add(memory.Handle, new(memory, size, kind, cpuAddress, memoryType));
-        return new(size, alignment, kind, cpuAddress, new(memory.Handle, 0, size));
+        ulong id = NextResourceId();
+        memories.Add(id, new(memory, size, kind, cpuAddress, memoryType));
+        return new(size, alignment, kind, cpuAddress, new(id, 0, size));
     }
 
     public bool TryCombineMemoryCompatibility(ulong left, ulong right, out ulong combined)
@@ -232,7 +235,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             }
 
             Check(vk.BindImageMemory(device, image, memory.Memory, allocation.MemoryAddress.Offset), "vkBindImageMemory");
-            var handle = new GpuTextureHandle(image.Handle);
+            var handle = new GpuTextureHandle(NextResourceId());
             images.Add(handle.Value, new(
                 image,
                 description,
@@ -358,7 +361,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
     internal GpuTextureView RegisterSwapchainImage(Image image, GpuTextureDescription description, ImageView view)
     {
-        var texture = new GpuTextureHandle(image.Handle);
+        var texture = new GpuTextureHandle(NextResourceId());
         images.Add(texture.Value, new(image, description, ImageLayout.Undefined, false));
         ulong id = NextResourceId();
         views.Add(id, view);
@@ -385,6 +388,10 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
     internal CommandBuffer PreparePresent(GpuCommandBuffer commands, GpuTextureHandle texture)
     {
+        if (commands.State != GpuCommandBufferState.Recording)
+        {
+            throw new InvalidOperationException("Presentation requires an open command recording.");
+        }
         if (GpuBackendCommands.GetRecorder(commands) is not VulkanRecorder recorder || recorder.Owner != this)
         {
             throw new ArgumentException("Command buffer belongs to another backend.", nameof(commands));
@@ -395,10 +402,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Swapchain image is not registered.", nameof(texture));
         }
 
+        image = GetRecordedImage(recorder.CommandBuffer, texture.Value);
         Transition(recorder.CommandBuffer, image.Image, image.Layout, ImageLayout.PresentSrcKhr,
             PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.ColorAttachmentWriteBit,
             PipelineStageFlags2.BottomOfPipeBit, 0);
-        images[texture.Value] = image with { Layout = ImageLayout.PresentSrcKhr };
+        SetRecordedImage(recorder.CommandBuffer, texture.Value, image with { Layout = ImageLayout.PresentSrcKhr });
         return recorder.CommandBuffer;
     }
 
@@ -443,7 +451,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             }
 
             Check(vk.BindBufferMemory(device, buffer, memory.Memory, allocation.MemoryAddress.Offset), "vkBindBufferMemory");
-            var handle = new GpuBufferHandle(buffer.Handle, description.Size);
+            var handle = new GpuBufferHandle(NextResourceId(), description.Size);
             buffers.Add(handle.Value, new(
                 buffer,
                 description,
@@ -729,7 +737,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                     Layout = layout,
                 };
                 Check(vk.CreateGraphicsPipelines(device, default, 1, in create, null, out VkPipeline pipeline), "vkCreateGraphicsPipelines");
-                var handle = new GpuRasterPipelineHandle(pipeline.Handle);
+                var handle = new GpuRasterPipelineHandle(NextResourceId());
                 pipelines.Add(handle.Value, new(pipeline, layout));
                 layout = default;
                 return handle;
@@ -810,7 +818,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 Check(vk.CreateComputePipelines(
                     device, default, 1, in create, null, out VkPipeline pipeline),
                     "vkCreateComputePipelines");
-                var handle = new GpuComputePipelineHandle(pipeline.Handle);
+                var handle = new GpuComputePipelineHandle(NextResourceId());
                 pipelines.Add(handle.Value, new(pipeline, layout));
                 layout = default;
                 return handle;
@@ -859,17 +867,14 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("At least one command buffer is required.", nameof(commands));
         }
         signal.ValidateSignal(signalValue);
+        var layouts = new Dictionary<ulong, ImageLayout>();
+        VulkanRecorder[] recorders = GpuBackendCommands.PrepareSubmission<VulkanRecorder>(
+            commands, recorder => recorder.Owner == this && ValidateRecordedImages(recorder.CommandBuffer, layouts));
 
         CommandBuffer[] native = new CommandBuffer[commands.Length];
         for (int index = 0; index < commands.Length; index++)
         {
-            ArgumentNullException.ThrowIfNull(commands[index]);
-            if (GpuBackendCommands.Finish(commands[index]) is not VulkanRecorder recorder || recorder.Owner != this)
-            {
-                throw new ArgumentException("Command buffer belongs to another backend.", nameof(commands));
-            }
-
-            native[index] = recorder.CommandBuffer;
+            native[index] = recorders[index].CommandBuffer;
         }
 
         ulong value = signalValue;
@@ -891,9 +896,16 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 SignalSemaphoreCount = 1,
                 PSignalSemaphores = &semaphore,
             };
-            Check(vk.QueueSubmit(queue, 1, in submit, default), "vkQueueSubmit");
+            signal.Track(signalValue, native);
+            Result result = vk.QueueSubmit(queue, 1, in submit, default);
+            if (result != Result.Success)
+            {
+                signal.Untrack(signalValue);
+                Check(result, "vkQueueSubmit");
+            }
         }
-        signal.Track(signalValue, native);
+        GpuBackendCommands.MarkSubmitted(commands);
+        foreach (VulkanRecorder recorder in recorders) { CommitRecordedImages(recorder.CommandBuffer); }
     }
 
     private void Wait(VulkanSemaphore semaphore, ulong value)
@@ -908,7 +920,13 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             PSemaphores = &handle,
             PValues = &value,
         };
-        Check(vk.WaitSemaphores(device, in wait, ulong.MaxValue), "vkWaitSemaphores");
+        Result result = vk.WaitSemaphores(device, in wait, ulong.MaxValue);
+        if (result == Result.ErrorDeviceLost)
+        {
+            semaphore.ReleaseCompleted(ulong.MaxValue);
+            throw new GpuDeviceLostException("Vulkan device was lost while waiting for commands.");
+        }
+        Check(result, "vkWaitSemaphores");
         semaphore.ReleaseCompleted(value);
     }
 
@@ -916,8 +934,13 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     {
         VerifyNotDisposed();
         semaphore.ValidateWait(value);
-        Check(vk.GetSemaphoreCounterValue(device, semaphore.Handle, out ulong completed),
-            "vkGetSemaphoreCounterValue");
+        Result result = vk.GetSemaphoreCounterValue(device, semaphore.Handle, out ulong completed);
+        if (result == Result.ErrorDeviceLost)
+        {
+            semaphore.ReleaseCompleted(ulong.MaxValue);
+            throw new GpuDeviceLostException("Vulkan device was lost while polling commands.");
+        }
+        Check(result, "vkGetSemaphoreCounterValue");
         if (completed < value) { return false; }
         semaphore.ReleaseCompleted(completed);
         return true;
@@ -956,10 +979,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Rendering attachment does not belong to this Vulkan device.", nameof(colors));
         }
 
+        record = GetRecordedImage(commandBuffer, attachment.View.Texture.Value);
         Transition(commandBuffer, record.Image, record.Layout, ImageLayout.ColorAttachmentOptimal,
             PipelineStageFlags2.TopOfPipeBit, 0, PipelineStageFlags2.ColorAttachmentOutputBit,
             AccessFlags2.ColorAttachmentReadBit | AccessFlags2.ColorAttachmentWriteBit);
-        images[attachment.View.Texture.Value] = record with { Layout = ImageLayout.ColorAttachmentOptimal };
+        SetRecordedImage(commandBuffer, attachment.View.Texture.Value, record with { Layout = ImageLayout.ColorAttachmentOptimal });
 
         var nativeAttachment = new RenderingAttachmentInfo
         {
@@ -994,6 +1018,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 throw new ArgumentException("Depth-stencil attachment dimensions must match the color attachment.", nameof(depth));
             }
 
+            depthRecord = GetRecordedImage(commandBuffer, depthAttachment.View.Texture.Value);
             GpuFormat depthFormat = depthAttachment.View.Description.Format;
             ImageAspectFlags depthAspect = Aspect(depthFormat);
             Transition(
@@ -1006,10 +1031,10 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit,
                 AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit,
                 depthAspect);
-            images[depthAttachment.View.Texture.Value] = depthRecord with
+            SetRecordedImage(commandBuffer, depthAttachment.View.Texture.Value, depthRecord with
             {
                 Layout = ImageLayout.DepthStencilAttachmentOptimal,
-            };
+            });
             nativeDepthAttachment = new()
             {
                 SType = StructureType.RenderingAttachmentInfo,
@@ -1073,10 +1098,11 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Copy footprint is incompatible with the source texture.", nameof(footprint));
         }
 
+        image = GetRecordedImage(commandBuffer, source.Value);
         Transition(commandBuffer, image.Image, image.Layout, ImageLayout.TransferSrcOptimal,
             PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.ColorAttachmentWriteBit,
             PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit);
-        images[source.Value] = image with { Layout = ImageLayout.TransferSrcOptimal };
+        SetRecordedImage(commandBuffer, source.Value, image with { Layout = ImageLayout.TransferSrcOptimal });
 
         var region = new BufferImageCopy
         {
@@ -1117,6 +1143,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             throw new ArgumentException("Copy footprint is incompatible with the destination texture.", nameof(footprint));
         }
 
+        image = GetRecordedImage(commandBuffer, destination.Value);
         Transition(commandBuffer, image.Image, image.Layout, ImageLayout.TransferDstOptimal,
             PipelineStageFlags2.TopOfPipeBit, 0,
             PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit);
@@ -1131,7 +1158,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         Transition(commandBuffer, image.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
             PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit,
             PipelineStageFlags2.FragmentShaderBit, AccessFlags2.ShaderReadBit);
-        images[destination.Value] = image with { Layout = ImageLayout.ShaderReadOnlyOptimal };
+        SetRecordedImage(commandBuffer, destination.Value, image with { Layout = ImageLayout.ShaderReadOnlyOptimal });
     }
 
     private void Initialize(uint extensionCount, byte** extensionNames)
@@ -1322,22 +1349,6 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         Check(vk.CreateDescriptorSetLayout(
             device, in writableBufferLayoutInfo, null, out writableBufferDescriptorLayout),
             "vkCreateDescriptorSetLayout");
-        DescriptorPoolSize* poolSizes = stackalloc DescriptorPoolSize[4]
-        {
-            new(DescriptorType.SampledImage, 1024),
-            new(DescriptorType.Sampler, 1024),
-            new(DescriptorType.StorageBuffer, 1024),
-            new(DescriptorType.StorageImage, 1024),
-        };
-        var poolInfo = new DescriptorPoolCreateInfo
-        {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-            MaxSets = 1024,
-            PoolSizeCount = 4,
-            PPoolSizes = poolSizes,
-        };
-        Check(vk.CreateDescriptorPool(device, in poolInfo, null, out descriptorPool), "vkCreateDescriptorPool");
         var commandPoolInfo = new CommandPoolCreateInfo
         {
             SType = StructureType.CommandPoolCreateInfo,
@@ -1669,7 +1680,122 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
 
     private void VerifyNotDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
 
-    private ulong NextResourceId() => nextResourceId++;
+    private ulong NextResourceId() => GpuHandleIds.Allocate();
+
+    private ImageRecord GetRecordedImage(CommandBuffer commands, ulong id)
+    {
+        if (!recordedImages.TryGetValue(commands.Handle, out var states))
+        {
+            states = [];
+            recordedImages.Add(commands.Handle, states);
+        }
+        if (!states.TryGetValue(id, out var state))
+        {
+            ImageRecord image = images[id];
+            state = (image.Layout, image);
+            states.Add(id, state);
+        }
+        return state.Current;
+    }
+
+    private void SetRecordedImage(CommandBuffer commands, ulong id, ImageRecord image)
+    {
+        GetRecordedImage(commands, id);
+        var states = recordedImages[commands.Handle];
+        states[id] = (states[id].Initial, image);
+    }
+
+    internal bool ValidateRecordedImages(CommandBuffer commands, Dictionary<ulong, ImageLayout> layouts)
+    {
+        if (!recordedImages.TryGetValue(commands.Handle, out var states)) { return true; }
+        foreach (var (id, state) in states)
+        {
+            ImageLayout actual = layouts.TryGetValue(id, out var layout) ? layout : images[id].Layout;
+            if (actual != state.Initial)
+            {
+                throw new InvalidOperationException("Texture layout changed since recording. Record the command buffer again.");
+            }
+            layouts[id] = state.Current.Layout;
+        }
+        return true;
+    }
+
+    internal void CommitRecordedImages(CommandBuffer commands)
+    {
+        if (!recordedImages.Remove(commands.Handle, out var states)) { return; }
+        foreach (var (id, state) in states) { images[id] = state.Current; }
+    }
+
+    private sealed class DescriptorPoolPage(DescriptorPool pool)
+    {
+        // Every layout contains 64 descriptors. Limiting total live sets also bounds
+        // the shared storage-buffer budget used by the read-only and writable tables.
+        public const int Capacity = 16;
+        public DescriptorPool Pool { get; } = pool;
+        public int LiveSets;
+        public bool Exhausted;
+    }
+
+    private DescriptorPoolPage CreateDescriptorPoolPage()
+    {
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4]
+        {
+            new(DescriptorType.SampledImage, MaximumShaderDescriptors * DescriptorPoolPage.Capacity),
+            new(DescriptorType.Sampler, MaximumShaderDescriptors * DescriptorPoolPage.Capacity),
+            new(DescriptorType.StorageBuffer, MaximumShaderDescriptors * DescriptorPoolPage.Capacity),
+            new(DescriptorType.StorageImage, MaximumShaderDescriptors * DescriptorPoolPage.Capacity),
+        };
+        var create = new DescriptorPoolCreateInfo
+        {
+            SType = StructureType.DescriptorPoolCreateInfo,
+            Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
+            MaxSets = DescriptorPoolPage.Capacity,
+            PoolSizeCount = 4,
+            PPoolSizes = sizes,
+        };
+        Check(vk.CreateDescriptorPool(device, in create, null, out DescriptorPool pool), "vkCreateDescriptorPool");
+        var page = new DescriptorPoolPage(pool);
+        descriptorPoolPages.Add(page);
+        return page;
+    }
+
+    private DescriptorSet AllocateDescriptorSet(CommandBuffer commands, DescriptorSetLayout layout)
+    {
+        foreach (DescriptorPoolPage page in descriptorPoolPages)
+        {
+            if (page.Exhausted || page.LiveSets == DescriptorPoolPage.Capacity) { continue; }
+            Result result = TryAllocate(page, layout, out DescriptorSet set);
+            if (result == Result.Success) { return Track(page, set); }
+            if (result is not (Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool))
+            {
+                Check(result, "vkAllocateDescriptorSets");
+            }
+            page.Exhausted = true;
+        }
+        DescriptorPoolPage added = CreateDescriptorPoolPage();
+        Check(TryAllocate(added, layout, out DescriptorSet allocated), "vkAllocateDescriptorSets");
+        return Track(added, allocated);
+
+        DescriptorSet Track(DescriptorPoolPage page, DescriptorSet set)
+        {
+            page.LiveSets++;
+            descriptorSetPages.Add(set.Handle, page);
+            TrackDescriptorSet(commands, set);
+            return set;
+        }
+    }
+
+    private Result TryAllocate(DescriptorPoolPage page, DescriptorSetLayout layout, out DescriptorSet set)
+    {
+        var allocate = new DescriptorSetAllocateInfo
+        {
+            SType = StructureType.DescriptorSetAllocateInfo,
+            DescriptorPool = page.Pool,
+            DescriptorSetCount = 1,
+            PSetLayouts = &layout,
+        };
+        return vk.AllocateDescriptorSets(device, in allocate, out set);
+    }
 
     private void TrackDescriptorSet(CommandBuffer commandBuffer, DescriptorSet set)
     {
@@ -1686,7 +1812,16 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
         if (!commandDescriptorSets.Remove(commandBuffer.Handle, out List<DescriptorSet>? sets)) { return; }
         foreach (DescriptorSet set in sets)
         {
-            Check(vk.FreeDescriptorSets(device, descriptorPool, 1, in set), "vkFreeDescriptorSets");
+            DescriptorPoolPage page = descriptorSetPages[set.Handle];
+            Result freed = vk.FreeDescriptorSets(device, page.Pool, 1, in set);
+            if (freed != Result.ErrorDeviceLost) { Check(freed, "vkFreeDescriptorSets"); }
+            descriptorSetPages.Remove(set.Handle);
+            if (--page.LiveSets == 0)
+            {
+                Result reset = vk.ResetDescriptorPool(device, page.Pool, 0);
+                if (reset != Result.ErrorDeviceLost) { Check(reset, "vkResetDescriptorPool"); }
+                page.Exhausted = false;
+            }
         }
     }
 
@@ -1720,8 +1855,8 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 if (memory.CpuAddress != 0) { vk.UnmapMemory(device, memory.Memory); }
                 vk.FreeMemory(device, memory.Memory, null);
             }
-            if (descriptorPool.Handle != 0)
-            { vk.DestroyDescriptorPool(device, descriptorPool, null); }
+            foreach (DescriptorPoolPage page in descriptorPoolPages)
+            { vk.DestroyDescriptorPool(device, page.Pool, null); }
             if (textureDescriptorLayout.Handle != 0)
             { vk.DestroyDescriptorSetLayout(device, textureDescriptorLayout, null); }
             if (samplerDescriptorLayout.Handle != 0)
@@ -1894,7 +2029,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                     {
                         throw new ArgumentException($"Texture slot {slot} does not belong to this Vulkan device.", nameof(table));
                     }
-                    ImageRecord image = Owner.images[registeredView.Texture.Value];
+                    ImageRecord image = Owner.GetRecordedImage(CommandBuffer, registeredView.Texture.Value);
                     if (image.Layout != ImageLayout.ShaderReadOnlyOptimal)
                     {
                         Owner.Transition(
@@ -1906,7 +2041,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                             AccessFlags2.MemoryWriteBit,
                             compute ? PipelineStageFlags2.ComputeShaderBit : PipelineStageFlags2.AllGraphicsBit,
                             AccessFlags2.ShaderReadBit);
-                        Owner.images[registeredView.Texture.Value] = image with { Layout = ImageLayout.ShaderReadOnlyOptimal };
+                        Owner.SetRecordedImage(CommandBuffer, registeredView.Texture.Value, image with { Layout = ImageLayout.ShaderReadOnlyOptimal });
                     }
                     var imageInfo = new DescriptorImageInfo(default, view, ImageLayout.ShaderReadOnlyOptimal);
                     var write = new WriteDescriptorSet
@@ -2013,6 +2148,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                             $"Storage texture slot {slot} does not identify a writable view on this Vulkan device.",
                             nameof(table));
                     }
+                    image = Owner.GetRecordedImage(CommandBuffer, registeredView.Texture.Value);
                     if (image.Layout != ImageLayout.General)
                     {
                         Owner.Transition(
@@ -2024,7 +2160,7 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                             AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
                             compute ? PipelineStageFlags2.ComputeShaderBit : PipelineStageFlags2.AllGraphicsBit,
                             AccessFlags2.ShaderReadBit | AccessFlags2.ShaderWriteBit);
-                        Owner.images[registeredView.Texture.Value] = image with { Layout = ImageLayout.General };
+                        Owner.SetRecordedImage(CommandBuffer, registeredView.Texture.Value, image with { Layout = ImageLayout.General });
                     }
                     var imageInfo = new DescriptorImageInfo(default, view, ImageLayout.General);
                     var write = new WriteDescriptorSet
@@ -2124,19 +2260,17 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
             Owner.vk.CmdDispatch(CommandBuffer, groupCountX, groupCountY, groupCountZ);
         }
         public void End() => Check(Owner.vk.EndCommandBuffer(CommandBuffer), "vkEndCommandBuffer");
+        public void Abort()
+        {
+            Owner.recordedImages.Remove(CommandBuffer.Handle);
+            Owner.ReleaseDescriptorSets(CommandBuffer);
+            CommandBuffer commands = CommandBuffer;
+            Owner.vk.FreeCommandBuffers(Owner.device, Owner.commandPool, 1, in commands);
+        }
 
         private DescriptorSet Allocate(DescriptorSetLayout layout)
         {
-            var allocate = new DescriptorSetAllocateInfo
-            {
-                SType = StructureType.DescriptorSetAllocateInfo,
-                DescriptorPool = Owner.descriptorPool,
-                DescriptorSetCount = 1,
-                PSetLayouts = &layout,
-            };
-            Check(Owner.vk.AllocateDescriptorSets(Owner.device, in allocate, out DescriptorSet set), "vkAllocateDescriptorSets");
-            Owner.TrackDescriptorSet(CommandBuffer, set);
-            return set;
+            return Owner.AllocateDescriptorSet(CommandBuffer, layout);
         }
     }
 
@@ -2144,7 +2278,13 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
     {
         private readonly SortedDictionary<ulong, List<CommandBuffer>> pending = [];
         private ulong lastSignalValue;
+        private ulong previousSignalValue;
         private bool disposed;
+        public void Untrack(ulong value)
+        {
+            pending.Remove(value);
+            lastSignalValue = previousSignalValue;
+        }
         public VulkanDevice Owner { get; }
         public VkSemaphore Handle { get; }
 
@@ -2170,8 +2310,9 @@ public sealed unsafe class VulkanDevice : IGpuBackend, IDisposable
                 throw new ObjectDisposedException(nameof(VulkanSemaphore));
             }
 
-            lastSignalValue = value;
             pending.Add(value, [.. buffers]);
+            previousSignalValue = lastSignalValue;
+            lastSignalValue = value;
         }
 
         public void ValidateSignal(ulong value)

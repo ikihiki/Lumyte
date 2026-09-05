@@ -12,6 +12,70 @@ namespace Lumyte.Graphics.Vulkan.Tests;
 [Collection("GpuBackend")]
 public sealed class VulkanComputeTests
 {
+    [Theory]
+    [InlineData(16)]
+    [InlineData(17)]
+    [InlineData(64)]
+    [Trait("Category", "VulkanConformance")]
+    public void DescriptorPagesGrowAndAreReusedAfterCompletionAndAbort(int bindCount)
+    {
+        using VulkanDevice device = VulkanDevice.Create();
+        var arena = new GpuPersistentArena(device);
+        var allocator = new GpuManualBufferAllocator(device, arena);
+        var description = new GpuBufferDescription(256, GpuBufferUsage.Storage | GpuBufferUsage.ShaderData);
+        GpuMemoryAllocation memory = allocator.AllocateMemory(description, GpuMemoryKind.HostMapped);
+        GpuBufferHandle buffer = allocator.CreatePlacedBuffer(description, memory);
+        GpuBufferView read = allocator.CreateView(buffer, new());
+        GpuBufferView write = allocator.CreateView(buffer, new(Access: GpuBufferViewAccess.ReadWrite));
+        byte[] abi = GpuShaderBindingConvention.AbiHash.ToArray();
+        GpuShaderPackage package = GpuShaderPackage.Read(GpuShaderPackageWriter.Write([
+            new(GpuShaderCodeFormat.SpirV, GpuShaderStage.Compute, "writeValues", "vulkan", "spirv1.3", "", abi,
+                TriangleShaders.Compile(TriangleShaders.ComputeSource, ShaderKind.ComputeShader)),
+        ]));
+        GpuComputePipelineHandle pipeline = device.CreateComputePipeline(package, "writeValues", abi);
+        var table = new GpuResourceTable(0, 0, 1, 0, 1);
+        table.SetBuffer(0, read.Id);
+        table.SetWritableBuffer(0, write.Id);
+        using GpuSemaphore completion = device.MainQueue.CreateSemaphore();
+        try
+        {
+            using (GpuCommandBuffer aborted = Record()) { aborted.Abort(); }
+            int pages = device.DescriptorPoolPageCount;
+            Assert.True(pages >= (bindCount * 2 + 15) / 16, "Both storage-buffer tables must consume page capacity.");
+            for (ulong frame = 1; frame <= 2; frame++)
+            {
+                using GpuCommandBuffer commands = Record();
+                commands.Dispatch(8).Barrier(GpuStage.ComputeShader, GpuStage.All);
+                device.MainQueue.Submit([commands], completion, frame);
+                device.MainQueue.Wait(completion, frame);
+
+                Assert.Equal(pages, device.DescriptorPoolPageCount);
+                Assert.Equal(0x5a000003u, MemoryMarshal.Cast<byte, uint>(memory.MappedBytes())[0]);
+            }
+        }
+        finally
+        {
+            device.DestroyComputePipeline(pipeline);
+            device.DestroyBufferView(read);
+            device.DestroyBufferView(write);
+            allocator.Retire(buffer, memory, new(1));
+            allocator.Collect(new(1));
+            arena.Dispose();
+        }
+
+        GpuCommandBuffer Record()
+        {
+            GpuCommandBuffer commands = device.MainQueue.StartCommandRecording();
+            try
+            {
+                commands.SetComputePipeline(pipeline);
+                for (int index = 0; index < bindCount; index++) { commands.SetComputeResourceTable(table); }
+                return commands;
+            }
+            catch { commands.Dispose(); throw; }
+        }
+    }
+
     [Fact]
     [Trait("Category", "VulkanConformance")]
     public void ComputeShaderWritesStorageBuffer()

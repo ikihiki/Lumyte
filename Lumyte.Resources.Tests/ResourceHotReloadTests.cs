@@ -5,6 +5,7 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourceHotReloadTests
 {
     [Fact]
+    [Trait("Category", "Integration")]
     public void FileChangeSourceMapsPathsToPortableAssetAddresses()
     {
         string root = Path.Combine(Path.GetTempPath(), $"Lumyte-{Guid.NewGuid():N}");
@@ -23,6 +24,7 @@ public sealed class ResourceHotReloadTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
     public async Task FileChangeReloadsTheCurrentResource()
     {
         string root = Path.Combine(Path.GetTempPath(), $"Lumyte-{Guid.NewGuid():N}");
@@ -126,6 +128,76 @@ public sealed class ResourceHotReloadTests
         Assert.Equal(0u, handle.Generation);
     }
 
+    [Fact]
+    public async Task DisposalDrainsSupersededWorkAndAllDisposersWaitForIt()
+    {
+        ResourceStore store = new([new MutableResolver("old")], [new TextResourceLoader()]);
+        await store.LoadAsync(Asset.From<TextResource>("memory:item"));
+        var source = new ManualChangeSource();
+        var manager = new ResourceHotReloadManager(store, [source], new() { DebounceDelay = TimeSpan.Zero });
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        int notifications = 0;
+        manager.Reloaded += _ =>
+        {
+            if (Interlocked.Increment(ref notifications) != 1) { return; }
+            entered.SetResult();
+            release.Wait();
+        };
+        manager.Start();
+        Task notification = Task.Run(() => source.Raise(new("memory", "item")));
+        await entered.Task;
+
+        try
+        {
+            source.Raise(new("memory", "item"));
+            Task first = manager.DisposeAsync().AsTask();
+            Task second = manager.DisposeAsync().AsTask();
+
+            Assert.False(first.IsCompleted, "Disposal must retain the superseded notification.");
+            Assert.Same(first, second);
+        }
+        finally
+        {
+            release.Set();
+            await notification;
+            await manager.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CapturedNotificationIsIgnoredAfterDisposal()
+    {
+        ResourceStore store = new([], []);
+        var source = new ManualChangeSource();
+        var manager = new ResourceHotReloadManager(store, [source]);
+        manager.Start();
+        Action<AssetChange> captured = source.Capture();
+
+        await manager.DisposeAsync();
+        captured(new("memory", "item"));
+
+        Assert.False(source.HasSubscribers);
+        Assert.Throws<InvalidOperationException>(manager.Start);
+    }
+
+    [Fact]
+    public async Task FailedNotificationIsReportedWhenTheManagerIsDisposed()
+    {
+        ResourceStore store = new([], []);
+        var source = new ManualChangeSource();
+        var manager = new ResourceHotReloadManager(store, [source], new() { DebounceDelay = TimeSpan.Zero });
+        var error = new InvalidOperationException("Notification failed.");
+        manager.Reloaded += _ => throw new InvalidOperationException("Reload observer failed.");
+        manager.ReloadFailed += _ => throw error;
+        manager.Start();
+        source.Raise(new("memory", "item"));
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(() => manager.DisposeAsync().AsTask());
+
+        Assert.Same(error, Assert.Single(failure.InnerExceptions));
+    }
+
     private sealed record TextResource(string Text);
 
     private sealed record LengthResource(int Length);
@@ -206,6 +278,8 @@ public sealed class ResourceHotReloadTests
         public event Action<AssetChange>? Changed;
 
         public void Raise(AssetChange change) => Changed?.Invoke(change);
+        public Action<AssetChange> Capture() => Changed!;
+        public bool HasSubscribers => Changed is not null;
     }
 
     private sealed class ManualTimerTimeProvider : TimeProvider

@@ -46,7 +46,7 @@ public sealed unsafe partial class WebGpuDevice
             vertexEntryPoint,
             pixelEntryPoint,
             description);
-        var handle = new GpuRasterPipelineHandle(nextPipelineId++);
+        var handle = new GpuRasterPipelineHandle(GpuHandleIds.Allocate());
         rasterPipelines.Add(handle.Value, new(native));
         return handle;
     }
@@ -77,7 +77,7 @@ public sealed unsafe partial class WebGpuDevice
                 };
                 ComputePipeline* native = api.DeviceCreateComputePipeline(device, in description);
                 if (native is null) { throw new InvalidOperationException("WebGPU compute pipeline creation failed."); }
-                var handle = new GpuComputePipelineHandle(nextPipelineId++);
+                var handle = new GpuComputePipelineHandle(GpuHandleIds.Allocate());
                 computePipelines.Add(handle.Value, new((nint)native));
                 return handle;
             }
@@ -171,19 +171,19 @@ public sealed unsafe partial class WebGpuDevice
                 throw new ArgumentException("Semaphore belongs to another backend.", nameof(signalSemaphore));
             }
             semaphore.ValidateSignal(signalValue);
+            WebGpuCommandRecorder[] recorders = GpuBackendCommands.PrepareSubmission<WebGpuCommandRecorder>(
+                commandBuffers, recorder => recorder.Owner == owner);
             CommandBuffer** native = stackalloc CommandBuffer*[commandBuffers.Length];
             var records = new nint[commandBuffers.Length];
             for (int index = 0; index < commandBuffers.Length; index++)
             {
-                if (GpuBackendCommands.Finish(commandBuffers[index]) is not WebGpuCommandRecorder recorder || recorder.Owner != owner)
-                {
-                    throw new ArgumentException("Command buffer belongs to another backend.", nameof(commandBuffers));
-                }
+                WebGpuCommandRecorder recorder = recorders[index];
                 native[index] = recorder.Commands;
                 records[index] = (nint)recorder.Commands;
             }
-            owner.api.QueueSubmit(owner.queue, checked((nuint)commandBuffers.Length), native);
             semaphore.Track(signalValue, records);
+            GpuBackendCommands.MarkSubmitted(commandBuffers);
+            owner.api.QueueSubmit(owner.queue, checked((nuint)commandBuffers.Length), native);
         }
 
         public void Wait(GpuSemaphore signalSemaphore, ulong value)
@@ -396,6 +396,14 @@ public sealed unsafe partial class WebGpuDevice
             if (Commands is null) { throw new InvalidOperationException("WebGPU command buffer creation failed."); }
         }
 
+        public void Abort()
+        {
+            if (pass is not null) { Owner.api.RenderPassEncoderRelease(pass); pass = null; }
+            if (computePass is not null) { Owner.api.ComputePassEncoderRelease(computePass); computePass = null; }
+            if (encoder is not null) { Owner.api.CommandEncoderRelease(encoder); encoder = null; }
+            if (Commands is not null) { Owner.api.CommandBufferRelease(Commands); Commands = null; }
+        }
+
         private void EndComputePass()
         {
             if (computePass is null) { return; }
@@ -438,8 +446,8 @@ public sealed unsafe partial class WebGpuDevice
 
         public void Track(ulong value, nint[] commands)
         {
-            lastSignalValue = value;
             pending.Add(value, [.. commands]);
+            lastSignalValue = value;
         }
 
         public void Wait(ulong value)

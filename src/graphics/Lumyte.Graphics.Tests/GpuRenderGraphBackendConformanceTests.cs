@@ -12,6 +12,124 @@ public abstract class GpuRenderGraphBackendConformanceTests
 
     [Fact]
     [Trait("Category", "RenderGraphConformance")]
+    public void ForeignSecondCommandDoesNotSubmitTheFirst()
+    {
+        using IGpuBackend first = CreateBackend();
+        using IGpuBackend second = CreateBackend();
+        using GpuCommandBuffer a = first.MainQueue.StartCommandRecording();
+        using GpuCommandBuffer b = second.MainQueue.StartCommandRecording();
+        using GpuSemaphore completion = first.MainQueue.CreateSemaphore();
+
+        Assert.Throws<ArgumentException>(() => first.MainQueue.Submit([a, b], completion, 1));
+
+        Assert.Equal(GpuCommandBufferState.Recording, a.State);
+        first.MainQueue.Submit([a], completion, 1);
+        first.MainQueue.Wait(completion, 1);
+    }
+
+    [Fact]
+    [Trait("Category", "RenderGraphConformance")]
+    public void SubmittedSecondCommandDoesNotSubmitTheFirst()
+    {
+        using IGpuBackend backend = CreateBackend();
+        IGpuQueue queue = backend.MainQueue;
+        using GpuCommandBuffer first = queue.StartCommandRecording();
+        using GpuCommandBuffer second = queue.StartCommandRecording();
+        using GpuSemaphore completion = queue.CreateSemaphore();
+        queue.Submit([second], completion, 1);
+        queue.Wait(completion, 1);
+
+        Assert.Throws<InvalidOperationException>(() => queue.Submit([first, second], completion, 2));
+
+        Assert.Equal(GpuCommandBufferState.Recording, first.State);
+        queue.Submit([first], completion, 2);
+        queue.Wait(completion, 2);
+    }
+
+    [Fact]
+    [Trait("Category", "RenderGraphConformance")]
+    public void DuplicateCommandDoesNotConsumeTheRecording()
+    {
+        using IGpuBackend backend = CreateBackend();
+        IGpuQueue queue = backend.MainQueue;
+        using GpuCommandBuffer commands = queue.StartCommandRecording();
+        using GpuSemaphore completion = queue.CreateSemaphore();
+
+        Assert.Throws<ArgumentException>(() => queue.Submit([commands, commands], completion, 1));
+
+        queue.Submit([commands], completion, 1);
+        queue.Wait(completion, 1);
+        Assert.Equal(GpuCommandBufferState.Submitted, commands.State);
+    }
+
+    [Fact]
+    [Trait("Category", "RenderGraphConformance")]
+    public void TextureFromAnotherDeviceCannotDestroyALocalTexture()
+    {
+        using IGpuBackend first = CreateBackend();
+        using IGpuBackend second = CreateBackend();
+        using var a = TestTexture.Create(first);
+        using var b = TestTexture.Create(second);
+
+        Assert.Throws<ArgumentException>(() => second.DestroyTexture(a.Handle));
+
+        GpuTextureView view = second.CreateTextureView(b.Handle, new(GpuFormat.Rgba8Unorm));
+        second.DestroyTextureView(view);
+    }
+
+    [Fact]
+    [Trait("Category", "RenderGraphConformance")]
+    public void SamplerFromAnotherDeviceCannotDestroyALocalSampler()
+    {
+        using IGpuBackend first = CreateBackend();
+        using IGpuBackend second = CreateBackend();
+        SamplerId a = first.CreateSampler(new());
+        SamplerId b = second.CreateSampler(new());
+        try
+        {
+            Assert.Throws<ArgumentException>(() => second.DestroySampler(a));
+        }
+        finally
+        {
+            first.DestroySampler(a);
+            second.DestroySampler(b);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "RenderGraphConformance")]
+    public void FailedRecordingDoesNotChangeTheNextRenderingState()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var texture = TestTexture.Create(backend, PixelWidth);
+        var graph = new GpuRenderGraph();
+        var target = graph.ImportTexture("target", texture.Handle, texture.Description);
+        GpuCommandBuffer? aborted = null;
+        graph.AddPass("failure", target, (context, state) =>
+        {
+            aborted = context.Commands;
+            context.Commands.BeginRendering([new(context.GetTextureView(state),
+                GpuAttachmentLoadOperation.Clear, GpuAttachmentStoreOperation.Store, new(1, 0, 0, 1))]);
+            throw new InvalidOperationException("recording failed");
+        }, GpuRenderGraphPassFlags.NeverCull).Write(target, GpuStage.ColorOutput);
+
+        var failure = Assert.Throws<InvalidOperationException>(() => graph.Compile().Execute(backend));
+
+        Assert.Equal("recording failed", failure.Message);
+        Assert.NotNull(aborted);
+        Assert.Equal(GpuCommandBufferState.Aborted, aborted.State);
+        var valid = new GpuRenderGraph();
+        var output = valid.ImportTexture("target", texture.Handle, texture.Description);
+        valid.AddPass("clear", output, static (context, state) => context.Commands
+            .BeginRendering([new(context.GetTextureView(state), GpuAttachmentLoadOperation.Clear,
+                GpuAttachmentStoreOperation.Store, new(0, 1, 0, 1))]).EndRendering(),
+            GpuRenderGraphPassFlags.NeverCull).Write(output, GpuStage.ColorOutput);
+        using GpuRenderGraphExecution execution = valid.Compile().Execute(backend);
+        Assert.Equal(new byte[] {0, 255, 0, 255}, ReadPixels(backend, texture.Handle)[..4]);
+    }
+
+    [Fact]
+    [Trait("Category", "RenderGraphConformance")]
     public void QueueCompletionCanBePolledAfterWait()
     {
         using IGpuBackend backend = CreateBackend();
@@ -577,11 +695,11 @@ public abstract class GpuRenderGraphBackendConformanceTests
         public GpuTextureHandle Handle { get; }
         public GpuTextureDescription Description { get; }
 
-        public static TestTexture Create(IGpuBackend backend)
+        public static TestTexture Create(IGpuBackend backend, uint size = 1)
         {
             var description = new GpuTextureDescription(
-                1,
-                1,
+                size,
+                size,
                 GpuFormat.Rgba8Unorm,
                 GpuTextureUsage.ColorAttachment
                     | GpuTextureUsage.CopySource

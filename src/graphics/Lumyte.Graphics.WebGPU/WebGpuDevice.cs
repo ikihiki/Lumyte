@@ -31,10 +31,6 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
     private Device* device;
     private Queue* queue;
     private string? failure;
-    private ulong nextResourceId = 1;
-    private ulong nextTextureId = 1;
-    private ulong nextBufferId = 1;
-    private ulong nextPipelineId = 1;
     private int bindGroupCreationCount;
     private bool disposed;
 
@@ -109,7 +105,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         };
         Texture* nativeTexture = api.DeviceCreateTexture(device, in nativeDescription);
         if (nativeTexture is null) { throw new InvalidOperationException("WebGPU texture creation failed."); }
-        var handle = new GpuTextureHandle(nextTextureId++);
+        var handle = new GpuTextureHandle(GpuHandleIds.Allocate());
         textures.Add(handle.Value, new((nint)nativeTexture, description));
         return handle;
     }
@@ -156,7 +152,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         };
         TextureView* nativeView = api.TextureCreateView((Texture*)record.Handle, in nativeDescription);
         if (nativeView is null) { throw new InvalidOperationException("WebGPU texture view creation failed."); }
-        var id = new TextureId(nextResourceId++);
+        var id = new TextureId(GpuHandleIds.Allocate());
         var normalized = description with { MipCount = mipCount, LayerCount = layerCount };
         var result = new GpuTextureView(id, texture, normalized);
         textureViews.Add(id.Value, new((nint)nativeView, result));
@@ -181,7 +177,7 @@ public sealed unsafe partial class WebGpuDevice : IGpuBackend, IDisposable
         };
         Sampler* nativeSampler = api.DeviceCreateSampler(device, in nativeDescription);
         if (nativeSampler is null) { throw new InvalidOperationException("WebGPU sampler creation failed."); }
-        var id = new SamplerId(nextResourceId++);
+        var id = new SamplerId(GpuHandleIds.Allocate());
         samplers.Add(id.Value, (nint)nativeSampler);
         return id;
     }

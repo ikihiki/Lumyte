@@ -11,7 +11,7 @@ public sealed unsafe partial class WebGpuDevice
         ObjectDisposedException.ThrowIf(disposed, this);
         description.Validate();
         WgpuBuffer* native = CreateNativeBuffer(description.Size, ToWebGpuUsage(description.Usage));
-        var handle = new GpuBufferHandle(nextBufferId++, description.Size);
+        var handle = new GpuBufferHandle(GpuHandleIds.Allocate(), description.Size);
         buffers.Add(handle.Value, new((nint)native, description));
         return handle;
     }
@@ -87,7 +87,7 @@ public sealed unsafe partial class WebGpuDevice
                 nameof(buffer));
         }
         GpuBufferViewDescription normalized = description.Normalize(buffer);
-        var view = new GpuBufferView(new(nextResourceId++), buffer, normalized);
+        var view = new GpuBufferView(new(GpuHandleIds.Allocate()), buffer, normalized);
         bufferViews.Add(view.Id.Value, view);
         return view;
     }

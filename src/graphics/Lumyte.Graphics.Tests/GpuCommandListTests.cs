@@ -41,7 +41,7 @@ public sealed class GpuCommandBufferTests
     }
 
     [Fact]
-    public void SubmittedCommandBufferCannotBeRecordedOrSubmittedAgain()
+    public void FinishedCommandBufferCannotBeRecordedOrFinishedAgain()
     {
         var recorder = new RecordingCommandRecorder();
         var commands = new GpuCommandBuffer(recorder).Barrier(GpuStage.ComputeShader, GpuStage.ComputeShader);
@@ -110,10 +110,83 @@ public sealed class GpuCommandBufferTests
         Assert.Equal(["compute-pipeline", "compute-resources", "compute-root:4", "dispatch:2:3:1"], recorder.Events);
     }
 
+    [Fact]
+    public void DisposingARecordingAbortsItExactlyOnce()
+    {
+        var recorder = new RecordingCommandRecorder();
+        var commands = new GpuCommandBuffer(recorder);
+
+        commands.Dispose();
+        commands.Dispose();
+
+        Assert.Equal(1, recorder.AbortCount);
+        Assert.Equal(GpuCommandBufferState.Aborted, commands.State);
+        Assert.Throws<InvalidOperationException>(() => commands.Barrier(GpuStage.None, GpuStage.All));
+    }
+
+    [Fact]
+    public void DisposingSubmittedCommandsPreservesQueueOwnership()
+    {
+        var recorder = new RecordingCommandRecorder();
+        var commands = new GpuCommandBuffer(recorder);
+        GpuBackendCommands.PrepareSubmission<RecordingCommandRecorder>([commands], _ => true);
+        GpuBackendCommands.MarkSubmitted([commands]);
+
+        commands.Dispose();
+
+        Assert.Equal(0, recorder.AbortCount);
+        Assert.Equal(GpuCommandBufferState.Submitted, commands.State);
+    }
+
+    [Fact]
+    public void InvalidLaterRecorderDoesNotFinishEarlierCommands()
+    {
+        var first = new RecordingCommandRecorder();
+        var second = new RecordingCommandRecorder();
+        using var a = new GpuCommandBuffer(first);
+        using var b = new GpuCommandBuffer(second);
+
+        Assert.Throws<ArgumentException>(() => GpuBackendCommands.PrepareSubmission<RecordingCommandRecorder>(
+            [a, b], recorder => recorder == first));
+
+        Assert.Equal(0, first.EndCount);
+        Assert.Equal(GpuCommandBufferState.Recording, a.State);
+    }
+
+    [Fact]
+    public void DuplicateCommandsAreRejectedBeforeFinishing()
+    {
+        var recorder = new RecordingCommandRecorder();
+        using var commands = new GpuCommandBuffer(recorder);
+
+        Assert.Throws<ArgumentException>(() => GpuBackendCommands.PrepareSubmission<RecordingCommandRecorder>(
+            [commands, commands], _ => true));
+
+        Assert.Equal(0, recorder.EndCount);
+    }
+
+    [Fact]
+    public void FailedFinishAbortsOnlyTheFailedRecording()
+    {
+        var first = new RecordingCommandRecorder();
+        var second = new RecordingCommandRecorder { FailEnd = true };
+        using var a = new GpuCommandBuffer(first);
+        using var b = new GpuCommandBuffer(second);
+
+        Assert.Throws<InvalidOperationException>(() => GpuBackendCommands.PrepareSubmission<RecordingCommandRecorder>([a, b], _ => true));
+
+        Assert.Equal(GpuCommandBufferState.Finished, a.State);
+        Assert.Equal(GpuCommandBufferState.Aborted, b.State);
+        Assert.Equal(1, second.AbortCount);
+    }
+
     private sealed class RecordingCommandRecorder : IGpuCommandRecorder
     {
         public List<string> Events { get; } = [];
         public int EndCount { get; private set; }
+        public int AbortCount { get; private set; }
+        public bool FailEnd { get; set; }
+        public void Abort() => AbortCount++;
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) => Events.Add($"barrier:{before}>{after}:{hazards}");
         public void BeginRendering(IReadOnlyList<GpuColorAttachment> colors, GpuDepthStencilAttachment? depth) => Events.Add("begin");
         public void EndRendering() => Events.Add("end");
@@ -129,6 +202,10 @@ public sealed class GpuCommandBufferTests
         public void SetComputeRootData(ReadOnlySpan<byte> data) => Events.Add($"compute-root:{data.Length}");
         public void Dispatch(uint groupCountX, uint groupCountY, uint groupCountZ) =>
             Events.Add($"dispatch:{groupCountX}:{groupCountY}:{groupCountZ}");
-        public void End() => EndCount++;
+        public void End()
+        {
+            if (FailEnd) { throw new InvalidOperationException("Injected end failure."); }
+            EndCount++;
+        }
     }
 }

@@ -66,7 +66,15 @@ public sealed class GpuRetirementQueue : IDisposable
         while (inFlight.Count != 0)
         {
             ulong value = inFlight.Min;
-            if (!queue.IsComplete(semaphore, value)) { break; }
+            try
+            {
+                if (!queue.IsComplete(semaphore, value)) { break; }
+            }
+            catch (GpuDeviceLostException)
+            {
+                CompleteThrough(nextValue);
+                throw;
+            }
             CompleteThrough(value);
             completed++;
         }
@@ -78,16 +86,22 @@ public sealed class GpuRetirementQueue : IDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
         if (inFlight.Count == 0) { return; }
         ulong value = inFlight.Max;
-        queue.Wait(semaphore, value);
+        WaitForValue(value);
         CompleteThrough(value);
     }
 
     public void Dispose()
     {
         if (disposed) { return; }
-        WaitIdle();
-        semaphore.Dispose();
-        disposed = true;
+        try { WaitIdle(); }
+        finally
+        {
+            if (inFlight.Count == 0)
+            {
+                semaphore.Dispose();
+                disposed = true;
+            }
+        }
     }
 
     internal void RequireBackend(IGpuBackend candidate)
@@ -112,7 +126,7 @@ public sealed class GpuRetirementQueue : IDisposable
         if (inFlight.Count >= MaximumFramesInFlight)
         {
             ulong oldest = inFlight.Min;
-            queue.Wait(semaphore, oldest);
+            WaitForValue(oldest);
             CompleteThrough(oldest);
         }
         ulong value = checked(nextValue + 1);
@@ -120,15 +134,21 @@ public sealed class GpuRetirementQueue : IDisposable
         {
             retirements.Add(value, [.. completionActions]);
         }
+        inFlight.Add(value);
         try
         {
             queue.Submit([commands], semaphore, value);
             nextValue = value;
-            inFlight.Add(value);
             return new(this, value);
         }
-        catch
+        catch (Exception error)
         {
+            if (commands.State == GpuCommandBufferState.Submitted)
+            {
+                nextValue = value;
+                throw new GpuSubmissionException(new(this, value), error);
+            }
+            inFlight.Remove(value);
             retirements.Remove(value);
             throw;
         }
@@ -168,8 +188,18 @@ public sealed class GpuRetirementQueue : IDisposable
     {
         RequireToken(token, allowDisposed: true);
         if (token.Value <= completedValue || disposed) { return; }
-        queue.Wait(semaphore, token.Value);
+        WaitForValue(token.Value);
         CompleteThrough(token.Value);
+    }
+
+    private void WaitForValue(ulong value)
+    {
+        try { queue.Wait(semaphore, value); }
+        catch (GpuDeviceLostException)
+        {
+            CompleteThrough(nextValue);
+            throw;
+        }
     }
 
     private void CompleteThrough(ulong value)

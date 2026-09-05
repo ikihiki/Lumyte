@@ -122,8 +122,8 @@ internal sealed class ColorBitmapTexture : IDisposable
                 height,
                 4,
                 checked((ulong)width * 4));
-            GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording()
-                .CopyMemoryToTexture(
+            using GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
+            commands.CopyMemoryToTexture(
                     backend.GetBufferMemoryAddress(upload, 0, checked((ulong)pixels.Length)),
                     texture,
                     footprint)

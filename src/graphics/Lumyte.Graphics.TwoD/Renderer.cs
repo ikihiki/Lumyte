@@ -624,7 +624,7 @@ public sealed class Renderer : IDisposable
         var views = new List<GpuBufferView>(jobs.Count * 2);
         try
         {
-            GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
+            using GpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
             for (int index = 0; index < jobs.Count; index++)
             {
                 PathComputeJob job = jobs[index];

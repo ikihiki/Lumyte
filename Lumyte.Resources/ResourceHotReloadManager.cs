@@ -6,8 +6,10 @@ public sealed class ResourceHotReloadManager : IAsyncDisposable
     private readonly IAssetChangeSource[] sources;
     private readonly ResourceHotReloadOptions options;
     private readonly Dictionary<AssetChange, ReloadWork> pending = [];
+    private readonly HashSet<ReloadWork> active = [];
     private readonly Lock gate = new();
-    private readonly CancellationTokenSource shutdown = new();
+    private Task? disposal;
+    private Exception? notificationFailure;
     private int state;
 
     public ResourceHotReloadManager(
@@ -35,74 +37,74 @@ public sealed class ResourceHotReloadManager : IAsyncDisposable
 
     public void Start()
     {
-        if (Interlocked.CompareExchange(ref state, 1, 0) != 0)
+        lock (gate)
         {
-            throw new InvalidOperationException("Resource hot reload can only be started once.");
-        }
-
-        foreach (IAssetChangeSource source in sources)
-        {
-            source.Changed += OnChanged;
+            if (state != 0)
+            {
+                throw new InvalidOperationException("Resource hot reload can only be started once.");
+            }
+            state = 1;
+            foreach (IAssetChangeSource source in sources)
+            {
+                source.Changed += OnChanged;
+            }
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        int previous = Interlocked.Exchange(ref state, 2);
-        if (previous == 2)
-        {
-            return;
-        }
-
-        foreach (IAssetChangeSource source in sources)
-        {
-            source.Changed -= OnChanged;
-        }
-
-        shutdown.Cancel();
-        Task[] tasks;
         lock (gate)
         {
-            foreach (ReloadWork work in pending.Values)
+            if (disposal is not null) { return new(disposal); }
+            state = 2;
+            ReloadWork[] works = active.ToArray();
+            disposal = DrainAsync(works);
+            foreach (IAssetChangeSource source in sources)
             {
-                work.Cancellation.Cancel();
+                source.Changed -= OnChanged;
             }
-
-            tasks = pending.Values.Select(work => work.Task).ToArray();
+            foreach (ReloadWork work in works)
+            {
+                if (active.Contains(work)) { CancelWork(work); }
+            }
             pending.Clear();
+            return new(disposal);
         }
+    }
 
-        try
+    private async Task DrainAsync(ReloadWork[] works)
+    {
+        await Task.WhenAll(works.Select(work => work.Completion.Task)).ConfigureAwait(false);
+        lock (gate)
         {
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            if (notificationFailure is { } failure) { throw new AggregateException("Hot reload notification failed.", failure); }
         }
-        catch (OperationCanceledException)
-        {
-        }
-
-        shutdown.Dispose();
     }
 
     private void OnChanged(AssetChange change)
     {
-        if (Volatile.Read(ref state) != 1)
-        {
-            return;
-        }
-
+        ReloadWork work;
         lock (gate)
         {
+            if (state != 1) { return; }
             if (pending.Remove(change, out ReloadWork? previous))
             {
-                previous.Cancellation.Cancel();
+                CancelWork(previous);
+                if (state != 1) { return; }
             }
 
-            CancellationTokenSource cancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
-            ReloadWork work = new(cancellation);
+            CancellationTokenSource cancellation = new();
+            work = new(cancellation);
             pending.Add(change, work);
-            work.Task = ProcessAsync(change, work);
+            active.Add(work);
         }
+        _ = ProcessAsync(change, work);
+    }
+
+    private void CancelWork(ReloadWork work)
+    {
+        try { work.Cancellation.Cancel(); }
+        catch (Exception error) { notificationFailure ??= error; }
     }
 
     private async Task ProcessAsync(AssetChange change, ReloadWork work)
@@ -132,7 +134,14 @@ public sealed class ResourceHotReloadManager : IAsyncDisposable
                 1,
                 new("outcome", "failed"),
                 new("error.type", exception.GetType().Name));
-            ReloadFailed?.Invoke(new ResourceHotReloadFailure(change, exception));
+            try
+            {
+                ReloadFailed?.Invoke(new ResourceHotReloadFailure(change, exception));
+            }
+            catch (Exception notificationException)
+            {
+                lock (gate) { notificationFailure ??= notificationException; }
+            }
         }
         finally
         {
@@ -143,9 +152,10 @@ public sealed class ResourceHotReloadManager : IAsyncDisposable
                 {
                     pending.Remove(change);
                 }
+                active.Remove(work);
+                work.Cancellation.Dispose();
+                work.Completion.TrySetResult();
             }
-
-            work.Cancellation.Dispose();
         }
     }
 
@@ -153,6 +163,6 @@ public sealed class ResourceHotReloadManager : IAsyncDisposable
     {
         internal CancellationTokenSource Cancellation { get; } = cancellation;
 
-        internal Task Task { get; set; } = Task.CompletedTask;
+        internal TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

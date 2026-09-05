@@ -84,6 +84,7 @@ public sealed unsafe class VulkanPresentation : IDisposable
         native.ValidateSignal(value);
         CommandBuffer commandBuffer = owner.PreparePresent(commands, frame.View.Texture);
         GpuBackendCommands.Finish(commands);
+        owner.ValidateRecordedImages(commandBuffer, []);
         ulong* waitValues = stackalloc ulong[1] { 0 };
         ulong* signalValues = stackalloc ulong[2] { value, 0 };
         var timelineInfo = new TimelineSemaphoreSubmitInfo
@@ -109,8 +110,15 @@ public sealed unsafe class VulkanPresentation : IDisposable
             SignalSemaphoreCount = 2,
             PSignalSemaphores = signals,
         };
-        Check(owner.Api.QueueSubmit(owner.NativeQueue, 1, in submit, default), "vkQueueSubmit(present)");
         native.Track(value, [commandBuffer]);
+        Result submitted = owner.Api.QueueSubmit(owner.NativeQueue, 1, in submit, default);
+        if (submitted != Result.Success)
+        {
+            native.Untrack(value);
+            Check(submitted, "vkQueueSubmit(present)");
+        }
+        GpuBackendCommands.MarkSubmitted([commands]);
+        owner.CommitRecordedImages(commandBuffer);
         SwapchainKHR localSwapchain = swapchain;
         VkSemaphore presentWait = renderFinished;
         uint imageIndex = frame.ImageIndex;

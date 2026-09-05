@@ -21,7 +21,6 @@ public sealed unsafe partial class DirectX12Device :
     private readonly Dictionary<ulong, GpuSamplerDescription> samplers = [];
     private readonly Dictionary<ulong, PipelineRecord> pipelines = [];
     private readonly Dictionary<ulong, ComputePipelineRecord> computePipelines = [];
-    private ulong nextHandle = 1;
     private bool disposed;
 
     private DirectX12Device(D3D12 api, ComPtr<ID3D12Device> device, ComPtr<ID3D12CommandQueue> queue)
