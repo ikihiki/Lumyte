@@ -13,21 +13,17 @@ public abstract class BackendConformanceTests
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
-    public void PrimitiveAndPolygonRoutesRenderWithoutGeometryBindings()
+    public void CachedPolygonRendersWithoutGeometryBindings()
     {
         using IGpuBackend backend = CreateBackend();
         using var target = BackendTexture.Create(backend, TargetDescription());
         using var renderer = new Renderer(backend);
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
-        encoder.FillRectangle(new(4, 4, 24, 24), Brush.Solid(new(1, 0, 0)));
-        encoder.FillRoundedRectangle(new(36, 4, 24, 24), new(8), Brush.Solid(new(0, 1, 0)));
-        encoder.DrawLine(new(8, 32), new(56, 32), 4, Brush.Solid(Color.White));
-        encoder.FillEllipse(new(4, 36, 24, 24), Brush.Solid(new(0, 0, 1)));
         encoder.DrawGeometry(
             PolygonGeometry.FromConvexPolygon([
-                new(36, 60),
-                new(60, 60),
-                new(48, 36),
+                new(8, 56),
+                new(56, 56),
+                new(32, 8),
             ]),
             Matrix3x2.Identity,
             Brush.Solid(new(1, 1, 0)));
@@ -47,14 +43,44 @@ public abstract class BackendConformanceTests
         using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
         byte[] pixels = ReadPixels(backend, target.Handle);
 
-        AssertPixelNear(pixels, 16, 16, 255, 0, 0, 255);
-        AssertPixelNear(pixels, 48, 16, 0, 255, 0, 255);
-        AssertPixelNear(pixels, 32, 32, 255, 255, 255, 255);
-        AssertPixelNear(pixels, 16, 48, 0, 0, 255, 255);
-        AssertPixelNear(pixels, 48, 48, 255, 255, 0, 255);
+        AssertPixelNear(pixels, 32, 32, 255, 255, 0, 255);
         AssertPixelNear(pixels, 1, 1, 0, 0, 0, 0);
-        AssertPixelNear(pixels, 36, 4, 0, 0, 0, 0);
-        AssertPixelNear(pixels, 4, 36, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void RoundedRectangleRendersAcrossTheBackend()
+    {
+        byte[] pixels = Render(static encoder =>
+            encoder.FillRoundedRectangle(
+                new(8, 8, 48, 48),
+                new(12),
+                Brush.Solid(new(0, 1, 0))));
+
+        AssertPixelNear(pixels, 32, 32, 0, 255, 0, 255);
+        AssertPixelNear(pixels, 8, 8, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void EllipseRendersAcrossTheBackend()
+    {
+        byte[] pixels = Render(static encoder =>
+            encoder.FillEllipse(new(8, 16, 48, 32), Brush.Solid(new(0, 0, 1))));
+
+        AssertPixelNear(pixels, 32, 32, 0, 0, 255, 255);
+        AssertPixelNear(pixels, 8, 16, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void LineRendersAcrossTheBackend()
+    {
+        byte[] pixels = Render(static encoder =>
+            encoder.DrawLine(new(8, 32), new(56, 32), 4, Brush.Solid(Color.White)));
+
+        AssertPixelNear(pixels, 32, 32, 255, 255, 255, 255);
+        AssertPixelNear(pixels, 32, 24, 0, 0, 0, 0);
     }
 
     [Fact]
@@ -167,7 +193,7 @@ public abstract class BackendConformanceTests
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
-    public void LayerShadowUsesTheBlurAndOffsetAcrossTheBackend()
+    public void LayerShadowUsesItsColorAndOffsetAcrossTheBackend()
     {
         using IGpuBackend backend = CreateBackend();
         using var target = BackendTexture.Create(backend, TargetDescription());
@@ -175,7 +201,7 @@ public abstract class BackendConformanceTests
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
         encoder.PushLayer(new()
         {
-            Shadow = new(new(24, 0), new(1, 0, 0), 1),
+            Shadow = new(new(24, 0), new(1, 0, 0)),
         });
         encoder.FillRectangle(new(8, 8, 16, 16), Brush.Solid(Color.White));
         encoder.PopLayer();
@@ -196,6 +222,21 @@ public abstract class BackendConformanceTests
 
         AssertPixelNear(pixels, 16, 16, 255, 255, 255, 255, tolerance: 3);
         AssertPixelNear(pixels, 40, 16, 255, 0, 0, 255, tolerance: 4);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void LayerBlurFiltersItsContentsAcrossTheBackend()
+    {
+        byte[] pixels = Render(static encoder =>
+        {
+            encoder.PushLayer(new() { BlurRadius = 2 });
+            encoder.FillRectangle(new(8, 8, 16, 16), Brush.Solid(new(1, 0, 0)));
+            encoder.PopLayer();
+        });
+
+        AssertPixelNear(pixels, 16, 16, 255, 0, 0, 255, tolerance: 4);
+        AssertRedPixelInRange(pixels, 6, 16, 32, 160);
     }
 
     [Fact]
@@ -313,7 +354,7 @@ public abstract class BackendConformanceTests
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
-    public void SolidBrushUsesPremultipliedSourceOverBlending()
+    public void RectangleUsesPremultipliedSourceOverBlending()
     {
         using IGpuBackend backend = CreateBackend();
         using var target = BackendTexture.Create(backend, TargetDescription());
@@ -503,7 +544,34 @@ public abstract class BackendConformanceTests
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
-    public void CurvedPathIsExpandedByComputeBeforeRasterization()
+    public void VectorPathRendersRadialGradientThroughTiledCoverage()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawPath(
+            RectanglePath(4, 4, 56, 56),
+            Matrix3x2.Identity,
+            Brush.RadialGradient(new(32, 32), 28, new(1, 0, 0), new(0, 0, 1)));
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "radial-gradient-path",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 255, 0, 0, 255, tolerance: 7);
+        AssertPixelNear(pixels, 53, 32, 64, 0, 191, 255, tolerance: 7);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void CubicPathIsExpandedByComputeBeforeRasterization()
     {
         using IGpuBackend backend = CreateBackend();
         using var target = BackendTexture.Create(backend, TargetDescription());
@@ -511,7 +579,9 @@ public abstract class BackendConformanceTests
         PathGeometry path = new PathBuilder()
             .MoveTo(new(8, 32))
             .CubicTo(new(8, 8), new(56, 8), new(56, 32))
-            .QuadraticTo(new(32, 58), new(8, 32))
+            .LineTo(new(56, 56))
+            .LineTo(new(8, 56))
+            .Close()
             .Build();
         using CommandEncoder encoder = renderer.CreateCommandEncoder();
         encoder.DrawPath(path, Matrix3x2.Identity, Brush.Solid(new(0, 1, 0)));
@@ -527,13 +597,44 @@ public abstract class BackendConformanceTests
         using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
         byte[] pixels = ReadPixels(backend, target.Handle);
 
-        AssertPixelNear(pixels, 32, 32, 0, 255, 0, 255, tolerance: 4);
+        AssertPixelNear(pixels, 32, 40, 0, 255, 0, 255, tolerance: 4);
         AssertPixelNear(pixels, 4, 4, 0, 0, 0, 0);
     }
 
     [Fact]
     [Trait("Category", "TwoDConformance")]
-    public void PathClipRestrictsStrokeAndFillCoverage()
+    public void QuadraticPathIsExpandedByComputeBeforeRasterization()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        PathGeometry path = new PathBuilder()
+            .MoveTo(new(8, 32))
+            .QuadraticTo(new(32, 8), new(56, 32))
+            .LineTo(new(56, 56))
+            .LineTo(new(8, 56))
+            .Close()
+            .Build();
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.DrawPath(path, Matrix3x2.Identity, Brush.Solid(new(0, 1, 0)));
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "quadratic-path",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 40, 0, 255, 0, 255, tolerance: 4);
+        AssertPixelNear(pixels, 4, 4, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void PathClipRestrictsFillCoverage()
     {
         using IGpuBackend backend = CreateBackend();
         using var target = BackendTexture.Create(backend, TargetDescription());
@@ -546,12 +647,6 @@ public abstract class BackendConformanceTests
             Matrix3x2.Identity,
             Brush.Solid(new(0, 1, 0)),
             clip: new(clip, Matrix3x2.Identity));
-        PathGeometry line = new PathBuilder().MoveTo(new(8, 52)).LineTo(new(56, 52)).Build();
-        encoder.StrokePath(
-            line,
-            Matrix3x2.Identity,
-            new StrokeStyle(4),
-            Brush.Solid(Color.White));
         DisplayList displayList = encoder.Finish();
         using PreparedDisplayList prepared = renderer.Prepare(displayList, target.Description);
         var graph = new GpuRenderGraph();
@@ -566,11 +661,64 @@ public abstract class BackendConformanceTests
 
         AssertPixelNear(pixels, 32, 32, 0, 255, 0, 255);
         AssertPixelNear(pixels, 8, 8, 0, 0, 0, 0);
-        AssertPixelNear(pixels, 32, 52, 255, 255, 255, 255);
-        AssertPixelNear(pixels, 32, 48, 0, 0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "TwoDConformance")]
+    public void StrokePathRendersAcrossTheBackend()
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        PathGeometry line = new PathBuilder()
+            .MoveTo(new(8, 32))
+            .LineTo(new(56, 32))
+            .Build();
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        encoder.StrokePath(
+            line,
+            Matrix3x2.Identity,
+            new StrokeStyle(4),
+            Brush.Solid(Color.White));
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "stroked-path",
+            renderer,
+            prepared,
+            new RenderTarget(target.Handle, target.Description, GpuAttachmentLoadOperation.Clear));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        byte[] pixels = ReadPixels(backend, target.Handle);
+
+        AssertPixelNear(pixels, 32, 32, 255, 255, 255, 255);
+        AssertPixelNear(pixels, 32, 26, 0, 0, 0, 0);
     }
 
     protected abstract IGpuBackend CreateBackend();
+
+    private byte[] Render(Action<CommandEncoder> record)
+    {
+        using IGpuBackend backend = CreateBackend();
+        using var target = BackendTexture.Create(backend, TargetDescription());
+        using var renderer = new Renderer(backend);
+        using CommandEncoder encoder = renderer.CreateCommandEncoder();
+        record(encoder);
+        using PreparedDisplayList prepared = renderer.Prepare(encoder.Finish(), target.Description);
+        var graph = new GpuRenderGraph();
+        graph.AddTwoD(
+            "two-d-route",
+            renderer,
+            prepared,
+            new RenderTarget(
+                target.Handle,
+                target.Description,
+                GpuAttachmentLoadOperation.Clear,
+                ClearColor: new(0, 0, 0, 0)));
+
+        using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
+        return ReadPixels(backend, target.Handle);
+    }
 
     private static PathGeometry RectanglePath(float x, float y, float width, float height)
         => new PathBuilder()
@@ -737,6 +885,26 @@ public abstract class BackendConformanceTests
             matches,
             $"Pixel ({x}, {y}) expected [{string.Join(", ", expected)}] "
                 + $"within {tolerance}, but was [{string.Join(", ", actual)}].");
+    }
+
+    private static void AssertRedPixelInRange(
+        ReadOnlySpan<byte> pixels,
+        int x,
+        int y,
+        byte minimum,
+        byte maximum)
+    {
+        int offset = checked((y * (int)Width + x) * 4);
+        byte[] actual = pixels.Slice(offset, 4).ToArray();
+        bool matches = actual[0] >= minimum
+            && actual[0] <= maximum
+            && actual[1] == 0
+            && actual[2] == 0
+            && Math.Abs(actual[0] - actual[3]) <= 2;
+        Assert.True(
+            matches,
+            $"Pixel ({x}, {y}) expected premultiplied red between {minimum} and {maximum}, "
+                + $"but was [{string.Join(", ", actual)}].");
     }
 
     private sealed class BackendTexture : IDisposable
