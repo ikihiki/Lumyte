@@ -1,0 +1,22 @@
+{
+  "compiler": "Slang 2026.17",
+  "shaders": {
+    "handAuthored": {
+      "path": "hand-authored.wgsl"
+    },
+    "slangInterop": {
+      "path": "../../../../artifacts/experiments/slang-wgsl-root/compiler/results-2026.17/target_switch_immediate.wgsl.wgsl",
+      "sha256": "0591c5f70cb19c93edc40b51979d96e6f28a7ff2d7bf721bcd18bc6ec802523b"
+    },
+    "slangMixed": {
+      "path": "../../../../artifacts/experiments/slang-wgsl-root/compiler/results-2026.17/scalar_getter_mixed_immediate.wgsl.wgsl",
+      "sha256": "22aeadaab338734708f0a722e2484b6e0a9c157bfde3e3b84e0a22257b744242"
+    },
+    "mixed": {
+      "path": "mixed-root.wgsl"
+    },
+    "raster": {
+      "path": "raster-root.wgsl"
+    }
+  }
+}
