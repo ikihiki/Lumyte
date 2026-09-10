@@ -90,4 +90,4 @@ Slice の CPU 整数 overflow と元の range 外の値生成を防ぐ。native 
 
 region の明示配置・mapping・実 GPU address の取得を両 backend に実装し、range／Slice の範囲と overflow を単体試験で確認した。DirectX 12 の実機試験は配置・mapping・address と独立した破棄を確認している。Vulkan でも必須拡張を満たす device で、複数 region の共有 mapping、独立した byte 範囲、region 破棄後の heap 再利用と実 GPU address を確認した。
 
-raw shader pointer の DirectX 12 対応は未提供であり、copy／indirect／descriptor の region 対応と GPU command によるデータ検証は未実装の移行作業である。詳細は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+copy は region identity と region 相対 offset を使う command へ接続した。DirectX 12 は backing resource、Vulkan は device address と range size を native copy に渡す。raw shader pointer の DirectX 12 対応は未提供であり、indirect／descriptor への region 対応は未実装の移行作業である。GPU 転送と読み戻しの検証結果は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

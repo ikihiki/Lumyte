@@ -1,14 +1,16 @@
 # Native GPU 基盤
 
-DirectX 12／Vulkan 向けの caller-owned な低レベル契約。現在は device、共通 heap、線形 region と region 内の range、texture の明示配置を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
+DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、GPU コピー、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
 
 `CreateGpuHeap` は backing allocation だけを確保する。`CreateLinearRegion` が指定した heap offset に独立した native buffer を配置し、その resource の GPU address と必要な CPU mapping を提供する。`NativeGpuRange.Offset` は region 内の値であり、heap offset を含めない。
 
 `CreateTexture` も同じ heap と offset を受け取り、独立した native texture を配置する。`GetTextureMemoryRequirements` と線形 region の requirements をまとめて heap 確保に渡すことで、native 条件が許す組合せを同居させられる。texture は opaque identity であり、CPU/GPU pointer や metadata の照会は公開しない。[混在配置の使用例](../../../docs/adr/0005-native-texture-api.md#使用例) を参照する。
 
-heap、region、texture と GPU 利用の寿命は caller が管理する。managed reference をコピーしても native resource を延命しない。解放順は GPU 利用終了 → region／texture → heap → backend。現段階には GPU work の記録・提出 API は含まれない。
+heap、region、texture と GPU 利用の寿命は caller が管理する。managed reference をコピーしても native resource を延命しない。解放順は GPU 利用終了 → region／texture → heap → backend。提出は一回限りとし、caller の semaphore と completion 値で GPU 完了を確認する。
 
 同一 heap／resource の操作は、配置と破棄も含めて caller が直列化する。backend の Dispose と利用も競合させない。Vulkan の同一 allocation 内で共有する mapping は、この host 同期の下で取得・解放する。
+
+backend の Dispose 前に、caller は提出済み work を完了させ、未提出分を含む全 recording と semaphore を破棄する。未提出 recording の native memory は各 recording が所有し、queue は提出済み command memory だけを回収する。
 
 ## 使用例
 
@@ -43,6 +45,37 @@ finally { backend.DestroyGpuHeap(heap); }
 
 requirement の Size は alignment を含む予約容量で、region の Size は論理データ容量。Compatibility は同じ backend・memory kind で取得した値をそのまま列として渡す。
 
+## GPU コピーと明示的な待機
+
+`upload`、`deviceData`、`readback` はそれぞれ CpuVisible、GpuOnly、Readback の region 内に確保済みの `NativeGpuRange` とする。各 range は16 byte以上あり、native の整列条件を満たす。caller は関連する全 resource と heap を、最後の待機が完了するまで破棄・再利用しない。
+
+```csharp
+byte[] input = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+Marshal.Copy(input, 0,
+    checked(upload.Region.CpuAddress + (nint)upload.Offset), input.Length);
+
+var queue = backend.MainQueue;
+using var completion = queue.CreateSemaphore(0);
+using var commands = queue.StartCommandRecording();
+commands.CopyMemory(upload.Slice(0, 16), deviceData.Slice(0, 16));
+commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+    GpuStage.Copy, GpuAccess.CopyRead);
+commands.CopyMemory(deviceData.Slice(0, 16), readback.Slice(0, 16));
+commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+    GpuStage.Host, GpuAccess.HostRead);
+queue.Submit([commands], completion, 1);
+commands.Dispose(); // GPU work は取り消さず、内部 command memory は完了まで保持する。
+queue.Wait(completion, 1);
+
+byte[] output = new byte[16];
+Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
+    output, 0, output.Length);
+```
+
+`GpuStage`／`GpuAccess` は `Lumyte.Graphics` に属する。HostRead barrier が memory visibility を、`Wait` が実行完了を扱う。GPU 間の依存も caller が指定し、Submit が不足 barrier を推定しない。`IsComplete(completion, value)` なら CPU を待機させずに確認できる。
+
+未提出の `Dispose` は記録を破棄する。提出済みの `Dispose` は待機せず、queue は内部 completion で command memory を回収する。caller semaphore は完了後に破棄できる。command の状態を取得する API、application resource の自動退役、暗黙 staging は設けない。
+
 ## バックエンドの追加
 
 別 assembly で `INativeGpuBackend` を実装し、次の基底型から実装内の非公開型を派生させる。`Lumyte.Graphics.Native` に `InternalsVisibleTo` はなく、追加 backend の assembly 名を登録する必要もない。
@@ -53,6 +86,9 @@ requirement の Size は alignment を含む予約容量で、region の Size �
 | `NativeGpuMemoryCompatibility` | `()` | native requirement、取得元 device と memory kind |
 | `NativeGpuLinearRegion` | `(heap, heapOffset, size, gpuAddress, cpuAddress)` | native resource、所属 device、mapping と局所的な解放状態 |
 | `NativeGpuTextureHandle` | `()` | native texture、作成値、所属 device と局所的な解放・初期化状態 |
+| `NativeGpuQueue` | `()` | native queue、内部 command memory の completion と回収 |
+| `NativeGpuCommandBuffer` | `()` | queue identity、記録・一回提出・破棄の局所状態と native command memory |
+| `NativeGpuSemaphore` | `()` | caller-owned native completion timeline と所属 queue |
 
 `NativeGpuMemoryRequirements(size, alignment, compatibility)` は public constructor で返せる。基底型が公開する metadata は不変とし、texture handle と compatibility は opaque に保つ。基底型自体は native resource を生成・破棄しない。backend は受け取った object の派生型と device identity を検査し、別実装・別 device の object を native API に渡さない。`object BackendData` や共通の resource registry は使わない。
 
@@ -62,6 +98,6 @@ requirement の Size は alignment を含む予約容量で、region の Size �
 
 旧 `IGpuBackend` の adapter は作らない。既存の描画系は未移行の source として残り、新しい backend は native API を直接呼ぶ。共通 `Lumyte.Graphics` から現在利用するものは code format と device loss 例外などの基礎型である。
 
-texture の配置までを実装し、view、copy footprint、初回 layout 遷移と GPU 転送は後続段階とする。DirectX 12 の texture は `Undefined`、Vulkan の image は `UNDEFINED` で生成する。Vulkan は使用前に `GENERAL` へ遷移させる義務を非公開の texture 状態に保持し、今後の command／submit 実装へ接続する。生成時に queue を作成・提出・待機しない。
+texture copy は単一 aspect の footprint と、明示した byte pitch を使う。DirectX 12 では caller が `TextureTransition` で前後の layout を指定し、Vulkan では backend が初回利用前に `GENERAL` を順序付ける。alias 再利用は caller が `Barrier` と `DiscardTexture` で指定する。非所有の view 値は subresource を表すだけで、native render view を生成しない。`CreateTexture` 自体は提出・待機しない。
 
-descriptor、shader、limits、command／queue、Resources と機能 RenderGraph の移行も後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+render view／descriptor、shader、pipeline／描画、limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

@@ -26,6 +26,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private DebugUtilsMessengerEXT debugMessenger;
     private delegate* unmanaged<Instance, DebugUtilsMessengerEXT, AllocationCallbacks*, void> destroyDebugMessenger;
     private bool disposed;
+    private QueueRecord? mainQueue;
 
     private VulkanBackend(Vk vk) => this.vk = vk;
 
@@ -33,6 +34,13 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
 
     // Later implementation stages enable capabilities when their corresponding operations exist.
     public NativeGpuCapabilities Capabilities => new();
+
+    internal bool SupportsSeparateDepthStencilLayouts { get; private set; }
+
+    public NativeGpuQueue MainQueue
+    {
+        get { VerifyNotDisposed(); return mainQueue!; }
+    }
 
     public static VulkanBackend Create(NativeGpuBackendOptions? options = null)
     {
@@ -108,6 +116,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
 
             vk.GetPhysicalDeviceMemoryProperties(physicalDevice, out memoryProperties);
             bufferImageGranularity = properties.Limits.BufferImageGranularity;
+            vk.GetDeviceQueue(device, queueFamily.Value, 0, out Queue queue);
+            mainQueue = new QueueRecord(this, queue, queueFamily.Value);
             return;
         }
         throw new NotSupportedException("No device satisfies Vulkan Native requirements. Missing: "
@@ -205,13 +215,15 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             return false;
         }
 
-        // Enable the required features only, not every optional feature reported by the driver.
+        // Enable required and explicitly used optional features, never the full query result.
         descriptors.DescriptorHeapCaptureReplay = false;
         unified.UnifiedImageLayoutsVideo = false;
+        bool separateDepthStencilLayouts = features12.SeparateDepthStencilLayouts;
         features12 = new()
         {
             SType = StructureType.PhysicalDeviceVulkan12Features,
             PNext = &features13, BufferDeviceAddress = true, TimelineSemaphore = true,
+            SeparateDepthStencilLayouts = separateDepthStencilLayouts,
         };
         features13 = new()
         {
@@ -242,6 +254,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             EnabledExtensionCount = names.Count, PpEnabledExtensionNames = names.Pointer,
         };
         Check(vk.CreateDevice(physicalDevice, in deviceInfo, null, out device), "vkCreateDevice");
+        SupportsSeparateDepthStencilLayouts = separateDepthStencilLayouts;
         missing = null;
         return true;
     }
@@ -308,6 +321,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         if (disposed) { return; }
         disposed = true;
         // Application resources and GPU work must already have been released by the caller.
+        mainQueue?.ReleaseInternalObjects();
         if (device.Handle != 0) { vk.DestroyDevice(device, null); }
         if (debugMessenger.Handle != 0) { destroyDebugMessenger(instance, debugMessenger, null); }
         if (instance.Handle != 0) { vk.DestroyInstance(instance, null); }

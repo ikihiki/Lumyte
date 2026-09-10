@@ -95,6 +95,8 @@ compute pipeline は作成時に native 生成を完了する。shader の linka
 
 global barrier は texture layout を変更しない。DirectX 12 で必要な layout 変更は `TextureTransition(view, beforeLayout, afterLayout)` に caller が明示する。同期範囲の変換に必要な情報をその入力から得て、不足する before state を履歴から算出しない。texture の初期化・aliasing・presentation で native が必要とする処理を、一般的な自動 state 管理へ拡張しない。
 
+DirectX 12 の enhanced barrier には host 専用 bit がない。`GpuStage.Host` は `ALL`、`GpuAccess.HostRead/Write` は `COMMON` の global access へ写し、CPU 読み取りの開始は caller の fence completion 待機で順序付ける。mapped range や Readback heap の利用を見て暗黙に barrier／wait を追加しない。
+
 `DiscardTexture(view, afterLayout)` は指定 mip／array layer／aspect を native の subresource range に写し、`LayoutBefore = UNDEFINED`、`AccessBefore = NO_ACCESS`、`Flags = DISCARD` の enhanced texture barrier で必要な metadata を初期化する。`LayoutAfter` と対応する access は caller の次用途から変換し、初期化を前後の work へ順序付ける sync scope は `ALL` とする。古い layout からの decompression や旧 data の保存は行わない。
 
 alias の write flush は caller の先行 global barrier に分ける。flush と discard を同時に実行し得る barrier 群へまとめず、先行 barrier の `SyncAfter` と discard の scope を `ALL` で接続し、同じ memory を更新する native barrier の順序条件を守る。既存 texture の再有効化も command に明示された回数だけ変換する。CPU 記録や native encode の時点で application resource を「再初期化済み」とする registry は持たず、受理されなかった記録は破棄する。[Enhanced Barriers の alias と順序](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html#barrier-ordering)
@@ -116,6 +118,8 @@ texture copy は footprint の `Aspect` を plane index に変換する。color 
 batch 全体の PSO と command list の生成・終了が成功してから、queue が command list を実行して native fence を signal する。PSO 生成や変換・終了が失敗した batch は受理せず、GPU work を開始しない。caller はその記録を `Dispose` し、新しい記録を作る。生成に成功した PSO は pipeline の内部に保持してよい。受理と completion を区別し、受理済み work を再提出可能な状態へ戻さない。受理後の signal を保証できなくなれば device loss として停止し、永久に届かない completion を通常待機として残さない。
 
 command allocator と記録用 memory だけを backend が所有する。未提出 command の `Dispose` は記録を破棄する。提出済み command の `Dispose` は GPU work を取消し・待機せず、対応 completion または確定した device 終了まで内部 memory を保持してから回収する。公開する command 状態は設けず、記録・終了・受理の管理は backend 内部に閉じる。application の heap、linear region、texture、render view、descriptor、pipeline の寿命は引き受けない。
+
+queue は command memory 回収専用の内部 fence を一つ所有する。caller fence と内部 fence を実行後に signal し、caller が完了確認後に自身の fence を破棄しても回収できるようにする。回収用の管理領域は Execute 前に確保する。受理後に signal できなければ `RemoveDevice` で該当 device を停止し、以後の通常待機を device loss として拒否する。
 
 ## API
 
@@ -198,7 +202,8 @@ amplification entry があれば指定 group 数は amplification を起動し�
 - heap 共用は native の条件を満たす組合せに限る。Tier 1 の分類制限と CPU 可視 heap の texture 制限を取り除いたとは扱わず、別 heap に分ける場合も公開の allocation 型と確保 API は共通とする。
 - mesh／amplification は任意機能として採用する。tier／limit の写像、AS／MS の PSO stream、直接／indirect dispatch、stage barrier と実 GPU 検証は未実装である。mesh 非対応 device への自動 emulation、multi-draw/count buffer と GPU 生成 root は今回の範囲に含めない。
 - Native 専用の `DirectX12Backend` と公開型群に、純粋 allocation、線形 region と texture の requirement・明示配置・独立破棄を実装した。保持した Device10 から同じ `ResourceDesc1` で `GetResourceAllocationInfo2`／`CreatePlacedResource2` を呼び、texture は `Undefined` で生成する。混在配置と heap 再利用は実機確認済み。実装と試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
-- command／submit、view／descriptor、shader、aspect 別 copy と alias 再初期化は未実装の移行作業である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。
+- CPU command 記録から Submit 内での一括 native 変換、線形／aspect 別 texture copy、global barrier、明示 texture transition／discard、queue と fence completion を実装した。native copy footprint の plane format を取得し、caller の row／image pitch と region 相対 offset をそのまま native copy へ変換する。
+- render view／descriptor、shader／pipeline と描画の移行は未実装である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
 
 ## 参照
 

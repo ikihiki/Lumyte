@@ -27,7 +27,7 @@ format の追加の再解釈は `MutableFormat` で指定する。許可 format 
 | `GetTextureMemoryRequirements(description, kind)` | 指定 texture と memory kind の配置に必要な共通の `NativeGpuMemoryRequirements` を返す。 |
 | `NativeGpuTextureHandle` | device に属する opaque texture identity。public abstract 基底型と protected constructor から各 backend が非公開派生型を実装する。heap の所有権は取得しない。 |
 | `CreateTexture(description, heap, offset)`／`DestroyTexture(texture)` | caller-owned `NativeGpuHeap` へ配置し、texture だけを破棄する。memory kind は `heap.Kind` に従う。 |
-| `NativeGpuTextureCopyFootprint` | `Mip`、`Aspect`、`BaseLayer`／`LayerCount`、`Origin`、`Extent`、byte 単位の `RowPitch`／`ImagePitch` を指定する非所有の転送配置。 |
+| `NativeGpuTextureCopyFootprint` | `Mip`、`Aspect`、`BaseLayer`／`LayerCount`、`Origin`（`GpuOrigin3D`）、`Extent`（`GpuExtent3D`）、byte 単位の ulong `RowPitch`／`ImagePitch` を指定する非所有の転送配置。 |
 
 `NativeGpuTextureDescription` は作成時の dimension、extent、mip/layer 数、sample count、format、usage と `MutableFormat` を指定する。`GetTextureMemoryRequirements` が返す予約 `Size` と `Alignment` に従って配置し、`Compatibility` を変更せず共通 heap の確保へ渡す。他の resource と同居させる場合はその requirement も確保時の列に含める。texture 自体から通常の CPU/GPU pointer は公開しない。
 
@@ -50,7 +50,7 @@ NoGraphicsAPI と同様に `MutableFormat` は bool、default false とする。
 
 ## コード配置
 
-パスは repository root 相対とする。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。aspect・copy footprint と転送の配置は後続実装の目標を含む。テストは xUnit を使う。
+パスは repository root 相対とする。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。転送命令の写像は各 backend の Commands と Synchronization に置く。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -111,4 +111,4 @@ caller-owned heap への texture 配置と MutableFormat を採用する。線�
 
 description、opaque handle、requirement 取得と heap への明示配置・独立破棄を両 backend に実装した。要件取得と生成は同じ native description 変換を使う。GPU を使った描画や転送前の配置処理として、dimension、array／mip、MSAA、format、MutableFormat、混在配置と破棄後の heap 再利用を検証した。特定 GPU の成功は他の device や組合せの保証にはしない。
 
-aspect・copy footprint、view、初回利用の layout 遷移、alias 再初期化と depth／stencil の独立転送は未実装である。Vulkan の `GENERAL` 初期化義務は非公開状態に保持するが、command／submit への接続と実行は後続作業とする。`CreateTexture` は暗黙の queue 生成・提出・待機を行わない。実機試験結果は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+aspect・copy footprint と非所有 view 値を追加し、初回 layout 遷移、alias 再初期化と単一 aspect の転送を command／submit へ接続した。Vulkan の `GENERAL` 初期化義務は非公開状態に保持し、初回参照の直前に実行する命令を提出成功後だけ確定する。`CreateTexture` は暗黙の提出・待機を行わない。attachment 用 render view と shader descriptor の利用は未実装である。実機試験結果と未検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

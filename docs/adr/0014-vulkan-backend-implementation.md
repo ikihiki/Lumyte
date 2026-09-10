@@ -115,6 +115,10 @@ rendering 内の `DispatchMesh(rootData, x, y, z)` は root を直接記録し�
 
 `Barrier` は stage/access から一つの global `VkMemoryBarrier2` を作り、`vkCmdPipelineBarrier2` で記録する。通常の texture/buffer を列挙せず、per-resource transition list を求めない。caller が producer/consumer の実際の依存を指定する。
 
+`GpuStage.Host` と `GpuAccess.HostRead/Write` は `HOST` stage と host access bit に対応する。readback の前には caller が producer から `HostRead` への dependency を記録し、提出後に completion を CPU で待つ。coherent mapping は host cache の明示 invalidate を省くが、device から host への memory domain operation と完了待機は省かない。backend が毎回の Submit に readback barrier を補うことはしない。[Vulkan の CPU readback 例](https://docs.vulkan.org/guide/latest/synchronization_examples.html#_cpu_read_back_of_data_written_by_a_compute_shader)
+
+`DescriptorRead` は `VK_ACCESS_2_RESOURCE_HEAP_READ_BIT_EXT` と `VK_ACCESS_2_SAMPLER_HEAP_READ_BIT_EXT` に写す。従来の descriptor-buffer 用 access bit を代用しない。
+
 `GpuStage.AmplificationShader`／`MeshShader` はそれぞれ `VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT`／`MESH_SHADER_BIT_EXT` に写す。meshlet data の shader read と indirect 引数の `DRAW_INDIRECT`／`INDIRECT_COMMAND_READ` は別の依存先であり、caller が実際の consumer を指定する。mesh を compute stage にまとめず、従来の shader-stage 定数 `VK_SHADER_STAGE_ALL_GRAPHICS` に mesh／task が含まれるとも仮定しない。[Mesh Shader の stage と同期](https://docs.vulkan.org/features/latest/features/proposals/VK_EXT_mesh_shader.html)
 
 texture copy は `NativeGpuTextureCopyFootprint.Aspect` を `VkDeviceMemoryImageCopyKHR.imageSubresource.aspectMask` の単一 `COLOR`／`DEPTH`／`STENCIL` bit に写す。mip と layer 範囲を同じ `imageSubresource` に渡し、layout は `GENERAL` とする。depth と stencil は別々の線形 plane として転送する。16-bit depth は `D16_UNORM`、24-bit depth は `X8_D24_UNORM_PACK32`、32-bit depth は `D32_SFLOAT`、stencil は `S8_UINT` の element 配置を使う。[Vulkan の aspect 別 copy](https://docs.vulkan.org/spec/latest/chapters/copies.html#copies-buffers-images)
@@ -122,6 +126,10 @@ texture copy は `NativeGpuTextureCopyFootprint.Aspect` を `VkDeviceMemoryImage
 byte 単位の `RowPitch`／`ImagePitch` は選択 aspect の element／block サイズから texel 単位の `addressRowLength` と `addressImageHeight` に変換する。copy の address は range の先頭であり、texture 内の opaque な offset から生成しない。整数変換で表現できない入力は失敗とし、staging や pitch 補正で救済しない。native の整列・範囲・format 条件は validation に委ねる。[VkDeviceMemoryImageCopyKHR](https://docs.vulkan.org/refpages/latest/refpages/source/VkDeviceMemoryImageCopyKHR.html)
 
 native command buffer は記録呼出し時に一回提出用の native command を生成し、queue が `Submit` 内で batch 全体の記録を終了してから受理する。終了に失敗した batch は GPU へ提出せず、caller が `Dispose` して新しく記録する。記録・終了・受理の区別は内部管理とし、command 状態を公開しない。timeline semaphore で caller の completion 値を表す。未提出 command の `Dispose` は記録を破棄し、提出済み command の `Dispose` は GPU work の取消しや待機を行わず、内部 command memory を必要な完了まで保持してから回収する。caller-owned heap、linear region、descriptor、texture と pipeline の寿命を backend が引き受けない。
+
+新規 texture の初回参照位置では native command の区間を分け、未初期化候補を非所有参照で記録する。Submit が区間を順に走査し、まだ必要な image の `UNDEFINED → GENERAL` command だけを参照の直前に挿入する。初期化は caller の先行 barrier を追い越さず、先に複数の recording を組み立てても同じ image を重複初期化しない。明示的な `DiscardTexture` はこの初回処理とは別に毎回記録する。通常 layout の履歴や subresource ごとの状態 tracker は追加しない。
+
+全区間の終了と回収用の管理領域の確保を終え、一回の `vkQueueSubmit2` で受理された後だけ初回初期化義務を消費する。失敗と未提出 Dispose では義務を残す。この一回の呼出しに、command と内部 timeline の signal を含む native batch、その後に caller timeline を signal する native batch を渡す。同じ native batch の複数 signal は互いに順序を保証しないため、分けることで caller の Wait が内部 signal の終了も保証する。command memory の回収は内部 timeline のみに依存し、追加の queue 提出呼出しや暗黙待機は行わない。[Vulkan の signal 順序](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-signal-operation-order)
 
 queue 受理と GPU completion を区別し、native の失敗を ADR 0002 の error/device loss に接続する。参照プロトタイプの `assert` やプロセス終了の方針を、そのまま Lumyte の失敗 API に置き換えない。未提出中止と受理後の停止も区別する。
 
@@ -212,8 +220,9 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 - NoGraphicsAPI の descriptor heap、null-layout pipeline、直接 push data、GPU pointer、global barrier と単一 image layout を採用する。
 - 共通 allocation と linear region の明示分離、`NativeGpuRange` の region identity、複数 requirement の opaque compatibility を受け取る確保、buffer descriptor、sampler の LOD/anisotropy 指定、read-only attachment、単一 aspect の copy footprint、alias 再利用の明示 discard と Lumyte の例外・`Dispose` 契約は、本 API の追加または差分である。NoGraphicsAPI の public API に同じ機能があるとは扱わない。
 - heap の共用は native memory 条件が適合する範囲に限り、GPU-only memory の全用途共通化や image の線形 pointer 化は保証しない。Native 専用の `VulkanBackend` に共通 allocation、線形 region の配置と mapping、texture の明示配置・独立破棄、granularity を含む requirements を実装した。必須拡張を満たす device で初期化、共有 mapping、texture との混在配置と heap 再利用を実機確認済み。validation layer を使う検証は未実施である。
-- texture の要件取得と生成は同じ `ImageCreateInfo` の変換を使う。optimal image を `UNDEFINED` で生成・bind し、初回の `GENERAL` 初期化義務を非公開状態に保持する。command／submit への接続は未実装であり、生成時の暗黙提出・待機は行わない。
+- texture の要件取得と生成は同じ `ImageCreateInfo` の変換を使う。optimal image を `UNDEFINED` で生成・bind し、初回の `GENERAL` 初期化義務を非公開状態に保持する。command／submit には参照直前の区間で接続し、生成時の暗黙提出・待機は行わない。
 - mesh／task は任意機能として採用する。feature／limit の写像、mesh／task pipeline、直接／address-range indirect dispatch、stage barrier と実 GPU 検証は未実装である。point 出力、mesh 固有の multiview／query など拡張全体の一括採用はしない。
 - PSO の rasterization/blend の全面分離、GPU が生成・選択する root は未採用。ray tracing、multi-draw/count buffer と presentation API はこの最小 Native interface の範囲外である。
 - 参照実装の swapchain には `GENERAL ↔ PRESENT_SRC_KHR` の内部 transition があるが、本 ADR は presentation API の実装完了を宣言しない。
-- descriptor-heap/address-command を使う描画経路への移行、texture/buffer 混在 slot stride と shader lowering の一致、aspect 別 copy と alias 再初期化、およびこれらの GPU conformance 検証は未実装である。メモリ基盤の試験成功を描画対応の完了とは扱わない。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+- address-command の線形／texture copy、global barrier、HostRead、明示 discard、queue の一回提出と timeline completion を実装した。転送先 range は source の byte 数だけに制限し、公開した余剰容量を変更しない。内部 command pool の回収は caller semaphore の寿命から分離する。
+- descriptor-heap/address-command を使う描画経路、texture/buffer 混在 slot stride と shader lowering の一致、render view、shader／pipeline／mesh の移行と GPU conformance 検証は未実装である。転送基盤の試験成功を描画対応の完了とは扱わない。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

@@ -21,12 +21,16 @@ caller が timeline の値、提出順序と再利用時点を管理する。bac
 | API | 契約 |
 | --- | --- |
 | `NativeGpuQueue.Submit(commands, semaphore, value)` | 同じ queue の一つ以上の記録について、必要な native PSO の解決と native command の生成・終了を batch 全体で成功させてから一度だけ提出する。caller 指定の値を batch 完了時に signal し、GPU 完了の CPU wait はしない。 |
-| `NativeGpuSemaphore` | caller-owned completion timeline。 |
+| `NativeGpuSemaphore` | caller-owned completion timeline。public abstract 基底型と protected constructor から各 backend が実装する。 |
 | `NativeGpuQueue.CreateSemaphore(initialValue)` | 初期値を持つ同期 object を生成する。 |
 | `NativeGpuQueue.IsComplete(semaphore, value)`／`Wait(semaphore, value)` | 指定値の completion を CPU から照会・待機する。 |
 | `NativeGpuSemaphore.Dispose()` | 関連する提出・待機を解消してから同期 object を破棄する。 |
 
 `NativeGpuSemaphore` は caller-owned な completion timeline である。caller は同じ timeline の signal 値を単調増加させ、同期 object を関連する提出・待機の解消後に破棄する。別 queue への GPU wait は最小契約に含めない。
+
+caller は同じ queue の操作と semaphore の利用・破棄を直列化する。異なる recording は別々に組み立てられるが、一つの recording の記録・提出・破棄を競合させない。batch は `ReadOnlySpan<NativeGpuCommandBuffer>` で渡し、span の storage は `Submit` が戻った後に保持する必要がない。
+
+backend の終了前に、caller は提出済み work を完了させ、未提出分を含む全 recording と semaphore を Dispose する。未提出の native command memory は recording が所有し、queue は受理した work の内部 memory だけを追跡する。backend 終了を application object の自動回収入口にしない。
 
 DirectX 12 の `Submit` は次の順序で処理する。
 
@@ -43,11 +47,13 @@ PSO 生成、native command への変換・終了に失敗した batch は受理
 
 受理後は command を Dispose しても caller の semaphore で completion を照会できる。signal を保証できなくなった場合は device loss として停止し、完了値が届かない通常待機を残さない。backend 所有の command memory は必要な completion または確定した device 終了まで保持し、Dispose を理由に早期再利用しない。
 
+内部 command memory の回収は caller の semaphore の寿命に依存させない。backend は queue 所有の内部 completion を使い、caller が `Wait` の直後に semaphore を破棄しても回収を継続できるようにする。この追跡は allocator／native command memory だけを対象とし、application resource の退役を引き受けない。回収のための公開 polling API や暗黙の CPU wait は追加しない。
+
 native 記録中・終了済み・受理済みの区別は内部管理であり、公開 command 状態は設けない。提出自体は GPU 完了の CPU wait を行わないが、提出中の native PSO 生成と command 変換は完了させる。
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とし、PSO など未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -63,20 +69,21 @@ native 記録中・終了済み・受理済みの区別は内部管理であり�
 
 ## 使用例
 
-`pipeline` と `resourceHeap` は作成済みで、caller が使用する object を completion まで保持する。shader と `rootData` は同じ Native ABI に従う。以下は提出と待機が正常に完了する経路の例である。
+`upload` と `readback` は同じ byte 数の確保済み range とし、upload の CPU 書込みは済んでいるとする。caller が使用する resource と backing heap を completion まで保持する。以下は提出と待機が正常に完了する経路の例である。
 
 ```csharp
 var queue = native.MainQueue;
 using var completion = queue.CreateSemaphore(0);
 using var commands = queue.StartCommandRecording();
-commands.SetResourceDescriptorHeap(resourceHeap);
-commands.SetComputePipeline(pipeline);
-commands.Dispatch(rootData, 1);
+commands.CopyMemory(upload, readback);
+commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+    GpuStage.Host, GpuAccess.HostRead);
 queue.Submit([commands], completion, 1);
+commands.Dispose();
 queue.Wait(completion, 1);
 ```
 
-この例は caller が明示的に Wait する。command の Dispose や Submit が暗黙に GPU 完了を待つわけではない。
+この例は caller が明示的に Wait してから readback を読む。受理後すぐ command を Dispose しても work は続き、内部 command memory は完了まで保持される。command の Dispose や Submit が暗黙に GPU 完了を待つわけではない。
 
 ## 検証方針
 
@@ -84,4 +91,6 @@ batch の一回受理、PSO/command 変換の失敗境界、completion の接続
 
 ## 採用差分と未実装範囲
 
-一回提出、明示 completion と caller lifetime を採用する。DirectX 12 の提出時 PSO 解決と batch 受理前の失敗処理は Lumyte の補足である。queue をまたぐ GPU wait、presentation と application resource の自動退役はこの Native 契約に含めない。mesh を含む実装移行と GPU conformance 検証は未実装である。
+一回提出、明示 completion と caller lifetime を採用し、転送 command の batch と caller-owned semaphore に実装した。内部 command memory は queue 所有の completion で回収する。受理前の command 変換・終了失敗を GPU 提出へ進めず、受理済み recording の再利用を拒否する。外部 assembly からの実装と GPU 試験の結果は [進捗記録](../designs/graphics-implementation-progress.md) に記録する。
+
+DirectX 12 の提出時 PSO 解決は Lumyte の補足として採用するが、shader／pipeline／mesh の移行と合わせて未実装である。queue をまたぐ GPU wait、presentation と application resource の自動退役はこの Native 契約に含めない。

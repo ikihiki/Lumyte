@@ -1,6 +1,6 @@
 # Graphics 実装進捗
 
-37 ADR の目標設計に対する実装状況を記録する。最初の統合完了条件は [ADR 0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) にある起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了であり、以下のメモリ基盤だけで達成したとは扱わない。
+37 ADR の目標設計に対する実装状況を記録する。最初の統合完了条件は [ADR 0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) にある起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了であり、以下のメモリ・転送基盤だけで達成したとは扱わない。
 
 ## 第1段階: Native メモリ基盤
 
@@ -90,10 +90,39 @@ Native の内部公開は0件で、repository の `InternalsVisibleTo` 9件は�
 
 実機は RTX 2080、driver 616.92。これらは配置・破棄の試験であり、texture の描画・転送結果を検証したものではない。Vulkan の Khronos validation layer は未導入のため、その有効時の試験は引き続き未実施である。view、aspect／copy footprint、初回 layout 遷移の実行、depth／stencil 別転送と alias の再初期化は未実装として残す。
 
+## 第3段階: Native 転送・提出・同期
+
+2026-09-10 に [Command Recording](../adr/0011-native-command-recording-api.md) と [Submission・同期](../adr/0012-native-command-submission-and-synchronization.md) の転送経路を追加した。
+
+| 範囲 | 実装と確認内容 |
+| --- | --- |
+| 公開契約 | `NativeGpuQueue`、`NativeGpuCommandBuffer`、`NativeGpuSemaphore` は公開基底型と protected constructor で外部 backend が実装する。MainQueue、copy、barrier、transition／discard、Submit／Wait／IsComplete を追加し、状態照会や独自 resource registry は設けない |
+| 転送の値 | 非所有 texture view、単一 aspect の copy footprint、texel 原点／extent、byte pitch を追加。copy は source の byte 数だけを転送し、destination の余剰範囲を変更しない |
+| DirectX 12 | CPU 記録を Submit 内で一括変換し、全 command list の終了と回収用管理領域の確保に成功してから一回 Execute。CopyBufferRegion と plane ごとの CopyTextureRegion を使い、明示 layout／discard を enhanced barrier へ写す |
+| Vulkan | `VK_KHR_device_address_commands` の copy を記録時に生成。初回 image 参照の直前で native command の区間を分け、Submit 時に必要な `GENERAL` 初期化だけを挿入する。caller の先行 alias barrier を追い越さず、複数 recording の初期化重複も防ぐ |
+| Completion | caller-owned timeline と queue 所有の内部 completion を分け、内部 command memory だけを回収する。Vulkan は一回の QueueSubmit2 に内部 signal を含む batch → caller signal の batch を渡し、caller の Wait が内部 signal の完了も保証する |
+| Host access | `GpuStage.Host` と `GpuAccess.HostRead/Write` を追加。caller が GPU producer → HostRead の barrier と completion 待機を明示する。coherent mapping や Wait だけで GPU→CPU の visibility が成立するとは扱わない |
+| 所有・失敗 | 未提出 recording は自身の native memory を所有し、queue は受理した command memory のみ追跡。提出前失敗で batch の一部を実行せず、一度受理した recording は再利用しない。DX12 で受理後 signal 不能なら device を停止して通常待機を拒否する |
+
+command の Dispose は暗黙待機せず、caller は GPU 完了まで application resource を保持する。backend の終了前には未提出分を含む recording、semaphore と application resource を解放する。queue が未提出 recording を大域的に登録・自動破棄する仕組みは置かない。
+
+Vulkan の単独 depth／stencil discard は、対応 device で `separateDepthStencilLayouts` を有効化する。未対応 device での native 条件は変えず、他方の aspect を勝手に含めて discard しない。depth／stencil の単一 aspect copy と、discard が要求する native feature は別の条件として扱う。
+
+focused tests は Native の consumer／range が **25件**、DirectX 12 の Native memory／texture／commands が **93件**、Vulkan の Native 契約／memory／texture／commands が **121件**成功し、失敗・skip はなかった。今回の追加は Native が2件、DirectX 12 が39件（実機20件）、Vulkan が41件である。
+
+両 backend で region 相対 offset、batch の順序、source より大きい destination の余剰保持、mip／layer／3D slice と pitch、depth／stencil の独立転送、同じ heap 範囲の A → B → A 再利用を確認した。未提出 Dispose、一回提出、拒否された batch の未実行、caller semaphore 破棄後の後続処理も検証した。Vulkan は事前に記録した同じ texture の同 batch／別 batch 使用、部分 layer の discard と depth-only discard 後の他方の内容保持も確認した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=native-transfer-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、25 test project の **1,275件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は248件、Vulkan は279件、WebGPU は154件、Native は25件を含む。TRX は各 test project の `TestResults/` に保存した。
+
+Native の内部公開は0件で、repository の `InternalsVisibleTo` 9件はすべて test assembly 向け。37 ADR の章構成・番号依存、43文書の334ローカルリンクと17アンカー、Native README のリンク、staged diff の空白検査も問題なし。
+
+今回の実機検証では RTX 2080、driver 616.92 を使用した。DirectX 12 の debug layer は未導入で、`D3D12GetDebugInterface` は `0x887A002D` を返した。Vulkan の `VK_LAYER_KHRONOS_validation` も未導入のため、両 backend の conformance は通常 device で実行した。validation option 自体を無効化する変更や、不足を隠す fallback は追加していない。
+
+実機試験は正常な転送結果と明示的な所有・同期、CPU 変換段階の失敗境界を対象とする。native queue の device loss、DX12 の Execute 後の Signal 失敗、Vulkan の EndCommandBuffer／QueueSubmit2 の memory allocation failure を実 GPU に強制する試験は未実施であり、これらの例外処理はコードレビューで確認した。
+
 ## 未実装と次の順序
 
-1. Native command、copy、主 queue、提出と completion を実装し、アップロード → GPU copy → readback の結果と明示的な寿命管理を実機確認する。texture の初回遷移・copy footprint・aspect 別転送もここへ接続する。limits は対応する操作の実装と合わせて追加する。
-2. Native descriptor／view、shader、pipeline と描画を接続する。root data の直接入力、parameter data を command で扱わない方針を維持する。
-3. 独立した Portable API と WebGPU、両系統の Resources・shader・RenderGraph provider、共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
+1. Native render view／descriptor、shader、pipeline と描画を接続する。root data の直接入力、parameter data を command で扱わない方針を維持し、indexed／indirect と limits を対応する操作とともに追加する。
+2. 独立した Portable API と WebGPU、両系統の Resources・shader・RenderGraph provider、共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
-mesh／amplification、保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。driver 更新により、この PC で Native Vulkan の初期化とメモリ基盤を実機検証できるようになった。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
+mesh／amplification、保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。driver 更新により、この PC で Native Vulkan の初期化と転送基盤を実機検証できるようになった。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

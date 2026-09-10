@@ -9,7 +9,7 @@ public sealed unsafe partial class DirectX12Backend
 {
     public NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind)
     {
-        VerifyNotDisposed();
+        VerifyAvailable();
         ResourceDesc description = LinearDescription(size, kind);
         ResourceAllocationInfo requirements = device.GetResourceAllocationInfo(0, 1, in description);
         if (requirements.SizeInBytes == ulong.MaxValue || requirements.Alignment == 0)
@@ -29,7 +29,7 @@ public sealed unsafe partial class DirectX12Backend
         NativeGpuMemoryKind kind,
         ReadOnlySpan<NativeGpuMemoryCompatibility> compatibilities)
     {
-        VerifyNotDisposed();
+        VerifyAvailable();
         if (compatibilities.IsEmpty)
         {
             throw new ArgumentException("At least one allocation requirement is required.", nameof(compatibilities));

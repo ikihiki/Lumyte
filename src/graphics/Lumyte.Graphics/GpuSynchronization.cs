@@ -13,6 +13,10 @@ public enum GpuStage : uint
     Copy = 1 << 6,
     AllGraphics = 1 << 7,
     All = 1 << 8,
+    IndexInput = 1 << 9,
+    AmplificationShader = 1 << 10,
+    MeshShader = 1 << 11,
+    Host = 1 << 12,
 }
 
 [Flags]

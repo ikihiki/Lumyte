@@ -1,12 +1,14 @@
 namespace Lumyte.Graphics.Native;
 
 /// <summary>
-/// Native GPU allocation and explicit linear or texture placement. The caller owns each resource and its backing heap.
-/// Shader, recording, and submission members are added in subsequent implementation stages.
+/// Native GPU allocation, placement, transfer recording, and explicit submission and completion.
+/// The caller owns each resource and its backing heap. Shader and drawing members follow in later stages.
 /// </summary>
 /// <remarks>
 /// The caller serializes operations on the same heap or resource, including placement and destruction,
 /// and does not dispose the backend concurrently with its use. GPU synchronization is also caller-owned.
+/// Before disposing the backend, the caller completes submitted work, disposes all recordings and semaphores,
+/// and destroys application resources and heaps. Disposal does not perform an implicit GPU wait.
 /// Implementations in any assembly derive their resource types from the public heap, region, texture, and
 /// compatibility bases. Each backend retains and checks resource ownership in its own private types.
 /// </remarks>
@@ -14,6 +16,7 @@ public interface INativeGpuBackend : IDisposable
 {
     GpuShaderCodeFormat ShaderCodeFormat { get; }
     NativeGpuCapabilities Capabilities { get; }
+    NativeGpuQueue MainQueue { get; }
 
     NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind);
 

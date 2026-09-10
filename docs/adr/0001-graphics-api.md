@@ -91,9 +91,10 @@ Native／Portable の本体はそれを専用 GPU layout へ配置し、GPU prog
 | `GpuShaderStage` | `Vertex`、`Pixel`、`Compute`、Native 追加機能の `Amplification`、`Mesh`。Amplification は Vulkan の task stage に対応する。Portable が受け取るのは Vertex／Pixel／Compute。 |
 | `GpuFormat` | color、sampled、storage、depth/stencil の format の意味。利用条件は実際の API の診断に従う。 |
 | `GpuCompareOp` | `Never`、`Less`、`Equal`、`LessEqual`、`Greater`、`NotEqual`、`GreaterEqual`、`Always`。 |
-| `GpuStage` | `None`、`DrawIndirect`、`IndexInput`、`VertexShader`、`AmplificationShader`、`MeshShader`、`PixelShader`、`ComputeShader`、`ColorOutput`、`DepthStencil`、`Copy`、`AllGraphics`、`All` の集合。AllGraphics は有効な amplification／mesh stage も含み、All はさらに compute／copy 等を含む。 |
-| `GpuAccess` | shader、descriptor、attachment、copy、index、indirect の read/write access。 |
+| `GpuStage` | `None`、`DrawIndirect`、`IndexInput`、`VertexShader`、`AmplificationShader`、`MeshShader`、`PixelShader`、`ComputeShader`、`ColorOutput`、`DepthStencil`、`Copy`、`AllGraphics`、`All`、`Host` の集合。AllGraphics は有効な amplification／mesh stage も含み、All はさらに compute／copy 等の GPU stage を含む。CPU access は Host で明示する。 |
+| `GpuAccess` | `None`、`ShaderRead/Write`、`DescriptorRead`、`ColorRead/Write`、`DepthStencilRead/Write`、`CopyRead/Write`、`IndexRead`、`IndirectRead`、`HostRead/Write` の集合。 |
 | `GpuTextureLayout` | `None`、`Undefined`、`General`、`ShaderRead`、`ColorAttachment`、`DepthStencilRead/Write`、`CopySource/Destination`、`Present`。明示 transition を持つ経路で用いる。 |
+| `GpuOrigin3D`／`GpuExtent3D` | texture の texel 単位の原点 `X/Y/Z` と範囲 `Width/Height/Depth` を、それぞれ uint の不変値で表す。memory allocation や view を所有しない。 |
 | `GpuResourceState(Stages, Access, Layout)` | caller が宣言する同期上の値。native の現在 state を照会・追跡する object ではない。Portable の共通入力に強制しない。 |
 | `GpuDeviceLostException` | device の利用を続けられない状態。正常 completion と区別する。 |
 

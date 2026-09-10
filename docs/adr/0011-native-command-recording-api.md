@@ -24,9 +24,9 @@ command は順序付きの指示と値を記録し、application resource の寿
 | API | 契約 |
 | --- | --- |
 | `MainQueue` | この device の `NativeGpuQueue`。 |
-| `NativeGpuQueue` | 一つの native queue の identity。 |
+| `NativeGpuQueue` | 一つの native queue の identity。public abstract 基底型と protected constructor から各 backend が実装する。 |
 | `NativeGpuQueue.StartCommandRecording()` | queue 所属の一回提出用 `NativeGpuCommandBuffer` を返す。 |
-| `NativeGpuCommandBuffer` | 記録とその内部管理を所有し、application resource を保持しない。状態の公開 enum や property は持たない。 |
+| `NativeGpuCommandBuffer` | public abstract 基底型と protected constructor から各 backend が実装する。記録とその内部管理を所有し、application resource を延命しない。状態の公開 enum や property は持たない。 |
 | `NativeGpuCommandBuffer.Dispose()` | 未提出なら記録を破棄する。提出済みなら GPU work の取消し・待機を行わず、内部 command memory は必要な完了まで保持する。 |
 | `SetResourceDescriptorHeap(heap)`／`SetSamplerDescriptorHeap(heap)` | command が使用する heap 全体を設定する。個別 resource の binding set や型別 profile は受け取らない。 |
 | `SetPipeline(pipeline)`／`SetComputePipeline(pipeline)`／`SetDepthStencilState(state)` | command の pipeline と独立 depth/stencil の値を設定する。`SetPipeline` は vertex／mesh の raster pipeline を共に受け取る。 |
@@ -42,7 +42,7 @@ command は順序付きの指示と値を記録し、application resource の寿
 | `DispatchMesh(rootData, x, y = 1, z = 1)` | rendering 内の mesh raster work。amplification があればその workgroup 数、なければ mesh の workgroup 数を指定する。`MeshShaders` を要求する。 |
 | `DispatchMeshIndirect(rootData, arguments)` | `NativeGpuRange` 内の一件の mesh workgroup 数を GPU が読む。使用する pipeline と必要 capability は直接版と同じ。 |
 | `Dispatch(rootData, x, y = 1, z = 1)`／`DispatchIndirect(rootData, arguments)` | rendering 外で直接または一件の間接 compute work を記録する。 |
-| `CopyMemory(source, destination)` | 二つの `NativeGpuRange` の byte 内容を転送する。各 range が指す線形 region と region 相対 offset を使う。 |
+| `CopyMemory(source, destination)` | `source.Size` byte を二つの `NativeGpuRange` 間で転送する。destination はその容量以上を持つ。各 range が指す線形 region と region 相対 offset を使う。 |
 | `CopyMemoryToTexture(source, destination, footprint)`／`CopyTextureToMemory(source, destination, footprint)` | range と texture の指定範囲を native copy に渡す。footprint の単一 `Aspect` が対象 plane を選ぶ。 |
 | `Barrier(beforeStages, beforeAccess, afterStages, afterAccess)` | resource を列挙しない global execution/memory dependency。共通の stage/access 値を使う。 |
 | `TextureTransition(view, beforeLayout, afterLayout)` | `ExplicitTextureTransitions` 対応 backend が必要とする補足操作。caller が実際の前後 layout/state を指定する。 |
@@ -64,6 +64,8 @@ compute 等が mesh の geometry、payload の入力または indirect 引数を
 
 同期は resource を列挙しない global execution/memory dependency を基本にする。DirectX 12 の texture layout 変更は caller が明示し、現在 layout と不足 barrier を backend が推論しない。Vulkan の通常 image は単一 layout とし、初回初期化、明示的な discard／alias 再初期化と presentation の処理を除いて transition を要求しない。rendering の境界だけで hazard が解消されたとは扱わない。
 
+GPU が書いた mapped memory を CPU が読む場合、caller は producer から `GpuStage.Host`／`GpuAccess.HostRead` への `Barrier` を記録し、その提出の completion を CPU で待つ。memory visibility と実行完了は別の条件であり、`Wait` が不足する memory dependency を推定・挿入しない。CPU 書込みを GPU に使わせる場合も caller が書込みと提出を順序付ける。
+
 `DiscardTexture` の `view` は非所有の `NativeGpuTextureView` であり、texture identity、aspect、mip／layer 範囲を指定する。対象の各 subresource 全体を破棄し、矩形の部分保持や alias 間の内容継承は行わない。backend は view の format 再解釈を使って data を変換しない。native が depth／stencil の一括初期化を必要とする範囲では caller が `DepthStencil` を指定し、texture の opaque な配置から影響範囲を限定できなければ texture 全体を指定する。
 
 alias A → B の書込み → A の再利用では、caller が B の利用と memory dependency を `Barrier` または queue の completion／wait で順序付けてから、A に `DiscardTexture` を記録する。再初期化そのものの memory access も先行 alias と競合し得るため、同じ queue の先行 `Barrier` は後続 scope に `GpuStage.All` を含めて再初期化までを覆う。discard 操作はその初期化と後続利用の順序を保つが、他の alias の write flush を代行しない。次に必要な copy／clear を caller が記録し、読み出す内容を定義する。
@@ -74,7 +76,7 @@ alias A → B の書込み → A の再利用では、caller が B の利用と 
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とし、描画など未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -87,7 +89,23 @@ alias A → B の書込み → A の再利用では、caller が B の利用と 
 
 Parameter Data の生成や upload、application resource の保持は recorder に配置しない。
 
+外部 assembly からの記録・引数の受渡しは `src/graphics/Lumyte.Graphics.Native.Tests/Device/ExternalNativeGpuBackendTests.Commands.cs` でも検証する。本体向け `InternalsVisibleTo` を使わず、GPU 実装の状態管理を consumer の fake へ再実装しない。
+
 ## 使用例
+
+`upload`、`deviceData`、`readback` は確保済みの同じ byte 数の `NativeGpuRange` とし、upload への CPU 書込みは済んでいるとする。次は転送と依存の記録だけを行い、提出は queue が担当する。
+
+```csharp
+using var transfers = native.MainQueue.StartCommandRecording();
+transfers.CopyMemory(upload, deviceData);
+transfers.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+    GpuStage.Copy, GpuAccess.CopyRead);
+transfers.CopyMemory(deviceData, readback);
+transfers.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+    GpuStage.Host, GpuAccess.HostRead);
+```
+
+提出しなければ scope 終了時に記録を破棄する。readback を CPU で読むには、提出と明示した completion 待機が別途必要である。
 
 `native` は初期化済み device、`pipeline` と `resourceHeap` は caller-owned とする。shader はその heap の descriptor を参照し、`rootData` は shader の byte 配置に従う。以下は未提出の記録である。
 
@@ -134,4 +152,6 @@ host byte 列の安全、整数変換、owned identity/記録状態、root コ�
 
 ## 採用差分と未実装範囲
 
-直接 root、global dependency と caller lifetime を採用する。DirectX 12 の CPU 記録と明示 texture transition、Lumyte の Dispose 契約と alias 再利用の明示 `DiscardTexture` は差分である。直接／一件の間接 mesh command を採用する。GPU が生成・選択する root、mesh を含む multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。Native recorder、mesh、aspect 別 copy と discard の native 変換、および未提出失敗を含む GPU 検証は未実装である。
+直接 root、global dependency と caller lifetime を採用する。DirectX 12 の CPU 記録と明示 texture transition、Lumyte の Dispose 契約と alias 再利用の明示 `DiscardTexture` は差分である。Native recorder に線形／texture copy、global barrier、HostRead、texture transition／discard を追加した。DirectX 12 は Submit 時の native 変換、Vulkan は呼出し時の native 記録と必要な初回初期化の区間挿入を使う。試験結果は [進捗記録](../designs/graphics-implementation-progress.md) に記録する。
+
+root を使う shader work、descriptor heap 設定、rendering、draw／indexed draw、indirect、mesh と対応する GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。

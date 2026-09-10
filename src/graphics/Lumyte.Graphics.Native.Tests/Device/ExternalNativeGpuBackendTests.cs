@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Native.Tests.Device;
 
-public sealed class ExternalNativeGpuBackendTests
+public sealed partial class ExternalNativeGpuBackendTests
 {
     [Fact]
     public void ConsumerUsesPrivateBackendHandlesThroughPublicContracts()
@@ -62,10 +62,12 @@ public sealed class ExternalNativeGpuBackendTests
 
     // This project has no friend access to the contracts assembly. Backend state remains
     // private to the implementation, while callers only receive public contract types.
-    private sealed class ExternalBackend(Action<object> release, Action<object>? observeTexture = null) : INativeGpuBackend
+    private sealed class ExternalBackend(Action<object> release, Action<object>? observeTexture = null,
+        Action<object>? observeCommands = null) : INativeGpuBackend
     {
         public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
         public NativeGpuCapabilities Capabilities => new();
+        public NativeGpuQueue MainQueue { get; } = new ExternalQueue(observeCommands);
 
         public NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind)
             => new(size, 256, new MemoryCompatibility(this, kind));

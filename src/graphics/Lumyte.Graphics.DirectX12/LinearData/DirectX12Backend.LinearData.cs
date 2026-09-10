@@ -10,7 +10,7 @@ public sealed unsafe partial class DirectX12Backend
 {
     public NativeGpuLinearRegion CreateLinearRegion(ulong size, NativeGpuHeap heap, ulong offset)
     {
-        VerifyNotDisposed();
+        VerifyAvailable();
         HeapRecord backing = RequireHeap(heap);
         ResourceDesc description = LinearDescription(size, heap.Kind);
         ResourceStates initialState = heap.Kind switch

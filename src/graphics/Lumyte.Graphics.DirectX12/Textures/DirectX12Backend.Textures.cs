@@ -11,7 +11,7 @@ public sealed unsafe partial class DirectX12Backend
     public NativeGpuMemoryRequirements GetTextureMemoryRequirements(
         NativeGpuTextureDescription description, NativeGpuMemoryKind kind)
     {
-        VerifyNotDisposed();
+        VerifyAvailable();
         _ = HeapTypeFor(kind);
         ResourceDesc1 nativeDescription = TextureDescription(description);
         ResourceAllocationInfo requirements = device10.GetResourceAllocationInfo2(
@@ -31,7 +31,7 @@ public sealed unsafe partial class DirectX12Backend
     public NativeGpuTextureHandle CreateTexture(
         NativeGpuTextureDescription description, NativeGpuHeap heap, ulong offset)
     {
-        VerifyNotDisposed();
+        VerifyAvailable();
         HeapRecord backing = RequireHeap(heap);
         ResourceDesc1 nativeDescription = TextureDescription(description);
         ComPtr<ID3D12Resource> resource = default;

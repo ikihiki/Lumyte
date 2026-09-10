@@ -12,6 +12,8 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     private readonly D3D12 api;
     private ComPtr<ID3D12Device> device;
     private ComPtr<ID3D12Device10> device10;
+    private NativeQueue mainQueue = null!;
+    private string? deviceLoss;
     private bool disposed;
 
     private DirectX12Backend(D3D12 api, ComPtr<ID3D12Device> device, ComPtr<ID3D12Device10> device10)
@@ -51,7 +53,9 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
                 default, D3DFeatureLevel.Level110, out device), "D3D12CreateDevice");
             Check(device.QueryInterface(out device10), "QueryInterface(ID3D12Device10)");
             RequireNativeFeatures(device);
-            return new(api, device, device10);
+            var backend = new DirectX12Backend(api, device, device10);
+            backend.mainQueue = backend.CreateMainQueue();
+            return backend;
         }
         catch
         {
@@ -63,18 +67,26 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     }
 
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Dxil;
-    public NativeGpuCapabilities Capabilities => default;
+    public NativeGpuCapabilities Capabilities => new(ExplicitTextureTransitions: true);
+    public NativeGpuQueue MainQueue => mainQueue;
 
     public void Dispose()
     {
         if (disposed) { return; }
         disposed = true;
+        mainQueue.DisposeNativeObjects();
         device10.Dispose();
         device.Dispose();
         api.Dispose();
     }
 
     private void VerifyNotDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
+
+    private void VerifyAvailable()
+    {
+        VerifyNotDisposed();
+        if (deviceLoss is not null) { throw new GpuDeviceLostException(deviceLoss); }
+    }
 
     private static void RequireNativeFeatures(ComPtr<ID3D12Device> device)
     {
