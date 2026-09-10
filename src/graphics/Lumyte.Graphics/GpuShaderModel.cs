@@ -13,4 +13,5 @@ public enum GpuShaderStage : byte
     Pixel = 2,
     Compute = 3,
     Mesh = 4,
+    Amplification = 5,
 }

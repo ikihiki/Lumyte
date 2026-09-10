@@ -93,4 +93,4 @@ batch の一回受理、PSO/command 変換の失敗境界、completion の接続
 
 一回提出、明示 completion と caller lifetime を採用し、転送 command の batch と caller-owned semaphore に実装した。内部 command memory は queue 所有の completion で回収する。受理前の command 変換・終了失敗を GPU 提出へ進めず、受理済み recording の再利用を拒否する。外部 assembly からの実装と GPU 試験の結果は [進捗記録](../designs/graphics-implementation-progress.md) に記録する。
 
-DirectX 12 の提出時 PSO 解決は Lumyte の補足として採用するが、shader／pipeline／mesh の移行と合わせて未実装である。queue をまたぐ GPU wait、presentation と application resource の自動退役はこの Native 契約に含めない。
+compute pipeline、直接 root と直接／間接 dispatch の提出を実装した。DirectX 12 の提出時 PSO 解決は Lumyte の補足として採用するが、raster pipeline／描画／mesh の移行と合わせて未実装である。queue をまたぐ GPU wait、presentation と application resource の自動退役はこの Native 契約に含めない。

@@ -28,8 +28,9 @@ backend は外部 assembly から `INativeGpuBackend` を実装する。resource
 | `NativeGpuBackendOptions.EnableValidation` | native debug/validation 機能の有効化要求。Native 独自の resource state 検証層は作らない。 |
 | `Capabilities`／`NativeGpuCapabilities` | `RawShaderPointers`、`BufferDescriptors`、`ExplicitTextureTransitions`、`MeshShaders`、`AmplificationShaders` の対応を返す。 |
 | `Limits`／`NativeGpuLimits` | `MaxRootDataSize`、heap の容量・整列条件、descriptor の native size/整列条件、texture と dispatch の有効上限を返す。異なる descriptor 型の byte size が同一とは仮定しない。 |
+| `NativeGpuLimits.Descriptors`／`NativeGpuDescriptorLimits` | byte-based な descriptor ABI の場合だけ値を持つ。`ResourceSlotStride`／`SamplerSlotStride`、`ImageDescriptorSize`／`BufferDescriptorSize`／`SamplerDescriptorSize` とそれぞれの `Alignment` を ulong で表す。DirectX 12 の opaque handle increment を byte 数として偽装せず、同 backend は null を返す。 |
 | `NativeGpuLimits.MeshShader`／`NativeGpuMeshShaderLimits` | mesh 未対応なら null。`MeshDispatch`、optional `AmplificationDispatch`、`MaxOutputVertices`、`MaxOutputPrimitives`、`MaxPayloadSize` を持つ。payload は amplification から mesh へ渡す byte 数の上限であり、未対応なら 0。 |
-| `NativeGpuDispatchLimits` | `MaxGroupCountX/Y/Z` と `ulong MaxTotalGroupCount`。前者は各軸、後者は三軸の積の上限。shader 内の local thread 数とは区別する。 |
+| `NativeGpuLimits.Dispatch`／`NativeGpuDispatchLimits` | `MaxGroupCountX/Y/Z` と `ulong MaxTotalGroupCount`。前者は各軸、後者は三軸の積の上限。shader 内の local thread 数とは区別する。 |
 | `ShaderCodeFormat` | `Dxil` または `SpirV`。 |
 | `Dispose()` | caller が未提出記録、提出済み利用と所有 object を解消した後に device を終了する。 |
 | `NativeGpuException.NativeErrorCode` | native 呼出し失敗のコードを保持する。device loss は共通の `GpuDeviceLostException` として区別する。 |
@@ -78,4 +79,6 @@ host memory の安全、整数演算、backend が管理する identity と局�
 
 caller-owned resource と明示同期を採用する。参照実装の線形／texture heap の分割は採用せず、共通の純粋 allocation と配置 resource に分離する。任意 shader pointer など target 間で同じ意味を提供できない機能は部分採用とし、capability で区別する。
 
-Native 専用 interface、options、capabilities の型、native error の写像と両 backend の初期化・終了を追加した。公開操作は共通 heap と線形 region／texture の配置・独立破棄、render view、descriptor storage と書込み、主 queue の転送記録・heap 選択・一回提出・completion に対応する。DirectX 12 は `ExplicitTextureTransitions` を true とする。buffer descriptor の書込みを実装しても Native shader からの参照経路はまだなく、`BufferDescriptors` は false のままとする。shader・mesh の capability、limits と描画機能の移行・conformance 検証も未実装である。ray tracing、presentation など参照実装の全機能への対応は宣言しない。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。
+Native 専用 interface、options、capabilities、native error と両 backend の初期化・終了を実装した。共通 heap と線形 region／texture の配置・独立破棄、render view、descriptor storage と書込み、転送・提出・completion に加え、raw shader、compute pipeline、直接 root と直接／間接 dispatch を提供する。両 backend の `BufferDescriptors`、Vulkan の `RawShaderPointers`、DirectX 12 の `ExplicitTextureTransitions` を true とする。DirectX 12 の raw shader pointer と両 backend の mesh／amplification は false である。
+
+limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch` と optional `Descriptors` を提供する。一般の heap／texture 上限、mesh limits、raster pipeline と描画、ray tracing、presentation は未実装である。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。

@@ -16,6 +16,7 @@ public sealed unsafe partial class VulkanBackend
         private bool submitted;
         private bool disposed;
         private NativeDescriptorHeapBindings descriptorHeaps;
+        private Pipeline computePipeline;
 
         public CommandRecord(QueueRecord queue, CommandPool pool, CommandBuffer first)
         {
@@ -28,6 +29,52 @@ public sealed unsafe partial class VulkanBackend
         public IReadOnlyList<CommandSegment> Segments => segments;
         private VulkanBackend Owner => Queue.Owner;
         private CommandBuffer Current => segments[^1].Command;
+
+        public override void SetComputePipeline(NativeGpuComputePipelineHandle pipeline)
+        {
+            VerifyRecording();
+            computePipeline = Owner.RequireComputePipeline(pipeline).Pipeline;
+            Owner.vk.CmdBindPipeline(Current, PipelineBindPoint.Compute, computePipeline);
+        }
+
+        public override void Dispatch(ReadOnlySpan<byte> rootData, uint x, uint y = 1, uint z = 1)
+        {
+            VerifyRecording();
+            PushRoot(rootData);
+            Owner.vk.CmdDispatch(Current, x, y, z);
+        }
+
+        public override void DispatchIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments)
+        {
+            VerifyRecording();
+            Owner.RequireCommandRange(arguments);
+            if (arguments.Size < 12)
+            {
+                throw new ArgumentException("Indirect dispatch arguments must cover three 32-bit group counts.", nameof(arguments));
+            }
+            NativeDispatchIndirectInfo info = new()
+            {
+                SType = (StructureType)1000318011,
+                AddressRange = new() { Address = arguments.GpuAddress, Size = arguments.Size },
+                AddressFlags = LinearAddressFlags,
+            };
+            PushRoot(rootData);
+            Owner.dispatchIndirect(Current, &info);
+        }
+
+        private void PushRoot(ReadOnlySpan<byte> rootData)
+        {
+            if (rootData.IsEmpty) { return; }
+            fixed (byte* data = rootData)
+            {
+                NativePushDataInfo info = new()
+                {
+                    SType = (StructureType)1000135004,
+                    Data = new() { Address = data, Size = checked((nuint)rootData.Length) },
+                };
+                Owner.pushData(Current, &info);
+            }
+        }
 
         public override void SetResourceDescriptorHeap(NativeGpuDescriptorHeap heap)
         {
@@ -147,6 +194,10 @@ public sealed unsafe partial class VulkanBackend
             touched.Add(texture);
             // Each segment is a new primary command buffer with no inherited binding state.
             descriptorHeaps.Apply(Current, Owner.bindResourceHeap, Owner.bindSamplerHeap);
+            if (computePipeline.Handle != 0)
+            {
+                Owner.vk.CmdBindPipeline(Current, PipelineBindPoint.Compute, computePipeline);
+            }
         }
 
         public void VerifyRecording()

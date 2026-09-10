@@ -111,4 +111,4 @@ caller-owned heap への texture 配置と MutableFormat を採用する。線�
 
 description、opaque handle、requirement 取得と heap への明示配置・独立破棄を両 backend に実装した。要件取得と生成は同じ native description 変換を使う。GPU を使った描画や転送前の配置処理として、dimension、array／mip、MSAA、format、MutableFormat、混在配置と破棄後の heap 再利用を検証した。特定 GPU の成功は他の device や組合せの保証にはしない。
 
-aspect・copy footprint と非所有 view 値を追加し、初回 layout 遷移、alias 再初期化と単一 aspect の転送を command／submit へ接続した。Vulkan の `GENERAL` 初期化義務は非公開状態に保持し、初回参照の直前に実行する命令を提出成功後だけ確定する。`CreateTexture` は暗黙の提出・待機を行わない。attachment 用 render view と shader descriptor の利用は未実装である。実機試験結果と未検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+aspect・copy footprint と非所有 view 値を追加し、初回 layout 遷移、alias 再初期化と単一 aspect の転送を command／submit へ接続した。Vulkan の `GENERAL` 初期化義務は非公開状態に保持し、初回参照の直前に実行する命令を提出成功後だけ確定する。`CreateTexture` は暗黙の提出・待機を行わない。render view の生成と shader descriptor の書込み、compute からの sampling／storage 書込みを実装した。render view の attachment 使用と描画は未実装である。実機試験結果と未検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

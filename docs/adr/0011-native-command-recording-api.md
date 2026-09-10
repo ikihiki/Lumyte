@@ -107,11 +107,12 @@ transfers.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
 
 提出しなければ scope 終了時に記録を破棄する。readback を CPU で読むには、提出と明示した completion 待機が別途必要である。
 
-`native` は初期化済み device、`pipeline` と `resourceHeap` は caller-owned とする。shader はその heap の descriptor を参照し、`rootData` は shader の byte 配置に従う。以下は未提出の記録である。
+`native` は初期化済み device、`pipeline`、`resourceHeap` と `samplerHeap` は caller-owned とする。shader はその heap の descriptor を参照し、`rootData` は shader の byte 配置に従う。heap 選択は対象 backend の native root ABI の条件を満たす。以下は未提出の記録である。
 
 ```csharp
 using NativeGpuCommandBuffer commands = native.MainQueue.StartCommandRecording();
 commands.SetResourceDescriptorHeap(resourceHeap);
+commands.SetSamplerDescriptorHeap(samplerHeap);
 commands.SetComputePipeline(pipeline);
 commands.Dispatch(rootData, 1);
 commands.Barrier(
@@ -126,6 +127,7 @@ mesh raster の記録も同じ recorder を使う。`meshPipeline` は mesh prog
 ```csharp
 using var meshCommands = native.MainQueue.StartCommandRecording();
 meshCommands.SetResourceDescriptorHeap(resourceHeap);
+meshCommands.SetSamplerDescriptorHeap(samplerHeap);
 meshCommands.BeginRendering([colorAttachment]);
 meshCommands.SetPipeline(meshPipeline);
 meshCommands.DispatchMesh(meshRootData, meshletGroupCount);
@@ -158,4 +160,6 @@ host byte 列の安全、整数変換、owned identity/記録状態、root コ�
 
 resource／sampler heap の独立選択も実装する。選択は heap 全体の非所有参照であり、格納 descriptor の参照先を列挙しない。DirectX 12 の native heap pair の設定と、Vulkan の native command 区間切替時の再設定でも他方の選択を保持する。
 
-root を使う shader work、rendering、draw／indexed draw、indirect、mesh と対応する GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。
+`SetComputePipeline`、各 dispatch の直接 root、直接／一件の間接 compute dispatch を実装した。root の最大 size と dispatch 数の native 条件を再検証する validator は追加しない。DirectX 12 では DWORD 変換で byte を失わないため長さの4倍数だけを確認し、Vulkan は byte 列をそのまま渡す。空 root は native root 更新を省き、末尾を補完しないため、shader が読む root 全域を caller が各 work に渡す。
+
+rendering、draw／indexed draw とそれらの indirect、mesh と対応する GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。

@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Native fixtures are compiled offline for the descriptor-heap ABI, separately from legacy packages. -->
+    <EnableDefaultSlangCompileItems>false</EnableDefaultSlangCompileItems>
   </PropertyGroup>
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -23,6 +25,7 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <EmbeddedResource Include="Integration\Shaders\*.spv" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />

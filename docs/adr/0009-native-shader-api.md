@@ -18,8 +18,8 @@ Native の低レベル shader API は raw DXIL または SPIR-V と entry point 
 
 | API | 契約 |
 | --- | --- |
-| `NativeGpuShaderCode` | `Stage`、`Code`、`EntryPoint`。code は device が受け取る raw DXIL または SPIR-V の byte 列。 |
-| `NativeGpuShaderProgram` | vertex raster、mesh raster または compute の `NativeGpuShaderCode` をまとめた値。package と resource 集合を要求しない。 |
+| `NativeGpuShaderCode` | init-only の `Stage`、`ReadOnlyMemory<byte> Code`、`EntryPoint`（既定値 main）を持つ record。code は device が受け取る raw DXIL または SPIR-V の byte 列。 |
+| `NativeGpuShaderProgram(params shaders)` | vertex raster、mesh raster または compute の `NativeGpuShaderCode` をまとめる。構築時に一意な stage 構成を確認し、nullable の `Vertex`／`Pixel`／`Compute`／`Mesh`／`Amplification` property で各値を保持する。package と resource 集合を要求しない。 |
 
 `NativeGpuShaderCode.Stage` は `GpuShaderStage.Vertex/Pixel/Compute/Mesh/Amplification`、`Code` は device が受け取る raw artifact、`EntryPoint` は entry の情報である。program は次のいずれかの stage 構成を表す。
 
@@ -31,6 +31,10 @@ Native の低レベル shader API は raw DXIL または SPIR-V と entry point 
 
 pixel を省く経路は depth-only 描画等、native が許可する用途に従う。mesh は `MeshShaders`、amplification はさらに `AmplificationShaders` を要求する。公開名 `Amplification` は DirectX 12 の amplification と Vulkan の task を表す。stage の重複等で program を一意に表せない入力は拒否するが、shader 内の入出力、payload、local size と native linkage の合法性を独自に解析しない。
 
+program は入力配列への後の変更に依存しないが、code の byte 列を構築時に複製しない。caller は pipeline 生成呼出しが戻るまで code の内容を保持する。compute は生成時に native pipeline を完成させるため、その後 caller の byte 列を再利用できる。遅延生成する raster pipeline は backend が必要な code を自身へコピーする。
+
+SPIR-V の `EntryPoint` は module 内の entry を native pipeline 作成時に選択する。DXIL は entry を既にコンパイルした artifact であり、この値は情報として保持する。DXIL 内の別 entry を選択する機能としては扱わず、entry 名を照合する shader reflection も追加しない。
+
 root data は shader の直接引数であり、size は Native device の上限と使用する Native artifact の ABI に従う。root に含めた GPU pointer、descriptor index と値から、shader が Parameter Data と資源参照を算出する。command はその意味を解釈せず、Parameter Data の生成・upload・保持を行わない。
 
 mesh raster でも amplification／mesh／pixel が同じ root を直接参照する。amplification から mesh への payload は shader が生成する stage 間データであり、command の root や CPU が渡す別の Parameter Data にはしない。mesh が出力する vertices／primitive indices は shader の出力であり、native index fetch 用の index buffer を program に要求しない。
@@ -39,7 +43,7 @@ row-major と共通座標規約に従う。native の root と descriptor heap �
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とし、未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済みで、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -62,6 +66,7 @@ var shader = new NativeGpuShaderCode
     Code = computeCode,
     EntryPoint = "main"
 };
+var program = new NativeGpuShaderProgram(shader);
 ```
 
 この値は shader package の読込みや native pipeline の生成を行わない。
@@ -83,4 +88,6 @@ host byte 列と entry 情報を入力契約どおりに渡すことを確認す
 
 ## 採用差分と未実装範囲
 
-raw shader、直接 root と caller-owned ABI を採用する。Lumyte の program 値と raw DXIL の経路は target 間の差を表す補足である。mesh／amplification stage を含む契約を追加するが、実装移行と conformance 検証は未実装である。shader package と GPU が生成・選択する root はこの低レベル契約の範囲外とする。
+raw shader、直接 root と caller-owned ABI を採用する。Lumyte の program 値と raw DXIL の経路は target 間の差を表す補足である。raw code／program の値、stage 構成、両 backend の compute pipeline 入力と直接 root の実行を実装した。Native の shader code は既存 package の wrapper を経由しない。
+
+vertex／mesh／amplification を含む program の値は構築できるが、それらの native pipeline と描画は未実装である。shader package と GPU が生成・選択する root はこの低レベル契約の範囲外とする。Slang artifact を使う実機検証と製品用 toolchain の実装は区別し、後者の移行は今後行う。

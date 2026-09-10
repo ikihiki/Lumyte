@@ -17,6 +17,17 @@ public abstract class NativeGpuCommandBuffer : IDisposable
     /// <summary>Selects the independent sampler heap. The caller keeps the heap alive until GPU completion.</summary>
     public abstract void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap);
 
+    /// <summary>Selects a borrowed pipeline that the caller keeps alive through recorded and submitted work.</summary>
+    public abstract void SetComputePipeline(NativeGpuComputePipelineHandle pipeline);
+
+    /// <summary>Copies root bytes directly into this work's shader arguments. The source span may be reused after return.</summary>
+    /// <remarks>The caller supplies all root bytes read by this work; trailing bytes are not zero-filled.</remarks>
+    public abstract void Dispatch(ReadOnlySpan<byte> rootData, uint x, uint y = 1, uint z = 1);
+
+    /// <summary>Dispatches once using three uint group counts at the start of the caller's range and direct root bytes.</summary>
+    /// <remarks>Root bytes follow the same snapshot and lifetime contract as direct dispatch.</remarks>
+    public abstract void DispatchIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments);
+
     /// <summary>Copies source bytes using region-relative offsets. The destination must cover the source size.</summary>
     public abstract void CopyMemory(NativeGpuRange source, NativeGpuRange destination);
 

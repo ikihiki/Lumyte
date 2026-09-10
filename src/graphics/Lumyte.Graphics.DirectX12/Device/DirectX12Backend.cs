@@ -7,11 +7,18 @@ using Silk.NET.DXGI;
 namespace Lumyte.Graphics.DirectX12;
 
 /// <summary>Owns the Direct3D 12 device used by the Native API.</summary>
+/// <remarks>
+/// The Native compute ABI uses root parameter zero as up to 64 constants at b0, space0,
+/// with both directly-indexed heap flags. The caller selects both resource and sampler
+/// descriptor heaps before compute work, including when its shader does not access them.
+/// </remarks>
 public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 {
     private readonly D3D12 api;
     private ComPtr<ID3D12Device> device;
     private ComPtr<ID3D12Device10> device10;
+    private ComPtr<ID3D12RootSignature> computeRootSignature;
+    private ComPtr<ID3D12CommandSignature> dispatchSignature;
     private NativeQueue mainQueue = null!;
     private string? deviceLoss;
     private bool disposed;
@@ -33,6 +40,7 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
         D3D12 api = D3D12.GetApi();
         ComPtr<ID3D12Device> device = default;
         ComPtr<ID3D12Device10> device10 = default;
+        DirectX12Backend? backend = null;
         try
         {
             if (options?.EnableValidation == true)
@@ -53,12 +61,14 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
                 default, D3DFeatureLevel.Level110, out device), "D3D12CreateDevice");
             Check(device.QueryInterface(out device10), "QueryInterface(ID3D12Device10)");
             RequireNativeFeatures(device);
-            var backend = new DirectX12Backend(api, device, device10);
+            backend = new DirectX12Backend(api, device, device10);
+            backend.CreateComputeSupport();
             backend.mainQueue = backend.CreateMainQueue();
             return backend;
         }
         catch
         {
+            backend?.DisposeComputeSupport();
             device10.Dispose();
             device.Dispose();
             api.Dispose();
@@ -67,7 +77,8 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     }
 
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Dxil;
-    public NativeGpuCapabilities Capabilities => new(ExplicitTextureTransitions: true);
+    public NativeGpuCapabilities Capabilities => new(BufferDescriptors: true, ExplicitTextureTransitions: true);
+    public NativeGpuLimits Limits => new(256, new(65535, 65535, 65535, 65535ul * 65535 * 65535));
     public NativeGpuQueue MainQueue => mainQueue;
 
     public void Dispose()
@@ -75,6 +86,7 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
         if (disposed) { return; }
         disposed = true;
         mainQueue.DisposeNativeObjects();
+        DisposeComputeSupport();
         device10.Dispose();
         device.Dispose();
         api.Dispose();
@@ -90,6 +102,14 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 
     private static void RequireNativeFeatures(ComPtr<ID3D12Device> device)
     {
+        var binding = new FeatureDataD3D12Options();
+        Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options, &binding,
+            (uint)sizeof(FeatureDataD3D12Options)), "CheckFeatureSupport(D3D12_OPTIONS)");
+        if (binding.ResourceBindingTier < ResourceBindingTier.Tier3)
+        {
+            throw new NotSupportedException("The Native Direct3D 12 backend requires Resource Binding Tier 3.");
+        }
+
         var options = new FeatureDataD3D12Options12();
         Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options12, &options,
             (uint)sizeof(FeatureDataD3D12Options12)), "CheckFeatureSupport(D3D12_OPTIONS12)");

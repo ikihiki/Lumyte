@@ -57,7 +57,9 @@ resource heap は texture descriptor と補足の buffer descriptor を保持す
 
 slot の位置は heap の先頭 handle に `index * native handle increment` を加えて求める。increment は device と heap type ごとに取得する handle 演算の値であり、mapped memory の stride や descriptor の byte size ではない。Vulkan の descriptor bytes と共通の生 memory 表現を装わない。[DirectX 12 の descriptor handle](https://learn.microsoft.com/en-us/windows/win32/direct3d12/creating-descriptor-heaps#descriptor-heap-methods)
 
-shader は対応 device の `ResourceDescriptorHeap`／`SamplerDescriptorHeap` を直接 index で参照する。必要な root-signature flags と native heap 選択の順序を実装する。heap 全体の選択は bindless の実行基盤であり、draw ごとの binding set・resource list・schema は作らない。
+shader は SM 6.6 と Resource Binding Tier 3 に対応する device の `ResourceDescriptorHeap`／`SamplerDescriptorHeap` を直接 index で参照する。両機能を初期化時に要求する。heap 全体の選択は bindless の実行基盤であり、draw ごとの binding set・resource list・schema は作らない。[SM 6.6 の必要機能](https://microsoft.github.io/DirectX-Specs/d3d/HLSL_SM_6_6_DynamicResources.html#device-capability)
+
+Native の固定 root signature は resource と sampler の両 `HEAP_DIRECTLY_INDEXED` flags を持つ。この native ABI では、shader が片方の heap を読まない場合も caller が両 heap を work より前に選択する。各 work の native 変換では、heap の設定後に root signature を再設定してから root と dispatch を記録し、heap を途中で切り替えても native の順序条件を満たす。backend 内部の代替 heap、shader reflection による usage 推定、heap の有無を再検証する独自 validator は追加しない。[heap と root signature の設定順](https://microsoft.github.io/DirectX-Specs/d3d/HLSL_SM_6_6_DynamicResources.html#setdescriptorheaps-and-setrootsignature)
 
 attachment の RTV/DSV は caller-owned `NativeGpuRenderViewHandle` で管理し、shader index と区別する。view の値計算だけでは native object を作らず、明示した render view の生成または descriptor 書込みで native 表現を用意する。view が親 texture を延命する保証はない。
 
@@ -73,7 +75,9 @@ float の anisotropy は DirectX 12 の整数へ正確に変換できる値だ�
 
 各 draw/dispatch の `rootData` は呼出し時に CPU 記録へコピーし、`Submit` で native command に変換するとき root constants として直接渡す。caller は呼出し後に元の byte 領域を再利用できる。長さは 4 byte の倍数で `MaxRootDataSize` 以下、空入力は許可する。64 byte 固定、末尾 zero fill、独立した root state setter は Native の規則にしない。入力の意味や pointer を CPU で解釈せず、Parameter Data の生成・upload・保持や GPU buffer への fallback を行わない。
 
-DirectX 12 の root signature 全体の上限は 64 DWORD である。実際に root payload へ使用できる範囲を `MaxRootDataSize` と Native ABI に反映し、64 byte と混同しない。row-major と座標規約の補正は compiler または native raster state の一方で行う。
+DirectX 12 の root signature 全体の上限は 64 DWORD である。Native compute は root parameter 0 に64個の32-bit constants を置き、shader の `b0, space0` に対応させる。descriptor table は持たず、`MaxRootDataSize` は256 byte とする。長さの4倍数は DWORD 変換で byte を失わないために確認し、最大 size や dispatch 数の native 検証を複製しない。row-major と座標規約の補正は compiler または native raster state の一方で行う。
+
+DXIL の entry は artifact にコンパイル済みである。`EntryPoint` は情報として保持し、native compute PSO の生成に別の entry selector として渡さない。compute pipeline は生成呼出し中に DXIL を消費し、戻った後は caller が元の byte 領域を再利用できる。
 
 mesh／amplification も同じ graphics root signature と直接 root constants を使う。root と heap indexing の visibility に両 stage を含め、`DispatchMesh` ごとに渡した root が両 stage と pixel stage から参照できるようにする。amplification から mesh へ渡す shader 内の payload は root data と別の GPU 内通信であり、command が payload buffer を生成・upload する契約にはしない。
 
@@ -89,7 +93,7 @@ mesh を選んだ `NativeGpuRasterPipelineDescription` は `MS`、必要なら `
 
 front/back の個別 stencil reference は対応する native 機能で設定する。Native 契約を満たす device 機能を初期化時に選び、片面の値へ黙って揃えない。blend と rasterization はこの最小 Native 契約では PSO に残し、独立 blend の全面的な分離を提供したとは扱わない。
 
-compute pipeline は作成時に native 生成を完了する。shader の linkage、format、sample count と state の適合性は compiler/native 作成処理と debug layer が診断し、wrapper が同じ validator を再実装しない。
+compute pipeline は作成時に native 生成を完了する。`DispatchIndirect` は共有の native command signature と `ExecuteIndirect` を使い、range 内の最初の3個の uint32 を1件の dispatch 引数として読む。root は CPU 記録から直接 constants へ渡し、indirect buffer に追加しない。shader の linkage、format、sample count と state の適合性は compiler/native 作成処理と debug layer が診断し、wrapper が同じ validator を再実装しない。
 
 ## Global barrier と texture transition
 
@@ -156,7 +160,7 @@ mesh は、amplification なし／ありの描画、GPU が書いた indirect �
 
 ## コード配置
 
-以下は repository root 相対の目標配置とする。既存の `Lumyte.Graphics.DirectX12` と隣の `Lumyte.Graphics.DirectX12.Tests` を Native 専用へ改編し、公開契約は新設予定の `Lumyte.Graphics.Native` を参照する。フォルダ分割は同一 backend project 内で行う。
+以下は repository root 相対の目標配置とする。既存の `Lumyte.Graphics.DirectX12` と隣の `Lumyte.Graphics.DirectX12.Tests` を Native 専用へ改編し、公開契約は作成済みの `Lumyte.Graphics.Native` を参照する。フォルダ分割は同一 backend project 内で行う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -207,7 +211,8 @@ amplification entry があれば指定 group 数は amplification を起動し�
 - mesh／amplification は任意機能として採用する。tier／limit の写像、AS／MS の PSO stream、直接／indirect dispatch、stage barrier と実 GPU 検証は未実装である。mesh 非対応 device への自動 emulation、multi-draw/count buffer と GPU 生成 root は今回の範囲に含めない。
 - Native 専用の `DirectX12Backend` と公開型群に、純粋 allocation、線形 region と texture の requirement・明示配置・独立破棄を実装した。保持した Device10 から同じ `ResourceDesc1` で `GetResourceAllocationInfo2`／`CreatePlacedResource2` を呼び、texture は `Undefined` で生成する。混在配置と heap 再利用は実機確認済み。実装と試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
 - CPU command 記録から Submit 内での一括 native 変換、線形／aspect 別 texture copy、global barrier、明示 texture transition／discard、queue と fence completion を実装した。native copy footprint の plane format を取得し、caller の row／image pitch と region 相対 offset をそのまま native copy へ変換する。
-- render view の生成・破棄、専用 descriptor heap と texture／raw buffer／sampler の書込み、resource／sampler heap の選択を実装する。shader／pipeline と描画、render view の attachment 使用と shader による descriptor 読出しは未実装である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
+- render view の生成・破棄、専用 descriptor heap と texture／raw buffer／sampler の書込み、resource／sampler heap の選択を実装した。さらに compute PSO、256 byte までの直接 root、直接／間接 dispatch と shader による descriptor 読出しを実機確認し、`BufferDescriptors` を true とする。
+- raster pipeline と描画、render view の attachment 使用は未実装である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
 
 ## 参照
 

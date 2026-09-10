@@ -126,7 +126,7 @@ public sealed partial class ExternalNativeGpuBackendTests
             => observe?.Invoke(new CompletionWait(semaphore, value));
     }
 
-    private sealed class ExternalCommands(Action<object>? observe) : NativeGpuCommandBuffer
+    private sealed partial class ExternalCommands(Action<object>? observe) : NativeGpuCommandBuffer
     {
         public override void CopyMemory(NativeGpuRange source, NativeGpuRange destination)
             => observe?.Invoke(new MemoryCopy(source, destination));

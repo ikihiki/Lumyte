@@ -32,7 +32,7 @@ Bindless は使用する heap 全体の選択を不要にするものではな�
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とし、未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済みで、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -62,4 +62,6 @@ Native 独自の型別 profile 比較や shader reflection を追加しない。
 
 ## 採用差分と未実装範囲
 
-caller-owned index と Bindless を採用する。分類値、両 backend の resource／sampler storage と指定 index への書込み、command の heap 選択を実装した。buffer descriptor は NoGraphicsAPI の public API に対する Lumyte の補足であり、raw shader pointer の DirectX 12 対応は未提供。Native shader ABI と shader が index を使って resource を読む conformance 検証は別途必要であり、storage の実装成功を Bindless 描画の完了とは扱わない。
+caller-owned index と Bindless を採用する。分類値、両 backend の resource／sampler storage と指定 index への書込み、command の heap 選択を実装した。buffer descriptor は NoGraphicsAPI の public API に対する Lumyte の補足であり、raw shader pointer の DirectX 12 対応は未提供。
+
+compute から texture／buffer／sampler を非ゼロ index で参照する経路と、Vulkan の実 GPU pointer 経路を実機確認した。raster／mesh の shader 参照と描画、製品用 shader toolchain の移行は未実装である。詳細は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

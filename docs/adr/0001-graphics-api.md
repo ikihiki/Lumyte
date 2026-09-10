@@ -140,7 +140,7 @@ front face は clip-to-viewport 変換後の winding に対する値とする。
 | --- | --- |
 | `src/graphics/Lumyte.Graphics/Primitives/`、`Coordinates/` | 既存 project を改編。GpuFormat 等の非所有の基礎値、座標規約。本 ADR が直接担当する共通型を置く |
 | `src/graphics/Shaders/Shared/` | 新設予定の build 用 Slang module。計算関数を共有し、共通 runtime assembly、GPU 入力 ABI、resource 宣言の所有元にはしない |
-| `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 新設予定。独立した低レベル契約。既存 Lumyte.Graphics の backend／command／resource API を共通基礎値から分離する |
+| `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 独立した低レベル契約。Native は作成済み、Portable は新設予定。既存 Lumyte.Graphics の backend／command／resource API を共通基礎値から分離する |
 | `src/graphics/Lumyte.Graphics.DirectX12/`、`src/graphics/Lumyte.Graphics.Vulkan/`、`src/graphics/Lumyte.Graphics.WebGPU/` | 既存 project を改編。前二者は Native、後者は Portable の実装を置く |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 新設予定。系統別の準備済み package と GPU program。offline tool の配置は各 shader ADR が定める |
 | `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | 新設予定。系統別の GPU 管理機構。共通基礎 project に管理 API を置かない |

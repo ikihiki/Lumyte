@@ -89,6 +89,8 @@ resource heap は texture と buffer の両 descriptor の native size/alignment
 
 SPIR-V の `ArrayStrideIdEXT` は配列の stride を指定し、`OpConstantSizeOfEXT` は型ごとの descriptor size を返す。既存 Slang の `ResourceDescriptorHeap[T][i]` が自動的に全型共通の slot stride を使うとは仮定しない。Native caller はこの byte offset 計算と一致する raw SPIR-V を用意し、toolchain が必要な場合は同じ計算へ lowering する。これは Lumyte の混在 heap ABI への対応であり、参照実装の全 shader がそのまま適合するという主張ではない。[SPV_EXT_descriptor_heap](https://github.khronos.org/SPIRV-Registry/extensions/EXT/SPV_EXT_descriptor_heap.html)
 
+Slang 2026.17 の `-spirv-unified-descriptor-heap-stride` を使い、型ごとの descriptor size から共通 stride を求める artifact を生成・検証した。device の size を固定値として埋め込まない。native の descriptor size と alignment は2の冪で、alignment は対応 size 以下のため、image と buffer の最大 size が両方の整列を満たす。storage と shader が同じ stride を使うことを、混在 slot を読む compute の実機試験で確認した。size／alignment と slot stride は `Limits.Descriptors` で公開する。[descriptor heap properties](https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceDescriptorHeapPropertiesEXT.html)
+
 descriptor が指す resource を自動保持しない。slot の上書き・再利用や heap の破棄は caller が未提出参照と GPU 利用を解消してから行う。native validation が診断する shader 型や descriptor の条件を独自に再検証しない。
 
 descriptor の書込みと heap の選択は texture の初期化義務を消費しない。shader から初めて参照する texture は caller が事前に明示 discard で `GENERAL` へ初期化するか、先行する texture copy で初期化する。descriptor slot の参照先 registry や、全 texture を巡回する未初期化リストは置かない。recording の native command 区間が切り替わる際は、選択済み resource／sampler heap を次の区間へ再設定する。この2個の選択値は resource 到達先の追跡ではない。
@@ -97,7 +99,9 @@ descriptor の書込みと heap の選択は texture の初期化義務を消費
 
 `NativeGpuShaderProgram` は raw SPIR-V と entry point を受け取る。shader package の選択・reflection・profile 比較は行わない。heap の配置、typed pointer と root の byte 配置を一致させるのは caller と shader compiler の責務である。
 
-pipeline は `VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT` と null pipeline layout で生成する。Vulkan は各 draw/dispatch の記録呼出し時に caller の root bytes をコピーし、その場で `vkCmdPushDataEXT` に直接記録する。`vkCmdPushConstants` は使わない。native 命令を生成する時点は backend の実装差であり、共通契約は caller の byte 領域を呼出し後に参照しないことと、native root へ直接渡すことである。`MaxRootDataSize` は native の `maxPushDataSize` から得る。入力は 4 byte の倍数で上限以下、空入力では push data を記録しない。
+pipeline は `VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT` と null pipeline layout で生成する。Vulkan は各 draw/dispatch の記録呼出し時に caller の root bytes をコピーし、その場で `vkCmdPushDataEXT` に直接記録する。`vkCmdPushConstants` は使わない。native 命令を生成する時点は backend の実装差であり、共通契約は caller の byte 領域を呼出し後に参照しないことと、native root へ直接渡すことである。`MaxRootDataSize` は native の `maxPushDataSize` から得る。入力は4 byte の倍数で上限以下とし、その native 条件は独自に再検証しない。空入力では push data を記録しない。[直接 push data](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdPushDataEXT.html)
+
+compute pipeline は raw SPIR-V と指定 entry から同期生成する。byte slice の開始位置が uint32 境界にない場合も aligned な作業領域から native shader module を作り、生成後に module を解放する。`DispatchIndirect` は `vkCmdDispatchIndirect2KHR` に実 GPU address と range を渡し、先頭3個の uint32 で1件を実行する。texture 初期化のため native command 区間が変わる際は、選択済み compute pipeline と descriptor heaps を次の区間にも再設定する。
 
 NoGraphicsAPI の Slang では `[[vk::push_constant]]` の宣言からこの push-data 経路を使う。宣言の名前を理由に `VkPipelineLayout` と従来の push-constant range が必要だとは解釈しない。shared POD の C layout、row-major、descriptor-heap capability と SPIR-V の事前検証は shader toolchain の契約である。[Slang shader 契約](https://github.com/sebbbi/NoGraphicsAPI/blob/main/docs/slang.md)
 
@@ -168,7 +172,7 @@ queue 受理と GPU completion を区別し、native の失敗を ADR 0002 の e
 
 ## コード配置
 
-以下は repository root 相対の目標配置とする。既存の `Lumyte.Graphics.Vulkan` と隣の `Lumyte.Graphics.Vulkan.Tests` を Native 専用へ改編し、公開契約は新設予定の `Lumyte.Graphics.Native` を参照する。フォルダ分割は同一 backend project 内で行う。
+以下は repository root 相対の目標配置とする。既存の `Lumyte.Graphics.Vulkan` と隣の `Lumyte.Graphics.Vulkan.Tests` を Native 専用へ改編し、公開契約は作成済みの `Lumyte.Graphics.Native` を参照する。フォルダ分割は同一 backend project 内で行う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -231,4 +235,5 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 - PSO の rasterization/blend の全面分離、GPU が生成・選択する root は未採用。ray tracing、multi-draw/count buffer と presentation API はこの最小 Native interface の範囲外である。
 - 参照実装の swapchain には `GENERAL ↔ PRESENT_SRC_KHR` の内部 transition があるが、本 ADR は presentation API の実装完了を宣言しない。
 - address-command の線形／texture copy、global barrier、HostRead、明示 discard、queue の一回提出と timeline completion を実装した。転送先 range は source の byte 数だけに制限し、公開した余剰容量を変更しない。内部 command pool の回収は caller semaphore の寿命から分離する。
-- render view の永続 image view、専用 descriptor storage と固定 slot stride、view／address range／sampler 作成情報からの descriptor 書込み、resource／sampler heap の設定を実装する。descriptor-heap/address-command を使う描画経路、混在 slot stride と shader lowering の接続、render view の attachment 使用、shader／pipeline／mesh の移行と GPU conformance 検証は未実装である。storage と転送基盤の試験成功を描画対応の完了とは扱わない。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+- render view の永続 image view、専用 descriptor storage と固定 slot stride、view／address range／sampler 作成情報からの descriptor 書込み、resource／sampler heap の設定を実装した。さらに null-layout compute pipeline、直接 push data、直接／address-range 間接 dispatch、混在 slot stride と shader lowering を実機確認し、`RawShaderPointers` と `BufferDescriptors` を true とする。
+- render view の attachment 使用、raster／mesh pipeline と描画、製品用 shader toolchain の移行は未実装である。compute の試験成功を描画対応の完了とは扱わない。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

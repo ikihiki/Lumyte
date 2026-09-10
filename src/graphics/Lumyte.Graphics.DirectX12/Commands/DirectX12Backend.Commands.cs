@@ -26,7 +26,7 @@ public sealed unsafe partial class DirectX12Backend
         return record;
     }
 
-    private sealed class NativeRecording(NativeQueue owner) : NativeGpuCommandBuffer
+    private sealed partial class NativeRecording(NativeQueue owner) : NativeGpuCommandBuffer
     {
         private readonly List<Action<ComPtr<ID3D12GraphicsCommandList7>>> operations = [];
         private RecordingState state;
@@ -155,7 +155,7 @@ public sealed unsafe partial class DirectX12Backend
             ClearOperations();
         }
 
-        private void ClearOperations() { operations.Clear(); resourceHeap = null; samplerHeap = null; }
+        private void ClearOperations() { operations.Clear(); resourceHeap = null; samplerHeap = null; computePipeline = null; }
 
         private enum RecordingState { Recording, Accepted, Failed, Disposed }
     }

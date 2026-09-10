@@ -148,9 +148,35 @@ Native の内部公開は0件で、repository の `InternalsVisibleTo` 9件は�
 
 実機は RTX 2080、driver 616.92。DirectX 12 debug layer と Vulkan Khronos validation layer は引き続き未導入で、有効時の試験は未実施である。DirectX 12 の view／sampler 作成は戻り値のない native API であり、今回の実機成功は呼出し・提出・完了と寿命の確認までを意味する。shader による descriptor の読出し、attachment の clear／描画と read-only aspect の内容保持を検証済みとは扱わない。native allocation failure の強制試験は行わず、失敗時の owned object の解放はコードレビューで確認した。
 
+## 第5段階: Native compute・直接 root・shader 参照
+
+2026-09-10 に [Shader](../adr/0009-native-shader-api.md)、[Compute pipeline](../adr/0010-native-pipeline-state-api.md)、[Command Recording](../adr/0011-native-command-recording-api.md) の実行経路を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | raw code／entry の shader 値、stage 構成を持つ program、外部 backend が派生できる compute pipeline handle、生成・破棄・選択と直接／間接 dispatch |
+| Root | 各呼出しが caller の byte 領域を消費し、DX12 は CPU 記録から root constants、Vulkan は記録時に push data へ渡す。root 用 GPU buffer、Parameter Data の生成・解釈・upload は追加しない |
+| DirectX 12 | 同期生成する native compute PSO、64 DWORD の固定 root signature、直接 heap indexing と ExecuteIndirect。shader に使用しない場合も caller が resource／sampler の両 heap を選択し、native 変換は heap → root signature → constants → dispatch の順とする |
+| Vulkan | descriptor-heap flag と null layout の compute pipeline、vkCmdPushDataEXT と vkCmdDispatchIndirect2KHR。texture 初期化で native command 区間を分ける場合に compute pipeline と選択済み heaps を再設定する |
+| Shader ABI | DX12 は b0／space0 の直接 constants と descriptor index。Vulkan は実 GPU pointer と固定 slot stride の mixed descriptor heap。Slang 2026.17 の unified stride を使い、特定 GPU の descriptor size を artifact に固定しない |
+| Capability／limits | 両 backend の BufferDescriptors、Vulkan の RawShaderPointers を有効化。root size、dispatch 各軸・積、Vulkan の descriptor size／alignment／stride を公開し、DX12 の opaque handle increment は byte stride にしない |
+| 所有と検証 | pipeline は caller-owned で、生成後に caller の raw code を再利用できる。root の最大 size・dispatch 数・shader の native 条件を独自に再検証せず、値の切捨て防止、論理 range と所有状態だけを確認する |
+
+DirectX 12 は従来の SM 6.6 と Enhanced Barriers に加え、heap 直接 indexing が要求する Resource Binding Tier 3 を初期化時に確認する。固定 root signature の両 heap flags に従うため、使わない heap を backend 内部で代用したり、shader reflection で省略条件を推定したりしない。
+
+Slang 2026.17 で生成した Vulkan 用 artifact を内蔵 SPIR-V validator で検証し、直接 PushConstant、物理 pointer、descriptor heap と共通 stride を確認した。試験は準備済み SPIR-V を使用し、製品 backend に compiler・package loader 依存を追加しない。DirectX 12 は既存のテスト用 DXC で raw DXIL を用意する。
+
+新規テストは Native が32件、DirectX 12 が13件、Vulkan が15件で、計60件を追加した。focused tests は Native の全62件、DirectX 12 の Native 名を持つ関連150件、Vulkan の compute 15件が成功し、失敗・skip はなかった。実GPUで64 byte を超える root と呼出し後の CPU 値変更、GPU が書いた indirect 引数、非ゼロ slot／range offset、texture／buffer／sampler の参照、storage texture 書込みと heap 切替を確認した。Vulkan は初回 texture 区間をまたぐ pipeline／heap の再設定、unaligned な shader byte slice と同期生成後の入力再利用も確認した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=native-compute-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、25 test project の **1,458件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は331件、Vulkan は342件、WebGPU は154件、Native は62件を含む。TRX は各 test project の `TestResults/` に保存した。初回は制限付き実行環境でビルド出力が進まず停止し、その実行が残した MSBuild 子プロセスだけを回収してから再実行した。
+
+37 ADR の API・コード配置・使用例・未実装章、44文書の340ローカルリンクと18アンカー、208件の番号依存を確認した。本体向け `InternalsVisibleTo` は0件で、9指定はすべて test assembly 向け。Native は内部公開を使わない。独立したコードレビューと空白検査でも問題はなかった。
+
+実機は RTX 2080、driver 616.92。DirectX 12 debug layer と Vulkan Khronos validation layer は未導入のため、有効時の検証は未実施である。native pipeline の allocation failure と device loss を強制する試験は行わず、失敗時の owned object 解放はコードレビューで確認した。
+
 ## 未実装と次の順序
 
-1. Native shader、pipeline と描画を接続し、render view を attachment として使う試験と descriptor を shader から読む試験を追加する。root data の直接入力、parameter data を command で扱わない方針を維持し、indexed／indirect と limits、descriptor stride の shader ABI を対応する操作とともに追加する。
+1. Native raster pipeline と rendering／draw／indexed draw を接続し、render view の attachment 使用と描画結果を確認する。DirectX 12 の depth/stencil を含む PSO は実際の Submit 時に解決し、root の直接入力と command で Parameter Data を扱わない方針を維持する。描画用 indirect と残る limits を対応する操作とともに追加する。
 2. 独立した Portable API と WebGPU、両系統の Resources・shader・RenderGraph provider、共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 mesh／amplification、保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。driver 更新により、この PC で Native Vulkan の初期化と転送基盤を実機検証できるようになった。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

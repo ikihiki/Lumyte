@@ -27,13 +27,19 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private delegate* unmanaged<Instance, DebugUtilsMessengerEXT, AllocationCallbacks*, void> destroyDebugMessenger;
     private bool disposed;
     private QueueRecord? mainQueue;
+    private NativeGpuDispatchLimits dispatchLimits;
 
     private VulkanBackend(Vk vk) => this.vk = vk;
 
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
 
-    // Later implementation stages enable capabilities when their corresponding operations exist.
-    public NativeGpuCapabilities Capabilities => new();
+    public NativeGpuCapabilities Capabilities => new(RawShaderPointers: true, BufferDescriptors: true);
+
+    public NativeGpuLimits Limits => new(checked((uint)descriptorProperties.MaxPushDataSize), dispatchLimits,
+        new(DescriptorLayout(descriptorProperties, NativeGpuDescriptorHeapKind.Resource, 1).Stride,
+            DescriptorLayout(descriptorProperties, NativeGpuDescriptorHeapKind.Sampler, 1).Stride,
+            descriptorProperties.ImageDescriptorSize, descriptorProperties.BufferDescriptorSize, descriptorProperties.SamplerDescriptorSize,
+            descriptorProperties.ImageDescriptorAlignment, descriptorProperties.BufferDescriptorAlignment, descriptorProperties.SamplerDescriptorAlignment));
 
     internal bool SupportsSeparateDepthStencilLayouts { get; private set; }
     internal bool SupportsImageCubeArray { get; private set; }
@@ -118,7 +124,12 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
 
             vk.GetPhysicalDeviceMemoryProperties(physicalDevice, out memoryProperties);
             bufferImageGranularity = properties.Limits.BufferImageGranularity;
+            uint countX = properties.Limits.MaxComputeWorkGroupCount[0];
+            uint countY = properties.Limits.MaxComputeWorkGroupCount[1];
+            uint countZ = properties.Limits.MaxComputeWorkGroupCount[2];
+            dispatchLimits = new(countX, countY, countZ, SaturatingProduct(countX, countY, countZ));
             InitializeDescriptors(physicalDevice);
+            InitializeCompute();
             vk.GetDeviceQueue(device, queueFamily.Value, 0, out Queue queue);
             mainQueue = new QueueRecord(this, queue, queueFamily.Value);
             return;
@@ -136,6 +147,12 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             if (!extensions.Contains(extension)) { missing.Add(extension); }
         }
         return missing.ToArray();
+    }
+
+    private static ulong SaturatingProduct(uint x, uint y, uint z)
+    {
+        ulong xy = (ulong)x * y;
+        return z != 0 && xy > ulong.MaxValue / z ? ulong.MaxValue : xy * z;
     }
 
     private HashSet<string> GetDeviceExtensions(PhysicalDevice physicalDevice)

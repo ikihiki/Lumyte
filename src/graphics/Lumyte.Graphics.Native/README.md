@@ -1,6 +1,6 @@
 # Native GPU 基盤
 
-DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
+DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、compute と直接 root、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
 
 `CreateGpuHeap` は backing allocation だけを確保する。`CreateLinearRegion` が指定した heap offset に独立した native buffer を配置し、その resource の GPU address と必要な CPU mapping を提供する。`NativeGpuRange.Offset` は region 内の値であり、heap offset を含めない。
 
@@ -102,6 +102,49 @@ finally
 
 slot の空き管理、参照先の保持、上書き前の待機は caller が担当する。書込みや heap 選択は texture を初期化しない。Vulkan で shader から初めて texture を参照する場合は、caller が先に `DiscardTexture(view, GpuTextureLayout.General)` を記録するか、先行する texture copy による初期化を済ませる。DX12 の layout 変更も caller が明示する。
 
+## Compute と直接 root
+
+`computeCode` は対象 device の raw DXIL または SPIR-V、`rootData` は shader の ABI に従う byte 列とする。`resources`／`samplers` は caller-owned heap、`readback` は出力を受け取る range とする。shader が書く `deviceOutput` は初期化・同期済みで、必要な descriptor を書込み済みとする。
+
+```csharp
+var pipeline = backend.CreateComputePipeline(new NativeGpuShaderProgram(
+    new NativeGpuShaderCode
+    {
+        Stage = GpuShaderStage.Compute,
+        Code = computeCode,
+        EntryPoint = "main"
+    }));
+try
+{
+    var queue = backend.MainQueue;
+    using var completion = queue.CreateSemaphore(0);
+    using var commands = queue.StartCommandRecording();
+    commands.SetResourceDescriptorHeap(resources);
+    commands.SetSamplerDescriptorHeap(samplers);
+    commands.SetComputePipeline(pipeline);
+    commands.Dispatch(rootData, 1); // 呼出し後は caller の rootData 領域を再利用できる。
+    commands.Barrier(GpuStage.ComputeShader, GpuAccess.ShaderWrite,
+        GpuStage.Copy, GpuAccess.CopyRead);
+    commands.CopyMemory(deviceOutput, readback);
+    commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+        GpuStage.Host, GpuAccess.HostRead);
+    queue.Submit([commands], completion, 1);
+    queue.Wait(completion, 1);
+}
+finally
+{
+    backend.DestroyComputePipeline(pipeline);
+}
+```
+
+DirectX 12 の compute ABI は `b0, space0` に最大256 byte の root constants を渡す。固定 root signature は両 heap の直接 indexing flags を持つため、shader が使用しない場合も caller が resource／sampler heap の両方を選択する。buffer data は descriptor index と offset で参照し、実 GPU pointer の shader dereference は提供しない。
+
+Vulkan は null pipeline layout と `vkCmdPushDataEXT` を使う。実 GPU pointer だけを使う shader なら descriptor heap は不要である。heap を使う artifact は `Limits.Descriptors` の固定 slot stride に従う。試験用 Slang artifact は device ごとの descriptor size を固定せず、unified descriptor stride を使う。
+
+root の有効上限は `Limits.MaxRootDataSize`、dispatch 数は `Limits.Dispatch` で得る。各 work が読む root 全域を caller が渡し、末尾の zero fill は行わない。command は root の pointer や index を解釈せず、Parameter Data の生成・upload と GPU buffer への fallback は行わない。
+
+`DispatchIndirect(rootData, arguments)` は range の先頭にある3個の uint32（X／Y／Z）で1件を実行する。GPU が引数を書いた場合は、その producer から `GpuStage.DrawIndirect`／`GpuAccess.IndirectRead` への barrier を caller が記録する。root は直接版と同様に command へ渡し、GPU 引数の readback や CPU 展開を行わない。
+
 ## バックエンドの追加
 
 別 assembly で `INativeGpuBackend` を実装し、次の基底型から実装内の非公開型を派生させる。`Lumyte.Graphics.Native` に `InternalsVisibleTo` はなく、追加 backend の assembly 名を登録する必要もない。
@@ -114,6 +157,7 @@ slot の空き管理、参照先の保持、上書き前の待機は caller が�
 | `NativeGpuTextureHandle` | `()` | native texture、作成値、所属 device と局所的な解放・初期化状態 |
 | `NativeGpuRenderViewHandle` | `(flags)` | attachment 用 native view、所属 device と局所的な解放状態 |
 | `NativeGpuDescriptorHeap` | `(kind, capacity)` | 専用 descriptor storage、native slot 配置と所属 device |
+| `NativeGpuComputePipelineHandle` | `()` | 完成済みの native compute pipeline、所属 device と局所的な解放状態 |
 | `NativeGpuQueue` | `()` | native queue、内部 command memory の completion と回収 |
 | `NativeGpuCommandBuffer` | `()` | queue identity、記録・一回提出・破棄の局所状態と native command memory |
 | `NativeGpuSemaphore` | `()` | caller-owned native completion timeline と所属 queue |
@@ -128,4 +172,6 @@ slot の空き管理、参照先の保持、上書き前の待機は caller が�
 
 texture copy は単一 aspect の footprint と、明示した byte pitch を使う。DirectX 12 では caller が `TextureTransition` で前後の layout を指定し、Vulkan では backend が初回利用前に `GENERAL` を順序付ける。alias 再利用は caller が `Barrier` と `DiscardTexture` で指定する。非所有の view 値は subresource を表すだけで、native render view を生成しない。`CreateTexture` 自体は提出・待機しない。
 
-render view と descriptor storage の生成・書込み・破棄、command の heap 選択までを扱う。shader、pipeline／描画、attachment としての使用、descriptor の shader 読出し、limits、Resources と機能 RenderGraph の移行は後続段階とする。`BufferDescriptors` は shader 参照経路の完成まで false とする。Vulkan の混在 slot stride と shader lowering の接続もまだ行わない。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+render view と descriptor storage に加え、raw shader の compute pipeline、直接 root、直接／間接 dispatch と shader による descriptor 参照を実装した。両 backend の `BufferDescriptors` と Vulkan の `RawShaderPointers` を true とする。limits は root、compute dispatch と descriptor ABI を提供する。
+
+raster pipeline／描画、attachment としての使用、mesh、その他の limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

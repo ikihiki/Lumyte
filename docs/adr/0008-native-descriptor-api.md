@@ -44,7 +44,7 @@ descriptor の書込みは texture の初期化や layout 遷移を行わない�
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とし、未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済みで、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -82,4 +82,6 @@ host memory の安全、slot から native の位置への変換、owned storage
 
 caller-owned storage と明示 index を採用する。専用 heap/index は DirectX 12 の opaque heap に合わせた部分採用であり、NoGraphicsAPI の CPU destination と GPU range をそのまま公開する契約ではない。Vulkan の raw mapped storage・CPU address 書込み・GPU range 設定を公開する追加機能は未採用・未実装とする。
 
-両 backend の storage 生成・破棄、texture／buffer／sampler の指定 slot への書込み、command の heap 選択を実装する。Vulkan は descriptor size と alignment から求めた共通 resource slot stride と独立した sampler slot stride を backend 内に保持する。shader 生成側への size／alignment／stride の受渡し、混在 heap の shader lowering と GPU からの読出し検証は未実装であり、Native shader／pipeline の段階で接続する。DirectX 12 の handle increment を byte stride として公開することはしない。
+両 backend の storage 生成・破棄、texture／buffer／sampler の指定 slot への書込み、command の heap 選択を実装した。Vulkan は descriptor size と alignment から求めた共通 resource slot stride と独立した sampler slot stride を `Limits.Descriptors` に公開する。DirectX 12 の同 property は null とし、opaque handle increment を byte stride として公開しない。
+
+両 backend の compute shader から混在 heap と sampler を参照する実機検証を追加した。Vulkan は Slang の unified descriptor stride と storage の一致を確認した。raster／mesh からの参照と製品用 shader toolchain の移行は未実装である。

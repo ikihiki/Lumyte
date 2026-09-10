@@ -32,7 +32,7 @@ DirectX 12 は depth/stencil を native PSO に含むため、実際の提出内
 | `NativeGpuStencilOperation` | `Keep/Zero/Replace/IncrementClamp/DecrementClamp/Invert/IncrementWrap/DecrementWrap`。 |
 | `NativeGpuStencilFaceState` | compare、fail/depth-fail/pass operation、reference。 |
 | `NativeGpuDepthStencilState` | depth test/write/compare、stencil test/read mask/write mask、front/back state。default は depth/stencil の test/write を無効にする。 |
-| `NativeGpuRasterPipelineHandle`／`NativeGpuComputePipelineHandle` | caller-owned pipeline identity。 |
+| `NativeGpuRasterPipelineHandle`／`NativeGpuComputePipelineHandle` | caller-owned pipeline identity。public abstract 基底型と protected constructor を持ち、別 assembly の backend が非公開派生型として実装する。 |
 | `CreateRasterPipeline(description, program)` | 固定 state と raw shader から論理 pipeline を生成する。DirectX 12 は後の native PSO 生成に必要な description、raw code と entry point を自身で保持する。Vulkan の dynamic state 経路はこの時点で native 生成を完了する。 |
 | `CreateComputePipeline(program)` | native compute pipeline の生成を完了して返す。 |
 | `DestroyRasterPipeline`／`DestroyComputePipeline` | caller が全利用を解消してから pipeline と所有する native object を解放する。 |
@@ -50,7 +50,7 @@ pipeline と state の意味上の適合は native の生成・診断に従う�
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とし、未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済みで、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -63,6 +63,13 @@ pipeline と state の意味上の適合は native の生成・診断に従う�
 事前 PSO 準備の公開 API や global cache 用の project は設けない。
 
 ## 使用例
+
+compute は raw code の program から native pipeline を完成させて返す。以下では GPU に使用しない。
+
+```csharp
+var compute = native.CreateComputePipeline(new NativeGpuShaderProgram(computeShader));
+native.DestroyComputePipeline(compute);
+```
 
 `description` と `program` は raster の固定 state と raw shader 値とする。GPU に使用させない例である。
 
@@ -88,4 +95,6 @@ state の native 表現、意味上の key と pipeline-owned object の回収�
 
 ## 採用差分と未実装範囲
 
-raster pipeline と depth/stencil の分離は部分採用である。DirectX 12 の提出時 PSO 解決は Lumyte の補足で、native PSO から depth/stencil を完全分離したとは扱わない。mesh は line／triangle 出力を採用し、DirectX 12 と共通に扱えない point 出力は未採用。rasterization/blend の全面分離、dual-source blend、alpha-to-coverage など本定義にない機能は未提供。Native 実装、mesh PSO と GPU conformance 検証は未実装である。
+raster pipeline と depth/stencil の分離は部分採用である。DirectX 12 の提出時 PSO 解決は Lumyte の補足で、native PSO から depth/stencil を完全分離したとは扱わない。mesh は line／triangle 出力を採用し、DirectX 12 と共通に扱えない point 出力は未採用。rasterization/blend の全面分離、dual-source blend、alpha-to-coverage など本定義にない機能は未提供。
+
+公開の compute pipeline handle と両 backend の同期生成・独立破棄、command への選択と実行を実装した。raster pipeline、depth/stencil の分離と提出時 PSO 解決、mesh PSO と描画の GPU 検証は未実装である。

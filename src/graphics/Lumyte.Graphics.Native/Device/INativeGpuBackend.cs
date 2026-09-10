@@ -2,7 +2,7 @@ namespace Lumyte.Graphics.Native;
 
 /// <summary>
 /// Native GPU allocation, placement, views, descriptors, recording, and explicit submission and completion.
-/// The caller owns each resource and its backing heap. Shader and drawing members follow in later stages.
+/// The caller owns each resource and its backing heap. Raster drawing members follow in later stages.
 /// </summary>
 /// <remarks>
 /// The caller serializes operations on the same heap or resource, including placement and destruction,
@@ -16,6 +16,7 @@ public interface INativeGpuBackend : IDisposable
 {
     GpuShaderCodeFormat ShaderCodeFormat { get; }
     NativeGpuCapabilities Capabilities { get; }
+    NativeGpuLimits Limits { get; }
     NativeGpuQueue MainQueue { get; }
 
     NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind);
@@ -62,4 +63,9 @@ public interface INativeGpuBackend : IDisposable
         NativeGpuRange range, NativeGpuBufferAccess access);
 
     void WriteSamplerDescriptor(NativeGpuDescriptorHeap heap, uint index, NativeGpuSamplerDescription description);
+
+    /// <summary>Completes native compute pipeline creation before returning; shader bytes are borrowed only during this call.</summary>
+    NativeGpuComputePipelineHandle CreateComputePipeline(NativeGpuShaderProgram program);
+
+    void DestroyComputePipeline(NativeGpuComputePipelineHandle pipeline);
 }

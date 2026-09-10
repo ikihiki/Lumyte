@@ -146,7 +146,7 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 | 配置先 | 目標の責務／現状 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics/` | 基礎値。既存 project を改編 |
-| `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 二系統の低レベル API。新設予定 |
+| `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 二系統の低レベル API。Native は作成済み、Portable は新設予定 |
 | `src/graphics/Lumyte.Graphics.DirectX12/`、`src/graphics/Lumyte.Graphics.Vulkan/`、`src/graphics/Lumyte.Graphics.WebGPU/` | 対応 backend。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser/` | WebGPU の browser 接続。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 準備済み shader package と GPU 初期化。新設予定 |

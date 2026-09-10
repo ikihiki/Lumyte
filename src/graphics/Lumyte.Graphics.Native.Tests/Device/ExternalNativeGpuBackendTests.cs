@@ -63,10 +63,13 @@ public sealed partial class ExternalNativeGpuBackendTests
     // This project has no friend access to the contracts assembly. Backend state remains
     // private to the implementation, while callers only receive public contract types.
     private sealed partial class ExternalBackend(Action<object> release, Action<object>? observeTexture = null,
-        Action<object>? observeCommands = null, Action<object>? observeDescriptors = null) : INativeGpuBackend
+        Action<object>? observeCommands = null, Action<object>? observeDescriptors = null,
+        Action<object>? observeCompute = null) : INativeGpuBackend
     {
         public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
         public NativeGpuCapabilities Capabilities => new();
+        public NativeGpuLimits Limits => new(256, new(65535, 65535, 65535, ulong.MaxValue),
+            new((1ul << 40) + 64, 32, 48, 32, 24, 16, 16, 8));
         public NativeGpuQueue MainQueue { get; } = new ExternalQueue(observeCommands);
 
         public NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind)
