@@ -11,12 +11,14 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 {
     private readonly D3D12 api;
     private ComPtr<ID3D12Device> device;
+    private ComPtr<ID3D12Device10> device10;
     private bool disposed;
 
-    private DirectX12Backend(D3D12 api, ComPtr<ID3D12Device> device)
+    private DirectX12Backend(D3D12 api, ComPtr<ID3D12Device> device, ComPtr<ID3D12Device10> device10)
     {
         this.api = api;
         this.device = device;
+        this.device10 = device10;
     }
 
     public static DirectX12Backend Create(NativeGpuBackendOptions? options = null)
@@ -28,6 +30,7 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 
         D3D12 api = D3D12.GetApi();
         ComPtr<ID3D12Device> device = default;
+        ComPtr<ID3D12Device10> device10 = default;
         try
         {
             if (options?.EnableValidation == true)
@@ -46,11 +49,13 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 
             Check(api.CreateDevice<IDXGIAdapter, ID3D12Device>(
                 default, D3DFeatureLevel.Level110, out device), "D3D12CreateDevice");
+            Check(device.QueryInterface(out device10), "QueryInterface(ID3D12Device10)");
             RequireNativeFeatures(device);
-            return new(api, device);
+            return new(api, device, device10);
         }
         catch
         {
+            device10.Dispose();
             device.Dispose();
             api.Dispose();
             throw;
@@ -64,6 +69,7 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     {
         if (disposed) { return; }
         disposed = true;
+        device10.Dispose();
         device.Dispose();
         api.Dispose();
     }
@@ -72,16 +78,6 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 
     private static void RequireNativeFeatures(ComPtr<ID3D12Device> device)
     {
-        ComPtr<ID3D12Device10> device10 = default;
-        try
-        {
-            Check(device.QueryInterface(out device10), "QueryInterface(ID3D12Device10)");
-        }
-        finally
-        {
-            device10.Dispose();
-        }
-
         var options = new FeatureDataD3D12Options12();
         Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options12, &options,
             (uint)sizeof(FeatureDataD3D12Options12)), "CheckFeatureSupport(D3D12_OPTIONS12)");

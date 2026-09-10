@@ -197,7 +197,8 @@ amplification entry があれば指定 group 数は amplification を起動し�
 - 共通 allocation と linear region の明示分離、range の region identity、buffer descriptor、明示 texture transition／discard、単一 aspect の copy footprint、`Submit` 内の depth/stencil PSO 解決と CPU 記録の native 変換は Lumyte の補足である。NoGraphicsAPI 本体が同じ API や記録方式を持つとは説明しない。
 - heap 共用は native の条件を満たす組合せに限る。Tier 1 の分類制限と CPU 可視 heap の texture 制限を取り除いたとは扱わず、別 heap に分ける場合も公開の allocation 型と確保 API は共通とする。
 - mesh／amplification は任意機能として採用する。tier／limit の写像、AS／MS の PSO stream、直接／indirect dispatch、stage barrier と実 GPU 検証は未実装である。mesh 非対応 device への自動 emulation、multi-draw/count buffer と GPU 生成 root は今回の範囲に含めない。
-- `INativeGpuBackend` と Native 型群への分離、aspect 別 copy と alias 再初期化を含む上記変換・conformance 検証は未実装の移行作業である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。
+- Native 専用の `DirectX12Backend` と公開型群に、純粋 allocation、線形 region と texture の requirement・明示配置・独立破棄を実装した。保持した Device10 から同じ `ResourceDesc1` で `GetResourceAllocationInfo2`／`CreatePlacedResource2` を呼び、texture は `Undefined` で生成する。混在配置と heap 再利用は実機確認済み。実装と試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+- command／submit、view／descriptor、shader、aspect 別 copy と alias 再初期化は未実装の移行作業である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。
 
 ## 参照
 

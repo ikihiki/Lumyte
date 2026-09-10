@@ -25,7 +25,7 @@ format の追加の再解釈は `MutableFormat` で指定する。許可 format 
 | `NativeGpuTextureUsage` | `Sampled`、`Storage`、`ColorAttachment`、`DepthStencilAttachment`、`CopySource`、`CopyDestination` の flags。 |
 | `NativeGpuTextureDescription` | dimension、width/height/depth、mip/layer count、sample count、format、usage と `MutableFormat`（bool、default false）。 |
 | `GetTextureMemoryRequirements(description, kind)` | 指定 texture と memory kind の配置に必要な共通の `NativeGpuMemoryRequirements` を返す。 |
-| `NativeGpuTextureHandle` | device に属する opaque texture identity。heap の所有権は取得しない。 |
+| `NativeGpuTextureHandle` | device に属する opaque texture identity。public abstract 基底型と protected constructor から各 backend が非公開派生型を実装する。heap の所有権は取得しない。 |
 | `CreateTexture(description, heap, offset)`／`DestroyTexture(texture)` | caller-owned `NativeGpuHeap` へ配置し、texture だけを破棄する。memory kind は `heap.Kind` に従う。 |
 | `NativeGpuTextureCopyFootprint` | `Mip`、`Aspect`、`BaseLayer`／`LayerCount`、`Origin`、`Extent`、byte 単位の `RowPitch`／`ImagePitch` を指定する非所有の転送配置。 |
 
@@ -50,27 +50,34 @@ NoGraphicsAPI と同様に `MutableFormat` は bool、default false とする。
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対とする。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。aspect・copy footprint と転送の配置は後続実装の目標を含む。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Native/Textures/` | texture description、dimension／aspect／usage、handle と copy footprint。要件取得・生成・破棄 member は `Device/INativeGpuBackend.cs` に宣言する。 |
 | `src/graphics/Lumyte.Graphics.DirectX12/Textures/` | native description と MutableFormat の変換、`Undefined` の placed texture の生成・破棄。 |
 | `src/graphics/Lumyte.Graphics.Vulkan/Textures/` | image description、heap への bind、MutableFormat と使用前の `GENERAL` 初期化を接続する局所状態。 |
-| `src/graphics/Lumyte.Graphics.Native.Tests/Textures/`、`src/graphics/Lumyte.Graphics.DirectX12.Tests/Textures/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Textures/` | footprint の aspect・pitch の CPU 値変換、要求値の受渡しと初期化の失敗境界を確認する unit test。 |
+| `src/graphics/Lumyte.Graphics.Native.Tests/Device/ExternalNativeGpuBackendTests.cs` | 公開契約だけで外部 backend が opaque texture と混在配置を提供できることを確認する consumer test。 |
+| `src/graphics/Lumyte.Graphics.Native.Tests/Textures/`、`src/graphics/Lumyte.Graphics.DirectX12.Tests/Textures/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Textures/` | description の native 変換、後続の footprint の aspect・pitch の変換と初期化の失敗境界を確認する unit test。 |
 | `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/Textures/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/Textures/` | 混在配置、初回使用と depth／stencil の独立した upload／readback を実 GPU で確認する試験。 |
 
 image のデコードやファイル取得はここに置かず、GPU へ渡された description と data の処理に限定する。
 
 ## 使用例
 
-`description` は使用する texture の作成値で、`MutableFormat` の既定値は false とする。一つの heap に線形 data と texture を配置する。共用できない device／組合せでは確保が失敗する。この例では GPU に使用させない。
+`native` は生成済みの `INativeGpuBackend` とする。`MutableFormat` の既定値は false とし、一つの heap に線形 data と texture を配置する。共用できない device／組合せでは確保が失敗する。この例では GPU に使用させない。
 
 ```csharp
 static ulong AlignUp(ulong value, ulong alignment)
     => checked((value + alignment - 1) / alignment * alignment);
 
 var kind = NativeGpuMemoryKind.GpuOnly;
+var description = new NativeGpuTextureDescription(
+    NativeGpuTextureDimension.TwoD,
+    Width: 256, Height: 256, Depth: 1,
+    MipCount: 1, LayerCount: 1, SampleCount: 1,
+    Format: GpuFormat.Rgba8Unorm,
+    Usage: NativeGpuTextureUsage.Sampled | NativeGpuTextureUsage.CopyDestination);
 const ulong dataSize = 4096;
 var dataRequirements = native.GetLinearMemoryRequirements(dataSize, kind);
 var textureRequirements = native.GetTextureMemoryRequirements(description, kind);
@@ -100,4 +107,8 @@ native requirement の取得と配置情報の変換を確認する。usage、fo
 
 ## 採用差分と未実装範囲
 
-caller-owned heap への texture 配置と MutableFormat を採用する。線形 resource と共通の allocation、DirectX 12 の明示 layout と opaque compatibility、単一 aspect の copy footprint は補足である。共通 heap への混在配置、alias 再利用と depth／stencil の独立転送を含む Native 実装・conformance 検証は未実装の移行作業である。
+caller-owned heap への texture 配置と MutableFormat を採用する。線形 resource と共通の allocation、DirectX 12 の明示 layout と opaque compatibility、単一 aspect の copy footprint は補足である。
+
+description、opaque handle、requirement 取得と heap への明示配置・独立破棄を両 backend に実装した。要件取得と生成は同じ native description 変換を使う。GPU を使った描画や転送前の配置処理として、dimension、array／mip、MSAA、format、MutableFormat、混在配置と破棄後の heap 再利用を検証した。特定 GPU の成功は他の device や組合せの保証にはしない。
+
+aspect・copy footprint、view、初回利用の layout 遷移、alias 再初期化と depth／stencil の独立転送は未実装である。Vulkan の `GENERAL` 初期化義務は非公開状態に保持するが、command／submit への接続と実行は後続作業とする。`CreateTexture` は暗黙の queue 生成・提出・待機を行わない。実機試験結果は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

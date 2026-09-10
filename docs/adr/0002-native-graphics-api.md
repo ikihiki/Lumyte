@@ -44,13 +44,13 @@ mesh は Native の optional 機能とする。`MeshShaders` は mesh stage と�
 
 ## コード配置
 
-以下は repository root 相対の目標配置であり、フォルダの作成済みを意味しない。公開契約とその xUnit テストは新設し、既存の backend とテスト project を Native 向けに改編する。
+以下は repository root 相対の配置であり、未実装機能の目標配置を含む。公開契約とその xUnit テストは作成済みで、既存の backend とテスト project 内へ Native 実装を追加する。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Native/Device/` | `INativeGpuBackend`、options、capabilities、limits と Native 固有例外を置く。責務別 ADR が定義する同 interface の member 宣言もここに集約し、引数・返却値の型は各担当フォルダに置く。 |
 | `src/graphics/Lumyte.Graphics.DirectX12/Device/`、`src/graphics/Lumyte.Graphics.Vulkan/Device/` | 既存 project を改編。device の生成・終了、機能と上限の取得、native 診断との接続を実装する。 |
-| `src/graphics/Lumyte.Graphics.Native.Tests/Device/` | 新設予定。共通の Native 契約について、CPU だけで確認できる所有権・エラーの振る舞いを検証する。 |
+| `src/graphics/Lumyte.Graphics.Native.Tests/Device/` | 共通の Native 契約について、外部 assembly からの実装と、CPU だけで確認できる所有権・エラーの振る舞いを検証する。 |
 | `src/graphics/Lumyte.Graphics.DirectX12.Tests/Device/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Device/` | 既存テスト project を改編。機能値と native error の写像など、GPU を使わない試験を置く。 |
 | `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/Device/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/Device/` | 実 device の初期化、validation 有効化と終了の試験を置き、通常の unit test と分離する。 |
 
@@ -78,4 +78,4 @@ host memory の安全、整数演算、backend が管理する identity と局�
 
 caller-owned resource と明示同期を採用する。参照実装の線形／texture heap の分割は採用せず、共通の純粋 allocation と配置 resource に分離する。任意 shader pointer など target 間で同じ意味を提供できない機能は部分採用とし、capability で区別する。
 
-最初の実装として Native 専用 interface、options、capabilities の型、native error の写像と両 backend の初期化・終了を追加した。現時点の公開 member はメモリ基盤に限り、実行機能の capability はすべて false とする。limits、主 queue、mesh／amplification と描画機能の移行・conformance 検証は未実装である。ray tracing、presentation など参照実装の全機能への対応は宣言しない。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。
+Native 専用 interface、options、capabilities の型、native error の写像と両 backend の初期化・終了を追加した。現時点の公開操作は共通 heap と線形 region／texture の明示配置・独立破棄までとし、実行機能の capability はすべて false とする。limits、主 queue、mesh／amplification と描画機能の移行・conformance 検証は未実装である。ray tracing、presentation など参照実装の全機能への対応は宣言しない。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。
