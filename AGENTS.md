@@ -1,5 +1,9 @@
 # Repository instructions
 
+## Assembly boundaries
+
+- Use `InternalsVisibleTo` only for test assemblies. Production libraries and backends must use deliberate public or protected extension contracts so that a new backend can be implemented in a separate assembly without changing the core library.
+
 ## Tests
 
 - Use xUnit for automated tests.

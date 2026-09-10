@@ -1,0 +1,41 @@
+namespace Lumyte.Graphics.Vulkan.Tests;
+
+[Collection("GpuBackend")]
+public sealed class VulkanBackendTests
+{
+    [Fact]
+    [Trait("Category", "VulkanNativeConformance")]
+    public void FactoryCreatesANativeDeviceOrReportsMissingNativeRequirements()
+    {
+        VulkanBackend? backend = null;
+        try
+        {
+            Exception? failure = Record.Exception(() => backend = VulkanBackend.Create());
+            if (failure is null)
+            {
+                Assert.NotNull(backend);
+                Assert.Equal(GpuShaderCodeFormat.SpirV, backend.ShaderCodeFormat);
+                return;
+            }
+
+            var unsupported = Assert.IsType<NotSupportedException>(failure);
+            Assert.Contains("Vulkan", unsupported.Message);
+            Assert.True(
+                unsupported.Message.Contains("Vulkan 1.4", StringComparison.Ordinal)
+                || unsupported.Message.Contains("No device satisfies Vulkan Native requirements. Missing:", StringComparison.Ordinal),
+                unsupported.Message);
+        }
+        finally { backend?.Dispose(); }
+    }
+}
+
+// GPU allocation tests need the actual Native feature baseline. The reason is surfaced as an
+// xUnit skip, rather than running the old descriptor-set backend under the new contract.
+internal sealed class VulkanNativeFactAttribute : FactAttribute
+{
+    public VulkanNativeFactAttribute()
+    {
+        try { using var backend = VulkanBackend.Create(); }
+        catch (NotSupportedException exception) { Skip = exception.Message; }
+    }
+}

@@ -5,7 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
-    <InternalsVisibleTo Include="Lumyte.Graphics.RenderGraph" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="GpuBackendKind.cs" />

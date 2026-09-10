@@ -2,6 +2,8 @@
 
 Lumyte Graphics の目標設計を定義する。採用は実装完了を意味しない。旧 API／shader ABI との互換層は設けない。
 
+Native メモリ基盤から実装を開始している。現在の実装済み API、実機で確認した範囲と残作業は [実装進捗](../designs/graphics-implementation-progress.md) を参照する。
+
 ## 共通化する境界
 
 **Model 描画・ブラー・2D 描画など、機能 pass を追加する API を共通化する。利用 library／application は再コンパイルせず同じ binary で Native／Portable を選択できる。** pass の実装本体と shader は二系統で用意し、各 API に合わせて独立して最適化する。

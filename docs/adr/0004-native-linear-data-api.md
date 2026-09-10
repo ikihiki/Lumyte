@@ -22,12 +22,14 @@ region は byte size を持つ一つの線形 resource である。vertex、inde
 | --- | --- |
 | `GetLinearMemoryRequirements(size, kind)` | 指定 byte size と memory kind の線形 resource に必要な `NativeGpuMemoryRequirements` を返す。生成時と同じ native 条件で取得する。 |
 | `CreateLinearRegion(size, heap, offset)`／`DestroyLinearRegion(region)` | caller-owned `NativeGpuHeap` の指定 byte offset に線形 resource を生成し、resource だけを破棄する。memory kind は `heap.Kind` を使う。 |
-| `NativeGpuLinearRegion` | region の identity、非所有の `Heap`、heap 相対の `HeapOffset`、logical byte 数の `Size`、実 `GpuAddress`、mapping がある場合の `CpuAddress` を持つ。 |
+| `NativeGpuLinearRegion` | public abstract 基底型。protected constructor `(heap, heapOffset, size, gpuAddress, cpuAddress)` で非所有の `Heap`、heap 相対の `HeapOffset`、logical byte 数の `Size`、実 `GpuAddress`、mapping がある場合の `CpuAddress` を設定する。identity は派生 object 自体とする。 |
 | `NativeGpuRange(Region, Offset, Size)` | region 内の非所有 byte 範囲。`Offset` は region の先頭からの値であり、heap 相対ではない。 |
 | `NativeGpuRange.GpuAddress` | `Region.GpuAddress + Offset`。CPU で dereference する pointer ではない。 |
 | `NativeGpuRange.Slice(offset, size)` | 元の range 内の部分範囲を返す。CPU 側の整数 overflow と範囲外の値生成を防ぐ。 |
 
 region の logical `Size` と配置 requirement の予約 `Size` は異なり得る。caller は後者を heap 内で占有させ、padding を data の範囲へ含めない。region の破棄は heap を解放せず、range のコピーや Slice は region／heap の寿命を延長しない。
+
+backend は非公開の region 派生型に native resource、所属 device と mapping の局所状態を保持する。公開基底 constructor は metadata だけを初期化し、配置や Map は行わない。外部 assembly もこの protected 契約で実装でき、共通型の内部情報へアクセスする必要はない。
 
 NoGraphicsAPI の `GpuRange` は address/size だけを持つ。本 API は copy と indirect command の native resource を取り出すため、range に region identity と offset を保持する。command が受け取る region 内 offset と、heap 上への配置 offset を区別し、global な address→resource の逆引き表を作らない。
 
@@ -39,7 +41,7 @@ CPU/GPU 同期、shader が導出する pointer の整列・範囲と寿命は c
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` を新設し、DirectX 12／Vulkan と各 `.Tests` は既存 project 内に Native 実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -86,4 +88,6 @@ Slice の CPU 整数 overflow と元の range 外の値生成を防ぐ。native 
 
 線形 data を byte range で渡す方針を採用する。純粋 allocation と線形 resource を分離するための `NativeGpuLinearRegion`、range の region identity は Lumyte の補足である。参照実装の「線形 heap 自体が backing buffer と address を持つ」構成は採用せず、address-only API の完全採用とも説明しない。
 
-raw shader pointer の DirectX 12 対応は未提供であり、region の明示配置、mapping、copy／indirect／descriptor の region 対応は未実装の移行作業である。
+region の明示配置・mapping・実 GPU address の取得を両 backend に実装し、range／Slice の範囲と overflow を単体試験で確認した。DirectX 12 の実機試験は配置・mapping・address と独立した破棄を確認している。Vulkan でも必須拡張を満たす device で、複数 region の共有 mapping、独立した byte 範囲、region 破棄後の heap 再利用と実 GPU address を確認した。
+
+raw shader pointer の DirectX 12 対応は未提供であり、copy／indirect／descriptor の region 対応と GPU command によるデータ検証は未実装の移行作業である。詳細は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

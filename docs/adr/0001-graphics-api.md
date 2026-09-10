@@ -26,6 +26,8 @@ Lumyte Graphics Resources は二実装を維持する。Native は heap／region
 
 以下は目標 package／namespace 名である。共通 graph 型は RenderGraph assembly、機能ごとの共通要求型は機能 contract assembly に一度だけ定義する。その実装 provider と低レベル API は別の assembly に置く。共通 assembly から下位実装への参照を要求しない。
 
+`InternalsVisibleTo` はテスト assembly にだけ使用する。backend、provider と本体 library の連携には明示した public／protected 契約を使い、新しい実装 assembly を追加するために共通 assembly の内部公開先を編集しない。backend が生成する resource は公開基底型とその非公開派生型に分け、native state を実装内へ閉じ込める。特定の上位 library だけが使う内部操作と型は、その所有 assembly に配置する。
+
 | package／namespace | 担当 API |
 | --- | --- |
 | `Lumyte.Graphics` | GPU object を所有しない基礎値と座標規約。低レベル backend interface は定義しない。 |

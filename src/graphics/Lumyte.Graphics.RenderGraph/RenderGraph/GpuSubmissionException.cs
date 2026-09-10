@@ -1,4 +1,4 @@
-namespace Lumyte.Graphics;
+namespace Lumyte.Graphics.RenderGraph;
 
 /// <summary>A submission started before an error was reported. Completion still owns its resources.</summary>
 public sealed class GpuSubmissionException : Exception, IDisposable
@@ -20,6 +20,3 @@ public sealed class GpuSubmissionException : Exception, IDisposable
         else { Completion.Wait(); }
     }
 }
-
-/// <summary>The native device has stopped executing work. Pending recording resources have been released.</summary>
-public sealed class GpuDeviceLostException(string message) : InvalidOperationException(message);

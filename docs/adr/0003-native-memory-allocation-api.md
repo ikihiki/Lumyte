@@ -25,9 +25,9 @@ heap 内の suballocation、offset の決定、重なり、再利用、退役待
 | API | 契約 |
 | --- | --- |
 | `NativeGpuMemoryKind` | `CpuVisible`、`GpuOnly`、`Readback`。memory の用途を指定する。選択できる native memory の種類は resource の requirement にも従う。 |
-| `NativeGpuMemoryCompatibility` | 同じ device と memory kind の確保へ渡す opaque な配置 requirement。公開の分類値、bit 演算、比較・統合・適合判定の API は持たない。 |
-| `NativeGpuMemoryRequirements` | `Size`、`Alignment`、`Compatibility`。線形領域と texture に共通の返却型。`Size` は予約する byte 数、`Alignment` は heap の指定 alignment と placement offset が満たす整列条件。 |
-| `NativeGpuHeap` | caller-owned allocation の identity、`Size`、`Alignment`、`Kind` を持つ。配置 resource の所有権、CPU/GPU address は持たない。 |
+| `NativeGpuMemoryCompatibility` | 同じ device と memory kind の確保へ渡す opaque な配置 requirement。public abstract 基底型と protected の引数なし constructor を提供し、backend が非公開型で継承する。公開の分類値、bit 演算、比較・統合・適合判定の API は持たない。 |
+| `NativeGpuMemoryRequirements(size, alignment, compatibility)` | 公開 constructor を持つ不変値。`Size`、`Alignment`、`Compatibility` は線形領域と texture に共通の返却型。`Size` は予約する byte 数、`Alignment` は heap の指定 alignment と placement offset が満たす整列条件。 |
+| `NativeGpuHeap` | public abstract 基底型。protected constructor `(size, alignment, kind)` で caller-owned allocation の `Size`、`Alignment`、`Kind` を初期化する。identity は派生 object 自体であり、配置 resource の所有権、CPU/GPU address は持たない。 |
 | `CreateGpuHeap(size, alignment, kind, compatibilities)` | caller 指定の byte 容量を一つの native allocation として確保する。`compatibilities` は取得済みの `ReadOnlySpan<NativeGpuMemoryCompatibility>` で、少なくとも一つ渡す。 |
 | `DestroyGpuHeap(heap)` | caller が全使用終了と配置 resource の破棄を保証した heap を解放する。内部 suballocator、暗黙の待機、自動 resource 破棄を置かない。 |
 
@@ -39,9 +39,11 @@ heap の `alignment` は配置予定の全 requirement の alignment を満た�
 
 descriptor storage の確保は専用の契約である。resource backing allocation の統一に、opaque な descriptor storage の CPU/GPU address への変換を含めない。
 
+backend は heap と compatibility の非公開派生型に native allocation／requirement と所属 device を保持する。caller には共通基底型を返し、使用時に実装型と所属 device を確認する。これにより外部 backend は共通 assembly への内部アクセスや追加の resource registry を必要としない。基底 constructor は metadata を設定し、native allocation の作成・破棄は行わない。
+
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` を新設し、DirectX 12／Vulkan と各 `.Tests` は既存 project 内に Native 実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -82,4 +84,6 @@ GPU に使用させる場合は、caller が全未提出参照と GPU 利用を�
 
 allocation を caller が所有し、resource と分離する方針を採用する。[NoGraphicsAPI の参照 header](https://github.com/sebbbi/NoGraphicsAPI/blob/main/include/NoGraphicsAPI/NoGraphicsAPI.hpp) の線形 heap／texture heap の分割は採用せず、純粋 allocation の heap に統一する。opaque requirement の列と、配置境界を含む予約量は Lumyte の補足である。
 
-GPU address は配置した線形 resource のものとし、heap 全体を一つの address 空間として公開する設計は採用しない。suballocator と退役 helper は範囲外である。統一確保、配置 resource の分離、混在配置と各 backend の制約に対する実装・conformance 検証は未実装であり、特定 PC の単発 probe を全 device の対応保証にはしない。
+GPU address は配置した線形 resource のものとし、heap 全体を一つの address 空間として公開する設計は採用しない。suballocator と退役 helper は範囲外である。
+
+純粋 allocation の生成・破棄、opaque requirement 列からの native 引数の構成と線形 resource の分離を両 backend に実装した。DirectX 12／Vulkan の線形配置・mapping・heap 再利用は実機確認済み。texture の requirement と混在配置は未実装である。特定 PC の試験を全 device・memory kind の対応保証にはしない。詳細は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

@@ -5,6 +5,23 @@ namespace Lumyte.Graphics.Tests;
 public sealed class GpuCommandBufferTests
 {
     [Fact]
+    public void AliasingBarrierPreservesResourcesAndDependencies()
+    {
+        var recorder = new RecordingCommandRecorder();
+        using GpuCommandBuffer commands = GpuBackendCommands.CreateCommandBuffer(recorder);
+        var expected = new AliasingBarrierCall(
+            GpuAliasingResource.FromTexture(new(11)),
+            GpuAliasingResource.FromBuffer(new(23, 64)),
+            GpuStage.ColorOutput, GpuStage.ComputeShader, GpuBarrierHazards.Descriptors);
+
+        commands.AliasingBarrier(
+            expected.BeforeResource, expected.AfterResource,
+            expected.Before, expected.After, expected.Hazards);
+
+        Assert.Equal(expected, Assert.Single(recorder.AliasingBarriers));
+    }
+
+    [Fact]
     public void CommandsRecordImmediatelyWithoutResourceBarriers()
     {
         var recorder = new RecordingCommandRecorder();
@@ -180,14 +197,26 @@ public sealed class GpuCommandBufferTests
         Assert.Equal(1, second.AbortCount);
     }
 
+    private readonly record struct AliasingBarrierCall(
+        GpuAliasingResource BeforeResource,
+        GpuAliasingResource AfterResource,
+        GpuStage Before,
+        GpuStage After,
+        GpuBarrierHazards Hazards);
+
     private sealed class RecordingCommandRecorder : IGpuCommandRecorder
     {
         public List<string> Events { get; } = [];
+        public List<AliasingBarrierCall> AliasingBarriers { get; } = [];
         public int EndCount { get; private set; }
         public int AbortCount { get; private set; }
         public bool FailEnd { get; set; }
         public void Abort() => AbortCount++;
         public void Barrier(GpuStage before, GpuStage after, GpuBarrierHazards hazards) => Events.Add($"barrier:{before}>{after}:{hazards}");
+        public void AliasingBarrier(
+            GpuAliasingResource beforeResource, GpuAliasingResource afterResource,
+            GpuStage before, GpuStage after, GpuBarrierHazards hazards)
+            => AliasingBarriers.Add(new(beforeResource, afterResource, before, after, hazards));
         public void BeginRendering(IReadOnlyList<GpuColorAttachment> colors, GpuDepthStencilAttachment? depth) => Events.Add("begin");
         public void EndRendering() => Events.Add("end");
         public void SetPipeline(GpuRasterPipelineHandle pipeline) => Events.Add("pipeline");

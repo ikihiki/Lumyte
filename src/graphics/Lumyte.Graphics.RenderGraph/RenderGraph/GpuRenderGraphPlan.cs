@@ -80,7 +80,7 @@ public sealed class GpuRenderGraphPlan
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(arena);
-        arena.RequireBackend(backend);
+        RequireArenaBackend(backend, arena);
         return Execute(backend, arena, ownsArena: false, null);
     }
 
@@ -130,9 +130,17 @@ public sealed class GpuRenderGraphPlan
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(arena);
         ArgumentNullException.ThrowIfNull(retirementQueue);
-        arena.RequireBackend(backend);
+        RequireArenaBackend(backend, arena);
         retirementQueue.RequireBackend(backend);
         return Execute(backend, arena, ownsArena: false, retirementQueue);
+    }
+
+    private static void RequireArenaBackend(IGpuBackend backend, GpuPersistentArena arena)
+    {
+        if (!ReferenceEquals(arena.Backend, backend))
+        {
+            throw new ArgumentException("Arena belongs to another GPU backend.", nameof(arena));
+        }
     }
 
     private GpuRenderGraphExecution Execute(

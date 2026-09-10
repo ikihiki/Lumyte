@@ -829,6 +829,27 @@ public sealed class GpuRenderGraphTests
         Assert.Equal(2, backend.DestroyedTextureCount);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExecutionRejectsAnArenaFromAnotherBackend(bool asynchronous)
+    {
+        var backend = new AliasingTrackingBackend();
+        var otherBackend = new AliasingTrackingBackend();
+        using var arena = new GpuPersistentArena(otherBackend);
+        using var retirements = new GpuRetirementQueue(backend);
+        GpuRenderGraphPlan plan = new GpuRenderGraph().Compile();
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() =>
+        {
+            using GpuRenderGraphExecution execution = asynchronous
+                ? plan.ExecuteAsync(backend, arena, retirements)
+                : plan.Execute(backend, arena);
+        });
+
+        Assert.Equal("arena", exception.ParamName);
+    }
+
     [Fact]
     public void AsyncExecutionKeepsArenaRegionUntilCompletion()
     {

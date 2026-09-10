@@ -299,7 +299,8 @@ public sealed class GpuCommandBuffer : IDisposable
 
     internal IGpuCommandRecorder Recorder => recorder;
 
-    internal void AliasingBarrier(
+    /// <summary>Orders reuse of overlapping placed resources outside a rendering scope.</summary>
+    public GpuCommandBuffer AliasingBarrier(
         GpuAliasingResource beforeResource,
         GpuAliasingResource afterResource,
         GpuStage before,
@@ -309,6 +310,7 @@ public sealed class GpuCommandBuffer : IDisposable
         VerifyOpen();
         if (rendering) { throw new InvalidOperationException("An aliasing barrier cannot be recorded inside rendering."); }
         recorder.AliasingBarrier(beforeResource, afterResource, before, after, hazards);
+        return this;
     }
 
     private void VerifyOpen()

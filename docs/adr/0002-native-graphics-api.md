@@ -16,6 +16,8 @@
 
 Native API は責務ごとの文書で定義する。各文書は同じ interface と型群の担当 member を説明し、別の backend interface を追加しない。
 
+backend は外部 assembly から `INativeGpuBackend` を実装する。resource／compatibility の公開基底型を実装内の非公開型で継承し、native handle、所属 backend と局所的な破棄状態を保持する。引数が自分の実装型・device に属することは backend 内で確認する。共通契約の `Owner`／`BackendData`、登録済み backend 名の一覧、内部公開先の追加を必要としない。
+
 ## API
 
 この文書は device と診断の member を定義する。
@@ -46,7 +48,7 @@ mesh は Native の optional 機能とする。`MeshShaders` は mesh stage と�
 
 | 配置先 | 内容 |
 | --- | --- |
-| `src/graphics/Lumyte.Graphics.Native/Device/` | 新設予定。`INativeGpuBackend`、options、capabilities、limits と Native 固有例外を置く。責務別 ADR が定義する同 interface の member 宣言もここに集約し、引数・返却値の型は各担当フォルダに置く。 |
+| `src/graphics/Lumyte.Graphics.Native/Device/` | `INativeGpuBackend`、options、capabilities、limits と Native 固有例外を置く。責務別 ADR が定義する同 interface の member 宣言もここに集約し、引数・返却値の型は各担当フォルダに置く。 |
 | `src/graphics/Lumyte.Graphics.DirectX12/Device/`、`src/graphics/Lumyte.Graphics.Vulkan/Device/` | 既存 project を改編。device の生成・終了、機能と上限の取得、native 診断との接続を実装する。 |
 | `src/graphics/Lumyte.Graphics.Native.Tests/Device/` | 新設予定。共通の Native 契約について、CPU だけで確認できる所有権・エラーの振る舞いを検証する。 |
 | `src/graphics/Lumyte.Graphics.DirectX12.Tests/Device/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Device/` | 既存テスト project を改編。機能値と native error の写像など、GPU を使わない試験を置く。 |
@@ -70,6 +72,10 @@ var canUseAmplification = native.Capabilities.AmplificationShaders;
 
 host memory の安全、整数演算、backend が管理する identity と局所状態だけを確認する。usage、format、barrier、descriptor、shader の適合性は native validation/debug layer と native error に委ねる。必要 feature の選択は初期化時に行うが、native の条件を網羅する独自 validator は作らない。
 
+同じ heap／region への host 操作は、配置・破棄も含めて caller が直列化する。backend の Dispose と他の操作も競合させない。GPU 同期に加えて native が要求する host の外部同期を caller が担い、backend 全体に暗黙の排他や lifetime tracker を置かない。
+
 ## 採用差分と未実装範囲
 
-caller-owned resource と明示同期を採用する。参照実装の線形／texture heap の分割は採用せず、共通の純粋 allocation と配置 resource に分離する。任意 shader pointer など target 間で同じ意味を提供できない機能は部分採用とし、capability で区別する。mesh／amplification は optional 契約として採用するが、Native 層への実装移行、機能値・上限の取得と GPU conformance 検証は未実装である。ray tracing、presentation など参照実装の全機能への対応は宣言しない。
+caller-owned resource と明示同期を採用する。参照実装の線形／texture heap の分割は採用せず、共通の純粋 allocation と配置 resource に分離する。任意 shader pointer など target 間で同じ意味を提供できない機能は部分採用とし、capability で区別する。
+
+最初の実装として Native 専用 interface、options、capabilities の型、native error の写像と両 backend の初期化・終了を追加した。現時点の公開 member はメモリ基盤に限り、実行機能の capability はすべて false とする。limits、主 queue、mesh／amplification と描画機能の移行・conformance 検証は未実装である。ray tracing、presentation など参照実装の全機能への対応は宣言しない。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。

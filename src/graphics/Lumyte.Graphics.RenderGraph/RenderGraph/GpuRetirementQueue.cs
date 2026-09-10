@@ -1,4 +1,4 @@
-namespace Lumyte.Graphics;
+namespace Lumyte.Graphics.RenderGraph;
 
 /// <summary>Identifies one submission owned by a <see cref="GpuRetirementQueue"/>.</summary>
 public readonly struct GpuSubmissionToken : IEquatable<GpuSubmissionToken>

@@ -211,8 +211,8 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 
 - NoGraphicsAPI の descriptor heap、null-layout pipeline、直接 push data、GPU pointer、global barrier と単一 image layout を採用する。
 - 共通 allocation と linear region の明示分離、`NativeGpuRange` の region identity、複数 requirement の opaque compatibility を受け取る確保、buffer descriptor、sampler の LOD/anisotropy 指定、read-only attachment、単一 aspect の copy footprint、alias 再利用の明示 discard と Lumyte の例外・`Dispose` 契約は、本 API の追加または差分である。NoGraphicsAPI の public API に同じ機能があるとは扱わない。
-- heap の共用は native memory 条件が適合する範囲に限り、GPU-only memory の全用途共通化や image の線形 pointer 化は保証しない。共通 allocation、region の配置と mapping、granularity を含む requirements は目標設計であり、現行 backend に実装済みとは扱わない。
+- heap の共用は native memory 条件が適合する範囲に限り、GPU-only memory の全用途共通化や image の線形 pointer 化は保証しない。Native 専用の `VulkanBackend` に共通 allocation、線形 region の配置と mapping、granularity を含む requirements を実装した。必須拡張を満たす device で初期化、共有 mapping と heap 再利用を確認済み。texture との混在配置と validation layer を使う検証は未実施である。
 - mesh／task は任意機能として採用する。feature／limit の写像、mesh／task pipeline、直接／address-range indirect dispatch、stage barrier と実 GPU 検証は未実装である。point 出力、mesh 固有の multiview／query など拡張全体の一括採用はしない。
 - PSO の rasterization/blend の全面分離、GPU が生成・選択する root は未採用。ray tracing、multi-draw/count buffer と presentation API はこの最小 Native interface の範囲外である。
 - 参照実装の swapchain には `GENERAL ↔ PRESENT_SRC_KHR` の内部 transition があるが、本 ADR は presentation API の実装完了を宣言しない。
-- Lumyte の既存 Vulkan backend をこの descriptor-heap/address-command 経路へ移行する実装、texture/buffer 混在 slot stride と shader lowering の一致、aspect 別 copy と alias 再初期化、および GPU conformance 検証は未実装である。従来経路からの文書変更をもって対応完了とはしない。
+- descriptor-heap/address-command を使う描画経路への移行、texture/buffer 混在 slot stride と shader lowering の一致、aspect 別 copy と alias 再初期化、およびこれらの GPU conformance 検証は未実装である。メモリ基盤の試験成功を描画対応の完了とは扱わない。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

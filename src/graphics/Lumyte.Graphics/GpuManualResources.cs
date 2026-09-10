@@ -30,6 +30,16 @@ public sealed class GpuPersistentArena : IDisposable
     public int LiveAllocationCount => liveAllocations.Count;
     public int PendingRetirementCount => retiredAllocations.Values.Sum(static values => values.Count);
 
+    /// <summary>The borrowed backend to which this arena's allocations belong.</summary>
+    public IGpuBackend Backend
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            return backend;
+        }
+    }
+
     public GpuMemoryAllocation Allocate(
         ulong size,
         ulong alignment = 16,
@@ -154,15 +164,6 @@ public sealed class GpuPersistentArena : IDisposable
         if (disposed) { return; }
         VerifyEmpty();
         disposed = true;
-    }
-
-    internal void RequireBackend(IGpuBackend candidate)
-    {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        if (!ReferenceEquals(backend, candidate))
-        {
-            throw new ArgumentException("Arena belongs to another GPU backend.", nameof(candidate));
-        }
     }
 
     private void ReleaseRegion(GpuMemoryAllocation allocation)
