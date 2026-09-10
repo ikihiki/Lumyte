@@ -62,4 +62,4 @@ Native 独自の型別 profile 比較や shader reflection を追加しない。
 
 ## 採用差分と未実装範囲
 
-caller-owned index と Bindless を採用する。buffer descriptor は NoGraphicsAPI の public API に対する Lumyte の補足であり、raw shader pointer の DirectX 12 対応は未提供。Native shader ABI と実装の conformance 検証は別途必要である。
+caller-owned index と Bindless を採用する。分類値、両 backend の resource／sampler storage と指定 index への書込み、command の heap 選択を実装した。buffer descriptor は NoGraphicsAPI の public API に対する Lumyte の補足であり、raw shader pointer の DirectX 12 対応は未提供。Native shader ABI と shader が index を使って resource を読む conformance 検証は別途必要であり、storage の実装成功を Bindless 描画の完了とは扱わない。

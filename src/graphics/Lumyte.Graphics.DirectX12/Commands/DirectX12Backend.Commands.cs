@@ -30,7 +30,39 @@ public sealed unsafe partial class DirectX12Backend
     {
         private readonly List<Action<ComPtr<ID3D12GraphicsCommandList7>>> operations = [];
         private RecordingState state;
+        private NativeGpuDescriptorHeap? resourceHeap;
+        private NativeGpuDescriptorHeap? samplerHeap;
         public NativeQueue Owner { get; } = owner;
+
+        public override void SetResourceDescriptorHeap(NativeGpuDescriptorHeap heap)
+        {
+            VerifyRecording();
+            Owner.Owner.RequireDescriptorHeap(heap, NativeGpuDescriptorHeapKind.Resource);
+            AddDescriptorHeaps(heap, samplerHeap);
+            resourceHeap = heap;
+        }
+
+        public override void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap)
+        {
+            VerifyRecording();
+            Owner.Owner.RequireDescriptorHeap(heap, NativeGpuDescriptorHeapKind.Sampler);
+            AddDescriptorHeaps(resourceHeap, heap);
+            samplerHeap = heap;
+        }
+
+        private void AddDescriptorHeaps(NativeGpuDescriptorHeap? resource, NativeGpuDescriptorHeap? sampler)
+        {
+            // SetDescriptorHeaps replaces both selections. Capture their values for this
+            // point in the recording, without owning either heap or its referenced resources.
+            operations.Add(commands =>
+            {
+                ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2];
+                uint count = 0;
+                if (resource is not null) { heaps[count++] = Owner.Owner.RequireDescriptorHeap(resource).Heap.Handle; }
+                if (sampler is not null) { heaps[count++] = Owner.Owner.RequireDescriptorHeap(sampler).Heap.Handle; }
+                commands.SetDescriptorHeaps(count, heaps);
+            });
+        }
 
         public override void CopyMemory(NativeGpuRange source, NativeGpuRange destination)
         {
@@ -76,7 +108,8 @@ public sealed unsafe partial class DirectX12Backend
         public override void TextureTransition(NativeGpuTextureView view, GpuTextureLayout beforeLayout, GpuTextureLayout afterLayout)
         {
             VerifyRecording();
-            Owner.Owner.RequireTexture(view.Texture);
+            TextureRecord texture = Owner.Owner.RequireTexture(view.Texture);
+            RequireTransitionView(view, texture.Description.Dimension);
             operations.Add(commands => Owner.Owner.EncodeTransition(commands, view, beforeLayout, afterLayout));
         }
 
@@ -113,14 +146,16 @@ public sealed unsafe partial class DirectX12Backend
             }
         }
 
-        public void Accept() { state = RecordingState.Accepted; operations.Clear(); }
-        public void Fail() { state = RecordingState.Failed; operations.Clear(); }
+        public void Accept() { state = RecordingState.Accepted; ClearOperations(); }
+        public void Fail() { state = RecordingState.Failed; ClearOperations(); }
 
         public override void Dispose()
         {
             state = RecordingState.Disposed;
-            operations.Clear();
+            ClearOperations();
         }
+
+        private void ClearOperations() { operations.Clear(); resourceHeap = null; samplerHeap = null; }
 
         private enum RecordingState { Recording, Accepted, Failed, Disposed }
     }

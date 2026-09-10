@@ -20,12 +20,12 @@ NoGraphicsAPI の CPU address への descriptor 書込みは設計の基礎と�
 
 | API | 契約 |
 | --- | --- |
-| `NativeGpuDescriptorHeap` | caller-owned descriptor storage。kind、capacity と native slot の配置情報を持つ。resource と sampler の index 空間は別。 |
+| `NativeGpuDescriptorHeap` | caller-owned descriptor storage。public abstract 基底型の `Kind`／`Capacity` は不変値で、protected constructor に渡す。外部 backend の非公開派生型が native slot の配置情報を保持する。resource と sampler の index 空間は別。 |
 | `CreateDescriptorHeap(kind, capacity)`／`DestroyDescriptorHeap(heap)` | 指定容量の descriptor heap を確保・解放する。slot の suballocation と再利用は caller が決める。 |
 | `WriteTextureDescriptor(heap, index, view, type = Sampled)` | resource heap の caller 指定 slot に texture descriptor を書く。 |
 | `WriteBufferDescriptor(heap, index, range, access)` | `BufferDescriptors` 対応時の補足。resource heap の slot に線形 range を書く。raw pointer 経路での使用は要求しない。 |
 | `NativeGpuSamplerFilter`／`NativeGpuSamplerAddressMode` | filter は `Nearest/Linear`、address mode は `Repeat/MirrorRepeat/ClampToEdge`。 |
-| `NativeGpuSamplerDescription` | `MinFilter`、`MagFilter`、`MipFilter`、`AddressU/V/W`、数値の `MinLod`／`MaxLod`／`MaxAnisotropy`、`CompareEnabled`／`CompareOp` の値。LOD 範囲と anisotropy の要求値を native 作成情報へそのまま渡す。 |
+| `NativeGpuSamplerDescription` | `MinFilter`、`MagFilter`、`MipFilter`、`AddressU/V/W`、float の `MinLod`／`MaxLod`／`MaxAnisotropy`、`CompareEnabled`／`CompareOp` の値。引数なしの `new` は Linear、Repeat、LOD 0～float.MaxValue、anisotropy 1、比較なし／Always。anisotropy 1 は無効化を表す。native 表現に変換できない値を切捨て・補正しない。 |
 | `WriteSamplerDescriptor(heap, index, description)` | sampler heap の caller 指定 slot に descriptor を書く。public sampler object は作らない。 |
 
 heap は `kind`、`capacity` と既存の native slot 配置情報を持つ。resource と sampler の空間を分け、resource heap の同じ index 計算を texture/buffer の書込みと shader 参照で共有する。public sampler object は作らない。
@@ -39,6 +39,8 @@ DirectX 12 の index は heap type ごとの native descriptor handle increment 
 Vulkan の alignment と reserved range は backing storage の作成に必要な条件として扱う。NoGraphicsAPI の参照実装も descriptor 用の専用 allocation と full heap range の設定を使うため、任意の通常 buffer をそのまま descriptor storage と扱えるとは説明しない。
 
 sampler の LOD 範囲と数値 anisotropy、texture view と buffer range の要求値は native 表現へ渡す。slot を書き換えても参照先を延命せず、caller が未提出参照と GPU 使用を解消してから上書き・再利用・heap 破棄を行う。
+
+descriptor の書込みは texture の初期化や layout 遷移を行わない。Vulkan で最初の利用が shader からの参照である場合、caller は先に明示 discard により内容を破棄して `GENERAL` へ初期化するか、copy など texture identity を渡す操作で初期化を済ませる。heap 選択から descriptor の参照先を列挙・逆引きする仕組みは作らない。
 
 ## コード配置
 
@@ -63,6 +65,11 @@ var heap = native.CreateDescriptorHeap(NativeGpuDescriptorHeapKind.Resource, 16)
 native.WriteTextureDescriptor(heap, 7, view);
 native.WriteBufferDescriptor(heap, 8, data, NativeGpuBufferAccess.ReadOnly);
 native.DestroyDescriptorHeap(heap);
+
+var samplers = native.CreateDescriptorHeap(NativeGpuDescriptorHeapKind.Sampler, 4);
+native.WriteSamplerDescriptor(samplers, 2, new NativeGpuSamplerDescription(
+    AddressU: NativeGpuSamplerAddressMode.ClampToEdge, MaxLod: 5));
+native.DestroyDescriptorHeap(samplers);
 ```
 
 書込みは slot を割り当てる操作ではない。descriptor heap の破棄は参照する texture、線形 region と共通 backing allocation を破棄しない。
@@ -73,4 +80,6 @@ host memory の安全、slot から native の位置への変換、owned storage
 
 ## 採用差分と未実装範囲
 
-caller-owned storage と明示 index を採用する。専用 heap/index は DirectX 12 の opaque heap に合わせた部分採用であり、NoGraphicsAPI の CPU destination と GPU range をそのまま公開する契約ではない。Vulkan の raw mapped storage・CPU address 書込み・GPU range 設定は追加機能候補として未採用・未実装とする。固定 slot stride と shader ABI の写像を含む Native 実装と GPU 検証は別途必要である。
+caller-owned storage と明示 index を採用する。専用 heap/index は DirectX 12 の opaque heap に合わせた部分採用であり、NoGraphicsAPI の CPU destination と GPU range をそのまま公開する契約ではない。Vulkan の raw mapped storage・CPU address 書込み・GPU range 設定を公開する追加機能は未採用・未実装とする。
+
+両 backend の storage 生成・破棄、texture／buffer／sampler の指定 slot への書込み、command の heap 選択を実装する。Vulkan は descriptor size と alignment から求めた共通 resource slot stride と独立した sampler slot stride を backend 内に保持する。shader 生成側への size／alignment／stride の受渡し、混在 heap の shader lowering と GPU からの読出し検証は未実装であり、Native shader／pipeline の段階で接続する。DirectX 12 の handle increment を byte stride として公開することはしない。

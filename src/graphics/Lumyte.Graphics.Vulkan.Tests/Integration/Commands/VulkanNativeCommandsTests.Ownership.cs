@@ -179,6 +179,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     private sealed class ForeignSemaphore : NativeGpuSemaphore { public override void Dispose() { } }
     private sealed class ForeignCommands : NativeGpuCommandBuffer
     {
+        public override void SetResourceDescriptorHeap(NativeGpuDescriptorHeap heap) => throw new NotSupportedException();
+        public override void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap) => throw new NotSupportedException();
         public override void CopyMemory(NativeGpuRange source, NativeGpuRange destination) => throw new NotSupportedException();
         public override void CopyMemoryToTexture(NativeGpuRange source, NativeGpuTextureHandle destination, NativeGpuTextureCopyFootprint footprint) => throw new NotSupportedException();
         public override void CopyTextureToMemory(NativeGpuTextureHandle source, NativeGpuRange destination, NativeGpuTextureCopyFootprint footprint) => throw new NotSupportedException();

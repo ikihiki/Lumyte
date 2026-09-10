@@ -61,7 +61,11 @@ shader は対応 device の `ResourceDescriptorHeap`／`SamplerDescriptorHeap` �
 
 attachment の RTV/DSV は caller-owned `NativeGpuRenderViewHandle` で管理し、shader index と区別する。view の値計算だけでは native object を作らず、明示した render view の生成または descriptor 書込みで native 表現を用意する。view が親 texture を延命する保証はない。
 
+各 render view は1 descriptor の非 shader-visible heap を所有する。resource／sampler heap は指定容量の shader-visible heap を所有し、内部 slot allocator を持たない。`SetDescriptorHeaps` は両 heap の組を置き換えるため、Native の個別 setter は他方の選択を保持した組を記録する。
+
 sampler の `MinLod`、`MaxLod`、`MaxAnisotropy` は指定値を native sampler に反映する。`CreateRenderView(view, flags)` の `NativeGpuRenderViewFlags.DepthReadOnly/StencilReadOnly` は DSV の native flags に反映する。attachment の aspect ごとの nullable load/store は指定された有無を維持し、clear 値もそのまま渡す。存在しない aspect や read-only aspect の operation を補完して書込みへ変えない。合法性は native 作成処理と debug layer が診断する。
+
+float の anisotropy は DirectX 12 の整数へ正確に変換できる値だけを受け付け、丸めない。anisotropic filter では min／mag／mip がすべて Linear である必要があり、指定 filter を暗黙に置き換えない。shader の depth／stencil descriptor は選択 aspect を format と plane に写し、D24S8 の DSV は両 aspect を持つ native 表現のため `DepthStencil` を要求する。cube／cube-array は sampled view として扱い、attachment／storage 用には `TwoDArray` を使う。shader dimension を変更して範囲指定を救済しない。
 
 ## DXIL と root payload
 
@@ -203,7 +207,7 @@ amplification entry があれば指定 group 数は amplification を起動し�
 - mesh／amplification は任意機能として採用する。tier／limit の写像、AS／MS の PSO stream、直接／indirect dispatch、stage barrier と実 GPU 検証は未実装である。mesh 非対応 device への自動 emulation、multi-draw/count buffer と GPU 生成 root は今回の範囲に含めない。
 - Native 専用の `DirectX12Backend` と公開型群に、純粋 allocation、線形 region と texture の requirement・明示配置・独立破棄を実装した。保持した Device10 から同じ `ResourceDesc1` で `GetResourceAllocationInfo2`／`CreatePlacedResource2` を呼び、texture は `Undefined` で生成する。混在配置と heap 再利用は実機確認済み。実装と試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
 - CPU command 記録から Submit 内での一括 native 変換、線形／aspect 別 texture copy、global barrier、明示 texture transition／discard、queue と fence completion を実装した。native copy footprint の plane format を取得し、caller の row／image pitch と region 相対 offset をそのまま native copy へ変換する。
-- render view／descriptor、shader／pipeline と描画の移行は未実装である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
+- render view の生成・破棄、専用 descriptor heap と texture／raw buffer／sampler の書込み、resource／sampler heap の選択を実装する。shader／pipeline と描画、render view の attachment 使用と shader による descriptor 読出しは未実装である。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
 
 ## 参照
 

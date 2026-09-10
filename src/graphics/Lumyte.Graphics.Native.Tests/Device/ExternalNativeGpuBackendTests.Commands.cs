@@ -146,6 +146,12 @@ public sealed partial class ExternalNativeGpuBackendTests
         public override void DiscardTexture(NativeGpuTextureView view, GpuTextureLayout afterLayout)
             => observe?.Invoke(new TextureDiscard(view, afterLayout));
 
+        public override void SetResourceDescriptorHeap(NativeGpuDescriptorHeap heap)
+            => observe?.Invoke(new ResourceHeapSelection(heap));
+
+        public override void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap)
+            => observe?.Invoke(new SamplerHeapSelection(heap));
+
         public override void Dispose() { }
     }
 

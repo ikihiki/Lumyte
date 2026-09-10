@@ -15,6 +15,7 @@ public sealed unsafe partial class VulkanBackend
         private bool ended;
         private bool submitted;
         private bool disposed;
+        private NativeDescriptorHeapBindings descriptorHeaps;
 
         public CommandRecord(QueueRecord queue, CommandPool pool, CommandBuffer first)
         {
@@ -27,6 +28,24 @@ public sealed unsafe partial class VulkanBackend
         public IReadOnlyList<CommandSegment> Segments => segments;
         private VulkanBackend Owner => Queue.Owner;
         private CommandBuffer Current => segments[^1].Command;
+
+        public override void SetResourceDescriptorHeap(NativeGpuDescriptorHeap heap)
+        {
+            VerifyRecording();
+            DescriptorHeapRecord record = Owner.RequireDescriptorHeap(heap, NativeGpuDescriptorHeapKind.Resource);
+            descriptorHeaps.Resource = record.BindInfo;
+            NativeBindHeapInfo info = record.BindInfo;
+            Owner.bindResourceHeap(Current, &info);
+        }
+
+        public override void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap)
+        {
+            VerifyRecording();
+            DescriptorHeapRecord record = Owner.RequireDescriptorHeap(heap, NativeGpuDescriptorHeapKind.Sampler);
+            descriptorHeaps.Sampler = record.BindInfo;
+            NativeBindHeapInfo info = record.BindInfo;
+            Owner.bindSamplerHeap(Current, &info);
+        }
 
         public override void CopyMemory(NativeGpuRange source, NativeGpuRange destination)
         {
@@ -107,6 +126,10 @@ public sealed unsafe partial class VulkanBackend
             {
                 throw new ArgumentException("Vulkan Native discard requires GENERAL.", nameof(afterLayout));
             }
+            if (texture.Description.Dimension == NativeGpuTextureDimension.ThreeD && view.Dimension != NativeGpuTextureViewDimension.ThreeD)
+            {
+                throw new ArgumentException("A 3D image discard requires a ThreeD view covering whole mip volumes; depth slices cannot be discarded independently.", nameof(view));
+            }
             ImageSubresourceRange range = new(TextureAspects(view.Aspect), view.BaseMip, view.MipCount, view.BaseLayer, view.LayerCount);
             Touch(texture);
             Owner.RecordDiscard(Current, texture, range);
@@ -122,6 +145,8 @@ public sealed unsafe partial class VulkanBackend
             CommandSegment segment = new(Queue.AllocateCommand(pool), texture);
             segments.Add(segment);
             touched.Add(texture);
+            // Each segment is a new primary command buffer with no inherited binding state.
+            descriptorHeaps.Apply(Current, Owner.bindResourceHeap, Owner.bindSamplerHeap);
         }
 
         public void VerifyRecording()

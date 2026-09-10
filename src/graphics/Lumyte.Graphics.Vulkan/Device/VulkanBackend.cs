@@ -36,6 +36,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     public NativeGpuCapabilities Capabilities => new();
 
     internal bool SupportsSeparateDepthStencilLayouts { get; private set; }
+    internal bool SupportsImageCubeArray { get; private set; }
+    internal bool SupportsSamplerAnisotropy { get; private set; }
 
     public NativeGpuQueue MainQueue
     {
@@ -116,6 +118,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
 
             vk.GetPhysicalDeviceMemoryProperties(physicalDevice, out memoryProperties);
             bufferImageGranularity = properties.Limits.BufferImageGranularity;
+            InitializeDescriptors(physicalDevice);
             vk.GetDeviceQueue(device, queueFamily.Value, 0, out Queue queue);
             mainQueue = new QueueRecord(this, queue, queueFamily.Value);
             return;
@@ -235,7 +238,12 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             SType = StructureType.PhysicalDeviceVulkan14Features,
             PNext = &descriptors, Maintenance5 = true,
         };
-        PhysicalDeviceFeatures enabled = new() { ShaderInt64 = true };
+        PhysicalDeviceFeatures enabled = new()
+        {
+            ShaderInt64 = true,
+            SamplerAnisotropy = features.Features.SamplerAnisotropy,
+            ImageCubeArray = features.Features.ImageCubeArray,
+        };
         float priority = 1;
         DeviceQueueCreateInfo queueInfo = new()
         {
@@ -255,6 +263,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         };
         Check(vk.CreateDevice(physicalDevice, in deviceInfo, null, out device), "vkCreateDevice");
         SupportsSeparateDepthStencilLayouts = separateDepthStencilLayouts;
+        SupportsImageCubeArray = enabled.ImageCubeArray;
+        SupportsSamplerAnisotropy = enabled.SamplerAnisotropy;
         missing = null;
         return true;
     }

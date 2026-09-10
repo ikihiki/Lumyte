@@ -79,13 +79,19 @@ DirectX 12 の opaque descriptor heap と共通の契約を保つため、descri
 
 texture/sampler の書込みは `vkWriteResourceDescriptorsEXT`／`vkWriteSamplerDescriptorsEXT`、heap 設定は `vkCmdBindResourceHeapEXT`／`vkCmdBindSamplerHeapEXT` に対応する。descriptor bytes、native alignment と reserved range を満たす backing storage は heap が所有する。resource と sampler の index 空間は分かれる。
 
+storage は descriptor-heap usage と device address を持つ buffer、HOST_VISIBLE／HOST_COHERENT memory と mapping を所有する。heap の先頭整列の余裕を backing に加え、caller の slot 範囲の後に native が要求する reserved range を置く。`samplerAnisotropy` と `imageCubeArray` は device が提供する場合だけ有効化し、新しい必須 feature にはしない。anisotropy の指定値は float のまま保持する。
+
 Lumyte の `WriteBufferDescriptor` は、`NativeGpuRange` の実 address と size を `VkResourceDescriptorInfoEXT.data.pAddressRange` へ渡す補足である。storage buffer descriptor を native heap に直接書き、address lookup table や root の追加領域は作らない。これは NoGraphicsAPI の public API にある機能ではなく、Vulkan の descriptor-heap 仕様が提供する buffer descriptor を使う選択である。[Vulkan の resource descriptor 仕様](https://docs.vulkan.org/refpages/latest/refpages/source/VkResourceDescriptorInfoEXT.html)
+
+Vulkan の `ReadOnly`／`ReadWrite` は同じ storage buffer descriptor を使い、読み書きの可否は SPIR-V 側の宣言で表す。DirectX 12 の SRV／UAV の違いを別種の Vulkan descriptor や lookup table へ模倣しない。
 
 resource heap は texture と buffer の両 descriptor の native size/alignment を満たす固定 slot stride を使う。sampler heap は別の stride を使う。各 descriptor の native size と slot stride は別の値であり、write 側と shader 側が利用 slot 領域の先頭から `byteOffset = index * resourceSlotStride` で同じ位置を求める。slot の種別によって index の意味を変えない。この配置契約は ADR 0008 に従い、raw shader と descriptor storage が同じ Native ABI を使う。追加の root/address 表は設けない。
 
 SPIR-V の `ArrayStrideIdEXT` は配列の stride を指定し、`OpConstantSizeOfEXT` は型ごとの descriptor size を返す。既存 Slang の `ResourceDescriptorHeap[T][i]` が自動的に全型共通の slot stride を使うとは仮定しない。Native caller はこの byte offset 計算と一致する raw SPIR-V を用意し、toolchain が必要な場合は同じ計算へ lowering する。これは Lumyte の混在 heap ABI への対応であり、参照実装の全 shader がそのまま適合するという主張ではない。[SPV_EXT_descriptor_heap](https://github.khronos.org/SPIRV-Registry/extensions/EXT/SPV_EXT_descriptor_heap.html)
 
 descriptor が指す resource を自動保持しない。slot の上書き・再利用や heap の破棄は caller が未提出参照と GPU 利用を解消してから行う。native validation が診断する shader 型や descriptor の条件を独自に再検証しない。
+
+descriptor の書込みと heap の選択は texture の初期化義務を消費しない。shader から初めて参照する texture は caller が事前に明示 discard で `GENERAL` へ初期化するか、先行する texture copy で初期化する。descriptor slot の参照先 registry や、全 texture を巡回する未初期化リストは置かない。recording の native command 区間が切り替わる際は、選択済み resource／sampler heap を次の区間へ再設定する。この2個の選択値は resource 到達先の追跡ではない。
 
 ## SPIR-V と直接 root data
 
@@ -225,4 +231,4 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 - PSO の rasterization/blend の全面分離、GPU が生成・選択する root は未採用。ray tracing、multi-draw/count buffer と presentation API はこの最小 Native interface の範囲外である。
 - 参照実装の swapchain には `GENERAL ↔ PRESENT_SRC_KHR` の内部 transition があるが、本 ADR は presentation API の実装完了を宣言しない。
 - address-command の線形／texture copy、global barrier、HostRead、明示 discard、queue の一回提出と timeline completion を実装した。転送先 range は source の byte 数だけに制限し、公開した余剰容量を変更しない。内部 command pool の回収は caller semaphore の寿命から分離する。
-- descriptor-heap/address-command を使う描画経路、texture/buffer 混在 slot stride と shader lowering の一致、render view、shader／pipeline／mesh の移行と GPU conformance 検証は未実装である。転送基盤の試験成功を描画対応の完了とは扱わない。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+- render view の永続 image view、専用 descriptor storage と固定 slot stride、view／address range／sampler 作成情報からの descriptor 書込み、resource／sampler heap の設定を実装する。descriptor-heap/address-command を使う描画経路、混在 slot stride と shader lowering の接続、render view の attachment 使用、shader／pipeline／mesh の移行と GPU conformance 検証は未実装である。storage と転送基盤の試験成功を描画対応の完了とは扱わない。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

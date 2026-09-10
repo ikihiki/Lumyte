@@ -22,10 +22,12 @@ texture の範囲を表す view 値と、attachment に必要な native render v
 | `NativeGpuTextureAspect` の利用 | [ADR 0005](0005-native-texture-api.md) の aspect 型を使う。view は `DepthStencil` による両 aspect の選択も許す。 |
 | `NativeGpuTextureView` | texture、view dimension、format、aspect、base mip/count、base layer/count を持つ非所有の範囲値。 |
 | `NativeGpuRenderViewFlags` | `None`、`DepthReadOnly`、`StencilReadOnly` の flags。attachment 用 native view の読み取り専用 aspect を指定する。 |
-| `NativeGpuRenderViewHandle` | attachment に使う native view の caller-owned identity。生成時の `Flags` を保持する。 |
+| `NativeGpuRenderViewHandle` | attachment に使う native view の caller-owned identity。public abstract 基底型と protected constructor により外部 backend が非公開派生型で実装し、生成時の `Flags` を保持する。 |
 | `CreateRenderView(view, flags = None)`／`DestroyRenderView(view)` | read-only flags を含む attachment 用の native 表現を生成・解放する。shader descriptor の slot とは独立する。 |
 
 `NativeGpuTextureView` は texture、dimension、format、aspect、base mip/count と base layer/count を指定する非所有値である。view dimension で array/cube の解釈を表す。
+
+3D texture の `TwoD`／`TwoDArray` attachment view では base layer/count は mip 内の depth slice 範囲を表す。`ThreeD` view は mip の volume 全体を表し、base layer 0／count 1 を指定する。transition／discard は3D mipのslice部分だけに作用する native 表現を持たないため、3D texture には `ThreeD` view を渡す。slice の attachment view をそのまま使って対象を暗黙に mip 全体へ拡張しない。
 
 `NativeGpuRenderViewHandle` は native attachment view を所有し、生成時の `Flags` を保持する。`DepthReadOnly` と `StencilReadOnly` はその aspect を読み取り専用として使用する指定である。view は親 texture や backing heap を延命しない。
 
@@ -63,4 +65,4 @@ render view の破棄は texture とその allocation を破棄しない。
 
 ## 採用差分と未実装範囲
 
-非所有 view 値と明示的な render view を採用する。read-only flags は Lumyte の表現上の補足である。`NativeGpuTextureView` と view dimension は実装し、texture transition／discard の subresource 指定に使用する。render view handle／flags、生成・破棄と attachment としての conformance 検証は未実装である。
+非所有 view 値と明示的な render view を採用する。read-only flags は Lumyte の表現上の補足である。`NativeGpuTextureView` と view dimension は texture transition／discard の subresource 指定にも使用する。render view handle／flags と両 backend の生成・破棄を実装した。native attachment としての clear／描画、read-only aspect の内容保持を含む conformance 検証は、rendering command の実装段階に残る。

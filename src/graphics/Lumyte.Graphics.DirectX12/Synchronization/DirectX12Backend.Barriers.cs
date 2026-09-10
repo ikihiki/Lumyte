@@ -77,6 +77,16 @@ public sealed unsafe partial class DirectX12Backend
         commands.Barrier(1, &group);
     }
 
+    internal static void RequireTransitionView(NativeGpuTextureView view, NativeGpuTextureDimension dimension)
+    {
+        // A 3D barrier covers a whole mip, not the depth slices selected by an attachment view.
+        if (dimension == NativeGpuTextureDimension.ThreeD
+            && (view.Dimension != NativeGpuTextureViewDimension.ThreeD || view.BaseLayer != 0 || view.LayerCount != 1))
+        {
+            throw new ArgumentException("A 3D texture transition requires a ThreeD view with the whole mip depth.", nameof(view));
+        }
+    }
+
     internal static (uint First, uint Count) TexturePlanes(GpuFormat format, NativeGpuTextureAspect aspect)
     {
         // Color and depth both become plane zero. Validate the distinction while the caller's

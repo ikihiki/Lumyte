@@ -148,10 +148,14 @@ copy が必要な内容を定義した後、caller は次の用途への依存�
 
 ## 検証方針
 
+3D texture の transition／discard には `ThreeD` view（base layer 0／count 1）を使用する。2D attachment としての slice view を受けても mip 全体への操作に拡張せず、native の範囲へ表現できない入力として失敗する。
+
 host byte 列の安全、整数変換、owned identity/記録状態、root コピーと native 命令への写像を確認する。read-only flags と operation など一意に変換できない入力は失敗とするが、実際の usage/layout/descriptor/shader 条件を網羅する独自 validator は作らない。
 
 ## 採用差分と未実装範囲
 
 直接 root、global dependency と caller lifetime を採用する。DirectX 12 の CPU 記録と明示 texture transition、Lumyte の Dispose 契約と alias 再利用の明示 `DiscardTexture` は差分である。Native recorder に線形／texture copy、global barrier、HostRead、texture transition／discard を追加した。DirectX 12 は Submit 時の native 変換、Vulkan は呼出し時の native 記録と必要な初回初期化の区間挿入を使う。試験結果は [進捗記録](../designs/graphics-implementation-progress.md) に記録する。
 
-root を使う shader work、descriptor heap 設定、rendering、draw／indexed draw、indirect、mesh と対応する GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。
+resource／sampler heap の独立選択も実装する。選択は heap 全体の非所有参照であり、格納 descriptor の参照先を列挙しない。DirectX 12 の native heap pair の設定と、Vulkan の native command 区間切替時の再設定でも他方の選択を保持する。
+
+root を使う shader work、rendering、draw／indexed draw、indirect、mesh と対応する GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。

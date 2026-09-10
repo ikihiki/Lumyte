@@ -11,6 +11,12 @@ public abstract class NativeGpuCommandBuffer : IDisposable
 {
     protected NativeGpuCommandBuffer() { }
 
+    /// <summary>Selects the complete resource heap without enumerating or retaining its referenced resources.</summary>
+    public abstract void SetResourceDescriptorHeap(NativeGpuDescriptorHeap heap);
+
+    /// <summary>Selects the independent sampler heap. The caller keeps the heap alive until GPU completion.</summary>
+    public abstract void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap);
+
     /// <summary>Copies source bytes using region-relative offsets. The destination must cover the source size.</summary>
     public abstract void CopyMemory(NativeGpuRange source, NativeGpuRange destination);
 

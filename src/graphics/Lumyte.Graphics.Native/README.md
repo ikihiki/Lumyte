@@ -1,6 +1,6 @@
 # Native GPU 基盤
 
-DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、GPU コピー、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
+DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
 
 `CreateGpuHeap` は backing allocation だけを確保する。`CreateLinearRegion` が指定した heap offset に独立した native buffer を配置し、その resource の GPU address と必要な CPU mapping を提供する。`NativeGpuRange.Offset` は region 内の値であり、heap offset を含めない。
 
@@ -76,6 +76,32 @@ Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
 
 未提出の `Dispose` は記録を破棄する。提出済みの `Dispose` は待機せず、queue は内部 completion で command memory を回収する。caller semaphore は完了後に破棄できる。command の状態を取得する API、application resource の自動退役、暗黙 staging は設けない。
 
+## View と descriptor
+
+`NativeGpuTextureView` は texture の範囲を示す値だけを持つ。`CreateRenderView` が attachment 用 native view を生成し、`DestroyRenderView` がそれだけを解放する。read-only depth／stencil flags は handle に保持し、親 texture は延命しない。
+
+descriptor は独立した専用 heap の caller 指定 slot に書く。以下の `view` は作成済み texture の view で、この例では shader を実行しない。
+
+```csharp
+var resources = backend.CreateDescriptorHeap(NativeGpuDescriptorHeapKind.Resource, 16);
+var samplers = backend.CreateDescriptorHeap(NativeGpuDescriptorHeapKind.Sampler, 4);
+try
+{
+    backend.WriteTextureDescriptor(resources, 7, view);
+    backend.WriteSamplerDescriptor(samplers, 2, new NativeGpuSamplerDescription());
+    using var selection = backend.MainQueue.StartCommandRecording();
+    selection.SetResourceDescriptorHeap(resources);
+    selection.SetSamplerDescriptorHeap(samplers);
+} // 未提出の recording を破棄してから heap を解放する。
+finally
+{
+    backend.DestroyDescriptorHeap(samplers);
+    backend.DestroyDescriptorHeap(resources);
+}
+```
+
+slot の空き管理、参照先の保持、上書き前の待機は caller が担当する。書込みや heap 選択は texture を初期化しない。Vulkan で shader から初めて texture を参照する場合は、caller が先に `DiscardTexture(view, GpuTextureLayout.General)` を記録するか、先行する texture copy による初期化を済ませる。DX12 の layout 変更も caller が明示する。
+
 ## バックエンドの追加
 
 別 assembly で `INativeGpuBackend` を実装し、次の基底型から実装内の非公開型を派生させる。`Lumyte.Graphics.Native` に `InternalsVisibleTo` はなく、追加 backend の assembly 名を登録する必要もない。
@@ -86,6 +112,8 @@ Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
 | `NativeGpuMemoryCompatibility` | `()` | native requirement、取得元 device と memory kind |
 | `NativeGpuLinearRegion` | `(heap, heapOffset, size, gpuAddress, cpuAddress)` | native resource、所属 device、mapping と局所的な解放状態 |
 | `NativeGpuTextureHandle` | `()` | native texture、作成値、所属 device と局所的な解放・初期化状態 |
+| `NativeGpuRenderViewHandle` | `(flags)` | attachment 用 native view、所属 device と局所的な解放状態 |
+| `NativeGpuDescriptorHeap` | `(kind, capacity)` | 専用 descriptor storage、native slot 配置と所属 device |
 | `NativeGpuQueue` | `()` | native queue、内部 command memory の completion と回収 |
 | `NativeGpuCommandBuffer` | `()` | queue identity、記録・一回提出・破棄の局所状態と native command memory |
 | `NativeGpuSemaphore` | `()` | caller-owned native completion timeline と所属 queue |
@@ -100,4 +128,4 @@ Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
 
 texture copy は単一 aspect の footprint と、明示した byte pitch を使う。DirectX 12 では caller が `TextureTransition` で前後の layout を指定し、Vulkan では backend が初回利用前に `GENERAL` を順序付ける。alias 再利用は caller が `Barrier` と `DiscardTexture` で指定する。非所有の view 値は subresource を表すだけで、native render view を生成しない。`CreateTexture` 自体は提出・待機しない。
 
-render view／descriptor、shader、pipeline／描画、limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+render view と descriptor storage の生成・書込み・破棄、command の heap 選択までを扱う。shader、pipeline／描画、attachment としての使用、descriptor の shader 読出し、limits、Resources と機能 RenderGraph の移行は後続段階とする。`BufferDescriptors` は shader 参照経路の完成まで false とする。Vulkan の混在 slot stride と shader lowering の接続もまだ行わない。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

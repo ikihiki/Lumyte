@@ -120,9 +120,37 @@ Native の内部公開は0件で、repository の `InternalsVisibleTo` 9件は�
 
 実機試験は正常な転送結果と明示的な所有・同期、CPU 変換段階の失敗境界を対象とする。native queue の device loss、DX12 の Execute 後の Signal 失敗、Vulkan の EndCommandBuffer／QueueSubmit2 の memory allocation failure を実 GPU に強制する試験は未実施であり、これらの例外処理はコードレビューで確認した。
 
+## 第4段階: Native render view・descriptor storage
+
+2026-09-10 に [View](../adr/0006-native-view-api.md)、[Bindless の分類値](../adr/0007-native-bindless-api.md)、[Descriptor](../adr/0008-native-descriptor-api.md) の実装を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開拡張契約 | render view と descriptor heap は public abstract／protected constructor とし、外部 backend が非公開派生型を返す。view は Flags、heap は Kind／Capacity を公開し、内部公開指定を増やさない |
+| Render view | 非所有 texture view から attachment 用 native view を生成・破棄する。DirectX 12 は1 descriptor の RTV／DSV heap、Vulkan は永続 image view を所有する。親 texture と allocation は延命しない |
+| Descriptor storage | resource／sampler の専用 heap を作り、caller の指定 index に texture／buffer／sampler を書く。slot allocator、空き slot の補完、参照先 registry と自動待機は持たない |
+| DirectX 12 | shader-visible heap の opaque handle increment で位置を計算する。buffer range は raw SRV／UAV の32-bit element へ変換し、余りや整数変換の切捨てを拒否する |
+| Vulkan | `VK_EXT_descriptor_heap` の専用 buffer に、固定 resource stride／sampler stride と reserved tail を確保する。view／address range／sampler 作成情報から直接 descriptor bytes を書き、shader 用の永続 view／sampler を増やさない |
+| Heap 選択 | resource／sampler を個別に選択する。DirectX 12 の native heap pair 更新時に他方の選択を保持し、Vulkan の native command 区間切替時には選択済み heap を再設定する |
+| 3D slice | 2D attachment view の BaseLayer／LayerCount は depth slice を表す。transition／discard は slice 部分を表現できないため、3D texture には ThreeD view を要求し、mip 全体への暗黙拡張を拒否する |
+
+descriptor の書込みと heap 選択は texture を初期化しない。Vulkan の最初の利用が shader 参照の場合、caller は事前に明示 discard または texture copy で `GENERAL` 初期化を済ませる。参照先の探索や生成時の暗黙提出は追加していない。
+
+Native shader／pipeline はまだ接続していないため、`BufferDescriptors` は両 backend とも false を維持する。Vulkan の固定 slot stride は storage 内に実装したが、shader 生成側への size／alignment／stride の受渡しと混在 heap の lowering は後続段階で接続する。
+
+focused tests は Native が **30件**、DirectX 12 の Native memory／texture／commands／view／descriptor が **163件**、Vulkan の Native 契約／memory／texture／commands／view／descriptor が **169件**成功し、失敗・skip はなかった。今回の追加は Native が5件、DirectX 12 が70件（変換37件・実機33件）、Vulkan が48件（変換24件・実機24件）である。
+
+別 assembly からの public／protected 契約、caller 指定容量・slot・sampler 全項目と大きな range の受渡しを確認した。両 backend では native view／storage の生成・書込み・解放、heap 選択の提出・完了、slice view の誤拡張拒否、別 device／破棄済み object／slot 範囲外の局所契約を確認した。Vulkan の cube-array／anisotropy の任意機能試験も、この GPU では実行できた。TRX は `artifacts/test-results/native-descriptors/` に保存した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=native-descriptors-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、25 test project の **1,398件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は318件、Vulkan は327件、WebGPU は154件、Native は30件を含む。全体実行の TRX は各 test project の `TestResults/` に保存した。
+
+Native の内部公開は0件で、repository の `InternalsVisibleTo` 9件はすべて test assembly 向け。37 ADR の API・コード配置・使用例・未実装範囲と番号依存、43文書と Native README のローカルリンク、staged diff の空白検査も問題なし。
+
+実機は RTX 2080、driver 616.92。DirectX 12 debug layer と Vulkan Khronos validation layer は引き続き未導入で、有効時の試験は未実施である。DirectX 12 の view／sampler 作成は戻り値のない native API であり、今回の実機成功は呼出し・提出・完了と寿命の確認までを意味する。shader による descriptor の読出し、attachment の clear／描画と read-only aspect の内容保持を検証済みとは扱わない。native allocation failure の強制試験は行わず、失敗時の owned object の解放はコードレビューで確認した。
+
 ## 未実装と次の順序
 
-1. Native render view／descriptor、shader、pipeline と描画を接続する。root data の直接入力、parameter data を command で扱わない方針を維持し、indexed／indirect と limits を対応する操作とともに追加する。
+1. Native shader、pipeline と描画を接続し、render view を attachment として使う試験と descriptor を shader から読む試験を追加する。root data の直接入力、parameter data を command で扱わない方針を維持し、indexed／indirect と limits、descriptor stride の shader ABI を対応する操作とともに追加する。
 2. 独立した Portable API と WebGPU、両系統の Resources・shader・RenderGraph provider、共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 mesh／amplification、保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。driver 更新により、この PC で Native Vulkan の初期化と転送基盤を実機検証できるようになった。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
