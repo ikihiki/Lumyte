@@ -55,7 +55,7 @@ feature と limit は生成時に要求を選ぶための情報である。resou
 
 ## コード配置
 
-以下は repository root からの配置で、後続機能の目標配置を含む。`Lumyte.Graphics.Portable` とそのテスト project を新設し、既存の WebGPU project にこの契約を直接実装する backend を置く。
+以下は repository root からの配置で、Browser 等の後続機能の目標配置を含む。`Lumyte.Graphics.Portable` とそのテスト project を設け、WebGPU project にこの契約を直接実装する backend を置く。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -83,4 +83,4 @@ factory は Portable device を作る。Native device を引数に取る変換�
 
 Portable の低層を独立させ、共通 RenderGraph の Portable provider から利用する。独立 package、外部 backend が実装できる interface、要求 feature／limit と有効値、直接入力の初期化条件、Buffer／Texture の生成・破棄と非同期 mapping、非所有の View／range／sampler、immutable Binding Layout／Bindings を実装した。native host の WebGPU は Dawn C API へ直接接続する。
 
-raw WGSL、compute pipeline、compute／buffer copy の記録と提出、CPU timeline の非同期待機も接続した。shader package／loader、raster／texture copy、Browser runtime、共通 RenderGraph provider への接続は未実装である。公開 interface にはこの段階で実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+raw WGSL、raster／compute pipeline、render／compute／buffer・texture copy の記録と提出、CPU timeline の非同期待機を接続した。indexed／indirect draw、直接 root、有限 binding、depth/stencil、blend、MSAA resolve を実装する。shader package／loader、Browser runtime、共通 RenderGraph provider への接続は未実装である。公開 interface には実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

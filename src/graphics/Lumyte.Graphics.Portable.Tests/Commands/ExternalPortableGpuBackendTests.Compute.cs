@@ -127,7 +127,7 @@ public sealed partial class ExternalPortableGpuBackendTests
         private sealed class Pipeline : GpuComputePipelineHandle;
     }
 
-    private sealed class ExternalCommands(Action<object> observe) : GpuCommandBuffer
+    private sealed partial class ExternalCommands(Action<object> observe) : GpuCommandBuffer
     {
         public override void BeginCompute() => observe(new BeginComputeCall());
         public override void EndCompute() => observe(new EndComputeCall());

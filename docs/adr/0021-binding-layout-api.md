@@ -41,7 +41,7 @@ layout の合法性、binding 数、visibility、sample/storage type と stage l
 
 ## コード配置
 
-以下は repository root からの配置で、後続の shader 接続の目標配置を含む。Portable とそのテスト project、WebGPU の独立実装に追加する。
+以下は repository root からの配置で、shader package の目標配置を含む。Portable とそのテスト project、WebGPU の独立実装に置く。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -80,4 +80,4 @@ finally
 
 Portable の resource 入力を明示 layout とする。layout の公開値、opaque handle、入力列の保持、native host の GPUBindGroupLayout 生成・解放と非同期診断を実装した。binding の重複番号や visibility、limit、layout の合法性は runtime に委ねる。
 
-compute shader module／pipeline と直接入力の layout へ接続した。raster、shader package metadata と Browser の接続は未実装である。[進捗記録](../designs/graphics-implementation-progress.md)
+raster／compute shader module・pipeline と直接入力の layout へ接続した。shader package metadata と Browser の接続は未実装である。[進捗記録](../designs/graphics-implementation-progress.md)

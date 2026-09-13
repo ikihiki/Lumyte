@@ -36,7 +36,7 @@ binding や attachment を実体化するときに backend が必要な view/sam
 | `GpuAttachmentLoadOperation` | `Load` または `Clear`。 |
 | `GpuAttachmentStoreOperation` | `Store` または `Discard`。 |
 | `GpuClearColor(Red, Green, Blue, Alpha)`／`GpuClearDepthStencil(Depth, Stencil)` | double 4成分の color、float depth と uint stencil の clear 値。 |
-| `GpuColorAttachment` | `View`、`LoadOperation`、`StoreOperation`、`ClearColor`。 |
+| `GpuColorAttachment` | `View`、`LoadOperation`、`StoreOperation`、`ClearColor`、optional な `ResolveTarget` と `DepthSlice`。ResolveTarget は multisample の解決先 view、DepthSlice は3D view の描画先 slice。 |
 | `GpuDepthStencilAttachment` | `View`、`DepthReadOnly`／`StencilReadOnly`、nullable の `DepthLoadOperation`／`DepthStoreOperation`／`StencilLoadOperation`／`StencilStoreOperation`、`ClearValue`。read-only または存在しない aspect の operation は省略する。 |
 
 comparison と format は ADR 0001 の基礎値 `GpuCompareOp`／`GpuFormat` を使う。これらの意味を共有することは、resource/view handle や shader byte layout の互換性を意味しない。
@@ -51,7 +51,7 @@ caller は参照先 resource を最初の記録から全利用終了まで保持
 
 ## コード配置
 
-以下は repository root からの配置で、後続の attachment 実行経路の目標配置を含む。Portable とそのテスト project、WebGPU の独立実装に追加する。
+以下は repository root からの配置。Portable とそのテスト project、WebGPU の独立した binding／attachment 実装に置く。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -79,6 +79,6 @@ var attachment = new GpuColorAttachment(
 
 ## 採用範囲と未実装事項
 
-resource と解釈を分け、非 owning の値で扱う方針を採用する。Portable 専用の view／range／sampler／attachment 値、Normalize／Slice の host 算術、native host の binding 用 view/sampler 実体化を実装した。内部 cache は使用中の binding が共有し、最後の参照の解放で取り除く。
+resource と解釈を分け、非 owning の値で扱う方針を採用する。Portable 専用の view／range／sampler／attachment 値、Normalize／Slice の host 算術、native host の binding 用 view/sampler と attachment 用 view の実体化を実装した。内部 cache は用途を含めて共有し、最後の参照の解放で取り除く。binding の参照は DestroyBindings まで、提出の attachment 参照は GPU 利用終了まで保持する。managed encode 失敗では途中取得した参照も回収する。
 
-Buffer range は compute binding／copy／indirect dispatch へ接続した。attachment の command 実体化、raster と Browser 接続は未実装である。Texture view／sampler の実機試験は binding の生成・診断・内部 object の所有までであり、buffer compute の成功と Texture sampling／描画結果の確認は区別する。[進捗記録](../designs/graphics-implementation-progress.md)
+Buffer range は binding／copy／index／indirect work へ接続し、attachment の clear/load/store、depth/stencil、resolve と描画も実装した。複数 mip を持つ Texture を attachment にするときは、caller が View に MipCount: 1 を指定する。backend が範囲を黙って狭めることはない。Browser 接続は未実装である。実機での sampling・転送・描画と所有の検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

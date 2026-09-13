@@ -364,9 +364,39 @@ timeline の試験は GPU 完了と診断の両到着順、取消し、device lo
 
 低レベル compute と buffer copy を今回の実装範囲とし、shader package／loader、Slang の製品 toolchain、生成 host 型、raster／texture copy と Browser は後続とする。Texture view／sampler の実 shader 利用、native allocation failure と実 device loss の強制は今回の実機検証に含めない。
 
+## 第12段階: Portable texture copy・raster 描画
+
+2026-09-13 に [Texture](../adr/0019-texture-api.md)、[View](../adr/0020-view-api.md)、[Pipeline](../adr/0024-pipeline-state-api.md)、[Command](../adr/0025-command-recording-api.md) を native host の WebGPU 描画・転送経路へ接続した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| Texture copy | mip／aspect／origin／extent と byte 単位の row/image pitch を持つ footprint、RequiredBytes(format)、Buffer→Texture／Texture→Buffer／Texture→Texture を追加する |
+| 固定状態 | topology、strip index format、culling／front face、depth/stencil、color target ごとの blend/write mask、sample count/mask、alpha-to-coverage を immutable raster description に保持する |
+| Pipeline | Vertex 一つと optional な Pixel entry、明示 group layout と ImmediateSize から、draw に使う論理 handle の native pipeline／layout を Submit 時に生成・再利用する |
+| Render pass | color／depth-stencil の clear/load/store、read-only aspect、MSAA resolve、mip／layer と3D depth slice を明示する。attachment 値の span は記録時にコピーする |
+| Work | 直接 draw、Uint16／Uint32 index range、firstIndex・signed baseVertex・firstInstance、GPU buffer による direct／indexed indirect draw を追加する。vertex data は明示 storage binding から読む |
+| 動的入力 | viewport／scissor、stencil reference、blend constant、group と dynamic offsets、program 全体の直接 root を記録する。root／dynamic offsets はコピーし、pipeline 再設定で zero-fill しない |
+| 所有と診断 | attachment の内部 view を用途付き cache で共有し、GPU 利用終了または提出前の encode 失敗で回収する。resource／view／shader／pipeline と encode の生成診断を当該 batch に保持する |
+
+API は public／protected の実装契約だけで外部 backend を追加できる。論理 range の長さ、Texture 間の extent 一致、native sentinel との衝突、byte image pitch を rowsPerImage へ写す際の整数幅・余りを確認する。GPU が診断できる format、usage、pitch alignment、sample count、shader 適合性と resource 範囲の validator は追加しない。Depth24PlusStencil8 の depth aspect は定義済み Buffer byte 表現がないため RequiredBytes で表現しないが、その転送操作の拒否は Dawn に任せる。
+
+公開契約・固定状態・footprint の新規テスト37件、Dawn の実機テスト38件を追加した。Portable の focused test は全102件、GPU の focused test は新規38件が成功し、失敗・skip はなかった。初回コンパイル時の例外 parameter 名に対する analyzer エラーとテストの enum 名を修正し、コンパイル後の同じ条件で検証した。
+
+実機では8 byteの root を vertex／pixel shader へ直接渡し、再 bind と呼出し後の配列変更を確認した。vertex pulling、dynamic uniform offset、Texture／sampler sampling、mip／array layer／3D slice、MRT、depth/stencil、blend constant、MSAA resolve を pixel の読み戻しで確認した。copy は複数行・複数 image の隙間、非ゼロ Buffer offset、選択 mip／layer、Texture 間の領域、native-invalid pitch・aspect の診断を含む。
+
+indexed draw は16／32 bitの range、firstIndex・baseVertex・firstInstance と、compute が生成した indirect 引数を検証する。独立レビューでテスト用 shader の範囲外 index が robust access によって同じ三角形を作る可能性を見つけ、範囲外を先頭頂点へ写して誤った引数では退化三角形になるようにした。添付 view を作った後の managed encode 失敗、invalid texture／shader／pipeline の診断、全 root 長の拒否による batch 全体の未提出と signal 値の再利用も確認する。
+
+使用例は [Portable README](../../src/graphics/Lumyte.Graphics.Portable/README.md)、実機の対象範囲は [適合試験](../../src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/PORTABLE.md) に置く。独立レビューで公開 API／ADR の整合と内部 view の回収を確認した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=portable-raster-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、26 test project の **1,900件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は401件、Vulkan は413件、WebGPU は319件、Native は92件、Portable は102件。最終的に強化した indexed draw の入力検証もこの全体実行に含む。TRX は各 test project の `TestResults/` に保存した。
+
+37 ADR の API・コード配置・使用例・未実装章、182個の番号依存、46文書の387ローカルリンクと20アンカーを確認した。`InternalsVisibleTo` は10指定すべて test assembly 向けで、Native と Portable の内部公開は0件。staged diff の空白検査も成功した。
+
+今回の実機検証は同梱 Dawn の native host とこの PC の GPU を対象とする。全 format／固定状態の組合せ、dual-source blending の実 shader、allocation failure と実 device loss の強制は検証していない。圧縮 Texture format、shader package／loader、Slang の製品 toolchain、Browser runtime、上位 Resources と RenderGraph provider は後続である。
+
 ## 未実装と次の順序
 
-1. Portable の texture copy、raster pipeline／draw と Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
+1. Portable の Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
 2. 両系統の Resources・shader package／loader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

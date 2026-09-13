@@ -99,7 +99,11 @@ public sealed partial class WebGpuBackend
             bool handedToQueue = false;
             try
             {
-                foreach (CommandRecording recording in recordings) { PrepareComputePipelines(recording, dependencies); }
+                foreach (CommandRecording recording in recordings)
+                {
+                    PrepareComputePipelines(recording, dependencies);
+                    PrepareRasterPipelines(recording, dependencies);
+                }
                 for (int index = 0; index < recordings.Length; index++) { handles[index] = Encode(recordings[index], dependencies); }
                 pendingCommands.Add(submitted);
                 timeline.Reserve(signalValue);

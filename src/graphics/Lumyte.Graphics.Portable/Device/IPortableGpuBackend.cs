@@ -35,4 +35,9 @@ public interface IPortableGpuBackend : IDisposable
     GpuComputePipelineHandle CreateComputePipeline(GpuShaderProgramDescription shaders);
     /// <summary>Destroys a logical pipeline and its native realization after all uses have ended.</summary>
     void DestroyComputePipeline(GpuComputePipelineHandle pipeline);
+
+    /// <summary>Creates an immutable logical raster pipeline, materialized only for submitted draw commands.</summary>
+    GpuRasterPipelineHandle CreateRasterPipeline(GpuRasterPipelineDescription description, GpuShaderProgramDescription shaders);
+    /// <summary>Destroys a logical raster pipeline and its native realization after all uses have ended.</summary>
+    void DestroyRasterPipeline(GpuRasterPipelineHandle pipeline);
 }

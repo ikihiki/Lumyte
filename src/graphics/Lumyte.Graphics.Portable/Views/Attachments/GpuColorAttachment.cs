@@ -5,4 +5,6 @@ public readonly record struct GpuColorAttachment(
     GpuTextureView View,
     GpuAttachmentLoadOperation LoadOperation = GpuAttachmentLoadOperation.Load,
     GpuAttachmentStoreOperation StoreOperation = GpuAttachmentStoreOperation.Store,
-    GpuClearColor ClearColor = default);
+    GpuClearColor ClearColor = default,
+    GpuTextureView? ResolveTarget = null,
+    uint? DepthSlice = null);

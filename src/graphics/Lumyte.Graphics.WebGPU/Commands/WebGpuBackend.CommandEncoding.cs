@@ -33,6 +33,7 @@ public sealed partial class WebGpuBackend
     {
         F.CommandEncoderHandle encoder = default;
         F.ComputePassEncoderHandle pass = default;
+        RasterEncodingState raster = default;
         F.CommandBufferHandle result = default;
         ComputePipelineResource? selected = null;
         bool pipelineChanged = false;
@@ -97,6 +98,11 @@ public sealed partial class WebGpuBackend
                             F.WebGPU_FFI.CommandEncoderCopyBufferToBuffer(encoder, source.Handle, copy.Source.Offset,
                                 destination.Handle, copy.Destination.Offset, copy.Source.Length!.Value);
                             break;
+                        default:
+                            if (!TryEncodeRaster(recording, command, encoder, ref raster, dependencies)
+                                && !TryEncodeTextureCopy(command, encoder, dependencies))
+                            { throw new InvalidOperationException("The recording contains an unknown command."); }
+                            break;
                     }
                 }
                 var commandDescription = new F.CommandBufferDescriptorFFI();
@@ -114,6 +120,7 @@ public sealed partial class WebGpuBackend
         finally
         {
             if ((nuint)pass != 0) { F.WebGPU_FFI.ComputePassEncoderRelease(pass); }
+            if ((nuint)raster.Pass != 0) { F.WebGPU_FFI.RenderPassEncoderRelease(raster.Pass); }
             if ((nuint)encoder != 0) { F.WebGPU_FFI.CommandEncoderRelease(encoder); }
         }
     }

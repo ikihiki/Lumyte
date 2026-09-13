@@ -14,11 +14,13 @@ public sealed partial class WebGpuBackend
     private sealed record DispatchIndirectCommand(P.GpuBufferRange Arguments) : RecordedCommand;
     private sealed record CopyBufferCommand(P.GpuBufferRange Source, P.GpuBufferRange Destination) : RecordedCommand;
 
-    private sealed class CommandRecording(PortableQueue queue) : P.GpuCommandBuffer
+    private sealed partial class CommandRecording(PortableQueue queue) : P.GpuCommandBuffer
     {
         internal readonly PortableQueue Queue = queue;
         internal readonly List<RecordedCommand> Commands = [];
         private bool computing;
+        private bool rendering;
+        private readonly List<TextureViewLease> attachmentViews = [];
         private bool consumed;
         private bool released;
         private bool disposed;
@@ -36,12 +38,17 @@ public sealed partial class WebGpuBackend
             if (!computing) { throw new InvalidOperationException("The command requires an open compute scope."); }
         }
 
+        private void RequireOutsidePass()
+        {
+            RequireRecording();
+            if (computing || rendering) { throw new InvalidOperationException("The command requires all pass scopes to be closed."); }
+        }
+
         public override void BeginCompute()
         {
             lock (Queue.Owner.gate)
             {
-                RequireRecording();
-                if (computing) { throw new InvalidOperationException("Compute scopes cannot be nested."); }
+                RequireOutsidePass();
                 Commands.Add(new BeginComputeCommand());
                 computing = true;
             }
@@ -110,8 +117,7 @@ public sealed partial class WebGpuBackend
         {
             lock (Queue.Owner.gate)
             {
-                RequireRecording();
-                if (computing) { throw new InvalidOperationException("Copy commands require all pass scopes to be closed."); }
+                RequireOutsidePass();
                 P.GpuBufferRange resolvedSource = Queue.Owner.ResolveCommandRange(source);
                 P.GpuBufferRange resolvedDestination = Queue.Owner.ResolveCommandRange(destination);
                 if (resolvedSource.Length != resolvedDestination.Length)
@@ -123,7 +129,7 @@ public sealed partial class WebGpuBackend
         internal void ValidateSubmission()
         {
             RequireRecording();
-            if (computing) { throw new InvalidOperationException("Close the compute scope before submitting its recording."); }
+            if (computing || rendering) { throw new InvalidOperationException("Close every pass scope before submitting its recording."); }
         }
 
         internal void Consume() => consumed = true;
@@ -132,6 +138,8 @@ public sealed partial class WebGpuBackend
         {
             if (released) { return; }
             released = true;
+            foreach (TextureViewLease view in attachmentViews) { Queue.Owner.ReleaseTextureView(view); }
+            attachmentViews.Clear();
             Commands.Clear();
         }
 

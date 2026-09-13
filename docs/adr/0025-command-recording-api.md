@@ -40,6 +40,7 @@ command は Portable 専用の記録とする。render pass、compute の区間�
 | `GpuViewport`／`GpuScissorRect` | viewport と scissor の領域値。 |
 | `SetViewportAndScissor(viewport, scissor)` | render 区間の viewport と scissor。 |
 | `SetStencilReference(reference)` | render 区間の front/back 共通 stencil reference。 |
+| `SetBlendConstant(color)` | constant blend factor が参照する RGBA 値。`GpuClearColor` の double 成分を渡す。 |
 | `SetBindings(group, bindings, dynamicOffsets = default)` | render 区間で一つの group に immutable binding set を設定する。 |
 | `SetComputeBindings(group, bindings, dynamicOffsets = default)` | compute 区間で一つの group に binding set を設定する。 |
 | `SetRootData(bytes)`／`SetRootData<T>(in T)` | 現在の raster program の直接入力を記録する。generic 版は Portable 用に生成した unmanaged の Root 型を受け取る。 |
@@ -47,7 +48,7 @@ command は Portable 専用の記録とする。render pass、compute の区間�
 
 root data は program が要求する byte 数を完全に与え、記録中にコピーする。別の固定容量へ zero-fill して共通 ABI を作らない。root を buffer に置き換えたり、その内容から resource や Parameter Data を抽出したりしない。
 
-`GpuCommandBuffer` は public abstract 型と protected constructor で外部 backend が実装する。generic root overload は `unmanaged` の表現を byte span として非 generic overload へ渡す。dynamic offsets は binding 番号の昇順で `ReadOnlySpan<uint>` を渡し、記録中にコピーする。BeginCompute で pipeline 選択と root の指定状態を初期状態へ戻す。dispatch ごとに最後に指定した root の長さが program の ImmediateSize と一致することを確認し、native の部分更新によって前の root の末尾が残る指定を拒否する。これは Portable の完全入力契約であり、native の即値 alignment／capacity の検証は重複させない。
+`GpuCommandBuffer` は public abstract 型と protected constructor で外部 backend が実装する。generic root overload は `unmanaged` の表現を byte span として非 generic overload へ渡す。dynamic offsets は binding 番号の昇順で `ReadOnlySpan<uint>` を渡し、記録中にコピーする。BeginRendering／BeginCompute で各 pass の pipeline 選択と root の指定状態を初期状態へ戻す。draw／dispatch ごとに最後に指定した root の長さが program の ImmediateSize と一致することを確認し、native の部分更新によって前の root の末尾が残る指定を拒否する。これは Portable の完全入力契約であり、native の即値 alignment／capacity の検証は重複させない。pipeline の再設定で root を消去しない。
 
 uniform/storage の resource と byte 列は caller または Resources が明示的に準備する。Parameter Data の参照位置は shader が root から算出する。binding 入力の作成は resource 対応の指定であり、Parameter Data の暗黙の転送ではない。
 
@@ -66,7 +67,9 @@ uniform/storage の resource と byte 列は caller または Resources が明�
 
 copy の alignment、usage、重複範囲、binding と pipeline の適合性、usage scope、draw/dispatch の合法性は runtime が検証する。wrapper は記録を一意に表現するための host 所有状態を持つが、runtime が診断できる条件を同じ validator として再実装しない。
 
-Buffer range の null length は保存した生成 description の残り byte 数から算出する。copy は二つの論理 range の同長、indirect は論理 range が一件の12 byte 引数を含むことを確認する。明示 length に対する実 Buffer の範囲・usage・alignment は runtime が検証する。copy の一つの size や indirect の先頭 offset へ変換すると失われる、caller の論理 range 契約だけを wrapper が扱う。
+Buffer range の null length は保存した生成 description の残り byte 数から算出する。buffer copy は二つの論理 range の同長を要求する。indirect の論理 range は dispatch が12 byte、draw が16 byte、indexed draw が20 byteの一件の引数を含む。indexed draw は index range の offset と length、index format、signed baseVertex をそのまま渡す。明示 length に対する実 Buffer の範囲・usage・alignment は runtime が検証する。
+
+texture copy は footprint の RequiredBytes(format) が計算できる場合に論理 buffer range の長さを確認する。Texture 間 copy は一つの extent に変換するため、source／destination footprint の extent が同じことを要求する。row／image pitch は Buffer との copy だけが使用する。API は native の一つの size や先頭 offset へ変換すると失われる、caller の論理 range と表現の契約だけを扱う。
 
 ## 順序と所有権
 
@@ -76,7 +79,7 @@ caller は resource、binding、pipeline、program を最初の記録から全�
 
 ## コード配置
 
-以下は repository root からの配置で、render／texture copy の目標配置を含む。Portable とそのテスト project は実装済みで、WebGPU に独立した記録・encode 処理を加える。
+以下は repository root からの配置。Portable とそのテスト project、WebGPU に独立した記録・encode 処理を置く。Browser は目標配置とする。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -105,6 +108,6 @@ commands.EndCompute();
 
 ## 採用範囲と未実装事項
 
-Portable 固有の pass、明示 binding、直接入力を採用する。compute 区間、pipeline／group／dynamic offsets／直接 root の記録、直接／間接 dispatch、buffer copy、提出時 encode と内部記録の所有を実装した。別 device・破棄済み object と記録区間を確認し、GPU の validator は追加しない。
+Portable 固有の pass、明示 binding、直接入力を採用する。render／compute 区間、pipeline／group／dynamic offsets／直接 root の記録、直接・indexed・indirect draw、直接／間接 dispatch、buffer／texture copy、提出時 encode と内部記録の所有を実装した。attachment の span も記録時にコピーする。別 device・破棄済み object と記録区間を確認し、GPU の validator は追加しない。
 
-render 区間、raster draw、texture copy と Browser 接続は未実装である。実機で確認した入力・実行・copy の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Browser 接続は未実装である。実機で確認した入力・実行・copy の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

@@ -95,6 +95,6 @@ commands.Dispose();
 
 ## 採用範囲と未実装事項
 
-一回提出、CPU からの timeline 観測と、利用終了・処理成功の分離を採用する。native host の WebGPU に compute／buffer copy の提出、object／batch 診断の帰属、非同期 completion、device loss と待機取消しの接続を実装した。成功結果は発行値の区間へ集約し、過去の失敗診断は semaphore の寿命まで保持する。
+一回提出、CPU からの timeline 観測と、利用終了・処理成功の分離を採用する。native host の WebGPU に raster／compute／buffer・texture copy の提出、object／batch 診断の帰属、非同期 completion、device loss と待機取消しの接続を実装した。成功結果は発行値の区間へ集約し、過去の失敗診断は semaphore の寿命まで保持する。attachment 用の内部 view も、当該 command の GPU 利用終了後に回収する。
 
-raster／texture copy の提出と Browser 接続は未実装である。実機と制御した非同期結果による検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Browser 接続は未実装である。実機と制御した非同期結果による検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

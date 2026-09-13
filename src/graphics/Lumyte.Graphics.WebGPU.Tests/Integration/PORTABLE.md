@@ -32,4 +32,12 @@ queue の待機は CPU 観測用の `WaitAsync` を使う。shader/module/bindin
 
 各 GPU 試験は受理した work の利用終了を明示的に待ってから test fixture の resource を解放する。記録の Dispose は受理済み work を取り消さず、root サイズ違反等で提出前に拒否された記録は再利用しない。program の root 全体を渡す契約を確認し、不足した末尾を暗黙にゼロ埋めしない。
 
-shader package / loader、raster、texture copy と browser runtime は後続の段階で検証する。旧 legacy shader 試験を新しい Portable の実行結果の代わりには扱わない。
+`Raster/` と raster pipeline の試験は、clear と direct draw、16/32 bit index buffer の range offset / firstIndex / baseVertex / firstInstance、compute が生成した直接・indexed indirect 引数を実行し、texture-to-buffer copy 後の代表 pixel を確認する。画像全体の snapshot や固定 driver 出力とは比較しない。
+
+raster の 8 byte root と unmanaged root、pipeline 再設定時の root 保持、attachment 配列と dynamic offset 配列のコピーを確認する。vertex pulling は明示 storage binding を使い、fragment shader は dynamic uniform および sampled texture / sampler を実際に読む。depth test、vertex だけの depth pass と後続 pass の Load、stencil reference と face operation、blend constant、scissor、複数 color output、mip / array layer attachment、3D texture の depth slice、4 sample MSAA resolve も readback で検証する。
+
+clear だけの pass や選択後に使わなかった raster pipeline は compile せず、実 draw を含む Submit で初めて生成し、後続 Submit が再利用する。root 長違反は先行 attachment work も実行せず、signal 値を消費しない。shader / pipeline / texture 生成の診断は対応する完了結果に残す。attachment view の内部 lease は GPU 利用終了後、または view を取得した後の managed encode 失敗時に解放し、別の binding が保持する sampled view の lease には影響しない。
+
+texture copy は 2D array / 3D の mip と origin、異なる row / image pitch、buffer offset を指定した upload → texture → texture → readback を確認する。最後の行の padding を含めない `RequiredBytes` と論理 buffer range、一行だけの pitch 省略、stencil aspect の upload / readback も扱う。ImagePitch を native rowsPerImage へ損失なく変換できない指定と省略 sentinel の衝突は host 側の境界で確認し、native の pitch 制約や未対応の depth24 copy は runtime 診断で確認する。
+
+shader package / loader と browser runtime は後続の段階で検証する。旧 legacy shader 試験を新しい Portable の実行結果の代わりには扱わない。

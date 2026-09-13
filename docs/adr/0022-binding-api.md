@@ -38,7 +38,7 @@ dynamic offset は set 自体を書き換えず command 側で渡す。layout �
 
 ## コード配置
 
-以下は repository root からの配置で、後続の command 接続の目標配置を含む。Portable とそのテスト project、WebGPU の独立実装に追加する。
+以下は repository root からの配置。Portable とそのテスト project、WebGPU の独立した binding／command 実装に置く。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -77,4 +77,4 @@ finally
 
 Portable に明示 binding を採用する。専用 handle、immutable set の作成・解放、依存 object の生成診断の保持、使用中の binding だけで共有する view/sampler cache を実装した。最後の binding 参照がなくなった内部 object は cache から取り除き、参照先の application resource は破棄しない。
 
-compute command への group 設定、dynamic offset の実行と shader からの参照を接続した。raster と Browser 接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)
+render／compute command への group 設定、dynamic offset の実行と shader からの参照を接続した。raster の vertex pulling と Texture／sampler の sampling も実行できる。Browser 接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)

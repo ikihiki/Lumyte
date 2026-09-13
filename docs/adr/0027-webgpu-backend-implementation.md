@@ -84,13 +84,19 @@ Parameter Data は明示した buffer binding から shader が参照する。ro
 
 Portable の immutable description と program から、実際の提出で必要になった `GPURenderPipeline`／`GPUComputePipeline` を作る。固定 depth/stencil/blend を WebGPU pipeline へ含め、同じ論理 pipeline は生成済み object を再利用する。
 
-native host の compute は raw WGSL module と group layout、ImmediateSize から内部 pipeline layout を作る。dispatch に使う論理 pipeline だけを最初の Submit で実体化する。native pipeline とその layout は論理 handle が所有し、全利用終了後の DestroyComputePipeline で解放する。module／group layout の元の生成診断も pipeline の診断に引き継ぐ。
+native host の raster／compute は raw WGSL module と group layout、ImmediateSize から内部 pipeline layout を作る。draw／dispatch に使う論理 pipeline だけを最初の Submit で実体化する。native pipeline とその layout は論理 handle が所有し、全利用終了後の DestroyRasterPipeline／DestroyComputePipeline で解放する。module／group layout の元の生成診断も pipeline の診断に引き継ぐ。
 
 提出時に必要な pipeline を揃え、各 command を encoder と render/compute pass に変換する。`SetBindings`／`SetComputeBindings` は対象 pass の `setBindGroup`、root 設定は `setImmediates` に変換する。copy は pass の外側で encode する。すべての encode を終えてから queue に提出する。
 
 pass 内の usage 制約を独自に検証したり、見えない pass 分割で違反を修正したりしない。resource state の推移は WebGPU runtime が管理する。Native の barrier command や stage mask を解釈する層は設けない。
 
-記録時に root bytes と dynamic offsets をコピーする。root は program の全 byte 列として扱い、各 dispatch に対して最後に指定した長さと ImmediateSize の一致を提出前に確認する。これは native setImmediates の部分更新を公開しない契約であり、root の解析や buffer 化ではない。pipeline の再設定でも wrapper による zero-fill を追加しない。Buffer copy の null length は元の生成値から解決し、logical range の同長と indirect range の12 byteだけを確認する。
+記録時に attachment、root bytes と dynamic offsets をコピーする。root は program の全 byte 列として扱い、各 draw／dispatch に対して最後に指定した長さと ImmediateSize の一致を提出前に確認する。これは native setImmediates の部分更新を公開しない契約であり、root の解析や buffer 化ではない。pipeline の再設定でも wrapper による zero-fill を追加しない。
+
+render attachment の view は RenderAttachment 用途で内部 cache から取得し、記録に参照を保持する。color clear/load/store、resolve target、3D depth slice と depth/stencil の独立した operation／read-only 指定を native descriptor へ写す。途中の encode 失敗は取得済み参照を戻し、成功時は GPU 利用終了で command buffer とともに回収する。caller の Texture 所有は変更しない。
+
+indexed draw は呼出しごとに index range と format を設定し、firstIndex、signed baseVertex、firstInstance を native draw へ渡す。indirect は dispatch 12 byte、draw 16 byte、indexed draw 20 byteを覆う logical range を要求する。vertex buffer layout は持たず、vertex pulling の入力は明示 binding から shader が読む。
+
+Buffer range の null length は元の生成値から解決する。Buffer copy は logical range の同長、Buffer／Texture copy は footprint が必要とする logical range の長さ、Texture 間 copy は両 extent の一致を確認する。row/image pitch は native の bytesPerRow／rowsPerImage に値を失わず変換する。native sentinel と衝突する明示値は拒否する。Texture の内部配置、GPU の alignment／usage／format／subresource 制約は計算し直さない。
 
 ## Completion と失敗
 
@@ -163,6 +169,6 @@ Console.WriteLine(program.BindingLayouts.Count);
 
 ## 採用範囲と未実装事項
 
-WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。raw WGSL、compute pipeline の提出時生成、直接 root／dynamic offsets／直接・間接 dispatch、buffer copy と CPU completion も接続した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
+WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。raw WGSL、raster／compute pipeline の提出時生成、直接 root／dynamic offsets／直接・間接 dispatch、indexed／indirect draw、buffer／texture copy と CPU completion を接続した。color／depth/stencil／blend／MSAA resolve と attachment の内部所有も実装した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
 
-WGSL package/loader、raster pipeline／attachment／draw、texture copy と Browser の runtime 借用形 factory は未実装である。Slang の build toolchain と生成 host 型の統合も後続とする。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+WGSL package/loader と Browser の runtime 借用形 factory は未実装である。Slang の build toolchain と生成 host 型の統合も後続とする。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

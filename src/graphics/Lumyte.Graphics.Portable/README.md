@@ -2,7 +2,7 @@
 
 WebGPU の resource と実行モデルに対応する独立した低レベル契約。[設計の正本](../../../docs/adr/0016-portable-api.md) は Portable ADR 群である。Native の backend を経由せず、Buffer／Texture は内部 memory を含めて生成・破棄する。
 
-現在の範囲は device、要求 feature／limits、Buffer／Texture と mapping、View／Binding、raw WGSL、compute pipeline、直接／間接 dispatch、buffer copy と CPU timeline の非同期待機である。shader package／loader、raster／texture copy と Browser runtime の接続は後続段階とする。
+現在の範囲は device、要求 feature／limits、Buffer／Texture と mapping、View／Binding、raw WGSL、raster／compute pipeline、直接・indexed・indirect draw、直接／間接 dispatch、buffer／texture copy と CPU timeline の非同期待機である。shader package／loader と Browser runtime の接続は後続段階とする。
 
 ## Device と直接入力
 
@@ -10,7 +10,7 @@ native host では `Lumyte.Graphics.WebGPU.WebGpuBackend.CreateAsync(options)` �
 
 native host の callback と GPU 完了通知は、instance ごとの内部イベント処理が進行させる。未完了の native future がない間は休止する。利用者が polling する必要はなく、`CreateAsync`／`MapBufferAsync` の公開呼出しは非同期に復帰する。
 
-WGSL の `immediate_address_space` と非ゼロの直接入力 capacity は初期化要件である。`MaxImmediateSize` を未指定なら adapter が提供する capacity を要求し、明示指定した場合はその値を要求する。有効な limits は作成した device から取得する。64 byte の固定 root ABI や、root を GPU buffer に退避する経路は設けない。raw WGSL と明示した program layout で compute shader を実行する。
+WGSL の `immediate_address_space` と非ゼロの直接入力 capacity は初期化要件である。`MaxImmediateSize` を未指定なら adapter が提供する capacity を要求し、明示指定した場合はその値を要求する。有効な limits は作成した device から取得する。64 byte の固定 root ABI や、root を GPU buffer に退避する経路は設けない。raw WGSL と明示した program layout で raster／compute shader を実行する。
 
 `GpuBackendOptions.RequireDualSourceBlend` と `RequireIndirectFirstInstance` は任意 feature の要求で、`Capabilities` は有効になった機能だけを返す。`RequiredLimits` の nullable member は null と0を区別する。Max limits は必要容量の下限、Min offset alignments は許容制約の上限として runtime へ渡す。native C API の未指定 sentinel と衝突する明示値は表現不能として拒否する。
 
@@ -65,7 +65,7 @@ try
         ]);
         try
         {
-            // この Pixel group を使う raster 描画は後続段階。
+            // render pass 内で commands.SetBindings(0, bindings) に渡せる。
         }
         finally
         {
@@ -87,7 +87,7 @@ finally
 
 View は Texture と解釈を組み合わせた非所有の値であり、public の生成・破棄操作は持たない。上の省略 description は Texture 全体の既定 view を表す。sampler も値で指定し、有効な既定値には `new GpuSamplerDescription()` を使う。`default(GpuSamplerDescription)` は構造体のゼロ値であり、無効な anisotropy を backend が自動補正することはない。
 
-layout は uniform／read-only storage／storage Buffer、sampled／storage Texture と sampler を明示する。Buffer の範囲は `GpuBufferRange(buffer, offset, length)` で渡し、null length は残り全体を表す。layout と binding は呼出し中に入力 span を消費するため、復帰後に元の配列を変更できる。compute の dynamic offsets は `SetComputeBindings` に binding 番号の昇順で渡し、呼出し中にコピーする。
+layout は uniform／read-only storage／storage Buffer、sampled／storage Texture と sampler を明示する。Buffer の範囲は `GpuBufferRange(buffer, offset, length)` で渡し、null length は残り全体を表す。layout と binding は呼出し中に入力 span を消費するため、復帰後に元の配列を変更できる。dynamic offsets は render の `SetBindings`、compute の `SetComputeBindings` に binding 番号の昇順で渡し、呼出し中にコピーする。
 
 内部 view／sampler は同じ値を使う生存中の Bindings 間で再利用し、最後の参照とともに解放する。Bindings の破棄は元 Buffer／Texture と layout を破棄しない。
 
@@ -150,6 +150,66 @@ pipeline は dispatch を含む最初の Submit で実体化し、論理 handle 
 
 timeline の signal 値は単調増加とし、照会できるのは initial value と実際に受理した値だけである。`IsComplete` は GPU 利用終了だけを示し、`WaitAsync` の正常復帰が当該 batch の診断も含む成功を示す。`GpuExecutionException` は利用終了後の失敗で、`FenceValue` とコピー済み `Diagnostics` を持つ。待機取消しは GPU work の取消しや回収許可ではなく、device loss は未完了の待機にも通知する。失敗経路での所有は [提出と完了のADR](../../../docs/adr/0026-command-submission-and-synchronization.md) に従う。
 
+## Raster と Texture copy
+
+次も正常系の例である。8 byte の root を vertex／pixel shader へ直接渡し、1 pixel の描画結果を読み戻す。module と pipeline を再利用するときは、下の破棄を最後の利用終了後まで遅らせる。
+
+```csharp
+var target = backend.CreateTexture(new P.GpuTextureDescription(
+    P.GpuTextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
+    Lumyte.Graphics.GpuFormat.Rgba8Unorm,
+    P.GpuTextureUsage.ColorAttachment | P.GpuTextureUsage.CopySource));
+var readback = backend.CreateBuffer(new P.GpuBufferDescription(
+    4, P.GpuBufferUsage.CopyDestination | P.GpuBufferUsage.MapRead));
+var module = backend.CreateShaderModule("""
+    requires immediate_address_space;
+    struct Root { color: u32, depth: f32 }
+    var<immediate> root: Root;
+    @vertex fn vertex(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
+        let positions = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+        return vec4f(positions[id], root.depth, 1);
+    }
+    @fragment fn fragment() -> @location(0) vec4f { return unpack4x8unorm(root.color); }
+    """);
+var pipeline = backend.CreateRasterPipeline(
+    new P.GpuRasterPipelineDescription([new(Lumyte.Graphics.GpuFormat.Rgba8Unorm)]),
+    new P.GpuShaderProgramDescription([
+        new(module, P.GpuShaderStage.Vertex, "vertex"),
+        new(module, P.GpuShaderStage.Pixel, "fragment")
+    ], [], immediateSize: 8));
+
+var queue = backend.MainQueue;
+using var completed = queue.CreateSemaphore();
+using var commands = queue.StartCommandRecording();
+commands.BeginRendering([
+    new(new(target), P.GpuAttachmentLoadOperation.Clear, ClearColor: new(0, 0, 1, 1))
+]);
+commands.SetPipeline(pipeline);
+byte[] root = new byte[8];
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(root, 0xff0000ff);
+commands.SetRootData(root);
+commands.Draw(3);
+commands.EndRendering();
+commands.CopyTextureToBuffer(target,
+    new(0, P.GpuTextureAspect.All, new(0, 0, 0), new(1, 1, 1)), new(readback));
+queue.Submit([commands], completed, 1);
+await queue.WaitAsync(completed, 1);
+using (var mapped = await backend.MapBufferAsync(readback, P.GpuMapMode.Read, 0, 4))
+{
+    Console.WriteLine(Convert.ToHexString(mapped.ReadOnlyMemory.Span)); // FF0000FF
+}
+backend.DestroyRasterPipeline(pipeline);
+backend.DestroyShaderModule(module);
+backend.DestroyBuffer(readback);
+backend.DestroyTexture(target);
+```
+
+draw 用の vertex buffer layout は持たず、必要な頂点データは shader が明示 storage binding から読む。`DrawIndexed` は index range と Uint16／Uint32、signed baseVertex を受け取る。indirect draw は16 byte、indexed indirect draw は20 byteの引数を range の先頭から読む。
+
+color attachment の `ResolveTarget` は MSAA の解決先、`DepthSlice` は3D view の描画先を表す。mip／layer は View で選び、複数 mip を持つ Texture の attachment には `MipCount: 1` を指定する。depth/stencil、blend、culling、topology、sample 条件は immutable pipeline に、viewport／scissor、stencil reference と blend constant は command に設定する。内部 attachment view は GPU 利用終了で解放する。
+
+`GpuTextureCopyFootprint` は mip／aspect／origin／extent と byte 単位の row／image pitch を表す。`RequiredBytes(format)` は最後の行の後の padding を含めず、必要な buffer span の長さを計算する。pitch の0は native descriptor で省略する指定であり、複数行を自動で256 byte境界へ整列する機能ではない。Buffer との copy の offset は `GpuBufferRange.Offset` で指定する。Texture 間 copy は両 footprint の extent を一致させ、buffer 用 pitch は使用しない。
+
 ## Runtime 診断
 
 resource の同期生成は runtime の非同期診断の成功を保証しない。validation／out-of-memory／internal scope を生成操作に対応付け、診断結果をその object に保持する。map は buffer の生成診断と native map の双方を確認してから成功する。失敗時は `GpuOperationException` に操作名とコピー済み診断列を渡し、device loss は `GpuDeviceLostException` で通知する。
@@ -158,6 +218,6 @@ scope を開いた native 呼出し区間は同じ device で直列化し、全 
 
 ## Backend の追加
 
-外部 assembly は `IPortableGpuBackend` と `IGpuQueue` を実装し、`GpuBufferHandle`、`GpuTextureHandle`、`GpuMappedBufferRange`、`GpuBindingLayoutHandle`、`GpuBindingsHandle`、`GpuShaderModuleHandle`、`GpuComputePipelineHandle`、`GpuCommandBuffer`、`GpuSemaphore` の public abstract 基底型と protected constructor から非公開実装を派生させる。Portable assembly の `InternalsVisibleTo` は不要である。
+外部 assembly は `IPortableGpuBackend` と `IGpuQueue` を実装し、`GpuBufferHandle`、`GpuTextureHandle`、`GpuMappedBufferRange`、`GpuBindingLayoutHandle`、`GpuBindingsHandle`、`GpuShaderModuleHandle`、`GpuRasterPipelineHandle`、`GpuComputePipelineHandle`、`GpuCommandBuffer`、`GpuSemaphore` の public abstract 基底型と protected constructor から非公開実装を派生させる。Portable assembly の `InternalsVisibleTo` は不要である。
 
 動作確認は隣接する [Portable.Tests](../Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj) の consumer test と、[WebGPU の適合試験](../Lumyte.Graphics.WebGPU.Tests/Integration/PORTABLE.md) に分ける。試験結果と後続作業は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
