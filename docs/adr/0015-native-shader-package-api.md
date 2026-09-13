@@ -92,7 +92,7 @@ pipeline 作成 API は、戻った後に必要な code と entry point を自�
 
 ## コード配置
 
-以下は repository root 相対の配置とする。runtime と offline の `Lumyte.Graphics.Native.Shaders.Offline`、それぞれに隣接する xUnit project を実装した。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、新しい tool から旧共通 package／ABI への互換経路は作らない。
+以下は repository root 相対の配置とする。runtime と offline の `Lumyte.Graphics.Native.Shaders.Offline`、それぞれに隣接する xUnit project を実装した。旧共通 shader library と offline compiler は削除済みであり、旧共通 package／ABI への互換経路は作らない。
 
 | 配置先 | 内容 |
 | --- | --- |

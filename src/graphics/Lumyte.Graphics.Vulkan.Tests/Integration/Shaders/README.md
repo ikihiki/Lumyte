@@ -2,9 +2,8 @@
 
 `NativeCompute.slang` は Native Vulkan 用の独立した検証入力である。Slang 2026.17 で
 SPIR-V 1.6 にコンパイルした小さな `.spv` を埋込み resource として保持し、これらの
-fixture の build／test のために Slang の導入や実行を追加しない。既存の legacy shader
-package 試験は従来の compiler を使う。製品 backend は raw SPIR-V を受け取り、
-compiler、shader package、従来の descriptor set ABI に依存しない。
+fixture の build／test のために Slang の導入や実行を追加しない。
+製品 backend は raw SPIR-V を受け取り、compiler と shader package に依存しない。
 
 ## 再生成
 

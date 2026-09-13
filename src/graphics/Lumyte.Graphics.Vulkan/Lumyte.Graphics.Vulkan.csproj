@@ -7,6 +7,5 @@
     <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Native\Lumyte.Graphics.Native.csproj" />
     <PackageReference Include="Silk.NET.Vulkan" />
-    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
   </ItemGroup>
 </Project>

@@ -39,9 +39,9 @@
 | RenderGraph の upload | 準備済みデータから各本体が GPU 資源と staging を準備する処理に置く |
 | 汎用 Model、ToneMap、Output | 新たに機能契約と両本体を実装する。Model の必要能力に glTF 描画を含める |
 
-現行の Blit／Composite は caller の `DrawMaterial` を Fullscreen に渡す wrapper であり、shader を管理しない新 API の完成品ではない。[現行 Blit](../../src/graphics/Lumyte.Graphics.Library/BlitRenderGraphExtensions.cs:7)、[現行 Composite](../../src/graphics/Lumyte.Graphics.Library/CompositeRenderGraphExtensions.cs:7)、[DrawMaterial](../../src/graphics/Lumyte.Graphics.Library/DrawMaterial.cs:63) を移行調査の基準とする。
+削除前の Blit／Composite は caller の DrawMaterial を Fullscreen に渡す wrapper であり、本 ADR の shader を管理しない機能 pass とは異なる。新しい Blit／Composite は本契約に従って実装する。
 
-2D の内部 pass 分割は [RenderGraphExtensions](../../src/graphics/Lumyte.Graphics.TwoD/RenderGraphExtensions.cs:1017)、線形色と alpha は [Color](../../src/graphics/Lumyte.Graphics.TwoD/Color.cs:5)、既存の機能テストは [CommonPassExtensionsTests](../../src/graphics/Lumyte.Graphics.Library.Tests/CommonPassExtensionsTests.cs:10) を参照する。現行能力の保持と、新しい契約の実装を分けて確認する。
+2D に必要な描画能力は ADR 0036 の調査表に記録する。旧実装と専用テストは削除済みであり、新しい機能の適合試験を各系統の本体に追加する。
 
 ## API
 
@@ -158,7 +158,7 @@ sampling、mipmap、color format の合法性は native API／WebGPU runtime に
 | `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Integration/ImageProcessing/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Integration/ImageProcessing/` | 同じ consumer 入力による画素・色・alpha と更新結果の GPU 適合試験。unit suite と分離する。 |
 | `benchmarks/Lumyte.Benchmarks/Graphics/ImageProcessing/` | 既存 benchmark project に追加する plan 再利用、入力変更と効果ごとの CPU／GPU 負荷の計測。 |
 
-既存 `src/graphics/Lumyte.Graphics.Library/` の Clear／Blit／Composite と shader は移植元とする。汎用 Draw／Dispatch API を共通 feature project に移す互換層は作らない。Models／TwoD はそれぞれ専用の機能ディレクトリが所有し、表示 window の取得・Present は RenderGraph の presentation と Hosting integration の担当に残す。
+旧 Library と shader は削除済みであり、汎用 Draw／Dispatch API を共通 feature project に移す互換層は作らない。Models／TwoD はそれぞれ専用の機能ディレクトリが所有し、表示 window の取得・Present は RenderGraph の presentation と Hosting integration の担当に残す。
 
 ## 使用例
 

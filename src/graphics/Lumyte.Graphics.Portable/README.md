@@ -6,7 +6,7 @@ WebGPU の resource と実行モデルに対応する独立した低レベル契
 
 ## Device と直接入力
 
-native host では `Lumyte.Graphics.WebGPU.WebGpuBackend.CreateAsync(options)` が、同梱 Dawn runtime の instance／adapter／device を所有する。旧 `IGpuBackend` 用 factory は `Lumyte.Graphics.WebGPU.Legacy.WebGpuBackend` へ移し、新しい Portable device と相互変換しない。
+native host では `Lumyte.Graphics.WebGPU.WebGpuBackend.CreateAsync(options)` が、同梱 Dawn runtime の instance／adapter／device を所有する。旧共通 backend と Legacy factory は削除済みであり、Portable device への互換変換は提供しない。
 
 Browser host では `Lumyte.Graphics.WebGPU.Browser.WebGpuBrowserRuntime.LoadAsync(moduleUrl)` で配布 ES module を読み込み、同 namespace の `WebGpuBackend.CreateAsync(runtime, options)` へ渡す。以降は同じ Portable API を使う。runtime は caller 所有で、借用する backend をすべて終了してから破棄する。JSObject を扱う操作は runtime を作成した JavaScript thread で行う。[Browser の配信と実行例](../Lumyte.Graphics.WebGPU.Browser/README.md) に host 設定と制約を記す。
 

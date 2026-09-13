@@ -75,7 +75,7 @@ prelude の root は Slang reflection の root として列挙されない。さ
 
 ## 既存実装と未確認範囲
 
-現行の [SlangPackageCompiler](../../tools/Lumyte.Graphics.Shader.Offline/SlangPackageCompiler.cs) には、予約 binding の `var<uniform>` を `var<immediate>` へ置換する `UseImmediateRootData` が残っている。今回の実験はこの処理を一切通していない。ADR の目標設計では文字列置換を廃止し、専用 accessor へ移す。今回行ったのは実験と設計の確定であり、production compiler の置換実装ではない。
+調査時の旧 SlangPackageCompiler には、予約 binding の `var<uniform>` を `var<immediate>` へ置換する処理があった。本実験はその処理を通していない。旧 compiler と文字列置換経路は 2026-09-14 に削除済みである。専用 accessor による Slang の本番統合は後続作業であり、本実験の成功と production compiler の完成は区別する。
 
 未実装・未確認なのは、root accessor の生成器、公式 WGSL frontend からの ABI／C# 生成、Slang の raster variant、matrix／array 等の全入力型、各機能 pass、C# の WebGPU 接続を経由したこの生成物の実行、他の browser／GPU である。比較用の Native shader は SPIR-V assembly と HLSL 生成まで確認した。DXIL の追加試行は実験 compiler 環境の `dxcompiler.dll` 読込みに失敗し、今回の直接入力実験では Native GPU 実行をしていない。
 

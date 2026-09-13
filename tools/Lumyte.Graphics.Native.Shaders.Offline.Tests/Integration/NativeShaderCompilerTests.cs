@@ -102,7 +102,7 @@ public sealed class NativeCompilerFixture
         string repository = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(repository, "Lumyte.slnx"))) { repository = Directory.GetParent(repository)?.FullName ?? throw new DirectoryNotFoundException("Repository not found."); }
         string compiler = Environment.GetEnvironmentVariable("LUMYTE_SLANGC") ?? Path.Combine(repository, "artifacts/experiments/slang-wgsl-root/compiler/slang-2026.17/bin/slangc.exe");
-        string downstream = Environment.GetEnvironmentVariable("LUMYTE_DXC_DIRECTORY") ?? Path.Combine(repository, "tools/Lumyte.Graphics.Shader.Offline/bin/Debug/net10.0");
+        string downstream = Environment.GetEnvironmentVariable("LUMYTE_DXC_DIRECTORY") ?? AppContext.BaseDirectory;
         if (!File.Exists(compiler)) { throw new FileNotFoundException("Slang conformance requires LUMYTE_SLANGC pointing to Slang 2026.17.", compiler); }
         this.compiler = new NativeShaderCompiler(compiler, downstream);
         request = new(Path.Combine(AppContext.BaseDirectory, "Fixtures/Resources.slang"),

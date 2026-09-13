@@ -305,7 +305,7 @@ amplification／mesh が読む別の GPU data にも、それぞれの shader st
 
 ## 現段階の範囲
 
-旧 `IGpuBackend` の adapter は作らない。既存の描画系は未移行の source として残り、新しい backend は native API を直接呼ぶ。共通 `Lumyte.Graphics` から現在利用するものは code format と device loss 例外などの基礎型である。
+旧 `IGpuBackend` と旧描画系は削除済みであり、互換 adapter はない。各 backend は native API を直接呼ぶ。共通 `Lumyte.Graphics` から利用するものは code format と device loss 例外などの基礎型である。
 
 texture copy は単一 aspect の footprint と、明示した byte pitch を使う。DirectX 12 では caller が `TextureTransition` で前後の layout を指定し、Vulkan では backend が初回利用前に `GENERAL` を順序付ける。alias 再利用は caller が `Barrier` と `DiscardTexture` で指定する。非所有の view 値は subresource を表すだけで、native render view を生成しない。`CreateTexture` 自体は提出・待機しない。
 

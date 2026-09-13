@@ -234,7 +234,7 @@ helper は target の取得後、queue の受理前に失敗した場合は Disc
 | `src/graphics/Lumyte.Graphics.RenderGraph.Conformance/` | 同じ consumer fixture を一度だけ build して両 provider で使う独立 assembly。実 GPU の実行は各 backend の integration suite から行う |
 | `benchmarks/Lumyte.Benchmarks/Graphics/RenderGraph/` | 既存 benchmark project 内の新設予定領域。plan 再利用、bindings 更新と CPU allocation の測定 |
 
-新しい共通契約と計画処理は上表の配置へ実装し、物理配置、barrier、binding と command 記録は provider 側へ分けた。旧 `RenderGraph/` は `Lumyte.Graphics.RenderGraph.Legacy` へ移動し、既存 Library／TwoD／Text の移植元として維持する。新しい公開契約を旧実装へ forwarding する互換層は作らない。`.Tests` は production project の隣に置き、実機適合試験に必要な provider の参照を production の共通 project へ逆流させない。
+共通契約と計画処理は上表の配置へ実装し、物理配置、barrier、binding と command 記録は provider 側へ分けた。旧 low-level RenderGraph と旧 Library／TwoD／Text は削除済みであり、公開契約を旧実装へ forwarding する互換層は作らない。`.Tests` は production project の隣に置き、実機適合試験に必要な provider の参照を production の共通 project へ逆流させない。
 
 ## 使用例
 

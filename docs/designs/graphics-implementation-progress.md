@@ -1,6 +1,6 @@
 # Graphics 実装進捗
 
-37 ADR の目標設計に対する実装状況を記録する。最初の統合完了条件は [ADR 0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) にある起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了であり、以下の低層基盤だけで達成したとは扱わない。
+37 ADR の目標設計に対する実装状況を記録する。最初の統合完了条件は [ADR 0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) にある起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了であり、以下の低層基盤だけで達成したとは扱わない。各段階の検証件数は実施当時の記録である。2026-09-14 に旧共通 backend、旧 RenderGraph、旧 Library／TwoD／Text、旧 shader system と専用テストを削除した。現行機能とテストの結果は末尾の更新に記録する。
 
 ## 第1段階: Native メモリ基盤
 
@@ -16,7 +16,7 @@
 | Vulkan | `VulkanBackend` が Vulkan 1.4 と必須拡張・feature を要求。memoryTypeBits の交差から allocation を選び、bind した buffer の device address を使う。CPU mapping は coherent memory に限り、同一 allocation の mapping を利用 region 間で共有する |
 | 所有・同期 | caller が resource → heap → backend の解放順、GPU 利用終了、同一 heap／region の host 操作の直列化を保証する。backend は application resource の自動破棄、暗黙の待機、全 resource の寿命追跡を行わない |
 
-DirectX 12／Vulkan は既存 project 内へ新しい実装を追加した。旧 `IGpuBackend` と既存の描画実装は未移行として残り、新 API から呼び出す adapter は作っていない。`Lumyte.Graphics.Native` は共通 `Lumyte.Graphics` の code format と device loss 例外などの基礎型を参照する。
+DirectX 12／Vulkan は既存 project 内へ新しい実装を追加した。この初回段階では旧 `IGpuBackend` と旧描画系を残していたが、2026-09-14 に削除した。新 API から呼び出す adapter は作っていない。`Lumyte.Graphics.Native` は共通 `Lumyte.Graphics` の code format と device loss 例外などの基礎型を参照する。
 
 公開実行機能の capability はすべて false としている。GPU address を取得できることや初期化時に native feature を有効にすることだけで、shader、descriptor、mesh command の実装完了を報告しない。
 
@@ -654,7 +654,7 @@ Native offline 48件、Portable offline 15件、両 Resources generator 19／17�
 | Native／Portable | 独立 registry と公開 SPI、実行ごとの資源と内部 pass、ResourceManager の scope／batch／pin、submit と completion、受理停止と drain |
 | 標準機能 | 共通 Clear／Texture Copy／Output と両本体。Clear 値は同じ plan の bindings で差し替えられ、shader と binding は利用側に公開しない |
 | Hosting | 同じ一回の StartAsync／GetAsync 初期化、Options snapshot、runtime 単位の CPU scope、session 借用、任意 presentation 接続、consumer 停止後の GPU／表示／CPU の順次終了 |
-| 移行 | 旧 low-level graph は明示的な `.RenderGraph.Legacy` assembly／namespace に移動。既存 TwoD／Text／Library の能力と試験を維持し、新 API の forwarding は作らない |
+| 移行 | 初回統合時は旧 graph を隔離していたが、後続の旧システム削除で旧 graph／TwoD／Text／Library と専用試験を削除。互換 API を残さない |
 | 適合 | `Lumyte.Graphics.RenderGraph.Conformance` に共通 consumer を一度 build し、各 backend の Host 設定から同じ Clear → Copy → Output を実行する |
 
 CPU 試験では宣言失敗の rollback、未初期化 read、culling、snapshot、別 plan／runtime の参照、
@@ -683,7 +683,7 @@ export の回収と Host 終了を確認した。単一 offscreen target は使�
 provider の global barrier に texture の attachment／copy／shader access を混在させていたため、
 明示 layout を使う backend では texture の依存を同一 layout 間も含めた TextureTransition に、
 buffer の依存を global Barrier に分けた。修正後の画素試験と headless presentation が成功した。
-この PC では D3D12 debug layer（`0x887A002D`）と `VK_LAYER_KHRONOS_validation` が利用できないため、
+この初回実行時は D3D12 debug layer（`0x887A002D`）と `VK_LAYER_KHRONOS_validation` が利用できなかったため、
 新規 DX12／Vulkan 適合は通常 device で実行した。追加 validation layer による検証成功とは扱わない。
 
 最終検証は既存の Browser、Slang、DXC、Tint の環境変数を指定し、
@@ -695,6 +695,40 @@ Portable provider／Passes 14／2件もすべて成功した。
 66文書・446ローカルリンク・21アンカー、37 ADR の必要章と179個の番号依存を確認し、問題はなかった。
 production 向け InternalsVisibleTo を追加せず、既存13指定はすべて test assembly 向けである。
 
+## 検証レイヤーと旧システムの削除
+
+2026-09-14 に Windows Graphics Tools と Vulkan SDK 1.4.357 の導入を確認した。
+DX12 の検証付き段階 0 適合で、texture copy の中間 buffer を COPY_DEST からコピー元として使う際に
+`MessageIDInvalidSubresourceState` が検出された。線形 buffer だけが旧 `CreatePlacedResource` と
+legacy resource state で作成されており、enhanced global barrier との混在が原因だった。
+線形 buffer の requirement と作成を `ResourceDesc1`、`GetResourceAllocationInfo2`、
+`CreatePlacedResource2` と `Undefined` に統一した。新しい状態追跡や暗黙 barrier は追加しない。
+
+DX12 と Vulkan の段階 0 適合は各4ケースとも検証を必須にし、画素だけでなく警告・エラーの不在も確認する。
+DX12 は InfoQueue のメッセージ破棄も検査する。Vulkan は同期検証を有効にして確認する。
+環境と実行方法は [テスト文書](../testing.md#native-検証レイヤー) を参照する。
+
+旧共通 backend、resource／command／PSO／shader ABI、手動 allocator、固定共通上限、
+旧 RenderGraph、旧 Library／TwoD／Text、旧 shader library と offline compiler、
+旧 Vulkan window sample と旧 graph benchmark を削除した。旧 shader の書換え処理や Legacy factory、
+旧 format の reader、型転送・互換 wrapper は提供しない。
+現行の Native／Portable の backend、各 Resources／shader／generator／provider、共通 Passes と Hosting は維持する。
+共通 Graphics は現在必要な基本値と device loss 例外のみを定義する。
+
+撤去した機能に専用のテストは、その機能と一緒に削除する。新方式の Model／2D／文字描画を
+実装済みと扱わず、必要な能力と過去の調査結果は ADR 0035／0036 に残す。
+これらの次回実装では新契約の適合試験を追加し、旧 API の再導入を前提にしない。
+
+最終検証は Browser／Slang／Tint の環境変数と `VK_LAYER_VALIDATE_SYNC=1` を設定し、
+DXC は各現行 project の NuGet dependency から解決して、
+`dotnet test Lumyte.slnx -m:4 --logger "trx;LogFilePrefix=graphics-cleanup-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini`
+を実行した。**37 project・1,741件成功、失敗0、skip 0**、全 TRX が Completed、終了コード0。
+DirectX 12 は276件、Vulkan は281件、Dawn は189件、Browser は61件成功し、
+DX12／Vulkan の各4件の検証付き feature graph も警告・エラー0で成功した。
+前回からの731件の減少は旧機能専用のテストと5 test project の撤去によるもので、
+現行機能の失敗を skip や期待値の緩和で回避したものではない。
+88現行文書のローカルリンクと84 project の参照先に欠落はなく、`git diff --check` も成功した。
+
 ## 未実装と次の順序
 
 1. RenderGraph の段階 1 として Blit、内部 template と差分準備、GPU 内容世代の結果依存を追加する。plan と bindings の再利用の基礎は段階 0 で利用できる。
@@ -703,4 +737,4 @@ production 向け InternalsVisibleTo を追加せず、既存13指定はすべ�
 
 任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。
 
-保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
+保持型 Model／2D／文字描画と Slang toolchain の製品実装への統合は、これらの後続作業である。旧描画系を復元する互換経路は設けない。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

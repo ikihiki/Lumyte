@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Native fixtures are compiled offline for the descriptor-heap ABI, separately from legacy packages. -->
-    <EnableDefaultSlangCompileItems>false</EnableDefaultSlangCompileItems>
   </PropertyGroup>
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -15,9 +13,6 @@
     <ProjectReference Include="..\Lumyte.Graphics.Native.Hosting\Lumyte.Graphics.Native.Hosting.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Passes.Hosting\Lumyte.Graphics.Passes.Hosting.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.RenderGraph.Conformance\Lumyte.Graphics.RenderGraph.Conformance.csproj" />
-    <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
-    <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
-    <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
@@ -26,27 +21,13 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Silk.NET.Shaderc" />
-  </ItemGroup>
-  <ItemGroup>
     <Using Include="Xunit" />
     <EmbeddedResource Include="Integration\Shaders\*.spv" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeMemoryArenaConformance.cs" Link="Integration\Memory\NativeMemoryArenaConformance.cs" />
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeResourceManagerConformance.cs" Link="Integration\Memory\NativeResourceManagerConformance.cs" />
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\RenderGraph\NativeFeatureGraphConformance.cs" Link="Integration\RenderGraph\NativeFeatureGraphConformance.cs" />
-    <Compile Include="..\Lumyte.Graphics.Text.Tests\TextBackendConformanceTests.cs" Link="TextBackendConformanceTests.cs" />
-    <Compile Include="..\Lumyte.Graphics.Text.Tests\TestFontData.cs" Link="TestFontData.cs" />
-    <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />
-    <Compile Include="..\..\..\samples\graphics\Lumyte.Graphics.Vulkan.Samples\SampleShaders.cs" Link="SampleShaders.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Lumyte.Graphics.Library\Lumyte.Graphics.Library.csproj" />
-    <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputRaster.slang" />
-    <SlangCompile Include="..\Lumyte.Graphics.Tests\Shaders\InputCompute.slang" />
-  </ItemGroup>
-  <Import Project="..\..\..\tools\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.targets" />
 </Project>

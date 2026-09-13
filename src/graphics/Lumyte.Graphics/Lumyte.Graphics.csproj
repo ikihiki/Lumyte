@@ -1,13 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Backend-independent GPU contracts for Lumyte rendering.</Description>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Shared graphics values for independent Native, Portable, and feature RenderGraph APIs.</Description>
   </PropertyGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="GpuBackendKind.cs" />
-    <Compile Remove="GpuShaderCode.cs" />
-  </ItemGroup>
+
 </Project>

@@ -56,4 +56,4 @@ stage 0 の両 provider が扱う共通 package profile は `images.sampled` ver
 
 共通機能、二系統の provider、ResourceManager 接続、Hosting、Clear／Copy／基本 Output と offscreen presentation の統合を実装する。実ウィンドウ／canvas と frame pacing、構造 cache、contributor、frame 外部 lease、内部内容世代 cache、alias allocation の最適化、Model／2D は後続段階とする。
 
-旧低レベル RenderGraph は [Legacy project](../Lumyte.Graphics.RenderGraph.Legacy/README.md) に明示的に分離した。新しい API から旧実装へ forwarding する互換層はない。詳細な目標契約と実装済みの範囲は [ADR 0030](../../../docs/adr/0030-render-graph-api.md) と [実装進捗](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+旧低レベル RenderGraph と旧描画系は削除済みであり、互換層はない。詳細な目標契約と実装済みの範囲は [ADR 0030](../../../docs/adr/0030-render-graph-api.md) と [実装進捗](../../../docs/designs/graphics-implementation-progress.md) を参照する。

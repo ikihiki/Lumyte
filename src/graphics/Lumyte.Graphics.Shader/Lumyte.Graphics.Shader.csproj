@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <Description>Validated shader package container and deterministic package writer.</Description>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
-    <PackageReference Include="MessagePack" />
-  </ItemGroup>
-</Project>

@@ -1,1 +1,0 @@
-namespace Lumyte.Graphics;

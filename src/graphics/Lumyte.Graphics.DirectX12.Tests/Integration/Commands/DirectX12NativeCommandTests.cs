@@ -324,8 +324,8 @@ public sealed class DirectX12NativeCommandTests
         }
     }
 
-    // These are hardware conformance tests; the optional Windows Graphics Tools debug layer
-    // is absent on the test machine (D3D12GetDebugInterface returns 0x887A002D).
+    // These copy conformance cases also run without Windows Graphics Tools. The feature graph
+    // validation cases additionally require the debug layer and assert its native diagnostics.
     private static DirectX12Backend CreateBackend() => DirectX12Backend.Create();
 
     private static byte[] WritePattern(nint address, NativeGpuTextureCopyFootprint footprint, int slices, int elementBytes, int seed = 0)

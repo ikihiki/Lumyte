@@ -10,8 +10,9 @@ public sealed unsafe partial class DirectX12Backend
     public NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind)
     {
         VerifyAvailable();
-        ResourceDesc description = LinearDescription(size, kind);
-        ResourceAllocationInfo requirements = device.GetResourceAllocationInfo(0, 1, in description);
+        ResourceDesc1 description = LinearDescription(size, kind);
+        ResourceAllocationInfo requirements = device10.GetResourceAllocationInfo2(
+            0, 1, &description, (ResourceAllocationInfo1*)null);
         if (requirements.SizeInBytes == ulong.MaxValue || requirements.Alignment == 0)
         {
             throw new InvalidOperationException("Direct3D 12 rejected the linear resource description.");

@@ -148,11 +148,11 @@ front face は clip-to-viewport 変換後の winding に対する値とする。
 | `src/graphics/Lumyte.Graphics.Native.RenderGraph/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph/` | 新設予定。共通契約を実装する provider と各系統の内部 graph |
 | `src/graphics/Lumyte.Graphics.Passes/`、`src/graphics/Lumyte.Graphics.Native.Passes/`、`src/graphics/Lumyte.Graphics.Portable.Passes/` | 新設予定。順に共通機能契約、Native 本体、Portable 本体。機能ごとの詳細は担当 ADR に置く |
 | `src/graphics/Lumyte.Graphics.TwoD.Primitives/` | 新設予定。2D と Text が共有する path／paint 等を定義する。型の namespace は Lumyte.Graphics.TwoD を保つ |
-| `src/graphics/Lumyte.Graphics.TwoD/`、`src/graphics/Lumyte.Graphics.Text/` | 既存 project を不変の CPU 描画データへ改編。GPU 本体は各系統の Passes へ分離する |
+| `src/graphics/Lumyte.Graphics.TwoD/`、`src/graphics/Lumyte.Graphics.Text/` | 不変の CPU 描画データを新設予定。GPU 本体は各系統の Passes へ分離する |
 | `src/graphics/Lumyte.Graphics.Hosting/`、`src/graphics/Lumyte.Graphics.Native.Hosting/`、`src/graphics/Lumyte.Graphics.Portable.Hosting/`、`src/graphics/Lumyte.Graphics.Passes.Hosting/` | 新設予定。Host の構成と DI 接続。共通 API からこれらを参照しない |
 | `src/graphics/Lumyte.Graphics.Tests/` | 既存の隣接 xUnit project を改編。本 ADR の基礎値・座標規約を検証し、各 library の振舞いはその隣の `.Tests` に置く |
 
-各 project の `.csproj` はそのディレクトリ直下に同名で置く。TwoD scene は Text を参照し、Text と TwoD は共有の TwoD.Primitives を参照する。Primitives から Text／scene を参照せず、API 名を変えずに assembly の循環を避ける。旧 `Lumyte.Graphics.Library` と `Lumyte.Graphics.Shader` は実装の移植元として扱い、新しい機能本体や二系統の API を集める場所にはしない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、利用側の起動設定は application 側に保つ。
+各 project の `.csproj` はそのディレクトリ直下に同名で置く。TwoD scene は Text を参照し、Text と TwoD は共有の TwoD.Primitives を参照する。Primitives から Text／scene を参照せず、assembly の循環を避ける。旧 Library、Shader、TwoD、Text と旧 RenderGraph は削除し、旧 API／package／shader ABI の互換層を残さない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、利用側の起動設定は application 側に保つ。
 
 ## 使用例
 
@@ -170,6 +170,6 @@ await renderer.RenderAsync(runtime, cancellationToken);
 
 NoGraphicsAPI の考え方を適用する対象は Native である。Portable の明示 binding や device-owned resource は独立した設計であり、NoGraphicsAPI の Bindless を実装したものとして説明しない。Native でも pointer、PSO 分解、texture layout など原案どおり提供できない点は各 ADR の末尾に部分採用として記す。
 
-単一の RenderGraph contract、Clear／Texture Copy／基本 Output の機能 request と二系統の本体、共通 resource facade、非同期提出、Native／Portable provider と Generic Host／DI integration を段階 0 として実装した。共通 consumer は独立 assembly に一度 build し、provider の設定だけを切り替える。旧描画系の移植元は `Lumyte.Graphics.RenderGraph.Legacy` へ明示分離し、新 API から旧 API へ forwarding しない。Model／2D、残る画像処理、内部 template の差分再利用と GPU 内容世代の共有は未実装である。
+単一の RenderGraph contract、Clear／Texture Copy／基本 Output の機能 request と二系統の本体、共通 resource facade、非同期提出、Native／Portable provider と Generic Host／DI integration を段階 0 として実装した。共通 consumer は独立 assembly に一度 build し、provider の設定だけを切り替える。旧共通 backend と旧描画系は削除済みである。Model／2D／文字描画、残る画像処理、内部 template の差分再利用と GPU 内容世代の共有は未実装である。
 
 Native の mesh／amplification と、両系統の Slang source の部分共有を追加採用する。Native の raw pipeline、直接／間接 mesh command、直接 root と試験用 shader は実装し、両 backend の実 GPU で確認した。製品用 shader artifact の生成・配布、pass の経路選択と共有 module は未実装である。Portable の直接 root は Slang 2026.17 の専用 accessor による WGSL 生成と実 GPU の最小実験で成立を確認した。通常の push constant 宣言の自動変換ではなく、固定した toolchain の相互運用機能を使う。toolchain への統合と各 pass での適合は未実装であり、全 pass の source を共有済みとは扱わない。

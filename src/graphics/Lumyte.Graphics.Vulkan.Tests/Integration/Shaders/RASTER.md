@@ -1,7 +1,7 @@
 # Native Vulkan raster fixtures
 
 `NativeRaster.slang` と埋込み `.spv` は Native の raw shader ABI を検証する小さな入力である。
-製品 backend の shader compiler 依存は追加しない。既存の legacy package 試験とは独立する。
+製品 backend の shader compiler 依存は追加しない。
 
 ## 再生成
 

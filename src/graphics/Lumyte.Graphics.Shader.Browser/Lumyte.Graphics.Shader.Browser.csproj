@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <Description>Browser integration for the Lumyte shader compiler API.</Description>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
-  </ItemGroup>
-</Project>

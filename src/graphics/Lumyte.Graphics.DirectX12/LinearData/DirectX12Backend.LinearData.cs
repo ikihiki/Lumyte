@@ -12,21 +12,16 @@ public sealed unsafe partial class DirectX12Backend
     {
         VerifyAvailable();
         HeapRecord backing = RequireHeap(heap);
-        ResourceDesc description = LinearDescription(size, heap.Kind);
-        ResourceStates initialState = heap.Kind switch
-        {
-            NativeGpuMemoryKind.CpuVisible => ResourceStates.GenericRead,
-            NativeGpuMemoryKind.GpuOnly => ResourceStates.Common,
-            NativeGpuMemoryKind.Readback => ResourceStates.CopyDest,
-            _ => throw new ArgumentOutOfRangeException(nameof(heap)),
-        };
+        ResourceDesc1 description = LinearDescription(size, heap.Kind);
         ComPtr<ID3D12Resource> resource = default;
         bool mapped = false;
         try
         {
-            Check(device.CreatePlacedResource<ID3D12Heap, ID3D12Resource>(
-                backing.Heap, offset, in description, initialState, null, out resource),
-                "ID3D12Device.CreatePlacedResource");
+            // Buffers have no layout. Create them in the enhanced barrier model so a caller's
+            // global barrier can synchronize writes and later reads without legacy state promotion.
+            Check(device10.CreatePlacedResource2<ID3D12Heap, ID3D12Resource>(
+                backing.Heap, offset, &description, BarrierLayout.Undefined, null,
+                0, (Format*)null, out resource), "ID3D12Device10.CreatePlacedResource2");
             void* cpuAddress = null;
             if (heap.Kind != NativeGpuMemoryKind.GpuOnly)
             {
@@ -66,7 +61,7 @@ public sealed unsafe partial class DirectX12Backend
         record.Resource.Dispose();
     }
 
-    private static ResourceDesc LinearDescription(ulong size, NativeGpuMemoryKind kind)
+    private static ResourceDesc1 LinearDescription(ulong size, NativeGpuMemoryKind kind)
     {
         ResourceFlags flags = kind switch
         {

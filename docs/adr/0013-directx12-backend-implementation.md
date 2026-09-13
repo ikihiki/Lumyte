@@ -33,6 +33,8 @@ mesh shader は任意機能として追加する。device 初期化で `D3D12_FE
 
 `CreateLinearRegion(size, heap, offset)` は caller が指定した heap 内に backing buffer を placed resource として生成する。`NativeGpuLinearRegion` がこの buffer と実 GPU virtual address を所有し、CPU 可視の memory kind では resource の `Map` から `CpuAddress` を提供する。`DestroyLinearRegion` は buffer を解放し、heap は解放しない。caller は一つの region を byte range に分割して使い、range ごとの resource を作る必要はない。
 
+すべての memory kind の buffer は `ResourceDesc1` と `GetResourceAllocationInfo2` で要件を取得し、`CreatePlacedResource2` の initial layout を `D3D12_BARRIER_LAYOUT_UNDEFINED` として作成する。buffer のアクセス依存は caller の enhanced global barrier で指定する。旧 `CreatePlacedResource` による legacy state 管理を混在させず、暗黙の state promotion／decay に依存した追跡も追加しない。[Enhanced Barriers の buffer 作成](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html)
+
 `NativeGpuRange(Region, Offset, Size)` の `Offset` は region 内の byte offset とする。index fetch には `Region.GpuAddress + Offset` と size、copy と indirect には region の backing resource と同じ `Offset` を渡す。heap への配置位置 `Region.HeapOffset` を resource 内の offset に重ねて加算しない。region identity の保持は DirectX 12 が resource object を要求する入口への変換に使い、global な address→resource 検索や使用状態追跡を必要としない。
 
 texture も同じ caller-owned `NativeGpuHeap` の offset に placed resource として生成する。heap、linear region、texture、render view は caller が別々に所有し、resource を破棄しても heap を自動解放しない。配置と aliasing の同期は caller が管理する。

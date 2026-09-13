@@ -1,5 +1,7 @@
 # Lumyte レビューと改善工程
 
+この文書は 2026-09-05 時点の全体レビュー記録であり、現在の Graphics API の規範ではない。Graphics の旧 API／実装／専用 ADR は削除済みで、現在の設計は [Graphics ADR](../adr/README.md)、実装済みの範囲は [進捗](../designs/graphics-implementation-progress.md) を参照する。以下の履歴上の source 位置は各節に記載した commit を基準とする。
+
 レビュー日: 2026-09-05 / 構造・性能の確認対象: c9b9839 / API評価の確認対象: b2b9eaf / DevTools追加評価の確認対象: 191afeb。共通API・CommandEncoderの方針変更と、MagicOnionを基盤とするリモート編集・ツリー/画像選択・デバッグ・OpenTelemetryの設計案を本書に統合した。
 
 優先すべきなのは、Resources の終了競合、GPU コマンドの失敗時の寿命管理、descriptor の容量・再利用、Text キャッシュの上限である。その後に API の対応範囲を定義し、プロジェクト境界を整理する。既存の arena、RenderGraph、明示的な resource/view の分離を土台に改善する。
@@ -73,7 +75,7 @@ docs/           architecture, api, performance, reviews
 
 テストは AGENTS.md の指示どおり、対応する製品プロジェクトの隣に Lumyte.<Area>.Tests として置く。最初の配置変更では assembly 名・namespace を変更せず、意味変更を含む PR と分ける。
 
-**注意:** TwoD と Graphics.Library の Offline 参照は ReferenceOutputAssembly="false" であり、実行時コンパイラ依存ではない。ここは分離済みである。問題は repository 相対の targets、全ターゲットのパッケージ埋め込み、ツール取得を含むビルド・配布経路の明示性にある。[TwoD.csproj](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/Lumyte.Graphics.TwoD.csproj:8)、[Offline.targets](E:/Lumyte/src/graphics/Lumyte.Graphics.Shader.Offline/Lumyte.Graphics.Shader.Offline.targets:23)
+**注意:** TwoD と Graphics.Library の Offline 参照は ReferenceOutputAssembly="false" であり、実行時コンパイラ依存ではない。ここは分離済みである。問題は repository 相対の targets、全ターゲットのパッケージ埋め込み、ツール取得を含むビルド・配布経路の明示性にある。TwoD.csproj（削除前: `src/graphics/Lumyte.Graphics.TwoD/Lumyte.Graphics.TwoD.csproj:8`）、Offline.targets（削除前: `src/graphics/Lumyte.Graphics.Shader.Offline/Lumyte.Graphics.Shader.Offline.targets:23`）
 
 ## 3. No Graphics API と WebGPU の設計方針
 
@@ -91,7 +93,7 @@ No Graphics API の主旨は、メモリ・所有権・小さいハンドル・s
 | graphics state | GpuDepthStencilState は公開されるが recorder に設定経路がない。CullMode 等は pipeline に入る | 全backendで成立するstate、attachment、sample、format/usageの契約を定義。動的stateとPSOの違いは内部で吸収し、共通範囲外は共通validationで拒否する |
 | barrier / graph | stage barrier、lifetime、aliasing、retirement が分離されている | 維持。API共通化のために詳細な万能 resource state enum を追加しない |
 
-根拠: [既存DESIGN](E:/Lumyte/src/graphics/Lumyte.Graphics/DESIGN.md:1)、[GpuBackend](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuBackend.cs:18)、[binding ABI](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuShaderBindingConvention.cs:11)、[address model](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuResourceModel.cs:19)、[pipeline description](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuPipelineModel.cs:22)。DESIGN の初期目標と実装済みの契約を更新し、提案・実装済み・未対応を区別する。
+根拠: 既存DESIGN（削除前: `src/graphics/Lumyte.Graphics/DESIGN.md:1`）、GpuBackend（削除前: `src/graphics/Lumyte.Graphics/GpuBackend.cs:18`）、binding ABI（削除前: `src/graphics/Lumyte.Graphics/GpuShaderBindingConvention.cs:11`）、address model（削除前: `src/graphics/Lumyte.Graphics/GpuResourceModel.cs:19`）、pipeline description（削除前: `src/graphics/Lumyte.Graphics/GpuPipelineModel.cs:22`）。DESIGN の初期目標と実装済みの契約を更新し、提案・実装済み・未対応を区別する。
 
 推奨する依存方向（矢印は「参照する」）:
 
@@ -157,7 +159,7 @@ No Graphics API由来のallocation/resource/viewの分離や、小さいhandle�
 | Platform | 3/5 | 小さいIPlatform/IWindow、client/framebufferの区別 | 実用的なGPU表示にはnative surface操作が必要。presentation adapterの入口がほしい |
 | DevTools（現行の監視・domain操作） | 4/5 | 型付きquery/command/event、登録解除をIDisposableで表現 | 登録scopeと最短例に加え、session・schema・ツリー/画像選択・安全な編集・状態同期をC# ClientとRuntimeで提供。リモートEditor用途は未実装として[別途評価](#devtools-design) |
 
-根拠となる良い使用例: [Input](E:/Lumyte/Lumyte.Interaction.Tests/ActionRuntimeTests.cs:14)、[StateMachine](E:/Lumyte/Lumyte.StateMachine.Tests/StateMachineTests.cs:13)、[Animation](E:/Lumyte/Lumyte.Animation.Tests/AnimationPlayerTests.cs:13)、[2D](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD.Tests/BackendConformanceTests.cs:20)、[DevTools](E:/Lumyte/Lumyte.DevTools.Host/DemoCounterDomain.cs:21)。
+根拠となる良い使用例: [Input](E:/Lumyte/Lumyte.Interaction.Tests/ActionRuntimeTests.cs:14)、[StateMachine](E:/Lumyte/Lumyte.StateMachine.Tests/StateMachineTests.cs:13)、[Animation](E:/Lumyte/Lumyte.Animation.Tests/AnimationPlayerTests.cs:13)、2D（削除前: `src/graphics/Lumyte.Graphics.TwoD.Tests/BackendConformanceTests.cs:20`）、[DevTools](E:/Lumyte/Lumyte.DevTools.Host/DemoCounterDomain.cs:21)。
 
 ### 4.3. APIの改善項目
 
@@ -165,7 +167,7 @@ No Graphics API由来のallocation/resource/viewの分離や、小さいhandle�
 
 #### U01 / 最優先: 非同期と破棄の意味をAPI名・型に揃える
 
-GpuRenderGraphPlan.ExecuteAsyncはGpuRenderGraphExecutionをその場で返し、Task/ValueTaskでもawaitableでもない。CompletionもGpuSubmissionTokenで、IsCompleteと同期Waitを持つ。さらにframes-in-flight上限では、内部Submitが古いsubmissionを同期Waitする。利用者には「GPUへ送信する」「CPUを止めずに空きを待つ」「GPU完了を待つ」の区別が必要になる。[ExecuteAsync](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPlan.cs:79)、[token](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuRetirementQueue.cs:4)、[上限時のWait](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuRetirementQueue.cs:102)
+GpuRenderGraphPlan.ExecuteAsyncはGpuRenderGraphExecutionをその場で返し、Task/ValueTaskでもawaitableでもない。CompletionもGpuSubmissionTokenで、IsCompleteと同期Waitを持つ。さらにframes-in-flight上限では、内部Submitが古いsubmissionを同期Waitする。利用者には「GPUへ送信する」「CPUを止めずに空きを待つ」「GPU完了を待つ」の区別が必要になる。ExecuteAsync（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPlan.cs:79`）、token（削除前: `src/graphics/Lumyte.Graphics/GpuRetirementQueue.cs:4`）、上限時のWait（削除前: `src/graphics/Lumyte.Graphics/GpuRetirementQueue.cs:102`）
 
 推奨する名前と契約:
 
@@ -178,7 +180,7 @@ GpuRenderGraphPlan.ExecuteAsyncはGpuRenderGraphExecutionをその場で返し�
 
 completion待機のキャンセルは、送信済みGPU処理の取り消しや使用中資源の解放を意味しない。この区別も契約に含める。
 
-GpuRenderGraphExecution.Disposeは非同期資源をretireできるが、PreparedDisplayList.Disposeはbufferを即時破棄する。したがって両方をusingで囲んでも、非同期submissionの完了前にscopeを抜けてよいとは限らない。[Execution.Dispose](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphExecution.cs:63)、[PreparedDisplayList.Dispose](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/PreparedDisplayList.cs:62)
+GpuRenderGraphExecution.Disposeは非同期資源をretireできるが、PreparedDisplayList.Disposeはbufferを即時破棄する。したがって両方をusingで囲んでも、非同期submissionの完了前にscopeを抜けてよいとは限らない。Execution.Dispose（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphExecution.cs:63`）、PreparedDisplayList.Dispose（削除前: `src/graphics/Lumyte.Graphics.TwoD/PreparedDisplayList.cs:62`）
 
 標準経路は、frame/executionが使用中のGPU世代をleaseし、完了後に解放する設計にする。単にmanaged objectを参照保持するだけでは、明示Disposeや同じbufferへの書換えを防げない。借用する低レベル経路も残し、ownerと完了tokenを明示する。
 
@@ -186,7 +188,7 @@ GpuRenderGraphExecution.Disposeは非同期資源をretireできるが、Prepare
 
 #### U02 / 最優先: 共通APIの契約をbackend非依存にする
 
-Graphics.Library.AddDrawはworld/view-projection行列を128-byte root dataに書き、SetRootDataを必ず呼ぶ。WebGPU実装のSetRootDataはNotSupportedExceptionになる。backend非依存に見える上位機能が、raster対応backendでも成立しない。[AddDraw.Record](E:/Lumyte/src/graphics/Lumyte.Graphics.Library/DrawRenderGraphExtensions.cs:129)、[WebGPU](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:340)
+Graphics.Library.AddDrawはworld/view-projection行列を128-byte root dataに書き、SetRootDataを必ず呼ぶ。WebGPU実装のSetRootDataはNotSupportedExceptionになる。backend非依存に見える上位機能が、raster対応backendでも成立しない。AddDraw.Record（削除前: `src/graphics/Lumyte.Graphics.Library/DrawRenderGraphExtensions.cs:129`）、WebGPU（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:340`）
 
 **改善方針: 共通APIが受け付ける機能・値の範囲を全対応backendで保証し、利用者はbackend別の分岐を書かずに同じコードを実行できるようにする。** 共通の上限、型、shader ABI、validationを先に定め、実装差はbackend内部で吸収する。共通範囲を超える機能は明示的に選ぶ拡張として扱う。共通経路の完了条件は、対応判定の追加ではなく実際の動作保証とする。以下は改善方針であり、現在の実装済み契約ではない。
 
@@ -198,9 +200,9 @@ Graphics.Library.AddDrawはworld/view-projection行列を128-byte root dataに�
 | shaderの入力・state | 同じ論理宣言と意味を維持し、shader出力、native binding、動的stateとpipeline stateの違いはbackend/toolchain内部で変換する |
 | capabilities/実device limits | backendの初期化・内部最適化・診断・明示的な拡張に使用する。標準描画の呼出し側に問い合わせや分岐を要求しない |
 
-root dataの64-byte制限はAPI側の共通契約である。E2実装時の利用者指定により、全backendで直接渡し、bufferへのフォールバックは禁止する。DX12はroot constants、Vulkanはpush constants、WebGPUはImmediatesを使用する。WebGPUのnative runtimeをWebGPUSharp/Dawnへ更新し、必要な64-byte immediate dataを利用できない環境は初期化時に拒否する。実装済みの契約と再生成手順は[E2 shader ABI](2026-09-05-phase-2-shader-abi.md)、実行・所有権は[E2 ADR](2026-09-05-phase-2-execution-adr.md)を参照。
+root dataの64-byte制限はAPI側の共通契約である。E2実装時の利用者指定により、全backendで直接渡し、bufferへのフォールバックは禁止する。DX12はroot constants、Vulkanはpush constants、WebGPUはImmediatesを使用する。WebGPUのnative runtimeをWebGPUSharp/Dawnへ更新し、必要な64-byte immediate dataを利用できない環境は初期化時に拒否する。実装済みの契約と再生成手順はE2 shader ABI（削除前: `2026-09-05-phase-2-shader-abi.md`）、実行・所有権はE2 ADR（削除前: `2026-09-05-phase-2-execution-adr.md`）を参照。
 
-既存AddDrawのWorldとViewProjectionはCPU側でWorld × ViewProjectionへ合成し、64-byte root dataとして渡す。より大きい入力や個別の行列を必要とするshaderは通常のresource-table bufferを使い、root dataのelement index/byte offsetから参照位置を算出する。[現在の行列入力](E:/Lumyte/src/graphics/Lumyte.Graphics.Library/DrawRenderGraphExtensions.cs:146)
+既存AddDrawのWorldとViewProjectionはCPU側でWorld × ViewProjectionへ合成し、64-byte root dataとして渡す。より大きい入力や個別の行列を必要とするshaderは通常のresource-table bufferを使い、root dataのelement index/byte offsetから参照位置を算出する。現在の行列入力（削除前: `src/graphics/Lumyte.Graphics.Library/DrawRenderGraphExtensions.cs:146`）
 
 実装工程と完了条件:
 
@@ -217,13 +219,13 @@ GPUアドレス、明示placement、aliasingなど、全backendで同じ意味�
 
 #### U03 / 高: 同じresourceの情報を二重に宣言させない
 
-DrawMaterialはGpuResourceTableとDrawSampledTexture[]/DrawShaderBuffer[]を別々に受け取る。tableはshaderのdescriptor、配列はgraphの依存計画を表すが、利用者は同じ資源の対応を2箇所で維持する必要がある。[DrawMaterial](E:/Lumyte/src/graphics/Lumyte.Graphics.Library/DrawMaterial.cs:8)
+DrawMaterialはGpuResourceTableとDrawSampledTexture[]/DrawShaderBuffer[]を別々に受け取る。tableはshaderのdescriptor、配列はgraphの依存計画を表すが、利用者は同じ資源の対応を2箇所で維持する必要がある。DrawMaterial（削除前: `src/graphics/Lumyte.Graphics.Library/DrawMaterial.cs:8`）
 
-tableは後から変更できる一方、materialの依存配列は構築時のcopyなので、slotだけ差し替えると対応がずれる可能性がある。現在のshader binding解決は明示descriptorをそのまま使うため、同じ長さ・slot番号であることだけでは意味の一致を保証できない。[bindings.Resolve](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphShaderBindings.cs:50)
+tableは後から変更できる一方、materialの依存配列は構築時のcopyなので、slotだけ差し替えると対応がずれる可能性がある。現在のshader binding解決は明示descriptorをそのまま使うため、同じ長さ・slot番号であることだけでは意味の一致を保証できない。bindings.Resolve（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphShaderBindings.cs:50`）
 
 上位APIでは「slot、view/range、stage、access」を1件のbindingとして渡し、native tableとgraph依存を生成する。Materialはimmutableなbinding集合か、revision付きの明確な更新APIを持つ。低レベルGpuResourceTableの直接編集は残す。
 
-targetも、TwoD.RenderTargetはtexture handle＋description、Library.DrawRenderTargetはview＋description、graph内ではGpuRenderGraphTextureとなる。用途差はあるが、標準のtarget adapterを用意して同じdescriptionを繰り返し渡さずに済むようにする。[TwoD target](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/RenderTarget.cs:3)、[Library target](E:/Lumyte/src/graphics/Lumyte.Graphics.Library/DrawRenderTarget.cs:3)
+targetも、TwoD.RenderTargetはtexture handle＋description、Library.DrawRenderTargetはview＋description、graph内ではGpuRenderGraphTextureとなる。用途差はあるが、標準のtarget adapterを用意して同じdescriptionを繰り返し渡さずに済むようにする。TwoD target（削除前: `src/graphics/Lumyte.Graphics.TwoD/RenderTarget.cs:3`）、Library target（削除前: `src/graphics/Lumyte.Graphics.Library/DrawRenderTarget.cs:3`）
 
 <a id="u04"></a>
 
@@ -242,7 +244,7 @@ graph.AddTwoD("ui", renderer, prepared, target);
 using GpuRenderGraphExecution execution = graph.Compile().Execute(backend);
 ~~~
 
-FillRectangle自体は十分読みやすい。負担は周囲のencoder/display list/prepared/graph/executionにある。継続描画ではcache、arena、retirement queueも必要になる。既存Vulkanサンプルの起動にもunsafeなsurface/extension操作が現れる。[Renderer](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/Renderer.cs:58)、[サンプル初期化](E:/Lumyte/samples/graphics/Lumyte.Graphics.Vulkan.Samples/Program.cs:24)
+FillRectangle自体は十分読みやすい。負担は周囲のencoder/display list/prepared/graph/executionにある。継続描画ではcache、arena、retirement queueも必要になる。既存Vulkanサンプルの起動にもunsafeなsurface/extension操作が現れる。Renderer（削除前: `src/graphics/Lumyte.Graphics.TwoD/Renderer.cs:58`）、サンプル初期化（削除前: `samples/graphics/Lumyte.Graphics.Vulkan.Samples/Program.cs:24`）
 
 上位にRenderContext/Frame相当を設け、device・plan cache・allocator方針・retirement・presentation adapterを一度だけ構成する。その上で通常描画、prepared drawingの再利用、独自graph passの追加を選べる入口にする。既存の低レベルAPIは引き続き独立利用可能にする。
 
@@ -272,7 +274,7 @@ default(ResourceHandle<T>)にはstoreがなく、TryGetValueでもNullReferenceE
 
 #### U06 / 高: CommandEncoderの状態・clip・layerを一貫した設計に作り直す
 
-CommandEncoderにはSave/Restore、PushClip/PopClip、PushLayer/PopLayerの3系統がある。Saveが保存するのはStateで、activeClips/activeLayersは別管理。Clip(Rect)は変換後boundsでstate clipを更新し、PushClip(Rect)は変換された矩形の正確なclipをstackに積む。名前が近くても効果・復元方法が違う。[Save/Restore](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:60)、[PushClip](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:90)、[Clip](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:133)
+CommandEncoderにはSave/Restore、PushClip/PopClip、PushLayer/PopLayerの3系統がある。Saveが保存するのはStateで、activeClips/activeLayersは別管理。Clip(Rect)は変換後boundsでstate clipを更新し、PushClip(Rect)は変換された矩形の正確なclipをstackに積む。名前が近くても効果・復元方法が違う。Save/Restore（削除前: `src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:60`）、PushClip（削除前: `src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:90`）、Clip（削除前: `src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:133`）
 
 「Save → PushClip → Restore」でclipが解除されるとは限らず、Finishまで残れば未解放clipとして例外になる。**改善はCommandEncoderの公開APIと状態モデルの再設計として実施する。** コメントの補足や既存の3系統をそのまま包むscopeの追加だけでは完了としない。変換・clip・layerの適用範囲と復元順序が、同じ入れ子規則で決まる設計に変更する。以下は未実装の設計方針である。
 
@@ -298,19 +300,19 @@ CommandEncoderにはSave/Restore、PushClip/PopClip、PushLayer/PopLayerの3系�
 
 完了条件は、新APIで通常終了・例外終了のどちらでも変換・clip・layerが外へ漏れず、同じサンプルが3backendで期待どおりに描画されること。コメントやサンプルの追加だけでは、この改善を完了扱いにしない。
 
-またAddTwoD(SceneSnapshot, ...)は登録時にsnapshot.Updateを実行する。snapshotはimmutableな撮影結果ではなく更新可能なGPUデータであり、Addという名前の操作がuploadを伴い得る。[AddTwoD](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/RenderGraphExtensions.cs:7)。自動更新を標準経路として隠すなら明記し、明示Updateを使う経路とは重複させない。
+またAddTwoD(SceneSnapshot, ...)は登録時にsnapshot.Updateを実行する。snapshotはimmutableな撮影結果ではなく更新可能なGPUデータであり、Addという名前の操作がuploadを伴い得る。AddTwoD（削除前: `src/graphics/Lumyte.Graphics.TwoD/RenderGraphExtensions.cs:7`）。自動更新を標準経路として隠すなら明記し、明示Updateを使う経路とは重複させない。
 
 <a id="u07"></a>
 
 #### U07 / 中: Textの通常利用と詳細制御を分ける
 
-encoder.DrawText(textRenderer, font, text, baseline, fontSize, brush, options)は便利だが、encoderとtextRendererが同じRendererに属することを利用者が揃える必要がある。TextRendererにも同等のDrawTextがあり、通常の呼出し方が2つある。[拡張method](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/TextDrawingExtensions.cs:10)
+encoder.DrawText(textRenderer, font, text, baseline, fontSize, brush, options)は便利だが、encoderとtextRendererが同じRendererに属することを利用者が揃える必要がある。TextRendererにも同等のDrawTextがあり、通常の呼出し方が2つある。拡張method（削除前: `src/graphics/Lumyte.Graphics.Text/TextDrawingExtensions.cs:10`）
 
-string overloadは毎回Shapeし、FontFace.MeasureもShapeする。毎フレーム同じ文字をMeasure→Drawする利用では同じ処理を繰り返す。ShapedTextを再利用する経路はすでにあるので、これを使うUI向けサンプルを優先する。[DrawText](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/TextRenderer.cs:56)、[Measure](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/FontFace.cs:250)
+string overloadは毎回Shapeし、FontFace.MeasureもShapeする。毎フレーム同じ文字をMeasure→Drawする利用では同じ処理を繰り返す。ShapedTextを再利用する経路はすでにあるので、これを使うUI向けサンプルを優先する。DrawText（削除前: `src/graphics/Lumyte.Graphics.Text/TextRenderer.cs:56`）、Measure（削除前: `src/graphics/Lumyte.Graphics.Text/FontFace.cs:250`）
 
 ShapedText.Advanceはfont units、DrawTextのbaseline/fontSizeはlogical pixels、Measureはpixel換算したadvanceとascender-descenderを返す。単位はコメントされているが、Vector2だけではadvance、ink bounds、line heightを区別しにくい。TextMetricsのような名前付き結果、shaped runからのMeasure、共通TextStyleを検討する。
 
-Shape(string)はrun単位でsegment propertiesを推定し、言語・方向・OpenType feature等を渡す公開optionsはない。折返し・配置・fallbackを含むTextLayoutは別の上位責務として追加すると、低レベルshapingの用途を保てる。現在のMeasureのコメントもmulti-line layoutを含まないと明記しているため、現APIを段落layoutとして紹介しない。[Shape](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/FontFace.cs:191)、[ShapedText](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/ShapedText.cs:5)
+Shape(string)はrun単位でsegment propertiesを推定し、言語・方向・OpenType feature等を渡す公開optionsはない。折返し・配置・fallbackを含むTextLayoutは別の上位責務として追加すると、低レベルshapingの用途を保てる。現在のMeasureのコメントもmulti-line layoutを含まないと明記しているため、現APIを段落layoutとして紹介しない。Shape（削除前: `src/graphics/Lumyte.Graphics.Text/FontFace.cs:191`）、ShapedText（削除前: `src/graphics/Lumyte.Graphics.Text/ShapedText.cs:5`）
 
 <a id="u08"></a>
 
@@ -339,13 +341,13 @@ identityを一律に変えるより、Name/Idが診断名なのかキーなの�
 
 #### U09 / 中: RenderGraphの意味と診断を公開APIに載せる
 
-Read/Write/ReadWriteは簡潔だが、Writeが「以前の内容を不要にする全上書き」であることがmethodのXMLコメントから分からない。部分更新でWriteを使うと、以前のproducerのcullingに影響する。Load attachmentにはReadWriteを使う、といった具体例が必要。[PassBuilder](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPassBuilder.cs:45)
+Read/Write/ReadWriteは簡潔だが、Writeが「以前の内容を不要にする全上書き」であることがmethodのXMLコメントから分からない。部分更新でWriteを使うと、以前のproducerのcullingに影響する。Load attachmentにはReadWriteを使う、といった具体例が必要。PassBuilder（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPassBuilder.cs:45`）
 
-Record(queue)はtransientなしのgraphで使えるが、同じcallbackがGetTextureView/GetBufferViewを使うとbackend不在で例外になる。つまり「import済みresourceだけなら同じpassをRecordできる」とは限らない。Recordのcontext要件を明記するか、backend/view resolverを渡せる記録経路を設ける。[Record](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPlan.cs:50)、[view解決](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPassContextView.cs:32)
+Record(queue)はtransientなしのgraphで使えるが、同じcallbackがGetTextureView/GetBufferViewを使うとbackend不在で例外になる。つまり「import済みresourceだけなら同じpassをRecordできる」とは限らない。Recordのcontext要件を明記するか、backend/view resolverを渡せる記録経路を設ける。Record（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPlan.cs:50`）、view解決（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPassContextView.cs:32`）
 
 GetTextureがexecutionではexport済み資源の取得、pass contextでは宣言した資源の解決を意味する点も、GetExportedTextureなどの名前で説明できる。static callback＋明示stateは性能・寿命の利点があるため維持し、基本利用はAddClear/AddTwoD等の上位extensionで短くする。
 
-エラーはpass名、resource名、期待access、実際の状態を含める。例えば現在の「access listに宣言した資源のみresolve可能」という例外では、何をどのpassに追加するかを再調査する必要がある。[RequireResource](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPassContextView.cs:98)
+エラーはpass名、resource名、期待access、実際の状態を含める。例えば現在の「access listに宣言した資源のみresolve可能」という例外では、何をどのpassに追加するかを再調査する必要がある。RequireResource（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPassContextView.cs:98`）
 
 ## 5. 実装・性能の優先度付き所見
 
@@ -367,65 +369,65 @@ SceneSnapshot はノードごとに batch を生成し、RecordDraw は batch �
 
 ### R03 / P1 / 静的確認: 記録中断と部分 submission の後始末が不十分
 
-GpuCommandBuffer に Dispose/Abort がなく、記録 callback が例外を投げた場合に native encoder/allocator/descriptor を回収する共通契約がない。DirectX12 は入力配列を1件ずつ検証しながら ExecuteCommandLists し、最後に signal.Track を呼ぶ。後続要素が不正なら、先行 command は実行済みでも fence の追跡に入らず例外終了し得る。[command契約](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuCommands.cs:72)、[DirectX12 Submit](E:/Lumyte/src/graphics/Lumyte.Graphics.DirectX12/DirectX12Commands.cs:34)
+GpuCommandBuffer に Dispose/Abort がなく、記録 callback が例外を投げた場合に native encoder/allocator/descriptor を回収する共通契約がない。DirectX12 は入力配列を1件ずつ検証しながら ExecuteCommandLists し、最後に signal.Track を呼ぶ。後続要素が不正なら、先行 command は実行済みでも fence の追跡に入らず例外終了し得る。command契約（削除前: `src/graphics/Lumyte.Graphics/GpuCommands.cs:72`）、DirectX12 Submit（削除前: `src/graphics/Lumyte.Graphics.DirectX12/DirectX12Commands.cs:34`）
 
 対策は Recording/Finished/Submitted/Aborted の状態・所有権を定義し、全要素の所属・状態を検証してから送信すること。記録失敗と送信後失敗を区別し、送信済み資源を未送信扱いで解放しない。device lost の終了経路もここに接続する。受入試験は「callback が途中で失敗」「同じ buffer の二重提出」「配列の2件目が別device/既提出」の各1挙動を独立して検証する。
 
 ### R04 / P1 / 静的確認: device-local ID は別 device の所有権検証にならない
 
-WebGpuDevice は各 instance で nextTextureId/nextResourceId を1から発行する。操作時は辞書に同じ数値があるかを確認しているため、2台の device で同じ順に作ったハンドルを取り違えると、誤った device 上の別資源を操作し得る。エラーメッセージの「another device」はこのケースを検出できない。[ID発行](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:34)、[CreateTexture](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:97)、[table検証](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:282)
+WebGpuDevice は各 instance で nextTextureId/nextResourceId を1から発行する。操作時は辞書に同じ数値があるかを確認しているため、2台の device で同じ順に作ったハンドルを取り違えると、誤った device 上の別資源を操作し得る。エラーメッセージの「another device」はこのケースを検出できない。ID発行（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:34`）、CreateTexture（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:97`）、table検証（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:282`）
 
 公開 handle のビット幅をむやみに増やす前に、device namespace を含む opaque ID、プロセス内一意の発行、検証レイヤー等を比較する。slot 再利用を導入するなら generation も必要。2つの device で同値の local ID を作る回帰試験を用意し、Vulkan/DirectX12 の同種の辞書も点検する。
 
 ### R05 / P1 / 静的確認: Text のキャッシュと atlas に長時間利用の方針がない
 
-TextRenderer の distanceFields/polygons/colorBitmaps は追加され続け、クリアは Dispose 時のみ。font、glyph、サイズ、DistanceRange 等が key に含まれる。固定サイズの atlas に空きがなくなると例外になる。Atlas 自体には Release/Collect があるが、TextRenderer の自動 eviction には接続されていない。[cache](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/TextRenderer.cs:21)、[追加](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/TextRenderer.cs:898)、[満杯時](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/DistanceFieldAtlas.cs:163)
+TextRenderer の distanceFields/polygons/colorBitmaps は追加され続け、クリアは Dispose 時のみ。font、glyph、サイズ、DistanceRange 等が key に含まれる。固定サイズの atlas に空きがなくなると例外になる。Atlas 自体には Release/Collect があるが、TextRenderer の自動 eviction には接続されていない。cache（削除前: `src/graphics/Lumyte.Graphics.Text/TextRenderer.cs:21`）、追加（削除前: `src/graphics/Lumyte.Graphics.Text/TextRenderer.cs:898`）、満杯時（削除前: `src/graphics/Lumyte.Graphics.TwoD/DistanceFieldAtlas.cs:163`）
 
 CPU bytes、GPU bytes、page 数の予算を定め、LRUとfont単位の無効化、描画中 entry の pin、fence後の退避、atlas page 増設上限、満杯時の描画 fallback を設計する。FontFace 内の outline/path/bitmap キャッシュも同じ予算の可視化対象。日本語・絵文字・複数サイズを継続的に切り替える検証を追加する。
 
 ### R06 / P2 / 実装差分: 共通 API のbackend非依存性が保証されていない
 
-RasterPipeline/ComputePipeline フラグだけでは、attachment数、MSAA、root data、binding個数、format usageを判定できない。WebGPU の SetRootData と SetComputeRootData は例外。Vulkan/WebGPU の raster 作成は1 color/1 sampleに制限される。一方、共通descriptionはより広い値を受け取る。[capabilities](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuBackend.cs:4)、[WebGPU root data](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:340)、[Vulkan raster](E:/Lumyte/src/graphics/Lumyte.Graphics.Vulkan/VulkanDevice.cs:552)
+RasterPipeline/ComputePipeline フラグだけでは、attachment数、MSAA、root data、binding個数、format usageを判定できない。WebGPU の SetRootData と SetComputeRootData は例外。Vulkan/WebGPU の raster 作成は1 color/1 sampleに制限される。一方、共通descriptionはより広い値を受け取る。capabilities（削除前: `src/graphics/Lumyte.Graphics/GpuBackend.cs:4`）、WebGPU root data（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:340`）、[Vulkan raster](E:/Lumyte/src/graphics/Lumyte.Graphics.Vulkan/VulkanDevice.cs:552)
 
 共通APIで受け付ける操作と値を全対応backendで保証する。最大64-byteのroot data、rootから参照する通常buffer、AddDraw移行、shader ABI更新、共通validationを含む実装・受入条件は [U02](#u02) に集約する。ここで挙げたattachment、MSAA、format/usage、binding個数も同じ共通契約の棚卸し対象とする。
 
 ### R07 / P2 / 実装差分: WebGPU Native と Browser の完成度を区別する
 
-現 backend は Silk.NET native WebGPU/wgpu と DevicePoll を利用する。Create は adapter/device callback が呼出し直後に完了したかを確認する。Browser プロジェクトは native backend の参照のみで、JS interop、canvas、非同期初期化の実装はない。[WebGpuDevice.Create](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:57)、[Browser.csproj](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU.Browser/Lumyte.Graphics.WebGPU.Browser.csproj:1)
+現 backend は Silk.NET native WebGPU/wgpu と DevicePoll を利用する。Create は adapter/device callback が呼出し直後に完了したかを確認する。Browser プロジェクトは native backend の参照のみで、JS interop、canvas、非同期初期化の実装はない。WebGpuDevice.Create（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:57`）、[Browser.csproj](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU.Browser/Lumyte.Graphics.WebGPU.Browser.csproj:1)
 
 Browser が必要な場合は、非同期 factory、queue completion、readback、device lost、canvas resize/presentation、WASM publish を独立した工程にする。WebGPU のブラウザ契約では adapter/device の取得は Promise であり、adapter の features/limits を問い合わせる。[GPU仕様](https://gpuweb.github.io/types/interfaces/GPU.html)、[GPUAdapter仕様](https://gpuweb.github.io/types/interfaces/GPUAdapter.html)
 
-64 logical slot は現在の変換器の上限であり、すべてのdeviceが各種類64個を同時利用できる保証ではない。R06で種類・stageごとの共通上限を定め、shader buildと共通validationで検証する。deviceが共通の最低要件を満たすかはbackend初期化時に確認する。Browser完成時も同じ共通契約を適用する。また、WGSL の group/binding 書換えは正規表現によるため、対応入力を Slang の出力に限定して明示するか、build時のreflection/変換に移す。[binding変換](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:104)
+64 logical slot は現在の変換器の上限であり、すべてのdeviceが各種類64個を同時利用できる保証ではない。R06で種類・stageごとの共通上限を定め、shader buildと共通validationで検証する。deviceが共通の最低要件を満たすかはbackend初期化時に確認する。Browser完成時も同じ共通契約を適用する。また、WGSL の group/binding 書換えは正規表現によるため、対応入力を Slang の出力に限定して明示するか、build時のreflection/変換に移す。binding変換（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuCommands.cs:104`）
 
 ### R08 / P2 / 静的確認: descriptor 管理が draw 数と table instance 数に比例する
 
-DirectX12 は SetResourceTable ごとに shader-visible heap を作成する。Vulkan は set と descriptor 更新を繰り返す。WebGPU には cache があるが key は table オブジェクトとlayoutで、同じ内容でも別instanceは別entry。cache に容量制限はなく、資源/view/pipeline破棄時は全件無効化する。新しい table を毎フレーム作り、資源を長く保持する利用では cache が増え続ける。[DX12 heap生成](E:/Lumyte/src/graphics/Lumyte.Graphics.DirectX12/DirectX12Commands.cs:444)、[WebGPU cache](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:247)、[全件無効化](E:/Lumyte/src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:643)
+DirectX12 は SetResourceTable ごとに shader-visible heap を作成する。Vulkan は set と descriptor 更新を繰り返す。WebGPU には cache があるが key は table オブジェクトとlayoutで、同じ内容でも別instanceは別entry。cache に容量制限はなく、資源/view/pipeline破棄時は全件無効化する。新しい table を毎フレーム作り、資源を長く保持する利用では cache が増え続ける。DX12 heap生成（削除前: `src/graphics/Lumyte.Graphics.DirectX12/DirectX12Commands.cs:444`）、WebGPU cache（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:247`）、全件無効化（削除前: `src/graphics/Lumyte.Graphics.WebGPU/WebGpuDevice.cs:643`）
 
 Native は device所有heap/poolのpageとfence retirement、descriptorの世代/dirty範囲を管理する。WebGPU は table の再利用または内容を表す安定key、上限付きcache、依存resource単位の無効化を検討する。ハッシュだけで同一性を判断しない。cache hit/miss、生成回数、保持bytesを可視化する。
 
 ### R09 / P2 / 静的確認: 2D/Text の準備処理で CPU-GPU を同期している
 
-Renderer の path compute preparation、DistanceFieldRasterizer の glyph生成、ColorBitmapTexture の upload は submit後に Wait する。新しいpath/glyphが現れるフレームでCPUが止まり得る。DirectX12のWaitはThread.Yieldによるpoll loop。[path準備](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/Renderer.cs:622)、[glyph描画](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/DistanceFieldRasterizer.cs:276)、[bitmap upload](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/ColorBitmapTexture.cs:133)、[DX12 wait](E:/Lumyte/src/graphics/Lumyte.Graphics.DirectX12/DirectX12Commands.cs:65)
+Renderer の path compute preparation、DistanceFieldRasterizer の glyph生成、ColorBitmapTexture の upload は submit後に Wait する。新しいpath/glyphが現れるフレームでCPUが止まり得る。DirectX12のWaitはThread.Yieldによるpoll loop。path準備（削除前: `src/graphics/Lumyte.Graphics.TwoD/Renderer.cs:622`）、glyph描画（削除前: `src/graphics/Lumyte.Graphics.TwoD/DistanceFieldRasterizer.cs:276`）、bitmap upload（削除前: `src/graphics/Lumyte.Graphics.Text/ColorBitmapTexture.cs:133`）、DX12 wait（削除前: `src/graphics/Lumyte.Graphics.DirectX12/DirectX12Commands.cs:65`）
 
 upload→compute preparation→draw を同じ graph/queue の依存として記録し、staging/view を token 完了まで保持する。[U01](#u01) の送信・待機・解放の契約へ移行し、既存retirement queueを土台にする。同期readback APIは明示的な用途として残し、通常描画と分ける。Nativeの必要なCPU待機はイベント通知型へ。待機回数と待機時間を計測する。
 
 ### R10 / P2 / 静的確認: Scene の dirty 更新は GPU upload の一部に限られる
 
-Scene.Capture は全nodeの投影・sort・配列化を毎回実行する。SceneSnapshot.Update も List/Dictionary/HashSet を作り直し、nodeごとにbatchを作る。GPU uploadが0でもCPU処理・allocation・draw数は減らない。NodeStrideは256 bytes、16,384 slotで4 MiBのbuffer容量になる。[Capture](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/Scene.cs:81)、[Update](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/SceneSnapshot.cs:44)
+Scene.Capture は全nodeの投影・sort・配列化を毎回実行する。SceneSnapshot.Update も List/Dictionary/HashSet を作り直し、nodeごとにbatchを作る。GPU uploadが0でもCPU処理・allocation・draw数は減らない。NodeStrideは256 bytes、16,384 slotで4 MiBのbuffer容量になる。Capture（削除前: `src/graphics/Lumyte.Graphics.TwoD/Scene.cs:81`）、Update（削除前: `src/graphics/Lumyte.Graphics.TwoD/SceneSnapshot.cs:44`）
 
 内容dirty、可視性/clip dirty、順序dirtyを分け、変更がなければ Update を終了できるようにする。描画順を変更したときだけsortし、隣接する互換batchをまとめる。データstrideとbinding offset alignmentを同一視せず、インスタンス配列＋index方式を評価する。重なり順を壊す並べ替えはしない。
 
 ### R11 / P2 / 改善候補: arena の利用範囲と非同期所有権を揃える
 
-TwoD の OwnedBuffer/OwnedTexture は各資源で backend.AllocateMemory を直接呼ぶ。保持型Sceneの容量増加では旧bufferを即時Disposeする。Graphが export/import lease を持つ一方、これらの外部所有資源は利用者がGPU完了まで維持する契約に依存する。[OwnedBuffer](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/OwnedBuffer.cs:49)、[OwnedTexture](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/OwnedTexture.cs:26)、[Scene再確保](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/SceneSnapshot.cs:51)
+TwoD の OwnedBuffer/OwnedTexture は各資源で backend.AllocateMemory を直接呼ぶ。保持型Sceneの容量増加では旧bufferを即時Disposeする。Graphが export/import lease を持つ一方、これらの外部所有資源は利用者がGPU完了まで維持する契約に依存する。OwnedBuffer（削除前: `src/graphics/Lumyte.Graphics.TwoD/OwnedBuffer.cs:49`）、OwnedTexture（削除前: `src/graphics/Lumyte.Graphics.TwoD/OwnedTexture.cs:26`）、Scene再確保（削除前: `src/graphics/Lumyte.Graphics.TwoD/SceneSnapshot.cs:51`）
 
 allocator注入、upload ring、device-local persistent data、tokenに紐づくretirementを用意する。非同期描画中のUpdate/Disposeは、lease、frame別buffer、または明示的な利用制約のどれで保証するか決める。ここはクラッシュを再現した所見ではなく、非同期化を広げる前の必須設計条件である。
 
 ### R12 / P2 / 改善候補: 残る RenderGraph・shader・font の allocation
 
-Graphの構造cacheは既に有界で完全比較も行う。一方、Executeはnative memory requirementsを再照会し、physical memory plan、resource runtime、Dictionary/List、retirement用closureを作る。構造cacheとdevice依存plan cacheは別問題である。[Execute](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPlan.cs:109)、[memory plan](E:/Lumyte/src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphMemoryPlan.cs:43)
+Graphの構造cacheは既に有界で完全比較も行う。一方、Executeはnative memory requirementsを再照会し、physical memory plan、resource runtime、Dictionary/List、retirement用closureを作る。構造cacheとdevice依存plan cacheは別問題である。Execute（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphPlan.cs:109`）、memory plan（削除前: `src/graphics/Lumyte.Graphics/RenderGraph/GpuRenderGraphMemoryPlan.cs:43`）
 
-さらにShaderArtifact.Payload/AbiHashはgetterごとに配列をコピーし、WebGPU pipeline作成はPayloadを複数回取得する。FontFaceはfont全体をコピーしてpinするため、同じfontのvariation/faceを増やすとデータが重複する。[shaderコピー](E:/Lumyte/src/graphics/Lumyte.Graphics/GpuShaderPackage.cs:57)、[fontコピー](E:/Lumyte/src/graphics/Lumyte.Graphics.Text/FontFace.cs:57)
+さらにShaderArtifact.Payload/AbiHashはgetterごとに配列をコピーし、WebGPU pipeline作成はPayloadを複数回取得する。FontFaceはfont全体をコピーしてpinするため、同じfontのvariation/faceを増やすとデータが重複する。shaderコピー（削除前: `src/graphics/Lumyte.Graphics/GpuShaderPackage.cs:57`）、fontコピー（削除前: `src/graphics/Lumyte.Graphics.Text/FontFace.cs:57`）
 
 構造＋device世代＋descriptionに対するrequirements/physical plan cache、execution scratchの再利用、単一ownerに基づく読み取りAPI、共有FontData ownerを比較する。borrowed spanを採用する場合は寿命をAPIで保証する。shaderコピーは通常ロード時なので、draw・glyph missの問題より優先度を下げる。
 
@@ -443,7 +445,7 @@ Action別のtyped slot/index、依存解放のwork queue、lane別のqueueを計
 
 ### R15 / P2 / 設計改善: CommandEncoderの状態・clip・layerの規則を統一する
 
-CommandEncoderはSave/Restore、PushClip/PopClip、PushLayer/PopLayerを別管理し、Saveで戻る範囲にscoped clipとlayerが含まれない。またClip(Rect)は変換後の外接矩形、PushClip(Rect)は正確な変換後形状を扱う。これらは公開APIと状態モデルを再設計する対象とする。[状態・clip操作](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:60)、[Finish](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:294)
+CommandEncoderはSave/Restore、PushClip/PopClip、PushLayer/PopLayerを別管理し、Saveで戻る範囲にscoped clipとlayerが含まれない。またClip(Rect)は変換後の外接矩形、PushClip(Rect)は正確な変換後形状を扱う。これらは公開APIと状態モデルを再設計する対象とする。状態・clip操作（削除前: `src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:60`）、Finish（削除前: `src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs:294`）
 
 公開APIと内部状態モデルを作り直し、単一のscope規則、正確なclip、layerの合成境界、記録の終了契約を揃える。旧APIの移行・廃止を含む設計と検証条件は [U06](#u06) に集約する。コメントやwrapperの追加だけでは完了としない。
 
@@ -472,7 +474,7 @@ CommandEncoderはSave/Restore、PushClip/PopClip、PushLayer/PopLayerを別管�
 | DT07 / 高: snapshotとeventの連続性がない | browserはrefreshしてからsubscribeし、eventにrevision/sequenceがない。途中の更新欠落や旧hostのeventを識別する契約が不足する。[state](E:/Lumyte/Lumyte.DevTools.Server/ClientApp/src/state/useDevTools.ts:5) | snapshotと差分の境界を一体で発行し、gap・再接続時は再同期。R13のhost切替修正も同時に適用 |
 | DT08 / 高: protocolの実装差と役割が混在する | local/remoteのJSON sessionが別実装で、交渉・error・fragmentの扱いが異なる。ServerがAgent assemblyのwire契約を参照する。[local](E:/Lumyte/Lumyte.DevTools.Server/DevToolsJsonSession.cs:9)、[remote](E:/Lumyte/Lumyte.DevTools.Server/DevToolsRemoteJsonSession.cs:20)、[参照](E:/Lumyte/Lumyte.DevTools.Server/Lumyte.DevTools.Server.csproj:4) | 公開契約をMagicOnionへ統一し、既存Browser bridgeはEditor内部へ移す。共有Protocol、接続session、UI、ゲーム処理の責務を分離 |
 | DT09 / 高: 独自Collectorと標準テレメトリの意味が揃っていない | 全対象ActivityにAllDataAndRecordedを要求し、active Activityを参照保持する。Gaugeも非Histogram経路のCurrent += valueで集計する。属性をすべてstringへ変換する。[Collector](E:/Lumyte/Lumyte.DevTools.Host/DiagnosticsCollector.cs:25)、[集計](E:/Lumyte/Lumyte.DevTools.Host/DiagnosticsCollector.cs:91) | SDKによるsampling・型付き属性・instrument別集計を採用。ライブ表示の保持上限、active記録、exportの責務を分ける |
-| DT10 / 高: 階層と画像から同じ編集対象へ辿る契約がない | 現行wireはdomain/feature/bytes中心で、階層、frame、pickの型付き契約がない。TwoDのSceneNodeStateは描画状態を持つが、親子や編集ownerの情報は持たない。[wire契約](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgentContract.cs:1)、[SceneNodeState](E:/Lumyte/src/graphics/Lumyte.Graphics.TwoD/SceneNodeState.cs:5) | UI/Scene adapterがObjectRefと階層・描画要素の対応を提供。表示frameに対するpickとツリー選択を同じInspectorへ接続する |
+| DT10 / 高: 階層と画像から同じ編集対象へ辿る契約がない | 現行wireはdomain/feature/bytes中心で、階層、frame、pickの型付き契約がない。TwoDのSceneNodeStateは描画状態を持つが、親子や編集ownerの情報は持たない。[wire契約](E:/Lumyte/Lumyte.DevTools.Agent/DevToolsAgentContract.cs:1)、SceneNodeState（削除前: `src/graphics/Lumyte.Graphics.TwoD/SceneNodeState.cs:5`） | UI/Scene adapterがObjectRefと階層・描画要素の対応を提供。表示frameに対するpickとツリー選択を同じInspectorへ接続する |
 
 DT09のGaugeは同じ値7を再観測すると14へ加算され得るという静的所見。既存のGaugeテストは1回のsnapshot取得なので、この継続観測を検証していない。[既存テスト](E:/Lumyte/Lumyte.DevTools.Host.Tests/DiagnosticsCollectorTests.cs:27)。未完了Activity、source/instrumentのcatalogにも独立した上限が必要。今回これらを新しい実行試験で再現したとは扱わない。
 
@@ -752,7 +754,7 @@ Editor側ではツリー、画像、Inspectorの選択連動と内部bridgeの�
 
 E1の実装内容・寿命の契約・回帰試験は [E1実装記録](2026-09-05-phase-1-implementation.md) を参照。本書の初回レビュー結果とは区別する。
 
-E2の実装済み契約・移行手順・検証結果は[E2 shader ABI](2026-09-05-phase-2-shader-abi.md)、U01/U09の契約は[E2実行・寿命ADR](2026-09-05-phase-2-execution-adr.md)を参照。root dataは全backendで直接渡し、bufferへフォールバックしない。
+E2の実装済み契約・移行手順・検証結果はE2 shader ABI（削除前: `2026-09-05-phase-2-shader-abi.md`）、U01/U09の契約はE2実行・寿命ADR（削除前: `2026-09-05-phase-2-execution-adr.md`）を参照。root dataは全backendで直接渡し、bufferへフォールバックしない。
 
 工数は1人が実装・レビュー対応・テスト整備を行う場合の粗い人日。既存APIの互換性、対象GPU/OS/ブラウザの範囲が未確定なため見積りには幅を持たせる。日程の約束ではなく、各工程の完了時に見直す。
 
@@ -761,10 +763,10 @@ E2の実装済み契約・移行手順・検証結果は[E2 shader ABI](2026-09-
 | E0: 再現・基準線 | 2–3人日 | なし | R01の競合、17以上のtable bind、recording例外、2deviceのID、2host切替を個別に再現。テスト分類とCPU/GPU計測シナリオを記録 |
 | E1: 正しさと寿命 | 5–9人日 | E0 | R01/R03/R04/R13を修正。Vulkan pool容量対策を先行。callback失敗・誤使用でリーク/追跡外submissionなし。全体テスト成功 |
 | E2: backend非依存の共通API | 6–10人日 | E1 | U01/U02/U09の非同期・寿命・共通上限・state・graph契約をADR化し、64-byte root data、root参照のresource buffer、shader ABI、AddDrawを実装・移行。共通範囲外は共通validationで拒否。同じ標準描画・computeコードがbackend別の分岐なしで3backendで成功する |
-| E2a: CommandEncoder再設計（完了） | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす。実装記録は[E2a/E2b ADR](2026-09-06-phase-e2a-e2b-api-adr.md) |
-| E2b: 利用者向けAPIの統合（完了） | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる。実装記録は[E2a/E2b ADR](2026-09-06-phase-e2a-e2b-api-adr.md) |
+| E2a: CommandEncoder再設計（完了） | 3–5人日 | E2 | R15の単一scopeモデル、正確なclip、layer境界、記録の終了契約を実装。旧APIと利用箇所を移行し、通常・例外終了で状態が漏れず、3backendの描画結果が契約を満たす。実装記録はE2a/E2b ADR（削除前: `2026-09-06-phase-e2a-e2b-api-adr.md`） |
+| E2b: 利用者向けAPIの統合（完了） | 要見積り | E2、GPU所有権はE4 | U03/U04/U05/U09のbinding一元化、RenderContext/Frame・presentation adapter、resource lease/default handle、graphの記録・export入口を実装。標準consumerが公開APIだけで安全に描画・資源管理できる。実装記録はE2a/E2b ADR（削除前: `2026-09-06-phase-e2a-e2b-api-adr.md`） |
 | E3: 配置と依存の整理（完了） | 3–6人日 | E2 | src/tools/samples配置統一、RenderGraph抽出、shader containerとIR境界、DevTools.Protocol分離。runtimeにcompiler/server依存が入らないことを検証。実装記録は[フェーズ3 ADR](2026-09-06-phase-3-project-boundaries.md) |
-| E4: descriptorとGPU実行（完了） | 6–10人日 | E1/E2 | pool/heap page再利用、WebGPU有界cache、upload/compute/draw統合、U01の送信・非同期待機・lease/retirementを実装。1k/10k batchと複数frameで容量枯渇せず、生成・待機回数とGPU完了までの寿命を検証。実装記録は[E4 ADR](2026-09-06-phase-4-gpu-execution-adr.md) |
+| E4: descriptorとGPU実行（完了） | 6–10人日 | E1/E2 | pool/heap page再利用、WebGPU有界cache、upload/compute/draw統合、U01の送信・非同期待機・lease/retirementを実装。1k/10k batchと複数frameで容量枯渇せず、生成・待機回数とGPU完了までの寿命を検証。実装記録はE4 ADR（削除前: `2026-09-06-phase-4-gpu-execution-adr.md`） |
 | E5: 2D/Textの再利用とメモリ | 5–9人日 | E4のretirement契約、上位接続はE2b | font共有、atlas予算/eviction/fallback、Scene dirty/sort/batch、allocator接続に加え、U07のTextMetrics・ShapedText再利用・通常描画の入口を整備。長時間利用で予算内に収束し、表示内容を維持 |
 | E6: その他hot pathと配布 | 3–5人日 | E0/E3、API公開例はE2a/E2b/E5 | Interaction/Resourcesを測定して改善。U08/U09のidentity・freeze・graph診断、各APIの独立consumer/Quick Start、CI、SDK/toolchain固定、runtime配布、performance記録を整備 |
 | E7: Browserの完成（必要な場合） | 8–15人日 | E2/E3、E4の非同期契約 | JS/WASM adapter、非同期初期化・completion/readback、canvas表示、device lostを実装。E2と同じ共通契約・サンプルでbrowser conformanceを実行 |

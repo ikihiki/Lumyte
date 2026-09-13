@@ -50,7 +50,7 @@ package は複数 WebGPU resource の所有と寿命をまとめ、pool は利�
 
 ### Native host の非同期接続
 
-native host は WebGPUSharp 0.5.7 の同梱 Dawn C API を直接呼ぶ。既存の Silk descriptor を変換する `ModernWebGpuApi` は旧実装の一部であり、新しい Portable backend は経由しない。WGSL の `ImmediateAddressSpace` を instance で確認し、要求した feature／limit を device 作成へ渡す。`GpuRequiredLimits` の null だけを C API の undefined sentinel に変換し、その sentinel と同じ明示値は表現不能として拒否する。能力の比較や適合性は runtime に委ね、有効値は `DeviceGetLimits`／`DeviceHasFeature` から取得する。[WebGPUSharp](https://github.com/EmilSV/WebGPUSharp)
+native host は WebGPUSharp 0.5.7 の同梱 Dawn C API を直接呼ぶ。旧 Silk descriptor 変換と旧 backend は削除済みである。WGSL の `ImmediateAddressSpace` を instance で確認し、要求した feature／limit を device 作成へ渡す。`GpuRequiredLimits` の null だけを C API の undefined sentinel に変換し、その sentinel と同じ明示値は表現不能として拒否する。能力の比較や適合性は runtime に委ね、有効値は `DeviceGetLimits`／`DeviceHasFeature` から取得する。[WebGPUSharp](https://github.com/EmilSV/WebGPUSharp)
 
 adapter／device 要求、map、error scope と device loss は `AllowSpontaneous` callback で受ける。callback 内では文字列をコピーして managed 結果を通知し、native API を再入呼出ししない。continuation は callback の外で実行する。callback の userdata は対応する callback まで保持し、device event の共有 userdata は device loss 通知で解放する。C API は loss 後に uncaptured error を呼ばないと保証している。[WebGPU C API の非同期操作](https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html)
 
@@ -164,7 +164,7 @@ device 作成直後から `device.lost` を監視し、completion と同じ runt
 
 ## コード配置
 
-以下は repository root からの目標配置を含む。既存の WebGPU、WebGPU.Browser と WebGPU.Tests を改編して Portable 契約へ接続する。新しい `WebGpuBackend` は Portable を直接実装する。未移行の旧 `WebGpuDevice` と描画系は既存 source として残し、その factory だけを `Legacy/WebGpuBackend.cs` の `Lumyte.Graphics.WebGPU.Legacy` へ移す。Portable の互換経路にはせず、移行完了後に旧実装を除く。
+以下は repository root からの目標配置を含む。WebGPU、WebGPU.Browser と WebGPU.Tests は Portable 契約へ接続する。`WebGpuBackend` は Portable を直接実装し、旧 `WebGpuDevice`、旧描画系と Legacy factory は削除済みである。
 
 | 配置先 | 内容 |
 | --- | --- |

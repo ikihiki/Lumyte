@@ -96,7 +96,7 @@ GPU cache を持つ作者は、CPU 側の cache key と provider の内容世代
 | `src/graphics/Lumyte.Graphics.Passes.Hosting.Tests/Unit/` | 隣接する新設 xUnit project。登録、準備と所有の接続を fake で確認する。 |
 | `benchmarks/Lumyte.Benchmarks/Graphics/Passes/` | 既存 benchmark project に追加する共通入力・保持と本体準備の計測。 |
 
-`IGpuRenderPassContract`、graph の input／declaration context は改編する既存 `src/graphics/Lumyte.Graphics.RenderGraph/`、系統別 registry／factory／context は新設の各系統 RenderGraph project の担当であり、feature project に複製しない。CPU scene は既存 `Lumyte.Graphics.TwoD`、glyph／text data は既存 `Lumyte.Graphics.Text` を CPU 契約へ改編して置く。共有 path／paint は新設の `src/graphics/Lumyte.Graphics.TwoD.Primitives/` に置き、Text と scene の循環参照を避ける。旧 `Lumyte.Graphics.Library`／TwoD／Text の GPU 部分は二系統の本体への移植元とし、互換 facade を残さない。
+`IGpuRenderPassContract`、graph の input／declaration context は `src/graphics/Lumyte.Graphics.RenderGraph/`、系統別 registry／factory／context は各系統 RenderGraph project の担当であり、feature project に複製しない。CPU scene は `Lumyte.Graphics.TwoD`、glyph／text data は `Lumyte.Graphics.Text` として新設する。共有 path／paint は新設の `src/graphics/Lumyte.Graphics.TwoD.Primitives/` に置き、Text と scene の循環参照を避ける。旧 Library／TwoD／Text は削除済みであり、互換 facade を残さない。
 
 ## 使用例
 

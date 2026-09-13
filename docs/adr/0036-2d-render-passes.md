@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。既存の `Lumyte.Graphics.TwoD` と `Lumyte.Graphics.Text` が持つ描画能力を共通の CPU scene と `Add2DPass` へ移し、Native／Portable の二つの本体で実装する。既存と同等にする範囲と、追加提案を区別する。新構成の実装完了を示さない。
+採用（目標設計）。旧 TwoD／Text の調査で確認した描画能力を共通の CPU scene と `Add2DPass` で定義し、Native／Portable の二つの本体で実装する。旧実装は削除済みであり、同等にする範囲と追加提案を区別する。新構成の実装完了を示さない。
 
 ## 依存 ADR
 
@@ -24,13 +24,13 @@
 
 ファイル、URI、asset ID からの画像／font 読込み、画像 decode、font variation／palette の解決、shaping／text layout と SVG の変換は `Lumyte.Resources` の分野とする。この ADR はそれらのロード API を定義せず、準備済みの不変データを GPU へ渡す型と描画 API を定義する。pass は font ID から glyph を探したり、文字列を再 shaping したりしない。
 
-既存ライブラリとの同等性は、この repository の実装とテストを基準にする。既存 `DESIGN.md` にある未実装の項目を実装済みとは数えない。旧 API の互換 facade は設けず、公開されていた GPU の所有と描画経路の選択は本体へ移す。
+旧ライブラリとの同等性は、削除前の実装とテストを調査した下表を基準にする。当時の設計にしかなかった項目を実装済みとは数えない。旧 API の互換 facade は設けず、GPU の所有と描画経路の選択は本体が担当する。
 
 ## 既存機能の対応と追加提案
 
-次の「保持」は描画能力の保持を意味する。表中の新 API と二系統の GPU 実装は未実装である。
+次の「保持」は新構成でも実装すべき描画能力を意味する。旧コードの保持ではない。表の調査元は削除前の commit `af01785e` であり、新 API と二系統の GPU 実装は未実装である。
 
-| 分類 | 現行の API／実装で確認した範囲 | 新 API／本体への対応 | 扱い |
+| 分類 | 削除前の API／実装で確認した範囲 | 新 API／本体への対応 | 扱い |
 | --- | --- | --- | --- |
 | 即時描画 | `CommandEncoder`、`Finish()`、不変 `DisplayList` | `Draw2DSceneBuilder`、`Finish()`、不変 `Draw2DScene`。backend を渡さず作成する。 | 保持 |
 | 単純図形 | `FillRectangle`、`FillRoundedRectangle`、`FillEllipse`、`DrawLine` | 同名の CPU scene 操作。解析的 AA など実描画経路は本体が選ぶ。 | 保持 |
@@ -50,7 +50,7 @@
 | 画像・paint の拡張 | 現行 `Brush` に image brush はない。九分割描画の専用 API もない。 | image brush／tile、nine-slice を scene の便利機能として追加する。 | 追加提案 |
 | SVG | 現行設計文書には importer があるが、該当する実装 package はない。 | `Lumyte.Resources` の分野で変換した path、paint、画像と scene を受け取る。SVG importer の API はここで定義しない。 | 入力表現を利用、ロードは別分野 |
 
-根拠は [CommandEncoder](../../src/graphics/Lumyte.Graphics.TwoD/CommandEncoder.cs)、[Brush](../../src/graphics/Lumyte.Graphics.TwoD/Brush.cs)、[PathBatchCompiler](../../src/graphics/Lumyte.Graphics.TwoD/PathBatchCompiler.cs)、[Renderer](../../src/graphics/Lumyte.Graphics.TwoD/Renderer.cs)、[Scene](../../src/graphics/Lumyte.Graphics.TwoD/Scene.cs)、[2D 描画テスト](../../src/graphics/Lumyte.Graphics.TwoD.Tests/BackendConformanceTests.cs)、[FontFace](../../src/graphics/Lumyte.Graphics.Text/FontFace.cs)、[TextRenderer](../../src/graphics/Lumyte.Graphics.Text/TextRenderer.cs)、[文字描画テスト](../../src/graphics/Lumyte.Graphics.Text.Tests/TextBackendConformanceTests.cs) とする。この調査はソースと既存テストの確認であり、今回これらの GPU テストを実行したという意味ではない。
+調査元は commit `af01785e` の TwoD の CommandEncoder／Brush／PathBatchCompiler／Renderer／Scene と適合試験、Text の FontFace／TextRenderer と適合試験である。必要な場合は Git 履歴から確認する。新しい実装は本 ADR の振舞いを検証し、旧 API の復元を必要としない。
 
 公開型に値を指定できることと、描画できることを分ける。stroke の未使用設定、paint と clip の組合せ制限は、理想の 2D 契約に残す制限ではなく完成させる作業とする。段落 layout や SVG decode は `Lumyte.Resources` の分野であり、この ADR の実装完了条件には含めない。これらから渡された内容を描けるデータ表現を保つ。
 
@@ -216,21 +216,21 @@ coverage、gradient、距離・曲線計算、premultiplied 合成は [ADR 0033]
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。既存 TwoD／Text project は CPU 契約へ改編し、共有値の TwoD.Primitives、feature の契約、二系統の GPU 本体と Hosting integration は新設予定とする。
+以下は repository root からの相対パスによる目標配置である。TwoD／Text は CPU 契約として新設し、共有値の TwoD.Primitives、feature の契約、二系統の GPU 本体と Hosting integration も新設予定とする。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Passes/TwoD/` | `Add2DPass`、`Draw2DPassRequest`／result／contract と `Draw2DSceneInputContract`。 |
-| `src/graphics/Lumyte.Graphics.TwoD/Scene/` | 既存 project の改編先。`Draw2DSceneBuilder`／scope、`Draw2DSceneStore`／node ID／snapshot、描画順と共有 page・所有情報。 |
+| `src/graphics/Lumyte.Graphics.TwoD/Scene/` | 新設予定。`Draw2DSceneBuilder`／scope、`Draw2DSceneStore`／node ID／snapshot、描画順と共有 page・所有情報。 |
 | `src/graphics/Lumyte.Graphics.TwoD.Primitives/Geometry/`、`src/graphics/Lumyte.Graphics.TwoD.Primitives/Paint/`、`src/graphics/Lumyte.Graphics.TwoD.Primitives/Images/` | 新設 project。path／polygon、stroke、色／brush／gradient、画像参照・sampling、clip／layer／composite の共有 CPU 描画値。namespace は `Lumyte.Graphics.TwoD` とし、Text と scene の両方から参照する。 |
-| `src/graphics/Lumyte.Graphics.Text/Upload/` | 既存 project の改編先。`TextDrawData`、metrics、配置済み glyph、輪郭と color paint tree、`DistanceFieldUploadData` の所有済み転送契約。 |
+| `src/graphics/Lumyte.Graphics.Text/Upload/` | 新設予定。`TextDrawData`、metrics、配置済み glyph、輪郭と color paint tree、`DistanceFieldUploadData` の所有済み転送契約。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/TwoD/` | `NativeDraw2DPass` と内部 path／coverage／layer／glyph 処理。`GpuData/`、`Upload/`、`Cache/` に専用入力、差分転送、atlas と scene／batch cache を置く。 |
 | `src/graphics/Lumyte.Graphics.Portable.Passes/TwoD/` | `PortableDraw2DPass` と自身の内部処理。同じ分類の `GpuData/`、`Upload/`、`Cache/` に明示 binding と atlas page に適した実装を置く。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/TwoD/Shaders/*.slang`、`src/graphics/Lumyte.Graphics.Portable.Passes/TwoD/Shaders/` | Native の Slang entry と Portable の Slang／直接 WGSL entry、図形・path・glyph・mask／layer の専用 resource／root 宣言。生成 C# と artifact は各 project の `obj/<Configuration>/<TargetFramework>/Shaders/Native/` または `Shaders/Portable/` に出力する。 |
 | `src/graphics/Shaders/Shared/TwoD/`、`src/graphics/Shaders/Shared/Color/` | coverage、gradient、距離・曲線計算、premultiplied 合成の共有 Slang module。atlas の読取り、binding、batch、AA の実行方式は各本体に置く。 |
 | `src/graphics/Lumyte.Graphics.Passes.Hosting/TwoD/` | `Add2DRendering()`、両本体の登録と shader package を渡す起動用定義。 |
-| `src/graphics/Lumyte.Graphics.TwoD.Primitives.Tests/Unit/` | 新設の隣接 xUnit project。geometry／paint／画像参照の値と不変性を確認し、既存の該当 fixture を移す。 |
-| `src/graphics/Lumyte.Graphics.TwoD.Tests/Unit/`、`src/graphics/Lumyte.Graphics.Text.Tests/Unit/` | 既存の隣接 xUnit project を CPU 契約向けに改編。scene 編集、glyph／text の所有と snapshot、共通 primitive の利用を確認する。 |
+| `src/graphics/Lumyte.Graphics.TwoD.Primitives.Tests/Unit/` | 新設の隣接 xUnit project。geometry／paint／画像参照の値と不変性を確認する。 |
+| `src/graphics/Lumyte.Graphics.TwoD.Tests/Unit/`、`src/graphics/Lumyte.Graphics.Text.Tests/Unit/` | 新設する隣接 xUnit project。scene 編集、glyph／text の所有と snapshot、共通 primitive の利用を確認する。 |
 | `src/graphics/Lumyte.Graphics.Passes.Tests/Unit/TwoD/` | 新設の隣接 xUnit project で pass の固定 I/O、scene 入力と依存宣言を確認する。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Unit/TwoD/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Unit/TwoD/` | 新設の隣接 xUnit project。fake による差分準備、atlas 世代、使用保持と失敗の試験。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Integration/TwoD/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Integration/TwoD/` | GPU を使う図形・文字・色・clip／layer と更新結果の適合試験。既存 GPU fixture を移し、unit suite と分離する。 |
@@ -279,7 +279,7 @@ using var second = await runtime.SubmitAsync(plan, bindings, cancellationToken);
 
 ## 適合試験と移行順
 
-最初に CPU scene と snapshot、画像／glyph／text の不変 upload data と測定済み metrics の受渡しを定義する。font 読込みと shaping／layout は `Lumyte.Resources` の分野へ分離する。次に Native／Portable それぞれで単純図形・画像を通し、path／stroke／paint、clip／layer／composite、文字と color glyph、保持 scene と cache の順に既存能力を満たす。現行で部分実装の stroke と描画要素の組合せも新契約の完了条件に含める。追加提案はこの基礎を確認してから別の実装単位として進める。
+最初に CPU scene と snapshot、画像／glyph／text の不変 upload data と測定済み metrics の受渡しを定義する。font 読込みと shaping／layout は `Lumyte.Resources` の分野へ分離する。次に Native／Portable それぞれで単純図形・画像を通し、path／stroke／paint、clip／layer／composite、文字と color glyph、保持 scene と cache の順に必要な能力を満たす。削除前に部分実装だった stroke と描画要素の組合せも新契約の完了条件に含める。追加提案はこの基礎を確認してから別の実装単位として進める。
 
 同じ consumer assembly から両 provider を実行し、図形、curve、dash／join／cap、全 composite、入れ子 clip、mask／blur／shadow、glyph と palette、scene 編集後の snapshot 不変性を検証する。atlas 退役中の再利用、glyph／画像の Key 切替えと graph 画像の依存も対象とする。供給側の cache eviction 後も scene を描画できること、GPU cache を Trim した後に同じ data から再転送できること、描画中に font／画像の再ロードが生じないことを確認する。command 数、GPU struct 配置、shader 全文、物理 atlas 座標の一致は条件にしない。
 
@@ -291,8 +291,8 @@ native API／WebGPU が判断する usage、binding、shader、pipeline の合�
 
 ## 採用範囲と未実装事項
 
-既存 TwoD／Text の描画能力を保持し、共通 CPU scene と同一 binary の追加 API に整理する。pass 本体、shader、GPU data と資源管理を Native／Portable の二系統へ分ける。利用者による GPU 描画経路と atlas 管理を廃止する。
+削除前に調査した TwoD／Text の描画能力を目標とし、共通 CPU scene と同一 binary の追加 API を定義する。pass 本体、shader、GPU data と資源管理を Native／Portable の二系統へ分ける。利用者による GPU 描画経路と atlas 管理は要求しない。
 
-新しい共通 scene／text／glyph／画像 upload 型と owning snapshot の受渡し、Add2DPass、型付き scene 入力と固定外部依存の契約、変更 page／部分木と所有集合を共有する store、再利用可能な bindings／plan、二系統の本体と shader、内部 graph、失効範囲を守る差分更新、atlas／glyph の使用保持、既存 fixture を新契約へ移す適合試験と継続的な部分更新の性能確認は未実装である。dash／join／cap／miter、全描画要素での拡張 gradient／path clip は現行の部分実装を完成させる必要がある。現行ライブラリに実装がある項目も、新しい二系統で完成したとは扱わない。描画品質の許容値と対象 format の適合表は実装時に固定する必要がある。
+新しい共通 scene／text／glyph／画像 upload 型と owning snapshot の受渡し、Add2DPass、型付き scene 入力と固定外部依存の契約、変更 page／部分木と所有集合を共有する store、再利用可能な bindings／plan、二系統の本体と shader、内部 graph、失効範囲を守る差分更新、atlas／glyph の使用保持、適合試験と継続的な部分更新の性能確認は未実装である。dash／join／cap／miter、全描画要素での拡張 gradient／path clip も新設する必要がある。削除前に実装があった項目も、新しい二系統で完成したとは扱わない。描画品質の許容値と対象 format の適合表は実装時に固定する必要がある。
 
 image brush と nine-slice は追加提案であり未実装である。font ロード・shaping／段落 layout・hit testing、SVG のロード／decode の設計は `Lumyte.Resources` の分野であり、この ADR の採用範囲に含めない。縦書き・ruby、完全な SVG／外部 2D library との互換、IME／編集／widget の実装も責務外とする。

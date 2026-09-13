@@ -202,7 +202,7 @@ culling の bounds は今回の geometry、draw range、morph、skin と transfo
 | `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Integration/Models/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Integration/Models/` | 同一 consumer による PBR、変形、動的更新と描画品質の GPU 適合試験。Native は vertex／mesh-only／amplification 付き経路、未対応 GPU での vertex 経路も確認する。`Fixtures/` には Graphics が受け取る準備済み入力と期待する意味を置く。 |
 | `benchmarks/Lumyte.Benchmarks/Graphics/Models/` | 既存 benchmark project に追加する 10 万 draw の変更なし／1 件／100 件更新、転送量、準備と描画の計測。Native の vertex／mesh／amplification を同じ scene で比較する。 |
 
-既存 `src/graphics/Lumyte.Graphics.Library/` の描画実装は必要な処理の移植元に限る。glTF 等の loader／decoder と sample asset の読取りは `Lumyte.Resources`、ECS からの抽出・node／animation 評価は上位が所有し、この配置に新設しない。共通 `GpuImageUploadData` は RenderGraph 側の定義を参照し、Models に複製しない。
+旧 Library の描画実装は削除済みであり、Model 本体は本 ADR に従って新設する。glTF 等の loader／decoder と sample asset の読取りは `Lumyte.Resources`、ECS からの抽出・node／animation 評価は上位が所有し、この配置に新設しない。共通 `GpuImageUploadData` は RenderGraph 側の定義を参照し、Models に複製しない。
 
 ## 使用例
 
@@ -384,7 +384,7 @@ camera による可視判定、透明 sort、動的な bounds、実際の comman
 
 Native の optional mesh／amplification 経路、同じ Model 入力からの meshlet 準備と派生 cache、Slang の計算 module の共有も採用する。共通 API に meshlet、shader と GPU ABI を露出せず、Portable の mesh エミュレーションは要求しない。
 
-本 ADR の型、保持集合・部分木共有・型付き入力の保持契約、AddModelPass、両本体の packing・差分転送・draw cache、shader、PBR、skin／morph、環境前処理、動的 bounds、透明 sort、meshlet 構築・mesh／amplification の選択、Slang 共通 module と適合・性能試験は未実装である。既存 Graphics.Library の DrawMaterial は本契約の実装を意味しない。共通 GpuFormat.Rgba16Float と下位の対応、BRDF の定数と fixture の許容誤差も必要になる。
+本 ADR の型、保持集合・部分木共有・型付き入力の保持契約、AddModelPass、両本体の packing・差分転送・draw cache、shader、PBR、skin／morph、環境前処理、動的 bounds、透明 sort、meshlet 構築・mesh／amplification の選択、Slang 共通 module と適合・性能試験は未実装である。共通 GpuFormat.Rgba16Float と下位の対応、BRDF の定数と fixture の許容誤差も必要になる。
 
 ファイル形式ごとの importer／decoder と依存解決は Lumyte.Resources、実行時の node／ECS／Component 管理、animation 混合・IK・simulation と描画データ抽出は上位側の実装事項である。この ADR はそれらの API を定義しない。実装進捗は、汎用描画の能力と各形式の end-to-end 対応を分け、未達成項目を部分実装として明示する。
 

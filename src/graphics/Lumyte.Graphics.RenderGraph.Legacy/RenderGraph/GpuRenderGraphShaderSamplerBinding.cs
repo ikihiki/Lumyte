@@ -1,4 +1,0 @@
-namespace Lumyte.Graphics.RenderGraph.Legacy;
-
-/// <summary>Associates one bindless sampler-array index with a device-issued sampler.</summary>
-public readonly record struct GpuRenderGraphShaderSamplerBinding(int Index, SamplerId Sampler);

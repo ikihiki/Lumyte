@@ -1,6 +1,6 @@
 # Portable WebGPU conformance tests
 
-Windows の実 Dawn device を使う Portable 適合試験。公開 `IPortableGpuBackend` と `WebGpuBackend.CreateAsync` を使用する。旧 `IGpuBackend` の描画試験は `Legacy.WebGpuBackend` に残し、Portable の動作を代替しない。
+Windows の実 Dawn device を使う Portable 適合試験。公開 `IPortableGpuBackend` と `WebGpuBackend.CreateAsync` を使用する。
 
 ```powershell
 dotnet test src/graphics/Lumyte.Graphics.WebGPU.Tests/Lumyte.Graphics.WebGPU.Tests.csproj --filter "FullyQualifiedName~WebGpuPortable|FullyQualifiedName~WebGpuDiagnosticsTests|FullyQualifiedName~WebGpuLimitMappingTests"
@@ -42,6 +42,6 @@ texture copy は 2D array / 3D の mip と origin、異なる row / image pitch�
 
 `Shaders/WebGpuPortableShaderPackageTests` は準備済み package／loader を経由して module と layout を作り、直接 root と明示 binding による compute の結果を読み戻す。無効な WGSL を loader が独自解析せず、実際の提出後に runtime の診断を報告することも確認する。program を破棄する前に pipeline／binding と GPU の利用を終了する。compiler と入力構造体の生成器はこの fixture では使わない。
 
-同じ Portable shader runtime の C# WebAssembly consumer は [Browser 適合試験](../../Lumyte.Graphics.WebGPU.Browser.Tests/Integration/README.md) に置く。旧 legacy shader 試験を新しい Portable の実行結果の代わりには扱わない。
+同じ Portable shader runtime の C# WebAssembly consumer は [Browser 適合試験](../../Lumyte.Graphics.WebGPU.Browser.Tests/Integration/README.md) に置く。
 
 `Resources/` は Portable の Buffer／Texture pool を実 backend 上で使い、GPU copy と CPU readback を終えてから貸出を返す。同じ description で再取得した handle と保存済み byte／pixel が一致することを確認する。pool は未完了 resource の回収、内容の初期化や heap 作成を行わない。mapping と recording を終了してから `Release` する。

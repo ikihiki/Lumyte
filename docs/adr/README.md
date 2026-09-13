@@ -158,7 +158,7 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 | `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/` | Portable の内部 logical binding 入力を作る build 用生成器。新設予定 |
 | `src/graphics/Lumyte.Graphics.Passes/` | 共通機能契約、Model の CPU データ、AddPass extension。新設予定 |
 | `src/graphics/Lumyte.Graphics.TwoD.Primitives/` | scene と glyph が共有する path／paint 等の CPU 値。新設予定。namespace は Lumyte.Graphics.TwoD を使う |
-| `src/graphics/Lumyte.Graphics.TwoD/`、`src/graphics/Lumyte.Graphics.Text/` | scene と準備済み文字データ。既存 project を改編。TwoD → Text → TwoD.Primitives の依存とし、Text から scene へ参照しない |
+| `src/graphics/Lumyte.Graphics.TwoD/`、`src/graphics/Lumyte.Graphics.Text/` | scene と準備済み文字データを新設予定。TwoD → Text → TwoD.Primitives の依存とし、Text から scene へ参照しない |
 | `src/graphics/Lumyte.Graphics.Native.Passes/`、`src/graphics/Lumyte.Graphics.Portable.Passes/` | 機能本体、専用 GPU データ、shader source と cache。新設予定 |
 | `src/graphics/Shaders/Shared/` | build 用の共有 Slang module。Math／Color／ImageProcessing／Models／TwoD に計算処理を置く。独立した runtime project や共通 GPU ABI は作らない |
 | `src/graphics/Lumyte.Graphics.Hosting/`、`src/graphics/Lumyte.Graphics.Native.Hosting/`、`src/graphics/Lumyte.Graphics.Portable.Hosting/`、`src/graphics/Lumyte.Graphics.Passes.Hosting/` | Host と DI、系統別／機能別の登録。新設予定 |
@@ -170,7 +170,7 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 
 系統別 entry と resource／root 宣言は各 pass の `<Feature>/Shaders/` に置き、Native は Slang、Portable は Slang または直接 WGSL とする。共有する計算だけを `src/graphics/Shaders/Shared/` の Slang module に置く。生成 C# と artifact は利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/<Family>/`、内部 graph 入力はその `Graph/` に置く。管理入力生成器のディスク出力は `obj/<Configuration>/<TargetFramework>/Shaders/Resources/<analyzer名>/` を既定とし、両系統の analyzer と利用側の出力設定を共存させる。Slang が生成した WGSL も build の出力先へ置き、手書き WGSL と区別する。配布 package は build の成果物から application の資産へ取り込み、生成物を手書き source の正として管理しない。offline compiler と各生成器は build 用であり、runtime project から tool の assembly を参照しない。
 
-既存の `Lumyte.Graphics.Library`、`Lumyte.Graphics.Shader`、`Lumyte.Graphics.Shader.Browser` と `tools/Lumyte.Graphics.Shader.Offline` は必要な実装の移植元とし、互換用の新規実装を追加する配置先にはしない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。段階 0 では共通 graph、二 provider、Passes と Hosting project を新設し、旧 graph は明示的な Legacy project へ分離した。
+旧 Library、Shader、Shader.Browser、共通 shader offline、TwoD、Text と旧 graph は削除済みであり、互換 API／shader ABI を残さない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。段階 0 の共通 graph、二 provider、Passes と Hosting が現在の実行経路である。
 
 ## 実装するレンダーパス
 
@@ -188,7 +188,7 @@ Model の内部の透明描画や変形、2D の atlas／mask／layer blur は�
 
 glTF 2.0 core と採用する五拡張を描画できる能力を必須とし、ファイル形式の解釈と required extension の判定は Lumyte.Resources が扱う。他形式や手続き生成にも同じ入力を使い、animation／物理の評価済み変形や動的な頂点・材質を Resources へ迂回させず供給できる。
 
-2D は repository の `Lumyte.Graphics.TwoD`／`Text` と同等の能力を基準にする。stroke の詳細設定、全描画要素での拡張 gradient／path clip など、現行の部分実装は新しい契約で完成させる。段落 layout、font fallback、SVG 変換は Lumyte.Resources の分野とし、Graphics は結果の転送／描画データを受け取る。image brush、nine-slice は描画機能の追加提案として分ける。既存型の GPU 管理を含む API との互換性は残さない。
+2D は ADR 0036 に記録した削除前の TwoD／Text の描画能力を基準にする。stroke の詳細設定、全描画要素での拡張 gradient／path clip など、当時の部分実装は新しい契約で完成させる。段落 layout、font fallback、SVG 変換は Lumyte.Resources の分野とし、Graphics は結果の転送／描画データを受け取る。image brush、nine-slice は描画機能の追加提案として分ける。Model／2D／文字描画の新実装は後続であり、旧 API との互換性は残さない。
 
 表示の典型的な順序は Model → ToneMap → 2D／Composite → Output とする。Output は画素の符号化であり、実際の提出と Present は共通 frame が行う。追加の後処理、時間履歴、解析・debug はカテゴリ表の必須機能とは別に検討する。
 

@@ -34,6 +34,23 @@ GPU を使うテストは担当 backend の既存 collection に置く。CPU の
 
 実行結果は各 project の `TestResults/` に保存する。TRX の成功件数だけでなく、全 project の outcome が Completed であり、コマンドの終了コードが0であることを確認する。中断した実行を、完了済みの単体テストだけで成功とは扱わない。
 
+## Native 検証レイヤー
+
+RenderGraph の `DirectX12Validation` と `VulkanValidation` の各4ケースは検証を有効にして実行する。
+Windows Graphics Tools の D3D12 debug layer と、Vulkan SDK の `VK_LAYER_KHRONOS_validation` が必要である。
+未導入時に検証を無効化して成功扱いにはしない。DX12 は native InfoQueue の警告・エラーと
+メッセージ破棄がないこと、Vulkan は backend の Trace 診断に警告・エラーがないことも確認する。
+通常の画素一致だけで検証成功とは扱わない。
+
+```powershell
+$env:VK_LAYER_VALIDATE_SYNC = '1'
+dotnet test Lumyte.slnx --filter 'Category=DirectX12Validation|Category=VulkanValidation'
+```
+
+同期検証の設定は起動した process とその子に適用する。GPU-assisted validation はこの設定には含まれない。
+Graphics Tools は管理者 PowerShell の `Add-WindowsCapability -Online -Name 'Tools.Graphics.DirectX~~~~0.0.1.0'`、
+Vulkan layer は Windows 向け Vulkan SDK の導入で用意する。
+
 ## Shader compiler の適合試験
 
 新しい `tools/Lumyte.Graphics.Native.Shaders.Offline.Tests` の `SlangConformance` と

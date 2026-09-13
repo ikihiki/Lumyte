@@ -123,7 +123,7 @@ build では Slang の WGSL 出力を target 対応の公式 WGSL frontend（Tin
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Shaders/` | 既存 xUnit project に置く実 runtime/device の WGSL、binding と直接入力の適合試験。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/` | 準備済み package からの program 初期化、直接 root と明示 binding による実行、runtime 診断の伝播を Dawn と C# WebAssembly consumer で確認する。 |
 
-runtime shader library は offline tool を参照しない。参照方向は Portable.Shaders → Portable とし、pipeline の生成には program.Description を渡す。Portable の backend が上位 PortableShaderProgram 型を受け取る循環を作らない。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、旧 API の互換層は残さない。package の保存・取得・復号は `Lumyte.Resources` 側に置く。
+runtime shader library は offline tool を参照しない。参照方向は Portable.Shaders → Portable とし、pipeline の生成には program.Description を渡す。Portable の backend が上位 PortableShaderProgram 型を受け取る循環を作らない。旧共通 shader library と offline compiler は削除済みであり、旧 API の互換層は残さない。package の保存・取得・復号は `Lumyte.Resources` 側に置く。
 
 ## 使用例
 
