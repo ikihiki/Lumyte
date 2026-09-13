@@ -79,4 +79,4 @@ finally
 
 WebGPU に適した明示用途と map/unmap を採用する。独立した Buffer API、内部 memory を含む生成・破棄、native host の非同期 mapping と、元 buffer の生成診断を含めた失敗通知を実装した。書込み範囲と読取り専用範囲を区別し、unmap 後の managed memory 再取得を拒否する。
 
-Buffer range による binding と、その生成診断を Bindings に引き継ぐ経路も実装した。copy command、shader からの実行時参照と Browser mapping は未実装である。実 device の制約の再実装や、Native address への変換 API は設けない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Buffer range による binding、compute shader からの参照、buffer 間 copy と生成診断を Bindings／提出へ引き継ぐ経路も実装した。texture との copy と Browser mapping は未実装である。実 device の制約の再実装や、Native address への変換 API は設けない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

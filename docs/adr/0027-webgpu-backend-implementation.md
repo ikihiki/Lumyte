@@ -84,13 +84,21 @@ Parameter Data は明示した buffer binding から shader が参照する。ro
 
 Portable の immutable description と program から、実際の提出で必要になった `GPURenderPipeline`／`GPUComputePipeline` を作る。固定 depth/stencil/blend を WebGPU pipeline へ含め、同じ論理 pipeline は生成済み object を再利用する。
 
+native host の compute は raw WGSL module と group layout、ImmediateSize から内部 pipeline layout を作る。dispatch に使う論理 pipeline だけを最初の Submit で実体化する。native pipeline とその layout は論理 handle が所有し、全利用終了後の DestroyComputePipeline で解放する。module／group layout の元の生成診断も pipeline の診断に引き継ぐ。
+
 提出時に必要な pipeline を揃え、各 command を encoder と render/compute pass に変換する。`SetBindings`／`SetComputeBindings` は対象 pass の `setBindGroup`、root 設定は `setImmediates` に変換する。copy は pass の外側で encode する。すべての encode を終えてから queue に提出する。
 
 pass 内の usage 制約を独自に検証したり、見えない pass 分割で違反を修正したりしない。resource state の推移は WebGPU runtime が管理する。Native の barrier command や stage mask を解釈する層は設けない。
 
+記録時に root bytes と dynamic offsets をコピーする。root は program の全 byte 列として扱い、各 dispatch に対して最後に指定した長さと ImmediateSize の一致を提出前に確認する。これは native setImmediates の部分更新を公開しない契約であり、root の解析や buffer 化ではない。pipeline の再設定でも wrapper による zero-fill を追加しない。Buffer copy の null length は元の生成値から解決し、logical range の同長と indirect range の12 byteだけを確認する。
+
 ## Completion と失敗
 
 queue への提出後、その提出を含む `onSubmittedWorkDone` を caller 指定の timeline 値へ対応付ける。これは GPU 利用終了を知る入口であり、処理成功は別に確定する。timeline は CPU 観測用とし、GPU の semaphore や queue 間 wait を偽装しない。[WebGPU の queue completion](https://gpuweb.github.io/gpuweb/#dom-gpuqueue-onsubmittedworkdone)
+
+native host は全記録を一つの QueueSubmit に渡し、後半の encode 失敗で前半だけを提出しない。timeline の内部領域を提出前に確保し、受理された値だけを照会対象にする。QueueOnSubmittedWorkDone の future は既存の instance event driver で進行させる。成功 callback 後に内部 native command buffer と記録 memory を回収し、診断が未確定でも GPU 利用終了を観測できるようにする。受理の有無や完了を確認できない interop 障害は device の共有失敗へ接続し、残った内部 command は device 終了時に解放する。application resource の registry は追加しない。
+
+timeline の照会・待機は提出の native 呼出し gate と分離する。成功 batch は発行済み整数値の区間へ集約し、間にある未発行値を補完しない。失敗した batch の診断はその値に保持し、独立した後続 batch の成功へ混ぜない。待機取消しは当該 await だけを終了し、GPU work と他の待機を取り消さない。
 
 ### 診断を object と batch に帰属させる
 
@@ -155,6 +163,6 @@ Console.WriteLine(program.BindingLayouts.Count);
 
 ## 採用範囲と未実装事項
 
-WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
+WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。raw WGSL、compute pipeline の提出時生成、直接 root／dynamic offsets／直接・間接 dispatch、buffer copy と CPU completion も接続した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
 
-WGSL package/loader、pipeline の提出時生成、copy を含む command、dynamic offset と attachment の実行、batch の利用終了と処理成功の接続、Browser の runtime 借用形 factory は未実装である。初期化時の直接入力能力確認と binding 生成は、この新経路で Portable shader を実行したことを意味しない。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+WGSL package/loader、raster pipeline／attachment／draw、texture copy と Browser の runtime 借用形 factory は未実装である。Slang の build toolchain と生成 host 型の統合も後続とする。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

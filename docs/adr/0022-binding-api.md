@@ -77,4 +77,4 @@ finally
 
 Portable に明示 binding を採用する。専用 handle、immutable set の作成・解放、依存 object の生成診断の保持、使用中の binding だけで共有する view/sampler cache を実装した。最後の binding 参照がなくなった内部 object は cache から取り除き、参照先の application resource は破棄しない。
 
-command への group 設定、dynamic offset の実行、shader からの参照と Browser 接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)
+compute command への group 設定、dynamic offset の実行と shader からの参照を接続した。raster と Browser 接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)

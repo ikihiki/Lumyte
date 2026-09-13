@@ -11,6 +11,7 @@ public interface IPortableGpuBackend : IDisposable
 {
     GpuBackendCapabilities Capabilities { get; }
     GpuDeviceLimits Limits { get; }
+    IGpuQueue MainQueue { get; }
     GpuBufferHandle CreateBuffer(GpuBufferDescription description);
     void DestroyBuffer(GpuBufferHandle buffer);
     ValueTask<GpuMappedBufferRange> MapBufferAsync(GpuBufferHandle buffer, GpuMapMode mode, ulong offset, ulong length);
@@ -25,4 +26,13 @@ public interface IPortableGpuBackend : IDisposable
     GpuBindingsHandle CreateBindings(GpuBindingLayoutHandle layout, ReadOnlySpan<GpuBindingEntry> entries);
     /// <summary>Releases internal objects after all uses end, without destroying referenced resources.</summary>
     void DestroyBindings(GpuBindingsHandle bindings);
+
+    /// <summary>Creates a WGSL module. Source validation and compilation belong to the runtime.</summary>
+    GpuShaderModuleHandle CreateShaderModule(string wgsl);
+    /// <summary>Destroys a module after all pipelines, recordings and GPU uses have ended.</summary>
+    void DestroyShaderModule(GpuShaderModuleHandle module);
+    /// <summary>Creates an immutable logical compute pipeline, materialized only when submitted work needs it.</summary>
+    GpuComputePipelineHandle CreateComputePipeline(GpuShaderProgramDescription shaders);
+    /// <summary>Destroys a logical pipeline and its native realization after all uses have ended.</summary>
+    void DestroyComputePipeline(GpuComputePipelineHandle pipeline);
 }

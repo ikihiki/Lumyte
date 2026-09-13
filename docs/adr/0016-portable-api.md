@@ -83,4 +83,4 @@ factory は Portable device を作る。Native device を引数に取る変換�
 
 Portable の低層を独立させ、共通 RenderGraph の Portable provider から利用する。独立 package、外部 backend が実装できる interface、要求 feature／limit と有効値、直接入力の初期化条件、Buffer／Texture の生成・破棄と非同期 mapping、非所有の View／range／sampler、immutable Binding Layout／Bindings を実装した。native host の WebGPU は Dawn C API へ直接接続する。
 
-shader／pipeline、command／queue completion、Browser runtime、共通 RenderGraph provider への接続は未実装である。公開 interface にはこの段階で実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+raw WGSL、compute pipeline、compute／buffer copy の記録と提出、CPU timeline の非同期待機も接続した。shader package／loader、raster／texture copy、Browser runtime、共通 RenderGraph provider への接続は未実装である。公開 interface にはこの段階で実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

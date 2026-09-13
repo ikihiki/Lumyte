@@ -80,4 +80,4 @@ finally
 
 Portable の resource 入力を明示 layout とする。layout の公開値、opaque handle、入力列の保持、native host の GPUBindGroupLayout 生成・解放と非同期診断を実装した。binding の重複番号や visibility、limit、layout の合法性は runtime に委ねる。
 
-shader module／pipeline、shader package metadata と Browser の接続は未実装である。実 device の layout 作成を、対応 shader の実行確認とは扱わない。[進捗記録](../designs/graphics-implementation-progress.md)
+compute shader module／pipeline と直接入力の layout へ接続した。raster、shader package metadata と Browser の接続は未実装である。[進捗記録](../designs/graphics-implementation-progress.md)

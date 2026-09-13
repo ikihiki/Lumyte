@@ -81,4 +81,4 @@ var attachment = new GpuColorAttachment(
 
 resource と解釈を分け、非 owning の値で扱う方針を採用する。Portable 専用の view／range／sampler／attachment 値、Normalize／Slice の host 算術、native host の binding 用 view/sampler 実体化を実装した。内部 cache は使用中の binding が共有し、最後の参照の解放で取り除く。
 
-attachment の command 実体化、sampling／描画結果と Browser 接続は未実装である。現在の実機試験は binding の生成・診断・内部 object の所有を確認するもので、shader からの利用成功とは区別する。[進捗記録](../designs/graphics-implementation-progress.md)
+Buffer range は compute binding／copy／indirect dispatch へ接続した。attachment の command 実体化、raster と Browser 接続は未実装である。Texture view／sampler の実機試験は binding の生成・診断・内部 object の所有までであり、buffer compute の成功と Texture sampling／描画結果の確認は区別する。[進捗記録](../designs/graphics-implementation-progress.md)

@@ -24,4 +24,12 @@ view は 1D、2D、2D array、cube、cube array、3D を実体化する。mutabl
 
 同じ view 値を sampled と storage の両 layout で使う場合は、それぞれの native view usage を保持する。明示 length/mip/layer count が native の省略 sentinel に衝突する場合や、anisotropy が C ABI の整数幅に収まらない場合は、指定値の意味を変更せず host 側で拒否する境界も検証する。
 
-この段階では Portable queue、copy、shader、pipeline、描画、提出 batch の成功判定は実装対象に含めない。直接 root 入力の新しい Portable shader 実行試験は shader / command の段階で追加する。既存 legacy immediate shader 試験の成功を、その代わりには扱わない。
+`Compute/`、`Pipelines/`、`Commands/`、`Submission/` は raw WGSL module と実 compute pipeline を使い、明示 staging → buffer copy → dispatch → readback を確認する。8 byte と padding を含む 32 byte の root、generic unmanaged root、複数 dynamic offset の binding 番号順と基準 offset 加算を実行し、記録後に caller の byte/offset 配列を変更しても出力が変わらないことを検証する。root や Parameter Data を隠れた buffer へ変換しない。
+
+indirect dispatch は先行 compute 区間が argument buffer の非 zero offset へ 12 byte の group count を書き、後続 compute 区間がその buffer を直接読む。CPU は indirect 引数を書き込まず、明示した root と通常の storage binding だけを使う。shader、program description の入力配列、未使用 pipeline の未生成、最初の Submit での生成と再利用も検証する。
+
+queue の待機は CPU 観測用の `WaitAsync` を使う。shader/module/binding/encode の診断がある提出は GPU 利用終了後に `GpuExecutionException` となり、`IsComplete` が true でも処理成功とは扱わない。valid copy と native-invalid command を同じ batch に入れる試験では先頭 copy も実行されず、後続の独立した正常提出が成功しても失敗履歴が保持されることを確認する。GPU 完了と診断の到着順、cancel/device loss は制御した Task による timeline 試験で検証し、実 GPU の処理速度や sleep に依存しない。
+
+各 GPU 試験は受理した work の利用終了を明示的に待ってから test fixture の resource を解放する。記録の Dispose は受理済み work を取り消さず、root サイズ違反等で提出前に拒否された記録は再利用しない。program の root 全体を渡す契約を確認し、不足した末尾を暗黙にゼロ埋めしない。
+
+shader package / loader、raster、texture copy と browser runtime は後続の段階で検証する。旧 legacy shader 試験を新しい Portable の実行結果の代わりには扱わない。

@@ -70,6 +70,10 @@ internal static unsafe class WebGpuCallbacks
             ? [] : [new(GpuDiagnosticKind.Runtime, $"Buffer map: {status}. {Text(message)}")]);
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    internal static void WorkDone(N.QueueWorkDoneStatus status, F.StringViewFFI message, void* userdata, void* unused)
+        => Finish(userdata, () => (status, Text(message)));
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     internal static void Lost(F.DeviceHandle* device, N.DeviceLostReason reason,
         F.StringViewFFI message, void* userdata, void* unused)
     {

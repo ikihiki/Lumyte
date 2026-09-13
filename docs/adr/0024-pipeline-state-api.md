@@ -39,19 +39,21 @@ Portable の raster pipeline は shader、出力、rasterization、depth/stencil
 
 shader 構成値の binding layout と直接入力 byte 数も実 pipeline の layout に含まれる。pipeline は caller の application resource を保持しない。caller は module と layout を pipeline の寿命まで保持する。上位 PortableShaderProgram を使う場合は、そこから Description を渡し、program の所有を同じ期間維持する。低層の Portable project から Portable.Shaders project を参照しない。
 
+`GpuComputePipelineHandle` は public abstract 型と protected constructor で外部 backend が実装する。compute の構成値は一つの Compute entry を持つ形だけを受け入れ、余分な entry を黙って捨てない。entry 名の存在、実 shader stage、binding layout と直接入力 size の適合性は runtime が検証する。native host は最初の dispatch を含む Submit で pipeline layout と compute pipeline を生成し、論理 handle の破棄まで再利用する。設定だけで work に使わなかった pipeline は実体化しない。
+
 viewport、scissor、stencil reference は command に設定する動的値とする。depth/stencil/blend の固定条件を変える場合は別の論理 pipeline を選ぶ。backend は同じ不変条件の実 object を再利用できるが、その cache を公開の ownership 契約にしない。
 
 WebGPU が検証できる format、sample count、blend factor、shader 入出力、binding layout の条件は runtime に委ねる。logical pipeline の identity 管理と runtime validation の複製を混同しない。
 
 ## コード配置
 
-以下は repository root からの目標配置である。Portable とそのテスト project は新設予定、WebGPU とそのテスト project は既存を改編する。
+以下は repository root からの配置で、raster 等の目標配置を含む。Portable とそのテスト project は実装済みで、WebGPU に独立した compute pipeline を加える。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Pipelines/` | raster/compute pipeline の公開 description、固定状態の値、論理 handle と生成・破棄契約。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Pipelines/` | 論理 pipeline の保持、`GPURenderPipeline`／`GPUComputePipeline` への変換と cache。実体化処理は同 project の `Submission/` から呼び出す内部経路とする。 |
-| `src/graphics/Lumyte.Graphics.Portable.Tests/Pipelines/` | 新設予定の xUnit project。description と固定状態の公開値を検証する。 |
+| `src/graphics/Lumyte.Graphics.Portable.Tests/Pipelines/` | 隣接 xUnit project。description と固定状態の公開値を検証する。公開拡張契約の consumer 試験は `Device/` にも置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Pipelines/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Pipelines/` | 既存 xUnit project。未提出 pipeline の未生成、提出時生成・再利用を fake runtime で確認し、実 shader を使った pipeline 試験を隔離する。 |
 
 事前準備の公開 API や Native の state handle 分解をこの project に追加しない。
@@ -80,4 +82,6 @@ finally
 
 ## 採用範囲と未実装事項
 
-Portable は WebGPU に沿った pipeline object を採用し、NoGraphicsAPI の独立 state handle による PSO 分解は Native 側の設計とする。提出時の raster/compute 実体化、失敗処理と cache は未実装である。
+Portable は WebGPU に沿った pipeline object を採用し、NoGraphicsAPI の独立 state handle による PSO 分解は Native 側の設計とする。compute の論理 handle、提出時の native pipeline／layout 生成、再利用、生成診断の batch への帰属と解放を実装した。
+
+raster の固定状態・pipeline と Browser 接続は未実装である。compute の検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

@@ -45,6 +45,8 @@ signal value は同じ semaphore の予約済み値より大きくする。数�
 
 backend は pending の診断と待機だけを活動中の記録として保持し、確定した成功は発行済み値の区間へ集約する。確定結果を後から待つための失敗診断は semaphore の寿命まで保持する。caller は長期運用で蓄積する発行区間や失敗診断を区切る必要がある場合、全利用終了後に semaphore を更新できる。全成功 batch の object を永久に残す実装にはしない。
 
+`IGpuQueue` は外部 backend が実装する interface、`GpuSemaphore` は public abstract 型と protected constructor から派生する。`Submit` は command の ReadOnlySpan を呼出し中に消費する。`WaitAsync` は ValueTask を返し、GPU work を同期的に待たない。`GpuExecutionException` は受け取った診断列をコピーし、呼出し側の配列変更で確定結果が変わらないようにする。
+
 ## 失敗と所有権
 
 受理前に pipeline 作成や encode が失敗した場合、その batch は提出しない。失敗した記録は破棄し、必要なら新しく記録する。公開状態を調べて一部を復旧する手順は設けない。
@@ -57,7 +59,7 @@ caller は未提出の記録と全提出の利用を考慮して resource、bind
 
 ## コード配置
 
-以下は repository root からの目標配置である。Portable とそのテスト project は新設予定、WebGPU 関連 project は既存を改編する。提出と完了は同じ project 内でも別のディレクトリに分ける。
+以下は repository root からの配置で、Browser 等の目標配置を含む。Portable とそのテスト project は実装済みで、WebGPU に独立した提出・完了処理を加える。提出と完了は同じ project 内でも別のディレクトリに分ける。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -66,7 +68,7 @@ caller は未提出の記録と全提出の利用を考慮して resource、bind
 | `src/graphics/Lumyte.Graphics.WebGPU/Submission/` | 提出時 pipeline 解決、encode の終了と queue への受渡し。受理前失敗と提出済み内部記録の所有を扱う。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Synchronization/` | queue の利用終了と batch ごとの診断結果、timeline 値、非同期待機、device loss による待機失敗。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser/Submission/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser/Synchronization/` | queue 提出と `onSubmittedWorkDone` の promise 接続。ブラウザーを block する待機 API は追加しない。 |
-| `src/graphics/Lumyte.Graphics.Portable.Tests/Submission/`、`src/graphics/Lumyte.Graphics.Portable.Tests/Synchronization/` | 新設予定の xUnit project。一回提出と timeline identity など Lumyte 固有の契約を、device に依存せず検証する。 |
+| `src/graphics/Lumyte.Graphics.Portable.Tests/Submission/`、`src/graphics/Lumyte.Graphics.Portable.Tests/Synchronization/` | 隣接 xUnit project。一回提出と timeline identity など Lumyte 固有の契約を、device に依存せず検証する。外部 backend の consumer 試験は `Device/` にも置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Submission/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Synchronization/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Submission/` | 既存 xUnit project。fake runtime で診断と利用終了の両到着順、先行する別 batch の失敗、取消し・device loss を検証し、実 queue の提出と完了試験を隔離する。 |
 
 ## 使用例
@@ -93,4 +95,6 @@ commands.Dispose();
 
 ## 採用範囲と未実装事項
 
-一回提出、CPU からの timeline 観測と、利用終了・処理成功の分離を採用する。Portable 専用の提出時 pipeline 作成、encode、object／batch 診断の帰属、非同期 completion と device loss の接続は未実装である。
+一回提出、CPU からの timeline 観測と、利用終了・処理成功の分離を採用する。native host の WebGPU に compute／buffer copy の提出、object／batch 診断の帰属、非同期 completion、device loss と待機取消しの接続を実装した。成功結果は発行値の区間へ集約し、過去の失敗診断は semaphore の寿命まで保持する。
+
+raster／texture copy の提出と Browser 接続は未実装である。実機と制御した非同期結果による検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

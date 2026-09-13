@@ -50,6 +50,7 @@ public sealed partial class WebGpuBackend : P.IPortableGpuBackend
             { throw new P.GpuOperationException("RequestDevice", [new(P.GpuDiagnosticKind.Runtime,
                 $"WebGPU device request failed ({deviceResult.Item1}): {deviceResult.Item3}")]); }
             result.ReadEffectiveConfiguration();
+            result.InitializeQueue();
             result.status.ThrowIfFailed();
             return result;
         }
@@ -259,6 +260,7 @@ public sealed partial class WebGpuBackend : P.IPortableGpuBackend
             if ((nuint)device != 0)
             {
                 F.WebGPU_FFI.DeviceDestroy(device);
+                StopQueue();
                 F.WebGPU_FFI.DeviceRelease(device);
                 device = default;
             }

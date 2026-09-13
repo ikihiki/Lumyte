@@ -6,11 +6,12 @@ namespace Lumyte.Graphics.WebGPU;
 
 public sealed partial class WebGpuBackend
 {
-    private sealed class BufferResource(WebGpuBackend owner, F.BufferHandle handle,
+    private sealed class BufferResource(WebGpuBackend owner, F.BufferHandle handle, P.GpuBufferDescription description,
         Task<IReadOnlyList<P.GpuDiagnostic>> diagnostics) : P.GpuBufferHandle
     {
         internal readonly WebGpuBackend Owner = owner;
         internal readonly F.BufferHandle Handle = handle;
+        internal readonly P.GpuBufferDescription Description = description;
         internal readonly Task<IReadOnlyList<P.GpuDiagnostic>> Diagnostics = diagnostics;
         internal bool Destroyed;
     }
@@ -34,7 +35,7 @@ public sealed partial class WebGpuBackend
                     status.Lose("WebGPU buffer creation returned no object.");
                     status.ThrowIfFailed();
                 }
-                return new BufferResource(this, buffer, diagnostics);
+                return new BufferResource(this, buffer, description, diagnostics);
             }
             catch
             {

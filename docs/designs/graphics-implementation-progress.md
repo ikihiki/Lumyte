@@ -331,9 +331,42 @@ backend は public Normalize を native 呼出し前の validator に使わず�
 
 この段階は resource を group に接続するところまでであり、shader の sampling／storage 実行、attachment encoding、dynamic offset の実行、copy／draw、queue completion と Browser は未実装である。allocation failure と実 device loss の強制試験は未実施とする。
 
+## 第11段階: Portable compute・buffer copy・CPU completion
+
+2026-09-13 に [低レベル Shader](../adr/0023-shader-design-and-api.md)、[Compute Pipeline](../adr/0024-pipeline-state-api.md)、[Command Recording](../adr/0025-command-recording-api.md)、[Submission と Completion](../adr/0026-command-submission-and-synchronization.md) を WebGPU の実行経路へ接続した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | raw WGSL module、entry point、不変の program description、compute pipeline、one-shot command、queue と CPU timeline を追加。外部 backend は public／protected 契約だけを使う |
+| Shader／pipeline | module は生成時に runtime が処理し、診断を保持する。compute の論理 pipeline は構成値だけを保存し、dispatch を含む最初の Submit で native pipeline／layout を生成して再利用する |
+| 記録 | compute 区間、明示 group と dynamic offsets、直接 root、3軸 dispatch、12 byte の indirect 引数と buffer 間 copy を記録する。root と動的引数は呼出し中にコピーする |
+| Root | program の ImmediateSize に一致する全 byte 数を各 work で要求する。不足した末尾の暗黙保持、固定容量への zero-fill、root の buffer 化と Parameter Data の暗黙 upload は行わない |
+| 提出 | 全 recording の pipeline と encode を準備してから、単一の native QueueSubmit に渡す。GPU 利用終了を待たず復帰し、内部 command memory は完了後に回収する |
+| Completion | initial value と受理済みの signal value だけを観測する。IsComplete は GPU 利用終了、WaitAsync の正常復帰は当該 batch の診断も含む成功を示す |
+| 診断と履歴 | module／layout／binding／resource、pipeline と encode／submit の診断を batch に結び付ける。成功は発行値の整数区間へまとめ、過去の失敗診断だけを timeline の寿命まで保持する |
+| 失敗と所有 | 受理前の managed 失敗は batch 全体を未提出のまま解放する。受理・完了が不明な interop 障害は device の共有失敗にし、残る内部 command は device 停止時に回収する。application resource の寿命は caller が管理する |
+
+Portable timeline は CPU から一つの queue の進行を観測する契約であり、Native の GPU semaphore wait、CPU signal、CopyQueue は持ち込まない。利用者は複数の batch を先行提出し、再利用する resource の完了だけを非同期に待てる。取消しは一つの await だけを終了し、work や他の待機を取り消さない。ある値の成功を、別の値の処理成功の代用にしない。
+
+shader は手動で準備した WGSL と明示した binding layout／ImmediateSize を使う。backend は shader source、group、usage、alignment と dispatch limits の validator を複製しない。copy の同長、indirect の論理 range の12 byte、完全な root 入力と一回提出など、native へ写す際に失われる Portable の契約だけを確認する。
+
+独立レビューでは、native setImmediates の部分更新で以前の root の末尾を残せる点を確認し、提出前に全 work の root 長を確認するようにした。旧 WebGPU の pipeline 再設定試験が示した zero-fill は旧 wrapper による明示的な固定64 byte設定であり、native setPipeline の仕様とは扱わない。新しい Portable へはその処理を移していない。
+
+追加テストは Portable の公開契約9件、WebGPU の純粋な timeline 試験21件と実 Dawn 試験20件で計50件。focused tests は Portable 全65件、timeline 21件、実 GPU 20件が成功し、失敗・skip・最終ビルド警告はなかった。初回コンパイルで見つかった primary constructor の二重 capture とテストの型推論を修正し、同じ試験条件で再実行した。
+
+実 GPU で8 byte／padding を含む32 byteの root と generic unmanaged 値、呼出し後の入力変更、2本の dynamic offset の binding 番号順、GPU producer が非ゼロ offset に書いた一件の indirect 引数を読み戻した。pipeline の再 bind で root 値を消さず、未使用 pipeline を生成せずに最初の提出で実体化・再利用することも確認した。無効な module／entry／resource の診断が提出へ残り、先頭の valid copy と後半の native-invalid command をまとめた batch が全体として実行されないこと、後続の独立した提出が成功しても先行の失敗診断が残ることを確認した。
+
+timeline の試験は GPU 完了と診断の両到着順、取消し、device loss、接続 Task の失敗、未発行の値、最大 ulong 値と履歴の区間集約を制御した Task で検証する。sleep や GPU の実行速度を判定条件にしない。独立レビューで公開拡張契約、提出・回収、診断の所有と ADR／使用例の整合を確認した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=portable-compute-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、26 test project の **1,825件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は401件、Vulkan は413件、WebGPU は281件、Native は92件、Portable は65件。TRX は各 test project の `TestResults/` に保存した。
+
+37 ADR の API・コード配置・使用例・未実装章、182個の番号依存、46文書の381ローカルリンクと20アンカーを確認した。`InternalsVisibleTo` は10指定すべて test assembly 向けで、Native と Portable の内部公開は0件。staged diff の空白検査も成功した。
+
+低レベル compute と buffer copy を今回の実装範囲とし、shader package／loader、Slang の製品 toolchain、生成 host 型、raster／texture copy と Browser は後続とする。Texture view／sampler の実 shader 利用、native allocation failure と実 device loss の強制は今回の実機検証に含めない。
+
 ## 未実装と次の順序
 
-1. Portable の shader／pipeline、copy を含む command、queue completion と Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
+1. Portable の texture copy、raster pipeline／draw と Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
 2. 両系統の Resources・shader package／loader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
