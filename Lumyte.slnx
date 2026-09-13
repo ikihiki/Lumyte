@@ -14,6 +14,8 @@
   <Project Path="src/graphics/Lumyte.Graphics/Lumyte.Graphics.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native/Lumyte.Graphics.Native.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native.Tests/Lumyte.Graphics.Native.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable/Lumyte.Graphics.Portable.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.DirectX12/Lumyte.Graphics.DirectX12.csproj" />

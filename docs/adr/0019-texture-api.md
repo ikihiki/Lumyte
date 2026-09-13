@@ -33,13 +33,13 @@ copy footprint は転送に用いる Buffer 内の byte 配列を表し、Textur
 
 ## コード配置
 
-以下は repository root からの目標配置である。Portable とそのテスト project は新設予定、WebGPU とそのテスト project は既存を改編する。
+以下は repository root からの配置で、後続機能の目標配置を含む。Portable とそのテスト project を新設し、WebGPU とそのテスト project に独立実装を加える。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Textures/` | 公開 description、dimension、usage、handle と copy footprint。`RequiredBytes` の host 算術もここに置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Textures/` | `GPUTexture` の生成・破棄、description 変換と `MutableFormat` に応じた内部 view format の設定。画像ファイルの読み込みや復号は追加しない。 |
-| `src/graphics/Lumyte.Graphics.Portable.Tests/Textures/` | 新設予定の xUnit project。copy footprint の byte 数と overflow など host 上の振る舞いを検証する。 |
+| `src/graphics/Lumyte.Graphics.Portable.Tests/Textures/` | copy footprint の追加時に、byte 数と overflow など host 上の振る舞いを検証する配置先。生成・破棄の公開契約は `Device/` の consumer test で検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Textures/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Textures/` | 既存 xUnit project。fake runtime への生成設定と破棄の接続を検証し、実 device の copy・format 再解釈試験を隔離する。 |
 
 ## 使用例
@@ -60,4 +60,6 @@ finally
 
 ## 採用範囲と未実装事項
 
-Texture と内部 memory の一体生成・破棄を採用する。新しい独立 backend、Texture の生成・破棄と copy footprint の接続は未実装である。
+Texture と内部 memory の一体生成・破棄を採用する。独立した Portable 契約と native host の WebGPU backend に、1D／2D／3D description、opaque handle、生成・破棄、MutableFormat と object ごとの非同期生成診断を実装した。
+
+View／Binding での利用、copy footprint／copy command と Browser 実装は未実装である。この段階の実機試験は生成・診断・所有の確認であり、Texture の転送・sampling・描画の成功を意味しない。詳細は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

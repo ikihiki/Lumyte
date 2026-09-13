@@ -2,6 +2,8 @@ using System.Text;
 
 using Lumyte.Graphics.Shader;
 
+using LegacyWebGpuBackend = Lumyte.Graphics.WebGPU.Legacy.WebGpuBackend;
+
 namespace Lumyte.Graphics.WebGPU.Tests;
 
 [Collection("GpuBackend")]
@@ -28,7 +30,7 @@ public sealed class WebGpuDeviceTests
     [Trait("Category", "WebGpuConformance")]
     public void BackendCanBeCreated()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
 
         Assert.NotNull(backend.MainQueue);
     }
@@ -37,7 +39,7 @@ public sealed class WebGpuDeviceTests
     [Trait("Category", "WebGpuConformance")]
     public void BackendExposesImplementedCapabilities()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
 
         Assert.Equal(
             GpuBackendCapabilities.DeviceOwnedResources
@@ -50,7 +52,7 @@ public sealed class WebGpuDeviceTests
     [Trait("Category", "WebGpuConformance")]
     public void DeviceIssuesDistinctLogicalSamplerIds()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
 
         SamplerId first = backend.CreateSampler(default);
         SamplerId second = backend.CreateSampler(new(GpuSamplerFilter.Linear, GpuSamplerFilter.Linear));
@@ -67,7 +69,7 @@ public sealed class WebGpuDeviceTests
     [Trait("Category", "WebGpuConformance")]
     public void DeviceIssuesDistinctLogicalTextureIds()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         GpuTextureHandle texture = backend.CreateTexture(
             new(2, 2, GpuFormat.Rgba8Unorm, GpuTextureUsage.Sampled));
 
@@ -87,7 +89,7 @@ public sealed class WebGpuDeviceTests
     [Trait("Category", "WebGpuConformance")]
     public void TextureRoundTripPreservesPixels()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] expected =
         [
             255, 0, 0, 255, 0, 255, 0, 255,

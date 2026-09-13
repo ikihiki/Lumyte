@@ -24,6 +24,7 @@ resource は `GPUBuffer`／`GPUTexture`、binding は `GPUBindGroupLayout`／`GP
 | API | 説明 |
 | --- | --- |
 | `WebGpuBackend.CreateAsync(runtime, options)` | runtime の adapter/device 初期化を行い、`IPortableGpuBackend` を返す。`runtime` のホスト環境は借用し、作成した device は backend が所有する。 |
+| `WebGpuBackend.CreateAsync(options = null)` | native host 用。配布した Dawn runtime の instance／adapter／device を自身で作成・所有する。Portable interface を直接実装した `WebGpuBackend` を非同期に返す。 |
 | `GpuBackendOptions` | 要求 feature と limit を device 作成へ渡す。要求した直接入力機能を満たせない環境では初期化を失敗させる。 |
 | `Capabilities`／`Limits` | 作成した device で有効な機能と上限。 |
 | `Dispose()` | application の全利用終了後に内部 object と device を終了する。借用 runtime のホスト環境は終了しない。 |
@@ -44,6 +45,22 @@ resource、binding、pipeline と queue の API は各依存 ADR をそのまま
 `MutableFormat = false` は基礎 format と既定の aspect 解釈を使い、true の場合も WebGPU が許す format 再解釈だけを有効にする。backend が公開の format 能力照会や独自 validator を追加する理由にはしない。
 
 package は複数 WebGPU resource の所有と寿命をまとめ、pool は利用終了後の resource object を再利用する。memory の取得と配置は WebGPU runtime に任せ、backend が resource 生成の前に別の heap を用意する経路は設けない。
+
+### Native host の非同期接続
+
+native host は WebGPUSharp 0.5.7 の同梱 Dawn C API を直接呼ぶ。既存の Silk descriptor を変換する `ModernWebGpuApi` は旧実装の一部であり、新しい Portable backend は経由しない。WGSL の `ImmediateAddressSpace` を instance で確認し、要求した feature／limit を device 作成へ渡す。`GpuRequiredLimits` の null だけを C API の undefined sentinel に変換し、その sentinel と同じ明示値は表現不能として拒否する。能力の比較や適合性は runtime に委ね、有効値は `DeviceGetLimits`／`DeviceHasFeature` から取得する。[WebGPUSharp](https://github.com/EmilSV/WebGPUSharp)
+
+adapter／device 要求、map、error scope と device loss は `AllowSpontaneous` callback で受ける。callback 内では文字列をコピーして managed 結果を通知し、native API を再入呼出ししない。continuation は callback の外で実行する。callback の userdata は対応する callback まで保持し、device event の共有 userdata は device loss 通知で解放する。C API は loss 後に uncaptured error を呼ばないと保証している。[WebGPU C API の非同期操作](https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html)
+
+`AllowSpontaneous` は callback の呼出しを許す設定であり、runtime が GPU の完了を発見する処理まで保証しない。native host は instance ごとに一つのイベント進行 thread を持ち、未完了の native future がある間だけ `InstanceWaitAny` を実行する。instance に `TimedWaitAny` を要求し、一度に一つの future を有限時間だけ待つことで、異なる発生源を同時に待つ C API の制約を避ける。未完了の future がなければ thread は休止し、登録または終了通知で再開する。公開の `CreateAsync`／`MapBufferAsync` は Task を返して呼出し元を待たせず、backend の終了時には進行処理を終了してから instance を解放する。[C API の待機と発生源](https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html)
+
+この内部保持は実行中の native future に限る。application resource の寿命管理、全 GPU work の暗黙待機や frame の進行制御は追加しない。Browser は JavaScript の Promise とホストのイベント処理へ接続し、この native thread を共通 Portable 契約へ持ち込まない。
+
+native host は Dawn の `ImplicitDeviceSynchronization` feature も device 作成時に要求する。Dawn はこの feature の有効時だけ device の host mutex を作るため、イベント進行と利用者の native 呼出しを並行させるために必要である。これは Dawn 内部 object の host 操作を保護する設定で、GPU の queue 間依存や application resource の寿命を自動管理する機能ではない。Portable の GPU capability には加えず、この runtime 接続の条件とする。[Dawn の device 初期化](https://dawn.googlesource.com/dawn/+/refs/heads/main/src/dawn/native/Device.cpp)
+
+Read mapping は const mapped range を `ReadOnlyMemory<byte>` に、Write mapping は writable mapped range を `Memory<byte>` に接続する。managed copy と後日の暗黙 write-back を用いず、native mapping を直接包む。`MemoryManager` が unmap 後の Span／Pin の再取得を拒否するが、すでに取得した Span／pointer の利用終了は caller が保証する。失敗した map の cleanup でも、成功していない二重 map を理由に既存 mapping を unmap しない。
+
+map の callback が未完了のまま device loss で公開待機を終了した場合も、callback 用の native 参照は完了まで保持して解放する。これは実行中の interop 操作の保持であり、application resource を追跡・延命する registry ではない。
 
 ## Binding と shader
 
@@ -75,6 +92,8 @@ queue への提出後、その提出を含む `onSubmittedWorkDone` を caller �
 
 batch は実際に参照する object の生成診断と、自身の pipeline・encode・submit 診断をまとめて観測する。生成が別の提出より前でも、必要な診断を失わない。無関係な object や batch のエラーを「最後に提出した batch」へ付け替えない。scope が返した runtime の診断を保持し、wrapper が binding・format・usage・shader の validator を複製する処理は設けない。
 
+提出を伴わない resource 操作は `GpuOperationException` に操作名と runtime の診断列を保持する。buffer mapping は生成診断と native map の両方が揃ってから成功する。要求した feature／limit を runtime が拒否した device request も、callback の status と message をそのまま診断へ写す。adapter がない、または必須の直接入力機能がない場合は `NotSupportedException` とし、buffer fallback へ進まない。
+
 ### 利用終了と成功を別々に確定する
 
 batch ごとに GPU 利用終了と診断確定を別々に記録し、両方が揃ってエラーがない場合だけ `WaitAsync` を正常完了させる。`onSubmittedWorkDone` と `popErrorScope` 等の Promise の到着順を仮定しない。低層 `Submit` は Promise を同期的に待たず復帰するため、その時点では runtime に渡した work の成功は未確定である。[WebGPU の Promise 順序](https://gpuweb.github.io/gpuweb/#promise-ordering)
@@ -95,12 +114,13 @@ device 作成直後から `device.lost` を監視し、completion と同じ runt
 
 ## コード配置
 
-以下は repository root からの目標配置である。既存の WebGPU、WebGPU.Browser と WebGPU.Tests を改編して Portable 契約へ接続する。表中の分野別ディレクトリは目標配置とし、同じ実装を旧・新 API に二重保持しない。
+以下は repository root からの目標配置を含む。既存の WebGPU、WebGPU.Browser と WebGPU.Tests を改編して Portable 契約へ接続する。新しい `WebGpuBackend` は Portable を直接実装する。未移行の旧 `WebGpuDevice` と描画系は既存 source として残し、その factory だけを `Legacy/WebGpuBackend.cs` の `Lumyte.Graphics.WebGPU.Legacy` へ移す。Portable の互換経路にはせず、移行完了後に旧実装を除く。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.WebGPU/Device/` | `WebGpuBackend.CreateAsync`、device 所有、feature/limit と診断の接続。`IPortableGpuBackend` を直接実装する。 |
-| `src/graphics/Lumyte.Graphics.WebGPU/Resources/`、`src/graphics/Lumyte.Graphics.WebGPU/Buffers/`、`src/graphics/Lumyte.Graphics.WebGPU/Textures/` | 内部 handle の所有、memory を含む resource の生成・破棄、mapping と copy 用の接続。 |
+| `src/graphics/Lumyte.Graphics.WebGPU/Interop/`、`src/graphics/Lumyte.Graphics.WebGPU/Diagnostics/` | Dawn C API の callback／userdata lifetime、instance の非同期イベント進行と、object ごとの診断・device loss の接続。 |
+| `src/graphics/Lumyte.Graphics.WebGPU/Buffers/`、`src/graphics/Lumyte.Graphics.WebGPU/Textures/` | 内部 handle の所有、memory を含む resource の生成・破棄、mapping と copy 用の接続。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Views/`、`src/graphics/Lumyte.Graphics.WebGPU/Bindings/` | view/sampler の実体化、内部 cache と bind group。group layout の実装は `Bindings/Layouts/` に置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Shaders/`、`src/graphics/Lumyte.Graphics.WebGPU/Pipelines/` | WGSL module と直接入力の接続、論理 pipeline と提出時に生成する実 pipeline の cache。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Commands/`、`src/graphics/Lumyte.Graphics.WebGPU/Submission/`、`src/graphics/Lumyte.Graphics.WebGPU/Synchronization/` | 記録の encode、queue 提出、CPU timeline と completion を分離する。object／batch の診断記録と、利用終了・成功の確定を接続する。 |
@@ -109,7 +129,7 @@ device 作成直後から `device.lost` を監視し、completion と同じ runt
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/` | 実 runtime/device を使う適合試験。無効な pipeline／command の提出を成功した upload として報告しないことも確認し、通常の unit test と分離する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/` | 新設予定の隣接 xUnit project。ブラウザー process と GPU を要する interop 試験を隔離する。 |
 
-低層の公開契約は新設予定の `src/graphics/Lumyte.Graphics.Portable/`、準備済み shader package と program の API は新設予定の `src/graphics/Lumyte.Graphics.Portable.Shaders/` が所有する。既存 WebGPU backend に Native adapter や file loader を追加しない。
+低層の公開契約は `src/graphics/Lumyte.Graphics.Portable/`、準備済み shader package と program の API は新設予定の `src/graphics/Lumyte.Graphics.Portable.Shaders/` が所有する。既存 WebGPU backend に Native adapter や file loader を追加しない。
 
 ## 使用例
 
@@ -127,4 +147,6 @@ Console.WriteLine(program.BindingLayouts.Count);
 
 ## 採用範囲と未実装事項
 
-WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。独立した Portable backend、WGSL package/loader、binding set、pipeline の提出時生成、直接入力対応 runtime の選定、object／batch 診断と利用終了・成功の接続は未実装である。
+WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping と object ごとの診断を実装した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
+
+WGSL package/loader、binding set、pipeline の提出時生成、copy を含む command、batch の利用終了と処理成功の接続、Browser の runtime 借用形 factory は未実装である。初期化時の直接入力能力確認は、この新経路で Portable shader を実行したことを意味しない。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

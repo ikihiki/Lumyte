@@ -3,6 +3,8 @@ using System.Text;
 
 using Lumyte.Graphics.Shader;
 
+using LegacyWebGpuBackend = Lumyte.Graphics.WebGPU.Legacy.WebGpuBackend;
+
 namespace Lumyte.Graphics.WebGPU.Tests;
 
 [Collection("GpuBackend")]
@@ -152,7 +154,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void RasterizedTriangleCanBeReadBack()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-triangle"));
         GpuShaderPackage package = CreatePackage(
             TriangleShader, "triangleVertex", "triangleFragment", abiHash);
@@ -185,7 +187,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void UploadedTextureCanBeSampledByAQuad()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-textured-quad"));
         GpuShaderPackage package = CreatePackage(
             TexturedQuadShader, "quadVertex", "quadFragment", abiHash);
@@ -237,7 +239,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void BufferIdCanBeReadByAFragmentShader()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         var description = new GpuBufferDescription(
             16,
             GpuBufferUsage.ShaderData | GpuBufferUsage.CopyDestination);
@@ -282,7 +284,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void DepthTestAndWriteKeepNearestTriangleInEitherDrawOrder()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-depth"));
         GpuShaderPackage nearPackage = CreatePackage(DepthShader, "nearVertex", "nearFragment", abiHash);
         GpuShaderPackage farPackage = CreatePackage(DepthShader, "farVertex", "farFragment", abiHash);
@@ -339,7 +341,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void StencilAttachmentParticipatesInRenderedOutput()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-stencil"));
         GpuShaderPackage package = CreatePackage(
             TriangleShader, "triangleVertex", "triangleFragment", abiHash);
@@ -389,7 +391,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void AlphaBlendCombinesSourceAndDestinationColors()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-alpha-blend"));
         GpuShaderPackage package = CreatePackage(AlphaShader, "alphaVertex", "alphaFragment", abiHash);
         GpuTextureHandle target = CreateTarget(backend);
@@ -425,7 +427,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void ColorWriteMaskPreservesDisabledChannels()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-color-mask"));
         GpuShaderPackage package = CreatePackage(
             TriangleShader, "triangleVertex", "triangleFragment", abiHash);
@@ -457,7 +459,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void TriangleStripRasterizesAQuad()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-triangle-strip"));
         GpuShaderPackage package = CreatePackage(StripShader, "stripVertex", "stripFragment", abiHash);
         GpuTextureHandle target = CreateTarget(backend);
@@ -484,7 +486,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void FrontFaceSelectsWhichTriangleIsCulled()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-culling"));
         GpuShaderPackage package = CreatePackage(
             TriangleShader, "triangleVertex", "triangleFragment", abiHash);
@@ -538,7 +540,7 @@ public sealed class WebGpuRenderingTests
     [Trait("Category", "WebGpuConformance")]
     public void UnsupportedPipelineOptionsAreRejected()
     {
-        using IGpuBackend backend = WebGpuBackend.Create();
+        using IGpuBackend backend = LegacyWebGpuBackend.Create();
         byte[] abiHash = SHA256.HashData(Encoding.UTF8.GetBytes("webgpu-unsupported-pipeline"));
         GpuShaderPackage package = CreatePackage(
             TriangleShader, "triangleVertex", "triangleFragment", abiHash);

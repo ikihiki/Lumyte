@@ -24,26 +24,31 @@ Buffer の生成時に必要な memory も取得し、破棄時にその所有�
 | `GpuBufferHandle` | device に属する opaque identity。値のコピーは resource を所有・延命しない。 |
 | `IPortableGpuBackend.CreateBuffer(description)` | memory を含む device-owned Buffer を作る。 |
 | `MapBufferAsync(buffer, mode, offset, length)` | `GpuMapMode.Read` または `Write` で指定範囲を非同期に map し、`GpuMappedBufferRange` を返す。map 完了前や map 中に競合する GPU 利用をしない。 |
-| `GpuMappedBufferRange.Memory` | map した host memory。読み書き権限は `GpuMapMode` に従う。shader からアクセスできる直接入力ではない。 |
-| `GpuMappedBufferRange.Dispose()` | unmap し、すべての host memory 参照を無効化する。buffer 自体は破棄しない。 |
+| `GpuMappedBufferRange.Memory` | Write mapping の `Memory<byte>`。Read mapping では `InvalidOperationException` を返す。shader の直接入力ではない。 |
+| `GpuMappedBufferRange.ReadOnlyMemory` | Read／Write の両 mapping で使える `ReadOnlyMemory<byte>`。 |
+| `GpuMappedBufferRange.Dispose()` | 一度だけ unmap し、mapped memory の論理寿命を終了する。以後の Memory／Span の取得を拒否する。buffer 自体は破棄しない。 |
 | `DestroyBuffer(buffer)` | 全利用終了後に Buffer を破棄し、内部 memory の所有も終了する。 |
 
 mapping、binding と copy の offset は、生成した Buffer の先頭からの byte offset とする。caller が heap 内の位置を足し込む必要はない。
 
 map は実際の resource 操作であり、永続的な CPU pointer を捏造しない。要求した resource の map に伴う runtime の待機はあり得るが、他 resource の所有や lifetime を引き受けない。Buffer を map できる用途と、GPU で利用できる用途の組合せは runtime の条件に従う。
 
+`GpuBufferHandle` と `GpuMappedBufferRange` は public abstract 基底型と protected constructor から外部 backend が実装する。取得済みの Memory から unmap 後に Span を取り直す操作は拒否するが、すでに取得した Span／pointer 自体を .NET が失効させることはできない。caller はそれらを Dispose 後に利用せず、mapped memory へのアクセスと unmap を競合させない。map の length は `Memory<byte>` の int 長とホストの pointer 幅で表現できる必要があり、buffer 全体の ulong 容量とは区別する。
+
+mapping の完了は native map とその buffer の生成診断をともに確認する。生成診断が遅れているときに native map の成功だけを返さず、失敗時は `GpuOperationException`、device loss は `GpuDeviceLostException` へ接続する。
+
 Parameter Data の uniform/storage Buffer は caller または Resources が明示的に作り、必要な byte 列を転送する。command は root data を解析してこの Buffer を作成・更新しない。
 
 ## コード配置
 
-以下は repository root からの目標配置である。Portable とそのテスト project は新設予定、WebGPU 関連 project は既存を改編する。
+以下は repository root からの配置で、後続機能の目標配置を含む。Portable とそのテスト project を新設し、WebGPU 関連 project に独立実装を加える。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Buffers/` | 公開 description、usage、handle、map mode、mapped range と backend の Buffer 操作契約。GPU address や heap 配置の型は置かない。 |
-| `src/graphics/Lumyte.Graphics.WebGPU/Buffers/` | `GPUBuffer` の生成・破棄、非同期 map/unmap と mapped memory の所有処理。既存の Buffer 実装を移す。 |
+| `src/graphics/Lumyte.Graphics.WebGPU/Buffers/` | `GPUBuffer` の生成・破棄、非同期 map/unmap と mapped memory の所有処理。Dawn C API へ直接接続する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser/Buffers/` | ブラウザーの mapped memory と promise の interop。JavaScript の参照や変換処理を Portable の公開型へ露出させない。 |
-| `src/graphics/Lumyte.Graphics.Portable.Tests/Buffers/` | 新設予定の xUnit project。description と mapped range の公開契約を、device 不要の範囲で検証する。 |
+| `src/graphics/Lumyte.Graphics.Portable.Tests/Buffers/` | description と mapped range の分野別試験の配置先。最初の consumer test は `Device/` から外部 backend の生成・mapping・破棄を通して検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Buffers/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Buffers/` | 既存 xUnit project の fake runtime による map/unmap と解放試験、実 device の mapping/copy 試験を分離する。 |
 
 ## 使用例
@@ -72,4 +77,6 @@ finally
 
 ## 採用範囲と未実装事項
 
-WebGPU に適した明示用途と map/unmap を採用する。独立した Buffer API、内部 memory を含む生成・破棄、非同期 mapping は未実装である。実 device の制約の再実装や、Native address への変換 API は設けない。
+WebGPU に適した明示用途と map/unmap を採用する。独立した Buffer API、内部 memory を含む生成・破棄、native host の非同期 mapping と、元 buffer の生成診断を含めた失敗通知を実装した。書込み範囲と読取り専用範囲を区別し、unmap 後の managed memory 再取得を拒否する。
+
+Buffer の binding／copy command と Browser mapping は未実装である。実 device の制約の再実装や、Native address への変換 API は設けない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

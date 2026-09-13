@@ -33,16 +33,16 @@ Buffer の byte 範囲と Texture の subresource は、その resource の内�
 
 ## コード配置
 
-以下は repository root からの目標配置である。Portable project は新設予定、WebGPU とそのテスト project は既存を改編する。
+以下は repository root からの配置で、後続機能の目標配置を含む。Portable project を新設し、WebGPU とそのテスト project に独立実装を加える。
 
 | 配置先 | 内容 |
 | --- | --- |
-| `src/graphics/Lumyte.Graphics.Portable/Resources/` | Buffer／Texture に共通する所有規約の文書化と、必要な内部 resource identity 処理を置く。公開 heap、allocation、memory manager は追加しない。 |
+| `src/graphics/Lumyte.Graphics.Portable/README.md` と `Device/IPortableGpuBackend.cs` | Buffer／Texture に共通する所有規約を記す。opaque identity は各 backend の派生型で持ち、共通の registry や公開 heap、allocation、memory manager は追加しない。 |
 | `src/graphics/Lumyte.Graphics.Portable/Buffers/`、`src/graphics/Lumyte.Graphics.Portable/Textures/` | 公開の生成・破棄契約を各 resource の API と同じ場所に置く。共通所有規約のために別の生成入口を設けない。 |
-| `src/graphics/Lumyte.Graphics.WebGPU/Resources/` | resource object と内部 memory の一体所有に関する内部 handle 管理。個々の WebGPU 生成・破棄呼出しは同 project の `Buffers/`、`Textures/` に置く。 |
+| `src/graphics/Lumyte.Graphics.WebGPU/Buffers/`、`src/graphics/Lumyte.Graphics.WebGPU/Textures/` | resource object と内部 memory の一体所有、非公開 handle、生成・破棄呼出しを resource ごとに置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Resources/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Resources/` | xUnit により fake runtime で生成・破棄の所有を確認し、実 device の resource 作成・終了試験は `Integration/` に隔離する。 |
 
-上位の package、pool と完了後回収は Resource 管理 library に置き、この低層の `Resources/` へ移さない。
+上位の package、pool と完了後回収は Resource 管理 library に置き、低層 backend へ移さない。
 
 ## 使用例
 
@@ -70,4 +70,6 @@ finally
 
 ## 採用範囲と未実装事項
 
-resource と内部 memory の一体生成・破棄を Portable の唯一の所有モデルとする。独立した Portable backend と各 resource の生成・破棄経路への接続は未実装である。
+resource と内部 memory の一体生成・破棄を Portable の唯一の所有モデルとする。独立した Portable 契約と native host の WebGPU backend に、Buffer／Texture の生成、native Destroy と参照解放を実装した。resource の opaque identity は実装側の非公開派生型が持ち、全 resource registry は設けない。
+
+上位 package／pool、自動退役、binding や GPU command を含む寿命の接続と Browser backend は未実装である。生成・mapping の試験を、まだ実装していない GPU 転送・描画の検証と扱わない。

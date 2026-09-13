@@ -269,9 +269,43 @@ CPU gate の timeline を GPU に待たせ、未解放の間に3 frame を CopyQ
 
 DirectX 12 debug layer と Vulkan Khronos validation layer を有効にした試験、native allocation failure と実 device loss の強制、全 GPU の queue 構成と性能測定は未実施とする。device loss の伝播は結果の注入で確認する。任意数の queue 作成、専用 compute queue、stage を選ぶ wait、複数 signal、presentation、上位 Resources の自動退役と Portable への移行はこの段階に含めない。
 
+## 第9段階: Portable device・Buffer／Texture 基盤
+
+2026-09-13 に [Portable device](../adr/0016-portable-api.md)、[Resource のメモリ所有](../adr/0017-resource-memory-model.md)、[Buffer](../adr/0018-buffer-api.md)、[Texture](../adr/0019-texture-api.md) と [WebGPU backend](../adr/0027-webgpu-backend-implementation.md) の基盤を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | 独立した `Lumyte.Graphics.Portable` に `IPortableGpuBackend`、要求 feature／limits、opaque Buffer／Texture、mapped range と runtime 診断を追加。外部 assembly は public／protected 契約だけで実装する |
+| Device | `WebGpuBackend.CreateAsync(options)` が WebGPUSharp 0.5.7 同梱 Dawn の instance／adapter／device を所有する。Native backend や既存の `ModernWebGpuApi` を経由しない |
+| 直接入力 | WGSL `immediate_address_space` と非ゼロの `MaxImmediateSize` を初期化要件にする。未指定なら adapter の直接入力容量を要求し、有効値は生成した device から読む。固定 byte ABI と buffer fallback は設けない |
+| 要求と有効値 | 任意 feature は明示要求し、device で有効な値を返す。要求 limits の null は未指定、0は明示値として扱う。C API の未指定 sentinel と同じ明示値は表現不能として拒否する |
+| Buffer／Texture | usage を native descriptor に渡し、必要な memory を含めて生成・破棄する。heap、配置 requirement、GPU address、application resource の registry は持たない。Texture は1D／2D array／3Dと内部の互換 view format 設定を扱う |
+| Mapping | native map 完了後の mapped pointer を `MemoryManager` で直接包む。Write は writable memory、Read は read-only memory とし、Dispose で unmap する。保存済み Memory からの Span／Pin 再取得も拒否する |
+| 診断 | validation／out-of-memory／internal scope を生成操作ごとに保持する。map は元 Buffer の生成診断と native map の双方を観測し、無関係な object の失敗を混ぜない。操作失敗は `GpuOperationException`、device loss は共有例外へ接続する |
+
+caller は取得済み Span／pointer の利用と mapping を終えてから resource を破棄し、その後に backend を破棄する。すでに取得した Span 自体を .NET で失効させることはできない。map の byte length は `Memory<byte>` の int 長とホストの pointer 幅で表現できる必要があるが、GPU の usage／alignment／size の検証は Dawn に委ねる。二重 map の失敗を理由に、先に成功した mapping を unmap しない。
+
+新しい `WebGpuBackend` は Portable 専用とし、旧 `IGpuBackend` の factory は `Legacy.WebGpuBackend` へ移した。未移行の旧描画系はその factory を使用する。旧実装を新契約の adapter として動かす経路は追加していない。
+
+この PC の Dawn では8 byte／16 byte の直接入力を要求した device の有効値が、ともに64 byteだった。要求 limit は必要容量の下限であり、runtime がそれ以上を有効にすることを許す。実 GPU 試験で要求を満たすことを確認し、interop の単体試験で8／16の要求をそのまま descriptor へ渡すことを確認する。64 byteへ固定する wrapper の実装とは区別する。
+
+並列生成・mapping の試験では、生成と map の全 error scope が完了しても4個の map callback が返らず、無応答検出で終了した。trace では native 呼出しはすべて復帰しており、managed lock の待機ではなかった。同梱 Dawn に `AllowSpontaneous` を指定するだけでは queue event が進行せず、runtime の `spontaneous_queue_events` toggle 単独でも解消しなかったため、instance ごとの `TimedWaitAny` によるイベント進行を実装した。未完了 future だけを一件ずつ有限時間待ち、空なら thread を休止する。公開の非同期呼出し、mapping 結果の判定と並列テストの条件は維持する。
+
+イベント進行と native resource 操作の並行試験では、Dawn の host 同期機能を要求しない構成で access violation も再現した。Dawn の device mutex は `ImplicitDeviceSynchronization` feature の有効時に作られることを公式実装で確認し、native host の device 要求へ追加した。GPU の同期を省略する代替機能とは扱わない。初期化の失敗で遅れて返る adapter／device も回収し、native future の登録や error scope 操作が失敗した場合は、壊れた runtime 接続の再利用を拒否する。
+
+公開契約の consumer test は [Portable.Tests](../../src/graphics/Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj)、実 Dawn device を使う試験は [WebGPU の適合試験](../../src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/PORTABLE.md) に置く。実行可能な生成・mapping の例は [Portable README](../../src/graphics/Lumyte.Graphics.Portable/README.md) にある。
+
+追加テストは Portable の公開契約12件、WebGPU の38件で計50件。WebGPU は実 device 24件、制御した非同期診断9件、要求 limit の interop 5件を含む。focused tests はそれぞれ全件成功し、失敗・skip・ビルド警告はなかった。前記の並列 mapping、失敗した二重 map による既存 lease の保全、無効 resource の診断分離も成功した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=portable-foundation-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、26 test project の **1,683件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は401件、Vulkan は413件、WebGPU は192件、Native は92件、Portable は12件。最後のレビューで追加した event 登録失敗時の device fault 処理も、この全体実行に含む。TRX は各 test project の `TestResults/` に保存した。
+
+独立レビューで外部 backend の実装契約、native future の進行と終了、初期化の失敗、callback の保持・回収、mapping の寿命と診断の分離を確認した。37 ADR の必要章、依存章の182個のリンクが若い番号へ向くこと、46文書の366ローカルリンクと20アンカーに問題がないことを確認した。`InternalsVisibleTo` は10指定すべて test assembly 向けで、Native と Portable の内部公開は0件。staged diff の空白検査も問題なし。
+
+この段階は resource 基盤であり、新しい Portable 経路での shader 実行、GPU copy／描画結果、提出 batch の成功確定は未実装である。Texture の試験も生成・診断・破棄の確認に限る。Browser runtime、実 GPU の allocation failure と device loss の強制試験は未実施とし、診断の到着順と device loss の伝播は制御した Task で検証する。
+
 ## 未実装と次の順序
 
-1. 独立した Portable API と WebGPU の device・resource・shader・command を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
-2. 両系統の Resources・shader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
+1. Portable の view／binding、shader／pipeline、copy を含む command、queue completion と Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
+2. 両系統の Resources・shader package／loader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
