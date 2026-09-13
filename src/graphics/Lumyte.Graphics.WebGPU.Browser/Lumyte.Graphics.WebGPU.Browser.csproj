@@ -1,8 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Description>Browser host integration for the Lumyte WebGPU backend.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Lumyte.Graphics.WebGPU\Lumyte.Graphics.WebGPU.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable\Lumyte.Graphics.Portable.csproj" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.WebGPU.Browser.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="wwwroot\lumyte-webgpu.js" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles/any/any/wwwroot/" />
   </ItemGroup>
 </Project>

@@ -39,16 +39,18 @@ texture 間 copy は二つの領域の extent を一致させ、buffer 用の pi
 
 ## コード配置
 
-以下は repository root からの配置。Portable の公開契約と WebGPU の native host 実装を分離する。
+以下は repository root からの配置。Portable の公開契約と WebGPU の native host／Browser 実装を分離する。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Textures/` | 公開 description、dimension、usage、handle と copy footprint。`RequiredBytes` の host 算術もここに置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Textures/` | `GPUTexture` の生成・破棄、description 変換と `MutableFormat` に応じた内部 view format の設定。画像ファイルの読み込みや復号は追加しない。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Commands/` | footprint の値を texture copy descriptor へ変換する記録・encode。resource の生成処理や画像 decoder は置かない。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Textures/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser/Commands/` | Browser の Texture 生成・破棄と copy の記録・encode を分離して置く。 |
 | `src/graphics/Lumyte.Graphics.Portable.Tests/Textures/` | 必要 byte 数、padding、aspect、省略 stride と overflow の host 算術を検証する。生成・破棄の公開契約は `Device/` の consumer test で検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Textures/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Textures/` | 生成設定、破棄、実 device の texture 生成・format 再解釈試験を隔離する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Commands/` | 2D array／3D の mip・origin、異なる row/image pitch の転送、stencil aspect、論理 range と native copy 診断の実機試験。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/RasterCases.cs`、`BindingCases.cs` | Browser の Texture、転送、描画と shader からの利用を C# consumer で確認し、隣接 xUnit project から実行する。 |
 
 ## 使用例
 
@@ -80,4 +82,4 @@ Texture と内部 memory の一体生成・破棄を採用する。独立した 
 
 View 値からの内部 view 生成と sampled／storage texture の Binding、compute／raster pass への group 設定、raster attachment、copy footprint と buffer↔texture／texture 間 copy を実装した。実機で 2D array／3D の mip・origin と異なる row/image pitch、stencil の upload／readback、sampled texture の raster 利用、attachment の描画と readback を検証する。
 
-現在の `GpuFormat` には圧縮 format がなく、その転送は未実装である。内部 texture placement の照会・公開や画像ファイルの loading は追加しない。Browser 実装は未実装である。実機検証の結果と範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Browser にも Texture の生成・破棄、View、描画と copy を接続した。現在の `GpuFormat` には圧縮 format がなく、その転送は未実装である。内部 texture placement の照会・公開や画像ファイルの loading は追加しない。実機検証の結果と範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

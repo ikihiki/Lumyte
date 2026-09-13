@@ -58,8 +58,10 @@ caller は参照先 resource を最初の記録から全利用終了まで保持
 | `src/graphics/Lumyte.Graphics.Portable/Views/` | 非 owning な texture view、buffer range、sampler description と正規化・slice の host 算術。 |
 | `src/graphics/Lumyte.Graphics.Portable/Views/Attachments/` | color/depth-stencil attachment、load/store と clear の公開値。resource の生成・破棄 API と分離する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Views/` | binding/attachment 実体化時の view・sampler 生成と内部 cache。公開 view identity や global descriptor 管理は追加しない。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Views/` | Browser の texture view／sampler を用途に応じて作り、内部参照と JSObject proxy の回収を接続する。 |
 | `src/graphics/Lumyte.Graphics.Portable.Tests/Views/` | 隣接する xUnit project。省略値の正規化、range の slice と非 owning な値の振る舞いを検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Views/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Views/` | 既存 xUnit project。内部 object の再利用・解放を fake runtime で、実 view/sampler の利用を実 device で検証する。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/BindingCases.cs`、`RasterCases.cs` | Browser の sampling／storage view と render attachment の実利用を C# consumer と xUnit で確認する。 |
 
 共有 format/comparison の定義は基礎値の project に残し、このディレクトリで複製しない。
 
@@ -81,4 +83,4 @@ var attachment = new GpuColorAttachment(
 
 resource と解釈を分け、非 owning の値で扱う方針を採用する。Portable 専用の view／range／sampler／attachment 値、Normalize／Slice の host 算術、native host の binding 用 view/sampler と attachment 用 view の実体化を実装した。内部 cache は用途を含めて共有し、最後の参照の解放で取り除く。binding の参照は DestroyBindings まで、提出の attachment 参照は GPU 利用終了まで保持する。managed encode 失敗では途中取得した参照も回収する。
 
-Buffer range は binding／copy／index／indirect work へ接続し、attachment の clear/load/store、depth/stencil、resolve と描画も実装した。複数 mip を持つ Texture を attachment にするときは、caller が View に MipCount: 1 を指定する。backend が範囲を黙って狭めることはない。Browser 接続は未実装である。実機での sampling・転送・描画と所有の検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Buffer range は binding／copy／index／indirect work へ接続し、attachment の clear/load/store、depth/stencil、resolve と描画も実装した。複数 mip を持つ Texture を attachment にするときは、caller が View に MipCount: 1 を指定する。backend が範囲を黙って狭めることはない。Browser も同じ値の契約と内部参照の所有を実装する。実機での sampling・転送・描画と所有の検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

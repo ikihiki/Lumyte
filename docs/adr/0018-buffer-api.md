@@ -41,7 +41,7 @@ Parameter Data の uniform/storage Buffer は caller または Resources が明�
 
 ## コード配置
 
-以下は repository root からの配置で、Browser 等の後続機能の目標配置を含む。Portable とそのテスト project、WebGPU 関連 project に独立実装を置く。
+以下は repository root からの配置。Portable とそのテスト project、WebGPU 関連 project に独立実装を置く。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -79,4 +79,4 @@ finally
 
 WebGPU に適した明示用途と map/unmap を採用する。独立した Buffer API、内部 memory を含む生成・破棄、native host の非同期 mapping と、元 buffer の生成診断を含めた失敗通知を実装した。書込み範囲と読取り専用範囲を区別し、unmap 後の managed memory 再取得を拒否する。
 
-Buffer range による binding、compute／raster shader からの参照、index／indirect 引数、buffer 間および texture との copy、生成診断を Bindings／提出へ引き継ぐ経路も実装した。texture copy では footprint の必要 byte 数を論理 range が含むことだけを確認し、実 Buffer の容量・用途・alignment は runtime の診断に委ねる。Browser mapping は未実装である。実 device の制約の再実装や、Native address への変換 API は設けない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Buffer range による binding、compute／raster shader からの参照、index／indirect 引数、buffer 間および texture との copy、生成診断を Bindings／提出へ引き継ぐ経路も実装した。texture copy では footprint の必要 byte 数を論理 range が含むことだけを確認し、実 Buffer の容量・用途・alignment は runtime の診断に委ねる。Browser も生成・破棄・mapping を実装する。Browser の mapped ArrayBuffer と WASM memory は直接共有できないため、mapped range を managed memory へコピーし、Write の Dispose で同じ ArrayBuffer へ書き戻してから unmap する。このホスト間転送で別の GPU buffer は作らない。実 device の制約の再実装や、Native address への変換 API は設けない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

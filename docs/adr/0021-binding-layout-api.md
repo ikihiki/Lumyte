@@ -47,8 +47,10 @@ layout の合法性、binding 数、visibility、sample/storage type と stage l
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Bindings/Layouts/` | 公開 layout entry、各 resource の layout 値、stage visibility、layout handle と生成・破棄契約。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Bindings/Layouts/` | `GPUBindGroupLayout` への変換、入力値の保持と内部 layout object の所有。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Bindings/Layouts/` | 同じ公開 layout を Browser の bind group layout へ変換し、生成診断と JSObject proxy を保持する。 |
 | `src/graphics/Lumyte.Graphics.Portable.Tests/Bindings/` | 外部 backend の consumer test で、4種類の layout 宣言と不透明 handle の生成・破棄を検証する。layout 固有の追加試験は配下の `Layouts/` に置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Bindings/Layouts/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Bindings/Layouts/` | 既存 xUnit project。入力値を保持する生成経路は fake runtime、shader と layout の実接続は実 device で検証する。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/BindingCases.cs`、`ComputeCases.cs` | Browser の layout と shader／pipeline の実接続を C# consumer と xUnit で確認する。 |
 
 shader package の group metadata は shader library に置き、低層 layout API から compiler を参照しない。WebGPU の layout validator はここで再実装しない。
 
@@ -80,4 +82,4 @@ finally
 
 Portable の resource 入力を明示 layout とする。layout の公開値、opaque handle、入力列の保持、native host の GPUBindGroupLayout 生成・解放と非同期診断を実装した。binding の重複番号や visibility、limit、layout の合法性は runtime に委ねる。
 
-raster／compute shader module・pipeline と直接入力の layout へ接続した。shader package metadata と Browser の接続は未実装である。[進捗記録](../designs/graphics-implementation-progress.md)
+raster／compute shader module・pipeline と直接入力の layout へ接続した。Browser も同じ契約から bind group layout を生成する。shader package metadata の接続は未実装である。[進捗記録](../designs/graphics-implementation-progress.md)

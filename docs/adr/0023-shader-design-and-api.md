@@ -34,7 +34,7 @@ root data は `var<immediate>` の直接入力であり、program ごとに byte
 
 description は GPU の状態照会ではなく、caller が準備した入力を保持する。コピーしても module／layout の寿命を延ばさず、構成値から shader package を逆引きしない。
 
-`GpuShaderModuleHandle` は public abstract 型と protected constructor で外部 backend が実装する。`CreateShaderModule(string wgsl)` は呼出し中に source を消費する。`GpuShaderEntryPoint` は readonly record struct、`GpuShaderProgramDescription` は entry／layout の ReadOnlySpan をコピーし、読取り専用の `EntryPoints`／`BindingLayouts` と `uint ImmediateSize` を公開する。元配列の変更は description に反映されない。native host の文字列変換は不正な UTF-16 を置換して別の source にせず、変換失敗として報告する。
+`GpuShaderModuleHandle` は public abstract 型と protected constructor で外部 backend が実装する。`CreateShaderModule(string wgsl)` は呼出し中に source を消費する。`GpuShaderEntryPoint` は readonly record struct、`GpuShaderProgramDescription` は entry／layout の ReadOnlySpan をコピーし、読取り専用の `EntryPoints`／`BindingLayouts` と `uint ImmediateSize` を公開する。元配列の変更は description に反映されない。native host と Browser の文字列変換は不正な UTF-16 を置換して別の source にせず、変換失敗として報告する。
 
 ### Build と package
 
@@ -144,6 +144,6 @@ var root = new LightingRoot { MaterialIndex = 7 };
 
 Portable 専用の準備済み WGSL package 入力型、GPU 構造体生成、binding schema と GPU program の初期化を採用する。source の Slang 共有は部分採用とし、対応を確認できた計算 module と program に限る。直接 WGSL の経路も正式な build 入力とする。ファイルロードと container のデシリアライズは `Lumyte.Resources` の責務であり、この API の採用範囲に含めない。
 
-低レベルの raw WGSL module、entry point と不変の program description を実装した。native host の WebGPU では module の生成診断を保持し、raster/compute pipeline と実際の提出へ引き継ぐ。Vertex／Pixel の直接 root、明示した resource binding と compute の直接入力を同じ低レベル module API で扱う。package、loader、compiler と C# 生成器はまだ使わず、手動で準備した WGSL と入力値を低レベル契約へ直接渡す。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+低レベルの raw WGSL module、entry point と不変の program description を実装した。native host と Browser の WebGPU では module の生成診断を保持し、raster/compute pipeline と実際の提出へ引き継ぐ。Vertex／Pixel の直接 root、明示した resource binding と compute の直接入力を同じ低レベル module API で扱う。package、loader、compiler と C# 生成器はまだ使わず、手動で準備した WGSL と入力値を低レベル契約へ直接渡す。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-Slang 2026.17 による直接 root の生成と、一つの browser／GPU 環境での compute 実行は実験済みである。二系統への toolchain 分離、root accessor の生成器、公開 `setLanguagePrelude` API の統合・適合試験、公式 WGSL frontend からの ABI metadata／C# 生成、package 形式、機能 pass 本体での shader 準備と cache、全 pass の適合試験は未実装である。実験 fixture の host 配置は手動で与えたもので、生成器の完成を示さない。Slang による raster variant、matrix／array 等の全入力型、C# の WebGPU 接続と他 runtime／GPU でのこの経路の適合は別途確認する。既存 offline compiler に残る WGSL の文字列書換えは目標設計の実装として数えず、移行時に廃止する。mesh／amplification の WGSL 変換と Native GPU ABI の移植は採用範囲外とする。
+Slang 2026.17 による直接 root の生成と、一つの browser／GPU 環境での compute 実行は実験済みである。二系統への toolchain 分離、root accessor の生成器、公開 `setLanguagePrelude` API の統合・適合試験、公式 WGSL frontend からの ABI metadata／C# 生成、package 形式、機能 pass 本体での shader 準備と cache、全 pass の適合試験は未実装である。実験 fixture の host 配置は手動で与えたもので、生成器の完成を示さない。C# の Browser WebGPU 接続は実装したが、Slang による raster variant、matrix／array 等の全入力型、他 runtime／GPU での生成経路の適合は別途確認する。既存 offline compiler に残る WGSL の文字列書換えは目標設計の実装として数えず、移行時に廃止する。mesh／amplification の WGSL 変換と Native GPU ABI の移植は採用範囲外とする。

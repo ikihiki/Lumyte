@@ -2,17 +2,21 @@
 
 WebGPU の resource と実行モデルに対応する独立した低レベル契約。[設計の正本](../../../docs/adr/0016-portable-api.md) は Portable ADR 群である。Native の backend を経由せず、Buffer／Texture は内部 memory を含めて生成・破棄する。
 
-現在の範囲は device、要求 feature／limits、Buffer／Texture と mapping、View／Binding、raw WGSL、raster／compute pipeline、直接・indexed・indirect draw、直接／間接 dispatch、buffer／texture copy と CPU timeline の非同期待機である。shader package／loader と Browser runtime の接続は後続段階とする。
+現在の範囲は device、要求 feature／limits、Buffer／Texture と mapping、View／Binding、raw WGSL、raster／compute pipeline、直接・indexed・indirect draw、直接／間接 dispatch、buffer／texture copy と CPU timeline の非同期待機である。native host の Dawn と Browser の WebGPU に独立した実装を置く。shader package／loader は後続段階とする。
 
 ## Device と直接入力
 
 native host では `Lumyte.Graphics.WebGPU.WebGpuBackend.CreateAsync(options)` が、同梱 Dawn runtime の instance／adapter／device を所有する。旧 `IGpuBackend` 用 factory は `Lumyte.Graphics.WebGPU.Legacy.WebGpuBackend` へ移し、新しい Portable device と相互変換しない。
+
+Browser host では `Lumyte.Graphics.WebGPU.Browser.WebGpuBrowserRuntime.LoadAsync(moduleUrl)` で配布 ES module を読み込み、同 namespace の `WebGpuBackend.CreateAsync(runtime, options)` へ渡す。以降は同じ Portable API を使う。runtime は caller 所有で、借用する backend をすべて終了してから破棄する。JSObject を扱う操作は runtime を作成した JavaScript thread で行う。[Browser の配信と実行例](../Lumyte.Graphics.WebGPU.Browser/README.md) に host 設定と制約を記す。
 
 native host の callback と GPU 完了通知は、instance ごとの内部イベント処理が進行させる。未完了の native future がない間は休止する。利用者が polling する必要はなく、`CreateAsync`／`MapBufferAsync` の公開呼出しは非同期に復帰する。
 
 WGSL の `immediate_address_space` と非ゼロの直接入力 capacity は初期化要件である。`MaxImmediateSize` を未指定なら adapter が提供する capacity を要求し、明示指定した場合はその値を要求する。有効な limits は作成した device から取得する。64 byte の固定 root ABI や、root を GPU buffer に退避する経路は設けない。raw WGSL と明示した program layout で raster／compute shader を実行する。
 
 `GpuBackendOptions.RequireDualSourceBlend` と `RequireIndirectFirstInstance` は任意 feature の要求で、`Capabilities` は有効になった機能だけを返す。`RequiredLimits` の nullable member は null と0を区別する。Max limits は必要容量の下限、Min offset alignments は許容制約の上限として runtime へ渡す。native C API の未指定 sentinel と衝突する明示値は表現不能として拒否する。
+
+Browser では C API の sentinel 制約を持ち込まず、未指定 property を省略する。GPU size／offset 等の ulong を JavaScript へ渡すときは、正確に表現できる最大値 `2^53 − 1` を超える値を拒否する。CPU timeline の値は JavaScript へ渡さず、ulong 全域を保持する。
 
 ## Buffer の作成と mapping
 
@@ -40,6 +44,8 @@ finally
 offset は Buffer 先頭からの byte offset である。Write mapping は `Memory<byte>`、Read mapping は `ReadOnlyMemory<byte>` を使う。Write mapping でも `ReadOnlyMemory` を取得できる。`Dispose` は unmap し、Buffer 自体を破棄しない。
 
 unmap 後は保存した Memory から Span を取得し直す操作も拒否する。ただし、すでに取得済みの Span／pointer を失効させることはできないため、caller は unmap 前に全アクセスを終了し、Dispose 後にそれらを使用しない。mapping の length は `Memory<byte>` の int 長とホストの pointer 幅で表現できる必要がある。native の map alignment／usage／resource size の検証は runtime に委ねる。
+
+native host は mapped pointer を直接包む。Browser は mapped ArrayBuffer と WASM memory を直接共有できないため、map 完了後に managed memory へコピーし、Write mapping の Dispose で同じ ArrayBuffer へ書き戻してから unmap する。追加の GPU buffer は作らず、root data はこの mapping 経路を通らない。
 
 ## Texture、View と Binding
 
@@ -220,4 +226,4 @@ scope を開いた native 呼出し区間は同じ device で直列化し、全 
 
 外部 assembly は `IPortableGpuBackend` と `IGpuQueue` を実装し、`GpuBufferHandle`、`GpuTextureHandle`、`GpuMappedBufferRange`、`GpuBindingLayoutHandle`、`GpuBindingsHandle`、`GpuShaderModuleHandle`、`GpuRasterPipelineHandle`、`GpuComputePipelineHandle`、`GpuCommandBuffer`、`GpuSemaphore` の public abstract 基底型と protected constructor から非公開実装を派生させる。Portable assembly の `InternalsVisibleTo` は不要である。
 
-動作確認は隣接する [Portable.Tests](../Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj) の consumer test と、[WebGPU の適合試験](../Lumyte.Graphics.WebGPU.Tests/Integration/PORTABLE.md) に分ける。試験結果と後続作業は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+動作確認は隣接する [Portable.Tests](../Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj) の consumer test、[Dawn の適合試験](../Lumyte.Graphics.WebGPU.Tests/Integration/PORTABLE.md)、[Browser の適合試験](../Lumyte.Graphics.WebGPU.Browser.Tests/Integration/README.md) に分ける。試験結果と後続作業は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

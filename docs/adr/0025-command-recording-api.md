@@ -79,7 +79,7 @@ caller は resource、binding、pipeline、program を最初の記録から全�
 
 ## コード配置
 
-以下は repository root からの配置。Portable とそのテスト project、WebGPU に独立した記録・encode 処理を置く。Browser は目標配置とする。
+以下は repository root からの配置。Portable とそのテスト project、WebGPU と WebGPU.Browser に独立した記録・encode 処理を置く。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -110,4 +110,4 @@ commands.EndCompute();
 
 Portable 固有の pass、明示 binding、直接入力を採用する。render／compute 区間、pipeline／group／dynamic offsets／直接 root の記録、直接・indexed・indirect draw、直接／間接 dispatch、buffer／texture copy、提出時 encode と内部記録の所有を実装した。attachment の span も記録時にコピーする。別 device・破棄済み object と記録区間を確認し、GPU の validator は追加しない。
 
-Browser 接続は未実装である。実機で確認した入力・実行・copy の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Browser も C# で入力を保持し、Submit で JavaScript の encoder／pass に接続する。root bytes は `setImmediates` の直接入力とし、GPU buffer を経由しない。実機で確認した入力・実行・copy の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

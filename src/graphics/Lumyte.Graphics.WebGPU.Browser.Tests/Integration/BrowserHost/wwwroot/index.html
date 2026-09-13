@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Lumyte Browser GPU conformance</title></head>
+<body>
+<p id="status">Starting the .NET browser host.</p>
+<script>
+globalThis.lumyteHost = new Promise((resolve, reject) => {
+    globalThis.resolveLumyteHost = resolve;
+    globalThis.rejectLumyteHost = reject;
+});
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

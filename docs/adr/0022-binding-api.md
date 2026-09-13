@@ -44,8 +44,10 @@ dynamic offset は set 自体を書き換えず command 側で渡す。layout �
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Bindings/` | 公開 `GpuBindingEntry`、`GpuBindingsHandle` と immutable set の生成・破棄契約。layout 定義は配下の `Layouts/` に分ける。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Bindings/` | `GPUBindGroup` の生成・破棄と、set が所有する内部 view/sampler 参照の保持。application resource の所有権は取得しない。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Bindings/` | Browser の immutable bind group、内部 view／sampler 参照と依存診断の所有。 |
 | `src/graphics/Lumyte.Graphics.Portable.Tests/Bindings/` | 外部 backend の consumer test で、Buffer／Texture／Sampler の入力、layout と set の生成・明示的な破棄を検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Bindings/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Bindings/` | 既存 xUnit project。set の不変性と内部 object の所有を fake runtime で、group 設定から draw/dispatch までを実 device で検証する。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/BindingCases.cs`、`ComputeCases.cs` | Browser の group、dynamic offset、Texture／sampler と shader 実行を C# consumer と xUnit で確認する。 |
 
 dynamic offset の記録は command の担当とし、上位の material/pass 向け binding cache は Resource 管理 library に置く。
 
@@ -77,4 +79,4 @@ finally
 
 Portable に明示 binding を採用する。専用 handle、immutable set の作成・解放、依存 object の生成診断の保持、使用中の binding だけで共有する view/sampler cache を実装した。最後の binding 参照がなくなった内部 object は cache から取り除き、参照先の application resource は破棄しない。
 
-render／compute command への group 設定、dynamic offset の実行と shader からの参照を接続した。raster の vertex pulling と Texture／sampler の sampling も実行できる。Browser 接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)
+render／compute command への group 設定、dynamic offset の実行と shader からの参照を接続した。raster の vertex pulling と Texture／sampler の sampling も実行できる。Browser も bind group と object ごとの生成診断に接続する。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)

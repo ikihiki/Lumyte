@@ -59,7 +59,7 @@ caller は未提出の記録と全提出の利用を考慮して resource、bind
 
 ## コード配置
 
-以下は repository root からの配置で、Browser 等の目標配置を含む。Portable とそのテスト project は実装済みで、WebGPU に独立した提出・完了処理を加える。提出と完了は同じ project 内でも別のディレクトリに分ける。
+以下は repository root からの配置。Portable とそのテスト project、WebGPU と WebGPU.Browser に独立した提出・完了処理を置く。提出と完了は同じ project 内でも別のディレクトリに分ける。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -97,4 +97,4 @@ commands.Dispose();
 
 一回提出、CPU からの timeline 観測と、利用終了・処理成功の分離を採用する。native host の WebGPU に raster／compute／buffer・texture copy の提出、object／batch 診断の帰属、非同期 completion、device loss と待機取消しの接続を実装した。成功結果は発行値の区間へ集約し、過去の失敗診断は semaphore の寿命まで保持する。attachment 用の内部 view も、当該 command の GPU 利用終了後に回収する。
 
-Browser 接続は未実装である。実機と制御した非同期結果による検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Browser も一つの `queue.submit` と `onSubmittedWorkDone`、独立した error scope の結果へ接続する。timeline 値は C# の ulong として管理し、JavaScript の Number へ変換しない。実機と制御した非同期結果による検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

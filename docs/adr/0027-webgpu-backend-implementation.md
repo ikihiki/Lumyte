@@ -23,13 +23,15 @@ resource は `GPUBuffer`／`GPUTexture`、binding は `GPUBindGroupLayout`／`GP
 
 | API | 説明 |
 | --- | --- |
-| `WebGpuBackend.CreateAsync(runtime, options)` | runtime の adapter/device 初期化を行い、`IPortableGpuBackend` を返す。`runtime` のホスト環境は借用し、作成した device は backend が所有する。 |
-| `WebGpuBackend.CreateAsync(options = null)` | native host 用。配布した Dawn runtime の instance／adapter／device を自身で作成・所有する。Portable interface を直接実装した `WebGpuBackend` を非同期に返す。 |
+| `Lumyte.Graphics.WebGPU.Browser.WebGpuBrowserRuntime.LoadAsync(moduleUrl)` | 配布した `lumyte-webgpu.js` を URL から import し、caller が所有する runtime を返す。同じ JavaScript thread の静的 interop は一つの module URL に結び付く。 |
+| `WebGpuBrowserRuntime.Dispose()` | runtime が所有する module proxy を解放する。借用する全 backend の破棄後に呼ぶ。ブラウザーのホスト環境や別の runtime を終了しない。 |
+| `Lumyte.Graphics.WebGPU.Browser.WebGpuBackend.CreateAsync(runtime, options = null)` | Browser の adapter/device を非同期に要求し、`IPortableGpuBackend` を実装した backend を返す。runtime は借用し、作成した device は backend が所有する。 |
+| `Lumyte.Graphics.WebGPU.WebGpuBackend.CreateAsync(options = null)` | native host 用。配布した Dawn runtime の instance／adapter／device を自身で作成・所有する。Portable interface を直接実装した backend を非同期に返す。 |
 | `GpuBackendOptions` | 要求 feature と limit を device 作成へ渡す。要求した直接入力機能を満たせない環境では初期化を失敗させる。 |
 | `Capabilities`／`Limits` | 作成した device で有効な機能と上限。 |
 | `Dispose()` | application の全利用終了後に内部 object と device を終了する。借用 runtime のホスト環境は終了しない。 |
 
-resource、binding、pipeline と queue の API は各依存 ADR をそのまま実装し、WebGPU の利用者だけが必要とする公開 slot 設定 API は追加しない。
+resource、binding、pipeline と queue の API は各依存 ADR をそのまま実装し、WebGPU の利用者だけが必要とする公開 slot 設定 API は追加しない。二つの backend は別 assembly の実装であり、Browser は native host の WebGPU assembly や Dawn を参照しない。新しい backend の実装には Portable の public／protected 契約を使い、本番 assembly 間の `InternalsVisibleTo` は使わない。
 
 ## Resource と memory
 
@@ -62,15 +64,31 @@ Read mapping は const mapped range を `ReadOnlyMemory<byte>` に、Write mappi
 
 map の callback が未完了のまま device loss で公開待機を終了した場合も、callback 用の native 参照は完了まで保持して解放する。これは実行中の interop 操作の保持であり、application resource を追跡・延命する registry ではない。
 
+### Browser の JavaScript 接続
+
+Browser backend は .NET WebAssembly の `JSImport` と配布 ES module から `navigator.gpu` を呼ぶ。WebGPU object は内部の `JSObject` proxy に保持し、共通 Portable API に JavaScript 型を公開しない。resource、layout、binding と shader の同期生成は Browser の同期 object 作成 API に対応させる。非同期の検証結果は error scope の Promise として保持し、object を返したことだけでは生成成功を確定しない。
+
+runtime の初期化、backend の生成・記録・提出・resource 操作・破棄は、その runtime を作成した JavaScript thread で行う。Browser の Promise は非同期待機で進行させ、同期ブロック待機や専用の native event thread は使わない。JSObject に触れる非同期処理の継続も同じ thread に戻す。timeline の純粋な CPU 照会・待機には JSObject の操作を持ち込まない。
+
+host は配布された `wwwroot/lumyte-webgpu.js` を任意の URL で配信し、その URL を `LoadAsync` に渡す。初回 import が失敗した場合は URL の予約を戻し、修正した URL で再試行できる。一度成功した module は同じ thread の静的 interop に固定し、後から別 URL へ既存 backend の呼出し先を変更しない。class library は module を build output／package に含めるが、HTTP server、canvas、DOM、application の起動順は所有しない。backend ごとに device を持ち、module 側は device failure の観測だけを WeakMap に対応付ける。application resource の global registry は作らない。
+
+`JSHost.ImportAsync` は失敗した import も名前で保持するため、最初は URL ごとの内部名で module を import し、成功後に静的 interop が使う固定名へ結び付ける。これにより失敗した候補 URL が固定名を使用不能にしない。ES module の本体は Browser の URL cache を使い、同じ module を二度評価しない。失敗した同一 URL の cache の強制削除や host の module 再読込み機構は backend の責務に加えない。
+
+Browser の `getMappedRange()` が返す ArrayBuffer は .NET の WebAssembly linear memory とは別領域である。このため mapping lease は CPU の byte 配列を持ち、map 成功時に ArrayBuffer からコピーする。Write mapping は Dispose 時にその配列を同じ mapped ArrayBuffer へコピーしてから unmap する。Read mapping は書き戻さない。これは `Memory<byte>` との相互運用に必要な CPU コピーであり、追加 GPU buffer、見えない GPU copy、root data の buffer fallback は作らない。[WebGPU の mapping](https://gpuweb.github.io/gpuweb/#buffer-mapping)
+
+相互コピーは同期 interop の `Span<byte>`／MemoryView を使い、MemoryView を await の前後で保持しない。lease の `MemoryManager` は Dispose 後の Span／Pin の再取得を拒否する。すでに取得した Span／pointer は caller が Dispose 前に利用を終える。map が失敗した場合は以前の mapping を勝手に unmap せず、その操作が map に成功した場合だけ cleanup を行う。[.NET の JavaScript interop](https://learn.microsoft.com/en-us/aspnet/core/client-side/dotnet-interop?view=aspnetcore-10.0)
+
+JavaScript の GPU size／offset は WebIDL の `[EnforceRange] unsigned long long` へ渡すため、入力の上限は `2^53 - 1` になる。C# の `ulong` から値を失う変換は境界で拒否し、GPU の limit／alignment／usage 検証とは分ける。BigInt を WebGPU の size 入力へ渡してこの上限を回避しない。一方、CPU timeline の値は C# 内に保持し、JavaScript へ数値化しないため `ulong` の全範囲を使える。[WebIDL の整数変換](https://webidl.spec.whatwg.org/#abstract-opdef-converttoint)
+
 ## Binding と shader
 
 group ごとの layout を `GPUBindGroupLayout` へ、immutable binding set を `GPUBindGroup` へ接続する。texture view と sampler の cache は内部 object の再利用であり、global descriptor domain の管理ではない。binding object の利用終了後に内部参照を解放する。application resource の所有は caller のままとする。
 
-layout と binding の入力 span は呼出し中にコピーする。生成後に caller が入力配列を書き換えても、作成済み object は変化しない。view の cache key は元 Texture の identity、省略値を解決した description と sampled／storage の用途とする。sampler は description を key にする。両 cache は生存する Bindings の参照だけを保持し、最後の参照を解放すると entry と native object を除く。途中の生成失敗では、その呼出しが取得した参照を戻す。caller の resource を自動破棄したり、利用終了後の object を無期限に保持したりしない。
+layout と binding の入力 span は呼出し中にコピーする。生成後に caller が入力配列を書き換えても、作成済み object は変化しない。view の cache key は元 Texture の identity、省略値を解決した description と sampled／storage／attachment の用途とする。sampler は description を key にする。両 cache は生存する Bindings または attachment 記録の参照だけを保持し、最後の参照を解放すると entry と実 object を除く。途中の生成失敗では、その呼出しが取得した参照を戻す。caller の resource を自動破棄したり、利用終了後の object を無期限に保持したりしない。
 
 view の format／dimension／mip／layer の省略値を元 description から解決し、明示した無効値は runtime の検証へ渡す。view の native usage は実際の binding 用途に限定し、元 Texture の attachment 用途をそのまま継承しない。Portable の `Depth24PlusStencil8` と `DepthOnly`／`StencilOnly` の組は、native の aspect 専用 format へ写す。公開 API に許可 ViewFormats の列を追加しない。
 
-Buffer range の null length は C API の whole-size、view の未解決 count は undefined に写す。それらの sentinel と衝突する明示値、native 型で表現できない sampler anisotropy、未知の enum だけを変換境界で拒否する。binding の番号重複、size／offset／usage、format と layout の適合性は runtime が検証する。public `Normalize` は caller 向けの値計算であり、backend の native validation の前段には挿入しない。
+native host では Buffer range の null length は C API の whole-size、view の未解決 count は undefined に写す。それらの sentinel と衝突する明示値、native 型で表現できない sampler anisotropy、未知の enum を変換境界で拒否する。Browser では対応する省略可能 property を省略し、C API の sentinel 制約は持ち込まない。binding の番号重複、size／offset／usage、format と layout の適合性は runtime が検証する。public `Normalize` は caller 向けの値計算であり、backend の native validation の前段には挿入しない。
 
 layout、元 resource、内部 view／sampler と bind group 自身の生成診断を、当該 Bindings の依存として保持する。cache の再利用時も元の診断を引き継ぎ、別 object の失敗を混ぜない。同期生成の復帰だけでは成功を確定せず、後続の提出で実際に参照する object の診断を観測する。
 
@@ -78,13 +96,15 @@ Portable package から WGSL module と group layout、entry point を読み込�
 
 WGSL の `immediate_address_space` と runtime の直接入力経路を初期化要件にする。仕様上存在する機能でも、選択した runtime が未実装なら対応済みと扱わない。root data の uniform/storage buffer 化は行わない。[WGSL の language feature](https://gpuweb.github.io/gpuweb/wgsl/#language-extensions)
 
+feature が公開されていても runtime の不具合がないことまでは保証しない。Edge 153.0.4234.32 では、間接 dispatch の内部検証が application の immediate data を上書きし、root の値 37 から計算する出力が 65535／65536 になる現象を確認した。Dawn は該当する内部検証の変更を [2026-09-07 の revert](https://dawn.googlesource.com/dawn/+/c4e47b5eddc06f271cb07c3108cfccb1bb4704ec) で戻している。修正を含む [Chrome for Testing Dev 155.0.8048.0 の Dawn revision](https://chromium.googlesource.com/chromium/src/+/refs/tags/155.0.8048.0/DEPS) で、実 Browser の適合試験 20 件と timeline 試験 21 件が成功し、間接 dispatch でも root の値が保持されることを確認した。backend に browser 名／version の判定や root の buffer fallback は加えず、実行環境は直接入力の適合試験を満たすものを使う。Dawn が内部検証用に使う memory と application の直接 root 入力は別の責務である。
+
 Parameter Data は明示した buffer binding から shader が参照する。root に含む index/offset を shader で使用し、backend は byte 列を解析して resource 選択や upload を行わない。
 
 ## Pipeline と command
 
 Portable の immutable description と program から、実際の提出で必要になった `GPURenderPipeline`／`GPUComputePipeline` を作る。固定 depth/stencil/blend を WebGPU pipeline へ含め、同じ論理 pipeline は生成済み object を再利用する。
 
-native host の raster／compute は raw WGSL module と group layout、ImmediateSize から内部 pipeline layout を作る。draw／dispatch に使う論理 pipeline だけを最初の Submit で実体化する。native pipeline とその layout は論理 handle が所有し、全利用終了後の DestroyRasterPipeline／DestroyComputePipeline で解放する。module／group layout の元の生成診断も pipeline の診断に引き継ぐ。
+native host と Browser の raster／compute は raw WGSL module と group layout、ImmediateSize から内部 pipeline layout を作る。draw／dispatch に使う論理 pipeline だけを最初の Submit で実体化する。実 pipeline とその layout は論理 handle が所有し、全利用終了後の DestroyRasterPipeline／DestroyComputePipeline で解放する。module／group layout の元の生成診断も pipeline の診断に引き継ぐ。Browser でも `createComputePipeline`／`createRenderPipeline` を使い、返された object と非同期診断を別々に保持する。
 
 提出時に必要な pipeline を揃え、各 command を encoder と render/compute pass に変換する。`SetBindings`／`SetComputeBindings` は対象 pass の `setBindGroup`、root 設定は `setImmediates` に変換する。copy は pass の外側で encode する。すべての encode を終えてから queue に提出する。
 
@@ -96,13 +116,15 @@ render attachment の view は RenderAttachment 用途で内部 cache から取�
 
 indexed draw は呼出しごとに index range と format を設定し、firstIndex、signed baseVertex、firstInstance を native draw へ渡す。indirect は dispatch 12 byte、draw 16 byte、indexed draw 20 byteを覆う logical range を要求する。vertex buffer layout は持たず、vertex pulling の入力は明示 binding から shader が読む。
 
-Buffer range の null length は元の生成値から解決する。Buffer copy は logical range の同長、Buffer／Texture copy は footprint が必要とする logical range の長さ、Texture 間 copy は両 extent の一致を確認する。row/image pitch は native の bytesPerRow／rowsPerImage に値を失わず変換する。native sentinel と衝突する明示値は拒否する。Texture の内部配置、GPU の alignment／usage／format／subresource 制約は計算し直さない。
+Buffer range の null length は元の生成値から解決する。Buffer copy は logical range の同長、Buffer／Texture copy は footprint が必要とする logical range の長さ、Texture 間 copy は両 extent の一致を確認する。row/image pitch は WebGPU の bytesPerRow／rowsPerImage に値を失わず変換する。native host では C API の sentinel と衝突する明示値を拒否する。Texture の内部配置、GPU の alignment／usage／format／subresource 制約は計算し直さない。
 
 ## Completion と失敗
 
 queue への提出後、その提出を含む `onSubmittedWorkDone` を caller 指定の timeline 値へ対応付ける。これは GPU 利用終了を知る入口であり、処理成功は別に確定する。timeline は CPU 観測用とし、GPU の semaphore や queue 間 wait を偽装しない。[WebGPU の queue completion](https://gpuweb.github.io/gpuweb/#dom-gpuqueue-onsubmittedworkdone)
 
 native host は全記録を一つの QueueSubmit に渡し、後半の encode 失敗で前半だけを提出しない。timeline の内部領域を提出前に確保し、受理された値だけを照会対象にする。QueueOnSubmittedWorkDone の future は既存の instance event driver で進行させる。成功 callback 後に内部 native command buffer と記録 memory を回収し、診断が未確定でも GPU 利用終了を観測できるようにする。受理の有無や完了を確認できない interop 障害は device の共有失敗へ接続し、残った内部 command は device 終了時に解放する。application resource の registry は追加しない。
+
+Browser も全記録の encode 後に一つの `queue.submit` へ渡し、その直後に `queue.onSubmittedWorkDone()` を要求する。Promise 完了後に内部 command buffer の JSObject proxy、attachment view と記録 memory を回収する。提出ごとの error scope の結果を別に保持し、後続の GPU 完了が先行 batch の診断成功を代用しない。失敗を観測しても内部 command の利用終了を確認できない場合は、device の破棄時に残った保持を解放する。
 
 timeline の照会・待機は提出の native 呼出し gate と分離する。成功 batch は発行済み整数値の区間へ集約し、間にある未発行値を補完しない。失敗した batch の診断はその値に保持し、独立した後続 batch の成功へ混ぜない。待機取消しは当該 await だけを終了し、GPU work と他の待機を取り消さない。
 
@@ -115,6 +137,8 @@ timeline の照会・待機は提出の native 呼出し gate と分離する。
 batch は実際に参照する object の生成診断と、自身の pipeline・encode・submit 診断をまとめて観測する。生成が別の提出より前でも、必要な診断を失わない。無関係な object や batch のエラーを「最後に提出した batch」へ付け替えない。scope が返した runtime の診断を保持し、wrapper が binding・format・usage・shader の validator を複製する処理は設けない。
 
 提出を伴わない resource 操作は `GpuOperationException` に操作名と runtime の診断列を保持する。buffer mapping は生成診断と native map の両方が揃ってから成功する。要求した feature／limit を runtime が拒否した device request も、callback の status と message をそのまま診断へ写す。adapter がない、または必須の直接入力機能がない場合は `NotSupportedException` とし、buffer fallback へ進まない。
+
+Browser の WebIDL 変換が同期的に拒否した object 作成や encode も `GpuOperationException` へ写し、runtime のメッセージを保持する。全 command を queue へ渡す前の失敗では signal value を受理しない。受理済み提出の非同期検証失敗はその値の `WaitAsync` が `GpuExecutionException` として返す。managed 値の表現不能、異なる backend の handle、破棄済み object などは、それぞれの引数／寿命契約の例外を使う。
 
 ### 利用終了と成功を別々に確定する
 
@@ -146,29 +170,38 @@ device 作成直後から `device.lost` を監視し、completion と同じ runt
 | `src/graphics/Lumyte.Graphics.WebGPU/Views/`、`src/graphics/Lumyte.Graphics.WebGPU/Bindings/` | view/sampler の実体化、内部 cache と bind group。group layout の実装は `Bindings/Layouts/` に置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Shaders/`、`src/graphics/Lumyte.Graphics.WebGPU/Pipelines/` | WGSL module と直接入力の接続、論理 pipeline と提出時に生成する実 pipeline の cache。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Commands/`、`src/graphics/Lumyte.Graphics.WebGPU/Submission/`、`src/graphics/Lumyte.Graphics.WebGPU/Synchronization/` | 記録の encode、queue 提出、CPU timeline と completion を分離する。object／batch の診断記録と、利用終了・成功の確定を接続する。 |
-| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Runtime/` と同 project の `Buffers/`、`Shaders/`、`Commands/`、`Submission/`、`Synchronization/` | ブラウザー固有の adapter/device、mapped memory、shader/encoder 呼出しと promise の interop。JavaScript 型を共通 Portable 契約へ漏らさない。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Runtime/`、`Device/`、`Diagnostics/` | `WebGpuBrowserRuntime`、Browser の `WebGpuBackend` factory、JSImport、thread affinity、device loss と object 診断。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/wwwroot/lumyte-webgpu.js` | 配布 ES module。Browser WebGPU の adapter/device、object、encoder、mapped ArrayBuffer と Promise へ接続する。host が配信 URL を決める。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Buffers/`、`Textures/`、`Views/`、`Bindings/`、`Shaders/`、`Pipelines/`、`Commands/`、`Submission/`、`Synchronization/` | Portable の各分野に対応する Browser 実装。JavaScript 型を共通 Portable 契約へ漏らさず、native host の assembly を参照しない。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/` | 既存 xUnit project。production と対応する分野別ディレクトリに fake runtime を使う高速試験を置く。診断／queue 完了の到着順、別 batch と共有 object への診断帰属、device loss を個別に検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/` | 実 runtime/device を使う適合試験。無効な pipeline／command の提出を成功した upload として報告しないことも確認し、通常の unit test と分離する。 |
-| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/` | 新設予定の隣接 xUnit project。ブラウザー process と GPU を要する interop 試験を隔離する。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Synchronization/` | 隣接 xUnit project 内の高速試験。制御した Task で GPU 完了、診断、取消しと device loss の到着順を検証する。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/` | Browser process と GPU を要する xUnit 適合試験。`BrowserHost/` の C# WebAssembly consumer が公開 API を実行し、実 Browser の WebGPU で結果を確認する。 |
 
 低層の公開契約は `src/graphics/Lumyte.Graphics.Portable/`、準備済み shader package と program の API は新設予定の `src/graphics/Lumyte.Graphics.Portable.Shaders/` が所有する。既存 WebGPU backend に Native adapter や file loader を追加しない。
 
 ## 使用例
 
-`runtime` は利用可能な WebGPU ホスト環境、`options` は直接入力と必要 limit を要求する設定、`package` は `Lumyte.Resources` が読み込みと復号を完了した `PortableShaderPackage` とする。
+Browser host が配布 ES module を `/graphics/lumyte-webgpu.js` で配信している場合の例。shader package／loader を必要としない低層 resource API だけを使う。GPU へ提出していないため、この例の Buffer は mapping の終了後に破棄できる。
 
 ```csharp
-using Lumyte.Graphics.Portable.Shaders;
+using B = Lumyte.Graphics.WebGPU.Browser;
+using P = Lumyte.Graphics.Portable;
 
-using var backend = await WebGpuBackend.CreateAsync(runtime, options);
-var loader = new PortableShaderLoader(backend);
-using var program = loader.Load(package);
-
-Console.WriteLine(program.BindingLayouts.Count);
+using var runtime = await B.WebGpuBrowserRuntime.LoadAsync("/graphics/lumyte-webgpu.js");
+using var backend = await B.WebGpuBackend.CreateAsync(runtime);
+var upload = backend.CreateBuffer(new(4, P.GpuBufferUsage.MapWrite | P.GpuBufferUsage.CopySource));
+try
+{
+    using var mapping = await backend.MapBufferAsync(upload, P.GpuMapMode.Write, 0, 4);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(mapping.Memory.Span, 42);
+}
+finally { backend.DestroyBuffer(upload); }
+Console.WriteLine(backend.Limits.MaxImmediateSize);
 ```
 
 ## 採用範囲と未実装事項
 
-WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。raw WGSL、raster／compute pipeline の提出時生成、直接 root／dynamic offsets／直接・間接 dispatch、indexed／indirect draw、buffer／texture copy と CPU completion を接続した。color／depth/stencil／blend／MSAA resolve と attachment の内部所有も実装した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
+WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host と Browser に独立した Portable backend、直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。raw WGSL、raster／compute pipeline の提出時生成、直接 root／dynamic offsets／直接・間接 dispatch、indexed／indirect draw、buffer／texture copy と CPU completion を接続した。color／depth/stencil／blend／MSAA resolve と attachment の内部所有も実装した。Browser の runtime 借用形 factory、JS module 配布と直接の browser WebGPU 呼出しを実装し、Dawn を Browser の adapter として扱わない。内部公開はそれぞれの test assembly 向けだけで、Portable 側は public／protected 契約から実装する。
 
-WGSL package/loader と Browser の runtime 借用形 factory は未実装である。Slang の build toolchain と生成 host 型の統合も後続とする。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+WGSL package／loader、Slang の build toolchain と生成 host 型の統合は未実装である。Browser の検証 host は untrimmed の C# WebAssembly とし、現在の匿名 descriptor の reflection JSON serialization を含む trimming／AOT 配布は未検証である。全 Browser／GPU の組合せ、worker／thread 間移送、canvas presentation と host の起動統合も今回の実装確認には含めない。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

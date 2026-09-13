@@ -1,6 +1,6 @@
 # Graphics 実装進捗
 
-37 ADR の目標設計に対する実装状況を記録する。最初の統合完了条件は [ADR 0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) にある起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了であり、以下のメモリ・転送基盤だけで達成したとは扱わない。
+37 ADR の目標設計に対する実装状況を記録する。最初の統合完了条件は [ADR 0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) にある起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了であり、以下の低層基盤だけで達成したとは扱わない。
 
 ## 第1段階: Native メモリ基盤
 
@@ -394,9 +394,44 @@ indexed draw は16／32 bitの range、firstIndex・baseVertex・firstInstance �
 
 今回の実機検証は同梱 Dawn の native host とこの PC の GPU を対象とする。全 format／固定状態の組合せ、dual-source blending の実 shader、allocation failure と実 device loss の強制は検証していない。圧縮 Texture format、shader package／loader、Slang の製品 toolchain、Browser runtime、上位 Resources と RenderGraph provider は後続である。
 
+## 第13段階: Portable Browser WebGPU backend
+
+2026-09-13 に [WebGPU backend](../adr/0027-webgpu-backend-implementation.md) の Browser 実装を追加した。`Lumyte.Graphics.WebGPU.Browser` は Portable だけを参照し、同梱 Dawn の assembly から独立して browser の WebGPU を呼び出す。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 起動 | `WebGpuBrowserRuntime.LoadAsync(moduleUrl)` で配布 ES module を読み込み、`WebGpuBackend.CreateAsync(runtime, options)` が device を作る。runtime は caller 所有で、backend は借用する |
+| 実行契約 | 現在の Portable interface の全操作を接続する。raw WGSL、明示 binding、raster／compute pipeline、直接・indexed・indirect draw、直接・間接 dispatch、buffer／texture copy を扱う |
+| Root | `immediate_address_space` と有効な直接入力容量を初期化時に要求する。記録した byte 列を `setImmediates` へ渡し、固定容量、GPU buffer への退避、Parameter Data の解析・upload は設けない |
+| Mapping | mapped ArrayBuffer と WASM memory の間でホスト側コピーを行う。Write mapping の Dispose で同じ ArrayBuffer へ書き戻してから unmap する。GPU buffer の追加生成はしない |
+| Pipeline・提出 | 使用する pipeline だけを最初の Submit で生成して再利用する。全記録を encode してから一つの `queue.submit` に渡す |
+| Completion | `onSubmittedWorkDone` と object／batch の error scope を別に観測する。内部記録と attachment view は GPU 利用終了後に回収し、診断も成功した batch だけ WaitAsync を正常完了させる |
+| 数値と寿命 | JavaScript へ渡す GPU size／offset は正確に表せる整数範囲を確認する。timeline 値は C# の ulong 全域を保持する。JSObject を扱う操作は runtime を作成した JavaScript thread で行う |
+| 検証の分担 | GPU の usage、alignment、format、binding と shader の条件は browser が検証する。WebIDL の同期例外も元の message を保持して操作診断に写す |
+
+Browser の低層は application resource の GC、staging、自動退役や device 全体の resource registry を設けない。内部 view／sampler の再利用、queue の内部記録と完了履歴だけを管理する。backend は外部 assembly と同じ public／protected 契約で Portable を実装し、本体向けの内部公開を追加しない。
+
+[Browser README](../../src/graphics/Lumyte.Graphics.WebGPU.Browser/README.md) に module の配信、起動、copy／readback と終了の例を置いた。[隣接する xUnit 適合試験](../../src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/README.md) は loopback HTTP server と独立した Chromium profile を起動し、C# WebAssembly consumer から実際の backend を呼ぶ。JavaScript だけで GPU の結果を作る代替試験ではない。Browser process の起動・終了とGPU試験の排他制御は fixture が所有する。
+
+検証 host は .NET WebAssembly interpreter、trimming 無効、reflection JSON serialization 有効で構成する。WASM workload の追加なしにビルドできる。初回実行では試作時の trimmed framework と現在の untrimmed framework の生成物が混在し、WASM 起動前に TypeLoadException が発生した。該当 host の生成物を削除して再生成し、C# host の起動を確認した。
+
+初回 module import の失敗が `JSHost` の固定名に記憶され、正しい URL を指定しても再試行できない問題を実際の C# host で再現した。URL ごとの候補名で読み込めることを確認してから固定名へ接続し、失敗した URL が本体の import を妨げないように修正した。回帰試験で失敗した URL から正しい module と device を生成できることを確認する。同じ失敗 URL に対する runtime 自身の cache は強制消去しない。
+
+Edge **153.0.4234.32** では、間接 dispatch が4 byteの直接 root 値37を65535へ上書きし、期待値 `[37, 38]` に対して `[65535, 65536]` が返った。C# と Lumyte を使わない raw JavaScript でも同じ結果になり、validation error は発生しなかった。Dawn の内部 indirect 引数検証が使う immediate data と利用者の入力の衝突に一致する。[上流の修正](https://dawn.googlesource.com/dawn/+/c4e47b5eddc06f271cb07c3108cfccb1bb4704ec) を含む Chrome for Testing **155.0.8048.0** を作業フォルダーへ取得し、元の C# 試験を同じ期待値で再実行して成功した。ユーザーの browser のインストール・profile は変更していない。独立した再現 source と実行方法は [実験記録](../../tools/experiments/browser-webgpu-indirect-immediates/README.md) に保存した。
+
+Browser の実機試験20件と純粋な timeline 試験21件、計41件の focused tests が成功した。8／32 byteの root、間接 dispatch、indexed raster と signed baseVertex、dynamic binding、texture sampling と複数行 copy、mapping の部分更新・二重 map 失敗時の既存 lease 保全を確認した。診断の依存・分離、失敗 batch の後の独立した成功、WebIDL の同期 encode 失敗後の未発行値の再利用、JavaScript の正確な整数範囲を超える GPU size の拒否と、同範囲を超える CPU timeline 値の保持も確認した。失敗を回避するための test skip、期待値の変更、validation の無効化や直接 root の buffer 置換は加えていない。
+
+最初の全体実行では Browser 41件、DirectX 12 401件、Dawn 319件を含む26 project が成功したが、Vulkan の test host がテスト列挙中に終了した。Windows の障害記録は `0xc0000005`、例外アドレス0、障害 module 不明であり、Vulkan のテストは実行されていない。調査で、Vulkan の条件付き属性8種類・124か所が、collection fixture の排他を取得する前にそれぞれ device を作る問題を見つけた。対応機能の不変 snapshot を、同じ GPU 排他付きの Lazy で一度だけ取得する形へ変更した。GPU を使わない回帰試験3件を加え、gate 全7件と Vulkan 単独全413件が成功した。探索時の排他不足は修正したが、元の native crash との直接の因果は断定しない。
+
+最後に `LUMYTE_WEBGPU_BROWSER` へ Chrome for Testing 155.0.8048.0 の絶対パスを指定し、`dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=portable-browser-solution-verified" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を実行した。27 test project の **1,944件成功、失敗0、skip 0**、終了コード0を確認した。Browser 41件、Dawn 319件、DirectX 12 401件、Vulkan 413件、Native 92件、Portable 102件、共通 Graphics 155件を含む。今回の追加は Browser 41件と排他の回帰3件の計44件である。全 TRX は各 test project の `TestResults/` に保存した。最終実行で build 警告と crash はなかった。
+
+独立レビューで JSObject の寿命、mapping の失敗時回収、recording の一回提出と内部参照の完了後解放、scope／Promise の診断帰属、公開拡張契約を確認した。37 ADR の必要章、182個の番号依存、49文書の403ローカルリンクと21アンカーに問題はなかった。`InternalsVisibleTo` は11指定すべて test assembly 向けで、Native／Portable の内部公開は0件。staged diff の空白検査も成功した。
+
+shader package／loader、Slang の製品 toolchain、上位 Resources、RenderGraph provider、Hosting と canvas presentation は後続である。trimming／AOT 配布、worker／thread 間移送、全 Browser／GPU の組合せ、実 device loss と allocation failure の強制試験は未検証とする。
+
 ## 未実装と次の順序
 
-1. Portable の Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
-2. 両系統の Resources・shader package／loader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
+1. 両系統の Resources と shader package／loader を実装する。低層 backend の上で upload、binding／descriptor と寿命を管理する。
+2. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

@@ -40,7 +40,9 @@ Buffer の byte 範囲と Texture の subresource は、その resource の内�
 | `src/graphics/Lumyte.Graphics.Portable/README.md` と `Device/IPortableGpuBackend.cs` | Buffer／Texture に共通する所有規約を記す。opaque identity は各 backend の派生型で持ち、共通の registry や公開 heap、allocation、memory manager は追加しない。 |
 | `src/graphics/Lumyte.Graphics.Portable/Buffers/`、`src/graphics/Lumyte.Graphics.Portable/Textures/` | 公開の生成・破棄契約を各 resource の API と同じ場所に置く。共通所有規約のために別の生成入口を設けない。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Buffers/`、`src/graphics/Lumyte.Graphics.WebGPU/Textures/` | resource object と内部 memory の一体所有、非公開 handle、生成・破棄呼出しを resource ごとに置く。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser/Buffers/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser/Textures/` | Browser の GPU resource と JSObject proxy の所有を resource ごとに実装する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Resources/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Resources/` | xUnit により fake runtime で生成・破棄の所有を確認し、実 device の resource 作成・終了試験は `Integration/` に隔離する。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/LifetimeCases.cs` | Browser の C# consumer で破棄、mapping lease と backend／runtime の所有境界を確認し、隣接 xUnit project から実行する。 |
 
 上位の package、pool と完了後回収は Resource 管理 library に置き、低層 backend へ移さない。
 
@@ -72,4 +74,4 @@ finally
 
 resource と内部 memory の一体生成・破棄を Portable の唯一の所有モデルとする。独立した Portable 契約と native host の WebGPU backend に、Buffer／Texture の生成、native Destroy と参照解放を実装した。resource の opaque identity は実装側の非公開派生型が持ち、全 resource registry は設けない。
 
-Bindings は内部 view／sampler への参照を所有し、破棄時に最後の参照を解放する。元 Buffer／Texture と Binding Layout の所有は caller に残す。render／compute／buffer・texture copy の提出では内部 command memory と attachment 用 view の参照を GPU 利用終了まで保持し、application resource の自動回収は行わない。上位 package／pool、自動退役と Browser backend は未実装である。
+Bindings は内部 view／sampler への参照を所有し、破棄時に最後の参照を解放する。元 Buffer／Texture と Binding Layout の所有は caller に残す。render／compute／buffer・texture copy の提出では内部 command memory と attachment 用 view の参照を GPU 利用終了まで保持し、application resource の自動回収は行わない。Browser backend もこの所有規約を実装し、GPU object とその JSObject proxy の寿命を接続する。上位 package／pool と自動退役は未実装である。

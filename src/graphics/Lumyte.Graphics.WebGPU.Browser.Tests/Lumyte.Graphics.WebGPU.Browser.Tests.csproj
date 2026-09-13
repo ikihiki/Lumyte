@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.WebGPU.Browser\Lumyte.Graphics.WebGPU.Browser.csproj" />
+    <ProjectReference Include="Integration\BrowserHost\BrowserHost.csproj" ReferenceOutputAssembly="false" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Using Include="Xunit" />
+    <Compile Remove="Integration\BrowserHost\**\*.cs" />
+    <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="Integration\GpuBackendTestGate.cs" />
+  </ItemGroup>
+  <Target Name="PublishBrowserConformanceHost" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="Integration\BrowserHost\BrowserHost.csproj" Targets="Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(TargetDir)BrowserHost\;NoBuild=true;BuildProjectReferences=false" />
+  </Target>
+</Project>
