@@ -26,19 +26,22 @@ Portable の entry、package、GPU 入力構造体と loader は別の契約と�
 | API | 契約 |
 | --- | --- |
 | `NativeShaderTarget` | `DirectX12/Vulkan`。artifact の対象であり、Portable を含めない。 |
-| `NativeShaderBuildTarget` | target、shader compiler の target 設定、要求 capability と descriptor heap ABI の組。Vulkan の固定 slot stride など code に影響する値を含む。 |
+| `NativeShaderBuildTarget` | target、shader compiler の target 設定、要求 capability と descriptor heap ABI の組。Vulkan の device 由来の統一 stride 方針や、数値を埋め込む場合の固定 slot stride など code に影響する値を含む。 |
 | `NativeShaderEntryPoint` | source 内の entry 名と `Vertex/Pixel/Compute/Mesh/Amplification` stage。Amplification は Vulkan の task に対応する。 |
 | `NativeShaderBuildRequest` | Slang source、import/include 入力、entry point 群、target 群と生成 host namespace。program は Vertex＋任意 Pixel、Mesh＋任意 Amplification＋任意 Pixel、または Compute のいずれか。任意 stage は省略でき、Pixel のない raster は depth 等の出力に使う。 |
 | `NativeShaderCompiler.Build(request)` | offline に target artifact、入力配置情報と対応する C# source を生成する。runtime device と pipeline を作らない。 |
 | `NativeShaderBuildResult.PackageBytes`／`HostSourceFiles` | 同じ build で生成した package bytes と host source。互いに対応する版を配布する。 |
-| `NativeShaderPackage(Version, Artifacts)` | 一つの論理 program の展開済み artifact 群を持つ不変の GPU 初期化入力。`Artifacts` は不変の `NativeShaderArtifact` 列とし、CPU 側で所有する。device、ファイル名や stream を持たない。 |
+| `NativeShaderPackage(Version, Artifacts)` | 一つの論理 program の展開済み artifact 群を持つ不変の GPU 初期化入力。`CurrentVersion = 1`。`Artifacts` は不変の `NativeShaderArtifact` 列とし、CPU 側で所有する。device、ファイル名や stream を持たない。 |
 | `NativeShaderArtifact(Target, CodeFormat, Stages, RequiredCapabilities, DescriptorHeapAbi, RootLayout, ParameterLayouts, AbiHash)` | target 用の stage 列、device 選択条件、入力配置、生成型の識別情報。`Stages` は不変の `NativeShaderStageArtifact` 列とし、layout も不変とする。 |
 | `NativeShaderStageArtifact(Stage, EntryPoint, Code)` | 一つの stage の entry 名と、その stage に対応する所有済みの不変 raw code bytes。artifact は build request と同じ排他的 stage 構成を持つ。Mesh の artifact は `MeshShaders`、Amplification を含む artifact は加えて `AmplificationShaders` を要求する。 |
+| `NativeShaderCapabilities` | artifact 選択に使う `None/RawShaderPointers/BufferDescriptors/MeshShaders/AmplificationShaders` の flags。GPU 操作全般の validation 条件ではなく、program が必要とする参照方式と stage の要件。 |
+| `NativeShaderDescriptorHeapAbiKind`／`NativeShaderDescriptorHeapAbi` | version と heap の index 解釈を持つ。`None` は heap 非使用、`DirectX12` は opaque heap index、`VulkanUnified` は device 由来の統一 stride、`VulkanFixed(layout)` は `NativeGpuDescriptorLimits` に埋め込んだ配置との完全一致。ABI の `Kind/Version/Layout` は不変値。 |
 | `NativeShaderLoader(native)` | 一つの `INativeGpuBackend` を非所有で参照し、その code format と ABI に対応する artifact を選ぶ。 |
-| `NativeShaderLoader.Load(package)` | 展開済み package から一致する artifact を使う `NativeShaderProgram` を返す。一致しない package は失敗する。I/O、デシリアライズ、runtime compilation は行わない。 |
+| `NativeShaderLoader.Load(package, expectedAbiHash = null)` | 対応 version、target、code format、要求 capability と descriptor ABI が一致する artifact 一つを選ぶ。該当なし・複数候補は失敗する。任意の expectedAbiHash は選択後の ABI 識別子と ordinal 比較し、生成入力との不一致を拒否する。I/O、デシリアライズ、runtime compilation は行わない。 |
 | `NativeShaderProgram.Code` | 既存の `NativeGpuShaderProgram`。選択済み raw code と entry point を pipeline 作成へ渡す。 |
+| `NativeShaderProgram.Target`／`AbiHash` | 選択済み artifact の target と生成入力に対応する不透明な ABI 識別子。hash から shader の合法性を推定しない。 |
 | `NativeShaderProgram.RootLayout`／`ParameterLayouts` | 選択した artifact の root と、root から参照する data の byte 配置。`NativeShaderInputLayout` の値を使う。 |
-| `NativeShaderInputLayout`／`NativeShaderInputField` | layout は ABI 識別子、size、alignment と field 列、field は名前、scalar/vector/matrix/参照種別、byte offset と size を持つ。resource の所有や列挙を表さない。 |
+| `NativeShaderInputLayout`／`NativeShaderInputField`／`NativeShaderInputFieldKind` | layout は `AbiId/Size/Alignment/Fields`、field は `Name/Kind/Offset/Size` を持つ。kind は `Scalar/Vector/Matrix/GpuAddress/DescriptorIndex`。byte 範囲と名前を保持し、型変換、resource の所有や到達先の列挙を表さない。 |
 | `NativeShaderProgram.Dispose()` | 選択 artifact の host 側保持を解消する。GPU pipeline の破棄や GPU wait を行わない。 |
 
 生成された C# source は Native 専用 namespace に unmanaged な root/input 構造体を定義する。field offset、size、padding と row-major matrix の配置を compiler の出力へ一致させる。各生成物は対応する package/ABI 識別子を持ち、build で組にして扱う。bool は共有配置が明確な整数表現にする。
@@ -64,7 +67,9 @@ mesh raster は従来の vertex raster と別の program とする。Slang の `
 
 mesh 非対応 device のための vertex program は pass 作者が別途用意する。loader が mesh artifact を vertex artifact へ変換したり、meshlet から index buffer を生成したりしない。vertex と mesh の program 間で共有できるのは計算 module であり、異なる stage の GPU 命令列まで同一にする要件はない。
 
-Vulkan の descriptor index は ADR 0008 の固定 slot stride で解釈する。shader code と heap 配置が同じ byte offset を使える artifact を用意し、loader は device の配置と一致するものを選ぶ。異なる stride を同じ ABI とみなさず、一つの SPIR-V artifact がすべての device に適合するとは要求しない。
+Vulkan の descriptor index は ADR 0008 の固定 slot stride で解釈する。固定とは一つの heap 内で slot 間隔が一定という意味で、全 GPU に同じ数値を埋め込む要件ではない。`VulkanUnified` version 1 は Slang の `-spirv-unified-descriptor-heap-stride` に対応し、SPIR-V の `OpConstantSizeOfEXT` と `ArrayStrideIdEXT` で resource の `max(imageDescriptorSize, bufferDescriptorSize)`、sampler の `samplerDescriptorSize` を使う。loader はこの式の結果と device が公開する slot stride の一致を確認する。backend の alignment 計算を再実装して artifact の式と同じとみなさない。[Slang の公式 compiler option](https://docs.shader-slang.org/en/stable/external/slang/docs/command-line-slangc-reference.html#spirv-unified-descriptor-heap-stride)。
+
+特定の数値配置を埋め込む artifact は `VulkanFixed(layout)` とし、device の配置に一致する場合だけ選ぶ。loader は SPIR-V の stride を書き換えず、一つの artifact がすべての device に適合するとは要求しない。これらは Lumyte の heap と artifact の ABI 対応の確認であり、descriptor の合法性や native の feature validation を再実装するものではない。
 
 DirectX 12 で raw shader pointer が提供されない場合は、buffer descriptor を使う Native variant を事前に用意する。loader が pointer を descriptor index に読み替えたり、root layout を書き換えたりしない。要求する variant がなければ program の初期化は失敗する。
 
@@ -86,7 +91,7 @@ pipeline 作成 API は、戻った後に必要な code と entry point を自�
 
 ## コード配置
 
-以下は repository root 相対の目標配置とする。runtime の `Lumyte.Graphics.Native.Shaders` と offline の `Lumyte.Graphics.Native.Shaders.Offline`、それぞれに隣接する xUnit テスト project は新設予定である。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、旧 shader API の互換層は残さない。
+以下は repository root 相対の目標配置とする。runtime の `Lumyte.Graphics.Native.Shaders` と隣接する xUnit テスト project は実装済みで、offline の `Lumyte.Graphics.Native.Shaders.Offline` とそのテストは新設予定である。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、旧 shader API の互換層は残さない。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -100,7 +105,7 @@ pipeline 作成 API は、戻った後に必要な code と entry point を自�
 | `src/graphics/Lumyte.Graphics.Native.Shaders.Tests/Packages/`、`src/graphics/Lumyte.Graphics.Native.Shaders.Tests/Programs/` | 不変入力の所有、artifact 選択、program の保持・破棄について、GPU を使わない unit test。 |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline.Tests/Compiler/`、`tools/Lumyte.Graphics.Native.Shaders.Offline.Tests/Packaging/`、`tools/Lumyte.Graphics.Native.Shaders.Offline.Tests/Generation/` | build の入力・出力契約と ABI 識別を検証する unit test。生成 C# は consumer としてコンパイル・実行し、field 配置等の振る舞いを確認する。 |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline.Tests/Fixtures/`、`tools/Lumyte.Graphics.Native.Shaders.Offline.Tests/Integration/` | 前者は直接 root、共有計算と mesh／amplification の小さな shader fixture、後者は固定版の実 compiler／公式検証ツールを起動する試験。 |
-| `src/graphics/Lumyte.Graphics.Native.Shaders.Tests/Integration/` | package と生成型の組を各 backend に渡し、直接 root と GPU 出力を確認する conformance 試験。通常の unit test とは分離する。 |
+| `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/` | 準備済み artifact を package に保持し、loader から pipeline を作って直接 root と GPU 出力を確認する実機試験。各 backend の fixture と GPU 排他を共有する。生成型との適合は offline tool の追加後に拡張する。 |
 
 offline tool は runtime の入力型を参照できるが、runtime library は offline tool を参照しない。ファイル取得、container のデシリアライズと cache のロードは `Lumyte.Resources` 側が担当し、Graphics に新しい loader／decoder を追加する意味の配置ではない。`NativeShaderLoader` はメモリ上の package からの artifact 選択だけを担う。
 
@@ -115,6 +120,7 @@ var loader = new NativeShaderLoader(native);
 
 using var program = loader.Load(package);
 var pipeline = native.CreateComputePipeline(program.Code);
+program.Dispose(); // pipeline は戻った時点で必要な code を保持している。
 
 native.DestroyComputePipeline(pipeline);
 ```
@@ -129,6 +135,8 @@ offline の ABI 生成と artifact の組、target 選択、host bytes の所有
 
 直接 root、Native Bindless と caller-owned GPU data は NoGraphicsAPI を基礎とする。C# 構造体生成、Native package と loader は Lumyte の上位ライブラリとして追加する。DirectX 12 の buffer descriptor variant は raw shader pointer の部分採用であり、同等の pointer 機能を提供したとは扱わない。
 
-offline compiler、container の出力、メモリ上の package/artifact 型、入力構造体生成、GPU program 初期化と各 target の ABI conformance は未実装である。Mesh／Amplification の artifact、対応 capability と payload の試験、共有 Slang module の build 依存と機能 pass への接続も未実装とする。source の部分共有は GPU ABI の共通化を意味しない。
+メモリ上の package/artifact 型、root／parameter layout、version・target・capability・descriptor ABI による選択、任意の生成入力 ABI 照合と program の host 側保持を実装した。package は入力配列と code をコピーし、低レベル Code の変更を package や別 program へ反映しない。pipeline 作成後に program を破棄して実行する経路、直接 root と Vulkan の統一 descriptor stride の検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。Mesh／Amplification は package の stage 構成と必須 capability を扱う。
+
+offline compiler、container の出力、入力構造体生成、生成型を含めた各 target の ABI conformance、Mesh／Amplification package の実機適合試験、共有 Slang module の build 依存と機能 pass への接続は未実装である。今回の runtime fixture は準備済み code と手動で指定した layout を使い、生成器の完成を示さない。source の部分共有は GPU ABI の共通化を意味しない。
 
 ファイルロードと container のデシリアライズは `Lumyte.Resources` の責務とし、この API の採用範囲に含めない。機能 pass が所有する shader 準備・cache と内部 graph への接続も未実装である。runtime shader compilation、Portable artifact の読み込み、任意 GPU ABI 構造体どうしの相互変換、GPU 生成 root、ray tracing／tessellation 等の追加 stage はこの設計の範囲に含めない。

@@ -429,9 +429,38 @@ Browser の実機試験20件と純粋な timeline 試験21件、計41件の focu
 
 shader package／loader、Slang の製品 toolchain、上位 Resources、RenderGraph provider、Hosting と canvas presentation は後続である。trimming／AOT 配布、worker／thread 間移送、全 Browser／GPU の組合せ、実 device loss と allocation failure の強制試験は未検証とする。
 
+## 第14段階: Native／Portable shader package と runtime loader
+
+2026-09-13 に [Native Shader](../adr/0015-native-shader-package-api.md) と [Portable Shader](../adr/0023-shader-design-and-api.md) の runtime を、それぞれ独立した assembly として追加した。いずれも下位の公開 backend 契約だけを参照する。Graphics の Resources が shader の入力 schema を使えるよう、まず準備済み package と program の所有を揃える段階とした。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| Native の入力 | 所有済み stage bytes、target 別 artifact、root／parameter layout と ABI 識別子を不変値として保持する。一つの package は compute、vertex raster、mesh raster のいずれかの program family を表す |
+| Native の選択 | version、公開 code format、有効 capability、descriptor ABI に一致する一つの artifact を選ぶ。Mesh／Amplification の必要機能は stage 構成から必ず要求する。候補なし・複数候補・任意の expectedAbiHash との不一致は失敗する |
+| Native の所有 | Load ごとに独立した raw code を保持する。低レベル Code から到達する memory が変更されても package と別 program は変化しない。program の Dispose は CPU 側保持を解放し、pipeline／device の破棄や GPU 待機はしない |
+| Descriptor ABI | DirectX 12 の opaque index、Vulkan の device 由来の統一 stride、固定配置を別の ABI として扱う。統一方式は Slang が生成する max(imageSize, bufferSize) と samplerSize の式を公開 slot stride と照合し、shader の式に host padding を追加しない |
+| Portable の入力 | 所有する WGSL、entry、group 順の不変 layout、root／parameter の配置、意味名による binding schema と ABI 識別子を保持する |
+| Portable の初期化 | version、program 構成、schema の対応、要求 feature、直接入力容量と任意の expectedAbiHash を確認し、module と group layout を生成する。各 program は専用の object を所有する |
+| Portable の所有 | Description は pipeline に渡す非所有の構成値。binding、pipeline、未提出記録と GPU 利用を終えてから program を破棄する。初期化途中の同期失敗では生成済み object を逆順に回収し、解放の一つが失敗しても残りを試みる |
+| 検証の分担 | shader の合法性は compiler／runtime が扱う。Portable の Load 成功を非同期 compilation の成功と扱わず、module／layout の診断を提出後の WaitAsync へ引き継ぐ |
+
+Native の shader bytes、Portable の WGSL と入力列を caller の元配列から独立させた。両 library はファイル、stream、URI、container の decoder、runtime compiler、上位 Resources と RenderGraph を参照しない。root は既存の直接入力経路を使い、command／loader による Parameter Data の生成・upload や GPU buffer への fallback を加えていない。今回の RequiredFeatures は既存の Portable device が明示的に確認できる直接入力と dual-source blend に限定する。
+
+使い方と所有権は [Native shader README](../../src/graphics/Lumyte.Graphics.Native.Shaders/README.md) と [Portable shader README](../../src/graphics/Lumyte.Graphics.Portable.Shaders/README.md) に記載する。ADR の API・配置・使用例・未実装範囲も現在の runtime に合わせて更新した。
+
+GPU を使わない新規テストは Native 47件、Portable 28件。配列・code の所有、別 Load への変更の分離、version／capability／ABI 選択、stage family、rollback と解放失敗の保持を確認した。Vulkan の統一 ABI には、shader の stride と host 側の padding が異なる場合の拒否を回帰試験として含める。
+
+新規の実機テスト8件が成功した。DirectX 12 は compute と、program を破棄した後に Submit で raster PSO を生成する描画を確認する。Vulkan は raw address による書込みと、統一 descriptor heap の buffer／texture／sampler の参照を読み戻す。Dawn と Browser は各2件で、package が所有する module／layout を使った直接 root の compute と、無効な WGSL の診断が提出の完了結果に保持されることを確認する。Browser は既存の Chrome for Testing 155.0.8048.0 を使う。
+
+両 runtime の独立レビューで入力の所有、public な backend 拡張契約、失敗時の全 object 解放、非同期診断の伝播を確認した。37 ADR の必要章、182個の番号依存、52文書の410ローカルリンクと21アンカーに問題はなかった。`InternalsVisibleTo` は既存の11指定すべて test assembly 向けで、今回追加した library に指定はない。
+
+最後に `LUMYTE_WEBGPU_BROWSER` へ Chrome for Testing 155.0.8048.0 の絶対パスを指定し、`dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=shader-packages-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を実行した。29 test project の **2,027件成功、失敗0、skip 0**、終了コード0を確認した。新規テストは75件の unit と8件の実機の計83件である。DirectX 12 全403件、Vulkan 全415件、Dawn 全321件、Browser 全43件が成功し、全 TRX を各 test project の `TestResults/` に保存した。staged diff の空白検査も成功した。
+
+offline compiler、Slang の製品 toolchain、最終 WGSL からの layout 取得、C# 構造体／BindingInputs 生成、container の出力と CPU 資産側 decoder は後続である。実行に使う fixture の shader code と入力 layout は事前に準備したもので、生成器の完成を示さない。shader package 経由の全 stage／feature、全 GPU／runtime と実 device loss／allocation failure の適合は未検証とする。
+
 ## 未実装と次の順序
 
-1. 両系統の Resources と shader package／loader を実装する。低層 backend の上で upload、binding／descriptor と寿命を管理する。
+1. 両系統の Resources を実装する。準備済み shader package／loader と低層 backend の上で upload、binding／descriptor と寿命を管理する。allocator／pool の基礎と、提出を受理した時点を正しく表す completion token を整える。
 2. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

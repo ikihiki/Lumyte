@@ -45,10 +45,11 @@ backend が `vkCmdPushDataEXT` で渡す。raw pointer は `PhysicalStorageBuffe
 device address を使う。buffer への root fallback と Parameter Data の生成はない。
 
 resource heap 内の buffer／image の配列は、`OpConstantSizeOfEXT` の双方の結果から
-大きい値を選ぶ `ArrayStrideIdEXT` を共有する。native descriptor size は自身の alignment
-の倍数で、alignment は 2 の累乗なので、この値は backend の
-`Align(max(imageSize, bufferSize), max(imageAlignment, bufferAlignment))` と一致する。
-sampler は独立した native sampler stride を使う。特定 GPU の 32 byte 等を固定せず、
+大きい値を選ぶ `ArrayStrideIdEXT` を共有する。この PC ではこの値と backend が公開する
+resource slot stride が一致する。shader package の `VulkanUnified` ABI は device ごとに
+この式の結果と実際の slot stride を照合する。alignment からの丸めが shader に追加されるとは
+仮定しない。[Slang の compiler option](https://docs.shader-slang.org/en/stable/external/slang/docs/command-line-slangc-reference.html#spirv-unified-descriptor-heap-stride)。
+sampler は独立した native sampler size による stride を使う。特定 GPU の 32 byte 等を固定せず、
 root の lookup table と型別 descriptor heap も導入しない。shader に `DescriptorSet`／
 `Binding` は生成されない。
 

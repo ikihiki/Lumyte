@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Immutable prepared WGSL packages and caller-owned Portable GPU shader programs.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Portable\Lumyte.Graphics.Portable.csproj" />
+  </ItemGroup>
+</Project>

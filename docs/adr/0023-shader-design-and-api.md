@@ -45,8 +45,12 @@ description は GPU の状態照会ではなく、caller が準備した入力�
 | `PortableShaderCompileOptions` | 必要な WGSL feature、target language version、固定した compiler/toolchain の版、生成 C# namespace と optimization 設定。Slang の target は WGSL とし、Native target の code format は指定しない。 |
 | `PortableShaderCompiler.Compile(source, options)` | Slang 入力は公式 compiler で WGSL へ生成し、Wgsl 入力と同じ WGSL toolchain へ渡す。最終 module に対応する Lumyte package／入力 schema を生成する。戻り値は `PortableShaderBuildResult`。 |
 | `PortableShaderBuildResult` | `Package`、`GeneratedSources` と build diagnostics。shader の resource usage や device limit の独自 validator は生成しない。 |
-| `PortableShaderPackage(Version, Module, EntryPoints, RequiredFeatures, GroupLayouts, RootLayout, ParameterLayouts, BindingSchema, AbiHash)` | GPU 初期化に渡す展開済みの不変 data。`Module` は所有する WGSL text、各 entry/layout/schema は不変の値と列である。device、ファイル名や stream を持たない。 |
+| `PortableShaderPackage(Version, Module, EntryPoints, RequiredFeatures, GroupLayouts, RootLayout, ParameterLayouts, BindingSchema, AbiHash)` | GPU 初期化に渡す展開済みの不変 data。`CurrentVersion = 1`。`Module` は所有する WGSL text、各 entry/layout/schema は不変の値と列である。device、ファイル名や stream を持たない。 |
+| `PortableShaderEntryPoint(Stage, Name)`／`PortableShaderGroupLayout(Entries)` | entry の stage と名前、group 順に並べる不変の `GpuBindingLayoutEntry` 列。group の空きを空 layout で明示でき、GPU handle は格納しない。 |
+| `PortableShaderFeatures` | 現在の device 選択で表せる `None/ImmediateAddressSpace/DualSourceBlend` の flags。任意の WGSL feature 名を対応済みと推測しない。 |
+| `PortableShaderDataLayout`／`PortableShaderFieldLayout` | layout の `Name/Size/Alignment/Fields` と、field の `Name/TypeName/Offset/Size/Alignment/ArrayStride/MatrixStride` を保持する不変 metadata。root は省略でき、その場合は ImmediateSize が0。型名や byte 列を解析して GPU data を生成しない。 |
 | `PortableShaderBindingSchema` | binding の意味名、group、binding、型の対応。下位 resource 入力と、任意の上位連携コードの生成に用いる。 |
+| `PortableShaderBindingSchemaEntry(Name, Group, Binding, Kind)` | schema の一つの意味名を、同じ package の group と binding kind に結び付ける。実際の buffer／view／sampler は保持しない。 |
 | 生成 Root／Parameter 構造体 | WGSL の host layout に一致する Portable 専用の値型。member offset、padding、matrix layout を明示する。Native の同名型との byte 互換は要求しない。 |
 | 生成 BindingInputs 構造体 | group ごとに `GpuBufferRange`、`GpuTextureView`、`GpuSamplerDescription` を意味名で渡す低層入力を生成する。group と binding 番号を package の schema に対応させる。 |
 
@@ -63,8 +67,9 @@ Slang の入力 module、import 閉包、toolchain の版、Portable 専用 root
 | API | 説明 |
 | --- | --- |
 | `PortableShaderLoader(backend)` | `IPortableGpuBackend` に結び付けた loader。backend の所有権は取得しない。 |
-| `PortableShaderLoader.Load(package)` | 展開済みの Portable package を選択 device 用の `PortableShaderProgram` にする。I/O とデシリアライズは行わない。必要な shader module と binding layout を生成し、要求 feature の不足を報告する。 |
+| `PortableShaderLoader.Load(package, expectedAbiHash = null)` | version、package の構成・schema の対応、要求 feature と直接入力容量を確認し、module と group 順の binding layout を生成する。任意の expectedAbiHash は生成入力との対応を ordinal 比較する。途中の同期例外では生成済み object を逆順にすべて解放し、元の失敗も保持する。I/O とデシリアライズは行わない。 |
 | `PortableShaderProgram` | device に属する program。`Kind`（Raster／Compute）、`EntryPoints`、`BindingLayouts`、`ImmediateSize`、`BindingSchema`、`AbiHash` を提供する。 |
+| `PortableShaderProgramKind`／`PortableShaderProgram.Package`／`RootLayout`／`ParameterLayouts` | Raster／Compute の program 構成と、その準備済み package および入力 layout を公開する。package は CPU の不変値で、GPU resource の列挙や寿命管理を行わない。 |
 | `PortableShaderProgram.Description` | 作成時に確定した低レベルの GpuShaderProgramDescription。pipeline の生成へ渡す非所有値であり、取得時に native API の照会や GPU 処理は行わない。 |
 | `PortableShaderProgram.Dispose()` | 所有する module/layout を解放する。参照する pipeline、binding、未提出記録と GPU 利用を先に終了する。 |
 
@@ -73,6 +78,8 @@ loader は WGSL/compiler/runtime に委ねる validation を再実装しない�
 material 等の CPU data から WGSL の buffer 配置への変換は、準備済み CPU upload data を受ける pass 実装の明示的な GPU 配置／upload 操作で行う。Native の pointer/index を埋め込んだ GPU bytes をそのまま取り込まず、その pass 専用の Portable payload と参照を構築する。consumer へ shader 用の data schema を公開しない。command や shader loader が root の解釈から Parameter Data を生成・転送する経路は加えない。
 
 package の WGSL text と metadata は data 自身が所有するか、移譲・コピーにより不変の内容を保持する。元の CPU 資産 cache が eviction されても GPU 初期化中の入力を無効にしない。
+
+`Load` の成功は WGSL のコンパイル成功を保証しない。backend が module／layout に保持した非同期の runtime 診断は pipeline と提出先へ引き継がれる。利用する caller は提出の `WaitAsync` を通じて GPU 利用終了と診断の成功を確認する。program の Dispose は GPU を待たず、各 object の解放が失敗しても残りの解放を試み、二重解放をしない。取得済み Description や handle は非所有のため、program の Dispose 後に使用しない。
 
 `ImmediateSize` は program 固有で、device の `MaxImmediateSize` 以下にする。対応しない runtime では初期化を、limit を満たさない program では作成を失敗させる。root を隠れた uniform/storage buffer に置き換えない。
 
@@ -95,7 +102,7 @@ build では Slang の WGSL 出力を target 対応の公式 WGSL frontend（Tin
 
 ## コード配置
 
-以下は repository root からの配置で、未実装部分の目標配置を含む。Portable の低層と隣接するテスト project は実装済みで、shader runtime／offline tool とそれぞれのテスト project は新設予定とする。
+以下は repository root からの配置で、未実装部分の目標配置を含む。Portable の低層、shader runtime とそれぞれに隣接するテスト project は実装済みで、offline tool とそのテスト project は新設予定とする。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -109,10 +116,11 @@ build では Slang の WGSL 出力を target 対応の公式 WGSL frontend（Tin
 | `src/graphics/Shaders/Shared/` | Native と source のみ共有する Slang の計算 module。build が import 入力として参照し、runtime assembly、共通 package や共通 GPU 構造体は生成しない。 |
 | `<利用 project>/obj/<Configuration>/<TargetFramework>/Shaders/Portable/` | build で生成した C# と shader artifact。source と区別した中間出力とし、Native の生成物とも分離する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Shaders/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser/Shaders/` | 既存 project を改編し、WGSL module・直接入力の runtime 接続と、必要なブラウザー interop をそれぞれ置く。ブラウザー専用 shader library は新設しない。 |
-| `src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Packages/`、`src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Programs/` | 新設予定の xUnit project。準備済み package の保持と、fake backend による program 初期化・終了を検証する。 |
+| `src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Packages/`、`src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Programs/` | 準備済み package の保持、ABI と schema の対応、fake backend による program 初期化・rollback・終了を検証する xUnit project。 |
 | `src/graphics/Lumyte.Graphics.Portable.Tests/Shaders/` | 隣接 xUnit project。低レベル構成値と上位 program を必要としない API の使用を確認する。 |
 | `tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Compiler/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Generation/` | 新設予定の xUnit project。compiler の結果と、生成した C# を実際に compile・実行する consumer 試験。ABI 適合確認用の shader source は同 project の `Fixtures/`、Slang→WGSL と公式 frontend の外部 process が必要な試験は `Integration/` に置く。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Shaders/` | 既存 xUnit project に置く実 runtime/device の WGSL、binding と直接入力の適合試験。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/` | 準備済み package からの program 初期化、直接 root と明示 binding による実行、runtime 診断の伝播を Dawn と C# WebAssembly consumer で確認する。 |
 
 runtime shader library は offline tool を参照しない。参照方向は Portable.Shaders → Portable とし、pipeline の生成には program.Description を渡す。Portable の backend が上位 PortableShaderProgram 型を受け取る循環を作らない。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、旧 API の互換層は残さない。package の保存・取得・復号は `Lumyte.Resources` 側に置く。
 
@@ -127,8 +135,11 @@ var loader = new PortableShaderLoader(backend);
 using var program = loader.Load(package);
 
 Console.WriteLine(program.ImmediateSize);
+var pipeline = backend.CreateComputePipeline(program.Description);
 var root = new LightingRoot { MaterialIndex = 7 };
 // root は対応する program の直接入力として command に渡す。
+// この例では提出しない。提出した場合は GPU 完了を待ってから破棄する。
+backend.DestroyComputePipeline(pipeline);
 ```
 
 ## 参考文献
@@ -144,6 +155,6 @@ var root = new LightingRoot { MaterialIndex = 7 };
 
 Portable 専用の準備済み WGSL package 入力型、GPU 構造体生成、binding schema と GPU program の初期化を採用する。source の Slang 共有は部分採用とし、対応を確認できた計算 module と program に限る。直接 WGSL の経路も正式な build 入力とする。ファイルロードと container のデシリアライズは `Lumyte.Resources` の責務であり、この API の採用範囲に含めない。
 
-低レベルの raw WGSL module、entry point と不変の program description を実装した。native host と Browser の WebGPU では module の生成診断を保持し、raster/compute pipeline と実際の提出へ引き継ぐ。Vertex／Pixel の直接 root、明示した resource binding と compute の直接入力を同じ低レベル module API で扱う。package、loader、compiler と C# 生成器はまだ使わず、手動で準備した WGSL と入力値を低レベル契約へ直接渡す。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+低レベルの raw WGSL module、entry point と不変の program description に加え、準備済み PortableShaderPackage、入力 layout／binding schema、PortableShaderLoader と所有型 PortableShaderProgram を実装した。native host と Browser の WebGPU では module の生成診断を保持し、pipeline と実際の提出へ引き継ぐ。package fixture は手動で準備した WGSL と入力 metadata を使い、compiler／生成器の完成を示さない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-Slang 2026.17 による直接 root の生成と、一つの browser／GPU 環境での compute 実行は実験済みである。二系統への toolchain 分離、root accessor の生成器、公開 `setLanguagePrelude` API の統合・適合試験、公式 WGSL frontend からの ABI metadata／C# 生成、package 形式、機能 pass 本体での shader 準備と cache、全 pass の適合試験は未実装である。実験 fixture の host 配置は手動で与えたもので、生成器の完成を示さない。C# の Browser WebGPU 接続は実装したが、Slang による raster variant、matrix／array 等の全入力型、他 runtime／GPU での生成経路の適合は別途確認する。既存 offline compiler に残る WGSL の文字列書換えは目標設計の実装として数えず、移行時に廃止する。mesh／amplification の WGSL 変換と Native GPU ABI の移植は採用範囲外とする。
+Slang 2026.17 による直接 root の生成と、一つの browser／GPU 環境での compute 実行は実験済みである。二系統への toolchain 分離、root accessor の生成器、公開 `setLanguagePrelude` API の統合・適合試験、公式 WGSL frontend からの ABI metadata／C# 生成、container の出力、機能 pass 本体での shader 準備と cache、全 pass の適合試験は未実装である。実験 fixture の host 配置は手動で与えたもので、生成器の完成を示さない。C# の Browser WebGPU 接続は実装したが、Slang による raster variant、matrix／array 等の全入力型、他 runtime／GPU での生成経路の適合は別途確認する。現在の RequiredFeatures にない WGSL feature と必要な device feature の対応は、低層で明示的に要求・確認できる契約を追加してから拡張する。既存 offline compiler に残る WGSL の文字列書換えは目標設計の実装として数えず、移行時に廃止する。mesh／amplification の WGSL 変換と Native GPU ABI の移植は採用範囲外とする。

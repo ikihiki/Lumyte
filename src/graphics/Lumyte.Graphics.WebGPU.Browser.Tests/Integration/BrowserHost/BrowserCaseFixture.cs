@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using Lumyte.Graphics.WebGPU.Browser;
+using Lumyte.Graphics.Portable.Shaders;
 using P = Lumyte.Graphics.Portable;
 
 [SupportedOSPlatform("browser")]
@@ -68,6 +69,20 @@ internal sealed class BrowserCaseFixture : IDisposable
     {
         P.GpuShaderModuleHandle module = Module(source);
         P.GpuComputePipelineHandle value = Backend.CreateComputePipeline(new([new(module, P.GpuShaderStage.Compute, entry)], layouts, immediateSize));
+        cleanup.Add(() => Backend.DestroyComputePipeline(value));
+        return value;
+    }
+
+    public PortableShaderProgram LoadShader(PortableShaderPackage package)
+    {
+        PortableShaderProgram value = new PortableShaderLoader(Backend).Load(package);
+        cleanup.Add(value.Dispose);
+        return value;
+    }
+
+    public P.GpuComputePipelineHandle Compute(PortableShaderProgram program)
+    {
+        P.GpuComputePipelineHandle value = Backend.CreateComputePipeline(program.Description);
         cleanup.Add(() => Backend.DestroyComputePipeline(value));
         return value;
     }

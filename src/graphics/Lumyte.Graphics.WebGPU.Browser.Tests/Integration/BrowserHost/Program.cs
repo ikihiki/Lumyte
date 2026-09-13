@@ -18,6 +18,8 @@ public static partial class BrowserCases
             "Device" => await DeviceAsync(),
             "ComputeEight" => await ComputeEightAsync(),
             "ComputeMixed" => await ComputeMixedAsync(),
+            "ShaderPackage" => await ShaderPackageAsync(),
+            "InvalidShaderPackage" => await InvalidShaderPackageAsync(),
             "IndexedRaster" => await IndexedRasterAsync(),
             "TextureUpload" => await TextureUploadAsync(),
             "MappingLease" => await MappingLeaseAsync(),

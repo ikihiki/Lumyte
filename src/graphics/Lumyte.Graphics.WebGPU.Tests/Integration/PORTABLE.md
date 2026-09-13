@@ -40,4 +40,6 @@ clear だけの pass や選択後に使わなかった raster pipeline は compi
 
 texture copy は 2D array / 3D の mip と origin、異なる row / image pitch、buffer offset を指定した upload → texture → texture → readback を確認する。最後の行の padding を含めない `RequiredBytes` と論理 buffer range、一行だけの pitch 省略、stencil aspect の upload / readback も扱う。ImagePitch を native rowsPerImage へ損失なく変換できない指定と省略 sentinel の衝突は host 側の境界で確認し、native の pitch 制約や未対応の depth24 copy は runtime 診断で確認する。
 
-shader package / loader と browser runtime は後続の段階で検証する。旧 legacy shader 試験を新しい Portable の実行結果の代わりには扱わない。
+`Shaders/WebGpuPortableShaderPackageTests` は準備済み package／loader を経由して module と layout を作り、直接 root と明示 binding による compute の結果を読み戻す。無効な WGSL を loader が独自解析せず、実際の提出後に runtime の診断を報告することも確認する。program を破棄する前に pipeline／binding と GPU の利用を終了する。compiler と入力構造体の生成器はこの fixture では使わない。
+
+同じ Portable shader runtime の C# WebAssembly consumer は [Browser 適合試験](../../Lumyte.Graphics.WebGPU.Browser.Tests/Integration/README.md) に置く。旧 legacy shader 試験を新しい Portable の実行結果の代わりには扱わない。

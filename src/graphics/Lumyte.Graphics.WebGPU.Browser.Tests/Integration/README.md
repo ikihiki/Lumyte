@@ -4,7 +4,7 @@
 
 ## 実行
 
-repository root で実行する。2026-09-13 の確認では **Chrome for Testing 155.0.8048.0** で20件の Browser conformance と21件の timeline unit tests が成功した。下記の path は今回の配置例であり、browser binary は Git に含めない。
+repository root で実行する。2026-09-13 の確認では **Chrome for Testing 155.0.8048.0** で22件の Browser conformance と21件の timeline unit tests が成功した。下記の path は今回の配置例であり、browser binary は Git に含めない。
 
 ```powershell
 $env:LUMYTE_WEBGPU_BROWSER = Join-Path $PWD 'artifacts/tools/chrome-for-testing/155.0.8048.0/chrome-win64/chrome.exe'
@@ -27,6 +27,7 @@ fixture は loopback の動的 port で publish 出力だけを配信し、headl
 - 初回 module import 失敗後に正しい URL から再試行できること。
 - JS の整数精度を超える Buffer size の拒否と、同期 WebIDL encode 失敗後の未発行 timeline 値の再利用。
 - 8 byte root の snapshot と pipeline 再設定、32 byte の混在型と padding。
+- Portable shader package／loader が所有する module・layout からの compute 実行と直接 root、package 経由でも保持される runtime の shader 診断。
 - GPU が生成した間接 dispatch 引数、dynamic uniform offset の snapshot。
 - indexed raster の index range、firstIndex、signed baseVertex と直接 root。
 - immutable Texture／Sampler binding による texture sampling。

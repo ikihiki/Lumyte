@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\Lumyte.Graphics.WebGPU.Browser\Lumyte.Graphics.WebGPU.Browser.csproj" />
+    <ProjectReference Include="..\..\..\Lumyte.Graphics.Portable.Shaders\Lumyte.Graphics.Portable.Shaders.csproj" />
     <Content Include="..\..\..\Lumyte.Graphics.WebGPU.Browser\wwwroot\lumyte-webgpu.js" Link="wwwroot\lumyte-webgpu.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

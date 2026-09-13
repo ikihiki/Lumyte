@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Prepared Native shader packages, input layouts, and artifact selection.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Native\Lumyte.Graphics.Native.csproj" />
+  </ItemGroup>
+</Project>

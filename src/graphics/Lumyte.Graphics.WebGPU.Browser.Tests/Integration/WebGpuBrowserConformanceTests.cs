@@ -61,6 +61,23 @@ public sealed class WebGpuBrowserConformanceTests(BrowserGpuFixture fixture)
     }
 
     [Fact]
+    public async Task PreparedShaderPackageExecutesWithItsOwnLayoutAndDirectRoot()
+    {
+        JsonElement result = await fixture.RunAsync("ShaderPackage");
+
+        Assert.Equal([41u, 89u], UInts(result, "actual"));
+    }
+
+    [Fact]
+    public async Task PreparedShaderPackagePreservesRuntimeCompilationDiagnostics()
+    {
+        JsonElement result = await fixture.RunAsync("InvalidShaderPackage");
+
+        Assert.True(result.GetProperty("complete").GetBoolean());
+        Assert.Contains("Validation", Strings(result, "kinds"));
+    }
+
+    [Fact]
     public async Task IndexedRasterUsesSignedBaseVertexAndCopiesTheRenderedTexture()
     {
         JsonElement result = await fixture.RunAsync("IndexedRaster");
