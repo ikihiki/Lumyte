@@ -105,6 +105,8 @@ compute pipeline は raw SPIR-V と指定 entry から同期生成する。byte 
 
 NoGraphicsAPI の Slang では `[[vk::push_constant]]` の宣言からこの push-data 経路を使う。宣言の名前を理由に `VkPipelineLayout` と従来の push-constant range が必要だとは解釈しない。shared POD の C layout、row-major、descriptor-heap capability と SPIR-V の事前検証は shader toolchain の契約である。[Slang shader 契約](https://github.com/sebbbi/NoGraphicsAPI/blob/main/docs/slang.md)
 
+draw の開始位置と符号付き base vertex は native 引数へそのまま渡す。試験用 Slang shader は `SV_VulkanVertexID`／`SV_VulkanInstanceID` を使い、開始位置を含む SPIR-V の `VertexIndex`／`InstanceIndex` を直接取得する。Slang の通常の `SV_VertexID`／`SV_InstanceID` はそれぞれ base 値を差し引く変換となるため、shader を移植する際は選択した semantic を ABI の一部として扱う。command は開始位置を root に追加せず、SPIR-V の書換えも行わない。[Slang の system-value 対応](https://shader-slang.org/slang/user-guide/spirv-target-specific#using-sv_instanceid-and-sv_vertexid-with-spir-v-target)
+
 root には GPU pointer、descriptor index と値を直接含められる。64 byte 固定や末尾 zero fill を Vulkan Native 層へ課さず、buffer fallback、Parameter Data の生成・upload・保持も行わない。CPU root 値は呼出し後に破棄できるが、参照先の heap/resource は caller が GPU 完了まで保持する。
 
 mesh／amplification も同じ descriptor-heap と push-data ABI を使う。公開 stage の `Mesh` を `VK_SHADER_STAGE_MESH_BIT_EXT`、`Amplification` を `VK_SHADER_STAGE_TASK_BIT_EXT` に写し、shader の execution model も `MeshEXT`／`TaskEXT` とする。task から mesh に渡す shader 内 payload は root data と別の GPU 内通信であり、command が payload buffer を生成・upload する契約にはしない。[descriptor heap を使う mesh draw](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawMeshTasksEXT.html)
@@ -118,6 +120,14 @@ mesh を選んだ raster pipeline は mesh、任意の task、任意の fragment
 `Submit` 内で depth/stencil の組に応じた追加 PSO を生成する必要はない。作成済み pipeline を記録呼出し時に設定し、native command へ直接変換する。draw 中の初回 pipeline 生成や global cache、LRU を導入しない。
 
 rendering は dynamic rendering を使い、開始時に attachment 領域の viewport/scissor と無効の depth/stencil を設定する。root は各 work の引数なので、前の work の root state を引き継ぐ操作は提供しない。rendering 境界で必要な memory hazard が解消されたとは扱わない。
+
+vertex raster pipeline は空の vertex input と caller の topology を使い、vertex data は shader が取得する。depth test/write/compare、stencil test/operation/mask/reference は dynamic state とし、front/back を個別に設定する。viewport は `y + height` と負の height を native に渡し、clip の Y 上向きと framebuffer の Y 下向きを一度だけ対応させる。shader 側で Y を再反転しない。
+
+read-only aspect の未指定 operation は native の Load／StoreOp.None に写し、clear や store write を行わない。存在しない aspect は `VkRenderingInfo` に attachment pointer を渡さない。`GENERAL` のまま使い、depth/stencil state が read-only aspect を書かないことは caller が保証する。参照先の layout を追跡して writable な operation へ補完しない。
+
+すべての attachment を rendering の開始前に初回参照処理へ渡し、native command 区間の切替と初期化を rendering の途中へ挿入しない。区間が変われば選択済み raster／compute pipeline と descriptor heaps を再設定する。`DrawIndexed` は `vkCmdBindIndexBuffer3KHR` に実 address、range size と index format を渡す。draw の間接版は `vkCmdDrawIndirect2KHR`／`vkCmdDrawIndexedIndirect2KHR` で1件を実行し、root は引き続き直接 push data にする。
+
+raw shader と draw に使う optional feature は、device が提供する `shaderDrawParameters`、`drawIndirectFirstInstance`、`independentBlend`、vertex／fragment の storage 書込みを有効化する。未提供の feature を要求する shader や state は native の作成・診断に従う。shader reflection による機能推定や不足機能の emulation は行わない。
 
 rendering 内の `DispatchMesh(rootData, x, y, z)` は root を直接記録した後に `vkCmdDrawMeshTasksEXT` を呼ぶ。task stage があればその group 数、なければ mesh の group 数となる。`DispatchMeshIndirect(rootData, arguments)` は既定の `VK_KHR_device_address_commands` と mesh 拡張の連携命令 `vkCmdDrawMeshTasksIndirect2EXT` を使う。`VkDrawIndirect2InfoKHR` に `arguments.GpuAddress`、range の size、12 byte の stride と `drawCount = 1` を渡し、GPU 上の X／Y／Z から 1 件だけ起動する。root は CPU 呼出しで渡したものを用い、count buffer、GPU 生成 root、CPU readback による展開は加えない。[address による mesh indirect](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawMeshTasksIndirect2EXT.html)
 
@@ -236,4 +246,4 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 - 参照実装の swapchain には `GENERAL ↔ PRESENT_SRC_KHR` の内部 transition があるが、本 ADR は presentation API の実装完了を宣言しない。
 - address-command の線形／texture copy、global barrier、HostRead、明示 discard、queue の一回提出と timeline completion を実装した。転送先 range は source の byte 数だけに制限し、公開した余剰容量を変更しない。内部 command pool の回収は caller semaphore の寿命から分離する。
 - render view の永続 image view、専用 descriptor storage と固定 slot stride、view／address range／sampler 作成情報からの descriptor 書込み、resource／sampler heap の設定を実装した。さらに null-layout compute pipeline、直接 push data、直接／address-range 間接 dispatch、混在 slot stride と shader lowering を実機確認し、`RawShaderPointers` と `BufferDescriptors` を true とする。
-- render view の attachment 使用、raster／mesh pipeline と描画、製品用 shader toolchain の移行は未実装である。compute の試験成功を描画対応の完了とは扱わない。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+- render view の attachment 使用、vertex raster pipeline、直接／address-range 間接 draw・indexed draw を実装した。depth/stencil は dynamic state を使い、read-only aspect は LOAD／STORE_OP_NONE で保持する。全 attachment の初期化区間を `vkCmdBeginRendering` の前に置き、pipeline／heap を再設定する。mesh と製品用 shader toolchain の移行は未実装である。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

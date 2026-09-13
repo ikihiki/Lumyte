@@ -50,13 +50,13 @@ public sealed unsafe partial class DirectX12Backend
         return result == 0 ? BarrierAccess.NoAccess : result;
     }
 
-    private static void EncodeBarrier(ComPtr<ID3D12GraphicsCommandList7> commands, GlobalBarrier barrier)
+    private static void EncodeBarrier(ComPtr<ID3D12GraphicsCommandList8> commands, GlobalBarrier barrier)
     {
         var group = new BarrierGroup { Type = BarrierType.Global, NumBarriers = 1, Anonymous = new() { PGlobalBarriers = &barrier } };
         commands.Barrier(1, &group);
     }
 
-    private void EncodeTransition(ComPtr<ID3D12GraphicsCommandList7> commands, NativeGpuTextureView view,
+    private void EncodeTransition(ComPtr<ID3D12GraphicsCommandList8> commands, NativeGpuTextureView view,
         GpuTextureLayout before, GpuTextureLayout after)
     {
         TextureRecord texture = RequireTexture(view.Texture);

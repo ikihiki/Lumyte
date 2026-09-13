@@ -130,6 +130,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             dispatchLimits = new(countX, countY, countZ, SaturatingProduct(countX, countY, countZ));
             InitializeDescriptors(physicalDevice);
             InitializeCompute();
+            InitializeRaster();
             vk.GetDeviceQueue(device, queueFamily.Value, 0, out Queue queue);
             mainQueue = new QueueRecord(this, queue, queueFamily.Value);
             return;
@@ -217,7 +218,11 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         {
             SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &features13,
         };
-        PhysicalDeviceFeatures2 features = new() { SType = StructureType.PhysicalDeviceFeatures2, PNext = &features12 };
+        PhysicalDeviceVulkan11Features features11 = new()
+        {
+            SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &features12,
+        };
+        PhysicalDeviceFeatures2 features = new() { SType = StructureType.PhysicalDeviceFeatures2, PNext = &features11 };
         vk.GetPhysicalDeviceFeatures2(physicalDevice, &features);
         List<string> missingFeatures = [];
         if (!descriptors.DescriptorHeap) { missingFeatures.Add("descriptorHeap"); }
@@ -239,6 +244,12 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         descriptors.DescriptorHeapCaptureReplay = false;
         unified.UnifiedImageLayoutsVideo = false;
         bool separateDepthStencilLayouts = features12.SeparateDepthStencilLayouts;
+        bool shaderDrawParameters = features11.ShaderDrawParameters;
+        features11 = new()
+        {
+            SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &features12,
+            ShaderDrawParameters = shaderDrawParameters,
+        };
         features12 = new()
         {
             SType = StructureType.PhysicalDeviceVulkan12Features,
@@ -260,6 +271,10 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             ShaderInt64 = true,
             SamplerAnisotropy = features.Features.SamplerAnisotropy,
             ImageCubeArray = features.Features.ImageCubeArray,
+            IndependentBlend = features.Features.IndependentBlend,
+            DrawIndirectFirstInstance = features.Features.DrawIndirectFirstInstance,
+            VertexPipelineStoresAndAtomics = features.Features.VertexPipelineStoresAndAtomics,
+            FragmentStoresAndAtomics = features.Features.FragmentStoresAndAtomics,
         };
         float priority = 1;
         DeviceQueueCreateInfo queueInfo = new()
@@ -274,7 +289,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         DeviceCreateInfo deviceInfo = new()
         {
             SType = StructureType.DeviceCreateInfo,
-            PNext = &features12, PEnabledFeatures = &enabled,
+            PNext = &features11, PEnabledFeatures = &enabled,
             QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo,
             EnabledExtensionCount = names.Count, PpEnabledExtensionNames = names.Pointer,
         };

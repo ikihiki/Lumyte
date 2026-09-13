@@ -32,8 +32,8 @@ command は順序付きの指示と値を記録し、application resource の寿
 | `SetPipeline(pipeline)`／`SetComputePipeline(pipeline)`／`SetDepthStencilState(state)` | command の pipeline と独立 depth/stencil の値を設定する。`SetPipeline` は vertex／mesh の raster pipeline を共に受け取る。 |
 | `SetViewport(viewport)`／`SetScissor(scissor)` | pipeline の生成を伴わず記録する。 |
 | `NativeGpuLoadOp`／`NativeGpuStoreOp` | load は `Load/Clear/Discard`、store は `Store/Discard`。 |
-| `NativeGpuColorAttachment` | render view、load/store と clear color の値を持つ。 |
-| `NativeGpuDepthStencilAttachment` | render view、`DepthReadOnly`／`StencilReadOnly`、aspect ごとの nullable load/store と clear 値を持つ。read-only または存在しない aspect の operation は未指定とし、存在する writable aspect は指定する。render view の `Flags` と同じ読み取り専用条件を使う。 |
+| `NativeGpuColorAttachment` | `View`、`LoadOp`（既定 Load）、`StoreOp`（Store）と `GpuClearColor ClearColor`（0）を持つ。 |
+| `NativeGpuDepthStencilAttachment` | `View`、nullable の `DepthLoadOp/DepthStoreOp/StencilLoadOp/StencilStoreOp` と `ClearDepth`（1）／byte `ClearStencil`（0）。read-only または存在しない aspect の operation は未指定とし、存在する writable aspect は指定する。`DepthReadOnly`／`StencilReadOnly` は view の `Flags` から算出し、同じ条件を二重入力させない。 |
 | `BeginRendering(colorAttachments, depthStencilAttachment = null)`／`EndRendering()` | attachment を指定して rendering 区間を開始・終了する。viewport/scissor は attachment 領域、depth/stencil は無効を初期値にする。 |
 | `Draw(rootData, vertexCount, instanceCount = 1, firstVertex = 0, firstInstance = 0)` | rendering 内の非 indexed draw。vertex fetch は shader が行う。 |
 | `NativeGpuIndexFormat` | `Uint16/Uint32`。 |
@@ -55,6 +55,8 @@ command は順序付きの指示と値を記録し、application resource の寿
 native 命令を生成するとき、その root を root constants または push data へ直接渡す。DirectX 12 は呼出し時の command 引数、state、root bytes と attachment の配列・clear 値を CPU 記録へコピーし、提出時に不足 PSO の解決後、順番どおりに native command へ変換する。Vulkan は記録呼出し時に native command を生成する。どちらも caller の入力領域を後から読み直さず、保持する resource identity は非所有とする。
 
 rendering の開始時は attachment 領域の viewport/scissor と無効な depth/stencil を初期値にする。read-only attachment は clear・書込みを行わず内容を保持し、未指定の load/store を writable の既定値に置き換えない。caller は指定 aspect に書かない depth/stencil state を使う。存在しない aspect の operation も未指定とする。render view の flags と attachment の指定を一致させる。
+
+attachment 領域は先頭 color view の mip の width/height と layer count から得る。color がなければ depth/stencil view を使い、attachment が一つもない rendering は表現しない。他の attachment はこの領域を覆う native 条件を caller が満たす。複数 attachment の最小値へ黙って縮小せず、viewport/scissor の明示設定は別の command とする。
 
 copy／index／indirect の range は線形 region を識別する。native 命令の resource 相対 offset に `Region.HeapOffset` を加算せず、allocation から backing resource を探索・暗黙生成しない。
 
@@ -122,6 +124,22 @@ commands.Barrier(
 
 dispatch が caller の root bytes をコピーする。scope 終了時の `Dispose` は未提出の記録だけを破棄し、application resource は解放しない。
 
+vertex raster では、作成済みの `rasterPipeline` と初期化・同期済みの `colorView` を使う。`indices` は native 条件を満たす caller-owned range で、Uint16 の index を3個含む。
+
+```csharp
+using var raster = native.MainQueue.StartCommandRecording();
+raster.SetResourceDescriptorHeap(resourceHeap);
+raster.SetSamplerDescriptorHeap(samplerHeap);
+raster.SetPipeline(rasterPipeline);
+raster.BeginRendering([new NativeGpuColorAttachment(
+    colorView, NativeGpuLoadOp.Clear, NativeGpuStoreOp.Store,
+    new GpuClearColor(0, 0, 0, 1))]);
+raster.DrawIndexed(rootData, indices, NativeGpuIndexFormat.Uint16, 3);
+raster.EndRendering();
+```
+
+この例も未提出の記録であり、scope 終了時に破棄する。描画に使った pipeline、view、texture、index と shader の参照先は caller が提出と completion に合わせて保持する。
+
 mesh raster の記録も同じ recorder を使う。`meshPipeline` は mesh program を使う作成済み raster pipeline、`meshletGroupCount` は shader が処理する workgroup 数、`colorAttachment` は初期化・同期済み attachment とする。
 
 ```csharp
@@ -162,4 +180,4 @@ resource／sampler heap の独立選択も実装する。選択は heap 全体�
 
 `SetComputePipeline`、各 dispatch の直接 root、直接／一件の間接 compute dispatch を実装した。root の最大 size と dispatch 数の native 条件を再検証する validator は追加しない。DirectX 12 では DWORD 変換で byte を失わないため長さの4倍数だけを確認し、Vulkan は byte 列をそのまま渡す。空 root は native root 更新を省き、末尾を補完しないため、shader が読む root 全域を caller が各 work に渡す。
 
-rendering、draw／indexed draw とそれらの indirect、mesh と対応する GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。
+rendering、viewport／scissor／depth-stencil の設定、直接 draw／indexed draw と一件の間接 draw を実装した。index は native の index fetch を使用し、vertex buffer binding は設けない。間接引数は直接 draw が16 byte、indexed draw が20 byteで、後者の baseVertex だけが signed 32-bit 値である。いずれも root は CPU から渡す直接入力である。mesh command とその GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。

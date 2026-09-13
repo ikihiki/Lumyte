@@ -81,4 +81,4 @@ caller-owned resource と明示同期を採用する。参照実装の線形／t
 
 Native 専用 interface、options、capabilities、native error と両 backend の初期化・終了を実装した。共通 heap と線形 region／texture の配置・独立破棄、render view、descriptor storage と書込み、転送・提出・completion に加え、raw shader、compute pipeline、直接 root と直接／間接 dispatch を提供する。両 backend の `BufferDescriptors`、Vulkan の `RawShaderPointers`、DirectX 12 の `ExplicitTextureTransitions` を true とする。DirectX 12 の raw shader pointer と両 backend の mesh／amplification は false である。
 
-limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch` と optional `Descriptors` を提供する。一般の heap／texture 上限、mesh limits、raster pipeline と描画、ray tracing、presentation は未実装である。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。
+limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch` と optional `Descriptors` を提供する。vertex raster pipeline、rendering と直接／一件の間接 draw・indexed draw を実装した。一般の heap／texture 上限、mesh とその limits、ray tracing、presentation は未実装である。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。

@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.DirectX12;
 
 public sealed unsafe partial class DirectX12Backend
 {
-    private void EncodeTextureCopy(ComPtr<ID3D12GraphicsCommandList7> commands, NativeGpuRange memory,
+    private void EncodeTextureCopy(ComPtr<ID3D12GraphicsCommandList8> commands, NativeGpuRange memory,
         NativeGpuTextureHandle handle, NativeGpuTextureCopyFootprint copy, bool upload)
     {
         LinearRecord linear = RequireLinear(memory.Region);

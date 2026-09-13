@@ -19,6 +19,8 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     private ComPtr<ID3D12Device10> device10;
     private ComPtr<ID3D12RootSignature> computeRootSignature;
     private ComPtr<ID3D12CommandSignature> dispatchSignature;
+    private ComPtr<ID3D12CommandSignature> drawSignature;
+    private ComPtr<ID3D12CommandSignature> drawIndexedSignature;
     private NativeQueue mainQueue = null!;
     private string? deviceLoss;
     private bool disposed;
@@ -102,6 +104,21 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 
     private static void RequireNativeFeatures(ComPtr<ID3D12Device> device)
     {
+        var stencil = new FeatureDataD3D12Options14();
+        Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options14, &stencil,
+            (uint)sizeof(FeatureDataD3D12Options14)), "CheckFeatureSupport(D3D12_OPTIONS14)");
+        if (!stencil.IndependentFrontAndBackStencilRefMaskSupported)
+        {
+            throw new NotSupportedException("The Native Direct3D 12 backend requires independent front/back stencil references.");
+        }
+        var renderPasses = new FeatureDataD3D12Options18();
+        Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options18, &renderPasses,
+            (uint)sizeof(FeatureDataD3D12Options18)), "CheckFeatureSupport(D3D12_OPTIONS18)");
+        if (!renderPasses.RenderPassesValid)
+        {
+            throw new NotSupportedException("The Native Direct3D 12 backend requires the corrected render-pass runtime.");
+        }
+
         var binding = new FeatureDataD3D12Options();
         Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options, &binding,
             (uint)sizeof(FeatureDataD3D12Options)), "CheckFeatureSupport(D3D12_OPTIONS)");

@@ -65,4 +65,4 @@ render view の破棄は texture とその allocation を破棄しない。
 
 ## 採用差分と未実装範囲
 
-非所有 view 値と明示的な render view を採用する。read-only flags は Lumyte の表現上の補足である。`NativeGpuTextureView` と view dimension は texture transition／discard の subresource 指定にも使用する。render view handle／flags と両 backend の生成・破棄を実装した。native attachment としての clear／描画、read-only aspect の内容保持を含む conformance 検証は、rendering command の実装段階に残る。
+非所有 view 値と明示的な render view を採用する。read-only flags は Lumyte の表現上の補足である。`NativeGpuTextureView` と view dimension は texture transition／discard の subresource 指定にも使用する。render view handle／flags と両 backend の生成・破棄、native attachment としての clear／vertex 描画を実装した。read-only depth／stencil の内容保持を実 GPU で確認したが、全 dimension／format／sample count の描画組合せと validation layer 有効時の検証を完了したとは扱わない。

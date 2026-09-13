@@ -179,6 +179,16 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     private sealed class ForeignSemaphore : NativeGpuSemaphore { public override void Dispose() { } }
     private sealed class ForeignCommands : NativeGpuCommandBuffer
     {
+        public override void SetPipeline(NativeGpuRasterPipelineHandle pipeline) => throw new NotSupportedException();
+        public override void SetDepthStencilState(NativeGpuDepthStencilState state) => throw new NotSupportedException();
+        public override void SetViewport(NativeGpuViewport viewport) => throw new NotSupportedException();
+        public override void SetScissor(NativeGpuScissorRect scissor) => throw new NotSupportedException();
+        public override void BeginRendering(ReadOnlySpan<NativeGpuColorAttachment> colors, NativeGpuDepthStencilAttachment? depthStencilAttachment = null) => throw new NotSupportedException();
+        public override void EndRendering() => throw new NotSupportedException();
+        public override void Draw(ReadOnlySpan<byte> rootData, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) => throw new NotSupportedException();
+        public override void DrawIndexed(ReadOnlySpan<byte> rootData, NativeGpuRange indices, NativeGpuIndexFormat format, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0) => throw new NotSupportedException();
+        public override void DrawIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments) => throw new NotSupportedException();
+        public override void DrawIndexedIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange indices, NativeGpuIndexFormat format, NativeGpuRange arguments) => throw new NotSupportedException();
         public override void SetComputePipeline(NativeGpuComputePipelineHandle pipeline) => throw new NotSupportedException();
         public override void Dispatch(ReadOnlySpan<byte> rootData, uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
         public override void DispatchIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments) => throw new NotSupportedException();

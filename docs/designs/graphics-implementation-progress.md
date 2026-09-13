@@ -174,9 +174,41 @@ Slang 2026.17 で生成した Vulkan 用 artifact を内蔵 SPIR-V validator で
 
 実機は RTX 2080、driver 616.92。DirectX 12 debug layer と Vulkan Khronos validation layer は未導入のため、有効時の検証は未実施である。native pipeline の allocation failure と device loss を強制する試験は行わず、失敗時の owned object 解放はコードレビューで確認した。
 
+## 第6段階: Native vertex raster・indexed draw
+
+2026-09-10 に [Pipeline State](../adr/0010-native-pipeline-state-api.md) と [Command Recording](../adr/0011-native-command-recording-api.md) の vertex 描画を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | 外部 backend が派生する raster pipeline handle、blend／raster／depth-stencil の値、viewport／scissor、color／depth-stencil attachment を追加。vertex／pixel の raw program から pipeline を生成・破棄する |
+| 描画 | Begin／EndRendering、直接 Draw／DrawIndexed、16 byte／20 byte の一件の間接 draw を追加。native の index fetch へ Uint16／Uint32 と range を渡し、vertex data は shader が取得する |
+| Root と引数 | 各 work の root を直接渡し、呼出し後の CPU 入力再利用を許す。firstVertex／firstIndex／signed baseVertex／firstInstance を native command へそのまま渡し、command による Parameter Data の解釈・upload・root への追加補正は行わない |
+| DirectX 12 | 論理 raster pipeline が description と raw DXIL を保持し、実際の draw の Submit 内で不足する PSO を生成する。depth/stencil の動作を key にし、pipeline が破棄まで所有する。viewport／scissor／stencil reference／root は key に含めない |
+| Vulkan | descriptor-heap flag と null layout の graphics pipeline を作成時に完成させる。depth/stencil を dynamic state、index／indirect を device-address command へ写し、attachment 初期化に伴う native command 分割後も pipeline／heap を再設定する |
+| Attachment | 最初の color、または depth/stencil の mip 領域を rendering の大きさとする。開始時に viewport／scissor と無効の depth/stencil を設定する。read-only は view flags から導出し、writable aspect の load／store だけ caller が指定する |
+| 所有と検証 | pipeline／view／resource の寿命は caller が管理する。別 device、破棄済み object、rendering の局所状態、論理 range と値を失う変換を確認し、shader／format／state の native validator は複製しない |
+
+DirectX 12 は front/back の stencil reference を個別に渡すため `D3D12_OPTIONS14.IndependentFrontAndBackStencilRefMaskSupported`、native render pass のため `D3D12_OPTIONS18.RenderPassesValid` を初期化時に要求する。read-only aspect は read-only binding flags と Preserve、存在しない aspect は NoAccess に写す。raw shader の storage 書込みを許す `ALLOW_UAV_WRITES` を指定し、shader の resource 参照を reflection で復元しない。
+
+Vulkan は必要な attachment をすべて `vkCmdBeginRendering` の前に初期化し、read-only aspect を GENERAL の LOAD／STORE_OP_NONE で保持する。負の viewport height で座標規約を合わせ、shader 生成時に Y を再反転しない。device が提供する ShaderDrawParameters、independent blend、indirect first instance と vertex／fragment storage 書込みの任意 feature を有効化し、Native 全体の新しい必須条件にはしない。
+
+Vulkan の5個の raster／indirect argument fixture は Slang 2026.17 で再生成し、内蔵 SPIR-V validator と再生成前後の hash 一致を確認した。source と再生成手順をテストの `Integration/Shaders/` に置き、製品 backend に compiler 依存を追加しない。DirectX 12 は既存のテスト用 DXC で raw DXIL を生成する。
+
+shader の system-value は target の raw ABI に従う。Vulkan の fixture は `SV_VulkanVertexID`／`SV_VulkanInstanceID` で native index を読む。DirectX 12 はこの GPU が提供する SM 6.8 Extended Command Info を任意機能の試験として使い、非 indexed／indexed と直接／間接の4通りで start vertex 6／base vertex -3、start instance 13、通常の instance ID 0 を GPU buffer への書込みと readback で確認した。両 target の通常の ID が同じ意味であるとは扱わず、command による shader 引数の追加・補正はしない。
+
+連続 render pass の DirectX 12 試験では、color と depth の access を一つの global barrier に OR した場合に `Close` が `E_INVALIDARG` を返した。depth read bit を除いた同一 write mask、同期 scope を All に揃えた場合でも再現した。一方、color と depth を個別の global barrier で指定した場合と、layout を維持する個別 texture barrier では同じ描画結果を得た。試験は依存を個別に記録し、viewport／scissor／depth の reset を検証する元の判定を維持する。backend に自動分割や native validation の複製は追加しない。Microsoft の現行仕様は global barrier の OR 指定を許し、DepthStencilWrite layout と depth read access の共存も認めるため、一般的な禁止規則と断定しない。この GPU／runtime が複合指定を拒否する詳細原因は debug layer 有効時の診断が残る。[Enhanced Barriers](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html#d3d12_global_barrier)
+
+新規テストは Native 17件、DirectX 12 32件、Vulkan 24件の計73件。直接 root の snapshot、Uint16／Uint32 と region 相対 offset、GPU が生成した間接引数、culling、blend／write mask、depth/stencil、read-only 内容保持、fragment の descriptor 参照を実 GPU で確認した。DirectX 12 は未使用 pipeline の PSO 未生成、固定 state の variant 再利用、PSO 生成失敗で batch 全体を提出しないことも検証した。Native の別 assembly から public／protected 契約だけで raster を実装・利用する consumer test も成功した。
+
+2026-09-13 に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=native-raster-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、25 test project の **1,531件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は363件、Vulkan は366件、WebGPU は154件、Native は79件。TRX は各 test project の `TestResults/` に保存した。連続 render pass の試験は前記の個別 global barrier を使用した最終コードで成功している。
+
+37 ADR の必須章、44文書の344ローカルリンクと20アンカー、208件の番号依存を確認した。`InternalsVisibleTo` 9指定はすべて test assembly 向けで、Native の内部公開は0件。独立レビューと staged diff の空白検査も問題なし。
+
+実機は RTX 2080、driver 616.92。DirectX 12 debug layer と Vulkan Khronos validation layer を有効にした検証は未実施である。全 format／dimension／MSAA の描画組合せ、native allocation failure と device loss の強制試験も未実施であり、正常な実機描画と明示的な所有・同期、CPU 側の失敗境界の確認とは区別する。mesh／amplification の capability は引き続き false とする。
+
 ## 未実装と次の順序
 
-1. Native raster pipeline と rendering／draw／indexed draw を接続し、render view の attachment 使用と描画結果を確認する。DirectX 12 の depth/stencil を含む PSO は実際の Submit 時に解決し、root の直接入力と command で Parameter Data を扱わない方針を維持する。描画用 indirect と残る limits を対応する操作とともに追加する。
+1. Native mesh／amplification の capability と limits、pipeline、直接／一件の間接 command、stage barrier と実機検証を追加する。root の直接入力と command で Parameter Data を扱わない方針を維持する。非対応 device へは emulation せず、vertex/indexed draw を残す。
 2. 独立した Portable API と WebGPU、両系統の Resources・shader・RenderGraph provider、共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
-mesh／amplification、保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。driver 更新により、この PC で Native Vulkan の初期化と転送基盤を実機検証できるようになった。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
+保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

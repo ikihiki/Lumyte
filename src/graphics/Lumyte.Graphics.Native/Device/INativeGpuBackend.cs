@@ -2,7 +2,7 @@ namespace Lumyte.Graphics.Native;
 
 /// <summary>
 /// Native GPU allocation, placement, views, descriptors, recording, and explicit submission and completion.
-/// The caller owns each resource and its backing heap. Raster drawing members follow in later stages.
+/// The caller owns resources, backing heaps, and pipelines.
 /// </summary>
 /// <remarks>
 /// The caller serializes operations on the same heap or resource, including placement and destruction,
@@ -63,6 +63,12 @@ public interface INativeGpuBackend : IDisposable
         NativeGpuRange range, NativeGpuBufferAccess access);
 
     void WriteSamplerDescriptor(NativeGpuDescriptorHeap heap, uint index, NativeGpuSamplerDescription description);
+
+    /// <summary>Consumes or copies the fixed description and raw shaders before returning a caller-owned pipeline.</summary>
+    /// <remarks>DirectX 12 resolves native depth/stencil PSOs only for work used in Submit; Vulkan completes native creation here.</remarks>
+    NativeGpuRasterPipelineHandle CreateRasterPipeline(NativeGpuRasterPipelineDescription description, NativeGpuShaderProgram program);
+
+    void DestroyRasterPipeline(NativeGpuRasterPipelineHandle pipeline);
 
     /// <summary>Completes native compute pipeline creation before returning; shader bytes are borrowed only during this call.</summary>
     NativeGpuComputePipelineHandle CreateComputePipeline(NativeGpuShaderProgram program);

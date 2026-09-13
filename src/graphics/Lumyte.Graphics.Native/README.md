@@ -1,6 +1,6 @@
 # Native GPU 基盤
 
-DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、compute と直接 root、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
+DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、compute／vertex raster と直接 root、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
 
 `CreateGpuHeap` は backing allocation だけを確保する。`CreateLinearRegion` が指定した heap offset に独立した native buffer を配置し、その resource の GPU address と必要な CPU mapping を提供する。`NativeGpuRange.Offset` は region 内の値であり、heap offset を含めない。
 
@@ -145,6 +145,50 @@ root の有効上限は `Limits.MaxRootDataSize`、dispatch 数は `Limits.Dispa
 
 `DispatchIndirect(rootData, arguments)` は range の先頭にある3個の uint32（X／Y／Z）で1件を実行する。GPU が引数を書いた場合は、その producer から `GpuStage.DrawIndirect`／`GpuAccess.IndirectRead` への barrier を caller が記録する。root は直接版と同様に command へ渡し、GPU 引数の readback や CPU 展開を行わない。
 
+## Raster と indexed draw
+
+`vertexShader` と `pixelShader` は対象 backend 用の `NativeGpuShaderCode`、`colorView` は color attachment 用の render view、`indices` は3個の Uint16 index を持つ範囲とする。texture の初期化と必要な layout／barrier は済ませ、descriptor heap を含むすべての参照先を GPU 完了まで保持する。
+
+```csharp
+var pipeline = backend.CreateRasterPipeline(
+    new NativeGpuRasterPipelineDescription
+    {
+        ColorTargets = [new(GpuFormat.Rgba8Unorm)],
+        Topology = NativeGpuPrimitiveTopology.TriangleList
+    },
+    new NativeGpuShaderProgram(vertexShader, pixelShader));
+try
+{
+    var queue = backend.MainQueue;
+    using var completion = queue.CreateSemaphore(0);
+    using var commands = queue.StartCommandRecording();
+    commands.SetResourceDescriptorHeap(resources);
+    commands.SetSamplerDescriptorHeap(samplers);
+    commands.SetPipeline(pipeline);
+    commands.BeginRendering([new NativeGpuColorAttachment(
+        colorView, NativeGpuLoadOp.Clear, NativeGpuStoreOp.Store,
+        new GpuClearColor(0, 0, 0, 1))]);
+    commands.DrawIndexed(rootData, indices, NativeGpuIndexFormat.Uint16, 3);
+    commands.EndRendering();
+    queue.Submit([commands], completion, 1);
+    queue.Wait(completion, 1);
+}
+finally
+{
+    backend.DestroyRasterPipeline(pipeline);
+}
+```
+
+vertex data の取得は shader が行い、index だけを native index fetch へ渡す。`Draw` は非 indexed、`DrawIndexed` は Uint16／Uint32 の範囲を使う。両者に `instanceCount` と開始位置を指定でき、`DrawIndexed` の `baseVertex` は符号付きである。shader の system-value semantic は対象 artifact の ABI に従い、command が開始位置を root に追加・補正することはない。
+
+Vulkan の試験用 Slang shader は `SV_VulkanVertexID`／`SV_VulkanInstanceID` で開始位置を含む native index を取得する。通常の `SV_VertexID`／`SV_InstanceID` と同じ値とは扱わない。DirectX 12 で開始引数そのものを shader から読むには、対応 device と SM 6.8 の `SV_StartVertexLocation`／`SV_StartInstanceLocation` を使える。この任意機能は試験で確認しており、Native backend の必須条件には加えていない。ABI の詳細は [DirectX 12](../../../docs/adr/0013-directx12-backend-implementation.md#dxil-と-root-payload) と [Vulkan](../../../docs/adr/0014-vulkan-backend-implementation.md#spir-v-と直接-root-data) の ADR を参照する。
+
+`DrawIndirect` は先頭4個の uint32、`DrawIndexedIndirect` は5個の32-bit field（4番目は符号付き baseVertex）を1件の GPU 引数として読む。root は直接渡し、引数の生成と indirect read の間には caller が barrier を指定する。
+
+`BeginRendering` は先頭 color attachment、または depth/stencil attachment の mip 領域に viewport/scissor を設定し、depth/stencil の test/write を無効にする。`SetViewport`、`SetScissor` と `SetDepthStencilState` はその後に上書きできる。read-only aspect は render view の flags から導出し、その load/store を指定しない。存在する writable aspect は load/store の両方を明示する。
+
+DirectX 12 は pipeline 作成時に description と raw shader をコピーし、実際の `Submit` で使う depth/stencil の組だけ native PSO を生成する。成功した PSO は同じ pipeline で再利用し、front/back の stencil reference、root、viewport/scissor の変更では増やさない。Vulkan は作成時に native pipeline を完成させ、depth/stencil は dynamic state で変更する。
+
 ## バックエンドの追加
 
 別 assembly で `INativeGpuBackend` を実装し、次の基底型から実装内の非公開型を派生させる。`Lumyte.Graphics.Native` に `InternalsVisibleTo` はなく、追加 backend の assembly 名を登録する必要もない。
@@ -158,6 +202,7 @@ root の有効上限は `Limits.MaxRootDataSize`、dispatch 数は `Limits.Dispa
 | `NativeGpuRenderViewHandle` | `(flags)` | attachment 用 native view、所属 device と局所的な解放状態 |
 | `NativeGpuDescriptorHeap` | `(kind, capacity)` | 専用 descriptor storage、native slot 配置と所属 device |
 | `NativeGpuComputePipelineHandle` | `()` | 完成済みの native compute pipeline、所属 device と局所的な解放状態 |
+| `NativeGpuRasterPipelineHandle` | `()` | 同期生成した native pipeline、または raw code と固定値・提出時に解決する pipeline 所有 PSO |
 | `NativeGpuQueue` | `()` | native queue、内部 command memory の completion と回収 |
 | `NativeGpuCommandBuffer` | `()` | queue identity、記録・一回提出・破棄の局所状態と native command memory |
 | `NativeGpuSemaphore` | `()` | caller-owned native completion timeline と所属 queue |
@@ -174,4 +219,4 @@ texture copy は単一 aspect の footprint と、明示した byte pitch を使
 
 render view と descriptor storage に加え、raw shader の compute pipeline、直接 root、直接／間接 dispatch と shader による descriptor 参照を実装した。両 backend の `BufferDescriptors` と Vulkan の `RawShaderPointers` を true とする。limits は root、compute dispatch と descriptor ABI を提供する。
 
-raster pipeline／描画、attachment としての使用、mesh、その他の limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+vertex raster pipeline、render pass、直接／一件の間接 draw・indexed draw と depth/stencil の分離も実装した。DirectX 12 の PSO は実際の draw の Submit 内で解決する。mesh、その他の limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

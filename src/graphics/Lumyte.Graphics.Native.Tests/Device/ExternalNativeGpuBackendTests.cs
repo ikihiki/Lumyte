@@ -64,7 +64,7 @@ public sealed partial class ExternalNativeGpuBackendTests
     // private to the implementation, while callers only receive public contract types.
     private sealed partial class ExternalBackend(Action<object> release, Action<object>? observeTexture = null,
         Action<object>? observeCommands = null, Action<object>? observeDescriptors = null,
-        Action<object>? observeCompute = null) : INativeGpuBackend
+        Action<object>? observeCompute = null, Action<object>? observeRaster = null) : INativeGpuBackend
     {
         public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
         public NativeGpuCapabilities Capabilities => new();

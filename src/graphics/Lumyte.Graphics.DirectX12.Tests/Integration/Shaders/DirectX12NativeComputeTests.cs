@@ -206,7 +206,7 @@ public sealed partial class DirectX12NativeComputeTests
         backend.MainQueue.Wait(completion, 1);
     }
 
-    private static byte[] Compile(string source, string profile = "cs_6_6")
+    internal static byte[] Compile(string source, string profile = "cs_6_6", string entryPoint = "computeMain")
     {
         string directory = Path.Combine(Path.GetTempPath(), $"lumyte-native-dxc-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -220,7 +220,7 @@ public sealed partial class DirectX12NativeComputeTests
                 RedirectStandardError = true, RedirectStandardOutput = true,
                 UseShellExecute = false, CreateNoWindow = true,
             };
-            foreach (string argument in new[] { "-T", profile, "-E", "computeMain", "-Fo", output, input })
+            foreach (string argument in new[] { "-T", profile, "-E", entryPoint, "-Fo", output, input })
             {
                 start.ArgumentList.Add(argument);
             }

@@ -53,7 +53,7 @@ native 記録中・終了済み・受理済みの区別は内部管理であり�
 
 ## コード配置
 
-パスは repository root 相対とし、PSO など未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
+パスは repository root 相対とし、未実装機能の目標配置を含む。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project 内へ実装を追加する。テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -93,4 +93,4 @@ batch の一回受理、PSO/command 変換の失敗境界、completion の接続
 
 一回提出、明示 completion と caller lifetime を採用し、転送 command の batch と caller-owned semaphore に実装した。内部 command memory は queue 所有の completion で回収する。受理前の command 変換・終了失敗を GPU 提出へ進めず、受理済み recording の再利用を拒否する。外部 assembly からの実装と GPU 試験の結果は [進捗記録](../designs/graphics-implementation-progress.md) に記録する。
 
-compute pipeline、直接 root と直接／間接 dispatch の提出を実装した。DirectX 12 の提出時 PSO 解決は Lumyte の補足として採用するが、raster pipeline／描画／mesh の移行と合わせて未実装である。queue をまたぐ GPU wait、presentation と application resource の自動退役はこの Native 契約に含めない。
+compute pipeline、直接 root と直接／間接 dispatch、vertex raster と直接／一件の間接 draw・indexed draw の提出を実装した。DirectX 12 の提出時 PSO 解決は Lumyte の補足として実装し、batch の native 変換に失敗した場合は一部の recording だけを実行しない。mesh の実行とその混在 batch は未実装である。queue をまたぐ GPU wait、presentation と application resource の自動退役はこの Native 契約に含めない。

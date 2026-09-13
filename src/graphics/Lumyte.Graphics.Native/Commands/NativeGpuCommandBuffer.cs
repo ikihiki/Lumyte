@@ -17,6 +17,43 @@ public abstract class NativeGpuCommandBuffer : IDisposable
     /// <summary>Selects the independent sampler heap. The caller keeps the heap alive until GPU completion.</summary>
     public abstract void SetSamplerDescriptorHeap(NativeGpuDescriptorHeap heap);
 
+    public abstract void SetPipeline(NativeGpuRasterPipelineHandle pipeline);
+
+    public abstract void SetDepthStencilState(NativeGpuDepthStencilState state);
+
+    public abstract void SetViewport(NativeGpuViewport viewport);
+
+    public abstract void SetScissor(NativeGpuScissorRect scissor);
+
+    /// <summary>Begins rendering using borrowed views and snapshots the attachment values before returning.</summary>
+    /// <remarks>
+    /// At least one attachment is required. Initial viewport/scissor cover the first color view's mip,
+    /// or the depth/stencil view's mip when no color view is supplied. Other attachments must cover that extent.
+    /// Depth/stencil tests and writes are disabled at the beginning of each rendering scope.
+    /// </remarks>
+    public abstract void BeginRendering(ReadOnlySpan<NativeGpuColorAttachment> colorAttachments,
+        NativeGpuDepthStencilAttachment? depthStencilAttachment = null);
+
+    public abstract void EndRendering();
+
+    /// <summary>Records a draw with direct root bytes, copied before the call returns.</summary>
+    /// <remarks>The caller supplies all root bytes read by this work; trailing bytes are not zero-filled.</remarks>
+    public abstract void Draw(ReadOnlySpan<byte> rootData, uint vertexCount, uint instanceCount = 1,
+        uint firstVertex = 0, uint firstInstance = 0);
+
+    /// <summary>Uses native index fetch from the caller's region-relative range and direct root bytes.</summary>
+    public abstract void DrawIndexed(ReadOnlySpan<byte> rootData, NativeGpuRange indices, NativeGpuIndexFormat format,
+        uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
+
+    /// <summary>Draws once from vertexCount, instanceCount, firstVertex, firstInstance uint32 values at the beginning of the argument range.</summary>
+    /// <remarks>Root bytes follow the same direct-input snapshot contract as Draw.</remarks>
+    public abstract void DrawIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments);
+
+    /// <summary>Draws once from indexCount, instanceCount, firstIndex, baseVertex, firstInstance at the beginning of the argument range.</summary>
+    /// <remarks>Fields are 32-bit values, with only baseVertex signed. Root bytes remain direct inputs with the same snapshot contract as Draw.</remarks>
+    public abstract void DrawIndexedIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange indices,
+        NativeGpuIndexFormat format, NativeGpuRange arguments);
+
     /// <summary>Selects a borrowed pipeline that the caller keeps alive through recorded and submitted work.</summary>
     public abstract void SetComputePipeline(NativeGpuComputePipelineHandle pipeline);
 

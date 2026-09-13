@@ -84,4 +84,4 @@ caller-owned storage と明示 index を採用する。専用 heap/index は Dir
 
 両 backend の storage 生成・破棄、texture／buffer／sampler の指定 slot への書込み、command の heap 選択を実装した。Vulkan は descriptor size と alignment から求めた共通 resource slot stride と独立した sampler slot stride を `Limits.Descriptors` に公開する。DirectX 12 の同 property は null とし、opaque handle increment を byte stride として公開しない。
 
-両 backend の compute shader から混在 heap と sampler を参照する実機検証を追加した。Vulkan は Slang の unified descriptor stride と storage の一致を確認した。raster／mesh からの参照と製品用 shader toolchain の移行は未実装である。
+両 backend の compute shader から混在 heap と sampler を参照する実機検証を追加した。Vulkan は Slang の unified descriptor stride と storage の一致を確認した。vertex raster にも同じ storage を接続し、heap ごとの所有と caller による選択を維持する。mesh からの参照と製品用 shader toolchain の移行は未実装である。

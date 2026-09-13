@@ -76,12 +76,22 @@ public sealed unsafe partial class DirectX12Backend
             var signature = new CommandSignatureDesc(12, 1, &argument, 0);
             Check(device.CreateCommandSignature<ID3D12RootSignature, ID3D12CommandSignature>(&signature, default,
                 out dispatchSignature), "CreateCommandSignature(Dispatch)");
+            argument.Type = IndirectArgumentType.Draw;
+            signature.ByteStride = 16;
+            Check(device.CreateCommandSignature<ID3D12RootSignature, ID3D12CommandSignature>(&signature, default,
+                out drawSignature), "CreateCommandSignature(Draw)");
+            argument.Type = IndirectArgumentType.DrawIndexed;
+            signature.ByteStride = 20;
+            Check(device.CreateCommandSignature<ID3D12RootSignature, ID3D12CommandSignature>(&signature, default,
+                out drawIndexedSignature), "CreateCommandSignature(DrawIndexed)");
         }
         finally { errors.Dispose(); serialized.Dispose(); }
     }
 
     private void DisposeComputeSupport()
     {
+        drawIndexedSignature.Dispose();
+        drawSignature.Dispose();
         dispatchSignature.Dispose();
         computeRootSignature.Dispose();
     }

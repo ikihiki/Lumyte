@@ -7,7 +7,7 @@ public sealed unsafe partial class VulkanBackend
 {
     private sealed record CommandSegment(CommandBuffer Command, TextureRecord? InitializationCandidate);
 
-    private sealed class CommandRecord : NativeGpuCommandBuffer
+    private sealed partial class CommandRecord : NativeGpuCommandBuffer
     {
         private CommandPool pool;
         private readonly List<CommandSegment> segments;
@@ -39,14 +39,14 @@ public sealed unsafe partial class VulkanBackend
 
         public override void Dispatch(ReadOnlySpan<byte> rootData, uint x, uint y = 1, uint z = 1)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             PushRoot(rootData);
             Owner.vk.CmdDispatch(Current, x, y, z);
         }
 
         public override void DispatchIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             Owner.RequireCommandRange(arguments);
             if (arguments.Size < 12)
             {
@@ -96,7 +96,7 @@ public sealed unsafe partial class VulkanBackend
 
         public override void CopyMemory(NativeGpuRange source, NativeGpuRange destination)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             Owner.RequireCommandRange(source);
             Owner.RequireCommandRange(destination);
             if (source.Size > destination.Size)
@@ -116,7 +116,7 @@ public sealed unsafe partial class VulkanBackend
 
         public override void CopyMemoryToTexture(NativeGpuRange source, NativeGpuTextureHandle destination, NativeGpuTextureCopyFootprint footprint)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             Owner.RequireCommandRange(source);
             TextureRecord texture = Owner.RequireCommandTexture(destination);
             NativeDeviceMemoryImageCopy region = TextureCopyRegion(texture.Description.Format, source, footprint);
@@ -130,7 +130,7 @@ public sealed unsafe partial class VulkanBackend
 
         public override void CopyTextureToMemory(NativeGpuTextureHandle source, NativeGpuRange destination, NativeGpuTextureCopyFootprint footprint)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             Owner.RequireCommandRange(destination);
             TextureRecord texture = Owner.RequireCommandTexture(source);
             NativeDeviceMemoryImageCopy region = TextureCopyRegion(texture.Description.Format, destination, footprint);
@@ -144,7 +144,7 @@ public sealed unsafe partial class VulkanBackend
 
         public override void Barrier(GpuStage beforeStages, GpuAccess beforeAccess, GpuStage afterStages, GpuAccess afterAccess)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             MemoryBarrier2 barrier = new()
             {
                 SType = StructureType.MemoryBarrier2,
@@ -160,14 +160,14 @@ public sealed unsafe partial class VulkanBackend
 
         public override void TextureTransition(NativeGpuTextureView view, GpuTextureLayout beforeLayout, GpuTextureLayout afterLayout)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             Owner.RequireCommandTexture(view.Texture);
             throw new NotSupportedException("Vulkan Native textures use GENERAL. ExplicitTextureTransitions is unavailable.");
         }
 
         public override void DiscardTexture(NativeGpuTextureView view, GpuTextureLayout afterLayout)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             TextureRecord texture = Owner.RequireCommandTexture(view.Texture);
             if (afterLayout != GpuTextureLayout.General)
             {
@@ -198,6 +198,10 @@ public sealed unsafe partial class VulkanBackend
             {
                 Owner.vk.CmdBindPipeline(Current, PipelineBindPoint.Compute, computePipeline);
             }
+            if (rasterPipeline.Handle != 0)
+            {
+                Owner.vk.CmdBindPipeline(Current, PipelineBindPoint.Graphics, rasterPipeline);
+            }
         }
 
         public void VerifyRecording()
@@ -210,6 +214,7 @@ public sealed unsafe partial class VulkanBackend
 
         public void End()
         {
+            VerifyOutsideRendering();
             ended = true;
             foreach (CommandSegment segment in segments)
             {

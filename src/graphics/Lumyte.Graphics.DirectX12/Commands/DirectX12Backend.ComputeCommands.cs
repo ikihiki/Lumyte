@@ -19,7 +19,7 @@ public sealed unsafe partial class DirectX12Backend
 
         public override void Dispatch(ReadOnlySpan<byte> rootData, uint x, uint y = 1, uint z = 1)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             NativeGpuComputePipelineHandle pipeline = SelectedComputePipeline();
             byte[] root = CopyRootData(rootData);
             operations.Add(commands =>
@@ -31,7 +31,7 @@ public sealed unsafe partial class DirectX12Backend
 
         public override void DispatchIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments)
         {
-            VerifyRecording();
+            VerifyOutsideRendering();
             NativeGpuComputePipelineHandle pipeline = SelectedComputePipeline();
             Owner.Owner.RequireLinear(arguments.Region);
             if (arguments.Size < 12)
@@ -60,7 +60,7 @@ public sealed unsafe partial class DirectX12Backend
             return rootData.ToArray();
         }
 
-        private void BindCompute(ComPtr<ID3D12GraphicsCommandList7> commands,
+        private void BindCompute(ComPtr<ID3D12GraphicsCommandList8> commands,
             NativeGpuComputePipelineHandle pipeline, byte[] root)
         {
             ComputePipelineRecord record = Owner.Owner.RequireComputePipeline(pipeline);

@@ -26,17 +26,18 @@ DirectX 12 は depth/stencil を native PSO に含むため、実際の提出内
 | `NativeGpuMeshOutputTopology` | `Line/Triangle`。mesh shader が出力する primitive の種類であり、input assembler の頂点列の組立て方ではない。 |
 | `NativeGpuBlendOperation` | `Add/Subtract/ReverseSubtract/Minimum/Maximum`。 |
 | `NativeGpuBlendFactor` | `Zero/One`、source/destination の color/alpha とその反転、`SourceAlphaSaturate`。 |
-| `NativeGpuBlendDescription` | enabled、color/alpha の operation と source/destination factor。 |
-| `NativeGpuColorTargetDescription` | format、RGBA write mask、blend description。 |
-| `NativeGpuRasterPipelineDescription` | color target 列、optional depth/stencil format、nullable `Topology`／`MeshOutputTopology`、cull/front face、sample count と rasterization の固定値。blend は target に含む。vertex program は `Topology` だけ、mesh program は `MeshOutputTopology` だけを指定する。 |
+| `NativeGpuBlendDescription` | `Enabled`、`ColorOperation`／`AlphaOperation`、`SourceColorFactor`／`DestinationColorFactor` と `SourceAlphaFactor`／`DestinationAlphaFactor`。constructor の既定値は blend 無効、Add、source One／destination Zero。 |
+| `NativeGpuColorTargetDescription` | `Format`、`GpuColorWriteMask WriteMask`（既定 All）、`Blend`（既定無効）。 |
+| `NativeGpuRasterPipelineDescription` | init-only record。`ColorTargets` 配列（既定空）、optional `DepthStencilFormat`、nullable `Topology`（既定 TriangleList）／`MeshOutputTopology`（既定 null）、`CullMode`（None）、`FrontFace`（CounterClockwise）、`SampleCount`（1）。blend は target に含む。vertex program は `Topology` だけ、mesh program は `MeshOutputTopology` だけを指定する。 |
 | `NativeGpuStencilOperation` | `Keep/Zero/Replace/IncrementClamp/DecrementClamp/Invert/IncrementWrap/DecrementWrap`。 |
-| `NativeGpuStencilFaceState` | compare、fail/depth-fail/pass operation、reference。 |
-| `NativeGpuDepthStencilState` | depth test/write/compare、stencil test/read mask/write mask、front/back state。default は depth/stencil の test/write を無効にする。 |
+| `NativeGpuStencilFaceState` | `Compare`、`FailOp`／`DepthFailOp`／`PassOp` と uint `Reference`。constructor の既定値は Always、全 operation Keep、reference 0。 |
+| `NativeGpuDepthStencilState` | `DepthTest`／`DepthWrite`／`DepthCompare`、`StencilTest`、byte `StencilReadMask`／`StencilWriteMask` と `Front`／`Back`。constructor の既定値は test/write 無効、depth LessEqual、mask 255、両 face は Always／Keep。`default` 値も test/write 無効とする。 |
 | `NativeGpuRasterPipelineHandle`／`NativeGpuComputePipelineHandle` | caller-owned pipeline identity。public abstract 基底型と protected constructor を持ち、別 assembly の backend が非公開派生型として実装する。 |
 | `CreateRasterPipeline(description, program)` | 固定 state と raw shader から論理 pipeline を生成する。DirectX 12 は後の native PSO 生成に必要な description、raw code と entry point を自身で保持する。Vulkan の dynamic state 経路はこの時点で native 生成を完了する。 |
 | `CreateComputePipeline(program)` | native compute pipeline の生成を完了して返す。 |
 | `DestroyRasterPipeline`／`DestroyComputePipeline` | caller が全利用を解消してから pipeline と所有する native object を解放する。 |
-| `NativeGpuViewport`／`NativeGpuScissorRect` | viewport の領域/depth と整数 scissor 領域。 |
+| `NativeGpuViewport` | float `X/Y/Width/Height` と `MinDepth/MaxDepth`（既定 0/1）。framebuffer 左上を原点とする。 |
+| `NativeGpuScissorRect` | int `X/Y` と uint `Width/Height`。 |
 
 vertex pipeline は shader による頂点取得と native index fetch を使う `Draw`／`DrawIndexed`、mesh pipeline は amplification／mesh が生成する geometry と `DispatchMesh` を使う。mesh の primitive indices は shader が出力し、input assembler 用の index buffer は使わない。`MeshOutputTopology` は raw shader の出力宣言に対応する caller の値で、DirectX 12 の PSO primitive type 等へ渡す。mesh program に vertex `Topology` を残して無視したり、shader を解析して値を推測したりしない。出力宣言との適合、payload と stage linkage は compiler／native 診断に委ねる。[DirectX mesh shader specification](https://microsoft.github.io/DirectX-Specs/d3d/MeshShader.html)
 
@@ -47,6 +48,8 @@ DirectX 12 の raster pipeline は、description、raw code と entry point を�
 Vulkan の dynamic depth/stencil 経路は vertex／mesh とも raster pipeline の作成時に native 生成を完了し、depth/stencil の組ごとの追加 PSO を作らない。mesh 経路は vertex input／input assembly state を使わず、mesh の出力宣言に従う。compute pipeline は双方で作成時に native 生成を完了する。[VK_EXT_mesh_shader](https://docs.vulkan.org/features/latest/features/proposals/VK_EXT_mesh_shader.html)
 
 pipeline と state の意味上の適合は native の生成・診断に従う。caller は pipeline を参照する全未提出記録と GPU 利用を解消してから破棄する。
+
+この最小契約の rasterization は solid fill、depth clipping 有効、depth bias なし、primitive restart 無効とする。wireframe、depth bias、depth clamp、strip の restart index を表す API は設けていない。未指定の機能を実装済みとは扱わない。
 
 ## コード配置
 
@@ -83,8 +86,11 @@ DirectX 12 では論理定義だけを生成・破棄し、未使用の depth/st
 同じ生成 API に mesh program を渡す。`meshProgram` は `Mesh` と optional `Amplification/Pixel` を持ち、三角形を出力する。`meshDescription` の attachment、sample count 等も対象描画に合わせて指定済みとする。
 
 ```csharp
-meshDescription.Topology = null;
-meshDescription.MeshOutputTopology = NativeGpuMeshOutputTopology.Triangle;
+meshDescription = meshDescription with
+{
+    Topology = null,
+    MeshOutputTopology = NativeGpuMeshOutputTopology.Triangle
+};
 var meshPipeline = native.CreateRasterPipeline(meshDescription, meshProgram);
 native.DestroyRasterPipeline(meshPipeline);
 ```
@@ -97,4 +103,4 @@ state の native 表現、意味上の key と pipeline-owned object の回収�
 
 raster pipeline と depth/stencil の分離は部分採用である。DirectX 12 の提出時 PSO 解決は Lumyte の補足で、native PSO から depth/stencil を完全分離したとは扱わない。mesh は line／triangle 出力を採用し、DirectX 12 と共通に扱えない point 出力は未採用。rasterization/blend の全面分離、dual-source blend、alpha-to-coverage など本定義にない機能は未提供。
 
-公開の compute pipeline handle と両 backend の同期生成・独立破棄、command への選択と実行を実装した。raster pipeline、depth/stencil の分離と提出時 PSO 解決、mesh PSO と描画の GPU 検証は未実装である。
+公開の compute／vertex raster pipeline handle、生成・独立破棄、command への選択と実行を実装した。DirectX 12 の raster は入力を保持し、実際の draw の Submit 内で不足する PSO を生成して pipeline ごとに再利用する。Vulkan は作成時に raster pipeline を完成させ、depth/stencil を dynamic state へ渡す。viewport／scissor／stencil reference は PSO key に含めない。mesh PSO とその GPU 実行は未実装である。
