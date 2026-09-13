@@ -84,12 +84,20 @@ public sealed unsafe partial class DirectX12Backend
             signature.ByteStride = 20;
             Check(device.CreateCommandSignature<ID3D12RootSignature, ID3D12CommandSignature>(&signature, default,
                 out drawIndexedSignature), "CreateCommandSignature(DrawIndexed)");
+            if (meshLimits.HasValue)
+            {
+                argument.Type = IndirectArgumentType.DispatchMesh;
+                signature.ByteStride = 12;
+                Check(device.CreateCommandSignature<ID3D12RootSignature, ID3D12CommandSignature>(&signature, default,
+                    out meshDispatchSignature), "CreateCommandSignature(DispatchMesh)");
+            }
         }
         finally { errors.Dispose(); serialized.Dispose(); }
     }
 
     private void DisposeComputeSupport()
     {
+        meshDispatchSignature.Dispose();
         drawIndexedSignature.Dispose();
         drawSignature.Dispose();
         dispatchSignature.Dispose();

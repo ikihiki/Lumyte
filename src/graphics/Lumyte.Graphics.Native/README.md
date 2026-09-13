@@ -1,6 +1,6 @@
 # Native GPU 基盤
 
-DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、compute／vertex raster と直接 root、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
+DirectX 12／Vulkan 向けの caller-owned な低レベル契約。device、共通 heap、線形 region と texture の明示配置、render view、descriptor storage、GPU コピー、compute／vertex・mesh raster と直接 root、コマンド記録・提出・同期を対象とする。[設計の正本](../../../docs/adr/0002-native-graphics-api.md) は Native ADR 群。
 
 `CreateGpuHeap` は backing allocation だけを確保する。`CreateLinearRegion` が指定した heap offset に独立した native buffer を配置し、その resource の GPU address と必要な CPU mapping を提供する。`NativeGpuRange.Offset` は region 内の値であり、heap offset を含めない。
 
@@ -189,6 +189,54 @@ Vulkan の試験用 Slang shader は `SV_VulkanVertexID`／`SV_VulkanInstanceID`
 
 DirectX 12 は pipeline 作成時に description と raw shader をコピーし、実際の `Submit` で使う depth/stencil の組だけ native PSO を生成する。成功した PSO は同じ pipeline で再利用し、front/back の stencil reference、root、viewport/scissor の変更では増やさない。Vulkan は作成時に native pipeline を完成させ、depth/stencil は dynamic state で変更する。
 
+## Mesh と amplification
+
+mesh は任意機能で、`Capabilities.MeshShaders` と `Limits.MeshShader` が対応を表す。
+amplification は別の capability を持ち、非対応の場合は `AmplificationDispatch` が null、`MaxPayloadSize` が0になる。
+shader が出力する頂点・primitive と payload の複合制約は compiler／native validation に従う。
+
+次は `meshShader` と `pixelShader` を用意した場合の例。既存の raster と同じ handle と生成 API を使い、
+vertex input の `Topology` を null にして mesh の出力 topology を明示する。
+`colorView` は初期化と必要な同期を済ませ、heap を含む参照先を完了まで保持する。
+
+```csharp
+if (!backend.Capabilities.MeshShaders)
+    throw new NotSupportedException("This pass requires mesh shaders.");
+
+var pipeline = backend.CreateRasterPipeline(
+    new NativeGpuRasterPipelineDescription
+    {
+        ColorTargets = [new(GpuFormat.Rgba8Unorm)],
+        Topology = null,
+        MeshOutputTopology = NativeGpuMeshOutputTopology.Triangle
+    },
+    new NativeGpuShaderProgram(meshShader, pixelShader));
+try
+{
+    var queue = backend.MainQueue;
+    using var completion = queue.CreateSemaphore(0);
+    using var commands = queue.StartCommandRecording();
+    commands.SetResourceDescriptorHeap(resources);
+    commands.SetSamplerDescriptorHeap(samplers);
+    commands.SetPipeline(pipeline);
+    commands.BeginRendering([new NativeGpuColorAttachment(colorView, NativeGpuLoadOp.Clear)]);
+    commands.DispatchMesh(rootData, meshGroupCount);
+    commands.EndRendering();
+    queue.Submit([commands], completion, 1);
+    queue.Wait(completion, 1);
+}
+finally
+{
+    backend.DestroyRasterPipeline(pipeline);
+}
+```
+
+amplification shader も program に渡すと、command の group 数は amplification を起動する数になる。
+その shader が payload と mesh group 数を生成する。command は payload を生成・upload せず、
+root は amplification／mesh／pixel へ直接渡す。`DispatchMeshIndirect` は指定 range の先頭12 byte の X／Y／Z を GPU が読む。
+compute が引数を作る場合は、caller が shader write から indirect read への barrier を指定する。
+amplification／mesh が読む別の GPU data にも、それぞれの shader stage への依存を指定する。
+
 ## バックエンドの追加
 
 別 assembly で `INativeGpuBackend` を実装し、次の基底型から実装内の非公開型を派生させる。`Lumyte.Graphics.Native` に `InternalsVisibleTo` はなく、追加 backend の assembly 名を登録する必要もない。
@@ -219,4 +267,4 @@ texture copy は単一 aspect の footprint と、明示した byte pitch を使
 
 render view と descriptor storage に加え、raw shader の compute pipeline、直接 root、直接／間接 dispatch と shader による descriptor 参照を実装した。両 backend の `BufferDescriptors` と Vulkan の `RawShaderPointers` を true とする。limits は root、compute dispatch と descriptor ABI を提供する。
 
-vertex raster pipeline、render pass、直接／一件の間接 draw・indexed draw と depth/stencil の分離も実装した。DirectX 12 の PSO は実際の draw の Submit 内で解決する。mesh、その他の limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+vertex／mesh raster pipeline、render pass、直接／一件の間接 draw・indexed draw・mesh dispatch と depth/stencil の分離も実装した。DirectX 12 の PSO は実際の raster work の Submit 内で解決する。mesh／amplification は任意機能で、対応と上限を capability／limits に反映する。その他の limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

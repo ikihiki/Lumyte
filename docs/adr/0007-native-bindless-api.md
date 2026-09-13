@@ -64,4 +64,4 @@ Native 独自の型別 profile 比較や shader reflection を追加しない。
 
 caller-owned index と Bindless を採用する。分類値、両 backend の resource／sampler storage と指定 index への書込み、command の heap 選択を実装した。buffer descriptor は NoGraphicsAPI の public API に対する Lumyte の補足であり、raw shader pointer の DirectX 12 対応は未提供。
 
-compute から texture／buffer／sampler を非ゼロ index で参照する経路と、Vulkan の実 GPU pointer 経路を実機確認した。vertex raster にも同じ caller-owned heap の選択を接続した。mesh の shader 参照と描画、製品用 shader toolchain の移行は未実装である。stage ごとの実機試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+compute から texture／buffer／sampler を非ゼロ index で参照する経路と、Vulkan の実 GPU pointer 経路を実機確認した。vertex／mesh raster にも同じ caller-owned heap の選択を接続した。mesh 専用の binding set や resource registry は追加しない。製品用 shader toolchain の移行は未実装である。stage ごとの実機試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

@@ -23,6 +23,10 @@ DirectX 12 の native object と有効機能を直接使う。resource の寿命
 
 mesh shader は任意機能として追加する。device 初期化で `D3D12_FEATURE_D3D12_OPTIONS7.MeshShaderTier` を取得し、対応 tier では `Capabilities.MeshShaders` と `Capabilities.AmplificationShaders` を有効にする。mesh の非対応だけで Native backend 全体を使用不可にせず、従来の vertex/indexed draw を維持する。上限は選択した shader model と native 機能から `Limits.MeshShader` へ反映し、新しい照会 API や software emulation は設けない。[Mesh Shader の device 機能](https://microsoft.github.io/DirectX-Specs/d3d/MeshShader.html#checkfeaturesupport)
 
+通常の三軸 dispatch の公開上限は各軸65,535、積4,194,303とし、mesh／amplification に同じ値を使う。出力頂点・primitive はそれぞれ256、payload は16,384 byteとする。積の上限は現行 SDK の `D3D12_MS_DISPATCH_MAX_THREAD_GROUPS_PER_GRID` に従う。古い MeshShader v0.86 文書の「2^22以下」との1差を独自の境界実験で決めず、現行ヘッダと新しい仕様の定数を採用する。payload、shared memory、出力 memory の複合条件は compiler／native 診断へ委ねる。[SDK 定数](https://github.com/microsoft/DirectX-Headers/blob/main/include/directx/d3d12.idl)・[更新された dispatch 仕様](https://microsoft.github.io/DirectX-Specs/d3d/D3D12IncreasedDispatchDimension.html)
+
+`OPTIONS25` の拡大1D dispatch は、YとZが1の場合だけXの上限を広げる別の任意機能である。この条件付き上限を通常の `MaxGroupCountX` として公開しない。現在の limits は通常の三軸範囲を表し、拡大1D範囲の公開・検証は未採用とする。command は渡された数を切り詰めたり、公開 limits に基づく独自 validator で拒否したりしない。
+
 ## Heap と address
 
 `NativeGpuHeap` は `ID3D12Heap` に対応する純粋な allocation であり、linear data と texture の確保を `CreateGpuHeap`／`DestroyGpuHeap` に統一する。公開する値は `Size`、`Alignment`、`Kind` で、heap 自体に buffer resource、GPU address、CPU pointer は持たせない。
@@ -212,11 +216,11 @@ amplification entry があれば指定 group 数は amplification を起動し�
 - address-only command range、任意 shader pointer、descriptor bytes の直接編集、texture transition 不要、depth/stencil の native PSO からの完全分離は部分採用または未対応とする。
 - 共通 allocation と linear region の明示分離、range の region identity、buffer descriptor、明示 texture transition／discard、単一 aspect の copy footprint、`Submit` 内の depth/stencil PSO 解決と CPU 記録の native 変換は Lumyte の補足である。NoGraphicsAPI 本体が同じ API や記録方式を持つとは説明しない。
 - heap 共用は native の条件を満たす組合せに限る。Tier 1 の分類制限と CPU 可視 heap の texture 制限を取り除いたとは扱わず、別 heap に分ける場合も公開の allocation 型と確保 API は共通とする。
-- mesh／amplification は任意機能として採用する。tier／limit の写像、AS／MS の PSO stream、直接／indirect dispatch、stage barrier と実 GPU 検証は未実装である。mesh 非対応 device への自動 emulation、multi-draw/count buffer と GPU 生成 root は今回の範囲に含めない。
+- mesh／amplification は任意機能として採用し、tier／limit の写像、AS／MS の PSO stream、直接／一件の indirect dispatch と stage barrier を実装した。mesh 非対応 device では capability は false、limits は nullとし、その command を利用可能とは扱わない。拡大1D dispatch、mesh 非対応 device への自動 emulation、multi-draw/count buffer と GPU 生成 root は今回の範囲に含めない。
 - Native 専用の `DirectX12Backend` と公開型群に、純粋 allocation、線形 region と texture の requirement・明示配置・独立破棄を実装した。保持した Device10 から同じ `ResourceDesc1` で `GetResourceAllocationInfo2`／`CreatePlacedResource2` を呼び、texture は `Undefined` で生成する。混在配置と heap 再利用は実機確認済み。実装と試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
 - CPU command 記録から Submit 内での一括 native 変換、線形／aspect 別 texture copy、global barrier、明示 texture transition／discard、queue と fence completion を実装した。native copy footprint の plane format を取得し、caller の row／image pitch と region 相対 offset をそのまま native copy へ変換する。
 - render view の生成・破棄、専用 descriptor heap と texture／raw buffer／sampler の書込み、resource／sampler heap の選択を実装した。さらに compute PSO、256 byte までの直接 root、直接／間接 dispatch と shader による descriptor 読出しを実機確認し、`BufferDescriptors` を true とする。
-- vertex raster pipeline、render pass、直接／一件の間接 draw・indexed draw と depth/stencil の分離を実装した。論理 pipeline が raw code と固定 state を保持し、実際の draw の Submit 内で depth/stencil を含む PSO を生成・再利用する。viewport／scissor／stencil reference を変更しても PSO は増やさない。GPU 生成 root、mesh、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
+- vertex／mesh raster pipeline、render pass、直接／一件の間接 work と depth/stencil の分離を実装した。論理 pipeline が raw code と固定 state を保持し、実際の raster work の Submit 内で depth/stencil を含む PSO を生成・再利用する。viewport／scissor／stencil reference を変更しても PSO は増やさない。GPU 生成 root、全面的な raster/blend 分離、追加の描画機能を実装済みとは扱わない。実機試験結果と未検証の失敗経路は進捗記録に分ける。
 - SM 6.8 対応機で、直接／間接と非 indexed／indexed の4通りについて shader から native 開始引数を読み戻した。`SV_StartVertexLocation` は非 indexed draw で6、indexed draw で−3、`SV_StartInstanceLocation` は13、最初の `SV_InstanceID` は0となることを確認した。この試験は任意機能の検証として分離し、backend の baseline や root ABI は変更しない。
 
 ## 参照

@@ -78,12 +78,12 @@ public sealed unsafe partial class DirectX12Backend
             RasterPipelineRecord record = Owner.Owner.RequireRasterPipeline(pipeline);
             commands.SetPipelineState(Owner.Owner.ResolveRasterPipeline(record, state));
             commands.SetGraphicsRootSignature(Owner.Owner.computeRootSignature);
-            commands.IASetPrimitiveTopology(record.Description.Topology switch
+            if (record.Vertex is not null) { commands.IASetPrimitiveTopology(record.Description.Topology switch
             {
                 NativeGpuPrimitiveTopology.TriangleList => D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglelist,
                 NativeGpuPrimitiveTopology.TriangleStrip => D3DPrimitiveTopology.D3DPrimitiveTopologyTrianglestrip,
                 _ => throw new ArgumentOutOfRangeException(nameof(pipeline)),
-            });
+            }); }
             commands.OMSetFrontAndBackStencilRef(state.Front.Reference, state.Back.Reference);
             if (root.Length != 0)
             {

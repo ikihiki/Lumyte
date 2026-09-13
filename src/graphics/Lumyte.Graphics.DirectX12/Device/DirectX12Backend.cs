@@ -8,9 +8,9 @@ namespace Lumyte.Graphics.DirectX12;
 
 /// <summary>Owns the Direct3D 12 device used by the Native API.</summary>
 /// <remarks>
-/// The Native compute ABI uses root parameter zero as up to 64 constants at b0, space0,
+/// The Native graphics and compute ABI uses root parameter zero as up to 64 constants at b0, space0,
 /// with both directly-indexed heap flags. The caller selects both resource and sampler
-/// descriptor heaps before compute work, including when its shader does not access them.
+/// descriptor heaps before shader work, including when its shader does not access them.
 /// </remarks>
 public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
 {
@@ -21,6 +21,8 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     private ComPtr<ID3D12CommandSignature> dispatchSignature;
     private ComPtr<ID3D12CommandSignature> drawSignature;
     private ComPtr<ID3D12CommandSignature> drawIndexedSignature;
+    private ComPtr<ID3D12CommandSignature> meshDispatchSignature;
+    private NativeGpuMeshShaderLimits? meshLimits;
     private NativeQueue mainQueue = null!;
     private string? deviceLoss;
     private bool disposed;
@@ -64,6 +66,10 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
             Check(device.QueryInterface(out device10), "QueryInterface(ID3D12Device10)");
             RequireNativeFeatures(device);
             backend = new DirectX12Backend(api, device, device10);
+            var mesh = new FeatureDataD3D12Options7();
+            Check(device.CheckFeatureSupport(Silk.NET.Direct3D12.Feature.D3D12Options7, &mesh,
+                (uint)sizeof(FeatureDataD3D12Options7)), "CheckFeatureSupport(D3D12_OPTIONS7)");
+            backend.meshLimits = MeshLimits(mesh.MeshShaderTier);
             backend.CreateComputeSupport();
             backend.mainQueue = backend.CreateMainQueue();
             return backend;
@@ -79,8 +85,17 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     }
 
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Dxil;
-    public NativeGpuCapabilities Capabilities => new(BufferDescriptors: true, ExplicitTextureTransitions: true);
-    public NativeGpuLimits Limits => new(256, new(65535, 65535, 65535, 65535ul * 65535 * 65535));
+    public NativeGpuCapabilities Capabilities => new(BufferDescriptors: true, ExplicitTextureTransitions: true,
+        MeshShaders: meshLimits.HasValue, AmplificationShaders: meshLimits.HasValue);
+    public NativeGpuLimits Limits => new(256, new(65535, 65535, 65535, 65535ul * 65535 * 65535), MeshShader: meshLimits);
+
+    internal static NativeGpuMeshShaderLimits? MeshLimits(MeshShaderTier tier)
+    {
+        if (tier == MeshShaderTier.TierNotSupported) { return null; }
+        // D3D12_MS_DISPATCH_MAX_THREAD_GROUPS_PER_GRID from the current DirectX-Headers.
+        var dispatch = new NativeGpuDispatchLimits(65535, 65535, 65535, 4194303);
+        return new(dispatch, dispatch, 256, 256, 16384);
+    }
     public NativeGpuQueue MainQueue => mainQueue;
 
     public void Dispose()

@@ -64,12 +64,15 @@ public sealed partial class ExternalNativeGpuBackendTests
     // private to the implementation, while callers only receive public contract types.
     private sealed partial class ExternalBackend(Action<object> release, Action<object>? observeTexture = null,
         Action<object>? observeCommands = null, Action<object>? observeDescriptors = null,
-        Action<object>? observeCompute = null, Action<object>? observeRaster = null) : INativeGpuBackend
+        Action<object>? observeCompute = null, Action<object>? observeRaster = null,
+        NativeGpuMeshShaderLimits? meshShaderLimits = null) : INativeGpuBackend
     {
         public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
-        public NativeGpuCapabilities Capabilities => new();
+        public NativeGpuCapabilities Capabilities => new(
+            MeshShaders: meshShaderLimits.HasValue,
+            AmplificationShaders: meshShaderLimits?.AmplificationDispatch.HasValue == true);
         public NativeGpuLimits Limits => new(256, new(65535, 65535, 65535, ulong.MaxValue),
-            new((1ul << 40) + 64, 32, 48, 32, 24, 16, 16, 8));
+            new((1ul << 40) + 64, 32, 48, 32, 24, 16, 16, 8), meshShaderLimits);
         public NativeGpuQueue MainQueue { get; } = new ExternalQueue(observeCommands);
 
         public NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind)

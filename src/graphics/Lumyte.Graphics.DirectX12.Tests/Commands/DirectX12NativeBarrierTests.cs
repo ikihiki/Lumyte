@@ -7,6 +7,8 @@ public sealed class DirectX12NativeBarrierTests
 {
     [Theory]
     [InlineData(GpuStage.AmplificationShader | GpuStage.MeshShader, BarrierSync.VertexShading)]
+    [InlineData(GpuStage.AmplificationShader, BarrierSync.VertexShading)]
+    [InlineData(GpuStage.MeshShader, BarrierSync.VertexShading)]
     [InlineData(GpuStage.IndexInput | GpuStage.DrawIndirect, BarrierSync.IndexInput | BarrierSync.ExecuteIndirect)]
     [InlineData(GpuStage.Copy | GpuStage.ComputeShader, BarrierSync.Copy | BarrierSync.ComputeShading)]
     [InlineData(GpuStage.AllGraphics, BarrierSync.Draw)]

@@ -28,18 +28,22 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private bool disposed;
     private QueueRecord? mainQueue;
     private NativeGpuDispatchLimits dispatchLimits;
+    private NativeGpuMeshShaderLimits? meshLimits;
+    private bool supportsMeshShaders;
+    private bool supportsAmplificationShaders;
 
     private VulkanBackend(Vk vk) => this.vk = vk;
 
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
 
-    public NativeGpuCapabilities Capabilities => new(RawShaderPointers: true, BufferDescriptors: true);
+    public NativeGpuCapabilities Capabilities => new(RawShaderPointers: true, BufferDescriptors: true,
+        MeshShaders: supportsMeshShaders, AmplificationShaders: supportsAmplificationShaders);
 
     public NativeGpuLimits Limits => new(checked((uint)descriptorProperties.MaxPushDataSize), dispatchLimits,
         new(DescriptorLayout(descriptorProperties, NativeGpuDescriptorHeapKind.Resource, 1).Stride,
             DescriptorLayout(descriptorProperties, NativeGpuDescriptorHeapKind.Sampler, 1).Stride,
             descriptorProperties.ImageDescriptorSize, descriptorProperties.BufferDescriptorSize, descriptorProperties.SamplerDescriptorSize,
-            descriptorProperties.ImageDescriptorAlignment, descriptorProperties.BufferDescriptorAlignment, descriptorProperties.SamplerDescriptorAlignment));
+            descriptorProperties.ImageDescriptorAlignment, descriptorProperties.BufferDescriptorAlignment, descriptorProperties.SamplerDescriptorAlignment), meshLimits);
 
     internal bool SupportsSeparateDepthStencilLayouts { get; private set; }
     internal bool SupportsImageCubeArray { get; private set; }
@@ -131,6 +135,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             InitializeDescriptors(physicalDevice);
             InitializeCompute();
             InitializeRaster();
+            InitializeMesh(physicalDevice);
             vk.GetDeviceQueue(device, queueFamily.Value, 0, out Queue queue);
             mainQueue = new QueueRecord(this, queue, queueFamily.Value);
             return;
@@ -193,14 +198,20 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private bool TryCreateDevice(PhysicalDevice physicalDevice, uint queueFamily, HashSet<string> extensions, out string? missing)
     {
         bool supportsUnifiedLayouts = extensions.Contains("VK_KHR_unified_image_layouts");
+        bool hasMeshExtension = extensions.Contains("VK_EXT_mesh_shader");
+        PhysicalDeviceMeshShaderFeaturesEXT mesh = new()
+        {
+            SType = StructureType.PhysicalDeviceMeshShaderFeaturesExt,
+        };
         PhysicalDeviceUnifiedImageLayoutsFeaturesKHR unified = new()
         {
             SType = StructureType.PhysicalDeviceUnifiedImageLayoutsFeaturesKhr,
+            PNext = hasMeshExtension ? &mesh : null,
         };
         PhysicalDeviceShaderUntypedPointersFeaturesKHR untyped = new()
         {
             SType = StructureType.PhysicalDeviceShaderUntypedPointersFeaturesKhr,
-            PNext = supportsUnifiedLayouts ? &unified : null,
+            PNext = supportsUnifiedLayouts ? &unified : hasMeshExtension ? &mesh : null,
         };
         NativeDeviceAddressCommandsFeatures addresses = NativeDeviceAddressCommandsFeatures.Create();
         addresses.PNext = &untyped;
@@ -243,6 +254,13 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         // Enable required and explicitly used optional features, never the full query result.
         descriptors.DescriptorHeapCaptureReplay = false;
         unified.UnifiedImageLayoutsVideo = false;
+        bool meshShader = hasMeshExtension && mesh.MeshShader;
+        bool taskShader = meshShader && mesh.TaskShader;
+        mesh = new()
+        {
+            SType = StructureType.PhysicalDeviceMeshShaderFeaturesExt,
+            MeshShader = meshShader, TaskShader = taskShader,
+        };
         bool separateDepthStencilLayouts = features12.SeparateDepthStencilLayouts;
         bool shaderDrawParameters = features11.ShaderDrawParameters;
         features11 = new()
@@ -283,8 +301,10 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority,
         };
         List<string> enabledExtensions = [.. RequiredExtensions];
+        if (meshShader) { enabledExtensions.Add("VK_EXT_mesh_shader"); }
+        unified.PNext = meshShader ? &mesh : null;
         if (supportsUnifiedLayouts && unified.UnifiedImageLayouts) { enabledExtensions.Add("VK_KHR_unified_image_layouts"); }
-        else { untyped.PNext = null; }
+        else { untyped.PNext = meshShader ? &mesh : null; }
         using NativeNames names = new(enabledExtensions);
         DeviceCreateInfo deviceInfo = new()
         {
@@ -297,6 +317,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         SupportsSeparateDepthStencilLayouts = separateDepthStencilLayouts;
         SupportsImageCubeArray = enabled.ImageCubeArray;
         SupportsSamplerAnisotropy = enabled.SamplerAnisotropy;
+        supportsMeshShaders = meshShader;
+        supportsAmplificationShaders = taskShader;
         missing = null;
         return true;
     }

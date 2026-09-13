@@ -180,4 +180,4 @@ resource／sampler heap の独立選択も実装する。選択は heap 全体�
 
 `SetComputePipeline`、各 dispatch の直接 root、直接／一件の間接 compute dispatch を実装した。root の最大 size と dispatch 数の native 条件を再検証する validator は追加しない。DirectX 12 では DWORD 変換で byte を失わないため長さの4倍数だけを確認し、Vulkan は byte 列をそのまま渡す。空 root は native root 更新を省き、末尾を補完しないため、shader が読む root 全域を caller が各 work に渡す。
 
-rendering、viewport／scissor／depth-stencil の設定、直接 draw／indexed draw と一件の間接 draw を実装した。index は native の index fetch を使用し、vertex buffer binding は設けない。間接引数は直接 draw が16 byte、indexed draw が20 byteで、後者の baseVertex だけが signed 32-bit 値である。いずれも root は CPU から渡す直接入力である。mesh command とその GPU 検証は未実装である。直接／一件の間接 mesh command は目標として採用し、GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。
+rendering、viewport／scissor／depth-stencil の設定、直接 draw／indexed draw と一件の間接 draw を実装した。index は native の index fetch を使用し、vertex buffer binding は設けない。間接引数は直接 draw が16 byte、indexed draw が20 byteで、後者の baseVertex だけが signed 32-bit 値である。直接／一件の間接 mesh command も実装し、後者は12 byteのX／Y／Zだけを読む。いずれも root は CPU から渡す直接入力である。GPU が生成・選択する root、multi-draw/count buffer と presentation の公開 command はこの範囲に含めない。

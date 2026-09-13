@@ -1,8 +1,21 @@
+using Xunit.Abstractions;
+
 namespace Lumyte.Graphics.Vulkan.Tests;
 
 [Collection("GpuBackend")]
-public sealed class VulkanBackendTests
+public sealed class VulkanBackendTests(ITestOutputHelper output)
 {
+    [VulkanNativeFact]
+    [Trait("Category", "VulkanNativeConformance")]
+    public void OptionalMeshCapabilitiesMatchExposedLimits()
+    {
+        using var backend = VulkanBackend.Create();
+        output.WriteLine($"Capabilities: {backend.Capabilities}; Mesh limits: {backend.Limits.MeshShader}");
+
+        Assert.Equal(backend.Capabilities.MeshShaders, backend.Limits.MeshShader.HasValue);
+        Assert.Equal(backend.Capabilities.AmplificationShaders, backend.Limits.MeshShader?.AmplificationDispatch.HasValue ?? false);
+    }
+
     [Fact]
     [Trait("Category", "VulkanNativeConformance")]
     public void FactoryCreatesANativeDeviceOrReportsMissingNativeRequirements()

@@ -39,7 +39,7 @@ DirectX 12 は depth/stencil を native PSO に含むため、実際の提出内
 | `NativeGpuViewport` | float `X/Y/Width/Height` と `MinDepth/MaxDepth`（既定 0/1）。framebuffer 左上を原点とする。 |
 | `NativeGpuScissorRect` | int `X/Y` と uint `Width/Height`。 |
 
-vertex pipeline は shader による頂点取得と native index fetch を使う `Draw`／`DrawIndexed`、mesh pipeline は amplification／mesh が生成する geometry と `DispatchMesh` を使う。mesh の primitive indices は shader が出力し、input assembler 用の index buffer は使わない。`MeshOutputTopology` は raw shader の出力宣言に対応する caller の値で、DirectX 12 の PSO primitive type 等へ渡す。mesh program に vertex `Topology` を残して無視したり、shader を解析して値を推測したりしない。出力宣言との適合、payload と stage linkage は compiler／native 診断に委ねる。[DirectX mesh shader specification](https://microsoft.github.io/DirectX-Specs/d3d/MeshShader.html)
+vertex pipeline は shader による頂点取得と native index fetch を使う `Draw`／`DrawIndexed`、mesh pipeline は amplification／mesh が生成する geometry と `DispatchMesh` を使う。mesh の primitive indices は shader が出力し、input assembler 用の index buffer は使わない。`MeshOutputTopology` は raw shader の出力宣言に対応する caller の値で、DirectX 12 の PSO primitive type 等へ渡す。mesh program に vertex `Topology` を残して無視したり、shader を解析して値を推測したりしない。native API に渡される出力宣言との適合、payload と stage linkage は compiler／native 診断に委ねる。Vulkan では SPIR-V が実際の出力 topology を決め、C# 側の `MeshOutputTopology` との一致は caller が保証する。native がこの metadata を照合するとは扱わない。[DirectX mesh shader specification](https://microsoft.github.io/DirectX-Specs/d3d/MeshShader.html)
 
 DirectX 12 の raster pipeline は、description、raw code と entry point を自身で保持する論理 object である。caller の入力領域を後から読み直さず、提出の中で実際の draw/indexed draw/mesh dispatch とそれぞれの indirect 版に使う pipeline/depth-stencil の組を解決する。設定されても raster work に使われない組は生成しない。
 
@@ -103,4 +103,4 @@ state の native 表現、意味上の key と pipeline-owned object の回収�
 
 raster pipeline と depth/stencil の分離は部分採用である。DirectX 12 の提出時 PSO 解決は Lumyte の補足で、native PSO から depth/stencil を完全分離したとは扱わない。mesh は line／triangle 出力を採用し、DirectX 12 と共通に扱えない point 出力は未採用。rasterization/blend の全面分離、dual-source blend、alpha-to-coverage など本定義にない機能は未提供。
 
-公開の compute／vertex raster pipeline handle、生成・独立破棄、command への選択と実行を実装した。DirectX 12 の raster は入力を保持し、実際の draw の Submit 内で不足する PSO を生成して pipeline ごとに再利用する。Vulkan は作成時に raster pipeline を完成させ、depth/stencil を dynamic state へ渡す。viewport／scissor／stencil reference は PSO key に含めない。mesh PSO とその GPU 実行は未実装である。
+公開の compute／vertex・mesh raster pipeline handle、生成・独立破棄、command への選択と実行を実装した。DirectX 12 の raster は入力を保持し、実際の draw／mesh dispatch の Submit 内で不足する PSO を生成して pipeline ごとに再利用する。mesh の native stream は MS／optional AS／PS と固定 state を持ち、vertex input を含めない。Vulkan は作成時に raster pipeline を完成させ、depth/stencil を dynamic state へ渡す。viewport／scissor／stencil reference は PSO key に含めない。全 format／sample count と mesh 固有機能の組合せを網羅した検証は未実施である。

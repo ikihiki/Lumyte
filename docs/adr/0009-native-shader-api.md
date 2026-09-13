@@ -90,4 +90,4 @@ host byte 列と entry 情報を入力契約どおりに渡すことを確認す
 
 raw shader、直接 root と caller-owned ABI を採用する。Lumyte の program 値と raw DXIL の経路は target 間の差を表す補足である。raw code／program の値、stage 構成、両 backend の compute pipeline 入力と直接 root の実行を実装した。Native の shader code は既存 package の wrapper を経由しない。
 
-vertex／pixel の raw program を raster pipeline に接続し、両 stage への直接 root と描画を実装した。mesh／amplification の program 値は構築できるが、その pipeline と実行 command は未実装である。shader package と GPU が生成・選択する root はこの低レベル契約の範囲外とする。Slang artifact を使う実機検証と製品用 toolchain の実装は区別し、後者の移行は今後行う。
+vertex／pixel と mesh／optional amplification の raw program を同じ raster pipeline API に接続し、active stage 群への直接 root と描画を実装した。shader 内で amplification が生成する payload は root とは別の GPU 内通信であり、command が管理する parameter buffer にはしない。shader package と GPU が生成・選択する root はこの低レベル契約の範囲外とする。Slang artifact を使う実機検証と製品用 toolchain の実装は区別し、後者の移行は今後行う。

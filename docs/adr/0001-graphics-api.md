@@ -172,4 +172,4 @@ NoGraphicsAPI の考え方を適用する対象は Native である。Portable �
 
 単一の RenderGraph contract、機能 request と二系統の pass 本体、共通 resource facade、非同期準備と二つの provider、Generic Host／DI integration は目標設計であり未実装である。この文書変更は runtime の実装を含まない。一度ビルドした同じ consumer assembly を両 provider に接続する適合試験を実装時に行う。
 
-Native の mesh／amplification と、両系統の Slang source の部分共有を追加採用する。対応する command、shader artifact、pass の経路選択と共有 module は未実装である。Portable の直接 root は Slang 2026.17 の専用 accessor による WGSL 生成と実 GPU の最小実験で成立を確認した。通常の push constant 宣言の自動変換ではなく、固定した toolchain の相互運用機能を使う。toolchain への統合と各 pass での適合は未実装であり、全 pass の source を共有済みとは扱わない。
+Native の mesh／amplification と、両系統の Slang source の部分共有を追加採用する。Native の raw pipeline、直接／間接 mesh command、直接 root と試験用 shader は実装し、両 backend の実 GPU で確認した。製品用 shader artifact の生成・配布、pass の経路選択と共有 module は未実装である。Portable の直接 root は Slang 2026.17 の専用 accessor による WGSL 生成と実 GPU の最小実験で成立を確認した。通常の push constant 宣言の自動変換ではなく、固定した toolchain の相互運用機能を使う。toolchain への統合と各 pass での適合は未実装であり、全 pass の source を共有済みとは扱わない。

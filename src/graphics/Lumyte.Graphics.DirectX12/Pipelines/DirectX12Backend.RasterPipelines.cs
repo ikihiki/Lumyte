@@ -13,18 +13,24 @@ public sealed unsafe partial class DirectX12Backend
         VerifyAvailable();
         ArgumentNullException.ThrowIfNull(description);
         ArgumentNullException.ThrowIfNull(program);
-        if (program.Mesh is not null) { throw new NotSupportedException("Native Direct3D 12 mesh raster is not implemented."); }
-        if (program.Vertex is null) { throw new ArgumentException("A raster pipeline requires a vertex program.", nameof(program)); }
-        if (description.Topology is null || description.MeshOutputTopology is not null)
+        if (program.Mesh is not null && !meshLimits.HasValue)
+        { throw new NotSupportedException("This Direct3D 12 device does not support mesh shaders."); }
+        if (program.Vertex is null && program.Mesh is null)
+        { throw new ArgumentException("A raster pipeline requires a vertex or mesh program.", nameof(program)); }
+        if (program.Vertex is not null && (description.Topology is null || description.MeshOutputTopology is not null))
         {
             throw new ArgumentException("A vertex program requires an input topology and no mesh output topology.", nameof(description));
         }
+        if (program.Mesh is not null && (description.Topology is not null || description.MeshOutputTopology is null))
+        { throw new ArgumentException("A mesh program requires a mesh output topology and no input topology.", nameof(description)); }
         ArgumentNullException.ThrowIfNull(description.ColorTargets);
         // Native PSOs first need these inputs at Submit, so keep owned copies.
         // Copy the values now; no shader validation, PSO generation, or global cache occurs here.
         return new RasterPipelineRecord(this, description with { ColorTargets = description.ColorTargets.ToArray() },
-            program.Vertex with { Code = program.Vertex.Code.ToArray() },
-            program.Pixel is { } pixel ? pixel with { Code = pixel.Code.ToArray() } : null);
+            Copy(program.Vertex), Copy(program.Pixel), Copy(program.Mesh), Copy(program.Amplification));
+
+        static NativeGpuShaderCode? Copy(NativeGpuShaderCode? code)
+            => code is null ? null : code with { Code = code.Code.ToArray() };
     }
 
     public void DestroyRasterPipeline(NativeGpuRasterPipelineHandle pipeline)
@@ -59,13 +65,14 @@ public sealed unsafe partial class DirectX12Backend
         try
         {
             ReadOnlySpan<byte> pixel = pipeline.Pixel is { } pixelShader ? pixelShader.Code.Span : default;
-            fixed (byte* vertexCode = pipeline.Vertex.Code.Span)
+            ReadOnlySpan<byte> vertex = pipeline.Vertex is { } vertexShader ? vertexShader.Code.Span : default;
+            fixed (byte* vertexCode = vertex)
             fixed (byte* pixelCode = pixel)
             {
                 var pso = new GraphicsPipelineStateDesc
                 {
                     PRootSignature = computeRootSignature.Handle,
-                    VS = new(vertexCode, checked((nuint)pipeline.Vertex.Code.Length)),
+                    VS = new(vertexCode, checked((nuint)vertex.Length)),
                     PS = new(pixelCode, checked((nuint)pixel.Length)),
                     BlendState = new(false, true),
                     SampleMask = uint.MaxValue,
@@ -95,7 +102,8 @@ public sealed unsafe partial class DirectX12Backend
                     pso.RTVFormats[index] = TextureFormat(color.Format, false);
                     pso.BlendState.RenderTarget[index] = RasterBlendDescription(color);
                 }
-                Check(device.CreateGraphicsPipelineState(in pso, out native), "CreateGraphicsPipelineState(Native raster)");
+                if (pipeline.Mesh is not null) { native = CreateMeshPipeline(pipeline, pso); }
+                else { Check(device.CreateGraphicsPipelineState(in pso, out native), "CreateGraphicsPipelineState(Native raster)"); }
             }
             pipeline.Variants.Add(key, native);
             return native;
@@ -104,12 +112,15 @@ public sealed unsafe partial class DirectX12Backend
     }
 
     private sealed class RasterPipelineRecord(DirectX12Backend owner, NativeGpuRasterPipelineDescription description,
-        NativeGpuShaderCode vertex, NativeGpuShaderCode? pixel) : NativeGpuRasterPipelineHandle
+        NativeGpuShaderCode? vertex, NativeGpuShaderCode? pixel, NativeGpuShaderCode? mesh,
+        NativeGpuShaderCode? amplification) : NativeGpuRasterPipelineHandle
     {
         public DirectX12Backend Owner { get; } = owner;
         public NativeGpuRasterPipelineDescription Description { get; } = description;
-        public NativeGpuShaderCode Vertex { get; } = vertex;
+        public NativeGpuShaderCode? Vertex { get; } = vertex;
         public NativeGpuShaderCode? Pixel { get; } = pixel;
+        public NativeGpuShaderCode? Mesh { get; } = mesh;
+        public NativeGpuShaderCode? Amplification { get; } = amplification;
         public Dictionary<RasterDepthStencilKey, ComPtr<ID3D12PipelineState>> Variants { get; } = [];
         public bool Disposed;
     }

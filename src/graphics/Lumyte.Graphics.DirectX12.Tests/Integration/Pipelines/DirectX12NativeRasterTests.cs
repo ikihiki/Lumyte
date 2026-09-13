@@ -134,7 +134,7 @@ public sealed partial class DirectX12NativeRasterTests
         return MemoryMarshal.AsBytes(values.AsSpan()).ToArray();
     }
 
-    private static byte[] Pixel(NativeGpuLinearRegion readback, int x, int y)
+    internal static byte[] Pixel(NativeGpuLinearRegion readback, int x, int y)
     {
         var pixel = new byte[4];
         Marshal.Copy(readback.CpuAddress + y * 256 + x * 4, pixel, 0, 4);
@@ -144,9 +144,9 @@ public sealed partial class DirectX12NativeRasterTests
     private static byte[] Compile(string source, string profile, string entry)
         => DirectX12NativeComputeTests.Compile(source, profile, entry);
 
-    private sealed record Target(NativeGpuTextureHandle Texture, NativeGpuTextureView View, NativeGpuRenderViewHandle RenderView);
+    internal sealed record Target(NativeGpuTextureHandle Texture, NativeGpuTextureView View, NativeGpuRenderViewHandle RenderView);
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         private readonly List<Action> cleanup = [];
         private readonly NativeGpuDescriptorHeap resources;
@@ -173,6 +173,18 @@ public sealed partial class DirectX12NativeRasterTests
             NativeGpuRasterPipelineHandle pipeline = Backend.CreateRasterPipeline(description ?? new() { ColorTargets = [new(GpuFormat.Rgba8Unorm)] },
                 new(new NativeGpuShaderCode { Stage = GpuShaderStage.Vertex, Code = vertex ?? VertexCode.Value, EntryPoint = "vertexMain" },
                     new NativeGpuShaderCode { Stage = GpuShaderStage.Pixel, Code = pixel ?? PixelCode.Value, EntryPoint = "pixelMain" }));
+            cleanup.Add(() => Backend.DestroyRasterPipeline(pipeline));
+            return pipeline;
+        }
+        public NativeGpuRasterPipelineHandle MeshPipeline(byte[] mesh, byte[]? pixel, byte[]? amplification = null,
+            NativeGpuRasterPipelineDescription? description = null)
+        {
+            List<NativeGpuShaderCode> shaders = [new() { Stage = GpuShaderStage.Mesh, Code = mesh }];
+            if (pixel is not null) { shaders.Add(new() { Stage = GpuShaderStage.Pixel, Code = pixel }); }
+            if (amplification is not null) { shaders.Add(new() { Stage = GpuShaderStage.Amplification, Code = amplification }); }
+            NativeGpuRasterPipelineHandle pipeline = Backend.CreateRasterPipeline(description ?? new()
+                { Topology = null, MeshOutputTopology = NativeGpuMeshOutputTopology.Triangle, ColorTargets = [new(GpuFormat.Rgba8Unorm)] },
+                new(shaders.ToArray()));
             cleanup.Add(() => Backend.DestroyRasterPipeline(pipeline));
             return pipeline;
         }

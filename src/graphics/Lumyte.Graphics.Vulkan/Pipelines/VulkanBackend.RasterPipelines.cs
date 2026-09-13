@@ -29,32 +29,49 @@ public sealed unsafe partial class VulkanBackend
         VerifyNotDisposed();
         ArgumentNullException.ThrowIfNull(description);
         ArgumentNullException.ThrowIfNull(program);
-        if (program.Mesh is not null) { throw new NotSupportedException("Native Vulkan mesh pipelines are not implemented."); }
-        NativeGpuShaderCode vertex = program.Vertex
-            ?? throw new ArgumentException("A raster pipeline requires a vertex program.", nameof(program));
-        if (!description.Topology.HasValue || description.MeshOutputTopology.HasValue)
+        bool mesh = program.Mesh is not null;
+        if (mesh && !supportsMeshShaders) { throw new NotSupportedException("This Vulkan device does not support mesh shaders."); }
+        if (program.Amplification is not null && !supportsAmplificationShaders)
         {
-            throw new ArgumentException("A vertex pipeline requires only vertex topology.", nameof(description));
+            throw new NotSupportedException("This Vulkan device does not support amplification shaders.");
+        }
+        NativeGpuShaderCode first = program.Mesh ?? program.Vertex
+            ?? throw new ArgumentException("A raster pipeline requires a vertex or mesh program.", nameof(program));
+        if (mesh ? description.Topology.HasValue || !description.MeshOutputTopology.HasValue
+            : !description.Topology.HasValue || description.MeshOutputTopology.HasValue)
+        {
+            throw new ArgumentException("A raster pipeline requires the topology for its vertex or mesh program only.", nameof(description));
+        }
+        // SPIR-V owns the actual output topology. The caller must match this metadata;
+        // reject only unknown common output classes, without parsing the shader.
+        if (mesh && description.MeshOutputTopology is not (NativeGpuMeshOutputTopology.Line or NativeGpuMeshOutputTopology.Triangle))
+        {
+            throw new ArgumentOutOfRangeException(nameof(description), "Unsupported mesh output topology.");
         }
         ArgumentNullException.ThrowIfNull(description.ColorTargets);
-        ShaderModule vertexModule = CreateRasterShaderModule(vertex);
-        ShaderModule pixelModule = default;
+        List<NativeGpuShaderCode> shaders = [first];
+        if (program.Amplification is { } task) { shaders.Add(task); }
+        if (program.Pixel is { } fragment) { shaders.Add(fragment); }
+        ShaderModule[] modules = new ShaderModule[shaders.Count];
         try
         {
-            if (program.Pixel is { } pixel) { pixelModule = CreateRasterShaderModule(pixel); }
-            using NativeNames entries = new(program.Pixel is null ? [vertex.EntryPoint] : [vertex.EntryPoint, program.Pixel.EntryPoint]);
-            PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
-            stages[0] = new()
+            for (int i = 0; i < shaders.Count; i++) { modules[i] = CreateRasterShaderModule(shaders[i]); }
+            using NativeNames entries = new(shaders.Select(shader => shader.EntryPoint));
+            PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[shaders.Count];
+            for (int i = 0; i < shaders.Count; i++)
             {
-                SType = StructureType.PipelineShaderStageCreateInfo,
-                Stage = ShaderStageFlags.VertexBit, Module = vertexModule, PName = entries.Pointer[0],
-            };
-            if (pixelModule.Handle != 0)
-            {
-                stages[1] = new()
+                stages[i] = new()
                 {
                     SType = StructureType.PipelineShaderStageCreateInfo,
-                    Stage = ShaderStageFlags.FragmentBit, Module = pixelModule, PName = entries.Pointer[1],
+                    Stage = shaders[i].Stage switch
+                    {
+                        GpuShaderStage.Vertex => ShaderStageFlags.VertexBit,
+                        GpuShaderStage.Mesh => ShaderStageFlags.MeshBitExt,
+                        GpuShaderStage.Amplification => ShaderStageFlags.TaskBitExt,
+                        GpuShaderStage.Pixel => ShaderStageFlags.FragmentBit,
+                        _ => throw new ArgumentException("Unsupported raster shader stage.", nameof(program)),
+                    },
+                    Module = modules[i], PName = entries.Pointer[i],
                 };
             }
             Format[] colors = new Format[description.ColorTargets.Length];
@@ -83,7 +100,7 @@ public sealed unsafe partial class VulkanBackend
                 PipelineInputAssemblyStateCreateInfo input = new()
                 {
                     SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-                    Topology = RasterTopology(description.Topology.Value),
+                    Topology = mesh ? default : RasterTopology(description.Topology!.Value),
                 };
                 PipelineViewportStateCreateInfo viewport = new()
                 {
@@ -120,8 +137,8 @@ public sealed unsafe partial class VulkanBackend
                 GraphicsPipelineCreateInfo info = new()
                 {
                     SType = StructureType.GraphicsPipelineCreateInfo, PNext = &flags,
-                    StageCount = pixelModule.Handle == 0 ? 1u : 2u, PStages = stages,
-                    PVertexInputState = &vertexInput, PInputAssemblyState = &input,
+                    StageCount = checked((uint)shaders.Count), PStages = stages,
+                    PVertexInputState = mesh ? null : &vertexInput, PInputAssemblyState = mesh ? null : &input,
                     PViewportState = &viewport, PRasterizationState = &raster,
                     PMultisampleState = &samples, PDepthStencilState = &depthStencil,
                     PColorBlendState = &blend, PDynamicState = &dynamic, Layout = default,
@@ -141,8 +158,10 @@ public sealed unsafe partial class VulkanBackend
         }
         finally
         {
-            if (pixelModule.Handle != 0) { vk.DestroyShaderModule(device, pixelModule, null); }
-            vk.DestroyShaderModule(device, vertexModule, null);
+            foreach (ShaderModule module in modules)
+            {
+                if (module.Handle != 0) { vk.DestroyShaderModule(device, module, null); }
+            }
         }
     }
 

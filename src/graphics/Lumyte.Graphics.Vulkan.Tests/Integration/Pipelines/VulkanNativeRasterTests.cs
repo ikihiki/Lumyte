@@ -163,7 +163,7 @@ public sealed unsafe partial class VulkanNativeRasterTests
         return memory.ToArray();
     }
 
-    private sealed class Resources : IDisposable
+    private sealed partial class Resources : IDisposable
     {
         private readonly List<NativeGpuHeap> heaps = [];
         private readonly List<NativeGpuLinearRegion> regions = [];

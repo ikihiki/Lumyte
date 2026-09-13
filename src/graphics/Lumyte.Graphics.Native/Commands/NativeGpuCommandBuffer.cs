@@ -54,6 +54,17 @@ public abstract class NativeGpuCommandBuffer : IDisposable
     public abstract void DrawIndexedIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange indices,
         NativeGpuIndexFormat format, NativeGpuRange arguments);
 
+    /// <summary>Records mesh raster work inside rendering with direct root bytes copied before returning.</summary>
+    /// <remarks>
+    /// Group counts launch amplification when present in the selected program, otherwise mesh directly.
+    /// Active amplification, mesh, and pixel stages share the root. Trailing root bytes are not zero-filled.
+    /// </remarks>
+    public abstract void DispatchMesh(ReadOnlySpan<byte> rootData, uint x, uint y = 1, uint z = 1);
+
+    /// <summary>Records one mesh dispatch from three uint32 group counts at the beginning of the argument range.</summary>
+    /// <remarks>Root bytes follow the same direct-input snapshot contract as DispatchMesh; arguments contain only X/Y/Z.</remarks>
+    public abstract void DispatchMeshIndirect(ReadOnlySpan<byte> rootData, NativeGpuRange arguments);
+
     /// <summary>Selects a borrowed pipeline that the caller keeps alive through recorded and submitted work.</summary>
     public abstract void SetComputePipeline(NativeGpuComputePipelineHandle pipeline);
 

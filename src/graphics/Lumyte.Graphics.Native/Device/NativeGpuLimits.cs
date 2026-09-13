@@ -1,7 +1,8 @@
 namespace Lumyte.Graphics.Native;
 
-/// <summary>Limits exposed by the implemented Native compute and descriptor ABI.</summary>
+/// <summary>Limits exposed by the enabled Native shader and descriptor ABI.</summary>
 public readonly record struct NativeGpuLimits(
     uint MaxRootDataSize,
     NativeGpuDispatchLimits Dispatch,
-    NativeGpuDescriptorLimits? Descriptors = null);
+    NativeGpuDescriptorLimits? Descriptors = null,
+    NativeGpuMeshShaderLimits? MeshShader = null);

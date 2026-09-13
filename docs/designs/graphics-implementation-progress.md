@@ -206,9 +206,42 @@ shader の system-value は target の raw ABI に従う。Vulkan の fixture �
 
 実機は RTX 2080、driver 616.92。DirectX 12 debug layer と Vulkan Khronos validation layer を有効にした検証は未実施である。全 format／dimension／MSAA の描画組合せ、native allocation failure と device loss の強制試験も未実施であり、正常な実機描画と明示的な所有・同期、CPU 側の失敗境界の確認とは区別する。mesh／amplification の capability は引き続き false とする。
 
+## 第7段階: Native mesh・amplification
+
+2026-09-13 に [Native device](../adr/0002-native-graphics-api.md)、[Pipeline State](../adr/0010-native-pipeline-state-api.md)、[Command Recording](../adr/0011-native-command-recording-api.md) の mesh 経路を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | `NativeGpuMeshShaderLimits` と nullable な `Limits.MeshShader`、`DispatchMesh`／`DispatchMeshIndirect` を追加。既存の raster pipeline と rendering scope で vertex／mesh を選択する |
+| 任意機能 | DirectX 12 の Mesh Shader Tier、Vulkan の meshShader／taskShader を確認し、有効な機能だけを capability に反映する。mesh 非対応でも Native device の生成を拒否せず、emulation は行わない |
+| Limits | compute と分けて mesh／amplification の各軸・積の dispatch 上限、mesh workgroup ごとの出力頂点・primitive 数、payload byte 数を公開する。amplification がなければその dispatch limits は null、payload size は0 |
+| Root と payload | caller の root を各 work の呼出し中に消費し、AS／MS／PS の直接入力へ渡す。amplification から mesh への payload は shader が生成する。command は Parameter Data や payload 用 buffer を生成・upload しない |
+| DirectX 12 | Submit 中の実際の mesh work で MS／任意 AS／任意 PS の pipeline state stream を生成する。既存の pipeline 所有 PSO variants と depth/stencil key を使い、vertex input／IA topology を追加しない |
+| Vulkan | 任意の `VK_EXT_mesh_shader` を有効化し、mesh／任意 task／任意 fragment の pipeline を作成時に完成させる。descriptor-heap flag、null layout、dynamic depth/stencil と command 区間切替時の pipeline／heap 再設定を維持する |
+| 間接実行 | caller の range 内の3個の uint、計12 byte を一件の native 引数として読む。DirectX 12 は ExecuteIndirect、Vulkan は device-address 版 vkCmdDrawMeshTasksIndirect2EXT を使う。GPU producer と indirect read の依存は caller が barrier で指定する |
+| 所有と検証 | 外部 backend は public／protected 契約だけで実装できる。論理 range、表現できない変換と所有状態を確認し、dispatch 数、shader の出力・payload・native state の検証器は複製しない |
+
+amplification を含む program の command 引数は amplification workgroup 数を表し、mesh workgroup 数は amplification shader が決める。amplification がなければ command 引数が直接 mesh workgroup 数となる。単なる compute dispatch の別名とはしない。
+
+DirectX 12 の標準 profile は各軸65,535、積4,194,303、出力頂点256、出力 primitive256、payload16,384 byte とする。積は現行 DirectX-Headers の定数と更新された仕様を採用し、古い mesh 仕様の境界記述との差を [backend ADR](../adr/0013-directx12-backend-implementation.md) に記した。任意の OPTIONS25 による一次元だけの上限拡張は今回の profile に含めない。Vulkan は mesh と task それぞれの実 device properties を使い、DirectX 12 の上限に揃えない。payload と shared／output memory の組合せ条件は native の契約に従う。
+
+Vulkan の fixture は Slang 2026.17 で直接 root、物理 pointer と mesh／task entry を生成する。source と再生成手順を `Integration/Shaders/NativeMesh.slang` と `MESH.md` に置く。DirectX 12 は既存のテスト用 DXC で mesh／amplification DXIL を生成し、製品 backend には compiler 依存を加えない。
+
+実機の RTX 2080、driver 616.92 では両 backend とも mesh と amplification を実行できた。Vulkan が報告した mesh／task の各上限は X=4,194,304、Y/Z=65,535、積4,194,304、出力頂点／primitive 各256、payload16,384 byte であり、そのまま公開する。これらは device が報告した limits であり、上限までの巨大な dispatch を実行した結果ではない。
+
+実 GPU で DirectX 12 は256 byte、Vulkan は80 byte の root を使い、AS／MS／PS の直接入力、amplification payload、記録後に変更した CPU 入力の snapshot、3軸の group 数と一件の間接引数を確認した。line／triangle、pixel なしの depth 描画、vertex／mesh の切替にも対応する。DirectX 12 は個別 mesh／amplification stage の UAV 書込みを明示 barrier 後に読み戻し、Vulkan は texture 初期化による command 区間切替後の descriptor sampling を確認した。Vulkan の7個の SPIR-V は内蔵 validator を通し、再生成前後の SHA256 一致も確認した。
+
+追加テストは Native 6件、DirectX 12 21件、Vulkan 21件の計48件。focused tests は Native 全85件、DirectX 12 の Native 関連203件、Vulkan の Native 関連162件が成功し、失敗・skip はなかった。DirectX 12 では mesh PSO の生成延期、depth/stencil variant の再利用、生成失敗による batch 全体の未実行を確認した。外部 backend の consumer test は内部公開を使わず、直接／間接 command、root の span、64-bit range と nullable limits を受け渡す。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=native-mesh-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、25 test project の **1,579件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は384件、Vulkan は387件、WebGPU は154件、Native は85件。TRX は各 test project の `TestResults/` に保存した。
+
+独立レビューで公開拡張契約、所有・失敗処理、root 入力と native 検証への委譲を確認した。37 ADR の必要章、44文書の348ローカルリンクと20アンカー、208件の番号依存も問題なし。fixture 文書2本は別途確認した。`InternalsVisibleTo` は repository 全体で9指定すべて test assembly 向けで、Native の内部公開は0件。
+
+DirectX 12 debug layer と Vulkan Khronos validation layer を有効にした試験は未実施である。mesh 非対応 device と Vulkan の mesh-only device はこの PC にないため、実機での起動確認ではなく capability／limits の変換と optional baseline の試験で確認した。全 format／MSAA、最大出力・payload の複合条件、native allocation failure と device loss の強制試験は未実施とする。
+
 ## 未実装と次の順序
 
-1. Native mesh／amplification の capability と limits、pipeline、直接／一件の間接 command、stage barrier と実機検証を追加する。root の直接入力と command で Parameter Data を扱わない方針を維持する。非対応 device へは emulation せず、vertex/indexed draw を残す。
-2. 独立した Portable API と WebGPU、両系統の Resources・shader・RenderGraph provider、共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
+1. 独立した Portable API と WebGPU の device・resource・shader・command を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
+2. 両系統の Resources・shader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
