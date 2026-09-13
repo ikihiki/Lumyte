@@ -17,12 +17,12 @@ internal sealed class PortableOutputPass(PortablePassServices services) : IPorta
         { pipeline = CreatePipeline(key.Format, key.Encoding, key.AlphaMode); pipelines.Add(key, pipeline); }
         PortablePassView sourceView = context.CreateView("Output input", source);
         PortablePassView targetView = context.CreateView("Output attachment", target);
-        PortablePassBindings bindings = context.CreateBindings("Output input", pipeline.Program, 0, new TextureInputs(sourceView));
+        PortablePassBindings bindings = context.CreateBindings("Output input", pipeline.Program, OutputPassInputs.Group, new OutputPassInputs(sourceView));
         context.AddPass("Output", (target, targetView, bindings, pipeline.Handle), static (record, state) =>
         {
             record.Commands.BeginRendering([new(record.GetTextureView(state.targetView), GpuAttachmentLoadOperation.Clear)]);
             record.Commands.SetPipeline(state.Handle);
-            record.Commands.SetBindings(0, record.GetBindings(state.bindings));
+            record.Commands.SetBindings(OutputPassInputs.Group, record.GetBindings(state.bindings));
             uint width = state.target.Description.Width, height = state.target.Description.Height;
             record.Commands.SetViewportAndScissor(new(0, 0, width, height), new(0, 0, width, height));
             record.Commands.Draw(3);
@@ -74,6 +74,4 @@ internal sealed class PortableOutputPass(PortablePassServices services) : IPorta
         pipelines.Clear(); return ValueTask.CompletedTask;
     }
     private sealed record Pipeline(PortableShaderProgram Program, GpuRasterPipelineHandle Handle);
-    private sealed class TextureInputs(PortablePassView view) : IPortablePassBindingInputs
-    { public void Write(PortablePassBindingWriter writer) => writer.Texture(0, view); }
 }

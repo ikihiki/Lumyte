@@ -4,10 +4,10 @@ repository root から実行する。Browser 適合試験には WebGPU の直接
 
 ```powershell
 $env:LUMYTE_WEBGPU_BROWSER = Join-Path $PWD 'artifacts/tools/chrome-for-testing/155.0.8048.0/chrome-win64/chrome.exe'
-dotnet test Lumyte.slnx --logger 'trx;LogFilePrefix=solution-parallel' --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini
+dotnet test Lumyte.slnx --disable-build-servers -m:4 --logger 'trx;LogFilePrefix=solution-parallel' --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini
 ```
 
-通常は `-m:1` を指定せず、project の build と test を並列に進める。xUnit は collection 間を並行し、同一 collection のテストは順番に実行する。[xUnit の並列実行](https://xunit.net/docs/running-tests-in-parallel)
+project の build と test を並列に進める。この例は MSBuild worker を4つまでに制限し、前の実行の build server を再利用しない。CPU 数に応じて上限は調整できる。xUnit は collection 間を並行し、同一 collection のテストは順番に実行する。[xUnit の並列実行](https://xunit.net/docs/running-tests-in-parallel)
 
 ## 並列にする範囲
 
@@ -36,7 +36,7 @@ GPU を使うテストは担当 backend の既存 collection に置く。CPU の
 
 ## Native 検証レイヤー
 
-RenderGraph の `DirectX12Validation` と `VulkanValidation` の各4ケースは検証を有効にして実行する。
+RenderGraph の `DirectX12Validation` と `VulkanValidation` の各5ケースは検証を有効にして実行する。
 Windows Graphics Tools の D3D12 debug layer と、Vulkan SDK の `VK_LAYER_KHRONOS_validation` が必要である。
 未導入時に検証を無効化して成功扱いにはしない。DX12 は native InfoQueue の警告・エラーと
 メッセージ破棄がないこと、Vulkan は backend の Trace 診断に警告・エラーがないことも確認する。

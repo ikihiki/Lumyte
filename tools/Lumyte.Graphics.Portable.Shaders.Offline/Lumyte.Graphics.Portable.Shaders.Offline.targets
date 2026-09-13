@@ -4,7 +4,7 @@
     <LumytePortableTintInfo Condition="'$(LumytePortableTintInfo)' == ''">$(TINT_INFO_PATH)</LumytePortableTintInfo>
     <LumytePortableShaderOutputDirectory Condition="'$(LumytePortableShaderOutputDirectory)' == ''">$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/Shaders/Portable</LumytePortableShaderOutputDirectory>
   </PropertyGroup>
-  <Target Name="LumyteCompilePortableShaders" BeforeTargets="LumytePortableResourceInputFiles;CoreCompile"
+  <Target Name="LumyteCompilePortableShaders" BeforeTargets="LumytePortableResourceInputFiles;LumytePortablePassBindingInputFiles;CoreCompile"
           DependsOnTargets="ResolveProjectReferences" Condition="'$(DesignTimeBuild)' != 'true'">
     <PropertyGroup>
       <_LumytePortableOutput>$([System.IO.Path]::GetFullPath('$(LumytePortableShaderOutputDirectory)', '$(MSBuildProjectDirectory)'))</_LumytePortableOutput>

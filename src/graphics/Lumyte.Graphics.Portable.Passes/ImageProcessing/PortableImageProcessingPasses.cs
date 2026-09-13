@@ -25,40 +25,45 @@ internal sealed class PortableClearPass : IPortableRenderPass<ClearPassRequest, 
         PortablePassTexture texture = context.ImportTexture(request.Target);
         TextureClearValue value = context.GetInput(request.Value);
         GpuTextureDescription description = texture.Description;
+        var attachments = new List<(PortablePassView View, uint? DepthSlice)>();
         for (uint mip = 0; mip < description.MipCount; mip++)
         {
             for (uint layer = 0; layer < description.LayerCount; layer++)
             {
-                PortablePassView view = context.CreateView("Clear attachment", texture,
+                PortablePassView view = context.CreateView($"Clear attachment {mip}/{layer}", texture,
                     new(Dimension: description.Dimension == GpuTextureDimension.Texture3D ? GpuTextureViewDimension.Texture3D : GpuTextureViewDimension.Texture2D,
                         BaseMip: mip, MipCount: 1, BaseLayer: layer, LayerCount: 1));
                 uint depth = description.Dimension == GpuTextureDimension.Texture3D ? Math.Max(1, description.Depth >> (int)mip) : 1;
                 for (uint slice = 0; slice < depth; slice++)
                 {
-                    uint? depthSlice = description.Dimension == GpuTextureDimension.Texture3D ? slice : null;
-                    context.AddPass("Clear", (view, value, depthSlice, description.Format), static (record, state) =>
-                    {
-                        GpuTextureView attachment = record.GetTextureView(state.view);
-                        if (state.value.IsDepthStencil)
-                        {
-                            bool stencil = state.Format == GpuFormat.Depth24PlusStencil8;
-                            record.Commands.BeginRendering([], new(attachment,
-                                DepthLoadOperation: GpuAttachmentLoadOperation.Clear, DepthStoreOperation: GpuAttachmentStoreOperation.Store,
-                                StencilLoadOperation: stencil ? GpuAttachmentLoadOperation.Clear : null,
-                                StencilStoreOperation: stencil ? GpuAttachmentStoreOperation.Store : null,
-                                ClearValue: new(state.value.Depth, state.value.Stencil)));
-                        }
-                        else
-                        {
-                            var color = state.value.ColorValue;
-                            record.Commands.BeginRendering([new(attachment, GpuAttachmentLoadOperation.Clear,
-                                ClearColor: new(color.X * color.W, color.Y * color.W, color.Z * color.W, color.W), DepthSlice: state.depthSlice)]);
-                        }
-                        record.Commands.EndRendering();
-                    }).Write(texture, value.IsDepthStencil ? PortablePassUsage.DepthStencilAttachment : PortablePassUsage.ColorAttachment);
+                    attachments.Add((view, description.Dimension == GpuTextureDimension.Texture3D ? slice : null));
                 }
             }
         }
+        // One declared Write initializes the entire texture, including every mip, layer and slice.
+        context.AddPass("Clear", (Attachments: attachments.ToArray(), Value: value, description.Format), static (record, state) =>
+        {
+            foreach (var item in state.Attachments)
+            {
+                GpuTextureView attachment = record.GetTextureView(item.View);
+                if (state.Value.IsDepthStencil)
+                {
+                    bool stencil = state.Format == GpuFormat.Depth24PlusStencil8;
+                    record.Commands.BeginRendering([], new(attachment,
+                        DepthLoadOperation: GpuAttachmentLoadOperation.Clear, DepthStoreOperation: GpuAttachmentStoreOperation.Store,
+                        StencilLoadOperation: stencil ? GpuAttachmentLoadOperation.Clear : null,
+                        StencilStoreOperation: stencil ? GpuAttachmentStoreOperation.Store : null,
+                        ClearValue: new(state.Value.Depth, state.Value.Stencil)));
+                }
+                else
+                {
+                    var color = state.Value.ColorValue;
+                    record.Commands.BeginRendering([new(attachment, GpuAttachmentLoadOperation.Clear,
+                        ClearColor: new(color.X * color.W, color.Y * color.W, color.Z * color.W, color.W), DepthSlice: item.DepthSlice)]);
+                }
+                record.Commands.EndRendering();
+            }
+        }).Write(texture, value.IsDepthStencil ? PortablePassUsage.DepthStencilAttachment : PortablePassUsage.ColorAttachment);
         return ValueTask.CompletedTask;
     }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

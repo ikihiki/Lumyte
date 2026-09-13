@@ -20,6 +20,20 @@ public sealed class GpuResourceScope : IDisposable
         return reference;
     }
     public GpuBufferRef CreateBuffer(GpuBufferDescription description) { RequireOpen(); return Hold(Manager.CreateBuffer(description)); }
+    /// <summary>Imports borrowed memory and transfers its explicit lifetime lease to this scope.</summary>
+    public GpuBufferRef ImportBuffer(NativeGpuRange range, IDisposable lease)
+    {
+        RequireOpen(); ArgumentNullException.ThrowIfNull(lease);
+        ResourceRecord record = Manager.Register(lease.Dispose); record.Buffer = range;
+        return Hold(new GpuBufferRef(record));
+    }
+    /// <summary>Imports a borrowed texture and transfers its explicit lifetime lease to this scope.</summary>
+    public GpuTextureRef ImportTexture(NativeGpuTextureHandle texture, NativeGpuTextureDescription description, IDisposable lease)
+    {
+        RequireOpen(); ArgumentNullException.ThrowIfNull(texture); ArgumentNullException.ThrowIfNull(lease);
+        ResourceRecord record = Manager.Register(lease.Dispose); record.Texture = texture; record.TextureDescription = description;
+        return Hold(new GpuTextureRef(record));
+    }
     public GpuTextureRef CreateTexture(NativeGpuTextureDescription description,
         NativeGpuMemoryKind memoryKind = NativeGpuMemoryKind.GpuOnly, GpuTextureViewDescription? defaultView = null)
     { RequireOpen(); return Hold(Manager.CreateTexture(description, memoryKind, defaultView)); }

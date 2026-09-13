@@ -85,6 +85,7 @@ public sealed class GpuResourceBatch : IDisposable
             // No ordinary exception is treated as evidence of rejection of arbitrary host failures.
             throw new GpuSubmissionException(token, cause);
         }
+        submission.Accepted = true;
         _ = submission.ObserveAsync();
         return token;
     }

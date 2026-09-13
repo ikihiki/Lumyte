@@ -175,6 +175,7 @@ public sealed partial class GpuResourceManager
             throw new GpuSubmissionException(token, cause);
         }
         _ = submission.ObserveAsync(timeline.Semaphore, value);
+        submission.Accepted = true;
         return token;
     }
     internal static Exception PublicCause(Exception error)

@@ -729,9 +729,52 @@ DX12／Vulkan の各4件の検証付き feature graph も警告・エラー0で�
 現行機能の失敗を skip や期待値の緩和で回避したものではない。
 88現行文書のローカルリンクと84 project の参照先に欠落はなく、`git diff --check` も成功した。
 
+## RenderGraph 基盤の完成
+
+2026-09-14 に ADR 0030〜0032 の共通 graph と Native／Portable provider の基盤を完成した。
+利用側は同じ機能 contract と入力を使い、内部 pass、shader、資源と binding の準備は二系統で扱う。
+
+| 範囲 | 実装と確認 |
+| --- | --- |
+| 共通の計画 | 容量制限付き LRU の plan cache、複数 contributor の順序・名前空間・資源共有、出力からの culling と資源寿命 |
+| CPU 入力 | 不変 snapshot の共有、変更枝だけの保持情報更新、plan／bindings の反復利用。graph の identity は builder を所有せず、除外した入力を計画に残さない |
+| 内部 graph | Read／Write／ReadWrite、未初期化 read、機能側宣言との対応、内部 culling、index だけの schedule cache、CPU template と準備 cache |
+| 一時資源 | execution 内で description が同じ、寿命が重ならない resource object を再利用。公開出力は最後まで保護し、同時実行間では共有しない |
+| 内容世代 | writer と reader の保持、受理済み upload からの依存、受理前失敗・遅延診断による失効、GPU 使用終了後の回収 |
+| 外部所有 | 両 provider の raw buffer／texture import と lease、受理済み提出からの接続。共通 execution と frame も GPU 使用終了まで所有を保つ |
+| 生成器 | `.portable.resources.xml` から内部 pass の buffer／view と sampler の binding 入力を生成。Output の本体で使用し、生成 API の consumer 試験を追加 |
+| 起動 | 選択した provider だけを準備し、DI scope と runtime options を typed pass factory に渡す。登録衝突は GPU 準備前に検出 |
+
+Native Texture Copy の内部処理を texture → scratch buffer と scratch buffer → texture に分け、
+中間 buffer の初期化と依存を graph へ正しく宣言した。複数 mip／layer を一つの全体書込として扱い、
+途中の書込が culling されないことを確認する。Portable Clear も全 mip／layer を一つの内部 pass から初期化する。
+
+同じ plan に異なる色の bindings を渡し、CPU を待たせず二回提出して両方の画素を検査する実機試験を追加した。
+5 回の Copy を含む graph で一時資源の再利用と出力の独立性を確認し、
+DX12／Vulkan の feature graph は各5ケースを検証レイヤー有効で実行する。
+
+終了時に一つの lease の解放が失敗しても他の frame と lease の返却を試み、診断をまとめて通知する。
+Hosting は進行中の終了を共有し、失敗後の明示 Stop／Dispose では残存所有の cleanup を再試行する。
+GPU 受理済みの保持登録に失敗した場合も、完了情報と target の退役を失わず、使用終了まで lease を保持する。
+これらの失敗と、import だけを MarkOutput する buffer／texture の GPU 保持を CPU 回帰試験で確認した。
+
+CPU planning と bindings 更新の BenchmarkDotNet 項目を `Lumyte.Benchmarks` に追加し、
+benchmark project の build を確認した。性能測定は未実施であり、60 FPS の達成を主張しない。
+
+最終検証は Browser／Slang／Tint の環境変数と `VK_LAYER_VALIDATE_SYNC=1` を設定し、
+DXC は各 project の NuGet dependency から解決して、
+`dotnet test Lumyte.slnx --disable-build-servers -m:4 --logger "trx;LogFilePrefix=render-graph-complete-verified" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini`
+を実行した。**38 project・1,859件成功、失敗0、skip 0**、全 TRX が Completed、終了コード0。
+前回から118件を追加し、共通 graph 60件、Native provider 41件、Portable provider 42件、
+Hosting 25件、新しい Portable graph generator 14件が成功した。
+DirectX 12 は277件、Vulkan は282件、Dawn は190件、Browser は61件成功し、
+DX12／Vulkan の各5件の feature graph は検証の警告・エラー0だった。
+92現行文書のローカルリンク、86 project と solution の参照先に欠落はなく、`git diff --check` も成功した。
+InternalsVisibleTo の9指定はすべて test assembly 向けであり、production 向けの指定はない。
+
 ## 未実装と次の順序
 
-1. RenderGraph の段階 1 として Blit、内部 template と差分準備、GPU 内容世代の結果依存を追加する。plan と bindings の再利用の基礎は段階 0 で利用できる。
+1. 完成した RenderGraph 基盤上に Blit／Blur／Composite／ToneMap と Model／2D の個別機能を追加する。内部 template、準備 cache と GPU 内容世代を使い、各機能で部分更新の適合と性能を確認する。
 2. platform の実 window／canvas に presentation factory を接続し、初回表示、resize、frame pacing、表示側の終了を確認する。headless presentation の適合を OS の表示完了とは扱わない。
 3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 

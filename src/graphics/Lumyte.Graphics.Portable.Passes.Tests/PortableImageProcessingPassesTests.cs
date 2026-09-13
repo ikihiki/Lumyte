@@ -8,6 +8,32 @@ namespace Lumyte.Graphics.Portable.Passes.Tests;
 
 public sealed class PortableImageProcessingPassesTests
 {
+    [Theory]
+    [InlineData(GpuGraphTextureDimension.TwoD)]
+    [InlineData(GpuGraphTextureDimension.ThreeD)]
+    public async Task ClearInitializesEveryMipLayerAndDepthSlice(GpuGraphTextureDimension dimension)
+    {
+        var backend = new ManagerTestBackend();
+        var registry = new PortableRenderPassRegistry().AddImageProcessing();
+        var provider = new PortableRenderProvider("test", (_, _) => ValueTask.FromResult<IPortableGpuBackend>(backend), registry);
+        await using IGpuRenderRuntime runtime = await provider.CreateAsync(new());
+        var graph = new GpuRenderGraph();
+        GpuRenderGraphTexture target = graph.CreateTexture("target", new(8, 8, GpuFormat.Rgba8Unorm,
+            DepthOrArrayLayers: 2, Dimension: dimension, MipLevelCount: 2));
+        graph.AddClearPass("clear", new(target, TextureClearValue.Color(Vector4.One)));
+        graph.MarkOutput(target);
+
+        using GpuRenderGraphExecution execution = await runtime.SubmitAsync(graph.Compile());
+        await execution.WaitForCompletionAsync();
+
+        var actual = Assert.Single(backend.TestQueue.Recordings).ColorAttachments
+            .Select(attachment => (attachment.View.Description.BaseMip, attachment.View.Description.BaseLayer, attachment.DepthSlice)).ToArray();
+        (uint Mip, uint Layer, uint? Slice)[] expected = dimension == GpuGraphTextureDimension.TwoD
+            ? [(0, 0, null), (0, 1, null), (1, 0, null), (1, 1, null)]
+            : [(0, 0, 0), (0, 0, 1), (1, 0, 0)];
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public async Task StartupRegistrationCreatesNoShaderObjects()
     {

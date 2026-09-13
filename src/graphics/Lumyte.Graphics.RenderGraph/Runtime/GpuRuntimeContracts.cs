@@ -65,20 +65,81 @@ public sealed class GpuRenderProviderRegistry
 /// <summary>Separates GPU use completion from successful diagnostics; cancellation only cancels the observer.</summary>
 public sealed class GpuGraphCompletion
 {
+    // A broken retirement callback cannot make accepted GPU work safe to release.
+    // Keep failed handoffs rooted until an explicit observation proves use has ended.
+    private static readonly object quarantineGate = new();
+    private static readonly Dictionary<GpuGraphCompletion, List<IDisposable>> quarantine = [];
     private readonly Func<bool> isComplete;
     private readonly Func<CancellationToken, ValueTask> wait;
+    private readonly Action<IDisposable>? retainUntilUseEnds;
     private int succeeded;
-    public GpuGraphCompletion(Func<bool> isComplete, Func<CancellationToken, ValueTask> wait)
+    public GpuGraphCompletion(Func<bool> isComplete, Func<CancellationToken, ValueTask> wait,
+        Action<IDisposable>? retainUntilUseEnds = null)
     {
         this.isComplete = isComplete ?? throw new ArgumentNullException(nameof(isComplete));
         this.wait = wait ?? throw new ArgumentNullException(nameof(wait));
+        this.retainUntilUseEnds = retainUntilUseEnds;
     }
-    public bool IsComplete => isComplete();
+    public bool IsComplete
+    {
+        get
+        {
+            if (!isComplete()) { return false; }
+            lock (quarantineGate)
+            {
+                if (quarantine.TryGetValue(this, out var leases))
+                {
+                    while (leases.Count != 0) { leases[^1].Dispose(); leases.RemoveAt(leases.Count - 1); }
+                    quarantine.Remove(this);
+                }
+            }
+            return true;
+        }
+    }
     internal bool Succeeded => Volatile.Read(ref succeeded) != 0;
+    /// <summary>Consumes a lease, including if the provider's registration throws. Failed handoffs remain retained until IsComplete or WaitAsync observes GPU use termination.</summary>
+    public void RetainUntilUseEnds(IDisposable lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        var transferred = new CompletionLease(lease);
+        try
+        {
+            if (IsComplete) { transferred.Dispose(); }
+            else if (retainUntilUseEnds is not null) { retainUntilUseEnds(transferred); }
+            else { throw new NotSupportedException("This completion does not provide GPU retirement for external leases."); }
+        }
+        catch
+        {
+            lock (quarantineGate)
+            {
+                if (!quarantine.TryGetValue(this, out var leases)) { quarantine.Add(this, leases = []); }
+                leases.Add(transferred);
+            }
+            throw;
+        }
+    }
     public async ValueTask WaitAsync(CancellationToken cancellationToken = default)
     {
-        await wait(cancellationToken).ConfigureAwait(false);
-        Volatile.Write(ref succeeded, 1);
+        try
+        {
+            await wait(cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref succeeded, 1);
+        }
+        finally
+        {
+            bool pending;
+            lock (quarantineGate) { pending = quarantine.ContainsKey(this); }
+            if (pending)
+            {
+                try { _ = IsComplete; }
+                catch { /* Failed observation leaves ownership quarantined and preserves the original diagnostics. */ }
+            }
+        }
+    }
+    private sealed class CompletionLease(IDisposable lease) : IDisposable
+    {
+        private IDisposable? value = lease;
+        public void Dispose() => Interlocked.Exchange(ref value, null)?.Dispose();
     }
 }
 
@@ -104,6 +165,17 @@ public sealed class GpuRenderGraphExecution : IDisposable
     }
     public GpuGraphCompletion Completion { get; }
     public bool IsComplete => Completion.IsComplete;
+    internal void RetainOwnership(IDisposable lease)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(ownership is null, this);
+            var holds = new GpuUseSet();
+            holds.Add(ownership);
+            holds.Add(lease);
+            ownership = holds;
+        }
+    }
     public ValueTask WaitForCompletionAsync(CancellationToken cancellationToken = default) => Completion.WaitAsync(cancellationToken);
     public GpuGraphTextureRef GetExportedTexture(GpuRenderGraphTexture resource) => (GpuGraphTextureRef)GetExport(resource);
     public GpuGraphBufferRef GetExportedBuffer(GpuRenderGraphBuffer resource) => (GpuGraphBufferRef)GetExport(resource);

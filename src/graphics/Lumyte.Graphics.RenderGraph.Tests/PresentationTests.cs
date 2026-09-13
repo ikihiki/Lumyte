@@ -5,6 +5,171 @@ public sealed class PresentationTests
     private static readonly GpuGraphTextureDescription Description = new(4, 4, GpuFormat.Rgba8Unorm);
 
     [Fact]
+    public async Task ContextCleanupAttemptsEveryFrameWhenTheirLeasesFail()
+    {
+        await using var runtime = new TestRuntime();
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        var first = await context.BeginFrameAsync();
+        var second = await context.BeginFrameAsync();
+        var firstLease = new TestLease(() => throw new InvalidOperationException("first"));
+        var secondLease = new TestLease(() => throw new InvalidOperationException("second"));
+        first.Retain(firstLease);
+        second.Retain(secondLease);
+
+        var error = Assert.Throws<AggregateException>(context.Dispose);
+        context.Dispose();
+
+        Assert.Equal(["first", "second"], error.Flatten().InnerExceptions.Select(failure => failure.Message).Order());
+        Assert.Equal((2, 1, 1), (presentation.DiscardCount, firstLease.Disposals, secondLease.Disposals));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UnknownSubmissionKeepsCompletionWhenRetirementRegistrationFails(bool synchronous)
+    {
+        var ended = false;
+        var completion = new GpuGraphCompletion(() => ended, _ => ValueTask.CompletedTask,
+            _ => throw new InvalidOperationException("retirement"));
+        var submissionError = new GpuRenderGraphSubmissionException(completion, new InvalidOperationException("handoff"));
+        var lease = new TestLease();
+        await using var runtime = new TestRuntime
+        { Submit = () => synchronous ? throw submissionError : ValueTask.FromException<GpuRenderGraphExecution>(submissionError) };
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        using var frame = await context.BeginFrameAsync();
+        frame.Retain(lease);
+        frame.Graph.AddPass("clear", GraphTests.Contract.Instance, new(null, frame.TargetResource));
+
+        var error = await Assert.ThrowsAsync<GpuRenderGraphSubmissionException>(() => frame.SubmitAsync().AsTask());
+        frame.Dispose();
+        Assert.Equal(0, lease.Disposals);
+        ended = true;
+        Assert.True(error.Completion.IsComplete);
+
+        Assert.Equal(1, lease.Disposals);
+    }
+
+    [Fact]
+    public async Task FrameCleanupAttemptsEveryLeaseWhenOneReleaseFails()
+    {
+        var lease = new TestLease();
+        await using var runtime = new TestRuntime();
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        var frame = await context.BeginFrameAsync();
+        frame.Retain(lease);
+        frame.Retain(new TestLease(() => throw new InvalidOperationException("release")));
+
+        Assert.Throws<AggregateException>(frame.Dispose);
+
+        Assert.Equal(1, lease.Disposals);
+        Assert.Equal(1, presentation.DiscardCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedRetirementRegistrationDoesNotReleaseAcceptedGpuOwnership(bool failExecutionCleanup)
+    {
+        var ended = false;
+        var completion = new GpuGraphCompletion(() => ended, _ => ValueTask.CompletedTask,
+            _ => throw new InvalidOperationException("retirement"));
+        var lease = new TestLease();
+        await using var runtime = new TestRuntime
+        {
+            Submit = () => new(new GpuRenderGraphExecution(completion,
+                new Dictionary<GpuRenderGraphResource, GpuGraphResourceRef>(),
+                new TestLease(() => { if (failExecutionCleanup) { throw new InvalidOperationException("execution cleanup"); } })))
+        };
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        using var frame = await context.BeginFrameAsync();
+        frame.Retain(lease);
+        frame.Graph.AddPass("clear", GraphTests.Contract.Instance, new(null, frame.TargetResource));
+
+        var error = await Assert.ThrowsAsync<GpuRenderGraphSubmissionException>(() => frame.SubmitAsync().AsTask());
+        frame.Dispose();
+        Assert.Same(completion, presentation.RetiredCompletion);
+        Assert.Equal(0, lease.Disposals);
+        ended = true;
+        Assert.True(error.Completion.IsComplete);
+
+        Assert.Equal(1, lease.Disposals);
+    }
+
+    [Fact]
+    public async Task FrameLeaseSurvivesEarlyExecutionDisposalUntilGpuUseEnds()
+    {
+        IDisposable? gpuUse = null;
+        var ended = false;
+        var completion = new GpuGraphCompletion(() => ended, _ => ValueTask.CompletedTask, lease => gpuUse = lease);
+        var lease = new TestLease();
+        await using var runtime = new TestRuntime
+        {
+            Submit = () => new(new GpuRenderGraphExecution(completion,
+                new Dictionary<GpuRenderGraphResource, GpuGraphResourceRef>(), new TestLease()))
+        };
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        using var frame = await context.BeginFrameAsync();
+        frame.Retain(lease);
+        frame.Graph.AddPass("clear", GraphTests.Contract.Instance, new(null, frame.TargetResource));
+        var execution = await frame.SubmitAsync();
+
+        frame.Dispose();
+        execution.Dispose();
+        Assert.Equal(0, lease.Disposals);
+        ended = true;
+        gpuUse!.Dispose();
+
+        Assert.Equal(1, lease.Disposals);
+    }
+
+    [Fact]
+    public async Task FrameLeaseSurvivesUncertainSubmissionFailure()
+    {
+        IDisposable? gpuUse = null;
+        var completion = new GpuGraphCompletion(() => false,
+            _ => ValueTask.FromException(new InvalidOperationException("diagnostic")), lease => gpuUse = lease);
+        var lease = new TestLease();
+        await using var runtime = new TestRuntime
+        {
+            Submit = () => ValueTask.FromException<GpuRenderGraphExecution>(
+                new GpuRenderGraphSubmissionException(completion, new InvalidOperationException("handoff")))
+        };
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        using var frame = await context.BeginFrameAsync();
+        frame.Retain(lease);
+        frame.Graph.AddPass("clear", GraphTests.Contract.Instance, new(null, frame.TargetResource));
+
+        await Assert.ThrowsAsync<GpuRenderGraphSubmissionException>(() => frame.SubmitAsync().AsTask());
+        frame.Dispose();
+        Assert.Equal(0, lease.Disposals);
+        gpuUse!.Dispose();
+
+        Assert.Equal(1, lease.Disposals);
+    }
+
+    [Fact]
+    public async Task DiscardingUnsubmittedFrameReturnsItsLeaseOnce()
+    {
+        var lease = new TestLease();
+        await using var runtime = new TestRuntime();
+        var presentation = new TestPresentation { Acquire = _ => new(CreateTarget(runtime.Id)) };
+        using var context = new GpuRenderContext(runtime, presentation);
+        var frame = await context.BeginFrameAsync();
+        frame.Retain(lease);
+
+        frame.Dispose();
+        frame.Dispose();
+
+        Assert.Equal(1, lease.Disposals);
+    }
+
+    [Fact]
     public async Task ImportsAreRetainedBeforeWaitingForPresentationTarget()
     {
         await using var runtime = new TestRuntime();

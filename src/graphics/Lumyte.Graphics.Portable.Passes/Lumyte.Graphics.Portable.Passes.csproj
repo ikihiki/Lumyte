@@ -3,5 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph\Lumyte.Graphics.Portable.RenderGraph.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph.Generators\Lumyte.Graphics.Portable.RenderGraph.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PortablePassBindingInput Include="ImageProcessing\Output.portable.resources.xml" />
   </ItemGroup>
+  <Import Project="..\Lumyte.Graphics.Portable.RenderGraph.Generators\buildTransitive\Lumyte.Graphics.Portable.RenderGraph.Generators.targets" />
 </Project>

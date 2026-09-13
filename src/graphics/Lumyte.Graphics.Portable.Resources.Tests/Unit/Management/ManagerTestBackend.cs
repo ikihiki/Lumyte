@@ -127,10 +127,12 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
     internal sealed class Recording(ManagerTestBackend backend) : GpuCommandBuffer
     {
         internal List<Action> Operations { get; } = [];
+        internal List<GpuColorAttachment> ColorAttachments { get; } = [];
         internal bool Disposed { get; private set; }
         internal Exception? DisposalError { get; set; }
         internal int DisposalAttempts { get; private set; }
-        public override void BeginRendering(ReadOnlySpan<GpuColorAttachment> colors, GpuDepthStencilAttachment? depthStencil = null) { }
+        public override void BeginRendering(ReadOnlySpan<GpuColorAttachment> colors, GpuDepthStencilAttachment? depthStencil = null)
+            => ColorAttachments.AddRange(colors.ToArray());
         public override void EndRendering() { }
         public override void SetPipeline(GpuRasterPipelineHandle pipeline) { }
         public override void SetViewportAndScissor(GpuViewport viewport, GpuScissorRect scissor) { }

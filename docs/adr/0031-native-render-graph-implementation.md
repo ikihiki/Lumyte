@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。共通の機能 pass を DirectX 12／Vulkan 向けの Native pass 実装で実行する provider を定義する。現行実装の完了を示さない。
+採用・実装済み。共通の機能 pass を DirectX 12／Vulkan 向けの Native pass 実装で実行する provider、内部 graph の計画、内容世代、使用保持と再利用を実装する。Model／2D 等の個別機能は各担当 ADR の範囲とする。
 
 ## 依存 ADR
 
@@ -58,15 +58,23 @@ factory が正常に返した backend と pass は runtime が所有する。fac
 | `NativePassBuildContext.Services` | この構築に対応する `NativePassServices` を返す。 |
 | `GetInput(value)` | 固定 request の `GpuGraphValue<T>` を、今回の bindings または定数の不変 T に解決する。この pass が ReadInput で宣言した値だけを読める。 |
 | `ImportBuffer(resource)`／`ImportTexture(resource)` | 宣言済みの logical resource を今回の `NativePassBuffer`／`NativePassTexture` に接続する。resource input は今回の ref、transient は今回の実行に解決する。 |
-| `ImportBuffer(reference)`／`ImportTexture(reference)` | 実装が所有・保持する Native managed reference を内部 graph に取り込む。外部資産の依存は共通契約または package の明示依存で覆う。 |
+| `ImportBuffer(reference)`／`ImportTexture(reference, description)` | 実装が保持する Native managed reference を内部 graph に取り込み、その時点で実行の使用保持を取得する。同じ managed ref は実行内で一つにまとめる。texture は実際の Native description を渡す。外部資産の依存は共通契約または package の明示依存で覆う。 |
 | `CreateBuffer(name, description)`／`CreateTexture(name, description)` | Native description を持つ内部 transient を宣言する。heap の物理配置は後の計画で行う。 |
 | `CreateView(name, resource, description)` | Native 用途・範囲を持つ `NativePassView` を宣言する。shader descriptor と attachment view を用途に応じて準備する。 |
+| resource／builder の `Name`、buffer／texture の `Description`、view の `Name`／`Texture`／`Description` | 構築済みの内部宣言を参照する。texture の用途は live な使用をまとめて物理化する。GPU handle の所有や状態照会にはしない。 |
 | `AddPass<TState>(name, state, record)` | 不変の実行 state と `NativePassRecordAction<TState>` を登録し、`NativePassBuilder` を返す。一つの共通機能から複数回呼べる。 |
 | `NativePassBuilder.Read(resource, usage)`／`Write(resource, usage)`／`ReadWrite(resource, usage)` | 内部 resource の先行内容の読取り／全範囲初期化／部分更新・保持を宣言する。 |
+| `NativePassBuilder.Preserve()` | 共通側で Preserve された機能の内部 pass を、出力からの到達性によらず残す。外部に宣言していない副作用を追加する入口にはしない。 |
+| `Instantiate(template, state)` | `NativePassTemplate<TState>` の CPU 構築手順に、今回の不変 state と実行参照を与える。 |
+| `NativePassTemplate<TState>(instantiate)` | 内部 node を展開する再利用可能な CPU blueprint。以前の実行の resource／view／builder を保存しない。 |
+| `NativePassPreparationCache<TKey, TValue>(capacity = 64)` | pass が所有する不変な CPU 準備結果の件数上限付き LRU cache。GPU 内容は ticket で管理する。 |
+| `GetOrCreateAsync(key, prepare, cancellationToken)`／`Count`／`Remove(key)`／`Clear()` | 意味を表す key で CPU 準備結果を再利用し、件数の確認・明示失効を行う。失敗・取消しは保存せず、除去時の値の Dispose は行わない。pass が呼出しを直列化する。 |
 | `NativePassUsage(Stages, Access)` | Native の同期計画に必要な `GpuStage` と `GpuAccess` を指定する。共通の機能 pass 利用者には要求しない。 |
 | `Retain(lease)` | この実行の記録と GPU 使用が終了するまで必要な `IDisposable` lease の返却責任を provider へ渡す。shader cache の使用 lease などに使う。返却は提出・内容生成の成功通知ではない。 |
 
-`NativePassBuffer`、`NativePassTexture`、`NativePassView` は、この runtime の内部 graph の非所有参照である。`NativePassBuildContext` は一回の構築に限って使い、callback に保存しない。内部 pass の state は値の snapshot または実行専用の不変 object とし、caller の後続変更を読み直さない。
+`NativePassBuffer`、`NativePassTexture`、`NativePassView` は今回の実行に属する非所有参照である。resource は現在の機能の context で import／create してから使用し、過去の実行の参照を再利用しない。resource、view、内部 pass の名前はそれぞれ一つの機能の構築内で一意にする。`NativePassBuildContext` と builder は BuildAsync の終了で閉じる。内部 pass の state は値の snapshot または実行専用の不変 object とし、caller の後続変更を読み直さない。
+
+Retain と RegisterContent は lease の返却責任を移譲する入口であり、同じ lease を二つの入口や実行へ重複して渡さない。別の使用には独立した使用 lease を取得する。内容 ticket の owner を返却しても、登録元 writer と取得済み reader の保持は残る。
 
 共通 `Declare` は外部の Read／Write／ReadWrite、ReadInput、固定データの ReadUpload と生成出力を宣言する。実際の shader stage、attachment、copy、barrier と一時資源は Native 本体が選ぶ。内部 graph は外部依存の間に展開し、実装が隠れた外部読取りや書込みを追加しない。private transient と実装専用の不変 shader 資産は外部入出力へ加える必要がないが、変更可能な共有 cache や外部 package の使用は依存と所有を明示する。
 
@@ -101,10 +109,10 @@ cache 内容世代の storage は不変とし、旧 ticket の取得可能期間
 | `NativePassRecordAction<TState>(context, state)` | 物理資源と使用保持が準備された後、内部 pass を記録する同期 delegate。 |
 | `NativePassRecordContext.Commands` | provider が所有する `NativeGpuCommandBuffer` を借用する。作者は Native の pipeline、rendering、Draw／Dispatch／copy を直接記録する。 |
 | `GetBufferRange(buffer, offset, length)` | 内部 buffer の範囲を `NativeGpuRange` に解決する。offset は論理範囲から一度だけ加算する。 |
-| `GetTexture(texture)`／`GetTextureView(view)` | 準備済みの `NativeGpuTexture`／`NativeGpuTextureView` を非所有で返す。 |
+| `GetTexture(texture)`／`GetTextureView(view)` | 準備済みの `NativeGpuTextureHandle`／`NativeGpuTextureView` を非所有で返す。 |
 | `GetShaderIndex(view)`／`GetRenderView(view)` | 用途に従って準備した descriptor index／`NativeGpuRenderViewHandle` を返す。取得時に生成や割当は行わない。 |
 
-record context は callback 内だけで使う。pass が command の提出・破棄や queue の切替えを行わず、provider が内部 graph 全体の順序と提出を所有する。必要な Native descriptor heap は管理 batch が設定する。callback は resource や descriptor を初めて生成する場所ではない。
+record context は callback 内だけで使い、終了後のアクセスは拒否する。resource／view はその内部 pass が使用を宣言したものだけを取得できる。借用した Commands 自体も保存しない。pass が command の提出・破棄や queue の切替えを行わず、provider が内部 graph 全体の順序と提出を所有する。必要な Native descriptor heap は管理 batch が設定する。callback は resource や descriptor を初めて生成する場所ではない。
 
 root は Native 用に生成した構造体から直接 bytes にし、Native command の引数に渡す。通常の material、Parameter Data、配列は pass 本体の GPU uploader が明示的に準備・upload し、shader が root の参照・index・offset から読む。command が不足 data を推測して生成する経路と、root を隠れた buffer へ移す fallback は設けない。
 
@@ -112,10 +120,15 @@ root は Native 用に生成した構造体から直接 bytes にし、Native co
 
 | 共通 API | Native 実装の担当 |
 | --- | --- |
+| `NativeRenderRuntime.Id`／`NativeResources` | runtime identity と、同じ manager に接続した Native 専用 facade を返す。 |
+| `NativeRenderRuntime.PreparationStatistics` | 内部 schedule cache の `CacheHits`、`CacheMisses`、`CachedSchedules` を返す。GPU や低レベル command の状態照会ではない。 |
 | `runtime.Resources` | 共通 scope、準備済み package の GPU upload、resource export、pin と回収を Native Resources に接続する。Native heap、address、descriptor index と shader の型を公開しない。 |
 | `SubmitAsync(plan, bindings, cancellationToken)` | live な機能に対応する Native 本体を選び、内部計画と部品を再利用し、今回の入力と資源に必要な準備・記録・下位提出を行う。bindings 省略時は CPU 初期値を使う。queue の受理後に共通 execution を返す。 |
+| `StopAccepting()` | 新しい構築・upload・取得の受理を閉じる。受理済み work の drain は WaitIdleAsync／DisposeAsync が行う。 |
 | `WaitIdleAsync(cancellationToken)` | runtime が管理する構築・提出・転送と退役を drain する。外部の未登録使用まで終了したことにはしない。 |
 | `DisposeAsync()` | 新しい work の受理を終了し、実行を drain して pass、資源、pool と backend を順に終了する。 |
+
+`NativeGraphResources` は `CreateScope`、`Pin`、`AcquireUse`、`Collect`、`Trim` を ADR 0030 の共通 facade 契約で実装する。scope の `ImportPackageAsync`、`Release`、`Dispose` も同契約に従う。Native 専用の `Manager` は下位 manager を借用し、`GetNativeBuffer(reference)`／`GetNativeTexture(reference)` は同じ runtime の共通 ref から非所有の managed ref を得る。これらを直接使うコードは既存の owner または使用 lease を保持し、manager の操作を直列化する。raw import の入口と寿命は後述する。
 
 共通 ref は runtime identity と record 世代を持つ。異なる runtime の同じ数値 handle を代用しない。共通 facade の `ImportPackageAsync(data, cancellationToken)` は準備済み `GpuPackageUploadData` を Native の upload 計画へ接続し、GPU 確保と転送を行う。pass 用 shader のファイル取得・package 展開は `Lumyte.Resources` 側で済ませ、host が不変の Native shader package を pass factory の closure に渡す。pass 本体は GPU program と専用入力を管理し、`runtime.Programs` のような利用側の shader 管理窓口を設けない。
 
@@ -123,7 +136,13 @@ root は Native 用に生成した構造体から直接 bytes にし、Native co
 
 共通 `Compile` は外部依存、入力 slot と機能契約を持つ論理 plan を作る。Native の shader、root bytes、heap と command は作らない。同じ plan を異なる bindings で繰り返し提出し、内部 graph の依存から今回の実行順、寿命、barrier と texture transition を具体化する。
 
-Native 本体と provider は内部 graph の template、CPU 入力の所有情報、geometry／material の GPU 表現、batch、bounds 等を保持し、実際に依存する値や世代が変わった箇所を更新する。BuildAsync は構築と更新の入口であり、毎回すべての内部 node、upload 参照、pipeline 定義を作り直す要件ではない。template が有効なら今回の入力・資源・実行 state を結び付けて再利用する。差分情報が使えない初回、旧世代、cache eviction では完全な snapshot から再構築できる。
+内部 graph は Read を先行内容への依存、Write を全範囲の新しい内容、ReadWrite を先行内容を保つ更新として扱う。後の Write が全面的に置き換えた旧 writer は、別の読取りや副作用がなければ除去できる。共通出力、明示 Preserve と opaque dependency の副作用から必要な内部 pass を残し、生きている transient の初期化前読取りを拒否する。残った pass は登録順に記録するため、読取り後の上書きの順序も変わらない。
+
+外部 Write／ReadWrite の実装は、culling 前の内部使用宣言全体に対応付ける。外部 Read への書込み、外部 Write の前内容の読取り、実書込みを持たない出力宣言を拒否する。複数出力のうち今回使わない内部 writer は、その対応を確認した上で除去できる。GPU 命令の意味を解析して宣言を証明するものではない。
+
+NativePassTemplate は CPU の構築手順を再利用し、実行ごとの callback と resource 参照を新しく作る。provider は展開後の構造から内部 pass の生存集合と resource 寿命を計画し、同じ構造では index のみを保存した最大 64 件の LRU schedule cache を再利用する。cache は bindings、callback、CPU snapshot、GPU 資源を保持しない。description、用途、物理割当と barrier は今回の値から具体化する。
+
+geometry／material、bounds 等の CPU 準備は、作者が意味を持つ世代 key で NativePassPreparationCache に保存する。変更部分だけ新しい key で準備し、不変 GPU 内容は RegisterContent／TryUseContent で再利用する。初回や eviction 後には完全な snapshot から再構築できる。毎回の内部 node 展開と command 記録は残るため、template を記録済み GPU command の cache と同一視しない。
 
 camera の変更による culling／透明 sort などは依存に応じて実行する。外部構造が同じまま内部の draw 数や一時資源が変化しても、共通 plan の再 Compile は不要である。command の再記録、bundle 等の再利用、CPU／GPU の分担は Native 内部の選択とし、同じ command buffer の再提出を共通要件にしない。
 
@@ -133,7 +152,9 @@ mesh 経路は既存の record context から [ADR 0011 の DispatchMesh／Dispa
 
 機能が vertex と mesh の両経路を持つ場合、選択は Native 本体の準備で行う。mesh command を下位 backend が他の命令へ自動変換する契約はない。mesh 用の派生 cache は元データ、packing・shader の版と device 条件へ結び付け、RegisterContent／TryUseContent で結果と使用保持を管理する。Slang 計算 module の共有も build 時に限り、Portable の入力型や内部 graph を読み替えない。
 
-物理配置計画が異なる resource 間の alias 切替を行う場合は、provider が先行使用と memory dependency を順序付け、texture の再利用前に [ADR 0011](0011-native-command-recording-api.md) の `DiscardTexture(view, afterLayout)` を明示記録する。Vulkan では `General`、DirectX 12 では次の用途の layout を指定する。global Barrier だけで再初期化済みとは扱わず、未提出記録も成功扱いにしない。Native backend に自動 alias 検出や全資源の state tracker を追加しない。
+物理再利用は、一つの execution 内で寿命が重ならず Native description が一致する内部 transient 同士に限定する。同じ buffer range／texture object を使い直し、共通 output／export と import は再利用対象から外す。別の execution は独立した scope と GPU 使用保持を持つため、CPU が次の frame を提出しても前の未完了資源を上書きしない。
+
+新規 texture の最初の使用は [ADR 0011](0011-native-command-recording-api.md) の `DiscardTexture(view, afterLayout)` で初期状態を定める。同じ物理 texture の再利用では先行用途から次の用途へ順序付ける。DirectX 12 は実際の物理 texture ごとの layout、Vulkan は General と明示 barrier を用いる。各 execution は使用した texture を General に戻す。この状態計画は graph が所有する使用範囲内に閉じ、Native backend の自動追跡にしない。description の異なる複数 resource object を同じ heap 領域へ重ねる最適化は基準実装に含めない。
 
 persistent な package export は準備済み `GpuPackageUploadData` の `Profile` と export 契約で利用範囲を定め、対応する Native uploader が usage を含む完全な物理 description を生成前に package plan へ渡す。`Profile` は用途契約の識別子であり、ファイルや loader の解決先ではない。registry の factory や未実行の BuildAsync から用途を推測しない。再 import と後続機能はその生成契約の範囲で利用し、既存 texture の用途を暗黙に広げない。この生成・所有契約を Native API の合法性の独自検証へ広げない。
 
@@ -151,9 +172,21 @@ shader program の GPU 初期化と通常 data の upload は異なる処理で�
 
 共通機能に対応する Native 本体がない場合は、GPU 資源の準備を始める前に理由を返す。本体が要求する shader package、ABI、必要機能が揃わない場合は、その準備で失敗する。別の意味の処理や Portable 本体へ暗黙に置換しない。
 
-GPU 内容の利用可能性は上記 ticket を provider が管理する。Retain の返却や CPU cache の準備完了から推測しない。device loss で ticket が失効しても、GPU 停止が確定するまでは memory と descriptor slot を回収しない。
+GPU 内容の利用可能性は上記 ticket を provider が管理する。Retain の返却や CPU cache の準備完了から推測しない。受理時と失効時に ticket から Build と writer node を切り離す。先行 writer の診断失敗は、派生 execution の GPU 終了を待たず ticket と結果依存へ伝播する。TryUseContent も判明済みの依存失敗をその場で確認し、準備中に失敗が判明した実行は提出前に中止する。先行 token による登録は登録元の execution にも結果依存を付ける。
 
-外部 raw Native resource と command の接続は provider 専用 integration に置く。caller が既知の state、先行 completion と所有 lease を渡し、以後の排他的な管理範囲を明確にする。低レベル Native API に全資源の状態照会や外部利用の追跡を加えない。
+失効と GPU の使用終了は別である。writer／reader の保持は manager の使用終了まで残し、lease の返却は runtime と直列化した Collect／終了処理で行う。非同期の失敗通知から manager を直接操作しない。返却に失敗した lease は隔離し、以降の回収・終了でも失敗を通知して二重返却しない。device loss で ticket が失効しても、GPU 停止が確定するまでは memory と descriptor slot を回収しない。
+
+外部 raw Native resource の接続は NativeGraphResources の provider 専用 API で行う。
+
+| API | 契約 |
+| --- | --- |
+| `ImportBuffer(range, lease, preceding = default)` | 同じ backend の `NativeGpuRange` と native 寿命を所有する lease を共通 ref に接続する。 |
+| `ImportTexture(texture, description, lease, preceding = default)` | 同じ backend の texture handle と実際の Native description を接続する。texture の受渡し layout は General とする。 |
+| `NativeGraphResourceImport<TReference>.Reference`／`Dispose()` | 共通 graph に渡す ref と import owner。owner を返却しても受理済み writer／reader の GPU 保持は残る。 |
+
+preceding は同じ runtime の manager が main queue に受理した GpuSubmissionToken とする。省略時の利用可能性は caller が保証する。明示 token は結果依存と使用保持に接続し、後続 graph がなくても import owner の早期返却から先行 GPU 使用を守る。lease は native object、heap と必要な依存をまとめて保持し、provider は raw object を別途 Destroy しない。
+
+caller は実際の description、General layout、先行順序と独占した管理範囲を保証する。同じ物理 resource や重なる range に複数の論理 import を作って独立資源として扱わない。外部 queue の未管理 token、任意 layout の推測、外部 command の state 解析はこの契約に含めない。低レベル Native API に全資源の状態照会や外部利用の追跡を加えない。
 
 resource input による presentation target の差替えは共通 helper と接続する。Acquire 済み target は今回の bindings にのみ結び付け、description が変わる場合は新しい共通 plan を要求する。GPU completion、target の再取得条件と host の frame pacing を分ける。
 
@@ -163,23 +196,23 @@ Lumyte が確認するのは機能契約の Id/version と型、runtime identity
 
 外部契約の意味を実装が守ることは pass 作者の責務であり、GPU 命令の解析から証明しない。同じ共通 request に対する結果、宣言した破壊範囲、依存と失敗契約を、pass library の適合試験で確認する。
 
-内容世代の試験では、writer 登録後の別 pass の構築失敗、提出失敗、受理済み未完了世代の取得、失効と取得の競合、依存先失敗の伝播、owner の早期 Dispose と GPU 使用保持を fake completion で確認する。未提出 writer を次回に再準備でき、旧世代を保持した描画の bytes が新世代によって変更されないことを観測する。Native alias の実機試験では同じ領域の texture → 別 resource → texture を再初期化して使う。
+隣接 xUnit 試験で内部依存、未初期化、不要 writer、外部宣言との対応、名前と実行 identity、callback の終了、CPU cache と schedule の再利用を確認する。内容世代は構築・記録・提出失敗、writer の culling、受理済み未完了内容の取得、先行 upload の独立存続、他 runtime の拒否と owner の早期返却を fake backend で確認する。raw import は owner 返却後の GPU reader と先行 writer の保持を lease の返却通知から観測する。
+
+DirectX 12／Vulkan の実機適合試験では、同じ plan を異なる画像入力で GPU を待たずに続けて提出し、copy chain の同 description texture／scratch 再利用と各出力の readback を確認する。debug／validation の診断を試験結果に含める。
 
 ## コード配置
 
-repository root 相対の目標配置を次に示す。`Lumyte.Graphics.Native.RenderGraph` と隣接 `.Tests` は新設予定とし、共通 graph、Native API、Native Resources／Shaders に依存する。機能 pass 本体から利用する SPI と、provider の内部実装を同じ project 内で分ける。
+repository root 相対の配置を次に示す。`Lumyte.Graphics.Native.RenderGraph` と隣接 `.Tests` は共通 graph、Native API、Native Resources／Shaders に依存する。機能 pass 本体から利用する公開 SPI と、provider の内部実装を同じ project 内で分ける。
 
 | 配置先 | 内容 |
 | --- | --- |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Registration/` | NativeRenderProvider、backend factory、NativeRenderPassRegistry と型付き pass factory。Host に依存しない bootstrap API |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Passes/` | INativeRenderPass、NativePassServices、build／record context、内部 logical resource、使用宣言と NativePassContentGeneration の SPI |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Planning/` | 内部 graph の順序、依存、barrier／配置計画、再利用する template と実行ごとの物理化 |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Resources/` | 共通 facade の Native 実装、共通 ref と managed ref の対応、upload profile の具体化、transient と使用保持 |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Execution/` | 共通 runtime の実装、command 記録・提出、内容世代と writer 結果の対応、completion と退役、停止時の drain |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph.Tests/` | 新設予定の隣接 xUnit project。fake backend による登録・依存・入力世代・所有・失敗の試験 |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph.Tests/Integration/` | DX12／Vulkan での graph 提出と回収の実機試験。CPU 試験とは実行区分を分ける |
+| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Runtime/` | NativeRenderProvider、backend factory、NativeRenderRuntime。Host に依存しない生成、提出、result 依存と停止時の drain |
+| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Passes/` | registry、factory、INativeRenderPass、services、build／record context、内部 resource と依存計画、template／cache、NativePassContentGeneration |
+| `src/graphics/Lumyte.Graphics.Native.RenderGraph/Resources/` | 共通 facade の Native 実装、共通 ref と managed ref の対応、upload profile、raw import、使用保持と回収 |
+| `src/graphics/Lumyte.Graphics.Native.RenderGraph.Tests/` | 隣接 xUnit project。fake backend による登録・依存・入力世代・所有・失敗・再利用の試験 |
+| `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/RenderGraph/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/RenderGraph/` | 共通 consumer による DX12／Vulkan の graph 適合試験。CPU 試験とは実行区分を分ける |
 
-現行共通 RenderGraph にある Native 向けの物理計画・記録をこの project へ移す。実際の DX12／Vulkan 呼出しは各 backend、Model／Blur 等の本体と shader は `Lumyte.Graphics.Native.Passes`、DI と shader の非同期取得をつなぐ登録は `Lumyte.Graphics.Native.Hosting` に置く。provider から特定機能の Passes や Hosting へ参照しない。
+Native 向けの物理計画・記録は共通 RenderGraph に置かない。実際の DX12／Vulkan 呼出しは各 backend、Model／Blur 等の本体と shader は `Lumyte.Graphics.Native.Passes`、DI と shader の非同期取得をつなぐ登録は `Lumyte.Graphics.Native.Hosting` に置く。provider から特定機能の Passes や Hosting へ参照しない。
 
 ## 使用例
 
@@ -243,6 +276,6 @@ else
 
 Native pass 本体が shader、GPU data、内部 graph と命令を所有する構成を採用する。NoGraphicsAPI を基礎とする Native の明示 allocation、descriptor と直接 root はその内部で活用し、低レベル wrapper に利用者全体の資源管理を加えない。下位 Native の部分採用事項は担当 ADR に従う。
 
-段階 0 として Native provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、実行ごとの内部 pass／transient／記録、scope／batch／export pin による保持、提出と停止、Hosting の登録 snapshot と runtime 所有を実装した。Clear／Copy／Output は別の Native.Passes assembly から登録し、外部 assembly に production の InternalsVisibleTo を要求しない。
+Native provider、公開構築 SPI、内部 Read／Write／ReadWrite の依存と culling、外部宣言対応、未初期化検出、内容世代 ticket と実行間結果依存、template と件数上限付き CPU／schedule cache、同 description transient の物理再利用、raw import の所有と先行 token を実装した。共通 facade、scope／batch／export pin、GPU 使用終了までの保持と停止時の drain に接続する。Clear／Copy／Output は別の Native.Passes assembly から登録し、外部 assembly に production の InternalsVisibleTo を要求しない。
 
-内容世代 ticket の登録・取得・実行間の結果依存、内部 template と部品の差分準備、transient の alias 再利用、一般の raw external interop と Native 専用拡張は未実装である。段階 0 は毎実行の transient を明示保持し、alias の最適化を前提にしない。共通 facade の明示 resource 操作は caller が直列化する。外部所有の scope／pin／execution は caller が返す。
+異種 resource object 間の heap 領域 alias、記録済み bundle の cache、GPU による可視判定や mesh 描画の個別最適化は基準実装の必須要件に含めず、必要な機能 pass が個別に追加する。Model／2D 等の描画能力の完成はそれぞれの担当 ADR で管理する。共通 facade と公開 manager の明示 resource 操作は契約に従い caller が直列化し、外部所有の scope／pin／execution は caller が返す。

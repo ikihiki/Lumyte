@@ -34,9 +34,10 @@ public sealed class GpuRenderContext : IDisposable
     private readonly IGpuGraphPresentation presentation;
     private readonly object gate = new();
     private readonly HashSet<GpuFrame> frames = [];
+    private readonly GpuRenderGraphPlanCache cache;
     private bool disposed;
-    public GpuRenderContext(IGpuRenderRuntime runtime, IGpuGraphPresentation presentation)
-    { this.runtime = runtime; this.presentation = presentation; }
+    public GpuRenderContext(IGpuRenderRuntime runtime, IGpuGraphPresentation presentation, int cacheMaximumEntries = 64)
+    { this.runtime = runtime; this.presentation = presentation; cache = new(cacheMaximumEntries); }
 
     public ValueTask<GpuRenderGraphExecution> SubmitAsync(GpuRenderGraphPlan plan, GpuRenderGraphBindings bindings,
         GpuGraphTextureInput presentationTargetInput, CancellationToken cancellationToken = default)
@@ -97,7 +98,7 @@ public sealed class GpuRenderContext : IDisposable
             lock (gate)
             {
                 ObjectDisposedException.ThrowIf(disposed, this);
-                var frame = new GpuFrame(runtime, presentation, target, RemoveFrame);
+                var frame = new GpuFrame(runtime, presentation, target, cache, RemoveFrame);
                 frames.Add(frame);
                 return frame;
             }
@@ -114,8 +115,15 @@ public sealed class GpuRenderContext : IDisposable
             if (disposed) { return; }
             disposed = true;
             outstanding = frames.ToArray();
+            cache.Clear();
         }
-        foreach (var frame in outstanding) { frame.Dispose(); }
+        List<Exception> errors = [];
+        foreach (var frame in outstanding)
+        {
+            try { frame.Dispose(); }
+            catch (Exception error) { errors.Add(error); }
+        }
+        if (errors.Count != 0) { throw new AggregateException("One or more frames failed to release.", errors); }
     }
 }
 
@@ -125,18 +133,32 @@ public sealed class GpuFrame : IDisposable
     private readonly IGpuGraphPresentation presentation;
     private readonly GpuGraphPresentationTarget target;
     private readonly Action<GpuFrame> finished;
+    private readonly GpuRenderGraphPlanCache cache;
+    private readonly GpuFrameOwnership ownership = new();
     private readonly object gate = new();
     private bool submitting;
     private bool accepted;
     private bool disposed;
     private bool returned;
-    internal GpuFrame(IGpuRenderRuntime runtime, IGpuGraphPresentation presentation, GpuGraphPresentationTarget target, Action<GpuFrame> finished)
+    internal GpuFrame(IGpuRenderRuntime runtime, IGpuGraphPresentation presentation, GpuGraphPresentationTarget target,
+        GpuRenderGraphPlanCache cache, Action<GpuFrame> finished)
     {
-        this.runtime = runtime; this.presentation = presentation; this.target = target; this.finished = finished;
+        this.runtime = runtime; this.presentation = presentation; this.target = target; this.cache = cache; this.finished = finished;
         TargetResource = Graph.ImportTexture("presentation.target", target.Texture);
     }
     public GpuRenderGraph Graph { get; } = new();
     public GpuRenderGraphTexture TargetResource { get; }
+
+    /// <summary>Transfer an external lease to this frame and its accepted execution, including GPU retirement.</summary>
+    public void Retain(IDisposable lease)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (submitting || accepted) { throw new InvalidOperationException("Cannot add ownership after submission starts."); }
+            ownership.Add(lease);
+        }
+    }
 
     public ValueTask<GpuRenderGraphExecution> SubmitAsync(CancellationToken cancellationToken = default)
     {
@@ -145,7 +167,7 @@ public sealed class GpuFrame : IDisposable
             ObjectDisposedException.ThrowIf(disposed, this);
             if (submitting || accepted) { throw new InvalidOperationException("This frame has already been submitted."); }
             Graph.MarkOutput(TargetResource);
-            var plan = Graph.Compile();
+            var plan = Graph.Compile(cache);
             submitting = true;
             // Invoke Submit before suspending, preserving the common synchronous retention contract.
             try { return FinishSubmissionAsync(runtime.SubmitAsync(plan, cancellationToken: cancellationToken)); }
@@ -155,7 +177,7 @@ public sealed class GpuFrame : IDisposable
                 accepted = true;
                 returned = true;
                 finished(this);
-                presentation.Retire(target, error.Completion);
+                RetireUnknown(error);
                 throw;
             }
             catch { submitting = false; throw; }
@@ -170,7 +192,7 @@ public sealed class GpuFrame : IDisposable
         {
             lock (gate) { submitting = false; accepted = true; returned = true; }
             finished(this);
-            presentation.Retire(target, error.Completion);
+            RetireUnknown(error);
             throw;
         }
         catch
@@ -180,25 +202,110 @@ public sealed class GpuFrame : IDisposable
         }
         lock (gate) { submitting = false; accepted = true; returned = true; }
         finished(this);
+        try
+        {
+            ownership.RetainForGpu(execution.Completion);
+            execution.RetainOwnership(ownership);
+        }
+        catch (Exception error)
+        {
+            List<Exception> errors = [error];
+            try { ownership.Dispose(); } catch (Exception failure) { errors.Add(failure); }
+            try { execution.Dispose(); } catch (Exception failure) { errors.Add(failure); }
+            try { presentation.Retire(target, execution.Completion); } catch (Exception failure) { errors.Add(failure); }
+            throw new GpuRenderGraphSubmissionException(execution.Completion,
+                errors.Count == 1 ? error : new AggregateException(errors));
+        }
         try { presentation.Present(target, execution.Completion); return execution; }
         catch { execution.Dispose(); throw; }
     }
 
     public void Dispose()
     {
-        lock (gate)
+        try
         {
-            if (disposed) { return; }
-            disposed = true;
-            if (!submitting && !accepted) { ReturnTarget(); }
+            lock (gate)
+            {
+                if (disposed) { return; }
+                disposed = true;
+                if (!submitting && !accepted) { ReturnTarget(); }
+            }
         }
-        finished(this);
+        finally { finished(this); }
     }
     private void ReturnTarget()
     {
         if (returned) { return; }
-        presentation.Discard(target);
         returned = true;
+        try { presentation.Discard(target); }
+        finally { ownership.Dispose(); }
+    }
+    private void RetireUnknown(GpuRenderGraphSubmissionException error)
+    {
+        List<Exception> errors = [];
+        try { ownership.RetainForGpu(error.Completion); } catch (Exception failure) { errors.Add(failure); }
+        try { ownership.Dispose(); } catch (Exception failure) { errors.Add(failure); }
+        try { presentation.Retire(target, error.Completion); } catch (Exception failure) { errors.Add(failure); }
+        if (errors.Count != 0)
+        { throw new GpuRenderGraphSubmissionException(error.Completion, new AggregateException([error, .. errors])); }
+    }
+}
+
+internal sealed class GpuFrameOwnership : IDisposable
+{
+    private readonly object gate = new();
+    private readonly List<IDisposable> leases = [];
+    private int owners = 1;
+    private bool disposed;
+    internal void Add(IDisposable lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (leases.Any(existing => ReferenceEquals(existing, lease)))
+            { throw new ArgumentException("The frame already owns this lease.", nameof(lease)); }
+            leases.Add(lease);
+        }
+    }
+    internal void RetainForGpu(GpuGraphCompletion completion)
+    {
+        lock (gate)
+        {
+            if (leases.Count == 0) { return; }
+            owners++;
+        }
+        var use = new Use(this);
+        completion.RetainUntilUseEnds(use);
+    }
+    public void Dispose()
+    {
+        lock (gate)
+        {
+            if (disposed) { return; }
+            disposed = true;
+            Release();
+        }
+    }
+    private void Release()
+    {
+        lock (gate)
+        {
+            if (--owners != 0) { return; }
+            List<Exception> errors = [];
+            for (var index = leases.Count - 1; index >= 0; index--)
+            {
+                try { leases[index].Dispose(); }
+                catch (Exception error) { errors.Add(error); }
+            }
+            leases.Clear();
+            if (errors.Count != 0) { throw new AggregateException("One or more frame leases failed to release.", errors); }
+        }
+    }
+    private sealed class Use(GpuFrameOwnership owner) : IDisposable
+    {
+        private GpuFrameOwnership? value = owner;
+        public void Dispose() => Interlocked.Exchange(ref value, null)?.Release();
     }
 }
 
@@ -208,10 +315,13 @@ internal sealed class GpuUseSet : IDisposable
     public void Add(IDisposable hold) => holds.Add(hold);
     public void Dispose()
     {
+        List<Exception> errors = [];
         for (var i = holds.Count - 1; i >= 0; i--)
         {
-            holds[i].Dispose();
+            try { holds[i].Dispose(); }
+            catch (Exception error) { errors.Add(error); }
             holds.RemoveAt(i);
         }
+        if (errors.Count != 0) { throw new AggregateException("One or more GPU ownership leases failed to release.", errors); }
     }
 }

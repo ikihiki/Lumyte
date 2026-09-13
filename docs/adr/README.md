@@ -170,7 +170,7 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 
 系統別 entry と resource／root 宣言は各 pass の `<Feature>/Shaders/` に置き、Native は Slang、Portable は Slang または直接 WGSL とする。共有する計算だけを `src/graphics/Shaders/Shared/` の Slang module に置く。生成 C# と artifact は利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/<Family>/`、内部 graph 入力はその `Graph/` に置く。管理入力生成器のディスク出力は `obj/<Configuration>/<TargetFramework>/Shaders/Resources/<analyzer名>/` を既定とし、両系統の analyzer と利用側の出力設定を共存させる。Slang が生成した WGSL も build の出力先へ置き、手書き WGSL と区別する。配布 package は build の成果物から application の資産へ取り込み、生成物を手書き source の正として管理しない。offline compiler と各生成器は build 用であり、runtime project から tool の assembly を参照しない。
 
-旧 Library、Shader、Shader.Browser、共通 shader offline、TwoD、Text と旧 graph は削除済みであり、互換 API／shader ABI を残さない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。段階 0 の共通 graph、二 provider、Passes と Hosting が現在の実行経路である。
+旧 Library、Shader、Shader.Browser、共通 shader offline、TwoD、Text と旧 graph は削除済みであり、互換 API／shader ABI を残さない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。共通 graph と二 provider の基盤は、plan／入力の再利用、内部依存と一時資源の再利用、内容世代、外部資源の所有まで実装済みであり、Passes と Hosting から利用する。Model／2D 等の個別機能と実 window／canvas の接続は別の実装範囲とする。
 
 ## 実装するレンダーパス
 

@@ -33,6 +33,9 @@ var image = execution.GetExportedTexture(target);
 | `GpuGraphValue<T>`、`GpuGraphInput<T>`、`IGpuGraphInputContract<T>` | 定数／型付き slot、値の Snapshot と明示的な所有集合 |
 | `GpuRenderGraphBindingsBuilder.Set/Build`、`GpuRenderGraphBindings.ToBuilder` | 変更から独立した不変値。各 Build は plan 内で一意な世代を取得する |
 | `GpuRenderGraphPlan.Passes/Resources/Exports/Outputs` | 生存する機能と論理宣言。provider の内部 GPU pass 数とは異なる |
+| `ResourceLifetimes` | 生存する機能順序における logical resource の first／last-use index |
+| `GpuRenderGraphPlanCache`、`Compile(cache)` | CPU schedule の有界 LRU。古い plan、入力 snapshot、GPU object は保持しない |
+| `GpuRenderGraphFrameBuilder`、`GpuRenderGraphContributionContext` | order／ordinal name 順の CPU 構築、名前の分離、logical resource の公開・受渡し |
 | `ValidateBindings`、pass の `RequestType/ResultType/GetInput` | 別 assembly の provider が使う公開拡張契約。要求型・入力・宣言を GPU 準備前に対応付ける |
 | `GpuGraphResourceRef`、`GpuGraphTextureRef/BufferRef/PackageRef` | runtime と resource 世代を識別する非所有 ref。GPU handle は公開しない |
 | `IGpuGraphResources.CreateScope/Pin/Collect/Trim` | 専用 ResourceManager の所有と回収への接続。`AcquireUse` は provider／presentation 向けの同期使用保持 |
@@ -40,7 +43,9 @@ var image = execution.GetExportedTexture(target);
 | `GpuBufferUploadData`、`GpuImageUploadData`、`GpuPackageUploadData` | 所有済み CPU bytes と export の集合。コンストラクタで借用 bytes／集合を固定する |
 | `IGpuRenderRuntime.SubmitAsync/WaitIdleAsync/StopAccepting/DisposeAsync` | 使用保持、提出、drain、新規受理停止と所有者の終了 |
 | `GpuGraphCompletion`、`GpuRenderGraphExecution` | GPU 使用終了と診断成功を区別する。export は Wait の成功後に取得する |
+| `GpuRenderInputRetentionContext.ReadSnapshot` | 不変の子 snapshot の所有情報を共有し、変更した枝だけを再列挙する |
 | `GpuRenderContext`、`GpuFrame`、`IGpuGraphPresentation` | 借用 runtime を用いた acquire／submit／present。未提出は Discard、受理不明は Retire |
+| `GpuFrame.Retain`、`GpuGraphCompletion.RetainUntilUseEnds` | 外部 lease を frame／execution と GPU retirement の両方に保持する |
 
 Compile は shader／backend／DI を呼ばない。Read は先行内容、Write は全体初期化、ReadWrite は先行内容を保持する更新として扱う。不要な内容の writer を除去し、生存する reader と後続 writer の順序を維持する。古い内容を output に指定した後、それを上書きする pass も生存する場合は拒否する。古い内容を残すには別の resource に Copy してから export する。
 
@@ -48,12 +53,16 @@ plan／bindings は GPU 資源を所有しない。呼出し元は SubmitAsync �
 
 `GpuRenderGraphSubmissionException.Completion` は queue への引渡し後に失敗した可能性を表す。presentation 接続は Retire された target を、GPU と表示側の使用終了が証明されるまで維持する。失敗した内容を Present したり、未提出として Discard したりしない。
 
-stage 0 の両 provider が扱う共通 package profile は `images.sampled` version 1、線形の `Rgba8Unorm`／`Bgra8Unorm`、Opaque／Premultiplied の準備済み画像である。CPU stride の 0 は tightly packed を表す。import は転送先と shader 読取りの用途を持つ。色変換、decode、任意の Buffer package profile は追加しない。
+provider の外部 lease 登録 callback が故障した場合も、提出例外に保持した completion が lease を隔離する。例外を受けた側はその completion の IsComplete／WaitAsync で使用終了を確認する。確認不能の間は保持を残す。通常の callback は manager の retirement に接続し、この回復経路を使わない。
+
+両 provider が扱う共通 package profile は `images.sampled` version 1、線形の `Rgba8Unorm`／`Bgra8Unorm`、Opaque／Premultiplied の準備済み画像である。CPU stride の 0 は tightly packed を表す。import は転送先と shader 読取りの用途を持つ。色変換、decode、任意の Buffer package profile は追加しない。
 
 下位 ResourceManager の管理操作は caller が直列化する。package import の待機中に別の import、提出、pin／scope 作成、回収、provider 固有の manager 操作を重ねない。返却が必要な import 中 scope の Dispose は、provider が実 import の終了まで遅延する。通常の Submit 同士と終了は provider が調停し、GPU 使用終了まで CPU を待たせる要件にはしない。
 
-## 段階 0 の範囲
+## 実装範囲
 
-共通機能、二系統の provider、ResourceManager 接続、Hosting、Clear／Copy／基本 Output と offscreen presentation の統合を実装する。実ウィンドウ／canvas と frame pacing、構造 cache、contributor、frame 外部 lease、内部内容世代 cache、alias allocation の最適化、Model／2D は後続段階とする。
+共通機能、二系統の内部 planner、ResourceManager 接続、Hosting、構造 cache、contributor、frame 外部 lease、内容世代と結果依存、使用期間による資源再利用を備える。標準 Clear／Copy／基本 Output と offscreen presentation で同じ consumer の実行を確認する。機能ごとの Model／2D／Blur 等の実装、実ウィンドウ／canvas と frame pacing は別 ADR の後続作業である。
+
+固定構造は一度 Compile して再利用する。再 Compile の cache は index の CPU schedule のみを共有し、今回の resource、request と input に再接続する。内部 GPU 内容を複数実行から使う pass 作者は、専用 provider の内容世代 ticket を通して所有と先行結果の依存を取得する。CPU cache の存在や GPU 使用終了だけで転送成功を推測しない。
 
 旧低レベル RenderGraph と旧描画系は削除済みであり、互換層はない。詳細な目標契約と実装済みの範囲は [ADR 0030](../../../docs/adr/0030-render-graph-api.md) と [実装進捗](../../../docs/designs/graphics-implementation-progress.md) を参照する。

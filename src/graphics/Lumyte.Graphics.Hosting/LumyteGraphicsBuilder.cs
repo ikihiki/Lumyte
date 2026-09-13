@@ -9,11 +9,13 @@ namespace Lumyte.Graphics.Hosting;
 public sealed class GpuGraphicsOptions
 {
     public GpuRenderRuntimeOptions Runtime { get; set; } = new();
+    public int PlanCacheMaximumEntries { get; set; } = 64;
 }
 
 /// <summary>A startup-only definition. GPU ownership belongs to its created runtime.</summary>
 public interface IGpuRenderProviderDefinition
 {
+    string Id { get; }
     ValueTask<IGpuRenderProvider> CreateAsync(IServiceProvider services, CancellationToken cancellationToken);
 }
 
@@ -63,6 +65,13 @@ public sealed class LumyteGraphicsBuilder
     public LumyteGraphicsBuilder AddProvider(IGpuRenderProviderDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(definition.Id);
+        foreach (var descriptor in Services.Where(item => item.ServiceType == typeof(IGpuRenderProviderDefinition)))
+        {
+            if (descriptor.ImplementationInstance is not IGpuRenderProviderDefinition existing || existing.Id != definition.Id) { continue; }
+            if (Equals(existing, definition)) { return this; }
+            throw new ArgumentException($"Provider '{definition.Id}' already has a different definition.", nameof(definition));
+        }
         Services.AddSingleton(definition);
         return this;
     }
@@ -81,7 +90,10 @@ public static class GraphicsHostServiceCollectionExtensions
         Action<GpuGraphicsOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddOptions<GpuGraphicsOptions>();
+        services.AddOptions<GpuGraphicsOptions>()
+            .Validate(static options => options.Runtime is not null && !string.IsNullOrWhiteSpace(options.Runtime.ProviderId)
+                && options.Runtime.RequiredPasses is not null, "Graphics Runtime requires a provider ID and RequiredPasses collection.")
+            .Validate(static options => options.PlanCacheMaximumEntries > 0, "Graphics PlanCacheMaximumEntries must be positive.");
         if (configure is not null)
         {
             services.Configure(configure);

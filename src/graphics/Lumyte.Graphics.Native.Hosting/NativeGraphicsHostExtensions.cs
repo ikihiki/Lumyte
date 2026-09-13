@@ -5,12 +5,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Graphics.Native.Hosting;
 
+public delegate ValueTask<INativeGpuBackend> NativeGraphicsBackendFactory(
+    IServiceProvider services, GpuRenderRuntimeOptions options, CancellationToken cancellationToken);
+
 public static class NativeGraphicsHostExtensions
 {
     public static LumyteGraphicsBuilder AddNativeProvider(
         this LumyteGraphicsBuilder builder,
         string id,
-        NativeRenderBackendFactory createBackend,
+        NativeGraphicsBackendFactory createBackend,
         Action<NativeRenderPassRegistry>? configurePasses = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -23,29 +26,84 @@ public static class NativeGraphicsHostExtensions
         this LumyteGraphicsBuilder builder,
         Action<IServiceProvider, NativeRenderPassRegistry> configure)
     {
-        ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
-        builder.Services.AddSingleton(new PassRegistration(configure));
+        return AddRegistration(builder, new ConfigureRegistration(configure));
+    }
+
+    /// <summary>Register asynchronous CPU/package preparation, once within the selected runtime's DI scope.</summary>
+    public static LumyteGraphicsBuilder AddNativePass<TRequest, TResult>(
+        this LumyteGraphicsBuilder builder,
+        IGpuRenderPassContract<TRequest, TResult> contract,
+        Func<IServiceProvider, CancellationToken, ValueTask<NativeRenderPassFactory<TRequest, TResult>>> prepareFactory)
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+        ArgumentNullException.ThrowIfNull(prepareFactory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contract.Id);
+        return AddRegistration(builder, new PreparedRegistration<TRequest, TResult>(contract, prepareFactory));
+    }
+
+    private static LumyteGraphicsBuilder AddRegistration(LumyteGraphicsBuilder builder, IPassRegistration registration)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        foreach (var descriptor in builder.Services.Where(item => item.ServiceType == typeof(IPassRegistration)))
+        {
+            if (descriptor.ImplementationInstance is not IPassRegistration existing) { continue; }
+            if (Equals(existing, registration)) { return builder; }
+            if (registration.Id is not null && existing.Id == registration.Id)
+            { throw new ArgumentException($"Pass '{registration.Id}' already has a different Native preparation definition.", nameof(registration)); }
+        }
+        builder.Services.AddSingleton(registration);
         return builder;
     }
 
-    private sealed record PassRegistration(Action<IServiceProvider, NativeRenderPassRegistry> Configure);
-
-    private sealed class ProviderDefinition(
-        string id,
-        NativeRenderBackendFactory createBackend,
-        Action<NativeRenderPassRegistry>? configurePasses) : IGpuRenderProviderDefinition
+    private interface IPassRegistration
     {
-        public ValueTask<IGpuRenderProvider> CreateAsync(IServiceProvider services, CancellationToken cancellationToken)
+        GpuRenderPassId? Id { get; }
+        ValueTask ConfigureAsync(IServiceProvider services, NativeRenderPassRegistry registry, CancellationToken cancellationToken);
+    }
+
+    private sealed record ConfigureRegistration(Action<IServiceProvider, NativeRenderPassRegistry> Configure) : IPassRegistration
+    {
+        public GpuRenderPassId? Id => null;
+        public ValueTask ConfigureAsync(IServiceProvider services, NativeRenderPassRegistry registry, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Configure(services, registry);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record PreparedRegistration<TRequest, TResult>(
+        IGpuRenderPassContract<TRequest, TResult> Contract,
+        Func<IServiceProvider, CancellationToken, ValueTask<NativeRenderPassFactory<TRequest, TResult>>> Prepare) : IPassRegistration
+    {
+        public GpuRenderPassId? Id { get; } = new GpuRenderPassId(Contract.Id, Contract.Version);
+        public async ValueTask ConfigureAsync(IServiceProvider services, NativeRenderPassRegistry registry, CancellationToken cancellationToken)
+        {
+            if (Id != new GpuRenderPassId(Contract.Id, Contract.Version))
+            { throw new InvalidOperationException("The pass contract identity changed after startup registration."); }
+            cancellationToken.ThrowIfCancellationRequested();
+            NativeRenderPassFactory<TRequest, TResult> factory = await Prepare(services, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The pass preparation callback returned no factory.");
+            cancellationToken.ThrowIfCancellationRequested();
+            registry.Register(Contract, factory);
+        }
+    }
+
+    private sealed record ProviderDefinition(
+        string Id, NativeGraphicsBackendFactory CreateBackend,
+        Action<NativeRenderPassRegistry>? ConfigurePasses) : IGpuRenderProviderDefinition
+    {
+        public async ValueTask<IGpuRenderProvider> CreateAsync(IServiceProvider services, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var passes = new NativeRenderPassRegistry();
-            configurePasses?.Invoke(passes);
-            foreach (PassRegistration registration in services.GetServices<PassRegistration>())
+            ConfigurePasses?.Invoke(passes);
+            foreach (IPassRegistration registration in services.GetServices<IPassRegistration>())
             {
-                registration.Configure(services, passes);
+                await registration.ConfigureAsync(services, passes, cancellationToken).ConfigureAwait(false);
             }
-            return ValueTask.FromResult<IGpuRenderProvider>(new NativeRenderProvider(id, createBackend, passes));
+            return new NativeRenderProvider(Id, (options, token) => CreateBackend(services, options, token), passes);
         }
     }
 }

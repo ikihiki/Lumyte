@@ -44,15 +44,17 @@ public sealed class WebGpuFeatureRenderGraphTests
         await host.StopAsync();
     }
 
-    [Fact]
-    public async Task SamePlanUsesNewInputValuesWhilePreviousExecutionKeepsItsOwnOutput()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    public async Task SamePlanUsesNewInputValuesWhilePreviousExecutionKeepsItsOwnOutput(int copyCount)
     {
         using IHost host = CreateHost();
         await host.StartAsync();
         IGpuRenderRuntime runtime = (await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
         var portable = Assert.IsType<PortableRenderRuntime>(runtime);
         ImagePipelinePlan consumer = ImagePipelineConsumer.CreateExportPlan(new(4, 4, GpuFormat.Rgba8Unorm),
-            TextureClearValue.Color(new Vector4(1, 0, 0, 1)), OutputEncoding.Linear, OutputAlphaMode.Opaque);
+            TextureClearValue.Color(new Vector4(1, 0, 0, 1)), OutputEncoding.Linear, OutputAlphaMode.Opaque, copyCount);
         GpuRenderGraphBindingsBuilder bindings = consumer.Plan.CreateBindings();
         bindings.Set(consumer.ColorInput, TextureClearValue.Color(new Vector4(0, 1, 0, 1)));
         using (GpuRenderGraphExecution first = await runtime.SubmitAsync(consumer.Plan))
@@ -97,7 +99,7 @@ public sealed class WebGpuFeatureRenderGraphTests
     private static IHost CreateHost(bool presentation = false) => new HostBuilder().ConfigureServices(services =>
     {
         LumyteGraphicsBuilder builder = services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = "webgpu" })
-            .AddPortableProvider("webgpu", static async (_, cancellationToken) =>
+            .AddPortableProvider("webgpu", static async (_, _, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return await WebGpuBackend.CreateAsync();

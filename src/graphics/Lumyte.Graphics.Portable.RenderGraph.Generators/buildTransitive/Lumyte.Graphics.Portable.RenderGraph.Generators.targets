@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <EmitCompilerGeneratedFiles Condition="'$(EmitCompilerGeneratedFiles)' == ''">true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath Condition="'$(CompilerGeneratedFilesOutputPath)' == ''">$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/Shaders/PassBindings</CompilerGeneratedFilesOutputPath>
+    <LumytePortableGeneratePassBindings Condition="'$(LumytePortableGeneratePassBindings)' == ''">true</LumytePortableGeneratePassBindings>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="LumytePortableRenderGraphInput" />
+  </ItemGroup>
+  <Target Name="LumytePortablePassBindingInputFiles" BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun;CoreCompile" AfterTargets="LumyteCompilePortableShaders">
+    <ItemGroup>
+      <PortablePassBindingInput Include="@(_LumytePortableGeneratedResource)" Exclude="@(PortablePassBindingInput)" Condition="'$(LumytePortableGeneratePassBindings)' == 'true'" />
+      <AdditionalFiles Remove="@(PortablePassBindingInput)" />
+      <AdditionalFiles Include="@(PortablePassBindingInput)" LumytePortableRenderGraphInput="true" />
+    </ItemGroup>
+  </Target>
+</Project>

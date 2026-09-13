@@ -23,6 +23,9 @@ public sealed partial class GpuResourceManager : IAsyncDisposable
     private readonly List<GpuResourceBatch> batches = [];
     private readonly List<ManagedSubmission> submissions = [];
     private readonly List<(ResourceRecord Record, ManagedSubmission Submission)> retirements = [];
+    private readonly List<SubmissionLifetime> submissionLeases = [];
+    private sealed class SubmissionLifetime(ManagedSubmission submission, IDisposable lease)
+    { internal ManagedSubmission Submission { get; } = submission; internal IDisposable Lease { get; } = lease; internal Exception? CleanupError { get; set; } }
     private readonly Dictionary<(ResourceRecord, GpuTextureViewDescription), GpuViewRef> views = [];
     private readonly Dictionary<GpuSamplerDescription, GpuSamplerRef> samplers = [];
     private readonly Dictionary<BindingCacheKey, GpuBindingsRef> bindings = [];
@@ -50,8 +53,8 @@ public sealed partial class GpuResourceManager : IAsyncDisposable
     public GpuResourceBatch BeginBatch()
     { CheckOpen(); var batch = new GpuResourceBatch(this); batches.Add(batch); owners++; return batch; }
     public GpuBufferRange GetBufferRange(GpuBufferRef buffer, ulong offset = 0, ulong? length = null)
-    { Check(buffer); return new GpuBufferRange(buffer.Lease.Handle, offset, length).Normalize(buffer.Description); }
-    public GpuTextureHandle GetTextureHandle(GpuTextureRef texture) { Check(texture); return texture.Lease.Handle; }
+    { Check(buffer); return new GpuBufferRange(buffer.Handle, offset, length).Normalize(buffer.Description); }
+    public GpuTextureHandle GetTextureHandle(GpuTextureRef texture) { Check(texture); return texture.Handle; }
     public GpuTextureView GetTextureView(GpuViewRef view) { Check(view); return view.View; }
     public GpuBindingsHandle GetBindingsHandle(GpuBindingsRef resource) { Check(resource); return resource.Handle; }
     internal GpuBufferRef CreateBuffer(GpuBufferDescription description)
@@ -86,10 +89,10 @@ public sealed partial class GpuResourceManager : IAsyncDisposable
         if (views.TryGetValue(key, out GpuViewRef? existing)) { return existing; }
         bool isDefault = description == default(GpuTextureViewDescription).Normalize(texture.Description);
         var record = isDefault ? textureRecord : new ResourceRecord(this);
-        var reference = new GpuViewRef(record, new(texture.Lease.Handle, description));
+        var reference = new GpuViewRef(record, new(texture.Handle, description));
         if (!isDefault) { Register(record, reference, [textureRecord]); }
         views.Add(key, reference);
-        record.RemoveCache = () => views.Remove(key);
+        record.RemoveCache += () => views.Remove(key);
         return reference;
     }
     internal GpuSamplerRef GetSampler(GpuSamplerDescription description)
@@ -155,6 +158,25 @@ public sealed partial class GpuResourceManager : IAsyncDisposable
         if (!ReferenceEquals(submission.Manager, this)) { throw new ArgumentException("The submission belongs to another manager.", nameof(token)); }
         retirements.Add((record, submission));
     }
+    /// <summary>Transfers a lease until a submission from this manager has ended GPU use, including uncertain acceptance.</summary>
+    /// <remarks>Collection releases the lease; diagnostic failure alone is not evidence that GPU use ended.</remarks>
+    public void RetainUntilSubmissionEnds(GpuSubmissionToken token, IDisposable lease)
+    {
+        CheckOpen(); ArgumentNullException.ThrowIfNull(lease);
+        if (token.Submission is not { } submission || !ReferenceEquals(submission.Manager, this))
+        { throw new ArgumentException("A submission from this resource manager is required.", nameof(token)); }
+        lock (submissionLeases) { submissionLeases.Add(new(token.Submission!, lease)); }
+    }
+    /// <summary>Checks the provenance and successful queue acceptance of an observation token without exporting signal authority.</summary>
+    public void RequireAcceptedSubmission(GpuSubmissionToken token)
+    {
+        CheckOpen();
+        if (token.Submission is not { Accepted: true } submission || !ReferenceEquals(submission.Manager, this))
+        { throw new ArgumentException("An accepted submission from this resource manager is required.", nameof(token)); }
+    }
+    /// <summary>Whether this manager issued the token after successful queue acceptance.</summary>
+    public bool OwnsSubmission(GpuSubmissionToken token)
+        => token.Submission is { Accepted: true } submission && ReferenceEquals(submission.Manager, this);
     /// <summary>Reclaims only explicitly released ownership whose GPU uses are known to have ended. Does not block.</summary>
     public void Collect()
     {
@@ -169,6 +191,20 @@ public sealed partial class GpuResourceManager : IAsyncDisposable
         {
             if (!retirements[index].Submission.Ended) { continue; }
             retirements[index].Record.Holds--; retirements.RemoveAt(index);
+        }
+        SubmissionLifetime[] lifetimeSnapshot;
+        lock (submissionLeases) { lifetimeSnapshot = submissionLeases.ToArray(); }
+        foreach (SubmissionLifetime lifetime in lifetimeSnapshot)
+        {
+            if (lifetime.CleanupError is { } previousError) { errors.Add(previousError); continue; }
+            try
+            {
+                if (!lifetime.Submission.Poll()) { continue; }
+                try { lifetime.Lease.Dispose(); }
+                catch (Exception error) { lifetime.CleanupError = error; throw; }
+                lock (submissionLeases) { submissionLeases.Remove(lifetime); }
+            }
+            catch (Exception error) { errors.Add(error); }
         }
         foreach (GpuResourceBatch batch in batches)
         {
@@ -235,7 +271,7 @@ public sealed partial class GpuResourceManager : IAsyncDisposable
         if (owners != 0) { throw new InvalidOperationException("Dispose scopes, pins, uses and batches before disposing their manager."); }
         ending = true;
         await WaitIdleAsync();
-        if (records.Count != 0 || retirements.Count != 0 || batches.Count != 0)
+        if (records.Count != 0 || retirements.Count != 0 || batches.Count != 0 || submissionLeases.Count != 0)
         { throw new InvalidOperationException("Uncertain resource use or failed cleanup still retains manager ownership."); }
         // Idle pools contain only known-ended resources. Backend destruction is never used as completion evidence.
         var errors = new List<Exception>();

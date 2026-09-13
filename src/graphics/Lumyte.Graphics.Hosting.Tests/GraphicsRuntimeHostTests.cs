@@ -7,6 +7,121 @@ namespace Lumyte.Graphics.Hosting.Tests;
 
 public sealed class GraphicsRuntimeHostTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitShutdownRetriesRemainingOwnershipAfterCleanupFails(bool retryWithDispose)
+    {
+        var events = new List<string>();
+        var attempts = 0;
+        var failure = new InvalidOperationException("runtime cleanup failed");
+        var runtime = new TestRuntime(() =>
+        {
+            events.Add($"runtime {++attempts}");
+            if (attempts == 1) { throw failure; }
+        });
+        var provider = new TestProvider("test", runtime);
+        var connection = new TestPresentationConnection(() => events.Add("presentation"));
+        IHost host = BuildHost(new(provider, services => services.GetRequiredService<ScopedDependency>()), services =>
+        {
+            services.AddScoped(_ => new ScopedDependency(() => events.Add("dependency")));
+            services.AddScoped<IGpuGraphicsPresentationFactory>(_ => new TestPresentationFactory(connection));
+        });
+        await using var lifetime = (IAsyncDisposable)host;
+        await host.StartAsync();
+
+        var observed = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StopAsync());
+        Assert.Same(failure, observed);
+        Assert.Equal(["presentation", "runtime 1"], events);
+        if (retryWithDispose) { await lifetime.DisposeAsync(); }
+        else { await host.StopAsync(); }
+
+        Assert.Equal(["presentation", "runtime 1", "runtime 2", "dependency"], events);
+    }
+
+    [Fact]
+    public async Task ConcurrentShutdownObserversShareTheRunningCleanup()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waitCount = 0;
+        var disposalCount = 0;
+        var runtime = new TestRuntime(() => disposalCount++)
+        {
+            WaitIdle = () =>
+            {
+                Interlocked.Increment(ref waitCount);
+                entered.TrySetResult();
+                return new(release.Task);
+            }
+        };
+        using IHost host = BuildHost(new(new TestProvider("test", runtime)));
+        await host.StartAsync();
+
+        Task first = host.StopAsync();
+        await entered.Task;
+        Task second = host.StopAsync();
+        release.SetResult();
+        await Task.WhenAll(first, second);
+
+        Assert.Equal((1, 1), (waitCount, disposalCount));
+    }
+
+    [Fact]
+    public async Task ExplicitSelectionNeverPreparesUnselectedProviders()
+    {
+        var selected = new TestProvider("selected");
+        var unselected = new TestProvider("unselected");
+        using IHost host = new HostBuilder().ConfigureServices(services =>
+            services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = "selected" })
+                .AddProvider(new TestDefinition(unselected, _ => throw new InvalidOperationException("Unselected preparation ran.")))
+                .AddProvider(new TestDefinition(selected))).Build();
+
+        await host.StartAsync();
+
+        Assert.Same(selected.Runtime, (await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task IdenticalProviderDefinitionIsRegisteredOnce()
+    {
+        var provider = new TestProvider("test");
+        var definition = new TestDefinition(provider);
+        using IHost host = new HostBuilder().ConfigureServices(services =>
+            services.AddLumyteGraphics().AddProvider(definition).AddProvider(definition)).Build();
+
+        await host.StartAsync();
+
+        Assert.Equal(1, provider.CreationCount);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public void ConflictingProviderDefinitionIsRejectedBeforePreparation()
+    {
+        var services = new ServiceCollection();
+        LumyteGraphicsBuilder builder = services.AddLumyteGraphics().AddProvider(new TestDefinition(new("same")));
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() => builder.AddProvider(new TestDefinition(new("same"))));
+
+        Assert.Equal("definition", error.ParamName);
+        Assert.Contains("different definition", error.Message);
+    }
+
+    [Fact]
+    public async Task InvalidCacheCapacityFailsBeforeGpuPreparation()
+    {
+        var provider = new TestProvider("test");
+        using IHost host = new HostBuilder().ConfigureServices(services =>
+            services.AddLumyteGraphics(options => options.PlanCacheMaximumEntries = 0).AddProvider(new TestDefinition(provider))).Build();
+
+        OptionsValidationException error = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+
+        Assert.Contains("PlanCacheMaximumEntries", error.Message);
+        Assert.Equal(0, provider.CreationCount);
+    }
+
     [Fact]
     public async Task RegistrationLeavesRuntimeCreationToHostStartup()
     {
@@ -225,6 +340,7 @@ public sealed class GraphicsRuntimeHostTests
 
     private sealed class TestDefinition(TestProvider provider, Action<IServiceProvider>? prepare = null) : IGpuRenderProviderDefinition
     {
+        public string Id => provider.Id;
         public ValueTask<IGpuRenderProvider> CreateAsync(IServiceProvider services, CancellationToken cancellationToken)
         {
             prepare?.Invoke(services);
@@ -262,12 +378,13 @@ public sealed class GraphicsRuntimeHostTests
 
     private sealed class TestRuntime(Action? onDispose = null) : IGpuRenderRuntime
     {
+        public Func<ValueTask>? WaitIdle { get; init; }
         public Guid Id { get; } = Guid.NewGuid();
         public IGpuGraphResources Resources => throw new NotSupportedException();
         public ValueTask<GpuRenderGraphExecution> SubmitAsync(GpuRenderGraphPlan plan, GpuRenderGraphBindings? bindings = null,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public void StopAccepting() { }
-        public ValueTask WaitIdleAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask WaitIdleAsync(CancellationToken cancellationToken = default) => WaitIdle?.Invoke() ?? ValueTask.CompletedTask;
         public ValueTask DisposeAsync()
         {
             onDispose?.Invoke();

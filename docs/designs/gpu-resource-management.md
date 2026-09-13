@@ -209,4 +209,4 @@ consumer は準備済み data を渡し、shader の選択やロード、系統�
 - [Dispose 後の memory cost 減算](E:/Lumyte/src/resources/Lumyte.Resources/ResourceRecord.cs:95)
 - [Loader の実行先・計測契約](E:/Lumyte/src/resources/Lumyte.Resources/IResourceLoader.cs:6)
 
-製品コードには共通の機能 pass 契約と二系統の本体、RenderGraph provider、二系統の GPU 管理ライブラリ、準備済み model data の GPU package 化と二系統の uploader は未実装である。既存の資産ライブラリが接続に使えることと、GPU 管理機能の完成を区別する。
+共通の機能 pass 契約、Clear／Copy／Output の二系統の本体、RenderGraph provider と二系統の GPU 管理ライブラリは実装済みである。RenderGraph は内容世代の保持・失効、外部資源の import、実行中の所有と回収を管理する。準備済み model data の GPU package 化と専用 uploader、ここで提案した tracing GC／予算管理は後続であり、基盤の完成と区別する。現在の検証範囲は [実装進捗](graphics-implementation-progress.md) を参照する。

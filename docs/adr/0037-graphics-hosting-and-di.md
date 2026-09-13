@@ -64,7 +64,8 @@ AddLumyteGraphics の繰返しで別の既定 session や hosted service を追�
 | --- | --- |
 | `AddNativeProvider(id, createBackend)` | Native の backend factory を DI と接続して登録する。callback は IServiceProvider、GpuRenderRuntimeOptions、CancellationToken を受け、所有を移譲する INativeGpuBackend を ValueTask で返す |
 | `AddPortableProvider(id, createBackend)` | 同じ構成で IPortableGpuBackend を返す Portable 用の登録 |
-| `AddProvider(definition)`／`IGpuRenderProviderDefinition.CreateAsync(services, cancellationToken)` | integration が明示的な provider の非同期準備定義を登録し、runtime 単位の CPU scope から構成する。描画 library は呼ばない |
+| `AddProvider(definition)`／`IGpuRenderProviderDefinition.Id` | 不変の provider ID と準備定義を登録する。同一定義をまとめ、同じ ID の競合定義は準備前に拒否する |
+| `IGpuRenderProviderDefinition.CreateAsync(services, cancellationToken)` | 選択された provider だけを runtime 単位の CPU scope から非同期準備する。返した provider の ID は定義の ID と一致させる。描画 library は呼ばない |
 | `AddNativePasses(configure)`／`AddPortablePasses(configure)` | 段階 0 の構成入口。起動時の `(IServiceProvider, 専用 registry)` callback で CPU 依存を解決し、専用の型付き factory をまとめて登録する |
 | `AddNativePass<TRequest, TResult>(contract, prepareFactory)` | 共通契約と Native の非同期準備 callback を登録する |
 | `AddPortablePass<TRequest, TResult>(contract, prepareFactory)` | 共通契約と Portable の非同期準備 callback を登録する |
@@ -75,7 +76,7 @@ AddLumyteGraphics の繰返しで別の既定 session や hosted service を追�
 
 IServiceProvider を使うのは Hosting の composition callback に限る。prepareFactory は Resources のサービス等から不変の package を受け取り、それを capture した型付き pass factory を返す。ここで file decoder や新しい Graphics loader を定義しない。通常の pass constructor は解決済みの依存を引数で受け、BuildAsync や recording callback で DI を検索しない。
 
-標準 feature extension もこの登録へ展開する。共通機能の ID／版と型は登録時に分かるため、実装の存在確認に GPU や shader のロードは必要ない。各候補 provider の非同期準備は選択処理の中で行い、候補の失敗では生成済みの部分を回収する。明示選択した provider が失敗したときは、別系統へ黙って切り替えない。Auto の候補順・適合判断は共通 registry の規約に従う。
+標準 feature extension もこの登録へ展開する。型付き定義の共通機能 ID／版と型は登録時に分かり、同一定義の重複と競合を shader 準備より前に扱える。opaque な AddNativePasses／AddPortablePasses callback 内の登録と RequiredPasses の最終照合は、選択 provider の registry 構成後、backend 生成前に行う。provider の ID を選んでから、その provider の非同期準備だけを実行し、失敗では生成済みの部分を回収する。Auto は共通 registry と同じく登録順の先頭を選ぶ。明示選択・Auto とも起動失敗後に別系統へ暗黙に切り替えない。
 
 ### DI から利用するサービス
 
@@ -98,8 +99,8 @@ presentation factory も、未起動の別 hosted service が window を作る�
 
 1. Host を Build する前に services、Options と型付き登録定義を集める。
 2. 初回 StartAsync／GetAsync で設定と登録定義の不変 snapshot を確定する。
-3. provider の候補ごとに必要な runtime 単位の DI scope を作り、typed CPU 依存と shader 準備を接続する。
-4. 確定済み定義から GpuRenderProviderRegistry と各系統の pass registry を構成し、選択する runtime を非同期に生成する。
+3. 不変 ID で provider を選択し、その runtime 単位の DI scope を作って typed CPU 依存と shader 準備を接続する。未選択 provider の準備や scope は作らない。
+4. 選択済み定義から GpuRenderProviderRegistry と当該系統の pass registry を構成し、runtime を非同期に生成する。
 5. 必要なら presentation 接続と render context を生成し、全成功後に session を公開する。
 
 IServiceCollection の変更は Host.Build 前で完了する。生成後の provider／pass registry は不変の登録集合として使う。GetAsync や frame の開始を registration callback の再実行契機にしない。runtime の設定に IOptionsMonitor の変更をそのまま流して、実行中に device／provider／shader ABI を差し替えることはしない。フレームの camera や値の変更は ADR 0030 の bindings に渡す。
@@ -142,6 +143,8 @@ StartAsync 中に失敗した場合は、公開前の部分生成物を逆順に
 session 公開後に別のサービスの StartAsync が失敗した場合は、Host の所有者が DI の破棄より前に StopAsync を呼び、consumer の保持も返却する。consumer の StopAsync は未起動・途中起動・繰返しの終了にも対応し、開始済み操作の終了と保持返却を必ず行う。起動時の取消済み token を cleanup の token に使い回さない。標準 RunAsync は StartAsync の失敗時には StopAsync を経ず Host を破棄するため、この所有契約の例では StartAsync と失敗時の StopAsync を明示する。Graphics owner が外部所有の scope／pin の返却を代行する設計にはしない。[Host の実行 helper](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/Microsoft.Extensions.Hosting.Abstractions/src/HostingAbstractionsHostExtensions.cs)
 
 shutdown の timeout や token の取消しは、GPU／表示側の完了を意味しない。未完了資源を pool に返したり借用の window を先に破棄したりせず、所有者の最終非同期 cleanup または device loss の終了処理へ引き継ぐ。異常を成功完了へ変換しない。停止順序をサービス登録順だけに依存させない。
+
+進行中の停止処理は複数の呼出し元で共有する。cleanup が失敗して残存所有がある場合、次の明示 StopAsync／DisposeAsync で残りの終了を再試行する。完了済みの所有をもう一度解放せず、最初の呼出し元へ通知した失敗を隠さない。
 
 ## コード配置
 
@@ -265,8 +268,8 @@ Generic Host の登録 extension、Options、明示的な module／factory、非
 
 段階 0 として四つの Hosting package、LumyteGraphicsBuilder、GpuGraphicsOptions.Runtime、Configure／BindConfiguration、非所有 session accessor、UsePresentation、非同期初期化／rollback、runtime 単位の DI scope、IHostedLifecycleService の停止と終了を実装した。StartAsync と GetAsync は先に呼ばれた側から同じ初期化を共有する。停止開始で runtime と presentation acquire の新規受理を閉じ、consumer の StopAsync 後の StoppedAsync で GPU、presentation connection、runtime、CPU scope を順に終了する。
 
-実装済みの個別登録は AddNativeProvider／AddPortableProvider の専用 backend factory と任意の registry 構成 callback、AddNativePasses／AddPortablePasses の `(IServiceProvider, 専用 registry)` callback である。callback は起動時に一度だけ scope 内の CPU 依存を解決する。AddImageProcessing は段階 0 の Clear／Copy／Output を両系統へ登録し、この三機能を RequiredPasses に加える。繰返しの標準機能登録は一度にまとめる。
+個別登録には AddNativeProvider／AddPortableProvider の `(IServiceProvider, GpuRenderRuntimeOptions, CancellationToken)` backend factory、任意の registry 構成 callback、AddNativePasses／AddPortablePasses の一括登録、AddNativePass／AddPortablePass の型付き非同期 factory 準備を実装した。callback は選択した provider で一度だけ実行し、同じ runtime の CPU scope を使う。型付き同一定義の重複は一つへまとめ、競合定義は準備前に拒否する。PlanCacheMaximumEntries の Options 検査と render context への接続も実装した。AddImageProcessing は Clear／Copy／Output を両系統へ登録し、この三機能を RequiredPasses に加える。
 
-AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、個別 AddNativePass／AddPortablePass の非同期 package 準備、PlanCacheMaximumEntries、Model／2D と残る画像機能の登録は未実装である。platform 固有の window／canvas factory と thread affinity、実 device loss の試験も後続とする。UsePresentation の所有接続と headless 接続の確認を、OS の初回表示や resize 対応の完了とは扱わない。
+AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、Model／2D と残る画像機能の登録は未実装である。platform 固有の window／canvas factory と thread affinity、実 device loss の試験も後続とする。UsePresentation の所有接続と headless 接続の確認を、OS の初回表示や resize 対応の完了とは扱わない。
 
 最初の統合では一つの Host に一つの既定 session を提供する。複数の named session、実行中の provider 差替え、GPU device の透過的な再生成、DI container の hot reload は未採用とする。複数 runtime を明示所有する低層の利用は引き続き可能であり、frame ごとのスコープや新しい汎用 DI framework を追加する理由にはしない。

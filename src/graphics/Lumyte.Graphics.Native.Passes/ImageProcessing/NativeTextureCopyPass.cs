@@ -17,6 +17,7 @@ public sealed class NativeTextureCopyPass : INativeRenderPass<TextureCopyPassReq
             GpuFormat.Depth24PlusStencil8 => [NativeGpuTextureAspect.Depth, NativeGpuTextureAspect.Stencil],
             _ => [NativeGpuTextureAspect.Color],
         };
+        List<CopyRegion> regions = [];
         for (uint mip = 0; mip < description.MipCount; mip++)
         {
             foreach (NativeGpuTextureAspect aspect in aspects)
@@ -26,21 +27,30 @@ public sealed class NativeTextureCopyPass : INativeRenderPass<TextureCopyPassReq
                 uint bytes = aspect == NativeGpuTextureAspect.Stencil ? 1u : description.Format switch
                 { GpuFormat.R8Unorm => 1, GpuFormat.Rg8Unorm => 2, _ => 4 };
                 ulong rowPitch = checked((width * bytes + 255ul) / 256 * 256), imagePitch = checked(rowPitch * height);
-                NativePassBuffer scratch = context.CreateBuffer("texture-copy", new(checked(imagePitch * Math.Max(depth, description.LayerCount)), Alignment: 512));
+                NativePassBuffer scratch = context.CreateBuffer($"texture-copy/{mip}/{aspect}", new(checked(imagePitch * Math.Max(depth, description.LayerCount)), Alignment: 512));
                 NativeGpuTextureCopyFootprint footprint = new(mip, aspect, 0, description.LayerCount, default,
                     new(width, height, depth), rowPitch, imagePitch);
-                context.AddPass("copy-texture", (Source: source, Target: target, Scratch: scratch, Footprint: footprint), static (record, state) =>
-                {
-                    NativeGpuRange range = record.GetBufferRange(state.Scratch);
-                    record.Commands.CopyTextureToMemory(record.GetTexture(state.Source), range, state.Footprint);
-                    record.Commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Copy, GpuAccess.CopyRead);
-                    record.Commands.CopyMemoryToTexture(range, record.GetTexture(state.Target), state.Footprint);
-                }).Read(source, new(GpuStage.Copy, GpuAccess.CopyRead))
-                    .Write(target, new(GpuStage.Copy, GpuAccess.CopyWrite))
-                    .ReadWrite(scratch, new(GpuStage.Copy, GpuAccess.CopyRead | GpuAccess.CopyWrite));
+                regions.Add(new(scratch, footprint));
             }
+        }
+        CopyRegion[] snapshot = regions.ToArray();
+        var read = context.AddPass("copy-to-memory", (Source: source, Regions: snapshot), static (record, state) =>
+        {
+            foreach (var region in state.Regions)
+            { record.Commands.CopyTextureToMemory(record.GetTexture(state.Source), record.GetBufferRange(region.Buffer), region.Footprint); }
+        }).Read(source, new(GpuStage.Copy, GpuAccess.CopyRead));
+        var write = context.AddPass("copy-to-texture", (Target: target, Regions: snapshot), static (record, state) =>
+        {
+            foreach (var region in state.Regions)
+            { record.Commands.CopyMemoryToTexture(record.GetBufferRange(region.Buffer), record.GetTexture(state.Target), region.Footprint); }
+        }).Write(target, new(GpuStage.Copy, GpuAccess.CopyWrite));
+        foreach (var region in snapshot)
+        {
+            read.Write(region.Buffer, new(GpuStage.Copy, GpuAccess.CopyWrite));
+            write.Read(region.Buffer, new(GpuStage.Copy, GpuAccess.CopyRead));
         }
         return ValueTask.CompletedTask;
     }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    private readonly record struct CopyRegion(NativePassBuffer Buffer, NativeGpuTextureCopyFootprint Footprint);
 }

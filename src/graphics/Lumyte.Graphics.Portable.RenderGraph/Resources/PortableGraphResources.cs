@@ -11,11 +11,65 @@ public sealed class PortableGraphResources : IGpuGraphResources
     private readonly ConditionalWeakTable<GpuResourceRef, GpuGraphResourceRef> wrappers = new();
     private readonly ConditionalWeakTable<GpuGraphPackageRef, GpuResourceRef[]> packages = new();
     private readonly HashSet<IDisposable> owners = [];
+    private readonly ConditionalWeakTable<GpuGraphResourceRef, ExternalDependency> externalDependencies = new();
     internal PortableGraphResources(PortableRenderRuntime runtime, GpuResourceManager manager) { this.runtime = runtime; Manager = manager; }
     /// <summary>Borrowed provider extension for integrations that deliberately use the Portable API.</summary>
     public GpuResourceManager Manager { get; }
     public GpuTextureRef ResolveTexture(GpuGraphTextureRef reference) => (GpuTextureRef)Resolve(reference);
     public GpuBufferRef ResolveBuffer(GpuGraphBufferRef reference) => (GpuBufferRef)Resolve(reference);
+    /// <summary>Exposes an explicitly owned Portable resource through the common facade without transferring its ownership.</summary>
+    public GpuGraphTextureRef ImportTexture(GpuTextureRef reference)
+    { lock (runtime.Gate) { runtime.CheckOpen(); Manager.GetTextureHandle(reference); return Wrap(reference); } }
+    /// <summary>Exposes an explicitly owned Portable resource through the common facade without transferring its ownership.</summary>
+    public GpuGraphBufferRef ImportBuffer(GpuBufferRef reference)
+    { lock (runtime.Gate) { runtime.CheckOpen(); Manager.GetBufferRange(reference); return Wrap(reference); } }
+    /// <summary>Imports a raw backend texture for host/presentation integration, transferring its lease on success.</summary>
+    public PortableGraphResourceImport<GpuGraphTextureRef> ImportTexture(GpuTextureHandle handle, GpuTextureDescription description,
+        IDisposable lease, GpuSubmissionToken? precedingSubmission = null)
+    {
+        lock (runtime.Gate)
+        {
+            runtime.CheckOpen(); if (precedingSubmission is { } token) { Manager.RequireAcceptedSubmission(token); }
+            GpuResourceScope scope = Manager.CreateScope();
+            try
+            {
+                GpuTextureRef resource = scope.ImportTexture(handle, description, lease);
+                GpuGraphTextureRef reference = Wrap(resource); TrackPredecessor(reference, resource, precedingSubmission);
+                var owner = new PortableGraphResourceImport<GpuGraphTextureRef>(reference, value => ReleaseImport(value, scope));
+                owners.Add(owner); return owner;
+            }
+            catch { scope.Dispose(); throw; }
+        }
+    }
+    /// <summary>Imports a raw backend buffer for host integration, transferring its lease on success.</summary>
+    public PortableGraphResourceImport<GpuGraphBufferRef> ImportBuffer(GpuBufferHandle handle, GpuBufferDescription description,
+        IDisposable lease, GpuSubmissionToken? precedingSubmission = null)
+    {
+        lock (runtime.Gate)
+        {
+            runtime.CheckOpen(); if (precedingSubmission is { } token) { Manager.RequireAcceptedSubmission(token); }
+            GpuResourceScope scope = Manager.CreateScope();
+            try
+            {
+                GpuBufferRef resource = scope.ImportBuffer(handle, description, lease);
+                GpuGraphBufferRef reference = Wrap(resource); TrackPredecessor(reference, resource, precedingSubmission);
+                var owner = new PortableGraphResourceImport<GpuGraphBufferRef>(reference, value => ReleaseImport(value, scope));
+                owners.Add(owner); return owner;
+            }
+            catch { scope.Dispose(); throw; }
+        }
+    }
+    private void TrackPredecessor(GpuGraphResourceRef reference, GpuResourceRef resource, GpuSubmissionToken? preceding)
+    {
+        if (preceding is not { } token) { return; }
+        Manager.RetainUntilSubmissionEnds(token, Manager.AcquireUse(resource));
+        externalDependencies.Add(reference, new(token.WaitAsync().AsTask()));
+    }
+    internal Task? GetExternalDependency(GpuGraphResourceRef reference)
+        => externalDependencies.TryGetValue(reference, out ExternalDependency? value) ? value.Result : null;
+    private void ReleaseImport(IDisposable owner, GpuResourceScope scope)
+    { lock (runtime.Gate) { scope.Dispose(); owners.Remove(owner); } }
+    private sealed record ExternalDependency(Task Result);
     internal GpuResourceRef Resolve(GpuGraphResourceRef reference)
     {
         ArgumentNullException.ThrowIfNull(reference);
@@ -77,8 +131,8 @@ public sealed class PortableGraphResources : IGpuGraphResources
         return packages.TryGetValue(package, out GpuResourceRef[]? resources) ? resources
             : throw new ArgumentException("The package does not belong to this resource facade.", nameof(reference));
     }
-    public void Collect() { lock (runtime.Gate) { runtime.CheckOpen(); Manager.Collect(); } }
-    public void Trim() { lock (runtime.Gate) { runtime.CheckOpen(); Manager.Trim(); } }
+    public void Collect() { lock (runtime.Gate) { runtime.CheckOpen(); runtime.Collect(); } }
+    public void Trim() { lock (runtime.Gate) { runtime.CheckOpen(); runtime.Collect(); Manager.Trim(); } }
     internal void RequireOwnersReturned()
     {
         if (owners.Count != 0) { throw new InvalidOperationException("Dispose resource scopes, pins and uses before disposing their runtime."); }

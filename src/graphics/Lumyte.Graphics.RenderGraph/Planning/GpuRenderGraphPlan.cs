@@ -14,11 +14,25 @@ public sealed class GpuRenderGraphPlan
         Inputs = Array.AsReadOnly(inputs);
         Exports = exports.ToFrozenSet();
         Outputs = outputs.ToFrozenSet();
+        var lifetimes = new Dictionary<GpuRenderGraphResource, (int First, int Last)>();
+        for (var index = 0; index < passes.Length; index++)
+        {
+            foreach (var use in passes[index].Uses)
+            {
+                lifetimes[use.Resource] = lifetimes.TryGetValue(use.Resource, out var previous)
+                    ? (previous.First, index) : (index, index);
+            }
+        }
+        ResourceLifetimes = Array.AsReadOnly(resources.Select(resource => lifetimes.TryGetValue(resource, out var range)
+            ? new GpuRenderGraphResourceLifetime(resource, range.First, range.Last)
+            : new GpuRenderGraphResourceLifetime(resource, -1, -1)).ToArray());
     }
     public IReadOnlyList<GpuRenderGraphPass> Passes { get; }
     public IReadOnlyList<GpuRenderGraphResource> Resources { get; }
     public IReadOnlySet<GpuRenderGraphResource> Exports { get; }
     public IReadOnlySet<GpuRenderGraphResource> Outputs { get; }
+    /// <summary>Indices into Passes; -1 denotes an imported output with no feature use. GPU lifetimes are planned by the provider.</summary>
+    public IReadOnlyList<GpuRenderGraphResourceLifetime> ResourceLifetimes { get; }
     public GpuRenderGraphBindingsBuilder CreateBindings() => new(this);
     internal long NextBindingsGeneration() => Interlocked.Increment(ref nextBindingsGeneration);
     public ValueTask<GpuRenderGraphExecution> SubmitAsync(IGpuRenderRuntime runtime,
@@ -55,3 +69,5 @@ public sealed class GpuRenderGraphPlan
         return bindings;
     }
 }
+
+public readonly record struct GpuRenderGraphResourceLifetime(GpuRenderGraphResource Resource, int FirstUse, int LastUse);

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Graphics.Portable.RenderGraph.Generators/Lumyte.Graphics.Portable.RenderGraph.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <ProjectReference Include="../Lumyte.Graphics.Portable.Resources.Generators/Lumyte.Graphics.Portable.Resources.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <ProjectReference Include="../Lumyte.Graphics.Portable.RenderGraph/Lumyte.Graphics.Portable.RenderGraph.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Compile Include="../Lumyte.Graphics.Resources.Generators.Shared/GeneratorCompilation.cs" Link="GeneratorCompilation.cs" />
+    <Compile Include="../Lumyte.Graphics.Portable.Resources.Tests/Unit/Management/ManagerTestBackend.cs" Link="ManagerTestBackend.cs" />
+    <PortablePassBindingInput Include="Consumer.portable.resources.xml" />
+    <AdditionalFiles Include="Managed.portable.resources.xml" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <Import Project="../Lumyte.Graphics.Portable.RenderGraph.Generators/buildTransitive/Lumyte.Graphics.Portable.RenderGraph.Generators.targets" />
+</Project>

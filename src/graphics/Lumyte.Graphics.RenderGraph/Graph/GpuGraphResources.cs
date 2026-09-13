@@ -9,19 +9,22 @@ public sealed record GpuGraphTextureDescription(
 
 public sealed record GpuGraphBufferDescription(ulong Size);
 
+// Declarations retain membership, without retaining the mutable builder and its culled content.
+internal sealed class GpuRenderGraphIdentity;
+
 /// <summary>A CPU declaration, never a physical GPU handle.</summary>
 public abstract class GpuRenderGraphResource
 {
-    private protected GpuRenderGraphResource(GpuRenderGraph graph, string name,
+    private protected GpuRenderGraphResource(GpuRenderGraphIdentity graphIdentity, string name,
         GpuGraphResourceRef? importedReference = null, bool isInput = false)
     {
-        Graph = graph;
+        GraphIdentity = graphIdentity;
         Name = name;
         ImportedReference = importedReference;
         IsInput = isInput;
     }
 
-    internal GpuRenderGraph Graph { get; }
+    internal GpuRenderGraphIdentity GraphIdentity { get; }
     public string Name { get; }
     public GpuGraphResourceRef? ImportedReference { get; }
     public bool IsInput { get; }
@@ -29,25 +32,25 @@ public abstract class GpuRenderGraphResource
 
 public sealed class GpuRenderGraphTexture : GpuRenderGraphResource
 {
-    internal GpuRenderGraphTexture(GpuRenderGraph graph, string name, GpuGraphTextureDescription description,
+    internal GpuRenderGraphTexture(GpuRenderGraphIdentity graphIdentity, string name, GpuGraphTextureDescription description,
         GpuGraphTextureRef? importedReference = null, bool isInput = false)
-        : base(graph, name, importedReference, isInput) => Description = description;
+        : base(graphIdentity, name, importedReference, isInput) => Description = description;
 
     public GpuGraphTextureDescription Description { get; }
 }
 
 public sealed class GpuRenderGraphBuffer : GpuRenderGraphResource
 {
-    internal GpuRenderGraphBuffer(GpuRenderGraph graph, string name, GpuGraphBufferDescription description,
+    internal GpuRenderGraphBuffer(GpuRenderGraphIdentity graphIdentity, string name, GpuGraphBufferDescription description,
         GpuGraphBufferRef? importedReference = null, bool isInput = false)
-        : base(graph, name, importedReference, isInput) => Description = description;
+        : base(graphIdentity, name, importedReference, isInput) => Description = description;
 
     public GpuGraphBufferDescription Description { get; }
 }
 
 public sealed class GpuRenderGraphDependency : GpuRenderGraphResource
 {
-    internal GpuRenderGraphDependency(GpuRenderGraph graph, string name) : base(graph, name) { }
+    internal GpuRenderGraphDependency(GpuRenderGraphIdentity graphIdentity, string name) : base(graphIdentity, name) { }
 }
 
 public sealed class GpuGraphTextureInput

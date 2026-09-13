@@ -16,6 +16,7 @@ public sealed partial class NativeGraphResources : IGpuGraphResources
     private bool closing;
     private readonly TaskCompletionSource drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public GpuResourceManager Manager { get; }
+    internal Action? DrainRetained;
     internal NativeGraphResources(Guid runtimeId, GpuResourceManager manager, object sync, SemaphoreSlim work)
     { this.runtimeId = runtimeId; Manager = manager; Sync = sync; Work = work; }
     public GpuGraphResourceScope CreateScope() { lock (Sync) { RequireOpen(); return new Scope(this, Manager.CreateScope()); } }
@@ -23,8 +24,8 @@ public sealed partial class NativeGraphResources : IGpuGraphResources
     { lock (Sync) { RequireOpen(); return new PinLease(this, Manager.Pin(Resolve(reference))); } }
     public IDisposable AcquireUse(GpuGraphResourceRef reference)
     { lock (Sync) { RequireOpen(); return new Lease(this, Manager.AcquireUse(Resolve(reference))); } }
-    public void Collect() { lock (Sync) { Manager.Collect(); } }
-    public void Trim() { lock (Sync) { Manager.Trim(); } }
+    public void Collect() { lock (Sync) { DrainRetained?.Invoke(); Manager.Collect(); DrainRetained?.Invoke(); Manager.Collect(); } }
+    public void Trim() { lock (Sync) { Collect(); Manager.Trim(); } }
     internal IDisposable BeginOperation()
     { lock (Sync) { RequireOpen(); activeOperations++; return new Operation(this); } }
     internal Task CloseAsync()

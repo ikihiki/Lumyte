@@ -12,6 +12,10 @@ namespace Lumyte.Graphics.Vulkan.Tests;
 public sealed class VulkanFeatureGraphTests
 {
     [VulkanNativeFact]
+    public Task ReusedPlanPreservesOverlappingOutputsWithTransientReuse()
+        => WithValidationAsync(() => NativeFeatureGraphConformance.ReusePlanAsync("vulkan", CreateBackend));
+
+    [VulkanNativeFact]
     public Task HostedConsumerClearsCopiesAndOutputsLinearPixels()
         => WithValidationAsync(() => NativeFeatureGraphConformance.RunAsync("vulkan", CreateBackend,
             GpuFormat.Rgba8Unorm, OutputEncoding.Linear, OutputAlphaMode.Opaque, new Vector4(0.25f, 0.5f, 0.75f, 1)));

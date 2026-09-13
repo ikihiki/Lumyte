@@ -2,6 +2,8 @@
   <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Hosting\Lumyte.Graphics.Hosting.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Native.Hosting\Lumyte.Graphics.Native.Hosting.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.Hosting\Lumyte.Graphics.Portable.Hosting.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">

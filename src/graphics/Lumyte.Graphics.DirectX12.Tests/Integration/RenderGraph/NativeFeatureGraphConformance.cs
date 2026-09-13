@@ -14,13 +14,51 @@ namespace Lumyte.Graphics.Tests;
 
 internal static class NativeFeatureGraphConformance
 {
+    internal static async Task ReusePlanAsync(string providerId, Func<INativeGpuBackend> factory)
+    {
+        using IHost host = new HostBuilder().ConfigureServices(services => services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = providerId })
+            .AddNativeProvider(providerId, (_, _, _) => new(factory())).AddImageProcessing()).Build();
+        await host.StartAsync();
+        var runtime = (NativeRenderRuntime)(await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
+        var red = new Vector4(1, 0, 0, 1);
+        var green = new Vector4(0, 1, 0, 1);
+        // The middle textures and copy scratch buffers have disjoint lifetimes and identical descriptions.
+        ImagePipelinePlan fixture = ImagePipelineConsumer.CreateExportPlan(new(4, 4, GpuFormat.Rgba8Unorm),
+            TextureClearValue.Color(red), OutputEncoding.Linear, OutputAlphaMode.Opaque, copyCount: 5);
+        var bindings = fixture.Plan.CreateBindings();
+        bindings.Set(fixture.ColorInput, TextureClearValue.Color(green));
+
+        using (var first = await runtime.SubmitAsync(fixture.Plan))
+        using (var second = await runtime.SubmitAsync(fixture.Plan, bindings.Build()))
+        {
+            await first.WaitForCompletionAsync();
+            await second.WaitForCompletionAsync();
+            await AssertOutputAsync(first, red);
+            await AssertOutputAsync(second, green);
+        }
+
+        await runtime.WaitIdleAsync(); runtime.Resources.Collect();
+        Assert.Equal(0, runtime.NativeResources.Manager.Statistics.ResourceCount);
+        await host.StopAsync();
+
+        async Task AssertOutputAsync(GpuRenderGraphExecution execution, Vector4 expected)
+        {
+            byte[] pixels = await runtime.NativeResources.Manager.ReadTextureAsync(
+                runtime.NativeResources.GetNativeTexture(execution.GetExportedTexture(fixture.Output)),
+                new(0, NativeGpuTextureAspect.Color, 0, 1, default, new(4, 4, 1), 256, 1024), 4, 16,
+                GpuTextureLayout.General, GpuTextureLayout.General,
+                synchronization: new(GpuStage.All, GpuAccess.ColorWrite | GpuAccess.CopyWrite | GpuAccess.ShaderWrite));
+            AssertPixels(pixels, Expected(expected, OutputEncoding.Linear, OutputAlphaMode.Opaque));
+        }
+    }
+
     internal static async Task PresentAsync(string providerId, Func<INativeGpuBackend> factory)
     {
         using IHost host = new HostBuilder().ConfigureServices(services =>
         {
             services.AddSingleton<PresentationProbe>();
             services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = providerId })
-                .AddNativeProvider(providerId, (_, _) => new(factory())).AddImageProcessing().UsePresentation<PresentationFactory>();
+                .AddNativeProvider(providerId, (_, _, _) => new(factory())).AddImageProcessing().UsePresentation<PresentationFactory>();
         }).Build();
         await host.StartAsync();
         GpuGraphicsSession session = await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync();
@@ -47,7 +85,7 @@ internal static class NativeFeatureGraphConformance
         GpuFormat format, OutputEncoding encoding, OutputAlphaMode alphaMode, Vector4 color)
     {
         using IHost host = new HostBuilder().ConfigureServices(services => services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = providerId })
-            .AddNativeProvider(providerId, (_, _) => new(factory())).AddImageProcessing()).Build();
+            .AddNativeProvider(providerId, (_, _, _) => new(factory())).AddImageProcessing()).Build();
         await host.StartAsync();
         IGpuRenderRuntime runtime = (await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
         var native = (NativeRenderRuntime)runtime;

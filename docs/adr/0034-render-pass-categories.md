@@ -207,12 +207,12 @@ Slang 共有は、色変換など小さい計算 module と各 target の数値 
 
 ## 採用範囲と未実装事項
 
-固定構成と型付きフレーム値を分けた plan 再利用を採用する。モデルと 2D の保持集合、標準画像処理の小さい入力値の差替え、provider 内の cache は未実装であり、60 FPS の実測結果を示さない。
+固定構成と型付きフレーム値を分けた plan 再利用を採用する。小さい入力値の差替え、未変更 snapshot の共有、provider 内の template／準備 cache／内容世代を実装した。モデルと 2D の保持集合と各専用の部分更新は未実装であり、60 FPS の実測結果を示さない。
 
 五カテゴリと、Clear／Texture Copy／Blit／Blur／Composite／ToneMap／Output の標準機能、および独立したモデル・2D の機能群を目標として採用する。追加候補を実装済みまたは必須対応とは扱わない。
 
 段階 0 の Clear／Texture Copy／Output について共通 request／result／contract、両系統の本体、専用 Output shader と Hosting 登録を実装した。Output version 1 の範囲は同一 extent の 2D・1 mip・1 layer・1 sample として確認し、その範囲外を全画像初期化済みとして扱わない。Copy version 1 は単一 sample とする。
 
-Blit／Blur／Composite／ToneMap、`Rgba16Float` を含む後続機能の format、Model と新しい 2D は未実装である。同じ plan への Clear 値の差替えは可能だが、内部 template の差分最適化や 60 FPS の実測を意味しない。ここで定めた GPU 機能は旧 API への互換層ではない。
+Blit／Blur／Composite／ToneMap、`Rgba16Float` を含む後続機能の format、Model と新しい 2D は未実装である。同じ plan への Clear 値の差替え、内部 graph の計画 cache と内容世代の再利用は利用できる。複数フレームの実機適合は 60 FPS の性能測定とは区別する。ここで定めた GPU 機能は旧 API への互換層ではない。
 
 適合試験は同一 consumer binary で行い、Clear／Copy の内容、Blit の pixel center、Blur の境界と半径、Composite の順序・alpha、ToneMap と Output の色変換、ReadWrite、失敗時の保持を確認する。数値 filter の tolerance は参照 CPU 計算、出力 format と演算精度に基づいて fixture ごとに定め、bit 一致を前提にしない。

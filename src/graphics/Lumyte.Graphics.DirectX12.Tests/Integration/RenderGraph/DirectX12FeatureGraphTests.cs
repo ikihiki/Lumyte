@@ -9,6 +9,16 @@ namespace Lumyte.Graphics.DirectX12.Tests;
 [Trait("Category", "DirectX12Validation")]
 public sealed class DirectX12FeatureGraphTests
 {
+    [Fact]
+    public async Task ReusedPlanPreservesOverlappingOutputsWithTransientReuse()
+    {
+        using var validation = new DirectX12ValidationScope();
+
+        await NativeFeatureGraphConformance.ReusePlanAsync("dx12", validation.CreateBackend);
+
+        validation.AssertNoWarningsOrErrors();
+    }
+
     // Requires Windows Graphics Tools. Every case checks the native debug layer as well as pixels.
     [Fact]
     public async Task HostedConsumerClearsCopiesAndOutputsLinearPixels()

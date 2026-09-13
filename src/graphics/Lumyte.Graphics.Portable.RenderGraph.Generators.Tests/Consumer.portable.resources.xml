@@ -1,0 +1,5 @@
+<input namespace="Consumer.namespace" name="struct" group="0" abiHash="pass-consumer-abi">
+  <field name="writer" kind="Buffer" binding="5" />
+  <field name="event" kind="Texture" binding="2" />
+  <field name="sampler" kind="Sampler" binding="8" />
+</input>

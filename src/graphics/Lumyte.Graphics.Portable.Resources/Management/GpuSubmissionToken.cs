@@ -43,6 +43,7 @@ internal sealed class ManagedSubmission(GpuResourceManager manager, GpuFenceValu
     internal TaskCompletionSource Outcome { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal volatile bool OutcomeObserved;
     internal volatile bool Ended;
+    internal bool Accepted;
     internal bool Poll()
     {
         if (Ended) { return true; }

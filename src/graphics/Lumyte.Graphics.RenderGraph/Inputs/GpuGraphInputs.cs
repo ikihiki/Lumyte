@@ -4,18 +4,19 @@ namespace Lumyte.Graphics.RenderGraph;
 
 public abstract class GpuGraphInput
 {
-    private protected GpuGraphInput(GpuRenderGraph graph, string name, bool hasInitial, object? initial)
-    { Graph = graph; Name = name; HasInitial = hasInitial; Initial = initial; }
-    internal GpuRenderGraph Graph { get; }
+    private protected GpuGraphInput(GpuRenderGraphIdentity graphIdentity, string name, bool hasInitial, GpuInputSnapshot? initial)
+    { GraphIdentity = graphIdentity; Name = name; HasInitial = hasInitial; Initial = initial; }
+    internal GpuRenderGraphIdentity GraphIdentity { get; }
     internal bool HasInitial { get; }
-    internal object? Initial { get; }
+    internal GpuInputSnapshot? Initial { get; }
     public string Name { get; }
 }
 
 public sealed class GpuGraphInput<T> : GpuGraphInput
 {
-    internal GpuGraphInput(GpuRenderGraph graph, string name, IGpuGraphInputContract<T> contract, bool hasInitial, T? initial)
-        : base(graph, name, hasInitial, hasInitial ? contract.Snapshot(initial!) : null) => Contract = contract;
+    internal GpuGraphInput(GpuRenderGraphIdentity graphIdentity, string name, IGpuGraphInputContract<T> contract, bool hasInitial, T? initial)
+        : base(graphIdentity, name, hasInitial, hasInitial ? GpuInputSnapshot.Create(contract, contract.Snapshot(initial!)) : null)
+    { ArgumentNullException.ThrowIfNull(contract); Contract = contract; }
     internal IGpuGraphInputContract<T> Contract { get; }
 }
 
@@ -34,28 +35,28 @@ internal interface IGpuInputUse
 {
     object ValueIdentity { get; }
     GpuGraphInput? Input { get; }
-    void Retain(GpuRenderGraphPass pass, GpuRenderGraphBindings bindings, List<IGpuUploadData> data);
+    void Retain(GpuRenderGraphPass pass, GpuRenderGraphBindings bindings);
 }
 
-internal sealed class GpuInputUse<T>(GpuGraphValue<T> value, IGpuGraphInputContract<T> contract) : IGpuInputUse
+internal sealed class GpuInputUse<T>(GpuGraphValue<T> value) : IGpuInputUse
 {
     public object ValueIdentity => value;
     public GpuGraphInput? Input => value.Input;
-    public void Retain(GpuRenderGraphPass pass, GpuRenderGraphBindings bindings, List<IGpuUploadData> data)
-        => contract.Retain(new GpuRenderInputRetentionContext(pass, data), pass.GetInput(value, bindings));
+    public void Retain(GpuRenderGraphPass pass, GpuRenderGraphBindings bindings)
+        => (value.Input is null ? pass.Constant(value) : bindings.InputValues[value.Input]).Validate(pass);
 }
 
 public sealed class GpuRenderGraphBindingsBuilder
 {
     private readonly GpuRenderGraphPlan plan;
-    private readonly Dictionary<GpuGraphInput, object?> inputs = [];
+    private readonly Dictionary<GpuGraphInput, GpuInputSnapshot> inputs = [];
     private readonly Dictionary<GpuRenderGraphResource, GpuGraphResourceRef> resources = [];
     internal GpuRenderGraphBindingsBuilder(GpuRenderGraphPlan plan)
     {
         this.plan = plan;
         foreach (var input in plan.Inputs)
         {
-            if (input.HasInitial) { inputs.Add(input, input.Initial); }
+            if (input.HasInitial) { inputs.Add(input, input.Initial!); }
         }
     }
 
@@ -69,7 +70,7 @@ public sealed class GpuRenderGraphBindingsBuilder
     public void Set<T>(GpuGraphInput<T> input, T value)
     {
         if (!plan.Inputs.Contains(input)) { throw new ArgumentException("Input does not belong to this plan.", nameof(input)); }
-        inputs[input] = input.Contract.Snapshot(value);
+        inputs[input] = GpuInputSnapshot.Create(input.Contract, input.Contract.Snapshot(value));
     }
     public void Set(GpuGraphTextureInput input, GpuGraphTextureRef reference) => SetResource(input.Texture, reference);
     public void Set(GpuGraphBufferInput input, GpuGraphBufferRef reference) => SetResource(input.Buffer, reference);
@@ -84,23 +85,20 @@ public sealed class GpuRenderGraphBindingsBuilder
 
 public sealed class GpuRenderGraphBindings
 {
-    internal IReadOnlyDictionary<GpuGraphInput, object?> InputValues { get; }
+    internal IReadOnlyDictionary<GpuGraphInput, GpuInputSnapshot> InputValues { get; }
     internal IReadOnlyDictionary<GpuRenderGraphResource, GpuGraphResourceRef> ResourceValues { get; }
-    // Own the explicit CPU data set independently of mutable builder dictionaries.
-    private readonly List<IGpuUploadData> retained = [];
     internal GpuRenderGraphBindings(GpuRenderGraphPlan plan, long generation,
-        Dictionary<GpuGraphInput, object?> inputs, Dictionary<GpuRenderGraphResource, GpuGraphResourceRef> resources)
+        Dictionary<GpuGraphInput, GpuInputSnapshot> inputs, Dictionary<GpuRenderGraphResource, GpuGraphResourceRef> resources)
     {
         Plan = plan;
         Generation = generation;
-        InputValues = new ReadOnlyDictionary<GpuGraphInput, object?>(new Dictionary<GpuGraphInput, object?>(inputs));
+        InputValues = new ReadOnlyDictionary<GpuGraphInput, GpuInputSnapshot>(new Dictionary<GpuGraphInput, GpuInputSnapshot>(inputs));
         ResourceValues = new ReadOnlyDictionary<GpuRenderGraphResource, GpuGraphResourceRef>(new Dictionary<GpuRenderGraphResource, GpuGraphResourceRef>(resources));
         foreach (var pass in plan.Passes)
         {
-            retained.AddRange(pass.Uploads);
             foreach (var input in pass.Inputs)
             {
-                if (input.Input is null || InputValues.ContainsKey(input.Input)) { input.Retain(pass, this, retained); }
+                if (input.Input is null || InputValues.ContainsKey(input.Input)) { input.Retain(pass, this); }
             }
         }
     }
@@ -115,7 +113,7 @@ public sealed class GpuRenderGraphBindings
             throw new ArgumentException("Resolve constants through the pass declaration's GetInput method.", nameof(value));
         }
         if (!InputValues.TryGetValue(input, out var result)) { throw new InvalidOperationException($"Input '{input.Name}' has no value."); }
-        return (T)result!;
+        return (T)result.Value!;
     }
     public GpuGraphResourceRef? ResolveResource(GpuRenderGraphResource resource)
     {

@@ -5,7 +5,8 @@ This project measures frequently executed, platform-independent paths:
 - action value aggregation;
 - interaction candidate resolution;
 - state-machine transition selection;
-- animation clip sampling.
+- animation clip sampling;
+- feature RenderGraph compilation, bounded schedule caching and bindings updates for reused plans.
 
 
 Run a short local comparison with:

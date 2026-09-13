@@ -9,6 +9,27 @@ namespace Lumyte.Graphics.Native.Passes.Tests;
 public sealed class NativeImagePassTests
 {
     [Fact]
+    public async Task CopyInitializesScratchBeforeReadingAllMipLayers()
+    {
+        TestResourceBackend backend = new();
+        NativeRenderPassRegistry registry = new(); registry.AddImageProcessing();
+        await using IGpuRenderRuntime runtime = await new NativeRenderProvider("test", (_, _) => new(backend), registry).CreateAsync(new());
+        var graph = new GpuRenderGraph();
+        var description = new GpuGraphTextureDescription(8, 8, GpuFormat.Rgba8Unorm, DepthOrArrayLayers: 2, MipLevelCount: 3);
+        var source = graph.CreateTexture("source", description);
+        var target = graph.CreateTexture("target", description);
+        graph.AddClearPass("clear", new(source, TextureClearValue.Color(Vector4.One)));
+        graph.AddCopyPass("copy", new(source, target));
+        graph.ExportTexture(target);
+
+        using GpuRenderGraphExecution execution = await runtime.SubmitAsync(graph.Compile());
+        await execution.WaitForCompletionAsync();
+
+        Assert.Equal(["ReadTexture", "ReadTexture", "ReadTexture", "CopyTexture", "CopyTexture", "CopyTexture"],
+            backend.Commands.Where(command => command is "ReadTexture" or "CopyTexture"));
+    }
+
+    [Fact]
     public async Task ClearPremultipliesLinearColorBeforeRecording()
     {
         TestResourceBackend backend = new();

@@ -9,16 +9,20 @@ public abstract class GpuResourceRef
 
 public sealed class GpuBufferRef : GpuResourceRef
 {
-    internal GpuBufferRef(ResourceRecord record, GpuBufferLease lease) : base(record) { Lease = lease; }
-    internal GpuBufferLease Lease { get; }
-    public GpuBufferDescription Description => Lease.Description;
+    internal GpuBufferRef(ResourceRecord record, GpuBufferLease lease) : this(record, lease.Handle, lease.Description) { }
+    internal GpuBufferRef(ResourceRecord record, GpuBufferHandle handle, GpuBufferDescription description) : base(record)
+    { Handle = handle; Description = description; }
+    internal GpuBufferHandle Handle { get; }
+    public GpuBufferDescription Description { get; }
 }
 
 public sealed class GpuTextureRef : GpuResourceRef
 {
-    internal GpuTextureRef(ResourceRecord record, GpuTextureLease lease) : base(record) { Lease = lease; }
-    internal GpuTextureLease Lease { get; }
-    public GpuTextureDescription Description => Lease.Description;
+    internal GpuTextureRef(ResourceRecord record, GpuTextureLease lease) : this(record, lease.Handle, lease.Description) { }
+    internal GpuTextureRef(ResourceRecord record, GpuTextureHandle handle, GpuTextureDescription description) : base(record)
+    { Handle = handle; Description = description; }
+    internal GpuTextureHandle Handle { get; }
+    public GpuTextureDescription Description { get; }
 }
 
 public sealed class GpuViewRef : GpuResourceRef

@@ -19,11 +19,12 @@ public static class ImagePipelineConsumer
         GpuGraphTextureDescription description,
         TextureClearValue clearValue,
         OutputEncoding encoding = OutputEncoding.Linear,
-        OutputAlphaMode alphaMode = OutputAlphaMode.Premultiplied)
+        OutputAlphaMode alphaMode = OutputAlphaMode.Premultiplied,
+        int copyCount = 1)
     {
         var graph = new GpuRenderGraph();
         GpuRenderGraphTexture output = graph.CreateTexture("output", description);
-        GpuGraphInput<TextureClearValue> color = Populate(graph, output, clearValue, encoding, alphaMode);
+        GpuGraphInput<TextureClearValue> color = Populate(graph, output, clearValue, encoding, alphaMode, copyCount);
         graph.ExportTexture(output);
         return new(graph.Compile(), color, output);
     }
@@ -46,14 +47,21 @@ public static class ImagePipelineConsumer
         GpuRenderGraphTexture output,
         TextureClearValue clearValue,
         OutputEncoding encoding,
-        OutputAlphaMode alphaMode)
+        OutputAlphaMode alphaMode,
+        int copyCount = 1)
     {
         GpuGraphTextureDescription working = output.Description with { Format = GpuFormat.Rgba8Unorm };
         GpuRenderGraphTexture source = graph.CreateTexture("source", working);
-        GpuRenderGraphTexture copied = graph.CreateTexture("copied", working);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(copyCount);
         GpuGraphInput<TextureClearValue> color = graph.CreateInput("color", ClearValueInputContract.Instance, clearValue);
         graph.AddClearPass("clear", new(source, color));
-        graph.AddCopyPass("copy", new(source, copied));
+        var copied = source;
+        for (var index = 0; index < copyCount; index++)
+        {
+            var next = graph.CreateTexture($"copied{index}", working);
+            graph.AddCopyPass($"copy{index}", new(copied, next));
+            copied = next;
+        }
         graph.AddOutputPass("output", new(copied, output, encoding, alphaMode));
         return color;
     }

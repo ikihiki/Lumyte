@@ -12,18 +12,18 @@ P1 は対象機能の成立を妨げる問題、P2 は API や失敗処理を実
 | --- | --- | --- |
 | R1 alias 再利用 | [0011](../adr/0011-native-command-recording-api.md) に DiscardTexture を追加し、0003／0005 と 0013／0014／0031 の所有・同期へ接続 | 設計反映済み。A → B → A と未提出失敗の実機試験は未実装 |
 | R2 copy aspect | [0005](../adr/0005-native-texture-api.md) に単一 Aspect と転送 bytes／pitch、0013／0014 に plane／aspect 写像を定義。0006 は型の正本を参照 | 設計反映済み。depth／stencil の独立転送試験は未実装 |
-| R3 cache 世代の結果 | [0031](../adr/0031-native-render-graph-implementation.md)／[0032](../adr/0032-portable-render-graph-implementation.md) に RegisterContent／TryUseContent と provider 所有の ticket を定義 | 設計反映済み。culling・受理前失敗・結果依存・失効中の保持の試験は未実装 |
-| R4 非同期診断 | [0026](../adr/0026-command-submission-and-synchronization.md)／[0027](../adr/0027-webgpu-backend-implementation.md) で GPU 使用終了と成功を区別し、0029〜0033 の upload／export／cache へ接続 | Resources の token・回収・package 成功公開へ接続済み。Graph の export／cache 接続は後続。[実装進捗](graphics-implementation-progress.md) を参照 |
+| R3 cache 世代の結果 | [0031](../adr/0031-native-render-graph-implementation.md)／[0032](../adr/0032-portable-render-graph-implementation.md) に RegisterContent／TryUseContent と provider 所有の ticket を定義 | 2026-09-14 に実装。culling・受理前失敗・結果依存・失効中の保持を CPU 試験で確認 |
+| R4 非同期診断 | [0026](../adr/0026-command-submission-and-synchronization.md)／[0027](../adr/0027-webgpu-backend-implementation.md) で GPU 使用終了と成功を区別し、0029〜0033 の upload／export／cache へ接続 | Resources と Graph の export／内容世代へ接続済み。非同期失敗時も GPU 使用終了まで保持する。[実装進捗](graphics-implementation-progress.md) を参照 |
 | R5 stage 名 | [0023](../adr/0023-shader-design-and-api.md) を GpuShaderStage.Pixel（WebGPU fragment）へ統一 | 文書修正済み。新 API の実装は別作業 |
 | I1 規範の集約 | [0030](../adr/0030-render-graph-api.md#所有同期失敗) を所有・snapshot・提出結果の正本とし、0031〜0033／0035／0036 の重複を整理 | 文書反映済み |
-| I2 初回・resize の例 | [0030 の使用例](../adr/0030-render-graph-api.md#使用例) に既存 BeginFrameAsync による初回取得と、形状不一致の通知からの再構築を追加 | 文書反映済み。取得間の resize 競合と保持の試験は未実装 |
-| I3 最小統合 | [0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) を起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了に固定 | 文書反映済み。統合実装・実測は未実施 |
+| I2 初回・resize の例 | [0030 の使用例](../adr/0030-render-graph-api.md#使用例) に既存 BeginFrameAsync による初回取得と、形状不一致の通知からの再構築を追加 | 共通 frame の形状変更・取得と停止の競合・所有を CPU 試験で確認。実 window／canvas の接続は後続 |
+| I3 最小統合 | [0034 の段階 0](../adr/0034-render-pass-categories.md#実装順と完了条件) を起動 → Clear／Copy／Output → 提出結果 → 回収 → 終了に固定 | DX12／Vulkan／WebGPU で同一 consumer の実機適合を確認。反復提出と一時資源の再利用も追加。性能測定は別作業 |
 
 以下は初回レビュー時の問題と、採用した修正方針を残す。未修正の一覧ではない。内容世代の失効については追加の相互レビューを行い、GPU 受理前の Build／記録も停止・破棄までは取得済み保持を失わないよう補足した。
 
 ## レビュー後に追加した設計
 
-2026-09-14 に [ADR 0028](../adr/0028-resource-utilities.md) の utility を arena／pool の明示的な貸出・返却へ限定し、依存関係が必要な寿命、提出 token、遅延回収と非同期転送を [ADR 0029](../adr/0029-resource-management-api.md) の上位管理層へ集約した。二つの Resources assembly は維持する。utility が貸出の返却可否を推測せず、上位が全利用と必要な依存を終了した後に返却する。utility と管理層を実装済みとし、RenderGraph への接続は後続に残す。
+2026-09-14 に [ADR 0028](../adr/0028-resource-utilities.md) の utility を arena／pool の明示的な貸出・返却へ限定し、依存関係が必要な寿命、提出 token、遅延回収と非同期転送を [ADR 0029](../adr/0029-resource-management-api.md) の上位管理層へ集約した。二つの Resources assembly は維持する。utility が貸出の返却可否を推測せず、上位が全利用と必要な依存を終了した後に返却する。utility、管理層と RenderGraph への接続を実装済みとする。
 
 Native の mesh／amplification 対応を [ADR 0002](../adr/0002-native-graphics-api.md)、[0009〜0015 の shader・pipeline・command・backend 契約](../adr/0011-native-command-recording-api.md) と [Model 描画](../adr/0035-model-render-passes.md) に追加した。Native の任意機能とし、共通 AddModelPass は同じ入力を維持する。Portable は自身の vertex／indexed 描画経路を使い、mesh command のエミュレーションを追加しない。
 

@@ -1,0 +1,3 @@
+<input namespace="Lumyte.Graphics.Portable.Passes" name="OutputPassInputs" group="0">
+  <field name="sourceImage" kind="Texture" binding="0" />
+</input>

@@ -48,6 +48,31 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
     private readonly Dictionary<GpuRenderPassId, PassInstance> passes;
     private readonly SemaphoreSlim builds = new(1, 1);
     private readonly HashSet<IDisposable> executionOwners = [];
+    private readonly HashSet<IDisposable> contentLeases = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<PortableContentState> contentOwners = [];
+    private readonly Queue<IDisposable> returnedContentLeases = [];
+    private readonly List<Exception> contentCleanupErrors = [];
+    internal PortableScheduleCache ScheduleCache { get; } = new(64);
+    internal void ClaimContentLease(PortableContentState owner, IDisposable lease)
+    {
+        if (!contentLeases.Add(lease)) { throw new ArgumentException("The content lease is already owned by this runtime.", nameof(lease)); }
+        contentOwners.Add(owner);
+    }
+    internal void ReleaseContentOwner(PortableContentState owner) => contentOwners.Remove(owner);
+    internal void ReturnContentLease(IDisposable lease) => returnedContentLeases.Enqueue(lease);
+    internal void DrainContentLeases()
+    {
+        while (returnedContentLeases.TryDequeue(out IDisposable? lease))
+        {
+            try { lease.Dispose(); contentLeases.Remove(lease); }
+            catch (Exception error) { contentCleanupErrors.Add(error); }
+        }
+        if (contentCleanupErrors.Count != 0) { throw new AggregateException("GPU content lifetime cleanup failed.", contentCleanupErrors); }
+    }
+    internal void Collect()
+    { DrainContentLeases(); services.Resources.Collect(); DrainContentLeases(); services.Resources.Collect(); }
+    private void RetainUntilUseEnds(GpuSubmissionToken token, IDisposable lease)
+    { lock (Gate) { services.Resources.RetainUntilSubmissionEnds(token, lease); } }
     private bool stopping;
     private bool disposed;
     private int operationCount;
@@ -64,6 +89,8 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
     public PortableGraphResources Resources { get; }
     IGpuGraphResources IGpuRenderRuntime.Resources => Resources;
     public IPortableGpuBackend Backend => services.Backend;
+    public PortableRenderPreparationStatistics PreparationStatistics
+    { get { lock (Gate) { return new(ScheduleCache.Count, ScheduleCache.ReuseCount); } } }
     public void StopAccepting() { lock (Gate) { stopping = true; } }
     internal void CheckOpen() { ObjectDisposedException.ThrowIf(stopping || disposed, this); }
     internal IDisposable BeginOperation()
@@ -120,14 +147,18 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
     {
         bool entered = false;
         GpuResourceScope? scope = null;
+        PortableExecutionBuild? build = null;
         List<IDisposable> exportPins = [];
         try
         {
             await builds.WaitAsync(cancellationToken).ConfigureAwait(false); entered = true;
-            ObjectDisposedException.ThrowIf(disposed, this); scope = services.Resources.CreateScope();
-            var build = new PortableExecutionBuild(services, bindings, batch);
+            ObjectDisposedException.ThrowIf(disposed, this);
+            lock (Gate) { Collect(); scope = services.Resources.CreateScope(); }
+            build = new PortableExecutionBuild(this, services, plan, bindings, batch);
             foreach (GpuRenderGraphResource resource in plan.Resources)
             {
+                if (bindings.ResolveResource(resource) is { } external && Resources.GetExternalDependency(external) is { } dependency)
+                { build.ExternalResults.Add(dependency); }
                 switch (resource)
                 {
                     case GpuRenderGraphTexture texture:
@@ -152,9 +183,14 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
             cancellationToken.ThrowIfCancellationRequested();
             lock (Gate)
             {
-                ObjectDisposedException.ThrowIf(disposed, this); build.Prepare(scope);
-                var record = new PortablePassRecordContext(build, batch.StartCommandRecording());
-                foreach (PortablePassBuilder pass in build.Passes) { pass.Record(record); }
+                ObjectDisposedException.ThrowIf(disposed, this); build.Compile(); build.CheckDependencies(); build.Prepare(scope);
+                GpuCommandBuffer commands = batch.StartCommandRecording();
+                foreach (PortablePassBuilder pass in build.LivePasses)
+                {
+                    build.CheckDependencies();
+                    var record = new PortablePassRecordContext(build, pass, commands);
+                    try { pass.Record(record); } finally { record.End(); }
+                }
                 var exports = new Dictionary<GpuRenderGraphResource, GpuGraphResourceRef>();
                 foreach (GpuRenderGraphResource export in plan.Exports)
                 {
@@ -169,14 +205,18 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
                 }
                 batch.Own(scope); scope = null;
                 GpuSubmissionToken token;
+                build.CheckDependencies();
                 try { token = batch.Submit(); }
                 catch (Resources.GpuSubmissionException failure)
                 {
                     GpuSubmissionToken failedToken = failure.Completion;
-                    throw new GpuRenderGraphSubmissionException(new(() => failedToken.IsComplete, failedToken.WaitAsync), failure);
+                    throw new GpuRenderGraphSubmissionException(new(() => failedToken.IsComplete, failedToken.WaitAsync,
+                        lease => RetainUntilUseEnds(failedToken, lease)), failure);
                 }
                 batch.Dispose();
-                var completion = new GpuGraphCompletion(() => token.IsComplete, token.WaitAsync);
+                Task result = build.Accept(token);
+                var completion = new GpuGraphCompletion(() => token.IsComplete, cancellation => new(result.WaitAsync(cancellation)),
+                    lease => RetainUntilUseEnds(token, lease));
                 var ownership = new LockedOwnership(this, exportPins);
                 var execution = new GpuRenderGraphExecution(completion, exports, ownership);
                 exportPins = []; executionOwners.Add(ownership); return execution;
@@ -189,8 +229,9 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
                 lock (Gate)
                 {
                     // A failed Submit still leaves its batch's resource uses retained by the manager token.
-                    batch.Dispose(); scope?.Dispose();
+                    build?.Abort(); batch.Dispose(); scope?.Dispose();
                     foreach (IDisposable pin in exportPins) { pin.Dispose(); }
+                    DrainContentLeases();
                 }
             }
             finally { if (entered) { builds.Release(); } operation.Dispose(); }
@@ -199,7 +240,7 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
     public async ValueTask WaitIdleAsync(CancellationToken cancellationToken = default)
     {
         await builds.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try { await services.Resources.WaitIdleAsync(cancellationToken).ConfigureAwait(false); }
+        try { await services.Resources.WaitIdleAsync(cancellationToken).ConfigureAwait(false); lock (Gate) { Collect(); } }
         finally { builds.Release(); }
     }
     public async ValueTask DisposeAsync()
@@ -220,6 +261,7 @@ public sealed class PortableRenderRuntime : IGpuRenderRuntime
                 Resources.RequireOwnersReturned(); services.Resources.Collect();
             }
             foreach (PassInstance pass in passes.Values.Reverse()) { await pass.DisposeAsync().ConfigureAwait(false); }
+            lock (Gate) { foreach (PortableContentState owner in contentOwners.ToArray()) { owner.ReleaseOwner(); } Collect(); }
             await services.Resources.DisposeAsync().ConfigureAwait(false);
             services.Backend.Dispose(); Resources.ClearReferences(); disposed = true;
         }

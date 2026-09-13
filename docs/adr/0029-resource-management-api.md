@@ -46,6 +46,7 @@ Native は descriptor slot、linear region、texture の配置を管理する。
 | `CreateScope()` | caller が所有する空の `GpuResourceScope` を作る。scope は生成物に対する CPU 側の保持集合となる。 |
 | `scope.CreateBuffer(description)` | 管理された `GpuBufferRef` を返す。Native では linear region/range を確保し、Portable では Buffer を確保する。 |
 | `scope.CreateTexture(description)` | 管理された `GpuTextureRef` を返す。Native は任意に指定した default view も準備する。Portable の view は `GetView` で明示的に取得する。 |
+| `scope.ImportBuffer(raw, description, lease)`／`scope.ImportTexture(raw, description, lease)` | 同じ backend の外部資源を管理された ref に接続し、明示 lease を所有する。Native Buffer は `NativeGpuRange` 自体が範囲を持つため description 引数は不要。実体を manager の pool へ返さず、最後の使用終了後に lease を返す。状態、先行提出と alias の契約は上位の専用 interop が宣言する。 |
 | `scope.GetView(resource, description)` | 指定した view の `GpuViewRef` を取得し、scope が保持する。同じ resource 世代と記述の view を再利用できる。 |
 | `scope.GetSampler(description)` | 同じ系統の sampler description から準備済みの `GpuSamplerRef` を取得し、scope が保持する。同じ不変記述の sampler を共有できる。 |
 | `GetBufferRange(reference, offset, length)` | 準備済み buffer の指定 byte 範囲を、Native では `NativeGpuRange`、Portable では `GpuBufferRange` として返す。保持を追加しない。 |
@@ -152,6 +153,9 @@ Native の raw 手動記録では caller が公開された二つの descriptor 
 | `Equals / GetHashCode / == / !=` | 発行元と提出 identity の両方で比較する。同じ数値でも異なる発行元の提出を同一視しない。 |
 | `GpuSubmissionException.Completion / InnerException` | manager の受渡し後・受理不明の同期失敗を、当該 token と元の障害へ結び付ける。例外自体は資源を所有せず、token の完了も保証しない。下位の raw completion を持つ例外とは別型である。 |
 | Portable の `GpuExecutionException.Diagnostics` | GPU 利用終了後に成功しなかった提出の診断一覧。下位の signal 権限を公開せず、Resources の待機から伝える。 |
+| `manager.OwnsSubmission(token)` | 上位 provider が内容世代の先行提出を接続するための発行元・正常受理の照合。Native は同じ main queue、Portable は manager の queue を対象とする。GPU の状態を照会する API ではない。 |
+| Portable の `manager.RequireAcceptedSubmission(token)` | 上記の条件を満たさない token を例外として拒否する。raw signal や外部 queue の提出を推測して受け付けない。 |
+| `manager.RetainUntilSubmissionEnds(token, lease)` | 同じ manager の提出へ明示 lease を移譲し、GPU 使用終了後の Collect／drain で返す。受理不明の token も保持できる。失敗診断・CPU 待機取消しを回収条件にしない。Native は main queue の token に限定する。 |
 
 manager は提出 identity、観測先、一時資源と依存の保持を raw queue への受渡し前に準備する。正常な提出では token を返し、受渡し後の例外では同じ identity の token を上位の失敗へ結び付ける。manager 内で raw Submit を呼ぶ前の失敗だけは未提出として扱える。raw 呼出し後は例外の型から拒否を推測せず、確実な利用終了を観測するまで保持する。受理不明の記録を再提出しない。
 

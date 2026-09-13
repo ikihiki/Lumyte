@@ -28,6 +28,8 @@
   <Project Path="src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Lumyte.Graphics.Portable.Resources.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Portable.Resources.Generators/Lumyte.Graphics.Portable.Resources.Generators.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Portable.Resources.Generators.Tests/Lumyte.Graphics.Portable.Resources.Generators.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/Lumyte.Graphics.Portable.RenderGraph.Generators.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators.Tests/Lumyte.Graphics.Portable.RenderGraph.Generators.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.DirectX12/Lumyte.Graphics.DirectX12.csproj" />

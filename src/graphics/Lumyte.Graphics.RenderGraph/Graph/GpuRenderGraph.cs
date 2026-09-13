@@ -1,7 +1,8 @@
 namespace Lumyte.Graphics.RenderGraph;
 
-public sealed class GpuRenderGraph
+public sealed partial class GpuRenderGraph
 {
+    private readonly GpuRenderGraphIdentity identity = new();
     private readonly List<GpuRenderGraphResource> resources = [];
     private readonly List<GpuRenderGraphPass> passes = [];
     private readonly List<GpuGraphInput> inputs = [];
@@ -15,34 +16,51 @@ public sealed class GpuRenderGraph
     private readonly Dictionary<GpuRenderGraphResource, int> outputVersions = [];
     private readonly List<List<GpuRenderGraphResource>> uninitialized = [];
     private bool declaring;
+    private string prefix = "";
+
+    internal IDisposable EnterNamespace(string name)
+    {
+        var previous = prefix;
+        prefix += name.Length + ":" + name + "/";
+        return new NamespaceLease(() => prefix = previous);
+    }
+    private string Qualify(string name)
+    { ArgumentException.ThrowIfNullOrWhiteSpace(name); return prefix + name; }
+    private sealed class NamespaceLease(Action restore) : IDisposable
+    {
+        private Action? action = restore;
+        public void Dispose() => Interlocked.Exchange(ref action, null)?.Invoke();
+    }
 
     public GpuRenderGraphTexture CreateTexture(string name, GpuGraphTextureDescription description)
-        => AddResource(new GpuRenderGraphTexture(this, name, description));
+        => AddResource(new GpuRenderGraphTexture(identity, Qualify(name), description));
     public GpuRenderGraphBuffer CreateBuffer(string name, GpuGraphBufferDescription description)
-        => AddResource(new GpuRenderGraphBuffer(this, name, description));
-    public GpuRenderGraphDependency CreateDependency(string name) => AddResource(new GpuRenderGraphDependency(this, name));
+        => AddResource(new GpuRenderGraphBuffer(identity, Qualify(name), description));
+    public GpuRenderGraphDependency CreateDependency(string name) => AddResource(new GpuRenderGraphDependency(identity, Qualify(name)));
     public GpuRenderGraphTexture ImportTexture(string name, GpuGraphTextureRef reference)
-    { ArgumentNullException.ThrowIfNull(reference); return AddResource(new GpuRenderGraphTexture(this, name, reference.Description, reference)); }
+    { ArgumentNullException.ThrowIfNull(reference); return AddResource(new GpuRenderGraphTexture(identity, Qualify(name), reference.Description, reference)); }
     public GpuRenderGraphBuffer ImportBuffer(string name, GpuGraphBufferRef reference)
-    { ArgumentNullException.ThrowIfNull(reference); return AddResource(new GpuRenderGraphBuffer(this, name, reference.Description, reference)); }
+    { ArgumentNullException.ThrowIfNull(reference); return AddResource(new GpuRenderGraphBuffer(identity, Qualify(name), reference.Description, reference)); }
     public GpuGraphTextureInput CreateTextureInput(string name, GpuGraphTextureDescription description)
-        => new(AddResource(new GpuRenderGraphTexture(this, name, description, isInput: true)));
+        => new(AddResource(new GpuRenderGraphTexture(identity, Qualify(name), description, isInput: true)));
     public GpuGraphBufferInput CreateBufferInput(string name, GpuGraphBufferDescription description)
-        => new(AddResource(new GpuRenderGraphBuffer(this, name, description, isInput: true)));
+        => new(AddResource(new GpuRenderGraphBuffer(identity, Qualify(name), description, isInput: true)));
     public GpuGraphInput<T> CreateInput<T>(string name, IGpuGraphInputContract<T> contract)
-        => AddInput(new GpuGraphInput<T>(this, name, contract, false, default));
+        => AddInput(new GpuGraphInput<T>(identity, Qualify(name), contract, false, default));
     public GpuGraphInput<T> CreateInput<T>(string name, IGpuGraphInputContract<T> contract, T initialValue)
-        => AddInput(new GpuGraphInput<T>(this, name, contract, true, initialValue));
+        => AddInput(new GpuGraphInput<T>(identity, Qualify(name), contract, true, initialValue));
 
     public TResult AddPass<TRequest, TResult>(string name, IGpuRenderPassContract<TRequest, TResult> contract, TRequest request)
     {
         ArgumentNullException.ThrowIfNull(contract);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (declaring) { throw new InvalidOperationException("A pass declaration cannot register another feature pass."); }
+        var localName = name;
+        name = Qualify(name);
         if (!passNames.Add(name)) { throw new ArgumentException($"Pass '{name}' already exists.", nameof(name)); }
         var resourceCount = resources.Count;
         var inputCount = inputs.Count;
-        var context = new GpuPassDeclarationContext(this, name);
+        var context = new GpuPassDeclarationContext(this, localName);
         declaring = true;
         try
         {
@@ -85,7 +103,7 @@ public sealed class GpuRenderGraph
     public void MarkOutput(GpuRenderGraphResource resource)
     {
         if (declaring) { throw new InvalidOperationException("Use Preserve inside a pass declaration."); }
-        Require(resource.Graph);
+        Require(resource.GraphIdentity);
         if (writers.TryGetValue(resource, out var writer)) { roots.Add(writer); }
         else if (resource.ImportedReference is null && !resource.IsInput)
         { throw new InvalidOperationException($"Output '{resource.Name}' has no initialized content."); }
@@ -102,9 +120,19 @@ public sealed class GpuRenderGraph
         exports.Add(resource);
     }
 
-    public GpuRenderGraphPlan Compile()
+    public GpuRenderGraphPlan Compile(GpuRenderGraphPlanCache? cache = null)
     {
         if (declaring) { throw new InvalidOperationException("Cannot compile during pass declaration."); }
+        var layout = cache is null ? CompileLayout() : cache.GetOrAdd(CreateTopologyKey(), CompileLayout);
+        var livePasses = layout.Select(index => passes[index]).ToArray();
+        var liveResources = livePasses.SelectMany(pass => pass.Uses.Select(use => use.Resource)).Concat(outputs).ToHashSet();
+        var liveInputs = livePasses.SelectMany(pass => pass.Inputs).Select(use => use.Input).OfType<GpuGraphInput>().ToHashSet();
+        return new GpuRenderGraphPlan(livePasses, resources.Where(liveResources.Contains).ToArray(),
+            inputs.Where(liveInputs.Contains).ToArray(), exports, outputs);
+    }
+
+    private int[] CompileLayout()
+    {
         var live = new HashSet<int>();
         var pending = new Stack<int>(roots);
         while (pending.TryPop(out var index))
@@ -119,7 +147,6 @@ public sealed class GpuRenderGraph
         }
         // All edges point to earlier content. Registration order also preserves WAR/WAW
         // between surviving uses without retaining otherwise dead writers or readers.
-        var livePasses = passes.Where((_, index) => live.Contains(index)).ToArray();
         foreach (var output in outputVersions)
         {
             if (live.Any(index => index > output.Value && passes[index].Uses.Any(use =>
@@ -128,14 +155,33 @@ public sealed class GpuRenderGraph
                 throw new InvalidOperationException($"Output '{output.Key.Name}' is overwritten by a later live pass. Copy the earlier content to a separate output.");
             }
         }
-        var liveResources = livePasses.SelectMany(pass => pass.Uses.Select(use => use.Resource)).Concat(outputs).ToHashSet();
-        var liveInputs = livePasses.SelectMany(pass => pass.Inputs).Select(use => use.Input).OfType<GpuGraphInput>().ToHashSet();
-        return new GpuRenderGraphPlan(livePasses, resources.Where(liveResources.Contains).ToArray(),
-            inputs.Where(liveInputs.Contains).ToArray(), exports, outputs);
+        return live.Order().ToArray();
     }
 
-    internal void Require(GpuRenderGraph graph)
-    { if (!ReferenceEquals(this, graph)) { throw new ArgumentException("The declaration belongs to another graph."); } }
+    // Only topology is cached. Descriptions, request constants, names and imports are
+    // rebound to this graph; none of its CPU snapshots or resource owners enter the cache.
+    private string CreateTopologyKey()
+    {
+        var key = new System.Text.StringBuilder();
+        var indices = resources.Select((resource, index) => (resource, index)).ToDictionary(pair => pair.resource, pair => pair.index);
+        foreach (var resource in resources) { key.Append(resource.IsInput || resource.ImportedReference is not null ? '1' : '0'); }
+        key.Append('|');
+        foreach (var pass in passes)
+        {
+            key.Append(pass.IsPreserved ? '1' : '0').Append(':');
+            foreach (var use in pass.Uses.OrderBy(use => indices[use.Resource]))
+            { key.Append(indices[use.Resource]).Append(',').Append((int)use.Access).Append(';'); }
+            key.Append('|');
+        }
+        foreach (var output in outputVersions.OrderBy(pair => indices[pair.Key]))
+        { key.Append(indices[output.Key]).Append(',').Append(output.Value).Append(';'); }
+        key.Append('|');
+        foreach (var root in roots.Order()) { key.Append(root).Append(';'); }
+        return key.ToString();
+    }
+
+    internal void Require(GpuRenderGraphIdentity graphIdentity)
+    { if (!ReferenceEquals(identity, graphIdentity)) { throw new ArgumentException("The declaration belongs to another graph."); } }
     private T AddResource<T>(T resource) where T : GpuRenderGraphResource
     { AddName(resource.Name); resources.Add(resource); return resource; }
     private GpuGraphInput<T> AddInput<T>(GpuGraphInput<T> input)

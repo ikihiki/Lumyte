@@ -17,7 +17,7 @@ public readonly record struct GpuRenderGraphUse(GpuRenderGraphResource Resource,
 /// <summary>The immutable feature declaration consumed by independently registered providers.</summary>
 public sealed class GpuRenderGraphPass
 {
-    private readonly IReadOnlyDictionary<object, object?> constants;
+    private readonly IReadOnlyDictionary<object, GpuInputSnapshot> constants;
     internal readonly IReadOnlyList<IGpuInputUse> Inputs;
     internal readonly IReadOnlyList<IGpuUploadData> Uploads;
 
@@ -33,7 +33,7 @@ public sealed class GpuRenderGraphPass
         Uses = Array.AsReadOnly(context.Uses.Select(pair => new GpuRenderGraphUse(pair.Key, pair.Value)).ToArray());
         Inputs = Array.AsReadOnly(context.Inputs.ToArray());
         Uploads = Array.AsReadOnly(context.Uploads.ToArray());
-        constants = new System.Collections.ObjectModel.ReadOnlyDictionary<object, object?>(new Dictionary<object, object?>(context.Constants));
+        constants = new System.Collections.ObjectModel.ReadOnlyDictionary<object, GpuInputSnapshot>(new Dictionary<object, GpuInputSnapshot>(context.Constants));
         IsPreserved = context.IsPreserved;
     }
 
@@ -53,8 +53,10 @@ public sealed class GpuRenderGraphPass
         {
             throw new ArgumentException("The input was not declared by this pass.", nameof(value));
         }
-        return value.Input is not null ? bindings.GetInput(value) : (T)constants[value]!;
+        if (!bindings.Plan.Passes.Contains(this)) { throw new ArgumentException("Bindings belong to another plan.", nameof(bindings)); }
+        return value.Input is not null ? bindings.GetInput(value) : (T)constants[value].Value!;
     }
+    internal GpuInputSnapshot Constant(object identity) => constants[identity];
 }
 
 public sealed class GpuPassDeclarationContext
@@ -65,7 +67,7 @@ public sealed class GpuPassDeclarationContext
     internal readonly Dictionary<GpuRenderGraphResource, GpuRenderGraphAccess> Uses = [];
     internal readonly List<IGpuInputUse> Inputs = [];
     internal readonly List<IGpuUploadData> Uploads = [];
-    internal readonly Dictionary<object, object?> Constants = [];
+    internal readonly Dictionary<object, GpuInputSnapshot> Constants = [];
     internal bool IsPreserved;
 
     internal GpuPassDeclarationContext(GpuRenderGraph graph, string name) { this.graph = graph; prefix = name + "/"; }
@@ -87,7 +89,7 @@ public sealed class GpuPassDeclarationContext
         ArgumentNullException.ThrowIfNull(inputContract);
         if (value.Input is { } input)
         {
-            graph.Require(input.Graph);
+            graph.Require(input.GraphIdentity);
             if (!ReferenceEquals(input.Contract, inputContract))
             {
                 throw new ArgumentException("Use the contract that created the input slot.", nameof(inputContract));
@@ -95,11 +97,11 @@ public sealed class GpuPassDeclarationContext
         }
         else if (!Constants.ContainsKey(value))
         {
-            Constants.Add(value, inputContract.Snapshot(value.Value!));
+            Constants.Add(value, GpuInputSnapshot.Create(inputContract, inputContract.Snapshot(value.Value!)));
         }
         if (!Inputs.Any(input => ReferenceEquals(input.ValueIdentity, value)))
         {
-            Inputs.Add(new GpuInputUse<T>(value, inputContract));
+            Inputs.Add(new GpuInputUse<T>(value));
         }
     }
 
@@ -109,7 +111,7 @@ public sealed class GpuPassDeclarationContext
     {
         CheckOpen();
         ArgumentNullException.ThrowIfNull(resource);
-        graph.Require(resource.Graph);
+        graph.Require(resource.GraphIdentity);
         if (Uses.TryGetValue(resource, out var previous) && previous != access)
         {
             access = GpuRenderGraphAccess.ReadWrite;
@@ -126,16 +128,25 @@ public interface IGpuGraphInputContract<T>
 
 public sealed class GpuRenderInputRetentionContext
 {
-    private readonly GpuRenderGraphPass pass;
     private readonly List<IGpuUploadData> retained;
-    internal GpuRenderInputRetentionContext(GpuRenderGraphPass pass, List<IGpuUploadData> retained)
-    { this.pass = pass; this.retained = retained; }
-    public void ReadUpload(IGpuUploadData data) { ArgumentNullException.ThrowIfNull(data); retained.Add(data); }
+    private readonly List<GpuRenderGraphResource> declared;
+    private readonly List<GpuInputSnapshot> children;
+    private bool closed;
+    internal GpuRenderInputRetentionContext(List<IGpuUploadData> retained, List<GpuRenderGraphResource> declared, List<GpuInputSnapshot> children)
+    { this.retained = retained; this.declared = declared; this.children = children; }
+    public void ReadUpload(IGpuUploadData data)
+    { ObjectDisposedException.ThrowIf(closed, this); ArgumentNullException.ThrowIfNull(data); retained.Add(data); }
     public void UseDeclared(GpuRenderGraphResource resource)
     {
-        if (!pass.Uses.Any(use => ReferenceEquals(use.Resource, resource) && use.Access != GpuRenderGraphAccess.Write))
-        {
-            throw new InvalidOperationException($"Input in pass '{pass.Name}' references an undeclared read: '{resource.Name}'.");
-        }
+        ObjectDisposedException.ThrowIf(closed, this);
+        ArgumentNullException.ThrowIfNull(resource);
+        declared.Add(resource);
     }
+    /// <summary>Retain an already immutable child snapshot. Its ownership set is shared across unchanged branches.</summary>
+    public void ReadSnapshot<T>(T snapshot, IGpuGraphInputContract<T> inputContract)
+    {
+        ObjectDisposedException.ThrowIf(closed, this);
+        children.Add(GpuInputSnapshot.Create(inputContract, snapshot));
+    }
+    internal void Close() => closed = true;
 }

@@ -19,6 +19,12 @@ public sealed class GpuResourceScope : IDisposable
     }
     public GpuBufferRef CreateBuffer(GpuBufferDescription description) { CheckOpen(); return Hold(Manager.CreateBuffer(description)); }
     public GpuTextureRef CreateTexture(GpuTextureDescription description) { CheckOpen(); return Hold(Manager.CreateTexture(description)); }
+    /// <summary>Imports a raw object from this backend and transfers its explicit ownership lease on success. No pooling or hidden copy occurs.</summary>
+    public GpuBufferRef ImportBuffer(GpuBufferHandle handle, GpuBufferDescription description, IDisposable lease)
+    { CheckOpen(); return Hold(Manager.ImportBuffer(handle, description, lease)); }
+    /// <summary>Imports a raw object from this backend and transfers its explicit ownership lease on success. No pooling or hidden copy occurs.</summary>
+    public GpuTextureRef ImportTexture(GpuTextureHandle handle, GpuTextureDescription description, IDisposable lease)
+    { CheckOpen(); return Hold(Manager.ImportTexture(handle, description, lease)); }
     public GpuViewRef GetView(GpuTextureRef texture, GpuTextureViewDescription description = default)
     { CheckOpen(); return Hold(Manager.GetView(texture, description)); }
     public GpuSamplerRef GetSampler() => GetSampler(new GpuSamplerDescription());

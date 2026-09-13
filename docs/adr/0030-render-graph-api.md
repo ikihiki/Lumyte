@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。利用 library／application は一つの共通 assembly に対してコンパイルし、Native／Portable を実行時に選択する。共通化するのは機能 pass の要求と入出力であり、GPU command を記録する pass 本体は二系統で実装する。現行実装の完了を示さない。
+採用・実装済み（共通 RenderGraph 基盤）。利用 library／application は一つの共通 assembly に対してコンパイルし、Native／Portable を実行時に選択する。共通化するのは機能 pass の要求と入出力であり、GPU command を記録する pass 本体は二系統で実装する。機能別の描画実装と window／canvas の接続はそれぞれの ADR の範囲とする。
 
 ## 依存 ADR
 
@@ -61,6 +61,7 @@ Snapshot 後に caller の配列を変更しても登録済み要求は変わら
 | `IGpuGraphInputContract<T>.Snapshot(value)` | 値を所有済みの不変 snapshot にする。不変値や共有部分木はそのまま使い、可変の借用 memory は固定する。 |
 | `IGpuGraphInputContract<T>.Retain(context, snapshot)` | snapshot が直接参照する upload data と logical resource を型に従って登録する。GPU 処理、外部依存の追加、ロードは行わない。 |
 | `GpuRenderInputRetentionContext.ReadUpload(data)` | 準備済みデータと、その明示的な子参照の CPU 所有を保持する。GPU allocation や cache entry の使用保持とは区別する。 |
+| `ReadSnapshot(snapshot, inputContract)` | 既に不変な子 snapshot の所有集合を共有する。Snapshot を再実行せず、未変更の枝を再列挙しない。循環した所有宣言は拒否する。 |
 | `GpuRenderInputRetentionContext.UseDeclared(resource)` | 入力内の logical resource が、その pass に固定宣言された Read／ReadWrite 集合にあることだけを確認する。新しい edge は追加しない。 |
 | `graph.CreateInput(name, inputContract)`／`CreateInput(name, inputContract, initialValue)` | graph と型を識別する `GpuGraphInput<T>` を返す。初期値を渡した場合だけ Snapshot して既定値として保持する。省略した slot は提出までに Set が必要。 |
 | `plan.CreateBindings()` | この plan の指定済み CPU 初期値を持つ `GpuRenderGraphBindingsBuilder` を作る。初期値のない CPU input と resource input は未設定とする。 |
@@ -178,11 +179,13 @@ SubmitAsync の成功は GPU 完了を意味しない。非同期にする理由
 
 | API | 契約 |
 | --- | --- |
-| `GpuRenderGraphPlan.Passes / Resources` | 外部の機能順序、宣言、論理 first/last use と export の診断値。内部 GPU pass 数は表さない。 |
+| `GpuRenderGraphPlan.Passes / Resources / Outputs / Exports` | 外部の機能順序、宣言と出力の診断値。内部 GPU pass 数は表さない。 |
+| `plan.ResourceLifetimes`／`GpuRenderGraphResourceLifetime(Resource, FirstUse, LastUse)` | 生存する Passes 内の最初と最後の使用 index。使用されずそのまま返す import は -1。GPU 上の具体的な寿命は provider が展開後に計画する。 |
 | `GpuRenderGraphPlanCache(maximumEntries)` | graph を再 Compile するときの有界の論理構造 cache。`Count`／`Clear()` を公開し、過去フレームの bindings や GPU object は保持しない。 |
 | `plan.SubmitAsync(runtime, bindings, cancellationToken)` | runtime の提出入口に委譲する。bindings の省略は初期値の提出を表し、同じ plan を繰り返し使える。 |
 | `GpuRenderGraphExecution.Completion`／`IsComplete` | 共通 `GpuGraphCompletion` と GPU 使用終了の状態。IsComplete は回収の条件であり、処理の成功を証明しない。native semaphore/value は公開しない。 |
 | `GpuGraphCompletion.WaitAsync(cancellationToken)`／`execution.WaitForCompletionAsync(cancellationToken)` | GPU 使用終了と、この実行および内容依存の診断確定を待つ。正常終了で成功を確認し、提出後の失敗は原因を保持して通知する。 |
+| `GpuGraphCompletion.RetainUntilUseEnds(lease)` | provider の retirement へ外部 lease を移譲する拡張契約。provider は constructor の保持 callback を実装し、使用終了を証明するまで保持する。診断の失敗や CPU 待機取消しでは返さない。 |
 | `execution.GetExportedBuffer/Texture(resource)` | 成功確認済み execution が保持する共通 managed ref を返す。結果未確定では取得せず、WaitForCompletionAsync の正常終了後に呼ぶ。失敗した出力は返さない。 |
 | `execution.Dispose()` | execution の所有を終了する。GPU 使用と他の保持が終わってから実回収する。 |
 
@@ -216,6 +219,8 @@ helper は Acquire の最初の await より前に、今回の CPU snapshot と 
 target の再利用条件、同時進行する frame 数、backpressure と frame pacing は provider と host の presentation 接続が管理する。GPU completion だけで presentation の使用終了とみなさない。window／canvas の接続は host の責務であり、描画 library の signature に platform 固有型を含めない。
 
 helper は target の取得後、queue の受理前に失敗した場合は Discard する。helper と frame は queue の受理時点で内部的に提出済みとする。その後に Present が失敗しても、Dispose が未提出 target として Discard しない。execution が caller に返らない場合も runtime／presentation 接続が GPU completion と target の返却条件を満たすまで所有を維持し、Present の失敗を呼出し元へ報告する。
+
+frame の外部 lease は execution 所有と GPU 使用の両方が終わるまで保持する。provider の retirement 登録 callback 自体が失敗した場合も `RetainUntilUseEnds` は lease を消費済みとし、共通 completion が隔離して保持する。frame は completion を伴う提出例外と Retire を返す。呼出し元がその completion の IsComplete／WaitAsync で実使用終了を確認した時点で隔離を解く。未確認の使用を timer や例外だけで終了扱いにしない。これは故障した provider 接続の回復経路であり、正常時は provider の manager が回収する。
 
 ## コード配置
 
@@ -349,7 +354,9 @@ AOT でも実装を明示登録して選択できる。runtime での C# compila
 
 共通 graph が確認するのは機能契約の ID／版／要求型、宣言した依存、循環、初期化、culling、export、plan と入力 slot の対応、UseDeclared の参照集合、資源 slot の設定・形状と意図しない alias、共通 ref の runtime／世代など、自分の契約である。各実装は同じ外部意味を守る責任を持ち、shader の内容を解析して意味の一致を証明する validator は作らない。format、usage、binding、pipeline、GPU 同期の合法性は native API／WebGPU runtime／compiler の診断に委ねる。
 
-同じ plan の反復提出は論理 cache の照合を必要としない。論理 cache は構造変更時の再 Compile に用い、契約 ID／版と宣言構造を共有する。今回の bindings と import は実行ごとに保持し、cache に過去フレームの snapshot を無制限に残さない。
+同じ plan の反復提出は論理 cache の照合を必要としない。論理 cache は構造変更時の再 Compile に用い、宣言から計算した schedule を共有する。今回の bindings と import は実行ごとに保持し、cache に過去フレームの snapshot を無制限に残さない。
+
+実装する cache は、resource の初期化条件、Read／Write、出力の内容版と Preserve から求めた index の実行順のみを LRU で保存する。同じ順序を利用できる場合も、要求型・契約 ID／版・description・定数・input・import は今回の graph から plan へ再接続する。過去の plan 自体を保存しないので、古い CPU snapshot や別 runtime の ref を cache が保持しない。非対応の契約や型を cache hit によって受理することもない。
 
 provider は内部 graph の template、保持情報、GPU 部品、batch と派生結果を依存する世代に応じて再利用する。未変更の全要素を毎回コピー・hash・再列挙・再転送することを通常経路の要件にしない。物理 cache と shader／GPU data の cache は実装、device、資源世代に束縛する。差分履歴の欠落、cache eviction、古い snapshot の再提出は完全な入力から再構築できる。Native の内部 graph や shader 入力を Portable に流用せず、Resources と二重に同じ GPU 資源を所有しない。
 
@@ -359,10 +366,10 @@ provider は内部 graph の template、保持情報、GPU 部品、batch と派
 
 共通化する対象は機能要求、外部入出力、再利用できる graph 構造、型付きフレーム入力、runtime 選択と実行結果である。pass 本体、shader、GPU data と低レベル操作は二系統で実装する。
 
-段階 0 として、転送データ型、共通 pass／input contract、不変 bindings、resource input、依存と culling、plan の反復提出、機能 registry、非同期準備・提出、成功後の export、共通 resource facade と二 provider、frame／presentation helper、Hosting との接続を実装した。使用終了と診断成功を分離し、取消しや受理不明の失敗で提出済み target を未提出として返さない。
+転送データ型、共通 pass／input contract、不変 bindings、resource input、依存と culling、plan の反復提出、機能 registry、非同期準備・提出、成功後の export、共通 resource facade と二 provider、frame／presentation helper、Hosting との接続を実装した。さらに有界構造 cache、contributor、論理使用期間、子 snapshot の所有共有、frame の外部 lease と GPU retirement を備える。使用終了と診断成功を分離し、取消しや受理不明の失敗で提出済み target を未提出として返さない。
 
-最初の planner は登録順で生存 pass を実行し、物理的な内容 version の複製は行わない。MarkOutput した内容を、その後の生存 pass が同じ logical resource へ書き込んで失わせる graph は拒否する。過去の内容も出力として残す場合は、別 texture へ Copy してその結果を export する。
+planner は登録順で生存 pass を実行し、物理的な内容 version の複製は行わない。MarkOutput した内容を、その後の生存 pass が同じ logical resource へ書き込んで失わせる graph は拒否する。過去の内容も出力として残す場合は、別 texture へ Copy してその結果を export する。
 
 resource facade の明示操作は下位 manager の直列利用契約に従う。同一 runtime の scope 作成、pin、import／upload、Collect／Trim は caller が直列化し、開始した import を await してから次の manager 操作へ進む。Submit と停止の競合は provider が受理済み操作として追跡するが、一般の resource 操作全体を thread-safe とする保証ではない。scope／pin／execution の外部所有は caller が返し、Host が強制破棄しない。
 
-論理構造 cache、contributor builder、内部 template と差分準備、GPU 内容世代 ticket と実行間の内容依存、一般の raw external interop は未実装である。Lumyte.Resources の loader／decoder／評価 API は本 ADR で定義しない。同じ consumer assembly を使う適合試験と、初期化・snapshot・所有・提出失敗・target 形状変更の CPU 試験を分け、GPU command 列の一致は条件にしない。
+内部 template、GPU 内容世代 ticket、実行間の結果依存、資源再利用と専用 interop は ADR 0031／0032 の provider SPI に接続する。機能ごとの geometry packing、差分 upload、Model／2D、window／canvas の表示接続はこの基盤から利用する別の実装である。Lumyte.Resources の loader／decoder／評価 API は本 ADR で定義しない。同じ consumer assembly を使う適合試験と、初期化・snapshot・所有・提出失敗・target 形状変更の CPU 試験を分け、GPU command 列の一致は条件にしない。

@@ -73,7 +73,9 @@ internal sealed class GraphicsRuntimeHost : IGpuGraphicsSessionAccessor, IAsyncD
         Close();
         lock (gate)
         {
-            stopTask ??= ShutdownAsync();
+            // Keep in-flight observers on the same cleanup. A later explicit stop/dispose
+            // can retry ownership left by a failed cleanup without hiding that failure.
+            if (stopTask is null || stopTask.IsFaulted) { stopTask = ShutdownAsync(); }
             return stopTask.WaitAsync(cancellationToken);
         }
     }
@@ -83,22 +85,33 @@ internal sealed class GraphicsRuntimeHost : IGpuGraphicsSessionAccessor, IAsyncD
 
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        scope = scopeFactory.CreateAsyncScope();
         try
         {
-            GpuRenderRuntimeOptions configured = options.Value.Runtime;
+            GpuGraphicsOptions configuredOptions = options.Value;
+            int cacheMaximumEntries = configuredOptions.PlanCacheMaximumEntries;
+            GpuRenderRuntimeOptions configured = configuredOptions.Runtime;
             var snapshot = configured with { RequiredPasses = Array.AsReadOnly(configured.RequiredPasses.ToArray()) };
-            var registry = new GpuRenderProviderRegistry();
+            var available = new Dictionary<string, IGpuRenderProviderDefinition>(StringComparer.Ordinal);
             foreach (IGpuRenderProviderDefinition definition in definitions)
             {
-                registry.Register(await definition.CreateAsync(scope.Value.ServiceProvider, cancellationToken).ConfigureAwait(false));
+                ArgumentException.ThrowIfNullOrWhiteSpace(definition.Id);
+                if (!available.TryAdd(definition.Id, definition) && !Equals(available[definition.Id], definition))
+                { throw new ArgumentException($"Provider '{definition.Id}' has conflicting startup definitions."); }
             }
+            IGpuRenderProviderDefinition selected = (snapshot.ProviderId == "Auto" ? available.Values.FirstOrDefault()
+                : available.GetValueOrDefault(snapshot.ProviderId))
+                ?? throw new NotSupportedException($"No render provider is registered for '{snapshot.ProviderId}'.");
+            scope = scopeFactory.CreateAsyncScope();
+            IGpuRenderProvider provider = await selected.CreateAsync(scope.Value.ServiceProvider, cancellationToken).ConfigureAwait(false);
+            if (provider.Id != selected.Id) { throw new InvalidOperationException("The prepared provider does not match its registered ID."); }
+            var registry = new GpuRenderProviderRegistry();
+            registry.Register(provider);
             runtime = await registry.CreateAsync(snapshot, cancellationToken).ConfigureAwait(false);
             if (scope.Value.ServiceProvider.GetService<IGpuGraphicsPresentationFactory>() is { } factory)
             {
                 presentation = await factory.CreateAsync(runtime, cancellationToken).ConfigureAwait(false);
                 presentationGate = new GraphicsPresentationGate(presentation.Presentation);
-                renderContext = new GpuRenderContext(runtime, presentationGate);
+                renderContext = new GpuRenderContext(runtime, presentationGate, cacheMaximumEntries);
             }
             lock (gate)
             {

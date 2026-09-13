@@ -27,7 +27,7 @@ public sealed class NativeClearPass : INativeRenderPass<ClearPassRequest, Textur
             {
                 NativeGpuTextureViewDimension dimension = description.Dimension == NativeGpuTextureDimension.OneD
                     ? NativeGpuTextureViewDimension.OneD : NativeGpuTextureViewDimension.TwoD;
-                views.Add(context.CreateView("clear-target", texture,
+                views.Add(context.CreateView($"clear-target/{mip}/{layer}", texture,
                     new(dimension, description.Format, aspect, mip, 1, layer, 1, GpuTextureViewPurpose.Attachment)));
             }
         }

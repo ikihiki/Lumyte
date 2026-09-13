@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。共通の機能 pass を Portable pass 実装で実行する provider を定義する。最初の backend は WebGPU とし、現行実装の完了を示さない。
+採用・実装済み。共通の機能 pass を Portable pass 実装で実行する provider、内部計画、内容世代、CPU 準備 cache と明示的な外部 resource 接続を実装する。最初の backend は WebGPU とする。個々の Model／Blur／2D アルゴリズムは機能別 ADR の実装範囲である。
 
 ## 依存 ADR
 
@@ -64,14 +64,24 @@ factory が正常に返した backend と pass は runtime が所有する。fac
 | `CreateBindings(name, program, group, inputs)` | Portable の pass 用に生成した binding 入力と内部 resource/view を使い、`PortablePassBindings` を宣言する。実体の準備は参照先 resource の確定後に行う。 |
 | `AddPass<TState>(name, state, record)` | 不変の実行 state と `PortablePassRecordAction<TState>` を登録し、`PortablePassBuilder` を返す。一つの機能から複数回呼べる。 |
 | `PortablePassBuilder.Read(resource, usage)`／`Write(resource, usage)`／`ReadWrite(resource, usage)` | 内部 resource の先行内容の読取り／全範囲初期化／部分更新・保持を宣言する。 |
+| `PortablePassBuilder.Name`／`Preserve()` | feature 名を含む内部 pass 名と、外部副作用のため culling から保持する明示宣言。共通 feature も Preserve を宣言している場合だけ使える。登録元 Build の終了後は使用宣言を変更できない。 |
 | `PortablePassUsage` | `SampledRead`、`UniformRead`、`StorageRead`、`StorageWrite`、`ColorAttachment`、`DepthStencilAttachment`、`CopySource`、`CopyDestination`、`IndexRead`、`IndirectRead` の使用区分。Native barrier や layout state を含めない。 |
 | `Retain(lease)` | この実行の記録と GPU 使用が終了するまで必要な `IDisposable` lease の返却責任を provider へ渡す。shader cache の使用 lease などに使う。返却は提出・内容生成の成功通知ではない。 |
+| `PortablePassTemplate<TState>(expand)`／`Instantiate(template, state)` | 不変の CPU 展開手順を再利用し、今回の state を結び付ける。過去 execution の logical resource を template に保存しない。 |
+| `PortablePassPreparationCache<TKey, TValue>(maxEntries, comparer)`／`GetOrCreateAsync` | pass が持つ不変 CPU 準備結果の LRU cache。既定上限は64件。完全な入力依存を key に含め、失敗・取消し結果は保存しない。GPU 内容の所有は ticket を使う。 |
+| `Count`／`Remove(key)`／`Clear()`／`Dispose()` | CPU cache の保持数を読み、指定 entry／全 entry／cache 自体の保持を終了する。値を GPU owner として破棄しない。呼出しは pass の直列化された構築で行う。 |
+| `IPortablePassBindingInputs.Write(writer)` | 今回の logical resource を不変の binding 宣言へ書く。生成器がこの interface を実装する。 |
+| `PortablePassBindingWriter.Buffer`／`Texture`／`Sampler` | 内部 buffer と範囲、内部 view、managed sampler ref を binding 番号へ対応させる。writer は呼出し終了時に閉じ、sampler は batch が使用保持する。 |
 
 `PortablePassBuffer`、`PortablePassTexture`、`PortablePassView`、`PortablePassBindings` は runtime 内部の非所有参照である。`PortablePassBuildContext` は一回の構築に限って使い、callback に保存しない。`CreateBindings` の入力型は Portable shader metadata から pass 向けに生成し、内部 logical reference を受け取る。resource の実体確定後に下位 Resources の managed binding 入力へ変換し、immutable binding set を準備する。binding 宣言だけでは GPU の使用宣言や shader program の所有を代替しない。
 
 共通 `Declare` は外部の Read／Write／ReadWrite、ReadInput、固定データの ReadUpload と出力を宣言する。Portable 本体はその中を render／compute／copy の内部 pass に展開し、有限の binding、private transient、upload と内部依存を決める。外部の使用資源、更新範囲と結果を契約に一致させる。変更可能な共有 cache や package を隠れた外部入出力として扱わない。
 
 request、GetInput、所有情報を共有する不変 snapshot と UseDeclared は [ADR 0030](0030-render-graph-api.md) の「不変入力と使用保持」に従う。共通 resource description は extent、format、byte 数等の外部意味を示し、usage や shader stage を固定しない。Portable 本体が内部使用を宣言し、provider が実際の用途をまとめて物理 description を具体化する。
+
+内部 pass、resource、view、binding の名前は各カテゴリ内で feature 名を含めて一意とする。共通 `Read` の資源への隠れた書込みと、共通 `Write` の初期化前の読取りを拒否する。共通の書込みは本体の内部書込みで実現する。record context からは、その内部 pass が明示した resource と binding の参照先だけを解決できる。GPU 命令列や native の合法性を解析する検証ではない。
+
+共通 Preserve の宣言だけで不要な内部 writer 全体を保持しない。読取りだけの内部 pass に外部副作用がある場合は、その pass にも `Preserve()` を明示する。初期化せずに読む transient は Preserve でも合法化しない。
 
 ### GPU 内容世代の登録と再利用
 
@@ -117,12 +127,17 @@ root は Portable 用に生成した構造体を直接入力へ渡す。material
 | `SubmitAsync(plan, bindings, cancellationToken)` | live な機能に対応する Portable 本体を選び、内部計画と部品を再利用し、今回の入力・資源・binding に必要な準備・記録・下位提出を行う。bindings 省略時は CPU 初期値を使う。queue の受理後に共通 execution を返す。 |
 | `WaitIdleAsync(cancellationToken)` | runtime が管理する構築・提出・転送と退役を drain する。外部の未登録提出は対象に含めない。 |
 | `DisposeAsync()` | 新しい work の受理を終了し、実行を drain して pass、binding、resource、pool と backend を順に終了する。 |
+| `PortableRenderRuntime.Backend`／`PreparationStatistics` | provider integration 用に backend を借用する。統計は CPU schedule cache の保持件数と再利用回数であり、GPU 能力照会や command 状態公開ではない。 |
 
 共通 ref は runtime identity と record 世代を持つ。別 provider/runtime の数値 handle を流用しない。共通 facade の `ImportPackageAsync(data, cancellationToken)` は準備済み `GpuPackageUploadData` を Portable の upload 計画へ接続し、GPU 確保と転送を行う。pass 用 shader のファイル取得・package 展開は `Lumyte.Resources` 側で済ませ、host が不変の Portable shader package を pass factory の closure に渡す。pass 本体は GPU program と専用入力を管理し、`runtime.Programs` のような利用側の shader 管理窓口は設けない。
 
 ## 実行計画と最適化
 
 共通 `Compile` は機能契約、入力 slot と外部依存の論理 plan を作る。Portable shader、binding、root bytes と GPU object は生成しない。同じ plan を異なる bindings で繰り返し提出し、内部依存に従って今回の render／compute／copy を具体化する。
+
+内部計画は全範囲 `Write` と先行内容を読む `ReadWrite` を区別する。最終 output、明示 `Preserve`、保持された機能の外部出力、物理資源を伴わない dependency の副作用を根として必要な writer だけを残す。未初期化の読取りは live pass だけで拒否し、上書きされる不要 writer とその資源を準備しない。生き残った pass の登録順で WAR／WAW の順序も保持する。ticket の登録だけでは writer を root にしない。
+
+provider は依存構造から得た live pass の index と resource の生存区間を、上限64件の LRU cache で再利用する。key と値は構造・整数 index のみであり、bindings、record state、GPU ref、以前の BuildContext を保持しない。template は今回の state を新しい execution に束縛し、schedule と生存区間は構造が同じ場合に再計算しない。
 
 Portable 本体と provider は内部 graph の template、CPU 入力の所有情報、geometry／material の GPU 表現、binding 単位の batch、bounds 等を保持し、実際に依存する値や世代が変わった箇所を更新する。BuildAsync は構築と更新の入口であり、毎回すべての内部 node、upload 参照、pipeline 定義を作り直す要件ではない。template が有効なら今回の入力・資源・実行 state を結び付けて再利用する。差分情報が使えない初回、旧世代、cache eviction では完全な snapshot から再構築できる。
 
@@ -136,7 +151,11 @@ binding layout は Portable shader package が定義する。pass の生成済�
 
 必要な物理資源は Buffer／Texture object として作り、description と用途に合う object pool で再利用する。resource の生成前に heap を確保せず、異なる object の物理 memory alias を計画しない。一つの package は明示依存を持つ所有集合であり、単一物理 allocation を意味しない。
 
+同じ execution 内でも完全な description が一致し、生存区間が重ならない transient は同じ object を再利用する。`MarkOutput` と export は実行最後まで保持し、再利用で内容を上書きしない。先の内容が必要な `ReadWrite` を未初期化 transient の先頭に置くことはできない。別 execution 間の pool 再利用は Resources が確認した GPU 利用終了後に限る。
+
 persistent な package export は準備済み `GpuPackageUploadData` の `Profile` と export 契約で利用範囲を定め、対応する Portable uploader が usage を含む完全な物理 description を生成前に package plan へ渡す。`Profile` は用途契約の識別子であり、ファイルや loader の解決先ではない。registry の factory や未実行の BuildAsync から用途を推測しない。再 import と後続機能はその生成契約の範囲で利用し、生成済み object の usage を変更したり、隠れた複製で別用途を満たしたりしない。この生成・所有契約を WebGPU の合法性の独自検証へ広げない。
+
+現行の共通 package importer は `images.sampled` version 1 に対応し、画像の各 subresource と image export を取り込む。Model などが要求する buffer を含む新しい upload profile と、その登録・拡張 SPI は当該機能の実装時に追加する。この対応範囲を汎用の package profile registry の実装済みという意味にはしない。
 
 WebGPU の状態遷移を模倣する barrier stream と Native の stage/access/layout 型を内部計画へ加えない。pass 作者が WebGPU で成立する区間分割と資源使用を選び、wrapper が不適合な同時使用を暗黙の pass 分割で修正しない。
 
@@ -158,6 +177,14 @@ GPU 内容の利用可能性は上記 ticket を provider が管理する。Reta
 
 外部 resource と command の接続は provider 専用 integration に置き、所有 lease と先行提出の依存を明示する。未申告の外部利用は推測しない。presentation target の再取得条件と command completion は区別し、具体的な WebGPU object や canvas/surface 型を利用側に公開しない。
 
+`PortablePassBuildContext.ImportBuffer(name, handle, description, lease, precedingSubmission)` と Texture overload は、この backend の raw object と完全な description、所有 lease を受け取る。先行する managed 提出がある場合は同じ manager の受理済み token を明示する。null は先行 GPU work がないか caller 側で既に終了したことを表し、未管理 queue work を推測しない。成功時に lease を移譲し、先行提出と今回の batch の両方の利用終了まで保持する。生成済み raw object は pool へ入れず、lease を返すだけとする。
+
+下位 `GpuResourceScope.ImportBuffer`／`ImportTexture` は raw handle と description、lease を managed ref に変換する。`PortableGraphResources.ImportBuffer(reference)`／`ImportTexture(reference)` は同じ manager の ref を共通の非所有 ref へ公開する。元の scope／pin と必要な GPU 保持は integration が明示する。同じ raw handle の二重 import は拒否し、一つの managed ref を共有する。
+
+host／presentation は `PortableGraphResources.ImportBuffer(handle, description, lease, precedingSubmission)` と Texture overload から `PortableGraphResourceImport<TReference>` を取得できる。`Reference` は共通 input に束縛し、`Dispose()` は host の所有だけを終了する。先行 token の結果依存はその ref を使う実行へ引き継ぎ、提出済みの GPU 保持は import owner の返却で解除しない。
+
+`GpuResourceManager.OwnsSubmission` と `RequireAcceptedSubmission` は同じ manager の正常受理 token を確認する公開拡張契約であり、signal 権限を公開しない。`RetainUntilSubmissionEnds(token, lease)` は不確定な提出も含めた同じ manager の token に lease を移し、結果の成功とは独立に GPU 利用終了まで保持する。共通 completion の使用保持もこの契約へ接続する。非同期診断は ticket の失効だけを行い、lease の実際の返却・GPU 破棄は実行 context の `Collect` と終了処理で行う。
+
 resource input による presentation target の差替えは共通 helper と接続する。Acquire 済み target は今回の bindings にのみ結び付け、description が変わる場合は新しい共通 plan を要求する。GPU completion、target の再取得条件と host の frame pacing を分ける。
 
 ## 検証
@@ -170,18 +197,18 @@ Lumyte が確認するのは機能契約の Id/version と型、runtime identity
 
 ## コード配置
 
-以下は repository root 相対の目標配置とし、`Lumyte.Graphics.Portable.RenderGraph`、build 用生成器とそれぞれの隣接 `.Tests` を新設する。共通 graph、Portable API、Portable Resources／Shaders への依存に限定し、Native の graph 実装や heap 計画を共有しない。
+以下は repository root 相対の配置である。共通 graph、Portable API、Portable Resources／Shaders への依存に限定し、Native の graph 実装や heap 計画を共有しない。
 
 | 配置先 | 内容 |
 | --- | --- |
-| `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Registration/` | PortableRenderProvider、backend factory、PortableRenderPassRegistry と型付き factory。Host 非依存の登録定義 |
+| `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Runtime/`、`Passes/` | PortableRenderProvider、backend factory、PortableRenderPassRegistry と型付き factory。Host 非依存の登録定義 |
 | `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Passes/` | IPortableRenderPass、PortablePassServices、build／record context、内部 resource と PortablePassContentGeneration の SPI |
-| `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Planning/`、`Bindings/` | 内部 graph、resource usage の集約、render／compute／copy の区間計画と logical binding の具体化 |
+| `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Planning/`、`Passes/` | 内部 graph、resource usage の集約、schedule／生存区間 cache と logical binding の具体化 |
 | `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Resources/` | 共通 facade の Portable 実装、ref の対応、upload profile、Buffer／Texture の生成と transient／使用保持 |
-| `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Execution/` | 共通 runtime、各 pass の記録と下位提出、内容世代と writer 結果の対応、completion、失敗・終了時の回収 |
-| `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/` | 新設予定の build 用 project。shader schema から CreateBindings 向けの内部 logical reference を受ける入力型を生成する。Resources 向け managed 入力生成とは分ける |
+| `src/graphics/Lumyte.Graphics.Portable.RenderGraph/Runtime/`、`Passes/` | 共通 runtime、各 pass の記録と下位提出、内容世代と writer 結果の対応、completion、失敗・終了時の回収 |
+| `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/` | build 用 project。準備済み `.portable.resources.xml` から CreateBindings 向けの Buffer／View／Sampler／range 入力型を生成する。Resources 向け managed 入力生成とは metadata で選択し併用できる |
 | 利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/Portable/Graph/` | 上記生成器の出力。feature 本体の build へ取り込み、手書き source と別にする |
-| `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Tests/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators.Tests/` | 新設予定の隣接 xUnit project。fake backend の計画・binding・所有試験と、生成入力を compile／使用する consumer 試験 |
+| `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Tests/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators.Tests/` | 隣接 xUnit project。fake backend の計画・binding・所有試験と、生成入力を compile／使用する consumer 試験 |
 | `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Tests/Integration/` | WebGPU での実行、binding と回収の実機試験。通常の CPU 試験から分ける |
 
 生成器は feature 実装の build から使用し、shader package／loader と Resources の runtime に上位 Graph への依存を追加しない。WebGPU の native／browser 接続は各 backend、機能本体と Portable 用 Slang／WGSL source は `Lumyte.Graphics.Portable.Passes`、共有計算 module は `src/graphics/Shaders/Shared/`、DI 登録は `Lumyte.Graphics.Portable.Hosting` に置く。生成 WGSL は obj 配下に分離する。共通 RenderGraph に旧 binding／記録実装を残して Portable をそこへ接続する互換経路は設けない。
@@ -252,6 +279,8 @@ else
 
 Portable pass 本体が shader、GPU data、内部 graph と命令を所有する構成を採用する。resource の直接生成と有限の明示 binding を用い、NoGraphicsAPI の allocation、GPU address や Bindless の模倣を要件にしない。
 
-段階 0 として Portable provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、実行ごとの内部 pass／transient／記録、管理された view／binding、scope／batch／export pin、診断付き completion と成功後の export、Hosting の登録 snapshot と runtime 所有を実装した。Clear／Copy／Output は別の Portable.Passes assembly から登録し、Output の専用 WGSL と直接 root を本体が所有する。
+Portable provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、内部依存と culling、初期化・外部契約検査、template と bounded CPU 準備 cache、transient object 再利用、内容世代 ticket、先行 upload と遅延診断の結果依存、明示 raw import、管理された view／binding、scope／batch／export pin、診断付き completion と成功後の export を実装した。Clear／Copy／Output は別の Portable.Passes assembly から登録し、Output の専用 WGSL と直接 root を本体が所有する。
 
-内容世代 ticket と実行間の遅延診断依存、内部 template と差分準備、transient の alias 最適化、一般の raw external interop は未実装である。標準 Output で直接 WGSL を使うことを Slang source の共有完了とは扱わない。共通 facade の明示 resource 操作は caller が直列化し、外部所有の scope／pin／execution は caller が返す。
+Graph 用 binding 入力生成器と consumer 試験も実装し、標準 Output が生成された入力型を利用する。Clear は全 mip／layer／depth slice の初期化を一つの内部 pass の全範囲 Write として宣言し、culling で一部の clear が失われない。
+
+標準 Output で直接 WGSL を使うことを Slang source の共有完了とは扱わない。Model／Blur／2D 本体と実 window／canvas の presentation adapter は各機能・host の実装範囲であり、この provider の完成条件には含めない。共通 facade の明示 resource 操作は caller が直列化し、外部所有の scope／pin／execution は caller が返す。cache ticket の owner を返し忘れた場合も runtime の終了が所有を終了する。Portable に物理 heap alias、Bindless emulation、未管理外部提出の自動検出を追加しない。
