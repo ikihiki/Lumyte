@@ -12,6 +12,7 @@
     <Using Include="Xunit" />
     <Compile Remove="Integration\BrowserHost\**\*.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="Integration\GpuBackendTestGate.cs" />
+    <Compile Include="..\Lumyte.Graphics.WebGPU.Tests\Submission\WebGpuSubmissionTests.cs" Link="Submission\WebGpuSubmissionTests.cs" />
   </ItemGroup>
   <Target Name="PublishBrowserConformanceHost" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <MSBuild Projects="Integration\BrowserHost\BrowserHost.csproj" Targets="Publish"

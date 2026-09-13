@@ -62,9 +62,9 @@ public sealed partial class WebGpuBackend
             recordings[index] = recording;
         }
         var submitted = new SubmittedCommands(recordings, handles);
+        var observation = new WebGpuSubmission(new(timeline, value));
         foreach (CommandRecording recording in recordings) { recording.Consume(); }
         bool reserved = false;
-        bool handedToQueue = false;
         try
         {
             foreach (CommandRecording recording in recordings) { PreparePipelines(recording, dependencies); }
@@ -73,15 +73,20 @@ public sealed partial class WebGpuBackend
             timeline.Reserve(value);
             reserved = true;
             BrowserInterop.PushErrorScopes(device);
-            try { handedToQueue = true; BrowserInterop.Submit(device, handles); }
-            finally { dependencies.Add(ReadDiagnosticsAsync(BrowserInterop.PopErrorScopesAsync(device))); }
-            Task gpuEnded = FinishSubmittedCommandsAsync(submitted, BrowserInterop.OnSubmittedWorkDoneAsync(device));
-            timeline.Accept(value, gpuEnded, BrowserDiagnostics.CombineAsync(dependencies.ToArray()));
+            observation.Execute(
+                () => timeline.Accept(value, observation.GpuEnded, observation.Diagnostics),
+                () => BrowserInterop.Submit(device, handles),
+                () => FinishSubmittedCommandsAsync(submitted, BrowserInterop.OnSubmittedWorkDoneAsync(device)),
+                () =>
+                {
+                    dependencies.Add(ReadDiagnosticsAsync(BrowserInterop.PopErrorScopesAsync(device)));
+                    return BrowserDiagnostics.CombineAsync(dependencies.ToArray());
+                });
         }
         catch (Exception error)
         {
             if (reserved) { status.Lose($"Browser WebGPU submission connection failed: {error.Message}"); }
-            if (!handedToQueue) { pendingCommands.Remove(submitted); submitted.Release(); }
+            observation.ReleaseUnsubmitted(() => { pendingCommands.Remove(submitted); submitted.Release(); });
             throw;
         }
     }

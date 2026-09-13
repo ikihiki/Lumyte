@@ -83,21 +83,41 @@ public sealed unsafe partial class DirectX12Backend
 
             foreach (NativeRecording record in records) { record.Accept(); }
             nextSerial = serial;
-            foreach ((NativeSemaphore semaphore, ulong value) in dependencies)
+            DirectX12Submission.Execute(signal, dependencies.Length,
+                new SubmissionCalls(this, dependencies, nativeLists, signalSemaphore, signal.Value, serial));
+        }
+
+        private readonly struct SubmissionCalls(NativeQueue submissionQueue,
+            (NativeSemaphore Semaphore, ulong Value)[] dependencies, nint[] nativeLists,
+            NativeSemaphore signalSemaphore, ulong signalValue, ulong serial) : IDirectX12SubmissionCalls
+        {
+            public void Wait(int index)
             {
-                int waitResult = queue.Wait(semaphore.Fence, value);
-                if (waitResult < 0) { Owner.LoseDevice("Enqueuing a GPU timeline wait failed.", waitResult); }
-            }
-            if (nativeLists.Length != 0)
-            {
-                fixed (nint* pointers = nativeLists)
-                { queue.ExecuteCommandLists(checked((uint)nativeLists.Length), (ID3D12CommandList**)pointers); }
+                (NativeSemaphore semaphore, ulong value) = dependencies[index];
+                int result = submissionQueue.queue.Wait(semaphore.Fence, value);
+                if (result < 0) { submissionQueue.Owner.LoseDevice("Enqueuing a GPU timeline wait failed.", result); }
             }
 
-            int result = queue.Signal(completion, serial);
-            if (result < 0) { Owner.LoseDevice("Signaling command-memory completion failed.", result); }
-            result = queue.Signal(signalSemaphore.Fence, signal.Value);
-            if (result < 0) { Owner.LoseDevice("Signaling caller completion failed.", result); }
+            public void ExecuteCommands()
+            {
+                if (nativeLists.Length == 0) { return; }
+                fixed (nint* pointers = nativeLists)
+                { submissionQueue.queue.ExecuteCommandLists((uint)nativeLists.Length, (ID3D12CommandList**)pointers); }
+            }
+
+            public void SignalInternal()
+            {
+                int result = submissionQueue.queue.Signal(submissionQueue.completion, serial);
+                if (result < 0) { submissionQueue.Owner.LoseDevice("Signaling command-memory completion failed.", result); }
+            }
+
+            public void SignalCaller()
+            {
+                int result = submissionQueue.queue.Signal(signalSemaphore.Fence, signalValue);
+                if (result < 0) { submissionQueue.Owner.LoseDevice("Signaling caller completion failed.", result); }
+            }
+
+            public void Fault() => submissionQueue.Owner.submissionFaulted = true;
         }
 
         public void VerifyOperational() => Owner.VerifyAvailable();
@@ -118,7 +138,7 @@ public sealed unsafe partial class DirectX12Backend
 
         public void DisposeNativeObjects()
         {
-            // The caller has completed normal work; loss has explicitly removed the device.
+            // The caller must have ended GPU use. Submission failure is not completion proof.
             foreach (PendingCommands item in pending)
             { foreach (EncodedCommands encoded in item.Commands) { encoded.Dispose(); } }
             pending.Clear();

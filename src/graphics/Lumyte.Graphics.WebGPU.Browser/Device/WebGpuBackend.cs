@@ -140,11 +140,10 @@ public sealed partial class WebGpuBackend : P.IPortableGpuBackend
         if (disposed) { return; }
         disposed = true;
         status.Lose("Browser WebGPU backend was disposed.");
-        try { BrowserInterop.Destroy(device); }
-        finally
-        {
-            StopQueue();
-            device.Dispose();
-        }
+        // A failed interop call does not establish that device.destroy() reached the runtime.
+        // Retain uncertain command storage instead of releasing it from a finally block.
+        BrowserDeviceDisposal.Destroy(
+            () => BrowserInterop.Destroy(device),
+            () => { StopQueue(); device.Dispose(); });
     }
 }

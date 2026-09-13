@@ -177,4 +177,4 @@ buffers.Trim();
 
 Native の統一 heap arena、Portable の Buffer／Texture pool、貸出 identity、Release／Trim／Dispose を実装した。これらは明示的な返却だけを扱い、raw command と GPU 利用の終了は caller が保証する。実機と単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-GpuSubmissionToken、GpuRetirementQueue、GpuSubmissionException、Retire／Collect、GpuTransferUtilities と提出経路への接続は未実装である。現在の raw Submit には native queue へ渡した後の同期例外があり、上位から受理前後を確実に区別できない経路が残る。受理の境界、失敗時の completion と利用終了の証明を下位の公開契約で整えてから実装する。command の状態照会、無効 token を完了扱いする処理、device loss 例外だけを根拠にした回収は追加しない。共通 backend adapter、互換 wrapper、旧 utility API の維持は対象に含めない。
+GpuSubmissionToken、GpuRetirementQueue、Resources の GpuSubmissionException、Retire／Collect、GpuTransferUtilities と提出経路への接続は未実装である。下位には NativeGpuSubmissionException／Portable.GpuSubmissionException を実装し、queue への受渡し後・受理不明の同期失敗を要求した raw completion と結び付ける。これらは上位 token と別の型で、completion の到達を保証しない。通常 completion を確認できない障害からの停止確認・drain と、発行元が保証する利用終了を整えて上位へ接続する。command の状態照会、無効 token を完了扱いする処理、device loss 例外だけを根拠にした回収は追加しない。共通 backend adapter、互換 wrapper、旧 utility API の維持は対象に含めない。

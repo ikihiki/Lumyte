@@ -87,6 +87,7 @@ public sealed unsafe partial class VulkanBackend
             HashSet<TextureRecord> initialized = [];
             List<CommandBufferSubmitInfo> nativeCommands = [];
             CommandPool initializationPool = default;
+            Retirement? retirement = null;
             try
             {
                 // Retain the caller's command order. Initialization can write image metadata and must
@@ -116,7 +117,7 @@ public sealed unsafe partial class VulkanBackend
                     }
                 }
                 CommandBufferSubmitInfo[] commandInfos = nativeCommands.ToArray();
-                Retirement retirement = new(nextValue, recordings, initializationPool);
+                retirement = new(this, nextValue, recordings, initializationPool);
                 foreach (CommandRecord recording in recordings) { recording.End(); }
 
                 SemaphoreSubmitInfo* signals = stackalloc SemaphoreSubmitInfo[2];
@@ -146,22 +147,46 @@ public sealed unsafe partial class VulkanBackend
                     {
                         SType = StructureType.SubmitInfo2, SignalSemaphoreInfoCount = 1, PSignalSemaphoreInfos = &signals[1],
                     };
-                    CheckResult(Owner.vk.QueueSubmit2(queue, 2, submits, default), "vkQueueSubmit2");
+                    VulkanSubmission.Execute(signal, new SubmissionCalls(this, submits, retirement, initialized));
                 }
-
-                // No allocation or native operation may fail between acceptance and retirement ownership.
-                pending.Add(retirement);
-                initializationPool = default;
-                submittedValue = nextValue;
-                foreach (TextureRecord texture in initialized) { texture.RequiresGeneralInitialization = false; }
-                foreach (CommandRecord recording in recordings) { recording.MarkSubmitted(); }
             }
             catch
             {
-                foreach (CommandRecord recording in recordings) { recording.Reject(); }
-                if (initializationPool.Handle != 0) { Owner.vk.DestroyCommandPool(Owner.device, initializationPool, null); }
+                if (retirement is null)
+                {
+                    foreach (CommandRecord recording in recordings) { recording.Reject(); }
+                    if (initializationPool.Handle != 0) { Owner.vk.DestroyCommandPool(Owner.device, initializationPool, null); }
+                }
+                else { retirement.RejectUnlessRetained(); }
                 throw;
             }
+        }
+
+        private readonly struct SubmissionCalls(QueueRecord submissionQueue, SubmitInfo2* submits,
+            Retirement retirement, HashSet<TextureRecord> initialized) : IVulkanSubmissionCalls
+        {
+            public Result Submit() => submissionQueue.Owner.vk.QueueSubmit2(submissionQueue.queue, 2, submits, default);
+
+            public void Retain(bool completionSignalKnown)
+            {
+                // Capacity and retirement storage were prepared before QueueSubmit2. Transfer ownership
+                // before any diagnostic allocation, including on an ambiguous result or interop exception.
+                retirement.Retain(completionSignalKnown);
+                submissionQueue.pending.Add(retirement);
+                submissionQueue.submittedValue = retirement.Value;
+                if (completionSignalKnown)
+                {
+                    foreach (TextureRecord texture in initialized) { texture.RequiresGeneralInitialization = false; }
+                }
+                else
+                {
+                    // Managed refusal to continue prevents reinitializing textures used by uncertain work.
+                    // It does not assert native device loss or that GPU execution has stopped.
+                    submissionQueue.Owner.submissionFaulted = true;
+                }
+            }
+
+            public void CheckResult(Result result) => submissionQueue.CheckResult(result, "vkQueueSubmit2");
         }
 
         private static CommandBufferSubmitInfo SubmitCommand(CommandBuffer command) => new()
@@ -202,9 +227,7 @@ public sealed unsafe partial class VulkanBackend
             int count = 0;
             foreach (Retirement retirement in pending)
             {
-                if (retirement.Value > completed) { break; }
-                foreach (CommandRecord recording in retirement.Recordings) { recording.ReleaseNative(); }
-                if (retirement.InitializationPool.Handle != 0) { Owner.vk.DestroyCommandPool(Owner.device, retirement.InitializationPool, null); }
+                if (!retirement.TryReleaseCompleted(completed)) { break; }
                 count++;
             }
             pending.RemoveRange(0, count);
@@ -222,14 +245,32 @@ public sealed unsafe partial class VulkanBackend
             // Backend disposal has a caller completion precondition. No WaitIdle or application-resource cleanup.
             foreach (Retirement retirement in pending)
             {
-                foreach (CommandRecord recording in retirement.Recordings) { recording.ReleaseNative(); }
-                if (retirement.InitializationPool.Handle != 0) { Owner.vk.DestroyCommandPool(Owner.device, retirement.InitializationPool, null); }
+                retirement.ReleaseAfterGpuUse();
             }
             pending.Clear();
             Owner.vk.DestroySemaphore(Owner.device, completion, null);
         }
 
-        private sealed record Retirement(ulong Value, CommandRecord[] Recordings, CommandPool InitializationPool);
+        private sealed class Retirement(QueueRecord queue, ulong value, CommandRecord[] recordings,
+            CommandPool initializationPool) : VulkanSubmissionRetirement(value)
+        {
+            protected override void MarkSubmitted()
+            {
+                foreach (CommandRecord recording in recordings) { recording.MarkSubmitted(); }
+            }
+
+            protected override void Reject()
+            {
+                foreach (CommandRecord recording in recordings) { recording.Reject(); }
+                if (initializationPool.Handle != 0) { queue.Owner.vk.DestroyCommandPool(queue.Owner.device, initializationPool, null); }
+            }
+
+            protected override void ReleaseNative()
+            {
+                foreach (CommandRecord recording in recordings) { recording.ReleaseNative(); }
+                if (initializationPool.Handle != 0) { queue.Owner.vk.DestroyCommandPool(queue.Owner.device, initializationPool, null); }
+            }
+        }
     }
 
 

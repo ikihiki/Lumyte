@@ -76,6 +76,8 @@ Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
 
 未提出の `Dispose` は記録を破棄する。提出済みの `Dispose` は待機せず、queue は内部 completion で command memory を回収する。caller semaphore は producer と、それを待つ全 consumer の GPU 利用が完了した後に破棄できる。command の状態を取得する API、application resource の自動退役、暗黙 staging は設けない。
 
+`Submit` が native queue への受渡し後に同期的に失敗し、native API に未提出の保証がない場合、`NativeGpuSubmissionException` が要求した `Completion` と元の `InnerException` を保持する。受理の有無が不明な場合も含み、未提出として再実行・解放しない。この値の到達や GPU 停止は保証されず、device loss や backend の Dispose も利用終了の代理にはならない。詳細は [提出と同期の ADR](../../../docs/adr/0012-native-command-submission-and-synchronization.md) に従う。
+
 ## 非同期 copy と CPU の先行
 
 `backend.CopyQueue` は独立した転送 queue で、利用できない device では null を返す。存在しても物理的な同時実行や高速化を保証しない。以下の `slots` は caller が用意した3組の upload／device／readback range とする。CPU は再利用する slot の最終 consumer だけを待ち、それ以外のフレームを先行提出できる。

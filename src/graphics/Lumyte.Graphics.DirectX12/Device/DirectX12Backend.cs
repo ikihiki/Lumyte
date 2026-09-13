@@ -26,6 +26,7 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     private NativeQueue mainQueue = null!;
     private NativeQueue copyQueue = null!;
     private volatile string? deviceLoss;
+    private volatile bool submissionFaulted;
     private volatile bool disposed;
 
     private DirectX12Backend(D3D12 api, ComPtr<ID3D12Device> device, ComPtr<ID3D12Device10> device10)
@@ -121,6 +122,7 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     {
         VerifyNotDisposed();
         if (deviceLoss is not null) { throw new GpuDeviceLostException(deviceLoss); }
+        if (submissionFaulted) { throw new InvalidOperationException("The Direct3D 12 backend cannot continue after an uncertain GPU submission. GPU execution may still be in progress."); }
     }
 
     private static void RequireNativeFeatures(ComPtr<ID3D12Device> device)

@@ -523,9 +523,36 @@ DX12 は実 device／heap／texture の作成、他3件は描画と readback を
 
 55文書の418ローカルリンク、21アンカー、37 ADR の必要章と182個の番号依存に問題はなかった。production 向け `InternalsVisibleTo` は追加せず、既存11指定はすべて test assembly 向けのままである。
 
+## 第16段階: 提出失敗の識別と内部 command memory の保持
+
+2026-09-14 に raw Native／Portable の提出失敗契約を整えた。Resources の自動回収へ進む前提として、GPU へ渡した可能性がある work を未提出として破棄しないようにする。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| Native 公開契約 | `NativeGpuSubmissionException` が要求した `NativeGpuTimelinePoint` の `Completion` と元の `InnerException` を保持する。`Submit` の署名は維持する |
+| DirectX 12 | GPU Wait／Execute／内部 Signal／caller Signal の区間で失敗した場合も、準備済み内部 command memory を保持する。後続の操作は共有障害を通知し、受理不明の work を再提出しない |
+| Vulkan | `QueueSubmit2` のメモリ不足だけを不変保証のある拒否として扱う。device loss／不明な結果では recording と初期化 pool を queue 側に移し、通常の破棄・counter による回収を行わない |
+| Portable 公開契約 | `GpuSubmissionException` が要求した raw `GpuFenceValue` と元の障害を保持する。GPU 利用終了後の診断失敗を示す既存 `GpuExecutionException` と区別する |
+| Dawn／Browser | GPU 利用終了と診断の観測を受渡し前に結び付ける。受渡し後の同期障害でも point を保持し、診断接続の失敗だけで独立した完了通知登録を省かない |
+| Browser 終了 | device の destroy interop が同期失敗した場合、finally で残った内部 command を解放しない。正常な Dispose の全利用終了という caller 前提は維持する |
+
+Vulkan の従来の catch は、`QueueSubmit2` の device loss を含む全失敗で初期化 pool を解放していた。native 仕様が resource／同期状態の不変を保証するのは `OUT_OF_HOST_MEMORY`／`OUT_OF_DEVICE_MEMORY` であるため、受理不明の結果を分けた。後の大きい timeline 値だけで不明な記録を回収せず、同じ image の初期化を再実行しないよう backend の継続利用も止める。[vkQueueSubmit2 の失敗保証](https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit2.html)
+
+新しい例外の completion は識別子であり、値の到達や GPU 利用終了を保証しない。例外を包む処理自体が成立しない致命的な host 障害も未提出の証拠にしない。device loss、待機の取消し、backend の Dispose を GPU 停止の代用にはしない。Browser の Promise と device loss の扱いも保守的な既存契約を維持し、診断接続の障害後に保持を自動で解く機構は加えていない。
+
+Native／Portable の下位例外は Resources の型を参照しない。native 呼出し順序を扱う内部 helper は実際の提出から使い、Dawn／Browser の観測 helper は source link で各 assembly に含める。production 向けの `InternalsVisibleTo`、公開 command 状態、暗黙の GPU wait、application resource の追跡は追加していない。関連 ADR の API・所有契約と両 API の README を更新した。
+
+新規の CPU 回帰試験50件が成功した。Native は例外2件、DX12 の実呼出し順序と途中失敗7件、Vulkan の拒否・保留と内部 memory の保持11件である。Portable は公開例外3件、両 WebGPU assembly で実際に使う提出 helper の各13件、Browser の destroy 失敗1件を追加した。Vulkan は通常 completion 前の回収禁止、受理不明の記録に最大 counter 値を与えても解放しないこと、利用終了を caller が別途確定した後の一度だけの解放を検証する。WebGPU は scope 回収と GPU 完了登録の独立性、受渡し前の失敗時だけの解放、受渡し後・非同期障害で利用終了を作り出さないことを確認する。既存 timeline／診断を含む focused tests 計101件もすべて成功した。
+
+独立レビューで実際の queue から helper・回収処理への接続と、公開契約・ADR の整合を確認した。故障の試験は制御した native 結果・runtime 呼出し・Task を使うもので、実 driver の device loss や Browser の loss 通知順序を強制した適合試験ではない。停止確認の公開操作、利用終了が不明な保持の drain と Resources への接続は後続である。
+
+`LUMYTE_WEBGPU_BROWSER` に既存の Chrome for Testing 155.0.8048.0 を指定し、`dotnet test Lumyte.slnx -m:4 --logger "trx;LogFilePrefix=submission-handoff-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を実行した。全31 project の **2,152件成功、失敗0、skip 0**、全 TRX の outcome が Completed、終了コード0を確認した。DX12 415件、Vulkan 428件、Dawn 336件、Browser 59件を含む。既存のコピー・描画・同期・完了後の再利用も元の期待値で成功し、native crash と無進行 timeout はなかった。
+
+55文書の419ローカルリンク、21アンカー、37 ADR の必要章と182個の番号依存を確認した。既存11指定の `InternalsVisibleTo` はすべて test assembly 向けで、差分の空白検査も成功した。
+
 ## 未実装と次の順序
 
-1. 提出の受理・GPU 利用終了・device 停止の契約を整え、両系統の Resources に completion token と `Retire`／`Collect` を接続する。その上で upload、binding／descriptor と resource manager の寿命管理を実装する。
+1. 通常 completion と停止未確認の障害を区別する発行元・待機契約を整え、両系統の Resources に completion token と `Retire`／`Collect` を接続する。利用終了を確認できない障害からの drain は別途必要であり、今回の提出例外だけでは完成していない。その上で upload、binding／descriptor と resource manager の寿命管理を実装する。
 2. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

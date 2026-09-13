@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="wwwroot\lumyte-webgpu.js" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="contentFiles/any/any/wwwroot/" />
+    <Compile Include="..\Lumyte.Graphics.WebGPU\Submission\WebGpuSubmission.cs" Link="Submission\WebGpuSubmission.cs" />
   </ItemGroup>
 </Project>

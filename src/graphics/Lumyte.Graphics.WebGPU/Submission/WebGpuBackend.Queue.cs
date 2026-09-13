@@ -94,9 +94,9 @@ public sealed partial class WebGpuBackend
                 recordings[index] = recording;
             }
             var submitted = new SubmittedCommands(recordings, handles);
+            var observation = new WebGpuSubmission(new(timeline, signalValue));
             foreach (CommandRecording recording in recordings) { recording.Consume(); }
             bool reserved = false;
-            bool handedToQueue = false;
             try
             {
                 foreach (CommandRecording recording in recordings)
@@ -109,27 +109,29 @@ public sealed partial class WebGpuBackend
                 timeline.Reserve(signalValue);
                 reserved = true;
                 PushScopes();
-                try
-                {
-                    fixed (F.CommandBufferHandle* pointer = handles)
+                observation.Execute(
+                    () => timeline.Accept(signalValue, observation.GpuEnded, observation.Diagnostics),
+                    () =>
                     {
-                        handedToQueue = true;
-                        F.WebGPU_FFI.QueueSubmit(queue.Handle, (nuint)handles.Length, pointer);
-                    }
-                }
-                finally { dependencies.Add(PopScopes()); }
-                Task gpuEnded = TrackCompletion(queue, submitted);
-                timeline.Accept(signalValue, gpuEnded, WebGpuDiagnostics.CombineAsync(dependencies.ToArray()));
+                        fixed (F.CommandBufferHandle* pointer = handles)
+                        { F.WebGPU_FFI.QueueSubmit(queue.Handle, (nuint)handles.Length, pointer); }
+                    },
+                    () => TrackCompletion(queue, submitted),
+                    () =>
+                    {
+                        dependencies.Add(PopScopes());
+                        return WebGpuDiagnostics.CombineAsync(dependencies.ToArray());
+                    });
             }
             catch (Exception error)
             {
                 // Once submission may have happened, its acceptance cannot be rolled back or retried safely.
                 if (reserved) { status.Lose($"WebGPU submission connection failed: {error.Message}"); }
-                if (!handedToQueue)
+                observation.ReleaseUnsubmitted(() =>
                 {
                     pendingCommands.Remove(submitted);
                     submitted.Release();
-                }
+                });
                 throw;
             }
         }

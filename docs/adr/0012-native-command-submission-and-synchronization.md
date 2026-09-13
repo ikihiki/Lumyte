@@ -22,6 +22,7 @@ caller が timeline の値、提出順序、GPU wait と再利用時点を管理
 | --- | --- |
 | `NativeGpuQueue.Submit(commands, signal, waits = default)` | `ReadOnlySpan<NativeGpuCommandBuffer>` を一回提出する。全 native 記録の生成・終了を成功させ、`ReadOnlySpan<NativeGpuTimelinePoint>` の全待機点を GPU が満たしてから batch の全 work を実行し、単一の `signal` point を通知する。CPU は GPU 完了を待たない。空の記録列も許す。 |
 | `NativeGpuTimelinePoint(Semaphore, Value)` | device timeline の identity と ulong 値の非所有 record struct。異なる semaphore の同じ数値は同じ完了点ではない。 |
+| `NativeGpuSubmissionException(completion, innerException)` | 受渡し後で未提出の保証がない同期失敗を通知する。受理不明の結果も含む。`Completion` は要求した caller signal、`InnerException` は元の障害。値の到達や GPU 利用終了を保証しない。 |
 | `NativeGpuSemaphore` | 全 queue から利用できる caller-owned device timeline。public abstract 基底型と protected constructor から各 backend が実装する。 |
 | `INativeGpuBackend.CreateSemaphore(initialValue = 0)` | 初期値を持つ device timeline を生成する。queue に所属させない。 |
 | `NativeGpuSemaphore.IsComplete(value)` | 現在の値が指定値以上かを CPU から確認する。待機と queue 内部 memory の回収を行わない。 |
@@ -48,9 +49,11 @@ Vulkan は作成済み pipeline と記録済み native command を使い、depth
 
 mesh も raster work としてこの提出・completion 契約を共有する。amplification の有無は program 定義の一部で、提出時に別の program へ差し替えない。DirectX 12 では mesh 用 PSO の生成失敗も batch 全体の受理前失敗になり、既存 draw と mesh が混在していても成功分だけを提出しない。mesh 専用 queue、準備呼出し、completion object は追加しない。
 
-PSO 生成、native command への変換・終了に失敗した batch は受理せず、その batch の GPU wait も work も追加しない。caller は失敗した記録を `Dispose` して新しく記録する。失敗までに生成できた PSO は pipeline に残してよい。受理済み work は未提出へ戻さず、再提出を許可しない。DirectX 12 では最初の native queue wait 以後の失敗も取消し不能な受理後失敗として扱い、残った wait による永久停止を残さない。
+PSO 生成、native command への変換・終了に失敗した batch は受理せず、その batch の GPU wait も work も追加しない。caller は失敗した記録を `Dispose` して新しく記録する。失敗までに生成できた PSO は pipeline に残してよい。受理済み work は未提出へ戻さず、再提出を許可しない。
 
-受理後は command を Dispose しても caller の semaphore で completion を照会できる。signal を保証できなくなった場合は device loss として停止し、完了値が届かない通常待機を残さない。backend 所有の command memory は必要な completion または確定した device 終了まで保持し、Dispose を理由に早期再利用しない。
+native queue への受渡し開始後で、native API が未提出を保証しない同期障害は `NativeGpuSubmissionException` に要求した completion と元の例外を保持する。Vulkan のメモリ不足による確実な拒否は元の例外を維持し、受理の有無を確定できない結果を包む。これは失敗した提出を識別する契約であり、公開 command 状態や完了証明ではない。受理済み・受理不明の記録を再提出せず、application resource と semaphore の所有を維持する。例外を包む処理自体が成立しない致命的な host 障害もあるため、この例外以外なら常に未提出だったとは推定しない。
+
+受理後は command を Dispose しても caller の semaphore で completion を照会できる。ただし、提出失敗の `Completion` が到達する保証はない。device loss として通知された場合も GPU 利用終了とはみなさない。backend 所有の command memory は必要な completion または別途確定した利用終了まで保持し、Dispose を理由に早期再利用しない。backend の Dispose は caller が先に全利用を終了する契約であり、戻り値を GPU 停止の証明に使わない。
 
 内部 command memory の回収は caller の semaphore の寿命に依存させない。各 queue は独立した内部 completion と回収リストを持ち、queue 操作に伴って完了済みの native memory を回収する。全 GPU 利用を解消した caller semaphore を破棄しても、内部回収は継続できる。CPU の待機・照会は回収リストを操作しない。この追跡は allocator／native command memory だけを対象とし、application resource の退役を引き受けない。回収のための公開 polling API、常駐 thread、暗黙の CPU wait は追加しない。
 
@@ -66,7 +69,7 @@ native 記録中・終了済み・受理済みの区別は内部管理であり�
 
 | 配置先 | 内容 |
 | --- | --- |
-| `src/graphics/Lumyte.Graphics.Native/Submission/`、`src/graphics/Lumyte.Graphics.Native/Synchronization/` | 前者は `NativeGpuQueue` と記録開始・wait point を受け取る提出、後者は `NativeGpuTimelinePoint` と device に属する caller-owned `NativeGpuSemaphore` の CPU 操作。生成 member は `Device/INativeGpuBackend.cs`。 |
+| `src/graphics/Lumyte.Graphics.Native/Submission/`、`src/graphics/Lumyte.Graphics.Native/Synchronization/` | 前者は `NativeGpuQueue`、`NativeGpuSubmissionException` と記録開始・wait point を受け取る提出、後者は `NativeGpuTimelinePoint` と device に属する caller-owned `NativeGpuSemaphore` の CPU 操作。生成 member は `Device/INativeGpuBackend.cs`。 |
 | `src/graphics/Lumyte.Graphics.DirectX12/Submission/` | batch 内の PSO 解決、command list の変換・終了から queue 受理までの処理、内部 command memory の回収との接続。 |
 | `src/graphics/Lumyte.Graphics.Vulkan/Submission/` | 記録済み command buffer の batch 終了、queue 受理と内部 command memory の回収との接続。 |
 | `src/graphics/Lumyte.Graphics.DirectX12/Synchronization/`、`src/graphics/Lumyte.Graphics.Vulkan/Synchronization/` | device に所属する fence／timeline semaphore、CPU signal・照会・wait、同期 object の解放と device 全体の loss の接続。 |
@@ -121,5 +124,7 @@ batch の一回受理、PSO/command 変換の失敗時に GPU wait も追加し�
 一回提出、明示 completion と caller lifetime を採用し、転送 command の batch と caller-owned semaphore に実装した。内部 command memory は queue 所有の completion で回収する。受理前の command 変換・終了失敗を GPU 提出へ進めず、受理済み recording の再利用を拒否する。外部 assembly からの実装と GPU 試験の結果は [進捗記録](../designs/graphics-implementation-progress.md) に記録する。
 
 compute pipeline、直接 root と直接／間接 dispatch、vertex／mesh raster の直接／一件の間接実行を提出へ接続した。DirectX 12 の提出時 PSO 解決は Lumyte の補足であり、mesh の PSO 生成を含む batch の native 変換に失敗した場合は一部の recording だけを実行しない。
+
+受渡し後・受理不明の同期失敗を識別する例外と、内部 command memory の保持を実装した。完了点の通知だけで device loss 後の回収まで保証しない。停止を確認する公開操作、非同期の Native CPU wait、上位の completion token と retirement への接続は未実装である。
 
 複数 queue の選択と GPU wait、queue に所属しない CPU timeline 操作は NoGraphicsAPI の現行 prototype を拡張する方針として採用し、DirectX 12／Vulkan に実装した。CopyQueue は独立した native queue を取得できる場合だけ提供する。任意数の queue 作成、専用 compute queue、stage を指定する部分 wait、複数 signal、presentation と application resource の自動退役はこの段階に含めない。実装と実機検証の範囲は進捗記録に従う。

@@ -154,7 +154,9 @@ pipeline は dispatch を含む最初の Submit で実体化し、論理 handle 
 
 一つの記録は生成元 queue に一回だけ提出する。複数記録を渡した batch は全 encode 後にまとめて提出する。`commands.Dispose()` は提出済み work を取り消さず、内部記録は GPU 利用終了まで保持する。caller は Buffer／Texture、binding、pipeline、module と layout を全利用終了まで維持する。
 
-timeline の signal 値は単調増加とし、照会できるのは initial value と実際に受理した値だけである。`IsComplete` は GPU 利用終了だけを示し、`WaitAsync` の正常復帰が当該 batch の診断も含む成功を示す。`GpuExecutionException` は利用終了後の失敗で、`FenceValue` とコピー済み `Diagnostics` を持つ。待機取消しは GPU work の取消しや回収許可ではなく、device loss は未完了の待機にも通知する。失敗経路での所有は [提出と完了のADR](../../../docs/adr/0026-command-submission-and-synchronization.md) に従う。
+timeline の signal 値は単調増加とし、観測対象は initial value と queue への受渡しを開始した値である。受理不明の値を保持していても GPU 利用終了を意味しない。`IsComplete` は GPU 利用終了だけを示し、`WaitAsync` の正常復帰が当該 batch の診断も含む成功を示す。`GpuExecutionException` は利用終了後の失敗で、`FenceValue` とコピー済み `Diagnostics` を持つ。待機取消しは GPU work の取消しや回収許可ではなく、device loss は未完了の待機にも通知する。失敗経路での所有は [提出と完了のADR](../../../docs/adr/0026-command-submission-and-synchronization.md) に従う。
+
+queue への受渡し後の同期障害は `GpuSubmissionException` で通知する。`Completion` は当該 signal point、`InnerException` は元の障害であり、GPU 利用終了を表さない。scope 回収や完了通知登録の失敗でも内部記録を保持し、未提出として再実行・返却しない。通常 completion が確認できない場合、backend の Dispose や device loss の通知だけで resource を再利用しない。
 
 ## Raster と Texture copy
 

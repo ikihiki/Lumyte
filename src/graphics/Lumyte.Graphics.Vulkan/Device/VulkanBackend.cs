@@ -27,6 +27,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private delegate* unmanaged<Instance, DebugUtilsMessengerEXT, AllocationCallbacks*, void> destroyDebugMessenger;
     private bool disposed;
     private volatile bool deviceLost;
+    private volatile bool submissionFaulted;
     private QueueRecord? mainQueue;
     private QueueRecord? copyQueue;
     private uint[] resourceQueueFamilies = [];
@@ -405,6 +406,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     {
         VerifyNotDisposed();
         if (deviceLost) { throw new GpuDeviceLostException("The Vulkan device stopped after device loss."); }
+        if (submissionFaulted) { throw new InvalidOperationException("The Vulkan backend cannot continue after an uncertain GPU submission. GPU execution may still be in progress."); }
     }
 
     internal void CheckDeviceResult(Result result, string operation)

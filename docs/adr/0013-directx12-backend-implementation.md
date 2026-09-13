@@ -141,7 +141,9 @@ texture copy は footprint の `Aspect` を plane index に変換する。color 
 
 `ImagePitch` による各 layer／slice の開始位置を caller の配置のまま native copy へ写す。必要なら指定された範囲を複数の native copy region に分けるが、新しい staging resource や data 変換は生成しない。native の pitch／offset 整列、depth/stencil copy の全 subresource 条件と sample count の制約を caller が満たす。これらの合法性を wrapper 内で再検証せず、debug layer の結果を伝える。[CopyTextureRegion](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copytextureregion)
 
-batch 全体の PSO と command list の生成・終了、回収用領域の確保が成功してから、指定された GPU waits → command list の実行 → 内部 fence → caller fence の順に queue へ積む。空 batch は実行呼出しを省き、wait と signal を行う。PSO 生成や変換・終了が失敗した batch は受理せず、GPU wait も積まない。caller はその記録を `Dispose` し、新しい記録を作る。生成に成功した PSO は pipeline の内部に保持してよい。最初の native Wait 以降の失敗は queue への副作用を取り消せないため `RemoveDevice` で device を停止し、device loss を返す。受理済み work を再提出可能に戻したり、永久に届かない completion を通常待機として残したりしない。
+batch 全体の PSO と command list の生成・終了、回収用領域の確保が成功してから、指定された GPU waits → command list の実行 → 内部 fence → caller fence の順に queue へ積む。空 batch は実行呼出しを省き、wait と signal を行う。PSO 生成や変換・終了が失敗した batch は受理せず、GPU wait も積まない。caller はその記録を `Dispose` し、新しい記録を作る。生成に成功した PSO は pipeline の内部に保持してよい。
+
+最初の native Wait／ExecuteCommandLists／Signal の呼出し開始以降は副作用を取り消せない。同期障害は `NativeGpuSubmissionException` に caller の `Completion` と元の例外を保持し、記録と内部 command memory を提出側に残す。queue Wait／Signal の失敗は `RemoveDevice` と共有 device loss へ接続するが、この呼出しや例外を GPU 利用終了の証明にしない。要求した caller signal が届く保証もなく、受理不明の work を再提出可能に戻さない。
 
 command allocator と記録用 memory だけを backend が所有する。未提出 command の `Dispose` は記録を破棄する。提出済み command の `Dispose` は GPU work を取消し・待機せず、対応 completion または確定した device 終了まで内部 memory を保持してから回収する。公開する command 状態は設けず、記録・終了・受理の管理は backend 内部に閉じる。application の heap、linear region、texture、render view、descriptor、pipeline の寿命は引き受けない。
 
@@ -167,6 +169,7 @@ command allocator と記録用 memory だけを backend が所有する。未提
 | `Barrier`／`TextureTransition`／`DiscardTexture` | global dependency、caller 指定の texture layout 変更、旧内容を保持しない subresource の metadata 再初期化を分ける。 |
 | `MainQueue`／`CopyQueue`／`StartCommandRecording`／`NativeGpuCommandBuffer.Dispose` | DIRECT／COPY の記録・command memory を独立して持つ。未提出の破棄と、提出済み memory の内部 completion 後の回収を区別する。 |
 | `Submit(commands, signal, waits)`／`NativeGpuTimelinePoint` | 全 batch の native 変換後、GPU waits → work → 内部 signal → caller signal を積む。空 batch も同期として受理する。 |
+| `NativeGpuSubmissionException.Completion / InnerException` | 受渡し後の同期失敗を caller の要求 signal と元の障害へ結び付ける。内部 memory の保持を未提出へ戻さず、完了したとは扱わない。 |
 | `CreateSemaphore`／`NativeGpuSemaphore.IsComplete`／`WaitCpu`／`SignalCpu`／`Dispose` | device に属する caller-owned fence の生成、完了照会、CPU wait／signal と解放。queue の回収から独立する。 |
 | `NativeGpuBackendOptions.EnableValidation`／`NativeGpuException.NativeErrorCode` | DirectX 12 debug layer と native error を使用し、独自の使用検証層を重ねない。 |
 

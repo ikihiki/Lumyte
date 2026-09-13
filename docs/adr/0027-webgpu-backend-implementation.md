@@ -122,9 +122,13 @@ Buffer range の null length は元の生成値から解決する。Buffer copy 
 
 queue への提出後、その提出を含む `onSubmittedWorkDone` を caller 指定の timeline 値へ対応付ける。これは GPU 利用終了を知る入口であり、処理成功は別に確定する。timeline は CPU 観測用とし、GPU の semaphore や queue 間 wait を偽装しない。[WebGPU の queue completion](https://gpuweb.github.io/gpuweb/#dom-gpuqueue-onsubmittedworkdone)
 
-native host は全記録を一つの QueueSubmit に渡し、後半の encode 失敗で前半だけを提出しない。timeline の内部領域を提出前に確保し、受理された値だけを照会対象にする。QueueOnSubmittedWorkDone の future は既存の instance event driver で進行させる。成功 callback 後に内部 native command buffer と記録 memory を回収し、診断が未確定でも GPU 利用終了を観測できるようにする。受理の有無や完了を確認できない interop 障害は device の共有失敗へ接続し、残った内部 command は device 終了時に解放する。application resource の registry は追加しない。
+native host は全記録を一つの QueueSubmit に渡し、後半の encode 失敗で前半だけを提出しない。timeline の内部領域を提出前に確保し、queue への受渡しを開始した値を観測対象として保持する。QueueOnSubmittedWorkDone の future は既存の instance event driver で進行させる。正常な GPU 利用終了を確認してから内部 native command buffer と記録 memory を回収し、診断が未確定でも GPU 利用終了を観測できるようにする。受理の有無や完了を確認できない interop 障害は device の共有失敗へ接続する。device 終了時に残った内部 command を解放する経路にも、caller による全利用終了の前提が適用される。application resource の registry は追加しない。
 
-Browser も全記録の encode 後に一つの `queue.submit` へ渡し、その直後に `queue.onSubmittedWorkDone()` を要求する。Promise 完了後に内部 command buffer の JSObject proxy、attachment view と記録 memory を回収する。提出ごとの error scope の結果を別に保持し、後続の GPU 完了が先行 batch の診断成功を代用しない。失敗を観測しても内部 command の利用終了を確認できない場合は、device の破棄時に残った保持を解放する。
+両 backend は提出の観測に必要な保持を受渡し前に準備する。queue の native／interop 呼出しを開始した後に同期障害が起きた場合、`GpuSubmissionException` に要求した `Completion` と元の例外を保持する。error scope の回収失敗だけで完了通知の登録を飛ばさず、それぞれの接続を試みる。受理不明の work と signal point は未提出へ戻さず、GPU 利用終了を確認できるまで内部記録を保持する。要求した point の識別と、その point の完了保証は区別する。
+
+Browser も全記録の encode 後に一つの `queue.submit` へ渡し、その直後に `queue.onSubmittedWorkDone()` を要求する。Promise の完了と device／接続の障害を確認し、正常な GPU 利用終了と判断できる場合だけ内部 command buffer の JSObject proxy、attachment view と記録 memory を回収する。提出ごとの error scope の結果を別に保持し、後続の GPU 完了が先行 batch の診断成功を代用しない。失敗を観測して内部 command の利用終了を確認できない場合は保持を続ける。backend 破棄時の保持解放も、caller による全利用終了を前提にする。
+
+backend の `Dispose` は全利用終了を caller の前提とし、raw `device.destroy()` の復帰や `device.lost` の通知を application resource の安全な再利用へ変換しない。停止が未確認の保持を回収する上位の drain 契約は未実装である。
 
 timeline の照会・待機は提出の native 呼出し gate と分離する。成功 batch は発行済み整数値の区間へ集約し、間にある未発行値を補完しない。失敗した batch の診断はその値に保持し、独立した後続 batch の成功へ混ぜない。待機取消しは当該 await だけを終了し、GPU work と他の待機を取り消さない。
 
