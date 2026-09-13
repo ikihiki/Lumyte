@@ -10,7 +10,7 @@
 | `NativeShaderCapabilities` | artifact が要求する raw pointer、buffer descriptor、mesh、amplification の flags。device へ機能を追加要求する値ではない。 |
 | `NativeShaderDescriptorHeapAbi`／`NativeShaderDescriptorHeapAbiKind` | descriptor index の解釈方式と version。`None`、`DirectX12`、`VulkanUnified`、`VulkanFixed(layout)` を持つ。 |
 | `NativeShaderStageArtifact(stage, entryPoint, code)` | stage と entry、所有済み raw bytes。構築時に bytes をコピーし、`Code` は割当てを行わない `ReadOnlySpan<byte>` を返す。shader を解析しない。 |
-| `NativeShaderInputField`／`NativeShaderInputFieldKind` | 名前、scalar／vector／matrix／GPU address／descriptor index の種別、byte offset と size。資源参照の列挙や所有を表さない。 |
+| `NativeShaderInputField`／`NativeShaderInputFieldKind`／`NativeShaderResourceKind` | 名前、scalar／vector／matrix／GPU address／descriptor index の種別、byte offset と size、compiler が明示した `None/Buffer/View/Sampler` の参照種別。資源参照の列挙や所有を表さない。 |
 | `NativeShaderInputLayout(abiId, size, alignment, fields)` | 不変の byte 配置。field 列をコピーし、重複名、layout 外の field、表現できない alignment を拒否する。 |
 | `NativeShaderArtifact` | target、format、stage 列、要求機能、descriptor ABI、root／parameter layouts、生成 host 型に対応する `AbiHash`。列は構築時にコピーする。 |
 | `NativeShaderPackage(version, artifacts)` | 一つの論理 program の展開済み CPU 入力。`CurrentVersion` は1。artifact 列をコピーし、file や stream を持たない。 |
@@ -51,4 +51,4 @@ root／Parameter Data は layout 情報から loader が構築しない。caller
 
 メモリ上の入力型、artifact 選択と host 側保持を実装した。隣接する `.Tests` は GPU を使わず、不変入力、ABI／機能選択、stage の受渡しと program の独立した所有を確認する。実 GPU の package 経由試験は DirectX12／Vulkan の test project に配置する。
 
-offline compiler、container 出力、生成 C# 構造体、Resources の decoder、pass factory／RenderGraph の接続は後続とする。ファイル読込み、デシリアライズ、runtime compilation、Parameter Data の自動生成や root の buffer fallback はこの runtime の API に含めない。
+[独立した offline compiler](../../../tools/Lumyte.Graphics.Native.Shaders.Offline/README.md) が Slang の target 別 reflection から container、host C# と管理入力 XML を生成する。runtime はこの tool を参照しない。Resources の decoder、pass factory／RenderGraph の接続は後続とする。ファイル読込み、デシリアライズ、runtime compilation、Parameter Data の自動生成や root の buffer fallback はこの runtime の API に含めない。

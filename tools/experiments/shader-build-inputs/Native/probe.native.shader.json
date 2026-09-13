@@ -1,0 +1,7 @@
+{
+  "source": "../../../Lumyte.Graphics.Native.Shaders.Offline.Tests/Fixtures/Resources.slang",
+  "hostNamespace": "BuildProbe.Native",
+  "entryPoints": [{ "name": "main", "stage": "Compute" }],
+  "targets": [{ "target": "DirectX12" }, { "target": "Vulkan" }],
+  "parameterTypes": ["Parameters"]
+}

@@ -28,9 +28,9 @@ Portable の entry、package、GPU 入力構造体と loader は別の契約と�
 | `NativeShaderTarget` | `DirectX12/Vulkan`。artifact の対象であり、Portable を含めない。 |
 | `NativeShaderBuildTarget` | target、shader compiler の target 設定、要求 capability と descriptor heap ABI の組。Vulkan の device 由来の統一 stride 方針や、数値を埋め込む場合の固定 slot stride など code に影響する値を含む。 |
 | `NativeShaderEntryPoint` | source 内の entry 名と `Vertex/Pixel/Compute/Mesh/Amplification` stage。Amplification は Vulkan の task に対応する。 |
-| `NativeShaderBuildRequest` | Slang source、import/include 入力、entry point 群、target 群と生成 host namespace。program は Vertex＋任意 Pixel、Mesh＋任意 Amplification＋任意 Pixel、または Compute のいずれか。任意 stage は省略でき、Pixel のない raster は depth 等の出力に使う。 |
-| `NativeShaderCompiler.Build(request)` | offline に target artifact、入力配置情報と対応する C# source を生成する。runtime device と pipeline を作らない。 |
-| `NativeShaderBuildResult.PackageBytes`／`HostSourceFiles` | 同じ build で生成した package bytes と host source。互いに対応する版を配布する。 |
+| `NativeShaderBuildRequest(SourcePath, EntryPoints, Targets, HostNamespace, RootParameterName, ParameterTypes, IncludeDirectories, Defines)` | Slang source と build 設定。root の global 名と、storage buffer element として反映する parameter 型名を指定する。offset や binding 番号は入力しない。program は Vertex＋任意 Pixel、Mesh＋任意 Amplification＋任意 Pixel、または Compute。root 名の null は root なしを表し、実際の宣言が残る場合は拒否する。 |
+| `NativeShaderCompiler(compilerPath, downstreamCompilerDirectory).BuildAsync(request, cancellationToken)` | Slang を offline に実行し、target artifact、入力配置情報と C# source を生成する。DXC の探索先は子 process だけに適用する。runtime device と pipeline を作らない。 |
+| `NativeShaderBuildResult.Package`／`PackageBytes`／`HostSourceFiles`／`ResourceInputFiles`／`CompilerVersion` | 同じ build の展開済み package、JSON container、host C#、管理入力 XML、compiler の版。辞書のキーは平坦な出力ファイル名。host source は `ShaderPackage.Create()` と target 別の型を含む。 |
 | `NativeShaderPackage(Version, Artifacts)` | 一つの論理 program の展開済み artifact 群を持つ不変の GPU 初期化入力。`CurrentVersion = 1`。`Artifacts` は不変の `NativeShaderArtifact` 列とし、CPU 側で所有する。device、ファイル名や stream を持たない。 |
 | `NativeShaderArtifact(Target, CodeFormat, Stages, RequiredCapabilities, DescriptorHeapAbi, RootLayout, ParameterLayouts, AbiHash)` | target 用の stage 列、device 選択条件、入力配置、生成型の識別情報。`Stages` は不変の `NativeShaderStageArtifact` 列とし、layout も不変とする。 |
 | `NativeShaderStageArtifact(Stage, EntryPoint, Code)` | 一つの stage の entry 名と、その stage に対応する所有済みの不変 raw code bytes。artifact は build request と同じ排他的 stage 構成を持つ。Mesh の artifact は `MeshShaders`、Amplification を含む artifact は加えて `AmplificationShaders` を要求する。 |
@@ -41,7 +41,8 @@ Portable の entry、package、GPU 入力構造体と loader は別の契約と�
 | `NativeShaderProgram.Code` | 既存の `NativeGpuShaderProgram`。選択済み raw code と entry point を pipeline 作成へ渡す。 |
 | `NativeShaderProgram.Target`／`AbiHash` | 選択済み artifact の target と生成入力に対応する不透明な ABI 識別子。hash から shader の合法性を推定しない。 |
 | `NativeShaderProgram.RootLayout`／`ParameterLayouts` | 選択した artifact の root と、root から参照する data の byte 配置。`NativeShaderInputLayout` の値を使う。 |
-| `NativeShaderInputLayout`／`NativeShaderInputField`／`NativeShaderInputFieldKind` | layout は `AbiId/Size/Alignment/Fields`、field は `Name/Kind/Offset/Size` を持つ。kind は `Scalar/Vector/Matrix/GpuAddress/DescriptorIndex`。byte 範囲と名前を保持し、型変換、resource の所有や到達先の列挙を表さない。 |
+| `NativeShaderInputLayout`／`NativeShaderInputField`／`NativeShaderInputFieldKind` | layout は `AbiId/Size/Alignment/Fields`、field は `Name/Kind/Offset/Size/ResourceKind` を持つ。kind は `Scalar/Vector/Matrix/GpuAddress/DescriptorIndex`。byte 範囲と名前を保持し、型変換、resource の所有や到達先の列挙を表さない。 |
+| `NativeShaderResourceKind` | `None/Buffer/View/Sampler`。compiler の明示 annotation から管理入力型の参照種別を確定する metadata。整数の名前や値から推測せず、runtime の依存追跡を追加しない。 |
 | `NativeShaderProgram.Dispose()` | 選択 artifact の host 側保持を解消する。GPU pipeline の破棄や GPU wait を行わない。 |
 
 生成された C# source は Native 専用 namespace に unmanaged な root/input 構造体を定義する。field offset、size、padding と row-major matrix の配置を compiler の出力へ一致させる。各生成物は対応する package/ABI 識別子を持ち、build で組にして扱う。bool は共有配置が明確な整数表現にする。
@@ -91,14 +92,15 @@ pipeline 作成 API は、戻った後に必要な code と entry point を自�
 
 ## コード配置
 
-以下は repository root 相対の目標配置とする。runtime の `Lumyte.Graphics.Native.Shaders` と隣接する xUnit テスト project は実装済みで、offline の `Lumyte.Graphics.Native.Shaders.Offline` とそのテストは新設予定である。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、旧 shader API の互換層は残さない。
+以下は repository root 相対の配置とする。runtime と offline の `Lumyte.Graphics.Native.Shaders.Offline`、それぞれに隣接する xUnit project を実装した。既存の `src/graphics/Lumyte.Graphics.Shader/` と `tools/Lumyte.Graphics.Shader.Offline/` は移植元とし、新しい tool から旧共通 package／ABI への互換経路は作らない。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/Packages/` | `NativeShaderPackage`、artifact／stage artifact、target、capability と descriptor heap ABI の展開済み入力型。 |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/Layouts/`、`src/graphics/Lumyte.Graphics.Native.Shaders/Programs/` | 前者は root／parameter layout の不変型、後者は `NativeShaderLoader` の artifact 選択と `NativeShaderProgram` の host 側保持。 |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline/Compiler/` | build target／request／result、Slang の offline 呼出し、DXIL／SPIR-V の生成と Vulkan の slot stride に対応する ABI lowering。 |
-| `tools/Lumyte.Graphics.Native.Shaders.Offline/Packaging/`、`tools/Lumyte.Graphics.Native.Shaders.Offline/Generation/` | 前者は Native container の書出し、後者は compiler が確定した配置からの C# root/input 構造体と ABI 識別子の生成。 |
+| `tools/Lumyte.Graphics.Native.Shaders.Offline/Generation/` | compiler が確定した配置から C# root/input 構造体、管理入力 XML、package factory、JSON container と ABI 識別子を生成する。 |
+| `tools/Lumyte.Graphics.Native.Shaders.Offline/Build/` と `.targets` | request JSON を読む CLI と MSBuild の生成入力登録。出力 inventory の CPU 処理は `tools/Lumyte.Graphics.Shaders.Offline.Shared/` を source link する。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/<Feature>/Shaders/` | 新設予定の Native pass project 内で、ImageProcessing／Models／TwoD 等の所有者ごとに Slang source と build 入力を置く。独自 pass はその実装 project 内に source を持つ。 |
 | `src/graphics/Shaders/Shared/` | Native と Portable の build が import する計算用 Slang module。source の共有に限定し、共通 runtime assembly、GPU 構造体や shader package は置かない。 |
 | 利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/Native/` | 生成 C#、DXIL／SPIR-V と package artifact の build 出力先。追跡する shader source とは分け、生成 C# はその利用 project でコンパイルする。 |
@@ -137,6 +139,8 @@ offline の ABI 生成と artifact の組、target 選択、host bytes の所有
 
 メモリ上の package/artifact 型、root／parameter layout、version・target・capability・descriptor ABI による選択、任意の生成入力 ABI 照合と program の host 側保持を実装した。package は入力配列と code をコピーし、低レベル Code の変更を package や別 program へ反映しない。pipeline 作成後に program を破棄して実行する経路、直接 root と Vulkan の統一 descriptor stride の検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。Mesh／Amplification は package の stage 構成と必須 capability を扱う。
 
-offline compiler、container の出力、入力構造体生成、生成型を含めた各 target の ABI conformance、Mesh／Amplification package の実機適合試験、共有 Slang module の build 依存と機能 pass への接続は未実装である。今回の runtime fixture は準備済み code と手動で指定した layout を使い、生成器の完成を示さない。source の部分共有は GPU ABI の共通化を意味しない。
+Slang 2026.17 の target 別 reflection から artifact、root／parameter 配置、host C#、管理入力 XML と JSON container を生成する offline compiler を実装した。`LumyteResources` module の `LumyteResource("GpuAddress"/"View"/"Sampler")` 属性から参照種別を取得し、parameter 型は同じ設定の `StructuredBuffer<T>` probe で反映する。MSBuild は shader の request JSON を受け取り、XML と生成 C# を consumer へ渡す。全 compile 成功後に出力 inventory を更新し、削除された入力を除去する。現時点は毎 build で compiler を呼ぶため、import の変更も再反映される。依存 fingerprint による compile cache は未実装である。
+
+実 Slang による DXIL／SPIR-V の生成、target 別の異なる root 配置、C# と管理入力 generator の consumer 実行を確認した。matrix と非 float vector は正確な byte storage とし、matrix の要素 serializer は未実装。VulkanFixed の生成、container の独立した破損検出、生成入力を使う実 GPU 適合試験、Mesh／Amplification package の実機試験、機能 pass への接続は後続とする。既存 runtime の実機 fixture と、今回の compiler／host ABI 試験は別の検証範囲である。source の部分共有は GPU ABI の共通化を意味しない。
 
 ファイルロードと container のデシリアライズは `Lumyte.Resources` の責務とし、この API の採用範囲に含めない。機能 pass が所有する shader 準備・cache と内部 graph への接続も未実装である。runtime shader compilation、Portable artifact の読み込み、任意 GPU ABI 構造体どうしの相互変換、GPU 生成 root、ray tracing／tessellation 等の追加 stage はこの設計の範囲に含めない。

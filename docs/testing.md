@@ -33,3 +33,19 @@ GPU を使うテストは担当 backend の既存 collection に置く。CPU の
 新しい backend は引数なしの専用 fixture から `GpuBackendTestGate` に一意の完全な mutex 名を渡す。backend の探索時に実 device を作る場合は `CreateProbe(probe, mutexName)` に同じ名前を渡し、不変の結果だけを保持する。別名へ分けて同一 backend の排他を回避しない。gate の所有 thread と、async fixture の破棄 thread が異なる場合も対応する。
 
 実行結果は各 project の `TestResults/` に保存する。TRX の成功件数だけでなく、全 project の outcome が Completed であり、コマンドの終了コードが0であることを確認する。中断した実行を、完了済みの単体テストだけで成功とは扱わない。
+
+## Shader compiler の適合試験
+
+新しい `tools/Lumyte.Graphics.Native.Shaders.Offline.Tests` の `SlangConformance` と
+`tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests` の `ShaderToolchainConformance` は外部 compiler を起動する。
+前者は Slang 2026.17 と DXC、後者は公式 Dawn v20260911.162847 の tint_info／tint を使う。
+`LUMYTE_SLANGC`、`LUMYTE_DXC_DIRECTORY`、`LUMYTE_TINT_INFO` で配置を指定できる。
+この PC の既存調査ディレクトリも探索するが、ネットワークからの自動取得は行わない。
+Tint 未配置時には該当試験の skip 理由を報告し、全 compiler 適合試験に成功したとは扱わない。
+各試験は固有の作業ディレクトリを使い、GPU collection には入れない。
+
+外部 compiler を使わない実行は `--filter 'Category!=SlangConformance&Category!=ShaderToolchainConformance'`。
+必須の最終確認では filter を付けず全体を実行する。
+生成 C# と Resources 入力は consumer としてコンパイル・実行し、shader の生成物全文は比較しない。
+[MSBuild consumer](../tools/experiments/shader-build-inputs/README.md) は targets の import 順を変えた接続例であり、
+各 project を build／run して XML の手入力なしで動くことを確認できる。

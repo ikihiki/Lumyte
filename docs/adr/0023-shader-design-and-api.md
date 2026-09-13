@@ -41,10 +41,10 @@ description は GPU の状態照会ではなく、caller が準備した入力�
 | API | 説明 |
 | --- | --- |
 | `PortableShaderSourceLanguage` | build 入力の `Slang/Wgsl`。どちらも出力は WGSL であり、runtime の code format を増やさない。 |
-| `PortableShaderSource` | Language、source module、依存 module 入力、entry point と生成型の名前。Slang の依存 module は import に使い、直接 root を持つ場合は `RootDeclaration` に専用の WGSL root 型・`var<immediate>` の宣言 text を渡す。offline tool がここから accessor module を生成し、Slang の import 入力に加える。Wgsl は root を含む完結した module text を渡し、RootDeclaration は指定しない。raster は vertex/pixel、compute は compute entry を指定する。Mesh／Amplification は受け付けない。 |
-| `PortableShaderCompileOptions` | 必要な WGSL feature、target language version、固定した compiler/toolchain の版、生成 C# namespace と optimization 設定。Slang の target は WGSL とし、Native target の code format は指定しない。 |
-| `PortableShaderCompiler.Compile(source, options)` | Slang 入力は公式 compiler で WGSL へ生成し、Wgsl 入力と同じ WGSL toolchain へ渡す。最終 module に対応する Lumyte package／入力 schema を生成する。戻り値は `PortableShaderBuildResult`。 |
-| `PortableShaderBuildResult` | `Package`、`GeneratedSources` と build diagnostics。shader の resource usage や device limit の独自 validator は生成しない。 |
+| `PortableShaderSource(Module, EntryPoints, Language)` | root を含む完結した WGSL text と、選択する entry 名の列。raster は vertex/pixel、compute は compute を公式 frontend から識別する。Mesh／Amplification は受け付けない。Slang 対応時には依存 module と `RootDeclaration` を追加し、専用 WGSL root から accessor を生成して import する。現在の実装では Slang は明示的に未対応とする。 |
+| `PortableShaderCompileOptions(TintInfoPath, GeneratedNamespace, GeneratedName, RootTypeName, ParameterTypeNames, TintPath)` | 公式 frontend の実行場所、生成名と host 型の選択。root は IR から自動識別し、任意の RootTypeName は一致確認に使う。ParameterTypeNames は出力したい構造体名。TintPath は省略時に tint_info と同じディレクトリを使う。target version／optimization と Slang 設定は後続で追加する。 |
+| `PortableShaderCompiler.CompileAsync(source, options, cancellationToken)` | 最終 WGSL を公式 frontend へ渡し、同じ module に対応する package／入力 schema を生成する。Slang 経路は今後 WGSL 生成の前段として接続し、Native reflection は使わない。 |
+| `PortableShaderBuildResult`／`PortableShaderGeneratedFile(FileName, Content)` | `Package`、C# の `GeneratedSources`、XML の `ResourceInputs`、公式出力の `ReflectionJson/ReflectionText/ReflectionIr`、`Diagnostics`。ファイル名は平坦な名前。resource usage や device limit の独自 validator は生成しない。 |
 | `PortableShaderPackage(Version, Module, EntryPoints, RequiredFeatures, GroupLayouts, RootLayout, ParameterLayouts, BindingSchema, AbiHash)` | GPU 初期化に渡す展開済みの不変 data。`CurrentVersion = 1`。`Module` は所有する WGSL text、各 entry/layout/schema は不変の値と列である。device、ファイル名や stream を持たない。 |
 | `PortableShaderEntryPoint(Stage, Name)`／`PortableShaderGroupLayout(Entries)` | entry の stage と名前、group 順に並べる不変の `GpuBindingLayoutEntry` 列。group の空きを空 layout で明示でき、GPU handle は格納しない。 |
 | `PortableShaderFeatures` | 現在の device 選択で表せる `None/ImmediateAddressSpace/DualSourceBlend` の flags。任意の WGSL feature 名を対応済みと推測しない。 |
@@ -102,14 +102,15 @@ build では Slang の WGSL 出力を target 対応の公式 WGSL frontend（Tin
 
 ## コード配置
 
-以下は repository root からの配置で、未実装部分の目標配置を含む。Portable の低層、shader runtime とそれぞれに隣接するテスト project は実装済みで、offline tool とそのテスト project は新設予定とする。
+以下は repository root からの配置で、未実装部分の目標配置を含む。Portable の低層、shader runtime、直接 WGSL 用 offline tool と、それぞれに隣接するテスト project は実装済みとする。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Shaders/` | GpuShaderModuleHandle、GpuShaderEntryPoint、GpuShaderProgramDescription と module の生成・破棄契約。上位の package、compiler と生成器への依存は持たせない。 |
 | `src/graphics/Lumyte.Graphics.Portable.Shaders/Packages/` | 準備済み `PortableShaderPackage`、binding schema、root/parameter layout と ABI metadata の不変入力型。ファイル、stream、URI のロード処理は置かない。 |
 | `src/graphics/Lumyte.Graphics.Portable.Shaders/Programs/` | `PortableShaderLoader`、`PortableShaderProgram` と GPU module/layout の初期化・所有処理。 |
-| `tools/Lumyte.Graphics.Portable.Shaders.Offline/Compiler/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/Packaging/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/Generation/` | Slang／WGSL source と compile options、Slang の WGSL target と WGSL toolchain の呼出し、package data の構築、Root／Parameter／BindingInputs の C# 生成。build result と diagnostics も offline tool 側に置く。 |
+| `tools/Lumyte.Graphics.Portable.Shaders.Offline/Compiler/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/Generation/` | source と compile options、公式 WGSL toolchain、reflection と package data、host C# と管理入力 XML の生成。Slang 接続と container 保存形式は後続で追加する。 |
+| `tools/Lumyte.Graphics.Portable.Shaders.Offline/Build/` と `.targets` | request JSON の CLI と MSBuild の入力登録。出力 inventory の CPU 処理は `tools/Lumyte.Graphics.Shaders.Offline.Shared/` を source link し、Native の GPU ABI は参照しない。 |
 | `tools/Lumyte.Graphics.Portable.Shaders.Offline/Compiler/WgslRoot/` | 固定した Slang の prelude 設定、Portable root 宣言と scalar／vector accessor の生成。compiler 内部機能への依存をこの build 用処理に限定する。 |
 | `src/graphics/Lumyte.Graphics.Portable.Passes/<Feature>/Shaders/` | 新設予定の pass 実装 project が所有する Slang entry／resource module と、直接記述する WGSL variant。`<Feature>` は `ImageProcessing`、`Models`、`TwoD` 等とし、各 pass の GPU ABI と source をその実装の隣に置く。 |
 | `src/graphics/Lumyte.Graphics.Portable.Passes/<Feature>/Shaders/*.root.wgsl` | Slang program の RootDeclaration に渡す Portable 専用 root 宣言。Slang entry の隣に作者が置く build 入力であり、Native と共有しない。生成 accessor と host 型は `obj/` 側へ出力する。 |
@@ -118,7 +119,7 @@ build では Slang の WGSL 出力を target 対応の公式 WGSL frontend（Tin
 | `src/graphics/Lumyte.Graphics.WebGPU/Shaders/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser/Shaders/` | 既存 project を改編し、WGSL module・直接入力の runtime 接続と、必要なブラウザー interop をそれぞれ置く。ブラウザー専用 shader library は新設しない。 |
 | `src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Packages/`、`src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Programs/` | 準備済み package の保持、ABI と schema の対応、fake backend による program 初期化・rollback・終了を検証する xUnit project。 |
 | `src/graphics/Lumyte.Graphics.Portable.Tests/Shaders/` | 隣接 xUnit project。低レベル構成値と上位 program を必要としない API の使用を確認する。 |
-| `tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Compiler/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Generation/` | 新設予定の xUnit project。compiler の結果と、生成した C# を実際に compile・実行する consumer 試験。ABI 適合確認用の shader source は同 project の `Fixtures/`、Slang→WGSL と公式 frontend の外部 process が必要な試験は `Integration/` に置く。 |
+| `tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Compiler/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Generation/` | xUnit project。compiler の結果と、生成 C# を compile・実行する consumer 試験。shader source は `Fixtures/`、公式 frontend の外部 process を使う試験は `Integration/` に置く。Slang 試験は本番経路の追加時に拡張する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Shaders/` | 既存 xUnit project に置く実 runtime/device の WGSL、binding と直接入力の適合試験。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/` | 準備済み package からの program 初期化、直接 root と明示 binding による実行、runtime 診断の伝播を Dawn と C# WebAssembly consumer で確認する。 |
 
@@ -157,4 +158,6 @@ Portable 専用の準備済み WGSL package 入力型、GPU 構造体生成、bi
 
 低レベルの raw WGSL module、entry point と不変の program description に加え、準備済み PortableShaderPackage、入力 layout／binding schema、PortableShaderLoader と所有型 PortableShaderProgram を実装した。native host と Browser の WebGPU では module の生成診断を保持し、pipeline と実際の提出へ引き継ぐ。package fixture は手動で準備した WGSL と入力 metadata を使い、compiler／生成器の完成を示さない。実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-Slang 2026.17 による直接 root の生成と、一つの browser／GPU 環境での compute 実行は実験済みである。二系統への toolchain 分離、root accessor の生成器、公開 `setLanguagePrelude` API の統合・適合試験、公式 WGSL frontend からの ABI metadata／C# 生成、container の出力、機能 pass 本体での shader 準備と cache、全 pass の適合試験は未実装である。実験 fixture の host 配置は手動で与えたもので、生成器の完成を示さない。C# の Browser WebGPU 接続は実装したが、Slang による raster variant、matrix／array 等の全入力型、他 runtime／GPU での生成経路の適合は別途確認する。現在の RequiredFeatures にない WGSL feature と必要な device feature の対応は、低層で明示的に要求・確認できる契約を追加してから拡張する。既存 offline compiler に残る WGSL の文字列書換えは目標設計の実装として数えず、移行時に廃止する。mesh／amplification の WGSL 変換と Native GPU ABI の移植は採用範囲外とする。
+独立した Portable offline tool に、直接 WGSL から公式 Tint の reflection／初期 IR を使う生成経路を実装した。Dawn v20260911.162847 の出力を基準に、binding、root の型と配置、parameter 型を取得し、package factory C#、32 bit scalar／vector／入れ子構造体、管理入力 XML を生成する。binding 名は公式出力に変数名がないため `GroupNBindingN` とする。実行 binary の hash を ABI identity に含め、更新時は conformance を再実行する。WGSL の独自解析・書換えは行わない。生成型と管理入力の consumer 実行、MSBuild の自動登録までを確認した。
+
+Slang 2026.17 による直接 root と browser／GPU での compute は実験済みだが、root accessor の本番生成器、公開 `setLanguagePrelude` の統合、Slang raster variant は後続である。matrix／array の host 生成は stride 取得が未対応のため明示的に拒否する。container 保存形式、生成入力を用いる実 GPU 適合、機能 pass の shader 準備と cache、全 pass の適合も未実装。既存 runtime の手動 metadata fixture と、今回の compiler／host 試験は別の検証範囲とする。RequiredFeatures にない WGSL feature は低層の要求契約を追加してから対応する。旧 offline compiler の WGSL 書換えは新しい経路へ接続せず、mesh／amplification の WGSL 変換と Native GPU ABI の移植は採用範囲外とする。

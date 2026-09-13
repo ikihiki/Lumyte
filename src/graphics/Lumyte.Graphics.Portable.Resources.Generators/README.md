@@ -4,6 +4,11 @@
 
 ## 導入
 
+通常の shader build は [Portable offline compiler](../../../tools/Lumyte.Graphics.Portable.Shaders.Offline/README.md) と接続します。
+公式 frontend から group／binding と `abiHash` を出力するため、以下の XML を手で維持する必要はありません。
+`abiHash` があると生成型に `AbiHash` 定数を追加し、loader の `expectedAbiHash` に渡せます。
+以下は準備済み schema を直接利用する場合の契約です。
+
 NuGet package を analyzer として参照すると、同梱した `buildTransitive` targets が `PortableGpuResourceInput` をコンパイラの `AdditionalFiles` に渡します。
 
 ```xml

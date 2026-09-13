@@ -605,10 +605,46 @@ focused 試験では Native Resources 72件、Portable Resources 75件、Native 
 
 57文書の425ローカルリンク、21アンカー、37 ADR の必要章と179個の番号依存に問題はなかった。production 向けの `InternalsVisibleTo` は追加せず、既存11指定はすべて test assembly 向けである。staged diff の空白検査も成功した。
 
+## Shader build と管理入力生成の接続
+
+2026-09-14 に Native／Portable の独立した offline tool を追加した。shader と build 設定から
+package と対応する host C#、Resources 入力 XML を生成し、手書きの offset／binding schema を不要にした。
+
+| 系統 | 実装と確認内容 |
+| --- | --- |
+| Native | Slang 2026.17 の同じ target compile の reflection から DXIL／SPIR-V、root 配置、host 型を生成。実 fixture の DX12 root は32 byte／colour offset20、Vulkan は48 byte／offset32。型を target 別 namespace に生成する。 |
+| Native の参照 | `LumyteResource` 属性から GpuAddress／View／Sampler を区別し、`NativeShaderResourceKind` に保持する。parameter 型は同じ設定の StructuredBuffer probe で反映する。通常の整数の意味を名前から推測しない。 |
+| Portable | 公式 Dawn v20260911.162847 の Tint JSON、型配置表示、最初の WGSL IR を利用する。root の型を自動識別し、binding、32 bit scalar／vector／入れ子構造体を生成。実 fixture は32 byte、vec3 offset16。元の WGSL を package に保持する。 |
+| 管理入力 | compiler の XML から既存 analyzer が Native の参照解決入力と Portable の group 入力を生成。package／host／管理入力に同じ AbiHash を持たせ、loader へ期待値を渡せる。shader runtime から Resources／offline への依存を追加しない。 |
+| Build | NativeShaderCompile／PortableShaderCompile は source と entry／target／名前を指定する JSON を受け取る。全 compile 成功後に manifest 所有ファイルを更新し、削除された入力を除去する。生成 C# と XML は CoreCompile 前に明示登録する。 |
+
+両 [offline tool](../../tools/README.md) の CLI と targets、[MSBuild consumer](../../tools/experiments/shader-build-inputs/README.md) を追加した。
+consumer は異なる targets import 順で build／run に成功し、生成型の size と管理入力の AbiHash が package に一致した。
+Native は JSON container と package factory、Portable は準備済み package と factory C# を出力する。
+ファイルのロード／デシリアライズは引き続き `Lumyte.Resources` が担当する。
+
+生成型の名前衝突、Native の root なし指定と shader 宣言の矛盾、未対応 ABI、未知の Tint IR、padding と実 field 名の衝突には診断と回帰試験を追加した。
+出力 publisher は古い group の削除、同値出力の保持、準備失敗時の保護、inventory 外のファイルを変更しないことを検証する。
+production 向け InternalsVisibleTo は追加せず、新規2指定も test assembly のみである。
+
+Native の matrix／非 float vector は反映された正確な byte storage とし、matrix 要素 serializer は未対応。
+Portable の matrix／array host 型は stride 取得が未対応のため明示的に拒否する。
+Portable Slang の root accessor／setLanguagePrelude 統合、生成入力を使う実 GPU 適合、VulkanFixed 生成、
+Portable container 形式と compile cache は後続とする。現在は毎 build で compiler を呼び、import 変更も反映する。
+既存 backend の実機 fixture と、今回の compiler／C# consumer 試験は異なる検証範囲である。
+
+最終検証は上記の compiler／Browser の環境変数を指定して
+`dotnet test Lumyte.slnx -m:4 --logger "trx;LogFilePrefix=shader-input-toolchain-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini`
+を実行した。**35 project・2,373件成功、失敗0、skip 0**、全 TRX が Completed、終了コード0。
+Native offline 48件、Portable offline 15件、両 Resources generator 19／17件、Native shader runtime 49件を含む。
+前回からの追加79件は CPU／外部 compiler の試験であり、GPU 試験を追加したとは扱わない。
+既存の DX12 427件、Vulkan 435件、Dawn 338件、Browser 61件もすべて成功した。
+61文書・437ローカルリンク・21アンカー、37 ADR の必要章と179個の番号依存に問題はなかった。
+
 ## 未実装と次の順序
 
 1. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。完成した ResourceManager の scope／pin／batch と転送を provider へ接続する。
-2. Slang の製品用 offline toolchain と管理入力 schema の一貫生成、機能 pass の実装と対応する conformance 試験を進める。
+2. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、機能 pass へ接続する。管理入力 schema の一貫生成は上記の対応範囲で利用できる。
 
 任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。
 

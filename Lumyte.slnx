@@ -47,6 +47,10 @@
   <Project Path="src/graphics/Lumyte.Graphics.Shader.Browser/Lumyte.Graphics.Shader.Browser.csproj" />
   <Project Path="tools/Lumyte.Graphics.Shader.Offline/Lumyte.Graphics.Shader.Offline.csproj" />
   <Project Path="tools/Lumyte.Graphics.Shader.Offline.Tests/Lumyte.Graphics.Shader.Offline.Tests.csproj" />
+  <Project Path="tools/Lumyte.Graphics.Native.Shaders.Offline/Lumyte.Graphics.Native.Shaders.Offline.csproj" />
+  <Project Path="tools/Lumyte.Graphics.Native.Shaders.Offline.Tests/Lumyte.Graphics.Native.Shaders.Offline.Tests.csproj" />
+  <Project Path="tools/Lumyte.Graphics.Portable.Shaders.Offline/Lumyte.Graphics.Portable.Shaders.Offline.csproj" />
+  <Project Path="tools/Lumyte.Graphics.Portable.Shaders.Offline.Tests/Lumyte.Graphics.Portable.Shaders.Offline.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Library/Lumyte.Graphics.Library.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Library.Tests/Lumyte.Graphics.Library.Tests.csproj" />
   <Project Path="samples/graphics/Lumyte.Graphics.Vulkan.Samples/Lumyte.Graphics.Vulkan.Samples.csproj" />

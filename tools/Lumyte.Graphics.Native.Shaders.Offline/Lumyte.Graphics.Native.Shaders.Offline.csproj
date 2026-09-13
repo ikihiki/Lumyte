@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Description>Native Slang compilation and compiler-derived host resource inputs.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Lumyte.Graphics.Shaders.Offline.Shared\ShaderBuildOutputs.cs" Link="Build\ShaderBuildOutputs.cs" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Native.Shaders.Offline.Tests" />
+    <ProjectReference Include="..\..\src\graphics\Lumyte.Graphics.Native.Shaders\Lumyte.Graphics.Native.Shaders.csproj" />
+    <EmbeddedResource Include="Compiler\LumyteResources.slang" />
+  </ItemGroup>
+</Project>

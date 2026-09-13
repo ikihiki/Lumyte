@@ -72,12 +72,14 @@ public sealed class ResourceInputGenerator : IIncrementalGenerator
         if (ns.Split('.').Any(part => !Identifier(part))) { throw new FormatException("Invalid generated namespace."); }
         string name = Required(root, "name");
         if (!Identifier(name)) { throw new FormatException("Invalid generated type name."); }
+        string? abiHash = (string?)root.Attribute("abiHash");
         var fields = new List<Field>();
 #if LUMYTE_NATIVE
         var members = new HashSet<string>(StringComparer.Ordinal) { "Write", "Retain", "ByteSize" };
 #else
         var members = new HashSet<string>(StringComparer.Ordinal) { "Write", "Group" };
 #endif
+        if (abiHash is not null) { members.Add("AbiHash"); }
         if (!members.Add(name)) { throw new FormatException("The generated type name conflicts with a generated member: " + name); }
         var bindings = new HashSet<uint>();
 #if LUMYTE_NATIVE
@@ -124,7 +126,7 @@ public sealed class ResourceInputGenerator : IIncrementalGenerator
             fields.Add(new Field(fieldName, resource, binding, 0));
 #endif
         }
-        return new Schema(ns, name, size, group, fields);
+        return new Schema(ns, name, size, group, fields, abiHash);
     }
 
     private static string Emit(Schema schema)
@@ -135,6 +137,11 @@ public sealed class ResourceInputGenerator : IIncrementalGenerator
         code.Append(" : ").Append(Api).Append("IGpuBindingInputs");
 #endif
         code.Append("\n{\n");
+        if (schema.AbiHash is not null)
+        {
+            code.Append("    public const string AbiHash = ")
+                .Append(Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(schema.AbiHash, quote: true)).Append(";\n");
+        }
         foreach (Field field in schema.Fields)
         {
             code.Append("    public ").Append(Api).Append("Gpu").Append(field.Resource).Append("Ref ").Append(Escape(field.Name)).Append(" { get; }\n");
@@ -202,13 +209,14 @@ public sealed class ResourceInputGenerator : IIncrementalGenerator
 
     private sealed class SchemaText(string path, string? text)
     { public string Path { get; } = path; public string? Text { get; } = text; }
-    private sealed class Schema(string ns, string name, uint size, uint group, List<Field> fields)
+    private sealed class Schema(string ns, string name, uint size, uint group, List<Field> fields, string? abiHash)
     {
         public string Namespace { get; } = ns;
         public string Name { get; } = name;
         public uint Size { get; } = size;
         public uint Group { get; } = group;
         public List<Field> Fields { get; } = fields;
+        public string? AbiHash { get; } = abiHash;
     }
     private sealed class Field(string name, string resource, uint offset, uint width)
     {

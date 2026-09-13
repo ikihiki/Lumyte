@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><Description>Offline WGSL shader package and resource input compiler using official Tint reflection.</Description></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Lumyte.Graphics.Shaders.Offline.Shared/ShaderBuildOutputs.cs" Link="Build/ShaderBuildOutputs.cs" />
+    <ProjectReference Include="../../src/graphics/Lumyte.Graphics.Portable.Shaders/Lumyte.Graphics.Portable.Shaders.csproj" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Portable.Shaders.Offline.Tests" />
+  </ItemGroup>
+</Project>

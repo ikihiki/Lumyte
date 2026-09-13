@@ -4,6 +4,11 @@
 
 ## 導入
 
+通常の shader build は [Native offline compiler](../../../tools/Lumyte.Graphics.Native.Shaders.Offline/README.md) と接続します。
+compiler が XML の size／offset と `abiHash` を出力するため、以下の XML を手で維持する必要はありません。
+`abiHash` があると生成型に `AbiHash` 定数を追加し、loader の `expectedAbiHash` に渡せます。
+以下は準備済み schema を直接利用する場合の契約です。
+
 NuGet package を analyzer として参照すると、同梱した `buildTransitive` targets が `NativeGpuResourceInput` をコンパイラの `AdditionalFiles` に渡します。
 
 ```xml

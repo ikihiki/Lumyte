@@ -2,6 +2,8 @@
 
 準備済みの WGSL package から、Portable backend の shader module と group layout を生成するライブラリです。参照先は `Lumyte.Graphics.Portable` で、Native の package／GPU ABI、Resources、RenderGraph、offline compiler には依存しません。
 
+[独立した offline compiler](../../../tools/Lumyte.Graphics.Portable.Shaders.Offline/README.md) では、公式 Tint を使って WGSL から package factory、host C#、管理入力 XML を生成できます。runtime のロード API と build 時の処理は分離します。
+
 `PortableShaderPackage` は WGSL text、entry point、group 順の layout、root／parameter の配置、binding の意味名と ABI hash を保持します。配列入力をコピーし、入れ子の metadata も不変です。ファイル取得、container の展開、Slang のコンパイル、WGSL reflection、C# 型生成はこの package の外側で行います。現時点の型配置は caller が準備した metadata であり、生成器を実装したものではありません。
 
 ## 使用例

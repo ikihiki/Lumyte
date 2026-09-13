@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using Lumyte.Graphics.Native.Resources.Tests;
+using Lumyte.Graphics.Native.Shaders;
 using Xunit;
 using Inputs = Consumer.@namespace.@struct;
 
@@ -7,6 +8,27 @@ namespace Lumyte.Graphics.Native.Resources.Generators.Tests;
 
 public sealed class GeneratedResourceInputTests
 {
+    [Fact]
+    public void GeneratedAbiIdentitySelectsTheMatchingPackage()
+    {
+        using var backend = new TestResourceBackend();
+
+        using NativeShaderProgram program = new NativeShaderLoader(backend).Load(Package("consumer-abi"), Inputs.AbiHash);
+
+        Assert.Equal("consumer-abi", program.AbiHash);
+    }
+
+    [Fact]
+    public void GeneratedAbiIdentityRejectsADifferentPackage()
+    {
+        using var backend = new TestResourceBackend();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+            new NativeShaderLoader(backend).Load(Package("different-abi"), Inputs.AbiHash));
+
+        Assert.Contains("ABI hash", error.Message);
+    }
+
     [Fact]
     public async Task PreparedOffsetsWriteAddressesAndIndicesWithoutChangingScalarBytes()
     {
@@ -70,4 +92,9 @@ public sealed class GeneratedResourceInputTests
         Assert.Equal("destination", error.ParamName);
         Assert.All(bytes, value => Assert.Equal(0xA5, value));
     }
+
+    private static NativeShaderPackage Package(string abiHash) => new(NativeShaderPackage.CurrentVersion,
+        [new(NativeShaderTarget.DirectX12, GpuShaderCodeFormat.Dxil,
+            [new(GpuShaderStage.Compute, "main", [1])], NativeShaderCapabilities.None,
+            NativeShaderDescriptorHeapAbi.DirectX12, new("root", 40, 8, []), [], abiHash)]);
 }

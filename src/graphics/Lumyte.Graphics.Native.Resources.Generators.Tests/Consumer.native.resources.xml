@@ -1,4 +1,4 @@
-<input namespace="Consumer.namespace" name="struct" size="40">
+<input namespace="Consumer.namespace" name="struct" size="40" abiHash="consumer-abi">
   <field name="manager" kind="GpuAddress" offset="0" />
   <field name="destination" kind="DescriptorIndex" resource="View" offset="12" />
   <field name="batch" kind="DescriptorIndex" resource="Sampler" offset="20" />

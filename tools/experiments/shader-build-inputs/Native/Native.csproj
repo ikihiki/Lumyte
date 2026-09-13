@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../src/graphics/Lumyte.Graphics.Native.Resources/Lumyte.Graphics.Native.Resources.csproj" />
+    <ProjectReference Include="../../../../src/graphics/Lumyte.Graphics.Native.Shaders/Lumyte.Graphics.Native.Shaders.csproj" />
+    <ProjectReference Include="../../../../src/graphics/Lumyte.Graphics.Native.Resources.Generators/Lumyte.Graphics.Native.Resources.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../../Lumyte.Graphics.Native.Shaders.Offline/Lumyte.Graphics.Native.Shaders.Offline.csproj" ReferenceOutputAssembly="false" />
+    <NativeShaderCompile Include="probe.native.shader.json" />
+  </ItemGroup>
+  <!-- Import order is deliberately opposite between the two consumers. -->
+  <Import Project="../../../../src/graphics/Lumyte.Graphics.Native.Resources.Generators/buildTransitive/Lumyte.Graphics.Native.Resources.Generators.targets" />
+  <Import Project="../../../Lumyte.Graphics.Native.Shaders.Offline/Lumyte.Graphics.Native.Shaders.Offline.targets" />
+</Project>

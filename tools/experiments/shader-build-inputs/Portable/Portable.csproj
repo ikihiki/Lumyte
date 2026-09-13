@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../src/graphics/Lumyte.Graphics.Portable.Resources/Lumyte.Graphics.Portable.Resources.csproj" />
+    <ProjectReference Include="../../../../src/graphics/Lumyte.Graphics.Portable.Shaders/Lumyte.Graphics.Portable.Shaders.csproj" />
+    <ProjectReference Include="../../../../src/graphics/Lumyte.Graphics.Portable.Resources.Generators/Lumyte.Graphics.Portable.Resources.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../../Lumyte.Graphics.Portable.Shaders.Offline/Lumyte.Graphics.Portable.Shaders.Offline.csproj" ReferenceOutputAssembly="false" />
+    <PortableShaderCompile Include="probe.portable.shader.json" />
+  </ItemGroup>
+  <Import Project="../../../Lumyte.Graphics.Portable.Shaders.Offline/Lumyte.Graphics.Portable.Shaders.Offline.targets" />
+  <Import Project="../../../../src/graphics/Lumyte.Graphics.Portable.Resources.Generators/buildTransitive/Lumyte.Graphics.Portable.Resources.Generators.targets" />
+</Project>

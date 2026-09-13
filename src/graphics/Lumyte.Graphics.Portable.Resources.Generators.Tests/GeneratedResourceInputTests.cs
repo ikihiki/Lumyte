@@ -7,6 +7,28 @@ namespace Lumyte.Graphics.Portable.Resources.Generators.Tests;
 
 public sealed class GeneratedResourceInputTests
 {
+    [Fact]
+    public void GeneratedAbiIdentitySelectsTheMatchingPackage()
+    {
+        using var backend = new ManagerTestBackend();
+
+        using PortableShaderProgram program = new PortableShaderLoader(backend).Load(Package(), Inputs.AbiHash);
+
+        Assert.Equal("consumer-abi", program.AbiHash);
+    }
+
+    [Fact]
+    public void GeneratedAbiIdentityRejectsADifferentPackage()
+    {
+        using var backend = new ManagerTestBackend();
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() =>
+            new PortableShaderLoader(backend).Load(Package("different-abi"), Inputs.AbiHash));
+
+        Assert.Equal("package", error.ParamName);
+        Assert.Contains("ABI hash", error.Message);
+    }
+
     [Theory]
     [InlineData(8ul, 16ul, 16ul)]
     [InlineData(8ul, ulong.MaxValue, 56ul)]
@@ -36,11 +58,11 @@ public sealed class GeneratedResourceInputTests
         }, actual.Entries);
     }
 
-    private static PortableShaderPackage Package() => new(PortableShaderPackage.CurrentVersion,
+    private static PortableShaderPackage Package(string abiHash = "consumer-abi") => new(PortableShaderPackage.CurrentVersion,
         "@compute @workgroup_size(1) fn main() {}", [new(GpuShaderStage.Compute, "main")], PortableShaderFeatures.None,
         [new([new(5, GpuShaderStage.Compute, new GpuBufferBindingLayout(GpuBufferBindingType.ReadOnlyStorage)),
             new(2, GpuShaderStage.Compute, new GpuTextureBindingLayout(GpuTextureSampleType.Float)),
             new(8, GpuShaderStage.Compute, new GpuSamplerBindingLayout(GpuSamplerBindingType.Filtering))])],
         null, [], new([new("writer", 0, 5, GpuBindingLayoutKind.Buffer),
-            new("event", 0, 2, GpuBindingLayoutKind.Texture), new("sampler", 0, 8, GpuBindingLayoutKind.Sampler)]), "consumer-abi");
+            new("event", 0, 2, GpuBindingLayoutKind.Texture), new("sampler", 0, 8, GpuBindingLayoutKind.Sampler)]), abiHash);
 }

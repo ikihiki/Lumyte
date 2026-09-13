@@ -1,0 +1,6 @@
+{
+  "source": "../../../Lumyte.Graphics.Portable.Shaders.Offline.Tests/Fixtures/MixedRoot.wgsl",
+  "hostNamespace": "BuildProbe.Portable",
+  "name": "Probe",
+  "entryPoints": ["main"]
+}

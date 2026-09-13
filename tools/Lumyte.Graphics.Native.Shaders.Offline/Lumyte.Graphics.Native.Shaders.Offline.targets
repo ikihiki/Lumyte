@@ -1,0 +1,32 @@
+<Project>
+  <PropertyGroup>
+    <LumyteNativeShaderTool Condition="'$(LumyteNativeShaderTool)' == ''">$(MSBuildThisFileDirectory)bin/$(Configuration)/net10.0/Lumyte.Graphics.Native.Shaders.Offline.dll</LumyteNativeShaderTool>
+    <LumyteNativeSlangCompiler Condition="'$(LumyteNativeSlangCompiler)' == ''">$(SLANGC_PATH)</LumyteNativeSlangCompiler>
+    <LumyteNativeShaderOutputDirectory Condition="'$(LumyteNativeShaderOutputDirectory)' == ''">$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/Shaders/Native</LumyteNativeShaderOutputDirectory>
+  </PropertyGroup>
+  <!-- Always compile: imports, includes and compiler options must never leave a
+       stale schema. Only unchanged generated files keep their timestamps. -->
+  <Target Name="LumyteCompileNativeShaders" BeforeTargets="LumyteNativeResourceInputFiles;CoreCompile"
+          DependsOnTargets="ResolveProjectReferences" Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_LumyteNativeOutput>$([System.IO.Path]::GetFullPath('$(LumyteNativeShaderOutputDirectory)', '$(MSBuildProjectDirectory)'))</_LumyteNativeOutput>
+      <_LumyteNativeDownstreamArgument Condition="'$(LumyteNativeDownstreamCompilerDirectory)' != ''">--downstream &quot;$(LumyteNativeDownstreamCompilerDirectory)&quot;</_LumyteNativeDownstreamArgument>
+    </PropertyGroup>
+    <Error Condition="'@(NativeShaderCompile)' != '' and '$(LumyteNativeSlangCompiler)' == ''" Text="Set LumyteNativeSlangCompiler (or SLANGC_PATH) to the pinned Slang compiler." />
+    <MakeDir Directories="$(_LumyteNativeOutput)" Condition="'@(NativeShaderCompile)' != '' or Exists('$(_LumyteNativeOutput)/generated-files.json')" />
+    <WriteLinesToFile File="$(_LumyteNativeOutput)/requests.txt" Lines="@(NativeShaderCompile->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" Condition="'@(NativeShaderCompile)' != '' or Exists('$(_LumyteNativeOutput)/generated-files.json')" />
+    <Exec Command="dotnet &quot;$(LumyteNativeShaderTool)&quot; --requests &quot;$(_LumyteNativeOutput)/requests.txt&quot; --output &quot;$(_LumyteNativeOutput)&quot; --compiler &quot;$(LumyteNativeSlangCompiler)&quot; $(_LumyteNativeDownstreamArgument)" Condition="'@(NativeShaderCompile)' != '' or Exists('$(_LumyteNativeOutput)/generated-files.json')" />
+    <ReadLinesFromFile File="$(_LumyteNativeOutput)/generated-sources.txt" Condition="Exists('$(_LumyteNativeOutput)/generated-files.json') and Exists('$(_LumyteNativeOutput)/generated-sources.txt')">
+      <Output TaskParameter="Lines" ItemName="_LumyteNativeGeneratedSource" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(_LumyteNativeOutput)/generated-resources.txt" Condition="Exists('$(_LumyteNativeOutput)/generated-files.json') and Exists('$(_LumyteNativeOutput)/generated-resources.txt')">
+      <Output TaskParameter="Lines" ItemName="_LumyteNativeGeneratedResource" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <Compile Include="@(_LumyteNativeGeneratedSource)" Exclude="@(Compile)" />
+      <NativeGpuResourceInput Include="@(_LumyteNativeGeneratedResource)" Exclude="@(NativeGpuResourceInput)" />
+      <AdditionalFiles Include="@(_LumyteNativeGeneratedResource)" Exclude="@(AdditionalFiles)" />
+      <FileWrites Include="$(_LumyteNativeOutput)/requests.txt;@(_LumyteNativeGeneratedSource);@(_LumyteNativeGeneratedResource)" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,0 +1,29 @@
+<Project>
+  <PropertyGroup>
+    <LumytePortableShaderTool Condition="'$(LumytePortableShaderTool)' == ''">$(MSBuildThisFileDirectory)bin/$(Configuration)/net10.0/Lumyte.Graphics.Portable.Shaders.Offline.dll</LumytePortableShaderTool>
+    <LumytePortableTintInfo Condition="'$(LumytePortableTintInfo)' == ''">$(TINT_INFO_PATH)</LumytePortableTintInfo>
+    <LumytePortableShaderOutputDirectory Condition="'$(LumytePortableShaderOutputDirectory)' == ''">$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/Shaders/Portable</LumytePortableShaderOutputDirectory>
+  </PropertyGroup>
+  <Target Name="LumyteCompilePortableShaders" BeforeTargets="LumytePortableResourceInputFiles;CoreCompile"
+          DependsOnTargets="ResolveProjectReferences" Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_LumytePortableOutput>$([System.IO.Path]::GetFullPath('$(LumytePortableShaderOutputDirectory)', '$(MSBuildProjectDirectory)'))</_LumytePortableOutput>
+    </PropertyGroup>
+    <Error Condition="'@(PortableShaderCompile)' != '' and '$(LumytePortableTintInfo)' == ''" Text="Set LumytePortableTintInfo (or TINT_INFO_PATH) to the supported official tint_info frontend." />
+    <MakeDir Directories="$(_LumytePortableOutput)" Condition="'@(PortableShaderCompile)' != '' or Exists('$(_LumytePortableOutput)/generated-files.json')" />
+    <WriteLinesToFile File="$(_LumytePortableOutput)/requests.txt" Lines="@(PortableShaderCompile->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" Condition="'@(PortableShaderCompile)' != '' or Exists('$(_LumytePortableOutput)/generated-files.json')" />
+    <Exec Command="dotnet &quot;$(LumytePortableShaderTool)&quot; --requests &quot;$(_LumytePortableOutput)/requests.txt&quot; --output &quot;$(_LumytePortableOutput)&quot; --tint-info &quot;$(LumytePortableTintInfo)&quot;" Condition="'@(PortableShaderCompile)' != '' or Exists('$(_LumytePortableOutput)/generated-files.json')" />
+    <ReadLinesFromFile File="$(_LumytePortableOutput)/generated-sources.txt" Condition="Exists('$(_LumytePortableOutput)/generated-files.json') and Exists('$(_LumytePortableOutput)/generated-sources.txt')">
+      <Output TaskParameter="Lines" ItemName="_LumytePortableGeneratedSource" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(_LumytePortableOutput)/generated-resources.txt" Condition="Exists('$(_LumytePortableOutput)/generated-files.json') and Exists('$(_LumytePortableOutput)/generated-resources.txt')">
+      <Output TaskParameter="Lines" ItemName="_LumytePortableGeneratedResource" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <Compile Include="@(_LumytePortableGeneratedSource)" Exclude="@(Compile)" />
+      <PortableGpuResourceInput Include="@(_LumytePortableGeneratedResource)" Exclude="@(PortableGpuResourceInput)" />
+      <AdditionalFiles Include="@(_LumytePortableGeneratedResource)" Exclude="@(AdditionalFiles)" />
+      <FileWrites Include="$(_LumytePortableOutput)/requests.txt;@(_LumytePortableGeneratedSource);@(_LumytePortableGeneratedResource)" />
+    </ItemGroup>
+  </Target>
+</Project>

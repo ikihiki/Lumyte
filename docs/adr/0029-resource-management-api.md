@@ -320,6 +320,8 @@ resources.Collect(); // 完了分を pool へ返す
 
 GpuResourceManager、scope／pin／use／batch、明示依存、token と非同期完了観測、内部 retirement、descriptor／binding 管理、用途別 arena／pool、package の初期転送、単独 upload／readback、管理入力生成器を実装した。通常 completion を確認できない障害では保持を維持して終了を失敗させる。強制回収や device loss からの復旧を実装済みとは扱わない。
 
-共通 RenderGraph provider と Hosting への組込み、Slang の製品用 offline toolchain から管理入力 schema を一貫生成する接続、性能 benchmark は後続である。準備済み schema を受け取る生成器と runtime manager は独立して利用できる。実機・単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Native の Slang offline compiler と Portable の公式 Tint を使う WGSL offline compiler から、管理入力 schema を生成する接続を実装した。XML は build 中間出力となり、package と同じ `abiHash` から生成型の `AbiHash` 定数を作る。loader の `expectedAbiHash` に渡すことで取り違えを検出できる。MSBuild は生成ファイルの inventory を使用し、手書き offset や obj 全体の XML glob を要求しない。
+
+共通 RenderGraph provider と Hosting への組込み、Portable Slang の root accessor／prelude の本番 toolchain 接続、性能 benchmark は後続である。準備済み schema を受け取る生成器と runtime manager は独立して利用できる。実機・単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
 任意 graph の tracing GC、予算圧力と `Lumyte.Resources` の cache eviction、CLR GC 連動はこの管理層の完成条件に含めず、別の設計案で検討する。

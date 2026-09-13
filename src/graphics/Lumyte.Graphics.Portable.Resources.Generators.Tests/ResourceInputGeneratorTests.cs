@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Lumyte.Graphics.Resources.Generators.Tests;
 using Microsoft.CodeAnalysis;
 using Xunit;
@@ -12,6 +13,8 @@ public sealed class ResourceInputGeneratorTests
     [InlineData("<input namespace='Consumer' name='Inputs' group='0'><field name='Data' kind='Pointer' binding='0'/></input>", "kind")]
     [InlineData("<input namespace='Consumer' name='Write' group='0'/>", "type name")]
     [InlineData("<input namespace='Consumer' name='Group' group='0'/>", "type name")]
+    [InlineData("<input namespace='Consumer' name='AbiHash' group='0' abiHash='build'/>", "type name")]
+    [InlineData("<input namespace='Consumer' name='Inputs' group='0' abiHash='build'><field name='AbiHash' kind='Buffer' binding='0'/></input>", "member")]
     [InlineData("<!DOCTYPE input SYSTEM 'https://example.invalid/schema'><input namespace='Consumer' name='Inputs' group='0'/>", "DTD")]
     public void InvalidMetadataProducesAnActionableDiagnostic(string schema, string reason)
     {
@@ -44,5 +47,34 @@ public sealed class ResourceInputGeneratorTests
         object? actual = assembly.GetType("ConsumerCheck")!.GetMethod("Run")!.Invoke(null, null);
 
         Assert.IsAssignableFrom<IGpuBindingInputs>(actual);
+    }
+
+    [Theory]
+    [InlineData("compiler-abi-v1")]
+    [InlineData("quote\" slash\\ ampersand& less< greater> single'\n\r\t\u2028\u2029")]
+    public void AbiIdentityIsAnExactConstantInCompiledConsumer(string abiHash)
+    {
+        string schema = new XElement("input", new XAttribute("namespace", "Consumer"),
+            new XAttribute("name", "Inputs"), new XAttribute("group", 0),
+            new XAttribute("abiHash", abiHash)).ToString();
+        const string source = "public static class ConsumerCheck { public static string Run() { const string hash = Consumer.Inputs.AbiHash; return hash; } }";
+
+        var assembly = GeneratorCompilation.Compile(new ResourceInputGenerator(), source,
+            ("inputs.portable.resources.xml", schema));
+        object? actual = assembly.GetType("ConsumerCheck")!.GetMethod("Run")!.Invoke(null, null);
+
+        Assert.Equal(abiHash, actual);
+    }
+
+    [Fact]
+    public void AbsentAbiIdentityKeepsTheTypeNameAvailable()
+    {
+        const string source = "public static class ConsumerCheck { public static uint Run() => Consumer.AbiHash.Group; }";
+
+        var assembly = GeneratorCompilation.Compile(new ResourceInputGenerator(), source,
+            ("inputs.portable.resources.xml", "<input namespace='Consumer' name='AbiHash' group='3'/>"));
+        object? actual = assembly.GetType("ConsumerCheck")!.GetMethod("Run")!.Invoke(null, null);
+
+        Assert.Equal(3u, actual);
     }
 }
