@@ -41,14 +41,3 @@ public sealed class VulkanBackendTests(ITestOutputHelper output)
         finally { backend?.Dispose(); }
     }
 }
-
-// GPU allocation tests need the actual Native feature baseline. The reason is surfaced as an
-// xUnit skip, rather than running the old descriptor-set backend under the new contract.
-internal sealed class VulkanNativeFactAttribute : FactAttribute
-{
-    public VulkanNativeFactAttribute()
-    {
-        try { using var backend = VulkanBackend.Create(); }
-        catch (NotSupportedException exception) { Skip = exception.Message; }
-    }
-}

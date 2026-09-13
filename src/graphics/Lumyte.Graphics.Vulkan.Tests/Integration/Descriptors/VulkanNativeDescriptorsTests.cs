@@ -303,29 +303,3 @@ public sealed unsafe class VulkanNativeDescriptorsTests
         }
     }
 }
-
-internal sealed class VulkanCubeArrayDescriptorFactAttribute : FactAttribute
-{
-    public VulkanCubeArrayDescriptorFactAttribute()
-    {
-        try
-        {
-            using var backend = VulkanBackend.Create();
-            if (!backend.SupportsImageCubeArray) { Skip = "Vulkan imageCubeArray is unavailable."; }
-        }
-        catch (NotSupportedException exception) { Skip = exception.Message; }
-    }
-}
-
-internal sealed class VulkanAnisotropicDescriptorFactAttribute : FactAttribute
-{
-    public VulkanAnisotropicDescriptorFactAttribute()
-    {
-        try
-        {
-            using var backend = VulkanBackend.Create();
-            if (!backend.SupportsSamplerAnisotropy) { Skip = "Vulkan samplerAnisotropy is unavailable."; }
-        }
-        catch (NotSupportedException exception) { Skip = exception.Message; }
-    }
-}

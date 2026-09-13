@@ -218,16 +218,3 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         Assert.Equal(expected, Bytes(readback).ToArray());
     }
 }
-
-internal sealed class VulkanCopyFactAttribute : FactAttribute
-{
-    public VulkanCopyFactAttribute()
-    {
-        try
-        {
-            using var backend = VulkanBackend.Create();
-            if (backend.CopyQueue is null) { Skip = "No distinct Vulkan queue is available for asynchronous copies."; }
-        }
-        catch (NotSupportedException exception) { Skip = exception.Message; }
-    }
-}

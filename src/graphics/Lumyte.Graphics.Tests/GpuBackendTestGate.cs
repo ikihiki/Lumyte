@@ -9,6 +9,20 @@ public sealed class GpuBackendTestGate : IDisposable
 
     public GpuBackendTestGate() : this(MutexName) { }
 
+    public static Lazy<T> CreateProbe<T>(Func<T> probe) => CreateProbe(probe, MutexName);
+
+    internal static Lazy<T> CreateProbe<T>(Func<T> probe, string mutexName)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        // Discovery runs before collection fixtures exist. Cache only the capability
+        // result, and use the same process-wide exclusion as execution while probing.
+        return new Lazy<T>(() =>
+        {
+            using var gate = new GpuBackendTestGate(mutexName);
+            return probe();
+        });
+    }
+
     internal GpuBackendTestGate(string mutexName)
     {
         TaskCompletionSource acquired = new(TaskCreationOptions.RunContinuationsAsynchronously);

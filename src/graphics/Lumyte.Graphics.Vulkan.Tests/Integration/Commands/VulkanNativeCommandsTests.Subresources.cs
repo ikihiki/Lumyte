@@ -128,19 +128,3 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         Assert.Equal(expected, Bytes(readback)[..512].ToArray());
     }
 }
-
-internal sealed class VulkanSeparateDepthStencilFactAttribute : FactAttribute
-{
-    public VulkanSeparateDepthStencilFactAttribute()
-    {
-        try
-        {
-            using var backend = VulkanBackend.Create();
-            if (!backend.SupportsSeparateDepthStencilLayouts)
-            {
-                Skip = "Vulkan device requires combined depth/stencil layout initialization.";
-            }
-        }
-        catch (NotSupportedException exception) { Skip = exception.Message; }
-    }
-}

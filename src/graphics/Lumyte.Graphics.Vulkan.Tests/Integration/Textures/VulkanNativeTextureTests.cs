@@ -216,12 +216,3 @@ public sealed class VulkanNativeTextureTests
     private sealed class ForeignTexture : NativeGpuTextureHandle;
     private sealed class ForeignHeap() : NativeGpuHeap(4096, 256, NativeGpuMemoryKind.GpuOnly);
 }
-
-internal sealed class VulkanNativeTheoryAttribute : TheoryAttribute
-{
-    public VulkanNativeTheoryAttribute()
-    {
-        try { using var backend = VulkanBackend.Create(); }
-        catch (NotSupportedException exception) { Skip = exception.Message; }
-    }
-}

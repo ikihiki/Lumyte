@@ -331,27 +331,3 @@ public sealed unsafe partial class VulkanNativeRasterTests
         }
     }
 }
-
-internal sealed class VulkanMeshFactAttribute : FactAttribute
-{
-    public VulkanMeshFactAttribute(bool amplification = false) => Skip = VulkanMeshSupport.UnavailableReason(amplification);
-}
-
-internal sealed class VulkanMeshTheoryAttribute : TheoryAttribute
-{
-    public VulkanMeshTheoryAttribute(bool amplification = false) => Skip = VulkanMeshSupport.UnavailableReason(amplification);
-}
-
-internal static class VulkanMeshSupport
-{
-    public static string? UnavailableReason(bool amplification)
-    {
-        try
-        {
-            using var backend = VulkanBackend.Create();
-            if (!backend.Capabilities.MeshShaders) { return "Vulkan VK_EXT_mesh_shader meshShader is unavailable."; }
-            return amplification && !backend.Capabilities.AmplificationShaders ? "Vulkan taskShader is unavailable." : null;
-        }
-        catch (NotSupportedException exception) { return exception.Message; }
-    }
-}
