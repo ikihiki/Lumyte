@@ -4,7 +4,7 @@ namespace Lumyte.Graphics.Vulkan.Tests;
 
 internal static class VulkanTestSupport
 {
-    private static readonly Lazy<Snapshot> support = GpuBackendTestGate.CreateProbe(Probe);
+    private static readonly Lazy<Snapshot> support = GpuBackendTestGate.CreateProbe(Probe, VulkanGpuTestGate.MutexName);
 
     internal static string? UnavailableReason => support.Value.UnavailableReason;
 

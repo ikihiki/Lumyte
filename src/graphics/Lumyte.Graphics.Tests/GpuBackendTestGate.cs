@@ -1,21 +1,17 @@
 namespace Lumyte.Graphics.Tests;
 
-public sealed class GpuBackendTestGate : IDisposable
+public class GpuBackendTestGate : IDisposable
 {
-    private const string MutexName = "Lumyte.Graphics.Tests.GpuBackend";
     private readonly ManualResetEventSlim release = new();
     private readonly Task lifetime;
     private int disposed;
 
-    public GpuBackendTestGate() : this(MutexName) { }
-
-    public static Lazy<T> CreateProbe<T>(Func<T> probe) => CreateProbe(probe, MutexName);
-
-    internal static Lazy<T> CreateProbe<T>(Func<T> probe, string mutexName)
+    public static Lazy<T> CreateProbe<T>(Func<T> probe, string mutexName)
     {
         ArgumentNullException.ThrowIfNull(probe);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mutexName);
         // Discovery runs before collection fixtures exist. Cache only the capability
-        // result, and use the same process-wide exclusion as execution while probing.
+        // result, and use the same backend-specific exclusion as execution while probing.
         return new Lazy<T>(() =>
         {
             using var gate = new GpuBackendTestGate(mutexName);
@@ -23,8 +19,9 @@ public sealed class GpuBackendTestGate : IDisposable
         });
     }
 
-    internal GpuBackendTestGate(string mutexName)
+    public GpuBackendTestGate(string mutexName)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mutexName);
         TaskCompletionSource acquired = new(TaskCreationOptions.RunContinuationsAsynchronously);
         // A collection fixture can be disposed on a different thread after an async test.
         // Keep native mutex ownership on one dedicated thread for the entire lease.

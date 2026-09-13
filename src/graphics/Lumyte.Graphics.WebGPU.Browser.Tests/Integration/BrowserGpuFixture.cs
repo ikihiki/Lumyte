@@ -5,7 +5,7 @@ using Lumyte.Graphics.Tests;
 
 namespace Lumyte.Graphics.WebGPU.Browser.Tests;
 
-[CollectionDefinition("BrowserGpu", DisableParallelization = true)]
+[CollectionDefinition("BrowserGpu")]
 public sealed class BrowserGpuCollection : ICollectionFixture<BrowserGpuFixture> { }
 
 public sealed class BrowserGpuFixture : IAsyncLifetime
@@ -25,7 +25,7 @@ public sealed class BrowserGpuFixture : IAsyncLifetime
     {
         try
         {
-            gate = new GpuBackendTestGate();
+            gate = new GpuBackendTestGate("Lumyte.Graphics.Tests.GpuBackend.WebGPU.Browser");
             string webRoot = Path.Combine(AppContext.BaseDirectory, "BrowserHost", "wwwroot");
             if (!File.Exists(Path.Combine(webRoot, "index.html"))) { throw new FileNotFoundException("Build the test project before running browser conformance tests.", webRoot); }
             server = new BrowserStaticServer(webRoot);

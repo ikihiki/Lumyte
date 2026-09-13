@@ -494,6 +494,35 @@ upload／readback utility、resource manager、scope／pin／batch、自動 desc
 
 実機試験は正常な提出と完了後の再利用を対象とする。native allocation failure、GPU device loss と不明な提出完了を強制した回収試験、全 memory type／format／adapter の組合せは未検証である。管理上の失敗と所有維持は fake backend の単体テストで確認する。
 
+## テスト実行の改善: backend ごとの並列化
+
+2026-09-13 に全 backend 共通の GPU 排他を、DirectX 12／Vulkan／Dawn／Browser ごとの named mutex へ分けた。同じ backend の GPU テストは一つの collection と専用 mutex で直列化し、別 backend の device と test host は並行できる。Vulkan の探索時の capability probe も実行用 fixture と同じ mutex 名を使う。
+
+GPU collection の `DisableParallelization = true` と Dawn の assembly 全体の並列禁止を除去した。これらは同じ GPU collection 内の順序だけでなく、CPU 単体テストとの並行まで禁止していた。同一 collection のテストは xUnit の通常規則で直列のまま、独立した CPU collection と他 project は並行する。native の検証、テストの期待値、skip 条件、2分の無進行監視は変更していない。[xUnit の並列実行](https://xunit.net/docs/running-tests-in-parallel)
+
+独立レビューで CPU test の可変状態、native callback の帰属、初期化と device 所有を確認し、cross-backend の共有可変状態は見つからなかった。以前の Vulkan discovery の native crash との因果は未確定の記録を維持する。今回の変更は同一 backend の探索・実行の保護を残しており、同一 device への host 操作を無条件で並行化するものではない。
+
+gate の8件の回帰試験を追加し、focused test 全15件が成功した。別名の gate の同時所有、一方の解放による他方の保護への非干渉、無名 mutex になる null／空文字と空白の拒否を確認する。既存の thread をまたぐ Dispose、同名の排他、abandoned mutex、probe の一回実行・失敗後の解放も維持する。
+
+通常の実行手順と新しい backend／テストの追加条件は [テストの実行と並列化](../testing.md)へまとめた。同じ backend を含む別コマンドを重ねた場合の mutex 待機は引き続き監視対象なので、一つの全体実行を使う。
+
+`LUMYTE_WEBGPU_BROWSER` に既存の Chrome for Testing 155.0.8048.0 を指定し、`dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=backend-parallel-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を `-m:1` なしで実行した。31 project の **2,102件成功、失敗0、skip 0**、全 TRX の outcome が Completed、コマンドの終了コード0を確認した。DX12 408件、Vulkan 417件、Dawn 323件、Browser 45件を含む。restore／build を含む今回一回の実測は320.08秒で、厳密な速度比較の benchmark ではない。native crash と無進行 timeout は発生しなかった。
+
+初回の TRX では DX12 と Vulkan の提出・readback を含む実機 case の重複を確認できたが、build の完了時刻が異なり4 backend 全体は重ならなかった。9月14日に同じソリューションを `--no-build --no-restore -m:4`、logger prefix `backend-overlap-final`、同じ2分の監視条件で再実行した。再度31 project の **2,102件成功、失敗0、skip 0**、全 outcome が Completed、終了コード0となった。ビルドを含まない今回一回の実測は194.05秒だった。
+
+GPU collection に属する class と TRX の testId／開始・終了を対応させ、次の4 case が **00:00:56.932424–00:00:57.043410 JST の約111ms** 同時に実行され、すべて成功したことを確認した。partial／継承による共通 conformance method も実行先 class で判定した。
+
+| Backend | 実機 case | 9月14日 00:00 の開始秒–終了秒 |
+| --- | --- | --- |
+| DirectX 12 | `TextureDimensionsCanBePlaced(TwoD)` | 56.597217–57.168308 |
+| Vulkan | `ColrLayersAndColrGlyphReuseRenderBothLayers("B")` | 56.932424–57.043410 |
+| Dawn | `AutoRenderingDrawsEveryPolicyRoute(56, Polygon)` | 56.789204–57.641991 |
+| Browser | `RasterSamplesAnImmutableTextureAndSamplerBinding` | 56.292495–57.150953 |
+
+DX12 は実 device／heap／texture の作成、他3件は描画と readback を行うことも source で確認した。これはテストの実行期間が重なった証拠であり、GPU engine 内部の同時実行率や速度向上の測定ではない。テストの期待値や native 検証は両実行で同じである。
+
+55文書の418ローカルリンク、21アンカー、37 ADR の必要章と182個の番号依存に問題はなかった。production 向け `InternalsVisibleTo` は追加せず、既存11指定はすべて test assembly 向けのままである。
+
 ## 未実装と次の順序
 
 1. 提出の受理・GPU 利用終了・device 停止の契約を整え、両系統の Resources に completion token と `Retire`／`Collect` を接続する。その上で upload、binding／descriptor と resource manager の寿命管理を実装する。

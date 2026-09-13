@@ -2,6 +2,32 @@ namespace Lumyte.Graphics.Tests;
 
 public sealed class GpuBackendTestGateTests
 {
+    [Theory]
+    [InlineData(null, typeof(ArgumentNullException))]
+    [InlineData("", typeof(ArgumentException))]
+    [InlineData(" ", typeof(ArgumentException))]
+    public void GateRejectsMissingMutexNames(string? mutexName, Type exceptionType)
+    {
+        var error = (ArgumentException)Assert.Throws(exceptionType, () =>
+        {
+            using var gate = new GpuBackendTestGate(mutexName!);
+        });
+
+        Assert.Equal("mutexName", error.ParamName);
+    }
+
+    [Theory]
+    [InlineData(null, typeof(ArgumentNullException))]
+    [InlineData("", typeof(ArgumentException))]
+    [InlineData(" ", typeof(ArgumentException))]
+    public void CapabilityProbeRejectsMissingMutexNames(string? mutexName, Type exceptionType)
+    {
+        var error = (ArgumentException)Assert.Throws(exceptionType,
+            () => GpuBackendTestGate.CreateProbe(static () => new object(), mutexName!));
+
+        Assert.Equal("mutexName", error.ParamName);
+    }
+
     [Fact]
     public void GateCanBeDisposedFromAnotherThread()
     {
@@ -35,6 +61,35 @@ public sealed class GpuBackendTestGateTests
         worker.Join();
 
         Assert.Equal(releaseGate, acquired);
+    }
+
+    [Fact]
+    public void DifferentBackendGatesCanBeHeldAtTheSameTime()
+    {
+        string firstName = UniqueMutexName();
+        string secondName = UniqueMutexName();
+        using Mutex firstContender = new(false, firstName);
+        using Mutex secondContender = new(false, secondName);
+
+        using var first = new GpuBackendTestGate(firstName);
+        using var second = new GpuBackendTestGate(secondName);
+
+        Assert.Equal((false, false), (TryAcquire(firstContender), TryAcquire(secondContender)));
+    }
+
+    [Fact]
+    public void DisposingOneBackendGateLeavesTheOtherOwned()
+    {
+        string firstName = UniqueMutexName();
+        string secondName = UniqueMutexName();
+        using var first = new GpuBackendTestGate(firstName);
+        using var second = new GpuBackendTestGate(secondName);
+        using Mutex firstContender = new(false, firstName);
+        using Mutex secondContender = new(false, secondName);
+
+        first.Dispose();
+
+        Assert.Equal((true, false), (TryAcquire(firstContender), TryAcquire(secondContender)));
     }
 
     [Fact]

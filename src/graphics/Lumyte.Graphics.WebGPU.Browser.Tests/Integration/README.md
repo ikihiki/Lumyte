@@ -17,9 +17,9 @@ build は参照した `BrowserHost` を一度 publish し、test output の `Bro
 
 Edge 153.0.4234.32 では、直接 root と indirect dispatch の組合せに Dawn の既知不具合を再現した。root の37が内部検証用の65535に置換され、validation error なしで誤った結果になる。直接 dispatch は正しい。確認した Chrome for Testing 155.0.8048.0 は、同じ C# indirect dispatch の期待値 `[37, 38]` を満たした。修正済み runtime を `LUMYTE_WEBGPU_BROWSER` で選択して試験する。該当試験の期待値を変更せず、feature 検証や browser の安全機能も無効化しない。[独立した再現実験](../../../../tools/experiments/browser-webgpu-indirect-immediates/README.md) と [Dawn の修正](https://dawn.googlesource.com/dawn/+/c4e47b5eddc06f271cb07c3108cfccb1bb4704ec) を参照する。
 
-fixture は loopback の動的 port で publish 出力だけを配信し、headless browser と新しい専用 profile を使う。ユーザーの profile と開いている browser は使用しない。experimental／unsafe feature の起動指定はない。GPU 試験の既存 named mutex を共有し、Dawn／Vulkan 等の適合試験と同時に device を動作させない。browser process と HTTP server は fixture 終了時に停止する。
+fixture は loopback の動的 port で publish 出力だけを配信し、headless browser と新しい専用 profile を使う。ユーザーの profile と開いている browser は使用しない。experimental／unsafe feature の起動指定はない。Browser 専用の named mutex を使い、同じ Browser backend の適合試験だけを直列化する。Dawn／DirectX 12／Vulkan と GPU を使わない単体テストは並行できる。browser process と HTTP server は fixture 終了時に停止する。
 
-ソリューション全体に `--blame-hang-timeout 2m` を指定する場合は `dotnet test Lumyte.slnx -m:1` として project を順番に実行する。別 project が GPU 排他を保持している間の fixture 初期化待ちも、VSTest の無進行時間に含まれる。並列 project 実行では Browser のケース開始前に timeout になり得るため、GPU 試験を skip したり guard を外したりせず、実行順序で競合を避ける。
+ソリューション全体は `dotnet test Lumyte.slnx` の project 並列実行を使う。以前の全 backend 共通 mutex による排他待ちを、backend 別の mutex へ分けた。`--blame-hang-timeout 2m` の監視条件は維持できる。同じ backend の試験を別コマンドでも同時起動すると、その排他待ちは引き続き監視対象になるため、通常は一つの全体実行にまとめる。[テストの実行と並列化](../../../../docs/testing.md)を参照する。
 
 `artifacts/tests/webgpu-browser/<GUID>/` に browser version、ケース別の JSON 結果、browser log を保存する。profile も同じ隔離 directory に置く。
 
