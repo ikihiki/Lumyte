@@ -35,7 +35,7 @@ public sealed unsafe partial class VulkanBackend
             SType = StructureType.MemoryAllocateInfo, PNext = &addressFlags,
             AllocationSize = size, MemoryTypeIndex = memoryType,
         };
-        Check(vk.AllocateMemory(device, in info, null, out DeviceMemory memory), "vkAllocateMemory");
+        CheckDeviceResult(vk.AllocateMemory(device, in info, null, out DeviceMemory memory), "vkAllocateMemory");
         try { return new HeapRecord(this, memory, size, alignment, kind); }
         catch
         {

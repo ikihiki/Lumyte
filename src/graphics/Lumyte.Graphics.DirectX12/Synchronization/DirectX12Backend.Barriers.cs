@@ -105,6 +105,7 @@ public sealed unsafe partial class DirectX12Backend
     private static BarrierLayout TextureLayoutFor(GpuTextureLayout layout) => layout switch
     {
         GpuTextureLayout.Undefined => BarrierLayout.Undefined,
+        GpuTextureLayout.Common => BarrierLayout.Common,
         GpuTextureLayout.General => BarrierLayout.DirectQueueCommon,
         GpuTextureLayout.ShaderRead => BarrierLayout.DirectQueueShaderResource,
         GpuTextureLayout.ColorAttachment => BarrierLayout.RenderTarget,
@@ -119,7 +120,7 @@ public sealed unsafe partial class DirectX12Backend
     private static BarrierAccess LayoutAccess(GpuTextureLayout layout) => layout switch
     {
         GpuTextureLayout.Undefined => BarrierAccess.NoAccess,
-        GpuTextureLayout.General or GpuTextureLayout.Present => BarrierAccess.Common,
+        GpuTextureLayout.Common or GpuTextureLayout.General or GpuTextureLayout.Present => BarrierAccess.Common,
         GpuTextureLayout.ShaderRead => BarrierAccess.ShaderResource,
         GpuTextureLayout.ColorAttachment => BarrierAccess.RenderTarget,
         GpuTextureLayout.DepthStencilRead => BarrierAccess.DepthStencilRead,

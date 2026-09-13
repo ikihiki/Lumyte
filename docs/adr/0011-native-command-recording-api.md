@@ -19,11 +19,12 @@ command は順序付きの指示と値を記録し、application resource の寿
 
 ## API
 
-`MainQueue` は `INativeGpuBackend` の member、`StartCommandRecording` は `NativeGpuQueue` の member とする。それ以外の記録操作と `Dispose` は `NativeGpuCommandBuffer` に属する。
+`MainQueue`／`CopyQueue` は `INativeGpuBackend` の member、`StartCommandRecording` は `NativeGpuQueue` の member とする。それ以外の記録操作と `Dispose` は `NativeGpuCommandBuffer` に属する。
 
 | API | 契約 |
 | --- | --- |
 | `MainQueue` | この device の `NativeGpuQueue`。 |
+| `CopyQueue` | linear／color texture 転送用の別 queue。独立 queue を取得できなければ null。記録は開始元の queue にだけ提出する。 |
 | `NativeGpuQueue` | 一つの native queue の identity。public abstract 基底型と protected constructor から各 backend が実装する。 |
 | `NativeGpuQueue.StartCommandRecording()` | queue 所属の一回提出用 `NativeGpuCommandBuffer` を返す。 |
 | `NativeGpuCommandBuffer` | public abstract 基底型と protected constructor から各 backend が実装する。記録とその内部管理を所有し、application resource を延命しない。状態の公開 enum や property は持たない。 |
@@ -46,7 +47,7 @@ command は順序付きの指示と値を記録し、application resource の寿
 | `CopyMemoryToTexture(source, destination, footprint)`／`CopyTextureToMemory(source, destination, footprint)` | range と texture の指定範囲を native copy に渡す。footprint の単一 `Aspect` が対象 plane を選ぶ。 |
 | `Barrier(beforeStages, beforeAccess, afterStages, afterAccess)` | resource を列挙しない global execution/memory dependency。共通の stage/access 値を使う。 |
 | `TextureTransition(view, beforeLayout, afterLayout)` | `ExplicitTextureTransitions` 対応 backend が必要とする補足操作。caller が実際の前後 layout/state を指定する。 |
-| `DiscardTexture(view, afterLayout)` | 指定 subresource の旧内容を保持せず、再利用のための layout／metadata 初期化を記録する。Vulkan は `General`、DirectX 12 は次の用途の layout を指定する。alias の探索・切替相手の指定・CPU 待機は行わない。 |
+| `DiscardTexture(view, afterLayout)` | 指定 subresource の旧内容を保持せず、再利用のための layout／metadata 初期化を記録する。Vulkan は `General`／`Common` を GENERAL に写し、DirectX 12 は次の用途の layout を指定する。alias の探索・切替相手の指定・CPU 待機は行わない。 |
 
 各 work の `rootData` は `ReadOnlySpan<byte>` とし、呼出し時に caller の bytes をコピーする。size は 4 byte の倍数で `MaxRootDataSize` 以下、空入力は許可する。active graphics stage 群は一つの root を共有し、mesh raster では amplification／mesh／pixel に直接可視とする。64 byte 固定、末尾 zero fill、独立した root setter を Native 層に要求しない。
 
@@ -66,7 +67,9 @@ compute 等が mesh の geometry、payload の入力または indirect 引数を
 
 同期は resource を列挙しない global execution/memory dependency を基本にする。DirectX 12 の texture layout 変更は caller が明示し、現在 layout と不足 barrier を backend が推論しない。Vulkan の通常 image は単一 layout とし、初回初期化、明示的な discard／alias 再初期化と presentation の処理を除いて transition を要求しない。rendering の境界だけで hazard が解消されたとは扱わない。
 
-GPU が書いた mapped memory を CPU が読む場合、caller は producer から `GpuStage.Host`／`GpuAccess.HostRead` への `Barrier` を記録し、その提出の completion を CPU で待つ。memory visibility と実行完了は別の条件であり、`Wait` が不足する memory dependency を推定・挿入しない。CPU 書込みを GPU に使わせる場合も caller が書込みと提出を順序付ける。
+queue 間の順序は Submit の timeline wait により指定し、global barrier だけで別 queue の完了を待つことはできない。CopyQueue の記録には転送とその queue で合法な barrier を用いる。DirectX 12 の copy texture は Common で引き渡し、layout 遷移を MainQueue へ置く。Vulkan の初回 image 初期化は producer を先に Submit 受理させる。command が使用可能な stage／format の native 条件を独自に再検証する層は追加しない。
+
+GPU が書いた mapped memory を CPU が読む場合、caller は producer から `GpuStage.Host`／`GpuAccess.HostRead` への `Barrier` を記録し、その提出の completion を CPU で待つ。memory visibility と実行完了は別の条件であり、`WaitCpu` が不足する memory dependency を推定・挿入しない。CPU 書込みを GPU に使わせる場合も caller が書込みと提出を順序付ける。
 
 `DiscardTexture` の `view` は非所有の `NativeGpuTextureView` であり、texture identity、aspect、mip／layer 範囲を指定する。対象の各 subresource 全体を破棄し、矩形の部分保持や alias 間の内容継承は行わない。backend は view の format 再解釈を使って data を変換しない。native が depth／stencil の一括初期化を必要とする範囲では caller が `DepthStencil` を指定し、texture の opaque な配置から影響範囲を限定できなければ texture 全体を指定する。
 

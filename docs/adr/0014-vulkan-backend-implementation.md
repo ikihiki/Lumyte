@@ -59,7 +59,7 @@ shader descriptor の生成では image と view の作成情報を descriptor �
 
 sampler の `MinLod/MaxLod/MaxAnisotropy` は要求値を native の sampler 作成情報へ渡し、参照プロトタイプの固定値へ丸めない。render view は read-only flags を保持し、attachment の aspect 別 nullable operation とともに rendering へ伝える。
 
-通常の image は sampling、storage、attachment、copy に `GENERAL` を使う。`unified_image_layouts` はこの単一 layout の最適化に使うもので、global barrier を自動化する機能ではない。
+通常の image は sampling、storage、attachment、copy に `GENERAL` を使う。公開値の `General` と `Common` は discard の到達先としてともに GENERAL に写し、queue 間の新しい layout は追加しない。`unified_image_layouts` はこの単一 layout の最適化に使うもので、global barrier を自動化する機能ではない。
 
 新しい image の `UNDEFINED → GENERAL` を初回初期化として使用前に順序付ける。初期化記録を未提出で中止した場合は完了扱いにせず、後の使用に必要な初期化を残す。この局所状態を、resource の使用履歴から現在 layout を推論する汎用 tracker に拡張しない。通常利用の `TextureTransition` は必要としない。
 
@@ -131,6 +131,16 @@ raw shader と draw に使う optional feature は、device が提供する `sha
 
 rendering 内の `DispatchMesh(rootData, x, y, z)` は root を直接記録した後に `vkCmdDrawMeshTasksEXT` を呼ぶ。task stage があればその group 数、なければ mesh の group 数となる。`DispatchMeshIndirect(rootData, arguments)` は既定の `VK_KHR_device_address_commands` と mesh 拡張の連携命令 `vkCmdDrawMeshTasksIndirect2EXT` を使う。`VkDrawIndirect2InfoKHR` に `arguments.GpuAddress`、range の size、12 byte の stride と `drawCount = 1` を渡し、GPU 上の X／Y／Z から 1 件だけ起動する。root は CPU 呼出しで渡したものを用い、count buffer、GPU 生成 root、CPU readback による展開は加えない。[address による mesh indirect](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawMeshTasksIndirect2EXT.html)
 
+## Queue family と device timeline
+
+`MainQueue` は graphics／compute／transfer を持つ queue、`CopyQueue` はそれと異なる queue とする。transfer 専用 family を優先し、なければ同 family の2番目の queue、最後に別の対応 family を選ぶ。専用転送がない場合は同 family を使い、CONCURRENT が不要な経路を優先する。独立した queue が得られない場合は null を返す。各 queue に対応する command pool と内部 completion を持たせ、同じ queue の host 操作は caller が直列化する。queue の存在から、物理 engine の重なりや性能向上を保証しない。
+
+Main／Copy の family が異なる場合、公開 linear region の buffer と texture の image は、その2 family を列挙した `VK_SHARING_MODE_CONCURRENT` で生成する。同 family、または CopyQueue がなければ EXCLUSIVE とする。memory requirements の取得と実際の生成に同じ設定を使う。descriptor storage は MainQueue 専用の EXCLUSIVE のままとする。固定した device-wide な共有契約であり、resource ごとの所有者追跡、release／acquire の推定や公開 sharing flags は追加しない。CONCURRENT は native の配置・性能へ影響し得るため、EXCLUSIVE と同等の性能を保証しない。[Resource sharing](https://docs.vulkan.org/spec/latest/chapters/resources.html#resources-sharing)
+
+CopyQueue の共通用途は線形データと color texture の転送とし、depth／stencil は graphics を持つ MainQueue を使う。転送の alignment、granularity と用途条件は native validation に委ねる。[vkCmdCopyMemoryToImageKHR](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdCopyMemoryToImageKHR.html)
+
+caller semaphore は device に属する timeline semaphore とする。`IsComplete` は `vkGetSemaphoreCounterValue`、`WaitCpu` は `vkWaitSemaphores`、`SignalCpu` は `vkSignalSemaphore` に写す。CPU 操作は queue の回収 list を変更せず、Submit や host signal と並行できる。全 queue と semaphore が同じ device loss を参照し、一方の queue の停止を他方で通常の未完了と扱わない。[Timeline semaphores](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-semaphores)
+
 ## Global barrier と提出
 
 `Barrier` は stage/access から一つの global `VkMemoryBarrier2` を作り、`vkCmdPipelineBarrier2` で記録する。通常の texture/buffer を列挙せず、per-resource transition list を求めない。caller が producer/consumer の実際の依存を指定する。
@@ -149,7 +159,9 @@ native command buffer は記録呼出し時に一回提出用の native command 
 
 新規 texture の初回参照位置では native command の区間を分け、未初期化候補を非所有参照で記録する。Submit が区間を順に走査し、まだ必要な image の `UNDEFINED → GENERAL` command だけを参照の直前に挿入する。初期化は caller の先行 barrier を追い越さず、先に複数の recording を組み立てても同じ image を重複初期化しない。明示的な `DiscardTexture` はこの初回処理とは別に毎回記録する。通常 layout の履歴や subresource ごとの状態 tracker は追加しない。
 
-全区間の終了と回収用の管理領域の確保を終え、一回の `vkQueueSubmit2` で受理された後だけ初回初期化義務を消費する。失敗と未提出 Dispose では義務を残す。この一回の呼出しに、command と内部 timeline の signal を含む native batch、その後に caller timeline を signal する native batch を渡す。同じ native batch の複数 signal は互いに順序を保証しないため、分けることで caller の Wait が内部 signal の終了も保証する。command memory の回収は内部 timeline のみに依存し、追加の queue 提出呼出しや暗黙待機は行わない。[Vulkan の signal 順序](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-signal-operation-order)
+全区間の終了と回収用の管理領域の確保を終え、一回の `vkQueueSubmit2` で受理された後だけ初回初期化義務を消費する。失敗と未提出 Dispose では義務を残す。この一回の呼出しに、指定された GPU waits・command・内部 timeline signal を含む `VkSubmitInfo2`、その後に caller timeline を signal する `VkSubmitInfo2` を渡す。wait／signal の stage は `ALL_COMMANDS` とし、wait は work 全体より前に働く。同じ native batch の複数 signal は互いに順序を保証しないため、分けることで caller の WaitCpu が内部 signal の終了も保証する。空 command 列も同じ同期経路で受理する。command memory の回収は各 queue の内部 timeline のみに依存し、追加の提出呼出しや暗黙待機は行わない。[Vulkan の signal 順序](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-signal-operation-order)
+
+別 queue へ新規 texture を渡すときは、初回初期化する producer の Submit を先に受理させ、その後に producer の timeline を待つ consumer を Submit する。初回初期化義務は host 側の受理時に消費するため、consumer を未来値の待機付きで先に提出する順序は初回 texture 利用では許さない。初期化済み resource／線形データの wait-before-signal は、caller が進行と signal 順序を保証して使える。GPU wait を CPU wait に置換したり、resource 参照から queue の順序を自動生成したりしない。
 
 queue 受理と GPU completion を区別し、native の失敗を ADR 0002 の error/device loss に接続する。参照プロトタイプの `assert` やプロセス終了の方針を、そのまま Lumyte の失敗 API に置き換えない。未提出中止と受理後の停止も区別する。
 
@@ -177,8 +189,9 @@ queue 受理と GPU completion を区別し、native の失敗を ADR 0002 の e
 | `Dispatch`／`DispatchIndirect` | 各呼出しの root と直接 group count または device-address の引数を使う。 |
 | `CopyMemory`／`CopyMemoryToTexture`／`CopyTextureToMemory` | `VK_KHR_device_address_commands` の copy に address/range と単一 aspect の footprint を渡す。 |
 | `Barrier`／`TextureTransition`／`DiscardTexture` | global execution/memory barrier と明示された `UNDEFINED → GENERAL` の再初期化を記録する。通常 image の用途ごとの `TextureTransition` は提供しない。 |
-| `StartCommandRecording`／`Dispose`／`Submit` | 一回提出用 command buffer の記録状態を内部で管理する。未提出の破棄と提出済み memory の completion 後の回収を区別する。 |
-| `CreateSemaphore`／`IsComplete`／`Wait`／`NativeGpuSemaphore.Dispose` | timeline semaphore の生成、照会、CPU wait と破棄。 |
+| `MainQueue`／`CopyQueue`／`StartCommandRecording`／`NativeGpuCommandBuffer.Dispose` | 別 queue とその family の command pool を使う。未提出の破棄と提出済み memory の内部 completion 後の回収を区別する。 |
+| `Submit(commands, signal, waits)`／`NativeGpuTimelinePoint` | batch 全体の終了後、GPU waits → work・内部 signal → caller signal を一回の vkQueueSubmit2 に渡す。空 batch も同期として受理する。 |
+| `CreateSemaphore`／`NativeGpuSemaphore.IsComplete`／`WaitCpu`／`SignalCpu`／`Dispose` | device に属する caller-owned timeline の生成、完了照会、CPU wait／signal と解放。queue の回収から独立する。 |
 
 ## コード配置
 
@@ -238,6 +251,7 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 ## 採用差分と未実装範囲
 
 - NoGraphicsAPI の descriptor heap、null-layout pipeline、直接 push data、GPU pointer、global barrier と単一 image layout を採用する。
+- 独立した CopyQueue、異 family 間の固定 CONCURRENT sharing、device timeline の GPU wait／CPU 操作を実装した。複数 queue を caller が選択する API は NoGraphicsAPI prototype への拡張であり、queue owner の追跡や application resource の自動退役は含めない。
 - 共通 allocation と linear region の明示分離、`NativeGpuRange` の region identity、複数 requirement の opaque compatibility を受け取る確保、buffer descriptor、sampler の LOD/anisotropy 指定、read-only attachment、単一 aspect の copy footprint、alias 再利用の明示 discard と Lumyte の例外・`Dispose` 契約は、本 API の追加または差分である。NoGraphicsAPI の public API に同じ機能があるとは扱わない。
 - heap の共用は native memory 条件が適合する範囲に限り、GPU-only memory の全用途共通化や image の線形 pointer 化は保証しない。Native 専用の `VulkanBackend` に共通 allocation、線形 region の配置と mapping、texture の明示配置・独立破棄、granularity を含む requirements を実装した。必須拡張を満たす device で初期化、共有 mapping、texture との混在配置と heap 再利用を実機確認済み。validation layer を使う検証は未実施である。
 - texture の要件取得と生成は同じ `ImageCreateInfo` の変換を使う。optimal image を `UNDEFINED` で生成・bind し、初回の `GENERAL` 初期化義務を非公開状態に保持する。command／submit には参照直前の区間で接続し、生成時の暗黙提出・待機は行わない。

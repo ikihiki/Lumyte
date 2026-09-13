@@ -35,6 +35,10 @@ NoGraphicsAPI と同様に `MutableFormat` は bool、default false とする。
 
 新しい texture の内容は不定である。DirectX 12 は `Undefined` で生成し、caller が最初の用途の layout へ明示的に遷移させる。Vulkan は backend が使用前の `GENERAL` 初期化を順序付け、通常利用はその layout のまま caller が global dependency を明示する。この初回処理は、他の alias が書き込んだ後の再初期化を代行しない。再利用時は caller が影響する subresource を command で明示的に discard／再初期化する。初期条件は生成契約に固定し、別の照会や property では公開しない。内容の初期化と使用間の同期は caller の責務である。
 
+texture は device が公開する MainQueue／CopyQueue で共有可能な条件で生成する。初回の layout／metadata 初期化を担当する producer の Submit を先に受理させ、別 queue の consumer はその後に GPU wait 付きで提出する。未来の signal を待つ consumer を先行提出して初期化担当にしない。初期化・共有条件と GPU の競合回避は別であり、同じ内容への競合する利用を許す契約ではない。
+
+CopyQueue は color texture 転送に用い、depth/stencil は MainQueue で転送する。DirectX 12 は MainQueue で初期化・Common への遷移を済ませ、CopyQueue では Common のまま転送し、consumer の MainQueue が待機後に用途の layout へ遷移させる。Vulkan は通常の GENERAL を保持する。共有のための生成 flags や barrier の写像は各 backend ADR に置く。
+
 `NativeGpuTextureCopyFootprint.Aspect` は `Color`、`Depth`、`Stencil` の一つを必須入力とする。depth/stencil を一度に interleaved bytes として転送せず、必要なら footprint と range を分けて二回 copy する。選択していない aspect を copy は変更しない。
 
 転送 range の先頭を byte 配列の原点とする。`RowPitch` は次の texel block 行まで、`ImagePitch` は次の 2D slice までの byte 間隔である。2D array では一つの slice が一つの layer、3D では一つの slice が一つの depth block 面に対応する。`Origin`／`Extent` は texture 側の texel 座標で、`Mip` と `BaseLayer`／`LayerCount` が対象 subresource を選ぶ。非圧縮では一 texel が一 block、圧縮 color では format の block の大きさで pitch を計算する。depth/stencil の転送 element は以下とする。

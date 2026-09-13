@@ -17,16 +17,16 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         expected.CopyTo(Bytes(upload)[16..]);
         Bytes(readback).Fill(0xCB);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.CopyMemory(new(upload, 16, 64), new(gpu, 32, 128));
         CopyDependency(commands);
         commands.CopyMemory(new(gpu, 32, 64), new(readback, 48, 128));
         HostDependency(commands);
 
-        queue.Submit([commands], completion, 1);
+        queue.Submit([commands], new(completion, 1));
         commands.Dispose();
-        queue.Wait(completion, 1);
+        completion.WaitCpu(1);
 
         byte[] actual = Bytes(readback).ToArray();
         byte[] wholeExpected = Enumerable.Repeat((byte)0xCB, 256).ToArray();
@@ -47,7 +47,7 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         byte[] expected = Pattern(256, 83);
         expected.CopyTo(Bytes(upload));
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var write = queue.StartCommandRecording();
         using var read = queue.StartCommandRecording();
         write.CopyMemoryToTexture(new(upload, 0, 256), texture, Footprint());
@@ -57,11 +57,11 @@ public sealed unsafe partial class VulkanNativeCommandsTests
 
         if (separateSubmissions)
         {
-            queue.Submit([write], completion, 1);
-            queue.Submit([read], completion, 2);
+            queue.Submit([write], new(completion, 1));
+            queue.Submit([read], new(completion, 2));
         }
-        else { queue.Submit([write, read], completion, 2); }
-        queue.Wait(completion, 2);
+        else { queue.Submit([write, read], new(completion, 2)); }
+        completion.WaitCpu(2);
 
         Assert.Equal(expected, Bytes(readback)[..256].ToArray());
     }
@@ -81,15 +81,15 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         {
             discarded.CopyMemoryToTexture(new(upload, 0, 256), texture, Footprint());
         }
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.CopyMemoryToTexture(new(upload, 0, 256), texture, Footprint());
         CopyDependency(commands);
         commands.CopyTextureToMemory(texture, new(readback, 0, 256), Footprint());
         HostDependency(commands);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(expected, Bytes(readback)[..256].ToArray());
     }
@@ -105,12 +105,12 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         byte[] expected = Pattern(256, 61);
         expected.CopyTo(Bytes(upload));
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using (var abandoned = queue.StartCommandRecording())
         using (var foreign = new ForeignCommands())
         {
             abandoned.CopyMemoryToTexture(new(upload, 0, 256), texture, Footprint());
-            Assert.Throws<ArgumentException>(() => queue.Submit([abandoned, foreign], completion, 1));
+            Assert.Throws<ArgumentException>(() => queue.Submit([abandoned, foreign], new(completion, 1)));
         }
         using var retry = queue.StartCommandRecording();
         retry.CopyMemoryToTexture(new(upload, 0, 256), texture, Footprint());
@@ -118,8 +118,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         retry.CopyTextureToMemory(texture, new(readback, 0, 256), Footprint());
         HostDependency(retry);
 
-        queue.Submit([retry], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([retry], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(expected, Bytes(readback)[..256].ToArray());
     }
@@ -130,19 +130,19 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     {
         using var resources = new Resources();
         var queue = resources.Backend.MainQueue;
-        using (var completion = queue.CreateSemaphore(0))
+        using (var completion = resources.Backend.CreateSemaphore(0))
         using (var commands = queue.StartCommandRecording())
         {
-            queue.Submit([commands], completion, 1);
-            queue.Wait(completion, 1);
+            queue.Submit([commands], new(completion, 1));
+            completion.WaitCpu(1);
         }
-        using var nextCompletion = queue.CreateSemaphore(7);
+        using var nextCompletion = resources.Backend.CreateSemaphore(7);
         using var next = queue.StartCommandRecording();
 
-        queue.Submit([next], nextCompletion, 8);
-        queue.Wait(nextCompletion, 8);
+        queue.Submit([next], new(nextCompletion, 8));
+        nextCompletion.WaitCpu(8);
 
-        Assert.True(queue.IsComplete(nextCompletion, 8));
+        Assert.True(nextCompletion.IsComplete(8));
     }
 
     [VulkanNativeTheory]
@@ -153,28 +153,32 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     {
         using var resources = new Resources();
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
-        queue.Submit([commands], completion, 1);
-        if (waitBeforeRetry) { queue.Wait(completion, 1); }
+        queue.Submit([commands], new(completion, 1));
+        if (waitBeforeRetry) { completion.WaitCpu(1); }
 
-        Exception? error = Record.Exception(() => queue.Submit([commands], completion, 2));
-        queue.Wait(completion, 1);
+        Exception? error = Record.Exception(() => queue.Submit([commands], new(completion, 2)));
+        completion.WaitCpu(1);
 
         Assert.IsType<InvalidOperationException>(error);
     }
 
     [VulkanNativeFact]
     [Trait("Category", "VulkanNativeConformance")]
-    public void EmptySubmissionIsRejected()
+    public void EmptySubmissionSignalsTheRequestedTimelineValue()
     {
         using var resources = new Resources();
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
 
-        var error = Assert.Throws<ArgumentException>(() => queue.Submit([], completion, 1));
+        // NativeGpuQueue.Submit now explicitly permits dependency/signal-only batches for
+        // device timelines. This replaces the former non-empty-batch contract; verify that
+        // the native signal actually completes instead of retaining its obsolete rejection.
+        queue.Submit([], new(completion, 1));
+        completion.WaitCpu(1);
 
-        Assert.Equal("commands", error.ParamName);
+        Assert.True(completion.IsComplete(1));
     }
 
     [VulkanNativeFact]
@@ -183,13 +187,13 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     {
         using var resources = new Resources();
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
 
-        var error = Assert.Throws<ArgumentException>(() => queue.Submit([commands, commands], completion, 1));
+        var error = Assert.Throws<ArgumentException>(() => queue.Submit([commands, commands], new(completion, 1)));
 
         Assert.Equal("commands", error.ParamName);
-        Assert.False(queue.IsComplete(completion, 1));
+        Assert.False(completion.IsComplete(1));
     }
 
     [VulkanNativeFact]
@@ -208,10 +212,10 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         var heap = resources.Heap(requirements, NativeGpuMemoryKind.GpuOnly);
         var a = resources.Texture(description, heap);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var useA = queue.StartCommandRecording();
         useA.CopyMemoryToTexture(new(upload, 0, 256), a, Footprint());
-        queue.Submit([useA], completion, 1);
+        queue.Submit([useA], new(completion, 1));
 
         // B is placed after A has been submitted and may still be executing.
         var b = resources.Texture(description, heap);
@@ -228,8 +232,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         reuse.CopyTextureToMemory(a, new(readback, 256, 256), Footprint());
         HostDependency(reuse);
 
-        queue.Submit([reuse], completion, 2);
-        queue.Wait(completion, 2);
+        queue.Submit([reuse], new(completion, 2));
+        completion.WaitCpu(2);
 
         Assert.Equal(second.Concat(first).ToArray(), Bytes(readback)[..512].ToArray());
     }
@@ -252,7 +256,7 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         var depthFootprint = Footprint() with { Aspect = NativeGpuTextureAspect.Depth };
         var stencilFootprint = Footprint() with { Aspect = NativeGpuTextureAspect.Stencil, RowPitch = 8, ImagePitch = 64 };
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.CopyMemoryToTexture(new(upload, 0, 256), texture, depthFootprint);
         CopyDependency(commands);
@@ -262,8 +266,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         commands.CopyTextureToMemory(texture, new(readback, 512, 64), stencilFootprint);
         HostDependency(commands);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(Bytes(upload)[512..576].ToArray(), Bytes(readback)[512..576].ToArray());
         Assert.Equal(Enumerable.Range(0, 64).Select(index => (uint)(index * 65537)).ToArray(),
@@ -284,15 +288,15 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         expected.CopyTo(Bytes(upload)[256..]);
         var footprint = Footprint() with { LayerCount = layers, Extent = new(8, 8, depth), RowPitch = 40, ImagePitch = 400 };
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.CopyMemoryToTexture(new(upload, 256, 768), texture, footprint);
         CopyDependency(commands);
         commands.CopyTextureToMemory(texture, new(readback, 128, 768), footprint);
         HostDependency(commands);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         byte[] expectedTexels = Enumerable.Range(0, 2).SelectMany(image => Enumerable.Range(0, 8)
             .SelectMany(row => expected.Skip(image * 400 + row * 40).Take(32))).ToArray();

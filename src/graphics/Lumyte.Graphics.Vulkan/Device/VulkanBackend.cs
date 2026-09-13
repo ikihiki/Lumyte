@@ -26,7 +26,10 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private DebugUtilsMessengerEXT debugMessenger;
     private delegate* unmanaged<Instance, DebugUtilsMessengerEXT, AllocationCallbacks*, void> destroyDebugMessenger;
     private bool disposed;
+    private volatile bool deviceLost;
     private QueueRecord? mainQueue;
+    private QueueRecord? copyQueue;
+    private uint[] resourceQueueFamilies = [];
     private NativeGpuDispatchLimits dispatchLimits;
     private NativeGpuMeshShaderLimits? meshLimits;
     private bool supportsMeshShaders;
@@ -54,6 +57,11 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         get { VerifyNotDisposed(); return mainQueue!; }
     }
 
+    public NativeGpuQueue? CopyQueue
+    {
+        get { VerifyNotDisposed(); return copyQueue; }
+    }
+
     public static VulkanBackend Create(NativeGpuBackendOptions? options = null)
     {
         var backend = new VulkanBackend(Vk.GetApi());
@@ -72,7 +80,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private void Initialize(NativeGpuBackendOptions options)
     {
         uint loaderVersion = 0;
-        Check(vk.EnumerateInstanceVersion(&loaderVersion), "vkEnumerateInstanceVersion");
+        CheckDeviceResult(vk.EnumerateInstanceVersion(&loaderVersion), "vkEnumerateInstanceVersion");
         if (loaderVersion < RequiredApiVersion)
         {
             throw new NotSupportedException("Vulkan Native requires Vulkan 1.4 or newer.");
@@ -91,15 +99,15 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             EnabledExtensionCount = extensionNames.Count,
             PpEnabledExtensionNames = extensionNames.Pointer,
         };
-        Check(vk.CreateInstance(in instanceInfo, null, out instance), "vkCreateInstance");
+        CheckDeviceResult(vk.CreateInstance(in instanceInfo, null, out instance), "vkCreateInstance");
         if (options.EnableValidation) { CreateDebugMessenger(); }
 
         uint count = 0;
-        Check(vk.EnumeratePhysicalDevices(instance, &count, null), "vkEnumeratePhysicalDevices");
+        CheckDeviceResult(vk.EnumeratePhysicalDevices(instance, &count, null), "vkEnumeratePhysicalDevices");
         PhysicalDevice[] physicalDevices = new PhysicalDevice[count];
         fixed (PhysicalDevice* pointer = physicalDevices)
         {
-            Check(vk.EnumeratePhysicalDevices(instance, &count, pointer), "vkEnumeratePhysicalDevices");
+            CheckDeviceResult(vk.EnumeratePhysicalDevices(instance, &count, pointer), "vkEnumeratePhysicalDevices");
         }
 
         List<string> unsupported = [];
@@ -114,13 +122,13 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
                 unsupported.Add($"{name}: {string.Join(", ", missing)}");
                 continue;
             }
-            uint? queueFamily = FindQueueFamily(physicalDevice);
-            if (queueFamily is null)
+            QueueSelection? queues = FindQueues(physicalDevice);
+            if (queues is null)
             {
                 unsupported.Add($"{name}: graphics and compute queue");
                 continue;
             }
-            if (!TryCreateDevice(physicalDevice, queueFamily.Value, availableExtensions, out string? missingFeatures))
+            if (!TryCreateDevice(physicalDevice, queues.Value, availableExtensions, out string? missingFeatures))
             {
                 unsupported.Add($"{name}: {missingFeatures}");
                 continue;
@@ -136,8 +144,15 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             InitializeCompute();
             InitializeRaster();
             InitializeMesh(physicalDevice);
-            vk.GetDeviceQueue(device, queueFamily.Value, 0, out Queue queue);
-            mainQueue = new QueueRecord(this, queue, queueFamily.Value);
+            QueueSelection selected = queues.Value;
+            resourceQueueFamilies = selected.CopyFamily is { } family && family != selected.MainFamily ? [selected.MainFamily, family] : [];
+            vk.GetDeviceQueue(device, selected.MainFamily, 0, out Queue queue);
+            mainQueue = new QueueRecord(this, queue, selected.MainFamily);
+            if (selected.CopyFamily is { } copyFamily)
+            {
+                vk.GetDeviceQueue(device, copyFamily, selected.CopyIndex, out Queue transferQueue);
+                copyQueue = new QueueRecord(this, transferQueue, copyFamily);
+            }
             return;
         }
         throw new NotSupportedException("No device satisfies Vulkan Native requirements. Missing: "
@@ -164,11 +179,11 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private HashSet<string> GetDeviceExtensions(PhysicalDevice physicalDevice)
     {
         uint count = 0;
-        Check(vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &count, null), "vkEnumerateDeviceExtensionProperties");
+        CheckDeviceResult(vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &count, null), "vkEnumerateDeviceExtensionProperties");
         ExtensionProperties[] properties = new ExtensionProperties[count];
         fixed (ExtensionProperties* pointer = properties)
         {
-            Check(vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &count, pointer), "vkEnumerateDeviceExtensionProperties");
+            CheckDeviceResult(vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &count, pointer), "vkEnumerateDeviceExtensionProperties");
             HashSet<string> names = new(StringComparer.Ordinal);
             for (int index = 0; index < count; index++)
             {
@@ -178,7 +193,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         }
     }
 
-    private uint? FindQueueFamily(PhysicalDevice physicalDevice)
+    private QueueSelection? FindQueues(PhysicalDevice physicalDevice)
     {
         uint count = 0;
         vk.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, null);
@@ -187,15 +202,10 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         {
             vk.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, pointer);
         }
-        const QueueFlags required = QueueFlags.GraphicsBit | QueueFlags.ComputeBit;
-        for (uint index = 0; index < count; index++)
-        {
-            if (properties[index].QueueCount != 0 && (properties[index].QueueFlags & required) == required) { return index; }
-        }
-        return null;
+        return SelectQueues(properties);
     }
 
-    private bool TryCreateDevice(PhysicalDevice physicalDevice, uint queueFamily, HashSet<string> extensions, out string? missing)
+    private bool TryCreateDevice(PhysicalDevice physicalDevice, QueueSelection queues, HashSet<string> extensions, out string? missing)
     {
         bool supportsUnifiedLayouts = extensions.Contains("VK_KHR_unified_image_layouts");
         bool hasMeshExtension = extensions.Contains("VK_EXT_mesh_shader");
@@ -294,12 +304,23 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             VertexPipelineStoresAndAtomics = features.Features.VertexPipelineStoresAndAtomics,
             FragmentStoresAndAtomics = features.Features.FragmentStoresAndAtomics,
         };
-        float priority = 1;
-        DeviceQueueCreateInfo queueInfo = new()
+        float* priorities = stackalloc float[] { 1, 1 };
+        DeviceQueueCreateInfo* queueInfos = stackalloc DeviceQueueCreateInfo[2];
+        bool differentFamily = queues.CopyFamily.HasValue && queues.CopyFamily != queues.MainFamily;
+        queueInfos[0] = new()
         {
             SType = StructureType.DeviceQueueCreateInfo,
-            QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority,
+            QueueFamilyIndex = queues.MainFamily,
+            QueueCount = queues.CopyFamily == queues.MainFamily ? 2u : 1u, PQueuePriorities = priorities,
         };
+        if (differentFamily)
+        {
+            queueInfos[1] = new()
+            {
+                SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queues.CopyFamily!.Value,
+                QueueCount = 1, PQueuePriorities = priorities,
+            };
+        }
         List<string> enabledExtensions = [.. RequiredExtensions];
         if (meshShader) { enabledExtensions.Add("VK_EXT_mesh_shader"); }
         unified.PNext = meshShader ? &mesh : null;
@@ -310,10 +331,10 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         {
             SType = StructureType.DeviceCreateInfo,
             PNext = &features11, PEnabledFeatures = &enabled,
-            QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo,
+            QueueCreateInfoCount = differentFamily ? 2u : 1u, PQueueCreateInfos = queueInfos,
             EnabledExtensionCount = names.Count, PpEnabledExtensionNames = names.Pointer,
         };
-        Check(vk.CreateDevice(physicalDevice, in deviceInfo, null, out device), "vkCreateDevice");
+        CheckDeviceResult(vk.CreateDevice(physicalDevice, in deviceInfo, null, out device), "vkCreateDevice");
         SupportsSeparateDepthStencilLayouts = separateDepthStencilLayouts;
         SupportsImageCubeArray = enabled.ImageCubeArray;
         SupportsSamplerAnisotropy = enabled.SamplerAnisotropy;
@@ -326,12 +347,12 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private void RequireValidation()
     {
         uint count = 0;
-        Check(vk.EnumerateInstanceLayerProperties(&count, null), "vkEnumerateInstanceLayerProperties");
+        CheckDeviceResult(vk.EnumerateInstanceLayerProperties(&count, null), "vkEnumerateInstanceLayerProperties");
         LayerProperties[] layers = new LayerProperties[count];
         bool found = false;
         fixed (LayerProperties* pointer = layers)
         {
-            Check(vk.EnumerateInstanceLayerProperties(&count, pointer), "vkEnumerateInstanceLayerProperties");
+            CheckDeviceResult(vk.EnumerateInstanceLayerProperties(&count, pointer), "vkEnumerateInstanceLayerProperties");
             for (int index = 0; index < count; index++)
             {
                 found |= Marshal.PtrToStringUTF8((nint)pointer[index].LayerName) == "VK_LAYER_KHRONOS_validation";
@@ -359,7 +380,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         };
         fixed (DebugUtilsMessengerEXT* messenger = &debugMessenger)
         {
-            Check(create(instance, &info, null, messenger), "vkCreateDebugUtilsMessengerEXT");
+            CheckDeviceResult(create(instance, &info, null, messenger), "vkCreateDebugUtilsMessengerEXT");
         }
     }
 
@@ -380,12 +401,25 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
 
     private void VerifyNotDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
 
+    private void VerifyAvailable()
+    {
+        VerifyNotDisposed();
+        if (deviceLost) { throw new GpuDeviceLostException("The Vulkan device stopped after device loss."); }
+    }
+
+    internal void CheckDeviceResult(Result result, string operation)
+    {
+        if (result == Result.ErrorDeviceLost) { deviceLost = true; }
+        Check(result, operation);
+    }
+
     public void Dispose()
     {
         if (disposed) { return; }
         disposed = true;
         // Application resources and GPU work must already have been released by the caller.
         mainQueue?.ReleaseInternalObjects();
+        copyQueue?.ReleaseInternalObjects();
         if (device.Handle != 0) { vk.DestroyDevice(device, null); }
         if (debugMessenger.Handle != 0) { destroyDebugMessenger(instance, debugMessenger, null); }
         if (instance.Handle != 0) { vk.DestroyInstance(instance, null); }

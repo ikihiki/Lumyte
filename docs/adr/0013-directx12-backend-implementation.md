@@ -119,6 +119,14 @@ alias の write flush は caller の先行 global barrier に分ける。flush �
 
 NoGraphicsAPI の通常 texture を単一 layout に保つ方式を、DirectX 12 の全 texture に完全適用したとは扱わない。特に render target/depth-stencil の利用を global barrier だけで成立させる保証はない。
 
+## CopyQueue と device timeline
+
+`MainQueue` は DIRECT、`CopyQueue` は独立した COPY queue を持ち、それぞれの type で command allocator／list を生成する。公開 linear region と texture は両 queue から利用できるが、依存を caller の GPU wait で接続する。queue の存在は物理的な同時実行や性能向上の保証ではない。
+
+COPY queue 上の texture は `D3D12_BARRIER_LAYOUT_COMMON` で使い、そこで texture layout を変更しない。`GpuTextureLayout.Common` をこの layout に対応させ、既存の `General` は `DIRECT_QUEUE_COMMON` のまま保つ。新規 color texture は MainQueue で Common へ discard して signal → CopyQueue で待機・copy・signal → MainQueue で待機・次用途への transition の順とする。既存 texture の返却も caller が Common へ戻して signal する。SIMULTANEOUS_ACCESS や暗黙 transition により条件を補完しない。depth／stencil の転送は MainQueue を使う。[Enhanced Barriers の Copy queues](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html#copy-queues)
+
+`CreateSemaphore(initialValue)` は device に属する `ID3D12Fence` を生成する。GPU wait は `ID3D12CommandQueue.Wait`、GPU signal は同 queue の `Signal`、`IsComplete` は fence の完了値、`WaitCpu` は `SetEventOnCompletion`、`SignalCpu` は fence の `Signal` へ写す。CPU 操作は queue の回収状態へ触れず、別 queue の Submit や CPU signal と並行できる。CPU wait の裏で worker を生成しない。[Queue.Wait](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12commandqueue-wait)、[Fence.SetEventOnCompletion](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12fence-seteventoncompletion)
+
 ## Recording と completion
 
 記録呼出し時点では必要な raster PSO が存在しない場合があるため、command の順序とその引数を CPU 記録に保持する。draw の値、root bytes、state、attachment の配列と clear 値などは呼出し時にコピーする。resource の identity は非所有とし、その保持で GPU resource の寿命を引き受けない。
@@ -131,11 +139,11 @@ texture copy は footprint の `Aspect` を plane index に変換する。color 
 
 `ImagePitch` による各 layer／slice の開始位置を caller の配置のまま native copy へ写す。必要なら指定された範囲を複数の native copy region に分けるが、新しい staging resource や data 変換は生成しない。native の pitch／offset 整列、depth/stencil copy の全 subresource 条件と sample count の制約を caller が満たす。これらの合法性を wrapper 内で再検証せず、debug layer の結果を伝える。[CopyTextureRegion](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copytextureregion)
 
-batch 全体の PSO と command list の生成・終了が成功してから、queue が command list を実行して native fence を signal する。PSO 生成や変換・終了が失敗した batch は受理せず、GPU work を開始しない。caller はその記録を `Dispose` し、新しい記録を作る。生成に成功した PSO は pipeline の内部に保持してよい。受理と completion を区別し、受理済み work を再提出可能な状態へ戻さない。受理後の signal を保証できなくなれば device loss として停止し、永久に届かない completion を通常待機として残さない。
+batch 全体の PSO と command list の生成・終了、回収用領域の確保が成功してから、指定された GPU waits → command list の実行 → 内部 fence → caller fence の順に queue へ積む。空 batch は実行呼出しを省き、wait と signal を行う。PSO 生成や変換・終了が失敗した batch は受理せず、GPU wait も積まない。caller はその記録を `Dispose` し、新しい記録を作る。生成に成功した PSO は pipeline の内部に保持してよい。最初の native Wait 以降の失敗は queue への副作用を取り消せないため `RemoveDevice` で device を停止し、device loss を返す。受理済み work を再提出可能に戻したり、永久に届かない completion を通常待機として残したりしない。
 
 command allocator と記録用 memory だけを backend が所有する。未提出 command の `Dispose` は記録を破棄する。提出済み command の `Dispose` は GPU work を取消し・待機せず、対応 completion または確定した device 終了まで内部 memory を保持してから回収する。公開する command 状態は設けず、記録・終了・受理の管理は backend 内部に閉じる。application の heap、linear region、texture、render view、descriptor、pipeline の寿命は引き受けない。
 
-queue は command memory 回収専用の内部 fence を一つ所有する。caller fence と内部 fence を実行後に signal し、caller が完了確認後に自身の fence を破棄しても回収できるようにする。回収用の管理領域は Execute 前に確保する。受理後に signal できなければ `RemoveDevice` で該当 device を停止し、以後の通常待機を device loss として拒否する。
+各 queue は command memory 回収専用の内部 fence を一つ所有する。内部 fence を caller fence より先に signal し、caller の完了確認は内部 signal の完了も保証する。caller fence の破棄は、それを待つ全 consumer の GPU 利用が終了してから行う。回収は queue 操作と backend の破棄で行い、CPU wait／照会は回収 list を変更しない。全 queue と semaphore の失敗判定は同じ device loss を参照する。
 
 ## API
 
@@ -155,7 +163,9 @@ queue は command memory 回収専用の内部 fence を一つ所有する。cal
 | `DispatchMesh`／`DispatchMeshIndirect` | graphics PSO と root を使う mesh dispatch と、1 件の `DISPATCH_MESH` を持つ `ExecuteIndirect`。amplification の有無は選択した pipeline に従う。 |
 | `CopyMemory`／`CopyMemoryToTexture`／`CopyTextureToMemory` | range/footprint を記録し、`Submit` の native 変換時に backing resource/offset と指定 aspect の plane を使って copy を記録する。 |
 | `Barrier`／`TextureTransition`／`DiscardTexture` | global dependency、caller 指定の texture layout 変更、旧内容を保持しない subresource の metadata 再初期化を分ける。 |
-| queue の記録・提出・semaphore・照会・待機 API／`NativeGpuCommandBuffer.Dispose` | `Submit` 中に PSO を解決し、batch 全体の native 変換・終了後に queue へ提出する。記録状態を内部で管理し、未提出の破棄と提出済み memory の completion 後の回収を区別する。 |
+| `MainQueue`／`CopyQueue`／`StartCommandRecording`／`NativeGpuCommandBuffer.Dispose` | DIRECT／COPY の記録・command memory を独立して持つ。未提出の破棄と、提出済み memory の内部 completion 後の回収を区別する。 |
+| `Submit(commands, signal, waits)`／`NativeGpuTimelinePoint` | 全 batch の native 変換後、GPU waits → work → 内部 signal → caller signal を積む。空 batch も同期として受理する。 |
+| `CreateSemaphore`／`NativeGpuSemaphore.IsComplete`／`WaitCpu`／`SignalCpu`／`Dispose` | device に属する caller-owned fence の生成、完了照会、CPU wait／signal と解放。queue の回収から独立する。 |
 | `NativeGpuBackendOptions.EnableValidation`／`NativeGpuException.NativeErrorCode` | DirectX 12 debug layer と native error を使用し、独自の使用検証層を重ねない。 |
 
 ## 検証の境界
@@ -196,7 +206,7 @@ commands.SetPipeline(pipeline);
 commands.SetDepthStencilState(depthStencilState);
 commands.Draw(rootData, 3);
 commands.EndRendering();
-native.MainQueue.Submit([commands], completion, completionValue);
+native.MainQueue.Submit([commands], new(completion, completionValue));
 ```
 
 draw は引数と root bytes を CPU 記録へコピーする。`Submit` がこの draw の PSO の組を解決して native command を生成し、batch 全体の成功後に提出する。scope 終了時の `Dispose` は提出済み work を取消し・待機せず、内部 command memory の回収は completion に従う。
@@ -213,6 +223,7 @@ amplification entry があれば指定 group 数は amplification を起動し�
 ## 採用差分と未実装範囲
 
 - caller-owned heap/slot、各 work の直接 root、global dependency と明示 completion を採用する。
+- 独立した COPY queue、device timeline の GPU wait／CPU 操作と Common での texture 引渡しを実装した。複数 queue を caller が選択する API は NoGraphicsAPI prototype への拡張であり、slot allocator や application resource の自動退役は含めない。
 - address-only command range、任意 shader pointer、descriptor bytes の直接編集、texture transition 不要、depth/stencil の native PSO からの完全分離は部分採用または未対応とする。
 - 共通 allocation と linear region の明示分離、range の region identity、buffer descriptor、明示 texture transition／discard、単一 aspect の copy footprint、`Submit` 内の depth/stencil PSO 解決と CPU 記録の native 変換は Lumyte の補足である。NoGraphicsAPI 本体が同じ API や記録方式を持つとは説明しない。
 - heap 共用は native の条件を満たす組合せに限る。Tier 1 の分類制限と CPU 可視 heap の texture 制限を取り除いたとは扱わず、別 heap に分ける場合も公開の allocation 型と確保 API は共通とする。

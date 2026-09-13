@@ -55,7 +55,7 @@ Marshal.Copy(input, 0,
     checked(upload.Region.CpuAddress + (nint)upload.Offset), input.Length);
 
 var queue = backend.MainQueue;
-using var completion = queue.CreateSemaphore(0);
+using var completion = backend.CreateSemaphore();
 using var commands = queue.StartCommandRecording();
 commands.CopyMemory(upload.Slice(0, 16), deviceData.Slice(0, 16));
 commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
@@ -63,18 +63,58 @@ commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
 commands.CopyMemory(deviceData.Slice(0, 16), readback.Slice(0, 16));
 commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
     GpuStage.Host, GpuAccess.HostRead);
-queue.Submit([commands], completion, 1);
+queue.Submit([commands], new(completion, 1));
 commands.Dispose(); // GPU work は取り消さず、内部 command memory は完了まで保持する。
-queue.Wait(completion, 1);
+completion.WaitCpu(1);
 
 byte[] output = new byte[16];
 Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
     output, 0, output.Length);
 ```
 
-`GpuStage`／`GpuAccess` は `Lumyte.Graphics` に属する。HostRead barrier が memory visibility を、`Wait` が実行完了を扱う。GPU 間の依存も caller が指定し、Submit が不足 barrier を推定しない。`IsComplete(completion, value)` なら CPU を待機させずに確認できる。
+`GpuStage`／`GpuAccess` は `Lumyte.Graphics` に属する。HostRead barrier が memory visibility を、`WaitCpu` が実行完了を扱う。GPU 間の依存も caller が指定し、Submit が不足 barrier を推定しない。`completion.IsComplete(value)` なら CPU を待機させずに確認できる。
 
-未提出の `Dispose` は記録を破棄する。提出済みの `Dispose` は待機せず、queue は内部 completion で command memory を回収する。caller semaphore は完了後に破棄できる。command の状態を取得する API、application resource の自動退役、暗黙 staging は設けない。
+未提出の `Dispose` は記録を破棄する。提出済みの `Dispose` は待機せず、queue は内部 completion で command memory を回収する。caller semaphore は producer と、それを待つ全 consumer の GPU 利用が完了した後に破棄できる。command の状態を取得する API、application resource の自動退役、暗黙 staging は設けない。
+
+## 非同期 copy と CPU の先行
+
+`backend.CopyQueue` は独立した転送 queue で、利用できない device では null を返す。存在しても物理的な同時実行や高速化を保証しない。以下の `slots` は caller が用意した3組の upload／device／readback range とする。CPU は再利用する slot の最終 consumer だけを待ち、それ以外のフレームを先行提出できる。
+
+```csharp
+var copy = backend.CopyQueue ?? throw new NotSupportedException("No copy queue.");
+var main = backend.MainQueue;
+using var copied = backend.CreateSemaphore();
+using var finished = backend.CreateSemaphore();
+ulong[] lastUse = new ulong[slots.Length];
+
+for (ulong frame = 0; frame < frameCount; frame++)
+{
+    int index = (int)(frame % (ulong)slots.Length);
+    finished.WaitCpu(lastUse[index]); // 初回は0。再利用する slot だけを待つ。
+    var slot = slots[index];
+    WriteFrameData(slot.Upload); // caller が mapped memory に書く。
+    ulong value = frame + 1;
+
+    using var uploadCommands = copy.StartCommandRecording();
+    uploadCommands.CopyMemory(slot.Upload, slot.Device);
+    copy.Submit([uploadCommands], new(copied, value));
+
+    using var consumeCommands = main.StartCommandRecording();
+    consumeCommands.CopyMemory(slot.Device, slot.Readback);
+    consumeCommands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
+        GpuStage.Host, GpuAccess.HostRead);
+    main.Submit([consumeCommands], new(finished, value), [new(copied, value)]);
+    lastUse[index] = value;
+    // 次の slot を準備する。描画を行う場合もその最終利用まで finished に含める。
+}
+finished.WaitCpu(frameCount); // resource と両 semaphore の破棄前に全 consumer を完了させる。
+```
+
+GPU wait は batch 全体より前に働く。CPU の待機ではなく、queue に依存を積む操作である。`Submit([], signal, waits)` で work を持たない同期だけの提出もできる。各 queue 内の host 操作は caller が直列化するが、別 queue の操作と `IsComplete`／`WaitCpu`／`SignalCpu` は並行できる。`SignalCpu(value)` は CPU producer や gate 用で、未完了の GPU work の完了通知として使わない。全 signal の値と実行順、待機が解消することは caller が保証する。
+
+CopyQueue の共通用途は線形データと color texture の転送である。depth／stencil は MainQueue を使う。DirectX 12 の texture は MainQueue で `DiscardTexture(view, GpuTextureLayout.Common)`、または既存 layout から Common への `TextureTransition` を実行して signal する。CopyQueue がその値を GPU wait して転送し、MainQueue が転送完了を GPU wait して shader／attachment layout へ移す。CopyQueue 自体は layout transition を行えない。
+
+Vulkan は両 queue family が異なる場合、線形 region と texture をその2 family の concurrent sharing で生成し、通常は GENERAL を維持する。新規 texture は、初期化する producer の Submit を先に受理させてから consumer を Submit する。未来の値への GPU wait は、この初回初期化の host 順序を代替しない。初期化済み resource の依存には wait-before-signal を使える。どちらの backend も application resource の寿命、frame slot や descriptor の再利用を追跡しない。
 
 ## View と descriptor
 
@@ -117,7 +157,7 @@ var pipeline = backend.CreateComputePipeline(new NativeGpuShaderProgram(
 try
 {
     var queue = backend.MainQueue;
-    using var completion = queue.CreateSemaphore(0);
+    using var completion = backend.CreateSemaphore();
     using var commands = queue.StartCommandRecording();
     commands.SetResourceDescriptorHeap(resources);
     commands.SetSamplerDescriptorHeap(samplers);
@@ -128,8 +168,8 @@ try
     commands.CopyMemory(deviceOutput, readback);
     commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite,
         GpuStage.Host, GpuAccess.HostRead);
-    queue.Submit([commands], completion, 1);
-    queue.Wait(completion, 1);
+    queue.Submit([commands], new(completion, 1));
+    completion.WaitCpu(1);
 }
 finally
 {
@@ -160,7 +200,7 @@ var pipeline = backend.CreateRasterPipeline(
 try
 {
     var queue = backend.MainQueue;
-    using var completion = queue.CreateSemaphore(0);
+    using var completion = backend.CreateSemaphore();
     using var commands = queue.StartCommandRecording();
     commands.SetResourceDescriptorHeap(resources);
     commands.SetSamplerDescriptorHeap(samplers);
@@ -170,8 +210,8 @@ try
         new GpuClearColor(0, 0, 0, 1))]);
     commands.DrawIndexed(rootData, indices, NativeGpuIndexFormat.Uint16, 3);
     commands.EndRendering();
-    queue.Submit([commands], completion, 1);
-    queue.Wait(completion, 1);
+    queue.Submit([commands], new(completion, 1));
+    completion.WaitCpu(1);
 }
 finally
 {
@@ -214,7 +254,7 @@ var pipeline = backend.CreateRasterPipeline(
 try
 {
     var queue = backend.MainQueue;
-    using var completion = queue.CreateSemaphore(0);
+    using var completion = backend.CreateSemaphore();
     using var commands = queue.StartCommandRecording();
     commands.SetResourceDescriptorHeap(resources);
     commands.SetSamplerDescriptorHeap(samplers);
@@ -222,8 +262,8 @@ try
     commands.BeginRendering([new NativeGpuColorAttachment(colorView, NativeGpuLoadOp.Clear)]);
     commands.DispatchMesh(rootData, meshGroupCount);
     commands.EndRendering();
-    queue.Submit([commands], completion, 1);
-    queue.Wait(completion, 1);
+    queue.Submit([commands], new(completion, 1));
+    completion.WaitCpu(1);
 }
 finally
 {
@@ -253,7 +293,7 @@ amplification／mesh が読む別の GPU data にも、それぞれの shader st
 | `NativeGpuRasterPipelineHandle` | `()` | 同期生成した native pipeline、または raw code と固定値・提出時に解決する pipeline 所有 PSO |
 | `NativeGpuQueue` | `()` | native queue、内部 command memory の completion と回収 |
 | `NativeGpuCommandBuffer` | `()` | queue identity、記録・一回提出・破棄の局所状態と native command memory |
-| `NativeGpuSemaphore` | `()` | caller-owned native completion timeline と所属 queue |
+| `NativeGpuSemaphore` | `()` | caller-owned native timeline と所属 device、独立した CPU 同期操作 |
 
 `NativeGpuMemoryRequirements(size, alignment, compatibility)` は public constructor で返せる。基底型が公開する metadata は不変とし、texture handle と compatibility は opaque に保つ。基底型自体は native resource を生成・破棄しない。backend は受け取った object の派生型と device identity を検査し、別実装・別 device の object を native API に渡さない。`object BackendData` や共通の resource registry は使わない。
 

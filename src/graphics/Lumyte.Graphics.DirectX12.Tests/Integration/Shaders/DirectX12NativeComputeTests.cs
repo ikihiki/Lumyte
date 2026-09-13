@@ -200,10 +200,10 @@ public sealed partial class DirectX12NativeComputeTests
 
     private static void Submit(DirectX12Backend backend, NativeGpuCommandBuffer commands)
     {
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
-        backend.MainQueue.Submit([commands], completion, 1);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
+        backend.MainQueue.Submit([commands], new(completion, 1));
         commands.Dispose();
-        backend.MainQueue.Wait(completion, 1);
+        completion.WaitCpu(1);
     }
 
     internal static byte[] Compile(string source, string profile = "cs_6_6", string entryPoint = "computeMain")

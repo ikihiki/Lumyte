@@ -13,7 +13,6 @@ public sealed unsafe partial class VulkanBackend
         private readonly VkSemaphore completion;
         private readonly List<Retirement> pending = [];
         private ulong submittedValue;
-        private volatile bool deviceLost;
 
         public QueueRecord(VulkanBackend owner, Queue queue, uint queueFamily)
         {
@@ -30,7 +29,7 @@ public sealed unsafe partial class VulkanBackend
             {
                 throw new NotSupportedException("VK_KHR_device_address_commands copy entry points are unavailable.");
             }
-            completion = CreateTimeline(0);
+            completion = owner.CreateTimeline(0);
         }
 
         public VulkanBackend Owner { get; }
@@ -54,11 +53,21 @@ public sealed unsafe partial class VulkanBackend
             }
         }
 
-        public override void Submit(ReadOnlySpan<NativeGpuCommandBuffer> commands, NativeGpuSemaphore semaphore, ulong value)
+        public override void Submit(ReadOnlySpan<NativeGpuCommandBuffer> commands, NativeGpuTimelinePoint signal,
+            ReadOnlySpan<NativeGpuTimelinePoint> waits = default)
         {
             VerifyAvailable();
-            SemaphoreRecord signal = RequireSemaphore(semaphore);
-            if (commands.IsEmpty) { throw new ArgumentException("A submission requires at least one recording.", nameof(commands)); }
+            SemaphoreRecord signalSemaphore = Owner.RequireSemaphore(signal.Semaphore, nameof(signal));
+            SemaphoreSubmitInfo[] waitInfos = new SemaphoreSubmitInfo[waits.Length];
+            for (int index = 0; index < waits.Length; index++)
+            {
+                SemaphoreRecord wait = Owner.RequireSemaphore(waits[index].Semaphore, nameof(waits));
+                waitInfos[index] = new()
+                {
+                    SType = StructureType.SemaphoreSubmitInfo, Semaphore = wait.Semaphore,
+                    Value = waits[index].Value, StageMask = PipelineStageFlags2.AllCommandsBit,
+                };
+            }
             ReclaimCompleted();
             CommandRecord[] recordings = new CommandRecord[commands.Length];
             HashSet<CommandRecord> unique = [];
@@ -118,10 +127,11 @@ public sealed unsafe partial class VulkanBackend
                 };
                 signals[1] = new()
                 {
-                    SType = StructureType.SemaphoreSubmitInfo, Semaphore = signal.Semaphore,
-                    Value = value, StageMask = PipelineStageFlags2.AllCommandsBit,
+                    SType = StructureType.SemaphoreSubmitInfo, Semaphore = signalSemaphore.Semaphore,
+                    Value = signal.Value, StageMask = PipelineStageFlags2.AllCommandsBit,
                 };
                 fixed (CommandBufferSubmitInfo* pointer = commandInfos)
+                fixed (SemaphoreSubmitInfo* waitPointer = waitInfos)
                 {
                     // Signals in one VkSubmitInfo2 are unordered. A second signal-only native batch
                     // makes caller completion include the internal signal, including at backend disposal.
@@ -130,6 +140,7 @@ public sealed unsafe partial class VulkanBackend
                     {
                         SType = StructureType.SubmitInfo2, CommandBufferInfoCount = checked((uint)commandInfos.Length),
                         PCommandBufferInfos = pointer, SignalSemaphoreInfoCount = 1, PSignalSemaphoreInfos = &signals[0],
+                        WaitSemaphoreInfoCount = checked((uint)waitInfos.Length), PWaitSemaphoreInfos = waitPointer,
                     };
                     submits[1] = new()
                     {
@@ -157,58 +168,6 @@ public sealed unsafe partial class VulkanBackend
         {
             SType = StructureType.CommandBufferSubmitInfo, CommandBuffer = command,
         };
-
-        public override NativeGpuSemaphore CreateSemaphore(ulong initialValue)
-        {
-            VerifyAvailable();
-            ReclaimCompleted();
-            VkSemaphore semaphore = CreateTimeline(initialValue);
-            try { return new SemaphoreRecord(this, semaphore); }
-            catch { Owner.vk.DestroySemaphore(Owner.device, semaphore, null); throw; }
-        }
-
-        public override bool IsComplete(NativeGpuSemaphore semaphore, ulong value)
-        {
-            VerifyAvailable();
-            SemaphoreRecord record = RequireSemaphore(semaphore);
-            CheckResult(Owner.vk.GetSemaphoreCounterValue(Owner.device, record.Semaphore, out ulong current), "vkGetSemaphoreCounterValue");
-            ReclaimCompleted();
-            return current >= value;
-        }
-
-        public override void Wait(NativeGpuSemaphore semaphore, ulong value)
-        {
-            VerifyAvailable();
-            VkSemaphore handle = RequireSemaphore(semaphore).Semaphore;
-            SemaphoreWaitInfo wait = new()
-            {
-                SType = StructureType.SemaphoreWaitInfo, SemaphoreCount = 1, PSemaphores = &handle, PValues = &value,
-            };
-            CheckResult(Owner.vk.WaitSemaphores(Owner.device, &wait, ulong.MaxValue), "vkWaitSemaphores");
-            ReclaimCompleted();
-        }
-
-        private SemaphoreRecord RequireSemaphore(NativeGpuSemaphore semaphore)
-        {
-            ArgumentNullException.ThrowIfNull(semaphore);
-            if (semaphore is not SemaphoreRecord record || !ReferenceEquals(record.Queue, this))
-            {
-                throw new ArgumentException("The semaphore belongs to another queue or backend.", nameof(semaphore));
-            }
-            ObjectDisposedException.ThrowIf(record.Disposed, semaphore);
-            return record;
-        }
-
-        private VkSemaphore CreateTimeline(ulong initialValue)
-        {
-            SemaphoreTypeCreateInfo timeline = new()
-            {
-                SType = StructureType.SemaphoreTypeCreateInfo, SemaphoreType = SemaphoreType.Timeline, InitialValue = initialValue,
-            };
-            SemaphoreCreateInfo info = new() { SType = StructureType.SemaphoreCreateInfo, PNext = &timeline };
-            CheckResult(Owner.vk.CreateSemaphore(Owner.device, &info, null, out VkSemaphore semaphore), "vkCreateSemaphore");
-            return semaphore;
-        }
 
         private CommandPool CreatePool()
         {
@@ -251,16 +210,11 @@ public sealed unsafe partial class VulkanBackend
             pending.RemoveRange(0, count);
         }
 
-        public void VerifyAvailable()
-        {
-            Owner.VerifyNotDisposed();
-            if (deviceLost) { throw new GpuDeviceLostException("The Vulkan queue stopped after device loss."); }
-        }
+        public void VerifyAvailable() => Owner.VerifyAvailable();
 
         public void CheckResult(Result result, string operation)
         {
-            if (result == Result.ErrorDeviceLost) { deviceLost = true; }
-            Check(result, operation);
+            Owner.CheckDeviceResult(result, operation);
         }
 
         public void ReleaseInternalObjects()

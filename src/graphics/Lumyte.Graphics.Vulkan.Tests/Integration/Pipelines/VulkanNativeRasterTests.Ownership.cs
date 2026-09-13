@@ -91,13 +91,13 @@ public sealed unsafe partial class VulkanNativeRasterTests
         using var r = new Resources();
         var target = r.Target();
         var queue = r.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = r.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.BeginRendering([new(target.View, NativeGpuLoadOp.Clear)]);
 
-        Assert.Throws<InvalidOperationException>(() => queue.Submit([commands], completion, 1));
+        Assert.Throws<InvalidOperationException>(() => queue.Submit([commands], new(completion, 1)));
 
-        Assert.False(queue.IsComplete(completion, 1));
+        Assert.False(completion.IsComplete(1));
     }
 
     private sealed class ForeignRasterPipeline : NativeGpuRasterPipelineHandle;

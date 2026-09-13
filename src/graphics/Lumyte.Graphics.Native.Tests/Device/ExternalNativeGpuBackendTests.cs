@@ -65,7 +65,7 @@ public sealed partial class ExternalNativeGpuBackendTests
     private sealed partial class ExternalBackend(Action<object> release, Action<object>? observeTexture = null,
         Action<object>? observeCommands = null, Action<object>? observeDescriptors = null,
         Action<object>? observeCompute = null, Action<object>? observeRaster = null,
-        NativeGpuMeshShaderLimits? meshShaderLimits = null) : INativeGpuBackend
+        NativeGpuMeshShaderLimits? meshShaderLimits = null, NativeGpuQueue? copyQueue = null) : INativeGpuBackend
     {
         public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.SpirV;
         public NativeGpuCapabilities Capabilities => new(
@@ -74,6 +74,13 @@ public sealed partial class ExternalNativeGpuBackendTests
         public NativeGpuLimits Limits => new(256, new(65535, 65535, 65535, ulong.MaxValue),
             new((1ul << 40) + 64, 32, 48, 32, 24, 16, 16, 8), meshShaderLimits);
         public NativeGpuQueue MainQueue { get; } = new ExternalQueue(observeCommands);
+        public NativeGpuQueue? CopyQueue { get; } = copyQueue;
+
+        public NativeGpuSemaphore CreateSemaphore(ulong initialValue = 0)
+        {
+            observeCommands?.Invoke(new SemaphoreCreation(initialValue));
+            return new ExternalSemaphore(observeCommands);
+        }
 
         public NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind)
             => new(size, 256, new MemoryCompatibility(this, kind));

@@ -18,16 +18,16 @@ public sealed class DirectX12NativeCommandTests
         Marshal.Copy(expected, 0, upload.Value.CpuAddress + 21, expected.Length);
         using NativeGpuCommandBuffer first = backend.MainQueue.StartCommandRecording();
         using NativeGpuCommandBuffer second = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         first.CopyMemory(new(upload.Value, 21, 73), new(gpu.Value, 37, 80));
         second.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Copy, GpuAccess.CopyRead);
         second.CopyMemory(new(gpu.Value, 37, 73), new(readback.Value, 57, 73));
         second.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-        backend.MainQueue.Submit([first, second], completion, 1);
+        backend.MainQueue.Submit([first, second], new(completion, 1));
         first.Dispose();
         second.Dispose();
-        backend.MainQueue.Wait(completion, 1);
+        completion.WaitCpu(1);
 
         Assert.Equal(expected, Read(readback.Value.CpuAddress + 57, expected.Length));
     }
@@ -58,15 +58,15 @@ public sealed class DirectX12NativeCommandTests
         Marshal.Copy(new byte[marker.Length], 0, upload.Value.CpuAddress, marker.Length);
         using NativeGpuCommandBuffer first = backend.MainQueue.StartCommandRecording();
         using NativeGpuCommandBuffer second = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         first.CopyMemory(new(upload.Value, 0, 4), new(readback.Value, 0, 4));
         second.CopyMemory(new(upload.Value, 0, 4), new(destroyed.Value, 0, 4));
         destroyed.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(() => backend.MainQueue.Submit([first, second], completion, 1));
+        Assert.Throws<ObjectDisposedException>(() => backend.MainQueue.Submit([first, second], new(completion, 1)));
         using NativeGpuCommandBuffer drain = backend.MainQueue.StartCommandRecording();
-        backend.MainQueue.Submit([drain], completion, 2);
-        backend.MainQueue.Wait(completion, 2);
+        backend.MainQueue.Submit([drain], new(completion, 2));
+        completion.WaitCpu(2);
 
         Assert.Equal(marker, Read(readback.Value.CpuAddress, marker.Length));
     }
@@ -76,12 +76,12 @@ public sealed class DirectX12NativeCommandTests
     {
         using DirectX12Backend backend = CreateBackend();
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
-        backend.MainQueue.Submit([recording], completion, 1);
-        backend.MainQueue.Wait(completion, 1);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
+        backend.MainQueue.Submit([recording], new(completion, 1));
+        completion.WaitCpu(1);
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-            () => backend.MainQueue.Submit([recording], completion, 2));
+            () => backend.MainQueue.Submit([recording], new(completion, 2)));
 
         Assert.Contains("no longer", error.Message);
     }
@@ -91,12 +91,12 @@ public sealed class DirectX12NativeCommandTests
     {
         using DirectX12Backend backend = CreateBackend();
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
 
         recording.Dispose();
 
-        Assert.Throws<InvalidOperationException>(() => backend.MainQueue.Submit([recording], completion, 1));
-        Assert.False(backend.MainQueue.IsComplete(completion, 1));
+        Assert.Throws<InvalidOperationException>(() => backend.MainQueue.Submit([recording], new(completion, 1)));
+        Assert.False(completion.IsComplete(1));
     }
 
     [Fact]
@@ -104,26 +104,26 @@ public sealed class DirectX12NativeCommandTests
     {
         using DirectX12Backend backend = CreateBackend();
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
 
         ArgumentException error = Assert.Throws<ArgumentException>(
-            () => backend.MainQueue.Submit([recording, recording], completion, 1));
+            () => backend.MainQueue.Submit([recording, recording], new(completion, 1)));
 
         Assert.Contains("more than once", error.Message);
     }
 
     [Theory]
     [InlineData("commands")]
-    [InlineData("semaphore")]
-    public void ForeignQueueObjectsAreRejected(string parameter)
+    [InlineData("signal")]
+    public void ForeignSubmissionObjectsAreRejected(string parameter)
     {
         using DirectX12Backend backend = CreateBackend();
         using DirectX12Backend other = CreateBackend();
         using NativeGpuCommandBuffer recording = (parameter == "commands" ? other : backend).MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = (parameter == "semaphore" ? other : backend).MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = (parameter == "signal" ? other : backend).CreateSemaphore(0);
 
         ArgumentException error = Assert.Throws<ArgumentException>(
-            () => backend.MainQueue.Submit([recording], completion, 1));
+            () => backend.MainQueue.Submit([recording], new(completion, 1)));
 
         Assert.Equal(parameter, error.ParamName);
     }
@@ -133,17 +133,17 @@ public sealed class DirectX12NativeCommandTests
     {
         using DirectX12Backend backend = CreateBackend();
         using NativeGpuCommandBuffer first = backend.MainQueue.StartCommandRecording();
-        NativeGpuSemaphore firstCompletion = backend.MainQueue.CreateSemaphore(0);
-        backend.MainQueue.Submit([first], firstCompletion, 1);
-        backend.MainQueue.Wait(firstCompletion, 1);
+        NativeGpuSemaphore firstCompletion = backend.CreateSemaphore(0);
+        backend.MainQueue.Submit([first], new(firstCompletion, 1));
+        firstCompletion.WaitCpu(1);
         firstCompletion.Dispose();
 
         using NativeGpuCommandBuffer second = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore secondCompletion = backend.MainQueue.CreateSemaphore(5);
-        backend.MainQueue.Submit([second], secondCompletion, 6);
-        backend.MainQueue.Wait(secondCompletion, 6);
+        using NativeGpuSemaphore secondCompletion = backend.CreateSemaphore(5);
+        backend.MainQueue.Submit([second], new(secondCompletion, 6));
+        secondCompletion.WaitCpu(6);
 
-        Assert.True(backend.MainQueue.IsComplete(secondCompletion, 6));
+        Assert.True(secondCompletion.IsComplete(6));
     }
 
     [Theory]
@@ -169,15 +169,15 @@ public sealed class DirectX12NativeCommandTests
             description.Format, NativeGpuTextureAspect.Color, 1, 1, volume ? 0u : 1u, volume ? 1u : 2u);
         byte[] expected = WritePattern(upload.Value.CpuAddress + 512, footprint, 2, 4);
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         recording.DiscardTexture(view, GpuTextureLayout.CopyDestination);
         recording.CopyMemoryToTexture(new(upload.Value, 512, 4096), texture.Value, footprint);
         recording.TextureTransition(view, GpuTextureLayout.CopyDestination, GpuTextureLayout.CopySource);
         recording.CopyTextureToMemory(texture.Value, new(readback.Value, 512, 4096), footprint);
         recording.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-        backend.MainQueue.Submit([recording], completion, 1);
-        backend.MainQueue.Wait(completion, 1);
+        backend.MainQueue.Submit([recording], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(expected, ReadPattern(readback.Value.CpuAddress + 512, footprint, 2, 4));
     }
@@ -200,15 +200,15 @@ public sealed class DirectX12NativeCommandTests
             format, aspect, 0, 1, 0, 1);
         byte[] expected = WritePattern(upload.Value.CpuAddress + 512, footprint, 1, bytes);
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         recording.DiscardTexture(view, GpuTextureLayout.CopyDestination);
         recording.CopyMemoryToTexture(new(upload.Value, 512, 1024), texture.Value, footprint);
         recording.TextureTransition(view, GpuTextureLayout.CopyDestination, GpuTextureLayout.CopySource);
         recording.CopyTextureToMemory(texture.Value, new(readback.Value, 512, 1024), footprint);
         recording.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-        backend.MainQueue.Submit([recording], completion, 1);
-        backend.MainQueue.Wait(completion, 1);
+        backend.MainQueue.Submit([recording], new(completion, 1));
+        completion.WaitCpu(1);
 
         byte[] actual = ReadPattern(readback.Value.CpuAddress + 512, footprint, 1, bytes);
         if (format == GpuFormat.Depth24PlusStencil8 && aspect == NativeGpuTextureAspect.Depth)
@@ -228,12 +228,12 @@ public sealed class DirectX12NativeCommandTests
         using var texture = new Texture(backend, new(NativeGpuTextureDimension.TwoD,
             8, 4, 1, 1, 1, 1, GpuFormat.Rgba8Unorm, NativeGpuTextureUsage.CopyDestination));
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         recording.CopyMemoryToTexture(new(upload.Value, 512, 16), texture.Value,
             new(0, NativeGpuTextureAspect.Color, 0, 1, default, new(8, 4, 1), 256, 1024));
 
         ArgumentException error = Assert.Throws<ArgumentException>(
-            () => backend.MainQueue.Submit([recording], completion, 1));
+            () => backend.MainQueue.Submit([recording], new(completion, 1)));
 
         Assert.Equal("memory", error.ParamName);
     }
@@ -249,12 +249,12 @@ public sealed class DirectX12NativeCommandTests
         using var texture = new Texture(backend, new(NativeGpuTextureDimension.TwoD,
             8, 4, 1, 2, 3, 1, GpuFormat.Rgba8Unorm, NativeGpuTextureUsage.CopyDestination));
         using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         recording.CopyMemoryToTexture(new(upload.Value, 512, 4096), texture.Value,
             new(mip, NativeGpuTextureAspect.Color, baseLayer, layerCount, default, new(1, 1, 1), 256, 1024));
 
         ArgumentOutOfRangeException error = Assert.Throws<ArgumentOutOfRangeException>(
-            () => backend.MainQueue.Submit([recording], completion, 1));
+            () => backend.MainQueue.Submit([recording], new(completion, 1)));
 
         Assert.Equal("copy", error.ParamName);
     }
@@ -283,7 +283,7 @@ public sealed class DirectX12NativeCommandTests
                 WritePattern(upload.Value.CpuAddress + 2560, footprint, 1, 4, 97),
             ];
             using NativeGpuCommandBuffer recording = backend.MainQueue.StartCommandRecording();
-            using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+            using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
             NativeGpuTextureHandle[] sequence = [first, second, first];
             for (int index = 0; index < sequence.Length; index++)
             {
@@ -302,8 +302,8 @@ public sealed class DirectX12NativeCommandTests
             }
             recording.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-            backend.MainQueue.Submit([recording], completion, 1);
-            backend.MainQueue.Wait(completion, 1);
+            backend.MainQueue.Submit([recording], new(completion, 1));
+            completion.WaitCpu(1);
 
             Assert.Collection(
                 new[]

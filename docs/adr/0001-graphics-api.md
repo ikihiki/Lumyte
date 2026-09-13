@@ -93,7 +93,7 @@ Native／Portable の本体はそれを専用 GPU layout へ配置し、GPU prog
 | `GpuCompareOp` | `Never`、`Less`、`Equal`、`LessEqual`、`Greater`、`NotEqual`、`GreaterEqual`、`Always`。 |
 | `GpuStage` | `None`、`DrawIndirect`、`IndexInput`、`VertexShader`、`AmplificationShader`、`MeshShader`、`PixelShader`、`ComputeShader`、`ColorOutput`、`DepthStencil`、`Copy`、`AllGraphics`、`All`、`Host` の集合。AllGraphics は有効な amplification／mesh stage も含み、All はさらに compute／copy 等の GPU stage を含む。CPU access は Host で明示する。 |
 | `GpuAccess` | `None`、`ShaderRead/Write`、`DescriptorRead`、`ColorRead/Write`、`DepthStencilRead/Write`、`CopyRead/Write`、`IndexRead`、`IndirectRead`、`HostRead/Write` の集合。 |
-| `GpuTextureLayout` | `None`、`Undefined`、`General`、`ShaderRead`、`ColorAttachment`、`DepthStencilRead/Write`、`CopySource/Destination`、`Present`。明示 transition を持つ経路で用いる。 |
+| `GpuTextureLayout` | `None`、`Undefined`、`General`、`ShaderRead`、`ColorAttachment`、`DepthStencilRead/Write`、`CopySource/Destination`、`Present`、`Common`。明示 transition を持つ経路で用いる。Common は graphics／copy queue 間の引渡しに使う queue 非依存の layout。 |
 | `GpuOrigin3D`／`GpuExtent3D` | texture の texel 単位の原点 `X/Y/Z` と範囲 `Width/Height/Depth` を、それぞれ uint の不変値で表す。memory allocation や view を所有しない。 |
 | `GpuResourceState(Stages, Access, Layout)` | caller が宣言する同期上の値。native の現在 state を照会・追跡する object ではない。Portable の共通入力に強制しない。 |
 | `GpuDeviceLostException` | device の利用を続けられない状態。正常 completion と区別する。 |

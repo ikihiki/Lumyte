@@ -132,9 +132,9 @@ public sealed unsafe partial class DirectX12Backend
             ComPtr<ID3D12GraphicsCommandList8> commands = default;
             try
             {
-                Check(Owner.Owner.device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct, out allocator), "CreateCommandAllocator");
+                Check(Owner.Owner.device.CreateCommandAllocator<ID3D12CommandAllocator>(Owner.Type, out allocator), "CreateCommandAllocator");
                 Check(Owner.Owner.device.CreateCommandList<ID3D12CommandAllocator, ID3D12PipelineState, ID3D12GraphicsCommandList8>(
-                    0, CommandListType.Direct, allocator, default, out commands), "CreateCommandList");
+                    0, Owner.Type, allocator, default, out commands), "CreateCommandList");
                 foreach (Action<ComPtr<ID3D12GraphicsCommandList8>> operation in operations) { operation(commands); }
                 Check(commands.Close(), "ID3D12GraphicsCommandList.Close");
                 return new(allocator, commands);

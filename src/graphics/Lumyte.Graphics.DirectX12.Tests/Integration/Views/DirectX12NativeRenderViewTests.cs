@@ -127,14 +127,14 @@ public sealed class DirectX12NativeRenderViewTests
             var view = new NativeGpuTextureView(texture, NativeGpuTextureViewDimension.ThreeD,
                 GpuFormat.Rgba8Unorm, NativeGpuTextureAspect.Color, 0, 1, 0, 1);
             using NativeGpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
-            using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+            using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
             commands.DiscardTexture(view, GpuTextureLayout.ColorAttachment);
             commands.TextureTransition(view, GpuTextureLayout.ColorAttachment, GpuTextureLayout.General);
 
-            backend.MainQueue.Submit([commands], completion, 1);
-            backend.MainQueue.Wait(completion, 1);
+            backend.MainQueue.Submit([commands], new(completion, 1));
+            completion.WaitCpu(1);
 
-            Assert.True(backend.MainQueue.IsComplete(completion, 1));
+            Assert.True(completion.IsComplete(1));
         });
     }
 

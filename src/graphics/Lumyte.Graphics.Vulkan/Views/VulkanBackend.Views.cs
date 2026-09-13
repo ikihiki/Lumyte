@@ -17,7 +17,7 @@ public sealed unsafe partial class VulkanBackend
         };
         ImageViewCreateInfo info = TextureViewDescription(view, texture.Image);
         info.PNext = &usage;
-        Check(vk.CreateImageView(device, in info, null, out ImageView imageView), "vkCreateImageView");
+        CheckDeviceResult(vk.CreateImageView(device, in info, null, out ImageView imageView), "vkCreateImageView");
         try { return new RenderViewRecord(this, imageView, texture, view, flags); }
         catch { vk.DestroyImageView(device, imageView, null); throw; }
     }

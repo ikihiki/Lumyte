@@ -167,6 +167,8 @@ public sealed partial class DirectX12NativeRasterTests
         }
         public void WriteBuffer(uint index, NativeGpuRange range, NativeGpuBufferAccess access)
             => Backend.WriteBufferDescriptor(resources, index, range, access);
+        public void WriteTexture(uint index, NativeGpuTextureView view)
+            => Backend.WriteTextureDescriptor(resources, index, view);
         public NativeGpuRasterPipelineHandle Pipeline(NativeGpuRasterPipelineDescription? description = null,
             byte[]? vertex = null, byte[]? pixel = null)
         {
@@ -197,12 +199,13 @@ public sealed partial class DirectX12NativeRasterTests
             cleanup.Add(() => Backend.DestroyLinearRegion(region));
             return region;
         }
-        public Target Texture(GpuFormat format = GpuFormat.Rgba8Unorm, NativeGpuRenderViewFlags flags = NativeGpuRenderViewFlags.None)
+        public Target Texture(GpuFormat format = GpuFormat.Rgba8Unorm, NativeGpuRenderViewFlags flags = NativeGpuRenderViewFlags.None,
+            NativeGpuTextureUsage additionalUsage = NativeGpuTextureUsage.None)
         {
             bool depth = format is GpuFormat.D32Float or GpuFormat.Depth24PlusStencil8;
             var description = new NativeGpuTextureDescription(NativeGpuTextureDimension.TwoD, 16, 16, 1, 1, 1, 1,
                 format, NativeGpuTextureUsage.CopySource | NativeGpuTextureUsage.CopyDestination
-                    | (depth ? NativeGpuTextureUsage.DepthStencilAttachment : NativeGpuTextureUsage.ColorAttachment));
+                    | (depth ? NativeGpuTextureUsage.DepthStencilAttachment : NativeGpuTextureUsage.ColorAttachment) | additionalUsage);
             NativeGpuMemoryRequirements requirements = Backend.GetTextureMemoryRequirements(description, NativeGpuMemoryKind.GpuOnly);
             NativeGpuHeap heap = Backend.CreateGpuHeap(requirements.Size * 2, requirements.Alignment,
                 NativeGpuMemoryKind.GpuOnly, [requirements.Compatibility]);
@@ -235,10 +238,10 @@ public sealed partial class DirectX12NativeRasterTests
         }
         public void Submit(NativeGpuCommandBuffer commands)
         {
-            using NativeGpuSemaphore semaphore = Backend.MainQueue.CreateSemaphore(0);
-            Backend.MainQueue.Submit([commands], semaphore, 1);
+            using NativeGpuSemaphore semaphore = Backend.CreateSemaphore(0);
+            Backend.MainQueue.Submit([commands], new(semaphore, 1));
             commands.Dispose();
-            Backend.MainQueue.Wait(semaphore, 1);
+            semaphore.WaitCpu(1);
         }
         public void Dispose()
         {

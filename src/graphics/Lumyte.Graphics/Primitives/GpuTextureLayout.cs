@@ -13,4 +13,6 @@ public enum GpuTextureLayout
     CopySource,
     CopyDestination,
     Present,
+    /// <summary>Queue-independent common layout for explicit transfers between graphics and copy queues.</summary>
+    Common,
 }

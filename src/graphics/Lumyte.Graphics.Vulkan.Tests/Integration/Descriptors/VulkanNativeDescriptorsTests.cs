@@ -26,7 +26,7 @@ public sealed unsafe class VulkanNativeDescriptorsTests
         backend.WriteSamplerDescriptor(sampler, 7, new(MinLod: 1.5f, MaxLod: 5.5f,
             CompareEnabled: true, CompareOp: GpuCompareOp.Less));
         var queue = backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = backend.CreateSemaphore(0);
         using var command = queue.StartCommandRecording();
         command.SetResourceDescriptorHeap(heap);
         command.SetSamplerDescriptorHeap(sampler);
@@ -35,9 +35,9 @@ public sealed unsafe class VulkanNativeDescriptorsTests
         command.CopyTextureToMemory(texture, new(readback, 0, 256), Footprint());
         command.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-        queue.Submit([command], completion, 1);
+        queue.Submit([command], new(completion, 1));
         command.Dispose();
-        queue.Wait(completion, 1);
+        completion.WaitCpu(1);
 
         Assert.Equal(expected, new ReadOnlySpan<byte>((void*)readback.CpuAddress, 256).ToArray());
     }
@@ -164,11 +164,11 @@ public sealed unsafe class VulkanNativeDescriptorsTests
         using var resources = new Resources();
         var heap = resources.Descriptors(NativeGpuDescriptorHeapKind.Resource, 1);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var recording = queue.StartCommandRecording();
         recording.SetResourceDescriptorHeap(heap);
-        queue.Submit([recording], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([recording], new(completion, 1));
+        completion.WaitCpu(1);
 
         var error = Assert.Throws<InvalidOperationException>(() => recording.SetResourceDescriptorHeap(heap));
 
@@ -243,14 +243,14 @@ public sealed unsafe class VulkanNativeDescriptorsTests
         using var resources = new Resources();
         var texture = resources.Texture(Description() with { Dimension = NativeGpuTextureDimension.ThreeD, Depth = 4 });
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.DiscardTexture(View(texture) with { Dimension = NativeGpuTextureViewDimension.ThreeD }, GpuTextureLayout.General);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
-        Assert.True(queue.IsComplete(completion, 1));
+        Assert.True(completion.IsComplete(1));
     }
 
     private static NativeGpuTextureDescription Description() => new(NativeGpuTextureDimension.TwoD,

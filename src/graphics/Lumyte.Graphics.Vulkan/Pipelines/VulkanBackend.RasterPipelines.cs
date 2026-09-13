@@ -146,7 +146,7 @@ public sealed unsafe partial class VulkanBackend
                 Pipeline pipeline = default;
                 try
                 {
-                    Check(vk.CreateGraphicsPipelines(device, default, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines");
+                    CheckDeviceResult(vk.CreateGraphicsPipelines(device, default, 1, &info, null, &pipeline), "vkCreateGraphicsPipelines");
                     return new RasterPipelineRecord(this, pipeline);
                 }
                 catch
@@ -177,7 +177,7 @@ public sealed unsafe partial class VulkanBackend
             {
                 SType = StructureType.ShaderModuleCreateInfo, CodeSize = checked((nuint)shader.Code.Length), PCode = code,
             };
-            Check(vk.CreateShaderModule(device, &info, null, out ShaderModule module), "vkCreateShaderModule");
+            CheckDeviceResult(vk.CreateShaderModule(device, &info, null, out ShaderModule module), "vkCreateShaderModule");
             return module;
         }
     }

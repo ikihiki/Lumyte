@@ -67,7 +67,7 @@ public sealed partial class DirectX12NativeRasterTests
         NativeGpuRasterPipelineHandle pipeline = gpu.Pipeline(vertex: [1, 2, 3, 4]);
         using NativeGpuCommandBuffer first = gpu.Commands();
         using NativeGpuCommandBuffer second = gpu.Commands();
-        using NativeGpuSemaphore semaphore = gpu.Backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore semaphore = gpu.Backend.CreateSemaphore(0);
         first.CopyMemory(new(upload, 0, 4), new(readback, 0, 4));
         second.DiscardTexture(color.View, GpuTextureLayout.ColorAttachment);
         second.BeginRendering([new(color.RenderView, NativeGpuLoadOp.Clear)]);
@@ -75,7 +75,7 @@ public sealed partial class DirectX12NativeRasterTests
         second.Draw([], 3);
         second.EndRendering();
 
-        NativeGpuException error = Assert.Throws<NativeGpuException>(() => gpu.Backend.MainQueue.Submit([first, second], semaphore, 1));
+        NativeGpuException error = Assert.Throws<NativeGpuException>(() => gpu.Backend.MainQueue.Submit([first, second], new(semaphore, 1)));
         using NativeGpuCommandBuffer drain = gpu.Commands();
         gpu.Submit(drain);
 
@@ -136,10 +136,10 @@ public sealed partial class DirectX12NativeRasterTests
         using var gpu = new Fixture();
         Target color = gpu.Texture();
         using NativeGpuCommandBuffer commands = gpu.Commands();
-        using NativeGpuSemaphore semaphore = gpu.Backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore semaphore = gpu.Backend.CreateSemaphore(0);
         commands.BeginRendering([new(color.RenderView)]);
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => gpu.Backend.MainQueue.Submit([commands], semaphore, 1));
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => gpu.Backend.MainQueue.Submit([commands], new(semaphore, 1)));
 
         Assert.Contains("End rendering", error.Message);
     }

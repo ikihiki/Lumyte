@@ -39,6 +39,8 @@ CPU から扱うときは region の `CpuAddress` と範囲を使う。`CpuVisib
 
 CPU/GPU 同期、shader が導出する pointer の整列・範囲と寿命は caller が保証する。shader の dereference は `RawShaderPointers` に従い、数値の GPU address があるだけで対応済みとは扱わない。
 
+linear region は device が公開する MainQueue／CopyQueue の双方で利用できる。queue 間の read/write 依存と CPU mapping の上書き時点は caller が timeline と barrier で指定する。生成時の queue 共有条件は backend が固定契約へ写像し、range ごとの queue owner、依存 graph、自動 staging を保持しない。
+
 ## コード配置
 
 パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` を新設し、DirectX 12／Vulkan と各 `.Tests` は既存 project 内に Native 実装を追加する。テストは xUnit を使う。

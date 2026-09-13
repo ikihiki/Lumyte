@@ -31,7 +31,7 @@ public sealed unsafe partial class VulkanBackend
         Image image = CreateTextureImage(description);
         try
         {
-            Check(vk.BindImageMemory(device, image, allocation.Memory, offset), "vkBindImageMemory");
+            CheckDeviceResult(vk.BindImageMemory(device, image, allocation.Memory, offset), "vkBindImageMemory");
             return new TextureRecord(this, image, description, allocation, offset);
         }
         catch
@@ -57,8 +57,17 @@ public sealed unsafe partial class VulkanBackend
     private Image CreateTextureImage(NativeGpuTextureDescription description)
     {
         ImageCreateInfo info = TextureImageDescription(description);
-        Check(vk.CreateImage(device, in info, null, out Image image), "vkCreateImage");
-        return image;
+        fixed (uint* families = resourceQueueFamilies)
+        {
+            if (resourceQueueFamilies.Length != 0)
+            {
+                info.SharingMode = SharingMode.Concurrent;
+                info.QueueFamilyIndexCount = checked((uint)resourceQueueFamilies.Length);
+                info.PQueueFamilyIndices = families;
+            }
+            CheckDeviceResult(vk.CreateImage(device, in info, null, out Image image), "vkCreateImage");
+            return image;
+        }
     }
 
     internal static ImageCreateInfo TextureImageDescription(NativeGpuTextureDescription description)

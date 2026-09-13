@@ -64,17 +64,17 @@ public sealed class DirectX12NativeDescriptorStorageTests
             backend.WriteSamplerDescriptor(sampler, 2, new(MaxAnisotropy: 8, CompareEnabled: true));
             backend.WriteSamplerDescriptor(sampler, 0, new(MinFilter: NativeGpuSamplerFilter.Nearest));
             using NativeGpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
-            using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+            using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
             commands.SetSamplerDescriptorHeap(sampler);
             commands.SetResourceDescriptorHeap(resource);
             commands.SetResourceDescriptorHeap(replacement);
             commands.SetSamplerDescriptorHeap(sampler);
 
-            backend.MainQueue.Submit([commands], completion, 1);
+            backend.MainQueue.Submit([commands], new(completion, 1));
             commands.Dispose();
-            backend.MainQueue.Wait(completion, 1);
+            completion.WaitCpu(1);
 
-            Assert.True(backend.MainQueue.IsComplete(completion, 1));
+            Assert.True(completion.IsComplete(1));
         }
         finally
         {
@@ -140,11 +140,11 @@ public sealed class DirectX12NativeDescriptorStorageTests
         using DirectX12Backend backend = DirectX12Backend.Create();
         NativeGpuDescriptorHeap heap = backend.CreateDescriptorHeap(NativeGpuDescriptorHeapKind.Resource, 1);
         using NativeGpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         commands.SetResourceDescriptorHeap(heap);
         backend.DestroyDescriptorHeap(heap);
 
-        Assert.Throws<ObjectDisposedException>(() => backend.MainQueue.Submit([commands], completion, 1));
+        Assert.Throws<ObjectDisposedException>(() => backend.MainQueue.Submit([commands], new(completion, 1)));
     }
 
     [Theory]
@@ -202,11 +202,11 @@ public sealed class DirectX12NativeDescriptorStorageTests
     private static void SubmitHeaps(DirectX12Backend backend, NativeGpuDescriptorHeap heap)
     {
         using NativeGpuCommandBuffer commands = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         commands.SetResourceDescriptorHeap(heap);
-        backend.MainQueue.Submit([commands], completion, 1);
-        backend.MainQueue.Wait(completion, 1);
-        Assert.True(backend.MainQueue.IsComplete(completion, 1));
+        backend.MainQueue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
+        Assert.True(completion.IsComplete(1));
     }
 
     private static NativeGpuTextureDescription TextureDescription => new(NativeGpuTextureDimension.TwoD,

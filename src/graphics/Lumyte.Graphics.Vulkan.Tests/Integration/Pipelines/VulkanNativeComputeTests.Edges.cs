@@ -15,7 +15,7 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var heap = resources.Descriptors(NativeGpuDescriptorHeapKind.Resource, 8);
         resources.Backend.WriteTextureDescriptor(heap, 5, View(texture), NativeGpuTextureDescriptorType.Storage);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.SetResourceDescriptorHeap(heap);
@@ -26,8 +26,8 @@ public sealed unsafe partial class VulkanNativeComputeTests
             new(0, NativeGpuTextureAspect.Color, 0, 1, default, new(1, 1, 1), 4, 4));
         commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(new byte[] { 173, 0, 255, 255 }, Bytes(readback)[..4].ToArray());
     }
@@ -43,15 +43,15 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var heap = resources.Descriptors(NativeGpuDescriptorHeapKind.Resource, 4);
         resources.Backend.WriteBufferDescriptor(heap, 3, new(output, 0, 256), NativeGpuBufferAccess.ReadWrite);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.SetResourceDescriptorHeap(heap);
         commands.Dispatch([], 1);
         Readback(commands, new(output, 0, 4), new(readback, 0, 4));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(97u, Words(readback)[0]);
     }
@@ -69,15 +69,15 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var heap = resources.Descriptors(NativeGpuDescriptorHeapKind.Resource, 8);
         resources.Backend.WriteBufferDescriptor(heap, 5, new(input, 64, 64), NativeGpuBufferAccess.ReadOnly);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.SetResourceDescriptorHeap(heap);
         commands.Dispatch(Root(new NativeGpuRange(output, 0, 256).GpuAddress, 18, buffer: 5), 1);
         Readback(commands, new(output, 0, 4), new(readback, 0, 4));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(731u, Words(readback)[0]);
     }
@@ -91,14 +91,14 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var output = resources.Linear(256, NativeGpuMemoryKind.GpuOnly);
         var readback = resources.Linear(256, NativeGpuMemoryKind.Readback);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.Dispatch(Root(new NativeGpuRange(output, 0, 256).GpuAddress, 0), 2, 3, 2);
         Readback(commands, new(output, 0, 48), new(readback, 0, 48));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(new uint[] { 0, 1, 10, 11, 20, 21, 100, 101, 110, 111, 120, 121 }, Words(readback)[..12].ToArray());
     }
@@ -116,7 +116,7 @@ public sealed unsafe partial class VulkanNativeComputeTests
         resources.Backend.WriteBufferDescriptor(first, 3, new(output, 0, 64), NativeGpuBufferAccess.ReadWrite);
         resources.Backend.WriteBufferDescriptor(second, 3, new(output, 64, 64), NativeGpuBufferAccess.ReadWrite);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.SetResourceDescriptorHeap(first);
@@ -128,8 +128,8 @@ public sealed unsafe partial class VulkanNativeComputeTests
         commands.CopyMemory(new(output, 64, 4), new(readback, 4, 4));
         commands.Barrier(GpuStage.Copy, GpuAccess.CopyWrite, GpuStage.Host, GpuAccess.HostRead);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(new uint[] { 97, 97 }, Words(readback)[..2].ToArray());
     }

@@ -235,9 +235,9 @@ public sealed unsafe partial class VulkanNativeRasterTests
         public void Submit(NativeGpuCommandBuffer commands)
         {
             var queue = Backend.MainQueue;
-            using var completion = queue.CreateSemaphore(0);
-            queue.Submit([commands], completion, 1);
-            queue.Wait(completion, 1);
+            using var completion = Backend.CreateSemaphore(0);
+            queue.Submit([commands], new(completion, 1));
+            completion.WaitCpu(1);
         }
         public void Dispose()
         {

@@ -46,7 +46,7 @@ public sealed unsafe partial class VulkanBackend
                 SType = StructureType.ShaderModuleCreateInfo,
                 CodeSize = checked((nuint)shader.Code.Length), PCode = code,
             };
-            Check(vk.CreateShaderModule(device, &moduleInfo, null, out ShaderModule module), "vkCreateShaderModule");
+            CheckDeviceResult(vk.CreateShaderModule(device, &moduleInfo, null, out ShaderModule module), "vkCreateShaderModule");
             try
             {
                 using NativeNames names = new([shader.EntryPoint]);
@@ -68,7 +68,7 @@ public sealed unsafe partial class VulkanBackend
                 Pipeline pipeline = default;
                 try
                 {
-                    Check(vk.CreateComputePipelines(device, default, 1, &info, null, &pipeline), "vkCreateComputePipelines");
+                    CheckDeviceResult(vk.CreateComputePipelines(device, default, 1, &info, null, &pipeline), "vkCreateComputePipelines");
                     return new ComputePipelineRecord(this, pipeline);
                 }
                 catch

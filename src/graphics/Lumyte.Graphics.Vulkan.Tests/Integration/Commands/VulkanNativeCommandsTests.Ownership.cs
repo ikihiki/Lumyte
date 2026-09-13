@@ -10,9 +10,9 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     {
         using var resources = new Resources();
         using var recording = new ForeignCommands();
-        using var completion = resources.Backend.MainQueue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
 
-        var error = Assert.Throws<ArgumentException>(() => resources.Backend.MainQueue.Submit([recording], completion, 1));
+        var error = Assert.Throws<ArgumentException>(() => resources.Backend.MainQueue.Submit([recording], new(completion, 1)));
 
         Assert.Equal("commands", error.ParamName);
     }
@@ -24,9 +24,9 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         using var first = new Resources();
         using var second = new Resources();
         using var recording = second.Backend.MainQueue.StartCommandRecording();
-        using var completion = first.Backend.MainQueue.CreateSemaphore(0);
+        using var completion = first.Backend.CreateSemaphore(0);
 
-        var error = Assert.Throws<ArgumentException>(() => first.Backend.MainQueue.Submit([recording], completion, 1));
+        var error = Assert.Throws<ArgumentException>(() => first.Backend.MainQueue.Submit([recording], new(completion, 1)));
 
         Assert.Equal("commands", error.ParamName);
     }
@@ -38,9 +38,9 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         using var resources = new Resources();
         using var semaphore = new ForeignSemaphore();
 
-        var error = Assert.Throws<ArgumentException>(() => resources.Backend.MainQueue.IsComplete(semaphore, 1));
+        var error = Assert.Throws<ArgumentException>(() => resources.Backend.MainQueue.Submit([], new(semaphore, 1)));
 
-        Assert.Equal("semaphore", error.ParamName);
+        Assert.Equal("signal", error.ParamName);
     }
 
     [VulkanNativeFact]
@@ -49,11 +49,11 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     {
         using var first = new Resources();
         using var second = new Resources();
-        using var semaphore = second.Backend.MainQueue.CreateSemaphore(0);
+        using var semaphore = second.Backend.CreateSemaphore(0);
 
-        var error = Assert.Throws<ArgumentException>(() => first.Backend.MainQueue.IsComplete(semaphore, 1));
+        var error = Assert.Throws<ArgumentException>(() => first.Backend.MainQueue.Submit([], new(semaphore, 1)));
 
-        Assert.Equal("semaphore", error.ParamName);
+        Assert.Equal("signal", error.ParamName);
     }
 
     [VulkanNativeFact]
@@ -138,10 +138,10 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     public void DisposedSemaphoreCannotBeQueried()
     {
         using var resources = new Resources();
-        using var semaphore = resources.Backend.MainQueue.CreateSemaphore(0);
+        using var semaphore = resources.Backend.CreateSemaphore(0);
         semaphore.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(() => resources.Backend.MainQueue.IsComplete(semaphore, 0));
+        Assert.Throws<ObjectDisposedException>(() => semaphore.IsComplete(0));
     }
 
     [VulkanNativeFact]
@@ -176,7 +176,13 @@ public sealed unsafe partial class VulkanNativeCommandsTests
     private sealed class ForeignHeap() : NativeGpuHeap(4096, 256, NativeGpuMemoryKind.GpuOnly);
     private sealed class ForeignRegion() : NativeGpuLinearRegion(new ForeignHeap(), 0, 256, 4096, 0);
     private sealed class ForeignTexture : NativeGpuTextureHandle;
-    private sealed class ForeignSemaphore : NativeGpuSemaphore { public override void Dispose() { } }
+    private sealed class ForeignSemaphore : NativeGpuSemaphore
+    {
+        public override bool IsComplete(ulong value) => throw new NotSupportedException();
+        public override void WaitCpu(ulong value) => throw new NotSupportedException();
+        public override void SignalCpu(ulong value) => throw new NotSupportedException();
+        public override void Dispose() { }
+    }
     private sealed class ForeignCommands : NativeGpuCommandBuffer
     {
         public override void SetPipeline(NativeGpuRasterPipelineHandle pipeline) => throw new NotSupportedException();

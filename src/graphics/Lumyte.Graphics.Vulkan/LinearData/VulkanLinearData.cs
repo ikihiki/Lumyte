@@ -27,7 +27,7 @@ public sealed unsafe partial class VulkanBackend
         bool acquiredMapping = false;
         try
         {
-            Check(vk.BindBufferMemory(device, buffer, allocation.Memory, offset), "vkBindBufferMemory");
+            CheckDeviceResult(vk.BindBufferMemory(device, buffer, allocation.Memory, offset), "vkBindBufferMemory");
             BufferDeviceAddressInfo addressInfo = new() { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
             ulong gpuAddress = vk.GetBufferDeviceAddress(device, in addressInfo);
             nint cpuAddress = 0;
@@ -43,7 +43,7 @@ public sealed unsafe partial class VulkanBackend
                 if (allocation.MappedRegionCount == 0)
                 {
                     void* mapped = null;
-                    Check(vk.MapMemory(device, allocation.Memory, 0, Vk.WholeSize, 0, &mapped), "vkMapMemory");
+                    CheckDeviceResult(vk.MapMemory(device, allocation.Memory, 0, Vk.WholeSize, 0, &mapped), "vkMapMemory");
                     allocation.MappedAddress = (nint)mapped;
                 }
                 allocation.MappedRegionCount++;
@@ -90,8 +90,17 @@ public sealed unsafe partial class VulkanBackend
                 | BufferUsageFlags.IndexBufferBit | BufferUsageFlags.IndirectBufferBit
                 | BufferUsageFlags.ShaderDeviceAddressBit,
         };
-        Check(vk.CreateBuffer(device, in description, null, out VkBuffer buffer), "vkCreateBuffer");
-        return buffer;
+        fixed (uint* families = resourceQueueFamilies)
+        {
+            if (resourceQueueFamilies.Length != 0)
+            {
+                description.SharingMode = SharingMode.Concurrent;
+                description.QueueFamilyIndexCount = checked((uint)resourceQueueFamilies.Length);
+                description.PQueueFamilyIndices = families;
+            }
+            CheckDeviceResult(vk.CreateBuffer(device, in description, null, out VkBuffer buffer), "vkCreateBuffer");
+            return buffer;
+        }
     }
 
     private void ReleaseMapping(HeapRecord allocation)

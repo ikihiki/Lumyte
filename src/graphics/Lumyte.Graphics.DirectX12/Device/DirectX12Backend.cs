@@ -24,8 +24,9 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
     private ComPtr<ID3D12CommandSignature> meshDispatchSignature;
     private NativeGpuMeshShaderLimits? meshLimits;
     private NativeQueue mainQueue = null!;
-    private string? deviceLoss;
-    private bool disposed;
+    private NativeQueue copyQueue = null!;
+    private volatile string? deviceLoss;
+    private volatile bool disposed;
 
     private DirectX12Backend(D3D12 api, ComPtr<ID3D12Device> device, ComPtr<ID3D12Device10> device10)
     {
@@ -71,11 +72,14 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
                 (uint)sizeof(FeatureDataD3D12Options7)), "CheckFeatureSupport(D3D12_OPTIONS7)");
             backend.meshLimits = MeshLimits(mesh.MeshShaderTier);
             backend.CreateComputeSupport();
-            backend.mainQueue = backend.CreateMainQueue();
+            backend.mainQueue = backend.CreateQueue(CommandListType.Direct);
+            backend.copyQueue = backend.CreateQueue(CommandListType.Copy);
             return backend;
         }
         catch
         {
+            backend?.copyQueue?.DisposeNativeObjects();
+            backend?.mainQueue?.DisposeNativeObjects();
             backend?.DisposeComputeSupport();
             device10.Dispose();
             device.Dispose();
@@ -97,11 +101,13 @@ public sealed unsafe partial class DirectX12Backend : INativeGpuBackend
         return new(dispatch, dispatch, 256, 256, 16384);
     }
     public NativeGpuQueue MainQueue => mainQueue;
+    public NativeGpuQueue? CopyQueue => copyQueue;
 
     public void Dispose()
     {
         if (disposed) { return; }
         disposed = true;
+        copyQueue.DisposeNativeObjects();
         mainQueue.DisposeNativeObjects();
         DisposeComputeSupport();
         device10.Dispose();

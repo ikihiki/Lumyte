@@ -239,6 +239,36 @@ Vulkan の fixture は Slang 2026.17 で直接 root、物理 pointer と mesh／
 
 DirectX 12 debug layer と Vulkan Khronos validation layer を有効にした試験は未実施である。mesh 非対応 device と Vulkan の mesh-only device はこの PC にないため、実機での起動確認ではなく capability／limits の変換と optional baseline の試験で確認した。全 format／MSAA、最大出力・payload の複合条件、native allocation failure と device loss の強制試験は未実施とする。
 
+## 第8段階: Native 非同期 copy・device timeline・CPU の先行
+
+2026-09-13 に [Native device](../adr/0002-native-graphics-api.md) と [Command Submission と同期](../adr/0012-native-command-submission-and-synchronization.md) を拡張し、MainQueue と独立した CopyQueue、GPU wait と CPU timeline 操作を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | optional `CopyQueue`、device の `CreateSemaphore`、非所有の `NativeGpuTimelinePoint(Semaphore, Value)`、`Submit(commands, signal, waits)` を追加。旧 Native queue の生成・CPU 照会・待機 member は削除する |
+| GPU 依存 | 提出は全 wait point を満たしてから batch 全体を実行し、単一 point を signal する。空 command 列の wait／signal 専用提出も可能。全 batch の記録・終了・管理領域確保は最初の GPU wait より前に完了する |
+| CPU の先行 | semaphore の `IsComplete`／`WaitCpu`／`SignalCpu` は queue の可変状態から独立。CPU は複数 frame を先行提出し、再利用する slot の最終 consumer だけを待てる。frame slot と先行数は caller が管理する |
+| DirectX 12 | DIRECT と COPY queue、各 type の allocator／list、各 queue の内部 fence を使用。queue wait → work → 内部 fence → caller fence の順で積む。最初の native wait 以後の失敗は device を停止して伝播する |
+| Vulkan | transfer 専用 family を優先し、なければ Main family の第2 queue、最後に他の対応 family を選ぶ。公開 buffer／image は異なる Main／Copy family の場合だけ CONCURRENT、同 family と CopyQueue なしの場合は EXCLUSIVE。requirements と生成は同じ設定を使う |
+| Texture | `GpuTextureLayout.Common` を追加。DirectX 12 は Main で Common へ移す → Copy が wait・転送・signal → Main が wait・次用途へ移す。Vulkan は General／Common を GENERAL へ写し、新規 texture の初期化 producer を consumer より先に Submit する |
+| 所有と回収 | 各 queue の private completion が内部 command memory のみを回収し、CPU wait／照会はその list を変更しない。caller semaphore は producer と全 consumer の利用終了まで保持する。root／Parameter Data の契約と application resource の明示寿命を維持する |
+
+CopyQueue の共通用途は線形データと color texture の転送で、depth／stencil と shader work は MainQueue を使う。Vulkan の consumer を未来値待機だけで初回 producer より先に提出する順序は許さない。初期化済み resource／線形データでは、caller が進行と signal 順序を保証して wait-before-signal を使える。device 全体で loss を共有し、片方の queue の停止を他方で通常の未完了として待ち続けない。
+
+実機の RTX 2080、driver 616.92 は Vulkan に graphics／compute／transfer family 0 の16 queue、transfer 専用 family 1 の2 queue、compute／transfer family 2 の8 queue を報告した。今回の CopyQueue は family 1 を選ぶ。これは queue family の報告値と実行経路の確認であり、物理 engine 数、描画との同時実行率や高速化の測定結果ではない。
+
+CPU gate の timeline を GPU に待たせ、未解放の間に3 frame を CopyQueue／MainQueue へ提出してから CPU signal で進める。転送したデータの compute 参照、texture の描画、MainQueue から CopyQueue への readback と最終内容を実 GPU で確認する。別 CPU thread の WaitCpu と Submit の並行、複数待機点、同期専用提出、別 device／破棄済み object と失敗前の GPU wait 未挿入も検証する。sleep や処理速度を同期の判定にしない。
+
+非同期テストの終了時に、既存の `GpuBackendTestGate` が Mutex を取得した thread と別の thread で解放して collection cleanup に失敗した。named Mutex の取得と解放をテスト用の一つの専用 thread に置き、別 thread の Dispose、他 handle からの占有／解放、abandoned Mutex を回帰試験で確認した。製品 backend の CPU wait に worker は追加しない。
+
+追加テストは Native 7件、DirectX 12 17件、Vulkan 26件と共通テスト基盤4件の計54件。focused tests は Native 92件、DirectX 12 の Native 関連220件、Vulkan の Native 関連183件、共通 gate 4件が成功した。Vulkan の queue 選択優先順位を確認する最後の1件は、その後の全体試験で確認した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=native-async-copy-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、25 test project の **1,633件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は401件、Vulkan は413件、WebGPU は154件、Native は92件、共通 Graphics は152件。TRX は各 test project の `TestResults/` に保存した。
+
+独立レビューで公開拡張契約、GPU wait／CPU 操作と内部回収の分離、device loss、texture 引渡しとサンプルの寿命を確認した。37 ADR の API・コード配置・使用例・未実装章、依存章の182個のリンクが若い番号へ向くこと、44文書の350ローカルリンクと20アンカーを確認した。非同期 copy のfixture文書2本を含めると46文書・352ローカルリンクで、リンク切れはない。`InternalsVisibleTo` は9指定すべて test assembly 向けで、Native の内部公開は0件。空白検査も問題なし。
+
+DirectX 12 debug layer と Vulkan Khronos validation layer を有効にした試験、native allocation failure と実 device loss の強制、全 GPU の queue 構成と性能測定は未実施とする。device loss の伝播は結果の注入で確認する。任意数の queue 作成、専用 compute queue、stage を選ぶ wait、複数 signal、presentation、上位 Resources の自動退役と Portable への移行はこの段階に含めない。
+
 ## 未実装と次の順序
 
 1. 独立した Portable API と WebGPU の device・resource・shader・command を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。

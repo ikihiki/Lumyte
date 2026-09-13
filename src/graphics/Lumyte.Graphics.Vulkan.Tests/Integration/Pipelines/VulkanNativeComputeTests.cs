@@ -16,7 +16,7 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var output = resources.Linear(512, NativeGpuMemoryKind.GpuOnly);
         var readback = resources.Linear(512, NativeGpuMemoryKind.Readback);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         byte[] root = Root(new NativeGpuRange(output, 64, 256).GpuAddress, 17, 0, tail: 700);
         commands.SetComputePipeline(pipeline);
@@ -27,8 +27,8 @@ public sealed unsafe partial class VulkanNativeComputeTests
         root.AsSpan().Fill(0xFF);
         Readback(commands, new(output, 64, 32), new(readback, 32, 32));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(new uint[] { 717, 718, 719, 720, 730, 731, 732, 733 }, Words(readback)[8..16].ToArray());
     }
@@ -45,7 +45,7 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var readback = resources.Linear(256, NativeGpuMemoryKind.Readback);
         var argumentRange = new NativeGpuRange(arguments, 64, 12);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(producer);
         commands.Dispatch(Root(argumentRange.GpuAddress, 5), 1);
@@ -54,8 +54,8 @@ public sealed unsafe partial class VulkanNativeComputeTests
         commands.DispatchIndirect(Root(new NativeGpuRange(output, 0, 256).GpuAddress, 41, tail: 9), argumentRange);
         Readback(commands, new(output, 0, 20), new(readback, 0, 20));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(new uint[] { 50, 51, 52, 53, 54 }, Words(readback)[..5].ToArray());
     }
@@ -80,7 +80,7 @@ public sealed unsafe partial class VulkanNativeComputeTests
         resources.Backend.WriteTextureDescriptor(resourceHeap, 5, View(texture));
         resources.Backend.WriteSamplerDescriptor(samplerHeap, 2, new());
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.SetResourceDescriptorHeap(resourceHeap);
@@ -91,8 +91,8 @@ public sealed unsafe partial class VulkanNativeComputeTests
         commands.Dispatch(Root(0, 7, buffer: 3, texture: 5, sampler: 2, tail: 800), 4);
         Readback(commands, new(output, 64, 16), new(readback, 0, 16));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(new uint[] { 870, 871, 872, 873 }, Words(readback)[..4].ToArray());
     }
@@ -110,14 +110,14 @@ public sealed unsafe partial class VulkanNativeComputeTests
         var output = resources.Linear(256, NativeGpuMemoryKind.GpuOnly);
         var readback = resources.Linear(256, NativeGpuMemoryKind.Readback);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.SetComputePipeline(pipeline);
         commands.Dispatch(Root(new NativeGpuRange(output, 0, 256).GpuAddress, 456), 1);
         Readback(commands, new(output, 0, 4), new(readback, 0, 4));
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(456u, Words(readback)[0]);
     }

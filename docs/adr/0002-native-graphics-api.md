@@ -24,7 +24,8 @@ backend は外部 assembly から `INativeGpuBackend` を実装する。resource
 
 | API | 契約 |
 | --- | --- |
-| `INativeGpuBackend` | native device、主 queue と生成 API の入口。同じ device の object を組み合わせる。 |
+| `INativeGpuBackend` | native device、MainQueue／optional CopyQueue と生成 API の入口。同じ device の object を組み合わせる。 |
+| `MainQueue`／`CopyQueue` | 前者は graphics／compute／copy を行う主 queue。後者は linear／color texture 転送用の独立した optional queue で、取得できなければ null。MainQueue の別名で対応を偽装せず、物理 engine の並行実行や高速化も保証しない。 |
 | `NativeGpuBackendOptions.EnableValidation` | native debug/validation 機能の有効化要求。Native 独自の resource state 検証層は作らない。 |
 | `Capabilities`／`NativeGpuCapabilities` | `RawShaderPointers`、`BufferDescriptors`、`ExplicitTextureTransitions`、`MeshShaders`、`AmplificationShaders` の対応を返す。 |
 | `Limits`／`NativeGpuLimits` | `MaxRootDataSize`、heap の容量・整列条件、descriptor の native size/整列条件、texture と dispatch の有効上限を返す。異なる descriptor 型の byte size が同一とは仮定しない。 |
@@ -75,10 +76,12 @@ host memory の安全、整数演算、backend が管理する identity と局�
 
 同じ heap／region への host 操作は、配置・破棄も含めて caller が直列化する。backend の Dispose と他の操作も競合させない。GPU 同期に加えて native が要求する host の外部同期を caller が担い、backend 全体に暗黙の排他や lifetime tracker を置かない。
 
+同じ queue の操作は caller が直列化し、別 queue と CPU timeline の待機・照会は並行できる。同じ texture の初回使用を含む Submit は producer を先に受理させ、consumer 側へ GPU wait を明示する。public linear region と texture は Main／Copy の双方へ引き渡せる生成契約とする。使用可能な command、format、layout と同期は native の条件に従う。backend が queue 間の依存や資源所有者を推測しない。
+
 ## 採用差分と未実装範囲
 
 caller-owned resource と明示同期を採用する。参照実装の線形／texture heap の分割は採用せず、共通の純粋 allocation と配置 resource に分離する。任意 shader pointer など target 間で同じ意味を提供できない機能は部分採用とし、capability で区別する。
 
 Native 専用 interface、options、capabilities、native error と両 backend の初期化・終了を実装した。共通 heap と線形 region／texture の配置・独立破棄、render view、descriptor storage と書込み、転送・提出・completion に加え、raw shader、compute pipeline、直接 root と直接／間接 dispatch を提供する。両 backend の `BufferDescriptors`、Vulkan の `RawShaderPointers`、DirectX 12 の `ExplicitTextureTransitions` を true とする。DirectX 12 の raw shader pointer は未対応。mesh／amplification の capability は device が提供する有効機能に応じて返す。
 
-limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch`、optional `Descriptors` と `MeshShader` を提供する。vertex／mesh raster pipeline、rendering と直接／一件の間接 draw・indexed draw・mesh dispatch を実装した。一般の heap／texture 上限、ray tracing、presentation は未実装である。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。
+limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch`、optional `Descriptors` と `MeshShader` を提供する。vertex／mesh raster pipeline、rendering と直接／一件の間接 draw・indexed draw・mesh dispatch を実装した。さらに MainQueue／CopyQueue、device timeline と明示 GPU wait、queue から独立した CPU 同期操作を実装した。一般の heap／texture 上限、ray tracing、presentation は未実装である。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。

@@ -122,16 +122,16 @@ public sealed partial class DirectX12NativeComputeTests
         NativeGpuComputePipelineHandle pipeline = backend.CreateComputePipeline(Program(GroupShader.Value));
         using NativeGpuCommandBuffer first = backend.MainQueue.StartCommandRecording();
         using NativeGpuCommandBuffer second = backend.MainQueue.StartCommandRecording();
-        using NativeGpuSemaphore completion = backend.MainQueue.CreateSemaphore(0);
+        using NativeGpuSemaphore completion = backend.CreateSemaphore(0);
         first.CopyMemory(new(upload.Value, 0, 4), new(readback.Value, 0, 4));
         second.SetComputePipeline(pipeline);
         second.Dispatch(Words(3, 0, 0, 1, 1), 1);
         backend.DestroyComputePipeline(pipeline);
 
-        Assert.Throws<ObjectDisposedException>(() => backend.MainQueue.Submit([first, second], completion, 1));
+        Assert.Throws<ObjectDisposedException>(() => backend.MainQueue.Submit([first, second], new(completion, 1)));
         using NativeGpuCommandBuffer drain = backend.MainQueue.StartCommandRecording();
-        backend.MainQueue.Submit([drain], completion, 2);
-        backend.MainQueue.Wait(completion, 2);
+        backend.MainQueue.Submit([drain], new(completion, 2));
+        completion.WaitCpu(2);
 
         Assert.Equal(77u, ReadWords(readback.Value.CpuAddress, 1)[0]);
     }

@@ -169,7 +169,7 @@ public sealed unsafe partial class VulkanBackend
         {
             VerifyOutsideRendering();
             TextureRecord texture = Owner.RequireCommandTexture(view.Texture);
-            if (afterLayout != GpuTextureLayout.General)
+            if (afterLayout is not (GpuTextureLayout.General or GpuTextureLayout.Common))
             {
                 throw new ArgumentException("Vulkan Native discard requires GENERAL.", nameof(afterLayout));
             }

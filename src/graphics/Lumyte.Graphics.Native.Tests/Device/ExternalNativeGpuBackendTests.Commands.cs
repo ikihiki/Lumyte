@@ -68,26 +68,26 @@ public sealed partial class ExternalNativeGpuBackendTests
         NativeGpuQueue queue = backend.MainQueue;
         const ulong initialValue = 1ul << 40;
         const ulong completionValue = initialValue + 9;
-        using NativeGpuSemaphore semaphore = queue.CreateSemaphore(initialValue);
+        using NativeGpuSemaphore semaphore = backend.CreateSemaphore(initialValue);
         using NativeGpuCommandBuffer first = queue.StartCommandRecording();
         using NativeGpuCommandBuffer second = queue.StartCommandRecording();
+        NativeGpuCommandBuffer[] recordings = [second, first];
+        var signal = new NativeGpuTimelinePoint(semaphore, completionValue);
 
-        queue.Submit([second, first], semaphore, completionValue);
-        _ = queue.IsComplete(semaphore, completionValue);
-        queue.Wait(semaphore, completionValue);
+        queue.Submit(recordings, signal);
+        Array.Clear(recordings);
 
         Assert.Collection(observed,
             value => Assert.Equal(new SemaphoreCreation(initialValue), Assert.IsType<SemaphoreCreation>(value)),
             value =>
             {
                 QueueSubmission submission = Assert.IsType<QueueSubmission>(value);
-                Assert.Equal((semaphore, completionValue), (submission.Semaphore, submission.Value));
+                Assert.Equal(signal, submission.Signal);
                 Assert.Collection(submission.Commands,
                     command => Assert.Same(second, command),
                     command => Assert.Same(first, command));
-            },
-            value => Assert.Equal(new CompletionQuery(semaphore, completionValue), Assert.IsType<CompletionQuery>(value)),
-            value => Assert.Equal(new CompletionWait(semaphore, completionValue), Assert.IsType<CompletionWait>(value)));
+                Assert.Empty(submission.Waits);
+            });
     }
 
     private sealed record MemoryCopy(NativeGpuRange Source, NativeGpuRange Destination);
@@ -97,9 +97,10 @@ public sealed partial class ExternalNativeGpuBackendTests
     private sealed record TextureLayoutChange(NativeGpuTextureView View, GpuTextureLayout Before, GpuTextureLayout After);
     private sealed record TextureDiscard(NativeGpuTextureView View, GpuTextureLayout After);
     private sealed record SemaphoreCreation(ulong InitialValue);
-    private sealed record QueueSubmission(NativeGpuCommandBuffer[] Commands, NativeGpuSemaphore Semaphore, ulong Value);
+    private sealed record QueueSubmission(NativeGpuCommandBuffer[] Commands, NativeGpuTimelinePoint Signal, NativeGpuTimelinePoint[] Waits);
     private sealed record CompletionQuery(NativeGpuSemaphore Semaphore, ulong Value);
     private sealed record CompletionWait(NativeGpuSemaphore Semaphore, ulong Value);
+    private sealed record CompletionSignal(NativeGpuSemaphore Semaphore, ulong Value);
 
     // This spy verifies the public implementation boundary without modelling GPU execution,
     // one-shot validation, or retirement; those behaviors belong to backend tests.
@@ -107,23 +108,9 @@ public sealed partial class ExternalNativeGpuBackendTests
     {
         public override NativeGpuCommandBuffer StartCommandRecording() => new ExternalCommands(observe);
 
-        public override void Submit(ReadOnlySpan<NativeGpuCommandBuffer> commands, NativeGpuSemaphore semaphore, ulong value)
-            => observe?.Invoke(new QueueSubmission(commands.ToArray(), semaphore, value));
-
-        public override NativeGpuSemaphore CreateSemaphore(ulong initialValue)
-        {
-            observe?.Invoke(new SemaphoreCreation(initialValue));
-            return new ExternalSemaphore();
-        }
-
-        public override bool IsComplete(NativeGpuSemaphore semaphore, ulong value)
-        {
-            observe?.Invoke(new CompletionQuery(semaphore, value));
-            return false;
-        }
-
-        public override void Wait(NativeGpuSemaphore semaphore, ulong value)
-            => observe?.Invoke(new CompletionWait(semaphore, value));
+        public override void Submit(ReadOnlySpan<NativeGpuCommandBuffer> commands, NativeGpuTimelinePoint signal,
+            ReadOnlySpan<NativeGpuTimelinePoint> waits = default)
+            => observe?.Invoke(new QueueSubmission(commands.ToArray(), signal, waits.ToArray()));
     }
 
     private sealed partial class ExternalCommands(Action<object>? observe) : NativeGpuCommandBuffer
@@ -155,8 +142,18 @@ public sealed partial class ExternalNativeGpuBackendTests
         public override void Dispose() { }
     }
 
-    private sealed class ExternalSemaphore : NativeGpuSemaphore
+    private sealed class ExternalSemaphore(Action<object>? observe) : NativeGpuSemaphore
     {
+        public override bool IsComplete(ulong value)
+        {
+            observe?.Invoke(new CompletionQuery(this, value));
+            return false;
+        }
+
+        public override void WaitCpu(ulong value) => observe?.Invoke(new CompletionWait(this, value));
+
+        public override void SignalCpu(ulong value) => observe?.Invoke(new CompletionSignal(this, value));
+
         public override void Dispose() { }
     }
 }

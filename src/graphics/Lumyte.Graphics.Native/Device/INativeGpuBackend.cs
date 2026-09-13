@@ -7,6 +7,9 @@ namespace Lumyte.Graphics.Native;
 /// <remarks>
 /// The caller serializes operations on the same heap or resource, including placement and destruction,
 /// and does not dispose the backend concurrently with its use. GPU synchronization is also caller-owned.
+/// Linear regions and textures can be handed between the exposed queues with explicit GPU dependencies
+/// and the backend's texture layout rules. The first texture-initialization producer must be submitted
+/// before consumers on another queue; a future timeline wait does not replace that host ordering.
 /// Before disposing the backend, the caller completes submitted work, disposes all recordings and semaphores,
 /// and destroys application resources and heaps. Disposal does not perform an implicit GPU wait.
 /// Implementations in any assembly derive their resource types from public or protected extension contracts.
@@ -18,6 +21,13 @@ public interface INativeGpuBackend : IDisposable
     NativeGpuCapabilities Capabilities { get; }
     NativeGpuLimits Limits { get; }
     NativeGpuQueue MainQueue { get; }
+
+    /// <summary>A distinct optional queue for linear and color-texture transfers; null if no second queue is available.</summary>
+    /// <remarks>Independent queues permit overlap but do not guarantee a dedicated hardware engine or improved performance.</remarks>
+    NativeGpuQueue? CopyQueue { get; }
+
+    /// <summary>Creates a caller-owned device timeline usable by every queue on this backend.</summary>
+    NativeGpuSemaphore CreateSemaphore(ulong initialValue = 0);
 
     NativeGpuMemoryRequirements GetLinearMemoryRequirements(ulong size, NativeGpuMemoryKind kind);
 

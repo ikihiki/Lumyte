@@ -42,7 +42,7 @@ public sealed unsafe partial class VulkanBackend
             SType = StructureType.BufferCreateInfo, Size = layout.BackingSize, SharingMode = SharingMode.Exclusive,
             Usage = BufferUsageFlags.ShaderDeviceAddressBit | (BufferUsageFlags)0x10000000,
         };
-        Check(vk.CreateBuffer(device, in info, null, out VkBuffer buffer), "vkCreateBuffer(descriptor heap)");
+        CheckDeviceResult(vk.CreateBuffer(device, in info, null, out VkBuffer buffer), "vkCreateBuffer(descriptor heap)");
         DeviceMemory memory = default;
         bool mapped = false;
         try
@@ -57,10 +57,10 @@ public sealed unsafe partial class VulkanBackend
                 SType = StructureType.MemoryAllocateInfo, PNext = &flags,
                 AllocationSize = requirements.Size, MemoryTypeIndex = memoryType,
             };
-            Check(vk.AllocateMemory(device, in allocation, null, out memory), "vkAllocateMemory(descriptor heap)");
-            Check(vk.BindBufferMemory(device, buffer, memory, 0), "vkBindBufferMemory(descriptor heap)");
+            CheckDeviceResult(vk.AllocateMemory(device, in allocation, null, out memory), "vkAllocateMemory(descriptor heap)");
+            CheckDeviceResult(vk.BindBufferMemory(device, buffer, memory, 0), "vkBindBufferMemory(descriptor heap)");
             void* address = null;
-            Check(vk.MapMemory(device, memory, 0, Vk.WholeSize, 0, &address), "vkMapMemory(descriptor heap)");
+            CheckDeviceResult(vk.MapMemory(device, memory, 0, Vk.WholeSize, 0, &address), "vkMapMemory(descriptor heap)");
             mapped = true;
             BufferDeviceAddressInfo addressInfo = new() { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
             ulong baseAddress = vk.GetBufferDeviceAddress(device, in addressInfo);
@@ -111,7 +111,7 @@ public sealed unsafe partial class VulkanBackend
         imageView.PNext = &usage;
         NativeImageDescriptorInfo image = new() { SType = (StructureType)1000135001, View = &imageView, Layout = ImageLayout.General };
         NativeResourceDescriptorInfo descriptor = new() { SType = (StructureType)1000135002, Type = nativeType, Data = &image };
-        Check(writeResourceDescriptors(device, 1, &descriptor, &destination), "vkWriteResourceDescriptorsEXT(image)");
+        CheckDeviceResult(writeResourceDescriptors(device, 1, &descriptor, &destination), "vkWriteResourceDescriptorsEXT(image)");
     }
 
     public void WriteBufferDescriptor(NativeGpuDescriptorHeap heap, uint index, NativeGpuRange range, NativeGpuBufferAccess access)
@@ -125,7 +125,7 @@ public sealed unsafe partial class VulkanBackend
         {
             SType = (StructureType)1000135002, Type = BufferDescriptorType(access), Data = &address,
         };
-        Check(writeResourceDescriptors(device, 1, &descriptor, &destination), "vkWriteResourceDescriptorsEXT(buffer)");
+        CheckDeviceResult(writeResourceDescriptors(device, 1, &descriptor, &destination), "vkWriteResourceDescriptorsEXT(buffer)");
     }
 
     public void WriteSamplerDescriptor(NativeGpuDescriptorHeap heap, uint index, NativeGpuSamplerDescription description)
@@ -134,7 +134,7 @@ public sealed unsafe partial class VulkanBackend
         DescriptorHeapRecord record = RequireDescriptorHeap(heap, NativeGpuDescriptorHeapKind.Sampler);
         NativeHostAddressRange destination = record.Slot(index, descriptorProperties.SamplerDescriptorSize);
         SamplerCreateInfo info = SamplerDescription(description);
-        Check(writeSamplerDescriptors(device, 1, &info, &destination), "vkWriteSamplerDescriptorsEXT");
+        CheckDeviceResult(writeSamplerDescriptors(device, 1, &info, &destination), "vkWriteSamplerDescriptorsEXT");
     }
 
     private DescriptorHeapRecord RequireDescriptorHeap(NativeGpuDescriptorHeap heap, NativeGpuDescriptorHeapKind? kind = null)

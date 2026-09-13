@@ -22,7 +22,7 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         var depthFootprint = Footprint() with { Aspect = NativeGpuTextureAspect.Depth };
         var stencilFootprint = Footprint() with { Aspect = NativeGpuTextureAspect.Stencil, RowPitch = 8, ImagePitch = 64 };
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var write = queue.StartCommandRecording();
         using var discard = queue.StartCommandRecording();
         write.CopyMemoryToTexture(new(upload, 0, 256), texture, depthFootprint);
@@ -36,8 +36,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         discard.CopyTextureToMemory(texture, new(readback, 0, 256), depthFootprint);
         HostDependency(discard);
 
-        queue.Submit([write, discard], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([write, discard], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(stencil, Bytes(readback)[512..576].ToArray());
         Assert.Equal(Enumerable.Range(0, 64).Select(index => (uint)(index * 65537)).ToArray(),
@@ -57,15 +57,15 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         var footprint = new NativeGpuTextureCopyFootprint(1, NativeGpuTextureAspect.Color, 1, 1,
             new(4, 2, 0), new(5, 3, 1), 32, 128);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.CopyMemoryToTexture(new(upload, 128, 128), texture, footprint);
         CopyDependency(commands);
         commands.CopyTextureToMemory(texture, new(readback, 256, 128), footprint);
         HostDependency(commands);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(Enumerable.Range(0, 3).SelectMany(row => expected.Skip(row * 32).Take(20)).ToArray(),
             Enumerable.Range(0, 3).SelectMany(row => Bytes(readback).Slice(256 + row * 32, 20).ToArray()).ToArray());
@@ -84,7 +84,7 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         original.CopyTo(Bytes(upload));
         replacement.CopyTo(Bytes(upload)[512..]);
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var write = queue.StartCommandRecording();
         using var replace = queue.StartCommandRecording();
         var bothLayers = Footprint() with { LayerCount = 2 };
@@ -96,8 +96,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         replace.CopyTextureToMemory(texture, new(readback, 0, 512), bothLayers);
         HostDependency(replace);
 
-        queue.Submit([write, replace], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([write, replace], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(original.Take(256).Concat(replacement).ToArray(), Bytes(readback)[..512].ToArray());
     }
@@ -113,7 +113,7 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         byte[] expected = Pattern(512, 67);
         expected.CopyTo(Bytes(upload));
         var queue = resources.Backend.MainQueue;
-        using var completion = queue.CreateSemaphore(0);
+        using var completion = resources.Backend.CreateSemaphore(0);
         using var commands = queue.StartCommandRecording();
         commands.DiscardTexture(View(texture) with { Dimension = NativeGpuTextureViewDimension.TwoDArray, BaseLayer = 1 }, GpuTextureLayout.General);
         commands.CopyMemoryToTexture(new(upload, 0, 256), texture, Footprint());
@@ -122,8 +122,8 @@ public sealed unsafe partial class VulkanNativeCommandsTests
         commands.CopyTextureToMemory(texture, new(readback, 0, 512), Footprint() with { LayerCount = 2 });
         HostDependency(commands);
 
-        queue.Submit([commands], completion, 1);
-        queue.Wait(completion, 1);
+        queue.Submit([commands], new(completion, 1));
+        completion.WaitCpu(1);
 
         Assert.Equal(expected, Bytes(readback)[..512].ToArray());
     }
