@@ -2,7 +2,7 @@
 
 WebGPU の resource と実行モデルに対応する独立した低レベル契約。[設計の正本](../../../docs/adr/0016-portable-api.md) は Portable ADR 群である。Native の backend を経由せず、Buffer／Texture は内部 memory を含めて生成・破棄する。
 
-現在の範囲は device、要求 feature／limits、Buffer／Texture の生成・破棄、非同期 map/unmap、runtime 診断である。binding、shader、pipeline、copy を含む command、queue completion、Browser runtime の接続は後続段階とする。
+現在の範囲は device、要求 feature／limits、Buffer／Texture の生成・破棄、非同期 map/unmap、非所有の View／range／sampler、immutable Binding Layout／Bindings と runtime 診断である。shader、pipeline、copy を含む command、queue completion、Browser runtime の接続は後続段階とする。
 
 ## Device と直接入力
 
@@ -41,7 +41,7 @@ offset は Buffer 先頭からの byte offset である。Write mapping は `Mem
 
 unmap 後は保存した Memory から Span を取得し直す操作も拒否する。ただし、すでに取得済みの Span／pointer を失効させることはできないため、caller は unmap 前に全アクセスを終了し、Dispose 後にそれらを使用しない。mapping の length は `Memory<byte>` の int 長とホストの pointer 幅で表現できる必要がある。native の map alignment／usage／resource size の検証は runtime に委ねる。
 
-## Texture と所有
+## Texture、View と Binding
 
 ```csharp
 var texture = backend.CreateTexture(new P.GpuTextureDescription(
@@ -53,7 +53,29 @@ var texture = backend.CreateTexture(new P.GpuTextureDescription(
     MutableFormat: true));
 try
 {
-    // view、binding、転送と描画は後続の API で接続する。
+    var layout = backend.CreateBindingLayout([
+        new(0, P.GpuShaderStage.Pixel, new P.GpuTextureBindingLayout(P.GpuTextureSampleType.Float)),
+        new(1, P.GpuShaderStage.Pixel, new P.GpuSamplerBindingLayout(P.GpuSamplerBindingType.Filtering))
+    ]);
+    try
+    {
+        var bindings = backend.CreateBindings(layout, [
+            P.GpuBindingEntry.Texture(0, new P.GpuTextureView(texture)),
+            P.GpuBindingEntry.Sampler(1, new P.GpuSamplerDescription())
+        ]);
+        try
+        {
+            // 作成した group を使う command と shader 実行は後続段階。
+        }
+        finally
+        {
+            backend.DestroyBindings(bindings);
+        }
+    }
+    finally
+    {
+        backend.DestroyBindingLayout(layout);
+    }
 }
 finally
 {
@@ -63,16 +85,22 @@ finally
 
 事前の heap、allocation、配置要件は不要である。`MutableFormat` は runtime が許す互換 view format の意図であり、公開の許可 format 列を要求しない。Texture handle から配置情報や GPU address を取得する API は設けない。
 
+View は Texture と解釈を組み合わせた非所有の値であり、public の生成・破棄操作は持たない。上の省略 description は Texture 全体の既定 view を表す。sampler も値で指定し、有効な既定値には `new GpuSamplerDescription()` を使う。`default(GpuSamplerDescription)` は構造体のゼロ値であり、無効な anisotropy を backend が自動補正することはない。
+
+layout は uniform／read-only storage／storage Buffer、sampled／storage Texture と sampler を明示する。Buffer の範囲は `GpuBufferRange(buffer, offset, length)` で渡し、null length は残り全体を表す。layout と binding は呼出し中に入力 span を消費するため、復帰後に元の配列を変更できる。dynamic offset の layout 指定は保持するが、command への設定は後続段階である。
+
+内部 view／sampler は同じ値を使う生存中の Bindings 間で再利用し、最後の参照とともに解放する。Bindings の破棄は元 Buffer／Texture と layout を破棄しない。
+
 caller は全利用終了後に resource を一度だけ破棄し、その後に backend を破棄する。handle のコピーは resource を延命しない。backend に全 resource の registry、自動 staging、GC や暗黙の GPU wait は置かない。
 
 ## Runtime 診断
 
 resource の同期生成は runtime の非同期診断の成功を保証しない。validation／out-of-memory／internal scope を生成操作に対応付け、診断結果をその object に保持する。map は buffer の生成診断と native map の双方を確認してから成功する。失敗時は `GpuOperationException` に操作名とコピー済み診断列を渡し、device loss は `GpuDeviceLostException` で通知する。
 
-scope を開いた native 呼出し区間は同じ device で直列化し、全 scope を pop してから非同期結果を待つ。無関係な object の診断を別の操作へ付け替えず、runtime の validator を複製しない。Texture を利用する binding／command への生成診断の接続と、GPU 利用終了・batch 成功の分離は後続段階で実装する。
+scope を開いた native 呼出し区間は同じ device で直列化し、全 scope を pop してから非同期結果を待つ。Bindings は layout、Buffer／Texture、内部 view／sampler と自身の生成診断を保持する。無関係な object の診断を別の操作へ付け替えず、runtime の validator を複製しない。command への診断接続と、GPU 利用終了・batch 成功の分離は後続段階で実装する。
 
 ## Backend の追加
 
-外部 assembly は `IPortableGpuBackend` を実装し、`GpuBufferHandle`、`GpuTextureHandle`、`GpuMappedBufferRange` の public abstract 基底型と protected constructor から非公開実装を派生させる。Portable assembly の `InternalsVisibleTo` は不要である。
+外部 assembly は `IPortableGpuBackend` を実装し、`GpuBufferHandle`、`GpuTextureHandle`、`GpuMappedBufferRange`、`GpuBindingLayoutHandle`、`GpuBindingsHandle` の public abstract 基底型と protected constructor から非公開実装を派生させる。Portable assembly の `InternalsVisibleTo` は不要である。
 
 動作確認は隣接する [Portable.Tests](../Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj) の consumer test と、[WebGPU の適合試験](../Lumyte.Graphics.WebGPU.Tests/Integration/PORTABLE.md) に分ける。試験結果と後続作業は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

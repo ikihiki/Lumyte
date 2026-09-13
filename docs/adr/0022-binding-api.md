@@ -22,9 +22,13 @@ resource の変更は新しい binding set を作る。提出中の set の内�
 | `GpuBindingEntry.Buffer(binding, range)` | 指定 binding に `GpuBufferRange` を設定する。uniform/storage と dynamic offset の規則は layout に属する。 |
 | `GpuBindingEntry.Texture(binding, view)` | 指定 binding に `GpuTextureView` を設定する。sampled/storage の条件は layout に属する。 |
 | `GpuBindingEntry.Sampler(binding, description)` | 指定 binding に sampler description を設定する。 |
+| `GpuBindingEntry.Binding`／`Kind` | group 内の binding 番号と `GpuBindingResourceKind`（Buffer／Texture／Sampler）。全ゼロの Undefined は resource 未設定の入力で、runtime が診断する。 |
+| entry の `BufferRange`／`TextureView`／`SamplerDescription` | Kind が選んだ一つの resource 値。factory によって設定され、後から変更しない。 |
 | `GpuBindingsHandle` | device に属する immutable な binding set の identity。shader-visible な integer index ではない。 |
 | `IPortableGpuBackend.CreateBindings(layout, entries)` | layout と resource の対応を実体化する。入力値は内部へコピーし、必要な backend view/sampler/binding object を所有する。application resource の所有権は取得しない。 |
 | `DestroyBindings(bindings)` | この set を使う未提出・提出済み command の利用終了後に object を解放する。参照先 resource は破棄しない。 |
+
+`CreateBindings` の entries は `ReadOnlySpan<GpuBindingEntry>` とし、呼出し中にコピーする。`GpuBindingsHandle` は public abstract／protected constructor で外部 backend が非公開派生型を返す。layout、resource と内部 view/sampler の生成診断を、set 自身の生成診断と合わせて保持する。無効な依存 object を後から別の set が使っても、その診断を失わない。
 
 各 entry は layout が要求する一つの入力に対応する。実際に必要な resource を渡す。未使用の global slot を埋める処理、fallback resource の自動挿入、全 device resource の保持は行わない。
 
@@ -34,13 +38,13 @@ dynamic offset は set 自体を書き換えず command 側で渡す。layout �
 
 ## コード配置
 
-以下は repository root からの目標配置である。Portable とそのテスト project は新設予定、WebGPU とそのテスト project は既存を改編する。
+以下は repository root からの配置で、後続の command 接続の目標配置を含む。Portable とそのテスト project、WebGPU の独立実装に追加する。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Portable/Bindings/` | 公開 `GpuBindingEntry`、`GpuBindingsHandle` と immutable set の生成・破棄契約。layout 定義は配下の `Layouts/` に分ける。 |
 | `src/graphics/Lumyte.Graphics.WebGPU/Bindings/` | `GPUBindGroup` の生成・破棄と、set が所有する内部 view/sampler 参照の保持。application resource の所有権は取得しない。 |
-| `src/graphics/Lumyte.Graphics.Portable.Tests/Bindings/` | 新設予定の xUnit project。Buffer／Texture／Sampler entry の公開値を検証する。 |
+| `src/graphics/Lumyte.Graphics.Portable.Tests/Bindings/` | 外部 backend の consumer test で、Buffer／Texture／Sampler の入力、layout と set の生成・明示的な破棄を検証する。 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Tests/Bindings/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Bindings/` | 既存 xUnit project。set の不変性と内部 object の所有を fake runtime で、group 設定から draw/dispatch までを実 device で検証する。 |
 
 dynamic offset の記録は command の担当とし、上位の material/pass 向け binding cache は Resource 管理 library に置く。
@@ -71,4 +75,6 @@ finally
 
 ## 採用範囲と未実装事項
 
-Portable に明示 binding を採用する。専用 handle、immutable set の作成、view/sampler cache と記録への接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。
+Portable に明示 binding を採用する。専用 handle、immutable set の作成・解放、依存 object の生成診断の保持、使用中の binding だけで共有する view/sampler cache を実装した。最後の binding 参照がなくなった内部 object は cache から取り除き、参照先の application resource は破棄しない。
+
+command への group 設定、dynamic offset の実行、shader からの参照と Browser 接続は未実装である。Native の descriptor storage を共通化する互換経路は追加しない。[進捗記録](../designs/graphics-implementation-progress.md)

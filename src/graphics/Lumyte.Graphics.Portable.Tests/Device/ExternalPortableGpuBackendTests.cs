@@ -62,7 +62,7 @@ public sealed partial class ExternalPortableGpuBackendTests
 
     // No friend access is available. This spy demonstrates the public implementation
     // boundary; runtime negotiation and GPU validation belong to backend tests.
-    private sealed class ExternalBackend(Action<object> observe,
+    private sealed partial class ExternalBackend(Action<object> observe,
         Func<MapRequest, ValueTask<GpuMappedBufferRange>>? map = null,
         GpuBackendCapabilities? capabilities = null, GpuDeviceLimits? limits = null) : IPortableGpuBackend
     {

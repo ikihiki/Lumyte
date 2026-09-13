@@ -62,4 +62,4 @@ finally
 
 Texture と内部 memory の一体生成・破棄を採用する。独立した Portable 契約と native host の WebGPU backend に、1D／2D／3D description、opaque handle、生成・破棄、MutableFormat と object ごとの非同期生成診断を実装した。
 
-View／Binding での利用、copy footprint／copy command と Browser 実装は未実装である。この段階の実機試験は生成・診断・所有の確認であり、Texture の転送・sampling・描画の成功を意味しない。詳細は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+View 値からの内部 view 生成と sampled／storage texture の Binding を実装した。copy footprint／copy command、shader による利用と Browser 実装は未実装である。この段階の実機試験は生成・binding・診断・所有の確認であり、Texture の転送・sampling・描画の成功を意味しない。詳細は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

@@ -303,9 +303,37 @@ caller は取得済み Span／pointer の利用と mapping を終えてから re
 
 この段階は resource 基盤であり、新しい Portable 経路での shader 実行、GPU copy／描画結果、提出 batch の成功確定は未実装である。Texture の試験も生成・診断・破棄の確認に限る。Browser runtime、実 GPU の allocation failure と device loss の強制試験は未実施とし、診断の到着順と device loss の伝播は制御した Task で検証する。
 
+## 第10段階: Portable View・Binding Layout・Bindings
+
+2026-09-13 に [View](../adr/0020-view-api.md)、[Binding Layout](../adr/0021-binding-layout-api.md)、[Binding](../adr/0022-binding-api.md) と WebGPU backend の接続を追加した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 公開契約 | 非所有の Buffer range、6種類の Texture view、sampler と attachment の値、immutable layout／binding entry、外部 backend が派生できる opaque handle を追加する |
+| 値の計算 | range の Normalize／Slice と view の Normalize は caller が持つ description から省略値と部分範囲を計算する。byte offset と length は64 bit とし、範囲外と算術 overflow を確認する |
+| Binding Layout | uniform／read-only storage／storage Buffer、sampled／storage Texture、sampler の型、可視 stage、最小 Buffer size と dynamic offset の有無を native layout へ渡す |
+| Bindings | 明示した layout と entry の span を呼出し中にコピーし、native bind group を作成・破棄する。root や Parameter Data の解釈、resource の自動選択・upload は行わない |
+| 内部再利用 | view は Texture identity、解決済み description と用途、sampler は description を key にする。生存する Bindings の参照だけを保持し、最後の参照で cache entry と native object を解放する |
+| 診断と失敗 | layout、resource、内部 view／sampler と group 自身の生成診断を Bindings に引き継ぐ。途中の生成失敗で取得済み内部参照を戻し、caller の resource 所有は変更しない |
+| 検証の分担 | 別 device／破棄済み handle、未知の enum と値を失う native 変換を拒否する。番号重複、offset／size／usage／format と layout の合法性は Dawn の診断を使う |
+
+Texture view の用途は sampled／storage binding の実際の要求から導出し、元 Texture の attachment 用途を継承しない。同じ view 値でも用途が異なれば内部 entry を分ける。論理的な packed depth/stencil format と aspect を、Dawn の depth 専用／stencil 専用 view format へ写す。公開の ViewFormats 列や view の所有 handle は追加しない。
+
+backend は public Normalize を native 呼出し前の validator に使わず、省略値だけを解決する。Buffer の null length と Texture view の未解決 count は native sentinel へ写し、同じ値を明示した場合は表現不能として拒否する。sampler の有効な既定値は `new GpuSamplerDescription()` で得る。構造体のゼロ値を黙って置換しない。
+
+公開契約と consumer の試験は Portable.Tests、実 Dawn device の試験は WebGPU.Tests の `Integration/Bindings/` と `Integration/Views/` に置く。後者は6種類の view、depth／stencil aspect、sRGB reinterpretation、uniform／storage、入力の変更、診断の依存と分離、cache の共有・最終解放・途中失敗の解放を確認する。API の使用例は Portable README と各担当 ADR を更新した。
+
+追加テストは Portable 44件と WebGPU 48件の計92件。focused tests は Portable 全56件と新規 WebGPU 48件が成功し、失敗・skip・ビルド警告はなかった。途中のレビューで range Slice の返却末尾 overflow を修正し、回帰試験を加えた。同じ view 値の sampled／storage 用途分離と、C API sentinel／整数幅との衝突も確認した。
+
+最後に `dotnet test Lumyte.slnx --logger "trx;LogFilePrefix=portable-bindings-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none` を実行し、26 test project の **1,775件成功、失敗0、skip 0**、終了コード0を確認した。DirectX 12 は401件、Vulkan は413件、WebGPU は240件、Native は92件、Portable は56件。TRX は各 test project の `TestResults/` に保存した。
+
+独立レビューで外部 backend の public／protected 契約、内部参照の所有・回収、runtime 診断と検証の委譲、ADR と API／使用例の整合性を確認した。37 ADR の必要章、182個の番号依存、46文書の372ローカルリンクと20アンカーに問題はなかった。`InternalsVisibleTo` は10指定すべて test assembly 向けで、Native と Portable の内部公開は0件。staged diff の空白検査も成功した。
+
+この段階は resource を group に接続するところまでであり、shader の sampling／storage 実行、attachment encoding、dynamic offset の実行、copy／draw、queue completion と Browser は未実装である。allocation failure と実 device loss の強制試験は未実施とする。
+
 ## 未実装と次の順序
 
-1. Portable の view／binding、shader／pipeline、copy を含む command、queue completion と Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
+1. Portable の shader／pipeline、copy を含む command、queue completion と Browser runtime を実装する。Portable に bindless、explicit placement、mesh の必須条件を持ち込まない。
 2. 両系統の Resources・shader package／loader・RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

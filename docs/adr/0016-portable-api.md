@@ -32,7 +32,7 @@ root data は shader の直接入力とする。対応 runtime と有効 limit �
 | `Capabilities`／`GpuBackendCapabilities` | `DirectRootData`、`DualSourceBlend`、`IndirectFirstInstance` など、作成済み device で有効な機能を表す。架空の対応値を返さない。 |
 | `Limits`／`GpuDeviceLimits` | 作成済み device の有効 limit。buffer size、uniform/storage binding size と offset alignment、texture extent/layers、color attachments、bind groups、group 内 bindings、stage ごとの resource 数、compute workgroup、`MaxImmediateSize` を含む。 |
 | `Dispose()` | backend が所有する内部 object と device を終了する。caller は resource と記録、提出済み利用を先に終了する。暗黙の全 resource 探索は行わない。 |
-| `GpuDiagnostic(Kind, Message)`／`GpuDiagnosticKind` | runtime が返した診断値。kind は `Validation`、`OutOfMemory`、`Internal`、error scope 以外の callback status を表す `Runtime`。独自 validation の結果を混ぜない。 |
+| `GpuDiagnostic(Kind, Message)`／`GpuDiagnosticKind` | runtime が返した診断値。kind は `Validation`、`OutOfMemory`、`Internal`、これらの error type に分類されない callback status を表す `Runtime`。独自 validation の結果を混ぜない。 |
 | `GpuOperationException(Operation, Diagnostics)` | device／resource 操作の失敗。操作名とコピー済みの変更不能な診断列を保持する。GPU 提出の完了や、その出力の成功を表す型ではない。device loss は共通の `GpuDeviceLostException` で通知する。 |
 
 `DirectRootData` は Portable backend の初期化条件とする。直接入力が未対応の runtime は初期化を失敗させる。`RequiredLimits.MaxImmediateSize` が未指定なら adapter の利用可能な直接入力容量を要求し、明示指定があればその値を runtime へ渡す。0 byte の device を直接入力対応として公開しない。対応する shader の byte 数は、作成した device から取得した `Limits.MaxImmediateSize` に収める。ほかの有効 limit も adapter の最大値で置き換えない。
@@ -81,6 +81,6 @@ factory は Portable device を作る。Native device を引数に取る変換�
 
 ## 採用範囲と未実装事項
 
-Portable の低層を独立させ、共通 RenderGraph の Portable provider から利用する。独立 package、外部 backend が実装できる interface、要求 feature／limit と有効値、直接入力の初期化条件、Buffer／Texture の生成・破棄と非同期 mapping を実装した。native host の WebGPU は Dawn C API へ直接接続する。
+Portable の低層を独立させ、共通 RenderGraph の Portable provider から利用する。独立 package、外部 backend が実装できる interface、要求 feature／limit と有効値、直接入力の初期化条件、Buffer／Texture の生成・破棄と非同期 mapping、非所有の View／range／sampler、immutable Binding Layout／Bindings を実装した。native host の WebGPU は Dawn C API へ直接接続する。
 
-binding、shader／pipeline、command／queue completion、Browser runtime、共通 RenderGraph provider への接続は未実装である。公開 interface にはこの段階で実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+shader／pipeline、command／queue completion、Browser runtime、共通 RenderGraph provider への接続は未実装である。公開 interface にはこの段階で実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

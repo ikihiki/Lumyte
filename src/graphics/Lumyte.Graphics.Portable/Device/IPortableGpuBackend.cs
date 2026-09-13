@@ -16,4 +16,13 @@ public interface IPortableGpuBackend : IDisposable
     ValueTask<GpuMappedBufferRange> MapBufferAsync(GpuBufferHandle buffer, GpuMapMode mode, ulong offset, ulong length);
     GpuTextureHandle CreateTexture(GpuTextureDescription description);
     void DestroyTexture(GpuTextureHandle texture);
+
+    /// <summary>Consumes the entry span during this call and creates an immutable group layout.</summary>
+    GpuBindingLayoutHandle CreateBindingLayout(ReadOnlySpan<GpuBindingLayoutEntry> entries);
+    /// <summary>Destroys the layout after its bindings, programs, pipelines and recorded uses have ended.</summary>
+    void DestroyBindingLayout(GpuBindingLayoutHandle layout);
+    /// <summary>Snapshots input values and owns internal binding objects, without owning application resources.</summary>
+    GpuBindingsHandle CreateBindings(GpuBindingLayoutHandle layout, ReadOnlySpan<GpuBindingEntry> entries);
+    /// <summary>Releases internal objects after all uses end, without destroying referenced resources.</summary>
+    void DestroyBindings(GpuBindingsHandle bindings);
 }

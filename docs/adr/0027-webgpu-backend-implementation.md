@@ -52,7 +52,7 @@ native host は WebGPUSharp 0.5.7 の同梱 Dawn C API を直接呼ぶ。既存�
 
 adapter／device 要求、map、error scope と device loss は `AllowSpontaneous` callback で受ける。callback 内では文字列をコピーして managed 結果を通知し、native API を再入呼出ししない。continuation は callback の外で実行する。callback の userdata は対応する callback まで保持し、device event の共有 userdata は device loss 通知で解放する。C API は loss 後に uncaptured error を呼ばないと保証している。[WebGPU C API の非同期操作](https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html)
 
-`AllowSpontaneous` は callback の呼出しを許す設定であり、runtime が GPU の完了を発見する処理まで保証しない。native host は instance ごとに一つのイベント進行 thread を持ち、未完了の native future がある間だけ `InstanceWaitAny` を実行する。instance に `TimedWaitAny` を要求し、一度に一つの future を有限時間だけ待つことで、異なる発生源を同時に待つ C API の制約を避ける。未完了の future がなければ thread は休止し、登録または終了通知で再開する。公開の `CreateAsync`／`MapBufferAsync` は Task を返して呼出し元を待たせず、backend の終了時には進行処理を終了してから instance を解放する。[C API の待機と発生源](https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html)
+`AllowSpontaneous` は callback の呼出しを許す設定であり、runtime が GPU の完了を発見する処理まで保証しない。native host は instance ごとに一つのイベント進行 thread を持ち、未完了の native future がある間だけ `InstanceWaitAny` を実行する。instance に `TimedWaitAny` を要求し、一度に一つの future を有限時間だけ待つことで、異なる発生源を同時に待つ C API の制約を避ける。未完了の future がなければ thread は休止し、登録または終了通知で再開する。公開の `CreateAsync`／`MapBufferAsync` は ValueTask を返して呼出し元を待たせず、backend の終了時には進行処理を終了してから instance を解放する。[C API の待機と発生源](https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html)
 
 この内部保持は実行中の native future に限る。application resource の寿命管理、全 GPU work の暗黙待機や frame の進行制御は追加しない。Browser は JavaScript の Promise とホストのイベント処理へ接続し、この native thread を共通 Portable 契約へ持ち込まない。
 
@@ -65,6 +65,14 @@ map の callback が未完了のまま device loss で公開待機を終了し�
 ## Binding と shader
 
 group ごとの layout を `GPUBindGroupLayout` へ、immutable binding set を `GPUBindGroup` へ接続する。texture view と sampler の cache は内部 object の再利用であり、global descriptor domain の管理ではない。binding object の利用終了後に内部参照を解放する。application resource の所有は caller のままとする。
+
+layout と binding の入力 span は呼出し中にコピーする。生成後に caller が入力配列を書き換えても、作成済み object は変化しない。view の cache key は元 Texture の identity、省略値を解決した description と sampled／storage の用途とする。sampler は description を key にする。両 cache は生存する Bindings の参照だけを保持し、最後の参照を解放すると entry と native object を除く。途中の生成失敗では、その呼出しが取得した参照を戻す。caller の resource を自動破棄したり、利用終了後の object を無期限に保持したりしない。
+
+view の format／dimension／mip／layer の省略値を元 description から解決し、明示した無効値は runtime の検証へ渡す。view の native usage は実際の binding 用途に限定し、元 Texture の attachment 用途をそのまま継承しない。Portable の `Depth24PlusStencil8` と `DepthOnly`／`StencilOnly` の組は、native の aspect 専用 format へ写す。公開 API に許可 ViewFormats の列を追加しない。
+
+Buffer range の null length は C API の whole-size、view の未解決 count は undefined に写す。それらの sentinel と衝突する明示値、native 型で表現できない sampler anisotropy、未知の enum だけを変換境界で拒否する。binding の番号重複、size／offset／usage、format と layout の適合性は runtime が検証する。public `Normalize` は caller 向けの値計算であり、backend の native validation の前段には挿入しない。
+
+layout、元 resource、内部 view／sampler と bind group 自身の生成診断を、当該 Bindings の依存として保持する。cache の再利用時も元の診断を引き継ぎ、別 object の失敗を混ぜない。同期生成の復帰だけでは成功を確定せず、後続の提出で実際に参照する object の診断を観測する。
 
 Portable package から WGSL module と group layout、entry point を読み込む。root の構造体は package の immediate layout に従い、pipeline layout の `immediateSize` と command の `setImmediates` に接続する。`MaxImmediateSize` の有効値に従い、共通の固定 64 byte ABI は設けない。[WebGPU の直接入力仕様](https://gpuweb.github.io/gpuweb/#immediate-data)
 
@@ -147,6 +155,6 @@ Console.WriteLine(program.BindingLayouts.Count);
 
 ## 採用範囲と未実装事項
 
-WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping と object ごとの診断を実装した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
+WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host の独立した Portable backend、Dawn の直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。内部公開は WebGPU.Tests 向けだけで、Portable 側は public／protected 契約から実装する。
 
-WGSL package/loader、binding set、pipeline の提出時生成、copy を含む command、batch の利用終了と処理成功の接続、Browser の runtime 借用形 factory は未実装である。初期化時の直接入力能力確認は、この新経路で Portable shader を実行したことを意味しない。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+WGSL package/loader、pipeline の提出時生成、copy を含む command、dynamic offset と attachment の実行、batch の利用終了と処理成功の接続、Browser の runtime 借用形 factory は未実装である。初期化時の直接入力能力確認と binding 生成は、この新経路で Portable shader を実行したことを意味しない。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

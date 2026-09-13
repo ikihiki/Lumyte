@@ -1,6 +1,6 @@
-# Portable WebGPU foundation tests
+# Portable WebGPU conformance tests
 
-Windows の実 Dawn device を使う最初の Portable 適合試験。公開 `IPortableGpuBackend` と新しい `WebGpuBackend.CreateAsync` を使用する。旧 `IGpuBackend` の描画試験は `Legacy.WebGpuBackend` に残し、Portable の動作を代替しない。
+Windows の実 Dawn device を使う Portable 適合試験。公開 `IPortableGpuBackend` と `WebGpuBackend.CreateAsync` を使用する。旧 `IGpuBackend` の描画試験は `Legacy.WebGpuBackend` に残し、Portable の動作を代替しない。
 
 ```powershell
 dotnet test src/graphics/Lumyte.Graphics.WebGPU.Tests/Lumyte.Graphics.WebGPU.Tests.csproj --filter "FullyQualifiedName~WebGpuPortable|FullyQualifiedName~WebGpuDiagnosticsTests|FullyQualifiedName~WebGpuLimitMappingTests"
@@ -15,5 +15,13 @@ buffer は明示した MapRead / MapWrite usage で作成する。非 zero offse
 texture は 1D、2D array、3D、mutable format の生成を runtime 診断で確認する。無効な usage と texture size も runtime に渡して、その生成診断が別 object に混ざらないことを並行呼出しを含めて確認する。生成診断の取得は test-only の内部観測点であり、公開能力照会 API ではない。
 
 `Diagnostics/WebGpuDiagnosticsTests` は GPU を使わず、生成診断と mapping 診断の到着順、両方の確定前に失敗を返さないこと、共有 object の診断再利用、無関係な object のエラー分離、device loss を制御した Task で確認する。
+
+`Bindings/` と `Views/` の実 runtime 試験は、4 種類の layout、uniform/storage buffer range、sampled/storage texture、sampler の immutable binding set を確認する。layout と binding の入力配列を作成後に変更しても元の内容・内部 lease が変わらないこと、別 device の handle を使えないこと、binding の破棄で resource や layout を破棄しないことを検証する。
+
+view は 1D、2D、2D array、cube、cube array、3D を実体化する。mutable color format の sRGB 解釈、mutable flag を要求しない depth/stencil aspect、sampled array view が texture の attachment usage を引き継がないことも含む。view/sampler は同じ値を使う有効な binding 間で再利用し、最後の binding を破棄した時点で cache から除去する。内部の entry 数と生成数を test-only に観測し、入力値の違いと途中失敗時の lease 解放も確認する。
+
+無効な layout、binding の欠落・重複・空 entry、alignment、view range/format、sampler filtering/anisotropy は runtime の診断で検証する。layout や resource の生成診断が、それを参照する binding に残り、無関係な binding へ混ざらないことを確認する。これらの試験は bind group 生成までを対象とし、shader への接続や実際の draw / dispatch の成功を意味しない。
+
+同じ view 値を sampled と storage の両 layout で使う場合は、それぞれの native view usage を保持する。明示 length/mip/layer count が native の省略 sentinel に衝突する場合や、anisotropy が C ABI の整数幅に収まらない場合は、指定値の意味を変更せず host 側で拒否する境界も検証する。
 
 この段階では Portable queue、copy、shader、pipeline、描画、提出 batch の成功判定は実装対象に含めない。直接 root 入力の新しい Portable shader 実行試験は shader / command の段階で追加する。既存 legacy immediate shader 試験の成功を、その代わりには扱わない。
