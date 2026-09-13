@@ -48,6 +48,13 @@ public sealed unsafe partial class DirectX12Backend
             flags &= native.Flags;
         }
 
+        // CreateHeap accepts either a single category (two deny flags), or all categories
+        // on tier 2 (no deny flags). A two-category intersection leaves one invalid deny flag.
+        if (flags is HeapFlags.DenyBuffers or HeapFlags.DenyRTDSTextures or HeapFlags.DenyNonRTDSTextures)
+        {
+            flags = HeapFlags.None;
+        }
+
         var description = new HeapDesc(size, new HeapProperties(HeapTypeFor(kind)), alignment, flags);
         ComPtr<ID3D12Heap> nativeHeap = default;
         try

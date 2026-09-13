@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Native GPU resource ownership utilities above explicit allocation and placement.</Description></PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\Lumyte.Graphics.Native\Lumyte.Graphics.Native.csproj" /></ItemGroup>
+</Project>

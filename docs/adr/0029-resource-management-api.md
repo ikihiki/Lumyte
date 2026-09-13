@@ -172,7 +172,7 @@ GPU 使用終了と処理成功の区別は [ADR 0028 の completion 契約](002
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。両 Resources project は新設予定とし、低層 utility と同じ project 内で管理層の担当を分ける。
+以下は repository root からの相対パスによる目標配置である。両 Resources project は低層 arena／pool utility を実装済みで、同じ project 内に本 ADR の管理層を追加する。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -221,4 +221,4 @@ resources.Collect(); // 完了した分だけ回収する
 
 ## 未実装事項
 
-二つの resource 管理ライブラリ、自動 descriptor／binding 管理、種類別 pool、package upload と上位実行器への接続は目標設計であり未実装である。GC の具体アルゴリズム、予算圧力と `Lumyte.Resources` の cache 回収の接続、CLR GC 連動は採用範囲に含めず、別の設計案で検討する。
+両 Resources assembly と、ADR 0028 の Native arena／Portable Buffer・Texture pool の明示貸出・返却を実装した。本 ADR の GpuResourceManager、scope／pin／use／batch、completion による自動退役、自動 descriptor／binding 管理、用途別の割当方針、package upload と上位実行器への接続は未実装である。utility の完成を管理層の完成とは扱わない。GC の具体アルゴリズム、予算圧力と `Lumyte.Resources` の cache 回収の接続、CLR GC 連動は採用範囲に含めず、別の設計案で検討する。

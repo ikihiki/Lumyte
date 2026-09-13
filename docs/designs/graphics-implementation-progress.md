@@ -458,9 +458,45 @@ GPU を使わない新規テストは Native 47件、Portable 28件。配列・c
 
 offline compiler、Slang の製品 toolchain、最終 WGSL からの layout 取得、C# 構造体／BindingInputs 生成、container の出力と CPU 資産側 decoder は後続である。実行に使う fixture の shader code と入力 layout は事前に準備したもので、生成器の完成を示さない。shader package 経由の全 stage／feature、全 GPU／runtime と実 device loss／allocation failure の適合は未検証とする。
 
+## 第15段階: Native memory arena と Portable resource pool
+
+2026-09-13 に [Resources utility](../adr/0028-resource-utilities.md) の最初の実装として、`Lumyte.Graphics.Native.Resources` と `Lumyte.Graphics.Portable.Resources` を追加した。それぞれ同じ系統の低レベル公開 backend 契約だけを参照し、新しい backend 向けの内部公開を要求しない。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| Native arena | `GpuMemoryArena` が backing heap を所有し、`Allocate` が alignment を満たす `GpuMemorySlice` を返す。空き範囲の分割と隣接範囲の結合、block の再利用と `Trim` を実装する |
+| Native の互換性 | memory kind と取得済み opaque compatibility token の参照 identity の集合で pool を分ける。同じ集合の順序・重複を正規化し、全 token を backend に渡す。token の内部表現や別 token の同等性を推測しない |
+| Native の配置 | caller が保存した requirements の予約 size と alignment を使用する。arena は resource を配置せず、caller が配置 resource と全使用を終了してから slice を返す |
+| Portable pool | `GpuBufferPool`／`GpuTexturePool` が description の全フィールドが一致する object を再利用する。heap、placement、大きめの resource への置換を追加しない |
+| 貸出 identity | Native の slice と Portable の typed lease は貸出ごとに一意。同じ heap 範囲や raw handle が再利用されても、古い貸出で現在の貸出を返却できない |
+| 所有と解放 | `Release` は使用終了を caller が保証する明示返却。`Trim` は未使用分だけを破棄する。未返却がある `Dispose` は状態を変更せず拒否し、返却後に再試行できる |
+| 破棄失敗 | 解放対象を cache から切り離してから、全対象の破棄を一度ずつ試す。副作用が不明な handle は再利用・再破棄せず、単一例外または複数例外を保持する |
+
+両 utility は backend を借用し、操作の直列化と実行 context は caller に従う。GPU state、format、usage、native alignment の validator を複製せず、resource の内容と状態を再初期化しない。mapping、view／binding、未提出記録と GPU 利用の終了を確認してから返却する。使用例と所有契約は [Native Resources README](../../src/graphics/Lumyte.Graphics.Native.Resources/README.md) と [Portable Resources README](../../src/graphics/Lumyte.Graphics.Portable.Resources/README.md) に記載した。
+
+GPU 不要の単体テストは Native 27件、Portable 29件。範囲の非重複と再結合、整列、token の参照集合、description の差、古い貸出の拒否、作成・解放失敗と所有状態を公開動作で検証した。両実装の独立レビューを行った。
+
+実機試験で、既存 DX12 backend が二つの resource category の requirement から deny flag 一つを生成し、`CreateHeap` が `E_INVALIDARG` になる不具合を確認した。単一 category は従来の `ALLOW_ONLY_*`、混在は `ALLOW_ALL_BUFFERS_AND_TEXTURES` へ写すよう修正し、二つずつの全3組で heap と placed resource を作る回帰試験を追加した。Tier の照会や managed な配置検証は増やしていない。[DX12 heap flag の仕様](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ne-d3d12-d3d12_heap_flags#remarks)
+
+3組の回帰試験で debug layer を明示要求した初回は、この PC に当該 component がなく `D3D12GetDebugInterface` が `0x887A002D` となった。既存の memory 適合試験と同じ既定 device 作成へ戻し、問題を直接拒否する native `CreateHeap` と配置処理で検証する。debug layer を使った試験は未実施で、OS component の追加やテストの skip は行っていない。
+
+新規の実機試験は11件が成功した。DX12／Vulkan はそれぞれ arena の二つの線形 slice の非重複・完了後の同じ範囲の再貸出と、同一 heap に配置した線形領域→Texture→readback の転送を確認した。Dawn／Browser はそれぞれ Buffer と Texture の完了後の再貸出で同じ raw handle と内容が保持されることを確認した。これら8件に DX12 の category pair の回帰3件を加える。Vulkan の共有試験は公開の `ExplicitTextureTransitions` に従い GENERAL layout と barrier を使い、DX12 の明示 layout 遷移を持ち込まない。Browser は既存の Chrome for Testing 155.0.8048.0 を使う。
+
+最初のソリューション全体の並列実行は、DX12 408件と Dawn 323件が成功した一方、Browser と Vulkan が2分の無進行監視で中断し、終了コード1だった。Browser は unit 21件の終了から約96秒を GPU mutex 待機に費やし、DX12 の完了直後に起動処理を開始したが、約24秒後に test host が停止した。ケース開始前の fixture 待機にも監視時間が消費されるため、並列実行を全件成功とは扱わない。中断したテスト専用 profile の Chrome と子プロセスを確認して終了し、同じ監視条件と全テストを保ったまま `-m:1` で project を順番に再実行した。
+
+独立レビューで arena／pool の所有、貸出 identity、CPU 計算、失敗時の保持と全対象の解放、使用例と Native／Portable の境界を確認した。37 ADR の必要章、182個の番号依存、54文書の415ローカルリンクと21アンカーに問題はなかった。`InternalsVisibleTo` は既存の11指定すべて test assembly 向けで、新しい Resources には指定がない。
+
+最終実行は `LUMYTE_WEBGPU_BROWSER` に Chrome for Testing 155.0.8048.0 の絶対パスを指定し、`dotnet test Lumyte.slnx -m:1 --logger "trx;LogFilePrefix=resource-pools-serial-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を使用した。31 test project の **2,094件成功、失敗0、skip 0**、終了コード0を確認した。全 TRX の outcome は Completed で、新規67件は unit 56件と実機11件からなる。DX12 全408件、Vulkan 全417件、Dawn 全323件、Browser 全45件を含み、最終の Dawn の返却順序修正もこの実行で確認した。TRX は各 test project の `TestResults/` に保存した。staged diff の空白検査も成功した。
+
+completion token と `Retire`／`Collect` はまだ公開しない。raw Submit は native queue へ渡した後でも fence signal や interop の後処理で例外になり得るため、例外だけから未提出・完了を推測できない。次に受理と利用終了の契約を整えてから、自動 retirement を接続する。`GpuDeviceLostException` の XML 説明も、例外自体は GPU 利用終了や resource 解放を保証しない表現に修正した。command の状態照会 API は追加していない。
+
+upload／readback utility、resource manager、scope／pin／batch、自動 descriptor／binding 管理、package upload と RenderGraph の接続は後続である。今回の pool の返却を自動 GC や完了追跡としては扱わない。
+
+実機試験は正常な提出と完了後の再利用を対象とする。native allocation failure、GPU device loss と不明な提出完了を強制した回収試験、全 memory type／format／adapter の組合せは未検証である。管理上の失敗と所有維持は fake backend の単体テストで確認する。
+
 ## 未実装と次の順序
 
-1. 両系統の Resources を実装する。準備済み shader package／loader と低層 backend の上で upload、binding／descriptor と寿命を管理する。allocator／pool の基礎と、提出を受理した時点を正しく表す completion token を整える。
+1. 提出の受理・GPU 利用終了・device 停止の契約を整え、両系統の Resources に completion token と `Retire`／`Collect` を接続する。その上で upload、binding／descriptor と resource manager の寿命管理を実装する。
 2. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

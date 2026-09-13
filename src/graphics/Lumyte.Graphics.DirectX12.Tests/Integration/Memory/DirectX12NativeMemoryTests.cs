@@ -7,6 +7,56 @@ namespace Lumyte.Graphics.DirectX12.Tests;
 [Collection("GpuBackend")]
 public sealed class DirectX12NativeMemoryTests
 {
+    [Theory]
+    [InlineData("buffer", "sampled")]
+    [InlineData("buffer", "attachment")]
+    [InlineData("sampled", "attachment")]
+    [Trait("Category", "DirectX12Conformance")]
+    public void TwoResourceCategoriesCanBePlacedInOneHeap(string firstCategory, string secondCategory)
+    {
+        // CreateHeap itself rejects the invalid flags; this regression does not require the optional debug layer.
+        using DirectX12Backend backend = DirectX12Backend.Create();
+        NativeGpuMemoryRequirements firstRequirements = Requirements(firstCategory);
+        NativeGpuMemoryRequirements secondRequirements = Requirements(secondCategory);
+        ulong alignment = Math.Max(firstRequirements.Alignment, secondRequirements.Alignment);
+        ulong secondOffset = checked((firstRequirements.Size + alignment - 1) / alignment * alignment);
+        ulong size = checked((secondOffset + secondRequirements.Size + alignment - 1) / alignment * alignment);
+
+        NativeGpuHeap heap = backend.CreateGpuHeap(size, alignment, NativeGpuMemoryKind.GpuOnly,
+            [firstRequirements.Compatibility, secondRequirements.Compatibility]);
+        try
+        {
+            (object first, Action releaseFirst) = Place(firstCategory, 0);
+            try
+            {
+                (object second, Action releaseSecond) = Place(secondCategory, secondOffset);
+                try { Assert.NotSame(first, second); }
+                finally { releaseSecond(); }
+            }
+            finally { releaseFirst(); }
+        }
+        finally { backend.DestroyGpuHeap(heap); }
+
+        NativeGpuMemoryRequirements Requirements(string category) => category == "buffer"
+            ? backend.GetLinearMemoryRequirements(64, NativeGpuMemoryKind.GpuOnly)
+            : backend.GetTextureMemoryRequirements(TextureDescription(category), NativeGpuMemoryKind.GpuOnly);
+
+        (object, Action) Place(string category, ulong offset)
+        {
+            if (category == "buffer")
+            {
+                NativeGpuLinearRegion region = backend.CreateLinearRegion(64, heap, offset);
+                return (region, () => backend.DestroyLinearRegion(region));
+            }
+            NativeGpuTextureHandle texture = backend.CreateTexture(TextureDescription(category), heap, offset);
+            return (texture, () => backend.DestroyTexture(texture));
+        }
+
+        static NativeGpuTextureDescription TextureDescription(string category) => new(
+            NativeGpuTextureDimension.TwoD, 4, 4, 1, 1, 1, 1, GpuFormat.Rgba8Unorm,
+            category == "attachment" ? NativeGpuTextureUsage.ColorAttachment : NativeGpuTextureUsage.Sampled);
+    }
+
     [Fact]
     [Trait("Category", "DirectX12Conformance")]
     public void PlacedRegionsMapTheirOwnBytes()

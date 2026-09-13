@@ -41,6 +41,8 @@ texture も同じ caller-owned `NativeGpuHeap` の offset に placed resource �
 
 各 requirement の opaque な `Compatibility` を `CreateGpuHeap(size, alignment, kind, compatibilities)` に列として渡す。backend はその native 条件から一つの heap の flags を構成する。これは確保パラメータの構築であり、公開の統合・分類・互換判定 API は設けない。要求を一つの heap で満たせないときは確保を失敗させ、自動的な複数 heap への分割、resource 配置の予約、使用履歴の追跡は行わない。
 
+一つの resource category だけを要求する場合は対応する `ALLOW_ONLY_*` を使い、二つ以上の category を混在させる場合は `ALLOW_ALL_BUFFERS_AND_TEXTURES` を使う。三つの deny flag のうち一つだけを指定する分類は作らない。これは DX12 の flag 表現への変換であり、Tier の独自検証や caller の配置予約ではない。[D3D12_HEAP_FLAGS の分類](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ne-d3d12-d3d12_heap_flags#remarks)
+
 Resource Heap Tier 2 では buffer、非 render-target/depth-stencil texture、render-target/depth-stencil texture の混在を許す heap を作れる。Tier 1 ではこれらを一つの heap に混在できないため、caller が同じ確保 API で別々の heap を用意する。`GpuOnly` だけを理由にすべての組合せの共用を保証しない。UPLOAD／READBACK heap に texture は配置できず、memory kind ごとに必要な native 生成条件を使う。[Resource Heap Tier](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ne-d3d12-d3d12_resource_heap_tier)・[heap type](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ne-d3d12-d3d12_heap_type)
 
 `MutableFormat` は既定 false とし、true のときは native の typeless resource を使って追加の互換 format view を許可する。false でも depth/stencil の aspect 解釈や sampled depth など基本用途に必要な typeless 表現を内部で用意し、native resource/view の format がすべて同一であることを要求しない。公開 API に許可 format の列挙は持たず、指定 format と用途から native 作成情報へ変換する。true でも未対応の組を保証せず、format の互換範囲と view の合法性は DirectX 12 の作成処理と debug layer へ委ねる。

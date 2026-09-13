@@ -4,7 +4,7 @@
 
 ## 実行
 
-repository root で実行する。2026-09-13 の確認では **Chrome for Testing 155.0.8048.0** で22件の Browser conformance と21件の timeline unit tests が成功した。下記の path は今回の配置例であり、browser binary は Git に含めない。
+repository root で実行する。2026-09-13 の確認では **Chrome for Testing 155.0.8048.0** で24件の Browser conformance と21件の timeline unit tests が成功した。下記の path は今回の配置例であり、browser binary は Git に含めない。
 
 ```powershell
 $env:LUMYTE_WEBGPU_BROWSER = Join-Path $PWD 'artifacts/tools/chrome-for-testing/155.0.8048.0/chrome-win64/chrome.exe'
@@ -19,6 +19,8 @@ Edge 153.0.4234.32 では、直接 root と indirect dispatch の組合せに Da
 
 fixture は loopback の動的 port で publish 出力だけを配信し、headless browser と新しい専用 profile を使う。ユーザーの profile と開いている browser は使用しない。experimental／unsafe feature の起動指定はない。GPU 試験の既存 named mutex を共有し、Dawn／Vulkan 等の適合試験と同時に device を動作させない。browser process と HTTP server は fixture 終了時に停止する。
 
+ソリューション全体に `--blame-hang-timeout 2m` を指定する場合は `dotnet test Lumyte.slnx -m:1` として project を順番に実行する。別 project が GPU 排他を保持している間の fixture 初期化待ちも、VSTest の無進行時間に含まれる。並列 project 実行では Browser のケース開始前に timeout になり得るため、GPU 試験を skip したり guard を外したりせず、実行順序で競合を避ける。
+
 `artifacts/tests/webgpu-browser/<GUID>/` に browser version、ケース別の JSON 結果、browser log を保存する。profile も同じ隔離 directory に置く。
 
 ## 検証する動作
@@ -32,6 +34,7 @@ fixture は loopback の動的 port で publish 出力だけを配信し、headl
 - indexed raster の index range、firstIndex、signed baseVertex と直接 root。
 - immutable Texture／Sampler binding による texture sampling。
 - Buffer／Texture と Texture 間 copy、複数行の明示 row pitch。
+- Portable Buffer／Texture pool への完了後の返却と再貸出。同じ handle と書込み済みの byte／pixel が保持されること。
 - offset 付き map write の反映、未編集 byte の保持、失敗した二回目の map による既存 lease の保持、read mapping と unmap 後の memory lease。
 - runtime の resource、shader、pipeline、command 診断と batch 単位の失敗。
 - 正確な ulong CPU timeline、受理していない値の拒否、記録の再提出拒否、待機取消しの独立性。

@@ -4,6 +4,8 @@
 
 採用（目標設計）。
 
+Native の arena、Portable の Buffer／Texture pool と明示的な貸出・返却を実装済みとする。completion token、自動退役と転送 utility は後続であり、この文書の目標 API に含めて記載する。
+
 Native と Portable に独立した utility を設ける。Native は native heap と linear region、Portable は自身の Buffer／Texture と提出経路を使う。両 utility が共通 backend interface を介して動くことは要求しない。
 
 ## 依存 ADR
@@ -32,8 +34,8 @@ utility は caller が明示的に指定した memory 範囲、転送、completi
 | API | 説明 |
 | --- | --- |
 | `GpuMemoryArena(nativeDevice, blockSize)` | Native device を借用し、純粋な `NativeGpuHeap` block とその貸出範囲を所有する。 |
-| `Allocate(size, alignment, kind, compatibilities)` | 同じ取得済み requirement の組と memory kind に対応する pool から、整列した `GpuMemorySlice` を貸し出す。新規 block では全 token を `CreateGpuHeap` に渡す。 |
-| `GpuMemorySlice.Heap / Offset / Size` | backing heap、heap 基準の offset、予約 byte 数。region や texture の生成は caller が行う。 |
+| `Allocate(size, alignment, kind, compatibilities)` | 同じ取得済み requirement token の参照 identity の集合と memory kind に対応する pool から、整列した `GpuMemorySlice` を貸し出す。token の順序・重複は集合の意味を変えない。新規 block では集合内の全 token を `CreateGpuHeap` に渡す。 |
+| `GpuMemorySlice.Heap / Offset / Size` | backing heap、heap 基準の offset、予約 byte 数を持つ貸出 identity。public constructor は持たず、同じ範囲の再貸出でも新しい object にする。region や texture の生成は caller が行う。 |
 | `Release(slice)` | 全参照の終了と配置 resource の破棄を caller が保証した範囲を返す。 |
 | `Retire(slice, completion)` | 最終利用を覆う同じ系統の completion まで返却を遅らせる。 |
 | `Collect()` | 完了した退役範囲を再利用可能にする。待機しない。 |
@@ -42,6 +44,10 @@ utility は caller が明示的に指定した memory 範囲、転送、completi
 
 arena は texture pool と linear pool の block を同じ heap 型で確保する。用途別に pool を分けることと、allocation API に別の heap 型を設けることは区別する。caller が mixed allocation を要求した場合は全 requirement token を一度の確保へ渡す。共通 memory の選択は Native backend に任せ、管理層で token の bit 表現を再解釈しない。
 
+参照 identity は取得済み token を再利用するための key とし、token の `Equals` や分類値から native 適合性を推定しない。別の取得で返された token は、同じ native 条件に見えても別集合として扱う。caller が requirement を保持して再利用する。block は要求以上で要求 alignment の倍数となる整列条件を持つものだけを再利用し、各 slice の開始を独立に整列させる。未使用範囲は分割し、返却した隣接範囲を結合する。新規 block は blockSize と要求 Size の大きい方を要求 Alignment へ切り上げる。size と alignment は非ゼロとし、CPU の範囲計算の overflow を拒否する。計算自体は正の alignment を扱い、native が受け付ける alignment の制約を独自に増やさない。
+
+placement に渡す予約量は Native が返した `requirements.Size`／`Alignment` に従う。混在配置の境界 padding は Native の requirement に含まれており、arena が resource 分類や Vulkan の granularity を照会して重ねて計算しない。新しい resource を配置した場合に、以前の alias の内容を引き継ぐとは保証しない。
+
 arena の slice は native allocation の別名ではない。heap 全体を解放する権限は arena にあり、caller は slice を `DestroyGpuHeap` へ渡さない。配置には `slice.Offset + localOffset` を一度だけ加え、linear region 内の offset と混同しない。
 
 ### Portable の resource pool
@@ -49,9 +55,10 @@ arena の slice は native allocation の別名ではない。heap 全体を解�
 | API | 説明 |
 | --- | --- |
 | `GpuBufferPool(backend)`／`GpuTexturePool(backend)` | `IPortableGpuBackend` を借用し、完全な resource description と用途に従って resource を所有・再利用する。 |
-| `Acquire(description)` | 使用可能な同条件の resource を貸し出す。なければ Portable の生成 API で作る。 |
-| `Release(resource)` | 未提出参照と GPU 利用が終了した貸出を返す。 |
-| `Retire(resource, completion)` | Portable の completion まで返却を遅らせる。 |
+| `Acquire(description)` | 使用可能な同条件の resource を、貸出ごとに新しい `GpuBufferLease`／`GpuTextureLease` に入れて返す。なければ Portable の生成 API で作る。 |
+| `GpuBufferLease.Handle / Description`／`GpuTextureLease.Handle / Description` | 借用する raw handle と完全な生成 description。lease は pool が発行し、コピーしても貸出を増やさない。Handle の取得は返却まで可能で、Description は返却後も不変 metadata として読める。 |
+| `Release(lease)` | mapping、binding、未提出参照と GPU 利用が終了した当該貸出を返す。別 pool・返却済みの lease は拒否する。 |
+| `Retire(lease, completion)` | Portable の completion まで当該貸出の返却を遅らせる。 |
 | `Collect()`／`Trim()` | 完了した貸出を回収する／使用していない resource を破棄する。どちらも GPU 待機を行わない。 |
 | `Dispose()` | 全貸出・退役が終了した pool を破棄する。 |
 
@@ -59,7 +66,11 @@ Portable はメモリを含む Buffer／Texture object を貸出・再利用す�
 
 pool が resource を再貸出ししても、内容や GPU state が生成直後へ戻ったとはみなさない。初期化、先行利用との同期、次の利用に必要な状態は caller が処理する。
 
-### CPU 転送
+再利用条件には Buffer の Size／Usage と、Texture の dimension、各寸法、mip/layer/sample 数、format、usage、MutableFormat をすべて含める。用途の包含関係から大きい resource を代用したり、descriptor を補正したりしない。値をそのまま backend に渡し、GPU の合法性は runtime の診断に委ねる。
+
+raw handle 自体は再利用するため、`Release(handle)` では古い貸出と新しい貸出を区別できない。返却には lease identity を使用し、古い lease が同じ handle の新しい貸出を返せないようにする。lease に自動 Dispose／finalizer による返却は設けない。caller は保存済み raw handle も含む全利用を終了してから明示的に返す。
+
+### CPU 転送（未実装）
 
 両 namespace に同名の `GpuTransferUtilities` を置く。引数は系統ごとの raw resource、copy footprint、同期情報を使う。
 
@@ -74,7 +85,7 @@ pool が resource を再貸出ししても、内容や GPU state が生成直後
 
 Native の CPU mapping は linear region を通じて行う。Portable の staging、queue write、map はその backend の経路を使う。CPU の byte 範囲、pitch、overflow は utility が確認し、GPU の format、usage、offset alignment、resource state の合法性は native API と validation に委ねる。command に Parameter Data の生成や root data の buffer fallback を追加しない。
 
-### Completion と retirement
+### Completion と retirement（未実装）
 
 | API | 説明 |
 | --- | --- |
@@ -96,20 +107,25 @@ Native の CPU mapping は linear region を通じて行う。Portable の stagi
 
 utility は自分が作った staging、memory、retirement 登録を所有する。渡された application resource の所有は caller に残る。提出前の失敗では未提出記録を先に破棄してから一時資源を解放する。
 
+arena／pool の操作は caller が直列化し、借用 backend に必要な実行 context 上で呼ぶ。Browser では JavaScript thread で生成・破棄する。Dispose は貸出が一つでも残る場合、何も破棄せず失敗する。caller が貸出を返してから再実行できる。Trim は未使用分だけを対象とする。
+
+未使用 block／resource の破棄は、再利用候補から外してから全対象を一度ずつ試みる。一つの Destroy が失敗しても残りの Destroy を試み、元の例外を保持する。native 側で破棄が行われたか不明な object を cache に戻したり自動再試行したりしない。utility の Dispose が借用 backend を破棄することはない。
+
 受理後は completion まで一時資源と明示的に引き受けた保持を維持する。例外、cancellation、token の破棄は GPU 完了を意味しない。通常 completion を保証できない device loss では利用を停止し、GPU の停止が確定するまで memory を再利用しない。
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置であり、両 Resources project と記載する配下のディレクトリは新設予定である。
+以下は repository root からの相対パスによる目標配置である。両 Resources project と隣接する xUnit project、Arena／Pool は実装済みで、Upload／Retirement とその試験は新設予定とする。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Utilities/Arena/` | `GpuMemoryArena`、`GpuMemorySlice` と統一 heap の block・範囲管理。 |
-| `src/graphics/Lumyte.Graphics.Portable.Resources/Utilities/Pool/` | `GpuBufferPool`、`GpuTexturePool` と description ごとの object 再利用。heap の取得・配置処理は置かない。 |
+| `src/graphics/Lumyte.Graphics.Portable.Resources/Utilities/Pool/` | `GpuBufferPool`、`GpuTexturePool`、貸出 identity の `GpuBufferLease`／`GpuTextureLease` と description ごとの object 再利用。heap の取得・配置処理は置かない。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Utilities/Upload/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Utilities/Upload/` | 各系統の `GpuTransferUtilities`、staging、copy footprint と同期入力。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Utilities/Retirement/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Utilities/Retirement/` | 各系統の `GpuSubmissionToken`、`GpuRetirementQueue`、`GpuSubmissionException` と completion に従う保持・回収。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources.Tests/Unit/Utilities/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Unit/Utilities/` | production project に隣接する新設 xUnit project。fake backend／completion による範囲演算、pool、retirement、失敗時の所有の試験。 |
+| `src/graphics/Lumyte.Graphics.Native.Resources.Tests/Unit/Utilities/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Unit/Utilities/` | production project に隣接する xUnit project。fake backend による範囲演算、pool と失敗時の所有の試験。completion／retirement の試験は後続。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources.Tests/Integration/Utilities/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Integration/Utilities/` | 同じ test project 内で分離する GPU 転送・完了の適合試験。必要な backend／hardware を明示する。 |
+| `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/`、`src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/` | 既存 backend の fixture と GPU 排他を使う arena／pool の実機試験。Native の共用テスト source は二つの test project に link し、production の共通管理 interface は追加しない。 |
 | `benchmarks/Lumyte.Benchmarks/Graphics/Resources/` | 既存 benchmark project に追加する arena／pool／retirement の CPU 負荷と転送量の計測。 |
 
 CPU の範囲演算や queue の helper は内部実装とし、共有を理由に共通 GPU 管理 API や共通 backend interface を追加しない。共通 facade の resource 対応表は各系統の新設 `src/graphics/Lumyte.Graphics.Native.RenderGraph/Resources/`／`src/graphics/Lumyte.Graphics.Portable.RenderGraph/Resources/` が所有し、ここへ移さない。この utility に shader source、生成 GPU 構造体、asset loader は置かない。
@@ -135,6 +151,19 @@ arena.Trim();
 
 Portable 側は同じ native arena を経由せず、`GpuBufferPool`／`GpuTexturePool` を自身の backend に対して使用する。
 
+```csharp
+using Lumyte.Graphics.Portable;
+using Lumyte.Graphics.Portable.Resources;
+
+using var buffers = new GpuBufferPool(portableBackend);
+var loan = buffers.Acquire(new GpuBufferDescription(
+    4096, GpuBufferUsage.Storage | GpuBufferUsage.CopyDestination));
+GpuBufferHandle buffer = loan.Handle;
+// この例では GPU に提出しない。利用した場合は全利用終了を確認してから返す。
+buffers.Release(loan);
+buffers.Trim();
+```
+
 ## 検証する契約
 
 - arena の offset 算術、貸出と退役の区別、同じ取得済み要件の再利用。
@@ -146,4 +175,6 @@ Portable 側は同じ native arena を経由せず、`GpuBufferPool`／`GpuTextu
 
 ## 未実装事項
 
-二系統の utility と提出経路への接続は目標設計であり、実装完了を示さない。共通 backend adapter、互換 wrapper、旧 utility API の維持は対象に含めない。
+Native の統一 heap arena、Portable の Buffer／Texture pool、貸出 identity、Release／Trim／Dispose を実装した。これらは明示的な返却だけを扱い、raw command と GPU 利用の終了は caller が保証する。実機と単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+
+GpuSubmissionToken、GpuRetirementQueue、GpuSubmissionException、Retire／Collect、GpuTransferUtilities と提出経路への接続は未実装である。現在の raw Submit には native queue へ渡した後の同期例外があり、上位から受理前後を確実に区別できない経路が残る。受理の境界、失敗時の completion と利用終了の証明を下位の公開契約で整えてから実装する。command の状態照会、無効 token を完了扱いする処理、device loss 例外だけを根拠にした回収は追加しない。共通 backend adapter、互換 wrapper、旧 utility API の維持は対象に含めない。

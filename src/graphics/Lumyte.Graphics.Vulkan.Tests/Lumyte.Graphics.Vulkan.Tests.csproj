@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Vulkan\Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Native.Shaders\Lumyte.Graphics.Native.Shaders.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Native.Resources\Lumyte.Graphics.Native.Resources.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
@@ -31,6 +32,7 @@
   <ItemGroup>
     <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
+    <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeMemoryArenaConformance.cs" Link="Integration\Memory\NativeMemoryArenaConformance.cs" />
     <Compile Include="..\Lumyte.Graphics.Text.Tests\TextBackendConformanceTests.cs" Link="TextBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Text.Tests\TestFontData.cs" Link="TestFontData.cs" />
     <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />

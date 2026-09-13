@@ -78,6 +78,24 @@ public sealed class WebGpuBrowserConformanceTests(BrowserGpuFixture fixture)
     }
 
     [Fact]
+    public async Task BufferPoolReusesCompletedResourceWithoutResettingItsBytes()
+    {
+        JsonElement result = await fixture.RunAsync("BufferPool");
+
+        Assert.True(result.GetProperty("reused").GetBoolean());
+        Assert.Equal([3u, 5u, 7u, 11u, 13u, 17u, 19u, 23u], UInts(result, "actual"));
+    }
+
+    [Fact]
+    public async Task TexturePoolReusesCompletedResourceWithoutResettingItsPixels()
+    {
+        JsonElement result = await fixture.RunAsync("TexturePool");
+
+        Assert.True(result.GetProperty("reused").GetBoolean());
+        Assert.Equal([31u, 63u, 127u, 255u], UInts(result, "actual"));
+    }
+
+    [Fact]
     public async Task IndexedRasterUsesSignedBaseVertexAndCopiesTheRenderedTexture()
     {
         JsonElement result = await fixture.RunAsync("IndexedRaster");

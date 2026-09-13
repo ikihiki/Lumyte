@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.DirectX12\Lumyte.Graphics.DirectX12.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Native.Shaders\Lumyte.Graphics.Native.Shaders.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Native.Resources\Lumyte.Graphics.Native.Resources.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />

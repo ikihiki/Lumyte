@@ -16,10 +16,14 @@
   <Project Path="src/graphics/Lumyte.Graphics.Native.Tests/Lumyte.Graphics.Native.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native.Shaders/Lumyte.Graphics.Native.Shaders.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native.Shaders.Tests/Lumyte.Graphics.Native.Shaders.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.Resources/Lumyte.Graphics.Native.Resources.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.Resources.Tests/Lumyte.Graphics.Native.Resources.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Portable/Lumyte.Graphics.Portable.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Portable.Tests/Lumyte.Graphics.Portable.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Portable.Shaders/Lumyte.Graphics.Portable.Shaders.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Portable.Shaders.Tests/Lumyte.Graphics.Portable.Shaders.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.Resources/Lumyte.Graphics.Portable.Resources.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Lumyte.Graphics.Portable.Resources.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.DirectX12/Lumyte.Graphics.DirectX12.csproj" />
