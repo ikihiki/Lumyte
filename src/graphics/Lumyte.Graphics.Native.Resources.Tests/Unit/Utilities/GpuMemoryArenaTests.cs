@@ -265,4 +265,78 @@ public sealed class GpuMemoryArenaTests
         Assert.Equal("compatibilities", error.ParamName);
         Assert.Empty(backend.Creations);
     }
+
+    [Fact]
+    public void FragmentedLoansRemainDisjointAndReturnTheWholeBlock()
+    {
+        using TestBackend backend = new();
+        using GpuMemoryArena arena = new(backend, 4096);
+        TestBackend.Compatibility token = new();
+        GpuMemorySlice seed = arena.Allocate(1, 120, NativeGpuMemoryKind.GpuOnly, [token]);
+        NativeGpuHeap heap = seed.Heap;
+        arena.Release(seed);
+        List<GpuMemorySlice> live = [];
+        ulong[] alignments = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 40];
+        Random random = new(1701);
+
+        for (int operation = 0; operation < 512; operation++)
+        {
+            if (live.Count != 0 && (live.Count == 32 || random.Next(3) == 0))
+            {
+                int index = random.Next(live.Count);
+                arena.Release(live[index]);
+                live.RemoveAt(index);
+                continue;
+            }
+
+            ulong alignment = alignments[random.Next(alignments.Length)];
+            GpuMemorySlice slice = arena.Allocate((ulong)random.Next(1, 32), alignment, NativeGpuMemoryKind.GpuOnly, [token]);
+            Assert.Same(heap, slice.Heap);
+            Assert.Equal(0ul, slice.Offset % alignment);
+            Assert.All(live, other => Assert.False(
+                slice.Offset < other.Offset + other.Size && other.Offset < slice.Offset + slice.Size,
+                $"Loan [{slice.Offset}, {slice.Offset + slice.Size}) overlaps [{other.Offset}, {other.Offset + other.Size})."));
+            live.Add(slice);
+        }
+        foreach (GpuMemorySlice slice in live) { arena.Release(slice); }
+        GpuMemorySlice whole = arena.Allocate(heap.Size, 120, NativeGpuMemoryKind.GpuOnly, [token]);
+
+        Assert.Equal((heap, 0ul, heap.Size), (whole.Heap, whole.Offset, whole.Size));
+        Assert.Single(backend.Creations);
+        arena.Release(whole);
+    }
+
+    [Fact]
+    public void FinalByteCanBeAllocatedAndReturnedWithoutOverflow()
+    {
+        using TestBackend backend = new();
+        using GpuMemoryArena arena = new(backend, ulong.MaxValue);
+        TestBackend.Compatibility token = new();
+        GpuMemorySlice first = arena.Allocate(ulong.MaxValue - 2, 1, NativeGpuMemoryKind.GpuOnly, [token]);
+        GpuMemorySlice middle = arena.Allocate(1, 1, NativeGpuMemoryKind.GpuOnly, [token]);
+        GpuMemorySlice last = arena.Allocate(1, 1, NativeGpuMemoryKind.GpuOnly, [token]);
+
+        arena.Release(first);
+        arena.Release(last);
+        arena.Release(middle);
+        GpuMemorySlice whole = arena.Allocate(ulong.MaxValue, 1, NativeGpuMemoryKind.GpuOnly, [token]);
+
+        Assert.Equal((ulong.MaxValue - 2, ulong.MaxValue - 1), (middle.Offset, last.Offset));
+        Assert.Equal((first.Heap, 0ul, ulong.MaxValue), (whole.Heap, whole.Offset, whole.Size));
+        Assert.Single(backend.Creations);
+        arena.Release(whole);
+    }
+
+    [Fact]
+    public void NullCompatibilityCannotReachTheBackend()
+    {
+        using TestBackend backend = new();
+        using GpuMemoryArena arena = new(backend, 16);
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() =>
+            arena.Allocate(1, 1, NativeGpuMemoryKind.GpuOnly, [new TestBackend.Compatibility(), null!]));
+
+        Assert.Equal("compatibilities", error.ParamName);
+        Assert.Empty(backend.Creations);
+    }
 }

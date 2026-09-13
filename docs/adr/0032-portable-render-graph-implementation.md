@@ -10,7 +10,7 @@
 - [0016 Portable Graphics](0016-portable-api.md)〜[0022 Resource Binding](0022-binding-api.md): Buffer／Texture の直接生成、view と明示 binding。
 - [0023 Portable Shader](0023-shader-design-and-api.md): WGSL artifact、入力構造体、直接 root と loader。
 - [0024 Pipeline](0024-pipeline-state-api.md)〜[0027 WebGPU](0027-webgpu-backend-implementation.md): Portable の記録、提出、完了と backend。
-- [0028 Resource Utilities](0028-resource-utilities.md)／[0029 Resource Management](0029-resource-management-api.md): Portable の転送、scope、resource pool、binding cache と回収。
+- [0028 Resource Utilities](0028-resource-utilities.md)／[0029 Resource Management](0029-resource-management-api.md): 0028 の Portable resource pool を基礎に、0029 が転送、scope、binding cache、依存と遅延回収を管理する。
 - [0030 RenderGraph](0030-render-graph-api.md): 共通の機能 pass 契約、外部入出力、論理 plan、resource facade と実行契約。
 
 ## 決定

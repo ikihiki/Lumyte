@@ -11,7 +11,7 @@
 | [0001 Graphics](0001-graphics-api.md) | 共通の公開契約と二系統の実装の境界 |
 | [0015 Native Shader Package](0015-native-shader-package-api.md)・[0023 Portable Shader](0023-shader-design-and-api.md) | 準備済み shader package からの GPU program 生成と専用 GPU 構造体 |
 | [0012 Native 提出と同期](0012-native-command-submission-and-synchronization.md)・[0026 Portable 提出と同期](0026-command-submission-and-synchronization.md) | 実行系統ごとの提出と completion |
-| [0028 Resource Utilities](0028-resource-utilities.md)・[0029 Resource Management](0029-resource-management-api.md) | 使用保持、資源管理と回収 |
+| [0028 Resource Utilities](0028-resource-utilities.md)・[0029 Resource Management](0029-resource-management-api.md) | 0028 の貸出・返却を使い、0029 が依存、使用保持、転送と遅延回収を管理する |
 
 これは設計上の依存であり、共通 assembly から Native／Portable の型や assembly を参照することを意味しない。各 provider が共通契約と自分の実装系統に依存する。
 

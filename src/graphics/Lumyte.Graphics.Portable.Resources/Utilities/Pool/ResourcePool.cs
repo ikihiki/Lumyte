@@ -60,7 +60,8 @@ internal sealed class ResourcePool<TDescription, THandle>(
     internal void Trim()
     {
         RequireAvailable();
-        DestroyAll(DetachIdle());
+        var (resources, errors) = DetachIdle();
+        DestroyAll(resources, errors);
     }
 
     internal void Dispose()
@@ -68,28 +69,32 @@ internal sealed class ResourcePool<TDescription, THandle>(
         if (disposed) { return; }
         if (activeCount != 0)
         { throw new InvalidOperationException("Return all resource leases before disposing the pool."); }
-        THandle[] resources = DetachIdle();
+        var (resources, errors) = DetachIdle();
         disposed = true;
-        DestroyAll(resources);
+        DestroyAll(resources, errors);
     }
 
-    private THandle[] DetachIdle()
+    private (THandle[] Resources, Exception[] Errors) DetachIdle()
     {
         THandle[] resources = idle.Values.SelectMany(static handles => handles).ToArray();
+        // Prepare all failure storage before dropping cache ownership. Destroy failures must
+        // not allocate a growing collection and prevent later resources from being attempted.
+        var errors = new Exception[resources.Length];
         idle.Clear();
-        return resources;
+        return (resources, errors);
     }
 
-    private void DestroyAll(THandle[] resources)
+    private void DestroyAll(THandle[] resources, Exception[] errors)
     {
-        List<Exception>? errors = null;
+        int errorCount = 0;
         foreach (THandle resource in resources)
         {
             try { destroy(resource); }
-            catch (Exception error) { (errors ??= []).Add(error); }
+            catch (Exception error) { errors[errorCount++] = error; }
         }
-        if (errors is { Count: 1 }) { ExceptionDispatchInfo.Capture(errors[0]).Throw(); }
-        if (errors is not null) { throw new AggregateException("Releasing pooled resources failed.", errors); }
+        if (errorCount == 1) { ExceptionDispatchInfo.Capture(errors[0]).Throw(); }
+        if (errorCount != 0)
+        { throw new AggregateException("Releasing pooled resources failed.", errors.AsSpan(0, errorCount).ToArray()); }
     }
 
     private void RequireAvailable()

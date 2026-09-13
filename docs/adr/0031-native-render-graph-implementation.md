@@ -10,7 +10,7 @@
 - [0002 Native Graphics](0002-native-graphics-api.md)〜[0012 Native 提出と同期](0012-native-command-submission-and-synchronization.md): allocation、resource、descriptor、shader、command と completion。
 - [0013 DirectX 12](0013-directx12-backend-implementation.md)／[0014 Vulkan](0014-vulkan-backend-implementation.md): Native backend の実装。
 - [0015 Native Shader Package](0015-native-shader-package-api.md): Native artifact、入力 ABI と loader。
-- [0028 Resource Utilities](0028-resource-utilities.md)／[0029 Resource Management](0029-resource-management-api.md): Native の転送、scope、pool、使用保持と回収。
+- [0028 Resource Utilities](0028-resource-utilities.md)／[0029 Resource Management](0029-resource-management-api.md): 0028 の Native arena を基礎に、0029 が転送、scope、依存、使用保持と遅延回収を管理する。
 - [0030 RenderGraph](0030-render-graph-api.md): 共通の機能 pass 契約、外部入出力、論理 plan、resource facade と実行契約。
 
 ## 決定

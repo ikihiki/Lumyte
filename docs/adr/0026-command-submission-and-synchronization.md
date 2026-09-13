@@ -104,4 +104,4 @@ commands.Dispose();
 
 Browser も一つの `queue.submit` と `onSubmittedWorkDone`、独立した error scope の結果へ接続する。timeline 値は C# の ulong として管理し、JavaScript の Number へ変換しない。実機と制御した非同期結果による検証範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-受渡し後の同期障害を通知する `GpuSubmissionException` と、その signal point・内部記録を保持する経路を実装した。Resources の token 発行、Retire／Collect と、利用終了を確認できない障害からの drain は未実装である。下位の例外は上位 Resources の token 型を参照しない。
+受渡し後の同期障害を通知する `GpuSubmissionException` と、その signal point・内部記録を保持する経路を実装した。上位 Resources 管理層の token 発行、遅延回収と、利用終了を確認できない障害からの drain は未実装である。これらは arena／pool utility の責務には含めない。下位の例外は上位 Resources の token 型を参照しない。

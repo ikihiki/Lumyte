@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Explicit Portable GPU resource pools and lifetime utilities.</Description>
+    <Description>Explicit Portable GPU buffer and texture pools.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Portable\Lumyte.Graphics.Portable.csproj" />

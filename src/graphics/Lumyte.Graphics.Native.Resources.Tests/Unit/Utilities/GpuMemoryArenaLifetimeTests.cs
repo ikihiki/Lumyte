@@ -164,4 +164,54 @@ public sealed class GpuMemoryArenaLifetimeTests
         Assert.False(backend.Disposed);
         Assert.Throws<ObjectDisposedException>(() => arena.Allocate(8, 8, NativeGpuMemoryKind.GpuOnly, [new TestBackend.Compatibility()]));
     }
+
+    [Fact]
+    public void FailedTrimLeavesLiveBlocksAvailableForReleaseAndReuse()
+    {
+        using TestBackend backend = new();
+        using GpuMemoryArena arena = new(backend, 16);
+        TestBackend.Compatibility token = new();
+        GpuMemorySlice live = arena.Allocate(8, 8, NativeGpuMemoryKind.GpuOnly, [token]);
+        GpuMemorySlice empty = arena.Allocate(16, 8, NativeGpuMemoryKind.GpuOnly, [token]);
+        arena.Release(empty);
+        InvalidOperationException expected = new("Release effect unknown.");
+        backend.DestructionError = heap => ReferenceEquals(heap, empty.Heap) ? expected : null;
+
+        InvalidOperationException actual = Assert.Throws<InvalidOperationException>(() => arena.Trim());
+        GpuMemorySlice reused = arena.Allocate(8, 8, NativeGpuMemoryKind.GpuOnly, [token]);
+        arena.Release(live);
+        arena.Release(reused);
+        arena.Trim();
+
+        Assert.Same(expected, actual);
+        Assert.Equal((live.Heap, 8ul), (reused.Heap, reused.Offset));
+        Assert.Equal(new[] { empty.Heap, live.Heap }, backend.Destroyed);
+    }
+
+    [Fact]
+    public void DisposeAttemptsEveryHeapAndRemainsClosedAfterMultipleErrors()
+    {
+        using TestBackend backend = new();
+        GpuMemoryArena arena = new(backend, 16);
+        TestBackend.Compatibility token = new();
+        GpuMemorySlice first = arena.Allocate(16, 8, NativeGpuMemoryKind.GpuOnly, [token]);
+        GpuMemorySlice second = arena.Allocate(16, 8, NativeGpuMemoryKind.GpuOnly, [token]);
+        GpuMemorySlice third = arena.Allocate(16, 8, NativeGpuMemoryKind.GpuOnly, [token]);
+        arena.Release(first);
+        arena.Release(second);
+        arena.Release(third);
+        Exception firstError = new OutOfMemoryException("Native heap release failed.");
+        Exception lastError = new InvalidOperationException("Native heap release effect unknown.");
+        backend.DestructionError = heap => ReferenceEquals(heap, first.Heap) ? firstError
+            : ReferenceEquals(heap, third.Heap) ? lastError : null;
+
+        AggregateException error = Assert.Throws<AggregateException>(() => arena.Dispose());
+        arena.Dispose();
+
+        Assert.Collection(error.InnerExceptions,
+            actual => Assert.Same(firstError, actual), actual => Assert.Same(lastError, actual));
+        Assert.Equal(new[] { first.Heap, second.Heap, third.Heap }, backend.Destroyed);
+        Assert.Throws<ObjectDisposedException>(() => arena.Trim());
+        Assert.False(backend.Disposed);
+    }
 }

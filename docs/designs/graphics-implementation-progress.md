@@ -550,9 +550,36 @@ Native／Portable の下位例外は Resources の型を参照しない。native
 
 55文書の419ローカルリンク、21アンカー、37 ADR の必要章と182個の番号依存を確認した。既存11指定の `InternalsVisibleTo` はすべて test assembly 向けで、差分の空白検査も成功した。
 
+## 第17段階: Resource Utilities の責務確定と完成
+
+2026-09-14 に依存関係の追跡を必要とする処理を上位へ集約し、[ADR 0028](../adr/0028-resource-utilities.md) の utility を Native arena と Portable Buffer／Texture pool の貸出・返却に限定した。この範囲の機能は実装済みである。前段階に記録した utility の completion／upload 追加予定は、この方針変更で置き換える。
+
+| 責務 | 担当 |
+| --- | --- |
+| Native heap block、整列、範囲分割・結合、貸出 identity、Release／Trim／Dispose | Native Resources の utility |
+| 完全な description による Buffer／Texture object の再利用、lease、Release／Trim／Dispose | Portable Resources の utility |
+| 配置 object と view／descriptor／binding の依存、scope／pin／use／batch、提出 token と完了、遅延回収 | 上位の resource manager |
+| staging、非同期 upload／readback、package 配置と結果公開 | manager が所有する uploader |
+
+[ADR 0029](../adr/0029-resource-management-api.md) に管理層の token 発行、内部 retirement、非同期転送と破棄順序をまとめた。同じ二つの Resources assembly 内で責務を分ける。utility に Retire／Collect、公開 retirement queue や独立した転送 API を追加しない。上位は全利用を確認し、Native の配置 object を破棄してから slice を返す。Portable は mapping／view／binding／記録の依存を終えて lease を返し、pool が所有する handle を直接破棄しない。
+
+返却前提を満たさない loan は保持を続ける。device loss、取消し、backend Dispose を GPU 使用終了の証拠にしない。manager の非公開 timeline と提出 token の発行・観測、停止未確認時の保持解消は上位の未実装事項であり、utility の完成とは区別する。CPU layout helper や raw copy の同義 wrapper を追加するための API は作らない。
+
+実装監査で、両 utility が未使用 object を cache から外した後に、Destroy の障害を記録する可変長 list を確保・拡張していた点を補強した。回収対象の snapshot と全対象分の error storage を先に確保し、成功後だけ切り離す。破棄中は固定配列へエラーを保持するため、その一覧の拡張失敗で残りの Destroy 試行を失わない。単一の元例外と複数エラーの集約、破棄が不明な object の再利用禁止、借用 backend の維持は従来の契約を保つ。
+
+Native の README にあった二重 finally の例は、配置 resource の破棄が失敗しても外側で slice を返すため修正した。破棄の成功後にだけ Release へ進む。両 README、project description、ADR 一覧と関連 Graph ADR も新しい境界へ揃えた。
+
+focused unit tests は Native 32件、Portable 31件の **計63件成功、失敗0、skip 0**。新規7件は、断片化と整列を組み合わせた固定 seed の512操作後の全範囲再利用、ulong 上限での分割・結合、null compatibility の拒否、Trim 失敗後の live block の保持、複数の破棄エラーと成功が混在する場合の全件試行を検証する。実際の host メモリ不足を発生させる試験ではなく、制御した backend の失敗と公開された所有・再利用動作で確認する。
+
+独立レビューで ADR・README の所有契約と返却例、utility 完了と管理層未実装の区別を確認した。production 向けの InternalsVisibleTo は追加せず、既存11指定はすべて test assembly 向けのままである。
+
+`LUMYTE_WEBGPU_BROWSER` に既存の Chrome for Testing 155.0.8048.0 を指定し、`dotnet test Lumyte.slnx -m:4 --logger "trx;LogFilePrefix=resource-utilities-complete" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を実行した。全31 project の **2,159件成功、失敗0、skip 0**、全 TRX の outcome が Completed、終了コード0を確認した。DX12 415件、Vulkan 428件、Dawn 336件、Browser 59件を含み、既存の GPU 転送と利用終了後の arena／pool 再利用も成功した。native crash と無進行 timeout はなかった。
+
+55文書の422ローカルリンク、21アンカー、37 ADR の必要章と179個の番号依存に問題はなく、差分の空白検査も成功した。
+
 ## 未実装と次の順序
 
-1. 通常 completion と停止未確認の障害を区別する発行元・待機契約を整え、両系統の Resources に completion token と `Retire`／`Collect` を接続する。利用終了を確認できない障害からの drain は別途必要であり、今回の提出例外だけでは完成していない。その上で upload、binding／descriptor と resource manager の寿命管理を実装する。
+1. ADR 0029 の上位 resource manager に明示的な依存・scope／pin／use／batch を実装し、提出 token、完了と停止未確認の障害を区別する観測・遅延回収へ接続する。その上で uploader、package と binding／descriptor の管理を実装する。利用終了を確認できない障害からの drain は、raw 提出例外だけでは成立していない。ADR 0028 の utility は完成済みとし、この作業を utility の追加 API にはしない。
 2. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

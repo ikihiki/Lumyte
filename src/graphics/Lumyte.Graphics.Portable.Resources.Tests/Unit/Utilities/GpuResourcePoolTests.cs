@@ -225,6 +225,31 @@ public sealed class GpuResourcePoolTests
         Assert.Throws<ObjectDisposedException>(() => pool.Acquire());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CleanupAggregatesOnlyFailedDestructionsAndStillAttemptsTheRest(bool texture)
+    {
+        using var pool = new PoolFixture(texture);
+        object first = pool.Acquire();
+        object second = pool.Acquire();
+        object third = pool.Acquire();
+        var firstFailure = new InvalidOperationException("first destroy failed");
+        var thirdFailure = new InvalidOperationException("third destroy failed");
+        pool.Backend.DestructionErrors.Add(pool.Handle(first), firstFailure);
+        pool.Backend.DestructionErrors.Add(pool.Handle(third), thirdFailure);
+        pool.Release(first);
+        pool.Release(second);
+        pool.Release(third);
+
+        AggregateException error = Assert.Throws<AggregateException>(() => pool.Trim());
+
+        Assert.Equal(2, error.InnerExceptions.Count);
+        Assert.Contains(firstFailure, error.InnerExceptions);
+        Assert.Contains(thirdFailure, error.InnerExceptions);
+        Assert.Equal(3, pool.Backend.Destroyed.Count);
+    }
+
     private sealed class PoolFixture : IDisposable
     {
         private readonly GpuBufferPool? buffers;

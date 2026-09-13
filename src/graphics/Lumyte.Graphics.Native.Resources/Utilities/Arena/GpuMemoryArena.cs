@@ -105,7 +105,7 @@ public sealed class GpuMemoryArena : IDisposable
     {
         if (disposed) { return; }
         if (loans.Count != 0) { throw new InvalidOperationException("Return every arena slice before disposal."); }
-        Block[] empty = DetachEmptyBlocks();
+        DetachedBlocks empty = DetachEmptyBlocks();
         disposed = true;
         DestroyBlocks(empty);
     }
@@ -134,29 +134,34 @@ public sealed class GpuMemoryArena : IDisposable
         return null;
     }
 
-    private Block[] DetachEmptyBlocks()
+    private DetachedBlocks DetachEmptyBlocks()
     {
         KeyValuePair<CompatibilityKey, List<Block>>[] entries = pools.ToArray();
         Block[] empty = entries.SelectMany(static entry => entry.Value).Where(static block => block.LoanCount == 0).ToArray();
+        // Prepare error storage while every heap is still owned by the pool. Recording
+        // native cleanup failures must not allocate after ownership has been detached.
+        Exception[] errors = new Exception[empty.Length];
         foreach (var entry in entries)
         {
             entry.Value.RemoveAll(static block => block.LoanCount == 0);
             if (entry.Value.Count == 0) { pools.Remove(entry.Key); }
         }
-        return empty;
+        return new(empty, errors);
     }
 
-    private void DestroyBlocks(Block[] blocks)
+    private void DestroyBlocks(DetachedBlocks detached)
     {
-        List<Exception>? errors = null;
-        foreach (Block block in blocks)
+        int errorCount = 0;
+        foreach (Block block in detached.Blocks)
         {
             try { backend.DestroyGpuHeap(block.Heap); }
-            catch (Exception error) { (errors ??= []).Add(error); }
+            catch (Exception error) { detached.Errors[errorCount++] = error; }
         }
-        if (errors is { Count: 1 }) { ExceptionDispatchInfo.Capture(errors[0]).Throw(); }
-        if (errors is not null) { throw new AggregateException("Releasing arena heaps failed.", errors); }
+        if (errorCount == 1) { ExceptionDispatchInfo.Capture(detached.Errors[0]).Throw(); }
+        if (errorCount > 1) { throw new AggregateException("Releasing arena heaps failed.", detached.Errors.Take(errorCount)); }
     }
+
+    private readonly record struct DetachedBlocks(Block[] Blocks, Exception[] Errors);
 
     private static ulong AlignUp(ulong value, ulong alignment)
     {

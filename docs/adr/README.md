@@ -124,8 +124,8 @@ root data は各系統の直接入力機能を使い、buffer fallback を行わ
 | [0025 Portable Command Recording](0025-command-recording-api.md) | pass、binding、直接入力、work と copy |
 | [0026 Portable 提出と同期](0026-command-submission-and-synchronization.md) | queue 受理と completion |
 | [0027 WebGPU](0027-webgpu-backend-implementation.md) | Portable API の WebGPU 実装 |
-| [0028 Resource Utilities](0028-resource-utilities.md) | 系統別 arena／pool、転送と retirement |
-| [0029 Resource Management](0029-resource-management-api.md) | 独立した二管理 API、自動 descriptor／binding、共通 facade との境界 |
+| [0028 Resource Utilities](0028-resource-utilities.md) | 系統別 arena／pool の明示的な貸出・返却 |
+| [0029 Resource Management](0029-resource-management-api.md) | 独立した二管理 API、依存と寿命、提出 token、転送、自動 descriptor／binding と遅延回収 |
 | [0030 共通 RenderGraph](0030-render-graph-api.md) | 固定の機能構成と依存、型付き入力と bindings、plan 再利用、GPU 転送型、提出と presentation |
 | [0031 Native RenderGraph 実装](0031-native-render-graph-implementation.md) | Native provider、専用 pass 本体の SPI、内部 graph と heap／descriptor／command |
 | [0032 Portable RenderGraph 実装](0032-portable-render-graph-implementation.md) | Portable provider、専用 pass 本体の SPI、内部 graph と resource／binding／pass |
@@ -146,12 +146,12 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 | 配置先 | 目標の責務／現状 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics/` | 基礎値。既存 project を改編 |
-| `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 二系統の低レベル API。Native は作成済み、Portable は新設予定 |
+| `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 二系統の低レベル API。作成済み |
 | `src/graphics/Lumyte.Graphics.DirectX12/`、`src/graphics/Lumyte.Graphics.Vulkan/`、`src/graphics/Lumyte.Graphics.WebGPU/` | 対応 backend。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser/` | WebGPU の browser 接続。既存 project を改編 |
-| `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 準備済み shader package と GPU 初期化。新設予定 |
+| `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 準備済み shader package と GPU 初期化。runtime は実装済み |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/` | 系統別の offline compiler、package 生成と下位 GPU 入力生成。新設予定 |
-| `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | utility と GPU 資源管理。新設予定 |
+| `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | utility は実装済み。同じ assembly 内の上位 GPU 資源管理は新設予定 |
 | `src/graphics/Lumyte.Graphics.Native.Resources.Generators/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators/` | schema から managed resource 入力を作る build 用生成器。新設予定 |
 | `src/graphics/Lumyte.Graphics.RenderGraph/` | 共通 graph／入力／runtime 契約。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.Native.RenderGraph/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph/` | provider、専用 SPI と内部 graph。新設予定 |
