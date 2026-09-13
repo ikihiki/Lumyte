@@ -4,7 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
-    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph\Lumyte.Graphics.RenderGraph.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph.Legacy\Lumyte.Graphics.RenderGraph.Legacy.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />
     <ProjectReference Include="..\..\..\tools\Lumyte.Graphics.Shader.Offline\Lumyte.Graphics.Shader.Offline.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>

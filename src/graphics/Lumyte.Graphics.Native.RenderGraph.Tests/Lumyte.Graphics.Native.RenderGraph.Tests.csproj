@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Native.RenderGraph\Lumyte.Graphics.Native.RenderGraph.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Compile Include="..\Lumyte.Graphics.Native.Resources.Tests\TestResourceBackend.cs" Link="Fixtures\TestResourceBackend.cs" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

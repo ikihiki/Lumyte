@@ -1,6 +1,6 @@
 using System.Numerics;
 
-using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.RenderGraph.Legacy;
 using Lumyte.Graphics.TwoD;
 
 namespace Lumyte.Graphics.Text.Tests;

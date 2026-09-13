@@ -75,4 +75,22 @@
   <Project Path="src/foundation/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
   <Project Path="src/interaction/Lumyte.Animation/Lumyte.Animation.csproj" />
   <Project Path="src/interaction/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Hosting.Tests/Lumyte.Graphics.Hosting.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.Hosting/Lumyte.Graphics.Native.Hosting.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.Passes/Lumyte.Graphics.Native.Passes.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.RenderGraph/Lumyte.Graphics.Native.RenderGraph.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Passes.Hosting/Lumyte.Graphics.Passes.Hosting.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Passes.Tests/Lumyte.Graphics.Passes.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Passes/Lumyte.Graphics.Passes.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.Hosting/Lumyte.Graphics.Portable.Hosting.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.Passes/Lumyte.Graphics.Portable.Passes.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.RenderGraph/Lumyte.Graphics.Portable.RenderGraph.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.RenderGraph.Conformance/Lumyte.Graphics.RenderGraph.Conformance.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.RenderGraph.Legacy/Lumyte.Graphics.RenderGraph.Legacy.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.Passes.Tests/Lumyte.Graphics.Native.Passes.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Native.RenderGraph.Tests/Lumyte.Graphics.Native.RenderGraph.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Lumyte.Graphics.Portable.Passes.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Portable.RenderGraph.Tests/Lumyte.Graphics.Portable.RenderGraph.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj" />
 </Solution>

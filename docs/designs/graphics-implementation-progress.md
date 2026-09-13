@@ -641,10 +641,65 @@ Native offline 48件、Portable offline 15件、両 Resources generator 19／17�
 既存の DX12 427件、Vulkan 435件、Dawn 338件、Browser 61件もすべて成功した。
 61文書・437ローカルリンク・21アンカー、37 ADR の必要章と179個の番号依存に問題はなかった。
 
+## RenderGraph 段階 0: 共通機能と二系統の実行
+
+2026-09-14 に [共通 RenderGraph](../adr/0030-render-graph-api.md)、
+[Native provider](../adr/0031-native-render-graph-implementation.md)、
+[Portable provider](../adr/0032-portable-render-graph-implementation.md) と
+[Generic Host 接続](../adr/0037-graphics-hosting-and-di.md) の最小統合を実装した。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 共通 graph | shader や GPU 記録 callback を受けない機能 contract、宣言と culling、CPU snapshot、型付き入力、不変 bindings、共通資源参照、成功後の export |
+| Native／Portable | 独立 registry と公開 SPI、実行ごとの資源と内部 pass、ResourceManager の scope／batch／pin、submit と completion、受理停止と drain |
+| 標準機能 | 共通 Clear／Texture Copy／Output と両本体。Clear 値は同じ plan の bindings で差し替えられ、shader と binding は利用側に公開しない |
+| Hosting | 同じ一回の StartAsync／GetAsync 初期化、Options snapshot、runtime 単位の CPU scope、session 借用、任意 presentation 接続、consumer 停止後の GPU／表示／CPU の順次終了 |
+| 移行 | 旧 low-level graph は明示的な `.RenderGraph.Legacy` assembly／namespace に移動。既存 TwoD／Text／Library の能力と試験を維持し、新 API の forwarding は作らない |
+| 適合 | `Lumyte.Graphics.RenderGraph.Conformance` に共通 consumer を一度 build し、各 backend の Host 設定から同じ Clear → Copy → Output を実行する |
+
+CPU 試験では宣言失敗の rollback、未初期化 read、culling、snapshot、別 plan／runtime の参照、
+export の成功確認、target の形状変更、提出前後の失敗、取消しと保持を個別に確認する。
+独立レビューで、同期的に送出された受理不明例外を未提出として Discard する問題、
+bindings の世代衝突、後続の生存 writer による過去 output の上書きを修正した。
+過去内容を残す場合は別 texture への明示 Copy を要求する。
+
+Host の consumer が Graphics より先に起動しても accessor が初期化を開始し、
+停止時は IHostedLifecycleService の段階を使って consumer の StopAsync 後に drain する。
+非同期の target 取得中に停止した場合も、接続の所有を終了する前に取得と返却を完了する。
+scope／pin／execution は caller が返し、Host が外部所有を強制回収しない。
+
+共通 facade の明示 resource 操作は下位 manager と同様に caller が直列化する。
+import／upload は await してから次の manager 操作へ進み、これを一般の concurrent resource API と表示しない。
+plan cache、contributor builder、内部 template の差分更新、内容世代 ticket、Blit 以降の画像機能、
+新しい Model／2D、実 window／canvas の接続は後続である。60 FPS の性能達成を示す段階ではない。
+
+段階 0 の実機適合は DirectX 12 が4件、Vulkan が4件、Dawn WebGPU が5件成功した。
+同じコンパイル済み consumer を Host の provider 設定から実行し、Clear → Copy → Output、
+線形／sRGB と premultiplied alpha の画素、headless target の Acquire → Submit → Present、
+export の回収と Host 終了を確認した。単一 offscreen target は使用終了まで再取得させず、
+終了時は取得済み未提出 target の返却も待つ。OS の window／canvas を表示した試験ではない。
+
+最初の DX12 試験は command list の Close が `0x80070057` で失敗した。
+provider の global barrier に texture の attachment／copy／shader access を混在させていたため、
+明示 layout を使う backend では texture の依存を同一 layout 間も含めた TextureTransition に、
+buffer の依存を global Barrier に分けた。修正後の画素試験と headless presentation が成功した。
+この PC では D3D12 debug layer（`0x887A002D`）と `VK_LAYER_KHRONOS_validation` が利用できないため、
+新規 DX12／Vulkan 適合は通常 device で実行した。追加 validation layer による検証成功とは扱わない。
+
+最終検証は既存の Browser、Slang、DXC、Tint の環境変数を指定し、
+`dotnet test Lumyte.slnx -m:4 --logger "trx;LogFilePrefix=render-graph-stage0-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini`
+を実行した。**42 project・2,472件成功、失敗0、skip 0**、全 TRX が Completed、終了コード0。
+新規99件は CPU 86件と実機13件で、DX12 431件、Vulkan 439件、Dawn 343件、Browser 61件を含む。
+新しい共通 graph 36件、Hosting 12件、共通 Passes 8件、Native provider／Passes 11／3件、
+Portable provider／Passes 14／2件もすべて成功した。
+66文書・446ローカルリンク・21アンカー、37 ADR の必要章と179個の番号依存を確認し、問題はなかった。
+production 向け InternalsVisibleTo を追加せず、既存13指定はすべて test assembly 向けである。
+
 ## 未実装と次の順序
 
-1. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。完成した ResourceManager の scope／pin／batch と転送を provider へ接続する。
-2. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、機能 pass へ接続する。管理入力 schema の一貫生成は上記の対応範囲で利用できる。
+1. RenderGraph の段階 1 として Blit、内部 template と差分準備、GPU 内容世代の結果依存を追加する。plan と bindings の再利用の基礎は段階 0 で利用できる。
+2. platform の実 window／canvas に presentation factory を接続し、初回表示、resize、frame pacing、表示側の終了を確認する。headless presentation の適合を OS の表示完了とは扱わない。
+3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 
 任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。
 

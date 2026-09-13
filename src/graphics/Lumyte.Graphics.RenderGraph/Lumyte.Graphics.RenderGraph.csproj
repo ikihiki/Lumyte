@@ -1,9 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Backend-independent render graph planning and execution for Lumyte.</Description>
+    <Description>Feature render graph contracts and CPU planning shared by Native and Portable providers.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
-    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
   </ItemGroup>
 </Project>

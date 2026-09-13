@@ -188,7 +188,9 @@ camera の変更が culling／透明 sort に影響するなど、必要な処�
 
 共通機能契約、固定構造と型付きフレーム入力、差分準備、二系統の本体とその shader 所有を採用する。Slang の計算用 source module を部分共有し、entry、GPU ABI と実行モデルは共有しない。モデル描画や 2D の個別 API と対象機能は、共通実装規約から独立させる。
 
-共通 feature library、input contract と保持情報の共有、再利用 plan と bindings、GetInput、内部 template と差分準備、contract と registry の接続、二系統への既存機能の移植、準備済み shader／transfer input の接続、機能ごとの Hosting 登録と runtime 単位の依存注入は未実装である。既存の旧 API に同様の機能があることを、新しい二系統の完成とは扱わない。
+段階 0 として共通 feature library、Clear 入力 contract、同じ plan と不変 bindings、GetInput、二系統の registry／本体、標準画像機能の Hosting 登録を実装した。Clear と Copy は下位命令で行い、Output の shader と program は各本体が所有する。利用側は shader、pipeline、root、binding を管理しない。
+
+内部 template と差分準備、GPU 内容世代 cache、Model／2D と残る画像機能の移植は未実装である。既存の旧 API の同様の機能を、新しい二系統の完成として数えない。
 
 共有 Slang module と両 target の build 依存、個別 entry への移植、直接 root を含む Portable variant の conformance、Native の mesh 経路と通常 vertex 経路の選択は未実装である。Slang の WGSL 出力対応だけを全 pass の source 共通化完了とは扱わない。
 

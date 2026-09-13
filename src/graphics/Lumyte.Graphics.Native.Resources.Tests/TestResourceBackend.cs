@@ -25,6 +25,8 @@ public sealed class TestResourceBackend : INativeGpuBackend
     public List<Texture> Textures { get; } = [];
     public List<object> Destroyed { get; } = [];
     public List<string> Commands { get; } = [];
+    public List<GpuClearColor> ColorClears { get; } = [];
+    public List<(float Depth, byte Stencil)> DepthStencilClears { get; } = [];
     public List<(NativeGpuDescriptorHeap Heap, uint Index, object Value)> DescriptorWrites { get; } = [];
     public GpuShaderCodeFormat ShaderCodeFormat => GpuShaderCodeFormat.Dxil;
     public NativeGpuCapabilities Capabilities => new(RawShaderPointers: true, BufferDescriptors: true, ExplicitTextureTransitions: ExplicitTransitions);
@@ -210,7 +212,13 @@ public sealed class TestResourceBackend : INativeGpuBackend
         public override void SetDepthStencilState(NativeGpuDepthStencilState state) { }
         public override void SetViewport(NativeGpuViewport viewport) { }
         public override void SetScissor(NativeGpuScissorRect scissor) { }
-        public override void BeginRendering(ReadOnlySpan<NativeGpuColorAttachment> colorAttachments, NativeGpuDepthStencilAttachment? depthStencilAttachment = null) { }
+        public override void BeginRendering(ReadOnlySpan<NativeGpuColorAttachment> colorAttachments, NativeGpuDepthStencilAttachment? depthStencilAttachment = null)
+        {
+            foreach (NativeGpuColorAttachment attachment in colorAttachments)
+            { if (attachment.LoadOp == NativeGpuLoadOp.Clear) { owner.ColorClears.Add(attachment.ClearColor); } }
+            if (depthStencilAttachment is { DepthLoadOp: NativeGpuLoadOp.Clear } depth)
+            { owner.DepthStencilClears.Add((depth.ClearDepth, depth.ClearStencil)); }
+        }
         public override void EndRendering() { }
         public override void Draw(ReadOnlySpan<byte> rootData, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) { }
         public override void DrawIndexed(ReadOnlySpan<byte> rootData, NativeGpuRange indices, NativeGpuIndexFormat format, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0) { }

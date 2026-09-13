@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Backend-independent feature render pass requests and declarations.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph\Lumyte.Graphics.RenderGraph.csproj" />
+  </ItemGroup>
+</Project>

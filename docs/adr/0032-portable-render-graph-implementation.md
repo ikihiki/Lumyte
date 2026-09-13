@@ -252,4 +252,6 @@ else
 
 Portable pass 本体が shader、GPU data、内部 graph と命令を所有する構成を採用する。resource の直接生成と有限の明示 binding を用い、NoGraphicsAPI の allocation、GPU address や Bindless の模倣を要件にしない。
 
-Portable provider、pass registry と構築 SPI、内容世代 ticket の登録・取得・遅延診断を含む提出結果依存、GetInput と不変 bindings の接続、内部 template と部品の差分準備、共通 facade、実行ごとの内部 graph／transient／記録、binding 宣言と cache の接続、pass ごとの shader／cache 管理、resource input と presentation の接続、Hosting integration との登録 snapshot・runtime 単位の factory・所有の接続、同一 consumer binary による適合試験は未実装である。WebGPU runtime の直接入力対応も確認が必要である。raw external interop の具体 API と共通契約外の拡張は、この採用範囲に含めない。
+段階 0 として Portable provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、実行ごとの内部 pass／transient／記録、管理された view／binding、scope／batch／export pin、診断付き completion と成功後の export、Hosting の登録 snapshot と runtime 所有を実装した。Clear／Copy／Output は別の Portable.Passes assembly から登録し、Output の専用 WGSL と直接 root を本体が所有する。
+
+内容世代 ticket と実行間の遅延診断依存、内部 template と差分準備、transient の alias 最適化、一般の raw external interop は未実装である。標準 Output で直接 WGSL を使うことを Slang source の共有完了とは扱わない。共通 facade の明示 resource 操作は caller が直列化し、外部所有の scope／pin／execution は caller が返す。

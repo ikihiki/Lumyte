@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.RenderGraph.Legacy;
 
 namespace Lumyte.Graphics.Library;
 

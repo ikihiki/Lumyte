@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Portable implementations of built-in feature render passes.</Description></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph\Lumyte.Graphics.Portable.RenderGraph.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
+  </ItemGroup>
+</Project>

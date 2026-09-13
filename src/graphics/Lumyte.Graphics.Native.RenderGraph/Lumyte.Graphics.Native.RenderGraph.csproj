@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Native implementation and public extension contracts for feature RenderGraph execution.</Description></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph\Lumyte.Graphics.RenderGraph.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Native.Resources\Lumyte.Graphics.Native.Resources.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Native.Shaders\Lumyte.Graphics.Native.Shaders.csproj" />
+  </ItemGroup>
+</Project>

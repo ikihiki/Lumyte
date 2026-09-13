@@ -170,7 +170,7 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 
 系統別 entry と resource／root 宣言は各 pass の `<Feature>/Shaders/` に置き、Native は Slang、Portable は Slang または直接 WGSL とする。共有する計算だけを `src/graphics/Shaders/Shared/` の Slang module に置く。生成 C# と artifact は利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/<Family>/`、内部 graph 入力はその `Graph/` に置く。管理入力生成器のディスク出力は `obj/<Configuration>/<TargetFramework>/Shaders/Resources/<analyzer名>/` を既定とし、両系統の analyzer と利用側の出力設定を共存させる。Slang が生成した WGSL も build の出力先へ置き、手書き WGSL と区別する。配布 package は build の成果物から application の資産へ取り込み、生成物を手書き source の正として管理しない。offline compiler と各生成器は build 用であり、runtime project から tool の assembly を参照しない。
 
-既存の `Lumyte.Graphics.Library`、`Lumyte.Graphics.Shader`、`Lumyte.Graphics.Shader.Browser` と `tools/Lumyte.Graphics.Shader.Offline` は必要な実装の移植元とし、互換用の新規実装を追加する配置先にはしない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。この文書更新では project の作成や source の移動は行わない。
+既存の `Lumyte.Graphics.Library`、`Lumyte.Graphics.Shader`、`Lumyte.Graphics.Shader.Browser` と `tools/Lumyte.Graphics.Shader.Offline` は必要な実装の移植元とし、互換用の新規実装を追加する配置先にはしない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。段階 0 では共通 graph、二 provider、Passes と Hosting project を新設し、旧 graph は明示的な Legacy project へ分離した。
 
 ## 実装するレンダーパス
 

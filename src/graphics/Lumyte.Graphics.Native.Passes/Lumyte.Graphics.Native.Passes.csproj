@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Native Clear, Copy and display output feature pass implementations.</Description>
+    <LumyteNativeSlangCompiler Condition="'$(LumyteNativeSlangCompiler)' == ''">$(LUMYTE_SLANGC)</LumyteNativeSlangCompiler>
+    <LumyteNativeSlangCompiler Condition="'$(LumyteNativeSlangCompiler)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\artifacts\experiments\slang-wgsl-root\compiler\slang-2026.17\bin\slangc.exe')">$(MSBuildThisFileDirectory)..\..\..\artifacts\experiments\slang-wgsl-root\compiler\slang-2026.17\bin\slangc.exe</LumyteNativeSlangCompiler>
+    <LumyteNativeDownstreamCompilerDirectory Condition="'$(LumyteNativeDownstreamCompilerDirectory)' == ''">$(LUMYTE_DXC_DIRECTORY)</LumyteNativeDownstreamCompilerDirectory>
+    <LumyteNativeDownstreamCompilerDirectory Condition="'$(LumyteNativeDownstreamCompilerDirectory)' == ''">$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64</LumyteNativeDownstreamCompilerDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Native.RenderGraph\Lumyte.Graphics.Native.RenderGraph.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
+    <ProjectReference Include="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.csproj" ReferenceOutputAssembly="false" />
+    <NativeShaderCompile Include="ImageProcessing\Shaders\output.native.shader.json" />
+    <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" PrivateAssets="all" />
+  </ItemGroup>
+  <Import Project="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.targets" />
+</Project>

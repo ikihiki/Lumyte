@@ -2,7 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 
 using Lumyte.Graphics;
-using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.RenderGraph.Legacy;
 using Lumyte.Graphics.Library;
 
 namespace Lumyte.Graphics.Library.Tests;

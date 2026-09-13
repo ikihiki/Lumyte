@@ -243,4 +243,6 @@ else
 
 Native pass 本体が shader、GPU data、内部 graph と命令を所有する構成を採用する。NoGraphicsAPI を基礎とする Native の明示 allocation、descriptor と直接 root はその内部で活用し、低レベル wrapper に利用者全体の資源管理を加えない。下位 Native の部分採用事項は担当 ADR に従う。
 
-Native provider、pass registry と構築 SPI、内容世代 ticket の登録・取得・提出結果依存、GetInput と不変 bindings の接続、内部 template と部品の差分準備、共通 facade、実行ごとの内部 graph／transient／記録、alias 切替時の DiscardTexture、pass ごとの shader／cache 管理、resource input と presentation の接続、Hosting integration との登録 snapshot・runtime 単位の factory・所有の接続、同一 consumer binary による適合試験は未実装である。raw external interop の具体 API と共通契約外の Native 専用拡張は、この採用範囲に含めない。
+段階 0 として Native provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、実行ごとの内部 pass／transient／記録、scope／batch／export pin による保持、提出と停止、Hosting の登録 snapshot と runtime 所有を実装した。Clear／Copy／Output は別の Native.Passes assembly から登録し、外部 assembly に production の InternalsVisibleTo を要求しない。
+
+内容世代 ticket の登録・取得・実行間の結果依存、内部 template と部品の差分準備、transient の alias 再利用、一般の raw external interop と Native 専用拡張は未実装である。段階 0 は毎実行の transient を明示保持し、alias の最適化を前提にしない。共通 facade の明示 resource 操作は caller が直列化する。外部所有の scope／pin／execution は caller が返す。

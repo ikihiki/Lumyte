@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Legacy low-level render graph retained for existing graphics libraries.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics\Lumyte.Graphics.csproj" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
+  </ItemGroup>
+</Project>

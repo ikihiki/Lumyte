@@ -7,6 +7,9 @@
     <ProjectReference Include="..\Lumyte.Graphics.WebGPU\Lumyte.Graphics.WebGPU.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Portable.Shaders\Lumyte.Graphics.Portable.Shaders.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Portable.Resources\Lumyte.Graphics.Portable.Resources.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.Hosting\Lumyte.Graphics.Portable.Hosting.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Passes.Hosting\Lumyte.Graphics.Passes.Hosting.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph.Conformance\Lumyte.Graphics.RenderGraph.Conformance.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Shader\Lumyte.Graphics.Shader.csproj" />

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Portable implementation of the common feature RenderGraph contract.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph\Lumyte.Graphics.RenderGraph.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.Resources\Lumyte.Graphics.Portable.Resources.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,5 +1,5 @@
 using Lumyte.Graphics.Tests;
-using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.RenderGraph.Legacy;
 
 using LegacyWebGpuBackend = Lumyte.Graphics.WebGPU.Legacy.WebGpuBackend;
 

@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。起動時に一度だけ必要な Graphics の登録・設定を Generic Host の構成へ集約し、描画 library は DI から実行用の接続を取得する。本 ADR の Hosting API と GPU 初期化の連携は未実装である。
+採用（段階 0 を実装、残りは目標設計）。起動時の Graphics 登録・設定を Generic Host へ集約し、描画 library は DI された session accessor から共通 runtime／render context を借用する。実装した API と後続機能を末尾で区別する。
 
 ## 依存 ADR
 
@@ -64,6 +64,8 @@ AddLumyteGraphics の繰返しで別の既定 session や hosted service を追�
 | --- | --- |
 | `AddNativeProvider(id, createBackend)` | Native の backend factory を DI と接続して登録する。callback は IServiceProvider、GpuRenderRuntimeOptions、CancellationToken を受け、所有を移譲する INativeGpuBackend を ValueTask で返す |
 | `AddPortableProvider(id, createBackend)` | 同じ構成で IPortableGpuBackend を返す Portable 用の登録 |
+| `AddProvider(definition)`／`IGpuRenderProviderDefinition.CreateAsync(services, cancellationToken)` | integration が明示的な provider の非同期準備定義を登録し、runtime 単位の CPU scope から構成する。描画 library は呼ばない |
+| `AddNativePasses(configure)`／`AddPortablePasses(configure)` | 段階 0 の構成入口。起動時の `(IServiceProvider, 専用 registry)` callback で CPU 依存を解決し、専用の型付き factory をまとめて登録する |
 | `AddNativePass<TRequest, TResult>(contract, prepareFactory)` | 共通契約と Native の非同期準備 callback を登録する |
 | `AddPortablePass<TRequest, TResult>(contract, prepareFactory)` | 共通契約と Portable の非同期準備 callback を登録する |
 | 各 `prepareFactory(services, cancellationToken)` | 起動時に CPU 依存と準備済み shader package を揃え、ADR 0031／0032 の同期 pass factory を ValueTask で返す。services は当該 runtime の DI scope |
@@ -143,7 +145,7 @@ shutdown の timeout や token の取消しは、GPU／表示側の完了を意�
 
 ## コード配置
 
-以下は repository root 相対の目標配置である。Graphics の四つの Hosting project と隣接する `.Tests` は新設予定とし、既存の DevTools.Host を含む application がそれらを利用する。登録を行う project だけが Microsoft.Extensions を参照する。
+以下は repository root 相対の配置である。Graphics の四つの Hosting project と共通 Hosting.Tests は段階 0 で新設した。既存の DevTools.Host を含む application への組込みは後続とする。登録を行う project だけが Microsoft.Extensions を参照する。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -153,7 +155,7 @@ shutdown の timeout や token の取消しは、GPU／表示側の完了を意�
 | `src/graphics/Lumyte.Graphics.Native.Hosting/Providers/`、`Passes/` | AddDirectX12／AddVulkan、Native provider／pass factory と runtime 単位の DI scope の接続 |
 | `src/graphics/Lumyte.Graphics.Portable.Hosting/Providers/`、`Passes/` | AddWebGpu、Portable provider／pass factory と DI の接続 |
 | `src/graphics/Lumyte.Graphics.Passes.Hosting/Models/`、`TwoD/`、`ImageProcessing/` | 標準機能の登録 extension、二系統の本体と準備済み shader package を対応付ける非同期準備 |
-| `src/graphics/Lumyte.Graphics.Hosting.Tests/`、`src/graphics/Lumyte.Graphics.Native.Hosting.Tests/`、`src/graphics/Lumyte.Graphics.Portable.Hosting.Tests/`、`src/graphics/Lumyte.Graphics.Passes.Hosting.Tests/` | 新設予定の隣接 xUnit project。fake による設定・初期化共有・登録順・所有・停止と例外の統合試験。実 GPU 試験は各 project の Integration に区分する |
+| `src/graphics/Lumyte.Graphics.Hosting.Tests/` | fake による設定・初期化共有・登録順・所有・停止・presentation と例外の統合試験。系統別の登録と GPU 実行は既存 backend の Integration suite から確認する |
 | `src/devtools/Lumyte.DevTools.Host/Graphics/`、`src/devtools/Lumyte.DevTools.Host/Program.cs` | 既存 host への組込み先。前者は新設予定の接続領域で、presentation factory／window の寿命接続／frame loop と Resources サービスの組合せを置く。Program.cs は起動時の登録を呼ぶ |
 | `src/devtools/Lumyte.DevTools.Host.Tests/Graphics/` | 既存 test project 内の新設予定領域。実際の composition root と platform 寿命の接続を検証する |
 | `samples/graphics/Lumyte.Graphics.Hosting.Sample/` | 新設予定の application。設定による provider 選択、DI からの session 取得、同じ描画 plan の反復利用を示す |
@@ -261,6 +263,10 @@ device と window が必要な試験は別の統合 suite とし、対応する 
 
 Generic Host の登録 extension、Options、明示的な module／factory、非同期起動の共有、DI からの非所有 session 取得、runtime 単位の CPU scope と一つの所有者による終了を採用する。通常の library 利用では GpuRenderProviderRegistry 等を手動で組み立てず、低レベル integration・テストだけが直接 composition API を使う。
 
-既存 DevTools.Host は Generic Host を使うが、本 ADR の Graphics Hosting package、登録 builder、session accessor、非同期準備と rollback、標準機能の extension、presentation 接続と統合試験は未実装である。既存コードの Host 利用を、この GPU 起動契約の実装完了とは扱わない。
+段階 0 として四つの Hosting package、LumyteGraphicsBuilder、GpuGraphicsOptions.Runtime、Configure／BindConfiguration、非所有 session accessor、UsePresentation、非同期初期化／rollback、runtime 単位の DI scope、IHostedLifecycleService の停止と終了を実装した。StartAsync と GetAsync は先に呼ばれた側から同じ初期化を共有する。停止開始で runtime と presentation acquire の新規受理を閉じ、consumer の StopAsync 後の StoppedAsync で GPU、presentation connection、runtime、CPU scope を順に終了する。
+
+実装済みの個別登録は AddNativeProvider／AddPortableProvider の専用 backend factory と任意の registry 構成 callback、AddNativePasses／AddPortablePasses の `(IServiceProvider, 専用 registry)` callback である。callback は起動時に一度だけ scope 内の CPU 依存を解決する。AddImageProcessing は段階 0 の Clear／Copy／Output を両系統へ登録し、この三機能を RequiredPasses に加える。繰返しの標準機能登録は一度にまとめる。
+
+AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、個別 AddNativePass／AddPortablePass の非同期 package 準備、PlanCacheMaximumEntries、Model／2D と残る画像機能の登録は未実装である。platform 固有の window／canvas factory と thread affinity、実 device loss の試験も後続とする。UsePresentation の所有接続と headless 接続の確認を、OS の初回表示や resize 対応の完了とは扱わない。
 
 最初の統合では一つの Host に一つの既定 session を提供する。複数の named session、実行中の provider 差替え、GPU device の透過的な再生成、DI container の hot reload は未採用とする。複数 runtime を明示所有する低層の利用は引き続き可能であり、frame ごとのスコープや新しい汎用 DI framework を追加する理由にはしない。

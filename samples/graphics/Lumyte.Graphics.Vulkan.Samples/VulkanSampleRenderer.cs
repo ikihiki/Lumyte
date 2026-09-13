@@ -1,4 +1,4 @@
-using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.RenderGraph.Legacy;
 using Lumyte.Graphics.Library;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Shader;

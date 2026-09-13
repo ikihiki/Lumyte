@@ -138,6 +138,7 @@ CPU／resource input が未設定でも Build は可能だが、live な使用�
 | `IGpuRenderRuntime.Resources` | 共通の `IGpuGraphResources`。選択系統の manager に接続する。 |
 | `runtime.SubmitAsync(plan, bindings, cancellationToken)` | plan と不変 bindings の使用保持を取得し、専用実装の再利用・差分準備・記録・提出を行って `GpuRenderGraphExecution` を返す。bindings 省略時は CPU 初期値を使う。 |
 | `WaitIdleAsync(cancellationToken)`／`DisposeAsync()` | 自分の work と管理資源を終了する。未知の外部 GPU 利用は対象にしない。 |
+| `StopAccepting()` | drain より先に新規 Submit、resource scope／pin／upload の受理を閉じる。既存の保持の返却は引き続き可能。 |
 
 RequiredPasses は host の初期選択に使う機能 manifest である。個々の計画も、必要な契約版の実装が選択 provider に登録されていることを準備前に確認する。対応する二系統の pass 実装と shader artifact は実行環境へ配布しておく。artifact の I/O と展開は Lumyte.Resources が担当し、host が準備済みの各系統の package を pass factory へ渡す。GPU program の生成と使用保持は pass 実装が担当する。利用側に shader のロード、program の保持、binding の作成を要求しない。
 
@@ -195,6 +196,8 @@ SubmitAsync の成功は GPU 完了を意味しない。非同期にする理由
 | `PublishTexture/Buffer/Dependency`／`GetTexture/Buffer/Dependency` | contributor 間の logical resource の受渡し。 |
 | `IGpuGraphPresentation.AcquireNextTargetAsync(cancellationToken)` | 共通 texture ref、description と所有 token を持つ `GpuGraphPresentationTarget` を取得する。 |
 | `Present(target, completion)`／`Discard(target)` | 提出済み target を presentation に渡す／未提出 target を返す。 |
+| `Retire(target, completion)` | queue への受渡し後に失敗した可能性がある target を、表示せず接続へ移譲する。GPU と表示側の使用終了を確認してから返す。 |
+| `GpuRenderGraphSubmissionException.Completion` | 受理の有無を確定できない提出失敗の使用終了。未提出として Discard する根拠にはしない。 |
 | `GpuRenderContext(runtime, presentation, cacheMaximumEntries)` | runtime と presentation を借用する共通 frame helper。 |
 | `GpuRenderContext.SubmitAsync(plan, bindings, presentationTargetInput, cancellationToken)` | target を取得し、今回の target を不変 bindings の派生値へ設定して runtime に提出し、Present して execution を返す。 |
 | `GpuPresentationTargetChangedException.Description` | 取得した target と plan の形状が一致しない場合に、その target の共通 description を通知する。helper が未提出 target を返却した後に送出する。 |
@@ -227,11 +230,11 @@ helper は target の取得後、queue の受理前に失敗した場合は Disc
 | `src/graphics/Lumyte.Graphics.RenderGraph/Resources/` | 共通 resource facade の契約、opaque ref、scope／pin の公開契約。物理資源と系統別対応表は各 provider に置く |
 | `src/graphics/Lumyte.Graphics.RenderGraph/Runtime/` | IGpuRenderProvider／IGpuRenderRuntime、GpuRenderProviderRegistry、Options、execution と completion の共通契約 |
 | `src/graphics/Lumyte.Graphics.RenderGraph/Presentation/` | GpuRenderContext、GpuFrame、presentation target、形状変更の例外と acquire／submit／present の共通 helper |
-| `src/graphics/Lumyte.Graphics.RenderGraph.Tests/` | 新設予定の隣接 xUnit project。Contracts／Planning／Inputs／Ownership の CPU 試験を fake provider で実行する |
-| `src/graphics/Lumyte.Graphics.RenderGraph.Tests/Conformance/` | 同じ consumer fixture を一度だけ build して両 provider で使う適合試験。実 GPU の実行は通常の CPU 試験から区分する |
+| `src/graphics/Lumyte.Graphics.RenderGraph.Tests/` | 隣接 xUnit project。Contracts／Planning／Inputs／Ownership の CPU 試験を fake provider で実行する |
+| `src/graphics/Lumyte.Graphics.RenderGraph.Conformance/` | 同じ consumer fixture を一度だけ build して両 provider で使う独立 assembly。実 GPU の実行は各 backend の integration suite から行う |
 | `benchmarks/Lumyte.Benchmarks/Graphics/RenderGraph/` | 既存 benchmark project 内の新設予定領域。plan 再利用、bindings 更新と CPU allocation の測定 |
 
-現行 project の `RenderGraph/` にある共通契約と計画処理を整理して移し、物理配置、barrier、binding と command 記録は provider 側へ分ける。新しい公開契約を旧実装へ forwarding する互換層は作らない。`.Tests` は production project の隣に置き、実機適合試験に必要な provider の参照を production の共通 project へ逆流させない。
+新しい共通契約と計画処理は上表の配置へ実装し、物理配置、barrier、binding と command 記録は provider 側へ分けた。旧 `RenderGraph/` は `Lumyte.Graphics.RenderGraph.Legacy` へ移動し、既存 Library／TwoD／Text の移植元として維持する。新しい公開契約を旧実装へ forwarding する互換層は作らない。`.Tests` は production project の隣に置き、実機適合試験に必要な provider の参照を production の共通 project へ逆流させない。
 
 ## 使用例
 
@@ -356,4 +359,10 @@ provider は内部 graph の template、保持情報、GPU 部品、batch と派
 
 共通化する対象は機能要求、外部入出力、再利用できる graph 構造、型付きフレーム入力、runtime 選択と実行結果である。pass 本体、shader、GPU data と低レベル操作は二系統で実装する。
 
-転送データ型、単一の公開 contract、input contract と所有情報の共有、不変 bindings、resource input、plan の反復提出、差分準備、機能 registry、非同期準備と提出、共通 resource facade、二 provider と再利用 plan の presentation 接続、Hosting integration との登録 snapshot・所有の接続は未実装である。今回定めた GPU 内容世代の結果依存、使用終了と成功の区別、成功後の export 公開、target 形状変更の通知も実装完了を示さない。Lumyte.Resources の loader／decoder／評価 API はこの ADR では定義しない。適合試験では一度ビルドした同じ consumer assembly を両 provider へ接続し、機能の出力、依存、所有、失敗と shader 管理が利用側に漏れないことを確認する。初回表示、resize の競合、未提出 target の返却、遅延診断と出力の公開はそれぞれ fake で検証する。GPU command 列の一致や provider ごとの consumer 再ビルドを成功条件にしない。
+段階 0 として、転送データ型、共通 pass／input contract、不変 bindings、resource input、依存と culling、plan の反復提出、機能 registry、非同期準備・提出、成功後の export、共通 resource facade と二 provider、frame／presentation helper、Hosting との接続を実装した。使用終了と診断成功を分離し、取消しや受理不明の失敗で提出済み target を未提出として返さない。
+
+最初の planner は登録順で生存 pass を実行し、物理的な内容 version の複製は行わない。MarkOutput した内容を、その後の生存 pass が同じ logical resource へ書き込んで失わせる graph は拒否する。過去の内容も出力として残す場合は、別 texture へ Copy してその結果を export する。
+
+resource facade の明示操作は下位 manager の直列利用契約に従う。同一 runtime の scope 作成、pin、import／upload、Collect／Trim は caller が直列化し、開始した import を await してから次の manager 操作へ進む。Submit と停止の競合は provider が受理済み操作として追跡するが、一般の resource 操作全体を thread-safe とする保証ではない。scope／pin／execution の外部所有は caller が返し、Host が強制破棄しない。
+
+論理構造 cache、contributor builder、内部 template と差分準備、GPU 内容世代 ticket と実行間の内容依存、一般の raw external interop は未実装である。Lumyte.Resources の loader／decoder／評価 API は本 ADR で定義しない。同じ consumer assembly を使う適合試験と、初期化・snapshot・所有・提出失敗・target 形状変更の CPU 試験を分け、GPU command 列の一致は条件にしない。

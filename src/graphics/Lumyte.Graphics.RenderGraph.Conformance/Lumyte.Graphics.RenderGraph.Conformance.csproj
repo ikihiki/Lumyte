@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>A single compiled feature render graph consumer shared by backend conformance tests.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
+  </ItemGroup>
+</Project>

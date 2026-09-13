@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph\Lumyte.Graphics.Portable.RenderGraph.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph.Conformance\Lumyte.Graphics.RenderGraph.Conformance.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Using Include="Xunit" />
+    <Compile Include="..\Lumyte.Graphics.Portable.Resources.Tests\Unit\Management\ManagerTestBackend.cs" Link="ManagerTestBackend.cs" />
+  </ItemGroup>
+</Project>

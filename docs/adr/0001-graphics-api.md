@@ -170,6 +170,6 @@ await renderer.RenderAsync(runtime, cancellationToken);
 
 NoGraphicsAPI の考え方を適用する対象は Native である。Portable の明示 binding や device-owned resource は独立した設計であり、NoGraphicsAPI の Bindless を実装したものとして説明しない。Native でも pointer、PSO 分解、texture layout など原案どおり提供できない点は各 ADR の末尾に部分採用として記す。
 
-単一の RenderGraph contract、機能 request と二系統の pass 本体、共通 resource facade、非同期準備と二つの provider、Generic Host／DI integration は目標設計であり未実装である。この文書変更は runtime の実装を含まない。一度ビルドした同じ consumer assembly を両 provider に接続する適合試験を実装時に行う。
+単一の RenderGraph contract、Clear／Texture Copy／基本 Output の機能 request と二系統の本体、共通 resource facade、非同期提出、Native／Portable provider と Generic Host／DI integration を段階 0 として実装した。共通 consumer は独立 assembly に一度 build し、provider の設定だけを切り替える。旧描画系の移植元は `Lumyte.Graphics.RenderGraph.Legacy` へ明示分離し、新 API から旧 API へ forwarding しない。Model／2D、残る画像処理、内部 template の差分再利用と GPU 内容世代の共有は未実装である。
 
 Native の mesh／amplification と、両系統の Slang source の部分共有を追加採用する。Native の raw pipeline、直接／間接 mesh command、直接 root と試験用 shader は実装し、両 backend の実 GPU で確認した。製品用 shader artifact の生成・配布、pass の経路選択と共有 module は未実装である。Portable の直接 root は Slang 2026.17 の専用 accessor による WGSL 生成と実 GPU の最小実験で成立を確認した。通常の push constant 宣言の自動変換ではなく、固定した toolchain の相互運用機能を使う。toolchain への統合と各 pass での適合は未実装であり、全 pass の source を共有済みとは扱わない。

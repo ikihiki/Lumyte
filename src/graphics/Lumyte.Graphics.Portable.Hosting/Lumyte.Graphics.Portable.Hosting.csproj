@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Portable render provider registration for Generic Host.</Description></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.Hosting\Lumyte.Graphics.Hosting.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph\Lumyte.Graphics.Portable.RenderGraph.csproj" />
+  </ItemGroup>
+</Project>
