@@ -17,6 +17,30 @@ public abstract class NativeGpuSemaphore : IDisposable
     /// <summary>Blocks the calling CPU thread until the requested value is reached; it does not block queue submission.</summary>
     public abstract void WaitCpu(ulong value);
 
+    /// <summary>Asynchronously observes the requested timeline value without blocking the calling thread.</summary>
+    /// <remarks>
+    /// Cancellation ends only this CPU observation; it does not cancel GPU work or prove GPU use has ended.
+    /// Keep the semaphore and backend alive until this operation has completed, failed, or been canceled.
+    /// A reached value can also originate from SignalCpu, so this method does not independently prove GPU completion.
+    /// The default implementation periodically calls IsComplete without blocking a worker thread.
+    /// Backends may override it to use native notifications while preserving these lifetime and failure semantics.
+    /// </remarks>
+    public virtual ValueTask WaitAsync(ulong value, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return IsComplete(value) ? ValueTask.CompletedTask : ObserveAsync(value, cancellationToken);
+    }
+
+    private async ValueTask ObserveAsync(ulong value, CancellationToken cancellationToken)
+    {
+        do
+        {
+            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        while (!IsComplete(value));
+    }
+
     /// <summary>Signals from the CPU, independently of GPU work; it is not a GPU completion notification.</summary>
     public abstract void SignalCpu(ulong value);
 

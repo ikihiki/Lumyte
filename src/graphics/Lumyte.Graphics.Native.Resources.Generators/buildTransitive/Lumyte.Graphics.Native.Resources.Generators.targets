@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <EmitCompilerGeneratedFiles Condition="'$(EmitCompilerGeneratedFiles)' == ''">true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath Condition="'$(CompilerGeneratedFilesOutputPath)' == ''">$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/Shaders/Resources</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+  <Target Name="LumyteNativeResourceInputFiles" BeforeTargets="CoreCompile">
+    <ItemGroup><AdditionalFiles Include="@(NativeGpuResourceInput)" Exclude="@(AdditionalFiles)" /></ItemGroup>
+  </Target>
+</Project>

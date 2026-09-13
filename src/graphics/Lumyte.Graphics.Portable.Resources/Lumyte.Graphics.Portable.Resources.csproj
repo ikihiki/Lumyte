@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Explicit Portable GPU buffer and texture pools.</Description>
+    <Description>Portable GPU resource ownership, transfers, caches, and whole-resource pools.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Portable\Lumyte.Graphics.Portable.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Portable.Shaders\Lumyte.Graphics.Portable.Shaders.csproj" />
   </ItemGroup>
 </Project>

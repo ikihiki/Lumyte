@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><Description>Native GPU heap arena with aligned range allocation, reuse, and explicit release.</Description></PropertyGroup>
+  <PropertyGroup><Description>Native GPU resource ownership, descriptors, asynchronous transfers, and explicit heap arenas.</Description></PropertyGroup>
+  <PropertyGroup><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
   <ItemGroup><ProjectReference Include="..\Lumyte.Graphics.Native\Lumyte.Graphics.Native.csproj" /></ItemGroup>
 </Project>

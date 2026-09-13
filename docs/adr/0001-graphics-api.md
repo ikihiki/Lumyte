@@ -143,7 +143,7 @@ front face は clip-to-viewport 変換後の winding に対する値とする。
 | `src/graphics/Lumyte.Graphics.Native/`、`src/graphics/Lumyte.Graphics.Portable/` | 独立した低レベル契約。Native は作成済み、Portable は新設予定。既存 Lumyte.Graphics の backend／command／resource API を共通基礎値から分離する |
 | `src/graphics/Lumyte.Graphics.DirectX12/`、`src/graphics/Lumyte.Graphics.Vulkan/`、`src/graphics/Lumyte.Graphics.WebGPU/` | 既存 project を改編。前二者は Native、後者は Portable の実装を置く |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 新設予定。系統別の準備済み package と GPU program。offline tool の配置は各 shader ADR が定める |
-| `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | 新設予定。系統別の GPU 管理機構。共通基礎 project に管理 API を置かない |
+| `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | 実装済みの系統別 GPU 管理機構。共通基礎 project に管理 API を置かない |
 | `src/graphics/Lumyte.Graphics.RenderGraph/` | 既存 project を改編。単一の共通 graph／runtime 契約と GPU 転送データ |
 | `src/graphics/Lumyte.Graphics.Native.RenderGraph/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph/` | 新設予定。共通契約を実装する provider と各系統の内部 graph |
 | `src/graphics/Lumyte.Graphics.Passes/`、`src/graphics/Lumyte.Graphics.Native.Passes/`、`src/graphics/Lumyte.Graphics.Portable.Passes/` | 新設予定。順に共通機能契約、Native 本体、Portable 本体。機能ごとの詳細は担当 ADR に置く |

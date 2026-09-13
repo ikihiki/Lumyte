@@ -74,4 +74,4 @@ finally
 
 resource と内部 memory の一体生成・破棄を Portable の唯一の所有モデルとする。独立した Portable 契約と native host の WebGPU backend に、Buffer／Texture の生成、native Destroy と参照解放を実装した。resource の opaque identity は実装側の非公開派生型が持ち、全 resource registry は設けない。
 
-Bindings は内部 view／sampler への参照を所有し、破棄時に最後の参照を解放する。元 Buffer／Texture と Binding Layout の所有は caller に残す。render／compute／buffer・texture copy の提出では内部 command memory と attachment 用 view の参照を GPU 利用終了まで保持し、application resource の自動回収は行わない。Browser backend もこの所有規約を実装し、GPU object とその JSObject proxy の寿命を接続する。上位 package／pool と自動退役は未実装である。
+Bindings は内部 view／sampler への参照を所有し、破棄時に最後の参照を解放する。元 Buffer／Texture と Binding Layout の所有は caller に残す。render／compute／buffer・texture copy の提出では内部 command memory と attachment 用 view の参照を GPU 利用終了まで保持し、application resource の自動回収は行わない。Browser backend もこの所有規約を実装し、GPU object とその JSObject proxy の寿命を接続する。package／pool と明示使用に基づく退役は上位 Resources に実装し、この backend の責務には加えない。

@@ -33,6 +33,7 @@
     <Compile Include="..\Lumyte.Graphics.Tests\GpuRenderGraphBackendConformanceTests.cs" Link="GpuRenderGraphBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Tests\GpuBackendTestGate.cs" Link="GpuBackendTestGate.cs" />
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeMemoryArenaConformance.cs" Link="Integration\Memory\NativeMemoryArenaConformance.cs" />
+    <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeResourceManagerConformance.cs" Link="Integration\Memory\NativeResourceManagerConformance.cs" />
     <Compile Include="..\Lumyte.Graphics.Text.Tests\TextBackendConformanceTests.cs" Link="TextBackendConformanceTests.cs" />
     <Compile Include="..\Lumyte.Graphics.Text.Tests\TestFontData.cs" Link="TestFontData.cs" />
     <Compile Include="..\Lumyte.Graphics.TwoD.Tests\BackendConformanceTests.cs" Link="BackendConformanceTests.cs" />

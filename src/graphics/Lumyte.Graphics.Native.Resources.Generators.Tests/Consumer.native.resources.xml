@@ -1,0 +1,7 @@
+<input namespace="Consumer.namespace" name="struct" size="40">
+  <field name="manager" kind="GpuAddress" offset="0" />
+  <field name="destination" kind="DescriptorIndex" resource="View" offset="12" />
+  <field name="batch" kind="DescriptorIndex" resource="Sampler" offset="20" />
+  <field name="event" kind="GpuAddress" offset="24" />
+  <field name="Tint" kind="Scalar" offset="8" size="4" />
+</input>

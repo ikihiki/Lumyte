@@ -27,12 +27,15 @@ caller が timeline の値、提出順序、GPU wait と再利用時点を管理
 | `INativeGpuBackend.CreateSemaphore(initialValue = 0)` | 初期値を持つ device timeline を生成する。queue に所属させない。 |
 | `NativeGpuSemaphore.IsComplete(value)` | 現在の値が指定値以上かを CPU から確認する。待機と queue 内部 memory の回収を行わない。 |
 | `NativeGpuSemaphore.WaitCpu(value)` | 指定値以上への到達を呼出し元 CPU thread で待つ。queue の Submit を停止せず、内部 memory 回収も行わない。 |
+| `NativeGpuSemaphore.WaitAsync(value, cancellationToken)` | CPU thread を占有せず値への到達を待つ。取消しはこの CPU 待機だけを終了し、GPU work や他の待機を取り消さない。 |
 | `NativeGpuSemaphore.SignalCpu(value)` | CPU から値を signal する。GPU work の完了通知ではなく、caller が CPU producer や明示的な gate に用いる。 |
 | `NativeGpuSemaphore.Dispose()` | この semaphore を参照する全 CPU 操作と GPU signal／wait を解消してから同期 object を破棄する。 |
 
 caller は同じ timeline の全 signal 値を実行順に厳密な単調増加にする。queue ごと、または CPU producer ごとに timeline を分けると、複数 signaler の順序を明確に保ちやすい。GPU wait は現在値が待機値以上なら満たされ、値を消費しない。signal 提出前の wait も許すが、待機で停止した同じ queue の後方にしか signal がない構成や循環依存は caller が避ける。単調性、将来値、GPU の循環依存を検査する独自 scheduler は設けない。
 
-caller は同じ queue の操作を直列化する。異なる queue と recording は並行して利用できるが、一つの recording の記録・提出・破棄を競合させない。同じ resource の host 操作と初回使用の提出も直列化する。CPU の `WaitCpu`／`IsComplete` は Submit／SignalCpu と並行可能であり、queue の回収リストへ触れない。SignalCpu 同士と GPU signal の順序は native の条件に従って caller が保証する。semaphore や backend の Dispose は他の操作と競合させない。command 列と wait 列の storage は Submit が戻った後に再利用できる。
+caller は同じ queue の操作を直列化する。異なる queue と recording は並行して利用できるが、一つの recording の記録・提出・破棄を競合させない。同じ resource の host 操作と初回使用の提出も直列化する。CPU の `WaitCpu`／`WaitAsync`／`IsComplete` は Submit／SignalCpu と並行可能であり、queue の回収リストへ触れない。SignalCpu 同士と GPU signal の順序は native の条件に従って caller が保証する。semaphore や backend の Dispose は他の操作と競合させない。command 列と wait 列の storage は Submit が戻った後に再利用できる。
+
+`WaitAsync` の既定実装は非同期 timer を挟んで `IsComplete` を照会し、待機専用 thread を作らない。DirectX 12／Vulkan は進行中の非同期待機を数え、その間の semaphore 破棄を拒否する。待機の取消しや例外は GPU 利用終了を保証しない。CPU signal で到達させた値についても、GPU work の完了と取り違えない。
 
 producer の signal を CPU が観測しただけでは、その semaphore を待っている consumer queue の参照は終了していない。consumer の completion も含む全利用終了まで semaphore を保持する。CPU root 入力の snapshot と、GPU が参照する resource／descriptor の寿命も別であり、最終 consumer が終わるまで後者を保持する。
 
@@ -74,6 +77,7 @@ native 記録中・終了済み・受理済みの区別は内部管理であり�
 | `src/graphics/Lumyte.Graphics.Vulkan/Submission/` | 記録済み command buffer の batch 終了、queue 受理と内部 command memory の回収との接続。 |
 | `src/graphics/Lumyte.Graphics.DirectX12/Synchronization/`、`src/graphics/Lumyte.Graphics.Vulkan/Synchronization/` | device に所属する fence／timeline semaphore、CPU signal・照会・wait、同期 object の解放と device 全体の loss の接続。 |
 | `src/graphics/Lumyte.Graphics.Native.Tests/Device/` | 一回提出、device timeline と CPU 同期操作を外部 backend の公開契約から実装・利用する consumer test。 |
+| `src/graphics/Lumyte.Graphics.Native.Tests/Synchronization/` | 非同期待機、取消し、独立した観測と障害通知を制御可能な semaphore で確認する。 |
 | `src/graphics/Lumyte.Graphics.DirectX12.Tests/Submission/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Submission/`、`src/graphics/Lumyte.Graphics.DirectX12.Tests/Synchronization/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Synchronization/` | native 呼出しを差し替え、受理前失敗、受理後の再提出拒否、completion と command memory の寿命を検証する unit test。 |
 | `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/Submission/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/Commands/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/Pipelines/` | 実 queue の GPU wait と CPU の先行、転送先の compute／描画、逆方向 copy、失敗境界と完了後の内部 memory 回収を確認する試験。 |
 
@@ -109,8 +113,7 @@ native.MainQueue.Submit([drawCommands], new(rendered, 1), [new(uploaded, 1)]);
 
 // CPU は別 slot の次 frame を準備・提出できる。
 // この slot を再利用する時点で、必要なら待つ。
-if (!rendered.IsComplete(1))
-    rendered.WaitCpu(1);
+await rendered.WaitAsync(1, cancellationToken);
 ```
 
 GPU wait は CPU を停止しない。上記の最終 consumer 完了後なら、uploaded と rendered の双方を破棄できる。CPU producer を明示 gate にする場合は別 timeline を待機列へ入れ、CPU 処理後にその timeline の SignalCpu を呼ぶ。SignalCpu で GPU completion 用の値を先取りしない。
@@ -125,6 +128,6 @@ batch の一回受理、PSO/command 変換の失敗時に GPU wait も追加し�
 
 compute pipeline、直接 root と直接／間接 dispatch、vertex／mesh raster の直接／一件の間接実行を提出へ接続した。DirectX 12 の提出時 PSO 解決は Lumyte の補足であり、mesh の PSO 生成を含む batch の native 変換に失敗した場合は一部の recording だけを実行しない。
 
-受渡し後・受理不明の同期失敗を識別する例外と、内部 command memory の保持を実装した。完了点の通知だけで device loss 後の回収まで保証しない。停止を確認する公開操作、非同期の Native CPU wait、上位の completion token と retirement への接続は未実装である。
+受渡し後・受理不明の同期失敗を識別する例外、内部 command memory の保持、非同期の Native CPU wait を実装した。上位 Resources は独自の token と使用保持をこの完了観測へ接続する。完了点の通知だけで device loss 後の回収まで保証しない。停止を強制して利用終了を証明する公開操作は設けず、観測不能な work は保持して終了を失敗させる。
 
 複数 queue の選択と GPU wait、queue に所属しない CPU timeline 操作は NoGraphicsAPI の現行 prototype を拡張する方針として採用し、DirectX 12／Vulkan に実装した。CopyQueue は独立した native queue を取得できる場合だけ提供する。任意数の queue 作成、専用 compute queue、stage を指定する部分 wait、複数 signal、presentation と application resource の自動退役はこの段階に含めない。実装と実機検証の範囲は進捗記録に従う。

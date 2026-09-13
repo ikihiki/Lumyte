@@ -2,11 +2,11 @@
 
 ## 状態
 
-採用（目標設計）。
+採用。Native／Portable の管理層、転送と管理入力生成器を実装済み。
 
 `Lumyte.Graphics.Native.Resources` と `Lumyte.Graphics.Portable.Resources` を独立したライブラリとして定義する。資源の作成・所有・使用・回収には同じ API 名と意味を用い、管理する resource、shader 入力、配置と descriptor／binding の実装はそれぞれの系統に合わせる。
 
-本 ADR の管理層は未実装である。ADR 0028 の明示的な arena／pool utility の完成とは分け、提出、completion、依存を伴う寿命管理と非同期 upload をここで定義する。
+ADR 0028 の明示的な arena／pool utility の上に、提出、completion、依存を伴う寿命管理と非同期 upload を実装する。共通 RenderGraph provider への組込みは後続とし、この管理層自体は直接利用できる。
 
 ## 依存 ADR
 
@@ -45,14 +45,15 @@ Native は descriptor slot、linear region、texture の配置を管理する。
 | `GpuResourceManager(device, options)` | 同じ系統の device/backend を借用し、resource record、pool、descriptor または binding cache、retirement を所有する。`options` の配置・容量設定は系統ごとに定義する。 |
 | `CreateScope()` | caller が所有する空の `GpuResourceScope` を作る。scope は生成物に対する CPU 側の保持集合となる。 |
 | `scope.CreateBuffer(description)` | 管理された `GpuBufferRef` を返す。Native では linear region/range を確保し、Portable では Buffer を確保する。 |
-| `scope.CreateTexture(description)` | 管理された `GpuTextureRef` を返す。用途として指定された default view と、系統ごとに必要な準備を済ませる。 |
+| `scope.CreateTexture(description)` | 管理された `GpuTextureRef` を返す。Native は任意に指定した default view も準備する。Portable の view は `GetView` で明示的に取得する。 |
 | `scope.GetView(resource, description)` | 指定した view の `GpuViewRef` を取得し、scope が保持する。同じ resource 世代と記述の view を再利用できる。 |
 | `scope.GetSampler(description)` | 同じ系統の sampler description から準備済みの `GpuSamplerRef` を取得し、scope が保持する。同じ不変記述の sampler を共有できる。 |
 | `GetBufferRange(reference, offset, length)` | 準備済み buffer の指定 byte 範囲を、Native では `NativeGpuRange`、Portable では `GpuBufferRange` として返す。保持を追加しない。 |
 | `GetTextureHandle(reference)` | 準備済み texture の raw handle を同じ系統の型で返す。保持を追加しない。 |
 | `GetTextureView(reference)` | 準備済み texture view を Native では `NativeGpuTextureView`、Portable では `GpuTextureView` として返す。新たな view 生成や保持追加は行わない。 |
 | `scope.Release(reference)` | この scope の保持を放す。他の scope、pin、GPU 使用による保持には影響しない。 |
-| `scope.ImportPackageAsync(plan, cancellationToken)` | 同じ系統の package plan を既定 pool で具体化し、view・shader 用参照・upload を構築する。初期 upload の GPU 使用終了と診断を含む成功確認後に `GpuPackageRef` を返す。Portable は配置指定を受け取らない。 |
+| `scope.AddDependency(resource, dependency)` | この scope が保持する resource へ同じ manager の明示依存を加える。重複は一つにまとめ、自己依存と循環を拒否する。pointer/index の内容は調べない。 |
+| `scope.ImportPackageAsync(plan, cancellationToken)` | 同じ系統の package plan を既定 pool で具体化し、buffer／texture、明示依存、export と初期 upload を構築する。成功確認後に `GpuPackageRef` を返す。Native は指定 default view も準備する。Portable は配置指定を受け取らず、view／binding は別途明示的に作る。 |
 | `scope.Dispose()` | 全 CPU 保持を放し、以後の生成を終了する。既存の pin と batch の使用保持は残る。 |
 | `Pin(reference)` | scope 外で依存を含めて保持する `GpuResourcePin` を返す。 |
 | `GpuResourcePin.Dispose()` | この pin の保持だけを放す。GPU 待機は行わない。 |
@@ -63,14 +64,16 @@ Native は descriptor slot、linear region、texture の配置を管理する。
 | `Collect()` | 明示保持を失った record と完了済み退役を非 block で回収する。 |
 | `Trim()` | 完全に未使用の pool block または cached resource を解放する。使用中の資産を追い出さない。 |
 | `WaitIdleAsync(cancellationToken)` | 呼出し時点でこの manager が管理する提出と退役を非同期に drain する。外部の手動提出を含む device idle は保証しない。取消しや観測失敗で保持を放棄しない。 |
-| `Statistics` | 自分が管理する確保・使用・退役待ち・再利用量を返す。Native の実 allocation 量、Portable の把握できる resource 量と推定量を区別する。descriptor 数と binding cache 数などの詳細も系統ごとに定義する。 |
+| `Statistics` | 自分が管理する record、保持、提出、descriptor／binding 数を返す。Native の heap 確保 byte 数と Portable の論理 buffer byte 数を区別し、物理メモリ使用量を推定しない。 |
 | `DisposeAsync()` | 管理する work を非同期に drain して pool と record を破棄する。外部の scope/pin/use は caller が先に返す。利用終了を確認できない場合は保持を残して失敗し、借用 device/backend を破棄しない。 |
 
-`GpuBufferRef`、`GpuTextureRef`、`GpuViewRef`、`GpuSamplerRef`、`GpuPackageRef` は manager と record 世代を示す非所有値とする。変数へコピーしても保持は増えない。scope、pin、batch のいずれかで寿命を覆う。古い reference が再利用済み record へ接続しないよう、管理層が自身の世代を確認する。
+`GpuResourceRef` を非所有参照の基底とし、`GpuBufferRef`、`GpuTextureRef`、`GpuViewRef`、`GpuSamplerRef`、`GpuPackageRef` は manager と record 世代を示す sealed class とする。利用者は生成せず、変数へコピーしても保持は増えない。scope、pin、batch のいずれかで寿命を覆う。record identity は再利用せず、古い reference が同じ raw handle の新資源へ接続しないようにする。Portable の buffer／texture／sampler ref は作成時の `Description` も返す。
 
 default view と resource は一つの owner record にまとめる。default view からの参照を独立した所有 edge として resource に戻さず、相互保持の循環を作らない。追加 view や binding は参照先 resource の owner record を保持する。基本実装の通常回収に任意 graph の tracing GC を必須にしない。
 
-`GpuPackageRef.GetExport(id)` は同じ系統の typed resource または package export を返す。export の `Pin`／`Use` は対象 resource と明示依存を保持する。Native の単一 allocation に属する export は、その allocation group 全体も保持する。両系統で揃える所有操作に native address、descriptor index、Portable binding layout を必須引数として加えない。
+`GpuPackageRef.GetExport(id)` は同じ系統の resource ref を返し、`GetExport<T>(id)` は型を確認して返す。export の `Pin`／`Use` は対象 resource と明示依存を保持する。Native の単一 allocation に属する export は、その allocation group 全体も保持する。両系統で揃える所有操作に native address、descriptor index、Portable binding layout を必須引数として加えない。
+
+Native の `GpuResourceManagerOptions` は `BlockSize`（既定16 MiB）、`ResourceDescriptorCapacity`（4096）、`SamplerDescriptorCapacity`（256）を設定する。Portable の同名 options は現在追加設定を持たず、resource description を変更しない。Native の `GpuResourceStatistics` は `ResourceCount`、`HeldResourceCount`、`PendingSubmissionCount`、`AllocatedBytes`、resource／sampler の descriptor 数と view／sampler cache 数を返す。Portable は resource、buffer、texture、view、sampler、bindings、package の各数、`LogicalBufferBytes`、`PendingSubmissionCount`、`QuarantinedResourceCount` を返す。論理量は pool の未使用 cache を含めず、texture の物理 byte 数は報告しない。
 
 Native 管理層は `GpuBufferDescription(Size, MemoryKind, Alignment)` を定義する。`Size` は論理 byte 数、`MemoryKind` は確保用途、`Alignment` は論理範囲の要求整列値であり、Portable の Buffer usage flags を Native に要求しない。`GpuBufferRef` は大きな linear region 内の部分範囲を保持できる。Native の `GetBufferRange` は保持範囲の `Offset + offset` を用い、region の address に含まれる heap 配置 offset を再加算しない。
 
@@ -101,10 +104,16 @@ Native の `GpuBufferViewDescription(Offset, Length, Access)` は管理 buffer �
 | `scope.GetBindings(program, group, inputs)` | `PortableShaderProgram` の指定 group と Portable 用の型付き入力から一つの `GpuBindingsRef` を取得する。program の binding metadata に従い、実際に指定された resource、view、sampler、range と dynamic offset 条件で immutable binding set を生成・再利用する。 |
 | `GpuBindingsRef` | binding set 世代の非所有参照。scope が保持し、`Pin`／`Use` は binding set が明示参照する resource 世代も保持する。 |
 | `GetBindingsHandle(reference)` | 準備済みの binding set の raw `GpuBindingsHandle` を返す。取得時に生成・更新・保持追加は行わない。 |
+| `IGpuBindingInputs.Write(writer)` | 手書きまたは生成された入力型が、使用する管理参照を writer へ渡す。 |
+| `GpuBindingWriter.Buffer(binding, buffer, offset, length)` | 論理 buffer 範囲を明示する。既定の `length = ulong.MaxValue` は残り全体を意味する。 |
+| `GpuBindingWriter.Texture(binding, view)` | sampled／storage texture 用の管理 view を渡す。用途の GPU 検証は下位へ委ねる。 |
+| `GpuBindingWriter.Sampler(binding, sampler)` | 管理 sampler を渡し、binding の寿命に含める。 |
 
 `PortableShaderLoader.Load(portablePackage)` と独立した入力構造体を使用する。Native の shader package、root 構造体、descriptor index table を変換して Portable 入力へ使わない。共通 RenderGraph から使用する場合は Portable の機能 pass 本体が、自身の shader、生成 GPU 構造体とこの binding 操作を使う。pass の共通 CPU 入力から共通 shader ABI への変換は要求しない。binding cache の再利用 key には layout と各 resource/view 世代を含め、古い世代が同じ数値 handle の新資源へ入れ替わらないようにする。
 
 shader compiler は下位の POD 構造体と binding schema を出力し、Resources 向けの生成器がその schema から managed reference を受け取る入力型を別途作る。shader package／loader 自体を Resources や上位の実行器の型へ依存させない。Native の managed resource 参照を解決する入力生成も同じ依存方向に従う。
+
+実装済みの生成器は準備済み `.native.resources.xml`／`.portable.resources.xml` をビルド入力にする。Native は ABI の `size` と address／descriptor index の byte offset から、参照 property、`ByteSize`、`Retain(batch)`、`Write(manager, destination)` を生成する。`Write` は参照の byte 位置だけを更新し、scalar 値や padding を変更しない。Portable は group／binding の対応から `IGpuBindingInputs`、`Group`、buffer の offset／length property を生成する。生成型自体は所有権を持たない。MSBuild の `NativeGpuResourceInput`／`PortableGpuResourceInput` item または `AdditionalFiles` で登録する。schema と shader ABI の整合は同じ artifact を準備する build が保証し、runtime で反射や I/O を行わない。詳細は各生成器の README に置く。
 
 Portable の managed binding 入力の sampler は `GpuSamplerRef` を受け取り、準備済み description/object とその世代へ解決する。binding set の使用保持には sampler の依存も含める。
 
@@ -119,12 +128,12 @@ program とその layout は借用する。caller は参照する binding と GP
 | `batch.Use(reference)` | 同じ manager の resource、view、package、系統固有 binding などの明示依存を記録前から保持する。所有権は移さない。 |
 | `batch.Use(scope)` | 呼出し時点で scope が保持する資源と依存を使用保持する。以後その scope に追加した資源を自動的に含めない。 |
 | `batch.Own(scope)` | caller から scope の所有を引き受け、その時点の保持集合を固定する。以後 caller は生成・変更・終了しない。batch の終了要求と、提出した場合の completion 後に CPU 保持を返す。取得済みの他の pin/use は引き続き生存を保証する。 |
-| `batch.Retain(lease)` | caller が明示的に渡した外部 `IDisposable` lease の返却責任を引き受ける。 |
+| `batch.Retain(lease)` | caller が明示的に渡した `IDisposable` lease の返却責任を引き受ける。同じ manager の pin／use／Portable mapping は外部所有数も移管し、以後 caller からの返却・退役を拒否する。 |
 | `batch.StartCommandRecording()` | この batch が所有・提出する、系統ごとの command を作る。Native は manager 自身の resource／sampler descriptor heap を初期設定する。 |
 | `batch.Submit()` | 自身の全記録を一度だけ提出し、系統ごとの `GpuSubmissionToken` を返す。GPU 完了を待たず、実際の提出時に必要な PSO を準備する。受理不明を含む受渡し後の失敗では、同じ token を Resources の `GpuSubmissionException.Completion` に保持する。 |
 | `batch.Dispose()` | 確実に未提出なら記録を破棄してから保持を返す。提出済み・受理不明なら、利用終了を確認できるまで記録に必要な保持を manager に残す。 |
 
-`Use`／`Own`／`Retain` は対象を参照する最初の記録より前に行う。提出を開始した後は記録や保持対象を追加しない。batch は GPU state、shader の Parameter Data、CPU/GPU 間の競合を推論しない。command の root data は caller が渡した内容を直接送る。
+`Use`／`Own`／`Retain` は対象を参照する最初の記録より前に行う。Native は最初の `StartCommandRecording` で保持集合を固定する。提出を開始した後は記録や保持対象を追加しない。batch は GPU state、shader の Parameter Data、CPU/GPU 間の競合を推論しない。command の root data は caller が渡した内容を直接送る。
 
 Native の raw 手動記録では caller が公開された二つの descriptor heap を command に設定し、`AcquireUse` で必要な資源・sampler の使用を保持する。heap は manager が所有し、caller は manager の slot を手動変更・返却しない。
 
@@ -142,10 +151,11 @@ Native の raw 手動記録では caller が公開された二つの descriptor 
 | `WaitAsync(cancellationToken)` | 当該提出の GPU 利用終了と診断を含む成功を非同期に待つ。取消しはこの CPU 待機だけを終了し、提出や保持を取り消さない。無効 token の待機は拒否する。 |
 | `Equals / GetHashCode / == / !=` | 発行元と提出 identity の両方で比較する。同じ数値でも異なる発行元の提出を同一視しない。 |
 | `GpuSubmissionException.Completion / InnerException` | manager の受渡し後・受理不明の同期失敗を、当該 token と元の障害へ結び付ける。例外自体は資源を所有せず、token の完了も保証しない。下位の raw completion を持つ例外とは別型である。 |
+| Portable の `GpuExecutionException.Diagnostics` | GPU 利用終了後に成功しなかった提出の診断一覧。下位の signal 権限を公開せず、Resources の待機から伝える。 |
 
-manager は提出 identity、観測先、一時資源と依存の保持を raw queue への受渡し前に準備する。正常な提出では token を返し、下位の `NativeGpuSubmissionException`／`Portable.GpuSubmissionException` を受けた場合は同じ identity の token を上位の失敗へ結び付ける。確実に未提出の失敗だけは保持を取り消せる。Native の未提出保証を持つ失敗結果は ADR 0012 の契約に従う。任意の別の host 例外だけを未提出の証拠にせず、受理不明の記録を再提出しない。
+manager は提出 identity、観測先、一時資源と依存の保持を raw queue への受渡し前に準備する。正常な提出では token を返し、受渡し後の例外では同じ identity の token を上位の失敗へ結び付ける。manager 内で raw Submit を呼ぶ前の失敗だけは未提出として扱える。raw 呼出し後は例外の型から拒否を推測せず、確実な利用終了を観測するまで保持する。受理不明の記録を再提出しない。
 
-上位例外の `InnerException` には下位提出例外が保持する元の原因を引き継ぎ、診断を失わせない。発行元の raw timeline を含む下位提出例外そのものは manager 内部に保持し、上位の例外連鎖から signal 権限を公開しない。利用者が受け取る提出の識別は Resources の token に統一する。
+上位例外の `InnerException` には下位提出例外が保持する元の原因を引き継ぎ、診断を失わせない。raw completion と観測に必要な原因を manager 内部に保持し、上位の例外連鎖から signal 権限を公開しない。利用者が受け取る提出の識別は Resources の token に統一する。
 
 発行元は同じ manager と借用 device に属し、提出に対応する completion の通知権限を管理する。Native では caller が `SignalCpu` で進められる任意の semaphore 値を回収の証明にしない。manager が非公開で所有する timeline と制御された signal を使用し、外部の raw fence を token に変換する API は設けない。Portable でも任意の数値を発行済み token として扱わず、管理する queue の提出と観測へ結び付ける。複数 queue の利用は、対象のすべての利用を覆う completion 群、または明示的に同期した最終 completion で保持する。
 
@@ -153,7 +163,7 @@ raw command を直接提出した caller は、必要な全利用の終了を自
 
 GPU 利用終了と処理成功は別に管理する。`Collect` は前者だけを回収条件とし、upload 結果の公開は `WaitAsync` の成功を条件とする。Portable の `GpuExecutionException` は当該提出の診断を保って待機へ伝える。失敗した提出でも利用終了を確認できれば保持を回収できるが、内容が完成したとは扱わない。device loss、観測の失敗、取消しで利用終了を確認できない場合は保持を継続する。
 
-Native の非同期観測も manager の提出担当へ接続する。下位の `WaitCpu` を呼出し元の thread で実行して非同期 API に見せかけず、UI や Browser の event loop を blocking wait で止めない。backend 固有の完了通知を利用する場合は公開された拡張契約を使い、production 間の `InternalsVisibleTo` を要求しない。観測機構は未実装であり、停止が確認できない障害からの drain を既存の raw Submit だけで保証しない。
+Native の非同期観測は下位の `NativeGpuSemaphore.WaitAsync` に接続する。既定実装は timer による非同期待機と counter 照会を使い、待機専用 thread を作らない。Browser も event loop を blocking wait で止めない。接続は公開契約だけを使い、production 間の `InternalsVisibleTo` を要求しない。
 
 ### 内部 retirement と終了
 
@@ -161,9 +171,13 @@ Native の非同期観測も manager の提出担当へ接続する。下位の 
 
 `Collect` は待機せず、利用終了を確認できた独立した登録を処理する。未完了の登録が先にあっても、依存しない完了済み登録の回収を妨げない。object の依存順序は manager が明示的に組み立て、同じ token に別々の callback を登録した順番だけを破棄順序の保証にしない。一つの回収が失敗しても独立した対象の処理を続け、元の障害を保持する。途中まで実行された破棄を自動再試行せず、破棄が不明な resource や配置範囲を再利用候補へ戻さない。
 
+batch の回収は、まず全記録の破棄を試みる。その成功後に retained lease を返し、最後に resource／scope の保持を放す。記録の破棄が失敗した場合、その記録が借用した mapping 等の lease も保持する。完了済み提出の内部履歴は回収し、長時間の連続描画で成功履歴を無制限に蓄積しない。Portable の未観測の診断失敗は token の待機または drain で報告するまで保持する。利用者が持つ token の観測 identity は引き続き有効である。
+
 `WaitIdleAsync` は対象にした管理 work と必要な回収だけを drain し、外部 scope/pin/use を強制的に返したり device 全体の idle を保証したりしない。取消しや観測失敗でも登録と保持は manager に残る。`DisposeAsync` は外部保持が残る場合、何も破棄せず失敗する。終了を開始した後は新たな生成・提出を受け付けず、正常に drain できたものから依存順に破棄する。失敗しても未解消の保持と障害を残し、終了済みと偽らない。
 
-backend の `Dispose`、raw `device.destroy()` の復帰、device loss の通知は GPU 停止の証明ではない。通常 completion を確認できない保持を解消するには別途確定した利用終了が必要であり、その公開契約と接続は後続の実装事項とする。manager の終了失敗を理由に借用 backend を破棄したり、utility の未返却 loan を強制回収したりしない。
+drain は一つの既知の失敗を他の未完了提出の待機に隠さず、失敗を返して独立した完了分を回収する。待機取消しも同じである。失敗の報告と、後から確定する GPU 利用終了は別に扱う。
+
+backend の `Dispose`、raw `device.destroy()` の復帰、device loss の通知は GPU 停止の証明ではない。通常 completion を確認できない場合は保持して drain を失敗させる。manager の終了失敗を理由に借用 backend を破棄したり、utility の未返却 loan を強制回収したりしない。停止が未確認の保持を強制的に解除する API は提供しない。
 
 ## 配置と package
 
@@ -172,6 +186,15 @@ Native の既定 pool は linear、texture、attachment、upload/readback、pack
 Portable は Buffer／Texture の description、usage、転送方法に適した object pool と binding cache を使用する。必要なメモリは `CreateBuffer`／`CreateTexture` が確保し、pool の未使用 resource を破棄する際は対応する `Destroy` が解放する。manager は事前に heap を作らず、requirement の取得や配置 offset の計算を行わない。
 
 両系統に同名の `GpuPackagePlan` を置き、resource description、準備済みの初期データ、明示依存、export を持たせる。plan は byte 列と記述を所有または移譲・コピーにより保持し、file path、URI、stream、外部 asset の解決用 ID を入力にしない。shader 入力と payload は別とする。配置 group と `GpuPackagePlacement` は Native 専用である。Portable の plan に heap、配置 offset、単一 allocation の要求を含めない。glTF decoder は graphics 管理層に含めない。
+
+| API | 説明 |
+| --- | --- |
+| `GpuPackagePlan(resources, exports)` | description、byte 列、依存と export を保持する不変の準備済み計画。`Resources`／`Exports` で参照できる。重複 ID、不明な参照先と循環を CPU の計画として拒否する。 |
+| `GpuPackageResource.Id / Dependencies` | package 内の一意な名前と明示依存。Native には `AllocationGroup` もある。 |
+| `GpuPackageBuffer(id, description, data, destinationOffset, dependencies, ...)` | 初期 byte 列をコピーして保持し、`Description`／`Data`／`DestinationOffset` を公開する。 |
+| `GpuPackageTexture(id, description, uploads, dependencies, ...)` | texture description と upload 列を保持する。Native は `MemoryKind` と任意の `DefaultView` も持つ。 |
+| `GpuTextureUpload(data, footprint, ...)` | CPU byte 列をコピーして保持する。Portable は `GpuTextureCopyFootprint`、Native は `NativeGpuTextureCopyFootprint` と CPU の `rowCount`／`rowBytes`、before／after layout、staging alignment を受け取る。`Data` と `Footprint` を参照できる。Native は `BeforeLayout`／`AfterLayout`／`StagingAlignment` も公開する。 |
+| `GpuPackageExport(Id, ResourceId)` | 外部へ公開する名前と計画内 resource ID の対応。 |
 
 通常の機能 pass は request 内の準備済み CPU upload data を受け取り、`BuildAsync` で専用 GPU 配置・payload の準備・転送と使用保持を行う。ファイル取得、glTF・画像・font の解釈、shader package の読取りは `Lumyte.Resources` の分野とし、pass や manager にロード API を設けない。consumer に shader 管理や GPU plan の作成を要求しない。
 
@@ -192,7 +215,19 @@ GPU package builder／uploader が準備済みの初期データと明示参照�
 
 ### 非同期 upload と staging
 
-非同期転送は manager が所有する uploader の責務とし、公開入口は package の `scope.ImportPackageAsync` に接続する。buffer／texture の upload、必要な readback、staging の確保、mapping、copy 記録と completion 待機を utility へ分割して所有関係を失わせない。単独転送の公開操作が必要になった場合も、manager の明示使用保持と成功待機の契約上で定義し、raw device だけを受け取る別の所有機構は作らない。
+非同期転送は manager が所有する uploader の責務とし、package の `scope.ImportPackageAsync` と単独転送へ接続する。buffer／texture の upload、readback、staging の確保、mapping、copy 記録と completion 待機を utility へ分割して所有関係を失わせない。
+
+| API | 説明 |
+| --- | --- |
+| `UploadBufferAsync(destination, data, destinationOffset, cancellationToken, ...)` | CPU byte 列を保持して既存 buffer 範囲へ転送する。変更先の世代は維持し、競合する外部利用の同期は caller が行う。 |
+| `UploadTextureAsync(destination, upload, cancellationToken, ...)` | 準備済み `GpuTextureUpload` を既存 texture へ転送する。 |
+| `ReadBufferAsync(source, offset, length, cancellationToken, ...)` | 管理された readback staging へコピーし、成功確認後に独立した `byte[]` を返す。 |
+| `ReadTextureAsync(source, footprint, ..., cancellationToken)` | 指定 footprint で readback し、pitch を含む CPU byte 列を返す。Native は row 数・byte 数、before／after layout と staging alignment も受け取る。 |
+| Portable の `MapBufferAsync(buffer, mode, offset, length, cancellationToken)` | mapping と資源の使用保持を結び付けた `GpuMappedBufferRange` を返す。`Dispose` で unmap に成功してから保持を返す。失敗した unmap は自動再試行せず、保持を維持する。 |
+| Native の `GpuUploadSynchronization(BeforeStages, BeforeAccess, AfterStages, AfterAccess)` | 単独 upload の前後に必要な global barrier を明示する。`Default` も提供する。 |
+| Native の `GpuReadbackSynchronization(BeforeStages, BeforeAccess)` | readback の producer 側 barrier を明示する。copy 後には HostRead barrier を置く。`Default` も提供する。 |
+
+Native の CPU mapping は `GetBufferRange` の `CpuAddress` と `AcquireUse` で利用できる。CPU-visible buffer の初期値は直接書き込み、既存値の更新は manager queue の先行 work を待ってから書き込む。Portable の `MapWrite` buffer は mapping で更新し、利用者の usage を CopyDestination へ書き換えない。通常の GPU buffer／texture は staging と copy を使う。同期・layout を明示する Native 専用引数は Portable へ追加しない。
 
 uploader は CPU byte 列をコピーまたは明示的な所有移管で保持し、記録と GPU 利用が終わるまで staging と転送先を保持する。Native は linear region の mapping と caller／plan が明示した before/after state・依存を使う。Portable は自身の Buffer／Texture、copy、mapping を使い、WebGPU の resource transition を二重管理しない。どちらも上位の成功待機が終わるまで package や readback 結果を完成品として返さず、待機取消しで提出済み転送の保持を解除しない。
 
@@ -226,25 +261,27 @@ manager と所有する utility の操作は caller が直列化し、借用 bac
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。両 Resources project は低層 arena／pool utility を実装済みで、同じ project 内に本 ADR の管理層を追加する。
+以下は repository root からの相対パスである。両 Resources project 内に utility と管理層を実装し、下表で明示した上位接続と benchmark だけを後続とする。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Management/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Management/` | 系統別の `GpuResourceManager`、scope、batch、pin、use、managed reference、record 世代、options と statistics。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources/Management/Submission/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Management/Submission/` | 系統別の `GpuSubmissionToken`、Resources の `GpuSubmissionException`、manager 内部の発行元、raw 提出との結合、GPU 利用終了と診断の非同期観測。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources/Management/Retirement/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Management/Retirement/` | manager 内部の retirement 登録、依存順の回収、Collect／drain と障害時の保持。独立した公開 utility は置かない。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources/Upload/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Upload/` | manager が所有する系統別 uploader、CPU payload と staging の保持、buffer／texture 転送、mapping、提出と成功待機。 |
+| `src/graphics/Lumyte.Graphics.Native.Resources/Management/Submission/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Management/GpuSubmissionToken.cs` | 系統別の token、Resources の提出例外、raw 提出との結合、GPU 利用終了と診断の非同期観測。 |
+| 両 project の `Management/GpuResourceManager.cs` と `GpuResourceBatch.cs` | 内部 retirement、依存順の回収、Collect／drain と障害時の保持。独立した公開 utility は置かない。 |
+| `src/graphics/Lumyte.Graphics.Native.Resources/Upload/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Management/GpuResourceManager.Transfers.cs` | 系統別 uploader、CPU payload と staging、buffer／texture 転送、mapping、提出と成功待機。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Packages/` | Native の `GpuPackagePlan`、export、`GpuPackagePlacement`、requirement を用いた配置計画と uploader への接続。 |
 | `src/graphics/Lumyte.Graphics.Portable.Resources/Packages/` | Portable の `GpuPackagePlan`、export、device-owned resource と初期 upload の計画。heap／placement 型は置かない。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Descriptors/` | resource／sampler descriptor slot、view 世代、shader index、GPU address と管理入力の解決。 |
-| `src/graphics/Lumyte.Graphics.Portable.Resources/Bindings/` | `GpuBindingsRef`、型付き管理入力の解決、view／sampler と immutable binding cache。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources.Generators/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators/` | 新設の build 用 project。shader schema から managed reference を受け取る系統別の入力型を生成する。公開の管理操作を追加するものではない。 |
-| 各利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/Native/Resources/` または `obj/<Configuration>/<TargetFramework>/Shaders/Portable/Resources/` | 管理入力の生成 C#。shader の下位 POD／artifact と出力先を分け、生成内容を手書き source と混在させない。 |
+| `src/graphics/Lumyte.Graphics.Portable.Resources/Management/GpuBindingWriter.cs` と `GpuResourceManager.cs` | 型付き管理入力の解決、view／sampler と immutable binding cache。 |
+| `src/graphics/Lumyte.Graphics.Native.Resources.Generators/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators/` | build 用 analyzer package。準備済み shader schema から管理参照を受け取る入力型を生成する。 |
+| `src/graphics/Lumyte.Graphics.Resources.Generators.Shared/` | 生成器の CPU 専用 source link。runtime の共通 GPU 抽象や assembly は作らない。 |
+| 各利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/Resources/<analyzer名>/` | ディスク出力する生成 C# の既定位置。Native／Portable を analyzer 名で区別し、利用側の出力設定を優先する。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources/Utilities/`、`src/graphics/Lumyte.Graphics.Portable.Resources/Utilities/` | ADR 0028 の薄い arena／pool だけを置く。manager は依存解消・配置 object の破棄を済ませてから明示的に返却する。token、retirement、upload は置かない。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources.Tests/Unit/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Unit/` | 隣接する既存 xUnit project に `Management/Submission/`、`Management/Retirement/`、`Upload/`、`Packages/` と `Descriptors/` または `Bindings/` を追加する。明示所有、世代、cache 回収、受理前後の失敗を fake で確認する。 |
-| `src/graphics/Lumyte.Graphics.Native.Resources.Tests/Integration/Management/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Integration/Management/` | GPU を使う package upload、使用中世代の保持、descriptor／binding と回収の適合試験。高速な unit suite から分離する。 |
+| `src/graphics/Lumyte.Graphics.Native.Resources.Tests/Unit/Management/` と `Unit/Packages/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Tests/Unit/Management/` | 隣接する xUnit project。明示所有、世代、cache 回収、package、転送と失敗を fake で確認する。 |
+| `src/graphics/Lumyte.Graphics.DirectX12.Tests/Integration/Memory/`、`src/graphics/Lumyte.Graphics.Vulkan.Tests/Integration/Memory/` | Native の package upload、統合配置、転送と回収の実 GPU 試験。 |
+| `src/graphics/Lumyte.Graphics.WebGPU.Tests/Integration/Resources/`、`src/graphics/Lumyte.Graphics.WebGPU.Browser.Tests/Integration/` | Dawn／Browser の binding を使う compute、package 転送と export の依存保持を確認する実 GPU 試験。 |
 | `src/graphics/Lumyte.Graphics.Native.Resources.Generators.Tests/Unit/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators.Tests/Unit/` | 生成器に隣接する新設 xUnit project。schema から生成した入力を consumer で compile・実行し、管理参照の解決を検証する。生成 source 全文の比較を主試験にしない。 |
-| `benchmarks/Lumyte.Benchmarks/Graphics/Resources/` | 既存 benchmark project に追加する package 配置、record／descriptor／binding 再利用、回収の計測。 |
+| `benchmarks/Lumyte.Benchmarks/Graphics/Resources/` | 後続で追加する package 配置、record／descriptor／binding 再利用、回収の計測。 |
 
 共通 `IGpuGraphResources` の実装、共通 export の wrapper と対応表は、新設の `src/graphics/Lumyte.Graphics.Native.RenderGraph/Resources/`／`src/graphics/Lumyte.Graphics.Portable.RenderGraph/Resources/` が所有する。manager を共通 Graph 型へ依存させない。GPU payload と shader source は各 pass 実装に置き、ファイル取得・glTF 等の decode は `Lumyte.Resources` の担当に残す。
 
@@ -252,36 +289,37 @@ manager と所有する utility の操作は caller が直列化し、借用 bac
 
 ## 使用例
 
-以下は Portable の低層管理 API を直接使う目標コードである。`portablePlan` は準備済み CPU data から Portable 用 uploader が作った package plan、`RecordModel` はその系統の shader・入力・command を使う caller の描画処理とする。共通 RenderGraph の consumer は機能 pass を追加し、選択された Portable pass 本体がこれらの呼出しを担当する。
+以下は Portable の低層管理 API を直接使い、準備済み CPU data を転送する例である。共通 RenderGraph の consumer は機能 pass を追加し、選択された Portable pass 本体がこの層を使う。
 
 ```csharp
+using Lumyte.Graphics;
+using Lumyte.Graphics.Portable;
 using Lumyte.Graphics.Portable.Resources;
 
-await using var resources = new GpuResourceManager(portableBackend, options);
+await using var resources = new GpuResourceManager(portableBackend);
 using var scope = resources.CreateScope();
-var model = await scope.ImportPackageAsync(
-    portablePlan, cancellationToken);
+var plan = new GpuPackagePlan(
+    [new GpuPackageBuffer("data",
+        new(4, GpuBufferUsage.CopySource | GpuBufferUsage.CopyDestination),
+        new byte[] { 1, 2, 3, 4 })],
+    [new GpuPackageExport("Data", "data")]);
+var package = await scope.ImportPackageAsync(plan, cancellationToken);
+var data = package.GetExport<GpuBufferRef>("Data");
+using var pin = resources.Pin(data);
+scope.Dispose(); // pin が export と依存を維持する
 
-GpuSubmissionToken completion;
-using (var batch = resources.BeginBatch())
-{
-    batch.Use(model);
-    var commands = batch.StartCommandRecording();
-    RecordModel(commands, model);
-    completion = batch.Submit();
-}
-
-scope.Release(model);
-await completion.WaitAsync(cancellationToken);
-resources.Collect(); // 完了した分だけ回収する
+byte[] result = await resources.ReadBufferAsync(data,
+    cancellationToken: cancellationToken);
+pin.Dispose();
+resources.Collect(); // 完了分を pool へ返す
 ```
 
-低層 API を直接使う Native コードでは namespace、device、plan と描画処理を Native 用へ変え、同じ所有操作を使う。Native で統合配置が必要なら配置指定付き overload に `GpuPackagePlacement.SingleAllocation` を渡す。共通 RenderGraph を使う consumer にこのコード変更や再コンパイルは要求せず、機能 pass の独立した本体が系統の差を引き受ける。
+低層 API を直接使う Native コードでは namespace、backend と plan の description を Native 用へ変え、同じ所有操作を使う。Native で統合配置が必要なら配置指定付き overload に `GpuPackagePlacement.SingleAllocation` を渡す。共通 RenderGraph を使う consumer にこのコード変更や再コンパイルは要求せず、機能 pass の独立した本体が系統の差を引き受ける。
 
 ## 未実装事項
 
-両 Resources assembly と、ADR 0028 の Native arena／Portable Buffer・Texture pool の明示貸出・返却を実装した。薄い utility の担当範囲に completion、retirement、upload は含めない。
+GpuResourceManager、scope／pin／use／batch、明示依存、token と非同期完了観測、内部 retirement、descriptor／binding 管理、用途別 arena／pool、package の初期転送、単独 upload／readback、管理入力生成器を実装した。通常 completion を確認できない障害では保持を維持して終了を失敗させる。強制回収や device loss からの復旧を実装済みとは扱わない。
 
-本 ADR の GpuResourceManager、scope／pin／use／batch、GpuSubmissionToken と発行元、上位の GpuSubmissionException、Native の非同期完了観測、内部 retirement、自動 descriptor／binding 管理、用途別の割当方針、package upload と上位実行器への接続は未実装である。通常 completion を確認できない障害からの停止確認・drain も、下位の raw 例外や backend Dispose だけでは成立しない。実装時に保持を引き受ける完了・停止の公開契約へ接続する。utility の完成を管理層の完成とは扱わない。
+共通 RenderGraph provider と Hosting への組込み、Slang の製品用 offline toolchain から管理入力 schema を一貫生成する接続、性能 benchmark は後続である。準備済み schema を受け取る生成器と runtime manager は独立して利用できる。実機・単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-CPU data layout の helper は実際に再利用できる計算が生じた場合だけ追加し、utility 完了の残作業としない。GC の具体アルゴリズム、予算圧力と `Lumyte.Resources` の cache 回収の接続、CLR GC 連動は採用範囲に含めず、別の設計案で検討する。
+任意 graph の tracing GC、予算圧力と `Lumyte.Resources` の cache eviction、CLR GC 連動はこの管理層の完成条件に含めず、別の設計案で検討する。

@@ -128,7 +128,7 @@ native host は全記録を一つの QueueSubmit に渡し、後半の encode �
 
 Browser も全記録の encode 後に一つの `queue.submit` へ渡し、その直後に `queue.onSubmittedWorkDone()` を要求する。Promise の完了と device／接続の障害を確認し、正常な GPU 利用終了と判断できる場合だけ内部 command buffer の JSObject proxy、attachment view と記録 memory を回収する。提出ごとの error scope の結果を別に保持し、後続の GPU 完了が先行 batch の診断成功を代用しない。失敗を観測して内部 command の利用終了を確認できない場合は保持を続ける。backend 破棄時の保持解放も、caller による全利用終了を前提にする。
 
-backend の `Dispose` は全利用終了を caller の前提とし、raw `device.destroy()` の復帰や `device.lost` の通知を application resource の安全な再利用へ変換しない。停止が未確認の保持を回収する上位の drain 契約は未実装である。
+backend の `Dispose` は全利用終了を caller の前提とし、raw `device.destroy()` の復帰や `device.lost` の通知を application resource の安全な再利用へ変換しない。上位 Resources は利用終了を確認できない場合、保持を継続して drain を失敗させる。
 
 timeline の照会・待機は提出の native 呼出し gate と分離する。成功 batch は発行済み整数値の区間へ集約し、間にある未発行値を補完しない。失敗した batch の診断はその値に保持し、独立した後続 batch の成功へ混ぜない。待機取消しは当該 await だけを終了し、GPU work と他の待機を取り消さない。
 

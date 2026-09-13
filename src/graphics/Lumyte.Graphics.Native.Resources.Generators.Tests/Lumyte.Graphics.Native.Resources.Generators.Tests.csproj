@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Graphics.Native.Resources.Generators/Lumyte.Graphics.Native.Resources.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <ProjectReference Include="../Lumyte.Graphics.Native.Resources/Lumyte.Graphics.Native.Resources.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Compile Include="../Lumyte.Graphics.Resources.Generators.Shared/GeneratorCompilation.cs" Link="GeneratorCompilation.cs" />
+    <Compile Include="../Lumyte.Graphics.Native.Resources.Tests/TestResourceBackend.cs" Link="TestResourceBackend.cs" />
+    <NativeGpuResourceInput Include="Consumer.native.resources.xml" />
+  </ItemGroup>
+  <Import Project="../Lumyte.Graphics.Native.Resources.Generators/buildTransitive/Lumyte.Graphics.Native.Resources.Generators.targets" />
+</Project>

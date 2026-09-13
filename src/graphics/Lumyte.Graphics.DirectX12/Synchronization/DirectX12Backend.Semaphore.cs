@@ -45,7 +45,7 @@ public sealed unsafe partial class DirectX12Backend
         throw new GpuDeviceLostException(result is int error ? $"{message} HRESULT 0x{error:X8}." : message);
     }
 
-    private sealed class NativeSemaphore(DirectX12Backend owner, ComPtr<ID3D12Fence> fence) : NativeGpuSemaphore
+    private sealed partial class NativeSemaphore(DirectX12Backend owner, ComPtr<ID3D12Fence> fence) : NativeGpuSemaphore
     {
         public DirectX12Backend Owner { get; } = owner;
         public ComPtr<ID3D12Fence> Fence = fence;
@@ -83,9 +83,14 @@ public sealed unsafe partial class DirectX12Backend
 
         public override void Dispose()
         {
-            if (Disposed) { return; }
-            Disposed = true;
-            Fence.Dispose();
+            lock (asyncWaitGate)
+            {
+                if (Disposed) { return; }
+                if (activeAsyncWaits != 0)
+                { throw new InvalidOperationException("The semaphore still has an active asynchronous CPU wait."); }
+                Disposed = true;
+                Fence.Dispose();
+            }
         }
     }
 }

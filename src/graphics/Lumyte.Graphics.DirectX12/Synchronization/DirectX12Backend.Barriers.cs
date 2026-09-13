@@ -35,7 +35,11 @@ public sealed unsafe partial class DirectX12Backend
             | GpuAccess.CopyRead | GpuAccess.CopyWrite | GpuAccess.IndexRead | GpuAccess.IndirectRead
             | GpuAccess.HostRead | GpuAccess.HostWrite;
         if ((access & ~known) != 0) { throw new ArgumentOutOfRangeException(nameof(access)); }
-        if ((access & (GpuAccess.HostRead | GpuAccess.HostWrite)) != 0) { return BarrierAccess.Common; }
+        if ((access & GpuAccess.HostRead) != 0) { return BarrierAccess.Common; }
+        // Host writes precede ExecuteCommandLists, whose start guarantees coherent GPU caches.
+        // They are not GPU writes to flush: COMMON in AccessBefore would instead declare every
+        // GPU write type, and a COMMON -> COPY_SOURCE global barrier is rejected by the runtime.
+        // Keep any explicitly combined GPU accesses; pure HostWrite maps to NO_ACCESS below.
         BarrierAccess result = 0;
         if ((access & GpuAccess.ShaderRead) != 0) { result |= BarrierAccess.ShaderResource | BarrierAccess.ConstantBuffer | BarrierAccess.UnorderedAccess; }
         if ((access & GpuAccess.ShaderWrite) != 0) { result |= BarrierAccess.UnorderedAccess; }

@@ -577,9 +577,39 @@ focused unit tests は Native 32件、Portable 31件の **計63件成功、失�
 
 55文書の422ローカルリンク、21アンカー、37 ADR の必要章と179個の番号依存に問題はなく、差分の空白検査も成功した。
 
+## 第18段階: ResourceManager の実装
+
+2026-09-14 に [ADR 0029](../adr/0029-resource-management-api.md) の管理層を Native／Portable の両 Resources assembly に実装した。下位 utility は明示的な arena／pool のまま維持し、利用終了と依存関係を判断する処理を manager が担当する。
+
+| 範囲 | 実装内容 |
+| --- | --- |
+| 所有 | 非所有の typed ref、scope、pin、use、batch。明示依存を保持し、循環を拒否する。raw handle が再利用されても古い ref を復活させない |
+| 提出と回収 | 非公開 timeline、manager 発行の token、成功と GPU 利用終了の分離、取消しで保持を放さない非同期待機、依存順の Collect／drain／終了 |
+| Native | 用途別 arena、descriptor slot と view／sampler cache、安定した index／address、package group の実 SingleAllocation 配置 |
+| Portable | device-owned Buffer／Texture pool、明示 view／sampler、typed binding 入力と immutable binding cache、mapping lease。heap／placement／bindless は追加しない |
+| 転送 | 不変の準備済み package plan、初期 upload と成功後の export 公開、buffer／texture の単独更新・readback。file／URI／glTF のロードは含めない |
+| 入力生成 | Native／Portable の独立した Roslyn analyzer。準備済み XML schema から管理参照の入力型を生成し、native address／index または Portable binding writer へ解決する |
+| Native 非同期待機 | 公開 `NativeGpuSemaphore.WaitAsync` と DX12／Vulkan の観測中 lifetime。timer と counter 照会を使い、待機専用 thread を作らない |
+
+回収は記録、retained lease、resource の順に行う。記録の破棄に失敗したら mapping などの借用先を保持し、同じ破棄を自動再試行しない。raw Submit を呼んだ後は例外の型から拒否を推測せず、GPU 利用終了が不明なら保持して drain を失敗させる。下位の raw signal point を含む例外は再帰的に包み直し、通知権限を token の外へ公開しない。外部の pin／use／mapping を batch へ渡す場合は外部所有数も移管し、正常な非同期終了を妨げない。
+
+独立レビューで、失敗した drain が別の未完了提出を待ち続ける問題、完了済み提出履歴の蓄積、default view cache の残留、失敗した記録より先に mapping の保持が外れる問題を修正した。Portable の古い IsComplete 結果が非同期観測済みの完了を false に戻さないことも、順序を制御した回帰試験で確認する。GPU の format／usage／binding layout の検証を manager に複製せず、入力の欠落も下位へ渡す。
+
+最初の DX12 package 試験では `ID3D12GraphicsCommandList.Close` が `0x80070057` を返した。HostWrite を enhanced barrier の COMMON（全 GPU write access）へ写像していたため、純粋な CPU 書込みに不要な GPU flush を要求していた。HostWrite は NO_ACCESS とし、混在した GPU access は維持するよう修正した。CPU の書込みは Submit 前に完了させ、ExecuteCommandLists 開始時の cache coherence を利用する。[DirectX の external dependency 規約](https://microsoft.github.io/DirectX-Specs/d3d/D3D12EnhancedBarriers.html#external-dependencies-and-d3d12_barrier_access_global)
+
+生成器は実際の analyzer と MSBuild targets を使って consumer をコンパイルし、公開 manager と fake backend で入力の解決と保持を実行して確認した。keyword や変数名との衝突を含め、生成 source 全文の snapshot は使わない。両 NuGet analyzer package をローカルに作成し、同一 consumer から導入・コンパイル・実行できることも確認した。
+
+focused 試験では Native Resources 72件、Portable Resources 75件、Native 生成器12件、Portable 生成器10件が成功した。DX12 は barrier の CPU 写像22件と実機4件、manager の実機4件の計30件、Vulkan は manager の実機4件が成功した。両 Native backend の非同期 semaphore 各3件、Dawn／Browser の管理された binding と package 各2件も成功した。Native の転送は非ゼロ buffer offset と複数行 texture の pitch、最小の readback 範囲を通し、Vulkan は GENERAL layout、DX12 は明示的な layout 遷移を使う。
+
+最終検証は `LUMYTE_WEBGPU_BROWSER` に既存の Chrome for Testing 155.0.8048.0 を指定し、`dotnet test Lumyte.slnx -m:4 --logger "trx;LogFilePrefix=resource-manager-solution-final" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini` を実行した。全33 project の **2,294件成功、失敗0、skip 0**、全 TRX の outcome が Completed、終了コード0を確認した。DX12 427件、Vulkan 435件、Dawn 338件、Browser 61件を含む。新規135件は CPU 113件と実機22件で、native crash と無進行 timeout はなかった。TRX は各 test project の `TestResults/` に保存した。
+
+57文書の425ローカルリンク、21アンカー、37 ADR の必要章と179個の番号依存に問題はなかった。production 向けの `InternalsVisibleTo` は追加せず、既存11指定はすべて test assembly 向けである。staged diff の空白検査も成功した。
+
 ## 未実装と次の順序
 
-1. ADR 0029 の上位 resource manager に明示的な依存・scope／pin／use／batch を実装し、提出 token、完了と停止未確認の障害を区別する観測・遅延回収へ接続する。その上で uploader、package と binding／descriptor の管理を実装する。利用終了を確認できない障害からの drain は、raw 提出例外だけでは成立していない。ADR 0028 の utility は完成済みとし、この作業を utility の追加 API にはしない。
-2. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。
+1. RenderGraph provider と共通 Hosting を実装し、同じ consumer binary で段階 0 を通す。完成した ResourceManager の scope／pin／batch と転送を provider へ接続する。
+2. Slang の製品用 offline toolchain と管理入力 schema の一貫生成、機能 pass の実装と対応する conformance 試験を進める。
+
+任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。
 
 保持型 Model／2D、Slang toolchain の製品実装への統合と既存描画系の移行は、これらの後続作業である。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

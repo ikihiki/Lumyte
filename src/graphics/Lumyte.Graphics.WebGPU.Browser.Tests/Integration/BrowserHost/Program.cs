@@ -22,6 +22,8 @@ public static partial class BrowserCases
             "InvalidShaderPackage" => await InvalidShaderPackageAsync(),
             "BufferPool" => await BufferPoolAsync(),
             "TexturePool" => await TexturePoolAsync(),
+            "ResourceManagerCompute" => await ResourceManagerComputeAsync(),
+            "ResourceManagerPackage" => await ResourceManagerPackageAsync(),
             "IndexedRaster" => await IndexedRasterAsync(),
             "TextureUpload" => await TextureUploadAsync(),
             "MappingLease" => await MappingLeaseAsync(),

@@ -74,6 +74,8 @@ Marshal.Copy(checked(readback.Region.CpuAddress + (nint)readback.Offset),
 
 `GpuStage`／`GpuAccess` は `Lumyte.Graphics` に属する。HostRead barrier が memory visibility を、`WaitCpu` が実行完了を扱う。GPU 間の依存も caller が指定し、Submit が不足 barrier を推定しない。`completion.IsComplete(value)` なら CPU を待機させずに確認できる。
 
+CPU thread を占有せずに待つ場合は `await completion.WaitAsync(value, cancellationToken)` を使う。非同期 timer と counter 照会による観測で、取消しは CPU の待機だけを終了する。GPU work や資源の利用が終わったとは扱わない。DirectX 12／Vulkan は観測中の semaphore の Dispose を拒否し、caller は全 CPU／GPU 利用が終了してから破棄する。
+
 未提出の `Dispose` は記録を破棄する。提出済みの `Dispose` は待機せず、queue は内部 completion で command memory を回収する。caller semaphore は producer と、それを待つ全 consumer の GPU 利用が完了した後に破棄できる。command の状態を取得する API、application resource の自動退役、暗黙 staging は設けない。
 
 `Submit` が native queue への受渡し後に同期的に失敗し、native API に未提出の保証がない場合、`NativeGpuSubmissionException` が要求した `Completion` と元の `InnerException` を保持する。受理の有無が不明な場合も含み、未提出として再実行・解放しない。この値の到達や GPU 停止は保証されず、device loss や backend の Dispose も利用終了の代理にはならない。詳細は [提出と同期の ADR](../../../docs/adr/0012-native-command-submission-and-synchronization.md) に従う。
@@ -309,4 +311,4 @@ texture copy は単一 aspect の footprint と、明示した byte pitch を使
 
 render view と descriptor storage に加え、raw shader の compute pipeline、直接 root、直接／間接 dispatch と shader による descriptor 参照を実装した。両 backend の `BufferDescriptors` と Vulkan の `RawShaderPointers` を true とする。limits は root、compute dispatch と descriptor ABI を提供する。
 
-vertex／mesh raster pipeline、render pass、直接／一件の間接 draw・indexed draw・mesh dispatch と depth/stencil の分離も実装した。DirectX 12 の PSO は実際の raster work の Submit 内で解決する。mesh／amplification は任意機能で、対応と上限を capability／limits に反映する。その他の limits、Resources と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。
+vertex／mesh raster pipeline、render pass、直接／一件の間接 draw・indexed draw・mesh dispatch と depth/stencil の分離も実装した。DirectX 12 の PSO は実際の raster work の Submit 内で解決する。mesh／amplification は任意機能で、対応と上限を capability／limits に反映する。Resources の管理層と非同期転送を実装し、その他の limits と機能 RenderGraph の移行は後続段階とする。Vulkan は ADR が要求する拡張・feature を初期化時に要求し、古い descriptor set の実装へ切り替えない。実装と実機検証の範囲は [進捗記録](../../../docs/designs/graphics-implementation-progress.md) を参照する。

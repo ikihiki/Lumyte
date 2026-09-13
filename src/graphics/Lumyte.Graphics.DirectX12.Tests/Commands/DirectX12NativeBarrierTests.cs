@@ -23,7 +23,8 @@ public sealed class DirectX12NativeBarrierTests
     [InlineData(GpuAccess.CopyWrite, BarrierAccess.CopyDest)]
     [InlineData(GpuAccess.IndexRead | GpuAccess.IndirectRead, BarrierAccess.IndexBuffer | BarrierAccess.IndirectArgument)]
     [InlineData(GpuAccess.HostRead, BarrierAccess.Common)]
-    [InlineData(GpuAccess.HostWrite, BarrierAccess.Common)]
+    [InlineData(GpuAccess.HostWrite, BarrierAccess.NoAccess)]
+    [InlineData(GpuAccess.HostWrite | GpuAccess.CopyWrite, BarrierAccess.CopyDest)]
     [InlineData(GpuAccess.None, BarrierAccess.NoAccess)]
     [InlineData(GpuAccess.DescriptorRead, BarrierAccess.NoAccess)]
     public void AccessScopesPreserveTheRequestedOperations(GpuAccess input, BarrierAccess expected)

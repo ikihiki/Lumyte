@@ -150,4 +150,4 @@ buffers.Trim();
 
 この ADR が担当する Native の統一 heap arena、Portable の Buffer／Texture pool、貸出 identity、Release／Trim／Dispose に未実装 API はない。実機と単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
-resource manager、scope／pin／batch、提出 token、自動 descriptor／binding、遅延回収と uploader は上位管理層の未実装事項であり、utility の完成条件には含めない。utility 単体の性能 benchmark と全 adapter／format の適合性は確認しておらず、機能の実装完了と性能・網羅的な hardware 検証を区別する。共通 backend adapter、互換 wrapper、旧 utility API の維持は対象に含めない。
+resource manager、scope／pin／batch、提出 token、自動 descriptor／binding、遅延回収と uploader は上位管理層に実装し、utility の API には含めない。utility 単体の性能 benchmark と全 adapter／format の適合性は確認しておらず、機能の実装完了と性能・網羅的な hardware 検証を区別する。共通 backend adapter、互換 wrapper、旧 utility API の維持は対象に含めない。

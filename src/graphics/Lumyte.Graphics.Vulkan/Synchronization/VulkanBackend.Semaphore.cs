@@ -36,7 +36,7 @@ public sealed unsafe partial class VulkanBackend
         return record;
     }
 
-    private sealed class SemaphoreRecord(VulkanBackend owner, VkSemaphore semaphore) : NativeGpuSemaphore
+    private sealed partial class SemaphoreRecord(VulkanBackend owner, VkSemaphore semaphore) : NativeGpuSemaphore
     {
         public VulkanBackend Owner { get; } = owner;
         public VkSemaphore Semaphore { get; } = semaphore;
@@ -75,10 +75,15 @@ public sealed unsafe partial class VulkanBackend
 
         public override void Dispose()
         {
-            if (Disposed) { return; }
-            Owner.VerifyNotDisposed();
-            Owner.vk.DestroySemaphore(Owner.device, Semaphore, null);
-            Disposed = true;
+            lock (asyncWaitGate)
+            {
+                if (Disposed) { return; }
+                if (activeAsyncWaits != 0)
+                { throw new InvalidOperationException("The semaphore still has an active asynchronous CPU wait."); }
+                Owner.VerifyNotDisposed();
+                Owner.vk.DestroySemaphore(Owner.device, Semaphore, null);
+                Disposed = true;
+            }
         }
     }
 }

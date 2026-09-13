@@ -151,8 +151,8 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser/` | WebGPU の browser 接続。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 準備済み shader package と GPU 初期化。runtime は実装済み |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/` | 系統別の offline compiler、package 生成と下位 GPU 入力生成。新設予定 |
-| `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | utility は実装済み。同じ assembly 内の上位 GPU 資源管理は新設予定 |
-| `src/graphics/Lumyte.Graphics.Native.Resources.Generators/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators/` | schema から managed resource 入力を作る build 用生成器。新設予定 |
+| `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | utility と管理層を実装済み。scope／batch、完了と回収、descriptor／binding、package 転送 |
+| `src/graphics/Lumyte.Graphics.Native.Resources.Generators/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators/` | 準備済み schema から managed resource 入力を作る build 用生成器。実装済み |
 | `src/graphics/Lumyte.Graphics.RenderGraph/` | 共通 graph／入力／runtime 契約。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.Native.RenderGraph/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph/` | provider、専用 SPI と内部 graph。新設予定 |
 | `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/` | Portable の内部 logical binding 入力を作る build 用生成器。新設予定 |
@@ -168,7 +168,7 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 
 テストは xUnit とし、production の隣に同名の `Lumyte.<Area>.Tests` project を置く。offline tool のテストも `tools/` 内で隣接させる。実 GPU、browser、外部 compiler process を使う試験は `Integration/` または `Conformance/` に配置し、category 等で高速な CPU 試験とは実行を区分する。生成器は生成した API を compile・実行する consumer 試験で確認する。新しい project は実装時に `Lumyte.slnx` へ追加する。
 
-系統別 entry と resource／root 宣言は各 pass の `<Feature>/Shaders/` に置き、Native は Slang、Portable は Slang または直接 WGSL とする。共有する計算だけを `src/graphics/Shaders/Shared/` の Slang module に置く。生成 C# と artifact は利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/<Family>/` へ出力し、管理入力はその `Resources/`、内部 graph 入力は `Graph/` に分ける。Slang が生成した WGSL もこの出力先へ置き、手書き WGSL と区別する。配布 package は build の成果物から application の資産へ取り込み、生成物を手書き source の正として管理しない。offline compiler と各生成器は build 用であり、runtime project から tool の assembly を参照しない。
+系統別 entry と resource／root 宣言は各 pass の `<Feature>/Shaders/` に置き、Native は Slang、Portable は Slang または直接 WGSL とする。共有する計算だけを `src/graphics/Shaders/Shared/` の Slang module に置く。生成 C# と artifact は利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/<Family>/`、内部 graph 入力はその `Graph/` に置く。管理入力生成器のディスク出力は `obj/<Configuration>/<TargetFramework>/Shaders/Resources/<analyzer名>/` を既定とし、両系統の analyzer と利用側の出力設定を共存させる。Slang が生成した WGSL も build の出力先へ置き、手書き WGSL と区別する。配布 package は build の成果物から application の資産へ取り込み、生成物を手書き source の正として管理しない。offline compiler と各生成器は build 用であり、runtime project から tool の assembly を参照しない。
 
 既存の `Lumyte.Graphics.Library`、`Lumyte.Graphics.Shader`、`Lumyte.Graphics.Shader.Browser` と `tools/Lumyte.Graphics.Shader.Offline` は必要な実装の移植元とし、互換用の新規実装を追加する配置先にはしない。ファイル取得・decode は `src/resources/`、window／event loop は `src/platform/`、ECS と application 固有の抽出・評価は利用側に置く。この文書更新では project の作成や source の移動は行わない。
 

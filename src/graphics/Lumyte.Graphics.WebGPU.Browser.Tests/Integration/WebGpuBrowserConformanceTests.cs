@@ -96,6 +96,25 @@ public sealed class WebGpuBrowserConformanceTests(BrowserGpuFixture fixture)
     }
 
     [Fact]
+    public async Task ResourceManagerUploadsPackagesAndRetainsExportDependencies()
+    {
+        JsonElement result = await fixture.RunAsync("ResourceManagerPackage");
+
+        Assert.Equal([2u, 3u, 5u, 7u, 11u, 13u, 17u, 19u], UInts(result, "data"));
+        Assert.Equal([31u, 63u, 127u, 255u], UInts(result, "pixel"));
+        Assert.True(result.GetProperty("released").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ResourceManagerRetainsBindingsAfterTheScopeIsReleased()
+    {
+        JsonElement result = await fixture.RunAsync("ResourceManagerCompute");
+
+        Assert.True(result.GetProperty("complete").GetBoolean());
+        Assert.Equal([63u, 127u], UInts(result, "actual"));
+    }
+
+    [Fact]
     public async Task IndexedRasterUsesSignedBaseVertexAndCopiesTheRenderedTexture()
     {
         JsonElement result = await fixture.RunAsync("IndexedRaster");
