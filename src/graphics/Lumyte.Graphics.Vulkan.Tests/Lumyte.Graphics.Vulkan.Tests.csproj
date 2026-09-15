@@ -29,5 +29,6 @@
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeMemoryArenaConformance.cs" Link="Integration\Memory\NativeMemoryArenaConformance.cs" />
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\Memory\NativeResourceManagerConformance.cs" Link="Integration\Memory\NativeResourceManagerConformance.cs" />
     <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\RenderGraph\NativeFeatureGraphConformance.cs" Link="Integration\RenderGraph\NativeFeatureGraphConformance.cs" />
+    <Compile Include="..\Lumyte.Graphics.DirectX12.Tests\Integration\TwoD\NativeTwoDConformance.cs" Link="Integration\TwoD\NativeTwoDConformance.cs" />
   </ItemGroup>
 </Project>

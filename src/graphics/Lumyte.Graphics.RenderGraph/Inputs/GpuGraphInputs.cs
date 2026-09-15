@@ -25,6 +25,9 @@ public sealed class GpuGraphValue<T>
     private GpuGraphValue(T? value, GpuGraphInput<T>? input) { Value = value; Input = input; }
     internal T? Value { get; }
     internal GpuGraphInput<T>? Input { get; }
+    /// <summary>Allows feature contracts to declare dependencies of an immutable constant without accessing slot values.</summary>
+    public bool TryGetConstant([System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out T value)
+    { value = Value!; return Input is null; }
     public static GpuGraphValue<T> Constant(T value) => new(value, null);
     public static GpuGraphValue<T> FromInput(GpuGraphInput<T> input) => new(default, input ?? throw new ArgumentNullException(nameof(input)));
     public static implicit operator GpuGraphValue<T>(T value) => Constant(value);

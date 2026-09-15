@@ -8,7 +8,8 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
     internal sealed class Buffer(GpuBufferDescription description) : GpuBufferHandle
     { internal GpuBufferDescription Description { get; } = description; internal byte[] Bytes { get; } = new byte[checked((int)description.Size)]; }
     internal sealed class Texture(GpuTextureDescription description) : GpuTextureHandle
-    { internal GpuTextureDescription Description { get; } = description; internal byte[] Bytes { get; } = new byte[checked((int)(description.Width * description.Height * description.Depth * 4))]; }
+    { internal GpuTextureDescription Description { get; } = description; internal byte[] Bytes { get; } = new byte[checked((int)(description.Width * description.Height * description.Depth * description.LayerCount * FormatBytes(description.Format)))]; }
+    private static uint FormatBytes(GpuFormat format) => format switch { GpuFormat.R8Unorm => 1, GpuFormat.Rg8Unorm => 2, GpuFormat.Rgba16Float => 8, _ => 4 };
     internal sealed class Layout(GpuBindingLayoutEntry[] entries) : GpuBindingLayoutHandle
     { internal GpuBindingLayoutEntry[] Entries { get; } = entries; }
     internal sealed class Bindings(GpuBindingLayoutHandle layout, GpuBindingEntry[] entries) : GpuBindingsHandle
@@ -127,6 +128,7 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
     internal sealed class Recording(ManagerTestBackend backend) : GpuCommandBuffer
     {
         internal List<Action> Operations { get; } = [];
+        internal List<(GpuBufferRange Source, GpuBufferRange Destination)> BufferCopies { get; } = [];
         internal List<GpuColorAttachment> ColorAttachments { get; } = [];
         internal bool Disposed { get; private set; }
         internal Exception? DisposalError { get; set; }
@@ -152,15 +154,19 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
         public override void Dispatch(uint x, uint y = 1, uint z = 1) { }
         public override void DispatchIndirect(GpuBufferRange arguments) { }
         public override void CopyBuffer(GpuBufferRange source, GpuBufferRange destination)
-            => Operations.Add(() => ((Buffer)source.Buffer).Bytes.AsSpan(checked((int)source.Offset), checked((int)source.Length!.Value))
+        {
+            BufferCopies.Add((source, destination));
+            Operations.Add(() => ((Buffer)source.Buffer).Bytes.AsSpan(checked((int)source.Offset), checked((int)source.Length!.Value))
                 .CopyTo(((Buffer)destination.Buffer).Bytes.AsSpan(checked((int)destination.Offset))));
+        }
         public override void CopyBufferToTexture(GpuBufferRange source, GpuTextureHandle texture, GpuTextureCopyFootprint footprint)
             => Operations.Add(() => Transfer(((Buffer)source.Buffer).Bytes, checked((int)source.Offset), (Texture)texture, footprint, true));
         public override void CopyTextureToBuffer(GpuTextureHandle texture, GpuTextureCopyFootprint footprint, GpuBufferRange destination)
             => Operations.Add(() => Transfer(((Buffer)destination.Buffer).Bytes, checked((int)destination.Offset), (Texture)texture, footprint, false));
         private static void Transfer(byte[] buffer, int offset, Texture texture, GpuTextureCopyFootprint footprint, bool upload)
         {
-            int rowBytes = checked((int)footprint.Extent.Width * 4);
+            int pixelBytes = checked((int)FormatBytes(texture.Description.Format));
+            int rowBytes = checked((int)footprint.Extent.Width * pixelBytes);
             int rowPitch = footprint.RowPitch == 0 ? rowBytes : checked((int)footprint.RowPitch);
             int imagePitch = footprint.ImagePitch == 0 ? rowPitch * checked((int)footprint.Extent.Height) : checked((int)footprint.ImagePitch);
             for (int z = 0; z < footprint.Extent.Depth; z++)
@@ -169,14 +175,28 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
             {
                 Span<byte> linear = buffer.AsSpan(offset + z * imagePitch + y * rowPitch, rowBytes);
                 int textureOffset = checked((int)((footprint.Origin.Z + z) * texture.Description.Height * texture.Description.Width
-                    + (footprint.Origin.Y + y) * texture.Description.Width + footprint.Origin.X) * 4);
+                    + (footprint.Origin.Y + y) * texture.Description.Width + footprint.Origin.X) * pixelBytes);
                 Span<byte> texels = texture.Bytes.AsSpan(textureOffset, rowBytes);
                 if (upload) { linear.CopyTo(texels); } else { texels.CopyTo(linear); }
             }
             }
         }
         public override void CopyTexture(GpuTextureHandle source, GpuTextureCopyFootprint sourceFootprint, GpuTextureHandle destination, GpuTextureCopyFootprint destinationFootprint)
-            => throw new NotSupportedException();
+            => Operations.Add(() =>
+            {
+                Texture input = (Texture)source, output = (Texture)destination;
+                int pixelBytes = checked((int)FormatBytes(input.Description.Format));
+                int rowBytes = checked((int)sourceFootprint.Extent.Width * pixelBytes);
+                for (uint z = 0; z < sourceFootprint.Extent.Depth; z++)
+                {
+                    for (uint y = 0; y < sourceFootprint.Extent.Height; y++)
+                    {
+                        int sourceOffset = checked((int)(((sourceFootprint.Origin.Z + z) * input.Description.Height + sourceFootprint.Origin.Y + y) * input.Description.Width + sourceFootprint.Origin.X) * pixelBytes);
+                        int destinationOffset = checked((int)(((destinationFootprint.Origin.Z + z) * output.Description.Height + destinationFootprint.Origin.Y + y) * output.Description.Width + destinationFootprint.Origin.X) * pixelBytes);
+                        input.Bytes.AsSpan(sourceOffset, rowBytes).CopyTo(output.Bytes.AsSpan(destinationOffset, rowBytes));
+                    }
+                }
+            });
         public override void Dispose()
         {
             if (Disposed) { return; }

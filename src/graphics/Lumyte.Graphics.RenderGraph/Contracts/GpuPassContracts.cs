@@ -130,10 +130,11 @@ public sealed class GpuRenderInputRetentionContext
 {
     private readonly List<IGpuUploadData> retained;
     private readonly List<GpuRenderGraphResource> declared;
+    private readonly List<GpuRenderGraphResource> readOnly;
     private readonly List<GpuInputSnapshot> children;
     private bool closed;
-    internal GpuRenderInputRetentionContext(List<IGpuUploadData> retained, List<GpuRenderGraphResource> declared, List<GpuInputSnapshot> children)
-    { this.retained = retained; this.declared = declared; this.children = children; }
+    internal GpuRenderInputRetentionContext(List<IGpuUploadData> retained, List<GpuRenderGraphResource> declared, List<GpuRenderGraphResource> readOnly, List<GpuInputSnapshot> children)
+    { this.retained = retained; this.declared = declared; this.readOnly = readOnly; this.children = children; }
     public void ReadUpload(IGpuUploadData data)
     { ObjectDisposedException.ThrowIf(closed, this); ArgumentNullException.ThrowIfNull(data); retained.Add(data); }
     public void UseDeclared(GpuRenderGraphResource resource)
@@ -141,6 +142,13 @@ public sealed class GpuRenderInputRetentionContext
         ObjectDisposedException.ThrowIf(closed, this);
         ArgumentNullException.ThrowIfNull(resource);
         declared.Add(resource);
+    }
+    /// <summary>Requires a fixed read-only declaration, preventing inputs from sampling their own writable target.</summary>
+    public void UseDeclaredRead(GpuRenderGraphResource resource)
+    {
+        ObjectDisposedException.ThrowIf(closed, this);
+        ArgumentNullException.ThrowIfNull(resource);
+        readOnly.Add(resource);
     }
     /// <summary>Retain an already immutable child snapshot. Its ownership set is shared across unchanged branches.</summary>
     public void ReadSnapshot<T>(T snapshot, IGpuGraphInputContract<T> inputContract)

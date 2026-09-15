@@ -80,6 +80,7 @@ public sealed partial class WebGpuBackend
         GpuFormat.R8Unorm => "r8unorm",
         GpuFormat.Rg8Unorm => "rg8unorm",
         GpuFormat.R32Float => "r32float",
+        GpuFormat.Rgba16Float => "rgba16float",
         GpuFormat.D32Float => "depth32float",
         GpuFormat.Depth24PlusStencil8 => "depth24plus-stencil8",
         _ => throw new ArgumentOutOfRangeException(nameof(format)),

@@ -7,10 +7,12 @@
     <LumyteNativeDownstreamCompilerDirectory Condition="'$(LumyteNativeDownstreamCompilerDirectory)' == ''">$(PkgMicrosoft_Direct3D_DXC)\build\native\bin\x64</LumyteNativeDownstreamCompilerDirectory>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Graphics.Native.Passes.Tests" />
     <ProjectReference Include="..\Lumyte.Graphics.Native.RenderGraph\Lumyte.Graphics.Native.RenderGraph.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
     <ProjectReference Include="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.csproj" ReferenceOutputAssembly="false" />
     <NativeShaderCompile Include="ImageProcessing\Shaders\output.native.shader.json" />
+    <NativeShaderCompile Include="TwoD\Shaders\two-d.native.shader.json" />
     <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
   <Import Project="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.targets" />

@@ -32,6 +32,7 @@ fixture は loopback の動的 port で publish 出力だけを配信し、headl
 - Portable shader package／loader が所有する module・layout からの compute 実行と直接 root、package 経由でも保持される runtime の shader 診断。
 - GPU が生成した間接 dispatch 引数、dynamic uniform offset の snapshot。
 - indexed raster の index range、firstIndex、signed baseVertex と直接 root。
+- 同じコンパイル済み 2D consumer を browser WASM で実行し、図形・画像の path clip・HDR layer を desktop 側の SkiaSharp 比較画像と照合すること。SkiaSharp の描画は browser 内では実行しない。
 - immutable Texture／Sampler binding による texture sampling。
 - Buffer／Texture と Texture 間 copy、複数行の明示 row pitch。
 - Portable Buffer／Texture pool への完了後の返却と再貸出。同じ handle と書込み済みの byte／pixel が保持されること。

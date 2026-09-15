@@ -14,6 +14,8 @@
     <ProjectReference Include="..\..\..\Lumyte.Graphics.WebGPU.Browser\Lumyte.Graphics.WebGPU.Browser.csproj" />
     <ProjectReference Include="..\..\..\Lumyte.Graphics.Portable.Shaders\Lumyte.Graphics.Portable.Shaders.csproj" />
     <ProjectReference Include="..\..\..\Lumyte.Graphics.Portable.Resources\Lumyte.Graphics.Portable.Resources.csproj" />
+    <ProjectReference Include="..\..\..\Lumyte.Graphics.Portable.Passes\Lumyte.Graphics.Portable.Passes.csproj" />
+    <ProjectReference Include="..\..\..\Lumyte.Graphics.RenderGraph.Conformance\Lumyte.Graphics.RenderGraph.Conformance.csproj" />
     <Compile Include="..\..\..\Lumyte.Graphics.WebGPU.Tests\Integration\Resources\ResourceManagerGpuCases.cs" Link="ResourceManagerGpuCases.cs" />
     <Content Include="..\..\..\Lumyte.Graphics.WebGPU.Browser\wwwroot\lumyte-webgpu.js" Link="wwwroot\lumyte-webgpu.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

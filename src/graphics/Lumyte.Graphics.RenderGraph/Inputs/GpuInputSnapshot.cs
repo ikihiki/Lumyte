@@ -15,11 +15,12 @@ internal sealed class GpuInputSnapshot
         {
             List<IGpuUploadData> uploads = [];
             List<GpuRenderGraphResource> resources = [];
+            List<GpuRenderGraphResource> readOnly = [];
             List<GpuInputSnapshot> children = [];
-            var context = new GpuRenderInputRetentionContext(uploads, resources, children);
+            var context = new GpuRenderInputRetentionContext(uploads, resources, readOnly, children);
             try { retain(context); }
             finally { context.Close(); }
-            return new(uploads.ToArray(), resources.Distinct().ToArray(), children.Distinct().ToArray());
+            return new(uploads.ToArray(), resources.Distinct().ToArray(), readOnly.Distinct().ToArray(), children.Distinct().ToArray());
         });
     }
     internal object? Value { get; }
@@ -44,8 +45,13 @@ internal sealed class GpuInputSnapshot
             { throw new InvalidOperationException($"Input in pass '{pass.Name}' references an undeclared read: '{resource.Name}'."); }
         }
         foreach (var child in retention.Value.Children) { child.Validate(pass, path); }
+        foreach (var resource in retention.Value.ReadOnly)
+        {
+            if (!pass.Uses.Any(use => ReferenceEquals(use.Resource, resource) && use.Access == GpuRenderGraphAccess.Read))
+            { throw new InvalidOperationException($"Input in pass '{pass.Name}' references a resource without a read-only declaration: '{resource.Name}'."); }
+        }
         path.Remove(this);
         validated.GetValue(pass, static _ => new());
     }
-    private sealed record Retention(IGpuUploadData[] Uploads, GpuRenderGraphResource[] Resources, GpuInputSnapshot[] Children);
+    private sealed record Retention(IGpuUploadData[] Uploads, GpuRenderGraphResource[] Resources, GpuRenderGraphResource[] ReadOnly, GpuInputSnapshot[] Children);
 }

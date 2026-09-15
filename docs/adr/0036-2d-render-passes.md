@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。旧 TwoD／Text の調査で確認した描画能力を共通の CPU scene と `Add2DPass` で定義し、Native／Portable の二つの本体で実装する。旧実装は削除済みであり、同等にする範囲と追加提案を区別する。新構成の実装完了を示さない。
+部分採用。共通の CPU scene、準備済み text／glyph、`Add2DPass`、保持 scene と Native／Portable の最初の GPU 描画経路を実装した。旧 renderer や互換 facade は復元しない。描画結果は SkiaSharp が独立に生成した参照画像で比較する。atlas、tile／batch 最適化と継続的な部分更新の性能目標は、この最初の描画経路とは分けて末尾に示す。
 
 ## 依存 ADR
 
@@ -28,7 +28,7 @@
 
 ## 既存機能の対応と追加提案
 
-次の「保持」は新構成でも実装すべき描画能力を意味する。旧コードの保持ではない。表の調査元は削除前の commit `af01785e` であり、新 API と二系統の GPU 実装は未実装である。
+次の「保持」は新構成でも維持する描画能力を意味する。旧コードの保持ではない。表の調査元は削除前の commit `af01785e` である。現在の採用範囲と最適化が残る項目は末尾で区別する。
 
 | 分類 | 削除前の API／実装で確認した範囲 | 新 API／本体への対応 | 扱い |
 | --- | --- | --- | --- |
@@ -70,7 +70,7 @@ assembly の参照は TwoD scene → Text → TwoD.Primitives とし、TwoD も 
 | `Draw2DPassContract.Id / Version / Instance` | `lumyte.draw.2d` と version `1` を共通契約とする。 |
 | `Snapshot(request)` | 固定 target、固定 ReadTextures と定数／slot の指定を固定する。定数 scene の論理画像集合は一度だけ抽出して ReadTextures に含められる。slot に後から渡される値を固定 request へコピーしない。 |
 | `Declare(context, request)` | target の ReadWrite と ReadTextures の Read を宣言し、`ReadInput(request.Scene, Draw2DSceneInputContract.Instance)` を登録する。入力更新から外部依存を追加しない。 |
-| `Draw2DSceneInputContract.Instance` | `IGpuGraphInputContract<Draw2DScene>` の共有実装。`Snapshot(scene)` は所有済みの不変 scene をそのまま保持し、`Retain(context, scene)` は記録済みの upload data を ReadUpload、論理画像を UseDeclared へ渡す。 |
+| `Draw2DSceneInputContract.Instance` | `IGpuGraphInputContract<Draw2DScene>` の共有実装。`Snapshot(scene)` は所有済みの不変 scene をそのまま保持し、`Retain(context, scene)` は記録済み upload data を ReadUpload、論理画像を UseDeclaredRead、共有子 scene を ReadSnapshot へ渡す。ReadWrite の target を画像入力に流用できない。 |
 
 `GpuGraphValue<Draw2DScene>` は scene 定数と `GpuGraphInput<Draw2DScene>` から暗黙変換できる。入力 slot を使う場合は、そこから利用できる logical texture を graph 構築時の ReadTextures に明示する。各 snapshot はこの集合の一部だけを使ってもよく、集合内で画像を差し替えられる。新しい外部画像を追加するときは依存集合が変わるため新しい plan を作る。準備済み `GpuImageUploadData` の差し替えは本体の内部資源の変更として処理し、この外部画像集合を増やさない。
 
@@ -92,15 +92,20 @@ version 1 の target は単一 layer／mip、sample count 1 の 2D texture と�
 | `DrawImage(source, destination, sourceRectangle = null, tint = null, sampling = default)` | 画像全体または pixel 単位の部分矩形を描く。既定の tint は白、filter は Linear、外側は Clamp。 |
 | `DrawDistanceField(data, destination, brush)` | `DistanceFieldUploadData` を描く。画素、Coverage／SDF／MSDF、元の大きさ、distance range を入力に含め、物理 atlas の位置は含めない。 |
 | `DrawText(data, origin, brush)` | 配置済みの不変 `TextDrawData` を追加する。origin は text bounds の左上とし、glyph の位置と line baseline は data が持つ。font や文字列からの再 shaping は行わない。 |
+| `DrawScene(content)` | deviceScale 1 の不変子 scene を現在の状態で追加する。子の命令や所有集合を複製しない。 |
 | `BeginState()`／`BeginClip(rect)`／`BeginClip(path, fillRule)`／`BeginLayer(options)` | LIFO の `Draw2DScope` を返す。Dispose で対象の state／clip／layer を閉じる。 |
 | `SetTransform(matrix)`／`Transform(matrix)` | affine transform を置換／合成する。scope を閉じると親の状態に戻る。 |
 | `Finish()` | scope が閉じた記録を不変の `Draw2DScene` として返す。GPU 準備・転送は行わない。 |
 | `Draw2DSceneBuilder.Dispose()` | 未完了の CPU 記録を破棄する。返却済み scene には影響しない。 |
 | `Draw2DScene` | 順序、状態、upload data とその Key、deviceScale を固定した完全な CPU snapshot。store の内容世代と構造共有する page／部分木、記録済みの upload 所有集合と論理画像参照 index を持つ。GPU object を所有しない。 |
+| `Draw2DScene.Commands / DeviceScale / OwnUploads / OwnTextures / ChildScenes / LogicalTextures` | 本体へ公開する意味上の命令と不変所有情報。自身の所有と子の所有を分けて共有し、LogicalTextures の集約は定数 pass の外部依存の確定時にだけ必要に応じて行う。 |
+| `Draw2DState / Draw2DClip / Draw2DCommand` | State は scene 内の affine transform と不変 clip 列。Shape、Path、Geometry、Image、DistanceField、Text、Layer、Scene の各 command は意味上の内容だけを公開し、GPU packet 配置を定義しない。 |
 | `Draw2DSceneStore.CreateNode(content)`／`Remove(node)` | 保持 scene の node を追加／削除する。content は不変 scene として表し、即時 scene と描画能力を揃えられる。 |
 | `SetContent(node, scene)`／`SetTransform(node, matrix)`／`SetClip(node, rect)`／`SetVisible(node, value)`／`SetOrder(node, order)` | node の状態を更新し、CPU の内容世代を進める。null clip は矩形 clip の解除。 |
 | `Draw2DSceneStore.Snapshot(deviceScale = 1)` | order、同値なら作成順で合成する不変 scene を返す。変更 page／部分木と参照 index の変更箇所だけを確定し、残りを共有する。変更がなければ同じ snapshot を返せる。過去の snapshot を変更しない。 |
 | `Draw2DNodeId` | store と世代に属する ID。削除後の ID が再利用 node を指すことはない。 |
+
+現在の store は order と作成順をキーにする不変 AVL 部分木である。変更 node から root までを作り直し、他の部分木、content と所有情報を共有する。変更のない Snapshot は同じ object を返す。これにより CPU snapshot と入力保持は毎 frame 全 content を走査しない。描画本体による命令の再記録と GPU cache の探索は別の処理である。
 
 state scope は Save／Restore と同じ能力を持つため、両方の API 群を重複公開しない。過去の snapshot は参照がある限り CPU 上で保持でき、GPU cache の寿命は実行の使用保持で別に管理する。保持 scene の差分は GPU 転送の最適化情報であり、変更部分だけを描けばよいという target の履歴契約ではない。
 
@@ -118,8 +123,8 @@ content 作成時に画像、text、glyph、paint の明示的な子 data を一
 | `FillRule`／`StrokeStyle` | NonZero／EvenOdd と、幅・join・cap・miter limit・dash／offset。奇数個の dash は列を二回繰り返して周期を作る。 |
 | `Brush.Solid/LinearGradient/RadialGradient/SweepGradient(...)` | 色、制御点／円／角度、不変 GradientStop 列、GradientExtendMode を持つ CPU paint。 |
 | `GradientStop(Offset, Color)`／`GradientExtendMode` | 色線の stop と Pad／Repeat／Reflect。等しい offset の stop は入力順を保ち、鋭い境界を表せる。 |
-| `Draw2DImageSource.Upload(GpuImageUploadData)` | decode 済みの画素、extent、format、色と alpha の規約を持つ不変 upload data を直接参照する。asset ID の解決や画像 decode は行わない。 |
-| `Draw2DImageSource.Texture(texture)` | この graph に属する先行 logical texture を参照する。別 graph でも使用できる CPU upload data とは区別する。 |
+| `new Draw2DImageSource(GpuImageUploadData)`／暗黙変換 | decode 済みの画素、extent、format、色と alpha の規約を持つ不変 upload data を直接参照する。Upload property で内容を取得し、asset ID の解決や画像 decode は行わない。 |
+| `new Draw2DImageSource(texture)`／暗黙変換 | この graph に属する先行 logical texture を参照する。Texture property で参照を取得する。Description はどちらの入力でも取得できる。 |
 | `Draw2DImageSampling(Filter, ExtendX, ExtendY)` | Nearest／Linear と Clamp／Repeat／Mirror の画像上の意味。実 sampler は本体が管理する。 |
 | `Draw2DLayerOptions` | `Bounds`、`Opacity = 1`、`CompositeMode = SourceOver`、任意の Mask、`BlurRadius = 0`、任意の Shadow。Bounds 省略時は親 clip と target の交差範囲。 |
 | `Draw2DLayerMask(Image, Destination)` | layer の座標へ配置した画像の alpha を coverage とする。画像を読む依存を scene に含める。 |
@@ -129,6 +134,8 @@ content 作成時に画像、text、glyph、paint の明示的な子 data を一
 画像 upload data は [ADR 0030](0030-render-graph-api.md) の `GpuImageUploadData` と `GpuImageSubresourceData` を使い、extent、format、mip／layer、row／slice stride と画素を明示する。色の規約は `GpuImageColorEncoding`（Linear／Srgb／Data）、alpha は `GpuImageAlphaMode`（Opaque／Straight／Premultiplied）で表す。logical graph texture は線形 premultiplied RGBA の共通画像を受け付け、二度の decode／premultiply を行わない。同じ target を scene の画像入力として読む契約は設けず、必要なら先行 Blit で別の logical texture に分ける。graph texture を含む scene はその graph に束縛される。
 
 layer は描画内容を透明から作り、layer 空間で blur、mask、opacity を適用して親へ composite する。影は元の layer alpha を指定半径でぼかして offset／色を適用し、親へ SourceOver してから本体を合成する。親 clip は最終合成に適用する。透明な空 layer でも Clear／Source 等は Bounds の結果を変えるので、単に内容が空という理由では削除しない。
+
+Mask は本体の合成にだけ適用し、Shadow の alpha は本体用の blur／mask を適用する前の内容から取得する。Shadow の blur は ShadowOptions の半径を使う。layer の Opacity、Bounds と親 clip は shadow と本体の両方の最終合成に適用する。
 
 layer の blur は有限範囲の Gaussian とする。物理半径を `R = BlurRadius × deviceScale`、標準偏差を `R / 3` とし、各軸の整数 `[-ceil(R), ceil(R)]` における Gaussian 重みを総和 1 に正規化する。範囲外は透明な黒、radius 0 は恒等とし、影にも同じ規約を使う。これは現行の重み付き blur の能力を保ちつつ新しい両本体の意味を固定するもので、旧実装との pixel 互換を要求しない。外部の画像 Blur と kernel／端の扱いが異なるため、共通 AddBlurPass の呼出しを強制せず、各本体の内部 graph で実装する。
 
@@ -146,6 +153,7 @@ layer の blur は有限範囲の Gaussian とする。物理半径を `R = Blur
 | `PositionedGlyphData(Glyph, Transform, Advance, Utf16Cluster)` | `GlyphUploadData` への直接参照、glyph ローカル座標から text の左上基準の logical 座標への変換、測定済み advance と元文字列の cluster。glyph の抽出・サイズ・variation と配置は確定済みとする。 |
 | `GlyphUploadData(Key, Bounds, Outline, ColorPaint) : IGpuUploadData` | 不変の glyph 輪郭と、任意の解決済み color paint tree。Bounds は glyph ローカル座標の ink bounds。ColorPaint があればそれを描き、なければ Outline を DrawText の brush で塗る。両方が空なら空白等の描画のない glyph とする。 |
 | `GlyphPaintNode` | 有限の不変 paint tree。下表の輪郭、色、gradient、bitmap、transform、clip、合成で color glyph の描画を表現する。font の表 offset、glyph ID だけの未解決参照、palette index は含めない。 |
+| `GlyphGradientStop(Offset, Color)`／`GlyphGradientStop.Foreground(Offset, Alpha)` | 解決済みの線形色、または DrawText 時点の foreground brush と alpha を指定する不変 stop。 |
 | `DistanceFieldUploadData(Key, Image, Kind, SourceSize, DistanceRange) : IGpuUploadData` | `Image` は `GpuImageUploadData`。Kind は Coverage／SDF／MSDF、SourceSize は距離場の元の描画サイズ、DistanceRange は距離の符号化範囲。物理 atlas の位置や backend handle を持たない。 |
 
 `GlyphUploadData.Outline` は `PathGeometry` と fill rule の組とし、font の輪郭を不変の曲線として保持する。palette の実色、variation、COLRv0 layer と COLRv1 の glyph 参照は提出前に `Lumyte.Resources` 側で評価・解釈する。color／monochrome の選択、壊れた color 表現からの fallback も供給側で確定する。bitmap glyph は decode 済み画像を ColorPaint の Bitmap node に含める。入力には PNG／TTF／OTF／TTC のファイル byte 列や未解決の font 表を含めない。これにより描画本体は font parser を持たず、既存の色文字と単色文字の能力を維持できる。
@@ -154,7 +162,7 @@ layer の blur は有限範囲の Gaussian とする。物理半径を `R = Blur
 | --- | --- |
 | `Outline(Path, FillRule, Paint)` | glyph ローカルの曲線領域に子 paint を適用する。別 glyph の輪郭も抽出済みの Path として渡す。 |
 | `Solid(Color)`／`Foreground(Alpha)` | 解決済み線形色、または DrawText の brush を使う foreground。Foreground は font palette の遅延参照ではない。 |
-| `LinearGradient`／`RadialGradient`／`SweepGradient` | 制御点／円／角度、extend、不変 stop 列を持つ。stop の色も解決済みの Color または Foreground と alpha で表せる。 |
+| `Gradient(GradientBrush)`／`LinearGradient(...)`／`RadialGradient(...)`／`SweepGradient(...)` | 通常の Gradient は解決済み brush を保持する。三つの factory は GlyphGradientStop 列も受け、foreground の寄与を既存の Gradient／Foreground／Composite の不変 paint tree へ展開する。GPU に追加の共通形式を要求しない。 |
 | `Bitmap(Image, SourceRectangle, Destination)` | decode 済み `GpuImageUploadData` の画素と配置。PNG／font blob を内部で開かない。 |
 | `Transform(Matrix, Child)`／`Clip(Path, FillRule, Child)` | affine transform と輪郭による clip。 |
 | `Composite(Source, Backdrop, Mode)`／`Layers(Children)` | 共通 CompositeMode に従う合成、または入力順の SourceOver layer 列。 |
@@ -183,6 +191,12 @@ font fallback chain、複数 run、折返し、混在 bidi、行間、ellipsis �
 原点は target の左上、X は右、Y は下とする。座標と線幅は logical unit で、scene の deviceScale を最終の物理座標変換に一度だけ掛ける。保持 scene の子 snapshot は deviceScale 1 とし、外側の snapshot で出力倍率を指定する。path と画像には描画時の affine transform、clip には clip を追加した時点の transform を使う。
 
 内部の色計算と合成は線形 premultiplied RGBA とする。color glyph palette と通常の画像の色変換もこれに合わせる。Plus は color と alpha を飽和し、その他の composite は現行テストの premultiplied reference を基準にする。sRGB encode、HDR tone mapping と presentation は別の機能で行い、2D pass が最後の出力変換を推測しない。一般的な画面合成では tone mapping 後の線形 SDR に UI を重ね、最後に Output pass へ渡す。
+
+gradient は各 stop の線形 RGB を alpha で premultiply してから、隣接 stop の RGBA を線形補間する。straight RGB の補間後に alpha を掛ける方式とは区別する。完全に透明な stop の RGB は結果へ寄与しない。foreground stop も同じ規約で、通常色の gradient と、foreground brush に gradient alpha を掛けた寄与を Plus 合成できる。sweep の角度はラジアンで、左上原点の座標系における正方向は時計回りとする。
+
+最初の本体では出力画素の中心で paint／画像を評価し、その画素における幾何 coverage を掛ける。参照画像も幾何 coverage の高解像度評価と、paint の画素中心での評価を分ける。画像や gradient の色を coverage 用サンプルごとに再評価して、暗黙に別のフィルターを重ねない。
+
+画像は色 encoding と alpha mode を解決し、線形 premultiplied の sample 値にしてから Nearest／Linear filter を適用する。SkiaSharp の比較画像も、供給画素を最初に線形 premultiplied surface へ変換する。Skia の既定の straight-alpha gradient はそのまま用いず、不透明な Skia gradient 二つの補間結果から premultiplied RGB と alpha を組み立てる。これは試験用の変換であり、production に SkiaSharp 依存を加えない。
 
 alpha を含む描画順を維持する。同じ resource／paint が遠くに出現しても、間の描画との関係を変える並べ替えは行わない。互換な連続範囲の batch 化や、結果を変えない tile 内の処理は可能とする。clip、opacity group と backdrop を読む blend の境界もこの順序に含める。
 
@@ -216,14 +230,14 @@ coverage、gradient、距離・曲線計算、premultiplied 合成は [ADR 0033]
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。TwoD／Text は CPU 契約として新設し、共有値の TwoD.Primitives、feature の契約、二系統の GPU 本体と Hosting integration も新設予定とする。
+以下は repository root からの相対パスである。TwoD／Text と共有値の TwoD.Primitives は CPU 契約として新設し、feature の契約、二系統の GPU 本体と Hosting integration をそれぞれ分離した。下表の細分化された Cache／Upload と共有 Slang module の配置は、最適化を進める際の分類を含む。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Passes/TwoD/` | `Add2DPass`、`Draw2DPassRequest`／result／contract と `Draw2DSceneInputContract`。 |
-| `src/graphics/Lumyte.Graphics.TwoD/Scene/` | 新設予定。`Draw2DSceneBuilder`／scope、`Draw2DSceneStore`／node ID／snapshot、描画順と共有 page・所有情報。 |
+| `src/graphics/Lumyte.Graphics.TwoD/Scene/` | `Draw2DSceneBuilder`／scope、`Draw2DSceneStore`／node ID／snapshot、描画順と共有部分木・所有情報。 |
 | `src/graphics/Lumyte.Graphics.TwoD.Primitives/Geometry/`、`src/graphics/Lumyte.Graphics.TwoD.Primitives/Paint/`、`src/graphics/Lumyte.Graphics.TwoD.Primitives/Images/` | 新設 project。path／polygon、stroke、色／brush／gradient、画像参照・sampling、clip／layer／composite の共有 CPU 描画値。namespace は `Lumyte.Graphics.TwoD` とし、Text と scene の両方から参照する。 |
-| `src/graphics/Lumyte.Graphics.Text/Upload/` | 新設予定。`TextDrawData`、metrics、配置済み glyph、輪郭と color paint tree、`DistanceFieldUploadData` の所有済み転送契約。 |
+| `src/graphics/Lumyte.Graphics.Text/Upload/` | `TextDrawData`、metrics、配置済み glyph、輪郭と color paint tree、foreground gradient stop、`DistanceFieldUploadData` の所有済み転送契約。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/TwoD/` | `NativeDraw2DPass` と内部 path／coverage／layer／glyph 処理。`GpuData/`、`Upload/`、`Cache/` に専用入力、差分転送、atlas と scene／batch cache を置く。 |
 | `src/graphics/Lumyte.Graphics.Portable.Passes/TwoD/` | `PortableDraw2DPass` と自身の内部処理。同じ分類の `GpuData/`、`Upload/`、`Cache/` に明示 binding と atlas page に適した実装を置く。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/TwoD/Shaders/*.slang`、`src/graphics/Lumyte.Graphics.Portable.Passes/TwoD/Shaders/` | Native の Slang entry と Portable の Slang／直接 WGSL entry、図形・path・glyph・mask／layer の専用 resource／root 宣言。生成 C# と artifact は各 project の `obj/<Configuration>/<TargetFramework>/Shaders/Native/` または `Shaders/Portable/` に出力する。 |
@@ -253,7 +267,7 @@ draw.FillRoundedRectangle(
     Brush.Solid(Color.FromSrgb(0.12f, 0.15f, 0.20f)));
 using (draw.BeginClip(new Rect(24, 24, 304, 84)))
 {
-    draw.DrawImage(Draw2DImageSource.Upload(iconData), new Rect(32, 36, 32, 32));
+    draw.DrawImage(iconData, new Rect(32, 36, 32, 32));
     draw.DrawText(titleData, new(80, 40), Brush.Solid(Color.White));
 }
 
@@ -275,7 +289,7 @@ bindings = inputs.Build();
 using var second = await runtime.SubmitAsync(plan, bindings, cancellationToken);
 ```
 
-文字と画像を組み立てるコードに shader、atlas、GPU handle は現れない。二度目は panel の transform だけが変わり、図形、文字、画像と共通 plan を共有する。次の frame で何も変わらなければ同じ bindings を再提出する。新しい frame の編集は、提出済みの scene を変更しない。この例は CPU upload data の画像だけを使うため ReadTextures を省略できる。graph の画像を使う slot では `new Draw2DPassRequest(sceneInput, color, ReadTextures: [source])` のように利用可能な集合を固定する。
+文字と画像を組み立てるコードに shader、atlas、GPU handle は現れない。二度目は panel の transform だけが変わり、図形、文字、画像と共通 plan を共有する。次の frame で何も変わらなければ同じ bindings を再提出する。新しい frame の編集は、提出済みの scene を変更しない。この例は CPU upload data の画像だけを使うため ReadTextures を省略できる。graph の画像を使う slot では `new Draw2DPassRequest(sceneInput, color, readTextures: [source])` のように利用可能な集合を固定する。
 
 ## 適合試験と移行順
 
@@ -293,6 +307,10 @@ native API／WebGPU が判断する usage、binding、shader、pipeline の合�
 
 削除前に調査した TwoD／Text の描画能力を目標とし、共通 CPU scene と同一 binary の追加 API を定義する。pass 本体、shader、GPU data と資源管理を Native／Portable の二系統へ分ける。利用者による GPU 描画経路と atlas 管理は要求しない。
 
-新しい共通 scene／text／glyph／画像 upload 型と owning snapshot の受渡し、Add2DPass、型付き scene 入力と固定外部依存の契約、変更 page／部分木と所有集合を共有する store、再利用可能な bindings／plan、二系統の本体と shader、内部 graph、失効範囲を守る差分更新、atlas／glyph の使用保持、適合試験と継続的な部分更新の性能確認は未実装である。dash／join／cap／miter、全描画要素での拡張 gradient／path clip も新設する必要がある。削除前に実装があった項目も、新しい二系統で完成したとは扱わない。描画品質の許容値と対象 format の適合表は実装時に固定する必要がある。
+共通 scene／text／glyph と owning snapshot、Add2DPass、型付き入力と固定 Read 集合、部分木と所有情報を共有する store、再利用可能な bindings／plan、二系統の本体と shader、内部 graph、図形／path／stroke／gradient／画像／clip／layer／composite／準備済み文字／距離場の描画経路を実装した。CPU scope、snapshot、依存集合は隣接 xUnit project、GPU の描画結果は共通 consumer と SkiaSharp 参照で確認する。実機試験の条件と固定許容値は [2D 比較試験](../../src/graphics/Lumyte.Graphics.RenderGraph.Conformance/TwoD/README.md) に置く。
 
-image brush と nine-slice は追加提案であり未実装である。font ロード・shaping／段落 layout・hit testing、SVG のロード／decode の設計は `Lumyte.Resources` の分野であり、この ADR の採用範囲に含めない。縦書き・ruby、完全な SVG／外部 2D library との互換、IME／編集／widget の実装も責務外とする。
+最初の GPU 経路は CPU で曲線と stroke を準備し、GPU で coverage、paint と合成を評価する。内容の同一性に基づく bounded cache により未変更の準備結果や upload を再利用する一方、描画要素ごとの全画面処理と backdrop 用の中間画像を使う。RenderGraph が一時資源を再利用しても、tile 単位の除外や複数描画の batch 化を完成したことにはならない。CPU store の部分更新が O(log n) であることから、GPU 描画全体の時間や 60 FPS を保証しない。
+
+未実装の最適化は、glyph／画像 atlas の packing と退役領域の再利用、輪郭からの coverage／SDF／MSDF の自動生成と品質に基づく経路選択、変更範囲に応じた細かい batch 更新、tile／scissor による描画範囲の削減、共有 Slang module の整理、継続的な部分更新の性能計測である。現在は atlas を必要としない輪郭描画と、供給済み距離場の描画を使う。image brush は CPU 契約と二系統の描画経路を追加したが、nine-slice は引き続き追加提案である。
+
+font ロード・shaping／段落 layout・hit testing、SVG のロード／decode は `Lumyte.Resources` の分野であり、この ADR の採用範囲に含めない。縦書き・ruby、完全な SVG／外部 2D library との互換、IME／編集／widget の実装も責務外とする。

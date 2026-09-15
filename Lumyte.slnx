@@ -12,6 +12,12 @@
   <Project Path="src/devtools/Lumyte.DevTools/Lumyte.DevTools.csproj" />
   <Project Path="src/devtools/Lumyte.DevTools.Protocol/Lumyte.DevTools.Protocol.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics/Lumyte.Graphics.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.TwoD.Primitives/Lumyte.Graphics.TwoD.Primitives.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.TwoD.Primitives.Tests/Lumyte.Graphics.TwoD.Primitives.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.TwoD/Lumyte.Graphics.TwoD.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.TwoD.Tests/Lumyte.Graphics.TwoD.Tests.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
+  <Project Path="src/graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native/Lumyte.Graphics.Native.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native.Tests/Lumyte.Graphics.Native.Tests.csproj" />
   <Project Path="src/graphics/Lumyte.Graphics.Native.Shaders/Lumyte.Graphics.Native.Shaders.csproj" />

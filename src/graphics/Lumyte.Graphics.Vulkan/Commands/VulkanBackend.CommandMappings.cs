@@ -28,6 +28,7 @@ public sealed unsafe partial class VulkanBackend
             {
                 GpuFormat.R8Unorm => 1,
                 GpuFormat.Rg8Unorm => 2,
+                GpuFormat.Rgba16Float => 8,
                 GpuFormat.Rgba8Unorm or GpuFormat.Bgra8Unorm or GpuFormat.R32Float
                     or GpuFormat.Rgba8UnormSrgb or GpuFormat.Bgra8UnormSrgb => 4,
                 _ => throw new ArgumentException("The format has no color transfer element.", nameof(format)),

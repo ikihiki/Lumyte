@@ -58,11 +58,13 @@ Snapshot 後に caller の配列を変更しても登録済み要求は変わら
 | API | 契約 |
 | --- | --- |
 | `GpuGraphValue<T>.Constant(value)`／`FromInput(input)` | CPU 定数または `GpuGraphInput<T>` の参照を表す。不変の和型とし、T と input からの暗黙変換も用意する。 |
+| `GpuGraphValue<T>.TryGetConstant(out value)` | 機能契約が定数の外部依存を確定できる公開拡張契約。slot の既定値や現在値を公開せず、slot の場合は false を返す。 |
 | `IGpuGraphInputContract<T>.Snapshot(value)` | 値を所有済みの不変 snapshot にする。不変値や共有部分木はそのまま使い、可変の借用 memory は固定する。 |
 | `IGpuGraphInputContract<T>.Retain(context, snapshot)` | snapshot が直接参照する upload data と logical resource を型に従って登録する。GPU 処理、外部依存の追加、ロードは行わない。 |
 | `GpuRenderInputRetentionContext.ReadUpload(data)` | 準備済みデータと、その明示的な子参照の CPU 所有を保持する。GPU allocation や cache entry の使用保持とは区別する。 |
 | `ReadSnapshot(snapshot, inputContract)` | 既に不変な子 snapshot の所有集合を共有する。Snapshot を再実行せず、未変更の枝を再列挙しない。循環した所有宣言は拒否する。 |
 | `GpuRenderInputRetentionContext.UseDeclared(resource)` | 入力内の logical resource が、その pass に固定宣言された Read／ReadWrite 集合にあることだけを確認する。新しい edge は追加しない。 |
+| `GpuRenderInputRetentionContext.UseDeclaredRead(resource)` | 固定宣言が Read の資源だけを参照できる。2D の画像入力など、同じ pass の ReadWrite target を入力へ流用できない機能で使う。依存の追加や native API の検証は行わない。 |
 | `graph.CreateInput(name, inputContract)`／`CreateInput(name, inputContract, initialValue)` | graph と型を識別する `GpuGraphInput<T>` を返す。初期値を渡した場合だけ Snapshot して既定値として保持する。省略した slot は提出までに Set が必要。 |
 | `plan.CreateBindings()` | この plan の指定済み CPU 初期値を持つ `GpuRenderGraphBindingsBuilder` を作る。初期値のない CPU input と resource input は未設定とする。 |
 | `bindingsBuilder.Set(input, value)` | CPU input の Snapshot をこの呼出し時点で確定する。builder を再利用すると、未変更 slot は直前の builder 値を保つ。 |

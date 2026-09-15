@@ -772,12 +772,45 @@ DX12／Vulkan の各5件の feature graph は検証の警告・エラー0だっ�
 92現行文書のローカルリンク、86 project と solution の参照先に欠落はなく、`git diff --check` も成功した。
 InternalsVisibleTo の9指定はすべて test assembly 向けであり、production 向けの指定はない。
 
+## 2D の新 RenderGraph への統合
+
+2026-09-16 に、[ADR 0036](../adr/0036-2d-render-passes.md) の CPU scene と Native／Portable の 2D pass を実装した。
+利用側は `Draw2DSceneBuilder` または `Draw2DSceneStore` の snapshot を `Add2DPass` に渡す。
+`AddLumyteGraphics(...).Add2DRendering()` で二系統を登録し、選択した provider が shader、GPU data、内部 pass と資源を準備する。
+旧 renderer／backend への互換経路は追加していない。
+
+- 図形、Bezier path と fill rule、stroke の join／cap／dash、各種 gradient、画像と image brush、affine transform と clip を GPU で描画する。
+- layer の opacity／mask／blur／shadow、Porter–Duff と blend mode、prepared text／color glyph、供給済み coverage／SDF／MSDF を扱う。font／画像のロードと shaping は引き続き Resources の責務である。
+- 変更枝だけを更新する CPU store、入力 snapshot の所有共有、plan と bindings の再利用、provider 別の準備 cache と GPU 内容保持により、未変更の内容を再利用する。
+- slot から利用する graph texture は固定の Read 集合で宣言する。自身の描画先を画像として読むことや、入力更新で未宣言の依存を増やすことを防ぐ。前段の 2D pass が作った画像を後段の 2D pass で利用できる。
+- 線形 premultiplied RGBA、RGBA8／BGRA8／RGBA16Float の描画先を扱う。Native は bindless descriptor と直接 root data、Portable は明示 binding と直接 immediate data を使用する。
+
+SkiaSharp は試験用 Conformance project にだけ追加した。同じ scene を独立した Skia API で描いて実機 readback と比較し、描画範囲内の誤差と AA 境界の誤差を分けて確認する。
+参照画像の色空間、補間、AA、HDR と失敗時の PNG 出力は [2D 比較試験](../../src/graphics/Lumyte.Graphics.RenderGraph.Conformance/TwoD/README.md) に記録する。
+
+本実装は各描画要素の GPU coverage／paint／合成と全画面の中間処理を使う。
+atlas の packing と退役領域の再利用、coverage／距離場の自動生成、tile／scissor 最適化、batch 化、共有 Slang module と性能計測は残る。
+部分更新の再利用は確認対象とするが、実際の描画量に対する 60 FPS はまだ保証しない。
+
+検証は Browser／Slang／Tint の環境変数と `VK_LAYER_VALIDATE_SYNC=1` を設定し、
+`dotnet build Lumyte.slnx --disable-build-servers -m:4 --no-restore` が警告0・エラー0で成功した。
+続く `dotnet test Lumyte.slnx --no-build --no-restore --disable-build-servers -m:4 --logger "trx;LogFilePrefix=two-d-verified" --blame-hang-timeout 2m --blame-hang-dump-type none --blame-crash --blame-crash-dump-type mini`
+は **41 project・2,149件成功、失敗0、skip 0**、全 TRX が Completed、終了コード0だった。
+DirectX 12 は357件、Vulkan は358件、Dawn は266件、Browser は64件成功した。
+
+その後、Portable の `Close()` に続く `LineTo()` が閉じた輪郭の点列へ追記してしまう不具合を修正した。
+修正前だけに戻した WebGPU の比較試験で余分な塗りを検出し、元へ戻した修正済みコードに対して
+`dotnet test Lumyte.slnx --disable-build-servers -m:4 --no-restore --filter "DisplayName~post-close-path" --logger "trx;LogFilePrefix=two-d-post-close-verified" --blame-hang-timeout 2m --blame-hang-dump-type none`
+を実行した。追加した DirectX 12／Vulkan／Dawn の **3件すべて成功、失敗0、skip 0**。
+全体実行と追加回帰を合わせ、SkiaSharp による実 GPU の 2D 比較は234件成功した。
+DirectX 12／Vulkan の比較は検証レイヤーを有効にし、警告・エラーがないことも確認した。
+
 ## 未実装と次の順序
 
-1. 完成した RenderGraph 基盤上に Blit／Blur／Composite／ToneMap と Model／2D の個別機能を追加する。内部 template、準備 cache と GPU 内容世代を使い、各機能で部分更新の適合と性能を確認する。
+1. 完成した RenderGraph 基盤上に独立した Blit／Blur／Composite／ToneMap と Model の個別機能を追加する。2D 内部の blur／composite と、単独で追加できる機能 pass は区別する。2D の残る batch／atlas 最適化と部分更新の性能も確認する。
 2. platform の実 window／canvas に presentation factory を接続し、初回表示、resize、frame pacing、表示側の終了を確認する。headless presentation の適合を OS の表示完了とは扱わない。
 3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 
 任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。
 
-保持型 Model／2D／文字描画と Slang toolchain の製品実装への統合は、これらの後続作業である。旧描画系を復元する互換経路は設けない。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
+保持型 Model と、Slang toolchain の残る共通化は後続作業である。旧描画系を復元する互換経路は設けない。各描画機能の実装後には、その機能を使う conformance 試験を追加する。

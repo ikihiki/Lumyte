@@ -12,4 +12,5 @@ public enum GpuFormat
     R8Unorm,
     Rg8Unorm,
     Depth24PlusStencil8,
+    Rgba16Float,
 }

@@ -117,6 +117,7 @@ public sealed unsafe partial class VulkanBackend
         GpuFormat.Bgra8UnormSrgb => Format.B8G8R8A8Srgb,
         GpuFormat.R8Unorm => Format.R8Unorm,
         GpuFormat.Rg8Unorm => Format.R8G8Unorm,
+        GpuFormat.Rgba16Float => Format.R16G16B16A16Sfloat,
         GpuFormat.R32Float => Format.R32Sfloat,
         GpuFormat.D32Float => Format.D32Sfloat,
         GpuFormat.Depth24PlusStencil8 => Format.D24UnormS8Uint,

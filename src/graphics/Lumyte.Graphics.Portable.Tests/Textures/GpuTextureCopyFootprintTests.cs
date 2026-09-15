@@ -10,6 +10,7 @@ public sealed class GpuTextureCopyFootprintTests
     [InlineData(GpuFormat.Bgra8Unorm, 24ul)]
     [InlineData(GpuFormat.Bgra8UnormSrgb, 24ul)]
     [InlineData(GpuFormat.R32Float, 24ul)]
+    [InlineData(GpuFormat.Rgba16Float, 48ul)]
     [InlineData(GpuFormat.D32Float, 24ul)]
     public void OmittedStridesCalculateTightlyPackedBytes(GpuFormat format, ulong expected)
     {

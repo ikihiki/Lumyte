@@ -116,6 +116,7 @@ public sealed unsafe partial class DirectX12Backend
         (GpuFormat.R32Float or GpuFormat.D32Float, true) => Format.FormatR32Typeless,
         (GpuFormat.R8Unorm, true) => Format.FormatR8Typeless,
         (GpuFormat.Rg8Unorm, true) => Format.FormatR8G8Typeless,
+        (GpuFormat.Rgba16Float, true) => Format.FormatR16G16B16A16Typeless,
         (GpuFormat.Depth24PlusStencil8, true) => Format.FormatR24G8Typeless,
         (GpuFormat.Rgba8Unorm, false) => Format.FormatR8G8B8A8Unorm,
         (GpuFormat.Rgba8UnormSrgb, false) => Format.FormatR8G8B8A8UnormSrgb,
@@ -125,6 +126,7 @@ public sealed unsafe partial class DirectX12Backend
         (GpuFormat.D32Float, false) => Format.FormatD32Float,
         (GpuFormat.R8Unorm, false) => Format.FormatR8Unorm,
         (GpuFormat.Rg8Unorm, false) => Format.FormatR8G8Unorm,
+        (GpuFormat.Rgba16Float, false) => Format.FormatR16G16B16A16Float,
         (GpuFormat.Depth24PlusStencil8, false) => Format.FormatD24UnormS8Uint,
         _ => throw new ArgumentOutOfRangeException(nameof(format)),
     };

@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph\Lumyte.Graphics.Portable.RenderGraph.csproj" />
     <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.TwoD\Lumyte.Graphics.TwoD.csproj" />
+    <EmbeddedResource Include="TwoD\Shaders\Draw2D.wgsl" LogicalName="Lumyte.Graphics.Portable.Passes.TwoD.Draw2D.wgsl" />
     <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph.Generators\Lumyte.Graphics.Portable.RenderGraph.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <PortablePassBindingInput Include="ImageProcessing\Output.portable.resources.xml" />
   </ItemGroup>

@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Lumyte.Graphics.WebGPU.Browser\Lumyte.Graphics.WebGPU.Browser.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.RenderGraph.Conformance\Lumyte.Graphics.RenderGraph.Conformance.csproj" />
     <ProjectReference Include="Integration\BrowserHost\BrowserHost.csproj" ReferenceOutputAssembly="false" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

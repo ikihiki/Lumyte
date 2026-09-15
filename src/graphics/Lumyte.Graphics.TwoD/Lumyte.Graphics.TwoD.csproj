@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Lumyte.Graphics.TwoD.Primitives\Lumyte.Graphics.TwoD.Primitives.csproj" />
+    <ProjectReference Include="..\Lumyte.Graphics.Text\Lumyte.Graphics.Text.csproj" />
+  </ItemGroup>
+</Project>

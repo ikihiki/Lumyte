@@ -101,7 +101,7 @@ public sealed unsafe partial class DirectX12Backend
             (GpuFormat.Depth24PlusStencil8, NativeGpuTextureAspect.Stencil) => (1, 1),
             (GpuFormat.Depth24PlusStencil8, NativeGpuTextureAspect.DepthStencil) => (0, 2),
             (GpuFormat.Rgba8Unorm or GpuFormat.Rgba8UnormSrgb or GpuFormat.Bgra8Unorm or GpuFormat.Bgra8UnormSrgb
-                or GpuFormat.R32Float or GpuFormat.R8Unorm or GpuFormat.Rg8Unorm, NativeGpuTextureAspect.Color) => (0, 1),
+                or GpuFormat.R32Float or GpuFormat.R8Unorm or GpuFormat.Rg8Unorm or GpuFormat.Rgba16Float, NativeGpuTextureAspect.Color) => (0, 1),
             _ => throw new ArgumentException("The aspect does not represent a plane of the texture format.", nameof(aspect)),
         };
     }

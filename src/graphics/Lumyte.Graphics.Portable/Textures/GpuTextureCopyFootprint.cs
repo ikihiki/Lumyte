@@ -28,6 +28,7 @@ public readonly record struct GpuTextureCopyFootprint(
         {
             GpuFormat.R8Unorm => 1,
             GpuFormat.Rg8Unorm => 2,
+            GpuFormat.Rgba16Float => 8,
             GpuFormat.Rgba8Unorm or GpuFormat.Bgra8Unorm or GpuFormat.Rgba8UnormSrgb
                 or GpuFormat.Bgra8UnormSrgb or GpuFormat.R32Float or GpuFormat.D32Float => 4,
             GpuFormat.Depth24PlusStencil8 when Aspect == GpuTextureAspect.StencilOnly => 1,

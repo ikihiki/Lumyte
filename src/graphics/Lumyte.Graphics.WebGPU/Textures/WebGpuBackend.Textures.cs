@@ -110,6 +110,7 @@ public sealed partial class WebGpuBackend
         GpuFormat.Bgra8UnormSrgb => N.TextureFormat.BGRA8UnormSrgb,
         GpuFormat.R8Unorm => N.TextureFormat.R8Unorm,
         GpuFormat.Rg8Unorm => N.TextureFormat.RG8Unorm,
+        GpuFormat.Rgba16Float => N.TextureFormat.RGBA16Float,
         GpuFormat.R32Float => N.TextureFormat.R32Float,
         GpuFormat.D32Float => N.TextureFormat.Depth32Float,
         GpuFormat.Depth24PlusStencil8 => N.TextureFormat.Depth24PlusStencil8,
