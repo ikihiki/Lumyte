@@ -190,8 +190,8 @@ camera の変更が culling／透明 sort に影響するなど、必要な処�
 
 段階 0 として共通 feature library、Clear 入力 contract、同じ plan と不変 bindings、GetInput、二系統の registry／本体、標準画像機能の Hosting 登録を実装した。Clear と Copy は下位命令で行い、Output の shader と program は各本体が所有する。利用側は shader、pipeline、root、binding を管理しない。
 
-内部 template と差分準備、GPU 内容世代 cache、Model／2D と残る画像機能の移植は未実装である。既存の旧 API の同様の機能を、新しい二系統の完成として数えない。
+内部 template と差分準備、GPU 内容世代 cache、2D と標準画像処理を実装した。Model と 2D の atlas／細粒度 batch 更新は後続である。既存の旧 API の同様の機能を、新しい二系統の完成として数えない。
 
-共有 Slang module と両 target の build 依存、個別 entry への移植、直接 root を含む Portable variant の conformance、Native の mesh 経路と通常 vertex 経路の選択は未実装である。Slang の WGSL 出力対応だけを全 pass の source 共通化完了とは扱わない。
+共有 Slang module と両 target の build 依存、共有 module を使う entry への移植、直接 root を含む Slang 由来 Portable raster variant の conformance、Native の mesh 経路と通常 vertex 経路の選択は未実装である。直接 WGSL を用いる機能 pass の適合は実装済みだが、全 pass の Slang source 共通化完了とは扱わない。
 
 適合試験では一度だけビルドした同じ consumer assembly を双方の provider で実行し、出力、依存、snapshot、所有と失敗を確認する。未変更入力の再利用、部分更新、古い bindings の再提出、重なる実行と構造変更も個別に確認する。内部 command 列や生成 shader 全文の一致は条件にしない。

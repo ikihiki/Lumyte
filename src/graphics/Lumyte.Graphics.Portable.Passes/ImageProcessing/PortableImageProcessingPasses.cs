@@ -12,6 +12,10 @@ public static class PortableImageProcessingPasses
         registry.Register(ClearPassContract.Instance, static _ => new PortableClearPass());
         registry.Register(TextureCopyPassContract.Instance, static _ => new PortableTextureCopyPass());
         registry.Register(OutputPassContract.Instance, static services => new PortableOutputPass(services));
+        registry.Register(BlitPassContract.Instance, static services => new PortableFilterPass(services));
+        registry.Register(BlurPassContract.Instance, static services => new PortableFilterPass(services));
+        registry.Register(CompositePassContract.Instance, static services => new PortableFilterPass(services));
+        registry.Register(ToneMapPassContract.Instance, static services => new PortableFilterPass(services));
         return registry;
     }
 }

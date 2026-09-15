@@ -101,7 +101,7 @@ pipeline 作成 API は、戻った後に必要な code と entry point を自�
 | `tools/Lumyte.Graphics.Native.Shaders.Offline/Compiler/` | build target／request／result、Slang の offline 呼出し、DXIL／SPIR-V の生成と Vulkan の slot stride に対応する ABI lowering。 |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline/Generation/` | compiler が確定した配置から C# root/input 構造体、管理入力 XML、package factory、JSON container と ABI 識別子を生成する。 |
 | `tools/Lumyte.Graphics.Native.Shaders.Offline/Build/` と `.targets` | request JSON を読む CLI と MSBuild の生成入力登録。出力 inventory の CPU 処理は `tools/Lumyte.Graphics.Shaders.Offline.Shared/` を source link する。 |
-| `src/graphics/Lumyte.Graphics.Native.Passes/<Feature>/Shaders/` | 新設予定の Native pass project 内で、ImageProcessing／Models／TwoD 等の所有者ごとに Slang source と build 入力を置く。独自 pass はその実装 project 内に source を持つ。 |
+| `src/graphics/Lumyte.Graphics.Native.Passes/<Feature>/Shaders/` | Native pass project 内で、ImageProcessing／Models／TwoD 等の所有者ごとに Slang source と build 入力を置く。独自 pass はその実装 project 内に source を持つ。 |
 | `src/graphics/Shaders/Shared/` | Native と Portable の build が import する計算用 Slang module。source の共有に限定し、共通 runtime assembly、GPU 構造体や shader package は置かない。 |
 | 利用 project の `obj/<Configuration>/<TargetFramework>/Shaders/Native/` | 生成 C#、DXIL／SPIR-V と package artifact の build 出力先。追跡する shader source とは分け、生成 C# はその利用 project でコンパイルする。 |
 | `src/graphics/Lumyte.Graphics.Native.Shaders.Tests/Packages/`、`src/graphics/Lumyte.Graphics.Native.Shaders.Tests/Programs/` | 不変入力の所有、artifact 選択、program の保持・破棄について、GPU を使わない unit test。 |
@@ -141,6 +141,6 @@ offline の ABI 生成と artifact の組、target 選択、host bytes の所有
 
 Slang 2026.17 の target 別 reflection から artifact、root／parameter 配置、host C#、管理入力 XML と JSON container を生成する offline compiler を実装した。`LumyteResources` module の `LumyteResource("GpuAddress"/"View"/"Sampler")` 属性から参照種別を取得し、parameter 型は同じ設定の `StructuredBuffer<T>` probe で反映する。MSBuild は shader の request JSON を受け取り、XML と生成 C# を consumer へ渡す。全 compile 成功後に出力 inventory を更新し、削除された入力を除去する。現時点は毎 build で compiler を呼ぶため、import の変更も再反映される。依存 fingerprint による compile cache は未実装である。
 
-実 Slang による DXIL／SPIR-V の生成、target 別の異なる root 配置、C# と管理入力 generator の consumer 実行を確認した。matrix と非 float vector は正確な byte storage とし、matrix の要素 serializer は未実装。VulkanFixed の生成、container の独立した破損検出、生成入力を使う実 GPU 適合試験、Mesh／Amplification package の実機試験、機能 pass への接続は後続とする。既存 runtime の実機 fixture と、今回の compiler／host ABI 試験は別の検証範囲である。source の部分共有は GPU ABI の共通化を意味しない。
+実 Slang による DXIL／SPIR-V の生成、target 別の異なる root 配置、C# と管理入力 generator の consumer 実行を確認した。matrix と非 float vector は正確な byte storage とし、matrix の要素 serializer は未実装。生成 root 入力を Output／Filter pass で利用し、実 GPU で画素を確認した。VulkanFixed の生成、container の独立した破損検出、管理入力全種の実 GPU 適合と Mesh／Amplification package の実機試験は後続とする。既存 runtime の実機 fixture と、今回の compiler／host ABI 試験は別の検証範囲である。source の部分共有は GPU ABI の共通化を意味しない。
 
-ファイルロードと container のデシリアライズは `Lumyte.Resources` の責務とし、この API の採用範囲に含めない。機能 pass が所有する shader 準備・cache と内部 graph への接続も未実装である。runtime shader compilation、Portable artifact の読み込み、任意 GPU ABI 構造体どうしの相互変換、GPU 生成 root、ray tracing／tessellation 等の追加 stage はこの設計の範囲に含めない。
+ファイルロードと container のデシリアライズは `Lumyte.Resources` の責務とし、この API の採用範囲に含めない。機能 pass が所有する shader 準備・cache と内部 graph への接続は実装済みである。runtime shader compilation、Portable artifact の読み込み、任意 GPU ABI 構造体どうしの相互変換、GPU 生成 root、ray tracing／tessellation 等の追加 stage はこの設計の範囲に含めない。

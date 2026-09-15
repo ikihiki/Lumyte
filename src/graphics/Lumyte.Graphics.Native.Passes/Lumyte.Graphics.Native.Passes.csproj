@@ -12,6 +12,7 @@
     <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
     <ProjectReference Include="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.csproj" ReferenceOutputAssembly="false" />
     <NativeShaderCompile Include="ImageProcessing\Shaders\output.native.shader.json" />
+    <NativeShaderCompile Include="ImageProcessing\Shaders\filter.native.shader.json" />
     <NativeShaderCompile Include="TwoD\Shaders\two-d.native.shader.json" />
     <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>

@@ -35,7 +35,7 @@ caller は format の再解釈を texture の MutableFormat 契約に従って�
 
 ## コード配置
 
-パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は新設予定、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
+パスは repository root 相対の目標配置とする。`Lumyte.Graphics.Native` と隣の `.Tests` は作成済み、DirectX 12／Vulkan と各 `.Tests` は既存 project の改編であり、テストは xUnit を使う。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -65,4 +65,4 @@ render view の破棄は texture とその allocation を破棄しない。
 
 ## 採用差分と未実装範囲
 
-非所有 view 値と明示的な render view を採用する。read-only flags は Lumyte の表現上の補足である。`NativeGpuTextureView` と view dimension は texture transition／discard の subresource 指定にも使用する。render view handle／flags と両 backend の生成・破棄、native attachment としての clear／vertex 描画を実装した。read-only depth／stencil の内容保持を実 GPU で確認したが、全 dimension／format／sample count の描画組合せと validation layer 有効時の検証を完了したとは扱わない。
+非所有 view 値と明示的な render view を採用する。read-only flags は Lumyte の表現上の補足である。`NativeGpuTextureView` と view dimension は texture transition／discard の subresource 指定にも使用する。render view handle／flags と両 backend の生成・破棄、native attachment としての clear／vertex 描画を実装した。read-only depth／stencil の内容保持を実 GPU で確認したが、validation layer を有効にした描画・転送も確認した。全 dimension／format／sample count の組合せを網羅した保証にはしない。

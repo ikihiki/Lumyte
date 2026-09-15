@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Native;
+
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 
@@ -33,6 +34,7 @@ public sealed unsafe partial class DirectX12Backend
         private readonly List<PendingCommands> pending = [];
         private ulong nextSerial;
         public DirectX12Backend Owner { get; } = owner;
+        internal ID3D12CommandQueue* Handle => queue.Handle;
         public CommandListType Type { get; } = type;
 
         public override NativeGpuCommandBuffer StartCommandRecording()
@@ -55,7 +57,8 @@ public sealed unsafe partial class DirectX12Backend
             {
                 if (commands[index] is not NativeRecording recording || !ReferenceEquals(recording.Owner, this))
                 { throw new ArgumentException("A recording belongs to another queue.", nameof(commands)); }
-                if (!seen.Add(recording)) { throw new ArgumentException("A recording occurs more than once.", nameof(commands)); }
+                if (!seen.Add(recording))
+                { throw new ArgumentException("A recording occurs more than once.", nameof(commands)); }
                 recording.VerifyRecording();
                 records[index] = recording;
             }
@@ -76,12 +79,15 @@ public sealed unsafe partial class DirectX12Backend
             }
             catch
             {
-                foreach (EncodedCommands? item in encoded) { item?.Dispose(); }
-                foreach (NativeRecording record in records) { record.Fail(); }
+                foreach (EncodedCommands? item in encoded)
+                { item?.Dispose(); }
+                foreach (NativeRecording record in records)
+                { record.Fail(); }
                 throw;
             }
 
-            foreach (NativeRecording record in records) { record.Accept(); }
+            foreach (NativeRecording record in records)
+            { record.Accept(); }
             nextSerial = serial;
             DirectX12Submission.Execute(signal, dependencies.Length,
                 new SubmissionCalls(this, dependencies, nativeLists, signalSemaphore, signal.Value, serial));
@@ -95,12 +101,14 @@ public sealed unsafe partial class DirectX12Backend
             {
                 (NativeSemaphore semaphore, ulong value) = dependencies[index];
                 int result = submissionQueue.queue.Wait(semaphore.Fence, value);
-                if (result < 0) { submissionQueue.Owner.LoseDevice("Enqueuing a GPU timeline wait failed.", result); }
+                if (result < 0)
+                { submissionQueue.Owner.LoseDevice("Enqueuing a GPU timeline wait failed.", result); }
             }
 
             public void ExecuteCommands()
             {
-                if (nativeLists.Length == 0) { return; }
+                if (nativeLists.Length == 0)
+                { return; }
                 fixed (nint* pointers = nativeLists)
                 { submissionQueue.queue.ExecuteCommandLists((uint)nativeLists.Length, (ID3D12CommandList**)pointers); }
             }
@@ -108,13 +116,15 @@ public sealed unsafe partial class DirectX12Backend
             public void SignalInternal()
             {
                 int result = submissionQueue.queue.Signal(submissionQueue.completion, serial);
-                if (result < 0) { submissionQueue.Owner.LoseDevice("Signaling command-memory completion failed.", result); }
+                if (result < 0)
+                { submissionQueue.Owner.LoseDevice("Signaling command-memory completion failed.", result); }
             }
 
             public void SignalCaller()
             {
                 int result = submissionQueue.queue.Signal(signalSemaphore.Fence, signalValue);
-                if (result < 0) { submissionQueue.Owner.LoseDevice("Signaling caller completion failed.", result); }
+                if (result < 0)
+                { submissionQueue.Owner.LoseDevice("Signaling caller completion failed.", result); }
             }
 
             public void Fault() => submissionQueue.Owner.submissionFaulted = true;
@@ -122,18 +132,30 @@ public sealed unsafe partial class DirectX12Backend
 
         public void VerifyOperational() => Owner.VerifyAvailable();
 
-        private void Collect()
+        internal void DrainSurfaceUse()
+        {
+            VerifyOperational();
+            ulong serial = checked(++nextSerial);
+            Owner.CheckDeviceResult(queue.Signal(completion, serial), "Signal(presentation completion)");
+            Owner.CheckDeviceResult(completion.SetEventOnCompletion(serial, (void*)null), "Wait(presentation completion)");
+            Collect();
+        }
+
+        internal void Collect()
         {
             VerifyOperational();
             ulong finished = completion.GetCompletedValue();
-            if (finished == ulong.MaxValue) { Owner.LoseDevice("Direct3D 12 reported a removed device."); }
+            if (finished == ulong.MaxValue)
+            { Owner.LoseDevice("Direct3D 12 reported a removed device."); }
             int count = 0;
             while (count < pending.Count && pending[count].Serial <= finished)
             {
-                foreach (EncodedCommands encoded in pending[count].Commands) { encoded.Dispose(); }
+                foreach (EncodedCommands encoded in pending[count].Commands)
+                { encoded.Dispose(); }
                 count++;
             }
-            if (count != 0) { pending.RemoveRange(0, count); }
+            if (count != 0)
+            { pending.RemoveRange(0, count); }
         }
 
         public void DisposeNativeObjects()

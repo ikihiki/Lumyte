@@ -90,9 +90,12 @@ public sealed unsafe partial class DirectX12Backend
         }
 
         ResourceFlags flags = ResourceFlags.None;
-        if ((description.Usage & NativeGpuTextureUsage.Storage) != 0) { flags |= ResourceFlags.AllowUnorderedAccess; }
-        if ((description.Usage & NativeGpuTextureUsage.ColorAttachment) != 0) { flags |= ResourceFlags.AllowRenderTarget; }
-        if ((description.Usage & NativeGpuTextureUsage.DepthStencilAttachment) != 0) { flags |= ResourceFlags.AllowDepthStencil; }
+        if ((description.Usage & NativeGpuTextureUsage.Storage) != 0)
+        { flags |= ResourceFlags.AllowUnorderedAccess; }
+        if ((description.Usage & NativeGpuTextureUsage.ColorAttachment) != 0)
+        { flags |= ResourceFlags.AllowRenderTarget; }
+        if ((description.Usage & NativeGpuTextureUsage.DepthStencilAttachment) != 0)
+        { flags |= ResourceFlags.AllowDepthStencil; }
         bool sampledDepth = (description.Usage & NativeGpuTextureUsage.Sampled) != 0
             && description.Format is GpuFormat.D32Float or GpuFormat.Depth24PlusStencil8;
         return new ResourceDesc1
@@ -138,6 +141,7 @@ public sealed unsafe partial class DirectX12Backend
         public DirectX12Backend Owner { get; } = owner;
         public ComPtr<ID3D12Resource> Resource = resource;
         public NativeGpuTextureDescription Description { get; } = description;
+        public bool IsSurfaceImage { get; init; }
         public bool Disposed;
     }
 }

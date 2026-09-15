@@ -326,6 +326,6 @@ GpuResourceManager、scope／pin／use／batch、明示依存、token と非同�
 
 Native の Slang offline compiler と Portable の公式 Tint を使う WGSL offline compiler から、管理入力 schema を生成する接続を実装した。XML は build 中間出力となり、package と同じ `abiHash` から生成型の `AbiHash` 定数を作る。loader の `expectedAbiHash` に渡すことで取り違えを検出できる。MSBuild は生成ファイルの inventory を使用し、手書き offset や obj 全体の XML glob を要求しない。
 
-共通 RenderGraph provider と Hosting への組込み、Portable Slang の root accessor／prelude の本番 toolchain 接続、性能 benchmark は後続である。準備済み schema を受け取る生成器と runtime manager は独立して利用できる。実機・単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+共通 RenderGraph provider と Hosting への組込みを実装した。Portable Slang の root accessor／prelude の本番 toolchain 接続と性能 benchmark は後続である。準備済み schema を受け取る生成器と runtime manager は独立して利用できる。実機・単体試験の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
 
 任意 graph の tracing GC、予算圧力と `Lumyte.Resources` の cache eviction、CLR GC 連動はこの管理層の完成条件に含めず、別の設計案で検討する。

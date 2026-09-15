@@ -1,5 +1,7 @@
 using Lumyte.Graphics.Native;
+
 using Silk.NET.Vulkan;
+
 using VkSemaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Lumyte.Graphics.Vulkan;
@@ -33,6 +35,8 @@ public sealed unsafe partial class VulkanBackend
         }
 
         public VulkanBackend Owner { get; }
+        internal Queue Handle => queue;
+        internal uint Family => queueFamily;
         public readonly delegate* unmanaged<CommandBuffer, NativeCopyDeviceMemoryInfo*, void> CopyMemory;
         public readonly delegate* unmanaged<CommandBuffer, NativeCopyDeviceMemoryImageInfo*, void> CopyMemoryToImage;
         public readonly delegate* unmanaged<CommandBuffer, NativeCopyDeviceMemoryImageInfo*, void> CopyImageToMemory;
@@ -64,8 +68,10 @@ public sealed unsafe partial class VulkanBackend
                 SemaphoreRecord wait = Owner.RequireSemaphore(waits[index].Semaphore, nameof(waits));
                 waitInfos[index] = new()
                 {
-                    SType = StructureType.SemaphoreSubmitInfo, Semaphore = wait.Semaphore,
-                    Value = waits[index].Value, StageMask = PipelineStageFlags2.AllCommandsBit,
+                    SType = StructureType.SemaphoreSubmitInfo,
+                    Semaphore = wait.Semaphore,
+                    Value = waits[index].Value,
+                    StageMask = PipelineStageFlags2.AllCommandsBit,
                 };
             }
             ReclaimCompleted();
@@ -78,7 +84,8 @@ public sealed unsafe partial class VulkanBackend
                     throw new ArgumentException("A recording belongs to another queue or backend.", nameof(commands));
                 }
                 recording.VerifyRecording();
-                if (!unique.Add(recording)) { throw new ArgumentException("A recording occurs more than once in the batch.", nameof(commands)); }
+                if (!unique.Add(recording))
+                { throw new ArgumentException("A recording occurs more than once in the batch.", nameof(commands)); }
                 recordings[index] = recording;
             }
 
@@ -100,7 +107,8 @@ public sealed unsafe partial class VulkanBackend
                         if (texture is not null && texture.RequiresGeneralInitialization && initialized.Add(texture))
                         {
                             ObjectDisposedException.ThrowIf(texture.Destroyed, texture);
-                            if (initializationPool.Handle == 0) { initializationPool = CreatePool(); }
+                            if (initializationPool.Handle == 0)
+                            { initializationPool = CreatePool(); }
                             CommandBuffer initialize = AllocateCommand(initializationPool);
                             var description = texture.Description;
                             ImageAspectFlags aspects = description.Format switch
@@ -118,18 +126,23 @@ public sealed unsafe partial class VulkanBackend
                 }
                 CommandBufferSubmitInfo[] commandInfos = nativeCommands.ToArray();
                 retirement = new(this, nextValue, recordings, initializationPool);
-                foreach (CommandRecord recording in recordings) { recording.End(); }
+                foreach (CommandRecord recording in recordings)
+                { recording.End(); }
 
                 SemaphoreSubmitInfo* signals = stackalloc SemaphoreSubmitInfo[2];
                 signals[0] = new()
                 {
-                    SType = StructureType.SemaphoreSubmitInfo, Semaphore = completion,
-                    Value = nextValue, StageMask = PipelineStageFlags2.AllCommandsBit,
+                    SType = StructureType.SemaphoreSubmitInfo,
+                    Semaphore = completion,
+                    Value = nextValue,
+                    StageMask = PipelineStageFlags2.AllCommandsBit,
                 };
                 signals[1] = new()
                 {
-                    SType = StructureType.SemaphoreSubmitInfo, Semaphore = signalSemaphore.Semaphore,
-                    Value = signal.Value, StageMask = PipelineStageFlags2.AllCommandsBit,
+                    SType = StructureType.SemaphoreSubmitInfo,
+                    Semaphore = signalSemaphore.Semaphore,
+                    Value = signal.Value,
+                    StageMask = PipelineStageFlags2.AllCommandsBit,
                 };
                 fixed (CommandBufferSubmitInfo* pointer = commandInfos)
                 fixed (SemaphoreSubmitInfo* waitPointer = waitInfos)
@@ -139,13 +152,19 @@ public sealed unsafe partial class VulkanBackend
                     SubmitInfo2* submits = stackalloc SubmitInfo2[2];
                     submits[0] = new()
                     {
-                        SType = StructureType.SubmitInfo2, CommandBufferInfoCount = checked((uint)commandInfos.Length),
-                        PCommandBufferInfos = pointer, SignalSemaphoreInfoCount = 1, PSignalSemaphoreInfos = &signals[0],
-                        WaitSemaphoreInfoCount = checked((uint)waitInfos.Length), PWaitSemaphoreInfos = waitPointer,
+                        SType = StructureType.SubmitInfo2,
+                        CommandBufferInfoCount = checked((uint)commandInfos.Length),
+                        PCommandBufferInfos = pointer,
+                        SignalSemaphoreInfoCount = 1,
+                        PSignalSemaphoreInfos = &signals[0],
+                        WaitSemaphoreInfoCount = checked((uint)waitInfos.Length),
+                        PWaitSemaphoreInfos = waitPointer,
                     };
                     submits[1] = new()
                     {
-                        SType = StructureType.SubmitInfo2, SignalSemaphoreInfoCount = 1, PSignalSemaphoreInfos = &signals[1],
+                        SType = StructureType.SubmitInfo2,
+                        SignalSemaphoreInfoCount = 1,
+                        PSignalSemaphoreInfos = &signals[1],
                     };
                     VulkanSubmission.Execute(signal, new SubmissionCalls(this, submits, retirement, initialized));
                 }
@@ -154,10 +173,13 @@ public sealed unsafe partial class VulkanBackend
             {
                 if (retirement is null)
                 {
-                    foreach (CommandRecord recording in recordings) { recording.Reject(); }
-                    if (initializationPool.Handle != 0) { Owner.vk.DestroyCommandPool(Owner.device, initializationPool, null); }
+                    foreach (CommandRecord recording in recordings)
+                    { recording.Reject(); }
+                    if (initializationPool.Handle != 0)
+                    { Owner.vk.DestroyCommandPool(Owner.device, initializationPool, null); }
                 }
-                else { retirement.RejectUnlessRetained(); }
+                else
+                { retirement.RejectUnlessRetained(); }
                 throw;
             }
         }
@@ -176,7 +198,8 @@ public sealed unsafe partial class VulkanBackend
                 submissionQueue.submittedValue = retirement.Value;
                 if (completionSignalKnown)
                 {
-                    foreach (TextureRecord texture in initialized) { texture.RequiresGeneralInitialization = false; }
+                    foreach (TextureRecord texture in initialized)
+                    { texture.RequiresGeneralInitialization = false; }
                 }
                 else
                 {
@@ -191,14 +214,17 @@ public sealed unsafe partial class VulkanBackend
 
         private static CommandBufferSubmitInfo SubmitCommand(CommandBuffer command) => new()
         {
-            SType = StructureType.CommandBufferSubmitInfo, CommandBuffer = command,
+            SType = StructureType.CommandBufferSubmitInfo,
+            CommandBuffer = command,
         };
 
         private CommandPool CreatePool()
         {
             CommandPoolCreateInfo info = new()
             {
-                SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = queueFamily, Flags = CommandPoolCreateFlags.TransientBit,
+                SType = StructureType.CommandPoolCreateInfo,
+                QueueFamilyIndex = queueFamily,
+                Flags = CommandPoolCreateFlags.TransientBit,
             };
             CheckResult(Owner.vk.CreateCommandPool(Owner.device, &info, null, out CommandPool pool), "vkCreateCommandPool");
             return pool;
@@ -208,13 +234,16 @@ public sealed unsafe partial class VulkanBackend
         {
             CommandBufferAllocateInfo allocate = new()
             {
-                SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool,
-                Level = CommandBufferLevel.Primary, CommandBufferCount = 1,
+                SType = StructureType.CommandBufferAllocateInfo,
+                CommandPool = pool,
+                Level = CommandBufferLevel.Primary,
+                CommandBufferCount = 1,
             };
             CheckResult(Owner.vk.AllocateCommandBuffers(Owner.device, &allocate, out CommandBuffer command), "vkAllocateCommandBuffers");
             CommandBufferBeginInfo begin = new()
             {
-                SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
+                SType = StructureType.CommandBufferBeginInfo,
+                Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
             };
             CheckResult(Owner.vk.BeginCommandBuffer(command, &begin), "vkBeginCommandBuffer");
             return command;
@@ -222,12 +251,14 @@ public sealed unsafe partial class VulkanBackend
 
         private void ReclaimCompleted()
         {
-            if (pending.Count == 0) { return; }
+            if (pending.Count == 0)
+            { return; }
             CheckResult(Owner.vk.GetSemaphoreCounterValue(Owner.device, completion, out ulong completed), "vkGetSemaphoreCounterValue (command memory)");
             int count = 0;
             foreach (Retirement retirement in pending)
             {
-                if (!retirement.TryReleaseCompleted(completed)) { break; }
+                if (!retirement.TryReleaseCompleted(completed))
+                { break; }
                 count++;
             }
             pending.RemoveRange(0, count);
@@ -256,19 +287,24 @@ public sealed unsafe partial class VulkanBackend
         {
             protected override void MarkSubmitted()
             {
-                foreach (CommandRecord recording in recordings) { recording.MarkSubmitted(); }
+                foreach (CommandRecord recording in recordings)
+                { recording.MarkSubmitted(); }
             }
 
             protected override void Reject()
             {
-                foreach (CommandRecord recording in recordings) { recording.Reject(); }
-                if (initializationPool.Handle != 0) { queue.Owner.vk.DestroyCommandPool(queue.Owner.device, initializationPool, null); }
+                foreach (CommandRecord recording in recordings)
+                { recording.Reject(); }
+                if (initializationPool.Handle != 0)
+                { queue.Owner.vk.DestroyCommandPool(queue.Owner.device, initializationPool, null); }
             }
 
             protected override void ReleaseNative()
             {
-                foreach (CommandRecord recording in recordings) { recording.ReleaseNative(); }
-                if (initializationPool.Handle != 0) { queue.Owner.vk.DestroyCommandPool(queue.Owner.device, initializationPool, null); }
+                foreach (CommandRecord recording in recordings)
+                { recording.ReleaseNative(); }
+                if (initializationPool.Handle != 0)
+                { queue.Owner.vk.DestroyCommandPool(queue.Owner.device, initializationPool, null); }
             }
         }
     }

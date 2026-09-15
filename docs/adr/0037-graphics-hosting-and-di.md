@@ -146,6 +146,22 @@ shutdown の timeout や token の取消しは、GPU／表示側の完了を意�
 
 進行中の停止処理は複数の呼出し元で共有する。cleanup が失敗して残存所有がある場合、次の明示 StopAsync／DisposeAsync で残りの終了を再試行する。完了済みの所有をもう一度解放せず、最初の呼出し元へ通知した失敗を隠さない。
 
+### Surface connection の API と実行例
+
+`UsePresentation(Func<IServiceProvider, IGpuRenderRuntime, CancellationToken, ValueTask<IGpuGraphicsPresentationConnection>>)` は選択済み runtime と同じ DI scope で一度だけ表示先を準備する。`GpuGraphicsSurfaceConnection(GpuSurfacePresentation)` は adapter の所有を Host に渡し、終了時にその `DisposeAsync` を待つ。公開型は `Lumyte.Graphics.Hosting/GpuGraphicsSurfaceConnection.cs` に置く。Host の停止は進行中の acquire にも取消しを伝える。native 側で取消せず遅れて届いた画像は Discard してから connection を閉じる。
+
+```csharp
+graphics.UsePresentation((services, runtime, token) =>
+{
+    var n = (NativeRenderRuntime)runtime;
+    var presentation = new NativeGraphPresentation(n.NativeResources,
+        backend.CreateWindowSurface(window.Handle), GetExtent);
+    return new(new GpuGraphicsSurfaceConnection(presentation));
+});
+```
+
+`samples/graphics/Lumyte.Graphics.Hosting.Sample/` は同じ consumer から `dx12`／`vulkan`／`webgpu` を選び、2D → Blur → Composite → Blit → ToneMap → Output を表示する。application が window と message pump を所有し、最小化中は休止する。停止は新規 frame の停止 → Host の非同期終了 → window の破棄の順とする。Browser の canvas 接続例は BrowserHost の PresentationCases に置く。
+
 ## コード配置
 
 以下は repository root 相対の配置である。Graphics の四つの Hosting project と共通 Hosting.Tests は段階 0 で新設した。既存の DevTools.Host を含む application への組込みは後続とする。登録を行う project だけが Microsoft.Extensions を参照する。
@@ -161,7 +177,7 @@ shutdown の timeout や token の取消しは、GPU／表示側の完了を意�
 | `src/graphics/Lumyte.Graphics.Hosting.Tests/` | fake による設定・初期化共有・登録順・所有・停止・presentation と例外の統合試験。系統別の登録と GPU 実行は既存 backend の Integration suite から確認する |
 | `src/devtools/Lumyte.DevTools.Host/Graphics/`、`src/devtools/Lumyte.DevTools.Host/Program.cs` | 既存 host への組込み先。前者は新設予定の接続領域で、presentation factory／window の寿命接続／frame loop と Resources サービスの組合せを置く。Program.cs は起動時の登録を呼ぶ |
 | `src/devtools/Lumyte.DevTools.Host.Tests/Graphics/` | 既存 test project 内の新設予定領域。実際の composition root と platform 寿命の接続を検証する |
-| `samples/graphics/Lumyte.Graphics.Hosting.Sample/` | 新設予定の application。設定による provider 選択、DI からの session 取得、同じ描画 plan の反復利用を示す |
+| `samples/graphics/Lumyte.Graphics.Hosting.Sample/` | 実装済みの application。起動引数による provider 選択、DI からの session 取得、同じ描画 API による実ウィンドウ表示を示す |
 
 他の application も自分の host project 内に platform／Resources の接続を置く。window と event loop 自体は `src/platform/` に保ち、その project へ Graphics Hosting の逆依存を追加しない。ファイル取得と decode を Graphics の Hosting 内に複製しない。共通 Passes、RenderGraph、低レベル backend の project へ DI extension を分散させない。
 
@@ -268,8 +284,8 @@ Generic Host の登録 extension、Options、明示的な module／factory、非
 
 段階 0 として四つの Hosting package、LumyteGraphicsBuilder、GpuGraphicsOptions.Runtime、Configure／BindConfiguration、非所有 session accessor、UsePresentation、非同期初期化／rollback、runtime 単位の DI scope、IHostedLifecycleService の停止と終了を実装した。StartAsync と GetAsync は先に呼ばれた側から同じ初期化を共有する。停止開始で runtime と presentation acquire の新規受理を閉じ、consumer の StopAsync 後の StoppedAsync で GPU、presentation connection、runtime、CPU scope を順に終了する。
 
-個別登録には AddNativeProvider／AddPortableProvider の `(IServiceProvider, GpuRenderRuntimeOptions, CancellationToken)` backend factory、任意の registry 構成 callback、AddNativePasses／AddPortablePasses の一括登録、AddNativePass／AddPortablePass の型付き非同期 factory 準備を実装した。callback は選択した provider で一度だけ実行し、同じ runtime の CPU scope を使う。型付き同一定義の重複は一つへまとめ、競合定義は準備前に拒否する。PlanCacheMaximumEntries の Options 検査と render context への接続も実装した。AddImageProcessing は Clear／Copy／Output を両系統へ登録し、この三機能を RequiredPasses に加える。
+個別登録には AddNativeProvider／AddPortableProvider の `(IServiceProvider, GpuRenderRuntimeOptions, CancellationToken)` backend factory、任意の registry 構成 callback、AddNativePasses／AddPortablePasses の一括登録、AddNativePass／AddPortablePass の型付き非同期 factory 準備を実装した。callback は選択した provider で一度だけ実行し、同じ runtime の CPU scope を使う。型付き同一定義の重複は一つへまとめ、競合定義は準備前に拒否する。PlanCacheMaximumEntries の Options 検査と render context への接続も実装した。AddImageProcessing は Clear／Copy／Blit／Blur／Composite／ToneMap／Output を両系統へ登録し、この七機能を RequiredPasses に加える。Add2DRendering は 2D の本体と必要な契約を登録する。
 
-AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、Model／2D と残る画像機能の登録は未実装である。platform 固有の window／canvas factory と thread affinity、実 device loss の試験も後続とする。UsePresentation の所有接続と headless 接続の確認を、OS の初回表示や resize 対応の完了とは扱わない。
+UsePresentation の delegate overload、GpuGraphicsSurfaceConnection、NativeGraphPresentation／PortableGraphPresentation を実装した。DirectX 12／Vulkan／Dawn の HWND と Browser canvas の初回表示・resize・返却・終了に接続する。window の所有 thread と message pump は application が維持し、Host 終了後に window を破棄する。AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、Model の登録と実 device loss の強制試験は後続である。
 
 最初の統合では一つの Host に一つの既定 session を提供する。複数の named session、実行中の provider 差替え、GPU device の透過的な再生成、DI container の hot reload は未採用とする。複数 runtime を明示所有する低層の利用は引き続き可能であり、frame ごとのスコープや新しい汎用 DI framework を追加する理由にはしない。

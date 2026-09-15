@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。実装する機能 pass を用途で分類し、標準機能と追加候補を区別する。モデル描画と 2D 描画の詳細はそれぞれ独立した ADR で定める。以下の API は目標であり、新しい二系統での実装完了を示さない。
+採用（目標設計）。実装する機能 pass を用途で分類し、標準機能と追加候補を区別する。モデル描画と 2D 描画の詳細はそれぞれ独立した ADR で定める。標準画像処理七機能と 2D の基準描画経路を実装した。Model と追加候補は目標設計として区別する。
 
 ## 依存 ADR
 
@@ -81,6 +81,8 @@ Blur version 1 は線形 premultiplied RGBA の box filter とする。`(2 × Ra
 
 Blit／Blur は source を Read、target／新規出力を Write とする。処理中の結果は線形 RGBA、Blur の出力 format は `GpuFormat.Rgba16Float` とする。多段 filter の中間も出力相当以上の精度を保ち、低精度の中間格納による誤差増幅を避ける。演算と量子化の許容誤差は適合試験で固定する。mip chain、array、depth、integer texture 用の filter は追加契約とする。
 
+version 1 の Blit／Blur／Composite／ToneMap は線形 `Rgba8Unorm`／`Bgra8Unorm`／`Rgba16Float`、2D・1 mip・1 layer・1 sample を対象とする。現在の Blur は両系統とも水平・垂直の二段で、巨大 radius は端の重複画素を重みに集約し、radius に比例したループを作らない。ToneMap は同じ Reinhard 式を対数表現で計算し、有限の非常に大きい exposure でも infinity の除算を避ける。
+
 ### 合成・表示
 
 | API | 契約 |
@@ -106,6 +108,8 @@ Output は source を Read、target 全体を Write とする。opaque 出力で
 `AddOutputPass` は pixel の出力変換であり、acquire／Present／Discard や target の所有を持たない。提出と Present は共通 frame の API に従う。HDR display、wide gamut、ICC color management はこの最初の出力契約に含めない。
 
 ### 再利用する入力と構成
+
+`BlitPassContract`／`BlurPassContract`／`CompositePassContract`／`ToneMapPassContract` はそれぞれ `Instance`、`Id`、`Version`、`Snapshot`、`Declare` を公開する。Id は順に `lumyte.image.blit`／`lumyte.image.blur`／`lumyte.image.composite`／`lumyte.image.tonemap`、Version は 1。Snapshot は不変 request を保持し、Composite の layer 列をコピーする。Declare はここに記載した Read／Write／ReadWrite と入力を登録し、新規出力があれば宣言する。空の Composite も Preserve／Clear の意味を維持する。
 
 以下の入力 contract は `IGpuGraphInputContract<T>` を実装する。Snapshot は小さい値を不変に固定し、Retain は upload data を保持しないため空とする。Declare は各値を ReadInput で登録し、各本体は GetInput で今回の値を取得する。
 
@@ -143,19 +147,19 @@ sampling、mipmap、color format の合法性は native API／WebGPU runtime に
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。初期化・転送、画像処理、合成・表示は同じ `ImageProcessing/` にまとめ、分類のためだけに project を分割しない。以下の feature／Hosting／test project は新設予定である。
+以下は repository root からの相対パスによる目標配置である。初期化・転送、画像処理、合成・表示は同じ `ImageProcessing/` にまとめ、分類のためだけに project を分割しない。feature／Hosting／test project は作成済みで、未実装の機能ディレクトリは目標配置を含む。
 
 | 配置先 | 内容 |
 | --- | --- |
 | `src/graphics/Lumyte.Graphics.Passes/ImageProcessing/` | Clear／Copy／Blit／Blur／Composite／ToneMap／Output の request、result、契約と追加 extension。色・sampling・出力の値型と六つの input contract もここで所有する。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/ImageProcessing/`、`src/graphics/Lumyte.Graphics.Portable.Passes/ImageProcessing/` | 七機能の系統別本体と内部 pass。Native の descriptor、Portable の binding と GPU 準備を各本体で扱う。 |
-| `src/graphics/Lumyte.Graphics.Native.Passes/ImageProcessing/Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Passes/ImageProcessing/Shaders/` | Native の Slang entry と Portable の Slang／直接 WGSL entry、専用 resource／root 宣言。clear／copy を API 命令だけで実行する本体に不要な shader を要求しない。 |
+| `src/graphics/Lumyte.Graphics.Native.Passes/ImageProcessing/Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Passes/ImageProcessing/Filter.wgsl` | Native の Slang entry／build request と Portable の直接 WGSL entry、専用 resource／root 宣言。clear／copy を API 命令だけで実行する本体に不要な shader を要求しない。 |
 | `src/graphics/Shaders/Shared/ImageProcessing/`、`src/graphics/Shaders/Shared/Color/` | filter の重み、座標・色変換、合成、ToneMap 等の計算用 Slang module。sampling と stage ごとの処理は系統別 entry に残す。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes/ImageProcessing/GpuData/`、`src/graphics/Lumyte.Graphics.Portable.Passes/ImageProcessing/GpuData/` | 専用 shader 入力の組立て。生成 C# と artifact は各 project の `obj/<Configuration>/<TargetFramework>/Shaders/Native/` または `Shaders/Portable/` に分ける。 |
 | `src/graphics/Lumyte.Graphics.Passes.Hosting/ImageProcessing/` | `AddImageProcessing()` と七機能・二系統の本体／shader 準備の起動登録。 |
 | `src/graphics/Lumyte.Graphics.Passes.Tests/Unit/ImageProcessing/` | 共通 request、色変換の意味、input contract、固定依存の xUnit 試験。 |
 | `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Unit/ImageProcessing/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Unit/ImageProcessing/` | 本体準備・入力更新・所有の GPU 不要な xUnit 試験。 |
-| `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Integration/ImageProcessing/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Integration/ImageProcessing/` | 同じ consumer 入力による画素・色・alpha と更新結果の GPU 適合試験。unit suite と分離する。 |
+| `src/graphics/Lumyte.Graphics.RenderGraph.Conformance/ImageFilterConsumer.cs` と各 backend `.Tests/Integration/` | 同じ consumer 入力による画素・色・alpha の GPU 適合試験。独立した CPU 参照値へ比較し、`ImageFilterConformance` category で unit suite と分離する。 |
 | `benchmarks/Lumyte.Benchmarks/Graphics/ImageProcessing/` | 既存 benchmark project に追加する plan 再利用、入力変更と効果ごとの CPU／GPU 負荷の計測。 |
 
 旧 Library と shader は削除済みであり、汎用 Draw／Dispatch API を共通 feature project に移す互換層は作らない。Models／TwoD はそれぞれ専用の機能ディレクトリが所有し、表示 window の取得・Present は RenderGraph の presentation と Hosting integration の担当に残す。
@@ -207,12 +211,12 @@ Slang 共有は、色変換など小さい計算 module と各 target の数値 
 
 ## 採用範囲と未実装事項
 
-固定構成と型付きフレーム値を分けた plan 再利用を採用する。小さい入力値の差替え、未変更 snapshot の共有、provider 内の template／準備 cache／内容世代を実装した。モデルと 2D の保持集合と各専用の部分更新は未実装であり、60 FPS の実測結果を示さない。
+固定構成と型付きフレーム値を分けた plan 再利用を採用する。小さい入力値の差替え、未変更 snapshot の共有、provider 内の template／準備 cache／内容世代を実装した。2D の保持 scene と変更 snapshot は実装済みである。Model の保持集合、2D の細粒度 batch 更新と性能計測は後続であり、60 FPS の実測結果を示さない。
 
 五カテゴリと、Clear／Texture Copy／Blit／Blur／Composite／ToneMap／Output の標準機能、および独立したモデル・2D の機能群を目標として採用する。追加候補を実装済みまたは必須対応とは扱わない。
 
 段階 0 の Clear／Texture Copy／Output について共通 request／result／contract、両系統の本体、専用 Output shader と Hosting 登録を実装した。Output version 1 の範囲は同一 extent の 2D・1 mip・1 layer・1 sample として確認し、その範囲外を全画像初期化済みとして扱わない。Copy version 1 は単一 sample とする。
 
-Blit／Blur／Composite／ToneMap、`Rgba16Float` を含む後続機能の format、Model と新しい 2D は未実装である。同じ plan への Clear 値の差替え、内部 graph の計画 cache と内容世代の再利用は利用できる。複数フレームの実機適合は 60 FPS の性能測定とは区別する。ここで定めた GPU 機能は旧 API への互換層ではない。
+Blit／Blur／Composite／ToneMap、`Rgba16Float`、新しい 2D と準備済み glyph の描画を実装した。標準画像処理は Native／Portable の本体と直接 root を持ち、同じ consumer から独立 CPU 参照値へ比較する。Model は未実装である。同じ plan への Clear 値の差替え、内部 graph の計画 cache と内容世代の再利用は利用できる。複数フレームの実機適合は 60 FPS の性能測定とは区別する。ここで定めた GPU 機能は旧 API への互換層ではない。
 
 適合試験は同一 consumer binary で行い、Clear／Copy の内容、Blit の pixel center、Blur の境界と半径、Composite の順序・alpha、ToneMap と Output の色変換、ReadWrite、失敗時の保持を確認する。数値 filter の tolerance は参照 CPU 計算、出力 format と演算精度に基づいて fixture ごとに定め、bit 一致を前提にしない。

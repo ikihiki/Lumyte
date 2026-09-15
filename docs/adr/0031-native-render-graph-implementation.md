@@ -200,6 +200,22 @@ Lumyte が確認するのは機能契約の Id/version と型、runtime identity
 
 DirectX 12／Vulkan の実機適合試験では、同じ plan を異なる画像入力で GPU を待たずに続けて提出し、copy chain の同 description texture／scratch 再利用と各出力の readback を確認する。debug／validation の診断を試験結果に含める。
 
+### 表示接続 API
+
+`NativeGraphPresentation(resources, surface, size)` は `INativeGpuSurface` の取得画像を runtime の resource facade に一時 import する。共通 consumer に backend の handle を渡さない。surface が生の texture を所有し、adapter は graph の scope／view を返してから Present／Discard する。Native の queue 操作は runtime の提出と直列化する。実装は `Lumyte.Graphics.Native.RenderGraph/Presentation/` に置く。
+
+```csharp
+await using var presentation = new NativeGraphPresentation(runtime.NativeResources, surface, GetExtent);
+using var context = new GpuRenderContext(runtime, presentation);
+using var frame = await context.BeginFrameAsync(cancellationToken);
+frame.Graph.AddClearPass("background", new(frame.TargetResource,
+    TextureClearValue.Color(new(0, 0, 0, 1))));
+using var execution = await frame.SubmitAsync(cancellationToken);
+await presentation.WaitForPresentationAsync(cancellationToken);
+```
+
+surface は adapter が非同期に破棄する。window／canvas はその完了後に application が破棄する。
+
 ## コード配置
 
 repository root 相対の配置を次に示す。`Lumyte.Graphics.Native.RenderGraph` と隣接 `.Tests` は共通 graph、Native API、Native Resources／Shaders に依存する。機能 pass 本体から利用する公開 SPI と、provider の内部実装を同じ project 内で分ける。
@@ -276,6 +292,6 @@ else
 
 Native pass 本体が shader、GPU data、内部 graph と命令を所有する構成を採用する。NoGraphicsAPI を基礎とする Native の明示 allocation、descriptor と直接 root はその内部で活用し、低レベル wrapper に利用者全体の資源管理を加えない。下位 Native の部分採用事項は担当 ADR に従う。
 
-Native provider、公開構築 SPI、内部 Read／Write／ReadWrite の依存と culling、外部宣言対応、未初期化検出、内容世代 ticket と実行間結果依存、template と件数上限付き CPU／schedule cache、同 description transient の物理再利用、raw import の所有と先行 token を実装した。共通 facade、scope／batch／export pin、GPU 使用終了までの保持と停止時の drain に接続する。Clear／Copy／Output は別の Native.Passes assembly から登録し、外部 assembly に production の InternalsVisibleTo を要求しない。
+Native provider、公開構築 SPI、内部 Read／Write／ReadWrite の依存と culling、外部宣言対応、未初期化検出、内容世代 ticket と実行間結果依存、template と件数上限付き CPU／schedule cache、同 description transient の物理再利用、raw import の所有と先行 token を実装した。共通 facade、scope／batch／export pin、GPU 使用終了までの保持と停止時の drain に接続する。標準画像処理七機能と 2D は別の Native.Passes assembly から登録し、外部 assembly に production の InternalsVisibleTo を要求しない。
 
 異種 resource object 間の heap 領域 alias、記録済み bundle の cache、GPU による可視判定や mesh 描画の個別最適化は基準実装の必須要件に含めず、必要な機能 pass が個別に追加する。Model／2D 等の描画能力の完成はそれぞれの担当 ADR で管理する。共通 facade と公開 manager の明示 resource 操作は契約に従い caller が直列化し、外部所有の scope／pin／execution は caller が返す。

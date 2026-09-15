@@ -16,6 +16,8 @@ public static partial class BrowserCases
         object result = scenario switch
         {
             "Device" => await DeviceAsync(),
+            "ImageFilters" => await ImageFiltersAsync(),
+            "CanvasPresentation" => await CanvasPresentationAsync(),
             "TwoDShapes" => await TwoDAsync("shapes", Lumyte.Graphics.GpuFormat.Rgba8Unorm),
             "TwoDImage" => await TwoDAsync("image-path-clip", Lumyte.Graphics.GpuFormat.Rgba8Unorm),
             "TwoDHdrLayer" => await TwoDAsync("hdr-layer", Lumyte.Graphics.GpuFormat.Rgba16Float),

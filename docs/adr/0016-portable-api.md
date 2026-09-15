@@ -53,6 +53,19 @@ root data は shader の直接入力とする。対応 runtime と有効 limit �
 
 feature と limit は生成時に要求を選ぶための情報である。resource、binding、pipeline、usage の合法性を毎回独自に再検証する根拠にはしない。WebGPU runtime が判断する条件は runtime に委ねる。
 
+### Surface の追加 API
+
+`IPortableGpuSurface` と `GpuSurfaceImage(Texture, Description)` は `src/graphics/Lumyte.Graphics.Portable/Presentation/` に置く。表示機能を持たない backend へ surface 作成を要求しない。
+
+| API | 責務 |
+| --- | --- |
+| `AcquireAsync(width, height, cancellationToken)` | 正の extent で一つの surface-owned texture を取得。取得済み画像がある間は再取得しない |
+| `PresentAsync(image)` | 描画使用終了後に表示し、surface の追加 GPU 使用も終了してから返す |
+| `DiscardAsync(image)` | 使用終了済みの画像を表示せず返す |
+| `DisposeAsync()` | 画像返却後に surface を解放。window／canvas と backend の所有は caller に残す |
+
+caller は texture を Destroy しない。共通 consumer への接続は ADR 0032 の adapter を利用する。
+
 ## コード配置
 
 以下は repository root からの配置。`Lumyte.Graphics.Portable` とそのテスト project を設け、WebGPU と WebGPU.Browser にこの契約を直接実装する backend を置く。
@@ -83,4 +96,4 @@ factory は Portable device を作る。Native device を引数に取る変換�
 
 Portable の低層を独立させ、共通 RenderGraph の Portable provider から利用する。独立 package、外部 backend が実装できる interface、要求 feature／limit と有効値、直接入力の初期化条件、Buffer／Texture の生成・破棄と非同期 mapping、非所有の View／range／sampler、immutable Binding Layout／Bindings を実装した。native host の WebGPU は Dawn C API へ直接接続する。
 
-raw WGSL、raster／compute pipeline、render／compute／buffer・texture copy の記録と提出、CPU timeline の非同期待機を接続した。indexed／indirect draw、直接 root、有限 binding、depth/stencil、blend、MSAA resolve を実装する。Browser も同じ Portable 契約を直接実装し、JavaScript WebGPU object と Promise へ接続する。shader package／loader と共通 RenderGraph provider への接続は未実装である。公開 interface には実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+raw WGSL、raster／compute pipeline、render／compute／buffer・texture copy の記録と提出、CPU timeline の非同期待機を接続した。indexed／indirect draw、直接 root、有限 binding、depth/stencil、blend、MSAA resolve を実装する。Browser も同じ Portable 契約を直接実装し、JavaScript WebGPU object と Promise へ接続する。shader package／loader と共通 RenderGraph provider への接続を実装した。公開 interface には実装した責務だけを加え、未実装 member を成功したように振る舞う stub は置かない。検証結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

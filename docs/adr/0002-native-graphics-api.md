@@ -44,6 +44,19 @@ mesh は Native の optional 機能とする。`MeshShaders` は mesh stage と�
 
 表現できない native 機能は対応済みと報告しない。capability は false とし、表現できない入力は明示的に失敗させる。入力値を捨てたり、別の値へ置き換えて成功扱いにしたりしない。
 
+### Surface の追加 API
+
+`INativeGpuSurface` は表示先だけを扱う独立した公開 extension contract であり、`INativeGpuBackend` の全実装へ window 対応を要求しない。`NativeGpuSurfaceImage(Texture, Description)` の texture は surface が所有する。
+
+| API | 責務 |
+| --- | --- |
+| `AcquireAsync(width, height, cancellationToken)` | 正の描画 extent で一つの画像を取得する。前の画像の返却前には次を取得しない。初期状態は General |
+| `PresentAsync(image)` | 描画の GPU 使用終了後、General に戻った画像を表示して返す。完了は surface による資源使用の終了を含み、実走査時刻を保証しない |
+| `DiscardAsync(image)` | GPU 使用終了済み、または未使用の画像を表示せず返す |
+| `DisposeAsync()` | 全画像返却後、表示先を解放する。window と backend はその後に破棄する |
+
+実体の配置は `src/graphics/Lumyte.Graphics.Native/Presentation/`。raw caller が同期と排他を管理し、共通 consumer では ADR 0031 の adapter を使う。直接 texture を Destroy しない。
+
 ## コード配置
 
 以下は repository root 相対の配置であり、未実装機能の目標配置を含む。公開契約とその xUnit テストは作成済みで、既存の backend とテスト project 内へ Native 実装を追加する。
@@ -84,4 +97,4 @@ caller-owned resource と明示同期を採用する。参照実装の線形／t
 
 Native 専用 interface、options、capabilities、native error と両 backend の初期化・終了を実装した。共通 heap と線形 region／texture の配置・独立破棄、render view、descriptor storage と書込み、転送・提出・completion に加え、raw shader、compute pipeline、直接 root と直接／間接 dispatch を提供する。両 backend の `BufferDescriptors`、Vulkan の `RawShaderPointers`、DirectX 12 の `ExplicitTextureTransitions` を true とする。DirectX 12 の raw shader pointer は未対応。mesh／amplification の capability は device が提供する有効機能に応じて返す。
 
-limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch`、optional `Descriptors` と `MeshShader` を提供する。vertex／mesh raster pipeline、rendering と直接／一件の間接 draw・indexed draw・mesh dispatch を実装した。さらに MainQueue／CopyQueue、device timeline と明示 GPU wait、queue から独立した CPU 同期操作を実装した。一般の heap／texture 上限、ray tracing、presentation は未実装である。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。
+limits は部分実装で、現在は `MaxRootDataSize`、`Dispatch`、optional `Descriptors` と `MeshShader` を提供する。vertex／mesh raster pipeline、rendering と直接／一件の間接 draw・indexed draw・mesh dispatch を実装した。さらに MainQueue／CopyQueue、device timeline と明示 GPU wait、queue から独立した CPU 同期操作を実装した。一般の heap／texture 上限と ray tracing は未実装である。presentation は独立した INativeGpuSurface と各 backend の Win32 surface として提供する。実装と実機検証の範囲は [進捗記録](../designs/graphics-implementation-progress.md) に分けて記載する。

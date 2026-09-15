@@ -54,7 +54,7 @@ capture した同期の `NativeRenderPassFactory`／`PortableRenderPassFactory` 
 `GpuGraphicsOptions.PlanCacheMaximumEntries`（既定 64、正数）は presentation context が
 単発 frame を Compile するときの構造 cache 上限を指定する。GPU memory budget とは別である。
 
-任意の表示接続は `UsePresentation<TFactory>()` で登録し、`session.RenderContext` を借用する。
+任意の表示接続は `UsePresentation<TFactory>()` または `UsePresentation((services, runtime, token) => ...)` で登録し、`session.RenderContext` を借用する。
 未指定なら headless であり、window／canvas を自動生成しない。consumer の hosted service は
 StopAsync で描画 loop を止め、自分の scope／pin／execution を返す。Graphics はその後の
 StoppedAsync で GPU と presentation を終了するため、サービスの登録順へ依存しない。
@@ -63,7 +63,11 @@ runtime に貸す CPU 依存は一つの DI scope に保持する。終了時は
 所有資源の破棄を先に待ち、その後に scope を破棄する。GPU 終了処理が失敗した場合、CPU scope の寿命を
 先に終わらせない。利用準備の待機に渡した cancellation token は、その観測だけを取り消す。
 
-標準 pass の現在の登録は Clear、Texture Copy、Output である。shader のファイル取得や decode は
+標準 pass の現在の登録は Clear、Texture Copy、Blit、Blur、Composite、ToneMap、Output である。2D は `Add2DRendering()` で登録する。shader のファイル取得や decode は
 この integration の責務ではない。追加の外部 shader package を必要とする機能は、
 型付き pass 準備 callback または `IGpuRenderProviderDefinition.CreateAsync` から
 Lumyte.Resources へ取得を委譲できる。provider 定義の `Id` は不変の登録識別子である。
+
+実表示では `NativeGraphPresentation`／`PortableGraphPresentation` を `GpuGraphicsSurfaceConnection` に包んで Host へ所有を渡す。
+window／canvas の生成と message pump は application が担当し、Host の終了後に window を破棄する。
+実行可能な例は [ウィンドウサンプル](../../../samples/graphics/Lumyte.Graphics.Hosting.Sample/README.md) にある。

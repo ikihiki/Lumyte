@@ -5,6 +5,7 @@ using Lumyte.Graphics.Native;
 using Lumyte.Graphics.Native.Hosting;
 using Lumyte.Graphics.Native.RenderGraph;
 using Lumyte.Graphics.Passes.Hosting;
+using Lumyte.Graphics.Passes;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.RenderGraph.Conformance;
 using Lumyte.Graphics.TwoD;
@@ -16,6 +17,66 @@ namespace Lumyte.Graphics.Tests;
 
 internal static class NativeTwoDConformance
 {
+    internal static Task PresentWindowAsync(Func<INativeGpuBackend> create, Func<INativeGpuBackend, nint, INativeGpuSurface> createSurface)
+        => WindowConformance.RunAsync(window =>
+        {
+            INativeGpuBackend? backend = null;
+            NativeGraphPresentation? presentation = null;
+            using IHost host = new HostBuilder().ConfigureServices(services =>
+                services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = "window" })
+                    .AddNativeProvider("window", (_, _, _) => new(backend = create())).AddImageProcessing()
+                    .UsePresentation((_, runtime, _) =>
+                    {
+                        presentation = new(((NativeRenderRuntime)runtime).NativeResources, createSurface(backend!, window.Handle), window.Size);
+                        return new(new GpuGraphicsSurfaceConnection(presentation));
+                    })).Build();
+            window.Complete(host.StartAsync());
+            var session = window.Complete(host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync().AsTask());
+            try
+            {
+                var context = session.RenderContext!;
+                foreach (var size in new[] { (Width: 160, Height: 120), (Width: 224, Height: 144), (Width: 128, Height: 96) })
+                {
+                    window.Resize(size.Width, size.Height);
+                    using (var frame = window.Complete(context.BeginFrameAsync().AsTask()))
+                    {
+                        Assert.Equal((uint)size.Width, frame.TargetResource.Description.Width);
+                        Assert.Equal((uint)size.Height, frame.TargetResource.Description.Height);
+                        var source = frame.Graph.CreateTexture("hdr", new((uint)size.Width, (uint)size.Height, GpuFormat.Rgba16Float));
+                        frame.Graph.AddClearPass("clear", new(source, TextureClearValue.Color(new(2, 1, .5f, 1))));
+                        var tone = frame.Graph.AddToneMapPass("tone", new(source));
+                        frame.Graph.AddOutputPass("screen", new(tone.Color, frame.TargetResource));
+                        using var execution = window.Complete(frame.SubmitAsync().AsTask());
+                        window.Complete(execution.WaitForCompletionAsync().AsTask());
+                    }
+                    window.Complete(presentation!.WaitForPresentationAsync());
+                    // Unsubmitted frames are returned without a Present, then acquisition remains usable.
+                    using (var discard = window.Complete(context.BeginFrameAsync().AsTask()))
+                    { }
+                    window.Complete(presentation.WaitForPresentationAsync());
+                }
+            }
+            finally { window.Complete(host.StopAsync()); }
+        });
+    internal static async Task FilterAsync(string backend, Func<INativeGpuBackend> create, string scenario)
+    {
+        using IHost host = CreateHost(backend, create);
+        await host.StartAsync();
+        var runtime = (NativeRenderRuntime)(await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
+        var fixture = ImageFilterConsumer.Create(scenario);
+        using (var execution = await runtime.SubmitAsync(fixture.Plan))
+        {
+            await execution.WaitForCompletionAsync();
+            uint width = fixture.Description.Width, height = fixture.Description.Height;
+            var texture = runtime.NativeResources.GetNativeTexture(execution.GetExportedTexture(fixture.Output));
+            var pixels = await runtime.NativeResources.Manager.ReadTextureAsync(texture,
+                new(0, NativeGpuTextureAspect.Color, 0, 1, default, new(width, height, 1), 256, 256 * height),
+                height, width * 8, GpuTextureLayout.General, GpuTextureLayout.General,
+                synchronization: new(GpuStage.All, GpuAccess.ColorWrite | GpuAccess.CopyWrite | GpuAccess.ShaderWrite));
+            ImageFilterConsumer.Compare(fixture, pixels, 256);
+        }
+        await host.StopAsync();
+    }
     internal static async Task CompareAsync(string backend, Func<INativeGpuBackend> create, string scenario, GpuFormat format = GpuFormat.Rgba8Unorm)
     {
         using IHost host = CreateHost(backend, create);

@@ -1,4 +1,5 @@
 using Lumyte.Graphics.RenderGraph;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -18,7 +19,8 @@ public sealed class GraphicsRuntimeHostTests
         var runtime = new TestRuntime(() =>
         {
             events.Add($"runtime {++attempts}");
-            if (attempts == 1) { throw failure; }
+            if (attempts == 1)
+            { throw failure; }
         });
         var provider = new TestProvider("test", runtime);
         var connection = new TestPresentationConnection(() => events.Add("presentation"));
@@ -33,8 +35,10 @@ public sealed class GraphicsRuntimeHostTests
         var observed = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StopAsync());
         Assert.Same(failure, observed);
         Assert.Equal(["presentation", "runtime 1"], events);
-        if (retryWithDispose) { await lifetime.DisposeAsync(); }
-        else { await host.StopAsync(); }
+        if (retryWithDispose)
+        { await lifetime.DisposeAsync(); }
+        else
+        { await host.StopAsync(); }
 
         Assert.Equal(["presentation", "runtime 1", "runtime 2", "dependency"], events);
     }
@@ -338,6 +342,35 @@ public sealed class GraphicsRuntimeHostTests
         Assert.Equal(["target", "connection"], events);
     }
 
+    [Fact]
+    public async Task ShutdownCancelsPendingSurfaceAcquisition()
+    {
+        var surface = new WaitingSurface();
+        using IHost host = new HostBuilder().ConfigureServices(services =>
+            services.AddLumyteGraphics().AddProvider(new TestDefinition(new TestProvider("test")))
+                .UsePresentation((_, _, _) => new(new GpuGraphicsSurfaceConnection(surface)))).Build();
+        await host.StartAsync();
+        var session = await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync();
+        var frame = session.RenderContext!.BeginFrameAsync().AsTask();
+        await surface.Started.Task;
+
+        Task stopped = host.StopAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => frame);
+        await stopped;
+
+        Assert.True(surface.Disposed);
+    }
+    private sealed class WaitingSurface : GpuSurfacePresentation
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<GpuGraphPresentationTarget> target = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Disposed { get; private set; }
+        protected override ValueTask<GpuGraphPresentationTarget> AcquireCoreAsync(CancellationToken cancellationToken)
+        { Started.TrySetResult(); return new(target.Task.WaitAsync(cancellationToken)); }
+        protected override ValueTask ReturnCoreAsync(GpuGraphPresentationTarget target, bool present) => throw new InvalidOperationException("No image was acquired.");
+        protected override ValueTask DisposeCoreAsync() { Disposed = true; return ValueTask.CompletedTask; }
+    }
+
     private sealed class TestDefinition(TestProvider provider, Action<IServiceProvider>? prepare = null) : IGpuRenderProviderDefinition
     {
         public string Id => provider.Id;
@@ -422,8 +455,10 @@ public sealed class GraphicsRuntimeHostTests
     {
         public IGpuGraphPresentation Presentation => this;
         public ValueTask DisposeAsync() { onDispose(); return ValueTask.CompletedTask; }
+        // Models acquisition already accepted by the native surface: cancellation cannot
+        // retract it, so Host must still discard the image that eventually arrives.
         public ValueTask<GpuGraphPresentationTarget> AcquireNextTargetAsync(CancellationToken cancellationToken = default) =>
-            acquired is null ? throw new NotSupportedException() : new(acquired.WaitAsync(cancellationToken));
+            acquired is null ? throw new NotSupportedException() : new(acquired);
         public void Present(GpuGraphPresentationTarget target, GpuGraphCompletion completion) => throw new NotSupportedException();
         public void Retire(GpuGraphPresentationTarget target, GpuGraphCompletion completion) => throw new NotSupportedException();
         public void Discard(GpuGraphPresentationTarget target) { target.Ownership.Dispose(); onDiscard?.Invoke(); }

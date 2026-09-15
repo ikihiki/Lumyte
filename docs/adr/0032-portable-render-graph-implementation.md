@@ -195,6 +195,22 @@ Lumyte が確認するのは機能契約の Id/version と型、runtime identity
 
 内容世代の試験では、writer 登録後の別 pass の構築失敗、提出失敗、受理済み未完了世代の取得、失効と取得の競合、owner の早期 Dispose と GPU 使用保持を fake completion で確認する。queue の利用終了と遅延診断の確定を両順序で発生させ、writer の失敗が利用側と派生内容へ伝播すること、無関係な世代は失効しないことを確かめる。旧世代を保持した描画の bytes が新世代によって変更されないことも観測する。
 
+### 表示接続 API
+
+`PortableGraphPresentation(resources, surface, size)` は `IPortableGpuSurface` の取得画像を runtime の resource facade に一時 import する。共通 consumer に backend の handle を渡さない。surface が生の texture を所有し、adapter は graph の scope／view を返してから Present／Discard する。Native の queue 操作は runtime の提出と直列化する。実装は `Lumyte.Graphics.Portable.RenderGraph/Presentation/` に置く。
+
+```csharp
+await using var presentation = new PortableGraphPresentation(runtime.Resources, surface, GetExtent);
+using var context = new GpuRenderContext(runtime, presentation);
+using var frame = await context.BeginFrameAsync(cancellationToken);
+frame.Graph.AddClearPass("background", new(frame.TargetResource,
+    TextureClearValue.Color(new(0, 0, 0, 1))));
+using var execution = await frame.SubmitAsync(cancellationToken);
+await presentation.WaitForPresentationAsync(cancellationToken);
+```
+
+surface は adapter が非同期に破棄する。window／canvas はその完了後に application が破棄する。
+
 ## コード配置
 
 以下は repository root 相対の配置である。共通 graph、Portable API、Portable Resources／Shaders への依存に限定し、Native の graph 実装や heap 計画を共有しない。
@@ -279,8 +295,8 @@ else
 
 Portable pass 本体が shader、GPU data、内部 graph と命令を所有する構成を採用する。resource の直接生成と有限の明示 binding を用い、NoGraphicsAPI の allocation、GPU address や Bindless の模倣を要件にしない。
 
-Portable provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、内部依存と culling、初期化・外部契約検査、template と bounded CPU 準備 cache、transient object 再利用、内容世代 ticket、先行 upload と遅延診断の結果依存、明示 raw import、管理された view／binding、scope／batch／export pin、診断付き completion と成功後の export を実装した。Clear／Copy／Output は別の Portable.Passes assembly から登録し、Output の専用 WGSL と直接 root を本体が所有する。
+Portable provider、pass registry と公開構築 SPI、GetInput と不変 bindings、共通 facade、内部依存と culling、初期化・外部契約検査、template と bounded CPU 準備 cache、transient object 再利用、内容世代 ticket、先行 upload と遅延診断の結果依存、明示 raw import、管理された view／binding、scope／batch／export pin、診断付き completion と成功後の export を実装した。標準画像処理七機能と 2D は別の Portable.Passes assembly から登録し、Output の専用 WGSL と直接 root を本体が所有する。
 
 Graph 用 binding 入力生成器と consumer 試験も実装し、標準 Output が生成された入力型を利用する。Clear は全 mip／layer／depth slice の初期化を一つの内部 pass の全範囲 Write として宣言し、culling で一部の clear が失われない。
 
-標準 Output で直接 WGSL を使うことを Slang source の共有完了とは扱わない。Model／Blur／2D 本体と実 window／canvas の presentation adapter は各機能・host の実装範囲であり、この provider の完成条件には含めない。共通 facade の明示 resource 操作は caller が直列化し、外部所有の scope／pin／execution は caller が返す。cache ticket の owner を返し忘れた場合も runtime の終了が所有を終了する。Portable に物理 heap alias、Bindless emulation、未管理外部提出の自動検出を追加しない。
+標準 Output で直接 WGSL を使うことを Slang source の共有完了とは扱わない。Blur／2D 本体と window／canvas の adapter は各担当 assembly に実装済みである。Model の完成は専用 ADR で管理する。共通 facade の明示 resource 操作は caller が直列化し、外部所有の scope／pin／execution は caller が返す。cache ticket の owner を返し忘れた場合も runtime の終了が所有を終了する。Portable に物理 heap alias、Bindless emulation、未管理外部提出の自動検出を追加しない。

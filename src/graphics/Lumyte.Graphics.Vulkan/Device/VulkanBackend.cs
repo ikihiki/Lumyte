@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+
 using Lumyte.Graphics.Native;
+
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
 
@@ -35,6 +37,9 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private NativeGpuMeshShaderLimits? meshLimits;
     private bool supportsMeshShaders;
     private bool supportsAmplificationShaders;
+    private PhysicalDevice presentationDevice;
+    private bool surfaceMaintenanceEnabled;
+    private bool swapchainMaintenanceEnabled;
 
     private VulkanBackend(Vk vk) => this.vk = vk;
 
@@ -88,8 +93,29 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         }
 
         using var layerNames = new NativeNames(options.EnableValidation ? ["VK_LAYER_KHRONOS_validation"] : []);
-        using var extensionNames = new NativeNames(options.EnableValidation ? ["VK_EXT_debug_utils"] : []);
-        if (options.EnableValidation) { RequireValidation(); }
+        var instanceExtensions = new List<string>();
+        if (options.EnableValidation)
+        { instanceExtensions.Add("VK_EXT_debug_utils"); }
+        if (OperatingSystem.IsWindows())
+        {
+            uint extensionCount = 0;
+            CheckDeviceResult(vk.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, null), "EnumerateInstanceExtensionProperties");
+            var available = new ExtensionProperties[extensionCount];
+            fixed (ExtensionProperties* entries = available)
+            {
+                CheckDeviceResult(vk.EnumerateInstanceExtensionProperties((byte*)null, &extensionCount, entries), "EnumerateInstanceExtensionProperties");
+                var names = new HashSet<string>();
+                for (int i = 0; i < extensionCount; i++)
+                { names.Add(Marshal.PtrToStringUTF8((nint)entries[i].ExtensionName)!); }
+                string[] required = ["VK_KHR_surface", "VK_KHR_win32_surface", "VK_KHR_get_surface_capabilities2", "VK_EXT_surface_maintenance1"];
+                surfaceMaintenanceEnabled = required.All(names.Contains);
+                if (surfaceMaintenanceEnabled)
+                { instanceExtensions.AddRange(required); }
+            }
+        }
+        using var extensionNames = new NativeNames(instanceExtensions);
+        if (options.EnableValidation)
+        { RequireValidation(); }
         ApplicationInfo application = new() { SType = StructureType.ApplicationInfo, ApiVersion = RequiredApiVersion };
         InstanceCreateInfo instanceInfo = new()
         {
@@ -101,7 +127,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             PpEnabledExtensionNames = extensionNames.Pointer,
         };
         CheckDeviceResult(vk.CreateInstance(in instanceInfo, null, out instance), "vkCreateInstance");
-        if (options.EnableValidation) { CreateDebugMessenger(); }
+        if (options.EnableValidation)
+        { CreateDebugMessenger(); }
 
         uint count = 0;
         CheckDeviceResult(vk.EnumeratePhysicalDevices(instance, &count, null), "vkEnumeratePhysicalDevices");
@@ -163,10 +190,12 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     internal static string[] MissingRequirements(uint apiVersion, IReadOnlySet<string> extensions)
     {
         List<string> missing = [];
-        if (apiVersion < RequiredApiVersion) { missing.Add("Vulkan 1.4"); }
+        if (apiVersion < RequiredApiVersion)
+        { missing.Add("Vulkan 1.4"); }
         foreach (string extension in RequiredExtensions)
         {
-            if (!extensions.Contains(extension)) { missing.Add(extension); }
+            if (!extensions.Contains(extension))
+            { missing.Add(extension); }
         }
         return missing.ToArray();
     }
@@ -230,32 +259,45 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         descriptors.PNext = &addresses;
         PhysicalDeviceVulkan14Features features14 = new()
         {
-            SType = StructureType.PhysicalDeviceVulkan14Features, PNext = &descriptors,
+            SType = StructureType.PhysicalDeviceVulkan14Features,
+            PNext = &descriptors,
         };
         PhysicalDeviceVulkan13Features features13 = new()
         {
-            SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &features14,
+            SType = StructureType.PhysicalDeviceVulkan13Features,
+            PNext = &features14,
         };
         PhysicalDeviceVulkan12Features features12 = new()
         {
-            SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &features13,
+            SType = StructureType.PhysicalDeviceVulkan12Features,
+            PNext = &features13,
         };
         PhysicalDeviceVulkan11Features features11 = new()
         {
-            SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &features12,
+            SType = StructureType.PhysicalDeviceVulkan11Features,
+            PNext = &features12,
         };
         PhysicalDeviceFeatures2 features = new() { SType = StructureType.PhysicalDeviceFeatures2, PNext = &features11 };
         vk.GetPhysicalDeviceFeatures2(physicalDevice, &features);
         List<string> missingFeatures = [];
-        if (!descriptors.DescriptorHeap) { missingFeatures.Add("descriptorHeap"); }
-        if (!addresses.DeviceAddressCommands) { missingFeatures.Add("deviceAddressCommands"); }
-        if (!untyped.ShaderUntypedPointers) { missingFeatures.Add("shaderUntypedPointers"); }
-        if (!features12.BufferDeviceAddress) { missingFeatures.Add("bufferDeviceAddress"); }
-        if (!features12.TimelineSemaphore) { missingFeatures.Add("timelineSemaphore"); }
-        if (!features13.Synchronization2) { missingFeatures.Add("synchronization2"); }
-        if (!features13.DynamicRendering) { missingFeatures.Add("dynamicRendering"); }
-        if (!features14.Maintenance5) { missingFeatures.Add("maintenance5"); }
-        if (!features.Features.ShaderInt64) { missingFeatures.Add("shaderInt64"); }
+        if (!descriptors.DescriptorHeap)
+        { missingFeatures.Add("descriptorHeap"); }
+        if (!addresses.DeviceAddressCommands)
+        { missingFeatures.Add("deviceAddressCommands"); }
+        if (!untyped.ShaderUntypedPointers)
+        { missingFeatures.Add("shaderUntypedPointers"); }
+        if (!features12.BufferDeviceAddress)
+        { missingFeatures.Add("bufferDeviceAddress"); }
+        if (!features12.TimelineSemaphore)
+        { missingFeatures.Add("timelineSemaphore"); }
+        if (!features13.Synchronization2)
+        { missingFeatures.Add("synchronization2"); }
+        if (!features13.DynamicRendering)
+        { missingFeatures.Add("dynamicRendering"); }
+        if (!features14.Maintenance5)
+        { missingFeatures.Add("maintenance5"); }
+        if (!features.Features.ShaderInt64)
+        { missingFeatures.Add("shaderInt64"); }
         if (missingFeatures.Count != 0)
         {
             missing = string.Join(", ", missingFeatures);
@@ -270,30 +312,37 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         mesh = new()
         {
             SType = StructureType.PhysicalDeviceMeshShaderFeaturesExt,
-            MeshShader = meshShader, TaskShader = taskShader,
+            MeshShader = meshShader,
+            TaskShader = taskShader,
         };
         bool separateDepthStencilLayouts = features12.SeparateDepthStencilLayouts;
         bool shaderDrawParameters = features11.ShaderDrawParameters;
         features11 = new()
         {
-            SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &features12,
+            SType = StructureType.PhysicalDeviceVulkan11Features,
+            PNext = &features12,
             ShaderDrawParameters = shaderDrawParameters,
         };
         features12 = new()
         {
             SType = StructureType.PhysicalDeviceVulkan12Features,
-            PNext = &features13, BufferDeviceAddress = true, TimelineSemaphore = true,
+            PNext = &features13,
+            BufferDeviceAddress = true,
+            TimelineSemaphore = true,
             SeparateDepthStencilLayouts = separateDepthStencilLayouts,
         };
         features13 = new()
         {
             SType = StructureType.PhysicalDeviceVulkan13Features,
-            PNext = &features14, Synchronization2 = true, DynamicRendering = true,
+            PNext = &features14,
+            Synchronization2 = true,
+            DynamicRendering = true,
         };
         features14 = new()
         {
             SType = StructureType.PhysicalDeviceVulkan14Features,
-            PNext = &descriptors, Maintenance5 = true,
+            PNext = &descriptors,
+            Maintenance5 = true,
         };
         PhysicalDeviceFeatures enabled = new()
         {
@@ -312,30 +361,50 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         {
             SType = StructureType.DeviceQueueCreateInfo,
             QueueFamilyIndex = queues.MainFamily,
-            QueueCount = queues.CopyFamily == queues.MainFamily ? 2u : 1u, PQueuePriorities = priorities,
+            QueueCount = queues.CopyFamily == queues.MainFamily ? 2u : 1u,
+            PQueuePriorities = priorities,
         };
         if (differentFamily)
         {
             queueInfos[1] = new()
             {
-                SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queues.CopyFamily!.Value,
-                QueueCount = 1, PQueuePriorities = priorities,
+                SType = StructureType.DeviceQueueCreateInfo,
+                QueueFamilyIndex = queues.CopyFamily!.Value,
+                QueueCount = 1,
+                PQueuePriorities = priorities,
             };
         }
         List<string> enabledExtensions = [.. RequiredExtensions];
-        if (meshShader) { enabledExtensions.Add("VK_EXT_mesh_shader"); }
+        if (meshShader)
+        { enabledExtensions.Add("VK_EXT_mesh_shader"); }
         unified.PNext = meshShader ? &mesh : null;
-        if (supportsUnifiedLayouts && unified.UnifiedImageLayouts) { enabledExtensions.Add("VK_KHR_unified_image_layouts"); }
-        else { untyped.PNext = meshShader ? &mesh : null; }
+        if (supportsUnifiedLayouts && unified.UnifiedImageLayouts)
+        { enabledExtensions.Add("VK_KHR_unified_image_layouts"); }
+        else
+        { untyped.PNext = meshShader ? &mesh : null; }
+        PhysicalDeviceSwapchainMaintenance1FeaturesEXT presentationFeatures = new() { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt };
+        if (surfaceMaintenanceEnabled && extensions.Contains("VK_KHR_swapchain") && extensions.Contains("VK_EXT_swapchain_maintenance1"))
+        {
+            PhysicalDeviceFeatures2 presentationQuery = new() { SType = StructureType.PhysicalDeviceFeatures2, PNext = &presentationFeatures };
+            vk.GetPhysicalDeviceFeatures2(physicalDevice, &presentationQuery);
+            swapchainMaintenanceEnabled = presentationFeatures.SwapchainMaintenance1;
+            if (swapchainMaintenanceEnabled)
+            { enabledExtensions.Add("VK_KHR_swapchain"); enabledExtensions.Add("VK_EXT_swapchain_maintenance1"); }
+        }
+        presentationFeatures.PNext = &features11;
         using NativeNames names = new(enabledExtensions);
         DeviceCreateInfo deviceInfo = new()
         {
             SType = StructureType.DeviceCreateInfo,
-            PNext = &features11, PEnabledFeatures = &enabled,
-            QueueCreateInfoCount = differentFamily ? 2u : 1u, PQueueCreateInfos = queueInfos,
-            EnabledExtensionCount = names.Count, PpEnabledExtensionNames = names.Pointer,
+            PNext = swapchainMaintenanceEnabled ? &presentationFeatures : &features11,
+            PEnabledFeatures = &enabled,
+            QueueCreateInfoCount = differentFamily ? 2u : 1u,
+            PQueueCreateInfos = queueInfos,
+            EnabledExtensionCount = names.Count,
+            PpEnabledExtensionNames = names.Pointer,
         };
         CheckDeviceResult(vk.CreateDevice(physicalDevice, in deviceInfo, null, out device), "vkCreateDevice");
+        presentationDevice = physicalDevice;
         SupportsSeparateDepthStencilLayouts = separateDepthStencilLayouts;
         SupportsImageCubeArray = enabled.ImageCubeArray;
         SupportsSamplerAnisotropy = enabled.SamplerAnisotropy;
@@ -359,7 +428,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
                 found |= Marshal.PtrToStringUTF8((nint)pointer[index].LayerName) == "VK_LAYER_KHRONOS_validation";
             }
         }
-        if (!found) { throw new NotSupportedException("Requested Vulkan validation is unavailable: VK_LAYER_KHRONOS_validation."); }
+        if (!found)
+        { throw new NotSupportedException("Requested Vulkan validation is unavailable: VK_LAYER_KHRONOS_validation."); }
     }
 
     private void CreateDebugMessenger()
@@ -389,15 +459,18 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private static Bool32 DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity, DebugUtilsMessageTypeFlagsEXT types,
         DebugUtilsMessengerCallbackDataEXT* data, void* userData)
     {
-        try { Trace.WriteLine(Marshal.PtrToStringUTF8((nint)data->PMessage), "Vulkan validation"); }
+        try
+        { Trace.WriteLine(Marshal.PtrToStringUTF8((nint)data->PMessage), "Vulkan validation"); }
         catch { /* Exceptions cannot cross the native callback boundary. */ }
         return false;
     }
 
     internal static void Check(Result result, string operation)
     {
-        if (result == Result.ErrorDeviceLost) { throw new GpuDeviceLostException($"{operation}: Vulkan device was lost."); }
-        if (result != Result.Success) { throw new NativeGpuException($"{operation}: {result}.", (int)result); }
+        if (result == Result.ErrorDeviceLost)
+        { throw new GpuDeviceLostException($"{operation}: Vulkan device was lost."); }
+        if (result != Result.Success)
+        { throw new NativeGpuException($"{operation}: {result}.", (int)result); }
     }
 
     private void VerifyNotDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
@@ -405,26 +478,33 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
     private void VerifyAvailable()
     {
         VerifyNotDisposed();
-        if (deviceLost) { throw new GpuDeviceLostException("The Vulkan device stopped after device loss."); }
-        if (submissionFaulted) { throw new InvalidOperationException("The Vulkan backend cannot continue after an uncertain GPU submission. GPU execution may still be in progress."); }
+        if (deviceLost)
+        { throw new GpuDeviceLostException("The Vulkan device stopped after device loss."); }
+        if (submissionFaulted)
+        { throw new InvalidOperationException("The Vulkan backend cannot continue after an uncertain GPU submission. GPU execution may still be in progress."); }
     }
 
     internal void CheckDeviceResult(Result result, string operation)
     {
-        if (result == Result.ErrorDeviceLost) { deviceLost = true; }
+        if (result == Result.ErrorDeviceLost)
+        { deviceLost = true; }
         Check(result, operation);
     }
 
     public void Dispose()
     {
-        if (disposed) { return; }
+        if (disposed)
+        { return; }
         disposed = true;
         // Application resources and GPU work must already have been released by the caller.
         mainQueue?.ReleaseInternalObjects();
         copyQueue?.ReleaseInternalObjects();
-        if (device.Handle != 0) { vk.DestroyDevice(device, null); }
-        if (debugMessenger.Handle != 0) { destroyDebugMessenger(instance, debugMessenger, null); }
-        if (instance.Handle != 0) { vk.DestroyInstance(instance, null); }
+        if (device.Handle != 0)
+        { vk.DestroyDevice(device, null); }
+        if (debugMessenger.Handle != 0)
+        { destroyDebugMessenger(instance, debugMessenger, null); }
+        if (instance.Handle != 0)
+        { vk.DestroyInstance(instance, null); }
         vk.Dispose();
     }
 
@@ -437,7 +517,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             Pointer = (byte**)NativeMemory.AllocZeroed((nuint)values.Length, (nuint)sizeof(nint));
             try
             {
-                for (int index = 0; index < values.Length; index++) { Pointer[index] = (byte*)Marshal.StringToCoTaskMemUTF8(values[index]); }
+                for (int index = 0; index < values.Length; index++)
+                { Pointer[index] = (byte*)Marshal.StringToCoTaskMemUTF8(values[index]); }
             }
             catch
             {
@@ -449,7 +530,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
         public byte** Pointer { get; }
         public void Dispose()
         {
-            for (int index = 0; index < Count; index++) { Marshal.FreeCoTaskMem((nint)Pointer[index]); }
+            for (int index = 0; index < Count; index++)
+            { Marshal.FreeCoTaskMem((nint)Pointer[index]); }
             NativeMemory.Free(Pointer);
         }
     }

@@ -8,6 +8,15 @@ namespace Lumyte.Graphics.WebGPU.Browser;
 [SupportedOSPlatform("browser")]
 internal static partial class BrowserInterop
 {
+    [JSImport("createCanvasSurface", WebGpuBrowserRuntime.ModuleName)]
+    internal static partial JSObject CreateCanvasSurface(JSObject device, string elementId);
+    [JSImport("resizeCanvasSurface", WebGpuBrowserRuntime.ModuleName)]
+    internal static partial void ResizeCanvasSurface(JSObject context, int width, int height);
+    [JSImport("presentCanvasSurface", WebGpuBrowserRuntime.ModuleName)]
+    [return: JSMarshalAs<JSType.Promise<JSType.Void>>()]
+    internal static partial Task PresentCanvasSurfaceAsync(JSObject device, JSObject context, JSObject texture);
+    [JSImport("unconfigureCanvasSurface", WebGpuBrowserRuntime.ModuleName)]
+    internal static partial void UnconfigureCanvasSurface(JSObject context);
     [JSImport("requestDevice", WebGpuBrowserRuntime.ModuleName)]
     [return: JSMarshalAs<JSType.Promise<JSType.Object>>()]
     internal static partial Task<JSObject> RequestDeviceAsync(string optionsJson);

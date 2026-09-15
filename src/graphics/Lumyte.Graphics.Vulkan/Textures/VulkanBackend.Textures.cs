@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Native;
+
 using Silk.NET.Vulkan;
 
 namespace Lumyte.Graphics.Vulkan;
@@ -73,7 +74,8 @@ public sealed unsafe partial class VulkanBackend
     internal static ImageCreateInfo TextureImageDescription(NativeGpuTextureDescription description)
     {
         ImageCreateFlags flags = ImageCreateFlags.CreateAliasBit;
-        if (description.MutableFormat) { flags |= ImageCreateFlags.CreateMutableFormatBit; }
+        if (description.MutableFormat)
+        { flags |= ImageCreateFlags.CreateMutableFormatBit; }
         // Cube selection belongs to the view. Preserve that option for eligible 2D arrays.
         // VkImageCreateInfo VUIDs 00949, 08865, 08866, and 02257 define these flag conditions.
         if (description.Dimension == NativeGpuTextureDimension.TwoD && description.Width == description.Height
@@ -129,24 +131,31 @@ public sealed unsafe partial class VulkanBackend
         const NativeGpuTextureUsage known = NativeGpuTextureUsage.Sampled | NativeGpuTextureUsage.Storage
             | NativeGpuTextureUsage.ColorAttachment | NativeGpuTextureUsage.DepthStencilAttachment
             | NativeGpuTextureUsage.CopySource | NativeGpuTextureUsage.CopyDestination;
-        if ((usage & ~known) != 0) { throw new ArgumentOutOfRangeException(nameof(usage)); }
+        if ((usage & ~known) != 0)
+        { throw new ArgumentOutOfRangeException(nameof(usage)); }
         ImageUsageFlags native = 0;
-        if ((usage & NativeGpuTextureUsage.Sampled) != 0) { native |= ImageUsageFlags.SampledBit; }
-        if ((usage & NativeGpuTextureUsage.Storage) != 0) { native |= ImageUsageFlags.StorageBit; }
-        if ((usage & NativeGpuTextureUsage.ColorAttachment) != 0) { native |= ImageUsageFlags.ColorAttachmentBit; }
-        if ((usage & NativeGpuTextureUsage.DepthStencilAttachment) != 0) { native |= ImageUsageFlags.DepthStencilAttachmentBit; }
-        if ((usage & NativeGpuTextureUsage.CopySource) != 0) { native |= ImageUsageFlags.TransferSrcBit; }
-        if ((usage & NativeGpuTextureUsage.CopyDestination) != 0) { native |= ImageUsageFlags.TransferDstBit; }
+        if ((usage & NativeGpuTextureUsage.Sampled) != 0)
+        { native |= ImageUsageFlags.SampledBit; }
+        if ((usage & NativeGpuTextureUsage.Storage) != 0)
+        { native |= ImageUsageFlags.StorageBit; }
+        if ((usage & NativeGpuTextureUsage.ColorAttachment) != 0)
+        { native |= ImageUsageFlags.ColorAttachmentBit; }
+        if ((usage & NativeGpuTextureUsage.DepthStencilAttachment) != 0)
+        { native |= ImageUsageFlags.DepthStencilAttachmentBit; }
+        if ((usage & NativeGpuTextureUsage.CopySource) != 0)
+        { native |= ImageUsageFlags.TransferSrcBit; }
+        if ((usage & NativeGpuTextureUsage.CopyDestination) != 0)
+        { native |= ImageUsageFlags.TransferDstBit; }
         return native;
     }
 
     private sealed class TextureRecord(VulkanBackend owner, Image image, NativeGpuTextureDescription description,
-        HeapRecord allocation, ulong heapOffset) : NativeGpuTextureHandle
+        HeapRecord? allocation, ulong heapOffset) : NativeGpuTextureHandle
     {
         public VulkanBackend Owner { get; } = owner;
         public Image Image { get; } = image;
         public NativeGpuTextureDescription Description { get; } = description;
-        public HeapRecord Allocation { get; } = allocation;
+        public HeapRecord? Allocation { get; } = allocation;
         public ulong HeapOffset { get; } = heapOffset;
         // Submission integration will retire this obligation only after native queue acceptance.
         public bool RequiresGeneralInitialization { get; set; } = true;

@@ -1,0 +1,6 @@
+{
+  "source": "Filter.slang",
+  "hostNamespace": "Lumyte.Graphics.Native.Passes.ImageProcessing.FilterGenerated",
+  "entryPoints": [{ "name": "vertexMain", "stage": "Vertex" }, { "name": "pixelMain", "stage": "Pixel" }],
+  "targets": [{ "target": "DirectX12" }, { "target": "Vulkan" }]
+}

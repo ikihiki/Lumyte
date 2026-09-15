@@ -82,4 +82,4 @@ finally
 
 Portable の resource 入力を明示 layout とする。layout の公開値、opaque handle、入力列の保持、native host の GPUBindGroupLayout 生成・解放と非同期診断を実装した。binding の重複番号や visibility、limit、layout の合法性は runtime に委ねる。
 
-raster／compute shader module・pipeline と直接入力の layout へ接続した。Browser も同じ契約から bind group layout を生成する。shader package metadata の接続は未実装である。[進捗記録](../designs/graphics-implementation-progress.md)
+raster／compute shader module・pipeline と直接入力の layout へ接続した。Browser も同じ契約から bind group layout を生成する。shader package metadata を loader、生成 binding 入力と機能 pass に接続した。[進捗記録](../designs/graphics-implementation-progress.md)

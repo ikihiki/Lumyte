@@ -86,4 +86,4 @@ allocation を caller が所有し、resource と分離する方針を採用す�
 
 GPU address は配置した線形 resource のものとし、heap 全体を一つの address 空間として公開する設計は採用しない。suballocator と退役 helper は範囲外である。
 
-純粋 allocation の生成・破棄、opaque requirement 列からの native 引数の構成と線形 resource・texture の分離を両 backend に実装した。線形配置・mapping・heap 再利用に続き、texture の requirement と混在配置を実機確認済み。GPU copy と同期・alias 再利用を command 側の検証へ接続する。shader からの利用を含む未実装機能の完了とは扱わず、特定 PC の試験を全 device・memory kind の対応保証にはしない。詳細と実機試験結果は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+純粋 allocation の生成・破棄、opaque requirement 列からの native 引数の構成と線形 resource・texture の分離を両 backend に実装した。線形配置・mapping・heap 再利用に続き、texture の requirement と混在配置を実機確認済み。GPU copy、同期、alias 再利用と shader からの参照も command／raster の実機試験へ接続した。特定 PC の試験を全 device・memory kind の対応保証にはしない。詳細と実機試験結果は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

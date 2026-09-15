@@ -6,6 +6,7 @@ internal sealed class GraphicsPresentationGate(IGpuGraphPresentation presentatio
 {
     private readonly object gate = new();
     private readonly TaskCompletionSource drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly CancellationTokenSource stopping = new();
     private bool closed;
     private int acquiring;
 
@@ -19,6 +20,7 @@ internal sealed class GraphicsPresentationGate(IGpuGraphPresentation presentatio
                 drained.TrySetResult();
             }
         }
+        stopping.Cancel();
     }
 
     public Task DrainAsync() => drained.Task;
@@ -35,9 +37,10 @@ internal sealed class GraphicsPresentationGate(IGpuGraphPresentation presentatio
 
     private async ValueTask<GpuGraphPresentationTarget> AcquireAsync(CancellationToken cancellationToken)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stopping.Token);
         try
         {
-            GpuGraphPresentationTarget target = await presentation.AcquireNextTargetAsync(cancellationToken).ConfigureAwait(false);
+            GpuGraphPresentationTarget target = await presentation.AcquireNextTargetAsync(linked.Token).ConfigureAwait(false);
             lock (gate)
             {
                 if (closed)
@@ -48,6 +51,8 @@ internal sealed class GraphicsPresentationGate(IGpuGraphPresentation presentatio
             }
             return target;
         }
+        catch (OperationCanceledException) when (stopping.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        { throw new ObjectDisposedException(nameof(GraphicsPresentationGate)); }
         finally
         {
             lock (gate)

@@ -195,6 +195,20 @@ queue 受理と GPU completion を区別し、native の失敗を ADR 0002 の e
 | `Submit(commands, signal, waits)`／`NativeGpuTimelinePoint` | batch 全体の終了後、GPU waits → work・内部 signal → caller signal を一回の vkQueueSubmit2 に渡す。空 batch も同期として受理する。 |
 | `CreateSemaphore`／`NativeGpuSemaphore.IsComplete`／`WaitCpu`／`SignalCpu`／`Dispose` | device に属する caller-owned timeline の生成、完了照会、CPU wait／signal と解放。queue の回収から独立する。 |
 
+### Win32 presentation API と配置
+
+`VulkanBackend.CreateWindowSurface(hwnd)` は `INativeGpuSurface` を返す。実装は `Presentation/VulkanBackend.Surface.cs` に置く。BGRA8 UNORM／sRGB nonlinear surface、FIFO と main queue を使う。instance の `VK_KHR_surface`、`VK_KHR_win32_surface`、`VK_KHR_get_surface_capabilities2`、`VK_EXT_surface_maintenance1` と device の `VK_KHR_swapchain`、`VK_EXT_swapchain_maintenance1`／feature が表示時に必要となる。これらがない環境の headless Native 使用は制限しない。
+
+acquire fence と image transition、描画 completion、Present 用 binary semaphore と maintenance1 の present fence を別々に扱う。present fence 後に semaphore を回収し、全過去の present fence 完了後に旧 swapchain を破棄する。非表示返却には `vkReleaseSwapchainImagesEXT` を使う。OUT_OF_DATE は画像返却後に再生成し、device loss を resize として握り潰さない。
+
+```csharp
+var surface = backend.CreateWindowSurface(window.Handle);
+await using var presentation = new NativeGraphPresentation(runtime.NativeResources, surface,
+    () => ((uint)window.FramebufferSize.Width, (uint)window.FramebufferSize.Height));
+```
+
+基準実装は一つの取得画像に制限し、surface transition に fence 待ちを使う。複数表示フレームの先行、KHR 版 maintenance1 のみの device、Win32 以外の WSI は後続とする。参照: [present fence の寿命保証](https://docs.vulkan.org/refpages/latest/refpages/source/VkSwapchainPresentFenceInfoKHR.html)、[present の OUT_OF_DATE と queue 操作](https://docs.vulkan.org/refpages/latest/refpages/source/vkQueuePresentKHR.html)。
+
 ## コード配置
 
 以下は repository root 相対の目標配置とする。既存の `Lumyte.Graphics.Vulkan` と隣の `Lumyte.Graphics.Vulkan.Tests` を Native 専用へ改編し、公開契約は作成済みの `Lumyte.Graphics.Native` を参照する。フォルダ分割は同一 backend project 内で行う。
@@ -262,4 +276,4 @@ mesh は task なし／ありの graphics pipeline と描画、compute が書い
 - 参照実装の swapchain には `GENERAL ↔ PRESENT_SRC_KHR` の内部 transition があるが、本 ADR は presentation API の実装完了を宣言しない。
 - address-command の線形／texture copy、global barrier、HostRead、明示 discard、queue の一回提出と timeline completion を実装した。転送先 range は source の byte 数だけに制限し、公開した余剰容量を変更しない。内部 command pool の回収は caller semaphore の寿命から分離する。
 - render view の永続 image view、専用 descriptor storage と固定 slot stride、view／address range／sampler 作成情報からの descriptor 書込み、resource／sampler heap の設定を実装した。さらに null-layout compute pipeline、直接 push data、直接／address-range 間接 dispatch、混在 slot stride と shader lowering を実機確認し、`RawShaderPointers` と `BufferDescriptors` を true とする。
-- render view の attachment 使用、vertex／mesh raster pipeline、直接／address-range 間接 draw・indexed draw・mesh dispatch を実装した。depth/stencil は dynamic state を使い、read-only aspect は LOAD／STORE_OP_NONE で保持する。全 attachment の初期化区間を `vkCmdBeginRendering` の前に置き、pipeline／heap を再設定する。製品用 shader toolchain の移行は未実装である。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。
+- render view の attachment 使用、vertex／mesh raster pipeline、直接／address-range 間接 draw・indexed draw・mesh dispatch を実装した。depth/stencil は dynamic state を使い、read-only aspect は LOAD／STORE_OP_NONE で保持する。全 attachment の初期化区間を `vkCmdBeginRendering` の前に置き、pipeline／heap を再設定する。Native offline compiler、MSBuild、package／loader を機能 pass に接続した。Output／2D／標準画像処理の shader を製品 project の build で生成する。実機試験結果と未検証の失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) を参照する。

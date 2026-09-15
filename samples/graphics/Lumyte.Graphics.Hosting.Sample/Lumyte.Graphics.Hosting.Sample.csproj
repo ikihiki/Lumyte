@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+    <ProjectReference Include="../../../src/graphics/Lumyte.Graphics.DirectX12/Lumyte.Graphics.DirectX12.csproj" />
+    <ProjectReference Include="../../../src/graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="../../../src/graphics/Lumyte.Graphics.WebGPU/Lumyte.Graphics.WebGPU.csproj" />
+    <ProjectReference Include="../../../src/graphics/Lumyte.Graphics.Native.Hosting/Lumyte.Graphics.Native.Hosting.csproj" />
+    <ProjectReference Include="../../../src/graphics/Lumyte.Graphics.Portable.Hosting/Lumyte.Graphics.Portable.Hosting.csproj" />
+    <ProjectReference Include="../../../src/graphics/Lumyte.Graphics.Passes.Hosting/Lumyte.Graphics.Passes.Hosting.csproj" />
+  </ItemGroup>
+</Project>

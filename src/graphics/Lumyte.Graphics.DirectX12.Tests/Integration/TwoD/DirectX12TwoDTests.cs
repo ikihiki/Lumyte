@@ -9,6 +9,24 @@ namespace Lumyte.Graphics.DirectX12.Tests;
 [Trait("Category", "TwoDConformance")]
 public sealed class DirectX12TwoDTests
 {
+    [Fact]
+    [Trait("Category", "WindowPresentation")]
+    public async Task PresentsAndResizesARealWindow()
+    {
+        using var validation = new DirectX12ValidationScope();
+        await NativeTwoDConformance.PresentWindowAsync(validation.CreateBackend, static (backend, hwnd) => ((DirectX12Backend)backend).CreateWindowSurface(hwnd));
+        validation.AssertNoWarningsOrErrors();
+    }
+    public static IEnumerable<object[]> FilterCases => ImageFilterConsumer.Cases.Select(name => new object[] { name });
+    [Theory]
+    [MemberData(nameof(FilterCases))]
+    [Trait("Category", "ImageFilterConformance")]
+    public async Task StandardImageFiltersMatchReference(string scenario)
+    {
+        using var validation = new DirectX12ValidationScope();
+        await NativeTwoDConformance.FilterAsync("dx12", validation.CreateBackend, scenario);
+        validation.AssertNoWarningsOrErrors();
+    }
     public static IEnumerable<object[]> Cases => TwoDScenarios.Names.Select(name => new object[] { name });
     [Theory]
     [MemberData(nameof(Cases))]

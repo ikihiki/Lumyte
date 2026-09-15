@@ -183,6 +183,21 @@ aspect ごとの footprint／subresource 変換と、先行 flush → discard �
 
 mesh は、amplification なし／ありの描画、GPU が書いた indirect 引数からの 1 件の描画、各 work の root と stage barrier の写像を確認する。PSO を設定しただけでは生成せず、mesh dispatch が実際に Submit されたとき生成することと、生成失敗時に batch を受理しないことを確認する。非対応 device では capability を返し、vertex/indexed path の動作を維持する。shader の出力数や payload の合法性を独自 validator で再検証しない。
 
+### Win32 presentation API と配置
+
+`DirectX12Backend.CreateWindowSurface(hwnd, verticalSync = true)` は `INativeGpuSurface` を返す。実装は `Presentation/DirectX12Backend.Surface.cs` に置く。BGRA8 UNORM・flip discard・3 buffers の SDR surface とし、extent 変更で `ResizeBuffers` を使う。最小化中は application が描画を休止する。
+
+swapchain 画像の General は D3D12 COMMON／PRESENT に対応し、通常 texture の DIRECT_QUEUE_COMMON と区別する。描画完了に加え、Present の後にも queue fence を待ってから backbuffer の参照を返す。完了済み command list の参照も resize 前に回収する。DXGI module の寿命は swapchain を覆う。native 診断を独自 validator で置き換えない。
+
+```csharp
+var surface = backend.CreateWindowSurface(window.Handle);
+await using var presentation = new NativeGraphPresentation(runtime.NativeResources, surface,
+    () => ((uint)window.FramebufferSize.Width, (uint)window.FramebufferSize.Height));
+// GpuRenderContext、または ADR 0037 の Host connection に渡す。
+```
+
+基準実装は一つずつ画像を取得して非同期に返却する。複数の表示フレームを同時に先行させる最適化や HDR display は未実装。参照: [ResizeBuffers の参照解放条件](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-resizebuffers)。
+
 ## コード配置
 
 以下は repository root 相対の目標配置とする。既存の `Lumyte.Graphics.DirectX12` と隣の `Lumyte.Graphics.DirectX12.Tests` を Native 専用へ改編し、公開契約は作成済みの `Lumyte.Graphics.Native` を参照する。フォルダ分割は同一 backend project 内で行う。

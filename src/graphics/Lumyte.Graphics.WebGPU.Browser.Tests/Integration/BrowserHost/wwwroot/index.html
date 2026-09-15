@@ -3,6 +3,7 @@
 <head><meta charset="utf-8"><title>Lumyte Browser GPU conformance</title></head>
 <body>
 <p id="status">Starting the .NET browser host.</p>
+<canvas id="presentation" width="32" height="24" aria-label="GPU presentation"></canvas>
 <script>
 globalThis.lumyteHost = new Promise((resolve, reject) => {
     globalThis.resolveLumyteHost = resolve;

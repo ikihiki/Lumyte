@@ -184,7 +184,7 @@ culling の bounds は今回の geometry、draw range、morph、skin と transfo
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。feature／Hosting／test project は新設予定とし、公開モデルをファイル形式や GPU の構造体配置から独立させる。
+以下は repository root からの相対パスによる目標配置である。feature／Hosting／test project は作成済みで、Model 固有の型・配置は目標設計とし、公開モデルをファイル形式や GPU の構造体配置から独立させる。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -384,7 +384,7 @@ camera による可視判定、透明 sort、動的な bounds、実際の comman
 
 Native の optional mesh／amplification 経路、同じ Model 入力からの meshlet 準備と派生 cache、Slang の計算 module の共有も採用する。共通 API に meshlet、shader と GPU ABI を露出せず、Portable の mesh エミュレーションは要求しない。
 
-本 ADR の型、保持集合・部分木共有・型付き入力の保持契約、AddModelPass、両本体の packing・差分転送・draw cache、shader、PBR、skin／morph、環境前処理、動的 bounds、透明 sort、meshlet 構築・mesh／amplification の選択、Slang 共通 module と適合・性能試験は未実装である。共通 GpuFormat.Rgba16Float と下位の対応、BRDF の定数と fixture の許容誤差も必要になる。
+本 ADR の型、保持集合・部分木共有・型付き入力の保持契約、AddModelPass、両本体の packing・差分転送・draw cache、shader、PBR、skin／morph、環境前処理、動的 bounds、透明 sort、meshlet 構築・mesh／amplification の選択、Slang 共通 module と適合・性能試験は未実装である。共通 GpuFormat.Rgba16Float と下位の対応は実装済みである。BRDF の定数と fixture の許容誤差は Model の実装時に確定する。
 
 ファイル形式ごとの importer／decoder と依存解決は Lumyte.Resources、実行時の node／ECS／Component 管理、animation 混合・IK・simulation と描画データ抽出は上位側の実装事項である。この ADR はそれらの API を定義しない。実装進捗は、汎用描画の能力と各形式の end-to-end 対応を分け、未達成項目を部分実装として明示する。
 

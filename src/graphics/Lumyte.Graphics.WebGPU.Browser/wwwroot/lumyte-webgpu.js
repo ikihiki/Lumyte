@@ -1,6 +1,35 @@
 // Host bridge for Lumyte.Graphics.WebGPU.Browser. GPU validation belongs to WebGPU.
 const deviceFailures = new WeakMap();
 
+export function createCanvasSurface(device, elementId) {
+    const canvas = document.getElementById(elementId);
+    if (!(canvas instanceof HTMLCanvasElement)) { throw new Error("Presentation requires an existing HTML canvas."); }
+    const context = canvas.getContext("webgpu");
+    if (!context) { throw new Error("Canvas WebGPU context is unavailable."); }
+    context.configure({ device, format: "rgba8unorm", alphaMode: "opaque",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST });
+    return context;
+}
+export function resizeCanvasSurface(context, width, height) {
+    if (context.canvas.width !== width) { context.canvas.width = width; }
+    if (context.canvas.height !== height) { context.canvas.height = height; }
+}
+export async function presentCanvasSurface(device, context, source) {
+    device.pushErrorScope("validation");
+    try {
+        const target = context.getCurrentTexture();
+        const encoder = device.createCommandEncoder();
+        encoder.copyTextureToTexture({ texture: source }, { texture: target },
+            { width: source.width, height: source.height, depthOrArrayLayers: 1 });
+        device.queue.submit([encoder.finish()]);
+    } finally {
+        const error = await device.popErrorScope();
+        if (error) { throw new Error(`Canvas presentation: ${error.message}`); }
+    }
+    await device.queue.onSubmittedWorkDone();
+}
+export function unconfigureCanvasSurface(context) { context.unconfigure(); }
+
 function observeDevice(device) {
     let report;
     const failure = new Promise(resolve => { report = resolve; });

@@ -100,4 +100,4 @@ finally
 
 Portable は WebGPU に沿った pipeline object を採用し、NoGraphicsAPI の独立 state handle による PSO 分解は Native 側の設計とする。raster/compute の論理 handle、固定状態、提出時の native pipeline／layout 生成、同一 handle での再利用、生成診断の batch への帰属と解放を実装した。dual-source factor も native enum に接続し、任意 feature の要求と shader の適合性は runtime に委ねる。
 
-Browser も raster／compute pipeline と layout を実際に使う最初の Submit で生成し、論理 handle の寿命まで再利用する。shader package／loader との統合は未実装である。同一 description の別 handle 間での native pipeline 共有は行っていない。これは公開契約で要求する機能ではなく、必要に応じて加える内部の最適化とする。実機検証の範囲と結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+Browser も raster／compute pipeline と layout を実際に使う最初の Submit で生成し、論理 handle の寿命まで再利用する。shader package／loader と機能 pass の shader 準備を統合した。同一 description の別 handle 間での native pipeline 共有は行っていない。これは公開契約で要求する機能ではなく、必要に応じて加える内部の最適化とする。実機検証の範囲と結果は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。

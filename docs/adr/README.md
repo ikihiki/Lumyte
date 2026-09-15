@@ -2,7 +2,7 @@
 
 Lumyte Graphics の目標設計を定義する。採用は実装完了を意味しない。旧 API／shader ABI との互換層は設けない。
 
-Native メモリ基盤から実装を開始している。現在の実装済み API、実機で確認した範囲と残作業は [実装進捗](../designs/graphics-implementation-progress.md) を参照する。
+Native／Portable の基盤、ResourceManager、RenderGraph、2D と標準画像処理七機能を実装した。DirectX 12／Vulkan／Dawn の Win32 表示と Browser canvas に接続し、Generic Host から利用できる。現在の実装済み API、実機で確認した範囲と残作業は [実装進捗](../designs/graphics-implementation-progress.md) を参照する。
 
 ## 共通化する境界
 
@@ -150,20 +150,20 @@ Graphics の production project は `src/graphics/<Project>/<Project>.csproj` �
 | `src/graphics/Lumyte.Graphics.DirectX12/`、`src/graphics/Lumyte.Graphics.Vulkan/`、`src/graphics/Lumyte.Graphics.WebGPU/` | 対応 backend。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.WebGPU.Browser/` | WebGPU の browser 接続。既存 project を改編 |
 | `src/graphics/Lumyte.Graphics.Native.Shaders/`、`src/graphics/Lumyte.Graphics.Portable.Shaders/` | 準備済み shader package と GPU 初期化。runtime は実装済み |
-| `tools/Lumyte.Graphics.Native.Shaders.Offline/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/` | 系統別の offline compiler、package 生成と下位 GPU 入力生成。新設予定 |
+| `tools/Lumyte.Graphics.Native.Shaders.Offline/`、`tools/Lumyte.Graphics.Portable.Shaders.Offline/` | 系統別の offline compiler、package 生成と下位 GPU 入力生成。作成済み |
 | `src/graphics/Lumyte.Graphics.Native.Resources/`、`src/graphics/Lumyte.Graphics.Portable.Resources/` | utility と管理層を実装済み。scope／batch、完了と回収、descriptor／binding、package 転送 |
 | `src/graphics/Lumyte.Graphics.Native.Resources.Generators/`、`src/graphics/Lumyte.Graphics.Portable.Resources.Generators/` | 準備済み schema から managed resource 入力を作る build 用生成器。実装済み |
 | `src/graphics/Lumyte.Graphics.RenderGraph/` | 共通 graph／入力／runtime 契約。既存 project を改編 |
-| `src/graphics/Lumyte.Graphics.Native.RenderGraph/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph/` | provider、専用 SPI と内部 graph。新設予定 |
-| `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/` | Portable の内部 logical binding 入力を作る build 用生成器。新設予定 |
-| `src/graphics/Lumyte.Graphics.Passes/` | 共通機能契約、Model の CPU データ、AddPass extension。新設予定 |
-| `src/graphics/Lumyte.Graphics.TwoD.Primitives/` | scene と glyph が共有する path／paint 等の CPU 値。新設予定。namespace は Lumyte.Graphics.TwoD を使う |
-| `src/graphics/Lumyte.Graphics.TwoD/`、`src/graphics/Lumyte.Graphics.Text/` | scene と準備済み文字データを新設予定。TwoD → Text → TwoD.Primitives の依存とし、Text から scene へ参照しない |
-| `src/graphics/Lumyte.Graphics.Native.Passes/`、`src/graphics/Lumyte.Graphics.Portable.Passes/` | 機能本体、専用 GPU データ、shader source と cache。新設予定 |
+| `src/graphics/Lumyte.Graphics.Native.RenderGraph/`、`src/graphics/Lumyte.Graphics.Portable.RenderGraph/` | provider、専用 SPI と内部 graph。作成済み |
+| `src/graphics/Lumyte.Graphics.Portable.RenderGraph.Generators/` | Portable の内部 logical binding 入力を作る build 用生成器。作成済み |
+| `src/graphics/Lumyte.Graphics.Passes/` | 共通機能契約、Model の CPU データ、AddPass extension。作成済み |
+| `src/graphics/Lumyte.Graphics.TwoD.Primitives/` | scene と glyph が共有する path／paint 等の CPU 値。project は作成済み。未実装機能の目標配置も含む。namespace は Lumyte.Graphics.TwoD を使う |
+| `src/graphics/Lumyte.Graphics.TwoD/`、`src/graphics/Lumyte.Graphics.Text/` | scene と準備済み文字データは実装済み。TwoD → Text → TwoD.Primitives の依存とし、Text から scene へ参照しない |
+| `src/graphics/Lumyte.Graphics.Native.Passes/`、`src/graphics/Lumyte.Graphics.Portable.Passes/` | 機能本体、専用 GPU データ、shader source と cache。作成済み |
 | `src/graphics/Shaders/Shared/` | build 用の共有 Slang module。Math／Color／ImageProcessing／Models／TwoD に計算処理を置く。独立した runtime project や共通 GPU ABI は作らない |
-| `src/graphics/Lumyte.Graphics.Hosting/`、`src/graphics/Lumyte.Graphics.Native.Hosting/`、`src/graphics/Lumyte.Graphics.Portable.Hosting/`、`src/graphics/Lumyte.Graphics.Passes.Hosting/` | Host と DI、系統別／機能別の登録。新設予定 |
+| `src/graphics/Lumyte.Graphics.Hosting/`、`src/graphics/Lumyte.Graphics.Native.Hosting/`、`src/graphics/Lumyte.Graphics.Portable.Hosting/`、`src/graphics/Lumyte.Graphics.Passes.Hosting/` | Host と DI、系統別／機能別の登録。作成済み |
 | `src/devtools/Lumyte.DevTools.Host/Graphics/` | 既存 Host 内に新設予定。platform／Resources と Graphics の composition |
-| `samples/graphics/Lumyte.Graphics.Hosting.Sample/` | 新設予定。起動設定と同一描画 API の利用を示す application |
+| `samples/graphics/Lumyte.Graphics.Hosting.Sample/` | 実装済み。起動引数による backend 選択と同一描画 API の実ウィンドウ表示を示す application |
 | `benchmarks/Lumyte.Benchmarks/Graphics/` | 既存 benchmark project 内に追加する CPU／GPU の計測 |
 
 テストは xUnit とし、production の隣に同名の `Lumyte.<Area>.Tests` project を置く。offline tool のテストも `tools/` 内で隣接させる。実 GPU、browser、外部 compiler process を使う試験は `Integration/` または `Conformance/` に配置し、category 等で高速な CPU 試験とは実行を区分する。生成器は生成した API を compile・実行する consumer 試験で確認する。新しい project は実装時に `Lumyte.slnx` へ追加する。

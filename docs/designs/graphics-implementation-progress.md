@@ -805,10 +805,56 @@ DirectX 12 は357件、Vulkan は358件、Dawn は266件、Browser は64件成�
 全体実行と追加回帰を合わせ、SkiaSharp による実 GPU の 2D 比較は234件成功した。
 DirectX 12／Vulkan の比較は検証レイヤーを有効にし、警告・エラーがないことも確認した。
 
+## 標準画像処理と実画面表示
+
+2026-09-16 に ADR の実装状況を更新し、独立した Blit／Blur／Composite／ToneMap を追加した。
+Clear／Copy／Output と合わせて七機能を `AddImageProcessing()` で登録する。
+Native は Slang から生成した shader と root 型、Portable は直接 WGSL と immediate data を使う。
+パラメータを command 側の buffer へ退避する経路は追加していない。
+
+- Blit は pixel center と nearest／linear、Blur は端を clamp する二段 box filter。巨大な radius は端の重みへ集約する。
+- Composite は順序を保つ premultiplied SourceOver と opacity、Clear／Preserve、空の layer 列を扱う。
+- ToneMap は exposure と Reinhard を適用し、alpha 0 と非常に大きい有限 exposure でも結果を維持する。
+- 対象は線形 RGBA8／BGRA8／RGBA16Float の 2D・1 mip・1 layer・1 sample。Blur／ToneMap の出力は RGBA16Float。
+- 同じ consumer の 12 シナリオを独立した CPU 参照値へ比較する。2D の SkiaSharp 比較も既存 suite として継続する。
+
+`INativeGpuSurface`／`IPortableGpuSurface`、`NativeGraphPresentation`／`PortableGraphPresentation` と
+`GpuSurfacePresentation` を追加し、DirectX 12／Vulkan／Dawn の Win32 window と Browser canvas に接続した。
+表示先の画像は surface が所有し、adapter が graph への一時 import と返却を担当する。
+Generic Host は `UsePresentation` の delegate と `GpuGraphicsSurfaceConnection` でこれを所有する。
+window の生成・message pump・破棄は application に残す。
+
+DirectX 12 は描画完了と Present 後の fence を分け、backbuffer の General を COMMON／PRESENT に対応させる。
+修正前は Present 後の使用が残った状態で resize し、DXGI が異常終了した。
+回帰試験は raw acquire／Present／Discard と、検証レイヤー付き RenderGraph の表示・三回の extent 変更を含む。
+Vulkan は acquire fence、表示用 binary semaphore、maintenance1 の present fence を使い、
+OUT_OF_DATE の再生成と非表示の画像返却を分ける。使用終了を確認できない acquire／present の失敗では保持する。
+Browser は非同期 graph 準備を跨ぐ owned texture から、同じ JavaScript turn で canvas current texture へ copy する。
+実 canvas の画素は自動 expiry より前に snapshot して検証する。
+
+Host の停止は待機中の acquire にも取消しを伝える。取消せず遅れて届いた画像は返してから終了し、
+描画・表示の使用終了が不明な場合に強制解放しない。
+[ウィンドウサンプル](../../samples/graphics/Lumyte.Graphics.Hosting.Sample/README.md) は同じ実行ファイルを
+`dx12`／`vulkan`／`webgpu` に切り替えて、2D と標準画像処理から表示・終了までを確認する。
+
+この表示実装は一つずつ画像を取得・返却する基準経路である。複数の表示フレームを並列に先行させる最適化、
+HDR display、Win32 以外の native WSI、全 adapter／driver と device loss の強制試験は後続とする。
+
+検証は Browser／Slang／Tint の環境変数と `VK_LAYER_VALIDATE_SYNC=1` を設定し、
+`dotnet test Lumyte.slnx --disable-build-servers -m:4 --no-restore --logger "trx;LogFilePrefix=standard-images-presentation" --blame-hang-timeout 2m --blame-hang-dump-type none`
+が **41 project・2,212 件成功、失敗 0、skip 0、終了コード 0** だった。全 TRX が Completed。
+DirectX 12 は 373 件、Vulkan は 372 件、Dawn は 280 件、Browser は 66 件成功した。
+全体実行後の Host 取得取消しの回帰追加は Hosting の 26 件を再実行してすべて成功し、
+全体実行と新規回帰を合わせた重複を除く確認数は **2,213 件**。
+Vulkan の acquire 異常時保持の変更も、検証レイヤー付き window 試験を再実行して成功した。
+標準画像処理の 12 シナリオは 4 経路で確認し、Browser は一つの試験内で全シナリオを実行する。
+最終サンプル build は警告 0・エラー 0、3 backend で各 3 フレームの実表示から終了まで成功した。
+ADR と関連文書のローカルリンクに欠落はなく、production 向け InternalsVisibleTo はない。
+
 ## 未実装と次の順序
 
-1. 完成した RenderGraph 基盤上に独立した Blit／Blur／Composite／ToneMap と Model の個別機能を追加する。2D 内部の blur／composite と、単独で追加できる機能 pass は区別する。2D の残る batch／atlas 最適化と部分更新の性能も確認する。
-2. platform の実 window／canvas に presentation factory を接続し、初回表示、resize、frame pacing、表示側の終了を確認する。headless presentation の適合を OS の表示完了とは扱わない。
+1. Model の個別機能を追加する。形式に依存しない転送データ、保持集合、PBR／skin／morph、Native の mesh 経路を専用 ADR に従って実装する。
+2. 2D の残る batch／atlas 最適化と部分更新の性能、複数表示フレームの先行、ResourceManager の性能を確認する。表示の基準実装は一つずつ取得・返却する方式であり、60 FPS の測定結果とは区別する。
 3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 
 任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。

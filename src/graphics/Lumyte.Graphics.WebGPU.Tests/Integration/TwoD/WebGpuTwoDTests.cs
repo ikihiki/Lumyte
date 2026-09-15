@@ -2,6 +2,7 @@ using System.Numerics;
 
 using Lumyte.Graphics.Hosting;
 using Lumyte.Graphics.Passes.Hosting;
+using Lumyte.Graphics.Passes;
 using Lumyte.Graphics.Portable.Hosting;
 using Lumyte.Graphics.Portable.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
@@ -20,6 +21,64 @@ namespace Lumyte.Graphics.WebGPU.Tests;
 [Trait("Category", "TwoDConformance")]
 public sealed class WebGpuTwoDTests
 {
+    [Fact]
+    [Trait("Category", "WindowPresentation")]
+    public Task PresentsAndResizesARealWindow() => WindowConformance.RunAsync(window =>
+    {
+        WebGpuBackend? backend = null;
+        using IHost host = new HostBuilder().ConfigureServices(services =>
+            services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = "window" })
+                .AddPortableProvider("window", async (_, _, token) => { token.ThrowIfCancellationRequested(); return backend = await WebGpuBackend.CreateAsync(); })
+                .AddImageProcessing()).Build();
+        window.Complete(host.StartAsync());
+        var session = window.Complete(host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync().AsTask());
+        var runtime = (PortableRenderRuntime)session.Runtime;
+        var presentation = new PortableGraphPresentation(runtime.Resources, backend!.CreateWindowSurface(window.Handle), window.Size);
+        try
+        {
+            using var context = new GpuRenderContext(runtime, presentation);
+            foreach (var size in new[] { (Width: 160, Height: 120), (Width: 224, Height: 144), (Width: 128, Height: 96) })
+            {
+                window.Resize(size.Width, size.Height);
+                using (var frame = window.Complete(context.BeginFrameAsync().AsTask()))
+                {
+                    Assert.Equal((uint)size.Width, frame.TargetResource.Description.Width);
+                    Assert.Equal((uint)size.Height, frame.TargetResource.Description.Height);
+                    var source = frame.Graph.CreateTexture("hdr", new((uint)size.Width, (uint)size.Height, GpuFormat.Rgba16Float));
+                    frame.Graph.AddClearPass("clear", new(source, TextureClearValue.Color(new(2, 1, .5f, 1))));
+                    var tone = frame.Graph.AddToneMapPass("tone", new(source));
+                    frame.Graph.AddOutputPass("screen", new(tone.Color, frame.TargetResource));
+                    using var execution = window.Complete(frame.SubmitAsync().AsTask());
+                    window.Complete(execution.WaitForCompletionAsync().AsTask());
+                }
+                window.Complete(presentation.WaitForPresentationAsync());
+                using (var discard = window.Complete(context.BeginFrameAsync().AsTask()))
+                { }
+                window.Complete(presentation.WaitForPresentationAsync());
+            }
+        }
+        finally { window.Complete(presentation.DisposeAsync().AsTask()); window.Complete(host.StopAsync()); }
+    });
+    public static IEnumerable<object[]> FilterCases => ImageFilterConsumer.Cases.Select(name => new object[] { name });
+    [Theory]
+    [MemberData(nameof(FilterCases))]
+    [Trait("Category", "ImageFilterConformance")]
+    public async Task StandardImageFiltersMatchReference(string scenario)
+    {
+        using IHost host = CreateHost();
+        await host.StartAsync();
+        var runtime = (PortableRenderRuntime)(await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
+        var fixture = ImageFilterConsumer.Create(scenario);
+        using (var execution = await runtime.SubmitAsync(fixture.Plan))
+        {
+            await execution.WaitForCompletionAsync();
+            var texture = runtime.Resources.ResolveTexture(execution.GetExportedTexture(fixture.Output));
+            var pixels = await runtime.Resources.Manager.ReadTextureAsync(texture,
+                new(0, P.GpuTextureAspect.All, default, new(fixture.Description.Width, fixture.Description.Height, 1), 256, 256 * fixture.Description.Height));
+            ImageFilterConsumer.Compare(fixture, pixels, 256);
+        }
+        await host.StopAsync();
+    }
     public static IEnumerable<object[]> Cases => TwoDScenarios.Names.Select(name => new object[] { name });
     [Theory]
     [MemberData(nameof(Cases))]

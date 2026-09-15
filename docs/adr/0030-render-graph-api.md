@@ -224,6 +224,14 @@ helper は target の取得後、queue の受理前に失敗した場合は Disc
 
 frame の外部 lease は execution 所有と GPU 使用の両方が終わるまで保持する。provider の retirement 登録 callback 自体が失敗した場合も `RetainUntilUseEnds` は lease を消費済みとし、共通 completion が隔離して保持する。frame は completion を伴う提出例外と Retire を返す。呼出し元がその completion の IsComplete／WaitAsync で実使用終了を確認した時点で隔離を解く。未確認の使用を timer や例外だけで終了扱いにしない。これは故障した provider 接続の回復経路であり、正常時は provider の manager が回収する。
 
+### 非同期 surface presentation
+
+`GpuSurfacePresentation` は `IGpuGraphPresentation` と `IAsyncDisposable` の共通基底で、`Presentation/GpuSurfacePresentation.cs` に置く。`AcquireNextTargetAsync` は前の取得画像が戻るまで待つ。`Present`／`Retire` は completion を観測してから返却し、GPU 使用は終了していても描画診断が失敗した画像は表示しない。`Discard` は未提出の画像を返す。`WaitForPresentationAsync` は直前の返却と非同期表示診断を待つ。`DisposeAsync` は取得処理と返却処理を drain してから surface を閉じる。
+
+派生 adapter は protected の `AcquireCoreAsync`、`ReturnCoreAsync(target, present)`、`DisposeCoreAsync` を実装する。取得中の取消しでも、取得してしまった画像の返却失敗を記録し、所有を失わない。GPU 使用終了を確認できない失敗では保持し、次の取得と終了を失敗させる。未提出 frame は caller が Dispose してから終了する。
+
+一つの取得画像による有界 pacing が基準実装である。表示フレームの並列先行や 60 FPS の性能保証とは区別する。非表示 graph の timeline／非同期転送の契約は従来どおりである。
+
 ## コード配置
 
 以下は repository root 相対の目標配置とする。`Lumyte.Graphics.RenderGraph` は既存 project を改編し、下表の役割ごとに整理する。共通 assembly には Native／Portable の実装と Microsoft.Extensions への参照を追加しない。

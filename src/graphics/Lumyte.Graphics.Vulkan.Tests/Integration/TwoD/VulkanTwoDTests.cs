@@ -12,6 +12,15 @@ namespace Lumyte.Graphics.Vulkan.Tests;
 [Trait("Category", "TwoDConformance")]
 public sealed class VulkanTwoDTests
 {
+    [VulkanNativeFact]
+    [Trait("Category", "WindowPresentation")]
+    public Task PresentsAndResizesARealWindow() => WithValidationAsync(() => NativeTwoDConformance.PresentWindowAsync(CreateBackend,
+        static (backend, hwnd) => ((VulkanBackend)backend).CreateWindowSurface(hwnd)));
+    public static IEnumerable<object[]> FilterCases => ImageFilterConsumer.Cases.Select(name => new object[] { name });
+    [VulkanNativeTheory]
+    [MemberData(nameof(FilterCases))]
+    [Trait("Category", "ImageFilterConformance")]
+    public Task StandardImageFiltersMatchReference(string scenario) => WithValidationAsync(() => NativeTwoDConformance.FilterAsync("vulkan", CreateBackend, scenario));
     public static IEnumerable<object[]> Cases => TwoDScenarios.Names.Select(name => new object[] { name });
     [VulkanNativeTheory]
     [MemberData(nameof(Cases))]

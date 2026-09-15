@@ -162,6 +162,23 @@ device 作成直後から `device.lost` を監視し、completion と同じ runt
 
 `uncapturederror` を発生源不明のまま任意の batch の成功へ混ぜない。backend が所有する呼出しに帰属できない障害は runtime 接続の障害として報告し、未確定の結果を成功に変換しない。device loss は同様に pending wait と終了処理へ接続する。これらの失敗は、GPU が終了したことの代わりにはならない。
 
+### Surface API と配置
+
+| API | 実装と意味 |
+| --- | --- |
+| Dawn `WebGpuBackend.CreateWindowSurface(hwnd)` | `Lumyte.Graphics.WebGPU/Presentation/`。surface capability から SDR RGBA8／BGRA8 を選択し、FIFO で configure／acquire／present。resize で再 configure、非表示返却では texture の参照返却と unconfigure |
+| Browser `WebGpuBackend.CreateCanvasSurface(elementId)` | `Lumyte.Graphics.WebGPU.Browser/Presentation/` と `wwwroot/lumyte-webgpu.js`。application が作成した HTML canvas を RGBA8 UNORM／opaque で configure |
+
+両方とも `IPortableGpuSurface` を返す。Browser は非同期の pass 準備を跨いで canvas の current texture を保持しない。取得には owned texture を使い、表示時の同じ JavaScript turn で current texture へ GPU copy を submit する。copy 完了まで元 texture を保持する。直接 root の方式や finite binding の契約は変わらない。
+
+```csharp
+var surface = backend.CreateCanvasSurface("presentation"); // HTML canvas は application が所有
+await using var presentation = new PortableGraphPresentation(runtime.Resources, surface, GetCanvasExtent);
+using var context = new GpuRenderContext(runtime, presentation);
+```
+
+配置・API の complete sample は Browser.Tests の `Integration/BrowserHost/PresentationCases.cs` に置く。canvas の画素試験は、current texture の自動 expiry より前に実際の canvas を 2D canvas へ snapshot する。非表示返却後の再取得と extent 変更も試験する。参照: [WebGPU canvas context](https://www.w3.org/TR/webgpu/#canvas-context)。
+
 ## コード配置
 
 以下は repository root からの目標配置を含む。WebGPU、WebGPU.Browser と WebGPU.Tests は Portable 契約へ接続する。`WebGpuBackend` は Portable を直接実装し、旧 `WebGpuDevice`、旧描画系と Legacy factory は削除済みである。
@@ -208,4 +225,4 @@ Console.WriteLine(backend.Limits.MaxImmediateSize);
 
 WebGPU の通常の binding model に直接接続する。Bindless エミュレーションと Native への adapter は採用しない。native host と Browser に独立した Portable backend、直接入力を要求する非同期初期化、有効 feature／limits、Buffer／Texture の生成・破棄、非同期 mapping、Binding Layout／Bindings、view／sampler の内部再利用と object ごとの依存診断を実装した。raw WGSL、raster／compute pipeline の提出時生成、直接 root／dynamic offsets／直接・間接 dispatch、indexed／indirect draw、buffer／texture copy と CPU completion を接続した。color／depth/stencil／blend／MSAA resolve と attachment の内部所有も実装した。Browser の runtime 借用形 factory、JS module 配布と直接の browser WebGPU 呼出しを実装し、Dawn を Browser の adapter として扱わない。内部公開はそれぞれの test assembly 向けだけで、Portable 側は public／protected 契約から実装する。
 
-WGSL package／loader、Slang の build toolchain と生成 host 型の統合は未実装である。Browser の検証 host は untrimmed の C# WebAssembly とし、現在の匿名 descriptor の reflection JSON serialization を含む trimming／AOT 配布は未検証である。全 Browser／GPU の組合せ、worker／thread 間移送、canvas presentation と host の起動統合も今回の実装確認には含めない。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
+WGSL package／loader、直接 WGSL の offline tool と生成 host 型を実装した。Slang root accessor の本番生成器への統合は後続である。Browser の検証 host は untrimmed の C# WebAssembly とし、現在の匿名 descriptor の reflection JSON serialization を含む trimming／AOT 配布は未検証である。Dawn の Win32 surface と Browser の canvas presentation を実装した。全 Browser／GPU の組合せ、worker／thread 間移送は未検証である。実機試験結果と検証できていない失敗経路は [進捗記録](../designs/graphics-implementation-progress.md) に記載する。
