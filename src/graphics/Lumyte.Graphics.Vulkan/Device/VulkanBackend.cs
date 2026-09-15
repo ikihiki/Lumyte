@@ -316,6 +316,8 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             TaskShader = taskShader,
         };
         bool separateDepthStencilLayouts = features12.SeparateDepthStencilLayouts;
+        // Slang's SPIR-V 1.6 fragment discard lowers to OpDemoteToHelperInvocation.
+        bool shaderDemoteToHelperInvocation = features13.ShaderDemoteToHelperInvocation;
         bool shaderDrawParameters = features11.ShaderDrawParameters;
         features11 = new()
         {
@@ -337,6 +339,7 @@ public sealed unsafe partial class VulkanBackend : INativeGpuBackend
             PNext = &features14,
             Synchronization2 = true,
             DynamicRendering = true,
+            ShaderDemoteToHelperInvocation = shaderDemoteToHelperInvocation,
         };
         features14 = new()
         {

@@ -2,7 +2,7 @@
 
 ## 状態
 
-採用（目標設計）。Model 描画を独立した機能契約とし、ファイル由来のモデル、ECS の描画対象、Component から合成した描画データ、実行時に生成・更新する geometry を同じ API で扱う。glTF 2.0 core と採用拡張の描画能力を初期要件に含める。現行実装の完了を示さず、旧 API との互換経路は設けない。
+部分採用。共通の入力・保持集合と Native／Portable の三角形描画を実装した。以下は glTF 2.0 core と採用拡張を含む目標設計であり、実装済みの範囲と残作業は末尾に分ける。ファイル由来のモデル、ECS／Component と動的 geometry を同じ API で扱い、旧 API との互換経路は設けない。
 
 ## 依存 ADR
 
@@ -184,7 +184,7 @@ culling の bounds は今回の geometry、draw range、morph、skin と transfo
 
 ## コード配置
 
-以下は repository root からの相対パスによる目標配置である。feature／Hosting／test project は作成済みで、Model 固有の型・配置は目標設計とし、公開モデルをファイル形式や GPU の構造体配置から独立させる。
+以下は repository root からの相対パスによる目標配置である。Models の共通型、両系統の本体、Hosting と共通 consumer の試験を追加済みで、細分化した cache／mesh 等は未実装である。公開モデルをファイル形式や GPU の構造体配置から独立させる。
 
 | 配置先 | 内容 |
 | --- | --- |
@@ -202,7 +202,7 @@ culling の bounds は今回の geometry、draw range、morph、skin と transfo
 | `src/graphics/Lumyte.Graphics.Native.Passes.Tests/Integration/Models/`、`src/graphics/Lumyte.Graphics.Portable.Passes.Tests/Integration/Models/` | 同一 consumer による PBR、変形、動的更新と描画品質の GPU 適合試験。Native は vertex／mesh-only／amplification 付き経路、未対応 GPU での vertex 経路も確認する。`Fixtures/` には Graphics が受け取る準備済み入力と期待する意味を置く。 |
 | `benchmarks/Lumyte.Benchmarks/Graphics/Models/` | 既存 benchmark project に追加する 10 万 draw の変更なし／1 件／100 件更新、転送量、準備と描画の計測。Native の vertex／mesh／amplification を同じ scene で比較する。 |
 
-旧 Library の描画実装は削除済みであり、Model 本体は本 ADR に従って新設する。glTF 等の loader／decoder と sample asset の読取りは `Lumyte.Resources`、ECS からの抽出・node／animation 評価は上位が所有し、この配置に新設しない。共通 `GpuImageUploadData` は RenderGraph 側の定義を参照し、Models に複製しない。
+旧 Library の描画実装は削除済みであり、Model 本体を本 ADR に従って新設した。glTF 等の loader／decoder と sample asset の読取りは `Lumyte.Resources`、ECS からの抽出・node／animation 評価は上位が所有し、この配置に新設しない。共通 `GpuImageUploadData` は RenderGraph 側の定義を参照し、Models に複製しない。
 
 ## 使用例
 
@@ -384,7 +384,27 @@ camera による可視判定、透明 sort、動的な bounds、実際の comman
 
 Native の optional mesh／amplification 経路、同じ Model 入力からの meshlet 準備と派生 cache、Slang の計算 module の共有も採用する。共通 API に meshlet、shader と GPU ABI を露出せず、Portable の mesh エミュレーションは要求しない。
 
-本 ADR の型、保持集合・部分木共有・型付き入力の保持契約、AddModelPass、両本体の packing・差分転送・draw cache、shader、PBR、skin／morph、環境前処理、動的 bounds、透明 sort、meshlet 構築・mesh／amplification の選択、Slang 共通 module と適合・性能試験は未実装である。共通 GpuFormat.Rgba16Float と下位の対応は実装済みである。BRDF の定数と fixture の許容誤差は Model の実装時に確定する。
+実装済みの範囲:
+
+- `AddModelPass`、`ModelRenderInputContract`、geometry／属性／index／material／skin／morph／camera／lighting の不変入力と `AddModelRendering()` の DI 登録。
+- `ModelDrawList` の Add／Set／Remove／MoveBefore／Clear、共有部分木を持つ snapshot、部分木単位の使用保持。10 万件の 1 件更新で未変更部分をコピーしないことを、新規部分木の数で確認する。順序ラベルは任意精度の二進有理数とする。
+- Triangles／TriangleStrip／TriangleFan、indexed／non-indexed、draw range、頂点色、欠落 normal の flat normal、非一様・負の transform。index は現時点では CPU で三角形の頂点列へ展開する。
+- 全 influence の skin、position／normal の morph を CPU で準備し、結果を geometry cache で再利用する。変形後に world transform を一度適用する。
+- テクスチャなしの metallic-roughness PBR と Unlit、emissive strength、directional／point／spot。BRDF は GGX 分布、相関 Smith visibility、Schlick Fresnel。数値安定化は roughness 下限 0.045、visibility の分母下限 1e-6。Unlit は base color のみを出力する。
+- RGBA16Float／D32Float の初期化、LessEqual depth、Opaque／Mask の書込み、Blend の読取りと premultiplied 合成。透明順序は変形・world 適用後の実頂点 AABB 中心で安定 sort する。
+- Native の直接 root と bindless buffer、Portable の直接 immediate root と明示 storage binding。parameter buffer の生成は pass 本体だけが行う。Native の CPU-visible geometry は書込み終了後に import して使用保持し、Portable の copy upload は内部 graph と内容世代 ticket に登録する。
+- 同じ共通 consumer による DirectX 12／Vulkan／Dawn／Browser の HDR 画素比較。同じ plan への更新と旧 snapshot の再提出を Native／Dawn で確認する。比較許容誤差は RGBA ベクトルの距離 0.006。PBR の正面・roughness 1 の閉形式解と、明示 light がない場合の黒も確認する。
+- 同じ executable を三 backend に切り替える回転モデルのウィンドウサンプル。画面サイズが変わるまで plan を再利用し、draw の transform だけ更新する。
+
+CPU の geometry 数学は `src/graphics/Shared/Models/ModelPreparation.cs` を両本体へ個別に compile する。共通の公開 GPU ABI や production の InternalsVisibleTo は追加しない。Native／Portable の shader と GPU resource 管理は別の実装である。
+
+未実装の範囲:
+
+- material texture、sampler、UV transform と mipmap、normal map の MikkTSpace、texture／color morph、環境光と IBL。従って **glTF core と五拡張の完了条件はまだ満たしていない**。loader は Lumyte.Resources の責務である。
+- Points／Lines／LineLoop／LineStrip の描画。現在これらを渡すと NotSupportedException を返す。
+- 部品別 GPU packing と WithRange の部分転送、GPU skin／morph、draw page／分類／内部 graph の差分更新。現在は geometry・deformation・range を単位に cache し、transform／material／camera だけの変更では geometry を再転送しないが、一属性更新では派生 geometry 全体を再準備する。各提出では draw を列挙して parameter data と内部 draw を構築する。
+- GPU cache の予算制御と page 単位の eviction。geometry cache は最大 1,024 entry の基準実装であり、10 万 draw の GPU 性能や 60 FPS を保証しない。
+- meshlet と mesh／amplification 経路、共有 Slang 計算 module、Khronos asset による完全適合試験、失敗注入・全 device／camera／lighting 条件の網羅と性能 benchmark。
 
 ファイル形式ごとの importer／decoder と依存解決は Lumyte.Resources、実行時の node／ECS／Component 管理、animation 混合・IK・simulation と描画データ抽出は上位側の実装事項である。この ADR はそれらの API を定義しない。実装進捗は、汎用描画の能力と各形式の end-to-end 対応を分け、未達成項目を部分実装として明示する。
 

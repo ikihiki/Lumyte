@@ -17,6 +17,25 @@ namespace Lumyte.Graphics.Tests;
 
 internal static class NativeTwoDConformance
 {
+    internal static async Task ModelAsync(string backend, Func<INativeGpuBackend> create, string scenario)
+    {
+        using IHost host = CreateHost(backend,create);
+        await host.StartAsync();
+        var runtime = (NativeRenderRuntime)(await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
+        var fixture = ModelRenderConsumer.Create(scenario);
+        foreach (var current in scenario == "retained" ? new[] { fixture,ModelRenderConsumer.Changed(fixture),fixture } : [fixture])
+        {
+            var bindings = fixture.Plan.CreateBindings(); bindings.Set(fixture.Input,current.Snapshot);
+            using var execution = await runtime.SubmitAsync(fixture.Plan,bindings.Build());
+            await execution.WaitForCompletionAsync();
+            var texture = runtime.NativeResources.GetNativeTexture(execution.GetExportedTexture(fixture.Output));
+            var pixels = await runtime.NativeResources.Manager.ReadTextureAsync(texture,
+                new(0,NativeGpuTextureAspect.Color,0,1,default,new(32,32,1),256,8192),32,256,GpuTextureLayout.General,GpuTextureLayout.General,
+                synchronization:new(GpuStage.All,GpuAccess.ColorWrite));
+            ModelRenderConsumer.Compare(current,pixels,256);
+        }
+        await host.StopAsync();
+    }
     internal static Task PresentWindowAsync(Func<INativeGpuBackend> create, Func<INativeGpuBackend, nint, INativeGpuSurface> createSurface)
         => WindowConformance.RunAsync(window =>
         {
@@ -145,7 +164,7 @@ internal static class NativeTwoDConformance
     }
     private static IHost CreateHost(string id, Func<INativeGpuBackend> create) => new HostBuilder().ConfigureServices(services =>
         services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = id })
-            .AddNativeProvider(id, (_, _, _) => new(create())).AddImageProcessing().Add2DRendering()).Build();
+            .AddNativeProvider(id, (_, _, _) => new(create())).AddImageProcessing().Add2DRendering().AddModelRendering()).Build();
     internal static int RowPitch(GpuFormat format) => (TwoDRenderConsumer.Size * TwoDPixelComparison.BytesPerPixel(format) + 255) / 256 * 256;
     private static Task<byte[]> ReadAsync(NativeRenderRuntime runtime, GpuGraphTextureRef texture)
     {

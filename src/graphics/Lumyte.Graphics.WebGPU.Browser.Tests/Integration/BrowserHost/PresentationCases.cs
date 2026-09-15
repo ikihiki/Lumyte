@@ -13,6 +13,24 @@ using P = Lumyte.Graphics.Portable;
 
 public static partial class BrowserCases
 {
+    private static async Task<object> ModelsAsync()
+    {
+        using var browser = await WebGpuBrowserRuntime.LoadAsync("/lumyte-webgpu.js");
+        var provider = new PortableRenderProvider("models",async (_,token) => { token.ThrowIfCancellationRequested(); return await WebGpuBackend.CreateAsync(browser); },
+            new PortableRenderPassRegistry().AddModelRendering());
+        await using var runtime = (PortableRenderRuntime)await provider.CreateAsync(new());
+        var results = new List<object>();
+        foreach (string name in ModelRenderConsumer.Cases)
+        {
+            var fixture = ModelRenderConsumer.Create(name);
+            using var execution = await runtime.SubmitAsync(fixture.Plan);
+            await execution.WaitForCompletionAsync();
+            var texture = runtime.Resources.ResolveTexture(execution.GetExportedTexture(fixture.Output));
+            byte[] pixels = await runtime.Resources.Manager.ReadTextureAsync(texture,new(0,P.GpuTextureAspect.All,default,new(32,32,1),256,8192));
+            results.Add(new { name,pixels = Convert.ToBase64String(pixels) });
+        }
+        return new { results };
+    }
     [JSImport("captureCanvas", "Lumyte.PresentationTest")]
     [return: JSMarshalAs<JSType.Promise<JSType.String>>()]
     private static partial Task<string> CaptureCanvasAsync();

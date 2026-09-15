@@ -9,6 +9,16 @@ namespace Lumyte.Graphics.DirectX12.Tests;
 [Trait("Category", "TwoDConformance")]
 public sealed class DirectX12TwoDTests
 {
+    public static IEnumerable<object[]> ModelCases => ModelRenderConsumer.Cases.Select(name => new object[] { name });
+    [Theory]
+    [MemberData(nameof(ModelCases))]
+    [Trait("Category","ModelConformance")]
+    public async Task ModelsMatchReference(string scenario)
+    {
+        using var validation = new DirectX12ValidationScope();
+        await NativeTwoDConformance.ModelAsync("dx12",validation.CreateBackend,scenario);
+        validation.AssertNoWarningsOrErrors();
+    }
     [Fact]
     [Trait("Category", "WindowPresentation")]
     public async Task PresentsAndResizesARealWindow()

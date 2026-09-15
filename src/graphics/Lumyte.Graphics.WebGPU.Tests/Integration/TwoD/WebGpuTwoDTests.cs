@@ -21,6 +21,27 @@ namespace Lumyte.Graphics.WebGPU.Tests;
 [Trait("Category", "TwoDConformance")]
 public sealed class WebGpuTwoDTests
 {
+    public static IEnumerable<object[]> ModelCases => ModelRenderConsumer.Cases.Select(name => new object[] { name });
+    [Theory]
+    [MemberData(nameof(ModelCases))]
+    [Trait("Category","ModelConformance")]
+    public async Task ModelsMatchReference(string scenario)
+    {
+        using IHost host = CreateHost();
+        await host.StartAsync();
+        var runtime = (PortableRenderRuntime)(await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
+        var fixture = ModelRenderConsumer.Create(scenario);
+        foreach (var current in scenario == "retained" ? new[] { fixture,ModelRenderConsumer.Changed(fixture),fixture } : [fixture])
+        {
+            var bindings = fixture.Plan.CreateBindings(); bindings.Set(fixture.Input,current.Snapshot);
+            using var execution = await runtime.SubmitAsync(fixture.Plan,bindings.Build());
+            await execution.WaitForCompletionAsync();
+            var texture = runtime.Resources.ResolveTexture(execution.GetExportedTexture(fixture.Output));
+            var pixels = await runtime.Resources.Manager.ReadTextureAsync(texture,new(0,P.GpuTextureAspect.All,default,new(32,32,1),256,8192));
+            ModelRenderConsumer.Compare(current,pixels,256);
+        }
+        await host.StopAsync();
+    }
     [Fact]
     [Trait("Category", "WindowPresentation")]
     public Task PresentsAndResizesARealWindow() => WindowConformance.RunAsync(window =>
@@ -183,7 +204,7 @@ public sealed class WebGpuTwoDTests
         services.AddLumyteGraphics(options => options.Runtime = new() { ProviderId = "webgpu" })
             .AddPortableProvider("webgpu", static async (_, _, token) =>
             { token.ThrowIfCancellationRequested(); return await WebGpuBackend.CreateAsync(); })
-            .AddImageProcessing().Add2DRendering()).Build();
+            .AddImageProcessing().Add2DRendering().AddModelRendering()).Build();
     private static int RowPitch(GpuFormat format) => (TwoDRenderConsumer.Size * TwoDPixelComparison.BytesPerPixel(format) + 255) / 256 * 256;
     private static Task<byte[]> ReadAsync(PortableRenderRuntime runtime, GpuGraphTextureRef texture)
     {

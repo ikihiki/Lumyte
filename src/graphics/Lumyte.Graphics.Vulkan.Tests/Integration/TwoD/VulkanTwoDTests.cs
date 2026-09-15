@@ -12,6 +12,11 @@ namespace Lumyte.Graphics.Vulkan.Tests;
 [Trait("Category", "TwoDConformance")]
 public sealed class VulkanTwoDTests
 {
+    public static IEnumerable<object[]> ModelCases => ModelRenderConsumer.Cases.Select(name => new object[] { name });
+    [VulkanNativeTheory]
+    [MemberData(nameof(ModelCases))]
+    [Trait("Category","ModelConformance")]
+    public Task ModelsMatchReference(string scenario) => WithValidationAsync(() => NativeTwoDConformance.ModelAsync("vulkan",CreateBackend,scenario));
     [VulkanNativeFact]
     [Trait("Category", "WindowPresentation")]
     public Task PresentsAndResizesARealWindow() => WithValidationAsync(() => NativeTwoDConformance.PresentWindowAsync(CreateBackend,

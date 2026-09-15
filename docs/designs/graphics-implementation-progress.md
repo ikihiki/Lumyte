@@ -853,10 +853,49 @@ ADR と関連文書のローカルリンクに欠落はなく、production 向�
 
 ## 未実装と次の順序
 
-1. Model の個別機能を追加する。形式に依存しない転送データ、保持集合、PBR／skin／morph、Native の mesh 経路を専用 ADR に従って実装する。
+1. Model の残る material texture、IBL、line／point topology、部品別転送と draw batch、Native の mesh 経路を専用 ADR に従って実装する。保持型入力と三角形の PBR／skin／morph は下記の範囲で実装した。
 2. 2D の残る batch／atlas 最適化と部分更新の性能、複数表示フレームの先行、ResourceManager の性能を確認する。表示の基準実装は一つずつ取得・返却する方式であり、60 FPS の測定結果とは区別する。
 3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 
 任意 graph の tracing GC、予算による資産 eviction、CLR GC 連動、ResourceManager の性能 benchmark はこの段階に含めない。device loss や停止未確認の work を強制回収する API はなく、保持して終了を失敗させる。全 adapter／format と実 driver の device loss を強制する適合性は未検証である。
 
-保持型 Model と、Slang toolchain の残る共通化は後続作業である。旧描画系を復元する互換経路は設けない。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
+Model の残る最適化と Slang toolchain の共通化は後続作業である。旧描画系を復元する互換経路は設けない。各描画機能の実装後には、その機能を使う conformance 試験を追加する。
+
+## Model 描画の初期実装
+
+2026-09-16 に共通 `AddModelPass` と Native／Portable の実装を追加した。
+`AddModelRendering()` で Generic Host に登録し、利用側は shader／GPU resource を管理しない。
+形式や ECS に依存しない immutable geometry、index、material、評価済み skin／morph と camera／light を入力する。
+ファイル decode／load と node／animation 評価は追加していない。
+
+ModelDrawList の変更は不変部分木を共有し、旧 snapshot を保持する。
+属性と index の WithRange も完全な値を保持して未変更部分を共有する。
+GPU 側は triangle list／strip／fan を三角形へ展開し、変形済み geometry を cache する。
+transform／material／camera の変更では geometry の再転送を避け、同じ共通 plan の入力を更新する。
+
+テクスチャなしの metallic-roughness PBR／Unlit、頂点色、emissive strength、punctual light、
+正負の transform、CPU skin／morph、RGBA16Float と D32Float の出力を実装した。
+Opaque／Mask と Blend の深度書込みを分け、Blend は今回の変形後の実頂点 AABB で安定 sort する。
+直接 root は Native の descriptor index と Portable の immediate data として渡す。
+
+DirectX 12／Vulkan／Dawn／Browser は同じ consumer による画素比較を行う。
+試験は空描画、indexed／non-indexed、strip／fan、深度、mask／blend、反転、skin／morph、HDR、PBR を含む。
+Native／Dawn は同じ plan の更新と旧 snapshot の再提出を確認する。
+Vulkan は Slang の discard が使う `shaderDemoteToHelperInvocation` を、device が対応している場合に明示して有効化する。
+これを有効にしない旧状態では検証レイヤーが shader module の capability 違反を検出した。
+
+[表示サンプル](../../samples/graphics/Lumyte.Graphics.Hosting.Sample/README.md) の第 3 引数 `model` で、
+手続き生成した cube を回転表示する。画面サイズの変更時だけ共通 plan を再構築する。
+
+material texture／sampler／UV transform、IBL、MikkTSpace、line／point、mesh／amplification、
+部品別 GPU 転送と draw batch／page の差分更新は未実装である。
+CPU の 10 万件の部分木共有試験は GPU の 10 万 draw や 60 FPS の達成を意味しない。
+glTF core と五拡張の完全適合は未達成として、[ADR 0035](../adr/0035-model-render-passes.md#採用範囲と未実装事項) に残す。
+
+検証は Browser／Slang／Tint の環境変数と `VK_LAYER_VALIDATE_SYNC=1` を設定した
+`dotnet test Lumyte.slnx --no-restore --disable-build-servers -m:4 --logger "trx;LogFilePrefix=models-full" --blame-hang-timeout 2m --blame-hang-dump-type none`
+で、**41 project・2,269 件成功、失敗 0、skip 0、終了コード 0**。
+DirectX 12 は 389 件、Vulkan は 388 件、Dawn は 296 件、Browser は 67 件。
+モデルの 16 シナリオを四経路で確認し、Browser は一つの試験内で全シナリオを実行する。
+並べ替え試験を精度が縮む順序へ強化した後も、ModelDrawList の 7 件が成功した。
+モデルサンプルは警告 0・エラー 0 で build し、3 backend で各 3 フレームの実表示と終了が成功した。

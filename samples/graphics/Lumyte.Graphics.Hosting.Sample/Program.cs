@@ -33,7 +33,8 @@ internal static partial class Program
         using var window = platform.CreateWindow(new() { Title = $"Lumyte — {backendName}: 2D / Blur / Composite / ToneMap", ClientSize = new(800, 480) });
         using var stop = new CancellationTokenSource();
         window.CloseRequested += (_, _) => stop.Cancel();
-        Task rendering = Task.Run(() => RenderAsync(backendName, window, frameLimit, stop.Token));
+        bool models = args.Length > 2 && args[2] == "model";
+        Task rendering = Task.Run(() => RenderAsync(backendName, window, frameLimit, models, stop.Token));
         while (!rendering.IsCompleted)
         {
             if (!platform.PumpEvents())
@@ -43,7 +44,7 @@ internal static partial class Program
         rendering.GetAwaiter().GetResult();
         // The Host and all surface use have ended before window disposal on its owning thread.
     }
-    private static async Task RenderAsync(string backendName, WindowsWindow window, int frameLimit, CancellationToken stop)
+    private static async Task RenderAsync(string backendName, WindowsWindow window, int frameLimit, bool models, CancellationToken stop)
     {
         INativeGpuBackend? native = null;
         WebGpuBackend? portable = null;
@@ -55,7 +56,7 @@ internal static partial class Program
             { graphics.AddPortableProvider(backendName, async (_, _, _) => portable = await WebGpuBackend.CreateAsync()); }
             else
             { graphics.AddNativeProvider(backendName, (_, _, _) => new(native = backendName == "dx12" ? DirectX12Backend.Create() : VulkanBackend.Create())); }
-            graphics.AddImageProcessing().Add2DRendering().UsePresentation((_, runtime, _) =>
+            graphics.AddImageProcessing().Add2DRendering().AddModelRendering().UsePresentation((_, runtime, _) =>
             {
                 presentation = runtime is NativeRenderRuntime n
                     ? new NativeGraphPresentation(n.NativeResources, native is DirectX12Backend dx ? dx.CreateWindowSurface(window.Handle) : ((VulkanBackend)native!).CreateWindowSurface(window.Handle), Size)
@@ -67,6 +68,8 @@ internal static partial class Program
         {
             await host.StartAsync(stop);
             var session = await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync(stop);
+            if (models)
+            { await RenderModelsAsync(session.RenderContext!,presentation!,frameLimit,stop); return; }
             using var builder = new Draw2DSceneBuilder();
             builder.FillRoundedRectangle(new(24, 24, 160, 128), 18, Brush.LinearGradient(new(24, 24), new(184, 152), new Color(4, .2f, .1f), new Color(.1f, .4f, 3)));
             builder.FillEllipse(new(200, 44, 88, 88), Brush.Solid(new(.1f, 3, 1, .85f)));

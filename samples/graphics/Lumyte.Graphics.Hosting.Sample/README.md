@@ -21,3 +21,18 @@ dotnet run --project samples/graphics/Lumyte.Graphics.Hosting.Sample -- dx12 3
 application が window と message pump を所有し、DI の session から `RenderContext` を借ります。最小化中は描画を休止し、close 時は新規 frame を停止してから Host の GPU／surface 終了を待ち、最後に window を所有 thread で破棄します。ウィンドウサイズは取得時に読み、サイズ変更を Blit の出力に反映します。
 
 基準実装は一つずつ取得・返却する frame pacing です。このサンプルは性能ベンチマークではありません。Browser canvas の実行例と画素比較は `Lumyte.Graphics.WebGPU.Browser.Tests/Integration/BrowserHost/PresentationCases.cs` にあります。
+
+## モデル描画
+
+3 番目の引数を `model` にすると、手続き生成した indexed cube を PBR で表示します。
+
+```powershell
+dotnet run --project samples/graphics/Lumyte.Graphics.Hosting.Sample -- dx12 300 model
+dotnet run --project samples/graphics/Lumyte.Graphics.Hosting.Sample -- vulkan 300 model
+dotnet run --project samples/graphics/Lumyte.Graphics.Hosting.Sample -- webgpu 300 model
+```
+
+`Models.cs` は同じ AddModelPass を使い、画面サイズが変わるまで共通 plan を再利用します。
+毎フレームは ModelDrawList の transform だけ更新します。shader、descriptor、GPU buffer は実装本体が所有します。
+現在の Model はテクスチャなしの PBR／Unlit、triangle topology と CPU skin／morph に対応する段階です。
+glTF のロード、material texture、IBL、mesh shader と GPU の差分 batch 最適化は未実装です。

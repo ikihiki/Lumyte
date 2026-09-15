@@ -9,6 +9,19 @@ namespace Lumyte.Graphics.WebGPU.Browser.Tests;
 public sealed class BrowserPresentationTests(BrowserGpuFixture fixture)
 {
     [Fact]
+    [Trait("Category","ModelConformance")]
+    public async Task ModelsMatchReference()
+    {
+        var result = await fixture.RunAsync("Models");
+        var cases = result.GetProperty("results").EnumerateArray().ToArray();
+        Assert.Equal(ModelRenderConsumer.Cases,cases.Select(c => c.GetProperty("name").GetString()));
+        foreach (var entry in cases)
+        {
+            var reference = ModelRenderConsumer.Create(entry.GetProperty("name").GetString()!);
+            ModelRenderConsumer.Compare(reference,Convert.FromBase64String(entry.GetProperty("pixels").GetString()!),256);
+        }
+    }
+    [Fact]
     [Trait("Category", "ImageFilterConformance")]
     public async Task StandardImageFiltersMatchReference()
     {

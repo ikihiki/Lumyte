@@ -2,7 +2,7 @@
 
 Lumyte Graphics の目標設計を定義する。採用は実装完了を意味しない。旧 API／shader ABI との互換層は設けない。
 
-Native／Portable の基盤、ResourceManager、RenderGraph、2D と標準画像処理七機能を実装した。DirectX 12／Vulkan／Dawn の Win32 表示と Browser canvas に接続し、Generic Host から利用できる。現在の実装済み API、実機で確認した範囲と残作業は [実装進捗](../designs/graphics-implementation-progress.md) を参照する。
+Native／Portable の基盤、ResourceManager、RenderGraph、2D と標準画像処理七機能を実装した。Model は保持型入力と三角形の PBR／Unlit、skin／morph、深度・透明合成まで部分実装した。DirectX 12／Vulkan／Dawn の Win32 表示と Browser canvas に接続し、Generic Host から利用できる。現在の実装済み API、実機で確認した範囲と残作業は [実装進捗](../designs/graphics-implementation-progress.md) を参照する。
 
 ## 共通化する境界
 

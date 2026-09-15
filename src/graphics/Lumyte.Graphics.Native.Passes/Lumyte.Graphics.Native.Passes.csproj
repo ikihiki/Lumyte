@@ -14,6 +14,8 @@
     <NativeShaderCompile Include="ImageProcessing\Shaders\output.native.shader.json" />
     <NativeShaderCompile Include="ImageProcessing\Shaders\filter.native.shader.json" />
     <NativeShaderCompile Include="TwoD\Shaders\two-d.native.shader.json" />
+    <NativeShaderCompile Include="Models\Shaders\model.native.shader.json" />
+    <Compile Include="..\Shared\Models\ModelPreparation.cs" Link="Models\ModelPreparation.cs" />
     <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
   <Import Project="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.targets" />
