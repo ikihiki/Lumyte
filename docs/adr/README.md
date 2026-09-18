@@ -188,7 +188,7 @@ Model の内部の透明描画や変形、2D の atlas／mask／layer blur は�
 
 glTF 2.0 core と採用する五拡張を描画できる能力を必須とし、ファイル形式の解釈と required extension の判定は Lumyte.Resources が扱う。他形式や手続き生成にも同じ入力を使い、animation／物理の評価済み変形や動的な頂点・材質を Resources へ迂回させず供給できる。
 
-2D は ADR 0036 に記録した削除前の TwoD／Text の描画能力を基準にする。stroke の詳細設定、全描画要素での拡張 gradient／path clip など、当時の部分実装は新しい契約で完成させる。段落 layout、font fallback、SVG 変換は Lumyte.Resources の分野とし、Graphics は結果の転送／描画データを受け取る。image brush、nine-slice は描画機能の追加提案として分ける。Model／2D／文字描画の新実装は後続であり、旧 API との互換性は残さない。
+2D は ADR 0036 に記録した削除前の TwoD／Text の描画能力を基準にする。stroke の詳細設定、全描画要素での拡張 gradient／path clip など、当時の部分実装は新しい契約で完成させる。段落 layout、font fallback、SVG 変換は Lumyte.Resources の分野とし、Graphics は結果の転送／描画データを受け取る。image brush、nine-slice は描画機能の追加提案として分ける。Model は三角形の初期描画、2D／準備済み文字は新しい二系統の描画を実装済みである。残作業は ADR 0035／0036 の末尾に示し、旧 API との互換性は残さない。
 
 表示の典型的な順序は Model → ToneMap → 2D／Composite → Output とする。Output は画素の符号化であり、実際の提出と Present は共通 frame が行う。追加の後処理、時間履歴、解析・debug はカテゴリ表の必須機能とは別に検討する。
 

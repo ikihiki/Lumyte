@@ -286,6 +286,6 @@ Generic Host の登録 extension、Options、明示的な module／factory、非
 
 個別登録には AddNativeProvider／AddPortableProvider の `(IServiceProvider, GpuRenderRuntimeOptions, CancellationToken)` backend factory、任意の registry 構成 callback、AddNativePasses／AddPortablePasses の一括登録、AddNativePass／AddPortablePass の型付き非同期 factory 準備を実装した。callback は選択した provider で一度だけ実行し、同じ runtime の CPU scope を使う。型付き同一定義の重複は一つへまとめ、競合定義は準備前に拒否する。PlanCacheMaximumEntries の Options 検査と render context への接続も実装した。AddImageProcessing は Clear／Copy／Blit／Blur／Composite／ToneMap／Output を両系統へ登録し、この七機能を RequiredPasses に加える。Add2DRendering は 2D の本体と必要な契約を登録する。
 
-UsePresentation の delegate overload、GpuGraphicsSurfaceConnection、NativeGraphPresentation／PortableGraphPresentation を実装した。DirectX 12／Vulkan／Dawn の HWND と Browser canvas の初回表示・resize・返却・終了に接続する。window の所有 thread と message pump は application が維持し、Host 終了後に window を破棄する。AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、Model の登録と実 device loss の強制試験は後続である。
+UsePresentation の delegate overload、GpuGraphicsSurfaceConnection、NativeGraphPresentation／PortableGraphPresentation を実装した。DirectX 12／Vulkan／Dawn の HWND と Browser canvas の初回表示・resize・返却・終了に接続する。window の所有 thread と message pump は application が維持し、Host 終了後に window を破棄する。AddDirectX12／AddVulkan／AddWebGpu の既定 backend 作成、実 device loss の強制試験は後続である。AddModelRendering は実装済みで、Model の契約と両系統の本体を登録する。
 
 最初の統合では一つの Host に一つの既定 session を提供する。複数の named session、実行中の provider 差替え、GPU device の透過的な再生成、DI container の hot reload は未採用とする。複数 runtime を明示所有する低層の利用は引き続き可能であり、frame ごとのスコープや新しい汎用 DI framework を追加する理由にはしない。
