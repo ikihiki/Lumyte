@@ -72,8 +72,14 @@ public sealed record ModelLight(ModelLightKind Kind, Vector3 Position, Vector3 D
     public static ModelLight Spot(Vector3 position, Vector3 direction, Vector3 color, float intensity, float? range = null, float innerAngle = 0, float outerAngle = MathF.PI / 4)
         => new(ModelLightKind.Spot, position, Vector3.Normalize(direction), color, intensity, range, innerAngle, outerAngle);
 }
-public sealed class ModelLighting(IEnumerable<ModelLight> lights)
+/// <summary>Decoded equirectangular environment radiance; rotation maps environment directions into world space.</summary>
+public sealed record ModelEnvironment(GpuImageUploadData Image, Quaternion Rotation, float Intensity = 1)
+{
+    public ModelEnvironment(GpuImageUploadData image) : this(image, Quaternion.Identity) { }
+}
+public sealed class ModelLighting(IEnumerable<ModelLight> lights, ModelEnvironment? environment = null)
 {
     public static ModelLighting Empty { get; } = new([]);
     public ImmutableArray<ModelLight> Lights { get; } = lights.ToImmutableArray();
+    public ModelEnvironment? Environment { get; } = environment;
 }

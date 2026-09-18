@@ -15,6 +15,7 @@
     <NativeShaderCompile Include="ImageProcessing\Shaders\filter.native.shader.json" />
     <NativeShaderCompile Include="TwoD\Shaders\two-d.native.shader.json" />
     <NativeShaderCompile Include="Models\Shaders\model.native.shader.json" />
+    <NativeShaderCompile Include="Models\Shaders\environment.native.shader.json" />
     <Compile Include="..\Shared\Models\ModelPreparation.cs" Link="Models\ModelPreparation.cs" />
     <Compile Include="..\Shared\Models\ModelImages.cs" Link="Models\ModelImages.cs" />
     <Compile Include="..\Shared\Models\MikkTangents.cs" Link="Models\MikkTangents.cs" />

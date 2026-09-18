@@ -152,8 +152,6 @@ internal static class ModelPreparation
         Matrix4x4 world = draw.LocalToWorld;
         if (!Matrix4x4.Invert(world, out var inverse)) { throw new ArgumentException("Model normal transform is singular.", nameof(draw)); }
         var m = draw.Material;
-        if (m.OcclusionTexture is not null)
-        { throw new NotSupportedException("Occlusion textures require image-based lighting."); }
         List<Vector4> data = [];
         void Matrix(Matrix4x4 value)
         { data.Add(new(value.M11, value.M12, value.M13, value.M14)); data.Add(new(value.M21, value.M22, value.M23, value.M24)); data.Add(new(value.M31, value.M32, value.M33, value.M34)); data.Add(new(value.M41, value.M42, value.M43, value.M44)); }
@@ -170,6 +168,20 @@ internal static class ModelPreparation
             data.Add(new(uv.M11, uv.M12, uv.M21, uv.M22)); data.Add(new(uv.M31, uv.M32, 0, 0));
         }
         data[28]=new(data[28].X,data[28].Y,m.NormalScale,world.GetDeterminant()<0 ? -1 : 1);
+        var environment = snapshot.Lighting.Environment;
+        var rotation = Matrix4x4.Identity;
+        if (environment is not null)
+        {
+            float length = environment.Rotation.LengthSquared();
+            if (!float.IsFinite(length) || length <= 0 || !float.IsFinite(environment.Intensity) || environment.Intensity < 0)
+            { throw new ArgumentException("Environment rotation must be finite and nonzero and intensity must be finite and nonnegative.", nameof(snapshot)); }
+            rotation = Matrix4x4.CreateFromQuaternion(Quaternion.Conjugate(Quaternion.Normalize(environment.Rotation)));
+        }
+        data.Add(new(0, 0, 0, environment?.Intensity ?? 0));
+        data.Add(new(rotation.M11, rotation.M12, rotation.M13, 0));
+        data.Add(new(rotation.M21, rotation.M22, rotation.M23, 0));
+        data.Add(new(rotation.M31, rotation.M32, rotation.M33, 0));
+        data.Add(new(environment is null ? 0 : 1, 8, m.OcclusionStrength, 0));
         foreach (var light in snapshot.Lighting.Lights)
         {
             data.Add(new(light.Position, (float)light.Kind)); data.Add(new(light.Direction, light.Range ?? 0));

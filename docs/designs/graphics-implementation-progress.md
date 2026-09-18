@@ -853,7 +853,7 @@ ADR と関連文書のローカルリンクに欠落はなく、production 向�
 
 ## 未実装と次の順序
 
-1. Model の残る normal map と IBL、line／point topology、部品別転送と draw batch、Native の mesh 経路を専用 ADR に従って実装する。保持型入力と三角形の PBR／skin／morph、材質 texture は下記の範囲で実装した。
+1. Model の残る line／point topology、texture／color morph、部品別転送と draw batch、Native の mesh 経路と glTF 適合試験を専用 ADR に従って実装する。保持型入力と三角形の PBR／skin／morph、材質 texture、normal map と IBL は下記の範囲で実装した。
 2. 2D の残る batch／atlas 最適化と部分更新の性能、複数表示フレームの先行、ResourceManager の性能を確認する。表示の基準実装は一つずつ取得・返却する方式であり、60 FPS の測定結果とは区別する。
 3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 
@@ -942,3 +942,30 @@ DirectX 12 は 416 件、Vulkan は 415 件、Dawn は 323 件、Browser は 67 
 Browser／Slang／Tint の環境変数と Vulkan 同期検証を有効にした
 `dotnet test Lumyte.slnx --no-restore --disable-build-servers -m:4` の結果を
 `artifacts/reviews/model-normal-final-full.log` と TRX に記録した。
+
+## Model 環境照明と Occlusion
+
+2026-09-18 に `ModelEnvironment`、equirectangular radiance の回転・強度、Occlusion を追加した。
+GPU で拡散照明、八段階の粗さに対応する鏡面 atlas、GGX／相関 Smith の BRDF LUT を生成する。
+Native／Portable はそれぞれ内容世代を保持し、同じ画像の回転・強度変更では前処理を繰り返さない。
+Occlusion は環境照明だけに掛け、直接光と Emissive は変更しない。
+画像の読込み、背景の描画や隠れた既定照明は追加しない。
+
+Native の保持用 texture は、初回 import で `discardContents: true` を指定して GPU で初期化できる。
+その指定を schedule cache の識別に含め、初期化前の Read／ReadWrite は graph の意味として拒否する。
+既存内容を使う次回以降の import では discard しない。
+
+一定色・方向性のある環境、金属／非金属、HDR、回転・強度、Occlusion と直接光／Emissive の独立、
+同じ plan の更新と旧 snapshot の再提出を共通 conformance で比較する。
+期待値は roughness 1 の半球積分から求め、shader の sample 列をコピーしない。
+高周波 HDR 環境の品質評価、sample 数の選択と multiple scattering の補償は未実装である。
+
+全体テストは Browser／Slang／Tint と Vulkan 同期検証を有効にして
+**41 project・2,401 件成功、失敗 0、skip 0、終了コード 0**。
+DirectX 12 は 428 件、Vulkan は 427 件、Dawn は 335 件、Browser は 67 件。
+モデルの 55 シナリオを四経路で確認した。三 backend のモデルサンプルも各 3 フレーム表示して正常終了した。
+結果は `artifacts/reviews/model-ibl-final-full.log` と TRX に記録した。
+
+その後、pipeline 作成失敗からの再試行で Portable の shader program を上書きする解放漏れを修正した。
+失敗注入の回帰テストは修正前に module／layout 各一個の未解放を検出し、修正後は Portable Passes の
+12 件すべてが成功した（`model-ibl-retry-before.log`／`model-ibl-retry-after.log`）。

@@ -15,4 +15,5 @@
     <PortablePassBindingInput Include="ImageProcessing\Output.portable.resources.xml" />
   </ItemGroup>
   <Import Project="..\Lumyte.Graphics.Portable.RenderGraph.Generators\buildTransitive\Lumyte.Graphics.Portable.RenderGraph.Generators.targets" />
+  <ItemGroup><EmbeddedResource Include="Models\Shaders\Environment.wgsl" LogicalName="Lumyte.Graphics.Portable.Passes.Models.Environment.wgsl" /></ItemGroup>
 </Project>

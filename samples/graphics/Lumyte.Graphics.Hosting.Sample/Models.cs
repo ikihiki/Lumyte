@@ -21,8 +21,17 @@ internal static partial class Program
         var draw = new ModelDrawItem(geometry,material,Matrix4x4.Identity);
         var draws = new ModelDrawList(); var moving = draws.Add(draw);
         var camera = ModelCamera.Perspective(new(3,2,5),Vector3.Zero,Vector3.UnitY,MathF.PI/3,.1f,100);
+        var skyBytes = new byte[32 * 16 * 8];
+        for (int y = 0; y < 16; y++)
+        {
+            var sky = new Vector4(Vector3.Lerp(new(.12f,.08f,.04f), new(1.2f,1.6f,2), (1 + MathF.Cos((y + .5f) / 16 * MathF.PI)) / 2), 1);
+            for (int x = 0; x < 32; x++)
+            { for (int c = 0; c < 4; c++) { BitConverter.TryWriteBytes(skyBytes.AsSpan((y * 32 + x) * 8 + c * 2, 2), (Half)sky[c]); } }
+        }
+        var skyImage = new GpuImageUploadData(new("sky",0),new(32,16,GpuFormat.Rgba16Float),GpuImageColorEncoding.Linear,GpuImageAlphaMode.Opaque,
+            [new(0,0,32*8,(ulong)skyBytes.Length,skyBytes)]);
         var lighting = new ModelLighting([ModelLight.Directional(Vector3.Normalize(new(-1,-2,-3)),Vector3.One,4),
-            ModelLight.Directional(Vector3.Normalize(new(1,0,1)),new(.3f,.5f,1),1)]);
+            ModelLight.Directional(Vector3.Normalize(new(1,0,1)),new(.3f,.5f,1),1)],new(skyImage,Quaternion.Identity,.5f));
         GpuGraphTextureDescription description;
         using (var first = await context.BeginFrameAsync(stop)) { description = first.TargetResource.Description; }
         await presentation.WaitForPresentationAsync();

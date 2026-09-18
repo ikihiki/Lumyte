@@ -23,6 +23,7 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
     internal List<Bindings> CreatedBindings { get; } = [];
     internal Dictionary<object, Exception> DestructionErrors { get; } = new(ReferenceEqualityComparer.Instance);
     internal Exception? CreationError { get; set; }
+    internal Exception? RasterCreationError { get; set; }
     internal Exception? MappingDisposeError { get; set; }
     internal bool Disposed { get; private set; }
     internal Queue TestQueue { get; }
@@ -65,7 +66,8 @@ internal sealed class ManagerTestBackend : IPortableGpuBackend
     public void DestroyShaderModule(GpuShaderModuleHandle module) => Destroy(module);
     public GpuComputePipelineHandle CreateComputePipeline(GpuShaderProgramDescription shaders) => Create(new Compute());
     public void DestroyComputePipeline(GpuComputePipelineHandle pipeline) => Destroy(pipeline);
-    public GpuRasterPipelineHandle CreateRasterPipeline(GpuRasterPipelineDescription description, GpuShaderProgramDescription shaders) => Create(new Raster());
+    public GpuRasterPipelineHandle CreateRasterPipeline(GpuRasterPipelineDescription description, GpuShaderProgramDescription shaders)
+    { if (RasterCreationError is { } error) { throw error; } return Create(new Raster()); }
     public void DestroyRasterPipeline(GpuRasterPipelineHandle pipeline) => Destroy(pipeline);
     public void Dispose() { Disposed = true; Events.Add("BackendDispose"); }
 

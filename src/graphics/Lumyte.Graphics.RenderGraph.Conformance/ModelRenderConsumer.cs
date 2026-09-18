@@ -9,9 +9,11 @@ public static class ModelRenderConsumer
     public static readonly string[] Cases = ["empty","indexed","nonindexed","strip","fan","depth","mask","blend","reflected","skin","morph","unlit-hdr","pbr-dark","pbr-dielectric","pbr-metal","retained",
         "texture-nearest","texture-linear","texture-repeat","texture-mirror","texture-clamp","texture-transform","texture-uv7",
         "texture-srgb","texture-premultiplied","texture-metallic","texture-emissive","texture-mip","texture-supplied-mip","texture-odd-mip","texture-trilinear","texture-retained",
-        "normal-generated","normal-provided","normal-handedness","normal-mirrored-uv","normal-reflected","normal-zero-scale","normal-half-scale","normal-skin","normal-morph","normal-flat","normal-uv-transform"];
+        "normal-generated","normal-provided","normal-handedness","normal-mirrored-uv","normal-reflected","normal-zero-scale","normal-half-scale","normal-skin","normal-morph","normal-flat","normal-uv-transform",
+        "ibl-diffuse","ibl-metal","ibl-hdr","ibl-intensity","ibl-disabled","ibl-occlusion","ibl-ao-strength","ibl-ao-direct","ibl-unlit","ibl-gradient","ibl-rotation","ibl-retained"];
     public static ModelFixture Create(string scenario)
     {
+        if (scenario.StartsWith("ibl-",StringComparison.Ordinal)) { return ModelEnvironmentReference.Create(scenario); }
         if (scenario.StartsWith("texture-",StringComparison.Ordinal)) { return ModelTextureReference.Create(scenario); }
         if (scenario.StartsWith("normal-",StringComparison.Ordinal)) { return ModelNormalReference.Create(scenario); }
         Vector3[] positions = [new(-1,-1,0),new(1,-1,0),new(1,1,0),new(-1,1,0)];
@@ -70,7 +72,7 @@ public static class ModelRenderConsumer
         graph.AddModelPass("model",new(input,color,depth)); graph.ExportTexture(color);
         return new(graph.Compile(),color,input,snapshot,expected,scenario is "skin" or "morph");
     }
-    public static ModelFixture Changed(ModelFixture original) => original.Snapshot.Draws.Items.First().Material.BaseColorTexture is not null
+    public static ModelFixture Changed(ModelFixture original) => original.Snapshot.Lighting.Environment is not null ? ModelEnvironmentReference.Changed(original) : original.Snapshot.Draws.Items.First().Material.BaseColorTexture is not null
         ? original with { Snapshot=ModelTextureReference.Create("texture-transform").Snapshot,ExpectedPixels=ModelTextureReference.Create("texture-transform").ExpectedPixels }
         : original with
     {

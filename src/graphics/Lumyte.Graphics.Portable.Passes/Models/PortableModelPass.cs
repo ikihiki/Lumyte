@@ -26,7 +26,7 @@ public static class PortableModelShaders
             PortableShaderFeatures.ImmediateAddressSpace,
             [new([new(0,GpuShaderStage.Vertex,new GpuBufferBindingLayout(GpuBufferBindingType.ReadOnlyStorage)),
                 new(1,GpuShaderStage.Vertex | GpuShaderStage.Pixel,new GpuBufferBindingLayout(GpuBufferBindingType.ReadOnlyStorage)),
-                .. Enumerable.Range(2,5).Select(binding => new GpuBindingLayoutEntry((uint)binding,GpuShaderStage.Pixel,new GpuTextureBindingLayout(GpuTextureSampleType.UnfilterableFloat)))])],
+                .. Enumerable.Range(2,8).Select(binding => new GpuBindingLayoutEntry((uint)binding,GpuShaderStage.Pixel,new GpuTextureBindingLayout(GpuTextureSampleType.UnfilterableFloat)))])],
             new("Root",8,4,[new("offset","u32",0,4,4),new("reserved","u32",4,4,4)]),[],new([]),"Lumyte.Portable.Model.v1");
     }
 }
@@ -38,6 +38,7 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
     private readonly Dictionary<(bool Blend, bool DoubleSided, bool Reflected), GpuRasterPipelineHandle> pipelines = [];
     private PortableShaderProgram? program;
     private int sequence;
+    private readonly PortableModelEnvironment environmentImages = new(services);
     public async ValueTask BuildAsync(PortablePassBuildContext context, ModelPassRequest request, ModelPassResult result, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested(); sequence = 0;
@@ -59,6 +60,12 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
             if (!geometries.TryGetValue(key, out var geometry)) { geometry = new(Preparation.Prepare(key)); geometries.Add(key, geometry); }
             if (geometry.Data.VertexCount != 0) { draws.Add((draw, geometry, draw.Material.AlphaMode == ModelAlphaMode.Blend ? Preparation.Depth(geometry.Data, draw.LocalToWorld, snapshot.Camera.View) : 0)); }
         }
+        PortablePassTexture[] environment = [];
+        if (snapshot.Lighting.Environment is { } lighting && draws.Count != 0)
+        {
+            var source = await ImageAsync(context, new(lighting.Image, true), cancellationToken);
+            environment = environmentImages.Prepare(context, source, lighting.Image);
+        }
         foreach (var entry in draws.OrderBy(x => x.Draw.Material.AlphaMode == ModelAlphaMode.Blend).ThenBy(x => x.Depth))
         {
             var draw = entry.Draw; var geometry = entry.Geometry;
@@ -77,6 +84,8 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
             var textures = new List<PortablePassTexture>(); int slot = 0;
             foreach (var texture in draw.Material.Textures)
             { textures.Add(await ImageAsync(context, new(texture?.Texture.Image ?? ModelImages.White, slot++ is 0 or 4), cancellationToken)); }
+            if (environment.Length != 0) { textures.AddRange(environment); }
+            else { textures.AddRange(Enumerable.Repeat(textures[0], 3)); }
             var views = textures.Select(t => context.CreateView(Name("image"), t)).ToArray();
             var bindings = context.CreateBindings(Name("bindings"), program!, 0, new Inputs(vertices,parameterData,views));
             var state = (cv,dv,pipeline,bindings,geometry.Data.VertexCount);
@@ -168,7 +177,7 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
         foreach (var geometry in geometries.Values) { geometry.Generation?.Dispose(); }
         foreach (var image in images.Values) { image.Dispose(); }
         foreach (var pipeline in pipelines.Values) { services.Backend.DestroyRasterPipeline(pipeline); }
-        geometries.Clear(); images.Clear(); pipelines.Clear(); program?.Dispose(); return imageFilter.DisposeAsync();
+        geometries.Clear(); images.Clear(); pipelines.Clear(); program?.Dispose(); environmentImages.Dispose(); return imageFilter.DisposeAsync();
     }
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Root(uint Offset,uint Reserved);
     private sealed class Geometry(PreparedGeometry data) { internal PreparedGeometry Data { get; } = data; internal PortablePassContentGeneration<GpuBufferRef>? Generation { get; set; } }

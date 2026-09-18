@@ -39,10 +39,15 @@ using var execution = await runtime.SubmitAsync(plan, bindings.Build());
 `WithRange` は完全な新しい属性値を作り、以前の snapshot を変更しません。
 `ModelDrawList` は呼出し側で直列に編集し、snapshot は提出後も利用できます。
 
-現在は triangle list／strip／fan、indexed／non-indexed、頂点色、テクスチャなし PBR／Unlit、
-directional／point／spot、CPU skin／morph、Mask／Blend と深度に対応します。
-PBR に light を渡さない場合、emissive 以外は黒です。隠れた ambient light はありません。
+現在は triangle list／strip／fan、indexed／non-indexed、頂点色、材質画像付き PBR／Unlit、
+normal map と欠落接線の生成、directional／point／spot、IBL、CPU skin／morph、Mask／Blend と深度に対応します。
+PBR に light も環境画像も渡さない場合、emissive 以外は黒です。隠れた ambient light はありません。
 
-material texture、IBL、line／point、mesh shader、部品ごとの GPU 部分転送と draw batch の差分更新は未実装です。
+読み込み済みの HDR equirectangular 画像は `new ModelLighting(lights, new ModelEnvironment(image))` で渡します。
+`Rotation` は環境から world への回転、`Intensity` は非負の倍率です。
+IBL の前処理画像は本体が GPU で生成して保持し、回転・倍率だけの変更では再生成しません。
+Occlusion はこの環境照明だけに掛かり、直接光や Emissive を暗くしません。
+
+line／point、mesh shader、部品ごとの GPU 部分転送と draw batch の差分更新は未実装です。
 glTF 等のロードは `Lumyte.Resources` が担当し、このライブラリには含めません。
 API の目標と未実装項目は [ADR 0035](../../../../docs/adr/0035-model-render-passes.md) を参照してください。

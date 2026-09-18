@@ -45,12 +45,39 @@ float4 sampleMaterial(uint slot,float2 inputUv)
     if(sampler.x!=2) return sampleLevel(image,uv,uint(floor(lod+0.5)),linear,wrap);
     uint low=uint(floor(lod)); return lerp(sampleLevel(image,uv,low,linear,wrap),sampleLevel(image,uv,min(low+1,levels-1),linear,wrap),frac(lod));
 }
+float3 environmentDirection(float3 v)
+{ return v.x*parameter(38).xyz+v.y*parameter(39).xyz+v.z*parameter(40).xyz; }
+float2 environmentUv(float3 direction)
+{ return float2(atan2(direction.z,direction.x)/(2*3.141592653589793)+0.5,acos(clamp(direction.y,-1,1))/3.141592653589793); }
+float4 atlasTexel(Texture2D<float4> image,int2 p,int2 size,uint layer)
+{ return image.Load(int3(wrapTexel(p.x,size.x,2),clamp(p.y,0,size.y-1)+int(layer)*size.y,0)); }
+float3 sampleEnvironmentLayer(Texture2D<float4> image,float2 uv,uint layer)
+{
+    uint w,h;image.GetDimensions(w,h);int2 size=int2(w,h/8);
+    float2 p=uv*float2(size)-0.5;int2 q=int2(floor(p));float2 t=frac(p);
+    return lerp(lerp(atlasTexel(image,q,size,layer),atlasTexel(image,q+int2(1,0),size,layer),t.x),
+        lerp(atlasTexel(image,q+int2(0,1),size,layer),atlasTexel(image,q+1,size,layer),t.x),t.y).rgb;
+}
+float3 environmentLighting(float3 n,float3 v,float nv,float roughness,float metallic,float3 base,float3 f0,float occlusion)
+{
+    float4 info=parameter(37);
+    Texture2D<float4> diffuse=ResourceDescriptorHeap[asuint(info.x)];
+    Texture2D<float4> specular=ResourceDescriptorHeap[asuint(info.y)];
+    Texture2D<float4> brdf=ResourceDescriptorHeap[asuint(info.z)];
+    float3 irradiance=sampleLevel(diffuse,environmentUv(environmentDirection(n)),0,true,int2(2,0)).rgb;
+    float2 uv=environmentUv(environmentDirection(reflect(-v,n)));
+    float layer=saturate(roughness)*7;uint low=uint(floor(layer));
+    float3 reflection=lerp(sampleEnvironmentLayer(specular,uv,low),sampleEnvironmentLayer(specular,uv,min(low+1,7)),frac(layer));
+    float2 integration=sampleLevel(brdf,float2(nv,roughness),0,true,int2(0,0)).xy;
+    return ((1-f0)*(1-metallic)*base*irradiance+reflection*(f0*integration.x+integration.y))*info.w*occlusion;
+}
+
 float3 safeNormal(float3 v) { return v * rsqrt(max(dot(v,v),1e-20)); }
 [shader("pixel")]
 float4 pixelMain(VertexOutput i, bool front : SV_IsFrontFace) : SV_Target
 {
     float4 base = parameter(12)*i.color*sampleMaterial(0,i.uv01.xy);
-    float4 mr=sampleMaterial(1,i.uv01.zw), emissive=sampleMaterial(4,i.uv4), normalMap=sampleMaterial(2,i.uv23.xy);
+    float4 mr=sampleMaterial(1,i.uv01.zw), emissive=sampleMaterial(4,i.uv4), normalMap=sampleMaterial(2,i.uv23.xy), occlusion=sampleMaterial(3,i.uv23.zw);
     float4 emission = parameter(13), material = parameter(14), camera = parameter(15);
     if (material.z == 1 && base.a < material.w) discard;
     float alpha = material.z == 2 ? base.a : 1;
@@ -70,9 +97,10 @@ float4 pixelMain(VertexOutput i, bool front : SV_IsFrontFace) : SV_Target
         float nv = max(dot(n,v),0), metallic = material.x*mr.b;
         float roughness = max(material.y*mr.g,0.045), a2 = pow(roughness,4);
         float3 f0 = lerp(float3(0.04),base.rgb,metallic);
+        if(parameter(41).x>0) radiance+=environmentLighting(n,v,nv,roughness,metallic,base.rgb,f0,lerp(1,occlusion.r,parameter(41).z));
         for(uint index=0;index<uint(camera.w);index++)
         {
-            float4 position=parameter(37+index*4), direction=parameter(38+index*4), color=parameter(39+index*4);
+            float4 position=parameter(42+index*4), direction=parameter(43+index*4), color=parameter(44+index*4);
             float3 delta=position.xyz-i.world;
             float d2=max(dot(delta,delta),1e-6);
             float3 l=position.w==0 ? -direction.xyz : delta*rsqrt(d2);
@@ -80,7 +108,7 @@ float4 pixelMain(VertexOutput i, bool front : SV_IsFrontFace) : SV_Target
             if(position.w!=0 && direction.w>0) attenuation*=saturate(1-pow(sqrt(d2)/direction.w,4));
             if(position.w==2)
             {
-                float outer=parameter(40+index*4).x;
+                float outer=parameter(45+index*4).x;
                 float spot=saturate((dot(-l,direction.xyz)-outer)/max(color.w-outer,1e-6)); attenuation*=spot*spot;
             }
             float nl=max(dot(n,l),0); float3 h=safeNormal(v+l);

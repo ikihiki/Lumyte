@@ -58,7 +58,7 @@ factory が正常に返した backend と pass は runtime が所有する。fac
 | `NativePassBuildContext.Services` | この構築に対応する `NativePassServices` を返す。 |
 | `GetInput(value)` | 固定 request の `GpuGraphValue<T>` を、今回の bindings または定数の不変 T に解決する。この pass が ReadInput で宣言した値だけを読める。 |
 | `ImportBuffer(resource)`／`ImportTexture(resource)` | 宣言済みの logical resource を今回の `NativePassBuffer`／`NativePassTexture` に接続する。resource input は今回の ref、transient は今回の実行に解決する。 |
-| `ImportBuffer(reference)`／`ImportTexture(reference, description)` | 実装が保持する Native managed reference を内部 graph に取り込み、その時点で実行の使用保持を取得する。同じ managed ref は実行内で一つにまとめる。texture は実際の Native description を渡す。外部資産の依存は共通契約または package の明示依存で覆う。 |
+| `ImportBuffer(reference)`／`ImportTexture(reference, description, discardContents = false)` | 実装が保持する Native managed reference を内部 graph に取り込み、その時点で実行の使用保持を取得する。同じ managed ref は実行内で一つにまとめる。texture は実際の Native description を渡す。新規保持 texture の GPU 初期化では、今回の最初の import に `discardContents: true` を渡す。内容を読む前に Write が必要で、最初の GPU 使用時に discard する。再 import はこの指定を保持する。通常の import は General layout の既存内容を読む。外部資産の依存は共通契約または package の明示依存で覆う。 |
 | `CreateBuffer(name, description)`／`CreateTexture(name, description)` | Native description を持つ内部 transient を宣言する。heap の物理配置は後の計画で行う。 |
 | `CreateView(name, resource, description)` | Native 用途・範囲を持つ `NativePassView` を宣言する。shader descriptor と attachment view を用途に応じて準備する。 |
 | resource／builder の `Name`、buffer／texture の `Description`、view の `Name`／`Texture`／`Description` | 構築済みの内部宣言を参照する。texture の用途は live な使用をまとめて物理化する。GPU handle の所有や状態照会にはしない。 |

@@ -24,7 +24,7 @@ application が window と message pump を所有し、DI の session から `Re
 
 ## モデル描画
 
-3 番目の引数を `model` にすると、手続き生成した indexed cube を PBR で表示します。
+3 番目の引数を `model` にすると、チェック柄の indexed cube を PBR と HDR 環境照明で表示します。
 
 ```powershell
 dotnet run --project samples/graphics/Lumyte.Graphics.Hosting.Sample -- dx12 300 model
@@ -34,5 +34,6 @@ dotnet run --project samples/graphics/Lumyte.Graphics.Hosting.Sample -- webgpu 3
 
 `Models.cs` は同じ AddModelPass を使い、画面サイズが変わるまで共通 plan を再利用します。
 毎フレームは ModelDrawList の transform だけ更新します。shader、descriptor、GPU buffer は実装本体が所有します。
-現在の Model はテクスチャなしの PBR／Unlit、triangle topology と CPU skin／morph に対応する段階です。
-glTF のロード、material texture、IBL、mesh shader と GPU の差分 batch 最適化は未実装です。
+現在の Model は材質画像付き PBR／Unlit、normal map、IBL、triangle topology と CPU skin／morph に対応します。
+このサンプルの環境画像は手続き生成し、IBL の GPU 前処理結果はフレーム間で再利用します。
+glTF のロードはこのサンプルには含めません。mesh shader と GPU の差分 batch 最適化は未実装です。

@@ -23,6 +23,7 @@ internal sealed class NativeModelPass(NativePassServices services) : INativeRend
     private readonly Dictionary<ModelImageKey, CachedImage> images = [];
     private readonly NativeFilterPass imageFilter = new(services);
     private int imageSequence;
+    private readonly NativeModelEnvironment environmentImages = new(services);
     private readonly Dictionary<(bool Blend, bool DoubleSided, bool Reflected), NativeGpuRasterPipelineHandle> pipelines = [];
     public async ValueTask BuildAsync(NativePassBuildContext context, ModelPassRequest request, ModelPassResult result, CancellationToken cancellationToken)
     {
@@ -53,6 +54,12 @@ internal sealed class NativeModelPass(NativePassServices services) : INativeRend
             }
             if (geometry.Data.VertexCount != 0) { draws.Add((draw, geometry, draw.Material.AlphaMode == ModelAlphaMode.Blend ? Preparation.Depth(geometry.Data, draw.LocalToWorld, snapshot.Camera.View) : 0)); }
         }
+        NativeModelEnvironment.Image[] environment = [];
+        if (snapshot.Lighting.Environment is { } lighting && draws.Count != 0)
+        {
+            var source = await ImageAsync(context, new(lighting.Image, true), cancellationToken);
+            environment = environmentImages.Prepare(context, context.ImportTexture(source.Texture, source.Description), lighting.Image);
+        }
         int sequence = 0;
         foreach (var entry in draws.OrderBy(x => x.Draw.Material.AlphaMode == ModelAlphaMode.Blend).ThenBy(x => x.Depth))
         {
@@ -65,6 +72,12 @@ internal sealed class NativeModelPass(NativePassServices services) : INativeRend
                 var image = await ImageAsync(context, key, cancellationToken);
                 textures.Add(context.ImportTexture(image.Texture, image.Description)); context.Retain(services.Resources.AcquireUse(image.View));
                 data[17 + slot * 4].X = BitConverter.UInt32BitsToSingle(services.Resources.GetShaderIndex(image.View)); slot++;
+            }
+            for (int i = 0; i < environment.Length; i++)
+            {
+                var image = environment[i]; textures.Add(context.ImportTexture(image.Texture, image.Description));
+                context.Retain(services.Resources.AcquireUse(image.View));
+                data[37][i] = BitConverter.UInt32BitsToSingle(services.Resources.GetShaderIndex(image.View));
             }
             using var parameters = Upload(data);
             var vb = context.ImportBuffer(vertices.Buffer); var pb = context.ImportBuffer(parameters.Buffer);
@@ -196,7 +209,7 @@ internal sealed class NativeModelPass(NativePassServices services) : INativeRend
         foreach (var geometry in geometries.Values) { geometry.Buffer?.Dispose(); }
         foreach (var image in images.Values) { image.Dispose(); }
         foreach (var pipeline in pipelines.Values) { services.Backend.DestroyRasterPipeline(pipeline); }
-        geometries.Clear(); images.Clear(); pipelines.Clear(); return imageFilter.DisposeAsync();
+        geometries.Clear(); images.Clear(); pipelines.Clear(); environmentImages.Dispose(); return imageFilter.DisposeAsync();
     }
     private sealed record Geometry(PreparedGeometry Data, CachedBuffer? Buffer);
     private sealed record CachedImage(GpuResourceScope Scope, GpuTextureRef Texture, GpuViewRef View, NativeGpuTextureDescription Description,

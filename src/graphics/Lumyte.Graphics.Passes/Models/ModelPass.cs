@@ -36,7 +36,10 @@ public sealed class ModelRenderInputContract : IGpuGraphInputContract<ModelRende
     private ModelRenderInputContract() { }
     public ModelRenderSnapshot Snapshot(ModelRenderSnapshot value) => value ?? throw new ArgumentNullException(nameof(value));
     public void Retain(GpuRenderInputRetentionContext context, ModelRenderSnapshot value)
-    { if (value.Draws.Root is { } root) { context.ReadSnapshot(root, NodeContract.Instance); } }
+    {
+        if (value.Draws.Root is { } root) { context.ReadSnapshot(root, NodeContract.Instance); }
+        if (value.Lighting.Environment is { } environment) { context.ReadUpload(environment.Image); }
+    }
     private sealed class NodeContract : IGpuGraphInputContract<ModelDrawNode>
     {
         internal static NodeContract Instance { get; } = new();

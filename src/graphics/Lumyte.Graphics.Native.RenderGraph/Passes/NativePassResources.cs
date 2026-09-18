@@ -26,8 +26,9 @@ public sealed class NativePassBuffer : NativePassResource
 
 public sealed class NativePassTexture : NativePassResource
 {
-    internal NativePassTexture(NativeExecutionBuild owner, string name, NativeGpuTextureDescription description, GpuTextureRef? reference = null)
-        : base(owner, name, reference is not null) { Description = description; Value = reference; }
+    internal NativePassTexture(NativeExecutionBuild owner, string name, NativeGpuTextureDescription description, GpuTextureRef? reference = null, bool discardContents = false)
+        : base(owner, name, reference is not null) { Description = description; Value = reference; DiscardContents = discardContents; }
+    internal bool DiscardContents { get; }
     public NativeGpuTextureDescription Description { get; internal set; }
     internal GpuTextureRef? Value;
     internal override GpuResourceRef Reference => Value ?? throw new InvalidOperationException("The texture has not been allocated.");

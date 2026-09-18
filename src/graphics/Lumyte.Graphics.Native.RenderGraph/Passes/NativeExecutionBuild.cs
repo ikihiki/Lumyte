@@ -53,7 +53,7 @@ internal sealed class NativeExecutionBuild(NativePassServices services, GpuRende
                     if (access != GpuRenderGraphAccess.Write)
                     {
                         if (writers.TryGetValue(resource, out NativePassBuilder? writer)) { pass.Dependencies.Add(writer); }
-                        else if (!resource.IsImported) { undefined.TryAdd(pass, resource); }
+                        else if (!resource.IsImported || resource is NativePassTexture { DiscardContents: true }) { undefined.TryAdd(pass, resource); }
                     }
                     if (access != GpuRenderGraphAccess.Read) { writers[resource] = pass; }
                 }
@@ -120,7 +120,7 @@ internal sealed class NativeExecutionBuild(NativePassServices services, GpuRende
     private string ScheduleKey(Dictionary<NativePassResource, int> resources)
     {
         var key = new System.Text.StringBuilder();
-        foreach (var resource in resources.Keys) { key.Append(resource.IsImported ? 'i' : 't'); }
+        foreach (var resource in resources.Keys) { key.Append(resource is NativePassTexture { DiscardContents: true } ? 'd' : resource.IsImported ? 'i' : 't'); }
         key.Append('|');
         foreach (NativePassBuildContext feature in Features)
         {
@@ -235,7 +235,7 @@ internal sealed class NativeExecutionBuild(NativePassServices services, GpuRende
                 NativeGpuTextureView view = WholeView(Services.Resources.GetTextureHandle(reference), texture.Description);
                 if (textures.TryGetValue(reference, out var state))
                 { if (explicitLayouts) { commands.TextureTransition(view, state.Layout, layout); } }
-                else if (!texture.IsImported) { commands.DiscardTexture(view, layout); }
+                else if (!texture.IsImported || texture.DiscardContents) { commands.DiscardTexture(view, layout); }
                 else if (explicitLayouts) { commands.TextureTransition(view, GpuTextureLayout.General, layout); }
                 textures[reference] = (texture.Description, layout);
             }

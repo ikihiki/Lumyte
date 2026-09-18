@@ -24,7 +24,8 @@ public sealed class NativePassBuildContext
     { RequireDeclared(resource); var value = (NativePassTexture)build.Resources[resource]; allowed.Add(value); return value; }
     public NativePassBuffer ImportBuffer(GpuRenderGraphBuffer resource)
     { RequireDeclared(resource); var value = (NativePassBuffer)build.Resources[resource]; allowed.Add(value); return value; }
-    public NativePassTexture ImportTexture(GpuTextureRef reference, NativeGpuTextureDescription description)
+    /// <summary>Imports a persistent texture. Set discardContents on its first import in this build when no previous contents may be read.</summary>
+    public NativePassTexture ImportTexture(GpuTextureRef reference, NativeGpuTextureDescription description, bool discardContents = false)
     {
         RequireOpen(); ArgumentNullException.ThrowIfNull(reference);
         if (build.Imported.TryGetValue(reference, out NativePassResource? existing))
@@ -32,10 +33,12 @@ public sealed class NativePassBuildContext
             RequireExternalDeclaration(existing);
             if (existing is not NativePassTexture texture || texture.Description != description)
             { throw new ArgumentException("An imported resource must retain its original description.", nameof(description)); }
+            if (discardContents && !texture.DiscardContents)
+            { throw new ArgumentException("Discard must be specified on the first import in this build.", nameof(discardContents)); }
             allowed.Add(texture); return texture;
         }
         IDisposable hold = Services.Resources.AcquireUse(reference);
-        var result = new NativePassTexture(build, Declaration.Name + "/imported-texture", description, reference);
+        var result = new NativePassTexture(build, Declaration.Name + "/imported-texture", description, reference, discardContents);
         build.PrivateResources.Add(result); build.Imported.Add(reference, result); build.Leases.Add(hold); allowed.Add(result); return result;
     }
     public NativePassBuffer ImportBuffer(GpuBufferRef reference)
