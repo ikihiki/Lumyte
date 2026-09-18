@@ -23,7 +23,7 @@ internal static class NativeTwoDConformance
         await host.StartAsync();
         var runtime = (NativeRenderRuntime)(await host.Services.GetRequiredService<IGpuGraphicsSessionAccessor>().GetAsync()).Runtime;
         var fixture = ModelRenderConsumer.Create(scenario);
-        foreach (var current in scenario == "retained" ? new[] { fixture,ModelRenderConsumer.Changed(fixture),fixture } : [fixture])
+        foreach (var current in scenario is "retained" or "texture-retained" ? new[] { fixture,ModelRenderConsumer.Changed(fixture),fixture } : [fixture])
         {
             var bindings = fixture.Plan.CreateBindings(); bindings.Set(fixture.Input,current.Snapshot);
             using var execution = await runtime.SubmitAsync(fixture.Plan,bindings.Build());

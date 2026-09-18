@@ -73,8 +73,9 @@ position のみを変更する場合は、新しい position 属性とそれを�
 | `NormalScale / OcclusionStrength` | normal map の XY scale と occlusion の強度。texture が無ければ対応効果を加えない |
 | `ModelAlphaMode.Opaque / Mask / Blend` | alpha の描画意味。AlphaCutoff は Mask に使用する |
 | `ModelTextureData(Image, Sampler)` | decode 済み `GpuImageUploadData` と `ModelSamplerData`。URI や画像ファイル bytes を受け取らない |
-| `ModelTextureUse(Texture, TexCoordSet, Transform)` | texture、UV set index と Matrix3x2 の UV 変換。source の変換順は確定済み |
-| `ModelSamplerData(MinFilter, MagFilter, MipFilter, WrapU, WrapV)` | sampling の意味。`ModelFilter` は Nearest／Linear、`ModelMipFilter` は None／Nearest／Linear、`ModelWrap` は ClampToEdge／MirroredRepeat／Repeat |
+| `ModelTextureUse(Texture, TexCoordSet)` | texture と UV set index。init property の `Transform` は Matrix3x2 の UV 変換で、既定は単位行列。source の変換順は確定済み |
+| `ModelSamplerData(MinFilter, MagFilter, MipFilter, WrapU, WrapV)` | sampling の意味。`ModelTextureFilter` は Nearest／Linear、`ModelMipFilter` は None／Nearest／Linear、`ModelTextureWrap` は ClampToEdge／MirroredRepeat／Repeat |
+| `ModelMaterialData.Textures` | BaseColor、MetallicRoughness、Normal、Occlusion、Emissive の順に任意の texture 用途を列挙する。未指定の用途は null |
 | `GpuImageUploadData / GpuImageSubresourceData` | ADR 0030 の共通画像型。寸法、画素 format、色・alpha、mip／layer と row／slice stride を明示する |
 
 初期の材質契約は metallic-roughness PBR と Unlit とする。base color／emissive の RGB は色として、normal／occlusion／metallic-roughness は数値として読む。metallic-roughness の G は roughness、B は metallic、occlusion の R は遮蔽値である。base color に color set 0 があれば RGBA を乗算し、他の color set も入力では保持する。材質の省略値と入力 channel の意味は [Metallic-Roughness schema](https://raw.githubusercontent.com/KhronosGroup/glTF/main/specification/2.0/schema/material.pbrMetallicRoughness.schema.json) に対応させる。別形式の importer や手続き生成側もこの描画意味へ値を整える。
@@ -390,7 +391,8 @@ Native の optional mesh／amplification 経路、同じ Model 入力からの m
 - `ModelDrawList` の Add／Set／Remove／MoveBefore／Clear、共有部分木を持つ snapshot、部分木単位の使用保持。10 万件の 1 件更新で未変更部分をコピーしないことを、新規部分木の数で確認する。順序ラベルは任意精度の二進有理数とする。
 - Triangles／TriangleStrip／TriangleFan、indexed／non-indexed、draw range、頂点色、欠落 normal の flat normal、非一様・負の transform。index は現時点では CPU で三角形の頂点列へ展開する。
 - 全 influence の skin、position／normal の morph を CPU で準備し、結果を geometry cache で再利用する。変形後に world transform を一度適用する。
-- テクスチャなしの metallic-roughness PBR と Unlit、emissive strength、directional／point／spot。BRDF は GGX 分布、相関 Smith visibility、Schlick Fresnel。数値安定化は roughness 下限 0.045、visibility の分母下限 1e-6。Unlit は base color のみを出力する。
+- metallic-roughness PBR と Unlit、emissive strength、directional／point／spot。BRDF は GGX 分布、相関 Smith visibility、Schlick Fresnel。数値安定化は roughness 下限 0.045、visibility の分母下限 1e-6。Unlit は base color のみを出力する。
+- BaseColor／MetallicRoughness／Emissive texture、用途ごとの UV set と Matrix3x2 変換、独立した min／mag filter、三つの mip filter と wrap。画像は RGBA16Float へ準備し、色の sRGB 復号と straight alpha 化を一度だけ行う。数値用途は色変換しない。入力にない mip は内部 GPU pass で面積平均し、奇数寸法の端も含める。入力済み mip を上書きしない。画像 cache は用途別に最大 256 entry で、GPU 生成の内容世代と提出の成功を対応させる。
 - RGBA16Float／D32Float の初期化、LessEqual depth、Opaque／Mask の書込み、Blend の読取りと premultiplied 合成。透明順序は変形・world 適用後の実頂点 AABB 中心で安定 sort する。
 - Native の直接 root と bindless buffer、Portable の直接 immediate root と明示 storage binding。parameter buffer の生成は pass 本体だけが行う。Native の CPU-visible geometry は書込み終了後に import して使用保持し、Portable の copy upload は内部 graph と内容世代 ticket に登録する。
 - 同じ共通 consumer による DirectX 12／Vulkan／Dawn／Browser の HDR 画素比較。同じ plan への更新と旧 snapshot の再提出を Native／Dawn で確認する。比較許容誤差は RGBA ベクトルの距離 0.006。PBR の正面・roughness 1 の閉形式解と、明示 light がない場合の黒も確認する。
@@ -400,7 +402,7 @@ CPU の geometry 数学は `src/graphics/Shared/Models/ModelPreparation.cs` を�
 
 未実装の範囲:
 
-- material texture、sampler、UV transform と mipmap、normal map の MikkTSpace、texture／color morph、環境光と IBL。従って **glTF core と五拡張の完了条件はまだ満たしていない**。loader は Lumyte.Resources の責務である。
+- normal map の MikkTSpace、occlusion と IBL、texture／color morph、環境光。NormalTexture／OcclusionTexture は現在 NotSupportedException を返す。従って **glTF core と五拡張の完了条件はまだ満たしていない**。loader は Lumyte.Resources の責務である。
 - Points／Lines／LineLoop／LineStrip の描画。現在これらを渡すと NotSupportedException を返す。
 - 部品別 GPU packing と WithRange の部分転送、GPU skin／morph、draw page／分類／内部 graph の差分更新。現在は geometry・deformation・range を単位に cache し、transform／material／camera だけの変更では geometry を再転送しないが、一属性更新では派生 geometry 全体を再準備する。各提出では draw を列挙して parameter data と内部 draw を構築する。
 - GPU cache の予算制御と page 単位の eviction。geometry cache は最大 1,024 entry の基準実装であり、10 万 draw の GPU 性能や 60 FPS を保証しない。

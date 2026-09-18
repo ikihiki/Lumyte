@@ -853,7 +853,7 @@ ADR と関連文書のローカルリンクに欠落はなく、production 向�
 
 ## 未実装と次の順序
 
-1. Model の残る material texture、IBL、line／point topology、部品別転送と draw batch、Native の mesh 経路を専用 ADR に従って実装する。保持型入力と三角形の PBR／skin／morph は下記の範囲で実装した。
+1. Model の残る normal map と IBL、line／point topology、部品別転送と draw batch、Native の mesh 経路を専用 ADR に従って実装する。保持型入力と三角形の PBR／skin／morph、材質 texture は下記の範囲で実装した。
 2. 2D の残る batch／atlas 最適化と部分更新の性能、複数表示フレームの先行、ResourceManager の性能を確認する。表示の基準実装は一つずつ取得・返却する方式であり、60 FPS の測定結果とは区別する。
 3. Portable Slang の accessor／prelude、残る matrix／array の host 表現、生成入力を使う GPU conformance を追加し、後続機能 pass へ広げる。NoGraphicsAPI に合わせるためだけの Native 入力 ABI 変更は今回の優先作業にしない。
 
@@ -887,7 +887,7 @@ Vulkan は Slang の discard が使う `shaderDemoteToHelperInvocation` を、de
 [表示サンプル](../../samples/graphics/Lumyte.Graphics.Hosting.Sample/README.md) の第 3 引数 `model` で、
 手続き生成した cube を回転表示する。画面サイズの変更時だけ共通 plan を再構築する。
 
-material texture／sampler／UV transform、IBL、MikkTSpace、line／point、mesh／amplification、
+IBL、MikkTSpace、line／point、mesh／amplification、
 部品別 GPU 転送と draw batch／page の差分更新は未実装である。
 CPU の 10 万件の部分木共有試験は GPU の 10 万 draw や 60 FPS の達成を意味しない。
 glTF core と五拡張の完全適合は未達成として、[ADR 0035](../adr/0035-model-render-passes.md#採用範囲と未実装事項) に残す。
@@ -899,3 +899,23 @@ DirectX 12 は 389 件、Vulkan は 388 件、Dawn は 296 件、Browser は 67 
 モデルの 16 シナリオを四経路で確認し、Browser は一つの試験内で全シナリオを実行する。
 並べ替え試験を精度が縮む順序へ強化した後も、ModelDrawList の 7 件が成功した。
 モデルサンプルは警告 0・エラー 0 で build し、3 backend で各 3 フレームの実表示と終了が成功した。
+
+## Model 材質画像と GPU mip 生成
+
+2026-09-18 に BaseColor／MetallicRoughness／Emissive の画像、用途別 UV set と変換、
+min／mag／mip filter、ClampToEdge／MirroredRepeat／Repeat を追加した。
+色と数値の用途を分けて RGBA16Float に準備し、sRGB の二重変換を避ける。
+不足 mip は GPU の面積平均で生成し、奇数寸法の端も含める。供給済み mip を保持する。
+生成の内容世代と提出を結び付け、保持された snapshot を再提出できる。
+Native は全 mip の初期化と画像 upload を一つの batch にまとめる。
+画像の読込み／decode は引き続き Lumyte.Resources の責務とする。
+
+全体テスト `dotnet test Lumyte.slnx --no-restore --disable-build-servers -m:4` は
+Browser／Slang／Tint の環境変数、Vulkan 同期検証と TRX 出力を有効にして
+**41 project・2,322 件成功、失敗 0、skip 0、終了コード 0**。
+DirectX 12 は 405 件、Vulkan は 404 件、Dawn は 312 件、Browser は 67 件。
+モデルは 32 シナリオを四経路で比較し、Native／Dawn は材質変更後と旧 snapshot の再提出も含む。
+チェック柄のモデルサンプルは三 backend で各 3 フレーム表示して正常終了した。
+
+NormalTexture／OcclusionTexture はこの段階では NotSupportedException を返す。
+MikkTSpace と normal map、環境光／IBL、glTF 完全適合は次の段階であり、完了とは扱わない。

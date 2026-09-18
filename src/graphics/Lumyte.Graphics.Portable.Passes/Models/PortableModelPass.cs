@@ -25,13 +25,16 @@ public static class PortableModelShaders
         return new(1, reader.ReadToEnd(), [new(GpuShaderStage.Vertex,"vertex"),new(GpuShaderStage.Pixel,"fragment")],
             PortableShaderFeatures.ImmediateAddressSpace,
             [new([new(0,GpuShaderStage.Vertex,new GpuBufferBindingLayout(GpuBufferBindingType.ReadOnlyStorage)),
-                new(1,GpuShaderStage.Vertex | GpuShaderStage.Pixel,new GpuBufferBindingLayout(GpuBufferBindingType.ReadOnlyStorage))])],
+                new(1,GpuShaderStage.Vertex | GpuShaderStage.Pixel,new GpuBufferBindingLayout(GpuBufferBindingType.ReadOnlyStorage)),
+                .. Enumerable.Range(2,5).Select(binding => new GpuBindingLayoutEntry((uint)binding,GpuShaderStage.Pixel,new GpuTextureBindingLayout(GpuTextureSampleType.UnfilterableFloat)))])],
             new("Root",8,4,[new("offset","u32",0,4,4),new("reserved","u32",4,4,4)]),[],new([]),"Lumyte.Portable.Model.v1");
     }
 }
 internal sealed class PortableModelPass(PortablePassServices services, PortableShaderPackage shaders) : IPortableRenderPass<ModelPassRequest, ModelPassResult>
 {
     private readonly Dictionary<GeometryKey, Geometry> geometries = [];
+    private readonly Dictionary<ModelImageKey, PortablePassContentGeneration<GpuTextureRef>> images = [];
+    private readonly PortableFilterPass imageFilter = new(services);
     private readonly Dictionary<(bool Blend, bool DoubleSided, bool Reflected), GpuRasterPipelineHandle> pipelines = [];
     private PortableShaderProgram? program;
     private int sequence;
@@ -52,7 +55,7 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
         foreach (var draw in snapshot.Draws.Items)
         {
             cancellationToken.ThrowIfCancellationRequested(); if (!draw.Visible) { continue; }
-            var key = new GeometryKey(draw.Geometry, draw.Deformation, draw.Range);
+            var key = new GeometryKey(draw.Geometry, draw.Deformation, draw.Range, ModelUvLayout.From(draw.Material));
             if (!geometries.TryGetValue(key, out var geometry)) { geometry = new(Preparation.Prepare(key)); geometries.Add(key, geometry); }
             if (geometry.Data.VertexCount != 0) { draws.Add((draw, geometry, draw.Material.AlphaMode == ModelAlphaMode.Blend ? Preparation.Depth(geometry.Data, draw.LocalToWorld, snapshot.Camera.View) : 0)); }
         }
@@ -71,9 +74,13 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
             var parameterData = context.ImportBuffer(parameterBuffer);
             bool blend = draw.Material.AlphaMode == ModelAlphaMode.Blend;
             var pipeline = Pipeline(blend, draw.Material.DoubleSided, draw.LocalToWorld.GetDeterminant() < 0);
-            var bindings = context.CreateBindings(Name("bindings"), program!, 0, new Inputs(vertices,parameterData));
+            var textures = new List<PortablePassTexture>(); int slot = 0;
+            foreach (var texture in draw.Material.Textures)
+            { textures.Add(await ImageAsync(context, new(texture?.Texture.Image ?? ModelImages.White, slot++ is 0 or 4), cancellationToken)); }
+            var views = textures.Select(t => context.CreateView(Name("image"), t)).ToArray();
+            var bindings = context.CreateBindings(Name("bindings"), program!, 0, new Inputs(vertices,parameterData,views));
             var state = (cv,dv,pipeline,bindings,geometry.Data.VertexCount);
-            context.AddPass(Name("draw"), state, static (record,s) =>
+            var pass = context.AddPass(Name("draw"), state, static (record,s) =>
             {
                 record.Commands.BeginRendering([new(record.GetTextureView(s.cv), GpuAttachmentLoadOperation.Load)],
                     new(record.GetTextureView(s.dv), DepthLoadOperation: GpuAttachmentLoadOperation.Load, DepthStoreOperation: GpuAttachmentStoreOperation.Store));
@@ -81,8 +88,56 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
                 Root root = default; record.Commands.SetRootData(in root); record.Commands.Draw(s.VertexCount); record.Commands.EndRendering();
             }).Read(vertices,PortablePassUsage.StorageRead).Read(parameterData,PortablePassUsage.StorageRead)
                 .ReadWrite(color,PortablePassUsage.ColorAttachment).ReadWrite(depth,PortablePassUsage.DepthStencilAttachment);
+            foreach (var texture in textures.Distinct()) { pass.Read(texture, PortablePassUsage.SampledRead); }
         }
         while (geometries.Count > 1024) { var key = geometries.Keys.First(); geometries[key].Generation?.Dispose(); geometries.Remove(key); }
+        while (images.Count > 256) { var key = images.Keys.First(); images[key].Dispose(); images.Remove(key); }
+    }
+    private async ValueTask<PortablePassTexture> ImageAsync(PortablePassBuildContext context, ModelImageKey key, CancellationToken cancellationToken)
+    {
+        images.TryGetValue(key, out var generation);
+        if (context.TryUseContent(generation, out GpuTextureRef texture)) { return context.ImportTexture(texture); }
+        generation?.Dispose(); var prepared = ModelImages.Prepare(key); var first = prepared.Levels[0];
+        using var scope = services.Resources.CreateScope();
+        texture = scope.CreateTexture(new(GpuTextureDimension.Texture2D, first.Width, first.Height, 1, (uint)prepared.Levels.Length, 1, 1,
+            GpuFormat.Rgba16Float, GpuTextureUsage.Sampled | GpuTextureUsage.CopyDestination));
+        var destination = context.ImportTexture(texture); List<PortablePassBuilder> writers = [];
+        for (int mip = 0; mip < prepared.Levels.Length; mip++)
+        {
+            var level = prepared.Levels[mip];
+            if(level.Bytes.Length==0) { continue; }
+            var staging = scope.CreateBuffer(new((ulong)level.Bytes.Length,GpuBufferUsage.MapWrite | GpuBufferUsage.CopySource));
+            using (var mapped = await services.Resources.MapBufferAsync(staging,GpuMapMode.Write,cancellationToken:cancellationToken)) { level.Bytes.CopyTo(mapped.Memory.Span); }
+            var source = context.ImportBuffer(staging);
+            var footprint = new GpuTextureCopyFootprint((uint)mip,GpuTextureAspect.All,default,new(level.Width,level.Height,1),level.Pitch,(ulong)level.Bytes.Length);
+            writers.Add(context.AddPass(Name("image upload"),(source,destination,footprint,Length:(ulong)level.Bytes.Length),static (record,s) =>
+                record.Commands.CopyBufferToTexture(record.GetBufferRange(s.source,0,s.Length),record.GetTexture(s.destination),s.footprint))
+                .Read(source,PortablePassUsage.CopySource).ReadWrite(destination,PortablePassUsage.CopyDestination));
+        }
+        var previous=destination;uint previousMip=0;
+        List<(PortablePassTexture Source,GpuTextureCopyFootprint SourceFootprint,GpuTextureCopyFootprint TargetFootprint)> copies=[];
+        for(uint mip=1;mip<prepared.Levels.Length;mip++)
+        {
+            var level=prepared.Levels[mip];
+            if(level.Bytes.Length!=0) { previous=destination;previousMip=mip;continue; }
+            var sourceView=context.CreateView(Name("mip source"),previous,new(BaseMip:previousMip,MipCount:1));
+            var target=context.CreateTexture(Name("mip"),new(GpuTextureDimension.Texture2D,level.Width,level.Height,1,1,1,1,GpuFormat.Rgba16Float,
+                GpuTextureUsage.Sampled|GpuTextureUsage.ColorAttachment|GpuTextureUsage.CopySource));
+            imageFilter.GenerateMip(context,Name("mip filter"),previous,sourceView,target);
+            var footprint=new GpuTextureCopyFootprint(0,GpuTextureAspect.All,default,new(level.Width,level.Height,1));
+            copies.Add((target,footprint,footprint with { Mip=mip }));previous=target;previousMip=0;
+        }
+        if(copies.Count!=0)
+        {
+            var copy=context.AddPass(Name("mip store"),(destination,Copies:copies.ToArray()),static (record,s) =>
+            {
+                foreach(var item in s.Copies) { record.Commands.CopyTexture(record.GetTexture(item.Source),item.SourceFootprint,record.GetTexture(s.destination),item.TargetFootprint); }
+            }).ReadWrite(destination,PortablePassUsage.CopyDestination);
+            foreach(var item in copies) { copy.Read(item.Source,PortablePassUsage.CopySource); }
+            writers.Add(copy);
+        }
+        generation = context.RegisterContent(texture,services.Resources.Pin(texture),writers.ToArray()); images[key] = generation;
+        _ = context.TryUseContent(generation,out texture); return destination;
     }
     private async ValueTask<PortablePassContentGeneration<GpuBufferRef>> Upload(PortablePassBuildContext context, Vector4[] values, CancellationToken cancellationToken)
     {
@@ -111,11 +166,12 @@ internal sealed class PortableModelPass(PortablePassServices services, PortableS
     public ValueTask DisposeAsync()
     {
         foreach (var geometry in geometries.Values) { geometry.Generation?.Dispose(); }
+        foreach (var image in images.Values) { image.Dispose(); }
         foreach (var pipeline in pipelines.Values) { services.Backend.DestroyRasterPipeline(pipeline); }
-        geometries.Clear(); pipelines.Clear(); program?.Dispose(); return ValueTask.CompletedTask;
+        geometries.Clear(); images.Clear(); pipelines.Clear(); program?.Dispose(); return imageFilter.DisposeAsync();
     }
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Root(uint Offset,uint Reserved);
     private sealed class Geometry(PreparedGeometry data) { internal PreparedGeometry Data { get; } = data; internal PortablePassContentGeneration<GpuBufferRef>? Generation { get; set; } }
-    private sealed class Inputs(PortablePassBuffer vertices,PortablePassBuffer parameters) : IPortablePassBindingInputs
-    { public void Write(PortablePassBindingWriter writer) { writer.Buffer(0,vertices); writer.Buffer(1,parameters); } }
+    private sealed class Inputs(PortablePassBuffer vertices,PortablePassBuffer parameters,PortablePassView[] textures) : IPortablePassBindingInputs
+    { public void Write(PortablePassBindingWriter writer) { writer.Buffer(0,vertices); writer.Buffer(1,parameters); for (int i=0;i<textures.Length;i++) { writer.Texture((uint)i+2,textures[i]); } } }
 }

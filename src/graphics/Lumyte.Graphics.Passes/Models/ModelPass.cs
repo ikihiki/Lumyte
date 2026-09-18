@@ -47,6 +47,8 @@ public sealed class ModelRenderInputContract : IGpuGraphInputContract<ModelRende
             if (value.Right is { } right) { context.ReadSnapshot(right, this); }
             var draw = value.Item; var g = draw.Geometry; var v = g.Vertices;
             context.ReadUpload(g); context.ReadUpload(draw.Material); context.ReadUpload(v.Positions);
+            foreach (var texture in draw.Material.Textures)
+            { if (texture is not null) { context.ReadUpload(texture.Texture.Image); } }
             if (v.Normals is { } n) { context.ReadUpload(n); }
             if (v.Tangents is { } t) { context.ReadUpload(t); }
             if (v.SkinInfluences is { } s) { context.ReadUpload(s); }

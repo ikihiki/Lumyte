@@ -5,6 +5,17 @@ using Lumyte.Graphics.RenderGraph;
 namespace Lumyte.Graphics.Passes;
 
 public enum ModelAlphaMode { Opaque, Mask, Blend }
+public enum ModelTextureFilter { Nearest, Linear }
+public enum ModelMipFilter { None, Nearest, Linear }
+public enum ModelTextureWrap { ClampToEdge, MirroredRepeat, Repeat }
+public sealed record ModelSamplerData(ModelTextureFilter MinFilter = ModelTextureFilter.Linear,
+    ModelTextureFilter MagFilter = ModelTextureFilter.Linear, ModelMipFilter MipFilter = ModelMipFilter.Linear,
+    ModelTextureWrap WrapU = ModelTextureWrap.Repeat, ModelTextureWrap WrapV = ModelTextureWrap.Repeat);
+public sealed record ModelTextureData(GpuImageUploadData Image, ModelSamplerData Sampler);
+public sealed record ModelTextureUse(ModelTextureData Texture, int TexCoordSet = 0)
+{
+    public Matrix3x2 Transform { get; init; } = Matrix3x2.Identity;
+}
 public sealed record ModelMaterialData(GpuUploadDataKey Key) : IGpuUploadData
 {
     public Vector4 BaseColorFactor { get; init; } = Vector4.One;
@@ -16,6 +27,14 @@ public sealed record ModelMaterialData(GpuUploadDataKey Key) : IGpuUploadData
     public float AlphaCutoff { get; init; } = .5f;
     public bool DoubleSided { get; init; }
     public bool Unlit { get; init; }
+    public ModelTextureUse? BaseColorTexture { get; init; }
+    public ModelTextureUse? MetallicRoughnessTexture { get; init; }
+    public ModelTextureUse? NormalTexture { get; init; }
+    public ModelTextureUse? OcclusionTexture { get; init; }
+    public ModelTextureUse? EmissiveTexture { get; init; }
+    public float NormalScale { get; init; } = 1;
+    public float OcclusionStrength { get; init; } = 1;
+    public IEnumerable<ModelTextureUse?> Textures => [BaseColorTexture, MetallicRoughnessTexture, NormalTexture, OcclusionTexture, EmissiveTexture];
 }
 
 public sealed record ModelCamera

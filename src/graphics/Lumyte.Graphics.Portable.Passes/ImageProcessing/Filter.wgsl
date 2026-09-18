@@ -34,6 +34,18 @@ fn readPixel(p: vec2i, size: vec2i) -> vec4f { return textureLoad(image, clamp(p
         }
         return value;
     }
+    if (root.mode==6) {
+        let ratio=vec2f(size)/vec2f(f32(root.width),f32(root.height));
+        let first=floor(position.xy)*ratio; let last=(floor(position.xy)+1)*ratio;
+        var sum=vec4f(0);
+        for(var y=i32(floor(first.y));y<i32(ceil(last.y));y++) {
+            for(var x=i32(floor(first.x));x<i32(ceil(last.x));x++) {
+                let weight=min(last,vec2f(f32(x+1),f32(y+1)))-max(first,vec2f(f32(x),f32(y)));
+                sum+=readPixel(vec2i(x,y),size)*weight.x*weight.y;
+            }
+        }
+        return sum/(ratio.x*ratio.y);
+    }
     let value = readPixel(p,size);
     if (root.mode==4) {
         if (value.a<=0) { return vec4f(0); }

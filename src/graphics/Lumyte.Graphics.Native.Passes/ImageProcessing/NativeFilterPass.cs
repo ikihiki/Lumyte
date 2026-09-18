@@ -93,6 +93,17 @@ internal sealed class NativeFilterPass(NativePassServices services) :
             record.Commands.Draw(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref root, 1)), 3);
         }
     }
+    internal NativePassBuilder GenerateMip(NativePassBuildContext context, string name, NativePassTexture source, NativePassView sourceView, NativePassTexture target)
+    {
+        var state = new DrawState(sourceView,Attachment(context,name+" target",target),Pipeline(target.Description.Format,false),6,0,target.Description.Width,target.Description.Height);
+        return context.AddPass(name,state,(record,s) =>
+        {
+            record.Commands.BeginRendering([new(record.GetRenderView(s.Target),NativeGpuLoadOp.Discard)]);
+            record.Commands.SetPipeline(s.Pipeline);
+            DrawRoot(record,s.Source,s.Mode,s.Parameter,s.Width,s.Height);
+            record.Commands.EndRendering();
+        }).Read(source,new(GpuStage.PixelShader,GpuAccess.ShaderRead)).Write(target,new(GpuStage.ColorOutput,GpuAccess.ColorWrite));
+    }
     private static NativePassView Sampled(NativePassBuildContext context, string name, NativePassTexture texture) => context.CreateView(name, texture,
         new(NativeGpuTextureViewDimension.TwoD, texture.Description.Format, NativeGpuTextureAspect.Color, 0, 1, 0, 1));
     private static NativePassView Attachment(NativePassBuildContext context, string name, NativePassTexture texture) => context.CreateView(name, texture,

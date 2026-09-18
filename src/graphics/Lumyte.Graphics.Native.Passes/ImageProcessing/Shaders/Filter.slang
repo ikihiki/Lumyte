@@ -52,6 +52,19 @@ float4 pixelMain(float4 position : SV_Position) : SV_Target0
         }
         return value;
     }
+    if (root.mode == 6)
+    {
+        float2 ratio = float2(w,h)/float2(root.width,root.height);
+        float2 first = floor(position.xy)*ratio, last = (floor(position.xy)+1)*ratio;
+        float4 sum = 0;
+        for(int y=int(floor(first.y));y<int(ceil(last.y));y++)
+        for(int x=int(floor(first.x));x<int(ceil(last.x));x++)
+        {
+            float2 weight = min(last,float2(x+1,y+1))-max(first,float2(x,y));
+            sum += readPixel(image,int2(x,y),size)*weight.x*weight.y;
+        }
+        return sum/(ratio.x*ratio.y);
+    }
     float4 value = readPixel(image, p, size);
     if (root.mode == 4)
     {

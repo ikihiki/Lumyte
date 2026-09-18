@@ -9,8 +9,15 @@ internal static partial class Program
     {
         Vector3[] vertices = [new(-1,-1,-1),new(1,-1,-1),new(1,1,-1),new(-1,1,-1),new(-1,-1,1),new(1,-1,1),new(1,1,1),new(-1,1,1)];
         uint[] indices = [4,5,6,4,6,7,1,0,3,1,3,2,0,4,7,0,7,3,5,1,2,5,2,6,3,7,6,3,6,2,0,1,5,0,5,4];
-        var geometry = new ModelGeometryData(new("cube",0),ModelTopology.Triangles,new(new(new("positions",0),vertices)),new(new("indices",0),indices));
-        var material = new ModelMaterialData(new("copper",0)) { BaseColorFactor = new(.8f,.25f,.08f,1),MetallicFactor = .7f,RoughnessFactor = .35f };
+        var faceVertices=Enumerable.Range(0,6).SelectMany(face => new[] {0,1,2,5}.Select(corner => vertices[indices[face*6+corner]])).ToArray();
+        var faceIndices=Enumerable.Range(0,6).SelectMany(face => new uint[] {0,1,2,0,2,3}.Select(index => (uint)face*4+index)).ToArray();
+        var uv=Enumerable.Range(0,6).SelectMany(_ => new Vector2[] {new(0,1),new(1,1),new(1,0),new(0,0)}).ToArray();
+        var geometry = new ModelGeometryData(new("cube",0),ModelTopology.Triangles,
+            new(new(new("positions",0),faceVertices),texCoords:[new(0,new(new("uv",0),uv))]),new(new("indices",0),faceIndices));
+        var checker=new GpuImageUploadData(new("checker",0),new(2,2,GpuFormat.Rgba8Unorm),GpuImageColorEncoding.Srgb,GpuImageAlphaMode.Opaque,
+            [new(0,0,8,16,new byte[] {255,255,255,255,80,80,80,255,80,80,80,255,255,255,255,255})]);
+        var material = new ModelMaterialData(new("copper",0)) { BaseColorFactor = new(.8f,.25f,.08f,1),MetallicFactor = .7f,RoughnessFactor = .35f,
+            BaseColorTexture=new(new(checker,new())) { Transform=Matrix3x2.CreateScale(4) } };
         var draw = new ModelDrawItem(geometry,material,Matrix4x4.Identity);
         var draws = new ModelDrawList(); var moving = draws.Add(draw);
         var camera = ModelCamera.Perspective(new(3,2,5),Vector3.Zero,Vector3.UnitY,MathF.PI/3,.1f,100);

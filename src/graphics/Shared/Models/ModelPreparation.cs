@@ -4,10 +4,17 @@ using Lumyte.Graphics.Passes;
 namespace Lumyte.Graphics.ModelPreparation;
 
 // Compiled independently into each provider. This is CPU geometry math, not a shared public GPU ABI.
-internal sealed record GeometryKey(ModelGeometryData Geometry, ModelDeformationData? Deformation, ModelDrawRange? Range);
+internal sealed record ModelUvLayout(int BaseColor, int MetallicRoughness, int Normal, int Occlusion, int Emissive)
+{
+    internal static ModelUvLayout From(ModelMaterialData m) => new(m.BaseColorTexture?.TexCoordSet ?? -1,
+        m.MetallicRoughnessTexture?.TexCoordSet ?? -1, m.NormalTexture?.TexCoordSet ?? -1,
+        m.OcclusionTexture?.TexCoordSet ?? -1, m.EmissiveTexture?.TexCoordSet ?? -1);
+    internal int[] Sets => [BaseColor, MetallicRoughness, Normal, Occlusion, Emissive];
+}
+internal sealed record GeometryKey(ModelGeometryData Geometry, ModelDeformationData? Deformation, ModelDrawRange? Range, ModelUvLayout Uv);
 internal sealed record PreparedGeometry(Vector4[] Vertices, Vector3 Minimum, Vector3 Maximum)
 {
-    internal uint VertexCount => (uint)(Vertices.Length / 3);
+    internal uint VertexCount => (uint)(Vertices.Length / 6);
 }
 internal static class ModelPreparation
 {
@@ -21,6 +28,8 @@ internal static class ModelPreparation
         { throw new NotSupportedException("The initial model renderer supports triangle, strip and fan topology."); }
         var positions = new Vector3[count]; var normals = new Vector3[count];
         var colors = v.Colors.FirstOrDefault(x => x.SetIndex == 0)?.Values;
+        var uvAttributes = key.Uv.Sets.Select(set => set < 0 ? null : v.TexCoords.FirstOrDefault(uv => uv.SetIndex == set)?.Values
+            ?? throw new ArgumentException($"Required texture coordinate set {set} is missing.", nameof(key))).ToArray();
         var morph = key.Deformation?.Morph;
         if (morph is not null && morph.Weights.Length != g.MorphTargets.Length)
         { throw new ArgumentException("Morph weights must match the target count.", nameof(key)); }
@@ -75,6 +84,10 @@ internal static class ModelPreparation
                 var p = positions[index]; var normal = v.Normals is null ? flat : normals[index];
                 normal = normal.LengthSquared() > 1e-20f ? Vector3.Normalize(normal) : Vector3.UnitZ;
                 result.Add(new(p, 1)); result.Add(new(normal, 0)); result.Add(colors?.Values[index] ?? Vector4.One);
+                Vector2 Uv(int slot) => uvAttributes[slot]?.Values[index] ?? default;
+                var uv0 = Uv(0); var uv1 = Uv(1); var uv2 = Uv(2); var uv3 = Uv(3); var uv4 = Uv(4);
+                result.Add(new(uv0.X, uv0.Y, uv1.X, uv1.Y));
+                result.Add(new(uv2.X, uv2.Y, uv3.X, uv3.Y)); result.Add(new(uv4, 0, 0));
                 minimum = Vector3.Min(minimum, p); maximum = Vector3.Max(maximum, p);
             }
         }
@@ -87,7 +100,7 @@ internal static class ModelPreparation
     {
         // Bounds of actual referenced vertices after deformation and world transformation.
         Vector3 min = new(float.PositiveInfinity), max = new(float.NegativeInfinity);
-        for (int i = 0; i < geometry.Vertices.Length; i += 3)
+        for (int i = 0; i < geometry.Vertices.Length; i += 6)
         {
             Vector4 p = geometry.Vertices[i]; var w = Vector3.Transform(new(p.X, p.Y, p.Z), world);
             min = Vector3.Min(min, w); max = Vector3.Max(max, w);
@@ -99,6 +112,8 @@ internal static class ModelPreparation
         Matrix4x4 world = draw.LocalToWorld;
         if (!Matrix4x4.Invert(world, out var inverse)) { throw new ArgumentException("Model normal transform is singular.", nameof(draw)); }
         var m = draw.Material;
+        if (m.NormalTexture is not null || m.OcclusionTexture is not null)
+        { throw new NotSupportedException("Normal and occlusion textures require the next model shading stage."); }
         List<Vector4> data = [];
         void Matrix(Matrix4x4 value)
         { data.Add(new(value.M11, value.M12, value.M13, value.M14)); data.Add(new(value.M21, value.M22, value.M23, value.M24)); data.Add(new(value.M31, value.M32, value.M33, value.M34)); data.Add(new(value.M41, value.M42, value.M43, value.M44)); }
@@ -107,6 +122,13 @@ internal static class ModelPreparation
         data.Add(new(m.MetallicFactor, m.RoughnessFactor, (float)m.AlphaMode, m.AlphaCutoff));
         data.Add(new(snapshot.Camera.Eye, snapshot.Lighting.Lights.Length));
         data.Add(new(snapshot.Camera.View.M13,snapshot.Camera.View.M23,snapshot.Camera.View.M33,snapshot.Camera.IsOrthographic ? 1 : 0));
+        foreach (var texture in m.Textures)
+        {
+            var sampler = texture?.Texture.Sampler ?? new ModelSamplerData(); var uv = texture?.Transform ?? Matrix3x2.Identity;
+            data.Add(new(0, texture is null ? 0 : 1, (float)sampler.MinFilter, (float)sampler.MagFilter));
+            data.Add(new((float)sampler.MipFilter, (float)sampler.WrapU, (float)sampler.WrapV, 0));
+            data.Add(new(uv.M11, uv.M12, uv.M21, uv.M22)); data.Add(new(uv.M31, uv.M32, 0, 0));
+        }
         foreach (var light in snapshot.Lighting.Lights)
         {
             data.Add(new(light.Position, (float)light.Kind)); data.Add(new(light.Direction, light.Range ?? 0));

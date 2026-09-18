@@ -6,9 +6,12 @@ namespace Lumyte.Graphics.RenderGraph.Conformance;
 /// <summary>One compiled feature consumer, with independent expected HDR colors for all providers.</summary>
 public static class ModelRenderConsumer
 {
-    public static readonly string[] Cases = ["empty","indexed","nonindexed","strip","fan","depth","mask","blend","reflected","skin","morph","unlit-hdr","pbr-dark","pbr-dielectric","pbr-metal","retained"];
+    public static readonly string[] Cases = ["empty","indexed","nonindexed","strip","fan","depth","mask","blend","reflected","skin","morph","unlit-hdr","pbr-dark","pbr-dielectric","pbr-metal","retained",
+        "texture-nearest","texture-linear","texture-repeat","texture-mirror","texture-clamp","texture-transform","texture-uv7",
+        "texture-srgb","texture-premultiplied","texture-metallic","texture-emissive","texture-mip","texture-supplied-mip","texture-odd-mip","texture-trilinear","texture-retained"];
     public static ModelFixture Create(string scenario)
     {
+        if (scenario.StartsWith("texture-",StringComparison.Ordinal)) { return ModelTextureReference.Create(scenario); }
         Vector3[] positions = [new(-1,-1,0),new(1,-1,0),new(1,1,0),new(-1,1,0)];
         uint[] indices = [0,1,2,0,2,3];
         if (scenario == "nonindexed") { positions = indices.Select(i => positions[i]).ToArray(); }
@@ -65,7 +68,9 @@ public static class ModelRenderConsumer
         graph.AddModelPass("model",new(input,color,depth)); graph.ExportTexture(color);
         return new(graph.Compile(),color,input,snapshot,expected,scenario is "skin" or "morph");
     }
-    public static ModelFixture Changed(ModelFixture original) => original with
+    public static ModelFixture Changed(ModelFixture original) => original.Snapshot.Draws.Items.First().Material.BaseColorTexture is not null
+        ? original with { Snapshot=ModelTextureReference.Create("texture-transform").Snapshot,ExpectedPixels=ModelTextureReference.Create("texture-transform").ExpectedPixels }
+        : original with
     {
         Snapshot = original.Snapshot with { Draws = ModelDrawSnapshot.From(original.Snapshot.Draws.Items.Select(d => d with
             { LocalToWorld = Matrix4x4.CreateScale(.5f),Material = d.Material with { Key = new("changed",1),BaseColorFactor = new(1,0,0,1) } })) },
@@ -79,11 +84,15 @@ public static class ModelRenderConsumer
         {
             var p = pixels.Slice(y*pitch+x*8,8);
             var actual = new Vector4((float)BitConverter.ToHalf(p),(float)BitConverter.ToHalf(p[2..]),(float)BitConverter.ToHalf(p[4..]),(float)BitConverter.ToHalf(p[6..]));
-            var expected = fixture.HalfSize && (x<8 || x>=24 || y<8 || y>=24) ? Vector4.Zero : fixture.Expected;
+            var expected = fixture.ExpectedPixels is { } reference ? reference[y*32+x]
+                : fixture.HalfSize && (x<8 || x>=24 || y<8 || y>=24) ? Vector4.Zero : fixture.Expected;
             if (!float.IsFinite(actual.X+actual.Y+actual.Z+actual.W) || Vector4.Distance(actual,expected)>.006f)
             { throw new InvalidOperationException($"Model pixel ({x},{y}): expected {expected}, actual {actual}."); }
         }
         }
     }
 }
-public sealed record ModelFixture(GpuRenderGraphPlan Plan,GpuRenderGraphTexture Output,GpuGraphInput<ModelRenderSnapshot> Input,ModelRenderSnapshot Snapshot,Vector4 Expected,bool HalfSize);
+public sealed record ModelFixture(GpuRenderGraphPlan Plan,GpuRenderGraphTexture Output,GpuGraphInput<ModelRenderSnapshot> Input,ModelRenderSnapshot Snapshot,Vector4 Expected,bool HalfSize)
+{
+    public Vector4[]? ExpectedPixels { get; init; }
+}

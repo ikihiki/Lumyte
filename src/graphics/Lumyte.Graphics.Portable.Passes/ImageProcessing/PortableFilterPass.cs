@@ -92,6 +92,19 @@ internal sealed class PortableFilterPass(PortablePassServices services) :
     }
     private PortablePassBindings Bind(PortablePassBuildContext context, string name, PortablePassTexture texture) =>
         context.CreateBindings(name, program!, 0, new Inputs(context.CreateView(name, texture)));
+    internal PortablePassBuilder GenerateMip(PortablePassBuildContext context,string name,PortablePassTexture source,PortablePassView sourceView,PortablePassTexture target)
+    {
+        var pipeline=Pipeline(target.Description.Format,false);
+        var binding=context.CreateBindings(name+" bindings",program!,0,new Inputs(sourceView));
+        var state=new DrawState(context.CreateView(name+" target",target),binding,pipeline,new(6,0,target.Description.Width,target.Description.Height));
+        return context.AddPass(name,state,static (record,s) =>
+        {
+            record.Commands.BeginRendering([new(record.GetTextureView(s.Target),GpuAttachmentLoadOperation.Clear)]);
+            record.Commands.SetPipeline(s.Pipeline);record.Commands.SetBindings(0,record.GetBindings(s.Bindings));
+            record.Commands.SetViewportAndScissor(new(0,0,s.Root.Width,s.Root.Height),new(0,0,s.Root.Width,s.Root.Height));
+            Root root=s.Root;record.Commands.SetRootData(in root);record.Commands.Draw(3);record.Commands.EndRendering();
+        }).Read(source,PortablePassUsage.SampledRead).Write(target,PortablePassUsage.ColorAttachment);
+    }
     private GpuRasterPipelineHandle Pipeline(GpuFormat format, bool blend)
     {
         if (pipelines.TryGetValue((format, blend), out var pipeline))
