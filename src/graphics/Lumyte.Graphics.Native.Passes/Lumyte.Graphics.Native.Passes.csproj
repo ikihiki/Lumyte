@@ -17,6 +17,8 @@
     <NativeShaderCompile Include="Models\Shaders\model.native.shader.json" />
     <Compile Include="..\Shared\Models\ModelPreparation.cs" Link="Models\ModelPreparation.cs" />
     <Compile Include="..\Shared\Models\ModelImages.cs" Link="Models\ModelImages.cs" />
+    <Compile Include="..\Shared\Models\MikkTangents.cs" Link="Models\MikkTangents.cs" />
+    <None Include="..\Shared\Models\MikkTSpace.LICENSE.txt" Pack="true" PackagePath="licenses/MikkTSpace.LICENSE.txt" />
     <PackageReference Include="Microsoft.Direct3D.DXC" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
   <Import Project="..\..\..\tools\Lumyte.Graphics.Native.Shaders.Offline\Lumyte.Graphics.Native.Shaders.Offline.targets" />

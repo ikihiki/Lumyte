@@ -919,3 +919,26 @@ DirectX 12 は 405 件、Vulkan は 404 件、Dawn は 312 件、Browser は 67 
 
 NormalTexture／OcclusionTexture はこの段階では NotSupportedException を返す。
 MikkTSpace と normal map、環境光／IBL、glTF 完全適合は次の段階であり、完了とは扱わない。
+
+## Model normal map と接線生成
+
+2026-09-18 に NormalTexture／NormalScale を Native／Portable に追加した。
+provided tangent を利用し、欠けた tangent は三角形専用の managed MikkTSpace で生成する。
+normal がない場合は変形後の flat normal を基準に生成し、元の tangent を使わない。
+反転 UV、負の world scale、skin、tangent morph、normal map の UV 変換を扱う。
+画像は数値として読み、色の sRGB 変換を適用しない。
+
+参照 C の結合と辺ソートの既知問題を修正した比較実装に対し、固定 seed の 755,004 corner で
+接線と handedness の最大ベクトル距離は 4.056292×10⁻⁷ だった。
+比較の条件、参照版、ライセンスと元の C との差は
+[接線生成の比較記録](model-tangent-validation.md) に残す。
+これは全入力・全 CPU の bit 一致を保証するものではない。
+
+OcclusionTexture、環境光／IBL、glTF 完全適合は引き続き未完了である。
+
+最終版を固定した全体テストは **41 project・2,360 件成功、失敗 0、skip 0、終了コード 0**。
+DirectX 12 は 416 件、Vulkan は 415 件、Dawn は 323 件、Browser は 67 件。
+43 のモデルシナリオを四経路で比較し、normal map の 11 シナリオを含む。
+Browser／Slang／Tint の環境変数と Vulkan 同期検証を有効にした
+`dotnet test Lumyte.slnx --no-restore --disable-build-servers -m:4` の結果を
+`artifacts/reviews/model-normal-final-full.log` と TRX に記録した。

@@ -11,10 +11,11 @@ var<immediate> root: Root;
 fn parameter(i: u32) -> vec4f { return parameters[root.offset+i]; }
 fn transform(v: vec4f, offset: u32) -> vec4f { return v.x*parameter(offset)+v.y*parameter(offset+1)+v.z*parameter(offset+2)+v.w*parameter(offset+3); }
 struct VertexOutput { @builtin(position) position: vec4f, @location(0) world: vec3f, @location(1) normal: vec3f, @location(2) color: vec4f,
-    @location(3) uv01: vec4f, @location(4) uv23: vec4f, @location(5) uv4: vec2f }
+    @location(3) uv01: vec4f, @location(4) uv23: vec4f, @location(5) uv4: vec2f, @location(6) tangent: vec4f }
 @vertex fn vertex(@builtin(vertex_index) id: u32) -> VertexOutput {
-    let world=transform(geometry[id*6],0);
-    return VertexOutput(transform(world,4),world.xyz,transform(geometry[id*6+1],8).xyz,geometry[id*6+2],geometry[id*6+3],geometry[id*6+4],geometry[id*6+5].xy);
+    let world=transform(geometry[id*7],0);
+    return VertexOutput(transform(world,4),world.xyz,transform(geometry[id*7+1],8).xyz,geometry[id*7+2],geometry[id*7+3],geometry[id*7+4],geometry[id*7+5].xy,
+        vec4f(transform(vec4f(geometry[id*7+6].xyz,0),0).xyz,geometry[id*7+6].w*parameter(28).w));
 }
 fn wrapTexel(x: i32,size: i32,mode: i32) -> i32 {
     if mode==0 { return clamp(x,0,size-1); }
@@ -45,6 +46,7 @@ fn sampleMaterial(image: texture_2d<f32>,slot: u32,inputUv: vec2f) -> vec4f {
 fn safeNormal(v: vec3f) -> vec3f { return v*inverseSqrt(max(dot(v,v),1e-20)); }
 @fragment fn fragment(i: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let base=parameter(12)*i.color*sampleMaterial(baseImage,0,i.uv01.xy);
+    let normalMap=sampleMaterial(normalImage,2,i.uv23.xy);
     let mr=sampleMaterial(mrImage,1,i.uv01.zw); let emissive=sampleMaterial(emissiveImage,4,i.uv4);
     let emission=parameter(13); let material=parameter(14); let camera=parameter(15);
     if material.z==1 && base.a<material.w { discard; }
@@ -52,7 +54,13 @@ fn safeNormal(v: vec3f) -> vec3f { return v*inverseSqrt(max(dot(v,v),1e-20)); }
     var radiance=emission.xyz*emissive.rgb;
     if emission.w>0 { radiance=base.rgb; }
     else {
-        let n=safeNormal(i.normal)*select(-1.0,1.0,front); let v=select(safeNormal(camera.xyz-i.world),parameter(16).xyz,parameter(16).w>0);
+        var n=safeNormal(i.normal);
+        if parameter(25).y>0 {
+            let t=safeNormal(i.tangent.xyz-n*dot(n,i.tangent.xyz)); let b=cross(n,t)*i.tangent.w;
+            var local=normalMap.xyz*2-1; local=vec3f(local.xy*parameter(28).z,local.z);
+            n=safeNormal(t*local.x+b*local.y+n*local.z);
+        }
+        n*=select(-1.0,1.0,front); let v=select(safeNormal(camera.xyz-i.world),parameter(16).xyz,parameter(16).w>0);
         let nv=max(dot(n,v),0.0); let metallic=material.x*mr.b;
         let roughness=max(material.y*mr.g,0.045); let a2=pow(roughness,4.0);
         let f0=mix(vec3f(0.04),base.rgb,metallic);

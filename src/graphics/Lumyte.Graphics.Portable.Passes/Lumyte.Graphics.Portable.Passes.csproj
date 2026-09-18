@@ -9,6 +9,8 @@
     <EmbeddedResource Include="Models\Shaders\Model.wgsl" LogicalName="Lumyte.Graphics.Portable.Passes.Models.Model.wgsl" />
     <Compile Include="..\Shared\Models\ModelPreparation.cs" Link="Models\ModelPreparation.cs" />
     <Compile Include="..\Shared\Models\ModelImages.cs" Link="Models\ModelImages.cs" />
+    <Compile Include="..\Shared\Models\MikkTangents.cs" Link="Models\MikkTangents.cs" />
+    <None Include="..\Shared\Models\MikkTSpace.LICENSE.txt" Pack="true" PackagePath="licenses/MikkTSpace.LICENSE.txt" />
     <ProjectReference Include="..\Lumyte.Graphics.Portable.RenderGraph.Generators\Lumyte.Graphics.Portable.RenderGraph.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <PortablePassBindingInput Include="ImageProcessing\Output.portable.resources.xml" />
   </ItemGroup>

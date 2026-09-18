@@ -393,6 +393,7 @@ Native の optional mesh／amplification 経路、同じ Model 入力からの m
 - 全 influence の skin、position／normal の morph を CPU で準備し、結果を geometry cache で再利用する。変形後に world transform を一度適用する。
 - metallic-roughness PBR と Unlit、emissive strength、directional／point／spot。BRDF は GGX 分布、相関 Smith visibility、Schlick Fresnel。数値安定化は roughness 下限 0.045、visibility の分母下限 1e-6。Unlit は base color のみを出力する。
 - BaseColor／MetallicRoughness／Emissive texture、用途ごとの UV set と Matrix3x2 変換、独立した min／mag filter、三つの mip filter と wrap。画像は RGBA16Float へ準備し、色の sRGB 復号と straight alpha 化を一度だけ行う。数値用途は色変換しない。入力にない mip は内部 GPU pass で面積平均し、奇数寸法の端も含める。入力済み mip を上書きしない。画像 cache は用途別に最大 256 entry で、GPU 生成の内容世代と提出の成功を対応させる。
+- NormalTexture／NormalScale、provided tangent と欠落時の managed MikkTSpace、反転 UV／world、skin と tangent morph。normal がない場合は変形後の flat normal から生成し、元の tangent を使わない。UV 変換を含む生成条件を cache key にする。元の参照 C の既知の結合・辺ソート問題は修正する。[接線生成の比較記録](../designs/model-tangent-validation.md) に出所と独立比較の範囲を示す。
 - RGBA16Float／D32Float の初期化、LessEqual depth、Opaque／Mask の書込み、Blend の読取りと premultiplied 合成。透明順序は変形・world 適用後の実頂点 AABB 中心で安定 sort する。
 - Native の直接 root と bindless buffer、Portable の直接 immediate root と明示 storage binding。parameter buffer の生成は pass 本体だけが行う。Native の CPU-visible geometry は書込み終了後に import して使用保持し、Portable の copy upload は内部 graph と内容世代 ticket に登録する。
 - 同じ共通 consumer による DirectX 12／Vulkan／Dawn／Browser の HDR 画素比較。同じ plan への更新と旧 snapshot の再提出を Native／Dawn で確認する。比較許容誤差は RGBA ベクトルの距離 0.006。PBR の正面・roughness 1 の閉形式解と、明示 light がない場合の黒も確認する。
@@ -402,7 +403,7 @@ CPU の geometry 数学は `src/graphics/Shared/Models/ModelPreparation.cs` を�
 
 未実装の範囲:
 
-- normal map の MikkTSpace、occlusion と IBL、texture／color morph、環境光。NormalTexture／OcclusionTexture は現在 NotSupportedException を返す。従って **glTF core と五拡張の完了条件はまだ満たしていない**。loader は Lumyte.Resources の責務である。
+- occlusion と IBL、texture／color morph、環境光。OcclusionTexture は現在 NotSupportedException を返す。従って **glTF core と五拡張の完了条件はまだ満たしていない**。loader は Lumyte.Resources の責務である。
 - Points／Lines／LineLoop／LineStrip の描画。現在これらを渡すと NotSupportedException を返す。
 - 部品別 GPU packing と WithRange の部分転送、GPU skin／morph、draw page／分類／内部 graph の差分更新。現在は geometry・deformation・range を単位に cache し、transform／material／camera だけの変更では geometry を再転送しないが、一属性更新では派生 geometry 全体を再準備する。各提出では draw を列挙して parameter data と内部 draw を構築する。
 - GPU cache の予算制御と page 単位の eviction。geometry cache は最大 1,024 entry の基準実装であり、10 万 draw の GPU 性能や 60 FPS を保証しない。

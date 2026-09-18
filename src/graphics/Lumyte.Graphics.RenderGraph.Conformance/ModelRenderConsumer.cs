@@ -8,10 +8,12 @@ public static class ModelRenderConsumer
 {
     public static readonly string[] Cases = ["empty","indexed","nonindexed","strip","fan","depth","mask","blend","reflected","skin","morph","unlit-hdr","pbr-dark","pbr-dielectric","pbr-metal","retained",
         "texture-nearest","texture-linear","texture-repeat","texture-mirror","texture-clamp","texture-transform","texture-uv7",
-        "texture-srgb","texture-premultiplied","texture-metallic","texture-emissive","texture-mip","texture-supplied-mip","texture-odd-mip","texture-trilinear","texture-retained"];
+        "texture-srgb","texture-premultiplied","texture-metallic","texture-emissive","texture-mip","texture-supplied-mip","texture-odd-mip","texture-trilinear","texture-retained",
+        "normal-generated","normal-provided","normal-handedness","normal-mirrored-uv","normal-reflected","normal-zero-scale","normal-half-scale","normal-skin","normal-morph","normal-flat","normal-uv-transform"];
     public static ModelFixture Create(string scenario)
     {
         if (scenario.StartsWith("texture-",StringComparison.Ordinal)) { return ModelTextureReference.Create(scenario); }
+        if (scenario.StartsWith("normal-",StringComparison.Ordinal)) { return ModelNormalReference.Create(scenario); }
         Vector3[] positions = [new(-1,-1,0),new(1,-1,0),new(1,1,0),new(-1,1,0)];
         uint[] indices = [0,1,2,0,2,3];
         if (scenario == "nonindexed") { positions = indices.Select(i => positions[i]).ToArray(); }
