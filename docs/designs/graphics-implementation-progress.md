@@ -969,3 +969,28 @@ DirectX 12 は 428 件、Vulkan は 427 件、Dawn は 335 件、Browser は 67 
 その後、pipeline 作成失敗からの再試行で Portable の shader program を上書きする解放漏れを修正した。
 失敗注入の回帰テストは修正前に module／layout 各一個の未解放を検出し、修正後は Portable Passes の
 12 件すべてが成功した（`model-ibl-retry-before.log`／`model-ibl-retry-after.log`）。
+
+## 固定 Khronos 資産と punctual light の適合試験
+
+Khronos glTF-Sample-Assets の commit `c6a6bd13ab2b3c685c7903d03561b8a9392f38b8` から
+BoxVertexColors を採用した。原文の glTF と buffer、CC0 の帰属情報、SHA-256 と再生成手順を
+`src/graphics/Lumyte.Graphics.RenderGraph.Conformance/Models/Fixtures/BoxVertexColors/` に置く。
+公式 glTF Validator 2.0.0-dev.3.10 で errors／warnings／infos／hints はすべて 0 だった。
+
+専用のオフライン script が属性と index を展開し、描画側は埋め込んだ転送データだけを読む。
+Graphics の production loader、node／animation 評価やファイル取得は追加していない。
+元資産の `RGB = object-space XYZ` と既定 metallic 材質の `F0 / 4` を使い、
+前後左右と負の scale の 5 ケースを画素比較する。
+別に point の距離減衰、range、spot の cone の 3 ケースを解析式から比較する。
+
+この段階の完了は試験基盤と一資産の描画範囲であり、glTF core と五拡張の完全適合ではない。
+line／point topology、texture／color morph、より広い資産群、Resources の loader と組み合わせた
+end-to-end の確認、GPU 部分転送／batch、mesh 経路は引き続き後続作業とする。
+
+IBL の再試行修正を含む最終状態で全体テストを再実行し、
+**41 project・2,426 件成功、失敗 0、skip 0、終了コード 0** を確認した。
+DirectX 12 は 436 件、Vulkan は 435 件、Dawn は 343 件、Browser は 67 件。
+63 のモデルシナリオを四経路で実行し、Native／Dawn では保持 snapshot の再提出も確認する。
+Browser／Slang／Tint の環境変数と `VK_LAYER_VALIDATE_SYNC=1` を有効にした
+`dotnet test Lumyte.slnx --no-restore --disable-build-servers -m:4` の結果を
+`artifacts/reviews/model-khronos-final-full.log` と TRX に記録した。

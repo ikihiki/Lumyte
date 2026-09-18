@@ -398,6 +398,7 @@ Native の optional mesh／amplification 経路、同じ Model 入力からの m
 - RGBA16Float／D32Float の初期化、LessEqual depth、Opaque／Mask の書込み、Blend の読取りと premultiplied 合成。透明順序は変形・world 適用後の実頂点 AABB 中心で安定 sort する。
 - Native の直接 root と bindless buffer、Portable の直接 immediate root と明示 storage binding。parameter buffer の生成は pass 本体だけが行う。Native の CPU-visible geometry は書込み終了後に import して使用保持し、Portable の copy upload は内部 graph と内容世代 ticket に登録する。
 - 同じ共通 consumer による DirectX 12／Vulkan／Dawn／Browser の HDR 画素比較。同じ plan への更新と旧 snapshot の再提出を Native／Dawn で確認する。比較許容誤差は RGBA ベクトルの距離 0.006。PBR の正面・roughness 1 の閉形式解と、明示 light がない場合の黒も確認する。
+- 固定版 Khronos BoxVertexColors の展開済み転送データによる、前後左右と負の scale の描画試験。元資産は公式 Validator で検証し、位置と頂点色の関係から独立した期待値を求める。point／spot の距離減衰、range と cone も解析値で比較する。資産、帰属情報と再生成手順は `src/graphics/Lumyte.Graphics.RenderGraph.Conformance/Models/Fixtures/BoxVertexColors/`、変換 script は `tools/model-conformance/prepare_box_vertex_colors.py` に置く。Graphics runtime に glTF loader は追加しない。
 - 同じ executable を三 backend に切り替える回転モデルのウィンドウサンプル。画面サイズが変わるまで plan を再利用し、draw の transform だけ更新する。
 
 CPU の geometry 数学は `src/graphics/Shared/Models/ModelPreparation.cs` を両本体へ個別に compile する。共通の公開 GPU ABI や production の InternalsVisibleTo は追加しない。Native／Portable の shader と GPU resource 管理は別の実装である。

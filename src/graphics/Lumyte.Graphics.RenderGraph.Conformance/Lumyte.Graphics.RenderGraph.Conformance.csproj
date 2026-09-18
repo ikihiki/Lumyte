@@ -8,4 +8,5 @@
     <ProjectReference Include="..\Lumyte.Graphics.Passes\Lumyte.Graphics.Passes.csproj" />
     <PackageReference Include="SkiaSharp" />
   </ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Models/Fixtures/BoxVertexColors/model.json" LogicalName="Lumyte.Graphics.Conformance.BoxVertexColors.json" /></ItemGroup>
 </Project>

@@ -1,0 +1,4 @@
+# Preserve the pinned upstream bytes on Windows checkouts.
+source/BoxVertexColors.gltf -text
+source/buffer.bin -text
+model.json text eol=lf

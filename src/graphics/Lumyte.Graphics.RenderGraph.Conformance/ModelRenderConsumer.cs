@@ -10,9 +10,13 @@ public static class ModelRenderConsumer
         "texture-nearest","texture-linear","texture-repeat","texture-mirror","texture-clamp","texture-transform","texture-uv7",
         "texture-srgb","texture-premultiplied","texture-metallic","texture-emissive","texture-mip","texture-supplied-mip","texture-odd-mip","texture-trilinear","texture-retained",
         "normal-generated","normal-provided","normal-handedness","normal-mirrored-uv","normal-reflected","normal-zero-scale","normal-half-scale","normal-skin","normal-morph","normal-flat","normal-uv-transform",
-        "ibl-diffuse","ibl-metal","ibl-hdr","ibl-intensity","ibl-disabled","ibl-occlusion","ibl-ao-strength","ibl-ao-direct","ibl-unlit","ibl-gradient","ibl-rotation","ibl-retained"];
+        "ibl-diffuse","ibl-metal","ibl-hdr","ibl-intensity","ibl-disabled","ibl-occlusion","ibl-ao-strength","ibl-ao-direct","ibl-unlit","ibl-gradient","ibl-rotation","ibl-retained",
+        "khronos-box-front","khronos-box-back","khronos-box-right","khronos-box-left","khronos-box-reflected",
+        "punctual-point","punctual-range","punctual-spot"];
     public static ModelFixture Create(string scenario)
     {
+        if (scenario.StartsWith("khronos-",StringComparison.Ordinal)) { return KhronosModelReference.Create(scenario); }
+        if (scenario.StartsWith("punctual-",StringComparison.Ordinal)) { return ModelPunctualReference.Create(scenario); }
         if (scenario.StartsWith("ibl-",StringComparison.Ordinal)) { return ModelEnvironmentReference.Create(scenario); }
         if (scenario.StartsWith("texture-",StringComparison.Ordinal)) { return ModelTextureReference.Create(scenario); }
         if (scenario.StartsWith("normal-",StringComparison.Ordinal)) { return ModelNormalReference.Create(scenario); }
