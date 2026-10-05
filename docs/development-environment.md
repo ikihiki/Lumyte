@@ -56,7 +56,7 @@ Git、MSVC の x64 コンパイラー、Windows SDK、VC++ ランタイムが不
 
 Vulkan loader とヘッダーは vcpkg から取得するため、別途 Vulkan SDK を入れる必要はない。lavapipe は `pal1000/mesa-dist-win` の MSVC 配布を固定版・SHA-256 で検証し、環境ディレクトリ内に展開する。7zip は固定コミットの vcpkg の検証済みツールを使う。GPU ドライバーの登録は変更しない。追加の HTTPS 接続先は Microsoft の `aka.ms` とそのリダイレクト先、winget の Git 配布先である。
 
-Windows 用スクリプトは PowerShell の構文検査を実施した。Windows 実機でのインストールと動作検証は未実施。
+GitHub Actions の Windows Server 2022 x64 でセットアップと smoke test が成功している。既存の MSVC／Windows SDK を再利用する経路を検証した。Microsoft インストーラーによるシステム依存の新規導入は未検証。
 
 ## devcontainer
 
@@ -83,6 +83,12 @@ mise run verify
 タスク開始時には、既存のチェックアウトを使用し、`source tools/setup/activate.sh` でツールを有効化する。クラウドタスクはすでに隔離されているため、ユーザーから明示的に依頼されない限り Git worktree を追加しない。常駐サービスは不要。
 
 必要な主な HTTPS 接続先は、ディストリビューションの APT ミラー、`builds.dotnet.microsoft.com`、`github.com`、`release-assets.githubusercontent.com`、`codeload.github.com`、NuGet の `api.nuget.org` と `globalcdn.nuget.org`。追加する vcpkg port によって取得元が増える場合がある。資格情報はこのセットアップには不要。
+
+## GitHub Actions
+
+`.github/workflows/setup-smoke.yml` は push、pull request、手動実行で Ubuntu 24.04 と Windows Server 2022 のセットアップから `mise run verify` までを確認する。両 OS の結果を個別に表示し、一方の失敗で他方の検証を中止しない。[成功した実行結果](https://github.com/ikihiki/Lumyte/actions/runs/37357250382)では、両 OS のセットアップと smoke test が完了した。
+
+GitHub の Windows runner は管理者権限で動くため、システム依存の導入後に一時的な通常ユーザーで smoke test を実行する。`tools/setup/ci-windows-smoke.ps1` がユーザーの作成、検証プロセスの待機、ユーザーの削除を担当する。このスクリプトは GitHub Actions 専用で、通常の開発環境では管理者権限のないシェルから `mise run verify` を使う。
 
 ## Native 依存とローカル NuGet
 
@@ -134,4 +140,4 @@ mise run verify
 
 検証済みの対象は Linux x64。arm64 向けには取得元・チェックサムとロックを用意しているが、arm64 実機での実行検証は別途必要。
 
-Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version` と `vars.windows_mesa_sha256` を更新する。Windows x64 は構文検査と配布元・チェックサムの確認まで実施済みで、実機検証は必要。Browser の WebAssembly workload と WebGPU の実行環境は別途整備する。
+Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version` と `vars.windows_mesa_sha256` を更新する。Windows x64 は GitHub Actions の Windows Server 2022 で、Vulkan の読み戻しと Direct3D 12 WARP を含む smoke test を検証済み。Browser の WebAssembly workload と WebGPU の実行環境は別途整備する。

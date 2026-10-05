@@ -48,6 +48,8 @@ devcontainer のイメージビルドと Codex のセットアップは共通ス
 - Windows では Direct3D 12 の WARP デバイス作成。
 - Native ライブラリをローカル NuGet パッケージにして C# から復元し、P/Invoke で呼び出す。
 
+GitHub Actions で Ubuntu 24.04 と Windows Server 2022 のセットアップと smoke test を確認する。Vulkan loader は管理者権限のプロセスではドライバー選択の環境変数を無視するため、Windows の smoke test は通常ユーザーで実行する。GitHub の Windows runner では、一時ユーザーで検証プロセスを起動し、結果を取得してからユーザーを削除する。
+
 検証用のプロジェクトは生成物として扱い、エンジンの公開 API や製品パッケージを定義するものではない。
 
 ## 検討した代替案
@@ -64,7 +66,7 @@ OS のヘッダーや共有ライブラリとの依存を独自に管理する�
 
 - mise の同じ設定とタスクをLinux と Windows の環境で使用できる。
 - 配布ツールの更新では `mise.toml` のバージョン・チェックサムと `mise.lock` を更新する。.NET は `global.json` も更新する。
-- OS パッケージはディストリビューションの更新を取り込むため、完全なビット単位の再現性は保証しない。Windows 用スクリプトは構文検査済みだが、Windows 実機でのセットアップ・DirectX 実行は未検証。Browser の実行環境は別途整備する。
+- OS パッケージはディストリビューションの更新を取り込むため、完全なビット単位の再現性は保証しない。Windows Server 2022 x64 の GitHub Actions でセットアップと Direct3D 12 WARP を含む smoke test を検証済み。MSVC／Windows SDK の新規導入経路は未検証。Browser の実行環境は別途整備する。
 - 従来の生成物は削除せず保持するが、有効なツールは mise のインストール先から選択する。
 
 ## 参考資料
