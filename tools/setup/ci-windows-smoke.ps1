@@ -18,7 +18,9 @@ try {
     $usersGroup = Get-LocalGroup -SID 'S-1-5-32-545'
     Add-LocalGroupMember -Group $usersGroup -Member $userName
     Start-Service seclogon
-    Invoke-LumyteCommand icacls.exe @($LumyteRepoRoot, '/grant', "${account}:(OI)(CI)M", '/T', '/Q')
+    # Inheritable permissions propagate from the checkout root. Avoid adding
+    # redundant explicit ACLs recursively to every downloaded tool file.
+    Invoke-LumyteCommand icacls.exe @($LumyteRepoRoot, '/grant', "${account}:(OI)(CI)M", '/Q')
     $ciRoot = Join-Path $env:LUMYTE_ENV_ROOT 'ci'
     $null = New-Item -ItemType Directory $ciRoot -Force
     $childScript = Join-Path $ciRoot 'smoke.ps1'
@@ -31,9 +33,17 @@ Invoke-LumyteCommand mise @('run', 'verify')
 "@ | Set-Content $childScript -Encoding ASCII
     $stdout = Join-Path $ciRoot 'stdout.log'
     $stderr = Join-Path $ciRoot 'stderr.log'
+    Write-Host '::notice title=Windows smoke test::Starting verification as an ordinary user.'
     $process = Start-Process powershell.exe -Credential $credential -LoadUserProfile `
         -WorkingDirectory $LumyteRepoRoot -ArgumentList @('-NoProfile', '-NonInteractive', '-File', ('"' + $childScript + '"')) `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    # Start-Process -Wait also waits for descendants such as MSVC's PDB server.
+    # Only the verification shell's exit status determines the smoke result.
+    if (-not $process.WaitForExit(600000)) {
+        $process.Kill()
+        throw 'Windows smoke verification exceeded 10 minutes.'
+    }
+    $process.Refresh()
     Get-Content $stdout
     Get-Content $stderr
     if ($process.ExitCode -ne 0) { throw "Non-administrator smoke test exited with code $($process.ExitCode)" }
