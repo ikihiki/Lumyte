@@ -24,12 +24,23 @@ try {
     $ciRoot = Join-Path $env:LUMYTE_ENV_ROOT 'ci'
     $null = New-Item -ItemType Directory $ciRoot -Force
     $childScript = Join-Path $ciRoot 'smoke.ps1'
+    $exitCodeFile = Join-Path $ciRoot ([Guid]::NewGuid().ToString('N') + '.exit-code')
     $escapedRoot = $LumyteRepoRoot.Replace("'", "''")
+    $escapedExitCodeFile = $exitCodeFile.Replace("'", "''")
     @"
 `$ErrorActionPreference = 'Stop'
-Set-Location '$escapedRoot'
-. './tools/setup/activate.ps1' -RequireCompiler
-Invoke-LumyteCommand mise @('run', 'verify')
+`$exitCode = 1
+try {
+    Set-Location '$escapedRoot'
+    . './tools/setup/activate.ps1' -RequireCompiler
+    Invoke-LumyteCommand mise @('run', 'verify')
+    `$exitCode = 0
+} catch {
+    Write-Output `$_.ToString()
+} finally {
+    [IO.File]::WriteAllText('$escapedExitCodeFile', `$exitCode.ToString())
+}
+exit `$exitCode
 "@ | Set-Content $childScript -Encoding ASCII
     $stdout = Join-Path $ciRoot 'stdout.log'
     $stderr = Join-Path $ciRoot 'stderr.log'
@@ -37,6 +48,8 @@ Invoke-LumyteCommand mise @('run', 'verify')
     $process = Start-Process powershell.exe -Credential $credential -LoadUserProfile `
         -WorkingDirectory $LumyteRepoRoot -ArgumentList @('-NoProfile', '-NonInteractive', '-File', ('"' + $childScript + '"')) `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    # Keep the process handle open before it exits (Windows PowerShell 5.1).
+    $null = $process.Handle
     # Start-Process -Wait also waits for descendants such as MSVC's PDB server.
     # Only the verification shell's exit status determines the smoke result.
     if (-not $process.WaitForExit(600000)) {
@@ -46,7 +59,14 @@ Invoke-LumyteCommand mise @('run', 'verify')
     $process.Refresh()
     Get-Content $stdout
     Get-Content $stderr
-    if ($process.ExitCode -ne 0) { throw "Non-administrator smoke test exited with code $($process.ExitCode)" }
+    $exitCode = $process.ExitCode
+    # Windows PowerShell may still return null for alternate-credential launches.
+    # The child writes a unique status file only after running verification.
+    if ($null -eq $exitCode) {
+        if (-not (Test-Path $exitCodeFile)) { throw 'Smoke process exited without reporting its result.' }
+        $exitCode = [int](Get-Content $exitCodeFile -Raw)
+    }
+    if ($exitCode -ne 0) { throw "Non-administrator smoke test exited with code $exitCode" }
 } finally {
     if ($created) { Remove-LocalUser -Name $userName }
 }
