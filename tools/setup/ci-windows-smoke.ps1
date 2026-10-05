@@ -10,11 +10,13 @@ $password = 'Aa!' + [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString
 Write-Host "::add-mask::$password"
 $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
 $account = "$env:COMPUTERNAME\$userName"
-$credential = New-Object Management.Automation.PSCredential($account, $securePassword)
+$credential = New-Object System.Management.Automation.PSCredential($account, $securePassword)
 $created = $false
 try {
     $null = New-LocalUser -Name $userName -Password $securePassword -AccountNeverExpires
     $created = $true
+    $usersGroup = Get-LocalGroup -SID 'S-1-5-32-545'
+    Add-LocalGroupMember -Group $usersGroup -Member $userName
     Start-Service seclogon
     Invoke-LumyteCommand icacls.exe @($LumyteRepoRoot, '/grant', "${account}:(OI)(CI)M", '/T', '/Q')
     $ciRoot = Join-Path $env:LUMYTE_ENV_ROOT 'ci'
