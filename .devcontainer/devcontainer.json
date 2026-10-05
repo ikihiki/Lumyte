@@ -1,0 +1,21 @@
+{
+  "name": "Lumyte",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "lumyte",
+  "containerEnv": {
+    "LUMYTE_ENV_ROOT": "/opt/lumyte"
+  },
+  "postCreateCommand": "bash tools/setup/setup.sh && mise run verify",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools"
+      ]
+    }
+  }
+}

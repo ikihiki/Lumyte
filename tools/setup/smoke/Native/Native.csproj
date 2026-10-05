@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Lumyte.Setup.Smoke.Native</PackageId>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <Description>Development environment smoke test; not an engine package.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SelfContained>false</SelfContained>
+    <NativeFileName Condition="'$(RuntimeIdentifier)' != 'win-x64'">liblumyte_setup_smoke.so</NativeFileName>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="../build/$(NativeFileName)" Condition="'$(RuntimeIdentifier)' != 'win-x64'" Pack="true"
+          PackagePath="runtimes/$(RuntimeIdentifier)/native/" />
+    <None Include="../build/*.dll" Condition="'$(RuntimeIdentifier)' == 'win-x64'" Pack="true"
+          PackagePath="runtimes/$(RuntimeIdentifier)/native/" />
+  </ItemGroup>
+</Project>

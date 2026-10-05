@@ -21,10 +21,13 @@ C# 側は C++ のネイティブライブラリをローカル NuGet パッケ�
 
 ```text
 Lumyte/
+├── .devcontainer/                  # 共通セットアップを使う開発コンテナ
 ├── docs/
-│   └── adr/
-│       ├── 0001-adr-writing-policy.md
-│       └── 0002-repository-layout.md
+│   ├── adr/
+│   │   ├── 0001-adr-writing-policy.md
+│   │   ├── 0002-repository-layout.md
+│   │   └── 0003-development-environment.md
+│   └── development-environment.md
 ├── src/
 │   ├── Core/
 │   │   └── Lumyte.Core/
@@ -45,6 +48,7 @@ Lumyte/
 ├── tests/
 ├── samples/
 ├── tools/
+│   └── setup/                      # 共通セットアップ・有効化・検証
 ├── packaging/
 │   └── nuget/
 ├── artifacts/
@@ -52,6 +56,9 @@ Lumyte/
 ├── CMakeLists.txt
 ├── Directory.Build.props
 ├── Directory.Packages.props
+├── global.json
+├── mise.toml
+├── mise.lock
 ├── NuGet.config
 └── Lumyte.sln
 ```
@@ -61,6 +68,7 @@ Lumyte/
 | ディレクトリ | 役割 |
 | --- | --- |
 | `docs/adr/` | 設計判断、採用理由、影響の記録 |
+| `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
 | `src/Core/` | 基本型と基盤機能 |
 | `src/Engine/` | エンジン機能の統合 |
 | `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |
@@ -68,6 +76,7 @@ Lumyte/
 | `tests/` | C# の単体テスト・統合テスト。必要に応じてカテゴリとプロジェクト単位で整理する |
 | `samples/` | 利用例と最小起動・描画サンプル |
 | `tools/` | ビルドやパッケージ生成の補助ツール |
+| `tools/setup/` | 開発環境の共通セットアップ、有効化、検証 |
 | `packaging/nuget/` | 必要な共通パッケージ定義や MSBuild 統合ファイル |
 | `artifacts/` | ビルド生成物。導入時に Git 管理対象外とする |
 | `artifacts/nuget/` | 生成したパッケージを配置するローカル NuGet フィード |

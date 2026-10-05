@@ -1,0 +1,8 @@
+{
+  "name": "lumyte-setup-smoke",
+  "version-string": "0.0.0",
+  "dependencies": [
+    "zlib",
+    { "name": "vulkan-loader", "platform": "windows" }
+  ]
+}
