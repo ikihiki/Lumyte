@@ -50,7 +50,7 @@ Windows x64 の Windows PowerShell 5.1 または PowerShell 7 で、リポジト
 mise run verify
 ```
 
-Git、MSVC の x64 コンパイラー、Windows SDK、VC++ ランタイムが不足する場合は、管理者として起動した PowerShell でセットアップする。既存の Visual Studio／Build Tools は再利用する。Git の自動導入には winget が必要。Microsoft インストーラーの署名を検証してから実行し、再起動が要求された場合は再起動後にセットアップを再実行する。組織の PowerShell 実行ポリシーにも従う。
+Git、MSVC の x64 コンパイラー、Windows SDK、VC++ ランタイムが不足する場合は、管理者として起動した PowerShell でセットアップする。既存の Visual Studio／Build Tools は再利用する。Git の自動導入には winget が必要。Microsoft インストーラーの署名を検証してから実行し、再起動が要求された場合は再起動後にセットアップを再実行する。組織の PowerShell 実行ポリシーにも従う。セットアップ後の smoke test は管理者権限のないシェルで実行する。Vulkan loader は管理者権限のプロセスでは lavapipe 選択用の環境変数を無視する。
 
 .NET SDK、CMake、Ninja は mise の Windows x64 用ロックに従って導入する。新しいシェルでは `. .\tools\setup\activate.ps1 -RequireCompiler` で MSVC の x64 開発環境と mise を有効化する。導入先を変更する場合は、セットアップと有効化の前に `$env:LUMYTE_ENV_ROOT` を同じ書き込み可能なパスに設定する。
 

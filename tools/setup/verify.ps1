@@ -13,7 +13,8 @@ try {
     $ninjaVersion = (Invoke-LumyteCommand mise @('current', 'http:ninja') | Select-Object -Last 1).Trim()
     if ((Invoke-LumyteCommand cmake @('--version') | Select-Object -First 1).Trim() -ne "cmake version $cmakeVersion") { throw 'Incorrect CMake version.' }
     if ((Invoke-LumyteCommand ninja @('--version') | Select-Object -Last 1).Trim() -ne $ninjaVersion) { throw 'Incorrect Ninja version.' }
-    $commit = (Invoke-LumyteCommand git @('-C', $env:VCPKG_ROOT, 'rev-parse', 'HEAD') | Select-Object -Last 1).Trim()
+    # CI may install tools as administrator and verify as an ordinary user.
+    $commit = (Invoke-LumyteCommand git @('-c', "safe.directory=$($env:VCPKG_ROOT)", '-C', $env:VCPKG_ROOT, 'rev-parse', 'HEAD') | Select-Object -Last 1).Trim()
     if ($commit -ne $env:LUMYTE_VCPKG_COMMIT) { throw 'Incorrect vcpkg commit.' }
     if (-not (Test-Path $env:LUMYTE_LAVAPIPE_ICD)) { throw 'lavapipe ICD is missing.' }
     $env:VK_DRIVER_FILES = $env:LUMYTE_LAVAPIPE_ICD
