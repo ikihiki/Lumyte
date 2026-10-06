@@ -23,6 +23,14 @@ try {
     $env:PATH = $mesaBin + ';' + $env:PATH
     $null = New-Item -ItemType Directory -Path $smokeRoot
     Copy-Item "$PSScriptRoot/smoke/*" $smokeRoot -Recurse
+    $shaderOutput = Join-Path $smokeRoot 'shader.spv'
+    Invoke-LumyteCommand slangc @((Join-Path $smokeRoot 'shader.slang'),
+        '-entry', 'main', '-stage', 'compute', '-target', 'spirv', '-o', $shaderOutput)
+    $spirv = [IO.File]::ReadAllBytes($shaderOutput)
+    if ($spirv.Length -le 20 -or $spirv.Length % 4 -ne 0 -or
+        [BitConverter]::ToUInt32($spirv, 0) -ne 0x07230203) {
+        throw 'Slang produced invalid SPIR-V.'
+    }
     $build = Join-Path $smokeRoot 'build'
     Invoke-LumyteCommand cmake @('-S', $smokeRoot, '-B', $build, '-G', 'Ninja',
         "-DCMAKE_TOOLCHAIN_FILE=$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake",
@@ -41,7 +49,7 @@ try {
     Invoke-LumyteCommand dotnet @('restore', $managedProject, '--source', $env:LUMYTE_NUGET_FEED, "-p:SmokeVersion=$version")
     Invoke-LumyteCommand dotnet @('run', '--project', $managedProject, '--configuration', 'Release',
         '--no-restore', "-p:SmokeVersion=$version", '--no-self-contained')
-    Write-Host 'PASS: C#, MSVC C++, vcpkg, native NuGet/PInvoke, lavapipe Vulkan readback, and Direct3D 12 WARP.'
+    Write-Host 'PASS: Slang SPIR-V compilation, C#, MSVC C++, vcpkg, native NuGet/PInvoke, lavapipe Vulkan readback, and Direct3D 12 WARP.'
 } finally {
     [Environment]::SetEnvironmentVariable('VK_DRIVER_FILES', $previousDriverFiles, 'Process')
     [Environment]::SetEnvironmentVariable('VK_ICD_FILENAMES', $previousIcdFiles, 'Process')

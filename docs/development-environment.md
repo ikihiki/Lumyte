@@ -1,6 +1,6 @@
 # 開発環境
 
-Debian／Ubuntu 系 Linux（x64／arm64）で、mise を使って .NET SDK、GCC、CMake、Ninja、Vulkan、lavapipe、vcpkg を準備する。設計方針は [ADR-0003](adr/0003-development-environment.md) を参照する。
+Debian／Ubuntu 系 Linux（x64／arm64）で、mise を使って .NET SDK、GCC、CMake、Ninja、Slang、Vulkan、lavapipe、vcpkg を準備する。設計方針は [ADR-0003](adr/0003-development-environment.md) を参照する。
 
 Windows x64 では PowerShell から同じ mise 設定を使用し、MSVC、Windows SDK、vcpkg、lavapipe を準備する。
 
@@ -14,7 +14,7 @@ source tools/setup/activate.sh
 mise run verify
 ```
 
-セットアップは再実行できる。`mise.toml` に .NET SDK、CMake、Ninja のバージョン・取得元・チェックサムと vcpkg のコミットを定義し、`mise.lock` に従って導入する。GCC、pkg-config、lavapipe などの OS パッケージは APT で更新する。管理者権限または非対話 sudo がなければ、パッケージを `artifacts/dev-env/sysroot/` に展開する。非特権モードの前提は Bash、APT、ディストリビューションの公式鍵、dpkg-deb、curl、Git、GCC／G++ である。
+セットアップは再実行できる。`mise.toml` に .NET SDK、CMake、Ninja、Slang のバージョン・取得元・チェックサムと vcpkg のコミットを定義し、`mise.lock` に従って導入する。GCC、pkg-config、lavapipe などの OS パッケージは APT で更新する。管理者権限または非対話 sudo がなければ、パッケージを `artifacts/dev-env/sysroot/` に展開する。非特権モードの前提は Bash、APT、ディストリビューションの公式鍵、dpkg-deb、curl、Git、GCC／G++ である。
 
 新しいシェルでは毎回 `source tools/setup/activate.sh` を実行する。保存済みファイルは再利用できるが、前のプロセスの環境変数は引き継がれるとは限らない。
 
@@ -25,10 +25,13 @@ mise run setup                 # OS 依存とツールを含む再セットア�
 mise run setup-native          # vcpkg と lavapipe ICD の準備
 mise run verify                # 開発環境の機能検証
 mise exec -- dotnet --version  # 固定したツールで実行
+mise exec -- slangc -version  # Slang コンパイラーのバージョンを確認
 mise ls --current             # 使用するツールのバージョンを確認
 ```
 
-共通環境変数は `mise.toml` に定義し、OS ごとの有効化スクリプトが mise とコンパイラー環境を準備する。.NET、CMake、Ninja は HTTP backend を使用し、公式アーカイブを既知のチェックサムで検証する。mise のデータ・設定・キャッシュも `LUMYTE_ENV_ROOT/mise/` に保存し、書き込めないホームディレクトリに依存しない。
+Slang はシェーダー言語のコンパイラー `shader-slang/slang` の 2026.19 を使用する。Linux x64／arm64 は glibc 2.28 向けの公式アーカイブ、Windows x64 は公式 ZIP を取得し、GitHub リリースが公開する SHA-256 digest で検証する。mise がアーカイブ内の `bin/` を PATH に追加するため、有効化後は `slangc` を使用できる。
+
+共通環境変数は `mise.toml` に定義し、OS ごとの有効化スクリプトが mise とコンパイラー環境を準備する。.NET、CMake、Ninja、Slang は HTTP backend を使用し、公式アーカイブを既知のチェックサムで検証する。mise のデータ・設定・キャッシュも `LUMYTE_ENV_ROOT/mise/` に保存し、書き込めないホームディレクトリに依存しない。
 
 インストール先を変更する場合は、セットアップ時と有効化時の両方に同じ `LUMYTE_ENV_ROOT` を設定する。
 
@@ -52,7 +55,7 @@ mise run verify
 
 Git、MSVC の x64 コンパイラー、Windows SDK、VC++ ランタイムが不足する場合は、管理者として起動した PowerShell でセットアップする。既存の Visual Studio／Build Tools は再利用する。Git の自動導入には winget が必要。Microsoft インストーラーの署名を検証してから実行し、再起動が要求された場合は再起動後にセットアップを再実行する。組織の PowerShell 実行ポリシーにも従う。セットアップ後の smoke test は管理者権限のないシェルで実行する。Vulkan loader は管理者権限のプロセスでは lavapipe 選択用の環境変数を無視する。
 
-.NET SDK、CMake、Ninja は mise の Windows x64 用ロックに従って導入する。新しいシェルでは `. .\tools\setup\activate.ps1 -RequireCompiler` で MSVC の x64 開発環境と mise を有効化する。導入先を変更する場合は、セットアップと有効化の前に `$env:LUMYTE_ENV_ROOT` を同じ書き込み可能なパスに設定する。
+.NET SDK、CMake、Ninja、Slang は mise の Windows x64 用ロックに従って導入する。新しいシェルでは `. .\tools\setup\activate.ps1 -RequireCompiler` で MSVC の x64 開発環境と mise を有効化する。導入先を変更する場合は、セットアップと有効化の前に `$env:LUMYTE_ENV_ROOT` を同じ書き込み可能なパスに設定する。
 
 Vulkan loader とヘッダーは vcpkg から取得するため、別途 Vulkan SDK を入れる必要はない。lavapipe は `pal1000/mesa-dist-win` の MSVC 配布を固定版・SHA-256 で検証し、環境ディレクトリ内に展開する。7zip は固定コミットの vcpkg の検証済みツールを使う。GPU ドライバーの登録は変更しない。追加の HTTPS 接続先は Microsoft の `aka.ms` とそのリダイレクト先、winget の Git 配布先である。
 
@@ -112,11 +115,12 @@ cmake -S <native-project> -B artifacts/build/<project> -G Ninja \
 
 `mise run verify` は Linux で `verify.sh`、Windows で `verify.ps1` を実行し、生成した検証用プロジェクトで次を確認する。
 
-1. vcpkg で zlib を取得・ビルドし、CMake／Ninja で C++ 共有ライブラリを作る。
-2. 共有ライブラリを `Lumyte.Setup.Smoke.Native` NuGet に格納し、ローカルフィードから C# プロジェクトへ復元する。
-3. C# から P/Invoke で C++ を呼び、zlib の圧縮・復元結果を確認する。
-4. lavapipe の CPU デバイスを選び、Vulkan キューにバッファ書き込みを送信し、読み戻した値を検証する。
-5. Windows では Direct3D 12 の WARP デバイスを作成する。
+1. Slang で検証用 compute shader を SPIR-V にコンパイルし、生成物のサイズとマジックナンバーを確認する。
+2. vcpkg で zlib を取得・ビルドし、CMake／Ninja で C++ 共有ライブラリを作る。
+3. 共有ライブラリを `Lumyte.Setup.Smoke.Native` NuGet に格納し、ローカルフィードから C# プロジェクトへ復元する。
+4. C# から P/Invoke で C++ を呼び、zlib の圧縮・復元結果を確認する。
+5. lavapipe の CPU デバイスを選び、Vulkan キューにバッファ書き込みを送信し、読み戻した値を検証する。
+6. Windows では Direct3D 12 の WARP デバイスを作成する。
 
 検証用 NuGet はエンジンの製品パッケージではない。検証のたびに別のバージョンを生成してキャッシュによる誤判定を避ける。検証プロジェクトは終了時に削除し、ダウンロードキャッシュと生成した NuGet は `artifacts/` に保持する。
 
@@ -128,7 +132,7 @@ VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
 
 ## バージョンの更新と対象外
 
-配布ツールの更新では `mise.toml` のバージョン・各 OS／CPU 向け取得元とチェックサムを更新する。.NET は公式リリースメタデータの SHA-512 を使用し、`global.json` も同じ SDK バージョンに更新する。vcpkg は `mise.toml` の `vars.vcpkg_commit` を更新する。mise 自身の更新だけは `tools/setup/mise-bootstrap.json` のバージョンと公式 SHA-256 を更新する。
+配布ツールの更新では `mise.toml` のバージョン・各 OS／CPU 向け取得元とチェックサムを更新する。Slang は `shader-slang/slang` の公式リリースの SHA-256 digest を使用する。.NET は公式リリースメタデータの SHA-512 を使用し、`global.json` も同じ SDK バージョンに更新する。vcpkg は `mise.toml` の `vars.vcpkg_commit` を更新する。mise 自身の更新だけは `tools/setup/mise-bootstrap.json` のバージョンと公式 SHA-256 を更新する。
 
 設定の更新後はロックを再生成し、セットアップと検証を行う。
 

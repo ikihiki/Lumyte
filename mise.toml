@@ -54,6 +54,15 @@ linux-x64 = { url = "https://github.com/ninja-build/ninja/releases/download/v1.1
 linux-arm64 = { url = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux-aarch64.zip", checksum = "sha256:fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc" }
 windows-x64 = { url = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip", checksum = "sha256:07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65" }
 
+# Shader Slang compiler; GitHub release assets supply SHA-256 digests.
+[tools."http:slang"]
+version = "2026.19"
+bin_path = "bin"
+[tools."http:slang".platforms]
+linux-x64 = { url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-x86_64-glibc-2.28.tar.gz", checksum = "sha256:bd7afcb0956dee9304f44ed115e9aaa7140704271b5c3294bcb237e3ae67adc7" }
+linux-arm64 = { url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-aarch64-glibc-2.28.tar.gz", checksum = "sha256:f49229eb9606b47b122e1d8789be46a7bcd6bb2ffa94b06fae6d544a4e6df637" }
+windows-x64 = { url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-windows-x86_64.zip", checksum = "sha256:fc922f214b5d115f663932e59e80e0f6b6cc6fae140979cf307da6459b6f8f33" }
+
 [tasks.setup]
 description = "Install the shared Linux or Windows development environment"
 run = "bash tools/setup/setup.sh"
@@ -65,6 +74,6 @@ run = "bash tools/setup/setup-native.sh"
 run_windows = "powershell.exe -NoProfile -File tools/setup/setup-native.ps1"
 
 [tasks.verify]
-description = "Verify native NuGet/PInvoke, vcpkg and lavapipe execution"
+description = "Verify Slang compilation, native NuGet/PInvoke, vcpkg and lavapipe execution"
 run = "bash tools/setup/verify.sh"
 run_windows = "powershell.exe -NoProfile -File tools/setup/verify.ps1"

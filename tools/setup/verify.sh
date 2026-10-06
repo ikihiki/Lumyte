@@ -24,6 +24,14 @@ vulkaninfo --summary
 smoke_root="$(mktemp -d "$LUMYTE_ENV_ROOT/smoke.XXXXXX")"
 trap 'rm -rf -- "$smoke_root"' EXIT
 cp -R "$script_dir/smoke/." "$smoke_root/"
+slangc "$smoke_root/shader.slang" -entry main -stage compute -target spirv \
+    -o "$smoke_root/shader.spv"
+python3 - "$smoke_root/shader.spv" <<'CHECK'
+import pathlib, struct, sys
+data = pathlib.Path(sys.argv[1]).read_bytes()
+assert len(data) > 20 and len(data) % 4 == 0, 'Slang produced invalid SPIR-V size'
+assert struct.unpack_from('<I', data)[0] == 0x07230203, 'Slang produced invalid SPIR-V magic'
+CHECK
 case "$(uname -m)" in
     x86_64) rid=linux-x64; triplet=x64-linux ;;
     aarch64) rid=linux-arm64; triplet=arm64-linux ;;
@@ -51,4 +59,4 @@ dotnet restore "$smoke_root/Managed/Managed.csproj" \
 dotnet run --project "$smoke_root/Managed/Managed.csproj" \
     --configuration Release --no-restore \
     "-p:SmokeVersion=$smoke_version" --no-self-contained
-echo 'PASS: C#, C++, vcpkg zlib, native NuGet/PInvoke, and lavapipe Vulkan queue/readback.'
+echo 'PASS: Slang SPIR-V compilation, C#, C++, vcpkg zlib, native NuGet/PInvoke, and lavapipe Vulkan queue/readback.'

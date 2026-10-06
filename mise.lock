@@ -55,3 +55,20 @@ url = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linu
 [tools."http:ninja"."platforms.windows-x64"]
 checksum = "sha256:07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65"
 url = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip"
+
+[[tools."http:slang"]]
+version = "2026.19"
+backend = "http:slang"
+specifiers = ["2026.19"]
+
+[tools."http:slang"."platforms.linux-arm64"]
+checksum = "sha256:f49229eb9606b47b122e1d8789be46a7bcd6bb2ffa94b06fae6d544a4e6df637"
+url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-aarch64-glibc-2.28.tar.gz"
+
+[tools."http:slang"."platforms.linux-x64"]
+checksum = "sha256:bd7afcb0956dee9304f44ed115e9aaa7140704271b5c3294bcb237e3ae67adc7"
+url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-x86_64-glibc-2.28.tar.gz"
+
+[tools."http:slang"."platforms.windows-x64"]
+checksum = "sha256:fc922f214b5d115f663932e59e80e0f6b6cc6fae140979cf307da6459b6f8f33"
+url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-windows-x86_64.zip"
