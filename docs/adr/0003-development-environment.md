@@ -5,71 +5,71 @@
 
 ## 背景
 
-devcontainer と Codex のクラウド環境で C#、C++、Vulkan の開発に同じセットアップ手順を使う。クラウド環境には GPU や管理者権限がない場合がある。共通セットアップを mise で管理する。バージョン、環境変数、実行タスクを devcontainer と Codex で共有し、シェルスクリプトごとにツールの管理方法を持たない構成にする。
+devcontainer、Codex のクラウド環境、Windows ネイティブ環境で C# と C++ の開発環境を共有する。クラウド環境には GPU や管理者権限がない場合がある。環境ごとにバージョン指定や導入方法が分散しないよう、共通の管理方針とセットアップの入口を定める。
 
 ## 決定
 
-Debian／Ubuntu 系 Linux の x64／arm64 と Windows x64 を対象にする。devcontainer と Codex のクラウド環境は Linux、Windows ネイティブ環境は PowerShell を入口とし、同じ mise 設定を共有する。devcontainer は Debian 13 を使用する。
+### 共通設定と OS ごとの責務
 
-`mise.toml` に .NET SDK、CMake、Ninja のバージョンと各 CPU 向け取得元・チェックサム、vcpkg のコミット、セットアップと検証のタスクを定義する。`mise.lock` に Linux x64／arm64 と Windows x64 の解決済み取得元を保存し、通常のインストールは `mise install --locked` で行う。
+開発ツールのバージョン、環境変数、セットアップと検証のタスクを mise で管理する。Linux と Windows で同じ設定とタスク名を共有し、OS 固有の処理は各環境のスクリプトに分ける。
 
-.NET、CMake、Ninja は mise の HTTP backend で管理する。公式配布アーカイブを使い、既知の SHA-512／SHA-256 を明示する。.NET の既存の公式 SHA-512 検証を維持するため、検証方法が異なるインストーラースクリプトへ切り替えない。`global.json` は .NET 自身の SDK 選択にも必要なので保持し、mise の指定との一致を検証する。
+配布済みツールの取得と PATH の選択は mise に任せる。OS のシステム依存は、その OS の導入方式で準備する。Native 依存管理に必要なリポジトリの準備や初期化は、共通の mise タスクから呼び出す。
 
-GCC、pkg-config、Vulkan loader、ヘッダー、lavapipe と各ランタイム依存はディストリビューションに依存するため、APT で導入する。管理者権限がない場合のローカル展開方式と署名・ハッシュ検証は維持する。
+導入対象、バージョン、取得元、チェックサム、導入コマンドはセットアップ設定と手順書で管理し、ADR には記載しない。
 
-vcpkg は Git リポジトリと bootstrap が必要なので、mise タスクで準備する。コミット指定は `mise.toml` に一元化し、vcpkg の依存取得時の検証を維持する。OS パッケージの具体的なバージョンは mise が管理するものではない。
+### 再現性と取得時の検証
 
-Windows では Microsoft の署名を検証したインストーラーで MSVC Build Tools、Windows SDK、VC++ ランタイムを準備する。Git がなければ winget で導入する。システム依存が不足する場合だけ管理者権限を要求する。Vulkan loader とヘッダーは vcpkg、lavapipe は第三者配布 `pal1000/mesa-dist-win` の固定版 MSVC アーカイブを SHA-256 検証して導入する。Mesa は環境ディレクトリ内に保持し、システムのドライバー登録を変更しない。
+共通設定にバージョンと取得元の検証情報を定義し、解決済みの取得情報をロックファイルに保存する。通常のセットアップはロックに従う。言語側にもバージョン選択の設定が必要な場合は、共通設定との一致を検証する。
 
-### コマンドと責務
+配布アーカイブはチェックサムで、システム依存の導入は配布元の署名やハッシュで検証する。Native 依存管理の基準となるリポジトリはコミットを固定する。OS の更新を取り込むシステム依存については、完全なビット単位の再現性を保証しない。
 
-| 入口 | 役割 |
-| --- | --- |
-| `bash tools/setup/setup.sh` | OS 依存導入、固定版 mise の bootstrap、設定の trust、ロックに従うツール導入、Native 環境準備 |
-| `./tools/setup/setup.ps1` | Windows のシステム依存、mise、Native 環境を準備する |
-| `. ./tools/setup/activate.ps1 -RequireCompiler` | Windows の mise と MSVC 開発環境を有効にする |
-| `source tools/setup/activate.sh` | mise と共通環境変数を有効にする |
-| `mise run setup` | 共通セットアップを再実行する |
-| `mise run setup-native` | 固定コミットの vcpkg と lavapipe ICD を準備する |
-| `mise run verify` | C#、C++、vcpkg、Native NuGet／PInvoke、Vulkan キューと読み戻しを検証する |
-| `mise exec -- <command>` | 固定したツールでコマンドを実行する |
+### 権限と生成物
 
-mise 自身を管理する bootstrap のバージョンと公式 SHA-256 だけは `tools/setup/mise-bootstrap.json` に記録する。生成物は `LUMYTE_ENV_ROOT` 以下に保持し、標準設定では `artifacts/dev-env/`、devcontainer では `/opt/lumyte` とする。
+Linux では、管理者権限を使えない環境でも、必要な依存をローカルに展開できるようにする。Windows では既存のシステム依存を再利用し、不足するシステム依存の導入時に管理者権限を要求する。
 
-devcontainer のイメージビルドと Codex のセットアップは共通スクリプトを呼ぶ。devcontainer の作成後は実際のマウント先の mise 設定を trust し、検証する。新しいシェルでは共通の有効化スクリプトを使用する。常駐サービスは不要。
+生成物とキャッシュは指定可能な環境ディレクトリに集約し、書き込めないホームディレクトリに依存しない。セットアップは再実行でき、保存済みの生成物を再利用する。新しいシェルでは共通の有効化スクリプトを使用する。
 
-### 検証
+ソフトウェア描画の検証では、ドライバーの選択を検証プロセス内に限定し、システムのドライバー登録を変更しない。Vulkan のドライバー選択用の環境変数は管理者権限で無視されるため、Windows の smoke test は通常ユーザーで実行する。
 
-`mise run verify`（Linux は `verify.sh`、Windows は `verify.ps1`）で以下を確認する。
+### 実行環境との接続
 
-- .NET と C++ のビルドと実行。
-- vcpkg による依存ライブラリのビルドと CMake からの利用。
-- lavapipe で Vulkan デバイスを作成し、キューへコマンドを送信して結果を読み戻す。
-- Windows では Direct3D 12 の WARP デバイス作成。
-- Native ライブラリをローカル NuGet パッケージにして C# から復元し、P/Invoke で呼び出す。
+devcontainer のイメージビルド、コンテナ作成後の初期化、Codex のセットアップは共通スクリプトを呼び出す。実際のチェックアウト先で mise 設定を信頼済みにし、環境を検証する。常駐サービスは不要とする。
 
-GitHub Actions で Ubuntu 24.04 と Windows Server 2022 のセットアップと smoke test を確認する。Vulkan loader は管理者権限のプロセスではドライバー選択の環境変数を無視するため、Windows の smoke test は通常ユーザーで実行する。GitHub の Windows runner では、一時ユーザーで検証プロセスを起動し、結果を取得してからユーザーを削除する。
+GitHub Actions で Linux と Windows のセットアップから smoke test までを確認する。管理者権限で動く Windows runner では、一時的な通常ユーザーで検証プロセスを起動する。終了結果を取得し、検証後に一時ユーザーを削除する。
 
-検証用のプロジェクトは生成物として扱い、エンジンの公開 API や製品パッケージを定義するものではない。
+### 検証方針
+
+共通の検証タスクで以下を確認する。
+
+- C# と C++ のビルドと実行。
+- Native 依存ライブラリのビルドと利用。
+- CPU による Vulkan デバイス作成、キューへの送信、結果の読み戻し。
+- Windows でのソフトウェア描画による DirectX デバイス作成。
+- Native ライブラリのローカル NuGet 化、C# からの復元、P/Invoke による呼び出し。
+
+検証用プロジェクトは生成物として扱い、エンジンの公開 API や製品パッケージを定義しない。具体的な対応環境と検証結果は開発環境の手順書で管理する。
 
 ## 検討した代替案
 
-### バージョン指定だけを mise に置き、導入は従来のスクリプトに残す
+### バージョン指定だけを mise に置き、導入は環境ごとのスクリプトに残す
 
-管理が二重になるため、配布済みツールのインストールと PATH 選択も mise に任せる。
+配布済みツールの導入と選択が二重管理になるため、インストールと PATH の選択も mise に任せる。
 
-### GCC と lavapipe も配布バイナリとして mise に登録する
+### OS のシステム依存も配布バイナリとして mise に登録する
 
-OS のヘッダーや共有ライブラリとの依存を独自に管理する必要があるため、これらは署名済みディストリビューションパッケージで導入する。
+OS のヘッダーや共有ライブラリとの依存を独自に管理する必要があるため、システム依存は OS に適した導入方式で準備する。
 
 ## 結果と影響
 
-- mise の同じ設定とタスクをLinux と Windows の環境で使用できる。
-- 配布ツールの更新では `mise.toml` のバージョン・チェックサムと `mise.lock` を更新する。.NET は `global.json` も更新する。
-- OS パッケージはディストリビューションの更新を取り込むため、完全なビット単位の再現性は保証しない。Windows Server 2022 x64 の GitHub Actions でセットアップと Direct3D 12 WARP を含む smoke test を検証済み。MSVC／Windows SDK の新規導入経路は未検証。Browser の実行環境は別途整備する。
-- 従来の生成物は削除せず保持するが、有効なツールは mise のインストール先から選択する。
+- Linux と Windows で同じ管理設定とタスクを使用できる。
+- 導入対象の追加やバージョン更新は設定と手順書に反映し、管理方針が変わらなければ ADR の更新を必要としない。
+- OS の更新を取り込む部分と、取得情報を固定する部分で再現性の保証が異なる。
+- Windows ではシステム依存の導入と smoke test で必要な権限が異なる。
+- Browser の実行環境は別途整備する。
 
 ## 参考資料
 
 - [ADR の書き方と運用](0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](0002-repository-layout.md)
+- [開発環境の手順書](../development-environment.md)
+- [共通セットアップ設定](../../mise.toml)
