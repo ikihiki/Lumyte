@@ -8,13 +8,14 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <SelfContained>false</SelfContained>
-    <NativeFileName Condition="'$(RuntimeIdentifier)' != 'win-x64'">liblumyte_setup_smoke.so</NativeFileName>
+    <IsWindowsRuntime Condition="'$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win-arm64'">true</IsWindowsRuntime>
+    <NativeFileName Condition="'$(IsWindowsRuntime)' != 'true'">liblumyte_setup_smoke.so</NativeFileName>
   </PropertyGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
-    <None Include="../build/$(NativeFileName)" Condition="'$(RuntimeIdentifier)' != 'win-x64'" Pack="true"
+    <None Include="../build/$(NativeFileName)" Condition="'$(IsWindowsRuntime)' != 'true'" Pack="true"
           PackagePath="runtimes/$(RuntimeIdentifier)/native/" />
-    <None Include="../build/*.dll" Condition="'$(RuntimeIdentifier)' == 'win-x64'" Pack="true"
+    <None Include="../build/*.dll" Condition="'$(IsWindowsRuntime)' == 'true'" Pack="true"
           PackagePath="runtimes/$(RuntimeIdentifier)/native/" />
   </ItemGroup>
 </Project>

@@ -2,7 +2,7 @@
 
 Debian／Ubuntu 系 Linux（x64／arm64）で、mise を使って .NET SDK、GCC、CMake、Ninja、Slang、Vulkan、lavapipe、vcpkg を準備する。設計方針は [ADR-0003](adr/0003-development-environment.md) を参照する。
 
-Windows x64 では PowerShell から同じ mise 設定を使用し、MSVC、Windows SDK、vcpkg、lavapipe を準備する。
+Windows x64／ARM64 では PowerShell から同じ mise 設定を使用し、MSVC、Windows SDK、vcpkg、lavapipe を準備する。
 
 ## Linux セットアップ
 
@@ -29,7 +29,7 @@ mise exec -- slangc -version  # Slang コンパイラーのバージョンを確
 mise ls --current             # 使用するツールのバージョンを確認
 ```
 
-Slang はシェーダー言語のコンパイラー `shader-slang/slang` の 2026.19 を使用する。Linux x64／arm64 は glibc 2.28 向けの公式アーカイブ、Windows x64 は公式 ZIP を取得し、GitHub リリースが公開する SHA-256 digest で検証する。mise がアーカイブ内の `bin/` を PATH に追加するため、有効化後は `slangc` を使用できる。
+Slang はシェーダー言語のコンパイラー `shader-slang/slang` の 2026.19 を使用する。Linux x64／arm64 は glibc 2.28 向けの公式アーカイブ、Windows x64／ARM64 は公式 ZIP を取得し、GitHub リリースが公開する SHA-256 digest で検証する。mise がアーカイブ内の `bin/` を PATH に追加するため、有効化後は `slangc` を使用できる。
 
 共通環境変数は `mise.toml` に定義し、OS ごとの有効化スクリプトが mise とコンパイラー環境を準備する。.NET、CMake、Ninja、Slang は HTTP backend を使用し、公式アーカイブを既知のチェックサムで検証する。mise のデータ・設定・キャッシュも `LUMYTE_ENV_ROOT/mise/` に保存し、書き込めないホームディレクトリに依存しない。
 
@@ -45,7 +45,7 @@ source tools/setup/activate.sh
 
 ## Windows セットアップ
 
-Windows x64 の Windows PowerShell 5.1 または PowerShell 7 で、リポジトリルートから実行する。
+Windows x64／Windows 11 ARM64 のネイティブな Windows PowerShell 5.1 または PowerShell 7 で、リポジトリルートから実行する。ARM64 では x64 エミュレーションのシェルを使用しない。
 
 ```powershell
 .\tools\setup\setup.ps1
@@ -53,11 +53,13 @@ Windows x64 の Windows PowerShell 5.1 または PowerShell 7 で、リポジト
 mise run verify
 ```
 
-Git、MSVC の x64 コンパイラー、Windows SDK、VC++ ランタイムが不足する場合は、管理者として起動した PowerShell でセットアップする。既存の Visual Studio／Build Tools は再利用する。Git の自動導入には winget が必要。Microsoft インストーラーの署名を検証してから実行し、再起動が要求された場合は再起動後にセットアップを再実行する。組織の PowerShell 実行ポリシーにも従う。セットアップ後の smoke test は管理者権限のないシェルで実行する。Vulkan loader は管理者権限のプロセスでは lavapipe 選択用の環境変数を無視する。
+Git、OS と同じアーキテクチャの MSVC コンパイラー、Windows SDK、VC++ ランタイムが不足する場合は、管理者として起動した PowerShell でセットアップする。既存の Visual Studio／Build Tools は再利用し、ARM64 では ARM64 用のコンポーネントを選ぶ。Git の自動導入には winget が必要。Microsoft インストーラーの署名を検証してから実行し、再起動が要求された場合は再起動後にセットアップを再実行する。組織の PowerShell 実行ポリシーにも従う。セットアップ後の smoke test は管理者権限のないシェルで実行する。Vulkan loader は管理者権限のプロセスでは lavapipe 選択用の環境変数を無視する。
 
-.NET SDK、CMake、Ninja、Slang は mise の Windows x64 用ロックに従って導入する。新しいシェルでは `. .\tools\setup\activate.ps1 -RequireCompiler` で MSVC の x64 開発環境と mise を有効化する。導入先を変更する場合は、セットアップと有効化の前に `$env:LUMYTE_ENV_ROOT` を同じ書き込み可能なパスに設定する。
+.NET SDK、CMake、Ninja、Slang は mise の Windows x64／ARM64 用ロックに従って導入する。mise 自身も OS と同じアーキテクチャの実行ファイルを使用する。新しいシェルでは `. .\tools\setup\activate.ps1 -RequireCompiler` で MSVC のネイティブ開発環境と mise を有効化する。導入先を変更する場合は、セットアップと有効化の前に `$env:LUMYTE_ENV_ROOT` を同じ書き込み可能なパスに設定する。
 
-Vulkan loader とヘッダーは vcpkg から取得するため、別途 Vulkan SDK を入れる必要はない。lavapipe は `pal1000/mesa-dist-win` の MSVC 配布を固定版・SHA-256 で検証し、環境ディレクトリ内に展開する。7zip は固定コミットの vcpkg の検証済みツールを使う。GPU ドライバーの登録は変更しない。追加の HTTPS 接続先は Microsoft の `aka.ms` とそのリダイレクト先、winget の Git 配布先である。
+Vulkan loader とヘッダーは vcpkg から取得するため、別途 Vulkan SDK を入れる必要はない。ターゲットとホストの triplet は x64 で `x64-windows-static`、ARM64 で `arm64-windows-static` を使用する。Native NuGet はそれぞれ `win-x64`／`win-arm64` に DLL を格納する。
+
+lavapipe は x64 で `pal1000/mesa-dist-win` の MSVC 配布、ARM64 で同プロジェクトが案内する `mmozeiko/build-mesa` の ARM64 配布を使用する。どちらも固定版・SHA-256 で検証し、環境ディレクトリ内に展開する。7zip は固定コミットの vcpkg の検証済みツールを使う。GPU ドライバーの登録は変更しない。追加の HTTPS 接続先は Microsoft の `aka.ms` とそのリダイレクト先、winget の Git 配布先である。
 
 GitHub Actions の Windows Server 2022 x64 でセットアップと smoke test が成功している。既存の MSVC／Windows SDK を再利用する経路を検証した。Microsoft インストーラーによるシステム依存の新規導入は未検証。
 
@@ -89,7 +91,7 @@ mise run verify
 
 ## GitHub Actions
 
-`.github/workflows/setup-smoke.yml` は push、pull request、手動実行で Ubuntu 24.04 と Windows Server 2022 のセットアップから `mise run verify` までを確認する。両 OS の結果を個別に表示し、一方の失敗で他方の検証を中止しない。[成功した実行結果](https://github.com/ikihiki/Lumyte/actions/runs/37357250382)では、両 OS のセットアップと smoke test が完了した。
+`.github/workflows/setup-smoke.yml` は push、pull request、手動実行で Ubuntu 24.04 x64、Windows Server 2022 x64、Windows 11 ARM64（`windows-11-arm`）のセットアップから `mise run verify` までを確認する。各環境の結果を個別に表示し、一方の失敗で他方の検証を中止しない。[従来の成功した実行結果](https://github.com/ikihiki/Lumyte/actions/runs/37357250382)では Linux x64 と Windows x64 のセットアップと smoke test が完了した。
 
 GitHub の Windows runner は管理者権限で動くため、システム依存の導入後に一時的な通常ユーザーで smoke test を実行する。`tools/setup/ci-windows-smoke.ps1` がユーザーの作成、検証プロセスの待機、ユーザーの削除を担当する。このスクリプトは GitHub Actions 専用で、通常の開発環境では管理者権限のないシェルから `mise run verify` を使う。
 
@@ -137,11 +139,11 @@ VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
 設定の更新後はロックを再生成し、セットアップと検証を行う。
 
 ```bash
-mise lock --platform linux-x64 --platform linux-arm64 --platform windows-x64
+mise lock --platform linux-x64 --platform linux-arm64 --platform windows-x64 --platform windows-arm64
 mise run setup
 mise run verify
 ```
 
-検証済みの対象は Linux x64。arm64 向けには取得元・チェックサムとロックを用意しているが、arm64 実機での実行検証は別途必要。
+Linux x64 は検証済み。Linux arm64 向けには取得元・チェックサムとロックを用意しているが、実機での実行検証は別途必要。
 
-Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version` と `vars.windows_mesa_sha256` を更新する。Windows x64 は GitHub Actions の Windows Server 2022 で、Vulkan の読み戻しと Direct3D 12 WARP を含む smoke test を検証済み。Browser の WebAssembly workload と WebGPU の実行環境は別途整備する。
+Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version`、x64 用の `vars.windows_mesa_sha256`、ARM64 用の `vars.windows_mesa_arm64_sha256` を更新する。Windows x64 は GitHub Actions の Windows Server 2022 で、Vulkan の読み戻しと Direct3D 12 WARP を含む smoke test を検証済み。Windows ARM64 の検証結果は追加した Windows 11 ARM64 の CI で確認する。Browser の WebAssembly workload と WebGPU の実行環境は別途整備する。

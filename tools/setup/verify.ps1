@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . "$PSScriptRoot/activate.ps1" -RequireCompiler
+$architecture = Get-LumyteWindowsArchitecture
+$runtimeIdentifier = "win-$architecture"
+$triplet = "$architecture-windows-static"
 Push-Location $LumyteRepoRoot
 $previousDriverFiles = $env:VK_DRIVER_FILES
 $previousIcdFiles = $env:VK_ICD_FILENAMES
@@ -19,7 +22,7 @@ try {
     if (-not (Test-Path $env:LUMYTE_LAVAPIPE_ICD)) { throw 'lavapipe ICD is missing.' }
     $env:VK_DRIVER_FILES = $env:LUMYTE_LAVAPIPE_ICD
     $env:VK_ICD_FILENAMES = $env:LUMYTE_LAVAPIPE_ICD
-    $mesaBin = Join-Path $env:LUMYTE_ENV_ROOT "mesa-$($env:LUMYTE_WINDOWS_MESA_VERSION)/x64"
+    $mesaBin = Split-Path ((Get-Content $env:LUMYTE_LAVAPIPE_ICD -Raw | ConvertFrom-Json).ICD.library_path) -Parent
     $env:PATH = $mesaBin + ';' + $env:PATH
     $null = New-Item -ItemType Directory -Path $smokeRoot
     Copy-Item "$PSScriptRoot/smoke/*" $smokeRoot -Recurse
@@ -34,17 +37,17 @@ try {
     $build = Join-Path $smokeRoot 'build'
     Invoke-LumyteCommand cmake @('-S', $smokeRoot, '-B', $build, '-G', 'Ninja',
         "-DCMAKE_TOOLCHAIN_FILE=$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake",
-        '-DVCPKG_TARGET_TRIPLET=x64-windows-static', '-DCMAKE_BUILD_TYPE=Release')
+        "-DVCPKG_TARGET_TRIPLET=$triplet", "-DVCPKG_HOST_TRIPLET=$triplet", '-DCMAKE_BUILD_TYPE=Release')
     Invoke-LumyteCommand cmake @('--build', $build, '--parallel', '2')
     # Bundle the vcpkg-built Vulkan loader with the temporary native NuGet.
-    $loader = Join-Path $build 'vcpkg_installed/x64-windows-static/bin/vulkan-1.dll'
+    $loader = Join-Path $build "vcpkg_installed/$triplet/bin/vulkan-1.dll"
     if (-not (Test-Path $loader)) { throw 'vcpkg-built Vulkan loader DLL is missing.' }
     Copy-Item $loader (Join-Path $build 'vulkan-1.dll') -Force
     $version = '0.0.0-smoke.' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + '.' + $PID
     $nativeProject = Join-Path $smokeRoot 'Native/Native.csproj'
     $managedProject = Join-Path $smokeRoot 'Managed/Managed.csproj'
     Invoke-LumyteCommand dotnet @('pack', $nativeProject, '--configuration', 'Release',
-        '--output', $env:LUMYTE_NUGET_FEED, "-p:PackageVersion=$version", '-p:RuntimeIdentifier=win-x64',
+        '--output', $env:LUMYTE_NUGET_FEED, "-p:PackageVersion=$version", "-p:RuntimeIdentifier=$runtimeIdentifier",
         "-p:RestoreSources=$($env:LUMYTE_NUGET_FEED)")
     Invoke-LumyteCommand dotnet @('restore', $managedProject, '--source', $env:LUMYTE_NUGET_FEED, "-p:SmokeVersion=$version")
     Invoke-LumyteCommand dotnet @('run', '--project', $managedProject, '--configuration', 'Release',

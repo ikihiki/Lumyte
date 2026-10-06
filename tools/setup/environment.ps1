@@ -23,11 +23,25 @@ $env:VCPKG_DISABLE_METRICS = '1'
 if (-not $env:VCPKG_MAX_CONCURRENCY) { $env:VCPKG_MAX_CONCURRENCY = '2' }
 $env:LUMYTE_NUGET_FEED = Join-Path $LumyteRepoRoot 'artifacts/nuget'
 
-function Assert-LumyteWindows {
+function Get-LumyteWindowsArchitecture {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
-        -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
-        throw 'This setup requires a 64-bit PowerShell session on Windows x64.'
+        -not [Environment]::Is64BitProcess) {
+        throw 'This setup requires a native 64-bit PowerShell session on Windows x64 or ARM64.'
     }
+    $osArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    $processArchitecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    if ($osArchitecture -ne $processArchitecture) {
+        throw 'Use native PowerShell for the OS architecture; emulated x64 shells on ARM64 are not supported.'
+    }
+    switch ($osArchitecture) {
+        'X64' { return 'x64' }
+        'Arm64' { return 'arm64' }
+        default { throw "Unsupported Windows architecture: $osArchitecture" }
+    }
+}
+
+function Assert-LumyteWindows {
+    $null = Get-LumyteWindowsArchitecture
 }
 
 function Invoke-LumyteCommand {
@@ -57,21 +71,26 @@ function Get-LumyteVerifiedDownload {
 }
 
 function Get-LumyteVisualStudio {
+    $architecture = Get-LumyteWindowsArchitecture
+    $component = if ($architecture -eq 'arm64') {
+        'Microsoft.VisualStudio.Component.VC.Tools.ARM64'
+    } else { 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' }
     $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
     $vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio/Installer/vswhere.exe'
     if (-not (Test-Path $vswhere)) { return $null }
     $data = Invoke-LumyteCommand $vswhere @('-latest', '-products', '*', '-requires',
-        'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-format', 'json')
+        $component, '-format', 'json')
     return ($data -join "`n" | ConvertFrom-Json | Select-Object -First 1)
 }
 
 function Initialize-LumyteCompiler {
+    $architecture = Get-LumyteWindowsArchitecture
     $installation = Get-LumyteVisualStudio
     if (-not $installation) { throw 'MSVC C++ Build Tools are missing. Run tools/setup/setup.ps1.' }
     $module = Join-Path $installation.installationPath 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll'
     Import-Module $module -ErrorAction Stop
     Enter-VsDevShell -VsInstallPath $installation.installationPath -SkipAutomaticLocation `
-        -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
+        -DevCmdArguments "-arch=$architecture -host_arch=$architecture" | Out-Null
     $null = Get-Command cl.exe -ErrorAction Stop
     if (-not $env:WindowsSdkDir -or -not $env:WindowsSDKVersion) { throw 'Windows SDK is missing.' }
     $header = Join-Path $env:WindowsSdkDir ('Include/' + $env:WindowsSDKVersion.TrimEnd('\') + '/um/d3d12.h')

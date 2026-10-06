@@ -2,6 +2,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . "$PSScriptRoot/environment.ps1"
 Assert-LumyteWindows
+$architecture = Get-LumyteWindowsArchitecture
+$compilerComponent = if ($architecture -eq 'arm64') {
+    'Microsoft.VisualStudio.Component.VC.Tools.ARM64'
+} else { 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' }
 
 foreach ($directory in @($env:LUMYTE_ENV_ROOT, $env:MISE_DATA_DIR, $env:MISE_CACHE_DIR,
     $env:MISE_STATE_DIR, $env:MISE_CONFIG_DIR, $env:DOTNET_CLI_HOME, $env:NUGET_PACKAGES,
@@ -44,7 +48,7 @@ if (-not $hasGit) {
 }
 if (-not $installation -or -not $hasSdk) {
     $arguments = @('--quiet', '--norestart', '--wait', '--add',
-        'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '--add',
+        $compilerComponent, '--add',
         'Microsoft.VisualStudio.Component.Windows11SDK.26100')
     if ($installation) {
         $arguments = @('modify', '--installPath', ('"' + $installation.installationPath + '"')) + $arguments
@@ -53,8 +57,8 @@ if (-not $installation -or -not $hasSdk) {
         -Name 'vs_BuildTools.exe' -Arguments $arguments
 }
 if (-not $hasRuntime) {
-    Install-LumyteMicrosoftPackage -Url 'https://aka.ms/vs/17/release/vc_redist.x64.exe' `
-        -Name 'vc_redist.x64.exe' -Arguments @('/install', '/quiet', '/norestart')
+    Install-LumyteMicrosoftPackage -Url "https://aka.ms/vs/17/release/vc_redist.$architecture.exe" `
+        -Name "vc_redist.$architecture.exe" -Arguments @('/install', '/quiet', '/norestart')
 }
 Initialize-LumyteCompiler
 
@@ -62,12 +66,11 @@ $bootstrap = Get-Content "$PSScriptRoot/mise-bootstrap.json" -Raw | ConvertFrom-
 $miseBinDir = Join-Path $env:LUMYTE_ENV_ROOT 'mise-bin'
 $null = New-Item -ItemType Directory -Path $miseBinDir -Force
 $miseBin = Join-Path $miseBinDir 'mise.exe'
-$version = $null
-if (Test-Path $miseBin) { $version = (Invoke-LumyteCommand $miseBin @('--version') | Select-Object -First 1).Split(' ')[0] }
-if ($version -ne $bootstrap.version) {
+$expectedHash = $bootstrap.platforms."windows-$architecture".sha256
+if (-not (Test-Path $miseBin) -or (Get-FileHash $miseBin -Algorithm SHA256).Hash -ne $expectedHash) {
     $staging = "$miseBin.download"
-    Get-LumyteVerifiedDownload -Url "https://github.com/jdx/mise/releases/download/v$($bootstrap.version)/mise-v$($bootstrap.version)-windows-x64.exe" `
-        -Destination $staging -Sha256 $bootstrap.platforms.'windows-x64'.sha256
+    Get-LumyteVerifiedDownload -Url "https://github.com/jdx/mise/releases/download/v$($bootstrap.version)/mise-v$($bootstrap.version)-windows-$architecture.exe" `
+        -Destination $staging -Sha256 $expectedHash
     Move-Item $staging $miseBin -Force
 }
 $env:PATH = $miseBinDir + ';' + $env:VCPKG_ROOT + ';' + $env:PATH

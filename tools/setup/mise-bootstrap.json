@@ -3,6 +3,7 @@
   "platforms": {
     "linux-x64": { "sha256": "04147c68e946902f5226dfdcd54d19907aed3cf54d95b2f27d2b9c778bb26f9e" },
     "linux-arm64": { "sha256": "e79866e32624b346f6854d93ca8a24294516cd7c0b48ce0e80af508fb7c3d8b8" },
-    "windows-x64": { "sha256": "1d137eaaa772bbcfc2210a7ceaa133347456f18138f17a20e8b2e46b64ec0391" }
+    "windows-x64": { "sha256": "1d137eaaa772bbcfc2210a7ceaa133347456f18138f17a20e8b2e46b64ec0391" },
+    "windows-arm64": { "sha256": "f307609491da1cb78ee3fd2de8949e7cce1a7e3032e1c1671dbfdfdf304ba2e1" }
   }
 }
