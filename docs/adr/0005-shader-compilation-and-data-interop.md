@@ -95,6 +95,8 @@ C ABI は opaque handle、固定幅整数、明示レイアウトの POD と fie
 
 オンラインで schema ID が同じ場合は新しい成果物と pipeline を準備してからフレーム境界で切り替える。schema が変わった場合は既存の生成 C# 型へ自動適用せず、型と利用側の再生成・再構築を要求する。古い pipeline と引数は最後の GPU 使用が完了してから解放する。コンパイル失敗時は診断を返し、既存の正常な pipeline を維持する。
 
+`ShaderArgumentsLayout` を不変の非 generic な共通基底契約とし、`ShaderArgumentsLayout<T>` はこれを継承して生成型との対応を加える。Graphics／ComputePipelineDesc は共通基底を受け取る。コンパイルされた linked program の composition ID、schema、library ABI と BindingPlan の互換性 ID は内部で保持し、利用者へ物理 binding を公開しない。
+
 ### 公開 API 一覧
 
 以下は C# の主要シグネチャ案であり未実装である。コンパイル関係と成果物の名前空間は `Lumyte.Graphics.Shaders`、GpuReference と生成データの契約の名前空間は `Lumyte.Graphics` とする。`Result<T>` と GraphicsError は ADR-0004 の共通結果契約に従う。成果物・レイアウトの型定義は GPU Core と compiler provider が共有する契約として配置する。
@@ -167,6 +169,7 @@ Browser の Wasm provider は成果物・診断・反射の共通契約に従え
 - [ADR の書き方と運用](0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](0002-repository-layout.md)
 - [グラフィックスライブラリの共通契約](0004-graphics-library.md)
+- [Graphics の Desc 型](0007-graphics-descriptors.md)
 - [Slang compilation API](https://github.com/shader-slang/slang/blob/master/docs/user-guide/08-compiling.md)
 - [Slang reflection](https://github.com/shader-slang/slang/blob/master/docs/user-guide/09-reflection.md)
 - [Slang link-time specialization／module precompilation](https://github.com/shader-slang/slang/blob/master/docs/user-guide/10-link-time-specialization.md)

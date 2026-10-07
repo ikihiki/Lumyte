@@ -42,10 +42,13 @@ Mesh Shader、間接描画、共通スキーマで表現できない動的リソ
 
 ### 公開 API 一覧
 
+RenderEncoder の操作・状態・寿命の正本は [ADR-0006](0006-render-encoder.md)、本 ADR に登場する Desc 型と補助型のフィールド・既定値・検証条件は [ADR-0007](0007-graphics-descriptors.md) に分離する。以下は共通境界を示す主要 API の要約であり、詳細は各 ADR に従う。
+
 以下は判断対象となる C# の主要シグネチャ案であり、既存の実装 API ではない。型は特記がなければ `Lumyte.Graphics`、Runtime 型は `Lumyte.Graphics.Runtime` に置く。`Desc` 型は生成条件、`Result<T>` は値または `GraphicsError` を持つ。各所有型は `IDisposable` を実装する。
 
 | 公開 API | 役割 | 契約・注意事項 |
 | --- | --- | --- |
+| `ValueTask<Result<IReadOnlyList<AdapterInfo>>> IGraphicsBackend.EnumerateAdaptersAsync(CancellationToken cancellationToken)` | backend の候補を列挙 | AdapterInfo は不透明な AdapterId、表示名、機能・上限を持つ。Browser の列挙制約下では backend が取得できる候補だけを返す |
 | `ValueTask<Result<GraphicsDevice>> IGraphicsBackend.CreateDeviceAsync(DeviceDesc desc, CancellationToken cancellationToken)` | バックエンドを指定して初期化 | 必須機能不足を明示して失敗。Browser の非同期初期化にも対応 |
 | `DeviceCaps GraphicsDevice.Caps { get; }` | 機能・上限の取得 | Mesh Shader、間接描画、参照可能リソース数、キュー構成などの機能・上限を公開。参照の物理表現は公開しない |
 | `Result<Buffer> GraphicsDevice.CreateBuffer(BufferDesc desc)` | データ領域の生成 | サイズ、用途、メモリ種別を指定。GPU アドレスや CPU mapping を保証しない |
@@ -57,6 +60,8 @@ Mesh Shader、間接描画、共通スキーマで表現できない動的リソ
 | `Result<ShaderModule> GraphicsDevice.CreateShader(ShaderArtifact artifact)` | バックエンド用のシェーダー成果物を読み込む | ADR-0005 の成果物・対象 profile・ABI を検証。Core は Slang コンパイラを起動しない |
 | `Result<GraphicsPipeline> GraphicsDevice.CreateGraphicsPipeline(GraphicsPipelineDesc desc)` | 描画状態の生成 | シェーダー、引数レイアウト、出力形式、固定状態を保持 |
 | `Result<ComputePipeline> GraphicsDevice.CreateComputePipeline(ComputePipelineDesc desc)` | Compute 状態の生成 | シェーダーと引数レイアウトの一致が必要 |
+| `void RenderEncoder.DrawIndexed(ShaderArguments arguments, IndexedDrawDesc desc)`／`SetIndexBuffer(BufferSlice indices, IndexFormat format)` | index 描画 | 詳細は ADR-0006／0007。index 範囲と pipeline の topology／strip format を検証 |
+| `void RenderEncoder.End()`／`Dispose()` | 記録 scope の終了 | GPU 完了を意味しない。二重 End と Dispose の契約は ADR-0006 |
 | `Result<CommandEncoder> GraphicsDevice.CreateCommandEncoder()` | コマンド記録の開始 | 単一スレッドで所有。初期設計では一つの汎用キューを対象とする |
 | `void CommandEncoder.CopyBuffer(BufferSlice source, BufferSlice destination)` | データの転送 | コピー用途、サイズ、アラインメントが有効であること |
 | `void CommandEncoder.CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc)` | テクスチャ Upload | 行ピッチとコピー範囲を検証 |
@@ -153,6 +158,8 @@ GPU データ参照の解決とシェーダーコンパイルは ADR-0005 の検
 - [リポジトリのフォルダ構成](0002-repository-layout.md)
 - [開発環境](0003-development-environment.md)
 - [Slang のコンパイルと GPU データ受け渡し](0005-shader-compilation-and-data-interop.md)
+- [RenderEncoder](0006-render-encoder.md)
+- [Graphics の Desc 型](0007-graphics-descriptors.md)
 - [NoGraphicsAPI README（参照コミット固定）](https://github.com/sebbbi/NoGraphicsAPI/blob/04004140f5b3b8ec7c566fd43bfed77d586155f8/README.md)
 - [NoGraphicsAPI 設計比較](https://github.com/sebbbi/NoGraphicsAPI/blob/04004140f5b3b8ec7c566fd43bfed77d586155f8/docs/no-graphics-api-comparison.md)
 - [NoGraphicsAPI 公開 API](https://github.com/sebbbi/NoGraphicsAPI/blob/04004140f5b3b8ec7c566fd43bfed77d586155f8/include/NoGraphicsAPI/NoGraphicsAPI.hpp)
