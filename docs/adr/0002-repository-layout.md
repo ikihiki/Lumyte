@@ -19,15 +19,13 @@ C# 側は C++ のネイティブライブラリをローカル NuGet パッケ�
 
 以下を目標構成とする。プロジェクトやフォルダは実装が必要になった時点で追加し、この ADR のためだけに空のプロジェクトを作成しない。
 
+構成図は配置ルールを示すためのものであり、個別の ADR や文書ファイルは列挙しない。
+
 ```text
 Lumyte/
 ├── .devcontainer/                  # 共通セットアップを使う開発コンテナ
 ├── docs/
-│   ├── adr/
-│   │   ├── 0001-adr-writing-policy.md
-│   │   ├── 0002-repository-layout.md
-│   │   └── 0003-development-environment.md
-│   └── development-environment.md
+│   └── adr/
 ├── src/
 │   ├── Core/
 │   │   └── Lumyte.Core/
