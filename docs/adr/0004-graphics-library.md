@@ -9,7 +9,7 @@ Lumyte のグラフィックスライブラリについて、描画バックエ�
 
 NoGraphicsAPI は GPU ポインタ、アプリケーション所有のディスクリプタヒープ、draw／dispatch ごとの単一 root 引数により、リソースバインディングをデータとして扱う。低レベル GPU 操作とアロケータ・Upload・遅延解放を分ける点も参考になる。
 
-一方、参照時点の NoGraphicsAPI は Metal 4 と特定拡張を備えた Vulkan 1.4 を対象とする。WebGPU には任意の GPU アドレスをシェーダーから間接参照する共通機構がない。GPU ポインタと無制限の Bindless を必須にすると Lumyte の対象環境と一致しないため、設計思想を取り入れつつ、共通契約と任意機能を分ける必要がある。
+一方、参照時点の NoGraphicsAPI は Metal 4 と特定拡張を備えた Vulkan 1.4 を対象とする。WebGPU には任意の GPU アドレスをシェーダーから間接参照する共通機構がない。実 GPU アドレスを公開契約にすると対象環境と一致しないため、利用者から実表現を識別できない GPU データ参照を共通契約にする。Slang を基準とするシェーダー、コンパイル方式、バックエンドごとの受け渡し方式は [ADR-0005](0005-shader-compilation-and-data-interop.md) に分離する。
 
 ## 決定
 
@@ -32,11 +32,13 @@ DirectX／Vulkan の C# バインディングは既存方針どおり各 `.Nativ
 
 共通 API は `Buffer` と非所有の `BufferSlice`（バッファ、バイトオフセット、バイト長）を使用する。GPU データを小さなオブジェクトごとに確保せず、大きなバッファを Runtime が部分確保する。範囲、用途、アラインメントを検証できる表現を保持する。
 
-draw／dispatch は単一の `ShaderArguments` を受け取る。引数には定数とバッファ範囲、テクスチャビュー、サンプラの参照をまとめる。共通経路の引数はシェーダーのバインディング定義に従い、バックエンドが bind group／descriptor table などに変換する。共通経路では GPU アドレスを定数に埋め込んで参照を代用しない。
+draw／dispatch は単一の `ShaderArguments` を受け取る。利用者は Slang の論理スキーマに対応する生成済み C# 引数型に定数と `GpuReference<T>`、テクスチャビュー、サンプラを設定する。GPU データ参照の実表現、root アドレス、ディスクリプタ番号、バインディングスロットを利用者に公開しない。
 
-`ShaderArgumentsLayout` はコンパイル時の反射情報から生成する。頂点は Storage Buffer からシェーダーが読み出す方式を基本とし、初期の共通 API に固定の頂点レイアウトを導入しない。これはシェーダーのリソースバインディング定義を不要にするものではない。
+`GpuReference<T>` は型付きの非所有参照であり、実 GPU アドレスを含むかどうかも公開契約に含めない。整数・CPU ポインタへの変換、任意の値からの生成、物理表現のシリアライズを提供しない。バックエンドは Native 実装と Slang のライブラリモジュールを組み合わせ、反射情報に従って参照と引数を実データへ変換する。DirectX／Vulkan の実 GPU アドレスや descriptor、WebGPU の buffer binding と offset の違いはこの境界に閉じ込める。
 
-GPU アドレス、Bindless、Mesh Shader、間接描画はそれぞれ独立した任意機能とする。対応デバイスでは、将来の拡張 API が型付き GPU アドレスとディスクリプタインデックス、root の GPU アドレスを扱えるようにする。GPU ポインタ方式は任意のシェーダーを共通経路に自動変換できるものではないため、共通経路を持つシェーダーバリアントが必要になる。具体的な拡張 API は後続 ADR で定める。
+`ShaderArgumentsLayout<T>`、生成引数型、バックエンド別の物理レイアウトと成果物の契約は ADR-0005 を正本とする。Core はコンパイラを必須依存にせず、オフラインまたはオンラインで生成された同じ成果物契約を受け取る。頂点はこのデータ参照を通してシェーダーが読み出す方式を基本とし、初期の共通 API に固定の頂点レイアウトを導入しない。
+
+Mesh Shader、間接描画、共通スキーマで表現できない動的リソース参照などは任意機能とする。実 GPU アドレスの利用可否は内部の方式選択に使い、共通の GPU データ参照を利用者に放棄させる条件にしない。対象機能・上限を満たさないシェーダーや参照は生成時に明示的に拒否する。
 
 ### 公開 API 一覧
 
@@ -45,13 +47,14 @@ GPU アドレス、Bindless、Mesh Shader、間接描画はそれぞれ独立し
 | 公開 API | 役割 | 契約・注意事項 |
 | --- | --- | --- |
 | `ValueTask<Result<GraphicsDevice>> IGraphicsBackend.CreateDeviceAsync(DeviceDesc desc, CancellationToken cancellationToken)` | バックエンドを指定して初期化 | 必須機能不足を明示して失敗。Browser の非同期初期化にも対応 |
-| `DeviceCaps GraphicsDevice.Caps { get; }` | 機能・上限の取得 | GPU アドレス、Bindless、Mesh Shader、間接描画、キュー構成、バインディング上限を独立して公開 |
+| `DeviceCaps GraphicsDevice.Caps { get; }` | 機能・上限の取得 | Mesh Shader、間接描画、参照可能リソース数、キュー構成などの機能・上限を公開。参照の物理表現は公開しない |
 | `Result<Buffer> GraphicsDevice.CreateBuffer(BufferDesc desc)` | データ領域の生成 | サイズ、用途、メモリ種別を指定。GPU アドレスや CPU mapping を保証しない |
 | `BufferSlice Buffer.Slice(ulong offset, ulong length)` | 非所有の部分領域 | 境界を検証。元の Buffer の寿命を延ばさない |
+| `GpuReference<T> GraphicsDevice.CreateReference<T>(BufferSlice data) where T : IShaderData` | GPU データの型付き参照を作る | 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証。実アドレスを公開しない |
 | `Result<Texture> GraphicsDevice.CreateTexture(TextureDesc desc)` | テクスチャの生成 | サイズ、形式、用途を検証。共通 API は CPU mapping を公開しない |
 | `Result<TextureView> Texture.CreateView(TextureViewDesc desc)` | mip・layer・aspect 範囲の参照 | 元の Texture を所有しない。互換形式と範囲を検証 |
 | `Result<Sampler> GraphicsDevice.CreateSampler(SamplerDesc desc)` | サンプリング設定 | テクスチャとは独立した所有リソース |
-| `Result<ShaderModule> GraphicsDevice.CreateShader(ShaderModuleDesc desc)` | バックエンド用のシェーダー成果物を読み込む | 形式と対象バックエンドの一致が必要。実行時コンパイルを必須にしない |
+| `Result<ShaderModule> GraphicsDevice.CreateShader(ShaderArtifact artifact)` | バックエンド用のシェーダー成果物を読み込む | ADR-0005 の成果物・対象 profile・ABI を検証。Core は Slang コンパイラを起動しない |
 | `Result<GraphicsPipeline> GraphicsDevice.CreateGraphicsPipeline(GraphicsPipelineDesc desc)` | 描画状態の生成 | シェーダー、引数レイアウト、出力形式、固定状態を保持 |
 | `Result<ComputePipeline> GraphicsDevice.CreateComputePipeline(ComputePipelineDesc desc)` | Compute 状態の生成 | シェーダーと引数レイアウトの一致が必要 |
 | `Result<CommandEncoder> GraphicsDevice.CreateCommandEncoder()` | コマンド記録の開始 | 単一スレッドで所有。初期設計では一つの汎用キューを対象とする |
@@ -67,17 +70,17 @@ GPU アドレス、Bindless、Mesh Shader、間接描画はそれぞれ独立し
 | `Result<Submission> GraphicsDevice.Submit(CommandBuffer commands)` | キューへの送信 | 一回限りの送信。リソースを GPU 完了まで保持 |
 | `bool Submission.IsCompleted { get; }`／`ValueTask Submission.WaitAsync(CancellationToken cancellationToken)` | GPU 完了確認 | 待機のキャンセルは送信済み処理を取り消さない |
 | `FrameContext GraphicsRuntime.BeginFrame()` | 再利用可能なフレーム領域を選ぶ | 使用中の領域は再利用しない。不足時の待機・拡張は Runtime が管理 |
-| `ShaderArguments FrameContext.CreateArguments(ShaderArgumentsLayout layout, ReadOnlySpan<byte> constants, ReadOnlySpan<ResourceBinding> resources)` | 単一引数の構築 | 入力を同期的にコピー。定数サイズ、型、バインディング数を検証 |
+| `ShaderArguments FrameContext.CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData` | 単一引数の構築 | 生成引数型を同期的に pack。参照の型・所属・寿命とレイアウトを検証。利用者は物理スロットを指定しない |
 | `void FrameContext.EndFrame(Submission completion)` | フレーム領域の再利用条件を登録 | 対象フレームの使用を含む Submission と結び付ける |
 | `void GraphicsRuntime.DeferDispose(IDisposable resource, Submission lastUse)` | GPU 完了後の解放 | 最後の使用を含む Submission が必要 |
 
-`ResourceBinding` はスロットと BufferSlice／TextureView／Sampler の組、`ResourceDependency` は対象範囲と producer／consumer のアクセスを表す。`ShaderArguments` は Runtime 所有領域の非所有参照で、所属フレームの完了後は再使用できない。`GraphicsPipelineDesc` のレイアウトと ShaderModule の反射情報が一致しない場合は生成を失敗させる。
+`GpuReference<T>` は所有権を持たず元の Buffer の寿命を延ばさない。`ResourceDependency` は対象範囲と producer／consumer のアクセスを表す。`ShaderArguments` は Runtime 所有領域の非所有参照で、所属フレームの完了後は再使用できない。`GraphicsPipelineDesc` と ShaderModule の引数レイアウトが一致しない場合は生成を失敗させる。
 
-Swapchain の生成・acquire・present と、型付き引数の生成コードはこの ADR の公開 API 範囲に含めず、後続 ADR で定める。最初の検証経路は画面表示を必要としないオフスクリーン描画とする。
+Swapchain の生成・acquire・present はこの ADR の公開 API 範囲に含めず、後続 ADR で定める。最初の検証経路は画面表示を必要としないオフスクリーン描画とする。
 
 ### 所有権、同期、スレッド
 
-Core の `Dispose()` は即時解放を要求する操作とし、利用者は未完了の GPU 使用がないことを保証する。通常の利用では Runtime の遅延解放を使用する。BufferSlice、TextureView の参照先、引数、ディスクリプタスロットの再利用にも同じ完了条件を適用する。Device は子リソースと GPU 使用の終了後に解放する。
+Core の `Dispose()` は即時解放を要求する操作とし、利用者は未完了の GPU 使用がないことを保証する。通常の利用では Runtime の遅延解放を使用する。BufferSlice、GpuReference、TextureView の参照先、引数、内部ディスクリプタスロットの再利用にも同じ完了条件を適用する。Device は子リソースと GPU 使用の終了後に解放する。
 
 記録中・送信済みコマンドが参照する引数やリソースを変更、破棄、再利用してはならない。記録していないリソースの Upload は staging 経由を共通経路とする。書き込み内容の可視化は送信とバックエンドの同期規約で保証し、C# の CPU 書き込みだけで GPU 可視性が成立すると扱わない。
 
@@ -89,7 +92,7 @@ NoGraphicsAPI のリソース一覧を持たないグローバルバリアは共
 
 初期化、確保、パイプライン生成、送信の実行環境に起因する失敗は `Result<T>` と `GraphicsError` で通知する。引数範囲や記録状態などの契約違反は C# の引数・状態例外として通知する。Device Lost はデバイス単位で保持し、以降の送信を拒否して未完了の待機をエラーで終了させる。Browser の非同期検証エラーも記録操作の成功だけで隠さない。
 
-DirectX／Vulkan の境界は C ABI とし、固定幅整数、明示レイアウトの POD、opaque handle、戻り値のエラーコードを使用する。C++ 例外を境界の外へ出さない。Managed オブジェクトのアドレスを GPU アドレスとして扱わない。Span や pin したメモリのポインタは呼び出し中だけ有効で、Native 側が保存するデータは同期的にコピーする。GPU 使用期間にわたるメモリは専用の所有領域に置く。ABI の具体的な宣言、構造体レイアウト、エラー文字列の寿命は後続 ADR で定める。
+DirectX／Vulkan の境界は C ABI とし、固定幅整数、明示レイアウトの POD、opaque handle、戻り値のエラーコードを使用する。C++ 例外を境界の外へ出さない。Managed オブジェクトのアドレスを GPU アドレスとして扱わない。Span や pin したメモリのポインタは呼び出し中だけ有効で、Native 側が保存するデータは同期的にコピーする。GPU 使用期間にわたるメモリは専用の所有領域に置く。GPU データの pack と Slang の物理レイアウトは ADR-0005 に従う。C ABI の全宣言、ハンドルとエラー文字列の寿命の詳細は後続 ADR で定める。
 
 ### プラットフォーム対応
 
@@ -101,7 +104,7 @@ DirectX／Vulkan の境界は C ABI とし、固定幅整数、明示レイア�
 
 この表は対応方針であり実装・実機検証の完了を表さない。必須機能不足はデバイス生成時に報告し、任意機能不足は Caps と明示的な非対応エラーで扱う。Metal は ADR-0002 の対象外であり今回追加しない。
 
-シェーダーは Slang を共通ソースの候補とし、バックエンドごとに成果物を用意する。既存の SPIR-V smoke test は共有 ABI、DirectX、WebGPU のシェーダー互換性を保証しない。WGSL への生成経路と対応可能な言語機能は別途検証・決定する。
+シェーダーは [ADR-0005](0005-shader-compilation-and-data-interop.md) に従って Slang を基準とし、オフライン／オンラインコンパイルと各バックエンドへの実データの受け渡しを行う。
 
 ## 検討した代替案
 
@@ -111,7 +114,7 @@ GPU ポインタと小さな API をすぐ利用できるが、現在のバッ�
 
 ### GPU ポインタと Bindless だけを共通 API にする
 
-バインディングと頂点レイアウトを省略できるが、WebGPU に同じ意味を保証できない。BufferSlice と引数レイアウトを共通経路に残し、GPU アドレスは任意の拡張にする。
+バインディングと頂点レイアウトを省略できるが、WebGPU に同じ意味を保証できない。型付きの不透明な参照を共通経路に残し、実 GPU アドレスを使うかどうかは Native／Slang の内部実装で選択する。
 
 ### 描画のたびに個別のリソースをバインドする
 
@@ -125,7 +128,7 @@ GPU ポインタと小さな API をすぐ利用できるが、現在のバッ�
 
 - NoGraphicsAPI のデータ中心の引数モデルと責務分離を取り入れながら、既存の対象環境を維持できる。
 - WebGPU 対応のため、共通経路には Buffer と引数レイアウトが残る。NoGraphicsAPI と同じ API の小ささや呼び出しコストは保証しない。
-- GPU アドレス拡張を利用するシェーダーには別バリアントが必要となり、機能判定と成果物の管理が増える。
+- 利用者が GPU アドレスとバインディング表現を識別せずにデータ参照を扱える一方、Native と Slang の対応モジュール、生成コード、成果物 ABI の管理が必要になる。
 - Runtime がフレーム領域と解放を管理しても、Core を直接使用する利用者は寿命と同期の契約を守る必要がある。
 - シェーダー成果物の反射情報と C#／Native のレイアウトを検証する仕組みが必要になる。
 - 文書のみの提案であり、API の実装、GPU 上の性能、各環境での成立はまだ検証していない。
@@ -134,14 +137,12 @@ GPU ポインタと小さな API をすぐ利用できるが、現在のバッ�
 
 実装時は共通経路で Buffer Upload → Compute → オフスクリーン描画 → Readback を行い、DirectX、Vulkan、WebGPU で結果とバインディングの対応を比較する。引数範囲とレイアウトの不一致を拒否すること、GPU 完了前にフレーム領域やリソースを再利用しないこと、Device Lost で待機が終了することを確認する。
 
-GPU アドレス拡張は別に検証し、Caps の非対応時に明示的に拒否できることを確認する。性能は共通経路と拡張経路の CPU 記録時間、割り当て回数、GPU 時間を実測し、効果が確認できるまで優位性を保証しない。今回の PR では ADR の規約、参照先、既存方針との整合性を確認する。
+GPU データ参照の解決とシェーダーコンパイルは ADR-0005 の検証方針に従う。性能はバックエンドごとの CPU 記録時間、割り当て回数、GPU 時間を実測し、効果が確認できるまで優位性を保証しない。今回の PR では ADR の規約、参照先、既存方針との整合性を確認する。
 
 ## 別途決定する事項
 
 - DirectX のバージョン、Vulkan／WebGPU の最低機能・上限と、対応環境ごとの必須機能。
-- GPU アドレス／Bindless 拡張の API と共有 ABI、型付き引数の生成方法。
 - C ABI の全宣言、P/Invoke、Native パッケージの RID とバージョニング。
-- シェーダーの成果物形式、反射情報、Slang から各ターゲットへの生成・検証方式。
 - Swapchain と Platform の接続、acquire／present、リサイズ、画面喪失への対応。
 - Runtime のメモリ予算、枯渇時の方針、フレーム数、並列記録、複数キュー。
 - Renderer のプロジェクト配置、Mesh／Material、Render Graph と自動依存解析。
@@ -151,6 +152,7 @@ GPU アドレス拡張は別に検証し、Caps の非対応時に明示的に�
 - [ADR の書き方と運用](0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](0002-repository-layout.md)
 - [開発環境](0003-development-environment.md)
+- [Slang のコンパイルと GPU データ受け渡し](0005-shader-compilation-and-data-interop.md)
 - [NoGraphicsAPI README（参照コミット固定）](https://github.com/sebbbi/NoGraphicsAPI/blob/04004140f5b3b8ec7c566fd43bfed77d586155f8/README.md)
 - [NoGraphicsAPI 設計比較](https://github.com/sebbbi/NoGraphicsAPI/blob/04004140f5b3b8ec7c566fd43bfed77d586155f8/docs/no-graphics-api-comparison.md)
 - [NoGraphicsAPI 公開 API](https://github.com/sebbbi/NoGraphicsAPI/blob/04004140f5b3b8ec7c566fd43bfed77d586155f8/include/NoGraphicsAPI/NoGraphicsAPI.hpp)
