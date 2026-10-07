@@ -2,6 +2,27 @@
 
 lockfile_version = 3
 
+[[tools."http:clang-format"]]
+version = "2026.09.01"
+backend = "http:clang-format"
+specifiers = ["2026.09.01"]
+
+[tools."http:clang-format"."platforms.linux-arm64"]
+checksum = "sha256:bc001ad9c42023c48d6321c9ea3961df4f39a9d688eb95ca0f27808d07a55255"
+url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_linux-arm64"
+
+[tools."http:clang-format"."platforms.linux-x64"]
+checksum = "sha256:94276e7eedb242f58e744a81c6c09bb8c791ec542b7993c14484f5e9652c87e9"
+url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_linux-amd64"
+
+[tools."http:clang-format"."platforms.windows-arm64"]
+checksum = "sha256:efc404969f9777de2dd43ab9868837c6b3189fa1b5285e58fd7883fdaffbe930"
+url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_windows-arm64.exe"
+
+[tools."http:clang-format"."platforms.windows-x64"]
+checksum = "sha256:61b65e096bd7d5b2050059e5a81688371cade58bffcfb17c2f58ef3571ffc2fd"
+url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_windows-amd64.exe"
+
 [[tools."http:cmake"]]
 version = "4.4.0"
 backend = "http:cmake"
@@ -88,3 +109,30 @@ url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-20
 [tools."http:slang"."platforms.windows-x64"]
 checksum = "sha256:fc922f214b5d115f663932e59e80e0f6b6cc6fae140979cf307da6459b6f8f33"
 url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-windows-x86_64.zip"
+
+[[tools.node]]
+version = "24.21.0"
+backend = "core:node"
+specifiers = ["24.21.0"]
+
+[tools.node."platforms.linux-arm64"]
+checksum = "sha256:724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz"
+
+[tools.node."platforms.linux-x64"]
+checksum = "sha256:6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"
+
+[tools.node."platforms.windows-arm64"]
+checksum = "sha256:8779b1bde1d39f8d420e3b57aa657b39891af434d3de44a919044cec06785921"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-arm64.zip"
+
+[tools.node."platforms.windows-x64"]
+checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
+
+[[tools."npm:markdownlint-cli2"]]
+version = "0.23.3"
+aube = { path = ".mise/locks/npm-markdownlint-cli2/0.23.3", digest = "sha256:39523bb981360d43f75c10a114ee091e42ff45a76d3c2c666a283ff017bd4926" }
+backend = "npm:markdownlint-cli2"
+specifiers = ["0.23.3"]
