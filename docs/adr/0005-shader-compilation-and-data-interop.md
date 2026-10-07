@@ -69,6 +69,8 @@ WebGPU の共通経路では、参照フィールドの論理パスごとに有�
 
 ### Native と Slang の実データ受け渡し
 
+参照先 Buffer の領域／世代／schema は [ADR-0009](0009-buffer-resource-contract.md)、TextureView の subresource／型／access は [ADR-0010](0010-texture-resource-contract.md)、Sampler の category と sampling pair は [ADR-0011](0011-sampler-resource-contract.md) に従う。BindingPlan は texture／sampler の関連 field path を保持し、生成 serializer と backend が適合を検証する。
+
 1. Slang の論理スキーマから C# の引数型とデータ型、スキーマ ID を生成する。共通の利用者 API とターゲットごとの物理レイアウトを分ける。
 2. 対象 profile のライブラリモジュールをリンクし、Slang の反射情報から定数の offset／alignment／stride、resource category、binding space、root の表現を取得する。論理フィールドとの対応を BindingPlan に保存する。
 3. 利用者が生成 C# 引数型へ通常の値と GpuReference を設定する。Runtime が型、範囲、世代、デバイス所属、アクセス用途を検証する。

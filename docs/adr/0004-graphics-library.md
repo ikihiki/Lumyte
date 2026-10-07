@@ -44,7 +44,7 @@ Mesh Shader、間接描画、共通スキーマで表現できない動的リソ
 
 ### 公開 API 一覧
 
-RenderEncoder の操作・状態・寿命の正本は [ADR-0006](0006-render-encoder.md)、本 ADR に登場する Desc 型と補助型のフィールド・既定値・検証条件は [ADR-0007](0007-graphics-descriptors.md) に分離する。以下は共通境界を示す主要 API の要約であり、詳細は各 ADR に従う。
+RenderEncoder の操作・状態・寿命の正本は [ADR-0006](0006-render-encoder.md)、本 ADR に登場する Desc 型と補助型のフィールド・既定値・検証条件は [ADR-0007](0007-graphics-descriptors.md) に分離する。リソースの利用 API と backend 契約は [Buffer の ADR-0009](0009-buffer-resource-contract.md)、[Texture の ADR-0010](0010-texture-resource-contract.md)、[Sampler の ADR-0011](0011-sampler-resource-contract.md) を正本とする。以下は共通境界を示す主要 API の要約であり、詳細は各 ADR に従う。
 
 以下は判断対象となる C# の主要シグネチャ案であり、既存の実装 API ではない。型は特記がなければ `Lumyte.Graphics`、Runtime 型は `Lumyte.Graphics.Runtime` に置く。`Desc` 型は生成条件、`Result<T>` は値または `GraphicsError` を持つ。各所有型は `IDisposable` を実装する。
 
@@ -57,7 +57,7 @@ RenderEncoder の操作・状態・寿命の正本は [ADR-0006](0006-render-enc
 | `BufferSlice Buffer.Slice(ulong offset, ulong length)` | 非所有の部分領域 | 境界を検証。元の Buffer の寿命を延ばさない |
 | `GpuReference<T> GraphicsDevice.CreateReference<T>(BufferSlice data) where T : IShaderData` | GPU データの型付き参照を作る | 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証。実アドレスを公開しない |
 | `Result<Texture> GraphicsDevice.CreateTexture(TextureDesc desc)` | テクスチャの生成 | サイズ、形式、用途を検証。共通 API は CPU mapping を公開しない |
-| `Result<TextureView> Texture.CreateView(TextureViewDesc desc)` | mip・layer・aspect 範囲の参照 | 元の Texture を所有しない。互換形式と範囲を検証 |
+| `Result<TextureView> Texture.CreateView(TextureViewDesc desc)` | mip・layer・aspect 範囲の参照 | 元の Texture の memory 所有権を持たず、view 存続中は元 Texture を lease。互換形式と範囲を検証 |
 | `Result<Sampler> GraphicsDevice.CreateSampler(SamplerDesc desc)` | サンプリング設定 | テクスチャとは独立した所有リソース |
 | `Result<ShaderModule> GraphicsDevice.CreateShader(ShaderArtifact artifact)` | バックエンド用のシェーダー成果物を読み込む | ADR-0005 の成果物・対象 profile・ABI を検証。Core は Slang コンパイラを起動しない |
 | `Result<GraphicsPipeline> GraphicsDevice.CreateGraphicsPipeline(GraphicsPipelineDesc desc)` | 描画状態の生成 | シェーダー、引数レイアウト、出力形式、固定状態を保持 |
@@ -66,6 +66,7 @@ RenderEncoder の操作・状態・寿命の正本は [ADR-0006](0006-render-enc
 | `void RenderEncoder.End()`／`Dispose()` | 記録 scope の終了 | GPU 完了を意味しない。二重 End と Dispose の契約は ADR-0006 |
 | `Result<CommandEncoder> GraphicsDevice.CreateCommandEncoder()` | コマンド記録の開始 | 単一スレッドで所有。初期設計では一つの汎用キューを対象とする |
 | `void CommandEncoder.CopyBuffer(BufferSlice source, BufferSlice destination)` | データの転送 | コピー用途、サイズ、アラインメントが有効であること |
+| `void CommandEncoder.CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc)` | テクスチャ Readback 用コピー | 範囲・pitch・用途の正本は ADR-0010 |
 | `void CommandEncoder.CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc)` | テクスチャ Upload | 行ピッチとコピー範囲を検証 |
 | `RenderEncoder CommandEncoder.BeginRenderPass(RenderPassDesc desc)` | 描画パスの開始 | attachment と load／store を指定。終了まで別パスを開始しない |
 | `void RenderEncoder.SetPipeline(GraphicsPipeline pipeline)` | パイプライン選択 | attachment の形式と一致すること |

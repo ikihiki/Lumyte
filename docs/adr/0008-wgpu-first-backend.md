@@ -63,6 +63,10 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 初期版では resource は明示的に Dispose、Submission は Wait／WaitAsync または IsCompleted で完了まで poll する。最終フレームを含め、完了を観測せず Device を破棄しない。一般的な Runtime の deferred deletion とフレーム allocator は後続実装とする。
 
+### リソース設計の拡張範囲
+
+[ADR-0009](0009-buffer-resource-contract.md)、[ADR-0010](0010-texture-resource-contract.md)、[ADR-0011](0011-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
+
 ### シェーダーと検証
 
 サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。ビルド時に共有 MSBuild targets が obj 内へ生成し、サンプル／テスト DLL の EmbeddedResource に格納する。生成 WGSL は Git に含めず、別ファイルとして配布しない。実行時は DLL の manifest resource を読み出し、Slang compiler を必要としない。コンパイラはビルド時にのみ必要とする。
