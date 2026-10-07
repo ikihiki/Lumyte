@@ -13,7 +13,7 @@
 
 ### 責務と公開型
 
-共通型は `Lumyte.Graphics`、Upload／Readback helper は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。Buffer は sealed な所有 class、BufferSlice と GpuReference は非所有の immutable value とする。利用者による Buffer の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
+共通型と staging の CPU 読み出し API は `Lumyte.Graphics`、型付き Upload helper は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。Buffer は sealed な所有 class、BufferSlice と GpuReference は非所有の immutable value とする。利用者による Buffer の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
 
 API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
 
@@ -30,6 +30,22 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 登録済みの schema／target layout を持つ部分領域を参照
 +        // 所属・用途・alignment・stride・要素数を検証
 +        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
++
++        // 利用者が確保し、コピーを送信して GPU 完了を観測した Readback buffer だけを読む。
++        // Memory=Readback、Usage=CopyDestination、同じ Device、idle な範囲を要求する。
++        // staging 確保、GPU コピー、Submit、Submission の完了待機は行わない。
++        // backend の map／invalidate と CPU bytes への読み出しだけを非同期に実施する。
++        // 返す byte[] は source.Length の独立した格納 bytes。長さは .NET 配列上限以内。
++        public ValueTask<Result<byte[]>> ReadBufferAsync(BufferSlice source, CancellationToken cancellationToken = default);
++    }
++
++    public sealed class DeviceCaps
++    {
++        // ReadBufferAsync の source.Offset に要求する正の byte alignment。
++        public uint ReadBufferOffsetAlignment { get; }
++
++        // ReadBufferAsync の source.Length に要求する正の byte alignment。
++        public uint ReadBufferSizeAlignment { get; }
 +    }
 +
 +    public sealed class Buffer : IDisposable
@@ -92,16 +108,16 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        public BufferSlice Upload<T>(ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData;
 +    }
 +
-+    public sealed class GraphicsRuntime
-+    {
-+        // lastWrite を待ち、Runtime が staging コピーとその送信・完了・CPU 読み出しを実施
-+        // 独立した bytes を返す
-+        public ValueTask<Result<byte[]>> ReadBufferAsync(BufferSlice source, Submission lastWrite, CancellationToken cancellationToken = default);
-+    }
 +}
 ```
 
-ReadBufferAsync の source は CopySource 用途、lastWrite は同じ Device の最後の書き込みを含む送信とする。呼び出しから完了まで追加の書き込み・再利用を禁止する。helper は対象を lease し、CPU 読み出しの完了まで staging を保持する。lastWrite が本当に最後の書き込みを含むことは利用側の責任であり、引数だけから保証できたと扱わない。返す byte[] の長さは .NET 配列上限内でなければ要求を拒否する。Runtime は追跡した producer access から CopySource への依存と staging の CopyDestination→CPU read の可視化も構築する。未知の producer access を推測してコピーしない。
+### 明示的な Readback の手順
+
+利用者が GraphicsDevice.CreateBuffer で Memory=Readback／Usage=CopyDestination の staging buffer を確保し、CommandEncoder で producer→CopySource の依存と CopyBuffer を記録する。利用者が Finish／Submit し、そのコピーを含む Submission の完了を WaitAsync または IsCompleted で観測してから GraphicsDevice.ReadBufferAsync を呼ぶ。staging の pooling、必要サイズ、再利用、Dispose も利用者が管理する。
+
+ReadBufferAsync は元の GPU buffer と lastWrite を受け取らず、コピー済みの staging BufferSlice だけを受け取る。staging の新規確保、GPU コピー、コマンド生成・送信、GPU 完了待機を内部で行わない。記録・送信の lease が残る場合は InvalidOperationException とし、未完了の使用が解消するまで内部で待たない。コピーを記録せずに読み出しても元の GPU buffer の内容を取得できる API ではなく、初期内容の保証も与えない。
+
+CPU 読み出し開始時に対象を lease し、その間の Dispose、次のコピー先への利用、再利用を拒否する。成功時の byte[] は GPU resource の寿命から独立する。map／invalidate、CPU bytes の所有コピー、unmap と lease 解放は backend の読み出し責務であり、GPU コピーの自動化とは区別する。async は Browser の mapAsync を含む CPU mapping の完了に必要なもので、Submission の待機を代行する意味ではない。readback offset／length の mapping alignment は backend が報告する DeviceCaps.ReadBufferOffsetAlignment／ReadBufferSizeAlignment に照合する。両値は正数で、利用者は適合する staging slice を選ぶ。
 
 UploadBytes はエンジン定義の bytes、index、texture staging 用であり、型付き GPU 参照を生成するメタデータを持たない。生成型の Upload が返す領域は target 用途に適合する Runtime の領域とし、必要なら staging → GPU buffer のコピーを Runtime が記録する。FrameContext に結び付いたコマンド送信を EndFrame の Submission に含める。
 
@@ -137,7 +153,7 @@ UploadBytes はエンジン定義の bytes、index、texture staging 用であ�
 +}
 ```
 
-ShaderWrite と ShaderRead は併用可能。Upload は CopySource のみ、Readback は CopyDestination のみを許可し、直接 shader／index 利用を要求する場合は Automatic／DeviceLocal を使う。これにより WebGPU の map 用途の制約を共通化する。Memory は公開 map 権限ではなく、staging による実現も許す。backend は hint を理由に要求用途を変更しない。
+ShaderWrite と ShaderRead は併用可能。Upload は CopySource のみ、Readback は CopyDestination のみを許可し、直接 shader／index 利用を要求する場合は Automatic／DeviceLocal を使う。これにより WebGPU の map 用途の制約を共通化する。Memory は公開 map 権限ではなく、staging による実現も許す。backend は hint を理由に要求用途を変更しない。Readback は生成時点で CPU 読み出しを実現する resource を確保し、ReadBufferAsync の呼び出し時に別 staging を作ってコピーする fallback は禁止する。必要な配置を実現できない場合は CreateBuffer を失敗させる。
 
 DeviceCaps に `ulong MaxBufferSize`、`ulong MaxStorageBufferBindingSize`、`uint CopyBufferOffsetAlignment`、`uint CopyBufferSizeAlignment`、`uint StorageBufferOffsetAlignment`、`uint MaxStorageBuffersPerStage` を報告する。各 alignment は正数。コピーは offset と length をそれぞれの alignment に照合し、index は format の要素サイズに照合する。型付き storage 参照は binding offset、target alignment／stride、最大 binding size にも従う。
 
@@ -169,7 +185,7 @@ typed Upload の schema／layout ID は物理 buffer 全体ではなく対象領
 +        // ネイティブ確保、失敗時 rollback、Device 所属・世代、logical size／usage の保持、idle 時の解放
 +        void DestroyBuffer(BufferToken token);
 +
-+        // 実際に実現する用途、コピー／storage alignment、容量を報告
++        // 実際に実現する用途、コピー／storage／CPU 読み出し alignment、容量を報告
 +        // native の制限を超えた値を返さない
 +        BufferCapabilities GetBufferCapabilities();
 +
@@ -184,7 +200,9 @@ typed Upload の schema／layout ID は物理 buffer 全体ではなく対象領
 +        // 所有メモリへのコピー、flush／invalidate または map／unmap、GPU 完了と CPU 可視性を保証
 +        StagingToken UploadStaging(ReadOnlySpan<byte> bytes);
 +
-+        // 所有メモリへのコピー、flush／invalidate または map／unmap、GPU 完了と CPU 可視性を保証
++        // 利用者がコピーと GPU 完了観測を済ませた既存 Readback buffer のみを map／invalidate して読む。
++        // コマンド生成・コピー・送信・GPU 完了待機・追加 staging 確保は行わない。
++        // 未完了の GPU 使用は待機で隠さず拒否。CPU コピー後に unmap と lease 解放。
 +        ValueTask<ReadOnlyMemory<byte>> ReadStagingAsync(BufferRange range);
 +
 +        // ADR-0004 の Barrier を各 backend のアクセス遷移へ変換
@@ -207,27 +225,45 @@ DirectX／Vulkan の C ABI には `uint64` の size／offset／length、`uint32`
 
 記録が使う buffer と参照依存は CommandEncoder → CommandBuffer → Submission に lease を移し、GPU 完了時に解放する。未送信のコマンドを破棄した場合も解放する。CPU 書き込み・Dispose・suballocation 再利用は使用中に拒否する。FrameContext の領域は EndFrame で登録した完了まで再利用しない。
 
-Encoder と FrameContext は単一スレッド、Device 操作は利用側で直列化する。キャンセルは Readback の待機・結果公開を中止するだけで、送信済み GPU コピーを取消さない。Runtime は完了後に staging／lease を必ず回収する。DeviceLost は未完了要求を GraphicsError で終了させ、使用中 handle を backend の安全な teardown 手順で解放する。
+Encoder と FrameContext は単一スレッド、Device 操作は利用側で直列化する。Submission 待機のキャンセルは利用者が送信した GPU コピーを取消さない。利用者は完了を改めて観測してから staging を解放・再利用する。CPU 読み出しのキャンセルは新しいコピーを発生させず、mapping を安全に終了して unmap／lease 解放を済ませてから OperationCanceledException を返す。読み出し API は staging 自体を Dispose しない。DeviceLost は未完了要求を GraphicsError で終了させ、使用中 handle を backend の安全な teardown 手順で解放する。
 
-範囲・enum・用途・別 Device は引数例外、破棄済みは ObjectDisposedException、記録状態・使用中変更は InvalidOperationException。有効な要求に対する未対応機能、OutOfMemory、DeviceLost は Result の GraphicsError。Readback 待機の cancellation は OperationCanceledException。native エラーを成功値へ変換しない。
+範囲・enum・用途・別 Device は引数例外、破棄済みは ObjectDisposedException、記録状態・使用中変更は InvalidOperationException。有効な要求に対する未対応機能、OutOfMemory、DeviceLost は Result の GraphicsError。Submission 待機と CPU 読み出しの cancellation は OperationCanceledException。native エラーを成功値へ変換しない。
 
 ### 利用例
 
-以下は提案 API。Result の失敗を確認してから得た `buffer` と `commands`、同じ runtime の `frame` を使う。
+以下は提案 API。RequireSuccess は利用者側で Result の失敗を処理して成功値を取り出す処理を表す。buffer は CopySource 用途、byteCount はコピーと読み出しの alignment を満たす。producerToCopySource は利用者が前の書き込みからコピーへの依存を構築したものとする。
 
 ```csharp
-var packed = frame.Upload(dataLayout, values); // schema を登録した GPU データ
-var reference = device.CreateReference<VertexData>(packed);
-var arguments = frame.CreateArguments(argumentsLayout, new DrawArguments { Vertices = reference });
-render.Draw(arguments, new DrawDesc { VertexCount = (uint)values.Length });
-// 提出した全 frame work を含む completion を EndFrame に渡す。
-frame.EndFrame(completion);
+// 1. 利用者が staging buffer を確保する。必要なら既存 buffer を再利用できる。
+using var staging = RequireSuccess(device.CreateBuffer(new BufferDesc {
+    SizeInBytes = byteCount,
+    Usage = BufferUsage.CopyDestination,
+    Memory = MemoryPreference.Readback,
+}));
 
-var bytes = await runtime.ReadBufferAsync(buffer.Slice(0, byteCount), completion, cancellationToken);
-// Result 成功時の bytes は GPU の寿命から独立する。
+// 2. 利用者が依存関係とコピー命令を記録する。
+using var encoder = RequireSuccess(device.CreateCommandEncoder());
+encoder.Barrier(producerToCopySource);
+encoder.CopyBuffer(buffer.Slice(0, byteCount), staging.Slice(0, byteCount));
+using var commands = encoder.Finish();
+
+// 3. 利用者が送信する。他の work と同じ送信にまとめることもできる。
+var copyCompletion = RequireSuccess(device.Submit(commands));
+
+// 4. 利用者が GPU 完了を観測する。この例はキャンセルせず完了まで待つ。
+await copyCompletion.WaitAsync();
+
+// 5. コピー済み staging から CPU bytes を読む。ここでは GPU work を作らない。
+var bytes = RequireSuccess(await device.ReadBufferAsync(
+    staging.Slice(0, byteCount), cancellationToken));
+// CPU 読み出しと GPU 使用の完了後に、利用者が staging を解放・再利用する。
 ```
 
 ## 検討した代替案
+
+### Readback helper が確保・コピー・送信・待機をまとめて実行する
+
+staging の再利用、コピーと他の work のまとめ方、送信と完了観測の時期を利用側が選べなくなる。各操作を明示し、ReadBufferAsync は CPU 読み出しに限定する。
 
 ### public map／GPU address を基本経路にする
 
@@ -242,11 +278,11 @@ layout、padding、参照の pack を検証できない。raw bytes と登録済
 - 用途と部分領域を共通 API で検証し、backend の物理表現を隠せる。
 - typed metadata、参照依存、lease、staging の管理コストが生じる。
 - 上限と alignment は backend ごとに確認が必要で、すべてのサイズをコピーできるとは保証しない。
-- 初期実装の WriteBuffer<T>／UInt32 ReadBuffer はこの Runtime 契約への移行対象。今回の変更は設計文書のみ。
+- 初期実装の WriteBuffer<T> は Upload 契約、UInt32 ReadBuffer は明示的な staging の CPU 読み出し契約への移行対象。今回の変更は設計文書のみ。
 
 ## 検証方針
 
-共通 API のみを使うテストで size／range overflow、用途、alignment、同一 buffer の重複コピー、別 Device、破棄後参照を拒否する。Upload → Compute → Barrier → Copy → Readback の bytes と、非 coherent memory の可視性を確認する。typed metadata の伝播／失効、世代更新、未送信破棄、in-flight Dispose、キャンセル／DeviceLost 時の staging 回収を backend ごとに検証する。今回これらの追加契約の GPU 検証は行わない。
+共通 API のみを使うテストで size／range overflow、用途、alignment、同一 buffer の重複コピー、別 Device、破棄後参照を拒否する。Upload → Compute → Barrier → Copy → Readback の bytes と、非 coherent memory の可視性を確認する。typed metadata の伝播／失効、世代更新、未送信破棄、in-flight Dispose、読み出し中の staging lease、未完了コピーでの読み出し拒否、キャンセル／DeviceLost 時の map／lease 回収を backend ごとに検証する。ReadBufferAsync が staging 確保・Copy・Submit・GPU 待機を実行しないことも backend の呼び出し記録で検証する。今回これらの追加契約の GPU 検証は行わない。
 
 ## 別途決定する事項
 

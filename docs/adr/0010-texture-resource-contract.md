@@ -13,7 +13,7 @@ Texture を単なる画像 handle として扱うと、mip／layer／aspect、fo
 
 ### 利用側の公開 API
 
-Core 型は `Lumyte.Graphics`、Readback helper は `Lumyte.Graphics.Runtime`。Texture と TextureView は sealed な所有 class とし、利用者による直接 constructor、native image／view handle の取得、CPU map は提供しない。
+Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の GraphicsDevice.ReadBufferAsync で CPU bytes を読む。Texture と TextureView は sealed な所有 class とし、利用者による直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
 API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
 
@@ -104,14 +104,6 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    }
 +}
 +
-+namespace Lumyte.Graphics.Runtime
-+{
-+    public sealed class GraphicsRuntime
-+    {
-+        // 最終書き込みを待ち、staging コピー・送信・完了・padding 除去を実施
-+        public ValueTask<Result<TextureReadback>> ReadTextureAsync(Texture source, TextureRegion region, Submission lastWrite, CancellationToken cancellationToken = default);
-+    }
-+}
 ```
 
 ```diff
@@ -141,24 +133,11 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-```diff
-+namespace Lumyte.Graphics
-+{
-+    // TextureReadback は TextureFormat Format、Extent3D Size、uint BytesPerRow、uint RowsPerImage、ReadOnlyMemory<byte> Data を持つ immutable な CPU 成果物とする
-+    // pitch は width × bytesPerPixel、rows は height、Data は layer／depth 順の密な独立した byte 配列
-+    // sRGB の bytes を線形値に変換せず、format の格納値を返す
-+    // array の総量と pitch の型上限を checked 検証する
-+    // lastWrite の所属、コピー用途、キャンセルと lease の扱いは ADR-0009 の Readback と同じ
-+    public sealed record TextureReadback
-+    {
-+        public TextureFormat Format { get; }
-+        public Extent3D Size { get; }
-+        public uint BytesPerRow { get; }
-+        public uint RowsPerImage { get; }
-+        public ReadOnlyMemory<byte> Data { get; }
-+    }
-+}
-```
+### 明示的なテクスチャ Readback
+
+利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の Buffer を確保し、CommandEncoder で依存と CopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 GraphicsDevice.ReadBufferAsync で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
+
+bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU 成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を ReadBufferAsync が追加する根拠にはしない。読み出し中の lease とキャンセルは ADR-0009 に従う。
 
 ### TextureDesc
 
@@ -354,8 +333,6 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 +        // source discard と target 保存を別に処理
 +        void ResolveColorAttachment(TextureViewToken source, TextureViewToken target);
 +
-+        // GPU 完了、map／invalidate、native pitch からの密な CPU bytes の構築、キャンセル後の安全な回収
-+        ValueTask<TextureReadback> ReadTextureStagingAsync(StagingToken staging, TextureRegion region);
 +    }
 +}
 ```
@@ -408,7 +385,7 @@ backend 条件が Upload code に広がる。共通 pitch／region を定め、n
 - mip／layer／aspect と用途を view、copy、attachment、shader が共有できる。
 - subresource と依存の追跡、format capabilities、staging repack の実装コストが必要。
 - 一部 backend では同一 image の異なる subresource 利用も制限される。capability と検証で明示する。
-- 現行 TextureDesc.Width／Height、引数なし CreateView、texture readback helper は移行対象。今回実装の拡張は行わない。
+- 現行 TextureDesc.Width／Height と引数なし CreateView は詳細 Desc へ移行する。texture の読み戻しは明示的な staging コピーと共通の CPU 読み出しへ移行する。今回実装の拡張は行わない。
 
 ## 検証方針
 

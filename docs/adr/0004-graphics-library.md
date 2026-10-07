@@ -78,6 +78,10 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // GPU アドレスや CPU mapping を保証しない
 +        public Result<Buffer> CreateBuffer(BufferDesc desc);
 +
++        // 利用者が確保・コピー・送信・完了観測を済ませた Readback buffer から CPU bytes を読む。
++        // staging 確保、コピー命令、Submit、GPU 完了待機を内部で自動実行しない。詳細は ADR-0009。
++        public ValueTask<Result<byte[]>> ReadBufferAsync(BufferSlice source, CancellationToken cancellationToken = default);
++
 +        // GPU データの型付き参照を作る
 +        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
 +        // 実アドレスを公開しない
