@@ -2,7 +2,24 @@ name: Setup smoke test
 
 on:
   push:
+    branches: [main]
+    paths:
+      - 'tools/setup/**'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'global.json'
+      - 'NuGet.config'
+      - '.devcontainer/**'
+      - '.github/workflows/setup-smoke.yml'
   pull_request:
+    paths:
+      - 'tools/setup/**'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'global.json'
+      - 'NuGet.config'
+      - '.devcontainer/**'
+      - '.github/workflows/setup-smoke.yml'
   workflow_dispatch:
 
 permissions:
