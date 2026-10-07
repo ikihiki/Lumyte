@@ -34,22 +34,147 @@ Core の wrapper は内部 driver と backend object を非公開で保持する
 
 `GraphicsBackend` は現在 `Wgpu` のみ。`Graphics.CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu)` は未定義値を ArgumentOutOfRangeException で拒否する。バックエンドの `WgpuBackend.CreateDevice()` は生成層用の接続点であり、サンプル／テストからは呼ばない。
 
-| API | 実装する契約 |
-| --- | --- |
-| `Graphics.CreateDevice(GraphicsBackend)` | blocking の Instance／Adapter／Device 生成。バインディングの初期化失敗は例外で返す |
-| `CreateBuffer(BufferDesc)`／`Buffer.Slice(ulong, ulong)` | サイズ・用途・範囲を検証。初期 buffer のサイズは 4-byte の倍数 |
-| `WriteBuffer<T>(BufferSlice, ReadOnlySpan<T>)` | blittable データの明示的な byte Upload。未知の Slang 型の ABI を自動保証しない |
-| `CreateReference<T>(BufferSlice)` | 初期の登録済みデータ schema は UInt32 配列のみ。非所有・型付きの不透明参照を作る |
-| `CreateShader(Assembly assembly, string resourceName)` | DLL の埋め込み WGSL を読み込む。resource 不在は ArgumentException。stream は内部で解放 |
-| `CreateComputePipeline(ComputePipelineDesc)`／`ComputePipeline.CreateArguments(GpuReference<uint>)` | 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数。binding と実データ参照の解決は library 内部 |
-| `CommandEncoder.Dispatch(...)`／`CopyBuffer(...)` | 単一 queue の Compute とコピー。パス中は禁止 |
-| `CreateTexture(TextureDesc)`／`Texture.CreateView()` | single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target |
-| `CreateGraphicsPipeline(GraphicsPipelineDesc)` | rootless vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline |
-| `BeginRenderPass(RenderPassDesc)`／`RenderEncoder.SetPipeline` | 一つの color attachment の Clear／Load、Store／Discard |
-| `RenderEncoder.SetViewport`／`SetScissor`／`SetIndexBuffer`／`Draw`／`DrawIndexed` | パス状態、範囲、index 用途を検証する記録 API |
-| `Finish()`／`Submit(CommandBuffer)` | 一回限りの送信。二重送信は Native に渡す前に拒否 |
-| `Submission.IsCompleted`／`Wait`／`WaitAsync` | callback を poll して実 GPU 完了を確認。待機キャンセルは GPU 処理を取り消さない |
-| `CopyTextureToBuffer(Texture, Buffer, uint bytesPerRow)`／`ReadBuffer(Buffer)` | 256-byte pitch の color コピー、完了後の UInt32 読み戻し。サンプルは bytes として pixel を検証 |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+
+```diff
++namespace Lumyte.Graphics
++{
++    // 現行のデバイス生成 API が受け付けるバックエンド。
++    public enum GraphicsBackend { Wgpu }
++
++    // リソースの所有基底型。GPU 使用中の解放は拒否する。
++    public abstract class GpuResource : IDisposable
++    {
++        public void Dispose();
++    }
++
++    public static class Graphics
++    {
++        // blocking の Instance／Adapter／Device 生成
++        // バインディングの初期化失敗は例外で返す
++        public static GraphicsDevice CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu);
++    }
++
++    public sealed class GraphicsDevice : IDisposable
++    {
++        // サイズ・用途・範囲を検証
++        // 初期 buffer のサイズは 4-byte の倍数
++        public Buffer CreateBuffer(BufferDesc desc);
++
++        // blittable データの明示的な byte Upload
++        // 未知の Slang 型の ABI を自動保証しない
++        public void WriteBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged;
++
++        // 初期の登録済みデータ schema は UInt32 配列のみ
++        // 非所有・型付きの不透明参照を作る
++        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : unmanaged;
++
++        // DLL の埋め込み WGSL を読み込む
++        // resource 不在は ArgumentException
++        // stream は内部で解放
++        public ShaderModule CreateShader(System.Reflection.Assembly assembly, string resourceName);
++
++        // 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数
++        // binding と実データ参照の解決は library 内部
++        public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc);
++
++        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
++        public Texture CreateTexture(TextureDesc desc);
++
++        // rootless vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
++        public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
++
++        // 一回限りの送信
++        // 二重送信は Native に渡す前に拒否
++        public Submission Submit(CommandBuffer commands);
++
++        // 256-byte pitch の color コピー、完了後の UInt32 読み戻し
++        // サンプルは bytes として pixel を検証
++        public uint[] ReadBuffer(Buffer buffer);
++    }
++
++    public sealed class Buffer : GpuResource
++    {
++        // サイズ・用途・範囲を検証
++        // 初期 buffer のサイズは 4-byte の倍数
++        public BufferSlice Slice(ulong offset, ulong length);
++    }
++
++    public sealed class ComputePipeline : GpuResource
++    {
++        // 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数
++        // binding と実データ参照の解決は library 内部
++        public ShaderArguments CreateArguments(GpuReference<uint> data);
++    }
++
++    public sealed class CommandEncoder : IDisposable
++    {
++        // 単一 queue の Compute とコピー
++        // パス中は禁止
++        public void Dispatch(ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y = 1, uint z = 1);
++
++        // 単一 queue の Compute とコピー
++        // パス中は禁止
++        public void CopyBuffer(BufferSlice source, BufferSlice destination);
++
++        // 一つの color attachment の Clear／Load、Store／Discard
++        public RenderEncoder BeginRenderPass(RenderPassDesc desc);
++
++        // 一回限りの送信
++        // 二重送信は Native に渡す前に拒否
++        public CommandBuffer Finish();
++
++        // 256-byte pitch の color コピー、完了後の UInt32 読み戻し
++        // サンプルは bytes として pixel を検証
++        public void CopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow);
++    }
++
++    public sealed class Texture : GpuResource
++    {
++        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
++        public TextureView CreateView();
++    }
++
++    public sealed class RenderEncoder : IDisposable
++    {
++        // 一つの color attachment の Clear／Load、Store／Discard
++        public void SetPipeline(GraphicsPipeline pipeline);
++
++        // パス状態、範囲、index 用途を検証する記録 API
++        public void SetViewport(Viewport viewport);
++
++        // パス状態、範囲、index 用途を検証する記録 API
++        public void SetScissor(Scissor scissor);
++
++        // パス状態、範囲、index 用途を検証する記録 API
++        public void SetIndexBuffer(BufferSlice indices, IndexFormat format);
++
++        // パス状態、範囲、index 用途を検証する記録 API
++        public void Draw(uint vertexCount, uint instanceCount = 1);
++
++        // パス状態、範囲、index 用途を検証する記録 API
++        public void Draw(DrawDesc desc);
++
++        // パス状態、範囲、index 用途を検証する記録 API
++        public void DrawIndexed(IndexedDrawDesc desc);
++    }
++
++    public sealed class Submission
++    {
++        // callback を poll して実 GPU 完了を確認
++        // 待機キャンセルは GPU 処理を取り消さない
++        public bool IsCompleted { get; }
++
++        // callback を poll して実 GPU 完了を確認
++        // 待機キャンセルは GPU 処理を取り消さない
++        public void Wait(CancellationToken cancellationToken = default);
++
++        // callback を poll して実 GPU 完了を確認
++        // 待機キャンセルは GPU 処理を取り消さない
++        public ValueTask WaitAsync(CancellationToken cancellationToken = default);
++    }
++}
+```
 
 初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 

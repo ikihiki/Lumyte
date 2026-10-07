@@ -23,20 +23,80 @@ RenderEncoder は一つの描画パスに属し、attachment、graphics pipeline
 
 すべて `Lumyte.Graphics` 名前空間の C# シグネチャ案であり未実装である。RenderEncoder は利用者が直接生成できない sealed class とし、親 CommandEncoder の BeginRenderPass だけが生成する。コピー可能な struct によるパス終了状態の分裂を避ける。
 
-| 公開 API | 役割 | 契約 |
-| --- | --- | --- |
-| `RenderEncoder CommandEncoder.BeginRenderPass(RenderPassDesc desc)` | パスを開始 | 親が RecordingOutsidePass。Desc を検証・コピーしてから開始。全 attachment が同じデバイス |
-| `void RenderEncoder.SetPipeline(GraphicsPipeline pipeline)` | graphics pipeline を選択 | パスの color format 順序、depth／stencil format、sample count と完全一致。readonly aspect への書き込みは不可 |
-| `void RenderEncoder.SetViewport(Viewport viewport)` | 一つの viewport を設定 | 座標・深度範囲の規約と検証は下記。pipeline の切り替えで失効しない |
-| `void RenderEncoder.SetScissor(Scissor scissor)` | 描画領域を制限 | パスの領域内。pipeline の切り替えで失効しない |
-| `void RenderEncoder.SetBlendConstant(Color4 value)` | constant blend factor の値 | 有限の float4。パス全体の動的状態で、既定値は全成分 0 |
-| `void RenderEncoder.SetStencilReference(uint value)` | front／back 共通の stencil reference | 初期の共通契約は 8-bit stencil、値は 0〜255。既定値 0 |
-| `void RenderEncoder.SetIndexBuffer(BufferSlice indices, IndexFormat format)` | index の読み取り範囲を設定 | Index 用途、Uint16／Uint32、offset と length が要素サイズの倍数。元 Buffer の寿命は利用側が保持 |
-| `void RenderEncoder.Draw(ShaderArguments arguments, uint vertexCount, uint instanceCount = 1)` | 通常描画の簡易呼び出し | firstVertex／firstInstance は 0。下記 DrawDesc 版と同じ検証 |
-| `void RenderEncoder.Draw(ShaderArguments arguments, DrawDesc desc)` | 開始位置を指定した通常描画 | pipeline と引数 ABI が一致。範囲・整数演算を検証。頂点データは引数の GPU データ参照から読む |
-| `void RenderEncoder.DrawIndexed(ShaderArguments arguments, IndexedDrawDesc desc)` | インデックス描画 | pipeline と index buffer が設定済み。index 範囲と strip format が一致 |
-| `void RenderEncoder.End()` | パスを終了 | Active → Ended を一度だけ行う。parent を RecordingOutsidePass に戻す |
-| `void RenderEncoder.Dispose()` | using によるパス終了 | Active なら End、Ended なら何もしない。GPU 完了待機や attachment 解放は行わない |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed class CommandEncoder : IDisposable
++    {
++        // パスを開始
++        // 親が RecordingOutsidePass
++        // Desc を検証・コピーしてから開始
++        // 全 attachment が同じデバイス
++        public RenderEncoder BeginRenderPass(RenderPassDesc desc);
++    }
++
++    public sealed class RenderEncoder : IDisposable
++    {
++        // graphics pipeline を選択
++        // パスの color format 順序、depth／stencil format、sample count と完全一致
++        // readonly aspect への書き込みは不可
++        public void SetPipeline(GraphicsPipeline pipeline);
++
++        // 一つの viewport を設定
++        // 座標・深度範囲の規約と検証は下記
++        // pipeline の切り替えで失効しない
++        public void SetViewport(Viewport viewport);
++
++        // 描画領域を制限
++        // パスの領域内
++        // pipeline の切り替えで失効しない
++        public void SetScissor(Scissor scissor);
++
++        // constant blend factor の値
++        // 有限の float4
++        // パス全体の動的状態で、既定値は全成分 0
++        public void SetBlendConstant(Color4 value);
++
++        // front／back 共通の stencil reference
++        // 初期の共通契約は 8-bit stencil、値は 0〜255
++        // 既定値 0
++        public void SetStencilReference(uint value);
++
++        // index の読み取り範囲を設定
++        // Index 用途、Uint16／Uint32、offset と length が要素サイズの倍数
++        // 元 Buffer の寿命は利用側が保持
++        public void SetIndexBuffer(BufferSlice indices, IndexFormat format);
++
++        // 通常描画の簡易呼び出し
++        // firstVertex／firstInstance は 0
++        // 下記 DrawDesc 版と同じ検証
++        public void Draw(ShaderArguments arguments, uint vertexCount, uint instanceCount = 1);
++
++        // 開始位置を指定した通常描画
++        // pipeline と引数 ABI が一致
++        // 範囲・整数演算を検証
++        // 頂点データは引数の GPU データ参照から読む
++        public void Draw(ShaderArguments arguments, DrawDesc desc);
++
++        // インデックス描画
++        // pipeline と index buffer が設定済み
++        // index 範囲と strip format が一致
++        public void DrawIndexed(ShaderArguments arguments, IndexedDrawDesc desc);
++
++        // パスを終了
++        // Active → Ended を一度だけ行う
++        // parent を RecordingOutsidePass に戻す
++        public void End();
++
++        // using によるパス終了
++        // Active なら End、Ended なら何もしない
++        // GPU 完了待機や attachment 解放は行わない
++        public void Dispose();
++    }
++}
+```
 
 `Viewport(float X, float Y, float Width, float Height, float MinDepth = 0, float MaxDepth = 1)` は top-left 原点のピクセル座標を使用する。全値が有限、Width／Height > 0、領域内、0 ≤ MinDepth ≤ MaxDepth ≤ 1 を要求する。負の viewport height は公開しない。NDC の Z は 0〜1 とし、画面座標や winding を合わせる変換はバックエンドと対応 Slang モジュールが担当する。
 

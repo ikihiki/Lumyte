@@ -15,37 +15,195 @@ Texture を単なる画像 handle として扱うと、mip／layer／aspect、fo
 
 Core 型は `Lumyte.Graphics`、Readback helper は `Lumyte.Graphics.Runtime`。Texture と TextureView は sealed な所有 class とし、利用者による直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
-| 利用側 API | 契約 |
-| --- | --- |
-| `Result<Texture> GraphicsDevice.CreateTexture(TextureDesc desc)` | Desc と ViewFormats を snapshot。形式・用途・寸法・容量を検証して生成 |
-| `TextureDimension Texture.Dimension`／`Extent3D Size`／`TextureFormat Format`／`TextureUsage Usage`／`uint MipLevels`／`uint SampleCount` | 確定した論理属性。生成後は不変 |
-| `Result<TextureView> Texture.CreateView(TextureViewDesc desc)` | 所属 texture の互換な subresource view を生成。null の count／format を解決して保持 |
-| `Texture TextureView.Texture`／`TextureViewInfo Info` | 元 texture と正規化済みの形式・dimension・aspect・mip／layer 範囲。物理 descriptor は公開しない |
-| `Extent3D Texture.GetMipSize(uint mipLevel)` | 範囲内 mip の寸法。D3 の depth は縮小、D2 の array layer 数は一定 |
-| `FormatCapabilities DeviceCaps.GetFormatCapabilities(TextureFormat format)` | sampled、filterable、comparison-sampleable、storage read／write、renderable、blendable、sample count、互換 view format |
-| `void CommandEncoder.CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc)` | source CopySource、destination CopyDestination。パス外、同じ Device |
-| `void CommandEncoder.CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc)` | 逆方向のコピー。source CopySource、destination CopyDestination。同じ layout 検証 |
-| `void CommandEncoder.CopyTexture(Texture source, TextureRegion sourceRegion, Texture destination, TextureRegion destinationRegion)` | 同 format、同 extent、sample count 1 の color。範囲、用途、alias を検証 |
-| `ValueTask<Result<TextureReadback>> GraphicsRuntime.ReadTextureAsync(Texture source, TextureRegion region, Submission lastWrite, CancellationToken cancellationToken = default)` | 最終書き込みを待ち、staging コピー・送信・完了・padding 除去を実施 |
-| `void TextureView.Dispose()`／`void Texture.Dispose()` | idle 時の即時解放、idempotent。使用中の解放は拒否 |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
 
-`TextureViewInfo` は immutable record。`Format`、`Dimension`、`Aspect`、`BaseMipLevel`、解決済み `MipLevelCount`、`BaseArrayLayer`、解決済み `ArrayLayerCount` を持つ。`TextureRegion` は init-only record で `uint MipLevel = 0`、`Origin3D Origin = (0,0,0)`、required `Extent3D Extent` を持つ。初期コピーは color の Aspect.All のみで、aspect field は追加しない。
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed class GraphicsDevice : IDisposable
++    {
++        // Desc と ViewFormats を snapshot
++        // 形式・用途・寸法・容量を検証して生成
++        public Result<Texture> CreateTexture(TextureDesc desc);
++    }
++
++    public sealed class Texture : IDisposable
++    {
++        // 確定した論理属性
++        // 生成後は不変
++        public TextureDimension Dimension { get; }
++
++        // 確定した論理属性
++        // 生成後は不変
++        public Extent3D Size { get; }
++
++        // 確定した論理属性
++        // 生成後は不変
++        public TextureFormat Format { get; }
++
++        // 確定した論理属性
++        // 生成後は不変
++        public TextureUsage Usage { get; }
++
++        // 確定した論理属性
++        // 生成後は不変
++        public uint MipLevels { get; }
++
++        // 確定した論理属性
++        // 生成後は不変
++        public uint SampleCount { get; }
++
++        // 所属 texture の互換な subresource view を生成
++        // null の count／format を解決して保持
++        public Result<TextureView> CreateView(TextureViewDesc desc);
++
++        // 範囲内 mip の寸法
++        // D3 の depth は縮小、D2 の array layer 数は一定
++        public Extent3D GetMipSize(uint mipLevel);
++
++        // idle 時の即時解放、idempotent
++        // 使用中の解放は拒否
++        public void Dispose();
++    }
++
++    public sealed class TextureView : IDisposable
++    {
++        // 元 texture と正規化済みの形式・dimension・aspect・mip／layer 範囲
++        // 物理 descriptor は公開しない
++        public Texture Texture { get; }
++
++        // 元 texture と正規化済みの形式・dimension・aspect・mip／layer 範囲
++        // 物理 descriptor は公開しない
++        public TextureViewInfo Info { get; }
++
++        // idle 時の即時解放、idempotent
++        // 使用中の解放は拒否
++        public void Dispose();
++    }
++
++    public sealed class DeviceCaps
++    {
++        // sampled、filterable、comparison-sampleable、storage read／write、renderable、blendable、sample count、互換 view format
++        public FormatCapabilities GetFormatCapabilities(TextureFormat format);
++    }
++
++    public sealed class CommandEncoder : IDisposable
++    {
++        // source CopySource、destination CopyDestination
++        // パス外、同じ Device
++        public void CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
++
++        // 逆方向のコピー
++        // source CopySource、destination CopyDestination
++        // 同じ layout 検証
++        public void CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
++
++        // 同 format、同 extent、sample count 1 の color
++        // 範囲、用途、alias を検証
++        public void CopyTexture(Texture source, TextureRegion sourceRegion, Texture destination, TextureRegion destinationRegion);
++    }
++}
++
++namespace Lumyte.Graphics.Runtime
++{
++    public sealed class GraphicsRuntime
++    {
++        // 最終書き込みを待ち、staging コピー・送信・完了・padding 除去を実施
++        public ValueTask<Result<TextureReadback>> ReadTextureAsync(Texture source, TextureRegion region, Submission lastWrite, CancellationToken cancellationToken = default);
++    }
++}
+```
 
-`TextureReadback` は `TextureFormat Format`、`Extent3D Size`、`uint BytesPerRow`、`uint RowsPerImage`、`ReadOnlyMemory<byte> Data` を持つ immutable な CPU 成果物とする。pitch は width × bytesPerPixel、rows は height、Data は layer／depth 順の密な独立した byte 配列。sRGB の bytes を線形値に変換せず、format の格納値を返す。array の総量と pitch の型上限を checked 検証する。lastWrite の所属、コピー用途、キャンセルと lease の扱いは ADR-0009 の Readback と同じ。
+```diff
++namespace Lumyte.Graphics
++{
++    // TextureViewInfo は immutable record
++    // Format、Dimension、Aspect、BaseMipLevel、解決済み MipLevelCount、BaseArrayLayer、解決済み ArrayLayerCount を持つ
++    // TextureRegion は init-only record で uint MipLevel = 0、Origin3D Origin = (0,0,0)、required Extent3D Extent を持つ
++    // 初期コピーは color の Aspect.All のみで、aspect field は追加しない
++    public sealed record TextureViewInfo
++    {
++        public TextureFormat Format { get; }
++        public TextureViewDimension Dimension { get; }
++        public TextureAspect Aspect { get; }
++        public uint BaseMipLevel { get; }
++        public uint MipLevelCount { get; }
++        public uint BaseArrayLayer { get; }
++        public uint ArrayLayerCount { get; }
++    }
++
++    public sealed record TextureRegion
++    {
++        public uint MipLevel { get; init; } = 0;
++        public Origin3D Origin { get; init; } = new Origin3D(0, 0, 0);
++        public required Extent3D Extent { get; init; }
++    }
++}
+```
+
+```diff
++namespace Lumyte.Graphics
++{
++    // TextureReadback は TextureFormat Format、Extent3D Size、uint BytesPerRow、uint RowsPerImage、ReadOnlyMemory<byte> Data を持つ immutable な CPU 成果物とする
++    // pitch は width × bytesPerPixel、rows は height、Data は layer／depth 順の密な独立した byte 配列
++    // sRGB の bytes を線形値に変換せず、format の格納値を返す
++    // array の総量と pitch の型上限を checked 検証する
++    // lastWrite の所属、コピー用途、キャンセルと lease の扱いは ADR-0009 の Readback と同じ
++    public sealed record TextureReadback
++    {
++        public TextureFormat Format { get; }
++        public Extent3D Size { get; }
++        public uint BytesPerRow { get; }
++        public uint RowsPerImage { get; }
++        public ReadOnlyMemory<byte> Data { get; }
++    }
++}
+```
 
 ### TextureDesc
 
 全 Desc は `string? Label = null`、init-only property を持つ。
 
-| フィールド | 型・既定値 | 検証と意味 |
-| --- | --- | --- |
-| Dimension | `TextureDimension = D2` | D1／D2／D3。Cube は view の dimension |
-| Size | `Extent3D`、required | uint Width／Height／DepthOrArrayLayers、すべて正数 |
-| Format | `TextureFormat`、required | Undefined／不明 enum は拒否、用途に必要な capability を確認 |
-| Usage | `TextureUsage`、required | CopySource／CopyDestination／Sampled／StorageRead／StorageWrite／RenderAttachment。None／不明 bit は拒否 |
-| MipLevels | `uint = 1` | 1〜floor(log2(max spatial dimension))+1。array layer 数は除外 |
-| SampleCount | `uint = 1` | 初期共通契約は 1 または 4、format／device の対応が必要 |
-| ViewFormats | `IReadOnlyList<TextureFormat> = empty` | 追加の互換 view format。元 Format は暗黙に含み、重複は拒否 |
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed record TextureDesc
++    {
++        // Desc の構築では GPU 操作を行わない
++        // 生成・記録 API が検証する
++        public TextureDesc();
++
++        // 診断用ラベル
++        // 動作と互換性を変えない
++        public string? Label { get; init; } = null;
++
++        // D1／D2／D3
++        // Cube は view の dimension
++        public TextureDimension Dimension { get; init; } = TextureDimension.D2;
++
++        // uint Width／Height／DepthOrArrayLayers、すべて正数
++        public required Extent3D Size { get; init; }
++
++        // Undefined／不明 enum は拒否、用途に必要な capability を確認
++        public required TextureFormat Format { get; init; }
++
++        // CopySource／CopyDestination／Sampled／StorageRead／StorageWrite／RenderAttachment
++        // None／不明 bit は拒否
++        public required TextureUsage Usage { get; init; }
++
++        // 1〜floor(log2(max spatial dimension))+1
++        // array layer 数は除外
++        public uint MipLevels { get; init; } = 1;
++
++        // 初期共通契約は 1 または 4、format／device の対応が必要
++        public uint SampleCount { get; init; } = 1;
++
++        // 追加の互換 view format
++        // 元 Format は暗黙に含み、重複は拒否
++        public IReadOnlyList<TextureFormat> ViewFormats { get; init; } = Array.Empty<TextureFormat>();
++    }
++}
+```
 
 D1 は height／depth = 1、D2 の depth は array layer 数、D3 の depth は空間寸法。mip の各空間寸法は `max(1, base >> mip)`。Cube は square な D2 の 6 layer、CubeArray は 6 の正の倍数を view に選ぶ。空間軸、mip 数、array layer 数を DeviceCaps の `MaxTextureDimension1D/2D/3D`、`MaxTextureArrayLayers` に照合する。shader binding には MaxSampledTexturesPerStage／MaxStorageTexturesPerStage と profile の合計 binding 上限も適用する。
 
@@ -57,15 +215,44 @@ color コピーの bytesPerPixel は順に R8=1、Rg8=2、RGBA8／BGRA8／R32=4�
 
 ### TextureViewDesc とシェーダー引数
 
-| フィールド | 型・既定値 | 検証と意味 |
-| --- | --- | --- |
-| Format | `TextureFormat? = null` | 元 format または許可済み ViewFormats |
-| Dimension | `TextureViewDimension = D2` | D1／D2／D2Array／Cube／CubeArray／D3。元 texture と適合 |
-| Aspect | `TextureAspect = All` | All／DepthOnly／StencilOnly、存在する aspect のみ |
-| BaseMipLevel | `uint = 0` | mip 範囲内 |
-| MipLevelCount | `uint? = null` | null は残り全 mip、それ以外は正数で範囲内 |
-| BaseArrayLayer | `uint = 0` | D2 の開始 layer。D1／D3 は 0 |
-| ArrayLayerCount | `uint? = null` | D2=1、D2Array=残り、Cube=6、CubeArray=残りの 6 の倍数、D1／D3=1 |
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed record TextureViewDesc
++    {
++        // Desc の構築では GPU 操作を行わない
++        // 生成・記録 API が検証する
++        public TextureViewDesc();
++
++        // 診断用ラベル
++        // 動作と互換性を変えない
++        public string? Label { get; init; } = null;
++
++        // 元 format または許可済み ViewFormats
++        public TextureFormat? Format { get; init; } = null;
++
++        // D1／D2／D2Array／Cube／CubeArray／D3
++        // 元 texture と適合
++        public TextureViewDimension Dimension { get; init; } = TextureViewDimension.D2;
++
++        // All／DepthOnly／StencilOnly、存在する aspect のみ
++        public TextureAspect Aspect { get; init; } = TextureAspect.All;
++
++        // mip 範囲内
++        public uint BaseMipLevel { get; init; } = 0;
++
++        // null は残り全 mip、それ以外は正数で範囲内
++        public uint? MipLevelCount { get; init; } = null;
++
++        // D2 の開始 layer
++        // D1／D3 は 0
++        public uint BaseArrayLayer { get; init; } = 0;
++
++        // D2=1、D2Array=残り、Cube=6、CubeArray=残りの 6 の倍数、D1／D3=1
++        public uint? ArrayLayerCount { get; init; } = null;
++    }
++}
+```
 
 D3 の depth slice を array layer として選択しない。view dimension の対応は D1 texture→D1、D2 texture→D2／D2Array／Cube／CubeArray、D3 texture→D3 のみとする。Cube の face 順序は +X、-X、+Y、-Y、+Z、-Z、CubeArray はこの 6 枚単位とし、backend と Slang helper が方向規約を一致させる。MSAA は単一 D2 view のみ。attachment は D2、単一 mip／layer、RenderAttachment 用途で、選択 mip の寸法を使用する。
 
@@ -75,12 +262,40 @@ depth／stencil の sampled view は depth aspect のみを共通経路に含め
 
 ### TextureCopyDesc と依存関係
 
-| フィールド | 型・既定値 | 検証 |
-| --- | --- | --- |
-| MipLevel／Origin／Extent | TextureRegion と同じ | 単一 mip、正の extent、選択 mip の範囲内 |
-| BufferOffset | `ulong = 0` | BufferSlice 先頭からの相対 byte offset |
-| BytesPerRow | `uint`、required | width × bytesPerPixel 以上、CopyBytesPerRowAlignment の倍数 |
-| RowsPerImage | `uint`、required | height 以上。layer／depth の row 間隔 |
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed record TextureCopyDesc
++    {
++        // Desc の構築では GPU 操作を行わない
++        // 生成・記録 API が検証する
++        public TextureCopyDesc();
++
++        // 診断用ラベル
++        // 動作と互換性を変えない
++        public string? Label { get; init; } = null;
++
++        // 単一 mip、選択 mip の範囲内
++        public uint MipLevel { get; init; } = 0;
++
++        // 選択 mip の範囲内
++        public Origin3D Origin { get; init; } = new Origin3D(0, 0, 0);
++
++        // 正の extent、選択 mip の範囲内
++        public required Extent3D Extent { get; init; }
++
++        // BufferSlice 先頭からの相対 byte offset
++        public ulong BufferOffset { get; init; } = 0;
++
++        // width × bytesPerPixel 以上、CopyBytesPerRowAlignment の倍数
++        public required uint BytesPerRow { get; init; }
++
++        // height 以上
++        // layer／depth の row 間隔
++        public required uint RowsPerImage { get; init; }
++    }
++}
+```
 
 buffer の絶対 offset は checked で Slice.Offset + BufferOffset を求め、CopyBufferOffsetAlignment と format の texel size に照合する。必要 bytes は checked で `BufferOffset + (depthOrLayers - 1) * BytesPerRow * RowsPerImage + (height - 1) * BytesPerRow + width * bytesPerPixel` とし、Slice.Length 以下を要求する。最終 row の後ろの padding は読み書き対象に含めない。Core は pitch を補正せず、Runtime の helper が padding を用意する。
 
@@ -90,16 +305,60 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 
 ### バックエンドが実装するもの
 
-| 内部操作 | 必須の実装責務 |
-| --- | --- |
-| `GetFormatCapabilities(format)` | native support と実装範囲の両方に基づく用途、filter／compare、sample count、view format の報告 |
-| `CreateTexture(normalizedDesc)`／`DestroyTexture(token)` | image と memory の確保、使用 flags、format／extent、世代、失敗 rollback、idle 時解放 |
-| `CreateTextureView(textureToken, normalizedDesc)`／`DestroyTextureView(token)` | 選択 subresource の native view と元 texture の lease。サブリソース情報を失わない |
-| `ResolveTextureView(token, reflectedType, bindingPlan)` | shader の型・用途・device と lifetime の検証、descriptor／binding への内部変換 |
-| `CopyBufferToTexture`／`CopyTextureToBuffer`／`CopyTexture` | 範囲・pitch・用途を記録前に検証。必要な native footprint へ変換し、padding の意味を維持 |
-| `ApplyTextureDependency(subresources, producer, consumer)` | layout／access／使用 scope の遷移。aspect／mip／layer の追跡。必要なら保守的な texture 全体の依存へ拡張 |
-| `ResolveColorAttachment(source, target)` | ADR-0006 の End で color MSAA resolve。source discard と target 保存を別に処理 |
-| `ReadTextureStagingAsync` | GPU 完了、map／invalidate、native pitch からの密な CPU bytes の構築、キャンセル後の安全な回収 |
+```diff
++namespace Lumyte.Graphics.Implementation
++{
++    // 内部操作の設計用宣言。Token／Range／Plan などは非公開の概念型。
++    // 正式な driver signature、結果／診断型、C ABI の layout は別途具体化する。
++    // この表示は現行 IGraphicsDriver の実装を変更しない。
++    internal interface ITextureBackendContract
++    {
++        // native support と実装範囲の両方に基づく用途、filter／compare、sample count、view format の報告
++        FormatCapabilities GetFormatCapabilities(TextureFormat format);
++
++        // image と memory の確保、使用 flags、format／extent、世代、失敗 rollback、idle 時解放
++        TextureToken CreateTexture(TextureDesc normalizedDesc);
++
++        // image と memory の確保、使用 flags、format／extent、世代、失敗 rollback、idle 時解放
++        void DestroyTexture(TextureToken token);
++
++        // 選択 subresource の native view と元 texture の lease
++        // サブリソース情報を失わない
++        TextureViewToken CreateTextureView(TextureToken textureToken, TextureViewDesc normalizedDesc);
++
++        // 選択 subresource の native view と元 texture の lease
++        // サブリソース情報を失わない
++        void DestroyTextureView(TextureViewToken token);
++
++        // shader の型・用途・device と lifetime の検証、descriptor／binding への内部変換
++        ResolvedTextureReference ResolveTextureView(TextureViewToken token, ReflectedTextureType reflectedType, BindingPlan bindingPlan);
++
++        // 範囲・pitch・用途を記録前に検証
++        // 必要な native footprint へ変換し、padding の意味を維持
++        void CopyBufferToTexture(EncoderToken encoder, BufferRange source, TextureToken destination, TextureCopyDesc desc);
++
++        // 範囲・pitch・用途を記録前に検証
++        // 必要な native footprint へ変換し、padding の意味を維持
++        void CopyTextureToBuffer(EncoderToken encoder, TextureToken source, BufferRange destination, TextureCopyDesc desc);
++
++        // 範囲・pitch・用途を記録前に検証
++        // 必要な native footprint へ変換し、padding の意味を維持
++        void CopyTexture(EncoderToken encoder, TextureToken source, TextureRegion sourceRegion, TextureToken destination, TextureRegion destinationRegion);
++
++        // layout／access／使用 scope の遷移
++        // aspect／mip／layer の追跡
++        // 必要なら保守的な texture 全体の依存へ拡張
++        void ApplyTextureDependency(TextureSubresources subresources, ResourceAccess producer, ResourceAccess consumer);
++
++        // ADR-0006 の End で color MSAA resolve
++        // source discard と target 保存を別に処理
++        void ResolveColorAttachment(TextureViewToken source, TextureViewToken target);
++
++        // GPU 完了、map／invalidate、native pitch からの密な CPU bytes の構築、キャンセル後の安全な回収
++        ValueTask<TextureReadback> ReadTextureStagingAsync(StagingToken staging, TextureRegion region);
++    }
++}
+```
 
 | backend | 実装上の対応 |
 | --- | --- |

@@ -15,32 +15,144 @@ SamplerDesc のフィールドだけでは、通常／比較 sampler の型、fi
 
 型は `Lumyte.Graphics` 名前空間。Sampler は sealed な immutable 所有 class とする。利用者による constructor、sampling state の変更、native descriptor／binding index の取得は提供しない。状態を変える場合は別の Sampler を生成する。
 
-| 利用側 API | 契約 |
-| --- | --- |
-| `Result<Sampler> GraphicsDevice.CreateSampler(SamplerDesc desc)` | enum／数値／capability を検証し、Desc を snapshot して生成。対応する完全な設定を実現できる場合だけ成功 |
-| `SamplerInfo Sampler.Info { get; }` | 確定した sampling 設定と Kind を返す immutable record。GPU handle は含まない |
-| `SamplerKind SamplerInfo.Kind { get; }` | NonFiltering／Filtering／Comparison。下記ルールで設定から決まる |
-| `uint DeviceCaps.MaxSamplersPerStage { get; }` | shader stage ごとの同時 sampler binding 上限。BindingPlan の samplers と texture／buffer を含む総 binding 上限も検証 |
-| `uint DeviceCaps.MaxAnisotropy { get; }` | 実装が保証する上限、最低 1。> 1 の要求には AnisotropicFiltering feature も必要 |
-| `ShaderArguments FrameContext.CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData` | 生成 C# 型の Sampler と TextureView field を pack。reflection と両者の互換性、所属、寿命を検証 |
-| `void Sampler.Dispose()` | idle 時に内部参照を解放。idempotent。引数・記録・GPU 使用で lease されていれば InvalidOperationException |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
 
-SamplerInfo は MinFilter／MagFilter／MipFilter、AddressU／V／W、MinLod／MaxLod、MaxAnisotropy、Compare と Kind を持つ。Label は互換性と cache key に含めない。変更可能な Desc を getter で返さない。引数を構築した後に別の sampler を使うには新しい ShaderArguments を構築する。
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed class GraphicsDevice : IDisposable
++    {
++        // enum／数値／capability を検証し、Desc を snapshot して生成
++        // 対応する完全な設定を実現できる場合だけ成功
++        public Result<Sampler> CreateSampler(SamplerDesc desc);
++    }
++
++    public sealed class Sampler : IDisposable
++    {
++        // 確定した sampling 設定と Kind を返す immutable record
++        // GPU handle は含まない
++        public SamplerInfo Info { get; }
++
++        // idle 時に内部参照を解放
++        // idempotent
++        // 引数・記録・GPU 使用で lease されていれば InvalidOperationException
++        public void Dispose();
++    }
++
++    public sealed record SamplerInfo
++    {
++        // NonFiltering／Filtering／Comparison
++        // 下記ルールで設定から決まる
++        public SamplerKind Kind { get; }
++    }
++
++    public sealed class DeviceCaps
++    {
++        // shader stage ごとの同時 sampler binding 上限
++        // BindingPlan の samplers と texture／buffer を含む総 binding 上限も検証
++        public uint MaxSamplersPerStage { get; }
++
++        // 実装が保証する上限、最低 1
++        // > 1 の要求には AnisotropicFiltering feature も必要
++        public uint MaxAnisotropy { get; }
++    }
++}
++
++namespace Lumyte.Graphics.Runtime
++{
++    public sealed class FrameContext
++    {
++        // 生成 C# 型の Sampler と TextureView field を pack
++        // reflection と両者の互換性、所属、寿命を検証
++        public ShaderArguments CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData;
++    }
++}
+```
+
+```diff
++namespace Lumyte.Graphics
++{
++    // SamplerInfo は MinFilter／MagFilter／MipFilter、AddressU／V／W、MinLod／MaxLod、MaxAnisotropy、Compare と Kind を持つ
++    // Label は互換性と cache key に含めない
++    // 変更可能な Desc を getter で返さない
++    // 引数を構築した後に別の sampler を使うには新しい ShaderArguments を構築する
++    public sealed record SamplerInfo
++    {
++        public Filter MinFilter { get; }
++        public Filter MagFilter { get; }
++        public Filter MipFilter { get; }
++        public AddressMode AddressU { get; }
++        public AddressMode AddressV { get; }
++        public AddressMode AddressW { get; }
++        public float MinLod { get; }
++        public float MaxLod { get; }
++        public uint MaxAnisotropy { get; }
++        public CompareOp? Compare { get; }
++    }
++
++    // Kind は設定から導出する。数値表現を互換契約にしない。
++    public enum SamplerKind { NonFiltering, Filtering, Comparison }
++}
+```
 
 ### SamplerDesc
 
 Desc は `public sealed record SamplerDesc`、init-only property、`string? Label = null`。各 enum の未知値は拒否する。
 
-| フィールド | 型・既定値 | 検証と意味 |
-| --- | --- | --- |
-| MinFilter | `Filter = Nearest` | minification の texel filter。Nearest／Linear |
-| MagFilter | `Filter = Nearest` | magnification の texel filter。Nearest／Linear |
-| MipFilter | `Filter = Nearest` | mip 間の選択／補間。Nearest／Linear |
-| AddressU／AddressV／AddressW | 各 `AddressMode = ClampToEdge` | ClampToEdge／Repeat／MirrorRepeat。正規化座標の各軸に適用 |
-| MinLod | `float = 0` | 有限かつ ≥ 0 |
-| MaxLod | `float = 32` | 有限かつ ≥ MinLod。+Infinity／NaN は拒否 |
-| MaxAnisotropy | `uint = 1` | 1〜Caps.MaxAnisotropy。> 1 は全 filter=Linear、feature が必要 |
-| Compare | `CompareOp? = null` | null は通常、指定時は比較 sampler。Never／Less／Equal／LessEqual／Greater／NotEqual／GreaterEqual／Always |
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed record SamplerDesc
++    {
++        // Desc の構築では GPU 操作を行わない
++        // 生成・記録 API が検証する
++        public SamplerDesc();
++
++        // 診断用ラベル
++        // 動作と互換性を変えない
++        public string? Label { get; init; } = null;
++
++        // minification の texel filter
++        // Nearest／Linear
++        public Filter MinFilter { get; init; } = Filter.Nearest;
++
++        // magnification の texel filter
++        // Nearest／Linear
++        public Filter MagFilter { get; init; } = Filter.Nearest;
++
++        // mip 間の選択／補間
++        // Nearest／Linear
++        public Filter MipFilter { get; init; } = Filter.Nearest;
++
++        // ClampToEdge／Repeat／MirrorRepeat
++        // 正規化座標の各軸に適用
++        public AddressMode AddressU { get; init; } = AddressMode.ClampToEdge;
++
++        // ClampToEdge／Repeat／MirrorRepeat
++        // 正規化座標の各軸に適用
++        public AddressMode AddressV { get; init; } = AddressMode.ClampToEdge;
++
++        // ClampToEdge／Repeat／MirrorRepeat
++        // 正規化座標の各軸に適用
++        public AddressMode AddressW { get; init; } = AddressMode.ClampToEdge;
++
++        // 有限かつ ≥ 0
++        public float MinLod { get; init; } = 0;
++
++        // 有限かつ ≥ MinLod
++        // +Infinity／NaN は拒否
++        public float MaxLod { get; init; } = 32;
++
++        // 1〜Caps.MaxAnisotropy
++        // > 1 は全 filter=Linear、feature が必要
++        public uint MaxAnisotropy { get; init; } = 1;
++
++        // null は通常、指定時は比較 sampler
++        // Never／Less／Equal／LessEqual／Greater／NotEqual／GreaterEqual／Always
++        public CompareOp? Compare { get; init; } = null;
++    }
++}
+```
 
 LOD は sampler 範囲に制限した後、選択 view の利用可能 mip 範囲にも制限される。LOD 0 は view の BaseMipLevel に対応する。整数 texel Load と storage read／write には Sampler を使わない。未使用軸も Desc として検証する。
 
@@ -67,14 +179,47 @@ texture と sampler が別 field の場合も利用者に binding 番号は指�
 
 ### バックエンドが実装するもの
 
-| 内部操作 | 必須の実装責務 |
-| --- | --- |
-| `GetSamplerCapabilities()` | 使用可能 filter／address／compare と anisotropy 上限、shader profile 制限を報告。未実装機能を native support だけで有効にしない |
-| `CreateSampler(normalizedDesc)`／`DestroySampler(token)` | 全設定を native state に変換、所属と世代を保持。確保失敗 rollback、idle 時の解放 |
-| `ResolveSampler(token, reflectedCategory, bindingPlan)` | Kind、device、世代、lease を検証し、descriptor／binding へ内部変換 |
-| `ValidateSamplingPair(textureView, sampler, reflectedUse)` | dimension、aspect、sample type、filter／compare、sample count を照合。pack／記録前に拒否 |
-| `PackSamplerReference(logicalPath, token, bindingPlan)` | Native と Slang が共有する ABI に従って引数を構築。slot／address／bind group を利用側に返さない |
-| `RetainSampler`／`ReleaseSampler` | 引数、CommandBuffer、Submission、cache の native lifetime を管理。GPU 完了前に descriptor を再利用しない |
+```diff
++namespace Lumyte.Graphics.Implementation
++{
++    // 内部操作の設計用宣言。Token／Range／Plan などは非公開の概念型。
++    // 正式な driver signature、結果／診断型、C ABI の layout は別途具体化する。
++    // この表示は現行 IGraphicsDriver の実装を変更しない。
++    internal interface ISamplerBackendContract
++    {
++        // 使用可能 filter／address／compare と anisotropy 上限、shader profile 制限を報告
++        // 未実装機能を native support だけで有効にしない
++        SamplerCapabilities GetSamplerCapabilities();
++
++        // 全設定を native state に変換、所属と世代を保持
++        // 確保失敗 rollback、idle 時の解放
++        SamplerToken CreateSampler(SamplerDesc normalizedDesc);
++
++        // 全設定を native state に変換、所属と世代を保持
++        // 確保失敗 rollback、idle 時の解放
++        void DestroySampler(SamplerToken token);
++
++        // Kind、device、世代、lease を検証し、descriptor／binding へ内部変換
++        ResolvedSamplerReference ResolveSampler(SamplerToken token, SamplerKind reflectedCategory, BindingPlan bindingPlan);
++
++        // dimension、aspect、sample type、filter／compare、sample count を照合
++        // pack／記録前に拒否
++        void ValidateSamplingPair(TextureViewToken textureView, SamplerToken sampler, ReflectedSamplingUse reflectedUse);
++
++        // Native と Slang が共有する ABI に従って引数を構築
++        // slot／address／bind group を利用側に返さない
++        void PackSamplerReference(ShaderFieldPath logicalPath, SamplerToken token, BindingPlan bindingPlan);
++
++        // 引数、CommandBuffer、Submission、cache の native lifetime を管理
++        // GPU 完了前に descriptor を再利用しない
++        void RetainSampler(SamplerToken token);
++
++        // 引数、CommandBuffer、Submission、cache の native lifetime を管理
++        // GPU 完了前に descriptor を再利用しない
++        void ReleaseSampler(SamplerToken token);
++    }
++}
+```
 
 | backend | 対応方法と注意点 |
 | --- | --- |

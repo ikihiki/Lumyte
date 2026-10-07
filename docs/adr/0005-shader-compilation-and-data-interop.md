@@ -105,19 +105,102 @@ C ABI は opaque handle、固定幅整数、明示レイアウトの POD と fie
 
 以下は C# の主要シグネチャ案であり未実装である。コンパイル関係と成果物の名前空間は `Lumyte.Graphics.Shaders`、GpuReference と生成データの契約の名前空間は `Lumyte.Graphics` とする。`Result<T>` と GraphicsError は ADR-0004 の共通結果契約に従う。成果物・レイアウトの型定義は GPU Core と compiler provider が共有する契約として配置する。
 
-| 公開 API | 役割 | 契約・注意事項 |
-| --- | --- | --- |
-| `ShaderCompilerCapabilities IShaderCompiler.Capabilities { get; }` | provider の対応を確認 | profile、ソース／IR 入力、反射、特殊化の対応を報告。GPU の Caps とは別 |
-| `ValueTask<Result<ShaderCompilation>> IShaderCompiler.CompileAsync(ShaderCompileRequest request, CancellationToken cancellationToken)` | ソース／IR からコンパイル | 対象 profile、entry point、module resolver、特殊化値、設定を明示。入力を所有コピーし、診断を返す |
-| `ValueTask<Result<ShaderSource>> IShaderModuleResolver.ResolveAsync(string moduleName, CancellationToken cancellationToken)` | import／include の解決 | 内容と論理識別子を返す。暗黙のネットワーク取得を行わない |
-| `ShaderArtifact ShaderCompilation.Artifact { get; }`／`IReadOnlyList<ShaderDiagnostic> Diagnostics { get; }` | 成果物と診断 | warning を保持。失敗時も Result のエラーに構造化診断を含める |
-| `Result<ShaderArtifact> ShaderArtifact.Load(ReadOnlyMemory<byte> data)`／`ReadOnlyMemory<byte> ShaderArtifact.Serialize()` | オフライン成果物の読み書き | 形式、内容ハッシュ、必須メタデータを検証。GPU オブジェクトや token を含まない |
-| `ShaderArgumentsLayout<T> ShaderArtifact.GetArgumentsLayout<T>() where T : IShaderArgumentsData` | 生成 C# 型の対応を取得 | schema と serializer の互換性 ID を検証。BindingPlan の物理詳細は非公開 |
-| `ShaderDataLayout<T> ShaderArtifact.GetDataLayout<T>() where T : IShaderData` | データ本体の pack 契約を取得 | target の型 layout と生成 serializer を照合。異なる物理 layout を暗黙に共用しない |
-| `GpuReference<T> GraphicsDevice.CreateReference<T>(BufferSlice data) where T : IShaderData` | データ領域を型付きで参照 | 登録済みの生成型、領域の schema／layout ID、target stride、範囲、デバイスを検証。所有権を持たない |
-| `BufferSlice FrameContext.Upload<T>(ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData` | GPU データ本体の Upload | 登録済みの生成データ型を target layout に pack。参照フィールドも列挙・解決。失敗は型・範囲の契約違反または Runtime の確保エラーとして通知 |
-| `ShaderArguments FrameContext.CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData` | 定数と参照を pack | 生成 serializer とバックエンドが物理表現を構築。C# オブジェクトのメモリ配置へ依存しない |
-| `Result<ShaderModule> GraphicsDevice.CreateShader(ShaderArtifact artifact)` | GPU module の生成 | profile・必須機能・ABI を検証。コンパイル provider は起動しない |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+
+```diff
++namespace Lumyte.Graphics.Shaders
++{
++    public interface IShaderCompiler
++    {
++        // provider の対応を確認
++        // profile、ソース／IR 入力、反射、特殊化の対応を報告
++        // GPU の Caps とは別
++        ShaderCompilerCapabilities Capabilities { get; }
++
++        // ソース／IR からコンパイル
++        // 対象 profile、entry point、module resolver、特殊化値、設定を明示
++        // 入力を所有コピーし、診断を返す
++        ValueTask<Result<ShaderCompilation>> CompileAsync(ShaderCompileRequest request, CancellationToken cancellationToken);
++    }
++
++    public interface IShaderModuleResolver
++    {
++        // import／include の解決
++        // 内容と論理識別子を返す
++        // 暗黙のネットワーク取得を行わない
++        ValueTask<Result<ShaderSource>> ResolveAsync(string moduleName, CancellationToken cancellationToken);
++    }
++
++    public sealed class ShaderCompilation
++    {
++        // 成果物と診断
++        // warning を保持
++        // 失敗時も Result のエラーに構造化診断を含める
++        public ShaderArtifact Artifact { get; }
++
++        // 成果物と診断
++        // warning を保持
++        // 失敗時も Result のエラーに構造化診断を含める
++        public IReadOnlyList<ShaderDiagnostic> Diagnostics { get; }
++    }
++
++    public sealed class ShaderArtifact
++    {
++        // オフライン成果物の読み書き
++        // 形式、内容ハッシュ、必須メタデータを検証
++        // GPU オブジェクトや token を含まない
++        public static Result<ShaderArtifact> Load(ReadOnlyMemory<byte> data);
++
++        // オフライン成果物の読み書き
++        // 形式、内容ハッシュ、必須メタデータを検証
++        // GPU オブジェクトや token を含まない
++        public ReadOnlyMemory<byte> Serialize();
++
++        // 生成 C# 型の対応を取得
++        // schema と serializer の互換性 ID を検証
++        // BindingPlan の物理詳細は非公開
++        public ShaderArgumentsLayout<T> GetArgumentsLayout<T>() where T : IShaderArgumentsData;
++
++        // データ本体の pack 契約を取得
++        // target の型 layout と生成 serializer を照合
++        // 異なる物理 layout を暗黙に共用しない
++        public ShaderDataLayout<T> GetDataLayout<T>() where T : IShaderData;
++    }
++}
++
++namespace Lumyte.Graphics
++{
++    public sealed class GraphicsDevice : IDisposable
++    {
++        // データ領域を型付きで参照
++        // 登録済みの生成型、領域の schema／layout ID、target stride、範囲、デバイスを検証
++        // 所有権を持たない
++        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
++
++        // GPU module の生成
++        // profile・必須機能・ABI を検証
++        // コンパイル provider は起動しない
++        public Result<ShaderModule> CreateShader(ShaderArtifact artifact);
++    }
++}
++
++namespace Lumyte.Graphics.Runtime
++{
++    public sealed class FrameContext
++    {
++        // GPU データ本体の Upload
++        // 登録済みの生成データ型を target layout に pack
++        // 参照フィールドも列挙・解決
++        // 失敗は型・範囲の契約違反または Runtime の確保エラーとして通知
++        public BufferSlice Upload<T>(ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData;
++
++        // 定数と参照を pack
++        // 生成 serializer とバックエンドが物理表現を構築
++        // C# オブジェクトのメモリ配置へ依存しない
++        public ShaderArguments CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData;
++    }
++}
+```
 
 `IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、`Upload<T>` はフィールドを列挙して値と参照を解決する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。Upload した領域には schema／layout ID と解決した参照の依存情報を記録し、CreateReference と引数 pack で照合する。生の BufferSlice にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
 

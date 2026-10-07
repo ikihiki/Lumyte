@@ -48,39 +48,207 @@ RenderEncoder の操作・状態・寿命の正本は [ADR-0006](0006-render-enc
 
 以下は判断対象となる C# の主要シグネチャ案であり、既存の実装 API ではない。型は特記がなければ `Lumyte.Graphics`、Runtime 型は `Lumyte.Graphics.Runtime` に置く。`Desc` 型は生成条件、`Result<T>` は値または `GraphicsError` を持つ。各所有型は `IDisposable` を実装する。
 
-| 公開 API | 役割 | 契約・注意事項 |
-| --- | --- | --- |
-| `ValueTask<Result<IReadOnlyList<AdapterInfo>>> IGraphicsBackend.EnumerateAdaptersAsync(CancellationToken cancellationToken)` | backend の候補を列挙 | AdapterInfo は不透明な AdapterId、表示名、機能・上限を持つ。Browser の列挙制約下では backend が取得できる候補だけを返す |
-| `ValueTask<Result<GraphicsDevice>> IGraphicsBackend.CreateDeviceAsync(DeviceDesc desc, CancellationToken cancellationToken)` | バックエンドを指定して初期化 | 必須機能不足を明示して失敗。Browser の非同期初期化にも対応 |
-| `DeviceCaps GraphicsDevice.Caps { get; }` | 機能・上限の取得 | Mesh Shader、間接描画、参照可能リソース数、キュー構成などの機能・上限を公開。参照の物理表現は公開しない |
-| `Result<Buffer> GraphicsDevice.CreateBuffer(BufferDesc desc)` | データ領域の生成 | サイズ、用途、メモリ種別を指定。GPU アドレスや CPU mapping を保証しない |
-| `BufferSlice Buffer.Slice(ulong offset, ulong length)` | 非所有の部分領域 | 境界を検証。元の Buffer の寿命を延ばさない |
-| `GpuReference<T> GraphicsDevice.CreateReference<T>(BufferSlice data) where T : IShaderData` | GPU データの型付き参照を作る | 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証。実アドレスを公開しない |
-| `Result<Texture> GraphicsDevice.CreateTexture(TextureDesc desc)` | テクスチャの生成 | サイズ、形式、用途を検証。共通 API は CPU mapping を公開しない |
-| `Result<TextureView> Texture.CreateView(TextureViewDesc desc)` | mip・layer・aspect 範囲の参照 | 元の Texture の memory 所有権を持たず、view 存続中は元 Texture を lease。互換形式と範囲を検証 |
-| `Result<Sampler> GraphicsDevice.CreateSampler(SamplerDesc desc)` | サンプリング設定 | テクスチャとは独立した所有リソース |
-| `Result<ShaderModule> GraphicsDevice.CreateShader(ShaderArtifact artifact)` | バックエンド用のシェーダー成果物を読み込む | ADR-0005 の成果物・対象 profile・ABI を検証。Core は Slang コンパイラを起動しない |
-| `Result<GraphicsPipeline> GraphicsDevice.CreateGraphicsPipeline(GraphicsPipelineDesc desc)` | 描画状態の生成 | シェーダー、引数レイアウト、出力形式、固定状態を保持 |
-| `Result<ComputePipeline> GraphicsDevice.CreateComputePipeline(ComputePipelineDesc desc)` | Compute 状態の生成 | シェーダーと引数レイアウトの一致が必要 |
-| `void RenderEncoder.DrawIndexed(ShaderArguments arguments, IndexedDrawDesc desc)`／`SetIndexBuffer(BufferSlice indices, IndexFormat format)` | index 描画 | 詳細は ADR-0006／0007。index 範囲と pipeline の topology／strip format を検証 |
-| `void RenderEncoder.End()`／`Dispose()` | 記録 scope の終了 | GPU 完了を意味しない。二重 End と Dispose の契約は ADR-0006 |
-| `Result<CommandEncoder> GraphicsDevice.CreateCommandEncoder()` | コマンド記録の開始 | 単一スレッドで所有。初期設計では一つの汎用キューを対象とする |
-| `void CommandEncoder.CopyBuffer(BufferSlice source, BufferSlice destination)` | データの転送 | コピー用途、サイズ、アラインメントが有効であること |
-| `void CommandEncoder.CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc)` | テクスチャ Readback 用コピー | 範囲・pitch・用途の正本は ADR-0010 |
-| `void CommandEncoder.CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc)` | テクスチャ Upload | 行ピッチとコピー範囲を検証 |
-| `RenderEncoder CommandEncoder.BeginRenderPass(RenderPassDesc desc)` | 描画パスの開始 | attachment と load／store を指定。終了まで別パスを開始しない |
-| `void RenderEncoder.SetPipeline(GraphicsPipeline pipeline)` | パイプライン選択 | attachment の形式と一致すること |
-| `void RenderEncoder.SetViewport(Viewport viewport)`／`SetScissor(Scissor scissor)` | 動的状態の指定 | パス内の状態。共通経路の depth／stencil はパイプラインに含める |
-| `void RenderEncoder.Draw(ShaderArguments arguments, uint vertexCount, uint instanceCount = 1)` | 描画 | Pipeline 設定済み、引数レイアウト一致。終了は `End()` で行う |
-| `void CommandEncoder.Dispatch(ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y, uint z)` | Compute 実行 | 描画パスの外。グループ数と引数レイアウトを検証 |
-| `void CommandEncoder.Barrier(ReadOnlySpan<ResourceDependency> dependencies)` | リソースの依存関係を宣言 | 前後のアクセス、BufferSlice／TextureView を指定。パス外で呼ぶ |
-| `CommandBuffer CommandEncoder.Finish()` | 記録の確定 | 一度だけ呼べる。以後 Encoder への記録は禁止 |
-| `Result<Submission> GraphicsDevice.Submit(CommandBuffer commands)` | キューへの送信 | 一回限りの送信。リソースを GPU 完了まで保持 |
-| `bool Submission.IsCompleted { get; }`／`ValueTask Submission.WaitAsync(CancellationToken cancellationToken)` | GPU 完了確認 | 待機のキャンセルは送信済み処理を取り消さない |
-| `FrameContext GraphicsRuntime.BeginFrame()` | 再利用可能なフレーム領域を選ぶ | 使用中の領域は再利用しない。不足時の待機・拡張は Runtime が管理 |
-| `ShaderArguments FrameContext.CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData` | 単一引数の構築 | 生成引数型を同期的に pack。参照の型・所属・寿命とレイアウトを検証。利用者は物理スロットを指定しない |
-| `void FrameContext.EndFrame(Submission completion)` | フレーム領域の再利用条件を登録 | 対象フレームの使用を含む Submission と結び付ける |
-| `void GraphicsRuntime.DeferDispose(IDisposable resource, Submission lastUse)` | GPU 完了後の解放 | 最後の使用を含む Submission が必要 |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+
+```diff
++namespace Lumyte.Graphics
++{
++    public interface IGraphicsBackend
++    {
++        // backend の候補を列挙
++        // AdapterInfo は不透明な AdapterId、表示名、機能・上限を持つ
++        // Browser の列挙制約下では backend が取得できる候補だけを返す
++        ValueTask<Result<IReadOnlyList<AdapterInfo>>> EnumerateAdaptersAsync(CancellationToken cancellationToken);
++
++        // バックエンドを指定して初期化
++        // 必須機能不足を明示して失敗
++        // Browser の非同期初期化にも対応
++        ValueTask<Result<GraphicsDevice>> CreateDeviceAsync(DeviceDesc desc, CancellationToken cancellationToken);
++    }
++
++    public sealed class GraphicsDevice : IDisposable
++    {
++        // 機能・上限の取得
++        // Mesh Shader、間接描画、参照可能リソース数、キュー構成などの機能・上限を公開
++        // 参照の物理表現は公開しない
++        public DeviceCaps Caps { get; }
++
++        // データ領域の生成
++        // サイズ、用途、メモリ種別を指定
++        // GPU アドレスや CPU mapping を保証しない
++        public Result<Buffer> CreateBuffer(BufferDesc desc);
++
++        // GPU データの型付き参照を作る
++        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
++        // 実アドレスを公開しない
++        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
++
++        // テクスチャの生成
++        // サイズ、形式、用途を検証
++        // 共通 API は CPU mapping を公開しない
++        public Result<Texture> CreateTexture(TextureDesc desc);
++
++        // サンプリング設定
++        // テクスチャとは独立した所有リソース
++        public Result<Sampler> CreateSampler(SamplerDesc desc);
++
++        // バックエンド用のシェーダー成果物を読み込む
++        // ADR-0005 の成果物・対象 profile・ABI を検証
++        // Core は Slang コンパイラを起動しない
++        public Result<ShaderModule> CreateShader(ShaderArtifact artifact);
++
++        // 描画状態の生成
++        // シェーダー、引数レイアウト、出力形式、固定状態を保持
++        public Result<GraphicsPipeline> CreateGraphicsPipeline(GraphicsPipelineDesc desc);
++
++        // Compute 状態の生成
++        // シェーダーと引数レイアウトの一致が必要
++        public Result<ComputePipeline> CreateComputePipeline(ComputePipelineDesc desc);
++
++        // コマンド記録の開始
++        // 単一スレッドで所有
++        // 初期設計では一つの汎用キューを対象とする
++        public Result<CommandEncoder> CreateCommandEncoder();
++
++        // キューへの送信
++        // 一回限りの送信
++        // リソースを GPU 完了まで保持
++        public Result<Submission> Submit(CommandBuffer commands);
++    }
++
++    public sealed class Buffer : IDisposable
++    {
++        // 非所有の部分領域
++        // 境界を検証
++        // 元の Buffer の寿命を延ばさない
++        public BufferSlice Slice(ulong offset, ulong length);
++    }
++
++    public sealed class Texture : IDisposable
++    {
++        // mip・layer・aspect 範囲の参照
++        // 元の Texture の memory 所有権を持たず、view 存続中は元 Texture を lease
++        // 互換形式と範囲を検証
++        public Result<TextureView> CreateView(TextureViewDesc desc);
++    }
++
++    public sealed class RenderEncoder : IDisposable
++    {
++        // index 描画
++        // 詳細は ADR-0006／0007
++        // index 範囲と pipeline の topology／strip format を検証
++        public void DrawIndexed(ShaderArguments arguments, IndexedDrawDesc desc);
++
++        // index 描画
++        // 詳細は ADR-0006／0007
++        // index 範囲と pipeline の topology／strip format を検証
++        public void SetIndexBuffer(BufferSlice indices, IndexFormat format);
++
++        // 記録 scope の終了
++        // GPU 完了を意味しない
++        // 二重 End と Dispose の契約は ADR-0006
++        public void End();
++
++        // 記録 scope の終了
++        // GPU 完了を意味しない
++        // 二重 End と Dispose の契約は ADR-0006
++        public void Dispose();
++
++        // パイプライン選択
++        // attachment の形式と一致すること
++        public void SetPipeline(GraphicsPipeline pipeline);
++
++        // 動的状態の指定
++        // パス内の状態
++        // 共通経路の depth／stencil はパイプラインに含める
++        public void SetViewport(Viewport viewport);
++
++        // 動的状態の指定
++        // パス内の状態
++        // 共通経路の depth／stencil はパイプラインに含める
++        public void SetScissor(Scissor scissor);
++
++        // 描画
++        // Pipeline 設定済み、引数レイアウト一致
++        // 終了は End() で行う
++        public void Draw(ShaderArguments arguments, uint vertexCount, uint instanceCount = 1);
++    }
++
++    public sealed class CommandEncoder : IDisposable
++    {
++        // データの転送
++        // コピー用途、サイズ、アラインメントが有効であること
++        public void CopyBuffer(BufferSlice source, BufferSlice destination);
++
++        // テクスチャ Readback 用コピー
++        // 範囲・pitch・用途の正本は ADR-0010
++        public void CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
++
++        // テクスチャ Upload
++        // 行ピッチとコピー範囲を検証
++        public void CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
++
++        // 描画パスの開始
++        // attachment と load／store を指定
++        // 終了まで別パスを開始しない
++        public RenderEncoder BeginRenderPass(RenderPassDesc desc);
++
++        // Compute 実行
++        // 描画パスの外
++        // グループ数と引数レイアウトを検証
++        public void Dispatch(ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y, uint z);
++
++        // リソースの依存関係を宣言
++        // 前後のアクセス、BufferSlice／TextureView を指定
++        // パス外で呼ぶ
++        public void Barrier(ReadOnlySpan<ResourceDependency> dependencies);
++
++        // 記録の確定
++        // 一度だけ呼べる
++        // 以後 Encoder への記録は禁止
++        public CommandBuffer Finish();
++    }
++
++    public sealed class Submission
++    {
++        // GPU 完了確認
++        // 待機のキャンセルは送信済み処理を取り消さない
++        public bool IsCompleted { get; }
++
++        // GPU 完了確認
++        // 待機のキャンセルは送信済み処理を取り消さない
++        public ValueTask WaitAsync(CancellationToken cancellationToken);
++    }
++}
++
++namespace Lumyte.Graphics.Runtime
++{
++    public sealed class GraphicsRuntime
++    {
++        // 再利用可能なフレーム領域を選ぶ
++        // 使用中の領域は再利用しない
++        // 不足時の待機・拡張は Runtime が管理
++        public FrameContext BeginFrame();
++
++        // GPU 完了後の解放
++        // 最後の使用を含む Submission が必要
++        public void DeferDispose(IDisposable resource, Submission lastUse);
++    }
++
++    public sealed class FrameContext
++    {
++        // 単一引数の構築
++        // 生成引数型を同期的に pack
++        // 参照の型・所属・寿命とレイアウトを検証
++        // 利用者は物理スロットを指定しない
++        public ShaderArguments CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData;
++
++        // フレーム領域の再利用条件を登録
++        // 対象フレームの使用を含む Submission と結び付ける
++        public void EndFrame(Submission completion);
++    }
++}
+```
 
 `GpuReference<T>` は所有権を持たず元の Buffer の寿命を延ばさない。`ResourceDependency` は対象範囲と producer／consumer のアクセスを表す。`ShaderArguments` は Runtime 所有領域の非所有参照で、所属フレームの完了後は再使用できない。`GraphicsPipelineDesc` と ShaderModule の引数レイアウトが一致しない場合は生成を失敗させる。
 

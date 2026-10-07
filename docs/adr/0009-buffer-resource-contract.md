@@ -15,18 +15,91 @@
 
 共通型は `Lumyte.Graphics`、Upload／Readback helper は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。Buffer は sealed な所有 class、BufferSlice と GpuReference は非所有の immutable value とする。利用者による Buffer の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
 
-| 利用側 API | 契約 |
-| --- | --- |
-| `Result<Buffer> GraphicsDevice.CreateBuffer(BufferDesc desc)` | Desc を snapshot して生成。確保失敗・未対応用途は GraphicsError。成功時だけ所有権を返す |
-| `ulong Buffer.SizeInBytes { get; }`／`BufferUsage Buffer.Usage { get; }` | 論理サイズと用途。物理配置・確保量は公開しない |
-| `BufferSlice Buffer.Slice(ulong offset, ulong length)` | byte 単位の半開区間。length > 0、offset ≤ size、length ≤ size - offset を要求 |
-| `Buffer BufferSlice.Buffer`／`ulong Offset`／`ulong Length` | 元の Buffer と論理範囲。直接 constructor を公開しない。default slice は無効 |
-| `GpuReference<T> GraphicsDevice.CreateReference<T>(BufferSlice data) where T : IShaderData` | 登録済みの schema／target layout を持つ部分領域を参照。所属・用途・alignment・stride・要素数を検証 |
-| `BufferSlice FrameContext.UploadBytes(ReadOnlySpan<byte> data)` | bytes を呼び出し中に所有 staging 領域へコピー。返す領域は CopySource 用途、当該 frame の寿命に従う |
-| `BufferSlice FrameContext.Upload<T>(ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData` | 生成 serializer で pack。layout ID と参照依存情報を領域に登録。生の C# struct を memcpy しない |
-| `void CommandEncoder.CopyBuffer(BufferSlice source, BufferSlice destination)` | 等しい長さの全範囲をコピー。パス外、同じ Device、source CopySource／destination CopyDestination |
-| `ValueTask<Result<byte[]>> GraphicsRuntime.ReadBufferAsync(BufferSlice source, Submission lastWrite, CancellationToken cancellationToken = default)` | lastWrite を待ち、Runtime が staging コピーとその送信・完了・CPU 読み出しを実施。独立した bytes を返す |
-| `void Buffer.Dispose()` | idle 時の即時解放。idempotent。記録・GPU 使用・保持中の参照依存がある場合は InvalidOperationException |
+API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed class GraphicsDevice : IDisposable
++    {
++        // Desc を snapshot して生成
++        // 確保失敗・未対応用途は GraphicsError
++        // 成功時だけ所有権を返す
++        public Result<Buffer> CreateBuffer(BufferDesc desc);
++
++        // 登録済みの schema／target layout を持つ部分領域を参照
++        // 所属・用途・alignment・stride・要素数を検証
++        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
++    }
++
++    public sealed class Buffer : IDisposable
++    {
++        // 論理サイズと用途
++        // 物理配置・確保量は公開しない
++        public ulong SizeInBytes { get; }
++
++        // 論理サイズと用途
++        // 物理配置・確保量は公開しない
++        public BufferUsage Usage { get; }
++
++        // byte 単位の半開区間
++        // length > 0、offset ≤ size、length ≤ size - offset を要求
++        public BufferSlice Slice(ulong offset, ulong length);
++
++        // idle 時の即時解放
++        // idempotent
++        // 記録・GPU 使用・保持中の参照依存がある場合は InvalidOperationException
++        public void Dispose();
++    }
++
++    public readonly struct BufferSlice
++    {
++        // 元の Buffer と論理範囲
++        // 直接 constructor を公開しない
++        // default slice は無効
++        public Buffer Buffer { get; }
++
++        // 元の Buffer と論理範囲
++        // 直接 constructor を公開しない
++        // default slice は無効
++        public ulong Offset { get; }
++
++        // 元の Buffer と論理範囲
++        // 直接 constructor を公開しない
++        // default slice は無効
++        public ulong Length { get; }
++    }
++
++    public sealed class CommandEncoder : IDisposable
++    {
++        // 等しい長さの全範囲をコピー
++        // パス外、同じ Device、source CopySource／destination CopyDestination
++        public void CopyBuffer(BufferSlice source, BufferSlice destination);
++    }
++}
++
++namespace Lumyte.Graphics.Runtime
++{
++    public sealed class FrameContext
++    {
++        // bytes を呼び出し中に所有 staging 領域へコピー
++        // 返す領域は CopySource 用途、当該 frame の寿命に従う
++        public BufferSlice UploadBytes(ReadOnlySpan<byte> data);
++
++        // 生成 serializer で pack
++        // layout ID と参照依存情報を領域に登録
++        // 生の C# struct を memcpy しない
++        public BufferSlice Upload<T>(ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData;
++    }
++
++    public sealed class GraphicsRuntime
++    {
++        // lastWrite を待ち、Runtime が staging コピーとその送信・完了・CPU 読み出しを実施
++        // 独立した bytes を返す
++        public ValueTask<Result<byte[]>> ReadBufferAsync(BufferSlice source, Submission lastWrite, CancellationToken cancellationToken = default);
++    }
++}
+```
 
 ReadBufferAsync の source は CopySource 用途、lastWrite は同じ Device の最後の書き込みを含む送信とする。呼び出しから完了まで追加の書き込み・再利用を禁止する。helper は対象を lease し、CPU 読み出しの完了まで staging を保持する。lastWrite が本当に最後の書き込みを含むことは利用側の責任であり、引数だけから保証できたと扱わない。返す byte[] の長さは .NET 配列上限内でなければ要求を拒否する。Runtime は追跡した producer access から CopySource への依存と staging の CopyDestination→CPU read の可視化も構築する。未知の producer access を推測してコピーしない。
 
@@ -36,11 +109,33 @@ UploadBytes はエンジン定義の bytes、index、texture staging 用であ�
 
 全 Desc に `string? Label = null` を持たせる。ラベルは診断専用。値は init-only とする。
 
-| フィールド | 型・既定値 | 検証 |
-| --- | --- | --- |
-| SizeInBytes | `ulong`、required | 正数、DeviceCaps.MaxBufferSize 以下。論理 byte 数 |
-| Usage | `BufferUsage`、required | CopySource／CopyDestination／ShaderRead／ShaderWrite／Index。None と未知 bit は拒否 |
-| Memory | `MemoryPreference = Automatic` | Automatic／DeviceLocal／Upload／Readback。配置のヒント |
+```diff
++namespace Lumyte.Graphics
++{
++    public sealed record BufferDesc
++    {
++        // Desc の構築では GPU 操作を行わない
++        // 生成・記録 API が検証する
++        public BufferDesc();
++
++        // 診断用ラベル
++        // 動作と互換性を変えない
++        public string? Label { get; init; } = null;
++
++        // 正数、DeviceCaps.MaxBufferSize 以下
++        // 論理 byte 数
++        public required ulong SizeInBytes { get; init; }
++
++        // CopySource／CopyDestination／ShaderRead／ShaderWrite／Index
++        // None と未知 bit は拒否
++        public required BufferUsage Usage { get; init; }
++
++        // Automatic／DeviceLocal／Upload／Readback
++        // 配置のヒント
++        public MemoryPreference Memory { get; init; } = MemoryPreference.Automatic;
++    }
++}
+```
 
 ShaderWrite と ShaderRead は併用可能。Upload は CopySource のみ、Readback は CopyDestination のみを許可し、直接 shader／index 利用を要求する場合は Automatic／DeviceLocal を使う。これにより WebGPU の map 用途の制約を共通化する。Memory は公開 map 権限ではなく、staging による実現も許す。backend は hint を理由に要求用途を変更しない。
 
@@ -60,14 +155,44 @@ typed Upload の schema／layout ID は物理 buffer 全体ではなく対象領
 
 内部 driver の以下の操作は概念的な実装契約であり、利用側へ公開する API ではない。現行 IGraphicsDriver の全機能が実装済みという意味ではない。
 
-| 内部操作 | 必須の実装責務 |
-| --- | --- |
-| `CreateBuffer(normalizedDesc)`／`DestroyBuffer(token)` | ネイティブ確保、失敗時 rollback、Device 所属・世代、logical size／usage の保持、idle 時の解放 |
-| `GetBufferCapabilities()` | 実際に実現する用途、コピー／storage alignment、容量を報告。native の制限を超えた値を返さない |
-| `ResolveBufferReference(token, range, schema, bindingPlan)` | lease と有効性を検証し、Slang の反射と一致する実データ参照へ解決。GPU address／descriptor／offset を利用側へ返さない |
-| `CopyBuffer(encoder, sourceRange, destinationRange)` | 全入力の検証後に記録。使用 range、アクセス、参照依存を記録し、native failure は Encoder を Faulted にする |
-| `UploadStaging(bytes)`／`ReadStagingAsync(range)` | 所有メモリへのコピー、flush／invalidate または map／unmap、GPU 完了と CPU 可視性を保証 |
-| `ApplyBufferDependency(range, producer, consumer)` | ADR-0004 の Barrier を各 backend のアクセス遷移へ変換。同一キューの送信順だけで memory visibility を保証したと扱わない |
+```diff
++namespace Lumyte.Graphics.Implementation
++{
++    // 内部操作の設計用宣言。Token／Range／Plan などは非公開の概念型。
++    // 正式な driver signature、結果／診断型、C ABI の layout は別途具体化する。
++    // この表示は現行 IGraphicsDriver の実装を変更しない。
++    internal interface IBufferBackendContract
++    {
++        // ネイティブ確保、失敗時 rollback、Device 所属・世代、logical size／usage の保持、idle 時の解放
++        BufferToken CreateBuffer(BufferDesc normalizedDesc);
++
++        // ネイティブ確保、失敗時 rollback、Device 所属・世代、logical size／usage の保持、idle 時の解放
++        void DestroyBuffer(BufferToken token);
++
++        // 実際に実現する用途、コピー／storage alignment、容量を報告
++        // native の制限を超えた値を返さない
++        BufferCapabilities GetBufferCapabilities();
++
++        // lease と有効性を検証し、Slang の反射と一致する実データ参照へ解決
++        // GPU address／descriptor／offset を利用側へ返さない
++        ResolvedBufferReference ResolveBufferReference(BufferToken token, BufferRange range, ShaderSchema schema, BindingPlan bindingPlan);
++
++        // 全入力の検証後に記録
++        // 使用 range、アクセス、参照依存を記録し、native failure は Encoder を Faulted にする
++        void CopyBuffer(EncoderToken encoder, BufferRange sourceRange, BufferRange destinationRange);
++
++        // 所有メモリへのコピー、flush／invalidate または map／unmap、GPU 完了と CPU 可視性を保証
++        StagingToken UploadStaging(ReadOnlySpan<byte> bytes);
++
++        // 所有メモリへのコピー、flush／invalidate または map／unmap、GPU 完了と CPU 可視性を保証
++        ValueTask<ReadOnlyMemory<byte>> ReadStagingAsync(BufferRange range);
++
++        // ADR-0004 の Barrier を各 backend のアクセス遷移へ変換
++        // 同一キューの送信順だけで memory visibility を保証したと扱わない
++        void ApplyBufferDependency(BufferRange range, ResourceAccess producer, ResourceAccess consumer);
++    }
++}
+```
 
 | backend | 対応方法と注意点 |
 | --- | --- |
