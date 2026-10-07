@@ -78,6 +78,10 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // GPU アドレスや CPU mapping を保証しない
 +        public Result<Buffer> CreateBuffer(BufferDesc desc);
 +
++        // 既存 Upload buffer の CPU memory に bytes をコピーする。GPU 命令や送信は作らない。
++        // GPU 転送は CommandEncoder.RecordCopyBuffer → Finish → Submit で利用者が明示する。
++        public void CopyBuffer(BufferSlice destination, ReadOnlySpan<byte> source);
++
 +        // 利用者が確保・コピー・送信・完了観測を済ませた Readback buffer から CPU bytes を読む。
 +        // staging 確保、コピー命令、Submit、GPU 完了待機を内部で自動実行しない。詳細は ADR-0009。
 +        public ValueTask<Result<byte[]>> ReadBufferAsync(BufferSlice source, CancellationToken cancellationToken = default);
@@ -182,15 +186,15 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    {
 +        // データの転送
 +        // コピー用途、サイズ、アラインメントが有効であること
-+        public void CopyBuffer(BufferSlice source, BufferSlice destination);
++        public void RecordCopyBuffer(BufferSlice source, BufferSlice destination);
 +
 +        // テクスチャ Readback 用コピー
 +        // 範囲・pitch・用途の正本は ADR-0010
-+        public void CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
++        public void RecordCopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
 +
 +        // テクスチャ Upload
 +        // 行ピッチとコピー範囲を検証
-+        public void CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
++        public void RecordCopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
 +
 +        // 描画パスの開始
 +        // attachment と load／store を指定
@@ -262,7 +266,7 @@ Swapchain の生成・acquire・present はこの ADR の公開 API 範囲に含
 
 Core の `Dispose()` は即時解放を要求する操作とし、利用者は未完了の GPU 使用がないことを保証する。通常の利用では Runtime の遅延解放を使用する。BufferSlice、GpuReference、TextureView の参照先、引数、内部ディスクリプタスロットの再利用にも同じ完了条件を適用する。Device は子リソースと GPU 使用の終了後に解放する。
 
-記録中・送信済みコマンドが参照する引数やリソースを変更、破棄、再利用してはならない。記録していないリソースの Upload は staging 経由を共通経路とする。書き込み内容の可視化は送信とバックエンドの同期規約で保証し、C# の CPU 書き込みだけで GPU 可視性が成立すると扱わない。
+記録中・送信済みコマンドが参照する引数やリソースを変更、破棄、再利用してはならない。Upload は利用者が確保した staging への CPU CopyBuffer と、明示的な RecordCopyBuffer／CommandBuffer の送信に分ける。書き込み内容の可視化は送信とバックエンドの同期規約で保証し、C# の CPU 書き込みだけで GPU 可視性が成立すると扱わない。
 
 初期の共通経路は単一キューで、送信順を保持する。GPU 完了は Submission の完了で判定し、CPU フレーム番号だけでは判定しない。Encoder／RenderEncoder／FrameContext は単一スレッドから操作する。Device の生成・送信操作は利用側で直列化し、Browser ではバックエンドが実行コンテキストの制約を守る。並列記録と複数キューは後続拡張とする。
 

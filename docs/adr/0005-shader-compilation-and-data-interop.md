@@ -22,7 +22,7 @@ Slang はモジュール、interface／generics、リンク時特殊化、ター
 | `Lumyte.Graphics.Shaders` | コンパイル要求、成果物、診断、論理スキーマ、生成 C# API。GPU Core のデバイスやパイプライン生成には依存しない |
 | `Lumyte.Graphics.Shaders.Native` | Windows／Linux の Slang コンパイル API を C ABI で包む。オフラインツールとオンライン provider が共用 |
 | 各 Graphics バックエンド | ターゲット profile、Slang の対応モジュール、物理レイアウトから pack／bind する処理を提供。DirectX／Vulkan は各 `.Native` 実装へ委譲 |
-| Graphics Runtime | フレーム引数、Upload、参照の検証と解決、GPU 完了までの保存を管理 |
+| Graphics Runtime | フレーム引数、CPU pack と参照の検証・解決、GPU 完了までの保存を管理 |
 | オフラインビルドツール／オンライン compiler provider | 同じ要求とコンパイル処理を実行。GPU Core にコンパイラを必須依存として持ち込まない |
 
 成果物・データ参照・結果の共通型は `Lumyte.Graphics` プロジェクトに置き、コンパイル API のプロジェクト `Lumyte.Graphics.Shaders` がこれを参照する。Core から compiler provider プロジェクトへの依存は設けず、型の名前空間と配置プロジェクトを区別する。各バックエンドのコンパイル用 profile と Slang モジュールはデバイスなしで取得可能とする。プロジェクトとパッケージは [ADR-0002](0002-repository-layout.md) の配置・命名規則に従い、実装時に追加する。
@@ -80,7 +80,7 @@ WebGPU の共通経路では、参照フィールドの論理パスごとに有�
 
 BindingPlan はコンパイル成果物の内部メタデータであり、利用者がスロットやアドレスを指定する入力ではない。Slang module、Native packer、生成 serializer は library ABI ID を共有する。異なる ABI の組み合わせ、別デバイスの token、失効した参照、範囲外、型違いを pack 前に拒否する。
 
-Managed の引数構造体を `memcpy` して GPU 上の構造体として扱わない。bool、vector、matrix、配列、padding を Slang の反射情報に従って pack する。行列の論理規約は row-major を基準とし、各ターゲットの物理配置と stride は検証・変換する。GPU データ本体も生成 serializer によって target layout に変換してから Upload する。
+Managed の引数構造体を `memcpy` して GPU 上の構造体として扱わない。bool、vector、matrix、配列、padding を Slang の反射情報に従って pack する。行列の論理規約は row-major を基準とし、各ターゲットの物理配置と stride は検証・変換する。GPU データ本体も生成 serializer によって target layout に変換して既存 Upload buffer の CPU memory にコピーする。GPU 転送と CommandBuffer の送信は利用者が明示する。
 
 参照を含む GPU データ型は scalar だけの POD と区別し、生成コードが参照フィールドを列挙・解決できるスキーマに限定する。生の token を通常の bytes として Upload する経路は提供しない。ポインタを含まない型も、ゼロコピー可能なのは layout の一致を検証した場合だけとする。
 
@@ -177,6 +177,10 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 所有権を持たない
 +        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
 +
++        // 生成データ型を target layout に pack し、利用者の Upload buffer の CPU memory にコピーする。
++        // 参照フィールドを解決して metadata を登録。GPU コピー、staging 確保、送信は行わない。
++        public void CopyBuffer<T>(BufferSlice destination, ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData;
++
 +        // GPU module の生成
 +        // profile・必須機能・ABI を検証
 +        // コンパイル provider は起動しない
@@ -188,12 +192,6 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +{
 +    public sealed class FrameContext
 +    {
-+        // GPU データ本体の Upload
-+        // 登録済みの生成データ型を target layout に pack
-+        // 参照フィールドも列挙・解決
-+        // 失敗は型・範囲の契約違反または Runtime の確保エラーとして通知
-+        public BufferSlice Upload<T>(ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData;
-+
 +        // 定数と参照を pack
 +        // 生成 serializer とバックエンドが物理表現を構築
 +        // C# オブジェクトのメモリ配置へ依存しない
@@ -202,7 +200,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-`IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、`Upload<T>` はフィールドを列挙して値と参照を解決する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。Upload した領域には schema／layout ID と解決した参照の依存情報を記録し、CreateReference と引数 pack で照合する。生の BufferSlice にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
+`IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、型付き `CopyBuffer<T>` はフィールドを列挙して値と参照を解決し、利用者が確保した Upload buffer の CPU memory に pack する。GPU への転送は利用者が RecordCopyBuffer を記録し、CommandBuffer を Submit する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。CPU pack した staging と明示的な転送先の領域には schema／layout ID と解決した参照の依存情報を記録し、CreateReference と引数 pack で照合する。生の BufferSlice にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
 
 ソース位置、severity、コード、ターゲット、依存 module を ShaderDiagnostic に残す。未対応機能、コンパイラ不在、コード生成失敗、ABI 不一致を区別する。session の並列利用を仮定せず、provider は要求単位の session または直列化を管理する。キャンセル後の結果は公開せず、Native 処理が停止できない場合も終了後に所有リソースを解放する。
 

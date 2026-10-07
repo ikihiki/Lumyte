@@ -15,7 +15,7 @@
 
 すべての Desc に診断用の `string? Label = null` を設ける。ラベルは動作や互換性を変えない。各 Desc の宣言にも Label を示す。既定のネストした Desc は宣言の既定値で生成したものを使い、null は受け付けない。配列は `IReadOnlyList<T>` とし、呼び出し時に値を snapshot する。呼び出し後の配列変更が GPU 記録に影響しないようにする。
 
-一般の constructor には GPU 操作を持たせず、検証は CreateDeviceAsync／CreateBuffer／CreateTexture／CreateView／CreateSampler／CreateGraphicsPipeline／CreateComputePipeline／BeginRenderPass／Draw／DrawIndexed／CopyBufferToTexture が行う。契約違反は引数例外、未対応機能・確保失敗は ADR-0004 の Result／GraphicsError を使用する。recording API での unsupported な入力も記録前の引数・状態エラーとして通知し、backend 記録失敗は ADR-0006 に従って Encoder を Faulted にする。Desc を黙って補正しない。
+一般の constructor には GPU 操作を持たせず、検証は CreateDeviceAsync／CreateBuffer／CreateTexture／CreateView／CreateSampler／CreateGraphicsPipeline／CreateComputePipeline／BeginRenderPass／Draw／DrawIndexed／RecordCopyBufferToTexture が行う。契約違反は引数例外、未対応機能・確保失敗は ADR-0004 の Result／GraphicsError を使用する。recording API での unsupported な入力も記録前の引数・状態エラーとして通知し、backend 記録失敗は ADR-0006 に従って Encoder を Faulted にする。Desc を黙って補正しない。
 
 DeviceCaps は本 ADR が参照する `MaxBufferSize`、`MaxColorAttachments`、`MaxAnisotropy`、`CopyBufferOffsetAlignment`、`CopyBytesPerRowAlignment` と compute／texture／binding の上限を公開する。`FormatCapabilities DeviceCaps.GetFormatCapabilities(TextureFormat format)` は sampled／filterable／comparison-sampleable／storage-read／storage-write／renderable／blendable の可否、対応 sample count、許可する view format を返す。不明な format は引数例外、既知の未対応 format は空の capability とする。これらは候補選択・Desc 検証に使用し、参照の物理表現を公開しない。
 

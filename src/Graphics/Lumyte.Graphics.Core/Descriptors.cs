@@ -2,7 +2,7 @@ namespace Lumyte.Graphics;
 
 [Flags]
 public enum BufferUsage { CopySource = 1, CopyDestination = 2, ShaderRead = 4, ShaderWrite = 8, Index = 16 }
-public enum MemoryPreference { Automatic, Readback }
+public enum MemoryPreference { Automatic, Readback, Upload }
 public enum LoadOp { Clear, Load }
 public enum StoreOp { Store, Discard }
 public enum IndexFormat { Uint16, Uint32 }

@@ -11,11 +11,15 @@ using (var readback = device.CreateBuffer(new BufferDesc {
 using (var shader = device.CreateShader(typeof(Program).Assembly, "Lumyte.Shaders.double.wgsl"))
 using (var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Shader = shader }))
 {
-    device.WriteBuffer<uint>(buffer.Slice(0, 32), new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+    using var upload = device.CreateBuffer(new BufferDesc {
+        SizeInBytes = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+    });
+    device.CopyBuffer<uint>(upload.Slice(0, 32), new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
     using var arguments = pipeline.CreateArguments(device.CreateReference<uint>(buffer.Slice(0, 32)));
     using var encoder = device.CreateCommandEncoder();
+    encoder.RecordCopyBuffer(upload.Slice(0, 32), buffer.Slice(0, 32));
     encoder.Dispatch(pipeline, arguments, 1);
-    encoder.CopyBuffer(buffer.Slice(0, 32), readback.Slice(0, 32));
+    encoder.RecordCopyBuffer(buffer.Slice(0, 32), readback.Slice(0, 32));
     using var commands = encoder.Finish();
     var submission = device.Submit(commands);
     await submission.WaitAsync();
@@ -38,7 +42,7 @@ using (var encoder = device.CreateCommandEncoder())
         render.SetPipeline(pipeline);
         render.Draw(3);
     }
-    encoder.CopyTextureToBuffer(texture, readback, 256);
+    encoder.RecordCopyTextureToBuffer(texture, readback, 256);
     using var commands = encoder.Finish();
     await device.Submit(commands).WaitAsync();
     var pixels = device.ReadBuffer(readback);

@@ -91,16 +91,16 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    {
 +        // source CopySource、destination CopyDestination
 +        // パス外、同じ Device
-+        public void CopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
++        public void RecordCopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
 +
 +        // 逆方向のコピー
 +        // source CopySource、destination CopyDestination
 +        // 同じ layout 検証
-+        public void CopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
++        public void RecordCopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
 +
 +        // 同 format、同 extent、sample count 1 の color
 +        // 範囲、用途、alias を検証
-+        public void CopyTexture(Texture source, TextureRegion sourceRegion, Texture destination, TextureRegion destinationRegion);
++        public void RecordCopyTexture(Texture source, TextureRegion sourceRegion, Texture destination, TextureRegion destinationRegion);
 +    }
 +}
 +
@@ -135,7 +135,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 
 ### 明示的なテクスチャ Readback
 
-利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の Buffer を確保し、CommandEncoder で依存と CopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 GraphicsDevice.ReadBufferAsync で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
+利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の Buffer を確保し、CommandEncoder で依存と RecordCopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 GraphicsDevice.ReadBufferAsync で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
 
 bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU 成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を ReadBufferAsync が追加する根拠にはしない。読み出し中の lease とキャンセルは ADR-0009 に従う。
 
@@ -314,15 +314,15 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 +
 +        // 範囲・pitch・用途を記録前に検証
 +        // 必要な native footprint へ変換し、padding の意味を維持
-+        void CopyBufferToTexture(EncoderToken encoder, BufferRange source, TextureToken destination, TextureCopyDesc desc);
++        void RecordCopyBufferToTexture(EncoderToken encoder, BufferRange source, TextureToken destination, TextureCopyDesc desc);
 +
 +        // 範囲・pitch・用途を記録前に検証
 +        // 必要な native footprint へ変換し、padding の意味を維持
-+        void CopyTextureToBuffer(EncoderToken encoder, TextureToken source, BufferRange destination, TextureCopyDesc desc);
++        void RecordCopyTextureToBuffer(EncoderToken encoder, TextureToken source, BufferRange destination, TextureCopyDesc desc);
 +
 +        // 範囲・pitch・用途を記録前に検証
 +        // 必要な native footprint へ変換し、padding の意味を維持
-+        void CopyTexture(EncoderToken encoder, TextureToken source, TextureRegion sourceRegion, TextureToken destination, TextureRegion destinationRegion);
++        void RecordCopyTexture(EncoderToken encoder, TextureToken source, TextureRegion sourceRegion, TextureToken destination, TextureRegion destinationRegion);
 +
 +        // layout／access／使用 scope の遷移
 +        // aspect／mip／layer の追跡
@@ -358,8 +358,10 @@ TextureView は独自の native view を所有し、その存続中は元 Textur
 
 ```csharp
 // texture: Rgba8Srgb、Sampled | CopyDestination、mip 数を指定して生成済み
-var staging = frame.UploadBytes(paddedRgbaBytes);
-commands.CopyBufferToTexture(staging, texture, new TextureCopyDesc {
+// 利用者が Memory=Upload／Usage=CopySource の uploadBuffer を生成済み。
+var staging = uploadBuffer.Slice(0, (ulong)paddedRgbaBytes.Length);
+device.CopyBuffer(staging, paddedRgbaBytes); // CPU memory へのコピーのみ。
+commands.RecordCopyBufferToTexture(staging, texture, new TextureCopyDesc {
     Extent = new Extent3D(width, height, 1),
     BytesPerRow = paddedPitch,
     RowsPerImage = height,
@@ -385,7 +387,7 @@ backend 条件が Upload code に広がる。共通 pitch／region を定め、n
 - mip／layer／aspect と用途を view、copy、attachment、shader が共有できる。
 - subresource と依存の追跡、format capabilities、staging repack の実装コストが必要。
 - 一部 backend では同一 image の異なる subresource 利用も制限される。capability と検証で明示する。
-- 現行 TextureDesc.Width／Height と引数なし CreateView は詳細 Desc へ移行する。texture の読み戻しは明示的な staging コピーと共通の CPU 読み出しへ移行する。今回実装の拡張は行わない。
+- 現行 TextureDesc.Width／Height と引数なし CreateView は詳細 Desc へ移行する。texture の読み戻しは明示的な staging コピーと共通の CPU 読み出しへ移行する。初期実装のコピー記録 API は RecordCopyTextureToBuffer に改称する。format／view などの追加機能は未実装。
 
 ## 検証方針
 

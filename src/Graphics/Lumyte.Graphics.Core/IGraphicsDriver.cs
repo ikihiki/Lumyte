@@ -11,7 +11,7 @@ internal interface IGraphicsDriver : IDisposable
     object CreateComputePipeline(ComputePipelineDesc desc);
     object CreateGraphicsPipeline(GraphicsPipelineDesc desc);
     object CreateReference<T>(BufferSlice data) where T : unmanaged;
-    void WriteBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged;
+    void CopyBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged;
     uint[] ReadBuffer(Buffer buffer);
     object CreateCommandEncoder();
     object Submit(CommandBuffer commands);
@@ -24,8 +24,8 @@ internal interface IGraphicsDriver : IDisposable
     object CreateArguments(object handle, GpuReference<uint> data);
     object BeginRenderPass(object handle, RenderPassDesc desc);
     void Dispatch(object handle, ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y, uint z);
-    void CopyBuffer(object handle, BufferSlice source, BufferSlice destination);
-    void CopyTextureToBuffer(object handle, Texture source, Buffer destination, uint bytesPerRow);
+    void RecordCopyBuffer(object handle, BufferSlice source, BufferSlice destination);
+    void RecordCopyTextureToBuffer(object handle, Texture source, Buffer destination, uint bytesPerRow);
     object Finish(object handle);
     void SetPipeline(object handle, GraphicsPipeline pipeline);
     void SetViewport(object handle, Viewport viewport);

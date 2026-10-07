@@ -13,7 +13,9 @@ public sealed class GraphicsDevice : IDisposable
     public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => new(_driver, _driver.CreateComputePipeline(desc));
     public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new(_driver, _driver.CreateGraphicsPipeline(desc));
     public GpuReference<T> CreateReference<T>(BufferSlice data) where T : unmanaged => new(_driver.CreateReference<T>(data));
-    public void WriteBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged => _driver.WriteBuffer(destination, values);
+    /// <summary>Copies CPU bytes into an idle Upload buffer; records and submits no GPU work.</summary>
+    public void CopyBuffer(BufferSlice destination, ReadOnlySpan<byte> source) => CopyBuffer<byte>(destination, source);
+    public void CopyBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged => _driver.CopyBuffer(destination, values);
     public uint[] ReadBuffer(Buffer buffer) => _driver.ReadBuffer(buffer);
     public CommandEncoder CreateCommandEncoder() => new(_driver, _driver.CreateCommandEncoder());
     public Submission Submit(CommandBuffer commands) => new(_driver, _driver.Submit(commands));
@@ -86,8 +88,10 @@ public sealed class CommandEncoder : IDisposable
     internal CommandEncoder(IGraphicsDriver driver, object handle) => (_driver, _handle) = (driver, handle);
     public RenderEncoder BeginRenderPass(RenderPassDesc desc) => new(_driver, _driver.BeginRenderPass(_handle, desc));
     public void Dispatch(ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y = 1, uint z = 1) => _driver.Dispatch(_handle, pipeline, arguments, x, y, z);
-    public void CopyBuffer(BufferSlice source, BufferSlice destination) => _driver.CopyBuffer(_handle, source, destination);
-    public void CopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow) => _driver.CopyTextureToBuffer(_handle, source, destination, bytesPerRow);
+    /// <summary>Records a GPU copy; execution requires Finish and explicit Submit.</summary>
+    public void RecordCopyBuffer(BufferSlice source, BufferSlice destination) => _driver.RecordCopyBuffer(_handle, source, destination);
+    /// <summary>Records a texture readback copy; records no submission.</summary>
+    public void RecordCopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow) => _driver.RecordCopyTextureToBuffer(_handle, source, destination, bytesPerRow);
     public CommandBuffer Finish() => new(_driver, _driver.Finish(_handle));
     public void Dispose() => _driver.DisposeHandle(_handle);
 }

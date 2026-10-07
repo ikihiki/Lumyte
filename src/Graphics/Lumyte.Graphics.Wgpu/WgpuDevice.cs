@@ -92,6 +92,11 @@ internal sealed unsafe class WgpuDevice : IDisposable
                 if (desc.Usage != BufferUsage.CopyDestination) throw new ArgumentException("Readback buffers support only CopyDestination.");
                 usage |= A.BufferUsage.MapRead;
             }
+            if (desc.Memory == MemoryPreference.Upload)
+            {
+                if (desc.Usage != BufferUsage.CopySource) throw new ArgumentException("Upload buffers support only CopySource.");
+                usage |= A.BufferUsage.MapWrite;
+            }
             return new(this, Validated(Native.CreateBuffer(new A.BufferDescriptor { Size = desc.SizeInBytes, Usage = usage })), desc);
         }
     }
@@ -110,17 +115,25 @@ internal sealed unsafe class WgpuDevice : IDisposable
         }
     }
 
-    public void WriteBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged
+    public void CopyBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged
     {
         lock (Gate)
         {
             Check(); if (destination.Buffer is null) throw new ArgumentException("Invalid slice.");
             destination.Buffer.Check(this); destination.Buffer.RequireIdle();
             ulong bytes = checked((ulong)values.Length * (ulong)sizeof(T));
-            if (!destination.Buffer.Usage.HasFlag(BufferUsage.CopyDestination) || destination.Offset % 4 != 0 || bytes % 4 != 0 || bytes > destination.Length)
-                throw new ArgumentException("Upload range or usage is invalid.");
-            Native.Queue.WriteBuffer(destination.Buffer.Native, destination.Offset, values);
-            CheckErrors();
+            if (destination.Buffer.Memory != MemoryPreference.Upload || destination.Buffer.SizeInBytes > int.MaxValue || bytes > destination.Length)
+                throw new ArgumentException("CPU copy requires an idle Upload buffer and a valid managed-size range.");
+            // This only maps existing CPU-visible memory. It never queues or submits GPU work.
+            var status = destination.Buffer.Native.MapBlocking(Instance, A.MapMode.Write, 0, (nuint)destination.Buffer.SizeInBytes);
+            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"Buffer map failed: {status}");
+            try
+            {
+                CheckErrors();
+                var mapped = destination.Buffer.Native.GetMappedRange<byte>(0, (nuint)destination.Buffer.SizeInBytes);
+                MemoryMarshal.AsBytes(values).CopyTo(mapped.Slice(checked((int)destination.Offset), checked((int)bytes)));
+            }
+            finally { destination.Buffer.Native.Unmap(); }
         }
     }
 

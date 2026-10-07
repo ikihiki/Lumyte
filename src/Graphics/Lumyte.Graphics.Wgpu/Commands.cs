@@ -71,7 +71,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
             finally { WGPU.wgpuComputePassEncoderRelease(pass); }
         }
     }
-    public void CopyBuffer(BufferSlice source, BufferSlice destination)
+    public void RecordCopyBuffer(BufferSlice source, BufferSlice destination)
     {
         lock (Owner.Gate)
         {
@@ -87,7 +87,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
                 destination.Buffer.Native.Handle, destination.Offset, source.Length);
         }
     }
-    public void CopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow)
+    public void RecordCopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow)
     {
         lock (Owner.Gate)
         {

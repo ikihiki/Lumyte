@@ -35,7 +35,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         return device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = Get<ShaderModule>(desc.Shader), VertexEntry = desc.VertexEntry, FragmentEntry = desc.FragmentEntry });
     }
     public object CreateReference<T>(G.BufferSlice data) where T : unmanaged => device.CreateReference<T>(Slice(data));
-    public void WriteBuffer<T>(G.BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged => device.WriteBuffer(Slice(destination), values);
+    public void CopyBuffer<T>(G.BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged => device.CopyBuffer(Slice(destination), values);
     public uint[] ReadBuffer(G.Buffer buffer) => device.ReadBuffer(Get<Buffer>(buffer));
     public object CreateCommandEncoder() => device.CreateCommandEncoder();
     public object Submit(G.CommandBuffer commands) => device.Submit(Get<CommandBuffer>(commands));
@@ -56,8 +56,8 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         return ((CommandEncoder)handle).BeginRenderPass(new RenderPassDesc { Target = Get<TextureView>(desc.Target), Load = desc.Load, Store = desc.Store, ClearValue = desc.ClearValue });
     }
     public void Dispatch(object handle, G.ComputePipeline pipeline, G.ShaderArguments arguments, uint x, uint y, uint z) => ((CommandEncoder)handle).Dispatch(Get<ComputePipeline>(pipeline), Get<ShaderArguments>(arguments), x, y, z);
-    public void CopyBuffer(object handle, G.BufferSlice source, G.BufferSlice destination) => ((CommandEncoder)handle).CopyBuffer(Slice(source), Slice(destination));
-    public void CopyTextureToBuffer(object handle, G.Texture source, G.Buffer destination, uint bytesPerRow) => ((CommandEncoder)handle).CopyTextureToBuffer(Get<Texture>(source), Get<Buffer>(destination), bytesPerRow);
+    public void RecordCopyBuffer(object handle, G.BufferSlice source, G.BufferSlice destination) => ((CommandEncoder)handle).RecordCopyBuffer(Slice(source), Slice(destination));
+    public void RecordCopyTextureToBuffer(object handle, G.Texture source, G.Buffer destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyTextureToBuffer(Get<Texture>(source), Get<Buffer>(destination), bytesPerRow);
     public object Finish(object handle) => ((CommandEncoder)handle).Finish();
     public void SetPipeline(object handle, G.GraphicsPipeline pipeline) => ((RenderEncoder)handle).SetPipeline(Get<GraphicsPipeline>(pipeline));
     public void SetViewport(object handle, Viewport viewport) => ((RenderEncoder)handle).SetViewport(viewport);

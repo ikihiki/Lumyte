@@ -42,6 +42,9 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    // 現行のデバイス生成 API が受け付けるバックエンド。
 +    public enum GraphicsBackend { Wgpu }
 +
++    // CPU 可視 Upload／Readback と通常の GPU resource を区別する。
++    public enum MemoryPreference { Automatic, Readback, Upload }
++
 +    // リソースの所有基底型。GPU 使用中の解放は拒否する。
 +    public abstract class GpuResource : IDisposable
 +    {
@@ -61,9 +64,12 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 初期 buffer のサイズは 4-byte の倍数
 +        public Buffer CreateBuffer(BufferDesc desc);
 +
-+        // blittable データの明示的な byte Upload
-+        // 未知の Slang 型の ABI を自動保証しない
-+        public void WriteBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged;
++        // blittable データを idle な Memory=Upload／Usage=CopySource buffer の CPU memory にコピーする。
++        // queue write、GPU コピー、送信を行わない。未知の Slang 型の ABI を自動保証しない。
++        public void CopyBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged;
++
++        // raw bytes 用の同じ CPU コピー契約。
++        public void CopyBuffer(BufferSlice destination, ReadOnlySpan<byte> source);
 +
 +        // 初期の登録済みデータ schema は UInt32 配列のみ
 +        // 非所有・型付きの不透明参照を作る
@@ -115,7 +121,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // 単一 queue の Compute とコピー
 +        // パス中は禁止
-+        public void CopyBuffer(BufferSlice source, BufferSlice destination);
++        public void RecordCopyBuffer(BufferSlice source, BufferSlice destination);
 +
 +        // 一つの color attachment の Clear／Load、Store／Discard
 +        public RenderEncoder BeginRenderPass(RenderPassDesc desc);
@@ -126,7 +132,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // 256-byte pitch の color コピー、完了後の UInt32 読み戻し
 +        // サンプルは bytes として pixel を検証
-+        public void CopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow);
++        public void RecordCopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow);
 +    }
 +
 +    public sealed class Texture : GpuResource
@@ -176,7 +182,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
+初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 
 ### GPU 参照、所有権、同期
 
@@ -196,7 +202,7 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。ビルド時に共有 MSBuild targets が obj 内へ生成し、サンプル／テスト DLL の EmbeddedResource に格納する。生成 WGSL は Git に含めず、別ファイルとして配布しない。実行時は DLL の manifest resource を読み出し、Slang compiler を必要としない。コンパイラはビルド時にのみ必要とする。
 
-テストで consumer と Core の assembly reference に wgpu／Ahjo がないことも確認する。GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
+テストで consumer と Core の assembly reference に wgpu／Ahjo がないことも確認する。初期 Upload も利用者が Upload buffer を確保し、CPU CopyBuffer 後に RecordCopyBuffer を記録して CommandBuffer を送信する。Ahjo Queue.WriteBuffer による隠れた転送は使用しない。CPU 上書きと GPU 転送の分離、記録後の CPU 書き込み拒否を共通 API で検証する。GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
 
 ## 検討した代替案
 
