@@ -241,7 +241,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +}
 ```
 
-wgpu の具象 buffer allocation が IGraphicsBuffer<T> と IBufferBackendContract、texture と view がそれぞれ IGraphicsTexture／ITextureBackendContract と IGraphicsTextureView／ITextureViewBackendContract を直接実装する。共通 factory は同じ instance を返す。view の保持・Dispose も具象実装が処理し、コマンド側は instance の所属と lease を検証する。GetBufferLayout<T>() の ElementStrideInBytes と BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
+wgpu の具象 buffer allocation が IGraphicsBuffer<T> と IBufferBackendContract、texture と view がそれぞれ IGraphicsTexture と IGraphicsTextureView を直接実装する。共通 factory は同じ instance を返す。view の保持・Dispose も具象実装が処理し、コマンド側は instance の所属と lease を検証する。GetBufferLayout<T>() の ElementStrideInBytes と BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
 
 初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 

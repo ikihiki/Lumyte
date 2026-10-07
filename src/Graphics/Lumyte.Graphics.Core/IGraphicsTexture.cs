@@ -14,15 +14,3 @@ public interface IGraphicsTextureView : IDisposable
 {
     IGraphicsTexture Texture { get; }
 }
-
-// Per-instance backend contracts; native allocation and lease state stay in concrete objects.
-internal interface ITextureBackendContract : IDisposable
-{
-    uint Width { get; }
-    uint Height { get; }
-    IGraphicsTextureView CreateView();
-}
-internal interface ITextureViewBackendContract : IDisposable
-{
-    ITextureBackendContract Texture { get; }
-}

@@ -13,7 +13,7 @@ Texture を単なる画像 handle として扱うと、mip／layer／aspect、fo
 
 ### 利用側の公開 API
 
-Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の BufferSlice<byte>.CopyTo で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface と内部 backend 契約を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
+Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の BufferSlice<byte>.CopyTo で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -294,46 +294,22 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 +        IGraphicsTexture CreateTexture(TextureDesc normalizedDesc);
 +    }
 +
-+    // 一つの native image と allocation、所属・世代・lease・属性を自身に保持する。
-+    internal interface ITextureBackendContract : IDisposable
-+    {
-+        TextureDimension Dimension { get; }
-+        Extent3D Size { get; }
-+        TextureFormat Format { get; }
-+        TextureUsage Usage { get; }
-+        uint MipLevels { get; }
-+        uint SampleCount { get; }
-+        // 失敗 rollback、選択 subresource の native view と元 texture の lease。
-+        IGraphicsTextureView CreateView(TextureViewDesc normalizedDesc);
-+        Extent3D GetMipSize(uint mipLevel);
-+        // idle 時に自身の allocation を解放、使用中は拒否、idempotent。
-+        void Dispose();
-+    }
-+
-+    // native view と正規化済み subresource を保持。解放時に元 texture の lease を返す。
-+    internal interface ITextureViewBackendContract : IDisposable
-+    {
-+        ITextureBackendContract Texture { get; }
-+        TextureViewInfo Info { get; }
-+        // Slang 型・用途・Device・寿命を検証し、実 descriptor／binding に内部で解決する。
-+        ResolvedTextureReference ResolveTextureView(ReflectedTextureType reflectedType, BindingPlan bindingPlan);
-+        void Dispose();
-+    }
-+
 +    // GPU コピー、依存遷移、attachment resolve はコマンド側の責務。
 +    // 利用者の明示的な操作と範囲を、native footprint／pitch／layout／access へ変換する。
 +    internal interface ICommandBufferBackendContract
 +    {
-+        void RecordCopyBufferToTexture(EncoderToken encoder, BufferRange source, ITextureBackendContract destination, TextureCopyDesc desc);
-+        void RecordCopyTextureToBuffer(EncoderToken encoder, ITextureBackendContract source, BufferRange destination, TextureCopyDesc desc);
-+        void RecordCopyTexture(EncoderToken encoder, ITextureBackendContract source, TextureRegion sourceRegion, ITextureBackendContract destination, TextureRegion destinationRegion);
++        void RecordCopyBufferToTexture(EncoderToken encoder, BufferRange source, IGraphicsTexture destination, TextureCopyDesc desc);
++        void RecordCopyTextureToBuffer(EncoderToken encoder, IGraphicsTexture source, BufferRange destination, TextureCopyDesc desc);
++        void RecordCopyTexture(EncoderToken encoder, IGraphicsTexture source, TextureRegion sourceRegion, IGraphicsTexture destination, TextureRegion destinationRegion);
 +        void Barrier(EncoderToken encoder, ResourceDependency dependency);
-+        void ResolveColorAttachment(EncoderToken encoder, ITextureViewBackendContract source, ITextureViewBackendContract target);
++        void ResolveColorAttachment(EncoderToken encoder, IGraphicsTextureView source, IGraphicsTextureView target);
 +    }
 +}
 ```
 
-公開 interface と内部契約は同一 instance の異なる境界であり、view は元 texture と別の native resource を所有する。コマンド backend は受け取った instance の実装・Device 所属・有効性を検証して native データを使い、texture／view に命令やバリアの管理を委譲しない。初期 wgpu の内部契約は Width／Height と引数なし CreateView に限定し、ここで示す追加属性・反射解決は提案である。
+Texture／view の具象 class は公開 IGraphicsTexture／IGraphicsTextureView を実装し、native image／allocation／view、所属 Device、世代、lease、正規化済み属性を内部に保持する。view は元 texture と別の native resource を所有し、Dispose で元 texture の lease を返す。コマンド backend は受け取った公開 interface の具象 instance に対して実装・Device 所属・有効性を検証して native データを使う。コピー命令とバリアはコマンド側に置く。
+
+Slang の型・用途・Device・寿命の検証と descriptor／binding への解決は shader 引数構築を扱う backend の内部処理であり、texture／view の公開 interface に native 参照の解決 API を追加しない。初期 wgpu の公開 texture 契約は Width／Height と引数なし CreateView、view 契約は元 Texture と Dispose に限定し、追加属性・一般的な反射解決は提案である。
 
 | backend | 実装上の対応 |
 | --- | --- |
