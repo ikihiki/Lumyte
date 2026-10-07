@@ -309,7 +309,7 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 
 Texture／view の具象 class は公開 IGraphicsTexture／IGraphicsTextureView を実装し、native image／allocation／view、所属 Device、世代、lease、正規化済み属性を内部に保持する。view は元 texture と別の native resource を所有し、Dispose で元 texture の lease を返す。コマンド backend は受け取った公開 interface の具象 instance に対して実装・Device 所属・有効性を検証して native データを使う。コピー命令とバリアはコマンド側に置く。
 
-Slang の型・用途・Device・寿命の検証と descriptor／binding への解決は shader 引数構築を扱う backend の内部処理であり、texture／view の公開 interface に native 参照の解決 API を追加しない。初期 wgpu の公開 texture 契約は Width／Height と引数なし CreateView、view 契約は元 Texture と Dispose に限定し、追加属性・一般的な反射解決は提案である。
+Slang の型・用途・Device・寿命の検証と descriptor／binding への解決は shader 引数構築を扱う backend の内部処理であり、texture／view の公開 interface に native 参照の解決 API を追加しない。初期 wgpu の公開 texture 契約は Width／Height／Usage／Format と引数なし CreateView、view 契約は元 Texture と Dispose に限定し、追加属性・一般的な反射解決は提案である。
 
 | backend | 実装上の対応 |
 | --- | --- |
@@ -363,7 +363,7 @@ backend 条件が Upload code に広がる。共通 pitch／region を定め、n
 - mip／layer／aspect と用途を view、copy、attachment、shader が共有できる。
 - subresource と依存の追跡、format capabilities、staging repack の実装コストが必要。
 - 一部 backend では同一 image の異なる subresource 利用も制限される。capability と検証で明示する。
-- 現行 TextureDesc.Width／Height と引数なし CreateView は詳細 Desc へ移行する。texture の読み戻しは明示的な staging コピーと共通の CPU 読み出しへ移行する。初期実装のコピー記録 API は RecordCopyTextureToBuffer に改称する。format／view などの追加機能は未実装。
+- 現行 TextureDesc.Width／Height と引数なし CreateView は詳細 Desc へ移行する。texture の読み戻しは明示的な staging コピーと共通の CPU 読み出しへ移行する。初期実装のコピー記録 API は RecordCopyTextureToBuffer に改称する。RGBA8Unorm／Srgb の sampling と RecordCopyBufferToTexture は実装済み。一般的な format／view の追加機能は未実装。
 
 ## 検証方針
 

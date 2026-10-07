@@ -137,10 +137,17 @@ internal sealed unsafe class WgpuDevice : IDisposable
             Check(); ArgumentNullException.ThrowIfNull(desc);
             var limit = Native.GetLimits().maxTextureDimension2D;
             if (desc.Width == 0 || desc.Height == 0 || desc.Width > limit || desc.Height > limit) throw new ArgumentOutOfRangeException(nameof(desc));
+            if (desc.Usage == 0 || (desc.Usage & ~(TextureUsage.CopySource | TextureUsage.CopyDestination | TextureUsage.Sampled | TextureUsage.RenderAttachment)) != 0 || !Enum.IsDefined(desc.Format))
+                throw new ArgumentException("Invalid texture usage or format.");
+            var usage = (A.TextureUsage)0;
+            if (desc.Usage.HasFlag(TextureUsage.CopySource)) usage |= A.TextureUsage.CopySrc;
+            if (desc.Usage.HasFlag(TextureUsage.CopyDestination)) usage |= A.TextureUsage.CopyDst;
+            if (desc.Usage.HasFlag(TextureUsage.Sampled)) usage |= A.TextureUsage.TextureBinding;
+            if (desc.Usage.HasFlag(TextureUsage.RenderAttachment)) usage |= A.TextureUsage.RenderAttachment;
             return new(this, Validated(Native.CreateTexture(new A.TextureDescriptor {
                 Size = new WGPUExtent3D { width = desc.Width, height = desc.Height, depthOrArrayLayers = 1 },
-                Format = WGPUTextureFormat.RGBA8Unorm, Dimension = WGPUTextureDimension._2D,
-                Usage = A.TextureUsage.RenderAttachment | A.TextureUsage.CopySrc,
+                Format = desc.Format == TextureFormat.Rgba8Unorm ? WGPUTextureFormat.RGBA8Unorm : WGPUTextureFormat.RGBA8UnormSrgb, Dimension = WGPUTextureDimension._2D,
+                Usage = usage,
             })), desc);
         }
     }
@@ -153,18 +160,21 @@ internal sealed unsafe class WgpuDevice : IDisposable
         using var stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new ArgumentException($"Shader resource '{resourceName}' was not found in '{assembly.FullName}'.", nameof(resourceName));
         using var reader = new StreamReader(stream, new UTF8Encoding(false, true));
-        return CreateShader(reader.ReadToEnd());
+        using var reflectionStream = assembly.GetManifestResourceStream(resourceName + ".reflection.json");
+        using var reflectionReader = reflectionStream is null ? null : new StreamReader(reflectionStream);
+        return CreateShader(reader.ReadToEnd(), reflectionReader?.ReadToEnd());
     }
 
     /// <summary>Loads WGSL produced offline from Slang; does not compile Slang at runtime.</summary>
-    public ShaderModule CreateShader(string wgsl)
+    public ShaderModule CreateShader(string wgsl, string? reflection = null)
     {
         lock (Gate)
         {
             Check(); ArgumentException.ThrowIfNullOrWhiteSpace(wgsl);
+            var schema = MaterialSchema.Parse(reflection);
             return new(this, Validated(Native.CreateShaderModule(new A.ShaderModuleDescriptor {
                 Source = A.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(wgsl)),
-            })));
+            })), schema);
         }
     }
     public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
@@ -184,7 +194,37 @@ internal sealed unsafe class WgpuDevice : IDisposable
             ArgumentException.ThrowIfNullOrWhiteSpace(desc.VertexEntry); ArgumentException.ThrowIfNullOrWhiteSpace(desc.FragmentEntry);
             return new(this, Validated(Native.CreateRenderPipeline(desc.Shader.Native, Encoding.UTF8.GetBytes(desc.VertexEntry),
                 desc.Shader.Native, Encoding.UTF8.GetBytes(desc.FragmentEntry),
-                [new A.ColorTargetState(WGPUTextureFormat.RGBA8Unorm)])));
+                [new A.ColorTargetState(WGPUTextureFormat.RGBA8Unorm)])), desc.Shader.MaterialSchema);
+        }
+    }
+    public Sampler CreateSampler(SamplerDesc desc)
+    {
+        lock (Gate)
+        {
+            Check(); ArgumentNullException.ThrowIfNull(desc);
+            if (!Enum.IsDefined(desc.MinFilter) || !Enum.IsDefined(desc.MagFilter) || !Enum.IsDefined(desc.AddressU) || !Enum.IsDefined(desc.AddressV)) throw new ArgumentException("Unknown sampler state.");
+            WGPUAddressMode Address(AddressMode mode) => mode switch { AddressMode.Repeat => WGPUAddressMode.Repeat, AddressMode.MirrorRepeat => WGPUAddressMode.MirrorRepeat, _ => WGPUAddressMode.ClampToEdge };
+            var native = new WGPUSamplerDescriptor { label = new() { length = nuint.MaxValue },
+                addressModeU = Address(desc.AddressU), addressModeV = Address(desc.AddressV), addressModeW = WGPUAddressMode.ClampToEdge,
+                minFilter = desc.MinFilter == FilterMode.Linear ? WGPUFilterMode.Linear : WGPUFilterMode.Nearest,
+                magFilter = desc.MagFilter == FilterMode.Linear ? WGPUFilterMode.Linear : WGPUFilterMode.Nearest,
+                mipmapFilter = WGPUMipmapFilterMode.Nearest, lodMinClamp = 0, lodMaxClamp = 32, maxAnisotropy = 1 };
+            var handle = WGPU.wgpuDeviceCreateSampler(Native.Handle, &native);
+            try { CheckErrors(); } catch { if (handle != null) WGPU.wgpuSamplerRelease(handle); throw; }
+            if (handle == null) throw new InvalidOperationException("Sampler creation failed.");
+            return new(this, handle);
+        }
+    }
+    public MaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials)
+    {
+        lock (Gate)
+        {
+            Check(); ArgumentNullException.ThrowIfNull(desc); ArgumentNullException.ThrowIfNull(desc.Layout);
+            var limits = Native.GetLimits();
+            if (desc.Layout.GetSizeInBytes((ulong)materials.Length) > limits.maxStorageBufferBindingSize || limits.maxSampledTexturesPerShaderStage < 4 || limits.maxSamplersPerShaderStage < 4)
+                throw new NotSupportedException("Material layout exceeds device binding limits.");
+            var prepared = MaterialBindings.Prepare(this, desc, materials);
+            return new(this, desc.Layout, (ulong)materials.Length, prepared.Bytes, prepared.Pairs);
         }
     }
     public CommandEncoder CreateCommandEncoder()
@@ -203,7 +243,7 @@ internal sealed unsafe class WgpuDevice : IDisposable
             var handle = commands.Handle;
             WGPU.wgpuQueueSubmit(Native.Queue.Handle, 1, &handle);
             commands.MarkSubmitted();
-            return new(this, Native.Queue.BeginOnSubmittedWorkDone(), commands.TakeResources());
+            return new(this, Native.Queue.BeginOnSubmittedWorkDone(), commands.TakeResources(), commands.TakeMaterialTransfers());
         }
     }
     public void Dispose()

@@ -82,7 +82,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
 +        public IGraphicsTexture CreateTexture(TextureDesc desc);
 +
-+        // rootless vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
++        // rootless または固定 material schema の vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
 +        public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
 +
 +        // 一回限りの送信
@@ -159,6 +159,8 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +    {
 +        public uint Width { get; }
 +        public uint Height { get; }
++        public TextureUsage Usage { get; }
++        public TextureFormat Format { get; }
 +        // 初期実装は単一 RGBA8 mip／layer 全体の view。
 +        public IGraphicsTextureView CreateView();
 +        public void Dispose();
@@ -243,7 +245,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 wgpu の具象 buffer allocation が IGraphicsBuffer<T> と IBufferBackendContract、texture と view がそれぞれ IGraphicsTexture と IGraphicsTextureView を直接実装する。共通 factory は同じ instance を返す。view の保持・Dispose も具象実装が処理し、コマンド側は instance の所属と lease を検証する。GetBufferLayout<T>() の ElementStrideInBytes と BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
 
-初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
+初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height／Usage／Format、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、汎用の生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 
 ### GPU 参照、所有権、同期
 
@@ -296,3 +298,45 @@ API の形は揃うが、未対応の機能を使用できると誤認させる�
 - [Desc 型](0007-graphics-descriptors.md)
 - [wgpu 実装](../../src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs)
 - [Ahjo.Wgpu](https://github.com/pekkah/Ahjo-Wgpu)
+
+### マテリアル描画の実装済み拡張
+
+[ADR-0012 の初期 wgpu 実装](0012-material-buffer-texture-resolution.md#初期-wgpu-実装) の固定 MaterialData、4 組の sampled texture／sampler、GPU material buffer からの選択と RenderEncoder.Draw(arguments, desc) を実装する。汎用 schema 全体は対象外。Slang の library helper と reflection JSON を使用し、生成 WGSL／JSON は DLL に埋め込む。
+
+```diff
++namespace Lumyte.Graphics
++{
++    [System.Flags]
++    public enum TextureUsage { CopySource = 1, CopyDestination = 2, Sampled = 4, RenderAttachment = 8 }
++    public enum TextureFormat { Rgba8Unorm, Rgba8Srgb }
++    public sealed record TextureDesc
++    {
++        public required uint Width { get; init; }
++        public required uint Height { get; init; }
++        public TextureUsage Usage { get; init; } = TextureUsage.RenderAttachment | TextureUsage.CopySource;
++        public TextureFormat Format { get; init; } = TextureFormat.Rgba8Unorm;
++    }
++    public enum FilterMode { Nearest, Linear }
++    public enum AddressMode { ClampToEdge, Repeat, MirrorRepeat }
++    public sealed record SamplerDesc
++    {
++        public FilterMode MinFilter { get; init; } = FilterMode.Linear;
++        public FilterMode MagFilter { get; init; } = FilterMode.Linear;
++        public AddressMode AddressU { get; init; } = AddressMode.Repeat;
++        public AddressMode AddressV { get; init; } = AddressMode.Repeat;
++    }
++    public sealed class Sampler : GpuResource;
++    public sealed class GraphicsDevice
++    {
++        public Sampler CreateSampler(SamplerDesc desc);
++    }
++    public sealed class CommandEncoder
++    {
++        // 全 D2 RGBA8 image の upload を記録。offset は 4、row pitch は 256 の倍数。
++        // source CopySource と destination CopyDestination が必要。送信しない。
++        public void RecordCopyBufferToTexture(BufferSlice<byte> source, IGraphicsTexture destination, uint bytesPerRow);
++    }
++}
+```
+
+texture は single mip／layer の RGBA8Unorm／Srgb を sampling と明示コピーに使える。描画 target は RGBA8Unorm に限定する。sampler は通常 sampling の min／mag と U／V address のみ。comparison、anisotropy、一般的な mip 設定は未対応。GPU テストと headless sample は GPU buffer の material による 1 draw 内の texture 選択を読み戻して確認する。

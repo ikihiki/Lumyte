@@ -7,7 +7,7 @@
 
 SamplerDesc のフィールドだけでは、通常／比較 sampler の型、filterable format との組合せ、Slang reflection に基づく引数構築、descriptor の寿命が確定しない。Texture に sampler を埋め込むと、同じ画像を異なる sampling 条件で使う際に resource と pipeline の管理が複雑になる。
 
-本 ADR を SamplerDesc の正本とし、Sampler を [ADR-0010](0010-texture-resource-contract.md) の TextureView とは独立した所有 resource として設計する。[ADR-0005](0005-shader-compilation-and-data-interop.md) の生成引数型と BindingPlan を通じて組み合わせる。現在の初期 wgpu 実装には Sampler がなく、以下は新しい共通契約の提案である。
+本 ADR を SamplerDesc の正本とし、Sampler を [ADR-0010](0010-texture-resource-contract.md) の TextureView とは独立した所有 resource として設計する。[ADR-0005](0005-shader-compilation-and-data-interop.md) の生成引数型と BindingPlan を通じて組み合わせる。以下は広い共通契約の提案である。初期 wgpu の通常 sampler は ADR-0008 の限定した Desc を実装している。
 
 ## 決定
 
@@ -280,7 +280,7 @@ WebGPU の binding layout と shader 型で validation error になり、backend
 - Slang の pair metadata と sampler category ごとの layout 検証が必要になる。
 - native cache の参照数・GPU 完了・診断 label の管理が必要になる。
 - PCF／anisotropy の画質と数値は backend ごとに差があり、全 pixel の bit 一致は保証しない。
-- 今回の変更は設計文書のみ。Sampler の実装と GPU 検証は未実施。
+- 初期 wgpu は通常 sampler の MinFilter／MagFilter と AddressU／V を実装し、material sampling を GPU テストで検証した。詳細は ADR-0008 の実装済み拡張に従う。comparison、anisotropy と一般的な mip 設定は未実装。
 
 ## 検証方針
 

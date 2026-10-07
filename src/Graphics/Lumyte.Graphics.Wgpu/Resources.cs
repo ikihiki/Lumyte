@@ -43,6 +43,22 @@ internal class WgpuBuffer : GpuResource, IBufferBackendContract
     public ulong SizeInBytes { get; }
     public BufferUsage Usage { get; }
     public MemoryPreference Memory { get; }
+    private readonly List<MaterialRegion> _materials = [];
+    internal MaterialRegion? FindMaterial(ulong offset, ulong length) => _materials.Find(r => r.Valid && r.Ready && r.Offset == offset && r.Length == length);
+    internal void InvalidateMaterials(ulong offset, ulong length)
+    {
+        foreach (var region in _materials.Where(r => r.Offset < offset + length && offset < r.Offset + r.Length).ToArray())
+        { region.Valid = false; region.Bindings.ReleaseLease(); _materials.Remove(region); }
+    }
+    internal MaterialRegion RegisterMaterial(ulong offset, ulong length, MaterialBindings bindings, bool ready = true)
+    {
+        InvalidateMaterials(offset, length); bindings.Acquire();
+        var region = new MaterialRegion(this, offset, length, bindings) { Ready = ready }; _materials.Add(region); return region;
+    }
+    internal void CancelMaterial(MaterialRegion region)
+    {
+        if (_materials.Remove(region)) { region.Valid = false; region.Bindings.ReleaseLease(); }
+    }
     internal WgpuBuffer(WgpuDevice owner, A.Buffer native, ulong size, BufferUsage usage, MemoryPreference memory) : base(owner)
         => (Native, SizeInBytes, Usage, Memory) = (native, size, usage, memory);
     public BufferSlice Slice(ulong offset, ulong length)
@@ -68,6 +84,7 @@ internal class WgpuBuffer : GpuResource, IBufferBackendContract
             try
             {
                 Owner.CheckErrors();
+                InvalidateMaterials(offset, (ulong)source.Length);
                 source.CopyTo(Native.GetMappedRange<byte>(0, (nuint)SizeInBytes).Slice(checked((int)offset), source.Length));
             }
             finally { Native.Unmap(); }
@@ -90,7 +107,7 @@ internal class WgpuBuffer : GpuResource, IBufferBackendContract
             finally { Native.Unmap(); }
         }
     }
-    protected override void ReleaseNative() => Native.Dispose();
+    protected override void ReleaseNative() { InvalidateMaterials(0, SizeInBytes); Native.Dispose(); }
 }
 
 // The public typed interface and the internal allocation contract are the same object.
@@ -116,8 +133,10 @@ internal sealed class Texture : GpuResource, IGraphicsTexture
     internal A.Texture Native { get; }
     public uint Width { get; }
     public uint Height { get; }
+    public TextureUsage Usage { get; }
+    public TextureFormat Format { get; }
     internal Texture(WgpuDevice owner, A.Texture native, TextureDesc desc) : base(owner)
-        => (Native, Width, Height) = (native, desc.Width, desc.Height);
+        => (Native, Width, Height, Usage, Format) = (native, desc.Width, desc.Height, desc.Usage, desc.Format);
     public IGraphicsTextureView CreateView()
     {
         lock (Owner.Gate)
@@ -142,14 +161,46 @@ internal sealed class TextureView : GpuResource, IGraphicsTextureView
 internal sealed class ShaderModule : GpuResource
 {
     internal A.ShaderModule Native { get; }
-    internal ShaderModule(WgpuDevice owner, A.ShaderModule native) : base(owner) => Native = native;
+    internal MaterialSchema? MaterialSchema { get; }
+    internal ShaderModule(WgpuDevice owner, A.ShaderModule native, MaterialSchema? schema) : base(owner) => (Native, MaterialSchema) = (native, schema);
     protected override void ReleaseNative() => Native.Dispose();
 }
 
 internal sealed class GraphicsPipeline : GpuResource
 {
     internal A.RenderPipeline Native { get; }
-    internal GraphicsPipeline(WgpuDevice owner, A.RenderPipeline native) : base(owner) => Native = native;
+    internal MaterialSchema? MaterialSchema { get; }
+    internal GraphicsPipeline(WgpuDevice owner, A.RenderPipeline native, MaterialSchema? schema) : base(owner) => (Native, MaterialSchema) = (native, schema);
+    internal unsafe MaterialArguments CreateArguments(MaterialRegion region)
+    {
+        lock (Owner.Gate)
+        {
+            Check(Owner); region.Check(Owner);
+            if (MaterialSchema is null || !ReferenceEquals(MaterialSchema, region.Bindings.Layout.Handle)) throw new ArgumentException("Material layout belongs to another shader program.");
+            var limits = Owner.Native.GetLimits();
+            if (!region.Buffer.Usage.HasFlag(BufferUsage.ShaderRead) || region.Buffer.Usage.HasFlag(BufferUsage.ShaderWrite) ||
+                region.Offset % limits.minStorageBufferOffsetAlignment != 0 || region.Length > limits.maxStorageBufferBindingSize)
+                throw new ArgumentException("Material storage range or usage does not satisfy device limits.");
+            var layout = WGPU.wgpuRenderPipelineGetBindGroupLayout(Native.Handle, 0);
+            try
+            {
+                WGPUBindGroupEntry* entries = stackalloc WGPUBindGroupEntry[9];
+                entries[0] = new() { binding = 0, buffer = region.Buffer.Native.Handle, offset = region.Offset, size = region.Length };
+                for (int i = 0; i < 4; i++)
+                {
+                    var pair = region.Bindings.Pairs[i];
+                    entries[1 + i * 2] = new() { binding = (uint)(1 + i * 2), textureView = pair.View.Native.Handle };
+                    entries[2 + i * 2] = new() { binding = (uint)(2 + i * 2), sampler = pair.Sampler.Handle };
+                }
+                var desc = new WGPUBindGroupDescriptor { label = new() { length = nuint.MaxValue }, layout = layout, entryCount = 9, entries = entries };
+                var handle = WGPU.wgpuDeviceCreateBindGroup(Owner.Native.Handle, &desc);
+                try { Owner.CheckErrors(); } catch { if (handle != null) WGPU.wgpuBindGroupRelease(handle); throw; }
+                if (handle == null) throw new InvalidOperationException("Material bind group creation failed.");
+                return new(this, region, handle);
+            }
+            finally { WGPU.wgpuBindGroupLayoutRelease(layout); }
+        }
+    }
     protected override void ReleaseNative() => Native.Dispose();
 }
 

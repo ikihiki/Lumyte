@@ -2,17 +2,24 @@
   <PropertyGroup>
     <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
   </PropertyGroup>
+  <ItemGroup>
+    <SlangShaderLibrary Include="$(MSBuildThisFileDirectory)../../src/Graphics/Lumyte.Graphics.Core/Shaders/*.slang" />
+  </ItemGroup>
   <!-- Run per source, keeping generated code entirely inside obj/. -->
   <Target Name="CompileSlangShaders"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
-          Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl"
+          Inputs="@(SlangShaderLibrary);%(SlangShader.FullPath);$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
+          Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).reflection.json"
           Condition="'@(SlangShader)' != ''">
     <MakeDir Directories="$(IntermediateOutputPath)Slang" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -target wgsl -matrix-layout-row-major -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl&quot;" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -I &quot;$(MSBuildThisFileDirectory)../../src/Graphics/Lumyte.Graphics.Core/Shaders&quot; -target wgsl -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl&quot;" />
   </Target>
   <Target Name="EmbedSlangShaders" BeforeTargets="AssignTargetPaths"
           DependsOnTargets="CompileSlangShaders" Condition="'@(SlangShader)' != ''">
     <ItemGroup>
+      <EmbeddedResource Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(Filename).reflection.json')">
+        <LogicalName>Lumyte.Shaders.%(Filename).wgsl.reflection.json</LogicalName>
+      </EmbeddedResource>
+      <FileWrites Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(Filename).reflection.json')" />
       <FileWrites Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(Filename).wgsl')" />
       <EmbeddedResource Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(Filename).wgsl')">
         <LogicalName>Lumyte.Shaders.%(Filename).wgsl</LogicalName>

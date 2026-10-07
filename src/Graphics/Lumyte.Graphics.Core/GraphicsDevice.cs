@@ -10,6 +10,10 @@ public sealed class GraphicsDevice : IDisposable
     public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged => _driver.GetBufferLayout<T>();
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => _driver.CreateBuffer(desc);
     public IGraphicsTexture CreateTexture(TextureDesc desc) => _driver.CreateTexture(desc);
+    public Sampler CreateSampler(SamplerDesc desc) => new(_driver, _driver.CreateSampler(desc));
+    public SampledTexture2DReference CreateSampledTexture2DReference(IGraphicsTextureView texture, Sampler sampler) => new(_driver.CreateSampledTextureReference(texture, sampler));
+    public IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials) => _driver.CreateMaterialBindings(desc, materials);
+    public MaterialBufferReference CreateMaterialReference(BufferSlice<byte> range) => new(_driver.CreateMaterialReference(range.Range));
     public ShaderModule CreateShader(Assembly assembly, string resourceName) => new(_driver, _driver.CreateShader(assembly, resourceName));
     public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => new(_driver, _driver.CreateComputePipeline(desc));
     public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new(_driver, _driver.CreateGraphicsPipeline(desc));
@@ -30,11 +34,13 @@ public abstract class GpuResource : IDisposable
 public sealed class ShaderModule : GpuResource
 {
     internal ShaderModule(IGraphicsDriver driver, object handle) : base(driver, handle) { }
+    public MaterialResourceLayout GetMaterialResourceLayout() => Driver.GetMaterialLayout(Handle);
 }
 
 public sealed class GraphicsPipeline : GpuResource
 {
     internal GraphicsPipeline(IGraphicsDriver driver, object handle) : base(driver, handle) { }
+    public ShaderArguments CreateArguments(MaterialBufferReference materials) => new(Driver, Driver.CreateMaterialArguments(Handle, materials));
 }
 
 public sealed class ComputePipeline : GpuResource
@@ -63,6 +69,7 @@ public sealed class CommandEncoder : IDisposable
     public void Dispatch(ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y = 1, uint z = 1) => _driver.Dispatch(_handle, pipeline, arguments, x, y, z);
     /// <summary>Records a GPU copy; execution requires Finish and explicit Submit.</summary>
     public void RecordCopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination) where TSource : unmanaged where TDestination : unmanaged => _driver.RecordCopyBuffer(_handle, source.Range, destination.Range);
+    public void RecordCopyBufferToTexture(BufferSlice<byte> source, IGraphicsTexture destination, uint bytesPerRow) => _driver.RecordCopyBufferToTexture(_handle, source.Range, destination, bytesPerRow);
     /// <summary>Records a texture readback copy; records no submission.</summary>
     public void RecordCopyTextureToBuffer<T>(IGraphicsTexture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged
     {
@@ -89,6 +96,7 @@ public sealed class RenderEncoder : IDisposable
         _driver.SetIndexBuffer(_handle, indices.Range, format);
     }
     public void Draw(uint vertexCount, uint instanceCount = 1) => Draw(new DrawDesc { VertexCount = vertexCount, InstanceCount = instanceCount });
+    public void Draw(ShaderArguments arguments, DrawDesc desc) => _driver.DrawWithArguments(_handle, arguments, desc);
     public void Draw(DrawDesc desc) => _driver.Draw(_handle, desc);
     public void DrawIndexed(IndexedDrawDesc desc) => _driver.DrawIndexed(_handle, desc);
     public void End() => _driver.End(_handle);

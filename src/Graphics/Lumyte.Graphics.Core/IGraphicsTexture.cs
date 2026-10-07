@@ -5,6 +5,8 @@ public interface IGraphicsTexture : IDisposable
 {
     uint Width { get; }
     uint Height { get; }
+    TextureUsage Usage { get; }
+    TextureFormat Format { get; }
     /// <summary>Creates an owned native view. The texture is held until the view is disposed.</summary>
     IGraphicsTextureView CreateView();
 }

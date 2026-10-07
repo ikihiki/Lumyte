@@ -36,6 +36,31 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged => device.GetBufferLayout<T>();
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => device.CreateBuffer(desc);
     public IGraphicsTexture CreateTexture(TextureDesc desc) => device.CreateTexture(desc);
+    public object CreateSampler(SamplerDesc desc) => device.CreateSampler(desc);
+    public object CreateSampledTextureReference(G.IGraphicsTextureView texture, G.Sampler sampler)
+    {
+        var view = GetTextureResource<TextureView>(texture); var state = Get<Sampler>(sampler);
+        state.Check(device);
+        if (!view.Texture.Usage.HasFlag(TextureUsage.Sampled)) throw new ArgumentException("Sampled texture usage is required.");
+        return new SampledPair(view, state);
+    }
+    public MaterialResourceLayout GetMaterialLayout(object shader)
+    {
+        var module = (ShaderModule)shader; module.Check(device);
+        return new(module.MaterialSchema ?? throw new NotSupportedException("Shader reflection does not declare the supported material ABI."));
+    }
+    public IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials) => device.CreateMaterialBindings(desc, materials);
+    public object CreateMaterialReference(G.BufferRange range)
+    {
+        var slice = Slice(range);
+        if (!slice.Buffer.Usage.HasFlag(BufferUsage.ShaderRead) || slice.Buffer.Usage.HasFlag(BufferUsage.ShaderWrite)) throw new ArgumentException("Material reference requires shader-read-only storage.");
+        return slice.Buffer.FindMaterial(slice.Offset, slice.Length) ?? throw new ArgumentException("Material range has no completed typed upload.");
+    }
+    public object CreateMaterialArguments(object pipeline, MaterialBufferReference materials)
+    {
+        if (materials.Handle is not MaterialRegion region) throw new ArgumentException("Invalid material reference.");
+        return ((GraphicsPipeline)pipeline).CreateArguments(region);
+    }
     public object CreateShader(Assembly assembly, string resourceName) => device.CreateShader(assembly, resourceName);
     public object CreateComputePipeline(G.ComputePipelineDesc desc)
     {
@@ -63,6 +88,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     }
     public void Dispatch(object handle, G.ComputePipeline pipeline, G.ShaderArguments arguments, uint x, uint y, uint z) => ((CommandEncoder)handle).Dispatch(Get<ComputePipeline>(pipeline), Get<ShaderArguments>(arguments), x, y, z);
     public void RecordCopyBuffer(object handle, G.BufferRange source, G.BufferRange destination) => ((CommandEncoder)handle).RecordCopyBuffer(Slice(source), Slice(destination));
+    public void RecordCopyBufferToTexture(object handle, G.BufferRange source, G.IGraphicsTexture destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyBufferToTexture(Slice(source), GetTextureResource<Texture>(destination), bytesPerRow);
     public void RecordCopyTextureToBuffer(object handle, G.IGraphicsTexture source, G.BufferRange destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyTextureToBuffer(GetTextureResource<Texture>(source), Slice(destination).Buffer, bytesPerRow);
     public object Finish(object handle) => ((CommandEncoder)handle).Finish();
     public void SetPipeline(object handle, G.GraphicsPipeline pipeline) => ((RenderEncoder)handle).SetPipeline(Get<GraphicsPipeline>(pipeline));
@@ -70,6 +96,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     public void SetScissor(object handle, Scissor scissor) => ((RenderEncoder)handle).SetScissor(scissor);
     public void SetIndexBuffer(object handle, G.BufferRange indices, IndexFormat format) => ((RenderEncoder)handle).SetIndexBuffer(Slice(indices), format);
     public void Draw(object handle, DrawDesc desc) => ((RenderEncoder)handle).Draw(desc);
+    public void DrawWithArguments(object handle, G.ShaderArguments arguments, DrawDesc desc) => ((RenderEncoder)handle).Draw(Get<MaterialArguments>(arguments), desc);
     public void DrawIndexed(object handle, IndexedDrawDesc desc) => ((RenderEncoder)handle).DrawIndexed(desc);
     public void End(object handle) => ((RenderEncoder)handle).End();
     public bool IsCompleted(object handle) => ((Submission)handle).IsCompleted;

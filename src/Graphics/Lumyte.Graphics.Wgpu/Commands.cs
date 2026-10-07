@@ -9,6 +9,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
     internal WgpuDevice Owner { get; }
     private WGPUCommandEncoderImpl* _handle;
     private HashSet<GpuResource> _resources = [];
+    private List<MaterialTransfer> _materialTransfers = [];
     private RenderEncoder? _render;
     private bool _finished;
     internal CommandEncoder(WgpuDevice owner, WGPUCommandEncoderImpl* handle)
@@ -34,6 +35,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
         {
             OutsidePass(); ArgumentNullException.ThrowIfNull(desc); ArgumentNullException.ThrowIfNull(desc.Target); desc.Target.Check(Owner);
             if (!Enum.IsDefined(desc.Load) || !Enum.IsDefined(desc.Store)) throw new ArgumentException("Invalid load/store operation.");
+            if (!desc.Target.Texture.Usage.HasFlag(TextureUsage.RenderAttachment) || desc.Target.Texture.Format != TextureFormat.Rgba8Unorm) throw new ArgumentException("Initial targets require RGBA8Unorm RenderAttachment usage.");
             var c = desc.ClearValue;
             if (!double.IsFinite(c.R) || !double.IsFinite(c.G) || !double.IsFinite(c.B) || !double.IsFinite(c.A)) throw new ArgumentException("Clear value must be finite.");
             var attachment = new WGPURenderPassColorAttachment {
@@ -47,7 +49,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
             };
             var handle = WGPU.wgpuCommandEncoderBeginRenderPass(_handle, &native);
             Use(desc.Target);
-            _render = new(this, handle, desc.Target.Texture.Width, desc.Target.Texture.Height);
+            _render = new(this, handle, desc.Target.Texture);
             return _render;
         }
     }
@@ -82,9 +84,31 @@ internal sealed unsafe class CommandEncoder : IDisposable
                 source.Offset % WgpuDevice.CopyOffsetAlignmentInBytes != 0 || destination.Offset % WgpuDevice.CopyOffsetAlignmentInBytes != 0 || source.Length % WgpuDevice.CopySizeAlignmentInBytes != 0 ||
                 !source.Buffer.Usage.HasFlag(BufferUsage.CopySource) || !destination.Buffer.Usage.HasFlag(BufferUsage.CopyDestination))
                 throw new ArgumentException("Copy requires distinct buffers, matching aligned ranges and copy usages.");
+            var material = source.Buffer.FindMaterial(source.Offset, source.Length);
+            destination.Buffer.InvalidateMaterials(destination.Offset, destination.Length);
+            _materialTransfers.RemoveAll(t => ReferenceEquals(t.Region.Buffer, destination.Buffer) && t.Region.Offset < destination.Offset + destination.Length && destination.Offset < t.Region.Offset + t.Region.Length);
+            if (material is not null)
+            { Use(material.Bindings); _materialTransfers.Add(new(destination.Buffer.RegisterMaterial(destination.Offset, destination.Length, material.Bindings, ready: false))); }
             Use(source.Buffer); Use(destination.Buffer);
             WGPU.wgpuCommandEncoderCopyBufferToBuffer(_handle, source.Buffer.Native.Handle, source.Offset,
                 destination.Buffer.Native.Handle, destination.Offset, source.Length);
+        }
+    }
+    public void RecordCopyBufferToTexture(BufferSlice source, Texture destination, uint bytesPerRow)
+    {
+        lock (Owner.Gate)
+        {
+            OutsidePass(); source.Buffer.Check(Owner); destination.Check(Owner);
+            ulong required = checked((ulong)bytesPerRow * (destination.Height - 1) + (ulong)destination.Width * 4);
+            if (!source.Buffer.Usage.HasFlag(BufferUsage.CopySource) || !destination.Usage.HasFlag(TextureUsage.CopyDestination) ||
+                source.Offset % 4 != 0 || bytesPerRow % 256 != 0 || bytesPerRow < (ulong)destination.Width * 4 || required > source.Length)
+                throw new ArgumentException("Texture upload requires copy usages, aligned pitch and sufficient source range.");
+            Use(source.Buffer); Use(destination);
+            var src = new WGPUTexelCopyBufferInfo { buffer = source.Buffer.Native.Handle,
+                layout = new WGPUTexelCopyBufferLayout { offset = source.Offset, bytesPerRow = bytesPerRow, rowsPerImage = destination.Height } };
+            var dst = new WGPUTexelCopyTextureInfo { texture = destination.Native.Handle, aspect = WGPUTextureAspect.All };
+            var extent = new WGPUExtent3D { width = destination.Width, height = destination.Height, depthOrArrayLayers = 1 };
+            WGPU.wgpuCommandEncoderCopyBufferToTexture(_handle, &src, &dst, &extent);
         }
     }
     public void RecordCopyTextureToBuffer(Texture source, WgpuBuffer destination, uint bytesPerRow)
@@ -93,8 +117,10 @@ internal sealed unsafe class CommandEncoder : IDisposable
         {
             OutsidePass(); source.Check(Owner); destination.Check(Owner);
             ulong required = checked((ulong)bytesPerRow * (source.Height - 1) + (ulong)source.Width * 4);
-            if (bytesPerRow % 256 != 0 || bytesPerRow < (ulong)source.Width * 4 || required > destination.SizeInBytes || !destination.Usage.HasFlag(BufferUsage.CopyDestination))
+            if (!source.Usage.HasFlag(TextureUsage.CopySource) || bytesPerRow % 256 != 0 || bytesPerRow < (ulong)source.Width * 4 || required > destination.SizeInBytes || !destination.Usage.HasFlag(BufferUsage.CopyDestination))
                 throw new ArgumentException("Texture copy requires aligned rows and sufficient CopyDestination storage.");
+            destination.InvalidateMaterials(0, required);
+            _materialTransfers.RemoveAll(t => ReferenceEquals(t.Region.Buffer, destination) && t.Region.Offset < required);
             Use(source); Use(destination);
             var src = new WGPUTexelCopyTextureInfo { texture = source.Native.Handle, aspect = WGPUTextureAspect.All };
             var dst = new WGPUTexelCopyBufferInfo { buffer = destination.Native.Handle,
@@ -112,7 +138,8 @@ internal sealed unsafe class CommandEncoder : IDisposable
             if (handle == null) throw new InvalidOperationException("Command buffer creation failed.");
             _finished = true; WGPU.wgpuCommandEncoderRelease(_handle); _handle = null; Owner.EncoderCount--;
             var resources = _resources; _resources = [];
-            return new(Owner, handle, resources);
+            var transfers = _materialTransfers; _materialTransfers = [];
+            return new(Owner, handle, resources, transfers);
         }
     }
     public void Dispose()
@@ -124,6 +151,8 @@ internal sealed unsafe class CommandEncoder : IDisposable
             WGPU.wgpuCommandEncoderRelease(_handle); _handle = null; Owner.EncoderCount--;
             foreach (var resource in _resources) resource.ReleaseLease();
             _resources.Clear();
+            foreach (var t in _materialTransfers) t.Region.Buffer.CancelMaterial(t.Region);
+            _materialTransfers.Clear();
         }
     }
 }
@@ -134,20 +163,22 @@ internal sealed unsafe class RenderEncoder : IDisposable
     private WGPURenderPassEncoderImpl* _handle;
     private readonly uint _width, _height;
     private GraphicsPipeline? _pipeline;
+    private MaterialArguments? _materialArguments;
+    private readonly Texture _target;
     private BufferSlice _indices;
     private IndexFormat _indexFormat;
-    internal RenderEncoder(CommandEncoder parent, WGPURenderPassEncoderImpl* handle, uint width, uint height)
+    internal RenderEncoder(CommandEncoder parent, WGPURenderPassEncoderImpl* handle, Texture target)
     {
-        _parent = parent; _handle = handle; _width = width; _height = height;
-        WGPU.wgpuRenderPassEncoderSetViewport(handle, 0, 0, width, height, 0, 1);
-        WGPU.wgpuRenderPassEncoderSetScissorRect(handle, 0, 0, width, height);
+        _parent = parent; _handle = handle; _target = target; _width = target.Width; _height = target.Height;
+        WGPU.wgpuRenderPassEncoderSetViewport(handle, 0, 0, _width, _height, 0, 1);
+        WGPU.wgpuRenderPassEncoderSetScissorRect(handle, 0, 0, _width, _height);
     }
     private void Active()
     { _parent.Active(); if (_handle == null) throw new InvalidOperationException("Render pass has ended."); }
     public void SetPipeline(GraphicsPipeline pipeline)
     {
         lock (_parent.Owner.Gate) { Active(); pipeline.Check(_parent.Owner); _parent.Use(pipeline);
-            WGPU.wgpuRenderPassEncoderSetPipeline(_handle, pipeline.Native.Handle); _pipeline = pipeline; }
+            WGPU.wgpuRenderPassEncoderSetPipeline(_handle, pipeline.Native.Handle); _pipeline = pipeline; _materialArguments = null; }
     }
     public void SetViewport(Viewport v)
     {
@@ -184,6 +215,28 @@ internal sealed unsafe class RenderEncoder : IDisposable
             _indices = indices; _indexFormat = format;
         }
     }
+    public void Draw(MaterialArguments arguments, DrawDesc desc)
+    {
+        lock (_parent.Owner.Gate)
+        {
+            Active(); ArgumentNullException.ThrowIfNull(desc); arguments.Check(_parent.Owner); arguments.Region.Check(_parent.Owner);
+            if (!ReferenceEquals(arguments.Pipeline, _pipeline)) throw new ArgumentException("Set the matching graphics pipeline before drawing.");
+            if (arguments.Region.Bindings.Pairs.Any(pair => ReferenceEquals(pair.View.Texture, _target))) throw new ArgumentException("Cannot sample the active render target.");
+            checked { _ = desc.FirstVertex + desc.VertexCount; _ = desc.FirstInstance + desc.InstanceCount; }
+            _parent.Use(arguments); _parent.Use(arguments.Region.Buffer);
+            WGPU.wgpuRenderPassEncoderSetBindGroup(_handle, 0, arguments.Handle, 0, null);
+            _materialArguments = arguments;
+            Draw(desc);
+        }
+    }
+    private void CheckMaterialArguments()
+    {
+        if (_pipeline?.MaterialSchema is not null)
+        {
+            if (_materialArguments is null) throw new InvalidOperationException("Material pipeline requires graphics arguments.");
+            _materialArguments.Region.Check(_parent.Owner);
+        }
+    }
     public void Draw(uint vertexCount, uint instanceCount = 1) => Draw(new DrawDesc { VertexCount = vertexCount, InstanceCount = instanceCount });
     public void Draw(DrawDesc desc)
     {
@@ -191,6 +244,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
         {
             Active(); ArgumentNullException.ThrowIfNull(desc);
             if (_pipeline is null) throw new InvalidOperationException("Set a graphics pipeline before drawing.");
+            CheckMaterialArguments();
             checked { _ = desc.FirstVertex + desc.VertexCount; _ = desc.FirstInstance + desc.InstanceCount; }
             WGPU.wgpuRenderPassEncoderDraw(_handle, desc.VertexCount, desc.InstanceCount, desc.FirstVertex, desc.FirstInstance);
         }
@@ -201,6 +255,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
         {
             Active(); ArgumentNullException.ThrowIfNull(desc);
             if (_pipeline is null || _indices.Buffer is null) throw new InvalidOperationException("Set a pipeline and index buffer before drawing.");
+            CheckMaterialArguments();
             uint size = _indexFormat == IndexFormat.Uint16 ? 2u : 4u;
             if (((ulong)desc.FirstIndex + desc.IndexCount) * size > _indices.Length) throw new ArgumentOutOfRangeException(nameof(desc));
             checked { _ = desc.FirstInstance + desc.InstanceCount; }
@@ -220,14 +275,16 @@ internal sealed unsafe class CommandBuffer : GpuResource
     internal WGPUCommandBufferImpl* Handle { get; }
     private HashSet<GpuResource> _resources;
     private bool _submitted;
-    internal CommandBuffer(WgpuDevice owner, WGPUCommandBufferImpl* handle, HashSet<GpuResource> resources) : base(owner)
-    { Handle = handle; _resources = resources; }
+    private List<MaterialTransfer> _materialTransfers;
+    internal CommandBuffer(WgpuDevice owner, WGPUCommandBufferImpl* handle, HashSet<GpuResource> resources, List<MaterialTransfer> transfers) : base(owner)
+    { Handle = handle; _resources = resources; _materialTransfers = transfers; }
     internal void MarkSubmitted()
     { if (_submitted) throw new InvalidOperationException("Command buffer was already submitted."); _submitted = true; }
     internal void CheckUnsubmitted() { if (_submitted) throw new InvalidOperationException("Command buffer was already submitted."); }
     internal HashSet<GpuResource> TakeResources() { var resources = _resources; _resources = []; return resources; }
+    internal List<MaterialTransfer> TakeMaterialTransfers() { var transfers = _materialTransfers; _materialTransfers = []; return transfers; }
     protected override void ReleaseNative()
-    { WGPU.wgpuCommandBufferRelease(Handle); foreach (var resource in _resources) resource.ReleaseLease(); _resources.Clear(); }
+    { foreach (var t in _materialTransfers) t.Region.Buffer.CancelMaterial(t.Region); _materialTransfers.Clear(); WGPU.wgpuCommandBufferRelease(Handle); foreach (var resource in _resources) resource.ReleaseLease(); _resources.Clear(); }
 }
 
 internal sealed class Submission
@@ -236,9 +293,10 @@ internal sealed class Submission
     private readonly A.QueueWorkDoneRequest _request;
     private readonly HashSet<GpuResource> _resources;
     private bool _completed;
+    private readonly List<MaterialTransfer> _materialTransfers;
     private Exception? _error;
-    internal Submission(WgpuDevice owner, A.QueueWorkDoneRequest request, HashSet<GpuResource> resources)
-    { _owner = owner; _request = request; _resources = resources; owner.EncoderCount++; }
+    internal Submission(WgpuDevice owner, A.QueueWorkDoneRequest request, HashSet<GpuResource> resources, List<MaterialTransfer> transfers)
+    { _owner = owner; _request = request; _resources = resources; _materialTransfers = transfers; owner.EncoderCount++; }
     public bool IsCompleted
     {
         get
@@ -250,6 +308,14 @@ internal sealed class Submission
                 if (!_request.IsComplete) return false;
                 if (!_request.IsSuccess) _error = new InvalidOperationException($"Queue completion failed: {_request.Status}");
                 try { _owner.Check(); } catch (Exception ex) { _error = ex; }
+                if (_error is null)
+                {
+                    foreach (var transfer in _materialTransfers)
+                        if (transfer.Region.Valid) transfer.Region.Ready = true;
+                }
+                else
+                    foreach (var transfer in _materialTransfers) transfer.Region.Buffer.CancelMaterial(transfer.Region);
+                _materialTransfers.Clear();
                 _request.Dispose();
                 foreach (var resource in _resources) resource.ReleaseLease();
                 _resources.Clear(); _completed = true; _owner.EncoderCount--;

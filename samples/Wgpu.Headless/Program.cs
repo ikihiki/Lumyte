@@ -61,3 +61,13 @@ static uint[] ReadWords(IGraphicsBuffer<uint> buffer)
     buffer.CopyTo(words.AsSpan());
     return words;
 }
+
+var materialPixels = Lumyte.Samples.MaterialDrawing.Run(device, typeof(Program).Assembly);
+for (int y = 0; y < 4; y++)
+for (int x = 0; x < 8; x++)
+{
+    byte[] expected = x < 4 ? [128, 0, 0, 255] : [0, 255, 0, 255];
+    if (!materialPixels.AsSpan(y * 256 + x * 4, 4).SequenceEqual(expected))
+        throw new InvalidOperationException($"GPU material texture selection mismatch at ({x}, {y}).");
+}
+Console.WriteLine("PASS: GPU material buffer selects red/green textures per pixel in one draw.");

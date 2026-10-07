@@ -51,3 +51,7 @@ SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセッ�
 `device.GetBufferLayout<T>()` と `buffer.Layout` で型ごとの格納 stride、byte／要素単位のコピー alignment を確認できます。初期 wgpu の GPU コピーでは `byte` は offset と count が 4 の倍数、`ushort` は 2 の倍数、`uint` は 1 の倍数です。これらは CPU コピーの範囲制約とは別です。
 
 Texture と TextureView は `IGraphicsTexture`／`IGraphicsTextureView` を使用し、バックエンドの具象 instance を直接受け取ります。view は native view を所有し、その存続中は元 texture を保持します。記録済み・送信中の view と texture の解放は拒否します。
+
+GPU material buffer からの texture 選択も実装しています。[MaterialDrawing.cs](samples/Wgpu.Headless/MaterialDrawing.cs) は共通 API で赤／緑の画像と material を明示的に upload し、1 draw 内で pixel ごとに material を読みます。Slang shader は library の `LumyteMaterials` を import して texture を解決します。生成 WGSL と reflection JSON は DLL に埋め込まれます。
+
+初期 schema は base color と省略可能な texture／sampler 組で、fallback を含む最大 4 組、material stride は 32 bytes です。Upload の pack、コピー命令、送信、完了確認、material 参照生成を利用側が行います。完全な glTF PBR と汎用 schema は今後の設計です。

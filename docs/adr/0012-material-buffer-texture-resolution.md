@@ -9,7 +9,7 @@ glTF のようなマテリアルは色・係数と複数の texture／sampler �
 
 Texture／view の契約は [ADR-0010](0010-texture-resource-contract.md)、sampler は [ADR-0011](0011-sampler-resource-contract.md)、CPU pack と明示的な GPU 転送は [ADR-0009](0009-buffer-resource-contract.md) に従う。WebGPU の storage buffer に texture／sampler object は格納できず、buffer 内の整数を任意の resource binding として使うこともできない。GPU buffer にマテリアルを格納するだけでは参照先の binding と寿命を確定できないため、有限の resource 集合を伴う契約を定める。
 
-本 ADR はマテリアルデータと sampled D2 texture の間接参照を設計する。glTF parser、画像 decoder、mesh importer、完全な PBR renderer は対象外。以下の API と shader helper は未実装であり、初期 wgpu 実装の対応範囲を変更したとは扱わない。
+本 ADR はマテリアルデータと sampled D2 texture の間接参照を設計する。glTF parser、画像 decoder、mesh importer、完全な PBR renderer は対象外。以下は汎用 schema の提案である。固定 schema に限定した実装済みサブセットは「初期 wgpu 実装」に記録する。
 
 ## 決定
 
@@ -230,7 +230,78 @@ DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFinit
 - view／sampler／set の lease、引数と pipeline の layout 不一致、別 set の bytes の拒否、異なる Device、GPU 完了前の Dispose、frame 終了後の解放順。
 - Slang の反射 stride と serializer の一致、オフラインの DLL 埋め込みとオンラインの同一 ABI、backend と profile の不適合および native profile の必須 feature 拒否、material index／selector 範囲外の安全な既定値。
 
-これらは本 ADR の検証方針であり、今回実行済みのテスト結果ではない。初期実装は [ADR-0008](0008-wgpu-first-backend.md) のままで、Sampler、一般 serializer、material bindings、finite switch helper、独立 Barrier は未実装。
+汎用 schema 全体については検証方針であり、実行済みの結果ではない。以下の固定 schema は GPU テストで検証した。一般 serializer、オンライン compiler、sampleLevel、独立 Barrier、Browser と NativeDescriptorIndexing は未実装。
+
+### 初期 wgpu 実装
+
+固定の `MaterialData`（base color と省略可能な texture／sampler 組）を実装する。上記の generic schema や完全な glTF PBR 型は公開しない。fallback を含め最大 4 組、1 material は 32 bytes。Slang の reflection によって wire field offset と binding を照合し、WGSL と reflection JSON はともに DLL に埋め込む。生成 WGSL はコミットしない。
+
+```diff
++namespace Lumyte.Graphics
++{
++    // GPU selector と実 handle は公開しない非所有の値型。default は無効。
++    public readonly struct SampledTexture2DReference;
++    public readonly struct MaterialBufferReference;
++    // null は texture を使わず係数だけを返す。係数は finite を要求。
++    public readonly record struct MaterialData(System.Numerics.Vector4 BaseColor,
++        SampledTexture2DReference? BaseColorTexture = null);
++    public sealed record MaterialBindingsDesc
++    {
++        public required MaterialResourceLayout Layout { get; init; }
++        // 使用しない slot も有効な view と sampler で埋める。容量に含む。
++        public required SampledTexture2DReference UnusedSlotFallback { get; init; }
++    }
++    public sealed class MaterialResourceLayout
++    {
++        public uint PairCapacity { get; }
++        // count > 0。checked で 32-byte stride を掛ける。
++        public ulong GetSizeInBytes(ulong count);
++    }
++    public interface IGraphicsMaterialBindings : System.IDisposable
++    {
++        public MaterialResourceLayout Layout { get; }
++        public ulong MaterialCount { get; }
++        public ulong SizeInBytes { get; }
++        // 全 snapshot と同サイズの idle Upload range に CPU pack。送信しない。
++        public void CopyTo(BufferSlice<byte> destination);
++    }
++    public static class MaterialDataTransfer
++    {
++        public static void CopyFrom(this BufferSlice<byte> destination, IGraphicsMaterialBindings materials);
++    }
++    public sealed class GraphicsDevice
++    {
++        public SampledTexture2DReference CreateSampledTexture2DReference(IGraphicsTextureView texture, Sampler sampler);
++        // 入力を immutable snapshot とし、組を deduplicate。容量超過は拒否。
++        public IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, System.ReadOnlySpan<MaterialData> materials);
++        // 登録された全 range と転送完了を要求。待機やコピーはしない。
++        public MaterialBufferReference CreateMaterialReference(BufferSlice<byte> range);
++    }
++    public sealed class ShaderModule
++    {
++        // library の固定 reflection に一致しない shader は拒否。
++        public MaterialResourceLayout GetMaterialResourceLayout();
++    }
++    public sealed class GraphicsPipeline
++    {
++        // 同じ shader schema、read-only Storage 用途と range alignment を検証。
++        public ShaderArguments CreateArguments(MaterialBufferReference materials);
++    }
++    public sealed class RenderEncoder
++    {
++        // SetPipeline 後に使用。active attachment の sampling は拒否。
++        public void Draw(ShaderArguments arguments, DrawDesc desc);
++    }
++}
+```
+
+利用者は Upload buffer を確保して `Slice.CopyFrom(bindings)` で pack し、`RecordCopyBuffer`、`Finish`、`Submit`、`Wait` または完了の観測を明示する。その後 GPU range から `CreateMaterialReference` し、pipeline の引数を作る。texture の pixels も別の Upload buffer と `RecordCopyBufferToTexture` で送信する。CPU コピー、pack、参照生成は GPU 命令を自動追加しない。
+
+backend は pack した range と参照集合の関係を保持し、全 range の明示的 GPU コピーへ登録を引き継ぐ。部分上書き、未送信 command の破棄、失敗した submission で登録を無効化する。古い submission の完了で、新しい上書きにより失効した登録を復活させない。生成済み参照も再検証する。bindings は view／sampler を、range と ShaderArguments は bindings を lease する。
+
+library の `LumyteMaterials.slang` が wire 型、物理 binding、4 分岐と `sampleMaterialBaseColor` を所有する。利用 shader はこれを import し、GPU material index と一様な制御フローで求めた UV gradient を渡す。内部は `SampleGrad` で texture を解決し係数を掛ける。material index 範囲外は magenta、無効 selector は zero とする。
+
+Linux lavapipe の共通 API テストで、1 draw の pixel ごとの赤／緑 texture 選択、参照の交換、省略時の係数、CPU snapshot、容量、Device と寿命、転送完了前の拒否、破棄と部分上書き後の失効を確認した。サンプルも同じ共通 API 経路を使う。
 
 ## 検討した代替案
 
@@ -256,4 +327,4 @@ format、色空間、sampler、wrap、mip、UV transform の意味や resource �
 - serializer、Slang helper、resource bindings、範囲 metadata の ABI と寿命を揃える必要がある。
 - wgpu／Browser WebGPU の portable profile は同時参照集合と shader binding 数に上限があり、シーン全体を一つの draw に集約できるとは保証しない。
 - glTF の logical material と GPU wire data を分離し、参照先や schema を変更した場合は再 pack／転送する。
-- 本 ADR は設計の提案。実装と GPU 検証は別の作業で行う。
+- 汎用契約は提案。初期 wgpu の固定 schema と GPU 検証は以下の範囲で実装済み。

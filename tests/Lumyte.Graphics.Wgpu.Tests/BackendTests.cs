@@ -22,6 +22,104 @@ public sealed class BackendTests
     [System.Runtime.InteropServices.StructLayout(LayoutKind.Sequential, Pack = 1)]
     private struct TripleByte { public byte X; public byte Y; public byte Z; }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void GpuMaterialBufferSelectsTexturesPerPixelInOneDraw(bool swap, bool untextured)
+    {
+        using var device = Graphics.CreateDevice();
+        var pixels = Lumyte.Samples.MaterialDrawing.Run(device, typeof(BackendTests).Assembly, swap, untextured);
+        for (int y = 0; y < 4; y++)
+        for (int x = 0; x < 8; x++)
+            Assert.Equal(x < 4
+                ? untextured ? new byte[] { 128, 255, 255, 255 } : swap ? new byte[] { 0, 255, 0, 255 } : new byte[] { 128, 0, 0, 255 }
+                : swap ? new byte[] { 255, 0, 0, 255 } : new byte[] { 0, 255, 0, 255 }, pixels.AsSpan(y * 256 + x * 4, 4).ToArray());
+    }
+
+    [Fact]
+    public void MaterialBindingsValidateReferencesCapacityAndLifetimeWithoutHiddenCopies()
+    {
+        using var device = Graphics.CreateDevice();
+        using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.material.wgsl");
+        using var rootless = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.triangle.wgsl");
+        Assert.Throws<NotSupportedException>(() => rootless.GetMaterialResourceLayout());
+        using var texture = device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled });
+        using var v0 = texture.CreateView(); using var v1 = texture.CreateView(); using var v2 = texture.CreateView();
+        using var v3 = texture.CreateView(); using var v4 = texture.CreateView();
+        using var sampler = device.CreateSampler(new SamplerDesc());
+        var fallback = device.CreateSampledTexture2DReference(v0, sampler);
+        var desc = new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = fallback };
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings(desc, new MaterialData[] { new(System.Numerics.Vector4.One, default(SampledTexture2DReference)) }));
+        Assert.Throws<NotSupportedException>(() => device.CreateMaterialBindings(desc, new[] { v1, v2, v3, v4 }.Select(v =>
+            new MaterialData(System.Numerics.Vector4.One, device.CreateSampledTexture2DReference(v, sampler))).ToArray()));
+        using var foreign = Graphics.CreateDevice();
+        Assert.Throws<ArgumentException>(() => foreign.CreateMaterialBindings(desc, new MaterialData[] { new(System.Numerics.Vector4.One) }));
+        using var invalid = device.CreateTexture(new TextureDesc { Width = 1, Height = 1 });
+        using var invalidView = invalid.CreateView();
+        Assert.Throws<ArgumentException>(() => device.CreateSampledTexture2DReference(invalidView, sampler));
+        var values = new MaterialData[] { new(new System.Numerics.Vector4(0.5f, 1, 1, 1)) };
+        using var bindings = device.CreateMaterialBindings(desc, values);
+        values[0] = new(System.Numerics.Vector4.Zero);
+        using var upload = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        Assert.Throws<ArgumentException>(() => upload.Slice(0, 16).CopyFrom(bindings));
+        upload.Slice(0, 32).CopyFrom(bindings);
+        Assert.Throws<InvalidOperationException>(bindings.Dispose);
+        Assert.Throws<InvalidOperationException>(v0.Dispose);
+        Assert.Throws<InvalidOperationException>(sampler.Dispose);
+        using var readback = Readback<byte>(device, 32);
+        using var encoder = device.CreateCommandEncoder();
+        encoder.RecordCopyBuffer(upload.Slice(0, 32), readback.Slice(0, 32));
+        using var commands = encoder.Finish(); device.Submit(commands).Wait();
+        var bytes = new byte[32]; readback.CopyTo(bytes);
+        Assert.Equal(0.5f, System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(bytes));
+        readback.Dispose(); upload.Dispose(); bindings.Dispose();
+    }
+
+    [Fact]
+    public void MaterialUploadCompletionDiscardAndPartialOverwriteControlValidity()
+    {
+        using var device = Graphics.CreateDevice();
+        using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.material.wgsl");
+        using var pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
+        using var texture = device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled });
+        using var view = texture.CreateView(); using var sampler = device.CreateSampler(new SamplerDesc());
+        using var bindings = device.CreateMaterialBindings(new MaterialBindingsDesc {
+            Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = device.CreateSampledTexture2DReference(view, sampler),
+        }, new MaterialData[] { new(System.Numerics.Vector4.One) });
+        using var upload = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        using var gpu = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
+        upload.Slice(0, 32).CopyFrom(bindings);
+        using (var discarded = device.CreateCommandEncoder()) {
+            discarded.RecordCopyBuffer(upload.Slice(0, 32), gpu.Slice(0, 32));
+            Assert.Throws<ArgumentException>(() => device.CreateMaterialReference(gpu.Slice(0, 32)));
+        }
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialReference(gpu.Slice(0, 32)));
+        using (var encoder = device.CreateCommandEncoder()) {
+            encoder.RecordCopyBuffer(upload.Slice(0, 32), gpu.Slice(0, 32));
+            using var commands = encoder.Finish(); var submission = device.Submit(commands);
+            Assert.Throws<ArgumentException>(() => device.CreateMaterialReference(gpu.Slice(0, 32)));
+            submission.Wait();
+        }
+        var reference = device.CreateMaterialReference(gpu.Slice(0, 32));
+        using var arguments = pipeline.CreateArguments(reference);
+        using var raw = device.CreateBuffer(new BufferDesc<byte> { Count = 4, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        raw.CopyFrom(new byte[4]);
+        using (var overwrite = device.CreateCommandEncoder()) {
+            overwrite.RecordCopyBuffer(raw.Slice(0, 4), gpu.Slice(0, 4));
+            Assert.Throws<ArgumentException>(() => pipeline.CreateArguments(reference));
+            using var commands = overwrite.Finish(); device.Submit(commands).Wait();
+        }
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialReference(gpu.Slice(0, 32)));
+        // A later pending overwrite must prevent an older upload completion restoring its registration.
+        using var first = device.CreateCommandEncoder(); first.RecordCopyBuffer(upload.Slice(0, 32), gpu.Slice(0, 32));
+        using var firstCommands = first.Finish(); var firstSubmission = device.Submit(firstCommands);
+        using var second = device.CreateCommandEncoder(); second.RecordCopyBuffer(raw.Slice(0, 4), gpu.Slice(0, 4));
+        using var secondCommands = second.Finish(); var secondSubmission = device.Submit(secondCommands);
+        firstSubmission.Wait(); secondSubmission.Wait();
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialReference(gpu.Slice(0, 32)));
+    }
+
     [Fact]
     public void TextureInterfacesRetainParentAndRecordedViewUntilCompletion()
     {
@@ -223,7 +321,7 @@ public sealed class BackendTests
     public void OfflineShadersAreEmbeddedWithoutDeploymentSidecars()
     {
         var assembly = typeof(BackendTests).Assembly;
-        foreach (var name in new[] { "double", "triangle" })
+        foreach (var name in new[] { "double", "triangle", "material" })
         {
             using var stream = assembly.GetManifestResourceStream($"Lumyte.Shaders.{name}.wgsl");
             Assert.NotNull(stream);

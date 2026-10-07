@@ -14,11 +14,16 @@ public sealed record BufferDesc<T> where T : unmanaged
     public MemoryPreference Memory { get; init; }
 }
 
-// The initial backend supports offscreen, single-sample RGBA8 targets only.
+[Flags]
+public enum TextureUsage { CopySource = 1, CopyDestination = 2, Sampled = 4, RenderAttachment = 8 }
+public enum TextureFormat { Rgba8Unorm, Rgba8Srgb }
+// Single-sample 2D RGBA8 images.
 public sealed record TextureDesc
 {
     public required uint Width { get; init; }
     public required uint Height { get; init; }
+    public TextureUsage Usage { get; init; } = TextureUsage.RenderAttachment | TextureUsage.CopySource;
+    public TextureFormat Format { get; init; } = TextureFormat.Rgba8Unorm;
 }
 
 public readonly record struct Color4(double R, double G, double B, double A);
