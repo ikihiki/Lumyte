@@ -34,7 +34,7 @@ Core の wrapper は内部 driver と backend object を非公開で保持する
 
 `GraphicsBackend` は現在 `Wgpu` のみ。`Graphics.CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu)` は未定義値を ArgumentOutOfRangeException で拒否する。バックエンドの `WgpuBackend.CreateDevice()` は生成層用の接続点であり、サンプル／テストからは呼ばない。
 
-API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ```diff
 +namespace Lumyte.Graphics

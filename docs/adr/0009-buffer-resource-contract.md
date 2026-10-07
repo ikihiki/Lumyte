@@ -15,7 +15,7 @@
 
 共通型と staging の CPU コピー・読み出し API は `Lumyte.Graphics`、frame allocator と引数構築は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。IGraphicsBuffer<T> は具象 backend が直接実装する所有 interface、BufferSlice<T> と GpuReference は非所有の immutable value とする。利用者による具象 allocation の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
 
-API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ```diff
 +namespace Lumyte.Graphics

@@ -23,7 +23,7 @@ RenderEncoder は一つの描画パスに属し、attachment、graphics pipeline
 
 すべて `Lumyte.Graphics` 名前空間の C# シグネチャ案であり未実装である。RenderEncoder は利用者が直接生成できない sealed class とし、親 CommandEncoder の BeginRenderPass だけが生成する。コピー可能な struct によるパス終了状態の分裂を避ける。
 
-API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
+API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ```diff
 +namespace Lumyte.Graphics
