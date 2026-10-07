@@ -179,7 +179,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // 生成データ型を target layout に pack し、利用者の Upload buffer の CPU memory にコピーする。
 +        // 参照フィールドを解決して metadata を登録。GPU コピー、staging 確保、送信は行わない。
-+        public void CopyBuffer<T>(BufferSlice destination, ShaderDataLayout<T> layout, ReadOnlySpan<T> values) where T : IShaderData;
++        public void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination, ShaderDataLayout<T> layout) where T : IShaderData;
 +
 +        // GPU module の生成
 +        // profile・必須機能・ABI を検証

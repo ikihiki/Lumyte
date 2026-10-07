@@ -80,11 +80,11 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // 既存 Upload buffer の CPU memory に bytes をコピーする。GPU 命令や送信は作らない。
 +        // GPU 転送は CommandEncoder.RecordCopyBuffer → Finish → Submit で利用者が明示する。
-+        public void CopyBuffer(BufferSlice destination, ReadOnlySpan<byte> source);
++        public void CopyBuffer(ReadOnlySpan<byte> source, BufferSlice destination);
 +
-+        // 利用者が確保・コピー・送信・完了観測を済ませた Readback buffer から CPU bytes を読む。
-+        // staging 確保、コピー命令、Submit、GPU 完了待機を内部で自動実行しない。詳細は ADR-0009。
-+        public ValueTask<Result<byte[]>> ReadBufferAsync(BufferSlice source, CancellationToken cancellationToken = default);
++        // 利用者の CPU destination へ、GPU 完了を観測した Readback buffer の bytes をコピーする。
++        // 確保・GPU コピー・送信・待機を代行しない。詳細は ADR-0009。
++        public void CopyBuffer(BufferSlice source, Span<byte> destination);
 +
 +        // GPU データの型付き参照を作る
 +        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
@@ -261,6 +261,25 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 `GpuReference<T>` は所有権を持たず元の Buffer の寿命を延ばさない。`ResourceDependency` は対象範囲と producer／consumer のアクセスを表す。`ShaderArguments` は Runtime 所有領域の非所有参照で、所属フレームの完了後は再使用できない。`GraphicsPipelineDesc` と ShaderModule の引数レイアウトが一致しない場合は生成を失敗させる。
 
 Swapchain の生成・acquire・present はこの ADR の公開 API 範囲に含めず、後続 ADR で定める。最初の検証経路は画面表示を必要としないオフスクリーン描画とする。
+
+### コマンドのバックエンド境界
+
+以下は非公開の概念的なコマンド契約の抜粋。Token は内部 handle、結果／診断型と ABI layout は別途具体化する。Buffer の契約とは別に実装する。
+
+```diff
++namespace Lumyte.Graphics.Implementation
++{
++    internal interface ICommandBufferBackendContract
++    {
++        // GPU コピーをコマンドへ記録する。検証後に参照を保持し、送信と実行は行わない。
++        void RecordCopyBuffer(EncoderToken encoder, BufferRange source, BufferRange destination);
++
++        // 利用者が指定した依存を native barrier／resource scope へ変換する。
++        // Buffer が依存を決定しない。利用者の明示的な Barrier のみを扱う。
++        void Barrier(EncoderToken encoder, ReadOnlySpan<ResourceDependency> dependencies);
++    }
++}
+```
 
 ### 所有権、同期、スレッド
 

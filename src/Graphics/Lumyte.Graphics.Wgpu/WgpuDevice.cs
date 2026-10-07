@@ -137,16 +137,23 @@ internal sealed unsafe class WgpuDevice : IDisposable
         }
     }
 
-    public uint[] ReadBuffer(Buffer buffer)
+    public void CopyBuffer(BufferSlice source, Span<byte> destination)
     {
         lock (Gate)
         {
-            Check(); buffer.Check(this); buffer.RequireIdle();
-            if (buffer.Memory != MemoryPreference.Readback || buffer.SizeInBytes > int.MaxValue)
-                throw new ArgumentException("A completed readback buffer with a managed-size range is required.");
+            Check(); if (source.Buffer is null) throw new ArgumentException("Invalid slice.");
+            var buffer = source.Buffer;
+            buffer.Check(this); buffer.RequireIdle();
+            if (buffer.Memory != MemoryPreference.Readback || buffer.SizeInBytes > int.MaxValue || source.Length > (ulong)destination.Length)
+                throw new ArgumentException("CPU copy requires completed Readback memory and a sufficient destination.");
             var status = buffer.Native.MapBlocking(Instance, A.MapMode.Read, 0, (nuint)buffer.SizeInBytes);
             if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"Buffer map failed: {status}");
-            try { CheckErrors(); return buffer.Native.GetConstMappedRange<uint>(0, (nuint)buffer.SizeInBytes).ToArray(); }
+            try
+            {
+                CheckErrors();
+                buffer.Native.GetConstMappedRange<byte>(0, (nuint)buffer.SizeInBytes)
+                    .Slice(checked((int)source.Offset), checked((int)source.Length)).CopyTo(destination);
+            }
             finally { buffer.Native.Unmap(); }
         }
     }

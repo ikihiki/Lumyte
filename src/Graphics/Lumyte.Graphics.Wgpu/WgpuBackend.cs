@@ -35,8 +35,8 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         return device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = Get<ShaderModule>(desc.Shader), VertexEntry = desc.VertexEntry, FragmentEntry = desc.FragmentEntry });
     }
     public object CreateReference<T>(G.BufferSlice data) where T : unmanaged => device.CreateReference<T>(Slice(data));
-    public void CopyBuffer<T>(G.BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged => device.CopyBuffer(Slice(destination), values);
-    public uint[] ReadBuffer(G.Buffer buffer) => device.ReadBuffer(Get<Buffer>(buffer));
+    public void CopyBuffer<T>(ReadOnlySpan<T> values, G.BufferSlice destination) where T : unmanaged => device.CopyBuffer(Slice(destination), values);
+    public void CopyBuffer(G.BufferSlice source, Span<byte> destination) => device.CopyBuffer(Slice(source), destination);
     public object CreateCommandEncoder() => device.CreateCommandEncoder();
     public object Submit(G.CommandBuffer commands) => device.Submit(Get<CommandBuffer>(commands));
     public void DisposeHandle(object handle) => ((IDisposable)handle).Dispose();

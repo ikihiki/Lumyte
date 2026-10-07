@@ -14,7 +14,7 @@ using (var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Sha
     using var upload = device.CreateBuffer(new BufferDesc {
         SizeInBytes = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
     });
-    device.CopyBuffer<uint>(upload.Slice(0, 32), new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+    device.CopyBuffer<uint>(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 }, upload.Slice(0, 32));
     using var arguments = pipeline.CreateArguments(device.CreateReference<uint>(buffer.Slice(0, 32)));
     using var encoder = device.CreateCommandEncoder();
     encoder.RecordCopyBuffer(upload.Slice(0, 32), buffer.Slice(0, 32));
@@ -23,7 +23,7 @@ using (var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Sha
     using var commands = encoder.Finish();
     var submission = device.Submit(commands);
     await submission.WaitAsync();
-    if (!device.ReadBuffer(readback).SequenceEqual(new uint[] { 2, 4, 6, 8, 10, 12, 14, 16 }))
+    if (!ReadWords(device, readback).SequenceEqual(new uint[] { 2, 4, 6, 8, 10, 12, 14, 16 }))
         throw new InvalidOperationException("Compute readback mismatch.");
     Console.WriteLine("PASS: Slang → WGSL → wgpu compute, opaque data reference and buffer readback.");
 }
@@ -45,11 +45,19 @@ using (var encoder = device.CreateCommandEncoder())
     encoder.RecordCopyTextureToBuffer(texture, readback, 256);
     using var commands = encoder.Finish();
     await device.Submit(commands).WaitAsync();
-    var pixels = device.ReadBuffer(readback);
+    var pixels = ReadWords(device, readback);
     // Read exact bytes rather than assuming host UInt32 endianness.
     var center = MemoryMarshal.AsBytes(pixels.AsSpan()).Slice((32 * 64 + 32) * 4, 4);
     var corner = MemoryMarshal.AsBytes(pixels.AsSpan()).Slice(0, 4);
     if (!center.SequenceEqual(new byte[] { 255, 0, 0, 255 }) || !corner.SequenceEqual(new byte[] { 0, 0, 255, 255 }))
         throw new InvalidOperationException("Offscreen triangle readback mismatch.");
     Console.WriteLine("PASS: Slang → WGSL → RenderEncoder triangle, clear color and texture readback.");
+}
+
+// CPU result storage is allocated by this sample, not by the buffer backend.
+static uint[] ReadWords(GraphicsDevice device, Lumyte.Graphics.Buffer buffer)
+{
+    var words = new uint[checked((int)(buffer.SizeInBytes / 4))];
+    device.CopyBuffer(buffer.Slice(0, buffer.SizeInBytes), MemoryMarshal.AsBytes(words.AsSpan()));
+    return words;
 }

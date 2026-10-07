@@ -66,10 +66,10 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // blittable データを idle な Memory=Upload／Usage=CopySource buffer の CPU memory にコピーする。
 +        // queue write、GPU コピー、送信を行わない。未知の Slang 型の ABI を自動保証しない。
-+        public void CopyBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged;
++        public void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination) where T : unmanaged;
 +
 +        // raw bytes 用の同じ CPU コピー契約。
-+        public void CopyBuffer(BufferSlice destination, ReadOnlySpan<byte> source);
++        public void CopyBuffer(ReadOnlySpan<byte> source, BufferSlice destination);
 +
 +        // 初期の登録済みデータ schema は UInt32 配列のみ
 +        // 非所有・型付きの不透明参照を作る
@@ -94,9 +94,9 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 二重送信は Native に渡す前に拒否
 +        public Submission Submit(CommandBuffer commands);
 +
-+        // 256-byte pitch の color コピー、完了後の UInt32 読み戻し
++        // 256-byte pitch の color コピー、完了後の caller 所有 CPU memory へのコピー
 +        // サンプルは bytes として pixel を検証
-+        public uint[] ReadBuffer(Buffer buffer);
++        public void CopyBuffer(BufferSlice source, Span<byte> destination);
 +    }
 +
 +    public sealed class Buffer : GpuResource
@@ -130,7 +130,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 二重送信は Native に渡す前に拒否
 +        public CommandBuffer Finish();
 +
-+        // 256-byte pitch の color コピー、完了後の UInt32 読み戻し
++        // 256-byte pitch の color コピー、完了後の caller 所有 CPU memory へのコピー
 +        // サンプルは bytes として pixel を検証
 +        public void RecordCopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow);
 +    }
@@ -182,7 +182,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
+初期の CPU CopyBuffer は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 
 ### GPU 参照、所有権、同期
 
@@ -196,7 +196,7 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 ### リソース設計の拡張範囲
 
-[ADR-0009](0009-buffer-resource-contract.md)、[ADR-0010](0010-texture-resource-contract.md)、[ADR-0011](0011-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
+[ADR-0009](0009-buffer-resource-contract.md)、[ADR-0010](0010-texture-resource-contract.md)、[ADR-0011](0011-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。初期 driver も IBufferBackendContract と ICommandBufferBackendContract を分離する。buffer 側は CPU CopyBuffer の双方向 overload、コマンド側は GPU コピーの記録・送信を持つ。Barrier の利用者向け拡張は ADR-0004 の提案に残す。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
 
 ### シェーダーと検証
 

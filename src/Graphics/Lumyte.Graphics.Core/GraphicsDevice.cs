@@ -14,9 +14,10 @@ public sealed class GraphicsDevice : IDisposable
     public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new(_driver, _driver.CreateGraphicsPipeline(desc));
     public GpuReference<T> CreateReference<T>(BufferSlice data) where T : unmanaged => new(_driver.CreateReference<T>(data));
     /// <summary>Copies CPU bytes into an idle Upload buffer; records and submits no GPU work.</summary>
-    public void CopyBuffer(BufferSlice destination, ReadOnlySpan<byte> source) => CopyBuffer<byte>(destination, source);
-    public void CopyBuffer<T>(BufferSlice destination, ReadOnlySpan<T> values) where T : unmanaged => _driver.CopyBuffer(destination, values);
-    public uint[] ReadBuffer(Buffer buffer) => _driver.ReadBuffer(buffer);
+    public void CopyBuffer(ReadOnlySpan<byte> source, BufferSlice destination) => CopyBuffer<byte>(source, destination);
+    public void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination) where T : unmanaged => _driver.CopyBuffer(values, destination);
+    /// <summary>Copies completed Readback memory into caller-owned CPU memory; records no GPU work.</summary>
+    public void CopyBuffer(BufferSlice source, Span<byte> destination) => _driver.CopyBuffer(source, destination);
     public CommandEncoder CreateCommandEncoder() => new(_driver, _driver.CreateCommandEncoder());
     public Submission Submit(CommandBuffer commands) => new(_driver, _driver.Submit(commands));
     public void Dispose() => _driver.Dispose();
