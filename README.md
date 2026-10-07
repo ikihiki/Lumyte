@@ -40,6 +40,7 @@ SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセッ�
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
+- [マテリアルバッファからのテクスチャ参照解決の設計案](docs/adr/0012-material-buffer-texture-resolution.md)
 
 - [バッファの利用 API とバックエンド契約](docs/adr/0009-buffer-resource-contract.md)
 - [テクスチャ・ビュー・転送の利用 API とバックエンド契約](docs/adr/0010-texture-resource-contract.md)

@@ -258,6 +258,8 @@ var shadow = frame.CreateArguments(shadowLayout, new ShadowArguments {
 });
 ```
 
+material buffer 内の texture／sampler の組の不透明参照、有限 binding 集合と lifetime は [ADR-0012](0012-material-buffer-texture-resolution.md) に従う。
+
 ## 検討した代替案
 
 ### sampler を texture に固定する

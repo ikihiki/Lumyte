@@ -284,6 +284,8 @@ staging.Slice(0, byteCount).CopyTo(bytes.AsSpan());
 // CPU 読み出しと GPU 使用の完了後に、利用者が staging を解放・再利用する。
 ```
 
+参照を含む material の byte pack、binding 集合との関連、コピー先の予定 metadata とその確定・失効は [ADR-0012](0012-material-buffer-texture-resolution.md) に従う。
+
 ## 検討した代替案
 
 ### Readback helper が確保・コピー・送信・待機をまとめて実行する

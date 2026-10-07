@@ -208,6 +208,8 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ソース位置、severity、コード、ターゲット、依存 module を ShaderDiagnostic に残す。未対応機能、コンパイラ不在、コード生成失敗、ABI 不一致を区別する。session の並列利用を仮定せず、provider は要求単位の session または直列化を管理する。キャンセル後の結果は公開せず、Native 処理が停止できない場合も終了後に所有リソースを解放する。
 
+GPU buffer 内の sampled texture／sampler 参照を使う material 配列の有限集合、Slang helper、profile、pack と寿命の契約は [ADR-0012](0012-material-buffer-texture-resolution.md) で具体化する。WebGPU の参照グラフの制約内で、個別 resource binding と内部 selector による選択を行う。
+
 ## 検討した代替案
 
 ### バックエンドごとに HLSL／GLSL／WGSL を手書きする

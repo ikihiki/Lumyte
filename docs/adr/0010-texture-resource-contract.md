@@ -346,6 +346,8 @@ render.Draw(args, new DrawDesc { VertexCount = 3 });
 // Barrier と BeginRenderPass はパス外。各 mip は個別に Upload する。
 ```
 
+material の GPU buffer から sampled view と sampler の組を選択する経路は [ADR-0012](0012-material-buffer-texture-resolution.md) に従う。view 自身を storage buffer に格納せず、finite binding 集合と不透明な wire 参照を使う。
+
 ## 検討した代替案
 
 ### Texture と sampler を一つの所有 resource にする
