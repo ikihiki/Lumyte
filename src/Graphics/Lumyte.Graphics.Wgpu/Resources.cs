@@ -37,7 +37,7 @@ internal abstract class GpuResource : IDisposable
     protected abstract void ReleaseNative();
 }
 
-internal sealed class Buffer : GpuResource
+internal sealed class Buffer : GpuResource, IBufferBackendContract
 {
     internal A.Buffer Native { get; }
     public ulong SizeInBytes { get; }
@@ -53,6 +53,41 @@ internal sealed class Buffer : GpuResource
             if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
                 throw new ArgumentOutOfRangeException(nameof(length));
             return new(this, offset, length);
+        }
+    }
+    public void ValidateRange(ulong offset, ulong length) => Slice(offset, length);
+    public void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
+    {
+        lock (Owner.Gate)
+        {
+            ValidateRange(offset, length); RequireIdle();
+            if (Memory != MemoryPreference.Upload || SizeInBytes > int.MaxValue || (ulong)source.Length > length)
+                throw new ArgumentException("CPU copy requires an idle Upload buffer and a valid managed-size range.");
+            var status = Native.MapBlocking(Owner.Instance, A.MapMode.Write, 0, (nuint)SizeInBytes);
+            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"Buffer map failed: {status}");
+            try
+            {
+                Owner.CheckErrors();
+                source.CopyTo(Native.GetMappedRange<byte>(0, (nuint)SizeInBytes).Slice(checked((int)offset), source.Length));
+            }
+            finally { Native.Unmap(); }
+        }
+    }
+    public void CopyTo(Span<byte> destination, ulong offset, ulong length)
+    {
+        lock (Owner.Gate)
+        {
+            ValidateRange(offset, length); RequireIdle();
+            if (Memory != MemoryPreference.Readback || SizeInBytes > int.MaxValue || length > (ulong)destination.Length)
+                throw new ArgumentException("CPU copy requires completed Readback memory and a sufficient destination.");
+            var status = Native.MapBlocking(Owner.Instance, A.MapMode.Read, 0, (nuint)SizeInBytes);
+            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"Buffer map failed: {status}");
+            try
+            {
+                Owner.CheckErrors();
+                Native.GetConstMappedRange<byte>(0, (nuint)SizeInBytes).Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
+            }
+            finally { Native.Unmap(); }
         }
     }
     protected override void ReleaseNative() => Native.Dispose();

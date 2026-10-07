@@ -13,7 +13,7 @@ Texture を単なる画像 handle として扱うと、mip／layer／aspect、fo
 
 ### 利用側の公開 API
 
-Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の GraphicsDevice.CopyBuffer で CPU bytes を読む。Texture と TextureView は sealed な所有 class とし、利用者による直接 constructor、native image／view handle の取得、CPU map は提供しない。
+Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の BufferSlice.CopyTo で CPU bytes を読む。Texture と TextureView は sealed な所有 class とし、利用者による直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
 API は .NET の API review／API diff に倣い、namespace・型・メンバーを C# 宣言でまとめる。`+` は origin/main に対する追加 API、`-` は削除 API、無印は変更の文脈を表す。この PR の main には Graphics API がないため、掲載する宣言は追加として表示する。各ブロックは当該 ADR の対象メンバーの抜粋であり、実装コードではない。説明と検証条件は宣言の `//` コメントに記す。提案と実装済みの区別は ADR の状態と本文に従う。
 
@@ -135,9 +135,9 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 
 ### 明示的なテクスチャ Readback
 
-利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の Buffer を確保し、CommandEncoder で依存と RecordCopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 GraphicsDevice.CopyBuffer で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
+利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の Buffer を確保し、CommandEncoder で依存と RecordCopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 BufferSlice.CopyTo で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
 
-bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU destination の確保と成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を CPU CopyBuffer が追加する根拠にはしない。CPU コピーと Submission 待機の契約は ADR-0009 に従う。
+bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU destination の確保と成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を CPU CopyFrom／CopyTo が追加する根拠にはしない。CPU コピーと Submission 待機の契約は ADR-0009 に従う。
 
 ### TextureDesc
 
@@ -360,7 +360,7 @@ TextureView は独自の native view を所有し、その存続中は元 Textur
 // texture: Rgba8Srgb、Sampled | CopyDestination、mip 数を指定して生成済み
 // 利用者が Memory=Upload／Usage=CopySource の uploadBuffer を生成済み。
 var staging = uploadBuffer.Slice(0, (ulong)paddedRgbaBytes.Length);
-device.CopyBuffer(paddedRgbaBytes, staging); // CPU memory へのコピーのみ。
+staging.CopyFrom(paddedRgbaBytes); // CPU memory へのコピーのみ。
 commands.RecordCopyBufferToTexture(staging, texture, new TextureCopyDesc {
     Extent = new Extent3D(width, height, 1),
     BytesPerRow = paddedPitch,

@@ -14,7 +14,7 @@ public sealed class BackendTests
     private static uint[] ReadWords(GraphicsDevice device, Buffer buffer)
     {
         var words = new uint[checked((int)(buffer.SizeInBytes / 4))];
-        device.CopyBuffer(buffer.Slice(0, buffer.SizeInBytes), MemoryMarshal.AsBytes(words.AsSpan()));
+        buffer.CopyTo(MemoryMarshal.AsBytes(words.AsSpan()));
         return words;
     }
 
@@ -26,18 +26,23 @@ public sealed class BackendTests
             SizeInBytes = 16, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
         using var readback = Readback(device, 16);
-        device.CopyBuffer(Enumerable.Range(0, 16).Select(x => (byte)x).ToArray(), upload.Slice(0, 16));
+        upload.CopyFrom(Enumerable.Range(0, 16).Select(x => (byte)x).ToArray());
+        upload.Slice(3, 4).CopyFrom(new byte[] { 30, 40 });
         using var encoder = device.CreateCommandEncoder();
         encoder.RecordCopyBuffer(upload.Slice(0, 16), readback.Slice(0, 16));
         using var commands = encoder.Finish();
         device.Submit(commands).Wait();
         var destination = Enumerable.Repeat((byte)255, 8).ToArray();
-        device.CopyBuffer(readback.Slice(3, 4), destination.AsSpan());
-        Assert.Equal(new byte[] { 3, 4, 5, 6, 255, 255, 255, 255 }, destination);
-        Assert.Throws<ArgumentException>(() => device.CopyBuffer(readback.Slice(0, 16), new byte[4].AsSpan()));
-        Assert.Throws<ArgumentException>(() => device.CopyBuffer(upload.Slice(0, 4), new byte[4].AsSpan()));
-        using var second = Graphics.CreateDevice();
-        Assert.Throws<ArgumentException>(() => second.CopyBuffer(readback.Slice(0, 4), new byte[4].AsSpan()));
+        readback.Slice(3, 4).CopyTo(destination.AsSpan());
+        Assert.Equal(new byte[] { 30, 40, 5, 6, 255, 255, 255, 255 }, destination);
+        Assert.Throws<ArgumentException>(() => readback.Slice(0, 16).CopyTo(new byte[4].AsSpan()));
+        Assert.Throws<ArgumentException>(() => upload.Slice(0, 4).CopyTo(new byte[4].AsSpan()));
+        Assert.Throws<ArgumentException>(() => default(BufferSlice).CopyTo(new byte[4].AsSpan()));
+        Assert.Throws<ArgumentException>(() => default(BufferSlice).CopyFrom(new byte[4]));
+        Assert.Throws<ArgumentException>(() => upload.CopyFrom(new byte[17]));
+        var stale = upload.Slice(0, 4);
+        upload.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => stale.CopyFrom(new byte[4]));
     }
 
     [Fact]
@@ -50,16 +55,16 @@ public sealed class BackendTests
         using var gpu = device.CreateBuffer(new BufferDesc {
             SizeInBytes = 16, Usage = BufferUsage.CopyDestination,
         });
-        Assert.Throws<ArgumentException>(() => device.CopyBuffer<uint>(new uint[] { 1, 2, 3, 4 }, gpu.Slice(0, 16)));
+        Assert.Throws<ArgumentException>(() => gpu.Slice(0, 16).CopyFrom<uint>(new uint[] { 1, 2, 3, 4 }));
         Assert.Throws<ArgumentException>(() => device.CreateBuffer(new BufferDesc {
             SizeInBytes = 16, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Upload,
         }));
-        device.CopyBuffer<uint>(new uint[] { 1, 2, 3, 4 }, upload.Slice(0, 16));
-        device.CopyBuffer(MemoryMarshal.AsBytes(new uint[] { 5, 6, 7, 8 }.AsSpan()), upload.Slice(0, 16));
+        upload.Slice(0, 16).CopyFrom<uint>(new uint[] { 1, 2, 3, 4 });
+        upload.Slice(0, 16).CopyFrom(MemoryMarshal.AsBytes(new uint[] { 5, 6, 7, 8 }.AsSpan()));
         using var output = Readback(device, 16);
         using var encoder = device.CreateCommandEncoder();
         encoder.RecordCopyBuffer(upload.Slice(0, 16), output.Slice(0, 16));
-        Assert.Throws<InvalidOperationException>(() => device.CopyBuffer<uint>(new uint[] { 9 }, upload.Slice(0, 16)));
+        Assert.Throws<InvalidOperationException>(() => upload.Slice(0, 16).CopyFrom<uint>(new uint[] { 9 }));
         Assert.Throws<InvalidOperationException>(() => ReadWords(device, output));
         using var commands = encoder.Finish();
         device.Submit(commands).Wait();
@@ -121,7 +126,7 @@ public sealed class BackendTests
         using var upload = device.CreateBuffer(new BufferDesc {
             SizeInBytes = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
-        device.CopyBuffer<uint>(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 }, upload.Slice(0, 32));
+        upload.CopyFrom<uint>(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
         var reference = device.CreateReference<uint>(data.Slice(0, 32));
         Assert.Equal("GpuReference<UInt32>", reference.ToString());
         using var arguments = pipeline.CreateArguments(reference);
@@ -148,7 +153,7 @@ public sealed class BackendTests
         using var upload = device.CreateBuffer(new BufferDesc {
             SizeInBytes = 12, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
-        device.CopyBuffer<uint>(new uint[] { 0, 1, 2 }, upload.Slice(0, 12));
+        upload.Slice(0, 12).CopyFrom<uint>(new uint[] { 0, 1, 2 });
         using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.triangle.wgsl");
         using var pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
         using var encoder = device.CreateCommandEncoder();

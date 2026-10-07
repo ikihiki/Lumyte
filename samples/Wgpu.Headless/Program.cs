@@ -14,7 +14,7 @@ using (var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Sha
     using var upload = device.CreateBuffer(new BufferDesc {
         SizeInBytes = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
     });
-    device.CopyBuffer<uint>(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 }, upload.Slice(0, 32));
+    upload.CopyFrom<uint>(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
     using var arguments = pipeline.CreateArguments(device.CreateReference<uint>(buffer.Slice(0, 32)));
     using var encoder = device.CreateCommandEncoder();
     encoder.RecordCopyBuffer(upload.Slice(0, 32), buffer.Slice(0, 32));
@@ -58,6 +58,6 @@ using (var encoder = device.CreateCommandEncoder())
 static uint[] ReadWords(GraphicsDevice device, Lumyte.Graphics.Buffer buffer)
 {
     var words = new uint[checked((int)(buffer.SizeInBytes / 4))];
-    device.CopyBuffer(buffer.Slice(0, buffer.SizeInBytes), MemoryMarshal.AsBytes(words.AsSpan()));
+    buffer.CopyTo(MemoryMarshal.AsBytes(words.AsSpan()));
     return words;
 }

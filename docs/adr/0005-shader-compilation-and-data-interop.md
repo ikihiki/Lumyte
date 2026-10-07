@@ -177,14 +177,25 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 所有権を持たない
 +        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
 +
-+        // 生成データ型を target layout に pack し、利用者の Upload buffer の CPU memory にコピーする。
-+        // 参照フィールドを解決して metadata を登録。GPU コピー、staging 確保、送信は行わない。
-+        public void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination, ShaderDataLayout<T> layout) where T : IShaderData;
-+
 +        // GPU module の生成
 +        // profile・必須機能・ABI を検証
 +        // コンパイル provider は起動しない
 +        public Result<ShaderModule> CreateShader(ShaderArtifact artifact);
++    }
++    public sealed class Buffer : IDisposable
++    {
++
++        // 生成 serializer で target layout に pack。schema／layout ID と参照依存を登録する。
++        // staging 確保・GPU 転送・送信は行わず、参照を含む C# struct の memcpy はしない。
++        public void CopyFrom<T>(ReadOnlySpan<T> values, ShaderDataLayout<T> layout) where T : IShaderData;
++    }
++    public readonly struct BufferSlice
++    {
++
++        // 生成 serializer で target layout に pack。schema／layout ID と参照依存を登録する。
++        // staging 確保・GPU 転送・送信は行わず、参照を含む C# struct の memcpy はしない。
++        public void CopyFrom<T>(ReadOnlySpan<T> values, ShaderDataLayout<T> layout) where T : IShaderData;
++        // この slice の範囲へ pack する。
 +    }
 +}
 +
@@ -200,7 +211,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-`IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、型付き `CopyBuffer<T>` はフィールドを列挙して値と参照を解決し、利用者が確保した Upload buffer の CPU memory に pack する。GPU への転送は利用者が RecordCopyBuffer を記録し、CommandBuffer を Submit する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。CPU pack した staging と明示的な転送先の領域には schema／layout ID と解決した参照の依存情報を記録し、CreateReference と引数 pack で照合する。生の BufferSlice にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
+`IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、型付き `CopyFrom<T>` はフィールドを列挙して値と参照を解決し、利用者が確保した Upload buffer の CPU memory に pack する。GPU への転送は利用者が RecordCopyBuffer を記録し、CommandBuffer を Submit する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。CPU pack した staging と明示的な転送先の領域には schema／layout ID と解決した参照の依存情報を記録し、CreateReference と引数 pack で照合する。生の BufferSlice にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
 
 ソース位置、severity、コード、ターゲット、依存 module を ShaderDiagnostic に残す。未対応機能、コンパイラ不在、コード生成失敗、ABI 不一致を区別する。session の並列利用を仮定せず、provider は要求単位の session または直列化を管理する。キャンセル後の結果は公開せず、Native 処理が停止できない場合も終了後に所有リソースを解放する。
 

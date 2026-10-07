@@ -13,11 +13,6 @@ public sealed class GraphicsDevice : IDisposable
     public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => new(_driver, _driver.CreateComputePipeline(desc));
     public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new(_driver, _driver.CreateGraphicsPipeline(desc));
     public GpuReference<T> CreateReference<T>(BufferSlice data) where T : unmanaged => new(_driver.CreateReference<T>(data));
-    /// <summary>Copies CPU bytes into an idle Upload buffer; records and submits no GPU work.</summary>
-    public void CopyBuffer(ReadOnlySpan<byte> source, BufferSlice destination) => CopyBuffer<byte>(source, destination);
-    public void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination) where T : unmanaged => _driver.CopyBuffer(values, destination);
-    /// <summary>Copies completed Readback memory into caller-owned CPU memory; records no GPU work.</summary>
-    public void CopyBuffer(BufferSlice source, Span<byte> destination) => _driver.CopyBuffer(source, destination);
     public CommandEncoder CreateCommandEncoder() => new(_driver, _driver.CreateCommandEncoder());
     public Submission Submit(CommandBuffer commands) => new(_driver, _driver.Submit(commands));
     public void Dispose() => _driver.Dispose();
@@ -33,11 +28,17 @@ public abstract class GpuResource : IDisposable
 
 public sealed class Buffer : GpuResource
 {
-    internal Buffer(IGraphicsDriver driver, object handle) : base(driver, handle) { }
-    public ulong SizeInBytes => Driver.BufferSize(Handle);
+    internal IBufferBackendContract Backend { get; }
+    internal Buffer(IGraphicsDriver driver, IBufferBackendContract backend) : base(driver, backend) => Backend = backend;
+    public ulong SizeInBytes => Backend.SizeInBytes;
+    /// <summary>Copies CPU bytes into this idle Upload buffer without recording GPU work.</summary>
+    public void CopyFrom(ReadOnlySpan<byte> source) => Backend.CopyFrom(source, 0, SizeInBytes);
+    public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged => CopyFrom(System.Runtime.InteropServices.MemoryMarshal.AsBytes(values));
+    /// <summary>Copies this completed Readback buffer into caller-owned CPU memory.</summary>
+    public void CopyTo(Span<byte> destination) => Backend.CopyTo(destination, 0, SizeInBytes);
     public BufferSlice Slice(ulong offset, ulong length)
     {
-        Driver.ValidateSlice(Handle, offset, length);
+        Backend.ValidateRange(offset, length);
         return new(this, offset, length);
     }
 }

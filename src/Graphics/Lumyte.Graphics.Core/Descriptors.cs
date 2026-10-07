@@ -68,6 +68,12 @@ public readonly struct BufferSlice
     public Buffer Buffer { get; }
     public ulong Offset { get; }
     public ulong Length { get; }
+    private IBufferBackendContract Backend => Buffer?.Backend ?? throw new ArgumentException("Invalid buffer slice.");
+    /// <summary>Copies CPU bytes into this idle Upload range; its remaining bytes are unchanged.</summary>
+    public void CopyFrom(ReadOnlySpan<byte> source) => Backend.CopyFrom(source, Offset, Length);
+    public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged => CopyFrom(System.Runtime.InteropServices.MemoryMarshal.AsBytes(values));
+    /// <summary>Copies this completed Readback range; the remaining destination bytes are unchanged.</summary>
+    public void CopyTo(Span<byte> destination) => Backend.CopyTo(destination, Offset, Length);
     internal BufferSlice(Buffer buffer, ulong offset, ulong length) => (Buffer, Offset, Length) = (buffer, offset, length);
 }
 

@@ -21,7 +21,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     private BufferSlice Slice(G.BufferSlice slice) => Get<Buffer>(slice.Buffer).Slice(slice.Offset, slice.Length);
     public void Dispose() => device.Dispose();
     public ulong MaxBufferSize => device.MaxBufferSize;
-    public object CreateBuffer(BufferDesc desc) => device.CreateBuffer(desc);
+    public IBufferBackendContract CreateBuffer(BufferDesc desc) => device.CreateBuffer(desc);
     public object CreateTexture(TextureDesc desc) => device.CreateTexture(desc);
     public object CreateShader(Assembly assembly, string resourceName) => device.CreateShader(assembly, resourceName);
     public object CreateComputePipeline(G.ComputePipelineDesc desc)
@@ -35,13 +35,9 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         return device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = Get<ShaderModule>(desc.Shader), VertexEntry = desc.VertexEntry, FragmentEntry = desc.FragmentEntry });
     }
     public object CreateReference<T>(G.BufferSlice data) where T : unmanaged => device.CreateReference<T>(Slice(data));
-    public void CopyBuffer<T>(ReadOnlySpan<T> values, G.BufferSlice destination) where T : unmanaged => device.CopyBuffer(Slice(destination), values);
-    public void CopyBuffer(G.BufferSlice source, Span<byte> destination) => device.CopyBuffer(Slice(source), destination);
     public object CreateCommandEncoder() => device.CreateCommandEncoder();
     public object Submit(G.CommandBuffer commands) => device.Submit(Get<CommandBuffer>(commands));
     public void DisposeHandle(object handle) => ((IDisposable)handle).Dispose();
-    public ulong BufferSize(object handle) => ((Buffer)handle).SizeInBytes;
-    public void ValidateSlice(object handle, ulong offset, ulong length) => ((Buffer)handle).Slice(offset, length);
     public uint TextureWidth(object handle) => ((Texture)handle).Width;
     public uint TextureHeight(object handle) => ((Texture)handle).Height;
     public object CreateView(object handle) => ((Texture)handle).CreateView();

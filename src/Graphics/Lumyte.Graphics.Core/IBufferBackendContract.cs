@@ -1,13 +1,11 @@
 namespace Lumyte.Graphics;
 
-// Buffer allocation, ranges and CPU memory copies; no commands, submission or barriers.
-internal interface IBufferBackendContract
+// One backend buffer instance owns its allocation and CPU memory access.
+// Commands, submission and barriers belong to the command backend.
+internal interface IBufferBackendContract : IDisposable
 {
-    ulong MaxBufferSize { get; }
-    object CreateBuffer(BufferDesc desc);
-    object CreateReference<T>(BufferSlice data) where T : unmanaged;
-    void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination) where T : unmanaged;
-    void CopyBuffer(BufferSlice source, Span<byte> destination);
-    ulong BufferSize(object handle);
-    void ValidateSlice(object handle, ulong offset, ulong length);
+    ulong SizeInBytes { get; }
+    void ValidateRange(ulong offset, ulong length);
+    void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length);
+    void CopyTo(Span<byte> destination, ulong offset, ulong length);
 }

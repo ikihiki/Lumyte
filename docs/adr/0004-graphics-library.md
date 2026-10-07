@@ -78,14 +78,6 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // GPU アドレスや CPU mapping を保証しない
 +        public Result<Buffer> CreateBuffer(BufferDesc desc);
 +
-+        // 既存 Upload buffer の CPU memory に bytes をコピーする。GPU 命令や送信は作らない。
-+        // GPU 転送は CommandEncoder.RecordCopyBuffer → Finish → Submit で利用者が明示する。
-+        public void CopyBuffer(ReadOnlySpan<byte> source, BufferSlice destination);
-+
-+        // 利用者の CPU destination へ、GPU 完了を観測した Readback buffer の bytes をコピーする。
-+        // 確保・GPU コピー・送信・待機を代行しない。詳細は ADR-0009。
-+        public void CopyBuffer(BufferSlice source, Span<byte> destination);
-+
 +        // GPU データの型付き参照を作る
 +        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
 +        // 実アドレスを公開しない
@@ -126,10 +118,28 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +    public sealed class Buffer : IDisposable
 +    {
++        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
++        public void CopyFrom(ReadOnlySpan<byte> source);
++
++        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
++        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
++        public void CopyTo(Span<byte> destination);
++
 +        // 非所有の部分領域
 +        // 境界を検証
 +        // 元の Buffer の寿命を延ばさない
 +        public BufferSlice Slice(ulong offset, ulong length);
++    }
++
++    public readonly struct BufferSlice
++    {
++        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
++        public void CopyFrom(ReadOnlySpan<byte> source);
++
++        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
++        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
++        public void CopyTo(Span<byte> destination);
++        // 元 Buffer を所有しない。操作は slice の範囲だけ。default は ArgumentException。
 +    }
 +
 +    public sealed class Texture : IDisposable
@@ -285,7 +295,7 @@ Swapchain の生成・acquire・present はこの ADR の公開 API 範囲に含
 
 Core の `Dispose()` は即時解放を要求する操作とし、利用者は未完了の GPU 使用がないことを保証する。通常の利用では Runtime の遅延解放を使用する。BufferSlice、GpuReference、TextureView の参照先、引数、内部ディスクリプタスロットの再利用にも同じ完了条件を適用する。Device は子リソースと GPU 使用の終了後に解放する。
 
-記録中・送信済みコマンドが参照する引数やリソースを変更、破棄、再利用してはならない。Upload は利用者が確保した staging への CPU CopyBuffer と、明示的な RecordCopyBuffer／CommandBuffer の送信に分ける。書き込み内容の可視化は送信とバックエンドの同期規約で保証し、C# の CPU 書き込みだけで GPU 可視性が成立すると扱わない。
+記録中・送信済みコマンドが参照する引数やリソースを変更、破棄、再利用してはならない。Upload は利用者が確保した staging への CPU CopyFrom／CopyTo と、明示的な RecordCopyBuffer／CommandBuffer の送信に分ける。書き込み内容の可視化は送信とバックエンドの同期規約で保証し、C# の CPU 書き込みだけで GPU 可視性が成立すると扱わない。
 
 初期の共通経路は単一キューで、送信順を保持する。GPU 完了は Submission の完了で判定し、CPU フレーム番号だけでは判定しない。Encoder／RenderEncoder／FrameContext は単一スレッドから操作する。Device の生成・送信操作は利用側で直列化し、Browser ではバックエンドが実行コンテキストの制約を守る。並列記録と複数キューは後続拡張とする。
 

@@ -64,13 +64,6 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 初期 buffer のサイズは 4-byte の倍数
 +        public Buffer CreateBuffer(BufferDesc desc);
 +
-+        // blittable データを idle な Memory=Upload／Usage=CopySource buffer の CPU memory にコピーする。
-+        // queue write、GPU コピー、送信を行わない。未知の Slang 型の ABI を自動保証しない。
-+        public void CopyBuffer<T>(ReadOnlySpan<T> values, BufferSlice destination) where T : unmanaged;
-+
-+        // raw bytes 用の同じ CPU コピー契約。
-+        public void CopyBuffer(ReadOnlySpan<byte> source, BufferSlice destination);
-+
 +        // 初期の登録済みデータ schema は UInt32 配列のみ
 +        // 非所有・型付きの不透明参照を作る
 +        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : unmanaged;
@@ -93,17 +86,35 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 一回限りの送信
 +        // 二重送信は Native に渡す前に拒否
 +        public Submission Submit(CommandBuffer commands);
-+
-+        // 256-byte pitch の color コピー、完了後の caller 所有 CPU memory へのコピー
-+        // サンプルは bytes として pixel を検証
-+        public void CopyBuffer(BufferSlice source, Span<byte> destination);
 +    }
 +
 +    public sealed class Buffer : GpuResource
 +    {
++        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
++        public void CopyFrom(ReadOnlySpan<byte> source);
++
++        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
++        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
++        public void CopyTo(Span<byte> destination);
++        // unmanaged 値を raw bytes として書く。Slang の ABI は自動保証しない。
++        public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged;
++
 +        // サイズ・用途・範囲を検証
 +        // 初期 buffer のサイズは 4-byte の倍数
 +        public BufferSlice Slice(ulong offset, ulong length);
++    }
++
++    public readonly struct BufferSlice
++    {
++        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
++        public void CopyFrom(ReadOnlySpan<byte> source);
++
++        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
++        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
++        public void CopyTo(Span<byte> destination);
++        // unmanaged 値を raw bytes として書く。Slang の ABI は自動保証しない。
++        public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged;
++        // 元 Buffer を所有しない。操作は slice の範囲だけ。default は ArgumentException。
 +    }
 +
 +    public sealed class ComputePipeline : GpuResource
@@ -182,7 +193,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-初期の CPU CopyBuffer は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
+初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 
 ### GPU 参照、所有権、同期
 
@@ -196,13 +207,13 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 ### リソース設計の拡張範囲
 
-[ADR-0009](0009-buffer-resource-contract.md)、[ADR-0010](0010-texture-resource-contract.md)、[ADR-0011](0011-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。初期 driver も IBufferBackendContract と ICommandBufferBackendContract を分離する。buffer 側は CPU CopyBuffer の双方向 overload、コマンド側は GPU コピーの記録・送信を持つ。Barrier の利用者向け拡張は ADR-0004 の提案に残す。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
+[ADR-0009](0009-buffer-resource-contract.md)、[ADR-0010](0010-texture-resource-contract.md)、[ADR-0011](0011-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。初期 driver は IBufferBackendContract の instance を生成し、ICommandBufferBackendContract による命令操作と分離する。具象 buffer instance が native allocation と所属・lease を保持し、buffer 側は CPU CopyFrom／CopyTo、コマンド側は GPU コピーの記録・送信を持つ。Barrier の利用者向け拡張は ADR-0004 の提案に残す。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
 
 ### シェーダーと検証
 
 サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。ビルド時に共有 MSBuild targets が obj 内へ生成し、サンプル／テスト DLL の EmbeddedResource に格納する。生成 WGSL は Git に含めず、別ファイルとして配布しない。実行時は DLL の manifest resource を読み出し、Slang compiler を必要としない。コンパイラはビルド時にのみ必要とする。
 
-テストで consumer と Core の assembly reference に wgpu／Ahjo がないことも確認する。初期 Upload も利用者が Upload buffer を確保し、CPU CopyBuffer 後に RecordCopyBuffer を記録して CommandBuffer を送信する。Ahjo Queue.WriteBuffer による隠れた転送は使用しない。CPU 上書きと GPU 転送の分離、記録後の CPU 書き込み拒否を共通 API で検証する。GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
+テストで consumer と Core の assembly reference に wgpu／Ahjo がないことも確認する。初期 Upload も利用者が Upload buffer を確保し、CPU CopyFrom／CopyTo 後に RecordCopyBuffer を記録して CommandBuffer を送信する。Ahjo Queue.WriteBuffer による隠れた転送は使用しない。CPU 上書きと GPU 転送の分離、記録後の CPU 書き込み拒否を共通 API で検証する。GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
 
 ## 検討した代替案
 
