@@ -54,9 +54,9 @@ API 差分の比較元は origin/main（Graphics API は未導入）。宣言は
 +
 +    public enum MaterialTextureProfile
 +    {
-+        // 固定数の個別 texture／sampler binding と library の選択 helper。
++        // wgpu／Browser WebGPU 向け。固定数の個別 bindings と選択 helper。
 +        PortableFiniteBindings,
-+        // descriptor indexing／non-uniform indexing の機能を明示的に要求する別 profile。
++        // DirectX／Vulkan 向け。descriptor indexing／non-uniform indexing を要求する。
 +        NativeDescriptorIndexing
 +    }
 +
@@ -64,7 +64,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。宣言は
 +    public sealed class MaterialResourceLayout<T> where T : IShaderData
 +    {
 +        public MaterialTextureProfile Profile { get; }
-+        // fallback 用の組を含む容量。正数、プログラム全体の binding 予算にも収まる必要がある。
++        // fallback 用の組を含む正数の容量。profile ごとの binding／descriptor 上限に照合する。
 +        public uint PairCapacity { get; }
 +        // 同じ compiled program の生成 serializer と target wire layout。
 +        public ShaderDataLayout<T> DataLayout { get; }
@@ -122,15 +122,15 @@ API 差分の比較元は origin/main（Graphics API は未導入）。宣言は
 
 profile、PairCapacity、logical schema と material block の構成は artifact の生成時に固定する。target profile、capacity、helper の版を ADR-0005 の cache key と library ABI に含める。binding 集合を作る時に capacity を増やしたり、暗黙にシェーダーを再コンパイルしたりしない。オフラインの場合は利用する capacity の variant を事前コンパイルし、artifact と反射 metadata を DLL に埋め込む。利用者が明示的に compiler provider を呼ぶオンライン方式も同じ metadata を出力する。
 
-### 初期共通 profile: PortableFiniteBindings
+### wgpu／Browser WebGPU: PortableFiniteBindings
 
 backend は texture view と sampler の組を同一 instance の組で deduplicate し、内部の有限 selector を割り当てる。format、view dimension、sampler category の適合は各組で検証する。同じ画像でも view または sampler が異なれば別の組とする。初期 material profile は filterable な float D2 color view と通常 sampler に限定する。unfilterable float、integer、depth／comparison、MSAA、異なる dimension はこの参照型では拒否し、専用の型と shader variant を別途設計する。各固定 slot と fallback の sample type／sampler binding category が同じ compiled layout に適合することを検証する。glTF の texture index をそのまま GPU selector にしない。
 
 PairCapacity = N の shader variant は N 個の texture binding と N 個の sampler binding を宣言し、それぞれの組に一対一で対応させる。参照が同じ組なら複数の material field が同じ selector を使用できる。fallback の組は集合に必ず含め、未使用の宣言済み binding にはその有効な組を割り当てる。これは selector 数値の公開や暗黙の texture 確保を必要としない。配列内の logical null は存在 flag を false にして sampling 自体を行わず、glTF の係数だけを使う。
 
-wgpu では通常の texture／sampler 個別 binding で実現する。optional な binding array／descriptor indexing は共通 profile の成立条件にしない。library の Slang module は selector を有限の switch へ lowering し、各 branch で具体的な texture／sampler binding を参照する。Slang から生成された WGSL を artifact と反射 metadata で検証する。buffer の値を WGSL の opaque resource object に変換する方式は採らない。
+wgpu では通常の texture／sampler 個別 binding で実現する。optional な binding array／descriptor indexing はこの profile の成立条件にしない。library の Slang module は selector を有限の switch へ lowering し、各 branch で具体的な texture／sampler binding を参照する。Slang から生成された WGSL を artifact と反射 metadata で検証する。buffer の値を WGSL の opaque resource object に変換する方式は採らない。
 
-fragment ごとに material index や selector が異なることを許可する。switch 内で暗黙の derivative を使う textureSample を発行すると、WebGPU の uniformity 条件を満たさない可能性がある。そのため初期の共通 helper は `sampleGrad` と `sampleLevel` を提供する。sampleGrad の UV と gradient は caller が一様な制御フローで計算して渡し、各 branch は明示 gradient を使う。compute／vertex や明示 LOD では sampleLevel を使う。uniformity 診断を無効化して成立した扱いにしない。
+fragment ごとに material index や selector が異なることを許可する。switch 内で暗黙の derivative を使う textureSample を発行すると、WebGPU の uniformity 条件を満たさない可能性がある。そのためこの profile の初期 helper は `sampleGrad` と `sampleLevel` を提供する。sampleGrad の UV と gradient は caller が一様な制御フローで計算して渡し、各 branch は明示 gradient を使う。compute／vertex や明示 LOD では sampleLevel を使う。uniformity 診断を無効化して成立した扱いにしない。
 
 N は program 全体の sampled textures／samplers、bind groups、bindings per group、storage buffers と各 stage の limits に照合する。他の shader 引数が使う環境 map、shadow map なども計数する。必要 bytes と material 数は MaxStorageBufferBindingSize などにも照合する。capacity より少ない実リソースしか使わなくても N 個の宣言に対する上限検証を省略しない。失敗時は必要量と利用可能量の診断を返す。
 
@@ -203,19 +203,18 @@ MaterialBindings は snapshot の全参照先 view／texture／sampler と fallb
 
 metadata を維持するコピーは登録済みの source 全範囲と一致し、destination の layout と関連する set が適合する場合に限る。部分コピー、raw byte 上書き、別 set の関連付けは重複した登録を失効させる。失効した範囲の CreateReference／引数 pack は拒否する。マテリアルの再編成や参照追加は新しい set を生成して再 pack／転送する。別 set の selector bytes を流用しない。同じ compiled layout を使う別 set でも identity と世代を照合する。
 
-参照 selector を含む material wire data は共通 profile では shader-read-only。GPU による任意 selector の生成・書き換えは対応しない。GPU material index は load helper が配列範囲を検証し、範囲外では schema が artifact に登録した、texture 参照を持たない診断用の既定 material を返す。glTF 用の schema では baseColorFactor を magenta、metallicFactor=0、roughnessFactor=1、emissiveFactor=0、全 map を null とする。sampling helper の範囲外 selector は既定値 float4(0) を返し、未束縛 resource や無効 descriptor を参照しない。logical default reference、別 Device、型・layout 不一致は CPU 側で先に拒否する。
+参照 selector を含む material wire data は本 ADR の両 profile で shader-read-only。GPU による任意 selector の生成・書き換えは対応しない。GPU material index は load helper が配列範囲を検証し、範囲外では schema が artifact に登録した、texture 参照を持たない診断用の既定 material を返す。glTF 用の schema では baseColorFactor を magenta、metallicFactor=0、roughnessFactor=1、emissiveFactor=0、全 map を null とする。sampling helper の範囲外 selector は既定値 float4(0) を返し、未束縛 resource や無効 descriptor を参照しない。logical default reference、別 Device、型・layout 不一致は CPU 側で先に拒否する。
 
 ### backend と Slang が実装するもの
 
 | profile／backend | resource と wire data の受け渡し |
 | --- | --- |
 | PortableFiniteBindings／managed wgpu | finite selector と存在 flag を buffer に pack。固定 texture／sampler 個別 bindings と Slang の switch helper、明示 gradient／LOD で解決。独自 .Native は不要 |
-| PortableFiniteBindings／DirectX・Vulkan | 同じ有限集合と意味を実現する descriptor layout と helper。Native が descriptor の構築・pack と lease を管理する |
 | NativeDescriptorIndexing／DirectX | 対応 Shader Model／binding tier／non-uniform indexing を要求。Native が descriptor を配置して内部 index を pack、Slang が同じ layout で参照する |
 | NativeDescriptorIndexing／Vulkan | descriptor indexing の必要な feature、limits、non-uniform decoration と descriptor layout を確認。必須 feature がなければ拒否する |
 | Browser WebGPU | PortableFiniteBindings を同じ WGSL と metadata で使用。JS／Wasm 側が binding と snapshot を所有し、ホスト Native を要求しない |
 
-NativeDescriptorIndexing は portable profile の自動 fallback ではない。descriptor の live な値を GPU buffer 内に保持する場合も Device、set、schema、世代との関連を維持し、利用者に整数を公開しない。任意の GPU address に texture object があるとは仮定しない。
+DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFiniteBindings は実装しない。wgpu／Browser WebGPU は PortableFiniteBindings を使用する。artifact の profile と backend が不適合な場合、または DirectX／Vulkan で descriptor indexing の必須能力がない場合は UnsupportedTarget／UnsupportedFeature として拒否し、別 profile へ自動切り替えしない。NativeDescriptorIndexing の PairCapacity は descriptor heap／descriptor set の容量と indexing の limits に照合する。PortableFiniteBindings の N 個の texture／sampler 個別 bindings と有限 switch の制約を NativeDescriptorIndexing に適用しない。descriptor の live な値を GPU buffer 内に保持する場合も Device、set、schema、世代との関連を維持し、利用者に整数を公開しない。任意の GPU address に texture object があるとは仮定しない。
 
 共通 Core は論理参照・layout・set・範囲の契約を保持し、backend はその interface を実装する具象 instance 内で descriptor／bind group と native リソースを管理する。Slang composition／specialization と反射から helper と serializer を生成し、offline／online と native／WGSL で同じ library ABI を照合する。Slang に `SampledTexture2DReference` をそのまま WGSL resource handle として出力することは要求せず、論理参照を selector と bindings に明示的に lowering する。
 
@@ -229,7 +228,7 @@ NativeDescriptorIndexing は portable profile の自動 fallback ではない。
 - fragment ごとに selector が異なる場合の sampleGrad／sampleLevel と WGSL uniformity 検証。上限ちょうどの集合、fallback 分を含む容量超過、他の shader resource との合計上限。
 - CPU pack と GPU copy／Submit の分離、完全コピーの関連伝播、部分上書きの失効、コピー前の利用拒否、未送信破棄と DeviceLost の登録回収。
 - view／sampler／set の lease、引数と pipeline の layout 不一致、別 set の bytes の拒否、異なる Device、GPU 完了前の Dispose、frame 終了後の解放順。
-- Slang の反射 stride と serializer の一致、オフラインの DLL 埋め込みとオンラインの同一 ABI、native profile の必須 feature 拒否、material index／selector 範囲外の安全な既定値。
+- Slang の反射 stride と serializer の一致、オフラインの DLL 埋め込みとオンラインの同一 ABI、backend と profile の不適合および native profile の必須 feature 拒否、material index／selector 範囲外の安全な既定値。
 
 これらは本 ADR の検証方針であり、今回実行済みのテスト結果ではない。初期実装は [ADR-0008](0008-wgpu-first-backend.md) のままで、Sampler、一般 serializer、material bindings、finite switch helper、独立 Barrier は未実装。
 
@@ -241,7 +240,7 @@ WebGPU で表現できず、型・Device・寿命を保証できない。buffer 
 
 ### 全ターゲットで無制限の bindless resource array を必須にする
 
-標準 WebGPU と device limits に適合しない。有限 binding を共通 profile とし、descriptor indexing は能力を要求する別 profile にする。
+標準 WebGPU と device limits に適合しない。wgpu／Browser WebGPU には有限 binding、DirectX／Vulkan には必須能力を確認した descriptor indexing を提供する。共通にするのは論理参照、pack と寿命の API とし、物理的な解決方式を全ターゲットへ強制しない。
 
 ### draw ごとに CPU が単一 material の texture だけを選ぶ
 
@@ -255,6 +254,6 @@ format、色空間、sampler、wrap、mip、UV transform の意味や resource �
 
 - material の係数と参照を一つの GPU 配列として扱い、共通 API のまま GPU で material と texture を選択できる。
 - serializer、Slang helper、resource bindings、範囲 metadata の ABI と寿命を揃える必要がある。
-- portable profile は同時参照集合と shader binding 数に上限があり、シーン全体を一つの draw に集約できるとは保証しない。
+- wgpu／Browser WebGPU の portable profile は同時参照集合と shader binding 数に上限があり、シーン全体を一つの draw に集約できるとは保証しない。
 - glTF の logical material と GPU wire data を分離し、参照先や schema を変更した場合は再 pack／転送する。
 - 本 ADR は設計の提案。実装と GPU 検証は別の作業で行う。
