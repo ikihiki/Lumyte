@@ -72,13 +72,28 @@ internal sealed unsafe class WgpuDevice : IDisposable
         catch { resource.Dispose(); throw; }
     }
 
+    internal const ulong CopyOffsetAlignmentInBytes = 4;
+    internal const ulong CopySizeAlignmentInBytes = 4;
+    public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged
+    {
+        lock (Gate)
+        {
+            Check();
+            // Initial storage uses host wire bytes. Shader compatibility is checked separately.
+            ulong elementSize = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+            return new(elementSize, elementSize, CopyOffsetAlignmentInBytes, CopySizeAlignmentInBytes);
+        }
+    }
+
     public WgpuBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged
     {
         lock (Gate)
         {
             Check(); ArgumentNullException.ThrowIfNull(desc);
-            if (desc.SizeInBytes == 0 || desc.SizeInBytes > MaxBufferSize || desc.SizeInBytes % 4 != 0)
-                throw new ArgumentOutOfRangeException(nameof(desc.SizeInBytes), "Initial buffers require a positive, 4-byte aligned size within device limits.");
+            var layout = GetBufferLayout<T>();
+            ulong sizeInBytes = layout.GetSizeInBytes(desc.Count);
+            if (sizeInBytes == 0 || sizeInBytes > MaxBufferSize || sizeInBytes % CopySizeAlignmentInBytes != 0)
+                throw new ArgumentOutOfRangeException(nameof(desc.Count), "Initial buffers require a positive, 4-byte aligned size within device limits.");
             if (desc.Usage == 0 || (desc.Usage & ~(BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index)) != 0)
                 throw new ArgumentException("Unknown or empty buffer usage.");
             if (!Enum.IsDefined(desc.Memory)) throw new ArgumentException("Unknown memory preference.");
@@ -97,7 +112,7 @@ internal sealed unsafe class WgpuDevice : IDisposable
                 if (desc.Usage != BufferUsage.CopySource) throw new ArgumentException("Upload buffers support only CopySource.");
                 usage |= A.BufferUsage.MapWrite;
             }
-            return new(this, Validated(Native.CreateBuffer(new A.BufferDescriptor { Size = desc.SizeInBytes, Usage = usage })), desc);
+            return new(this, Validated(Native.CreateBuffer(new A.BufferDescriptor { Size = sizeInBytes, Usage = usage })), desc, layout);
         }
     }
 

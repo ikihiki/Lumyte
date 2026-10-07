@@ -19,6 +19,47 @@ public sealed class BackendTests
 
     private readonly record struct Pair(int X, float Y);
 
+    [System.Runtime.InteropServices.StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct TripleByte { public byte X; public byte Y; public byte Z; }
+
+    [Fact]
+    public void BackendReportsTypedCopyAlignmentAndRecordedCopiesHonorIt()
+    {
+        using var device = Graphics.CreateDevice();
+        var bytes = device.GetBufferLayout<byte>();
+        Assert.Equal(1UL, bytes.ElementStrideInBytes);
+        Assert.Equal(4UL, bytes.CopyOffsetAlignmentInBytes);
+        Assert.Equal(4UL, bytes.CopySizeAlignmentInBytes);
+        Assert.Equal(4UL, bytes.CopyOffsetAlignmentInElements);
+        Assert.Equal(4UL, bytes.CopyCountAlignment);
+        Assert.Equal(2UL, device.GetBufferLayout<ushort>().CopyCountAlignment);
+        Assert.Equal(1UL, device.GetBufferLayout<uint>().CopyCountAlignment);
+        Assert.Equal(1UL, device.GetBufferLayout<double>().CopyCountAlignment);
+        var triples = device.GetBufferLayout<TripleByte>();
+        Assert.Equal(3UL, triples.ElementSizeInBytes);
+        Assert.Equal(3UL, triples.ElementStrideInBytes);
+        Assert.Equal(4UL, triples.CopyOffsetAlignmentInElements);
+        Assert.Equal(4UL, triples.CopyCountAlignment);
+        Assert.Equal(12UL, triples.GetSizeInBytes(4));
+        using var upload = device.CreateBuffer(new BufferDesc<TripleByte> {
+            Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+        });
+        Assert.Equal(triples, upload.Layout);
+        using var readback = Readback<byte>(device, 12);
+        var values = new TripleByte[] { new() { X = 1, Y = 2, Z = 3 } };
+        upload.Slice(4, 4).CopyFrom(values); // CPU copies do not require GPU copy alignment.
+        using var encoder = device.CreateCommandEncoder();
+        Assert.Throws<ArgumentException>(() => encoder.RecordCopyBuffer(upload.Slice(1, 4), readback.Slice(0, 12)));
+        Assert.Throws<ArgumentException>(() => encoder.RecordCopyBuffer(upload.Slice(0, 1), readback.Slice(0, 3)));
+        encoder.RecordCopyBuffer(upload.Slice(4, 4), readback.Slice(0, 12));
+        using var commands = encoder.Finish();
+        device.Submit(commands).Wait();
+        var result = new byte[12];
+        readback.CopyTo(result);
+        Assert.Equal(new byte[] { 1, 2, 3 }, result[..3]);
+        Assert.Throws<InvalidOperationException>(() => default(BufferLayout<uint>).GetSizeInBytes(4));
+    }
+
     [Fact]
     public void TypedBuffersComputeSizesAndCopyElementRangesAcrossTypes()
     {
@@ -54,11 +95,11 @@ public sealed class BackendTests
     [Fact]
     public void TypedSizesUseManagedLayoutAndRejectOverflowBeforeAllocation()
     {
-        Assert.Equal(4UL, new BufferDesc<byte> { Count = 4, Usage = BufferUsage.CopySource }.SizeInBytes);
-        Assert.Equal(4UL, new BufferDesc<ushort> { Count = 2, Usage = BufferUsage.CopySource }.SizeInBytes);
-        Assert.Equal(16UL, new BufferDesc<double> { Count = 2, Usage = BufferUsage.CopySource }.SizeInBytes);
-        Assert.Equal(4UL, new BufferDesc<bool> { Count = 4, Usage = BufferUsage.CopySource }.SizeInBytes);
         using var device = Graphics.CreateDevice();
+        Assert.Equal(4UL, device.GetBufferLayout<byte>().GetSizeInBytes(4));
+        Assert.Equal(4UL, device.GetBufferLayout<ushort>().GetSizeInBytes(2));
+        Assert.Equal(16UL, device.GetBufferLayout<double>().GetSizeInBytes(2));
+        Assert.Equal(4UL, device.GetBufferLayout<bool>().GetSizeInBytes(4));
         Assert.Throws<OverflowException>(() => device.CreateBuffer(new BufferDesc<double> {
             Count = ulong.MaxValue, Usage = BufferUsage.CopySource,
         }));

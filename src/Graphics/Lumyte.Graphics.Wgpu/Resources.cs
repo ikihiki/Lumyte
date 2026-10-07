@@ -97,14 +97,14 @@ internal class WgpuBuffer : GpuResource, IBufferBackendContract
 internal sealed class WgpuBuffer<T> : WgpuBuffer, IGraphicsBuffer<T> where T : unmanaged
 {
     public ulong Count { get; }
-    internal WgpuBuffer(WgpuDevice owner, A.Buffer native, BufferDesc<T> desc)
-        : base(owner, native, desc.SizeInBytes, desc.Usage, desc.Memory) => Count = desc.Count;
+    public BufferLayout<T> Layout { get; }
+    internal WgpuBuffer(WgpuDevice owner, A.Buffer native, BufferDesc<T> desc, BufferLayout<T> layout)
+        : base(owner, native, layout.GetSizeInBytes(desc.Count), desc.Usage, desc.Memory) => (Count, Layout) = (desc.Count, layout);
     public new Lumyte.Graphics.BufferSlice<T> Slice(ulong offset, ulong count)
     {
         if (count == 0 || offset > Count || count > Count - offset)
             throw new ArgumentOutOfRangeException(nameof(count));
-        ulong elementSize = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
-        ValidateRange(checked(offset * elementSize), checked(count * elementSize));
+        ValidateRange(Layout.GetSizeInBytes(offset), Layout.GetSizeInBytes(count));
         return new(this, offset, count);
     }
     public void CopyFrom(ReadOnlySpan<T> source) => base.CopyFrom(System.Runtime.InteropServices.MemoryMarshal.AsBytes(source), 0, SizeInBytes);

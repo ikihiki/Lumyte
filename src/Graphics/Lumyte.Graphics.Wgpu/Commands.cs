@@ -79,7 +79,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
             if (source.Buffer is null || destination.Buffer is null) throw new ArgumentException("Invalid buffer slice.");
             source.Buffer.Check(Owner); destination.Buffer.Check(Owner);
             if (ReferenceEquals(source.Buffer, destination.Buffer) || source.Length != destination.Length ||
-                source.Offset % 4 != 0 || destination.Offset % 4 != 0 || source.Length % 4 != 0 ||
+                source.Offset % WgpuDevice.CopyOffsetAlignmentInBytes != 0 || destination.Offset % WgpuDevice.CopyOffsetAlignmentInBytes != 0 || source.Length % WgpuDevice.CopySizeAlignmentInBytes != 0 ||
                 !source.Buffer.Usage.HasFlag(BufferUsage.CopySource) || !destination.Buffer.Usage.HasFlag(BufferUsage.CopyDestination))
                 throw new ArgumentException("Copy requires distinct buffers, matching aligned ranges and copy usages.");
             Use(source.Buffer); Use(destination.Buffer);

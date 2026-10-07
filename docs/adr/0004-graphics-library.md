@@ -77,6 +77,8 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // サイズ、用途、メモリ種別を指定
 +        // GPU アドレスや CPU mapping を保証しない
 +        public Result<IGraphicsBuffer<T>> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
++        // 確保せず T の解決済みレイアウトと要素単位のコピー制約を取得する。
++        public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +
 +        // GPU データの型付き参照を作る
 +        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
@@ -117,10 +119,12 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    }
 +
 +    // T は数値型や unmanaged struct。byte は raw storage、Slang 互換性は別途検証する。
-+    // factory が返す具象 backend 自身が実装し、共通 Buffer wrapper を確保しない。
++    // factory が返す具象 backend 自身が実装し、直接 allocation の所有権を持つ。
 +    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 +    {
-+        // 要素数。論理サイズは checked(Count * Unsafe.SizeOf<T>())。
++        // backend の解決済み数値。論理サイズは Layout.GetSizeInBytes(Count)。
++        public BufferLayout<T> Layout { get; }
++        // 要素数。
 +        public ulong Count { get; }
 +        public ulong SizeInBytes { get; }
 +        public BufferUsage Usage { get; }

@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Lumyte.Graphics;
@@ -6,6 +5,7 @@ namespace Lumyte.Graphics;
 /// <summary>A typed GPU allocation implemented directly by its backend; owns no wrapper allocation.</summary>
 public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 {
+    BufferLayout<T> Layout { get; }
     ulong Count { get; }
     ulong SizeInBytes { get; }
     BufferUsage Usage { get; }
@@ -24,8 +24,9 @@ public readonly struct BufferSlice<T> where T : unmanaged
     public IGraphicsBuffer<T> Buffer { get; }
     public ulong Offset { get; }
     public ulong Count { get; }
-    public ulong OffsetInBytes => checked(Offset * (ulong)Unsafe.SizeOf<T>());
-    public ulong SizeInBytes => checked(Count * (ulong)Unsafe.SizeOf<T>());
+    public ulong OffsetInBytes => GetLayout().GetSizeInBytes(Offset);
+    public ulong SizeInBytes => GetLayout().GetSizeInBytes(Count);
+    private BufferLayout<T> GetLayout() => Buffer?.Layout ?? throw new ArgumentException("Invalid buffer slice.");
     internal BufferRange Range => Buffer is IBufferBackendContract backend
         ? new(backend, OffsetInBytes, SizeInBytes)
         : throw new ArgumentException("Invalid buffer slice or unsupported implementation.");

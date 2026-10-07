@@ -10,7 +10,6 @@ public enum IndexFormat { Uint16, Uint32 }
 public sealed record BufferDesc<T> where T : unmanaged
 {
     public required ulong Count { get; init; }
-    public ulong SizeInBytes => checked(Count * (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>());
     public required BufferUsage Usage { get; init; }
     public MemoryPreference Memory { get; init; }
 }

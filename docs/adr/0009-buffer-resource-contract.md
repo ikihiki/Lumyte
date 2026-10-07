@@ -26,17 +26,39 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // 確保失敗・未対応用途は GraphicsError
 +        // 成功時だけ所有権を返す
 +        public Result<IGraphicsBuffer<T>> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
++        // 確保せず T の解決済みレイアウトと要素単位のコピー制約を取得する。
++        public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +
 +        // 登録済みの schema／target layout を持つ部分領域を参照
 +        // 所属・用途・alignment・stride・要素数を検証
 +        public GpuReference<T> CreateReference<T>(BufferSlice<byte> data) where T : IShaderData;
 +    }
 +
++    // backend が T の格納 stride と GPU コピー制約を解決した値型。constructor は非公開。
++    public readonly struct BufferLayout<T> where T : unmanaged
++    {
++        // host 要素の byte 数と、この backend の buffer 内で一要素が占める stride。
++        public ulong ElementSizeInBytes { get; }
++        public ulong ElementStrideInBytes { get; }
++        // native GPU copy の制約。いずれも正数。
++        public ulong CopyOffsetAlignmentInBytes { get; }
++        public ulong CopySizeAlignmentInBytes { get; }
++        // 要素単位でコピー offset／count が満たす必要のある最小の倍数。
++        // respective byte alignment / gcd(byte alignment, ElementStrideInBytes)。
++        public ulong CopyOffsetAlignmentInElements { get; }
++        public ulong CopyCountAlignment { get; }
++        // checked(count * ElementStrideInBytes)。overflow は OverflowException。
++        // default layout は未解決として InvalidOperationException。
++        public ulong GetSizeInBytes(ulong count);
++    }
++
 +    // T は数値型や unmanaged struct。byte は raw storage、Slang 互換性は別途検証する。
-+    // factory が返す具象 backend 自身が実装し、共通 Buffer wrapper を確保しない。
++    // factory が返す具象 backend 自身が実装し、直接 allocation の所有権を持つ。
 +    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 +    {
-+        // 要素数。論理サイズは checked(Count * Unsafe.SizeOf<T>())。
++        // backend の解決済み数値。論理サイズは Layout.GetSizeInBytes(Count)。
++        public BufferLayout<T> Layout { get; }
++        // 要素数。
 +        public ulong Count { get; }
 +        public ulong SizeInBytes { get; }
 +        public BufferUsage Usage { get; }
@@ -74,9 +96,24 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 
 ### 型、サイズ、instance 数
 
-BufferDesc<T> と IGraphicsBuffer<T> の Count は要素数、SizeInBytes は `checked(Count * Unsafe.SizeOf<T>())` であり、Marshal.SizeOf の interop 表現を使わない。T は数値型、enum、参照フィールドを含まない unmanaged struct を許可する。bool／char／native-sized integer を含む host 表現も CPU storage として扱えるが、Slang の型、stride、alignment と互換とは仮定しない。参照を含む logical shader data は unmanaged 制約の buffer 要素にせず、生成 serializer で IGraphicsBuffer<byte> に pack する。生成 wire struct を T として使う場合も shader schema と反射 layout を検証する。backend が要求する GPU copy alignment は byte 換算後に別途検証し、要素数や SizeInBytes を暗黙に補正しない。
+BufferDesc<T> と IGraphicsBuffer<T> の Count は要素数、SizeInBytes は backend が返す `BufferLayout<T>.GetSizeInBytes(Count)` で算出する。Desc 自体は Device を持たず Count／Usage／Memory の入力だけを保持し、生成前のサイズは `device.GetBufferLayout<T>().GetSizeInBytes(desc.Count)` で問い合わせる。T は数値型、enum、参照フィールドを含まない unmanaged struct を許可する。bool／char／native-sized integer を含む host 表現も CPU storage として扱えるが、Slang の型、stride、alignment と互換とは仮定しない。参照を含む logical shader data は unmanaged 制約の buffer 要素にせず、生成 serializer で IGraphicsBuffer<byte> に pack する。生成 wire struct を T として使う場合も shader schema と反射 layout を検証する。backend は T の ElementSizeInBytes／ElementStrideInBytes、GPU copy の byte alignment と、それを T の要素単位に解決した CopyOffsetAlignmentInElements／CopyCountAlignment を数値で返す。要素数と SizeInBytes はこの解決済み layout から計算する。利用者とコピー記録 API は同じ数値を使い、コピー offset／count の倍数条件と最終 byte 範囲を検証する。
 
-具象 allocation が public interface を直接実装し、以前の共通 Buffer class の追加 instance を廃止する。一つの typed buffer に facade や要素ごとの object を作らない。BufferSlice<T> は値型なので slice ごとの heap allocation も必須にしない。ただし native binding の内部 object、Desc、CPU 結果領域などまで allocation がゼロになるとは保証しない。大きな buffer の部分利用と pooling は引き続き利用側で選択する。
+具象 allocation が public interface を直接実装する。一つの typed buffer に facade や要素ごとの object を作らない。BufferSlice<T> は値型なので slice ごとの heap allocation も必須にしない。ただし native binding の内部 object、Desc、CPU 結果領域などまで allocation がゼロになるとは保証しない。大きな buffer の部分利用と pooling は引き続き利用側で選択する。
+
+### backend が認識する T ごとの数値
+
+ElementStrideInBytes は GPU buffer の格納表現を認識する backend が決定する。初期 wgpu の raw storage は Unsafe.SizeOf<T>() を stride とし、GPU copy の offset／size alignment はともに 4 bytes。公開する要素単位の制約は `alignment / gcd(alignment, stride)` で求める。stride が 3 bytes の packed struct は 4 要素ごとの offset／count が必要であり、単純な切り上げ除算では求めない。byte 換算も公開 Buffer.Layout と同じ解決済み値を使う。CPU CopyFrom／CopyTo はこの GPU コピー用の倍数条件を要求しない。
+
+| 初期 wgpu の T | ElementStrideInBytes | CopyOffsetAlignmentInElements | CopyCountAlignment |
+| --- | ---: | ---: | ---: |
+| byte／sbyte／bool | 1 | 4 | 4 |
+| short／ushort／Half／char | 2 | 2 | 2 |
+| int／uint／float | 4 | 1 | 1 |
+| long／ulong／double | 8 | 1 | 1 |
+| packed 3-byte struct | 3 | 4 | 4 |
+| 12-byte struct | 12 | 1 | 1 |
+
+この対応表は shader ABI の互換表ではない。Slang の wire layout は schema と profile の反射情報で検証し、host 表現と異なる stride を採用する backend は CopyFrom／CopyTo に必要な pack／unpack を実装する。対応する変換を実装していない場合は明示的な未対応として拒否し、host の memcpy で代用しない。現在の wgpu は host stride と同じ raw storage、shader schema は UInt32 に限定する。layout は値型として buffer に保持し、要素ごとの object を追加しない。
 
 ### 明示的な Readback の手順
 
@@ -116,10 +153,6 @@ CPU mapping／flush／unmap は backend が CPU 可視性のために実装す�
 +        // 正数の要素数。要素ごとの object は生成しない。
 +        public required ulong Count { get; init; }
 +
-+        // checked(Count * Unsafe.SizeOf<T>())。書き換え不可、overflow は OverflowException。
-+        // CreateBuffer は 0／DeviceCaps.MaxBufferSize 超過を引数例外にする。
-+        public ulong SizeInBytes { get; }
-+
 +        // CopySource／CopyDestination／ShaderRead／ShaderWrite／Index
 +        // None と未知 bit は拒否
 +        public required BufferUsage Usage { get; init; }
@@ -155,6 +188,8 @@ GPU の同一 Buffer 内コピーはコマンド契約が扱い、半開区間�
 +    // factory は確保・rollback を担い、成功時だけ具象 buffer instance を返す。
 +    internal interface IGraphicsDriver
 +    {
++        // Device の backend 制約と T の wire layout を解決する。allocation は作らない。
++        BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +        IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> normalizedDesc) where T : unmanaged;
 +        BufferCapabilities GetBufferCapabilities();
 +    }

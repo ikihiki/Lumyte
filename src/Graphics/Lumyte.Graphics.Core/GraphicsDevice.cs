@@ -7,6 +7,7 @@ public sealed class GraphicsDevice : IDisposable
     private readonly IGraphicsDriver _driver;
     internal GraphicsDevice(IGraphicsDriver driver) => _driver = driver;
     public ulong MaxBufferSize => _driver.MaxBufferSize;
+    public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged => _driver.GetBufferLayout<T>();
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => _driver.CreateBuffer(desc);
     public Texture CreateTexture(TextureDesc desc) => new(_driver, _driver.CreateTexture(desc));
     public ShaderModule CreateShader(Assembly assembly, string resourceName) => new(_driver, _driver.CreateShader(assembly, resourceName));

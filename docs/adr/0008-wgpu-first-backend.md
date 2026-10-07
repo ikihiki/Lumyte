@@ -63,6 +63,8 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // サイズ・用途・範囲を検証
 +        // 初期 buffer のサイズは 4-byte の倍数
 +        public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
++        // 確保せず T の解決済みレイアウトと要素単位のコピー制約を取得する。
++        public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +
 +        // 初期の登録済みデータ schema は UInt32 配列のみ
 +        // 非所有・型付きの不透明参照を作る
@@ -88,21 +90,39 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        public Submission Submit(CommandBuffer commands);
 +    }
 +
++    // backend が T の格納 stride と GPU コピー制約を解決した値型。constructor は非公開。
++    public readonly struct BufferLayout<T> where T : unmanaged
++    {
++        // host 要素の byte 数と、この backend の buffer 内で一要素が占める stride。
++        public ulong ElementSizeInBytes { get; }
++        public ulong ElementStrideInBytes { get; }
++        // native GPU copy の制約。いずれも正数。
++        public ulong CopyOffsetAlignmentInBytes { get; }
++        public ulong CopySizeAlignmentInBytes { get; }
++        // 要素単位でコピー offset／count が満たす必要のある最小の倍数。
++        // respective byte alignment / gcd(byte alignment, ElementStrideInBytes)。
++        public ulong CopyOffsetAlignmentInElements { get; }
++        public ulong CopyCountAlignment { get; }
++        // checked(count * ElementStrideInBytes)。overflow は OverflowException。
++        // default layout は未解決として InvalidOperationException。
++        public ulong GetSizeInBytes(ulong count);
++    }
++
 +    public sealed record BufferDesc<T> where T : unmanaged
 +    {
 +        // 正数の要素数。初期 backend は byte 換算後のサイズに 4-byte alignment を要求。
 +        public required ulong Count { get; init; }
-+        // checked(Count * Unsafe.SizeOf<T>())。生成前の overflow を拒否する。
-+        public ulong SizeInBytes { get; }
 +        public required BufferUsage Usage { get; init; }
 +        public MemoryPreference Memory { get; init; } = MemoryPreference.Automatic;
 +    }
 +
 +    // T は数値型や unmanaged struct。byte は raw storage、Slang 互換性は別途検証する。
-+    // factory が返す具象 backend 自身が実装し、共通 Buffer wrapper を確保しない。
++    // factory が返す具象 backend 自身が実装し、直接 allocation の所有権を持つ。
 +    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 +    {
-+        // 要素数。論理サイズは checked(Count * Unsafe.SizeOf<T>())。
++        // backend の解決済み数値。論理サイズは Layout.GetSizeInBytes(Count)。
++        public BufferLayout<T> Layout { get; }
++        // 要素数。
 +        public ulong Count { get; }
 +        public ulong SizeInBytes { get; }
 +        public BufferUsage Usage { get; }
@@ -210,7 +230,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +}
 ```
 
-Buffer の共通 wrapper は廃止し、wgpu の具象 allocation が直接 IGraphicsBuffer<T> と IBufferBackendContract を実装する。BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
+wgpu の具象 allocation が直接 IGraphicsBuffer<T> と IBufferBackendContract を実装する。GetBufferLayout<T>() の ElementStrideInBytes と BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
 
 初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 

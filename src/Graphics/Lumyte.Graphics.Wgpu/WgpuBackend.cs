@@ -26,6 +26,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     }
     public void Dispose() => device.Dispose();
     public ulong MaxBufferSize => device.MaxBufferSize;
+    public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged => device.GetBufferLayout<T>();
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => device.CreateBuffer(desc);
     public object CreateTexture(TextureDesc desc) => device.CreateTexture(desc);
     public object CreateShader(Assembly assembly, string resourceName) => device.CreateShader(assembly, resourceName);
