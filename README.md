@@ -17,7 +17,7 @@ dotnet test tests/Lumyte.Graphics.Wgpu.Tests --no-restore
 
 GPU がない Linux 環境では Mesa の lavapipe を用意し、その ICD を実行プロセスの `VK_DRIVER_FILES` に指定できます。Mesa の shader cache は書き込める場所を `MESA_SHADER_CACHE_DIR` に指定してください。システムのドライバー登録は変更しません。GPU テストは adapter 不在を skip しません。
 
-現段階はネイティブ向けの初期版です。Compute は UInt32 配列の単一 Storage 引数、描画は single-sample RGBA8 の単一 attachment・通常／indexed triangle-list が対象です。GPU アドレスと物理 binding slot は公開しません。Upload は利用者が Upload buffer を生成し、Buffer／BufferSlice.CopyFrom で CPU memory に書いた後、RecordCopyBuffer を記録して Finish／Submit します。CopyFrom／CopyTo は GPU 転送や queue write を行いません。Readback も利用者が CPU destination を確保し、GPU 完了後に Buffer／BufferSlice.CopyTo で読み出します。buffer と command の内部契約は分離しています。resource と command scope を Dispose し、送信完了を観測してから参照先を再利用・解放してください。
+現段階はネイティブ向けの初期版です。Compute は UInt32 配列の単一 Storage 引数、描画は single-sample RGBA8 の単一 attachment・通常／indexed triangle-list が対象です。GPU アドレスと物理 binding slot は公開しません。Upload は利用者が Upload buffer を生成し、IGraphicsBuffer<T>／BufferSlice<T>.CopyFrom で CPU memory に書いた後、RecordCopyBuffer を記録して Finish／Submit します。CopyFrom／CopyTo は GPU 転送や queue write を行いません。Readback も利用者が CPU destination を確保し、GPU 完了後に IGraphicsBuffer<T>／BufferSlice<T>.CopyTo で読み出します。buffer と command の内部契約は分離しています。resource と command scope を Dispose し、送信完了を観測してから参照先を再利用・解放してください。
 
 テストとサンプルは `Lumyte.Graphics` の共通 API のみを使用します。`Graphics.CreateDevice()` が既定の wgpu 実装を生成し、Core はバックエンドに依存しません。
 
@@ -44,3 +44,5 @@ SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセッ�
 - [バッファの利用 API とバックエンド契約](docs/adr/0009-buffer-resource-contract.md)
 - [テクスチャ・ビュー・転送の利用 API とバックエンド契約](docs/adr/0010-texture-resource-contract.md)
 - [サンプラーの利用 API とバックエンド契約](docs/adr/0011-sampler-resource-contract.md)
+
+バッファは `device.CreateBuffer(new BufferDesc<uint> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload })` のように型と要素数で生成します。`SizeInBytes` は自動計算され、`Slice(offset, count)` も要素単位です。数値型や `unmanaged` struct を許可しますが、Slang の ABI 互換性は別途検証します。具象バックエンドが `IGraphicsBuffer<T>` を直接実装し、共通 `Buffer` ラッパーの確保を省きます。

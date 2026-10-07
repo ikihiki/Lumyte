@@ -67,7 +67,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // index の読み取り範囲を設定
 +        // Index 用途、Uint16／Uint32、offset と length が要素サイズの倍数
 +        // 元 Buffer の寿命は利用側が保持
-+        public void SetIndexBuffer(BufferSlice indices, IndexFormat format);
++        public void SetIndexBuffer<T>(BufferSlice<T> indices, IndexFormat format) where T : unmanaged;
 +
 +        // 通常描画の簡易呼び出し
 +        // firstVertex／firstInstance は 0
@@ -134,7 +134,7 @@ draw の count が 0 の場合は GPU の描画コマンドを省略してよい
 
 通常描画の論理 vertex index は firstVertex を含み、インデックス描画では index 値 + baseVertex とする。論理 instance index は firstInstance を含む。Slang のターゲット間で system-value の意味が異なる部分は、ライブラリの vertex／instance index helper と内部 draw metadata で正規化する。生の system-value を使うコードはこの正規化の保証対象にしない。
 
-index buffer は GPU データ参照とは別のネイティブ index input であり、BufferSlice で範囲を指定する。TriangleStrip／LineStrip は GraphicsPipelineDesc の StripIndexFormat と同じ format が必要で、最大 index 値を restart として扱う。それ以外の topology では strip format を設定しない。
+index buffer は GPU データ参照とは別のネイティブ index input であり、BufferSlice<T> の要素範囲で指定し、T は Uint16 で ushort、Uint32 で uint を要求する。TriangleStrip／LineStrip は GraphicsPipelineDesc の StripIndexFormat と同じ format が必要で、最大 index 値を restart として扱う。それ以外の topology では strip format を設定しない。
 
 ### Attachment と同期
 

@@ -5,8 +5,8 @@ namespace Lumyte.Graphics;
 internal interface IGraphicsDriver : IDisposable, ICommandBufferBackendContract
 {
     ulong MaxBufferSize { get; }
-    IBufferBackendContract CreateBuffer(BufferDesc desc);
-    object CreateReference<T>(BufferSlice data) where T : unmanaged;
+    IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
+    object CreateReference<T>(BufferRange data) where T : unmanaged;
     object CreateTexture(TextureDesc desc);
     object CreateShader(Assembly assembly, string resourceName);
     object CreateComputePipeline(ComputePipelineDesc desc);

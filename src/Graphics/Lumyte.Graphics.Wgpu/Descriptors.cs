@@ -24,10 +24,10 @@ internal sealed record ComputePipelineDesc
 
 internal readonly struct BufferSlice
 {
-    public Buffer Buffer { get; }
+    public WgpuBuffer Buffer { get; }
     public ulong Offset { get; }
     public ulong Length { get; }
-    internal BufferSlice(Buffer buffer, ulong offset, ulong length) => (Buffer, Offset, Length) = (buffer, offset, length);
+    internal BufferSlice(WgpuBuffer buffer, ulong offset, ulong length) => (Buffer, Offset, Length) = (buffer, offset, length);
 }
 
 /// <summary>A non-owning data reference. No native address, binding slot or serialization API is exposed.</summary>

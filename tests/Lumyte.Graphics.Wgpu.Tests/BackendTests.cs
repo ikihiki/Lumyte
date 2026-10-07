@@ -1,31 +1,83 @@
 using System.Runtime.InteropServices;
 using Lumyte.Graphics;
 using Xunit;
-using Buffer = Lumyte.Graphics.Buffer;
 
 namespace Lumyte.Graphics.Tests;
 
 public sealed class BackendTests
 {
-    private static Buffer Readback(GraphicsDevice device, ulong size) => device.CreateBuffer(new BufferDesc {
-        SizeInBytes = size, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback,
+    private static IGraphicsBuffer<T> Readback<T>(GraphicsDevice device, ulong count) where T : unmanaged => device.CreateBuffer(new BufferDesc<T> {
+        Count = count, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback,
     });
 
-    private static uint[] ReadWords(GraphicsDevice device, Buffer buffer)
+    private static uint[] ReadWords(IGraphicsBuffer<uint> buffer)
     {
-        var words = new uint[checked((int)(buffer.SizeInBytes / 4))];
-        buffer.CopyTo(MemoryMarshal.AsBytes(words.AsSpan()));
+        var words = new uint[checked((int)buffer.Count)];
+        buffer.CopyTo(words.AsSpan());
         return words;
+    }
+
+    private readonly record struct Pair(int X, float Y);
+
+    [Fact]
+    public void TypedBuffersComputeSizesAndCopyElementRangesAcrossTypes()
+    {
+        using var device = Graphics.CreateDevice();
+        using var upload = device.CreateBuffer(new BufferDesc<Pair> {
+            Count = 3, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+        });
+        Assert.Equal(3UL, upload.Count);
+        Assert.Equal(24UL, upload.SizeInBytes);
+        upload.CopyFrom(new Pair[] { new(1, 1.5f), new(2, 2.5f), new(3, 3.5f) });
+        var part = upload.Slice(1, 2);
+        Assert.Same(upload, part.Buffer);
+        Assert.Equal(8UL, part.OffsetInBytes);
+        Assert.Equal(16UL, part.SizeInBytes);
+        part.CopyFrom(new Pair[] { new(4, 4.5f) });
+        Assert.Throws<ArgumentException>(() => part.CopyFrom(new Pair[3]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => upload.Slice(2, 2));
+        using var result = Readback<byte>(device, 16);
+        using var encoder = device.CreateCommandEncoder();
+        encoder.RecordCopyBuffer(part, result.Slice(0, 16));
+        using var commands = encoder.Finish();
+        device.Submit(commands).Wait();
+        var bytes = new byte[16];
+        result.CopyTo(bytes);
+        Assert.Equal(new Pair[] { new(4, 4.5f), new(3, 3.5f) }, MemoryMarshal.Cast<byte, Pair>(bytes).ToArray());
+        using var foreign = Graphics.CreateDevice();
+        using var foreignEncoder = foreign.CreateCommandEncoder();
+        Assert.Throws<ArgumentException>(() => foreignEncoder.RecordCopyBuffer(part, result.Slice(0, 16)));
+        // The backend object implements both contracts; no common resource wrapper is allocated.
+        Assert.False(upload is GpuResource);
+    }
+
+    [Fact]
+    public void TypedSizesUseManagedLayoutAndRejectOverflowBeforeAllocation()
+    {
+        Assert.Equal(4UL, new BufferDesc<byte> { Count = 4, Usage = BufferUsage.CopySource }.SizeInBytes);
+        Assert.Equal(4UL, new BufferDesc<ushort> { Count = 2, Usage = BufferUsage.CopySource }.SizeInBytes);
+        Assert.Equal(16UL, new BufferDesc<double> { Count = 2, Usage = BufferUsage.CopySource }.SizeInBytes);
+        Assert.Equal(4UL, new BufferDesc<bool> { Count = 4, Usage = BufferUsage.CopySource }.SizeInBytes);
+        using var device = Graphics.CreateDevice();
+        Assert.Throws<OverflowException>(() => device.CreateBuffer(new BufferDesc<double> {
+            Count = ulong.MaxValue, Usage = BufferUsage.CopySource,
+        }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => device.CreateBuffer(new BufferDesc<uint> {
+            Count = 0, Usage = BufferUsage.CopySource,
+        }));
+        Assert.Throws<ArgumentNullException>(() => device.CreateBuffer<uint>(null!));
+        Assert.Throws<ArgumentException>(() => device.CreateReference(default(BufferSlice<uint>)));
+        device.Dispose();
     }
 
     [Fact]
     public void CpuReadCopyUsesCallerMemoryAndValidatesRanges()
     {
         using var device = Graphics.CreateDevice();
-        using var upload = device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 16, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+        using var upload = device.CreateBuffer(new BufferDesc<byte> {
+            Count = 16, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
-        using var readback = Readback(device, 16);
+        using var readback = Readback<byte>(device, 16);
         upload.CopyFrom(Enumerable.Range(0, 16).Select(x => (byte)x).ToArray());
         upload.Slice(3, 4).CopyFrom(new byte[] { 30, 40 });
         using var encoder = device.CreateCommandEncoder();
@@ -37,8 +89,8 @@ public sealed class BackendTests
         Assert.Equal(new byte[] { 30, 40, 5, 6, 255, 255, 255, 255 }, destination);
         Assert.Throws<ArgumentException>(() => readback.Slice(0, 16).CopyTo(new byte[4].AsSpan()));
         Assert.Throws<ArgumentException>(() => upload.Slice(0, 4).CopyTo(new byte[4].AsSpan()));
-        Assert.Throws<ArgumentException>(() => default(BufferSlice).CopyTo(new byte[4].AsSpan()));
-        Assert.Throws<ArgumentException>(() => default(BufferSlice).CopyFrom(new byte[4]));
+        Assert.Throws<ArgumentException>(() => default(BufferSlice<byte>).CopyTo(new byte[4].AsSpan()));
+        Assert.Throws<ArgumentException>(() => default(BufferSlice<byte>).CopyFrom(new byte[4]));
         Assert.Throws<ArgumentException>(() => upload.CopyFrom(new byte[17]));
         var stale = upload.Slice(0, 4);
         upload.Dispose();
@@ -49,26 +101,26 @@ public sealed class BackendTests
     public void CpuCopyOnlyWritesUploadMemoryAndTransferRequiresCommands()
     {
         using var device = Graphics.CreateDevice();
-        using var upload = device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 16, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+        using var upload = device.CreateBuffer(new BufferDesc<uint> {
+            Count = 4, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
-        using var gpu = device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 16, Usage = BufferUsage.CopyDestination,
+        using var gpu = device.CreateBuffer(new BufferDesc<uint> {
+            Count = 4, Usage = BufferUsage.CopyDestination,
         });
-        Assert.Throws<ArgumentException>(() => gpu.Slice(0, 16).CopyFrom<uint>(new uint[] { 1, 2, 3, 4 }));
-        Assert.Throws<ArgumentException>(() => device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 16, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Upload,
+        Assert.Throws<ArgumentException>(() => gpu.Slice(0, 4).CopyFrom(new uint[] { 1, 2, 3, 4 }));
+        Assert.Throws<ArgumentException>(() => device.CreateBuffer(new BufferDesc<uint> {
+            Count = 4, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Upload,
         }));
-        upload.Slice(0, 16).CopyFrom<uint>(new uint[] { 1, 2, 3, 4 });
-        upload.Slice(0, 16).CopyFrom(MemoryMarshal.AsBytes(new uint[] { 5, 6, 7, 8 }.AsSpan()));
-        using var output = Readback(device, 16);
+        upload.Slice(0, 4).CopyFrom(new uint[] { 1, 2, 3, 4 });
+        upload.Slice(0, 4).CopyFrom(new uint[] { 5, 6, 7, 8 });
+        using var output = Readback<uint>(device, 4);
         using var encoder = device.CreateCommandEncoder();
-        encoder.RecordCopyBuffer(upload.Slice(0, 16), output.Slice(0, 16));
-        Assert.Throws<InvalidOperationException>(() => upload.Slice(0, 16).CopyFrom<uint>(new uint[] { 9 }));
-        Assert.Throws<InvalidOperationException>(() => ReadWords(device, output));
+        encoder.RecordCopyBuffer(upload.Slice(0, 4), output.Slice(0, 4));
+        Assert.Throws<InvalidOperationException>(() => upload.Slice(0, 4).CopyFrom(new uint[] { 9 }));
+        Assert.Throws<InvalidOperationException>(() => ReadWords(output));
         using var commands = encoder.Finish();
         device.Submit(commands).Wait();
-        Assert.Equal(new uint[] { 5, 6, 7, 8 }, ReadWords(device, output));
+        Assert.Equal(new uint[] { 5, 6, 7, 8 }, ReadWords(output));
     }
 
     [Fact]
@@ -117,28 +169,28 @@ public sealed class BackendTests
     public async Task SlangComputeUsesOpaqueReferenceAndReturnsDoubledData()
     {
         using var device = Graphics.CreateDevice();
-        using var data = device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 32, Usage = BufferUsage.CopyDestination | BufferUsage.CopySource | BufferUsage.ShaderWrite,
+        using var data = device.CreateBuffer(new BufferDesc<uint> {
+            Count = 8, Usage = BufferUsage.CopyDestination | BufferUsage.CopySource | BufferUsage.ShaderWrite,
         });
-        using var output = Readback(device, 32);
+        using var output = Readback<uint>(device, 8);
         using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.double.wgsl");
         using var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Shader = shader });
-        using var upload = device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+        using var upload = device.CreateBuffer(new BufferDesc<uint> {
+            Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
-        upload.CopyFrom<uint>(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
-        var reference = device.CreateReference<uint>(data.Slice(0, 32));
+        upload.CopyFrom(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+        var reference = device.CreateReference<uint>(data.Slice(0, 8));
         Assert.Equal("GpuReference<UInt32>", reference.ToString());
         using var arguments = pipeline.CreateArguments(reference);
         using var encoder = device.CreateCommandEncoder();
-        encoder.RecordCopyBuffer(upload.Slice(0, 32), data.Slice(0, 32));
+        encoder.RecordCopyBuffer(upload.Slice(0, 8), data.Slice(0, 8));
         encoder.Dispatch(pipeline, arguments, 1);
-        encoder.RecordCopyBuffer(data.Slice(0, 32), output.Slice(0, 32));
+        encoder.RecordCopyBuffer(data.Slice(0, 8), output.Slice(0, 8));
         using var commands = encoder.Finish();
         var submitted = device.Submit(commands);
         Assert.Throws<InvalidOperationException>(() => device.Submit(commands));
         await submitted.WaitAsync();
-        Assert.Equal(new uint[] { 2, 4, 6, 8, 10, 12, 14, 16 }, ReadWords(device, output));
+        Assert.Equal(new uint[] { 2, 4, 6, 8, 10, 12, 14, 16 }, ReadWords(output));
         Assert.True(submitted.IsCompleted);
     }
 
@@ -148,27 +200,28 @@ public sealed class BackendTests
         using var device = Graphics.CreateDevice();
         using var target = device.CreateTexture(new TextureDesc { Width = 64, Height = 64 });
         using var view = target.CreateView();
-        using var output = Readback(device, 64 * 256);
-        using var indices = device.CreateBuffer(new BufferDesc { SizeInBytes = 12, Usage = BufferUsage.Index | BufferUsage.CopyDestination });
-        using var upload = device.CreateBuffer(new BufferDesc {
-            SizeInBytes = 12, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
+        using var output = Readback<uint>(device, 64 * 256 / sizeof(uint));
+        using var indices = device.CreateBuffer(new BufferDesc<uint> { Count = 3, Usage = BufferUsage.Index | BufferUsage.CopyDestination });
+        using var upload = device.CreateBuffer(new BufferDesc<uint> {
+            Count = 3, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload,
         });
-        upload.Slice(0, 12).CopyFrom<uint>(new uint[] { 0, 1, 2 });
+        upload.Slice(0, 3).CopyFrom(new uint[] { 0, 1, 2 });
         using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.triangle.wgsl");
         using var pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
         using var encoder = device.CreateCommandEncoder();
-        encoder.RecordCopyBuffer(upload.Slice(0, 12), indices.Slice(0, 12));
+        encoder.RecordCopyBuffer(upload.Slice(0, 3), indices.Slice(0, 3));
         using (var pass = encoder.BeginRenderPass(new RenderPassDesc { Target = view, ClearValue = new Color4(0, 0, 1, 1) }))
         {
             pass.SetPipeline(pipeline);
-            pass.SetIndexBuffer(indices.Slice(0, 12), IndexFormat.Uint32);
+            Assert.Throws<ArgumentException>(() => pass.SetIndexBuffer(indices.Slice(0, 3), IndexFormat.Uint16));
+            pass.SetIndexBuffer(indices.Slice(0, 3), IndexFormat.Uint32);
             Assert.Throws<ArgumentOutOfRangeException>(() => pass.DrawIndexed(new IndexedDrawDesc { IndexCount = 4 }));
             pass.DrawIndexed(new IndexedDrawDesc { IndexCount = 3 });
         }
         encoder.RecordCopyTextureToBuffer(target, output, 256);
         using var commands = encoder.Finish();
         device.Submit(commands).Wait();
-        var result = ReadWords(device, output);
+        var result = ReadWords(output);
         var bytes = MemoryMarshal.AsBytes(result.AsSpan()).ToArray();
         Assert.Equal(new byte[] { 255, 0, 0, 255 }, bytes.AsSpan((32 * 64 + 32) * 4, 4).ToArray());
         Assert.Equal(new byte[] { 0, 0, 255, 255 }, bytes.AsSpan(0, 4).ToArray());
@@ -201,10 +254,10 @@ public sealed class BackendTests
     public void ResourcesAreHeldThroughRecordingAndSubmission()
     {
         using var device = Graphics.CreateDevice();
-        using var source = device.CreateBuffer(new BufferDesc { SizeInBytes = 16, Usage = BufferUsage.CopySource });
-        using var destination = Readback(device, 16);
+        using var source = device.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.CopySource });
+        using var destination = Readback<uint>(device, 4);
         using var encoder = device.CreateCommandEncoder();
-        encoder.RecordCopyBuffer(source.Slice(0, 16), destination.Slice(0, 16));
+        encoder.RecordCopyBuffer(source.Slice(0, 4), destination.Slice(0, 4));
         Assert.Throws<InvalidOperationException>(source.Dispose);
         using var commands = encoder.Finish();
         var submission = device.Submit(commands);
@@ -245,13 +298,14 @@ public sealed class BackendTests
     {
         using var first = Graphics.CreateDevice();
         using var second = Graphics.CreateDevice();
-        using var data = first.CreateBuffer(new BufferDesc { SizeInBytes = 16, Usage = BufferUsage.ShaderWrite });
+        using var data = first.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.ShaderWrite });
         Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(ulong.MaxValue, 4));
-        Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(12, 8));
-        Assert.Throws<ArgumentException>(() => second.CreateReference<uint>(data.Slice(0, 16)));
-        Assert.Throws<NotSupportedException>(() => first.CreateReference<float>(data.Slice(0, 16)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => first.CreateBuffer(new BufferDesc { SizeInBytes = 3, Usage = BufferUsage.CopySource }));
-        Assert.Throws<ArgumentException>(() => first.CreateBuffer(new BufferDesc { SizeInBytes = 16, Usage = (BufferUsage)128 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(3, 2));
+        Assert.Throws<ArgumentException>(() => second.CreateReference<uint>(data.Slice(0, 4)));
+        using var floatData = first.CreateBuffer(new BufferDesc<float> { Count = 4, Usage = BufferUsage.ShaderWrite });
+        Assert.Throws<NotSupportedException>(() => first.CreateReference<float>(floatData.Slice(0, 4)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => first.CreateBuffer(new BufferDesc<byte> { Count = 3, Usage = BufferUsage.CopySource }));
+        Assert.Throws<ArgumentException>(() => first.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = (BufferUsage)128 }));
         using var shader = first.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.double.wgsl");
         using var pipeline = first.CreateComputePipeline(new ComputePipelineDesc { Shader = shader });
         Assert.Throws<ArgumentException>(() => pipeline.CreateArguments(default));

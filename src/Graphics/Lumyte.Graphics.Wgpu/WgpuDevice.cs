@@ -72,7 +72,7 @@ internal sealed unsafe class WgpuDevice : IDisposable
         catch { resource.Dispose(); throw; }
     }
 
-    public Buffer CreateBuffer(BufferDesc desc)
+    public WgpuBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged
     {
         lock (Gate)
         {

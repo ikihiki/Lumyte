@@ -62,11 +62,11 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    {
 +        // サイズ・用途・範囲を検証
 +        // 初期 buffer のサイズは 4-byte の倍数
-+        public Buffer CreateBuffer(BufferDesc desc);
++        public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
 +
 +        // 初期の登録済みデータ schema は UInt32 配列のみ
 +        // 非所有・型付きの不透明参照を作る
-+        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : unmanaged;
++        public GpuReference<T> CreateReference<T>(BufferSlice<T> data) where T : unmanaged;
 +
 +        // DLL の埋め込み WGSL を読み込む
 +        // resource 不在は ArgumentException
@@ -88,33 +88,50 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        public Submission Submit(CommandBuffer commands);
 +    }
 +
-+    public sealed class Buffer : GpuResource
++    public sealed record BufferDesc<T> where T : unmanaged
 +    {
-+        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
-+        public void CopyFrom(ReadOnlySpan<byte> source);
-+
-+        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
-+        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
-+        public void CopyTo(Span<byte> destination);
-+        // unmanaged 値を raw bytes として書く。Slang の ABI は自動保証しない。
-+        public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged;
-+
-+        // サイズ・用途・範囲を検証
-+        // 初期 buffer のサイズは 4-byte の倍数
-+        public BufferSlice Slice(ulong offset, ulong length);
++        // 正数の要素数。初期 backend は byte 換算後のサイズに 4-byte alignment を要求。
++        public required ulong Count { get; init; }
++        // checked(Count * Unsafe.SizeOf<T>())。生成前の overflow を拒否する。
++        public ulong SizeInBytes { get; }
++        public required BufferUsage Usage { get; init; }
++        public MemoryPreference Memory { get; init; } = MemoryPreference.Automatic;
 +    }
 +
-+    public readonly struct BufferSlice
++    // T は数値型や unmanaged struct。byte は raw storage、Slang 互換性は別途検証する。
++    // factory が返す具象 backend 自身が実装し、共通 Buffer wrapper を確保しない。
++    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 +    {
-+        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
-+        public void CopyFrom(ReadOnlySpan<byte> source);
++        // 要素数。論理サイズは checked(Count * Unsafe.SizeOf<T>())。
++        public ulong Count { get; }
++        public ulong SizeInBytes { get; }
++        public BufferUsage Usage { get; }
++        public MemoryPreference Memory { get; }
++        // 要素単位の半開区間。count > 0、offset <= Count、count <= Count - offset。
++        // allocation を作らず、元 buffer の寿命を延ばさない。
++        public BufferSlice<T> Slice(ulong offset, ulong count);
++        // idle な Upload memory へ source.Length 要素をコピー。余りは変更しない。
++        // GPU 命令、queue write、staging 確保、送信は行わない。
++        public void CopyFrom(ReadOnlySpan<T> source);
++        // GPU 完了を観測した idle な Readback の Count 要素を caller memory にコピー。
++        // destination.Length >= Count。余りは変更せず、GPU コピー・送信・完了待機をしない。
++        public void CopyTo(Span<T> destination);
++        // idle 時の解放、idempotent。lease 中は InvalidOperationException。
++        public void Dispose();
++    }
 +
-+        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
-+        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
-+        public void CopyTo(Span<byte> destination);
-+        // unmanaged 値を raw bytes として書く。Slang の ABI は自動保証しない。
-+        public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged;
-+        // 元 Buffer を所有しない。操作は slice の範囲だけ。default は ArgumentException。
++    // 非所有の値型。直接 constructor は非公開。default は無効。
++    public readonly struct BufferSlice<T> where T : unmanaged
++    {
++        public IGraphicsBuffer<T> Buffer { get; }
++        // Offset と Count は要素単位。byte 換算は checked で検証する。
++        public ulong Offset { get; }
++        public ulong Count { get; }
++        public ulong OffsetInBytes { get; }
++        public ulong SizeInBytes { get; }
++        // 元 buffer と同じ CPU コピー契約をこの範囲に適用。default は ArgumentException。
++        public void CopyFrom(ReadOnlySpan<T> source);
++        public void CopyTo(Span<T> destination);
 +    }
 +
 +    public sealed class ComputePipeline : GpuResource
@@ -132,7 +149,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // 単一 queue の Compute とコピー
 +        // パス中は禁止
-+        public void RecordCopyBuffer(BufferSlice source, BufferSlice destination);
++        public void RecordCopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination) where TSource : unmanaged where TDestination : unmanaged;
 +
 +        // 一つの color attachment の Clear／Load、Store／Discard
 +        public RenderEncoder BeginRenderPass(RenderPassDesc desc);
@@ -143,7 +160,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +
 +        // 256-byte pitch の color コピー、完了後の caller 所有 CPU memory へのコピー
 +        // サンプルは bytes として pixel を検証
-+        public void RecordCopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow);
++        public void RecordCopyTextureToBuffer<T>(Texture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged;
 +    }
 +
 +    public sealed class Texture : GpuResource
@@ -164,7 +181,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        public void SetScissor(Scissor scissor);
 +
 +        // パス状態、範囲、index 用途を検証する記録 API
-+        public void SetIndexBuffer(BufferSlice indices, IndexFormat format);
++        public void SetIndexBuffer<T>(BufferSlice<T> indices, IndexFormat format) where T : unmanaged;
 +
 +        // パス状態、範囲、index 用途を検証する記録 API
 +        public void Draw(uint vertexCount, uint instanceCount = 1);
@@ -192,6 +209,8 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    }
 +}
 ```
+
+Buffer の共通 wrapper は廃止し、wgpu の具象 allocation が直接 IGraphicsBuffer<T> と IBufferBackendContract を実装する。BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
 
 初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 

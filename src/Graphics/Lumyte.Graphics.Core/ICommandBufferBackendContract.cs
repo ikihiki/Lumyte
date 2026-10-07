@@ -7,13 +7,13 @@ internal interface ICommandBufferBackendContract
     object Submit(CommandBuffer commands);
     object BeginRenderPass(object handle, RenderPassDesc desc);
     void Dispatch(object handle, ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y, uint z);
-    void RecordCopyBuffer(object handle, BufferSlice source, BufferSlice destination);
-    void RecordCopyTextureToBuffer(object handle, Texture source, Buffer destination, uint bytesPerRow);
+    void RecordCopyBuffer(object handle, BufferRange source, BufferRange destination);
+    void RecordCopyTextureToBuffer(object handle, Texture source, BufferRange destination, uint bytesPerRow);
     object Finish(object handle);
     void SetPipeline(object handle, GraphicsPipeline pipeline);
     void SetViewport(object handle, Viewport viewport);
     void SetScissor(object handle, Scissor scissor);
-    void SetIndexBuffer(object handle, BufferSlice indices, IndexFormat format);
+    void SetIndexBuffer(object handle, BufferRange indices, IndexFormat format);
     void Draw(object handle, DrawDesc desc);
     void DrawIndexed(object handle, IndexedDrawDesc desc);
     void End(object handle);

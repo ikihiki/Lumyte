@@ -87,7 +87,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
                 destination.Buffer.Native.Handle, destination.Offset, source.Length);
         }
     }
-    public void RecordCopyTextureToBuffer(Texture source, Buffer destination, uint bytesPerRow)
+    public void RecordCopyTextureToBuffer(Texture source, WgpuBuffer destination, uint bytesPerRow)
     {
         lock (Owner.Gate)
         {

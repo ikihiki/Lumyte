@@ -7,9 +7,10 @@ public enum LoadOp { Clear, Load }
 public enum StoreOp { Store, Discard }
 public enum IndexFormat { Uint16, Uint32 }
 
-public sealed record BufferDesc
+public sealed record BufferDesc<T> where T : unmanaged
 {
-    public required ulong SizeInBytes { get; init; }
+    public required ulong Count { get; init; }
+    public ulong SizeInBytes => checked(Count * (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>());
     public required BufferUsage Usage { get; init; }
     public MemoryPreference Memory { get; init; }
 }
@@ -62,20 +63,6 @@ public sealed record IndexedDrawDesc
 
 public readonly record struct Viewport(float X, float Y, float Width, float Height, float MinDepth = 0, float MaxDepth = 1);
 public readonly record struct Scissor(uint X, uint Y, uint Width, uint Height);
-
-public readonly struct BufferSlice
-{
-    public Buffer Buffer { get; }
-    public ulong Offset { get; }
-    public ulong Length { get; }
-    private IBufferBackendContract Backend => Buffer?.Backend ?? throw new ArgumentException("Invalid buffer slice.");
-    /// <summary>Copies CPU bytes into this idle Upload range; its remaining bytes are unchanged.</summary>
-    public void CopyFrom(ReadOnlySpan<byte> source) => Backend.CopyFrom(source, Offset, Length);
-    public void CopyFrom<T>(ReadOnlySpan<T> values) where T : unmanaged => CopyFrom(System.Runtime.InteropServices.MemoryMarshal.AsBytes(values));
-    /// <summary>Copies this completed Readback range; the remaining destination bytes are unchanged.</summary>
-    public void CopyTo(Span<byte> destination) => Backend.CopyTo(destination, Offset, Length);
-    internal BufferSlice(Buffer buffer, ulong offset, ulong length) => (Buffer, Offset, Length) = (buffer, offset, length);
-}
 
 /// <summary>A non-owning data reference. No native address, binding slot or serialization API is exposed.</summary>
 public readonly struct GpuReference<T> where T : unmanaged

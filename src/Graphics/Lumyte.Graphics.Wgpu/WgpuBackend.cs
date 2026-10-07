@@ -18,10 +18,15 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         throw new ArgumentException("Resource belongs to another device or backend.", nameof(resource));
         return value;
     }
-    private BufferSlice Slice(G.BufferSlice slice) => Get<Buffer>(slice.Buffer).Slice(slice.Offset, slice.Length);
+    private BufferSlice Slice(G.BufferRange slice)
+    {
+        if (slice.Buffer is not WgpuBuffer buffer) throw new ArgumentException("Resource belongs to another backend.");
+        buffer.Check(device);
+        return buffer.Slice(slice.Offset, slice.Length);
+    }
     public void Dispose() => device.Dispose();
     public ulong MaxBufferSize => device.MaxBufferSize;
-    public IBufferBackendContract CreateBuffer(BufferDesc desc) => device.CreateBuffer(desc);
+    public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => device.CreateBuffer(desc);
     public object CreateTexture(TextureDesc desc) => device.CreateTexture(desc);
     public object CreateShader(Assembly assembly, string resourceName) => device.CreateShader(assembly, resourceName);
     public object CreateComputePipeline(G.ComputePipelineDesc desc)
@@ -34,7 +39,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         ArgumentNullException.ThrowIfNull(desc);
         return device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = Get<ShaderModule>(desc.Shader), VertexEntry = desc.VertexEntry, FragmentEntry = desc.FragmentEntry });
     }
-    public object CreateReference<T>(G.BufferSlice data) where T : unmanaged => device.CreateReference<T>(Slice(data));
+    public object CreateReference<T>(G.BufferRange data) where T : unmanaged => device.CreateReference<T>(Slice(data));
     public object CreateCommandEncoder() => device.CreateCommandEncoder();
     public object Submit(G.CommandBuffer commands) => device.Submit(Get<CommandBuffer>(commands));
     public void DisposeHandle(object handle) => ((IDisposable)handle).Dispose();
@@ -52,13 +57,13 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         return ((CommandEncoder)handle).BeginRenderPass(new RenderPassDesc { Target = Get<TextureView>(desc.Target), Load = desc.Load, Store = desc.Store, ClearValue = desc.ClearValue });
     }
     public void Dispatch(object handle, G.ComputePipeline pipeline, G.ShaderArguments arguments, uint x, uint y, uint z) => ((CommandEncoder)handle).Dispatch(Get<ComputePipeline>(pipeline), Get<ShaderArguments>(arguments), x, y, z);
-    public void RecordCopyBuffer(object handle, G.BufferSlice source, G.BufferSlice destination) => ((CommandEncoder)handle).RecordCopyBuffer(Slice(source), Slice(destination));
-    public void RecordCopyTextureToBuffer(object handle, G.Texture source, G.Buffer destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyTextureToBuffer(Get<Texture>(source), Get<Buffer>(destination), bytesPerRow);
+    public void RecordCopyBuffer(object handle, G.BufferRange source, G.BufferRange destination) => ((CommandEncoder)handle).RecordCopyBuffer(Slice(source), Slice(destination));
+    public void RecordCopyTextureToBuffer(object handle, G.Texture source, G.BufferRange destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyTextureToBuffer(Get<Texture>(source), Slice(destination).Buffer, bytesPerRow);
     public object Finish(object handle) => ((CommandEncoder)handle).Finish();
     public void SetPipeline(object handle, G.GraphicsPipeline pipeline) => ((RenderEncoder)handle).SetPipeline(Get<GraphicsPipeline>(pipeline));
     public void SetViewport(object handle, Viewport viewport) => ((RenderEncoder)handle).SetViewport(viewport);
     public void SetScissor(object handle, Scissor scissor) => ((RenderEncoder)handle).SetScissor(scissor);
-    public void SetIndexBuffer(object handle, G.BufferSlice indices, IndexFormat format) => ((RenderEncoder)handle).SetIndexBuffer(Slice(indices), format);
+    public void SetIndexBuffer(object handle, G.BufferRange indices, IndexFormat format) => ((RenderEncoder)handle).SetIndexBuffer(Slice(indices), format);
     public void Draw(object handle, DrawDesc desc) => ((RenderEncoder)handle).Draw(desc);
     public void DrawIndexed(object handle, IndexedDrawDesc desc) => ((RenderEncoder)handle).DrawIndexed(desc);
     public void End(object handle) => ((RenderEncoder)handle).End();

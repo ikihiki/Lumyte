@@ -37,14 +37,14 @@ internal abstract class GpuResource : IDisposable
     protected abstract void ReleaseNative();
 }
 
-internal sealed class Buffer : GpuResource, IBufferBackendContract
+internal class WgpuBuffer : GpuResource, IBufferBackendContract
 {
     internal A.Buffer Native { get; }
     public ulong SizeInBytes { get; }
-    internal BufferUsage Usage { get; }
-    internal MemoryPreference Memory { get; }
-    internal Buffer(WgpuDevice owner, A.Buffer native, BufferDesc desc) : base(owner)
-        => (Native, SizeInBytes, Usage, Memory) = (native, desc.SizeInBytes, desc.Usage, desc.Memory);
+    public BufferUsage Usage { get; }
+    public MemoryPreference Memory { get; }
+    internal WgpuBuffer(WgpuDevice owner, A.Buffer native, ulong size, BufferUsage usage, MemoryPreference memory) : base(owner)
+        => (Native, SizeInBytes, Usage, Memory) = (native, size, usage, memory);
     public BufferSlice Slice(ulong offset, ulong length)
     {
         lock (Owner.Gate)
@@ -64,7 +64,7 @@ internal sealed class Buffer : GpuResource, IBufferBackendContract
             if (Memory != MemoryPreference.Upload || SizeInBytes > int.MaxValue || (ulong)source.Length > length)
                 throw new ArgumentException("CPU copy requires an idle Upload buffer and a valid managed-size range.");
             var status = Native.MapBlocking(Owner.Instance, A.MapMode.Write, 0, (nuint)SizeInBytes);
-            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"Buffer map failed: {status}");
+            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"WgpuBuffer map failed: {status}");
             try
             {
                 Owner.CheckErrors();
@@ -81,7 +81,7 @@ internal sealed class Buffer : GpuResource, IBufferBackendContract
             if (Memory != MemoryPreference.Readback || SizeInBytes > int.MaxValue || length > (ulong)destination.Length)
                 throw new ArgumentException("CPU copy requires completed Readback memory and a sufficient destination.");
             var status = Native.MapBlocking(Owner.Instance, A.MapMode.Read, 0, (nuint)SizeInBytes);
-            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"Buffer map failed: {status}");
+            if (status != WGPUMapAsyncStatus.Success) throw new InvalidOperationException($"WgpuBuffer map failed: {status}");
             try
             {
                 Owner.CheckErrors();
@@ -91,6 +91,24 @@ internal sealed class Buffer : GpuResource, IBufferBackendContract
         }
     }
     protected override void ReleaseNative() => Native.Dispose();
+}
+
+// The public typed interface and the internal allocation contract are the same object.
+internal sealed class WgpuBuffer<T> : WgpuBuffer, IGraphicsBuffer<T> where T : unmanaged
+{
+    public ulong Count { get; }
+    internal WgpuBuffer(WgpuDevice owner, A.Buffer native, BufferDesc<T> desc)
+        : base(owner, native, desc.SizeInBytes, desc.Usage, desc.Memory) => Count = desc.Count;
+    public new Lumyte.Graphics.BufferSlice<T> Slice(ulong offset, ulong count)
+    {
+        if (count == 0 || offset > Count || count > Count - offset)
+            throw new ArgumentOutOfRangeException(nameof(count));
+        ulong elementSize = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+        ValidateRange(checked(offset * elementSize), checked(count * elementSize));
+        return new(this, offset, count);
+    }
+    public void CopyFrom(ReadOnlySpan<T> source) => base.CopyFrom(System.Runtime.InteropServices.MemoryMarshal.AsBytes(source), 0, SizeInBytes);
+    public void CopyTo(Span<T> destination) => base.CopyTo(System.Runtime.InteropServices.MemoryMarshal.AsBytes(destination), 0, SizeInBytes);
 }
 
 internal sealed class Texture : GpuResource
@@ -173,8 +191,8 @@ internal sealed unsafe class ShaderArguments : GpuResource
 {
     internal WGPUBindGroupImpl* Handle { get; }
     internal ComputePipeline Pipeline { get; }
-    private readonly Buffer _buffer;
-    internal ShaderArguments(ComputePipeline pipeline, Buffer buffer, WGPUBindGroupImpl* handle) : base(pipeline.Owner)
+    private readonly WgpuBuffer _buffer;
+    internal ShaderArguments(ComputePipeline pipeline, WgpuBuffer buffer, WGPUBindGroupImpl* handle) : base(pipeline.Owner)
     { Pipeline = pipeline; _buffer = buffer; Handle = handle; pipeline.Acquire(); buffer.Acquire(); }
     protected override void ReleaseNative()
     { WGPU.wgpuBindGroupRelease(Handle); Pipeline.ReleaseLease(); _buffer.ReleaseLease(); }

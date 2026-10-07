@@ -32,7 +32,7 @@ DirectX／Vulkan の C# バインディングは既存方針どおり各 `.Nativ
 
 ### データとバインディング
 
-共通 API は `Buffer` と非所有の `BufferSlice`（バッファ、バイトオフセット、バイト長）を使用する。GPU データを小さなオブジェクトごとに確保せず、大きなバッファを Runtime が部分確保する。範囲、用途、アラインメントを検証できる表現を保持する。
+共通 API は `IGraphicsBuffer<T>` と非所有の値型 `BufferSlice<T>`（buffer、要素 offset、要素数）を使用する。`T : unmanaged` とし、byte 換算は checked で計算する。GPU データを小さなオブジェクトごとに確保せず、大きなバッファを Runtime が部分確保する。範囲、用途、アラインメントを検証できる表現を保持する。
 
 draw／dispatch は単一の `ShaderArguments` を受け取る。利用者は Slang の論理スキーマに対応する生成済み C# 引数型に定数と `GpuReference<T>`、テクスチャビュー、サンプラを設定する。GPU データ参照の実表現、root アドレス、ディスクリプタ番号、バインディングスロットを利用者に公開しない。
 
@@ -76,12 +76,12 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // データ領域の生成
 +        // サイズ、用途、メモリ種別を指定
 +        // GPU アドレスや CPU mapping を保証しない
-+        public Result<Buffer> CreateBuffer(BufferDesc desc);
++        public Result<IGraphicsBuffer<T>> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
 +
 +        // GPU データの型付き参照を作る
 +        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
 +        // 実アドレスを公開しない
-+        public GpuReference<T> CreateReference<T>(BufferSlice data) where T : IShaderData;
++        public GpuReference<T> CreateReference<T>(BufferSlice<byte> data) where T : IShaderData;
 +
 +        // テクスチャの生成
 +        // サイズ、形式、用途を検証
@@ -116,30 +116,40 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        public Result<Submission> Submit(CommandBuffer commands);
 +    }
 +
-+    public sealed class Buffer : IDisposable
++    // T は数値型や unmanaged struct。byte は raw storage、Slang 互換性は別途検証する。
++    // factory が返す具象 backend 自身が実装し、共通 Buffer wrapper を確保しない。
++    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 +    {
-+        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
-+        public void CopyFrom(ReadOnlySpan<byte> source);
-+
-+        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
-+        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
-+        public void CopyTo(Span<byte> destination);
-+
-+        // 非所有の部分領域
-+        // 境界を検証
-+        // 元の Buffer の寿命を延ばさない
-+        public BufferSlice Slice(ulong offset, ulong length);
++        // 要素数。論理サイズは checked(Count * Unsafe.SizeOf<T>())。
++        public ulong Count { get; }
++        public ulong SizeInBytes { get; }
++        public BufferUsage Usage { get; }
++        public MemoryPreference Memory { get; }
++        // 要素単位の半開区間。count > 0、offset <= Count、count <= Count - offset。
++        // allocation を作らず、元 buffer の寿命を延ばさない。
++        public BufferSlice<T> Slice(ulong offset, ulong count);
++        // idle な Upload memory へ source.Length 要素をコピー。余りは変更しない。
++        // GPU 命令、queue write、staging 確保、送信は行わない。
++        public void CopyFrom(ReadOnlySpan<T> source);
++        // GPU 完了を観測した idle な Readback の Count 要素を caller memory にコピー。
++        // destination.Length >= Count。余りは変更せず、GPU コピー・送信・完了待機をしない。
++        public void CopyTo(Span<T> destination);
++        // idle 時の解放、idempotent。lease 中は InvalidOperationException。
++        public void Dispose();
 +    }
 +
-+    public readonly struct BufferSlice
++    // 非所有の値型。直接 constructor は非公開。default は無効。
++    public readonly struct BufferSlice<T> where T : unmanaged
 +    {
-+        // idle な Upload の CPU memory に書く。残りの領域は変更しない。GPU 命令・確保・送信は行わない。
-+        public void CopyFrom(ReadOnlySpan<byte> source);
-+
-+        // 完了を観測した idle な Readback の全対象範囲を caller memory に読む。
-+        // destination は対象サイズ以上。余りは変更しない。GPU コピー・送信・待機は行わない。
-+        public void CopyTo(Span<byte> destination);
-+        // 元 Buffer を所有しない。操作は slice の範囲だけ。default は ArgumentException。
++        public IGraphicsBuffer<T> Buffer { get; }
++        // Offset と Count は要素単位。byte 換算は checked で検証する。
++        public ulong Offset { get; }
++        public ulong Count { get; }
++        public ulong OffsetInBytes { get; }
++        public ulong SizeInBytes { get; }
++        // 元 buffer と同じ CPU コピー契約をこの範囲に適用。default は ArgumentException。
++        public void CopyFrom(ReadOnlySpan<T> source);
++        public void CopyTo(Span<T> destination);
 +    }
 +
 +    public sealed class Texture : IDisposable
@@ -160,7 +170,7 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +        // index 描画
 +        // 詳細は ADR-0006／0007
 +        // index 範囲と pipeline の topology／strip format を検証
-+        public void SetIndexBuffer(BufferSlice indices, IndexFormat format);
++        public void SetIndexBuffer<T>(BufferSlice<T> indices, IndexFormat format) where T : unmanaged;
 +
 +        // 記録 scope の終了
 +        // GPU 完了を意味しない
@@ -196,15 +206,15 @@ API は .NET の API review／API diff に倣い、namespace・型・メンバ�
 +    {
 +        // データの転送
 +        // コピー用途、サイズ、アラインメントが有効であること
-+        public void RecordCopyBuffer(BufferSlice source, BufferSlice destination);
++        public void RecordCopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination) where TSource : unmanaged where TDestination : unmanaged;
 +
 +        // テクスチャ Readback 用コピー
 +        // 範囲・pitch・用途の正本は ADR-0010
-+        public void RecordCopyTextureToBuffer(Texture source, BufferSlice destination, TextureCopyDesc desc);
++        public void RecordCopyTextureToBuffer(Texture source, BufferSlice<byte> destination, TextureCopyDesc desc);
 +
 +        // テクスチャ Upload
 +        // 行ピッチとコピー範囲を検証
-+        public void RecordCopyBufferToTexture(BufferSlice source, Texture destination, TextureCopyDesc desc);
++        public void RecordCopyBufferToTexture(BufferSlice<byte> source, Texture destination, TextureCopyDesc desc);
 +
 +        // 描画パスの開始
 +        // attachment と load／store を指定
