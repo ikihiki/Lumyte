@@ -15,6 +15,8 @@ NoGraphicsAPI は GPU ポインタ、アプリケーション所有のディス�
 
 以下を提案する。本 ADR はライブラリの境界と主要 API の設計を扱い、実装言語の変更や対応環境の削除は行わない。
 
+最初の実装は [ADR-0008](0008-wgpu-first-backend.md) の managed wgpu バックエンドとし、既存 .NET binding を直接使用する。本 ADR の広い共通契約への統合と、独立した DirectX／Vulkan 実装は後続とする。wgpu に Lumyte の `.Native` プロジェクトは追加しない。
+
 ### 責務と依存関係
 
 | 層 | 配置・名前空間 | 責務 |
