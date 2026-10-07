@@ -204,7 +204,7 @@ texture と sampler が別 field の場合も利用者に binding 番号は指�
 +
 +        // dimension、aspect、sample type、filter／compare、sample count を照合
 +        // pack／記録前に拒否
-+        void ValidateSamplingPair(TextureViewToken textureView, SamplerToken sampler, ReflectedSamplingUse reflectedUse);
++        void ValidateSamplingPair(ITextureViewBackendContract textureView, SamplerToken sampler, ReflectedSamplingUse reflectedUse);
 +
 +        // Native と Slang が共有する ABI に従って引数を構築
 +        // slot／address／bind group を利用側に返さない

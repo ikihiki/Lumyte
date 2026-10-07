@@ -18,6 +18,13 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         throw new ArgumentException("Resource belongs to another device or backend.", nameof(resource));
         return value;
     }
+    private T GetTextureResource<T>(object resource) where T : GpuResource
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        if (resource is not T value) throw new ArgumentException("Unsupported texture implementation.", nameof(resource));
+        value.Check(device);
+        return value;
+    }
     private BufferSlice Slice(G.BufferRange slice)
     {
         if (slice.Buffer is not WgpuBuffer buffer) throw new ArgumentException("Resource belongs to another backend.");
@@ -28,7 +35,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     public ulong MaxBufferSize => device.MaxBufferSize;
     public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged => device.GetBufferLayout<T>();
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => device.CreateBuffer(desc);
-    public object CreateTexture(TextureDesc desc) => device.CreateTexture(desc);
+    public IGraphicsTexture CreateTexture(TextureDesc desc) => device.CreateTexture(desc);
     public object CreateShader(Assembly assembly, string resourceName) => device.CreateShader(assembly, resourceName);
     public object CreateComputePipeline(G.ComputePipelineDesc desc)
     {
@@ -44,9 +51,6 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     public object CreateCommandEncoder() => device.CreateCommandEncoder();
     public object Submit(G.CommandBuffer commands) => device.Submit(Get<CommandBuffer>(commands));
     public void DisposeHandle(object handle) => ((IDisposable)handle).Dispose();
-    public uint TextureWidth(object handle) => ((Texture)handle).Width;
-    public uint TextureHeight(object handle) => ((Texture)handle).Height;
-    public object CreateView(object handle) => ((Texture)handle).CreateView();
     public object CreateArguments(object handle, G.GpuReference<uint> data)
     {
         if (data.Handle is not GpuReference<uint> reference) throw new ArgumentException("Invalid GPU data reference.", nameof(data));
@@ -55,11 +59,11 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     public object BeginRenderPass(object handle, G.RenderPassDesc desc)
     {
         ArgumentNullException.ThrowIfNull(desc);
-        return ((CommandEncoder)handle).BeginRenderPass(new RenderPassDesc { Target = Get<TextureView>(desc.Target), Load = desc.Load, Store = desc.Store, ClearValue = desc.ClearValue });
+        return ((CommandEncoder)handle).BeginRenderPass(new RenderPassDesc { Target = GetTextureResource<TextureView>(desc.Target), Load = desc.Load, Store = desc.Store, ClearValue = desc.ClearValue });
     }
     public void Dispatch(object handle, G.ComputePipeline pipeline, G.ShaderArguments arguments, uint x, uint y, uint z) => ((CommandEncoder)handle).Dispatch(Get<ComputePipeline>(pipeline), Get<ShaderArguments>(arguments), x, y, z);
     public void RecordCopyBuffer(object handle, G.BufferRange source, G.BufferRange destination) => ((CommandEncoder)handle).RecordCopyBuffer(Slice(source), Slice(destination));
-    public void RecordCopyTextureToBuffer(object handle, G.Texture source, G.BufferRange destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyTextureToBuffer(Get<Texture>(source), Slice(destination).Buffer, bytesPerRow);
+    public void RecordCopyTextureToBuffer(object handle, G.IGraphicsTexture source, G.BufferRange destination, uint bytesPerRow) => ((CommandEncoder)handle).RecordCopyTextureToBuffer(GetTextureResource<Texture>(source), Slice(destination).Buffer, bytesPerRow);
     public object Finish(object handle) => ((CommandEncoder)handle).Finish();
     public void SetPipeline(object handle, G.GraphicsPipeline pipeline) => ((RenderEncoder)handle).SetPipeline(Get<GraphicsPipeline>(pipeline));
     public void SetViewport(object handle, Viewport viewport) => ((RenderEncoder)handle).SetViewport(viewport);

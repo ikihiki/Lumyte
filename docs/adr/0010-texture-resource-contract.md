@@ -13,7 +13,7 @@ Texture を単なる画像 handle として扱うと、mip／layer／aspect、fo
 
 ### 利用側の公開 API
 
-Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の BufferSlice<byte>.CopyTo で CPU bytes を読む。Texture と TextureView は sealed な所有 class とし、利用者による直接 constructor、native image／view handle の取得、CPU map は提供しない。
+Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の BufferSlice<byte>.CopyTo で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface と内部 backend 契約を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -24,10 +24,10 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +    {
 +        // Desc と ViewFormats を snapshot
 +        // 形式・用途・寸法・容量を検証して生成
-+        public Result<Texture> CreateTexture(TextureDesc desc);
++        public Result<IGraphicsTexture> CreateTexture(TextureDesc desc);
 +    }
 +
-+    public sealed class Texture : IDisposable
++    public interface IGraphicsTexture : IDisposable
 +    {
 +        // 確定した論理属性
 +        // 生成後は不変
@@ -55,7 +55,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +
 +        // 所属 texture の互換な subresource view を生成
 +        // null の count／format を解決して保持
-+        public Result<TextureView> CreateView(TextureViewDesc desc);
++        public Result<IGraphicsTextureView> CreateView(TextureViewDesc desc);
 +
 +        // 範囲内 mip の寸法
 +        // D3 の depth は縮小、D2 の array layer 数は一定
@@ -66,11 +66,11 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        public void Dispose();
 +    }
 +
-+    public sealed class TextureView : IDisposable
++    public interface IGraphicsTextureView : IDisposable
 +    {
 +        // 元 texture と正規化済みの形式・dimension・aspect・mip／layer 範囲
 +        // 物理 descriptor は公開しない
-+        public Texture Texture { get; }
++        public IGraphicsTexture Texture { get; }
 +
 +        // 元 texture と正規化済みの形式・dimension・aspect・mip／layer 範囲
 +        // 物理 descriptor は公開しない
@@ -91,16 +91,16 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +    {
 +        // source CopySource、destination CopyDestination
 +        // パス外、同じ Device
-+        public void RecordCopyBufferToTexture(BufferSlice<byte> source, Texture destination, TextureCopyDesc desc);
++        public void RecordCopyBufferToTexture(BufferSlice<byte> source, IGraphicsTexture destination, TextureCopyDesc desc);
 +
 +        // 逆方向のコピー
 +        // source CopySource、destination CopyDestination
 +        // 同じ layout 検証
-+        public void RecordCopyTextureToBuffer(Texture source, BufferSlice<byte> destination, TextureCopyDesc desc);
++        public void RecordCopyTextureToBuffer(IGraphicsTexture source, BufferSlice<byte> destination, TextureCopyDesc desc);
 +
 +        // 同 format、同 extent、sample count 1 の color
 +        // 範囲、用途、alias を検証
-+        public void RecordCopyTexture(Texture source, TextureRegion sourceRegion, Texture destination, TextureRegion destinationRegion);
++        public void RecordCopyTexture(IGraphicsTexture source, TextureRegion sourceRegion, IGraphicsTexture destination, TextureRegion destinationRegion);
 +    }
 +}
 +
@@ -287,55 +287,53 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 ```diff
 +namespace Lumyte.Graphics.Implementation
 +{
-+    // 内部操作の設計用宣言。Token／Range／Plan などは非公開の概念型。
-+    // 正式な driver signature、結果／診断型、C ABI の layout は別途具体化する。
-+    // この表示は現行 IGraphicsDriver の実装を変更しない。
-+    internal interface ITextureBackendContract
++    // Device factory が support の照会と allocation の生成・失敗 rollback を担う。
++    internal interface IGraphicsDriver
 +    {
-+        // native support と実装範囲の両方に基づく用途、filter／compare、sample count、view format の報告
 +        FormatCapabilities GetFormatCapabilities(TextureFormat format);
++        IGraphicsTexture CreateTexture(TextureDesc normalizedDesc);
++    }
 +
-+        // image と memory の確保、使用 flags、format／extent、世代、失敗 rollback、idle 時解放
-+        TextureToken CreateTexture(TextureDesc normalizedDesc);
++    // 一つの native image と allocation、所属・世代・lease・属性を自身に保持する。
++    internal interface ITextureBackendContract : IDisposable
++    {
++        TextureDimension Dimension { get; }
++        Extent3D Size { get; }
++        TextureFormat Format { get; }
++        TextureUsage Usage { get; }
++        uint MipLevels { get; }
++        uint SampleCount { get; }
++        // 失敗 rollback、選択 subresource の native view と元 texture の lease。
++        IGraphicsTextureView CreateView(TextureViewDesc normalizedDesc);
++        Extent3D GetMipSize(uint mipLevel);
++        // idle 時に自身の allocation を解放、使用中は拒否、idempotent。
++        void Dispose();
++    }
 +
-+        // image と memory の確保、使用 flags、format／extent、世代、失敗 rollback、idle 時解放
-+        void DestroyTexture(TextureToken token);
++    // native view と正規化済み subresource を保持。解放時に元 texture の lease を返す。
++    internal interface ITextureViewBackendContract : IDisposable
++    {
++        ITextureBackendContract Texture { get; }
++        TextureViewInfo Info { get; }
++        // Slang 型・用途・Device・寿命を検証し、実 descriptor／binding に内部で解決する。
++        ResolvedTextureReference ResolveTextureView(ReflectedTextureType reflectedType, BindingPlan bindingPlan);
++        void Dispose();
++    }
 +
-+        // 選択 subresource の native view と元 texture の lease
-+        // サブリソース情報を失わない
-+        TextureViewToken CreateTextureView(TextureToken textureToken, TextureViewDesc normalizedDesc);
-+
-+        // 選択 subresource の native view と元 texture の lease
-+        // サブリソース情報を失わない
-+        void DestroyTextureView(TextureViewToken token);
-+
-+        // shader の型・用途・device と lifetime の検証、descriptor／binding への内部変換
-+        ResolvedTextureReference ResolveTextureView(TextureViewToken token, ReflectedTextureType reflectedType, BindingPlan bindingPlan);
-+
-+        // 範囲・pitch・用途を記録前に検証
-+        // 必要な native footprint へ変換し、padding の意味を維持
-+        void RecordCopyBufferToTexture(EncoderToken encoder, BufferRange source, TextureToken destination, TextureCopyDesc desc);
-+
-+        // 範囲・pitch・用途を記録前に検証
-+        // 必要な native footprint へ変換し、padding の意味を維持
-+        void RecordCopyTextureToBuffer(EncoderToken encoder, TextureToken source, BufferRange destination, TextureCopyDesc desc);
-+
-+        // 範囲・pitch・用途を記録前に検証
-+        // 必要な native footprint へ変換し、padding の意味を維持
-+        void RecordCopyTexture(EncoderToken encoder, TextureToken source, TextureRegion sourceRegion, TextureToken destination, TextureRegion destinationRegion);
-+
-+        // layout／access／使用 scope の遷移
-+        // aspect／mip／layer の追跡
-+        // 必要なら保守的な texture 全体の依存へ拡張
-+        void ApplyTextureDependency(TextureSubresources subresources, ResourceAccess producer, ResourceAccess consumer);
-+
-+        // ADR-0006 の End で color MSAA resolve
-+        // source discard と target 保存を別に処理
-+        void ResolveColorAttachment(TextureViewToken source, TextureViewToken target);
-+
++    // GPU コピー、依存遷移、attachment resolve はコマンド側の責務。
++    // 利用者の明示的な操作と範囲を、native footprint／pitch／layout／access へ変換する。
++    internal interface ICommandBufferBackendContract
++    {
++        void RecordCopyBufferToTexture(EncoderToken encoder, BufferRange source, ITextureBackendContract destination, TextureCopyDesc desc);
++        void RecordCopyTextureToBuffer(EncoderToken encoder, ITextureBackendContract source, BufferRange destination, TextureCopyDesc desc);
++        void RecordCopyTexture(EncoderToken encoder, ITextureBackendContract source, TextureRegion sourceRegion, ITextureBackendContract destination, TextureRegion destinationRegion);
++        void Barrier(EncoderToken encoder, ResourceDependency dependency);
++        void ResolveColorAttachment(EncoderToken encoder, ITextureViewBackendContract source, ITextureViewBackendContract target);
 +    }
 +}
 ```
+
+公開 interface と内部契約は同一 instance の異なる境界であり、view は元 texture と別の native resource を所有する。コマンド backend は受け取った instance の実装・Device 所属・有効性を検証して native データを使い、texture／view に命令やバリアの管理を委譲しない。初期 wgpu の内部契約は Width／Height と引数なし CreateView に限定し、ここで示す追加属性・反射解決は提案である。
 
 | backend | 実装上の対応 |
 | --- | --- |
@@ -344,7 +342,7 @@ Texture→Texture は同じ texture の同じ mip では、空間／layer のコ
 | Vulkan | image／memory／view、aspect mask、layout とアクセス依存。row／image stride を texel 単位へ検証して変換し、必要なら repack |
 | Browser WebGPU | texture／view、copy の row alignment、使用 scope、mapAsync。ホスト Native handle を公開しない |
 
-DirectX／Vulkan の Native 境界は uint32 の寸法／mip／layer／format／usage と、uint64 の buffer offset、opaque resource token を使用する。view format 配列は呼び出し中に snapshot し、managed 配列 pointer を保存しない。native image／descriptor の寿命と GPU 使用を token に結び付ける。完全な POD 宣言は後続の ABI 設計で定める。
+DirectX／Vulkan の Native 境界は uint32 の寸法／mip／layer／format／usage と、uint64 の buffer offset、opaque resource token を使用する。view format 配列は呼び出し中に snapshot し、managed 配列 pointer を保存しない。native image／descriptor の handle と GPU 使用の状態は具象 backend が所有する。共通 TextureToken／TextureViewToken は設けない。完全な POD 宣言は後続の ABI 設計で定める。
 
 ### 所有権と失敗
 

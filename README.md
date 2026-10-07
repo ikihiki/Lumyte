@@ -48,3 +48,5 @@ SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセッ�
 バッファは `device.CreateBuffer(new BufferDesc<uint> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload })` のように型と要素数で生成します。`SizeInBytes` はバックエンドが解決する `Layout.ElementStrideInBytes` と要素数から自動計算され、`Slice(offset, count)` も要素単位です。数値型や `unmanaged` struct を許可しますが、Slang の ABI 互換性は別途検証します。具象バックエンドが `IGraphicsBuffer<T>` を直接実装し、allocation を所有します。
 
 `device.GetBufferLayout<T>()` と `buffer.Layout` で型ごとの格納 stride、byte／要素単位のコピー alignment を確認できます。初期 wgpu の GPU コピーでは `byte` は offset と count が 4 の倍数、`ushort` は 2 の倍数、`uint` は 1 の倍数です。これらは CPU コピーの範囲制約とは別です。
+
+Texture と TextureView は `IGraphicsTexture`／`IGraphicsTextureView` を使用し、バックエンドの具象 instance を直接受け取ります。view は native view を所有し、その存続中は元 texture を保持します。記録済み・送信中の view と texture の解放は拒否します。

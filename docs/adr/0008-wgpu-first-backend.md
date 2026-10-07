@@ -30,7 +30,7 @@
 | `Lumyte.Graphics` | Core と対応 backend に依存する生成層。`Graphics.CreateDevice(GraphicsBackend)` で選択し、共通 GraphicsDevice を返す |
 | テスト／サンプル | 生成層を ProjectReference し、Core の共通型だけで操作。wgpu／Ahjo の直接参照は禁止 |
 
-Core の wrapper は内部 driver と backend object を非公開で保持する。GPU 参照も不透明な内部データを保持し、利用者が backend 型や物理表現へ変換する API は提供しない。生成層から backend への依存は構成のためだけに使う。frame allocator／deferred deletion を扱う Runtime とは別の責務とする。
+Buffer／Texture／TextureView は backend の具象 instance が共通 interface を直接実装する。pipeline などの Core wrapper は内部 driver と backend object を非公開で保持する。GPU 参照も不透明な内部データを保持し、利用者が backend 型や物理表現へ変換する API は提供しない。生成層から backend への依存は構成のためだけに使う。frame allocator／deferred deletion を扱う Runtime とは別の責務とする。
 
 `GraphicsBackend` は現在 `Wgpu` のみ。`Graphics.CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu)` は未定義値を ArgumentOutOfRangeException で拒否する。バックエンドの `WgpuBackend.CreateDevice()` は生成層用の接続点であり、サンプル／テストからは呼ばない。
 
@@ -80,7 +80,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc);
 +
 +        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
-+        public Texture CreateTexture(TextureDesc desc);
++        public IGraphicsTexture CreateTexture(TextureDesc desc);
 +
 +        // rootless vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
 +        public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
@@ -154,6 +154,23 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        public void CopyTo(Span<T> destination);
 +    }
 +
++    // 具象 backend が native allocation と Device 所属・lease を保持する。
++    public interface IGraphicsTexture : IDisposable
++    {
++        public uint Width { get; }
++        public uint Height { get; }
++        // 初期実装は単一 RGBA8 mip／layer 全体の view。
++        public IGraphicsTextureView CreateView();
++        public void Dispose();
++    }
++
++    // native view を所有し、存続中は元 texture を lease する。
++    public interface IGraphicsTextureView : IDisposable
++    {
++        public IGraphicsTexture Texture { get; }
++        public void Dispose();
++    }
++
 +    public sealed class ComputePipeline : GpuResource
 +    {
 +        // 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数
@@ -180,13 +197,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +
 +        // 256-byte pitch の color コピー、完了後の caller 所有 CPU memory へのコピー
 +        // サンプルは bytes として pixel を検証
-+        public void RecordCopyTextureToBuffer<T>(Texture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged;
-+    }
-+
-+    public sealed class Texture : GpuResource
-+    {
-+        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
-+        public TextureView CreateView();
++        public void RecordCopyTextureToBuffer<T>(IGraphicsTexture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged;
 +    }
 +
 +    public sealed class RenderEncoder : IDisposable
@@ -230,7 +241,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +}
 ```
 
-wgpu の具象 allocation が直接 IGraphicsBuffer<T> と IBufferBackendContract を実装する。GetBufferLayout<T>() の ElementStrideInBytes と BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
+wgpu の具象 buffer allocation が IGraphicsBuffer<T> と IBufferBackendContract、texture と view がそれぞれ IGraphicsTexture／ITextureBackendContract と IGraphicsTextureView／ITextureViewBackendContract を直接実装する。共通 factory は同じ instance を返す。view の保持・Dispose も具象実装が処理し、コマンド側は instance の所属と lease を検証する。GetBufferLayout<T>() の ElementStrideInBytes と BufferDesc<T>.Count から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
 
 初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、Sampler、生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
 

@@ -9,7 +9,7 @@ public sealed class GraphicsDevice : IDisposable
     public ulong MaxBufferSize => _driver.MaxBufferSize;
     public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged => _driver.GetBufferLayout<T>();
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged => _driver.CreateBuffer(desc);
-    public Texture CreateTexture(TextureDesc desc) => new(_driver, _driver.CreateTexture(desc));
+    public IGraphicsTexture CreateTexture(TextureDesc desc) => _driver.CreateTexture(desc);
     public ShaderModule CreateShader(Assembly assembly, string resourceName) => new(_driver, _driver.CreateShader(assembly, resourceName));
     public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => new(_driver, _driver.CreateComputePipeline(desc));
     public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new(_driver, _driver.CreateGraphicsPipeline(desc));
@@ -25,19 +25,6 @@ public abstract class GpuResource : IDisposable
     internal object Handle { get; }
     internal GpuResource(IGraphicsDriver driver, object handle) => (Driver, Handle) = (driver, handle);
     public void Dispose() => Driver.DisposeHandle(Handle);
-}
-
-public sealed class Texture : GpuResource
-{
-    internal Texture(IGraphicsDriver driver, object handle) : base(driver, handle) { }
-    public uint Width => Driver.TextureWidth(Handle);
-    public uint Height => Driver.TextureHeight(Handle);
-    public TextureView CreateView() => new(Driver, Driver.CreateView(Handle));
-}
-
-public sealed class TextureView : GpuResource
-{
-    internal TextureView(IGraphicsDriver driver, object handle) : base(driver, handle) { }
 }
 
 public sealed class ShaderModule : GpuResource
@@ -77,7 +64,7 @@ public sealed class CommandEncoder : IDisposable
     /// <summary>Records a GPU copy; execution requires Finish and explicit Submit.</summary>
     public void RecordCopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination) where TSource : unmanaged where TDestination : unmanaged => _driver.RecordCopyBuffer(_handle, source.Range, destination.Range);
     /// <summary>Records a texture readback copy; records no submission.</summary>
-    public void RecordCopyTextureToBuffer<T>(Texture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged
+    public void RecordCopyTextureToBuffer<T>(IGraphicsTexture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(destination);
         _driver.RecordCopyTextureToBuffer(_handle, source, destination.Slice(0, destination.Count).Range, bytesPerRow);

@@ -88,7 +88,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        // テクスチャの生成
 +        // サイズ、形式、用途を検証
 +        // 共通 API は CPU mapping を公開しない
-+        public Result<Texture> CreateTexture(TextureDesc desc);
++        public Result<IGraphicsTexture> CreateTexture(TextureDesc desc);
 +
 +        // サンプリング設定
 +        // テクスチャとは独立した所有リソース
@@ -156,12 +156,12 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        public void CopyTo(Span<T> destination);
 +    }
 +
-+    public sealed class Texture : IDisposable
++    public interface IGraphicsTexture : IDisposable
 +    {
 +        // mip・layer・aspect 範囲の参照
 +        // 元の Texture の memory 所有権を持たず、view 存続中は元 Texture を lease
 +        // 互換形式と範囲を検証
-+        public Result<TextureView> CreateView(TextureViewDesc desc);
++        public Result<IGraphicsTextureView> CreateView(TextureViewDesc desc);
 +    }
 +
 +    public sealed class RenderEncoder : IDisposable
@@ -214,11 +214,11 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +
 +        // テクスチャ Readback 用コピー
 +        // 範囲・pitch・用途の正本は ADR-0010
-+        public void RecordCopyTextureToBuffer(Texture source, BufferSlice<byte> destination, TextureCopyDesc desc);
++        public void RecordCopyTextureToBuffer(IGraphicsTexture source, BufferSlice<byte> destination, TextureCopyDesc desc);
 +
 +        // テクスチャ Upload
 +        // 行ピッチとコピー範囲を検証
-+        public void RecordCopyBufferToTexture(BufferSlice<byte> source, Texture destination, TextureCopyDesc desc);
++        public void RecordCopyBufferToTexture(BufferSlice<byte> source, IGraphicsTexture destination, TextureCopyDesc desc);
 +
 +        // 描画パスの開始
 +        // attachment と load／store を指定

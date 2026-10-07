@@ -23,6 +23,34 @@ public sealed class BackendTests
     private struct TripleByte { public byte X; public byte Y; public byte Z; }
 
     [Fact]
+    public void TextureInterfacesRetainParentAndRecordedViewUntilCompletion()
+    {
+        using var device = Graphics.CreateDevice();
+        using IGraphicsTexture texture = device.CreateTexture(new TextureDesc { Width = 4, Height = 4 });
+        using IGraphicsTextureView view = texture.CreateView();
+        Assert.Equal(4U, texture.Width);
+        Assert.Equal(4U, texture.Height);
+        Assert.Same(texture, view.Texture);
+        Assert.Throws<InvalidOperationException>(texture.Dispose);
+        using var readback = Readback<byte>(device, 4 * 256);
+        using var foreign = Graphics.CreateDevice();
+        using var foreignEncoder = foreign.CreateCommandEncoder();
+        Assert.Throws<ArgumentException>(() => foreignEncoder.RecordCopyTextureToBuffer(texture, readback, 256));
+        using var encoder = device.CreateCommandEncoder();
+        using (var pass = encoder.BeginRenderPass(new RenderPassDesc { Target = view })) { }
+        Assert.Throws<InvalidOperationException>(view.Dispose);
+        using var commands = encoder.Finish();
+        var submission = device.Submit(commands);
+        Assert.Throws<InvalidOperationException>(view.Dispose);
+        submission.Wait();
+        view.Dispose(); view.Dispose();
+        texture.Dispose(); texture.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => texture.CreateView());
+        using var nextEncoder = device.CreateCommandEncoder();
+        Assert.Throws<ObjectDisposedException>(() => nextEncoder.BeginRenderPass(new RenderPassDesc { Target = view }));
+    }
+
+    [Fact]
     public void BackendReportsTypedCopyAlignmentAndRecordedCopiesHonorIt()
     {
         using var device = Graphics.CreateDevice();

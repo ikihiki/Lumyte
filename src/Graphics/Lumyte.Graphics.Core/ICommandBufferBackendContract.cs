@@ -8,7 +8,7 @@ internal interface ICommandBufferBackendContract
     object BeginRenderPass(object handle, RenderPassDesc desc);
     void Dispatch(object handle, ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y, uint z);
     void RecordCopyBuffer(object handle, BufferRange source, BufferRange destination);
-    void RecordCopyTextureToBuffer(object handle, Texture source, BufferRange destination, uint bytesPerRow);
+    void RecordCopyTextureToBuffer(object handle, IGraphicsTexture source, BufferRange destination, uint bytesPerRow);
     object Finish(object handle);
     void SetPipeline(object handle, GraphicsPipeline pipeline);
     void SetViewport(object handle, Viewport viewport);

@@ -150,7 +150,7 @@ Extent3D／Origin3D／TextureFormat／TextureAspect の定義は ADR-0010、Comp
 +        public string? Label { get; init; } = null;
 +
 +        // color の D2 単一 mip／layer、RenderAttachment 用途
-+        public required TextureView View { get; init; }
++        public required IGraphicsTextureView View { get; init; }
 +
 +        // Clear／Load
 +        public LoadOp Load { get; init; } = LoadOp.Clear;
@@ -164,7 +164,7 @@ Extent3D／Origin3D／TextureFormat／TextureAspect の定義は ADR-0010、Comp
 +
 +        // source が 4 samples、target が 1 sample、同 format・同サイズ
 +        // integer format は不可
-+        public TextureView? ResolveTarget { get; init; } = null;
++        public IGraphicsTextureView? ResolveTarget { get; init; } = null;
 +    }
 +}
 ```
@@ -200,7 +200,7 @@ Extent3D／Origin3D／TextureFormat／TextureAspect の定義は ADR-0010、Comp
 +        public string? Label { get; init; } = null;
 +
 +        // depth／stencil の D2 単一 mip／layer、RenderAttachment 用途
-+        public required TextureView View { get; init; }
++        public required IGraphicsTextureView View { get; init; }
 +
 +        // 使用する depth aspect の操作
 +        // null はその aspect を使用しない

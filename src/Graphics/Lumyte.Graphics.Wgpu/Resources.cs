@@ -111,14 +111,14 @@ internal sealed class WgpuBuffer<T> : WgpuBuffer, IGraphicsBuffer<T> where T : u
     public void CopyTo(Span<T> destination) => base.CopyTo(System.Runtime.InteropServices.MemoryMarshal.AsBytes(destination), 0, SizeInBytes);
 }
 
-internal sealed class Texture : GpuResource
+internal sealed class Texture : GpuResource, IGraphicsTexture, ITextureBackendContract
 {
     internal A.Texture Native { get; }
     public uint Width { get; }
     public uint Height { get; }
     internal Texture(WgpuDevice owner, A.Texture native, TextureDesc desc) : base(owner)
         => (Native, Width, Height) = (native, desc.Width, desc.Height);
-    public TextureView CreateView()
+    public IGraphicsTextureView CreateView()
     {
         lock (Owner.Gate)
         {
@@ -129,10 +129,12 @@ internal sealed class Texture : GpuResource
     protected override void ReleaseNative() => Native.Dispose();
 }
 
-internal sealed class TextureView : GpuResource
+internal sealed class TextureView : GpuResource, IGraphicsTextureView, ITextureViewBackendContract
 {
     internal A.TextureView Native { get; }
     internal Texture Texture { get; }
+    IGraphicsTexture IGraphicsTextureView.Texture => Texture;
+    ITextureBackendContract ITextureViewBackendContract.Texture => Texture;
     internal TextureView(Texture texture, A.TextureView native) : base(texture.Owner)
     { Texture = texture; Native = native; texture.Acquire(); }
     protected override void ReleaseNative() { Native.Dispose(); Texture.ReleaseLease(); }
