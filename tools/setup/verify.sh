@@ -4,6 +4,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
 source "$script_dir/activate.sh"
 cd "$repo_root"
+mise run check-native-format
+mise run check-markdown
 
 sdk_version="$(python3 -c 'import json; print(json.load(open("global.json"))["sdk"]["version"])')"
 [[ "$(dotnet --version)" == "$sdk_version" ]]
@@ -24,6 +26,7 @@ vulkaninfo --summary
 smoke_root="$(mktemp -d "$LUMYTE_ENV_ROOT/smoke.XXXXXX")"
 trap 'rm -rf -- "$smoke_root"' EXIT
 cp -R "$script_dir/smoke/." "$smoke_root/"
+cp "$repo_root/Directory.Build.props" "$repo_root/.editorconfig" "$repo_root/stylecop.json" "$smoke_root/"
 slangc "$smoke_root/shader.slang" -entry main -stage compute -target spirv \
     -o "$smoke_root/shader.spv"
 python3 - "$smoke_root/shader.spv" <<'CHECK'
@@ -49,14 +52,20 @@ cmake --build "$smoke_root/build" --parallel 2
 
 # Include a new version on each run to avoid reusing a cached NuGet package.
 smoke_version="0.0.0-smoke.$(date +%s).$$"
-dotnet pack "$smoke_root/Native/Native.csproj" --configuration Release \
+dotnet pack "$smoke_root/Native/Native.csproj" --configuration Release -warnaserror \
     --output "$LUMYTE_NUGET_FEED" \
     "-p:PackageVersion=$smoke_version" "-p:RuntimeIdentifier=$rid" \
-    "-p:RestoreSources=$LUMYTE_NUGET_FEED"
-dotnet restore "$smoke_root/Managed/Managed.csproj" \
+    "-p:RestoreSources=$LUMYTE_NUGET_FEED%3Bhttps://api.nuget.org/v3/index.json"
+dotnet restore "$smoke_root/Managed/Managed.csproj" -warnaserror \
     --source "$LUMYTE_NUGET_FEED" \
+    --source https://api.nuget.org/v3/index.json \
     "-p:SmokeVersion=$smoke_version"
+dotnet format whitespace "$smoke_root/Managed/Managed.csproj" --verify-no-changes --no-restore
+dotnet format style "$smoke_root/Managed/Managed.csproj" --verify-no-changes --no-restore --severity warn
+dotnet build "$smoke_root/Managed/Managed.csproj" \
+    --configuration Release --no-restore -warnaserror \
+    "-p:SmokeVersion=$smoke_version" --no-self-contained
 dotnet run --project "$smoke_root/Managed/Managed.csproj" \
-    --configuration Release --no-restore \
+    --configuration Release --no-build --no-restore \
     "-p:SmokeVersion=$smoke_version" --no-self-contained
 echo 'PASS: Slang SPIR-V compilation, C#, C++, vcpkg zlib, native NuGet/PInvoke, and lavapipe Vulkan queue/readback.'

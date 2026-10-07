@@ -10,6 +10,8 @@ $previousIcdFiles = $env:VK_ICD_FILENAMES
 $previousPath = $env:PATH
 $smokeRoot = Join-Path $env:LUMYTE_ENV_ROOT ('smoke.' + [IO.Path]::GetRandomFileName())
 try {
+    Invoke-LumyteCommand mise @('run', 'check-native-format')
+    Invoke-LumyteCommand mise @('run', 'check-markdown')
     $sdk = (Get-Content 'global.json' -Raw | ConvertFrom-Json).sdk.version
     if ((Invoke-LumyteCommand dotnet @('--version') | Select-Object -Last 1).Trim() -ne $sdk) { throw 'Incorrect .NET SDK.' }
     $cmakeVersion = (Invoke-LumyteCommand mise @('current', 'http:cmake') | Select-Object -Last 1).Trim()
@@ -26,6 +28,9 @@ try {
     $env:PATH = $mesaBin + ';' + $env:PATH
     $null = New-Item -ItemType Directory -Path $smokeRoot
     Copy-Item "$PSScriptRoot/smoke/*" $smokeRoot -Recurse
+    foreach ($config in @('Directory.Build.props', '.editorconfig', 'stylecop.json')) {
+        Copy-Item (Join-Path $LumyteRepoRoot $config) $smokeRoot
+    }
     $shaderOutput = Join-Path $smokeRoot 'shader.spv'
     Invoke-LumyteCommand slangc @((Join-Path $smokeRoot 'shader.slang'),
         '-entry', 'main', '-stage', 'compute', '-target', 'spirv', '-o', $shaderOutput)
@@ -46,12 +51,17 @@ try {
     $version = '0.0.0-smoke.' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + '.' + $PID
     $nativeProject = Join-Path $smokeRoot 'Native/Native.csproj'
     $managedProject = Join-Path $smokeRoot 'Managed/Managed.csproj'
-    Invoke-LumyteCommand dotnet @('pack', $nativeProject, '--configuration', 'Release',
+    Invoke-LumyteCommand dotnet @('pack', $nativeProject, '--configuration', 'Release', '-warnaserror',
         '--output', $env:LUMYTE_NUGET_FEED, "-p:PackageVersion=$version", "-p:RuntimeIdentifier=$runtimeIdentifier",
-        "-p:RestoreSources=$($env:LUMYTE_NUGET_FEED)")
-    Invoke-LumyteCommand dotnet @('restore', $managedProject, '--source', $env:LUMYTE_NUGET_FEED, "-p:SmokeVersion=$version")
+        "-p:RestoreSources=$($env:LUMYTE_NUGET_FEED)%3Bhttps://api.nuget.org/v3/index.json")
+    Invoke-LumyteCommand dotnet @('restore', $managedProject, '-warnaserror', '--source', $env:LUMYTE_NUGET_FEED,
+        '--source', 'https://api.nuget.org/v3/index.json', "-p:SmokeVersion=$version")
+    Invoke-LumyteCommand dotnet @('format', 'whitespace', $managedProject, '--verify-no-changes', '--no-restore')
+    Invoke-LumyteCommand dotnet @('format', 'style', $managedProject, '--verify-no-changes', '--no-restore', '--severity', 'warn')
+    Invoke-LumyteCommand dotnet @('build', $managedProject, '--configuration', 'Release', '--no-restore',
+        '-warnaserror', "-p:SmokeVersion=$version", '--no-self-contained')
     Invoke-LumyteCommand dotnet @('run', '--project', $managedProject, '--configuration', 'Release',
-        '--no-restore', "-p:SmokeVersion=$version", '--no-self-contained')
+        '--no-build', '--no-restore', "-p:SmokeVersion=$version", '--no-self-contained')
     Write-Host 'PASS: Slang SPIR-V compilation, C#, MSVC C++, vcpkg, native NuGet/PInvoke, lavapipe Vulkan readback, and Direct3D 12 WARP.'
 } finally {
     [Environment]::SetEnvironmentVariable('VK_DRIVER_FILES', $previousDriverFiles, 'Process')

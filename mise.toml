@@ -25,6 +25,12 @@ LUMYTE_VCPKG_COMMIT = "{{ vars.vcpkg_commit }}"
 LUMYTE_WINDOWS_MESA_VERSION = "{{ vars.windows_mesa_version }}"
 LUMYTE_WINDOWS_MESA_SHA256 = "{{ vars.windows_mesa_sha256 }}"
 LUMYTE_WINDOWS_MESA_ARM64_SHA256 = "{{ vars.windows_mesa_arm64_sha256 }}"
+npm_config_cache = "{{ env.LUMYTE_ENV_ROOT | default(value=config_root ~ '/artifacts/dev-env') }}/npm-cache"
+npm_config_update_notifier = "false"
+
+[tools]
+node = "24.21.0"
+"npm:markdownlint-cli2" = "0.23.3"
 
 # Official SDK archive; preserve Microsoft's SHA-512 verification.
 [tools."http:dotnet"]
@@ -68,6 +74,34 @@ linux-x64 = { url = "https://github.com/shader-slang/slang/releases/download/v20
 linux-arm64 = { url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-linux-aarch64-glibc-2.28.tar.gz", checksum = "sha256:f49229eb9606b47b122e1d8789be46a7bcd6bb2ffa94b06fae6d544a4e6df637" }
 windows-x64 = { url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-windows-x86_64.zip", checksum = "sha256:fc922f214b5d115f663932e59e80e0f6b6cc6fae140979cf307da6459b6f8f33" }
 windows-arm64 = { url = "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-windows-aarch64.zip", checksum = "sha256:6ddc5a56d22690d2077f91edea884f88f8ea35cba4d2f717fc84bf1c2ded766f" }
+
+# Standalone clang-format built by cpp-linter; fixed release and GitHub asset SHA-256 digests.
+[tools."http:clang-format"]
+version = "2026.09.01"
+bin = "clang-format"
+[tools."http:clang-format".platforms]
+linux-x64 = { url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_linux-amd64", checksum = "sha256:94276e7eedb242f58e744a81c6c09bb8c791ec542b7993c14484f5e9652c87e9" }
+linux-arm64 = { url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_linux-arm64", checksum = "sha256:bc001ad9c42023c48d6321c9ea3961df4f39a9d688eb95ca0f27808d07a55255" }
+windows-x64 = { url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_windows-amd64.exe", checksum = "sha256:61b65e096bd7d5b2050059e5a81688371cade58bffcfb17c2f58ef3571ffc2fd", bin = "clang-format.exe" }
+windows-arm64 = { url = "https://github.com/cpp-linter/clang-tools-static-binaries/releases/download/2026.09.01-5fb8802d/clang-format-22_windows-arm64.exe", checksum = "sha256:efc404969f9777de2dd43ab9868837c6b3189fa1b5285e58fd7883fdaffbe930", bin = "clang-format.exe" }
+
+[tasks.check-native-format]
+description = "Check C/C++ formatting without changing files"
+run = "bash tools/style/format-native.sh"
+run_windows = "powershell.exe -NoProfile -File tools/style/format-native.ps1"
+
+[tasks.check-markdown]
+description = "Lint repository Markdown without changing files"
+run = "markdownlint-cli2"
+
+[tasks.format-markdown]
+description = "Fix automatically correctable Markdown lint violations"
+run = "markdownlint-cli2 --fix"
+
+[tasks.format-native]
+description = "Format C/C++ sources using the repository style"
+run = "bash tools/style/format-native.sh --fix"
+run_windows = "powershell.exe -NoProfile -File tools/style/format-native.ps1 -Fix"
 
 [tasks.setup]
 description = "Install the shared Linux or Windows development environment"
