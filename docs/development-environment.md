@@ -24,6 +24,10 @@ mise run verify
 mise run setup                 # OS 依存とツールを含む再セットアップ
 mise run setup-native          # vcpkg と lavapipe ICD の準備
 mise run verify                # 開発環境の機能検証
+mise run check-native-format   # C/C++ の書式チェック
+mise run format-native         # C/C++ の書式を修正
+mise run check-markdown        # Markdown の lint
+mise run format-markdown       # 自動修正可能な Markdown の違反を修正
 mise exec -- dotnet --version  # 固定したツールで実行
 mise exec -- slangc -version  # Slang コンパイラーのバージョンを確認
 mise ls --current             # 使用するツールのバージョンを確認
@@ -95,6 +99,45 @@ mise run verify
 
 GitHub の Windows runner は管理者権限で動くため、システム依存の導入後に一時的な通常ユーザーで smoke test を実行する。`tools/setup/ci-windows-smoke.ps1` がユーザーの作成、検証プロセスの待機、ユーザーの削除を担当する。このスクリプトは GitHub Actions 専用で、通常の開発環境では管理者権限のないシェルから `mise run verify` を使う。
 
+## コードスタイル
+
+ルートの `.editorconfig` と `Directory.Build.props` が共通設定であり、新規 C# プロジェクトにも適用される。StyleCop.Analyzers は file-scoped namespace を扱える `1.2.0-beta.556` に固定し、公開 API の XML ドキュメントも検査する。
+
+開発環境を有効化して、対象プロジェクトの書式確認とビルドを実行する。
+
+```bash
+dotnet format whitespace <project.csproj> --verify-no-changes --no-restore
+dotnet format style <project.csproj> --verify-no-changes --no-restore --severity warn
+dotnet build <project.csproj> -warnaserror
+```
+
+`--no-restore` の書式確認は復元済みのプロジェクトを対象とする。修正する場合は `--verify-no-changes` を外す。コンパイラー・アナライザー・NuGet の警告は共通設定でエラーになる。`-warnaserror` は MSBuild タスクの警告もエラーにするために指定する。`mise run verify` でも同じ設定を一時プロジェクトにコピーし、書式確認と警告のエラー化を実行する。C++ の検証用ターゲットにも CMake の `COMPILE_WARNING_AS_ERROR` を設定する。
+
+命名規則は `.editorconfig` の `dotnet_naming_style` と `dotnet_naming_rule` で定義する。`dotnet_diagnostic.IDE1006.severity = error` と共通の `EnforceCodeStyleInBuild` により、命名違反もビルド時にエラーになる。固定 SDK の .NET 10.0.401 で、private フィールドの `_` 不足と async メソッドの `Async` 不足がビルドと `dotnet format style` で検出されることを確認済み。
+
+C/C++ の書式はルートの `.clang-format` に定義する。4 空白、LF、120 桁、波括弧の改行、制御文への波括弧追加、型側のポインター・参照記号を使用し、include の順序は保持する。整形後の差分は確認する。[clang-format の設定仕様](https://clang.llvm.org/docs/ClangFormatStyleOptions.html)を参照する。
+
+```bash
+mise run check-native-format   # 変更せずに検査。違反があれば失敗
+mise run format-native         # 自動修正
+mise exec -- clang-format --version
+```
+
+Windows も同じ mise タスクを使用する。Git 管理下と未追跡の C/C++ ソース・ヘッダーを対象とし、Git の無視対象である `artifacts/` や外部依存の生成物は走査しない。`mise run verify` と既存 CI でも書式を検査する。
+
+clang-format 22.1.0 は [cpp-linter の standalone binaries](https://github.com/cpp-linter/clang-tools-static-binaries) の `2026.09.01-5fb8802d` リリースから取得し、GitHub 公開の各 asset の SHA-256 で検証する。mise の版指定は配布リリースの日付 `2026.09.01` であり、clang-format 自体の版とは異なる。Linux／Windows の x64／ARM64 の URL とチェックサムを `mise.toml` と `mise.lock` に固定する。
+
+Markdown は [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) 0.23.3 と Node.js 24.21.0 を mise で導入する。設定は `.markdownlint-cli2.jsonc`。既定のルールを有効にし、行長制限（MD013）を無効にする。同名見出し（MD024）は同じ親見出しの範囲で検査し、インライン HTML（MD033）は禁止する。リストは 2 空白でインデントし、コードブロックには言語を指定する。
+
+```bash
+mise run check-markdown
+mise run format-markdown
+```
+
+隠しディレクトリを含む Markdown を検査する。Git の無視対象、`artifacts/`、`.git/`、`node_modules/` は除外する。チェックは違反があれば失敗する。自動修正できない違反は手動で直し、修正後は再度チェックする。リンク先の存在や文章の内容は検査しない。Linux／Windows の `mise run verify` と既存 CI でも lint を実行する。npm のキャッシュは環境ディレクトリの `npm-cache/` に置く。
+
+`mise.lock` が参照する `.mise/locks/` の npm 依存ロックもリポジトリに保持する。devcontainer のセットアップにもこのディレクトリをコピーし、依存パッケージを固定して導入する。
+
 ## Native 依存とローカル NuGet
 
 `VCPKG_ROOT` は固定コミットの vcpkg を指す。Native プロジェクトを追加する際は manifest を作り、CMake に以下を指定する。
@@ -115,7 +158,7 @@ cmake -S <native-project> -B artifacts/build/<project> -G Ninja \
 
 ## 検証内容
 
-`mise run verify` は Linux で `verify.sh`、Windows で `verify.ps1` を実行し、生成した検証用プロジェクトで次を確認する。
+`mise run verify` は Linux で `verify.sh`、Windows で `verify.ps1` を実行する。最初に C/C++ の書式と Markdown の lint を確認し、生成した検証用プロジェクトで次を確認する。
 
 1. Slang で検証用 compute shader を SPIR-V にコンパイルし、生成物のサイズとマジックナンバーを確認する。
 2. vcpkg で zlib を取得・ビルドし、CMake／Ninja で C++ 共有ライブラリを作る。
@@ -135,6 +178,10 @@ VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
 ## バージョンの更新と対象外
 
 配布ツールの更新では `mise.toml` のバージョン・各 OS／CPU 向け取得元とチェックサムを更新する。Slang は `shader-slang/slang` の公式リリースの SHA-256 digest を使用する。.NET は公式リリースメタデータの SHA-512 を使用し、`global.json` も同じ SDK バージョンに更新する。vcpkg は `mise.toml` の `vars.vcpkg_commit` を更新する。mise 自身の更新だけは `tools/setup/mise-bootstrap.json` のバージョンと公式 SHA-256 を更新する。
+
+clang-format の更新では cpp-linter の配布リリース、実行ファイルの clang-format バージョン、4 プラットフォームの URL・SHA-256 を確認し、mise の版指定も配布日付に更新する。書式が変わる場合は `mise run format-native` の差分を確認する。
+
+Markdown ツールの更新では、`mise.toml` の Node.js と `npm:markdownlint-cli2` の版を更新する。markdownlint-cli2 が要求する Node.js の版を確認し、ロックの再生成後に `mise run check-markdown` と `mise run format-markdown` の結果を確認する。
 
 設定の更新後はロックを再生成し、セットアップと検証を行う。
 

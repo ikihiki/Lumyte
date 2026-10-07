@@ -19,6 +19,7 @@ ENV PATH="/opt/lumyte/mise-bin:/opt/lumyte/mise/data/shims:/opt/lumyte/vcpkg:${P
 
 COPY global.json /opt/lumyte-bootstrap/global.json
 COPY mise.toml mise.lock /opt/lumyte-bootstrap/
+COPY .mise/locks/ /opt/lumyte-bootstrap/.mise/locks/
 COPY tools/setup/ /opt/lumyte-bootstrap/tools/setup/
 RUN --mount=type=secret,id=proxy-ca \
     apt-get update -o APT::Update::Error-Mode=any \
