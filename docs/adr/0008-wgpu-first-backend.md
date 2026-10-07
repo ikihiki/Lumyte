@@ -29,6 +29,7 @@
 | `CreateBuffer(BufferDesc)`／`Buffer.Slice(ulong, ulong)` | サイズ・用途・範囲を検証。初期 buffer のサイズは 4-byte の倍数 |
 | `WriteBuffer<T>(BufferSlice, ReadOnlySpan<T>)` | blittable データの明示的な byte Upload。未知の Slang 型の ABI を自動保証しない |
 | `CreateReference<T>(BufferSlice)` | 初期の登録済みデータ schema は UInt32 配列のみ。非所有・型付きの不透明参照を作る |
+| `CreateShader(Assembly assembly, string resourceName)` | DLL の埋め込み WGSL を読み込む。resource 不在は ArgumentException。stream は内部で解放 |
 | `CreateShader(string wgsl)` | Slang から生成済みの WGSL を読み込む。Native の validation error は例外で通知 |
 | `CreateComputePipeline(ComputePipelineDesc)`／`ComputePipeline.CreateArguments(GpuReference<uint>)` | 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数。binding と実データ参照の解決は library 内部 |
 | `CommandEncoder.Dispatch(...)`／`CopyBuffer(...)` | 単一 queue の Compute とコピー。パス中は禁止 |
@@ -54,7 +55,7 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 ### シェーダーと検証
 
-サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。生成物も保存し、最小 backend の build／run に compiler を必須依存としない。`tools/shaders/compile-samples.py --check` で生成物の一致を確認する。
+サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。ビルド時に共有 MSBuild targets が obj 内へ生成し、サンプル／テスト DLL の EmbeddedResource に格納する。生成 WGSL は Git に含めず、別ファイルとして配布しない。実行時は DLL の manifest resource を読み出し、Slang compiler を必要としない。コンパイラはビルド時にのみ必要とする。
 
 GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
 

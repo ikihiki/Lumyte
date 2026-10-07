@@ -8,7 +8,7 @@ using (var buffer = device.CreateBuffer(new BufferDesc {
 using (var readback = device.CreateBuffer(new BufferDesc {
     SizeInBytes = 32, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback,
 }))
-using (var shader = device.CreateShader(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders/double.wgsl"))))
+using (var shader = device.CreateShader(typeof(Program).Assembly, "Lumyte.Shaders.double.wgsl"))
 using (var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Shader = shader }))
 {
     device.WriteBuffer<uint>(buffer.Slice(0, 32), new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
@@ -29,7 +29,7 @@ using (var view = texture.CreateView())
 using (var readback = device.CreateBuffer(new BufferDesc {
     SizeInBytes = 64 * 256, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback,
 }))
-using (var shader = device.CreateShader(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders/triangle.wgsl"))))
+using (var shader = device.CreateShader(typeof(Program).Assembly, "Lumyte.Shaders.triangle.wgsl"))
 using (var pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader }))
 using (var encoder = device.CreateCommandEncoder())
 {

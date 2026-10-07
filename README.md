@@ -4,7 +4,7 @@ C# を主言語とするゲームエンジン。最初のグラフィックス�
 
 ## 最初の wgpu バックエンド
 
-.NET SDK のバージョンは `global.json` に従います。通常の NuGet パッケージ復元で Ahjo.Wgpu と対応 RID の wgpu-native が導入されます。実行には Vulkan／DirectX などの対応ドライバーが必要です。
+ビルド前に mise の Slang を PATH に配置してください。.NET SDK のバージョンは `global.json` に従います。通常の NuGet パッケージ復元で Ahjo.Wgpu と対応 RID の wgpu-native が導入されます。実行には Vulkan／DirectX などの対応ドライバーが必要です。
 
 ```sh
 dotnet restore Lumyte.sln --source https://api.nuget.org/v3/index.json
@@ -21,16 +21,16 @@ GPU がない Linux 環境では Mesa の lavapipe を用意し、その ICD を
 
 Browser、一般的な Slang 引数生成、オンラインコンパイル、depth／stencil、MSAA、window／swapchain と共通 API への統合は未実装です。[初期実装の契約](docs/adr/0008-wgpu-first-backend.md) と [設計 ADR](docs/adr/) を参照してください。
 
-## サンプル WGSL の再生成
+## オフラインシェーダーのビルド
 
-既存の開発環境を有効化し、mise で固定した Slang を使います。サンプルの build と run は保存済みの WGSL だけでも行えます。
+mise で固定した Slang を有効化してからビルドしてください。共有 MSBuild targets が Slang ソースを obj 内の WGSL にコンパイルし、サンプル／テスト DLL の埋め込みリソースへ格納します。生成 WGSL はコミットせず、実行時は DLL から読み出します。配布先には Slang コンパイラやシェーダーの別ファイルは不要です。
 
 ```sh
-python3 tools/shaders/compile-samples.py
-python3 tools/shaders/compile-samples.py --check
+dotnet build Lumyte.sln -p:SlangCompilerPath=/path/to/slangc
+dotnet run --project samples/Wgpu.Headless --no-build
 ```
 
-Windows では `python` を使えます。`slangc` が PATH にない場合は `--compiler PATH` を指定してください。[環境のセットアップ](docs/development-environment.md) を参照してください。
+SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセットアップ](docs/development-environment.md) を参照してください。
 
 ## 開発・設計文書
 

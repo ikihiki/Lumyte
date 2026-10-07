@@ -152,6 +152,17 @@ public sealed unsafe class WgpuDevice : IDisposable
         }
     }
 
+    /// <summary>Loads an offline shader embedded in the supplied DLL.</summary>
+    public ShaderModule CreateShader(System.Reflection.Assembly assembly, string resourceName)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceName);
+        using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new ArgumentException($"Shader resource '{resourceName}' was not found in '{assembly.FullName}'.", nameof(resourceName));
+        using var reader = new StreamReader(stream, new UTF8Encoding(false, true));
+        return CreateShader(reader.ReadToEnd());
+    }
+
     /// <summary>Loads WGSL produced offline from Slang; does not compile Slang at runtime.</summary>
     public ShaderModule CreateShader(string wgsl)
     {

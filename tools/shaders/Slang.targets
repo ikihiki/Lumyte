@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
+  </PropertyGroup>
+  <!-- Run per source, keeping generated code entirely inside obj/. -->
+  <Target Name="CompileSlangShaders"
+          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
+          Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl"
+          Condition="'@(SlangShader)' != ''">
+    <MakeDir Directories="$(IntermediateOutputPath)Slang" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -target wgsl -matrix-layout-row-major -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl&quot;" />
+  </Target>
+  <Target Name="EmbedSlangShaders" BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="CompileSlangShaders" Condition="'@(SlangShader)' != ''">
+    <ItemGroup>
+      <FileWrites Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(Filename).wgsl')" />
+      <EmbeddedResource Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(Filename).wgsl')">
+        <LogicalName>Lumyte.Shaders.%(Filename).wgsl</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+</Project>

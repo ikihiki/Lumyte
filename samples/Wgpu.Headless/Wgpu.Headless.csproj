@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
-    <None Include="Shaders/**" CopyToOutputDirectory="PreserveNewest" />
+    <SlangShader Include="Shaders/*.slang" />
   </ItemGroup>
+  <Import Project="../../tools/shaders/Slang.targets" />
 </Project>

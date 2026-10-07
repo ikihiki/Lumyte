@@ -56,7 +56,7 @@ jobs:
           test -f "$driver"
           echo "VK_DRIVER_FILES=$driver" >> "$GITHUB_ENV"
           echo "MESA_SHADER_CACHE_DIR=$RUNNER_TEMP/mesa-cache" >> "$GITHUB_ENV"
-      - name: Check Slang-generated WGSL
+      - name: Install offline Slang compiler
         run: |
           python3 - <<'PYTHON'
           import hashlib, os, pathlib, tarfile, tomllib, urllib.request
@@ -69,7 +69,7 @@ jobs:
           with tarfile.open(archive) as source:
               source.extractall(directory, filter='data')
           PYTHON
-          python3 tools/shaders/compile-samples.py --compiler "$RUNNER_TEMP/lumyte-slang/bin/slangc" --check
+          echo "SlangCompilerPath=$RUNNER_TEMP/lumyte-slang/bin/slangc" >> "$GITHUB_ENV"
       - name: Restore and build
         run: |
           dotnet restore Lumyte.sln --source https://api.nuget.org/v3/index.json

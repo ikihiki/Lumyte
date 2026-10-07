@@ -7,10 +7,24 @@ namespace Lumyte.Graphics.Wgpu.Tests;
 
 public sealed class BackendTests
 {
-    private static string Shader(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", name));
     private static Buffer Readback(WgpuDevice device, ulong size) => device.CreateBuffer(new BufferDesc {
         SizeInBytes = size, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback,
     });
+
+    [Fact]
+    public void OfflineShadersAreEmbeddedWithoutDeploymentSidecars()
+    {
+        var assembly = typeof(BackendTests).Assembly;
+        foreach (var name in new[] { "double", "triangle" })
+        {
+            using var stream = assembly.GetManifestResourceStream($"Lumyte.Shaders.{name}.wgsl");
+            Assert.NotNull(stream);
+            Assert.True(stream.Length > 0);
+        }
+        Assert.Empty(Directory.GetFiles(AppContext.BaseDirectory, "*.wgsl", SearchOption.AllDirectories));
+        using var device = WgpuDevice.Create();
+        Assert.Throws<ArgumentException>(() => device.CreateShader(assembly, "missing.wgsl"));
+    }
 
     [Fact]
     public async Task SlangComputeUsesOpaqueReferenceAndReturnsDoubledData()
@@ -20,7 +34,7 @@ public sealed class BackendTests
             SizeInBytes = 32, Usage = BufferUsage.CopyDestination | BufferUsage.CopySource | BufferUsage.ShaderWrite,
         });
         using var output = Readback(device, 32);
-        using var shader = device.CreateShader(Shader("double.wgsl"));
+        using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.double.wgsl");
         using var pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Shader = shader });
         device.WriteBuffer<uint>(data.Slice(0, 32), new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
         var reference = device.CreateReference<uint>(data.Slice(0, 32));
@@ -46,7 +60,7 @@ public sealed class BackendTests
         using var output = Readback(device, 64 * 256);
         using var indices = device.CreateBuffer(new BufferDesc { SizeInBytes = 12, Usage = BufferUsage.Index | BufferUsage.CopyDestination });
         device.WriteBuffer<uint>(indices.Slice(0, 12), new uint[] { 0, 1, 2 });
-        using var shader = device.CreateShader(Shader("triangle.wgsl"));
+        using var shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.triangle.wgsl");
         using var pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
         using var encoder = device.CreateCommandEncoder();
         using (var pass = encoder.BeginRenderPass(new RenderPassDesc { Target = view, ClearValue = new Color4(0, 0, 1, 1) }))
@@ -143,7 +157,7 @@ public sealed class BackendTests
         Assert.Throws<NotSupportedException>(() => first.CreateReference<float>(data.Slice(0, 16)));
         Assert.Throws<ArgumentOutOfRangeException>(() => first.CreateBuffer(new BufferDesc { SizeInBytes = 3, Usage = BufferUsage.CopySource }));
         Assert.Throws<ArgumentException>(() => first.CreateBuffer(new BufferDesc { SizeInBytes = 16, Usage = (BufferUsage)128 }));
-        using var shader = first.CreateShader(Shader("double.wgsl"));
+        using var shader = first.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.double.wgsl");
         using var pipeline = first.CreateComputePipeline(new ComputePipelineDesc { Shader = shader });
         Assert.Throws<ArgumentException>(() => pipeline.CreateArguments(default));
     }
