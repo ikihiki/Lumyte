@@ -3,11 +3,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="../Lumyte.Graphics.Core/Lumyte.Graphics.Core.csproj" />
-    <PackageReference Include="Ahjo.Wgpu" Version="0.7.0" />
-  </ItemGroup>
 </Project>

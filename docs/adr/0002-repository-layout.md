@@ -32,7 +32,8 @@ Lumyte/
 │   ├── Engine/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
-│   │   ├── Lumyte.Graphics/
+│   │   ├── Lumyte.Graphics.Core/      # バックエンドに依存しない共通型
+│   │   ├── Lumyte.Graphics/           # 共通 API のデバイス生成層
 │   │   ├── Lumyte.Graphics.Wgpu/      # 最初の managed wgpu 実装
 │   │   ├── Lumyte.Graphics.DirectX/
 │   │   ├── Lumyte.Graphics.DirectX.Native/

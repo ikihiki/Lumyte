@@ -1,9 +1,10 @@
+using Lumyte.Graphics;
 using Ahjo.Wgpu.Native;
 using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;
 
-public sealed unsafe class CommandEncoder : IDisposable
+internal sealed unsafe class CommandEncoder : IDisposable
 {
     internal WgpuDevice Owner { get; }
     private WGPUCommandEncoderImpl* _handle;
@@ -127,7 +128,7 @@ public sealed unsafe class CommandEncoder : IDisposable
     }
 }
 
-public sealed unsafe class RenderEncoder : IDisposable
+internal sealed unsafe class RenderEncoder : IDisposable
 {
     private readonly CommandEncoder _parent;
     private WGPURenderPassEncoderImpl* _handle;
@@ -214,7 +215,7 @@ public sealed unsafe class RenderEncoder : IDisposable
     { lock (_parent.Owner.Gate) { if (_handle != null) End(); } }
 }
 
-public sealed unsafe class CommandBuffer : GpuResource
+internal sealed unsafe class CommandBuffer : GpuResource
 {
     internal WGPUCommandBufferImpl* Handle { get; }
     private HashSet<GpuResource> _resources;
@@ -229,7 +230,7 @@ public sealed unsafe class CommandBuffer : GpuResource
     { WGPU.wgpuCommandBufferRelease(Handle); foreach (var resource in _resources) resource.ReleaseLease(); _resources.Clear(); }
 }
 
-public sealed class Submission
+internal sealed class Submission
 {
     private readonly WgpuDevice _owner;
     private readonly A.QueueWorkDoneRequest _request;

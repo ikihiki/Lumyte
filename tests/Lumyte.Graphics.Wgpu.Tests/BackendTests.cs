@@ -1,15 +1,42 @@
 using System.Runtime.InteropServices;
-using Lumyte.Graphics.Wgpu;
+using Lumyte.Graphics;
 using Xunit;
-using Buffer = Lumyte.Graphics.Wgpu.Buffer;
+using Buffer = Lumyte.Graphics.Buffer;
 
-namespace Lumyte.Graphics.Wgpu.Tests;
+namespace Lumyte.Graphics.Tests;
 
 public sealed class BackendTests
 {
-    private static Buffer Readback(WgpuDevice device, ulong size) => device.CreateBuffer(new BufferDesc {
+    private static Buffer Readback(GraphicsDevice device, ulong size) => device.CreateBuffer(new BufferDesc {
         SizeInBytes = size, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback,
     });
+
+    [Fact]
+    public void ConsumersAndCoreHaveNoBackendAssemblyReferences()
+    {
+        foreach (var assembly in new[] { typeof(BackendTests).Assembly, typeof(GraphicsDevice).Assembly })
+        {
+            Assert.DoesNotContain(assembly.GetReferencedAssemblies(), name =>
+                name.Name == "Lumyte.Graphics.Wgpu" || name.Name!.StartsWith("Ahjo."));
+        }
+    }
+
+    [Fact]
+    public void BackendSelectionAndCrossDeviceCommandsAreValidatedThroughCommonApi()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => Graphics.CreateDevice((GraphicsBackend)999));
+        using var first = Graphics.CreateDevice();
+        using var second = Graphics.CreateDevice();
+        using var target = first.CreateTexture(new TextureDesc { Width = 4, Height = 4 });
+        using var view = target.CreateView();
+        using var encoder = second.CreateCommandEncoder();
+        Assert.Throws<ArgumentException>(() => encoder.BeginRenderPass(new RenderPassDesc { Target = view }));
+        using var shader = first.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.double.wgsl");
+        Assert.Throws<ArgumentException>(() => second.CreateComputePipeline(new ComputePipelineDesc { Shader = shader }));
+        using var commands = encoder.Finish();
+        Assert.Throws<ArgumentException>(() => first.Submit(commands));
+        second.Submit(commands).Wait();
+    }
 
     [Fact]
     public void OfflineShadersAreEmbeddedWithoutDeploymentSidecars()
@@ -22,14 +49,14 @@ public sealed class BackendTests
             Assert.True(stream.Length > 0);
         }
         Assert.Empty(Directory.GetFiles(AppContext.BaseDirectory, "*.wgsl", SearchOption.AllDirectories));
-        using var device = WgpuDevice.Create();
+        using var device = Graphics.CreateDevice();
         Assert.Throws<ArgumentException>(() => device.CreateShader(assembly, "missing.wgsl"));
     }
 
     [Fact]
     public async Task SlangComputeUsesOpaqueReferenceAndReturnsDoubledData()
     {
-        using var device = WgpuDevice.Create();
+        using var device = Graphics.CreateDevice();
         using var data = device.CreateBuffer(new BufferDesc {
             SizeInBytes = 32, Usage = BufferUsage.CopyDestination | BufferUsage.CopySource | BufferUsage.ShaderWrite,
         });
@@ -54,7 +81,7 @@ public sealed class BackendTests
     [Fact]
     public void IndexedTriangleAndClearHaveCorrectReadback()
     {
-        using var device = WgpuDevice.Create();
+        using var device = Graphics.CreateDevice();
         using var target = device.CreateTexture(new TextureDesc { Width = 64, Height = 64 });
         using var view = target.CreateView();
         using var output = Readback(device, 64 * 256);
@@ -82,7 +109,7 @@ public sealed class BackendTests
     [Fact]
     public void PassStateValidationDoesNotCorruptRecording()
     {
-        using var device = WgpuDevice.Create();
+        using var device = Graphics.CreateDevice();
         using var target = device.CreateTexture(new TextureDesc { Width = 64, Height = 64 });
         using var view = target.CreateView();
         using var encoder = device.CreateCommandEncoder();
@@ -105,7 +132,7 @@ public sealed class BackendTests
     [Fact]
     public void ResourcesAreHeldThroughRecordingAndSubmission()
     {
-        using var device = WgpuDevice.Create();
+        using var device = Graphics.CreateDevice();
         using var source = device.CreateBuffer(new BufferDesc { SizeInBytes = 16, Usage = BufferUsage.CopySource });
         using var destination = Readback(device, 16);
         using var encoder = device.CreateCommandEncoder();
@@ -123,7 +150,7 @@ public sealed class BackendTests
     [Fact]
     public void DiscardingEncoderReleasesResourcesAndInvalidatesOpenPass()
     {
-        using var device = WgpuDevice.Create();
+        using var device = Graphics.CreateDevice();
         using var target = device.CreateTexture(new TextureDesc { Width = 64, Height = 64 });
         using var view = target.CreateView();
         using var encoder = device.CreateCommandEncoder();
@@ -136,20 +163,20 @@ public sealed class BackendTests
     }
 
     [Fact]
-    public void NativeShaderValidationIsReportedAndFailedHandleIsReleased()
+    public void InvalidEmbeddedShaderRequestsDoNotRetainResources()
     {
-        using var device = WgpuDevice.Create();
-        var error = Assert.Throws<InvalidOperationException>(() => device.CreateShader("not valid WGSL"));
-        Assert.Contains("wgpu validation failed", error.Message);
-        // No failed module remains registered: device teardown must still succeed.
+        using var device = Graphics.CreateDevice();
+        Assert.Throws<ArgumentNullException>(() => device.CreateShader(null!, "missing"));
+        Assert.Throws<ArgumentException>(() => device.CreateShader(typeof(BackendTests).Assembly, ""));
+        Assert.Throws<ArgumentException>(() => device.CreateShader(typeof(BackendTests).Assembly, "missing"));
         device.Dispose();
     }
 
     [Fact]
     public void InvalidRangesAndCrossDeviceReferencesAreRejected()
     {
-        using var first = WgpuDevice.Create();
-        using var second = WgpuDevice.Create();
+        using var first = Graphics.CreateDevice();
+        using var second = Graphics.CreateDevice();
         using var data = first.CreateBuffer(new BufferDesc { SizeInBytes = 16, Usage = BufferUsage.ShaderWrite });
         Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(ulong.MaxValue, 4));
         Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(12, 8));

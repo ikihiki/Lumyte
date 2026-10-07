@@ -15,7 +15,7 @@ NoGraphicsAPI は GPU ポインタ、アプリケーション所有のディス�
 
 以下を提案する。本 ADR はライブラリの境界と主要 API の設計を扱い、実装言語の変更や対応環境の削除は行わない。
 
-最初の実装は [ADR-0008](0008-wgpu-first-backend.md) の managed wgpu バックエンドとし、既存 .NET binding を直接使用する。本 ADR の広い共通契約への統合と、独立した DirectX／Vulkan 実装は後続とする。wgpu に Lumyte の `.Native` プロジェクトは追加しない。
+最初の実装は [ADR-0008](0008-wgpu-first-backend.md) の managed wgpu バックエンドとし、既存 .NET binding を直接使用する。初期の共通 API サブセットを Core で公開し、テスト／サンプルは共通 API のみを使用する。本 ADR の残りの契約と、独立した DirectX／Vulkan 実装は後続とする。wgpu に Lumyte の `.Native` プロジェクトは追加しない。
 
 ### 責務と依存関係
 
@@ -26,9 +26,9 @@ NoGraphicsAPI は GPU ポインタ、アプリケーション所有のディス�
 | バックエンド | `Lumyte.Graphics.DirectX`／`.Vulkan`／`.WebGPU` | 共通契約の実装、機能検出、ネイティブ同期とバインディングへの変換 |
 | Renderer | エンジン側。具体的なプロジェクトは別途決定 | Mesh、Material、描画パス、必要なら Render Graph |
 
-依存は Renderer → Runtime → Core、各バックエンド → Core とする。Core はバックエンド、シーン、ウィンドウ実装に依存しない。アプリケーションがバックエンドを選択してデバイスを作る。画面表示では Platform が生成した表示先を渡し、Graphics がウィンドウ自体を所有しない。
+依存は Renderer → Runtime → Core、各バックエンド → Core とする。Core はバックエンド、シーン、ウィンドウ実装に依存しない。初期実装では `Lumyte.Graphics.Core` が共通型を持ち、生成層の `Lumyte.Graphics` が Core と backend に依存してデバイスを生成する。テストとサンプルは生成層と共通型のみを使用する。アプリケーションがバックエンドを選択してデバイスを作る。画面表示では Platform が生成した表示先を渡し、Graphics がウィンドウ自体を所有しない。
 
-DirectX／Vulkan の C# バインディングは既存方針どおり各 `.Native` パッケージを参照する。WebGPU にネイティブ C++ 依存を要求しない。今回、実装プロジェクトや空フォルダは追加しない。
+DirectX／Vulkan の C# バインディングは既存方針どおり各 `.Native` パッケージを参照する。WebGPU にネイティブ C++ 依存を要求しない。初期実装のプロジェクト構成と API サブセットは ADR-0008 に記録する。
 
 ### データとバインディング
 

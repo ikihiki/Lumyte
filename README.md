@@ -19,7 +19,9 @@ GPU がない Linux 環境では Mesa の lavapipe を用意し、その ICD を
 
 現段階はネイティブ向けの初期版です。Compute は UInt32 配列の単一 Storage 引数、描画は single-sample RGBA8 の単一 attachment・通常／indexed triangle-list が対象です。GPU アドレスと物理 binding slot は公開しません。resource と command scope を Dispose し、送信完了を観測してから参照先を再利用・解放してください。
 
-Browser、一般的な Slang 引数生成、オンラインコンパイル、depth／stencil、MSAA、window／swapchain と共通 API への統合は未実装です。[初期実装の契約](docs/adr/0008-wgpu-first-backend.md) と [設計 ADR](docs/adr/) を参照してください。
+テストとサンプルは `Lumyte.Graphics` の共通 API のみを使用します。`Graphics.CreateDevice()` が既定の wgpu 実装を生成し、Core はバックエンドに依存しません。
+
+Browser、一般的な Slang 引数生成、オンラインコンパイル、depth／stencil、MSAA、window／swapchain と広い共通契約の残りは未実装です。[初期実装の契約](docs/adr/0008-wgpu-first-backend.md) と [設計 ADR](docs/adr/) を参照してください。
 
 ## オフラインシェーダーのビルド
 

@@ -1,3 +1,4 @@
+using Lumyte.Graphics;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -8,7 +9,7 @@ using Ahjo.Wgpu.Native;
 namespace Lumyte.Graphics.Wgpu;
 
 /// <summary>Native wgpu backend using the existing .NET binding, without a Lumyte C++ shim.</summary>
-public sealed unsafe class WgpuDevice : IDisposable
+internal sealed unsafe class WgpuDevice : IDisposable
 {
     internal object Gate { get; } = new();
     internal A.Device Native { get; }

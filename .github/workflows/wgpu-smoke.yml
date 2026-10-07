@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/Graphics/Lumyte.Graphics.Wgpu/**'
+      - 'src/Graphics/**'
       - 'samples/Wgpu.Headless/**'
       - 'tests/Lumyte.Graphics.Wgpu.Tests/**'
       - 'tools/shaders/**'
@@ -16,7 +16,7 @@ on:
       - '.github/workflows/wgpu-smoke.yml'
   pull_request:
     paths:
-      - 'src/Graphics/Lumyte.Graphics.Wgpu/**'
+      - 'src/Graphics/**'
       - 'samples/Wgpu.Headless/**'
       - 'tests/Lumyte.Graphics.Wgpu.Tests/**'
       - 'tools/shaders/**'

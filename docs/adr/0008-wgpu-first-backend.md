@@ -7,7 +7,7 @@
 
 最初のグラフィックス実装は wgpu を使用し、.NET にあるバインディングを直接参照する。Lumyte の C++ ラッパーや `.Native` プロジェクトは作らない。先にデバイス生成、Compute、RenderEncoder、GPU 完了、読み戻しを実行して、設計の成立を確認する。
 
-[ADR-0004](0004-graphics-library.md)〜[ADR-0007](0007-graphics-descriptors.md) は広い共通 API の提案であり、全機能を初回実装の完了条件にはしない。本 ADR は最初のバックエンド選択と動く初期契約を採用する。共通契約へ未統合の部分と実装済みの API を区別する。
+[ADR-0004](0004-graphics-library.md)〜[ADR-0007](0007-graphics-descriptors.md) は広い共通 API の提案であり、全機能を初回実装の完了条件にはしない。本 ADR は最初のバックエンド選択と動く初期契約を採用する。共通 API の初期サブセットと未実装の広い契約を区別する。
 
 ## 決定
 
@@ -21,16 +21,26 @@
 
 ### 初期契約と公開 API
 
-現段階の名前空間は `Lumyte.Graphics.Wgpu`、所有型は managed class とする。初期 API は広い共通契約の実装を偽装せず、将来 `Lumyte.Graphics` と統合する前提の backend 固有 API として公開する。
+公開する利用 API の名前空間は `Lumyte.Graphics` とし、所有型は managed class とする。テストとサンプルはこの共通 API のみを使用し、バックエンドのクラスや binding を直接参照しない。初期機能と Desc の範囲は以下に限定し、ADR-0004〜0007 の未実装部分を公開しない。
+
+| プロジェクト | 依存と責務 |
+| --- | --- |
+| `Lumyte.Graphics.Core` | binding／バックエンドへの依存なし。公開 resource、Desc、GraphicsDevice、CommandEncoder、RenderEncoder、Submission と内部 driver 契約 |
+| `Lumyte.Graphics.Wgpu` | Core と Ahjo.Wgpu に依存。内部 driver が managed backend object を保持し、共通契約を wgpu に変換 |
+| `Lumyte.Graphics` | Core と対応 backend に依存する生成層。`Graphics.CreateDevice(GraphicsBackend)` で選択し、共通 GraphicsDevice を返す |
+| テスト／サンプル | 生成層を ProjectReference し、Core の共通型だけで操作。wgpu／Ahjo の直接参照は禁止 |
+
+Core の wrapper は内部 driver と backend object を非公開で保持する。GPU 参照も不透明な内部データを保持し、利用者が backend 型や物理表現へ変換する API は提供しない。生成層から backend への依存は構成のためだけに使う。frame allocator／deferred deletion を扱う Runtime とは別の責務とする。
+
+`GraphicsBackend` は現在 `Wgpu` のみ。`Graphics.CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu)` は未定義値を ArgumentOutOfRangeException で拒否する。バックエンドの `WgpuBackend.CreateDevice()` は生成層用の接続点であり、サンプル／テストからは呼ばない。
 
 | API | 実装する契約 |
 | --- | --- |
-| `WgpuDevice.Create()` | blocking の Instance／Adapter／Device 生成。バインディングの初期化失敗は例外で返す |
+| `Graphics.CreateDevice(GraphicsBackend)` | blocking の Instance／Adapter／Device 生成。バインディングの初期化失敗は例外で返す |
 | `CreateBuffer(BufferDesc)`／`Buffer.Slice(ulong, ulong)` | サイズ・用途・範囲を検証。初期 buffer のサイズは 4-byte の倍数 |
 | `WriteBuffer<T>(BufferSlice, ReadOnlySpan<T>)` | blittable データの明示的な byte Upload。未知の Slang 型の ABI を自動保証しない |
 | `CreateReference<T>(BufferSlice)` | 初期の登録済みデータ schema は UInt32 配列のみ。非所有・型付きの不透明参照を作る |
 | `CreateShader(Assembly assembly, string resourceName)` | DLL の埋め込み WGSL を読み込む。resource 不在は ArgumentException。stream は内部で解放 |
-| `CreateShader(string wgsl)` | Slang から生成済みの WGSL を読み込む。Native の validation error は例外で通知 |
 | `CreateComputePipeline(ComputePipelineDesc)`／`ComputePipeline.CreateArguments(GpuReference<uint>)` | 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数。binding と実データ参照の解決は library 内部 |
 | `CommandEncoder.Dispatch(...)`／`CopyBuffer(...)` | 単一 queue の Compute とコピー。パス中は禁止 |
 | `CreateTexture(TextureDesc)`／`Texture.CreateView()` | single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target |
@@ -57,7 +67,7 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。ビルド時に共有 MSBuild targets が obj 内へ生成し、サンプル／テスト DLL の EmbeddedResource に格納する。生成 WGSL は Git に含めず、別ファイルとして配布しない。実行時は DLL の manifest resource を読み出し、Slang compiler を必要としない。コンパイラはビルド時にのみ必要とする。
 
-GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
+テストで consumer と Core の assembly reference に wgpu／Ahjo がないことも確認する。GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
 
 ## 検討した代替案
 
@@ -78,7 +88,7 @@ API の形は揃うが、未対応の機能を使用できると誤認させる�
 - .NET binding と既存 runtime package だけで Compute／描画／Readback の経路を実行できる。
 - Lumyte の Native ビルドを増やさずに最初の backend を確認できる。
 - pre-1.0 binding の更新時に API と callback／所有権を再検証する必要がある。
-- 現在の API と Desc は限定的であり、共通契約への統合や一般化で変更する可能性がある。
+- 現在の API と Desc は限定的であり、共通契約の拡張や一般化で変更する可能性がある。
 - lavapipe の成功は実 GPU の性能や全プラットフォームの互換性を保証しない。
 
 ## 参考資料

@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics/Lumyte.Graphics.csproj" />
     <SlangShader Include="Shaders/*.slang" />
   </ItemGroup>
   <Import Project="../../tools/shaders/Slang.targets" />

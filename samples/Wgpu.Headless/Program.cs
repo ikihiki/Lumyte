@@ -1,7 +1,7 @@
-using Lumyte.Graphics.Wgpu;
+using Lumyte.Graphics;
 using System.Runtime.InteropServices;
 
-using var device = WgpuDevice.Create();
+using var device = Graphics.CreateDevice();
 using (var buffer = device.CreateBuffer(new BufferDesc {
     SizeInBytes = 32, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.CopySource | BufferUsage.CopyDestination,
 }))

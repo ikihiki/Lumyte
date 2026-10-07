@@ -1,9 +1,10 @@
+using Lumyte.Graphics;
 using A = Ahjo.Wgpu;
 using Ahjo.Wgpu.Native;
 
 namespace Lumyte.Graphics.Wgpu;
 
-public abstract class GpuResource : IDisposable
+internal abstract class GpuResource : IDisposable
 {
     internal WgpuDevice Owner { get; }
     private bool _disposed;
@@ -36,7 +37,7 @@ public abstract class GpuResource : IDisposable
     protected abstract void ReleaseNative();
 }
 
-public sealed class Buffer : GpuResource
+internal sealed class Buffer : GpuResource
 {
     internal A.Buffer Native { get; }
     public ulong SizeInBytes { get; }
@@ -57,7 +58,7 @@ public sealed class Buffer : GpuResource
     protected override void ReleaseNative() => Native.Dispose();
 }
 
-public sealed class Texture : GpuResource
+internal sealed class Texture : GpuResource
 {
     internal A.Texture Native { get; }
     public uint Width { get; }
@@ -75,7 +76,7 @@ public sealed class Texture : GpuResource
     protected override void ReleaseNative() => Native.Dispose();
 }
 
-public sealed class TextureView : GpuResource
+internal sealed class TextureView : GpuResource
 {
     internal A.TextureView Native { get; }
     internal Texture Texture { get; }
@@ -84,21 +85,21 @@ public sealed class TextureView : GpuResource
     protected override void ReleaseNative() { Native.Dispose(); Texture.ReleaseLease(); }
 }
 
-public sealed class ShaderModule : GpuResource
+internal sealed class ShaderModule : GpuResource
 {
     internal A.ShaderModule Native { get; }
     internal ShaderModule(WgpuDevice owner, A.ShaderModule native) : base(owner) => Native = native;
     protected override void ReleaseNative() => Native.Dispose();
 }
 
-public sealed class GraphicsPipeline : GpuResource
+internal sealed class GraphicsPipeline : GpuResource
 {
     internal A.RenderPipeline Native { get; }
     internal GraphicsPipeline(WgpuDevice owner, A.RenderPipeline native) : base(owner) => Native = native;
     protected override void ReleaseNative() => Native.Dispose();
 }
 
-public sealed class ComputePipeline : GpuResource
+internal sealed class ComputePipeline : GpuResource
 {
     internal A.ComputePipeline Native { get; }
     internal ComputePipeline(WgpuDevice owner, A.ComputePipeline native) : base(owner) => Native = native;
@@ -133,7 +134,7 @@ public sealed class ComputePipeline : GpuResource
     protected override void ReleaseNative() => Native.Dispose();
 }
 
-public sealed unsafe class ShaderArguments : GpuResource
+internal sealed unsafe class ShaderArguments : GpuResource
 {
     internal WGPUBindGroupImpl* Handle { get; }
     internal ComputePipeline Pipeline { get; }
