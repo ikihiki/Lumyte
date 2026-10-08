@@ -17,7 +17,7 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 InputSystem はデバイスごとの入力記録配列と最新状態を管理する。配列参照、イベント通知、ポーリングは同じ記録を利用し、読み取りによって記録を消費しない。入力の取得周期と履歴の保持期間は独立させ、毎フレームの削除を必須にしない。
 
-初期対象は物理キー、マウスボタン、位置、移動量、ホイール、フォーカス、デバイス接続・切断とする。文字入力・IME、ゲームパッド、タッチ、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
+初期対象は物理キー、マウスボタン、位置、移動量、ホイール、コントローラー（ゲームパッド）のボタン・スティック・トリガー、フォーカス、デバイス接続・切断とする。文字入力・IME、タッチ、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
 
 一つの InputSystem は一つのウィンドウまたは Browser の入力対象に接続する。対象内で識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
 
@@ -50,13 +50,18 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 | 公開 API | 役割 | 契約・注意事項 |
 | --- | --- | --- |
 | `readonly record struct InputDeviceId(ulong Value)` | デバイスの識別 | 0 は無効。Source が割り当て、システム内で再利用しない |
-| `enum InputDeviceKind` / `InputDeviceIdentityKind` | 種類と識別粒度 | 種類は Keyboard / Mouse、粒度は Physical / Logical |
+| `enum InputDeviceKind` / `InputDeviceIdentityKind` | 種類と識別粒度 | 種類は Keyboard / Mouse / Controller、粒度は Physical / Logical |
 | `sealed record InputDeviceInfo(InputDeviceId Id, InputDeviceKind Kind, string Name, InputDeviceIdentityKind IdentityKind)` | デバイス情報 | 接続時に登録し、切断後も参照できる |
 | `enum Key` / `enum MouseButton` | 物理キーとボタン | Key は Unknown、文字位置・数字・矢印・左右別修飾キー等。MouseButton は Left / Right / Middle / X1 / X2 |
+| `enum ControllerButton` | 共通コントローラーボタン | South / East / West / North、DPadUp / Down / Left / Right、LeftShoulder / RightShoulder、LeftStick / RightStick、Start / Select。フェイスボタンは位置で表し、メーカーの文字表記に依存しない |
+| `enum ControllerStick` / `enum ControllerTrigger` | アナログ入力の識別 | それぞれ Left / Right |
 | `abstract record InputData` | 共通入力ペイロード | 共通ライブラリが定義する派生型に限定 |
 | `sealed record KeyData(Key Key, bool IsDown, bool IsRepeat) : InputData` | キー入力 | 文字入力ではなく物理キーの押下・解放 |
 | `sealed record MouseButtonData(MouseButton Button, bool IsDown) : InputData` | ボタン入力 | 押下・解放 |
 | `sealed record MouseMoveData(Vector2 Position) : InputData` / `MouseWheelData(Vector2 Delta) : InputData` | マウス入力 | 座標・ホイールは後述の共通単位 |
+| `sealed record ControllerButtonData(ControllerButton Button, bool IsDown) : InputData` | コントローラーボタン | 押下・解放 |
+| `sealed record ControllerStickData(ControllerStick Stick, Vector2 Value) : InputData` | スティック入力 | 各軸 -1〜1、中心は 0。右が X 正、上が Y 正 |
+| `sealed record ControllerTriggerData(ControllerTrigger Trigger, float Value) : InputData` | トリガー入力 | 0〜1。未操作が 0、最大操作が 1 |
 | `sealed record DeviceConnectedData(InputDeviceInfo Info) : InputData` / `DeviceDisconnectedData : InputData` | 接続状態 | 最初の入力より先に接続を記録 |
 | `sealed record FocusData(bool IsFocused) : InputData` | 対象のフォーカス | デバイスごとに展開して記録 |
 | `readonly record struct InputRecord(InputDeviceId DeviceId, ulong Sequence, TimeSpan RecordedAt, InputData Data)` | 共通記録 | 配列・通知・ポーリングで同じ内容を提供 |
@@ -68,8 +73,9 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 | `ReadOnlyMemory<InputRecord> InputSystem.GetRecords(InputDeviceId device)` | 記録配列の直接参照 | 保持記録の読み取り専用スナップショット。Span で列挙でき、必要なら ToArray で所有配列を作れる |
 | `InputDeviceState InputSystem.GetState(InputDeviceId device)` | 現在状態のポーリング | 不変スナップショット。履歴の有無に依存しない |
 | `bool InputDeviceState.IsConnected { get; }` / `IsFocused { get; }` | 接続・フォーカス | 初期状態は解放・非フォーカス |
-| `bool InputDeviceState.IsDown(Key key)` / `IsDown(MouseButton button)` | 押下状態 | 対象デバイス種別に合わない照会は InvalidOperationException |
+| `bool InputDeviceState.IsDown(Key key)` / `IsDown(MouseButton button)` / `IsDown(ControllerButton button)` | 押下状態 | 対象デバイス種別に合わない照会は InvalidOperationException |
 | `Vector2 InputDeviceState.MousePosition { get; }` | 最新のマウス位置 | Mouse のみ。移動・ホイールの期間集計は履歴から行う |
+| `Vector2 InputDeviceState.GetStick(ControllerStick stick)` / `float GetTrigger(ControllerTrigger trigger)` | 最新のアナログ状態 | Controller のみ。初期値は 0。デッドゾーン適用前の正規化値 |
 | `InputReadResult InputSystem.ReadRecords(InputDeviceId device, ulong afterSequence)` | 履歴のポーリング | 指定 Sequence より後の保持記録を返す。利用者ごとにカーソルを管理 |
 | `ReadOnlyMemory<InputRecord> InputReadResult.Records { get; }` / `ulong NextSequence { get; }` / `bool HasGap { get; }` | ポーリング結果 | 欠落を通知し、次回カーソルを提示する |
 | `event Action<InputRecord>? InputSystem.Recorded` | 記録の通知 | 新規記録ごとに一度、Sequence 順で同期通知。DeviceId で購読側が選別する |
@@ -122,6 +128,12 @@ Prune は設定済みの件数・時間制限だけを評価し、Manual の記�
 Source は接続時に DeviceConnectedData、続けて初期 FocusData を通知してから通常入力を送る。フォーカス喪失または切断時は、そのデバイスで押下中のキー・ボタンを解放する記録を状態変更の直後に enum 値順で合成する。履歴は消さない。
 
 非フォーカス中の通常入力は記録・状態に適用しない。復帰時は新たな非リピート押下を待ち、リピートだけで解放状態を復活させない。マウス位置は最後の値を保持し、復帰後最初の位置を移動量計算の新しい基準とする。履歴から移動量を集計する利用者はフォーカス・接続境界をまたいだ位置差を加算しない。
+
+コントローラーは識別可能な接続ごとに別デバイスとして登録し、接続・切断を記録する。Browser の接続スロットも接続期間ごとに新しい ID を割り当てる。OS API が状態ポーリングを提供する場合は、Platform が前回取得値との差をボタン・スティック・トリガーの共通データに変換する。初回は全ボタン解放・アナログ値 0 を基準とし、値が変わった項目を通知する。取得間隔より短い操作は復元できないため、イベント取得型とは取得精度が異なることを明記する。
+
+Platform は標準ゲームパッドの物理的な位置に共通ボタンを割り当てる。非標準配置や未対応の操作は推測せず、対応表・未対応範囲をバックエンド ADR に記載する。スティックの各軸を -1〜1、トリガーを 0〜1 に正規化し、非有限値を拒否する。デッドゾーン、反応曲線、トリガーからボタンへの変換は利用者側の処理とし、記録する正規化値を変更しない。
+
+フォーカス喪失・切断時はコントローラーボタンも合成解放し、非ゼロのスティック・トリガーには値 0 の記録を追加して現在状態を中立にする。復帰時に押し続けたボタンを新たな押下として扱わないよう、Platform は一度解放されるまで押下通知を抑制する。アナログ入力は復帰後の新しい取得値から記録を再開する。
 
 物理デバイス識別不能な環境では同種入力の混在を論理デバイスの履歴として扱う。独立した複数キーボード等の機能を提供できると偽らず、Platform ごとの識別粒度を明示する。
 
@@ -176,15 +188,18 @@ Source は DrainEvents の失敗時にイベントを消費しない。取得例
 - 未読履歴の削除で HasGap が立ち、読了範囲の削除では立たない。
 - 削除で現在状態を変えず、取得済み配列も変えない。
 - フォーカス喪失・切断で合成解放を全方式から参照できる。
+- 複数コントローラーの識別、ボタンの短い押下、スティック・トリガーの範囲・向き・初期値・中立復帰を検証する。
+- 状態取得型バックエンドで値の変化を記録し、復帰時の押下抑制と接続スロットの再利用を正しく扱う。
 - 通知例外・再入禁止・不正バッチ・Source 例外で記録や通知が重複しない。
 
-実環境では Windows / Linux / Browser のデバイス識別粒度、物理キー、DPI、ホイール、フォーカスと切断を検証する。
+実環境では Windows / Linux / Browser のデバイス識別粒度、物理キー、DPI、ホイール、コントローラーのボタン対応・アナログ正規化、フォーカスと切断を検証する。
 
 ## 別途決定する事項
 
 - 各 Platform の入力ライブラリ、物理デバイス識別方法、Native 境界、Browser の DOM 連携。
 - キー enum の完全な定義と変換表、ホイール換算、マウスキャプチャ・ポインターロック。
-- 文字入力・IME、ゲームパッド、タッチ、アクションマッピングと UI の入力伝播。
+- 各環境のコントローラー取得 API と非標準配置の対応表、振動・ハプティクスなどの出力機能。
+- 文字入力・IME、タッチ、アクションマッピングと UI の入力伝播。
 - OS 発生時刻の取り扱い、永続記録・リプレイ形式、固定時間ステップへのイベント分配。
 - 計測に基づく性能目標、受信キュー上限、長期稼働時の切断済みデバイス情報の回収。
 
