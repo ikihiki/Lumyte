@@ -15,7 +15,7 @@ Lumyte は C# を中心とするゲームエンジンで、Windows、Linux、Bro
 
 ### 適用範囲と依存方向
 
-実装時の配置は [ADR-0002](../0002-repository-layout.md) の分類ルールに従う `src/Animation/Lumyte.Animation/`、名前空間と NuGet パッケージ名は `Lumyte.Animation` とする。構築用の Composition 連携は同じ分類の別プロジェクトで提供する。今回の変更ではプロジェクトを作成しない。
+実装時の配置は [ADR-0002](../0002-repository-layout.md) の分類ルールに従う `src/Animation/Lumyte.Animation/`、名前空間と NuGet パッケージ名は `Lumyte.Animation` とする。設定型の構築には既存の Lumyte.Composition を使用する。今回の変更ではプロジェクトを作成しない。
 
 ```text
 入力・ゲームの条件判定 → トリガー
@@ -312,11 +312,11 @@ void UpdateBone(double simulationDeltaSeconds, Action<Quaternion> applyRotation)
 
 利用全体の更新順序は、入力と条件判定、トリガー処理、時計の前進、値評価と競合解決、消費側による値取得・適用、消費側によるイベント配送とする。Animation の Update は計算結果とイベントを出力した時点で終了し、適用や配送を呼び出さない。
 
-### Composition による定義の構築
+### Lumyte.Composition による定義の構築
 
-[ADR-COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md) のファクトリ、子要素インデクサ、名前付きスロットを使い、タイムラインと状態機械の設定を構築できるようにする。実装時には `src/Animation/Lumyte.Animation.Composition/` に別プロジェクトを配置し、NuGet 名・名前空間を `Lumyte.Animation.Composition` とする。今回の変更では実装を追加しない。
+[ADR-COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md) のファクトリ、子要素インデクサ、名前付きスロットを使い、タイムラインと状態機械の設定を構築できるようにする。設定型は `Lumyte.Animation` に配置し、既存の `Lumyte.Composition` の Composable／ComposeParameter／ComposeContent／ComposeSlot を使用する。今回の変更では実装を追加しない。
 
-依存方向は `Lumyte.Animation.Composition → Lumyte.Animation + Lumyte.Composition` とする。Composition Generator はこの定義プロジェクトで Analyzer として使用し、生成済み API を利用側へ公開する。実行時の Generator 参照を要求しない。Lumyte.Animation 自体は Composition を参照せず、既存の Builder／コンストラクター経路も同じ実行定義を作る入口として維持する。
+依存方向は `Lumyte.Animation → Lumyte.Composition` とする。既存の `Lumyte.Composition.Generators` を Lumyte.Animation のビルド時に Analyzer として参照し、生成されたファクトリとインデクサーを公開する。利用側は Lumyte.Animation の生成済み API を使用し、実行時の Generator 参照を要求しない。Builder／コンストラクター経路も同じ実行定義を作る入口として維持する。
 
 Composition は可変の設定ノードだけを組み立てる。Timeline.Build と StateMachine.Build はノードを検証し、既存の AnimationTimelineBuilder／AnimationController の契約に変換する。Build は再生を更新せず、対象への値適用やイベント配送も行わない。StateMachine.Build の戻り値は既存契約どおり初期状態の再生を開始済みのコントローラーであり、時刻は 0 のままとする。
 
@@ -354,7 +354,7 @@ SetDuration は有限かつ正の長さを指定し、項目またはイベン�
 +using Lumyte.Animation;
 +using Lumyte.Composition;
 +
-+namespace Lumyte.Animation.Composition;
++namespace Lumyte.Animation;
 +
 +public static partial class ComposeAnimation
 +{
@@ -536,8 +536,7 @@ Sequence と Parallel をネストし、開始時刻を手計算せずに UI の
 
 ```csharp
 using Lumyte.Animation;
-using Lumyte.Animation.Composition;
-using static Lumyte.Animation.Composition.ComposeAnimation;
+using static Lumyte.Animation.ComposeAnimation;
 
 var opacity = AnimationChannel<float>.Create();
 var buttonOpacity = AnimationChannel<float>.Create();
@@ -644,7 +643,7 @@ GPU と近い位置で処理できるが、バックエンドごとに再生・�
 - ボーン、UI、その他の型付きプロパティ変化を同じ時間・再生制御で扱い、複数領域の順序と同期を定義できる。
 - 値評価と実行制御を描画なしで検証でき、同じ定義を複数対象と環境で共有できる。
 - ネストしたタイムラインと状態機械を Composition の式で構築でき、再生時には Composition の可変ノードを参照しない。
-- 構築用の別パッケージと Generator による API の確認が必要になる。
+- Lumyte.Animation が Lumyte.Composition の契約を参照し、既存 Generator による設定 API の生成と互換性確認が必要になる。
 - シーンと描画の契約が未確定でも評価ライブラリの設計を進められる。
 - アニメーション側が実行タイミングと遷移を制御し、ゲーム・UI 側が条件判定、時計、値の適用と副作用を制御できる。
 - チャネルと対象の対応、出力の適用、ボーン固有の構造と合成、イベント配送は消費側が実装する必要がある。
