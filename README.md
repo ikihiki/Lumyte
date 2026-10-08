@@ -8,6 +8,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
 - [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
 
