@@ -1,50 +1,21 @@
-name: Composition
+name: Build and test
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/Core/Lumyte.Composition*/**'
-      - 'tests/Core/Lumyte.Composition.Tests/**'
-      - 'samples/Lumyte.Composition.Sample/**'
-      - 'docs/adr/composition/**'
-      - 'Lumyte.slnx'
-      - 'Directory.Build.props'
-      - 'NuGet.config'
-      - 'global.json'
-      - 'mise.toml'
-      - 'mise.lock'
-      - '.editorconfig'
-      - 'stylecop.json'
-      - '.markdownlint-cli2.jsonc'
-      - '.github/workflows/composition.yml'
   pull_request:
-    paths:
-      - 'src/Core/Lumyte.Composition*/**'
-      - 'tests/Core/Lumyte.Composition.Tests/**'
-      - 'samples/Lumyte.Composition.Sample/**'
-      - 'docs/adr/composition/**'
-      - 'Lumyte.slnx'
-      - 'Directory.Build.props'
-      - 'NuGet.config'
-      - 'global.json'
-      - 'mise.toml'
-      - 'mise.lock'
-      - '.editorconfig'
-      - 'stylecop.json'
-      - '.markdownlint-cli2.jsonc'
-      - '.github/workflows/composition.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: composition-${{ github.ref }}
+  group: build-test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  composition:
+  tests:
+    name: Build and run tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -53,13 +24,28 @@ jobs:
         with:
           version: '2026.10.3'
           install_args: '--locked'
-      - name: Build, test, sample, pack and lint
+      - name: Build solution
         shell: bash
         run: |
           export DOTNET_ROOT="$(mise where http:dotnet)"
           mkdir -p artifacts/nuget
           mise exec -- dotnet build Lumyte.slnx -c Release
-          mise exec -- dotnet test Lumyte.slnx -c Release --no-build
+      - name: Run solution tests
+        shell: bash
+        run: |
+          export DOTNET_ROOT="$(mise where http:dotnet)"
+          mise exec -- dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results
+          path: artifacts/test-results/*.trx
+          if-no-files-found: ignore
+      - name: Sample, pack and lint
+        shell: bash
+        run: |
+          export DOTNET_ROOT="$(mise where http:dotnet)"
           mise exec -- dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
           mise exec -- dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
           mise exec -- dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget

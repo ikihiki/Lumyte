@@ -10,3 +10,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
 - [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
+
+ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
+で `tests/` 内のソリューションに登録されたテストを実行できます。
+CI でも main への push とすべての PR でテストを実行し、TRX 形式の結果を保存します。
