@@ -7,5 +7,6 @@
   },
   "globs": ["**/*.md"],
   "gitignore": true,
-  "ignores": [".git/**", "**/node_modules/**", "artifacts/**"]
+  // AnalyzerReleases files use Roslyn's required release tracking format.
+  "ignores": [".git/**", "**/node_modules/**", "artifacts/**", "**/AnalyzerReleases.*.md"]
 }

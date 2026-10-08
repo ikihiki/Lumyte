@@ -8,3 +8,11 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
+
+- [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
+- [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
+
+ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
+で `tests/` 内のソリューションに登録されたテストを実行できます。
+CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環境検証 → ビルド → テストの順に実行します。
+すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。
