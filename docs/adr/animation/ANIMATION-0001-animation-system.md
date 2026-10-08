@@ -15,7 +15,7 @@ Lumyte は C# を中心とするゲームエンジンで、Windows、Linux、Bro
 
 ### 適用範囲と依存方向
 
-実装時の配置は [ADR-0002](../0002-repository-layout.md) の分類ルールに従う `src/Animation/Lumyte.Animation/`、名前空間と NuGet パッケージ名は `Lumyte.Animation` とする。今回の変更ではプロジェクトを作成しない。
+実装時の配置は [ADR-0002](../0002-repository-layout.md) の分類ルールに従う `src/Animation/Lumyte.Animation/`、名前空間と NuGet パッケージ名は `Lumyte.Animation` とする。構築用の Composition 連携は同じ分類の別プロジェクトで提供する。今回の変更ではプロジェクトを作成しない。
 
 ```text
 入力・ゲームの条件判定 → トリガー
@@ -312,6 +312,282 @@ void UpdateBone(double simulationDeltaSeconds, Action<Quaternion> applyRotation)
 
 利用全体の更新順序は、入力と条件判定、トリガー処理、時計の前進、値評価と競合解決、消費側による値取得・適用、消費側によるイベント配送とする。Animation の Update は計算結果とイベントを出力した時点で終了し、適用や配送を呼び出さない。
 
+### Composition による定義の構築
+
+[ADR-COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md) のファクトリ、子要素インデクサ、名前付きスロットを使い、タイムラインと状態機械の設定を構築できるようにする。実装時には `src/Animation/Lumyte.Animation.Composition/` に別プロジェクトを配置し、NuGet 名・名前空間を `Lumyte.Animation.Composition` とする。今回の変更では実装を追加しない。
+
+依存方向は `Lumyte.Animation.Composition → Lumyte.Animation + Lumyte.Composition` とする。Composition Generator はこの定義プロジェクトで Analyzer として使用し、生成済み API を利用側へ公開する。実行時の Generator 参照を要求しない。Lumyte.Animation 自体は Composition を参照せず、既存の Builder／コンストラクター経路も同じ実行定義を作る入口として維持する。
+
+Composition は可変の設定ノードだけを組み立てる。Timeline.Build と StateMachine.Build はノードを検証し、既存の AnimationTimelineBuilder／AnimationController の契約に変換する。Build は再生を更新せず、対象への値適用やイベント配送も行わない。StateMachine.Build の戻り値は既存契約どおり初期状態の再生を開始済みのコントローラーであり、時刻は 0 のままとする。
+
+| 設定ノード | 時刻への変換 |
+| --- | --- |
+| Timeline / Parallel | 子を同じ開始時刻へ配置し、長さを子の最大終了時刻とする |
+| Sequence | 登録順に配置し、前の子の長さだけ次の開始時刻を進める |
+| Delay | 有限かつ 0 以上の秒数だけ長さを持ち、値を出力しない |
+| Track&lt;T&gt; | 指定した値ソースを型付きチャネルへ配置し、ソースの Duration を長さとする |
+| Marker | その配置時刻へイベントを登録する。自身の長さは 0 |
+| State | 子を Timeline と同じ並列規則で構築し、名前とループ設定を状態に対応付ける |
+| Transition | 状態名・トリガー名から既存の AnimationTransition を構築する |
+
+ネストは深さ優先・子の登録順で展開する。算出時刻のオーバーフロー・非有限値、参照の循環、null の子、名前の重複、参照先のない遷移は Build 時に拒否する。同じノードを複数の場所で再利用する場合は各配置として展開し、共有参照自体は循環としない。子のないグループは長さ 0 とし、最終タイムラインや各状態の長さには正の値を要求する。Delay だけで終わる定義も長さを保持するよう、Builder に終端指定を追加する。
+
+構築用ノードのコレクションは Composition の既存契約に従って参照を保持できる。Build は構造・値・登録順を読み取ってコピーし、再生中にノードを参照しない。Build 後のノード変更は構築済みの定義へ影響せず、再 Build だけに反映される。値ソースは不変の契約に基づいて共有する。構築・Build 中の同時変更は禁止する。
+
+#### 設定ノードの追加 API
+
+以下も実装本体を省略した宣言差分とする。required メンバーには ComposeParameter を付け、生成ファクトリにも必須引数として公開する。通常の子要素は abstract なクラスを基底型とし、Composition の子要素とスロットの混在に対応する。
+
+```diff
++// Lumyte.Animation に追加。指定した時刻まで値を出さずに長さだけ延長する。
++public sealed class AnimationTimelineBuilder
++{
++    public void SetDuration(double duration);
++}
+```
+
+SetDuration は有限かつ正の長さを指定し、項目またはイベントの最大終了時刻より短い値は Build 時に拒否する。未指定は既存の最大終了時刻の計算を使う。
+
+```diff
++using System;
++using System.Collections.Generic;
++using Lumyte.Animation;
++using Lumyte.Composition;
++
++namespace Lumyte.Animation.Composition;
++
++public static partial class ComposeAnimation
++{
++    public static partial class Definitions
++    {
++        public abstract class TimelineItem { }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Timeline : TimelineItem
++        {
++            [ComposeContent]
++            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
++            public AnimationTimeline Build();
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Sequence : TimelineItem
++        {
++            [ComposeContent]
++            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Parallel : TimelineItem
++        {
++            [ComposeContent]
++            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Delay : TimelineItem
++        {
++            [ComposeParameter]
++            public required double Duration { get; init; }
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Track<T> : TimelineItem
++        {
++            [ComposeParameter]
++            public required AnimationChannel<T> Channel { get; init; }
++            [ComposeParameter]
++            public required IAnimationSource<T> Source { get; init; }
++            [ComposeParameter]
++            public AnimationFillMode Fill { get; init; } = AnimationFillMode.Hold;
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Marker : TimelineItem
++        {
++            [ComposeParameter]
++            public required string Name { get; init; }
++            [ComposeParameter]
++            public string? Payload { get; init; }
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class State
++        {
++            [ComposeParameter]
++            public required string Name { get; init; }
++            [ComposeParameter]
++            public AnimationWrapMode WrapMode { get; init; } = AnimationWrapMode.Once;
++            [ComposeContent]
++            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class Transition
++        {
++            [ComposeParameter]
++            public required string From { get; init; }
++            [ComposeParameter]
++            public required string Trigger { get; init; }
++            [ComposeParameter]
++            public required string To { get; init; }
++        }
++
++        [Composable(Factory = "ComposeAnimation")]
++        public partial class StateMachine
++        {
++            [ComposeParameter]
++            public required string InitialState { get; init; }
++            [ComposeContent]
++            public IReadOnlyList<State> States { get; set; } = [];
++            public IReadOnlyList<Transition> TransitionItems { get; private set; } = [];
++            [ComposeSlot]
++            private static void Transitions(StateMachine target,
++                IReadOnlyList<Transition> children);
++            public AnimationController Build();
++        }
++    }
++}
+```
+
+Transitions の宣言本体は受け取った子を TransitionItems に保存する。名前付きスロットはその設定を遅延して適用するだけで、再生を開始しない。StateMachine の通常の子要素を状態、Transitions スロットの子要素を遷移として型で区別する。Timeline／Sequence／Parallel の子として異なる T の Track を混在できるが、各 Track の Channel と Source の T は一致させる。
+
+#### 生成される入口
+
+主な入口の差分は以下とする。State、Delay、Marker、Transition の専用デリゲートも同じ既存規則で生成し、引数順は required 群のメンバー名順とする。例では名前付き引数を使う。
+
+```diff
++public static partial class ComposeAnimation
++{
++    public static Definitions.TimelineFactory Timeline { get; }
++    public static Definitions.SequenceFactory Sequence { get; }
++    public static Definitions.ParallelFactory Parallel { get; }
++    public static Definitions.DelayFactory Delay { get; }
++    public static Definitions.MarkerFactory Marker { get; }
++    public static Definitions.StateFactory State { get; }
++    public static Definitions.TransitionFactory Transition { get; }
++    public static Definitions.StateMachineFactory StateMachine { get; }
++    public static Definitions.Track<T> Track<T>(AnimationChannel<T> channel,
++        IAnimationSource<T> source, Optional<AnimationFillMode> fill = default,
++        IReadOnlyList<Action<Definitions.Track<T>>>? with = null);
++    public static Definitions.TrackFactory<T> TrackFactory<T>();
++
++    public static partial class Definitions
++    {
++        public delegate Timeline TimelineFactory(IReadOnlyList<Action<Timeline>>? with = null);
++        public delegate Sequence SequenceFactory(IReadOnlyList<Action<Sequence>>? with = null);
++        public delegate Parallel ParallelFactory(IReadOnlyList<Action<Parallel>>? with = null);
++        public delegate Delay DelayFactory(double duration, IReadOnlyList<Action<Delay>>? with = null);
++        public delegate Marker MarkerFactory(string name, Optional<string?> payload = default,
++            IReadOnlyList<Action<Marker>>? with = null);
++        public delegate State StateFactory(string name, Optional<AnimationWrapMode> wrapMode = default,
++            IReadOnlyList<Action<State>>? with = null);
++        public delegate Transition TransitionFactory(string from, string to, string trigger,
++            IReadOnlyList<Action<Transition>>? with = null);
++        public delegate StateMachine StateMachineFactory(string initialState,
++            IReadOnlyList<Action<StateMachine>>? with = null);
++        public delegate Track<T> TrackFactory<T>(AnimationChannel<T> channel,
++            IAnimationSource<T> source, Optional<AnimationFillMode> fill = default,
++            IReadOnlyList<Action<Track<T>>>? with = null);
++
++        // 各 partial 型内に生成するインデクサー。
++        public partial class Timeline
++        {
++            public Timeline this[params TimelineItem[] content] { get; }
++        }
++        public partial class Sequence
++        {
++            public Sequence this[params TimelineItem[] content] { get; }
++        }
++        public partial class Parallel
++        {
++            public Parallel this[params TimelineItem[] content] { get; }
++        }
++        public partial class State
++        {
++            public State this[params TimelineItem[] content] { get; }
++        }
++        public partial class StateMachine
++        {
++            public readonly struct CompositionChild
++            {
++                public static implicit operator CompositionChild(State state);
++                public static implicit operator CompositionChild(
++                    CompositionSlotAssignment<StateMachine> slot);
++            }
++            public StateMachine this[params CompositionChild[] content] { get; }
++        }
++    }
++}
++
++public static class ComposeAnimationStateMachineCompositionExtensions
++{
++    public static CompositionSlot<ComposeAnimation.Definitions.StateMachine,
++        ComposeAnimation.Definitions.Transition> Transitions(
++        this ComposeAnimation.Definitions.StateMachineFactory factory);
++}
+```
+
+ファクトリ名は各 Composable 属性の Factory で明示し、既定の Compose と区別する。StateMachine.CompositionChild には State と CompositionSlotAssignment&lt;StateMachine&gt; からの暗黙変換を既存規則で生成する。生成 API の Optional、with、スロット、配列参照、置換の契約は Composition ADR に従い、Animation 独自の構文や Generator の拡張は追加しない。
+
+#### ネストしたタイムラインと状態機械の例
+
+Sequence と Parallel をネストし、開始時刻を手計算せずに UI の設定を記述する。マーカーは最後のフェードが終わった時刻に配置される。例は未実装 API の利用設計である。
+
+```csharp
+using Lumyte.Animation;
+using Lumyte.Animation.Composition;
+using static Lumyte.Animation.Composition.ComposeAnimation;
+
+var opacity = AnimationChannel<float>.Create();
+var buttonOpacity = AnimationChannel<float>.Create();
+var fadeIn = new Tween<float>(
+    0f, 1f, 0.2, AnimationInterpolators.Float, AnimationEasing.Linear);
+var fadeButton = new Tween<float>(
+    0f, 1f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear);
+var hidden = new Tween<float>(
+    0f, 0f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear);
+
+var opening = Timeline()[
+    Sequence()[
+        Parallel()[
+            Track<float>(channel: opacity, source: fadeIn),
+            Sequence()[
+                Delay(duration: 0.2),
+                Track<float>(channel: buttonOpacity, source: fadeButton)
+            ]
+        ],
+        Marker(name: "PanelOpened")
+    ]
+];
+AnimationTimeline timeline = opening.Build(); // 長さ 0.3 秒。
+
+var definition = StateMachine(initialState: "Closed")[
+    State(name: "Closed")[
+        Track<float>(channel: opacity, source: hidden),
+        Track<float>(channel: buttonOpacity, source: hidden)
+    ],
+    State(name: "Opening")[opening],
+    StateMachine.Transitions()[
+        Transition(from: "Closed", trigger: "Open", to: "Opening"),
+        Transition(from: "Opening", trigger: "Close", to: "Closed")
+    ]
+];
+AnimationController controller = definition.Build();
+controller.Trigger("Open");
+
+var output = new AnimationOutput();
+var events = new System.Collections.Generic.List<AnimationEventOccurrence>();
+output.Clear();
+events.Clear();
+controller.Update(0.25, output, events);
+output.TryGet(opacity, out var panelValue);       // 1。
+output.TryGet(buttonOpacity, out var buttonValue); // 約 0.5。
+// 消費側が panelValue / buttonValue を対象へ適用する。
+```
+
+設定ノード opening を単独タイムラインと状態内の両方で使える。Build 済みの定義は各々独立しており、実行中に設定ノードを参照しない。値の適用は先の UI 利用例と同じ消費側の更新関数で行う。
+
 ### 共通の時間、状態、イベント
 
 - 時計を内部で取得せず、利用側が秒単位の `deltaSeconds >= 0` を渡す。ゲームとボーンはシミュレーション時計、UI はゲームの一時停止に影響されない時計など、統合層が明示的に時計を選ぶ。同じ再生者を複数の更新ループから進めない。描画だけの再評価では時間を進めない。Browser の停止復帰などによる大きな時間差の制限は Engine の方針とする。
@@ -367,6 +643,8 @@ GPU と近い位置で処理できるが、バックエンドごとに再生・�
 
 - ボーン、UI、その他の型付きプロパティ変化を同じ時間・再生制御で扱い、複数領域の順序と同期を定義できる。
 - 値評価と実行制御を描画なしで検証でき、同じ定義を複数対象と環境で共有できる。
+- ネストしたタイムラインと状態機械を Composition の式で構築でき、再生時には Composition の可変ノードを参照しない。
+- 構築用の別パッケージと Generator による API の確認が必要になる。
 - シーンと描画の契約が未確定でも評価ライブラリの設計を進められる。
 - アニメーション側が実行タイミングと遷移を制御し、ゲーム・UI 側が条件判定、時計、値の適用と副作用を制御できる。
 - チャネルと対象の対応、出力の適用、ボーン固有の構造と合成、イベント配送は消費側が実装する必要がある。
@@ -376,6 +654,10 @@ GPU と近い位置で処理できるが、バックエンドごとに再生・�
 ## 検証方針
 
 採用後の実装では以下を受け入れ条件とする。
+
+- 実際の Composition Generator を Analyzer として使用し、設定ノードと別アセンブリの利用例をコンパイルする。generic Track、通常の子と Transitions スロットの混在、required 引数、Build を確認する。
+- ネストした Sequence／Parallel／Delay／Marker が Builder の等価な定義と同じ時刻・値・イベント順序を返すことを確認する。遅延だけの末尾と明示した長さも検証する。
+- 循環、null の子、重複状態、未登録遷移、同一ノードの複数配置を検証する。Build 後の子配列や設定変更が既存の再生へ影響しないことを確認する。
 
 - float／Vector／Quaternion／離散値のカーブと Tween、キー境界、端の保持、イージング端点、独自型の補間を検証する。
 - 位置・透明度・回転・重みを同じタイムラインへ配置し、順次・並列・ネストの開始／終了順序を検証する。検証にボーンや UI のプロジェクトを参照しない。
@@ -399,3 +681,4 @@ GPU と近い位置で処理できるが、バックエンドごとに再生・�
 
 - [ADR-0001: ADR の書き方と運用](../0001-adr-writing-policy.md)
 - [ADR-0002: リポジトリのフォルダ構成](../0002-repository-layout.md)
+- [ADR-COMPOSITION-0001: デリゲート型ファクトリとノード操作の生成](../composition/COMPOSITION-0001-declarative-composition.md)
