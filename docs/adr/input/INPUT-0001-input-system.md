@@ -19,7 +19,7 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 
 初期対象は物理キー、マウスボタン、位置、移動量、ホイール、コントローラー（ゲームパッド）のボタン・スティック・トリガー、フォーカス、デバイス接続・切断とする。文字入力・IME、タッチ、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
 
-InputSystem はエンジンで利用するすべての IInputSource と、それらが登録する IInputDevice を一元管理する。ウィンドウ入力、コントローラー入力など複数のソースを同時に登録できる。ソースやデバイスは自身の入力対象を把握し、フォーカス変更はその対象に属するデバイスだけに通知する。識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
+InputSystem はコンストラクター DI で受け取るすべての IInputSource と、それらが登録する IInputDevice を一元管理する。ウィンドウ入力、コントローラー入力など複数のソースを同時に登録できる。ソースやデバイスは自身の入力対象を把握し、フォーカス変更はその対象に属するデバイスだけに通知する。識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
 
 ### 責務と依存関係
 
@@ -29,10 +29,18 @@ InputSystem はエンジンで利用するすべての IInputSource と、それ
 | --- | --- | --- |
 | `Lumyte.Input` | 全入力ソースと登録デバイスの管理、記録配列、状態更新、参照・通知・ポーリング、保持方針 | .NET 標準ライブラリのみ |
 | `Lumyte.Platform.Windows` / `Linux` / `Browser` | 接続監視と登録を行う `IInputSource`、入力取得・正規化を行う `IInputDevice` の実装 | `Lumyte.Input` |
-| `Lumyte.Engine` | InputSystem の所有、利用する全 Source の追加、取得・利用・削除の呼び出し順 | 共通 Input と必要な Platform 実装 |
+| `Lumyte.Engine` | DI スコープと InputSystem のライフサイクル管理、利用する全 Source の DI 登録、取得・利用・削除の呼び出し順 | 共通 Input と必要な Platform 実装 |
 | ゲーム・ツール | デバイスの選択、記録参照やイベント購読、ポーリング、保持方針の設定 | `Lumyte.Input` の公開 API |
 
 共通 Input は Engine、Platform 実装、Graphics に依存しない。OS ハンドルやウィンドウ型を共通 API に持ち込まない。この PR は文書だけを追加し、空のプロジェクトを作成しない。
+
+### 入力ソースの依存性注入
+
+InputSystem は `IEnumerable<IInputSource>` をコンストラクターで受け取る。構成側が利用する Platform の Source を DI に登録し、InputSystem は渡されたすべての Source を一元管理する。共通ライブラリは特定の DI コンテナーに依存せず、手動のコンストラクター注入も可能とする。
+
+Source 列挙は構築時に一度だけ行い、順序を維持した読み取り専用一覧へ固定する。null の列挙・要素は拒否し、同じインスタンスの重複は拒否する。空の一覧はヘッドレス用途に許容する。Source の追加・削除 API は公開しない。構成変更は新しい DI スコープと InputSystem の生成で行い、デバイスの接続・切断は既存 Source の Registry 操作で扱う。
+
+InputSystem と Source は同じ寿命の DI スコープに置き、一つの Source インスタンスを複数 InputSystem に共有しない。ソース一覧の管理とソースオブジェクトの所有権を区別し、注入された Source 自体の破棄は DI コンテナーまたは構成側が行う。
 
 ### データモデル
 
@@ -108,6 +116,8 @@ InputSystem はエンジンで利用するすべての IInputSource と、それ
 +{
 +    void Initialize(IInputDeviceRegistry registry);
 +    void Update();
++    // InputSystem との接続・監視を解除する。Source 自体の破棄とは別。
++    void Shutdown();
 +}
 +
 +// InputSystem が Source ごとに渡す登録窓口。他ソースのデバイスは削除不可。
@@ -131,18 +141,17 @@ InputSystem はエンジンで利用するすべての IInputSource と、それ
 +
 +public sealed class InputSystem : IDisposable
 +{
-+    // 時計の既定は TimeProvider.System。初期状態はソース・デバイスなし。
-+    public InputSystem(TimeProvider? timeProvider = null);
-+    // 成功時に所有権を移し、Source 専用 Registry で初期化する。
-+    public void AddSource(IInputSource source);
-+    // 所属デバイスの最終取り込み・切断・削除後に Source を破棄する。
-+    public void RemoveSource(IInputSource source);
++    // 全 Source を DI で受け取り、一度だけ列挙して順序を固定する。
++    // Source は借用し、時計の既定は TimeProvider.System。
++    public InputSystem(
++        IEnumerable<IInputSource> sources, TimeProvider? timeProvider = null);
 +    public IReadOnlyList<IInputSource> Sources { get; }
 +    // アクティブな IInputDevice のみ。削除後の履歴は別に保持する。
 +    public IReadOnlyDictionary<InputDeviceId, IInputDevice> Devices { get; }
-+    // 全ソース・デバイスを解放する。複数回の呼び出しは許容する。
++    // Source を切り離し、所有する Device を解放する。Source 自体は破棄しない。
++    // 複数回の呼び出しは許容する。
 +    public void Dispose();
-+    // 全 Source を追加順に更新後、全 Device の入力を取り込む。
++    // 全 Source を注入順に更新後、全 Device の入力を取り込む。
 +    // 状態更新・通知・自動削除。表示フレームへの依存なし。
 +    public void Update();
 +    // 切断済みを含むメタデータの一覧。
@@ -195,13 +204,13 @@ InputSystem はエンジンで利用するすべての IInputSource と、それ
 
 ### 参照・通知・ポーリングの共通契約
 
-1. 全 Source の Update を追加順に呼び、Registry の登録・削除要求を収集する。新規 Device を登録し、全 Device の DrainEvents をデバイス ID 順に呼んでバッチを検証する。削除要求のある Device も残った入力を最終取得する。
+1. 全 Source の Update を注入順に呼び、Registry の登録・削除要求を収集する。新規 Device を登録し、全 Device の DrainEvents をデバイス ID 順に呼んでバッチを検証する。削除要求のある Device も残った入力を最終取得する。
 2. 各デバイスのイベント順に状態を計算し、デバイス別配列に記録を追加する。フォーカス喪失・切断による合成解放も同じ経路で追加する。
 3. 新規登録には接続記録を先行させ、デバイスごとに検証済みバッチの配列と状態を公開する。削除要求のある Device は最終入力と切断・合成解放を記録してアクティブ一覧から削除する。
 4. 新規記録を Recorded で Sequence 順に通知する。通知中の配列参照は今回のバッチまでを含み、状態照会はバッチ終了時点の状態を返す。
 5. 通知完了後、件数・時間の保持方針を評価して古い履歴を削除する。Manual では削除しない。
 
-複数デバイス間の Sequence は Source の追加順・Device の ID 順による取り込み順を表し、OS 上の厳密な発生順とは扱わない。各デバイス内の受信順は維持する。
+複数デバイス間の Sequence は Source の注入順・Device の ID 順による取り込み順を表し、OS 上の厳密な発生順とは扱わない。各デバイス内の受信順は維持する。
 
 読み取りや通知は記録を消費せず、別の利用者のカーソルや結果を変更しない。通知時点の状態は各記録直後の中間状態ではないため、遷移順を必要とする購読者は通知の Data を使用する。保持期間をゼロにしても新規記録は一度通知するが、Update が戻った後の履歴は空になり得る。
 
@@ -247,17 +256,19 @@ Platform は標準ゲームパッドの物理的な位置に共通ボタンを�
 
 ### スレッド・所有権・エラー
 
-Update、Source の追加・削除、Registry 操作、配列取得、状態照会、ポーリング、保持設定、履歴削除は InputSystem の管理スレッドから呼ぶ。Update と通知への再入を禁止し、通知中は参照・状態照会・ポーリングのみ許可する。保持設定・削除・再更新は禁止し、InvalidOperationException を返す。購読の追加・解除はその時点以降の通知に反映し、通知中の呼び出し先一覧は固定する。
+構築・破棄、Update、Registry 操作、配列取得、状態照会、ポーリング、保持設定、履歴削除は InputSystem の管理スレッドから呼ぶ。Update と通知への再入を禁止し、通知中は参照・状態照会・ポーリングのみ許可する。保持設定・削除・再更新は禁止し、InvalidOperationException を返す。購読の追加・解除はその時点以降の通知に反映し、通知中の呼び出し先一覧は固定する。
 
 別スレッドからの入力は Device が受信キューを同期する。接続・切断コールバックは Source がキューに蓄積し、管理スレッドで Registry を呼ぶ。入力対象のイベントスレッドが異なる場合も、Platform 側で管理スレッドへ橋渡しする。別スレッドの利用者には、所有側が取得済みの不変配列・状態を同期して引き渡す。InputSystem 自体は並行アクセスを保証しない。
 
-InputSystem は AddSource 成功後の Source と、RegisterDevice 成功後の Device の所有者とする。Source がデバイスを見つけ、Source 専用の Registry が登録元を記録する。他 Source のデバイス削除、同じ Source・Device インスタンスの重複登録、同じ物理入力を複数 Source から登録する構成は許可しない。最後の構成は Platform / Engine が排他的なソース選択で防ぎ、共通層が OS の物理識別を推測して統合しない。
+InputSystem は注入された Source を借用し、RegisterDevice 成功後の Device の所有者とする。Source がデバイスを見つけ、Source 専用の Registry が登録元を記録する。他 Source のデバイス削除、同じ Source・Device インスタンスの重複登録、同じ物理入力を複数 Source から登録する構成は許可しない。最後の構成は Platform / Engine が排他的なソース選択で防ぎ、共通層が OS の物理識別を推測して統合しない。
 
 Registry の削除要求は管理操作として保留し、Update の最終入力・切断・合成解放の公開と通知後に Device.Dispose を一度だけ呼ぶ。Devices から削除しても、DeviceInfos、現在状態の最終値、履歴、削除済み位置は保持方針に従って参照できる。Device の登録削除と履歴削除を区別する。
 
-RemoveSource は所属する全 Device について同じ終了処理を実行し、Source を一覧から削除して Dispose する。InputSystem.Dispose は全 Source を追加の逆順で終了処理し、購読・OS リソースを解放する。解放中の例外でも他のリソースの解放を続け、最後にまとめて報告する。取得済み配列は有効だが、破棄済み InputSystem の照会・更新は ObjectDisposedException とする。
+InputSystem.Dispose は全 Source を注入の逆順で Shutdown して接続監視を止め、所属 Device の最終取得・切断・合成解放を通知して破棄する。Shutdown は Device を独自に破棄したり、未処理入力を消したりしない。すべての Registry を無効化した後、DI スコープまたは構成側が Source.Dispose を呼ぶ。解放中の例外でも他のリソースの解放を続け、最後にまとめて報告する。取得済み配列は有効だが、破棄済み InputSystem の照会・更新は ObjectDisposedException とする。DI 構成は InputSystem を Source より先に終了させる。
 
-AddSource / Initialize が失敗した場合は登録要求を取り消し、所有権は呼び出し側に残す。初期化中の Device 登録は暫定扱いとし、失敗時の解放は Source の責任とする。成功後は Source が Device を独自に破棄しない。Registry は Source の管理呼び出し中だけ操作可能とし、通知中や Source 削除後の呼び出しを拒否する。
+コンストラクターは列挙の検証後に各 Source.Initialize を注入順に呼ぶ。初期化中の Device 登録は暫定扱いとし、すべて成功してから確定する。Initialize が失敗した場合は、呼び出しを開始した Source を逆順に Shutdown し、暫定登録した Device を InputSystem が破棄する。Registry は無効化し、Source 自体は破棄しない。Source は初期化途中でも Shutdown で監視を解除できるようにする。元のエラーと後処理のエラーはまとめて構成側に報告する。
+
+Source は登録済み Device を独自に破棄しない。Registry は Source の初期化・更新の呼び出し中だけ操作可能とし、通知中や切り離し後の呼び出しを拒否する。登録に失敗した Device は Source が所有したままとする。
 
 Device は DrainEvents の失敗時に入力を消費しない。取得例外はデバイスごとに収集し、そのデバイスの既存状態・履歴は維持する。他のソース・デバイスの処理は継続し、Update は処理と通知・保持評価の完了後に AggregateException を返す。Source.Update の例外も収集し、成功した登録・削除要求は処理する。ほかの Source と既存 Device の取得は継続する。デバイス間では全体ロールバックを保証しない。不正な入力バッチも該当デバイス単位で拒否し、自動再試行しない。所有者は障害のあるデバイスや Source を停止・修復する。削除中の最終取得が失敗しても、欠落エラーを報告して切断・中立化とリソース解放を続行する。
 
@@ -296,7 +307,9 @@ Device は DrainEvents の失敗時に入力を消費しない。取得例外は
 
 - 複数 Source が Device を登録・削除でき、全 Source を InputSystem が更新する。
 - 全 Source 間で ID が一意となり、再接続で再利用せず、他 Source の登録削除を拒否する。
-- Device 削除・Source 削除・システム破棄で最終記録と合成解放を残し、各リソースを一度だけ解放する。
+- DI で複数 Source を受け取り、一度だけ列挙して注入順に管理する。空、null、重複、初期化失敗の契約を検証する。
+- Device 削除・システム破棄で最終記録と合成解放を残し、Device を一度だけ解放する。
+- InputSystem が借用 Source を破棄せず、Shutdown と DI スコープの Dispose の順序が正しい。
 - 二つ以上のデバイスの配列・状態が混ざらない。
 - 配列、通知、ポーリングの DeviceId・Sequence・時刻・データが一致する。
 - 短い押下、リピート、同一バッチ内の複数遷移が記録に残る。
