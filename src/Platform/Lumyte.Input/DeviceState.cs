@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Numerics;
 
 namespace Lumyte.Input;
@@ -12,34 +13,43 @@ internal sealed class DeviceState(InputDeviceKind kind)
 
     internal Vector2 Position { get; set; }
 
-    internal HashSet<Key> Keys { get; } = [];
+    internal bool[] Keys { get; } = kind == InputDeviceKind.Keyboard ? new bool[(int)Key.IntlYen + 1] : [];
 
-    internal HashSet<MouseButton> MouseButtons { get; } = [];
+    internal bool[] MouseButtons { get; } = kind == InputDeviceKind.Mouse ? new bool[(int)MouseButton.X2 + 1] : [];
 
-    internal HashSet<ControllerButton> ControllerButtons { get; } = [];
+    internal bool[] ControllerButtons { get; } = kind == InputDeviceKind.Controller ? new bool[(int)ControllerButton.Select + 1] : [];
 
-    internal Dictionary<ControllerStick, Vector2> Sticks { get; } = [];
+    internal Vector2[] Sticks { get; } = kind == InputDeviceKind.Controller ? new Vector2[2] : [];
 
-    internal Dictionary<ControllerTrigger, float> Triggers { get; } = [];
+    internal float[] Triggers { get; } = kind == InputDeviceKind.Controller ? new float[2] : [];
 
     internal Dictionary<TouchContactId, TouchData> Touches { get; } = [];
 
     internal Dictionary<PenPointerId, PenData> Pens { get; } = [];
 
-    internal HashSet<TouchContactId> UsedContacts { get; } = [];
+    internal ImmutableHashSet<TouchContactId> UsedContacts { get; private set; } = [];
 
-    internal HashSet<PenPointerId> UsedPointers { get; } = [];
+    internal ImmutableHashSet<PenPointerId> UsedPointers { get; private set; } = [];
 
-    internal static void CheckEnum<T>(T value)
-        where T : struct, Enum
-    {
-        if (!Enum.IsDefined(value))
-        {
-            throw new ArgumentOutOfRangeException(nameof(value));
-        }
-    }
+    internal static void CheckEnum(Key value) => CheckRange((int)value, (int)Key.IntlYen);
 
-    internal DeviceState Clone()
+    internal static void CheckEnum(MouseButton value) => CheckRange((int)value, (int)MouseButton.X2);
+
+    internal static void CheckEnum(ControllerButton value) => CheckRange((int)value, (int)ControllerButton.Select);
+
+    internal static void CheckEnum(ControllerStick value) => CheckRange((int)value, (int)ControllerStick.Right);
+
+    internal static void CheckEnum(ControllerTrigger value) => CheckRange((int)value, (int)ControllerTrigger.Right);
+
+    internal static void CheckEnum(TouchPhase value) => CheckRange((int)value, (int)TouchPhase.Canceled);
+
+    internal static void CheckEnum(PenPhase value) => CheckRange((int)value, (int)PenPhase.Canceled);
+
+    internal static void CheckEnum(InputDeviceKind value) => CheckRange((int)value, (int)InputDeviceKind.Pen);
+
+    internal static void CheckEnum(InputDeviceIdentityKind value) => CheckRange((int)value, (int)InputDeviceIdentityKind.Logical);
+
+    internal DeviceState Clone(bool includeIdentityHistory = true)
     {
         var copy = new DeviceState(Kind)
         {
@@ -47,19 +57,15 @@ internal sealed class DeviceState(InputDeviceKind kind)
             Focused = Focused,
             Position = Position,
         };
-        copy.Keys.UnionWith(Keys);
-        copy.MouseButtons.UnionWith(MouseButtons);
-        copy.ControllerButtons.UnionWith(ControllerButtons);
-        copy.UsedContacts.UnionWith(UsedContacts);
-        copy.UsedPointers.UnionWith(UsedPointers);
-        foreach (KeyValuePair<ControllerStick, Vector2> pair in Sticks)
+        Keys.CopyTo(copy.Keys, 0);
+        MouseButtons.CopyTo(copy.MouseButtons, 0);
+        ControllerButtons.CopyTo(copy.ControllerButtons, 0);
+        Sticks.CopyTo(copy.Sticks, 0);
+        Triggers.CopyTo(copy.Triggers, 0);
+        if (includeIdentityHistory)
         {
-            copy.Sticks.Add(pair.Key, pair.Value);
-        }
-
-        foreach (KeyValuePair<ControllerTrigger, float> pair in Triggers)
-        {
-            copy.Triggers.Add(pair.Key, pair.Value);
+            copy.UsedContacts = UsedContacts;
+            copy.UsedPointers = UsedPointers;
         }
 
         foreach (KeyValuePair<TouchContactId, TouchData> pair in Touches)
@@ -99,26 +105,26 @@ internal sealed class DeviceState(InputDeviceKind kind)
         switch (data)
         {
             case KeyData key:
-                if (key.Key != Key.Unknown && (!key.IsRepeat || Keys.Contains(key.Key)))
+                if (key.Key != Key.Unknown && (!key.IsRepeat || Keys[(int)key.Key]))
                 {
-                    Set(Keys, key.Key, key.IsDown);
+                    Keys[(int)key.Key] = key.IsDown;
                 }
 
                 break;
             case MouseButtonData mouse:
-                Set(MouseButtons, mouse.Button, mouse.IsDown);
+                MouseButtons[(int)mouse.Button] = mouse.IsDown;
                 break;
             case MouseMoveData move:
                 Position = move.Position;
                 break;
             case ControllerButtonData button:
-                Set(ControllerButtons, button.Button, button.IsDown);
+                ControllerButtons[(int)button.Button] = button.IsDown;
                 break;
             case ControllerStickData stick:
-                Sticks[stick.Stick] = stick.Value;
+                Sticks[(int)stick.Stick] = stick.Value;
                 break;
             case ControllerTriggerData trigger:
-                Triggers[trigger.Trigger] = trigger.Value;
+                Triggers[(int)trigger.Trigger] = trigger.Value;
                 break;
             case TouchData touch:
                 ApplyTouch(touch);
@@ -133,34 +139,43 @@ internal sealed class DeviceState(InputDeviceKind kind)
 
     internal void Neutralize(List<InputData> applied)
     {
-        foreach (Key key in Keys.Order())
+        for (int i = 0; i < Keys.Length; i++)
         {
-            applied.Add(new KeyData(key, false, false));
-        }
-
-        foreach (MouseButton button in MouseButtons.Order())
-        {
-            applied.Add(new MouseButtonData(button, false));
-        }
-
-        foreach (ControllerButton button in ControllerButtons.Order())
-        {
-            applied.Add(new ControllerButtonData(button, false));
-        }
-
-        foreach (KeyValuePair<ControllerStick, Vector2> pair in Sticks.OrderBy(pair => pair.Key))
-        {
-            if (pair.Value != Vector2.Zero)
+            if (Keys[i])
             {
-                applied.Add(new ControllerStickData(pair.Key, Vector2.Zero));
+                applied.Add(new KeyData((Key)i, false, false));
             }
         }
 
-        foreach (KeyValuePair<ControllerTrigger, float> pair in Triggers.OrderBy(pair => pair.Key))
+        for (int i = 0; i < MouseButtons.Length; i++)
         {
-            if (pair.Value != 0)
+            if (MouseButtons[i])
             {
-                applied.Add(new ControllerTriggerData(pair.Key, 0));
+                applied.Add(new MouseButtonData((MouseButton)i, false));
+            }
+        }
+
+        for (int i = 0; i < ControllerButtons.Length; i++)
+        {
+            if (ControllerButtons[i])
+            {
+                applied.Add(new ControllerButtonData((ControllerButton)i, false));
+            }
+        }
+
+        for (int i = 0; i < Sticks.Length; i++)
+        {
+            if (Sticks[i] != Vector2.Zero)
+            {
+                applied.Add(new ControllerStickData((ControllerStick)i, Vector2.Zero));
+            }
+        }
+
+        for (int i = 0; i < Triggers.Length; i++)
+        {
+            if (Triggers[i] != 0)
+            {
+                applied.Add(new ControllerTriggerData((ControllerTrigger)i, 0));
             }
         }
 
@@ -180,24 +195,21 @@ internal sealed class DeviceState(InputDeviceKind kind)
             });
         }
 
-        Keys.Clear();
-        MouseButtons.Clear();
-        ControllerButtons.Clear();
-        Sticks.Clear();
-        Triggers.Clear();
+        Array.Clear(Keys);
+        Array.Clear(MouseButtons);
+        Array.Clear(ControllerButtons);
+        Array.Clear(Sticks);
+        Array.Clear(Triggers);
         Touches.Clear();
         Pens.Clear();
     }
 
-    private static void Set<T>(HashSet<T> values, T value, bool isDown)
+    // All supported non-flags enums are contiguous int values starting at zero.
+    private static void CheckRange(int value, int maximum)
     {
-        if (isDown)
+        if ((uint)value > (uint)maximum)
         {
-            values.Add(value);
-        }
-        else
-        {
-            values.Remove(value);
+            throw new ArgumentOutOfRangeException(nameof(value));
         }
     }
 
@@ -285,10 +297,12 @@ internal sealed class DeviceState(InputDeviceKind kind)
     {
         if (touch.Phase == TouchPhase.Began)
         {
-            if (!UsedContacts.Add(touch.ContactId))
+            if (UsedContacts.Contains(touch.ContactId))
             {
                 throw new ArgumentException("Contact identifiers cannot be reused.");
             }
+
+            UsedContacts = UsedContacts.Add(touch.ContactId);
         }
         else if (!Touches.ContainsKey(touch.ContactId))
         {
@@ -309,10 +323,12 @@ internal sealed class DeviceState(InputDeviceKind kind)
     {
         if (pen.Phase == PenPhase.Entered)
         {
-            if (pen.IsInContact || !UsedPointers.Add(pen.PointerId))
+            if (pen.IsInContact || UsedPointers.Contains(pen.PointerId))
             {
                 throw new ArgumentException("A pointer must enter hovering and cannot reuse its identifier.");
             }
+
+            UsedPointers = UsedPointers.Add(pen.PointerId);
         }
         else
         {

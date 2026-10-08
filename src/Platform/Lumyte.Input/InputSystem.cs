@@ -8,6 +8,7 @@ public sealed class InputSystem : IDisposable
     private readonly IInputSource[] _sources;
     private readonly Registry[] _registries;
     private readonly Dictionary<InputDeviceId, Entry> _entries = [];
+    private readonly List<Entry> _activeEntries = [];
     private readonly TimeProvider _clock;
     private readonly long _started;
     private readonly int _thread = Environment.CurrentManagedThreadId;
@@ -127,7 +128,7 @@ public sealed class InputSystem : IDisposable
                 }
             }
 
-            foreach (Entry entry in _entries.Values.OrderBy(entry => entry.Info.Id.Value))
+            foreach (Entry entry in _activeEntries)
             {
                 if (entry.State.Connected)
                 {
@@ -150,12 +151,20 @@ public sealed class InputSystem : IDisposable
     /// <summary>Gets an immutable array snapshot of retained device records.</summary>
     /// <param name="device">The device identifier.</param>
     /// <returns>The retained records in sequence order.</returns>
-    public ReadOnlyMemory<InputRecord> GetRecords(InputDeviceId device) => GetEntry(device).Records.ToArray();
+    public ReadOnlyMemory<InputRecord> GetRecords(InputDeviceId device)
+    {
+        Entry entry = GetEntry(device);
+        return entry.RecordSnapshot ??= entry.Records.ToArray();
+    }
 
     /// <summary>Gets a snapshot of device state independent of retained history.</summary>
     /// <param name="device">The device identifier.</param>
     /// <returns>The immutable current state.</returns>
-    public InputDeviceState GetState(InputDeviceId device) => new(GetEntry(device).State);
+    public InputDeviceState GetState(InputDeviceId device)
+    {
+        Entry entry = GetEntry(device);
+        return entry.StateSnapshot ??= new InputDeviceState(entry.State);
+    }
 
     /// <summary>Reads history without consuming it for other readers.</summary>
     /// <param name="device">The device identifier.</param>
@@ -259,6 +268,7 @@ public sealed class InputSystem : IDisposable
 
             Recorded = null;
             _entries.Clear();
+            _activeEntries.Clear();
             _disposed = true;
             _busy = false;
         }
@@ -292,6 +302,7 @@ public sealed class InputSystem : IDisposable
         {
             entry.RemovedThrough = entry.Records[count - 1].Sequence;
             entry.Records.RemoveRange(0, count);
+            entry.RecordSnapshot = null;
         }
 
         return count;
@@ -340,17 +351,21 @@ public sealed class InputSystem : IDisposable
         try
         {
             IReadOnlyList<InputData> batch = entry.Device.DrainEvents() ?? throw new ArgumentException("A device returned a null batch.");
-            DeviceState candidate = entry.State.Clone();
-            var applied = new List<InputData>();
-            foreach (InputData data in batch)
+            if (batch.Count != 0)
             {
-                candidate.Apply(data, applied);
-            }
+                DeviceState candidate = entry.State.Clone();
+                var applied = new List<InputData>(batch.Count);
+                foreach (InputData data in batch)
+                {
+                    candidate.Apply(data, applied);
+                }
 
-            entry.State = candidate;
-            foreach (InputData data in applied)
-            {
-                Append(entry, data, notifications);
+                entry.State = candidate;
+                entry.StateSnapshot = null;
+                foreach (InputData data in applied)
+                {
+                    Append(entry, data, notifications);
+                }
             }
         }
         catch (Exception exception)
@@ -363,6 +378,7 @@ public sealed class InputSystem : IDisposable
             Append(entry, new DeviceDisconnectedData(), notifications);
             var releases = new List<InputData>();
             entry.State.Neutralize(releases);
+            entry.StateSnapshot = null;
             entry.State.Connected = false;
             entry.State.Focused = false;
             foreach (InputData data in releases)
@@ -376,6 +392,7 @@ public sealed class InputSystem : IDisposable
     {
         var record = new InputRecord(entry.Info.Id, checked(++_sequence), _clock.GetElapsedTime(_started), data);
         entry.Records.Add(record);
+        entry.RecordSnapshot = null;
         notifications.Add(record);
     }
 
@@ -411,10 +428,15 @@ public sealed class InputSystem : IDisposable
 
     private void ReleaseRemoved(List<Exception> errors)
     {
-        foreach (Entry entry in _entries.Values.Where(entry => entry.Removing && !entry.Released))
+        for (int i = _activeEntries.Count - 1; i >= 0; i--)
         {
-            entry.Released = true;
-            Capture(entry.Device.Dispose, errors);
+            Entry entry = _activeEntries[i];
+            if (entry.Removing)
+            {
+                entry.Released = true;
+                Capture(entry.Device.Dispose, errors);
+                _activeEntries.RemoveAt(i);
+            }
         }
     }
 
@@ -431,6 +453,10 @@ public sealed class InputSystem : IDisposable
         internal List<InputRecord> Records { get; } = [];
 
         internal InputRetentionPolicy Policy { get; set; } = new();
+
+        internal InputRecord[]? RecordSnapshot { get; set; }
+
+        internal InputDeviceState? StateSnapshot { get; set; }
 
         internal ulong RemovedThrough { get; set; }
 
@@ -462,7 +488,9 @@ public sealed class InputSystem : IDisposable
             ArgumentNullException.ThrowIfNull(descriptor.Name);
             var id = new InputDeviceId(checked(++system._nextId));
             var info = new InputDeviceInfo(id, descriptor.Kind, descriptor.Name, descriptor.IdentityKind);
-            system._entries.Add(id, new Entry(device, this, info));
+            var entry = new Entry(device, this, info);
+            system._entries.Add(id, entry);
+            system._activeEntries.Add(entry);
             return id;
         }
 

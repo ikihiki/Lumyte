@@ -213,6 +213,9 @@ public sealed class InputSystemTests
         Assert.Throws<AggregateException>(input.Update);
         Assert.Equal(before, input.GetRecords(source.Id).Length);
         Assert.Empty(input.GetState(source.Id).PenPointers);
+        device.Add(new PenData(new(1), PenPhase.Entered, Vector2.Zero, 0, false, PenButtons.None, false));
+        input.Update();
+        Assert.Single(input.GetState(source.Id).PenPointers);
     }
 
     /// <summary>Checks partial initialization rollback and borrowed ownership.</summary>
@@ -341,6 +344,81 @@ public sealed class InputSystemTests
         device.Add(new ControllerTriggerData(ControllerTrigger.Right, float.NaN));
         Assert.Throws<AggregateException>(input.Update);
         Assert.Equal(1, input.GetState(source.Id).GetTrigger(ControllerTrigger.Right));
+    }
+
+    /// <summary>Checks all enum values remain dense and indexable, including rejection boundaries.</summary>
+    [Fact]
+    public void EnumRangesAreDenseAndInvalidValuesAreRejected()
+    {
+        AssertDense<Key>();
+        AssertDense<MouseButton>();
+        AssertDense<ControllerButton>();
+        AssertDense<ControllerStick>();
+        AssertDense<ControllerTrigger>();
+        AssertDense<TouchPhase>();
+        AssertDense<PenPhase>();
+        AssertDense<InputDeviceKind>();
+        AssertDense<InputDeviceIdentityKind>();
+        var device = new Device(InputDeviceKind.Keyboard);
+        var source = new Source(device);
+        using var input = new InputSystem([source]);
+        device.Add(new FocusData(true));
+        foreach (Key key in Enum.GetValues<Key>())
+        {
+            device.Add(new KeyData(key, true, false));
+        }
+
+        input.Update();
+        InputDeviceState state = input.GetState(source.Id);
+        foreach (Key key in Enum.GetValues<Key>())
+        {
+            Assert.Equal(key != Key.Unknown, state.IsDown(key));
+        }
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => state.IsDown((Key)(-1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => state.IsDown((Key)((int)Key.IntlYen + 1)));
+        device.Add(new FocusData(false));
+        input.Update();
+        Key[] released = input.GetRecords(source.Id).ToArray()
+            .Select(record => record.Data).OfType<KeyData>().Where(data => !data.IsDown).Select(data => data.Key).ToArray();
+        Assert.Equal(Enum.GetValues<Key>().Where(key => key != Key.Unknown), released);
+    }
+
+    /// <summary>Checks cached snapshots stay immutable and do not copy identifier history for queries.</summary>
+    [Fact]
+    public void CachedSnapshotsAreReusedUntilStateOrHistoryChanges()
+    {
+        var device = new Device(InputDeviceKind.Touch);
+        var source = new Source(device);
+        using var input = new InputSystem([source]);
+        device.Add(new FocusData(true), new TouchData(new(1), TouchPhase.Began, Vector2.Zero, 0.5f));
+        input.Update();
+        InputDeviceState before = input.GetState(source.Id);
+        ReadOnlyMemory<InputRecord> records = input.GetRecords(source.Id);
+        Assert.Same(before, input.GetState(source.Id));
+        Assert.Same(before.TouchContacts, before.TouchContacts);
+        Assert.True(records.Equals(input.GetRecords(source.Id)));
+        input.Update();
+        Assert.Same(before, input.GetState(source.Id));
+        device.Add(new TouchData(new(1), TouchPhase.Ended, Vector2.One, 0));
+        input.Update();
+        Assert.NotSame(before, input.GetState(source.Id));
+        Assert.Single(before.TouchContacts);
+        Assert.Empty(input.GetState(source.Id).TouchContacts);
+        Assert.Equal(3, records.Length);
+        Assert.False(records.Equals(input.GetRecords(source.Id)));
+        input.ClearRecords(source.Id);
+        Assert.Empty(input.GetRecords(source.Id).ToArray());
+        Assert.Equal(3, records.Length);
+        device.Add(new TouchData(new(1), TouchPhase.Began, Vector2.Zero, null));
+        Assert.Throws<AggregateException>(input.Update);
+    }
+
+    private static void AssertDense<T>()
+        where T : struct, Enum
+    {
+        T[] values = Enum.GetValues<T>();
+        Assert.Equal(Enumerable.Range(0, values.Length), values.Select(value => Convert.ToInt32(value)));
     }
 
     private sealed class Clock : TimeProvider

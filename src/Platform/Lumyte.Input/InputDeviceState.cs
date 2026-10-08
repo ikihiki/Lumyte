@@ -7,10 +7,14 @@ namespace Lumyte.Input;
 public sealed class InputDeviceState
 {
     private readonly DeviceState _state;
+    private readonly IReadOnlyDictionary<TouchContactId, TouchData> _touchContacts;
+    private readonly IReadOnlyDictionary<PenPointerId, PenData> _penPointers;
 
     internal InputDeviceState(DeviceState state)
     {
-        _state = state.Clone();
+        _state = state.Clone(includeIdentityHistory: false);
+        _touchContacts = new ReadOnlyDictionary<TouchContactId, TouchData>(_state.Touches);
+        _penPointers = new ReadOnlyDictionary<PenPointerId, PenData>(_state.Pens);
     }
 
     /// <summary>Gets a value indicating whether the device is connected.</summary>
@@ -35,7 +39,7 @@ public sealed class InputDeviceState
         get
         {
             Require(InputDeviceKind.Touch);
-            return new ReadOnlyDictionary<TouchContactId, TouchData>(_state.Touches);
+            return _touchContacts;
         }
     }
 
@@ -45,7 +49,7 @@ public sealed class InputDeviceState
         get
         {
             Require(InputDeviceKind.Pen);
-            return new ReadOnlyDictionary<PenPointerId, PenData>(_state.Pens);
+            return _penPointers;
         }
     }
 
@@ -56,7 +60,7 @@ public sealed class InputDeviceState
     {
         Require(InputDeviceKind.Keyboard);
         DeviceState.CheckEnum(key);
-        return _state.Keys.Contains(key);
+        return _state.Keys[(int)key];
     }
 
     /// <summary>Checks a mouse button's current pressed state.</summary>
@@ -66,7 +70,7 @@ public sealed class InputDeviceState
     {
         Require(InputDeviceKind.Mouse);
         DeviceState.CheckEnum(button);
-        return _state.MouseButtons.Contains(button);
+        return _state.MouseButtons[(int)button];
     }
 
     /// <summary>Checks a controller button's current pressed state.</summary>
@@ -76,7 +80,7 @@ public sealed class InputDeviceState
     {
         Require(InputDeviceKind.Controller);
         DeviceState.CheckEnum(button);
-        return _state.ControllerButtons.Contains(button);
+        return _state.ControllerButtons[(int)button];
     }
 
     /// <summary>Gets the normalized stick position before dead-zone processing.</summary>
@@ -86,7 +90,7 @@ public sealed class InputDeviceState
     {
         Require(InputDeviceKind.Controller);
         DeviceState.CheckEnum(stick);
-        return _state.Sticks.GetValueOrDefault(stick);
+        return _state.Sticks[(int)stick];
     }
 
     /// <summary>Gets the normalized trigger value.</summary>
@@ -96,7 +100,7 @@ public sealed class InputDeviceState
     {
         Require(InputDeviceKind.Controller);
         DeviceState.CheckEnum(trigger);
-        return _state.Triggers.GetValueOrDefault(trigger);
+        return _state.Triggers[(int)trigger];
     }
 
     private void Require(InputDeviceKind kind)
