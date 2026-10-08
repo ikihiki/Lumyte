@@ -71,25 +71,76 @@ int column = (int)grid.Children[0].AttachedValues["Grid.Column"]!;
 
 ### 契約ライブラリの公開 API
 
-比較元の現行 Lumyte main に Composition API はなく、以下はすべて新規 API である。属性はすべて AllowMultiple = false とする。
+比較元は Lumyte main の `36ced17bd093bb2c1bc360bd729f035c2655d9f7` とする。この revision に Composition API はなく、以下はすべて追加である。
 
-| 公開 API | 役割と契約 |
-| --- | --- |
-| `ComposableAttribute()` | クラスに適用し、Inherited = false。生成対象を明示する。 |
-| `string? ComposableAttribute.Factory { get; set; }` | 外側のファクトリクラス名。null はアセンブリ指定、それもなければ Compose。 |
-| `string? ComposableAttribute.Name { get; set; }` | ファクトリプロパティ名。null は定義クラス名。別名は opt-in。 |
-| `ComposeParameterAttribute()` | field/property に適用し、Inherited = true。ファクトリ引数を指定する。 |
-| `ComposeContentAttribute()` | field/property に適用し、Inherited = false。子要素を置換するメンバーを指定する。 |
-| `ComposeActionAttribute()` | Method に適用し、Inherited = false。ノードを操作する静的メソッドを指定する。 |
-| `CompositionDefaultsAttribute(string factoryClass)` | Assembly に適用。null・空文字・空白は ArgumentException。 |
-| `string CompositionDefaultsAttribute.FactoryClass { get; }` | 指定された既定クラス名を保持する。 |
-| `readonly struct Optional<T>` | 型制約なし。省略と明示的 default/null を区別する。 |
-| `Optional<T>(T value)` | value が default/null でも指定済み。 |
-| `bool Optional<T>.HasValue { get; }` | default(Optional) は false、コンストラクター・暗黙変換後は true。 |
-| `T Optional<T>.Value { get; }` | 未指定なら InvalidOperationException。 |
-| `implicit operator Optional<T>(T value)` | 指定済みの Optional へ変換する。 |
-
-Factory/Name の setter は値を保持し、識別子・衝突の検査は Generator が行う。Assembly のコンストラクター検証も識別子検査の代わりにはならない。Optional は汎用的な結果型へ拡張しない。
+```diff
++namespace Lumyte.Composition
++{
++    // 生成対象のクラスを明示する。
++    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
++    public sealed class ComposableAttribute : Attribute
++    {
++        public ComposableAttribute();
++
++        // 外側のファクトリクラス名。既定値 null はアセンブリ指定、それもなければ Compose。
++        // setter は値を保持し、識別子・衝突の検査は Generator が行う。
++        public string? Factory { get; set; }
++
++        // ファクトリプロパティ名。既定値 null は定義クラス名。別名指定は opt-in。
++        // setter は値を保持し、識別子・衝突の検査は Generator が行う。
++        public string? Name { get; set; }
++    }
++
++    // ファクトリ引数にする field/property を指定する。
++    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
++    public sealed class ComposeParameterAttribute : Attribute
++    {
++        public ComposeParameterAttribute();
++    }
++
++    // 子要素を置換する field/property を指定する。
++    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
++    public sealed class ComposeContentAttribute : Attribute
++    {
++        public ComposeContentAttribute();
++    }
++
++    // ノードを操作する静的メソッドを指定する。値の保存領域は利用側が持つ。
++    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
++    public sealed class ComposeActionAttribute : Attribute
++    {
++        public ComposeActionAttribute();
++    }
++
++    // アセンブリの既定ファクトリクラス名を指定する。
++    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
++    public sealed class CompositionDefaultsAttribute : Attribute
++    {
++        // factoryClass が null・空文字・空白なら ArgumentException。
++        // この検証は Generator による識別子検査の代わりにはならない。
++        public CompositionDefaultsAttribute(string factoryClass);
++
++        // コンストラクターで指定された既定クラス名を保持する。
++        public string FactoryClass { get; }
++    }
++
++    // 型制約なし。省略と明示的 default/null を区別する。汎用的な結果型へ拡張しない。
++    public readonly struct Optional<T>
++    {
++        // value が default/null でも指定済みとする。
++        public Optional(T value);
++
++        // default(Optional<T>) は false、コンストラクター・暗黙変換後は true。
++        public bool HasValue { get; }
++
++        // 未指定なら InvalidOperationException。
++        public T Value { get; }
++
++        // value を指定済みの Optional<T> へ変換する。
++        public static implicit operator Optional<T>(T value);
++    }
++}
+```
 
 ### 生成される公開 API
 
