@@ -91,6 +91,10 @@ jobs:
         shell: bash
         run: |
           source tools/setup/activate.sh
+          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
+            export LUMYTE_GRAPHICS_GPU_TESTS=1
+            export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          fi
           dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
 
       - name: Run solution tests (Windows)
@@ -101,12 +105,21 @@ jobs:
           Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore',
             '--logger', 'trx', '--results-directory', 'artifacts/test-results')
 
+      - name: Run Wasm and browser WebGPU tests
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          source tools/setup/activate.sh
+          mise run test-wasm 2>&1 | tee artifacts/test-results/browser-webgpu.log
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
-          path: artifacts/test-results/*.trx
+          path: artifacts/test-results/
           if-no-files-found: ignore
 
       - name: Sample, pack and lint

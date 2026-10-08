@@ -2,6 +2,7 @@
 lockfile = true
 
 [vars]
+dotnet_workload_version = "10.0.401"
 vcpkg_commit = "9e593bb18ea69cc5095e012465dcd675a822ed0d"
 windows_mesa_version = "26.2.4"
 windows_mesa_sha256 = "351fc8c8b695878ffb3eaa044b3ead08672a48b1a045e3c3e3975811df0f6695"
@@ -117,3 +118,15 @@ run_windows = "powershell.exe -NoProfile -File tools/setup/setup-native.ps1"
 description = "Verify Slang compilation, native NuGet/PInvoke, vcpkg and lavapipe execution"
 run = "bash tools/setup/verify.sh"
 run_windows = "powershell.exe -NoProfile -File tools/setup/verify.ps1"
+
+[tasks.setup-wasm]
+description = "Install wasm-tools from the pinned .NET workload set"
+run = "dotnet workload install wasm-tools --version {{ vars.dotnet_workload_version }}"
+
+[tasks.test-wasm]
+description = "Publish and verify the .NET browser sample with real WebGPU"
+depends = ["setup-wasm"]
+run = [
+  "dotnet publish samples/Lumyte.Graphics.Browser.Sample -c Release",
+  "node tools/graphics/verify-browser.mjs",
+]
