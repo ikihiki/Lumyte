@@ -68,41 +68,91 @@ flowchart LR
 
 receiver の戻り値に操作結果を依存させず、要求通知と結果報告を別メッセージにする。診断 UI 向け API、大容量転送サービスの具体的な API、グラフ・描画・入力に固有の公開アダプター API は別途定義する。
 
-### サブシステムが利用する登録 API
+### DI による構成と公開境界
 
-サブシステムは `Lumyte.Diagnostics` のローカル登録 API を利用する。MagicOnion、接続先、セッション ID を知る必要はない。診断エージェントが登録内容をカタログへ変換し、購読と要求をローカルのハンドラーへ配送する。
+DI をサブシステム統合の基準とする。診断アダプターはコンストラクターで対象サブシステムを受け取り、`IDiagnosticContributor.Configure` で公開内容を宣言する。サブシステム自身はレジストリ、接続、ランタイムを取得しない。登録ハンドルと通信のライフサイクルは診断基盤が所有する。
 
-主要型を以下に定める。宣言は設計上の公開 API であり、この PR で実装を追加するものではない。
+DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断契約・メトリクス・操作の型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion への依存は通信実装に限定する。以下は公開 API の設計であり、実装は未追加である。
+
+```csharp
+public interface IDiagnosticContributor
+{
+    void Configure(DiagnosticBuilder builder);
+}
+
+public interface IDiagnosticPump<TPoint> where TPoint : class
+{
+    void Activate();
+    void Pump(DiagnosticFrame frame, DiagnosticBudget budget);
+    void Deactivate();
+}
+
+public interface IDiagnosticSession
+{
+    Task StartAsync(CancellationToken cancellationToken);
+    Task StopAsync(CancellationToken cancellationToken);
+}
+
+public sealed class DiagnosticOptions
+{
+    public bool Enabled { get; set; }
+    public Uri? ServerAddress { get; set; }
+}
+
+// Lumyte.Diagnostics.DependencyInjection 内の拡張メソッド。
+public static IServiceCollection AddLumyteDiagnostics(
+    this IServiceCollection services, Action<DiagnosticOptions> configure);
+public static IServiceCollection AddDiagnosticExecutionPoint<TPoint>(
+    this IServiceCollection services, string id) where TPoint : class;
+public static IServiceCollection AddDiagnosticSubsystem<TContributor, TPoint>(
+    this IServiceCollection services, SubsystemDescriptor descriptor)
+    where TContributor : class, IDiagnosticContributor
+    where TPoint : class;
+```
+
+`AddLumyteDiagnostics` は設定と通信ファクトリを Singleton、セッション、レジストリ、購読状態、カタログ、実行キューを Scoped として登録する。一つのゲーム実行に一つの明示的な DI スコープを作る。別スコープは別の実行インスタンス ID と接続を持ち、オブジェクト、要求、購読を共有しない。Scoped をプロセス全体の Singleton として注入しない。
+
+`AddDiagnosticExecutionPoint<TPoint>` は型と安定したポイント ID を対応付け、`IDiagnosticPump<TPoint>` を Scoped として登録する。型は DI で使うマーカーであり、マーカーインスタンスを生成しない。型・ID の重複と未定義ポイントへの登録を起動時に拒否する。
+
+`AddDiagnosticSubsystem<TContributor, TPoint>` は公開記述子を登録し、`TContributor` を Scoped として登録する。同じ型の既存の Scoped 登録があればそれを利用し、Singleton・Transient 登録なら起動時に拒否する。フレーム更新側への `TContributor` の注入と診断側の解決は、同じスコープ内の同一インスタンスになる。同じ型の複数サービス登録も拒否し、別の `IDiagnosticContributor` インスタンスを生成する登録は行わない。同じ型を複数サブシステムとして登録することは初期 API では拒否する。
+
+スコープごとの調整サービスだけが登録済み型を DI から解決する。アダプターとサブシステムは `IServiceProvider` を受け取らず、依存をコンストラクターに明示する。未使用のアダプターが DI 登録だけで公開されるとは限らず、対応ポイントの `Activate` が必要である。
+
+| サービス | 寿命 | 所有者・依存 |
+| --- | --- | --- |
+| 設定、通信ファクトリ、登録記述子 | Singleton | スコープ内のエンジンオブジェクトを保持しない |
+| `IDiagnosticSession`、内部レジストリ | Scoped | ゲーム実行スコープ。アダプターの生成・破棄は DI に任せる |
+| `IDiagnosticPump<TPoint>` | Scoped | 同じスコープのキューと調整サービスを参照する |
+| 診断アダプター、診断対象、更新ループ | Scoped | 同じゲーム実行内のインスタンスを共有する |
+| メトリクス・登録ハンドル | 登録期間 | DI サービスにせず、診断基盤が登録解除を管理する |
+
+### DI と所有スレッドのライフサイクル
+
+DI の解決と所有スレッドの確定は別の処理とする。コンストラクターでは外部公開・接続・エンジン操作を行わない。
+
+1. Composition Root でサービスを登録し、ゲーム実行スコープを作る。
+2. エンジンが各ポイントの所有スレッドで `Activate` を呼ぶ。初回呼び出しで所有スレッドを確定し、そのポイントのアダプターを同じスコープから解決して `Configure` を呼ぶ。
+3. 診断基盤がスキーマを検証し、ポイント単位で全アダプターを一括公開する。失敗時はそのポイントの公開を取り消し、例外を起動側に返す。
+4. `IDiagnosticSession.StartAsync` が通信を開始し、有効化されたカタログを送る。接続開始後の追加 `Activate` もカタログ更新として扱う。
+5. 所有スレッドが安全な更新位置で `Pump` を呼び、アダプターが値を記録する。
+6. 終了時は各所有スレッドで `Deactivate` を呼び、要求受付・登録・購読を解除する。その後 `StopAsync` で接続と送信処理を終了し、スコープを破棄する。
+
+有効化済みポイントへの同じ所有スレッドからの `Activate` は冪等とする。`Deactivate` も冪等とし、再有効化時は新しい登録世代にする。異なるスレッドからの有効化・処理・解除、`Pump` 中の再入や解除を拒否する。予期しないスコープ破棄では基盤が登録を無効化し、通信を終了するが、サブシステムにアクセスする終了コールバックは呼ばない。セッション実装は `IAsyncDisposable` を実装し、スコープは `CreateAsyncScope` で生成して非同期破棄する。通常終了は上の順序を守る。
+
+型の解決時にスレッド制約のある対象を構築する場合は、その解決も所有スレッドで行う。DI 自体にスレッド親和性を期待しない。複数ポイントを同時に持つスコープでは、調整サービスが登録カタログの更新を同期する。
+
+`Enabled = false` でも同じ DI 登録と注入を利用する。アダプターの構成は有効化時に行えるが、メトリクスは無効、キューは空、通信接続は作らない。テストでは診断対象や Pump をテスト用サービスに差し替えられる。
+
+### サブシステムが宣言する API
 
 ```csharp
 namespace Lumyte.Diagnostics;
 
-public interface IDiagnosticRegistry
-{
-    DiagnosticRegistration Register(
-        SubsystemDescriptor subsystem,
-        DiagnosticExecutionPoint executionPoint,
-        Action<DiagnosticBuilder> configure);
-}
-
 public sealed record SubsystemDescriptor(
     string Id, string DisplayName, int SchemaVersion);
 
-public readonly record struct DiagnosticExecutionPoint(string Id);
 public readonly record struct DiagnosticFrame(long Number, long TimestampTicks);
 public sealed record DiagnosticBudget(TimeSpan MaxDuration, int MaxCommands);
-
-public sealed class DiagnosticExecutionQueue
-{
-    public void Pump(DiagnosticFrame frame, DiagnosticBudget budget);
-}
-
-public sealed class DiagnosticRegistration : IDisposable
-{
-    public string SubsystemId { get; }
-    public long Generation { get; }
-    public void Dispose();
-}
 
 public sealed class DiagnosticBuilder
 {
@@ -167,11 +217,11 @@ public sealed class DiagnosticOperationResult
 }
 ```
 
-`DiagnosticBuilder` は `configure` の呼び出し中だけ有効とし、内容をコピー・検証して一括登録する。登録失敗時は一部だけ公開しない。メトリクスハンドルは成功後に利用できる。`MetricDescriptor.Kind` と `Gauge` / `Counter` の不一致、重複 ID、無効な範囲、未対応の集約を登録エラーとする。
+`DiagnosticBuilder` は `Configure` の呼び出し中だけ有効とし、内容をコピー・検証して一括登録する。登録失敗時は一部だけ公開しない。メトリクスハンドルは成功後に利用できる。`MetricDescriptor.Kind` と `Gauge` / `Counter` の不一致、重複 ID、無効な範囲、未対応の集約を登録エラーとする。
 
-サブシステム ID は `physics` などの安定した名前、メンバー ID は `step-duration` や `set-time-scale` とする。表示名を識別子に使わない。同時に同じサブシステム ID を登録できない。解除後に再登録すると世代を進め、旧世代の要求と購読を引き継がない。契約変更時は `SchemaVersion` を更新する。
+サブシステム ID は `physics` などの安定した名前、メンバー ID は `step-duration` や `set-time-scale` とする。表示名を識別子に使わない。同時に同じサブシステム ID を登録できない。再有効化すると世代を進め、旧世代の要求と購読を引き継がない。契約変更時は `SchemaVersion` を更新する。
 
-`DiagnosticRegistration` がメトリクスとハンドラーの生存期間を所有する。サブシステムの所有スレッドで登録し、破棄前に解除する。解除は冪等とし、実行中のハンドラー内からの解除は拒否する。解除後の未実行要求は対象消失になり、メトリクスの `TryRecord` は `false` を返す。解除後はハンドラーによるサブシステム参照を保持しない。
+基盤の内部登録がメトリクスとハンドラーの生存期間を所有し、公開 API として登録ハンドルを DI 利用者に渡さない。解除後の未実行要求は対象消失になり、旧メトリクスの `TryRecord` は `false` を返す。再有効化時には `Configure` を再実行してハンドルを交換する。基盤は解除後のハンドラー参照を解放するが、アダプター自体の破棄は DI スコープが担う。
 
 ### テレメトリーの発行契約
 
@@ -185,7 +235,7 @@ public sealed class DiagnosticOperationResult
 
 操作は明示的な名前と入出力スキーマで公開する。初期の引数は必須のスカラー値に限定し、未知フィールド、欠落、型違い、範囲外、長さ超過をハンドラー実行前に拒否する。リフレクションで任意メソッドを公開しない。
 
-操作は登録時に指定した実行ポイントへ配送する。エンジンがその所有スレッド上の安全な位置で `Pump` を呼ぶと、期限と権限を再検証した後にハンドラーを同期実行する。入力前、シミュレーション後、描画後などはエンジン側が実行ポイントを用意する。同じ ID のキューを複数作成することは拒否し、異なる所有スレッドでの `Pump` と再入も拒否する。
+操作は登録時に指定した実行ポイントへ配送する。エンジンがその所有スレッド上の安全な位置で `Pump` を呼ぶと、期限と権限を再検証した後にハンドラーを同期実行する。入力前、シミュレーション後、描画後などはエンジン側が実行ポイントを用意する。キューは DI スコープ内で実行ポイントごとに一つとし、異なる所有スレッドでの `Pump` と再入を拒否する。
 
 `Pump` は実行予算に達すると後続要求を延期するが、実行中の同期ハンドラーを強制中断できない。ハンドラーは短時間で終了する必要がある。GPU 待ち、長時間探索、ファイル・ネットワーク待ちを伴う操作はこの同期 API に登録せず、専用のジョブ・キャプチャー API で別途設計する。
 
@@ -198,107 +248,117 @@ public sealed class DiagnosticOperationResult
 以下は `PhysicsWorld` が `LastStepMilliseconds`、`ActiveBodyCount`、`TimeScale`、`Revision` を持つ例である。`Revision` は診断経由以外の `TimeScale` 変更でも進むものとする。
 
 ```csharp
-public sealed class PhysicsDiagnostics : IDisposable
+public sealed class PhysicsDiagnostics : IDiagnosticContributor
 {
-    private readonly DiagnosticRegistration _registration;
-    private readonly DiagnosticMetric<double> _stepDuration;
-    private readonly DiagnosticMetric<double> _activeBodies;
+    private readonly PhysicsWorld _world;
+    private DiagnosticMetric<double>? _stepDuration;
+    private DiagnosticMetric<double>? _activeBodies;
 
-    public PhysicsDiagnostics(
-        IDiagnosticRegistry registry,
-        DiagnosticExecutionPoint afterSimulation,
-        PhysicsWorld world)
+    public PhysicsDiagnostics(PhysicsWorld world) => _world = world;
+
+    public void Configure(DiagnosticBuilder builder)
     {
-        DiagnosticMetric<double> stepDuration = null!;
-        DiagnosticMetric<double> activeBodies = null!;
+        _stepDuration = builder.Gauge(new MetricDescriptor(
+            "step-duration", "Step duration", "ms", MetricKind.Gauge,
+            new[] { MetricAggregation.Latest, MetricAggregation.Mean }));
+        _activeBodies = builder.Gauge(new MetricDescriptor(
+            "active-bodies", "Active bodies", "count", MetricKind.Gauge,
+            new[] { MetricAggregation.Latest, MetricAggregation.Max }));
 
-        _registration = registry.Register(
-            new SubsystemDescriptor("physics", "Physics", 1),
-            afterSimulation,
-            builder =>
+        builder.Operation(new OperationDescriptor(
+            "get-time-scale", "Get time scale", DiagnosticPermission.Observe,
+            Array.Empty<DiagnosticField>(),
+            new[] { new DiagnosticField("actual", DiagnosticValueKind.Double, 0, 2) }),
+            (context, arguments) => DiagnosticOperationResult.Success(
+                new Dictionary<string, DiagnosticValue>
+                {
+                    ["actual"] = DiagnosticValue.From(_world.TimeScale),
+                }, _world.Revision));
+
+        builder.Operation(new OperationDescriptor(
+            "set-time-scale", "Set time scale", DiagnosticPermission.Edit,
+            new[] { new DiagnosticField("value", DiagnosticValueKind.Double, 0, 2) },
+            new[] { new DiagnosticField("actual", DiagnosticValueKind.Double, 0, 2) }),
+            (context, arguments) =>
             {
-                stepDuration = builder.Gauge(new MetricDescriptor(
-                    "step-duration", "Step duration", "ms", MetricKind.Gauge,
-                    new[] { MetricAggregation.Latest, MetricAggregation.Mean }));
-                activeBodies = builder.Gauge(new MetricDescriptor(
-                    "active-bodies", "Active bodies", "count", MetricKind.Gauge,
-                    new[] { MetricAggregation.Latest, MetricAggregation.Max }));
+                if (context.ExpectedRevision is not long expected)
+                {
+                    return DiagnosticOperationResult.Reject(
+                        "revision-required", "Expected revision is required.");
+                }
 
-                builder.Operation(new OperationDescriptor(
-                    "get-time-scale", "Get time scale", DiagnosticPermission.Observe,
-                    Array.Empty<DiagnosticField>(),
-                    new[] { new DiagnosticField("actual", DiagnosticValueKind.Double, 0, 2) }),
-                    (context, arguments) => DiagnosticOperationResult.Success(
-                        new Dictionary<string, DiagnosticValue>
-                        {
-                            ["actual"] = DiagnosticValue.From(world.TimeScale),
-                        }, world.Revision));
+                if (expected != _world.Revision)
+                {
+                    return DiagnosticOperationResult.Conflict(_world.Revision);
+                }
 
-                builder.Operation(new OperationDescriptor(
-                    "set-time-scale", "Set time scale", DiagnosticPermission.Edit,
-                    new[] { new DiagnosticField("value", DiagnosticValueKind.Double, 0, 2) },
-                    new[] { new DiagnosticField("actual", DiagnosticValueKind.Double, 0, 2) }),
-                    (context, arguments) =>
+                _world.SetTimeScale(arguments.GetDouble("value"));
+                return DiagnosticOperationResult.Success(
+                    new Dictionary<string, DiagnosticValue>
                     {
-                        if (context.ExpectedRevision is not long expected)
-                        {
-                            return DiagnosticOperationResult.Reject(
-                                "revision-required", "Expected revision is required.");
-                        }
-
-                        if (expected != world.Revision)
-                        {
-                            return DiagnosticOperationResult.Conflict(world.Revision);
-                        }
-
-                        world.SetTimeScale(arguments.GetDouble("value"));
-                        return DiagnosticOperationResult.Success(
-                            new Dictionary<string, DiagnosticValue>
-                            {
-                                ["actual"] = DiagnosticValue.From(world.TimeScale),
-                            }, world.Revision);
-                    });
+                        ["actual"] = DiagnosticValue.From(_world.TimeScale),
+                    }, _world.Revision);
             });
-
-        _stepDuration = stepDuration;
-        _activeBodies = activeBodies;
     }
 
-    public void RecordAfterSimulation(PhysicsWorld world, DiagnosticFrame frame)
+    public void RecordAfterSimulation(DiagnosticFrame frame)
     {
-        _stepDuration.TryRecord(world.LastStepMilliseconds, frame);
-        _activeBodies.TryRecord((double)world.ActiveBodyCount, frame);
+        _stepDuration?.TryRecord(_world.LastStepMilliseconds, frame);
+        _activeBodies?.TryRecord((double)_world.ActiveBodyCount, frame);
+    }
+}
+```
+
+DI 登録は Composition Root で行う。アダプターと更新ループが注入される `PhysicsWorld` は同じ Scoped インスタンスである。以下のマーカーは実行位置を型で識別する。
+
+```csharp
+public sealed class AfterPhysicsSimulation { }
+
+services.AddLumyteDiagnostics(options =>
+{
+    options.Enabled = true;
+    options.ServerAddress = new Uri("https://localhost:5001");
+});
+services.AddScoped<PhysicsWorld>();
+services.AddScoped<PhysicsLoop>();
+services.AddDiagnosticExecutionPoint<AfterPhysicsSimulation>(
+    "physics.after-simulation");
+services.AddDiagnosticSubsystem<PhysicsDiagnostics, AfterPhysicsSimulation>(
+    new SubsystemDescriptor("physics", "Physics", 1));
+```
+
+更新ループも DI で構築する。コンストラクターは受け取った依存を保持するだけとし、エンジンが所有スレッド上で `Initialize`、`Update`、`Shutdown` を呼ぶ。例の予算は説明用である。
+
+```csharp
+public sealed class PhysicsLoop
+{
+    private readonly PhysicsWorld _world;
+    private readonly PhysicsDiagnostics _diagnostics;
+    private readonly IDiagnosticPump<AfterPhysicsSimulation> _pump;
+
+    public PhysicsLoop(
+        PhysicsWorld world, PhysicsDiagnostics diagnostics,
+        IDiagnosticPump<AfterPhysicsSimulation> pump)
+    {
+        _world = world;
+        _diagnostics = diagnostics;
+        _pump = pump;
     }
 
-    public void Dispose() => _registration.Dispose();
+    public void Initialize() => _pump.Activate();
+
+    public void Update(double deltaTime, DiagnosticFrame frame)
+    {
+        _world.Step(deltaTime);
+        _pump.Pump(frame, new DiagnosticBudget(TimeSpan.FromMilliseconds(0.2), 8));
+        _diagnostics.RecordAfterSimulation(frame);
+    }
+
+    public void Shutdown() => _pump.Deactivate();
 }
 ```
 
-エンジンの統合位置は以下のようになる。キュー、登録、`PhysicsWorld` の生成・破棄を所有スレッドで行い、終了時は診断登録を先に解除する。例の予算は説明用であり、性能上の保証値ではない。
-
-```csharp
-var point = new DiagnosticExecutionPoint("physics.after-simulation");
-var queue = runtime.CreateExecutionQueue(point);
-using var diagnostics = new PhysicsDiagnostics(runtime.Registry, point, world);
-
-// フレーム更新内。通信スレッドからは呼ばない。
-world.Step(deltaTime);
-queue.Pump(frame, new DiagnosticBudget(TimeSpan.FromMilliseconds(0.2), 8));
-diagnostics.RecordAfterSimulation(world, frame);
-```
-
-キューは登録先レジストリと同じ診断ランタイムに所属する。公開コンストラクターは設けず、生成 API を以下に定める。ランタイムがキューを所有し、終了時に受付を停止して未実行要求とバッファを解放する。
-
-```csharp
-public interface IDiagnosticRuntime : IDisposable
-{
-    IDiagnosticRegistry Registry { get; }
-    DiagnosticExecutionQueue CreateExecutionQueue(DiagnosticExecutionPoint point);
-    void Dispose();
-}
-```
-
-ランタイムとその Registry はエージェントに接続され、サブシステム側がエージェントを生成することはない。ランタイムはキュー生成時のスレッドを所有スレッドとして記録する。未作成の実行ポイントへの登録は拒否する。診断無効時も同じ登録 API を使用でき、メトリクスは無効、キューは空となり、通信接続を作らない。
+ゲーム起動側は実行スコープから `PhysicsLoop` と `IDiagnosticSession` を一度解決する。所有スレッドで `Initialize` 後にセッションを開始する。終了は所有スレッドで `Shutdown`、セッション停止、スコープの非同期破棄の順に行う。非同期接続後の継続が所有スレッドへ戻るとは仮定せず、フレーム更新と終了はエンジンの実行機構へ配送する。診断セッションは PhysicsLoop を解決・更新せず、両者の順序を起動側が管理する。
 
 ### カタログ公開とサーバーからの利用
 
@@ -306,7 +366,7 @@ Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。
 
 サーバーは受信カタログを認可に従って UI に公開する。カタログはコードやデリゲートを含まない。操作の要求経路は以下のとおりである。
 
-1. `physics` が登録され、エージェントがカタログを送る。
+1. DI が `PhysicsWorld` と `PhysicsDiagnostics` を同じスコープで構築する。`Activate` が `Configure` を呼び、`physics` の公開後にエージェントがカタログを送る。
 2. UI が `physics/step-duration` を周期 100 ms、Mean で購読する。サーバーは `ConfigureTelemetry` 要求を送り、ゲーム側は登録と集約方式を検証して購読 ID を返す。
 3. 物理更新後の `TryRecord` が値を有界バッファへ記録する。エージェントが集約し、購読 ID、登録世代、フレーム範囲を含む `TelemetryBatch` を送る。
 4. UI が `physics/get-time-scale` で現在値とリビジョンを取得し、`physics/set-time-scale` に `value = 0.5` と期待リビジョンを指定する。サーバーは `InvokeOperation` 要求を送る。
@@ -433,7 +493,9 @@ Browser で StreamingHub の要件を満たせない場合の中継や代替ト�
 
 - 接続・認証・機能交渉、非互換拒否、複数インスタンスの操作分離。
 - 重複要求、期限切れ、結果報告前の切断、再接続での未完了操作の非再実行。
-- 登録の原子性、重複 ID、登録解除・再登録、購読統合、カタログ更新と操作の競合。
+- DI の Scoped インスタンス共有、スコープ間分離、寿命違反、依存循環、診断無効時の注入。
+- 有効化の原子性、重複 ID、解除・再有効化、起動失敗時の解放、所有スレッドと終了順序。
+- 購読統合、カタログ更新と操作の競合。
 - 対象破棄、ID 再利用、競合編集、部分成功、所有スレッドでの実行。
 - スナップショット取得中の更新、差分欠落、保持上限超過と再同期。
 - 入力の所有者競合、更新、期限切れ、切断時解除、解除後のボタン状態。
