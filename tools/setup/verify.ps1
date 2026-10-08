@@ -51,9 +51,11 @@ try {
     $version = '0.0.0-smoke.' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + '.' + $PID
     $nativeProject = Join-Path $smokeRoot 'Native/Native.csproj'
     $managedProject = Join-Path $smokeRoot 'Managed/Managed.csproj'
-    Invoke-LumyteCommand dotnet @('pack', $nativeProject, '--configuration', 'Release', '-warnaserror',
-        '--output', $env:LUMYTE_NUGET_FEED, "-p:PackageVersion=$version", "-p:RuntimeIdentifier=$runtimeIdentifier",
-        "-p:RestoreSources=$($env:LUMYTE_NUGET_FEED)%3Bhttps://api.nuget.org/v3/index.json")
+    # Separate source arguments avoid MSBuild list escaping through Windows PowerShell.
+    Invoke-LumyteCommand dotnet @('restore', $nativeProject, '-warnaserror', '--source', $env:LUMYTE_NUGET_FEED,
+        '--source', 'https://api.nuget.org/v3/index.json', "-p:RuntimeIdentifier=$runtimeIdentifier")
+    Invoke-LumyteCommand dotnet @('pack', $nativeProject, '--configuration', 'Release', '--no-restore', '-warnaserror',
+        '--output', $env:LUMYTE_NUGET_FEED, "-p:PackageVersion=$version", "-p:RuntimeIdentifier=$runtimeIdentifier")
     Invoke-LumyteCommand dotnet @('restore', $managedProject, '-warnaserror', '--source', $env:LUMYTE_NUGET_FEED,
         '--source', 'https://api.nuget.org/v3/index.json', "-p:SmokeVersion=$version")
     Invoke-LumyteCommand dotnet @('format', 'whitespace', $managedProject, '--verify-no-changes', '--no-restore')
