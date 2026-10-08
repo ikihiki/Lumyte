@@ -6,5 +6,5 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
-- [MagicOnion によるゲームエンジン診断通信](docs/adr/diagnostics/DIAGNOSTICS-0001-magiconion-diagnostics.md)
+- [DI で通信方式を選択するゲームエンジン診断システム](docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)

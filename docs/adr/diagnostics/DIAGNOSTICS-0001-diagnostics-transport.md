@@ -1,11 +1,11 @@
-# ADR-DIAGNOSTICS-0001: MagicOnion によるゲームエンジン診断通信
+# ADR-DIAGNOSTICS-0001: DI で通信方式を選択するゲームエンジン診断システム
 
 - 状態: 提案
 - 日付: 2026-10-08
 
 ## 背景
 
-Lumyte の実行状態を外部から観測し、必要に応じて変更できる診断機能を提供する。診断システムをサーバー、ゲームに組み込む診断エージェントをクライアントとして MagicOnion で通信する。
+Lumyte の実行状態を外部から観測し、必要に応じて変更できる診断機能を提供する。診断システムをサーバー、ゲームに組み込む診断エージェントをクライアントとして通信する。Desktop では MagicOnion、Browser では HTTP を DI で選択し、診断機能とサブシステムは通信方式に依存させない。
 
 対象は Metrics / Trace / Log のテレメトリー、シーンやコンポーネントなどのオブジェクトグラフ、レンダリング結果、プロパティ編集、インプットのオーバーライドである。ゲーム側で待ち受けポートを開かずに、診断側から操作できる必要がある。
 
@@ -15,9 +15,9 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 
 ## 決定
 
-ゲーム側から接続する MagicOnion StreamingHub を制御経路の中心とする。診断サーバーは receiver コールバックで要求を通知し、ゲーム側は安全な実行タイミングで処理して結果を報告する。
+通信抽象を診断セッションに DI 注入し、MagicOnion と HTTP のアダプターを差し替える。診断サーバーからの要求は共通の非同期受信列として扱い、ゲーム側は安全な実行タイミングで処理して結果を報告する。
 
-観測と変更操作を明示的なプロトコルにする。制御、テレメトリー、大容量データは論理的に分離し、画像や大きなスナップショットを制御用 Hub に直接載せない。
+観測と変更操作を明示的なプロトコルにする。制御、テレメトリー、大容量データは論理的に分離し、画像や大きなスナップショットを制御メッセージに直接載せない。
 
 ### 責務と依存関係
 
@@ -27,7 +27,8 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 | 診断サーバー | 認証、セッション、購読、要求と結果の相関管理 | エンジン実装型を参照しない |
 | ゲーム側診断エージェント | 接続、検証、要求キュー、観測データの送信 | 各サブシステムの診断アダプターを利用する |
 | 診断アダプター | 安全な時点での読み取り・変更、診断モデルへの変換 | 通信接続や UI を管理しない |
-| 共有通信契約 | Hub 契約、診断専用 DTO、スキーマ | エンジンオブジェクトや Native ハンドルを含めない |
+| 共有通信契約 | 通信抽象、診断専用 DTO、スキーマ | エンジンオブジェクトや Native ハンドルを含めない |
+| 通信アダプター | 共通メッセージと MagicOnion / HTTP の変換 | 診断エージェントとサーバーの共通処理を参照し、エンジンを参照しない |
 | 大容量転送サービス | 分割データの受信、保存、期限付き参照 | 制御と独立したキュー・転送予算を持つ |
 
 共有契約、エージェント、サーバーは実装時に `src/Diagnostics/` の別プロジェクトとして配置する。エンジンの通常実行は診断サーバーの存在に依存させず、診断アダプターを明示的に登録する。この ADR の追加ではプロジェクトを作成しない。
@@ -35,46 +36,160 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 ```mermaid
 flowchart LR
     UI[診断 UI] --> Server[診断サーバー]
-    Agent[ゲーム側診断エージェント] -->|接続開始・結果報告| Server
-    Server -->|Hub receiver の操作通知| Agent
+    Agent[ゲーム側診断エージェント] --> Transport[DI で選択する通信アダプター]
+    Transport -->|MagicOnion または HTTP| Server
+    Server -->|共通の操作要求| Transport
+    Transport --> Agent
     Agent --> Queue[エンジン実行キュー]
     Queue --> Engine[診断アダプター・ゲームエンジン]
-    Agent -->|画像・大容量スナップショット| Transfer[大容量転送サービス]
+    Transport -->|画像・大容量スナップショット| Transfer[大容量転送サービス]
     Server --> Transfer
 ```
 
 ### 接続とセッション
 
-ゲーム側が接続し、StreamingHub の接続を維持する。接続時にプロトコルバージョン、エンジン・ビルド情報、実行インスタンス ID、対応機能、型スキーマのバージョンを交換する。サーバーはセッション ID とセッションに許可する機能を返す。
+ゲーム側が論理セッションを確立し、選択したアダプターが接続または HTTP ポーリングを維持する。接続時にプロトコルバージョン、エンジン・ビルド情報、実行インスタンス ID、対応機能、型スキーマのバージョンを交換する。サーバーはセッション ID とセッションに許可する機能を返す。
 
 実行インスタンス ID はゲームプロセスの起動ごとに変える。セッション ID は接続ごとに変える。複数インスタンスを許容し、診断利用者は操作対象を明示する。
 
 接続状態は未接続、接続中、機能交渉中、利用可能、切断として扱い、交渉完了前は操作を受け付けない。再接続には上限付きのバックオフを使用し、新しいセッションで購読とスナップショットを同期し直す。古いセッションの未完了操作は自動再実行しない。
 
-### 主要な公開通信 API
+### 通信方式に依存しない公開 API
 
-共有契約の名前空間は `Lumyte.Diagnostics.Contracts` とする。以下は判断対象となる主要シグネチャであり、DTO のフィールド番号や全メンバーは実装前に具体化する。Hub は `IStreamingHub<IDiagnosticsHub, IDiagnosticsReceiver>` を継承する。
+共有契約の名前空間は `Lumyte.Diagnostics.Contracts`、通信抽象は `Lumyte.Diagnostics.Transport` とする。共通契約は BCL の型と診断専用 DTO だけを参照し、MagicOnion、gRPC、HttpClient、MessagePack の属性を要求しない。
 
-| 公開 API | 役割 | 契約・注意事項 |
+```csharp
+public interface IDiagnosticTransportFactory
+{
+    ValueTask<IDiagnosticConnection> OpenAsync(
+        ClientHello hello, CancellationToken cancellationToken);
+}
+
+public interface IDiagnosticConnection : IAsyncDisposable
+{
+    SessionWelcome Welcome { get; }
+    IAsyncEnumerable<DiagnosticCommand> ReadCommandsAsync(
+        CancellationToken cancellationToken);
+    ValueTask<PublishReceipt> PublishAsync(
+        DiagnosticMessage message, CancellationToken cancellationToken);
+    ValueTask<TransferDescriptor> UploadAsync(
+        BlobDescriptor descriptor, Stream content,
+        CancellationToken cancellationToken);
+}
+
+public sealed record DiagnosticMessage(
+    Guid MessageId, Guid SessionId, DiagnosticMessagePayload Payload);
+public sealed record PublishReceipt(
+    Guid MessageId, PublishStatus Status, string? ErrorCode = null);
+public enum PublishStatus { Accepted, Duplicate, Rejected }
+```
+
+`DiagnosticMessagePayload` は閉じた判別共用体として、Catalog、CommandResult、MetricsBatch、TraceBatch、LogBatch、GraphUpdate、TransferCompleted を表す。任意の `object` や任意 CLR 型を転送する契約にしない。`DiagnosticCommand` も型付きの閉じた要求集合とし、計測・Trace・Log の購読設定、グラフ取得、操作呼び出し、プロパティ編集、キャプチャー、入力リースを扱う。型識別子と値の意味を共通化し、DTO のフィールド番号や各形式へのマッピングは通信アダプターで具体化する。
+
+| 公開 API | 役割 | 契約 |
 | --- | --- | --- |
-| `Task<SessionWelcome> IDiagnosticsHub.RegisterAsync(ClientHello hello)` | 接続と機能交渉 | 認証後、一接続につき一回。非互換なら利用可能状態にしない |
-| `void IDiagnosticsReceiver.OnCommand(DiagnosticCommand command)` | サーバーからゲームへの要求通知 | 受信処理はキュー投入までとし、エンジンを直接操作しない |
-| `Task IDiagnosticsHub.ReportCommandResultAsync(CommandResult result)` | 受信確認・実行結果の報告 | `RequestId` と `SessionId` を一致させ、受付と完了を区別する |
-| `Task IDiagnosticsHub.PublishTelemetryAsync(TelemetryBatch batch)` | Metrics の送信 | 有界バッチとし、欠落件数を含める |
-| `Task IDiagnosticsHub.PublishTraceAsync(TraceBatch batch)` | 完了 Span の送信 | 標準 Activity を DTO にコピーし、欠落件数を含める |
-| `Task IDiagnosticsHub.PublishLogsAsync(LogBatch batch)` | 構造化 Log の送信 | レベル・カテゴリ・スコープを検証し、有界バッチにする |
-| `Task IDiagnosticsHub.PublishGraphUpdateAsync(GraphUpdate update)` | 小さな状態更新の送信 | 基準リビジョンと順序を含め、大容量なら転送参照を使う |
-| `Task IDiagnosticsHub.ReportTransferAsync(TransferDescriptor transfer)` | 大容量転送の完了通知 | 完了・整合性確認後の転送 ID とメタデータを報告する |
+| `OpenAsync` | 認証、セッション確立、機能交渉 | 利用可能状態になってから Connection を返す。呼び出し中のキャンセルは接続を解放する |
+| `Welcome` | セッション ID、許可機能、転送上限 | セッション期間中に不変。再確立では別 Connection を返す |
+| `ReadCommandsAsync` | サーバー要求の受信 | 一接続に一 reader。通知方式はアダプターに隠す |
+| `PublishAsync` | 結果・カタログ・計測の送信 | サーバーによる受理を返す。診断操作の実行完了や永続保存とは区別する |
+| `UploadAsync` | 大容量データの転送 | 上限と整合性を検証し、完了した転送参照を返す。入力 Stream は呼び出し側所有 |
+| `DisposeAsync` | セッション終了 | 冪等。受付と受信を停止し、可能ならサーバーへ終了を通知する |
 
-`DiagnosticCommand` は識別子付きの型付き要求とし、購読の設定・解除、グラフ取得・再同期、プロパティ編集、画像キャプチャー、入力リースの取得・更新・解除を表現する。任意コード、任意メソッド呼び出し、任意メモリー読み書きは提供しない。
+サブシステムはこれらの通信 API も参照しない。Scoped の診断セッションが DI で Factory を受け取り、Connection を一つ所有する。セッションは要求検証、所有スレッドへの配送、重複排除、購読、収集と予算を担当する。アダプターは符号化、物理接続、HTTP 要求・Hub 通知の変換だけを担当し、エンジンに依存しない。
 
-receiver の戻り値に操作結果を依存させず、要求通知と結果報告を別メッセージにする。診断 UI 向け API、大容量転送サービスの具体的な API、グラフ・描画・入力に固有の公開アダプター API は別途定義する。
+受信要求を拒否した場合は明示的な結果を返す。有界の受信キューが満杯になって通知を保持できない場合は接続失敗として扱い、要求を黙って捨てない。`ReadCommandsAsync` は次の要素の取得時に直前の配送を確認できるため、セッションはキュー投入または明示的な拒否を済ませてから次へ進む。途中切断では同じ要求が再配送され得るが、`RequestId` の重複排除で再実行を防ぐ。
+
+`MessageId` はセッション内で一意とする。通信アダプターが応答不明の送信を再試行するときは同じ ID とペイロードを使い、サーバーは保持期間内で重複を受理済みとして返す。同じ ID の異なるペイロードは拒否する。保持期限を過ぎた結果不明は上位へ返し、永久の重複排除や exactly-once を保証しない。
+
+制御メッセージは順序を保ち、計測種別ごとのシーケンスは各バッチが保持する。異なる種別間の全順序は要求しない。アダプター内にも有界送信予算を設け、大容量転送と計測で制御要求・結果を詰まらせない。`PublishReceipt.Accepted` はカタログの場合、後続の要求に利用できるところまでサーバーが処理したことを意味する。
+
+共通の接続失敗を `DiagnosticTransportException` として公開し、`FailureKind`（Unavailable、Unauthorized、Incompatible、SessionExpired、ProtocolError）と `IsTransient` を持たせる。キャンセルは `OperationCanceledException` とする。生の gRPC ステータスや HTTP ステータスで診断側を分岐させない。個別の編集・実行エラーは CommandResult のままとする。
+
+### DI による通信アダプターの選択
+
+MagicOnion 実装は `Lumyte.Diagnostics.Transport.MagicOnion`、HTTP 実装は `Lumyte.Diagnostics.Transport.Http` に分ける。各モジュールの DI 拡張を Composition Root から呼び、同じ `IDiagnosticTransportFactory` を登録する。
+
+```csharp
+public sealed class MagicOnionDiagnosticTransportOptions
+{
+    public Uri Endpoint { get; set; } = null!;
+}
+
+public sealed class HttpDiagnosticTransportOptions
+{
+    public Uri BaseAddress { get; set; } = null!;
+    public TimeSpan LongPollTimeout { get; set; } = TimeSpan.FromSeconds(20);
+}
+
+public static IServiceCollection AddMagicOnionDiagnosticTransport(
+    this IServiceCollection services,
+    Action<MagicOnionDiagnosticTransportOptions> configure);
+public static IServiceCollection AddHttpDiagnosticTransport(
+    this IServiceCollection services,
+    Action<HttpDiagnosticTransportOptions> configure);
+```
+
+構成例は次のようになる。サブシステム登録・ILogger・ActivitySource・Meter のコードは共通で、接続先は各アダプターの設定へ移す。選択条件はアプリ起動側が決め、診断機能や各サブシステムへ `IsBrowser` の分岐を入れない。
+
+```csharp
+services.AddLumyteDiagnostics(options =>
+{
+    options.Enabled = true;
+    options.AllowedMeterNames = new[] { "Lumyte.Physics" };
+    options.AllowedActivitySourceNames = new[] { "Lumyte.Physics" };
+    options.AllowedLogCategoryPrefixes = new[] { "Lumyte.Physics" };
+});
+
+// Desktop 向け Composition Root
+services.AddMagicOnionDiagnosticTransport(options =>
+    options.Endpoint = new Uri("https://diagnostics.example.com"));
+
+// Browser 向け Composition Root では上の代わりにこちらを登録する。
+// services.AddHttpDiagnosticTransport(options =>
+//     options.BaseAddress = new Uri("https://diagnostics.example.com"));
+```
+
+Factory は Singleton とし、Scoped サブシステムを捕捉しない。Connection は DI サービスとして共有せず、ゲーム実行セッションが生成・非同期破棄する。診断有効時は Factory がちょうど一つ必要で、未登録や複数方式の同時登録は起動エラーとする。診断無効時は Factory の登録・接続を必須にしない。
+
+初期設計では一ゲーム実行に一方式を固定する。通信失敗時に HTTP へ暗黙切り替えたり、同じデータを両方式へ送ったりしない。テストはインメモリーの Factory / Connection を DI で差し替える。
+
+### MagicOnion アダプター
+
+ゲーム側から StreamingHub に接続する。アダプター内部の Hub は登録、メッセージ送信、終了を提供し、receiver の操作通知を共通の受信キューへ変換する。receiver の戻り値を操作結果にせず、CommandResult メッセージで報告する。
+
+共有 DTO とは別の通信 DTO に MessagePack の安定したキーを割り当てる。大容量転送は制御 Hub と独立したサービス・ストリームで行う。Hub のインターフェースと gRPC 型は共通公開 API に露出させない。
+
+### Browser HTTP アダプター
+
+Browser の `HttpClient` / Fetch で使える HTTPS の POST、GET、PUT、DELETE と長いポーリングを使用する。双方向 HTTP/2 ストリーム、gRPC-Web、WebSocket、SSE を前提にしない。長いポーリングがタイムアウトしてもセッションが有効なら同じセッションで次の要求を行い、TCP 接続の入れ替わりを診断セッションの再確立とみなさない。
+
+| HTTP API | 対応する共通処理 |
+| --- | --- |
+| `POST /diagnostics/v1/sessions` | ClientHello を送り、SessionWelcome を取得する |
+| `GET /diagnostics/v1/sessions/{id}/commands?after={cursor}` | 未配送の要求を待ち、有界件数と次カーソルを返す |
+| `POST /diagnostics/v1/sessions/{id}/messages` | 診断メッセージを受理し、PublishReceipt を返す |
+| `POST /diagnostics/v1/sessions/{id}/transfers` | 転送 ID、総サイズ、チャンク上限を確立する |
+| `PUT /diagnostics/v1/sessions/{id}/transfers/{transferId}/chunks/{index}` | バイナリの有界チャンクを送信する |
+| `POST /diagnostics/v1/sessions/{id}/transfers/{transferId}/complete` | サイズ・ハッシュを検証し、TransferDescriptor を返す |
+| `DELETE /diagnostics/v1/sessions/{id}` | セッション終了を通知する |
+
+制御と計測 DTO は型識別子付き JSON、チャンクはバイナリとする。64 bit 整数と decimal は桁を失わない文字列表現で符号化する。数値型・UTC 時刻・単調増加時刻・ID・タグの意味は両アダプターで同一に保つ。System.Text.Json の Source Generator を用い、Browser / AOT で動的な型探索に依存しない。
+
+カーソルはアダプター内部の配送確認であり、ゲーム側の実行完了とは異なる。キュー投入・拒否まで済ませた範囲だけを次回要求の `after` へ反映する。サーバーは未確認要求を再配送でき、古いカーソルが保持範囲外になったらセッション再確立を要求する。ポーリングはセッションごとに一つだけ行い、キャプチャー転送と競合しないよう HTTP 同時数とサイズを制限する。
+
+HTTP セッションには認証主体に紐付く有効期限を設け、有効なポーリングまたは送信で更新する。Browser のバックグラウンド化・ページ終了・ネットワーク断で更新できない場合は期限切れとし、復帰後に新しいセッションで再同期する。入力リースの期限はこれより短い独立したゲーム側期限で扱う。Browser 自体が停止中にコードを実行できるとは保証せず、復帰時に入力適用より先に期限切れを処理する。
+
+同一 origin を基本とし、別 origin ならサーバーで明示的な CORS と preflight 対応を設定する。資格情報はアダプター側の HttpClient / ハンドラーで構成し、共通 DTO に埋め込まない。Cookie 認証なら CSRF 対策を適用する。ページ終了の DELETE 到達を保証せず、サーバー側の期限とゲーム側リースで解放する。
+
+チャンクの同じ index への再送は同一内容の場合だけ受け付け、完了要求も転送 ID に対して冪等にする。未完了転送はセッション期限とは別の期限で解放する。
+
+サーバーは HTTP と MagicOnion の入口を、同じセッション・認可・カタログ・要求管理のアプリケーションサービスへ配送する。診断 UI はゲームが選んだ通信方式に依存しない。両方式の同じ共通契約に対する適合性テストを行う。
 
 ### DI による構成と公開境界
 
 DI をサブシステム統合の基準とする。診断アダプターはコンストラクターで対象サブシステムを受け取り、`IDiagnosticContributor.Configure` で公開内容を宣言する。サブシステム自身はレジストリ、接続、ランタイムを取得しない。登録ハンドルと通信のライフサイクルは診断基盤が所有する。
 
-DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断操作の契約型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion への依存は通信実装に限定する。以下は公開 API の設計であり、実装は未追加である。設定の `LogLevel` は `Microsoft.Extensions.Logging` を使用する。
+DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断操作の契約型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion / HttpClient への依存は各通信アダプターに限定する。以下は公開 API の設計であり、実装は未追加である。設定の `LogLevel` は `Microsoft.Extensions.Logging` を使用する。
 
 ```csharp
 public interface IDiagnosticContributor
@@ -98,7 +213,6 @@ public interface IDiagnosticSession
 public sealed class DiagnosticOptions
 {
     public bool Enabled { get; set; }
-    public Uri? ServerAddress { get; set; }
     public IReadOnlyList<string> AllowedMeterNames { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> AllowedActivitySourceNames { get; set; } = Array.Empty<string>();
     public double TraceSampleRatio { get; set; } = 0.1;
@@ -117,7 +231,7 @@ public static IServiceCollection AddDiagnosticSubsystem<TContributor, TPoint>(
     where TPoint : class;
 ```
 
-`AddLumyteDiagnostics` は設定と通信ファクトリを Singleton、セッション、レジストリ、購読状態、カタログ、実行キューを Scoped として登録する。一つのゲーム実行に一つの明示的な DI スコープを作る。別スコープは別の実行インスタンス ID と接続を持ち、オブジェクト、要求、購読を共有しない。Scoped をプロセス全体の Singleton として注入しない。
+`AddLumyteDiagnostics` は設定を Singleton、セッション、レジストリ、購読状態、カタログ、実行キューを Scoped として登録する。一つのゲーム実行に一つの明示的な DI スコープを作る。別スコープは別の実行インスタンス ID と接続を持ち、オブジェクト、要求、購読を共有しない。Scoped をプロセス全体の Singleton として注入しない。
 
 `TraceSampleRatio` は 0〜1 の有限値とし、各許可リストは既定で空とする。無効な設定は起動時に拒否する。`StartAsync` は Metrics / Trace Listener とログ送信先を有効化し、`StopAsync` はそれらを無効化・解放する。
 
@@ -232,7 +346,7 @@ public sealed class DiagnosticOperationResult
 
 エージェントはスコープごとに `MeterListener` を所有する。Instrument の公開通知から名前、Meter 名・版、Instrument 種別、数値型、単位、説明を取得し、カタログへ登録する。購読がある Instrument にだけ `EnableMeasurementEvents` を適用し、`SetMeasurementEventCallback<T>` で標準計測を受け取る。解除・切断で不要な計測受信を無効化し、セッション終了で Listener を Dispose する。再接続時は Listener を再作成し、既存 Instrument も再発見する。
 
-Listener のコールバックは `Record` / `Add` を呼ぶスレッドで同期実行される。コールバック内ではエンジンへアクセスせず、タグをコピーして有界バッファへ投入するか、短い集約処理だけを行う。シリアライズと MagicOnion 送信は別処理に移す。バッファ超過と不正値の破棄を診断基盤が数え、計測コードへ例外を返さない。標準 `Record` / `Add` に配送成功の戻り値はなく、完全配送は保証しない。
+Listener のコールバックは `Record` / `Add` を呼ぶスレッドで同期実行される。コールバック内ではエンジンへアクセスせず、タグをコピーして有界バッファへ投入するか、短い集約処理だけを行う。シリアライズと通信送信は別処理に移す。バッファ超過と不正値の破棄を診断基盤が数え、計測コードへ例外を返さない。標準 `Record` / `Add` に配送成功の戻り値はなく、完全配送は保証しない。
 
 | 標準 Instrument | 用途・入力 | 初期の送信集約 |
 | --- | --- | --- |
@@ -341,11 +455,11 @@ public void Update(double deltaTime, DiagnosticFrame frame)
 
 ### Trace・Log の転送契約
 
-Hub に `Task PublishTraceAsync(TraceBatch batch)` と `Task PublishLogsAsync(LogBatch batch)` を追加する。両バッチはセッション ID、実行インスタンス ID、シーケンス番号、欠落件数を含み、個々の Span / Log を上記の DTO で表す。型付きのスカラーフィールドで転送し、`Activity` や `ILogger` の状態を直接 MessagePack でシリアライズしない。
+共通メッセージに TraceBatch と LogBatch を追加し、`IDiagnosticConnection.PublishAsync` で送る。両バッチはセッション ID、実行インスタンス ID、シーケンス番号、欠落件数を含み、個々の Span / Log を上記の DTO で表す。型付きのスカラーフィールドで転送し、`Activity` や `ILogger` の状態を通信ライブラリで直接シリアライズしない。
 
 `ConfigureTracing` 要求は購読 ID、Source 名、操作名フィルター、割合を持ち、`ConfigureLogging` は購読 ID、カテゴリと最小レベルを持つ。ゲーム側設定と Observe 権限を超える要求は拒否する。購読停止後のイベントは送らず、未送信キューにもセッションと購読世代を付けて古いデータを除外する。複数の購読に同じイベントを配送する場合はイベント ID を維持する。
 
-Metrics / Trace / Log は同じ標準計測基盤から生成するが、異なるキュー・件数予算を持つ。バッチサイズを制限し、制御応答を優先する。Trace・Log のスキーマ・対応機能をカタログに含め、未対応のフィールドは明示する。OpenTelemetry SDK の導入は必須にせず、標準 Listener と Provider を MagicOnion の転送境界とする。
+Metrics / Trace / Log は同じ標準計測基盤から生成するが、異なるキュー・件数予算を持つ。バッチサイズを制限し、制御応答を優先する。Trace・Log のスキーマ・対応機能をカタログに含め、未対応のフィールドは明示する。OpenTelemetry SDK の導入は必須にせず、標準 Listener と Provider の出力を、通信抽象を通じて転送する。
 
 ### 操作の実行契約
 
@@ -454,13 +568,15 @@ public sealed class AfterPhysicsSimulation { }
 services.AddLumyteDiagnostics(options =>
 {
     options.Enabled = true;
-    options.ServerAddress = new Uri("https://localhost:5001");
     options.AllowedMeterNames = new[] { "Lumyte.Physics" };
     options.AllowedActivitySourceNames = new[] { "Lumyte.Physics" };
     options.TraceSampleRatio = 0.1;
     options.AllowedLogCategoryPrefixes = new[] { "Lumyte.Physics" };
     options.MinimumLogLevel = LogLevel.Information;
 });
+// この Composition Root では Desktop 向け通信アダプターを選ぶ。
+services.AddMagicOnionDiagnosticTransport(options =>
+    options.Endpoint = new Uri("https://localhost:5001"));
 services.AddMetrics();
 services.AddScoped<PhysicsMetrics>();
 services.AddScoped<PhysicsWorld>();
@@ -508,7 +624,7 @@ public sealed class PhysicsLoop
 
 ### カタログ公開とサーバーからの利用
 
-Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。カタログはセッション ID、カタログリビジョン、登録中の各操作サブシステムの ID・世代・スキーマ版・操作記述子、および Listener が発見した Instrument の記述子を含む。接続・再接続後は完全なカタログを送り、登録・解除時も新しいリビジョンの完全版を送る。サイズ超過時は既存の大容量転送参照を使う。
+Catalog ペイロードを `IDiagnosticConnection.PublishAsync` で送る。カタログはセッション ID、カタログリビジョン、登録中の各操作サブシステムの ID・世代・スキーマ版・操作記述子、および Listener が発見した Instrument の記述子を含む。接続・再接続後は完全なカタログを送り、登録・解除時も新しいリビジョンの完全版を送る。サイズ超過時は既存の大容量転送参照を使う。
 
 サーバーは受信カタログを認可に従って UI に公開する。カタログはコードやデリゲートを含まない。操作の要求経路は以下のとおりである。
 
@@ -521,7 +637,7 @@ Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。
 
 `InvokeOperation` のペイロードは `SubsystemId`、`Generation`、`SchemaVersion`、`OperationId`、引数値、期待リビジョンを持つ。`ConfigureTelemetry` は購読 ID、Instrument ID、カタログリビジョン、周期、集約を持つ。操作の登録世代をメトリクスの識別に流用しない。カタログ更新と競合する要求は古い世代・スキーマとして拒否し、サーバーは再取得する。
 
-公開順序はセッション確立、カタログ公開、購読・操作受付とする。サーバーはカタログを処理した Hub 呼び出しの完了後に要求を送る。解除直前のカタログを見て要求しても、ゲーム側の実行時検証で対象消失として処理する。
+公開順序はセッション確立、カタログ公開、購読・操作受付とする。サーバーはカタログの Accepted 応答後に要求を送る。解除直前のカタログを見て要求しても、ゲーム側の実行時検証で対象消失として処理する。
 
 ### 要求と結果の契約
 
@@ -569,11 +685,11 @@ Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。
 
 初期実装はオンデマンドの静止画取得とする。対象ビュー、解像度、フォーマット、頻度上限を指定し、対応環境では GPU 読み戻しを非同期に行う。
 
-結果にはキャプチャー ID、フレーム番号、ビュー、寸法、画素形式、色空間を含める。画像の圧縮や大きなスナップショットの転送は制御用 Hub から分離し、別の MagicOnion サービス等を使った分割転送でゲーム側からアップロードする。
+結果にはキャプチャー ID、フレーム番号、ビュー、寸法、画素形式、色空間を含める。画像の圧縮や大きなスナップショットの転送は制御メッセージから分離し、`IDiagnosticConnection.UploadAsync` でゲーム側からアップロードし、分割転送の方式はアダプターへ委譲する。
 
 転送 ID はセッションと要求に紐付ける。総サイズ、チャンクの位置、整合性情報を検証し、転送途中を完了済みとして公開しない。サイズ、同時数、帯域、保存期間に上限を設け、切断や期限切れの未完了データを解放する。ダウンロードにも認可を適用する。
 
-制御用 Hub は転送参照とメタデータのみを扱う。独立したストリームとキューを使い、帯域競合が残る場合は接続と帯域予算も分離する。継続キャプチャーでは古いフレームを破棄し、待ち行列を増やさない。低遅延動画は後続 ADR の対象とする。
+共通の制御メッセージは転送参照とメタデータのみを扱う。独立したストリームとキューを使い、帯域競合が残る場合は接続と帯域予算も分離する。継続キャプチャーでは古いフレームを破棄し、待ち行列を増やさない。低遅延動画は後続 ADR の対象とする。
 
 ### インプットのオーバーライド
 
@@ -607,31 +723,31 @@ TLS を使用し、ゲーム接続と診断利用者を認証する。観測、�
 
 ### 互換性と対応環境
 
-共有 DTO には MessagePack の安定したキーと型識別子を使い、既存キーの意味変更や再利用を避ける。接続時にプロトコルバージョンを確認し、対応機能とスキーマを交渉する。非互換なら接続を利用可能にせず、機能不足ならその操作を提供しない。
+共通 DTO には安定した型・フィールド識別子を定め、識別子の意味変更や再利用を避ける。MagicOnion の MessagePack キーと HTTP の JSON フィールドへのマッピングはアダプターで管理する。接続時にプロトコルバージョンを確認し、対応機能とスキーマを交渉する。非互換なら接続を利用可能にせず、機能不足ならその操作を提供しない。
 
-MagicOnion と MessagePack の版は実装時に固定する。AOT・トリミング環境では生成コードとシリアライズ対象を検証する。
+MagicOnion / MessagePack と HTTP の JSON 符号化規約は実装時に固定する。AOT・トリミング環境では生成コードとシリアライズ対象を検証する。
 
 | 環境 | 本 ADR の扱い |
 | --- | --- |
-| Windows / Linux | ネイティブ gRPC・HTTP/2 による接続を初期検証対象とする。動作検証は未実施 |
-| Browser | StreamingHub の双方向通信が利用可能か、採用版とトランスポートで要検証。通常の gRPC-Web だけで利用可能とは仮定しない |
+| Windows / Linux | MagicOnion アダプターを初期選択とする。HTTP の選択も可能。動作検証は未実施 |
+| Browser | HTTP アダプターを選択する。長いポーリング・有界アップロードを使用。動作検証は未実施 |
 
-Browser で StreamingHub の要件を満たせない場合の中継や代替トランスポートは後続 ADR で決め、未対応の間は機能交渉で明示する。
+通信方式で診断 API を変えず、対応機能と上限を SessionWelcome で交渉する。Browser のバックグラウンド制限や描画のキャプチャー可否は、通信の抽象化だけで解消するとは仮定しない。
 
 ## 検討した代替案
 
 | 案 | 採用しない理由 |
 | --- | --- |
 | ゲーム側をサーバーにする | 待ち受けポート、端末探索、ファイアウォール対応が必要となる |
-| Unary RPC のポーリングだけで構成する | 操作通知の遅延と継続観測の通信量が増える |
+| 全プラットフォームで同じ物理接続を必須にする | Browser の制約を診断機能に持ち込むため、共通契約の下でアダプターを選ぶ |
 | 全データを単一 StreamingHub で送信する | 画像転送が制御応答を遅らせ、負荷制御を分けにくい |
 | エンジンオブジェクトを直接シリアライズする | 循環参照、スレッド制約、内部実装への結合、情報公開の制御に問題がある |
 
-ゲーム側からの接続とサーバーからの操作通知を両立できるため、StreamingHub を制御の中心にする。
+MagicOnion はプッシュ通知、HTTP は長いポーリングで共通の要求受信契約を実装する。HTTP では通知遅延とリクエスト数の増加を許容する。
 
 ## 結果と影響
 
-診断 UI と通信をエンジン実装から分離し、複数のゲームインスタンスを共通の契約で扱える。安全な実行時点、切断時の入力解除、編集競合、転送上限を定めることで診断操作の影響を制御できる。
+診断 UI と通信をエンジン実装から分離し、DI で物理通信方式を選択できる。複数のゲームインスタンスを共通の契約で扱える。安全な実行時点、切断時の入力解除、編集競合、転送上限を定めることで診断操作の影響を制御できる。
 
 一方で、要求と結果の相関管理、ID・世代・リビジョン、差分同期、スキーマ、負荷制御の実装が必要となる。診断自体にも CPU・GPU・メモリー・帯域のコストがあり、遠隔操作はローカルデバッガーと同じ即時性を保証しない。
 
@@ -654,13 +770,15 @@ Browser で StreamingHub の要件を満たせない場合の中継や代替ト�
 - 入力の所有者競合、更新、期限切れ、切断時解除、解除後のボタン状態。
 - 画像のフレーム対応、転送のサイズ超過・中断・期限切れ・整合性エラー。
 - 大容量転送中の制御応答時間、診断有効・無効時のフレーム時間と資源消費。
-- 対象ランタイムの AOT・トリミング、Browser の双方向通信可否。
+- MagicOnion / HTTP の共通適合性、送信再試行、受理応答不明、コマンド再配送とカーソル保持期限。
+- HTTP のセッション期限、CORS、Browser のバックグラウンド復帰、分割アップロード。
+- 対象ランタイムの AOT・トリミング、Browser の HTTP 動作。
 
 ## 別途決定する事項
 
 - Observable Instrument、数値集約の精度とオーバーフロー、tail sampling、未終了 Span のライブ表示。
 - 全通信 DTO のフィールド番号、グラフ・描画・入力の診断アダプター API、具体的なプロジェクト名。
-- 大容量転送 API、保存先、診断 UI 向け API、認証方式と資格情報の配布。
+- 大容量転送 DTO の詳細と保存先、診断 UI 向け API、認証方式と資格情報の配布。
 - 入力・描画システムへの具体的な統合位置とプラットフォーム別対応範囲。
 - 帯域・キュー・実行時間の具体的な上限と測定に基づく受け入れ基準。
-- Browser の通信方式、低遅延動画、決定的な再現実行。
+- HTTP の具体的な再試行・期限・サイズ上限、低遅延動画、決定的な再現実行。
