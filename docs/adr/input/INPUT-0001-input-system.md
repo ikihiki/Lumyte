@@ -45,45 +45,124 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 
 ### 公開 API 一覧
 
-以下は `Lumyte.Input` 名前空間の主要 API 案である。Vector2 は `System.Numerics.Vector2`、TimeProvider は `System.TimeProvider` を使用する。
+以下は `Lumyte.Input` 名前空間に追加する主要 API を diff 形式で示した設計案である。すべて新規追加のため `+` 行とする。宣言の本体と内部メンバーを省略した API 一覧であり、コンパイル用の実装ではない。
 
-| 公開 API | 役割 | 契約・注意事項 |
-| --- | --- | --- |
-| `readonly record struct InputDeviceId(ulong Value)` | デバイスの識別 | 0 は無効。Source が割り当て、システム内で再利用しない |
-| `enum InputDeviceKind` / `InputDeviceIdentityKind` | 種類と識別粒度 | 種類は Keyboard / Mouse / Controller、粒度は Physical / Logical |
-| `sealed record InputDeviceInfo(InputDeviceId Id, InputDeviceKind Kind, string Name, InputDeviceIdentityKind IdentityKind)` | デバイス情報 | 接続時に登録し、切断後も参照できる |
-| `enum Key` / `enum MouseButton` | 物理キーとボタン | Key は Unknown、文字位置・数字・矢印・左右別修飾キー等。MouseButton は Left / Right / Middle / X1 / X2 |
-| `enum ControllerButton` | 共通コントローラーボタン | South / East / West / North、DPadUp / Down / Left / Right、LeftShoulder / RightShoulder、LeftStick / RightStick、Start / Select。フェイスボタンは位置で表し、メーカーの文字表記に依存しない |
-| `enum ControllerStick` / `enum ControllerTrigger` | アナログ入力の識別 | それぞれ Left / Right |
-| `abstract record InputData` | 共通入力ペイロード | 共通ライブラリが定義する派生型に限定 |
-| `sealed record KeyData(Key Key, bool IsDown, bool IsRepeat) : InputData` | キー入力 | 文字入力ではなく物理キーの押下・解放 |
-| `sealed record MouseButtonData(MouseButton Button, bool IsDown) : InputData` | ボタン入力 | 押下・解放 |
-| `sealed record MouseMoveData(Vector2 Position) : InputData` / `MouseWheelData(Vector2 Delta) : InputData` | マウス入力 | 座標・ホイールは後述の共通単位 |
-| `sealed record ControllerButtonData(ControllerButton Button, bool IsDown) : InputData` | コントローラーボタン | 押下・解放 |
-| `sealed record ControllerStickData(ControllerStick Stick, Vector2 Value) : InputData` | スティック入力 | 各軸 -1〜1、中心は 0。右が X 正、上が Y 正 |
-| `sealed record ControllerTriggerData(ControllerTrigger Trigger, float Value) : InputData` | トリガー入力 | 0〜1。未操作が 0、最大操作が 1 |
-| `sealed record DeviceConnectedData(InputDeviceInfo Info) : InputData` / `DeviceDisconnectedData : InputData` | 接続状態 | 最初の入力より先に接続を記録 |
-| `sealed record FocusData(bool IsFocused) : InputData` | 対象のフォーカス | デバイスごとに展開して記録 |
-| `readonly record struct InputRecord(InputDeviceId DeviceId, ulong Sequence, TimeSpan RecordedAt, InputData Data)` | 共通記録 | 配列・通知・ポーリングで同じ内容を提供 |
-| `readonly record struct InputSourceEvent(InputDeviceId DeviceId, InputData Data)` | 取り込み前の入力 | Sequence と時刻は InputSystem が付与 |
-| `IReadOnlyList<InputSourceEvent> IInputSource.DrainEvents()` | Platform のイベント供給 | 開始時点の未処理イベントを受信順に一度だけ返す。更新中に届いた入力は次回へ |
-| `InputSystem(IInputSource source, TimeProvider? timeProvider = null)` | 作成 | Source を借用。時計の既定値は TimeProvider.System。null Source は例外 |
-| `void InputSystem.Update()` | 取り込み・状態更新・通知・自動削除 | 表示フレームへの依存なし。呼び出し順は後述 |
-| `IReadOnlyList<InputDeviceInfo> InputSystem.Devices { get; }` | 登録済みデバイス | 切断済みを含む読み取り専用一覧 |
-| `ReadOnlyMemory<InputRecord> InputSystem.GetRecords(InputDeviceId device)` | 記録配列の直接参照 | 保持記録の読み取り専用スナップショット。Span で列挙でき、必要なら ToArray で所有配列を作れる |
-| `InputDeviceState InputSystem.GetState(InputDeviceId device)` | 現在状態のポーリング | 不変スナップショット。履歴の有無に依存しない |
-| `bool InputDeviceState.IsConnected { get; }` / `IsFocused { get; }` | 接続・フォーカス | 初期状態は解放・非フォーカス |
-| `bool InputDeviceState.IsDown(Key key)` / `IsDown(MouseButton button)` / `IsDown(ControllerButton button)` | 押下状態 | 対象デバイス種別に合わない照会は InvalidOperationException |
-| `Vector2 InputDeviceState.MousePosition { get; }` | 最新のマウス位置 | Mouse のみ。移動・ホイールの期間集計は履歴から行う |
-| `Vector2 InputDeviceState.GetStick(ControllerStick stick)` / `float GetTrigger(ControllerTrigger trigger)` | 最新のアナログ状態 | Controller のみ。初期値は 0。デッドゾーン適用前の正規化値 |
-| `InputReadResult InputSystem.ReadRecords(InputDeviceId device, ulong afterSequence)` | 履歴のポーリング | 指定 Sequence より後の保持記録を返す。利用者ごとにカーソルを管理 |
-| `ReadOnlyMemory<InputRecord> InputReadResult.Records { get; }` / `ulong NextSequence { get; }` / `bool HasGap { get; }` | ポーリング結果 | 欠落を通知し、次回カーソルを提示する |
-| `event Action<InputRecord>? InputSystem.Recorded` | 記録の通知 | 新規記録ごとに一度、Sequence 順で同期通知。DeviceId で購読側が選別する |
-| `InputRetentionPolicy InputSystem.GetRetentionPolicy(InputDeviceId device)` / `SetRetentionPolicy(InputDeviceId device, InputRetentionPolicy policy)` | デバイス別の保持設定 | 既定は Manual。変更は次の自動削除または明示削除から適用 |
-| `sealed record InputRetentionPolicy(int? MaxRecords = null, TimeSpan? MaxAge = null)` | 件数・時間の上限 | 両方 null が Manual。上限 0 も許容し、負値は拒否 |
-| `int InputSystem.Prune()` | 設定に従う明示削除 | 全デバイスの保持方針を評価し、削除件数を返す |
-| `int InputSystem.RemoveRecordsThrough(InputDeviceId device, ulong sequence)` | 指定位置までの削除 | Sequence 以下の記録を削除し、削除件数を返す |
-| `int InputSystem.ClearRecords(InputDeviceId device)` | 履歴全削除 | 現在状態・デバイス情報・採番は維持 |
+```diff
++using System;
++using System.Collections.Generic;
++using System.Numerics;
++
++namespace Lumyte.Input;
++
++// 0 は無効。Source が割り当て、システム内で再利用しない。
++public readonly record struct InputDeviceId(ulong Value);
++public enum InputDeviceKind { Keyboard, Mouse, Controller }
++public enum InputDeviceIdentityKind { Physical, Logical }
++public sealed record InputDeviceInfo(
++    InputDeviceId Id, InputDeviceKind Kind, string Name,
++    InputDeviceIdentityKind IdentityKind);
++
++// Key の完全なメンバー一覧はバックエンド設計時に確定する。
++public enum Key { Unknown, /* 文字位置・数字・矢印・左右別修飾キー等 */ }
++public enum MouseButton { Left, Right, Middle, X1, X2 }
++// フェイスボタンはメーカーの文字表記ではなく位置で表す。
++public enum ControllerButton
++{
++    South, East, West, North,
++    DPadUp, DPadDown, DPadLeft, DPadRight,
++    LeftShoulder, RightShoulder, LeftStick, RightStick, Start, Select,
++}
++public enum ControllerStick { Left, Right }
++public enum ControllerTrigger { Left, Right }
++
++// 共通ライブラリが定義する派生型に限定する。
++public abstract record InputData
++{
++    private protected InputData();
++}
++public sealed record KeyData(Key Key, bool IsDown, bool IsRepeat) : InputData;
++public sealed record MouseButtonData(MouseButton Button, bool IsDown) : InputData;
++public sealed record MouseMoveData(Vector2 Position) : InputData;
++public sealed record MouseWheelData(Vector2 Delta) : InputData;
++public sealed record ControllerButtonData(
++    ControllerButton Button, bool IsDown) : InputData;
++// 各軸 -1〜1。中心 0、右が X 正、上が Y 正。
++public sealed record ControllerStickData(
++    ControllerStick Stick, Vector2 Value) : InputData;
++// 0〜1。未操作 0、最大操作 1。
++public sealed record ControllerTriggerData(
++    ControllerTrigger Trigger, float Value) : InputData;
++public sealed record DeviceConnectedData(InputDeviceInfo Info) : InputData;
++public sealed record DeviceDisconnectedData : InputData;
++public sealed record FocusData(bool IsFocused) : InputData;
++
++// 配列・通知・ポーリングで共通の不変記録。
++public readonly record struct InputRecord(
++    InputDeviceId DeviceId, ulong Sequence, TimeSpan RecordedAt, InputData Data);
++// Sequence と時刻は InputSystem が付与する。
++public readonly record struct InputSourceEvent(
++    InputDeviceId DeviceId, InputData Data);
++public interface IInputSource
++{
++    // 開始時点の未処理入力を受信順に返す。更新中の到着分は次回へ。
++    IReadOnlyList<InputSourceEvent> DrainEvents();
++}
++
++// 両方 null が Manual。上限 0 は許容し、負値は拒否する。
++public sealed record InputRetentionPolicy(
++    int? MaxRecords = null, TimeSpan? MaxAge = null);
++
++public sealed class InputSystem
++{
++    // Source は借用。null Source は例外、時計の既定は TimeProvider.System。
++    public InputSystem(IInputSource source, TimeProvider? timeProvider = null);
++    // 取り込み・状態更新・通知・自動削除。表示フレームへの依存なし。
++    public void Update();
++    // 切断済みを含む読み取り専用一覧。
++    public IReadOnlyList<InputDeviceInfo> Devices { get; }
++    // 保持記録の不変配列を参照。Span で列挙、ToArray で所有配列化できる。
++    public ReadOnlyMemory<InputRecord> GetRecords(InputDeviceId device);
++    // 現在状態の不変スナップショット。履歴の有無に依存しない。
++    public InputDeviceState GetState(InputDeviceId device);
++    // 指定 Sequence より後の記録。利用者ごとにカーソルを管理する。
++    public InputReadResult ReadRecords(InputDeviceId device, ulong afterSequence);
++    // 新規記録ごとに一度、Sequence 順で同期通知。DeviceId で選別する。
++    public event Action<InputRecord>? Recorded;
++    // 既定は Manual。設定変更は次の自動削除または明示削除から適用。
++    public InputRetentionPolicy GetRetentionPolicy(InputDeviceId device);
++    public void SetRetentionPolicy(InputDeviceId device, InputRetentionPolicy policy);
++    // 全デバイスの保持方針を評価し、削除件数を返す。
++    public int Prune();
++    // Sequence 以下の履歴を削除し、削除件数を返す。
++    public int RemoveRecordsThrough(InputDeviceId device, ulong sequence);
++    // 全履歴を削除。現在状態・デバイス情報・採番は維持する。
++    public int ClearRecords(InputDeviceId device);
++}
++
++// InputSystem が生成する不変スナップショット。公開コンストラクターなし。
++public sealed class InputDeviceState
++{
++    public bool IsConnected { get; }
++    public bool IsFocused { get; }
++    // 初期状態は解放。対象種別に合わない照会は InvalidOperationException。
++    public bool IsDown(Key key);
++    public bool IsDown(MouseButton button);
++    public bool IsDown(ControllerButton button);
++    // Mouse のみ。移動・ホイールの期間集計は履歴から行う。
++    public Vector2 MousePosition { get; }
++    // Controller のみ。初期値 0、デッドゾーン適用前の正規化値。
++    public Vector2 GetStick(ControllerStick stick);
++    public float GetTrigger(ControllerTrigger trigger);
++}
++
++// InputSystem が生成する取得結果。公開コンストラクターなし。
++public sealed class InputReadResult
++{
++    public ReadOnlyMemory<InputRecord> Records { get; }
++    public ulong NextSequence { get; }
++    public bool HasGap { get; }
++}
+```
 
 不明な DeviceId は KeyNotFoundException、不正な enum・負の保持設定・現在のシステム Sequence を超えるカーソルや削除境界は ArgumentOutOfRangeException とする。Key.Unknown の押下照会は false とする。公開スナップショットは内部の書き換え可能な配列を露出せず、その後の更新・削除でも内容を変えない。
 
