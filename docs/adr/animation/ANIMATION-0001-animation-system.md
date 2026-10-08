@@ -59,39 +59,256 @@ Tween の始値と終値は明示的に与える。現在値から開始した�
 
 ### 共通の公開 API
 
-以下は `Lumyte.Animation` の主要な公開契約とする。補間器、値ソース、タイムラインは不変とし、独自実装にも純粋な評価を要求する。
+以下は追加する公開 API の設計差分であり、実装本体を省略した C# 宣言を示す。すべて新規 API のため追加行として記載する。補間器、値ソース、タイムラインは不変とし、独自実装にも純粋な評価を要求する。
 
-| 公開 API | 役割・契約 |
-| --- | --- |
-| `IAnimationSource<T>`: `double Duration { get; }`, `T Sample(double time)` | 有限かつ正の Duration と `[0, Duration]` の純粋な時刻評価。対象に副作用を起こさない |
-| `AnimationKey<T>(double time, T value)` | 時刻と値の読み取り専用レコード。カーブ内の時刻は厳密に昇順 |
-| `IAnimationInterpolator<T>.Interpolate(T from, T to, float amount)` | 正規化時間に対応する型固有の補間。離散値の Step もこの契約で提供する |
-| `AnimationCurve<T>(double duration, IReadOnlyList<AnimationKey<T>> keys, IAnimationInterpolator<T> interpolator)` | キーを検証・コピーする。最低一つのキーを要求し、端の値を保持する |
-| `Tween<T>(T from, T to, double duration, IAnimationInterpolator<T> interpolator, AnimationEasing easing)` | 明示した端点間を変化させる値ソース。標準 easing は Linear、EaseIn、EaseOut、EaseInOut |
-| `AnimationChannel<T>.Create()` | プロセス内で一意な型付きチャネルを作る。統合層が対象との対応を保持する |
-| `AnimationTimelineBuilder.Add<T>(double start, IAnimationSource<T> source, AnimationChannel<T> channel, AnimationFillMode fill = AnimationFillMode.Hold)` | 時刻・値・出力を登録する。start は有限かつ 0 以上。登録順を保持する |
-| `AnimationTimelineBuilder.AddTimeline(double start, AnimationTimeline timeline)` / `AddEvent(double time, string name, string? payload)` | 既存タイムラインまたはイベントを配置する |
-| `AnimationTimeline AnimationTimelineBuilder.Build()` | 入力を検証して不変定義を生成する。Build 後の Builder 変更は生成済み定義に影響しない |
-| `AnimationOutput.Clear()` / `bool TryGet<T>(AnimationChannel<T> channel, out T value)` | 統合層がフレーム開始時にクリアし、全評価後に型付きの結果を取得する。未出力は false |
-| `AnimationPlayback(AnimationTimeline timeline, AnimationWrapMode wrapMode = AnimationWrapMode.Once)` | 再生状態を所有する。State、Time、Speed、Play／Pause／Stop／Seek は後述の時間契約に従う |
-| `AnimationPlaybackState AnimationPlayback.State { get; }` / `double Time { get; }` / `double Speed { get; set; }` | 現在状態と時刻、有限かつ 0 以上の速度を公開する |
-| `void AnimationPlayback.Play()` / `Pause()` / `Stop()` / `Seek(double time)` | 開始・一時停止・停止・時刻移動。Seek は `[0, timeline.Duration]` を要求する |
-| `void AnimationPlayback.Cancel()` | Cancelled に移行し、以後の出力とイベントを停止する。Play は 0 から再開する |
-| `bool AnimationPlayback.Update(double deltaSeconds, AnimationOutput output, ICollection<AnimationEventOccurrence> events)` | 有効な値と通過イベントを追記し、この更新で完了した場合だけ true を返す |
-| `AnimationEvent(double time, string name, string? payload)` | タイムライン内の時刻と通知内容を保持する読み取り専用の値。AddEvent が生成し、登録順を保持する |
-| `AnimationEventOccurrence` | 元イベント、`long LoopIndex`、今回の更新開始からの実時間オフセットを公開する読み取り専用の値 |
-| `AnimationState(AnimationTimeline timeline, AnimationWrapMode wrapMode)` | 状態の再生定義。歩行は Loop、UI の表示は Once を選べる |
-| `AnimationController(string initialState, IReadOnlyDictionary<string, AnimationState> states, IReadOnlyList<AnimationTransition> transitions)` | 定義を検証・コピーして初期状態の再生を開始する。Once の状態は完了後も遷移待ちする |
-| `AnimationTransition(string from, string trigger, string to)` | 登録済み状態間の遷移を定義する |
-| `void AnimationController.Trigger(string trigger)` / `void Update(double deltaSeconds, AnimationOutput output, ICollection<AnimationEventOccurrence> events)` | トリガーをキューに積み、更新開始時に遷移と現在状態の再生を処理する。`string CurrentState` を公開する |
+```diff
++using System.Collections.Generic;
++using System.Numerics;
++
++namespace Lumyte.Animation;
++
++public enum AnimationWrapMode { Once, Loop }
++public enum AnimationFillMode { Hold, Release }
++public enum AnimationPlaybackState { Stopped, Playing, Paused, Completed, Cancelled }
++public enum AnimationEasing { Linear, EaseIn, EaseOut, EaseInOut }
++
++// 正の Duration と [0, Duration] の純粋な値評価。対象への副作用を持たない。
++public interface IAnimationSource<T>
++{
++    double Duration { get; }
++    T Sample(double time);
++}
++
++public readonly record struct AnimationKey<T>(double Time, T Value);
++
++public interface IAnimationInterpolator<T>
++{
++    T Interpolate(T from, T to, float amount);
++}
++
++// 標準数値型の補間。回転は最短経路の Slerp、離散値は Step を使う。
++public static class AnimationInterpolators
++{
++    public static IAnimationInterpolator<float> Float { get; }
++    public static IAnimationInterpolator<Vector2> Vector2 { get; }
++    public static IAnimationInterpolator<Vector3> Vector3 { get; }
++    public static IAnimationInterpolator<Vector4> Vector4 { get; }
++    public static IAnimationInterpolator<Quaternion> Quaternion { get; }
++    public static IAnimationInterpolator<T> Step<T>();
++}
++
++public sealed class AnimationCurve<T> : IAnimationSource<T>
++{
++    // キーを検証・コピーする。最低一つのキー、厳密な時刻昇順を要求する。
++    public AnimationCurve(double duration, IReadOnlyList<AnimationKey<T>> keys,
++        IAnimationInterpolator<T> interpolator);
++    public double Duration { get; }
++    public T Sample(double time);
++}
++
++public sealed class Tween<T> : IAnimationSource<T>
++{
++    public Tween(T from, T to, double duration,
++        IAnimationInterpolator<T> interpolator, AnimationEasing easing);
++    public double Duration { get; }
++    public T Sample(double time);
++}
++
++// 対象への参照や setter を保持しない、型付きの不透明な識別子。
++public sealed class AnimationChannel<T>
++{
++    private AnimationChannel();
++    public static AnimationChannel<T> Create();
++}
++
++public sealed class AnimationTimeline
++{
++    // Builder のみが生成する不変定義。
++    internal AnimationTimeline();
++    public double Duration { get; }
++}
++
++public sealed class AnimationTimelineBuilder
++{
++    public AnimationTimelineBuilder();
++    public void Add<T>(double start, IAnimationSource<T> source,
++        AnimationChannel<T> channel, AnimationFillMode fill = AnimationFillMode.Hold);
++    public void AddTimeline(double start, AnimationTimeline timeline);
++    public void AddEvent(double time, string name, string? payload = null);
++    // 登録順を保持し、定義を検証・コピーする。全体に正の長さを要求する。
++    public AnimationTimeline Build();
++}
++
++public sealed class AnimationOutput
++{
++    public AnimationOutput();
++    public void Clear();
++    // 値を取得するだけで対象へ適用しない。未出力は false。
++    public bool TryGet<T>(AnimationChannel<T> channel, out T value);
++}
++
++public readonly record struct AnimationEvent(double Time, string Name, string? Payload);
++public readonly record struct AnimationEventOccurrence(
++    AnimationEvent Event, long LoopIndex, double UpdateOffsetSeconds);
++
++public sealed class AnimationPlayback
++{
++    public AnimationPlayback(AnimationTimeline timeline,
++        AnimationWrapMode wrapMode = AnimationWrapMode.Once);
++    public AnimationPlaybackState State { get; }
++    public double Time { get; }
++    // 有限かつ 0 以上。既定は 1。
++    public double Speed { get; set; }
++    public void Play();
++    public void Pause();
++    public void Stop();
++    public void Seek(double time);
++    public void Cancel();
++    // 結果・通過イベントを追記。この更新で完了したときだけ true。
++    public bool Update(double deltaSeconds, AnimationOutput output,
++        ICollection<AnimationEventOccurrence> events);
++}
++
++public sealed record AnimationState(AnimationTimeline Timeline, AnimationWrapMode WrapMode);
++public sealed record AnimationTransition(string From, string Trigger, string To);
++
++public sealed class AnimationController
++{
++    // 定義を検証・コピーし、初期状態の再生を開始する。
++    public AnimationController(string initialState,
++        IReadOnlyDictionary<string, AnimationState> states,
++        IReadOnlyList<AnimationTransition> transitions);
++    public string CurrentState { get; }
++    public void Trigger(string trigger);
++    // キュー順で遷移を処理してから現在状態を評価する。
++    public void Update(double deltaSeconds, AnimationOutput output,
++        ICollection<AnimationEventOccurrence> events);
++}
+```
 
-AnimationWrapMode は Once／Loop、AnimationFillMode は Hold／Release、AnimationPlaybackState は Stopped／Playing／Paused／Completed／Cancelled とする。AnimationTimeline は `double Duration` を公開する。ビルダーの不正時刻・非有限値は ArgumentOutOfRangeException、未登録状態・重複遷移・長さ 0 の定義は ArgumentException、必須の null は ArgumentNullException とし、Build／Controller 作成時に検出する。
+カーブは端のキーの値を保持する。Tween は明示した始値と終値を使用する。チャネルの対象との対応は消費側が保持する。Build 後の Builder の変更は生成済み定義に影響しない。Playback は初期状態 Stopped、時刻 0 とし、Controller は初期状態の Playback を Playing にする。
+
+ビルダーの不正時刻・非有限値は ArgumentOutOfRangeException、未登録状態・重複遷移・長さ 0 の定義は ArgumentException、必須の null は ArgumentNullException とし、Build／Controller 作成時に検出する。Seek は `[0, timeline.Duration]` を要求する。
 
 出力は再利用可能な型付き格納領域とし、object への毎更新のボックス化を避ける実装を目標とする。出力は一更新に一スレッドが操作し、読み取りと対象への適用は評価完了後に行う。独自ソースの例外時はその更新の出力を適用せず、統合層がエラーを扱う。更新前の内部状態への自動ロールバックは保証しない。
 
 ### 利用例と更新順序
 
-UI パネルの表示は「時刻 0 から位置を 0.2 秒で移動」「時刻 0 から透明度を 0.2 秒で変化」「時刻 0.2 からボタンを 0.1 秒でフェード」というタイムラインで表す。`Open` トリガーが表示状態を選び、`Close` が非表示状態を選ぶ。プレイヤーのボーン制御では、`Walk` トリガーが歩行タイムラインを選び、その項目がボーンを動かす位置・回転・重みのチャネルへ値を出力する。消費側のボーンプロジェクトが結果を読み、所有するボーン構造へ適用する。
+以下は設計 API の利用例であり、現時点で実装・実行済みのサンプルではない。型名・using・呼び出しは上記の公開 API に対応する。
+
+#### 値を単独で計算する
+
+タイムラインや適用先を作らず、指定した時刻の値だけを取得できる。
+
+```csharp
+using Lumyte.Animation;
+
+var opacity = new Tween<float>(
+    0f, 1f, 0.2, AnimationInterpolators.Float, AnimationEasing.Linear);
+float halfway = opacity.Sample(0.1); // 0.5。UI への適用は行わない。
+```
+
+#### UI 用のタイムラインと状態機械
+
+位置と透明度を並列に変化させ、その後ボタンをフェードさせる。Closed と Opening をトリガーで切り替える。各状態で同じチャネルを使い、対象との対応は消費側が保持する。
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Lumyte.Animation;
+
+var position = AnimationChannel<Vector2>.Create();
+var opacity = AnimationChannel<float>.Create();
+var buttonOpacity = AnimationChannel<float>.Create();
+
+var openingBuilder = new AnimationTimelineBuilder();
+openingBuilder.Add(0, new Tween<Vector2>(
+    new Vector2(0, -40), Vector2.Zero, 0.2,
+    AnimationInterpolators.Vector2, AnimationEasing.EaseOut), position);
+openingBuilder.Add(0, new Tween<float>(
+    0f, 1f, 0.2, AnimationInterpolators.Float, AnimationEasing.Linear), opacity);
+openingBuilder.Add(0.2, new Tween<float>(
+    0f, 1f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear), buttonOpacity);
+openingBuilder.AddEvent(0.3, "PanelOpened");
+
+var closedBuilder = new AnimationTimelineBuilder();
+closedBuilder.Add(0, new Tween<Vector2>(
+    new Vector2(0, -40), new Vector2(0, -40), 0.1,
+    AnimationInterpolators.Vector2, AnimationEasing.Linear), position);
+closedBuilder.Add(0, new Tween<float>(
+    0f, 0f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear), opacity);
+closedBuilder.Add(0, new Tween<float>(
+    0f, 0f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear), buttonOpacity);
+
+var controller = new AnimationController(
+    "Closed",
+    new Dictionary<string, AnimationState>
+    {
+        ["Closed"] = new(closedBuilder.Build(), AnimationWrapMode.Once),
+        ["Opening"] = new(openingBuilder.Build(), AnimationWrapMode.Once),
+    },
+    new[]
+    {
+        new AnimationTransition("Closed", "Open", "Opening"),
+        new AnimationTransition("Opening", "Close", "Closed"),
+    });
+var output = new AnimationOutput();
+var events = new List<AnimationEventOccurrence>();
+controller.Trigger("Open");
+
+// 消費側の更新関数。適用用 Action は消費側だけが保持する。
+void UpdateUi(double uiDeltaSeconds, Action<Vector2> setPosition,
+    Action<float> setOpacity, Action<float> setButtonOpacity,
+    Action<AnimationEventOccurrence> dispatch)
+{
+    output.Clear();
+    events.Clear();
+    controller.Update(uiDeltaSeconds, output, events);
+
+    if (output.TryGet(position, out var p)) setPosition(p);
+    if (output.TryGet(opacity, out var a)) setOpacity(a);
+    if (output.TryGet(buttonOpacity, out var b)) setButtonOpacity(b);
+    foreach (var occurrence in events) dispatch(occurrence);
+}
+```
+
+消費側が各フレームで UpdateUi に UI 時計の時間差を渡す。Close は即時に Closed へ切り替える例とする。途中の現在値から滑らかに閉じる場合は消費側が現在値を読み、明示的な始値で閉じる Tween を作る。
+
+#### ボーンの消費側で結果を適用する
+
+汎用カーブから回転を計算し、ボーンを所有するプロジェクトへ渡す。Animation の公開 API にボーン型や setter は追加しない。
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Lumyte.Animation;
+
+var rotation = AnimationChannel<Quaternion>.Create();
+var curve = new AnimationCurve<Quaternion>(1.0, new[]
+{
+    new AnimationKey<Quaternion>(0, Quaternion.Identity),
+    new AnimationKey<Quaternion>(0.5,
+        Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 4)),
+    new AnimationKey<Quaternion>(1.0, Quaternion.Identity),
+}, AnimationInterpolators.Quaternion);
+var builder = new AnimationTimelineBuilder();
+builder.Add(0, curve, rotation);
+var playback = new AnimationPlayback(builder.Build(), AnimationWrapMode.Loop);
+var output = new AnimationOutput();
+var events = new List<AnimationEventOccurrence>();
+playback.Play();
+
+// ボーンプロジェクトが所有する適用処理を、この消費側関数へ渡す。
+void UpdateBone(double simulationDeltaSeconds, Action<Quaternion> applyRotation)
+{
+    output.Clear();
+    events.Clear();
+    playback.Update(simulationDeltaSeconds, output, events);
+    if (output.TryGet(rotation, out var value)) applyRotation(value);
+}
+```
 
 利用全体の更新順序は、入力と条件判定、トリガー処理、時計の前進、値評価と競合解決、消費側による値取得・適用、消費側によるイベント配送とする。Animation の Update は計算結果とイベントを出力した時点で終了し、適用や配送を呼び出さない。
 
