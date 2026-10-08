@@ -168,6 +168,10 @@ public static partial class Compose
 生成される公開入口の宣言は次の形になる。デリゲートを接続する非公開の構築処理とインデクサの本体は省略する。
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using Lumyte.Composition;
+
 namespace Example;
 
 public static partial class Compose
