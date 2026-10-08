@@ -1,69 +1,89 @@
-# ADR-ANIMATION-0001: 時間による値の変化と実行タイミングを制御するアニメーション基盤
+# ADR-ANIMATION-0001: 単調時計とタイムラインによる汎用値の計算
 
 - 状態: 提案
 - 日付: 2026-10-08
 
 ## 背景
 
-Lumyte は C# を中心とするゲームエンジンで、Windows、Linux、Browser と複数の描画バックエンドを対象とする。現時点ではアニメーション、シーン、アセットの実装や契約は存在しない。描画 API に依存せず検証できるアニメーションの評価契約を先に定め、後続のエンジン統合と描画実装の境界を明確にする必要がある。
+Lumyte のアニメーションシステムは、ボーン制御から UI の位置・サイズ・色・透明度まで、時間によって値が変わる事象と、その変化の実行タイミングを扱う。値を対象へ適用する責務は消費側にある。ボーン関連のデータ構造とボーンへの適用も別の消費側プロジェクトが管理する。
 
-アニメーションシステムは、ボーン制御から UI の位置・サイズ・色・透明度まで、時間によって値が変わる事象と、いつどの変化を起こすかの両方を扱う。代表的な用途は、待機から歩行への切り替え、上半身の動作の重ね合わせ、パネルを表示した後のボタンのフェード、入力に応じた選択状態の変化、複数の演出の同期である。スケルタルアニメーションはこの基盤の利用領域の一つとする。既存コードの移行は発生しない。
+旧ライブラリの [Lumyte.Animation](https://github.com/ikihiki/Lumyte_old/tree/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/interaction/Lumyte.Animation) は単調時計、型付き時間、汎用チャネルとタイムラインを備える。その時間管理を参考にし、現在の計算と適用を分ける責務に合わせて公開契約を定める。
+
+今回の PR は値評価と再生・タイムラインの設計を対象とする。状態機械の設計・実装・Composition 定義は別 PR に分離し、今回の公開 API と利用例には含めない。
 
 ## 決定
 
-型付きの値評価、実行タイミングと再生状態の制御、対象への適用を分離する。共通基盤がカーブ・Tween・タイムライン・トリガーによる状態遷移を扱い、ボーンと UI はそれぞれのアダプターで評価結果を利用する。アプリケーションは入力や条件判定をトリガーとして渡し、アニメーション側が定義に従って再生する変化と時刻を決定する。Lumyte.Animation の責務は汎用の値計算と実行制御までとする。ボーン関連のデータ構造は別の消費側プロジェクトが所有し、ボーンや UI への値の適用も消費側で行う。
+不変の値ソース・タイムラインと、時計に基づく可変の再生状態を分離する。カーブ、Tween、遅延、順次・並列実行、有限回の Repeat、Reverse、ループとイベント収集を提供する。計算結果とイベントの出力までを Animation の責務とし、対象の参照・setter・適用処理を保持しない。
 
-### 適用範囲と依存方向
+### 配置と依存方向
 
-実装時の配置は [ADR-0002](../0002-repository-layout.md) の分類ルールに従う `src/Animation/Lumyte.Animation/`、名前空間と NuGet パッケージ名は `Lumyte.Animation` とする。設定型の構築には既存の Lumyte.Composition を使用する。今回の変更ではプロジェクトを作成しない。
+[ADR-0002](../0002-repository-layout.md) に従い、プロジェクト・NuGet 名を `Lumyte.Animation`、配置を `src/Animation/Lumyte.Animation/` とする。今回の変更では実装プロジェクトを作成しない。
+
+- `Lumyte.Animation → Lumyte.Core.Time` の時間契約と `Lumyte.Composition` を参照する。実際の時間型の配置は `Lumyte.Core` とし、名前空間を `Lumyte.Core.Time` とする。
+- 既存の `Lumyte.Composition.Generators` をビルド時の Analyzer として使い、生成済み構築 API を公開する。別の Composition 連携プロジェクトや Generator は設けない。
+- Animation はボーンのプロジェクト、シーン、ECS、UI、Graphics、OS、Native に依存しない。基本数値型は System.Numerics を使用する。
+- 消費側が時計、対象とチャネルの対応、値の適用、イベント配送を所有する。ボーン固有の構造・ポーズ合成・ルートモーションは消費側の責務とする。
 
 ```text
-入力・ゲームの条件判定 → トリガー
-                           ↓
-                  再生制御・タイムライン
-                           ↓
-                    型付きの値評価
-                           ↓
-                   出力バッチ・イベント
-                           ↓
-         消費側プロジェクト（ここから適用）
-                           ↓
-                 物理・レイアウト・描画
+消費側が選択した単調時計
+          ↓
+再生状態 → タイムライン → 型付き値の評価
+                              ↓
+                      Output とイベント
+                              ↓
+                  消費側で取得・適用・配送
 ```
 
-- `Lumyte.Animation` はボーンのデータ構造を管理するプロジェクト、シーン、ECS、UI フレームワーク、描画、OS、Native ライブラリに依存しない。基本数値型は `System.Numerics` を使用する。
-- 共通基盤は値評価、遅延、順次・並列実行、ループ、一時停止、Seek、中断、トリガーによる状態遷移、イベント収集を所有する。
-- Engine と UI の統合層は時計の選択、対象とチャネルの対応、評価結果の適用、イベント配送を所有する。Animation から各統合層への依存を作らない。
-- ボーン関連の型、スケルトン、ポーズ、ボーンマスク、ボーン固有の合成とルートモーションは消費側プロジェクトが管理する。Animation はそれらの型や意味を認識せず、必要な時刻、重み、位置、回転などの汎用値を返す。
-- このプロジェクトは対象オブジェクトへの参照、プロパティ setter、適用アダプターを保持しない。消費側が必要な型付き値を取得し、自身のデータ構造へ適用する。グラフの編集 UI・保存形式は後続判断とする。
+### 時間管理
 
-### 共通の値評価と出力
+旧ライブラリの `IMonotonicClock`、`Duration`、`TimePoint` を時間管理の基準とする。実行時に double 秒の差分を毎更新で加算する方式は使用しない。
 
-`IAnimationSource<T>` はローカル時刻から T の値を返す純粋な評価契約とする。キーフレームカーブと Tween は同じ契約を実装する。`float`、`Vector2`、`Vector3`、`Vector4`、`Quaternion` の補間を標準提供し、色は統合層が定める色空間の Vector4 として扱う。離散値は Step 補間で切り替え、独自型は `IAnimationInterpolator<T>` で拡張する。型の異なる値を暗黙に変換しない。
+| 型・機能 | 契約 |
+| --- | --- |
+| `IMonotonicClock.Now` | カレンダー時刻と無関係で、逆行しない TimePoint |
+| `Duration` | 符号付きの時間幅。TimeSpan と同じ 100 ns 単位の long Ticks を保持する |
+| `TimePoint` | 時計上の時点。時点の差は Duration、時点に Duration を加えると TimePoint |
+| `SystemMonotonicClock` | Stopwatch に基づく時計。壁時計の変更に影響されない |
+| `ManualClock` | Advance により非負の Duration だけ進めるテスト・シミュレーション用時計 |
 
-Tween の始値と終値は明示的に与える。現在値から開始したい場合は、統合層が開始前に値を読み、始値を固定する。評価中に UI やシーンの値を読み取らず、同じ時刻と入力で同じ値を得られるようにする。補間とイージングは区別し、イージングで正規化時間を変換してから型ごとの補間を行う。標準イージングは `[0, 1]` を保ち、端点は厳密に 0／1 とする。
+これらの Core 時間型は現在のリポジトリでは未実装であり、Animation 実装の前提となる。旧ソースを参照した共通契約として導入し、Animation 独自の時間型は作らない。Duration は一般の時間幅として負値も表せるが、アニメーションの長さ・開始時刻・Seek の位置は非負に制限する。秒からの変換、加減算、時間倍率、Repeat の長さ計算は範囲を検証し、オーバーフローを検出する。
 
-出力先は型付きの `AnimationChannel<T>` で識別する。チャネルは計算結果を区別する不透明な識別子である。対象オブジェクトやプロパティとの対応は消費側だけが保持し、Animation はその対応を参照しない。評価は `AnimationOutput` へ結果を書き、適用は別段階とする。UI の位置・透明度とボーン制御で使用する位置・回転・重みなどを同じタイムラインに配置できる。ボーン構造を表す専用型を Animation に追加する必要はない。消費側が独自型の純粋な値ソースを提供する場合も、その型の所有権と意味は消費側にある。
+再生者は時計をコンストラクターで受け取り、Update が一度だけ Now を読む。再生位置は、基準位置と基準時点からの経過時間を使って `anchorPosition + (now - anchorClock) * speed` として求める。毎更新の丸め誤差を累積させない。補間率とイージングの計算時だけ浮動小数点に変換する。
 
-### 実行タイミングと再生制御
+Pause は停止時の位置を固定し、Resume は再開時点を新しい基準にする。Seek と Speed の変更も、その操作時点の位置を基準として更新する。操作は値の適用やイベント配送を行わず、次の Update が結果を出力する。ゲーム用の ManualClock と UI 用の SystemMonotonicClock など、時計の選択は消費側が行う。一時停止によるゲーム時計の停止は UI の再生に影響しない。
 
-`AnimationTimeline` は開始時刻、値ソース、出力チャネル、終端時の扱いを持つ不変の項目集合とする。開始時刻によって遅延を、前項目の終了時刻への配置によって順次実行を、同じ開始時刻への配置によって並列実行を表す。ネストしたタイムラインは Build 時に時刻を合成して平坦化する。長さは最後の項目またはイベントの終了時刻で決め、全体に正の長さを要求する。
+### 値評価とチャネル
 
-開始前の項目は値を出力しない。`Hold` は終了以降も終値を出力し、`Release` は終端到達の更新で終値を一度出力した後にチャネルを解放する。大きな時間差で開始と終了を飛び越しても終値を評価する。解放は以後その項目が出力に寄与しないことだけを意味する。消費側が値を保持するか元値へ戻すかは消費側の契約であり、Animation は復元を行わない。Seek は通過イベントや途中の項目の終了通知を発生させず、移動先で有効な値だけを再評価する。
+`IAnimationSource<T>` は `[Duration.Zero, Duration]` の時刻から T を返す純粋な値ソースとする。キーフレームカーブと Tween は同じ契約を実装する。カーブのキーは最低一つ、時刻は厳密に昇順で長さの範囲内とし、端のキー以前・以後は端の値を保持する。
 
-同一タイムライン内の同じチャネルに複数の項目が寄与する場合は、後から登録した項目を優先する。複数の再生者の出力を一つの AnimationOutput に集める場合も、更新順で後の寄与を優先する。更新順は統合層が固定する。ブレンドが必要な値は明示的なブレンドソースで一つの値へ合成してから出力し、UI に意図しない加算を適用しない。
+標準補間は float、Vector2／3／4 の Lerp、Quaternion の最短経路の Slerp と正規化、離散値の Step とする。独自型は `IAnimationInterpolator<T>` で拡張する。Tween の始値・終値は明示的に渡し、現在値を使いたい場合は消費側が先に取得する。イージングは補間率を変換し、標準では `[0, 1]` と端点を保持する。
 
-`AnimationController` は状態名とタイムライン・ループ設定、現在状態とトリガー名から次状態への遷移を保持する。条件判定は入力・ゲーム側で行い、Trigger を送る。制御層は次の Update の開始時にキュー順でトリガーを処理し、遷移先の再生を時刻 0 から開始する。対応する遷移がないトリガーは消費して無視し、同じ状態・トリガーの重複登録は拒否する。トリガー列は有限とし、イベントからの新しいトリガーは配送後の次更新で処理する。評価中に再帰的に遷移しない。
+`AnimationChannel<T>` は出力を区別する不透明な識別子とし、対象・プロパティとの対応は消費側だけが保持する。AnimationOutput は型付き結果を格納し、TryGet で取得する。異なる T は暗黙変換しない。複数の再生結果を同じ Output に集める場合、後に評価した寄与を優先する。各更新前の Clear と評価順は消費側が制御する。
 
-中断は現在の再生を Cancel して新しい再生を開始する。中断時に消費側の値を変更しない。新しい変化の始値が必要なら消費側がその値を明示的に取得する。クロスフェードの時間依存の重みは汎用カーブで計算でき、ポーズの合成はボーンを所有するプロジェクトで行う。汎用コントローラーの状態遷移は即時切り替えとし、滑らかな値の変化は明示した Tween で構成し、結果の適用は消費側が行う。
+### タイムライン、Repeat、Reverse
 
-### 共通の公開 API
+AnimationTimeline は値項目とマーカーの不変定義とし、Builder と Composition の両方で構築できる。子を同じ開始時刻へ置くと並列、直前の子の終了時刻へ置くと順次実行になる。ネストは登録順を保持して評価する。
 
-以下は追加する公開 API の設計差分であり、実装本体を省略した C# 宣言を示す。すべて新規 API のため追加行として記載する。補間器、値ソース、タイムラインは不変とし、独自実装にも純粋な評価を要求する。
+開始前の値項目は出力しない。Hold は終了後も終値を出力し、Release は終端へ到達した更新で終値を一度出力した後に寄与を停止する。大きな時計差で項目を飛び越しても終値を出力する。解放は対象の元値への復元を意味しない。Seek は移動先の有効な値だけを再評価し、通過したマーカーを収集しない。同じチャネルの項目が重なる場合は後の登録を優先する。
+
+| 演算 | 長さと時刻の規則 |
+| --- | --- |
+| `Repeat(count)` | 正の回数だけ子全体を繰り返す。長さは `checked(child.Duration.Ticks * count)`。途中の周境界は次周の時刻 0、最終終端だけは子の終端を評価する |
+| `Reverse()` | 子の長さを保持し、区間内の時刻 t を `child.Duration - t` へ写像する。速度を負にせず、単調時計を逆行させない |
+| 再生の Loop | タイムライン全体を無期限に繰り返す。有限長を構成する Repeat と区別する |
+
+Repeat は登録数を count 倍に複製せず、子と回数を保持する。周をまたぐ際、前周の Hold が次周の待機区間へ漏れないよう、子の評価状態を周ごとに扱う。Reverse は子の元時刻で有効な値を評価するため、子の終了後の Hold は反転後の先頭側に現れる。子に Release がある場合は逆向きに区間を離れる更新でも最後の値を一度出力し、その後寄与を停止する。イベントは値評価と独立して反転後の前進区間から収集する。
+
+Reverse のマーカー時刻は `child.Duration - marker.Time` とする。Repeat では各周の開始時刻を加える。同じ変換後時刻のマーカーは構造上の登録順を保持する。周境界では前周の終端マーカーを先に、次周の 0 のマーカーを後に出す。有限 Repeat の最終終端には存在しない次周の 0 を出さない。Repeat／Reverse をネストしても最終的な再生時刻順で収集する。
+
+### 公開 API の追加差分
+
+以下は実装本体を省略した設計宣言とする。今回の範囲に状態機械の API は含めない。
 
 ```diff
 +using System.Collections.Generic;
 +using System.Numerics;
++using Lumyte.Core.Time;
 +
 +namespace Lumyte.Animation;
 +
@@ -72,21 +92,16 @@ Tween の始値と終値は明示的に与える。現在値から開始した�
 +public enum AnimationPlaybackState { Stopped, Playing, Paused, Completed, Cancelled }
 +public enum AnimationEasing { Linear, EaseIn, EaseOut, EaseInOut }
 +
-+// 正の Duration と [0, Duration] の純粋な値評価。対象への副作用を持たない。
 +public interface IAnimationSource<T>
 +{
-+    double Duration { get; }
-+    T Sample(double time);
++    Duration Duration { get; }
++    T Sample(Duration time);
 +}
-+
-+public readonly record struct AnimationKey<T>(double Time, T Value);
-+
++public readonly record struct AnimationKey<T>(Duration Time, T Value);
 +public interface IAnimationInterpolator<T>
 +{
 +    T Interpolate(T from, T to, float amount);
 +}
-+
-+// 標準数値型の補間。回転は最短経路の Slerp、離散値は Step を使う。
 +public static class AnimationInterpolators
 +{
 +    public static IAnimationInterpolator<float> Float { get; }
@@ -96,263 +111,104 @@ Tween の始値と終値は明示的に与える。現在値から開始した�
 +    public static IAnimationInterpolator<Quaternion> Quaternion { get; }
 +    public static IAnimationInterpolator<T> Step<T>();
 +}
-+
 +public sealed class AnimationCurve<T> : IAnimationSource<T>
 +{
-+    // キーを検証・コピーする。最低一つのキー、厳密な時刻昇順を要求する。
-+    public AnimationCurve(double duration, IReadOnlyList<AnimationKey<T>> keys,
++    public AnimationCurve(Duration duration, IReadOnlyList<AnimationKey<T>> keys,
 +        IAnimationInterpolator<T> interpolator);
-+    public double Duration { get; }
-+    public T Sample(double time);
++    public Duration Duration { get; }
++    public T Sample(Duration time);
 +}
-+
 +public sealed class Tween<T> : IAnimationSource<T>
 +{
-+    public Tween(T from, T to, double duration,
++    public Tween(T from, T to, Duration duration,
 +        IAnimationInterpolator<T> interpolator, AnimationEasing easing);
-+    public double Duration { get; }
-+    public T Sample(double time);
++    public Duration Duration { get; }
++    public T Sample(Duration time);
 +}
-+
-+// 対象への参照や setter を保持しない、型付きの不透明な識別子。
 +public sealed class AnimationChannel<T>
 +{
 +    private AnimationChannel();
 +    public static AnimationChannel<T> Create();
 +}
-+
 +public sealed class AnimationTimeline
 +{
-+    // Builder のみが生成する不変定義。
 +    internal AnimationTimeline();
-+    public double Duration { get; }
++    public Duration Duration { get; }
++    public AnimationTimeline Repeat(int count);
++    public AnimationTimeline Reverse();
 +}
-+
 +public sealed class AnimationTimelineBuilder
 +{
 +    public AnimationTimelineBuilder();
-+    public void Add<T>(double start, IAnimationSource<T> source,
++    public void Add<T>(Duration start, IAnimationSource<T> source,
 +        AnimationChannel<T> channel, AnimationFillMode fill = AnimationFillMode.Hold);
-+    public void AddTimeline(double start, AnimationTimeline timeline);
-+    public void AddEvent(double time, string name, string? payload = null);
-+    // 登録順を保持し、定義を検証・コピーする。全体に正の長さを要求する。
++    public void AddTimeline(Duration start, AnimationTimeline timeline);
++    public void AddEvent(Duration time, string name, string? payload = null);
++    public void SetDuration(Duration duration);
 +    public AnimationTimeline Build();
 +}
-+
 +public sealed class AnimationOutput
 +{
 +    public AnimationOutput();
 +    public void Clear();
-+    // 値を取得するだけで対象へ適用しない。未出力は false。
 +    public bool TryGet<T>(AnimationChannel<T> channel, out T value);
 +}
-+
-+public readonly record struct AnimationEvent(double Time, string Name, string? Payload);
++public readonly record struct AnimationEvent(Duration Time, string Name, string? Payload);
 +public readonly record struct AnimationEventOccurrence(
-+    AnimationEvent Event, long LoopIndex, double UpdateOffsetSeconds);
-+
++    AnimationEvent Event, long LoopIndex, Duration UpdateOffset);
 +public sealed class AnimationPlayback
 +{
-+    public AnimationPlayback(AnimationTimeline timeline,
++    public AnimationPlayback(IMonotonicClock clock, AnimationTimeline timeline,
 +        AnimationWrapMode wrapMode = AnimationWrapMode.Once);
 +    public AnimationPlaybackState State { get; }
-+    public double Time { get; }
-+    // 有限かつ 0 以上。既定は 1。
++    public Duration Position { get; }
++    // 有限かつ 0 以上、既定 1。変更時に現在位置を維持する。
 +    public double Speed { get; set; }
 +    public void Play();
 +    public void Pause();
++    public void Resume();
 +    public void Stop();
-+    public void Seek(double time);
++    public void Seek(Duration position);
 +    public void Cancel();
-+    // 結果・通過イベントを追記。この更新で完了したときだけ true。
-+    public bool Update(double deltaSeconds, AnimationOutput output,
-+        ICollection<AnimationEventOccurrence> events);
-+}
-+
-+public sealed record AnimationState(AnimationTimeline Timeline, AnimationWrapMode WrapMode);
-+public sealed record AnimationTransition(string From, string Trigger, string To);
-+
-+public sealed class AnimationController
-+{
-+    // 定義を検証・コピーし、初期状態の再生を開始する。
-+    public AnimationController(string initialState,
-+        IReadOnlyDictionary<string, AnimationState> states,
-+        IReadOnlyList<AnimationTransition> transitions);
-+    public string CurrentState { get; }
-+    public void Trigger(string trigger);
-+    // キュー順で遷移を処理してから現在状態を評価する。
-+    public void Update(double deltaSeconds, AnimationOutput output,
-+        ICollection<AnimationEventOccurrence> events);
++    // 単調時計を一度読み、結果を追記する。今回完了した場合だけ true。
++    public bool Update(AnimationOutput output, ICollection<AnimationEventOccurrence> events);
 +}
 ```
 
-カーブは端のキーの値を保持する。Tween は明示した始値と終値を使用する。チャネルの対象との対応は消費側が保持する。Build 後の Builder の変更は生成済み定義に影響しない。Playback は初期状態 Stopped、時刻 0 とし、Controller は初期状態の Playback を Playing にする。
+SetDuration は正の長さを指定する。項目・イベントの最大終了時刻より短い明示長は Build 時に拒否する。未指定なら最大終了時刻で決める。値ソースと最終タイムラインは正の長さを要求し、Delay だけで長さを持つタイムラインも許容する。
 
-ビルダーの不正時刻・非有限値は ArgumentOutOfRangeException、未登録状態・重複遷移・長さ 0 の定義は ArgumentException、必須の null は ArgumentNullException とし、Build／Controller 作成時に検出する。Seek は `[0, timeline.Duration]` を要求する。
+### 再生状態とイベント
 
-出力は再利用可能な型付き格納領域とし、object への毎更新のボックス化を避ける実装を目標とする。出力は一更新に一スレッドが操作し、読み取りと対象への適用は評価完了後に行う。独自ソースの例外時はその更新の出力を適用せず、統合層がエラーを扱う。更新前の内部状態への自動ロールバックは保証しない。
+- 初期状態は Stopped、位置は 0。Play は開始し、Playing では何もしない。Paused では Resume と同じ動作、Completed／Cancelled では 0 から再開する。
+- Pause は Playing だけを停止する。Resume は Paused だけを再開する。Stop はどの状態からも Stopped にして位置を 0 に戻し、Cancel は位置を保持して Cancelled にする。いずれも対象の値を変更しない。
+- Stopped／Cancelled の Update は出力しない。Paused は停止位置の有効な値を、Completed は Hold 項目だけを評価する。時計が進まない場合はイベントを再収集しない。Once の終端更新だけが完了を返す。
+- Loop は折り返し前の累積位置を内部で保持する。Position は `[0, Duration)`、Seek(Duration) は次周の 0 と同等に扱う。Seek は `[0, Duration]` だけを許容し、イベント収集の基準も更新する。
+- イベントは前回位置から今回位置への `(前回, 今回]` の前進区間で収集する。初回の正の前進と各周の開始では時刻 0 のマーカーを一度収集する。Seek の移動先の始点イベントは収集しない。
+- 複数周を飛び越す更新も全マーカーを収集する。UpdateOffset は前回の評価時点から見た時計上の Duration とし、速度を反映したマーカー通過位置から算出する。LoopIndex は再生全体の外側の周番号であり、有限 Repeat の内部周は構造から区別する。
+- 評価中に消費側のコールバックを呼ばない。events への追記先は再入しないコレクションとし、消費側が全評価後に配送する。
 
-### 利用例と更新順序
+### Lumyte.Composition による構築
 
-以下は設計 API の利用例であり、現時点で実装・実行済みのサンプルではない。型名・using・呼び出しは上記の公開 API に対応する。
+[ADR-COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md) の既存属性と Generator を使う。構築用ノードは Lumyte.Animation に置き、ComposeAnimation のファクトリから生成する。Timeline.Build が設定を検証して不変の実行定義へ変換し、構築だけで Play や値適用を行わない。
 
-#### 値を単独で計算する
-
-タイムラインや適用先を作らず、指定した時刻の値だけを取得できる。
-
-```csharp
-using Lumyte.Animation;
-
-var opacity = new Tween<float>(
-    0f, 1f, 0.2, AnimationInterpolators.Float, AnimationEasing.Linear);
-float halfway = opacity.Sample(0.1); // 0.5。UI への適用は行わない。
-```
-
-#### UI 用のタイムラインと状態機械
-
-位置と透明度を並列に変化させ、その後ボタンをフェードさせる。Closed と Opening をトリガーで切り替える。各状態で同じチャネルを使い、対象との対応は消費側が保持する。
-
-```csharp
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using Lumyte.Animation;
-
-var position = AnimationChannel<Vector2>.Create();
-var opacity = AnimationChannel<float>.Create();
-var buttonOpacity = AnimationChannel<float>.Create();
-
-var openingBuilder = new AnimationTimelineBuilder();
-openingBuilder.Add(0, new Tween<Vector2>(
-    new Vector2(0, -40), Vector2.Zero, 0.2,
-    AnimationInterpolators.Vector2, AnimationEasing.EaseOut), position);
-openingBuilder.Add(0, new Tween<float>(
-    0f, 1f, 0.2, AnimationInterpolators.Float, AnimationEasing.Linear), opacity);
-openingBuilder.Add(0.2, new Tween<float>(
-    0f, 1f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear), buttonOpacity);
-openingBuilder.AddEvent(0.3, "PanelOpened");
-
-var closedBuilder = new AnimationTimelineBuilder();
-closedBuilder.Add(0, new Tween<Vector2>(
-    new Vector2(0, -40), new Vector2(0, -40), 0.1,
-    AnimationInterpolators.Vector2, AnimationEasing.Linear), position);
-closedBuilder.Add(0, new Tween<float>(
-    0f, 0f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear), opacity);
-closedBuilder.Add(0, new Tween<float>(
-    0f, 0f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear), buttonOpacity);
-
-var controller = new AnimationController(
-    "Closed",
-    new Dictionary<string, AnimationState>
-    {
-        ["Closed"] = new(closedBuilder.Build(), AnimationWrapMode.Once),
-        ["Opening"] = new(openingBuilder.Build(), AnimationWrapMode.Once),
-    },
-    new[]
-    {
-        new AnimationTransition("Closed", "Open", "Opening"),
-        new AnimationTransition("Opening", "Close", "Closed"),
-    });
-var output = new AnimationOutput();
-var events = new List<AnimationEventOccurrence>();
-controller.Trigger("Open");
-
-// 消費側の更新関数。適用用 Action は消費側だけが保持する。
-void UpdateUi(double uiDeltaSeconds, Action<Vector2> setPosition,
-    Action<float> setOpacity, Action<float> setButtonOpacity,
-    Action<AnimationEventOccurrence> dispatch)
-{
-    output.Clear();
-    events.Clear();
-    controller.Update(uiDeltaSeconds, output, events);
-
-    if (output.TryGet(position, out var p)) setPosition(p);
-    if (output.TryGet(opacity, out var a)) setOpacity(a);
-    if (output.TryGet(buttonOpacity, out var b)) setButtonOpacity(b);
-    foreach (var occurrence in events) dispatch(occurrence);
-}
-```
-
-消費側が各フレームで UpdateUi に UI 時計の時間差を渡す。Close は即時に Closed へ切り替える例とする。途中の現在値から滑らかに閉じる場合は消費側が現在値を読み、明示的な始値で閉じる Tween を作る。
-
-#### ボーンの消費側で結果を適用する
-
-汎用カーブから回転を計算し、ボーンを所有するプロジェクトへ渡す。Animation の公開 API にボーン型や setter は追加しない。
-
-```csharp
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using Lumyte.Animation;
-
-var rotation = AnimationChannel<Quaternion>.Create();
-var curve = new AnimationCurve<Quaternion>(1.0, new[]
-{
-    new AnimationKey<Quaternion>(0, Quaternion.Identity),
-    new AnimationKey<Quaternion>(0.5,
-        Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 4)),
-    new AnimationKey<Quaternion>(1.0, Quaternion.Identity),
-}, AnimationInterpolators.Quaternion);
-var builder = new AnimationTimelineBuilder();
-builder.Add(0, curve, rotation);
-var playback = new AnimationPlayback(builder.Build(), AnimationWrapMode.Loop);
-var output = new AnimationOutput();
-var events = new List<AnimationEventOccurrence>();
-playback.Play();
-
-// ボーンプロジェクトが所有する適用処理を、この消費側関数へ渡す。
-void UpdateBone(double simulationDeltaSeconds, Action<Quaternion> applyRotation)
-{
-    output.Clear();
-    events.Clear();
-    playback.Update(simulationDeltaSeconds, output, events);
-    if (output.TryGet(rotation, out var value)) applyRotation(value);
-}
-```
-
-利用全体の更新順序は、入力と条件判定、トリガー処理、時計の前進、値評価と競合解決、消費側による値取得・適用、消費側によるイベント配送とする。Animation の Update は計算結果とイベントを出力した時点で終了し、適用や配送を呼び出さない。
-
-### Lumyte.Composition による定義の構築
-
-[ADR-COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md) のファクトリ、子要素インデクサ、名前付きスロットを使い、タイムラインと状態機械の設定を構築できるようにする。設定型は `Lumyte.Animation` に配置し、既存の `Lumyte.Composition` の Composable／ComposeParameter／ComposeContent／ComposeSlot を使用する。今回の変更では実装を追加しない。
-
-依存方向は `Lumyte.Animation → Lumyte.Composition` とする。既存の `Lumyte.Composition.Generators` を Lumyte.Animation のビルド時に Analyzer として参照し、生成されたファクトリとインデクサーを公開する。利用側は Lumyte.Animation の生成済み API を使用し、実行時の Generator 参照を要求しない。Builder／コンストラクター経路も同じ実行定義を作る入口として維持する。
-
-Composition は可変の設定ノードだけを組み立てる。Timeline.Build と StateMachine.Build はノードを検証し、既存の AnimationTimelineBuilder／AnimationController の契約に変換する。Build は再生を更新せず、対象への値適用やイベント配送も行わない。StateMachine.Build の戻り値は既存契約どおり初期状態の再生を開始済みのコントローラーであり、時刻は 0 のままとする。
-
-| 設定ノード | 時刻への変換 |
+| ノード | 構築規則 |
 | --- | --- |
-| Timeline / Parallel | 子を同じ開始時刻へ配置し、長さを子の最大終了時刻とする |
-| Sequence | 登録順に配置し、前の子の長さだけ次の開始時刻を進める |
-| Delay | 有限かつ 0 以上の秒数だけ長さを持ち、値を出力しない |
-| Track&lt;T&gt; | 指定した値ソースを型付きチャネルへ配置し、ソースの Duration を長さとする |
-| Marker | その配置時刻へイベントを登録する。自身の長さは 0 |
-| State | 子を Timeline と同じ並列規則で構築し、名前とループ設定を状態に対応付ける |
-| Transition | 状態名・トリガー名から既存の AnimationTransition を構築する |
+| Timeline / Parallel | 子を並列に置き、最大長を持つ |
+| Sequence | 子を登録順に置き、長さの合計を持つ |
+| Delay | 指定した Duration の長さだけを持ち、出力しない |
+| Track&lt;T&gt; | ソースとチャネルを型付きで登録する |
+| Marker | 配置時刻へイベントを登録し、自身の長さは 0 |
+| Repeat | 子を一つだけ受け取り、そのタイムラインの Repeat(count) を構築する |
+| Reverse | 子を一つだけ受け取り、そのタイムラインの Reverse() を構築する |
 
-ネストは深さ優先・子の登録順で展開する。算出時刻のオーバーフロー・非有限値、参照の循環、null の子、名前の重複、参照先のない遷移は Build 時に拒否する。同じノードを複数の場所で再利用する場合は各配置として展開し、共有参照自体は循環としない。子のないグループは長さ 0 とし、最終タイムラインや各状態の長さには正の値を要求する。Delay だけで終わる定義も長さを保持するよう、Builder に終端指定を追加する。
+Repeat／Reverse の複数の子をまとめたい場合は Sequence／Parallel を一つの子にする。子のないグループは長さ 0 とし、最終定義の正の長さを Build で検証する。負の Delay、Repeat の count が 0 以下、null、循環参照、時刻のオーバーフローは拒否する。同じノードの複数配置は許容し、共有そのものを循環とはしない。
 
-構築用ノードのコレクションは Composition の既存契約に従って参照を保持できる。Build は構造・値・登録順を読み取ってコピーし、再生中にノードを参照しない。Build 後のノード変更は構築済みの定義へ影響せず、再 Build だけに反映される。値ソースは不変の契約に基づいて共有する。構築・Build 中の同時変更は禁止する。
-
-#### 設定ノードの追加 API
-
-以下も実装本体を省略した宣言差分とする。required メンバーには ComposeParameter を付け、生成ファクトリにも必須引数として公開する。通常の子要素は abstract なクラスを基底型とし、Composition の子要素とスロットの混在に対応する。
+ノードの子配列は Composition の契約どおり参照を保持できるが、Build は定義をコピーする。Build 後のノード変更は既存のタイムラインに影響しない。構築中の同時変更は禁止し、不変ソースは共有する。
 
 ```diff
-+// Lumyte.Animation に追加。指定した時刻まで値を出さずに長さだけ延長する。
-+public sealed class AnimationTimelineBuilder
-+{
-+    public void SetDuration(double duration);
-+}
-```
-
-SetDuration は有限かつ正の長さを指定し、項目またはイベントの最大終了時刻より短い値は Build 時に拒否する。未指定は既存の最大終了時刻の計算を使う。
-
-```diff
-+using System;
 +using System.Collections.Generic;
-+using Lumyte.Animation;
 +using Lumyte.Composition;
++using Lumyte.Core.Time;
 +
 +namespace Lumyte.Animation;
 +
@@ -361,7 +217,6 @@ SetDuration は有限かつ正の長さを指定し、項目またはイベン�
 +    public static partial class Definitions
 +    {
 +        public abstract class TimelineItem { }
-+
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class Timeline : TimelineItem
 +        {
@@ -369,28 +224,24 @@ SetDuration は有限かつ正の長さを指定し、項目またはイベン�
 +            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
 +            public AnimationTimeline Build();
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class Sequence : TimelineItem
 +        {
 +            [ComposeContent]
 +            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class Parallel : TimelineItem
 +        {
 +            [ComposeContent]
 +            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class Delay : TimelineItem
 +        {
 +            [ComposeParameter]
-+            public required double Duration { get; init; }
++            public required Duration Duration { get; init; }
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class Track<T> : TimelineItem
 +        {
@@ -401,7 +252,6 @@ SetDuration は有限かつ正の長さを指定し、項目またはイベン�
 +            [ComposeParameter]
 +            public AnimationFillMode Fill { get; init; } = AnimationFillMode.Hold;
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class Marker : TimelineItem
 +        {
@@ -410,53 +260,34 @@ SetDuration は有限かつ正の長さを指定し、項目またはイベン�
 +            [ComposeParameter]
 +            public string? Payload { get; init; }
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
-+        public partial class State
++        public partial class Repeat : TimelineItem
 +        {
 +            [ComposeParameter]
-+            public required string Name { get; init; }
-+            [ComposeParameter]
-+            public AnimationWrapMode WrapMode { get; init; } = AnimationWrapMode.Once;
++            public required int Count { get; init; }
 +            [ComposeContent]
 +            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
 +        }
-+
 +        [Composable(Factory = "ComposeAnimation")]
-+        public partial class Transition
++        public partial class Reverse : TimelineItem
 +        {
-+            [ComposeParameter]
-+            public required string From { get; init; }
-+            [ComposeParameter]
-+            public required string Trigger { get; init; }
-+            [ComposeParameter]
-+            public required string To { get; init; }
-+        }
-+
-+        [Composable(Factory = "ComposeAnimation")]
-+        public partial class StateMachine
-+        {
-+            [ComposeParameter]
-+            public required string InitialState { get; init; }
 +            [ComposeContent]
-+            public IReadOnlyList<State> States { get; set; } = [];
-+            public IReadOnlyList<Transition> TransitionItems { get; private set; } = [];
-+            [ComposeSlot]
-+            private static void Transitions(StateMachine target,
-+                IReadOnlyList<Transition> children);
-+            public AnimationController Build();
++            public IReadOnlyList<TimelineItem> Children { get; set; } = [];
 +        }
 +    }
 +}
 ```
 
-Transitions の宣言本体は受け取った子を TransitionItems に保存する。名前付きスロットはその設定を遅延して適用するだけで、再生を開始しない。StateMachine の通常の子要素を状態、Transitions スロットの子要素を遷移として型で区別する。Timeline／Sequence／Parallel の子として異なる T の Track を混在できるが、各 Track の Channel と Source の T は一致させる。
-
-#### 生成される入口
-
-主な入口の差分は以下とする。State、Delay、Marker、Transition の専用デリゲートも同じ既存規則で生成し、引数順は required 群のメンバー名順とする。例では名前付き引数を使う。
+生成する主な入口を以下に示す。Optional、with、子の置換とインデクサーの契約は既存 Composition の規則に従う。状態機械用のノード・スロットは今回追加しない。
 
 ```diff
++using System;
++using System.Collections.Generic;
++using Lumyte.Composition;
++using Lumyte.Core.Time;
++
++namespace Lumyte.Animation;
++
 +public static partial class ComposeAnimation
 +{
 +    public static Definitions.TimelineFactory Timeline { get; }
@@ -464,220 +295,217 @@ Transitions の宣言本体は受け取った子を TransitionItems に保存す
 +    public static Definitions.ParallelFactory Parallel { get; }
 +    public static Definitions.DelayFactory Delay { get; }
 +    public static Definitions.MarkerFactory Marker { get; }
-+    public static Definitions.StateFactory State { get; }
-+    public static Definitions.TransitionFactory Transition { get; }
-+    public static Definitions.StateMachineFactory StateMachine { get; }
++    public static Definitions.RepeatFactory Repeat { get; }
++    public static Definitions.ReverseFactory Reverse { get; }
 +    public static Definitions.Track<T> Track<T>(AnimationChannel<T> channel,
 +        IAnimationSource<T> source, Optional<AnimationFillMode> fill = default,
 +        IReadOnlyList<Action<Definitions.Track<T>>>? with = null);
 +    public static Definitions.TrackFactory<T> TrackFactory<T>();
-+
 +    public static partial class Definitions
 +    {
 +        public delegate Timeline TimelineFactory(IReadOnlyList<Action<Timeline>>? with = null);
 +        public delegate Sequence SequenceFactory(IReadOnlyList<Action<Sequence>>? with = null);
 +        public delegate Parallel ParallelFactory(IReadOnlyList<Action<Parallel>>? with = null);
-+        public delegate Delay DelayFactory(double duration, IReadOnlyList<Action<Delay>>? with = null);
++        public delegate Delay DelayFactory(Duration duration, IReadOnlyList<Action<Delay>>? with = null);
 +        public delegate Marker MarkerFactory(string name, Optional<string?> payload = default,
 +            IReadOnlyList<Action<Marker>>? with = null);
-+        public delegate State StateFactory(string name, Optional<AnimationWrapMode> wrapMode = default,
-+            IReadOnlyList<Action<State>>? with = null);
-+        public delegate Transition TransitionFactory(string from, string to, string trigger,
-+            IReadOnlyList<Action<Transition>>? with = null);
-+        public delegate StateMachine StateMachineFactory(string initialState,
-+            IReadOnlyList<Action<StateMachine>>? with = null);
++        public delegate Repeat RepeatFactory(int count, IReadOnlyList<Action<Repeat>>? with = null);
++        public delegate Reverse ReverseFactory(IReadOnlyList<Action<Reverse>>? with = null);
 +        public delegate Track<T> TrackFactory<T>(AnimationChannel<T> channel,
 +            IAnimationSource<T> source, Optional<AnimationFillMode> fill = default,
 +            IReadOnlyList<Action<Track<T>>>? with = null);
-+
-+        // 各 partial 型内に生成するインデクサー。
-+        public partial class Timeline
-+        {
-+            public Timeline this[params TimelineItem[] content] { get; }
-+        }
-+        public partial class Sequence
-+        {
-+            public Sequence this[params TimelineItem[] content] { get; }
-+        }
-+        public partial class Parallel
-+        {
-+            public Parallel this[params TimelineItem[] content] { get; }
-+        }
-+        public partial class State
-+        {
-+            public State this[params TimelineItem[] content] { get; }
-+        }
-+        public partial class StateMachine
-+        {
-+            public readonly struct CompositionChild
-+            {
-+                public static implicit operator CompositionChild(State state);
-+                public static implicit operator CompositionChild(
-+                    CompositionSlotAssignment<StateMachine> slot);
-+            }
-+            public StateMachine this[params CompositionChild[] content] { get; }
-+        }
++        public partial class Timeline { public Timeline this[params TimelineItem[] content] { get; } }
++        public partial class Sequence { public Sequence this[params TimelineItem[] content] { get; } }
++        public partial class Parallel { public Parallel this[params TimelineItem[] content] { get; } }
++        public partial class Repeat { public Repeat this[params TimelineItem[] content] { get; } }
++        public partial class Reverse { public Reverse this[params TimelineItem[] content] { get; } }
 +    }
-+}
-+
-+public static class ComposeAnimationStateMachineCompositionExtensions
-+{
-+    public static CompositionSlot<ComposeAnimation.Definitions.StateMachine,
-+        ComposeAnimation.Definitions.Transition> Transitions(
-+        this ComposeAnimation.Definitions.StateMachineFactory factory);
 +}
 ```
 
-ファクトリ名は各 Composable 属性の Factory で明示し、既定の Compose と区別する。StateMachine.CompositionChild には State と CompositionSlotAssignment&lt;StateMachine&gt; からの暗黙変換を既存規則で生成する。生成 API の Optional、with、スロット、配列参照、置換の契約は Composition ADR に従い、Animation 独自の構文や Generator の拡張は追加しない。
+### 利用例
 
-#### ネストしたタイムラインと状態機械の例
+以下は未実装の設計 API に対応する例であり、コンパイル・実行確認済みのサンプルではない。
 
-Sequence と Parallel をネストし、開始時刻を手計算せずに UI の設定を記述する。マーカーは最後のフェードが終わった時刻に配置される。例は未実装 API の利用設計である。
+#### 指定時刻の値だけを計算する
 
 ```csharp
 using Lumyte.Animation;
+using Lumyte.Core.Time;
+
+var opacity = new Tween<float>(0f, 1f, Duration.FromSeconds(0.2),
+    AnimationInterpolators.Float, AnimationEasing.Linear);
+float value = opacity.Sample(Duration.FromSeconds(0.1)); // 0.5。適用は行わない。
+```
+
+#### UI の順次・並列実行と単調時計
+
+パネルのフェードと、遅延後のボタンのフェードを並列に構成する。消費側が時計を進めて評価結果を取得し、自身の setter に適用する。
+
+```csharp
+using System;
+using System.Collections.Generic;
+using Lumyte.Animation;
+using Lumyte.Core.Time;
 using static Lumyte.Animation.ComposeAnimation;
 
 var opacity = AnimationChannel<float>.Create();
 var buttonOpacity = AnimationChannel<float>.Create();
-var fadeIn = new Tween<float>(
-    0f, 1f, 0.2, AnimationInterpolators.Float, AnimationEasing.Linear);
-var fadeButton = new Tween<float>(
-    0f, 1f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear);
-var hidden = new Tween<float>(
-    0f, 0f, 0.1, AnimationInterpolators.Float, AnimationEasing.Linear);
-
 var opening = Timeline()[
     Sequence()[
         Parallel()[
-            Track<float>(channel: opacity, source: fadeIn),
+            Track<float>(channel: opacity, source: new Tween<float>(
+                0f, 1f, Duration.FromSeconds(0.2),
+                AnimationInterpolators.Float, AnimationEasing.Linear)),
             Sequence()[
-                Delay(duration: 0.2),
-                Track<float>(channel: buttonOpacity, source: fadeButton)
+                Delay(duration: Duration.FromSeconds(0.2)),
+                Track<float>(channel: buttonOpacity, source: new Tween<float>(
+                    0f, 1f, Duration.FromSeconds(0.1),
+                    AnimationInterpolators.Float, AnimationEasing.Linear))
             ]
         ],
         Marker(name: "PanelOpened")
     ]
-];
-AnimationTimeline timeline = opening.Build(); // 長さ 0.3 秒。
+].Build();
 
-var definition = StateMachine(initialState: "Closed")[
-    State(name: "Closed")[
-        Track<float>(channel: opacity, source: hidden),
-        Track<float>(channel: buttonOpacity, source: hidden)
-    ],
-    State(name: "Opening")[opening],
-    StateMachine.Transitions()[
-        Transition(from: "Closed", trigger: "Open", to: "Opening"),
-        Transition(from: "Opening", trigger: "Close", to: "Closed")
-    ]
-];
-AnimationController controller = definition.Build();
-controller.Trigger("Open");
-
+var clock = new ManualClock();
+var playback = new AnimationPlayback(clock, opening);
 var output = new AnimationOutput();
-var events = new System.Collections.Generic.List<AnimationEventOccurrence>();
+var events = new List<AnimationEventOccurrence>();
+playback.Play();
+clock.Advance(Duration.FromSeconds(0.25));
 output.Clear();
 events.Clear();
-controller.Update(0.25, output, events);
-output.TryGet(opacity, out var panelValue);       // 1。
+playback.Update(output, events); // deltaSeconds を渡さない。
+output.TryGet(opacity, out var panelValue);        // 1。
 output.TryGet(buttonOpacity, out var buttonValue); // 約 0.5。
-// 消費側が panelValue / buttonValue を対象へ適用する。
+
+// 消費側だけが適用処理を保持する。実際の UI setter を引数として渡す。
+void ApplyUi(Action<float> setPanel, Action<float> setButton)
+{
+    if (output.TryGet(opacity, out var p)) setPanel(p);
+    if (output.TryGet(buttonOpacity, out var b)) setButton(b);
+}
 ```
 
-設定ノード opening を単独タイムラインと状態内の両方で使える。Build 済みの定義は各々独立しており、実行中に設定ノードを参照しない。値の適用は先の UI 利用例と同じ消費側の更新関数で行う。
+実際の UI では SystemMonotonicClock を渡し、各フレームで同じ再生者を一度 Update する。ManualClock はテストやシミュレーションで使う。イベント配送は全評価と適用の後に消費側で行う。
 
-### 共通の時間、状態、イベント
+#### Repeat／Reverse とボーン消費側
 
-- 時計を内部で取得せず、利用側が秒単位の `deltaSeconds >= 0` を渡す。ゲームとボーンはシミュレーション時計、UI はゲームの一時停止に影響されない時計など、統合層が明示的に時計を選ぶ。同じ再生者を複数の更新ループから進めない。描画だけの再評価では時間を進めない。Browser の停止復帰などによる大きな時間差の制限は Engine の方針とする。
-- `Play` は Playing／Paused では現在位置を保ち、Cancelled では 0 から再開する。`Pause` は Playing のみ変更する。`Stop` はどの状態からも停止して時刻を 0 に戻す。
-- Update は Stopped／Cancelled では出力せず、Paused では停止位置の有効項目、Completed では Hold 項目だけを再評価する。時間が進まない更新ではイベントを返さない。`deltaSeconds == 0` は現在位置の値だけを評価する。Once は終端に達した更新だけで完了を通知する。完了後の Play は 0 から再開する。
-- Loop は非負の非折り返し累積時間を保持し、サンプル時刻を `[0, Duration)` に折り返す。イベントは折り返し前の区間を使って収集する。Loop の Seek(Duration) は次周の 0 と同等に扱う。
-- イベントは通過区間 `(前回時刻, 今回時刻]` で配送する。時刻 0 のイベントは停止からの初回の正の前進と各周の開始で一度ずつ配送する。Seek 後の始点イベントは配送しない。
-- ループ境界では前周の Duration のイベント、その後に次周の 0 のイベントを配送する。同一時刻では格納順を保つ。複数周を進む Update も通過した全イベントを返し、暗黙の省略をしない。長時間差では出力量が増えるため、利用側が時間差を制限する。
-- 評価中にゲームコードのコールバックを呼ばない。呼び出し側が渡した追記先は再入しないコレクションとし、消費側が評価終了後に配送する。複数の再生を並行して評価するとき、消費側が配送対象を明示的に選ぶ。
+回転カーブの正方向と逆方向を順次再生し、その全体を 3 回繰り返す。ボーン型を Animation に持ち込まず、消費側に回転を渡す。
 
-### スレッド、環境、性能
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Lumyte.Animation;
+using Lumyte.Core.Time;
+using static Lumyte.Animation.ComposeAnimation;
 
-不変アセットと純粋な値ソースはスレッド間で共有できる。Controller、Playback、AnimationOutput は一更新に一つのスレッドだけが操作する。適用先のスレッド制約は消費側が定める。UI の適用はそのフレームワークが要求するスレッドで実行する。イベント追記先も一更新中に一つのスレッドだけが操作する。異なるキャラクターや UI の独立した再生を並列評価できるが、実行スケジューラーは Engine の責務であり Browser に並列実行を要求しない。同一入力と更新列の再現性を目指す一方、異なる CPU・ランタイム間の浮動小数点のビット一致は保証しない。
+var rotation = AnimationChannel<Quaternion>.Create();
+var curve = new AnimationCurve<Quaternion>(Duration.FromSeconds(1), new[]
+{
+    new AnimationKey<Quaternion>(Duration.Zero, Quaternion.Identity),
+    new AnimationKey<Quaternion>(Duration.FromSeconds(1),
+        Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2)),
+}, AnimationInterpolators.Quaternion);
+var forward = Timeline()[Track<Quaternion>(channel: rotation, source: curve)];
+var repeated = Timeline()[
+    Repeat(count: 3)[
+        Sequence()[forward, Reverse()[forward]]
+    ]
+].Build(); // 2 秒の往復を 3 回、合計 6 秒。
 
-| 環境 | 評価方式 | 制約 |
-| --- | --- | --- |
-| Windows / Linux | Managed CPU 評価 | DirectX／Vulkan の利用可否に依存しない |
-| Browser | 同じ Managed CPU 評価 | 単一スレッドで動作でき、Native と動的コード生成を要求しない |
+// 通常の API でも同じ演算を構成できる。
+AnimationTimeline backwards = forward.Build().Reverse();
+AnimationTimeline threeForwardRuns = forward.Build().Repeat(3);
 
-キーの探索は二分探索を基準とし、不変の値ソースとタイムラインを再生者ごとにコピーしない。出力とイベントの容量は再利用し、内部の一時領域も再利用する。初期化・容量拡張を除く標準数値型の定常更新の Managed 割り当てゼロを検証目標とする。独自型の評価・格納コストは消費側が測定する。性能値は未測定である。
+var simulationClock = new ManualClock();
+var playback = new AnimationPlayback(simulationClock, repeated);
+var output = new AnimationOutput();
+var events = new List<AnimationEventOccurrence>();
+playback.Play();
+simulationClock.Advance(Duration.FromSeconds(1.5));
+output.Clear();
+events.Clear();
+playback.Update(output, events);
 
-### データの所有権とエラー契約
+void ApplyBone(Action<Quaternion> applyRotation)
+{
+    if (output.TryGet(rotation, out var value)) applyRotation(value);
+}
+```
 
-カーブはキーを、タイムラインと状態機械は定義のコレクションをコピーして検証する。値ソースと補間器は不変の契約に基づいて共有する。T が参照型の場合、その不変性と寿命は型を提供する消費側が保証する。Animation は独自型の深いコピーや破棄を行わない。
+UI とボーンに別の時計を渡せば独立して進められる。設定ノード forward の共有は許容するが、Build 後の再生は可変ノードを参照しない。
 
-再生者、コントローラー、出力は呼び出し側が所有する Managed オブジェクトとし、Native ハンドルや Dispose を要求しない。標準補間では有限値を要求し、Quaternion は正規化された非ゼロの値を使用して最短経路の Slerp と正規化を行う。独自型の妥当性は独自のソース・補間器が検証する。
+### 所有権、エラー、性能
 
-負の時間差、NaN、無限大、範囲外の時刻は ArgumentOutOfRangeException、定義の不整合は ArgumentException、必須の null は ArgumentNullException とする。通常の引数エラーは再生状態や出力の変更前に検出する。対象の破棄、対象への適用失敗、ボーンの整合性は消費側が扱う。
+不変定義はスレッド間で共有できる。再生者、出力、イベント追記先は一更新に一つのスレッドが操作し、時計もそのスレッド規約に従う。消費側の適用先のスレッド制約は消費側が定める。異なる CPU 間の浮動小数点のビット一致は保証しない。
+
+カーブと定義コレクションは検証してコピーする。独自 T が参照型の場合、その不変性と寿命は消費側が保証する。深いコピーや独自型の破棄は行わない。再生者と出力は通常の Managed オブジェクトであり、Dispose や Native ハンドルを要求しない。
+
+負の長さ・時刻、0 以下の Repeat 回数、非有限の速度、範囲外の Seek は ArgumentOutOfRangeException、定義の不整合は ArgumentException、必須の null は ArgumentNullException、時間演算のオーバーフローは OverflowException とする。時計の逆行は契約違反として InvalidOperationException で拒否する。通常の引数エラーは状態・出力変更前に検出する。独自ソースの例外時はその更新の結果を消費側が適用しない。内部状態の自動ロールバックは保証しない。
+
+キー探索は二分探索を基準とし、Output とイベントの容量は再利用する。初期化・容量拡張を除く標準数値型の定常更新の Managed 割り当てゼロを検証目標とする。Repeat は有限回の定義を展開してメモリを増やさないが、通過イベントの数は回数に比例する。独自ソースの性能と長い停止後のイベント出力量は消費側も考慮する。
+
+Windows、Linux、Browser で Managed 評価を使用し、単一スレッドでも動作できるようにする。Native、描画バックエンド、実行時リフレクション・動的コード生成を要求しない。環境別の時計・評価性能は未検証である。
 
 ## 検討した代替案
 
-### 描画バックエンド内でクリップを評価する
+### double 秒の時間差を毎更新で渡す
 
-GPU と近い位置で処理できるが、バックエンドごとに再生・イベントの契約が重複する。描画しないサーバーや単体テストにも使える CPU 評価を先に定める。GPU スキニング自体はこの判断で禁止しない。
+時計の差し替えは容易だが、時間単位と位置の区別が弱く、更新ごとの累積計算を利用側へ分散させる。旧ライブラリの単調時計と型付き時間、基準時点からの位置計算を採用する。
 
-### シーンのコンポーネントだけを公開する
+### 旧 AnimationTarget による適用を再利用する
 
-利用方法は簡単になるが、未決定の ECS やシーンに評価処理まで依存する。再利用できる評価ライブラリと Engine の統合層を分離する。
+再生と適用をまとめられるが、今回の消費側が適用する責務に合わない。時間管理とタイムラインの演算を参考にし、適用コールバックは Animation に保持しない。
 
-### ボーン評価と UI Tween を別の再生システムにする
+### 状態機械まで同じ PR に含める
 
-用途固有の最適化はしやすいが、時間・ループ・イベント・中断・順次実行の仕様が重複し、複数領域の演出を同期しにくい。値の型と適用は分け、時間と実行制御を共通化する。
+条件判定、トリガー型、遷移優先度、クロスフェードと独立した状態機械の再利用を同時に決める必要がある。値評価と時間制御を先に確認し、状態機械は別 PR に分離する。
 
-### いつ何を再生するかをすべて利用側へ任せる
+### ボーン用と UI 用に再生を分ける
 
-評価ライブラリを小さくできるが、遅延、順次・並列実行、トリガーによる切り替えを利用側が毎回実装する必要がある。タイムラインと基本コントローラーを今回の責務とし、編集・保存形式や高度な条件グラフだけを後続判断とする。
-
-### Native の既存アニメーションライブラリを採用する
-
-圧縮や SIMD 最適化の利点があるが、Browser 対応、配布、相互運用、所有権の契約が必要になる。初期段階では Managed 実装の検証容易性を優先し、測定で必要性を確認してから再検討する。
+時間・ループ・中断・タイムラインの仕様が重複する。汎用の計算と時計を共通化し、データ構造と適用を消費側に残す。
 
 ## 結果と影響
 
-- ボーン、UI、その他の型付きプロパティ変化を同じ時間・再生制御で扱い、複数領域の順序と同期を定義できる。
-- 値評価と実行制御を描画なしで検証でき、同じ定義を複数対象と環境で共有できる。
-- ネストしたタイムラインと状態機械を Composition の式で構築でき、再生時には Composition の可変ノードを参照しない。
-- Lumyte.Animation が Lumyte.Composition の契約を参照し、既存 Generator による設定 API の生成と互換性確認が必要になる。
-- シーンと描画の契約が未確定でも評価ライブラリの設計を進められる。
-- アニメーション側が実行タイミングと遷移を制御し、ゲーム・UI 側が条件判定、時計、値の適用と副作用を制御できる。
-- チャネルと対象の対応、出力の適用、ボーン固有の構造と合成、イベント配送は消費側が実装する必要がある。
-- 汎用値と時間制御に責務を限定することでボーン・UI の構造変更から独立できるが、多数のチャネルや複雑なタイムラインの性能は別途測定が必要になる。
-- 本 ADR は設計提案であり、実装・性能・Browser 動作を検証済みとするものではない。
+- 旧ライブラリの時計設計を活かし、時間幅と時点を区別できる。Update に double の時間差を渡す必要がなくなる。
+- Repeat／Reverse を通常 API と Lumyte.Composition の両方で構築できる。
+- ボーンや UI の構造・適用と独立して計算を検証できる。
+- Core 時間型と Composition 契約・Generator の参照が実装の前提になる。
+- 状態機械は今回の API・実装範囲に含まれず、別 PR の設計が必要になる。
+- Output の初期化・クリア、評価順、値の適用とイベント配送は消費側が制御する。
+- 本 ADR は設計提案であり、実装・性能・利用例を検証済みとするものではない。
 
 ## 検証方針
 
 採用後の実装では以下を受け入れ条件とする。
 
-- 実際の Composition Generator を Analyzer として使用し、設定ノードと別アセンブリの利用例をコンパイルする。generic Track、通常の子と Transitions スロットの混在、required 引数、Build を確認する。
-- ネストした Sequence／Parallel／Delay／Marker が Builder の等価な定義と同じ時刻・値・イベント順序を返すことを確認する。遅延だけの末尾と明示した長さも検証する。
-- 循環、null の子、重複状態、未登録遷移、同一ノードの複数配置を検証する。Build 後の子配列や設定変更が既存の再生へ影響しないことを確認する。
-
-- float／Vector／Quaternion／離散値のカーブと Tween、キー境界、端の保持、イージング端点、独自型の補間を検証する。
-- 位置・透明度・回転・重みを同じタイムラインへ配置し、順次・並列・ネストの開始／終了順序を検証する。検証にボーンや UI のプロジェクトを参照しない。
-- 同一チャネルの優先順、Hold／Release、開始終了を飛び越す更新、Cancel と再開始、Seek が中間イベントを配送しないことを確認する。
-- Open／Close／Walk トリガー、未登録遷移、同一更新の複数トリガー、イベント配送からの翌更新の遷移を検証する。
-- 異なる deltaSeconds を与えた二つの再生者を使い、一方を停止したまま他方だけを進められることを確認する。
-- Once の終端、Pause／Play／Stop／Seek、速度 0、0／Duration／同時刻イベントと複数周を検証する。分割更新と一括更新でイベントの順序と重複・欠落を比較する。
-- 不正時刻・非有限値・重複遷移・未登録状態などの通常の引数エラーで部分更新を起こさないことを確認する。
-- 値評価と Update が消費側の対象や setter にアクセスせず、取得した結果の適用を消費側が選べることを確認する。
+- ManualClock で時計の停止・前進、基準時点、Pause／Resume／Seek／速度変更、同時刻の再更新と Once の完了を確認する。時計逆行と時間演算のオーバーフローも検証する。
+- ゲーム時計を止めたまま UI 時計を進め、独立した結果を得られることを確認する。
+- Repeat の中間周と最終終端、Reverse の始端／終端、Reverse 二重適用、Repeat／Reverse のネストを検証する。合計長と値を元の子の期待時刻と比較する。
+- Repeat 内の Hold／Release と待機区間、Reverse の有効区間と退出時の最後の値を検証する。
+- 0／終端／同時刻マーカー、Repeat の有限終端、Loop の複数周、Reverse のマーカー順、Seek 後を検証する。分割更新と一括更新のイベント列を比較する。
+- 実際の Composition Generator を Analyzer として使用し、別アセンブリから generic Track とネストした Repeat／Reverse の利用例をコンパイルする。子が一つという制約、循環、null、ノード共有、Build 後の変更の分離を確認する。
+- Composition の定義と等価な Builder・通常 API が、同じ時刻に同じ値とイベントを返すことを確認する。
+- float／Vector／Quaternion／離散値、キー境界、端の保持、イージング端点、独自型を検証する。消費側の対象や setter にアクセスしないことを確認する。
 - 共通の既知入力を Windows、Linux、Browser で許容誤差内で比較する。
-- 1 再生者あたり 100 数値チャネル・100 再生者を測定用の基準として、ウォームアップ後の評価時間と割り当て量を記録する。イベントの有無を分け、ハードウェアとランタイムを併記する。合格時間の予算は消費側の更新予算と合わせて後続で定める。
+- 100 数値チャネル・100 再生者を測定基準とし、ウォームアップ後の評価時間と割り当て量をイベントの有無別に記録する。合格時間の予算は消費側の更新予算と合わせて別途定める。
 
 ## 別途決定する事項
 
-- 状態機械・タイムラインの編集と保存形式、高度な条件グラフと同期グループ。
-- 消費側プロジェクトのボーン関連データ構造、ポーズ合成、ルートモーションと値適用の契約。本 ADR ではプロジェクト名や公開型を定めない。
-- 各 UI フレームワーク、シーン、物理との値適用・レイアウト統合とイベント配送。
-- 独自型のソース・補間器、アセットのインポート・保存形式・バージョニング。
+- 別 PR での状態機械、型付きトリガー・Context、遷移条件・優先度・クロスフェードと Composition 定義。
+- タイムラインの編集・保存形式、同期グループ、PingPong と高度なイージング。
+- 消費側のボーン構造、ポーズ合成、ルートモーション、UI・シーン・物理への適用とイベント配送。
+- アセットのインポート、保存形式・バージョニング、独自型のソースと補間。
 
 ## 参考資料
 
 - [ADR-0001: ADR の書き方と運用](../0001-adr-writing-policy.md)
 - [ADR-0002: リポジトリのフォルダ構成](../0002-repository-layout.md)
 - [ADR-COMPOSITION-0001: デリゲート型ファクトリとノード操作の生成](../composition/COMPOSITION-0001-declarative-composition.md)
+- [旧 Core.Time](https://github.com/ikihiki/Lumyte_old/tree/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Core/Time)
+- [旧 PlaybackHandle の時間管理](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/interaction/Lumyte.Animation/PlaybackHandle.cs)
+- [旧 RepeatTimeline](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/interaction/Lumyte.Animation/RepeatTimeline.cs)
+- [旧 ReverseTimeline](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/interaction/Lumyte.Animation/ReverseTimeline.cs)
