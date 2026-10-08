@@ -63,7 +63,7 @@ Lumyte/
 ├── mise.toml
 ├── mise.lock
 ├── NuGet.config
-└── Lumyte.sln
+└── Lumyte.slnx
 ```
 
 ### 各ディレクトリの役割

@@ -1,68 +1,122 @@
-name: Composition
+name: CI
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'src/Core/Lumyte.Composition*/**'
-      - 'tests/Core/Lumyte.Composition.Tests/**'
-      - 'samples/Lumyte.Composition.Sample/**'
-      - 'docs/adr/composition/**'
-      - 'Lumyte.slnx'
-      - 'Directory.Build.props'
-      - 'NuGet.config'
-      - 'global.json'
-      - 'mise.toml'
-      - 'mise.lock'
-      - '.editorconfig'
-      - 'stylecop.json'
-      - '.markdownlint-cli2.jsonc'
-      - '.github/workflows/composition.yml'
   pull_request:
-    paths:
-      - 'src/Core/Lumyte.Composition*/**'
-      - 'tests/Core/Lumyte.Composition.Tests/**'
-      - 'samples/Lumyte.Composition.Sample/**'
-      - 'docs/adr/composition/**'
-      - 'Lumyte.slnx'
-      - 'Directory.Build.props'
-      - 'NuGet.config'
-      - 'global.json'
-      - 'mise.toml'
-      - 'mise.lock'
-      - '.editorconfig'
-      - 'stylecop.json'
-      - '.markdownlint-cli2.jsonc'
-      - '.github/workflows/composition.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: composition-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  composition:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+  validate:
+    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: Linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: Linux
+            arch: aarch64
+          - os: windows-2022
+            platform: Windows
+            arch: x64
+          - os: windows-11-arm
+            platform: Windows
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-        with:
-          version: '2026.10.3'
-          install_args: '--locked'
-      - name: Build, test, sample, pack and lint
+
+      - name: Mise setup (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash tools/setup/setup.sh
+
+      - name: Mise setup (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\tools\setup\setup.ps1
+
+      - name: Verify environment (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
-          export DOTNET_ROOT="$(mise where http:dotnet)"
-          mkdir -p artifacts/nuget
-          mise exec -- dotnet build Lumyte.slnx -c Release
-          mise exec -- dotnet test Lumyte.slnx -c Release --no-build
-          mise exec -- dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
-          mise exec -- dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
-          mise exec -- dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
-          mise exec -- dotnet build Lumyte.slnx --no-restore
-          mise exec -- dotnet format Lumyte.slnx --no-restore --verify-no-changes
+          source tools/setup/activate.sh
+          mise run verify
+
+      - name: Verify environment (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'lumyte-smoke.log'
+          try {
+            & {
+              .\tools\setup\ci-windows-smoke.ps1
+            } *>&1 | Tee-Object -FilePath $log
+          } catch {
+            $details = $_.ToString()
+            if (Test-Path $log) {
+              $details += "`n" + ((Get-Content $log -Tail 60) -join "`n")
+            }
+            $details = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host "::error title=Windows environment verification failed::$details"
+            exit 1
+          }
+
+      - name: Build solution (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet build Lumyte.slnx -c Release
+
+      - name: Build solution (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('build', 'Lumyte.slnx', '-c', 'Release')
+
+      - name: Run solution tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
+
+      - name: Run solution tests (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore',
+            '--logger', 'trx', '--results-directory', 'artifacts/test-results')
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/test-results/*.trx
+          if-no-files-found: ignore
+
+      - name: Sample, pack and lint
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
+          dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
+          dotnet build Lumyte.slnx --no-restore
+          dotnet format Lumyte.slnx --no-restore --verify-no-changes
           mise run check-markdown
