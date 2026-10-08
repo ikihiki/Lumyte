@@ -19,7 +19,7 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 
 初期対象は物理キー、マウスボタン、位置、移動量、ホイール、コントローラー（ゲームパッド）のボタン・スティック・トリガー、フォーカス、デバイス接続・切断とする。文字入力・IME、タッチ、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
 
-一つの InputSystem は一つのウィンドウまたは Browser の入力対象に接続する。対象内で識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
+InputSystem はエンジンで利用するすべての IInputSource と、それらが登録する IInputDevice を一元管理する。ウィンドウ入力、コントローラー入力など複数のソースを同時に登録できる。ソースやデバイスは自身の入力対象を把握し、フォーカス変更はその対象に属するデバイスだけに通知する。識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
 
 ### 責務と依存関係
 
@@ -27,9 +27,9 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 
 | 構成要素 | 責務 | 依存先 |
 | --- | --- | --- |
-| `Lumyte.Input` | デバイス管理、記録配列、状態更新、参照・通知・ポーリング、保持方針 | .NET 標準ライブラリのみ |
-| `Lumyte.Platform.Windows` / `Linux` / `Browser` | 入力取得、デバイス識別、共通データへの正規化、`IInputSource` の生成 | `Lumyte.Input` |
-| `Lumyte.Engine` | Source と InputSystem の所有、取得・利用・削除の呼び出し順 | 共通 Input と必要な Platform 実装 |
+| `Lumyte.Input` | 全入力ソースと登録デバイスの管理、記録配列、状態更新、参照・通知・ポーリング、保持方針 | .NET 標準ライブラリのみ |
+| `Lumyte.Platform.Windows` / `Linux` / `Browser` | 接続監視と登録を行う `IInputSource`、入力取得・正規化を行う `IInputDevice` の実装 | `Lumyte.Input` |
+| `Lumyte.Engine` | InputSystem の所有、利用する全 Source の追加、取得・利用・削除の呼び出し順 | 共通 Input と必要な Platform 実装 |
 | ゲーム・ツール | デバイスの選択、記録参照やイベント購読、ポーリング、保持方針の設定 | `Lumyte.Input` の公開 API |
 
 共通 Input は Engine、Platform 実装、Graphics に依存しない。OS ハンドルやウィンドウ型を共通 API に持ち込まない。この PR は文書だけを追加し、空のプロジェクトを作成しない。
@@ -37,11 +37,11 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 ### データモデル
 
 - `InputDeviceId` は一つの InputSystem 内で一意な不透明 ID とする。切断後に同じ ID を再利用せず、再接続は新しい ID とする。永続 ID や異なる InputSystem 間の識別子としては使わない。
-- `InputDeviceInfo` は ID、種類、表示名、物理デバイスか論理デバイスかを表す識別粒度を持つ。
+- `InputDeviceInfo` は InputSystem が割り当てる ID、種類、表示名、物理デバイスか論理デバイスかを表す識別粒度を持つ。
 - `InputRecord` はデバイス ID、InputSystem 全体で単調増加する Sequence、取り込み時刻、正規化された入力データを持つ不変値とする。Sequence は 1 から開始し、削除後もリセットしない。
 - 記録時刻は注入された `TimeProvider` の単調時計による取り込み時の経過時間とする。OS の発生時刻とは区別する。同じバッチ内で時刻が等しくても Sequence で順序を決められる。
 - 各デバイスは Sequence 順の保持記録配列と最新状態を持つ。押下状態などは履歴とは別に保持し、履歴削除によって現在押されているキーを解放しない。
-- 接続・切断とフォーカスの変化も記録する。フォーカス変化は登録中の各接続デバイスに展開し、合成解放とともに通常の記録経路へ流す。
+- 接続・切断とフォーカスの変化も記録する。フォーカス変化は同じ入力対象の各接続デバイスから取得し、合成解放とともに通常の記録経路へ流す。
 
 ### 公開 API 一覧
 
@@ -54,7 +54,7 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 +
 +namespace Lumyte.Input;
 +
-+// 0 は無効。Source が割り当て、システム内で再利用しない。
++// 0 は無効。InputSystem が割り当て、全ソースを通じて再利用しない。
 +public readonly record struct InputDeviceId(ulong Value);
 +public enum InputDeviceKind { Keyboard, Mouse, Controller }
 +public enum InputDeviceIdentityKind { Physical, Logical }
@@ -99,27 +99,54 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 +// 配列・通知・ポーリングで共通の不変記録。
 +public readonly record struct InputRecord(
 +    InputDeviceId DeviceId, ulong Sequence, TimeSpan RecordedAt, InputData Data);
-+// Sequence と時刻は InputSystem が付与する。
-+public readonly record struct InputSourceEvent(
-+    InputDeviceId DeviceId, InputData Data);
-+public interface IInputSource
++// デバイス登録前の情報。ID は InputSystem が付与する。
++public sealed record InputDeviceDescriptor(
++    InputDeviceKind Kind, string Name, InputDeviceIdentityKind IdentityKind);
++
++// Source は接続・切断を監視し、渡された Registry に登録・削除する。
++public interface IInputSource : IDisposable
 +{
-+    // 開始時点の未処理入力を受信順に返す。更新中の到着分は次回へ。
-+    IReadOnlyList<InputSourceEvent> DrainEvents();
++    void Initialize(IInputDeviceRegistry registry);
++    void Update();
++}
++
++// InputSystem が Source ごとに渡す登録窓口。他ソースのデバイスは削除不可。
++public interface IInputDeviceRegistry
++{
++    InputDeviceId RegisterDevice(IInputDevice device);
++    void UnregisterDevice(InputDeviceId device);
++}
++
++// 入力取得は Device の責務。接続・切断データは InputSystem が生成する。
++public interface IInputDevice : IDisposable
++{
++    InputDeviceDescriptor Descriptor { get; }
++    // 開始時点の未処理入力を受信順に返す。取得中の到着分は次回へ。
++    IReadOnlyList<InputData> DrainEvents();
 +}
 +
 +// 両方 null が Manual。上限 0 は許容し、負値は拒否する。
 +public sealed record InputRetentionPolicy(
 +    int? MaxRecords = null, TimeSpan? MaxAge = null);
 +
-+public sealed class InputSystem
++public sealed class InputSystem : IDisposable
 +{
-+    // Source は借用。null Source は例外、時計の既定は TimeProvider.System。
-+    public InputSystem(IInputSource source, TimeProvider? timeProvider = null);
-+    // 取り込み・状態更新・通知・自動削除。表示フレームへの依存なし。
++    // 時計の既定は TimeProvider.System。初期状態はソース・デバイスなし。
++    public InputSystem(TimeProvider? timeProvider = null);
++    // 成功時に所有権を移し、Source 専用 Registry で初期化する。
++    public void AddSource(IInputSource source);
++    // 所属デバイスの最終取り込み・切断・削除後に Source を破棄する。
++    public void RemoveSource(IInputSource source);
++    public IReadOnlyList<IInputSource> Sources { get; }
++    // アクティブな IInputDevice のみ。削除後の履歴は別に保持する。
++    public IReadOnlyDictionary<InputDeviceId, IInputDevice> Devices { get; }
++    // 全ソース・デバイスを解放する。複数回の呼び出しは許容する。
++    public void Dispose();
++    // 全 Source を追加順に更新後、全 Device の入力を取り込む。
++    // 状態更新・通知・自動削除。表示フレームへの依存なし。
 +    public void Update();
-+    // 切断済みを含む読み取り専用一覧。
-+    public IReadOnlyList<InputDeviceInfo> Devices { get; }
++    // 切断済みを含むメタデータの一覧。
++    public IReadOnlyList<InputDeviceInfo> DeviceInfos { get; }
 +    // 保持記録の不変配列を参照。Span で列挙、ToArray で所有配列化できる。
 +    public ReadOnlyMemory<InputRecord> GetRecords(InputDeviceId device);
 +    // 現在状態の不変スナップショット。履歴の有無に依存しない。
@@ -168,11 +195,13 @@ InputSystem はデバイスごとの入力記録配列と最新状態を管理�
 
 ### 参照・通知・ポーリングの共通契約
 
-1. Source からバッチを取得し、デバイス情報と入力の妥当性を検証する。
-2. イベント順に状態を計算し、デバイス別配列に記録を追加する。フォーカス喪失・切断による合成解放も同じ経路で追加する。
-3. バッチ全体の配列と最新状態を公開する。
+1. 全 Source の Update を追加順に呼び、Registry の登録・削除要求を収集する。新規 Device を登録し、全 Device の DrainEvents をデバイス ID 順に呼んでバッチを検証する。削除要求のある Device も残った入力を最終取得する。
+2. 各デバイスのイベント順に状態を計算し、デバイス別配列に記録を追加する。フォーカス喪失・切断による合成解放も同じ経路で追加する。
+3. 新規登録には接続記録を先行させ、デバイスごとに検証済みバッチの配列と状態を公開する。削除要求のある Device は最終入力と切断・合成解放を記録してアクティブ一覧から削除する。
 4. 新規記録を Recorded で Sequence 順に通知する。通知中の配列参照は今回のバッチまでを含み、状態照会はバッチ終了時点の状態を返す。
 5. 通知完了後、件数・時間の保持方針を評価して古い履歴を削除する。Manual では削除しない。
+
+複数デバイス間の Sequence は Source の追加順・Device の ID 順による取り込み順を表し、OS 上の厳密な発生順とは扱わない。各デバイス内の受信順は維持する。
 
 読み取りや通知は記録を消費せず、別の利用者のカーソルや結果を変更しない。通知時点の状態は各記録直後の中間状態ではないため、遷移順を必要とする購読者は通知の Data を使用する。保持期間をゼロにしても新規記録は一度通知するが、Update が戻った後の履歴は空になり得る。
 
@@ -204,7 +233,7 @@ Prune は設定済みの件数・時間制限だけを評価し、Manual の記�
 
 物理キーは US 配列におけるキー位置で表し、文字入力と区別する。OS 独自の整数コードを共通 API に流さない。マウス位置は対象領域左上を原点、右を X 正、下を Y 正とする DPI 調整済みの論理ピクセルとし、Browser では CSS ピクセルを使う。ホイールは右を X 正、上を Y 正、一段を 1 とし、小数を保持する。完全なキー対応と環境別ホイール換算はバックエンド ADR で定める。
 
-Source は接続時に DeviceConnectedData、続けて初期 FocusData を通知してから通常入力を送る。フォーカス喪失または切断時は、そのデバイスで押下中のキー・ボタンを解放する記録を状態変更の直後に enum 値順で合成する。履歴は消さない。
+Source は接続時に IInputDevice を RegisterDevice へ渡し、切断時に UnregisterDevice を呼ぶ。InputSystem が DeviceConnectedData / DeviceDisconnectedData を生成し、Device は初期 FocusData と通常入力を提供する。フォーカス喪失または切断時は、そのデバイスで押下中のキー・ボタンを解放する記録を状態変更の直後に enum 値順で合成する。履歴は消さない。
 
 非フォーカス中の通常入力は記録・状態に適用しない。復帰時は新たな非リピート押下を待ち、リピートだけで解放状態を復活させない。マウス位置は最後の値を保持し、復帰後最初の位置を移動量計算の新しい基準とする。履歴から移動量を集計する利用者はフォーカス・接続境界をまたいだ位置差を加算しない。
 
@@ -218,13 +247,19 @@ Platform は標準ゲームパッドの物理的な位置に共通ボタンを�
 
 ### スレッド・所有権・エラー
 
-Update、配列取得、状態照会、ポーリング、保持設定、削除は入力対象の処理スレッドから呼ぶ。Update と通知への再入を禁止し、通知中は参照・状態照会・ポーリングのみ許可する。保持設定・削除・再更新は禁止し、InvalidOperationException を返す。購読の追加・解除はその時点以降の通知に反映し、通知中の呼び出し先一覧は固定する。
+Update、Source の追加・削除、Registry 操作、配列取得、状態照会、ポーリング、保持設定、履歴削除は InputSystem の管理スレッドから呼ぶ。Update と通知への再入を禁止し、通知中は参照・状態照会・ポーリングのみ許可する。保持設定・削除・再更新は禁止し、InvalidOperationException を返す。購読の追加・解除はその時点以降の通知に反映し、通知中の呼び出し先一覧は固定する。
 
-別スレッドからの入力は Source が受信キューを同期する。別スレッドの利用者には、所有側が取得済みの不変配列・状態を同期して引き渡す。InputSystem 自体は並行アクセスを保証しない。
+別スレッドからの入力は Device が受信キューを同期する。接続・切断コールバックは Source がキューに蓄積し、管理スレッドで Registry を呼ぶ。入力対象のイベントスレッドが異なる場合も、Platform 側で管理スレッドへ橋渡しする。別スレッドの利用者には、所有側が取得済みの不変配列・状態を同期して引き渡す。InputSystem 自体は並行アクセスを保証しない。
 
-Source と OS リソースの所有者は Platform / Engine とし、InputSystem は Source を破棄しない。対象を閉じるときは切断通知を取り込んで合成解放まで配信し、Source の購読を解除する。利用者は Recorded の購読を解除し、不要なスナップショットと InputSystem の参照を解放する。
+InputSystem は AddSource 成功後の Source と、RegisterDevice 成功後の Device の所有者とする。Source がデバイスを見つけ、Source 専用の Registry が登録元を記録する。他 Source のデバイス削除、同じ Source・Device インスタンスの重複登録、同じ物理入力を複数 Source から登録する構成は許可しない。最後の構成は Platform / Engine が排他的なソース選択で防ぎ、共通層が OS の物理識別を推測して統合しない。
 
-Source は DrainEvents の失敗時にイベントを消費しない。取得例外はそのまま伝え、既存の状態・履歴は変えない。不正な入力バッチは公開前に全体を拒否して ArgumentException を返す。既に Source から取り出した不正バッチは自動再試行せず、所有者がバックエンドを停止・修復する。
+Registry の削除要求は管理操作として保留し、Update の最終入力・切断・合成解放の公開と通知後に Device.Dispose を一度だけ呼ぶ。Devices から削除しても、DeviceInfos、現在状態の最終値、履歴、削除済み位置は保持方針に従って参照できる。Device の登録削除と履歴削除を区別する。
+
+RemoveSource は所属する全 Device について同じ終了処理を実行し、Source を一覧から削除して Dispose する。InputSystem.Dispose は全 Source を追加の逆順で終了処理し、購読・OS リソースを解放する。解放中の例外でも他のリソースの解放を続け、最後にまとめて報告する。取得済み配列は有効だが、破棄済み InputSystem の照会・更新は ObjectDisposedException とする。
+
+AddSource / Initialize が失敗した場合は登録要求を取り消し、所有権は呼び出し側に残す。初期化中の Device 登録は暫定扱いとし、失敗時の解放は Source の責任とする。成功後は Source が Device を独自に破棄しない。Registry は Source の管理呼び出し中だけ操作可能とし、通知中や Source 削除後の呼び出しを拒否する。
+
+Device は DrainEvents の失敗時に入力を消費しない。取得例外はデバイスごとに収集し、そのデバイスの既存状態・履歴は維持する。他のソース・デバイスの処理は継続し、Update は処理と通知・保持評価の完了後に AggregateException を返す。Source.Update の例外も収集し、成功した登録・削除要求は処理する。ほかの Source と既存 Device の取得は継続する。デバイス間では全体ロールバックを保証しない。不正な入力バッチも該当デバイス単位で拒否し、自動再試行しない。所有者は障害のあるデバイスや Source を停止・修復する。削除中の最終取得が失敗しても、欠落エラーを報告して切断・中立化とリソース解放を続行する。
 
 購読者の例外は記録成功を巻き戻さない。ほかの購読者と後続記録の通知を継続し、保持方針の評価後に AggregateException として報告する。この場合、記録と通知処理は完了しており、Update の再試行で同じ記録を再配信しない。バックエンドの受信キュー制限による欠落と、利用者設定による履歴削除は区別し、前者を黙って捨てない。
 
@@ -257,9 +292,12 @@ Source は DrainEvents の失敗時にイベントを消費しない。取得例
 
 ## 検証方針
 
-実装時に偽の Source と TimeProvider を使い、次を検証する。本 PR は文書のみであり、実行テストを追加しない。
+実装時に偽の Source・Device と TimeProvider を使い、次を検証する。本 PR は文書のみであり、実行テストを追加しない。
 
-- 二つ以上のデバイスの配列・状態が混ざらず、再接続時に ID を再利用しない。
+- 複数 Source が Device を登録・削除でき、全 Source を InputSystem が更新する。
+- 全 Source 間で ID が一意となり、再接続で再利用せず、他 Source の登録削除を拒否する。
+- Device 削除・Source 削除・システム破棄で最終記録と合成解放を残し、各リソースを一度だけ解放する。
+- 二つ以上のデバイスの配列・状態が混ざらない。
 - 配列、通知、ポーリングの DeviceId・Sequence・時刻・データが一致する。
 - 短い押下、リピート、同一バッチ内の複数遷移が記録に残る。
 - 一利用者の読み取りが別利用者を消費せず、空取得も含めカーソルが正しく進む。
@@ -269,7 +307,7 @@ Source は DrainEvents の失敗時にイベントを消費しない。取得例
 - フォーカス喪失・切断で合成解放を全方式から参照できる。
 - 複数コントローラーの識別、ボタンの短い押下、スティック・トリガーの範囲・向き・初期値・中立復帰を検証する。
 - 状態取得型バックエンドで値の変化を記録し、復帰時の押下抑制と接続スロットの再利用を正しく扱う。
-- 通知例外・再入禁止・不正バッチ・Source 例外で記録や通知が重複しない。
+- 通知例外・再入禁止・不正バッチ・Source / Device 例外で記録や通知が重複しない。
 
 実環境では Windows / Linux / Browser のデバイス識別粒度、物理キー、DPI、ホイール、コントローラーのボタン対応・アナログ正規化、フォーカスと切断を検証する。
 
