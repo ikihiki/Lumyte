@@ -49,3 +49,9 @@ dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
 NuGet から使う場合は `Lumyte.Composition` と `Lumyte.Composition.Generators` を導入し、後者には `PrivateAssets="all"` を付ける。Generator パッケージは `analyzers/dotnet/cs` に DLL を配置する。外部への公開は行っていない。
 
 初期対応は非 generic な public partial component を public static partial factory の public static partial Definitions 内に置く形である。ComposeAction メソッドは private 可、static void、参照型対象を先頭引数に取り、残りは通常の必須引数とする。async、generic、ref/out/in、params、optional、属性付き同名 overload は `LYC001` で報告する。Browser、AOT、trimming は未検証。
+
+ジェネリックな定義は `ListView<int>()` として構築する。型に対応するデリゲートを取得して操作を追加する場合は、`ListViewFactory<int>().Select(2)` を利用する。
+
+```csharp
+var list = ListView<int>(with: [ListViewFactory<int>().Select(2)])[1, 2, 3];
+```

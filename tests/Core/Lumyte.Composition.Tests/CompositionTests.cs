@@ -55,6 +55,19 @@ public sealed class CompositionTests
         Assert.DoesNotContain(typeof(ComposableAttribute).Assembly.GetTypes(), type => type.Name.StartsWith("AttachedProperty", StringComparison.Ordinal));
     }
 
+    /// <summary>Tests generic factories across an assembly boundary, including caching and typed operations.</summary>
+    [Fact]
+    public void GenericFactoryCreatesTypedLists()
+    {
+        Compose.Definitions.ListView<int> list = ListView<int>(selected: 1, with: [ListViewFactory<int>().Select(2)])[1, 2, 3];
+        Assert.Equal(new[] { 1, 2, 3 }, list.Items);
+        Assert.Equal(2, list.Selected);
+        Assert.Same(ListViewFactory<int>(), ListViewFactory<int>());
+        Assert.NotSame(ListView<int>(), ListView<int>());
+        Assert.Equal("hello", ListView<string>(selected: "hello").Selected);
+        Assert.Same(list, list[4]);
+    }
+
     /// <summary>Tests defaults, explicit false and zero, required arguments and init assignments.</summary>
     [Fact]
     public void FactoriesPreserveOmittedDefaultsAndApplyExplicitValues()

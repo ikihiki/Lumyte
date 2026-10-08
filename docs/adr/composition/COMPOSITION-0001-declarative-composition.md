@@ -142,6 +142,60 @@ int column = (int)grid.Children[0].AttachedValues["Grid.Column"]!;
 +}
 ```
 
+### ジェネリックな定義
+
+`Definitions.ListView<T>` も生成対象とする。C# に generic property がないため、外側には `ListView<T>(...)` メソッドと `ListViewFactory<T>()` デリゲート取得メソッドを生成する。非 generic 型のプロパティ方式は維持する。デリゲートは閉じた型引数の組ごとにキャッシュし、呼び出しごとに新しいノードを生成する。型引数は明示でき、通常の C# の型推論も利用できる。
+
+```csharp
+[Composable]
+public partial class ListView<T> : Widget where T : notnull
+{
+    [ComposeParameter]
+    public T Selected { get; set; } = default!;
+
+    [ComposeContent]
+    public IReadOnlyList<T> Items { get; set; } = [];
+
+    [ComposeAction]
+    private static void Select(ListView<T> target, T value) => target.Selected = value;
+}
+
+// using static Compose;
+var list = ListView<int>(with: [ListViewFactory<int>().Select(2)])[1, 2, 3];
+```
+
+上の定義を Definitions 内に置いた場合の追加 API は次のとおり。
+
+```diff
++public static partial class Compose
++{
++    // 型引数ごとにキャッシュした専用デリゲートを呼び出す。
++    public static Definitions.ListView<T> ListView<T>(
++        Optional<T> selected = default,
++        IReadOnlyList<Action<Definitions.ListView<T>>>? with = null) where T : notnull;
++    public static Definitions.ListViewFactory<T> ListViewFactory<T>() where T : notnull;
++
++    public static partial class Definitions
++    {
++        public delegate ListView<T> ListViewFactory<T>(
++            Optional<T> selected = default,
++            IReadOnlyList<Action<ListView<T>>>? with = null) where T : notnull;
++        public partial class ListView<T> where T : notnull
++        {
++            // 子要素を置換して同じインスタンスを返す。
++            public ListView<T> this[params T[] content] { get; }
++        }
++    }
++}
++public static class ComposeListViewCompositionExtensions
++{
++    public static Action<Compose.Definitions.ListView<T>> Select<T>(
++        this Compose.Definitions.ListViewFactory<T> factory, T value) where T : notnull;
++}
+```
+
+型パラメーター名と `class` / `class?` / `struct` / `unmanaged` / `notnull`、基底型・interface、`new()` の制約を、partial 型・デリゲート・ファクトリメソッド・拡張メソッドに引き継ぐ。複数型引数にも対応する。公開できない制約と `allows ref struct` は LYC001 で拒否する。後者は Optional と Action の契約に適合しない。操作メソッド自身の generic 化は引き続き対象外とする。
+
 ### 生成される公開 API
 
 Grid/Text の例について、次の入口を生成する。以下はシグネチャの一覧である。
@@ -197,11 +251,11 @@ with は最後の省略可能な引数とし、`IReadOnlyList<Action<TComponent>
 
 ### 初期 Generator の対応範囲と診断
 
-非 generic・非 abstract な public partial クラスを、public static partial 外側クラスの public static partial Definitions 内に置く形を扱う。包含型の階層を維持して partial 宣言を生成する。引数なしコンストラクターが必要で、暗黙定義の場合は生成コンストラクターの追加によって消えないよう明示定義を補う。
+非 abstract な public partial クラス（generic を含む）を、public static partial 外側クラスの public static partial Definitions 内に置く形を扱う。包含型の階層を維持して partial 宣言を生成する。引数なしコンストラクターが必要で、暗黙定義の場合は生成コンストラクターの追加によって消えないよう明示定義を補う。
 
 継承階層を走査し、アクセス可能な設定値と子要素を扱う。Inherited = false の ComposeContent でも基底型に宣言されたメンバーは走査する。子要素は高々一つで、一次元配列または IEnumerable/IReadOnlyCollection/IReadOnlyList/ICollection/IList の generic interface とする。init-only な子要素は拒否する。すべての required メンバーを ComposeParameter とし、生成コンストラクターが確実に代入してから SetsRequiredMembers を付ける。
 
-引数順は required を先頭にし、各群では派生型から基底型、型内ではメンバー名の ordinal 順とする。引数名は先頭 underscore を除き先頭文字を小文字化し、C# keyword を escape する。generic 型、任意の包含階層、アクセス不能な基底メンバー、override/隠蔽、非対応 collection、static/readonly 設定メンバー、複数 content、操作メソッドの不正な型や修飾子、生成名の衝突は LYC001 の error とする。生成メンバーの __Lumyte prefix は予約する。
+引数順は required を先頭にし、各群では派生型から基底型、型内ではメンバー名の ordinal 順とする。引数名は先頭 underscore を除き先頭文字を小文字化し、C# keyword を escape する。任意の包含階層、アクセス不能な基底メンバー、override/隠蔽、非対応 collection、static/readonly 設定メンバー、複数 content、操作メソッドの不正な型や修飾子、生成名の衝突は LYC001 の error とする。生成メンバーの __Lumyte prefix は予約する。
 
 ### 互換性と環境
 
@@ -244,7 +298,7 @@ Roslyn のテスト compilation で、不正宣言の LYC001、required の省�
 ## 別途決定する事項
 
 - Browser/AOT/trimming/Windows の環境検証。
-- generic や任意の包含階層、override/隠蔽への対応。
+- 任意の包含階層、override/隠蔽への対応。
 - 操作メソッドの overload、optional/params 引数、非同期操作の完了・キャンセルの扱い。
 - 性能測定と、NuGet 公開・バージョニング運用。
 

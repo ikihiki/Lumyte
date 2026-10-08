@@ -32,6 +32,24 @@ public static partial class Compose
             }
         }
 
+        /// <summary>A generic list widget with typed items and operations.</summary>
+        /// <typeparam name="T">The item type.</typeparam>
+        [Composable]
+        public partial class ListView<T> : Widget
+            where T : notnull
+        {
+            /// <summary>Gets or sets the selected item.</summary>
+            [ComposeParameter]
+            public T Selected { get; set; } = default!;
+
+            /// <summary>Gets or sets the list items.</summary>
+            [ComposeContent]
+            public IReadOnlyList<T> Items { get; set; } = [];
+
+            [ComposeAction]
+            private static void Select(ListView<T> target, T value) => target.Selected = value;
+        }
+
         /// <summary>A text widget receiving initial settings and style operations.</summary>
         [Composable]
         public partial class Text : Widget

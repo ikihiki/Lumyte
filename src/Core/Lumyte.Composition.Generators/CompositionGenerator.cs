@@ -58,9 +58,19 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             context.CancellationToken.ThrowIfCancellationRequested();
             string? failure = Validate(component, compilation, out string factoryName, out string propertyName);
             string identity = component.ContainingNamespace + "." + factoryName + "." + propertyName;
-            if (failure is null && !names.Add(identity))
+            string accessorIdentity = identity + "Factory";
+            if (failure is null && (names.Contains(identity) || (component.Arity != 0 && names.Contains(accessorIdentity))))
             {
-                failure = "Factory property '" + identity + "' is declared more than once.";
+                failure = "Factory member '" + identity + "' is declared more than once.";
+            }
+
+            if (failure is null)
+            {
+                names.Add(identity);
+                if (component.Arity != 0)
+                {
+                    names.Add(accessorIdentity);
+                }
             }
 
             if (failure is not null)
@@ -70,7 +80,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             }
 
             string source = Render(component, propertyName);
-            context.AddSource(component.ToDisplayString().Replace('.', '_') + ".Composition.g.cs", SourceText.From(source, Encoding.UTF8));
+            context.AddSource(component.ToDisplayString().Replace('.', '_').Replace('<', '_').Replace('>', '_').Replace(',', '_') + ".Composition.g.cs", SourceText.From(source, Encoding.UTF8));
         }
     }
 
@@ -90,11 +100,22 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         }
 
         if (definitions?.Name != "Definitions" || outer?.Name != factoryName || outer.ContainingType is not null
-            || !PublicPartial(component) || component.IsAbstract || component.IsStatic || component.Arity != 0
+            || !PublicPartial(component) || component.IsAbstract || component.IsStatic
             || !PublicPartial(definitions) || !definitions.IsStatic || definitions.Arity != 0
             || !PublicPartial(outer) || !outer.IsStatic || outer.Arity != 0)
         {
-            return "Use a public non-generic partial component in public static partial " + factoryName + ".Definitions.";
+            return "Use a public partial component in public static partial " + factoryName + ".Definitions.";
+        }
+
+        if (component.TypeParameters.Any(parameter => parameter.AllowsRefLikeType || parameter.ConstraintTypes.Any(type => !PublicType(type))))
+        {
+            return "Component type parameters require public constraints and cannot allow ref struct.";
+        }
+
+        if (component.Arity != 0 && (outer.GetMembers(propertyName + "Factory").Length != 0
+            || outer.GetMembers("__Lumyte" + component.Name + "FactoryCache").Length != 0))
+        {
+            return "A generic factory accessor or cache name conflicts with an existing member.";
         }
 
         if (!component.InstanceConstructors.Any(constructor => constructor.Parameters.Length == 0))
@@ -208,6 +229,8 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         IMethodSymbol[] actions = component.GetMembers().OfType<IMethodSymbol>().Where(member => HasAttribute(member, "ComposeAction"))
             .OrderBy(member => member.Name, StringComparer.Ordinal).ToArray();
         string type = TypeName(component);
+        string generics = TypeParameters(component);
+        string constraints = Constraints(component);
         string signature = string.Join(", ", parameters.Select(parameter => ParameterDeclaration(parameter)).Concat(new[]
         {
             "global::System.Collections.Generic.IReadOnlyList<global::System.Action<" + type + ">>? @with = null",
@@ -219,9 +242,29 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         }
 
         builder.Append("public static partial class ").Append(Escape(outer.Name)).AppendLine("\n{");
-        builder.AppendLine("/// <summary>Gets the cached component factory delegate.</summary>");
-        builder.Append("public static Definitions.").Append(Escape(component.Name + "Factory")).Append(' ').Append(Escape(propertyName))
-            .Append(" { get; } = Definitions.").Append(Escape(component.Name)).AppendLine(".__LumyteCreate;");
+        builder.AppendLine(component.Arity == 0
+            ? "/// <summary>Gets the cached component factory delegate.</summary>"
+            : "/// <summary>Constructs a component for the selected type arguments.</summary>");
+        if (component.Arity == 0)
+        {
+            builder.Append("public static Definitions.").Append(Escape(component.Name + "Factory")).Append(' ').Append(Escape(propertyName))
+                .Append(" { get; } = Definitions.").Append(Escape(component.Name)).AppendLine(".__LumyteCreate;");
+        }
+        else
+        {
+            builder.Append("public static ").Append(type).Append(' ').Append(Escape(propertyName)).Append(generics)
+                .Append('(').Append(signature).Append(')').Append(constraints).Append(" => ")
+                .Append(Escape(propertyName + "Factory")).Append(generics).Append("()(")
+                .Append(string.Join(", ", parameters.Select(parameter => Escape(ParameterName(parameter))).Concat(new[] { "@with" }))).AppendLine(");");
+            builder.AppendLine("/// <summary>Gets the cached factory for the selected type arguments.</summary>");
+            builder.Append("public static Definitions.").Append(Escape(component.Name + "Factory")).Append(generics).Append(' ')
+                .Append(Escape(propertyName + "Factory")).Append(generics).Append("()").Append(constraints)
+                .Append(" => __Lumyte").Append(component.Name).Append("FactoryCache").Append(generics).AppendLine(".Value;");
+            builder.Append("private static class __Lumyte").Append(component.Name).Append("FactoryCache").Append(generics).Append(constraints).AppendLine("\n{");
+            builder.Append("internal static readonly Definitions.").Append(Escape(component.Name + "Factory")).Append(generics)
+                .Append(" Value = ").Append(type).AppendLine(".__LumyteCreate;\n}");
+        }
+
         builder.AppendLine("public static partial class Definitions\n{");
         builder.AppendLine("/// <summary>Constructs a component and applies additional actions.</summary>");
         foreach (ISymbol parameter in parameters)
@@ -232,8 +275,8 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         builder.AppendLine("/// <param name=\"with\">Ordered additional actions; null means none.</param>");
         builder.AppendLine("/// <returns>A new configured component.</returns>");
         builder.Append("public delegate ").Append(type).Append(' ').Append(Escape(component.Name + "Factory"))
-            .Append('(').Append(signature).AppendLine(");");
-        builder.Append("public partial class ").Append(Escape(component.Name)).AppendLine("\n{");
+            .Append(generics).Append('(').Append(signature).Append(')').Append(constraints).AppendLine(";");
+        builder.Append("public partial class ").Append(Escape(component.Name)).Append(generics).Append(constraints).AppendLine("\n{");
         if (component.InstanceConstructors.Any(constructor => constructor.IsImplicitlyDeclared))
         {
             builder.AppendLine("/// <summary>Initializes a new component with its declared defaults.</summary>");
@@ -308,15 +351,61 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
                 builder.AppendLine("/// <returns>An action invoking the operation when applied.</returns>");
                 builder.Append("public static global::System.Action<").Append(TypeName(method.Parameters[0].Type)).Append("> ")
-                    .Append(Escape(method.Name)).Append("(this ").Append(TypeName(outer)).Append(".Definitions.")
-                    .Append(Escape(component.Name + "Factory")).Append(" __factory");
+                    .Append(Escape(method.Name)).Append(generics).Append("(this ").Append(TypeName(outer)).Append(".Definitions.")
+                    .Append(Escape(component.Name + "Factory")).Append(generics).Append(" __factory");
                 string actionSignature = ActionSignature(method);
                 builder.Append(actionSignature.Length == 0 ? string.Empty : ", " + actionSignature)
-                    .Append(") => ").Append(type).Append('.').Append(Escape("__LumyteAction" + method.Name))
+                    .Append(')').Append(constraints).Append(" => ").Append(type).Append('.').Append(Escape("__LumyteAction" + method.Name))
                     .Append('(').Append(ActionArguments(method)).AppendLine(");");
             }
 
             builder.AppendLine("}");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string TypeParameters(INamedTypeSymbol type) => type.Arity == 0 ? string.Empty
+        : "<" + string.Join(", ", type.TypeParameters.Select(parameter => Escape(parameter.Name))) + ">";
+
+    private static string Constraints(INamedTypeSymbol type)
+    {
+        var builder = new StringBuilder();
+        foreach (ITypeParameterSymbol parameter in type.TypeParameters)
+        {
+            var items = new List<string>();
+            if (parameter.HasUnmanagedTypeConstraint)
+            {
+                items.Add("unmanaged");
+            }
+            else if (parameter.HasValueTypeConstraint)
+            {
+                items.Add("struct");
+            }
+            else if (parameter.HasReferenceTypeConstraint)
+            {
+                items.Add(parameter.ReferenceTypeConstraintNullableAnnotation == NullableAnnotation.Annotated ? "class?" : "class");
+            }
+            else if (parameter.HasNotNullConstraint)
+            {
+                items.Add("notnull");
+            }
+
+            items.AddRange(parameter.ConstraintTypes.Select(TypeName));
+            if (parameter.HasConstructorConstraint)
+            {
+                items.Add("new()");
+            }
+
+            if (parameter.AllowsRefLikeType)
+            {
+                items.Add("allows ref struct");
+            }
+
+            if (items.Count != 0)
+            {
+                builder.Append(" where ").Append(Escape(parameter.Name)).Append(" : ").Append(string.Join(", ", items));
+            }
         }
 
         return builder.ToString();
@@ -347,6 +436,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
     private static bool PublicType(ITypeSymbol type) => type switch
     {
+        ITypeParameterSymbol => true,
         IArrayTypeSymbol array => PublicType(array.ElementType),
         INamedTypeSymbol named => named.DeclaredAccessibility == Accessibility.Public
             && (named.ContainingType is null || PublicType(named.ContainingType)) && named.TypeArguments.All(PublicType),
