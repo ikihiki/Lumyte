@@ -9,7 +9,7 @@ glTF のようなマテリアルは色・係数と複数の texture／sampler �
 
 Texture／view の契約は [ADR-0010](0010-texture-resource-contract.md)、sampler は [ADR-0011](0011-sampler-resource-contract.md)、CPU pack と明示的な GPU 転送は [ADR-0009](0009-buffer-resource-contract.md) に従う。WebGPU の storage buffer に texture／sampler object は格納できず、buffer 内の整数を任意の resource binding として使うこともできない。GPU buffer にマテリアルを格納するだけでは参照先の binding と寿命を確定できないため、有限の resource 集合を伴う契約を定める。
 
-本 ADR はマテリアルデータと sampled D2 texture の間接参照を設計する。glTF parser、画像 decoder、mesh importer、完全な PBR renderer は対象外。以下は汎用 schema の提案である。固定 schema に限定した実装済みサブセットは「初期 wgpu 実装」に記録する。
+本 ADR はマテリアルデータと sampled D2 texture の間接参照を設計する。Buffer の内容を定義する論理型と Slang の wire 要素型は利用側が所有し、Core には置かない。Core は resource、参照、layout と serialization の契約を提供する。glTF parser、画像 decoder、mesh importer、完全な PBR renderer は対象外。以下は汎用 schema の提案である。利用側の schema と明示 serializer に対応した実装済みサブセットは「初期 wgpu 実装」に記録する。
 
 ## 決定
 
@@ -230,11 +230,11 @@ DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFinit
 - view／sampler／set の lease、引数と pipeline の layout 不一致、別 set の bytes の拒否、異なる Device、GPU 完了前の Dispose、frame 終了後の解放順。
 - Slang の反射 stride と serializer の一致、オフラインの DLL 埋め込みとオンラインの同一 ABI、backend と profile の不適合および native profile の必須 feature 拒否、material index／selector 範囲外の安全な既定値。
 
-汎用 schema 全体については検証方針であり、実行済みの結果ではない。以下の固定 schema は GPU テストで検証した。一般 serializer、オンライン compiler、sampleLevel、独立 Barrier、Browser と NativeDescriptorIndexing は未実装。
+汎用 schema 全体については検証方針であり、実行済みの結果ではない。利用側の 32-byte／48-byte schema と明示 serializer は GPU テストで検証した。生成 serializer、オンライン compiler、sampleLevel、独立 Barrier、Browser と NativeDescriptorIndexing は未実装。
 
 ### 初期 wgpu 実装
 
-固定の `MaterialData`（base color と省略可能な texture／sampler 組）を実装する。上記の generic schema や完全な glTF PBR 型は公開しない。fallback を含め最大 4 組、1 material は 32 bytes。Slang の reflection によって wire field offset と binding を照合し、WGSL と reflection JSON はともに DLL に埋め込む。生成 WGSL はコミットしない。
+Buffer 内容の論理型は利用側が定義し、`IShaderDataSerializer<T>` で Slang wire field へ対応付ける。サンプルの `MaterialData`（base color と省略可能な texture／sampler 組）はサンプル assembly にのみ置き、対応する Slang の `MaterialWire` もサンプル shader に置く。Core にこれらの型や特定の field 名・stride は持たせない。fallback を含め最大 4 組。backend が Slang reflection から field 名・offset・型・stride を解決する。WGSL と reflection JSON はともに DLL に埋め込み、生成 WGSL はコミットしない。
 
 ```diff
 +namespace Lumyte.Graphics
@@ -242,9 +242,21 @@ DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFinit
 +    // GPU selector と実 handle は公開しない非所有の値型。default は無効。
 +    public readonly struct SampledTexture2DReference;
 +    public readonly struct MaterialBufferReference;
-+    // null は texture を使わず係数だけを返す。係数は finite を要求。
-+    public readonly record struct MaterialData(System.Numerics.Vector4 BaseColor,
-+        SampledTexture2DReference? BaseColorTexture = null);
++    // T の内容と Slang の要素型は利用側が定義する。
++    public interface IShaderDataSerializer<T>
++    {
++        // writer はこの同期 callback 中のみ有効。T や serializer を保持しない。
++        public void Serialize(in T value, IShaderDataWriter writer);
++    }
++    public interface IShaderDataWriter
++    {
++        // 反射された top-level field と型が一致する値を pack。
++        // 初期対応は float／int／uint と System.Numerics の float Vector2／3／4。
++        // 未知の field、非対応型、不一致、非 finite 値、同一 field の二重書き込みは拒否。
++        public void Write<TValue>(string fieldName, TValue value) where TValue : unmanaged;
++        // UInt32 field へ内部表現を格納。null は fallback。数値 selector は返さない。
++        public void WriteSampledTexture2D(string fieldName, SampledTexture2DReference? reference);
++    }
 +    public sealed record MaterialBindingsDesc
 +    {
 +        public required MaterialResourceLayout Layout { get; init; }
@@ -254,7 +266,9 @@ DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFinit
 +    public sealed class MaterialResourceLayout
 +    {
 +        public uint PairCapacity { get; }
-+        // count > 0。checked で 32-byte stride を掛ける。
++        // backend が reflection から解決した stride。Core 固定の値ではない。
++        public ulong ElementStrideInBytes { get; }
++        // count > 0。checked で解決済み stride を掛ける。
 +        public ulong GetSizeInBytes(ulong count);
 +    }
 +    public interface IGraphicsMaterialBindings : System.IDisposable
@@ -273,13 +287,13 @@ DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFinit
 +    {
 +        public SampledTexture2DReference CreateSampledTexture2DReference(IGraphicsTextureView texture, Sampler sampler);
 +        // 入力を immutable snapshot とし、組を deduplicate。容量超過は拒否。
-+        public IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, System.ReadOnlySpan<MaterialData> materials);
++        public IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, System.ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer);
 +        // 登録された全 range と転送完了を要求。待機やコピーはしない。
 +        public MaterialBufferReference CreateMaterialReference(BufferSlice<byte> range);
 +    }
 +    public sealed class ShaderModule
 +    {
-+        // library の固定 reflection に一致しない shader は拒否。
++        // backend の有限 binding profile と初期 field 型に不適合な shader は拒否。
 +        public MaterialResourceLayout GetMaterialResourceLayout();
 +    }
 +    public sealed class GraphicsPipeline
@@ -299,9 +313,9 @@ DirectX／Vulkan は NativeDescriptorIndexing のみを提供し、PortableFinit
 
 backend は pack した range と参照集合の関係を保持し、全 range の明示的 GPU コピーへ登録を引き継ぐ。部分上書き、未送信 command の破棄、失敗した submission で登録を無効化する。古い submission の完了で、新しい上書きにより失効した登録を復活させない。生成済み参照も再検証する。bindings は view／sampler を、range と ShaderArguments は bindings を lease する。
 
-library の `LumyteMaterials.slang` が wire 型、物理 binding、4 分岐と `sampleMaterialBaseColor` を所有する。利用 shader はこれを import し、GPU material index と一様な制御フローで求めた UV gradient を渡す。内部は `SampleGrad` で texture を解決し係数を掛ける。material index 範囲外は magenta、無効 selector は zero とする。
+backend の `LumyteSampledTextures.slang` は物理 binding、4 分岐と `sampleSampledTexture2D` のみを所有する。buffer 要素型、material index の選び方、係数と texture の組み合わせ、省略時の動作は利用 shader が定義する。利用側はその Slang field 名で serializer を実装し、resource field には不透明な sampled reference を writer へ渡す。GPU 側は内部の selector を helper に渡し、一様な制御フローで求めた UV gradient による `SampleGrad` で解決する。無効 selector は zero。未記入の numeric field と padding は zero の snapshot とし、library は係数の既定値を補わない。
 
-Linux lavapipe の共通 API テストで、1 draw の pixel ごとの赤／緑 texture 選択、参照の交換、省略時の係数、CPU snapshot、容量、Device と寿命、転送完了前の拒否、破棄と部分上書き後の失効を確認した。サンプルも同じ共通 API 経路を使う。
+Linux lavapipe の共通 API テストで、利用側の異なる型・field 名・並び・32／48-byte stride、callback 外の writer 拒否、未知 field／型不一致／重複書き込みの拒否、および 1 draw の pixel ごとの赤／緑 texture 選択、参照の交換、省略時の係数、CPU snapshot、容量、Device と寿命、転送完了前の拒否、破棄と部分上書き後の失効を確認した。サンプルも同じ共通 API 経路を使う。
 
 ## 検討した代替案
 
@@ -327,4 +341,4 @@ format、色空間、sampler、wrap、mip、UV transform の意味や resource �
 - serializer、Slang helper、resource bindings、範囲 metadata の ABI と寿命を揃える必要がある。
 - wgpu／Browser WebGPU の portable profile は同時参照集合と shader binding 数に上限があり、シーン全体を一つの draw に集約できるとは保証しない。
 - glTF の logical material と GPU wire data を分離し、参照先や schema を変更した場合は再 pack／転送する。
-- 汎用契約は提案。初期 wgpu の固定 schema と GPU 検証は以下の範囲で実装済み。
+- 汎用契約は提案。初期 wgpu の利用側 schema・明示 serializer と GPU 検証は上記の範囲で実装済み。

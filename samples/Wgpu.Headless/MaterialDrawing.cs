@@ -18,7 +18,7 @@ internal static class MaterialDrawing
         SampledTexture2DReference greenReference = device.CreateSampledTexture2DReference(greenView, sampler);
         using ShaderModule shader = device.CreateShader(shaders, "Lumyte.Shaders.material.wgsl");
         using GraphicsPipeline pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
-        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings(new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = redReference, }, new MaterialData[] { new(new Vector4(0.5f, 1, 1, 1), untextured ? null : swap ? greenReference : redReference), new(Vector4.One, swap ? redReference : greenReference), });
+        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings<MaterialData>(new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = redReference, }, new MaterialData[] { new(new Vector4(0.5f, 1, 1, 1), untextured ? null : swap ? greenReference : redReference), new(Vector4.One, swap ? redReference : greenReference), }, MaterialDataSerializer.Instance);
         using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload, });
         using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead, });
         using IGraphicsBuffer<byte> redUpload = device.CreateBuffer(new BufferDesc<byte> { Count = 256, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });

@@ -36,10 +36,11 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
     {
         var module = (ShaderModule)shader;
         module.Check(device);
-        return new(module.MaterialSchema ?? throw new NotSupportedException("Shader reflection does not declare the supported material ABI."));
+        MaterialSchema schema = module.MaterialSchema ?? throw new NotSupportedException("Shader reflection does not declare the supported material ABI.");
+        return new(schema, 4, schema.ElementStrideInBytes);
     }
 
-    public IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials) => device.CreateMaterialBindings(desc, materials);
+    public IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer) => device.CreateMaterialBindings(desc, materials, serializer);
 
     public object CreateMaterialReference(G.BufferRange range)
     {

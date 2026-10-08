@@ -59,12 +59,14 @@ public sealed class GraphicsDevice : IDisposable
     public SampledTexture2DReference CreateSampledTexture2DReference(IGraphicsTextureView texture, Sampler sampler) => new(_driver.CreateSampledTextureReference(texture, sampler));
 
     /// <summary>
-    /// Snapshots logical materials and retains their finite sampled-resource set.
+    /// Serializes caller-defined logical elements into a snapshot and retains their finite sampled-resource set.
     /// </summary>
-    /// <param name="desc">The immutable creation or recording settings to validate.</param>
-    /// <param name="materials">The logical material snapshot, packed set, or opaque material range.</param>
+    /// <typeparam name="T">The caller-defined logical buffer element type.</typeparam>
+    /// <param name="desc">The reflected layout and fallback resource settings.</param>
+    /// <param name="materials">The logical elements to serialize into an immutable snapshot.</param>
+    /// <param name="serializer">The caller-owned mapping from logical values to the Slang wire schema.</param>
     /// <returns>The owned snapshot and its retained sampled-resource set.</returns>
-    public IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials) => _driver.CreateMaterialBindings(desc, materials);
+    public IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer) => _driver.CreateMaterialBindings(desc, materials, serializer);
 
     /// <summary>
     /// References a registered, complete material range after explicit upload completion; does not wait or submit.

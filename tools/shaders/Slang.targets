@@ -3,7 +3,7 @@
     <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
   </PropertyGroup>
   <ItemGroup>
-    <SlangShaderLibrary Include="$(MSBuildThisFileDirectory)../../src/Graphics/Lumyte.Graphics.Core/Shaders/*.slang" />
+    <SlangShaderLibrary Include="$(MSBuildThisFileDirectory)../../src/Graphics/Lumyte.Graphics.Wgpu/Shaders/*.slang" />
   </ItemGroup>
   <!-- Run per source, keeping generated code entirely inside obj/. -->
   <Target Name="CompileSlangShaders"
@@ -11,7 +11,7 @@
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).reflection.json"
           Condition="'@(SlangShader)' != ''">
     <MakeDir Directories="$(IntermediateOutputPath)Slang" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -I &quot;$(MSBuildThisFileDirectory)../../src/Graphics/Lumyte.Graphics.Core/Shaders&quot; -target wgsl -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl&quot;" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -I &quot;$(MSBuildThisFileDirectory)../../src/Graphics/Lumyte.Graphics.Wgpu/Shaders&quot; -target wgsl -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.Filename).wgsl&quot;" />
   </Target>
   <Target Name="EmbedSlangShaders" BeforeTargets="AssignTargetPaths"
           DependsOnTargets="CompileSlangShaders" Condition="'@(SlangShader)' != ''">

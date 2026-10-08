@@ -1,0 +1,16 @@
+using Lumyte.Graphics;
+
+namespace Lumyte.Samples;
+
+// The consumer owns both its logical data and the mapping to its Slang wire fields.
+internal sealed class MaterialDataSerializer : IShaderDataSerializer<MaterialData>
+{
+    internal static MaterialDataSerializer Instance { get; } = new();
+
+    public void Serialize(in MaterialData value, IShaderDataWriter writer)
+    {
+        writer.Write("baseColor", value.BaseColor);
+        writer.WriteSampledTexture2D("textureSelector", value.BaseColorTexture);
+        writer.Write("hasTexture", value.BaseColorTexture.HasValue ? 1u : 0u);
+    }
+}

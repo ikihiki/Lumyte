@@ -324,7 +324,7 @@ internal sealed unsafe class WgpuDevice : IDisposable
         }
     }
 
-    public MaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials)
+    public MaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer)
     {
         lock (Gate)
         {
@@ -337,7 +337,14 @@ internal sealed unsafe class WgpuDevice : IDisposable
                 throw new NotSupportedException("Material layout exceeds device binding limits.");
             }
 
-            (byte[] Bytes, SampledPair[] Pairs) prepared = MaterialBindings.Prepare(this, desc, materials);
+            (byte[] Bytes, SampledPair[] Pairs) prepared = MaterialBindings.Prepare(this, desc, materials, serializer);
+            Check();
+            foreach (SampledPair pair in prepared.Pairs.Distinct())
+            {
+                pair.View.Check(this);
+                pair.Sampler.Check(this);
+            }
+
             return new(this, desc.Layout, (ulong)materials.Length, prepared.Bytes, prepared.Pairs);
         }
     }

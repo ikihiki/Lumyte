@@ -11,8 +11,8 @@ public sealed class ShaderModule : GpuResource
     }
 
     /// <summary>
-    /// Gets the fixed material ABI validated against the embedded Slang reflection; unsupported shaders are rejected.
+    /// Gets the caller-defined element layout validated against embedded Slang reflection; unsupported schemas are rejected.
     /// </summary>
-    /// <returns>The validated fixed layout associated with this shader.</returns>
+    /// <returns>The reflected element layout and compiled sampled-resource capacity.</returns>
     public MaterialResourceLayout GetMaterialResourceLayout() => Driver.GetMaterialLayout(Handle);
 }

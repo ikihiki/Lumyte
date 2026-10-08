@@ -63,19 +63,21 @@ internal interface IGraphicsDriver : IDisposable, ICommandBufferBackendContract
     object CreateSampledTextureReference(IGraphicsTextureView texture, Sampler sampler);
 
     /// <summary>
-    /// Gets the fixed material ABI validated against the embedded Slang reflection; unsupported shaders are rejected.
+    /// Gets the caller-defined element layout validated against embedded Slang reflection; unsupported schemas are rejected.
     /// </summary>
     /// <param name="shader">The shader handle whose reflection defines the material schema.</param>
-    /// <returns>The validated fixed layout associated with the shader handle.</returns>
+    /// <returns>The reflected element layout and compiled sampled-resource capacity.</returns>
     MaterialResourceLayout GetMaterialLayout(object shader);
 
     /// <summary>
-    /// Snapshots logical materials and retains their finite sampled-resource set.
+    /// Serializes caller-defined logical elements into a snapshot and retains their finite sampled-resource set.
     /// </summary>
-    /// <param name="desc">The immutable creation or recording settings to validate.</param>
-    /// <param name="materials">The logical material snapshot, packed set, or opaque material range.</param>
+    /// <typeparam name="T">The caller-defined logical buffer element type.</typeparam>
+    /// <param name="desc">The reflected layout and fallback resource settings.</param>
+    /// <param name="materials">The logical elements to serialize into an immutable snapshot.</param>
+    /// <param name="serializer">The caller-owned mapping from logical values to the Slang wire schema.</param>
     /// <returns>The owned snapshot and its retained sampled-resource set.</returns>
-    IGraphicsMaterialBindings CreateMaterialBindings(MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials);
+    IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer);
 
     /// <summary>
     /// References a registered, complete material range after explicit upload completion; does not wait or submit.

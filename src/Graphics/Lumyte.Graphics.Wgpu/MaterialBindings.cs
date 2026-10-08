@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using System.Numerics;
 using G = Lumyte.Graphics;
 
 namespace Lumyte.Graphics.Wgpu;
@@ -51,11 +49,12 @@ internal sealed class MaterialBindings : GpuResource, IGraphicsMaterialBindings
         }
     }
 
-    internal static (byte[] Bytes, SampledPair[] Pairs) Prepare(WgpuDevice owner, MaterialBindingsDesc desc, ReadOnlySpan<MaterialData> materials)
+    internal static (byte[] Bytes, SampledPair[] Pairs) Prepare<T>(WgpuDevice owner, MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer)
     {
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.Layout);
-        if (desc.Layout.Handle is not MaterialSchema)
+        ArgumentNullException.ThrowIfNull(serializer);
+        if (desc.Layout.Handle is not MaterialSchema schema)
         {
             throw new ArgumentException("Invalid material layout.");
         }
@@ -69,42 +68,24 @@ internal sealed class MaterialBindings : GpuResource, IGraphicsMaterialBindings
         {
             Resolve(owner, desc.UnusedSlotFallback),
         };
-        byte[] bytes = new byte[checked(materials.Length * 32)];
+        byte[] bytes = new byte[checked((int)desc.Layout.GetSizeInBytes((ulong)materials.Length))];
+        int stride = checked((int)schema.ElementStrideInBytes);
+        var writer = new ShaderDataWriter(owner, schema, bytes, unique, desc.Layout.PairCapacity);
         for (int i = 0; i < materials.Length; i++)
         {
-            MaterialData m = materials[i];
-            Vector4 c = m.BaseColor;
-            if (!float.IsFinite(c.X) || !float.IsFinite(c.Y) || !float.IsFinite(c.Z) || !float.IsFinite(c.W))
+            writer.BeginRow(checked(i * stride));
+            try
             {
-                throw new ArgumentException("Material coefficients must be finite.");
+                serializer.Serialize(in materials[i], writer);
             }
-
-            Span<byte> row = bytes.AsSpan(i * 32, 32);
-            BinaryPrimitives.WriteSingleLittleEndian(row, c.X);
-            BinaryPrimitives.WriteSingleLittleEndian(row[4..], c.Y);
-            BinaryPrimitives.WriteSingleLittleEndian(row[8..], c.Z);
-            BinaryPrimitives.WriteSingleLittleEndian(row[12..], c.W);
-            if (m.BaseColorTexture is { } reference)
+            finally
             {
-                SampledPair pair = Resolve(owner, reference);
-                int index = unique.IndexOf(pair);
-                if (index < 0)
-                {
-                    index = unique.Count;
-                    unique.Add(pair);
-                }
-
-                if (unique.Count > 4)
-                {
-                    throw new NotSupportedException("This material variant supports four sampled pairs including fallback.");
-                }
-
-                BinaryPrimitives.WriteUInt32LittleEndian(row[16..], (uint)index);
-                BinaryPrimitives.WriteUInt32LittleEndian(row[20..], 1);
+                writer.EndRow();
             }
         }
 
-        SampledPair[] pairs = Enumerable.Range(0, 4).Select(i => i < unique.Count ? unique[i] : unique[0]).ToArray();
+        SampledPair[] pairs = Enumerable.Range(0, checked((int)desc.Layout.PairCapacity))
+            .Select(i => i < unique.Count ? unique[i] : unique[0]).ToArray();
         return (bytes, pairs);
     }
 

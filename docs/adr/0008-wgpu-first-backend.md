@@ -82,7 +82,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
 +        public IGraphicsTexture CreateTexture(TextureDesc desc);
 +
-+        // rootless または固定 material schema の vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
++        // rootless または有限 binding profile の material shader の vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
 +        public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
 +
 +        // 一回限りの送信
@@ -301,7 +301,7 @@ API の形は揃うが、未対応の機能を使用できると誤認させる�
 
 ### マテリアル描画の実装済み拡張
 
-[ADR-0012 の初期 wgpu 実装](0012-material-buffer-texture-resolution.md#初期-wgpu-実装) の固定 MaterialData、4 組の sampled texture／sampler、GPU material buffer からの選択と RenderEncoder.Draw(arguments, desc) を実装する。汎用 schema 全体は対象外。Slang の library helper と reflection JSON を使用し、生成 WGSL／JSON は DLL に埋め込む。
+[ADR-0012 の初期 wgpu 実装](0012-material-buffer-texture-resolution.md#初期-wgpu-実装) の利用側で定義した要素型・明示 serializer、4 組の sampled texture／sampler、GPU material buffer からの選択と RenderEncoder.Draw(arguments, desc) を実装する。Core は Buffer 内容の構造体を定義しない。初期 field 対応は top-level の float／int／uint と float vectors に限定し、stride は backend が Slang reflection から解決する。生成 serializer と nested／array schema は対象外。Slang の library helper と reflection JSON を使用し、生成 WGSL／JSON は DLL に埋め込む。
 
 ```diff
 +namespace Lumyte.Graphics

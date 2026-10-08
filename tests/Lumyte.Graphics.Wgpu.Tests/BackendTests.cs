@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Lumyte.Samples;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -9,6 +10,137 @@ namespace Lumyte.Graphics.Tests;
 /// </summary>
 public sealed class BackendTests
 {
+    /// <summary>
+    /// Verifies caller-owned logical and Slang wire types with a different stride can resolve textures on the GPU.
+    /// </summary>
+    [Fact]
+    public void CallerDefinedMaterialSchemaUsesReflectedStrideAndGpuSampling()
+    {
+        Assert.DoesNotContain(typeof(GraphicsDevice).Assembly.GetTypes(), type => type.Name == "MaterialData");
+        using GraphicsDevice device = Graphics.CreateDevice();
+        using IGraphicsTexture red = device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
+        using IGraphicsTexture green = device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
+        using IGraphicsTextureView redView = red.CreateView();
+        using IGraphicsTextureView greenView = green.CreateView();
+        using Sampler sampler = device.CreateSampler(new SamplerDesc { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest });
+        SampledTexture2DReference redRef = device.CreateSampledTexture2DReference(redView, sampler);
+        SampledTexture2DReference greenRef = device.CreateSampledTexture2DReference(greenView, sampler);
+        using ShaderModule shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.customMaterial.wgsl");
+        using GraphicsPipeline pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
+        MaterialResourceLayout layout = shader.GetMaterialResourceLayout();
+        Assert.Equal(48UL, layout.ElementStrideInBytes);
+        Assert.Equal(96UL, layout.GetSizeInBytes(2));
+        IShaderDataWriter? capturedWriter = null;
+        var serializer = new DelegateShaderDataSerializer<CustomMaterial>((value, writer) =>
+        {
+            writer.Write("opacity", value.Opacity);
+            writer.Write("options", 0u);
+            writer.WriteSampledTexture2D("image", value.Texture);
+            writer.Write("tint", value.Tint);
+            capturedWriter = writer;
+        });
+        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings<CustomMaterial>(
+            new MaterialBindingsDesc { Layout = layout, UnusedSlotFallback = redRef },
+            new CustomMaterial[] { new(0.5f, System.Numerics.Vector4.One, redRef), new(1, System.Numerics.Vector4.One, greenRef) },
+            serializer);
+        Assert.Equal(96UL, bindings.SizeInBytes);
+        Assert.Throws<InvalidOperationException>(() => capturedWriter!.Write("opacity", 1f));
+        using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
+        using IGraphicsBuffer<byte> redUpload = device.CreateBuffer(new BufferDesc<byte> { Count = 256, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        using IGraphicsBuffer<byte> greenUpload = device.CreateBuffer(new BufferDesc<byte> { Count = 256, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        redUpload.CopyFrom(new byte[] { 255, 0, 0, 255 });
+        greenUpload.CopyFrom(new byte[] { 0, 255, 0, 255 });
+        upload.Slice(0, bindings.SizeInBytes).CopyFrom(bindings);
+        using (CommandEncoder transfer = device.CreateCommandEncoder())
+        {
+            transfer.RecordCopyBufferToTexture(redUpload.Slice(0, 256), red, 256);
+            transfer.RecordCopyBufferToTexture(greenUpload.Slice(0, 256), green, 256);
+            transfer.RecordCopyBuffer(upload.Slice(0, bindings.SizeInBytes), gpu.Slice(0, bindings.SizeInBytes));
+            using CommandBuffer commands = transfer.Finish();
+            device.Submit(commands).Wait();
+        }
+
+        using ShaderArguments arguments = pipeline.CreateArguments(device.CreateMaterialReference(gpu.Slice(0, bindings.SizeInBytes)));
+        using IGraphicsTexture target = device.CreateTexture(new TextureDesc { Width = 8, Height = 4 });
+        using IGraphicsTextureView targetView = target.CreateView();
+        using IGraphicsBuffer<byte> readback = Readback<byte>(device, 1024);
+        using (CommandEncoder encoder = device.CreateCommandEncoder())
+        {
+            using (RenderEncoder pass = encoder.BeginRenderPass(new RenderPassDesc { Target = targetView }))
+            {
+                pass.SetPipeline(pipeline);
+                pass.Draw(arguments, new DrawDesc { VertexCount = 3 });
+            }
+
+            encoder.RecordCopyTextureToBuffer(target, readback, 256);
+            using CommandBuffer commands = encoder.Finish();
+            device.Submit(commands).Wait();
+        }
+
+        byte[] pixels = new byte[1024];
+        readback.CopyTo(pixels);
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 8; x++)
+            {
+                byte[] expected = x < 4 ? new byte[] { 128, 0, 0, 128 } : new byte[] { 0, 255, 0, 255 };
+                Assert.Equal(expected, pixels.AsSpan((y * 256) + (x * 4), 4).ToArray());
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies serializer field names, numeric types, resource slots, duplicate writes, and callback lifetime.
+    /// </summary>
+    [Fact]
+    public void CallerSerializerMustMatchReflectedFieldsAndCannotRetainWriter()
+    {
+        using GraphicsDevice device = Graphics.CreateDevice();
+        using ShaderModule shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.material.wgsl");
+        using IGraphicsTexture texture = device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled });
+        using IGraphicsTextureView view = texture.CreateView();
+        using Sampler sampler = device.CreateSampler(new SamplerDesc());
+        var desc = new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = device.CreateSampledTexture2DReference(view, sampler) };
+        var values = new MaterialData[] { new(System.Numerics.Vector4.One) };
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings<MaterialData>(
+            desc,
+            values,
+            new DelegateShaderDataSerializer<MaterialData>((value, writer) => writer.Write("missing", 1u))));
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings<MaterialData>(
+            desc,
+            values,
+            new DelegateShaderDataSerializer<MaterialData>((value, writer) => writer.Write("baseColor", 1u))));
+        Assert.Throws<NotSupportedException>(() => device.CreateMaterialBindings<MaterialData>(
+            desc,
+            values,
+            new DelegateShaderDataSerializer<MaterialData>((value, writer) => writer.Write("baseColor", (byte)1))));
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings<MaterialData>(
+            desc,
+            values,
+            new DelegateShaderDataSerializer<MaterialData>((value, writer) => writer.WriteSampledTexture2D("baseColor", null))));
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings<MaterialData>(
+            desc,
+            values,
+            new DelegateShaderDataSerializer<MaterialData>((value, writer) =>
+            {
+                writer.Write("hasTexture", 0u);
+                writer.Write("hasTexture", 1u);
+            })));
+        IShaderDataWriter? capturedWriter = null;
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings<MaterialData>(
+            desc,
+            values,
+            new DelegateShaderDataSerializer<MaterialData>((value, writer) =>
+            {
+                capturedWriter = writer;
+                writer.Write("baseColor", new System.Numerics.Vector4(float.NaN, 1, 1, 1));
+            })));
+        Assert.Throws<InvalidOperationException>(() => capturedWriter!.Write("hasTexture", 1u));
+        using IGraphicsMaterialBindings valid = device.CreateMaterialBindings<MaterialData>(desc, values, MaterialDataSerializer.Instance);
+        Assert.Equal(32UL, valid.SizeInBytes);
+    }
+
     /// <summary>
     /// Verifies gpu material buffer selects textures per pixel in one draw.
     /// </summary>
@@ -54,10 +186,10 @@ public sealed class BackendTests
             Layout = shader.GetMaterialResourceLayout(),
             UnusedSlotFallback = fallback,
         };
-        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings(desc, new MaterialData[] { new(System.Numerics.Vector4.One, default(SampledTexture2DReference)) }));
-        Assert.Throws<NotSupportedException>(() => device.CreateMaterialBindings(desc, new[] { v1, v2, v3, v4 }.Select(v => new MaterialData(System.Numerics.Vector4.One, device.CreateSampledTexture2DReference(v, sampler))).ToArray()));
+        Assert.Throws<ArgumentException>(() => device.CreateMaterialBindings<MaterialData>(desc, new MaterialData[] { new(System.Numerics.Vector4.One, default(SampledTexture2DReference)) }, MaterialDataSerializer.Instance));
+        Assert.Throws<NotSupportedException>(() => device.CreateMaterialBindings<MaterialData>(desc, new[] { v1, v2, v3, v4 }.Select(v => new MaterialData(System.Numerics.Vector4.One, device.CreateSampledTexture2DReference(v, sampler))).ToArray(), MaterialDataSerializer.Instance));
         using GraphicsDevice foreign = Graphics.CreateDevice();
-        Assert.Throws<ArgumentException>(() => foreign.CreateMaterialBindings(desc, new MaterialData[] { new(System.Numerics.Vector4.One) }));
+        Assert.Throws<ArgumentException>(() => foreign.CreateMaterialBindings<MaterialData>(desc, new MaterialData[] { new(System.Numerics.Vector4.One) }, MaterialDataSerializer.Instance));
         using IGraphicsTexture invalid = device.CreateTexture(new TextureDesc { Width = 1, Height = 1 });
         using IGraphicsTextureView invalidView = invalid.CreateView();
         Assert.Throws<ArgumentException>(() => device.CreateSampledTexture2DReference(invalidView, sampler));
@@ -65,7 +197,7 @@ public sealed class BackendTests
         {
             new(new System.Numerics.Vector4(0.5f, 1, 1, 1)),
         };
-        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings(desc, values);
+        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings<MaterialData>(desc, values, MaterialDataSerializer.Instance);
         values[0] = new(System.Numerics.Vector4.Zero);
         using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         Assert.Throws<ArgumentException>(() => upload.Slice(0, 16).CopyFrom(bindings));
@@ -98,7 +230,7 @@ public sealed class BackendTests
         using IGraphicsTexture texture = device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled });
         using IGraphicsTextureView view = texture.CreateView();
         using Sampler sampler = device.CreateSampler(new SamplerDesc());
-        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings(new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = device.CreateSampledTexture2DReference(view, sampler), }, new MaterialData[] { new(System.Numerics.Vector4.One) });
+        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings<MaterialData>(new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = device.CreateSampledTexture2DReference(view, sampler), }, new MaterialData[] { new(System.Numerics.Vector4.One) }, MaterialDataSerializer.Instance);
         using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         upload.Slice(0, 32).CopyFrom(bindings);
