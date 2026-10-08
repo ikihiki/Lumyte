@@ -2,6 +2,7 @@ name: Graphics device capabilities
 
 on:
   push:
+    branches: [main]
     paths:
       - 'src/Graphics/**'
       - 'samples/Graphics.Shared/**'
