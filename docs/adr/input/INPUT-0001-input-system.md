@@ -17,7 +17,7 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 InputSystem はデバイスごとの入力記録配列と最新状態を管理する。配列参照、イベント通知、ポーリングは同じ記録を利用し、読み取りによって記録を消費しない。入力の取得周期と履歴の保持期間は独立させ、毎フレームの削除を必須にしない。
 
-初期対象は物理キー、マウスボタン、位置、移動量、ホイール、コントローラー（ゲームパッド）のボタン・スティック・トリガー、フォーカス、デバイス接続・切断とする。文字入力・IME、タッチ、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
+初期対象は物理キー、マウスボタン、位置、移動量、ホイール、コントローラー（ゲームパッド）のボタン・スティック・トリガー、マルチタッチ、ペンの位置・接触・筆圧、フォーカス、デバイス接続・切断とする。文字入力・IME、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
 
 InputSystem はコンストラクター DI で受け取るすべての IInputSource と、それらが登録する IInputDevice を一元管理する。ウィンドウ入力、コントローラー入力など複数のソースを同時に登録できる。ソースやデバイスは自身の入力対象を把握し、フォーカス変更はその対象に属するデバイスだけに通知する。識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
 
@@ -64,7 +64,7 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 +
 +// 0 は無効。InputSystem が割り当て、全ソースを通じて再利用しない。
 +public readonly record struct InputDeviceId(ulong Value);
-+public enum InputDeviceKind { Keyboard, Mouse, Controller }
++public enum InputDeviceKind { Keyboard, Mouse, Controller, Touch, Pen }
 +public enum InputDeviceIdentityKind { Physical, Logical }
 +public sealed record InputDeviceInfo(
 +    InputDeviceId Id, InputDeviceKind Kind, string Name,
@@ -102,6 +102,23 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 +    ControllerTrigger Trigger, float Value) : InputData;
 +public sealed record DeviceConnectedData(InputDeviceInfo Info) : InputData;
 +public sealed record DeviceDisconnectedData : InputData;
++// ContactId は一つの Device 内で一意。終了・キャンセル後も再利用しない。
++public readonly record struct TouchContactId(ulong Value);
++public enum TouchPhase { Began, Moved, Ended, Canceled }
++// Pressure は 0〜1、取得不能なら null。Position は共通の論理座標。
++public sealed record TouchData(
++    TouchContactId ContactId, TouchPhase Phase,
++    Vector2 Position, float? Pressure) : InputData;
++
++// PointerId は一つの Device 内のペン識別子。離脱後の再入場は新しい ID。
++public readonly record struct PenPointerId(ulong Value);
++public enum PenPhase { Entered, Moved, Down, Up, Left, Canceled }
++[Flags]
++public enum PenButtons { None = 0, Barrel = 1, SecondaryBarrel = 2 }
++// ホバー・筆先接触・消しゴムを区別し、未対応の筆圧を捏造しない。
++public sealed record PenData(
++    PenPointerId PointerId, PenPhase Phase, Vector2 Position,
++    float? Pressure, bool IsInContact, PenButtons Buttons, bool IsEraser) : InputData;
 +public sealed record FocusData(bool IsFocused) : InputData;
 +
 +// 配列・通知・ポーリングで共通の不変記録。
@@ -186,6 +203,10 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 +    public bool IsDown(ControllerButton button);
 +    // Mouse のみ。移動・ホイールの期間集計は履歴から行う。
 +    public Vector2 MousePosition { get; }
++    // Touch のみ。現在接触中の指を保持し、終了・キャンセル後は一覧から削除。
++    public IReadOnlyDictionary<TouchContactId, TouchData> TouchContacts { get; }
++    // Pen のみ。ホバー中を含む在圏ペン。Left / Canceled で一覧から削除。
++    public IReadOnlyDictionary<PenPointerId, PenData> PenPointers { get; }
 +    // Controller のみ。初期値 0、デッドゾーン適用前の正規化値。
 +    public Vector2 GetStick(ControllerStick stick);
 +    public float GetTrigger(ControllerTrigger trigger);
@@ -254,6 +275,18 @@ Platform は標準ゲームパッドの物理的な位置に共通ボタンを�
 
 物理デバイス識別不能な環境では同種入力の混在を論理デバイスの履歴として扱う。独立した複数キーボード等の機能を提供できると偽らず、Platform ごとの識別粒度を明示する。
 
+### タッチ・ペン・筆圧
+
+Touch のデバイス ID と指の ContactId は別の識別子とする。一つのタッチデバイス内で複数の接触を同時に記録する。Platform は OS の接触 ID を接触期間ごとの新しい ContactId に変換し、Began → Moved（0 回以上）→ Ended または Canceled の順序を保証する。筆圧だけの変化も Moved として記録する。終了記録を履歴へ追加してから最新状態の TouchContacts から除去する。
+
+Pen はデバイスごとに PointerId を持ち、Entered → Moved / Down / Up → Left を扱う。Down / Up は筆先の接触開始・終了、Moved は位置・筆圧・ボタン等の変化、Left は検出範囲からの離脱、Canceled は入力の中断を表す。Up 後もホバー可能なため PenPointers に残し、Left / Canceled で除去する。接触状態は各 PenData の IsInContact で参照でき、Down は true、Up / Left / Canceled は false とする。Moved はその時点の接触状態を保持する。ホバーを取得できない環境では Platform が最初の Down 前に Entered、Up 後に Left を補う。消しゴム側は IsEraser、側面ボタンは PenButtons で表す。
+
+位置はマウスと同じ対象領域の論理座標とし、筆圧はタッチ・ペンとも 0〜1 の正規化値とする。未取得・非対応は null とし、実測値 0 と区別する。Platform は各機器の圧力範囲を換算し、有限値かつ範囲内の値だけを提供する。既定の筆圧カーブや平滑化は適用せず、描画側が選べるようにする。Pen の Up とホバー時は筆圧対応機器なら 0、非対応なら null とする。筆圧対応の有無をブラシ側が確認できる。
+
+フォーカス喪失、デバイス切断、OS のキャンセルでは、アクティブな接触・ペンを ID 順に Canceled として記録し、最新状態から除去する。合成キャンセルには最後の位置と、対応機器なら筆圧 0、非対応なら null を使用し、Pen の IsInContact は false、PenButtons は None とする。復帰後に古い接触を復元せず、新しい接触開始を待つ。ブラウザーの既定ジェスチャーによるキャンセルも Ended と区別する。
+
+Source はタッチ・ペンの識別粒度に従って Device を登録する。OS が一つの画面や入力対象にまとめて提供する場合は Logical とする。タッチ・ペン由来の互換マウス入力は Platform が識別できる範囲で除外し、同じ操作を二重記録しない。識別不能な場合はバックエンドの制約を明記する。ジェスチャー認識、傾き・回転・接触面積の拡張は後続 ADR とする。
+
 ### スレッド・所有権・エラー
 
 構築・破棄、Update、Registry 操作、配列取得、状態照会、ポーリング、保持設定、履歴削除は InputSystem の管理スレッドから呼ぶ。Update と通知への再入を禁止し、通知中は参照・状態照会・ポーリングのみ許可する。保持設定・削除・再更新は禁止し、InvalidOperationException を返す。購読の追加・解除はその時点以降の通知に反映し、通知中の呼び出し先一覧は固定する。
@@ -318,18 +351,22 @@ Device は DrainEvents の失敗時に入力を消費しない。取得例外は
 - 未読履歴の削除で HasGap が立ち、読了範囲の削除では立たない。
 - 削除で現在状態を変えず、取得済み配列も変えない。
 - フォーカス喪失・切断で合成解放を全方式から参照できる。
+- 複数のタッチ接触を個別に記録し、終了・キャンセル・OS ID 再利用で混同しない。
+- ペンのホバー・接触・離脱・消しゴム・側面ボタンと、筆圧 0 / null / 範囲外を正しく扱う。
+- 筆圧だけの変化と合成キャンセルが配列・通知・ポーリングに一致し、最新状態を残さない。
 - 複数コントローラーの識別、ボタンの短い押下、スティック・トリガーの範囲・向き・初期値・中立復帰を検証する。
 - 状態取得型バックエンドで値の変化を記録し、復帰時の押下抑制と接続スロットの再利用を正しく扱う。
 - 通知例外・再入禁止・不正バッチ・Source / Device 例外で記録や通知が重複しない。
 
-実環境では Windows / Linux / Browser のデバイス識別粒度、物理キー、DPI、ホイール、コントローラーのボタン対応・アナログ正規化、フォーカスと切断を検証する。
+実環境では Windows / Linux / Browser のデバイス識別粒度、物理キー、DPI、ホイール、コントローラーのボタン対応・アナログ正規化、マルチタッチ・ペン筆圧・キャンセル・互換マウス入力、フォーカスと切断を検証する。
 
 ## 別途決定する事項
 
 - 各 Platform の入力ライブラリ、物理デバイス識別方法、Native 境界、Browser の DOM 連携。
 - キー enum の完全な定義と変換表、ホイール換算、マウスキャプチャ・ポインターロック。
 - 各環境のコントローラー取得 API と非標準配置の対応表、振動・ハプティクスなどの出力機能。
-- 文字入力・IME、タッチ、アクションマッピングと UI の入力伝播。
+- タッチ・ペンの各環境の取得 API、傾き・回転・接触面積、ジェスチャー認識。
+- 文字入力・IME、アクションマッピングと UI の入力伝播。
 - OS 発生時刻の取り扱い、永続記録・リプレイ形式、固定時間ステップへのイベント分配。
 - 計測に基づく性能目標、受信キュー上限、長期稼働時の切断済みデバイス情報の回収。
 
