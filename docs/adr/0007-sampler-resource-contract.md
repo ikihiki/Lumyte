@@ -1,4 +1,4 @@
-# ADR-0011: サンプラーの利用 API とバックエンド実装契約
+# ADR-0007: サンプラーの利用 API とバックエンド実装契約
 
 - 状態: 提案
 - 日付: 2026-10-07
@@ -7,7 +7,7 @@
 
 SamplerDesc のフィールドだけでは、通常／比較 sampler の型、filterable format との組合せ、Slang reflection に基づく引数構築、descriptor の寿命が確定しない。Texture に sampler を埋め込むと、同じ画像を異なる sampling 条件で使う際に resource と pipeline の管理が複雑になる。
 
-本 ADR を SamplerDesc の正本とし、Sampler を [ADR-0010](0010-texture-resource-contract.md) の TextureView とは独立した所有 resource として設計する。[ADR-0005](0005-shader-compilation-and-data-interop.md) の生成引数型と BindingPlan を通じて組み合わせる。以下は広い共通契約の提案である。初期 wgpu の通常 sampler は ADR-0008 の限定した Desc を実装している。
+本 ADR を SamplerDesc の正本とし、Sampler を [ADR-0006](0006-texture-resource-contract.md) の TextureView とは独立した所有 resource として設計する。[ADR-0010](0010-shader-compilation-and-data-interop.md) の生成引数型と BindingPlan を通じて組み合わせる。以下は広い共通契約の提案である。初期 wgpu の通常 sampler は ADR-0011 の限定した Desc を実装している。
 
 ## 決定
 
@@ -236,9 +236,9 @@ Sampler は texture に依存しない。通常／比較設定が適合する複
 
 backend は同一 normalizedDesc の native sampler を cache してよい。公開 Sampler は別の所有 wrapper を返し、ReferenceEquals、native の同一性、生成数を保証しない。各 wrapper の Dispose を独立に処理し、共有 native sampler は参照数と GPU 使用の両方が zero の時だけ回収する。cache は Device ごとで、上限と eviction を設けて無制限に増やさない。Label が異なる場合も cache 共有を許すが、診断には公開 wrapper の Label を残す。
 
-Sampler 自体に GPU 書き込みや resource barrier はない。texture のアクセス遷移は TextureView と ADR-0010 に従う。sampler の descriptor を保持するために dummy texture や CPU の完了待機を作らない。FrameContext と Encoder は単一スレッド、生成・解放は Device の直列化規約に従う。
+Sampler 自体に GPU 書き込みや resource barrier はない。texture のアクセス遷移は TextureView と ADR-0006 に従う。sampler の descriptor を保持するために dummy texture や CPU の完了待機を作らない。FrameContext と Encoder は単一スレッド、生成・解放は Device の直列化規約に従う。
 
-null／enum／LOD／anisotropy 範囲・別 Device・型不適合は引数例外、失効は ObjectDisposedException、lease 中解放は InvalidOperationException。有効な設定の未対応機能、確保失敗、DeviceLost は Result の GraphicsError。pack 中の型不適合は native に渡す前に拒否し、native 記録失敗と非同期 validation error は ADR-0006 の Faulted／Submission error 契約に従う。
+null／enum／LOD／anisotropy 範囲・別 Device・型不適合は引数例外、失効は ObjectDisposedException、lease 中解放は InvalidOperationException。有効な設定の未対応機能、確保失敗、DeviceLost は Result の GraphicsError。pack 中の型不適合は native に渡す前に拒否し、native 記録失敗と非同期 validation error は ADR-0009 の Faulted／Submission error 契約に従う。
 
 ### 利用例
 
@@ -258,7 +258,7 @@ var shadow = frame.CreateArguments(shadowLayout, new ShadowArguments {
 });
 ```
 
-material buffer 内の texture／sampler の組の不透明参照、有限 binding 集合と lifetime は [ADR-0012](0012-material-buffer-texture-resolution.md) に従う。
+material buffer 内の texture／sampler の組の不透明参照、有限 binding 集合と lifetime は [ADR-0008](0008-resource-bindings.md) に従う。
 
 ## 検討した代替案
 
@@ -280,7 +280,7 @@ WebGPU の binding layout と shader 型で validation error になり、backend
 - Slang の pair metadata と sampler category ごとの layout 検証が必要になる。
 - native cache の参照数・GPU 完了・診断 label の管理が必要になる。
 - PCF／anisotropy の画質と数値は backend ごとに差があり、全 pixel の bit 一致は保証しない。
-- 初期 wgpu は通常 sampler の MinFilter／MagFilter と AddressU／V を実装し、material sampling を GPU テストで検証した。詳細は ADR-0008 の実装済み拡張に従う。comparison、anisotropy と一般的な mip 設定は未実装。
+- 初期 wgpu は通常 sampler の MinFilter／MagFilter と AddressU／V を実装し、material sampling を GPU テストで検証した。詳細は ADR-0011 の実装済み拡張に従う。comparison、anisotropy と一般的な mip 設定は未実装。
 
 ## 検証方針
 
@@ -293,6 +293,6 @@ WebGPU の binding layout と shader 型で validation error になり、backend
 
 ## 参考資料
 
-- [Slang と GPU データ受け渡し](0005-shader-compilation-and-data-interop.md)
-- [テクスチャ・ビュー](0010-texture-resource-contract.md)
+- [Slang と GPU データ受け渡し](0010-shader-compilation-and-data-interop.md)
+- [テクスチャ・ビュー](0006-texture-resource-contract.md)
 - [WebGPU samplers](https://www.w3.org/TR/webgpu/#samplers)

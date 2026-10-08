@@ -1,17 +1,65 @@
-# ADR-0012: マテリアルバッファからのテクスチャ参照解決
+# ADR-0008: バインディングとマテリアルバッファからのテクスチャ参照解決
 
 - 状態: 提案
 - 日付: 2026-10-07
 
 ## 背景
 
-glTF のようなマテリアルは色・係数と複数の texture／sampler の組を持つ。マテリアル配列を GPU buffer に置き、シェーダーが material index で要素を選んで画像を sample できるようにする。利用側に GPU address、descriptor index、binding slot を公開せず、[ADR-0005](0005-shader-compilation-and-data-interop.md) の生成 serializer と Slang の library module で解決する。
+glTF のようなマテリアルは色・係数と複数の texture／sampler の組を持つ。マテリアル配列を GPU buffer に置き、シェーダーが material index で要素を選んで画像を sample できるようにする。利用側に GPU address、descriptor index、binding slot を公開せず、[ADR-0010](0010-shader-compilation-and-data-interop.md) の生成 serializer と Slang の library module で解決する。
 
-Texture／view の契約は [ADR-0010](0010-texture-resource-contract.md)、sampler は [ADR-0011](0011-sampler-resource-contract.md)、CPU pack と明示的な GPU 転送は [ADR-0009](0009-buffer-resource-contract.md) に従う。WebGPU の storage buffer に texture／sampler object は格納できず、buffer 内の整数を任意の resource binding として使うこともできない。GPU buffer にマテリアルを格納するだけでは参照先の binding と寿命を確定できないため、有限の resource 集合を伴う契約を定める。
+Texture／view の契約は [ADR-0006](0006-texture-resource-contract.md)、sampler は [ADR-0007](0007-sampler-resource-contract.md)、CPU pack と明示的な GPU 転送は [ADR-0005](0005-buffer-resource-contract.md) に従う。WebGPU の storage buffer に texture／sampler object は格納できず、buffer 内の整数を任意の resource binding として使うこともできない。GPU buffer にマテリアルを格納するだけでは参照先の binding と寿命を確定できないため、有限の resource 集合を伴う契約を定める。
 
 本 ADR はマテリアルデータと sampled D2 texture の間接参照を設計する。Buffer の内容を定義する論理型と Slang の wire 要素型は利用側が所有し、Core には置かない。Core は resource、参照、layout と serialization の契約を提供する。glTF parser、画像 decoder、mesh importer、完全な PBR renderer は対象外。以下は汎用 schema の提案である。利用側の schema と明示 serializer に対応した実装済みサブセットは「初期 wgpu 実装」に記録する。
 
 ## 決定
+
+### データとバインディング
+
+共通 API は `IGraphicsBuffer<T>` と非所有の値型 `BufferSlice<T>`（buffer、要素 offset、要素数）を使用する。`T : unmanaged` とし、byte 換算は checked で計算する。GPU データを小さなオブジェクトごとに確保せず、大きなバッファを Runtime が部分確保する。範囲、用途、アラインメントを検証できる表現を保持する。
+
+draw／dispatch は単一の `ShaderArguments` を受け取る。利用者は Slang の論理スキーマに対応する生成済み C# 引数型に定数と `GpuReference<T>`、テクスチャビュー、サンプラを設定する。GPU データ参照の実表現、root アドレス、ディスクリプタ番号、バインディングスロットを利用者に公開しない。
+
+`GpuReference<T>` は型付きの非所有参照であり、実 GPU アドレスを含むかどうかも公開契約に含めない。整数・CPU ポインタへの変換、任意の値からの生成、物理表現のシリアライズを提供しない。バックエンドは Native 実装と Slang のライブラリモジュールを組み合わせ、反射情報に従って参照と引数を実データへ変換する。DirectX／Vulkan の実 GPU アドレスや descriptor、WebGPU の buffer binding と offset の違いはこの境界に閉じ込める。
+
+`ShaderArgumentsLayout<T>`、生成引数型、バックエンド別の物理レイアウトと成果物の契約は ADR-0010 を正本とする。Core はコンパイラを必須依存にせず、オフラインまたはオンラインで生成された同じ成果物契約を受け取る。頂点はこのデータ参照を通してシェーダーが読み出す方式を基本とし、初期の共通 API に固定の頂点レイアウトを導入しない。
+
+Mesh Shader、間接描画、共通スキーマで表現できない動的リソース参照などは任意機能とする。実 GPU アドレスの利用可否は内部の方式選択に使い、共通の GPU データ参照を利用者に放棄させる条件にしない。対象機能・上限を満たさないシェーダーや参照は生成時に明示的に拒否する。
+
+### Runtime の引数構築と再利用
+
+API 差分の比較元は origin/main（Graphics API は未導入）。以下は Runtime の拡張案であり、初期 wgpu は後述の共通 API サブセットに従う。
+
+```diff
++namespace Lumyte.Graphics.Runtime
++{
++    public sealed class GraphicsRuntime
++    {
++        // 再利用可能なフレーム領域を選ぶ
++        // 使用中の領域は再利用しない
++        // 不足時の待機・拡張は Runtime が管理
++        public FrameContext BeginFrame();
++
++        // GPU 完了後の解放
++        // 最後の使用を含む Submission が必要
++        public void DeferDispose(IDisposable resource, Submission lastUse);
++    }
++
++    public sealed class FrameContext
++    {
++        // 単一引数の構築
++        // 生成引数型を同期的に pack
++        // 参照の型・所属・寿命とレイアウトを検証
++        // 利用者は物理スロットを指定しない
++        public ShaderArguments CreateArguments<T>(ShaderArgumentsLayout<T> layout, in T values) where T : IShaderArgumentsData;
++
++        // フレーム領域の再利用条件を登録
++        // 対象フレームの使用を含む Submission と結び付ける
++        public void EndFrame(Submission completion);
++    }
++}
+```
+
+ShaderArguments は Runtime 所有領域の非所有参照であり、所属フレームの完了後は再使用できない。フレーム領域とディスクリプタの再利用・遅延解放には、その最後の GPU 使用を含む Submission の完了が必要である。GpuReference は元のバッファを所有せず、利用者が記録時の寿命を保証する。
 
 ### 論理マテリアル、wire data、binding 集合
 
@@ -22,7 +70,7 @@ Texture／view の契約は [ADR-0010](0010-texture-resource-contract.md)、samp
 5. `CreateReference<T>` で得たマテリアル配列の `GpuReference<T>` を生成 root 引数へ渡す。引数 pack はその範囲に関連する binding 集合を取り込み、同じ set と互換な pipeline の resource bindings を構築する。利用者が set を別の root field に重複して設定する必要はない。
 6. シェーダーが GPU buffer からマテリアルを load し、参照 field を library の sampling helper に渡す。helper は同じ BindingPlan と集合を使って texture／sampler を選択する。
 
-この material 配列の pack では MaterialDataTransfer.CopyFrom(set) を使う。ADR-0005 の汎用 CopyFrom(values, dataLayout) が binding 集合を自動生成することは要求しない。必要な集合の関連がないまま texture 参照を含む material 配列を pack する要求は拒否する。
+この material 配列の pack では MaterialDataTransfer.CopyFrom(set) を使う。ADR-0010 の汎用 CopyFrom(values, dataLayout) が binding 集合を自動生成することは要求しない。必要な集合の関連がないまま texture 参照を含む material 配列を pack する要求は拒否する。
 
 material index は論理配列の要素番号であり、利用側が指定できる。texture selector は backend が wire data に pack する内部表現であり、material index と同じ契約にはしない。参照を含む論理型は `IShaderData` で、`IGraphicsBuffer<T> where T : unmanaged` の T に直接使わない。反射に基づく wire data は byte storage に置き、C# struct の memcpy や `Unsafe.SizeOf<LogicalMaterial>()` で stride を求めない。
 
@@ -42,7 +90,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。宣言は
 +    public sealed class GraphicsDevice : IDisposable
 +    {
 +        // 同じ Device、D2 color view、Sampled 用途、sample count 1、float sample type を検証。
-+        // Comparison sampler は不可。Filtering／NonFiltering と format は ADR-0011 に従う。
++        // Comparison sampler は不可。Filtering／NonFiltering と format は ADR-0007 に従う。
 +        // resource を複製せず、GPU コピー・送信をしない。default／失効参照は pack 時にも拒否。
 +        public Result<SampledTexture2DReference> CreateSampledTexture2DReference(IGraphicsTextureView texture, Sampler sampler);
 +
@@ -120,7 +168,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。宣言は
 +}
 ```
 
-profile、PairCapacity、logical schema と material block の構成は artifact の生成時に固定する。target profile、capacity、helper の版を ADR-0005 の cache key と library ABI に含める。binding 集合を作る時に capacity を増やしたり、暗黙にシェーダーを再コンパイルしたりしない。オフラインの場合は利用する capacity の variant を事前コンパイルし、artifact と反射 metadata を DLL に埋め込む。利用者が明示的に compiler provider を呼ぶオンライン方式も同じ metadata を出力する。
+profile、PairCapacity、logical schema と material block の構成は artifact の生成時に固定する。target profile、capacity、helper の版を ADR-0010 の cache key と library ABI に含める。binding 集合を作る時に capacity を増やしたり、暗黙にシェーダーを再コンパイルしたりしない。オフラインの場合は利用する capacity の variant を事前コンパイルし、artifact と反射 metadata を DLL に埋め込む。利用者が明示的に compiler provider を呼ぶオンライン方式も同じ metadata を出力する。
 
 ### wgpu／Browser WebGPU: PortableFiniteBindings
 
@@ -141,12 +189,12 @@ N は program 全体の sampled textures／samplers、bind groups、bindings per
 生成する論理型の例は baseColorFactor、metallicFactor、roughnessFactor、emissiveFactor、normalScale、occlusionStrength と最大五つの optional sampled reference を持つ。各マップには texCoord の選択と UV transform を持たせる。alphaMode、alphaCutoff、doubleSided などの draw／pipeline 分類は importer と renderer が行い、resource 集合の生成だけで pipeline 状態を変更しない。
 
 - baseColor と emissive の RGB は sRGB 解釈の view、metallicRoughness／normal／occlusion は線形の view とする。backend が material 名から format を推測しない。
-- 同じ画像を sRGB と線形の両方で使う場合は、ADR-0010 の compatible view format 条件を満たすように texture を生成する。実現できなければ importer が別 texture を明示的に用意する。
+- 同じ画像を sRGB と線形の両方で使う場合は、ADR-0006 の compatible view format 条件を満たすように texture を生成する。実現できなければ importer が別 texture を明示的に用意する。
 - metallicRoughness は G=roughness、B=metallic、occlusion は R を使用する。チャンネルの解釈と normal map の復元は material shader の責務とする。
 - UV transform による gradient の変換も caller が行う。normal map の tangent／normal、TEXCOORD_0／1 の供給は mesh と shader の契約であり、本 API は生成しない。
 - glTF の sampler 省略時の設定とマップ省略時の係数は importer が仕様に従って解決する。optional map の null と無効な default reference を混同しない。
 
-以下は library module が提供する Slang の論理操作の例。実 resource binding 宣言、selector の field、switch 本体は生成側に置く。この helper は ADR-0005 の linked program と同じ BindingPlan を使用する。
+以下は library module が提供する Slang の論理操作の例。実 resource binding 宣言、selector の field、switch 本体は生成側に置く。この helper は ADR-0010 の linked program と同じ BindingPlan を使用する。
 
 ```slang
 // MaterialData は Slang schema と生成 C# 型に対応する論理型。

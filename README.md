@@ -21,7 +21,7 @@ GPU がない Linux 環境では Mesa の lavapipe を用意し、その ICD を
 
 テストとサンプルは `Lumyte.Graphics` の共通 API のみを使用します。`Graphics.CreateDevice()` が既定の wgpu 実装を生成し、Core はバックエンドに依存しません。
 
-Browser、一般的な Slang 引数生成、オンラインコンパイル、depth／stencil、MSAA、window／swapchain と広い共通契約の残りは未実装です。[初期実装の契約](docs/adr/0008-wgpu-first-backend.md) と [設計 ADR](docs/adr/) を参照してください。
+Browser、一般的な Slang 引数生成、オンラインコンパイル、depth／stencil、MSAA、window／swapchain と広い共通契約の残りは未実装です。[初期実装の契約](docs/adr/0011-wgpu-first-backend.md) と [設計 ADR](docs/adr/) を参照してください。
 
 ## オフラインシェーダーのビルド
 
@@ -41,11 +41,14 @@ SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセッ�
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
-- [マテリアルバッファからのテクスチャ参照解決の設計案](docs/adr/0012-material-buffer-texture-resolution.md)
-
-- [バッファの利用 API とバックエンド契約](docs/adr/0009-buffer-resource-contract.md)
-- [テクスチャ・ビュー・転送の利用 API とバックエンド契約](docs/adr/0010-texture-resource-contract.md)
-- [サンプラーの利用 API とバックエンド契約](docs/adr/0011-sampler-resource-contract.md)
+- [004: グラフィックデバイス](docs/adr/0004-graphics-device.md)
+- [005: バッファ](docs/adr/0005-buffer-resource-contract.md)
+- [006: テクスチャ](docs/adr/0006-texture-resource-contract.md)
+- [007: サンプラー](docs/adr/0007-sampler-resource-contract.md)
+- [008: バインディング](docs/adr/0008-resource-bindings.md)
+- [009: コマンドバッファ](docs/adr/0009-command-buffer.md)
+- [010: シェーダー](docs/adr/0010-shader-compilation-and-data-interop.md)
+- [011: wgpu](docs/adr/0011-wgpu-first-backend.md)
 
 バッファは `device.CreateBuffer(new BufferDesc<uint> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload })` のように型と要素数で生成します。`SizeInBytes` はバックエンドが解決する `Layout.ElementStrideInBytes` と要素数から自動計算され、`Slice(offset, count)` も要素単位です。数値型や `unmanaged` struct を許可しますが、Slang の ABI 互換性は別途検証します。具象バックエンドが `IGraphicsBuffer<T>` を直接実装し、allocation を所有します。
 

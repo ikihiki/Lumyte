@@ -1,11 +1,11 @@
-# ADR-0005: Slang を基準とするシェーダーコンパイルと GPU データ受け渡し
+# ADR-0010: Slang を基準とするシェーダーコンパイルと GPU データ受け渡し
 
 - 状態: 提案
 - 日付: 2026-10-07
 
 ## 背景
 
-[ADR-0004](0004-graphics-library.md) のグラフィックス共通契約から、シェーダーの言語、コンパイル、引数レイアウト、GPU データ参照の解決を独立させる。Slang を基準とし、配布時にコンパイラを必要としないオフラインコンパイルと、編集・特殊化・動的生成に使うオンラインコンパイルを用意する。
+[ADR-0004](0004-graphics-device.md) のグラフィックス共通契約から、シェーダーの言語、コンパイル、引数レイアウト、GPU データ参照の解決を独立させる。Slang を基準とし、配布時にコンパイラを必要としないオフラインコンパイルと、編集・特殊化・動的生成に使うオンラインコンパイルを用意する。
 
 利用者は GPU データを参照できる必要があるが、実 GPU アドレス、descriptor index、bind group の slot を知る必要はない。DirectX、Vulkan、WebGPU で参照の物理表現と型レイアウトは異なるため、Native 実装と Slang の機能を組み合わせ、各バックエンドライブラリが実データを受け渡す仕組みを持つ。
 
@@ -69,14 +69,14 @@ WebGPU の共通経路では、参照フィールドの論理パスごとに有�
 
 ### Native と Slang の実データ受け渡し
 
-参照先 Buffer の領域／世代／schema は [ADR-0009](0009-buffer-resource-contract.md)、TextureView の subresource／型／access は [ADR-0010](0010-texture-resource-contract.md)、Sampler の category と sampling pair は [ADR-0011](0011-sampler-resource-contract.md) に従う。BindingPlan は texture／sampler の関連 field path を保持し、生成 serializer と backend が適合を検証する。
+参照先 Buffer の領域／世代／schema は [ADR-0005](0005-buffer-resource-contract.md)、TextureView の subresource／型／access は [ADR-0006](0006-texture-resource-contract.md)、Sampler の category と sampling pair は [ADR-0007](0007-sampler-resource-contract.md) に従う。BindingPlan は texture／sampler の関連 field path を保持し、生成 serializer と backend が適合を検証する。
 
 1. Slang の論理スキーマから C# の引数型とデータ型、スキーマ ID を生成する。共通の利用者 API とターゲットごとの物理レイアウトを分ける。
 2. 対象 profile のライブラリモジュールをリンクし、Slang の反射情報から定数の offset／alignment／stride、resource category、binding space、root の表現を取得する。論理フィールドとの対応を BindingPlan に保存する。
 3. 利用者が生成 C# 引数型へ通常の値と GpuReference を設定する。Runtime が型、範囲、世代、デバイス所属、アクセス用途を検証する。
 4. 生成 serializer が値と参照 token を C ABI 用の論理フィールド列へ変換する。DirectX／Vulkan の各 Native 実装が token を解決し、BindingPlan に従って実 GPU アドレス、descriptor、定数 bytes と root を構築する。Slang が生成した対応コードは同じ plan の表現からデータを読む。
 5. WebGPU は同じ論理フィールド列を Browser 実装が pack し、buffer／texture／sampler の bind group と offset を構築する。Browser で Native C++ に処理を委譲することを必須にしない。
-6. root、descriptor、定数、参照先と plan を使用した pipeline は GPU 完了まで保持する。再利用と解放は ADR-0004 の Submission に従う。
+6. root、descriptor、定数、参照先と plan を使用した pipeline は GPU 完了まで保持する。再利用と解放は ADR-0009 の Submission に従う。
 
 BindingPlan はコンパイル成果物の内部メタデータであり、利用者がスロットやアドレスを指定する入力ではない。Slang module、Native packer、生成 serializer は library ABI ID を共有する。異なる ABI の組み合わせ、別デバイスの token、失効した参照、範囲外、型違いを pack 前に拒否する。
 
@@ -208,7 +208,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ソース位置、severity、コード、ターゲット、依存 module を ShaderDiagnostic に残す。未対応機能、コンパイラ不在、コード生成失敗、ABI 不一致を区別する。session の並列利用を仮定せず、provider は要求単位の session または直列化を管理する。キャンセル後の結果は公開せず、Native 処理が停止できない場合も終了後に所有リソースを解放する。
 
-GPU buffer 内の sampled texture／sampler 参照を使う material 配列の有限集合、Slang helper、profile、pack と寿命の契約は [ADR-0012](0012-material-buffer-texture-resolution.md) で具体化する。WebGPU の参照グラフの制約内で、個別 resource binding と内部 selector による選択を行う。
+GPU buffer 内の sampled texture／sampler 参照を使う material 配列の有限集合、Slang helper、profile、pack と寿命の契約は [ADR-0008](0008-resource-bindings.md) で具体化する。WebGPU の参照グラフの制約内で、個別 resource binding と内部 selector による選択を行う。
 
 ## 検討した代替案
 
@@ -259,8 +259,8 @@ Browser の Wasm provider は成果物・診断・反射の共通契約に従え
 
 - [ADR の書き方と運用](0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](0002-repository-layout.md)
-- [グラフィックスライブラリの共通契約](0004-graphics-library.md)
-- [Graphics の Desc 型](0007-graphics-descriptors.md)
+- [グラフィックスライブラリの共通契約](0004-graphics-device.md)
+- [コマンドバッファと描画 Desc](0009-command-buffer.md)
 - [Slang compilation API](https://github.com/shader-slang/slang/blob/master/docs/user-guide/08-compiling.md)
 - [Slang reflection](https://github.com/shader-slang/slang/blob/master/docs/user-guide/09-reflection.md)
 - [Slang link-time specialization／module precompilation](https://github.com/shader-slang/slang/blob/master/docs/user-guide/10-link-time-specialization.md)

@@ -1,19 +1,19 @@
-# ADR-0010: テクスチャ・ビュー・転送の利用 API とバックエンド実装契約
+# ADR-0006: テクスチャ・ビュー・転送の利用 API とバックエンド実装契約
 
 - 状態: 提案
 - 日付: 2026-10-07
 
 ## 背景
 
-Texture を単なる画像 handle として扱うと、mip／layer／aspect、format、sample count、用途、コピーの pitch と読み戻しの意味が不明になる。[ADR-0006](0006-render-encoder.md) の attachment と [ADR-0005](0005-shader-compilation-and-data-interop.md) のシェーダー参照が同じ subresource を扱える設計が必要である。
+Texture を単なる画像 handle として扱うと、mip／layer／aspect、format、sample count、用途、コピーの pitch と読み戻しの意味が不明になる。[ADR-0009](0009-command-buffer.md) の attachment と [ADR-0010](0010-shader-compilation-and-data-interop.md) のシェーダー参照が同じ subresource を扱える設計が必要である。
 
-本 ADR を TextureDesc、TextureViewDesc、TextureCopyDesc の正本とする。Sampler は [ADR-0011](0011-sampler-resource-contract.md)、Buffer は [ADR-0009](0009-buffer-resource-contract.md) に分離する。以下は広い共通 API の提案であり、実装済みの単一 RGBA8 target は [ADR-0008](0008-wgpu-first-backend.md) に従う。
+本 ADR を TextureDesc、TextureViewDesc、TextureCopyDesc の正本とする。Sampler は [ADR-0007](0007-sampler-resource-contract.md)、Buffer は [ADR-0005](0005-buffer-resource-contract.md) に分離する。以下は広い共通 API の提案であり、実装済みの単一 RGBA8 target は [ADR-0011](0011-wgpu-first-backend.md) に従う。
 
 ## 決定
 
 ### 利用側の公開 API
 
-Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の `BufferSlice<byte>.CopyTo` で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
+Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0005 の `BufferSlice<byte>.CopyTo` で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -137,7 +137,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の `IGraphicsBuffer<byte>` を確保し、CommandEncoder で依存と RecordCopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 `BufferSlice<byte>.CopyTo` で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
 
-bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU destination の確保と成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を CPU CopyFrom／CopyTo が追加する根拠にはしない。CPU コピーと Submission 待機の契約は ADR-0009 に従う。
+bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU destination の確保と成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を CPU CopyFrom／CopyTo が追加する根拠にはしない。CPU コピーと Submission 待機の契約は ADR-0005 に従う。
 
 ### TextureDesc
 
@@ -237,7 +237,7 @@ D3 の depth slice を array layer として選択しない。view dimension の
 
 depth／stencil の sampled view は depth aspect のみを共通経路に含め、複合 depth／stencil format では DepthOnly を要求する。StencilOnly の sampled view は後続拡張とする。Sampled view は shader の dimension、numeric category、sample count、depth／color と適合する。Storage view は SampleCount=1、単一 mip、color format、shader access と StorageRead／Write 用途の一致を要求し、format 変更は不可。view の生成だけではアクセス権を付与しない。Storage の view dimension は D1／D2／D2Array／D3 のみで、Cube／CubeArray は拒否する。storage-read 対応などは backend／format capability に照合する。
 
-利用者は生成済み引数型の TextureView field に view を設定し、FrameContext.CreateArguments で pack する。binding 番号、native descriptor、bindless index を指定しない。Slang reflection の resource category／dimension／sample type／access と実 view を検証する。sampler との組合せは ADR-0011 に従う。
+利用者は生成済み引数型の TextureView field に view を設定し、FrameContext.CreateArguments で pack する。binding 番号、native descriptor、bindless index を指定しない。Slang reflection の resource category／dimension／sample type／access と実 view を検証する。sampler との組合せは ADR-0007 に従う。
 
 ### TextureCopyDesc と依存関係
 
@@ -280,7 +280,7 @@ buffer の絶対 offset は checked で Slice.Offset + BufferOffset を求め、
 
 Texture→Texture は同じ texture の同じ mip では、空間／layer のコピー領域が重なる場合に拒否する。異なる mip や非重複領域は backend の resource scope が許す場合だけ使用可能とする。backend が実現できない同一 resource コピーを黙って記録しない。
 
-使用 subresource とアクセスは ResourceDependency に登録する。render 書き込み→sample、storage 書き込み→copy、copy→sample の依存を Barrier で宣言する。attachment と引数、resolve target の重複は ADR-0006 に従って拒否する。Load／Discard は内容の定義状態を変え、初期生成内容を一律 zero として利用する保証は与えない。backend は API の安全性要件として必要な初期化を実施するが、アプリケーションの content 初期化は省略しない。
+使用 subresource とアクセスは ResourceDependency に登録する。render 書き込み→sample、storage 書き込み→copy、copy→sample の依存を Barrier で宣言する。attachment と引数、resolve target の重複は ADR-0009 に従って拒否する。Load／Discard は内容の定義状態を変え、初期生成内容を一律 zero として利用する保証は与えない。backend は API の安全性要件として必要な初期化を実施するが、アプリケーションの content 初期化は省略しない。
 
 ### バックエンドが実装するもの
 
@@ -324,7 +324,7 @@ DirectX／Vulkan の Native 境界は uint32 の寸法／mip／layer／format／
 
 TextureView は独自の native view を所有し、その存続中は元 Texture を lease する。TextureView は GPU コマンドの使用終了後に Dispose し、その後 Texture を Dispose する。非所有の参照関係という説明は texture memory の所有権移譲を意味しないが、元 texture の早期解放は拒否する。ShaderArguments の使用は view と元 texture を GPU 完了まで保持する。
 
-引数・enum・範囲・別 Device は引数例外、破棄済みは ObjectDisposedException、使用中解放・パス状態違反は InvalidOperationException。有効な生成要求の未対応 format／機能、確保失敗、DeviceLost は Result の GraphicsError。コピーの native failure は Encoder を Faulted にする。非同期 validation error は関連 Submission に伝え、Readback を成功として返さない。スレッドとキャンセルは ADR-0009 と同じ。
+引数・enum・範囲・別 Device は引数例外、破棄済みは ObjectDisposedException、使用中解放・パス状態違反は InvalidOperationException。有効な生成要求の未対応 format／機能、確保失敗、DeviceLost は Result の GraphicsError。コピーの native failure は Encoder を Faulted にする。非同期 validation error は関連 Submission に伝え、Readback を成功として返さない。スレッドとキャンセルは ADR-0005 と同じ。
 
 ### 利用例
 
@@ -346,7 +346,7 @@ render.Draw(args, new DrawDesc { VertexCount = 3 });
 // Barrier と BeginRenderPass はパス外。各 mip は個別に Upload する。
 ```
 
-material の GPU buffer から sampled view と sampler の組を選択する経路は [ADR-0012](0012-material-buffer-texture-resolution.md) に従う。view 自身を storage buffer に格納せず、finite binding 集合と不透明な wire 参照を使う。
+material の GPU buffer から sampled view と sampler の組を選択する経路は [ADR-0008](0008-resource-bindings.md) に従う。view 自身を storage buffer に格納せず、finite binding 集合と不透明な wire 参照を使う。
 
 ## 検討した代替案
 
@@ -376,7 +376,7 @@ backend 条件が Upload code に広がる。共通 pitch／region を定め、n
 
 ## 参考資料
 
-- [RenderEncoder と attachment](0006-render-encoder.md)
-- [バッファ](0009-buffer-resource-contract.md)
-- [サンプラー](0011-sampler-resource-contract.md)
+- [RenderEncoder と attachment](0009-command-buffer.md)
+- [バッファ](0005-buffer-resource-contract.md)
+- [サンプラー](0007-sampler-resource-contract.md)
 - [WebGPU textures](https://www.w3.org/TR/webgpu/#textures)

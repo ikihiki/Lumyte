@@ -1,13 +1,13 @@
-# ADR-0009: バッファの利用 API とバックエンド実装契約
+# ADR-0005: バッファの利用 API とバックエンド実装契約
 
 - 状態: 提案
 - 日付: 2026-10-07
 
 ## 背景
 
-[ADR-0004](0004-graphics-library.md) の Buffer と GPU データ参照を、生成、部分領域、Upload、コピー、Readback、解放まで実装できる契約にする。GPU アドレスに依存する設計では WebGPU と共通化できず、C# のメモリ配置を直接 GPU データとして扱うと Slang の target layout と食い違う。
+[ADR-0004](0004-graphics-device.md) の Buffer と GPU データ参照を、生成、部分領域、Upload、コピー、Readback、解放まで実装できる契約にする。GPU アドレスに依存する設計では WebGPU と共通化できず、C# のメモリ配置を直接 GPU データとして扱うと Slang の target layout と食い違う。
 
-本 ADR は `BufferDesc<T>` の正本でもある。テクスチャへの転送は [ADR-0010](0010-texture-resource-contract.md)、シェーダーの schema と pack は [ADR-0005](0005-shader-compilation-and-data-interop.md) に従う。以下は拡張する共通 API の案であり、現在の UInt32 限定 shader schema と初期 API の仕様は [ADR-0008](0008-wgpu-first-backend.md) に残す。
+本 ADR は `BufferDesc<T>` の正本でもある。テクスチャへの転送は [ADR-0006](0006-texture-resource-contract.md)、シェーダーの schema と pack は [ADR-0010](0010-shader-compilation-and-data-interop.md) に従う。以下は拡張する共通 API の案であり、現在の UInt32 限定 shader schema と初期 API の仕様は [ADR-0011](0011-wgpu-first-backend.md) に残す。
 
 ## 決定
 
@@ -125,7 +125,7 @@ CPU メモリの map／invalidate／flush／unmap は backend が CPU 可視性�
 
 ### 明示的な Upload とコピー命令
 
-CopyFrom は既存 Upload buffer の CPU メモリへ T の要素をコピーする。CopyTo は Readback から caller の `Span<T>` に読む。byte storage は index／texture staging や Slang の wire data に使用する。参照を含む生成型の serializer は ADR-0005 の byte storage 向け拡張で pack し、schema／target layout の metadata を付ける。CPU コピーは GPU buffer を更新しない。通常の DeviceLocal／Automatic buffer を destination に渡す要求は拒否し、queue write や staging の追加確保で代行しない。
+CopyFrom は既存 Upload buffer の CPU メモリへ T の要素をコピーする。CopyTo は Readback から caller の `Span<T>` に読む。byte storage は index／texture staging や Slang の wire data に使用する。参照を含む生成型の serializer は ADR-0010 の byte storage 向け拡張で pack し、schema／target layout の metadata を付ける。CPU コピーは GPU buffer を更新しない。通常の DeviceLocal／Automatic buffer を destination に渡す要求は拒否し、queue write や staging の追加確保で代行しない。
 
 利用者が Memory=Upload／Usage=CopySource の staging buffer と CopyDestination を持つ GPU buffer を確保する。CopyFrom で CPU 側のデータを準備し、CommandEncoder.RecordCopyBuffer で staging→GPU の転送命令を記録し、Finish で CommandBuffer に確定して Submit する。Upload だけを暗黙に送信する helper は提供しない。FrameContext の自動 UploadBytes／`Upload<T>` はこの契約から外す。frame の引数構築と allocator の管理は別の責務として維持する。
 
@@ -215,7 +215,7 @@ GPU の同一 Buffer 内コピーはコマンド契約が扱い、半開区間�
 +}
 ```
 
-バッファの backend はコピー命令、resource state／layout 遷移、バリアを所有しない。RecordCopyBuffer はコマンドバッファの backend 契約、Barrier は利用者が明示するコマンドの契約に置く。IBufferBackendContract にこれらの操作を追加せず、自動で推測して挿入もしない。コマンド側が受け取った依存を native の遷移へ変換する詳細は ADR-0004 を参照する。CPU memory の flush／invalidate はバリア宣言の代行ではない。
+バッファの backend はコピー命令、resource state／layout 遷移、バリアを所有しない。RecordCopyBuffer はコマンドバッファの backend 契約、Barrier は利用者が明示するコマンドの契約に置く。IBufferBackendContract にこれらの操作を追加せず、自動で推測して挿入もしない。コマンド側が受け取った依存を native の遷移へ変換する詳細は [ADR-0009](0009-command-buffer.md) を参照する。CPU memory の flush／invalidate はバリア宣言の代行ではない。
 
 | backend | 対応方法と注意点 |
 | --- | --- |
@@ -284,7 +284,7 @@ staging.Slice(0, byteCount).CopyTo(bytes.AsSpan());
 // CPU 読み出しと GPU 使用の完了後に、利用者が staging を解放・再利用する。
 ```
 
-参照を含む material の byte pack、binding 集合との関連、コピー先の予定 metadata とその確定・失効は [ADR-0012](0012-material-buffer-texture-resolution.md) に従う。
+参照を含む material の byte pack、binding 集合との関連、コピー先の予定 metadata とその確定・失効は [ADR-0008](0008-resource-bindings.md) に従う。
 
 ## 検討した代替案
 
@@ -309,7 +309,7 @@ layout、padding、参照の pack を検証できない。raw bytes と登録済
 
 ## 検証方針
 
-共通 API のみを使うテストで size／range overflow、用途、alignment、同一 buffer の重複コピー、別 Device、破棄後参照を拒否する。Upload → Compute → Barrier → Copy → Readback の bytes と、非 coherent memory の可視性を確認する。typed metadata の伝播／失効、世代更新、未送信破棄、in-flight Dispose、読み出し中の staging lease、未完了コピーでの読み出し拒否、キャンセル／DeviceLost 時の map／lease 回収を backend ごとに検証する。CopyFrom／CopyTo が CPU memory のみを変更し、RecordCopyBuffer の Finish 前／Submit 前に GPU work が生じないことを確認する。Upload の queue write と隠れた staging／送信がないこと、記録後の CPU 上書きを拒否することも検証する。読み取り側 CopyTo が staging／結果領域の確保・GPU Copy・Submit・GPU 待機を実行しないこと、命令とバリアが buffer 契約に含まれないことを検証する。初期の raw CPU copy と明示的な transfer は ADR-0008 の実装で検証する。一般的な schema／metadata と追加契約は今回未検証。
+共通 API のみを使うテストで size／range overflow、用途、alignment、同一 buffer の重複コピー、別 Device、破棄後参照を拒否する。Upload → Compute → Barrier → Copy → Readback の bytes と、非 coherent memory の可視性を確認する。typed metadata の伝播／失効、世代更新、未送信破棄、in-flight Dispose、読み出し中の staging lease、未完了コピーでの読み出し拒否、キャンセル／DeviceLost 時の map／lease 回収を backend ごとに検証する。CopyFrom／CopyTo が CPU memory のみを変更し、RecordCopyBuffer の Finish 前／Submit 前に GPU work が生じないことを確認する。Upload の queue write と隠れた staging／送信がないこと、記録後の CPU 上書きを拒否することも検証する。読み取り側 CopyTo が staging／結果領域の確保・GPU Copy・Submit・GPU 待機を実行しないこと、命令とバリアが buffer 契約に含まれないことを検証する。初期の raw CPU copy と明示的な transfer は ADR-0011 の実装で検証する。一般的な schema／metadata と追加契約は今回未検証。
 
 ## 別途決定する事項
 
@@ -318,7 +318,7 @@ layout、padding、参照の pack を検証できない。raw bytes と登録済
 
 ## 参考資料
 
-- [グラフィックス共通契約](0004-graphics-library.md)
-- [Slang とデータ受け渡し](0005-shader-compilation-and-data-interop.md)
-- [wgpu 初期実装](0008-wgpu-first-backend.md)
+- [グラフィックス共通契約](0004-graphics-device.md)
+- [Slang とデータ受け渡し](0010-shader-compilation-and-data-interop.md)
+- [wgpu 初期実装](0011-wgpu-first-backend.md)
 - [WebGPU buffers](https://www.w3.org/TR/webgpu/#buffers)

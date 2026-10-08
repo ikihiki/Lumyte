@@ -1,4 +1,4 @@
-# ADR-0008: .NET バインディングによる最初の wgpu バックエンド
+# ADR-0011: .NET バインディングによる最初の wgpu バックエンド
 
 - 状態: 採用
 - 日付: 2026-10-07
@@ -7,7 +7,7 @@
 
 最初のグラフィックス実装は wgpu を使用し、.NET にあるバインディングを直接参照する。Lumyte の C++ ラッパーや `.Native` プロジェクトは作らない。先にデバイス生成、Compute、RenderEncoder、GPU 完了、読み戻しを実行して、設計の成立を確認する。
 
-[ADR-0004](0004-graphics-library.md)〜[ADR-0007](0007-graphics-descriptors.md) は広い共通 API の提案であり、全機能を初回実装の完了条件にはしない。本 ADR は最初のバックエンド選択と動く初期契約を採用する。共通 API の初期サブセットと未実装の広い契約を区別する。
+[ADR-0004](0004-graphics-device.md)〜[ADR-0009](0009-command-buffer.md) は広い共通 API の提案であり、全機能を初回実装の完了条件にはしない。本 ADR は最初のバックエンド選択と動く初期契約を採用する。共通 API の初期サブセットと未実装の広い契約を区別する。
 
 ## 決定
 
@@ -21,7 +21,7 @@
 
 ### 初期契約と公開 API
 
-公開する利用 API の名前空間は `Lumyte.Graphics` とし、所有型は managed class とする。テストとサンプルはこの共通 API のみを使用し、バックエンドのクラスや binding を直接参照しない。初期機能と Desc の範囲は以下に限定し、ADR-0004〜0007 の未実装部分を公開しない。
+公開する利用 API の名前空間は `Lumyte.Graphics` とし、所有型は managed class とする。テストとサンプルはこの共通 API のみを使用し、バックエンドのクラスや binding を直接参照しない。初期機能と Desc の範囲は以下に限定し、ADR-0004〜0010 の未実装部分を公開しない。
 
 | プロジェクト | 依存と責務 |
 | --- | --- |
@@ -245,7 +245,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 wgpu の具象 buffer allocation が `IGraphicsBuffer<T>` と IBufferBackendContract、texture と view がそれぞれ IGraphicsTexture と IGraphicsTextureView を直接実装する。共通 factory は同じ instance を返す。view の保持・Dispose も具象実装が処理し、コマンド側は instance の所属と lease を検証する。`GetBufferLayout<T>`() の ElementStrideInBytes と `BufferDesc<T>.Count` から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
 
-初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height／Usage／Format、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、汎用の生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0005／0007 の全仕様を満たしたとは扱わない。
+初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height／Usage／Format、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、汎用の生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0010／0009 の全仕様を満たしたとは扱わない。
 
 ### GPU 参照、所有権、同期
 
@@ -259,7 +259,7 @@ Dispose は idempotent とし、End は一回限りの状態変更とする。�
 
 ### リソース設計の拡張範囲
 
-[ADR-0009](0009-buffer-resource-contract.md)、[ADR-0010](0010-texture-resource-contract.md)、[ADR-0011](0011-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。初期 driver は IBufferBackendContract の instance を生成し、ICommandBufferBackendContract による命令操作と分離する。具象 buffer instance が native allocation と所属・lease を保持し、buffer 側は CPU CopyFrom／CopyTo、コマンド側は GPU コピーの記録・送信を持つ。Barrier の利用者向け拡張は ADR-0004 の提案に残す。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
+[ADR-0005](0005-buffer-resource-contract.md)、[ADR-0006](0006-texture-resource-contract.md)、[ADR-0007](0007-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。初期 driver は IBufferBackendContract の instance を生成し、ICommandBufferBackendContract による命令操作と分離する。具象 buffer instance が native allocation と所属・lease を保持し、buffer 側は CPU CopyFrom／CopyTo、コマンド側は GPU コピーの記録・送信を持つ。Barrier の利用者向け拡張は ADR-0009 の提案に残す。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
 
 ### シェーダーと検証
 
@@ -292,16 +292,15 @@ API の形は揃うが、未対応の機能を使用できると誤認させる�
 ## 参考資料
 
 - [フォルダ構成](0002-repository-layout.md)
-- [グラフィックス共通契約](0004-graphics-library.md)
-- [Slang とデータ受け渡し](0005-shader-compilation-and-data-interop.md)
-- [RenderEncoder](0006-render-encoder.md)
-- [Desc 型](0007-graphics-descriptors.md)
+- [グラフィックス共通契約](0004-graphics-device.md)
+- [Slang とデータ受け渡し](0010-shader-compilation-and-data-interop.md)
+- [コマンドバッファ・RenderEncoder・描画 Desc](0009-command-buffer.md)
 - [wgpu 実装](../../src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs)
 - [Ahjo.Wgpu](https://github.com/pekkah/Ahjo-Wgpu)
 
 ### マテリアル描画の実装済み拡張
 
-[ADR-0012 の初期 wgpu 実装](0012-material-buffer-texture-resolution.md#初期-wgpu-実装) の利用側で定義した要素型・明示 serializer、4 組の sampled texture／sampler、GPU material buffer からの選択と RenderEncoder.Draw(arguments, desc) を実装する。Core は Buffer 内容の構造体を定義しない。初期 field 対応は top-level の float／int／uint と float vectors に限定し、stride は backend が Slang reflection から解決する。生成 serializer と nested／array schema は対象外。Slang の library helper と reflection JSON を使用し、生成 WGSL／JSON は DLL に埋め込む。
+[ADR-0008 の初期 wgpu 実装](0008-resource-bindings.md#初期-wgpu-実装) の利用側で定義した要素型・明示 serializer、4 組の sampled texture／sampler、GPU material buffer からの選択と RenderEncoder.Draw(arguments, desc) を実装する。Core は Buffer 内容の構造体を定義しない。初期 field 対応は top-level の float／int／uint と float vectors に限定し、stride は backend が Slang reflection から解決する。生成 serializer と nested／array schema は対象外。Slang の library helper と reflection JSON を使用し、生成 WGSL／JSON は DLL に埋め込む。
 
 ```diff
 +namespace Lumyte.Graphics
