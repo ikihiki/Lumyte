@@ -11,6 +11,34 @@ namespace Lumyte.Graphics.Tests;
 public sealed class BackendTests
 {
     /// <summary>
+    /// Verifies twenty distinct textures fill a five-by-four quad grid, including all shared edges and batch boundaries.
+    /// </summary>
+    [Fact]
+    public void TwentyTexturedSquaresFillSceneWithTwentyDistinctColors()
+    {
+        Assert.Equal(20, TwentySquaresScene.SquareCount);
+        Assert.Equal(20, TwentySquaresScene.Colors.ToArray().Distinct().Count());
+        using GraphicsDevice device = Graphics.CreateDevice();
+        byte[] pixels = TwentySquaresScene.Run(device, typeof(BackendTests).Assembly);
+        TwentySquaresScene.Verify(pixels);
+        var observed = new HashSet<uint>();
+        for (int y = 0; y < TwentySquaresScene.Height; y++)
+        {
+            for (int x = 0; x < TwentySquaresScene.Width; x++)
+            {
+                int offset = checked((int)((y * TwentySquaresScene.BytesPerRow) + (x * 4)));
+                observed.Add(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(pixels.AsSpan(offset, 4)));
+            }
+        }
+
+        Assert.Equal(20, observed.Count);
+
+        // A missing or corrupt square must fail the same complete-pixel validation used by the sample.
+        pixels[0] ^= 0xff;
+        Assert.Throws<InvalidOperationException>(() => TwentySquaresScene.Verify(pixels));
+    }
+
+    /// <summary>
     /// Verifies caller-owned logical and Slang wire types with a different stride can resolve textures on the GPU.
     /// </summary>
     [Fact]

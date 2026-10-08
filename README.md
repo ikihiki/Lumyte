@@ -56,3 +56,19 @@ Texture と TextureView は `IGraphicsTexture`／`IGraphicsTextureView` を使�
 GPU material buffer からの texture 選択も実装しています。[MaterialDrawing.cs](samples/Wgpu.Headless/MaterialDrawing.cs) は共通 API で赤／緑の画像と material を明示的に upload し、1 draw 内で pixel ごとに material を読みます。Slang shader は backend の `LumyteSampledTextures` を import して texture を解決します。生成 WGSL と reflection JSON は DLL に埋め込まれます。
 
 Buffer の内容を定義する論理型と Slang の要素型は利用側が所有し、Core に含めません。利用側の `IShaderDataSerializer<T>` と汎用 writer で pack し、型・offset・stride は backend が reflection に従って検証します。サンプルの MaterialData はサンプル内の 32-byte schema で、テストでは別の 48-byte schema も使用します。fallback を含む最大 4 組に対応します。Upload の pack、コピー命令、送信、完了確認、material 参照生成を利用側が行います。初期 serializer は top-level の float／int／uint と float vectors に対応し、生成 serializer、nested／array schema と完全な glTF PBR は今後の設計です。
+
+## 20 色の四角のシーン
+
+[TwentySquaresScene.cs](samples/Wgpu.Headless/TwentySquaresScene.cs) は、各四角に固有の GPU material と 1×1 texture を割り当て、5 列 × 4 行に敷き詰めます。四角の位置と texture 参照は利用側の [SquareMaterial](samples/Wgpu.Headless/SquareMaterial.cs) に定義し、Slang shader が GPU buffer から読みます。色は texture の texel から取得します。
+
+同時参照上限 4 組に合わせて利用側が 5 batch を作り、各 batch を 4 instance の draw で描画します。fallback にその batch の先頭 texture を再利用するため、4 slot に 4 色が入ります。20 枚の texture と 20 material の upload、GPU コピー、送信、完了確認、160×128 target の読み戻しはすべて明示的に行います。
+
+サンプルと GPU テストで、境界と batch の切り替わりを含む全 20,480 画素の RGBA を検証し、20 色すべてが存在することを確認します。サンプルは任意の保存先へ GPU 読み戻しの PNG を出力できます。
+
+```sh
+dotnet run --project samples/Wgpu.Headless --no-build --configuration Release -- --scene-output artifacts/graphics/twenty-squares.png
+```
+
+以下は lavapipe で描画し、実際の GPU 読み戻しから保存した画像です。
+
+![20 枚の固有テクスチャを持つ四角の GPU 描画結果](samples/Wgpu.Headless/Images/twenty-squares.png)
