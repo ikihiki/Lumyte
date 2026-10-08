@@ -1,6 +1,6 @@
 # ADR-ANIMATION-0001: 単調時計とタイムラインによる汎用値の計算
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-08
 
 ## 背景
@@ -17,7 +17,7 @@ Lumyte のアニメーションシステムは、ボーン制御から UI の位
 
 ### 配置と依存方向
 
-[ADR-0002](../0002-repository-layout.md) に従い、プロジェクト・NuGet 名を `Lumyte.Animation`、配置を `src/Animation/Lumyte.Animation/` とする。今回の変更では実装プロジェクトを作成しない。
+[ADR-0002](../0002-repository-layout.md) に従い、プロジェクト・NuGet 名を `Lumyte.Animation`、配置を `src/Animation/Lumyte.Animation/` とする。本 PR で Core の時間型と Animation の評価・再生・構築 API を実装する。
 
 - `Lumyte.Animation → Lumyte.Core.Time` の時間契約と `Lumyte.Composition` を参照する。実際の時間型の配置は `Lumyte.Core` とし、名前空間を `Lumyte.Core.Time` とする。
 - 既存の `Lumyte.Composition.Generators` をビルド時の Analyzer として使い、生成済み構築 API を公開する。別の Composition 連携プロジェクトや Generator は設けない。
@@ -46,7 +46,7 @@ Lumyte のアニメーションシステムは、ボーン制御から UI の位
 | `SystemMonotonicClock` | Stopwatch に基づく時計。壁時計の変更に影響されない |
 | `ManualClock` | Advance により非負の Duration だけ進めるテスト・シミュレーション用時計 |
 
-これらの Core 時間型は現在のリポジトリでは未実装であり、Animation 実装の前提となる。旧ソースを参照した共通契約として導入し、Animation 独自の時間型は作らない。Duration は一般の時間幅として負値も表せるが、アニメーションの長さ・開始時刻・Seek の位置は非負に制限する。秒からの変換、加減算、時間倍率、Repeat の長さ計算は範囲を検証し、オーバーフローを検出する。
+これらの Core 時間型を本 PR で共通契約として導入し、Animation 独自の時間型は作らない。Duration は一般の時間幅として負値も表せるが、アニメーションの長さ・開始時刻・Seek の位置は非負に制限する。秒からの変換、加減算、時間倍率、Repeat の長さ計算は範囲を検証し、オーバーフローを検出する。
 
 再生者は時計をコンストラクターで受け取り、Update が一度だけ Now を読む。再生位置は、基準位置と基準時点からの経過時間を使って `anchorPosition + (now - anchorClock) * speed` として求める。毎更新の丸め誤差を累積させない。補間率とイージングの計算時だけ浮動小数点に変換する。
 
@@ -325,7 +325,7 @@ Repeat／Reverse の複数の子をまとめたい場合は Sequence／Parallel 
 
 ### 利用例
 
-以下は未実装の設計 API に対応する例であり、コンパイル・実行確認済みのサンプルではない。
+以下は公開 API の利用例である。生成 API を別アセンブリから使用するテストと、[実行可能なサンプル](../../../samples/Lumyte.Animation.Sample/README.md)で主要な構築・再生経路を検証する。
 
 #### 指定時刻の値だけを計算する
 
@@ -476,11 +476,11 @@ Windows、Linux、Browser で Managed 評価を使用し、単一スレッドで
 - Core 時間型と Composition 契約・Generator の参照が実装の前提になる。
 - 状態機械は今回の API・実装範囲に含まれず、別 PR の設計が必要になる。
 - Output の初期化・クリア、評価順、値の適用とイベント配送は消費側が制御する。
-- 本 ADR は設計提案であり、実装・性能・利用例を検証済みとするものではない。
+- 採用は設計方針への合意を表す。環境別の検証結果と未検証事項は実装の確認記録で区別する。
 
 ## 検証方針
 
-採用後の実装では以下を受け入れ条件とする。
+以下を実装と継続検証の受け入れ条件とする。
 
 - ManualClock で時計の停止・前進、基準時点、Pause／Resume／Seek／速度変更、同時刻の再更新と Once の完了を確認する。時計逆行と時間演算のオーバーフローも検証する。
 - ゲーム時計を止めたまま UI 時計を進め、独立した結果を得られることを確認する。
@@ -492,6 +492,16 @@ Windows、Linux、Browser で Managed 評価を使用し、単一スレッドで
 - float／Vector／Quaternion／離散値、キー境界、端の保持、イージング端点、独自型を検証する。消費側の対象や setter にアクセスしないことを確認する。
 - 共通の既知入力を Windows、Linux、Browser で許容誤差内で比較する。
 - 100 数値チャネル・100 再生者を測定基準とし、ウォームアップ後の評価時間と割り当て量をイベントの有無別に記録する。合格時間の予算は消費側の更新予算と合わせて別途定める。
+
+## 実装の確認記録
+
+2026-10-08 に Linux・.NET SDK 10.0.401 で確認した。
+
+- Debug／Release のソリューションビルドが警告・エラーともに 0 件。
+- Animation の 23 件、既存 Composition の 47 件のテストが成功。時計操作、境界値、イベント順、独立した時計、定常数値更新の割り当てゼロを含む。
+- Animation と Composition の実行サンプルが成功。Animation は有限 Repeat／Reverse の 4 秒終端で完了する。
+- Core と Animation の NuGet パッケージ生成、整形検査、Markdown lint が成功。
+- Windows／Browser の実行と、100 チャネル・100 再生者の性能測定は未実施。上記の定常更新テストは大規模性能測定を代替しない。
 
 ## 別途決定する事項
 

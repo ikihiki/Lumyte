@@ -1,13 +1,21 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Animation.Sample/Lumyte.Animation.Sample.csproj" />
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/Animation/">
+    <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
+  </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Core/Lumyte.Core.csproj" />
     <Project Path="src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
     <Project Path="src/Core/Lumyte.Composition/Lumyte.Composition.csproj" />
   </Folder>
   <Folder Name="/tests/" />
+  <Folder Name="/tests/Animation/">
+    <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Core/">
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
   </Folder>
