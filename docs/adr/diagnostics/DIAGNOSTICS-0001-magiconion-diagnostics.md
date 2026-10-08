@@ -72,7 +72,7 @@ receiver の戻り値に操作結果を依存させず、要求通知と結果�
 
 DI をサブシステム統合の基準とする。診断アダプターはコンストラクターで対象サブシステムを受け取り、`IDiagnosticContributor.Configure` で公開内容を宣言する。サブシステム自身はレジストリ、接続、ランタイムを取得しない。登録ハンドルと通信のライフサイクルは診断基盤が所有する。
 
-DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断契約・メトリクス・操作の型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion への依存は通信実装に限定する。以下は公開 API の設計であり、実装は未追加である。
+DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断操作の契約型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion への依存は通信実装に限定する。以下は公開 API の設計であり、実装は未追加である。
 
 ```csharp
 public interface IDiagnosticContributor
@@ -97,6 +97,7 @@ public sealed class DiagnosticOptions
 {
     public bool Enabled { get; set; }
     public Uri? ServerAddress { get; set; }
+    public IReadOnlyList<string> AllowedMeterNames { get; set; } = Array.Empty<string>();
 }
 
 // Lumyte.Diagnostics.DependencyInjection 内の拡張メソッド。
@@ -124,7 +125,9 @@ public static IServiceCollection AddDiagnosticSubsystem<TContributor, TPoint>(
 | `IDiagnosticSession`、内部レジストリ | Scoped | ゲーム実行スコープ。アダプターの生成・破棄は DI に任せる |
 | `IDiagnosticPump<TPoint>` | Scoped | 同じスコープのキューと調整サービスを参照する |
 | 診断アダプター、診断対象、更新ループ | Scoped | 同じゲーム実行内のインスタンスを共有する |
-| メトリクス・登録ハンドル | 登録期間 | DI サービスにせず、診断基盤が登録解除を管理する |
+| `IMeterFactory` / Meter | DI ルート | 標準 AddMetrics。スコープから共有 Meter を破棄しない |
+| `IGameExecutionIdentity` / MeterListener | Scoped | 実行 ID による計測分離と購読管理 |
+| 操作登録ハンドル | 登録期間 | DI サービスにせず、診断基盤が解除を管理する |
 
 ### DI と所有スレッドのライフサイクル
 
@@ -135,13 +138,13 @@ DI の解決と所有スレッドの確定は別の処理とする。コンス�
 3. 診断基盤がスキーマを検証し、ポイント単位で全アダプターを一括公開する。失敗時はそのポイントの公開を取り消し、例外を起動側に返す。
 4. `IDiagnosticSession.StartAsync` が通信を開始し、有効化されたカタログを送る。接続開始後の追加 `Activate` もカタログ更新として扱う。
 5. 所有スレッドが安全な更新位置で `Pump` を呼び、アダプターが値を記録する。
-6. 終了時は各所有スレッドで `Deactivate` を呼び、要求受付・登録・購読を解除する。その後 `StopAsync` で接続と送信処理を終了し、スコープを破棄する。
+6. 終了時は各所有スレッドで `Deactivate` を呼び、要求受付・登録・操作対象の購読を解除する。標準メトリクスはセッション停止まで独立して観測できる。その後 `StopAsync` で接続と送信処理を終了し、スコープを破棄する。
 
 有効化済みポイントへの同じ所有スレッドからの `Activate` は冪等とする。`Deactivate` も冪等とし、再有効化時は新しい登録世代にする。異なるスレッドからの有効化・処理・解除、`Pump` 中の再入や解除を拒否する。予期しないスコープ破棄では基盤が登録を無効化し、通信を終了するが、サブシステムにアクセスする終了コールバックは呼ばない。セッション実装は `IAsyncDisposable` を実装し、スコープは `CreateAsyncScope` で生成して非同期破棄する。通常終了は上の順序を守る。
 
-型の解決時にスレッド制約のある対象を構築する場合は、その解決も所有スレッドで行う。DI 自体にスレッド親和性を期待しない。複数ポイントを同時に持つスコープでは、調整サービスが登録カタログの更新を同期する。
+計測用サービスのコンストラクターで標準 Meter / Instrument を作成することは許容するが、計測値は発行せずエンジンへアクセスしない。型の解決時にスレッド制約のある対象を構築する場合は、その解決も所有スレッドで行う。DI 自体にスレッド親和性を期待しない。複数ポイントを同時に持つスコープでは、調整サービスが登録カタログの更新を同期する。
 
-`Enabled = false` でも同じ DI 登録と注入を利用する。アダプターの構成は有効化時に行えるが、メトリクスは無効、キューは空、通信接続は作らない。テストでは診断対象や Pump をテスト用サービスに差し替えられる。
+`Enabled = false` でも同じ DI 登録と注入を利用する。アダプターの構成は有効化時に行えるが、診断用 Listener は計測を有効化せず、キューは空、通信接続は作らない。標準メトリクス生成と他の Listener は継続できる。テストでは診断対象や Pump をテスト用サービスに差し替えられる。メトリクスのテストは標準 MeterListener で記録を受け取り、診断通信を必要としない。
 
 ### サブシステムが宣言する API
 
@@ -156,22 +159,8 @@ public sealed record DiagnosticBudget(TimeSpan MaxDuration, int MaxCommands);
 
 public sealed class DiagnosticBuilder
 {
-    public DiagnosticMetric<double> Gauge(MetricDescriptor descriptor);
-    public DiagnosticMetric<long> Counter(MetricDescriptor descriptor);
     public void Operation(
         OperationDescriptor descriptor, DiagnosticOperationHandler handler);
-}
-
-public enum MetricKind { Gauge, Counter }
-public enum MetricAggregation { Latest, Min, Max, Mean, Sum }
-public sealed record MetricDescriptor(
-    string Id, string DisplayName, string Unit,
-    MetricKind Kind, MetricAggregation[] AllowedAggregations);
-
-public sealed class DiagnosticMetric<T> where T : struct
-{
-    public bool IsEnabled { get; }
-    public bool TryRecord(T value, DiagnosticFrame frame);
 }
 
 public enum DiagnosticPermission { Observe, Edit, OverrideInput }
@@ -217,19 +206,42 @@ public sealed class DiagnosticOperationResult
 }
 ```
 
-`DiagnosticBuilder` は `Configure` の呼び出し中だけ有効とし、内容をコピー・検証して一括登録する。登録失敗時は一部だけ公開しない。メトリクスハンドルは成功後に利用できる。`MetricDescriptor.Kind` と `Gauge` / `Counter` の不一致、重複 ID、無効な範囲、未対応の集約を登録エラーとする。
+`DiagnosticBuilder` は `Configure` の呼び出し中だけ有効とし、内容をコピー・検証して一括登録する。登録失敗時は一部だけ公開しない。操作 ID の重複と無効な引数・結果スキーマを登録エラーとする。標準メトリクスはこの Builder に登録しない。
 
-サブシステム ID は `physics` などの安定した名前、メンバー ID は `step-duration` や `set-time-scale` とする。表示名を識別子に使わない。同時に同じサブシステム ID を登録できない。再有効化すると世代を進め、旧世代の要求と購読を引き継がない。契約変更時は `SchemaVersion` を更新する。
+サブシステム ID は `physics` などの安定した名前、操作 ID は `set-time-scale` などとする。メトリクスは Meter と Instrument の名前で独立して識別する。表示名を識別子に使わない。同時に同じサブシステム ID を登録できない。再有効化すると世代を進め、旧世代の要求と購読を引き継がない。契約変更時は `SchemaVersion` を更新する。
 
-基盤の内部登録がメトリクスとハンドラーの生存期間を所有し、公開 API として登録ハンドルを DI 利用者に渡さない。解除後の未実行要求は対象消失になり、旧メトリクスの `TryRecord` は `false` を返す。再有効化時には `Configure` を再実行してハンドルを交換する。基盤は解除後のハンドラー参照を解放するが、アダプター自体の破棄は DI スコープが担う。
+基盤の内部登録が操作ハンドラーの生存期間を所有し、公開 API として登録ハンドルを DI 利用者に渡さない。解除後の未実行要求は対象消失になる。再有効化時には `Configure` を再実行する。基盤は解除後のハンドラー参照を解放するが、アダプター自体の破棄は DI スコープが担う。
 
-### テレメトリーの発行契約
+### .NET 標準メトリクスの生成と転送
 
-初期の数値メトリクスは `double` の Gauge と `long` の Counter に限定する。Gauge は観測値、Counter は非負の増分を記録し、絶対累計値を渡さない。NaN・無限大や負の増分は拒否する。ヒストグラム、ラベル付き高カーディナリティ系列は後続設計に分ける。
+テレメトリーの生成には `System.Diagnostics.Metrics` を使用する。独自の `DiagnosticMetric<T>`、`Gauge` / `Counter` 登録、`TryRecord` は提供しない。サブシステムは DI で受け取る `IMeterFactory` から `Meter` を取得し、標準の Instrument に `Record` / `Add` する。診断操作の登録とは独立して計測でき、OpenTelemetry 等の別 Listener と併用できる。
 
-`IsEnabled` は現在の購読を示すヒントであり、値の計算が高価な場合のガードに使う。購読変更と競合しても、`TryRecord` は独立して購読・登録の有効性を確認する。`TryRecord` はネットワークを待たず、無効・未購読・キュー満杯なら `false` を返す。引数の不正は例外とし、バッファ不足と区別する。キュー満杯による欠落はエージェントが数える。
+`services.AddMetrics()` が標準の `IMeterFactory` を登録する。ファクトリは DI ルートで Meter を共有・所有するため、Scoped サブシステムが共有 Meter を Dispose しない。`AddLumyteDiagnostics` も `AddMetrics` を呼ぶが、計測のみ利用するアプリは診断接続を登録する必要がない。
 
-複数利用者の購読はエージェントが統合する。Gauge の Latest / Min / Max / Mean は集約窓内の記録に対して計算し、Counter は Sum のみ提供する。購読周期は送信・集約の周期であり、サブシステムの更新周期を変更しない。記録のない窓は欠測として扱う。切断中に履歴を無制限に蓄積せず、再接続後に購読を再設定する。
+同じ Meter を使う複数ゲームスコープを分離するため、Scoped の `IGameExecutionIdentity` を注入する。`Guid InstanceId { get; }` を持ち、セッションの実行インスタンス ID と一致する。全ゲーム計測に `lumyte.instance.id` タグを付ける。Listener はそのタグと Meter の所属ファクトリを検証し、自分の実行スコープの計測だけを受け付ける。タグを持たないプロセス共通メトリクスは初期設計ではゲームへ自動配信しない。
+
+エージェントはスコープごとに `MeterListener` を所有する。Instrument の公開通知から名前、Meter 名・版、Instrument 種別、数値型、単位、説明を取得し、カタログへ登録する。購読がある Instrument にだけ `EnableMeasurementEvents` を適用し、`SetMeasurementEventCallback<T>` で標準計測を受け取る。解除・切断で不要な計測受信を無効化し、セッション終了で Listener を Dispose する。再接続時は Listener を再作成し、既存 Instrument も再発見する。
+
+Listener のコールバックは `Record` / `Add` を呼ぶスレッドで同期実行される。コールバック内ではエンジンへアクセスせず、タグをコピーして有界バッファへ投入するか、短い集約処理だけを行う。シリアライズと MagicOnion 送信は別処理に移す。バッファ超過と不正値の破棄を診断基盤が数え、計測コードへ例外を返さない。標準 `Record` / `Add` に配送成功の戻り値はなく、完全配送は保証しない。
+
+| 標準 Instrument | 用途・入力 | 初期の送信集約 |
+| --- | --- | --- |
+| `Counter<T>` | 件数などの非負の増分を `Add` | 集約窓の Sum。累計値として解釈しない |
+| `UpDownCounter<T>` | リソースの増減を `Add` | 符号付きの窓内 Sum。購読前の現在量は復元しない |
+| `Gauge<T>` | 現在値を `Record` | Latest / Min / Max / Mean |
+| `Histogram<T>` | 時間などの観測分布を `Record` | Count / Sum / Min / Max、明示境界のバケット |
+
+対象は標準 API が許容する `byte`、`short`、`int`、`long`、`float`、`double`、`decimal` とする。転送で整数を無条件に double に変換せず、元の型をカタログで宣言する。集約のオーバーフローや精度の扱いは通信 DTO の具体化時に定める。Gauge は .NET 10 の標準 API を使う。
+
+Histogram のバケット境界はエージェントの設定で固定し、カタログへ含める。異なる境界の購読要求は拒否する。標準計測は単なる観測値であり、Listener が分布を構成する。集約期間内に Counter の記録がない場合は、期間全体を継続観測できたときだけ増分ゼロとし、Gauge 等の未観測値は欠測とする。切断、バッファ欠落、購読開始時刻も送信する。
+
+`ObservableGauge` / `ObservableCounter` / `ObservableUpDownCounter` は初期転送対象に含めない。`RecordObservableInstruments` は収集側スレッドでコールバックを呼び得るため、エンジン状態への直接アクセスや、共有 Meter から Scoped オブジェクトの捕捉を許可する設計にしない。後続設計ではスレッド安全なスナップショットとコールバックの寿命を定める。未対応 Instrument はカタログで非対応を示す。
+
+Instrument の識別には Meter 名・版、Instrument 名・種別・数値型と、Listener が割り当てる Instrument ID を使う。同じ名前の別 Instrument を無条件に統合しない。Meter 名は `DiagnosticOptions.AllowedMeterNames` の完全一致で制限し、既定の空リストでは公開しない。タグ名・文字列長・系列数にも上限を設ける。`lumyte.instance.id` は経路識別用として集約系列の次元から除き、オブジェクト ID やフレーム番号を高カーディナリティタグにしない。
+
+複数利用者の購読はエージェントが統合し、購読ごとに必要な窓で集約する。生成側の `Instrument.Enabled` はすべての Listener の状態を示すため、診断サーバーの購読有無とは解釈しない。高価な計測のガードには使えるが、診断無効時にも OpenTelemetry 等による計測を妨げない。
+
+標準計測にはフレーム番号や生成時刻が含まれない。Listener は受信時の単調増加時刻を記録し、送信データに集約期間を付ける。フレーム相関がない計測にはフレーム番号を推測して付けない。正確なフレーム相関が必要なイベントはメトリクスとは別契約で設計する。ログと分散トレースは、将来 `ILogger` と `ActivitySource` を対象とする別の転送設計で扱う。
 
 ### 操作の実行契約
 
@@ -251,20 +263,10 @@ public sealed class DiagnosticOperationResult
 public sealed class PhysicsDiagnostics : IDiagnosticContributor
 {
     private readonly PhysicsWorld _world;
-    private DiagnosticMetric<double>? _stepDuration;
-    private DiagnosticMetric<double>? _activeBodies;
-
     public PhysicsDiagnostics(PhysicsWorld world) => _world = world;
 
     public void Configure(DiagnosticBuilder builder)
     {
-        _stepDuration = builder.Gauge(new MetricDescriptor(
-            "step-duration", "Step duration", "ms", MetricKind.Gauge,
-            new[] { MetricAggregation.Latest, MetricAggregation.Mean }));
-        _activeBodies = builder.Gauge(new MetricDescriptor(
-            "active-bodies", "Active bodies", "count", MetricKind.Gauge,
-            new[] { MetricAggregation.Latest, MetricAggregation.Max }));
-
         builder.Operation(new OperationDescriptor(
             "get-time-scale", "Get time scale", DiagnosticPermission.Observe,
             Array.Empty<DiagnosticField>(),
@@ -300,11 +302,42 @@ public sealed class PhysicsDiagnostics : IDiagnosticContributor
                     }, _world.Revision);
             });
     }
+}
+```
 
-    public void RecordAfterSimulation(DiagnosticFrame frame)
+標準メトリクスは操作アダプターと独立した Scoped サービスで生成する。
+
+```csharp
+using System.Diagnostics.Metrics;
+
+public interface IGameExecutionIdentity
+{
+    Guid InstanceId { get; }
+}
+
+public sealed class PhysicsMetrics
+{
+    private readonly Histogram<double> _stepDuration;
+    private readonly Gauge<long> _activeBodies;
+    private readonly KeyValuePair<string, object?> _instanceTag;
+
+    public PhysicsMetrics(IMeterFactory meterFactory, IGameExecutionIdentity identity)
     {
-        _stepDuration?.TryRecord(_world.LastStepMilliseconds, frame);
-        _activeBodies?.TryRecord((double)_world.ActiveBodyCount, frame);
+        var meter = meterFactory.Create(new MeterOptions("Lumyte.Physics")
+        {
+            Version = "1.0.0",
+        });
+        _stepDuration = meter.CreateHistogram<double>(
+            "physics.step.duration", unit: "ms", description: "Physics step duration");
+        _activeBodies = meter.CreateGauge<long>(
+            "physics.active_bodies", unit: "{body}", description: "Active bodies");
+        _instanceTag = new("lumyte.instance.id", identity.InstanceId.ToString("D"));
+    }
+
+    public void RecordAfterSimulation(PhysicsWorld world)
+    {
+        _stepDuration.Record(world.LastStepMilliseconds, _instanceTag);
+        _activeBodies.Record(world.ActiveBodyCount, _instanceTag);
     }
 }
 ```
@@ -318,7 +351,10 @@ services.AddLumyteDiagnostics(options =>
 {
     options.Enabled = true;
     options.ServerAddress = new Uri("https://localhost:5001");
+    options.AllowedMeterNames = new[] { "Lumyte.Physics" };
 });
+services.AddMetrics();
+services.AddScoped<PhysicsMetrics>();
 services.AddScoped<PhysicsWorld>();
 services.AddScoped<PhysicsLoop>();
 services.AddDiagnosticExecutionPoint<AfterPhysicsSimulation>(
@@ -333,15 +369,15 @@ services.AddDiagnosticSubsystem<PhysicsDiagnostics, AfterPhysicsSimulation>(
 public sealed class PhysicsLoop
 {
     private readonly PhysicsWorld _world;
-    private readonly PhysicsDiagnostics _diagnostics;
+    private readonly PhysicsMetrics _metrics;
     private readonly IDiagnosticPump<AfterPhysicsSimulation> _pump;
 
     public PhysicsLoop(
-        PhysicsWorld world, PhysicsDiagnostics diagnostics,
+        PhysicsWorld world, PhysicsMetrics metrics,
         IDiagnosticPump<AfterPhysicsSimulation> pump)
     {
         _world = world;
-        _diagnostics = diagnostics;
+        _metrics = metrics;
         _pump = pump;
     }
 
@@ -351,7 +387,7 @@ public sealed class PhysicsLoop
     {
         _world.Step(deltaTime);
         _pump.Pump(frame, new DiagnosticBudget(TimeSpan.FromMilliseconds(0.2), 8));
-        _diagnostics.RecordAfterSimulation(frame);
+        _metrics.RecordAfterSimulation(_world);
     }
 
     public void Shutdown() => _pump.Deactivate();
@@ -362,18 +398,18 @@ public sealed class PhysicsLoop
 
 ### カタログ公開とサーバーからの利用
 
-Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。カタログはセッション ID、カタログリビジョン、登録中の各サブシステムの ID・世代・スキーマ版、メトリクスと操作の記述子を含む。接続・再接続後は完全なカタログを送り、登録・解除時も新しいリビジョンの完全版を送る。サイズ超過時は既存の大容量転送参照を使う。
+Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。カタログはセッション ID、カタログリビジョン、登録中の各操作サブシステムの ID・世代・スキーマ版・操作記述子、および Listener が発見した Instrument の記述子を含む。接続・再接続後は完全なカタログを送り、登録・解除時も新しいリビジョンの完全版を送る。サイズ超過時は既存の大容量転送参照を使う。
 
 サーバーは受信カタログを認可に従って UI に公開する。カタログはコードやデリゲートを含まない。操作の要求経路は以下のとおりである。
 
 1. DI が `PhysicsWorld` と `PhysicsDiagnostics` を同じスコープで構築する。`Activate` が `Configure` を呼び、`physics` の公開後にエージェントがカタログを送る。
-2. UI が `physics/step-duration` を周期 100 ms、Mean で購読する。サーバーは `ConfigureTelemetry` 要求を送り、ゲーム側は登録と集約方式を検証して購読 ID を返す。
-3. 物理更新後の `TryRecord` が値を有界バッファへ記録する。エージェントが集約し、購読 ID、登録世代、フレーム範囲を含む `TelemetryBatch` を送る。
+2. Listener が `Lumyte.Physics` の `physics.step.duration` を発見し、カタログを更新する。UI がその Instrument ID を周期 100 ms で購読し、ゲーム側は対象と集約方式を検証して購読 ID を返す。
+3. 物理更新後の標準 Histogram.Record が Listener へ計測を通知する。エージェントが実行 ID を検証して集約し、購読 ID、Instrument ID、集約期間、Count / Sum とバケットを含む `TelemetryBatch` を送る。
 4. UI が `physics/get-time-scale` で現在値とリビジョンを取得し、`physics/set-time-scale` に `value = 0.5` と期待リビジョンを指定する。サーバーは `InvokeOperation` 要求を送る。
 5. エージェントが対象の ID・世代・カタログ版、権限、スキーマを検証し、指定実行ポイントへ投入する。
 6. 次の `Pump` でハンドラーが適用し、実際の値とリビジョンを結果として返す。エージェントが元の `RequestId` でサーバーへ報告する。
 
-`InvokeOperation` のペイロードは `SubsystemId`、`Generation`、`SchemaVersion`、`OperationId`、引数値、期待リビジョンを持つ。`ConfigureTelemetry` は購読 ID、対象サブシステム・世代・メトリクス ID、周期、集約を持つ。カタログ更新と競合する要求は古い世代・スキーマとして拒否し、サーバーは再取得する。
+`InvokeOperation` のペイロードは `SubsystemId`、`Generation`、`SchemaVersion`、`OperationId`、引数値、期待リビジョンを持つ。`ConfigureTelemetry` は購読 ID、Instrument ID、カタログリビジョン、周期、集約を持つ。操作の登録世代をメトリクスの識別に流用しない。カタログ更新と競合する要求は古い世代・スキーマとして拒否し、サーバーは再取得する。
 
 公開順序はセッション確立、カタログ公開、購読・操作受付とする。サーバーはカタログを処理した Hub 呼び出しの完了後に要求を送る。解除直前のカタログを見て要求しても、ゲーム側の実行時検証で対象消失として処理する。
 
@@ -399,7 +435,7 @@ Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。
 
 診断サーバーが項目、取得周期、集約方法を指定する購読方式とする。初期対象はフレーム時間、CPU・GPU 時間、メモリー、描画統計、診断処理自体の負荷とする。計測不能な項目は機能交渉または結果で非対応を示し、ゼロ値に置き換えない。
 
-サンプルには実行インスタンス ID、シーケンス番号、フレーム番号、ゲーム側の単調増加時刻を含める。送信はバッチ化し、混雑時は特性に応じて間引き・集約する。欠落件数を報告し、ゲーム実行を停止させてまで完全配送を保証しない。
+送信バッチには実行インスタンス ID、シーケンス番号、Instrument ID、ゲーム側の単調増加時刻による集約期間を含める。標準メトリクスにはフレーム番号を要求しない。送信はバッチ化し、混雑時は特性に応じて間引き・集約する。欠落件数を報告し、ゲーム実行を停止させてまで完全配送を保証しない。
 
 ### オブジェクトグラフ
 
@@ -495,7 +531,9 @@ Browser で StreamingHub の要件を満たせない場合の中継や代替ト�
 - 重複要求、期限切れ、結果報告前の切断、再接続での未完了操作の非再実行。
 - DI の Scoped インスタンス共有、スコープ間分離、寿命違反、依存循環、診断無効時の注入。
 - 有効化の原子性、重複 ID、解除・再有効化、起動失敗時の解放、所有スレッドと終了順序。
-- 購読統合、カタログ更新と操作の競合。
+- MeterListener の既存 Instrument 発見、購読統合、タグと DI スコープによる分離、他 Listener との共存。
+- 標準 Counter / Gauge / Histogram の集約、欠測・欠落、系列数上限、Meter と Listener の破棄。
+- カタログ更新と操作の競合。
 - 対象破棄、ID 再利用、競合編集、部分成功、所有スレッドでの実行。
 - スナップショット取得中の更新、差分欠落、保持上限超過と再同期。
 - 入力の所有者競合、更新、期限切れ、切断時解除、解除後のボタン状態。
@@ -505,6 +543,7 @@ Browser で StreamingHub の要件を満たせない場合の中継や代替ト�
 
 ## 別途決定する事項
 
+- Observable Instrument、ログ・トレース転送、数値集約の精度とオーバーフロー。
 - 全通信 DTO のフィールド番号、グラフ・描画・入力の診断アダプター API、具体的なプロジェクト名。
 - 大容量転送 API、保存先、診断 UI 向け API、認証方式と資格情報の配布。
 - 入力・描画システムへの具体的な統合位置とプラットフォーム別対応範囲。
