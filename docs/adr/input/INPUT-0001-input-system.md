@@ -1,6 +1,6 @@
 # ADR-INPUT-0001: デバイス別の入力記録と参照・通知・ポーリング
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-08
 
 ## 背景
@@ -32,7 +32,7 @@ InputSystem はコンストラクター DI で受け取るすべての IInputSou
 | `Lumyte.Engine` | DI スコープと InputSystem のライフサイクル管理、利用する全 Source の DI 登録、取得・利用・削除の呼び出し順 | 共通 Input と必要な Platform 実装 |
 | ゲーム・ツール | デバイスの選択、記録参照やイベント購読、ポーリング、保持方針の設定 | `Lumyte.Input` の公開 API |
 
-共通 Input は Engine、Platform 実装、Graphics に依存しない。OS ハンドルやウィンドウ型を共通 API に持ち込まない。この PR は文書だけを追加し、空のプロジェクトを作成しない。
+共通 Input は Engine、Platform 実装、Graphics に依存しない。OS ハンドルやウィンドウ型を共通 API に持ち込まない。本 PR では共通ライブラリと契約の単体テストを実装する。OS 固有のバックエンドは後続 ADR とする。
 
 ### 入力ソースの依存性注入
 
@@ -53,7 +53,7 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 
 ### 公開 API 一覧
 
-以下は `Lumyte.Input` 名前空間に追加する主要 API を diff 形式で示した設計案である。すべて新規追加のため `+` 行とする。宣言の本体と内部メンバーを省略した API 一覧であり、コンパイル用の実装ではない。
+以下は `Lumyte.Input` 名前空間に追加する主要 API を diff 形式で示した設計案である。すべて新規追加のため `+` 行とする。宣言の本体と内部メンバーを省略した API 一覧であり、このコードブロック自体はコンパイル用の実装ではない。実装は `src/Platform/Lumyte.Input/` に置く。
 
 ```diff
 +using System;
@@ -70,7 +70,7 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 +    InputDeviceId Id, InputDeviceKind Kind, string Name,
 +    InputDeviceIdentityKind IdentityKind);
 +
-+// Key の完全なメンバー一覧はバックエンド設計時に確定する。
++// Key は英数字、修飾キー、矢印、編集キー、F1〜F24、テンキー、記号、国際配列位置を定義する。
 +public enum Key { Unknown, /* 文字位置・数字・矢印・左右別修飾キー等 */ }
 +public enum MouseButton { Left, Right, Middle, X1, X2 }
 +// フェイスボタンはメーカーの文字表記ではなく位置で表す。
@@ -336,7 +336,7 @@ Device は DrainEvents の失敗時に入力を消費しない。取得例外は
 
 ## 検証方針
 
-実装時に偽の Source・Device と TimeProvider を使い、次を検証する。本 PR は文書のみであり、実行テストを追加しない。
+偽の Source・Device と TimeProvider を使い、以下の契約を共通ライブラリの単体テストで検証する。
 
 - 複数 Source が Device を登録・削除でき、全 Source を InputSystem が更新する。
 - 全 Source 間で ID が一意となり、再接続で再利用せず、他 Source の登録削除を拒否する。

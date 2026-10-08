@@ -11,4 +11,10 @@
   <Folder Name="/tests/Core/">
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
   </Folder>
+  <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Input/Lumyte.Input.csproj" />
+  </Folder>
+  <Folder Name="/tests/Platform/">
+    <Project Path="tests/Platform/Lumyte.Input.Tests/Lumyte.Input.Tests.csproj" />
+  </Folder>
 </Solution>

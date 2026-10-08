@@ -117,6 +117,7 @@ jobs:
           dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
           dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Platform/Lumyte.Input -c Release --no-build -o artifacts/nuget
           dotnet build Lumyte.slnx --no-restore
           dotnet format Lumyte.slnx --no-restore --verify-no-changes
           mise run check-markdown
