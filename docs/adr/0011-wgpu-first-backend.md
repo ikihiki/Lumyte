@@ -1,341 +1,129 @@
-# ADR-0011: .NET バインディングによる最初の wgpu バックエンド
+# ADR-0011: .NET バインディングによる wgpu バックエンド
 
 - 状態: 採用
 - 日付: 2026-10-07
+- 更新日: 2026-10-08
 
 ## 背景
 
-最初のグラフィックス実装は wgpu を使用し、.NET にあるバインディングを直接参照する。Lumyte の C++ ラッパーや `.Native` プロジェクトは作らない。先にデバイス生成、Compute、RenderEncoder、GPU 完了、読み戻しを実行して、設計の成立を確認する。
+最初の Graphics backend は wgpu とし、既存の .NET binding を直接使う。Lumyte の C++ wrapper や .Native プロジェクトは追加しない。[ADR-0004](0004-graphics-device.md) の生成境界、[ADR-0008](0008-resource-bindings.md) の論理 Argument Table と [ADR-0012](0012-bindless-binding-lowering.md) の自動 binding 構築を共通 API のまま実行する。
 
-[ADR-0004](0004-graphics-device.md)〜[ADR-0009](0009-command-buffer.md) は広い共通 API の提案であり、全機能を初回実装の完了条件にはしない。本 ADR は最初のバックエンド選択と動く初期契約を採用する。共通 API の初期サブセットと未実装の広い契約を区別する。
+Graphics API は main に未導入のため、この PR 内の設計・実装を更新する。旧 API の履歴や互換 wrapper を公開契約として残さない。各 ADR の広い設計と、この backend が対応する具体的な範囲を区別する。
 
 ## 決定
 
-### バインディングと配置
+### 構成と依存
 
-`src/Graphics/Lumyte.Graphics.Wgpu` に C# の `Lumyte.Graphics.Wgpu` を配置する。`Ahjo.Wgpu` 0.7.0 を直接 PackageReference し、既存の wrapper と必要な raw binding を利用する。wgpu-native の実行ファイルは第三者パッケージの推移的依存 `Ahjo.Wgpu.Native` が RID ごとに供給する。Lumyte の `.Native` プロジェクト、C++、独自 P/Invoke 宣言、ネイティブビルドは追加しない。
+Lumyte.Graphics.Core は共通型、resource・command・serializer と内部 driver の契約を保持する。Lumyte.Graphics.Wgpu は Ahjo.Wgpu の managed binding と第三者 native runtime を直接参照する。生成層の Lumyte.Graphics が backend を選び、Graphics.CreateDevice で共通 GraphicsDevice を返す。Core は Ahjo と backend に依存しない。テストとサンプルは生成層と共通 API だけを使う。
 
-バインディングは pre-1.0 のためバージョンを固定する。既存 wrapper の handle struct はコピーと二重解放を許してしまうので、公開 API は所有権を検証する managed class に包む。Native handle とアドレスは internal に留める。
+Linux／Windows の desktop adapter と software Vulkan を対象とし、Browser の JS／Wasm backend、独立 DirectX／Vulkan 実装は別途実装する。wgpu に Lumyte 独自 .Native は不要。
 
-最初はネイティブプロセスで動くヘッドレス実装とする。wgpu-native が内部で Vulkan／DirectX などを選択する。Browser の WebGPU 接続は別実装であり、wgpu-native のパッケージを Browser に配布できると扱わない。既存の DirectX／Vulkan `.Native` の設計は将来の独立バックエンドに残すが、最初の実装には使用しない。
+### 対応する resource と command
 
-### 初期契約と公開 API
+buffer は `IGraphicsBuffer<T>` を backend が直接実装し、Count と backend 解決の stride から SizeInBytes を計算する。CPU Upload／Readback の CopyFrom／CopyTo と、GPU の RecordCopyBuffer は分離する。byte の GPU copy offset／count は4の倍数、ushort は2、uint は1の倍数として解決し、論理 count を暗黙に補正しない。一般的な Slang data は byte storage へ serializer で pack する。
 
-公開する利用 API の名前空間は `Lumyte.Graphics` とし、所有型は managed class とする。テストとサンプルはこの共通 API のみを使用し、バックエンドのクラスや binding を直接参照しない。初期機能と Desc の範囲は以下に限定し、ADR-0004〜0010 の未実装部分を公開しない。
+Texture は single mip／layer の D2 RGBA8Unorm／Srgb と sampled・明示 copy を扱う。描画先は RGBA8Unorm。backend の texture／view が共通 interface を直接実装する。sampler は通常の min／mag filter と U／V address に対応する。comparison、anisotropy、追加 dimension／format／mip は未対応として拒否する。
 
-| プロジェクト | 依存と責務 |
-| --- | --- |
-| `Lumyte.Graphics.Core` | binding／バックエンドへの依存なし。公開 resource、Desc、GraphicsDevice、CommandEncoder、RenderEncoder、Submission と内部 driver 契約 |
-| `Lumyte.Graphics.Wgpu` | Core と Ahjo.Wgpu に依存。内部 driver が managed backend object を保持し、共通契約を wgpu に変換 |
-| `Lumyte.Graphics` | Core と対応 backend に依存する生成層。`Graphics.CreateDevice(GraphicsBackend)` で選択し、共通 GraphicsDevice を返す |
-| テスト／サンプル | 生成層を ProjectReference し、Core の共通型だけで操作。wgpu／Ahjo の直接参照は禁止 |
+CommandEncoder は明示的な buffer／texture コピー、UInt32 compute、render pass と Finish を扱う。Submit は一度だけ実行し、Submission の完了まで記録した resource を保持する。CPU readback は利用者が staging 確保・コピー・送信・完了観測・CopyTo を行う。同期は wgpu の native resource scope に従い、独立した公開 Barrier 拡張は ADR-0009 の設計対象とする。
 
-Buffer／Texture／TextureView は backend の具象 instance が共通 interface を直接実装する。pipeline などの Core wrapper は内部 driver と backend object を非公開で保持する。GPU 参照も不透明な内部データを保持し、利用者が backend 型や物理表現へ変換する API は提供しない。生成層から backend への依存は構成のためだけに使う。frame allocator／deferred deletion を扱う Runtime とは別の責務とする。
+描画は triangle list、通常／index draw、viewport／scissor、clear／load／store、単一 RGBA8 target を扱う。depth／stencil、MSAA、複数 attachment、window／swapchain は別途実装する。
 
-`GraphicsBackend` は現在 `Wgpu` のみ。`Graphics.CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu)` は未定義値を ArgumentOutOfRangeException で拒否する。バックエンドの `WgpuBackend.CreateDevice()` は生成層用の接続点であり、サンプル／テストからは呼ばない。
+### 論理 Argument Table と shader data
 
-API 差分の比較元は origin/main（Graphics API は未導入）。
+texture、sampler、buffer を独立した logical slot に登録する。登録容量は draw の容量ではない。Argument Table が resource を lease し、registration 世代と Device 所属を検証する。CPU serializer は numeric field と不透明 descriptor 参照を pack し、要素ごとの CPU dependency metadata を残す。
+
+対応する logical element は利用側が定義し、`IShaderDataSerializer<T>` を実装する。Slang wire struct も利用 shader が定義する。Core に material の係数や field 名・固定 stride は置かない。初期 schema は top-level float／int／uint と float Vector2／3／4、UInt32 の resource field に対応する。nested／array field と生成 serializer は拡張対象。
+
+API 差分の比較元は origin/main（Graphics API は未導入）。以下はこの backend が共通 API として提供する宣言の抜粋。
 
 ```diff
 +namespace Lumyte.Graphics
 +{
-+    // 現行のデバイス生成 API が受け付けるバックエンド。
-+    public enum GraphicsBackend { Wgpu }
-+
-+    // CPU 可視 Upload／Readback と通常の GPU resource を区別する。
-+    public enum MemoryPreference { Automatic, Readback, Upload }
-+
-+    // リソースの所有基底型。GPU 使用中の解放は拒否する。
-+    public abstract class GpuResource : IDisposable
++    public sealed class GraphicsDevice
 +    {
-+        public void Dispose();
++        // independent capacities。resource の Upload や送信をしない。
++        public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc);
++        // 完了済みの metadata、型、用途と要素境界を検証。待機・送信はしない。
++        public GpuReference<T> CreateShaderDataReference<T>(BufferSlice<byte> range);
 +    }
-+
-+    public static class Graphics
++    public sealed class ShaderModule
 +    {
-+        // blocking の Instance／Adapter／Device 生成
-+        // バインディングの初期化失敗は例外で返す
-+        public static GraphicsDevice CreateDevice(GraphicsBackend backend = GraphicsBackend.Wgpu);
++        // DLL 埋め込みの Slang reflection から利用側型の wire stride を解決する。
++        public ShaderDataLayout<T> GetDataLayout<T>();
 +    }
-+
-+    public sealed class GraphicsDevice : IDisposable
++    public sealed class ShaderDataLayout<T>
 +    {
-+        // サイズ・用途・範囲を検証
-+        // 初期 buffer のサイズは 4-byte の倍数
-+        public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
-+        // 確保せず T の解決済みレイアウトと要素単位のコピー制約を取得する。
-+        public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
-+
-+        // 初期の登録済みデータ schema は UInt32 配列のみ
-+        // 非所有・型付きの不透明参照を作る
-+        public GpuReference<T> CreateReference<T>(BufferSlice<T> data) where T : unmanaged;
-+
-+        // DLL の埋め込み WGSL を読み込む
-+        // resource 不在は ArgumentException
-+        // stream は内部で解放
-+        public ShaderModule CreateShader(System.Reflection.Assembly assembly, string resourceName);
-+
-+        // 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数
-+        // binding と実データ参照の解決は library 内部
-+        public ComputePipeline CreateComputePipeline(ComputePipelineDesc desc);
-+
-+        // single-sample、単一 mip／layer の RGBA8Unorm オフスクリーン target
-+        public IGraphicsTexture CreateTexture(TextureDesc desc);
-+
-+        // rootless または有限 binding profile の material shader の vertex／fragment、triangle-list、blend／depth 無効の graphics pipeline
-+        public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
-+
-+        // 一回限りの送信
-+        // 二重送信は Native に渡す前に拒否
-+        public Submission Submit(CommandBuffer commands);
-+    }
-+
-+    // backend が T の格納 stride と GPU コピー制約を解決した値型。constructor は非公開。
-+    public readonly struct BufferLayout<T> where T : unmanaged
-+    {
-+        // host 要素の byte 数と、この backend の buffer 内で一要素が占める stride。
-+        public ulong ElementSizeInBytes { get; }
 +        public ulong ElementStrideInBytes { get; }
-+        // native GPU copy の制約。いずれも正数。
-+        public ulong CopyOffsetAlignmentInBytes { get; }
-+        public ulong CopySizeAlignmentInBytes { get; }
-+        // 要素単位でコピー offset／count が満たす必要のある最小の倍数。
-+        // respective byte alignment / gcd(byte alignment, ElementStrideInBytes)。
-+        public ulong CopyOffsetAlignmentInElements { get; }
-+        public ulong CopyCountAlignment { get; }
-+        // checked(count * ElementStrideInBytes)。overflow は OverflowException。
-+        // default layout は未解決として InvalidOperationException。
++        // count > 0。checked。要素数と byte 数を暗黙に丸めない。
 +        public ulong GetSizeInBytes(ulong count);
 +    }
-+
-+    public sealed record BufferDesc<T> where T : unmanaged
++    public static class ShaderDataTransfer
 +    {
-+        // 正数の要素数。初期 backend は byte 換算後のサイズに 4-byte alignment を要求。
-+        public required ulong Count { get; init; }
-+        public required BufferUsage Usage { get; init; }
-+        public MemoryPreference Memory { get; init; } = MemoryPreference.Automatic;
++        // exact-size の既存 Upload 範囲へ CPU pack と要素依存を登録するだけ。
++        public static void CopyFrom<T>(this BufferSlice<byte> destination, ReadOnlySpan<T> values, ShaderDataLayout<T> layout, IShaderDataSerializer<T> serializer);
 +    }
-+
-+    // T は数値型や unmanaged struct。byte は raw storage、Slang 互換性は別途検証する。
-+    // factory が返す具象 backend 自身が実装し、直接 allocation の所有権を持つ。
-+    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
++    public sealed class GraphicsPipeline
 +    {
-+        // backend の解決済み数値。論理サイズは Layout.GetSizeInBytes(Count)。
-+        public BufferLayout<T> Layout { get; }
-+        // 要素数。
-+        public ulong Count { get; }
-+        public ulong SizeInBytes { get; }
-+        public BufferUsage Usage { get; }
-+        public MemoryPreference Memory { get; }
-+        // 要素単位の半開区間。count > 0、offset <= Count、count <= Count - offset。
-+        // allocation を作らず、元 buffer の寿命を延ばさない。
-+        public BufferSlice<T> Slice(ulong offset, ulong count);
-+        // idle な Upload memory へ source.Length 要素をコピー。余りは変更しない。
-+        // GPU 命令、queue write、staging 確保、送信は行わない。
-+        public void CopyFrom(ReadOnlySpan<T> source);
-+        // GPU 完了を観測した idle な Readback の Count 要素を caller memory にコピー。
-+        // destination.Length >= Count。余りは変更せず、GPU コピー・送信・完了待機をしない。
-+        public void CopyTo(Span<T> destination);
-+        // idle 時の解放、idempotent。lease 中は InvalidOperationException。
-+        public void Dispose();
-+    }
-+
-+    // 非所有の値型。直接 constructor は非公開。default は無効。
-+    public readonly struct BufferSlice<T> where T : unmanaged
-+    {
-+        public IGraphicsBuffer<T> Buffer { get; }
-+        // Offset と Count は要素単位。byte 換算は checked で検証する。
-+        public ulong Offset { get; }
-+        public ulong Count { get; }
-+        public ulong OffsetInBytes { get; }
-+        public ulong SizeInBytes { get; }
-+        // 元 buffer と同じ CPU コピー契約をこの範囲に適用。default は ArgumentException。
-+        public void CopyFrom(ReadOnlySpan<T> source);
-+        public void CopyTo(Span<T> destination);
-+    }
-+
-+    // 具象 backend が native allocation と Device 所属・lease を保持する。
-+    public interface IGraphicsTexture : IDisposable
-+    {
-+        public uint Width { get; }
-+        public uint Height { get; }
-+        public TextureUsage Usage { get; }
-+        public TextureFormat Format { get; }
-+        // 初期実装は単一 RGBA8 mip／layer 全体の view。
-+        public IGraphicsTextureView CreateView();
-+        public void Dispose();
-+    }
-+
-+    // native view を所有し、存続中は元 texture を lease する。
-+    public interface IGraphicsTextureView : IDisposable
-+    {
-+        public IGraphicsTexture Texture { get; }
-+        public void Dispose();
-+    }
-+
-+    public sealed class ComputePipeline : GpuResource
-+    {
-+        // 一つの論理 RWStructuredBuffer<uint> を使う Compute 引数
-+        // binding と実データ参照の解決は library 内部
-+        public ShaderArguments CreateArguments(GpuReference<uint> data);
-+    }
-+
-+    public sealed class CommandEncoder : IDisposable
-+    {
-+        // 単一 queue の Compute とコピー
-+        // パス中は禁止
-+        public void Dispatch(ComputePipeline pipeline, ShaderArguments arguments, uint x, uint y = 1, uint z = 1);
-+
-+        // 単一 queue の Compute とコピー
-+        // パス中は禁止
-+        public void RecordCopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination) where TSource : unmanaged where TDestination : unmanaged;
-+
-+        // 一つの color attachment の Clear／Load、Store／Discard
-+        public RenderEncoder BeginRenderPass(RenderPassDesc desc);
-+
-+        // 一回限りの送信
-+        // 二重送信は Native に渡す前に拒否
-+        public CommandBuffer Finish();
-+
-+        // 256-byte pitch の color コピー、完了後の caller 所有 CPU memory へのコピー
-+        // サンプルは bytes として pixel を検証
-+        public void RecordCopyTextureToBuffer<T>(IGraphicsTexture source, IGraphicsBuffer<T> destination, uint bytesPerRow) where T : unmanaged;
-+    }
-+
-+    public sealed class RenderEncoder : IDisposable
-+    {
-+        // 一つの color attachment の Clear／Load、Store／Discard
-+        public void SetPipeline(GraphicsPipeline pipeline);
-+
-+        // パス状態、範囲、index 用途を検証する記録 API
-+        public void SetViewport(Viewport viewport);
-+
-+        // パス状態、範囲、index 用途を検証する記録 API
-+        public void SetScissor(Scissor scissor);
-+
-+        // パス状態、範囲、index 用途を検証する記録 API
-+        public void SetIndexBuffer<T>(BufferSlice<T> indices, IndexFormat format) where T : unmanaged;
-+
-+        // パス状態、範囲、index 用途を検証する記録 API
-+        public void Draw(uint vertexCount, uint instanceCount = 1);
-+
-+        // パス状態、範囲、index 用途を検証する記録 API
-+        public void Draw(DrawDesc desc);
-+
-+        // パス状態、範囲、index 用途を検証する記録 API
-+        public void DrawIndexed(IndexedDrawDesc desc);
-+    }
-+
-+    public sealed class Submission
-+    {
-+        // callback を poll して実 GPU 完了を確認
-+        // 待機キャンセルは GPU 処理を取り消さない
-+        public bool IsCompleted { get; }
-+
-+        // callback を poll して実 GPU 完了を確認
-+        // 待機キャンセルは GPU 処理を取り消さない
-+        public void Wait(CancellationToken cancellationToken = default);
-+
-+        // callback を poll して実 GPU 完了を確認
-+        // 待機キャンセルは GPU 処理を取り消さない
-+        public ValueTask WaitAsync(CancellationToken cancellationToken = default);
++        // root 範囲の要素依存から物理 binding と変換表を自動構築する。
++        public ShaderArguments CreateArguments<T>(GpuReference<T> data);
 +    }
 +}
 ```
 
-wgpu の具象 buffer allocation が `IGraphicsBuffer<T>` と IBufferBackendContract、texture と view がそれぞれ IGraphicsTexture と IGraphicsTextureView を直接実装する。共通 factory は同じ instance を返す。view の保持・Dispose も具象実装が処理し、コマンド側は instance の所属と lease を検証する。`GetBufferLayout<T>`() の ElementStrideInBytes と `BufferDesc<T>.Count` から SizeInBytes を checked で算出し、slice は要素単位とする。T は数値型や unmanaged struct で、UInt32 以外の shader schema は未対応。要素ごとの object と typed facade の追加確保をしない。
+### WebGPU の binding lowering
 
-初期の CPU CopyFrom／CopyTo は元 buffer のサイズが int.MaxValue 以下の範囲に限定する。初期 MemoryPreference は Automatic／Readback／Upload。Upload は CopySource のみ、Readback は CopyDestination のみで、CPU mapping のみを許可する。初期の Desc は実装するフィールドだけを持つ。TextureDesc は Width／Height／Usage／Format、RenderPassDesc は Target／Load／Store／ClearValue、GraphicsPipelineDesc／ComputePipelineDesc は Shader と entry point を持ち、詳細な固定状態は省略する。サポートしない形式や状態を受け取って黙って無視する API は提供しない。全 format、depth／stencil、MSAA resolve、複数 attachment、汎用の生成 serializer、一般的な ShaderArtifact、オンライン Slang compiler と共通の Result API はまだ未実装であり、ADR-0010／0009 の全仕様を満たしたとは扱わない。
+Slang library module は固定容量の8 texture、4 sampler、4 read-only buffer descriptor、root data storage buffer一つと内部 lookup uniform buffer一つを宣言する。これらの容量は独立する。compiled layout の全宣言を stage ごとの Device limits と bindings per group に照合する。必要集合が容量を超えた場合は記録前に拒否し、draw を分割したり shader を再コンパイルしたりしない。
 
-### GPU 参照、所有権、同期
+root が一要素ならその依存だけ、配列範囲なら全候補を収集する。複数論理 Argument Tableの登録は Device 内の stable identity で区別し、同じ view／sampler／buffer 範囲の alias を同じ内部 ID に集約する。各登録の失効・lease は別々に検証する。GPU wire ID は draw の局所番号と分離し、material buffer を draw ごとに書き換えない。
 
-GpuReference は元の managed resource と範囲を内部で保持し、整数変換、実アドレス、binding index の公開と serialization を持たない。失効した resource、別 Device の resource、default の参照、未対応の型と Storage の alignment／size を検証する。初期の Slang schema の WGSL binding は library 内部で所有し、利用者は参照だけを渡す。
+内部 lookup uniform は root の要素 offset／count、texture ID、sampler ID、buffer ID・base offset・length を保持する。小さな有限表を Slang helper が検索し、個別 binding の switch から sampleGrad または UInt32 buffer load を行う。root の単一要素 offset が native storage alignment を満たさなくても、包含 allocation のbindingと内部 offsetで解決する。包含 byte 数は native上限へ検証し、bufferの論理サイズを変更しない。
 
-CommandEncoder が記録に使った resource を lease し、Finish で CommandBuffer、Submit で Submission へ引き継ぐ。完了確認で lease を解放する。記録破棄時も解放する。ShaderArguments は pipeline と参照先 Buffer を、その破棄まで lease する。lease 中の Dispose と CPU 書き込み、Device の子 resource／Encoder／Submission が残った状態の Device.Dispose は拒否する。
+backend の lookup は mapped-at-creation の内部 uniform として初期化し、引数・CommandBuffer・Submission の寿命で保持する。ユーザーデータの staging を確保・Upload したり、別 Submit／GPU 待機を追加したりしない。未使用 texture／sampler binding の neutral resource は pipeline 作成時に用意する。無効 ID の helper はこれらをアクセスせず zero を返す。
 
-Dispose は idempotent とし、End は一回限りの状態変更とする。親 Encoder の破棄は開いた pass を無効化する。操作は Device の gate で直列化し、Native error callback は所有 Device の診断 queue へ書き込み、managed 例外を Native 境界外へ出さない。queue 完了の失敗は待機で通知する。未完了の callback storage はキャンセルで解放しない。利用者はキャンセル後も Submission の完了を確認する。
+sample type は filterable float D2、通常 sampler に限定する。fragment gradient は caller が一様な制御フローで計算して渡し、WGSL uniformity 診断を無効化しない。sampleLevel、nested shader-data reference、generic root struct、binding cache と transient table の再利用は拡張対象。
 
-初期版では resource は明示的に Dispose、Submission は Wait／WaitAsync または IsCompleted で完了まで poll する。最終フレームを含め、完了を観測せず Device を破棄しない。一般的な Runtime の deferred deletion とフレーム allocator は後続実装とする。
+### shader の成果物
 
-### リソース設計の拡張範囲
+Slang を基準とし、offline compiler が生成する WGSL と reflection JSON は DLL の embedded resources として読み出す。生成 WGSL／JSON はコミットしない。consumer は backend の library module を import するが、buffer内容を定義するstructはconsumerのmoduleに置く。runtime は Slang compiler を自動起動しない。明示オンライン compiler provider は ADR-0010 に従う別の実装対象。
 
-[ADR-0005](0005-buffer-resource-contract.md)、[ADR-0006](0006-texture-resource-contract.md)、[ADR-0007](0007-sampler-resource-contract.md) が buffer／texture／sampler の詳細な共通契約を提案する。初期 driver は IBufferBackendContract の instance を生成し、ICommandBufferBackendContract による命令操作と分離する。具象 buffer instance が native allocation と所属・lease を保持し、buffer 側は CPU CopyFrom／CopyTo、コマンド側は GPU コピーの記録・送信を持つ。Barrier の利用者向け拡張は ADR-0009 の提案に残す。本 ADR の初期実装の範囲や検証済みの機能は、それらの提案だけでは拡張されない。移行時もテストとサンプルは共通 API のみを使用する。
+### 所有権と検証
 
-### シェーダーと検証
+Argument Table 登録はview／sampler／bufferをleaseする。serializedmetadataは登録を保持し、buffer内容の失効・解放でleaseを返す。引数はroot buffer・metadata・pipeline・lookupを保持し、記録・GPU使用中にDisposeを拒否する。未送信破棄、部分上書き、失敗した送信とDeviceLostで予定のmetadataを失効させる。古い完了で失効を取り消さない。
 
-サンプルの `.slang` を正本とし、mise の固定 Slang から offline に WGSL を生成する。ビルド時に共有 MSBuild targets が obj 内へ生成し、サンプル／テスト DLL の EmbeddedResource に格納する。生成 WGSL は Git に含めず、別ファイルとして配布しない。実行時は DLL の manifest resource を読み出し、Slang compiler を必要としない。コンパイラはビルド時にのみ必要とする。
-
-テストで consumer と Core の assembly reference に wgpu／Ahjo がないことも確認する。初期 Upload も利用者が Upload buffer を確保し、CPU CopyFrom／CopyTo 後に RecordCopyBuffer を記録して CommandBuffer を送信する。Ahjo Queue.WriteBuffer による隠れた転送は使用しない。CPU 上書きと GPU 転送の分離、記録後の CPU 書き込み拒否を共通 API で検証する。GPU integration test は adapter 不在を成功や skip とせず、実行環境を準備して実行する。Linux の lavapipe で Slang Compute の UInt32 配列、通常／indexed triangle の color readback、pass 状態、二重送信、resource lifetime、破棄、別 Device と invalid range を検証する。Windows／Browser の動作は今回の検証結果に含めない。
+失効参照、別Device、schema不一致、用途・範囲違反は引数例外、disposed登録はObjectDisposedException、lease中の変更・解放はInvalidOperationException、未対応schema／capacity超過はNotSupportedExceptionを返す。広い共通Result／GraphicsError契約はADR-0004で定め、未対応な範囲を成功扱いにしない。
 
 ## 検討した代替案
 
-### wgpu-native を C++ と独自 P/Invoke で包む
+### wgpu 用 C++ wrapper と独自 Native package を作る
 
-ABI を制御できるが、既存の .NET binding と runtime 配布を重複実装する。最初は既存 binding を直接使う。
+既存.NET bindingがdevice／resource／pipeline／commandを扱えるため、独自ABIの維持を増やさない。第三者runtimeの依存とLumyteのNative projectを区別する。
 
-### 最初から DirectX／Vulkan を個別実装する
+### optional binding array を必須にする
 
-Native API 固有の最適化は可能だが、データと記録契約の初期検証が複数実装に分散する。wgpu で共通の利用経路を先に動かす。
+portable WebGPUの成立条件と一致しない。個別bindingとlibrary helperで実現し、Device limitsを明示的に検証する。
 
-### 提案済みの全 API を空の実装で公開する
+### test と sample で backend を直接使う
 
-API の形は揃うが、未対応の機能を使用できると誤認させる。初期 schema と描画形式を限定した具体 API を実装し、未実装部分を明示する。
+共通契約の不足を検出できないため採用しない。testとsampleは共通生成層と公開APIのみを参照する。
 
 ## 結果と影響
 
-- .NET binding と既存 runtime package だけで Compute／描画／Readback の経路を実行できる。
-- Lumyte の Native ビルドを増やさずに最初の backend を確認できる。
-- pre-1.0 binding の更新時に API と callback／所有権を再検証する必要がある。
-- 現在の API と Desc は限定的であり、共通契約の拡張や一般化で変更する可能性がある。
-- lavapipe の成功は実 GPU の性能や全プラットフォームの互換性を保証しない。
+- 論理 Argument Table と不透明参照の共通APIを、既存.NET bindingで実行できる。
+- 利用者は個別のbind group構造やtexture／samplerのペア容量を操作しない。
+- 型別のcompiled capacityとDevice limitsによる一drawの制約は残る。
+- CPU dependency metadataとGPU lookupに追加コストが生じ、cacheと再利用は実測して拡張する。
+- 対応範囲を超えるschema・format・機能は拒否する。
+
+## 検証方針
+
+共通APIのGPUテストで、computeとreadback、triangle、indexと状態遷移、descriptorのDevice／世代／lease、serializerと反射stride、単一要素と候補配列の参照解決、容量、コピー・上書き・未送信破棄を確認する。20枚の独立textureを論理 Argument Tableへ登録し、一つのGPU配列の各要素をrootとして20drawするシーンの全20,480画素を検証する。
+
+Linux software Vulkanで実行し、Windows／Browser／実GPUの性能を同じ検証結果として扱わない。実行結果はPRへ記録する。
 
 ## 参考資料
 
-- [フォルダ構成](0002-repository-layout.md)
-- [グラフィックス共通契約](0004-graphics-device.md)
-- [Slang とデータ受け渡し](0010-shader-compilation-and-data-interop.md)
-- [コマンドバッファ・RenderEncoder・描画 Desc](0009-command-buffer.md)
-- [wgpu 実装](../../src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs)
-- [Ahjo.Wgpu](https://github.com/pekkah/Ahjo-Wgpu)
-
-### マテリアル描画の実装済み拡張
-
-[ADR-0008 の初期 wgpu 実装](0008-resource-bindings.md#初期-wgpu-実装) の利用側で定義した要素型・明示 serializer、4 組の sampled texture／sampler、GPU material buffer からの選択と RenderEncoder.Draw(arguments, desc) を実装する。Core は Buffer 内容の構造体を定義しない。初期 field 対応は top-level の float／int／uint と float vectors に限定し、stride は backend が Slang reflection から解決する。生成 serializer と nested／array schema は対象外。Slang の library helper と reflection JSON を使用し、生成 WGSL／JSON は DLL に埋め込む。
-
-```diff
-+namespace Lumyte.Graphics
-+{
-+    [System.Flags]
-+    public enum TextureUsage { CopySource = 1, CopyDestination = 2, Sampled = 4, RenderAttachment = 8 }
-+    public enum TextureFormat { Rgba8Unorm, Rgba8Srgb }
-+    public sealed record TextureDesc
-+    {
-+        public required uint Width { get; init; }
-+        public required uint Height { get; init; }
-+        public TextureUsage Usage { get; init; } = TextureUsage.RenderAttachment | TextureUsage.CopySource;
-+        public TextureFormat Format { get; init; } = TextureFormat.Rgba8Unorm;
-+    }
-+    public enum FilterMode { Nearest, Linear }
-+    public enum AddressMode { ClampToEdge, Repeat, MirrorRepeat }
-+    public sealed record SamplerDesc
-+    {
-+        public FilterMode MinFilter { get; init; } = FilterMode.Linear;
-+        public FilterMode MagFilter { get; init; } = FilterMode.Linear;
-+        public AddressMode AddressU { get; init; } = AddressMode.Repeat;
-+        public AddressMode AddressV { get; init; } = AddressMode.Repeat;
-+    }
-+    public sealed class Sampler : GpuResource;
-+    public sealed class GraphicsDevice
-+    {
-+        public Sampler CreateSampler(SamplerDesc desc);
-+    }
-+    public sealed class CommandEncoder
-+    {
-+        // 全 D2 RGBA8 image の upload を記録。offset は 4、row pitch は 256 の倍数。
-+        // source CopySource と destination CopyDestination が必要。送信しない。
-+        public void RecordCopyBufferToTexture(BufferSlice<byte> source, IGraphicsTexture destination, uint bytesPerRow);
-+    }
-+}
-```
-
-texture は single mip／layer の RGBA8Unorm／Srgb を sampling と明示コピーに使える。描画 target は RGBA8Unorm に限定する。sampler は通常 sampling の min／mag と U／V address のみ。comparison、anisotropy、一般的な mip 設定は未対応。GPU テストと headless sample は GPU buffer の material による 1 draw 内の texture 選択を読み戻して確認する。
+- [論理 Argument Table と bindless API](0008-resource-bindings.md)
+- [参照追跡と binding lowering](0012-bindless-binding-lowering.md)
+- [コマンドバッファ](0009-command-buffer.md)
+- [Slang と shader 成果物](0010-shader-compilation-and-data-interop.md)
+- [Ahjo.Wgpu](https://www.nuget.org/packages/Ahjo.Wgpu/)

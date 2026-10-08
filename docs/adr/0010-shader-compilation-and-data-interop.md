@@ -208,7 +208,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ソース位置、severity、コード、ターゲット、依存 module を ShaderDiagnostic に残す。未対応機能、コンパイラ不在、コード生成失敗、ABI 不一致を区別する。session の並列利用を仮定せず、provider は要求単位の session または直列化を管理する。キャンセル後の結果は公開せず、Native 処理が停止できない場合も終了後に所有リソースを解放する。
 
-GPU buffer 内の sampled texture／sampler 参照を使う material 配列の有限集合、Slang helper、profile、pack と寿命の契約は [ADR-0008](0008-resource-bindings.md) で具体化する。WebGPU の参照グラフの制約内で、個別 resource binding と内部 selector による選択を行う。
+GPU data 内の参照は [ADR-0008](0008-resource-bindings.md) の論理 Argument Table と不透明参照を使用する。要素単位の dependency metadata、root 引数からの追跡、WebGPU の有限 binding と安定 wire ID の変換は [ADR-0012](0012-bindless-binding-lowering.md) に従う。生成 serializer は参照 field の schema と metadata を出力し、linked program は同じ lookup ABI を持つ helper を使用する。backend が対応する schema・参照範囲は ADR-0011 に記録する。
 
 ## 検討した代替案
 

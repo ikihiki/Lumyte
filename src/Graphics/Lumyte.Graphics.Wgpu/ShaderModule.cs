@@ -4,15 +4,15 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal sealed class ShaderModule : GpuResource
 {
-    internal ShaderModule(WgpuDevice owner, A.ShaderModule native, MaterialSchema? schema)
+    internal ShaderModule(WgpuDevice owner, A.ShaderModule native, ShaderDataSchema? schema)
         : base(owner)
     {
-        (Native, MaterialSchema) = (native, schema);
+        (Native, ShaderDataSchema) = (native, schema);
     }
 
     internal A.ShaderModule Native { get; }
 
-    internal MaterialSchema? MaterialSchema { get; }
+    internal ShaderDataSchema? ShaderDataSchema { get; }
 
     protected override void ReleaseNative() => Native.Dispose();
 }

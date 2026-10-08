@@ -7,18 +7,17 @@ namespace Lumyte.Graphics.Wgpu;
 internal sealed class ShaderDataWriter : IShaderDataWriter
 {
     private readonly WgpuDevice _owner;
-    private readonly MaterialSchema _schema;
+    private readonly ShaderDataSchema _schema;
     private readonly byte[] _bytes;
-    private readonly List<SampledPair> _pairs;
-    private readonly uint _capacity;
+    private readonly List<DescriptorRegistration> _dependencies;
     private readonly int _threadId = Environment.CurrentManagedThreadId;
     private readonly HashSet<string> _written = new(StringComparer.Ordinal);
     private int _rowOffset;
     private bool _active;
 
-    internal ShaderDataWriter(WgpuDevice owner, MaterialSchema schema, byte[] bytes, List<SampledPair> pairs, uint capacity)
+    internal ShaderDataWriter(WgpuDevice owner, ShaderDataSchema schema, byte[] bytes, List<DescriptorRegistration> dependencies)
     {
-        (_owner, _schema, _bytes, _pairs, _capacity) = (owner, schema, bytes, pairs, capacity);
+        (_owner, _schema, _bytes, _dependencies) = (owner, schema, bytes, dependencies);
     }
 
     public void Write<TValue>(string fieldName, TValue value)
@@ -69,34 +68,12 @@ internal sealed class ShaderDataWriter : IShaderDataWriter
         }
     }
 
-    public void WriteSampledTexture2D(string fieldName, SampledTexture2DReference? reference)
-    {
-        ShaderDataField field = GetField(fieldName);
-        if (field.ScalarType != "uint32" || field.ElementCount != 1)
-        {
-            throw new ArgumentException("Sampled references require a reflected UInt32 field.", nameof(fieldName));
-        }
+    public void WriteTextureReference(string fieldName, TextureDescriptorReference? reference) => WriteReference(fieldName, reference?.Handle, typeof(TextureView), reference.HasValue);
 
-        int index = 0;
-        if (reference is { } sampled)
-        {
-            SampledPair pair = MaterialBindings.Resolve(_owner, sampled);
-            index = _pairs.IndexOf(pair);
-            if (index < 0)
-            {
-                if (_pairs.Count >= _capacity)
-                {
-                    throw new NotSupportedException("Sampled resource set exceeds the compiled binding capacity.");
-                }
+    public void WriteSamplerReference(string fieldName, SamplerDescriptorReference? reference) => WriteReference(fieldName, reference?.Handle, typeof(Sampler), reference.HasValue);
 
-                index = _pairs.Count;
-                _pairs.Add(pair);
-            }
-        }
-
-        MarkWritten(fieldName);
-        BinaryPrimitives.WriteUInt32LittleEndian(_bytes.AsSpan(_rowOffset + field.Offset, 4), (uint)index);
-    }
+    public void WriteBufferReference<T>(string fieldName, BufferDescriptorReference<T> reference)
+        where T : unmanaged => WriteReference(fieldName, reference.Handle, typeof(WgpuBuffer), true);
 
     internal void BeginRow(int rowOffset)
     {
@@ -106,6 +83,32 @@ internal sealed class ShaderDataWriter : IShaderDataWriter
     }
 
     internal void EndRow() => _active = false;
+
+    private void WriteReference(string fieldName, object? handle, Type resourceType, bool required)
+    {
+        ShaderDataField field = GetField(fieldName);
+        if (field.ScalarType != "uint32" || field.ElementCount != 1)
+        {
+            throw new ArgumentException("Resource references require a reflected UInt32 field.", nameof(fieldName));
+        }
+
+        uint identity = 0;
+        if (required)
+        {
+            if (handle is not DescriptorRegistration registration || !resourceType.IsInstanceOfType(registration.Resource))
+            {
+                throw new ArgumentException("Invalid logical descriptor reference.");
+            }
+
+            registration.Check(_owner);
+            registration.Resource.Check(_owner);
+            identity = registration.Identity;
+            _dependencies.Add(registration);
+        }
+
+        MarkWritten(fieldName);
+        BinaryPrimitives.WriteUInt32LittleEndian(_bytes.AsSpan(_rowOffset + field.Offset, 4), identity);
+    }
 
     private ShaderDataField GetField(string fieldName)
     {

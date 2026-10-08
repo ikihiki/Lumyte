@@ -180,7 +180,7 @@ GPU の同一 Buffer 内コピーはコマンド契約が扱い、半開区間�
 
 ### バックエンドが実装するもの
 
-内部 driver の以下の操作は概念的な実装契約であり、利用側へ公開する API ではない。現行 IGraphicsDriver の全機能が実装済みという意味ではない。
+内部 driver の以下の操作は概念的な実装契約であり、利用側へ公開する API ではない。backend が対応する具体的な範囲は ADR-0011 に定める。
 
 ```diff
 +namespace Lumyte.Graphics.Implementation
@@ -284,7 +284,7 @@ staging.Slice(0, byteCount).CopyTo(bytes.AsSpan());
 // CPU 読み出しと GPU 使用の完了後に、利用者が staging を解放・再利用する。
 ```
 
-参照を含む material の byte pack、binding 集合との関連、コピー先の予定 metadata とその確定・失効は [ADR-0008](0008-resource-bindings.md) に従う。
+参照を含む利用側の shader data の byte pack と論理 Argument Table参照は [ADR-0008](0008-resource-bindings.md)、要素単位の依存 metadata とコピー先の予定状態・確定・失効は [ADR-0012](0012-bindless-binding-lowering.md) に従う。
 
 ## 検討した代替案
 

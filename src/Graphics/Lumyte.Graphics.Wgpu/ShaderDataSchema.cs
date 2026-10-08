@@ -2,19 +2,22 @@ using System.Text.Json;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class MaterialSchema
+internal sealed class ShaderDataSchema
 {
-    internal MaterialSchema(ulong elementStrideInBytes, IReadOnlyDictionary<string, ShaderDataField> fields)
+    internal ShaderDataSchema(WgpuDevice owner, ulong elementStrideInBytes, IReadOnlyDictionary<string, ShaderDataField> fields)
     {
+        Owner = owner;
         ElementStrideInBytes = elementStrideInBytes;
         Fields = fields;
     }
+
+    internal WgpuDevice Owner { get; }
 
     internal ulong ElementStrideInBytes { get; }
 
     internal IReadOnlyDictionary<string, ShaderDataField> Fields { get; }
 
-    internal static MaterialSchema? Parse(string? reflection)
+    internal static ShaderDataSchema? Parse(WgpuDevice owner, string? reflection)
     {
         if (reflection is null)
         {
@@ -23,14 +26,14 @@ internal sealed class MaterialSchema
 
         using var doc = JsonDocument.Parse(reflection);
         JsonElement reflectedParameters = doc.RootElement.GetProperty("parameters");
-        if (reflectedParameters.GetArrayLength() != 9)
+        if (reflectedParameters.GetArrayLength() != 18)
         {
             return null;
         }
 
         JsonElement[] parameters = reflectedParameters.EnumerateArray()
             .OrderBy(parameter => parameter.GetProperty("binding").GetProperty("index").GetInt32()).ToArray();
-        if (parameters[0].GetProperty("name").GetString() != "materials")
+        if (parameters[0].GetProperty("name").GetString() != "shaderData")
         {
             return null;
         }
@@ -101,17 +104,27 @@ internal sealed class MaterialSchema
             return null;
         }
 
-        for (int i = 0; i < 4; i++)
+        if (parameters[1].GetProperty("name").GetString() != "bindlessLookup")
         {
-            if (parameters[1 + (i * 2)].GetProperty("name").GetString() != $"materialTexture{i}" ||
-                parameters[2 + (i * 2)].GetProperty("name").GetString() != $"materialSampler{i}" ||
-                parameters[1 + (i * 2)].GetProperty("type").GetProperty("baseShape").GetString() != "texture2D" ||
-                parameters[2 + (i * 2)].GetProperty("type").GetProperty("kind").GetString() != "samplerState")
+            return null;
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            if (parameters[2 + i].GetProperty("name").GetString() != $"bindlessTexture{i}" || parameters[2 + i].GetProperty("type").GetProperty("baseShape").GetString() != "texture2D")
             {
                 return null;
             }
         }
 
-        return new((ulong)stride, fields);
+        for (int i = 0; i < 4; i++)
+        {
+            if (parameters[10 + i].GetProperty("name").GetString() != $"bindlessSampler{i}" || parameters[10 + i].GetProperty("type").GetProperty("kind").GetString() != "samplerState" || parameters[14 + i].GetProperty("name").GetString() != $"bindlessBuffer{i}")
+            {
+                return null;
+            }
+        }
+
+        return new(owner, (ulong)stride, fields);
     }
 }

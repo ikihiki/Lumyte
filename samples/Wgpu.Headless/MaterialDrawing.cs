@@ -14,30 +14,34 @@ internal static class MaterialDrawing
         using IGraphicsTextureView redView = red.CreateView();
         using IGraphicsTextureView greenView = green.CreateView();
         using Sampler sampler = device.CreateSampler(new SamplerDesc { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest });
-        SampledTexture2DReference redReference = device.CreateSampledTexture2DReference(redView, sampler);
-        SampledTexture2DReference greenReference = device.CreateSampledTexture2DReference(greenView, sampler);
+        using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = 2, SamplerCapacity = 1 });
+        TextureDescriptorReference redReference = table.WriteTexture(0, redView);
+        TextureDescriptorReference greenReference = table.WriteTexture(1, greenView);
+        SamplerDescriptorReference samplerReference = table.WriteSampler(0, sampler);
         using ShaderModule shader = device.CreateShader(shaders, "Lumyte.Shaders.material.wgsl");
         using GraphicsPipeline pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
-        using IGraphicsMaterialBindings bindings = device.CreateMaterialBindings<MaterialData>(new MaterialBindingsDesc { Layout = shader.GetMaterialResourceLayout(), UnusedSlotFallback = redReference, }, new MaterialData[] { new(new Vector4(0.5f, 1, 1, 1), untextured ? null : swap ? greenReference : redReference), new(Vector4.One, swap ? redReference : greenReference), }, MaterialDataSerializer.Instance);
-        using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload, });
-        using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead, });
+        ShaderDataLayout<MaterialData> layout = shader.GetDataLayout<MaterialData>();
+        ulong byteCount = layout.GetSizeInBytes(2);
+        var materials = new MaterialData[] { new(new Vector4(0.5f, 1, 1, 1), untextured ? null : swap ? greenReference : redReference, samplerReference), new(Vector4.One, swap ? redReference : greenReference, samplerReference) };
+        using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = byteCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = byteCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         using IGraphicsBuffer<byte> redUpload = device.CreateBuffer(new BufferDesc<byte> { Count = 256, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         using IGraphicsBuffer<byte> greenUpload = device.CreateBuffer(new BufferDesc<byte> { Count = 256, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         redUpload.CopyFrom(new byte[] { 255, 0, 0, 255 });
         greenUpload.CopyFrom(new byte[] { 0, 255, 0, 255 });
-        upload.Slice(0, bindings.SizeInBytes).CopyFrom(bindings);
+        upload.Slice(0, byteCount).CopyFrom<MaterialData>(materials, layout, MaterialDataSerializer.Instance);
 
         // Explicit upload recording and submission. No queue writes or hidden staging.
         using (CommandEncoder transfer = device.CreateCommandEncoder())
         {
             transfer.RecordCopyBufferToTexture(redUpload.Slice(0, 256), red, 256);
             transfer.RecordCopyBufferToTexture(greenUpload.Slice(0, 256), green, 256);
-            transfer.RecordCopyBuffer(upload.Slice(0, bindings.SizeInBytes), gpu.Slice(0, bindings.SizeInBytes));
+            transfer.RecordCopyBuffer(upload.Slice(0, byteCount), gpu.Slice(0, byteCount));
             using CommandBuffer commands = transfer.Finish();
             device.Submit(commands).Wait();
         }
 
-        using ShaderArguments arguments = pipeline.CreateArguments(device.CreateMaterialReference(gpu.Slice(0, bindings.SizeInBytes)));
+        using ShaderArguments arguments = pipeline.CreateArguments(device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, byteCount)));
         using IGraphicsTexture target = device.CreateTexture(new TextureDesc { Width = 8, Height = 4 });
         using IGraphicsTextureView view = target.CreateView();
         using IGraphicsBuffer<byte> readback = device.CreateBuffer(new BufferDesc<byte> { Count = 4 * 256, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });

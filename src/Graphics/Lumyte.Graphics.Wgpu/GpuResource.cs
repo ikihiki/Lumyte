@@ -13,6 +13,8 @@ internal abstract class GpuResource : IDisposable
 
     internal WgpuDevice Owner { get; }
 
+    protected int ActiveLeases => _leases;
+
     public void Dispose()
     {
         lock (Owner.Gate)
@@ -50,7 +52,7 @@ internal abstract class GpuResource : IDisposable
         _leases++;
     }
 
-    internal void ReleaseLease() => _leases--;
+    internal virtual void ReleaseLease() => _leases--;
 
     internal void RequireIdle()
     {

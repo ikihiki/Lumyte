@@ -54,45 +54,36 @@ internal interface IGraphicsDriver : IDisposable, ICommandBufferBackendContract
     /// <returns>The owned immutable sampler.</returns>
     object CreateSampler(SamplerDesc desc);
 
-    /// <summary>
-    /// Creates an opaque, non-owning texture-view and sampler pair from this device.
-    /// </summary>
-    /// <param name="texture">The sampled texture view from this device.</param>
-    /// <param name="sampler">The immutable sampler from this device.</param>
-    /// <returns>The internal non-owning sampled-pair representation.</returns>
-    object CreateSampledTextureReference(IGraphicsTextureView texture, Sampler sampler);
+    /// <summary>Creates a logical argument table.</summary>
+    /// <param name="desc">The independent registration capacities.</param>
+    /// <returns>The owned table.</returns>
+    IArgumentTable CreateArgumentTable(ArgumentTableDesc desc);
 
-    /// <summary>
-    /// Gets the caller-defined element layout validated against embedded Slang reflection; unsupported schemas are rejected.
-    /// </summary>
-    /// <param name="shader">The shader handle whose reflection defines the material schema.</param>
-    /// <returns>The reflected element layout and compiled sampled-resource capacity.</returns>
-    MaterialResourceLayout GetMaterialLayout(object shader);
+    /// <summary>Resolves a caller-owned logical type's reflected wire layout.</summary>
+    /// <typeparam name="T">The logical element type.</typeparam>
+    /// <param name="shader">The shader handle.</param>
+    /// <returns>The matching wire layout.</returns>
+    ShaderDataLayout<T> GetDataLayout<T>(object shader);
 
-    /// <summary>
-    /// Serializes caller-defined logical elements into a snapshot and retains their finite sampled-resource set.
-    /// </summary>
-    /// <typeparam name="T">The caller-defined logical buffer element type.</typeparam>
-    /// <param name="desc">The reflected layout and fallback resource settings.</param>
-    /// <param name="materials">The logical elements to serialize into an immutable snapshot.</param>
-    /// <param name="serializer">The caller-owned mapping from logical values to the Slang wire schema.</param>
-    /// <returns>The owned snapshot and its retained sampled-resource set.</returns>
-    IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer);
+    /// <summary>Packs logical elements and records their descriptor dependencies in a CPU Upload range.</summary>
+    /// <typeparam name="T">The logical element type.</typeparam>
+    /// <param name="destination">The exact-size Upload range.</param>
+    /// <param name="values">The values to serialize.</param>
+    /// <param name="schema">The reflected wire schema.</param>
+    /// <param name="serializer">The explicit caller-owned serializer.</param>
+    void PackShaderData<T>(BufferRange destination, ReadOnlySpan<T> values, object schema, IShaderDataSerializer<T> serializer);
 
-    /// <summary>
-    /// References a registered, complete material range after explicit upload completion; does not wait or submit.
-    /// </summary>
-    /// <param name="range">The complete registered material range.</param>
-    /// <returns>The non-owning reference to the completed, registered material range.</returns>
-    object CreateMaterialReference(BufferRange range);
+    /// <summary>References registered completed shader data elements.</summary>
+    /// <param name="range">The element-aligned range.</param>
+    /// <param name="dataType">The matching logical element type.</param>
+    /// <returns>The opaque root range.</returns>
+    object CreateShaderDataReference(BufferRange range, Type dataType);
 
-    /// <summary>
-    /// Creates leased drawing arguments for a complete material range with the same shader schema.
-    /// </summary>
-    /// <param name="pipeline">The matching pipeline from the same device.</param>
-    /// <param name="materials">The logical material snapshot, packed set, or opaque material range.</param>
-    /// <returns>The internal drawing arguments retaining the material range and its resources.</returns>
-    object CreateMaterialArguments(object pipeline, MaterialBufferReference materials);
+    /// <summary>Collects root dependencies and constructs automatic drawing bindings.</summary>
+    /// <param name="pipeline">The matching pipeline handle.</param>
+    /// <param name="data">The opaque shader-data root.</param>
+    /// <returns>The leased automatic drawing arguments.</returns>
+    object CreateDrawingArguments(object pipeline, object? data);
 
     /// <summary>
     /// Loads WGSL and optional Slang reflection from assembly resources; no shader compilation occurs.

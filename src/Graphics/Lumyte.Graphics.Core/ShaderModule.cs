@@ -10,9 +10,8 @@ public sealed class ShaderModule : GpuResource
     {
     }
 
-    /// <summary>
-    /// Gets the caller-defined element layout validated against embedded Slang reflection; unsupported schemas are rejected.
-    /// </summary>
-    /// <returns>The reflected element layout and compiled sampled-resource capacity.</returns>
-    public MaterialResourceLayout GetMaterialResourceLayout() => Driver.GetMaterialLayout(Handle);
+    /// <summary>Gets a caller-owned logical type's wire schema from embedded Slang reflection.</summary>
+    /// <typeparam name="T">The caller-owned logical element type.</typeparam>
+    /// <returns>The reflected layout used by the explicit serializer.</returns>
+    public ShaderDataLayout<T> GetDataLayout<T>() => Driver.GetDataLayout<T>(Handle);
 }

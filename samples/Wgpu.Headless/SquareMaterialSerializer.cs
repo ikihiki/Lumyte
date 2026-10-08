@@ -9,6 +9,7 @@ internal sealed class SquareMaterialSerializer : IShaderDataSerializer<SquareMat
     public void Serialize(in SquareMaterial value, IShaderDataWriter writer)
     {
         writer.Write("rectangle", value.Rectangle);
-        writer.WriteSampledTexture2D("textureSelector", value.Texture);
+        writer.WriteTextureReference("textureReference", value.Texture);
+        writer.WriteSamplerReference("samplerReference", value.Sampler);
     }
 }

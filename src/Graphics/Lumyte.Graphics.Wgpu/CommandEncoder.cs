@@ -6,7 +6,7 @@ internal sealed unsafe class CommandEncoder : IDisposable
 {
     private WGPUCommandEncoderImpl* _handle;
     private HashSet<GpuResource> _resources = [];
-    private List<MaterialTransfer> _materialTransfers = [];
+    private List<ShaderDataTransferState> _shaderDataTransfers = [];
     private RenderEncoder? _render;
     private bool _finished;
 
@@ -125,13 +125,13 @@ internal sealed unsafe class CommandEncoder : IDisposable
                 throw new ArgumentException("Copy requires distinct buffers, matching aligned ranges and copy usages.");
             }
 
-            MaterialRegion? material = source.Buffer.FindMaterial(source.Offset, source.Length);
-            destination.Buffer.InvalidateMaterials(destination.Offset, destination.Length);
-            _materialTransfers.RemoveAll(t => ReferenceEquals(t.Region.Buffer, destination.Buffer) && t.Region.Offset < destination.Offset + destination.Length && destination.Offset < t.Region.Offset + t.Region.Length);
-            if (material is not null)
+            ShaderDataRegion[] regions = source.Buffer.FindShaderDataCopies(source.Offset, source.Length).ToArray();
+            destination.Buffer.InvalidateShaderData(destination.Offset, destination.Length);
+            _shaderDataTransfers.RemoveAll(t => ReferenceEquals(t.Region.Buffer, destination.Buffer) && t.Region.Offset < destination.Offset + destination.Length && destination.Offset < t.Region.Offset + t.Region.Length);
+            foreach (ShaderDataRegion region in regions)
             {
-                Use(material.Bindings);
-                _materialTransfers.Add(new(destination.Buffer.RegisterMaterial(destination.Offset, destination.Length, material.Bindings, ready: false)));
+                Use(region.Snapshot);
+                _shaderDataTransfers.Add(new(destination.Buffer.RegisterShaderData(destination.Offset + (region.Offset - source.Offset), region.Length, region.Snapshot, region.FirstElement, ready: false)));
             }
 
             Use(source.Buffer);
@@ -193,8 +193,8 @@ internal sealed unsafe class CommandEncoder : IDisposable
                 throw new ArgumentException("Texture copy requires aligned rows and sufficient CopyDestination storage.");
             }
 
-            destination.InvalidateMaterials(0, required);
-            _materialTransfers.RemoveAll(t => ReferenceEquals(t.Region.Buffer, destination) && t.Region.Offset < required);
+            destination.InvalidateShaderData(0, required);
+            _shaderDataTransfers.RemoveAll(t => ReferenceEquals(t.Region.Buffer, destination) && t.Region.Offset < required);
             Use(source);
             Use(destination);
             var src = new WGPUTexelCopyTextureInfo
@@ -238,8 +238,8 @@ internal sealed unsafe class CommandEncoder : IDisposable
             Owner.EncoderCount--;
             HashSet<GpuResource> resources = _resources;
             _resources = [];
-            List<MaterialTransfer> transfers = _materialTransfers;
-            _materialTransfers = [];
+            List<ShaderDataTransferState> transfers = _shaderDataTransfers;
+            _shaderDataTransfers = [];
             return new(Owner, handle, resources, transfers);
         }
     }
@@ -264,12 +264,12 @@ internal sealed unsafe class CommandEncoder : IDisposable
             }
 
             _resources.Clear();
-            foreach (MaterialTransfer t in _materialTransfers)
+            foreach (ShaderDataTransferState t in _shaderDataTransfers)
             {
-                t.Region.Buffer.CancelMaterial(t.Region);
+                t.Region.Buffer.CancelShaderData(t.Region);
             }
 
-            _materialTransfers.Clear();
+            _shaderDataTransfers.Clear();
         }
     }
 

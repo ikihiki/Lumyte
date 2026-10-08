@@ -50,30 +50,16 @@ public sealed class GraphicsDevice : IDisposable
     /// <returns>The owned immutable sampler.</returns>
     public Sampler CreateSampler(SamplerDesc desc) => new(_driver, _driver.CreateSampler(desc));
 
-    /// <summary>
-    /// Creates an opaque, non-owning texture-view and sampler pair from this device.
-    /// </summary>
-    /// <param name="texture">The sampled texture view from this device.</param>
-    /// <param name="sampler">The immutable sampler from this device.</param>
-    /// <returns>The non-owning sampled pair, without exposing a physical binding.</returns>
-    public SampledTexture2DReference CreateSampledTexture2DReference(IGraphicsTextureView texture, Sampler sampler) => new(_driver.CreateSampledTextureReference(texture, sampler));
+    /// <summary>Creates a backend-owned logical argument table with independent resource capacities.</summary>
+    /// <param name="desc">The logical registration capacities.</param>
+    /// <returns>The owned logical argument table.</returns>
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => _driver.CreateArgumentTable(desc);
 
-    /// <summary>
-    /// Serializes caller-defined logical elements into a snapshot and retains their finite sampled-resource set.
-    /// </summary>
-    /// <typeparam name="T">The caller-defined logical buffer element type.</typeparam>
-    /// <param name="desc">The reflected layout and fallback resource settings.</param>
-    /// <param name="materials">The logical elements to serialize into an immutable snapshot.</param>
-    /// <param name="serializer">The caller-owned mapping from logical values to the Slang wire schema.</param>
-    /// <returns>The owned snapshot and its retained sampled-resource set.</returns>
-    public IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer) => _driver.CreateMaterialBindings(desc, materials, serializer);
-
-    /// <summary>
-    /// References a registered, complete material range after explicit upload completion; does not wait or submit.
-    /// </summary>
-    /// <param name="range">The complete registered material range.</param>
-    /// <returns>The non-owning reference to the completed, registered material range.</returns>
-    public MaterialBufferReference CreateMaterialReference(BufferSlice<byte> range) => new(_driver.CreateMaterialReference(range.Range));
+    /// <summary>References completed, registered shader data elements without submitting or waiting.</summary>
+    /// <typeparam name="T">The caller-owned logical element type.</typeparam>
+    /// <param name="range">One element or a complete element-aligned candidate range.</param>
+    /// <returns>The opaque reference used as drawing root data.</returns>
+    public GpuReference<T> CreateShaderDataReference<T>(BufferSlice<byte> range) => new(_driver.CreateShaderDataReference(range.Range, typeof(T)));
 
     /// <summary>
     /// Loads WGSL and optional Slang reflection from assembly resources; no shader compilation occurs.

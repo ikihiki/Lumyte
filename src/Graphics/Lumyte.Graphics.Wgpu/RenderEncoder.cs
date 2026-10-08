@@ -10,7 +10,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
     private readonly Texture _target;
     private WGPURenderPassEncoderImpl* _handle;
     private GraphicsPipeline? _pipeline;
-    private MaterialArguments? _materialArguments;
+    private DrawingArguments? _drawingArguments;
     private BufferSlice _indices;
     private IndexFormat _indexFormat;
 
@@ -34,7 +34,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
             _parent.Use(pipeline);
             WGPU.wgpuRenderPassEncoderSetPipeline(_handle, pipeline.Native.Handle);
             _pipeline = pipeline;
-            _materialArguments = null;
+            _drawingArguments = null;
         }
     }
 
@@ -95,7 +95,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
         }
     }
 
-    public void Draw(MaterialArguments arguments, DrawDesc desc)
+    public void Draw(DrawingArguments arguments, DrawDesc desc)
     {
         lock (_parent.Owner.Gate)
         {
@@ -108,7 +108,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
                 throw new ArgumentException("Set the matching graphics pipeline before drawing.");
             }
 
-            if (arguments.Region.Bindings.Pairs.Any(pair => ReferenceEquals(pair.View.Texture, _target)))
+            if (arguments.Dependencies.Any(entry => entry.Resource is TextureView view && ReferenceEquals(view.Texture, _target)))
             {
                 throw new ArgumentException("Cannot sample the active render target.");
             }
@@ -122,7 +122,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
             _parent.Use(arguments);
             _parent.Use(arguments.Region.Buffer);
             WGPU.wgpuRenderPassEncoderSetBindGroup(_handle, 0, arguments.Handle, 0, null);
-            _materialArguments = arguments;
+            _drawingArguments = arguments;
             Draw(desc);
         }
     }
@@ -140,7 +140,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
                 throw new InvalidOperationException("Set a graphics pipeline before drawing.");
             }
 
-            CheckMaterialArguments();
+            CheckDrawingArguments();
             checked
             {
                 _ = desc.FirstVertex + desc.VertexCount;
@@ -162,7 +162,7 @@ internal sealed unsafe class RenderEncoder : IDisposable
                 throw new InvalidOperationException("Set a pipeline and index buffer before drawing.");
             }
 
-            CheckMaterialArguments();
+            CheckDrawingArguments();
             uint size = _indexFormat == IndexFormat.Uint16 ? 2u : 4u;
             if (((ulong)desc.FirstIndex + desc.IndexCount) * size > _indices.Length)
             {
@@ -220,16 +220,16 @@ internal sealed unsafe class RenderEncoder : IDisposable
         }
     }
 
-    private void CheckMaterialArguments()
+    private void CheckDrawingArguments()
     {
-        if (_pipeline?.MaterialSchema is not null)
+        if (_pipeline?.ShaderDataSchema is not null)
         {
-            if (_materialArguments is null)
+            if (_drawingArguments is null)
             {
-                throw new InvalidOperationException("Material pipeline requires graphics arguments.");
+                throw new InvalidOperationException("Shader-data pipeline requires graphics arguments.");
             }
 
-            _materialArguments.Region.Check(_parent.Owner);
+            _drawingArguments.Region.Check(_parent.Owner);
         }
     }
 }

@@ -79,7 +79,7 @@ Console.WriteLine("PASS: GPU material buffer selects red/green textures per pixe
 
 byte[] squarePixels = Lumyte.Samples.TwentySquaresScene.Run(device, typeof(Program).Assembly);
 Lumyte.Samples.TwentySquaresScene.Verify(squarePixels);
-Console.WriteLine("PASS: 20 distinct textures and GPU materials render a 5×4 grid in 5 instanced draws; all 20,480 pixels match.");
+Console.WriteLine("PASS: 20 distinct textures and GPU materials render a 5×4 grid in 20 draws with automatic bindings; all 20,480 pixels match.");
 if (args.Length == 2 && args[0] == "--scene-output")
 {
     Lumyte.Samples.ScenePng.Write(args[1], squarePixels);

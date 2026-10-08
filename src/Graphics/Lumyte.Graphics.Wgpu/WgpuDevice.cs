@@ -15,7 +15,9 @@ internal sealed unsafe class WgpuDevice : IDisposable
     private readonly A.Adapter _adapter;
     private readonly ConcurrentQueue<string> _errors;
     private readonly GCHandle _errorHandle;
+    private readonly ConditionalWeakTable<GpuResource, Dictionary<(ulong Offset, ulong Length), uint>> _descriptorIdentities = new();
     private bool _disposed;
+    private uint _descriptorIdentity;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device native, ConcurrentQueue<string> errors, GCHandle errorHandle)
     {
@@ -235,7 +237,7 @@ internal sealed unsafe class WgpuDevice : IDisposable
         {
             Check();
             ArgumentException.ThrowIfNullOrWhiteSpace(wgsl);
-            var schema = MaterialSchema.Parse(reflection);
+            var schema = ShaderDataSchema.Parse(this, reflection);
             return new(this, Validated(Native.CreateShaderModule(new A.ShaderModuleDescriptor { Source = A.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(wgsl)), })), schema);
         }
     }
@@ -263,7 +265,8 @@ internal sealed unsafe class WgpuDevice : IDisposable
             desc.Shader.Check(this);
             ArgumentException.ThrowIfNullOrWhiteSpace(desc.VertexEntry);
             ArgumentException.ThrowIfNullOrWhiteSpace(desc.FragmentEntry);
-            return new(this, Validated(Native.CreateRenderPipeline(desc.Shader.Native, Encoding.UTF8.GetBytes(desc.VertexEntry), desc.Shader.Native, Encoding.UTF8.GetBytes(desc.FragmentEntry), [new A.ColorTargetState(WGPUTextureFormat.RGBA8Unorm)])), desc.Shader.MaterialSchema);
+            using A.PipelineLayout layout = desc.Shader.ShaderDataSchema is null ? default : GraphicsPipeline.CreateLayout(this);
+            return new(this, Validated(Native.CreateRenderPipeline(desc.Shader.Native, Encoding.UTF8.GetBytes(desc.VertexEntry), desc.Shader.Native, Encoding.UTF8.GetBytes(desc.FragmentEntry), [new A.ColorTargetState(WGPUTextureFormat.RGBA8Unorm)], layout)), desc.Shader.ShaderDataSchema);
         }
     }
 
@@ -324,31 +327,6 @@ internal sealed unsafe class WgpuDevice : IDisposable
         }
     }
 
-    public MaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer)
-    {
-        lock (Gate)
-        {
-            Check();
-            ArgumentNullException.ThrowIfNull(desc);
-            ArgumentNullException.ThrowIfNull(desc.Layout);
-            WGPULimits limits = Native.GetLimits();
-            if (desc.Layout.GetSizeInBytes((ulong)materials.Length) > limits.maxStorageBufferBindingSize || limits.maxSampledTexturesPerShaderStage < 4 || limits.maxSamplersPerShaderStage < 4)
-            {
-                throw new NotSupportedException("Material layout exceeds device binding limits.");
-            }
-
-            (byte[] Bytes, SampledPair[] Pairs) prepared = MaterialBindings.Prepare(this, desc, materials, serializer);
-            Check();
-            foreach (SampledPair pair in prepared.Pairs.Distinct())
-            {
-                pair.View.Check(this);
-                pair.Sampler.Check(this);
-            }
-
-            return new(this, desc.Layout, (ulong)materials.Length, prepared.Bytes, prepared.Pairs);
-        }
-    }
-
     public CommandEncoder CreateCommandEncoder()
     {
         lock (Gate)
@@ -369,7 +347,7 @@ internal sealed unsafe class WgpuDevice : IDisposable
             WGPUCommandBufferImpl* handle = commands.Handle;
             WGPU.wgpuQueueSubmit(Native.Queue.Handle, 1, &handle);
             commands.MarkSubmitted();
-            return new(this, Native.Queue.BeginOnSubmittedWorkDone(), commands.TakeResources(), commands.TakeMaterialTransfers());
+            return new(this, Native.Queue.BeginOnSubmittedWorkDone(), commands.TakeResources(), commands.TakeShaderDataTransferStates());
         }
     }
 
@@ -393,6 +371,19 @@ internal sealed unsafe class WgpuDevice : IDisposable
             _errorHandle.Free();
             _disposed = true;
         }
+    }
+
+    internal uint NextDescriptorIdentity(GpuResource resource, BufferSlice range)
+    {
+        Dictionary<(ulong Offset, ulong Length), uint> identities = _descriptorIdentities.GetOrCreateValue(resource);
+        (ulong Offset, ulong Length) key = (range.Offset, range.Length);
+        if (!identities.TryGetValue(key, out uint identity))
+        {
+            identity = checked(++_descriptorIdentity);
+            identities.Add(key, identity);
+        }
+
+        return identity;
     }
 
     internal void Check()

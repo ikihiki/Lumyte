@@ -363,7 +363,7 @@ backend 条件が Upload code に広がる。共通 pitch／region を定め、n
 - mip／layer／aspect と用途を view、copy、attachment、shader が共有できる。
 - subresource と依存の追跡、format capabilities、staging repack の実装コストが必要。
 - 一部 backend では同一 image の異なる subresource 利用も制限される。capability と検証で明示する。
-- 現行 TextureDesc.Width／Height と引数なし CreateView は詳細 Desc へ移行する。texture の読み戻しは明示的な staging コピーと共通の CPU 読み出しへ移行する。初期実装のコピー記録 API は RecordCopyTextureToBuffer に改称する。RGBA8Unorm／Srgb の sampling と RecordCopyBufferToTexture は実装済み。一般的な format／view の追加機能は未実装。
+- backend の対応範囲は ADR-0011 に従う。texture の読み戻しは利用者の staging 確保、明示コピー・送信・完了観測と CopyTo に分ける。一般的な format／view は対応範囲を明示する。
 
 ## 検証方針
 

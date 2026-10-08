@@ -1,15 +1,15 @@
-import LumyteSampledTextures;
+import LumyteBindless;
 
 // The consumer owns this wire schema and its logical serializer.
 struct MaterialWire
 {
     float4 baseColor;
-    uint textureSelector;
+    uint textureReference;
+    uint samplerReference;
     uint hasTexture;
     uint padding0;
-    uint padding1;
 };
-[[vk::binding(0, 0)]] StructuredBuffer<MaterialWire> materials;
+[[vk::binding(0, 0)]] StructuredBuffer<MaterialWire> shaderData;
 
 struct VertexOutput
 {
@@ -33,11 +33,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target0
     float2 dy = ddy(input.uv);
     uint index = uint(input.uv.x * 2);
     uint count, stride;
-    materials.GetDimensions(count, stride);
+    count = shaderDataCount();
     if (index >= count) return float4(1, 0, 1, 1);
-    MaterialWire material = materials[index];
+    MaterialWire material = shaderData[shaderDataIndex(index)];
     float4 color = material.baseColor;
     if (material.hasTexture != 0)
-        color *= sampleSampledTexture2D(material.textureSelector, input.uv, dx, dy);
+        color *= sampleTextureGrad(material.textureReference, material.samplerReference, input.uv, dx, dy);
     return color;
 }

@@ -1,7 +1,7 @@
 namespace Lumyte.Graphics;
 
 /// <summary>
-/// Owns a graphics pipeline and its reflected material schema.
+/// Owns a graphics pipeline and its reflected shader-data schema.
 /// </summary>
 public sealed class GraphicsPipeline : GpuResource
 {
@@ -10,10 +10,9 @@ public sealed class GraphicsPipeline : GpuResource
     {
     }
 
-    /// <summary>
-    /// Creates leased drawing arguments for a complete material range with the same shader schema.
-    /// </summary>
-    /// <param name="materials">The logical material snapshot, packed set, or opaque material range.</param>
-    /// <returns>The owned arguments retaining the pipeline and its referenced resources.</returns>
-    public ShaderArguments CreateArguments(MaterialBufferReference materials) => new(Driver, Driver.CreateMaterialArguments(Handle, materials));
+    /// <summary>Automatically collects dependencies from a shader-data root range and constructs drawing bindings.</summary>
+    /// <typeparam name="T">The caller-owned logical element type.</typeparam>
+    /// <param name="data">One logical element or the shader's candidate array range.</param>
+    /// <returns>The owned drawing arguments and their retained automatic bindings.</returns>
+    public ShaderArguments CreateArguments<T>(GpuReference<T> data) => new(Driver, Driver.CreateDrawingArguments(Handle, data.Handle));
 }

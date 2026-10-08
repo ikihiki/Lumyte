@@ -19,45 +19,106 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
 
     public object CreateSampler(SamplerDesc desc) => device.CreateSampler(desc);
 
-    public object CreateSampledTextureReference(G.IGraphicsTextureView texture, G.Sampler sampler)
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        TextureView view = GetTextureResource<TextureView>(texture);
-        Sampler state = Get<Sampler>(sampler);
-        state.Check(device);
-        if (!view.Texture.Usage.HasFlag(TextureUsage.Sampled))
+        lock (device.Gate)
         {
-            throw new ArgumentException("Sampled texture usage is required.");
+            device.Check();
+            ArgumentNullException.ThrowIfNull(desc);
+            if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
+            {
+                throw new ArgumentException("At least one descriptor slot is required.", nameof(desc));
+            }
+
+            return new ArgumentTable(this, device, desc);
         }
-
-        return new SampledPair(view, state);
     }
 
-    public MaterialResourceLayout GetMaterialLayout(object shader)
+    public ShaderDataLayout<T> GetDataLayout<T>(object shader)
     {
-        var module = (ShaderModule)shader;
-        module.Check(device);
-        MaterialSchema schema = module.MaterialSchema ?? throw new NotSupportedException("Shader reflection does not declare the supported material ABI.");
-        return new(schema, 4, schema.ElementStrideInBytes);
-    }
-
-    public IGraphicsMaterialBindings CreateMaterialBindings<T>(MaterialBindingsDesc desc, ReadOnlySpan<T> materials, IShaderDataSerializer<T> serializer) => device.CreateMaterialBindings(desc, materials, serializer);
-
-    public object CreateMaterialReference(G.BufferRange range)
-    {
-        BufferSlice slice = Slice(range);
-        if (!slice.Buffer.Usage.HasFlag(BufferUsage.ShaderRead) || slice.Buffer.Usage.HasFlag(BufferUsage.ShaderWrite))
+        lock (device.Gate)
         {
-            throw new ArgumentException("Material reference requires shader-read-only storage.");
+            var module = (ShaderModule)shader;
+            module.Check(device);
+            ShaderDataSchema schema = module.ShaderDataSchema ?? throw new NotSupportedException("Shader reflection does not declare the supported bindless data ABI.");
+            return new(this, schema, schema.ElementStrideInBytes);
         }
-
-        return slice.Buffer.FindMaterial(slice.Offset, slice.Length) ?? throw new ArgumentException("Material range has no completed typed upload.");
     }
 
-    public object CreateMaterialArguments(object pipeline, MaterialBufferReference materials)
+    public void PackShaderData<T>(G.BufferRange destination, ReadOnlySpan<T> values, object schema, IShaderDataSerializer<T> serializer)
     {
-        if (materials.Handle is not MaterialRegion region)
+        lock (device.Gate)
         {
-            throw new ArgumentException("Invalid material reference.");
+            ArgumentNullException.ThrowIfNull(serializer);
+            if (schema is not ShaderDataSchema layout || !ReferenceEquals(layout.Owner, device) || values.IsEmpty || destination.Length != checked((ulong)values.Length * layout.ElementStrideInBytes))
+            {
+                throw new ArgumentException("Packing requires an exact-size range and a matching device schema.");
+            }
+
+            BufferSlice target = Slice(destination);
+            byte[] bytes = new byte[checked((int)target.Length)];
+            var dependencies = new List<DescriptorRegistration>();
+            var elements = new DescriptorRegistration[values.Length][];
+            var writer = new ShaderDataWriter(device, layout, bytes, dependencies);
+            for (int i = 0; i < values.Length; i++)
+            {
+                dependencies.Clear();
+                writer.BeginRow(checked(i * (int)layout.ElementStrideInBytes));
+                try
+                {
+                    serializer.Serialize(in values[i], writer);
+                    elements[i] = dependencies.Distinct().ToArray();
+                }
+                finally
+                {
+                    writer.EndRow();
+                }
+            }
+
+            foreach (DescriptorRegistration registration in elements.SelectMany(element => element).Distinct())
+            {
+                registration.Check(device);
+            }
+
+            var snapshot = new ShaderDataSnapshot(device, layout, typeof(T), elements);
+            try
+            {
+                target.Buffer.CopyFrom(bytes, target.Offset, target.Length);
+                target.Buffer.RegisterShaderData(target.Offset, target.Length, snapshot);
+            }
+            catch
+            {
+                snapshot.Dispose();
+                throw;
+            }
+        }
+    }
+
+    public object CreateShaderDataReference(G.BufferRange range, Type dataType)
+    {
+        lock (device.Gate)
+        {
+            BufferSlice slice = Slice(range);
+            if (!slice.Buffer.Usage.HasFlag(BufferUsage.ShaderRead) || slice.Buffer.Usage.HasFlag(BufferUsage.ShaderWrite))
+            {
+                throw new ArgumentException("Shader data requires read-only storage.");
+            }
+
+            ShaderDataRegion region = slice.Buffer.FindShaderData(slice.Offset, slice.Length) ?? throw new ArgumentException("Range has no completed shader-data metadata.");
+            if (region.Snapshot.DataType != dataType)
+            {
+                throw new ArgumentException("Logical element type does not match the serialized schema.");
+            }
+
+            return region;
+        }
+    }
+
+    public object CreateDrawingArguments(object pipeline, object? data)
+    {
+        if (data is not ShaderDataRegion region)
+        {
+            throw new ArgumentException("Invalid shader-data root reference.");
         }
 
         return ((GraphicsPipeline)pipeline).CreateArguments(region);
@@ -122,7 +183,7 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
 
     public void Draw(object handle, DrawDesc desc) => ((RenderEncoder)handle).Draw(desc);
 
-    public void DrawWithArguments(object handle, G.ShaderArguments arguments, DrawDesc desc) => ((RenderEncoder)handle).Draw(Get<MaterialArguments>(arguments), desc);
+    public void DrawWithArguments(object handle, G.ShaderArguments arguments, DrawDesc desc) => ((RenderEncoder)handle).Draw(Get<DrawingArguments>(arguments), desc);
 
     public void DrawIndexed(object handle, IndexedDrawDesc desc) => ((RenderEncoder)handle).DrawIndexed(desc);
 

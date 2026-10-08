@@ -6,14 +6,14 @@ internal sealed unsafe class CommandBuffer : GpuResource
 {
     private HashSet<GpuResource> _resources;
     private bool _submitted;
-    private List<MaterialTransfer> _materialTransfers;
+    private List<ShaderDataTransferState> _shaderDataTransfers;
 
-    internal CommandBuffer(WgpuDevice owner, WGPUCommandBufferImpl* handle, HashSet<GpuResource> resources, List<MaterialTransfer> transfers)
+    internal CommandBuffer(WgpuDevice owner, WGPUCommandBufferImpl* handle, HashSet<GpuResource> resources, List<ShaderDataTransferState> transfers)
         : base(owner)
     {
         Handle = handle;
         _resources = resources;
-        _materialTransfers = transfers;
+        _shaderDataTransfers = transfers;
     }
 
     internal WGPUCommandBufferImpl* Handle { get; }
@@ -43,21 +43,21 @@ internal sealed unsafe class CommandBuffer : GpuResource
         return resources;
     }
 
-    internal List<MaterialTransfer> TakeMaterialTransfers()
+    internal List<ShaderDataTransferState> TakeShaderDataTransferStates()
     {
-        List<MaterialTransfer> transfers = _materialTransfers;
-        _materialTransfers = [];
+        List<ShaderDataTransferState> transfers = _shaderDataTransfers;
+        _shaderDataTransfers = [];
         return transfers;
     }
 
     protected override void ReleaseNative()
     {
-        foreach (MaterialTransfer t in _materialTransfers)
+        foreach (ShaderDataTransferState t in _shaderDataTransfers)
         {
-            t.Region.Buffer.CancelMaterial(t.Region);
+            t.Region.Buffer.CancelShaderData(t.Region);
         }
 
-        _materialTransfers.Clear();
+        _shaderDataTransfers.Clear();
         WGPU.wgpuCommandBufferRelease(Handle);
         foreach (GpuResource resource in _resources)
         {

@@ -1,4 +1,4 @@
-import LumyteSampledTextures;
+import LumyteBindless;
 
 // Test-owned schema: field names, ordering and stride deliberately differ from the sample.
 struct CustomMaterialWire
@@ -6,11 +6,11 @@ struct CustomMaterialWire
     float opacity;
     uint options;
     uint image;
-    uint reserved;
+    uint sampler;
     float4 tint;
     float4 extra;
 };
-[[vk::binding(0, 0)]] StructuredBuffer<CustomMaterialWire> materials;
+[[vk::binding(0, 0)]] StructuredBuffer<CustomMaterialWire> shaderData;
 struct VertexOutput
 {
     float4 position : SV_Position;
@@ -31,6 +31,6 @@ float4 fragmentMain(VertexOutput input) : SV_Target0
     float2 dx = ddx(input.uv);
     float2 dy = ddy(input.uv);
     uint index = uint(input.uv.x * 2);
-    CustomMaterialWire material = materials[index];
-    return material.tint * material.opacity * sampleSampledTexture2D(material.image, input.uv, dx, dy);
+    CustomMaterialWire material = shaderData[shaderDataIndex(index)];
+    return material.tint * material.opacity * sampleTextureGrad(material.image, material.sampler, input.uv, dx, dy);
 }

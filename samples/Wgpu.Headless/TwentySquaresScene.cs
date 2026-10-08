@@ -32,55 +32,34 @@ internal static class TwentySquaresScene
             Sampler sampler = Own(device.CreateSampler(new SamplerDesc { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest }), resources);
             ShaderModule shader = Own(device.CreateShader(shaders, "Lumyte.Shaders.squares.wgsl"), resources);
             GraphicsPipeline pipeline = Own(device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader }), resources);
-            MaterialResourceLayout layout = shader.GetMaterialResourceLayout();
-            int capacity = checked((int)layout.PairCapacity);
-            if (capacity != 4)
-            {
-                throw new NotSupportedException("This sample uses the compiled four-pair profile.");
-            }
-
-            var references = new SampledTexture2DReference[SquareCount];
+            ShaderDataLayout<SquareMaterial> layout = shader.GetDataLayout<SquareMaterial>();
             var textureUploads = new IGraphicsBuffer<byte>[SquareCount];
             var textures = new IGraphicsTexture[SquareCount];
+            var views = new IGraphicsTextureView[SquareCount];
             for (int i = 0; i < SquareCount; i++)
             {
                 textures[i] = Own(device.CreateTexture(new TextureDesc { Width = 1, Height = 1, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination }), resources);
-                IGraphicsTextureView view = Own(textures[i].CreateView(), resources);
-                references[i] = device.CreateSampledTexture2DReference(view, sampler);
+                views[i] = Own(textures[i].CreateView(), resources);
                 textureUploads[i] = Own(device.CreateBuffer(new BufferDesc<byte> { Count = 256, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }), resources);
                 textureUploads[i].CopyFrom(ColorBytes(i));
             }
 
-            int batchCount = (SquareCount + capacity - 1) / capacity;
-            var materialUploads = new IGraphicsBuffer<byte>[batchCount];
-            var materialBuffers = new IGraphicsBuffer<byte>[batchCount];
-            uint[] instanceCounts = new uint[batchCount];
-            for (int batch = 0; batch < batchCount; batch++)
+            IArgumentTable table = Own(device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = SquareCount, SamplerCapacity = 1 }), resources);
+            SamplerDescriptorReference samplerReference = table.WriteSampler(0, sampler);
+            var materials = new SquareMaterial[SquareCount];
+            for (int square = 0; square < SquareCount; square++)
             {
-                int first = batch * capacity;
-                int count = Math.Min(capacity, SquareCount - first);
-                var materials = new SquareMaterial[count];
-                for (int i = 0; i < count; i++)
-                {
-                    int square = first + i;
-                    int column = square % Columns;
-                    int row = square / Columns;
-                    var rectangle = new Vector4(-1f + (2f * column / Columns), 1f - (2f * (row + 1) / Rows), 2f / Columns, 2f / Rows);
-                    materials[i] = new(rectangle, references[square]);
-                }
-
-                // Fallback is the first used pair, so all four slots can hold distinct textures.
-                IGraphicsMaterialBindings bindings = Own(
-                    device.CreateMaterialBindings<SquareMaterial>(
-                    new MaterialBindingsDesc { Layout = layout, UnusedSlotFallback = references[first] },
-                    materials,
-                    SquareMaterialSerializer.Instance),
-                    resources);
-                materialUploads[batch] = Own(device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }), resources);
-                materialBuffers[batch] = Own(device.CreateBuffer(new BufferDesc<byte> { Count = bindings.SizeInBytes, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }), resources);
-                materialUploads[batch].Slice(0, bindings.SizeInBytes).CopyFrom(bindings);
-                instanceCounts[batch] = checked((uint)count);
+                TextureDescriptorReference textureReference = table.WriteTexture((uint)square, views[square]);
+                int column = square % Columns;
+                int row = square / Columns;
+                var rectangle = new Vector4(-1f + (2f * column / Columns), 1f - (2f * (row + 1) / Rows), 2f / Columns, 2f / Rows);
+                materials[square] = new(rectangle, textureReference, samplerReference);
             }
+
+            ulong byteCount = layout.GetSizeInBytes(SquareCount);
+            IGraphicsBuffer<byte> materialUpload = Own(device.CreateBuffer(new BufferDesc<byte> { Count = byteCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }), resources);
+            IGraphicsBuffer<byte> materialBuffer = Own(device.CreateBuffer(new BufferDesc<byte> { Count = byteCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }), resources);
+            materialUpload.Slice(0, byteCount).CopyFrom<SquareMaterial>(materials, layout, SquareMaterialSerializer.Instance);
 
             // The sample explicitly records all texture and material uploads, submits, and observes completion.
             using (CommandEncoder transfer = device.CreateCommandEncoder())
@@ -90,19 +69,18 @@ internal static class TwentySquaresScene
                     transfer.RecordCopyBufferToTexture(textureUploads[i].Slice(0, textureUploads[i].Count), textures[i], 256);
                 }
 
-                for (int batch = 0; batch < batchCount; batch++)
-                {
-                    transfer.RecordCopyBuffer(materialUploads[batch].Slice(0, materialUploads[batch].Count), materialBuffers[batch].Slice(0, materialBuffers[batch].Count));
-                }
+                transfer.RecordCopyBuffer(materialUpload.Slice(0, byteCount), materialBuffer.Slice(0, byteCount));
 
                 using CommandBuffer commands = transfer.Finish();
                 device.Submit(commands).Wait();
             }
 
-            var arguments = new ShaderArguments[batchCount];
-            for (int batch = 0; batch < batchCount; batch++)
+            var arguments = new ShaderArguments[SquareCount];
+            for (int square = 0; square < SquareCount; square++)
             {
-                arguments[batch] = Own(pipeline.CreateArguments(device.CreateMaterialReference(materialBuffers[batch].Slice(0, materialBuffers[batch].Count))), resources);
+                // Root data identifies one element. The backend follows its recorded descriptor dependencies.
+                BufferSlice<byte> element = materialBuffer.Slice((ulong)square * layout.ElementStrideInBytes, layout.ElementStrideInBytes);
+                arguments[square] = Own(pipeline.CreateArguments(device.CreateShaderDataReference<SquareMaterial>(element)), resources);
             }
 
             IGraphicsTexture target = Own(device.CreateTexture(new TextureDesc { Width = Width, Height = Height }), resources);
@@ -113,10 +91,9 @@ internal static class TwentySquaresScene
                 using (RenderEncoder render = encoder.BeginRenderPass(new RenderPassDesc { Target = targetView, ClearValue = new Color4(0, 0, 0, 0) }))
                 {
                     render.SetPipeline(pipeline);
-                    for (int batch = 0; batch < batchCount; batch++)
+                    for (int square = 0; square < SquareCount; square++)
                     {
-                        // Six vertices form each quad; instance/material indices are local to the binding set.
-                        render.Draw(arguments[batch], new DrawDesc { VertexCount = 6, InstanceCount = instanceCounts[batch] });
+                        render.Draw(arguments[square], new DrawDesc { VertexCount = 6 });
                     }
                 }
 

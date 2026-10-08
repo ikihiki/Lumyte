@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal class WgpuBuffer : GpuResource, IBufferBackendContract
 {
-    private readonly List<MaterialRegion> _materials = [];
+    private readonly List<ShaderDataRegion> _shaderData = [];
 
     internal WgpuBuffer(WgpuDevice owner, A.Buffer native, ulong size, BufferUsage usage, MemoryPreference memory)
         : base(owner)
@@ -57,7 +57,7 @@ internal class WgpuBuffer : GpuResource, IBufferBackendContract
             try
             {
                 Owner.CheckErrors();
-                InvalidateMaterials(offset, (ulong)source.Length);
+                InvalidateShaderData(offset, (ulong)source.Length);
                 source.CopyTo(Native.GetMappedRange<byte>(0, (nuint)SizeInBytes).Slice(checked((int)offset), source.Length));
             }
             finally
@@ -96,42 +96,97 @@ internal class WgpuBuffer : GpuResource, IBufferBackendContract
         }
     }
 
-    internal MaterialRegion? FindMaterial(ulong offset, ulong length) => _materials.Find(r => r.Valid && r.Ready && r.Offset == offset && r.Length == length);
-
-    internal void InvalidateMaterials(ulong offset, ulong length)
+    internal ShaderDataRegion? FindShaderData(ulong offset, ulong length)
     {
-        foreach (MaterialRegion? region in _materials.Where(r => r.Offset < offset + length && offset < r.Offset + r.Length).ToArray())
+        ShaderDataRegion? region = _shaderData.Find(r => r.Valid && r.Ready && r.Offset <= offset && offset - r.Offset <= r.Length && length <= r.Length - (offset - r.Offset));
+        if (region is null)
         {
-            region.Valid = false;
-            region.Bindings.ReleaseLease();
-            _materials.Remove(region);
+            return null;
+        }
+
+        ulong stride = region.Snapshot.Schema.ElementStrideInBytes;
+        if ((offset - region.Offset) % stride != 0 || length % stride != 0)
+        {
+            return null;
+        }
+
+        return new(this, offset, length, region.Snapshot, checked(region.FirstElement + (int)((offset - region.Offset) / stride))) { Ready = true };
+    }
+
+    internal IEnumerable<ShaderDataRegion> FindShaderDataCopies(ulong offset, ulong length)
+    {
+        foreach (ShaderDataRegion region in _shaderData.Where(r => r.Valid && r.Ready && r.Offset < offset + length && offset < r.Offset + r.Length))
+        {
+            ulong first = Math.Max(region.Offset, offset);
+            ulong last = Math.Min(region.Offset + region.Length, offset + length);
+            ulong stride = region.Snapshot.Schema.ElementStrideInBytes;
+            if ((first - region.Offset) % stride == 0 && (last - first) % stride == 0)
+            {
+                yield return new(this, first, last - first, region.Snapshot, checked(region.FirstElement + (int)((first - region.Offset) / stride))) { Ready = true };
+            }
         }
     }
 
-    internal MaterialRegion RegisterMaterial(ulong offset, ulong length, MaterialBindings bindings, bool ready = true)
+    internal bool IsCurrent(ShaderDataRegion reference) => _shaderData.Any(region => region.Valid && region.Ready && ReferenceEquals(region.Snapshot, reference.Snapshot) && region.Offset <= reference.Offset && reference.Offset - region.Offset <= region.Length && reference.Length <= region.Length - (reference.Offset - region.Offset) && reference.FirstElement == region.FirstElement + (int)((reference.Offset - region.Offset) / region.Snapshot.Schema.ElementStrideInBytes));
+
+    internal void InvalidateShaderData(ulong offset, ulong length)
     {
-        InvalidateMaterials(offset, length);
-        bindings.Acquire();
-        var region = new MaterialRegion(this, offset, length, bindings)
+        if (length == 0)
+        {
+            return;
+        }
+
+        foreach (ShaderDataRegion region in _shaderData.Where(r => r.Offset < offset + length && offset < r.Offset + r.Length).ToArray())
+        {
+            ulong stride = region.Snapshot.Schema.ElementStrideInBytes;
+            ulong prefix = offset > region.Offset ? ((offset - region.Offset) / stride) * stride : 0;
+            ulong suffix = Math.Min(region.Length, ((Math.Min(offset + length, region.Offset + region.Length) - region.Offset + stride - 1) / stride) * stride);
+            if (prefix > 0)
+            {
+                Preserve(region, region.Offset, prefix, region.FirstElement);
+            }
+
+            if (suffix < region.Length)
+            {
+                Preserve(region, region.Offset + suffix, region.Length - suffix, checked(region.FirstElement + (int)(suffix / stride)));
+            }
+
+            region.Valid = false;
+            region.Snapshot.ReleaseLease();
+            _shaderData.Remove(region);
+        }
+    }
+
+    internal ShaderDataRegion RegisterShaderData(ulong offset, ulong length, ShaderDataSnapshot snapshot, int firstElement = 0, bool ready = true)
+    {
+        InvalidateShaderData(offset, length);
+        snapshot.Acquire();
+        var region = new ShaderDataRegion(this, offset, length, snapshot, firstElement)
         {
             Ready = ready,
         };
-        _materials.Add(region);
+        _shaderData.Add(region);
         return region;
     }
 
-    internal void CancelMaterial(MaterialRegion region)
+    internal void CancelShaderData(ShaderDataRegion region)
     {
-        if (_materials.Remove(region))
+        if (_shaderData.Remove(region))
         {
             region.Valid = false;
-            region.Bindings.ReleaseLease();
+            region.Snapshot.ReleaseLease();
         }
     }
 
     protected override void ReleaseNative()
     {
-        InvalidateMaterials(0, SizeInBytes);
+        InvalidateShaderData(0, SizeInBytes);
         Native.Dispose();
+    }
+
+    private void Preserve(ShaderDataRegion region, ulong offset, ulong length, int firstElement)
+    {
+        region.Snapshot.Acquire();
+        _shaderData.Add(new(this, offset, length, region.Snapshot, firstElement) { Ready = region.Ready });
     }
 }

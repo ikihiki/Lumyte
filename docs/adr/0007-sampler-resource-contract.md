@@ -184,7 +184,7 @@ texture と sampler が別 field の場合も利用者に binding 番号は指�
 +{
 +    // 内部操作の設計用宣言。Token／Range／Plan などは非公開の概念型。
 +    // 正式な driver signature、結果／診断型、C ABI の layout は別途具体化する。
-+    // この表示は現行 IGraphicsDriver の実装を変更しない。
++    // backend の対応範囲は ADR-0011 に従う。
 +    internal interface ISamplerBackendContract
 +    {
 +        // 使用可能 filter／address／compare と anisotropy 上限、shader profile 制限を報告
@@ -280,7 +280,7 @@ WebGPU の binding layout と shader 型で validation error になり、backend
 - Slang の pair metadata と sampler category ごとの layout 検証が必要になる。
 - native cache の参照数・GPU 完了・診断 label の管理が必要になる。
 - PCF／anisotropy の画質と数値は backend ごとに差があり、全 pixel の bit 一致は保証しない。
-- 初期 wgpu は通常 sampler の MinFilter／MagFilter と AddressU／V を実装し、material sampling を GPU テストで検証した。詳細は ADR-0011 の実装済み拡張に従う。comparison、anisotropy と一般的な mip 設定は未実装。
+- 初期 wgpu は通常 sampler の MinFilter／MagFilter と AddressU／V を実装し、material sampling を GPU テストで検証した。詳細は ADR-0011 の対応範囲に従う。comparison、anisotropy と一般的な mip 設定は未実装。
 
 ## 検証方針
 

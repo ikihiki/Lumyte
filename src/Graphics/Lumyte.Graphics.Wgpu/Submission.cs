@@ -7,16 +7,16 @@ internal sealed class Submission
     private readonly WgpuDevice _owner;
     private readonly A.QueueWorkDoneRequest _request;
     private readonly HashSet<GpuResource> _resources;
-    private readonly List<MaterialTransfer> _materialTransfers;
+    private readonly List<ShaderDataTransferState> _shaderDataTransfers;
     private bool _completed;
     private Exception? _error;
 
-    internal Submission(WgpuDevice owner, A.QueueWorkDoneRequest request, HashSet<GpuResource> resources, List<MaterialTransfer> transfers)
+    internal Submission(WgpuDevice owner, A.QueueWorkDoneRequest request, HashSet<GpuResource> resources, List<ShaderDataTransferState> transfers)
     {
         _owner = owner;
         _request = request;
         _resources = resources;
-        _materialTransfers = transfers;
+        _shaderDataTransfers = transfers;
         owner.EncoderCount++;
     }
 
@@ -53,7 +53,7 @@ internal sealed class Submission
 
                 if (_error is null)
                 {
-                    foreach (MaterialTransfer transfer in _materialTransfers)
+                    foreach (ShaderDataTransferState transfer in _shaderDataTransfers)
                     {
                         if (transfer.Region.Valid)
                         {
@@ -63,13 +63,13 @@ internal sealed class Submission
                 }
                 else
                 {
-                    foreach (MaterialTransfer transfer in _materialTransfers)
+                    foreach (ShaderDataTransferState transfer in _shaderDataTransfers)
                     {
-                        transfer.Region.Buffer.CancelMaterial(transfer.Region);
+                        transfer.Region.Buffer.CancelShaderData(transfer.Region);
                     }
                 }
 
-                _materialTransfers.Clear();
+                _shaderDataTransfers.Clear();
                 _request.Dispose();
                 foreach (GpuResource resource in _resources)
                 {
