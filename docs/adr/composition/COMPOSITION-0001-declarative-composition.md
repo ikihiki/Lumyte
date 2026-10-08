@@ -1,308 +1,204 @@
-# ADR-COMPOSITION-0001: 宣言的なオブジェクト構築の契約ライブラリ
+# ADR-COMPOSITION-0001: デリゲート型ファクトリとノード操作の生成
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-08
 
 ## 背景
 
-オブジェクトの設定値と子要素を C# の式でまとめて記述し、階層構造を読みやすく構築したい。旧 Lumyte の `Lumyte.Composition` は、属性による宣言と、引数の省略を表す `Optional<T>` を提供する。別プロジェクトの Source Generator がその宣言からファクトリと子要素を設定するインデクサを生成する。
+設定値と子要素を C# の式でまとめ、`Grid()[Text(with: [Grid.Column(1)])]` と記述したい。旧 Lumyte.Composition の属性と Optional を基礎にするが、通常の静的メソッドは `Grid.Column` の拡張の receiver にできない。また、定義するクラスとファクトリのプロパティは同じ名前にしたい。
 
-通常の省略可能引数では、省略した値と明示的な `0`、`false`、`null` を区別できない。構築対象が持つ初期値を維持しながら明示した値だけを適用するため、その区別を公開契約に含める必要がある。
-
-現行 Lumyte には Composition の実装がない。旧ライブラリの契約を基礎に、描画や UI に依存せず利用できる基盤ライブラリとして導入する方針を提案する。
+Composable クラス内の属性付き静的メソッドからファクトリへの拡張を生成する。生成されたノードを受け取って操作する共通の仕組みとし、添付値の保存領域は Widget 側が所有する。アニメーションの開始や tailwind 風のスタイル変更も同じ操作の生成で扱う。
 
 ## 決定
 
-### 対象範囲と配置
+### 配置と責務
 
-`src/Core/Lumyte.Composition/` に C# ライブラリを配置し、プロジェクト名、NuGet パッケージ名、名前空間を `Lumyte.Composition` とする。[ADR-0002](../0002-repository-layout.md) の基本型・基盤機能の分類に従う。
+[ADR-0002](../0002-repository-layout.md) に従い、契約を `src/Core/Lumyte.Composition`、Generator を `src/Core/Lumyte.Composition.Generators` に配置する。契約のプロジェクト名・NuGet 名・名前空間は Lumyte.Composition とし、BCL のみに依存する。Graphics、UI、Engine、Native、Roslyn を実行時に参照しない。
 
-本 ADR は四つの属性と `Optional<T>` の公開契約、専用デリゲート型を返す静的プロパティ、`with` による追加設定、およびそれを消費するコード生成との境界を扱う。DI コンテナ、サービス探索、シリアライズ、差分更新、描画、子要素の所有権管理は提供しない。`Optional<T>` は Composition の引数表現として導入し、汎用的な結果型には拡張しない。
+契約は net10.0、Generator は netstandard2.0 と Microsoft.CodeAnalysis.CSharp 4.14.0 を使用する。Generator はビルド時の Analyzer とし、NuGet では `analyzers/dotnet/cs` に DLL を配置する。利用側は契約を通常参照し、Generator を Analyzer 参照する。NuGet の外部公開は行わない。
 
-この PR は設計文書のみを追加する。[ADR-0001](../0001-adr-writing-policy.md) に従い、設計を採用してから実装する。
+[ADR-0001](../0001-adr-writing-policy.md) に従い、本 ADR を初期実装の設計として採用する。DI、実行時探索、シリアライズ、差分更新、描画、子要素の所有権管理は扱わない。
 
-### 公開 API
+### 定義と利用例
 
-比較元は現行 Lumyte の main（Composition API なし）であり、以下はすべて新規 API である。属性はすべて `AllowMultiple = false` とする。
-
-```csharp
-namespace Lumyte.Composition
-{
-    [AttributeUsage(AttributeTargets.Class, Inherited = false)]
-    public sealed class ComposableAttribute : Attribute
-    {
-        public ComposableAttribute();
-        public string? Factory { get; set; }
-        public string? Name { get; set; }
-    }
-
-    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = true)]
-    public sealed class ComposeParameterAttribute : Attribute
-    {
-        public ComposeParameterAttribute();
-    }
-
-    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = false)]
-    public sealed class ComposeContentAttribute : Attribute
-    {
-        public ComposeContentAttribute();
-    }
-
-    [AttributeUsage(AttributeTargets.Assembly)]
-    public sealed class CompositionDefaultsAttribute : Attribute
-    {
-        public CompositionDefaultsAttribute(string factoryClass);
-        public string FactoryClass { get; }
-    }
-
-    public readonly struct Optional<T>
-    {
-        public Optional(T value);
-        public bool HasValue { get; }
-        public T Value { get; }
-        public static implicit operator Optional<T>(T value);
-    }
-}
-```
-
-| API | 役割・契約 |
-| --- | --- |
-| `ComposableAttribute()` | ファクトリ生成対象のクラスを明示する。派生クラスへの自動適用はしない。生成対象は `partial` とする。 |
-| `ComposableAttribute.Factory` | 生成する静的ファクトリクラスの名前。既定値は `null`。省略時はアセンブリ既定値を使い、それもなければ `Compose` とする。 |
-| `ComposableAttribute.Name` | 生成する静的プロパティの名前。既定値は `null`。省略時は対象クラス名を使う。 |
-| `ComposeParameterAttribute()` | フィールドまたはプロパティをファクトリ引数の候補として指定する。値型、参照型、nullable 型を扱う。 |
-| `ComposeContentAttribute()` | 子要素を設定するメンバーを指定する。ファクトリ引数とは別の役割であり、同一メンバーに両属性を指定しない。 |
-| `CompositionDefaultsAttribute(string factoryClass)` | アセンブリ内のファクトリクラス名の既定値を指定する。`null`、空文字、空白のみなら `ArgumentException` を送出する。 |
-| `CompositionDefaultsAttribute.FactoryClass` | コンストラクターで受け取った名前を変更せず返す。 |
-| `Optional<T>(T value)` | 値を指定した状態を作る。`value` が `default(T)` でも `HasValue = true`。 |
-| `Optional<T>.HasValue` | 引数が指定されたかを表す。`default(Optional<T>)` は `false`。 |
-| `Optional<T>.Value` | 指定された値を返す。未指定なら `InvalidOperationException` を送出する。 |
-| `implicit operator Optional<T>(T value)` | コンストラクターと同じ指定済み状態へ変換する。 |
-
-`Optional<T>` に型制約を付けない。nullable reference types の通常の規則に従い、明示的な `null` は `Optional<string?>` などで表す。ラッパー自身はヒープ上の領域を確保しないが、参照型の値や生成した子要素配列の確保は別途発生する。
-
-`Factory`、`Name` の setter は値を保持するだけとし、C# 識別子としての妥当性、空文字、名前衝突は Generator が診断する。`CompositionDefaultsAttribute` のコンストラクターによる検査も識別子検証の代わりにはならない。
-
-### コード生成との責務分担
-
-属性自体はインスタンス生成やメンバーへの代入を実行しない。`Lumyte.Composition` は BCL のみに依存し、Roslyn、Graphics、Engine、Platform、Native の参照を持たない。
-
-デリゲート型・静的プロパティ・インデクサを実現するには、別の `Lumyte.Composition.Generators` をビルド時の Analyzer として利用側に導入する。利用側の通常参照は契約ライブラリへ向け、Roslyn や Generator を実行時依存に含めない。Generator の実装と配布は後続 ADR で設計するが、生成機能には以下の振る舞いを要求する。
-
-- 非 required の設定値は `Optional<T> parameter = default` で受け取り、指定済みの場合だけ代入する。未指定ならフィールド初期化子や引数なしコンストラクターによる初期値を維持する。
-- `required` の設定値は型 `T` の必須引数として受け取り、省略をコンパイル時に拒否する。`init` の代入は構築中に行う。未設定の required メンバーを `SetsRequiredMembers` だけで隠さない。
-- 基底型に宣言された対象メンバーも走査する。派生型からアクセスできないメンバー、重複する引数名、書き込み不能なメンバーを診断する。`Inherited` の指定だけに依存して走査を省略しない。
-- 子要素メンバーは継承階層全体で高々一つとする。旧実装と同様に、属性を継承しない `ComposeContentAttribute` でも基底型に宣言されたメンバーは走査対象になる。
-- 子要素がある場合は `Component this[params Child[] content] { get; }` に相当するインデクサを生成する。呼び出しは指定順の配列を対象メンバーへ代入し、同じインスタンスを返す。追記ではなく置換であり、繰り返し呼ぶと直前の子要素を置き換える。
-- 子要素メンバーの型は一次元配列、`IEnumerable<T>`、`IReadOnlyCollection<T>`、`IReadOnlyList<T>`、`ICollection<T>`、`IList<T>` を初期候補とする。`List<T>` などへ配列をそのまま代入しない。確定した対応型と不正入力の診断は後続 ADR に記録する。
-- ファクトリの公開入口は、生成する専用デリゲート型を返す getter のみの静的プロパティとする。型ごとの指定、アセンブリ指定、`Compose` の順で外側のファクトリクラス名を解決する。通常の静的メソッドは公開入口として生成しない。
-
-Generator の詳細が未採用の間、属性だけの導入を宣言的構築機能の実装完了とは扱わない。旧 Generator をそのまま移植することも決定しない。
-
-### 専用デリゲート型と同名プロパティ
-
-ファクトリごとに異なる名前付きデリゲート型を生成し、外側の静的クラスにその型の静的プロパティを配置する。例えば `Compose.Grid` の型を `Compose.Definitions.GridFactory`、`Compose.Text` の型を `Compose.Definitions.TextFactory` とする。`Func<...>` へ共通化せず、専用型を拡張メソッドの receiver にできるようにする。
-
-利用側は `using static Example.Compose;` により `Grid()`、`Text()` と記述する。`Grid()` はプロパティが返すデリゲートの呼び出し、`Grid.Column(1)` は同じプロパティ値を receiver とする拡張メソッド呼び出しになる。拡張メソッドは名前空間スコープの非 generic な静的クラスで定義し、その名前空間を利用側で import する。`Column` をデリゲートの静的メンバーとして定義する必要はない。
-
-省略可能引数、引数名、既定値、required 引数はデリゲートの `Invoke` シグネチャを決める宣言に含める。接続先メソッドだけに既定値を付けても `Grid()` の省略には使えない。プロパティは getter のみで、初期化時に生成した同じデリゲートを返す。取得だけでは構築や設定を実行せず、呼び出すたびに新しい対象インスタンスを作る。外部からファクトリを差し替える setter は設けない。
-
-### 内部クラスへの定義の配置
-
-構築対象のクラスは外側のファクトリクラス内の `Definitions` という内部クラスに配置し、プロパティ群は外側に生成する。`Compose.Definitions.Grid` と `Compose.Grid`、`Compose.Definitions.Text` と `Compose.Text` のように、定義するクラスと生成されるプロパティの名前を一致させる。`Definitions` は包含を表す名前であり、C# の `internal` アクセス修飾子を意味しない。外部利用を想定する定義型とデリゲート型は `public` とする。
-
-外側は `public static partial class Compose`、内部は `public static partial class Definitions`、対象は `partial class` とする。Generator は包含型の名前と階層を維持して partial 宣言を生成する。この形の nested 型への対応は初期導入の必須条件とし、任意の深さや generic な包含型への対応とは分ける。プロパティ名は既定で対象クラス名を使用し、明示的な `Name` による別名は opt-in とする。同じ外側クラスへ集約する際のプロパティ名・補助型名・既存メンバーとの衝突は診断する。
-
-### with による追加設定
-
-生成デリゲートの最後の省略可能引数として `IReadOnlyList<Action<TComponent>>? @with = null` を設ける。利用側は `with: [ ... ]` と書ける。`with` は追加設定専用の予約引数名とし、`ComposeParameter` から生成される引数名との衝突は診断する。コレクション式を直接受け取れる型を使い、`Optional<IReadOnlyList<...>>` で包まない。
-
-`Grid.Column(1)` のような拡張メソッドは設定値を捕捉した `Action<T>` を返し、その時点では子要素を変更しない。ファクトリは次の順序で処理する。
-
-1. インスタンスの初期化子と引数なしコンストラクターを実行する。
-2. 通常のファクトリ引数から required と指定済みの設定値を適用する。init メンバーは構築中に設定する。
-3. `with` のアクションを列挙順に一度ずつ、作成した同じインスタンスへ適用する。
-4. そのインスタンスを返す。続く子要素インデクサの処理はその後に実行される。
-
-`with` の省略・null・空コレクションはすべて追加設定なしとする。null のアクション要素は、アクションの実行前に全要素を検査して `ArgumentException` で拒否する。アクションが例外を送出した場合は後続を実行せず、その例外を伝播し、インスタンスを返さない。適用済みの変更やコンストラクター・アクションの外部への副作用はロールバックしない。通常の設定と同じ書き込み可能な値を変更する場合は後から適用したアクションが優先される。アクションで init メンバーを書き換えたり、required 引数を省略したりはできない。
-
-設定を共通基底型へ適用できる場合は `Action<T>` の反変性を利用する。例えば `Action<Node>` は `Action<Text>` として渡せる。`Grid.Column` の具体的な保存先や親 Grid による解釈は UI 側の責務であり、Core に Grid やレイアウトの型を追加しない。
-
-### 利用例と生成される公開入口
-
-以下は導入後を想定した定義と生成 API の例であり、この PR に実装済みの API ではない。UI 型は契約を説明するための仮の型とする。
+外側の public static partial クラスにファクトリのプロパティ群を生成し、内側の public static partial Definitions に同名の定義クラスを置く。「内部」は包含関係を表し、internal アクセス修飾子を意味しない。
 
 ```csharp
-using System;
-using System.Collections.Generic;
-using Lumyte.Composition;
-
-namespace Example;
-
 public static partial class Compose
 {
     public static partial class Definitions
     {
-        public abstract class Node
+        public abstract class Widget
         {
-            public int GridColumn { get; set; }
+            public IDictionary<string, object?> AttachedValues { get; } =
+                new Dictionary<string, object?>();
         }
 
         [Composable]
-        public partial class Grid : Node
+        public partial class Grid : Widget
         {
+            [ComposeAction]
+            private static void Column(Widget target, int value)
+            {
+                ArgumentOutOfRangeException.ThrowIfNegative(value);
+                target.AttachedValues["Grid.Column"] = value;
+            }
+
             [ComposeContent]
-            public IReadOnlyList<Node> Children { get; set; } = [];
+            public IReadOnlyList<Widget> Children { get; set; } = [];
         }
 
         [Composable]
-        public partial class Text : Node
+        public partial class Text : Widget
         {
             [ComposeParameter]
-            public string? Content { get; set; } = "untitled";
+            public string? Content { get; init; } = "untitled";
         }
     }
 }
 ```
 
-生成される公開入口の宣言は次の形になる。デリゲートを接続する非公開の構築処理とインデクサの本体は省略する。
+上記には契約の名前空間と BCL の using が必要である。完全な実行可能な定義は [サンプル](../../../samples/Lumyte.Composition.Sample/README.md) に置く。
 
 ```csharp
-using System;
-using System.Collections.Generic;
-using Lumyte.Composition;
-
-namespace Example;
-
-public static partial class Compose
-{
-    public static Definitions.GridFactory Grid { get; }
-    public static Definitions.TextFactory Text { get; }
-
-    public static partial class Definitions
-    {
-        public delegate Grid GridFactory(
-            IReadOnlyList<Action<Grid>>? @with = null);
-
-        public delegate Text TextFactory(
-            Optional<string?> content = default,
-            IReadOnlyList<Action<Text>>? @with = null);
-
-        public partial class Grid
-        {
-            public Grid this[params Node[] content] { get; }
-        }
-    }
-}
-```
-
-拡張と利用は次のように記述する。`using static` で import するのは外側のクラスとし、`Definitions` の型を同時に static import して名前解決を曖昧にしない。
-
-```csharp
-using System;
 using static Example.Compose;
 
-namespace Example;
-
-public static class GridFactoryExtensions
-{
-    public static Action<Compose.Definitions.Node> Column(
-        this Compose.Definitions.GridFactory factory,
-        int column)
-    {
-        if (column < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(column));
-        }
-
-        return node => node.GridColumn = column;
-    }
-}
-
-public static class Usage
-{
-    public static Compose.Definitions.Grid Build() =>
-        Grid()[Text(with: [Grid.Column(1)])];
-}
+var grid = Grid()[Text(with: [Grid.Column(1)])];
+int column = (int)grid.Children[0].AttachedValues["Grid.Column"]!;
 ```
 
-`Grid.Column(1)` の receiver は拡張の入口を識別するために使用し、Grid のインスタンスを生成しない。返された設定を `Text` の `with` へ渡し、構築した Text に column 1 を設定してから Grid の子要素へ配置する。別の型専用デリゲートにはこの拡張を適用できない。
+拡張メソッドの名前空間も import する。Definitions の型を外側と同時に static import して名前解決を曖昧にしない。Grid は利用側の例であり、契約ライブラリに UI 型を追加しない。
 
-`Text()` は Content の初期値を維持し、`Text(content: (string?)null)` は明示的な null を設定する。`default(Optional<string?>)` は未指定、`new Optional<string?>(null)` は指定済みであり、両者を区別する。
+### 契約ライブラリの公開 API
 
-インデクサは対象インスタンスを変更するため、共有済みオブジェクトの並行変更は利用側で同期する。子要素への参照を設定しても、破棄責任の移譲、ディープコピー、親子関係の検証、スレッド安全性は保証しない。`with` のアクションも任意の利用側コードであり、スレッド安全性や副作用の隔離を保証しない。
+比較元の現行 Lumyte main に Composition API はなく、以下はすべて新規 API である。属性はすべて AllowMultiple = false とする。
 
-### 対応環境と互換性
+| 公開 API | 役割と契約 |
+| --- | --- |
+| `ComposableAttribute()` | クラスに適用し、Inherited = false。生成対象を明示する。 |
+| `string? ComposableAttribute.Factory { get; set; }` | 外側のファクトリクラス名。null はアセンブリ指定、それもなければ Compose。 |
+| `string? ComposableAttribute.Name { get; set; }` | ファクトリプロパティ名。null は定義クラス名。別名は opt-in。 |
+| `ComposeParameterAttribute()` | field/property に適用し、Inherited = true。ファクトリ引数を指定する。 |
+| `ComposeContentAttribute()` | field/property に適用し、Inherited = false。子要素を置換するメンバーを指定する。 |
+| `ComposeActionAttribute()` | Method に適用し、Inherited = false。ノードを操作する静的メソッドを指定する。 |
+| `CompositionDefaultsAttribute(string factoryClass)` | Assembly に適用。null・空文字・空白は ArgumentException。 |
+| `string CompositionDefaultsAttribute.FactoryClass { get; }` | 指定された既定クラス名を保持する。 |
+| `readonly struct Optional<T>` | 型制約なし。省略と明示的 default/null を区別する。 |
+| `Optional<T>(T value)` | value が default/null でも指定済み。 |
+| `bool Optional<T>.HasValue { get; }` | default(Optional) は false、コンストラクター・暗黙変換後は true。 |
+| `T Optional<T>.Value { get; }` | 未指定なら InvalidOperationException。 |
+| `implicit operator Optional<T>(T value)` | 指定済みの Optional へ変換する。 |
 
-契約ライブラリは managed code のみとし、Windows、Linux、Browser で共通の API を使用する。実行時のリフレクションや動的コード生成を必須にせず、AOT と trimming を妨げる依存を導入しない。具体的な TargetFramework は導入時の共通 .NET 設定に合わせる。各環境の動作確認は実装後に行う。
+Factory/Name の setter は値を保持し、識別子・衝突の検査は Generator が行う。Assembly のコンストラクター検証も識別子検査の代わりにはならない。Optional は汎用的な結果型へ拡張しない。
 
-旧ライブラリの公開型名、名前空間、属性の適用先、引数省略の意味を維持する。旧 Generator の静的メソッドを、専用デリゲート型を返す静的プロパティへ変更する。nested 型の配置と拡張のための型 identity も公開契約に含める。旧 Generator が生成するすべてのコードとのバイナリ互換性は保証せず、移行時は新 Generator で再生成する。ファクトリ引数の順序、名前変換、継承の詳細を確定するまでは、旧実装との完全互換を宣言しない。
+### 生成される公開 API
+
+Grid/Text の例について、次の入口を生成する。以下はシグネチャの一覧である。
+
+```csharp
+// Compose.Definitions 内
+public delegate Grid GridFactory(
+    IReadOnlyList<Action<Grid>>? @with = null);
+public delegate Text TextFactory(
+    Optional<string?> content = default,
+    IReadOnlyList<Action<Text>>? @with = null);
+
+// Compose 内
+public static Definitions.GridFactory Grid { get; }
+public static Definitions.TextFactory Text { get; }
+
+// Compose.Definitions.Grid 内
+public Grid this[params Widget[] content] { get; }
+
+// 名前空間直下の生成された静的クラス内
+public static Action<Widget> Column(
+    this Compose.Definitions.GridFactory factory, int value);
+```
+
+ファクトリごとに異なる名前付きデリゲートを使い、Func に共通化しない。Grid() はプロパティ値のデリゲート呼び出し、Grid.Column(1) はその値を receiver とする拡張メソッドになる。拡張は他のファクトリ型には適用できない。プロパティ取得だけでは構築せず、キャッシュした同じデリゲートを返す。デリゲート呼び出しは毎回新しいインスタンスを作る。
+
+引数名・省略可能引数・既定値はデリゲート宣言に含める。接続先メソッドだけに既定値を付けても呼び出し時の省略には使えない。公開 setter や、公開入口となる通常の静的ファクトリメソッドは生成しない。
+
+### 属性付き静的メソッドから操作を生成する
+
+ComposeAction は Composable クラス自身の静的 void メソッドに付ける。先頭引数は操作対象の参照型、残りは捕捉する操作引数とする。例えば `private static void Column(Widget target, int value)` から `Action<Widget> Column(this GridFactory factory, int value)` を生成する。宣言メソッドは private でもよく、クラス内の生成 helper がアクセスし、名前空間直下の拡張からその helper を呼ぶ。
+
+拡張の呼び出しは引数を捕捉した Action を返し、宣言メソッドを実行しない。with が構築したノードに Action を適用すると、その同じノードを先頭引数に渡してメソッド本体を呼ぶ。`Action<T>` の反変性により、`Action<Widget>` を派生 Text の with に渡せる。receiver は拡張の入口を識別するために使い、Grid のインスタンスを作らない。
+
+追加引数がゼロの Reset、複数の引数を持つ Tag、添付値の設定やプロパティ書き換えなどを同じ規則で扱う。引数名と nullable を維持し、C# keyword を escape する。値の検査・保存・通知・アニメーション開始・レイアウト更新はメソッド本体の責務とし、Composition に保存 API、descriptor、Dictionary、弱参照 table を持たせない。Widget の具体的な保存形式も Core で規定しない。
+
+Action は適用のたびに宣言メソッドを一度呼ぶ。再適用も別の副作用になり、冪等性は保証しない。参照型の捕捉引数はコピーされず同じ参照を使う。ユーザーコードの検証と例外は適用時に発生し、拡張の呼び出し時へ検証を先送り・先行実行することはしない。
+
+初期対応は synchronous、非 generic、static void、先頭に参照型対象を持つメソッドとする。ref/out/in、params、optional 引数、同名の属性付き overload は LYC001 で拒否する。async void も完了と例外を with で観測できないため拒否する。生成拡張の公開シグネチャに出る型はすべて public を要求する。アニメーションなど非同期処理の完了を扱う契約は後続設計とする。
+
+### 構築・with・子要素の順序
+
+1. インスタンスの初期化子と引数なしコンストラクターを実行する。
+2. required 引数と、指定済みの Optional 引数を適用する。未指定なら初期値を維持する。init メンバーの代入は構築中に行う。
+3. with の null 要素を全件検査し、含まれていれば ArgumentException で拒否する。その後、アクションを列挙順に一度ずつ適用する。
+4. 同じインスタンスを返す。続く子要素インデクサはその後に実行する。
+
+with は最後の省略可能な引数とし、`IReadOnlyList<Action<TComponent>>? @with = null` を用いる。コレクション式を直接渡せるよう Optional で包まない。省略/null/空コレクションは追加設定なし。with は予約引数名であり、通常の生成引数との衝突を診断する。
+
+アクションの例外は伝播し、後続を実行せず、インスタンスを返さない。すでに適用した値・コンストラクターやアクションの外部副作用はロールバックしない。書き込み可能な値は後のアクションが優先する。アクションは init を書き換えられず、required 引数の省略にも使えない。
+
+子要素インデクサは配列を指定順で代入し、同じインスタンスを返す。繰り返し呼ぶと置換する。null 配列は ArgumentNullException。配列は複製せず参照を保持し、配列側からの変更も反映される。null 要素の可否は利用側の要素型とアプリケーションの責務に従い、Generator は要素の null 検査を行わない。破棄責任の移譲、ディープコピー、親子関係の検証は提供しない。
+
+### 初期 Generator の対応範囲と診断
+
+非 generic・非 abstract な public partial クラスを、public static partial 外側クラスの public static partial Definitions 内に置く形を扱う。包含型の階層を維持して partial 宣言を生成する。引数なしコンストラクターが必要で、暗黙定義の場合は生成コンストラクターの追加によって消えないよう明示定義を補う。
+
+継承階層を走査し、アクセス可能な設定値と子要素を扱う。Inherited = false の ComposeContent でも基底型に宣言されたメンバーは走査する。子要素は高々一つで、一次元配列または IEnumerable/IReadOnlyCollection/IReadOnlyList/ICollection/IList の generic interface とする。init-only な子要素は拒否する。すべての required メンバーを ComposeParameter とし、生成コンストラクターが確実に代入してから SetsRequiredMembers を付ける。
+
+引数順は required を先頭にし、各群では派生型から基底型、型内ではメンバー名の ordinal 順とする。引数名は先頭 underscore を除き先頭文字を小文字化し、C# keyword を escape する。generic 型、任意の包含階層、アクセス不能な基底メンバー、override/隠蔽、非対応 collection、static/readonly 設定メンバー、複数 content、操作メソッドの不正な型や修飾子、生成名の衝突は LYC001 の error とする。生成メンバーの __Lumyte prefix は予約する。
+
+### 互換性と環境
+
+旧ライブラリの四属性と Optional の名前・適用先・省略の意味を保つ。ComposeAction 属性を追加し、旧 Generator の静的メソッドを専用デリゲートのプロパティへ変更する。定義型の階層とデリゲート型も公開契約になり、シグネチャ変更は拡張と利用側の再コンパイルを必要とする。旧生成物とのバイナリ互換性や全面的なソース互換性は保証せず、移行時は再生成する。
+
+managed code と静的な生成コードを使い、実行時の反射・動的コード生成を必須にしない。Windows/Linux/Browser を将来の対象とするが、今回の実行検証は Linux の .NET 10 とする。Browser/AOT/trimming と Windows の動作は未検証である。
 
 ## 検討した代替案
 
-### 通常の静的ファクトリメソッドまたは共通の Func 型
+### 通常の静的メソッドまたは Func 型
 
-静的メソッドは `Grid()` と呼べるが、そのメソッド自体を receiver として `Grid.Column(1)` の拡張を解決できない。共通の `Func` 型では同じシグネチャの別ファクトリにも拡張が適用されるため、ファクトリごとの専用デリゲート型と静的プロパティを使用する。
+静的メソッドは拡張の receiver にできず、共通の Func 型では同じシグネチャの別ファクトリにも拡張が適用される。専用デリゲートと静的プロパティにする。
 
-### 定義型とプロパティを同じクラス直下に配置する
+### 定義型とプロパティを同じクラス直下へ置く
 
-C# では同じクラスに同名の nested 型とプロパティを宣言できない。型を `Definitions` にまとめ、プロパティを外側へ配置することで両方の名前を保つ。
+C# の同名メンバーの制約に衝突する。定義型を Definitions、プロパティを外側へ分けて名前を保つ。
 
-### オブジェクト初期化子とコレクション初期化子だけを使用する
+### descriptor フィールドから保存・getter・setter を生成する
 
-追加ライブラリなしで明示的に構築できるため、単純な用途では引き続き利用する。名前付き引数とインデクサによる階層表現を共通化し、非公開メンバーも宣言から設定する用途には生成用の契約を用意する。
+宣言を集約できる一方、Composition が値の保存と寿命を所有することになる。Widget 側の保存領域と責務が重なるため採用しない。静的メソッドをラップすることで、添付値・スタイル・アニメーションなどの操作を共通化する。
 
-### nullable 型や default 値を省略の印として使用する
+### nullable/default を省略の印にする
 
-`null`、`0`、`false` を設定できなくなるか、独自の sentinel 値が必要になる。`Optional<T>` に指定の有無を独立して保持する。
-
-### 実行時のリフレクションや DI コンテナで構築する
-
-属性の解釈と依存解決をまとめられる一方、今回必要なのは利用側が明示する値と子要素による構築である。実行時の探索、依存解決、AOT 対応の負担を追加しない。
-
-### 契約と Generator を一つの実行時ライブラリにまとめる
-
-導入対象を一つにできるが、Roslyn のビルド時依存と利用側の実行時依存を混在させる。契約とコード生成を分離し、配布時の導入補助は Generator の設計で検討する。
+null/0/false を明示できなくなる。Optional に指定の有無を独立して保持する。
 
 ## 結果と影響
 
-- 同名の定義クラスと静的プロパティを階層で分離し、`Grid()` と `Grid.Column(1)` を同じ入口から記述できる。
-- 専用デリゲート型が拡張ポイントになるため、別のファクトリへ拡張が誤って適用されることを型で防げる。デリゲート型の変更も公開 API の変更として扱う。
-- キャッシュしたデリゲート、with のコレクション、設定を捕捉するアクションの確保が発生し得る。性能評価ではこれらを含める。
-
-- 構築対象の初期値を維持しつつ、default 値と null を明示的に設定できる。
-- UI やシーンなどの具体的な型に依存せず、宣言的な構築の契約を共有できる。
-- 属性の追加だけではファクトリやインデクサは使えず、別途 Generator の導入が必要になる。
-- インデクサの getter が対象を変更するため、通常の参照操作とは意味が異なる。置換と同一インスタンスの返却を利用者へ説明する必要がある。
-- 設定メンバーの追加・変更は生成ファクトリのシグネチャにも影響する。生成 API も互換性確認の対象になる。
+- Composable 型内の属性付き静的メソッドから、対象型を保った操作の入口を生成できる。
+- 初期値を維持しながら default/null を指定でき、保存形式に依存せず、利用側のノード操作を適用できる。
+- デリゲートのキャッシュ、with のコレクション、引数を捕捉する Action の割り当てが発生する。
+- インデクサの getter が対象を変更するため、置換と同一インスタンス返却を利用者へ説明する必要がある。
+- 契約だけでは構築機能は動作せず、Generator と、その生成 API の互換性管理が必要になる。
 
 ## 検証方針
 
-本 PR では ADR の必須項目、カテゴリ採番、相対リンク、旧公開 API との対応を確認する。実装時の受け入れ条件は以下とする。
+実際の Generator を Analyzer として参照したサンプルと、別アセンブリからのテストで要求構文をコンパイル・実行する。メソッドの遅延実行、同一対象への操作、Widget 側の保存、スタイル書き換え、ゼロ/複数引数、適用時の検証失敗、Optional、required/init、with の順序・例外、デリゲートのキャッシュ、新規 instance、子要素置換を確認する。
 
-- 四つの属性の適用先、重複指定の禁止、継承設定を確認する。
-- `CompositionDefaultsAttribute` の通常値の保持と、null・空文字・空白の拒否を確認する。
-- `Optional<T>` の未指定、通常値、0、false、nullable の null を区別し、未指定の `Value` で例外になることを確認する。
-- `Grid()[Text(with: [Grid.Column(1)])]` の生成後コンパイルと実行、同名の型とプロパティの共存、外部アセンブリからの拡張、デリゲート宣言側の既定引数、プロパティ取得時の非構築と呼び出し時の新規構築を確認する。
-- `with` の適用順・通常引数に対する優先・省略／null／空、null 要素の拒否、途中の例外伝播と後続の停止、予約名衝突、別ファクトリへの拡張の拒否を確認する。
-- Generator の採用後は生成コードのコンパイルと実行で、初期値維持、required／init、継承、入れ子、子要素の順序・置換・同一インスタンス返却を確認する。
-- 生成対象の不正な宣言を診断できること、実行時成果物が Roslyn に依存しないこと、Browser／AOT／trimming の対応を検証する。
-
-上記は将来の検証条件であり、実装や環境ごとの検証は未実施である。
+Roslyn のテスト compilation で、不正宣言の LYC001、required の省略、別ファクトリへの拡張拒否を確認する。NuGet をローカルに pack し、ProjectReference なしの consumer が Analyzer を発見・実行できることを確認する。build、dotnet format、Markdown lint と専用 CI で検証を継続する。
 
 ## 別途決定する事項
 
-- Generator の配置、TargetFramework、Roslyn 対応バージョン、Analyzer／NuGet の配布方法。
-- 引数なしコンストラクターの条件、generic・abstract 型、および本 ADR の二段構成以外の nested 型への対応。
-- 必須引数と省略可能引数の順序、引数名の変換規則、継承・override・メンバー隠蔽の扱い。
-- 名前の妥当性と衝突、既存インデクサとの衝突、static／readonly／init／required メンバーの診断と安全な生成。
-- 子要素の対応型、null 配列・null 要素・空配列の扱い、配列参照を保持する際の aliasing 契約。
-- インクリメンタル生成、診断 ID、生成コードの XML documentation と lint の適合。
+- Browser/AOT/trimming/Windows の環境検証。
+- generic や任意の包含階層、override/隠蔽への対応。
+- 操作メソッドの overload、optional/params 引数、非同期操作の完了・キャンセルの扱い。
+- 性能測定と、NuGet 公開・バージョニング運用。
 
 ## 参考資料
 
-調査対象を旧リポジトリのコミット `462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee` に固定する。
-
-- [旧 Lumyte.Composition の契約](https://github.com/ikihiki/Lumyte_old/tree/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Composition)
-- [旧 Composition Generator](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Composition.Generators/CompositionGenerator.cs)
-- [旧 Composition の利用テスト](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Composition.Tests/CompositionTests.cs)
+- [旧契約](https://github.com/ikihiki/Lumyte_old/tree/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Composition)
+- [旧 Generator](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Composition.Generators/CompositionGenerator.cs)
+- [旧利用テスト](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/foundation/Lumyte.Composition.Tests/CompositionTests.cs)
