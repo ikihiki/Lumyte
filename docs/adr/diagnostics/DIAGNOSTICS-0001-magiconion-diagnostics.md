@@ -7,7 +7,7 @@
 
 Lumyte の実行状態を外部から観測し、必要に応じて変更できる診断機能を提供する。診断システムをサーバー、ゲームに組み込む診断エージェントをクライアントとして MagicOnion で通信する。
 
-対象はテレメトリー、シーンやコンポーネントなどのオブジェクトグラフ、レンダリング結果、プロパティ編集、インプットのオーバーライドである。ゲーム側で待ち受けポートを開かずに、診断側から操作できる必要がある。
+対象は Metrics / Trace / Log のテレメトリー、シーンやコンポーネントなどのオブジェクトグラフ、レンダリング結果、プロパティ編集、インプットのオーバーライドである。ゲーム側で待ち受けポートを開かずに、診断側から操作できる必要がある。
 
 通信遅延、切断、対象オブジェクトの破棄、大容量転送があっても、ゲーム実行と診断操作の整合性を維持する。通信処理からエンジンへ直接アクセスすると、スレッド制約やフレーム更新を壊すため、実行境界も定める。
 
@@ -60,7 +60,9 @@ flowchart LR
 | `Task<SessionWelcome> IDiagnosticsHub.RegisterAsync(ClientHello hello)` | 接続と機能交渉 | 認証後、一接続につき一回。非互換なら利用可能状態にしない |
 | `void IDiagnosticsReceiver.OnCommand(DiagnosticCommand command)` | サーバーからゲームへの要求通知 | 受信処理はキュー投入までとし、エンジンを直接操作しない |
 | `Task IDiagnosticsHub.ReportCommandResultAsync(CommandResult result)` | 受信確認・実行結果の報告 | `RequestId` と `SessionId` を一致させ、受付と完了を区別する |
-| `Task IDiagnosticsHub.PublishTelemetryAsync(TelemetryBatch batch)` | テレメトリーの送信 | 有界バッチとし、欠落件数を含める |
+| `Task IDiagnosticsHub.PublishTelemetryAsync(TelemetryBatch batch)` | Metrics の送信 | 有界バッチとし、欠落件数を含める |
+| `Task IDiagnosticsHub.PublishTraceAsync(TraceBatch batch)` | 完了 Span の送信 | 標準 Activity を DTO にコピーし、欠落件数を含める |
+| `Task IDiagnosticsHub.PublishLogsAsync(LogBatch batch)` | 構造化 Log の送信 | レベル・カテゴリ・スコープを検証し、有界バッチにする |
 | `Task IDiagnosticsHub.PublishGraphUpdateAsync(GraphUpdate update)` | 小さな状態更新の送信 | 基準リビジョンと順序を含め、大容量なら転送参照を使う |
 | `Task IDiagnosticsHub.ReportTransferAsync(TransferDescriptor transfer)` | 大容量転送の完了通知 | 完了・整合性確認後の転送 ID とメタデータを報告する |
 
@@ -72,7 +74,7 @@ receiver の戻り値に操作結果を依存させず、要求通知と結果�
 
 DI をサブシステム統合の基準とする。診断アダプターはコンストラクターで対象サブシステムを受け取り、`IDiagnosticContributor.Configure` で公開内容を宣言する。サブシステム自身はレジストリ、接続、ランタイムを取得しない。登録ハンドルと通信のライフサイクルは診断基盤が所有する。
 
-DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断操作の契約型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion への依存は通信実装に限定する。以下は公開 API の設計であり、実装は未追加である。
+DI 統合は `Microsoft.Extensions.DependencyInjection` の `IServiceCollection` を使う。診断操作の契約型は `Lumyte.Diagnostics`、DI 拡張は `Lumyte.Diagnostics.DependencyInjection` に分ける。MagicOnion への依存は通信実装に限定する。以下は公開 API の設計であり、実装は未追加である。設定の `LogLevel` は `Microsoft.Extensions.Logging` を使用する。
 
 ```csharp
 public interface IDiagnosticContributor
@@ -98,6 +100,10 @@ public sealed class DiagnosticOptions
     public bool Enabled { get; set; }
     public Uri? ServerAddress { get; set; }
     public IReadOnlyList<string> AllowedMeterNames { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> AllowedActivitySourceNames { get; set; } = Array.Empty<string>();
+    public double TraceSampleRatio { get; set; } = 0.1;
+    public IReadOnlyList<string> AllowedLogCategoryPrefixes { get; set; } = Array.Empty<string>();
+    public LogLevel MinimumLogLevel { get; set; } = LogLevel.Information;
 }
 
 // Lumyte.Diagnostics.DependencyInjection 内の拡張メソッド。
@@ -113,6 +119,8 @@ public static IServiceCollection AddDiagnosticSubsystem<TContributor, TPoint>(
 
 `AddLumyteDiagnostics` は設定と通信ファクトリを Singleton、セッション、レジストリ、購読状態、カタログ、実行キューを Scoped として登録する。一つのゲーム実行に一つの明示的な DI スコープを作る。別スコープは別の実行インスタンス ID と接続を持ち、オブジェクト、要求、購読を共有しない。Scoped をプロセス全体の Singleton として注入しない。
 
+`TraceSampleRatio` は 0〜1 の有限値とし、各許可リストは既定で空とする。無効な設定は起動時に拒否する。`StartAsync` は Metrics / Trace Listener とログ送信先を有効化し、`StopAsync` はそれらを無効化・解放する。
+
 `AddDiagnosticExecutionPoint<TPoint>` は型と安定したポイント ID を対応付け、`IDiagnosticPump<TPoint>` を Scoped として登録する。型は DI で使うマーカーであり、マーカーインスタンスを生成しない。型・ID の重複と未定義ポイントへの登録を起動時に拒否する。
 
 `AddDiagnosticSubsystem<TContributor, TPoint>` は公開記述子を登録し、`TContributor` を Scoped として登録する。同じ型の既存の Scoped 登録があればそれを利用し、Singleton・Transient 登録なら起動時に拒否する。フレーム更新側への `TContributor` の注入と診断側の解決は、同じスコープ内の同一インスタンスになる。同じ型の複数サービス登録も拒否し、別の `IDiagnosticContributor` インスタンスを生成する登録は行わない。同じ型を複数サブシステムとして登録することは初期 API では拒否する。
@@ -126,7 +134,9 @@ public static IServiceCollection AddDiagnosticSubsystem<TContributor, TPoint>(
 | `IDiagnosticPump<TPoint>` | Scoped | 同じスコープのキューと調整サービスを参照する |
 | 診断アダプター、診断対象、更新ループ | Scoped | 同じゲーム実行内のインスタンスを共有する |
 | `IMeterFactory` / Meter | DI ルート | 標準 AddMetrics。スコープから共有 Meter を破棄しない |
-| `IGameExecutionIdentity` / MeterListener | Scoped | 実行 ID による計測分離と購読管理 |
+| `IGameExecutionIdentity` / MeterListener / ActivityListener | Scoped | 実行 ID による計測分離と購読管理 |
+| ActivitySource を持つ計測サービス | Scoped | 所有する Source をスコープ破棄時に解放する |
+| ILoggerProvider / ログルーター | Singleton | Scoped を注入せず、稼働中の送信先だけへ配送する |
 | 操作登録ハンドル | 登録期間 | DI サービスにせず、診断基盤が解除を管理する |
 
 ### DI と所有スレッドのライフサイクル
@@ -144,7 +154,7 @@ DI の解決と所有スレッドの確定は別の処理とする。コンス�
 
 計測用サービスのコンストラクターで標準 Meter / Instrument を作成することは許容するが、計測値は発行せずエンジンへアクセスしない。型の解決時にスレッド制約のある対象を構築する場合は、その解決も所有スレッドで行う。DI 自体にスレッド親和性を期待しない。複数ポイントを同時に持つスコープでは、調整サービスが登録カタログの更新を同期する。
 
-`Enabled = false` でも同じ DI 登録と注入を利用する。アダプターの構成は有効化時に行えるが、診断用 Listener は計測を有効化せず、キューは空、通信接続は作らない。標準メトリクス生成と他の Listener は継続できる。テストでは診断対象や Pump をテスト用サービスに差し替えられる。メトリクスのテストは標準 MeterListener で記録を受け取り、診断通信を必要としない。
+`Enabled = false` でも同じ DI 登録と注入を利用する。アダプターの構成は有効化時に行えるが、診断用 Listener は計測を有効化せず、キューは空、通信接続は作らない。標準 Metrics / Trace / Log の生成と他の Listener / Provider は継続できる。テストでは診断対象や Pump をテスト用サービスに差し替えられる。メトリクスのテストは標準 MeterListener で記録を受け取り、診断通信を必要としない。
 
 ### サブシステムが宣言する API
 
@@ -241,7 +251,101 @@ Instrument の識別には Meter 名・版、Instrument 名・種別・数値型
 
 複数利用者の購読はエージェントが統合し、購読ごとに必要な窓で集約する。生成側の `Instrument.Enabled` はすべての Listener の状態を示すため、診断サーバーの購読有無とは解釈しない。高価な計測のガードには使えるが、診断無効時にも OpenTelemetry 等による計測を妨げない。
 
-標準計測にはフレーム番号や生成時刻が含まれない。Listener は受信時の単調増加時刻を記録し、送信データに集約期間を付ける。フレーム相関がない計測にはフレーム番号を推測して付けない。正確なフレーム相関が必要なイベントはメトリクスとは別契約で設計する。ログと分散トレースは、将来 `ILogger` と `ActivitySource` を対象とする別の転送設計で扱う。
+標準計測にはフレーム番号や生成時刻が含まれない。Listener は受信時の単調増加時刻を記録し、送信データに集約期間を付ける。フレーム相関がない計測にはフレーム番号を推測して付けない。正確なフレーム相関が必要なイベントはメトリクスとは別契約で設計する。Trace と Log は以下の標準 API と転送契約で扱う。
+
+### .NET 標準 Trace の生成と転送
+
+Trace は `System.Diagnostics.ActivitySource` と `Activity` で生成する。サブシステムは開始時に `StartActivity`、終了時に `Dispose` を使い、必要に応じてタグ、イベント、リンク、`SetStatus` を設定する。独自の Span 型や生成 API は設けない。Trace ID / Span ID / Parent Span ID は W3C 形式で保持する。
+
+`ActivitySource` を所有する計測サービスを Scoped で DI 登録する。コンストラクターでは Source の生成だけを行い、そのサービスの `Dispose` で Source を破棄する。初期設計では Source を static にせず、スコープをまたぐサブシステム参照を捕捉しない。診断用 Listener の有無にかかわらず、他の OpenTelemetry Listener がこの Source を観測できる。
+
+エージェントはセッションごとに `ActivityListener` を持つ。`ShouldListenTo` は `AllowedActivitySourceNames` の完全一致で Source を絞る。`Sample` と `SampleUsingParentId` の両方を実装し、Source、操作名、開始時タグの `lumyte.instance.id`、購読とサンプリング設定を判定する。ゲーム内のすべての Activity は開始時タグに実行 ID を付ける。開始後の `SetTag` だけではサンプリングと経路分離に使えない。
+
+診断側は未購読・対象外なら `None`、収集対象なら `AllDataAndRecorded` を返す。これは他 Listener のサンプリング結果を上書きするものではなく、他 Listener が生成した Activity の開始・終了通知も来得るため、通知側でも実行 ID と診断側の収集判定を確認する。`Activity.IsAllDataRequested` は全 Listener の要求であり、診断購読の有無とは解釈しない。
+
+初期のサンプリングは Trace ID による決定的な割合とする。同じ設定の親子で一貫した判定を行い、親がある場合は親の Recorded フラグを尊重する。ルートの割合は `TraceSampleRatio` で上限を設定し、サーバーはその範囲内で購読を要求する。実行 ID がなく経路不明な親や設定変更、収集前に始まった Span によって部分 Trace が生じ得る。完全な Trace 木を保証せず、欠落を UI で区別する。エラーのみ保存する tail sampling は初期設計に含めない。
+
+`ActivityStopped` で完了 Span を DTO にコピーし、Trace / Span / Parent ID、Source 名・版、操作名、Kind、開始 UTC 時刻、Duration、Status、許可されたタグ・イベント・リンクを送信する。ゲームの壁時計はサーバーと同期しているとは仮定せず、受信時の単調増加時刻も記録する。未終了 Span のライブ表示は初期対象外とする。
+
+Span 数、属性・イベント・リンク数、文字列長と送信キューに上限を設ける。コールバックはゲームを待たせず、満杯なら破棄して欠落数を数える。Activity や対象オブジェクトの参照をキューへ残さない。切断前に開始し再接続後に終了した Span は、新セッションの Trace として自動転送しない。セッション停止は収集中フラグを無効化し、Listener と未完了の追跡情報を解放する。
+
+### .NET 標準 Log の生成と転送
+
+Log は `Microsoft.Extensions.Logging.ILogger<T>` を DI 注入して生成する。メッセージテンプレート、`EventId`、例外、構造化フィールドを標準 API で記録する。高頻度のログには標準の `LoggerMessage` ソース生成を利用できる。
+
+`AddLumyteDiagnostics` は `AddLogging` と診断用 `ILoggerProvider` の登録を行う。Console 等の既存 Provider は維持する。Provider は Singleton とし、`ISupportExternalScope` を実装して `IExternalScopeProvider` からログスコープを読む。Scoped のゲームやセッションをコンストラクター注入しない。代わりに、停止可能なスコープ別送信先を登録する Singleton のルーターへ、有界 DTO を配送する。
+
+ゲームの更新入口とゲームに所属する非同期処理の入口で、`BeginScope` に `lumyte.instance.id` を設定する。ログ Provider はこの ID と登録中の送信先を照合する。`BeginScope` 用の実行 ID は任意の外部入力から採用せず、DI の `IGameExecutionIdentity` に由来するものを使う。ID がないログ、停止済み実行のログ、矛盾する複数 ID を持つログはゲームへ配送しない。標準ログスコープの AsyncLocal は DI の Scoped 寿命とは独立しているため、各実行入口で明示して Dispose し、別ゲームへ引き継がない。
+
+診断側のレベル・カテゴリは `MinimumLogLevel` と `AllowedLogCategoryPrefixes` で上限を設定する。カテゴリの一致は指定名そのものか、その名前と `.` で始まる子カテゴリに限定する。Provider の `IsEnabled` は現在の全送信先の設定を反映するが、対象実行の判定とフィルターは `Log` 時にも行う。標準 LoggerFactory のフィルターで既に落ちたログを、診断側の購読で復元することはできない。
+
+ログ DTO は実行 ID、シーケンス番号、UTC 時刻、受信単調増加時刻、カテゴリ、LogLevel、EventId、整形メッセージ、元テンプレート、構造化フィールド、許可されたスコープ、例外情報を持つ。`Activity.Current` がある場合は Trace ID / Span ID と Recorded フラグを付け、Trace が未収集でも相関 ID を保持する。ログ自体は Trace のサンプリング結果で破棄しない。
+
+`Log<TState>` 内で state とスコープをコピーし、列挙子、例外、任意の参照オブジェクトをキューに保持しない。値は許可したプリミティブ型と文字列に限定する。例外は型名・メッセージを基本とし、スタックトレースは明示的な許可と長さ上限の下で公開する。フォーマッター失敗は破棄数へ記録し、ゲームへ例外を返さない。同期ログ生成の負荷はゼロにはならず、高価なフォーマッターを途中で強制中断できない。
+
+ログにも有界キューとレート制限を設ける。Warning 以上には別の予算を確保できるが、Error / Critical を含め完全配送は保証しない。通信実装と Provider 自身の内部ログは診断転送対象から除外し、転送エラーの再帰ログを防ぐ。停止時は送信先を先に無効化し、Provider が破棄済み Scoped サービスを参照しないようにする。
+
+### Trace と Log の DI・利用例
+
+Source を持つ計測サービスは標準 ActivitySource をそのまま公開する。
+
+```csharp
+using System.Diagnostics;
+
+public sealed class PhysicsTracing : IDisposable
+{
+    public ActivitySource Source { get; } = new("Lumyte.Physics", "1.0.0");
+    public void Dispose() => Source.Dispose();
+}
+
+services.AddLogging();
+services.AddScoped<PhysicsTracing>();
+```
+
+`PhysicsLoop` に `PhysicsTracing`、`ILogger<PhysicsLoop>`、`IGameExecutionIdentity` を追加でコンストラクター注入すると、更新処理は次のようになる。ログスコープと Activity は更新ごとに閉じる。PhysicsWorld の例外は記録後に再送出し、診断機能がゲームのエラー処理を変更しない。
+
+```csharp
+public void Update(double deltaTime, DiagnosticFrame frame)
+{
+    string instanceId = _identity.InstanceId.ToString("D");
+    using var scope = _logger.BeginScope(new Dictionary<string, object?>
+    {
+        ["lumyte.instance.id"] = instanceId,
+    });
+    using var activity = _tracing.Source.StartActivity(
+        "physics.step", ActivityKind.Internal,
+        parentContext: Activity.Current?.Context ?? default,
+        tags: new[] { new KeyValuePair<string, object?>("lumyte.instance.id", instanceId) });
+
+    try
+    {
+        _world.Step(deltaTime);
+        _pump.Pump(frame, new DiagnosticBudget(TimeSpan.FromMilliseconds(0.2), 8));
+        _metrics.RecordAfterSimulation(_world);
+        activity?.SetTag("physics.active_bodies", _world.ActiveBodyCount);
+        _logger.LogDebug(new EventId(1001, "StepCompleted"),
+            "Physics step completed with {ActiveBodyCount} active bodies",
+            _world.ActiveBodyCount);
+    }
+    catch (Exception exception)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error, "Physics step failed");
+        _logger.LogError(new EventId(1002, "StepFailed"), exception,
+            "Physics step failed");
+        throw;
+    }
+}
+```
+
+バックグラウンド処理を開始する場合も実行 ID を明示し、ゲームスコープ終了後まで Scoped のサブシステムを捕捉しない。Activity の親コンテキストの伝播と、DI の寿命管理は別々に扱う。
+
+### Trace・Log の転送契約
+
+Hub に `Task PublishTraceAsync(TraceBatch batch)` と `Task PublishLogsAsync(LogBatch batch)` を追加する。両バッチはセッション ID、実行インスタンス ID、シーケンス番号、欠落件数を含み、個々の Span / Log を上記の DTO で表す。型付きのスカラーフィールドで転送し、`Activity` や `ILogger` の状態を直接 MessagePack でシリアライズしない。
+
+`ConfigureTracing` 要求は購読 ID、Source 名、操作名フィルター、割合を持ち、`ConfigureLogging` は購読 ID、カテゴリと最小レベルを持つ。ゲーム側設定と Observe 権限を超える要求は拒否する。購読停止後のイベントは送らず、未送信キューにもセッションと購読世代を付けて古いデータを除外する。複数の購読に同じイベントを配送する場合はイベント ID を維持する。
+
+Metrics / Trace / Log は同じ標準計測基盤から生成するが、異なるキュー・件数予算を持つ。バッチサイズを制限し、制御応答を優先する。Trace・Log のスキーマ・対応機能をカタログに含め、未対応のフィールドは明示する。OpenTelemetry SDK の導入は必須にせず、標準 Listener と Provider を MagicOnion の転送境界とする。
 
 ### 操作の実行契約
 
@@ -352,6 +456,10 @@ services.AddLumyteDiagnostics(options =>
     options.Enabled = true;
     options.ServerAddress = new Uri("https://localhost:5001");
     options.AllowedMeterNames = new[] { "Lumyte.Physics" };
+    options.AllowedActivitySourceNames = new[] { "Lumyte.Physics" };
+    options.TraceSampleRatio = 0.1;
+    options.AllowedLogCategoryPrefixes = new[] { "Lumyte.Physics" };
+    options.MinimumLogLevel = LogLevel.Information;
 });
 services.AddMetrics();
 services.AddScoped<PhysicsMetrics>();
@@ -366,6 +474,8 @@ services.AddDiagnosticSubsystem<PhysicsDiagnostics, AfterPhysicsSimulation>(
 更新ループも DI で構築する。コンストラクターは受け取った依存を保持するだけとし、エンジンが所有スレッド上で `Initialize`、`Update`、`Shutdown` を呼ぶ。例の予算は説明用である。
 
 ```csharp
+namespace Lumyte.Physics;
+
 public sealed class PhysicsLoop
 {
     private readonly PhysicsWorld _world;
@@ -480,7 +590,9 @@ Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。
 | 種別 | 混雑・欠落時の方針 |
 | --- | --- |
 | 操作要求・結果 | 有界キュー。受付拒否を明示し、接続喪失後の結果不明は再照会で解決する |
-| テレメトリー | 間引き・集約と欠落件数の報告 |
+| Metrics | 集約・系列数制限と欠落件数の報告 |
+| Trace | サンプリング・有界 Span キューと欠落件数の報告 |
+| Log | レベル・カテゴリ・レート制限と欠落件数の報告 |
 | グラフ差分 | 順序を検証し、欠落時に再同期 |
 | レンダリング結果 | 古いフレームを破棄可能とする |
 | 大容量転送 | 同時数・サイズ・帯域・保存期間を制限する |
@@ -491,7 +603,7 @@ Hub に `Task PublishCatalogAsync(DiagnosticCatalog catalog)` を追加する。
 
 TLS を使用し、ゲーム接続と診断利用者を認証する。観測、編集、入力操作の権限を分け、サーバーで利用者を認可し、ゲーム側でもセッションに許された操作と公開対象を検証する。ゲーム側が UI から受け取った自己申告の権限を信頼する設計にはしない。
 
-編集と入力操作の主体、対象、結果を監査ログに記録する。秘密情報をスキーマの公開対象から除外する。製品ビルドでは診断機能を既定で無効とし、有効化条件を明示する。
+編集と入力操作の主体、対象、結果を監査ログに記録する。秘密情報をスキーマの公開対象から除外する。Metrics のタグ、Trace の属性・イベント、Log の状態・スコープ・例外も送信前の許可リストと秘匿値の除去に従う。製品ビルドでは診断機能を既定で無効とし、有効化条件を明示する。
 
 ### 互換性と対応環境
 
@@ -533,6 +645,9 @@ Browser で StreamingHub の要件を満たせない場合の中継や代替ト�
 - 有効化の原子性、重複 ID、解除・再有効化、起動失敗時の解放、所有スレッドと終了順序。
 - MeterListener の既存 Instrument 発見、購読統合、タグと DI スコープによる分離、他 Listener との共存。
 - 標準 Counter / Gauge / Histogram の集約、欠測・欠落、系列数上限、Meter と Listener の破棄。
+- Activity の親子相関、サンプリング、他 Listener による生成、null Activity、切断をまたぐ Span。
+- 構造化ログとスコープ、Trace 相関、並行実行の ID 分離、フォーマッター失敗、転送再帰の防止。
+- Trace・Log の属性制限、秘匿値の除去、バッファ欠落、停止後の Scoped 参照解放。
 - カタログ更新と操作の競合。
 - 対象破棄、ID 再利用、競合編集、部分成功、所有スレッドでの実行。
 - スナップショット取得中の更新、差分欠落、保持上限超過と再同期。
@@ -543,7 +658,7 @@ Browser で StreamingHub の要件を満たせない場合の中継や代替ト�
 
 ## 別途決定する事項
 
-- Observable Instrument、ログ・トレース転送、数値集約の精度とオーバーフロー。
+- Observable Instrument、数値集約の精度とオーバーフロー、tail sampling、未終了 Span のライブ表示。
 - 全通信 DTO のフィールド番号、グラフ・描画・入力の診断アダプター API、具体的なプロジェクト名。
 - 大容量転送 API、保存先、診断 UI 向け API、認証方式と資格情報の配布。
 - 入力・描画システムへの具体的な統合位置とプラットフォーム別対応範囲。
