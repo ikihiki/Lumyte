@@ -1,0 +1,80 @@
+name: Wgpu smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Graphics/**'
+      - 'samples/Wgpu.Headless/**'
+      - 'tests/Lumyte.Graphics.Wgpu.Tests/**'
+      - 'tools/shaders/**'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'Lumyte.sln'
+      - 'global.json'
+      - 'NuGet.config'
+      - '.github/workflows/wgpu-smoke.yml'
+  pull_request:
+    paths:
+      - 'src/Graphics/**'
+      - 'samples/Wgpu.Headless/**'
+      - 'tests/Lumyte.Graphics.Wgpu.Tests/**'
+      - 'tools/shaders/**'
+      - 'mise.toml'
+      - 'mise.lock'
+      - 'Lumyte.sln'
+      - 'global.json'
+      - 'NuGet.config'
+      - '.github/workflows/wgpu-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wgpu-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wgpu-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      XDG_RUNTIME_DIR: /tmp
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+      - name: Install software Vulkan
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
+          driver=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          if [ ! -f "$driver" ]; then driver=/usr/share/vulkan/icd.d/lvp_icd.json; fi
+          test -f "$driver"
+          echo "VK_DRIVER_FILES=$driver" >> "$GITHUB_ENV"
+          echo "MESA_SHADER_CACHE_DIR=$RUNNER_TEMP/mesa-cache" >> "$GITHUB_ENV"
+      - name: Install offline Slang compiler
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, os, pathlib, tarfile, tomllib, urllib.request
+          config = tomllib.loads(pathlib.Path('mise.toml').read_text())['tools']['http:slang']['platforms']['linux-x64']
+          directory = pathlib.Path(os.environ['RUNNER_TEMP']) / 'lumyte-slang'
+          directory.mkdir(exist_ok=True)
+          archive = directory / 'slang.tar.gz'
+          urllib.request.urlretrieve(config['url'], archive)
+          assert config['checksum'] == 'sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest()
+          with tarfile.open(archive) as source:
+              source.extractall(directory, filter='data')
+          PYTHON
+          echo "SlangCompilerPath=$RUNNER_TEMP/lumyte-slang/bin/slangc" >> "$GITHUB_ENV"
+      - name: Restore and build
+        run: |
+          dotnet restore Lumyte.sln --source https://api.nuget.org/v3/index.json
+          dotnet build Lumyte.sln --no-restore --configuration Release
+      - name: GPU integration tests
+        run: dotnet test tests/Lumyte.Graphics.Wgpu.Tests --no-build --configuration Release
+      - name: Headless compute and rendering
+        run: dotnet run --project samples/Wgpu.Headless --no-build --configuration Release

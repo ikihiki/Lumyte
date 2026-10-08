@@ -32,7 +32,9 @@ Lumyte/
 │   ├── Engine/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
-│   │   ├── Lumyte.Graphics/
+│   │   ├── Lumyte.Graphics.Core/      # バックエンドに依存しない共通型
+│   │   ├── Lumyte.Graphics/           # 共通 API のデバイス生成層
+│   │   ├── Lumyte.Graphics.Wgpu/      # 最初の managed wgpu 実装
 │   │   ├── Lumyte.Graphics.DirectX/
 │   │   ├── Lumyte.Graphics.DirectX.Native/
 │   │   ├── Lumyte.Graphics.Vulkan/
@@ -80,6 +82,8 @@ Lumyte/
 | `artifacts/nuget/` | 生成したパッケージを配置するローカル NuGet フィード |
 
 カテゴリは配置を整理するためのものであり、フォルダ階層だけで名前空間や依存関係を決めない。新しい機能カテゴリも同じ一段の分類ルールで追加する。
+
+最初の実装は [ADR-0008](0008-wgpu-first-backend.md) に従い、`Lumyte.Graphics.Wgpu` が既存 .NET binding を直接参照する。Lumyte の `Lumyte.Graphics.Wgpu.Native` は作らない。第三者パッケージの native runtime と、Lumyte 自身の Native プロジェクトを区別する。以下の DirectX／Vulkan の Native 構成は将来の独立バックエンドに適用する。
 
 ### Native プロジェクト
 

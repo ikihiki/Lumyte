@@ -2,3 +2,6 @@
 **/bin/
 **/obj/
 **/vcpkg_installed/
+
+# Slang output is generated under obj/ and embedded in assemblies.
+**/*.wgsl
