@@ -55,3 +55,12 @@ NuGet から使う場合は `Lumyte.Composition` と `Lumyte.Composition.Generat
 ```csharp
 var list = ListView<int>(with: [ListViewFactory<int>().Select(2)])[1, 2, 3];
 ```
+
+名前付きスロットは静的メソッドに `[ComposeSlot]` を付けて定義する。
+
+```csharp
+var button = Button()[Button.Background()[Image("sample.jpeg")]];
+var mixed = Button()[Text(), Button.Background()[Image("sample.jpeg")]];
+```
+
+子要素はスロット指定で捕捉し、外側のButtonへ適用する。保存領域と置換処理はButton側で定義する。

@@ -103,6 +103,53 @@ public sealed class GeneratorTests
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
     }
 
+    /// <summary>Tests generic named slots on a component without ordinary content.</summary>
+    [Fact]
+    public void GenericSlotOnlyComponentCompiles()
+    {
+        const string Source = "using System.Collections.Generic; using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class ListView<T> where T : notnull { [ComposeSlot] private static void Header(ListView<T> target, IReadOnlyList<T> items) { } } } } public class Usage { public object Build() => Compose.ListView<int>()[Compose.ListViewFactory<int>().Header()[1, 2]]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    /// <summary>Tests generic ordinary children mixed with a slot using the same item type.</summary>
+    [Fact]
+    public void GenericMixedContentCompiles()
+    {
+        const string Source = "using System.Collections.Generic; using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class ListView<T> where T : notnull { [ComposeContent] public IReadOnlyList<T> Items { get; set; } = []; [ComposeSlot] private static void Header(ListView<T> target, T[] items) { } } } } public class Usage { public object Build() => Compose.ListView<int>()[1, Compose.ListViewFactory<int>().Header()[2]]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    /// <summary>Tests deliberate diagnostics for unsupported slot declarations.</summary>
+    /// <param name="member">The malformed slot declaration.</param>
+    [Theory]
+    [InlineData("[ComposeSlot] private void Background(Button target, object[] items) { }")]
+    [InlineData("[ComposeSlot] private static void Background(object target, object[] items) { }")]
+    [InlineData("[ComposeSlot] private static void Background(Button target, List<object> items) { }")]
+    [InlineData("[ComposeSlot] private static void Background(Button target, object[] items, int extra) { }")]
+    [InlineData("[ComposeSlot] private static void Background<T>(Button target, T[] items) { }")]
+    [InlineData("[ComposeSlot] private static void Background(Button target, ref object[] items) { }")]
+    [InlineData("[ComposeSlot, ComposeAction] private static void Background(Button target, object[] items) { }")]
+    public void InvalidSlotIsDiagnosed(string member)
+    {
+        string source = "using System.Collections.Generic; using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Button { " + member + " } } }";
+        GeneratorDriverRunResult result = Run(source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Id == "AD0001");
+    }
+
+    /// <summary>Tests that a slot cannot be assigned to a different component.</summary>
+    [Fact]
+    public void SlotIsSpecificToItsComponent()
+    {
+        const string Source = "using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Button { [ComposeSlot] private static void Background(Button target, object[] items) { } } [Composable] public partial class Other { [ComposeSlot] private static void Background(Other target, object[] items) { } } } } public class Usage { public object Build() => Compose.Other()[Compose.Button.Background()[new object()]]; }";
+        Run(Source, out Compilation output);
+        Assert.Contains(output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
     private static GeneratorDriverRunResult Run(string source, out Compilation output)
     {
         var options = new CSharpParseOptions(LanguageVersion.Latest);

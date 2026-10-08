@@ -112,6 +112,33 @@ int column = (int)grid.Children[0].AttachedValues["Grid.Column"]!;
 +        public ComposeActionAttribute();
 +    }
 +
++    // 名前付きの子要素を操作する静的メソッドを指定する。
++    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
++    public sealed class ComposeSlotAttribute : Attribute
++    {
++        public ComposeSlotAttribute();
++    }
++
++    // ノードの保存領域を持たず、子要素を捕捉するスロットの入口。
++    public sealed class CompositionSlot<TTarget, TChild> where TTarget : class
++    {
++        // apply が null なら ArgumentNullException。
++        public CompositionSlot(Action<TTarget, TChild[]> apply);
++        // children が null なら ArgumentNullException。配列を浅くコピーして遅延指定を返す。
++        // 子ノード自体はコピーしない。空配列も操作へ渡す。
++        public CompositionSlotAssignment<TTarget> this[params TChild[] children] { get; }
++    }
++
++    // 対象型を限定した遅延スロット指定。default は適用できない。
++    public readonly struct CompositionSlotAssignment<TTarget> where TTarget : class
++    {
++        // apply が null なら ArgumentNullException。
++        public CompositionSlotAssignment(Action<TTarget> apply);
++        // target が null なら ArgumentNullException、未初期化なら InvalidOperationException。
++        // 操作の例外は伝播する。スロット由来の操作には捕捉した配列のコピーを毎回渡す。
++        public void Apply(TTarget target);
++    }
++
 +    // アセンブリの既定ファクトリクラス名を指定する。
 +    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
 +    public sealed class CompositionDefaultsAttribute : Attribute
@@ -141,6 +168,64 @@ int column = (int)grid.Children[0].AttachedValues["Grid.Column"]!;
 +    }
 +}
 ```
+
+### 名前付きスロット
+
+名前付きの子要素は、定義クラス内の静的メソッドに ComposeSlot を付けて指定する。先頭引数は定義クラス自身、第二引数は一次元配列または ComposeContent と同じ対応 collection interface とする。同期・非 generic・static void のみを扱い、ref/out/in、params、optional 引数、overload、ComposeAction との併用、デリゲートメンバーと衝突する名前は LYC001 で拒否する。保存、置換、検証の処理は利用側メソッドが担当する。
+
+```csharp
+[Composable]
+public partial class Button : Widget
+{
+    [ComposeContent]
+    public IReadOnlyList<Widget> Children { get; set; } = [];
+    public IReadOnlyList<Widget> BackgroundChildren { get; private set; } = [];
+
+    [ComposeSlot]
+    private static void Background(Button target, IReadOnlyList<Widget> children)
+        => target.BackgroundChildren = children;
+}
+
+// 定義は Compose.Definitions 内。using static Compose と拡張メソッドの名前空間を import する。
+var button = Button()[Button.Background()[Image("sample.jpeg")]];
+var mixed = Button()[Text(), Button.Background()[Image("sample.jpeg")]];
+```
+
+C# の文字列リテラルには二重引用符を使う。Image のファクトリは利用側の定義から生成する。
+
+上の例では、通常の子要素とスロットを同じインデクサーへ渡すために生成型 CompositionChild を使う。比較元は契約ライブラリの公開 API と同じ revision とする。
+
+```diff
++public static partial class Compose
++{
++    public static partial class Definitions
++    {
++        public partial class Button
++        {
++            // 通常の子要素と、この Button 用のスロット指定を受け取る。
++            public readonly struct CompositionChild
++            {
++                public static implicit operator CompositionChild(Widget child);
++                public static implicit operator CompositionChild(CompositionSlotAssignment<Button> slot);
++            }
++            // 通常の子要素を置換してから、スロットを記述順に適用し、同じ Button を返す。
++            public Button this[params CompositionChild[] content] { get; }
++        }
++    }
++}
++public static class ComposeButtonCompositionExtensions
++{
++    // 子要素を捕捉する入口。ここでは Button を操作しない。
++    public static CompositionSlot<Compose.Definitions.Button, Compose.Definitions.Widget> Background(
++        this Compose.Definitions.ButtonFactory factory);
++}
+```
+
+スロットの入口で子要素配列を浅くコピーし、外側インデクサーを評価した時に対象へ適用する。指定は再利用でき、適用ごとに配列のコピーを渡す。スロット名による辞書や保存領域は Composition に追加しない。
+
+通常の子要素を含む指定は ComposeContent を置換する。スロットだけの指定では既存の通常の子要素を維持する。外側への空配列は通常の子要素を空にし、スロットには触れない。スロットへの空配列は利用側操作へ渡し、上の例では背景を空にする。同じスロットへの指定を含めて記述順に実行し、操作の例外は伝播して後続を停止する。適用済みの変更はロールバックしない。default のスロット指定は InvalidOperationException、null の配列は ArgumentNullException とする。
+
+ComposeContent のない定義では、CompositionSlotAssignment を直接受けるインデクサーを生成する。通常の子要素とスロットを併用する定義では、C# の暗黙変換の制約から通常の子要素型が object または interface の場合を LYC001 で拒否する。スロット自体の子要素型にはこの制限はない。スロット対象型を別の定義へ流用できず、無関係なノードはコンパイル時に拒否される。ジェネリックな定義では `ListViewFactory<int>().Header()[...]` の形で利用する。
 
 ### ジェネリックな定義
 
@@ -222,7 +307,7 @@ public static Action<Widget> Column(
 
 ファクトリごとに異なる名前付きデリゲートを使い、Func に共通化しない。Grid() はプロパティ値のデリゲート呼び出し、Grid.Column(1) はその値を receiver とする拡張メソッドになる。拡張は他のファクトリ型には適用できない。プロパティ取得だけでは構築せず、キャッシュした同じデリゲートを返す。デリゲート呼び出しは毎回新しいインスタンスを作る。
 
-引数名・省略可能引数・既定値はデリゲート宣言に含める。接続先メソッドだけに既定値を付けても呼び出し時の省略には使えない。公開 setter や、公開入口となる通常の静的ファクトリメソッドは生成しない。
+引数名・省略可能引数・既定値はデリゲート宣言に含める。接続先メソッドだけに既定値を付けても呼び出し時の省略には使えない。ファクトリプロパティの公開 setter は生成しない。非 generic 型では、公開入口となる通常の静的ファクトリメソッドも生成しない。
 
 ### 属性付き静的メソッドから操作を生成する
 

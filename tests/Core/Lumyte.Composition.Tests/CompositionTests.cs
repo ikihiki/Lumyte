@@ -68,6 +68,84 @@ public sealed class CompositionTests
         Assert.Same(list, list[4]);
     }
 
+    /// <summary>Tests the requested named slot expression and mixed ordinary content.</summary>
+    [Fact]
+    public void NamedSlotAcceptsImagesAlongsideOrdinaryChildren()
+    {
+        Compose.Definitions.Image image = Image("sample.jpeg");
+        Compose.Definitions.Button button = Button()[Button.Background()[image]];
+        Assert.Same(image, Assert.Single(button.BackgroundChildren));
+        Assert.Empty(button.Children);
+        Compose.Definitions.Text text = Text();
+        Assert.Same(button, button[text, Button.Background()[Image("other.jpeg")]]);
+        Assert.Same(text, Assert.Single(button.Children));
+        Assert.Equal("other.jpeg", Assert.IsType<Compose.Definitions.Image>(Assert.Single(button.BackgroundChildren)).Source);
+    }
+
+    /// <summary>Tests slot deferral, reuse, snapshotting, and preservation of ordinary content.</summary>
+    [Fact]
+    public void SlotAssignmentsAreDeferredAndReusable()
+    {
+        Compose.Definitions.Image image = Image("first.jpeg");
+        Compose.Definitions.Widget[] children = [image];
+        CompositionSlotAssignment<Compose.Definitions.Button> slot = Button.Background()[children];
+        children[0] = Image("changed.jpeg");
+        Compose.Definitions.Button first = Button()[Text()];
+        Assert.Empty(first.BackgroundChildren);
+        Assert.Same(first, first[slot]);
+        Assert.Same(image, Assert.Single(first.BackgroundChildren));
+        Assert.Single(first.Children);
+        Compose.Definitions.Button second = Button()[slot];
+        Assert.Same(image, Assert.Single(second.BackgroundChildren));
+        Assert.NotSame(first.BackgroundChildren, second.BackgroundChildren);
+        Assert.Same(first, first[Button.Background()[Image("next.jpeg")], Button.Background()[Array.Empty<Compose.Definitions.Widget>()]]);
+        Assert.Empty(first.BackgroundChildren);
+    }
+
+    /// <summary>Tests null and uninitialized assignment rejection at the runtime boundary.</summary>
+    [Fact]
+    public void InvalidSlotArgumentsAreRejected()
+    {
+        Assert.Throws<ArgumentNullException>(() => new CompositionSlot<Compose.Definitions.Button, Compose.Definitions.Widget>(null!));
+        Assert.Throws<ArgumentNullException>(() => Button.Background()[null!]);
+        CompositionSlotAssignment<Compose.Definitions.Button> empty = default;
+        Assert.Throws<InvalidOperationException>(() => empty.Apply(Button()));
+        Assert.Throws<ArgumentNullException>(() => empty.Apply(null!));
+    }
+
+    /// <summary>Tests slot ordering and stopping after a callback failure without rollback.</summary>
+    [Fact]
+    public void SlotFailureStopsLaterAssignments()
+    {
+        var order = new List<int>();
+        var expected = new InvalidOperationException("slot");
+        var first = new CompositionSlotAssignment<Compose.Definitions.Button>(target => order.Add(1));
+        var failure = new CompositionSlotAssignment<Compose.Definitions.Button>(target => throw expected);
+        var last = new CompositionSlotAssignment<Compose.Definitions.Button>(target => order.Add(3));
+        Compose.Definitions.Button button = Button();
+        Compose.Definitions.Text text = Text();
+        InvalidOperationException actual = Assert.Throws<InvalidOperationException>(() => button[text, first, failure, last]);
+        Assert.Same(expected, actual);
+        Assert.Equal(new[] { 1 }, order);
+        Assert.Same(text, Assert.Single(button.Children));
+    }
+
+    /// <summary>Tests that a user operation mutating its array cannot alter later applications.</summary>
+    [Fact]
+    public void EachSlotApplicationReceivesItsOwnChildArray()
+    {
+        var observed = new List<int>();
+        var slot = new CompositionSlot<Compose.Definitions.Button, int>((target, children) =>
+        {
+            observed.Add(children[0]);
+            children[0] = 99;
+        });
+        CompositionSlotAssignment<Compose.Definitions.Button> assignment = slot[1];
+        assignment.Apply(Button());
+        assignment.Apply(Button());
+        Assert.Equal(new[] { 1, 1 }, observed);
+    }
+
     /// <summary>Tests defaults, explicit false and zero, required arguments and init assignments.</summary>
     [Fact]
     public void FactoriesPreserveOmittedDefaultsAndApplyExplicitValues()

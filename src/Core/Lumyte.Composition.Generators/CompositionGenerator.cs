@@ -38,6 +38,20 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             Prefix + "ComposeActionAttribute",
             static (node, _) => node is MethodDeclarationSyntax,
             static (attribute, _) => (IMethodSymbol)attribute.TargetSymbol);
+        IncrementalValuesProvider<IMethodSymbol> slots = context.SyntaxProvider.ForAttributeWithMetadataName(
+            Prefix + "ComposeSlotAttribute",
+            static (node, _) => node is MethodDeclarationSyntax,
+            static (attribute, _) => (IMethodSymbol)attribute.TargetSymbol);
+        context.RegisterSourceOutput(slots, static (output, method) =>
+        {
+            if (!HasAttribute(method.ContainingType, "Composable"))
+            {
+                output.ReportDiagnostic(Diagnostic.Create(
+                    _invalidDeclaration,
+                    method.Locations.FirstOrDefault(),
+                    "ComposeSlot methods must be declared in a Composable class."));
+            }
+        });
         context.RegisterSourceOutput(actions, static (output, method) =>
         {
             if (!HasAttribute(method.ContainingType, "Composable"))
@@ -184,7 +198,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             return "Use at most one settable array or supported collection interface for content; init-only content is unsupported.";
         }
 
-        if (contents.Length != 0 && component.GetMembers().OfType<IPropertySymbol>().Any(property => property.IsIndexer))
+        if ((contents.Length != 0 || component.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))) && component.GetMembers().OfType<IPropertySymbol>().Any(property => property.IsIndexer))
         {
             return "The generated content indexer conflicts with an existing indexer.";
         }
@@ -217,6 +231,35 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             }
         }
 
+        foreach (IMethodSymbol method in component.GetMembers().OfType<IMethodSymbol>().Where(member => HasAttribute(member, "ComposeSlot")))
+        {
+            if (!method.IsStatic || !method.ReturnsVoid || method.IsAsync || method.Arity != 0
+                || method.MethodKind != MethodKind.Ordinary || method.Parameters.Length != 2
+                || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, component)
+                || ContentItem(method.Parameters[1].Type) is null
+                || method.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.IsOptional || parameter.IsParams || !PublicType(parameter.Type)))
+            {
+                return "ComposeSlot requires a synchronous non-generic static void method accepting its component and a supported child collection.";
+            }
+
+            if (HasAttribute(method, "ComposeAction") || !actionNames.Add(method.Name)
+                || method.Name is "Invoke" or "DynamicInvoke" or "Equals" or "GetHashCode" or "GetType" or "ToString" or "Clone" or "GetInvocationList")
+            {
+                return "A composition slot name conflicts with another operation or delegate member.";
+            }
+        }
+
+        if (contents.Length != 0 && component.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))
+            && ContentItem(MemberType(contents[0])) is ITypeSymbol child && (child.TypeKind == TypeKind.Interface || child.SpecialType == SpecialType.System_Object))
+        {
+            return "Combining ordinary content and slots requires a child type other than object or an interface.";
+        }
+
+        if (component.GetMembers("CompositionChild").Length != 0 && component.GetMembers().Any(member => HasAttribute(member, "ComposeSlot")))
+        {
+            return "The generated CompositionChild type conflicts with an existing member.";
+        }
+
         return null;
     }
 
@@ -227,6 +270,8 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             .OrderByDescending(Required).ToArray();
         ISymbol? content = Members(component).FirstOrDefault(member => HasAttribute(member, "ComposeContent"));
         IMethodSymbol[] actions = component.GetMembers().OfType<IMethodSymbol>().Where(member => HasAttribute(member, "ComposeAction"))
+            .OrderBy(member => member.Name, StringComparer.Ordinal).ToArray();
+        IMethodSymbol[] slots = component.GetMembers().OfType<IMethodSymbol>().Where(member => HasAttribute(member, "ComposeSlot"))
             .OrderBy(member => member.Name, StringComparer.Ordinal).ToArray();
         string type = TypeName(component);
         string generics = TypeParameters(component);
@@ -315,7 +360,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         builder.AppendLine(");\nif (@with is not null)\n{");
         builder.AppendLine("foreach (var action in @with)\n{\nif (action is null) throw new global::System.ArgumentException(\"Null composition action.\", nameof(@with));\n}");
         builder.AppendLine("foreach (var action in @with)\n{\naction(instance);\n}\n}\nreturn instance;\n}");
-        if (content is not null)
+        if (content is not null && slots.Length == 0)
         {
             builder.AppendLine("/// <summary>Replaces children and returns this same instance.</summary>");
             builder.AppendLine("/// <param name=\"content\">The ordered children.</param>");
@@ -324,6 +369,17 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 .AppendLine("[] content]\n{\nget\n{");
             builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
             builder.Append("this.").Append(Escape(content.Name)).AppendLine(" = content;\nreturn this;\n}\n}");
+        }
+
+        if (slots.Length != 0)
+        {
+            RenderSlotIndexer(builder, type, content);
+            foreach (IMethodSymbol slot in slots)
+            {
+                builder.Append("internal static global::Lumyte.Composition.CompositionSlot<").Append(type).Append(", ")
+                    .Append(TypeName(ContentItem(slot.Parameters[1].Type)!)).Append("> ").Append(Escape("__LumyteSlot" + slot.Name))
+                    .Append("() => new((target, children) => ").Append(Escape(slot.Name)).AppendLine("(target, children));");
+            }
         }
 
         foreach (IMethodSymbol method in actions)
@@ -336,7 +392,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         }
 
         builder.AppendLine("}\n}\n}");
-        if (actions.Length != 0)
+        if (actions.Length != 0 || slots.Length != 0)
         {
             builder.AppendLine("/// <summary>Provides operations for this component's factory.</summary>");
             builder.Append("public static class ").Append(Escape(outer.Name + component.Name + "CompositionExtensions")).AppendLine("\n{");
@@ -359,10 +415,52 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                     .Append('(').Append(ActionArguments(method)).AppendLine(");");
             }
 
+            foreach (IMethodSymbol slot in slots)
+            {
+                builder.AppendLine("/// <summary>Creates a deferred named child slot.</summary>");
+                builder.Append("public static global::Lumyte.Composition.CompositionSlot<").Append(type).Append(", ")
+                    .Append(TypeName(ContentItem(slot.Parameters[1].Type)!)).Append("> ").Append(Escape(slot.Name)).Append(generics)
+                    .Append("(this ").Append(TypeName(outer)).Append(".Definitions.").Append(Escape(component.Name + "Factory"))
+                    .Append(generics).Append(" __factory)").Append(constraints).Append(" => ").Append(type).Append('.')
+                    .Append(Escape("__LumyteSlot" + slot.Name)).AppendLine("();");
+            }
+
             builder.AppendLine("}");
         }
 
         return builder.ToString();
+    }
+
+    private static void RenderSlotIndexer(StringBuilder builder, string type, ISymbol? content)
+    {
+        string assignment = "global::Lumyte.Composition.CompositionSlotAssignment<" + type + ">";
+        if (content is null)
+        {
+            builder.AppendLine("/// <summary>Applies named slots in order and returns this instance.</summary>");
+            builder.Append("public ").Append(type).Append(" this[params ").Append(assignment).AppendLine("[] content]\n{\nget\n{");
+            builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);\nforeach (var slot in content) slot.Apply(this);\nreturn this;\n}\n}");
+            return;
+        }
+
+        string child = TypeName(ContentItem(MemberType(content))!);
+        builder.AppendLine("/// <summary>Represents an ordinary child or a named slot assignment.</summary>");
+        builder.AppendLine("public readonly struct CompositionChild\n{");
+        builder.Append("internal readonly ").Append(child).AppendLine(" Child;");
+        builder.Append("internal readonly ").Append(assignment).AppendLine(" Slot;");
+        builder.AppendLine("internal readonly bool IsChild;");
+        builder.Append("private CompositionChild(").Append(child).AppendLine(" child) { Child = child; Slot = default; IsChild = true; }");
+        builder.Append("private CompositionChild(").Append(assignment).AppendLine(" slot) { Child = default!; Slot = slot; IsChild = false; }");
+        builder.AppendLine("/// <summary>Wraps an ordinary child.</summary>");
+        builder.Append("public static implicit operator CompositionChild(").Append(child).AppendLine(" child) => new(child);");
+        builder.AppendLine("/// <summary>Wraps a named slot assignment.</summary>");
+        builder.Append("public static implicit operator CompositionChild(").Append(assignment).AppendLine(" slot) => new(slot);\n}");
+        builder.AppendLine("/// <summary>Replaces ordinary children when present and applies named slots in order.</summary>");
+        builder.Append("public ").Append(type).AppendLine(" this[params CompositionChild[] content]\n{\nget\n{");
+        builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
+        builder.Append("var children = new global::System.Collections.Generic.List<").Append(child).AppendLine(">();");
+        builder.AppendLine("foreach (var item in content) { if (item.IsChild) children.Add(item.Child); }");
+        builder.Append("if (children.Count != 0 || content.Length == 0) this.").Append(Escape(content.Name)).AppendLine(" = children.ToArray();");
+        builder.AppendLine("foreach (var item in content) { if (!item.IsChild) item.Slot.Apply(this); }\nreturn this;\n}\n}");
     }
 
     private static string TypeParameters(INamedTypeSymbol type) => type.Arity == 0 ? string.Empty

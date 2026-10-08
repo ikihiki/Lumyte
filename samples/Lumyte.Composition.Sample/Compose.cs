@@ -32,6 +32,30 @@ public static partial class Compose
             }
         }
 
+        /// <summary>A button with ordinary content and a named background slot.</summary>
+        [Composable]
+        public partial class Button : Widget
+        {
+            /// <summary>Gets or sets ordinary button content.</summary>
+            [ComposeContent]
+            public IReadOnlyList<Widget> Children { get; set; } = [];
+
+            /// <summary>Gets the background children owned by this button.</summary>
+            public IReadOnlyList<Widget> BackgroundChildren { get; private set; } = [];
+
+            [ComposeSlot]
+            private static void Background(Button target, IReadOnlyList<Widget> children) => target.BackgroundChildren = children;
+        }
+
+        /// <summary>An image widget with a required path.</summary>
+        [Composable]
+        public partial class Image : Widget
+        {
+            /// <summary>Gets or initializes the image path.</summary>
+            [ComposeParameter]
+            public required string Source { get; init; }
+        }
+
         /// <summary>A generic list widget with typed items and operations.</summary>
         /// <typeparam name="T">The item type.</typeparam>
         [Composable]
