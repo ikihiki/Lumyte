@@ -44,7 +44,7 @@ public static class BufferExercise
         Require(slice.OffsetInBytes == 12 && slice.SizeInBytes == 8, "Slice byte range is incorrect.");
         slice.CopyFrom(source.AsSpan(0, 2));
         Expect<ArgumentException>(() => slice.CopyFrom(source));
-        Expect<InvalidOperationException>(() => upload.CopyTo(source));
+        Expect<InvalidOperationException>(() => slice.CopyTo(source));
         await ExpectAsync<InvalidOperationException>(() => upload.MapAsync());
         upload.Unmap();
         Expect<InvalidOperationException>(() => upload.CopyFrom(source));
