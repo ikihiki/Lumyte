@@ -71,7 +71,9 @@ try {
             if (message.error) { action.reject(new Error(JSON.stringify(message.error))); }
             else { action.resolve(message.result); }
         } else if (message.method === "Runtime.exceptionThrown") {
-            errors.push(message.params.exceptionDetails.text);
+            errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+        } else if (message.method === "Runtime.consoleAPICalled" && message.params.type === "error") {
+            errors.push(message.params.args.map(value => value.description ?? String(value.value)).join(" "));
         }
     });
     function command(method, params = {}) {
@@ -104,6 +106,7 @@ try {
     assert.match(result.report, /MaxBufferSize: [1-9]\d* bytes/);
     assert.match(result.report, /MaxTextureDimension2D: [1-9]\d* texels/);
     assert.match(result.report, /StorageBufferOffsetAlignment: [1-9]\d* bytes/);
+    assert.match(result.report, /Buffer checks passed:/);
     console.log(`Browser .NET/WebGPU verification passed\n${result.report}`);
 } finally {
     socket?.close();

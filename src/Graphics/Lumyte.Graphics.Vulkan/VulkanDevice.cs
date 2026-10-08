@@ -9,15 +9,27 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Vk _api;
     private readonly Instance _instance;
     private readonly Device _device;
+    private readonly PhysicalDevice _physicalDevice;
+    private readonly object _bufferGate = new();
+    private int _bufferCount;
     private bool _disposed;
 
-    private VulkanDevice(Vk api, Instance instance, Device device, DeviceCaps caps)
+    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps)
     {
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
+        _physicalDevice = physicalDevice;
     }
 
     /// <summary>Gets the enabled capabilities and physical device limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal object BufferGate => _bufferGate;
+
+    internal Vk Api => _api;
+
+    internal Device NativeDevice => _device;
+
+    internal PhysicalDevice PhysicalDevice => _physicalDevice;
 
     /// <summary>Creates a Vulkan 1.3 device with a graphics and compute queue and maintenance4 support.</summary>
     /// <param name="physicalDeviceIndex">The zero-based device index in the Vulkan enumeration.</param>
@@ -57,7 +69,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
             DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
-            return new(api, instance, device, caps);
+            return new(api, instance, device, physical, caps);
         }
         catch
         {
@@ -76,18 +88,73 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
     }
 
+    /// <inheritdoc />
+    public BufferLayout<T> GetBufferLayout<T>()
+        where T : unmanaged
+    {
+        lock (_bufferGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
+        }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(desc);
+        lock (_bufferGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            BufferLayout<T> layout = GetBufferLayout<T>();
+            ulong size = layout.GetSizeInBytes(desc.Count);
+            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
+            {
+                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
+            }
+
+            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+            {
+                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+            }
+
+            var buffer = new VulkanBuffer<T>(this, desc, layout, size);
+            _bufferCount++;
+            return buffer;
+        }
+    }
+
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        lock (_bufferGate)
         {
-            return;
-        }
+            if (_bufferCount != 0)
+            {
+                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
+            }
 
-        _api.DestroyDevice(_device, null);
-        _api.DestroyInstance(_instance, null);
-        _api.Dispose();
-        _disposed = true;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _api.DestroyDevice(_device, null);
+            _api.DestroyInstance(_instance, null);
+            _api.Dispose();
+            _disposed = true;
+        }
+    }
+
+    internal void ReleaseBuffer()
+    {
+        lock (_bufferGate)
+        {
+            _bufferCount--;
+        }
     }
 
     private static PhysicalDevice SelectPhysicalDevice(Vk api, Instance instance, uint index)

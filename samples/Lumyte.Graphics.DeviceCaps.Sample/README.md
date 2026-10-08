@@ -8,3 +8,12 @@ dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vul
 ```
 
 [Wgpu](../../src/Graphics/Lumyte.Graphics.Wgpu/README.md) または [Vulkan](../../src/Graphics/Lumyte.Graphics.Vulkan/README.md) の実行環境が必要です。実デバイスを生成できない場合は例外となり、代わりの固定 Caps は返しません。
+
+## Buffer
+
+```sh
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- wgpu buffers
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan buffers
+```
+
+共有プロジェクトの BufferExercise が共通 API だけで、要素のサイズ、非所有 slice、明示 mapping、CPU copy の方向・範囲・状態と寿命を確認します。GPU copy や描画は実行しません。

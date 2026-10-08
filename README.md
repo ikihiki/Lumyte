@@ -8,6 +8,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [型付きbufferの設計](docs/adr/graphics/GRAPHICS-0002-typed-buffers.md)
 - [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
 - [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)
 - [Wgpu](src/Graphics/Lumyte.Graphics.Wgpu/README.md)／[Browser](src/Graphics/Lumyte.Graphics.Browser/README.md)／[Vulkan](src/Graphics/Lumyte.Graphics.Vulkan/README.md)

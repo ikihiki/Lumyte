@@ -31,4 +31,16 @@ GPU buffer copy の offset／length alignment は 4 byte、encoded image copy �
 
 `IndirectDraw` と `AnisotropicFiltering` は WebGPU の基本機能として返します。非ゼロ firstInstance の optional feature は保証しません。`DepthBiasClamp` と `MeshShader` は返しません。
 
-このプロジェクトのデバイス API は生成・解放と Caps 取得を扱います。[共通契約](../Lumyte.Graphics.Abstractions/README.md) と [.NET WebAssembly サンプル](../../../samples/Lumyte.Graphics.Browser.Sample/README.md) を参照してください。
+このプロジェクトはデバイス生成・解放、Caps 取得と型付き buffer を扱います。[共通契約](../Lumyte.Graphics.Abstractions/README.md) と [.NET WebAssembly サンプル](../../../samples/Lumyte.Graphics.Browser.Sample/README.md) を参照してください。
+
+## Buffer
+
+生成済みの `IGraphicDevice` から `CreateBuffer<T>(BufferDesc<T>)` と `GetBufferLayout<T>()` を使用します。Count と SizeInBytes は指定した raw storage のサイズを保ち、alignment のために補正しません。数値型・enum・unmanaged struct は sizeof(T) の stride で格納します。shader target の layout 互換性は別途検証が必要です。
+
+CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copy と同期の command API は別の設計で追加します。
+
+CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。buffer の操作は device ごとの gate で直列化し、buffer が残った device の Dispose は InvalidOperationException で拒否します。解放済み allocation への access は ObjectDisposedException です。
+
+WebGPU の usage は CopySource → COPY_SRC、CopyDestination → COPY_DST、ShaderRead／ShaderWrite → STORAGE、Index → INDEX に対応します。Upload は CopySource のみと MAP_WRITE、Readback は CopyDestination のみと MAP_READ の組み合わせです。CPU-mapped buffer の size は 4 byte の倍数でなければ生成時に拒否します。GPU-only buffer の論理 size はこの理由で丸めません。
+
+GPUBuffer.mapAsync の Promise と getMappedRange を使います。.NET／JavaScript 間の CPU copy は MemoryView による span の同期受け渡しで行い、GPUDevice.queue.writeBuffer は呼びません。キャンセル時も native Promise の完了後に mapping を解除します。JavaScript 相互運用が利用できるスレッドで操作してください。
