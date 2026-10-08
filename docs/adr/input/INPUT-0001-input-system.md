@@ -1,157 +1,192 @@
-# ADR-INPUT-0001: Input システムの共通契約とフレーム更新
+# ADR-INPUT-0001: デバイス別の入力記録と参照・通知・ポーリング
 
 - 状態: 提案
 - 日付: 2026-10-08
 
 ## 背景
 
-Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジンである。ゲーム側が OS やウィンドウシステム固有の入力 API を直接参照すると、環境ごとの分岐と入力状態の管理がゲームコードに分散する。
+Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジンである。OS 固有の入力 API をゲーム側で直接扱うと、入力状態と履歴の管理が利用コードに分散する。
 
-キーを押し続けている状態だけでなく、そのフレームで押した・離したという遷移を共通に扱う必要がある。状態のポーリングだけでは、フレーム間に発生した短い押下を見落とす。また、フォーカスを失った際に解放イベントが届かない環境でも、押下状態が残り続けてはならない。
+入力データはデバイスごとに記録し、利用者が記録配列を直接参照する方法、イベントで通知を受ける方法、ポーリングで取得する方法を選べるようにしたい。利用者によって処理周期が異なるため、フレーム更新のたびに履歴を一律に消去すると、低頻度の利用者が短い押下などを取りこぼす。古いデータの削除時点も利用者が設定できる必要がある。
 
-現時点で Input の実装は存在しない。本 ADR は最初の実装に向けた共通契約を提案し、環境固有のライブラリ選定は後続 ADR に分離する。
+本 ADR は最初の Input 実装に向けた設計案である。環境固有の入力ライブラリ選定は後続 ADR に分離する。
 
 ## 決定
 
 ### 目的と対象範囲
 
-キーボードとマウスについて、環境固有のイベントを共通イベントへ変換し、ゲームがフレーム単位で参照できる状態を提供する。一つの Input インスタンスは一つのウィンドウ、または Browser の一つの入力対象に対応する。同種の物理デバイスは統合し、個別デバイス ID は公開しない。
+InputSystem はデバイスごとの入力記録配列と最新状態を管理する。配列参照、イベント通知、ポーリングは同じ記録を利用し、読み取りによって記録を消費しない。入力の取得周期と履歴の保持期間は独立させ、毎フレームの削除を必須にしない。
 
-初期スコープは物理キー、マウスボタン、位置、移動量、ホイール、フォーカスとする。文字入力・IME、ゲームパッド、タッチ、アクションマッピング、キー割り当ての保存、入力リプレイは後続 ADR で扱う。物理キーから文字を推測して文字入力を代用しない。
+初期対象は物理キー、マウスボタン、位置、移動量、ホイール、フォーカス、デバイス接続・切断とする。文字入力・IME、ゲームパッド、タッチ、アクションマッピング、保存形式は後続 ADR とする。記録の基盤はデバイスの追加を想定するが、これらの入力種別が実装済みであるとは扱わない。
+
+一つの InputSystem は一つのウィンドウまたは Browser の入力対象に接続する。対象内で識別できる物理デバイスは分離して記録する。物理デバイスを識別できない API、特に Browser のキーボード・マウスは種類ごとの論理デバイスとして記録し、その制約をデバイス情報に明示する。
 
 ### 責務と依存関係
 
-[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、共通の Input を `src/Platform/Lumyte.Input/` に配置する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。入力はプラットフォーム境界の機能として扱い、新しい `src/Input/` カテゴリは追加しない。
+[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、共通ライブラリを `src/Platform/Lumyte.Input/` に配置する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
 
 | 構成要素 | 責務 | 依存先 |
 | --- | --- | --- |
-| `Lumyte.Input` | 共通イベント、状態更新、公開 API | .NET 標準ライブラリのみ |
-| `Lumyte.Platform.Windows` / `Linux` / `Browser` | ウィンドウの入力取得と共通イベントへの変換、入力対象に結び付いた `IInputSource` の生成 | `Lumyte.Input` |
-| `Lumyte.Engine` | 対象ごとの Input インスタンスの管理、イベント処理と更新の呼び出し順の保証 | `Lumyte.Input` と必要な Platform 実装 |
-| ゲーム・ツール | 共通状態やイベントの参照 | `Lumyte.Input` の公開 API |
+| `Lumyte.Input` | デバイス管理、記録配列、状態更新、参照・通知・ポーリング、保持方針 | .NET 標準ライブラリのみ |
+| `Lumyte.Platform.Windows` / `Linux` / `Browser` | 入力取得、デバイス識別、共通データへの正規化、`IInputSource` の生成 | `Lumyte.Input` |
+| `Lumyte.Engine` | Source と InputSystem の所有、取得・利用・削除の呼び出し順 | 共通 Input と必要な Platform 実装 |
+| ゲーム・ツール | デバイスの選択、記録参照やイベント購読、ポーリング、保持方針の設定 | `Lumyte.Input` の公開 API |
 
-共通 Input は Engine、Platform 実装、Graphics に依存しない。Platform 実装が共通 Input を参照する一方向の依存とし、ウィンドウ型を共通 API に持ち込まない。Native 実装が必要になった場合も、変換処理は対応する Platform 側に置く。
+共通 Input は Engine、Platform 実装、Graphics に依存しない。OS ハンドルやウィンドウ型を共通 API に持ち込まない。この PR は文書だけを追加し、空のプロジェクトを作成しない。
 
-この ADR では文書のみを追加し、空のプロジェクトやパッケージを作成しない。
+### データモデル
+
+- `InputDeviceId` は一つの InputSystem 内で一意な不透明 ID とする。切断後に同じ ID を再利用せず、再接続は新しい ID とする。永続 ID や異なる InputSystem 間の識別子としては使わない。
+- `InputDeviceInfo` は ID、種類、表示名、物理デバイスか論理デバイスかを表す識別粒度を持つ。
+- `InputRecord` はデバイス ID、InputSystem 全体で単調増加する Sequence、取り込み時刻、正規化された入力データを持つ不変値とする。Sequence は 1 から開始し、削除後もリセットしない。
+- 記録時刻は注入された `TimeProvider` の単調時計による取り込み時の経過時間とする。OS の発生時刻とは区別する。同じバッチ内で時刻が等しくても Sequence で順序を決められる。
+- 各デバイスは Sequence 順の保持記録配列と最新状態を持つ。押下状態などは履歴とは別に保持し、履歴削除によって現在押されているキーを解放しない。
+- 接続・切断とフォーカスの変化も記録する。フォーカス変化は登録中の各接続デバイスに展開し、合成解放とともに通常の記録経路へ流す。
 
 ### 公開 API 一覧
 
-以下は `Lumyte.Input` 名前空間に公開する主要 API と契約である。型は設計案であり、この PR では実装しない。
+以下は `Lumyte.Input` 名前空間の主要 API 案である。Vector2 は `System.Numerics.Vector2`、TimeProvider は `System.TimeProvider` を使用する。
 
 | 公開 API | 役割 | 契約・注意事項 |
 | --- | --- | --- |
-| `enum Key` | レイアウトに依存しない物理キー | `Unknown`、`A`〜`Z`、数字、矢印、修飾キー、ファンクションキー等。左右の修飾キーを区別し、OS のキーコードを値として公開しない |
-| `enum MouseButton` | 共通のマウスボタン | `Left`、`Right`、`Middle`、`X1`、`X2` |
-| `abstract record InputEvent` | 正規化されたイベントの基底型 | 共通ライブラリが定義する以下のイベントだけを受け付ける |
-| `sealed record KeyInputEvent(Key Key, bool IsDown, bool IsRepeat) : InputEvent` | キーの押下・解放 | リピートは押下イベントのみ。`Unknown` は状態に反映しない |
-| `sealed record MouseButtonInputEvent(MouseButton Button, bool IsDown) : InputEvent` | マウスボタンの押下・解放 | 下記の状態遷移ルールに従う |
-| `sealed record MouseMoveInputEvent(Vector2 Position) : InputEvent` | 絶対マウス位置 | `Vector2` は `System.Numerics.Vector2`。論理座標を使用する |
-| `sealed record MouseWheelInputEvent(Vector2 Delta) : InputEvent` | ホイール移動 | X は右、Y は上を正とし、一段を 1 に正規化する |
-| `sealed record FocusInputEvent(bool IsFocused) : InputEvent` | 入力対象のフォーカス変更 | 初期フォーカス状態もこのイベントで通知する |
-| `interface IInputSource` | Platform が実装するイベント供給契約 | 対象ごとに独立した受信キューを持つ |
-| `IReadOnlyList<InputEvent> IInputSource.DrainEvents()` | 未処理イベントの取得 | 呼び出し開始時点のイベントを受信順で一度だけ渡す。空なら空リスト。戻り値とイベントは以後変更しない |
-| `sealed class InputSystem` | イベントからフレーム状態を生成 | 一つの Source と組み合わせる。プロセス全体の static 状態を持たない |
-| `InputSystem(IInputSource source)` | 入力対象への接続 | null は `ArgumentNullException`。Source は借用し、所有権を移さない |
-| `InputFrame InputSystem.Current { get; }` | 最新の状態 | 最初の更新前はフォーカスなし、全ボタン解放、位置と移動量はゼロ、イベントは空 |
-| `InputFrame InputSystem.Update()` | イベントの取り込みと次フレームの生成 | `DrainEvents()` を一度呼ぶ。返すオブジェクトは `Current` と同一 |
-| `sealed class InputFrame` | 更新時点の不変スナップショット | 古いフレームを保持しても後の更新によって変更されない。公開コンストラクターを設けない |
-| `bool InputFrame.IsFocused { get; }` | 更新終了時のフォーカス | 更新内の最後のフォーカス変更を反映 |
-| `bool InputFrame.IsDown(Key key)` / `WasPressed(Key key)` / `WasReleased(Key key)` | キー状態と遷移の照会 | `Unknown` はすべて false。未定義の enum 値は `ArgumentOutOfRangeException` |
-| `bool InputFrame.IsDown(MouseButton button)` / `WasPressed(MouseButton button)` / `WasReleased(MouseButton button)` | マウスボタン状態と遷移の照会 | 未定義の enum 値は `ArgumentOutOfRangeException` |
-| `Vector2 InputFrame.MousePosition { get; }` | 最後に取得した位置 | フォーカスを失っても最後の位置を保持 |
-| `Vector2 InputFrame.MouseDelta { get; }` | 今回の更新での移動量 | 絶対位置差の合計。初回位置通知とフォーカス復帰後の初回通知は基準設定だけを行う |
-| `Vector2 InputFrame.WheelDelta { get; }` | 今回の更新でのホイール量 | 正規化済みのイベント値を合計し、次の更新でリセット |
-| `IReadOnlyList<InputEvent> InputFrame.Events { get; }` | 今回適用したイベント列 | 受信順。無効なフォーカス中の入力等を除外し、フォーカス喪失による合成解放を含める。外部から変更できない |
+| `readonly record struct InputDeviceId(ulong Value)` | デバイスの識別 | 0 は無効。Source が割り当て、システム内で再利用しない |
+| `enum InputDeviceKind` / `InputDeviceIdentityKind` | 種類と識別粒度 | 種類は Keyboard / Mouse、粒度は Physical / Logical |
+| `sealed record InputDeviceInfo(InputDeviceId Id, InputDeviceKind Kind, string Name, InputDeviceIdentityKind IdentityKind)` | デバイス情報 | 接続時に登録し、切断後も参照できる |
+| `enum Key` / `enum MouseButton` | 物理キーとボタン | Key は Unknown、文字位置・数字・矢印・左右別修飾キー等。MouseButton は Left / Right / Middle / X1 / X2 |
+| `abstract record InputData` | 共通入力ペイロード | 共通ライブラリが定義する派生型に限定 |
+| `sealed record KeyData(Key Key, bool IsDown, bool IsRepeat) : InputData` | キー入力 | 文字入力ではなく物理キーの押下・解放 |
+| `sealed record MouseButtonData(MouseButton Button, bool IsDown) : InputData` | ボタン入力 | 押下・解放 |
+| `sealed record MouseMoveData(Vector2 Position) : InputData` / `MouseWheelData(Vector2 Delta) : InputData` | マウス入力 | 座標・ホイールは後述の共通単位 |
+| `sealed record DeviceConnectedData(InputDeviceInfo Info) : InputData` / `DeviceDisconnectedData : InputData` | 接続状態 | 最初の入力より先に接続を記録 |
+| `sealed record FocusData(bool IsFocused) : InputData` | 対象のフォーカス | デバイスごとに展開して記録 |
+| `readonly record struct InputRecord(InputDeviceId DeviceId, ulong Sequence, TimeSpan RecordedAt, InputData Data)` | 共通記録 | 配列・通知・ポーリングで同じ内容を提供 |
+| `readonly record struct InputSourceEvent(InputDeviceId DeviceId, InputData Data)` | 取り込み前の入力 | Sequence と時刻は InputSystem が付与 |
+| `IReadOnlyList<InputSourceEvent> IInputSource.DrainEvents()` | Platform のイベント供給 | 開始時点の未処理イベントを受信順に一度だけ返す。更新中に届いた入力は次回へ |
+| `InputSystem(IInputSource source, TimeProvider? timeProvider = null)` | 作成 | Source を借用。時計の既定値は TimeProvider.System。null Source は例外 |
+| `void InputSystem.Update()` | 取り込み・状態更新・通知・自動削除 | 表示フレームへの依存なし。呼び出し順は後述 |
+| `IReadOnlyList<InputDeviceInfo> InputSystem.Devices { get; }` | 登録済みデバイス | 切断済みを含む読み取り専用一覧 |
+| `ReadOnlyMemory<InputRecord> InputSystem.GetRecords(InputDeviceId device)` | 記録配列の直接参照 | 保持記録の読み取り専用スナップショット。Span で列挙でき、必要なら ToArray で所有配列を作れる |
+| `InputDeviceState InputSystem.GetState(InputDeviceId device)` | 現在状態のポーリング | 不変スナップショット。履歴の有無に依存しない |
+| `bool InputDeviceState.IsConnected { get; }` / `IsFocused { get; }` | 接続・フォーカス | 初期状態は解放・非フォーカス |
+| `bool InputDeviceState.IsDown(Key key)` / `IsDown(MouseButton button)` | 押下状態 | 対象デバイス種別に合わない照会は InvalidOperationException |
+| `Vector2 InputDeviceState.MousePosition { get; }` | 最新のマウス位置 | Mouse のみ。移動・ホイールの期間集計は履歴から行う |
+| `InputReadResult InputSystem.ReadRecords(InputDeviceId device, ulong afterSequence)` | 履歴のポーリング | 指定 Sequence より後の保持記録を返す。利用者ごとにカーソルを管理 |
+| `ReadOnlyMemory<InputRecord> InputReadResult.Records { get; }` / `ulong NextSequence { get; }` / `bool HasGap { get; }` | ポーリング結果 | 欠落を通知し、次回カーソルを提示する |
+| `event Action<InputRecord>? InputSystem.Recorded` | 記録の通知 | 新規記録ごとに一度、Sequence 順で同期通知。DeviceId で購読側が選別する |
+| `InputRetentionPolicy InputSystem.GetRetentionPolicy(InputDeviceId device)` / `SetRetentionPolicy(InputDeviceId device, InputRetentionPolicy policy)` | デバイス別の保持設定 | 既定は Manual。変更は次の自動削除または明示削除から適用 |
+| `sealed record InputRetentionPolicy(int? MaxRecords = null, TimeSpan? MaxAge = null)` | 件数・時間の上限 | 両方 null が Manual。上限 0 も許容し、負値は拒否 |
+| `int InputSystem.Prune()` | 設定に従う明示削除 | 全デバイスの保持方針を評価し、削除件数を返す |
+| `int InputSystem.RemoveRecordsThrough(InputDeviceId device, ulong sequence)` | 指定位置までの削除 | Sequence 以下の記録を削除し、削除件数を返す |
+| `int InputSystem.ClearRecords(InputDeviceId device)` | 履歴全削除 | 現在状態・デバイス情報・採番は維持 |
 
-`InputEvent` は外部で派生型を作成できないよう基底コンストラクターのアクセスを制限する。各イベントは不変とする。`IReadOnlyList` は読み取り専用の公開型であり、書き換え可能な内部配列やリストをそのまま渡さない。
+不明な DeviceId は KeyNotFoundException、不正な enum・負の保持設定・現在のシステム Sequence を超えるカーソルや削除境界は ArgumentOutOfRangeException とする。Key.Unknown の押下照会は false とする。公開スナップショットは内部の書き換え可能な配列を露出せず、その後の更新・削除でも内容を変えない。
 
-### キーと座標の正規化
+### 参照・通知・ポーリングの共通契約
 
-物理キーはキーボード上の位置を表す。例えば `Key.A` は US 配列の A の位置であり、利用者の配列で入力される文字を表さない。取得できないキーは `Unknown` として扱い、Platform が独自の整数コードを共通 API に流さない。完全な enum メンバー一覧と各 OS の対応表はバックエンド設計時に確定する。
+1. Source からバッチを取得し、デバイス情報と入力の妥当性を検証する。
+2. イベント順に状態を計算し、デバイス別配列に記録を追加する。フォーカス喪失・切断による合成解放も同じ経路で追加する。
+3. バッチ全体の配列と最新状態を公開する。
+4. 新規記録を Recorded で Sequence 順に通知する。通知中の配列参照は今回のバッチまでを含み、状態照会はバッチ終了時点の状態を返す。
+5. 通知完了後、件数・時間の保持方針を評価して古い履歴を削除する。Manual では削除しない。
 
-マウス位置は入力対象のクライアント領域左上を原点とし、右を X 正、下を Y 正とする。単位は DPI を反映した論理ピクセルとし、Browser は CSS ピクセルを使用する。Platform は物理ピクセルから変換し、入力対象外の座標を強制的に領域内へ丸めない。通常の絶対座標入力を対象とし、ポインターロックや生の相対入力は後続 ADR とする。
+読み取りや通知は記録を消費せず、別の利用者のカーソルや結果を変更しない。通知時点の状態は各記録直後の中間状態ではないため、遷移順を必要とする購読者は通知の Data を使用する。保持期間をゼロにしても新規記録は一度通知するが、Update が戻った後の履歴は空になり得る。
 
-ホイールは各環境の一段分を 1 として変換し、精密スクロールの小数を保持する。Browser の pixel / line / page の差は Platform 側で吸収し、変換基準はバックエンド ADR に明記する。移動・ホイールの非有限値と不正な enum 値は Platform 側で検出し、共通イベントへ変換しない。
+GetRecords は呼び出し時点の配列を読み取り専用メモリとして直接提供する。取得済みのスナップショットは削除後も有効とするため、削除は InputSystem が保持する参照を解放する操作であり、利用者が保持する配列まで強制回収するものではない。
 
-### 更新フローと状態遷移
+ReadRecords はデバイスごとに Sequence > afterSequence の記録を返す。NextSequence は今回の取得時点のシステム全体の最終 Sequence とし、該当記録が空でもその値へ進められる。利用者は返却された NextSequence を次回に渡す。0 はシステム開始からの取得を意味する。
 
-1. Platform がイベントポンプを処理する。Browser では前回までに届いたコールバックを受信キューに蓄積する。
-2. Engine がゲームの更新前に、入力対象ごとに `InputSystem.Update()` を一度だけ呼ぶ。
-3. Input は直前の押下状態を引き継ぎ、Pressed / Released、移動量、ホイール量、イベント列を空にしてイベントを受信順に適用する。
-4. 不変の `InputFrame` を生成し、ゲームと UI が同じフレームを参照する。
+各デバイスは最後に削除した記録の Sequence を保持する。これが afterSequence より大きければ HasGap を true とし、保持期間の超過や明示削除で未読記録を失ったことを通知する。欠落を黙って完全な履歴として返さない。利用者は現在状態へ同期するか、取得不能をエラーとして扱うかを選ぶ。
 
-更新中に届いたイベントは次回に渡す。状態照会でイベントを消費せず、複数の利用者が同じ結果を取得できる。UI による入力消費やゲームへの伝播制御はこの層では行わない。
+押下・解放を前後状態の差だけで判断しない。同じ取得バッチ内の短い押下→解放も二つの記録として残る。WasPressed のようなフレーム限定フラグはこの層の主要契約にせず、利用者がカーソルで選んだ期間の記録から求める。リピートと重複イベントは記録に残すが、重複した押下・解放で状態遷移を再発生させない。
 
-未押下から押下への遷移で `WasPressed`、押下から解放への遷移で `WasReleased` を true にする。リピートと重複した押下・解放は遷移を再発生させない。リピートは `Events` で参照できる。同じ更新内に押下と解放の両方があれば、`WasPressed` と `WasReleased` は両方 true、`IsDown` は最後の状態とする。前後フレームの状態差だけで遷移を判定しない。
+### 保持方針と削除時点
 
-固定時間刻みのゲーム更新を同じ表示フレーム内で複数回行う場合も、Input の取り込みは一度とする。同一スナップショットの Pressed / Released はその間維持されるため、一度だけ実行する操作は Engine またはゲーム側で最初のステップに限定する。物理時間刻みに合わせたイベント分配は後続 ADR で扱う。
+| 方針 | 設定・操作 | 削除時点 |
+| --- | --- | --- |
+| 手動 | MaxRecords / MaxAge ともに null | 自動削除なし。利用者が RemoveRecordsThrough または ClearRecords を呼ぶ |
+| 件数 | MaxRecords を設定 | Update の通知完了後、最新 N 件を残して先頭から削除 |
+| 時間 | MaxAge を設定 | Update の通知完了後、現在の単調時刻との差が上限以上の記録を削除 |
+| 件数＋時間 | 両方設定 | どちらかの制限を超えた古い記録を削除 |
+| 利用者の処理区切り | Prune、RemoveRecordsThrough、ClearRecords | ゲーム更新・固定時間ステップ・保存完了など、利用者が選んだ時点 |
 
-### フォーカスとライフサイクル
+Prune は設定済みの件数・時間制限だけを評価し、Manual の記録を消さない。入力が届かない Update でも時間制限を評価する。Update を呼ばない期間は自動削除も動かないため、必要なら利用者が Prune を呼ぶ。バックグラウンドタイマーは設けない。
 
-- 初期状態はフォーカスなしとする。Source は入力対象の作成時に初期状態を `FocusInputEvent` として先頭に通知する。
-- フォーカス喪失時は押下中のキーとボタンを解放し、`WasReleased` を記録する。`Events` にはフォーカス喪失の直後に合成解放をキー、ボタンそれぞれの enum 値順で追加する。
-- 喪失時はその更新のマウス移動量とホイール量をゼロにし、位置差の基準を無効にする。喪失前の適用済みイベントと Pressed / Released は保持する。
-- フォーカスがない間のキー・ボタン・移動・ホイールは適用せず、`Events` にも含めない。復帰時は OS の現在の押下状態を自動復元せず、新たな非リピート押下を待つ。リピートだけでは解放済みキーを押下状態にしない。
-- Source とウィンドウの所有者は Platform / Engine とし、InputSystem は Source を破棄しない。InputSystem は OS ハンドルやイベント購読を直接持たず、破棄 API を必要としない。
-- 入力対象を閉じる際は、Source がフォーカス喪失を通知し、Engine が最終更新を行ってから Source の購読・リソースを解放する。以後その InputSystem を更新しない。
+初期実装は既定の保持方針を Manual とする。履歴が際限なく増えるため、長時間動作する利用者は明示削除または上限設定を行う。複数の利用者がすべて読み終えてから消す場合は、そのデバイスに対する各カーソルの最小値まで RemoveRecordsThrough を呼ぶ。InputSystem は利用者の処理完了を推測しない。
 
-### スレッドとエラー処理
+削除は現在状態、通知済みかどうか、ID や Sequence に影響しない。切断済みデバイスの記録にも同じ保持方針を適用する。デバイス情報と削除済み位置はシステムの生存期間中維持し、切断後もポーリングと欠落検出を可能にする。
 
-`Update()` と `DrainEvents()` は入力対象のイベント処理スレッドから呼び出し、並行・再入呼び出しを禁止する。別スレッドから届くイベントの受信キューは Source が同期する。ゲームを別スレッドで動かす場合、Engine が更新完了後の不変フレームを同期して引き渡し、別スレッドから `Current` を直接ポーリングしない。
+### 正規化・フォーカス・切断
 
-Source の生成失敗や必要な機能の不足は Platform の初期化エラーとして報告し、黙って空入力へ切り替えない。未対応のキーやボタンは無視できる入力として扱う。フォーカス喪失は正常な状態遷移であり、例外ではない。
+物理キーは US 配列におけるキー位置で表し、文字入力と区別する。OS 独自の整数コードを共通 API に流さない。マウス位置は対象領域左上を原点、右を X 正、下を Y 正とする DPI 調整済みの論理ピクセルとし、Browser では CSS ピクセルを使う。ホイールは右を X 正、上を Y 正、一段を 1 とし、小数を保持する。完全なキー対応と環境別ホイール換算はバックエンド ADR で定める。
 
-`DrainEvents()` の失敗時は `Update()` が例外を呼び出し側へ伝え、`Current` を変更しない。Source は取得を失敗させる場合にイベントを消費しない契約とする。不正なイベントを受け取った場合も共通 Input は `ArgumentException` で拒否し、フレーム状態を部分的に公開しない。この場合の Source は契約違反のため、Engine は再初期化または入力対象の停止を選び、自動で再試行しない。
+Source は接続時に DeviceConnectedData、続けて初期 FocusData を通知してから通常入力を送る。フォーカス喪失または切断時は、そのデバイスで押下中のキー・ボタンを解放する記録を状態変更の直後に enum 値順で合成する。履歴は消さない。
 
-受信キューはイベントを黙って捨てない。容量制限やイベント統合が必要なバックエンドでは、押下・解放・フォーカスの順序と短い押下を保持する方針を後続 ADR に記載する。
+非フォーカス中の通常入力は記録・状態に適用しない。復帰時は新たな非リピート押下を待ち、リピートだけで解放状態を復活させない。マウス位置は最後の値を保持し、復帰後最初の位置を移動量計算の新しい基準とする。履歴から移動量を集計する利用者はフォーカス・接続境界をまたいだ位置差を加算しない。
+
+物理デバイス識別不能な環境では同種入力の混在を論理デバイスの履歴として扱う。独立した複数キーボード等の機能を提供できると偽らず、Platform ごとの識別粒度を明示する。
+
+### スレッド・所有権・エラー
+
+Update、配列取得、状態照会、ポーリング、保持設定、削除は入力対象の処理スレッドから呼ぶ。Update と通知への再入を禁止し、通知中は参照・状態照会・ポーリングのみ許可する。保持設定・削除・再更新は禁止し、InvalidOperationException を返す。購読の追加・解除はその時点以降の通知に反映し、通知中の呼び出し先一覧は固定する。
+
+別スレッドからの入力は Source が受信キューを同期する。別スレッドの利用者には、所有側が取得済みの不変配列・状態を同期して引き渡す。InputSystem 自体は並行アクセスを保証しない。
+
+Source と OS リソースの所有者は Platform / Engine とし、InputSystem は Source を破棄しない。対象を閉じるときは切断通知を取り込んで合成解放まで配信し、Source の購読を解除する。利用者は Recorded の購読を解除し、不要なスナップショットと InputSystem の参照を解放する。
+
+Source は DrainEvents の失敗時にイベントを消費しない。取得例外はそのまま伝え、既存の状態・履歴は変えない。不正な入力バッチは公開前に全体を拒否して ArgumentException を返す。既に Source から取り出した不正バッチは自動再試行せず、所有者がバックエンドを停止・修復する。
+
+購読者の例外は記録成功を巻き戻さない。ほかの購読者と後続記録の通知を継続し、保持方針の評価後に AggregateException として報告する。この場合、記録と通知処理は完了しており、Update の再試行で同じ記録を再配信しない。バックエンドの受信キュー制限による欠落と、利用者設定による履歴削除は区別し、前者を黙って捨てない。
 
 ## 検討した代替案
 
-### OS の状態を毎フレーム直接ポーリングする
+### 毎フレーム履歴を一律に削除する
 
-実装は単純だが、フレーム間の短い押下を失い、Browser のイベント駆動モデルとも揃えにくい。イベントを蓄積し、更新時に状態へ反映する。
+保持メモリは小さくなるが、処理周期が異なる利用者がデータを取得できない。取得周期と保持方針を分離する。
 
-### コールバックだけをゲームへ公開する
+### デバイスを種類ごとに常に統合する
 
-イベント順序を扱いやすい一方、ゲームと UI が個別に状態を管理する必要があり、更新中のコールバックで状態が変化する。不変フレームと適用イベント列の両方を提供する。
+実装は単純だが、識別可能な複数デバイスを選べなくなる。物理識別できる環境では分離し、取得できない場合だけ論理デバイスとして提供する。
 
-### プロセス全体で static な Input を共有する
+### 配列参照・イベント・ポーリングに別の記録を持つ
 
-利用コードは短くなるが、複数ウィンドウ、ヘッドレステスト、ライフサイクルの分離が難しい。入力対象ごとのインスタンスを Engine が管理する。
+方式ごとに順序、寿命、内容がずれる可能性がある。一つのデバイス別記録を共通の基盤にする。
 
-### 共通 Input から各 Platform 実装を直接呼び出す
+### 読み取り時に記録を消費する
 
-Input が OS の選択と初期化を背負い、依存が循環しやすくなる。Platform が共通インターフェースを実装し、Source を注入する。
+単一の利用者には便利だが、ゲームと UI、保存処理などが互いの入力を奪う。非破壊の読み取りと利用者別カーソルを採用する。
 
 ## 結果と影響
 
-- ゲームは環境ごとの入力 API に依存せず、状態と短い押下の両方を扱える。
-- 偽の `IInputSource` を使い、OS やウィンドウなしで状態遷移を検証できる。
-- フォーカス喪失時に押下状態が残り続けることを防げる。
-- イベントと不変フレームの保存にメモリ割り当てが発生する。最初は正確な契約を優先し、性能測定後に内部表現を最適化する。公開済みフレームのバッファを再利用して契約を壊さない。
-- Engine はイベント処理、Input 更新、ゲーム更新の順序と Source の終了処理を保証する必要がある。
-- 初期実装はキーボードと通常のマウス入力に限定され、文字入力やゲームパッドを必要とする機能は後続設計が必要になる。
+- 利用者はデバイス別の配列参照、通知、ポーリングを併用できる。
+- 履歴を消すタイミングと期間を処理周期に合わせて設定できる。
+- 履歴を削除しても最新状態は照会でき、未読履歴の欠落はカーソルで検出できる。
+- Manual の長期利用、切断済みデバイス情報、保持された配列にメモリを使用する。利用者が削除と参照解放を管理する必要がある。
+- 不変配列の公開にはコピー等のコストがある。最初は寿命の明確さを優先し、性能測定後に内部表現を最適化する。
+- 物理デバイスを分離できる範囲は Platform の入力 API に依存する。
 
 ## 検証方針
 
-実装時は偽の Source による単体テストで以下を確認する。本 PR では実装・テストコードを追加しない。
+実装時に偽の Source と TimeProvider を使い、次を検証する。本 PR は文書のみであり、実行テストを追加しない。
 
-- 押下、継続、解放、リピート、重複イベントで状態と遷移が契約どおりになる。
-- 一更新内の押下→解放、解放→押下で両方の遷移が残る。
-- フォーカス喪失で全押下が解放され、非フォーカス中の入力と復帰後のリピートで状態が復活しない。
-- マウス移動量とホイール量の累積・リセット、初回と復帰後の位置基準が正しい。
-- 更新中に届いたイベントが次回に渡され、過去のフレームが変更されない。
-- 複数の入力対象の状態が混ざらない。Source の例外時に `Current` が変わらない。
+- 二つ以上のデバイスの配列・状態が混ざらず、再接続時に ID を再利用しない。
+- 配列、通知、ポーリングの DeviceId・Sequence・時刻・データが一致する。
+- 短い押下、リピート、同一バッチ内の複数遷移が記録に残る。
+- 一利用者の読み取りが別利用者を消費せず、空取得も含めカーソルが正しく進む。
+- Manual、件数、時間、併用、上限 0、入力なしの更新、設定変更、明示削除が契約どおりに動作する。
+- 未読履歴の削除で HasGap が立ち、読了範囲の削除では立たない。
+- 削除で現在状態を変えず、取得済み配列も変えない。
+- フォーカス喪失・切断で合成解放を全方式から参照できる。
+- 通知例外・再入禁止・不正バッチ・Source 例外で記録や通知が重複しない。
 
-各バックエンドでは、物理キー対応、DPI と座標、ホイール正規化、フォーカス喪失、閉じる操作を Windows / Linux / Browser の実環境で確認する。Browser の OS ショートカットや権限制限による取得不能な入力は、バックエンドの制約として記録する。
+実環境では Windows / Linux / Browser のデバイス識別粒度、物理キー、DPI、ホイール、フォーカスと切断を検証する。
 
 ## 別途決定する事項
 
-- Windows / Linux のウィンドウ・入力ライブラリ選定、Browser の DOM 連携と購読解除、Native 境界。
-- キーの完全な enum 定義、物理キー変換表、環境ごとのホイール換算、マウスキャプチャ。
-- 文字入力・IME の編集状態と確定文字列、ゲームパッド、タッチ、ポインターロック。
-- アクションマッピング、リバインド、UI の入力伝播制御、固定時間刻みへのイベント分配。
-- リプレイに必要な時刻・シリアライズと、計測に基づく性能目標・キュー上限。
+- 各 Platform の入力ライブラリ、物理デバイス識別方法、Native 境界、Browser の DOM 連携。
+- キー enum の完全な定義と変換表、ホイール換算、マウスキャプチャ・ポインターロック。
+- 文字入力・IME、ゲームパッド、タッチ、アクションマッピングと UI の入力伝播。
+- OS 発生時刻の取り扱い、永続記録・リプレイ形式、固定時間ステップへのイベント分配。
+- 計測に基づく性能目標、受信キュー上限、長期稼働時の切断済みデバイス情報の回収。
 
 ## 参考資料
 
