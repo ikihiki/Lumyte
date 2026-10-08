@@ -13,4 +13,5 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 
 ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
 で `tests/` 内のソリューションに登録されたテストを実行できます。
-CI でも main への push とすべての PR でテストを実行し、TRX 形式の結果を保存します。
+CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環境検証 → ビルド → テストの順に実行します。
+すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。

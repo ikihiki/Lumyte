@@ -95,7 +95,7 @@ mise run verify
 
 ## GitHub Actions
 
-`.github/workflows/setup-smoke.yml` は push、pull request、手動実行で Ubuntu 24.04 x64、Windows Server 2022 x64、Windows 11 ARM64（`windows-11-arm`）のセットアップから `mise run verify` までを確認する。各環境の結果を個別に表示し、一方の失敗で他方の検証を中止しない。[従来の成功した実行結果](https://github.com/ikihiki/Lumyte/actions/runs/37357250382)では Linux x64 と Windows x64 のセットアップと smoke test が完了した。
+`.github/workflows/composition.yml` は push、pull request、手動実行で Linux x64（`ubuntu-24.04`）、Linux aarch64（`ubuntu-24.04-arm`）、Windows x64（`windows-2022`）、Windows aarch64（`windows-11-arm`）を確認する。各ジョブは mise セットアップ、環境検証（`mise run verify`）、`Lumyte.slnx` の Release ビルド、ソリューションに登録された `tests/` 内のテストの順に実行する。先行ステップが失敗した場合は後続のビルド・テストを実行しない。他の構成の検証は継続する。テスト結果は構成ごとに TRX 形式の artifact として保存する。Linux x64 では追加でサンプル、パッケージ、書式も確認する。
 
 GitHub の Windows runner は管理者権限で動くため、システム依存の導入後に一時的な通常ユーザーで smoke test を実行する。`tools/setup/ci-windows-smoke.ps1` がユーザーの作成、検証プロセスの待機、ユーザーの削除を担当する。このスクリプトは GitHub Actions 専用で、通常の開発環境では管理者権限のないシェルから `mise run verify` を使う。
 
