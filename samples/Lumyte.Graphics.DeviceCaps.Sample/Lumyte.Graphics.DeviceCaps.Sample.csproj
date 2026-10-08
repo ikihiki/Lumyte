@@ -8,6 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
-    <Compile Include="../Graphics.Shared/CapsDisplay.cs" Link="CapsDisplay.cs" />
+    <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
+    <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Core/">

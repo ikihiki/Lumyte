@@ -2,9 +2,13 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Samples;
 
-internal static class CapsDisplay
+/// <summary>Displays device capabilities using only the common graphics API.</summary>
+public static class CapsDisplay
 {
-    internal static string Describe(IGraphicDevice device)
+    /// <summary>Checks the capability snapshot and formats its values.</summary>
+    /// <param name="device">The device to inspect.</param>
+    /// <returns>The formatted capability values.</returns>
+    public static string Describe(IGraphicDevice device)
     {
         DeviceCaps caps = device.Caps;
         if (!ReferenceEquals(caps, device.Caps))

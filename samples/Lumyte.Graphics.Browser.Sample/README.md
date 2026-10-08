@@ -1,6 +1,6 @@
 # Browser DeviceCaps サンプル
 
-.NET WebAssembly から BrowserDevice を生成し、共通 API だけを使う `CapsDisplay` で Caps を表示します。ブラウザーの WebGPU device は表示後に解放します。
+.NET WebAssembly から BrowserDevice を生成し、[共有プロジェクト](../Lumyte.Graphics.Shared/README.md)の `CapsDisplay` で Caps を表示します。ブラウザーの WebGPU device は表示後に解放します。
 
 ## 実行
 
