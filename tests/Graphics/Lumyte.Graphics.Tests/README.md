@@ -10,4 +10,4 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Tests -c 
 
 環境変数を指定しない場合は GPU テストを skip します。有効にした場合、device を生成できないことを成功として扱いません。Browser の実行は [.NET WebAssembly サンプル](../../../samples/Lumyte.Graphics.Browser.Sample/README.md) で確認します。
 
-[Graphics device capabilities CI](../../../.github/workflows/graphics-caps.yml) は、graphics の実装・サンプル・テストと共通ビルド設定が変わった場合に software Vulkan と browser WebGPU の検証を行います。Markdown のみの変更ではこの workflow を起動しません。
+[既存 CI](../../../.github/workflows/composition.yml) の Linux x64 ジョブで、セットアップ済みの lavapipe を使って native device の GPU テストを有効にします。同じジョブで `mise run test-wasm` による browser WebGPU の検証も実行します。
