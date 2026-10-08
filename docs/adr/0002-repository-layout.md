@@ -26,7 +26,6 @@ Lumyte/
 ├── .devcontainer/                  # 共通セットアップを使う開発コンテナ
 ├── docs/
 │   └── adr/
-│       ├── governance/             # リポジトリ全体の運用・構成
 │       ├── input/                  # 入力システム
 │       ├── core/
 │       ├── engine/
@@ -71,7 +70,7 @@ Lumyte/
 
 | ディレクトリ | 役割 |
 | --- | --- |
-| `docs/adr/` | 既存 ADR と、カテゴリ別 ADR ディレクトリの配置先 |
+| `docs/adr/` | リポジトリ全体の運用・構成の ADR。直下でプレフィックスなしの連番を採番する |
 | `docs/adr/<category>/` | カテゴリごとの設計判断、採用理由、影響の記録。カテゴリ内で独立して採番する |
 | `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
 | `src/Core/` | 基本型と基盤機能 |
@@ -90,11 +89,11 @@ Lumyte/
 
 ### ADR のカテゴリ配置
 
-新規 ADR は `docs/adr/<category>/CATEGORY-NNNN-short-description.md` に配置する。採番・命名・変更履歴の詳細は [ADR-0001: ADR の書き方と運用](0001-adr-writing-policy.md) に従う。各カテゴリは `0001` から独立して採番し、別カテゴリの進行中の作業によって番号が衝突しない構成とする。同じカテゴリ内の重複は番号予約で防ぐ。
+リポジトリ全体の運用・構成に関する ADR は `docs/adr/NNNN-short-description.md` に配置し、タイトルは `ADR-NNNN` とする。機能の設計判断は `docs/adr/<category>/CATEGORY-NNNN-short-description.md` に配置する。採番・命名・変更履歴の詳細は [ADR-0001: ADR の書き方と運用](0001-adr-writing-policy.md) に従う。直下と各カテゴリはそれぞれ `0001` から独立して採番し、別カテゴリの進行中の作業によって番号が衝突しない構成とする。同じ採番範囲内の重複は番号予約で防ぐ。
 
 入力システムの ADR は `docs/adr/input/` に配置し、識別子を `INPUT-0001`、`INPUT-0002` のように採番する。ADR の分類は設計判断の責務を表し、入力実装をどの `src/` カテゴリに配置するかは入力システムの設計 ADR で決定する。
 
-既存の `docs/adr/0001-adr-writing-policy.md`、`0002-repository-layout.md`、`0003-development-environment.md` は移動・改番せず、既存リンクを維持する。構成図のカテゴリディレクトリは目標構成であり、最初の ADR が必要になった時点で作成する。
+構成図のカテゴリディレクトリは目標構成であり、最初の ADR が必要になった時点で作成する。
 
 ### Native プロジェクト
 
