@@ -71,12 +71,11 @@ export function unmapBuffer(handle) {
 }
 
 export function copyBufferFrom(handle, source, offset) {
-    new Uint8Array(handle.mapped).set(source.getTypedArray(), offset);
+    source.copyTo(new Uint8Array(handle.mapped, offset, source.byteLength));
 }
 
 export function copyBufferTo(handle, destination, offset) {
-    const target = destination.getTypedArray();
-    target.set(new Uint8Array(handle.mapped, offset, target.byteLength));
+    destination.set(new Uint8Array(handle.mapped, offset, destination.byteLength));
 }
 
 export function destroyBuffer(handle) {
