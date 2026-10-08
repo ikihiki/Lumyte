@@ -1,18 +1,33 @@
 namespace Lumyte.Graphics;
 
-/// <summary>A texture allocation directly owned by its backend implementation.</summary>
+/// <summary>
+/// Owns a texture allocation implemented directly by the backend.
+/// </summary>
 public interface IGraphicsTexture : IDisposable
 {
+    /// <summary>
+    /// Gets the image width in texels.
+    /// </summary>
     uint Width { get; }
-    uint Height { get; }
-    TextureUsage Usage { get; }
-    TextureFormat Format { get; }
-    /// <summary>Creates an owned native view. The texture is held until the view is disposed.</summary>
-    IGraphicsTextureView CreateView();
-}
 
-/// <summary>An owned view retaining its texture; recorded work retains this view.</summary>
-public interface IGraphicsTextureView : IDisposable
-{
-    IGraphicsTexture Texture { get; }
+    /// <summary>
+    /// Gets the image height in texels.
+    /// </summary>
+    uint Height { get; }
+
+    /// <summary>
+    /// Gets the immutable permitted image usages.
+    /// </summary>
+    TextureUsage Usage { get; }
+
+    /// <summary>
+    /// Gets the image storage format.
+    /// </summary>
+    TextureFormat Format { get; }
+
+    /// <summary>
+    /// Creates an owned view covering the single mip and layer and retaining the texture.
+    /// </summary>
+    /// <returns>The owned view, which retains its source texture.</returns>
+    IGraphicsTextureView CreateView();
 }

@@ -5,7 +5,7 @@
 
 ## 背景
 
-[ADR-0004](0004-graphics-library.md) では DeviceDesc、BufferDesc<T> などの名前と役割だけを示していた。利用者が実装を参照せずに生成条件を指定できるよう、フィールド、既定値、単位、検証条件を定める。[ADR-0006](0006-render-encoder.md) の描画パスと pipeline の互換性も同じ定義を使用する。
+[ADR-0004](0004-graphics-library.md) では DeviceDesc、`BufferDesc<T>` などの名前と役割だけを示していた。利用者が実装を参照せずに生成条件を指定できるよう、フィールド、既定値、単位、検証条件を定める。[ADR-0006](0006-render-encoder.md) の描画パスと pipeline の互換性も同じ定義を使用する。
 
 ## 決定
 
@@ -104,7 +104,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 | 型・詳細 | 正本 |
 | --- | --- |
-| BufferDesc<T>、BufferUsage、MemoryPreference、BufferSlice<T>、buffer alignment／typed metadata | [ADR-0009: バッファ](0009-buffer-resource-contract.md) |
+| `BufferDesc<T>`、BufferUsage、MemoryPreference、`BufferSlice<T>`、buffer alignment／typed metadata | [ADR-0009: バッファ](0009-buffer-resource-contract.md) |
 | TextureDesc、TextureViewDesc、TextureCopyDesc、TextureRegion、format／mip／layer／copy pitch | [ADR-0010: テクスチャ・ビュー](0010-texture-resource-contract.md) |
 | SamplerDesc、SamplerInfo、SamplerKind、filter／compare／anisotropy と texture の適合 | [ADR-0011: サンプラー](0011-sampler-resource-contract.md) |
 

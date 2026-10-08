@@ -7,13 +7,13 @@
 
 [ADR-0004](0004-graphics-library.md) の Buffer と GPU データ参照を、生成、部分領域、Upload、コピー、Readback、解放まで実装できる契約にする。GPU アドレスに依存する設計では WebGPU と共通化できず、C# のメモリ配置を直接 GPU データとして扱うと Slang の target layout と食い違う。
 
-本 ADR は BufferDesc<T> の正本でもある。テクスチャへの転送は [ADR-0010](0010-texture-resource-contract.md)、シェーダーの schema と pack は [ADR-0005](0005-shader-compilation-and-data-interop.md) に従う。以下は拡張する共通 API の案であり、現在の UInt32 限定 shader schema と初期 API の仕様は [ADR-0008](0008-wgpu-first-backend.md) に残す。
+本 ADR は `BufferDesc<T>` の正本でもある。テクスチャへの転送は [ADR-0010](0010-texture-resource-contract.md)、シェーダーの schema と pack は [ADR-0005](0005-shader-compilation-and-data-interop.md) に従う。以下は拡張する共通 API の案であり、現在の UInt32 限定 shader schema と初期 API の仕様は [ADR-0008](0008-wgpu-first-backend.md) に残す。
 
 ## 決定
 
 ### 責務と公開型
 
-共通型と staging の CPU コピー・読み出し API は `Lumyte.Graphics`、frame allocator と引数構築は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。IGraphicsBuffer<T> は具象 backend が直接実装する所有 interface、BufferSlice<T> と GpuReference は非所有の immutable value とする。利用者による具象 allocation の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
+共通型と staging の CPU コピー・読み出し API は `Lumyte.Graphics`、frame allocator と引数構築は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。`IGraphicsBuffer<T>` は具象 backend が直接実装する所有 interface、`BufferSlice<T>` と GpuReference は非所有の immutable value とする。利用者による具象 allocation の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -96,13 +96,13 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ### 型、サイズ、instance 数
 
-BufferDesc<T> と IGraphicsBuffer<T> の Count は要素数、SizeInBytes は backend が返す `BufferLayout<T>.GetSizeInBytes(Count)` で算出する。Desc 自体は Device を持たず Count／Usage／Memory の入力だけを保持し、生成前のサイズは `device.GetBufferLayout<T>().GetSizeInBytes(desc.Count)` で問い合わせる。T は数値型、enum、参照フィールドを含まない unmanaged struct を許可する。bool／char／native-sized integer を含む host 表現も CPU storage として扱えるが、Slang の型、stride、alignment と互換とは仮定しない。参照を含む logical shader data は unmanaged 制約の buffer 要素にせず、生成 serializer で IGraphicsBuffer<byte> に pack する。生成 wire struct を T として使う場合も shader schema と反射 layout を検証する。backend は T の ElementSizeInBytes／ElementStrideInBytes、GPU copy の byte alignment と、それを T の要素単位に解決した CopyOffsetAlignmentInElements／CopyCountAlignment を数値で返す。要素数と SizeInBytes はこの解決済み layout から計算する。利用者とコピー記録 API は同じ数値を使い、コピー offset／count の倍数条件と最終 byte 範囲を検証する。
+`BufferDesc<T>` と `IGraphicsBuffer<T>` の Count は要素数、SizeInBytes は backend が返す `BufferLayout<T>.GetSizeInBytes(Count)` で算出する。Desc 自体は Device を持たず Count／Usage／Memory の入力だけを保持し、生成前のサイズは `device.GetBufferLayout<T>().GetSizeInBytes(desc.Count)` で問い合わせる。T は数値型、enum、参照フィールドを含まない unmanaged struct を許可する。bool／char／native-sized integer を含む host 表現も CPU storage として扱えるが、Slang の型、stride、alignment と互換とは仮定しない。参照を含む logical shader data は unmanaged 制約の buffer 要素にせず、生成 serializer で `IGraphicsBuffer<byte>` に pack する。生成 wire struct を T として使う場合も shader schema と反射 layout を検証する。backend は T の ElementSizeInBytes／ElementStrideInBytes、GPU copy の byte alignment と、それを T の要素単位に解決した CopyOffsetAlignmentInElements／CopyCountAlignment を数値で返す。要素数と SizeInBytes はこの解決済み layout から計算する。利用者とコピー記録 API は同じ数値を使い、コピー offset／count の倍数条件と最終 byte 範囲を検証する。
 
-具象 allocation が public interface を直接実装する。一つの typed buffer に facade や要素ごとの object を作らない。BufferSlice<T> は値型なので slice ごとの heap allocation も必須にしない。ただし native binding の内部 object、Desc、CPU 結果領域などまで allocation がゼロになるとは保証しない。大きな buffer の部分利用と pooling は引き続き利用側で選択する。
+具象 allocation が public interface を直接実装する。一つの typed buffer に facade や要素ごとの object を作らない。`BufferSlice<T>` は値型なので slice ごとの heap allocation も必須にしない。ただし native binding の内部 object、Desc、CPU 結果領域などまで allocation がゼロになるとは保証しない。大きな buffer の部分利用と pooling は引き続き利用側で選択する。
 
 ### backend が認識する T ごとの数値
 
-ElementStrideInBytes は GPU buffer の格納表現を認識する backend が決定する。初期 wgpu の raw storage は Unsafe.SizeOf<T>() を stride とし、GPU copy の offset／size alignment はともに 4 bytes。公開する要素単位の制約は `alignment / gcd(alignment, stride)` で求める。stride が 3 bytes の packed struct は 4 要素ごとの offset／count が必要であり、単純な切り上げ除算では求めない。byte 換算も公開 Buffer.Layout と同じ解決済み値を使う。CPU CopyFrom／CopyTo はこの GPU コピー用の倍数条件を要求しない。
+ElementStrideInBytes は GPU buffer の格納表現を認識する backend が決定する。初期 wgpu の raw storage は `Unsafe.SizeOf<T>`() を stride とし、GPU copy の offset／size alignment はともに 4 bytes。公開する要素単位の制約は `alignment / gcd(alignment, stride)` で求める。stride が 3 bytes の packed struct は 4 要素ごとの offset／count が必要であり、単純な切り上げ除算では求めない。byte 換算も公開 Buffer.Layout と同じ解決済み値を使う。CPU CopyFrom／CopyTo はこの GPU コピー用の倍数条件を要求しない。
 
 | 初期 wgpu の T | ElementStrideInBytes | CopyOffsetAlignmentInElements | CopyCountAlignment |
 | --- | ---: | ---: | ---: |
@@ -125,15 +125,15 @@ CPU メモリの map／invalidate／flush／unmap は backend が CPU 可視性�
 
 ### 明示的な Upload とコピー命令
 
-CopyFrom は既存 Upload buffer の CPU メモリへ T の要素をコピーする。CopyTo は Readback から caller の Span<T> に読む。byte storage は index／texture staging や Slang の wire data に使用する。参照を含む生成型の serializer は ADR-0005 の byte storage 向け拡張で pack し、schema／target layout の metadata を付ける。CPU コピーは GPU buffer を更新しない。通常の DeviceLocal／Automatic buffer を destination に渡す要求は拒否し、queue write や staging の追加確保で代行しない。
+CopyFrom は既存 Upload buffer の CPU メモリへ T の要素をコピーする。CopyTo は Readback から caller の `Span<T>` に読む。byte storage は index／texture staging や Slang の wire data に使用する。参照を含む生成型の serializer は ADR-0005 の byte storage 向け拡張で pack し、schema／target layout の metadata を付ける。CPU コピーは GPU buffer を更新しない。通常の DeviceLocal／Automatic buffer を destination に渡す要求は拒否し、queue write や staging の追加確保で代行しない。
 
-利用者が Memory=Upload／Usage=CopySource の staging buffer と CopyDestination を持つ GPU buffer を確保する。CopyFrom で CPU 側のデータを準備し、CommandEncoder.RecordCopyBuffer で staging→GPU の転送命令を記録し、Finish で CommandBuffer に確定して Submit する。Upload だけを暗黙に送信する helper は提供しない。FrameContext の自動 UploadBytes／Upload<T> はこの契約から外す。frame の引数構築と allocator の管理は別の責務として維持する。
+利用者が Memory=Upload／Usage=CopySource の staging buffer と CopyDestination を持つ GPU buffer を確保する。CopyFrom で CPU 側のデータを準備し、CommandEncoder.RecordCopyBuffer で staging→GPU の転送命令を記録し、Finish で CommandBuffer に確定して Submit する。Upload だけを暗黙に送信する helper は提供しない。FrameContext の自動 UploadBytes／`Upload<T>` はこの契約から外す。frame の引数構築と allocator の管理は別の責務として維持する。
 
 CommandEncoder は CommandBuffer の記録 builder、CommandBuffer は Finish で確定した一回限りの送信単位とする。RecordCopyBuffer、RecordCopyBufferToTexture、RecordCopyTextureToBuffer、RecordCopyTexture は命令を記録するだけで CPU memcpy や GPU 実行を行わない。GPU コピーは利用者がその CommandBuffer を Submit した後に実行される。コピー命令の受け渡しに、利用者から見えないコマンドバッファや送信を作らない。
 
 CPU mapping／flush／unmap は backend が CPU 可視性のために実装するが、これを GPU コピー命令と混同しない。mapping に非同期準備が必要な環境の async API は別途具体化し、同期 CopyFrom／CopyTo の実装に GPU 転送を隠して代替しない。typed reference は shader 用途を持つコピー先の登録済み領域に対して作り、CopySource のみの staging 領域を直接 shader 引数にしない。
 
-### BufferDesc<T> と上限
+### `BufferDesc<T>` と上限
 
 全 Desc に `string? Label = null` を持たせる。ラベルは診断専用。値は init-only とする。
 
@@ -224,7 +224,7 @@ GPU の同一 Buffer 内コピーはコマンド契約が扱い、半開区間�
 | Vulkan | buffer／allocation、memory type、非 coherent 範囲の flush／invalidate。アクセス依存はコマンド側。device address は使用する profile が要求する場合だけ内部で採用 |
 | Browser WebGPU | WebGPU buffer／mapAsync と promise 完了。JS／Wasm の入力は所有コピーを作り、ホスト Native に依存しない |
 
-具象 backend は native allocation と Device 所属を自身に保持する。具象 instance は IGraphicsBuffer<T> と IBufferBackendContract を同時に実装し、factory はそのまま返す。共通層に Buffer wrapper は設けない。BufferSlice<T> は同じ instance と要素 offset／count を保持する値型で、byte 範囲への変換も値型とする。コマンド backend は同じ instance と範囲を受け取り、所属と lease を検証する。
+具象 backend は native allocation と Device 所属を自身に保持する。具象 instance は `IGraphicsBuffer<T>` と IBufferBackendContract を同時に実装し、factory はそのまま返す。共通層に Buffer wrapper は設けない。`BufferSlice<T>` は同じ instance と要素 offset／count を保持する値型で、byte 範囲への変換も値型とする。コマンド backend は同じ instance と範囲を受け取り、所属と lease を検証する。
 
 DirectX／Vulkan の C ABI には `uint64` の size／offset／length、`uint32` の usage／memory を渡す。native object の非公開 handle は具象 backend 内だけで管理し、共通 buffer token は設けない。CPU bytes の pointer と length は呼び出し中にコピーし、GPU 完了まで caller の pin を保持しない。完全な ABI 宣言・エラー文字列の所有規約は別途定める。
 
@@ -238,7 +238,7 @@ Encoder と FrameContext は単一スレッド、Device 操作は利用側で直
 
 ### 利用例
 
-以下は提案 API の Upload。RequireSuccess は利用者の Result エラー処理。stagingBytes は pack 後の必要サイズ、gpuBuffer は IGraphicsBuffer<byte> で CopyDestination と必要な shader 用途を持つ。
+以下は提案 API の Upload。RequireSuccess は利用者の Result エラー処理。stagingBytes は pack 後の必要サイズ、gpuBuffer は `IGraphicsBuffer<byte>` で CopyDestination と必要な shader 用途を持つ。
 
 ```csharp
 using var upload = RequireSuccess(device.CreateBuffer(new BufferDesc<byte> {
@@ -256,7 +256,7 @@ var uploaded = RequireSuccess(device.Submit(uploadCommands));
 await uploaded.WaitAsync();
 ```
 
-以下は提案 API。RequireSuccess は利用者側で Result の失敗を処理して成功値を取り出す処理を表す。buffer は IGraphicsBuffer<byte> で CopySource 用途、byteCount はコピーと読み出しの alignment を満たす。producerToCopySource は利用者が前の書き込みからコピーへの依存を構築したものとする。
+以下は提案 API。RequireSuccess は利用者側で Result の失敗を処理して成功値を取り出す処理を表す。buffer は `IGraphicsBuffer<byte>` で CopySource 用途、byteCount はコピーと読み出しの alignment を満たす。producerToCopySource は利用者が前の書き込みからコピーへの依存を構築したものとする。
 
 ```csharp
 // 1. 利用者が staging buffer を確保する。必要なら既存 buffer を再利用できる。
@@ -290,7 +290,7 @@ staging.Slice(0, byteCount).CopyTo(bytes.AsSpan());
 
 ### Readback helper が確保・コピー・送信・待機をまとめて実行する
 
-staging の再利用、コピーと他の work のまとめ方、送信と完了観測の時期を利用側が選べなくなる。各操作を明示し、CPU 書き込みと読み出しを IGraphicsBuffer<T>／BufferSlice<T> の CopyFrom／CopyTo に分ける。
+staging の再利用、コピーと他の work のまとめ方、送信と完了観測の時期を利用側が選べなくなる。各操作を明示し、CPU 書き込みと読み出しを `IGraphicsBuffer<T>`／`BufferSlice<T>` の CopyFrom／CopyTo に分ける。
 
 ### public map／GPU address を基本経路にする
 

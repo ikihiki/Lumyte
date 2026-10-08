@@ -1,48 +1,54 @@
-using System.Runtime.InteropServices;
-
 namespace Lumyte.Graphics;
 
-/// <summary>A typed GPU allocation implemented directly by its backend; owns no wrapper allocation.</summary>
-public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
+/// <summary>
+/// Owns a typed GPU allocation implemented directly by the backend.
+/// </summary>
+/// <typeparam name="T">The unmanaged element type; shader ABI compatibility is validated separately.</typeparam>
+public interface IGraphicsBuffer<T> : IDisposable
+    where T : unmanaged
 {
+    /// <summary>
+    /// Gets the backend-resolved element layout and copy constraints.
+    /// </summary>
     BufferLayout<T> Layout { get; }
+
+    /// <summary>
+    /// Gets the allocation count in elements.
+    /// </summary>
     ulong Count { get; }
+
+    /// <summary>
+    /// Gets the checked allocation size in bytes.
+    /// </summary>
     ulong SizeInBytes { get; }
+
+    /// <summary>
+    /// Gets the immutable permitted buffer usages.
+    /// </summary>
     BufferUsage Usage { get; }
+
+    /// <summary>
+    /// Gets the CPU access preference chosen at allocation.
+    /// </summary>
     MemoryPreference Memory { get; }
-    /// <summary>Creates a non-owning value slice. Offset and count are in elements of T.</summary>
+
+    /// <summary>
+    /// Creates a non-owning, nonempty element range within the allocation.
+    /// </summary>
+    /// <param name="offset">The start offset in elements, or bytes for the backend byte-range contract.</param>
+    /// <param name="count">The number of elements; no implicit padding or rounding is applied.</param>
+    /// <returns>The non-owning element range; the allocation lifetime is unchanged.</returns>
     BufferSlice<T> Slice(ulong offset, ulong count);
-    /// <summary>Copies values into idle Upload memory, without GPU work or submission.</summary>
+
+    /// <summary>
+    /// Copies into idle Upload memory without GPU commands, staging allocation, or submission.
+    /// </summary>
+    /// <param name="source">The elements to copy; their count must not exceed the Upload range.</param>
     void CopyFrom(ReadOnlySpan<T> source);
-    /// <summary>Copies completed Readback memory into caller storage, without GPU completion waits.</summary>
+
+    /// <summary>
+    /// Copies completed, idle Readback memory into caller storage without GPU work or completion waits.
+    /// </summary>
+    /// <param name="destination">The caller storage, which must fit the complete Readback range.</param>
     void CopyTo(Span<T> destination);
 }
-
-/// <summary>A non-owning element range; default is invalid and the owner's lifetime is unchanged.</summary>
-public readonly struct BufferSlice<T> where T : unmanaged
-{
-    public IGraphicsBuffer<T> Buffer { get; }
-    public ulong Offset { get; }
-    public ulong Count { get; }
-    public ulong OffsetInBytes => GetLayout().GetSizeInBytes(Offset);
-    public ulong SizeInBytes => GetLayout().GetSizeInBytes(Count);
-    private BufferLayout<T> GetLayout() => Buffer?.Layout ?? throw new ArgumentException("Invalid buffer slice.");
-    internal BufferRange Range => Buffer is IBufferBackendContract backend
-        ? new(backend, OffsetInBytes, SizeInBytes)
-        : throw new ArgumentException("Invalid buffer slice or unsupported implementation.");
-    internal BufferSlice(IGraphicsBuffer<T> buffer, ulong offset, ulong count)
-        => (Buffer, Offset, Count) = (buffer, offset, count);
-    public void CopyFrom(ReadOnlySpan<T> source)
-    {
-        var range = Range;
-        range.Buffer.CopyFrom(MemoryMarshal.AsBytes(source), range.Offset, range.Length);
-    }
-    public void CopyTo(Span<T> destination)
-    {
-        var range = Range;
-        range.Buffer.CopyTo(MemoryMarshal.AsBytes(destination), range.Offset, range.Length);
-    }
-}
-
-// Byte range shared with command backends, referring directly to the concrete allocation.
-internal readonly record struct BufferRange(IBufferBackendContract Buffer, ulong Offset, ulong Length);

@@ -13,7 +13,7 @@ Texture を単なる画像 handle として扱うと、mip／layer／aspect、fo
 
 ### 利用側の公開 API
 
-Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の BufferSlice<byte>.CopyTo で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
+Core 型は `Lumyte.Graphics`。Readback は利用者が staging buffer へのコピーと送信・完了待機を行い、ADR-0009 の `BufferSlice<byte>.CopyTo` で CPU bytes を読む。IGraphicsTexture と IGraphicsTextureView は所有 interface とし、backend の具象 class が公開 interface を直接実装する。Device／CreateView はその instance を返す。native image／view、所属 Device、属性、世代、lease は具象 class の内部で管理し、共通層に個別の token 登録表を置かない。利用者による具象 class の直接 constructor、native image／view handle の取得、CPU map は提供しない。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -135,7 +135,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ### 明示的なテクスチャ Readback
 
-利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の IGraphicsBuffer<byte> を確保し、CommandEncoder で依存と RecordCopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 BufferSlice<byte>.CopyTo で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
+利用者が TextureCopyDesc の pitch／offset／必要 bytes に適合する Memory=Readback／Usage=CopyDestination の `IGraphicsBuffer<byte>` を確保し、CommandEncoder で依存と RecordCopyTextureToBuffer を記録する。Finish／Submit とその Submission の完了観測も利用者が行い、その後 `BufferSlice<byte>.CopyTo` で staging の格納 bytes を読む。専用の ReadTextureAsync は提供しない。
 
 bytes には指定した BytesPerRow／RowsPerImage の padding が残る。行・layer の抽出、padding 除去、CPU destination の確保と成果物の構築は利用者が行う。sRGB の格納 bytes を線形値に変換せず、深度／stencil のコピー対象制約も変わらない。backend の native footprint 変換は記録したコピー命令の実装であり、別のコピーや送信を CPU CopyFrom／CopyTo が追加する根拠にはしない。CPU コピーと Submission 待機の契約は ADR-0009 に従う。
 

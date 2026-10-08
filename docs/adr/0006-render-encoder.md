@@ -134,7 +134,7 @@ draw の count が 0 の場合は GPU の描画コマンドを省略してよい
 
 通常描画の論理 vertex index は firstVertex を含み、インデックス描画では index 値 + baseVertex とする。論理 instance index は firstInstance を含む。Slang のターゲット間で system-value の意味が異なる部分は、ライブラリの vertex／instance index helper と内部 draw metadata で正規化する。生の system-value を使うコードはこの正規化の保証対象にしない。
 
-index buffer は GPU データ参照とは別のネイティブ index input であり、BufferSlice<T> の要素範囲で指定し、T は Uint16 で ushort、Uint32 で uint を要求する。TriangleStrip／LineStrip は GraphicsPipelineDesc の StripIndexFormat と同じ format が必要で、最大 index 値を restart として扱う。それ以外の topology では strip format を設定しない。
+index buffer は GPU データ参照とは別のネイティブ index input であり、`BufferSlice<T>` の要素範囲で指定し、T は Uint16 で ushort、Uint32 で uint を要求する。TriangleStrip／LineStrip は GraphicsPipelineDesc の StripIndexFormat と同じ format が必要で、最大 index 値を restart として扱う。それ以外の topology では strip format を設定しない。
 
 ### Attachment と同期
 
