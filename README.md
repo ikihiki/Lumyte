@@ -6,4 +6,5 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
+- [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
