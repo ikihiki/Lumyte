@@ -45,11 +45,11 @@ internal static class TwentySquaresScene
             }
 
             IArgumentTable table = Own(device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = SquareCount, SamplerCapacity = 1 }), resources);
-            SamplerDescriptorReference samplerReference = table.WriteSampler(0, sampler);
+            IGpuRef<Sampler> samplerReference = table.WriteSampler(0, sampler);
             var materials = new SquareMaterial[SquareCount];
             for (int square = 0; square < SquareCount; square++)
             {
-                TextureDescriptorReference textureReference = table.WriteTexture((uint)square, views[square]);
+                IGpuRef<IGraphicsTextureView> textureReference = table.WriteTexture((uint)square, views[square]);
                 int column = square % Columns;
                 int row = square / Columns;
                 var rectangle = new Vector4(-1f + (2f * column / Columns), 1f - (2f * (row + 1) / Rows), 2f / Columns, 2f / Rows);
@@ -75,12 +75,13 @@ internal static class TwentySquaresScene
                 device.Submit(commands).Wait();
             }
 
+            IArgumentTable roots = Own(device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 }), resources);
+            IGpuRef<SquareMaterial> materialReference = roots.WriteBuffer(0, materialBuffer.Slice(0, byteCount), layout);
             var arguments = new ShaderArguments[SquareCount];
             for (int square = 0; square < SquareCount; square++)
             {
                 // Root data identifies one element. The backend follows its recorded descriptor dependencies.
-                BufferSlice<byte> element = materialBuffer.Slice((ulong)square * layout.ElementStrideInBytes, layout.ElementStrideInBytes);
-                arguments[square] = Own(pipeline.CreateArguments(device.CreateShaderDataReference<SquareMaterial>(element)), resources);
+                arguments[square] = Own(pipeline.CreateArguments(materialReference.GetElement((ulong)square)), resources);
             }
 
             IGraphicsTexture target = Own(device.CreateTexture(new TextureDesc { Width = Width, Height = Height }), resources);

@@ -14,5 +14,5 @@ public sealed class GraphicsPipeline : GpuResource
     /// <typeparam name="T">The caller-owned logical element type.</typeparam>
     /// <param name="data">One logical element or the shader's candidate array range.</param>
     /// <returns>The owned drawing arguments and their retained automatic bindings.</returns>
-    public ShaderArguments CreateArguments<T>(GpuReference<T> data) => new(Driver, Driver.CreateDrawingArguments(Handle, data.Handle));
+    public ShaderArguments CreateArguments<T>(IGpuRef<T> data) => new(Driver, Driver.CreateDrawingArguments(Handle, data));
 }

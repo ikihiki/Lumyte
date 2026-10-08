@@ -4,16 +4,16 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal sealed unsafe class ShaderArguments : GpuResource
 {
-    private readonly WgpuBuffer _buffer;
+    private readonly DescriptorRegistration _registration;
 
-    internal ShaderArguments(ComputePipeline pipeline, WgpuBuffer buffer, WGPUBindGroupImpl* handle)
+    internal ShaderArguments(ComputePipeline pipeline, DescriptorRegistration registration, WGPUBindGroupImpl* handle)
         : base(pipeline.Owner)
     {
         Pipeline = pipeline;
-        _buffer = buffer;
+        _registration = registration;
         Handle = handle;
         pipeline.Acquire();
-        buffer.Acquire();
+        registration.Acquire();
     }
 
     internal WGPUBindGroupImpl* Handle { get; }
@@ -24,6 +24,6 @@ internal sealed unsafe class ShaderArguments : GpuResource
     {
         WGPU.wgpuBindGroupRelease(Handle);
         Pipeline.ReleaseLease();
-        _buffer.ReleaseLease();
+        _registration.ReleaseLease();
     }
 }

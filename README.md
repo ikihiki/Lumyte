@@ -49,7 +49,6 @@ SlangCompilerPath の既定値は PATH 上の slangc です。[環境のセッ�
 - [009: コマンドバッファ](docs/adr/0009-command-buffer.md)
 - [010: シェーダー](docs/adr/0010-shader-compilation-and-data-interop.md)
 - [011: wgpu](docs/adr/0011-wgpu-first-backend.md)
-- [012: bindless 参照の追跡と有限 binding への変換](docs/adr/0012-bindless-binding-lowering.md)
 
 バッファは `device.CreateBuffer(new BufferDesc<uint> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload })` のように型と要素数で生成します。`SizeInBytes` はバックエンドが解決する `Layout.ElementStrideInBytes` と要素数から自動計算され、`Slice(offset, count)` も要素単位です。数値型や `unmanaged` struct を許可しますが、Slang の ABI 互換性は別途検証します。具象バックエンドが `IGraphicsBuffer<T>` を直接実装し、allocation を所有します。
 
@@ -59,13 +58,13 @@ Texture と TextureView は `IGraphicsTexture`／`IGraphicsTextureView` を使�
 
 GPU material buffer からの texture 選択も実装しています。[MaterialDrawing.cs](samples/Wgpu.Headless/MaterialDrawing.cs) は共通 API で赤／緑の画像と material を明示的に upload し、1 draw 内で pixel ごとに material を読みます。Slang shader は backend の `LumyteBindless` を import して texture を解決します。生成 WGSL と reflection JSON は DLL に埋め込まれます。
 
-Buffer の内容を定義する論理型と Slang の要素型は利用側が所有し、Core に含めません。利用側の `IShaderDataSerializer<T>` と汎用 writer で pack し、型・offset・stride は backend が reflection に従って検証します。サンプルの MaterialData はサンプル内の 32-byte schema で、テストでは別の 48-byte schema も使用します。texture・sampler・buffer は `IArgumentTable` の独立した論理 slot に登録します。Upload の pack、コピー命令、送信、完了確認を利用側が行い、`CreateShaderDataReference<T>` で指定した要素の依存を backend が追跡して binding を自動構築します。shader の容量は texture 8、sampler 4、read-only buffer descriptor 4 で独立し、Argument Table 全体の登録数とは別です。初期 serializer は top-level の float／int／uint と float vectors に対応し、生成 serializer、nested／array schema と完全な glTF PBR は今後の設計です。
+Buffer の内容を定義する論理型と Slang の要素型は利用側が所有し、Core に含めません。利用側の `IShaderDataSerializer<T>` と汎用 writer で pack し、型・offset・stride は backend が reflection に従って検証します。サンプルの MaterialData はサンプル内の 32-byte schema で、テストでは別の 48-byte schema も使用します。texture・sampler・buffer は `IArgumentTable` の独立した論理 slot に登録します。Upload の pack、コピー命令、送信、完了確認を利用側が行い、`IArgumentTable.WriteBuffer` と `IGpuRef<T>.GetElement` で指定した要素の依存を backend が追跡して binding を自動構築します。shader の容量は texture 8、sampler 4、read-only buffer descriptor 4 で独立し、Argument Table 全体の登録数とは別です。初期 serializer は top-level の float／int／uint と float vectors に対応し、生成 serializer、nested／array schema と完全な glTF PBR は今後の設計です。
 
 ## 20 色の四角のシーン
 
 [TwentySquaresScene.cs](samples/Wgpu.Headless/TwentySquaresScene.cs) は、各四角に固有の GPU material と 1×1 texture を割り当て、5 列 × 4 行に敷き詰めます。四角の位置と texture 参照は利用側の [SquareMaterial](samples/Wgpu.Headless/SquareMaterial.cs) に定義し、Slang shader が GPU buffer から読みます。色は texture の texel から取得します。
 
-20 個の texture を一つの論理 Argument Tableに登録し、一つの GPU material 配列へ格納します。各四角の単一要素参照を root data として渡す 20 draw から、backend が必要な texture と共有 sampler の binding を自動構築します。利用側は binding 集合の分割や物理番号の割り当てを行いません。20 枚の texture と 20 material の upload、GPU コピー、送信、完了確認、160×128 target の読み戻しはすべて明示的に行います。
+20 個の texture を一つの論理 Argument Table に登録し、一つの GPU material 配列へ格納します。各四角の単一要素参照を root data として渡す 20 draw から、backend が必要な texture と共有 sampler の binding を自動構築します。利用側は binding 集合の分割や物理番号の割り当てを行いません。20 枚の texture と 20 material の upload、GPU コピー、送信、完了確認、160×128 target の読み戻しはすべて明示的に行います。
 
 サンプルと GPU テストで、四角の境界を含む全 20,480 画素の RGBA を検証し、20 色すべてが存在することを確認します。サンプルは任意の保存先へ GPU 読み戻しの PNG を出力できます。
 

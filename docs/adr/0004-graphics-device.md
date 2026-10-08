@@ -76,10 +76,8 @@ API 差分の比較元は origin/main（Graphics API は未導入）。以下は
 +        // 確保せず T の解決済みレイアウトと要素単位のコピー制約を取得する。
 +        public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +
-+        // GPU データの型付き参照を作る
-+        // 登録済み Slang データスキーマ、デバイス、範囲、用途、要素 stride・アラインメントを検証
-+        // 実アドレスを公開しない
-+        public GpuReference<T> CreateReference<T>(BufferSlice<byte> data) where T : IShaderData;
++        // resource の登録と要素参照は ADR-0008 の IArgumentTable へ集約。
++        public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc);
 +
 +        // テクスチャの生成
 +        // サイズ、形式、用途を検証
@@ -207,7 +205,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 
 ### 所有権、同期、スレッド
 
-Core の `Dispose()` は即時解放を要求する操作とし、利用者は未完了の GPU 使用がないことを保証する。通常の利用では Runtime の遅延解放を使用する。BufferSlice、GpuReference、TextureView の参照先、引数、内部ディスクリプタスロットの再利用にも同じ完了条件を適用する。Device は子リソースと GPU 使用の終了後に解放する。
+Core の `Dispose()` は即時解放を要求する操作とし、利用者は未完了の GPU 使用がないことを保証する。通常の利用では Runtime の遅延解放を使用する。BufferSlice、IGpuRef、TextureView の参照先、引数、内部ディスクリプタスロットの再利用にも同じ完了条件を適用する。Device は子リソースと GPU 使用の終了後に解放する。
 
 記録中・送信済みコマンドが参照する引数やリソースを変更、破棄、再利用してはならない。Upload は利用者が確保した staging への CPU CopyFrom／CopyTo と、明示的な RecordCopyBuffer／CommandBuffer の送信に分ける。書き込み内容の可視化は送信とバックエンドの同期規約で保証し、C# の CPU 書き込みだけで GPU 可視性が成立すると扱わない。
 

@@ -73,7 +73,7 @@ internal sealed class GraphicsPipeline : GpuResource
         return owner.Native.CreatePipelineLayout([group]);
     }
 
-    internal unsafe DrawingArguments CreateArguments(ShaderDataRegion region)
+    internal unsafe DrawingArguments CreateArguments(ShaderDataRegion region, DescriptorRegistration registration)
     {
         lock (Owner.Gate)
         {
@@ -177,7 +177,7 @@ internal sealed class GraphicsPipeline : GpuResource
                     WGPU.wgpuBindGroupLayoutRelease(layout);
                 }
 
-                return new(this, region, dependencies, lookup, handle);
+                return new(this, region, dependencies, lookup, handle, registration);
             }
             catch
             {

@@ -32,15 +32,6 @@ internal interface IGraphicsDriver : IDisposable, ICommandBufferBackendContract
         where T : unmanaged;
 
     /// <summary>
-    /// Creates a non-owning typed data reference after validating device, schema, and range.
-    /// </summary>
-    /// <typeparam name="T">The unmanaged element type; shader ABI compatibility is validated separately.</typeparam>
-    /// <param name="data">The non-owning storage range to reference.</param>
-    /// <returns>The non-owning typed reference to the validated buffer range.</returns>
-    object CreateReference<T>(BufferRange data)
-        where T : unmanaged;
-
-    /// <summary>
     /// Allocates a single-mip, single-layer RGBA8 texture with explicit usage.
     /// </summary>
     /// <param name="desc">The immutable creation or recording settings to validate.</param>
@@ -119,5 +110,5 @@ internal interface IGraphicsDriver : IDisposable, ICommandBufferBackendContract
     /// <param name="handle">The internal backend handle owned by this device.</param>
     /// <param name="data">The non-owning storage range to reference.</param>
     /// <returns>The owned arguments retaining the pipeline and its referenced resources.</returns>
-    object CreateArguments(object handle, GpuReference<uint> data);
+    object CreateArguments(object handle, IGpuRef<uint> data);
 }

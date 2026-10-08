@@ -57,7 +57,7 @@ Windows／Linux のオンライン provider は Native の Slang API を使用�
 
 ### 論理スキーマと不透明な GPU データ参照
 
-利用者の C# API は `GpuReference<T>` を型付きの不透明な値として扱う。コンストラクターと内部表現は非公開で、実アドレス、整数、CPU ポインタ、descriptor index への変換・表示を提供しない。任意の bytes から復元できず、永続保存や異なるデバイス・バックエンド間の受け渡しには使用できない。不透明とは表現のカプセル化を意味し、プロセス内の攻撃者に対する秘匿を保証するものではない。
+利用者の C# API は `IGpuRef<T>` を型付きの不透明な値として扱う。コンストラクターと内部表現は非公開で、実アドレス、整数、CPU ポインタ、descriptor index への変換・表示を提供しない。任意の bytes から復元できず、永続保存や異なるデバイス・バックエンド間の受け渡しには使用できない。不透明とは表現のカプセル化を意味し、プロセス内の攻撃者に対する秘匿を保証するものではない。
 
 `T` は Slang の論理データ型に対応する登録済みの生成型とする。`unmanaged` な任意の C# 型を渡すだけでシェーダー型と互換になるわけではない。参照の生成元は GraphicsDevice が管理する BufferSlice とし、内部でデバイス、元の領域、型 ID、世代、範囲、アクセス用途を保持する。公開 token のサイズと値に意味を持たせない。
 
@@ -73,7 +73,7 @@ WebGPU の共通経路では、参照フィールドの論理パスごとに有�
 
 1. Slang の論理スキーマから C# の引数型とデータ型、スキーマ ID を生成する。共通の利用者 API とターゲットごとの物理レイアウトを分ける。
 2. 対象 profile のライブラリモジュールをリンクし、Slang の反射情報から定数の offset／alignment／stride、resource category、binding space、root の表現を取得する。論理フィールドとの対応を BindingPlan に保存する。
-3. 利用者が生成 C# 引数型へ通常の値と GpuReference を設定する。Runtime が型、範囲、世代、デバイス所属、アクセス用途を検証する。
+3. 利用者が生成 C# 引数型へ通常の値と IGpuRef を設定する。Runtime が型、範囲、世代、デバイス所属、アクセス用途を検証する。
 4. 生成 serializer が値と参照 token を C ABI 用の論理フィールド列へ変換する。DirectX／Vulkan の各 Native 実装が token を解決し、BindingPlan に従って実 GPU アドレス、descriptor、定数 bytes と root を構築する。Slang が生成した対応コードは同じ plan の表現からデータを読む。
 5. WebGPU は同じ論理フィールド列を Browser 実装が pack し、buffer／texture／sampler の bind group と offset を構築する。Browser で Native C++ に処理を委譲することを必須にしない。
 6. root、descriptor、定数、参照先と plan を使用した pipeline は GPU 完了まで保持する。再利用と解放は ADR-0009 の Submission に従う。
@@ -103,7 +103,7 @@ C ABI は opaque handle、固定幅整数、明示レイアウトの POD と fie
 
 ### 公開 API 一覧
 
-以下は C# の主要シグネチャ案であり未実装である。コンパイル関係と成果物の名前空間は `Lumyte.Graphics.Shaders`、GpuReference と生成データの契約の名前空間は `Lumyte.Graphics` とする。`Result<T>` と GraphicsError は ADR-0004 の共通結果契約に従う。成果物・レイアウトの型定義は GPU Core と compiler provider が共有する契約として配置する。
+以下は C# の主要シグネチャ案であり未実装である。コンパイル関係と成果物の名前空間は `Lumyte.Graphics.Shaders`、IGpuRef と生成データの契約の名前空間は `Lumyte.Graphics` とする。`Result<T>` と GraphicsError は ADR-0004 の共通結果契約に従う。成果物・レイアウトの型定義は GPU Core と compiler provider が共有する契約として配置する。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -172,10 +172,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +{
 +    public sealed class GraphicsDevice : IDisposable
 +    {
-+        // データ領域を型付きで参照
-+        // 登録済みの生成型、領域の schema／layout ID、target stride、範囲、デバイスを検証
-+        // 所有権を持たない
-+        public GpuReference<T> CreateReference<T>(BufferSlice<byte> data) where T : IShaderData;
++        // GPU 参照は ADR-0008 の IArgumentTable.WriteBuffer で登録して取得する。
 +
 +        // GPU module の生成
 +        // profile・必須機能・ABI を検証
@@ -204,11 +201,11 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +}
 ```
 
-`IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、serializer 拡張 `CopyFrom<TData>` はフィールドを列挙して値と参照を解決し、利用者が確保した `IGraphicsBuffer<byte>` の Upload CPU memory に pack する。GPU への転送は利用者が RecordCopyBuffer を記録し、CommandBuffer を Submit する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。CPU pack した staging と明示的な転送先の領域には schema／layout ID と解決した参照の依存情報を記録し、CreateReference と引数 pack で照合する。生の `BufferSlice<byte>` にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
+`IShaderData` と `IShaderArgumentsData` は生成 serializer を持つ型の契約である。参照を含む生成型に `unmanaged` を要求せず、serializer 拡張 `CopyFrom<TData>` はフィールドを列挙して値と参照を解決し、利用者が確保した `IGraphicsBuffer<byte>` の Upload CPU memory に pack する。GPU への転送は利用者が RecordCopyBuffer を記録し、CommandBuffer を Submit する。root 引数は `CreateArguments<T>` で構築する。どちらも単なる marker interface の実装だけでは利用できず、型 ID と生成 serializer の登録を必須とする。CPU pack した staging と明示的な転送先の領域には schema／layout ID と解決した参照の依存情報を記録し、IArgumentTable.WriteBuffer と引数 pack で照合する。生の `BufferSlice<byte>` にこれらのメタデータがない場合は型付き参照の生成を拒否する。コンパイル時に確定した参照経路とアクセス用途を BindingPlan に含め、共通経路で表現できない参照グラフを拒否する。
 
 ソース位置、severity、コード、ターゲット、依存 module を ShaderDiagnostic に残す。未対応機能、コンパイラ不在、コード生成失敗、ABI 不一致を区別する。session の並列利用を仮定せず、provider は要求単位の session または直列化を管理する。キャンセル後の結果は公開せず、Native 処理が停止できない場合も終了後に所有リソースを解放する。
 
-GPU data 内の参照は [ADR-0008](0008-resource-bindings.md) の論理 Argument Table と不透明参照を使用する。要素単位の dependency metadata、root 引数からの追跡、WebGPU の有限 binding と安定 wire ID の変換は [ADR-0012](0012-bindless-binding-lowering.md) に従う。生成 serializer は参照 field の schema と metadata を出力し、linked program は同じ lookup ABI を持つ helper を使用する。backend が対応する schema・参照範囲は ADR-0011 に記録する。
+GPU data 内の参照は [ADR-0008](0008-resource-bindings.md) の論理 Argument Table と不透明参照を使用する。要素単位の dependency metadata、root 引数からの追跡、WebGPU の有限 binding と安定 wire ID の変換は [ADR-0008](0008-resource-bindings.md) に従う。生成 serializer は参照 field の schema と metadata を出力し、linked program は同じ lookup ABI を持つ helper を使用する。backend が対応する schema・参照範囲は ADR-0011 に記録する。
 
 ## 検討した代替案
 

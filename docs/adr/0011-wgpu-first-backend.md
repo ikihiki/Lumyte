@@ -6,7 +6,7 @@
 
 ## 背景
 
-最初の Graphics backend は wgpu とし、既存の .NET binding を直接使う。Lumyte の C++ wrapper や .Native プロジェクトは追加しない。[ADR-0004](0004-graphics-device.md) の生成境界、[ADR-0008](0008-resource-bindings.md) の論理 Argument Table と [ADR-0012](0012-bindless-binding-lowering.md) の自動 binding 構築を共通 API のまま実行する。
+最初の Graphics backend は wgpu とし、既存の .NET binding を直接使う。Lumyte の C++ wrapper や .Native プロジェクトは追加しない。[ADR-0004](0004-graphics-device.md) の生成境界、[ADR-0008](0008-resource-bindings.md) の論理 Argument Table・IGpuRef と自動 binding 構築を共通 API のまま実行する。
 
 Graphics API は main に未導入のため、この PR 内の設計・実装を更新する。旧 API の履歴や互換 wrapper を公開契約として残さない。各 ADR の広い設計と、この backend が対応する具体的な範囲を区別する。
 
@@ -43,8 +43,15 @@ API 差分の比較元は origin/main（Graphics API は未導入）。以下は
 +    {
 +        // independent capacities。resource の Upload や送信をしない。
 +        public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc);
++    }
++    public interface IArgumentTable : IDisposable
++    {
 +        // 完了済みの metadata、型、用途と要素境界を検証。待機・送信はしない。
-+        public GpuReference<T> CreateShaderDataReference<T>(BufferSlice<byte> range);
++        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<byte> range, ShaderDataLayout<T> layout);
++        // raw shader buffer の Count／stride は数値型や unmanaged 型から解決する。
++        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range) where T : unmanaged;
++        public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view);
++        public IGpuRef<Sampler> WriteSampler(uint slot, Sampler sampler);
 +    }
 +    public sealed class ShaderModule
 +    {
@@ -65,7 +72,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。以下は
 +    public sealed class GraphicsPipeline
 +    {
 +        // root 範囲の要素依存から物理 binding と変換表を自動構築する。
-+        public ShaderArguments CreateArguments<T>(GpuReference<T> data);
++        public ShaderArguments CreateArguments<T>(IGpuRef<T> data);
 +    }
 +}
 ```
@@ -74,7 +81,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。以下は
 
 Slang library module は固定容量の8 texture、4 sampler、4 read-only buffer descriptor、root data storage buffer一つと内部 lookup uniform buffer一つを宣言する。これらの容量は独立する。compiled layout の全宣言を stage ごとの Device limits と bindings per group に照合する。必要集合が容量を超えた場合は記録前に拒否し、draw を分割したり shader を再コンパイルしたりしない。
 
-root が一要素ならその依存だけ、配列範囲なら全候補を収集する。複数論理 Argument Tableの登録は Device 内の stable identity で区別し、同じ view／sampler／buffer 範囲の alias を同じ内部 ID に集約する。各登録の失効・lease は別々に検証する。GPU wire ID は draw の局所番号と分離し、material buffer を draw ごとに書き換えない。
+root が一要素ならその依存だけ、配列範囲なら全候補を収集する。複数論理 Argument Table の登録は Device 内の stable identity で区別し、同じ view／sampler／buffer 範囲の alias を同じ内部 ID に集約する。各登録の失効・lease は別々に検証する。GPU wire ID は draw の局所番号と分離し、material buffer を draw ごとに書き換えない。
 
 内部 lookup uniform は root の要素 offset／count、texture ID、sampler ID、buffer ID・base offset・length を保持する。小さな有限表を Slang helper が検索し、個別 binding の switch から sampleGrad または UInt32 buffer load を行う。root の単一要素 offset が native storage alignment を満たさなくても、包含 allocation のbindingと内部 offsetで解決する。包含 byte 数は native上限へ検証し、bufferの論理サイズを変更しない。
 
@@ -88,7 +95,7 @@ Slang を基準とし、offline compiler が生成する WGSL と reflection JSO
 
 ### 所有権と検証
 
-Argument Table 登録はview／sampler／bufferをleaseする。serializedmetadataは登録を保持し、buffer内容の失効・解放でleaseを返す。引数はroot buffer・metadata・pipeline・lookupを保持し、記録・GPU使用中にDisposeを拒否する。未送信破棄、部分上書き、失敗した送信とDeviceLostで予定のmetadataを失効させる。古い完了で失効を取り消さない。
+Argument Table 登録はview／sampler／bufferをleaseする。GetElementで派生した参照も親slotと同じ世代に属し、派生要素がmetadataや引数から参照されている間は親slotを更新・解放できない。serializedmetadataは登録を保持し、buffer内容の失効・解放でleaseを返す。引数はroot buffer・metadata・pipeline・lookupを保持し、記録・GPU使用中にDisposeを拒否する。未送信破棄、部分上書き、失敗した送信とDeviceLostで予定のmetadataを失効させる。古い完了で失効を取り消さない。
 
 失効参照、別Device、schema不一致、用途・範囲違反は引数例外、disposed登録はObjectDisposedException、lease中の変更・解放はInvalidOperationException、未対応schema／capacity超過はNotSupportedExceptionを返す。広い共通Result／GraphicsError契約はADR-0004で定め、未対応な範囲を成功扱いにしない。
 
@@ -123,7 +130,7 @@ Linux software Vulkanで実行し、Windows／Browser／実GPUの性能を同じ
 ## 参考資料
 
 - [論理 Argument Table と bindless API](0008-resource-bindings.md)
-- [参照追跡と binding lowering](0012-bindless-binding-lowering.md)
+- [参照追跡と binding lowering](0008-resource-bindings.md)
 - [コマンドバッファ](0009-command-buffer.md)
 - [Slang と shader 成果物](0010-shader-compilation-and-data-interop.md)
 - [Ahjo.Wgpu](https://www.nuget.org/packages/Ahjo.Wgpu/)

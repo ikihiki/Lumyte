@@ -12,6 +12,6 @@ internal sealed class MaterialDataSerializer : IShaderDataSerializer<MaterialDat
         writer.Write("baseColor", value.BaseColor);
         writer.WriteTextureReference("textureReference", value.BaseColorTexture);
         writer.WriteSamplerReference("samplerReference", value.Sampler);
-        writer.Write("hasTexture", value.BaseColorTexture.HasValue ? 1u : 0u);
+        writer.Write("hasTexture", value.BaseColorTexture is not null ? 1u : 0u);
     }
 }

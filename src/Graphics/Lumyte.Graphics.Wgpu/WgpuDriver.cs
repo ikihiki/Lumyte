@@ -116,12 +116,16 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
 
     public object CreateDrawingArguments(object pipeline, object? data)
     {
-        if (data is not ShaderDataRegion region)
+        if (data is not ResourceReference reference || reference.Region is not ShaderDataRegion region)
         {
             throw new ArgumentException("Invalid shader-data root reference.");
         }
 
-        return ((GraphicsPipeline)pipeline).CreateArguments(region);
+        lock (device.Gate)
+        {
+            reference.Check(device);
+            return ((GraphicsPipeline)pipeline).CreateArguments(region, reference.Registration);
+        }
     }
 
     public object CreateShader(Assembly assembly, string resourceName) => device.CreateShader(assembly, resourceName);
@@ -138,23 +142,24 @@ internal sealed class WgpuDriver(WgpuDevice device) : IGraphicsDriver
         return device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = Get<ShaderModule>(desc.Shader), VertexEntry = desc.VertexEntry, FragmentEntry = desc.FragmentEntry });
     }
 
-    public object CreateReference<T>(G.BufferRange data)
-        where T : unmanaged => device.CreateReference<T>(Slice(data));
-
     public object CreateCommandEncoder() => device.CreateCommandEncoder();
 
     public object Submit(G.CommandBuffer commands) => device.Submit(Get<CommandBuffer>(commands));
 
     public void DisposeHandle(object handle) => ((IDisposable)handle).Dispose();
 
-    public object CreateArguments(object handle, G.GpuReference<uint> data)
+    public object CreateArguments(object handle, IGpuRef<uint> data)
     {
-        if (data.Handle is not GpuReference<uint> reference)
+        if (data is not ResourceElementReference<uint> reference || reference.Region is not null || reference.Registration.Resource is not WgpuBuffer)
         {
             throw new ArgumentException("Invalid GPU data reference.", nameof(data));
         }
 
-        return ((ComputePipeline)handle).CreateArguments(reference);
+        lock (device.Gate)
+        {
+            reference.Check(device);
+            return ((ComputePipeline)handle).CreateArguments(reference.Registration);
+        }
     }
 
     public object BeginRenderPass(object handle, G.RenderPassDesc desc)

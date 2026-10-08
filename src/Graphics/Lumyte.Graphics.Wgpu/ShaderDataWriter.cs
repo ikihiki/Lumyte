@@ -68,12 +68,12 @@ internal sealed class ShaderDataWriter : IShaderDataWriter
         }
     }
 
-    public void WriteTextureReference(string fieldName, TextureDescriptorReference? reference) => WriteReference(fieldName, reference?.Handle, typeof(TextureView), reference.HasValue);
+    public void WriteTextureReference(string fieldName, IGpuRef<IGraphicsTextureView>? reference) => WriteReference(fieldName, reference, typeof(TextureView), reference is not null);
 
-    public void WriteSamplerReference(string fieldName, SamplerDescriptorReference? reference) => WriteReference(fieldName, reference?.Handle, typeof(Sampler), reference.HasValue);
+    public void WriteSamplerReference(string fieldName, IGpuRef<Lumyte.Graphics.Sampler>? reference) => WriteReference(fieldName, reference, typeof(Sampler), reference is not null);
 
-    public void WriteBufferReference<T>(string fieldName, BufferDescriptorReference<T> reference)
-        where T : unmanaged => WriteReference(fieldName, reference.Handle, typeof(WgpuBuffer), true);
+    public void WriteBufferReference<T>(string fieldName, IGpuRef<T> reference)
+        where T : unmanaged => WriteReference(fieldName, reference, typeof(WgpuBuffer), true);
 
     internal void BeginRow(int rowOffset)
     {
@@ -95,13 +95,20 @@ internal sealed class ShaderDataWriter : IShaderDataWriter
         uint identity = 0;
         if (required)
         {
-            if (handle is not DescriptorRegistration registration || !resourceType.IsInstanceOfType(registration.Resource))
+            if (handle is not ResourceReference reference || !resourceType.IsInstanceOfType(reference.Registration.Resource))
             {
                 throw new ArgumentException("Invalid logical descriptor reference.");
             }
 
+            reference.Check(_owner);
+            DescriptorRegistration registration = reference.Registration;
             registration.Check(_owner);
             registration.Resource.Check(_owner);
+            if (registration.Resource is WgpuBuffer buffer && (!buffer.Usage.HasFlag(BufferUsage.ShaderRead) || buffer.Usage.HasFlag(BufferUsage.ShaderWrite)))
+            {
+                throw new ArgumentException("Shader data references require read-only storage.");
+            }
+
             identity = registration.Identity;
             _dependencies.Add(registration);
         }

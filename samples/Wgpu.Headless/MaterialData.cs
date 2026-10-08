@@ -9,4 +9,4 @@ namespace Lumyte.Samples;
 /// <param name="BaseColor">The finite base-color coefficient in linear RGBA order.</param>
 /// <param name="BaseColorTexture">The optional logical texture registration; null uses only the coefficient.</param>
 /// <param name="Sampler">The independently registered sampler.</param>
-internal readonly record struct MaterialData(Vector4 BaseColor, TextureDescriptorReference? BaseColorTexture = null, SamplerDescriptorReference? Sampler = null);
+internal readonly record struct MaterialData(Vector4 BaseColor, IGpuRef<IGraphicsTextureView>? BaseColorTexture = null, IGpuRef<Sampler>? Sampler = null);

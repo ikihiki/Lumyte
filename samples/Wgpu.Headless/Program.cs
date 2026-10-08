@@ -9,7 +9,8 @@ using (ComputePipeline pipeline = device.CreateComputePipeline(new ComputePipeli
 {
     using IGraphicsBuffer<uint> upload = device.CreateBuffer(new BufferDesc<uint> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload, });
     upload.CopyFrom(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
-    using ShaderArguments arguments = pipeline.CreateArguments(device.CreateReference<uint>(buffer.Slice(0, 8)));
+    using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+    using ShaderArguments arguments = pipeline.CreateArguments(table.WriteBuffer(0, buffer.Slice(0, 8)));
     using CommandEncoder encoder = device.CreateCommandEncoder();
     encoder.RecordCopyBuffer(upload.Slice(0, 8), buffer.Slice(0, 8));
     encoder.Dispatch(pipeline, arguments, 1);

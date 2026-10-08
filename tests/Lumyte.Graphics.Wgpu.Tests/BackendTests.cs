@@ -52,9 +52,9 @@ public sealed class BackendTests
         using IGraphicsTextureView greenView = green.CreateView();
         using Sampler sampler = device.CreateSampler(new SamplerDesc { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest });
         using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = 2, SamplerCapacity = 1 });
-        TextureDescriptorReference redRef = table.WriteTexture(0, redView);
-        TextureDescriptorReference greenRef = table.WriteTexture(1, greenView);
-        SamplerDescriptorReference samplerRef = table.WriteSampler(0, sampler);
+        IGpuRef<IGraphicsTextureView> redRef = table.WriteTexture(0, redView);
+        IGpuRef<IGraphicsTextureView> greenRef = table.WriteTexture(1, greenView);
+        IGpuRef<Sampler> samplerRef = table.WriteSampler(0, sampler);
         using ShaderModule shader = device.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.customMaterial.wgsl");
         using GraphicsPipeline pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
         ShaderDataLayout<CustomMaterial> layout = shader.GetDataLayout<CustomMaterial>();
@@ -88,7 +88,8 @@ public sealed class BackendTests
             device.Submit(commands).Wait();
         }
 
-        using ShaderArguments arguments = pipeline.CreateArguments(device.CreateShaderDataReference<CustomMaterial>(gpu.Slice(0, layout.GetSizeInBytes(2))));
+        using IArgumentTable roots = device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+        using ShaderArguments arguments = pipeline.CreateArguments(roots.WriteBuffer(0, gpu.Slice(0, layout.GetSizeInBytes(2)), layout));
         using IGraphicsTexture target = device.CreateTexture(new TextureDesc { Width = 8, Height = 4 });
         using IGraphicsTextureView targetView = target.CreateView();
         using IGraphicsBuffer<byte> readback = Readback<byte>(device, 1024);
@@ -205,10 +206,10 @@ public sealed class BackendTests
         using IGraphicsTextureView view = texture.CreateView();
         using Sampler sampler = device.CreateSampler(new SamplerDesc());
         using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = 1, SamplerCapacity = 1 });
-        TextureDescriptorReference previous = table.WriteTexture(0, view);
+        IGpuRef<IGraphicsTextureView> previous = table.WriteTexture(0, view);
         table.ReleaseTexture(0);
-        TextureDescriptorReference reference = table.WriteTexture(0, view);
-        SamplerDescriptorReference samplerReference = table.WriteSampler(0, sampler);
+        IGpuRef<IGraphicsTextureView> reference = table.WriteTexture(0, view);
+        IGpuRef<Sampler> samplerReference = table.WriteSampler(0, sampler);
         Assert.Throws<ArgumentOutOfRangeException>(() => table.WriteTexture(1, view));
         using GraphicsDevice foreign = Graphics.CreateDevice();
         using IArgumentTable foreignTable = foreign.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = 1, SamplerCapacity = 1 });
@@ -256,30 +257,31 @@ public sealed class BackendTests
         using IGraphicsTextureView view = texture.CreateView();
         using Sampler sampler = device.CreateSampler(new SamplerDesc());
         using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = 1, SamplerCapacity = 1 });
-        TextureDescriptorReference textureReference = table.WriteTexture(0, view);
-        SamplerDescriptorReference samplerReference = table.WriteSampler(0, sampler);
+        IGpuRef<IGraphicsTextureView> textureReference = table.WriteTexture(0, view);
+        IGpuRef<Sampler> samplerReference = table.WriteSampler(0, sampler);
         ShaderDataLayout<MaterialData> layout = shader.GetDataLayout<MaterialData>();
         var values = new MaterialData[] { new(System.Numerics.Vector4.One, textureReference, samplerReference) };
         using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = 32, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
+        using IArgumentTable roots = device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
         upload.Slice(0, 32).CopyFrom<MaterialData>(values, layout, MaterialDataSerializer.Instance);
         using (CommandEncoder discarded = device.CreateCommandEncoder())
         {
             discarded.RecordCopyBuffer(upload.Slice(0, 32), gpu.Slice(0, 32));
-            Assert.Throws<ArgumentException>(() => device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, 32)));
+            Assert.Throws<ArgumentException>(() => roots.WriteBuffer(0, gpu.Slice(0, 32), layout));
         }
 
-        Assert.Throws<ArgumentException>(() => device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, 32)));
+        Assert.Throws<ArgumentException>(() => roots.WriteBuffer(0, gpu.Slice(0, 32), layout));
         using (CommandEncoder encoder = device.CreateCommandEncoder())
         {
             encoder.RecordCopyBuffer(upload.Slice(0, 32), gpu.Slice(0, 32));
             using CommandBuffer commands = encoder.Finish();
             Submission submission = device.Submit(commands);
-            Assert.Throws<ArgumentException>(() => device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, 32)));
+            Assert.Throws<ArgumentException>(() => roots.WriteBuffer(0, gpu.Slice(0, 32), layout));
             submission.Wait();
         }
 
-        GpuReference<MaterialData> reference = device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, 32));
+        IGpuRef<MaterialData> reference = roots.WriteBuffer(0, gpu.Slice(0, 32), layout);
         using ShaderArguments arguments = pipeline.CreateArguments(reference);
         using IGraphicsBuffer<byte> raw = device.CreateBuffer(new BufferDesc<byte> { Count = 4, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         raw.CopyFrom(new byte[4]);
@@ -291,7 +293,7 @@ public sealed class BackendTests
             device.Submit(commands).Wait();
         }
 
-        Assert.Throws<ArgumentException>(() => device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, 32)));
+        Assert.Throws<ArgumentException>(() => roots.WriteBuffer(0, gpu.Slice(0, 32), layout));
 
         // A later pending overwrite must prevent an older upload completion restoring its registration.
         using CommandEncoder first = device.CreateCommandEncoder();
@@ -304,7 +306,7 @@ public sealed class BackendTests
         Submission secondSubmission = device.Submit(secondCommands);
         firstSubmission.Wait();
         secondSubmission.Wait();
-        Assert.Throws<ArgumentException>(() => device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, 32)));
+        Assert.Throws<ArgumentException>(() => roots.WriteBuffer(0, gpu.Slice(0, 32), layout));
     }
 
     /// <summary>
@@ -438,7 +440,9 @@ public sealed class BackendTests
         Assert.Throws<OverflowException>(() => device.CreateBuffer(new BufferDesc<double> { Count = ulong.MaxValue, Usage = BufferUsage.CopySource, }));
         Assert.Throws<ArgumentOutOfRangeException>(() => device.CreateBuffer(new BufferDesc<uint> { Count = 0, Usage = BufferUsage.CopySource, }));
         Assert.Throws<ArgumentNullException>(() => device.CreateBuffer<uint>(null!));
-        Assert.Throws<ArgumentException>(() => device.CreateReference(default(BufferSlice<uint>)));
+        using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+        Assert.Throws<ArgumentException>(() => table.WriteBuffer(0, default(BufferSlice<uint>)));
+        table.Dispose();
         device.Dispose();
     }
 
@@ -567,9 +571,11 @@ public sealed class BackendTests
         using ComputePipeline pipeline = device.CreateComputePipeline(new ComputePipelineDesc { Shader = shader });
         using IGraphicsBuffer<uint> upload = device.CreateBuffer(new BufferDesc<uint> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload, });
         upload.CopyFrom(new uint[] { 1, 2, 3, 4, 5, 6, 7, 8 });
-        GpuReference<uint> reference = device.CreateReference<uint>(data.Slice(0, 8));
-        Assert.Equal("GpuReference<UInt32>", reference.ToString());
+        using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+        IGpuRef<uint> reference = table.WriteBuffer(0, data.Slice(0, 8));
+        Assert.Equal(8UL, reference.Count);
         using ShaderArguments arguments = pipeline.CreateArguments(reference);
+        Assert.Throws<InvalidOperationException>(() => table.ReleaseBuffer(0));
         using CommandEncoder encoder = device.CreateCommandEncoder();
         encoder.RecordCopyBuffer(upload.Slice(0, 8), data.Slice(0, 8));
         encoder.Dispatch(pipeline, arguments, 1);
@@ -707,14 +713,16 @@ public sealed class BackendTests
         using IGraphicsBuffer<uint> data = first.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.ShaderWrite });
         Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(ulong.MaxValue, 4));
         Assert.Throws<ArgumentOutOfRangeException>(() => data.Slice(3, 2));
-        Assert.Throws<ArgumentException>(() => second.CreateReference<uint>(data.Slice(0, 4)));
+        using IArgumentTable foreign = second.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+        Assert.Throws<ArgumentException>(() => foreign.WriteBuffer(0, data.Slice(0, 4)));
         using IGraphicsBuffer<float> floatData = first.CreateBuffer(new BufferDesc<float> { Count = 4, Usage = BufferUsage.ShaderWrite });
-        Assert.Throws<NotSupportedException>(() => first.CreateReference<float>(floatData.Slice(0, 4)));
+        using IArgumentTable table = first.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+        Assert.Equal(4UL, table.WriteBuffer(0, floatData.Slice(0, 4)).Count);
         Assert.Throws<ArgumentOutOfRangeException>(() => first.CreateBuffer(new BufferDesc<byte> { Count = 3, Usage = BufferUsage.CopySource }));
         Assert.Throws<ArgumentException>(() => first.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = (BufferUsage)128 }));
         using ShaderModule shader = first.CreateShader(typeof(BackendTests).Assembly, "Lumyte.Shaders.double.wgsl");
         using ComputePipeline pipeline = first.CreateComputePipeline(new ComputePipelineDesc { Shader = shader });
-        Assert.Throws<ArgumentException>(() => pipeline.CreateArguments(default));
+        Assert.Throws<ArgumentException>(() => pipeline.CreateArguments(null!));
     }
 
     private static IGraphicsBuffer<T> Readback<T>(GraphicsDevice device, ulong count)

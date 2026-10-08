@@ -15,9 +15,9 @@ internal static class MaterialDrawing
         using IGraphicsTextureView greenView = green.CreateView();
         using Sampler sampler = device.CreateSampler(new SamplerDesc { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest });
         using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc { TextureCapacity = 2, SamplerCapacity = 1 });
-        TextureDescriptorReference redReference = table.WriteTexture(0, redView);
-        TextureDescriptorReference greenReference = table.WriteTexture(1, greenView);
-        SamplerDescriptorReference samplerReference = table.WriteSampler(0, sampler);
+        IGpuRef<IGraphicsTextureView> redReference = table.WriteTexture(0, redView);
+        IGpuRef<IGraphicsTextureView> greenReference = table.WriteTexture(1, greenView);
+        IGpuRef<Sampler> samplerReference = table.WriteSampler(0, sampler);
         using ShaderModule shader = device.CreateShader(shaders, "Lumyte.Shaders.material.wgsl");
         using GraphicsPipeline pipeline = device.CreateGraphicsPipeline(new GraphicsPipelineDesc { Shader = shader });
         ShaderDataLayout<MaterialData> layout = shader.GetDataLayout<MaterialData>();
@@ -41,7 +41,9 @@ internal static class MaterialDrawing
             device.Submit(commands).Wait();
         }
 
-        using ShaderArguments arguments = pipeline.CreateArguments(device.CreateShaderDataReference<MaterialData>(gpu.Slice(0, byteCount)));
+        using IArgumentTable roots = device.CreateArgumentTable(new ArgumentTableDesc { BufferCapacity = 1 });
+        IGpuRef<MaterialData> root = roots.WriteBuffer(0, gpu.Slice(0, byteCount), layout);
+        using ShaderArguments arguments = pipeline.CreateArguments(root);
         using IGraphicsTexture target = device.CreateTexture(new TextureDesc { Width = 8, Height = 4 });
         using IGraphicsTextureView view = target.CreateView();
         using IGraphicsBuffer<byte> readback = device.CreateBuffer(new BufferDesc<byte> { Count = 4 * 256, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });

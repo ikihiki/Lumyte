@@ -55,12 +55,6 @@ public sealed class GraphicsDevice : IDisposable
     /// <returns>The owned logical argument table.</returns>
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => _driver.CreateArgumentTable(desc);
 
-    /// <summary>References completed, registered shader data elements without submitting or waiting.</summary>
-    /// <typeparam name="T">The caller-owned logical element type.</typeparam>
-    /// <param name="range">One element or a complete element-aligned candidate range.</param>
-    /// <returns>The opaque reference used as drawing root data.</returns>
-    public GpuReference<T> CreateShaderDataReference<T>(BufferSlice<byte> range) => new(_driver.CreateShaderDataReference(range.Range, typeof(T)));
-
     /// <summary>
     /// Loads WGSL and optional Slang reflection from assembly resources; no shader compilation occurs.
     /// </summary>
@@ -82,15 +76,6 @@ public sealed class GraphicsDevice : IDisposable
     /// <param name="desc">The immutable creation or recording settings to validate.</param>
     /// <returns>The owned graphics pipeline.</returns>
     public GraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new(_driver, _driver.CreateGraphicsPipeline(desc));
-
-    /// <summary>
-    /// Creates a non-owning typed data reference after validating device, schema, and range.
-    /// </summary>
-    /// <typeparam name="T">The unmanaged element type; shader ABI compatibility is validated separately.</typeparam>
-    /// <param name="data">The non-owning storage range to reference.</param>
-    /// <returns>The non-owning typed reference to the validated buffer range.</returns>
-    public GpuReference<T> CreateReference<T>(BufferSlice<T> data)
-        where T : unmanaged => new(_driver.CreateReference<T>(data.Range));
 
     /// <summary>
     /// Creates an encoder for explicit copy, compute, and render commands.

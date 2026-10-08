@@ -13,7 +13,7 @@
 
 ### 責務と公開型
 
-共通型と staging の CPU コピー・読み出し API は `Lumyte.Graphics`、frame allocator と引数構築は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。`IGraphicsBuffer<T>` は具象 backend が直接実装する所有 interface、`BufferSlice<T>` と GpuReference は非所有の immutable value とする。利用者による具象 allocation の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
+共通型と staging の CPU コピー・読み出し API は `Lumyte.Graphics`、frame allocator と引数構築は `Lumyte.Graphics.Runtime` に置く。Core は backend や Ahjo に依存しない。利用者は共通 GraphicsDevice で生成し、バックエンドは内部 driver を通して処理する。`IGraphicsBuffer<T>` は具象 backend が直接実装する所有 interface、`BufferSlice<T>` は非所有の immutable value、IGpuRef は非所有の型付き interface とする。利用者による具象 allocation の直接構築、Native handle、GPU アドレス、map pointer の取得は提供しない。
 
 API 差分の比較元は origin/main（Graphics API は未導入）。
 
@@ -29,9 +29,7 @@ API 差分の比較元は origin/main（Graphics API は未導入）。
 +        // 確保せず T の解決済みレイアウトと要素単位のコピー制約を取得する。
 +        public BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +
-+        // 登録済みの schema／target layout を持つ部分領域を参照
-+        // 所属・用途・alignment・stride・要素数を検証
-+        public GpuReference<T> CreateReference<T>(BufferSlice<byte> data) where T : IShaderData;
++        // GPU 参照は ADR-0008 の IArgumentTable.WriteBuffer で登録して取得する。
 +    }
 +
 +    // backend が T の格納 stride と GPU コピー制約を解決した値型。constructor は非公開。
@@ -172,9 +170,9 @@ CreateBuffer の論理 size 自体には copy alignment を要求しない。bac
 
 ### 部分領域、データ型、競合
 
-Slice は allocation を作らず、寿命も延ばさない。Runtime の suballocation は alignment と世代を保持し、再利用後の typed reference を拒否する。GpuReference の整数化、serialization、任意 token の生成は提供しない。
+Slice は allocation を作らず、寿命も延ばさない。Runtime の suballocation は alignment と世代を保持し、再利用後の typed reference を拒否する。IGpuRef の整数化、serialization、任意 token の生成は提供しない。
 
-typed CPU copy の schema／layout ID は物理 buffer 全体ではなく対象領域に記録する。登録のない bytes から CreateReference は作れない。型付きコピーは source の登録済み範囲全体と一致し、destination の alignment・target layout が適合する場合だけメタデータと参照依存を伝播する。部分コピーまたは raw bytes による上書きは重複する登録を失効させる。古い GPU 参照を新しいデータの型として再利用しない。
+typed CPU copy の schema／layout ID は物理 buffer 全体ではなく対象領域に記録する。登録のない bytes から shader data の IGpuRef は作れない。明示的な GPU コピーが登録済みの完全要素に整列し、destination の alignment・target layout が適合する場合だけメタデータと参照依存を伝播する。要素を切る部分コピーまたは raw bytes による上書きは重複する要素の登録を失効させる。古い GPU 参照を新しいデータの型として再利用しない。
 
 GPU の同一 Buffer 内コピーはコマンド契約が扱い、半開区間の重複を記録前に拒否する。IBufferBackendContract の CPU CopyFrom／CopyTo は GPU 命令を検査・記録せず、CPU のコピーは Span.CopyTo の重複領域の規約に従う。shader の範囲外 index は利用者のシェーダー契約であり、backend に全 GPU データの CPU 検査は要求しない。
 
@@ -284,7 +282,7 @@ staging.Slice(0, byteCount).CopyTo(bytes.AsSpan());
 // CPU 読み出しと GPU 使用の完了後に、利用者が staging を解放・再利用する。
 ```
 
-参照を含む利用側の shader data の byte pack と論理 Argument Table参照は [ADR-0008](0008-resource-bindings.md)、要素単位の依存 metadata とコピー先の予定状態・確定・失効は [ADR-0012](0012-bindless-binding-lowering.md) に従う。
+参照を含む利用側の shader data の byte pack と論理 Argument Table 参照は [ADR-0008](0008-resource-bindings.md)、要素単位の依存 metadata とコピー先の予定状態・確定・失効は [ADR-0008](0008-resource-bindings.md) に従う。
 
 ## 検討した代替案
 

@@ -150,32 +150,6 @@ internal sealed unsafe class WgpuDevice : IDisposable
         }
     }
 
-    public GpuReference<T> CreateReference<T>(BufferSlice slice)
-        where T : unmanaged
-    {
-        lock (Gate)
-        {
-            Check();
-            if (typeof(T) != typeof(uint))
-            {
-                throw new NotSupportedException("The initial data schema supports UInt32 only.");
-            }
-
-            if (slice.Buffer is null)
-            {
-                throw new ArgumentException("Invalid buffer slice.");
-            }
-
-            slice.Buffer.Check(this);
-            if (slice.Offset % 4 != 0 || slice.Length % 4 != 0 || (slice.Buffer.Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) == 0)
-            {
-                throw new ArgumentException("Reference must describe aligned shader data.");
-            }
-
-            return new(slice);
-        }
-    }
-
     public Texture CreateTexture(TextureDesc desc)
     {
         lock (Gate)

@@ -13,12 +13,13 @@ internal sealed class ComputePipeline : GpuResource
 
     internal A.ComputePipeline Native { get; }
 
-    public unsafe ShaderArguments CreateArguments(GpuReference<uint> data)
+    public unsafe ShaderArguments CreateArguments(DescriptorRegistration registration)
     {
         lock (Owner.Gate)
         {
             Check(Owner);
-            BufferSlice slice = data.Data;
+            registration.Check(Owner);
+            BufferSlice slice = registration.Range;
             if (slice.Buffer is null)
             {
                 throw new ArgumentException("Reference was not created by a device.");
@@ -78,7 +79,7 @@ internal sealed class ComputePipeline : GpuResource
                     throw new InvalidOperationException("Bind group creation failed.");
                 }
 
-                return new ShaderArguments(this, slice.Buffer, handle);
+                return new ShaderArguments(this, registration, handle);
             }
             finally
             {
