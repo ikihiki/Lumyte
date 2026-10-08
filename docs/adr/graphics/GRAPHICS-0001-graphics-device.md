@@ -44,7 +44,7 @@ NoGraphicsAPI の、低レベル GPU 操作とアロケータ・Upload・遅延�
 
 ### 公開 API 一覧
 
-比較元は origin/main。Graphics API は未導入であり、以下は追加する公開契約の設計宣言。実装済み API ではない。
+比較元は origin/main。Graphics API は未導入であり、以下は追加する公開契約の設計宣言。
 
 ```diff
 +namespace Lumyte.Graphics
