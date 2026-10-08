@@ -5,7 +5,7 @@
 
 ## 背景
 
-設定値と子要素を C# の式でまとめ、`Grid()[Text(with: [Grid.Column(1)])]` と記述したい。旧 Lumyte.Composition の属性と Optional を基礎にするが、通常の静的メソッドは `Grid.Column` の拡張の receiver にできない。また、定義するクラスとファクトリのプロパティは同じ名前にしたい。
+設定値と子要素を C# の式でまとめ、`Grid()[Text(with: [Grid.Column(1)])]` と記述したい。通常の静的メソッドは `Grid.Column` の拡張の receiver にできない。また、定義するクラスとファクトリのプロパティは同じ名前にしたい。
 
 Composable クラス内の属性付き静的メソッドからファクトリへの拡張を生成する。生成されたノードを受け取って操作する共通の仕組みとし、添付値の保存領域は Widget 側が所有する。アニメーションの開始や tailwind 風のスタイル変更も同じ操作の生成で扱う。
 
@@ -342,9 +342,7 @@ with は最後の省略可能な引数とし、`IReadOnlyList<Action<TComponent>
 
 引数順は required を先頭にし、各群では派生型から基底型、型内ではメンバー名の ordinal 順とする。引数名は先頭 underscore を除き先頭文字を小文字化し、C# keyword を escape する。任意の包含階層、アクセス不能な基底メンバー、override/隠蔽、非対応 collection、static/readonly 設定メンバー、複数 content、操作メソッドの不正な型や修飾子、生成名の衝突は LYC001 の error とする。生成メンバーの __Lumyte prefix は予約する。
 
-### 互換性と環境
-
-旧ライブラリの四属性と Optional の名前・適用先・省略の意味を保つ。ComposeAction 属性を追加し、旧 Generator の静的メソッドを専用デリゲートのプロパティへ変更する。定義型の階層とデリゲート型も公開契約になり、シグネチャ変更は拡張と利用側の再コンパイルを必要とする。旧生成物とのバイナリ互換性や全面的なソース互換性は保証せず、移行時は再生成する。
+### 対応環境
 
 managed code と静的な生成コードを使い、実行時の反射・動的コード生成を必須にしない。Windows/Linux/Browser を将来の対象とするが、今回の実行検証は Linux の .NET 10 とする。Browser/AOT/trimming と Windows の動作は未検証である。
 
