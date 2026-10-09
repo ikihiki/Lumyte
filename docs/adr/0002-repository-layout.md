@@ -26,6 +26,7 @@ Lumyte/
 ├── .devcontainer/                  # 共通セットアップを使う開発コンテナ
 ├── docs/
 │   └── adr/
+│       ├── diagnostics/            # 診断基盤
 │       ├── input/                  # 入力システム
 │       ├── core/
 │       ├── engine/
@@ -34,6 +35,13 @@ Lumyte/
 ├── src/
 │   ├── Core/
 │   │   └── Lumyte.Core/
+│   ├── Diagnostics/
+│   │   ├── Lumyte.Diagnostics/
+│   │   ├── Lumyte.Diagnostics.Generators/
+│   │   ├── Lumyte.Diagnostics.Transport/
+│   │   ├── Lumyte.Diagnostics.Transport.Http/
+│   │   ├── Lumyte.Diagnostics.Transport.MagicOnion/
+│   │   └── Lumyte.Diagnostics.Server/
 │   ├── Engine/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
@@ -75,6 +83,7 @@ Lumyte/
 | `docs/adr/<category>/` | カテゴリごとの設計判断、採用理由、影響の記録。カテゴリ内で独立して採番する |
 | `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
 | `src/Core/` | 基本型と基盤機能 |
+| `src/Diagnostics/` | 診断の実行・収集基盤、コード生成、共通通信、DI で選ぶ通信アダプター、診断サーバー |
 | `src/Engine/` | エンジン機能の統合 |
 | `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |
 | `src/Platform/` | ウィンドウ、入力などの共通契約と環境ごとの実装 |
