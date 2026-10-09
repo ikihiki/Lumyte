@@ -13,52 +13,25 @@ Argument Tableのslotは種類別の論理登録位置であり、shaderのbindi
 
 ### Table選択と引数指定を分離する
 
-機能名は「シェーダー引数バインディング」とする。IRenderEncoderとIComputeEncoderにSetArgumentTableとSetShaderArgumentsを追加する。tableは参照の解決元、shader argumentsはそのdraw／dispatchが使うroot引数であり、別々に設定する。
+機能名は「シェーダー引数バインディング」とする。IRenderEncoderとIComputeEncoderにSetArgumentTableと`SetArguments<T>`を追加する。tableは参照の解決元、shader argumentsはそのdraw／dispatchが使うroot引数であり、別々に設定する。
 
 最初の契約では一つのtableを選択する。texture・sampler・bufferの登録領域はそのtable内で独立している。backendが実際に設定するheapやbinding集合の数は共通APIへ露出しない。未使用slotをbindingへ含めず、textureとsamplerのペアを強制しない。
 
-shader argumentsはdeviceから生成されるbackend具象型とし、共通の所有wrapperやbackend contractを設けない。対象programのartifact reflectionからfield path・型・stage・resource用途を検証する。CPU側の設定値を保持し、draw／dispatch時にsnapshotする。設定APIだけでGPUコピーやcommandを発行しない。
+shader argumentsはapplicationが定義するstructとし、encoderへ値として渡す。IShaderArguments、CreateShaderArguments、文字列のfield pathを受けるSetValue／SetBuffer／SetTexture／SetSamplerは設けない。対象programのartifact reflectionと、引数型に対して生成したcodecを照合する。共通の所有wrapperやbackend contractは追加しない。
 
 ### 公開API
 
-比較元はmain。以下は提案するAPI差分で、公開契約はGraphics.Abstractionsに置く。
+比較元はmain。以下は提案するAPI差分で、公開契約はGraphics.Abstractionsに置く。source generatorは別projectに置き、Abstractionsからgeneratorやbackendへ依存しない。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
  {
-     public interface IGraphicDevice
-     {
-+        // programは同じdeviceの生存中の具象型に限る。
-+        // graphicsの全stageを含む引数schemaをartifact reflectionから作る。
-+        IShaderArguments CreateShaderArguments(IGraphicsPipeline program);
-+
-+        // compute entryの引数schemaをartifact reflectionから作る。
-+        IShaderArguments CreateShaderArguments(IGraphicsComputePipeline program);
-     }
-+
-+    // 利用者のmaterialなどbuffer内容を定義する型はapplicationに置く。
-+    // このinterfaceはroot引数の設定を保持し、GPU resource自体は所有しない。
-+    public interface IShaderArguments : IDisposable
++    // applicationの引数structにcodecを生成するcompile-time marker。
++    // rootParameterはSlangの論理root parameter名。物理binding番号ではない。
++    [AttributeUsage(AttributeTargets.Struct)]
++    public sealed class ShaderArgumentsAttribute(string rootParameter = "arguments") : Attribute
 +    {
-+        // parameterPathはartifact reflectionに含まれる論理field path。
-+        // native binding番号やtarget固有のlayoutを指定しない。
-+        // 型・用途・rangeの不一致はArgumentException。
-+        // 独自IGpuRef実装や他deviceの参照もArgumentException。
-+        // 失効済みの登録はInvalidOperationException。
-+        void SetBuffer<T>(string parameterPath, IGpuRef<T> value)
-+            where T : unmanaged;
-+
-+        // texture viewの次元・sample typeをschemaへ照合する。
-+        void SetTexture(string parameterPath, IGpuRef<IGraphicsTextureView> value);
-+
-+        // comparisonとfilteringの要件をschemaへ照合する。
-+        void SetSampler(string parameterPath, IGpuRef<IGraphicsSampler> value);
-+
-+        // resource参照を含まないroot値。型・layoutはreflectionへ照合する。
-+        // sizeof(T)のmemcpyだけでshader layoutが一致したと仮定しない。
-+        // 未対応型・field layoutはNotSupportedException。
-+        void SetValue<T>(string parameterPath, T value)
-+            where T : unmanaged;
++        public string RootParameter { get; } = rootParameter;
 +    }
 +
      public interface IRenderEncoder
@@ -67,9 +40,14 @@ shader argumentsはdeviceから生成されるbackend具象型とし、共通の
 +        // 次のdrawへ使うtableであり、全slotのbinding命令は発行しない。
 +        void SetArgumentTable(IArgumentTable table);
 +
-+        // 現在のprogramに対応するroot引数を選択する。
-+        // 値と登録identityのsnapshotはdraw時に作る。
-+        void SetShaderArguments(IShaderArguments arguments);
++        // 現在のprogramのroot schemaへ引数structを照合してsnapshotする。
++        // unmanaged制約は付けない。IGpuRefを含むstructも受け入れる。
++        // codec未生成・未対応型はNotSupportedException。
++        // schemaの型・用途・field不一致はArgumentException。
++        // 独自IGpuRef実装や他deviceの参照もArgumentException。
++        // 失効済みの登録はInvalidOperationException。
++        void SetArguments<T>(in T arguments)
++            where T : struct;
      }
 +
      public interface IComputeEncoder
@@ -77,18 +55,78 @@ shader argumentsはdeviceから生成されるbackend具象型とし、共通の
 +        // renderと同じ選択・検証・寿命契約。
 +        void SetArgumentTable(IArgumentTable table);
 +
-+        void SetShaderArguments(IShaderArguments arguments);
++        void SetArguments<T>(in T arguments)
++            where T : struct;
      }
  }
 ```
 
-SetPipelineはtable選択や引数を暗黙に書き換えない。programを切り替えた場合、draw／dispatch時に引数schemaとの互換性を検証する。別programの引数は、reflectionの偶然の一致だけで受け入れずArgumentExceptionとする。
+現在のprogramを先にSetPipelineで選択する。SetArgumentsはsetter呼び出し時に値と登録identityのsnapshotを作り、元structやそのローカル変数を後から変更しても設定済み引数へ影響させない。drawごとにmanaged reflectionでstructを探索しない。
 
-bindingのないshaderはtableとargumentsを設定しなくても実行できる。resourceまたはroot値を使うshaderでは必要な設定と全required fieldを要求し、不足をInvalidOperationExceptionとする。新しいpassでは設定状態を初期化し、別passから継承しない。
+SetPipelineはtable選択や引数を暗黙に書き換えない。programを切り替えた場合は、そのprogramに対してSetArgumentsを再度呼ぶ。以前のprogramに対応付けたsnapshotを使うdraw／dispatchはInvalidOperationExceptionとし、reflectionの偶然の一致で受け入れない。
+
+root引数のないshaderはSetArgumentsを必要としない。値だけのstructではArgumentTableの選択を要求しない。IGpuRefを含む場合は、draw／dispatchまでにその参照を登録したtableを選択する。新しいpassでは設定状態を初期化し、別passから継承しない。
+
+### 利用例とshader側の受け取り
+
+引数struct、camera data、material dataはapplicationに定義する。数値型とIGpuRefを同じstructへ入れられる。
+
+```csharp
+[ShaderArguments]
+public readonly record struct DrawArguments(
+    Matrix4x4 ViewProjection,
+    IGpuRef<MaterialData> Material);
+
+encoder.SetPipeline(pipeline);
+encoder.SetArgumentTable(table);
+encoder.SetArguments(new DrawArguments(
+    camera.ViewProjection,
+    materialRef.GetElement(materialIndex)));
+encoder.Draw(vertexCount);
+```
+
+Slangのroot structも同じ論理member名と型で宣言する。数値memberは通常の値、IGpuRef memberはartifactに記録されたtarget別helper ABIを持つ型として受け取る。IGpuRefをC# interfaceのメモリ表現のままGPUへ送らない。
+
+カメラ行列だけを渡す最小例は次の対応となる。この場合はtableを設定しなくてよい。
+
+```csharp
+[ShaderArguments]
+public readonly record struct CameraArguments(Matrix4x4 ViewProjection);
+
+encoder.SetPipeline(pipeline);
+encoder.SetArguments(new CameraArguments(camera.ViewProjection));
+```
+
+```slang
+struct CameraArguments
+{
+    float4x4 ViewProjection;
+};
+ConstantBuffer<CameraArguments> arguments;
+
+// System.Numericsのrow-vector規約に対応する式。
+// positionはapplicationのvertex shaderから与える。
+float4 clipPosition(float3 position)
+{
+    return mul(float4(position, 1), arguments.ViewProjection);
+}
+```
+
+ConstantBuffer宣言はshaderの論理的な受け口を示す。利用者に転送bufferの作成やbinding番号の指定を要求しない。backendがcompiled ABIに対応するroot data storageを用意し、commandに所有期間を関連付ける。一般bufferへのアップロード・copy APIは従来どおり利用者が明示し、この引数設定とは区別する。
+
+### 型対応とcodec生成
+
+source generatorはShaderArguments属性を付けたstructの公開instance fieldと読み出せる自動propertyを検査し、直接アクセスするcodecを生成する。readonly record structのprimary constructor由来のpropertyも対象とする。member名はSlangの論理member名と大文字・小文字を含めて一致させ、宣言順やC#のbyte offsetをshader layoutと仮定しない。rootParameterはattributeのcompile-time情報としてcodecへ保持し、setterへ文字列を渡さない。
+
+対応するroot値はint／uint／float、Vector2／Vector3／Vector4、Matrix4x4、それらとIGpuRefを含む入れ子structとする。IGpuRefの論理型・用途をschemaへ照合する。配列、string、任意class、delegate、boolや未定義の数値変換、循環する型、custom getterは診断して拒否する。buffer要素型Tの有効性はbufferの既存layout契約に従う。
+
+codecは値memberの読み出しとIGpuRefの列挙を行い、backendはprogramに含まれるtarget別reflectionのoffset・stride・alignmentへpackする。型Tとprogram schemaの検証結果は再利用できるが、registrationの有効性は各draw／dispatchでも確認する。source generatorはartifactのlayoutを別のruntime設定で上書きしない。online生成されたartifactにも同じcodecとschema照合を適用する。
+
+Matrix4x4はSlangのfloat4x4へ対応する。System.NumericsのM11〜M44を論理的な行・列として扱い、artifactのrow-major設定に従ってpackする。matrix/vectorの掛ける順序は利用者のshader式で定め、codecが暗黙にtransposeして数学上の意味を変えない。paddingは初期化し、sizeof(T)のmemcpyでshader layoutが一致したと仮定しない。
 
 ### 反射情報とtarget別ABI
 
-parameterPathはtarget固有のbinding番号と分離する。同じlogical pathが複数stageで使われる場合、型と用途の互換性をprogram作成時に検証する。target別layout、binding plan、root値の配置、GPU参照のhelper ABI、schema versionはcompile時に確定してopaque artifact内へ保存する。runtimeで利用者がlayout補助情報を渡す方式にしない。
+rootParameterとstruct memberの論理pathはtarget固有のbinding番号と分離する。同じlogical pathが複数stageで使われる場合、型と用途の互換性をprogram作成時に検証する。target別layout、binding plan、root値の配置、GPU参照のhelper ABI、schema versionはcompile時に確定してopaque artifact内へ保存する。runtimeで利用者がlayout補助情報を渡す方式にしない。
 
 offlineは全targetを含む一つのartifactをDLLへ埋め込み、onlineは指定targetまたは全targetを含む同じformatを生成する。追加ABIに対応しないartifactは明示的にNotSupportedExceptionとする。生成WGSLやreflection JSONをソース管理へ追加しない。
 
@@ -96,10 +134,10 @@ buffer参照は登録rangeと要素位置を保持する。GetElementで得た�
 
 ### Draw／dispatchでの解決
 
-1. program・table・arguments・各IGpuRefのdevice、登録identity、生存、用途、型を確認する。
+1. programと引数snapshotの対応、必要なtable、各IGpuRefのdevice・登録identity・生存・用途・型を確認する。
 2. root引数から参照した登録を収集し、selected table以外の登録を拒否する。
 3. resource種類別に同じ登録と同じrangeを重複排除し、shaderのreflectionと有効なdevice limitsへ照合する。
-4. backendがtarget別ABIへpackし、必要なresourceとroot値をcommandへ設定する。
+4. SetArgumentsで取り出した数値snapshotと参照metadataをtarget別ABIへ変換し、必要なresourceとroot値をcommandへ設定する。
 5. native命令の記録に成功した時点のsnapshotと登録identityをcommandへ関連付ける。
 
 texture・sampler・bufferの上限は種類別に検証する。一回のdraw／dispatchが上限を超えたらNotSupportedExceptionとし、自動的に描画を分割しない。tableのcapacityはこの上限と独立したままにする。
@@ -110,7 +148,7 @@ direct address／native descriptorで解決できるbackendへ有限bindingの�
 
 draw／dispatch後のarguments変更は記録済みcommandを変更しない。tableのslotを後から置換・解放した場合、古いIGpuRefを新しい登録へ読み替えない。submit前に記録済みidentityの有効性を再検証し、失効したcommandのsubmitを拒否する。submit後の登録変更やresource解放に必要なGPU同期は利用者が管理する。
 
-IShaderArgumentsはprogramを保持し、argumentsが生存しているprogramのDisposeを拒否する。引数内のIGpuRefは非所有で、登録を保持する権利を追加しない。argumentsのDisposeはそのCPU設定を解放するが、program・table・登録resourceをDisposeしない。記録済みcommandはarguments objectの生存ではなくsnapshotを使う。
+引数structは非所有のCPU値でDisposeを要求しない。IGpuRefも非所有で、登録を保持する権利を追加しない。encoderはsnapshotの数値と参照metadataを保持し、記録済みcommandはそのdraw／dispatchのsnapshotを保持する。program・table・resourceの寿命は既存のcommand／registration契約に従い、引数struct自体がprogramのDisposeを禁止する所有objectにはならない。
 
 不正なsetterは以前の値を維持する。draw／dispatchの事前検証失敗時はnative draw／dispatchを記録しない。GPU使用中のobjectを自動で待機・変更・破棄しない。CPU／GPU同期は利用者が管理し、内部lock、atomic ownership、InternalsVisibleToを追加しない。
 
@@ -122,6 +160,7 @@ IShaderArgumentsはprogramを保持し、argumentsが生存しているprogram�
 
 ## 検討した代替案
 
+- 文字列のfield pathへ値を逐次設定するIShaderArguments: 引数を一つのapplication structとして渡す方式を選び、型検証とcodec生成の対象を明確にする。
 - tableの論理slotをshader binding番号へ流用する: 種類別slotとtarget別の物理配置を混同するため採用しない。
 - table全体を常にbindingする: 登録容量が物理上限へ制約され、未使用resourceも保持するため採用しない。
 - shader sourceとは別のruntime binding layoutを利用者へ要求する: compile済み情報をartifactへ保持する方針に反するため採用しない。
@@ -133,6 +172,6 @@ IShaderArgumentsはprogramを保持し、argumentsが生存しているprogram�
 
 ## 検証方針
 
-shared projectの検証は共通APIのみを使う。texture・sampler・bufferの実アクセス、buffer単一要素、sampler共有、不要slot、同じ論理slot番号の種類別登録、引数のsnapshot、欠落・型不一致・別device・別table・失効参照を検証する。
+shared projectの検証は共通APIのみを使う。texture・sampler・bufferの実アクセス、buffer単一要素、sampler共有、不要slot、同じ論理slot番号の種類別登録、引数のsnapshot、欠落・型不一致・別device・別table・失効参照を検証する。カメラ行列、入れ子struct、record struct、値だけの引数、setter後の元struct変更、program切替後の再設定を検証する。非対称の行列で既知のvertex座標を変換し、transposeや乗算順の誤りを検出する。generatorの非対応型診断とBrowser/Wasmでのcodec動作も確認する。
 
 computeはstorage buffer更新後に明示的なbarrier、copy、submit、wait、map、CopyToで結果を読む。graphicsは異なるtextureを使ったdrawの全画素を確認する。bindingのないPSOの検証も維持し、wgpu・Vulkan・Browser/Wasmを既存CIで実行する。backend固有の生成・cacheの詳細と測定は各READMEに記録する。
