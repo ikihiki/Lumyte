@@ -10,6 +10,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     private readonly JSObject _handle;
     private int _bufferCount;
     private int _textureCount;
+    private int _samplerCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -93,12 +94,22 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         return texture;
     }
 
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new BrowserSampler(this, desc);
+        _samplerCount++;
+        return sampler;
+    }
+
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
         {
-            throw new InvalidOperationException("Dispose all buffers and textures before disposing their device.");
+            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
         }
 
         if (_disposed)
@@ -110,6 +121,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         _handle.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseSampler() => _samplerCount--;
 
     internal void ReleaseTexture() => _textureCount--;
 

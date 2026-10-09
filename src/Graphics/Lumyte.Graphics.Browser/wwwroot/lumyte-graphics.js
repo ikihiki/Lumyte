@@ -19,6 +19,7 @@ export async function createDevice() {
             maxColorAttachments: limits.maxColorAttachments,
             maxSampledTexturesPerStage: limits.maxSampledTexturesPerShaderStage,
             maxSamplersPerStage: limits.maxSamplersPerShaderStage,
+            maxSamplerAnisotropy: 16,
             maxUniformBuffersPerStage: limits.maxUniformBuffersPerShaderStage,
             maxStorageBuffersPerStage: limits.maxStorageBuffersPerShaderStage,
             maxComputeInvocationsPerWorkgroup: limits.maxComputeInvocationsPerWorkgroup,
@@ -117,4 +118,24 @@ export function createTextureView(texture, dimension, baseMip, mipCount, baseLay
 
 export function destroyTexture(texture) {
     texture.destroy();
+}
+
+export function createSampler(handle, descJson) {
+    const desc = JSON.parse(descJson);
+    const filters = ["nearest", "linear"];
+    const addresses = ["clamp-to-edge", "repeat", "mirror-repeat"];
+    const compares = ["never", "less", "equal", "less-equal", "greater", "not-equal", "greater-equal", "always"];
+    const native = {
+        minFilter: filters[desc.minFilter],
+        magFilter: filters[desc.magFilter],
+        mipmapFilter: filters[desc.mipmapFilter],
+        addressModeU: addresses[desc.addressU],
+        addressModeV: addresses[desc.addressV],
+        addressModeW: addresses[desc.addressW],
+        lodMinClamp: desc.lodMinClamp,
+        lodMaxClamp: desc.lodMaxClamp,
+        maxAnisotropy: desc.maxAnisotropy,
+    };
+    if (desc.compare !== null) native.compare = compares[desc.compare];
+    return handle.device.createSampler(native);
 }

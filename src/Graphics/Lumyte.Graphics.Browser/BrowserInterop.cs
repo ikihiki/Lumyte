@@ -41,4 +41,7 @@ internal static partial class BrowserInterop
 
     [JSImport("destroyTexture", "Lumyte.Graphics.Browser")]
     internal static partial void DestroyTexture(JSObject texture);
+
+    [JSImport("createSampler", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject CreateSampler(JSObject device, string descJson);
 }

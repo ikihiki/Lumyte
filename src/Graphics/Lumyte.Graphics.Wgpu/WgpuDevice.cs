@@ -12,6 +12,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Device _device;
     private int _bufferCount;
     private int _textureCount;
+    private int _samplerCount;
     private bool _disposed;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device)
@@ -28,6 +29,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             MaxColorAttachments = limits.maxColorAttachments,
             MaxSampledTexturesPerStage = limits.maxSampledTexturesPerShaderStage,
             MaxSamplersPerStage = limits.maxSamplersPerShaderStage,
+            MaxSamplerAnisotropy = 16,
             MaxUniformBuffersPerStage = limits.maxUniformBuffersPerShaderStage,
             MaxStorageBuffersPerStage = limits.maxStorageBuffersPerShaderStage,
             MaxComputeInvocationsPerWorkgroup = limits.maxComputeInvocationsPerWorkgroup,
@@ -108,12 +110,22 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         return texture;
     }
 
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new WgpuSampler(this, desc);
+        _samplerCount++;
+        return sampler;
+    }
+
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
         {
-            throw new InvalidOperationException("Dispose all buffers and textures before disposing their device.");
+            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
         }
 
         if (_disposed)
@@ -126,6 +138,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _instance.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseSampler() => _samplerCount--;
 
     internal void ReleaseTexture() => _textureCount--;
 

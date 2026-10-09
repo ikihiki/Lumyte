@@ -26,3 +26,12 @@ dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vul
 ```
 
 shared projectのTextureExerciseが共通APIでallocationとViewの範囲・所有を確認します。画素の転送や描画は実行しません。
+
+## Sampler
+
+```bash
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- wgpu samplers
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan samplers
+```
+
+SamplerExerciseが共通APIでsampling stateの指定値・不正入力・capabilityと寿命を検証します。

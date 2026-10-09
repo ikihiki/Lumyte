@@ -8,7 +8,7 @@ using Lumyte.Graphics.Abstractions;
 static DeviceCaps Inspect(IGraphicDevice device) => device.Caps;
 ```
 
-`IGraphicDevice` は `Caps`、型付き buffer の `CreateBuffer<T>` と `GetBufferLayout<T>`、texture の `CreateTexture` を提供します。デバイス自体を生成する factory、バックエンドの選択、解放、描画・送信の API は持ちません。生成と解放はアプリケーションの起動・終了部分で、選んだバックエンドの具象型を使って行います。
+`IGraphicDevice` は `Caps`、型付き buffer の `CreateBuffer<T>` と `GetBufferLayout<T>`、texture の `CreateTexture`、sampler の `CreateSampler` を提供します。デバイス自体を生成する factory、バックエンドの選択、解放、描画・送信の API は持ちません。生成と解放はアプリケーションの起動・終了部分で、選んだバックエンドの具象型を使って行います。
 
 `DeviceCaps` は生成済みデバイスの利用可能な機能と上限の非所有 snapshot です。同じデバイスは同じ instance を返し、読み取りでは native query、allocation、GPU work を行いません。`with` で作ったコピーは元の snapshot を変更しません。
 
@@ -40,7 +40,7 @@ upload.Unmap();
 
 `BufferLayout<T>` の byte alignment と要素単位の倍数は backend が数値で提供します。要素数や論理 SizeInBytes を丸めず、コピー条件を満たさない場合は利用側の command 記録時に拒否します。
 
-`IGraphicsBuffer<T>` に byte 範囲検証と CPU copy の契約も含め、slice は同じ allocation に処理を委譲します。buffer は device より先に解放します。各 backend の device は所有 buffer または texture が残っている場合に Dispose を拒否します。
+`IGraphicsBuffer<T>` に byte 範囲検証と CPU copy の契約も含め、slice は同じ allocation に処理を委譲します。buffer は device より先に解放します。各 backend の device は所有 buffer・texture・sampler が残っている場合に Dispose を拒否します。
 
 設計判断は [GRAPHICS-0002](../../../docs/adr/graphics/GRAPHICS-0002-typed-buffers.md) を参照してください。
 
@@ -73,3 +73,22 @@ ViewはSampledまたはRenderAttachment用途を必要とします。View、Text
 ## 利用者による同期
 
 resource APIは並列実行の安全性を保証しません。backendが許す並列実行の範囲と、device・buffer・texture・viewの生成・アクセス・mapping・解放に必要な同期は利用者が管理します。live childやmapping状態の検証は必要な同期の代わりにはなりません。GPUアクセスの同期もcommand／submissionの契約に従って利用者が保証します。
+
+## Sampler
+
+```csharp
+using IGraphicsSampler sampler = device.CreateSampler(new SamplerDesc
+{
+    MinFilter = FilterMode.Linear,
+    MagFilter = FilterMode.Linear,
+    MipmapFilter = FilterMode.Linear,
+    AddressU = AddressMode.Repeat,
+    AddressV = AddressMode.ClampToEdge,
+    LodMinClamp = 0,
+    LodMaxClamp = 0,
+});
+```
+
+SamplerはTexture／Viewとは独立した所有resourceで、複数textureで同じinstanceを共有できます。Descは生成時の指定値を保持します。LODは有限・非負かつmin <= maxで、max=0を暗黙に変更しません。MaxAnisotropyはcaps以下で、1より大きい場合はすべてのfilterにLinearが必要です。Compareがnull以外なら比較samplerとして確保します。shader／textureとの互換性はbinding側で検証します。
+
+samplerを先にDisposeし、samplerが残ったdeviceの解放は拒否します。同期は利用者が管理し、内部lock・アトミックカウンター・自動cacheを追加しません。設計は [GRAPHICS-0004](../../../docs/adr/graphics/GRAPHICS-0004-samplers.md) を参照してください。

@@ -15,7 +15,7 @@ internal static partial class Program
     private static async Task Main()
     {
         using BrowserDevice device = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
-        _report = CapsDisplay.Describe(device) + "\n" + await BufferExercise.RunAsync(device) + "\n" + TextureExercise.Run(device);
+        _report = CapsDisplay.Describe(device) + "\n" + await BufferExercise.RunAsync(device) + "\n" + TextureExercise.Run(device) + "\n" + SamplerExercise.Run(device);
         Console.WriteLine(_report);
     }
 }
