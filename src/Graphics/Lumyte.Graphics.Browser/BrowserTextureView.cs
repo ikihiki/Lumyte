@@ -12,6 +12,15 @@ internal sealed class BrowserTextureView(BrowserTexture texture, TextureViewInfo
 
     public TextureViewInfo Info { get; } = info;
 
+    internal JSObject Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return native;
+        }
+    }
+
     internal BrowserDevice Owner => texture.Owner;
 
     public void Dispose()

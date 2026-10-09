@@ -7,6 +7,9 @@ public interface IGraphicDevice
     /// <summary>Gets the immutable device capabilities.</summary>
     public DeviceCaps Caps { get; }
 
+    /// <summary>Gets the device-owned general queue.</summary>
+    IGraphicsQueue Queue { get; }
+
     /// <summary>Gets the raw element layout and GPU copy alignment expressed for T.</summary>
     /// <typeparam name="T">The unmanaged storage element type.</typeparam>
     /// <returns>The backend-resolved layout without implicit padding.</returns>
@@ -39,4 +42,14 @@ public interface IGraphicDevice
     /// <param name="artifact">The code and reflection matching the backend target.</param>
     /// <returns>The concrete backend shader through its common interface.</returns>
     IGraphicsShader CreateShader(ShaderArtifact artifact);
+
+    /// <summary>Creates a one-shot command buffer in Recording state.</summary>
+    /// <param name="desc">The diagnostic description.</param>
+    /// <returns>The owned recording.</returns>
+    IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc);
+
+    /// <summary>Gets exact copy constraints without padding or allocation.</summary>
+    /// <param name="format">The color storage format.</param>
+    /// <returns>The resolved texture copy layout.</returns>
+    TextureCopyLayout GetTextureCopyLayout(TextureFormat format);
 }

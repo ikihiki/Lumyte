@@ -12,6 +12,15 @@ internal sealed unsafe class VulkanTextureView(VulkanTexture texture, TextureVie
 
     public TextureViewInfo Info { get; } = info;
 
+    internal ImageView Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return native;
+        }
+    }
+
     internal VulkanDevice Owner => texture.Owner;
 
     public void Dispose()

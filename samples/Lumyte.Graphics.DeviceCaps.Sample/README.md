@@ -48,3 +48,12 @@ dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vul
 ## シェーダー
 
 `mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu shaders` または `vulkan shaders` で、DLL のオフライン成果物と Slang のオンライン成果物から module を作成します。bootstrap だけが具体的な device／compiler を作り、検証本体は shared の共通 API を使います。オンライン側は PATH の slangc が必要です。GPU の dispatch／描画は行いません。
+
+## GPU command
+
+```sh
+mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu commands
+mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- vulkan commands
+```
+
+共有プロジェクトのCommandExerciseで、buffer・mip／layer textureのGPUコピー、clear／store、passとsubmissionの状態を共通APIのみで検証します。Vulkanはdynamic renderingとsynchronization2を必須としてdevice生成時に有効化します。

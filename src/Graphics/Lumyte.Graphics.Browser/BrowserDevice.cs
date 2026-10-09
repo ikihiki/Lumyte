@@ -13,12 +13,18 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     private int _samplerCount;
     private int _argumentTableCount;
     private int _shaderCount;
+    private int _commandCount;
+    private int _submissionCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
     {
         (_handle, Caps) = (handle, caps);
+        Queue = new BrowserQueue(this);
     }
+
+    /// <inheritdoc />
+    public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
@@ -51,6 +57,28 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
             handle.Dispose();
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var commands = new BrowserCommandBuffer(this);
+        _commandCount++;
+        return commands;
+    }
+
+    /// <inheritdoc />
+    public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
+    {
+        ValidateAlive();
+        if (!Enum.IsDefined(format))
+        {
+            throw new NotSupportedException("Unknown color texture format.");
+        }
+
+        return new() { BytesPerTexel = 4, BufferOffsetAlignmentInBytes = 4, BytesPerRowAlignment = Caps.CopyBytesPerRowAlignment };
     }
 
     /// <inheritdoc />
@@ -134,9 +162,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers and shaders before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, commands and submissions before disposing their device.");
         }
 
         if (_disposed)
@@ -148,6 +176,14 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         _handle.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseCommand() => _commandCount--;
+
+    internal void RetainSubmission() => _submissionCount++;
+
+    internal void ReleaseSubmission() => _submissionCount--;
+
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     internal void ReleaseShader() => _shaderCount--;
 

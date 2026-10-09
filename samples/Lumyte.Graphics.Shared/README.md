@@ -15,3 +15,9 @@ ArgumentTableExercise.Runは共通APIで種類別slot、buffer要素参照、世
 `Shaders/increment.slang` をビルド時に WGSL と SPIR-V へ変換し、反射情報・entry・stage・compiler version・行列layoutと一つのbinaryにpackし、このDLLに埋め込みます。利用側はtargetを選ばず同じbinaryを渡します。生成 code はコミットせず、実行時に外部ファイルを読みません。オンライン検証用の Slang source も DLL に埋め込みます。
 
 `ShaderExercise.Run(IGraphicDevice)` は共通 API だけで成果物をロードし、全targetの収録・コンパイルmetadata・module作成・所有権を確認します。`RunOnlineAsync` は bootstrap から渡された `IShaderCompiler` を使用します。module の作成検証であり、compute dispatch は行いません。このプロジェクトは引き続き Abstractions のみ参照します。
+
+## GPU command検証
+
+`CommandExercise.RunAsync(IGraphicDevice)` は共通APIだけでupload → buffer部分コピー → readback、mip／layerとrow paddingを指定したtexture往復・texture間コピー、render passのclear／storeを検証します。GPU完了後にmapし、コピーした全texelのbytesを照合します。padding部分の内容は検証対象にしません。compute passの開始・終了、pass内操作の拒否、二重submit・mapped bufferの拒否とキャンセル後の再待機も確認します。
+
+NativeのGPUテストとBrowserの既存Wasm検証が同じ処理を呼びます。backend固有deviceの生成はそれぞれのbootstrapで行います。

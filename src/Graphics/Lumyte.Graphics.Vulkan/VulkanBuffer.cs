@@ -85,6 +85,20 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public bool IsMapped => _mapped && !_pending && !_disposed;
 
+    internal VkBuffer Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_mapped || _pending)
+            {
+                throw new InvalidOperationException("GPU commands require an unmapped buffer.");
+            }
+
+            return _native;
+        }
+    }
+
     internal VulkanDevice Owner => _owner;
 
     public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);

@@ -105,6 +105,15 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public TextureUsage Usage { get; }
 
+    internal Image Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _native;
+        }
+    }
+
     internal VulkanDevice Owner => _owner;
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)

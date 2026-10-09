@@ -44,7 +44,7 @@ GPU buffer copy の offset と length は WebGPU の規定によりそれぞれ 
 
 生成済みの `IGraphicDevice` から `CreateBuffer<T>(BufferDesc<T>)` と `GetBufferLayout<T>()` を使用します。Count と SizeInBytes は指定した raw storage のサイズを保ち、alignment のために補正しません。数値型・enum・unmanaged struct は sizeof(T) の stride で格納します。shader target の layout 互換性は別途検証が必要です。
 
-CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copy と同期の command API は別の設計で追加します。
+CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copyと同期はcommand bufferへ明示的に記録します。
 
 CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。必要な同期は利用者が管理し、bufferが残ったdeviceのDisposeはInvalidOperationExceptionで拒否します。解放済み allocation への access は ObjectDisposedException です。
 
@@ -86,4 +86,12 @@ CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler
 
 共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `Wgsl`。Ahjo.Wgpu の `Device.CreateShaderModule` と `ShaderSource.FromWgsl` を直接使用します。WGSL の検証や非同期 device error の扱いは wgpu に従います。shader の `Dispose()` は native module を release します。
 
-artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。実行する pipeline や command はこの PR の範囲に含めません。
+artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。pipelineとshader実行命令は別のAPIで扱います。
+
+## CommandBuffer
+
+Ahjo.Wgpuのnative bindingを直接使用してWGPUCommandEncoder／WGPUCommandBufferを保持します。buffer／textureコピーとcolor render・compute passを記録し、Finishでnative recordingを確定します。独自のNativeプロジェクトは追加しません。barrierのstage・access・usageとtextureの論理stateは検証し、物理的なvisibilityとtexture transitionはWebGPUの順序保証で実現します。
+
+GetTextureCopyLayoutはcolor texel size 4、buffer offset alignment 4、row alignment 256を返します。padding・行の詰め替え・staging確保は行いません。SubmitはQueueSubmitし、BeginOnSubmittedWorkDoneのrequestを保持します。Status／WaitAsyncでProcessEventsを進め、そのrequestの完了を確認します。command bufferと完了requestは別にDisposeし、pending中の解放を拒否します。
+
+共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。commandとsubmissionもdeviceの子として数えます。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
