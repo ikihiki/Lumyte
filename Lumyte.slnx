@@ -21,6 +21,7 @@
     <Project Path="src/Core/Lumyte.Composition/Lumyte.Composition.csproj" />
   </Folder>
   <Folder Name="/src/Diagnostics/">
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Settings/Lumyte.Diagnostics.Settings.csproj" />
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Transport/Lumyte.Diagnostics.Transport.csproj" />
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Transport.Http/Lumyte.Diagnostics.Transport.Http.csproj" />
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Transport.MagicOnion/Lumyte.Diagnostics.Transport.MagicOnion.csproj" />

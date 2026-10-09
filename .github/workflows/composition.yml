@@ -162,6 +162,7 @@ jobs:
           dotnet pack src/Animation/Lumyte.Animation -c Release --no-build -o artifacts/nuget
           dotnet pack src/Platform/Lumyte.Input -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Diagnostics/Lumyte.Diagnostics.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics.Generators -c Release --no-build -o artifacts/nuget
           dotnet build Lumyte.slnx --no-restore
           dotnet format Lumyte.slnx --no-restore --verify-no-changes

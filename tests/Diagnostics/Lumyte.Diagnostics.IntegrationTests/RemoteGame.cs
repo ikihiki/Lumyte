@@ -18,7 +18,7 @@ internal sealed class RemoteGame : IAsyncDisposable
     private bool _pressed;
     private int _disposed;
 
-    public RemoteGame(Uri address, string gameToken, bool magicOnion)
+    public RemoteGame(Uri address, string gameToken, bool magicOnion, Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLumyteDiagnostics(options =>
@@ -50,6 +50,7 @@ internal sealed class RemoteGame : IAsyncDisposable
             });
         }
 
+        configure?.Invoke(services);
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         new Thread(Run) { IsBackground = true, Name = "diagnostic-test-game" }.Start();
     }

@@ -137,3 +137,12 @@ RequiredSubsystem は公開カタログの ID と完全一致で判定し、未�
 直接 URL を開いた場合には未対応状態を表示します。
 Objects、UI、Animation、Rendering は現在カタログと操作を表示する拡張枠です。
 詳細グラフや画像の公開プロトコルは今後追加します。
+
+### 設定の診断
+
+ゲームが`AddSettingsDiagnostics<T, TPoint>`で登録した`settings.{moduleId}`のカタログを、
+EngineカテゴリのSettingsページに表示します。設定が未公開のゲームにはナビゲーションを表示しません。
+公開操作を検索し、readで公開値・LoadStatus・Revisionを確認できます。
+saveは保存開始であり、戻されたjob-idをsave-resultへ渡してSavedを確認します。
+個々の設定値や保存完了をサーバー側で推測せず、ゲーム側の検証と競合制御を使用します。
+登録方法は[設定診断API](../Lumyte.Diagnostics.Settings/README.md)を参照してください。

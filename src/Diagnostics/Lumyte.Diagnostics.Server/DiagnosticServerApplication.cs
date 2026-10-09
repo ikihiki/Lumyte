@@ -144,6 +144,7 @@ public static class DiagnosticServerApplication
             new("ui", "UI", "Engine", 1, "ui"),
             new("animation", "Animation", "Engine", 2, "animation"),
             new("input", "Input", "Engine", 3),
+            new("settings", "Settings", "Engine", 5),
             new("rendering", "Rendering", "Engine", 4, "rendering"),
             new("metrics", "Metrics", "Telemetry", 0),
             new("logs", "Logs", "Telemetry", 1),

@@ -2,10 +2,14 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
 using Lumyte.Diagnostics;
+using Lumyte.Diagnostics.Remote.Sample;
 using Lumyte.Diagnostics.Sample;
+using Lumyte.Diagnostics.Settings;
 using Lumyte.Diagnostics.Transport;
 using Lumyte.Diagnostics.Transport.Http;
 using Lumyte.Diagnostics.Transport.MagicOnion;
+using Lumyte.Settings;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +30,8 @@ services.AddScoped<InputOverrideService>();
 services.AddDiagnosticExecutionPoint<BeforeInputProcessing>("input.before-processing");
 services.AddDiagnosticSubsystem<InputDiagnostics, BeforeInputProcessing>(new("input", "Input", 1));
 services.AddDiagnosticAgent<BeforeInputProcessing>();
+string? settingsPath = Environment.GetEnvironmentVariable("LUMYTE_DIAGNOSTICS_SETTINGS_PATH");
+using IDisposable? configuration = settingsPath == null ? null : RegisterSettings(services, settingsPath);
 if (transport == "http")
 {
     services.AddHttpDiagnosticTransport(options =>
@@ -115,4 +121,19 @@ try
 finally
 {
     scope.DisposeAsync().AsTask().GetAwaiter().GetResult();
+}
+
+static IDisposable RegisterSettings(IServiceCollection services, string path)
+{
+    var source = new PersistedJsonFileSource(path);
+    IConfigurationRoot configuration = new ConfigurationBuilder().AddPersistedJsonFile(source).Build();
+    services.AddSettings(source);
+    services.AddPersistedOptions<AudioSettings>("audio")
+        .Validate(value => value.Volume is >= 0 and <= 1, "Volume must be between zero and one.")
+        .UseJsonTypeInfo(AudioSettingsJsonContext.Default.AudioSettings);
+    services.AddSettingsDiagnostics<AudioSettings, BeforeInputProcessing>("audio", fields => fields
+        .Double("volume", value => value.Volume, (value, volume) => value.Volume = volume)
+        .Boolean("muted", value => value.Muted, (value, muted) => value.Muted = muted)
+        .String("device", value => value.Device));
+    return (IDisposable)configuration;
 }

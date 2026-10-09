@@ -121,7 +121,7 @@ try {
     await waitFor(() => evaluate("Boolean(document.getElementById('workspace')) && document.getElementById('workspace').hidden === false"), 'cookie login after reload');
     for (const transport of ['http', 'magiconion']) {
         const endpoint = transport === 'http' ? httpPort : grpcPort;
-        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '60'], root);
+        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '60'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`) });
         await waitFor(() => evaluate("Array.from(document.querySelectorAll('#game-select option')).filter(option => option.value.length === 36).length === 1"), `${transport} catalog`);
         await evaluate("{ const choice = Array.from(document.querySelectorAll('#game-select option')).find(option => option.value.length === 36); document.getElementById('game-select').value = choice.value; document.getElementById('game-select').dispatchEvent(new Event('change', { bubbles: true })); }");
         await waitFor(() => evaluate("document.querySelector('[data-tab=input]')?.disabled === false"), 'selected game navigation');
@@ -130,6 +130,29 @@ try {
         await evaluate(`{ const form = document.querySelector('#input-forms form'); form.elements.namedItem('button').value = 'Jump'; form.elements.namedItem('pressed').value = 'true'; form.elements.namedItem('duration-ms').value = '5000'; for (const input of form.querySelectorAll('input,select')) input.dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
         await waitFor(() => evaluate("document.getElementById('operation-result').textContent.includes('\"status\": \"success\"')"), `${transport} operation result`);
         await waitFor(() => logs.get(transport).includes('Input state: Jump=True'), `${transport} input change`);
+        await evaluate("document.querySelector('[data-tab=settings]').click()");
+        await waitFor(() => evaluate("Boolean(document.querySelector('[data-subsystem=\"settings.audio\"][data-operation=read] form'))"), 'settings forms');
+        await evaluate("document.querySelector('[data-subsystem=\"settings.audio\"][data-operation=read] form').requestSubmit()");
+        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('load-status')"), 'settings snapshot');
+        const beforeSettings = JSON.parse(await evaluate("document.getElementById('operation-result').textContent"));
+        assert.equal(beforeSettings.revision, '0');
+        await evaluate(`{ const form = document.querySelector('[data-subsystem="settings.audio"][data-operation=save] form'); form.elements.namedItem('volume').value = '0.75'; form.elements.namedItem('muted').value = 'true'; form.elements.namedItem('expected-revision').value = '${beforeSettings.revision}'; for (const input of form.querySelectorAll('input,select')) input.dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
+        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('job-id')"), 'settings save receipt');
+        const saveReceipt = JSON.parse(await evaluate("document.getElementById('operation-result').textContent"));
+        for (let attempt = 0; attempt < 50; attempt++) {
+            await evaluate(`{ const form = document.querySelector('[data-subsystem="settings.audio"][data-operation=save-result] form'); form.elements.namedItem('job-id').value = '${saveReceipt.values['job-id'].string}'; form.elements.namedItem('job-id').dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
+            await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('write-status')"), 'settings save outcome');
+            if (await evaluate("document.getElementById('operation-result').textContent.includes('Saved')")) break;
+            await delay(100);
+        }
+        assert.equal(await evaluate("document.getElementById('operation-result').textContent.includes('Saved')"), true);
+        await evaluate("document.querySelector('[data-subsystem=\"settings.audio\"][data-operation=read] form').requestSubmit()");
+        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('load-status')"), 'updated settings');
+        const afterSettings = JSON.parse(await evaluate("document.getElementById('operation-result').textContent"));
+        assert.equal(afterSettings.revision, '1');
+        assert.equal(afterSettings.values.volume.double, 0.75);
+        const persistedSettings = JSON.parse(await readFile(resolve(profile, `${transport}-settings.json`), 'utf8'));
+        assert.equal(persistedSettings.sections.audio.values.volume, 0.75);
         await evaluate("document.querySelector('[data-tab=metrics]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('9007199254740993')"), 'lossless Int64 Metric');
         await evaluate("document.querySelector('[data-tab=logs]').click()");
@@ -154,7 +177,7 @@ try {
         assert.equal(game.exitCode, 0);
         assert.ok(logs.get(transport).includes('Disconnected: Jump=False'));
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
-        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
+        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsReadSavePoll: true, settingsFilePersisted: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
     // Controlled resources exercise the resource-oriented query and navigation model.
     async function gameRequest(method, path, body, secret) {
