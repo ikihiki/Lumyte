@@ -232,5 +232,6 @@
       "src/Diagnostics/Lumyte.Diagnostics.Transport.MagicOnion/WireValue.cs": "cc29ee52c1718d5af6f62e445537d56a601c3b7486920250c79191e47ab89fd7",
       "src/Diagnostics/Lumyte.Diagnostics.Transport.MagicOnion/WireWelcome.cs": "34e8578aa1352e0d9177edad506a15c7a3431dd4d51c3ea94f4f93dd408eb497"
     }
-  }
+  },
+  "after_commit": "23d24621b8409bec8053710ad6d1c34c123fcb9c"
 }

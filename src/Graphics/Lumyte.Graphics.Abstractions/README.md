@@ -8,7 +8,7 @@ using Lumyte.Graphics.Abstractions;
 static DeviceCaps Inspect(IGraphicDevice device) => device.Caps;
 ```
 
-`IGraphicDevice` は `Caps`、型付き buffer の `CreateBuffer<T>` と `GetBufferLayout<T>`、texture の `CreateTexture`、sampler の `CreateSampler` を提供します。デバイス自体を生成する factory、バックエンドの選択、解放、描画・送信の API は持ちません。生成と解放はアプリケーションの起動・終了部分で、選んだバックエンドの具象型を使って行います。
+`IGraphicDevice` は `Caps`、型付き buffer の `CreateBuffer<T>` と `GetBufferLayout<T>`、texture の `CreateTexture`、sampler の `CreateSampler`、論理登録先の `CreateArgumentTable` を提供します。デバイス自体を生成する factory、バックエンドの選択、解放、描画・送信の API は持ちません。生成と解放はアプリケーションの起動・終了部分で、選んだバックエンドの具象型を使って行います。
 
 `DeviceCaps` は生成済みデバイスの利用可能な機能と上限の非所有 snapshot です。同じデバイスは同じ instance を返し、読み取りでは native query、allocation、GPU work を行いません。`with` で作ったコピーは元の snapshot を変更しません。
 
@@ -92,3 +92,26 @@ using IGraphicsSampler sampler = device.CreateSampler(new SamplerDesc
 SamplerはTexture／Viewとは独立した所有resourceで、複数textureで同じinstanceを共有できます。Descは生成時の指定値を保持します。LODは有限・非負かつmin <= maxで、max=0を暗黙に変更しません。MaxAnisotropyはcaps以下で、1より大きい場合はすべてのfilterにLinearが必要です。Compareがnull以外なら比較samplerとして確保します。shader／textureとの互換性はbinding側で検証します。
 
 samplerを先にDisposeし、samplerが残ったdeviceの解放は拒否します。同期は利用者が管理し、内部lock・アトミックカウンター・自動cacheを追加しません。設計は [GRAPHICS-0004](../../../docs/adr/graphics/GRAPHICS-0004-samplers.md) を参照してください。
+
+## Argument TableとGPU参照
+
+```csharp
+using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc
+{
+    TextureCapacity = 20,
+    SamplerCapacity = 1,
+    BufferCapacity = 1,
+});
+IGpuRef<IGraphicsTextureView> image = table.WriteTexture(0, sampledView);
+IGpuRef<IGraphicsSampler> sampling = table.WriteSampler(0, sampler);
+IGpuRef<uint> values = table.WriteBuffer(0, storage.Slice(3, 5));
+IGpuRef<uint> value = values.GetElement(2);
+```
+
+slotは利用者が管理する論理位置です。種類ごとに独立し、同時shader binding数ではありません。IGpuRefのCountは論理要素数で、bufferのGetElementは登録範囲から単一要素を選びます。GPU addressやbinding番号への変換は公開しません。
+
+slotの置換・Release・table Disposeは古い参照と派生要素を失効させます。tableは登録したresourceを保持し、登録中のbuffer／view／samplerのDisposeは拒否します。tableまたは登録を先に解放してください。tableを解放しても登録resource自体はDisposeしません。
+
+今回のAPIは登録・要素参照・失効と寿命の基盤です。IGpuRefをGPU dataへpackするserializerと、root参照から物理bindingを構築するshader／commandの接続はそのAPIで扱います。IGpuRefを含む論理structはunmanagedではないため、raw bufferのCopyFromへそのまま渡しません。登録はGPU copy・upload・bind group生成を行いません。
+
+設計判断は [GRAPHICS-0005](../../../docs/adr/graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md) を参照してください。

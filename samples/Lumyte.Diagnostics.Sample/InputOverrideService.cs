@@ -1,18 +1,12 @@
 namespace Lumyte.Diagnostics.Sample;
 
 /// <summary>A small owner-thread input domain used to demonstrate expiring overrides.</summary>
-public sealed class InputOverrideService
+/// <param name="clock">The monotonic clock.</param>
+public sealed class InputOverrideService(TimeProvider clock)
 {
-    private readonly TimeProvider _clock;
+    private readonly TimeProvider _clock = clock;
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
     private readonly int _owner = Environment.CurrentManagedThreadId;
-
-    /// <summary>Initializes a new instance of the <see cref="InputOverrideService"/> class.</summary>
-    /// <param name="clock">The monotonic clock.</param>
-    public InputOverrideService(TimeProvider clock)
-    {
-        _clock = clock;
-    }
 
     /// <summary>Applies an owned, expiring override.</summary>
     /// <param name="context">The trusted execution context.</param>

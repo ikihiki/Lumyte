@@ -1,16 +1,10 @@
 namespace Lumyte.Diagnostics;
 
 /// <summary>Validated arguments consumed by generated handlers.</summary>
-public sealed class DiagnosticArguments
+/// <param name="values">The values argument.</param>
+public sealed class DiagnosticArguments(IReadOnlyDictionary<string, DiagnosticValue> values)
 {
-    private readonly IReadOnlyDictionary<string, DiagnosticValue> _values;
-
-    /// <summary>Initializes a new instance of the <see cref="DiagnosticArguments"/> class.</summary>
-    /// <param name="values">The values argument.</param>
-    public DiagnosticArguments(IReadOnlyDictionary<string, DiagnosticValue> values)
-    {
-        _values = values;
-    }
+    private readonly IReadOnlyDictionary<string, DiagnosticValue> _values = values;
 
     /// <summary>Reads a boolean.</summary>
     /// <param name="id">The id argument.</param>

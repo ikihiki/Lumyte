@@ -13,6 +13,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
+    private int _argumentTableCount;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays)
@@ -143,12 +144,27 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return sampler;
     }
 
+    /// <inheritdoc />
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(desc);
+        if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
+        {
+            throw new ArgumentException("An argument table must have at least one logical slot.", nameof(desc));
+        }
+
+        var table = new VulkanArgumentTable(this, desc);
+        _argumentTableCount++;
+        return table;
+    }
+
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0)
         {
-            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures and samplers before disposing their device.");
         }
 
         if (_disposed)
@@ -161,6 +177,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _api.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseArgumentTable() => _argumentTableCount--;
 
     internal void ReleaseSampler() => _samplerCount--;
 

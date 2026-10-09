@@ -54,7 +54,7 @@ JSON 直接符号化の StdDev は前 20.93 µs、後 5.51 µs。MessagePack は
 
 Linux x64 / Debian 13、AMD EPYC 9V74、.NET SDK 10.0.401 / Runtime 10.0.12、BenchmarkDotNet 0.15.8、MessagePack 3.1.11。ShortRun: LaunchCount 1、WarmupCount 3、IterationCount 5、IterationTime 150 ms。
 
-改善前は 0c7a1c1 に今回の ServerRegistryBenchmarks だけを加えた 16 ケース、改善後は ReceiveDecodingBenchmarks を加えた 20 ケース、追加確認はサーバー 4 ケースを実行した。送信 benchmark の条件を変えず、旧 DTO の比較 fixture は本番から benchmarks へ移動した。
+改善前は 0c7a1c1 に今回の ServerRegistryBenchmarks だけを加えた 16 ケース、改善後は 23d2462 の実装で ReceiveDecodingBenchmarks を加えた 20 ケース、追加確認はサーバー 4 ケースを実行した。送信 benchmark の条件を変えず、旧 DTO の比較 fixture は本番から benchmarks へ移動した。
 
 ```sh
 dotnet run --project benchmarks/Lumyte.Diagnostics.Benchmarks -c Release -- \
@@ -62,5 +62,7 @@ dotnet run --project benchmarks/Lumyte.Diagnostics.Benchmarks -c Release -- \
     '*ServerRegistryBenchmarks*' '*InstrumentationBenchmarks*' '*OperationBenchmarks*' \
   --artifacts artifacts/diagnostics-cleanup/after --exporters json
 ```
+
+測定後に main の f69072f を取り込み、新しい primary constructor 規約に合わせてコンストラクターの記法を変更した。測定対象の処理本体は変えていない。取り込み後も 54 件のテストと HTTP / MagicOnion の別プロセス通信を確認した。
 
 [生データ](cleanup-results/) に before / after / server-confirmation の CSV と全 measurement JSON、ソースの hash を保存した。4 ライブラリの元の比較、今回の符号化と復号の同値性も確認している。ログ・Trace の収集時間、混雑時の制御遅延、Browser/WASM、NativeAOT の性能は今回の測定対象外。

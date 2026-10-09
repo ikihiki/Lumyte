@@ -1,21 +1,15 @@
 namespace Lumyte.Diagnostics;
 
 /// <summary>Explicitly exposes one synchronous operation.</summary>
+/// <param name="permission">The permission argument.</param>
 [AttributeUsage(AttributeTargets.Method, Inherited = false)]
-public sealed class DiagnosticOperationAttribute : Attribute
+public sealed class DiagnosticOperationAttribute(DiagnosticPermission permission = DiagnosticPermission.Edit) : Attribute
 {
-    /// <summary>Initializes a new instance of the <see cref="DiagnosticOperationAttribute"/> class.</summary>
-    /// <param name="permission">The permission argument.</param>
-    public DiagnosticOperationAttribute(DiagnosticPermission permission = DiagnosticPermission.Edit)
-    {
-        Permission = permission;
-    }
-
     /// <summary>Gets or sets an optional stable wire name.</summary>
     public string? Id { get; set; }
 
     /// <summary>Gets the permission.</summary>
-    public DiagnosticPermission Permission { get; }
+    public DiagnosticPermission Permission { get; } = permission;
 
     /// <summary>Gets or sets the display name.</summary>
     public string? DisplayName { get; set; }

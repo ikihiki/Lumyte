@@ -2,12 +2,12 @@ using System.Diagnostics;
 
 namespace Lumyte.Diagnostics;
 
-internal sealed class DiagnosticPump<TPoint> : IDiagnosticPump<TPoint>, IDisposable
+internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumerable<DiagnosticRegistration> registrations, TimeProvider clock) : IDiagnosticPump<TPoint>, IDisposable
     where TPoint : class
 {
-    private readonly IServiceProvider _services;
-    private readonly DiagnosticRegistration[] _registrations;
-    private readonly TimeProvider _clock;
+    private readonly IServiceProvider _services = services;
+    private readonly DiagnosticRegistration[] _registrations = registrations.Where(item => item.Point == typeof(TPoint)).ToArray();
+    private readonly TimeProvider _clock = clock;
     private readonly object _gate = new();
     private readonly Queue<Entry> _pending = new();
     private readonly Dictionary<(Guid Session, Guid Request), Entry> _requests = [];
@@ -16,13 +16,6 @@ internal sealed class DiagnosticPump<TPoint> : IDiagnosticPump<TPoint>, IDisposa
     private bool _active;
     private bool _busy;
     private bool _disposed;
-
-    public DiagnosticPump(IServiceProvider services, IEnumerable<DiagnosticRegistration> registrations, TimeProvider clock)
-    {
-        _services = services;
-        _registrations = registrations.Where(item => item.Point == typeof(TPoint)).ToArray();
-        _clock = clock;
-    }
 
     public IReadOnlyList<DiagnosticSubsystemCatalog> Catalog
     {

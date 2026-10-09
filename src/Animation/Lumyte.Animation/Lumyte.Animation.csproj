@@ -8,6 +8,7 @@
   <ItemGroup>
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../../Core/Lumyte.Core/Lumyte.Core.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.StateMachines/Lumyte.StateMachines.csproj" />
     <ProjectReference Include="../../Core/Lumyte.Composition/Lumyte.Composition.csproj" />
     <ProjectReference Include="../../Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>

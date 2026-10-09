@@ -11,6 +11,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
+    private int _argumentTableCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -104,12 +105,27 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         return sampler;
     }
 
+    /// <inheritdoc />
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(desc);
+        if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
+        {
+            throw new ArgumentException("An argument table must have at least one logical slot.", nameof(desc));
+        }
+
+        var table = new BrowserArgumentTable(this, desc);
+        _argumentTableCount++;
+        return table;
+    }
+
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0)
         {
-            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures and samplers before disposing their device.");
         }
 
         if (_disposed)
@@ -121,6 +137,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         _handle.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseArgumentTable() => _argumentTableCount--;
 
     internal void ReleaseSampler() => _samplerCount--;
 

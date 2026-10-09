@@ -3,20 +3,16 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserTextureView : IGraphicsTextureView
+internal sealed class BrowserTextureView(BrowserTexture texture, TextureViewInfo info, JSObject native) : IGraphicsTextureView
 {
-    private readonly BrowserTexture _texture;
-    private readonly JSObject _native;
+    private int _registrationCount;
     private bool _disposed;
 
-    internal BrowserTextureView(BrowserTexture texture, TextureViewInfo info, JSObject native)
-    {
-        (_texture, Info, _native) = (texture, info, native);
-    }
+    public IGraphicsTexture Texture => texture;
 
-    public IGraphicsTexture Texture => _texture;
+    public TextureViewInfo Info { get; } = info;
 
-    public TextureViewInfo Info { get; }
+    internal BrowserDevice Owner => texture.Owner;
 
     public void Dispose()
     {
@@ -25,8 +21,21 @@ internal sealed class BrowserTextureView : IGraphicsTextureView
             return;
         }
 
-        _native.Dispose();
+        if (_registrationCount != 0)
+        {
+            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
+        }
+
+        native.Dispose();
         _disposed = true;
-        _texture.ReleaseView();
+        texture.ReleaseView();
     }
+
+    internal void RetainRegistration()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _registrationCount = checked(_registrationCount + 1);
+    }
+
+    internal void ReleaseRegistration() => _registrationCount--;
 }

@@ -1,16 +1,10 @@
 namespace Lumyte.Diagnostics.Sample;
 
 /// <summary>One opt-in attribute; argument and output schemas are generated.</summary>
-public sealed partial class InputDiagnostics
+/// <param name="input">The shared scoped input service.</param>
+public sealed partial class InputDiagnostics(InputOverrideService input)
 {
-    private readonly InputOverrideService _input;
-
-    /// <summary>Initializes a new instance of the <see cref="InputDiagnostics"/> class.</summary>
-    /// <param name="input">The shared scoped input service.</param>
-    public InputDiagnostics(InputOverrideService input)
-    {
-        _input = input;
-    }
+    private readonly InputOverrideService _input = input;
 
     [DiagnosticOperation(DiagnosticPermission.OverrideInput)]
     private DiagnosticResult<ButtonOverrideReceipt> OverrideButton(

@@ -1,18 +1,12 @@
 namespace Lumyte.Diagnostics;
 
 /// <summary>Optionally overrides a scalar name or constraint.</summary>
+/// <param name="id">The id argument.</param>
 [AttributeUsage(AttributeTargets.Parameter, Inherited = false)]
-public sealed class DiagnosticArgumentAttribute : Attribute
+public sealed class DiagnosticArgumentAttribute(string? id = null) : Attribute
 {
-    /// <summary>Initializes a new instance of the <see cref="DiagnosticArgumentAttribute"/> class.</summary>
-    /// <param name="id">The id argument.</param>
-    public DiagnosticArgumentAttribute(string? id = null)
-    {
-        Id = id;
-    }
-
     /// <summary>Gets the optional name.</summary>
-    public string? Id { get; }
+    public string? Id { get; } = id;
 
     /// <summary>Gets or sets the minimum numeric value.</summary>
     public double Minimum { get; set; } = double.NegativeInfinity;

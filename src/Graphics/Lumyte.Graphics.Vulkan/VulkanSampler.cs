@@ -7,6 +7,7 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
 {
     private readonly VulkanDevice _owner;
     private readonly Sampler _native;
+    private int _registrationCount;
     private bool _disposed;
 
     internal VulkanSampler(VulkanDevice owner, SamplerDesc desc)
@@ -41,6 +42,8 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
 
     public SamplerDesc Desc { get; }
 
+    internal VulkanDevice Owner => _owner;
+
     public void Dispose()
     {
         if (_disposed)
@@ -48,10 +51,23 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
             return;
         }
 
+        if (_registrationCount != 0)
+        {
+            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
+        }
+
         _owner.Api.DestroySampler(_owner.NativeDevice, _native, null);
         _disposed = true;
         _owner.ReleaseSampler();
     }
+
+    internal void RetainRegistration()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _registrationCount = checked(_registrationCount + 1);
+    }
+
+    internal void ReleaseRegistration() => _registrationCount--;
 
     private static SamplerAddressMode NativeAddress(AddressMode mode) => mode switch
     {
