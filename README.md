@@ -16,6 +16,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
 - [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
 - [アニメーションシステムの設計](docs/adr/animation/ANIMATION-0001-animation-system.md)
+- [汎用状態機械の設計](docs/adr/core/CORE-0001-state-machine.md)
 - [状態機械によるアニメーションの設計](docs/adr/animation/ANIMATION-0002-animation-state-machine.md)
 - [アニメーションの利用例](samples/Lumyte.Animation.Sample/README.md)
 
