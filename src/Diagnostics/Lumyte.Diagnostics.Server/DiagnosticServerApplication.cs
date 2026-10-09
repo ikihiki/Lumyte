@@ -1,11 +1,14 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Lumyte.Diagnostics.Server.Components;
 using Lumyte.Diagnostics.Transport;
 using Lumyte.Diagnostics.Transport.MagicOnion;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.FluentUI.AspNetCore.Components;
 
 namespace Lumyte.Diagnostics.Server;
 
@@ -28,7 +31,8 @@ public static class DiagnosticServerApplication
             throw new ArgumentException("Invalid server configuration.", nameof(configure));
         }
 
-        WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ApplicationName = typeof(DiagnosticHub).Assembly.FullName });
+        WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ApplicationName = typeof(DiagnosticHub).Assembly.GetName().Name, WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
+        builder.WebHost.UseStaticWebAssets();
         builder.WebHost.ConfigureKestrel(server =>
         {
             server.Limits.MaxRequestBodySize = 4 * 1024 * 1024;
@@ -51,10 +55,21 @@ public static class DiagnosticServerApplication
         {
             antiforgery.HeaderName = "X-Diagnostics-CSRF";
             antiforgery.Cookie.Name = "Lumyte.Diagnostics.Csrf";
-            antiforgery.Cookie.Path = "/api/ui";
+            antiforgery.Cookie.Path = "/";
             antiforgery.Cookie.SameSite = SameSiteMode.Strict;
         });
-        builder.Services.AddSingleton<DiagnosticUiStreams>();
+        builder.Services.AddSingleton<DiagnosticBrowserTickets>();
+        builder.Services.AddSingleton<DiagnosticDashboardLimits>();
+        builder.Services.AddScoped<DiagnosticDashboardSession>();
+        builder.Services.AddScoped<CircuitHandler>(services => services.GetRequiredService<DiagnosticDashboardSession>());
+        builder.Services.AddCascadingAuthenticationState();
+        builder.Services.AddRazorComponents().AddInteractiveServerComponents(circuits =>
+        {
+            circuits.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(10);
+            circuits.DisconnectedCircuitMaxRetained = 16;
+            circuits.MaxBufferedUnacknowledgedRenderBatches = 2;
+        });
+        builder.Services.AddFluentUIComponents();
         builder.Services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = 429;
@@ -66,16 +81,31 @@ public static class DiagnosticServerApplication
             });
         });
         builder.Services.AddAuthentication("Diagnostics")
-            .AddScheme<AuthenticationSchemeOptions, DiagnosticAuthenticationHandler>("Diagnostics", _ => { })
+            .AddPolicyScheme("Diagnostics", "Diagnostics", policy => policy.ForwardDefaultSelector = context =>
+                context.Request.Path == "/" || context.Request.Path.StartsWithSegments("/api/ui") || context.Request.Path.StartsWithSegments("/_blazor") ? DiagnosticBrowserUi.Scheme : "DiagnosticBearer")
+            .AddScheme<AuthenticationSchemeOptions, DiagnosticAuthenticationHandler>("DiagnosticBearer", _ => { })
             .AddCookie(DiagnosticBrowserUi.Scheme, cookie =>
             {
                 cookie.Cookie.Name = "Lumyte.Diagnostics.Operator";
-                cookie.Cookie.Path = "/api/ui";
+                cookie.Cookie.Path = "/";
                 cookie.Cookie.HttpOnly = true;
                 cookie.Cookie.SameSite = SameSiteMode.Strict;
                 cookie.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 cookie.ExpireTimeSpan = TimeSpan.FromMinutes(30);
                 cookie.SlidingExpiration = false;
+                cookie.Events.OnValidatePrincipal = context =>
+                {
+                    try
+                    {
+                        context.HttpContext.RequestServices.GetRequiredService<DiagnosticBrowserTickets>().Require(context.Principal!);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        context.RejectPrincipal();
+                    }
+
+                    return Task.CompletedTask;
+                };
                 cookie.Events.OnRedirectToLogin = context =>
                 {
                     context.Response.StatusCode = 401;
@@ -110,6 +140,7 @@ public static class DiagnosticServerApplication
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
+        app.UseAntiforgery();
         app.Use(async (context, next) =>
         {
             try
@@ -135,6 +166,8 @@ public static class DiagnosticServerApplication
         app.MapMagicOnionService().RequireAuthorization("Game");
         MapHttp(app);
         DiagnosticBrowserUi.Map(app);
+        app.MapStaticAssets().WithMetadata(new Microsoft.AspNetCore.Cors.DisableCorsAttribute());
+        app.MapRazorComponents<App>().AddInteractiveServerRenderMode(server => server.ContentSecurityFrameAncestorsPolicy = null).WithMetadata(new Microsoft.AspNetCore.Cors.DisableCorsAttribute());
         return app;
     }
 

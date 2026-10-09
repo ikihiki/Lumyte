@@ -1,0 +1,120 @@
+<header class="topbar">
+    <a class="brand" href="/" data-enhance-nav="false">LUMYTE <span>DIAGNOSTICS</span></a>
+    <div class="top-actions"><span id="connection-status" role="status">@(_expired ? "認証期限切れ" : "接続中")</span>
+        <form method="post" action="/api/ui/logout?redirect=true" data-enhance="false"><AntiforgeryToken /><button id="logout" type="submit">ログアウト</button></form>
+    </div>
+</header>
+@if (_expired)
+{
+    <section id="expired" class="login-card" role="alert"><h1>ログインが失効しました</h1><p>操作用トークンでログインし直してください。</p><a href="/" data-enhance-nav="false">ログイン画面へ</a></section>
+}
+<div id="workspace" class="workspace" data-ui-framework="blazor-server" data-ready="@(_ready ? "true" : "false")" hidden="@_expired">
+    <aside class="sidebar">
+        <div class="section-heading"><h2>ゲーム</h2><FluentButton Id="refresh" OnClick="Refresh">更新</FluentButton></div>
+        <label for="game-select">診断対象</label>
+        <select id="game-select" value="@_selectedId" @onchange="SelectGame">
+            <option value="">@(_resources.Length == 0 ? "ゲームを待っています" : "診断対象を選択してください")</option>
+            @foreach (SessionSnapshot resource in _resources)
+            {
+                <option value="@resource.SessionId">Game @resource.InstanceId.ToString()[..8] · @resource.Catalog.Length subsystems</option>
+            }
+        </select>
+        <dl class="session-info"><dt>Instance</dt><dd id="instance-id">@(Selected?.InstanceId.ToString() ?? "—")</dd><dt>Session</dt><dd id="session-id">@(Selected?.SessionId.ToString() ?? "—")</dd></dl>
+        <nav class="tabs" aria-label="診断画面">
+            @foreach (var tab in _titles)
+            {
+                <FluentButton data-tab="@tab.Key" aria-current="@(_view == tab.Key ? "page" : null)" OnClick="() => Navigate(tab.Key)">@tab.Value</FluentButton>
+            }
+        </nav>
+        <h2>サブシステム</h2>
+        <ul id="subsystems" class="subsystems">@foreach (DiagnosticSubsystemCatalog item in Selected?.Catalog ?? []) { <li>@item.Subsystem.DisplayName · @item.Operations.Count operations</li> }</ul>
+        <FluentButton Id="disconnect" Class="danger" Disabled="@(Selected == null)" OnClick="AskDisconnect">ゲーム接続を終了</FluentButton>
+        @if (_confirmDisconnect)
+        {
+            <p role="alert">接続に属するInputリースも解除されます。</p><FluentButton Id="confirm-disconnect" OnClick="Disconnect">接続終了を確認</FluentButton><FluentButton OnClick="() => _confirmDisconnect = false">キャンセル</FluentButton>
+        }
+        <p class="hint">接続の終了により、この接続に属するInputリースも解除されます。</p>
+    </aside>
+    <section class="content">
+        <div class="page-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h1 id="page-title">@_titles[_view]</h1></div><span class="hint">@_updatedAt</span></div>
+        <p id="workspace-error" class="error" role="alert">@_error</p>
+        <div class="stats"><article><span>受信イベント</span><strong id="received">@(Selected?.TelemetryReceived ?? 0)</strong></article><article><span>保持からの欠落</span><strong id="dropped">@(Selected?.TelemetryDropped ?? 0)</strong></article><article><span>未完了操作</span><strong id="pending">@(Selected?.PendingCommands ?? 0)</strong></article></div>
+        @if (_view == "overview")
+        {
+            <FluentCard Class="card"><h2>Resources — 接続中のゲーム</h2><label for="resource-filter">検索</label><input id="resource-filter" type="search" @bind="_resourceFilter" @bind:event="oninput" />
+                <div id="resource-table" class="table-container"><table><thead><tr><th>Resource</th><th>接続</th><th>受信 / 欠落</th><th>診断</th></tr></thead><tbody>
+                @foreach (SessionSnapshot resource in FilteredResources)
+                {
+                    <tr><td title="@resource.InstanceId">Game @resource.InstanceId.ToString()[..8]</td><td class="resource-state">Connected</td><td>@resource.TelemetryReceived / @resource.TelemetryDropped</td><td><div class="resource-actions">
+                    @foreach (string view in new[] { "logs", "traces", "metrics", "operations" })
+                    {
+                        <FluentButton data-resource="@resource.SessionId" data-view="@view" OnClick="() => Navigate(view, resource.SessionId)">@_titles[view]</FluentButton>
+                    }
+                    </div></td></tr>
+                }
+                </tbody></table></div>
+            </FluentCard>
+            <FluentCard Class="card"><h2>公開された操作</h2><p>@(Selected?.Catalog.Length ?? 0) サブシステム / @Operations.Length 操作を公開しています。</p><p class="hint">操作はゲームの実行ポイントで処理されます。結果が不明になった操作は自動で再実行されません。</p></FluentCard>
+            <FluentCard Class="card"><h2>最近のイベント</h2><div id="recent-events"><EventTable Items="_events.TakeLast(6).ToArray()" Inspect="Inspect" Trace="Trace" /></div></FluentCard>
+        }
+        @if (_view is "operations" or "input")
+        {
+            <label for="operation-filter">操作名・サブシステムで検索</label><input id="operation-filter" type="search" @bind="_operationFilter" @bind:event="oninput" />
+            <p class="hint">公開カタログから生成した操作を最大20件表示します。検索で絞り込めます。</p>
+            <div id="@(_view == "input" ? "input-forms" : "operation-forms")" class="operation-grid">
+                @foreach (var item in FilteredOperations.Take(20))
+                {
+                    <OperationCard @key="(_selectedId, item.Subsystem.Id, item.Operation.Id)" Subsystem="item.Subsystem" Operation="item.Operation" Execute="ExecuteAsync" />
+                }
+            </div>
+        }
+        @if (_view is "metrics" or "logs" or "traces")
+        {
+            <section id="telemetry-panel">
+                <div class="filter-bar"><label for="event-filter">名前・フィールドで検索</label><input id="event-filter" type="search" @bind="_eventFilter" @bind:event="oninput" />
+                    @if (_view != "metrics")
+                    {
+                        <label for="trace-filter">Trace ID</label><input id="trace-filter" type="search" maxlength="32" @bind="_traceFilter" @bind:event="oninput" />
+                    }
+                    @if (_view == "logs")
+                    {
+                        <label for="log-level">最小ログレベル</label><select id="log-level" @bind="_level"><option value="">すべてのレベル</option>@foreach (string level in DiagnosticTelemetryModel.LogLevels) { <option>@level</option> }</select>
+                    }
+                    <div class="telemetry-actions"><FluentButton Id="pause-telemetry" aria-pressed="@(_paused ? "true" : "false")" OnClick="TogglePause">@(_paused ? "表示を再開" : "表示を一時停止")</FluentButton><FluentButton OnClick="ClearFilters">絞り込みを解除</FluentButton></div>
+                    <span class="hint">@(_paused ? "表示を一時停止しています。収集は継続します。" : "選択したゲームの最新200件")</span>
+                </div>
+                @if (_view == "traces")
+                {
+                    <div id="trace-summary">
+                    @foreach (var group in DiagnosticTelemetryModel.Traces(FilteredEvents))
+                    {
+                        <FluentCard Class="card trace-card"><FluentButton OnClick="() => Trace(group.TraceId)">@group.Name</FluentButton><span>@group.Spans.Length spans · @(group.HasError ? "Error" : "保持SpanにErrorなし") · 最長Span @DiagnosticTelemetryModel.Duration(group.Longest)</span><span class="trace-id">@group.TraceId</span><FluentButton data-correlated="logs" OnClick='() => Navigate("logs", _selectedId, group.TraceId)'>関連Logs</FluentButton></FluentCard>
+                    }
+                    </div>
+                    <p class="hint">保持中のSpanの親子関係と処理時間。バーは最長Spanとの比率です。</p>
+                }
+                @if (_view == "metrics")
+                {
+                    <div id="metric-charts" class="metric-grid">
+                    @foreach (var group in DiagnosticTelemetryModel.Metrics(FilteredEvents).Take(20))
+                    {
+                        <FluentCard Class="card"><h2>@group.Name</h2><p class="metric-value">@DiagnosticTelemetryModel.Text(group.Latest.Value)</p><p class="hint">保持中の観測値 @group.Samples.Length 件（受信順）</p>
+                            <svg viewBox="0 0 300 80" class="metric-chart" role="img" aria-label="@(group.Name + " 受信順の観測値")"><polyline points="@DiagnosticTelemetryModel.Points(group.Samples)"></polyline>@if (group.Samples.Length == 1) { <circle cx="150" cy="40" r="3"></circle> }</svg>
+                            <p class="hint">@string.Join(", ", group.Latest.Fields.Select(field => field.Key + "=" + DiagnosticTelemetryModel.Text(field.Value)))</p>
+                        </FluentCard>
+                    }
+                    </div>
+                }
+                <div id="event-table" class="table-container"><EventTable Items="FilteredEvents" Kind="@EventKind" Inspect="Inspect" Trace="Trace" /></div>
+            </section>
+        }
+    </section>
+    <aside class="inspector"><p class="eyebrow">INSPECTOR</p><h2>操作結果</h2><p id="operation-status" role="status">@_operationStatus</p><pre id="operation-result">@_operationResult</pre><h2>イベント詳細</h2>
+        <div id="event-relations" class="telemetry-actions">
+        @if (_inspected?.TraceId is string traceId)
+        {
+            <FluentButton data-correlated="logs" OnClick='() => Navigate("logs", _selectedId, traceId)'>関連Logs</FluentButton><FluentButton data-correlated="traces" OnClick="() => Trace(traceId)">関連Traces</FluentButton>
+        }
+        </div><pre id="event-detail">@(_inspected == null ? "イベントを選択してください。" : JsonSerializer.Serialize(_inspected, _prettyJson.DiagnosticEvent))</pre>
+    </aside>
+</div>

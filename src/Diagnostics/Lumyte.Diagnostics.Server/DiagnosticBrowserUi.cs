@@ -1,6 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
-using Lumyte.Diagnostics.Transport;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Cors;
@@ -15,20 +13,34 @@ internal static class DiagnosticBrowserUi
     {
         app.Use(async (context, next) =>
         {
-            if (context.Request.Path == "/" || context.Request.Path.StartsWithSegments("/assets") || context.Request.Path.StartsWithSegments("/api/ui"))
+            if (!context.Request.Path.StartsWithSegments("/diagnostics") && !context.Request.Path.StartsWithSegments("/Lumyte.Diagnostics"))
             {
                 context.Response.Headers.CacheControl = "no-store";
                 context.Response.Headers.XContentTypeOptions = "nosniff";
                 context.Response.Headers["Referrer-Policy"] = "no-referrer";
-                context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+                context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
+            }
+
+            if (context.Request.Path.StartsWithSegments("/_blazor"))
+            {
+                if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    context.Response.StatusCode = 401;
+                    return;
+                }
+
+                string origin = context.Request.Headers.Origin.ToString();
+                string expected = context.Request.Scheme + "://" + context.Request.Host;
+                if (origin.Length > 0 && !string.Equals(origin, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = 403;
+                    return;
+                }
             }
 
             await next(context).ConfigureAwait(false);
         });
-        app.MapGet("/", () => Asset("index.html", "text/html; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
-        app.MapGet("/assets/diagnostics.css", () => Asset("diagnostics.css", "text/css; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
-        app.MapGet("/assets/diagnostics.js", () => Asset("diagnostics.js", "text/javascript; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
-        app.MapGet("/assets/telemetry-model.js", () => Asset("telemetry-model.mjs", "text/javascript; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
+        app.MapGet("/assets/diagnostics.css", () => Results.Stream(typeof(DiagnosticBrowserUi).Assembly.GetManifestResourceStream("Lumyte.Diagnostics.Server.Web.diagnostics.css")!, "text/css; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
         RouteGroupBuilder group = app.MapGroup("/api/ui").WithMetadata(new DisableCorsAttribute());
         group.MapGet("/bootstrap", async (HttpContext context, IAntiforgery antiforgery) =>
         {
@@ -38,35 +50,15 @@ internal static class DiagnosticBrowserUi
             return Results.Json(new DiagnosticUiBootstrap(authentication.Succeeded, token), DiagnosticUiJsonContext.Protocol.DiagnosticUiBootstrap);
         });
         group.MapPost("/login", LoginAsync).AddEndpointFilter<DiagnosticUiMutationFilter>().RequireRateLimiting("UiLogin");
-        group.MapPost("/logout", async (HttpContext context) =>
+        group.MapPost("/logout", async (HttpContext context, DiagnosticBrowserTickets tickets) =>
         {
+            tickets.Revoke(context.User);
             await context.SignOutAsync(Scheme).ConfigureAwait(false);
-            return Results.NoContent();
+            return context.Request.Query.ContainsKey("redirect") ? Results.Redirect("/") : Results.NoContent();
         }).RequireAuthorization(Scheme).AddEndpointFilter<DiagnosticUiMutationFilter>();
-        group.MapGet("/sessions", (IDiagnosticDashboardReader reader) => Results.Json(reader.Resources(), DiagnosticJson.Context.SessionSnapshotArray)).RequireAuthorization(Scheme);
-        group.MapPost("/sessions/{id:guid}/operations", async (Guid id, HttpContext context, DiagnosticSessionRegistry sessions) =>
-        {
-            OperationInvocation? invocation = await JsonSerializer.DeserializeAsync(context.Request.Body, DiagnosticJson.Context.OperationInvocation, context.RequestAborted).ConfigureAwait(false);
-            if (invocation == null)
-            {
-                return Results.BadRequest();
-            }
-
-            DiagnosticOperationResult result = await sessions.InvokeAsync(id, invocation, context.User.Identity!.Name!, context.RequestAborted).ConfigureAwait(false);
-            return Results.Json(result, DiagnosticJson.Context.DiagnosticOperationResult);
-        }).RequireAuthorization(Scheme).AddEndpointFilter<DiagnosticUiMutationFilter>();
-        group.MapDelete("/sessions/{id:guid}/connection", (Guid id, DiagnosticSessionRegistry sessions) =>
-        {
-            sessions.Close(id);
-            return Results.NoContent();
-        }).RequireAuthorization(Scheme).AddEndpointFilter<DiagnosticUiMutationFilter>();
-        group.MapGet("/events", EventsAsync).RequireAuthorization(Scheme);
     }
 
-    private static IResult Asset(string name, string contentType)
-        => Results.Stream(typeof(DiagnosticBrowserUi).Assembly.GetManifestResourceStream("Lumyte.Diagnostics.Server.Web." + name)!, contentType);
-
-    private static async Task<IResult> LoginAsync(HttpContext context, DiagnosticServerOptions options)
+    private static async Task<IResult> LoginAsync(HttpContext context, DiagnosticServerOptions options, DiagnosticBrowserTickets tickets)
     {
         if (!context.Request.HasFormContentType)
         {
@@ -77,96 +69,16 @@ internal static class DiagnosticBrowserUi
         string token = form["token"].ToString();
         if (token.Length > 512 || !DiagnosticAuthenticationHandler.Match(token, options.OperatorToken))
         {
-            return Results.Unauthorized();
+            return context.Request.Query.ContainsKey("redirect") ? Results.Redirect("/?loginError=true") : Results.Unauthorized();
         }
 
-        var identity = new ClaimsIdentity([new(ClaimTypes.Name, "diagnostic-operator"), new("diagnostics.role", "operator")], Scheme);
-        await context.SignInAsync(Scheme, new ClaimsPrincipal(identity), new AuthenticationProperties
+        ClaimsPrincipal user = tickets.Create();
+        await context.SignInAsync(Scheme, user, new AuthenticationProperties
         {
             IsPersistent = false,
             AllowRefresh = false,
             ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(30),
         }).ConfigureAwait(false);
-        return Results.NoContent();
-    }
-
-    private static async Task EventsAsync(HttpContext context, IDiagnosticDashboardReader reader, DiagnosticUiStreams streams)
-    {
-        string selected = context.Request.Query["sessionId"].ToString();
-        Guid? selectedId = null;
-        if (selected.Length > 0)
-        {
-            if (!Guid.TryParse(selected, out Guid id))
-            {
-                context.Response.StatusCode = 400;
-                return;
-            }
-
-            selectedId = id;
-        }
-
-        if (!await streams.Slots.WaitAsync(0, context.RequestAborted).ConfigureAwait(false))
-        {
-            context.Response.StatusCode = 429;
-            return;
-        }
-
-        try
-        {
-            AuthenticateResult authentication = await context.AuthenticateAsync(Scheme).ConfigureAwait(false);
-            TimeSpan remaining = authentication.Properties!.ExpiresUtc!.Value - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                context.Response.StatusCode = 401;
-                return;
-            }
-
-            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, context.RequestServices.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping);
-            lifetime.CancelAfter(remaining < TimeSpan.FromMinutes(2) ? remaining : TimeSpan.FromMinutes(2));
-            context.Response.ContentType = "text/event-stream";
-            context.Response.Headers["X-Accel-Buffering"] = "no";
-            DiagnosticUiSession[]? previous = null;
-            do
-            {
-                long version = reader.Version;
-                DiagnosticUiSession[] current = reader.Summaries();
-                if (previous == null || !current.SequenceEqual(previous))
-                {
-                    Guid? active = current.Any(item => item.SessionId == selectedId) ? selectedId : null;
-                    DiagnosticEvent[] events = active.HasValue ? reader.Events(active.Value) : [];
-                    var state = new DiagnosticUiState(current, active, events);
-                    await context.Response.WriteAsync("event: state\ndata: ", lifetime.Token).ConfigureAwait(false);
-                    await JsonSerializer.SerializeAsync(context.Response.Body, state, DiagnosticUiJsonContext.Protocol.DiagnosticUiState, lifetime.Token).ConfigureAwait(false);
-                    await context.Response.WriteAsync("\n\n", lifetime.Token).ConfigureAwait(false);
-                    previous = current;
-                }
-                else
-                {
-                    await context.Response.WriteAsync(": heartbeat\n\n", lifetime.Token).ConfigureAwait(false);
-                }
-
-                await context.Response.Body.FlushAsync(lifetime.Token).ConfigureAwait(false);
-                using var heartbeat = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-                heartbeat.CancelAfter(TimeSpan.FromSeconds(10));
-                try
-                {
-                    await reader.WaitForChangeAsync(version, heartbeat.Token).ConfigureAwait(false);
-                    await Task.Delay(TimeSpan.FromMilliseconds(200), lifetime.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!lifetime.IsCancellationRequested)
-                {
-                    // A quiet subscription only needs a heartbeat, not a data poll.
-                }
-            }
-            while (!lifetime.IsCancellationRequested);
-        }
-        catch (OperationCanceledException)
-        {
-            // Socket cancellation, cookie expiry and shutdown all end this bounded stream.
-        }
-        finally
-        {
-            streams.Slots.Release();
-        }
+        return context.Request.Query.ContainsKey("redirect") ? Results.Redirect("/") : Results.NoContent();
     }
 }

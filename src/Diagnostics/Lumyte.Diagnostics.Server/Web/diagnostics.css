@@ -38,8 +38,8 @@ dd { margin: 5px 0; font-family: ui-monospace, monospace; overflow-wrap: anywher
 .content { padding: 28px; min-width: 0; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 12px; overflow-x: auto; }
-.tabs button { border-color: transparent; background: transparent; white-space: nowrap; }
-.tabs button[aria-current] { color: var(--accent); background: #e2eee2; }
+.tabs fluent-button { border-color: transparent; background: transparent; white-space: nowrap; }
+.tabs fluent-button[aria-current] { color: var(--accent); background: #e2eee2; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0; }
 .stats article, .card { padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 .stats span { font-size: 11px; color: var(--muted); }
@@ -48,7 +48,7 @@ dd { margin: 5px 0; font-family: ui-monospace, monospace; overflow-wrap: anywher
 .card h2 { margin-top: 0; }
 .operation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .operation-grid .card { margin-top: 20px; }
-.operation-grid button { margin-top: 18px; width: 100%; }
+.operation-grid fluent-button { margin-top: 18px; width: 100%; }
 .field-hint { font-size: 10px; color: var(--muted); margin-top: 4px; }
 .filter-bar { padding: 16px 0; }
 .filter-bar .hint { display: block; margin-top: 8px; }
@@ -56,14 +56,14 @@ dd { margin: 5px 0; font-family: ui-monospace, monospace; overflow-wrap: anywher
 table { width: 100%; border-collapse: collapse; background: var(--surface); font-size: 11px; }
 th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 th { font-weight: 500; color: var(--muted); }
-td button { max-width: 240px; text-align: left; overflow-wrap: anywhere; }
+td fluent-button { max-width: 240px; text-align: left; overflow-wrap: anywhere; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 ui-monospace, monospace; }
 #operation-status { font-size: 12px; }
 @media (max-width: 1150px) { .workspace { grid-template-columns: 210px minmax(0, 1fr); } .inspector { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); } }
 @media (max-width: 640px) { .topbar { padding: 16px; flex-wrap: wrap; gap: 12px; } .workspace { display: block; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .content { padding: 20px 16px; } .stats { gap: 6px; } .stats article { padding: 10px; } .stats strong { font-size: 20px; } .login-card { margin: 30px 16px; padding: 24px; } }
 
 .sidebar .tabs { flex-direction: column; margin: 20px 0; }
-.sidebar .tabs button { text-align: left; }
+.sidebar .tabs fluent-button { text-align: left; }
 .telemetry-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .resource-actions { display: flex; flex-wrap: wrap; gap: 5px; }
 .resource-state { color: var(--accent); white-space: nowrap; }
@@ -78,3 +78,11 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 ui-monospac
 .metric-value { font: 20px ui-monospace, monospace; overflow-wrap: anywhere; }
 .span-duration { accent-color: var(--accent); max-width: 110px; }
 @media (max-width: 640px) { .sidebar .tabs { flex-direction: row; flex-wrap: wrap; } }
+
+fluent-card { display: block; width: 100%; }
+fluent-button { max-width: 100%; }
+.sidebar .tabs fluent-button::part(control) { width: 100%; justify-content: flex-start; }
+.sidebar .tabs fluent-button[aria-current]::part(control) { background: #e2eee2; color: var(--accent); }
+fluent-button.danger::part(control) { color: #9c3329; }
+
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 16px; background: #fff4d6; z-index: 1000; }

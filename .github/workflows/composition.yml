@@ -131,7 +131,6 @@ jobs:
         run: |
           source tools/setup/activate.sh
           dotnet publish src/Diagnostics/Lumyte.Diagnostics.Server -c Release --no-build --no-restore -o artifacts/diagnostics-ui-server
-          node tools/diagnostics/telemetry-model.test.mjs
           node tools/diagnostics/verify-browser.mjs
 
       - name: Upload test results

@@ -14,11 +14,11 @@ dotnet run --project src/Diagnostics/Lumyte.Diagnostics.Server -c Release
 
 この端末に設定した GameToken を、ゲームを起動する端末にも設定する。既定は **127.0.0.1:5000 の HTTP/1** と **127.0.0.1:5001 の HTTP/2**。後者はローカル開発用の h2c。ポートは LUMYTE_DIAGNOSTICS_HTTP_PORT / LUMYTE_DIAGNOSTICS_GRPC_PORT で変更できる。資格情報なし、両トークンが同じ、無効なポートでは起動を拒否する。
 
-ブラウザーの別 Origin から利用する場合は LUMYTE_DIAGNOSTICS_ALLOWED_ORIGINS に許可する Origin をカンマ区切りで設定する。Authorization / Content-Type / X-Diagnostics-Session の CORS preflight に対応する。空ならcross-originを許可しない。同梱UIのCookie APIはこの設定によらず同じOrigin専用とする。
+ブラウザーの別 Origin から利用する場合は LUMYTE_DIAGNOSTICS_ALLOWED_ORIGINS に許可する Origin をカンマ区切りで設定する。Authorization / Content-Type / X-Diagnostics-Session の CORS preflight に対応する。空ならcross-originを許可しない。同梱UIの認証とSignalR接続はこの設定によらず同じOrigin専用とする。
 
 ## Web UI
 
-**[http://127.0.0.1:5000/](http://127.0.0.1:5000/)** を開き、起動時に設定したOperatorTokenを入力する。HTML・CSS・JavaScriptは診断サーバー自身が配信する。別のUIサーバー、npm install、NodeでのUIビルドは不要。資産はassemblyへ埋め込まれるため、次のpublish成果物だけでも起動できる。
+**[http://127.0.0.1:5000/](http://127.0.0.1:5000/)** を開き、起動時に設定したOperatorTokenを入力する。HTML・CSS・JavaScriptは診断サーバー自身が配信する。別のUIサーバー、npm install、NodeでのUIビルドは不要。Blazor Server（Interactive Server）とFluent UIを使う。Razorコンポーネントはassembly、自前CSSは埋め込みresource、Blazor／Fluent UIの資産はstatic web assetsとして同梱し、次のpublish成果物だけで起動できる。
 
 ```sh
 dotnet publish src/Diagnostics/Lumyte.Diagnostics.Server -c Release -o artifacts/diagnostics-ui-server
@@ -27,27 +27,29 @@ dotnet artifacts/diagnostics-ui-server/Lumyte.Diagnostics.Server.dll
 
 Aspire DashboardのResources・構造化ログ・相関移動を参考に、Resources一覧または左のゲーム一覧から対象を選び、OperationsまたはInputタブで公開された操作の引数を入力する。フォームはカタログのBoolean／Int64／Double／String、範囲、最大長、revision要件から生成する。操作名・サブシステムで検索でき、各画面のフォームは最大20操作に限定する。InputタブはOverrideInput権限の操作を表示する。サンプルではbutton=Jump、pressed=true、duration-ms=5000を入力して実行できる。返ったリースIDと成功・拒否結果を右のInspectorへ表示する。
 
-Metrics／Logs／Tracesは選択したゲームの最新最大200件を表示し、名前・フィールド・Trace IDで検索できる。イベント名をクリックすると詳細を表示する。Int64は十進文字列のまま表示・送信する。SSEはDIの読み取りサービスから変更通知を購読し、200 msで連続更新をまとめてスナップショットを置き換える。静かな接続には10秒ごとのheartbeatを送る。ゲーム変更、非表示タブ、ログアウト時に購読を閉じ、復帰・再接続で新しいスナップショットを取得する。
+Metrics／Logs／Tracesは選択したゲームの最新最大200件を表示し、名前・フィールド・Trace IDで検索できる。イベント名をクリックすると詳細を表示する。Int64はC#のlongで扱い、グラフはBigIntegerで差分を計算する。画面はDIの読み取りサービスから変更通知を購読し、連続変更を200 msでまとめる。SignalRはBlazorの画面差分を運び、ゲーム側のMagicOnion／HTTPには影響しない。カタログは接続構成の変更時、イベントは選択ゲームの更新時に読む。
 
-操作用トークンはURLやブラウザーストレージへ保存しない。ログイン後はPath=/api/ui、SameSite=Strict、HttpOnly、固定30分のCookieを使う。変更APIはログインを含めてCSRF検証を行い、ゲーム用トークン・SessionSecretを返さない。既存Bearer APIと認証を分離する。ログインはサーバー全体で毎分10回、SSEは最大16本、各接続は最大2分で終了して再接続時に認証し直す。
+操作用トークンはURLやブラウザーストレージへ保存しない。ログイン後はPath=/、SameSite=Strict、HttpOnly、固定30分のCookieを使う。ログイン・ログアウトのHTTPフォームはCSRF検証を行い、SignalRは認証と同一Originの検査を行う。ゲーム用トークン・SessionSecretを画面へ返さず、既存Bearer APIはCookieを受け付けない。ログインはサーバー全体で毎分10回、認証チケットは最大128個、Circuitは最大16個、切断したCircuitの保持は10秒に制限する。
 
-ログアウトはInput操作の取消ではない。「ゲーム接続を終了」は確認後に接続を閉じ、その接続のリースをゲーム側で解除する。ゲームが公開していない現在の実入力、個別解除、グラフ、描画結果はUIで推測しない。構造化ログは最小レベルとTrace IDで絞り込み、表示を一時停止できる。停止中も収集と最新200件の受信は続き、再開すると最新のスナップショットを表示する。Trace IDから関連Logs／Tracesへ移動でき、対象ゲーム・画面・Trace IDはURL fragmentで共有・再読み込みできる。
+切断時は購読と操作待機を取消し、接続復帰時に認証を確認して購読を再開する。操作は自動再送しない。認証期限切れとログアウトは同じログインに属するすべてのCircuitを失効させ、表示データを除く。ゲームで実行済み・配送済みの操作の巻き戻しは意味しない。ログアウトはInput操作の取消ではない。「ゲーム接続を終了」は画面上の確認後に接続を閉じ、その接続のリースをゲーム側で解除する。
 
-Tracesは保持Spanの親子関係と処理時間を表示する。バーは最長Spanとの比率で、欠けた親は明示する。Metricsは名前・値の型・タグで分けた最新観測値と受信順のグラフを表示する。Counterの累積・レートやHistogram分布を推測しない。完全な時系列集約やwall-clockのTrace waterfallは後続範囲。Aspireで使われるBlazor／Fluent UIやOTLP／SQLストアの採用は別途判断する。
+ゲームが公開していない実入力の現在値、個別解除、オブジェクトグラフ、描画結果はUIで推測しない。構造化ログは最小レベルとTrace IDで絞り込み、表示を一時停止できる。停止中もサーバーの収集は続き、再開すると最新のスナップショットを表示する。Trace IDから関連Logs／Tracesへ移動でき、対象ゲーム・画面・Trace IDはURL queryで共有・再読み込みできる。切断済みのリンク先を別ゲームへ自動変更しない。
+
+Tracesは保持Spanの親子関係と処理時間を表示する。バーは最長Spanとの比率で、欠けた親は明示する。Metricsは名前・値の型・タグで分けた最新観測値と受信順のグラフを表示する。Counterの累積・レートやHistogram分布を推測しない。完全な時系列集約やwall-clockのTrace waterfall、OTLP受信、SQLストアは後続範囲。
 
 ### UI検証
 
-統合テスト38件でHTML・資産・CSP・Cookie／Bearer分離・CSRF・ログアウト・両ゲーム通信方式の操作／SSE、200件の保持末尾と対象分離、16本の接続上限、ログイン上限、購読開始後の更新・切断通知を確認する。独立した表示モデルの7テストでログ絞り込み、一時停止、Span階層と循環、タグ別系列、Int64グラフの精度とdurationを確認する。
+統合テストでHTML・資産・CSP・Cookie／Bearer分離・CSRF・ログアウトとCookie再利用の拒否、両ゲーム通信方式の操作、200件の保持末尾と対象分離、Circuitとログインの上限、切断・再接続・認証失効による購読の取消を確認する。C#の表示モデルとフォームのテストでログ絞り込み、Span階層と循環、タグ別系列、Int64グラフの精度、duration、引数の型・範囲・長さ・revision、認証期限を確認する。
 
 Chromiumを使う別プロセス検証は、上記のpublish後に次を実行する。ゲームサンプルのReleaseビルドも必要。Nodeはこの検証だけに使用する。CHROMEでChrome／Chromiumの実行ファイル、DOTNETでdotnetのパスを変更できる。
 
 ```sh
+dotnet test tests/Diagnostics/Lumyte.Diagnostics.IntegrationTests -c Release
 dotnet build samples/Lumyte.Diagnostics.Remote.Sample -c Release
-node tools/diagnostics/telemetry-model.test.mjs
 node tools/diagnostics/verify-browser.mjs
 ```
 
-一時トークンで公開サーバーをソースツリー外から起動し、実ブラウザーでログイン、生成フォーム、Input変更、Int64 Metric、Log／Trace相関、切断時解除、ログアウト、狭い画面での表示に加え、複数リソースの分離、ログレベル、一時停止・再開、Traceリンクの再読み込み、親子Span、相関Logs、大きいInt64のグラフ、HTML文字列の安全な表示を確認する。結果・スクリーンショット・ログはartifacts/test-results/diagnostics-uiへ出力する。CIのLinux x64でも実行する。[検証結果](../../../docs/diagnostics/results/browser-ui-processes.json)と[UI ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
+一時トークンで公開サーバーをソースツリー外から起動し、実ブラウザーでログイン、BlazorのSignalR WebSocket、Fluent UIコンポーネント、生成フォーム、Input変更、Int64 Metric、Log／Trace相関、切断時解除、ログアウト、狭い画面での表示を確認する。複数リソースの分離、ログレベル、一時停止・再開、Traceリンクの再読み込み、親子Span、相関Logs、大きいInt64のグラフ、HTML文字列の安全な表示、別タブのCircuit失効も確認する。結果・スクリーンショット・ログはartifacts/test-results/diagnostics-uiへ出力する。CIのLinux x64でも実行する。[検証結果](../../../docs/diagnostics/results/browser-ui-processes.json)と[UI ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
 ## ゲームを接続
 

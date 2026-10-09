@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Text.Json;
 using Lumyte.Diagnostics.Server;
 using Lumyte.Diagnostics.Transport;
@@ -29,7 +30,7 @@ public sealed class BrowserUiTests
             Assert.DoesNotContain(host.OperatorToken, await html.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
 
-        foreach (string path in new[] { "/assets/diagnostics.css", "/assets/diagnostics.js", "/assets/telemetry-model.js" })
+        foreach (string path in new[] { "/assets/diagnostics.css", "/_framework/blazor.web.js" })
         {
             using HttpResponseMessage asset = await browser.GetAsync(path);
             Assert.Equal(HttpStatusCode.OK, asset.StatusCode);
@@ -40,7 +41,7 @@ public sealed class BrowserUiTests
             Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         }
 
-        using (HttpResponseMessage denied = await browser.GetAsync("/api/ui/sessions"))
+        using (HttpResponseMessage denied = await browser.PostAsync("/_blazor/negotiate?negotiateVersion=1", null))
         {
             Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
         }
@@ -59,7 +60,8 @@ public sealed class BrowserUiTests
             Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
         }
 
-        string csrf = await LoginAsync(browser, host.OperatorToken);
+        string stolenCookie = string.Empty;
+        string csrf = await LoginAsync(browser, host.OperatorToken, cookie => stolenCookie = cookie);
         browser.DefaultRequestHeaders.Remove("X-Diagnostics-CSRF");
         using (HttpResponseMessage bearerDenied = await browser.GetAsync("/diagnostics/v1/sessions"))
         {
@@ -71,6 +73,14 @@ public sealed class BrowserUiTests
             Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
         }
 
+        browser.DefaultRequestHeaders.Add("Origin", "https://diagnostics.example");
+        using (HttpResponseMessage crossOrigin = await browser.PostAsync("/_blazor/negotiate?negotiateVersion=1", null))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, crossOrigin.StatusCode);
+            Assert.False(crossOrigin.Headers.Contains("Access-Control-Allow-Origin"));
+        }
+
+        browser.DefaultRequestHeaders.Remove("Origin");
         browser.DefaultRequestHeaders.Add("X-Diagnostics-CSRF", csrf);
         using (HttpResponseMessage loggedOut = await browser.PostAsync("/api/ui/logout", null))
         {
@@ -78,8 +88,12 @@ public sealed class BrowserUiTests
         }
 
         await BootstrapAsync(browser, authenticated: false);
-        using HttpResponseMessage deniedAfterLogout = await browser.GetAsync("/api/ui/events");
+        using HttpResponseMessage deniedAfterLogout = await browser.PostAsync("/_blazor/negotiate?negotiateVersion=1", null);
         Assert.Equal(HttpStatusCode.Unauthorized, deniedAfterLogout.StatusCode);
+        using HttpClient replay = host.Client();
+        replay.DefaultRequestHeaders.Add("Cookie", stolenCookie);
+        using HttpResponseMessage revokedCookie = await replay.PostAsync("/_blazor/negotiate?negotiateVersion=1", null);
+        Assert.Equal(HttpStatusCode.Unauthorized, revokedCookie.StatusCode);
     }
 
     /// <summary>Checks browser control and correlated telemetry for both game transports.</summary>
@@ -95,75 +109,37 @@ public sealed class BrowserUiTests
         string csrf = await LoginAsync(browser, host.OperatorToken);
         await using var game = new RemoteGame(magicOnion ? host.Grpc : host.Http, host.GameToken, magicOnion);
         Guid id = await game.ReadyAsync();
-        using (HttpResponseMessage catalog = await browser.GetAsync("/api/ui/sessions"))
-        {
-            Assert.Equal(HttpStatusCode.OK, catalog.StatusCode);
-            string json = await catalog.Content.ReadAsStringAsync();
-            Assert.Contains("override-button", json, StringComparison.Ordinal);
-            Assert.DoesNotContain("sessionSecret", json, StringComparison.Ordinal);
-        }
-
+        using IServiceScope scope = host.Services.CreateScope();
+        DiagnosticDashboardSession dashboard = scope.ServiceProvider.GetRequiredService<DiagnosticDashboardSession>();
+        await dashboard.OnConnectionUpAsync(null!, CancellationToken.None);
+        Assert.Throws<UnauthorizedAccessException>(() => dashboard.Attach(new ClaimsPrincipal(new ClaimsIdentity())));
+        dashboard.Attach(host.Services.GetRequiredService<DiagnosticBrowserTickets>().Create());
+        SessionSnapshot resource = Assert.Single(dashboard.Resources());
+        Assert.Contains(resource.Catalog.SelectMany(item => item.Operations), item => item.Id == "override-button");
         var invocation = new OperationInvocation(Guid.NewGuid(), "input", "override-button", new()
         {
             ["button"] = DiagnosticValue.From("Jump"),
             ["pressed"] = DiagnosticValue.From(true),
             ["duration-ms"] = DiagnosticValue.From(5000L),
         });
-        browser.DefaultRequestHeaders.Remove("X-Diagnostics-CSRF");
-        using (HttpResponseMessage denied = await InvokeAsync(browser, id, invocation))
+        DiagnosticOperationResult result = await dashboard.InvokeAsync(id, invocation, CancellationToken.None);
+        Assert.Equal("success", result.Status);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (true)
         {
-            Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
-            Assert.False(game.Pressed);
-        }
-
-        browser.DefaultRequestHeaders.Add("X-Diagnostics-CSRF", csrf);
-        using (HttpResponseMessage response = await InvokeAsync(browser, id, invocation))
-        {
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            DiagnosticOperationResult result = JsonSerializer.Deserialize(await response.Content.ReadAsByteArrayAsync(), DiagnosticJson.Context.DiagnosticOperationResult)!;
-            Assert.Equal("success", result.Status);
-        }
-
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        using (HttpResponseMessage response = await browser.GetAsync($"/api/ui/events?sessionId={id}", HttpCompletionOption.ResponseHeadersRead, cancellation.Token))
-        {
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            Assert.Equal("text/event-stream", response.Content.Headers.ContentType!.MediaType);
-            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellation.Token));
-            while (true)
+            long version = dashboard.Version;
+            DiagnosticEvent[] events = dashboard.Events(id);
+            if (events.Length >= 3)
             {
-                string line = (await reader.ReadLineAsync(cancellation.Token))!;
-                if (!line.StartsWith("data: ", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                using var state = JsonDocument.Parse(line[6..]);
-                JsonElement events = state.RootElement.GetProperty("events");
-                if (events.GetArrayLength() < 3)
-                {
-                    continue;
-                }
-
-                Assert.Equal(id, state.RootElement.GetProperty("selectedSessionId").GetGuid());
-                JsonElement metric = events.EnumerateArray().Single(item => item.GetProperty("kind").GetString() == "metric");
-                Assert.Equal("9007199254740993", metric.GetProperty("value").GetProperty("int64").GetString());
-                JsonElement log = events.EnumerateArray().Single(item => item.GetProperty("kind").GetString() == "log");
-                JsonElement trace = events.EnumerateArray().Single(item => item.GetProperty("kind").GetString() == "span");
-                Assert.Equal(log.GetProperty("traceId").GetString(), trace.GetProperty("traceId").GetString());
+                Assert.Equal(9007199254740993L, Assert.Single(events, item => item.Kind == "metric").Value.Int64);
+                Assert.Equal(Assert.Single(events, item => item.Kind == "log").TraceId, Assert.Single(events, item => item.Kind == "span").TraceId);
                 break;
             }
+
+            await dashboard.WaitForChangeAsync(version, timeout.Token);
         }
 
-        browser.DefaultRequestHeaders.Remove("X-Diagnostics-CSRF");
-        using (HttpResponseMessage denied = await browser.DeleteAsync($"/api/ui/sessions/{id}/connection"))
-        {
-            Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
-        }
-
-        browser.DefaultRequestHeaders.Add("X-Diagnostics-CSRF", csrf);
-        using HttpResponseMessage closed = await browser.DeleteAsync($"/api/ui/sessions/{id}/connection");
-        Assert.Equal(HttpStatusCode.NoContent, closed.StatusCode);
+        dashboard.Close(id);
         await game.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(game.Pressed);
     }
@@ -176,7 +152,7 @@ public sealed class BrowserUiTests
         await using BrowserHost host = await BrowserHost.StartAsync();
         using HttpClient browser = host.Client();
         browser.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", host.OperatorToken);
-        using (HttpResponseMessage denied = await browser.GetAsync("/api/ui/sessions"))
+        using (HttpResponseMessage denied = await browser.PostAsync("/_blazor/negotiate?negotiateVersion=1", null))
         {
             Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
         }
@@ -187,14 +163,12 @@ public sealed class BrowserUiTests
         Assert.Contains("no-store", response.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
     }
 
-    /// <summary>Checks tail bounds, target isolation and the global stream capacity.</summary>
+    /// <summary>Checks bounded reads, target isolation and the global Circuit capacity.</summary>
     /// <returns>The integration test.</returns>
     [Fact]
-    public async Task BoundedStreamsAsync()
+    public async Task BoundedCircuitsAsync()
     {
         await using BrowserHost host = await BrowserHost.StartAsync();
-        using HttpClient browser = host.Client();
-        await LoginAsync(browser, host.OperatorToken);
         DiagnosticSessionRegistry registry = host.Registry;
         var catalog = new DiagnosticSubsystemCatalog(new("sample", "Sample", 1), []);
         SessionWelcome target = registry.Open(new(Guid.NewGuid(), 1, [catalog]));
@@ -206,36 +180,39 @@ public sealed class BrowserUiTests
         }
 
         registry.Publish(other.SessionId, new(Guid.NewGuid(), other.SessionId, DiagnosticMessageKind.Telemetry, null, null, [new("log", 0, "other-game", DiagnosticValue.From("secret"), null, null, null, 0, new Dictionary<string, DiagnosticValue>())]));
-        var responses = new List<HttpResponseMessage>();
+        var scopes = new List<IServiceScope>();
         try
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             for (int index = 0; index < 16; index++)
             {
-                HttpResponseMessage response = await browser.GetAsync($"/api/ui/events?sessionId={target.SessionId}", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-                responses.Add(response);
-                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                IServiceScope scope = host.Services.CreateScope();
+                scopes.Add(scope);
+                await scope.ServiceProvider.GetRequiredService<DiagnosticDashboardSession>().OnCircuitOpenedAsync(null!, CancellationToken.None);
             }
 
-            using HttpResponseMessage rejected = await browser.GetAsync("/api/ui/events", timeout.Token);
-            Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
-            using var reader = new StreamReader(await responses[0].Content.ReadAsStreamAsync(timeout.Token));
-            Assert.Equal("event: state", await reader.ReadLineAsync(timeout.Token));
-            string line = (await reader.ReadLineAsync(timeout.Token))!;
-            using var state = JsonDocument.Parse(line[6..]);
-            JsonElement events = state.RootElement.GetProperty("events");
-            Assert.Equal(200, events.GetArrayLength());
-            Assert.Equal("event-56", events[0].GetProperty("name").GetString());
-            Assert.Equal("event-255", events[199].GetProperty("name").GetString());
-            Assert.DoesNotContain("other-game", line, StringComparison.Ordinal);
+            using IServiceScope rejected = host.Services.CreateScope();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => rejected.ServiceProvider.GetRequiredService<DiagnosticDashboardSession>().OnCircuitOpenedAsync(null!, CancellationToken.None));
+            DiagnosticDashboardSession dashboard = scopes[0].ServiceProvider.GetRequiredService<DiagnosticDashboardSession>();
+            await dashboard.OnConnectionUpAsync(null!, CancellationToken.None);
+            dashboard.Attach(host.Services.GetRequiredService<DiagnosticBrowserTickets>().Create());
+            DiagnosticEvent[] tail = dashboard.Events(target.SessionId);
+            Assert.Equal(200, tail.Length);
+            Assert.Equal("event-56", tail[0].Name);
+            Assert.Equal("event-255", tail[^1].Name);
+            Assert.DoesNotContain(tail, item => item.Name == "other-game");
+            await dashboard.OnConnectionDownAsync(null!, CancellationToken.None);
+            Assert.Throws<InvalidOperationException>(() => dashboard.Events(target.SessionId));
         }
         finally
         {
-            foreach (HttpResponseMessage response in responses)
+            foreach (IServiceScope scope in scopes)
             {
-                response.Dispose();
+                scope.Dispose();
             }
         }
+
+        using IServiceScope released = host.Services.CreateScope();
+        await released.ServiceProvider.GetRequiredService<DiagnosticDashboardSession>().OnCircuitOpenedAsync(null!, CancellationToken.None);
     }
 
     /// <summary>Checks that repeated login attempts have a finite budget.</summary>
@@ -255,47 +232,37 @@ public sealed class BrowserUiTests
         }
     }
 
-    /// <summary>Checks notification subscriptions observe later data and target removal.</summary>
+    /// <summary>Checks subscription cancellation, reconnect, logout and target removal.</summary>
     /// <returns>The integration test.</returns>
     [Fact]
-    public async Task StreamObservesLaterChangesAsync()
+    public async Task CircuitLifetimeAsync()
     {
         await using BrowserHost host = await BrowserHost.StartAsync();
-        using HttpClient browser = host.Client();
-        await LoginAsync(browser, host.OperatorToken);
-        DiagnosticSessionRegistry registry = host.Registry;
-        SessionWelcome target = registry.Open(new(Guid.NewGuid(), 1, [new(new("sample", "Sample", 1), [])]));
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        using HttpResponseMessage response = await browser.GetAsync($"/api/ui/events?sessionId={target.SessionId}", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
-        using (JsonDocument initial = await ReadStateAsync(reader, timeout.Token))
-        {
-            Assert.Equal(0, initial.RootElement.GetProperty("events").GetArrayLength());
-        }
-
-        registry.Publish(target.SessionId, new(Guid.NewGuid(), target.SessionId, DiagnosticMessageKind.Telemetry, null, null, [new("metric", 1, "later", DiagnosticValue.From(42L), null, null, null, 0, new Dictionary<string, DiagnosticValue>())]));
-        using (JsonDocument updated = await ReadStateAsync(reader, timeout.Token))
-        {
-            Assert.Equal("later", updated.RootElement.GetProperty("events")[0].GetProperty("name").GetString());
-        }
-
-        registry.Close(target.SessionId);
-        using JsonDocument closed = await ReadStateAsync(reader, timeout.Token);
-        Assert.Equal(JsonValueKind.Null, closed.RootElement.GetProperty("selectedSessionId").ValueKind);
-        Assert.Equal(0, closed.RootElement.GetProperty("sessions").GetArrayLength());
-    }
-
-    private static async Task<JsonDocument> ReadStateAsync(StreamReader reader, CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            string line = (await reader.ReadLineAsync(cancellationToken))!;
-            if (line.StartsWith("data: ", StringComparison.Ordinal))
-            {
-                return JsonDocument.Parse(line[6..]);
-            }
-        }
+        using IServiceScope scope = host.Services.CreateScope();
+        DiagnosticDashboardSession dashboard = scope.ServiceProvider.GetRequiredService<DiagnosticDashboardSession>();
+        DiagnosticBrowserTickets tickets = host.Services.GetRequiredService<DiagnosticBrowserTickets>();
+        ClaimsPrincipal user = tickets.Create();
+        dashboard.Attach(user);
+        await dashboard.OnConnectionUpAsync(null!, CancellationToken.None);
+        SessionWelcome target = host.Registry.Open(new(Guid.NewGuid(), 1, [new(new("sample", "Sample", 1), [])]));
+        long version = dashboard.Version;
+        Task changed = dashboard.WaitForChangeAsync(version, CancellationToken.None);
+        host.Registry.Publish(target.SessionId, new(Guid.NewGuid(), target.SessionId, DiagnosticMessageKind.Telemetry, null, null, [new("metric", 1, "later", DiagnosticValue.From(42L), null, null, null, 0, new Dictionary<string, DiagnosticValue>())]));
+        await changed.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("later", Assert.Single(dashboard.Events(target.SessionId)).Name);
+        Task disconnect = dashboard.WaitForChangeAsync(dashboard.Version, CancellationToken.None);
+        await dashboard.OnConnectionDownAsync(null!, CancellationToken.None);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => disconnect);
+        await dashboard.OnConnectionUpAsync(null!, CancellationToken.None);
+        Assert.Equal("later", Assert.Single(dashboard.Events(target.SessionId)).Name);
+        host.Registry.Close(target.SessionId);
+        Assert.Empty(dashboard.Resources());
+        Task logout = dashboard.WaitForChangeAsync(dashboard.Version, CancellationToken.None);
+        tickets.Revoke(user);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => logout);
+        Assert.Throws<UnauthorizedAccessException>(() => dashboard.Resources());
+        Assert.Throws<UnauthorizedAccessException>(() => dashboard.Close(target.SessionId));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => dashboard.InvokeAsync(target.SessionId, new(Guid.NewGuid(), "sample", "any", new()), CancellationToken.None));
     }
 
     private static async Task<string> BootstrapAsync(HttpClient client, bool authenticated)
@@ -307,7 +274,7 @@ public sealed class BrowserUiTests
         return state.RootElement.GetProperty("requestToken").GetString()!;
     }
 
-    private static async Task<string> LoginAsync(HttpClient client, string token)
+    private static async Task<string> LoginAsync(HttpClient client, string token, Action<string>? captureCookie = null)
     {
         string csrf = await BootstrapAsync(client, authenticated: false);
         client.DefaultRequestHeaders.Remove("X-Diagnostics-CSRF");
@@ -316,20 +283,14 @@ public sealed class BrowserUiTests
         using HttpResponseMessage response = await client.PostAsync("/api/ui/login", content);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         string cookie = response.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("Lumyte.Diagnostics.Operator=", StringComparison.Ordinal));
+        captureCookie?.Invoke(cookie.Split(';')[0]);
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=strict", cookie, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("path=/api/ui", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("path=/", cookie, StringComparison.OrdinalIgnoreCase);
         csrf = await BootstrapAsync(client, authenticated: true);
         client.DefaultRequestHeaders.Remove("X-Diagnostics-CSRF");
         client.DefaultRequestHeaders.Add("X-Diagnostics-CSRF", csrf);
         return csrf;
-    }
-
-    private static async Task<HttpResponseMessage> InvokeAsync(HttpClient client, Guid id, OperationInvocation invocation)
-    {
-        using var content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(invocation, DiagnosticJson.Context.OperationInvocation));
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        return await client.PostAsync($"/api/ui/sessions/{id}/operations", content);
     }
 
     private sealed class BrowserHost(WebApplication app, Uri http, Uri grpc, string gameToken, string operatorToken) : IAsyncDisposable
@@ -341,6 +302,8 @@ public sealed class BrowserUiTests
         public string GameToken { get; } = gameToken;
 
         public string OperatorToken { get; } = operatorToken;
+
+        public IServiceProvider Services => app.Services;
 
         public DiagnosticSessionRegistry Registry => app.Services.GetRequiredService<DiagnosticSessionRegistry>();
 

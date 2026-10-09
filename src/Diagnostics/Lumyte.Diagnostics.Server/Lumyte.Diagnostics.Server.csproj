@@ -5,7 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Web/**" />
+    <InternalsVisibleTo Include="Lumyte.Diagnostics.IntegrationTests" />
+    <EmbeddedResource Include="Web/diagnostics.css" />
+    <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.0.0" />
     <ProjectReference Include="../Lumyte.Diagnostics.Transport.Http/Lumyte.Diagnostics.Transport.Http.csproj" />
     <ProjectReference Include="../Lumyte.Diagnostics.Transport.MagicOnion/Lumyte.Diagnostics.Transport.MagicOnion.csproj" />
     <PackageReference Include="MagicOnion.Server" Version="7.11.0" />

@@ -33,5 +33,12 @@
     "int64ChartPrecision": true,
     "resourceIsolation": true,
     "untrustedText": true
+  },
+  {
+    "scenario": "blazor-server",
+    "signalRWebSocket": true,
+    "fluentUiComponents": true,
+    "noLegacySse": true,
+    "logoutRevokesOtherCircuit": true
   }
 ]
