@@ -85,6 +85,16 @@ public sealed class InputSystem : IDisposable
         }
     }
 
+    /// <summary>Gets monotonic time relative to this system's creation.</summary>
+    public TimeSpan ElapsedTime
+    {
+        get
+        {
+            Check();
+            return _clock.GetElapsedTime(_started);
+        }
+    }
+
     /// <summary>Gets the active devices, excluding archived disconnected devices.</summary>
     public IReadOnlyDictionary<InputDeviceId, IInputDevice> Devices
     {

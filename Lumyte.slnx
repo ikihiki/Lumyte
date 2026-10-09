@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Input.Advanced.Sample/Lumyte.Input.Advanced.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Remote.Sample/Lumyte.Diagnostics.Remote.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
     <Project Path="samples/Lumyte.Animation.Sample/Lumyte.Animation.Sample.csproj" />
@@ -46,6 +47,9 @@
     <Project Path="tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Input.Processing/Lumyte.Input.Processing.csproj" />
+    <Project Path="src/Platform/Lumyte.Input.Actions/Lumyte.Input.Actions.csproj" />
+    <Project Path="src/Platform/Lumyte.Input.Settings/Lumyte.Input.Settings.csproj" />
     <Project Path="src/Platform/Lumyte.Input/Lumyte.Input.csproj" />
   </Folder>
   <Folder Name="/tests/Diagnostics/">
@@ -56,6 +60,7 @@
     <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Platform/">
+    <Project Path="tests/Platform/Lumyte.Input.Advanced.Tests/Lumyte.Input.Advanced.Tests.csproj" />
     <Project Path="tests/Platform/Lumyte.Input.Tests/Lumyte.Input.Tests.csproj" />
   </Folder>
 </Solution>

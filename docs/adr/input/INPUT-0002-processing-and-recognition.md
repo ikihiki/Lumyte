@@ -1,314 +1,169 @@
 # ADR-INPUT-0002: デバイスデータ補正と仮想デバイス生成
 
-- 状態: 提案
+- 状態: 提案（実装を含む）
 - 日付: 2026-10-09
 
 ## 背景
 
-[Input 基盤](INPUT-0001-input-system.md)は正規化されたデバイス別記録を提供する。ゲームではデッドゾーンや筆圧カーブ、操作の先行受付、ピンチや長押し等が必要となる。これらを利用者ごとに実装すると、時間判定・キャンセル・履歴欠落への対応が分散する。
+[Input 基盤](INPUT-0001-input-system.md)は DI で受け取った InputSource からデバイスを登録し、デバイス別の履歴・通知・ポーリングを提供する。デッドゾーン、中心ずれ、筆圧、平滑化、タッチ操作の変換を差し込む位置と、[設定保存基盤](../settings/SETTINGS-0001-user-settings-persistence.md)との連携を統一する。
 
 ## 決定
 
-### 加工の区分と配置
+### 加工の区分
 
-加工を四つに分ける。本 ADR はマッピング前の二つを扱い、後の二つは [アクション層](INPUT-0003-actions-and-contexts.md)で決定する。
-
-| 区分 | 入出力 | 責務と例 |
+| 層 | 入力と出力 | 担当 |
 | --- | --- | --- |
-| デバイスデータ補正 | Device の InputData → 補正済み InputData | 中心ずれ、デッドゾーン、筆圧校正、座標変換 |
-| 仮想デバイス生成 | 一つ以上の Device のデータ → 新しい IInputDevice | タッチから仮想スティック、ピンチ・回転から軸、複数機器の統合 |
-| アクション値補正 | マッピングした値 → 補正したアクション値 | 移動の正規化、照準感度、ゲーム側の反応曲線 |
-| マッピング後の操作認識 | アクションの値・遷移 → 操作イベント | 決定の長押し、攻撃の連打、コマンド入力 |
+| デバイス補正 | 同じデバイスの InputData → 補正済み InputData | Processing |
+| 仮想デバイス生成 | 物理デバイスのバッチ → 別の Logical デバイス | Processing |
+| アクション値補正 | マッピング結果 → 補正済み ActionState | Actions |
+| 操作認識 | アクション遷移 → 意味のある操作 | Actions |
 
-`src/Platform/Lumyte.Input.Processing/`、名前空間・パッケージ名 `Lumyte.Input.Processing` にデバイス側の処理を置く。依存は `Lumyte.Input` と .NET のみとし、Actions に依存しない。アクション名やコンテキストを入力にしない。
+本 ADR は前の二つを扱う。[INPUT-0003](INPUT-0003-actions-and-contexts.md)は後の二つ、入力バッファ、リバインド、コンテキストを扱う。InputSystem の記録・保持期間の責務を変更しない。
 
-### デバイスへの適用と元データ
+### デバイス補正
 
-補正処理は Device から取得した正規化済み InputData を直接受け取り、同じ入力種別のデータを返す。アクションへの割り当て前に適用する。Source は補正する Device をデコレーターで包み、Registry に登録できる。ラッパーは元 Device の DrainEvents を一度だけ呼び、取得・破棄の所有権を一つにする。元 Device とラッパーを重複登録しない。
+`Lumyte.Input.Processing` は共通 Input と .NET にだけ依存する。`CorrectingInputSource` は DI で借用した Source に Registry のデコレータを渡し、登録された Device を `CorrectedInputDevice` で包む。プロセッサはデバイスごとに独立して生成し、指定順に実行する。
 
-元データを不変のまま補正済みコピーを生成する。取得時に元バッチを診断用の分岐へ渡せるようにし、元データ保存を必要とする利用者は明示的に記録する。InputSystem に登録した補正済み Device の履歴は補正後のデータとなる。アクション側の追加加工はその履歴を変更しない。
+`AnalogCorrection` はスティック中心補正、半径方向のデッドゾーン、タッチ・ペンの筆圧カーブを扱う。半径がデッドゾーン以下ならゼロ、それ以上は残りの区間を 0〜1 に再配置する。筆圧が null ならそのまま保持する。`ExponentialStickSmoothing` は左右のスティックを別々に単調時間差で平滑化し、フォーカス喪失で履歴をリセットする。
 
-補正設定は順序付き不変設定として保持し、デバイス補正とアクション補正を別の設定欄で管理する。同じデッドゾーン等を暗黙に二重適用しない。設定変更で平滑化等をリセットし、接触中の座標変換変更はキャンセル境界を入れて次の接触から反映する。
+InputSystem が記録・通知・ポーリングに使うのは補正後のデータである。元入力を別途保存する場合は、元デバイスの取得側に診断用の分岐を設ける。
 
-### デバイスデータ補正
+`SetProcessorFactory` は既存デバイスの新しいパイプラインを準備してから交換を予約する。次の DrainEvents でフォーカス喪失による中立化を発生させ、元のフォーカス状態へ戻す。進行中のタッチ・ペン ID の続きは終了まで除外し、新しい接触だけを受け付ける。
 
-処理順は正規化値 → デッドゾーン → 機器校正用の反応曲線 → 必要なら平滑化とする。設定は登録時にコピーして固定し、元記録を変更しない。スティックは円形デッドゾーンを既定とし、半径 d 以下をゼロ、残りを `(r-d)/(1-d)` に再写像して方向を維持する。対角方向の半径は 1 にクランプする。
+### 仮想デバイス生成
 
-トリガーと筆圧は 0〜1 の範囲を維持し、非対応の筆圧 null を 0 に置き換えない。反応曲線は有限・単調増加、端点 0 / 1 を保証する。d は 0 以上 1 未満、ゲームの照準感度はアクション側に置く。平滑化は明示的に有効化し、単調時間差による指数平滑化を使う。フォーカス喪失・切断・キャンセル時は中立化し、平滑化の前回値を捨てる。
+`VirtualizingInputSource` は元 Source の Registry を包み、対象デバイスと Logical Controller を登録する。Update で元デバイスのバッチを一度だけ取得し、物理側と仮想側のキューを同じ更新内に準備する。InputSystem の履歴を仮想 Device の DrainEvents から読み直すことはしない。
 
-### 仮想デバイスとマッピング前のジェスチャー
+`TouchControllerGenerator` は次を出力する。
 
-仮想デバイスは IInputDevice を実装し、DI で注入する仮想 IInputSource が Registry から登録・削除する。新しい InputDeviceId と Logical の識別粒度を持ち、元デバイスとの関連を保持する。マッピングとリバインドからは通常のデバイスとして選択できる。
-
-初期出力は既存の ControllerButtonData / ControllerStickData / ControllerTriggerData に投影する。例えばタッチスティックは Left スティック、ピンチ比と回転角は設定された基準・範囲で Right スティックの二軸へ変換する。出力の意味・範囲は仮想デバイスの設定として明示する。任意の新しい軸・コントロールを追加する基盤拡張は別途決定する。
-
-| 認識 | 契約 |
+| タッチ操作 | コントローラー入力 |
 | --- | --- |
-| スワイプ | 一接触の開始から正常終了までの距離・期間・方向で判定。キャンセルでは成立しない |
-| ピンチ・回転 | 同一デバイスの二接触を ID で固定し、距離比・角度差を算出。接触終了で中立化し、新しい組で基準を再設定 |
-| タッチスティック | 接触開始位置を中心として移動を軸へ変換し、終了・キャンセルでゼロに戻す |
+| 一接触の開始点からの移動 | Left Stick |
+| 正常終了した十分な距離のスワイプ | South の押下・解放 |
+| 二接触の初期距離からのピンチ | Right Stick X |
+| 二接触の初期角度からの回転 | Right Stick Y |
 
-接触情報が必要な認識はマッピング前で行い、出力を仮想デバイスにする。長押し・連打・同時押し・順序入力は原則としてマッピング後のアクションを認識する。時間・しきい値判定等の共通アルゴリズムは再利用できるが、デバイス ID とアクション ID の状態管理は混ぜない。
+接触の追加・終了ではピンチと回転の基準を取り直す。Canceled はスワイプにならず、フォーカス喪失・切断では操作を中断する。新しい接触が始まるまで終了済みの接触を復元しない。原点 ID は履歴上の物理デバイス ID、生成先 ID は独立した InputSystem の ID とする。
 
-### 更新順と派生デバイスの安全性
+Source の構成は内側から外側へ取得が進む木構造であり、実装は物理デバイスごとの直接生成を提供する。履歴を再入力する循環経路や動的な派生グラフは公開しない。複数段の一般的な派生グラフを追加する場合は、トポロジカル順序と循環拒否を別途実装する。
 
-処理順は実デバイス取得 → デバイス補正 → 仮想デバイス生成 → アクションマッピングとする。補正されたバッチを共有する取得コーディネーターが一度だけ取得し、実 Device と派生 Device の DrainEvents はそれぞれの準備済みキューを返す。Source.Update では接続監視と取得準備を行い、実 Source の接続更新より後にコーディネーターを実行する依存順を構成側で保証し、マッピングは InputSystem.Update が完了してから開始する。
+### 所有権と終了処理
 
-仮想 Device が同じ InputSystem の ReadRecords を読んで同じ更新へ戻す構成は使用しない。現在の Source 更新 → Device 取得の順序では前回分を読むことになるためである。過去履歴を読む独立したリプレイ用途は更新遅延を明示する。
+補正・仮想 Source は内側 Source を借用し、Dispose で内側を破棄しない。登録成功後の Device は InputSystem が所有し、物理デバイスを一度だけ破棄する。登録失敗時は元 Device を呼び出し元の所有として残す。仮想側の登録失敗では物理ラッパーの所有権を解除し、部分登録を取り消す。
 
-派生関係を DAG とし、元デバイスから順に評価する。自己参照・循環は構成時に拒否する。元デバイスの切断・フォーカス喪失・キャンセル・データ欠落時は派生出力も中立化し、必要なら仮想 Source が Device を登録解除する。元と派生が同じアクションへ同時に割り当てられる場合は、アクション層の合成・競合規則を適用する。
+切断では最後のバッチを物理・仮想へ取り込み、両方の登録解除を予約する。Shutdown でも元 Source の終了後に残りのバッチを取り込む。設定・加工・取得は InputSystem の管理スレッドで実行する。
+
+### DI 構成と InputSystem との相互作用
+
+構成側が Microsoft.Extensions.DependencyInjection を使用する。Processing 自体に DI コンテナーへの依存を追加しない。PlatformInputSource は各プラットフォームのバックエンドの例示名である。
+
+```csharp
+services.AddSingleton<PlatformInputSource>();
+services.AddSingleton<InputTimeSource>();
+services.AddSingleton(provider => new CorrectingInputSource(
+    provider.GetRequiredService<PlatformInputSource>(),
+    descriptor => descriptor.Kind == InputDeviceKind.Controller
+        ? new IDeviceDataProcessor[]
+        {
+            new AnalogCorrection(Vector2.Zero, deadZone: 0.15f),
+            new ExponentialStickSmoothing(0.05f),
+        }
+        : [],
+    provider.GetRequiredService<InputTimeSource>().GetElapsedTime));
+services.AddSingleton(provider => new VirtualizingInputSource(
+    provider.GetRequiredService<CorrectingInputSource>(),
+    descriptor => descriptor.Kind == InputDeviceKind.Touch
+        ? new TouchControllerGenerator(radius: 100, swipeDistance: 80)
+        : null,
+    provider.GetRequiredService<InputTimeSource>().GetElapsedTime));
+services.AddSingleton<IInputSource>(provider =>
+    provider.GetRequiredService<VirtualizingInputSource>());
+services.AddSingleton(provider =>
+{
+    var input = new InputSystem(provider.GetServices<IInputSource>());
+    provider.GetRequiredService<InputTimeSource>().Attach(input);
+    return input;
+});
+```
+
+InputSystem は外側の IInputSource を受け取る。内側を同時に IInputSource として登録すると同じ機器を二重取得するため、具象型だけで登録する。InputTimeSource は InputSystem 構築後に接続し、更新・終了処理では DI を再解決せずに ElapsedTime を参照する。構築前はゼロを返す。
+
+一回の更新は Source.Update → 補正済みバッチ取得 → 仮想入力生成 → InputSystem の物理・仮想 Device 取り込み → 記録・状態更新・通知となる。履歴の保持期間は既存の SetRetentionPolicy / ClearRecords 等で利用者が設定する。
+
+### 設定保存
+
+任意の連携ライブラリ `Lumyte.Input.Settings` が Processing・Actions・Settings を参照する。実行コアは Settings に依存しない。`AddInputSettings` は `input-processing` と `input-actions` を登録し、ソース生成 JSON メタデータと構成可能性のバリデータを設定する。
+
+InputProcessingSettings は名前付き DeviceProfiles、TouchRadius、SwipeDistance を持つ。プロファイルには CenterX / CenterY、DeadZone、PressureExponent、SmoothingSeconds を保存する。実行 ID、接触、平滑化履歴は保存しない。既定の選択キーは Controller / Touch / Pen 等のデバイス種別名であり、独自の `selectProfile` で記述子を永続的な利用者プロファイル名へ対応付けられる。
+
+```csharp
+var source = new PersistedJsonFileSource(absolutePath);
+configuration.AddPersistedJsonFile(source);
+services.AddSettings(source);
+services.AddInputSettings();
+// Host を使わない場合も、入力開始前に呼ぶ。
+provider.GetRequiredService<ISettingsDocument>().ValidateRegisteredSettings();
+
+var editable = provider.GetRequiredService<
+    IEditableOptions<InputProcessingSettings>>();
+var edit = editable.BeginEdit();
+edit.Value.DeviceProfiles["Controller"] = new DeviceCorrectionSettings
+{
+    DeadZone = 0.2f,
+    PressureExponent = 1.5f,
+};
+var saved = await editable.SaveAsync(edit, cancellationToken);
+// Saved のときだけ Current と Revision が変わる。
+```
+
+管理スレッドで InputSettingsCoordinator.ApplyCommittedSettings → input.Update → actions.Advance の順に実行する。Coordinator は Revision の変化時だけ Current のコピーを変換する。保存の継続スレッドから Device を操作しない。検証失敗・競合・保存失敗では確定済み設定を維持する。セクションごとの Revision を全体トランザクションとは見なさない。
+
+[実行サンプル](../../../samples/Lumyte.Input.Advanced.Sample/Program.cs)は DI、実際の設定ファイル、リバインド、記録通知からアクションへの受け渡しを示す。プラットフォームバックエンドの代わりに決定的なデモ Source を使う。
 
 ### 公開 API 一覧
 
-新規 API の宣言案。設定型と本体の詳細は実装前に具体化する。
+主要な追加 API を差分形式で示す。既存 InputSystem の API は ElapsedTime を除いて維持する。
 
 ```diff
-+public interface IDeviceDataProcessor
-+{
-+    // Device から取得したデータを補正し、元バッチは変更しない。
-+    IReadOnlyList<InputData> Process(
-+        IReadOnlyList<InputData> data, TimeSpan now);
-+    void Reset();
-+}
-+public sealed class CorrectedInputDevice : IInputDevice
-+{
-+    // 元 Device の所有権を引き受け、取得・破棄を一度だけ実行する。
-+    public CorrectedInputDevice(
-+        IInputDevice device, IReadOnlyList<IDeviceDataProcessor> processors,
-+        Func<TimeSpan> getTime);
-+    public InputDeviceDescriptor Descriptor { get; }
-+    public IReadOnlyList<InputData> DrainEvents();
-+    public void Dispose();
-+}
-+public interface IVirtualDeviceGenerator
-+{
-+    // 元 Device とコーディネーターが同じ更新時間軸を共有する。
-+    IReadOnlyList<InputData> Generate(
-+        InputDeviceId origin, IReadOnlyList<InputData> data, TimeSpan now);
-+    // 中断を解放・ゼロ値・キャンセルへ変換する。
-+    IReadOnlyList<InputData> Reset(InputDeviceId origin, TimeSpan now);
-+}
++InputSystem.ElapsedTime : TimeSpan
++InputTimeSource.GetElapsedTime() : TimeSpan
++InputTimeSource.Attach(InputSystem system)
++IDeviceDataProcessor.Process(IReadOnlyList<InputData> data, TimeSpan now)
++IDeviceDataProcessor.Reset()
++AnalogCorrection(Vector2 center, float deadZone = 0.15f,
++    float pressureExponent = 1)
++ExponentialStickSmoothing(float seconds)
++CorrectedInputDevice(IInputDevice inner,
++    IEnumerable<IDeviceDataProcessor> processors, Func<TimeSpan> getTime)
++CorrectedInputDevice.SetProcessors(IEnumerable<IDeviceDataProcessor> processors)
++CorrectingInputSource(IInputSource inner,
++    Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory,
++    Func<TimeSpan> getTime)
++CorrectingInputSource.SetProcessorFactory(
++    Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory)
++IVirtualDeviceGenerator.Generate(InputDeviceId origin,
++    IReadOnlyList<InputData> data, TimeSpan now)
++IVirtualDeviceGenerator.Reset(InputDeviceId origin, TimeSpan now)
++TouchControllerGenerator(float radius = 100, float swipeDistance = 80)
++VirtualizingInputSource(IInputSource inner,
++    Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory,
++    Func<TimeSpan> getTime)
++VirtualizingInputSource.SetGeneratorFactory(
++    Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory)
++IServiceCollection.AddInputSettings()
++InputSettingsConverter.BuildCorrections(InputProcessingSettings settings,
++    Func<InputDeviceDescriptor, string>? selectProfile = null)
++InputSettingsCoordinator.ApplyCommittedSettings()
 ```
-
-now はコーディネーターが共有する単調経過時間とし、逆行を拒否する。空バッチでも時間依存加工を進められる。InputDeviceId が必要な派生関係は元 Device の登録確定後に接続する。元データ分岐、コーディネーター、仮想 Source / Device の完全な API と時刻の受け渡しは実装前に具体化する。
-
-### InputSystem との相互作用とサンプル
-
-以下は構成と呼び出し順を示す設計用サンプルである。Processing、Platform とコーディネーターの具体クラスは未実装であり、コンパイル可能なサンプルプロジェクトではない。記載する InputSystem / Registry の既存 API と、追加提案を区別する。
-
-#### 共通時間軸のための基盤 API 追加案
-
-補正・仮想生成・アクション認識は InputSystem.RecordedAt と同じ時間軸を使う。現在の InputSystem は開始時刻を公開していないため、次の読み取り専用 API を追加提案する。同じ TimeProvider を渡すだけでは開始時刻が一致しないので、各層で独立した Stopwatch を開始しない。
-
-```diff
-+// InputSystem 内部の開始timestampから、注入済み時計で計算する。
-+public TimeSpan InputSystem.ElapsedTime { get; }
-```
-
-#### DI で Source と登録窓口をラップする
-
-Platform Source の実装を変更せず補正を差し込む場合は、DI が InputSystem に渡す IInputSource を CorrectingInputSource で包む。補正 Source は Initialize で渡された Registry を CorrectingDeviceRegistry でラップして内側の Source に渡す。Platform Source が RegisterDevice(raw) を呼ぶと、補正 Registry が Device をラップして本来の Registry へ登録する。返された ID と UnregisterDevice はそのまま委譲する。
-
-```text
-DI → InputSystem(IEnumerable<IInputSource>)
-        └─ CorrectingInputSource
-             └─ PlatformInputSource
-
-InputSystem.Initialize(本来の Registry)
-  → CorrectingInputSource.Initialize
-  → PlatformInputSource.Initialize(補正 Registry)
-  → 補正 Registry.RegisterDevice(raw)
-  → 本来の Registry.RegisterDevice(corrected)
-```
-
-次は Microsoft.Extensions.DependencyInjection を使用する構成側の例である。Processing ライブラリ自体に DI コンテナーへの依存を追加するものではない。補正 Source / Registry と具体的な補正クラスは未実装の設計名とする。
-
-```csharp
-services.AddSingleton<TimeProvider>(TimeProvider.System);
-// 具象型として登録し、IInputSource として二重登録しない。
-services.AddSingleton<PlatformInputSource>();
-
-services.AddSingleton<IInputSource>(provider =>
-    new CorrectingInputSource(
-        provider.GetRequiredService<PlatformInputSource>(),
-        descriptor => descriptor.Kind == InputDeviceKind.Controller
-            ? new IDeviceDataProcessor[]
-            {
-                new StickCalibration(centerOffset),
-                new RadialDeadZone(0.15f),
-            }
-            : Array.Empty<IDeviceDataProcessor>(),
-        // Source 構築中に InputSystem を解決せず、更新時に時刻を取得する。
-        () => provider.GetRequiredService<InputSystem>().ElapsedTime));
-
-// IEnumerable<IInputSource> で補正 Source を受け取る。
-// 同じスコープに別の種類の Source も IInputSource として登録できる。
-services.AddSingleton<InputSystem>();
-
-using ServiceProvider provider = services.BuildServiceProvider();
-InputSystem input = provider.GetRequiredService<InputSystem>();
-input.Update();
-```
-
-getTime の呼び出しは構築完了後の DrainEvents / Update まで遅延する。Initialize で実行すると InputSystem の再帰解決になるため禁止する。ElapsedTime は上記の追加提案であり、現行 API に存在するものとして扱わない。
-
-補正 Source の Update / Shutdown は内側 Source へ委譲する。補正 Registry は登録成功時だけ Device の所有権を移し、失敗時は元 Device を呼び出し元 Source の所有のまま残す。未登録ラッパーの後処理で元 Device を二重破棄しないよう、所有権確定前の解除処理を設ける。登録成功後の corrected.Dispose は raw も一度だけ破棄する。
-
-Platform Source は DI が所有し、補正 Source は借用する。補正 Source.Dispose は内側 Source.Dispose を呼ばない。上の例では InputSystem が最後に解決されるため、DI 終了時は InputSystem → 補正 Source → Platform Source の順に破棄される。別コンテナーでもこの順序を保証する。
-
-#### Device 入力を補正して登録する
-
-Source は接続を検出したとき、元 Device をラップして Registry に登録する。登録失敗時のラッパー破棄は Source、登録成功後は InputSystem の責務となる。
-
-```csharp
-// IInputSource.Initialize / Update の中で実行するコード。
-IInputDevice raw = platform.OpenController(connection);
-var corrected = new CorrectedInputDevice(
-    raw,
-    new IDeviceDataProcessor[]
-    {
-        new StickCalibration(centerOffset), // 機器の中心ずれ
-        new RadialDeadZone(0.15f),
-    },
-    getTime); // () => input.ElapsedTime。DrainEvents 時に評価する。
-
-InputDeviceId id;
-try
-{
-    id = registry.RegisterDevice(corrected);
-}
-catch
-{
-    corrected.Dispose(); // 未登録の raw も一度だけ破棄する。
-    throw;
-}
-connections.Add(connection, id);
-
-// 切断を検出した Source.Update 内で要求する。
-registry.UnregisterDevice(connections[disconnectedConnection]);
-connections.Remove(disconnectedConnection);
-```
-
-InputSystem.Update は Source.Update を呼び、登録済み corrected.DrainEvents を呼ぶ。ラッパーは raw の入力を一度だけ取得・補正する。InputSystem は補正済み入力に ID・Sequence・RecordedAt を付け、記録・現在状態・Recorded 通知へ反映する。切断要求では最終取り込みと中立化の後に corrected を破棄する。アクション側は通常の ReadRecords を使えばよく、補正処理を再実行しない。
-
-#### タッチから仮想コントローラーを生成する
-
-次の構成コードの型は、取得コーディネーターの責務を説明するための仮の名前であり、確定した公開 API ではない。
-
-```csharp
-// 診断・仮想生成に分岐するが、OS 入力の取得は一度だけ。
-var acquisition = new SharedTouchAcquisition(platform, getTime);
-var touchSource = new BufferedTouchSource(acquisition);
-var virtualSource = new VirtualControllerSource(
-    acquisition,
-    new TouchStickGenerator(radius: 80f));
-
-// touchSource.Update が接続を更新し、virtualSource.Update が
-// 同じ取得バッチから生成する。各 Device は準備済みキューだけを返す。
-input = new InputSystem(new IInputSource[] { touchSource, virtualSource }, clock);
-input.Update();
-```
-
-touchSource が Touch Device を、virtualSource が Logical な Controller Device をそれぞれ Registry へ登録する。仮想 Source は元 Touch の登録済み ID を参照できる構成窓口を持つ。仮想 Device は ControllerStickData を返し、InputSystem は実デバイスと同じ経路で履歴・状態を生成する。入力途中のタッチキャンセルも同じバッチで仮想スティックのゼロ値に変換し、一更新遅れにしない。
-
-共有取得の寿命は構成側が両 Source より長く保ち、Device の分岐を一つ閉じても残りを破棄しない。終了順は InputSystem → Source → acquisition とする。getTime は InputSystem の構築後に参照可能にし、Initialize では取得・時刻評価を行わず、Update から評価する。
-
-### Lumyte.Settings による補正設定の保存・復元
-
-[設定保存基盤](../settings/SETTINGS-0001-user-settings-persistence.md)と [Lumyte.Settings の登録契約](../../../src/Core/Lumyte.Settings/README.md)を使用する。共通 JSON ドキュメントの `input-processing` セクションに、機器校正・デッドゾーン・筆圧曲線・仮想デバイスの生成設定を保存する。アクション値補正は `input-actions` の責務とし、同じ設定を双方へ重複保存しない。
-
-Processing の実行コアは引き続き Settings に依存しない。構成側の任意の連携モジュール `Lumyte.Input.Settings` が Settings、Processing、Actions を参照し、DTO の登録・検証・実行設定への変換を担当する。OS 取得 Source を設定保存用 Source と混同しない。
-
-保存モデルは引数なしで生成できる class とし、スカラー、読み書き可能なオブジェクト、List / Dictionary 等、Settings の対応型だけを使う。実行中の processor インスタンス、delegate、ポリモーフィックな InputData は保存しない。次は一部の設定を示す設計用 DTO と登録例であり、入力連携型は未実装である。
-
-```csharp
-public sealed class InputProcessingSettings
-{
-    public Dictionary<string, DeviceCorrectionSettings> DeviceProfiles { get; set; } = new();
-}
-
-public sealed class DeviceCorrectionSettings
-{
-    public float DeadZone { get; set; } = 0.15f;
-    public float CenterX { get; set; }
-    public float CenterY { get; set; }
-    public float PressureExponent { get; set; } = 1f;
-}
-
-[JsonSerializable(typeof(InputProcessingSettings))]
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-internal partial class InputSettingsJsonContext : JsonSerializerContext;
-
-var settingsSource = new PersistedJsonFileSource(absoluteSettingsPath);
-builder.Configuration.AddPersistedJsonFile(settingsSource);
-builder.Services.AddSettings(settingsSource);
-builder.Services.AddPersistedOptions<InputProcessingSettings>("input-processing")
-    .Validate(ValidateProcessingSettings, "Invalid input correction settings.")
-    .UseJsonTypeInfo(InputSettingsJsonContext.Default.InputProcessingSettings,
-        schemaVersion: 1);
-```
-
-ValidateProcessingSettings は全プロファイルの有限値、デッドゾーン範囲、中心オフセット、正の筆圧指数、仮想デバイスの参照先と循環を検証する副作用なしの関数とする。ルート Dictionary そのものを Options 型にせず、上記の class のプロパティに置く。AOT では生成 JSON 型情報を登録する。
-
-DeviceProfiles のキーは利用者が選ぶ安定したプロファイル名とする。InputDeviceId、接触 ID、OS の接続スロット、表示名だけによる自動対応を保存しない。再接続時は識別可能な機器情報と利用者の選択からプロファイルを解決し、対応が不明なら既定補正を使って確認を求める。曲線等は名前付き種別と数値パラメーターとして保存する。
-
-#### 編集・保存と適用境界
-
-```csharp
-var editable = provider.GetRequiredService<IEditableOptions<InputProcessingSettings>>();
-SettingsEdit<InputProcessingSettings> edit = editable.BeginEdit();
-edit.Value.DeviceProfiles["player1-controller"].DeadZone = 0.2f;
-SettingsSaveResult<InputProcessingSettings> result =
-    await editable.SaveAsync(edit, cancellationToken);
-if (result.Status != SettingsSaveStatus.Saved)
-{
-    ShowSettingsError(result.Status, result.Errors);
-    return; // 実行中の補正は変更しない。
-}
-// 保存処理から Source / Device を直接操作しない。
-// 管理スレッドの次回更新で Revision の変化を検出する。
-```
-
-BeginEdit の例はプロファイルが既に存在する場合とする。新規作成では DTO を先に追加する。編集を共有して同時変更しない。SaveAsync の保存・検証結果が Saved の場合だけ確定値が変わる。Conflict は再取得して再編集し、StorageFailure / ValidationFailed / RecoveryRequired は診断を表示して旧値を保持する。
-
-構成側は起動時に Current のコピーから不変な補正パイプラインを構築する。実行中は管理スレッドで Revision だけを確認し、変化した場合に Current を取得・変換して更新境界へ適用する。保存後も更新されない IOptions<T> のキャッシュをライブ設定として使わない。読み取り専用の設定コピーを更新ごとに作る必要もない。
-
-```csharp
-// 以下はInputSystemの管理スレッドで実行する。
-if (editable.Revision != appliedProcessingRevision)
-{
-    SettingsSnapshot<InputProcessingSettings> snapshot = editable.Current;
-    var pipeline = BuildImmutableProcessingPipeline(snapshot.Value);
-    acquisition.ScheduleProcessing(pipeline); // 提案する連携API。次の取得境界へ反映。
-    appliedProcessingRevision = snapshot.Revision;
-}
-input.Update();
-```
-
-補正の交換で平滑化・接触ジェスチャーを中断し、必要な中立化・キャンセルを記録する。失敗する実行構成の組み立てを保存後へ先送りせず、設定バリデータで構成可能性を検証する。実機切断等の一時的な非対応は設定エラーとは分けて扱う。
-
-Host は登録設定を起動時に検証する。Host を使わない Engine は起動完了前に ISettingsDocument.ValidateRegisteredSettings を呼ぶ。旧セクションは UseJsonTypeInfo の schemaVersion / upgrade で移行し、未対応・破損データを自動で上書きしない。Browser では ISettingsStore を実装し、PersistedSettingsSource.LoadAsync 後に登録する。保存媒体の所有・原子的更新は Settings に委譲する。
-
-### エラーとライフサイクル
-
-管理スレッドで処理し、スナップショットだけを他スレッドへ渡す。不正な設定・非有限値・逆行時刻は拒否する。過去記録から再処理する利用者は Sequence と HasGap を検証し、欠落時に加工・ジェスチャー状態をリセットする。現在状態から未観測のジェスチャーを推測しない。
-
-Source が登録 Device の所有権を InputSystem に渡し、ラッパーは内部の元 Device を所有する。共有取得の分岐 Device は元 Device を個別に破棄せず、コーディネーターが共有資源を一度だけ解放する。アクション層が Source / Device を直接破棄しない。
 
 ## 検討した代替案
 
-- InputSystem に認識を組み込む: 利用者ごとに異なる加工設定や処理周期を持てなくなる。
-- 現在状態だけで認識する: 短い押下と順序を失うため、記録と単調時間を使用する。
-- すべてをアクション後に加工する: 接触IDや機器校正など、マッピングで失われる情報が必要な処理を扱えない。
+- InputSystem に全加工を組み込む: デバイス履歴と利用者ごとの設定の責務が混ざる。
+- 仮想 Device から履歴を読む: 同じ更新では未記録のため、一更新遅れる。
+- 全処理をマッピング後に置く: 接触 ID や筆圧などの元情報が失われる。
 
-## 結果と影響
+## 結果と検証
 
-機器固有の補正と操作の意味を分離し、仮想 Device を既存の登録・履歴・マッピングの仕組みに接続できる。元入力の保存は取得分岐として明示的に構成する必要がある。派生関係の更新順、共有取得と所有権の管理が追加される。
+既存の履歴・通知・ポーリングを保ったまま加工を差し込める。補正前の診断分岐、実 OS バックエンド、一般的な派生グラフの構成 UI は本実装の対象外とする。
 
-## 検証方針
-
-デッドゾーン境界、筆圧 null、元バッチの不変性、一更新一取得、二接触の入替・キャンセル、派生 Device の登録・切断・中立化、循環拒否、元と派生の二重入力、資源の一度だけの破棄、設定の保存・復元・移行、保存失敗時の旧補正維持、Revision変更の境界適用を検証する。
-
-## 別途決定する事項
-
-設定型と完全な公開 API、取得コーディネーター、仮想デバイスのコントロール表示・保存形式、複数接触の選択規則、性能目標は実装前に具体化する。本 PR は設計提案のみである。
+テストでは中心補正・デッドゾーン・筆圧 null、一更新一取得、スワイプの終了とキャンセル、ピンチ・回転、設定変更時の接触中断、所有権と設定保存・復元を確認する。
