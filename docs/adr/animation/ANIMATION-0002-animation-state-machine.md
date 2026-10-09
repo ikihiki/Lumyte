@@ -57,7 +57,7 @@ flowchart LR
 
 1. 引数を検証し、注入された時計の `Now` を一度だけ取得する。内部の再生者にはこの取得済み時点を返す時計を渡す。
 2. 現在状態をその時点まで評価する。値は内部の再利用可能な出力へ計算し、通過したマーカーを保持する。
-3. その評価後の位置・完了情報と今回の Context を AnimationStateContext に包み、内部の汎用機械の FireAny を、保留トリガーと AutomaticTrigger の集合で一度呼ぶ。候補内のガード短絡と、全候補を登録順に評価した後の優先順位選択は汎用側の契約を使う。
+3. その評価後の位置・完了情報と今回の Context を AnimationStateContext に包み、内部の汎用機械の FireAny を、保留トリガーと AutomaticTrigger の集合で一度呼ぶ。優先順位順の候補選択と、候補内および成立後のガード短絡は汎用側の契約を使う。
 4. 遷移がなければ現在状態の値を外部 Output に書き込む。遷移があれば旧状態の値の寄与を破棄し、新状態を取得済み時点から位置 0 で開始して値を評価する。旧状態の途中位置や超過時間は引き継がない。
 5. 通過マーカーと、成立した一件の遷移通知を追記する。手順 3 が正常終了した時点でアダプターが保留を消去する。汎用機械自体は保留を持たない。
 
@@ -369,8 +369,8 @@ AnimationStateMachineDefinition<Motion, MotionInput> simple = builder.Build(Moti
 専用 Builder を使わず、汎用側の API で条件を作る例。idle と pulse は上の例と同じ値ソースを使う。
 
 ```csharp
-var idleState = StateMachineKit.State<AnimationStateContext<MotionInput>>("Idle");
-var actionState = StateMachineKit.State<AnimationStateContext<MotionInput>>("Action");
+var idleState = new State<AnimationStateContext<MotionInput>>("Idle");
+var actionState = new State<AnimationStateContext<MotionInput>>("Action");
 var tick = StateMachineTrigger.Create();
 var control = new StateMachineBuilder<AnimationStateContext<MotionInput>, StateMachineTrigger>(idleState);
 control.AddTransition(new Transition<AnimationStateContext<MotionInput>, StateMachineTrigger>(
@@ -434,7 +434,7 @@ null の必須引数は ArgumentNullException、不整合な定義と未使用�
 本 PR は文書のみを追加する。以下は採用後の実装の受け入れ条件であり、実装・測定済みの結果ではない。
 
 - ManualClock で初期状態、条件・トリガー・完了遷移、自己遷移、最大一遷移、同時刻の再評価を確認する。
-- 優先順位と同順位の登録順、候補内の短絡評価・全候補の評価、条件の AND、未使用トリガー、保留の消費、Pause 中の保留を確認する。
+- 優先順位と同順位の登録順、候補内と成立後の短絡評価、条件の AND、未使用トリガー、保留の消費、Pause 中の保留を確認する。
 - Pause／Resume、Speed 0、速度変更と入場への継承、Once 終端保持、Loop に完了がないこと、停止・再開始を確認する。
 - 一回の Update が時計を一回だけ読むこと、入場時点が同じであること、ゲームと UI の時計を独立して進められることを確認する。
 - 長い更新間隔で旧マーカーを収集し、新状態を観測時点から開始すること、旧値を破棄しチャネルを復元しないことを確認する。

@@ -13,7 +13,7 @@ UI の画面選択、接続処理、ゲーム進行では、状態、入力、�
 
 ### 配置と責務
 
-プロジェクト・NuGet・名前空間を `Lumyte.StateMachines`、配置を `src/Core/Lumyte.StateMachines/` とする。旧ライブラリの型名と主要な API・挙動を継承し、名前空間とパッケージ名は現在の配置に揃える。旧パッケージとのバイナリ互換は要求しない。
+プロジェクト・NuGet・名前空間を `Lumyte.StateMachines`、配置を `src/Core/Lumyte.StateMachines/` とする。旧ライブラリの機能を引き継ぎ、公開 API は現在の構築・所有権の方針に合わせて設計する。型名・メソッド名・シグネチャ・構築構文・診断識別子について、旧 API のソース互換・バイナリ互換は要求しない。
 
 一つの不変定義から、独立した Context と現在状態を持つ実行インスタンスを作る。状態の識別には `State<TContext>` の参照同一性を使い、Name は表示・診断用とする。同名の別インスタンスを別状態として扱う。TTrigger は enum、文字列、独自型を使え、`EqualityComparer<TTrigger>.Default` で比較する。不透明なキーだけに制限しない。
 
@@ -31,34 +31,36 @@ flowchart LR
 
 以下をすべて実装の受け入れ条件とする。旧実装の比較元は `462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee` の `src/interaction/Lumyte.StateMachine/` と、そのテスト・ベンチマークである。
 
-- `State<TContext>`：必須の Name、複数の OnEnter／OnExit、登録順での実行、定義所属後の変更禁止。
-- `Transition<TContext, TTrigger>`：From／To／Trigger、複数の When ガード、複数の Effect、WithPriority、定義所属後の変更禁止。
-- `StateMachine<TContext, TTrigger>`：InitialState、States、Transitions の参照、初期状態と全遷移端点からの状態集合の構築、共有定義からの CreateInstance。
-- `StateMachineInstance<TContext, TTrigger>`：保持する Context、CurrentState、生成時の初期入場、同期 Fire、非遷移の CanFire、Transitioned イベント。
-- ガードの AND と短絡、成立候補の最大 Priority、同順位の登録順、退出 → Effect → 状態変更 → 入場 → 通知という順序。
-- 未知・不成立トリガーの false、自己遷移、複数インスタンスの独立性、参照型 Context による外部入力の変更。
-- `StateMachineKit`：State／Machine の生成ファクトリ、Transition の構築、Composition の子登録。
-- `StateMachineDiagnostics`：ActivitySource、Fire の Activity、状態・トリガー・遷移先・優先順位・成功のタグ、例外の Error status と error.type。
+- 名前付き状態と、複数の入場・退出アクションの登録・順次実行。
+- 型付き Context と enum・文字列・独自型の Trigger。
+- 複数ガードの AND・候補内の短絡評価、複数の遷移エフェクト、優先順位と同順位の登録順。
+- 初期状態と遷移一覧の参照、共有できる確定済み定義と独立した実行インスタンス。
+- 保持 Context、現在状態、生成時の初期入場、同期の発火と遷移可能性の照会、遷移通知。
+- 退出 → エフェクト → 状態変更 → 入場 → 通知の順序。
+- 未知・不成立トリガーの false、自己遷移、外部で変更した参照型 Context の利用。
+- 構築時の設定変更と、定義確定後の設定変更の禁止。
+- 通常 API と Composition による構築。
+- ActivitySource による状態・トリガー・遷移先・優先順位・成功と、例外の診断。
 
 旧実装は階層状態、並列状態、履歴、非同期コールバック、自動遷移連鎖、保留トリガーキューを提供しない。これらを「旧機能」として追加することはしない。
 
 ### 定義と凍結
 
-State と Transition は構築中だけ可変であり、定義に所属した時点で凍結する。初期状態は定義の作成時に凍結し、遷移とその両端の状態は遷移一覧の確定時に凍結する。OnEnter／OnExit／When／Effect／WithPriority を凍結後に呼ぶと InvalidOperationException。
+State と Transition は構築中だけ可変であり、定義に所属した時点で凍結する。Builder／Composition の Build で検証を終えてから、状態と遷移をまとめて凍結する。初期状態だけを設定途中で凍結する API は設けない。OnEnter／OnExit／When／Effect／WithPriority を凍結後に呼ぶと InvalidOperationException。
 
 States は InitialState を先頭とし、遷移を登録順に走査して From／To を参照同一性で重複排除する。初期状態以外の明示登録を許す Builder の追加状態は、その後に登録順で含める。Transitions は登録順を保持する。外部から一覧を変更できない読み取り専用の格納とする。
 
-Composition で定義を構成できるのは一回だけ。旧実装で空の一覧だと再構成できた判定漏れは引き継がず、空の定義でも確定済みとする。入力一覧はコピーする。状態名とトリガーの等価性・ハッシュ値は定義の寿命中に変更しない。
+定義の作成は Build に統一し、実行時の定義に再構成用インデクサーを持たせない。Builder と Composition ノードは編集できるが、Build は入力一覧をコピーし、構築済み定義に後から変更を反映しない。空の遷移一覧も有効な確定済み定義とする。状態名とトリガーの等価性・ハッシュ値は定義の寿命中に変更しない。
 
 ### インスタンスと評価規則
 
-CreateInstance(context) は Context を保持し、CurrentState を InitialState に設定して OnEnter を登録順に実行する。Context を毎回渡すことだけを要求する設計に変えない。複数インスタンスで定義を共有しても現在状態は独立する。Context の共有は消費側が明示的に選ぶ。
+CreateInstance(context) は Context を保持し、CurrentState を InitialState に設定して OnEnter を登録順に実行する。複数インスタンスで定義を共有しても現在状態は独立する。Context の共有は消費側が明示的に選ぶ。
 
 Fire(trigger) は同期処理で、保持した Context を使って次の順に実行する。
 
-1. 登録順に遷移を走査する。From が現在状態と同じ参照、Trigger が一致するものだけを候補とする。
+1. From が現在状態と同じ参照、Trigger が一致するものだけを候補とし、Priority の降順、同順位は登録順に調べる。
 2. 各候補の When を登録順に評価する。一つでも false ならその候補を除外する。ガードがなければ成立する。
-3. 全候補の成立判定を終え、最大 Priority の候補を一つ選ぶ。同順位は先に登録した候補を優先する。高優先順位の成立候補があっても、後の候補のガード評価を省略しない。
+3. 最初に成立した候補を一つ選び、それ以後のガードは呼ばない。純粋なガードによる最大優先順位の選択結果を維持し、旧実装の候補走査順や呼び出し回数は互換対象にしない。
 4. 候補がなければ false。あれば旧状態の OnExit → 選択遷移の Effect → CurrentState を To に変更 → 新状態の OnEnter → Transitioned の順に実行して true。
 
 一回の Fire で最大一遷移。自己遷移に追加フラグを要求せず、通常どおり退出・Effect・再入場・通知を行う。未登録のトリガーと不成立トリガーは例外にせず false を返す。Fire は入力を即座に処理し、保留・集約・次回評価への持ち越しを行わない。
@@ -73,7 +75,7 @@ CanFire は同じ候補選択とガード評価を行うが、状態を変更せ
 
 Transitioned は新状態の OnEnter が正常終了した後に、選択した Transition を渡して同期発火する。購読者は消費側が管理し、長寿命の定義が実行者を保持することはない。
 
-旧リスナーを継続利用できるよう、ActivitySourceName は `Lumyte.StateMachine`、通常 Fire の操作名は `StateMachine.Fire` を維持する。タグは `state_machine.state`、`state_machine.trigger`、`state_machine.transitioned`、成立時の `state_machine.target` と `state_machine.priority` を使う。例外時は Error status と `error.type` を記録して再送出する。CanFire は診断 Activity を開始しない。FireAny は `StateMachine.FireAny` とし、単一トリガーの代わりに `state_machine.triggers` を記録する。
+ActivitySourceName は新パッケージと揃えて `Lumyte.StateMachines` とし、通常 Fire の操作名は `StateMachine.Fire` とする。タグは `state_machine.state`、`state_machine.trigger`、`state_machine.transitioned`、成立時の `state_machine.target` と `state_machine.priority` を使う。例外時は Error status と `error.type` を記録して再送出する。CanFire は診断 Activity を開始しない。FireAny は `StateMachine.FireAny` とし、単一トリガーの代わりに `state_machine.triggers` を記録する。
 
 ## 公開 API の追加差分
 
@@ -86,10 +88,11 @@ Transitioned は新状態の OnEnter が正常終了した後に、選択した 
 +
 +namespace Lumyte.StateMachines;
 +
-+public sealed partial class State<TContext>
++public sealed class State<TContext>
 +{
 +    // null・空白名は拒否。名前は状態同一性のキーではない。
-+    public required string Name { get; init; }
++    public State(string name);
++    public string Name { get; }
 +    // 複数登録可、登録順。凍結後は InvalidOperationException。
 +    public State<TContext> OnEnter(Action<TContext> action);
 +    public State<TContext> OnExit(Action<TContext> action);
@@ -107,9 +110,10 @@ Transitioned は新状態の OnEnter が正常終了した後に、選択した 
 +    public Transition<TContext, TTrigger> Effect(Action<TContext> effect);
 +    public Transition<TContext, TTrigger> WithPriority(int priority);
 +}
-+public sealed partial class StateMachine<TContext, TTrigger>
++public sealed class StateMachine<TContext, TTrigger>
 +{
-+    public required State<TContext> InitialState { get; init; }
++    internal StateMachine();
++    public State<TContext> InitialState { get; }
 +    public IReadOnlyList<State<TContext>> States { get; }
 +    public IReadOnlyList<Transition<TContext, TTrigger>> Transitions { get; }
 +    // 同期で初期状態の OnEnter を実行する。
@@ -132,7 +136,7 @@ Transitioned は新状態の OnEnter が正常終了した後に、選択した 
 +}
 +public static class StateMachineDiagnostics
 +{
-+    public const string ActivitySourceName = "Lumyte.StateMachine";
++    public const string ActivitySourceName = "Lumyte.StateMachines";
 +    public static ActivitySource Activities { get; }
 +}
 +// enum・文字列と並んで使用できる任意の参照同一性キー。
@@ -151,11 +155,11 @@ Transitioned は新状態の OnEnter が正常終了した後に、選択した 
 +}
 ```
 
-State と StateMachine は通常の object initializer でも構築できる。遷移を持つ定義は Builder または Composition で確定する。CreateInstance は遷移ゼロの定義も受け入れ、その時点で未確定の定義を空として確定する。
+State と Transition は通常のコンストラクターで構築し、定義は Builder または Composition の Build で確定する。遷移ゼロの定義も同じ経路で構築できる。CreateInstance は確定済みの定義だけを受け取る。
 
 ### 構築入口と Composition
 
-旧 StateMachineKit の State／Machine／Transition と子登録の構文を維持する。互換入口は通常メソッドとして提供し、旧 Generator の配置規則は持ち込まない。現在の Generator が要求する `ComposeStateMachines.Definitions` 内のノードを別途用意し、同じ Builder と凍結処理へ接続する。
+現在の Generator が要求する `ComposeStateMachines.Definitions` 内のノードを構築入口とし、通常 Builder と同じ検証・凍結処理へ接続する。旧 StateMachineKit と実行時定義の子登録インデクサーは設けない。
 
 ```diff
 +using System;
@@ -164,20 +168,6 @@ State と StateMachine は通常の object initializer でも構築できる。�
 +
 +namespace Lumyte.StateMachines;
 +
-+public static class StateMachineKit
-+{
-+    public static State<TContext> State<TContext>(string name,
-+        IReadOnlyList<Action<State<TContext>>>? with = null);
-+    public static StateMachine<TContext, TTrigger> Machine<TContext, TTrigger>(State<TContext> initialState,
-+        IReadOnlyList<Action<StateMachine<TContext, TTrigger>>>? with = null);
-+    public static Transition<TContext, TTrigger> Transition<TContext, TTrigger>(
-+        State<TContext> from, State<TContext> to, TTrigger trigger);
-+}
-+public sealed partial class StateMachine<TContext, TTrigger>
-+{
-+    // 旧構文の互換入口。一度だけ遷移一覧を確定する。
-+    public StateMachine<TContext, TTrigger> this[params Transition<TContext, TTrigger>[] content] { get; }
-+}
 +public static partial class ComposeStateMachines
 +{
 +    public static partial class Definitions
@@ -208,24 +198,24 @@ Optional、with、生成インデクサーによる子の置換は既存 Composi
 
 ```csharp
 using Lumyte.StateMachines;
-using static Lumyte.StateMachines.StateMachineKit;
+using static Lumyte.StateMachines.ComposeStateMachines;
 
 var context = new ConnectionContext();
-State<ConnectionContext> disconnected = State<ConnectionContext>("Disconnected")
+State<ConnectionContext> disconnected = new State<ConnectionContext>("Disconnected")
     .OnExit(c => c.Log.Add("exit disconnected"));
-State<ConnectionContext> connecting = State<ConnectionContext>("Connecting")
+State<ConnectionContext> connecting = new State<ConnectionContext>("Connecting")
     .OnEnter(c => c.Log.Add("enter connecting"));
-State<ConnectionContext> connected = State<ConnectionContext>("Connected");
+State<ConnectionContext> connected = new State<ConnectionContext>("Connected");
 StateMachine<ConnectionContext, ConnectionTrigger> definition =
     Machine<ConnectionContext, ConnectionTrigger>(disconnected)[
-        Transition(disconnected, connecting, ConnectionTrigger.Connect)
+        new Transition<ConnectionContext, ConnectionTrigger>(disconnected, connecting, ConnectionTrigger.Connect)
             .When(c => c.HasConfiguration)
             .When(c => !c.IsConnecting)
             .Effect(c => c.IsConnecting = true)
             .WithPriority(10),
-        Transition(connecting, connected, ConnectionTrigger.Ready)
+        new Transition<ConnectionContext, ConnectionTrigger>(connecting, connected, ConnectionTrigger.Ready)
             .When(c => c.IsReady)
-    ];
+    ].Build();
 var machine = definition.CreateInstance(context);
 machine.Transitioned += transition => context.Log.Add(transition.To.Name);
 if (machine.CanFire(ConnectionTrigger.Connect))
@@ -266,17 +256,17 @@ StateMachine<ConnectionContext, ConnectionTrigger> composed =
     ].Build();
 ```
 
-## 所有権・エラー・互換性
+## 所有権と失敗時の契約
 
 定義は Managed の共有オブジェクト。インスタンス、Context、アクション・条件が捕捉するオブジェクト、通知購読の寿命は消費側が管理する。インスタンスの Context は作成時から保持される。明示 Context のオーバーロードでは、指定 Context を呼び出し後に保持しない。Dispose や Native ハンドルは要求しない。単一インスタンスの操作は一スレッドに限定する。
 
-必須の null は ArgumentNullException、空白の Name と null を含む定義は ArgumentException、凍結後の変更と再構成は InvalidOperationException。Fire の null トリガーは旧実装どおり一致候補なしとして false を返す。明示 Context と入力一覧の null は副作用前に拒否する。無効な一覧を検証しただけで既存定義を部分更新しない。
+必須の null は ArgumentNullException、空白の Name と null を含む定義は ArgumentException、凍結後の変更は InvalidOperationException。Fire の null トリガーは一致候補なしとして false を返す。明示 Context と入力一覧の null は副作用前に拒否する。無効な一覧を検証しただけで既存定義を部分更新しない。
 
 条件・アクション・通知は同期処理であり、例外を呼び出し側へ返す。ガード例外時は状態未変更。退出・Effect の例外時は旧状態のまま、入場・Transitioned の例外時は新状態に変更済みとなる。完了したアクションと外部への副作用は巻き戻さない。CreateInstance の初期入場例外はインスタンス作成の失敗として返す。
 
 旧実装で未定義だった Fire の再入操作は、現在状態の変更順序を壊すため InvalidOperationException で拒否する。通常の同期コールバックと通知は維持し、別の実行インスタンスの操作は許可する。ガードは副作用を持たないものとし、Context と呼び出し回数が同じなら同じ結果を返す。
 
-旧実装の機能を省略せず、空定義の再構成、公開配列の外部書換え、再入評価の扱いだけを契約として明確化する。従来の状態名、Trigger の値、ガード・Effect の順序、診断名を維持して移行できる。旧実装に存在しない Start／Stop／Pause や入力保留を基本 API に必須化しない。リセットは定義から新しいインスタンスを作り、初期入場を再実行する。
+旧実装の機能を省略せず、構築の確定、読み取り専用の一覧、再入評価、例外時の状態を明示する。利用コード・構築コード・診断リスナーの変更を許容し、旧 API を転送する互換層は提供しない。旧実装に存在しない Start／Stop／Pause や入力保留を基本 API に必須化しない。リセットは定義から新しいインスタンスを作り、初期入場を再実行する。
 
 ## 検討した代替案
 
@@ -288,9 +278,9 @@ StateMachine<ConnectionContext, ConnectionTrigger> composed =
 
 参照同一性は便利だが、旧ライブラリで使える enum・文字列・独自型の入力を制限する。TTrigger を維持し、不透明なキーは任意の追加型とする。
 
-### 高優先順位の候補を最初に短絡選択する
+### 旧 API と候補走査順を維持する
 
-ガード呼び出しを減らせるが、旧実装の登録順の候補評価と挙動が変わる。候補のガードをすべて評価してから最大優先順位を選ぶ。
+互換入口や全候補のガード評価は、必要な機能を増やさず構築経路と処理量を増やす。互換層を設けず、純粋なガードを優先順位順に短絡評価する。
 
 ## 結果と影響
 
@@ -298,14 +288,14 @@ StateMachine<ConnectionContext, ConnectionTrigger> composed =
 - 型付き入力、Context、複数ガードとアクション、通知・診断を独立した基盤として提供する。
 - コールバックの副作用と例外時の部分完了を利用側が扱う必要がある。
 - 状態同一性は参照であり、Name をキーとして保存・検索する場合は消費側で対応を管理する。
-- 候補の全走査を維持するため、単一状態の候補数に比例したガード評価が発生する。
+- ガードを優先順位順に短絡評価できる。最悪時の評価量は該当状態とトリガーの候補数に比例する。
 
 ## 検証方針
 
-- 旧 StateMachineTests の全 8 ケースを新配置で再現する。型付きトリガー、ガード、優先順位、退出／Effect／入場、独立インスタンス、未知トリガー、凍結、診断タグを含む。
-- 初期入場、複数アクションの登録順、複数ガードの AND／短絡、同順位、後続候補の評価、自己遷移を確認する。
+- 旧 StateMachineTests の全 8 ケースが検証する機能を新 API で確認する。旧テストコードの無変更移植は要求しない。型付きトリガー、ガード、優先順位、退出／Effect／入場、独立インスタンス、未知トリガー、凍結、診断タグを含む。
+- 初期入場、複数アクションの登録順、複数ガードの AND／短絡、同順位、成立後のガード省略、自己遷移を確認する。
 - enum・文字列・独自型の Trigger 等価性、同名別状態、CanFire が状態・Effect・通知を変更しないことを確認する。
-- 空定義、複数回の構成拒否、入力一覧のコピー、読み取り専用の一覧、通常 Builder と Composition の等価性を確認する。
+- 空定義、Build 後のノード編集と既存定義の分離、入力一覧のコピー、読み取り専用の一覧、通常 Builder と Composition の等価性を確認する。
 - 各コールバック・通知の例外時の状態と診断 Error、再入拒否、通知購読の寿命を確認する。
 - 明示 Context の非保持と、FireAny の一回の候補評価・優先順位・入力重複・空入力・例外を確認する。
 - 旧ベンチマークの候補数 1／8／32 の FireAndReset を再現し、診断リスナーの有無別に割り当てと実行時間を測定する。
