@@ -103,3 +103,49 @@ barrierはMemoryBarrier2／BufferMemoryBarrier2／ImageMemoryBarrier2をCmdPipel
 Submitは専用VkFenceを確保してQueueSubmitし、Status／WaitAsyncはそのfenceを非blockingに確認します。GPU全体のidle待機、CPUデータのreadback、resourceの自動解放を挿入しません。提出失敗時のout-of-memoryは未提出として扱い、device lossはFaultedにして再提出を拒否します。fenceとcommand poolはGPU使用終了後に明示的にDisposeします。
 
 共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。commandとsubmissionもdeviceの子として数えます。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+
+## Pipeline
+
+graphics programはshaderの組・topology分類・compile optionを保持し、draw時に描画状態とpassの実attachment formatからnative pipelineを解決します。完全なnative PSOを生成するため、program内でvariantをcacheし、等価なkeyの再利用で生成を繰り返しません。keyにviewport／scissor／blend constant／stencil reference、texture instance、clear値は含めません。variantはprogram Disposeまで保持します。
+
+compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
+
+reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。初期のresource ABIは空で、descriptorやpush constantが必要なprogramはroot-data／binding契約への接続前に拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
+
+Vulkanはdynamic rendering対応のGraphicsPipelineCreateInfoと空のPipelineLayoutを使用します。attachment formatはPipelineRenderingCreateInfo、topology・blend・coverageは完全なnative pipelineへ固定します。viewport・scissor・blend constants・stencil referenceはdynamic stateです。WebGPUと同じ画面座標へ揃えるためviewportのheightを負にし、front faceを対応させます。per-attachment blendに必要なIndependentBlendもdevice生成時に必須として有効化し、fallbackは設けません。
+
+CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返された部分的なnative objectを回収してcacheへ登録しません。sample mask 0も正確に渡します。optimization hintは保持しますが、partial graphics programをこの実装では使用せず、両hintともdriverの通常のpipeline生成へ渡します。
+
+これらの完全なnative pipelineはcacheが必要な生成単位です。dynamic stateはcommandを記録するだけで、一時state objectを生成しません。そのため今回新たに比較対象となる軽量なstate objectはありません。partial programや独立した軽量objectを導入する際は、毎draw生成・状態変更時生成・cacheのCPU時間と保持memoryを同条件で比較し、結果をこのREADMEへ記録します。今回の実装で性能計測済みとは扱いません。
+
+共通契約は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)、共通画素検証は [PipelineExercise](../../../samples/Lumyte.Graphics.Shared/PipelineExercise.cs) を参照してください。
+
+### Graphics PSO cacheの無効化
+
+`VulkanDevice.Create(cacheGraphicsPipelines: false)` で、状態が同じdrawでも毎回 `vkCreateGraphicsPipelines` を呼ぶ比較用経路を選べます。既定値は `true` です。これはライブラリのvariant再利用を無効にする設定で、driver内部のcacheを無効にするものではありません。`VkPipelineCache` はどちらの経路も渡していません。
+
+生成したPSOは記録済みcommandやGPUが参照するため、draw直後には破棄せずprogramの `Dispose` まで保持します。利用者はGPU完了後にprogramを解放してください。無効時はdraw数に比例してnative PSOの保持数と生成費用が増えます。compute pipelineはprogram生成時の一個を使う契約を維持します。
+
+共通APIの同じ画素検証をcache有効・無効の両方で既存CIへ流します。これは描画の正しさの比較で、実GPUの性能比較結果を示すものではありません。
+
+### PSO生成費用の比較方法
+
+`dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan pipeline-benchmark` で共通APIの同一workloadを比較します。各試行は独立したdeviceとprogramを生成し、8×8の単一attachmentに初回drawと同じ状態の200 drawを記録します。8 roundで有効・無効の順を交互に入れ替え、最初の2 roundをwarmupとして除外します。
+
+測定項目は初回drawのCPU時間、200 draw記録のCPU時間、submitから完了までのwall-clock時間、GPU完了後のprogram破棄時間です。device／shader／resource作成と状態設定は測定対象に含めません。完了時間はGPU timestampではなくCPU schedulingを含みます。PSO cache無効時のnative保持数は201個、有効時は1個です。毎drawで状態を再設定する費用や異なるstate variantのworkloadはこの測定に含めません。
+
+既存Linux x64 CIのlavapipeで測定し、raw JSONLをtest-results artifactに保存します。software VulkanのCPU費用を比較するための結果であり、hardware GPUや実シーンのFPSへ一般化しません。median・最小・最大を報告し、速度比は200 draw記録のmedianから計算します。
+
+### CI測定結果
+
+[2026-10-09の測定ログ](https://github.com/ikihiki/Lumyte/actions/runs/37933131170/job/113828542234)。Ubuntu 24.04 x64、Release、Mesa 25.2.8、llvmpipe LLVM 20.1.2。warmup 2回を除いた各6試行。値はmsの中央値（最小–最大）です。
+
+| 測定項目 | cache有効 | cache無効 |
+| --- | ---: | ---: |
+| 初回draw記録 | 0.274 (0.253–0.336) | 0.295 (0.243–0.323) |
+| 200 draw記録 | 0.221 (0.142–0.350) | 21.456 (18.133–28.571) |
+| submitから完了 | 4.704 (4.608–5.848) | 65.970 (63.083–105.730) |
+| program破棄 | 0.020 (0.017–0.069) | 0.078 (0.054–0.100) |
+| 上記の合計（各試行の合計から算出） | 5.251 (5.069–6.471) | 90.184 (82.813–130.980) |
+
+200 draw記録の中央値は無効時に約97倍、測定した区間の合計は約17.2倍でした。同じPSOの再利用が多いこのworkloadではcacheを維持します。submit完了時間の差にはsoftware driverの実行時処理やCPU schedulingも含まれるため、hardware GPUの描画時間差とは解釈しません。必要な拡張を用いたdynamic state化や部分PSO生成との比較は別のworkloadです。

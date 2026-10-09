@@ -261,7 +261,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
             _owner.Api.CmdBeginRendering(_command, &rendering);
         }
 
-        return new VulkanRenderEncoder(this);
+        return new VulkanRenderEncoder(this, attachments);
     }
 
     private IComputeEncoder BeginComputeNative() => new VulkanComputeEncoder(this);

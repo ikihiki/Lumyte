@@ -15,6 +15,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private int _samplerCount;
     private int _argumentTableCount;
     private int _shaderCount;
+    private int _pipelineCount;
     private int _commandCount;
     private int _submissionCount;
     private bool _disposed;
@@ -38,6 +39,10 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             MaxSamplerAnisotropy = 16,
             MaxUniformBuffersPerStage = limits.maxUniformBuffersPerShaderStage,
             MaxStorageBuffersPerStage = limits.maxStorageBuffersPerShaderStage,
+            MaxComputeWorkgroupsPerDimension = limits.maxComputeWorkgroupsPerDimension,
+            MaxComputeWorkgroupSizeX = limits.maxComputeWorkgroupSizeX,
+            MaxComputeWorkgroupSizeY = limits.maxComputeWorkgroupSizeY,
+            MaxComputeWorkgroupSizeZ = limits.maxComputeWorkgroupSizeZ,
             MaxComputeInvocationsPerWorkgroup = limits.maxComputeInvocationsPerWorkgroup,
             CopyBufferOffsetAlignment = 4,
             CopyBufferSizeAlignment = 4,
@@ -74,6 +79,26 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             instance.Dispose();
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new WgpuGraphicsPipeline(this, desc);
+        _pipelineCount++;
+        return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new WgpuComputePipeline(this, desc);
+        _pipelineCount++;
+        return program;
     }
 
     /// <inheritdoc />
@@ -179,9 +204,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, commands and submissions before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
 
         if (_disposed)
@@ -194,6 +219,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _instance.Dispose();
         _disposed = true;
     }
+
+    internal void ReleasePipeline() => _pipelineCount--;
 
     internal void ReleaseCommand() => _commandCount--;
 

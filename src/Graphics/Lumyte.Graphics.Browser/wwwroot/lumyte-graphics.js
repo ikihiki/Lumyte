@@ -23,6 +23,10 @@ export async function createDevice() {
             maxSamplerAnisotropy: 16,
             maxUniformBuffersPerStage: limits.maxUniformBuffersPerShaderStage,
             maxStorageBuffersPerStage: limits.maxStorageBuffersPerShaderStage,
+            maxComputeWorkgroupsPerDimension: limits.maxComputeWorkgroupsPerDimension,
+            maxComputeWorkgroupSizeX: limits.maxComputeWorkgroupSizeX,
+            maxComputeWorkgroupSizeY: limits.maxComputeWorkgroupSizeY,
+            maxComputeWorkgroupSizeZ: limits.maxComputeWorkgroupSizeZ,
             maxComputeInvocationsPerWorkgroup: limits.maxComputeInvocationsPerWorkgroup,
             copyBufferOffsetAlignment: 4,
             copyBufferSizeAlignment: 4,
@@ -184,3 +188,32 @@ export function submitCommands(handle, list) {
 export function getSubmissionStatus(result) { return result.status; }
 export function getSubmissionError(result) { return result.error; }
 export async function waitSubmission(result) { await result.promise; }
+
+export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson) {
+    const state = JSON.parse(stateJson), formats = JSON.parse(formatsJson);
+    const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    const factors = ["zero", "one", "src", "one-minus-src", "src-alpha", "one-minus-src-alpha", "dst", "one-minus-dst", "dst-alpha", "one-minus-dst-alpha", "src-alpha-saturated", "constant", "one-minus-constant"];
+    const operations = ["add", "subtract", "reverse-subtract", "min", "max"];
+    const blend = b => ({ srcFactor: factors[b.Source], dstFactor: factors[b.Destination], operation: operations[b.Operation] });
+    return handle.device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module: vertex, entryPoint: vertexEntry },
+        fragment: { module: fragment, entryPoint: fragmentEntry, targets: formats.map((format, i) => {
+            const c = state.ColorTargets[i];
+            const result = { format: nativeFormats[format], writeMask: c.WriteMask };
+            if (c.BlendEnable) result.blend = { color: blend(c.Color), alpha: blend(c.Alpha) };
+            return result;
+        }) },
+        primitive: { topology: ["point-list", "line-list", "line-strip", "triangle-list", "triangle-strip"][state.Topology], frontFace: state.Rasterization.FrontFace === 0 ? "ccw" : "cw", cullMode: ["none", "front", "back"][state.Rasterization.Cull] },
+        multisample: { count: 1, mask: state.SampleMask },
+    });
+}
+export function createComputePipeline(handle, shader, entry) { return handle.device.createComputePipeline({ layout: "auto", compute: { module: shader, entryPoint: entry } }); }
+export function setRenderPipeline(pass, pipeline) { pass.setPipeline(pipeline); }
+export function setComputePipeline(pass, pipeline) { pass.setPipeline(pipeline); }
+export function setViewport(pass, x, y, width, height, min, max) { pass.setViewport(x, y, width, height, min, max); }
+export function setScissor(pass, x, y, width, height) { pass.setScissorRect(x, y, width, height); }
+export function setBlendConstant(pass, r, g, b, a) { pass.setBlendConstant({ r, g, b, a }); }
+export function setStencilReference(pass, reference) { pass.setStencilReference(reference); }
+export function draw(pass, vertices, instances, firstVertex, firstInstance) { pass.draw(vertices, instances, firstVertex, firstInstance); }
+export function dispatch(pass, x, y, z) { pass.dispatchWorkgroups(x, y, z); }

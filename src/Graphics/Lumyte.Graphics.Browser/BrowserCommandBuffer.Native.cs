@@ -65,7 +65,7 @@ internal sealed partial class BrowserCommandBuffer
             BrowserInterop.AddColorAttachment(desc, ((BrowserTextureView)a.View).Native, (int)a.LoadOp, (int)a.StoreOp, a.ClearValue.Red, a.ClearValue.Green, a.ClearValue.Blue, a.ClearValue.Alpha);
         }
 
-        return new BrowserRenderEncoder(this, BrowserInterop.BeginRenderPass(_encoder!, desc));
+        return new BrowserRenderEncoder(this, BrowserInterop.BeginRenderPass(_encoder!, desc), attachments);
     }
 
     private IComputeEncoder BeginComputeNative() => new BrowserComputeEncoder(this, BrowserInterop.BeginComputePass(_encoder!));

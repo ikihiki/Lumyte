@@ -52,4 +52,14 @@ public interface IGraphicDevice
     /// <param name="format">The color storage format.</param>
     /// <returns>The resolved texture copy layout.</returns>
     TextureCopyLayout GetTextureCopyLayout(TextureFormat format);
+
+    /// <summary>Creates a shader program; draw state and attachment formats are resolved at draw.</summary>
+    /// <param name="desc">The program description.</param>
+    /// <returns>The owned backend program.</returns>
+    IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
+
+    /// <summary>Creates a compute program from embedded entry and workgroup metadata.</summary>
+    /// <param name="desc">The compute description.</param>
+    /// <returns>The owned executable program.</returns>
+    IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc);
 }

@@ -8,6 +8,9 @@
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/fullscreen-vertex.slang" ResourceName="Lumyte.Shaders.fullscreen-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/color-fragment.slang" ResourceName="Lumyte.Shaders.color-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/empty-compute.slang" ResourceName="Lumyte.Shaders.empty-compute" Stage="compute" />
     <SlangShader Include="Shaders/increment.slang" ResourceName="Lumyte.Shaders.increment" />
     <EmbeddedResource Include="Shaders/increment.slang" LogicalName="Lumyte.Shaders.increment.slang" />
   </ItemGroup>

@@ -15,9 +15,10 @@ internal static partial class Program
     private static async Task Main()
     {
         using BrowserDevice device = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
-        string report = CapsDisplay.Describe(device) + "\n" + await BufferExercise.RunAsync(device) + "\n" + TextureExercise.Run(device) + "\n" + SamplerExercise.Run(device) + "\n" + ArgumentTableExercise.Run(device) + "\n" + ShaderExercise.Run(device) + "\n" + await CommandExercise.RunAsync(device);
+        string report = CapsDisplay.Describe(device) + "\n" + await BufferExercise.RunAsync(device) + "\n" + TextureExercise.Run(device) + "\n" + SamplerExercise.Run(device) + "\n" + ArgumentTableExercise.Run(device) + "\n" + ShaderExercise.Run(device) + "\n" + await CommandExercise.RunAsync(device) + "\n" + await PipelineExercise.RunAsync(device);
         using BrowserDevice foreign = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
         ArgumentTableExercise.CheckForeignDevice(device, foreign);
+        PipelineExercise.CheckForeignDevice(device, foreign);
         _report = report;
         Console.WriteLine(_report);
     }

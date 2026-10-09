@@ -57,3 +57,12 @@ mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- v
 ```
 
 共有プロジェクトのCommandExerciseで、buffer・mip／layer textureのGPUコピー、clear／store、passとsubmissionの状態を共通APIのみで検証します。Vulkanはdynamic renderingとsynchronization2を必須としてdevice生成時に有効化します。
+
+## Pipeline
+
+```sh
+mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu pipelines
+mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- vulkan pipelines
+```
+
+共通APIのPipelineExerciseでprogram再利用、複数format、blendとzero maskの全画素、compute dispatchを検証します。

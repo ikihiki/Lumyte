@@ -13,6 +13,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     private int _samplerCount;
     private int _argumentTableCount;
     private int _shaderCount;
+    private int _pipelineCount;
     private int _commandCount;
     private int _submissionCount;
     private bool _disposed;
@@ -57,6 +58,26 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
             handle.Dispose();
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new BrowserGraphicsPipeline(this, desc);
+        _pipelineCount++;
+        return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new BrowserComputePipeline(this, desc);
+        _pipelineCount++;
+        return program;
     }
 
     /// <inheritdoc />
@@ -162,9 +183,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, commands and submissions before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
 
         if (_disposed)
@@ -176,6 +197,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         _handle.Dispose();
         _disposed = true;
     }
+
+    internal void ReleasePipeline() => _pipelineCount--;
 
     internal void ReleaseCommand() => _commandCount--;
 

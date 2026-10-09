@@ -99,4 +99,34 @@ internal static partial class BrowserInterop
     [JSImport("waitSubmission", "Lumyte.Graphics.Browser")]
     [return: JSMarshalAs<JSType.Promise<JSType.Void>>]
     internal static partial Task WaitSubmissionAsync(JSObject submission);
+
+    [JSImport("createGraphicsPipeline", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject CreateGraphicsPipeline(JSObject device, JSObject vertex, string vertexEntry, JSObject fragment, string fragmentEntry, string state, string formats);
+
+    [JSImport("createComputePipeline", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject CreateComputePipeline(JSObject device, JSObject shader, string entry);
+
+    [JSImport("setRenderPipeline", "Lumyte.Graphics.Browser")]
+    internal static partial void SetRenderPipeline(JSObject pass, JSObject pipeline);
+
+    [JSImport("setComputePipeline", "Lumyte.Graphics.Browser")]
+    internal static partial void SetComputePipeline(JSObject pass, JSObject pipeline);
+
+    [JSImport("setViewport", "Lumyte.Graphics.Browser")]
+    internal static partial void SetViewport(JSObject pass, double x, double y, double width, double height, double min, double max);
+
+    [JSImport("setScissor", "Lumyte.Graphics.Browser")]
+    internal static partial void SetScissor(JSObject pass, double x, double y, double width, double height);
+
+    [JSImport("setBlendConstant", "Lumyte.Graphics.Browser")]
+    internal static partial void SetBlendConstant(JSObject pass, double r, double g, double b, double a);
+
+    [JSImport("setStencilReference", "Lumyte.Graphics.Browser")]
+    internal static partial void SetStencilReference(JSObject pass, int reference);
+
+    [JSImport("draw", "Lumyte.Graphics.Browser")]
+    internal static partial void Draw(JSObject pass, double vertices, double instances, double firstVertex, double firstInstance);
+
+    [JSImport("dispatch", "Lumyte.Graphics.Browser")]
+    internal static partial void Dispatch(JSObject pass, double x, double y, double z);
 }
