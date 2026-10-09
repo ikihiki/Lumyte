@@ -73,12 +73,10 @@ public static class CommandExercise
         var submitted = new List<IGraphicsCommandBuffer> { commands };
         using IGraphicsSubmission submission = device.Queue.Submit(submitted);
         submitted.Clear();
-        if (submission.Status == SubmissionStatus.Pending)
-        {
-            Expect<InvalidOperationException>(submission.Dispose);
-            Expect<InvalidOperationException>(commands.Dispose);
-        }
 
+        // Completion is acknowledged by Status or WaitAsync; observing Pending cannot freeze GPU progress.
+        Require(commands.State == CommandBufferState.Submitted, "Submit did not mark the commands as submitted.");
+        Expect<InvalidOperationException>(commands.Dispose);
         Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
         using var canceled = new CancellationTokenSource();
         canceled.Cancel();
