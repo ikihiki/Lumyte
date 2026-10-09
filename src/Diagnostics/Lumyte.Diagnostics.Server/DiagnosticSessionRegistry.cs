@@ -13,6 +13,8 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Session> _sessions = [];
 
+    internal DiagnosticUiChanges UiChanges { get; } = new();
+
     /// <summary>Opens a negotiated session with optional pushed command delivery.</summary>
     /// <param name="hello">The game hello.</param>
     /// <param name="delivery">A hub command callback, or null for polling.</param>
@@ -36,6 +38,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
 
             var welcome = new SessionWelcome(Guid.NewGuid(), Convert.ToHexString(RandomNumberGenerator.GetBytes(32)), [.. options.GamePermissions]);
             _sessions.Add(welcome.SessionId, new(hello, welcome, delivery, clock.GetTimestamp()));
+            UiChanges.Notify();
             return welcome with { Permissions = [.. welcome.Permissions] };
         }
     }
@@ -194,6 +197,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                 session.CommandBytes += bytes.Length;
                 delivery = session.Delivery;
                 session.Signal.Writer.TryWrite(0);
+                UiChanges.Notify();
             }
         }
 
@@ -217,6 +221,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         catch (TimeoutException)
         {
             entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Operation result is unknown after the deadline."));
+            UiChanges.Notify();
             return CopyResult(await entry.Completion.Task.ConfigureAwait(false));
         }
     }
@@ -265,7 +270,11 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                 {
                     if (entry.Command.ExpiresUnixMilliseconds <= clock.GetUtcNow().ToUnixTimeMilliseconds())
                     {
-                        entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Operation result is unknown after the deadline."));
+                        if (entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Operation result is unknown after the deadline.")))
+                        {
+                            UiChanges.Notify();
+                        }
+
                         receipt = new(message.MessageId, false, "expired");
                     }
                     else
@@ -299,6 +308,11 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
 
             session.Messages.Add(message.MessageId, (fingerprint, receipt));
             session.MessageOrder.Enqueue(message.MessageId);
+            if (message.Kind != DiagnosticMessageKind.Heartbeat)
+            {
+                UiChanges.Notify();
+            }
+
             return receipt;
         }
     }
@@ -332,8 +346,33 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                 }
 
                 session.Signal.Writer.TryComplete();
+                UiChanges.Notify();
             }
         }
+    }
+
+    internal DiagnosticUiSession[] UiSessions()
+    {
+        lock (_gate)
+        {
+            return _sessions.Values.Select(session => new DiagnosticUiSession(
+                session.Welcome.SessionId,
+                session.Hello.InstanceId,
+                session.Commands.Values.Count(entry => !entry.Completion.Task.IsCompleted),
+                session.Received,
+                session.Dropped)).ToArray();
+        }
+    }
+
+    internal DiagnosticEvent[] UiTelemetry(Guid id)
+    {
+        DiagnosticEvent[] snapshot;
+        lock (_gate)
+        {
+            snapshot = _sessions.TryGetValue(id, out Session? session) ? session.Telemetry.TakeLast(200).Select(item => item.Event).ToArray() : [];
+        }
+
+        return CopyEvents(snapshot);
     }
 
     internal void CloseAll()
@@ -355,7 +394,10 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
             {
                 if (entry.Command.ExpiresUnixMilliseconds <= clock.GetUtcNow().ToUnixTimeMilliseconds())
                 {
-                    entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Operation result is unknown after the deadline."));
+                    if (entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Operation result is unknown after the deadline.")))
+                    {
+                        UiChanges.Notify();
+                    }
                 }
             }
 

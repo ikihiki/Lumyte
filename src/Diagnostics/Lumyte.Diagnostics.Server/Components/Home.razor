@@ -1,0 +1,43 @@
+@page "/"
+@page "/resources"
+@page "/games/{SessionId:guid}/{PageId}"
+
+@if (HttpContext?.User.Identity?.IsAuthenticated == true)
+{
+    <Dashboard @rendermode="new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false)" />
+}
+else
+{
+    <header class="topbar"><a class="brand" href="/">LUMYTE <span>DIAGNOSTICS</span></a><span>未ログイン</span></header>
+    <main>
+        <section id="login-panel" class="login-card" aria-labelledby="login-heading">
+            <p class="eyebrow">ENGINE WORKSPACE</p>
+            <h1 id="login-heading">実行中のゲームを診断する</h1>
+            <p>診断サーバーの操作用トークンでログインしてください。</p>
+            <form id="login-form" method="post" action="/api/ui/login?redirect=true" data-enhance="false">
+                <AntiforgeryToken />
+                <label for="operator-token">操作用トークン</label>
+                <input id="operator-token" name="token" type="password" autocomplete="off" required maxlength="512" />
+                <button type="submit" class="primary">診断を開始</button>
+            </form>
+            @if (HttpContext?.Request.Query.ContainsKey("loginError") == true)
+            {
+                <p id="login-error" class="error" role="alert">操作用トークンを確認してください。</p>
+            }
+        </section>
+    </main>
+}
+
+@code {
+    /// <summary>Gets or sets the requested game.</summary>
+    [Parameter]
+    public Guid SessionId { get; set; }
+
+    /// <summary>Gets or sets the registered page ID.</summary>
+    [Parameter]
+    public string? PageId { get; set; }
+
+    /// <summary>Gets or sets the initial HTTP request; never retained inside a Circuit.</summary>
+    [CascadingParameter]
+    public HttpContext? HttpContext { get; set; }
+}

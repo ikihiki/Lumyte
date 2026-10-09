@@ -126,6 +126,16 @@ jobs:
           source tools/setup/activate.sh
           python3 tools/diagnostics/communication-smoke.py --output artifacts/test-results/diagnostics-communication/processes
 
+      - name: Verify server-hosted diagnostic UI
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          source tools/setup/activate.sh
+          dotnet publish src/Diagnostics/Lumyte.Diagnostics.Server -c Release --no-build --no-restore -o artifacts/diagnostics-ui-server
+          node tools/diagnostics/verify-browser.mjs
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -1,6 +1,6 @@
 # 診断サーバー
 
-ASP.NET Core / Kestrel で起動する診断サーバー。ゲーム側の接続とカタログを管理し、REST API から Operation を要求する。ゲームは MagicOnion StreamingHub または HTTP 長いポーリングで受信し、同じ DI / Pump / Generator を使って実行する。
+ASP.NET Core / Kestrel で起動する診断サーバー。ゲーム側の接続とカタログを管理し、同梱のWeb UIまたはREST APIからOperationを要求する。ゲームは MagicOnion StreamingHub または HTTP 長いポーリングで受信し、同じ DI / Pump / Generator を使って実行する。
 
 ## 起動
 
@@ -14,7 +14,42 @@ dotnet run --project src/Diagnostics/Lumyte.Diagnostics.Server -c Release
 
 この端末に設定した GameToken を、ゲームを起動する端末にも設定する。既定は **127.0.0.1:5000 の HTTP/1** と **127.0.0.1:5001 の HTTP/2**。後者はローカル開発用の h2c。ポートは LUMYTE_DIAGNOSTICS_HTTP_PORT / LUMYTE_DIAGNOSTICS_GRPC_PORT で変更できる。資格情報なし、両トークンが同じ、無効なポートでは起動を拒否する。
 
-ブラウザーの別 Origin から利用する場合は LUMYTE_DIAGNOSTICS_ALLOWED_ORIGINS に許可する Origin をカンマ区切りで設定する。Authorization / Content-Type / X-Diagnostics-Session の CORS preflight に対応する。空なら cross-origin を許可しない。ブラウザー用 UI と資格情報の配布機構は含まない。
+ブラウザーの別 Origin から利用する場合は LUMYTE_DIAGNOSTICS_ALLOWED_ORIGINS に許可する Origin をカンマ区切りで設定する。Authorization / Content-Type / X-Diagnostics-Session の CORS preflight に対応する。空ならcross-originを許可しない。同梱UIの認証とSignalR接続はこの設定によらず同じOrigin専用とする。
+
+## Web UI
+
+**[http://127.0.0.1:5000/](http://127.0.0.1:5000/)** を開き、起動時に設定したOperatorTokenを入力する。HTML・CSS・JavaScriptは診断サーバー自身が配信する。別のUIサーバー、npm install、NodeでのUIビルドは不要。Blazor Server（Interactive Server）とFluent UIを使う。Razorコンポーネントはassembly、自前CSSは埋め込みresource、Blazor／Fluent UIの資産はstatic web assetsとして同梱し、次のpublish成果物だけで起動できる。
+
+```sh
+dotnet publish src/Diagnostics/Lumyte.Diagnostics.Server -c Release -o artifacts/diagnostics-ui-server
+dotnet artifacts/diagnostics-ui-server/Lumyte.Diagnostics.Server.dll
+```
+
+Aspire DashboardのResources・構造化ログ・相関移動を参考に、Resources一覧または左のゲーム一覧から対象を選び、OperationsまたはInputタブで公開された操作の引数を入力する。フォームはカタログのBoolean／Int64／Double／String、範囲、最大長、revision要件から生成する。操作名・サブシステムで検索でき、各画面のフォームは最大20操作に限定する。InputタブはOverrideInput権限の操作を表示する。サンプルではbutton=Jump、pressed=true、duration-ms=5000を入力して実行できる。返ったリースIDと成功・拒否結果を右のInspectorへ表示する。
+
+Metrics／Logs／Tracesは選択したゲームの最新最大200件を表示し、名前・フィールド・Trace IDで検索できる。イベント名をクリックすると詳細を表示する。Int64はC#のlongで扱い、グラフはBigIntegerで差分を計算する。画面はDIの読み取りサービスから変更通知を購読し、連続変更を200 msでまとめる。SignalRはBlazorの画面差分を運び、ゲーム側のMagicOnion／HTTPには影響しない。カタログは接続構成の変更時、イベントは選択ゲームの更新時に読む。
+
+操作用トークンはURLやブラウザーストレージへ保存しない。ログイン後はPath=/、SameSite=Strict、HttpOnly、固定30分のCookieを使う。ログイン・ログアウトのHTTPフォームはCSRF検証を行い、SignalRは認証と同一Originの検査を行う。ゲーム用トークン・SessionSecretを画面へ返さず、既存Bearer APIはCookieを受け付けない。ログインはサーバー全体で毎分10回、認証チケットは最大128個、Circuitは最大16個、切断したCircuitの保持は10秒に制限する。
+
+切断時は購読と操作待機を取消し、接続復帰時に認証を確認して購読を再開する。操作は自動再送しない。認証期限切れとログアウトは同じログインに属するすべてのCircuitを失効させ、表示データを除く。ゲームで実行済み・配送済みの操作の巻き戻しは意味しない。ログアウトはInput操作の取消ではない。「ゲーム接続を終了」は画面上の確認後に接続を閉じ、その接続のリースをゲーム側で解除する。
+
+ゲームが公開していない実入力の現在値、個別解除、オブジェクトグラフ、描画結果はUIで推測しない。構造化ログは最小レベルとTrace IDで絞り込み、表示を一時停止できる。停止中もサーバーの収集は続き、再開すると最新のスナップショットを表示する。Trace IDから関連Logs／Tracesへ移動でき、対象ゲーム・画面はURL path、Trace IDはqueryで共有・再読み込みできる。切断済みのリンク先を別ゲームへ自動変更しない。
+
+Tracesは保持Spanの親子関係と処理時間を表示する。バーは最長Spanとの比率で、欠けた親は明示する。Metricsは名前・値の型・タグで分けた最新観測値と受信順のグラフを表示する。Counterの累積・レートやHistogram分布を推測しない。完全な時系列集約やwall-clockのTrace waterfall、OTLP受信、SQLストアは後続範囲。
+
+### UI検証
+
+統合テストでHTML・資産・CSP・Cookie／Bearer分離・CSRF・ログアウトとCookie再利用の拒否、両ゲーム通信方式の操作、200件の保持末尾と対象分離、Circuitとログインの上限、切断・再接続・認証失効による購読の取消を確認する。C#の表示モデルとフォームのテストでログ絞り込み、Span階層と循環、タグ別系列、Int64グラフの精度、duration、引数の型・範囲・長さ・revision、認証期限を確認する。
+
+Chromiumを使う別プロセス検証は、上記のpublish後に次を実行する。ゲームサンプルのReleaseビルドも必要。Nodeはこの検証だけに使用する。CHROMEでChrome／Chromiumの実行ファイル、DOTNETでdotnetのパスを変更できる。
+
+```sh
+dotnet test tests/Diagnostics/Lumyte.Diagnostics.IntegrationTests -c Release
+dotnet build samples/Lumyte.Diagnostics.Remote.Sample -c Release
+node tools/diagnostics/verify-browser.mjs
+```
+
+一時トークンで公開サーバーをソースツリー外から起動し、実ブラウザーでログイン、BlazorのSignalR WebSocket、Fluent UIコンポーネント、生成フォーム、Input変更、Int64 Metric、Log／Trace相関、切断時解除、ログアウト、狭い画面での表示を確認する。複数リソースの分離、ログレベル、一時停止・再開、Traceリンクの再読み込み、親子Span、相関Logs、大きいInt64のグラフ、HTML文字列の安全な表示、別タブのCircuit失効も確認する。結果・スクリーンショット・ログはartifacts/test-results/diagnostics-uiへ出力する。CIのLinux x64でも実行する。[検証結果](../../../docs/diagnostics/results/browser-ui-processes.json)と[UI ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
 ## ゲームを接続
 
@@ -71,8 +106,34 @@ curl --fail --silent -H "Authorization: Bearer $LUMYTE_DIAGNOSTICS_OPERATOR_TOKE
 - 要求の結果が期限までに届かない場合は expired とする。副作用が実行されなかったという保証ではなく、結果が不明な操作を自動再実行しない。
 - 通信終了で共通エージェントの RunAsync が完了する。ゲームの所有スレッドが Input の ReleaseSession と Pump.Deactivate を実行する。サンプルは finally でこの順序を保証する。
 
-サーバーは loopback で動く開発用の in-memory 実装。診断 UI、外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、グラフ・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
+サーバーは loopback で動く開発用の in-memory 実装。外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、グラフ・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
 
 [実通信の検証結果・再現スクリプト](../../../docs/diagnostics/communication-verification.md) と [ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。
 
 内部保持用のコピーは scalar / array / dictionary を直接コピーする。コピー目的の JSON 往復は行わない。List / Telemetry の外向きコピーは共有 lock の外へ移し、返却した権限・要求・結果を変更しても内部状態に影響しない。メッセージ重複の 1,024 件キャッシュは受信順の明示 FIFO で保持する。
+
+### ページの追加
+
+`/resources` は全ゲーム一覧、`/games/{sessionId}/overview` はゲーム概要です。
+Engine、Telemetry、Operations のカテゴリと検索を共通シェルが提供します。
+未接続のゲームのリンクを開いても別のゲームへ切り替えません。
+詳細を選択したとき、または操作ページを開いたときに Inspector を表示します。
+
+サーバーの起動時にページ定義を DI へ登録します。
+
+```csharp
+DiagnosticServerApplication.Create(args, ConfigureOptions, services =>
+{
+    services.AddSingleton(new DiagnosticPageDefinition(
+        "physics", "Physics", "Engine", 5, "physics", typeof(PhysicsPage)));
+});
+```
+
+`PhysicsPage` は任意の Razor コンポーネントです。通常の `@inject` と、
+`[CascadingParameter] public DiagnosticPageContext Context { get; set; }` で
+選択中のゲーム、保持イベント、認証済みの操作コールバックを利用できます。
+`Context.Execute.InvokeAsync(invocation)` は共通シェルに結果を表示します。
+RequiredSubsystem は公開カタログの ID と完全一致で判定し、未対応ページはナビゲーションに表示しません。
+直接 URL を開いた場合には未対応状態を表示します。
+Objects、UI、Animation、Rendering は現在カタログと操作を表示する拡張枠です。
+詳細グラフや画像の公開プロトコルは今後追加します。
