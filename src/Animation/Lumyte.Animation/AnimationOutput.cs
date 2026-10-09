@@ -56,7 +56,7 @@ public sealed class AnimationOutput
 
     internal void BeginEvaluation() => _epoch = checked(_epoch + 1);
 
-    internal void Set<T>(AnimationChannel<T> channel, T value, long priority)
+    internal void Set<T>(AnimationChannel<T> channel, T value, UInt128 priority)
     {
         if (!_slots.TryGetValue(channel, out object? entry))
         {
@@ -86,7 +86,7 @@ public sealed class AnimationOutput
 
         internal long Epoch { get; set; }
 
-        internal long Priority { get; set; }
+        internal UInt128 Priority { get; set; }
 
         /// <summary>Copies an active typed contribution without boxing its value.</summary>
         /// <param name="channel">The channel identity.</param>

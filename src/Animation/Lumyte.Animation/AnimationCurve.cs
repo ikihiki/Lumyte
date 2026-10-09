@@ -78,7 +78,12 @@ public sealed class AnimationCurve<T> : IAnimationSource<T>
 
         AnimationKey<T> a = _keys[low - 1];
         AnimationKey<T> b = _keys[low];
-        float t = (float)((double)(time.Ticks - a.Time.Ticks) / (b.Time.Ticks - a.Time.Ticks));
+        if (time == a.Time)
+        {
+            return a.Value;
+        }
+
+        float t = AnimationInterpolators.GetInteriorAmount(time.Ticks - a.Time.Ticks, b.Time.Ticks - a.Time.Ticks);
         return _interpolator.Interpolate(a.Value, b.Value, t);
     }
 }
