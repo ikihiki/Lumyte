@@ -8,7 +8,7 @@ internal static class SampleModuleExtensions
 {
     public static IServiceCollection UseSampleModule(this IServiceCollection services)
     {
-        services.AddPersistedOptions<SampleSettings>("sample").UseJsonDefinition<SampleSettings, SampleDefinition>();
+        services.AddPersistedOptions<SampleSettings>("sample").UseJsonTypeInfo(TestJsonContext.Default.SampleSettings);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<SampleSettings>, SampleValidator>());
         return services;
     }

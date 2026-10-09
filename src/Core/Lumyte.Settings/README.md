@@ -17,10 +17,32 @@ builder.Services.UseMyModule(); // モジュール側で設定を登録する AP
 services.AddPersistedOptions<MySettings>("my-module")
     .Configure(value => value.Volume = 0.5f)
     .Validate(value => float.IsFinite(value.Volume), "Volume must be finite.")
-    .UseJsonDefinition<MySettings, MySettingsDefinition>();
+    .UseJsonTypeInfo(MySettingsJsonContext.Default.MySettings);
 ```
 
-設定定義は `ISettingsDefinition<T>` を実装し、JSON 型情報、形式移行、独立した深いコピーを提供します。コピーは不正な値も保持し、検証前に JSON 化しません。JSON ソースジェネレーターの型情報を使用でき、辞書と配列は既定値へ追加せず全体を置き換えます。
+通常は `ISettingsDefinition<T>` を作りません。`UseJsonTypeInfo` には標準のソースジェネレーターが生成した型情報を渡します。
+
+```csharp
+[JsonSerializable(typeof(MySettings))]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+internal partial class MySettingsJsonContext : JsonSerializerContext;
+```
+
+AOT / trimming を使わない環境では型情報の指定も省略でき、`AddPersistedOptions<MySettings>("my-module")` だけで camelCase のリフレクション型情報を利用します。リフレクション無効時は明示した型情報が必要です。
+
+共通基盤が JSON 型情報の getter / setter と生成ファクトリーを使い、検証前に JSON 化せず深いコピーを作ります。有限でない数値や null も保持します。設定モデルは引数なしで生成できる class、読み書き可能な JSON プロパティ、標準のスカラー値、その nullable、一次元配列、`List<T>`、`Dictionary<string, T>` を使用できます。辞書と配列は既定値へ追加せず全体を置き換えます。JSON から除外する状態、読み取り専用メンバー、独自コンバーター、ポリモーフィズムやその他の型には `UseJsonDefinition<T, TDefinition>` で独自の定義を指定します。明示した型情報の対応外モデルは登録時に検出します。省略時は定義の初回解決時に検出します。
+
+保存形式のバージョンは既定で 1 です。旧形式への対応が必要な場合だけ移行関数を指定します。現在のバージョンでは関数を呼びません。移行は読み込み時にメモリ上で行い、保存するまで元データを書き換えません。
+
+```csharp
+services.AddPersistedOptions<MySettings>("my-module")
+    .UseJsonTypeInfo(MySettingsJsonContext.Default.MySettings,
+        schemaVersion: 2,
+        upgrade: (values, oldVersion) => MigrateToVersion2(values, oldVersion));
+```
+
+旧版の移行関数が未登録の場合はそのセクションを保護し、復旧まで上書きしません。独自定義を使う場合は JSON 型情報、形式移行、検証前の深いコピーをモジュール側で提供します。
 
 ```csharp
 var settings = provider.GetRequiredService<IEditableOptions<MySettings>>();

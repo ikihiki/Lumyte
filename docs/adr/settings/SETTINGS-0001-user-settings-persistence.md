@@ -40,7 +40,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 ### データモデルと互換性
 
-共通設定ファイルは一つのドキュメントにモジュール別セクションを持つ。例えば `{ "documentVersion": 1, "sections": { "input": { "schemaVersion": 1, "values": {} } } }` とする。documentVersion は共通の外側形式、schemaVersion はモジュールごとの形式であり、個別に移行する。モジュールの保存は対象セクションの値全体を置き換え、媒体には最新のドキュメント全体を原子的に保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に設定定義の `DeepClone` で候補を深く複製し、以後の UI 編集と分離する。コピーは JSON シリアライズを前提にせず、NaN・Infinity・不正な null なども値を変えずに保持して標準バリデータへ渡す。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
+共通設定ファイルは一つのドキュメントにモジュール別セクションを持つ。例えば `{ "documentVersion": 1, "sections": { "input": { "schemaVersion": 1, "values": {} } } }` とする。documentVersion は共通の外側形式、schemaVersion はモジュールごとの形式であり、個別に移行する。モジュールの保存は対象セクションの値全体を置き換え、媒体には最新のドキュメント全体を原子的に保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に共通基盤または独自設定定義の `DeepClone` で候補を深く複製し、以後の UI 編集と分離する。コピーは JSON シリアライズを前提にせず、NaN・Infinity・不正な null なども値を変えずに保持して標準バリデータへ渡す。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
 
 永続化サービスは JSON の項目の存在を確認して、新しく追加された未指定項目だけを既定値で補完する。明示的な `false`、`0`、空配列を未指定と扱わない。明示的な `null` の可否は JSON の型情報と標準バリデータで検証する。既存の保存値はアプリの既定値変更後も維持し、リセットで新しい既定値に戻す。
 
@@ -70,17 +70,19 @@ AddSettings はソースの接続、共通ドキュメント管理、保存の�
 services.AddPersistedOptions<InputSettings>("input")
     .Configure(InputDefaults.Configure)
     .ValidateDataAnnotations()
-    .UseJsonDefinition<InputSettings, InputSettingsJsonDefinition>();
+    .UseJsonTypeInfo(InputSettingsJsonContext.Default.InputSettings);
 services.AddSingleton<IValidateOptions<InputSettings>, InputSettingsValidator>();
 ```
 
-AddPersistedOptions は ValidateOnStart を自動登録する。モジュールは移行・DeepClone も提供し、保存パスやストアの種類には依存しない。アプリ独自設定は同じ低水準 API で追加できる。利用者の既定値調整はモジュール有効化後の標準 `services.Configure<InputSettings>`(...) で行う。すべての Configure の後に保存値を適用するため、既存ユーザーの保存値は維持される。
+AddPersistedOptions は ValidateOnStart を自動登録する。通常は型情報を指定するだけで共通基盤がコピーを提供し、SchemaVersion は 1 とする。AOT / trimming を使わない環境では型情報も省略でき、camelCase のリフレクション型情報を使う。旧版が必要な場合だけ UseJsonTypeInfo の schemaVersion と upgrade を指定し、現在版には移行関数を呼ばない。独自のコピー・直列化が必要な場合だけ ISettingsDefinition を実装する。モジュールは保存パスやストアの種類には依存しない。アプリ独自設定は同じ低水準 API で追加できる。利用者の既定値調整はモジュール有効化後の標準 `services.Configure<InputSettings>`(...) で行う。すべての Configure の後に保存値を適用するため、既存ユーザーの保存値は維持される。
 
 共通基盤とモジュールの DI 登録順は問わず、解決時に接続する。全登録は DI 構築前に完了する。同一ソースの AddSettings は再登録しても重複処理しない。異なるソースの二重登録、同じセクション ID の別型への割り当て、同じ型の複数 ID への割り当て、共通基盤の未登録は構成エラーとする。UseInput などのモジュール有効化も既定値とバリデータを二重登録しない。
 
 セクション ID は型名・表示名に依存しない英語の小文字・数字・ハイフンとし、モジュールの契約として固定する。セクション ID と Options の name は別で、初期対象は Options.DefaultName のみとする。プロファイルはモデル内で表す。
 
 利用側は `IEditableOptions<InputSettings>` を注入し、BeginEdit、SaveAsync、ResetAsync を使う。ソースは事前ロード済みとし、DI 解決中に非同期 I/O を行わない。
+
+自動コピーは JSON 型情報に含まれる getter / setter と生成ファクトリーを使う。引数なしで生成できる class、読み書き可能な JSON プロパティ、標準スカラーと nullable、一次元配列、`List<T>`、`Dictionary<string, T>` を対象とする。対応外の型・メンバーは明示登録時（型情報省略時は初回解決時）に構成エラーとする。読み取り専用状態、JSON から除外する状態、独自コンバーター、ポリモーフィズムは独自定義で扱う。
 
 ### 構成の読み込み時点と非同期
 
@@ -154,6 +156,7 @@ builder.Services.UseInput();
 +    public sealed record `SettingsSaveResult<T>`(
 +        SettingsSaveStatus Status, `SettingsSnapshot<T>` Snapshot,
 +        ImmutableArray<string> Errors) where T : class, new();
++    // 高度なカスタマイズ用。通常のモジュールでは実装不要。
 +    public interface `ISettingsDefinition<T>` where T : class, new()
 +    {
 +        int SchemaVersion { get; }
@@ -233,6 +236,11 @@ builder.Services.UseInput();
 +        // 通常の builder では Build 時、ConfigurationManager では追加時に同期ロード。
 +        public static IConfigurationBuilder AddPersistedJsonFile(
 +            this IConfigurationBuilder builder, PersistedJsonFileSource source);
++        // 標準モデルのコピーは共通基盤が提供。旧版対応時だけ移行を指定。
++        public static OptionsBuilder<T> UseJsonTypeInfo<T>(
++            this OptionsBuilder<T> builder, JsonTypeInfo<T> metadata,
++            int schemaVersion = 1, Func<JsonObject, int, JsonObject>? upgrade = null)
++            where T : class, new();
 +        public static `OptionsBuilder<T>` UseJsonDefinition<T, TDefinition>(
 +            this `OptionsBuilder<T>` builder)
 +            where T : class, new() where TDefinition : class, `ISettingsDefinition<T>`;

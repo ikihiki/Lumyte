@@ -338,6 +338,124 @@ public sealed class SettingsTests
         Assert.Equal(0, store.Writes);
     }
 
+    /// <summary>Reflection defaults require no definition or explicit metadata registration.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task ReflectionRegistrationPersistsWithoutADefinitionAsync()
+    {
+        var store = new MemoryStore();
+        PersistedSettingsSource source = await PersistedSettingsSource.LoadAsync(store);
+        var configuration = new ConfigurationManager();
+        configuration.AddPersistedSettings(source);
+        var services = new ServiceCollection();
+        services.AddSettings(source);
+        services.AddPersistedOptions<SampleSettings>("sample");
+        using ServiceProvider provider = services.BuildServiceProvider();
+        IEditableOptions<SampleSettings> settings = provider.GetRequiredService<IEditableOptions<SampleSettings>>();
+        SettingsEdit<SampleSettings> edit = settings.BeginEdit();
+        edit.Value.PrimaryRange.Minimum = 0.3f;
+        edit.Value.Entries["group"] = new() { ["item"] = ["first"] };
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(edit)).Status);
+        edit.Value.Entries["group"]["item"][0] = "changed";
+        Assert.Equal("first", settings.Current.Value.Entries["group"]["item"][0]);
+        using ServiceProvider restarted = await CreateProviderAsync(store);
+        Assert.Equal(0.3f, restarted.GetRequiredService<IEditableOptions<SampleSettings>>().Current.Value.PrimaryRange.Minimum);
+        Assert.Equal(1, JsonNode.Parse(store.Data!)!["sections"]!["sample"]!["schemaVersion"]!.GetValue<int>());
+    }
+
+    /// <summary>Metadata copies nested arrays, lists, nullable values and shared references without JSON.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task MetadataCopyPreservesInvalidValuesAndSeparatesCollectionsAsync()
+    {
+        var store = new MemoryStore();
+        using ServiceProvider provider = await CreateProviderAsync(store, services => services.AddPersistedOptions<CollectionSettings>("collections")
+            .UseJsonTypeInfo(TestJsonContext.Default.CollectionSettings)
+            .Validate(value => value.Optional is null || float.IsFinite(value.Optional.Value), "finite"));
+        IEditableOptions<CollectionSettings> settings = provider.GetRequiredService<IEditableOptions<CollectionSettings>>();
+        var range = new SampleRange { Minimum = 0.2f };
+        SettingsEdit<CollectionSettings> edit = settings.BeginEdit();
+        edit.Value.Ranges = [range];
+        edit.Value.Bytes = [1, 2];
+        edit.Value.Array = [range];
+        edit.Value.Optional = float.NaN;
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, (await settings.SaveAsync(edit)).Status);
+        Assert.Equal(0, store.Writes);
+        edit.Value.Optional = null;
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(edit)).Status);
+        range.Minimum = 0.8f;
+        edit.Value.Bytes[0] = 9;
+        CollectionSettings snapshot = settings.Current.Value;
+        Assert.Equal(0.2f, snapshot.Ranges[0].Minimum);
+        Assert.Equal(1, snapshot.Bytes[0]);
+        snapshot.Bytes[0] = 8;
+        Assert.Equal(1, settings.Current.Value.Bytes[0]);
+        Assert.Same(snapshot.Ranges[0], snapshot.Array[0]);
+        snapshot.Array[0].Minimum = 0.9f;
+        Assert.Equal(0.2f, settings.Current.Value.Array[0].Minimum);
+        using ServiceProvider restarted = await CreateProviderAsync(store, services => services.AddPersistedOptions<CollectionSettings>("collections").UseJsonTypeInfo(TestJsonContext.Default.CollectionSettings));
+        Assert.Null(restarted.GetRequiredService<IEditableOptions<CollectionSettings>>().Current.Value.Optional);
+    }
+
+    /// <summary>Migration can be registered as a delegate instead of implementing a definition.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task MetadataMigrationRunsOnlyForOlderVersionsAsync()
+    {
+        var store = new MemoryStore { Data = Encoding.UTF8.GetBytes("{\"documentVersion\":1,\"sections\":{\"other\":{\"schemaVersion\":1,\"values\":{\"number\":2}}}}") };
+        int migrations = 0;
+        JsonObject Upgrade(JsonObject values, int version)
+        {
+            Assert.Equal(1, version);
+            migrations++;
+            values["number"] = values["number"]!.GetValue<int>() + 10;
+            return values;
+        }
+
+        void Register(IServiceCollection services) => services.AddPersistedOptions<OtherSettings>("other").UseJsonTypeInfo(TestJsonContext.Default.OtherSettings, schemaVersion: 2, upgrade: Upgrade);
+        using ServiceProvider provider = await CreateProviderAsync(store, Register);
+        IEditableOptions<OtherSettings> settings = provider.GetRequiredService<IEditableOptions<OtherSettings>>();
+        Assert.Equal(12, settings.Current.Value.Number);
+        Assert.Equal(0, store.Writes);
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(settings.BeginEdit())).Status);
+        using ServiceProvider restarted = await CreateProviderAsync(store, Register);
+        Assert.Equal(12, restarted.GetRequiredService<IEditableOptions<OtherSettings>>().Current.Value.Number);
+        Assert.Equal(1, migrations);
+    }
+
+    /// <summary>An old section without a migration is protected instead of silently rewritten.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task MissingMetadataMigrationProtectsSavedValuesAsync()
+    {
+        var store = new MemoryStore { Data = Encoding.UTF8.GetBytes("{\"documentVersion\":1,\"sections\":{\"other\":{\"schemaVersion\":1,\"values\":{\"number\":2}}}}") };
+        using ServiceProvider provider = await CreateProviderAsync(store, services => services.AddPersistedOptions<OtherSettings>("other").UseJsonTypeInfo(TestJsonContext.Default.OtherSettings, schemaVersion: 2));
+        IEditableOptions<OtherSettings> settings = provider.GetRequiredService<IEditableOptions<OtherSettings>>();
+        Assert.Equal(SettingsLoadStatus.UnsupportedVersion, settings.LoadResult.Status);
+        Assert.Equal(SettingsSaveStatus.RecoveryRequired, (await settings.SaveAsync(settings.BeginEdit())).Status);
+        Assert.Equal(0, store.Writes);
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.ResetAsync(settings.Revision)).Status);
+        Assert.Equal(2, JsonNode.Parse(store.Data!)!["sections"]!["other"]!["schemaVersion"]!.GetValue<int>());
+    }
+
+    /// <summary>Unsupported shapes and ambiguous registrations fail before module use.</summary>
+    [Fact]
+    public void MetadataRegistrationRejectsUnsupportedShapesAndConflicts()
+    {
+        var services = new ServiceCollection();
+        OptionsBuilder<ReadOnlySettings> unsupported = services.AddPersistedOptions<ReadOnlySettings>("readonly");
+        Assert.Throws<InvalidOperationException>(() => unsupported.UseJsonTypeInfo(TestJsonContext.Default.ReadOnlySettings));
+        OptionsBuilder<SampleSettings> builder = services.AddPersistedOptions<SampleSettings>("sample");
+        builder.UseJsonTypeInfo(TestJsonContext.Default.SampleSettings);
+        builder.UseJsonTypeInfo(TestJsonContext.Default.SampleSettings);
+        Assert.Single(services, item => item.ServiceType == typeof(ISettingsDefinition<SampleSettings>));
+        Assert.Throws<InvalidOperationException>(() => builder.UseJsonTypeInfo(TestJsonContext.Default.SampleSettings, schemaVersion: 2));
+        OptionsBuilder<OtherSettings> custom = services.AddPersistedOptions<OtherSettings>("other");
+        custom.UseJsonDefinition<OtherSettings, OtherDefinition>();
+        Assert.Throws<InvalidOperationException>(() => custom.UseJsonTypeInfo(TestJsonContext.Default.OtherSettings));
+        Assert.Throws<InvalidOperationException>(() => services.AddOptions<CollectionSettings>("named").UseJsonTypeInfo(TestJsonContext.Default.CollectionSettings));
+    }
+
     private static ServiceProvider CreateFileProvider(PersistedSettingsSource source) => new ServiceCollection().AddSettings(source).UseSampleModule().BuildServiceProvider();
 
     private static async Task<ServiceProvider> CreateProviderAsync(MemoryStore store, Action<IServiceCollection>? configure = null)

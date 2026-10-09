@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -61,6 +63,7 @@ public static class PersistedOptionsExtensions
             return services.AddOptions<T>();
         }
 
+        services.TryAddSingleton<ISettingsDefinition<T>, JsonSettingsDefinition<T>>();
         services.AddSingleton(new Registration(sectionId, typeof(T), provider => provider.GetRequiredService<SettingsState<T>>()));
         services.AddSingleton(provider => new SettingsState<T>(
             sectionId,
@@ -90,12 +93,55 @@ public static class PersistedOptionsExtensions
         }
 
         ServiceDescriptor? existing = builder.Services.FirstOrDefault(item => item.ServiceType == typeof(ISettingsDefinition<T>));
-        if (existing is not null && existing.ImplementationType != typeof(TDefinition))
+        if (existing is not null && existing.ImplementationType != typeof(TDefinition) && existing.ImplementationType != typeof(JsonSettingsDefinition<T>))
         {
             throw new InvalidOperationException("The settings definition is already registered.");
         }
 
+        if (existing?.ImplementationType == typeof(JsonSettingsDefinition<T>))
+        {
+            builder.Services.Remove(existing);
+        }
+
         builder.Services.TryAddSingleton<ISettingsDefinition<T>, TDefinition>();
+        return builder;
+    }
+
+    /// <summary>Registers JSON metadata with automatic copying and optional section migration.</summary>
+    /// <param name="builder">The default-named Options builder.</param>
+    /// <param name="metadata">The serialization metadata, preferably source-generated for AOT.</param>
+    /// <param name="schemaVersion">The current section version, defaulting to one.</param>
+    /// <param name="upgrade">An optional migration from an older version to the current version.</param>
+    /// <typeparam name="T">The settings model.</typeparam>
+    /// <returns>The Options builder.</returns>
+    public static OptionsBuilder<T> UseJsonTypeInfo<T>(this OptionsBuilder<T> builder, JsonTypeInfo<T> metadata, int schemaVersion = 1, Func<JsonObject, int, JsonObject>? upgrade = null)
+        where T : class, new()
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (builder.Name != Options.DefaultName)
+        {
+            throw new InvalidOperationException("Persisted settings only support the default Options name.");
+        }
+
+        ServiceDescriptor? existing = builder.Services.FirstOrDefault(item => item.ServiceType == typeof(ISettingsDefinition<T>));
+        if (existing?.ImplementationInstance is JsonSettingsDefinition<T> definition && definition.Matches(metadata, schemaVersion, upgrade))
+        {
+            return builder;
+        }
+
+        if (existing is not null && existing.ImplementationType != typeof(JsonSettingsDefinition<T>))
+        {
+            throw new InvalidOperationException("The settings definition is already registered.");
+        }
+
+        var replacement = new JsonSettingsDefinition<T>(metadata, schemaVersion, upgrade);
+        if (existing is not null)
+        {
+            builder.Services.Remove(existing);
+        }
+
+        builder.Services.AddSingleton<ISettingsDefinition<T>>(replacement);
         return builder;
     }
 
