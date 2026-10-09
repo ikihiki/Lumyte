@@ -4,9 +4,37 @@ namespace Lumyte.Graphics.Abstractions;
 /// Owns a typed GPU allocation implemented directly by the backend.
 /// </summary>
 /// <typeparam name="T">The unmanaged element type; shader ABI compatibility is validated separately.</typeparam>
-public interface IGraphicsBuffer<T> : IBufferBackendContract
+public interface IGraphicsBuffer<T> : IDisposable
     where T : unmanaged
 {
+    /// <summary>
+    /// Gets the native allocation size in bytes.
+    /// </summary>
+    ulong SizeInBytes { get; }
+
+    /// <summary>
+    /// Rejects empty, overflowing, or out-of-bounds byte ranges.
+    /// </summary>
+    /// <param name="offset">The start offset in bytes.</param>
+    /// <param name="length">The byte length of the backend range.</param>
+    void ValidateRange(ulong offset, ulong length);
+
+    /// <summary>
+    /// Copies caller bytes into idle Upload storage without GPU transfer.
+    /// </summary>
+    /// <param name="source">The caller-owned source bytes.</param>
+    /// <param name="offset">The start offset in bytes.</param>
+    /// <param name="length">The byte length of the backend range.</param>
+    void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length);
+
+    /// <summary>
+    /// Copies completed Readback bytes into caller storage without waiting.
+    /// </summary>
+    /// <param name="destination">The caller-owned destination bytes.</param>
+    /// <param name="offset">The start offset in bytes.</param>
+    /// <param name="length">The byte length of the backend range.</param>
+    void CopyTo(Span<byte> destination, ulong offset, ulong length);
+
     /// <summary>
     /// Gets the backend-resolved element layout and copy constraints.
     /// </summary>

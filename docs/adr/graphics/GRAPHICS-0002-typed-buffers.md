@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0002: 型付きバッファの所有・サイズ・明示的なCPUアクセス
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-08
 
 ## 背景
@@ -13,7 +13,7 @@ Upload／Readback の staging 確保、GPU copy の記録・送信、同期と C
 
 ### 配置と責務
 
-公開 interface、Desc、layout、slice、usage、memory preference は `Lumyte.Graphics.Abstractions` に置く。具象 backend buffer は `IGraphicsBuffer<T>` と byte 範囲の `IBufferBackendContract` を直接実装し、native resource と CPU access の状態を一つの instance で所有する。BufferToken や所有 facade を設けない。
+公開 interface、Desc、layout、slice、usage、memory preference は `Lumyte.Graphics.Abstractions` に置く。具象 backend buffer は byte 範囲の検証と CPU copy も含めた `IGraphicsBuffer<T>` を直接実装し、native resource と CPU access の状態を一つの instance で所有する。BufferToken や所有 facade を設けない。
 
 デバイス自体の生成方法は引き続き backend 固有とする。生成済みデバイスの buffer 確保と layout 問い合わせは `IGraphicDevice` の共通操作として追加する。backend 固有の生成条件、usage 制約、memory type、mapping の処理は各 backend README に記載する。
 
@@ -26,7 +26,9 @@ Upload／Readback の staging 確保、GPU copy の記録・送信、同期と C
  {
      public interface IGraphicDevice
      {
-+        // T の raw storage と、要素単位へ換算した GPU copy alignment を取得する。
++        // allocation を作らず、T の raw layout と device の GPU copy 制約を返す。
++        // stride は sizeof(T)。byte alignment と要素単位の倍数を返し、size を丸めない。
++        // 解放済み device は ObjectDisposedException。
 +        BufferLayout<T> GetBufferLayout<T>() where T : unmanaged;
 +        // Desc の Count を保ったまま buffer を確保する。生成済み device の共通操作。
 +        IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc) where T : unmanaged;
@@ -78,9 +80,10 @@ Upload／Readback の staging 確保、GPU copy の記録・送信、同期と C
 +        public ulong GetSizeInBytes(ulong count);
 +    }
 
-+    // 具象 backend buffer が保持する byte 範囲と CPU memory の契約。
++    // concrete backend が直接実装する、一つの所有 allocation。
++    // byte 範囲検証と CPU copy を同じ interface に含める。
 +    // token・別所有 wrapper・command 記録・barrier 処理は持たない。
-+    public interface IBufferBackendContract : IDisposable
++    public interface IGraphicsBuffer<T> : IDisposable where T : unmanaged
 +    {
 +        public ulong SizeInBytes { get; }
 +        // length > 0、offset <= SizeInBytes、length <= SizeInBytes - offset。
@@ -92,11 +95,6 @@ Upload／Readback の staging 確保、GPU copy の記録・送信、同期と C
 +        // mapped Readback の length byte を destination にコピー。余りは変更しない。
 +        // destination.Length >= length。mapping・GPU work・待機を行わない。
 +        public void CopyTo(Span<byte> destination, ulong offset, ulong length);
-+    }
-
-+    // concrete backend が直接実装する、一つの所有 allocation。
-+    public interface IGraphicsBuffer<T> : IBufferBackendContract where T : unmanaged
-+    {
 +        public BufferLayout<T> Layout { get; }
 +        public ulong Count { get; }
 +        public BufferUsage Usage { get; }

@@ -118,7 +118,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
         }
     }
 
-    void IBufferBackendContract.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
+    void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
         lock (_owner.BufferGate)
         {
@@ -133,7 +133,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
         }
     }
 
-    void IBufferBackendContract.CopyTo(Span<byte> destination, ulong offset, ulong length)
+    void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
         lock (_owner.BufferGate)
         {

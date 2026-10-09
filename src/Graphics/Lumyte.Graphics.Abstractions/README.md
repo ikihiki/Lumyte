@@ -40,6 +40,6 @@ upload.Unmap();
 
 `BufferLayout<T>` の byte alignment と要素単位の倍数は backend が数値で提供します。要素数や論理 SizeInBytes を丸めず、コピー条件を満たさない場合は利用側の command 記録時に拒否します。
 
-`IBufferBackendContract` は backend の byte 範囲検証と CPU copy の契約です。typed interface から継承し、slice も同じ allocation に処理を委譲します。buffer は device より先に解放します。各 backend の device は所有 buffer が残っている場合に Dispose を拒否します。
+`IGraphicsBuffer<T>` に byte 範囲検証と CPU copy の契約も含め、slice は同じ allocation に処理を委譲します。buffer は device より先に解放します。各 backend の device は所有 buffer が残っている場合に Dispose を拒否します。
 
 設計判断は [GRAPHICS-0002](../../../docs/adr/graphics/GRAPHICS-0002-typed-buffers.md) を参照してください。
