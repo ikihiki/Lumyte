@@ -17,3 +17,5 @@ BufferTests は layout の要素単位 alignment と overflow を検証し、GPU
 TextureTestsはshared projectのTextureExerciseをWgpu／Vulkanで実行します。format、mip／array／cube範囲、正規化、copy専用textureのView拒否、子resourceを保持したDispose拒否を共通APIだけで検証します。同じexerciseを既存CIのBrowser sampleでも実行します。
 
 SamplerTestsはshared projectのSamplerExerciseをWgpu／Vulkanで実行します。default・LOD 0固定・全filter／address／comparison・anisotropy制約と寿命を共通APIで検証します。同じexerciseを既存Wasm／Browser CIでも実行します。
+
+ArgumentTableTestsはshared projectのArgumentTableExerciseをWgpu／Vulkanで実行し、論理slot・型付き要素・参照失効・resource leaseと別deviceの登録拒否を共通APIだけで検証します。同じexerciseを既存Wasm／Browser CIでも実行します。

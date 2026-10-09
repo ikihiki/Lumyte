@@ -7,6 +7,7 @@ internal sealed class BrowserTextureView : IGraphicsTextureView
 {
     private readonly BrowserTexture _texture;
     private readonly JSObject _native;
+    private int _registrationCount;
     private bool _disposed;
 
     internal BrowserTextureView(BrowserTexture texture, TextureViewInfo info, JSObject native)
@@ -18,6 +19,8 @@ internal sealed class BrowserTextureView : IGraphicsTextureView
 
     public TextureViewInfo Info { get; }
 
+    internal BrowserDevice Owner => _texture.Owner;
+
     public void Dispose()
     {
         if (_disposed)
@@ -25,8 +28,21 @@ internal sealed class BrowserTextureView : IGraphicsTextureView
             return;
         }
 
+        if (_registrationCount != 0)
+        {
+            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
+        }
+
         _native.Dispose();
         _disposed = true;
         _texture.ReleaseView();
     }
+
+    internal void RetainRegistration()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _registrationCount = checked(_registrationCount + 1);
+    }
+
+    internal void ReleaseRegistration() => _registrationCount--;
 }

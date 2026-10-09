@@ -38,3 +38,5 @@ BufferExercise も同じ共通 API で実行します。実際の GPUBuffer の�
 TextureExerciseも実行し、GPUTextureとGPUTextureViewの確保、mip／layer・cube選択と寿命を確認します。成功時には `Texture checks passed` を表示し、既存Wasm CIがこの結果を検証します。
 
 SamplerExerciseも共通APIで実行します。GPU samplerの確保・sampling stateと所有を確認し、既存Wasm CIは `Sampler checks passed` を検証します。
+
+ArgumentTableExerciseで登録・要素参照・slot置換・解放と寿命、別deviceのresource拒否を確認します。既存Wasm CIは `Argument table checks passed` を検証します。

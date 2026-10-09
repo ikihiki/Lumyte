@@ -29,4 +29,9 @@ public interface IGraphicDevice
     /// <param name="desc">The immutable filters, addressing, LOD, anisotropy and comparison state.</param>
     /// <returns>The concrete backend sampler through the common interface.</returns>
     IGraphicsSampler CreateSampler(SamplerDesc desc);
+
+    /// <summary>Creates an owned logical registration table without constructing shader bindings.</summary>
+    /// <param name="desc">The independent logical capacities and optional diagnostic label.</param>
+    /// <returns>The backend table owning its active resource registrations.</returns>
+    IArgumentTable CreateArgumentTable(ArgumentTableDesc desc);
 }
