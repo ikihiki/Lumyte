@@ -32,3 +32,5 @@ Output とイベントの格納先は再利用し、更新前に消費側がク�
 
 - [設計 ADR](../../../docs/adr/animation/ANIMATION-0001-animation-system.md)
 - [実行可能なサンプル](../../../samples/Lumyte.Animation.Sample/README.md)
+
+状態機械の Composition 定義は `new AnimationStateMachine<TState, TContext>(clock, definition)` に直接渡す。子の Timeline と汎用制御を一度だけ自動構築し、`Start(context)` で再生を開始する。[状態機械の例](../../../samples/Lumyte.Animation.StateMachine.Sample/README.md)を参照。

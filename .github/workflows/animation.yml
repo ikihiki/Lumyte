@@ -6,9 +6,14 @@ on:
     paths:
       - 'src/Animation/**'
       - 'src/Core/Lumyte.Core/**'
+      - 'src/Core/Lumyte.StateMachines/**'
+      - 'tests/Core/Lumyte.StateMachines.Tests/**'
+      - 'docs/adr/core/CORE-0001-state-machine.md'
       - 'src/Core/Lumyte.Composition*/**'
       - 'tests/Animation/**'
       - 'samples/Lumyte.Animation.Sample/**'
+      - 'samples/Lumyte.Animation.StateMachine.Sample/**'
+      - 'samples/Lumyte.StateMachines.Sample/**'
       - 'docs/adr/animation/**'
       - 'Lumyte.slnx'
       - 'Directory.Build.props'
@@ -24,9 +29,14 @@ on:
     paths:
       - 'src/Animation/**'
       - 'src/Core/Lumyte.Core/**'
+      - 'src/Core/Lumyte.StateMachines/**'
+      - 'tests/Core/Lumyte.StateMachines.Tests/**'
+      - 'docs/adr/core/CORE-0001-state-machine.md'
       - 'src/Core/Lumyte.Composition*/**'
       - 'tests/Animation/**'
       - 'samples/Lumyte.Animation.Sample/**'
+      - 'samples/Lumyte.Animation.StateMachine.Sample/**'
+      - 'samples/Lumyte.StateMachines.Sample/**'
       - 'docs/adr/animation/**'
       - 'Lumyte.slnx'
       - 'Directory.Build.props'
@@ -65,6 +75,9 @@ jobs:
           mise exec -- dotnet build Lumyte.slnx -c Release
           mise exec -- dotnet test Lumyte.slnx -c Release --no-build
           mise exec -- dotnet run --project samples/Lumyte.Animation.Sample -c Release --no-build
+          mise exec -- dotnet run --project samples/Lumyte.StateMachines.Sample -c Release --no-build
+          mise exec -- dotnet run --project samples/Lumyte.Animation.StateMachine.Sample -c Release --no-build
+          mise exec -- dotnet pack src/Core/Lumyte.StateMachines -c Release --no-build -o artifacts/nuget
           mise exec -- dotnet pack src/Core/Lumyte.Core -c Release --no-build -o artifacts/nuget
           mise exec -- dotnet pack src/Animation/Lumyte.Animation -c Release --no-build -o artifacts/nuget
           mise exec -- dotnet build Lumyte.slnx --no-restore

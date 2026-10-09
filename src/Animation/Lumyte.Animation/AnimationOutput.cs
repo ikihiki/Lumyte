@@ -11,6 +11,11 @@ public sealed class AnimationOutput
     {
         /// <summary>Clears contributions while retaining reusable typed storage.</summary>
         void Clear();
+
+        /// <summary>Copies an active typed contribution to another output.</summary>
+        /// <param name="channel">The channel identity.</param>
+        /// <param name="output">The destination output.</param>
+        void CopyTo(object channel, AnimationOutput output);
     }
 
     /// <summary>Clears contributions while retaining reusable typed storage.</summary>
@@ -38,6 +43,15 @@ public sealed class AnimationOutput
 
         value = default!;
         return false;
+    }
+
+    internal void CopyTo(AnimationOutput output)
+    {
+        output.BeginEvaluation();
+        foreach (KeyValuePair<object, object> entry in _slots)
+        {
+            ((ISlot)entry.Value).CopyTo(entry.Key, output);
+        }
     }
 
     internal void BeginEvaluation() => _epoch = checked(_epoch + 1);
@@ -73,6 +87,17 @@ public sealed class AnimationOutput
         internal long Epoch { get; set; }
 
         internal long Priority { get; set; }
+
+        /// <summary>Copies an active typed contribution without boxing its value.</summary>
+        /// <param name="channel">The channel identity.</param>
+        /// <param name="output">The destination output.</param>
+        public void CopyTo(object channel, AnimationOutput output)
+        {
+            if (HasValue)
+            {
+                output.Set((AnimationChannel<T>)channel, Value, 0);
+            }
+        }
 
         /// <summary>Clears contributions while retaining reusable typed storage.</summary>
         public void Clear()

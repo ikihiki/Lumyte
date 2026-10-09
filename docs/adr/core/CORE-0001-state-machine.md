@@ -1,13 +1,13 @@
 # ADR-CORE-0001: 汎用状態機械と型付きトリガーによる遷移
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-09
 
 ## 背景
 
 UI の画面選択、接続処理、ゲーム進行では、状態、入力、遷移条件、入場・退出処理を共通の規則で管理する必要がある。
 
-旧ライブラリの `Lumyte.StateMachine` は、型付き Context と Trigger、状態の入場・退出アクション、ガード、遷移エフェクト、優先順位、通知、診断を提供している。この機能一式を独立した基盤として引き継ぐ。本 ADR は設計提案であり、この PR では実装を追加しない。
+旧ライブラリの `Lumyte.StateMachine` は、型付き Context と Trigger、状態の入場・退出アクション、ガード、遷移エフェクト、優先順位、通知、診断を提供している。この機能一式を独立した基盤として引き継ぐ。本 ADR に沿って、この PR で状態機械を実装する。
 
 ## 決定
 
@@ -83,7 +83,7 @@ ActivitySourceName は新パッケージと揃えて `Lumyte.StateMachines` と�
 
 ## 公開 API の追加差分
 
-現在の main `3e31e7d5fae9a8d4d00ce30136bd951f0949ea72` に対する追加提案。実装本体を省いた宣言であり未実装。旧ライブラリとの差分は前節の機能対応と後述の契約で示す。
+現在の main `3e31e7d5fae9a8d4d00ce30136bd951f0949ea72` に対する追加 API。実装本体を省いた宣言として示す。旧ライブラリとの差分は前節の機能対応と後述の契約で示す。
 
 ```diff
 +using System;
@@ -202,7 +202,7 @@ Optional、with、生成インデクサーによる子の置換は既存 Composi
 
 ## 利用例
 
-以下は提案 API の例であり、現行版では未実装。
+以下は実装した API の使用例。
 
 ```csharp
 using Lumyte.StateMachines;
@@ -330,3 +330,7 @@ Build は null の Context を検証してから定義を確定する。初期�
 - [旧状態機械の全ソース](https://github.com/ikihiki/Lumyte_old/tree/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/interaction/Lumyte.StateMachine)
 - [旧状態機械のテスト](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/src/interaction/Lumyte.StateMachine.Tests/StateMachineTests.cs)
 - [旧ベンチマーク](https://github.com/ikihiki/Lumyte_old/blob/462e5b3e1e65c37ab2d1df6ba9ddde9f287690ee/benchmarks/Lumyte.Benchmarks/StateMachineBenchmarks.cs)
+
+## 実装・検証記録
+
+2026-10-09、`Lumyte.StateMachines` と Composition ノード、独立したサンプルを実装した。Linux / .NET 10 で専用テスト 21 件が成功した。旧テストの機能、初期入場失敗、明示 Context、複数入力、診断と再入拒否を含む。ウォームアップ後の数値トリガーによる Fire / FireAny はテスト内で管理ヒープ割り当てゼロを確認した。Windows / Browser の実行とスループットのベンチマークは未実施。
