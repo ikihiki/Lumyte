@@ -74,3 +74,5 @@ curl --fail --silent -H "Authorization: Bearer $LUMYTE_DIAGNOSTICS_OPERATOR_TOKE
 サーバーは loopback で動く開発用の in-memory 実装。診断 UI、外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、グラフ・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
 
 [実通信の検証結果・再現スクリプト](../../../docs/diagnostics/communication-verification.md) と [ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。
+
+内部保持用のコピーは scalar / array / dictionary を直接コピーする。コピー目的の JSON 往復は行わない。List / Telemetry の外向きコピーは共有 lock の外へ移し、返却した権限・要求・結果を変更しても内部状態に影響しない。メッセージ重複の 1,024 件キャッシュは受信順の明示 FIFO で保持する。

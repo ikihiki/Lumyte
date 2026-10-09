@@ -12,3 +12,5 @@ dotnet run --project benchmarks/Lumyte.Diagnostics.Benchmarks -c Release -- --fi
 比較条件、バージョン、環境、割り当て量、サイズ、全測定の生データは [結果レポート](../../docs/benchmarks/diagnostics/README.md) に記載する。
 
 送信経路の直接エンコード比較は `--filter '*SendEncodingBenchmarks*' '*OperationBenchmarks*'` で実行できる。実際の版 1 の publication を使い、旧 MessagePack DTO マッピングを含む経路と直接 Formatter、source-generated JSON と直接 Writer を比較する。全方式の出力は所有 byte[] とし、直接 JSON は再利用 buffer から最終コピーする。HTTP のストリーム送信ではこの最終コピーは不要。
+
+`ServerRegistryBenchmarks` は受信後の検証・保持と外向き snapshot の取得、`ReceiveDecodingBenchmarks` は旧 publication DTO と直接 MessagePack reader を比較する。[全体レビュー後の前後比較](../../docs/benchmarks/diagnostics/cleanup.md) に条件・生データを記録する。旧 publication の LegacyPublication* は比較専用で、本番パッケージには含まれない。

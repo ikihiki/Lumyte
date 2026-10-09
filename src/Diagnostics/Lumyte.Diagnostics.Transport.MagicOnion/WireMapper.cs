@@ -52,24 +52,6 @@ public static class WireMapper
     /// <returns>The common value.</returns>
     public static DiagnosticCommand FromWire(WireCommand value) => new(Guid.Parse(value.RequestId), value.SubsystemId, value.OperationId, value.ActorId, value.ExpectedRevision, value.ExpiresUnixMilliseconds, Values(value.Arguments));
 
-    /// <summary>Maps a message.</summary>
-    /// <param name="value">The common value.</param>
-    /// <returns>The wire value.</returns>
-    public static WireMessage ToWire(DiagnosticMessage value) => new()
-    {
-        MessageId = value.MessageId.ToString("D"),
-        SessionId = value.SessionId.ToString("D"),
-        Kind = (int)value.Kind,
-        RequestId = value.RequestId?.ToString("D"),
-        Result = value.Result == null ? null : new() { Status = value.Result.Status, Values = value.Result.Values == null ? null : Values(value.Result.Values), Revision = value.Result.Revision, Code = value.Result.Code, Message = value.Result.Message },
-        Events = value.Events.Select(item => new WireEvent { Kind = item.Kind, Timestamp = item.Timestamp, Name = item.Name, Value = Scalar(item.Value), TraceId = item.TraceId, SpanId = item.SpanId, ParentSpanId = item.ParentSpanId, DurationTicks = item.DurationTicks, Fields = Values(item.Fields) }).ToArray(),
-    };
-
-    /// <summary>Maps a message.</summary>
-    /// <param name="value">The wire value.</param>
-    /// <returns>The common value.</returns>
-    public static DiagnosticMessage FromWire(WireMessage value) => new(Guid.Parse(value.MessageId), Guid.Parse(value.SessionId), (DiagnosticMessageKind)value.Kind, value.RequestId == null ? null : Guid.Parse(value.RequestId), value.Result == null ? null : new(value.Result.Status, value.Result.Values == null ? null : Values(value.Result.Values), value.Result.Revision, value.Result.Code, value.Result.Message), value.Events.Select(item => new DiagnosticEvent(item.Kind, item.Timestamp, item.Name, Scalar(item.Value), item.TraceId, item.SpanId, item.ParentSpanId, item.DurationTicks, Values(item.Fields))).ToArray());
-
     /// <summary>Maps a receipt.</summary>
     /// <param name="value">The common value.</param>
     /// <returns>The wire value.</returns>

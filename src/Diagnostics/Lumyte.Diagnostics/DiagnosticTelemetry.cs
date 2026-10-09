@@ -8,7 +8,6 @@ namespace Lumyte.Diagnostics;
 /// <summary>Collects standard metrics, completed spans and structured logs into a bounded queue.</summary>
 public sealed class DiagnosticTelemetry : IDisposable
 {
-    private readonly IGameExecutionIdentity _identity;
     private readonly DiagnosticOptions _options;
     private readonly IMeterFactory _meterFactory;
     private readonly TelemetryRouter _router;
@@ -23,7 +22,6 @@ public sealed class DiagnosticTelemetry : IDisposable
 
     internal DiagnosticTelemetry(IGameExecutionIdentity identity, DiagnosticOptions options, IMeterFactory meterFactory, TelemetryRouter router)
     {
-        _identity = identity;
         _instanceTag = identity.InstanceId.ToString("D");
         _options = options;
         _meterFactory = meterFactory;
@@ -49,7 +47,7 @@ public sealed class DiagnosticTelemetry : IDisposable
         }
 
         _running = true;
-        _router.Register(_identity.InstanceId, this);
+        _router.Register(_instanceTag, this);
         _metrics = new MeterListener
         {
             InstrumentPublished = (instrument, listener) =>
@@ -107,7 +105,7 @@ public sealed class DiagnosticTelemetry : IDisposable
     {
         _running = false;
         _disposed = true;
-        _router.Remove(_identity.InstanceId);
+        _router.Remove(_instanceTag);
         _metrics?.Dispose();
         _traces?.Dispose();
         _metrics = null;
@@ -115,19 +113,51 @@ public sealed class DiagnosticTelemetry : IDisposable
         _events.Writer.TryComplete();
     }
 
-    internal void Drop() => Interlocked.Increment(ref _dropped);
-
-    internal bool LogEnabled(string category, LogLevel level) => _running && level >= _options.MinimumLogLevel && level != LogLevel.None
-        && _options.AllowedLogCategoryPrefixes.Any(prefix => category == prefix || category.StartsWith(prefix + ".", StringComparison.Ordinal));
-
-    internal void WriteLog(string category, LogLevel level, EventId eventId, string message, IEnumerable<KeyValuePair<string, object?>> state, IEnumerable<KeyValuePair<string, object?>> scopes, Exception? exception)
+    internal static void CopyField(Dictionary<string, DiagnosticValue> destination, KeyValuePair<string, object?> pair)
     {
-        if (!LogEnabled(category, level))
+        if (pair.Key.Length > 128)
         {
             return;
         }
 
-        Dictionary<string, DiagnosticValue> fields = CopyFields(state.Concat(scopes));
+        DiagnosticValue? value = pair.Value switch
+        {
+            string text => DiagnosticValue.From(Trim(text)),
+            bool boolean => DiagnosticValue.From(boolean),
+            int integer => DiagnosticValue.From((long)integer),
+            long integer => DiagnosticValue.From(integer),
+            double number when double.IsFinite(number) => DiagnosticValue.From(number),
+            _ => null,
+        };
+        if (value is DiagnosticValue scalar)
+        {
+            destination[pair.Key] = scalar;
+        }
+    }
+
+    internal void Drop() => Interlocked.Increment(ref _dropped);
+
+    internal bool LogEnabled(string category, LogLevel level)
+    {
+        if (!_running || level < _options.MinimumLogLevel || level == LogLevel.None)
+        {
+            return false;
+        }
+
+        foreach (string prefix in _options.AllowedLogCategoryPrefixes)
+        {
+            if (category.StartsWith(prefix, StringComparison.Ordinal)
+                && (category.Length == prefix.Length || category[prefix.Length] == '.'))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal void WriteLog(string category, LogLevel level, EventId eventId, string message, Dictionary<string, DiagnosticValue> fields, Exception? exception)
+    {
         fields["log.level"] = DiagnosticValue.From(level.ToString());
         fields["log.event-id"] = DiagnosticValue.From((long)eventId.Id);
         if (exception != null)
@@ -150,28 +180,46 @@ public sealed class DiagnosticTelemetry : IDisposable
             return result;
         }
 
-        foreach (KeyValuePair<string, object?> pair in values.Take(32))
+        int copied = 0;
+        foreach (KeyValuePair<string, object?> pair in values)
         {
-            DiagnosticValue? value = pair.Value switch
+            CopyField(result, pair);
+            if (++copied == 32)
             {
-                string text => DiagnosticValue.From(Trim(text)),
-                bool boolean => DiagnosticValue.From(boolean),
-                int integer => DiagnosticValue.From((long)integer),
-                long integer => DiagnosticValue.From(integer),
-                double number when double.IsFinite(number) => DiagnosticValue.From(number),
-                _ => null,
-            };
-            if (value is DiagnosticValue scalar && pair.Key.Length <= 128)
-            {
-                result[pair.Key] = scalar;
+                break;
             }
         }
 
         return result;
     }
 
+    private static Dictionary<string, DiagnosticValue> CopyFields(ReadOnlySpan<KeyValuePair<string, object?>> values)
+    {
+        values = values[..Math.Min(values.Length, 32)];
+        var result = new Dictionary<string, DiagnosticValue>(values.Length, StringComparer.Ordinal);
+        foreach (KeyValuePair<string, object?> pair in values)
+        {
+            CopyField(result, pair);
+        }
+
+        return result;
+    }
+
     private bool Matches(IEnumerable<KeyValuePair<string, object?>>? tags)
-        => tags != null && tags.Any(pair => pair.Key == "lumyte.instance.id" && pair.Value is string id && id == _instanceTag);
+    {
+        if (tags != null)
+        {
+            foreach (KeyValuePair<string, object?> pair in tags)
+            {
+                if (pair.Key == "lumyte.instance.id" && pair.Value is string id && id == _instanceTag)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     private ActivitySamplingResult Sample(IEnumerable<KeyValuePair<string, object?>>? tags, ActivityTraceId traceId, ActivityContext parent)
     {
@@ -198,18 +246,18 @@ public sealed class DiagnosticTelemetry : IDisposable
 
     private void OnMetric(Instrument instrument, DiagnosticValue value, ReadOnlySpan<KeyValuePair<string, object?>> tags)
     {
-        bool matched = false;
+        if (!_running || (value.Kind == DiagnosticValueKind.Double && !double.IsFinite(value.Double)))
+        {
+            return;
+        }
+
         foreach (KeyValuePair<string, object?> tag in tags)
         {
             if (tag.Key == "lumyte.instance.id" && tag.Value is string id && id == _instanceTag)
             {
-                matched = true;
+                Write(new("metric", Stopwatch.GetTimestamp(), instrument.Name, value, null, null, null, 0, CopyFields(tags)));
+                return;
             }
-        }
-
-        if (matched && (value.Kind != DiagnosticValueKind.Double || double.IsFinite(value.Double)))
-        {
-            Write(new("metric", Stopwatch.GetTimestamp(), instrument.Name, value, null, null, null, 0, CopyFields(tags.ToArray())));
         }
     }
 

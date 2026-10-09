@@ -52,3 +52,5 @@ CSV と全 measurement を含む JSON は [生データ](direct-encoding-results
 - 実 TCP と独立プロセスの両方式で Input 操作・標準 Telemetry・切断時の解除が継続すること。
 
 詳細は [実通信検証](../../diagnostics/communication-verification.md) と [今回の別プロセス結果](../../diagnostics/results/direct-encoding-processes.json) を参照する。大容量送信中の制御応答時間、受信側のベンチマーク、Browser/WASM、NativeAOT は今回の測定対象外。
+
+この測定後の変更・前後比較は [全体レビュー後のクリーンアップ](cleanup.md) に記録する。

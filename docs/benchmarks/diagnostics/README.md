@@ -45,7 +45,7 @@ Image の JSON は base64 により約 33% 大きくなる。2 回目では画�
 
 Operation の追加分は約 69 ns / 328 B。これは空に近い Echo ハンドラーの `DiagnosticOperationSet.Invoke` であり、Pump のキュー・重複排除・Input ドメイン処理・通信は含まない。生成コードによる高速化を示す反射版との比較ではなく、実装した検証・結果変換の費用を確認するベンチマークである。
 
-Metric は queue を毎回 drain し、満杯による破棄が高速経路として測定されるのを防ぐ。drain の費用を含み、実際の送信・集約は含まない。現在は測定イベントごとに辞書を作るため、有効時 496 B の割り当ては高頻度記録では問題になる。毎秒 10 万件ならこの経路だけで約 49.6 MB/秒の managed 割り当てとなる計算で、次段階では bounded aggregation と buffer pooling を検討する。この数字はそのレートでの負荷試験結果ではない。
+Metric は queue を毎回 drain し、満杯による破棄が高速経路として測定されるのを防ぐ。drain の費用を含み、実際の送信・集約は含まない。当時の実装は測定イベントごとに辞書を作るため、有効時 496 B の割り当ては高頻度記録では問題になる。毎秒 10 万件ならこの経路だけで約 49.6 MB/秒の managed 割り当てとなる計算で、次段階では bounded aggregation と buffer pooling を検討する。この数字はそのレートでの負荷試験結果ではない。
 
 Trace と Log は実際の標準 API で収集・相関を検証したが、収集コストのベンチマークは Counter に限定する。Trace / Log のシリアライズ性能は全測定に含める。
 
@@ -94,3 +94,5 @@ dotnet run --project benchmarks/Lumyte.Diagnostics.Benchmarks -c Release -- --fi
 - [初回シリアライズ結果](initial/Lumyte.Diagnostics.Benchmarks.SerializationBenchmarks-report-github.md) / [CSV](initial/Lumyte.Diagnostics.Benchmarks.SerializationBenchmarks-report.csv) / [生ログ（gzip）](initial/run.log.gz)
 - [ペイロードサイズ](payload-sizes.jsonl)
 - [測定ソースの SHA-256](source-sha256.json)
+
+最新の全体レビューと前後比較は [クリーンアップ後の測定](cleanup.md) を参照する。

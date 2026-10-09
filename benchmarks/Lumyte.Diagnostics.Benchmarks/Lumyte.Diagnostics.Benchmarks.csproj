@@ -12,6 +12,7 @@
     <PackageReference Include="protobuf-net" Version="3.4.30" />
     <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics/Lumyte.Diagnostics.csproj" />
     <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Transport.MagicOnion/Lumyte.Diagnostics.Transport.MagicOnion.csproj" />
+    <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Server/Lumyte.Diagnostics.Server.csproj" />
     <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

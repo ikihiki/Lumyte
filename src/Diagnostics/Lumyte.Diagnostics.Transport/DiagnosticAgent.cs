@@ -10,6 +10,8 @@ namespace Lumyte.Diagnostics.Transport;
 public sealed class DiagnosticAgent<TPoint>(IDiagnosticTransportFactory factory, IDiagnosticPump<TPoint> pump, DiagnosticTelemetry telemetry, IGameExecutionIdentity identity, TimeProvider clock) : IAsyncDisposable
     where TPoint : class
 {
+    private const int MaximumPublicationBytes = 4 * 1024 * 1024;
+    private const int EnvelopeBytes = 1024;
     private readonly CancellationTokenSource _stop = new();
     private IDiagnosticConnection? _connection;
     private Task? _run;
@@ -81,6 +83,30 @@ public sealed class DiagnosticAgent<TPoint>(IDiagnosticTransportFactory factory,
         _stop.Dispose();
     }
 
+    private static long EstimateEventBytes(DiagnosticEvent item)
+    {
+        // JSON may escape each UTF-16 code unit as six bytes. Fixed allowances cover
+        // property names, scalar envelopes and numeric values, and also bound MessagePack.
+        long characters = item.Kind.Length + (long)item.Name.Length + (item.Value.String?.Length ?? 0)
+            + (item.TraceId?.Length ?? 0) + (item.SpanId?.Length ?? 0) + (item.ParentSpanId?.Length ?? 0);
+        if (item.Fields is Dictionary<string, DiagnosticValue> fields)
+        {
+            foreach ((string name, DiagnosticValue value) in fields)
+            {
+                characters += name.Length + (long)(value.String?.Length ?? 0);
+            }
+        }
+        else
+        {
+            foreach ((string name, DiagnosticValue value) in item.Fields)
+            {
+                characters += name.Length + (long)(value.String?.Length ?? 0);
+            }
+        }
+
+        return 1024 + (item.Fields.Count * 128L) + (characters * 6);
+    }
+
     private async Task RunCoreAsync(IDiagnosticConnection connection)
     {
         Task commands = ReadAsync(connection, _stop.Token);
@@ -118,23 +144,41 @@ public sealed class DiagnosticAgent<TPoint>(IDiagnosticTransportFactory factory,
     private async Task SendAsync(IDiagnosticConnection connection, CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        List<DiagnosticEvent>? events = null;
+        DiagnosticEvent? pending = null;
         int idle = 0;
         while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
         {
-            var events = new List<DiagnosticEvent>(128);
-            while (events.Count < 128 && telemetry.TryRead(out DiagnosticEvent? item))
+            long bytes = EnvelopeBytes;
+            while ((events?.Count ?? 0) < 128 && (pending != null || telemetry.TryRead(out pending)))
             {
-                events.Add(item!);
+                long eventBytes = EstimateEventBytes(pending!);
+                if (eventBytes > MaximumPublicationBytes - EnvelopeBytes)
+                {
+                    throw new DiagnosticTransportException("A telemetry event exceeds the publication byte budget.");
+                }
+
+                if (bytes + eventBytes > MaximumPublicationBytes)
+                {
+                    break;
+                }
+
+                (events ??= new(128)).Add(pending!);
+                bytes += eventBytes;
+                pending = null;
             }
 
-            if (events.Count == 0 && ++idle < 10)
+            int count = events?.Count ?? 0;
+            if (count == 0 && ++idle < 10)
             {
                 continue;
             }
 
             idle = 0;
-            DiagnosticMessageKind kind = events.Count == 0 ? DiagnosticMessageKind.Heartbeat : DiagnosticMessageKind.Telemetry;
-            PublishReceipt receipt = await connection.PublishAsync(new(Guid.NewGuid(), SessionId, kind, null, null, events.ToArray()), cancellationToken).ConfigureAwait(false);
+            DiagnosticMessageKind kind = count == 0 ? DiagnosticMessageKind.Heartbeat : DiagnosticMessageKind.Telemetry;
+            DiagnosticEvent[] batch = count == 0 ? [] : events!.ToArray();
+            events?.Clear();
+            PublishReceipt receipt = await connection.PublishAsync(new(Guid.NewGuid(), SessionId, kind, null, null, batch), cancellationToken).ConfigureAwait(false);
             if (!receipt.Accepted)
             {
                 throw new DiagnosticTransportException("The server rejected telemetry: " + receipt.ErrorCode);

@@ -12,6 +12,6 @@ public static class DiagnosticMessagePack
         .WithResolver(CompositeResolver.Create([new DiagnosticMessageFormatter()], [DiagnosticMessagePackResolver.Instance, StandardResolver.Instance]))
         .WithSecurity(MessagePackSecurity.UntrustedData.WithMaximumObjectGraphDepth(32));
 
-    /// <summary>Gets direct publication writing and generated decoding with bounded depth.</summary>
+    /// <summary>Gets direct publication encoding and decoding with bounded depth.</summary>
     public static MessagePackMagicOnionSerializerProvider Provider { get; } = MessagePackMagicOnionSerializerProvider.Default.WithOptions(Options);
 }

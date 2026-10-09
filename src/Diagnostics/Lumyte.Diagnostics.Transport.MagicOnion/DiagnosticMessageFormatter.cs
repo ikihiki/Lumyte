@@ -11,10 +11,18 @@ public sealed class DiagnosticMessageFormatter : IMessagePackFormatter<Diagnosti
     {
         ArgumentNullException.ThrowIfNull(value);
         writer.WriteArrayHeader(6);
-        writer.Write(value.MessageId.ToString("D"));
-        writer.Write(value.SessionId.ToString("D"));
+        WriteIdentifier(ref writer, value.MessageId);
+        WriteIdentifier(ref writer, value.SessionId);
         writer.Write((int)value.Kind);
-        writer.Write(value.RequestId?.ToString("D"));
+        if (value.RequestId is Guid requestId)
+        {
+            WriteIdentifier(ref writer, requestId);
+        }
+        else
+        {
+            writer.WriteNil();
+        }
+
         WriteResult(ref writer, value.Result);
         writer.WriteArrayHeader(value.Events.Length);
         foreach (DiagnosticEvent item in value.Events)
@@ -33,11 +41,13 @@ public sealed class DiagnosticMessageFormatter : IMessagePackFormatter<Diagnosti
     }
 
     /// <inheritdoc/>
-    public DiagnosticMessage Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
+    public DiagnosticMessage Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options) => DiagnosticMessageReader.Read(ref reader, options);
+
+    private static void WriteIdentifier(ref MessagePackWriter writer, Guid value)
     {
-        WireMessage wire = options.Resolver.GetFormatterWithVerify<WireMessage>().Deserialize(ref reader, options)
-            ?? throw new MessagePackSerializationException("A publication cannot be nil.");
-        return WireMapper.FromWire(wire);
+        writer.WriteStringHeader(36);
+        value.TryFormat(writer.GetSpan(36), out int written, "D");
+        writer.Advance(written);
     }
 
     private static void WriteResult(ref MessagePackWriter writer, DiagnosticOperationResult? result)

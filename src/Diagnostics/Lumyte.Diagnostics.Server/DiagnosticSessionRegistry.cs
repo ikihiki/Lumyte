@@ -26,7 +26,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
             throw new ArgumentException("Catalog exceeds the byte budget.", nameof(hello));
         }
 
-        hello = JsonSerializer.Deserialize(catalogBytes, DiagnosticJson.Context.ClientHello)!;
+        hello = hello with { Catalog = CopyCatalog(hello.Catalog) };
         lock (_gate)
         {
             if (_sessions.Count >= 64)
@@ -36,7 +36,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
 
             var welcome = new SessionWelcome(Guid.NewGuid(), Convert.ToHexString(RandomNumberGenerator.GetBytes(32)), [.. options.GamePermissions]);
             _sessions.Add(welcome.SessionId, new(hello, welcome, delivery, clock.GetTimestamp()));
-            return welcome;
+            return welcome with { Permissions = [.. welcome.Permissions] };
         }
     }
 
@@ -44,16 +44,24 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
     /// <returns>The active sessions.</returns>
     public SessionSnapshot[] List()
     {
+        SessionSnapshot[] snapshots;
         lock (_gate)
         {
-            return _sessions.Values.Select(session => new SessionSnapshot(
+            snapshots = _sessions.Values.Select(session => new SessionSnapshot(
                 session.Welcome.SessionId,
                 session.Hello.InstanceId,
-                JsonSerializer.Deserialize(JsonSerializer.SerializeToUtf8Bytes(session.Hello, DiagnosticJson.Context.ClientHello), DiagnosticJson.Context.ClientHello)!.Catalog,
+                session.Hello.Catalog,
                 session.Commands.Values.Count(entry => !entry.Completion.Task.IsCompleted),
                 session.Received,
                 session.Dropped)).ToArray();
         }
+
+        for (int index = 0; index < snapshots.Length; index++)
+        {
+            snapshots[index] = snapshots[index] with { Catalog = CopyCatalog(snapshots[index].Catalog) };
+        }
+
+        return snapshots;
     }
 
     /// <summary>Checks the HTTP session capability in addition to enrollment authentication.</summary>
@@ -99,7 +107,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                     Entry? pending = session.Commands.Values.FirstOrDefault(entry => !entry.Completion.Task.IsCompleted);
                     if (pending != null)
                     {
-                        return [pending.Command];
+                        return [CopyCommand(pending.Command)];
                     }
                 }
 
@@ -129,14 +137,13 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
     public async Task<DiagnosticOperationResult> InvokeAsync(Guid id, OperationInvocation invocation, string actor, CancellationToken cancellationToken)
     {
         DiagnosticProtocol.Validate(invocation);
-        invocation = invocation with { Arguments = invocation.Arguments.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) };
+        invocation = invocation with { Arguments = CopyFields(invocation.Arguments, canonical: true) };
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(invocation, DiagnosticJson.Context.OperationInvocation);
         if (bytes.Length > 64 * 1024)
         {
             throw new ArgumentException("Invocation exceeds the byte budget.", nameof(invocation));
         }
 
-        invocation = JsonSerializer.Deserialize(bytes, DiagnosticJson.Context.OperationInvocation)!;
         string fingerprint = actor + Convert.ToHexString(SHA256.HashData(bytes));
         Entry entry;
         Action<DiagnosticCommand>? delivery = null;
@@ -194,7 +201,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         {
             try
             {
-                delivery(entry.Command);
+                delivery(CopyCommand(entry.Command));
             }
             catch (Exception)
             {
@@ -205,12 +212,12 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         var remaining = TimeSpan.FromMilliseconds(Math.Max(0, entry.Command.ExpiresUnixMilliseconds - clock.GetUtcNow().ToUnixTimeMilliseconds()));
         try
         {
-            return await entry.Completion.Task.WaitAsync(remaining, clock, cancellationToken).ConfigureAwait(false);
+            return CopyResult(await entry.Completion.Task.WaitAsync(remaining, clock, cancellationToken).ConfigureAwait(false));
         }
         catch (TimeoutException)
         {
             entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Operation result is unknown after the deadline."));
-            return await entry.Completion.Task.ConfigureAwait(false);
+            return CopyResult(await entry.Completion.Task.ConfigureAwait(false));
         }
     }
 
@@ -223,14 +230,8 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         DiagnosticProtocol.Validate(message);
         message = message with
         {
-            Result = message.Result == null ? null : message.Result with
-            {
-                Values = message.Result.Values?.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
-            },
-            Events = message.Events.Select(item => item with
-            {
-                Fields = item.Fields.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
-            }).ToArray(),
+            Result = message.Result == null ? null : CopyResult(message.Result, canonical: true),
+            Events = CopyEvents(message.Events, canonical: true),
         };
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(message, DiagnosticJson.Context.DiagnosticMessage);
         if (bytes.Length > 4 * 1024 * 1024)
@@ -238,7 +239,6 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
             throw new ArgumentException("Message exceeds the byte budget.", nameof(message));
         }
 
-        message = JsonSerializer.Deserialize(bytes, DiagnosticJson.Context.DiagnosticMessage)!;
         string fingerprint = Convert.ToHexString(SHA256.HashData(bytes));
         lock (_gate)
         {
@@ -294,10 +294,11 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
 
             if (session.Messages.Count == 1024)
             {
-                session.Messages.Remove(session.Messages.Keys.First());
+                session.Messages.Remove(session.MessageOrder.Dequeue());
             }
 
             session.Messages.Add(message.MessageId, (fingerprint, receipt));
+            session.MessageOrder.Enqueue(message.MessageId);
             return receipt;
         }
     }
@@ -307,10 +308,13 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
     /// <returns>The retained events.</returns>
     public DiagnosticEvent[] Telemetry(Guid id)
     {
+        DiagnosticEvent[] snapshot;
         lock (_gate)
         {
-            return JsonSerializer.Deserialize(JsonSerializer.SerializeToUtf8Bytes(Get(id).Telemetry.Select(item => item.Event).ToArray(), DiagnosticJson.Context.DiagnosticEventArray), DiagnosticJson.Context.DiagnosticEventArray)!;
+            snapshot = Get(id).Telemetry.Select(item => item.Event).ToArray();
         }
+
+        return CopyEvents(snapshot);
     }
 
     /// <summary>Closes a session and explicitly rejects pending work.</summary>
@@ -362,6 +366,52 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         }
     }
 
+    private static DiagnosticSubsystemCatalog[] CopyCatalog(IReadOnlyList<DiagnosticSubsystemCatalog> catalog)
+        => catalog.Select(item => item with
+        {
+            Operations = item.Operations.Select(operation => operation with
+            {
+                Arguments = [.. operation.Arguments],
+                Results = [.. operation.Results],
+            }).ToArray(),
+        }).ToArray();
+
+    private static DiagnosticCommand CopyCommand(DiagnosticCommand command)
+        => command with { Arguments = CopyFields(command.Arguments) };
+
+    private static DiagnosticOperationResult CopyResult(DiagnosticOperationResult result, bool canonical = false)
+        => result with { Values = result.Values == null ? null : CopyFields(result.Values, canonical) };
+
+    private static DiagnosticEvent[] CopyEvents(DiagnosticEvent[] events, bool canonical = false)
+    {
+        var copy = new DiagnosticEvent[events.Length];
+        for (int index = 0; index < events.Length; index++)
+        {
+            DiagnosticEvent item = events[index];
+            copy[index] = item with { Fields = CopyFields(item.Fields, canonical) };
+        }
+
+        return copy;
+    }
+
+    private static Dictionary<string, DiagnosticValue> CopyFields(IReadOnlyDictionary<string, DiagnosticValue> fields, bool canonical = false)
+    {
+        if (!canonical || fields.Count < 2)
+        {
+            return new(fields, StringComparer.Ordinal);
+        }
+
+        KeyValuePair<string, DiagnosticValue>[] pairs = fields.ToArray();
+        Array.Sort(pairs, static (left, right) => StringComparer.Ordinal.Compare(left.Key, right.Key));
+        var copy = new Dictionary<string, DiagnosticValue>(pairs.Length, StringComparer.Ordinal);
+        foreach ((string key, DiagnosticValue value) in pairs)
+        {
+            copy.Add(key, value);
+        }
+
+        return copy;
+    }
+
     private Session Get(Guid id) => _sessions.TryGetValue(id, out Session? session) ? session : throw new KeyNotFoundException("Unknown diagnostic session.");
 
     private sealed class Session(ClientHello hello, SessionWelcome welcome, Action<DiagnosticCommand>? delivery, long lastSeen)
@@ -377,6 +427,8 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         public Dictionary<Guid, Entry> Commands { get; } = [];
 
         public Dictionary<Guid, (string Fingerprint, PublishReceipt Receipt)> Messages { get; } = [];
+
+        public Queue<Guid> MessageOrder { get; } = new();
 
         public Queue<(DiagnosticEvent Event, long Bytes)> Telemetry { get; } = new();
 

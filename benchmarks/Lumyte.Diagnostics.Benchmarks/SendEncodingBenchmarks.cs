@@ -55,7 +55,7 @@ public class SendEncodingBenchmarks
     /// <summary>Maps every event and field to wire DTOs before serializing.</summary>
     /// <returns>An owned payload.</returns>
     [Benchmark]
-    public byte[] MessagePackDto() => MessagePackSerializer.Serialize(WireMapper.ToWire(_message), DiagnosticMessagePack.Options);
+    public byte[] MessagePackDto() => MessagePackSerializer.Serialize(LegacyPublication.Map(_message), LegacyPublication.Options);
 
     /// <summary>Uses the publication formatter without constructing per-event wire DTOs.</summary>
     /// <returns>An owned payload.</returns>

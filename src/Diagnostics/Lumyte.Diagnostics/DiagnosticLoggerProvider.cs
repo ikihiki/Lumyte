@@ -28,30 +28,83 @@ internal sealed class DiagnosticLoggerProvider(TelemetryRouter router) : ILogger
                 return;
             }
 
-            var scopes = new List<KeyValuePair<string, object?>>();
-            provider._scopes.ForEachScope(
-                (scope, list) =>
-            {
-                if (scope is IEnumerable<KeyValuePair<string, object?>> fields)
-                {
-                    list.AddRange(fields.Take(32));
-                }
-            },
-                scopes);
-            string[] ids = scopes.Where(pair => pair.Key == "lumyte.instance.id").Select(pair => pair.Value as string ?? string.Empty).Distinct(StringComparer.Ordinal).ToArray();
-            if (ids.Length != 1 || !router.TryGet(ids[0], out DiagnosticTelemetry? sink) || sink == null || !sink.LogEnabled(category, logLevel))
-            {
-                return;
-            }
-
+            DiagnosticTelemetry? sink = null;
             try
             {
-                sink.WriteLog(category, logLevel, eventId, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>> ?? [], scopes, exception);
+                var fields = new LogFields(state as IEnumerable<KeyValuePair<string, object?>>);
+                provider._scopes.ForEachScope(static (scope, target) => target.AddScope(scope), fields);
+                if (fields.Ambiguous || fields.InstanceId == null || !router.TryGet(fields.InstanceId, out sink)
+                    || sink == null || !sink.LogEnabled(category, logLevel))
+                {
+                    return;
+                }
+
+                sink.WriteLog(category, logLevel, eventId, formatter(state, exception), fields, exception);
             }
             catch (Exception)
             {
                 // Providers never throw into game code or recursively log transfer errors.
-                sink.Drop();
+                sink?.Drop();
+            }
+        }
+    }
+
+    private sealed class LogFields : Dictionary<string, DiagnosticValue>
+    {
+        private int _visited;
+
+        public LogFields(IEnumerable<KeyValuePair<string, object?>>? state)
+            : base(StringComparer.Ordinal)
+        {
+            if (state != null)
+            {
+                foreach (KeyValuePair<string, object?> pair in state)
+                {
+                    DiagnosticTelemetry.CopyField(this, pair);
+                    if (++_visited == 32)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        public string? InstanceId { get; private set; }
+
+        public bool Ambiguous { get; private set; }
+
+        public void AddScope(object? scope)
+        {
+            if (Ambiguous || scope is not IEnumerable<KeyValuePair<string, object?>> values)
+            {
+                return;
+            }
+
+            int visited = 0;
+            foreach (KeyValuePair<string, object?> pair in values)
+            {
+                if (pair.Key == "lumyte.instance.id")
+                {
+                    string id = pair.Value as string ?? string.Empty;
+                    if (InstanceId != null && InstanceId != id)
+                    {
+                        Ambiguous = true;
+                        return;
+                    }
+
+                    InstanceId = id;
+                }
+
+                if (_visited < 32)
+                {
+                    DiagnosticTelemetry.CopyField(this, pair);
+                    _visited++;
+                }
+
+                if (++visited == 32)
+                {
+                    break;
+                }
             }
         }
     }

@@ -163,7 +163,7 @@ public sealed class OperationGenerator : IIncrementalGenerator
                 encoded.Add("writer.Write(" + Literal(name) + ", " + field + ");");
             }
 
-            string outputName = "__DiagnosticOutput" + outputTypes.Count;
+            string outputName = "__LumyteDiagnosticOutput" + outputTypes.Count;
             outputTypes.Add("private sealed class " + outputName + "(" + string.Join(",", parameters) + ") : global::Lumyte.Diagnostics.DiagnosticOutputValues { public override int Count => " + encoded.Count + "; public override void WriteTo<TWriter>(ref TWriter writer) { " + string.Join(string.Empty, encoded) + " } }");
             bool requiresRevision = NamedBool(attribute, "RequiresRevision");
             string code = "builder.Operation(new(" + Literal(id) + ", " + Literal(NamedString(attribute, "DisplayName") ?? method.Name)

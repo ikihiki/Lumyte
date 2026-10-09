@@ -65,6 +65,20 @@ HTTP の `DiagnosticJsonMessageEncoder.Write(IBufferWriter<byte>, DiagnosticMess
 
 検証では旧 DTO 経路との wire 一致、4 種の scalar、空・失敗結果、特殊文字、大きい整数、復号・実通信を確認する。送信 benchmark は同じ内容・所有条件で、DTO 構築を含む経路と直接書き込みを比較する。受信の速度やゼロアロケーションはこの測定から推論しない。
 
+### 全体レビュー後の整理と保持契約
+
+publication の WireMessage / WireEvent / WireResult と変換コードは本番から除去する。サーバーの MessagePack 受信は共通モデルへ直接復号し、コレクション確保前の件数制限、重複キー拒否、未知末尾フィールドを含む depth 上限を維持する。旧 DTO 経路は性能比較用 fixture として benchmarks にだけ残す。wire 互換性は旧生成 formatter から採取した固定データで検証する。低頻度の Hello / Command 等の wire DTO は契約を担うため保持する。
+
+標準計測の収集ではタグを Span から直接コピーし、ログ状態とスコープも上限付きの scalar dictionary へ集める。一時配列、LINQ の連結、カテゴリ文字列の連結を省く。動的フィールドの dictionary 自体は非同期処理まで値を所有するため保持する。直接 Writer は Dictionary の具体型を列挙し、enumerator の boxing を避ける。JSON の固定プロパティ名は事前エンコードし、MessagePack の GUID は出力バッファへ直接書く。
+
+Agent は無イベント時に List を確保せず、確保した batch 用 List は再利用する。128 件と 4 MiB の両予算で区切る。JSON の最大 escape 量を含む保守的なサイズ見積りで、入り切らないイベントを次の batch へ保持し、順序と欠落計数を壊さない。実際の符号化サイズより余裕を取るため、大きいタグの batch では送信件数が小さくなる。
+
+サーバーは array / dictionary の明示コピーで内部状態の所有権を確保し、コピーのための JSON 往復を行わない。文字列・scalar・immutable descriptor は共有でき、可変コンテナーを共有しない。公開カタログ・テレメトリーのコピーは共有 lock の外で行う。canonical JSON によるバイト上限と要求・メッセージ指紋の算出は保持する。カタログ、権限、再配送要求、重複要求の結果を返す際も外向きコピーを作り、利用者の変更がキャッシュを変えない契約とする。
+
+メッセージの重複排除は最大 1,024 件を受信順 FIFO で保持する。Dictionary の列挙順を削除順として利用せず、明示的な ID queue で順序を管理する。重複要求の照会は保持順を進めない。生成型名は予約済み __Lumyte prefix に揃える。
+
+今回のクリーンアップ前後の計測は [測定結果](../../benchmarks/diagnostics/cleanup.md) に記録する。ネットワークの自動再試行は引き続き提供しない。将来導入する場合は、再配送でゲーム側の単調時計へ変換し直した期限を同一要求判定に使う方法を見直す。
+
 ### 実装段階と測定範囲（2026-10-09）
 
 ユーザーの実装・性能確認依頼に基づき、DI、最小属性からの Operation 生成、安全な実行ポイント、標準 Metrics / Trace / Log の有界収集を実装した。実装パッケージは `Lumyte.Diagnostics` と `Lumyte.Diagnostics.Generators`。現在の公開名前空間は `Lumyte.Diagnostics` であり、以降に示す最終的な通信契約の namespace / 型構成の全体はまだ実装していない。

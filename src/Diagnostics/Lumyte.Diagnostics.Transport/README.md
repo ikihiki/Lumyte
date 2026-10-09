@@ -53,3 +53,5 @@ DiagnosticMessageKind は CommandResult / Telemetry / Heartbeat の閉じた集�
 低頻度の受信・Hello は source-generated JSON または generated MessagePack resolver で復号し、検証した scalar を所有する内部要求として Pump へ渡す。MessagePack 属性は MagicOnion モジュールの wire-only DTO に限定する。通信失敗は DiagnosticTransportException として伝え、呼び出しのキャンセルは OperationCanceledException を使う。
 
 Agent は IAsyncDisposable なので DI スコープを DisposeAsync で破棄する。エンジンの所有スレッドでの解除を先に済ませ、通信待ちの continuation からドメインにアクセスしない。[実行例](../../../samples/Lumyte.Diagnostics.Remote.Sample/README.md) を参照する。
+
+送信 batch は 128 件と保守的な 4 MiB byte budget の両方で分割する。大きいイベントが入り切らなければ次回へ保持する。アイドル時は List を確保せず、送信を開始した後は batch 用 List を再利用する。JSON の固定名と MessagePack の GUID 書き込み、Dictionary の具体型列挙により繰り返しの割り当てを削減する。

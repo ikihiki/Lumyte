@@ -1,10 +1,10 @@
 using MessagePack;
 
-namespace Lumyte.Diagnostics.Transport.MagicOnion;
+namespace Lumyte.Diagnostics.Benchmarks;
 
-/// <summary>Version-one numeric-key wire schema for WireMessage.</summary>
+/// <summary>Benchmark-only version-one wire schema for LegacyPublicationMessage.</summary>
 [MessagePackObject]
-public sealed partial class WireMessage
+public sealed partial class LegacyPublicationMessage
 {
     /// <summary>Gets or sets the MessageId field.</summary>
     [Key(0)]
@@ -24,9 +24,9 @@ public sealed partial class WireMessage
 
     /// <summary>Gets or sets the Result field.</summary>
     [Key(4)]
-    public WireResult? Result { get; set; }
+    public LegacyPublicationResult? Result { get; set; }
 
     /// <summary>Gets or sets the Events field.</summary>
     [Key(5)]
-    public WireEvent[] Events { get; set; } = [];
+    public LegacyPublicationEvent[] Events { get; set; } = [];
 }

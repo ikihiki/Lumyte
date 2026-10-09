@@ -103,6 +103,103 @@ public sealed class TelemetryTests
         Assert.Empty(Drain(collector));
     }
 
+    /// <summary>Checks duplicate scope identity is accepted while ambiguous identities never format or route logs.</summary>
+    [Fact]
+    public void NestedLogScopesRequireOneDistinctIdentity()
+    {
+        using ServiceProvider provider = Build();
+        using IServiceScope first = provider.CreateScope();
+        using IServiceScope second = provider.CreateScope();
+        DiagnosticTelemetry one = first.ServiceProvider.GetRequiredService<DiagnosticTelemetry>();
+        DiagnosticTelemetry two = second.ServiceProvider.GetRequiredService<DiagnosticTelemetry>();
+        one.Start();
+        two.Start();
+        string firstId = first.ServiceProvider.GetRequiredService<IGameExecutionIdentity>().InstanceId.ToString("D");
+        string secondId = second.ServiceProvider.GetRequiredService<IGameExecutionIdentity>().InstanceId.ToString("D");
+        ILogger logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Lumyte.Test.Component");
+        using (logger.BeginScope(new Dictionary<string, object?> { ["lumyte.instance.id"] = firstId }))
+        {
+            using (logger.BeginScope(new Dictionary<string, object?> { ["lumyte.instance.id"] = firstId }))
+            {
+                logger.LogInformation("Repeated identity");
+            }
+
+            bool formatted = false;
+            using (logger.BeginScope(new Dictionary<string, object?> { ["lumyte.instance.id"] = secondId }))
+            {
+                logger.Log(LogLevel.Information, new EventId(1), 0, null, (_, _) =>
+                {
+                    formatted = true;
+                    return "Ambiguous identity";
+                });
+            }
+
+            Assert.False(formatted);
+            ILogger unrelated = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Lumyte.Testing.Component");
+            unrelated.LogInformation("Unrelated category");
+        }
+
+        Assert.Equal("Repeated identity", Assert.Single(Drain(one)).Value.String);
+        Assert.Empty(Drain(two));
+    }
+
+    /// <summary>Checks structured log fields remain detached and bounded across nested scopes.</summary>
+    [Fact]
+    public void LogFieldsAreBoundedBeforeScopeIdentity()
+    {
+        using ServiceProvider provider = Build();
+        using IServiceScope game = provider.CreateScope();
+        DiagnosticTelemetry collector = game.ServiceProvider.GetRequiredService<DiagnosticTelemetry>();
+        collector.Start();
+        string instanceId = game.ServiceProvider.GetRequiredService<IGameExecutionIdentity>().InstanceId.ToString("D");
+        ILogger logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Lumyte.Test.Component");
+        var state = Enumerable.Range(0, 10).ToDictionary(index => $"state-{index}", index => (object?)index);
+        var outer = Enumerable.Range(0, 32).ToDictionary(index => $"outer-{index}", index => (object?)index);
+        using (logger.BeginScope(outer))
+        using (logger.BeginScope(new Dictionary<string, object?> { ["lumyte.instance.id"] = instanceId }))
+        {
+            logger.Log(LogLevel.Warning, new EventId(7), state, new InvalidOperationException("Error"), static (_, _) => "Message");
+            state["state-0"] = 123;
+            outer.Clear();
+        }
+
+        DiagnosticEvent log = Assert.Single(Drain(collector));
+        Assert.Equal(36, log.Fields.Count);
+        Assert.Equal(0, log.Fields["state-0"].Int64);
+        Assert.Equal(21, log.Fields["outer-21"].Int64);
+        Assert.False(log.Fields.ContainsKey("outer-22"));
+        Assert.False(log.Fields.ContainsKey("lumyte.instance.id"));
+        Assert.Equal("Warning", log.Fields["log.level"].String);
+        Assert.Equal("Error", log.Fields["exception.message"].String);
+    }
+
+    /// <summary>Checks metric span snapshots keep their field limit, reject nonfinite values and detach source tags.</summary>
+    [Fact]
+    public void MetricTagsAreBoundedAndDetached()
+    {
+        using ServiceProvider provider = Build();
+        using IServiceScope game = provider.CreateScope();
+        DiagnosticTelemetry collector = game.ServiceProvider.GetRequiredService<DiagnosticTelemetry>();
+        collector.Start();
+        string instanceId = game.ServiceProvider.GetRequiredService<IGameExecutionIdentity>().InstanceId.ToString("D");
+        Meter meter = provider.GetRequiredService<IMeterFactory>().Create(new MeterOptions("Lumyte.Test"));
+        Counter<double> counter = meter.CreateCounter<double>("requests");
+        KeyValuePair<string, object?>[] tags = Enumerable.Range(0, 64)
+            .Select(index => new KeyValuePair<string, object?>($"tag-{index}", index))
+            .ToArray();
+        tags[63] = new("lumyte.instance.id", instanceId);
+        counter.Add(double.NaN, tags.AsSpan());
+        counter.Add(double.PositiveInfinity, tags.AsSpan());
+        counter.Add(1, tags.AsSpan());
+        tags[0] = new("tag-0", 123);
+
+        DiagnosticEvent metric = Assert.Single(Drain(collector));
+        Assert.Equal(32, metric.Fields.Count);
+        Assert.Equal(0, metric.Fields["tag-0"].Int64);
+        Assert.False(metric.Fields.ContainsKey("tag-32"));
+        Assert.Equal(1, metric.Value.Double);
+    }
+
     private static ServiceProvider Build(int capacity = 1024, double ratio = 1)
     {
         var services = new ServiceCollection();

@@ -46,6 +46,7 @@ public sealed class GeneratorTests
     [InlineData("public partial class Adapter { [DiagnosticOperation] private DiagnosticResult<R> Go(int x) => null!; }", "LMDIAG004")]
     [InlineData("public partial class Adapter { [DiagnosticOperation] private DiagnosticResult<R> Go([DiagnosticArgument(Minimum = 2, Maximum = 1)] long x) => null!; }", "LMDIAG005")]
     [InlineData("public partial class Adapter { [DiagnosticOperation] private DiagnosticResult<R> GetURL() => null!; [DiagnosticOperation] private DiagnosticResult<R> GetUrl() => null!; }", "LMDIAG003")]
+    [InlineData("public partial class Adapter { private sealed class __LumyteDiagnosticOutput0 {} [DiagnosticOperation] private DiagnosticResult<R> Go() => null!; }", "LMDIAG001")]
     public void InvalidDeclarationsAreRejected(string declaration, string code)
     {
         (GeneratorDriverRunResult Run, Compilation Output) result = Run("using Lumyte.Diagnostics; namespace Demo; " + declaration + " public sealed record R(bool Ok);");
@@ -79,6 +80,27 @@ public sealed class GeneratorTests
         Assert.Contains("\"result\"", generated, StringComparison.Ordinal);
         Assert.Contains("RequiresRevision: true", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("Internal", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>Checks private snapshot types use the generator's explicitly reserved member prefix.</summary>
+    [Fact]
+    public void SnapshotNamesDoNotCollideWithUnreservedMembers()
+    {
+        const string Source = """
+            using Lumyte.Diagnostics;
+            namespace Demo;
+            public sealed partial class Adapter
+            {
+                private sealed class __DiagnosticOutput0 {}
+                [DiagnosticOperation]
+                private DiagnosticResult<Receipt> Read() => DiagnosticResult<Receipt>.Success(new(true));
+            }
+            public sealed record Receipt(bool Ok);
+            """;
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(Source);
+        Assert.Empty(result.Run.Diagnostics);
+        Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("__LumyteDiagnosticOutput0", Assert.Single(result.Run.GeneratedTrees).ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>Checks generated snapshots copy mutable domain properties before background serialization.</summary>
