@@ -8,6 +8,8 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
+    private readonly object _bufferGate = new();
+    private int _bufferCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -17,6 +19,10 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal object BufferGate => _bufferGate;
+
+    internal JSObject Handle => _handle;
 
     /// <summary>Imports the browser module and requests a WebGPU device from the default adapter.</summary>
     /// <param name="moduleUrl">The URL serving this package's lumyte-graphics.js module.</param>
@@ -46,16 +52,71 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
     }
 
+    /// <inheritdoc />
+    public BufferLayout<T> GetBufferLayout<T>()
+        where T : unmanaged
+    {
+        lock (_bufferGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
+        }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(desc);
+        lock (_bufferGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            BufferLayout<T> layout = GetBufferLayout<T>();
+            ulong size = layout.GetSizeInBytes(desc.Count);
+            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
+            {
+                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
+            }
+
+            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+            {
+                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+            }
+
+            var buffer = new BrowserBuffer<T>(this, desc, layout, size);
+            _bufferCount++;
+            return buffer;
+        }
+    }
+
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        lock (_bufferGate)
         {
-            return;
-        }
+            if (_bufferCount != 0)
+            {
+                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
+            }
 
-        BrowserInterop.DestroyDevice(_handle);
-        _handle.Dispose();
-        _disposed = true;
+            if (_disposed)
+            {
+                return;
+            }
+
+            BrowserInterop.DestroyDevice(_handle);
+            _handle.Dispose();
+            _disposed = true;
+        }
+    }
+
+    internal void ReleaseBuffer()
+    {
+        lock (_bufferGate)
+        {
+            _bufferCount--;
+        }
     }
 }

@@ -32,3 +32,5 @@ CHROME=/usr/bin/google-chrome node tools/graphics/verify-browser.mjs
 この検証は actual WebGPU device を作り、.NET の共通 API からの表示結果を確認します。GPU がない環境では Chromium の SwiftShader を使用します。ブラウザーを生成できない場合は失敗します。
 
 このサンプルは `wasm-tools` を必要とするため `Lumyte.slnx` に登録していません。Browser library 自体は通常の .NET SDK でソリューションからビルドできます。既存 CI の Linux x64 ジョブは `mise run test-wasm` で、固定 workload の導入・publish・実 WebGPU と WebAssembly による検証を実行します。
+
+BufferExercise も同じ共通 API で実行します。実際の GPUBuffer の確保・map・CPU copy・unmap と境界条件を確認し、成功時には `Buffer checks passed` を表示します。

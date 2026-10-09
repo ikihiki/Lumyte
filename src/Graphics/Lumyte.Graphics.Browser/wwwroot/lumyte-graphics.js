@@ -43,3 +43,45 @@ export function destroyDevice(handle) {
         handle.disposed = true;
     }
 }
+
+export function createBuffer(device, size, flags, memory) {
+    let usage = 0;
+    if (flags & 1) usage |= GPUBufferUsage.COPY_SRC;
+    if (flags & 2) usage |= GPUBufferUsage.COPY_DST;
+    if (flags & 12) usage |= GPUBufferUsage.STORAGE;
+    if (flags & 16) usage |= GPUBufferUsage.INDEX;
+    if (memory === 2) usage |= GPUBufferUsage.MAP_WRITE;
+    if (memory === 1) usage |= GPUBufferUsage.MAP_READ;
+    return { buffer: device.device.createBuffer({ size, usage }), mapped: null, disposed: false };
+}
+
+export async function mapBuffer(handle, memory) {
+    await handle.buffer.mapAsync(memory === 2 ? GPUMapMode.WRITE : GPUMapMode.READ);
+    try {
+        handle.mapped = handle.buffer.getMappedRange();
+    } catch (error) {
+        handle.buffer.unmap();
+        throw error;
+    }
+}
+
+export function unmapBuffer(handle) {
+    handle.buffer.unmap();
+    handle.mapped = null;
+}
+
+export function copyBufferFrom(handle, source, offset) {
+    source.copyTo(new Uint8Array(handle.mapped, offset, source.byteLength));
+}
+
+export function copyBufferTo(handle, destination, offset) {
+    destination.set(new Uint8Array(handle.mapped, offset, destination.byteLength));
+}
+
+export function destroyBuffer(handle) {
+    if (!handle.disposed) {
+        if (handle.mapped) unmapBuffer(handle);
+        handle.buffer.destroy();
+        handle.disposed = true;
+    }
+}
