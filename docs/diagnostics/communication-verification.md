@@ -35,8 +35,8 @@ python3 tools/diagnostics/communication-smoke.py
 
 これは実通信の機能確認であり、直接エンコード追加後も両方式の独立プロセス確認が成功した。[今回の結果](results/direct-encoding-processes.json) を参照する。wire 一致・結果の直接検証など 9 ケースも追加し、統合テストは計 14 件となる。基盤・Generator の 18 件も成功した。
 
-スクリプトの単発操作時間はネットワーク性能のベンチマークではない。[シリアライズ比較](../benchmarks/diagnostics/README.md) は別のローカル測定である。
+スクリプトの単発操作時間は機能確認の記録であり、性能評価には使わない。
 
 Input はリースを持つサンプルモデルで、既存 InputSystem のデバイス入力へはまだ統合していない。実オブジェクトグラフ、描画キャプチャー、転送、購読・集約、再接続、Browser/WASM、NativeAOT、Windows 実行は未検証または未実装。サーバーは開発用のメモリー保持と固定トークン認証で、公開ホストの TLS・外部 ID 基盤・永続監査は含まない。HTTP のリクエストと gRPC の個々のメッセージは 4 MiB に制限し、キュー・セッション・保持件数も制限する。
 
-全体レビュー後は基盤 23 件・統合 31 件を検証した。旧 MessagePack の固定データとの互換、direct reader の不正データ・件数・depth、4 MiB batch 分割、キャッシュ FIFO、返却データの所有権、タグ収集上限も確認する。[今回の独立プロセス結果](results/cleanup-processes.json) と [性能比較](../benchmarks/diagnostics/cleanup.md) を参照する。
+全体レビュー後は基盤 23 件・統合 31 件を検証した。旧 MessagePack の固定データとの互換、direct reader の不正データ・件数・depth、4 MiB batch 分割、キャッシュ FIFO、返却データの所有権、タグ収集上限も確認する。[今回の独立プロセス結果](results/cleanup-processes.json) を参照する。

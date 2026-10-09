@@ -1,7 +1,4 @@
 <Solution>
-  <Folder Name="/benchmarks/">
-    <Project Path="benchmarks/Lumyte.Diagnostics.Benchmarks/Lumyte.Diagnostics.Benchmarks.csproj" />
-  </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Diagnostics.Remote.Sample/Lumyte.Diagnostics.Remote.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />

@@ -12,4 +12,4 @@ DI スコープ内の `InputOverrideService` を通常の Input 読み取りと�
 
 `DiagnosticRequest.Permissions` / ActorId は信頼済みホストが与える前提である。今回のサンプルはローカルで実行し、サーバーへ接続しない。JSON 出力は確認用であり、Browser 通信プロトコルを実装したものではない。
 
-[基盤 API とライフサイクル](../../src/Diagnostics/Lumyte.Diagnostics/README.md)、[測定結果](../../docs/benchmarks/diagnostics/README.md)、[ADR](../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。
+[基盤 API とライフサイクル](../../src/Diagnostics/Lumyte.Diagnostics/README.md)、[ADR](../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。

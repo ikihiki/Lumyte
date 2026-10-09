@@ -63,11 +63,11 @@ public static class DiagnosticValueWriting
 
 HTTP の `DiagnosticJsonMessageEncoder.Write(IBufferWriter<byte>, DiagnosticMessage)` と `Write(Utf8JsonWriter, DiagnosticMessage)` は caller-owned storage へ書き、外部 Writer を破棄しない。MagicOnion は `DiagnosticMessageFormatter` と `DiagnosticMessagePack.Options` に直接書き込みを登録する。生成された snapshot は Count と同数の一意なフィールドを出力し、値を変更しない契約とする。
 
-検証では旧 DTO 経路との wire 一致、4 種の scalar、空・失敗結果、特殊文字、大きい整数、復号・実通信を確認する。送信 benchmark は同じ内容・所有条件で、DTO 構築を含む経路と直接書き込みを比較する。受信の速度やゼロアロケーションはこの測定から推論しない。
+検証では旧 DTO 経路との wire 一致、4 種の scalar、空・失敗結果、特殊文字、大きい整数、復号・実通信を確認する。
 
 ### 全体レビュー後の整理と保持契約
 
-publication の WireMessage / WireEvent / WireResult と変換コードは本番から除去する。サーバーの MessagePack 受信は共通モデルへ直接復号し、コレクション確保前の件数制限、重複キー拒否、未知末尾フィールドを含む depth 上限を維持する。旧 DTO 経路は性能比較用 fixture として benchmarks にだけ残す。wire 互換性は旧生成 formatter から採取した固定データで検証する。低頻度の Hello / Command 等の wire DTO は契約を担うため保持する。
+publication の WireMessage / WireEvent / WireResult と変換コードは本番から除去する。サーバーの MessagePack 受信は共通モデルへ直接復号し、コレクション確保前の件数制限、重複キー拒否、未知末尾フィールドを含む depth 上限を維持する。wire 互換性は旧生成 formatter から採取した固定データで検証する。低頻度の Hello / Command 等の wire DTO は契約を担うため保持する。
 
 標準計測の収集ではタグを Span から直接コピーし、ログ状態とスコープも上限付きの scalar dictionary へ集める。一時配列、LINQ の連結、カテゴリ文字列の連結を省く。動的フィールドの dictionary 自体は非同期処理まで値を所有するため保持する。直接 Writer は Dictionary の具体型を列挙し、enumerator の boxing を避ける。JSON の固定プロパティ名は事前エンコードし、MessagePack の GUID は出力バッファへ直接書く。
 
@@ -77,21 +77,19 @@ Agent は無イベント時に List を確保せず、確保した batch 用 Lis
 
 メッセージの重複排除は最大 1,024 件を受信順 FIFO で保持する。Dictionary の列挙順を削除順として利用せず、明示的な ID queue で順序を管理する。重複要求の照会は保持順を進めない。生成型名は予約済み __Lumyte prefix に揃える。
 
-今回のクリーンアップ前後の計測は [測定結果](../../benchmarks/diagnostics/cleanup.md) に記録する。ネットワークの自動再試行は引き続き提供しない。将来導入する場合は、再配送でゲーム側の単調時計へ変換し直した期限を同一要求判定に使う方法を見直す。
+ネットワークの自動再試行は引き続き提供しない。将来導入する場合は、再配送でゲーム側の単調時計へ変換し直した期限を同一要求判定に使う方法を見直す。
 
-### 実装段階と測定範囲（2026-10-09）
+### 実装段階と検証範囲（2026-10-09）
 
-ユーザーの実装・性能確認依頼に基づき、DI、最小属性からの Operation 生成、安全な実行ポイント、標準 Metrics / Trace / Log の有界収集を実装した。実装パッケージは `Lumyte.Diagnostics` と `Lumyte.Diagnostics.Generators`。現在の公開名前空間は `Lumyte.Diagnostics` であり、以降に示す最終的な通信契約の namespace / 型構成の全体はまだ実装していない。
+DI、最小属性からの Operation 生成、安全な実行ポイント、標準 Metrics / Trace / Log の有界収集を実装した。実装パッケージは `Lumyte.Diagnostics` と `Lumyte.Diagnostics.Generators`。現在の公開名前空間は `Lumyte.Diagnostics` であり、以降に示す最終的な通信契約の namespace / 型構成の全体はまだ実装していない。
 
-[基盤 API と契約](../../../src/Diagnostics/Lumyte.Diagnostics/README.md)、[Generator](../../../src/Diagnostics/Lumyte.Diagnostics.Generators/README.md)、[実行可能な Input サンプル](../../../samples/Lumyte.Diagnostics.Sample/README.md)、[再現コマンド・全測定結果](../../benchmarks/diagnostics/README.md) を参照する。
+[基盤 API と契約](../../../src/Diagnostics/Lumyte.Diagnostics/README.md)、[Generator](../../../src/Diagnostics/Lumyte.Diagnostics.Generators/README.md)、[実行可能な Input サンプル](../../../samples/Lumyte.Diagnostics.Sample/README.md) を参照する。
 
 実装ではカタログ公開、private Operation への無反射配送、引数・権限・結果検証、所有スレッド、期限、重複排除、DI スコープ間の分離、収集キューの欠落計数を検証する。Input サンプルは expiring lease を持つ小さなドメインモデルであり、既存 `Lumyte.Input.InputSystem` のデバイス入力への統合は未実施。
 
 診断サーバーと MagicOnion / HTTP のアダプターを実装した。通信抽象は `Lumyte.Diagnostics.Transport` に置き、DI で選ぶ。MagicOnion は StreamingHub と native MessagePack DTO、HTTP は長いポーリングと source-generated JSON を使う。ゲームと操作利用者の別トークン認証、権限、プロトコル版、期限、重複排除、有界保持を検証した。Linux の別プロセス間で Input 操作、Metrics / Trace / Log、切断時の解除を確認した。[起動方法](../../../src/Diagnostics/Lumyte.Diagnostics.Server/README.md)、[共通 API](../../../src/Diagnostics/Lumyte.Diagnostics.Transport/README.md)、[実通信検証](../../diagnostics/communication-verification.md) を参照する。
 
 登録世代、購読・Metric 集約、Activity Events / Links、実エンジンのグラフ走査、描画キャプチャー、転送サービス、NativeAOT / Browser 実行は未実装または未検証。Input は小さなモデルを用いる。Browser 向け HTTP と CORS の契約は確認したが、WASM での実行は確認していない。以降の最終契約には未実装の構成も含む。現在の期限配送は UTC をゲームの単調時計へ変換するためホスト間の時計同期を前提とする。時計同期不要の予算配送は後続課題。
-
-比較対象は System.Text.Json source generation、MessagePack generated resolver、MemoryPack、protobuf-net。Operation、Metrics、Trace、Log、Graph、256 KiB Image の同一内容を符号化・復号し、サイズ・CPU 時間・割り当て量を測定する。ここで Graph は合成スナップショット、Image は固定バイナリで、実エンジンからの取得性能は含まれない。測定結果は transport の選定と分離して評価し、最速のシリアライザーをそのまま全通信の既定としない。
 
 以下は `origin/main` の `faf6593` と比較した、実装済みの主要 API の抜粋である。全 API の使い方と失敗条件は基盤 README に記載する。
 
@@ -1041,7 +1039,7 @@ MagicOnion はプッシュ通知、HTTP は長いポーリングで共通の要�
 
 ## 検証方針
 
-ゲーム側の初期実装、診断サーバー、両通信方式の実接続と性能比較を実施した。検証結果は [実測レポート](../../benchmarks/diagnostics/README.md) と [実通信検証](../../diagnostics/communication-verification.md) に記録する。以下は最終的なシステムとして確認する項目であり、すべての完了を表さない。
+ゲーム側の初期実装、診断サーバー、両通信方式の実接続を検証した。結果は [実通信検証](../../diagnostics/communication-verification.md) に記録する。以下は最終的なシステムとして確認する項目であり、すべての完了を表さない。
 
 - 接続・認証・機能交渉、非互換拒否、複数インスタンスの操作分離。
 - 重複要求、期限切れ、結果報告前の切断、再接続での未完了操作の非再実行。

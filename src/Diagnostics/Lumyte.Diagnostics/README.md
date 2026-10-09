@@ -67,6 +67,6 @@ Singleton の `ILoggerProvider` は Scoped サービスを捕捉せず、instanc
 
 ## 実装範囲と検証
 
-[実行可能な Input サンプル](../../../samples/Lumyte.Diagnostics.Sample/README.md)、[性能比較と生データ](../../../docs/benchmarks/diagnostics/README.md) を参照する。
+[実行可能な Input サンプル](../../../samples/Lumyte.Diagnostics.Sample/README.md) を参照する。
 
-このパッケージはゲーム側の実行・収集の基盤である。[診断サーバー](../Lumyte.Diagnostics.Server/README.md) と [共通通信エージェント](../Lumyte.Diagnostics.Transport/README.md) を追加し、MagicOnion / HTTP の実接続を検証した。[検証結果](../../../docs/diagnostics/communication-verification.md) を参照する。登録世代、実エンジンのグラフ走査、描画キャプチャー、大容量転送は後続実装範囲。本パッケージのベンチマークをネットワーク往復性能と読み替えない。
+このパッケージはゲーム側の実行・収集の基盤である。[診断サーバー](../Lumyte.Diagnostics.Server/README.md) と [共通通信エージェント](../Lumyte.Diagnostics.Transport/README.md) を追加し、MagicOnion / HTTP の実接続を検証した。[検証結果](../../../docs/diagnostics/communication-verification.md) を参照する。登録世代、実エンジンのグラフ走査、描画キャプチャー、大容量転送は後続実装範囲。
