@@ -6,6 +6,8 @@
     <Description>Device-based input recording, notifications, polling and retention.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Settings/Lumyte.Settings.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>
