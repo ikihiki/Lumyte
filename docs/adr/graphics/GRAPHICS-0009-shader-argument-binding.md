@@ -163,15 +163,18 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 ```diff
  namespace Lumyte.Graphics.Abstractions
  {
-+    // applicationの論理structへshader data codecを生成するmarker。
-+    // shaderTypeはartifactに保存された論理型名。物理layoutの上書きではない。
++    // shader data codecの生成対象を示すmarker。instance methodは要求しない。
++    public interface IShaderData { }
++
++    // C#とSlangの論理型名が異なる場合だけ指定する任意annotation。
++    // markerやlayoutの上書きとしては使わない。
 +    [AttributeUsage(AttributeTargets.Struct)]
-+    public sealed class ShaderDataAttribute(string shaderType) : Attribute
++    public sealed class ShaderTypeNameAttribute(string name) : Attribute
 +    {
-+        public string ShaderType { get; } = shaderType;
++        public string Name { get; } = name;
 +    }
 +
-+    public sealed record ShaderDataBufferDesc<T> where T : struct
++    public sealed record ShaderDataBufferDesc<T> where T : struct, IShaderData
 +    {
 +        // このartifactの現在のbackend用schemaへpackする。
 +        public required ShaderArtifact Artifact { get; init; }
@@ -183,14 +186,18 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 +
 +    public interface IGraphicDevice
 +    {
+         // 既存のraw buffer生成API。unmanaged制約を維持する。
+         IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
+             where T : unmanaged;
++
 +        // codec・型schemaを検証し、backend自身がbufferを生成する。
 +        // Artifactに型の全target schemaと参照helper ABIが必要。
-+        IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderDataBufferDesc<T> desc)
-+            where T : struct;
++        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderDataBufferDesc<T> desc)
++            where T : struct, IShaderData;
 +    }
 +
 +    public interface IGraphicsShaderDataBuffer<T> : IGraphicsBuffer<byte>
-+        where T : struct
++        where T : struct, IShaderData
 +    {
 +        // 継承したCountはbyte数。論理要素数はElementCountで区別する。
 +        ulong ElementCount { get; }
@@ -203,7 +210,7 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 +        ShaderDataSlice<T> SliceElements(ulong offset, ulong count);
 +    }
 +
-+    public readonly struct ShaderDataSlice<T> where T : struct
++    public readonly struct ShaderDataSlice<T> where T : struct, IShaderData
 +    {
 +        // 非空・範囲内を検証する。defaultは無効なrange。
 +        public ShaderDataSlice(IGraphicsShaderDataBuffer<T> buffer, ulong offset, ulong count);
@@ -220,33 +227,36 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 +        // schemaとrangeに対応するopaque参照を返す。
 +        // Write時に未uploadでもよいが、drawでは要素metadataが有効でなければ拒否。
 +        IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-+            where T : struct;
++            where T : struct, IShaderData;
 +    }
  }
 ```
 
-TはShaderData属性を持つ生成codec対象のstructに限り、ShaderArgumentsと同じ数値型・入れ子struct・IGpuRefの規則で検証する。IGpuRefのbuffer要素型はraw unmanaged型だけでなく、ShaderDataで定義された論理型も認める。これはraw bufferの型制約を変更するものではない。
+TはIShaderDataを実装するstructに限り、source generatorもinterface実装からcodec対象を識別する。markerだけではmemberやlayoutの互換性を保証せず、ShaderArgumentsと同じ数値型・入れ子struct・IGpuRefの規則で検証する。IGpuRefのbuffer要素型はraw unmanaged型だけでなく、IShaderDataを実装する論理型も認める。これはraw bufferの型制約を変更するものではない。
 
 shader data bufferのSizeInBytesと継承したCountは `ElementCount * ShaderElementStrideInBytes` でchecked計算する。artifactで定まるstruct内paddingとstrideはshader ABIの一部であり、backendのGPU copy alignmentのための追加丸めとは区別する。計算済みbyte rangeへcopy制約を別途検証し、不適合なら拒否する。
+
+CreateBufferはDesc型の違いでoverloadする。generic制約だけでoverloadを分けることはできないため、BufferDescとShaderDataBufferDescを別型として維持する。ShaderData側のDesc・buffer interface・slice・table登録overloadの全てに `where T : struct, IShaderData` を適用し、通常bufferのunmanaged制約は維持する。
+
+Slangの論理型名は既定でC#の型名と一致させ、名前が異なる場合だけShaderTypeName属性を使う。artifact内のschemaへ一意に対応しない場合は拒否する。この属性だけを付けた型はcodec対象にならず、IShaderDataの実装を必要とする。instanceをinterfaceへboxingしてpackせず、生成されたgeneric codecでmemberを読み出す。
 
 ### 明示的なpack・転送と利用例
 
 ```csharp
-[ShaderData("MaterialData")]
 public readonly record struct MaterialData(
     Vector4 BaseColor,
     IGpuRef<IGraphicsTextureView> BaseColorTexture,
-    IGpuRef<IGraphicsSampler> BaseColorSampler);
+    IGpuRef<IGraphicsSampler> BaseColorSampler) : IShaderData;
 
 var material = new MaterialData(color, textureRef, samplerRef);
-using var upload = device.CreateShaderDataBuffer<MaterialData>(new()
+using var upload = device.CreateBuffer<MaterialData>(new()
 {
     Artifact = artifact,
     Count = 1,
     Usage = BufferUsage.CopySource,
     Memory = MemoryPreference.Upload,
 });
-using var materials = device.CreateShaderDataBuffer<MaterialData>(new()
+using var materials = device.CreateBuffer<MaterialData>(new()
 {
     Artifact = artifact,
     Count = 1,
@@ -312,6 +322,6 @@ commandは未submitのcopyによって共有bufferのmetadataを即変更しな�
 
 ## 検証方針
 
-shared projectの検証は共通APIのみを使う。texture・sampler・bufferの実アクセス、buffer単一要素、sampler共有、不要slot、同じ論理slot番号の種類別登録、引数のsnapshot、欠落・型不一致・別device・別table・失効参照を検証する。MaterialData内のtextureと共有sampler、別要素参照と循環、単一要素とrangeの収集、schema一致copy、部分copyとraw上書き、記録中overlay、submit前のversion不一致、ShaderWrite拒否も検証する。カメラ行列、入れ子struct、record struct、値だけの引数、setter後の元struct変更、program切替後の再設定を検証する。非対称の行列で既知のvertex座標を変換し、transposeや乗算順の誤りを検出する。generatorの非対応型診断とBrowser/Wasmでのcodec動作も確認する。
+shared projectの検証は共通APIのみを使う。texture・sampler・bufferの実アクセス、buffer単一要素、sampler共有、不要slot、同じ論理slot番号の種類別登録、引数のsnapshot、欠落・型不一致・別device・別table・失効参照を検証する。MaterialData内のtextureと共有sampler、別要素参照と循環、単一要素とrangeの収集、schema一致copy、部分copyとraw上書き、記録中overlay、submit前のversion不一致、ShaderWrite拒否も検証する。カメラ行列、入れ子struct、record struct、値だけの引数、setter後の元struct変更、program切替後の再設定を検証する。非対称の行列で既知のvertex座標を変換し、transposeや乗算順の誤りを検出する。generatorの非対応型診断、IShaderData markerの有無、任意の型名annotation、Desc別CreateBuffer overloadの解決とBrowser/Wasmでのcodec動作も確認する。
 
 computeはstorage buffer更新後に明示的なbarrier、copy、submit、wait、map、CopyToで結果を読む。graphicsは異なるtextureを使ったdrawの全画素を確認する。bindingのないPSOの検証も維持し、wgpu・Vulkan・Browser/Wasmを既存CIで実行する。backend固有の生成・cacheの詳細と測定は各READMEに記録する。
