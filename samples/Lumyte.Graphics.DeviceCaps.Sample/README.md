@@ -35,3 +35,12 @@ dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vul
 ```
 
 SamplerExerciseが共通APIでsampling stateの指定値・不正入力・capabilityと寿命を検証します。
+
+## Argument Table
+
+```bash
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- wgpu arguments
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan arguments
+```
+
+共通APIだけで論理登録・要素参照・失効と所有を確認します。

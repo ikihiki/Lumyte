@@ -3,20 +3,16 @@ using Silk.NET.Vulkan;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanTextureView : IGraphicsTextureView
+internal sealed unsafe class VulkanTextureView(VulkanTexture texture, TextureViewInfo info, ImageView native) : IGraphicsTextureView
 {
-    private readonly VulkanTexture _texture;
-    private readonly ImageView _native;
+    private int _registrationCount;
     private bool _disposed;
 
-    internal VulkanTextureView(VulkanTexture texture, TextureViewInfo info, ImageView native)
-    {
-        (_texture, Info, _native) = (texture, info, native);
-    }
+    public IGraphicsTexture Texture => texture;
 
-    public IGraphicsTexture Texture => _texture;
+    public TextureViewInfo Info { get; } = info;
 
-    public TextureViewInfo Info { get; }
+    internal VulkanDevice Owner => texture.Owner;
 
     public void Dispose()
     {
@@ -25,8 +21,21 @@ internal sealed unsafe class VulkanTextureView : IGraphicsTextureView
             return;
         }
 
-        _texture.Owner.Api.DestroyImageView(_texture.Owner.NativeDevice, _native, null);
+        if (_registrationCount != 0)
+        {
+            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
+        }
+
+        texture.Owner.Api.DestroyImageView(texture.Owner.NativeDevice, native, null);
         _disposed = true;
-        _texture.ReleaseView();
+        texture.ReleaseView();
     }
+
+    internal void RetainRegistration()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _registrationCount = checked(_registrationCount + 1);
+    }
+
+    internal void ReleaseRegistration() => _registrationCount--;
 }
