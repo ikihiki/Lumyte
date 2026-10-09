@@ -1,6 +1,7 @@
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Provides immutable capabilities of a backend-owned graphics device.</summary>
+/// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicDevice
 {
     /// <summary>Gets the immutable device capabilities.</summary>
@@ -18,4 +19,9 @@ public interface IGraphicDevice
     /// <returns>The concrete backend allocation through its common interface.</returns>
     IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
         where T : unmanaged;
+
+    /// <summary>Creates an owned two-dimensional texture with the exact requested attributes.</summary>
+    /// <param name="desc">The immutable storage format, usages, dimensions and subresources.</param>
+    /// <returns>The concrete backend allocation through its common interface.</returns>
+    IGraphicsTexture CreateTexture(TextureDesc desc);
 }

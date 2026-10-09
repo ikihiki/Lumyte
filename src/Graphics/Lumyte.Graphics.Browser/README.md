@@ -39,8 +39,21 @@ GPU buffer copy の offset／length alignment は 4 byte、encoded image copy �
 
 CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copy と同期の command API は別の設計で追加します。
 
-CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。buffer の操作は device ごとの gate で直列化し、buffer が残った device の Dispose は InvalidOperationException で拒否します。解放済み allocation への access は ObjectDisposedException です。
+CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。必要な同期は利用者が管理し、bufferが残ったdeviceのDisposeはInvalidOperationExceptionで拒否します。解放済み allocation への access は ObjectDisposedException です。
 
 WebGPU の usage は CopySource → COPY_SRC、CopyDestination → COPY_DST、ShaderRead／ShaderWrite → STORAGE、Index → INDEX に対応します。Upload は CopySource のみと MAP_WRITE、Readback は CopyDestination のみと MAP_READ の組み合わせです。CPU-mapped buffer の size は 4 byte の倍数でなければ生成時に拒否します。GPU-only buffer の論理 size はこの理由で丸めません。
 
 GPUBuffer.mapAsync の Promise と getMappedRange を使います。.NET／JavaScript 間の CPU copy は MemoryView による span の同期受け渡しで行い、GPUDevice.queue.writeBuffer は呼びません。キャンセル時も native Promise の完了後に mapping を解除します。JavaScript 相互運用が利用できるスレッドで操作してください。
+
+## TextureとView
+
+生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
+
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、利用者による同期を前提にlive view数を管理します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+
+JavaScript moduleはGPUDevice.createTextureとGPUTexture.createViewを呼び、具象resourceがJSObject proxyを保持します。viewの解放はproxyをDisposeし、textureの解放はGPUTexture.destroyとproxyのDisposeを行います。GPUTextureViewにdestroy APIはありません。WebGPUのvalidation／device lostはbrowserのエラー通知にも現れるため、CIのChrome検証はruntime／consoleエラーも監視します。
+
+DescとView範囲の検証は、このbackend assembly内のinternalなTextureValidationで行います。Abstractionsの内部型へのアクセスやInternalsVisibleToは使いません。
+
+resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。状態検証はデータ競合を防止する機構ではありません。
+BrowserではJSObjectが属する実行contextの制約も利用者が守ります。

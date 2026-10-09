@@ -4,6 +4,7 @@ namespace Lumyte.Graphics.Abstractions;
 /// Owns a typed GPU allocation implemented directly by the backend.
 /// </summary>
 /// <typeparam name="T">The unmanaged element type; shader ABI compatibility is validated separately.</typeparam>
+/// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicsBuffer<T> : IDisposable
     where T : unmanaged
 {

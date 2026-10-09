@@ -69,16 +69,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public MemoryPreference Memory { get; }
 
-    public bool IsMapped
-    {
-        get
-        {
-            lock (_owner.BufferGate)
-            {
-                return _mapped && !_pending && !_disposed;
-            }
-        }
-    }
+    public bool IsMapped => _mapped && !_pending && !_disposed;
 
     public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);
 
@@ -88,103 +79,85 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
-            {
-                throw new ArgumentOutOfRangeException(nameof(length));
-            }
+            throw new ArgumentOutOfRangeException(nameof(length));
         }
     }
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        lock (_owner.BufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Memory == MemoryPreference.Automatic || _mapped || _pending)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (Memory == MemoryPreference.Automatic || _mapped || _pending)
-            {
-                throw new InvalidOperationException("Buffer cannot begin a CPU mapping in its current state.");
-            }
-
-            _pending = true;
-            return new(MapCoreAsync(cancellationToken));
+            throw new InvalidOperationException("Buffer cannot begin a CPU mapping in its current state.");
         }
+
+        _pending = true;
+        return new(MapCoreAsync(cancellationToken));
     }
 
     public void Unmap()
     {
-        lock (_owner.BufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_mapped || _pending)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_mapped || _pending)
-            {
-                throw new InvalidOperationException("No completed mapping is available.");
-            }
-
-            _native.Unmap();
-            _mappedAddress = 0;
-            _mapped = false;
+            throw new InvalidOperationException("No completed mapping is available.");
         }
+
+        _native.Unmap();
+        _mappedAddress = 0;
+        _mapped = false;
     }
 
     public void Dispose()
     {
-        lock (_owner.BufferGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_pending)
-            {
-                throw new InvalidOperationException("Wait for the mapping request before disposal.");
-            }
-
-            if (_mapped)
-            {
-                _native.Unmap();
-                _mappedAddress = 0;
-                _mapped = false;
-            }
-
-            _native.Dispose();
-            _disposed = true;
-            _owner.ReleaseBuffer();
+            return;
         }
+
+        if (_pending)
+        {
+            throw new InvalidOperationException("Wait for the mapping request before disposal.");
+        }
+
+        if (_mapped)
+        {
+            _native.Unmap();
+            _mappedAddress = 0;
+            _mapped = false;
+        }
+
+        _native.Dispose();
+        _disposed = true;
+        _owner.ReleaseBuffer();
     }
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        ValidateRange(offset, length);
+        RequireMapping(MemoryPreference.Upload);
+        if ((ulong)source.Length > length)
         {
-            ValidateRange(offset, length);
-            RequireMapping(MemoryPreference.Upload);
-            if ((ulong)source.Length > length)
-            {
-                throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
-            }
-
-            source.CopyTo(GetMappedBytes().Slice(checked((int)offset), source.Length));
+            throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
+
+        source.CopyTo(GetMappedBytes().Slice(checked((int)offset), source.Length));
     }
 
     void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        ValidateRange(offset, length);
+        RequireMapping(MemoryPreference.Readback);
+        if ((ulong)destination.Length < length)
         {
-            ValidateRange(offset, length);
-            RequireMapping(MemoryPreference.Readback);
-            if ((ulong)destination.Length < length)
-            {
-                throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
-            }
-
-            GetMappedBytes().Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
+            throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
+
+        GetMappedBytes().Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
     }
 
     private void RequireMapping(MemoryPreference memory)
@@ -203,52 +176,43 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
             request = _native.BeginMap(Memory == MemoryPreference.Upload ? A.MapMode.Write : A.MapMode.Read, 0, (nuint)SizeInBytes);
             while (true)
             {
-                lock (_owner.BufferGate)
+                _owner.NativeDevice.ProcessEvents();
+                if (request.IsComplete)
                 {
-                    _owner.NativeDevice.ProcessEvents();
-                    if (request.IsComplete)
-                    {
-                        break;
-                    }
+                    break;
                 }
 
                 await Task.Delay(1);
             }
 
-            lock (_owner.BufferGate)
+            if (request.Status != WGPUMapAsyncStatus.Success)
             {
-                if (request.Status != WGPUMapAsyncStatus.Success)
-                {
-                    throw new InvalidOperationException($"WebGPU mapping failed: {request.Status}.");
-                }
+                throw new InvalidOperationException($"WebGPU mapping failed: {request.Status}.");
+            }
 
-                try
-                {
-                    CaptureMappedMemory();
-                }
-                catch
-                {
-                    _native.Unmap();
-                    throw;
-                }
+            try
+            {
+                CaptureMappedMemory();
+            }
+            catch
+            {
+                _native.Unmap();
+                throw;
+            }
 
-                _mapped = true;
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    _native.Unmap();
-                    _mappedAddress = 0;
-                    _mapped = false;
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
+            _mapped = true;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _native.Unmap();
+                _mappedAddress = 0;
+                _mapped = false;
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
         finally
         {
             request.Dispose();
-            lock (_owner.BufferGate)
-            {
-                _pending = false;
-            }
+            _pending = false;
         }
     }
 
