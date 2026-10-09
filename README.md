@@ -7,6 +7,9 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [DI で通信方式を選択するゲームエンジン診断システム](docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
+- [診断基盤の API と利用方法](src/Diagnostics/Lumyte.Diagnostics/README.md)
+- [診断 Input サンプル](samples/Lumyte.Diagnostics.Sample/README.md)
+- [診断の性能・シリアライズ比較](docs/benchmarks/diagnostics/README.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 

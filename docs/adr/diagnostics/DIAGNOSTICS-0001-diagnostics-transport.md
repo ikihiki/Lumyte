@@ -1,7 +1,8 @@
 # ADR-DIAGNOSTICS-0001: DI で通信方式を選択するゲームエンジン診断システム
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-08
+- 更新: 2026-10-09（ゲーム側基盤の実装・シリアライズ測定）
 
 ## 背景
 
@@ -11,13 +12,64 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 
 通信遅延、切断、対象オブジェクトの破棄、大容量転送があっても、ゲーム実行と診断操作の整合性を維持する。通信処理からエンジンへ直接アクセスすると、スレッド制約やフレーム更新を壊すため、実行境界も定める。
 
-配置と記述は [ADR-0001](../0001-adr-writing-policy.md)、プロジェクト配置は [ADR-0002](../0002-repository-layout.md) に従う。本 ADR は診断通信と操作の共通契約を対象とし、各サブシステムの具体的な実装は扱わない。
+配置と記述は [ADR-0001](../0001-adr-writing-policy.md)、プロジェクト配置は [ADR-0002](../0002-repository-layout.md) に従う。本 ADR は診断通信と操作の共通契約を対象とする。実装段階のゲーム側 API、最小サンプルと測定範囲は後述する。
 
 ## 決定
 
 通信抽象を診断セッションに DI 注入し、MagicOnion と HTTP のアダプターを差し替える。診断サーバーからの要求は共通の非同期受信列として扱い、ゲーム側は安全な実行タイミングで処理して結果を報告する。
 
 観測と変更操作を明示的なプロトコルにする。制御、テレメトリー、大容量データは論理的に分離し、画像や大きなスナップショットを制御メッセージに直接載せない。
+
+### 実装段階と測定範囲（2026-10-09）
+
+ユーザーの実装・性能確認依頼に基づき、DI、最小属性からの Operation 生成、安全な実行ポイント、標準 Metrics / Trace / Log の有界収集を実装した。実装パッケージは `Lumyte.Diagnostics` と `Lumyte.Diagnostics.Generators`。現在の公開名前空間は `Lumyte.Diagnostics` であり、以降に示す最終的な通信契約の namespace / 型構成の全体はまだ実装していない。
+
+[基盤 API と契約](../../../src/Diagnostics/Lumyte.Diagnostics/README.md)、[Generator](../../../src/Diagnostics/Lumyte.Diagnostics.Generators/README.md)、[実行可能な Input サンプル](../../../samples/Lumyte.Diagnostics.Sample/README.md)、[再現コマンド・全測定結果](../../benchmarks/diagnostics/README.md) を参照する。
+
+実装ではカタログ公開、private Operation への無反射配送、引数・権限・結果検証、所有スレッド、期限、重複排除、DI スコープ間の分離、収集キューの欠落計数を検証する。Input サンプルは expiring lease を持つ小さなドメインモデルであり、既存 `Lumyte.Input.InputSystem` のデバイス入力への統合は未実施。
+
+MagicOnion / Browser HTTP の実接続、診断サーバー、認証・機能交渉、登録世代、購読・Metric 集約、Activity Events / Links、実エンジンのグラフ走査、描画キャプチャー、転送サービス、NativeAOT / Browser 動作は未実装または未検証。本 ADR の採用はそれらの完成を意味しない。
+
+比較対象は System.Text.Json source generation、MessagePack generated resolver、MemoryPack、protobuf-net。Operation、Metrics、Trace、Log、Graph、256 KiB Image の同一内容を符号化・復号し、サイズ・CPU 時間・割り当て量を測定する。ここで Graph は合成スナップショット、Image は固定バイナリで、実エンジンからの取得性能は含まれない。測定結果は transport の選定と分離して評価し、最速のシリアライザーをそのまま全通信の既定としない。
+
+以下は `origin/main` の `faf6593` と比較した、実装済みの主要 API の抜粋である。全 API の使い方と失敗条件は基盤 README に記載する。
+
+```diff
++namespace Lumyte.Diagnostics
++{
++    public interface IDiagnosticPump<TPoint> where TPoint : class
++    {
++        // 非アクティブ時は空。配列をコピーしたカタログを公開する。
++        IReadOnlyList<DiagnosticSubsystemCatalog> Catalog { get; }
++        // 所有スレッドでカタログを原子的に構築する。
++        void Activate();
++        // 認証済みホストが権限と単調増加時計の期限を与える。
++        Task<DiagnosticOperationResult> SubmitAsync(DiagnosticRequest request);
++        // コマンド間で予算を確認する。長い同期操作は中断しない。
++        void Pump(DiagnosticFrame frame, DiagnosticBudget budget);
++        // 未実行要求を target-gone で完了する。
++        void Deactivate();
++    }
++    public sealed class DiagnosticOperationSet
++    {
++        public DiagnosticOperationSet(IDiagnosticContributor contributor);
++        public IReadOnlyList<OperationDescriptor> Catalog { get; }
++        // 呼び出し側が所有スレッドを管理。期限制御は Pump が行う。
++        public DiagnosticOperationResult Invoke(string id,
++            IReadOnlyDictionary<string, DiagnosticValue> values,
++            DiagnosticOperationContext context,
++            IReadOnlySet<DiagnosticPermission> permissions);
++    }
++    public sealed class DiagnosticTelemetry : IDisposable
++    {
++        // DI スコープから解決し、起動前に確定した設定で一度開始する。
++        public void Start();
++        public long Dropped { get; }
++        public bool TryRead(out DiagnosticEvent? item);
++        public void Dispose();
++    }
++}
+```
 
 ### 責務と依存関係
 
@@ -31,7 +83,7 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 | 通信アダプター | 共通メッセージと MagicOnion / HTTP の変換 | 診断エージェントとサーバーの共通処理を参照し、エンジンを参照しない |
 | 大容量転送サービス | 分割データの受信、保存、期限付き参照 | 制御と独立したキュー・転送予算を持つ |
 
-共有契約、エージェント、サーバーは実装時に `src/Diagnostics/` の別プロジェクトとして配置する。エンジンの通常実行は診断サーバーの存在に依存させず、診断アダプターを明示的に登録する。この ADR の追加ではプロジェクトを作成しない。
+共有契約、エージェント、サーバーは実装時に `src/Diagnostics/` の別プロジェクトとして配置する。エンジンの通常実行は診断サーバーの存在に依存させず、診断アダプターを明示的に登録する。2026-10-09 時点ではゲーム側基盤と Generator を実装し、通信アダプター・サーバーは後続実装とする。
 
 ```mermaid
 flowchart LR
@@ -928,7 +980,7 @@ MagicOnion はプッシュ通知、HTTP は長いポーリングで共通の要�
 
 ## 検証方針
 
-実装・性能測定は未実施である。採用後、以下を確認する。
+ゲーム側の初期実装と性能比較を実施した。検証結果は [実測レポート](../../benchmarks/diagnostics/README.md) に記録する。以下は最終的なシステムとして確認する項目であり、すべての完了を表さない。
 
 - 接続・認証・機能交渉、非互換拒否、複数インスタンスの操作分離。
 - 重複要求、期限切れ、結果報告前の切断、再接続での未完了操作の非再実行。

@@ -1,0 +1,6 @@
+{"workload":"Operation","json":470,"messagepack":173,"memorypack":249,"protobuf":161}
+{"workload":"Metrics","json":56326,"messagepack":15285,"memorypack":24765,"protobuf":12977}
+{"workload":"Trace","json":64006,"messagepack":23605,"memorypack":34237,"protobuf":22193}
+{"workload":"Log","json":70011,"messagepack":27463,"memorypack":38223,"protobuf":24643}
+{"workload":"Graph","json":438007,"messagepack":117053,"memorypack":191061,"protobuf":99049}
+{"workload":"Image","json":349634,"messagepack":262198,"memorypack":262205,"protobuf":262195}

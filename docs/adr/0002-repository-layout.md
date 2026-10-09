@@ -26,6 +26,7 @@ Lumyte/
 ├── .devcontainer/                  # 共通セットアップを使う開発コンテナ
 ├── docs/
 │   └── adr/
+│       ├── diagnostics/            # 診断基盤
 │       ├── input/                  # 入力システム
 │       ├── core/
 │       ├── engine/
@@ -34,6 +35,9 @@ Lumyte/
 ├── src/
 │   ├── Core/
 │   │   └── Lumyte.Core/
+│   ├── Diagnostics/
+│   │   ├── Lumyte.Diagnostics/
+│   │   └── Lumyte.Diagnostics.Generators/
 │   ├── Engine/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
@@ -51,6 +55,7 @@ Lumyte/
 │       └── Lumyte.Platform.Browser/
 ├── tests/
 ├── samples/
+├── benchmarks/                     # 再現可能な性能測定
 ├── tools/
 │   └── setup/                      # 共通セットアップ・有効化・検証
 ├── packaging/
@@ -75,11 +80,13 @@ Lumyte/
 | `docs/adr/<category>/` | カテゴリごとの設計判断、採用理由、影響の記録。カテゴリ内で独立して採番する |
 | `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
 | `src/Core/` | 基本型と基盤機能 |
+| `src/Diagnostics/` | 通信方式に依存しない診断の実行・収集基盤とコード生成 |
 | `src/Engine/` | エンジン機能の統合 |
 | `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |
 | `src/Platform/` | ウィンドウ、入力などの共通契約と環境ごとの実装 |
 | `tests/` | C# の単体テスト・統合テスト。必要に応じてカテゴリとプロジェクト単位で整理する |
 | `samples/` | 利用例と最小起動・描画サンプル |
+| `benchmarks/` | BenchmarkDotNet による診断・シリアライズ等の再現可能な性能測定 |
 | `tools/` | ビルドやパッケージ生成の補助ツール |
 | `tools/setup/` | 開発環境の共通セットアップ、有効化、検証 |
 | `packaging/nuget/` | 必要な共通パッケージ定義や MSBuild 統合ファイル |

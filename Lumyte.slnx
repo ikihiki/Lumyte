@@ -1,5 +1,9 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Lumyte.Diagnostics.Benchmarks/Lumyte.Diagnostics.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
     <Project Path="samples/Lumyte.Animation.Sample/Lumyte.Animation.Sample.csproj" />
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
@@ -13,6 +17,10 @@
     <Project Path="src/Core/Lumyte.Core/Lumyte.Core.csproj" />
     <Project Path="src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
     <Project Path="src/Core/Lumyte.Composition/Lumyte.Composition.csproj" />
+  </Folder>
+  <Folder Name="/src/Diagnostics/">
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics/Lumyte.Diagnostics.csproj" />
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
     <Project Path="src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
@@ -29,6 +37,9 @@
   </Folder>
   <Folder Name="/src/Platform/">
     <Project Path="src/Platform/Lumyte.Input/Lumyte.Input.csproj" />
+  </Folder>
+  <Folder Name="/tests/Diagnostics/">
+    <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
     <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
