@@ -20,3 +20,6 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 で `tests/` 内のソリューションに登録されたテストを実行できます。
 CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環境検証 → ビルド → テストの順に実行します。
 すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。
+
+- [入力加工・認識の設計](docs/adr/input/INPUT-0002-processing-and-recognition.md)
+- [アクション・リバインド・コンテキストの設計](docs/adr/input/INPUT-0003-actions-and-contexts.md)
