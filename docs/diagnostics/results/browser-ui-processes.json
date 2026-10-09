@@ -20,5 +20,18 @@
     "traceLogCorrelated": true,
     "disconnectReleasedInput": true,
     "mobileOverflow": false
+  },
+  {
+    "scenario": "aspire-dashboard-patterns",
+    "resourceNavigation": true,
+    "severityFilter": true,
+    "pauseResume": true,
+    "traceDeepLink": true,
+    "spanHierarchy": true,
+    "traceToLogs": true,
+    "metricSeriesChart": true,
+    "int64ChartPrecision": true,
+    "resourceIsolation": true,
+    "untrustedText": true
   }
 ]

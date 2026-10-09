@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -102,8 +102,8 @@ try {
     for (const transport of ['http', 'magiconion']) {
         const endpoint = transport === 'http' ? httpPort : grpcPort;
         const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '60'], root);
-        await waitFor(() => evaluate("document.querySelectorAll('#game-select option[value]').length === 1"), `${transport} catalog`);
-        await evaluate("document.querySelector('[data-tab=input]').click()");
+        await waitFor(() => evaluate("Array.from(document.querySelectorAll('#game-select option')).filter(option => option.value.length === 36).length === 1"), `${transport} catalog`);
+        await evaluate("{ const choice = Array.from(document.querySelectorAll('#game-select option')).find(option => option.value.length === 36); document.getElementById('game-select').value = choice.value; document.getElementById('game-select').dispatchEvent(new Event('change')); document.querySelector('[data-tab=input]').click(); }");
         await waitFor(() => evaluate("Boolean(document.querySelector('#input-forms form'))"), 'generated Input form');
         await evaluate(`{ const form = document.querySelector('#input-forms form'); form.elements.namedItem('button').value = 'Jump'; form.elements.namedItem('pressed').value = 'true'; form.elements.namedItem('duration-ms').value = '5000'; form.requestSubmit(); }`);
         await waitFor(() => evaluate("document.getElementById('operation-result').textContent.includes('\"status\": \"success\"')"), `${transport} operation result`);
@@ -130,6 +130,61 @@ try {
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
         results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
+    // Controlled resources exercise the resource-oriented query and navigation model.
+    async function gameRequest(method, path, body, secret) {
+        const headers = { Authorization: 'Bearer ' + gameToken };
+        if (secret) headers['X-Diagnostics-Session'] = secret;
+        if (body) headers['Content-Type'] = 'application/json';
+        const response = await fetch(origin + '/diagnostics/v1/' + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        assert.ok(response.ok, `Probe request: HTTP ${response.status}`);
+        return response.status === 204 ? null : response.json();
+    }
+    const catalog = [{ subsystem: { id: 'probe', displayName: 'Probe', schemaVersion: 1 }, operations: [] }];
+    const first = await gameRequest('POST', 'sessions', { instanceId: randomUUID(), protocolVersion: 1, catalog });
+    const second = await gameRequest('POST', 'sessions', { instanceId: randomUUID(), protocolVersion: 1, catalog });
+    const traceId = '1234567890abcdef1234567890abcdef';
+    const zero = '0000000000000000';
+    const scalar = string => ({ kind: 3, string });
+    const log = (message, level, trace = traceId) => ({ kind: 'log', timestamp: '1', name: 'Probe.Category', value: scalar(message), traceId: trace, spanId: '1111111111111111', parentSpanId: null, durationTicks: '0', fields: { 'log.level': scalar(level) } });
+    const span = (name, id, parent, duration) => ({ kind: 'span', timestamp: '2', name, value: scalar('Unset'), traceId, spanId: id, parentSpanId: parent, durationTicks: duration, fields: {} });
+    const publish = (session, events) => gameRequest('POST', `sessions/${session.sessionId}/messages`, { messageId: randomUUID(), sessionId: session.sessionId, kind: 1, requestId: null, result: null, events }, session.sessionSecret);
+    const metric = value => ({ kind: 'metric', timestamp: value, name: 'probe.precision', value: { kind: 1, int64: value }, traceId: null, spanId: null, parentSpanId: null, durationTicks: '0', fields: {} });
+    await publish(first, [log('information', 'Information'), log('failure', 'Error'), log('<img src=x onerror="window.__lumyteProbe=true">', 'Warning'), log('wrong-trace', 'Error', 'abcdef1234567890abcdef1234567890'), span('parent', '1111111111111111', zero, '50000'), span('child', '2222222222222222', '1111111111111111', '10000'), ...['9223372036854775805', '9223372036854775806', '9223372036854775807'].map(metric)]);
+    await publish(second, [log('other-resource', 'Error')]);
+    await evaluate("document.querySelector('[data-tab=overview]').click()");
+    await waitFor(() => evaluate("document.querySelectorAll('#resource-table button[data-view=logs]').length === 2"), 'resource table');
+    await evaluate(`document.querySelector('#resource-table button[data-resource="${first.sessionId}"][data-view="logs"]').click()`);
+    await waitFor(() => evaluate("document.getElementById('event-table').textContent.includes('information')"), 'resource log navigation');
+    assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('other-resource'));
+    assert.ok((await evaluate("document.getElementById('event-table').textContent")).includes('<img'));
+    assert.equal(await evaluate("document.querySelector('img') === null && typeof window.__lumyteProbe === 'undefined'"), true, 'untrusted log text');
+    await evaluate("document.getElementById('log-level').value = 'Error'; document.getElementById('log-level').dispatchEvent(new Event('change'));");
+    assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('information'));
+    await evaluate("document.getElementById('pause-telemetry').click()");
+    await publish(first, [log('later-error', 'Error')]);
+    await waitFor(() => evaluate("document.getElementById('received').textContent === '10'"), 'collect while paused');
+    assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('later-error'));
+    await evaluate("document.getElementById('pause-telemetry').click()");
+    await waitFor(() => evaluate("document.getElementById('event-table').textContent.includes('later-error')"), 'resume newest snapshot');
+    await evaluate("document.querySelector('#event-table td button').click(); document.querySelector('#event-relations button[data-correlated=traces]').click()");
+    await waitFor(() => evaluate("document.getElementById('event-table').textContent.includes('Child 1')"), 'span hierarchy');
+    assert.equal(await evaluate("document.getElementById('trace-filter').value"), traceId);
+    await command('Page.reload');
+    await waitFor(() => evaluate("Boolean(document.getElementById('event-table')) && document.getElementById('event-table').textContent.includes('Child 1')"), 'trace deep link after reload');
+    await evaluate("document.querySelector('#trace-summary button[data-correlated=logs]').click()");
+    await waitFor(() => evaluate("document.getElementById('page-title').textContent === 'Logs' && document.getElementById('event-table').textContent.includes('failure')"), 'Trace to Logs');
+    assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('wrong-trace'));
+    await evaluate("document.querySelector('[data-tab=metrics]').click()");
+    await waitFor(() => evaluate("document.getElementById('metric-charts').textContent.includes('9223372036854775807')"), 'metric series chart');
+    const points = await evaluate("document.querySelector('#metric-charts polyline').getAttribute('points')");
+    assert.equal(points, '0,72 150,40 300,8');
+    await command('Page.captureScreenshot').then(result => writeFile(resolve(output, 'aspire-metrics-desktop.png'), Buffer.from(result.data, 'base64')));
+    await evaluate(`document.getElementById('game-select').value = '${second.sessionId}'; document.getElementById('game-select').dispatchEvent(new Event('change')); document.querySelector('[data-tab=logs]').click();`);
+    await waitFor(() => evaluate("document.getElementById('event-table').textContent.includes('other-resource')"), 'switch resource');
+    assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('later-error'));
+    await gameRequest('DELETE', `sessions/${first.sessionId}`, undefined, first.sessionSecret);
+    await gameRequest('DELETE', `sessions/${second.sessionId}`, undefined, second.sessionSecret);
+    results.push({ scenario: 'aspire-dashboard-patterns', resourceNavigation: true, severityFilter: true, pauseResume: true, traceDeepLink: true, spanHierarchy: true, traceToLogs: true, metricSeriesChart: true, int64ChartPrecision: true, resourceIsolation: true, untrustedText: true });
     await evaluate("document.getElementById('logout').click()");
     await waitFor(() => evaluate("document.getElementById('workspace').hidden"), 'logout');
     assert.equal(await evaluate("fetch('/api/ui/sessions').then(response => response.status)"), 401);

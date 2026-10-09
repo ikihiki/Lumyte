@@ -29,7 +29,7 @@ public sealed class BrowserUiTests
             Assert.DoesNotContain(host.OperatorToken, await html.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
 
-        foreach (string path in new[] { "/assets/diagnostics.css", "/assets/diagnostics.js" })
+        foreach (string path in new[] { "/assets/diagnostics.css", "/assets/diagnostics.js", "/assets/telemetry-model.js" })
         {
             using HttpResponseMessage asset = await browser.GetAsync(path);
             Assert.Equal(HttpStatusCode.OK, asset.StatusCode);
@@ -252,6 +252,49 @@ public sealed class BrowserUiTests
             using var body = new FormUrlEncodedContent(new Dictionary<string, string> { ["token"] = "invalid" });
             using HttpResponseMessage response = await browser.PostAsync("/api/ui/login", body);
             Assert.Equal(index < 10 ? HttpStatusCode.Unauthorized : HttpStatusCode.TooManyRequests, response.StatusCode);
+        }
+    }
+
+    /// <summary>Checks notification subscriptions observe later data and target removal.</summary>
+    /// <returns>The integration test.</returns>
+    [Fact]
+    public async Task StreamObservesLaterChangesAsync()
+    {
+        await using BrowserHost host = await BrowserHost.StartAsync();
+        using HttpClient browser = host.Client();
+        await LoginAsync(browser, host.OperatorToken);
+        DiagnosticSessionRegistry registry = host.Registry;
+        SessionWelcome target = registry.Open(new(Guid.NewGuid(), 1, [new(new("sample", "Sample", 1), [])]));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using HttpResponseMessage response = await browser.GetAsync($"/api/ui/events?sessionId={target.SessionId}", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
+        using (JsonDocument initial = await ReadStateAsync(reader, timeout.Token))
+        {
+            Assert.Equal(0, initial.RootElement.GetProperty("events").GetArrayLength());
+        }
+
+        registry.Publish(target.SessionId, new(Guid.NewGuid(), target.SessionId, DiagnosticMessageKind.Telemetry, null, null, [new("metric", 1, "later", DiagnosticValue.From(42L), null, null, null, 0, new Dictionary<string, DiagnosticValue>())]));
+        using (JsonDocument updated = await ReadStateAsync(reader, timeout.Token))
+        {
+            Assert.Equal("later", updated.RootElement.GetProperty("events")[0].GetProperty("name").GetString());
+        }
+
+        registry.Close(target.SessionId);
+        using JsonDocument closed = await ReadStateAsync(reader, timeout.Token);
+        Assert.Equal(JsonValueKind.Null, closed.RootElement.GetProperty("selectedSessionId").ValueKind);
+        Assert.Equal(0, closed.RootElement.GetProperty("sessions").GetArrayLength());
+    }
+
+    private static async Task<JsonDocument> ReadStateAsync(StreamReader reader, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            string line = (await reader.ReadLineAsync(cancellationToken))!;
+            if (line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                return JsonDocument.Parse(line[6..]);
+            }
         }
     }
 

@@ -61,3 +61,20 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 ui-monospac
 #operation-status { font-size: 12px; }
 @media (max-width: 1150px) { .workspace { grid-template-columns: 210px minmax(0, 1fr); } .inspector { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); } }
 @media (max-width: 640px) { .topbar { padding: 16px; flex-wrap: wrap; gap: 12px; } .workspace { display: block; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .content { padding: 20px 16px; } .stats { gap: 6px; } .stats article { padding: 10px; } .stats strong { font-size: 20px; } .login-card { margin: 30px 16px; padding: 24px; } }
+
+.sidebar .tabs { flex-direction: column; margin: 20px 0; }
+.sidebar .tabs button { text-align: left; }
+.telemetry-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.resource-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.resource-state { color: var(--accent); white-space: nowrap; }
+.severity-error, .severity-critical { color: #b42318; font-weight: 600; }
+.severity-warning { color: #925b0c; }
+.trace-card { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.trace-id { font: 11px ui-monospace, monospace; overflow-wrap: anywhere; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.metric-chart { width: 100%; height: 80px; }
+.metric-chart polyline { fill: none; stroke: var(--accent); stroke-width: 2; }
+.metric-chart circle { fill: var(--accent); }
+.metric-value { font: 20px ui-monospace, monospace; overflow-wrap: anywhere; }
+.span-duration { accent-color: var(--accent); max-width: 110px; }
+@media (max-width: 640px) { .sidebar .tabs { flex-direction: row; flex-wrap: wrap; } }

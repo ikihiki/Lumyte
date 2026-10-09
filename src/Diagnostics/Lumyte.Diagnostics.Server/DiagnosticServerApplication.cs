@@ -45,6 +45,7 @@ public static class DiagnosticServerApplication
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<DiagnosticSessionRegistry>();
+        builder.Services.AddSingleton<IDiagnosticDashboardReader, DiagnosticDashboardReader>();
         builder.Services.AddHostedService<SessionExpiryService>();
         builder.Services.AddAntiforgery(antiforgery =>
         {

@@ -28,6 +28,7 @@ internal static class DiagnosticBrowserUi
         app.MapGet("/", () => Asset("index.html", "text/html; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
         app.MapGet("/assets/diagnostics.css", () => Asset("diagnostics.css", "text/css; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
         app.MapGet("/assets/diagnostics.js", () => Asset("diagnostics.js", "text/javascript; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
+        app.MapGet("/assets/telemetry-model.js", () => Asset("telemetry-model.mjs", "text/javascript; charset=utf-8")).WithMetadata(new DisableCorsAttribute());
         RouteGroupBuilder group = app.MapGroup("/api/ui").WithMetadata(new DisableCorsAttribute());
         group.MapGet("/bootstrap", async (HttpContext context, IAntiforgery antiforgery) =>
         {
@@ -42,7 +43,7 @@ internal static class DiagnosticBrowserUi
             await context.SignOutAsync(Scheme).ConfigureAwait(false);
             return Results.NoContent();
         }).RequireAuthorization(Scheme).AddEndpointFilter<DiagnosticUiMutationFilter>();
-        group.MapGet("/sessions", (DiagnosticSessionRegistry sessions) => Results.Json(sessions.List(), DiagnosticJson.Context.SessionSnapshotArray)).RequireAuthorization(Scheme);
+        group.MapGet("/sessions", (IDiagnosticDashboardReader reader) => Results.Json(reader.Resources(), DiagnosticJson.Context.SessionSnapshotArray)).RequireAuthorization(Scheme);
         group.MapPost("/sessions/{id:guid}/operations", async (Guid id, HttpContext context, DiagnosticSessionRegistry sessions) =>
         {
             OperationInvocation? invocation = await JsonSerializer.DeserializeAsync(context.Request.Body, DiagnosticJson.Context.OperationInvocation, context.RequestAborted).ConfigureAwait(false);
@@ -89,7 +90,7 @@ internal static class DiagnosticBrowserUi
         return Results.NoContent();
     }
 
-    private static async Task EventsAsync(HttpContext context, DiagnosticSessionRegistry sessions, DiagnosticUiStreams streams)
+    private static async Task EventsAsync(HttpContext context, IDiagnosticDashboardReader reader, DiagnosticUiStreams streams)
     {
         string selected = context.Request.Query["sessionId"].ToString();
         Guid? selectedId = null;
@@ -124,15 +125,15 @@ internal static class DiagnosticBrowserUi
             lifetime.CancelAfter(remaining < TimeSpan.FromMinutes(2) ? remaining : TimeSpan.FromMinutes(2));
             context.Response.ContentType = "text/event-stream";
             context.Response.Headers["X-Accel-Buffering"] = "no";
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
             DiagnosticUiSession[]? previous = null;
             do
             {
-                DiagnosticUiSession[] current = sessions.UiSessions();
+                long version = reader.Version;
+                DiagnosticUiSession[] current = reader.Summaries();
                 if (previous == null || !current.SequenceEqual(previous))
                 {
                     Guid? active = current.Any(item => item.SessionId == selectedId) ? selectedId : null;
-                    DiagnosticEvent[] events = active.HasValue ? sessions.UiTelemetry(active.Value) : [];
+                    DiagnosticEvent[] events = active.HasValue ? reader.Events(active.Value) : [];
                     var state = new DiagnosticUiState(current, active, events);
                     await context.Response.WriteAsync("event: state\ndata: ", lifetime.Token).ConfigureAwait(false);
                     await JsonSerializer.SerializeAsync(context.Response.Body, state, DiagnosticUiJsonContext.Protocol.DiagnosticUiState, lifetime.Token).ConfigureAwait(false);
@@ -145,8 +146,19 @@ internal static class DiagnosticBrowserUi
                 }
 
                 await context.Response.Body.FlushAsync(lifetime.Token).ConfigureAwait(false);
+                using var heartbeat = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                heartbeat.CancelAfter(TimeSpan.FromSeconds(10));
+                try
+                {
+                    await reader.WaitForChangeAsync(version, heartbeat.Token).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(200), lifetime.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!lifetime.IsCancellationRequested)
+                {
+                    // A quiet subscription only needs a heartbeat, not a data poll.
+                }
             }
-            while (await timer.WaitForNextTickAsync(lifetime.Token).ConfigureAwait(false));
+            while (!lifetime.IsCancellationRequested);
         }
         catch (OperationCanceledException)
         {
