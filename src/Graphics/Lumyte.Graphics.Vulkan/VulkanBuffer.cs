@@ -13,6 +13,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
     private byte* _pointer;
     private bool _mapped;
     private bool _pending;
+    private int _registrationCount;
     private bool _disposed;
 
     internal VulkanBuffer(VulkanDevice owner, BufferDesc<T> desc, BufferLayout<T> layout, ulong size)
@@ -82,16 +83,23 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public MemoryPreference Memory { get; }
 
-    public bool IsMapped
+    public bool IsMapped => _mapped && !_pending && !_disposed;
+
+    internal VkBuffer Native
     {
         get
         {
-            lock (_owner.BufferGate)
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_mapped || _pending)
             {
-                return _mapped && !_pending && !_disposed;
+                throw new InvalidOperationException("GPU commands require an unmapped buffer.");
             }
+
+            return _native;
         }
     }
+
+    internal VulkanDevice Owner => _owner;
 
     public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);
 
@@ -101,118 +109,113 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
-            {
-                throw new ArgumentOutOfRangeException(nameof(length));
-            }
+            throw new ArgumentOutOfRangeException(nameof(length));
         }
     }
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        lock (_owner.BufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Memory == MemoryPreference.Automatic || _mapped || _pending)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (Memory == MemoryPreference.Automatic || _mapped || _pending)
+            throw new InvalidOperationException("Buffer cannot begin a CPU mapping in its current state.");
+        }
+
+        _pending = true;
+        try
+        {
+            void* pointer = null;
+            Check(_owner.Api.MapMemory(_owner.NativeDevice, _memory, 0, SizeInBytes, 0, &pointer), "MapMemory");
+            _pointer = (byte*)pointer;
+            _mapped = true;
+            if (cancellationToken.IsCancellationRequested)
             {
-                throw new InvalidOperationException("Buffer cannot begin a CPU mapping in its current state.");
+                UnmapCore();
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
-            _pending = true;
-            try
-            {
-                void* pointer = null;
-                Check(_owner.Api.MapMemory(_owner.NativeDevice, _memory, 0, SizeInBytes, 0, &pointer), "MapMemory");
-                _pointer = (byte*)pointer;
-                _mapped = true;
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    UnmapCore();
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-
-                return ValueTask.CompletedTask;
-            }
-            finally
-            {
-                _pending = false;
-            }
+            return ValueTask.CompletedTask;
+        }
+        finally
+        {
+            _pending = false;
         }
     }
 
     public void Unmap()
     {
-        lock (_owner.BufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_mapped || _pending)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_mapped || _pending)
-            {
-                throw new InvalidOperationException("No completed mapping is available.");
-            }
-
-            UnmapCore();
+            throw new InvalidOperationException("No completed mapping is available.");
         }
+
+        UnmapCore();
     }
 
     public void Dispose()
     {
-        lock (_owner.BufferGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_pending)
-            {
-                throw new InvalidOperationException("Wait for the mapping request before disposal.");
-            }
-
-            if (_mapped)
-            {
-                UnmapCore();
-            }
-
-            _owner.Api.DestroyBuffer(_owner.NativeDevice, _native, null);
-            _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
-            _disposed = true;
-            _owner.ReleaseBuffer();
+            return;
         }
+
+        if (_registrationCount != 0)
+        {
+            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
+        }
+
+        if (_pending)
+        {
+            throw new InvalidOperationException("Wait for the mapping request before disposal.");
+        }
+
+        if (_mapped)
+        {
+            UnmapCore();
+        }
+
+        _owner.Api.DestroyBuffer(_owner.NativeDevice, _native, null);
+        _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
+        _disposed = true;
+        _owner.ReleaseBuffer();
     }
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        ValidateRange(offset, length);
+        RequireMapping(MemoryPreference.Upload);
+        if ((ulong)source.Length > length)
         {
-            ValidateRange(offset, length);
-            RequireMapping(MemoryPreference.Upload);
-            if ((ulong)source.Length > length)
-            {
-                throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
-            }
-
-            source.CopyTo(new Span<byte>(_pointer + checked((int)offset), source.Length));
+            throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
+
+        source.CopyTo(new Span<byte>(_pointer + checked((int)offset), source.Length));
     }
 
     void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        ValidateRange(offset, length);
+        RequireMapping(MemoryPreference.Readback);
+        if ((ulong)destination.Length < length)
         {
-            ValidateRange(offset, length);
-            RequireMapping(MemoryPreference.Readback);
-            if ((ulong)destination.Length < length)
-            {
-                throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
-            }
-
-            new ReadOnlySpan<byte>(_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
+            throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
+
+        new ReadOnlySpan<byte>(_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
     }
+
+    internal void RetainRegistration()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _registrationCount = checked(_registrationCount + 1);
+    }
+
+    internal void ReleaseRegistration() => _registrationCount--;
 
     private static uint SelectMemoryType(PhysicalDeviceMemoryProperties properties, uint bits, MemoryPropertyFlags required)
     {

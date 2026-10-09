@@ -1,6 +1,10 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Diagnostics.Remote.Sample/Lumyte.Diagnostics.Remote.Sample.csproj" />
+    <Project Path="samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
     <Project Path="samples/Lumyte.Animation.Sample/Lumyte.Animation.Sample.csproj" />
+    <Project Path="samples/Lumyte.Animation.StateMachine.Sample/Lumyte.Animation.StateMachine.Sample.csproj" />
+    <Project Path="samples/Lumyte.StateMachines.Sample/Lumyte.StateMachines.Sample.csproj" />
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
@@ -10,13 +14,25 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Settings/Lumyte.Settings.csproj" />
     <Project Path="src/Core/Lumyte.Core/Lumyte.Core.csproj" />
+    <Project Path="src/Core/Lumyte.StateMachines/Lumyte.StateMachines.csproj" />
     <Project Path="src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
     <Project Path="src/Core/Lumyte.Composition/Lumyte.Composition.csproj" />
+  </Folder>
+  <Folder Name="/src/Diagnostics/">
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Transport/Lumyte.Diagnostics.Transport.csproj" />
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Transport.Http/Lumyte.Diagnostics.Transport.Http.csproj" />
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Transport.MagicOnion/Lumyte.Diagnostics.Transport.MagicOnion.csproj" />
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Server/Lumyte.Diagnostics.Server.csproj" />
+
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics/Lumyte.Diagnostics.csproj" />
+    <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
     <Project Path="src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Shaders/Lumyte.Graphics.Shaders.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
@@ -25,10 +41,16 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Settings.Tests/Lumyte.Settings.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
+    <Project Path="tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Platform/">
     <Project Path="src/Platform/Lumyte.Input/Lumyte.Input.csproj" />
+  </Folder>
+  <Folder Name="/tests/Diagnostics/">
+    <Project Path="tests/Diagnostics/Lumyte.Diagnostics.IntegrationTests/Lumyte.Diagnostics.IntegrationTests.csproj" />
+    <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
     <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />

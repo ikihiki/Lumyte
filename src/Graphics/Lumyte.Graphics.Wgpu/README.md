@@ -44,10 +44,68 @@ GPU buffer copy の offset と length は WebGPU の規定によりそれぞれ 
 
 生成済みの `IGraphicDevice` から `CreateBuffer<T>(BufferDesc<T>)` と `GetBufferLayout<T>()` を使用します。Count と SizeInBytes は指定した raw storage のサイズを保ち、alignment のために補正しません。数値型・enum・unmanaged struct は sizeof(T) の stride で格納します。shader target の layout 互換性は別途検証が必要です。
 
-CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copy と同期の command API は別の設計で追加します。
+CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copyと同期はcommand bufferへ明示的に記録します。
 
-CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。buffer の操作は device ごとの gate で直列化し、buffer が残った device の Dispose は InvalidOperationException で拒否します。解放済み allocation への access は ObjectDisposedException です。
+CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。必要な同期は利用者が管理し、bufferが残ったdeviceのDisposeはInvalidOperationExceptionで拒否します。解放済み allocation への access は ObjectDisposedException です。
 
 WebGPU の usage は CopySource → COPY_SRC、CopyDestination → COPY_DST、ShaderRead／ShaderWrite → STORAGE、Index → INDEX に対応します。Upload は CopySource のみと MAP_WRITE、Readback は CopyDestination のみと MAP_READ の組み合わせです。CPU-mapped buffer の size は 4 byte の倍数でなければ生成時に拒否します。GPU-only buffer の論理 size はこの理由で丸めません。
 
 Ahjo の BeginMap と device の ProcessEvents を使い、native callback の完了後に mapping 状態を公開します。キャンセルされても callback の保存先を途中で解放せず、request が完了してから Unmap と cleanup を行います。CPU copy は mapped native span に対して行います。
+
+## TextureとView
+
+生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
+
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、利用者による同期を前提にlive view数を管理します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+
+Ahjo.WgpuのCreateTexture／CreateViewを直接使用し、native textureとviewを具象resourceが所有します。dimension、format、usage、mip／layer範囲をWebGPU descriptorに明示的に変換します。Disposeではview／textureの参照をReleaseします。native handleを共通APIへ公開しません。
+
+DescとView範囲の検証は、このbackend assembly内のinternalなTextureValidationで行います。Abstractionsの内部型へのアクセスやInternalsVisibleToは使いません。
+
+resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。状態検証はデータ競合を防止する機構ではありません。
+
+## Sampler
+
+CreateSamplerは具象backendのIGraphicsSamplerを返し、Descを変更せずにsampling stateを確保します。enum、有限で非負のLOD、min <= max、正のanisotropyとlinear filter条件をbackend内のSamplerValidationで検証します。caps超過はNotSupportedExceptionで、暗黙補正しません。
+
+Ahjo.Wgpu.NativeのwgpuDeviceCreateSamplerとwgpuSamplerReleaseを直接使用します。Ahjo.WgpuのSamplerDescriptor経由ではLodMaxClamp=0が32へ置換されるため、0固定を保つ目的で同じ.NET bindingのraw descriptorを使用します。新しい.Native projectは追加しません。filters／address／comparisonはnative enumへ明示変換し、anisotropy上限はWebGPUの16です。
+
+samplerはtexture／Viewを所有せず、deviceのlive childとして数えます。Disposeは一度だけnative資源を解放し、samplerが残るdeviceのDisposeは拒否します。CPU／GPUの利用・解放に必要な同期は利用者の責務です。内部lock、InternalsVisibleTo、sampler cacheは設けません。
+
+## Argument Table
+
+CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler・bufferを種類別のDictionaryへ疎に登録します。capacityは論理slotの上限で、巨大な事前確保やshaderのbinding数を意味しません。別tableの同じslotと、種類ごとの同じslotは独立します。Labelは診断用の指定です。
+
+各登録instanceがidentityを持ち、`GpuReference<T>` は同じ登録の型・Count・byte offset／sizeを保持します。GetElementは登録rangeに対するoffsetをchecked計算し、内部Resolveは登録が生存することを確認してresourceを返します。公開APIへnative handleや整数IDを出しません。
+
+登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録中resourceの解放は拒否します。置換とReleaseは古い登録を失効させ、失敗した登録で新しいleaseを残しません。tableを解放すると登録を解放してdeviceのchild数を減らし、登録resource自体はDisposeしません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
+
+登録はnative bind groupを生成せず、backendのresource instanceと選択byte rangeを保持します。将来のSlang serializer／shader binding planがこのidentityと要素metadataを使い、rootから必要なtexture・sampler・bufferを収集して種類別に上限を照合します。物理indexと安定した登録identityを区別し、有限bind groupへの変換をshader／commandの接続で実装します。
+
+## シェーダーモジュール
+
+共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `Wgsl`。Ahjo.Wgpu の `Device.CreateShaderModule` と `ShaderSource.FromWgsl` を直接使用します。WGSL の検証や非同期 device error の扱いは wgpu に従います。shader の `Dispose()` は native module を release します。
+
+artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。pipelineとshader実行命令は別のAPIで扱います。
+
+## CommandBuffer
+
+Ahjo.Wgpuのnative bindingを直接使用してWGPUCommandEncoder／WGPUCommandBufferを保持します。buffer／textureコピーとcolor render・compute passを記録し、Finishでnative recordingを確定します。独自のNativeプロジェクトは追加しません。barrierのstage・access・usageとtextureの論理stateは検証し、物理的なvisibilityとtexture transitionはWebGPUの順序保証で実現します。
+
+GetTextureCopyLayoutはcolor texel size 4、buffer offset alignment 4、row alignment 256を返します。padding・行の詰め替え・staging確保は行いません。SubmitはQueueSubmitし、BeginOnSubmittedWorkDoneのrequestを保持します。Status／WaitAsyncでProcessEventsを進め、そのrequestの完了を確認します。command bufferと完了requestは別にDisposeし、pending中の解放を拒否します。
+
+共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。commandとsubmissionもdeviceの子として数えます。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+
+## Pipeline
+
+graphics programはshaderの組・topology分類・compile optionを保持し、draw時に描画状態とpassの実attachment formatからnative pipelineを解決します。完全なnative PSOを生成するため、program内でvariantをcacheし、等価なkeyの再利用で生成を繰り返しません。keyにviewport／scissor／blend constant／stencil reference、texture instance、clear値は含めません。variantはprogram Disposeまで保持します。
+
+compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
+
+reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。初期のresource ABIは空で、descriptorやpush constantが必要なprogramはroot-data／binding契約への接続前に拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
+
+Ahjo.Wgpuのnative bindingでWGPURenderPipeline／WGPUComputePipelineを生成します。描画状態は完全なrender pipelineのkeyに入り、dynamic値はrender encoderへ直接設定します。write maskとsample maskはnative descriptorへ正確に渡すため、0をdefaultへ置き換えるwrapperは使いません。resource ABIが空なのでlayoutはWebGPUのauto layoutを使用します。DepthClipControl等の追加featureは有効化せず、必要なstateは拒否します。
+
+これらの完全なnative pipelineはcacheが必要な生成単位です。dynamic stateはcommandを記録するだけで、一時state objectを生成しません。そのため今回新たに比較対象となる軽量なstate objectはありません。partial programや独立した軽量objectを導入する際は、毎draw生成・状態変更時生成・cacheのCPU時間と保持memoryを同条件で比較し、結果をこのREADMEへ記録します。今回の実装で性能計測済みとは扱いません。
+
+共通契約は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)、共通画素検証は [PipelineExercise](../../../samples/Lumyte.Graphics.Shared/PipelineExercise.cs) を参照してください。

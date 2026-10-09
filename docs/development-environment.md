@@ -105,6 +105,8 @@ GitHub の Windows runner は管理者権限で動くため、システム依存
 
 ルートの `.editorconfig` と `Directory.Build.props` が共通設定であり、新規 C# プロジェクトにも適用される。StyleCop.Analyzers は file-scoped namespace を扱える `1.2.0-beta.556` に固定し、公開 API の XML ドキュメントも検査する。
 
+プライマリコンストラクターを利用できる型では優先して使用する。`.editorconfig` の `csharp_style_prefer_primary_constructors = true:error` と `dotnet_diagnostic.IDE0290.severity = error` で、対応する .NET アナライザーの診断をビルド時にエラーにする。StyleCopではなくIDE0290で検査する。公開する生成APIのアクセス制限や初期化手順を変えてまで変換するものではない。
+
 開発環境を有効化して、対象プロジェクトの書式確認とビルドを実行する。
 
 ```bash

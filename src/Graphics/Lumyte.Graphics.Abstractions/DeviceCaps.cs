@@ -3,6 +3,9 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Contains backend-resolved capability values without owning GPU resources.</summary>
 public sealed record DeviceCaps
 {
+    /// <summary>Gets the supported compiled shader target.</summary>
+    public ShaderTarget ShaderTarget { get; init; }
+
     /// <summary>Gets the supported portable feature flags.</summary>
     public GraphicsFeatures Features { get; init; } = GraphicsFeatures.None;
 
@@ -15,6 +18,9 @@ public sealed record DeviceCaps
     /// <summary>Gets the maximum two-dimensional texture extent in texels.</summary>
     public uint MaxTextureDimension2D { get; init; }
 
+    /// <summary>Gets the maximum two-dimensional texture array layer count.</summary>
+    public uint MaxTextureArrayLayers { get; init; }
+
     /// <summary>Gets the maximum color attachment count.</summary>
     public uint MaxColorAttachments { get; init; }
 
@@ -23,6 +29,9 @@ public sealed record DeviceCaps
 
     /// <summary>Gets the maximum sampler count per shader stage.</summary>
     public uint MaxSamplersPerStage { get; init; }
+
+    /// <summary>Gets the maximum supported sampler anisotropy; one means anisotropic filtering is unavailable.</summary>
+    public ushort MaxSamplerAnisotropy { get; init; } = 1;
 
     /// <summary>Gets the maximum uniform buffer count per shader stage.</summary>
     public uint MaxUniformBuffersPerStage { get; init; }
@@ -44,4 +53,16 @@ public sealed record DeviceCaps
 
     /// <summary>Gets the required native storage binding offset alignment in bytes.</summary>
     public uint StorageBufferOffsetAlignment { get; init; } = 1;
+
+    /// <summary>Gets the maximum dispatch group count per axis.</summary>
+    public uint MaxComputeWorkgroupsPerDimension { get; init; }
+
+    /// <summary>Gets the maximum workgroup size on X.</summary>
+    public uint MaxComputeWorkgroupSizeX { get; init; }
+
+    /// <summary>Gets the maximum workgroup size on Y.</summary>
+    public uint MaxComputeWorkgroupSizeY { get; init; }
+
+    /// <summary>Gets the maximum workgroup size on Z.</summary>
+    public uint MaxComputeWorkgroupSizeZ { get; init; }
 }

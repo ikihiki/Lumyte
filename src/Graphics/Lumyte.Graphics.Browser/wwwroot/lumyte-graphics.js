@@ -11,15 +11,22 @@ export async function createDevice() {
     try {
         const limits = device.limits;
         const caps = Object.freeze({
+            shaderTarget: 0, // WGSL.
             features: 3, // WebGPU core: indirect draw and anisotropic filtering.
             maxBufferSize: limits.maxBufferSize,
             maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
             maxTextureDimension2D: limits.maxTextureDimension2D,
+            maxTextureArrayLayers: limits.maxTextureArrayLayers,
             maxColorAttachments: limits.maxColorAttachments,
             maxSampledTexturesPerStage: limits.maxSampledTexturesPerShaderStage,
             maxSamplersPerStage: limits.maxSamplersPerShaderStage,
+            maxSamplerAnisotropy: 16,
             maxUniformBuffersPerStage: limits.maxUniformBuffersPerShaderStage,
             maxStorageBuffersPerStage: limits.maxStorageBuffersPerShaderStage,
+            maxComputeWorkgroupsPerDimension: limits.maxComputeWorkgroupsPerDimension,
+            maxComputeWorkgroupSizeX: limits.maxComputeWorkgroupSizeX,
+            maxComputeWorkgroupSizeY: limits.maxComputeWorkgroupSizeY,
+            maxComputeWorkgroupSizeZ: limits.maxComputeWorkgroupSizeZ,
             maxComputeInvocationsPerWorkgroup: limits.maxComputeInvocationsPerWorkgroup,
             copyBufferOffsetAlignment: 4,
             copyBufferSizeAlignment: 4,
@@ -85,3 +92,128 @@ export function destroyBuffer(handle) {
         handle.disposed = true;
     }
 }
+
+export function createTexture(handle, width, height, layers, mips, format, flags) {
+    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    let usage = 0;
+    if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
+    if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
+    if (flags & 4) usage |= GPUTextureUsage.TEXTURE_BINDING;
+    if (flags & 8) usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+    return handle.device.createTexture({
+        size: [width, height, layers],
+        mipLevelCount: mips,
+        sampleCount: 1,
+        dimension: "2d",
+        format: formats[format],
+        usage,
+    });
+}
+
+export function createTextureView(texture, dimension, baseMip, mipCount, baseLayer, layerCount) {
+    return texture.createView({
+        dimension: ["2d", "2d-array", "cube", "cube-array"][dimension],
+        aspect: "all",
+        baseMipLevel: baseMip,
+        mipLevelCount: mipCount,
+        baseArrayLayer: baseLayer,
+        arrayLayerCount: layerCount,
+    });
+}
+
+export function destroyTexture(texture) {
+    texture.destroy();
+}
+
+export function createSampler(handle, descJson) {
+    const desc = JSON.parse(descJson);
+    const filters = ["nearest", "linear"];
+    const addresses = ["clamp-to-edge", "repeat", "mirror-repeat"];
+    const compares = ["never", "less", "equal", "less-equal", "greater", "not-equal", "greater-equal", "always"];
+    const native = {
+        minFilter: filters[desc.minFilter],
+        magFilter: filters[desc.magFilter],
+        mipmapFilter: filters[desc.mipmapFilter],
+        addressModeU: addresses[desc.addressU],
+        addressModeV: addresses[desc.addressV],
+        addressModeW: addresses[desc.addressW],
+        lodMinClamp: desc.lodMinClamp,
+        lodMaxClamp: desc.lodMaxClamp,
+        maxAnisotropy: desc.maxAnisotropy,
+    };
+    if (desc.compare !== null) native.compare = compares[desc.compare];
+    return handle.device.createSampler(native);
+}
+
+export function createShader(handle, code) {
+    return handle.device.createShaderModule({ code });
+}
+
+export function createCommandEncoder(handle) { return handle.device.createCommandEncoder(); }
+export function recordBufferCopy(encoder, src, srcOffset, dst, dstOffset, size) {
+    encoder.copyBufferToBuffer(src.buffer, srcOffset, dst.buffer, dstOffset, size);
+}
+function textureInfo(texture, r) {
+    return { texture, mipLevel: r.mip, origin: { x: r.x, y: r.y, z: r.layer } };
+}
+function copyExtent(r) { return { width: r.width, height: r.height, depthOrArrayLayers: r.layers }; }
+export function recordTextureCopy(encoder, src, sourceRegion, dst, destinationRegion) {
+    const s = JSON.parse(sourceRegion), d = JSON.parse(destinationRegion);
+    encoder.copyTextureToTexture(textureInfo(src, s), textureInfo(dst, d), copyExtent(s));
+}
+export function recordBufferTextureCopy(encoder, buffer, offset, bytesPerRow, rowsPerImage, texture, region, upload) {
+    const r = JSON.parse(region), b = { buffer: buffer.buffer, offset, bytesPerRow, rowsPerImage };
+    if (upload) encoder.copyBufferToTexture(b, textureInfo(texture, r), copyExtent(r));
+    else encoder.copyTextureToBuffer(textureInfo(texture, r), b, copyExtent(r));
+}
+export function createRenderDescriptor() { return { colorAttachments: [] }; }
+export function addColorAttachment(desc, view, load, store, r, g, b, a) {
+    desc.colorAttachments.push({ view, loadOp: load === 0 ? "load" : "clear", storeOp: store === 0 ? "store" : "discard", clearValue: { r, g, b, a } });
+}
+export function beginRenderPass(encoder, desc) { return encoder.beginRenderPass(desc); }
+export function beginComputePass(encoder) { return encoder.beginComputePass(); }
+export function endRenderPass(pass) { pass.end(); }
+export function endComputePass(pass) { pass.end(); }
+export function finishCommands(encoder) { return encoder.finish(); }
+export function createCommandList() { return []; }
+export function addCommand(list, commands) { list.push(commands); }
+export function submitCommands(handle, list) {
+    handle.device.queue.submit(list);
+    const result = { status: 0, error: "", promise: null };
+    result.promise = handle.device.queue.onSubmittedWorkDone().then(
+        () => { result.status = 1; },
+        error => { result.status = 2; result.error = String(error); });
+    return result;
+}
+export function getSubmissionStatus(result) { return result.status; }
+export function getSubmissionError(result) { return result.error; }
+export async function waitSubmission(result) { await result.promise; }
+
+export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson) {
+    const state = JSON.parse(stateJson), formats = JSON.parse(formatsJson);
+    const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    const factors = ["zero", "one", "src", "one-minus-src", "src-alpha", "one-minus-src-alpha", "dst", "one-minus-dst", "dst-alpha", "one-minus-dst-alpha", "src-alpha-saturated", "constant", "one-minus-constant"];
+    const operations = ["add", "subtract", "reverse-subtract", "min", "max"];
+    const blend = b => ({ srcFactor: factors[b.Source], dstFactor: factors[b.Destination], operation: operations[b.Operation] });
+    return handle.device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module: vertex, entryPoint: vertexEntry },
+        fragment: { module: fragment, entryPoint: fragmentEntry, targets: formats.map((format, i) => {
+            const c = state.ColorTargets[i];
+            const result = { format: nativeFormats[format], writeMask: c.WriteMask };
+            if (c.BlendEnable) result.blend = { color: blend(c.Color), alpha: blend(c.Alpha) };
+            return result;
+        }) },
+        primitive: { topology: ["point-list", "line-list", "line-strip", "triangle-list", "triangle-strip"][state.Topology], frontFace: state.Rasterization.FrontFace === 0 ? "ccw" : "cw", cullMode: ["none", "front", "back"][state.Rasterization.Cull] },
+        multisample: { count: 1, mask: state.SampleMask },
+    });
+}
+export function createComputePipeline(handle, shader, entry) { return handle.device.createComputePipeline({ layout: "auto", compute: { module: shader, entryPoint: entry } }); }
+export function setRenderPipeline(pass, pipeline) { pass.setPipeline(pipeline); }
+export function setComputePipeline(pass, pipeline) { pass.setPipeline(pipeline); }
+export function setViewport(pass, x, y, width, height, min, max) { pass.setViewport(x, y, width, height, min, max); }
+export function setScissor(pass, x, y, width, height) { pass.setScissorRect(x, y, width, height); }
+export function setBlendConstant(pass, r, g, b, a) { pass.setBlendConstant({ r, g, b, a }); }
+export function setStencilReference(pass, reference) { pass.setStencilReference(reference); }
+export function draw(pass, vertices, instances, firstVertex, firstInstance) { pass.draw(vertices, instances, firstVertex, firstInstance); }
+export function dispatch(pass, x, y, z) { pass.dispatchWorkgroups(x, y, z); }

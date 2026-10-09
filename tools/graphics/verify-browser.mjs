@@ -107,6 +107,14 @@ try {
     assert.match(result.report, /MaxTextureDimension2D: [1-9]\d* texels/);
     assert.match(result.report, /StorageBufferOffsetAlignment: [1-9]\d* bytes/);
     assert.match(result.report, /Buffer checks passed:/);
+    assert.match(result.report, /Texture checks passed:/);
+    assert.match(result.report, /Sampler checks passed:/);
+    assert.match(result.report, /Argument table checks passed:/);
+    assert.match(result.report, /Shader checks passed:/);
+    assert.match(result.report, /Command checks passed:/);
+    assert.match(result.report, /Pipeline checks passed:/);
+    assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);
+    assert.deepEqual(errors, [], "Browser reported runtime or console errors.");
     console.log(`Browser .NET/WebGPU verification passed\n${result.report}`);
 } finally {
     socket?.close();

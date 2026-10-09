@@ -8,19 +8,27 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
-    private readonly object _bufferGate = new();
     private int _bufferCount;
+    private int _textureCount;
+    private int _samplerCount;
+    private int _argumentTableCount;
+    private int _shaderCount;
+    private int _pipelineCount;
+    private int _commandCount;
+    private int _submissionCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
     {
         (_handle, Caps) = (handle, caps);
+        Queue = new BrowserQueue(this);
     }
+
+    /// <inheritdoc />
+    public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
-
-    internal object BufferGate => _bufferGate;
 
     internal JSObject Handle => _handle;
 
@@ -53,15 +61,54 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new BrowserGraphicsPipeline(this, desc);
+        _pipelineCount++;
+        return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new BrowserComputePipeline(this, desc);
+        _pipelineCount++;
+        return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var commands = new BrowserCommandBuffer(this);
+        _commandCount++;
+        return commands;
+    }
+
+    /// <inheritdoc />
+    public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
+    {
+        ValidateAlive();
+        if (!Enum.IsDefined(format))
+        {
+            throw new NotSupportedException("Unknown color texture format.");
+        }
+
+        return new() { BytesPerTexel = 4, BufferOffsetAlignmentInBytes = 4, BytesPerRowAlignment = Caps.CopyBytesPerRowAlignment };
+    }
+
+    /// <inheritdoc />
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        lock (_bufferGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
-            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+        return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
 
     /// <inheritdoc />
@@ -69,54 +116,105 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        lock (_bufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        BufferLayout<T> layout = GetBufferLayout<T>();
+        ulong size = layout.GetSizeInBytes(desc.Count);
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            BufferLayout<T> layout = GetBufferLayout<T>();
-            ulong size = layout.GetSizeInBytes(desc.Count);
-            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
-            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
-            {
-                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
-            }
-
-            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
-            {
-                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
-            }
-
-            var buffer = new BrowserBuffer<T>(this, desc, layout, size);
-            _bufferCount++;
-            return buffer;
+            throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
         }
+
+        if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+        {
+            throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+        }
+
+        var buffer = new BrowserBuffer<T>(this, desc, layout, size);
+        _bufferCount++;
+        return buffer;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsTexture CreateTexture(TextureDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureValidation.Validate(desc, Caps);
+        var texture = new BrowserTexture(this, desc);
+        _textureCount++;
+        return texture;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new BrowserSampler(this, desc);
+        _samplerCount++;
+        return sampler;
+    }
+
+    /// <inheritdoc />
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(desc);
+        if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
+        {
+            throw new ArgumentException("An argument table must have at least one logical slot.", nameof(desc));
+        }
+
+        var table = new BrowserArgumentTable(this, desc);
+        _argumentTableCount++;
+        return table;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(artifact);
+        var shader = new BrowserShader(this, artifact);
+        _shaderCount++;
+        return shader;
     }
 
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        lock (_bufferGate)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            if (_bufferCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
-            }
-
-            if (_disposed)
-            {
-                return;
-            }
-
-            BrowserInterop.DestroyDevice(_handle);
-            _handle.Dispose();
-            _disposed = true;
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
+
+        if (_disposed)
+        {
+            return;
+        }
+
+        BrowserInterop.DestroyDevice(_handle);
+        _handle.Dispose();
+        _disposed = true;
     }
 
-    internal void ReleaseBuffer()
-    {
-        lock (_bufferGate)
-        {
-            _bufferCount--;
-        }
-    }
+    internal void ReleasePipeline() => _pipelineCount--;
+
+    internal void ReleaseCommand() => _commandCount--;
+
+    internal void RetainSubmission() => _submissionCount++;
+
+    internal void ReleaseSubmission() => _submissionCount--;
+
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+    internal void ReleaseShader() => _shaderCount--;
+
+    internal void ReleaseArgumentTable() => _argumentTableCount--;
+
+    internal void ReleaseSampler() => _samplerCount--;
+
+    internal void ReleaseTexture() => _textureCount--;
+
+    internal void ReleaseBuffer() => _bufferCount--;
 }
