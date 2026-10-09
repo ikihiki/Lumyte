@@ -16,6 +16,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private int _samplerCount;
     private int _argumentTableCount;
     private int _shaderCount;
+    private int _pipelineCount;
     private int _commandCount;
     private int _submissionCount;
     private bool _disposed;
@@ -73,15 +74,15 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
             var supported = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
             api.GetPhysicalDeviceFeatures2(physical, &supported);
-            if (!supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2)
+            if (!supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2 || !supported.Features.IndependentBlend)
             {
-                throw new NotSupportedException("Vulkan maintenance4, dynamic rendering and synchronization2 are required.");
+                throw new NotSupportedException("Vulkan maintenance4, dynamic rendering, synchronization2 and independent blending are required.");
             }
 
             uint queueFamily = SelectQueueFamily(api, physical);
             float priority = 1;
             var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
-            var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray };
+            var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray, IndependentBlend = true };
             var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, Maintenance4 = true, DynamicRendering = true, Synchronization2 = true };
             var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
@@ -103,6 +104,26 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             api.Dispose();
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new VulkanGraphicsPipeline(this, desc);
+        _pipelineCount++;
+        return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var program = new VulkanComputePipeline(this, desc);
+        _pipelineCount++;
+        return program;
     }
 
     /// <inheritdoc />
@@ -208,9 +229,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, commands and submissions before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
 
         if (_disposed)
@@ -223,6 +244,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _api.Dispose();
         _disposed = true;
     }
+
+    internal void ReleasePipeline() => _pipelineCount--;
 
     internal void ReleaseCommand() => _commandCount--;
 
@@ -313,6 +336,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             MaxSamplerAnisotropy = enabled.SamplerAnisotropy ? checked((ushort)Math.Min(16, Math.Floor(limits.MaxSamplerAnisotropy))) : (ushort)1,
             MaxUniformBuffersPerStage = limits.MaxPerStageDescriptorUniformBuffers,
             MaxStorageBuffersPerStage = limits.MaxPerStageDescriptorStorageBuffers,
+            MaxComputeWorkgroupsPerDimension = Math.Min(limits.MaxComputeWorkGroupCount[0], Math.Min(limits.MaxComputeWorkGroupCount[1], limits.MaxComputeWorkGroupCount[2])),
+            MaxComputeWorkgroupSizeX = limits.MaxComputeWorkGroupSize[0],
+            MaxComputeWorkgroupSizeY = limits.MaxComputeWorkGroupSize[1],
+            MaxComputeWorkgroupSizeZ = limits.MaxComputeWorkGroupSize[2],
             MaxComputeInvocationsPerWorkgroup = limits.MaxComputeWorkGroupInvocations,
             CopyBufferOffsetAlignment = 1,
             CopyBufferSizeAlignment = 1,

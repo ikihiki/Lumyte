@@ -95,3 +95,17 @@ Ahjo.Wgpuのnative bindingを直接使用してWGPUCommandEncoder／WGPUCommandB
 GetTextureCopyLayoutはcolor texel size 4、buffer offset alignment 4、row alignment 256を返します。padding・行の詰め替え・staging確保は行いません。SubmitはQueueSubmitし、BeginOnSubmittedWorkDoneのrequestを保持します。Status／WaitAsyncでProcessEventsを進め、そのrequestの完了を確認します。command bufferと完了requestは別にDisposeし、pending中の解放を拒否します。
 
 共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。commandとsubmissionもdeviceの子として数えます。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+
+## Pipeline
+
+graphics programはshaderの組・topology分類・compile optionを保持し、draw時に描画状態とpassの実attachment formatからnative pipelineを解決します。完全なnative PSOを生成するため、program内でvariantをcacheし、等価なkeyの再利用で生成を繰り返しません。keyにviewport／scissor／blend constant／stencil reference、texture instance、clear値は含めません。variantはprogram Disposeまで保持します。
+
+compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
+
+reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。初期のresource ABIは空で、descriptorやpush constantが必要なprogramはroot-data／binding契約への接続前に拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
+
+Ahjo.Wgpuのnative bindingでWGPURenderPipeline／WGPUComputePipelineを生成します。描画状態は完全なrender pipelineのkeyに入り、dynamic値はrender encoderへ直接設定します。write maskとsample maskはnative descriptorへ正確に渡すため、0をdefaultへ置き換えるwrapperは使いません。resource ABIが空なのでlayoutはWebGPUのauto layoutを使用します。DepthClipControl等の追加featureは有効化せず、必要なstateは拒否します。
+
+これらの完全なnative pipelineはcacheが必要な生成単位です。dynamic stateはcommandを記録するだけで、一時state objectを生成しません。そのため今回新たに比較対象となる軽量なstate objectはありません。partial programや独立した軽量objectを導入する際は、毎draw生成・状態変更時生成・cacheのCPU時間と保持memoryを同条件で比較し、結果をこのREADMEへ記録します。今回の実装で性能計測済みとは扱いません。
+
+共通契約は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)、共通画素検証は [PipelineExercise](../../../samples/Lumyte.Graphics.Shared/PipelineExercise.cs) を参照してください。

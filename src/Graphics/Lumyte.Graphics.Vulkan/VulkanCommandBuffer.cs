@@ -240,6 +240,10 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
 
     internal void Complete(bool success) => State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
 
+    internal void TrackProgram(Action validate) => _resources.Add(validate);
+
+    internal void ValidatePass(object pass) => ValidateEnd(pass);
+
     private void RequireRecording()
     {
         _owner.ValidateAlive();

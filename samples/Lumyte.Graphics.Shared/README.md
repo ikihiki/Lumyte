@@ -21,3 +21,9 @@ ArgumentTableExercise.Runは共通APIで種類別slot、buffer要素参照、世
 `CommandExercise.RunAsync(IGraphicDevice)` は共通APIだけでupload → buffer部分コピー → readback、mip／layerとrow paddingを指定したtexture往復・texture間コピー、render passのclear／storeを検証します。GPU完了後にmapし、コピーした全texelのbytesを照合します。padding部分の内容は検証対象にしません。compute passの開始・終了、pass内操作の拒否、二重submit・mapped bufferの拒否とキャンセル後の再待機も確認します。
 
 NativeのGPUテストとBrowserの既存Wasm検証が同じ処理を呼びます。backend固有deviceの生成はそれぞれのbootstrapで行います。
+
+## Pipeline検証
+
+`PipelineExercise.RunAsync(IGraphicDevice)` は同じgraphics programをRGBA／BGRAと複数描画状態で使い、readbackの全画素を検証します。blend、write mask 0、sample mask 0、setter失敗後の状態維持、元list変更後のsnapshot、未設定／終了後のdraw拒否とshader保持を確認します。compute programのdispatchとstage／device不一致の拒否も共通APIで確認します。
+
+fullscreen vertex・color fragment・empty computeのSlang sourceを全targetへoffline compileし、metadataと一つのbinaryとしてDLLに埋め込みます。生成WGSL／SPIR-Vはコミットしません。native GPUテストと既存Browser CIから同じ検証を呼びます。空のcompute shaderはdispatch・完了経路の検証であり、storage bufferへの書き込み検証はbinding接続時に追加します。

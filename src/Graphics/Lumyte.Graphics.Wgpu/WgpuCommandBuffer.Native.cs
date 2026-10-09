@@ -118,7 +118,7 @@ internal sealed unsafe partial class WgpuCommandBuffer
                 throw new InvalidOperationException("WebGPU render pass creation failed.");
             }
 
-            return new WgpuRenderEncoder(this, pass);
+            return new WgpuRenderEncoder(this, pass, attachments);
         }
     }
 

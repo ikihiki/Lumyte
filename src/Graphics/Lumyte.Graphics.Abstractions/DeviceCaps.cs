@@ -53,4 +53,16 @@ public sealed record DeviceCaps
 
     /// <summary>Gets the required native storage binding offset alignment in bytes.</summary>
     public uint StorageBufferOffsetAlignment { get; init; } = 1;
+
+    /// <summary>Gets the maximum dispatch group count per axis.</summary>
+    public uint MaxComputeWorkgroupsPerDimension { get; init; }
+
+    /// <summary>Gets the maximum workgroup size on X.</summary>
+    public uint MaxComputeWorkgroupSizeX { get; init; }
+
+    /// <summary>Gets the maximum workgroup size on Y.</summary>
+    public uint MaxComputeWorkgroupSizeY { get; init; }
+
+    /// <summary>Gets the maximum workgroup size on Z.</summary>
+    public uint MaxComputeWorkgroupSizeZ { get; init; }
 }

@@ -126,6 +126,16 @@ opaque binaryのartifactをそのまま `IGraphicDevice.CreateShader` に渡す�
 
 `CreateCommandBuffer(new())` はRecording状態のone-shot記録を返します。GPUのbuffer／textureコピー、明示的なbarrier、render／compute passを記録し、`Finish()` の後で `device.Queue.Submit([commands])` を呼びます。`IGraphicsSubmission.WaitAsync()` でその提出分の完了を待ちます。各操作はstagingの確保、CPUコピー、map／unmapやGPU待機を自動実行しません。
 
-textureは利用前に `TextureBarrierDesc` でstateを宣言します。pass内ではcopy・barrier・Finishを拒否します。render passはcolor attachmentのclear／load・store／discardを扱い、両encoderは `End()` で終了します。初期範囲にdraw／dispatchは含みません。
+textureは利用前に `TextureBarrierDesc` でstateを宣言します。pass内ではcopy・barrier・Finishを拒否します。render passはcolor attachmentのclear／load・store／discardを扱い、両encoderは `End()` で終了します。draw／dispatchとpipeline設定は次の契約を使用します。
 
 resourceはGPU完了まで利用者が生存させます。Submit時に生存とmappingを再検証し、Pending中のsubmissionとSubmitted状態のcommand bufferのDisposeを拒否します。待機のキャンセルでGPU実行は取り消しません。内部lockや並列呼び出しの保証は設けません。設計は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。
+
+## Pipelineと描画状態
+
+`CreateGraphicsPipeline(GraphicsPipelineDesc)` はshader moduleを保持するprogramを返します。`IRenderEncoder.SetPipeline(IGraphicsPipeline)` と `SetRenderState` は独立し、viewport・scissor・blend constant・stencil referenceも明示してから `Draw` を呼びます。利用側にattachment layoutやprepare objectを要求せず、passの実viewからformatを取得してnative variantを解決します。ColorTargetsはsnapshotにし、write mask／sample maskの0を補正しません。
+
+`CreateComputePipeline(ComputePipelineDesc)` はbinaryのentry・stage・workgroup sizeを使用します。compute encoderでSetPipeline後にDispatchを記録します。workgroup各軸・invocationの積とdispatch group数はcapsで検証し、数値を補正しません。
+
+初期の実行範囲は既存のsingle-sample color attachmentとresource bindingを必要としないshaderです。depth/stencil、MSAA、root data／Argument Tableの物理binding接続はそれぞれのresource・binding契約で追加します。対応するattachmentがないdepth test等と、未接続のresource ABIは明確に拒否します。program → shader → deviceの順で解放し、GPU完了までの寿命と同期は利用者が管理します。
+
+設計は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md) を参照してください。

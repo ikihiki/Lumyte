@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0008: PSOのシェーダープログラムと描画状態の分離
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-09
 
 ## 背景
@@ -29,13 +29,26 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 
 この境界は共通APIの責務であり、全deviceでnative stateをdynamicに設定できるという保証ではない。backendがstateをnative PSOへ固定する必要があれば、draw時にその組み合わせのnative PSOをcacheから取得し、cache miss時には生成またはlinkする。API上のprogram再利用と、driver内でshader再compileが起きないことを区別する。
 
+### 初期のresource境界
+
+現在のtexture／pass契約で利用できる単一sampleのcolor attachmentを初期の実行範囲とする。depth/stencil texture format・attachment、MSAA／resolveはresourceとpassの拡張で追加する。depth／stencil testやwriteを有効にした状態は対応するattachmentがないdrawで拒否する。AlphaToCoverageEnableも実attachmentのsample count条件に従って拒否する。
+
+初期のprogramはresource bindingやroot dataを必要としないshaderを受け付ける。binaryのreflectionにresource／push constantがあるprogramはNotSupportedExceptionとし、descriptorを暗黙に割り当てない。参照追跡とArgument Tableへの接続は、その契約とともに追加する。stage入出力のlocationと型をreflectionで検証し、vertex input layoutは設けない。computeのworkgroup各軸と積をdevice上限で検証する。
+
 ### 公開API
 
-比較元はorigin/main（6717920）。説明・既定値・失敗条件をコメントとして示す。[CommandBuffer](GRAPHICS-0007-command-buffers-and-submission.md)のpass開始・終了、barrier、submitと完了待機の契約を使用し、既存のIRenderEncoder／IComputeEncoderへpipelineの接続点を追加する。draw／dispatch命令とroot dataの設定は追加の契約で扱う。
+比較元はorigin/main（6717920）。説明・既定値・失敗条件をコメントとして示す。[CommandBuffer](GRAPHICS-0007-command-buffers-and-submission.md)のpass開始・終了、barrier、submitと完了待機の契約を使用し、既存のIRenderEncoder／IComputeEncoderへpipelineの接続点を追加する。direct draw／dispatchを本ADRで追加する。root data・resource binding、indexed／indirect命令は追加の契約で扱う。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
  {
+     public sealed record DeviceCaps
+     {
++        public uint MaxComputeWorkgroupsPerDimension { get; init; }
++        public uint MaxComputeWorkgroupSizeX { get; init; }
++        public uint MaxComputeWorkgroupSizeY { get; init; }
++        public uint MaxComputeWorkgroupSizeZ { get; init; }
+     }
      public interface IGraphicDevice
      {
 +        // shader stage、同一device、stage間linkage、resource ABIを検証する。
@@ -72,14 +85,6 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 +        ComputePipelineDesc Desc { get; }
 +    }
 +    public enum PipelineOptimizationMode { PreferReuse, FullSpecialization }
-     public enum TextureFormat
-     {
-+        // depth/stencil attachment用に追加。対応usage・sample countはdeviceで検証。
-+        Depth16Unorm,
-+        Depth24Stencil8,
-+        Depth32Float,
-+        Depth32FloatStencil8,
-     }
 +    public enum PrimitiveTopologyClass { Point, Line, Triangle }
 +    public enum PrimitiveTopology { PointList, LineList, LineStrip, TriangleList, TriangleStrip }
 +    public enum IndexFormat { Uint16, Uint32 }
@@ -147,7 +152,7 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 +        public bool DepthTestEnable { get; init; }
 +        public bool DepthWriteEnable { get; init; }
 +        // depth test無効ならeffective比較はAlways。depth writeは独立に扱う。
-+        public CompareFunction DepthCompare { get; init; } = CompareFunction.LessEqual;
++        public CompareFunction DepthCompare { get; init; } = CompareFunction.LessOrEqual;
 +        public bool StencilTestEnable { get; init; }
 +        public StencilFaceDesc Front { get; init; } = new();
 +        public StencilFaceDesc Back { get; init; } = new();
@@ -168,11 +173,15 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 +        void SetScissor(ScissorRect scissor);
 +        void SetBlendConstant(BlendConstant value);
 +        void SetStencilReference(uint reference);
++        // vertex pulling。count=0は状態検証後に命令を省く。加算はchecked。
++        void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
          void End();
      }
      public interface IComputeEncoder
      {
 +        void SetPipeline(IGraphicsComputePipeline pipeline);
++        // 正数かつdeviceの各軸共通実効上限以下。workgroup sizeはbinary内の情報を使用。
++        void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1);
          void End();
      }
  }
@@ -198,7 +207,7 @@ SetPipelineとSetRenderStateは独立したencoder状態を更新する。SetPip
 
 SetRenderStateのcollectionはcopyして不変のsnapshotを保持する。呼び出し後に利用者が元listを変更しても記録済みの状態に影響しない。複数回設定した場合は次のdrawに最後の設定が適用され、以前に記録したdrawには影響しない。drawはその時点のpipeline・状態・attachment metadataを消費する。
 
-viewport、scissor、blend constant、stencil referenceはencoder状態とし、native PSOのkeyには含めない。最初のdrawより前に設定する。viewportはfiniteな位置・正の幅と高さ、`0 <= MinDepth <= MaxDepth <= 1`、scissorはattachment範囲内の正の幅と高さ、blend constantはfiniteな値とする。暗黙のdefaultやclampは挿入しない。現在のportable契約ではfront／backのstencil referenceは共通の一値を使う。
+viewport、scissor、blend constant、stencil referenceはencoder状態とし、native PSOのkeyには含めない。最初のdrawより前に設定する。viewportはattachment内のfiniteな位置・正の幅と高さ、`0 <= MinDepth <= MaxDepth <= 1`、scissorはattachment範囲内の正の幅と高さ、blend constantはfiniteな値とする。暗黙のdefaultやclampは挿入しない。現在のportable契約ではfront／backのstencil referenceは共通の一値を使う。
 
 attachment情報を利用者が別のlayoutとして再指定するAPIは設けない。backendはpassが保持するtexture viewからformatとsample countを取得する。resolve targetを含むrender passの整合性はcommandの設計で扱う。drawに必要な情報は実resourceとshader binaryのmetadataを使う。
 
@@ -258,11 +267,11 @@ native partial program／pipeline library／完全PSOへの対応、必要なfea
 
 shader programを再利用し、利用者は描画時に状態を設定するだけで使える。attachment情報は実passから取得する。部分programを活用できるdeviceではshader compileの重複を減らせる可能性がある。完全なnative PSOが必要なdeviceではstate組み合わせごとのnative variantとmemory消費、初回drawでの生成費用が残るため、性能改善を共通APIだけで保証しない。
 
-depth/stencil用TextureFormatを追加するため、texture allocation・view・sampler comparisonとの対応をbackend実装時に整合させる。programの寿命管理とread-only snapshotの実装も必要になる。
+depth/stencil用TextureFormatの追加時に、texture allocation・view・sampler comparisonとの対応を整合させる。programの寿命管理とread-only snapshotの実装も必要になる。
 
 ## 検証方針
 
-共通APIのみを使うsample／testで、一つのprogramをSetPipelineし、blend・cull・depth stateを設定して異なるattachment format／sample countのpassでdrawし、正しい描画とprogram再利用を確認する。stage／device不一致、非対応state、shader metadata／linkage不整合、変更後の元list、解放順、strip index formatを検証する。
+共通APIのみを使うsample／testで、一つのprogramをSetPipelineし、blend・write mask・sample maskを設定してRGBA／BGRAのpassでdrawし、正しい画素とprogram再利用を確認する。未設定state、元listの変更、shader解放拒否、stage／device不一致、compute dispatchも確認する。depth/stencilとMSAAのresource拡張後には、それらのattachmentとsample countを変えた検証を追加する。stage／device不一致、非対応state、shader metadata／linkage不整合、変更後の元list、解放順、strip index formatを検証する。
 
 native shader compile回数、初回drawの生成／link時間、cache hit、native PSO数をbackendの計測で分けて確認する。異なるcolor write mask等を変えた場合にdriverが再compileしないかは実測し、APIの保証と混同しない。cache採用経路では同じkeyの再利用で生成を繰り返さないこと、cache missでは必要な生成／linkが行われることを検証する。非cache経路では想定した生成回数とnative objectの解放を検証する。いずれも失敗したdrawが記録されないことを確認し、既存CIでnativeとWasmのテストを実行する。
 
@@ -273,7 +282,7 @@ cacheの要否が自明でない経路は、以下の条件で毎回生成と比
 - native objectの保持・解放と描画結果の検証を同じ条件で含める。cache側だけ寿命を短縮したり、生成側だけGPU同期を追加したりしない。
 - CPU時間とmemoryの実測から採用方式を決め、対象GPU／driver、workload、比較条件と結果を各backend READMEへ記録する。計測前に特定の方式が高速と断定しない。
 
-本PRは設計文書の更新であり、この比較の実測結果はbackend実装時に記録する。
+完全なnative PSOを必要とする生成単位はcacheを実装する。dynamic stateの設定はnative objectを生成しない。軽量なstate object等を追加する際は、上記の比較結果を各backend READMEへ記録する。
 
 ## 参考資料
 
