@@ -134,6 +134,116 @@ now は入力の RecordedAt と同じ単調経過時間軸とし、逆行を拒�
 
 ActionProfile は Action・Binding・Context の不変設定、RebindOptions はデバイス選択・捕捉しきい値・期間・中止操作、RebindCandidate は捕捉したコントロール指定とする。RebindConflictPolicy は Reject / Allow / ReplaceConflicts とし、ReplaceConflicts は競合する既存バインディングを無効にする。ActionProfile にはアクションごとの値補正設定とコンテキストごとの認識設定も保持する。ActionEvent は成立に寄与したデバイス ID を Devices に保持し、認識結果へ引き継ぐ。型の完全な宣言は実装前に本 ADR を具体化する。
 
+### InputSystem との相互作用とサンプル
+
+以下は設計用サンプルであり、ActionProfile のビルダー、Actions の型、Platform Source は未実装である。InputSystem からの履歴取得は既存 API、ElapsedTime は [INPUT-0002 の追加提案](INPUT-0002-processing-and-recognition.md)を使用する。
+
+#### 構成と更新・ポーリング
+
+プロファイルは構成側で作る。例えば Game.Move にキーボードの方向キー・実コントローラーの Left スティック・タッチ由来の仮想 Left スティックを割り当て、合成後に長さ 1 へ制限する。Game.Confirm には Enter と South を割り当て、そのアクションに長押し認識を設定する。機器のデッドゾーンは Device 側、移動の正規化は Action 側で各一度だけ適用する。
+
+```csharp
+var actions = new ActionSystem(profile);
+var buffer = new ActionInputBuffer(
+    new InputBufferOptions(TimeSpan.FromMilliseconds(150), MaxEntries: 16));
+var cursors = new Dictionary<InputDeviceId, ulong>();
+actions.ActivateContext("Game");
+TimeSpan dispatchTime = TimeSpan.Zero;
+
+actions.Recognized += operation =>
+{
+    buffer.Add(operation, dispatchTime); // 作成時刻は operation.At、評価時刻は現在。
+};
+
+// ゲームループから、InputSystem の管理スレッドで呼ぶ。
+void Tick()
+{
+    input.Update(); // 全 Source・Device の取得、記録、通知、保持評価。
+    TimeSpan now = input.ElapsedTime;
+    dispatchTime = now;
+    actions.SetDevices(selectedDeviceIds); // 実 Device と仮想 Device を選択。
+    var batch = new List<InputRecord>();
+    var interrupted = new HashSet<InputDeviceId>();
+
+    // アクティブ Devices だけでは最終切断記録を取り逃すので
+    // 切断済みも含む DeviceInfos から読む。
+    foreach (InputDeviceInfo info in input.DeviceInfos)
+    {
+        ulong cursor = cursors.GetValueOrDefault(info.Id);
+        InputReadResult read = input.ReadRecords(info.Id, cursor);
+        if (read.HasGap)
+        {
+            actions.Reset(info.Id, now);
+            buffer.ClearDevice(info.Id);
+            // 不完全な履歴を渡さず、次の新規入力から再開する。
+            interrupted.Add(info.Id);
+        }
+        else
+        {
+            batch.AddRange(read.Records.ToArray());
+        }
+
+        cursors[info.Id] = read.NextSequence;
+    }
+
+    // デバイス単位の読み取りをSystem全体の順序へ戻す。
+    InputRecord[] ordered = batch.OrderBy(record => record.Sequence).ToArray();
+    foreach (InputRecord record in ordered)
+    {
+        if (record.Data is DeviceDisconnectedData or FocusData { IsFocused: false }
+            or TouchData { Phase: TouchPhase.Canceled }
+            or PenData { Phase: PenPhase.Canceled })
+        {
+            interrupted.Add(record.DeviceId);
+        }
+    }
+
+    actions.Advance(ordered, now); // 空バッチでも長押し・期限を進める。
+    // 同じバッチの中断より前に成立した結果も、通知後に除去する。
+    foreach (InputDeviceId device in interrupted)
+    {
+        buffer.ClearDevice(device);
+    }
+
+    buffer.Prune(now);
+    if (canJump && buffer.TryConsume("Jump.Press", now, out _))
+    {
+        Jump();
+    }
+}
+```
+
+Advance は仮想 Device を含む選択済みデバイスだけを評価する。新規デバイスと選択変更は更新境界で適用し、押下中の入力から勝手に Started を作らない。途中のフォーカス・切断等は記録順に認識器へ伝え、候補を中断する。上記は安全側の例として、中断があるデバイスの先行入力をそのバッチ全体について破棄する。同一バッチの中断後に新しく成立した入力まで保持する実装では、キャンセル境界の通知を認識結果と同じ時系列で外部バッファへ渡す API を具体化する。
+
+複数の利用者はそれぞれ cursors・ActionSystem・buffer を持つ。ReadRecords は履歴を消費しない。InputSystem の保持上限が短すぎれば HasGap となるため、利用者の最大処理間隔に合わせて SetRetentionPolicy を設定する。手動削除する場合は、全利用者の読了カーソルの最小値まで RemoveRecordsThrough を呼ぶ。
+
+#### コンテキスト切替とリバインド
+
+```csharp
+// 更新境界でメニューに切り替える。変更は次の Advance に反映する。
+actions.DeactivateContext("Game");
+buffer.ClearContext("Game");
+actions.ActivateContext("Menu");
+
+// 以下の options は対象機器・期限・中止操作を含む構成側の設定。
+RebindSession session = actions.BeginRebind("Game.Jump.Primary", options);
+// Tick は継続する。ActionSystem が ReadRecords の入力から候補を捕捉する。
+if (session.Candidate is not null && session.ConflictingBindingIds.Count == 0)
+{
+    session.Confirm(RebindConflictPolicy.Reject);
+    // 設定変更対象の認識・先行入力を旧設定のまま残さない。
+    buffer.ClearContext("Game");
+    ActionProfile updated = actions.ExportProfile();
+    SaveProfile(updated); // ファイルI/Oは構成側。InputSystemは書き換えない。
+}
+```
+
+コンテキスト変更・リバインド確定では、ActionSystem が影響するアクションと認識をキャンセルする。外部 ActionInputBuffer は利用者が対応するコンテキストをクリアする。Recognized 通知中にプロファイルを変更する場合は次回境界へ保留し、InputSystem.Update へ再入しない。
+
+#### 終了処理
+
+ActionSystem は InputSystem.Recorded を直接購読する必要はなく、上記サンプルはポーリングだけで駆動する。停止時はゲームループを止めて、コンテキストと外部バッファを解除する。その後 InputSystem.Dispose が Source.Shutdown・Device の最終取得と解放を実行し、DI スコープが Source を破棄する。最終記録をアクション層まで配信する必要がある場合は、構成側が Source の切断を取り込む最後の Tick を実行してからループを停止する。
+
 ### エラーとライフサイクル
 
 管理スレッドで更新し、並行・再入 Advance は禁止する。不正な設定、未登録 ID、非有限値、逆行時刻・Sequence は拒否する。HasGap を検出した利用者は Reset と関連入力バッファのクリアを行い、既存押下から新しい操作を生成しない。

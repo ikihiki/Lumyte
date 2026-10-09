@@ -92,6 +92,76 @@
 
 now はコーディネーターが共有する単調経過時間とし、逆行を拒否する。空バッチでも時間依存加工を進められる。InputDeviceId が必要な派生関係は元 Device の登録確定後に接続する。元データ分岐、コーディネーター、仮想 Source / Device の完全な API と時刻の受け渡しは実装前に具体化する。
 
+### InputSystem との相互作用とサンプル
+
+以下は構成と呼び出し順を示す設計用サンプルである。Processing、Platform とコーディネーターの具体クラスは未実装であり、コンパイル可能なサンプルプロジェクトではない。記載する InputSystem / Registry の既存 API と、追加提案を区別する。
+
+#### 共通時間軸のための基盤 API 追加案
+
+補正・仮想生成・アクション認識は InputSystem.RecordedAt と同じ時間軸を使う。現在の InputSystem は開始時刻を公開していないため、次の読み取り専用 API を追加提案する。同じ TimeProvider を渡すだけでは開始時刻が一致しないので、各層で独立した Stopwatch を開始しない。
+
+```diff
++// InputSystem 内部の開始timestampから、注入済み時計で計算する。
++public TimeSpan InputSystem.ElapsedTime { get; }
+```
+
+#### Device 入力を補正して登録する
+
+Source は接続を検出したとき、元 Device をラップして Registry に登録する。登録失敗時のラッパー破棄は Source、登録成功後は InputSystem の責務となる。
+
+```csharp
+// IInputSource.Initialize / Update の中で実行するコード。
+IInputDevice raw = platform.OpenController(connection);
+var corrected = new CorrectedInputDevice(
+    raw,
+    new IDeviceDataProcessor[]
+    {
+        new StickCalibration(centerOffset), // 機器の中心ずれ
+        new RadialDeadZone(0.15f),
+    },
+    getTime); // () => input.ElapsedTime。DrainEvents 時に評価する。
+
+InputDeviceId id;
+try
+{
+    id = registry.RegisterDevice(corrected);
+}
+catch
+{
+    corrected.Dispose(); // 未登録の raw も一度だけ破棄する。
+    throw;
+}
+connections.Add(connection, id);
+
+// 切断を検出した Source.Update 内で要求する。
+registry.UnregisterDevice(connections[disconnectedConnection]);
+connections.Remove(disconnectedConnection);
+```
+
+InputSystem.Update は Source.Update を呼び、登録済み corrected.DrainEvents を呼ぶ。ラッパーは raw の入力を一度だけ取得・補正する。InputSystem は補正済み入力に ID・Sequence・RecordedAt を付け、記録・現在状態・Recorded 通知へ反映する。切断要求では最終取り込みと中立化の後に corrected を破棄する。アクション側は通常の ReadRecords を使えばよく、補正処理を再実行しない。
+
+#### タッチから仮想コントローラーを生成する
+
+次の構成コードの型は、取得コーディネーターの責務を説明するための仮の名前であり、確定した公開 API ではない。
+
+```csharp
+// 診断・仮想生成に分岐するが、OS 入力の取得は一度だけ。
+var acquisition = new SharedTouchAcquisition(platform, getTime);
+var touchSource = new BufferedTouchSource(acquisition);
+var virtualSource = new VirtualControllerSource(
+    acquisition,
+    new TouchStickGenerator(radius: 80f));
+
+// touchSource.Update が接続を更新し、virtualSource.Update が
+// 同じ取得バッチから生成する。各 Device は準備済みキューだけを返す。
+input = new InputSystem(new IInputSource[] { touchSource, virtualSource }, clock);
+input.Update();
+```
+
+touchSource が Touch Device を、virtualSource が Logical な Controller Device をそれぞれ Registry へ登録する。仮想 Source は元 Touch の登録済み ID を参照できる構成窓口を持つ。仮想 Device は ControllerStickData を返し、InputSystem は実デバイスと同じ経路で履歴・状態を生成する。入力途中のタッチキャンセルも同じバッチで仮想スティックのゼロ値に変換し、一更新遅れにしない。
+
+共有取得の寿命は構成側が両 Source より長く保ち、Device の分岐を一つ閉じても残りを破棄しない。終了順は InputSystem → Source → acquisition とする。getTime は InputSystem の構築後に参照可能にし、Initialize では取得・時刻評価を行わず、Update から評価する。
+
 ### エラーとライフサイクル
 
 管理スレッドで処理し、スナップショットだけを他スレッドへ渡す。不正な設定・非有限値・逆行時刻は拒否する。過去記録から再処理する利用者は Sequence と HasGap を検証し、欠落時に加工・ジェスチャー状態をリセットする。現在状態から未観測のジェスチャーを推測しない。
