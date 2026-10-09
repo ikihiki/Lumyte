@@ -83,7 +83,7 @@ builder.Services.UseMyModule(); // モジュール側で設定を登録する AP
 | `settings.write.wait.duration` | 書き込み権の待ち時間（ms） |
 | `settings.writes.active` | 保存・リセットの処理中件数（待機中を含む） |
 
-操作は `document-load`、`load`、`save`、`reset`、`document-reset`、`store` に分類します。`store` はシリアライズとストアへの書き込み、`save` はコピー・検証・待機・書き込み・確定を含みます。操作・セクション・結果をタグに含めます。Revision は Span のみに付与し、設定値、JSON、保存先、例外メッセージやスタックは記録しません。値の参照だけではテレメトリーを増やしません。
+操作は `document-load`、`load`、`save`、`reset`、`document-reset`、`store` に分類します。`store` はシリアライズとストアへの書き込み、`save` はコピー・検証・待機・書き込み・確定を含みます。操作・セクション・結果をタグに含めます。Revision は Span のみに付与し、設定値、JSON、保存先を専用フィールドとして記録しません。例外は標準 ILogger に元の Exception を渡し、Span の `exception` イベントと `exception.type`／`exception.message`／`exception.stacktrace` タグへ記録します。原文には保存先や検証内容を含む場合があります。診断操作の応答には含めず、認証済みのテレメトリーで確認できます。診断転送では文字列を最大 4096 文字に制限します。値の参照だけではテレメトリーを増やしません。
 
 構成登録時の物理ロードは DI の構築より先に実行されるため、保持した結果と実測時間を SettingsDocument の初回解決時に一度記録します。このロードには過去の Span を作りません。各モジュールの初期化と保存・リセット・書き込みには `Settings.load` / `Settings.save` などの Span を作成します。テレメトリーの購読は設定サービスを解決する前に開始してください。
 

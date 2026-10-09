@@ -29,9 +29,14 @@ internal sealed class SettingsTelemetryCollector : IDisposable
 
     public Operation Begin(string operation, string section) => new(this, operation, section);
 
-    public void DocumentLoaded(SettingsLoadStatus status, double milliseconds)
+    public void DocumentLoaded(SettingsLoadStatus status, double milliseconds, Exception? exception)
     {
         using Operation operation = Begin("document-load", "$document");
+        if (exception != null)
+        {
+            operation.RecordException(exception);
+        }
+
         operation.Complete(status.ToString());
         operation.DurationOverride = milliseconds;
     }
@@ -49,6 +54,7 @@ internal sealed class SettingsTelemetryCollector : IDisposable
         private readonly bool _write;
         private readonly Activity? _activity;
         private readonly IDisposable? _scope;
+        private Exception? _exception;
         private string _status = "Failed";
         private long? _revision;
         private int _disposed;
@@ -98,6 +104,29 @@ internal sealed class SettingsTelemetryCollector : IDisposable
         {
             _status = status;
             _revision = revision;
+        }
+
+        public void RecordException(Exception exception)
+        {
+            _exception = exception;
+            try
+            {
+                var tags = new ActivityTagsCollection
+                {
+                    { "exception.type", exception.GetType().FullName },
+                    { "exception.message", exception.Message },
+                    { "exception.stacktrace", exception.ToString() },
+                };
+                _activity?.AddEvent(new ActivityEvent("exception", tags: tags));
+                foreach (KeyValuePair<string, object?> tag in tags)
+                {
+                    _activity?.SetTag(tag.Key, tag.Value);
+                }
+            }
+            catch (Exception)
+            {
+                // Exception telemetry must not replace the original failure.
+            }
         }
 
         public async Task WaitAsync(SemaphoreSlim semaphore, CancellationToken cancellationToken)
@@ -171,7 +200,7 @@ internal sealed class SettingsTelemetryCollector : IDisposable
                 if (IsFailure(_status))
                 {
                     _activity?.SetStatus(ActivityStatusCode.Error, _status);
-                    _failed(_owner._logger, _name, _status, null);
+                    _failed(_owner._logger, _name, _status, _exception);
                 }
                 else if (_status is "Conflict" or "RecoveryRequired")
                 {

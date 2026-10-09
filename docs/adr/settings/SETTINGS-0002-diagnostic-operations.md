@@ -87,6 +87,6 @@ Settings 本体で Meter／ActivitySource／ILogger を生成し、診断経由�
 
 処理区分は document-load、load、save、reset、document-reset、store。Snapshot 参照や診断の結果ポーリングは計測しない。初回 document-load の媒体読み込みは構成／DI の起動前に行うため、所要時間を source に保持し、DI 解決時に結果のメトリクスとログを一度発行する。実際の初期化・移行・検証の load、非同期保存・リセット・store は実行中の Span を生成する。
 
-Span のタグと構造化ログには operation、section、status と確定 Revision を記録できる。メトリクスへ Revision、Request ID、job-id を付けない。値、JSON、パス、検証メッセージ、例外メッセージやスタックは出力しない。保存失敗・無効なデータなどは Error Span、Conflict／RecoveryRequired は警告ログ、Cancelled は通常の取消結果とする。計測先の例外で保存の成功・失敗を変えない。
+Span のタグと構造化ログには operation、section、status と確定 Revision を記録できる。メトリクスへ Revision、Request ID、job-id を付けない。設定値や JSON、保存パスを専用フィールドで出力しない。発生した例外は ILogger の Exception 引数で記録し、Span に標準の exception イベントと exception.type／exception.message／exception.stacktrace タグを付与する。例外の原文にはパスや検証内容を含む場合があるため、診断操作の応答とは分け、認証済みのテレメトリーで原因を確認する。診断転送の文字列は既存の 4096 文字上限を適用し、標準 ILogger には元の例外を渡す。結果へ変換する例外、初回物理ロードで保持した例外、予期せず伝播する例外を捕捉し、再送出は throw で元の例外とスタックを保持する。保存失敗・無効なデータなどは Error Span、Conflict／RecoveryRequired は警告ログ、Cancelled は通常の取消結果とする。計測先の例外で保存の成功・失敗を変えない。
 
 SettingsTelemetry.BeginScope を利用した場合だけ `lumyte.instance.id` を付ける。診断アダプターは登録時の解決と read／save をこのスコープに入れ、非同期完了まで維持する。ゲームの診断収集で Meter／ActivitySource／ログカテゴリを明示許可する。ゲーム相関がない起動時の記録も、標準の .NET／OpenTelemetry の購読では観測できる。診断だけの busy や開始前の Revision 拒否は永続化の試行数に含めない。

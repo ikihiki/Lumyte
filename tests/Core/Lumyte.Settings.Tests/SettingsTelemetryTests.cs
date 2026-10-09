@@ -14,7 +14,7 @@ public sealed class SettingsTelemetryTests
     /// <summary>Measures real outcomes, durations and balanced write ownership without publishing settings values.</summary>
     /// <returns>The asynchronous test.</returns>
     [Fact]
-    public async Task RecordsOutcomesAndCorrelatedLogsWithoutSensitiveDataAsync()
+    public async Task RecordsOutcomesAndCorrelatedExceptionsAsync()
     {
         var instance = Guid.NewGuid();
         using var capture = new Capture(instance);
@@ -59,8 +59,11 @@ public sealed class SettingsTelemetryTests
         Assert.Contains(capture.Logs, log => log.TraceId == save.TraceId.ToString() && log.Level == LogLevel.Error);
         Assert.Contains(capture.Logs, log => log.Level == LogLevel.Warning && log.Message.Contains("Conflict", StringComparison.Ordinal));
         Assert.DoesNotContain(capture.Spans, span => span.OperationName == "Settings.document-load");
-        Assert.All(capture.Logs, log => Assert.Null(log.Exception));
-        Assert.DoesNotContain(capture.Logs, log => log.Message.Contains("secret-storage-path", StringComparison.Ordinal));
+        Assert.Contains(capture.Logs, log => log.TraceId == save.TraceId.ToString() && log.Exception is IOException);
+        Assert.Equal(typeof(IOException).FullName, save.GetTagItem("exception.type"));
+        Assert.Equal("secret-storage-path", save.GetTagItem("exception.message"));
+        Assert.Contains(nameof(Store.WriteAtomicallyAsync), save.GetTagItem("exception.stacktrace")?.ToString(), StringComparison.Ordinal);
+        Assert.Contains(save.Events, item => item.Name == "exception");
         Assert.All(capture.Measurements, item => Assert.False(item.Tags.ContainsKey("settings.revision")));
     }
 
@@ -137,8 +140,40 @@ public sealed class SettingsTelemetryTests
         Assert.Equal(SettingsSaveStatus.RecoveryRequired, (await settings.SaveAsync(settings.BeginEdit())).Status);
         Assert.Contains(capture.Measurements, item => item.Name == "settings.operations" && item.Tags["settings.operation"]?.ToString() == "document-load" && item.Tags["settings.status"]?.ToString() == status.ToString());
         Assert.Contains(capture.Spans, span => span.OperationName == "Settings.load" && span.Status == ActivityStatusCode.Error);
+        if (status != SettingsLoadStatus.UnsupportedVersion)
+        {
+            Assert.Contains(capture.Logs, log => log.Exception != null && log.Message.Contains("document-load", StringComparison.Ordinal));
+        }
+
         Assert.Equal(SettingsSaveStatus.Saved, (await provider.GetRequiredService<ISettingsDocument>().ResetAsync()).Status);
         Assert.Contains(capture.Measurements, item => item.Name == "settings.operations" && item.Tags["settings.operation"]?.ToString() == "document-reset" && item.Tags["settings.status"]?.ToString() == "Saved");
+    }
+
+    /// <summary>Unexpected errors preserve the original exception while producing failure telemetry.</summary>
+    /// <returns>The asynchronous test.</returns>
+    [Fact]
+    public async Task RecordsUnexpectedExceptionsAndPreservesPropagationAsync()
+    {
+        var instance = Guid.NewGuid();
+        using var capture = new Capture(instance);
+        using IDisposable correlation = SettingsTelemetry.BeginScope(instance);
+        var failure = new InvalidOperationException("Unexpected storage failure", new ArgumentException("Inner failure"));
+        var store = new Store { Unexpected = failure };
+        using ServiceProvider provider = await CreateAsync(store, capture);
+        IEditableOptions<SampleSettings> settings = provider.GetRequiredService<IEditableOptions<SampleSettings>>();
+        Assert.Same(failure, await Assert.ThrowsAsync<InvalidOperationException>(() => settings.SaveAsync(settings.BeginEdit())));
+        Assert.Equal(0, settings.Revision);
+        Assert.Null(store.Data);
+        Activity span = Assert.Single(capture.Spans, item => item.OperationName == "Settings.save");
+        Assert.Equal(ActivityStatusCode.Error, span.Status);
+        Assert.Equal("Failed", span.GetTagItem("settings.status"));
+        Assert.Contains("Inner failure", span.GetTagItem("exception.stacktrace")?.ToString(), StringComparison.Ordinal);
+        Assert.Contains(capture.Logs, log => ReferenceEquals(log.Exception, failure) && log.TraceId == span.TraceId.ToString());
+        Assert.Same(failure, await Assert.ThrowsAsync<InvalidOperationException>(() => settings.ResetAsync(settings.Revision)));
+        Assert.Same(failure, await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetRequiredService<ISettingsDocument>().ResetAsync()));
+        Assert.Contains(capture.Spans, item => item.OperationName == "Settings.reset" && item.Status == ActivityStatusCode.Error && item.GetTagItem("exception.type")?.ToString() == typeof(InvalidOperationException).FullName);
+        Assert.Contains(capture.Spans, item => item.OperationName == "Settings.document-reset" && item.Status == ActivityStatusCode.Error && item.GetTagItem("exception.type")?.ToString() == typeof(InvalidOperationException).FullName);
+        Assert.Equal(0, capture.Measurements.Where(item => item.Name == "settings.writes.active").Sum(item => item.Value));
     }
 
     private static async Task<ServiceProvider> CreateAsync(Store store, Capture capture)
@@ -160,6 +195,8 @@ public sealed class SettingsTelemetryTests
     {
         public byte[]? Data { get; set; }
 
+        public Exception? Unexpected { get; set; }
+
         public bool FailReads { get; set; }
 
         public bool Fail { get; set; }
@@ -180,6 +217,11 @@ public sealed class SettingsTelemetryTests
 
         public async ValueTask WriteAtomicallyAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
         {
+            if (Unexpected != null)
+            {
+                throw Unexpected;
+            }
+
             if (Fail)
             {
                 throw new IOException("secret-storage-path");

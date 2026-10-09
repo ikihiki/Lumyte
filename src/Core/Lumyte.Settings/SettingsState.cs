@@ -118,12 +118,25 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
     private Initial Initialize()
     {
         using SettingsTelemetryCollector.Operation operation = _telemetry.Begin("load", SectionId);
-        Initial initial = InitializeValue();
-        operation.Complete(initial.Result.Status.ToString(), 0);
-        return initial;
+        try
+        {
+            Initial initial = InitializeValue(operation);
+            if (_document.LoadException is Exception loadException)
+            {
+                operation.RecordException(loadException);
+            }
+
+            operation.Complete(initial.Result.Status.ToString(), 0);
+            return initial;
+        }
+        catch (Exception error)
+        {
+            operation.RecordException(error);
+            throw;
+        }
     }
 
-    private Initial InitializeValue()
+    private Initial InitializeValue(SettingsTelemetryCollector.Operation operation)
     {
         if (_definition.SchemaVersion < 1)
         {
@@ -167,12 +180,14 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
                 }
                 catch (NotSupportedException error)
                 {
+                    operation.RecordException(error);
                     value = validatedDefaults;
                     result = new(SettingsLoadStatus.UnsupportedVersion, [error.Message]);
                     _protected = true;
                 }
                 catch (Exception error) when (error is JsonException or ArgumentException)
                 {
+                    operation.RecordException(error);
                     value = validatedDefaults;
                     result = new(SettingsLoadStatus.InvalidData, [error.Message]);
                     _protected = true;
@@ -242,6 +257,11 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
             operation.Complete("Cancelled");
             throw;
         }
+        catch (Exception error)
+        {
+            operation.RecordException(error);
+            throw;
+        }
     }
 
     private async Task<SettingsSaveResult<T>> SaveCandidateAsync(T candidate, long expectedRevision, bool recovering, SettingsTelemetryCollector.Operation operation, CancellationToken cancellationToken)
@@ -260,6 +280,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         }
         catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
         {
+            operation.RecordException(error);
             return new(SettingsSaveStatus.ValidationFailed, Current, [error.Message]);
         }
 
@@ -288,10 +309,12 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
             }
             catch (IOException error)
             {
+                operation.RecordException(error);
                 return new(SettingsSaveStatus.StorageFailure, Current, [error.Message]);
             }
             catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
             {
+                operation.RecordException(error);
                 return new(SettingsSaveStatus.ValidationFailed, Current, [error.Message]);
             }
 

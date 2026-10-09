@@ -164,6 +164,7 @@ public sealed class DiagnosticTelemetry : IDisposable
         {
             fields["exception.type"] = DiagnosticValue.From(exception.GetType().FullName ?? "Exception");
             fields["exception.message"] = DiagnosticValue.From(Trim(exception.Message));
+            fields["exception.stacktrace"] = DiagnosticValue.From(Trim(exception.ToString()));
         }
 
         Activity? activity = Activity.Current;

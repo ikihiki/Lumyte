@@ -21,7 +21,7 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
 
         _source = source;
         _telemetry = telemetry;
-        _telemetry.DocumentLoaded(source.Result.Status, source.LoadDurationMilliseconds);
+        _telemetry.DocumentLoaded(source.Result.Status, source.LoadDurationMilliseconds, source.LoadException);
         _services = services;
         _registrations = registrations.ToArray();
         _document = source.CopyDocument();
@@ -33,6 +33,8 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
     internal SemaphoreSlim Writes { get; } = new(1, 1);
 
     internal SettingsLoadResult LoadResult => _source.Result;
+
+    internal Exception? LoadException => _source.LoadException;
 
     internal bool IsProtected => _protected;
 
@@ -56,6 +58,11 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
         catch (OperationCanceledException)
         {
             operation.Complete("Cancelled");
+            throw;
+        }
+        catch (Exception error)
+        {
+            operation.RecordException(error);
             throw;
         }
     }
@@ -86,14 +93,21 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
             operation.Complete("Cancelled");
             throw;
         }
-        catch (IOException)
+        catch (IOException error)
         {
+            operation.RecordException(error);
             operation.Complete("StorageFailure");
             throw;
         }
         catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
         {
+            operation.RecordException(error);
             operation.Complete("ValidationFailed");
+            throw;
+        }
+        catch (Exception error)
+        {
+            operation.RecordException(error);
             throw;
         }
     }
@@ -116,6 +130,7 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
         }
         catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
         {
+            operation.RecordException(error);
             return new(SettingsSaveStatus.ValidationFailed, [error.Message]);
         }
 
@@ -135,10 +150,12 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
             }
             catch (IOException error)
             {
+                operation.RecordException(error);
                 return new(SettingsSaveStatus.StorageFailure, [error.Message]);
             }
             catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
             {
+                operation.RecordException(error);
                 return new(SettingsSaveStatus.ValidationFailed, [error.Message]);
             }
 

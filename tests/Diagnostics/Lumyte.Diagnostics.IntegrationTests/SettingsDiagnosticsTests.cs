@@ -253,6 +253,36 @@ public sealed class SettingsDiagnosticsTests
         Assert.Contains(events, item => item.Name == "settings.operations" && item.Fields.GetValueOrDefault("settings.operation").String == "document-load");
         Assert.All(events.Where(item => item.Fields.ContainsKey("settings.operation")), item => Assert.Equal(span.Fields["lumyte.instance.id"].String, item.Fields["lumyte.instance.id"].String));
         Assert.DoesNotContain(events, item => item.Fields.Values.Any(value => value.String?.Contains("not-for-diagnostics", StringComparison.Ordinal) == true));
+        store.Fail = true;
+        DiagnosticOperationResult failedReceipt = await RemoteInvokeAsync(client, session, "save", Edit(), after.Revision);
+        string failedId = failedReceipt.Values!["job-id"].String!;
+        do
+        {
+            result = await RemoteInvokeAsync(client, session, "save-result", new() { ["job-id"] = DiagnosticValue.From(failedId) });
+            if (result.Values!["write-status"].String == "Pending")
+            {
+                await Task.Delay(10, timeout.Token);
+            }
+        }
+        while (result.Values!["write-status"].String == "Pending");
+        Assert.Equal("StorageFailure", result.Values["write-status"].String);
+        do
+        {
+            using HttpResponseMessage response = await client.GetAsync($"diagnostics/v1/sessions/{session}/telemetry", timeout.Token);
+            response.EnsureSuccessStatusCode();
+            events = JsonSerializer.Deserialize(await response.Content.ReadAsByteArrayAsync(timeout.Token), DiagnosticJson.Context.DiagnosticEventArray)!;
+            if (!events.Any(item => item.Name == "Settings.save" && item.Fields.ContainsKey("exception.type")))
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+        while (!events.Any(item => item.Name == "Settings.save" && item.Fields.ContainsKey("exception.type")));
+        DiagnosticEvent failure = Assert.Single(events, item => item.Name == "Settings.save" && item.Fields.ContainsKey("exception.type"));
+        Assert.Equal("Error", failure.Value.String);
+        Assert.Equal(typeof(IOException).FullName, failure.Fields["exception.type"].String);
+        Assert.Equal("Secret storage path", failure.Fields["exception.message"].String);
+        Assert.Contains(nameof(Store.WriteAtomicallyAsync), failure.Fields["exception.stacktrace"].String, StringComparison.Ordinal);
+        Assert.Contains(events, item => item.Kind == "log" && item.TraceId == failure.TraceId && item.Fields.GetValueOrDefault("exception.message").String == "Secret storage path" && item.Fields.ContainsKey("exception.stacktrace"));
     }
 
     private static async Task<ServiceProvider> CreateAsync(Store store)

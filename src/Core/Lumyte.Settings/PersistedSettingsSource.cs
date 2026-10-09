@@ -20,6 +20,8 @@ public abstract class PersistedSettingsSource : IConfigurationSource
         Store = store;
     }
 
+    internal Exception? LoadException { get; private set; }
+
     internal double LoadDurationMilliseconds { get; private set; }
 
     internal ISettingsStore Store { get; }
@@ -157,12 +159,14 @@ public abstract class PersistedSettingsSource : IConfigurationSource
         }
         catch (JsonException error)
         {
+            LoadException = error;
             _result = new(SettingsLoadStatus.InvalidData, [error.Message]);
         }
     }
 
     private void AcceptFailure(IOException error)
     {
+        LoadException = error;
         _loaded = true;
         _result = new(SettingsLoadStatus.StorageFailure, [error.Message]);
     }
