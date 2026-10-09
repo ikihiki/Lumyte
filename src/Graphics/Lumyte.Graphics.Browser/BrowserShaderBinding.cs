@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices.JavaScript;
+using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 

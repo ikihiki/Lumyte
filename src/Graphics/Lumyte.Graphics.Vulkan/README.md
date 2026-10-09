@@ -167,3 +167,5 @@ Vulkan 1.2のBufferDeviceAddress、RuntimeDescriptorArray、DescriptorBindingPar
 textureとsamplerは独立したnative descriptor arrayへ登録します。必要な集合のarray数とroot uniformを含むlayoutに対応してnative PSOをcacheします。shader dataの参照先backingをすべて確保してaddressを確定してからpackするため、循環したIGpuRefも扱えます。commandは固定backingとdescriptor poolを保持し、submitで登録identityを再検証します。
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
+
+共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。

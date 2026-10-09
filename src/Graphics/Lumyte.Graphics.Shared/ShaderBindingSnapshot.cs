@@ -1,8 +1,9 @@
 using Lumyte.Graphics.Abstractions;
 
-namespace Lumyte.Graphics;
+namespace Lumyte.Graphics.Shared;
 
-internal sealed class ShaderBindingSnapshot
+/// <summary>Captures reachable CPU shader values and resource registrations.</summary>
+public sealed class ShaderBindingSnapshot
 {
     private readonly HashSet<IShaderReference> _references = [];
     private readonly Dictionary<(IShaderDataSource Buffer, ulong Element), ShaderValueSnapshot> _elements = [];
@@ -18,15 +19,24 @@ internal sealed class ShaderBindingSnapshot
         }
     }
 
-    internal ShaderValueSnapshot Root { get; }
+    /// <summary>Gets the immutable root values.</summary>
+    public ShaderValueSnapshot Root { get; }
 
-    internal IReadOnlyCollection<IShaderReference> References => _references;
+    /// <summary>Gets the reachable resource references.</summary>
+    public IReadOnlyCollection<IShaderReference> References => _references;
 
-    internal IReadOnlyDictionary<(IShaderDataSource Buffer, ulong Element), ShaderValueSnapshot> Elements => _elements;
+    /// <summary>Gets the captured shader data elements.</summary>
+    public IReadOnlyDictionary<(IShaderDataSource Buffer, ulong Element), ShaderValueSnapshot> Elements => _elements;
 
-    internal static ShaderBindingSnapshot Capture(object table, ShaderValueSnapshot root) => new(table, root);
+    /// <summary>Captures a root value and its transitive element dependencies.</summary>
+    /// <param name="table">The table input.</param>
+    /// <param name="root">The root input.</param>
+    /// <returns>The processed result.</returns>
+    public static ShaderBindingSnapshot Capture(object table, ShaderValueSnapshot root) => new(table, root);
 
-    internal void ValidateLayouts(ShaderTargetData target)
+    /// <summary>Validates captured element schemas against the consuming shader.</summary>
+    /// <param name="target">The target input.</param>
+    public void ValidateLayouts(ShaderTargetData target)
     {
         foreach (IShaderDataSource source in _elements.Keys.Select(k => k.Buffer).Distinct())
         {
@@ -37,7 +47,8 @@ internal sealed class ShaderBindingSnapshot
         }
     }
 
-    internal void Validate()
+    /// <summary>Validates the captured registration and resource lifetimes.</summary>
+    public void Validate()
     {
         foreach (IShaderReference reference in _references)
         {

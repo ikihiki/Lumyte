@@ -3,6 +3,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <AssemblyName>Lumyte.Graphics.Samples.Shared</AssemblyName>
+    <PackageId>Lumyte.Graphics.Samples.Shared</PackageId>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />

@@ -31,7 +31,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
 
     public ulong ShaderElementStrideInBytes => (ulong)Layout.Size;
 
-    public ShaderDataLayout Layout { get; }
+    public IShaderDataLayout Layout { get; }
 
     internal WgpuDevice Owner { get; }
 

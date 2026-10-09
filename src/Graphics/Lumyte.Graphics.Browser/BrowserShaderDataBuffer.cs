@@ -31,7 +31,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
 
     public ulong ShaderElementStrideInBytes => (ulong)Layout.Size;
 
-    public ShaderDataLayout Layout { get; }
+    public IShaderDataLayout Layout { get; }
 
     internal BrowserDevice Owner { get; }
 

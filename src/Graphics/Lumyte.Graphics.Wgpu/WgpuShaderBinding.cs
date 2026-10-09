@@ -1,4 +1,5 @@
 using Ahjo.Wgpu.Native;
+using Lumyte.Graphics.Abstractions;
 using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;

@@ -1,11 +1,19 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Lumyte.Graphics;
+namespace Lumyte.Graphics.Shared;
 
-internal static class WgslBindingSpecializer
+/// <summary>Expands the compiled WGSL helper ABI to the requested resource counts.</summary>
+public static class WgslBindingSpecializer
 {
-    internal static string Specialize(string source, int textureCount, int samplerCount, int bufferCount, int writableCount)
+    /// <summary>Rewrites WGSL resource declarations and helper dispatch functions.</summary>
+    /// <param name="source">The source input.</param>
+    /// <param name="textureCount">The textureCount input.</param>
+    /// <param name="samplerCount">The samplerCount input.</param>
+    /// <param name="bufferCount">The bufferCount input.</param>
+    /// <param name="writableCount">The writableCount input.</param>
+    /// <returns>The processed result.</returns>
+    public static string Specialize(string source, int textureCount, int samplerCount, int bufferCount, int writableCount)
     {
         source = Expand(source, "lumyteTexture0", "texture_2d<f32>", string.Empty, textureCount, 0, 10);
         source = Expand(source, "lumyteSampler0", "sampler", string.Empty, samplerCount, 1, 10 + Math.Max(0, textureCount - 1));

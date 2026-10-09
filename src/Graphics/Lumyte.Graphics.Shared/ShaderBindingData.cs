@@ -2,9 +2,10 @@ using System.Buffers.Binary;
 using System.Text;
 using Lumyte.Graphics.Abstractions;
 
-namespace Lumyte.Graphics;
+namespace Lumyte.Graphics.Shared;
 
-internal sealed class ShaderBindingData
+/// <summary>Packs snapshots and finite resource bindings for WGSL backends.</summary>
+public sealed class ShaderBindingData
 {
     private readonly Dictionary<object, uint> _identities = [];
     private readonly Dictionary<object, int> _textures = [];
@@ -12,14 +13,18 @@ internal sealed class ShaderBindingData
     private readonly Dictionary<object, int> _buffers = [];
     private readonly Dictionary<object, int> _writable = [];
 
-    internal ShaderBindingData(ShaderBindingSnapshot snapshot, ShaderTargetData target, DeviceCaps caps)
+    /// <summary>Initializes a new instance of the <see cref="ShaderBindingData"/> class.</summary>
+    /// <param name="snapshot">The snapshot input.</param>
+    /// <param name="target">The target input.</param>
+    /// <param name="caps">The caps input.</param>
+    public ShaderBindingData(ShaderBindingSnapshot snapshot, ShaderTargetData target, DeviceCaps caps)
     {
         Snapshot = snapshot;
         snapshot.ValidateLayouts(target);
         var rootLayout = ShaderDataLayout.Root(target, snapshot.Root.RootParameter);
         var read = new HashSet<object>();
         var write = new HashSet<object>();
-        void Uses(ShaderDataLayout layout, ShaderValueSnapshot values)
+        void Uses(IShaderDataLayout layout, ShaderValueSnapshot values)
         {
             foreach (ShaderValue value in values.Values)
             {
@@ -116,27 +121,43 @@ internal sealed class ShaderBindingData
         }
     }
 
-    internal ShaderBindingSnapshot Snapshot { get; }
+    /// <summary>Gets the dependency snapshot.</summary>
+    public ShaderBindingSnapshot Snapshot { get; }
 
-    internal byte[] Root { get; }
+    /// <summary>Gets the packed root argument bytes.</summary>
+    public byte[] Root { get; }
 
-    internal byte[] Map { get; }
+    /// <summary>Gets the resource remapping bytes.</summary>
+    public byte[] Map { get; }
 
-    internal Dictionary<IShaderDataSource, byte[]> Data { get; } = [];
+    /// <summary>Gets the packed shader data allocations.</summary>
+    public Dictionary<IShaderDataSource, byte[]> Data { get; } = [];
 
-    internal IReadOnlyDictionary<object, int> Textures => _textures;
+    /// <summary>Gets the texture binding indices.</summary>
+    public IReadOnlyDictionary<object, int> Textures => _textures;
 
-    internal IReadOnlyDictionary<object, int> Samplers => _samplers;
+    /// <summary>Gets the sampler binding indices.</summary>
+    public IReadOnlyDictionary<object, int> Samplers => _samplers;
 
-    internal IReadOnlyDictionary<object, int> Buffers => _buffers;
+    /// <summary>Gets the read-only buffer binding indices.</summary>
+    public IReadOnlyDictionary<object, int> Buffers => _buffers;
 
-    internal IReadOnlyDictionary<object, int> Writable => _writable;
+    /// <summary>Gets the writable buffer binding indices.</summary>
+    public IReadOnlyDictionary<object, int> Writable => _writable;
 
-    internal string Key => $"{_textures.Count}:{_samplers.Count}:{_buffers.Count}:{_writable.Count}";
+    /// <summary>Gets the binding shape cache key.</summary>
+    public string Key => $"{_textures.Count}:{_samplers.Count}:{_buffers.Count}:{_writable.Count}";
 
-    internal string Specialize(ShaderTargetData target) => WgslBindingSpecializer.Specialize(Encoding.UTF8.GetString(target.Code), _textures.Count, _samplers.Count, _buffers.Count, _writable.Count);
+    /// <summary>Generates WGSL for the captured resource binding counts.</summary>
+    /// <param name="target">The target input.</param>
+    /// <returns>The processed result.</returns>
+    public string Specialize(ShaderTargetData target) => WgslBindingSpecializer.Specialize(Encoding.UTF8.GetString(target.Code), _textures.Count, _samplers.Count, _buffers.Count, _writable.Count);
 
-    internal uint Binding(string kind, int index) => kind switch
+    /// <summary>Resolves a resource kind and pool index to a physical binding.</summary>
+    /// <param name="kind">The kind input.</param>
+    /// <param name="index">The index input.</param>
+    /// <returns>The processed result.</returns>
+    public uint Binding(string kind, int index) => kind switch
     {
         "texture" => index == 0 ? 0u : checked((uint)(10 + index - 1)),
         "sampler" => index == 0 ? 1u : checked((uint)(10 + Math.Max(0, _textures.Count - 1) + index - 1)),

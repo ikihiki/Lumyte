@@ -31,7 +31,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
 
     public ulong ShaderElementStrideInBytes => (ulong)Layout.Size;
 
-    public ShaderDataLayout Layout { get; }
+    public IShaderDataLayout Layout { get; }
 
     internal VulkanDevice Owner { get; }
 

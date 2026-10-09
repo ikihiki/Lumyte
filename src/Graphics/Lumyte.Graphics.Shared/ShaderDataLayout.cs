@@ -2,14 +2,15 @@ using System.Numerics;
 using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
 
-namespace Lumyte.Graphics;
+namespace Lumyte.Graphics.Shared;
 
-internal sealed class ShaderDataLayout
+/// <summary>Reads and packs compiled shader structure layouts.</summary>
+public sealed class ShaderDataLayout : IShaderDataLayout
 {
     private readonly Dictionary<string, ShaderMember> _members = [];
     private readonly JsonElement _referenceTargets;
 
-    internal ShaderDataLayout(JsonElement type, JsonElement metadata, bool uniform = false)
+    private ShaderDataLayout(JsonElement type, JsonElement metadata, bool uniform = false)
     {
         _referenceTargets = metadata.TryGetProperty("lumyteReferenceTargets", out JsonElement targets) ? targets.Clone() : default;
         Name = type.GetProperty("name").GetString()!;
@@ -20,11 +21,17 @@ internal sealed class ShaderDataLayout
         Add(type, string.Empty, 0);
     }
 
-    internal string Name { get; }
+    /// <inheritdoc/>
+    public string Name { get; }
 
-    internal int Size { get; }
+    /// <inheritdoc/>
+    public int Size { get; }
 
-    internal static ShaderDataLayout Data(ShaderTargetData target, string name)
+    /// <summary>Provides the packed shader data allocations.</summary>
+    /// <param name="target">The target input.</param>
+    /// <param name="name">The name input.</param>
+    /// <returns>The processed result.</returns>
+    public static ShaderDataLayout Data(ShaderTargetData target, string name)
     {
         using var document = JsonDocument.Parse(target.ReflectionJson);
         if (!document.RootElement.TryGetProperty("lumyteAbi", out JsonElement abi) || abi.GetInt32() != 1)
@@ -41,7 +48,12 @@ internal sealed class ShaderDataLayout
         return new(parameter.GetProperty("type").GetProperty("resultType"), document.RootElement);
     }
 
-    internal static ShaderTargetData RootTarget(ShaderTargetData vertex, ShaderTargetData? fragment, string name)
+    /// <summary>Selects the shader stage declaring a root parameter.</summary>
+    /// <param name="vertex">The vertex input.</param>
+    /// <param name="fragment">The fragment input.</param>
+    /// <param name="name">The name input.</param>
+    /// <returns>The processed result.</returns>
+    public static ShaderTargetData RootTarget(ShaderTargetData vertex, ShaderTargetData? fragment, string name)
     {
         if (HasRoot(vertex, name))
         {
@@ -56,7 +68,10 @@ internal sealed class ShaderDataLayout
         throw new ArgumentException("The program does not declare this root parameter.");
     }
 
-    internal static void ValidateProgram(ShaderTargetData vertex, ShaderTargetData? fragment)
+    /// <summary>Validates compatible root layouts across graphics stages.</summary>
+    /// <param name="vertex">The vertex input.</param>
+    /// <param name="fragment">The fragment input.</param>
+    public static void ValidateProgram(ShaderTargetData vertex, ShaderTargetData? fragment)
     {
         if (fragment == null || !HasRoot(vertex) || !HasRoot(fragment))
         {
@@ -71,13 +86,21 @@ internal sealed class ShaderDataLayout
         }
     }
 
-    internal static bool HasRoot(ShaderTargetData target, string? name = null)
+    /// <summary>Checks whether a shader declares a root constant buffer.</summary>
+    /// <param name="target">The target input.</param>
+    /// <param name="name">The name input.</param>
+    /// <returns>The processed result.</returns>
+    public static bool HasRoot(ShaderTargetData target, string? name = null)
     {
         using var document = JsonDocument.Parse(target.ReflectionJson);
         return document.RootElement.GetProperty("parameters").EnumerateArray().Any(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" && (name == null || p.GetProperty("name").GetString() == name));
     }
 
-    internal static ShaderDataLayout Root(ShaderTargetData target, string name)
+    /// <summary>Provides the immutable root values.</summary>
+    /// <param name="target">The target input.</param>
+    /// <param name="name">The name input.</param>
+    /// <returns>The processed result.</returns>
+    public static ShaderDataLayout Root(ShaderTargetData target, string name)
     {
         using var document = JsonDocument.Parse(target.ReflectionJson);
         JsonElement parameter = document.RootElement.GetProperty("parameters").EnumerateArray().SingleOrDefault(p => p.GetProperty("name").GetString() == name);
@@ -89,11 +112,14 @@ internal sealed class ShaderDataLayout
         return new(parameter.GetProperty("type").GetProperty("elementType"), document.RootElement, true);
     }
 
-    internal string ReferenceKind(string path) => _members[path].Kind;
+    /// <inheritdoc/>
+    public string ReferenceKind(string path) => _members[path].Kind;
 
-    internal bool Matches(ShaderDataLayout other) => Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member);
+    /// <inheritdoc/>
+    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member);
 
-    internal void Validate(ShaderValueSnapshot snapshot)
+    /// <inheritdoc/>
+    public void Validate(ShaderValueSnapshot snapshot)
     {
         if (snapshot.ShaderTypeName != Name || snapshot.Values.Count != _members.Count)
         {
@@ -137,7 +163,8 @@ internal sealed class ShaderDataLayout
         }
     }
 
-    internal byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference)
+    /// <inheritdoc/>
+    public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference)
     {
         Validate(snapshot);
         byte[] result = new byte[Size];

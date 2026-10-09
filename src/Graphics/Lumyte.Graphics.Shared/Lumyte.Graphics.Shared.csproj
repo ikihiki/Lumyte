@@ -2,15 +2,11 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Graphics Wgpu device capabilities.</Description>
+    <Description>Shared graphics shader layout, dependency tracking and binding implementation.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <Using Include="Lumyte.Graphics.Shared" />
-    <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
-    <PackageReference Include="Ahjo.Wgpu" Version="0.7.0" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

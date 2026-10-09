@@ -7,7 +7,8 @@
     <Description>Graphics Vulkan device capabilities.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../Shared/*.cs" Exclude="../Shared/WgslBindingSpecializer.cs;../Shared/ShaderBindingData.cs" Link="Shared/%(Filename)%(Extension)" />
+    <Using Include="Lumyte.Graphics.Shared" />
+    <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <PackageReference Include="Silk.NET.Vulkan" Version="2.23.0" />
     <None Update="README.md" Pack="true" PackagePath="/" />

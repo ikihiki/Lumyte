@@ -135,3 +135,5 @@ artifactのWGSLを直接編集し、texture・sampler・read-only buffer・writa
 root値、remap、使用するshader data要素の固定backingはmappedAtCreationで初期化してunmapし、consumerの命令を記録する前に用意します。利用者のpass内へcopyを追加しません。raw bufferは元のresourceを参照し、その内容をsnapshotしません。commandは内部backingとbind groupをGPU完了後のDisposeまで保持します。submitでは登録identityを再検証します。
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
+
+共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
