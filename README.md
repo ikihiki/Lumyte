@@ -29,6 +29,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [アニメーションシステムの設計](docs/adr/animation/ANIMATION-0001-animation-system.md)
 - [汎用状態機械の設計](docs/adr/core/CORE-0001-state-machine.md)／[利用例](samples/Lumyte.StateMachines.Sample/README.md)
 - [アニメーション状態機械の構築とイベント時刻](docs/adr/animation/ANIMATION-0003-animation-execution-and-event-time.md)／[利用例](samples/Lumyte.Animation.StateMachine.Sample/README.md)
+- [形式に依存しない補間・値ソースの合成](docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)
 - [アニメーションの利用例](samples/Lumyte.Animation.Sample/README.md)
 
 ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
