@@ -20,7 +20,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 `Microsoft.Extensions.Configuration` の構成ソースとして永続化設定を登録する。その他の起動時構成や環境変数も標準の構成基盤を使用する。ユーザーが編集する同じ項目に環境変数などの上書きを重ねず、保存した値と実際に使う値の対応を維持する。
 
-本 ADR は設定管理の採用方針である。共通ライブラリと Input モジュール登録を実装し、Browser 固有ストアは注入可能な契約を提供する。アクションの評価・入力伝播の詳細は後続 ADR に分離する。
+本 ADR は設定管理の採用方針である。本 PR では共通ライブラリのみを実装し、Browser 固有ストアは注入可能な契約を提供する。Input モジュールの実装と共通基盤への接続は別の変更で扱う。アクションの評価・入力伝播の詳細は後続 ADR に分離する。
 
 ### 責務と依存関係
 
@@ -36,7 +36,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 | アプリケーション / Engine の構成側 | 共通ソースの選択、設定画面、Input への橋渡し |
 | Input の上位処理 | スナップショットからのリマッピング表生成とデッドゾーン変換 |
 
-汎用ライブラリを `src/Core/Lumyte.Settings/` に配置する。`Lumyte.Settings` は `Lumyte.Input` や OS 固有 API に依存しない。Input 設定の型と検証は Input 側、アプリ独自のアクション定義はアプリ側に置く。Browser のストアは Platform 側で実装する。設定モデル・登録・変換処理を Input パッケージに配置する。
+汎用ライブラリを `src/Core/Lumyte.Settings/` に配置する。`Lumyte.Settings` は `Lumyte.Input` や OS 固有 API に依存しない。Input 設定の型と検証は Input 側、アプリ独自のアクション定義はアプリ側に置く。Browser のストアは Platform 側で実装する。設定モデル・登録・変換処理を Input パッケージに配置する方針とし、本 PR には含めない。
 
 ### データモデルと互換性
 
@@ -50,7 +50,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 ### 共通基盤とモジュール登録
 
-アプリケーションは共通のソース・保存先を一度設定し、モジュールを有効化する。UseInput などのモジュール API が、設定型、安定したセクション ID、設定定義、既定値、標準バリデータを内部登録する。UseInput は Input モジュールの登録 API とする。
+アプリケーションは共通のソース・保存先を一度設定し、モジュールを有効化する。UseInput などのモジュール API が、設定型、安定したセクション ID、設定定義、既定値、標準バリデータを内部登録する。以下の UseInput はモジュール接続の設計例であり、本 PR では実装しない。具体的な公開 API は Input 側の実装で決定する。
 
 ```csharp
 var source = new PersistedJsonFileSource(settingsPath);
@@ -260,44 +260,7 @@ Windows / Linux は構成側が選んだユーザー単位の設定ディレク�
 
 Browser はファイルパスを前提にせず、Platform が IndexedDB のトランザクションで置き換えるストアを注入する。トランザクションの完了を保存成功とし、容量不足、利用不可、トランザクション失敗を `StorageFailure` として報告する。保存できない状態を成功扱いしてメモリだけで確定しない。サイトデータの消去やブラウザーによる退避解除に対する永続性は保証しない。
 
-### Input の公開 API
-
-設定はコンテキスト ID → アクション ID →物理入力配列として表し、安定した enum 名を含む key:Space、mouse:Left、controller:South の形式を使用する。同じアクション内の重複は拒否し、異なるアクションへの共有は許可する。
-
-```diff
-+namespace Lumyte.Input
-+{
-+    public sealed class DeadZoneSettings
-+    {
-+        public float Inner { get; set; } // 既定 0.15。
-+        public float Outer { get; set; } // 既定 1。
-+    }
-+    public sealed class InputSettings
-+    {
-+        public Dictionary<string, Dictionary<string, string[]>> Bindings { get; set; }
-+        public DeadZoneSettings LeftStick { get; set; }
-+        public DeadZoneSettings RightStick { get; set; }
-+        public DeadZoneSettings LeftTrigger { get; set; } // Inner 既定 0.05。
-+        public DeadZoneSettings RightTrigger { get; set; } // Inner 既定 0.05。
-+    }
-+    public static class InputServiceCollectionExtensions
-+    {
-+        public static IServiceCollection UseInput(this IServiceCollection services);
-+    }
-+    public sealed class InputSettingsProcessor
-+    {
-+        // 構築スレッドに所属。取得・適用・更新も同じスレッドから呼ぶ。
-+        public InputSettingsProcessor(IEditableOptions<InputSettings> settings);
-+        public long Revision { get; }
-+        public void Refresh(); // フレーム境界で最新確定値を取得。
-+        public string[] GetBindings(string context, string action); // 独立した配列。
-+        public Vector2 ApplyStick(ControllerStick stick, Vector2 value);
-+        public float ApplyTrigger(ControllerTrigger trigger, float value);
-+    }
-+}
-```
-
-### Input 設定との接続
+### Input 設定との接続方針（別実装）
 
 アクションは表示名と分離した安定した文字列 ID で識別し、コンテキスト単位で複数の物理入力を割り当てられるようにする。各アクションの割り当て配列は全体置換し、未指定は既定値、空配列は明示的な解除とする。キーやコントローラーの識別子は安定した文字列表現で保存し、enum の数値や実行中だけ有効な `InputDeviceId` は永続化しない。
 
@@ -350,7 +313,7 @@ Input の `IValidateOptions<T>` は変換表を構築できることまで保存
 
 ## 検証方針
 
-偽ストアと実ストアを使って以下を検証する。実装済みの共通基盤と Input 登録の動作は Settings.Tests および Input.Tests で確認する。
+偽ストアと実ストアを使って以下を検証する。共通基盤は Input に依存しないサンプルモジュールを使い、Settings.Tests で確認する。Input 固有の変換・フレーム反映に関する項目は、別の Input 実装で検証する。
 
 - 共通基盤とモジュールの登録順に依存せず、二重有効化で既定値・検証を重複登録しない。
 - 未登録の共通基盤、異なるソースの二重登録、セクション ID / 型の衝突を拒否する。
