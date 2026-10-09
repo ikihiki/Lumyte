@@ -12,6 +12,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     private int _textureCount;
     private int _samplerCount;
     private int _argumentTableCount;
+    private int _shaderCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -120,12 +121,22 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         return table;
     }
 
+    /// <inheritdoc />
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(artifact);
+        var shader = new BrowserShader(this, artifact);
+        _shaderCount++;
+        return shader;
+    }
+
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures and samplers before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers and shaders before disposing their device.");
         }
 
         if (_disposed)
@@ -137,6 +148,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         _handle.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseShader() => _shaderCount--;
 
     internal void ReleaseArgumentTable() => _argumentTableCount--;
 

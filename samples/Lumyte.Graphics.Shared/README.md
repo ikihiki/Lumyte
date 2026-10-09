@@ -9,3 +9,9 @@ Native と Browser のサンプルが ProjectReference で参照する共有ラ�
 SamplerExercise.Runは共通APIだけでfilter／address／comparison、LOD 0、anisotropy、入力拒否と所有を確認します。実際のsampling結果はshader／binding／描画の後続検証で扱います。
 
 ArgumentTableExercise.Runは共通APIで種類別slot、buffer要素参照、世代の失効、用途・範囲と寿命を検証します。CheckForeignDeviceは別deviceのresourceを登録できないことを確認します。shaderやGPU bindingの生成は行いません。
+
+## シェーダー
+
+`Shaders/increment.slang` をビルド時に WGSL と SPIR-V へ変換し、反射情報・entry・stage・compiler version・行列layoutと一つのbinaryにpackし、このDLLに埋め込みます。利用側はtargetを選ばず同じbinaryを渡します。生成 code はコミットせず、実行時に外部ファイルを読みません。オンライン検証用の Slang source も DLL に埋め込みます。
+
+`ShaderExercise.Run(IGraphicDevice)` は共通 API だけで成果物をロードし、全targetの収録・コンパイルmetadata・module作成・所有権を確認します。`RunOnlineAsync` は bootstrap から渡された `IShaderCompiler` を使用します。module の作成検証であり、compute dispatch は行いません。このプロジェクトは引き続き Abstractions のみ参照します。

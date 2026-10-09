@@ -14,6 +14,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private int _textureCount;
     private int _samplerCount;
     private int _argumentTableCount;
+    private int _shaderCount;
     private bool _disposed;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device)
@@ -22,6 +23,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         WGPULimits limits = device.GetLimits();
         Caps = new()
         {
+            ShaderTarget = ShaderTarget.Wgsl,
             Features = GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering,
             MaxBufferSize = limits.maxBufferSize,
             MaxStorageBufferBindingSize = limits.maxStorageBufferBindingSize,
@@ -136,12 +138,22 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         return table;
     }
 
+    /// <inheritdoc />
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(artifact);
+        var shader = new WgpuShader(this, artifact);
+        _shaderCount++;
+        return shader;
+    }
+
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures and samplers before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers and shaders before disposing their device.");
         }
 
         if (_disposed)
@@ -154,6 +166,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _instance.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseShader() => _shaderCount--;
 
     internal void ReleaseArgumentTable() => _argumentTableCount--;
 

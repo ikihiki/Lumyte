@@ -75,3 +75,9 @@ CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler
 登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録中resourceの解放は拒否します。置換とReleaseは古い登録を失効させ、失敗した登録で新しいleaseを残しません。tableを解放すると登録を解放してdeviceのchild数を減らし、登録resource自体はDisposeしません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
 
 登録はJavaScriptやGPUDeviceのbinding APIを呼ばず、C#のbackend resource instanceと選択byte rangeを保持します。shader binding planとroot参照から必要なGPUTextureView／GPUSampler／GPUBufferを解決し、有限bind groupへ構築する処理はshader／commandとの接続で実装します。JSObjectの実行context制約は引き続き利用者が守ります。
+
+## シェーダーモジュール
+
+共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `Wgsl`。DLL から取り出した UTF-8 WGSL を `GPUDevice.createShaderModule` に渡します。ブラウザーの shader validation／非同期 device error は WebGPU に従い、この同期 API は `getCompilationInfo()` を待ちません。`Dispose()` は JavaScript proxy を解放します。WebGPU の GPUShaderModule には destroy メソッドがありません。ブラウザー内で slangc を起動せず、オフライン成果物を使用します。
+
+artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。実行する pipeline や command はこの PR の範囲に含めません。

@@ -6,9 +6,9 @@ internal sealed class ReverseNode(TimelineNode child) : TimelineNode(child.Lengt
 
     internal override bool HasRelease { get; } = child.HasRelease;
 
-    internal override long ValueCount { get; } = child.ValueCount;
+    internal override UInt128 ValueCount { get; } = child.ValueCount;
 
-    internal override void Sample(long time, AnimationOutput output, bool backwards, long priority)
+    internal override void Sample(long time, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (time < 0)
         {
@@ -18,7 +18,7 @@ internal sealed class ReverseNode(TimelineNode child) : TimelineNode(child.Lengt
         child.Sample(Length - Math.Min(time, Length), output, !backwards, priority);
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, long priority) => child.Endpoints(Length - from, Length - to, output, priority);
+    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority) => child.Endpoints(Length - from, Length - to, output, priority);
 
     internal override void Events(EventQuery query, EventCollector collector)
     {

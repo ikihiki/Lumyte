@@ -44,3 +44,7 @@ dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vul
 ```
 
 共通APIだけで論理登録・要素参照・失効と所有を確認します。
+
+## シェーダー
+
+`mise exec -- dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu shaders` または `vulkan shaders` で、DLL のオフライン成果物と Slang のオンライン成果物から module を作成します。bootstrap だけが具体的な device／compiler を作り、検証本体は shared の共通 API を使います。オンライン側は PATH の slangc が必要です。GPU の dispatch／描画は行いません。

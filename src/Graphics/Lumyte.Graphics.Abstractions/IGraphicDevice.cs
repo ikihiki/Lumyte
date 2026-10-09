@@ -34,4 +34,9 @@ public interface IGraphicDevice
     /// <param name="desc">The independent logical capacities and optional diagnostic label.</param>
     /// <returns>The backend table owning its active resource registrations.</returns>
     IArgumentTable CreateArgumentTable(ArgumentTableDesc desc);
+
+    /// <summary>Creates an owned native shader module without compiling source or submitting commands.</summary>
+    /// <param name="artifact">The code and reflection matching the backend target.</param>
+    /// <returns>The concrete backend shader through its common interface.</returns>
+    IGraphicsShader CreateShader(ShaderArtifact artifact);
 }

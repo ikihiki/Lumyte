@@ -1,6 +1,6 @@
 # Lumyte.Animation
 
-単調時計を使って汎用の型付き値を計算するライブラリです。カーブ・Tween、順次・並列・遅延、有限 Repeat、Reverse、Loop、マーカーを扱います。状態機械は別 PR の対象です。
+単調時計を使って汎用の型付き値を計算するライブラリです。カーブ・Tween、順次・並列・遅延、有限 Repeat、Reverse、Loop、マーカーと、条件・トリガーでタイムラインを切り替える状態機械を扱います。
 
 設定は既存の Lumyte.Composition と Generator で構築します。生成済み API を公開するため、利用側で Generator を参照する必要はありません。
 
@@ -33,4 +33,6 @@ Output とイベントの格納先は再利用し、更新前に消費側がク�
 - [設計 ADR](../../../docs/adr/animation/ANIMATION-0001-animation-system.md)
 - [実行可能なサンプル](../../../samples/Lumyte.Animation.Sample/README.md)
 
-状態機械の Composition 定義は `new AnimationStateMachine<TState, TContext>(clock, definition)` に直接渡す。子の Timeline と汎用制御を一度だけ自動構築し、`Start(context)` で再生を開始する。[状態機械の例](../../../samples/Lumyte.Animation.StateMachine.Sample/README.md)を参照。
+状態機械の Composition ノードは `definition.Build(clock, context)`、Builder は `builder.Build(clock, initialState, context)` で開始済みの実行者を返します。子の Timeline と汎用制御を一度だけまとめて構築するため、子ごとの Build や追加の Start は不要です。
+
+構築と開始を分ける場合は `new AnimationStateMachine<TState, TContext>(clock, definition)` で停止中の実行者を作り、`Start(context)` で初期入場と再生を開始します。状態マーカーの `OccurredAt` と遷移の `ObservedAt` は同じ時計上の絶対時点なので、消費側で時系列に並べられます。異なる時計の時点は比較しないでください。[構築とイベント時刻の設計](../../../docs/adr/animation/ANIMATION-0003-animation-execution-and-event-time.md)と[実行可能な例](../../../samples/Lumyte.Animation.StateMachine.Sample/README.md)を参照してください。
