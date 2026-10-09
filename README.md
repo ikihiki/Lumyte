@@ -15,6 +15,8 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [DeviceCaps サンプル](samples/Lumyte.Graphics.DeviceCaps.Sample/README.md)／[Browser サンプル](samples/Lumyte.Graphics.Browser.Sample/README.md)
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
 - [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
+- [アニメーションシステムの設計](docs/adr/animation/ANIMATION-0001-animation-system.md)
+- [アニメーションの利用例](samples/Lumyte.Animation.Sample/README.md)
 
 ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
 で `tests/` 内のソリューションに登録されたテストを実行できます。
