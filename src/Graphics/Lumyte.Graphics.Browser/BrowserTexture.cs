@@ -28,6 +28,15 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public TextureUsage Usage { get; }
 
+    internal JSObject Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _native;
+        }
+    }
+
     internal BrowserDevice Owner => _owner;
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)

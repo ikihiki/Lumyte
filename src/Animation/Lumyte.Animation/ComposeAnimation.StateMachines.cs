@@ -1,4 +1,5 @@
 using Lumyte.Composition;
+using Lumyte.Core.Time;
 using Lumyte.StateMachines;
 
 namespace Lumyte.Animation;
@@ -24,6 +25,23 @@ public static partial class ComposeAnimation
             [ComposeContent]
             public IReadOnlyList<State<TState, TContext>> States { get; set; } = [];
 
+            /// <summary>Compiles this definition and starts an independent execution instance.</summary>
+            /// <param name="clock">The monotonic clock used by the new instance.</param>
+            /// <param name="context">The context for initial entry.</param>
+            /// <returns>The running animation state machine.</returns>
+            public AnimationStateMachine<TState, TContext> Build(IMonotonicClock clock, TContext context)
+            {
+                ArgumentNullException.ThrowIfNull(clock);
+                if (context is null)
+                {
+                    throw new ArgumentNullException(nameof(context));
+                }
+
+                var machine = new AnimationStateMachine<TState, TContext>(clock, this);
+                machine.Start(context);
+                return machine;
+            }
+
             internal AnimationStateMachineDefinition<TState, TContext> Compile()
             {
                 ArgumentNullException.ThrowIfNull(States);
@@ -41,7 +59,7 @@ public static partial class ComposeAnimation
                     }
                 }
 
-                return builder.Build(InitialState);
+                return builder.Compile(InitialState);
             }
         }
 

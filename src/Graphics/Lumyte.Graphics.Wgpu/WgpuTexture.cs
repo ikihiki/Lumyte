@@ -66,6 +66,15 @@ internal sealed class WgpuTexture : IGraphicsTexture
 
     public TextureUsage Usage { get; }
 
+    internal A.Texture Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _native;
+        }
+    }
+
     internal WgpuDevice Owner => _owner;
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)

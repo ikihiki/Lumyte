@@ -31,7 +31,7 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 
 ### 公開API
 
-比較元はorigin/main。説明・既定値・失敗条件をコメントとして示す。IRenderEncoder／IComputeEncoderの宣言はpipelineの接続点で、pass開始・draw・dispatch・barrierの全契約はcommandのADRで扱う。
+比較元はorigin/main（6717920）。説明・既定値・失敗条件をコメントとして示す。[CommandBuffer](GRAPHICS-0007-command-buffers-and-submission.md)のpass開始・終了、barrier、submitと完了待機の契約を使用し、既存のIRenderEncoder／IComputeEncoderへpipelineの接続点を追加する。draw／dispatch命令とroot dataの設定は追加の契約で扱う。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
@@ -157,8 +157,8 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 +    public readonly record struct Viewport(float X, float Y, float Width, float Height, float MinDepth, float MaxDepth);
 +    public readonly record struct ScissorRect(uint X, uint Y, uint Width, uint Height);
 +    public readonly record struct BlendConstant(float Red, float Green, float Blue, float Alpha);
-+    public interface IRenderEncoder
-+    {
+     public interface IRenderEncoder
+     {
 +        // shader programを選ぶ。描画状態は変更しない。
 +        void SetPipeline(IGraphicsPipeline pipeline);
 +        // encoder状態のsnapshotを置き換える。attachment指定やprepareは不要。
@@ -168,11 +168,13 @@ shader programに残すのはvertex／fragmentの組、stage間linkageとresourc
 +        void SetScissor(ScissorRect scissor);
 +        void SetBlendConstant(BlendConstant value);
 +        void SetStencilReference(uint reference);
-+    }
-+    public interface IComputeEncoder
-+    {
+         void End();
+     }
+     public interface IComputeEncoder
+     {
 +        void SetPipeline(IGraphicsComputePipeline pipeline);
-+    }
+         void End();
+     }
  }
 ```
 

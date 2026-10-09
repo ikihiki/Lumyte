@@ -8,7 +8,7 @@ using Lumyte.Graphics.Abstractions;
 static DeviceCaps Inspect(IGraphicDevice device) => device.Caps;
 ```
 
-`IGraphicDevice` は `Caps`、型付き buffer の `CreateBuffer<T>` と `GetBufferLayout<T>`、texture の `CreateTexture`、sampler の `CreateSampler`、論理登録先の `CreateArgumentTable` を提供します。デバイス自体を生成する factory、バックエンドの選択、解放、描画・送信の API は持ちません。生成と解放はアプリケーションの起動・終了部分で、選んだバックエンドの具象型を使って行います。
+`IGraphicDevice` は `Caps`、型付き buffer の `CreateBuffer<T>` と `GetBufferLayout<T>`、texture の `CreateTexture`、sampler の `CreateSampler`、論理登録先の `CreateArgumentTable`、shader module、command buffer、copy layoutとdevice所有の `Queue` を提供します。デバイス自体を生成する factory、バックエンドの選択・解放は持ちません。生成と解放はアプリケーションの起動・終了部分で、選んだバックエンドの具象型を使って行います。
 
 `DeviceCaps` は生成済みデバイスの利用可能な機能と上限の非所有 snapshot です。同じデバイスは同じ instance を返し、読み取りでは native query、allocation、GPU work を行いません。`with` で作ったコピーは元の snapshot を変更しません。
 
@@ -121,3 +121,11 @@ slotの置換・Release・table Disposeは古い参照と派生要素を失効�
 `ShaderCompilationDesc` は Slang source、entry、stage と生成 target を指定します。`IShaderCompiler.CompileAsync` は GPU に依存せず `ShaderArtifact` を返します。artifactは全targetのcode、reflection、コンパイルmetadataを格納したopaque binaryを保持し、`LoadEmbedded(assembly, resourceName)`でDLLから読み込めます。online compilerのtarget選択は任意で、省略／null時は全対応target、指定時はそのtargetだけを生成します。
 
 opaque binaryのartifactをそのまま `IGraphicDevice.CreateShader` に渡すと、backendが自分用のtargetを取り出し、バックエンド所有の `IGraphicsShader` が返ります。必要な同期は利用側が管理します。[設計](../../../docs/adr/graphics/GRAPHICS-0006-shader-compilation-and-modules.md)／[Slang コンパイラーとオフライン設定](../Lumyte.Graphics.Shaders/README.md)を参照してください。
+
+## CommandBufferとGPU実行
+
+`CreateCommandBuffer(new())` はRecording状態のone-shot記録を返します。GPUのbuffer／textureコピー、明示的なbarrier、render／compute passを記録し、`Finish()` の後で `device.Queue.Submit([commands])` を呼びます。`IGraphicsSubmission.WaitAsync()` でその提出分の完了を待ちます。各操作はstagingの確保、CPUコピー、map／unmapやGPU待機を自動実行しません。
+
+textureは利用前に `TextureBarrierDesc` でstateを宣言します。pass内ではcopy・barrier・Finishを拒否します。render passはcolor attachmentのclear／load・store／discardを扱い、両encoderは `End()` で終了します。初期範囲にdraw／dispatchは含みません。
+
+resourceはGPU完了まで利用者が生存させます。Submit時に生存とmappingを再検証し、Pending中のsubmissionとSubmitted状態のcommand bufferのDisposeを拒否します。待機のキャンセルでGPU実行は取り消しません。内部lockや並列呼び出しの保証は設けません。設計は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。

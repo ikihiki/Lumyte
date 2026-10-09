@@ -8,9 +8,9 @@ internal sealed class ValueNode<T>(IAnimationSource<T> source, AnimationChannel<
 
     internal override bool HasRelease { get; } = fill == AnimationFillMode.Release;
 
-    internal override long ValueCount { get; } = 1;
+    internal override UInt128 ValueCount { get; } = 1;
 
-    internal override void Sample(long time, AnimationOutput output, bool backwards, long priority)
+    internal override void Sample(long time, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (time < 0)
         {
@@ -25,7 +25,7 @@ internal sealed class ValueNode<T>(IAnimationSource<T> source, AnimationChannel<
         output.Set(channel, source.Sample(Duration.FromTicks(Math.Min(time, Length))), priority);
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, long priority)
+    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
     {
         if (!HasRelease)
         {

@@ -1,8 +1,9 @@
+using Lumyte.Core.Time;
 using Lumyte.StateMachines;
 
 namespace Lumyte.Animation;
 
-/// <summary>Compiles animation bindings and generic control definitions without starting playback.</summary>
+/// <summary>Builds independent running animation machines from state bindings and transitions.</summary>
 /// <typeparam name="TState">The external state identifier type.</typeparam>
 /// <typeparam name="TContext">The application input and callback context type.</typeparam>
 public sealed class AnimationStateMachineBuilder<TState, TContext>
@@ -47,10 +48,25 @@ public sealed class AnimationStateMachineBuilder<TState, TContext>
         _transitions.Add(new PendingTransition(from, to, condition, trigger, onCompleted, priority));
     }
 
-    /// <summary>Validates and snapshots the definition without starting playback or applying values.</summary>
+    /// <summary>Compiles the definition, creates an independent execution instance and starts its initial state.</summary>
+    /// <param name="clock">The monotonic clock used by the new instance.</param>
     /// <param name="initialState">The initial state.</param>
-    /// <returns>The computed result.</returns>
-    public AnimationStateMachineDefinition<TState, TContext> Build(TState initialState)
+    /// <param name="context">The context for initial entry.</param>
+    /// <returns>The running animation state machine.</returns>
+    public AnimationStateMachine<TState, TContext> Build(IMonotonicClock clock, TState initialState, TContext context)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        if (context is null)
+        {
+            throw new ArgumentNullException(nameof(context));
+        }
+
+        var machine = new AnimationStateMachine<TState, TContext>(clock, this, initialState);
+        machine.Start(context);
+        return machine;
+    }
+
+    internal AnimationStateMachineDefinition<TState, TContext> Compile(TState initialState)
     {
         ArgumentNullException.ThrowIfNull(initialState);
         var states = new Dictionary<TState, AnimationStateBinding<TState, TContext>>();

@@ -6,13 +6,13 @@ internal sealed class MarkerNode(AnimationEvent marker) : TimelineNode(0)
 
     internal override bool HasRelease { get; } = false;
 
-    internal override long ValueCount { get; } = 0;
+    internal override UInt128 ValueCount { get; } = 0;
 
-    internal override void Sample(long time, AnimationOutput output, bool backwards, long priority)
+    internal override void Sample(long time, AnimationOutput output, bool backwards, UInt128 priority)
     {
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, long priority)
+    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
     {
     }
 

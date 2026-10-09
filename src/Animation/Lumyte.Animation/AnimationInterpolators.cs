@@ -6,7 +6,7 @@ namespace Lumyte.Animation;
 public static class AnimationInterpolators
 {
     /// <summary>Gets the float.</summary>
-    public static IAnimationInterpolator<float> Float { get; } = new Interpolator<float>((a, b, t) => a + ((b - a) * t));
+    public static IAnimationInterpolator<float> Float { get; } = new Interpolator<float>((a, b, t) => (float)(((1d - t) * a) + ((double)t * b)));
 
     /// <summary>Gets the vector2.</summary>
     public static IAnimationInterpolator<Vector2> Vector2 { get; } = new Interpolator<Vector2>(System.Numerics.Vector2.Lerp);
@@ -24,6 +24,21 @@ public static class AnimationInterpolators
     /// <typeparam name="T">The value type.</typeparam>
     /// <returns>The computed result.</returns>
     public static IAnimationInterpolator<T> Step<T>() => Discrete<T>.Instance;
+
+    internal static float GetInteriorAmount(long elapsedTicks, long durationTicks, AnimationEasing easing = AnimationEasing.Linear)
+    {
+        double t = (double)elapsedTicks / durationTicks;
+        t = easing switch
+        {
+            AnimationEasing.EaseIn => t * t,
+            AnimationEasing.EaseOut => t * (2 - t),
+            AnimationEasing.EaseInOut => t < 0.5 ? 2 * t * t : 1 - (2 * (1 - t) * (1 - t)),
+            _ => t,
+        };
+
+        // Tick comparisons own the endpoints; floating-point rounding must not reach them early.
+        return Math.Clamp((float)t, float.Epsilon, MathF.BitDecrement(1));
+    }
 
     internal static void Validate<T>(T value)
     {

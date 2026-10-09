@@ -1,7 +1,9 @@
 # ADR-ANIMATION-0002: 状態機械によるアニメーションの選択と遷移
 
-- 状態: 採用
+- 状態: 置換済み
 - 日付: 2026-10-09
+- 変更日: 2026-10-09
+- 置換理由: Build が実行者を直接返す契約と、状態マーカーの絶対発生時刻を [ADR-ANIMATION-0003](ANIMATION-0003-animation-execution-and-event-time.md) で採用した。その他の判断は後継 ADR へ引き継ぐ。
 
 ## 背景
 
@@ -99,7 +101,7 @@ Start(context) は停止中にだけ呼べる。初期状態の位置 0 と長�
 
 状態へ入場するたびに新しい再生区間を開始する。自己遷移は旧ライブラリと同じく許可し、退出・Effect・入場を実行して再生位置を 0 に戻す。常時再起動を防ぐ条件を定義する責任は作成者にある。
 
-Start は汎用インスタンスを生成し、Stop はそのインスタンスと再生資源を破棄する。Stop による追加の OnExit は実行しない。Pause は Animation のみの状態とし、内部の汎用インスタンスへの FireAny を呼ばない。Pause は現在位置を固定する。Resume は同じ位置から新しい時計基準で続ける。Pause 中の Update は停止位置の値だけを出し、遷移と未配送マーカーの収集は Resume 後へ残す。Speed は既存再生と同じ非負の有限値であり、状態の切替先にも引き継ぐ。Speed が 0 でも、実行中なら Context・トリガーによる遷移は判定する。
+Start は汎用インスタンスを生成し、Stop はそのインスタンスを破棄して各状態の再生を停止する。再生資源は実行者内に保持し、再開始と状態切替で再利用する。Stop による追加の OnExit は実行しない。Pause は Animation のみの状態とし、内部の汎用インスタンスへの FireAny を呼ばない。Pause は現在位置を固定する。Resume は同じ位置から新しい時計基準で続ける。Pause 中の Update は停止位置の値だけを出し、遷移と未配送マーカーの収集は Resume 後へ残す。Speed は既存再生と同じ非負の有限値であり、状態の切替先にも引き継ぐ。Speed が 0 でも、実行中なら Context・トリガーによる遷移は判定する。
 
 Once の完了後も機械は Running のまま終端を保持し、後続 Update で条件遷移できる。`OnCompleted` は一度限りの通知ではなく、完了済みという条件である。Stop は現在状態と保留を破棄し、値の復元や最後の値の書き込みをしない。停止中の Update は出力を変更せず false を返す。
 
@@ -111,7 +113,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 
 切替した更新では旧状態の Hold／Release の値を外部へ転送しない。新状態に寄与がないチャネルは Output に出ないので、前の値を保つか復元するかは消費側が決める。切替時の連続性は保証せず、クロスフェードや現在値からの補間を暗黙に行わない。
 
-旧状態が切替までに通過したマーカーは失わず、旧状態の識別子付きで配送する。`AnimationStateEvent<TState>` の `Occurrence.Time` と `LoopIndex` はその状態のタイムライン内の値、`UpdateOffset` は状態機械の前回評価基準からの時計上の時間幅とする。内部再生者の基準が異なる場合は機械が差を補正する。Start 後の最初の基準は Start の時計時点とする。
+旧状態が切替までに通過したマーカーは失わず、旧状態の識別子付きで配送する。`AnimationStateEvent<TState>` の `Occurrence.Event.Time` はその状態のタイムライン内の時刻、`Occurrence.LoopIndex` は状態に入場してからの外側の周番号とする。`Occurrence.UpdateOffset` は状態機械の前回イベント走査基準からの時計上の時間幅とする。内部再生者の基準が異なる場合は機械が差を補正する。Start 後の最初の基準は Start の時計時点とし、Paused の Update はこの基準を進めない。
 
 0 のマーカーを開始操作で追加配送しない。既存 `AnimationPlayback` と同様に、最初に時間が前進した Update で収集する。新状態の 0 のマーカーも次の前進更新で収集する。遷移通知にはソース、ターゲット、切替を観測した `TimePoint` を記録する。異なる時計の TimePoint 同士は比較しない。コレクション間の配送は消費側が行い、必要ならマーカーの基準時点＋UpdateOffset と遷移の ObservedAt から並べる。
 
@@ -416,7 +418,7 @@ var animation = new AnimationStateMachine<Motion, MotionInput>(clock, adapted);
 
 ## 検証・所有権・失敗時の契約
 
-汎用定義は初期状態と全遷移端点から参照同一性で状態集合を構築する。アニメーション定義は消費側 ID の一意性、Control の全状態と再生対応の一対一の一致、null、Wrap の有効値と正のタイムライン長を検証する。汎用 State の Name を消費側 ID のキーとして使わない。自動構築と専用 Builder の明示確定はさらに Loop 状態の OnCompleted を検証する。`TState` の等価比較には `EqualityComparer<TState>.Default` を使用する。ID の等価性とハッシュ値は定義の寿命中に変えてはならない。到達不能な状態と複数の同一条件は許可するが、曖昧な条件に優先順位を付ける責任は定義作成者にある。
+汎用定義は初期状態と全遷移端点、および明示登録した状態から参照同一性で状態集合を構築する。アニメーション定義は消費側 ID の一意性、Control の全状態と再生対応の一対一の一致、null、Wrap の有効値と正のタイムライン長を検証する。汎用 State の Name を消費側 ID のキーとして使わない。自動構築と専用 Builder の明示確定はさらに Loop 状態の OnCompleted を検証する。`TState` の等価比較には `EqualityComparer<TState>.Default` を使用する。ID の等価性とハッシュ値は定義の寿命中に変えてはならない。到達不能な状態と複数の同一条件は許可するが、曖昧な条件に優先順位を付ける責任は定義作成者にある。
 
 null の必須引数は ArgumentNullException、不整合な定義と未使用トリガーは ArgumentException、無効な数値・列挙値は ArgumentOutOfRangeException、時計逆行は InvalidOperationException、時間演算のオーバーフローは OverflowException とする。Pause／Resume は対象状態以外では何もしない。Stop は繰り返しても安全。参照型 Context の null は Update の変更前に拒否する。
 

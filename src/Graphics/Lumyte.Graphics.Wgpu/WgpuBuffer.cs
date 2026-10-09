@@ -72,6 +72,20 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public bool IsMapped => _mapped && !_pending && !_disposed;
 
+    internal A.Buffer Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_mapped || _pending)
+            {
+                throw new InvalidOperationException("GPU commands require an unmapped buffer.");
+            }
+
+            return _native;
+        }
+    }
+
     internal WgpuDevice Owner => _owner;
 
     public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);

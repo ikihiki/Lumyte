@@ -20,6 +20,121 @@ public sealed class AnimationStateMachineTests
         Moving,
     }
 
+    /// <summary>Checks both build entry points return independent running instances with copied timelines.</summary>
+    /// <param name="composition">Whether to use the Composition build entry point.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildReturnsRunningIndependentInstances(bool composition)
+    {
+        var clock = new ObservedClock();
+        var source = new CountingSource();
+        var channel = AnimationChannel<float>.Create();
+        ComposeAnimation.Definitions.Timeline timeline = Timeline()[Track<float>(channel, source)];
+        var builder = new AnimationStateMachineBuilder<Motion, Input>();
+        builder.AddState(Motion.Idle, timeline);
+        ComposeAnimation.Definitions.StateMachine<Motion, Input> definition = StateMachine<Motion, Input>(Motion.Idle)[State<Motion, Input>(Motion.Idle, timeline)];
+        AnimationStateMachine<Motion, Input> first = composition
+            ? definition.Build(clock, new Input(Moving: false))
+            : builder.Build(clock, Motion.Idle, new Input(Moving: false));
+        Assert.Equal(AnimationStateMachineStatus.Running, first.Status);
+        Assert.Equal(Motion.Idle, first.CurrentState);
+        Assert.Equal(Duration.Zero, first.Position);
+        Assert.Equal(1, clock.Reads);
+        Assert.Equal(0, source.Samples);
+        Assert.Throws<InvalidOperationException>(() => first.Start(new Input(Moving: false)));
+        timeline.Children = [Track<float>(channel, Scalar(9, 9))];
+        AnimationStateMachine<Motion, Input> second = composition
+            ? definition.Build(clock, new Input(Moving: false))
+            : builder.Build(clock, Motion.Idle, new Input(Moving: false));
+        clock.Time += Duration.FromSeconds(0.5);
+        var output = new AnimationOutput();
+        first.Update(new Input(Moving: false), output, [], []);
+        Assert.True(output.TryGet(channel, out float original));
+        Assert.Equal(0.5f, original);
+        output.Clear();
+        second.Update(new Input(Moving: false), output, [], []);
+        Assert.True(output.TryGet(channel, out float changed));
+        Assert.Equal(9, changed);
+        first.Stop();
+        Assert.Equal(AnimationStateMachineStatus.Running, second.Status);
+    }
+
+    /// <summary>Checks invalid build arguments fail before compilation, clock reads or value sampling.</summary>
+    [Fact]
+    public void BuildValidatesInputsBeforeCompilationAndStart()
+    {
+        var clock = new ObservedClock();
+        var source = new CountingSource();
+        var channel = AnimationChannel<float>.Create();
+        ComposeAnimation.Definitions.Timeline timeline = Timeline()[Track<float>(channel, source)];
+        var builder = new AnimationStateMachineBuilder<Motion, string>();
+        builder.AddState(Motion.Idle, timeline);
+        ComposeAnimation.Definitions.StateMachine<Motion, string> definition = StateMachine<Motion, string>(Motion.Idle)[State<Motion, string>(Motion.Idle, timeline)];
+        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, Motion.Idle, "input"));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(clock, Motion.Idle, null!));
+        Assert.Throws<ArgumentNullException>(() => definition.Build(null!, "input"));
+        Assert.Throws<ArgumentNullException>(() => definition.Build(clock, null!));
+        Assert.Equal(0, source.DurationReads);
+        Assert.Throws<ArgumentException>(() => builder.Build(clock, Motion.Action, "input"));
+        Assert.Equal(0, clock.Reads);
+        Assert.Equal(0, source.Samples);
+        Assert.Equal(AnimationStateMachineStatus.Running, builder.Build(clock, Motion.Idle, "input").Status);
+    }
+
+    /// <summary>Checks absolute marker times survive state changes, pause and speed changes without external clock reads.</summary>
+    [Fact]
+    public void EventTimesRemainComparableAcrossStatesAndPause()
+    {
+        var clock = new ObservedClock
+        {
+            Time = TimePoint.Zero + Duration.FromSeconds(10),
+        };
+        var channel = AnimationChannel<float>.Create();
+        var trigger = StateMachineTrigger.Create();
+        var first = new AnimationTimelineBuilder();
+        first.Add(Duration.Zero, Scalar(0, 1), channel);
+        first.AddEvent(Duration.FromSeconds(0.4), "BeforePause");
+        var second = new AnimationTimelineBuilder();
+        second.Add(Duration.Zero, Scalar(1, 2), channel);
+        second.AddEvent(Duration.Zero, "Entered");
+        second.AddEvent(Duration.FromSeconds(0.4), "AfterTransition");
+        var builder = new AnimationStateMachineBuilder<Motion, Input>();
+        builder.AddState(Motion.Idle, first.Build());
+        builder.AddState(Motion.Action, second.Build());
+        builder.AddTransition(Motion.Idle, Motion.Action, trigger: trigger);
+        AnimationStateMachine<Motion, Input> machine = builder.Build(clock, Motion.Idle, new Input(Moving: false));
+        clock.Time += Duration.FromSeconds(0.5);
+        machine.Pause();
+        clock.Time += Duration.FromSeconds(3.5);
+        var output = new AnimationOutput();
+        var events = new List<AnimationStateEvent<Motion>>();
+        var transitions = new List<AnimationStateTransition<Motion>>();
+        machine.Update(new Input(Moving: false), output, events, transitions);
+        Assert.Empty(events);
+        machine.SetTrigger(trigger);
+        machine.Resume();
+        int reads = clock.Reads;
+        Assert.True(machine.Update(new Input(Moving: false), output, events, transitions));
+        Assert.Equal(reads + 1, clock.Reads);
+        AnimationStateEvent<Motion> beforePause = Assert.Single(events);
+        Assert.Equal(TimePoint.Zero + Duration.FromSeconds(10.4), beforePause.OccurredAt);
+        Assert.Equal(Duration.FromSeconds(0.4), beforePause.Occurrence.UpdateOffset);
+        AnimationStateTransition<Motion> transition = Assert.Single(transitions);
+        Assert.Equal(TimePoint.Zero + Duration.FromSeconds(14), transition.ObservedAt);
+        Assert.True(beforePause.OccurredAt < transition.ObservedAt);
+        machine.Speed = 2;
+        events.Clear();
+        clock.Time += Duration.FromSeconds(0.2);
+        reads = clock.Reads;
+        machine.Update(new Input(Moving: false), output, events, transitions);
+        Assert.Equal(reads + 1, clock.Reads);
+        Assert.Equal(2, events.Count);
+        Assert.Equal(transition.ObservedAt, events[0].OccurredAt);
+        Assert.Equal(TimePoint.Zero + Duration.FromSeconds(14.2), events[1].OccurredAt);
+        Assert.Equal(Duration.FromSeconds(0.2), events[1].Occurrence.UpdateOffset);
+    }
+
     /// <summary>Performs composition builds automatically without reading clock or sampling.</summary>
     [Fact]
     public void CompositionBuildsAutomaticallyWithoutReadingClockOrSampling()

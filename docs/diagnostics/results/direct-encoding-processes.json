@@ -1,0 +1,26 @@
+[
+  {
+    "transport": "http",
+    "serverProcessId": 20786,
+    "gameProcessId": 20831,
+    "catalogOperation": "override-button",
+    "result": "success",
+    "operationElapsedMilliseconds": 129.12,
+    "inputChanged": true,
+    "metricInt64": "9007199254740993",
+    "traceLogCorrelated": true,
+    "disconnectReleasedInput": true
+  },
+  {
+    "transport": "magiconion",
+    "serverProcessId": 20786,
+    "gameProcessId": 20881,
+    "catalogOperation": "override-button",
+    "result": "success",
+    "operationElapsedMilliseconds": 81.112,
+    "inputChanged": true,
+    "metricInt64": "9007199254740993",
+    "traceLogCorrelated": true,
+    "disconnectReleasedInput": true
+  }
+]
