@@ -119,3 +119,11 @@ CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返�
 これらの完全なnative pipelineはcacheが必要な生成単位です。dynamic stateはcommandを記録するだけで、一時state objectを生成しません。そのため今回新たに比較対象となる軽量なstate objectはありません。partial programや独立した軽量objectを導入する際は、毎draw生成・状態変更時生成・cacheのCPU時間と保持memoryを同条件で比較し、結果をこのREADMEへ記録します。今回の実装で性能計測済みとは扱いません。
 
 共通契約は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)、共通画素検証は [PipelineExercise](../../../samples/Lumyte.Graphics.Shared/PipelineExercise.cs) を参照してください。
+
+### Graphics PSO cacheの無効化
+
+`VulkanDevice.Create(cacheGraphicsPipelines: false)` で、状態が同じdrawでも毎回 `vkCreateGraphicsPipelines` を呼ぶ比較用経路を選べます。既定値は `true` です。これはライブラリのvariant再利用を無効にする設定で、driver内部のcacheを無効にするものではありません。`VkPipelineCache` はどちらの経路も渡していません。
+
+生成したPSOは記録済みcommandやGPUが参照するため、draw直後には破棄せずprogramの `Dispose` まで保持します。利用者はGPU完了後にprogramを解放してください。無効時はdraw数に比例してnative PSOの保持数と生成費用が増えます。compute pipelineはprogram生成時の一個を使う契約を維持します。
+
+共通APIの同じ画素検証をcache有効・無効の両方で既存CIへ流します。これは描画の正しさの比較で、実GPUの性能比較結果を示すものではありません。

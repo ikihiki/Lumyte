@@ -29,4 +29,13 @@ public sealed class PipelineTests
         PipelineExercise.CheckForeignDevice(device, foreign);
         Assert.Contains("Pipeline checks passed", await PipelineExercise.RunAsync(device));
     }
+
+    /// <summary>Checks identical Vulkan draws without native graphics pipeline reuse.</summary>
+    /// <returns>The asynchronous verification.</returns>
+    [GpuFact]
+    public async Task VulkanPipelinesWithoutCacheDrawAndDispatchAsync()
+    {
+        using var device = VulkanDevice.Create(cacheGraphicsPipelines: false);
+        Assert.Contains("Pipeline checks passed", await PipelineExercise.RunAsync(device));
+    }
 }

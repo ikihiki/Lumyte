@@ -8,12 +8,20 @@ namespace Lumyte.Graphics.Vulkan;
 internal sealed unsafe partial class VulkanGraphicsPipeline
 {
     private readonly Dictionary<string, Pipeline> _variants = [];
+    private readonly List<Pipeline> _uncachedPipelines = [];
     private PipelineLayout _layout;
 
     internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats)
     {
         ValidateAlive();
         PipelineValidation.Draw(Desc, state, formats, FragmentOutputs);
+        if (!_owner.CacheGraphicsPipelines)
+        {
+            Pipeline fresh = CreateNative(state.Desc, formats);
+            _uncachedPipelines.Add(fresh);
+            return fresh;
+        }
+
         string key = state.Key + ":" + string.Join(',', formats);
         if (_variants.TryGetValue(key, out Pipeline cached))
         {
@@ -177,6 +185,12 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
             _owner.Api.DestroyPipeline(_owner.NativeDevice, pipeline, null);
         }
 
+        foreach (Pipeline pipeline in _uncachedPipelines)
+        {
+            _owner.Api.DestroyPipeline(_owner.NativeDevice, pipeline, null);
+        }
+
+        _uncachedPipelines.Clear();
         _variants.Clear();
         _owner.Api.DestroyPipelineLayout(_owner.NativeDevice, _layout, null);
     }

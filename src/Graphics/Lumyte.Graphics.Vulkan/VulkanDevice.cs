@@ -21,11 +21,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private int _submissionCount;
     private bool _disposed;
 
-    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily)
+    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines)
     {
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
         SupportsCubeArrays = supportsCubeArrays;
+        CacheGraphicsPipelines = cacheGraphicsPipelines;
         QueueFamily = queueFamily;
         api.GetDeviceQueue(device, queueFamily, 0, out _nativeQueue);
         Queue = new VulkanQueue(this);
@@ -36,6 +37,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the enabled capabilities and physical device limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal bool CacheGraphicsPipelines { get; }
 
     internal uint QueueFamily { get; }
 
@@ -51,8 +54,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     /// <summary>Creates a Vulkan 1.3 device with a general queue, maintenance4, dynamic rendering and synchronization2.</summary>
     /// <param name="physicalDeviceIndex">The zero-based device index in the Vulkan enumeration.</param>
+    /// <param name="cacheGraphicsPipelines">Whether to reuse native graphics pipelines for equivalent draw state.</param>
     /// <returns>The owned instance and logical device.</returns>
-    public static VulkanDevice Create(uint physicalDeviceIndex = 0)
+    public static VulkanDevice Create(uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)
     {
         var api = Vk.GetApi();
         Instance instance = default;
@@ -87,7 +91,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
             DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
-            return new(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily);
+            return new(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily, cacheGraphicsPipelines);
         }
         catch
         {
