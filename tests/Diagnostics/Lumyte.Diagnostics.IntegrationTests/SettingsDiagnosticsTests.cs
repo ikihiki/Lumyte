@@ -232,6 +232,27 @@ public sealed class SettingsDiagnosticsTests
         Assert.Equal(1, after.Revision);
         Assert.Equal("conflict", (await RemoteInvokeAsync(client, session, "save", Edit(), before.Revision)).Status);
         Assert.Contains("not-for-diagnostics", System.Text.Encoding.UTF8.GetString(store.Bytes!), StringComparison.Ordinal);
+        DiagnosticEvent[] events;
+        do
+        {
+            using HttpResponseMessage response = await client.GetAsync($"diagnostics/v1/sessions/{session}/telemetry", timeout.Token);
+            response.EnsureSuccessStatusCode();
+            events = JsonSerializer.Deserialize(await response.Content.ReadAsByteArrayAsync(timeout.Token), DiagnosticJson.Context.DiagnosticEventArray)!;
+            if (!events.Any(item => item.Name == "Settings.save" && item.Fields.GetValueOrDefault("settings.status").String == "Saved"))
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+        while (!events.Any(item => item.Name == "Settings.save" && item.Fields.GetValueOrDefault("settings.status").String == "Saved"));
+        DiagnosticEvent span = Assert.Single(events, item => item.Name == "Settings.save" && item.Fields.GetValueOrDefault("settings.status").String == "Saved");
+        Assert.Contains(events, item => item.Kind == "log" && item.Name == SettingsTelemetry.LogCategoryName && item.TraceId == span.TraceId);
+        Assert.Contains(events, item => item.Name == "settings.operations" && item.Fields.GetValueOrDefault("settings.operation").String == "save" && item.Fields.GetValueOrDefault("settings.status").String == "Saved");
+        Assert.Contains(events, item => item.Name == "settings.operation.duration");
+        Assert.Contains(events, item => item.Name == "settings.write.wait.duration");
+        Assert.Contains(events, item => item.Name == "settings.writes.active");
+        Assert.Contains(events, item => item.Name == "settings.operations" && item.Fields.GetValueOrDefault("settings.operation").String == "document-load");
+        Assert.All(events.Where(item => item.Fields.ContainsKey("settings.operation")), item => Assert.Equal(span.Fields["lumyte.instance.id"].String, item.Fields["lumyte.instance.id"].String));
+        Assert.DoesNotContain(events, item => item.Fields.Values.Any(value => value.String?.Contains("not-for-diagnostics", StringComparison.Ordinal) == true));
     }
 
     private static async Task<ServiceProvider> CreateAsync(Store store)
@@ -246,6 +267,7 @@ public sealed class SettingsDiagnosticsTests
     private static void RegisterSettings(IServiceCollection services, PersistedSettingsSource source)
     {
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddPersistedSettings(source).Build());
+        services.AddLumyteDiagnostics(_ => { });
         services.AddSettings(source);
         services.AddPersistedOptions<SettingsDiagnosticModel>("audio")
             .Validate(model => model.Volume is >= 0 and <= 1, "Secret validation details")

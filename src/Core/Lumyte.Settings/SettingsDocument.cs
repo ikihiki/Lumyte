@@ -6,12 +6,13 @@ namespace Lumyte.Settings;
 internal sealed class SettingsDocument : ISettingsDocument, IDisposable
 {
     private readonly PersistedSettingsSource _source;
+    private readonly SettingsTelemetryCollector _telemetry;
     private readonly IServiceProvider _services;
     private readonly PersistedOptionsExtensions.Registration[] _registrations;
     private JsonObject _document;
     private bool _protected;
 
-    public SettingsDocument(PersistedSettingsSource source, IServiceProvider services, IEnumerable<PersistedOptionsExtensions.Registration> registrations)
+    public SettingsDocument(PersistedSettingsSource source, IServiceProvider services, IEnumerable<PersistedOptionsExtensions.Registration> registrations, SettingsTelemetryCollector telemetry)
     {
         if (!source.IsLoaded || !source.IsRegistered)
         {
@@ -19,6 +20,8 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
         }
 
         _source = source;
+        _telemetry = telemetry;
+        _telemetry.DocumentLoaded(source.Result.Status, source.LoadDurationMilliseconds);
         _services = services;
         _registrations = registrations.ToArray();
         _document = source.CopyDocument();
@@ -43,6 +46,68 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
 
     public async Task<SettingsDocumentSaveResult> ResetAsync(CancellationToken cancellationToken = default)
     {
+        using SettingsTelemetryCollector.Operation operation = _telemetry.Begin("document-reset", "$document");
+        try
+        {
+            SettingsDocumentSaveResult result = await ResetValueAsync(operation, cancellationToken).ConfigureAwait(false);
+            operation.Complete(result.Status.ToString());
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Complete("Cancelled");
+            throw;
+        }
+    }
+
+    public void Dispose() => Writes.Dispose();
+
+    internal JsonNode? ReadSection(string sectionId) => _document["sections"]![sectionId]?.DeepClone();
+
+    internal bool ContainsSection(string sectionId) => ((JsonObject)_document["sections"]!).ContainsKey(sectionId);
+
+    internal JsonObject ReplaceSection(string sectionId, JsonObject section)
+    {
+        var next = (JsonObject)_document.DeepClone();
+        next["sections"]![sectionId] = section;
+        return next;
+    }
+
+    internal async Task StoreAsync(JsonObject replacement, string sectionId, CancellationToken cancellationToken)
+    {
+        using SettingsTelemetryCollector.Operation operation = _telemetry.Begin("store", sectionId);
+        try
+        {
+            await _source.Store.WriteAtomicallyAsync(Serialize(replacement), cancellationToken).ConfigureAwait(false);
+            operation.Complete("Saved");
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Complete("Cancelled");
+            throw;
+        }
+        catch (IOException)
+        {
+            operation.Complete("StorageFailure");
+            throw;
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
+        {
+            operation.Complete("ValidationFailed");
+            throw;
+        }
+    }
+
+    internal void Publish(JsonObject replacement)
+    {
+        _document = replacement;
+        _source.Publish(replacement);
+    }
+
+    private static byte[] Serialize(JsonObject document) => SettingsJson.SerializeDocument(document);
+
+    private async Task<SettingsDocumentSaveResult> ResetValueAsync(SettingsTelemetryCollector.Operation operation, CancellationToken cancellationToken)
+    {
         ValidateRegisteredSettings();
         (ISettingsSlot Slot, (object Value, JsonObject Section) Prepared)[] defaults;
         try
@@ -54,7 +119,7 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
             return new(SettingsSaveStatus.ValidationFailed, [error.Message]);
         }
 
-        await Writes.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await operation.WaitAsync(Writes, cancellationToken).ConfigureAwait(false);
         try
         {
             JsonObject replacement = PersistedSettingsSource.EmptyDocument();
@@ -66,7 +131,7 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
 
             try
             {
-                await _source.Store.WriteAtomicallyAsync(Serialize(replacement), cancellationToken).ConfigureAwait(false);
+                await StoreAsync(replacement, "$document", cancellationToken).ConfigureAwait(false);
             }
             catch (IOException error)
             {
@@ -95,27 +160,4 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
             Writes.Release();
         }
     }
-
-    public void Dispose() => Writes.Dispose();
-
-    internal JsonNode? ReadSection(string sectionId) => _document["sections"]![sectionId]?.DeepClone();
-
-    internal bool ContainsSection(string sectionId) => ((JsonObject)_document["sections"]!).ContainsKey(sectionId);
-
-    internal JsonObject ReplaceSection(string sectionId, JsonObject section)
-    {
-        var next = (JsonObject)_document.DeepClone();
-        next["sections"]![sectionId] = section;
-        return next;
-    }
-
-    internal async Task StoreAsync(JsonObject replacement, CancellationToken cancellationToken) => await _source.Store.WriteAtomicallyAsync(Serialize(replacement), cancellationToken).ConfigureAwait(false);
-
-    internal void Publish(JsonObject replacement)
-    {
-        _document = replacement;
-        _source.Publish(replacement);
-    }
-
-    private static byte[] Serialize(JsonObject document) => SettingsJson.SerializeDocument(document);
 }

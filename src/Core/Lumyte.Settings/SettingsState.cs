@@ -10,6 +10,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
     where T : class, new()
 {
     private readonly SettingsDocument _document;
+    private readonly SettingsTelemetryCollector _telemetry;
     private readonly ISettingsDefinition<T> _definition;
     private readonly JsonTypeInfo<T> _metadata;
     private readonly IConfigureOptions<T>[] _configure;
@@ -20,10 +21,11 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
     private long _revision;
     private bool _protected;
 
-    public SettingsState(string sectionId, SettingsDocument document, ISettingsDefinition<T> definition, IEnumerable<IConfigureOptions<T>> configure, IEnumerable<IPostConfigureOptions<T>> post, IEnumerable<IValidateOptions<T>> validators)
+    public SettingsState(string sectionId, SettingsDocument document, SettingsTelemetryCollector telemetry, ISettingsDefinition<T> definition, IEnumerable<IConfigureOptions<T>> configure, IEnumerable<IPostConfigureOptions<T>> post, IEnumerable<IValidateOptions<T>> validators)
     {
         SectionId = sectionId;
         _document = document;
+        _telemetry = telemetry;
         _definition = definition;
         _metadata = SettingsJson.CreatePersistenceMetadata(definition.JsonTypeInfo);
         _configure = configure.ToArray();
@@ -75,16 +77,13 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         }
 
         EnsureInitialized();
-        cancellationToken.ThrowIfCancellationRequested();
-        T candidate = _definition.DeepClone(edit.Value);
-        return SaveCandidateAsync(candidate, edit.BaseRevision, recovering: false, cancellationToken);
+        return SaveObservedAsync(edit.Value, edit.BaseRevision, recovering: false, cancellationToken);
     }
 
     public Task<SettingsSaveResult<T>> ResetAsync(long expectedRevision, CancellationToken cancellationToken = default)
     {
         EnsureInitialized();
-        cancellationToken.ThrowIfCancellationRequested();
-        return SaveCandidateAsync(_definition.DeepClone(CreateDefaults()), expectedRevision, recovering: true, cancellationToken);
+        return SaveObservedAsync(null, expectedRevision, recovering: true, cancellationToken);
     }
 
     public void EnsureInitialized() => _ = _initial.Value;
@@ -117,6 +116,14 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
     }
 
     private Initial Initialize()
+    {
+        using SettingsTelemetryCollector.Operation operation = _telemetry.Begin("load", SectionId);
+        Initial initial = InitializeValue();
+        operation.Complete(initial.Result.Status.ToString(), 0);
+        return initial;
+    }
+
+    private Initial InitializeValue()
     {
         if (_definition.SchemaVersion < 1)
         {
@@ -219,7 +226,25 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         return errors.ToImmutable();
     }
 
-    private async Task<SettingsSaveResult<T>> SaveCandidateAsync(T candidate, long expectedRevision, bool recovering, CancellationToken cancellationToken)
+    private async Task<SettingsSaveResult<T>> SaveObservedAsync(T? value, long expectedRevision, bool recovering, CancellationToken cancellationToken)
+    {
+        using SettingsTelemetryCollector.Operation operation = _telemetry.Begin(recovering ? "reset" : "save", SectionId);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            T candidate = _definition.DeepClone(recovering ? CreateDefaults() : value!);
+            SettingsSaveResult<T> result = await SaveCandidateAsync(candidate, expectedRevision, recovering, operation, cancellationToken).ConfigureAwait(false);
+            operation.Complete(result.Status.ToString(), result.Snapshot.Revision);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Complete("Cancelled");
+            throw;
+        }
+    }
+
+    private async Task<SettingsSaveResult<T>> SaveCandidateAsync(T candidate, long expectedRevision, bool recovering, SettingsTelemetryCollector.Operation operation, CancellationToken cancellationToken)
     {
         ImmutableArray<string> errors = NormalizeAndValidate(candidate);
         if (!errors.IsEmpty)
@@ -238,7 +263,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
             return new(SettingsSaveStatus.ValidationFailed, Current, [error.Message]);
         }
 
-        await _document.Writes.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await operation.WaitAsync(_document.Writes, cancellationToken).ConfigureAwait(false);
         try
         {
             JsonObject replacement;
@@ -259,7 +284,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
 
             try
             {
-                await _document.StoreAsync(replacement, cancellationToken).ConfigureAwait(false);
+                await _document.StoreAsync(replacement, SectionId, cancellationToken).ConfigureAwait(false);
             }
             catch (IOException error)
             {

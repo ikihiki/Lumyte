@@ -44,3 +44,15 @@ getter／setterは副作用を持たず、getterは正常な有限値を返す�
 
 サーバーのSettingsページは該当カタログの操作を表示し、操作結果をInspectorに表示します。
 設計判断は[ADR-SETTINGS-0002](../../../docs/adr/settings/SETTINGS-0002-diagnostic-operations.md)を参照してください。
+
+## テレメトリー
+
+Settings 本体が標準 .NET の Metric / Trace / Log を生成します。診断収集の許可リストへ以下を追加し、`DiagnosticTelemetry.Start()` を設定アダプターの解決より先に呼んでください。
+
+```csharp
+options.AllowedMeterNames = [SettingsTelemetry.MeterName];
+options.AllowedActivitySourceNames = [SettingsTelemetry.ActivitySourceName];
+options.AllowedLogCategoryPrefixes = [SettingsTelemetry.LogCategoryName];
+```
+
+アダプターは初回ロードと非同期保存にゲーム ID を付与し、既存の HTTP / MagicOnion テレメトリー送信へ接続します。保存結果のポーリングは新しい保存イベントを生成しません。各 Metric と通常のゲーム処理でのスコープ指定は [Settings README](../../Core/Lumyte.Settings/README.md) を参照してください。

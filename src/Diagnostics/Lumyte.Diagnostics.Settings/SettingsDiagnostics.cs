@@ -2,7 +2,7 @@ using Lumyte.Settings;
 
 namespace Lumyte.Diagnostics.Settings;
 
-internal sealed class SettingsDiagnostics<T>(IEditableOptions<T> settings, SettingsDiagnosticFields<T>.Field[] fields) : IDiagnosticContributor, IAsyncDisposable
+internal sealed class SettingsDiagnostics<T>(IEditableOptions<T> settings, SettingsDiagnosticFields<T>.Field[] fields, IGameExecutionIdentity identity) : IDiagnosticContributor, IAsyncDisposable
     where T : class, new()
 {
     private readonly IEditableOptions<T> _settings = settings;
@@ -14,6 +14,7 @@ internal sealed class SettingsDiagnostics<T>(IEditableOptions<T> settings, Setti
     {
         builder.Operation(new("read", "Read settings", DiagnosticPermission.Observe, [], [.. _fields.Select(field => field.Schema), new("load-status", DiagnosticValueKind.String)]), (_, _) =>
         {
+            using IDisposable correlation = SettingsTelemetry.BeginScope(identity.InstanceId);
             SettingsSnapshot<T> snapshot = _settings.Current;
             return DiagnosticOperationResult.Success(new SnapshotValues(snapshot.Value, _settings.LoadResult.Status.ToString(), _fields), snapshot.Revision);
         });
@@ -25,6 +26,7 @@ internal sealed class SettingsDiagnostics<T>(IEditableOptions<T> settings, Setti
 
         builder.Operation(new("save", "Start saving settings", DiagnosticPermission.Edit, editable.Select(field => field.Schema).ToArray(), [new("job-id", DiagnosticValueKind.String)], RequiresRevision: true), (context, arguments) =>
         {
+            using IDisposable correlation = SettingsTelemetry.BeginScope(identity.InstanceId);
             if (_job is { Completion.IsCompleted: false })
             {
                 return DiagnosticOperationResult.Reject("busy", "A settings save is still running.");
@@ -73,6 +75,7 @@ internal sealed class SettingsDiagnostics<T>(IEditableOptions<T> settings, Setti
 
     private async Task<Outcome> SaveAsync(SettingsEdit<T> edit, CancellationToken cancellationToken)
     {
+        using IDisposable correlation = SettingsTelemetry.BeginScope(identity.InstanceId);
         try
         {
             SettingsSaveResult<T> result = await _settings.SaveAsync(edit, cancellationToken).ConfigureAwait(false);

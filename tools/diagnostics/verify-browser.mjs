@@ -155,14 +155,17 @@ try {
         assert.equal(persistedSettings.sections.audio.values.volume, 0.75);
         await evaluate("document.querySelector('[data-tab=metrics]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('9007199254740993')"), 'lossless Int64 Metric');
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('settings.operations')"), 'settings Metric');
         await evaluate("document.querySelector('[data-tab=logs]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'Log display');
-        await evaluate("document.querySelector('#event-table td fluent-button').click()");
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Settings save completed with Saved')"), 'settings Log');
+        await evaluate("[...document.querySelectorAll('#event-table tr')].find(row => row.textContent.includes('Game instance connected')).querySelector('fluent-button').click()");
         await waitFor(() => evaluate("document.getElementById('event-detail')?.textContent.includes('\"kind\": \"log\"')"), 'log detail');
         const log = JSON.parse(await evaluate("document.getElementById('event-detail').textContent"));
         await evaluate("document.querySelector('[data-tab=traces]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('remote.start')"), 'Trace display');
-        await evaluate("document.querySelector('#event-table td fluent-button').click()");
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Settings.save')"), 'settings Trace');
+        await evaluate("[...document.querySelectorAll('#event-table tr')].find(row => row.textContent.includes('remote.start')).querySelector('fluent-button').click()");
         await waitFor(() => evaluate("document.getElementById('event-detail')?.textContent.includes('\"kind\": \"span\"')"), 'span detail');
         const trace = JSON.parse(await evaluate("document.getElementById('event-detail').textContent"));
         assert.equal(trace.traceId, log.traceId);
@@ -177,7 +180,7 @@ try {
         assert.equal(game.exitCode, 0);
         assert.ok(logs.get(transport).includes('Disconnected: Jump=False'));
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
-        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsReadSavePoll: true, settingsFilePersisted: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
+        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
     // Controlled resources exercise the resource-oriented query and navigation model.
     async function gameRequest(method, path, body, secret) {

@@ -32,7 +32,12 @@ public static class SettingsDiagnosticsExtensions
         services.AddDiagnosticSubsystem<SettingsDiagnostics<T>, TPoint>(new("settings." + moduleId, "Settings: " + moduleId, 1));
         ServiceDescriptor adapter = services.Single(service => service.ServiceType == typeof(SettingsDiagnostics<T>));
         services.Remove(adapter);
-        services.AddScoped(provider => new SettingsDiagnostics<T>(provider.GetRequiredService<IEditableOptions<T>>(), fields));
+        services.AddScoped(provider =>
+        {
+            IGameExecutionIdentity identity = provider.GetRequiredService<IGameExecutionIdentity>();
+            using IDisposable correlation = SettingsTelemetry.BeginScope(identity.InstanceId);
+            return new SettingsDiagnostics<T>(provider.GetRequiredService<IEditableOptions<T>>(), fields, identity);
+        });
         return services;
     }
 }

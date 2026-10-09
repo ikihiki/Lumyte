@@ -21,9 +21,9 @@ var services = new ServiceCollection();
 services.AddLumyteDiagnostics(options =>
 {
     options.Enabled = true;
-    options.AllowedMeterNames = ["Lumyte.Remote.Sample"];
-    options.AllowedActivitySourceNames = ["Lumyte.Remote.Sample"];
-    options.AllowedLogCategoryPrefixes = ["Lumyte.Remote.Sample"];
+    options.AllowedMeterNames = ["Lumyte.Remote.Sample", SettingsTelemetry.MeterName];
+    options.AllowedActivitySourceNames = ["Lumyte.Remote.Sample", SettingsTelemetry.ActivitySourceName];
+    options.AllowedLogCategoryPrefixes = ["Lumyte.Remote.Sample", SettingsTelemetry.LogCategoryName];
     options.TraceSampleRatio = 1;
 });
 services.AddScoped<InputOverrideService>();
@@ -59,9 +59,9 @@ try
 {
     IServiceProvider game = scope.ServiceProvider;
     InputOverrideService input = game.GetRequiredService<InputOverrideService>();
+    game.GetRequiredService<DiagnosticTelemetry>().Start();
     IDiagnosticPump<BeforeInputProcessing> pump = game.GetRequiredService<IDiagnosticPump<BeforeInputProcessing>>();
     DiagnosticAgent<BeforeInputProcessing> agent = game.GetRequiredService<DiagnosticAgent<BeforeInputProcessing>>();
-    game.GetRequiredService<DiagnosticTelemetry>().Start();
     pump.Activate();
     try
     {

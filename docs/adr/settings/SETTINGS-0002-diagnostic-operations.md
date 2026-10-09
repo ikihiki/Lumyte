@@ -61,3 +61,32 @@ setter は診断の所有スレッドで編集候補だけに作用する。Save
 ## 検証方針
 
 公開項目の限定、読み取り専用、権限、Revision 必須・競合、検証失敗、媒体失敗、保存進行中の busy と取消を確認する。実サーバーと両通信方式で read → save → save-result → read を行い、保存後の値と Revision を照合する。
+
+### 標準 .NET テレメトリー
+
+Settings 本体で Meter／ActivitySource／ILogger を生成し、診断経由以外の保存・リセットも計測する。Meter と ActivitySource、ログカテゴリの名前は `Lumyte.Settings`。Meter は DI の IMeterFactory が所有し、ActivitySource は DI の singleton 計測サービスが所有する。Settings は引き続き診断や通信層へ依存しない。
+
+```diff
++namespace Lumyte.Settings
++{
++    public static class SettingsTelemetry
++    {
++        public const string MeterName = "Lumyte.Settings";
++        public const string ActivitySourceName = "Lumyte.Settings";
++        public const string LogCategoryName = "Lumyte.Settings";
++        // 任意のゲーム相関。AsyncLocal で伝播し、Dispose で直前のスコープへ戻す。
++        public static IDisposable BeginScope(Guid instanceId);
++    }
++}
+```
+
+- `settings.operations`: 終了した処理数。operation、section、status をタグにする。
+- `settings.operation.duration`: 処理時間（ms）。save／reset は候補のコピー・検証・待機・保存・コミットを含む。store はシリアライズと媒体書き込みを含む。
+- `settings.write.wait.duration`: 書き込みの排他待ち時間（ms）。待機結果は Acquired／Cancelled／Failed。
+- `settings.writes.active`: 実行中の保存・リセット数。開始と終了で同じタグに +1／-1 を記録する。
+
+処理区分は document-load、load、save、reset、document-reset、store。Snapshot 参照や診断の結果ポーリングは計測しない。初回 document-load の媒体読み込みは構成／DI の起動前に行うため、所要時間を source に保持し、DI 解決時に結果のメトリクスとログを一度発行する。実際の初期化・移行・検証の load、非同期保存・リセット・store は実行中の Span を生成する。
+
+Span のタグと構造化ログには operation、section、status と確定 Revision を記録できる。メトリクスへ Revision、Request ID、job-id を付けない。値、JSON、パス、検証メッセージ、例外メッセージやスタックは出力しない。保存失敗・無効なデータなどは Error Span、Conflict／RecoveryRequired は警告ログ、Cancelled は通常の取消結果とする。計測先の例外で保存の成功・失敗を変えない。
+
+SettingsTelemetry.BeginScope を利用した場合だけ `lumyte.instance.id` を付ける。診断アダプターは登録時の解決と read／save をこのスコープに入れ、非同期完了まで維持する。ゲームの診断収集で Meter／ActivitySource／ログカテゴリを明示許可する。ゲーム相関がない起動時の記録も、標準の .NET／OpenTelemetry の購読では観測できる。診断だけの busy や開始前の Revision 拒否は永続化の試行数に含めない。

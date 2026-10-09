@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
@@ -18,6 +19,8 @@ public abstract class PersistedSettingsSource : IConfigurationSource
     {
         Store = store;
     }
+
+    internal double LoadDurationMilliseconds { get; private set; }
 
     internal ISettingsStore Store { get; }
 
@@ -44,6 +47,7 @@ public abstract class PersistedSettingsSource : IConfigurationSource
     {
         ArgumentNullException.ThrowIfNull(store);
         var source = new LoadedSource(store);
+        long started = Stopwatch.GetTimestamp();
         try
         {
             source.Accept(await store.ReadAsync(cancellationToken).ConfigureAwait(false));
@@ -53,6 +57,7 @@ public abstract class PersistedSettingsSource : IConfigurationSource
             source.AcceptFailure(error);
         }
 
+        source.LoadDurationMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         return source;
     }
 
@@ -101,6 +106,7 @@ public abstract class PersistedSettingsSource : IConfigurationSource
         {
             if (!_loaded)
             {
+                long started = Stopwatch.GetTimestamp();
                 try
                 {
                     Accept(ReadSynchronously());
@@ -109,6 +115,8 @@ public abstract class PersistedSettingsSource : IConfigurationSource
                 {
                     AcceptFailure(error);
                 }
+
+                LoadDurationMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             }
 
             _provider!.Publish(_raw);
