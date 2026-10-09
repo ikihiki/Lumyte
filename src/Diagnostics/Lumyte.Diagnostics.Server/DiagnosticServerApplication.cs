@@ -1,10 +1,14 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Lumyte.Diagnostics.Server.Components;
 using Lumyte.Diagnostics.Transport;
 using Lumyte.Diagnostics.Transport.MagicOnion;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.FluentUI.AspNetCore.Components;
 
 namespace Lumyte.Diagnostics.Server;
 
@@ -14,8 +18,9 @@ public static class DiagnosticServerApplication
     /// <summary>Creates an application with explicit enrollment and operator credentials.</summary>
     /// <param name="args">The host arguments.</param>
     /// <param name="configure">The credentials, capabilities and listener ports.</param>
+    /// <param name="configureServices">Optional page and service registrations.</param>
     /// <returns>The application; callers start and dispose it.</returns>
-    public static WebApplication Create(string[] args, Action<DiagnosticServerOptions> configure)
+    public static WebApplication Create(string[] args, Action<DiagnosticServerOptions> configure, Action<IServiceCollection>? configureServices = null)
     {
         var options = new DiagnosticServerOptions();
         configure(options);
@@ -27,7 +32,8 @@ public static class DiagnosticServerApplication
             throw new ArgumentException("Invalid server configuration.", nameof(configure));
         }
 
-        WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ApplicationName = typeof(DiagnosticHub).Assembly.FullName });
+        WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ApplicationName = typeof(DiagnosticHub).Assembly.GetName().Name, WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
+        builder.WebHost.UseStaticWebAssets();
         builder.WebHost.ConfigureKestrel(server =>
         {
             server.Limits.MaxRequestBodySize = 4 * 1024 * 1024;
@@ -44,10 +50,77 @@ public static class DiagnosticServerApplication
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<DiagnosticSessionRegistry>();
+        builder.Services.AddSingleton<IDiagnosticDashboardReader, DiagnosticDashboardReader>();
         builder.Services.AddHostedService<SessionExpiryService>();
-        builder.Services.AddAuthentication("Diagnostics").AddScheme<AuthenticationSchemeOptions, DiagnosticAuthenticationHandler>("Diagnostics", _ => { });
+        builder.Services.AddAntiforgery(antiforgery =>
+        {
+            antiforgery.HeaderName = "X-Diagnostics-CSRF";
+            antiforgery.Cookie.Name = "Lumyte.Diagnostics.Csrf";
+            antiforgery.Cookie.Path = "/";
+            antiforgery.Cookie.SameSite = SameSiteMode.Strict;
+        });
+        builder.Services.AddSingleton<DiagnosticBrowserTickets>();
+        builder.Services.AddSingleton<DiagnosticDashboardLimits>();
+        builder.Services.AddScoped<DiagnosticDashboardSession>();
+        builder.Services.AddScoped<CircuitHandler>(services => services.GetRequiredService<DiagnosticDashboardSession>());
+        builder.Services.AddCascadingAuthenticationState();
+        builder.Services.AddRazorComponents().AddInteractiveServerComponents(circuits =>
+        {
+            circuits.DisconnectedCircuitRetentionPeriod = TimeSpan.FromSeconds(10);
+            circuits.DisconnectedCircuitMaxRetained = 16;
+            circuits.MaxBufferedUnacknowledgedRenderBatches = 2;
+        });
+        builder.Services.AddFluentUIComponents();
+        builder.Services.AddRateLimiter(limiter =>
+        {
+            limiter.RejectionStatusCode = 429;
+            limiter.AddFixedWindowLimiter("UiLogin", window =>
+            {
+                window.PermitLimit = 10;
+                window.Window = TimeSpan.FromMinutes(1);
+                window.QueueLimit = 0;
+            });
+        });
+        builder.Services.AddAuthentication("Diagnostics")
+            .AddPolicyScheme("Diagnostics", "Diagnostics", policy => policy.ForwardDefaultSelector = context =>
+                context.Request.Path == "/" || context.Request.Path.StartsWithSegments("/resources") || context.Request.Path.StartsWithSegments("/games") || context.Request.Path.StartsWithSegments("/api/ui") || context.Request.Path.StartsWithSegments("/_blazor") ? DiagnosticBrowserUi.Scheme : "DiagnosticBearer")
+            .AddScheme<AuthenticationSchemeOptions, DiagnosticAuthenticationHandler>("DiagnosticBearer", _ => { })
+            .AddCookie(DiagnosticBrowserUi.Scheme, cookie =>
+            {
+                cookie.Cookie.Name = "Lumyte.Diagnostics.Operator";
+                cookie.Cookie.Path = "/";
+                cookie.Cookie.HttpOnly = true;
+                cookie.Cookie.SameSite = SameSiteMode.Strict;
+                cookie.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                cookie.ExpireTimeSpan = TimeSpan.FromMinutes(30);
+                cookie.SlidingExpiration = false;
+                cookie.Events.OnValidatePrincipal = context =>
+                {
+                    try
+                    {
+                        context.HttpContext.RequestServices.GetRequiredService<DiagnosticBrowserTickets>().Require(context.Principal!);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        context.RejectPrincipal();
+                    }
+
+                    return Task.CompletedTask;
+                };
+                cookie.Events.OnRedirectToLogin = context =>
+                {
+                    context.Response.StatusCode = 401;
+                    return Task.CompletedTask;
+                };
+                cookie.Events.OnRedirectToAccessDenied = context =>
+                {
+                    context.Response.StatusCode = 403;
+                    return Task.CompletedTask;
+                };
+            });
         builder.Services.AddAuthorization(authorization =>
         {
+            authorization.AddPolicy(DiagnosticBrowserUi.Scheme, policy => policy.AddAuthenticationSchemes(DiagnosticBrowserUi.Scheme).RequireAuthenticatedUser().RequireClaim("diagnostics.role", "operator"));
             authorization.AddPolicy("Game", policy => policy.RequireAuthenticatedUser().RequireClaim("diagnostics.role", "game"));
             authorization.AddPolicy("Operator", policy => policy.RequireAuthenticatedUser().RequireClaim("diagnostics.role", "operator"));
         });
@@ -63,10 +136,33 @@ public static class DiagnosticServerApplication
             magic.StreamingHubResponseQueueMaxLength = 256;
             magic.EnableStreamingHubHeartbeat = true;
         });
+        foreach (DiagnosticPageDefinition page in new DiagnosticPageDefinition[]
+        {
+            new("resources", "Resources", "Resources", 0),
+            new("overview", "Overview", "Game", 0),
+            new("objects", "Objects", "Engine", 0, "objects"),
+            new("ui", "UI", "Engine", 1, "ui"),
+            new("animation", "Animation", "Engine", 2, "animation"),
+            new("input", "Input", "Engine", 3),
+            new("rendering", "Rendering", "Engine", 4, "rendering"),
+            new("metrics", "Metrics", "Telemetry", 0),
+            new("logs", "Logs", "Telemetry", 1),
+            new("traces", "Traces", "Telemetry", 2),
+            new("operations", "Operations", "Operations", 0),
+        })
+        {
+            builder.Services.AddSingleton(page);
+        }
+
+        builder.Services.AddSingleton<DiagnosticPageRegistry>();
+        configureServices?.Invoke(builder.Services);
         WebApplication app = builder.Build();
+        _ = app.Services.GetRequiredService<DiagnosticPageRegistry>();
         app.UseCors("Diagnostics");
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseRateLimiter();
+        app.UseAntiforgery();
         app.Use(async (context, next) =>
         {
             try
@@ -91,6 +187,9 @@ public static class DiagnosticServerApplication
         });
         app.MapMagicOnionService().RequireAuthorization("Game");
         MapHttp(app);
+        DiagnosticBrowserUi.Map(app);
+        app.MapStaticAssets().WithMetadata(new Microsoft.AspNetCore.Cors.DisableCorsAttribute());
+        app.MapRazorComponents<App>().AddInteractiveServerRenderMode(server => server.ContentSecurityFrameAncestorsPolicy = null).WithMetadata(new Microsoft.AspNetCore.Cors.DisableCorsAttribute());
         return app;
     }
 

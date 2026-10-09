@@ -1,0 +1,63 @@
+<FluentCard Class="card">
+    <p class="eyebrow">@Subsystem.DisplayName</p><h2>@Operation.DisplayName</h2><p class="hint">@Operation.Id</p>
+    <form @onsubmit="ExecuteAsync" @onsubmit:preventDefault>
+        @foreach (DiagnosticField field in Operation.Arguments)
+        {
+            <label>@field.Id
+                @if (field.Kind == DiagnosticValueKind.Boolean)
+                {
+                    <select name="@field.Id" aria-label="@field.Id" @bind="_form.Values[field.Id]"><option>true</option><option>false</option></select>
+                }
+                else
+                {
+                    <input name="@field.Id" aria-label="@field.Id" type="@(field.Kind == DiagnosticValueKind.Double ? "number" : "text")" inputmode="@(field.Kind == DiagnosticValueKind.Int64 ? "numeric" : null)" step="any" required="@(field.Kind != DiagnosticValueKind.String)" maxlength="@(field.Kind == DiagnosticValueKind.String ? field.MaxLength ?? 4096 : null)" @bind="_form.Values[field.Id]" />
+                }
+            </label>
+            <p class="field-hint">型: @field.Kind / 最小: @field.Minimum / 最大: @field.Maximum / 最大文字数: @field.MaxLength</p>
+        }
+        @if (Operation.RequiresRevision)
+        {
+            <label>Expected revision<input name="expected-revision" aria-label="expected-revision" inputmode="numeric" required @bind="_form.Revision" /></label>
+        }
+        <FluentButton Type="ButtonType.Submit" Appearance="ButtonAppearance.Primary" Disabled="_busy">実行</FluentButton>
+        <p class="error" role="alert">@_error</p>
+    </form>
+</FluentCard>
+
+@code {
+    /// <summary>Gets or sets the operation schema.</summary>
+    [Parameter, EditorRequired]
+    public OperationDescriptor Operation { get; set; } = default!;
+
+    /// <summary>Gets or sets the subsystem identity.</summary>
+    [Parameter, EditorRequired]
+    public SubsystemDescriptor Subsystem { get; set; } = default!;
+
+    /// <summary>Gets or sets the validated invocation callback.</summary>
+    [Parameter]
+    public EventCallback<OperationInvocation> Execute { get; set; }
+
+    private DiagnosticOperationForm _form = default!;
+    private bool _busy;
+    private string _error = string.Empty;
+
+    protected override void OnInitialized() => _form = new(Operation);
+
+    private async Task ExecuteAsync()
+    {
+        _busy = true;
+        _error = string.Empty;
+        try
+        {
+            await Execute.InvokeAsync(_form.Build(Subsystem.Id));
+        }
+        catch (ArgumentException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

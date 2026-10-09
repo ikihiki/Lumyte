@@ -1,0 +1,62 @@
+@if (Items.Length == 0)
+{
+    <p class="hint">該当するイベントはありません。</p>
+}
+else
+{
+    <table>
+        <thead><tr><th>@(Kind == "log" ? "レベル" : Kind == "span" ? "Span" : "種類")</th><th>@(Kind == "log" ? "Category" : "名前")</th><th>@(Kind == "span" ? "処理時間" : "値 / 要約")</th><th>Trace ID</th></tr></thead>
+        <tbody>
+        @foreach (var row in Rows())
+        {
+            DiagnosticEvent item = row.Span;
+            <tr>
+                <td class="@(Kind == "log" ? "severity-" + DiagnosticTelemetryModel.Level(item).ToLowerInvariant() : null)">@(Kind == "log" ? DiagnosticTelemetryModel.Level(item) : Kind == "span" ? row.ParentMissing ? "親Span未保持" : row.Depth == 0 ? "Root" : "Child " + row.Depth : item.Kind)</td>
+                <td><FluentButton OnClick="() => Inspect.InvokeAsync(item)">@(new string('↳', Math.Min(row.Depth, 8)) + item.Name)</FluentButton></td>
+                <td>@(Kind == "span" ? DiagnosticTelemetryModel.Duration(item.DurationTicks) : DiagnosticTelemetryModel.Text(item.Value))
+                    @if (Kind == "span")
+                    {
+                        <progress class="span-duration" max="10000" value="@Ratio(item)" aria-label="@(item.Name + " " + DiagnosticTelemetryModel.Duration(item.DurationTicks))"></progress>
+                    }
+                </td>
+                <td>
+                    @if (item.TraceId is not null)
+                    {
+                        <FluentButton Class="trace-id" data-trace-link="@item.TraceId" OnClick="() => Trace.InvokeAsync(item.TraceId)">@item.TraceId</FluentButton>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    /// <summary>Gets or sets the bounded events to display.</summary>
+    [Parameter]
+    public DiagnosticEvent[] Items { get; set; } = [];
+
+    /// <summary>Gets or sets the presentation kind.</summary>
+    [Parameter]
+    public string? Kind { get; set; }
+
+    /// <summary>Gets or sets the detail callback.</summary>
+    [Parameter]
+    public EventCallback<DiagnosticEvent> Inspect { get; set; }
+
+    /// <summary>Gets or sets the trace navigation callback.</summary>
+    [Parameter]
+    public EventCallback<string> Trace { get; set; }
+
+    private DiagnosticTelemetryModel.SpanRow[] Rows() => Kind == "span" ? DiagnosticTelemetryModel.Traces(Items).SelectMany(group => group.Spans).ToArray() : Items.Reverse().Select(item => new DiagnosticTelemetryModel.SpanRow(item, 0, false)).ToArray();
+
+    private int Ratio(DiagnosticEvent item)
+    {
+        long longest = Items.Where(span => span.TraceId == item.TraceId).Max(span => span.DurationTicks);
+        return longest <= 0 ? 0 : (int)((decimal)item.DurationTicks * 10000 / longest);
+    }
+}

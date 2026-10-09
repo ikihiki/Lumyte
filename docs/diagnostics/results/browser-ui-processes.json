@@ -1,0 +1,47 @@
+[
+  {
+    "transport": "http",
+    "publishedServer": true,
+    "cookieLogin": true,
+    "generatedOperation": true,
+    "inputChanged": true,
+    "metricInt64": "9007199254740993",
+    "traceLogCorrelated": true,
+    "disconnectReleasedInput": true,
+    "mobileOverflow": false
+  },
+  {
+    "transport": "magiconion",
+    "publishedServer": true,
+    "cookieLogin": true,
+    "generatedOperation": true,
+    "inputChanged": true,
+    "metricInt64": "9007199254740993",
+    "traceLogCorrelated": true,
+    "disconnectReleasedInput": true,
+    "mobileOverflow": false
+  },
+  {
+    "scenario": "aspire-dashboard-patterns",
+    "resourceNavigation": true,
+    "gamePageRoutes": true,
+    "unsupportedCapability": true,
+    "disconnectedTargetIsolation": true,
+    "severityFilter": true,
+    "pauseResume": true,
+    "traceDeepLink": true,
+    "spanHierarchy": true,
+    "traceToLogs": true,
+    "metricSeriesChart": true,
+    "int64ChartPrecision": true,
+    "resourceIsolation": true,
+    "untrustedText": true
+  },
+  {
+    "scenario": "blazor-server",
+    "signalRWebSocket": true,
+    "fluentUiComponents": true,
+    "noLegacySse": true,
+    "logoutRevokesOtherCircuit": true
+  }
+]

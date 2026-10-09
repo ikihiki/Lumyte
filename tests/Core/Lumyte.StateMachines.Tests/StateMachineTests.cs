@@ -345,12 +345,19 @@ public sealed class StateMachineTests
     [Fact]
     public void DiagnosticsRecordSuccessUnknownTriggerAndCallbackErrors()
     {
+        using Activity scope = new Activity("StateMachine diagnostics test").Start();
         var captured = new List<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == StateMachineDiagnostics.ActivitySourceName,
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = captured.Add,
+            ActivityStopped = activity =>
+            {
+                if (ReferenceEquals(activity.Parent, scope))
+                {
+                    captured.Add(activity);
+                }
+            },
         };
         ActivitySource.AddActivityListener(listener);
         var state = new State<Context>("State");
@@ -358,6 +365,12 @@ public sealed class StateMachineTests
         builder.AddTransition(new Transition<Context, Trigger>(state, state, Trigger.Go).WithPriority(12));
         builder.AddTransition(new Transition<Context, Trigger>(state, state, Trigger.Other).Effect(_ => throw new ApplicationException("Effect")));
         StateMachineInstance<Context, Trigger> machine = builder.Build(new Context());
+        using (Activity otherScope = new Activity("Unrelated diagnostics scope").Start())
+        {
+            Assert.True(machine.Fire(Trigger.Go));
+        }
+
+        Assert.Empty(captured);
         Assert.True(machine.Fire(Trigger.Go));
         Assert.Equal("StateMachine.Fire", captured[0].OperationName);
         Assert.Equal("State", captured[0].GetTagItem("state_machine.state"));
