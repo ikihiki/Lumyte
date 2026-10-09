@@ -28,7 +28,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 | --- | --- |
 | `Lumyte.Settings` | 汎用サービス、結果型、JSON の読み書き、保存先の共通契約 |
 | 標準 Options の登録 | `Configure` / `PostConfigure` による既定値・正規化、`IValidateOptions<T>` による検証 |
-| 設定定義 `ISettingsDefinition<T>` | JSON 型情報、形式移行 |
+| 設定定義 `ISettingsDefinition<T>` | JSON 型情報、形式移行、検証前の深いコピー |
 | 永続化設定ソース / プロバイダー | 構成読み込み時の保存データ取得、元 JSON と診断の保持 |
 | 設定ストア `ISettingsStore` | 保存媒体への読み込みと全体置き換え |
 | アプリケーション / Engine の構成側 | ストアと設定定義の選択、設定画面、Input への橋渡し |
@@ -38,7 +38,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 ### データモデルと互換性
 
-設定ファイルは `{ "schemaVersion": 1, "values": { ... } }` のエンベロープとし、現在の設定全体を保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に候補を JSON に変換して再構築し、以後の UI 編集と分離する。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
+設定ファイルは `{ "schemaVersion": 1, "values": { ... } }` のエンベロープとし、現在の設定全体を保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に設定定義の `DeepClone` で候補を深く複製し、以後の UI 編集と分離する。コピーは JSON シリアライズを前提にせず、NaN・Infinity・不正な null なども値を変えずに保持して標準バリデータへ渡す。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
 
 永続化サービスは JSON の項目の存在を確認して、新しく追加された未指定項目だけを既定値で補完する。明示的な `false`、`0`、空配列を未指定と扱わない。明示的な `null` の可否は JSON の型情報と標準バリデータで検証する。既存の保存値はアプリの既定値変更後も維持し、リセットで新しい既定値に戻す。
 
@@ -48,7 +48,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 ### DI と宣言的な登録
 
-`AddPersistedOptions<T>` は標準 `OptionsBuilder<T>` を返す拡張メソッドとする。標準の `Configure`、`PostConfigure`、`Validate`、`ValidateDataAnnotations` と独自の保存先・JSON 形式の指定を連結できる。次の例は未実装の API を含む利用例である。
+`AddPersistedOptions<T>` は標準 `OptionsBuilder<T>` を返す拡張メソッドとする。標準の `Configure`、`PostConfigure`、`Validate`、`ValidateDataAnnotations` と独自の保存先・JSON 形式の指定を連結できる。`AddPersistedOptions<T>` は標準の `ValidateOnStart()` も自動登録し、利用側の追加呼び出しを不要にする。バリデータの一覧は DI の解決時に取得するため、チェーンや後続の DI 登録で追加した検証も起動時に実行される。次の例は未実装の API を含む利用例である。
 
 ```csharp
 var source = new PersistedJsonFileSource(settingsPath);
@@ -93,7 +93,7 @@ builder.Services.AddPersistedOptions<InputSettings>()
     .ValidateDataAnnotations();
 ```
 
-取得済みソースの IConfigurationProvider.Load はメモリ内のデータを公開するだけで、再度非同期 I/O を行わない。GetAwaiter().GetResult、Result、Task.Run による同期化は使用しない。非同期準備の完了前に DI / Host を構築したり、Input を開始したりしない。構成側が ValidateOnStart を連結し、同じ確定値生成を起動中に強制する。Generic Host を使わない場合は Engine の起動処理が IEditableOptions<T> を解決してから起動完了を返す。
+取得済みソースの IConfigurationProvider.Load はメモリ内のデータを公開するだけで、再度非同期 I/O を行わない。GetAwaiter().GetResult、Result、Task.Run による同期化は使用しない。非同期準備の完了前に DI / Host を構築したり、Input を開始したりしない。AddPersistedOptions が自動登録する ValidateOnStart により、未参照の設定型も起動中に確定値の生成・検証を完了する。Generic Host を使わない場合は Engine の起動処理が IEditableOptions<T> を解決してから起動完了を返す。
 
 ソースは一つの構成ルートに登録し、一つの設定型に接続する。DI 構築前にソースが読み込まれていることを確認し、未登録・未ロードなら構成エラーにする。外部ファイルの監視と IConfigurationRoot.Reload による再読み込みは初期対象外であり、取得済みデータを再公開する。保存成功時は元 JSON と構成プロバイダーのメモリ内表示も更新するが、変更通知による再読み込みは行わない。
 
@@ -109,11 +109,13 @@ builder.Services.AddPersistedOptions<InputSettings>()
 
 ### 設定の構築順序
 
-起動・リセットの既定値は、新しい T に名前が一致する `IConfigureOptions<T>` / `IConfigureNamedOptions<T>` を登録順に適用して作る。読み込みではこの既定値を JSON 化し、構成ソースが取得済みの JSON を移行して、存在する項目を上書きする。配列は全体置換、オブジェクトは項目単位で補完し、未知項目と不正な型を拒否する。その後、名前が一致する `IPostConfigureOptions<T>` を適用し、標準バリデータで検証する。
+起動・リセットの既定値は、新しい T に名前が一致する `IConfigureOptions<T>` / `IConfigureNamedOptions<T>` を登録順に適用して作る。読み込みではこの既定値を JSON 化し、構成ソースが取得済みの JSON を移行して、存在する項目を上書きする。型付きオブジェクトは既知のプロパティ単位で補完し、配列・辞書は存在する場合に全体置換する。この分類は JSON の見た目ではなく JsonTypeInfo のモデル種別に基づく。辞書の未指定は既定値、明示的な `{}` は空の辞書とし、保存済み辞書に存在しない既定のキーを補充しない。辞書キーは型付きプロパティの未知項目と区別し、許容するキー・各エントリの内容を標準バリデータで検証する。新しい既定エントリの追加が必要な場合は明示的な形式移行で行う。型付きオブジェクトの未知プロパティと不正な型を拒否する。その後、名前が一致する `IPostConfigureOptions<T>` を適用し、標準バリデータで検証する。
 
-保存候補は現在の編集内容が全体を持つため、`Configure` を再適用してユーザー値を上書きしない。独立した候補に `PostConfigure` を適用してから検証し、正規化後の値を保存・公開する。`PostConfigure` は繰り返し適用しても結果が変わらない処理に限定する。
+保存候補は現在の編集内容が全体を持つため、`Configure` を再適用してユーザー値を上書きしない。DeepClone で確保した独立の候補に `PostConfigure` を適用し、標準バリデータで検証してから保存用 JSON に変換する。NaN・Infinity は JSON 変換前に有限値バリデータで拒否して ValidationFailed を返す。検証を通った候補でも保存形式に表現できない場合は、その JSON 変換の診断を ValidationFailed として返し、ストアの書き込みと確定値の公開を行わない。正規化後の値を保存・公開する。`PostConfigure` は繰り返し適用しても結果が変わらない処理に限定する。
 
-保存 JSON の適用はすべての既定値 Configure の後、PostConfigure の前に挿入する必要がある。永続化サービスは標準の登録済みインターフェースを用いて上記の順序を組み立てる。標準 `IOptions<T>` / `IOptionsMonitor<T>` に保存済み設定を別途公開せず、確定値の読み取り窓口は `IEditableOptions<T>` に統一する。本設定型には同じ構築処理を使う IOptionsFactory<T> を登録し、標準の IOptions<T> と ValidateOnStart も取得済み保存値を含めて生成・検証する。IOptions<T> は最初の Value をキャッシュするため、保存後の変更を反映する読み取り窓口には使用しない。IOptionsMonitor<T> への保存時通知は初期対象外とする。
+保存 JSON の適用はすべての既定値 Configure の後、PostConfigure の前に挿入する必要がある。設定型ごとの内部 singleton 状態が標準の登録済みインターフェースを使って上記の順序を組み立てる。IOptionsFactory<T> と編集サービスはこの一つの状態を共有し、初期ロード結果・診断・復旧保護・Revision を独立に生成しない。初期化は同期かつ排他的に一度だけ行い、不正な既定値や構成エラーによる失敗も保持して再実行しない。内部状態は IOptions<T>・IOptionsMonitor<T>・IOptionsFactory<T>・編集サービスに依存させず、これらが内部状態に依存する方向とし、循環依存を防ぐ。
+
+本設定型には閉じた型の IOptionsFactory<T> を登録する。Create は共通状態の初期化を保証した後、現在の確定値の深いコピーを返す。ValidateOnStart は標準の IOptionsMonitor<T>.Get を通じてこの factory を呼ぶため、編集サービスが未参照でも同じ初期状態と診断が確定する。各キャッシュに返す T と編集用コピーは内部状態から分離し、利用者による変更が内部確定値へ伝わらないようにする。保存後の変更を反映する読み取り窓口は IEditableOptions<T> に統一する。IOptions<T> は最初の Value をキャッシュするため、保存後の変更を反映する読み取り窓口には使用しない。IOptionsMonitor<T> への保存時通知は初期対象外とする。
 
 ### 公開 API 案
 
@@ -148,6 +150,9 @@ builder.Services.AddPersistedOptions<InputSettings>()
 +    {
 +        int SchemaVersion { get; }
 +        JsonTypeInfo<T> JsonTypeInfo { get; }
++        // 入力を変更せず、内部コレクションまで独立したコピーを返す。
++        // 不正値・null・NaN・Infinity も保持し、検証前に JSON 化しない。
++        T DeepClone(T value);
 +        // JSON 形式の移行のみ。型付き検証は IValidateOptions<T> に委譲する。
 +        // 入力を変更せず、不正形式は JsonException、未対応版は NotSupportedException。
 +        JsonObject Upgrade(JsonObject values, int sourceVersion);
@@ -201,7 +206,7 @@ builder.Services.AddPersistedOptions<InputSettings>()
 +    }
 +    public static class PersistedOptionsExtensions
 +    {
-+        // 既定名のみ。通常の Configure / PostConfigure / Validate を連結できる。
++        // 既定名のみ。ValidateOnStart を自動登録し、通常の Options メソッドを連結できる。
 +        public static OptionsBuilder<T> AddPersistedOptions<T>(
 +            this IServiceCollection services) where T : class, new();
 +        // 読み込み済みソースを接続。設定型ごとに一つ、重複登録は構成エラー。
@@ -219,9 +224,9 @@ builder.Services.AddPersistedOptions<InputSettings>()
 
 ### 読み込み・編集・保存の契約
 
-構成ロード時に保存データを取得し、DI で IEditableOptions<T> を解決した際に同期で確定値を構築する。LoadResult の診断を UI やログへ渡す。ファイル不在なら既定値で開始し、暗黙にファイルを作成しない。不正データ、未対応版、ストア障害では既定値で開始するが、通常の `SaveAsync` は `RecoveryRequired` を返し、元データを上書きしない。ユーザーが明示的に復元を選んだ場合の `ResetAsync` でのみ上書きし、成功後に通常保存を許可する。
+構成ロード時に保存データを取得し、標準 Options の最初の生成または IEditableOptions<T> の解決で共通状態を同期初期化する。LoadResult の診断を UI やログへ渡す。ファイル不在なら既定値で開始し、暗黙にファイルを作成しない。不正データ、未対応版、ストア障害では既定値で開始するが、通常の `SaveAsync` は `RecoveryRequired` を返し、元データを上書きしない。ユーザーが明示的に復元を選んだ場合の `ResetAsync` でのみ上書きし、成功後に通常保存を許可する。
 
-UI は編集開始時の `Current.Revision` を保持する。保存は全設定を一括で検証し、失敗なら標準バリデータの失敗文字列を返す。保存操作の直列化後に Revision を確認し、古い編集コピーなら `Conflict` を返す。成功時だけ保存内容と同じスナップショットを公開し、Revision を増やす。保存失敗では Current と Revision を維持し、UI の編集コピーから再試行できる。
+UI は BeginEdit で一貫した BaseRevision と編集コピーを取得する。DeepClone の実行中は同じ編集コピーを別スレッドから変更しない。SaveAsync が候補を確保した後の UI 編集は保存内容に影響しない。保存は全設定を一括で検証し、失敗なら標準バリデータの失敗文字列を返す。保存操作の直列化後に Revision を確認し、古い編集コピーなら `Conflict` を返す。成功時だけ保存内容と同じスナップショットを公開し、Revision を増やす。保存失敗では Current と Revision を維持し、UI の編集コピーから再試行できる。
 
 内部の確定値全体を一度に置き換え、取得済みのコピーを変更しない。通知コールバックを保存処理に組み込まず、利用側がフレーム開始時などに Revision の変化を検出する。
 
@@ -277,7 +282,6 @@ Input の `IValidateOptions<T>` は変換表を構築できることまで保存
 
 - ファイルの読み込みは AddJsonFile と同じ構成ロード段階で完了し、利用者の初期化呼び出しは不要になる。
 - 非同期ストアは構成登録前の await が必要であり、標準の同期 API 内でブロックしない。
-
 - 読み込みから保存・復旧までを同じ型付き API で扱える。
 - 設定画面と Input 処理は JSON や保存媒体に依存しない。
 - 標準 Options の DI・宣言的登録・バリデータと JSON 機能を活用できる。移行とストアは独自実装する。
@@ -302,12 +306,18 @@ Input の `IValidateOptions<T>` は変換表を構築できることまで保存
 - 公開コピーの内部コレクションまで確定値と分離し、Input の管理スレッドで一括切り替えする。
 - ConfigurationBuilder の Build 時と ConfigurationManager の追加時に同期ロードが完了する。
 - 非同期ストアは構成登録前に await され、provider.Load と DI 解決で追加 I/O や同期ブロックを行わない。
-- 構成ロードと型付き生成・検証の時点を分離し、ValidateOnStart / Engine 起動で検証が完了する。
+- 構成ロードと型付き生成・検証の時点を分離し、追加の ValidateOnStart 呼び出しなしで未参照の設定も Host 起動中に検証する。
+- factory と編集サービスの解決順・並行解決にかかわらず、共通の初期値・診断・復旧保護が一度だけ確定する。
+- 標準 Options のキャッシュや公開コピーを変更しても内部確定値が変化しない。
+- 初期化失敗時に Configure / 移行 / 検証を暗黙に再実行しない。
+- 既定辞書 `{A,B}` から B を削除して `{A}` を保存し、再起動でも B が復活しない。空辞書と未指定も区別する。
 - IOptions<T> の初回生成は取得済み保存値を含み、保存後もキャッシュの契約を維持する。
 - Configure → 保存 JSON の適用 → PostConfigure → 検証の順序と、保存時に Configure を再適用しないこと。
 - 読み込み・保存・リセットで同じ標準バリデータを使い、複数の Fail を集約し Skip を尊重する。
 - ラムダ、DataAnnotations、Options 検証ソースジェネレーターによるネスト・コレクション検証。
 - デッドゾーンのゼロ、境界、斜め入力、外側の飽和、NaN / Infinity の拒否。
+- NaN / Infinity の候補が DeepClone を通って標準バリデータに届き、ValidationFailed として戻る。
+- JSON 変換失敗でストアを呼ばず、Current と Revision を維持する。
 - プレビューのキャンセルが最新の確定済み設定へ戻る。
 
 ## 別途決定する事項
