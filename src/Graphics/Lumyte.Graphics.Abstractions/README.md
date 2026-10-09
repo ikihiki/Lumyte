@@ -139,3 +139,9 @@ resourceはGPU完了まで利用者が生存させます。Submit時に生存と
 初期の実行範囲は既存のsingle-sample color attachmentとresource bindingを必要としないshaderです。depth/stencil、MSAA、root data／Argument Tableの物理binding接続はそれぞれのresource・binding契約で追加します。対応するattachmentがないdepth test等と、未接続のresource ABIは明確に拒否します。program → shader → deviceの順で解放し、GPU完了までの寿命と同期は利用者が管理します。
 
 設計は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md) を参照してください。
+
+## 構造体のshader argumentsとshader data
+
+applicationのroot structにShaderArgumentsを付け、IRenderEncoder／IComputeEncoder.SetArgumentsへ渡します。IShaderDataを実装したstructは`CreateBuffer<T>`(artifact, count)でCPU設定専用bufferを生成し、CopyFromで値を設定します。`ShaderDataSlice<T>`をIArgumentTable.WriteBufferへ登録すると`IGpuRef<T>`を取得でき、GetElementで各要素をroot引数へ渡せます。
+
+生成codecは[Lumyte.Graphics.Generators](../Lumyte.Graphics.Generators/README.md)から導入します。各draw／dispatchは到達可能な要素と参照をsnapshotします。shader dataへGPU copy、mapping、raw byte alias、shader writeを公開しません。通常のunmanaged bufferは従来の明示copyとbarrierを使います。同期と登録resourceの寿命は利用者が管理します。

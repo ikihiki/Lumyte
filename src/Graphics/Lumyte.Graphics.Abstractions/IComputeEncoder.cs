@@ -3,6 +3,16 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Provides a non-owning recording scope.</summary>
 public interface IComputeEncoder
 {
+    /// <summary>Selects the device's logical registration table for subsequent execution.</summary>
+    /// <param name="table">The live table from this device.</param>
+    void SetArgumentTable(IArgumentTable table);
+
+    /// <summary>Snapshots application root values using their generated codec.</summary>
+    /// <typeparam name="T">The generated argument structure.</typeparam>
+    /// <param name="arguments">The root values for the selected program.</param>
+    void SetArguments<T>(in T arguments)
+        where T : struct;
+
     /// <summary>Selects a same-device compute program.</summary>
     /// <param name="pipeline">The compute program.</param>
     void SetPipeline(IGraphicsComputePipeline pipeline);

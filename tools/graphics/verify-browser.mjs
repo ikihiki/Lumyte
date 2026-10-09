@@ -113,6 +113,7 @@ try {
     assert.match(result.report, /Shader checks passed:/);
     assert.match(result.report, /Command checks passed:/);
     assert.match(result.report, /Pipeline checks passed:/);
+    assert.match(result.report, /Shader binding checks passed:/);
     assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");
     console.log(`Browser .NET/WebGPU verification passed\n${result.report}`);

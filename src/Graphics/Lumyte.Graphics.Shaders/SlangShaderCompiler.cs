@@ -29,16 +29,22 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             string source = Path.Combine(directory, "shader.slang");
             string output = Path.Combine(directory, "shader.bin");
             string reflection = Path.Combine(directory, "reflection.json");
-            await File.WriteAllTextAsync(source, desc.Source, cancellationToken);
+            await File.WriteAllTextAsync(source, ShaderSourcePreparation.Prepare(desc.Source), cancellationToken);
+            using Stream helper = typeof(SlangShaderCompiler).Assembly.GetManifestResourceStream("Lumyte.Shaders.lumyte.slang")!;
+            using (FileStream helperFile = File.Create(Path.Combine(directory, "lumyte.slang")))
+            {
+                await helper.CopyToAsync(helperFile, cancellationToken);
+            }
+
             string compilerVersion = (await RunCompilerAsync(["-version"], cancellationToken)).Trim();
             ShaderTarget[] targets = desc.Target is { } selected ? [selected] : Enum.GetValues<ShaderTarget>();
             var results = new List<ShaderTargetData>();
             foreach (ShaderTarget target in targets)
             {
-                string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", desc.Stage.ToString().ToLowerInvariant(), "-target", target == ShaderTarget.Wgsl ? "wgsl" : "spirv", "-matrix-layout-row-major", "-reflection-json", reflection, "-o", output];
+                string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", desc.Stage.ToString().ToLowerInvariant(), "-target", target == ShaderTarget.Wgsl ? "wgsl" : "spirv", "-matrix-layout-row-major", target == ShaderTarget.SpirV ? "-DLUMYTE_SPIRV=1" : "-DLUMYTE_WGSL=1", "-I", directory, "-reflection-json", reflection, "-o", output];
                 _ = await RunCompilerAsync(arguments, cancellationToken);
                 byte[] code = await File.ReadAllBytesAsync(output, cancellationToken);
-                string reflectionJson = await File.ReadAllTextAsync(reflection, cancellationToken);
+                string reflectionJson = ShaderSourcePreparation.CompleteReflection(await File.ReadAllTextAsync(reflection, cancellationToken), desc.Source);
                 results.Add(new(target, desc.Stage, desc.EntryPoint, compilerVersion, "row-major", code, reflectionJson));
             }
 

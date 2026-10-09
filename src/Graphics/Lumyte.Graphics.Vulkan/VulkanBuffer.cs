@@ -4,7 +4,7 @@ using VkBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
+internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     where T : unmanaged
 {
     private readonly VulkanDevice _owner;
@@ -32,7 +32,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
         if ((Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) != 0)
         {
-            usage |= BufferUsageFlags.StorageBufferBit;
+            usage |= BufferUsageFlags.StorageBufferBit | BufferUsageFlags.ShaderDeviceAddressBit;
         }
 
         if ((Usage & BufferUsage.Index) != 0)
@@ -52,7 +52,8 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
             owner.Api.GetPhysicalDeviceMemoryProperties(owner.PhysicalDevice, &properties);
             MemoryPropertyFlags required = Memory == MemoryPreference.Automatic ? MemoryPropertyFlags.DeviceLocalBit : MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit;
             uint type = SelectMemoryType(properties, requirements.MemoryTypeBits, required);
-            var allocation = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type };
+            var flags = new MemoryAllocateFlagsInfo { SType = StructureType.MemoryAllocateFlagsInfo, Flags = (Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) != 0 ? MemoryAllocateFlags.DeviceAddressBit : 0 };
+            var allocation = new MemoryAllocateInfo { PNext = &flags, SType = StructureType.MemoryAllocateInfo, AllocationSize = requirements.Size, MemoryTypeIndex = type };
             Check(owner.Api.AllocateMemory(owner.NativeDevice, &allocation, null, &memory), "AllocateMemory");
             Check(owner.Api.BindBufferMemory(owner.NativeDevice, buffer, memory, 0), "BindBufferMemory");
             (_native, _memory) = (buffer, memory);
@@ -72,6 +73,8 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
             throw;
         }
     }
+
+    public object ShaderHandle => Native;
 
     public BufferLayout<T> Layout { get; }
 

@@ -32,6 +32,7 @@
   <Folder Name="/src/Graphics/">
     <Project Path="src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Shaders/Lumyte.Graphics.Shaders.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />

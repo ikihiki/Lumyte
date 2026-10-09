@@ -6,12 +6,17 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/binding-camera.slang" ResourceName="Lumyte.Shaders.binding-camera" Stage="fragment" />
+    <SlangShader Include="Shaders/binding-fragment.slang" ResourceName="Lumyte.Shaders.binding-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/binding-compute.slang" ResourceName="Lumyte.Shaders.binding-compute" Stage="compute" />
     <SlangShader Include="Shaders/fullscreen-vertex.slang" ResourceName="Lumyte.Shaders.fullscreen-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/color-fragment.slang" ResourceName="Lumyte.Shaders.color-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/empty-compute.slang" ResourceName="Lumyte.Shaders.empty-compute" Stage="compute" />
     <SlangShader Include="Shaders/increment.slang" ResourceName="Lumyte.Shaders.increment" />
+    <EmbeddedResource Include="Shaders/binding-compute.slang" LogicalName="Lumyte.Shaders.binding-compute.slang" />
     <EmbeddedResource Include="Shaders/increment.slang" LogicalName="Lumyte.Shaders.increment.slang" />
   </ItemGroup>
   <Import Project="../../tools/shaders/Slang.targets" />

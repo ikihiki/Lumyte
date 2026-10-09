@@ -25,6 +25,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         (_instance, _adapter, _device) = (instance, adapter, device);
         Queue = new WgpuQueue(this);
         WGPULimits limits = device.GetLimits();
+        Limits = limits;
         Caps = new()
         {
             ShaderTarget = ShaderTarget.Wgsl,
@@ -56,6 +57,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the effective device capabilities captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal WGPULimits Limits { get; }
 
     internal A.Device NativeDevice => _device;
 
@@ -152,6 +155,17 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new WgpuBuffer<T>(this, desc, layout, size);
+        _bufferCount++;
+        return buffer;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count)
+        where T : struct, IShaderData
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(artifact);
+        var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count);
         _bufferCount++;
         return buffer;
     }

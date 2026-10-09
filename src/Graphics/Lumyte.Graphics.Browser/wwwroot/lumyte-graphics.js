@@ -189,14 +189,14 @@ export function getSubmissionStatus(result) { return result.status; }
 export function getSubmissionError(result) { return result.error; }
 export async function waitSubmission(result) { await result.promise; }
 
-export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson) {
+export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson, bindingKey) {
     const state = JSON.parse(stateJson), formats = JSON.parse(formatsJson);
     const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
     const factors = ["zero", "one", "src", "one-minus-src", "src-alpha", "one-minus-src-alpha", "dst", "one-minus-dst", "dst-alpha", "one-minus-dst-alpha", "src-alpha-saturated", "constant", "one-minus-constant"];
     const operations = ["add", "subtract", "reverse-subtract", "min", "max"];
     const blend = b => ({ srcFactor: factors[b.Source], dstFactor: factors[b.Destination], operation: operations[b.Operation] });
     return handle.device.createRenderPipeline({
-        layout: "auto",
+        layout: bindingKey ? handle.device.createPipelineLayout({ bindGroupLayouts: [shaderLayout(handle.device, bindingKey)] }) : "auto",
         vertex: { module: vertex, entryPoint: vertexEntry },
         fragment: { module: fragment, entryPoint: fragmentEntry, targets: formats.map((format, i) => {
             const c = state.ColorTargets[i];
@@ -208,7 +208,7 @@ export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fr
         multisample: { count: 1, mask: state.SampleMask },
     });
 }
-export function createComputePipeline(handle, shader, entry) { return handle.device.createComputePipeline({ layout: "auto", compute: { module: shader, entryPoint: entry } }); }
+export function createComputePipeline(handle, shader, entry, bindingKey) { return handle.device.createComputePipeline({ layout: bindingKey ? handle.device.createPipelineLayout({ bindGroupLayouts: [shaderLayout(handle.device, bindingKey, true)] }) : "auto", compute: { module: shader, entryPoint: entry } }); }
 export function setRenderPipeline(pass, pipeline) { pass.setPipeline(pipeline); }
 export function setComputePipeline(pass, pipeline) { pass.setPipeline(pipeline); }
 export function setViewport(pass, x, y, width, height, min, max) { pass.setViewport(x, y, width, height, min, max); }
@@ -217,3 +217,52 @@ export function setBlendConstant(pass, r, g, b, a) { pass.setBlendConstant({ r, 
 export function setStencilReference(pass, reference) { pass.setStencilReference(reference); }
 export function draw(pass, vertices, instances, firstVertex, firstInstance) { pass.draw(vertices, instances, firstVertex, firstInstance); }
 export function dispatch(pass, x, y, z) { pass.dispatchWorkgroups(x, y, z); }
+
+function shaderLayout(device, key, compute = false) {
+    const [textures, samplers, buffers, writable] = key.split(":").map(Number);
+    const visibility = compute ? GPUShaderStage.COMPUTE : GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+    const entries = [{ binding: 8, visibility, buffer: { type: "uniform" } }];
+    if (textures + samplers + buffers + writable > 0) entries.push({ binding: 9, visibility, buffer: { type: "read-only-storage" } });
+    const extra = [10, 10 + Math.max(0, textures - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1) + Math.max(0, buffers - 1)];
+    [textures, samplers, buffers, writable].forEach((count, kind) => {
+        for (let i = 0; i < count; i++) {
+            const binding = i === 0 ? kind : extra[kind] + i - 1;
+            const entry = { binding, visibility: kind === 3 && !compute ? GPUShaderStage.FRAGMENT : visibility };
+            if (kind === 0) entry.texture = { sampleType: "float", viewDimension: "2d" };
+            else if (kind === 1) entry.sampler = { type: "filtering" };
+            else entry.buffer = { type: kind === 2 ? "read-only-storage" : "storage" };
+            entries.push(entry);
+        }
+    });
+    if (entries.length > device.limits.maxBindingsPerBindGroup) throw new Error("Shader arguments exceed maxBindingsPerBindGroup.");
+    return device.createBindGroupLayout({ entries });
+}
+function shaderBacking(device, view, usage) {
+    const bytes = view.slice();
+    const buffer = device.createBuffer({ size: (bytes.length + 3) & ~3, usage, mappedAtCreation: true });
+    new Uint8Array(buffer.getMappedRange()).set(bytes);
+    buffer.unmap();
+    return buffer;
+}
+export function createShaderBinding(handle, key, compute, root, map) {
+    if (root.length > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
+    const uniform = shaderBacking(handle.device, root, GPUBufferUsage.UNIFORM);
+    const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [uniform], entries: [{ binding: 8, resource: { buffer: uniform, size: root.length } }] };
+    if (map.length > 0) {
+        const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
+        binding.buffers.push(remap);
+        binding.entries.push({ binding: 9, resource: { buffer: remap, size: map.length } });
+    }
+    return binding;
+}
+export function addShaderResource(binding, slot, kind, resource, size) {
+    binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource, size } });
+}
+export function addShaderData(handle, binding, slot, data) {
+    const buffer = shaderBacking(handle.device, data, GPUBufferUsage.STORAGE);
+    binding.buffers.push(buffer);
+    binding.entries.push({ binding: slot, resource: { buffer, size: data.length } });
+}
+export function finishShaderBinding(handle, binding) { binding.group = handle.device.createBindGroup({ layout: binding.layout, entries: binding.entries }); }
+export function setShaderBinding(pass, binding) { pass.setBindGroup(0, binding.group); }
+export function destroyShaderBinding(binding) { for (const buffer of binding.buffers) buffer.destroy(); }

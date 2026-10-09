@@ -14,6 +14,52 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     private bool _blend;
     private bool _stencil;
 
+    private VulkanArgumentTable? _argumentTable;
+    private ShaderValueSnapshot? _arguments;
+    private object? _argumentProgram;
+
+    public void SetArgumentTable(IArgumentTable table)
+    {
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(table);
+        if (table is not VulkanArgumentTable concrete || !concrete.BelongsTo(owner.Owner))
+        {
+            throw new ArgumentException("Argument table belongs to another device.", nameof(table));
+        }
+
+        concrete.ThrowIfDisposed();
+        _argumentTable = concrete;
+    }
+
+    public void SetArguments<T>(in T value)
+        where T : struct
+    {
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+        ShaderValueSnapshot snapshot = ShaderCodec<T>.Capture(in value);
+        ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).Validate(snapshot);
+        foreach (ShaderValue member in snapshot.Values)
+        {
+            if (member.IsReference)
+            {
+                if (member.Reference is not IShaderReference reference || reference.Table is not VulkanArgumentTable referenceTable || !referenceTable.BelongsTo(owner.Owner))
+                {
+                    throw new ArgumentException("Root arguments contain a missing or foreign backend reference.", nameof(value));
+                }
+
+                reference.Validate();
+            }
+        }
+
+        _arguments = snapshot;
+        _argumentProgram = _pipeline;
+    }
+
     public void SetPipeline(IGraphicsPipeline pipeline)
     {
         owner.ValidatePass(this);
@@ -90,6 +136,29 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
         }
 
+        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        {
+            throw new InvalidOperationException("Set arguments again after switching to a different program.");
+        }
+
+        if (_arguments == null && (ShaderDataLayout.HasRoot(_pipeline.VertexData) || (_pipeline.FragmentData != null && ShaderDataLayout.HasRoot(_pipeline.FragmentData))))
+        {
+            throw new InvalidOperationException("Set the program's root arguments before execution.");
+        }
+
+        ShaderBindingSnapshot? bindingSnapshot = null;
+        if (_arguments != null)
+        {
+            if (_argumentTable == null && _arguments.Values.Any(v => v.IsReference))
+            {
+                throw new InvalidOperationException("Select an argument table before using shader arguments.");
+            }
+
+            _argumentTable?.ThrowIfDisposed();
+            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments);
+            bindingSnapshot = snapshot;
+        }
+
         _pipeline.ValidateAlive();
         PipelineValidation.Draw(_pipeline.Desc, _state, _formats, _pipeline.FragmentOutputs);
         _ = checked(firstVertex + vertexCount);
@@ -99,9 +168,22 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             return;
         }
 
-        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats);
+        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, bindingSnapshot);
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
+        if (bindingSnapshot != null)
+        {
+            var binding = new VulkanShaderBinding(owner.Owner, bindingSnapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingSnapshot.Root.RootParameter), _pipeline.ArgumentLayout);
+            owner.KeepBinding(binding);
+            V.DescriptorSet set = binding.Native;
+            owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
+        }
+
         owner.Owner.Api.CmdDraw(owner.Native, vertexCount, instanceCount, firstVertex, firstInstance);
+        if (bindingSnapshot != null)
+        {
+            owner.TrackProgram(bindingSnapshot.Validate);
+        }
+
         owner.TrackProgram(_pipeline.ValidateAlive);
     }
 

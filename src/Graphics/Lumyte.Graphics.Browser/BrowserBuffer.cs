@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
+internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     where T : unmanaged
 {
     private readonly BrowserDevice _owner;
@@ -26,6 +26,8 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
         _native = BrowserInterop.CreateBuffer(owner.Handle, size, (int)Usage, (int)Memory);
     }
+
+    public object ShaderHandle => Native;
 
     public BufferLayout<T> Layout { get; }
 

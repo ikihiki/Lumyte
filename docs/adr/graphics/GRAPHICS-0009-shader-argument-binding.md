@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0009: Argument Tableのシェーダー引数への接続
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-09
 
 ## 背景
@@ -21,7 +21,7 @@ shader argumentsはapplicationが定義するstructとし、encoderへ値とし�
 
 ### 公開API
 
-比較元はmain。以下は提案するAPI差分で、公開契約はGraphics.Abstractionsに置く。source generatorは別projectに置き、Abstractionsからgeneratorやbackendへ依存しない。
+比較元はmain。以下はAPI差分で、公開契約はGraphics.Abstractionsに置く。source generatorは別projectに置き、Abstractionsからgeneratorやbackendへ依存しない。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
@@ -66,6 +66,45 @@ shader argumentsはapplicationが定義するstructとし、encoderへ値とし�
 SetPipelineはtable選択や引数を暗黙に書き換えない。programを切り替えた場合は、そのprogramに対してSetArgumentsを再度呼ぶ。以前のprogramに対応付けたsnapshotを使うdraw／dispatchはInvalidOperationExceptionとし、reflectionの偶然の一致で受け入れない。
 
 root引数のないshaderはSetArgumentsを必要としない。値だけのstructではArgumentTableの選択を要求しない。IGpuRefを含む場合は、draw／dispatchまでにその参照を登録したtableを選択する。新しいpassでは設定状態を初期化し、別passから継承しない。
+
+### 生成codecとbackendの接続
+
+生成codecはapplication assemblyのmodule initializerで登録する。別assemblyのbackendから呼び出せるAOT対応の接続をGraphics.Abstractionsへ置き、managed reflectionやInternalsVisibleToを使わない。以下は生成コードとbackendが使用する契約であり、通常の利用側はSetArgumentsとCopyFromを使う。
+
+```diff
+ namespace Lumyte.Graphics.Abstractions
+ {
++    // 生成codecが数値と不透明参照を列挙する接続。
++    public interface IShaderValueWriter
++    {
++        void WriteValue<T>(string path, in T value) where T : unmanaged;
++        void WriteReference<T>(string path, IGpuRef<T>? value);
++    }
++
++    public delegate void ShaderWriteAction<T>(in T value, IShaderValueWriter writer)
++        where T : struct;
++
++    // application assemblyで生成したcodecをmodule initializerから登録する。
++    public static class ShaderCodec<T> where T : struct
++    {
++        public static void Register(string rootParameter, string shaderTypeName, ShaderWriteAction<T> write);
++        public static ShaderValueSnapshot Capture(in T value);
++    }
++
++    // 数値のCPU snapshotと参照identityを保持し、native addressは公開しない。
++    public sealed record ShaderValue(string Path, Type ValueType,
++        ReadOnlyMemory<byte> Data, object? Reference, bool IsReference);
++    public sealed record ShaderValueSnapshot(string RootParameter,
++        string ShaderTypeName, IReadOnlyList<ShaderValue> Values);
++
++    // offline／online compilerで共通のhelper ABIと型metadataを準備する。
++    public static class ShaderSourcePreparation
++    {
++        public static string Prepare(string source);
++        public static string CompleteReflection(string reflection, string source);
++    }
+ }
+```
 
 ### 利用例とshader側の受け取り
 

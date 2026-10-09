@@ -17,10 +17,28 @@ internal static class PipelineValidation
         using var document = JsonDocument.Parse(data.ReflectionJson);
         JsonElement root = document.RootElement;
         JsonElement entry = root.GetProperty("entryPoints").EnumerateArray().Single(e => e.GetProperty("name").GetString() == data.EntryPoint);
-        if ((root.TryGetProperty("parameters", out JsonElement globals) && globals.GetArrayLength() != 0) ||
-            (entry.TryGetProperty("bindings", out JsonElement bindings) && bindings.GetArrayLength() != 0))
+        if (root.TryGetProperty("parameters", out JsonElement globals))
         {
-            throw new NotSupportedException("Resource ABI requires the root-data and binding contract.");
+            int roots = globals.EnumerateArray().Count(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer");
+            if (roots > 1)
+            {
+                throw new NotSupportedException("A stage accepts one logical root structure.");
+            }
+
+            if (globals.GetArrayLength() != 0 && (!root.TryGetProperty("lumyteAbi", out JsonElement abi) || abi.GetInt32() != 1))
+            {
+                throw new NotSupportedException("The shader artifact has no supported root-data helper ABI.");
+            }
+
+            foreach (JsonElement parameter in globals.EnumerateArray())
+            {
+                string name = parameter.GetProperty("name").GetString()!;
+                string kind = parameter.GetProperty("type").GetProperty("kind").GetString()!;
+                if (kind != "constantBuffer" && !name.StartsWith("lumyte", StringComparison.Ordinal) && !name.StartsWith("__lumyte_schema_", StringComparison.Ordinal))
+                {
+                    throw new NotSupportedException("Shader resources must use the generated root-data and reference ABI.");
+                }
+            }
         }
 
         if (stage == ShaderStage.Compute)
@@ -45,6 +63,7 @@ internal static class PipelineValidation
 
     internal static void Program(GraphicsPipelineDesc desc, ShaderTargetData vertex, ShaderTargetData? fragment)
     {
+        ShaderDataLayout.ValidateProgram(vertex, fragment);
         if (!Enum.IsDefined(desc.TopologyClass) || !Enum.IsDefined(desc.Optimization) || (desc.AlphaToCoverageEnable && fragment == null))
         {
             throw new ArgumentException("Invalid compilation options.");

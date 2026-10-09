@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Samples;
+using Lumyte.Graphics.Shaders;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -17,6 +18,8 @@ public sealed class PipelineTests
         using var foreign = WgpuDevice.Create();
         PipelineExercise.CheckForeignDevice(device, foreign);
         Assert.Contains("Pipeline checks passed", await PipelineExercise.RunAsync(device));
+        Assert.Contains("Shader binding checks passed", await ShaderBindingExercise.RunAsync(device));
+        await ShaderBindingExercise.RunOnlineAsync(device, new SlangShaderCompiler());
     }
 
     /// <summary>Checks Vulkan native graphics variants and compute programs.</summary>
@@ -28,6 +31,8 @@ public sealed class PipelineTests
         using var foreign = VulkanDevice.Create();
         PipelineExercise.CheckForeignDevice(device, foreign);
         Assert.Contains("Pipeline checks passed", await PipelineExercise.RunAsync(device));
+        Assert.Contains("Shader binding checks passed", await ShaderBindingExercise.RunAsync(device));
+        await ShaderBindingExercise.RunOnlineAsync(device, new SlangShaderCompiler());
     }
 
     /// <summary>Checks identical Vulkan draws without native graphics pipeline reuse.</summary>
@@ -37,5 +42,7 @@ public sealed class PipelineTests
     {
         using var device = VulkanDevice.Create(cacheGraphicsPipelines: false);
         Assert.Contains("Pipeline checks passed", await PipelineExercise.RunAsync(device));
+        Assert.Contains("Shader binding checks passed", await ShaderBindingExercise.RunAsync(device));
+        await ShaderBindingExercise.RunOnlineAsync(device, new SlangShaderCompiler());
     }
 }

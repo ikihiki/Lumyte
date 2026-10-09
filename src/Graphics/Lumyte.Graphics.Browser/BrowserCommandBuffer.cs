@@ -4,6 +4,7 @@ namespace Lumyte.Graphics.Browser;
 
 internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
 {
+    private readonly List<IDisposable> _bindings = [];
     private readonly BrowserDevice _owner;
     private readonly List<Action> _resources = [];
     private readonly Dictionary<(IGraphicsTexture Texture, uint Mip, uint Layer), TextureState> _states = [];
@@ -216,6 +217,12 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         }
 
         DisposeNative();
+        foreach (IDisposable binding in _bindings)
+        {
+            binding.Dispose();
+        }
+
+        _bindings.Clear();
         _resources.Clear();
         _states.Clear();
         State = CommandBufferState.Disposed;
@@ -239,6 +246,8 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     internal void MarkSubmitted() => State = CommandBufferState.Submitted;
 
     internal void Complete(bool success) => State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
+
+    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
 
     internal void TrackProgram(Action validate) => _resources.Add(validate);
 
