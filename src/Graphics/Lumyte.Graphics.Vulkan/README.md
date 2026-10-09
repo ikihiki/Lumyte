@@ -149,3 +149,13 @@ CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返�
 | 上記の合計（各試行の合計から算出） | 5.251 (5.069–6.471) | 90.184 (82.813–130.980) |
 
 200 draw記録の中央値は無効時に約97倍、測定した区間の合計は約17.2倍でした。同じPSOの再利用が多いこのworkloadではcacheを維持します。submit完了時間の差にはsoftware driverの実行時処理やCPU schedulingも含まれるため、hardware GPUの描画時間差とは解釈しません。必要な拡張を用いたdynamic state化や部分PSO生成との比較は別のworkloadです。
+
+## Shader dataのCPU値設定（ADR-0009の設計）
+
+[ADR-GRAPHICS-0009](../../../docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)のshader data bufferは、CPUの数値とIGpuRefをCopyFromで設定します。raw bufferを公開せず、GPU copyのdestinationやShaderWriteにはしません。通常のbufferに対する明示的copyとbarrierの契約は別に維持します。
+
+draw／dispatchで推移的なshader dataのversionをsnapshotし、そのsnapshotのGPU backingを確保してからnative参照をpackします。buffer device addressを使う場合は必要feature・usage・allocation flagを有効化し、循環する参照先も含めて全backingのaddressを確定してから書き込みます。同じ論理bufferの新しいCPU versionは、記録済みcommandが保持するGPU backingを上書きしません。
+
+内部stagingからの転送とshader readへのdependencyは、consumer commandの実行前に同一queue上で成立するよう記録します。利用者のrender passの内部へcopyを挿入せず、内部転送とread-only shader dataの寿命をbackendが管理します。通常resourceとtable登録の寿命・同期は利用者が管理します。
+
+SPIR-Vだけを含むonline artifactも、このbackendの型schemaとhelper ABIが揃っていれば使用できます。WGSL targetがないことだけを理由に拒否しません。

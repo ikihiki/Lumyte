@@ -103,3 +103,17 @@ JS moduleからGPUDevice.createRenderPipeline／createComputePipelineを使用�
 これらの完全なnative pipelineはcacheが必要な生成単位です。dynamic stateはcommandを記録するだけで、一時state objectを生成しません。そのため今回新たに比較対象となる軽量なstate objectはありません。partial programや独立した軽量objectを導入する際は、毎draw生成・状態変更時生成・cacheのCPU時間と保持memoryを同条件で比較し、結果をこのREADMEへ記録します。今回の実装で性能計測済みとは扱いません。
 
 共通契約は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)、共通画素検証は [PipelineExercise](../../../samples/Lumyte.Graphics.Shared/PipelineExercise.cs) を参照してください。
+
+## Shader argumentsのbinding容量調整（ADR-0009の設計）
+
+[ADR-GRAPHICS-0009](../../../docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)のshader argumentsでは、artifactから取り出したWGSLをbackendが直接調整してからnative shader moduleを生成します。hardwareのlimitsを変更する機能ではなく、有効limitsに収まるresource宣言数とbinding配置を生成する機構です。
+
+compilerはWGSLとともに、変更対象のresource宣言・参照選択helper・binding位置を識別するschemaとABI versionをartifactへ保存します。backendはcompilerが管理する領域を構造的に編集し、resource宣言、binding番号、switch等の参照解決コードを一緒に更新します。定数だけを変えて既存のresource宣言を残す置換や、任意のWGSLへ無条件の正規表現置換を行う方式は使いません。
+
+draw／dispatchで必要な集合を収集し、textureの次元・sample type、sampler種別、buffer用途・accessなどの互換classごとに必要数を求めます。最初は必要数ぴったりの宣言を生成し、0個のclassは宣言を除去します。root uniformと参照変換表の予約枠を含め、全stageのvisibility、種類別limits、group数とgroup内binding数へ照合します。収まらない場合はdraw／dispatchを拒否し、物理上限を超える宣言は生成しません。
+
+resourceを使うprogramのnative moduleとgraphics／compute pipeline variantは、容量が確定するdraw／dispatch時に生成できます。artifact hash、entryとstage集合、helper ABI、容量vector、実binding planをdevice内のcache keyに含めます。同じ容量でも論理型が異なれば別variantです。生成後のWGSLと実binding planを同じ変換結果から作り、artifact内の変換前binding番号を流用しません。
+
+容量調整は数値structのlayoutと安定した参照identityを変えません。sampler共有とtexture数を独立に扱います。textureのsample helperはfragmentのderivative-uniformityを満たすように生成し、非一様な選択では明示gradient等を用いる対応可能な経路かどうか検証します。生成WGSLはDLL内artifactとruntime memoryで扱い、ソース管理へ追加しません。
+
+shader dataのCopyFromはCPU値だけを設定します。draw／dispatchは参照先の推移的なversionをsnapshotし、そのsnapshot用にGPU bufferとbindingを用意します。必要なuploadは実行前の転送処理としてsubmissionへ関連付け、render／compute pass内へcopyを挿入しません。記録済みcommandが使用するbufferを別versionで上書きせず、GPU完了まで保持します。

@@ -118,7 +118,7 @@ ConstantBuffer宣言はshaderの論理的な受け口を示す。利用者に転
 
 source generatorはShaderArguments属性を付けたstructの公開instance fieldと読み出せる自動propertyを検査し、直接アクセスするcodecを生成する。readonly record structのprimary constructor由来のpropertyも対象とする。member名はSlangの論理member名と大文字・小文字を含めて一致させ、宣言順やC#のbyte offsetをshader layoutと仮定しない。rootParameterはattributeのcompile-time情報としてcodecへ保持し、setterへ文字列を渡さない。
 
-対応するroot値はint／uint／float、Vector2／Vector3／Vector4、Matrix4x4、それらとIGpuRefを含む入れ子structとする。IGpuRefの論理型・用途をschemaへ照合する。配列、string、任意class、delegate、boolや未定義の数値変換、循環する型、custom getterは診断して拒否する。buffer要素型Tの有効性はbufferの既存layout契約に従う。
+対応するroot値はint／uint／float、Vector2／Vector3／Vector4、Matrix4x4、それらとIGpuRefを含む入れ子structとする。IGpuRefの論理型・用途をschemaへ照合する。配列、string、任意class、delegate、boolや未定義の数値変換、inline展開で循環する型、custom getterは診断して拒否する。IGpuRefの型引数は参照先schemaを示すedgeとして扱い、inline展開しないため、IGpuRef経由の循環は許可する。buffer要素型Tの有効性はbufferの既存layout契約に従う。
 
 codecは値memberの読み出しとIGpuRefの列挙を行い、backendはprogramに含まれるtarget別reflectionのoffset・stride・alignmentへpackする。型Tとprogram schemaの検証結果は再利用できるが、registrationの有効性は各draw／dispatchでも確認する。source generatorはartifactのlayoutを別のruntime設定で上書きしない。online生成されたartifactにも同じcodecとschema照合を適用する。
 
@@ -126,9 +126,9 @@ Matrix4x4はSlangのfloat4x4へ対応する。System.NumericsのM11〜M44を論�
 
 ### 反射情報とtarget別ABI
 
-rootParameterとstruct memberの論理pathはtarget固有のbinding番号と分離する。同じlogical pathが複数stageで使われる場合、型と用途の互換性をprogram作成時に検証する。target別layout、binding plan、root値の配置、GPU参照のhelper ABI、schema versionはcompile時に確定してopaque artifact内へ保存する。runtimeで利用者がlayout補助情報を渡す方式にしない。
+rootParameterとstruct memberの論理pathはtarget固有のbinding番号と分離する。同じlogical pathが複数stageで使われる場合、型と用途の互換性をprogram作成時に検証する。target別の論理layout、binding生成規則、root値の配置、GPU参照helper ABI、schema versionはcompile時に確定してopaque artifact内へ保存する。sourceから物理binding数を調整するtargetでは、変更対象の宣言と参照操作を識別する情報もartifactへ含める。backendはdeviceの有効limitsと使用するresource型から物理配置を確定し、実際のsource・binding plan・pipelineを一体として生成する。runtimeで利用者がlayout補助情報を渡す方式にしない。
 
-offlineは全targetを含む一つのartifactをDLLへ埋め込み、onlineは指定targetまたは全targetを含む同じformatを生成する。追加ABIに対応しないartifactは明示的にNotSupportedExceptionとする。生成WGSLやreflection JSONをソース管理へ追加しない。
+offlineは全targetを含む一つのartifactをDLLへ埋め込み、onlineは指定targetまたは全targetを含む同じformatを生成する。使用backendのtarget code・対象型schema・helper ABIが揃っていれば、他targetを含まないonline artifactもshader data buffer生成に使用できる。使用backendのtargetが欠落する場合と、必要なABI/schemaがない場合はNotSupportedExceptionとし、必要な項目を診断する。生成WGSLやreflection JSONをソース管理へ追加しない。
 
 buffer参照は登録rangeと要素位置を保持する。GetElementで得た参照のbyte位置をbackendが解決し、生addressや整数への変換は提供しない。有限bindingでは、元rangeのbindingと要素位置を別々に表現し、単一要素offsetをnative bindingのalignmentへ暗黙に丸めない。元range自体がalignment・用途・サイズ制約を満たさない場合は拒否する。参照に対応するshader helperのABIがない通常のresource parameterに、要素参照を無理に当てはめない。
 
@@ -140,7 +140,7 @@ buffer参照は登録rangeと要素位置を保持する。GetElementで得た�
 4. SetArgumentsで取り出した数値snapshotと参照metadataをtarget別ABIへ変換し、必要なresourceとroot値をcommandへ設定する。
 5. native命令の記録に成功した時点のsnapshotと登録identityをcommandへ関連付ける。
 
-texture・sampler・bufferの上限は種類別に検証する。一回のdraw／dispatchが上限を超えたらNotSupportedExceptionとし、自動的に描画を分割しない。tableのcapacityはこの上限と独立したままにする。
+texture・sampler・bufferの上限は種類別・shader stage別に検証する。root値と参照変換表の補助bindingも予約し、生成した物理layout全体がdevice limitsに収まることを検証する。一回のdraw／dispatchが上限を超えたらNotSupportedExceptionとし、自動的に描画を分割しない。tableのcapacityはこの上限と独立したままにする。
 
 direct address／native descriptorで解決できるbackendへ有限bindingの変換表を強制しない。物理binding生成、cache key、native objectの所有と破棄の詳細は各backend READMEへ記載する。
 
@@ -156,7 +156,7 @@ draw／dispatch後のarguments変更は記録済みcommandを変更しない。t
 
 MaterialDataはapplicationの論理structであり、ライブラリへ固定のmaterial schemaを入れない。root引数と同様の生成codecを使い、数値をtarget別layoutへpackする。同時に各IGpuRefの登録identity、resource種別、range、要素位置、field pathをCPU metadataへ記録する。
 
-IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制約を外したり、managed参照をraw copyしたりしない。shader data用bufferのbackend具象型がnative allocationを直接所有し、同じobjectで`IGraphicsBuffer<byte>`も実装する。raw byte accessのための第二の所有buffer instanceを作らない。
+IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制約を外したり、managed参照をraw copyしたりしない。shader data用bufferはCPUから型付きの値だけを設定する独立したinterfaceとする。backend具象型がCPU値・依存metadata・必要なGPU表現を管理する。IGraphicsBufferを継承せず、raw byte alias、GPU copyのsource／destination、shaderからの書き込みを公開しない。
 
 ### Shader dataの公開API
 
@@ -174,39 +174,31 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 +        public string Name { get; } = name;
 +    }
 +
-+    public sealed record ShaderDataBufferDesc<T> where T : struct, IShaderData
-+    {
-+        // このartifactの現在のbackend用schemaへpackする。
-+        public required ShaderArtifact Artifact { get; init; }
-+        // 論理T要素数。byte数やalignmentのために補正しない。
-+        public required ulong Count { get; init; }
-+        public required BufferUsage Usage { get; init; }
-+        public MemoryPreference Memory { get; init; }
-+    }
-+
 +    public interface IGraphicDevice
 +    {
          // 既存のraw buffer生成API。unmanaged制約を維持する。
          IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
              where T : unmanaged;
 +
-+        // codec・型schemaを検証し、backend自身がbufferを生成する。
-+        // Artifactに型の全target schemaと参照helper ABIが必要。
-+        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderDataBufferDesc<T> desc)
++        // 使用backendのartifact targetと型schema・helper ABIを検証する。
++        // countは正の論理要素数。CPU設定専用なのでUsage／Memory指定は不要。
++        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count)
 +            where T : struct, IShaderData;
 +    }
 +
-+    public interface IGraphicsShaderDataBuffer<T> : IGraphicsBuffer<byte>
++    public interface IGraphicsShaderDataBuffer<T> : IDisposable
 +        where T : struct, IShaderData
 +    {
-+        // 継承したCountはbyte数。論理要素数はElementCountで区別する。
-+        ulong ElementCount { get; }
++        // 論理T要素数。byte数はSizeInBytesで取得する。
++        ulong Count { get; }
++        // target layoutのstride × Count。確保済みnative総量ではない。
++        ulong SizeInBytes { get; }
 +        // artifactのtarget layoutから求めたstride。sizeof(T)ではない。
 +        ulong ShaderElementStrideInBytes { get; }
-+        // 明示的にmapしたUpload memoryへ数値とopaque wire dataをpackし、
-+        // 同じ要素範囲の依存metadataを置換する。GPU命令を発行しない。
++        // CPUからの値設定だけを行う。mapやGPU転送を実行しない。
++        // 数値と参照metadataを検証し、対象要素の新しいversionを作る。
 +        void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0);
-+        // 非所有の論理要素range。継承したSliceはbyte rangeのまま。
++        // table登録に使う非所有の論理要素range。byte rangeは公開しない。
 +        ShaderDataSlice<T> SliceElements(ulong offset, ulong count);
 +    }
 +
@@ -217,15 +209,13 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 +        public IGraphicsShaderDataBuffer<T> Buffer { get; }
 +        public ulong Offset { get; }
 +        public ulong Count { get; }
-+        // byte copy／barrierの既存APIへ渡す非所有range。
-+        public BufferSlice<byte> Bytes { get; }
 +    }
 +
 +    public interface IArgumentTable
 +    {
 +        // raw unmanaged bufferの既存overloadとは区別する。
 +        // schemaとrangeに対応するopaque参照を返す。
-+        // Write時に未uploadでもよいが、drawでは要素metadataが有効でなければ拒否。
++        // Write時に未設定でもよいが、drawでは参照する全要素が設定済みでなければ拒否。
 +        IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
 +            where T : struct, IShaderData;
 +    }
@@ -234,13 +224,13 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
 
 TはIShaderDataを実装するstructに限り、source generatorもinterface実装からcodec対象を識別する。markerだけではmemberやlayoutの互換性を保証せず、ShaderArgumentsと同じ数値型・入れ子struct・IGpuRefの規則で検証する。IGpuRefのbuffer要素型はraw unmanaged型だけでなく、IShaderDataを実装する論理型も認める。これはraw bufferの型制約を変更するものではない。
 
-shader data bufferのSizeInBytesと継承したCountは `ElementCount * ShaderElementStrideInBytes` でchecked計算する。artifactで定まるstruct内paddingとstrideはshader ABIの一部であり、backendのGPU copy alignmentのための追加丸めとは区別する。計算済みbyte rangeへcopy制約を別途検証し、不適合なら拒否する。
+shader data bufferのSizeInBytesは `Count * ShaderElementStrideInBytes` でchecked計算する。artifactで定まるstruct内paddingとstrideはshader ABIの一部とする。backend内部の転送や確保に追加alignmentが必要でも、公開CountとSizeInBytesを暗黙に補正しない。
 
-CreateBufferはDesc型の違いでoverloadする。generic制約だけでoverloadを分けることはできないため、BufferDescとShaderDataBufferDescを別型として維持する。ShaderData側のDesc・buffer interface・slice・table登録overloadの全てに `where T : struct, IShaderData` を適用し、通常bufferのunmanaged制約は維持する。
+ShaderDataBufferDescは設けない。shader dataに必要なのはartifactと要素数であり、CPU値設定専用の契約にはUsage／Memoryの選択がない。CreateBufferは引数数と引数型でoverloadを区別するため、数値だけのIShaderData型がunmanagedも満たす場合も曖昧にならない。shader dataの生成・buffer interface・slice・table登録には `where T : struct, IShaderData` を適用し、通常bufferのunmanaged制約は維持する。
 
 Slangの論理型名は既定でC#の型名と一致させ、名前が異なる場合だけShaderTypeName属性を使う。artifact内のschemaへ一意に対応しない場合は拒否する。この属性だけを付けた型はcodec対象にならず、IShaderDataの実装を必要とする。instanceをinterfaceへboxingしてpackせず、生成されたgeneric codecでmemberを読み出す。
 
-### 明示的なpack・転送と利用例
+### CPU値設定と利用例
 
 ```csharp
 public readonly record struct MaterialData(
@@ -248,39 +238,21 @@ public readonly record struct MaterialData(
     IGpuRef<IGraphicsTextureView> BaseColorTexture,
     IGpuRef<IGraphicsSampler> BaseColorSampler) : IShaderData;
 
-var material = new MaterialData(color, textureRef, samplerRef);
-using var upload = device.CreateBuffer<MaterialData>(new()
-{
-    Artifact = artifact,
-    Count = 1,
-    Usage = BufferUsage.CopySource,
-    Memory = MemoryPreference.Upload,
-});
-using var materials = device.CreateBuffer<MaterialData>(new()
-{
-    Artifact = artifact,
-    Count = 1,
-    Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead,
-});
+using var materials = device.CreateBuffer<MaterialData>(artifact, count: 20);
+materials.CopyFrom(materialArray);
+var materialRef = table.WriteBuffer(0, materials.SliceElements(0, materials.Count));
 
-await upload.MapAsync();
-upload.CopyFrom([material]);
-upload.Unmap();
-// 利用者が必要なbarrierを記録する。
-commands.CopyBuffer(upload.SliceElements(0, 1).Bytes,
-                    materials.SliceElements(0, 1).Bytes);
-// 利用者がshader読み出しに必要なbarrierを記録する。
-var materialRef = table.WriteBuffer(0, materials.SliceElements(0, 1));
+encoder.SetPipeline(pipeline);
 encoder.SetArgumentTable(table);
-encoder.SetArguments(new DrawArguments(matrix, materialRef.GetElement(0)));
-// drawとsubmit・waitも利用者が明示する。
+encoder.SetArguments(new DrawArguments(matrix, materialRef.GetElement(materialIndex)));
+encoder.Draw(vertexCount);
 ```
 
-例は同じcommand内でcopy後にdrawを記録する連携を示し、render passやbarrierの詳細を省略している。packはCPU memoryだけを更新し、stagingの自動確保、queue write、submit、waitを挿入しない。upload bufferをGPU使用完了前に解放しない。
+CopyFromはCPU上の値と参照metadataを設定する。shader data bufferはMap／Unmap、raw byte access、GPU copy、readbackのAPIを持たない。shaderへの転送はroot引数と同様にbackendの引数設定処理が担い、利用者へ転送用bufferを返さない。通常のIGraphicsBufferへのstaging・copy・barrier・submitは既存の明示的な契約に従う。
 
 ### GPU上の参照表現
 
-shader dataへ格納するIGpuRefは登録identityに対応するtarget別opaque wire値であり、そのdrawの有限binding indexをMaterialDataへ書き込まない。登録の置換・slot再利用は新しいidentityとし、以前のwire値やCPU metadataを新登録へ読み替えない。
+CPU値に含まれるIGpuRefは登録identityと論理rangeとして保持し、draw／dispatchのsnapshotからtarget別opaque wire値へ変換する。そのwire値は登録identityに対応し、そのdrawの有限binding indexをMaterialDataへ書き込まない。登録の置換・slot再利用は新しいidentityとし、以前のwire値やCPU metadataを新登録へ読み替えない。
 
 shader側のMaterialDataは同じ数値memberと、compilerが提供するtexture・sampler・buffer参照helper型で宣言する。helper型のABI version、wire layout、resourceの種類・型、論理要素schema、参照先へのアクセス方法をartifactへ保存する。利用側が整数からhelper参照を作ったりbinding番号を計算したりしない。
 
@@ -294,19 +266,21 @@ rootが単一要素参照ならその要素だけ、配列参照ならそのrang
 
 shader実行中に選択されるindexをCPUが推測しない。range参照は全候補を追跡するため、不要なbindingを減らしたい利用者はGetElementでdrawが使う要素を指定する。GPU data内の数値から依存を逆算しない。
 
-依存metadataは非所有である。texture・sampler・bufferの実寿命はtableのlive registrationとcommandの既存契約で維持する。数値と登録identityはsnapshotするが、参照先のbuffer内容をroot設定時に凍結しない。draw記録時に、そのcommandの記録順序に従う要素versionから依存を収集する。
+依存metadataは非所有である。texture・sampler・bufferの実寿命はtableのlive registrationとcommandの既存契約で維持する。root設定時は数値と登録identityだけをsnapshotし、参照先のshader data内容はdraw／dispatch記録時に確定する。その時点の推移的な参照先の要素version、数値payload、参照metadataをまとめてsnapshotし、GPU表現と依存集合を同じversionから作る。
 
-### Copy・上書き・GPU書き込み
+### CPU更新・snapshot・転送の寿命
 
-型付きCopyFromは全source要素のschemaと参照を先に検証し、成功後に対象要素のbytesとmetadataを一緒に更新する。失敗時は以前のbytesとmetadataを維持する。raw byte CopyFromは触れた論理要素全体を無効にし、既知のcodecから書かれたと推測しない。raw CopyToはbytesだけを読み、IGpuRefへ復元しない。
+CopyFromは全source要素のschemaと参照を先に検証し、成功後にCPUの数値・依存metadataを一緒に置換する。失敗時は以前の状態を維持する。空sourceは有効offsetでno-opとし、範囲外・overflow・無効参照を拒否する。
 
-既存commandのCopyBufferはbyte copyを記録する。同じdevice・互換schemaのshader data間で、sourceとdestinationが両方とも完全な要素境界に揃うときだけ、そのrangeのmetadataを対応して伝播する。destinationの登録identityは維持し、内容versionを更新する。metadataを持たないsource、schema不一致、部分要素のcopyは、destinationの触れた要素を無効にする。byte copy自体が合法なら記録を拒否するのではなく、後の参照解決で無効要素を拒否する。sliceやCountを暗黙に拡張しない。
+GPUコピーやtextureからのコピーでshader dataを書き換える経路を設けない。raw bufferへcastして書くこともできないため、GPU copyによるmetadata伝播・部分コピーによる失効・command間のmetadata overlayは不要となる。ShaderWriteはIGpuRefの有無にかかわらず提供しない。shader helperもshader dataへの読み取りだけを公開し、書き込み用途のschemaへのbindingは拒否する。
 
-commandは未submitのcopyによって共有bufferのmetadataを即変更しない。記録中のmetadata変更をcommand内のoverlayへ保持し、同じcommandのcopy後drawはそのoverlayを使う。submitはqueue順にsource versionとoverlayを検証し、後続commandが使う既知のmetadata状態を更新する。記録後に外部のCPU書き込みや先行submitで前提versionが変わった場合、内容を推測して再packせずsubmitを拒否し、利用者がcommandを記録し直す。submit失敗時は共有metadataへの変更を確定しない。
+draw／dispatch後のCopyFromは新しいCPU versionを作り、記録済みcommandのsnapshotを変更しない。既にsnapshotしたshader dataの更新だけを理由にsubmitを拒否しない。未設定の要素、失効登録、schema不一致はdrawで拒否し、登録の置換・解放はsubmit前にも再検証する。CPUで値を設定した後なら、複数commandを記録して同じsubmissionへまとめられる。
 
-初期契約ではIGpuRefを含むshader data bufferのShaderWrite用途を拒否する。GPUから参照や数値を変更すると、CPU依存metadataとの整合を保証できないためである。通常のraw storage bufferのGPU書き込みは従来どおり可能。参照memberを維持した数値memberだけのGPU更新などは、field別write範囲を保証できる別の契約で扱う。
+backendはsnapshotの寿命に合わせたGPU表現を用意し、cacheは参照graph全体の要素versionとschemaをkeyへ含め、同じsnapshotは再利用できる。参照された通常のraw bufferの内容はsnapshotせず、従来のresourceアクセスと同期契約に従う。native addressが必要な場合は、そのdrawの参照graph全体のbackingを確定してから参照をwire表現へ解決し、循環参照でも新旧versionのaddressを混在させない。shaderへ渡すbytesとbindingは必ず同じsnapshotを参照する。
 
-利用者はcopy／draw／dispatch間のbarrier、queue間の同期、CPU packとGPU実行の同期を管理する。metadataのversion検証はCPU／GPU同期の代わりにはならない。submit後にGPUが使う範囲を書き換えることを許可する仕組みではなく、内部lockや自動待機を追加しない。
+必要な転送はcommandの実行前に完了するようbackendが記録し、同一queue内の順序と内部resourceのdependencyを保証する。recording中のrender／compute pass内へ禁止されたcopy命令を差し込まない。記録済みcommandが持つbackingを、別versionの転送で上書きしない。生成・cache・転送の具体的なnative手順はbackend READMEに記載する。
+
+command未submit時の解放はsnapshotの保持を解除し、submit後はGPU使用完了まで内部backingを保持する。利用者は通常のresourceとtableの寿命・同期を管理する。CopyFromとcommand記録のCPU並行操作は利用者が同期し、内部lockや自動waitを追加しない。
 
 ## 検討した代替案
 
@@ -322,6 +296,6 @@ commandは未submitのcopyによって共有bufferのmetadataを即変更しな�
 
 ## 検証方針
 
-shared projectの検証は共通APIのみを使う。texture・sampler・bufferの実アクセス、buffer単一要素、sampler共有、不要slot、同じ論理slot番号の種類別登録、引数のsnapshot、欠落・型不一致・別device・別table・失効参照を検証する。MaterialData内のtextureと共有sampler、別要素参照と循環、単一要素とrangeの収集、schema一致copy、部分copyとraw上書き、記録中overlay、submit前のversion不一致、ShaderWrite拒否も検証する。カメラ行列、入れ子struct、record struct、値だけの引数、setter後の元struct変更、program切替後の再設定を検証する。非対称の行列で既知のvertex座標を変換し、transposeや乗算順の誤りを検出する。generatorの非対応型診断、IShaderData markerの有無、任意の型名annotation、Desc別CreateBuffer overloadの解決とBrowser/Wasmでのcodec動作も確認する。
+shared projectの検証は共通APIのみを使う。texture・sampler・bufferの実アクセス、buffer単一要素、sampler共有、不要slot、同じ論理slot番号の種類別登録、引数のsnapshot、欠落・型不一致・別device・別table・失効参照を検証する。MaterialData内のtextureと共有sampler、別要素参照と循環、単一要素とrangeの収集、GPU copyとraw byte書き込み経路がないこと、CopyFrom後の記録済みsnapshot保持、複数commandへのsnapshot記録、ShaderWrite非提供も検証する。カメラ行列、入れ子struct、record struct、値だけの引数、setter後の元struct変更、program切替後の再設定を検証する。非対称の行列で既知のvertex座標を変換し、transposeや乗算順の誤りを検出する。generatorの非対応型診断、IShaderData markerの有無、任意の型名annotation、引数数で分けたCreateBuffer overloadの解決とBrowser/Wasmでのcodec動作も確認する。
 
-computeはstorage buffer更新後に明示的なbarrier、copy、submit、wait、map、CopyToで結果を読む。graphicsは異なるtextureを使ったdrawの全画素を確認する。bindingのないPSOの検証も維持し、wgpu・Vulkan・Browser/Wasmを既存CIで実行する。backend固有の生成・cacheの詳細と測定は各READMEに記録する。
+computeは通常のraw storage buffer更新後に明示的なbarrier、copy、submit、wait、map、CopyToで結果を読む。graphicsは異なるtextureを使ったdrawの全画素を確認する。bindingのないPSOの検証も維持し、wgpu・Vulkan・Browser/Wasmを既存CIで実行する。使用backendだけのonline artifactによるshader data生成と、該当target欠落時の失敗も確認する。backend固有のsource調整、生成・cacheの詳細と測定は各READMEに記録する。
