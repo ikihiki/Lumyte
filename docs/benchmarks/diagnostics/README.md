@@ -2,7 +2,7 @@
 
 測定日: 2026-10-09。ゲーム側の DI / Operation Generator / 標準 Metrics・Trace・Log の収集を実装し、ローカル実行とテストに加えて BenchmarkDotNet で性能を比較した。
 
-この条件では MemoryPack の CPU 時間が最も短く、protobuf-net の構造化データのサイズが最小だった。MagicOnion 向け MessagePack と Browser 向け JSON を置き換える根拠にはせず、CPU・帯域・互換性・配布先を分けて判断する。通信アダプターと診断サーバーは未実装であり、以下はネットワーク往復性能の測定ではない。
+この条件では MemoryPack の CPU 時間が最も短く、protobuf-net の構造化データのサイズが最小だった。MagicOnion 向け MessagePack と Browser 向け JSON を置き換える根拠にはせず、CPU・帯域・互換性・配布先を分けて判断する。以下はネットワーク往復性能の測定ではない。後から追加した通信アダプターと診断サーバーの確認結果は [実通信検証](../../diagnostics/communication-verification.md) に記録する。
 
 ## 128 件の Metrics バッチ
 
@@ -69,7 +69,7 @@ Trace と Log は実際の標準 API で収集・相関を検証したが、収�
 
 Release ビルドで warnings / errors は 0。17 件のテストで生成コードの実コンパイル、不正宣言、DI スコープ共有と分離、所有スレッド、引数・権限、重複実行、期限・キャンセル、Input リース期限、Meter の所属、Log / Trace の相関、外部 Listener とのサンプリング共存、キュー欠落、収集停止を確認した。CI にはサンプル実行・全シリアライザーの往復一致を追加し、時間の閾値は設けない。
 
-MagicOnion / Browser HTTP の実接続、サーバー、実入力・描画統合、登録世代、集約・購読、認証・秘匿化、AOT / Browser は後続実装／検証として ADR に明示する。
+MagicOnion / HTTP の実接続、サーバー、トークン認証は別途実装・検証した。実入力・描画統合、登録世代、集約・購読、秘匿化、AOT / Browser 実行は後続実装／検証として ADR に明示する。
 
 ## 再現
 

@@ -114,6 +114,13 @@ jobs:
           source tools/setup/activate.sh
           mise run test-wasm 2>&1 | tee artifacts/test-results/browser-webgpu.log
 
+      - name: Verify diagnostic server and game processes
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          python3 tools/diagnostics/communication-smoke.py --output artifacts/test-results/diagnostics-communication/processes
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

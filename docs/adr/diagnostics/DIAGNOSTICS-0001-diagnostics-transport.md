@@ -2,7 +2,7 @@
 
 - 状態: 採用
 - 日付: 2026-10-08
-- 更新: 2026-10-09（ゲーム側基盤の実装・シリアライズ測定）
+- 更新: 2026-10-09（診断サーバー・実通信検証まで実装）
 
 ## 背景
 
@@ -28,7 +28,9 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 
 実装ではカタログ公開、private Operation への無反射配送、引数・権限・結果検証、所有スレッド、期限、重複排除、DI スコープ間の分離、収集キューの欠落計数を検証する。Input サンプルは expiring lease を持つ小さなドメインモデルであり、既存 `Lumyte.Input.InputSystem` のデバイス入力への統合は未実施。
 
-MagicOnion / Browser HTTP の実接続、診断サーバー、認証・機能交渉、登録世代、購読・Metric 集約、Activity Events / Links、実エンジンのグラフ走査、描画キャプチャー、転送サービス、NativeAOT / Browser 動作は未実装または未検証。本 ADR の採用はそれらの完成を意味しない。
+診断サーバーと MagicOnion / HTTP のアダプターを実装した。通信抽象は `Lumyte.Diagnostics.Transport` に置き、DI で選ぶ。MagicOnion は StreamingHub と native MessagePack DTO、HTTP は長いポーリングと source-generated JSON を使う。ゲームと操作利用者の別トークン認証、権限、プロトコル版、期限、重複排除、有界保持を検証した。Linux の別プロセス間で Input 操作、Metrics / Trace / Log、切断時の解除を確認した。[起動方法](../../../src/Diagnostics/Lumyte.Diagnostics.Server/README.md)、[共通 API](../../../src/Diagnostics/Lumyte.Diagnostics.Transport/README.md)、[実通信検証](../../diagnostics/communication-verification.md) を参照する。
+
+登録世代、購読・Metric 集約、Activity Events / Links、実エンジンのグラフ走査、描画キャプチャー、転送サービス、NativeAOT / Browser 実行は未実装または未検証。Input は小さなモデルを用いる。Browser 向け HTTP と CORS の契約は確認したが、WASM での実行は確認していない。以降の最終契約には未実装の構成も含む。現在の期限配送は UTC をゲームの単調時計へ変換するためホスト間の時計同期を前提とする。時計同期不要の予算配送は後続課題。
 
 比較対象は System.Text.Json source generation、MessagePack generated resolver、MemoryPack、protobuf-net。Operation、Metrics、Trace、Log、Graph、256 KiB Image の同一内容を符号化・復号し、サイズ・CPU 時間・割り当て量を測定する。ここで Graph は合成スナップショット、Image は固定バイナリで、実エンジンからの取得性能は含まれない。測定結果は transport の選定と分離して評価し、最速のシリアライザーをそのまま全通信の既定としない。
 
@@ -980,7 +982,7 @@ MagicOnion はプッシュ通知、HTTP は長いポーリングで共通の要�
 
 ## 検証方針
 
-ゲーム側の初期実装と性能比較を実施した。検証結果は [実測レポート](../../benchmarks/diagnostics/README.md) に記録する。以下は最終的なシステムとして確認する項目であり、すべての完了を表さない。
+ゲーム側の初期実装、診断サーバー、両通信方式の実接続と性能比較を実施した。検証結果は [実測レポート](../../benchmarks/diagnostics/README.md) と [実通信検証](../../diagnostics/communication-verification.md) に記録する。以下は最終的なシステムとして確認する項目であり、すべての完了を表さない。
 
 - 接続・認証・機能交渉、非互換拒否、複数インスタンスの操作分離。
 - 重複要求、期限切れ、結果報告前の切断、再接続での未完了操作の非再実行。
@@ -1007,8 +1009,8 @@ MagicOnion はプッシュ通知、HTTP は長いポーリングで共通の要�
 
 - Observable Instrument、数値集約の精度とオーバーフロー、tail sampling、未終了 Span のライブ表示。
 - Generator の依存バージョンとパッケージ配布詳細、複合型・非同期操作・継承への拡張。
-- 全通信 DTO のフィールド番号、グラフ・描画・入力の診断アダプター API、具体的なプロジェクト名。
-- 大容量転送 DTO の詳細と保存先、診断 UI 向け API、認証方式と資格情報の配布。
+- 未対応のグラフ・描画・大容量転送 DTO のフィールド番号と診断アダプター API。
+- 大容量転送 DTO の詳細と保存先、診断 UI、公開運用向け認証基盤と資格情報の配布。
 - 入力・描画システムへの具体的な統合位置とプラットフォーム別対応範囲。
 - 帯域・キュー・実行時間の具体的な上限と測定に基づく受け入れ基準。
 - HTTP の具体的な再試行・期限・サイズ上限、低遅延動画、決定的な再現実行。
