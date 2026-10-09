@@ -17,7 +17,7 @@
 
 `Lumyte.Animation` に、[汎用状態機械](../core/CORE-0001-state-machine.md)を所有するアニメーション用アダプターを追加する。汎用機械は `Lumyte.StateMachines` に配置し、Animation や時計には依存しない。アダプターは不変の状態とタイムラインの対応、および時計を持つ可変の実行者を提供する。一つの実行者は一つの状態だけを選択し、各状態は既存の `AnimationTimeline` と `AnimationWrapMode` を持つ。状態識別子を `TState`、外部入力を `TContext` とし、文字列のパラメーター辞書やボーン固有の状態を要求しない。
 
-遷移条件は `TContext` と現在状態の再生情報から値を返す純粋な判定とする。トリガーは汎用側の `StateMachineTrigger` をそのまま使い、発火済みかどうかは内部の汎用実行者が保持する。Animation 独自のトリガー型は設けない。条件の中から値を適用したり、状態機械を操作したりしない。
+遷移条件は `TContext` と現在状態の再生情報から値を返す純粋な判定とする。トリガーは汎用側の `StateMachineTrigger` をそのまま使い、保留と集約はアダプターが保持し、更新時に汎用実行者へ入力集合として渡す。Animation 独自のトリガー型は設けない。条件の中から値を適用したり、状態機械を操作したりしない。
 
 今回は平坦な状態、条件遷移、トリガー遷移、Once の完了遷移、優先順位、明示した自己遷移を扱う。切替は即時とする。階層状態、複数の同時状態、クロスフェード、ブレンドツリー、状態履歴、シリアライズは今回追加しない。
 
@@ -41,11 +41,13 @@ flowchart LR
 
 ### 汎用機械との接続
 
-継承用の基底クラスではなく、通常 API の合成でベースとして利用する。Animation の実行者は `StateMachine<TState, AnimationStateContext<TContext>>` と各状態の再生資源を所有する。状態一覧・初期状態・候補の選択・優先順位・トリガー保留・自己遷移の検証は汎用側を唯一の実装とし、Animation 側で同じ判定器を作らない。
+継承用の基底クラスではなく、通常 API の合成でベースとして利用する。Animation の実行者は `StateMachineInstance<AnimationStateContext<TContext>, StateMachineTrigger>` と各状態の再生資源を所有する。状態一覧・初期状態・候補の選択・優先順位・ガード・コールバックは汎用側を唯一の実装とし、Animation 側で同じ判定器を作らない。
 
-`AnimationStateContext<TContext>` は消費側の Input と評価済みの Playback 情報を持つ。汎用側はこの型を参照せず、任意の TContext の一つとして扱う。Animation の Builder は `OnCompleted` を `context.Playback.IsCompleted` の条件に変換し、指定した Condition と AND にして汎用 Builder に登録する。一般用途には OnCompleted という API を追加しない。
+`AnimationStateContext<TContext>` は消費側の Input と評価済みの Playback 情報を持つ。汎用側はこの型を参照せず、任意の TContext の一つとして扱う。Animation の Builder は `OnCompleted` を `context.Playback.IsCompleted` のガードに変換し、指定した Condition と AND にして汎用 Transition に登録する。Trigger を指定しない遷移には定義ごとの AutomaticTrigger を割り当て、各 Update の入力集合へ追加する。一般用途には OnCompleted という API を追加しない。
 
-アニメーション定義は汎用の Control 定義と、状態 ID から Timeline／Wrap への対応を持つ。専用 Builder／Composition は両者を一緒に構築する簡便 API とし、既に構築した汎用 Control と再生対応を直接渡す経路も用意する。従ってアニメーション専用の構築 API を使わなくても、このアダプターを利用できる。
+アニメーション定義は汎用の Control 定義と、消費側の状態 ID・汎用 State の参照・Timeline／Wrap の対応を持つ。専用 Builder／Composition は両者を一緒に構築する簡便 API とし、既に構築した汎用 Control と再生対応を直接渡す経路も用意する。従ってアニメーション専用の構築 API を使わなくても、このアダプターを利用できる。
+
+直接渡した Control の OnEnter／OnExit／Effect は汎用契約の順序で実行する。汎用インスタンスの Transitioned をアダプターが購読し、選択した遷移を時計時点付き通知へ変換する。FireAny の全アクションには同じ入力と評価済みの旧状態の Playback 情報を渡す。切替後の再生評価はその後に行い、アダプターはコールバックを無効化・置換しない。専用 Builder が作る Control は再生切替以外のユーザーアクションを暗黙に追加しない。
 
 専用 Builder は Loop 状態の OnCompleted を拒否できる。一方、直接渡された汎用条件の内容は解析しない。Loop の IsCompleted は常に false なので、完了を調べる汎用条件は成立しない。この二つの検証範囲を区別する。
 
@@ -55,9 +57,9 @@ flowchart LR
 
 1. 引数を検証し、注入された時計の `Now` を一度だけ取得する。内部の再生者にはこの取得済み時点を返す時計を渡す。
 2. 現在状態をその時点まで評価する。値は内部の再利用可能な出力へ計算し、通過したマーカーを保持する。
-3. その評価後の位置・完了情報と今回の Context を AnimationStateContext に包み、内部の汎用機械の TryStep を一度呼ぶ。候補の優先順位と短絡評価は汎用側の契約を使う。
+3. その評価後の位置・完了情報と今回の Context を AnimationStateContext に包み、内部の汎用機械の FireAny を、保留トリガーと AutomaticTrigger の集合で一度呼ぶ。候補内のガード短絡と、全候補を登録順に評価した後の優先順位選択は汎用側の契約を使う。
 4. 遷移がなければ現在状態の値を外部 Output に書き込む。遷移があれば旧状態の値の寄与を破棄し、新状態を取得済み時点から位置 0 で開始して値を評価する。旧状態の途中位置や超過時間は引き継がない。
-5. 通過マーカーと、成立した一件の遷移通知を追記する。保留トリガーは手順 3 の汎用 TryStep の正常終了時に既に消費されている。
+5. 通過マーカーと、成立した一件の遷移通知を追記する。手順 3 が正常終了した時点でアダプターが保留を消去する。汎用機械自体は保留を持たない。
 
 一回の Update で最大一遷移とし、新状態からの連鎖遷移を同じ呼び出しでは調べない。同じ時計時点の再呼び出しでも条件判定は行うため、呼び出し回数は消費側が制御する。時計が進まなければ、既存再生契約どおり通過マーカーを重複出力しない。
 
@@ -73,17 +75,17 @@ flowchart LR
 
 何も指定しない遷移は無条件となる。優先順位は大きい数値を優先する。同順位は安定した登録順とし、数値の差で重み付けや時間制御は行わない。Loop は完了しないため、Loop 状態を出発点に `OnCompleted` を指定した定義は Build で拒否する。
 
-`SetTrigger` は同じキーの複数回の入力を一件にまとめる。候補の不成立や優先順位負けも含め、内部 TryStep が通常終了した際に保留トリガー全体を破棄し、次状態へ持ち越さない。その後の出力追記が失敗しても入力の消費は巻き戻さない。条件入力を持続させる場合は Context に状態を保持する。イベントが発生するたびにキューとして処理したい場合は消費側が入力キューを管理する。
+`SetTrigger` は同じキーの複数回の入力を一件にまとめる。候補の不成立や優先順位負けも含め、内部 FireAny が通常終了した際に保留トリガー全体を破棄し、次状態へ持ち越さない。その後の出力追記が失敗しても入力の消費は巻き戻さない。条件入力を持続させる場合は Context に状態を保持する。イベントが発生するたびにキューとして処理したい場合は消費側が入力キューを管理する。
 
 停止中の `SetTrigger` は InvalidOperationException。一時停止中は保留できるが、Update は条件を調べずトリガーも消費しない。`ClearTriggers` と Stop は保留を破棄する。条件とマーカーの名前を暗黙に結び付けない。今回のマーカーを消費側が `SetTrigger` に変換した場合、そのトリガーは次の Update から有効になる。
 
 ### 状態の再生とライフサイクル
 
-Start は停止中にだけ呼べる。初期状態を位置 0 で開始し、保留入力と前回更新の基準を初期化する。初期状態の選択自体は遷移通知に含めない。実行中の Start は InvalidOperationException とし、最初からやり直す場合は Stop → Start を使う。
+Start(context) は停止中にだけ呼べる。初期状態の位置 0 と長さを含む Context で Control.CreateInstance を呼び、初期 OnEnter を実行する。初期状態を位置 0 で開始し、保留入力と前回更新の基準を初期化する。初期状態の選択自体は遷移通知に含めない。実行中の Start は InvalidOperationException とし、最初からやり直す場合は Stop → Start(context) を使う。
 
-状態へ入場するたびに新しい再生区間を開始する。自己遷移も再生位置を 0 に戻す。誤った常時再起動を防ぐため、自己遷移は `Reenter = true` が必要であり、それ以外は Build で拒否する。
+状態へ入場するたびに新しい再生区間を開始する。自己遷移は旧ライブラリと同じく許可し、退出・Effect・入場を実行して再生位置を 0 に戻す。常時再起動を防ぐ条件を定義する責任は作成者にある。
 
-Start／Stop は汎用機械と再生資源を一緒に開始・停止する。Pause は Animation のみの状態とし、内部の汎用機械は Running のまま TryStep を呼ばない。Pause は現在位置を固定する。Resume は同じ位置から新しい時計基準で続ける。Pause 中の Update は停止位置の値だけを出し、遷移と未配送マーカーの収集は Resume 後へ残す。Speed は既存再生と同じ非負の有限値であり、状態の切替先にも引き継ぐ。Speed が 0 でも、実行中なら Context・トリガーによる遷移は判定する。
+Start は汎用インスタンスを生成し、Stop はそのインスタンスと再生資源を破棄する。Stop による追加の OnExit は実行しない。Pause は Animation のみの状態とし、内部の汎用インスタンスへの FireAny を呼ばない。Pause は現在位置を固定する。Resume は同じ位置から新しい時計基準で続ける。Pause 中の Update は停止位置の値だけを出し、遷移と未配送マーカーの収集は Resume 後へ残す。Speed は既存再生と同じ非負の有限値であり、状態の切替先にも引き継ぐ。Speed が 0 でも、実行中なら Context・トリガーによる遷移は判定する。
 
 Once の完了後も機械は Running のまま終端を保持し、後続 Update で条件遷移できる。`OnCompleted` は一度限りの通知ではなく、完了済みという条件である。Stop は現在状態と保留を破棄し、値の復元や最後の値の書き込みをしない。停止中の Update は出力を変更せず false を返す。
 
@@ -118,8 +120,9 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +// 消費側の入力と今回評価した再生情報。汎用機械には一つの Context として渡す。
 +public readonly record struct AnimationStateContext<TContext>(TContext Input, AnimationStateInfo Playback);
 +// 状態と既存タイムラインの対応。データ構造・対象参照は含めない。
-+public readonly record struct AnimationStateBinding<TState>(
-+    TState State, AnimationTimeline Timeline, AnimationWrapMode Wrap = AnimationWrapMode.Once)
++public readonly record struct AnimationStateBinding<TState, TContext>(
++    TState Id, State<AnimationStateContext<TContext>> State,
++    AnimationTimeline Timeline, AnimationWrapMode Wrap = AnimationWrapMode.Once)
 +    where TState : notnull;
 +public readonly record struct AnimationStateEvent<TState>(
 +    TState State, AnimationEventOccurrence Occurrence) where TState : notnull;
@@ -131,10 +134,12 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +{
 +    // 任意の汎用定義をベースにできる。全状態との一対一対応を検証しコピーする。
 +    public AnimationStateMachineDefinition(
-+        StateMachineDefinition<TState, AnimationStateContext<TContext>> control,
-+        IReadOnlyList<AnimationStateBinding<TState>> states);
-+    public StateMachineDefinition<TState, AnimationStateContext<TContext>> Control { get; }
++        StateMachine<AnimationStateContext<TContext>, StateMachineTrigger> control,
++        IReadOnlyList<AnimationStateBinding<TState, TContext>> states, StateMachineTrigger? automaticTrigger = null);
++    public StateMachine<AnimationStateContext<TContext>, StateMachineTrigger> Control { get; }
 +    public TState InitialState { get; }
++    // 非 null の場合、各 Update に追加する入力。直接構築では省略可。
++    public StateMachineTrigger? AutomaticTrigger { get; }
 +}
 +public sealed class AnimationStateMachineBuilder<TState, TContext> where TState : notnull
 +{
@@ -146,7 +151,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +    public void AddTransition(TState from, TState to,
 +        Func<TContext, AnimationStateInfo, bool>? condition = null,
 +        StateMachineTrigger? trigger = null, bool onCompleted = false,
-+        int priority = 0, bool reenter = false);
++        int priority = 0);
 +    // 汎用 Builder で制御定義を構築し、再生対応を検証しコピーする。
 +    public AnimationStateMachineDefinition<TState, TContext> Build(TState initialState);
 +}
@@ -162,7 +167,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +    public Duration Position { get; }
 +    // 既定 1。非有限・負数は ArgumentOutOfRangeException。0 は許可。
 +    public double Speed { get; set; }
-+    public void Start();
++    public void Start(TContext context);
 +    public void Pause();
 +    public void Resume();
 +    public void Stop();
@@ -216,7 +221,6 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +            [ComposeParameter] public StateMachineTrigger? Trigger { get; init; }
 +            [ComposeParameter] public bool OnCompleted { get; init; }
 +            [ComposeParameter] public int Priority { get; init; }
-+            [ComposeParameter] public bool Reenter { get; init; }
 +        }
 +    }
 +    // 以下の入口は既存 Generator が生成する。
@@ -229,7 +233,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +    public static Definitions.Transition<TState, TContext> Transition<TState, TContext>(
 +        TState to, Optional<Func<TContext, AnimationStateInfo, bool>?> condition = default,
 +        Optional<StateMachineTrigger?> trigger = default, Optional<bool> onCompleted = default,
-+        Optional<int> priority = default, Optional<bool> reenter = default,
++        Optional<int> priority = default,
 +        IReadOnlyList<Action<Definitions.Transition<TState, TContext>>>? with = null) where TState : notnull;
 +    public static Definitions.StateMachineFactory<TState, TContext> StateMachineFactory<TState, TContext>()
 +        where TState : notnull;
@@ -248,7 +252,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +        public delegate Transition<TState, TContext> TransitionFactory<TState, TContext>(
 +            TState to, Optional<Func<TContext, AnimationStateInfo, bool>?> condition = default,
 +            Optional<StateMachineTrigger?> trigger = default, Optional<bool> onCompleted = default,
-+            Optional<int> priority = default, Optional<bool> reenter = default,
++            Optional<int> priority = default,
 +            IReadOnlyList<Action<Transition<TState, TContext>>>? with = null) where TState : notnull;
 +        public partial class StateMachine<TState, TContext> where TState : notnull
 +        {
@@ -324,7 +328,7 @@ var machine = new AnimationStateMachine<Motion, MotionInput>(clock, definition);
 var output = new AnimationOutput();
 var events = new List<AnimationStateEvent<Motion>>();
 var transitions = new List<AnimationStateTransition<Motion>>();
-machine.Start();
+machine.Start(new MotionInput(IsMoving: false));
 machine.SetTrigger(action);
 
 output.Clear();
@@ -365,19 +369,21 @@ AnimationStateMachineDefinition<Motion, MotionInput> simple = builder.Build(Moti
 専用 Builder を使わず、汎用側の API で条件を作る例。idle と pulse は上の例と同じ値ソースを使う。
 
 ```csharp
-var control = new StateMachineBuilder<Motion, AnimationStateContext<MotionInput>>();
-control.AddState(Motion.Idle);
-control.AddState(Motion.Action);
-control.AddTransition(Motion.Idle, Motion.Action, trigger: action);
-control.AddTransition(Motion.Action, Motion.Idle,
-    condition: context => context.Playback.IsCompleted);
-var baseDefinition = control.Build(Motion.Idle);
+var idleState = StateMachineKit.State<AnimationStateContext<MotionInput>>("Idle");
+var actionState = StateMachineKit.State<AnimationStateContext<MotionInput>>("Action");
+var tick = StateMachineTrigger.Create();
+var control = new StateMachineBuilder<AnimationStateContext<MotionInput>, StateMachineTrigger>(idleState);
+control.AddTransition(new Transition<AnimationStateContext<MotionInput>, StateMachineTrigger>(
+    idleState, actionState, action));
+control.AddTransition(new Transition<AnimationStateContext<MotionInput>, StateMachineTrigger>(
+    actionState, idleState, tick).When(context => context.Playback.IsCompleted));
+var baseDefinition = control.Build();
 var adapted = new AnimationStateMachineDefinition<Motion, MotionInput>(baseDefinition,
-    new AnimationStateBinding<Motion>[]
+    new AnimationStateBinding<Motion, MotionInput>[]
     {
-        new(Motion.Idle, Timeline()[Track<float>(amount, idle)].Build(), AnimationWrapMode.Loop),
-        new(Motion.Action, Timeline()[Track<float>(amount, pulse)].Build())
-    });
+        new(Motion.Idle, idleState, Timeline()[Track<float>(amount, idle)].Build(), AnimationWrapMode.Loop),
+        new(Motion.Action, actionState, Timeline()[Track<float>(amount, pulse)].Build())
+    }, automaticTrigger: tick);
 var animation = new AnimationStateMachine<Motion, MotionInput>(clock, adapted);
 ```
 
@@ -385,13 +391,13 @@ var animation = new AnimationStateMachine<Motion, MotionInput>(clock, adapted);
 
 ## 検証・所有権・失敗時の契約
 
-状態の一意性・初期状態・遷移先・自己遷移は汎用 Build が検証する。アニメーション定義は Control の全状態と再生対応の一対一の一致、null、Wrap の有効値と正のタイムライン長を検証する。専用 Builder はさらに Loop 状態の OnCompleted を検証する。`TState` の等価比較には `EqualityComparer<TState>.Default` を使用する。ID の等価性とハッシュ値は定義の寿命中に変えてはならない。到達不能な状態と複数の同一条件は許可するが、曖昧な条件に優先順位を付ける責任は定義作成者にある。
+汎用定義は初期状態と全遷移端点から参照同一性で状態集合を構築する。アニメーション定義は消費側 ID の一意性、Control の全状態と再生対応の一対一の一致、null、Wrap の有効値と正のタイムライン長を検証する。汎用 State の Name を消費側 ID のキーとして使わない。専用 Builder はさらに Loop 状態の OnCompleted を検証する。`TState` の等価比較には `EqualityComparer<TState>.Default` を使用する。ID の等価性とハッシュ値は定義の寿命中に変えてはならない。到達不能な状態と複数の同一条件は許可するが、曖昧な条件に優先順位を付ける責任は定義作成者にある。
 
 null の必須引数は ArgumentNullException、不整合な定義と未使用トリガーは ArgumentException、無効な数値・列挙値は ArgumentOutOfRangeException、時計逆行は InvalidOperationException、時間演算のオーバーフローは OverflowException とする。Pause／Resume は対象状態以外では何もしない。Stop は繰り返しても安全。参照型 Context の null は Update の変更前に拒否する。
 
-定義は共有できるが、実行者と出力は一スレッドだけが操作する。条件が捕捉する可変オブジェクトと参照型 Context は消費側が管理する。機械は Context を更新後に保持しない。条件は Update 中の固定入力として扱い、外部の時計や可変状態の読み直しを避ける。Update 中の再入呼び出し・操作は InvalidOperationException とする。
+定義は共有できるが、実行者と出力は一スレッドだけが操作する。条件が捕捉する可変オブジェクトと参照型 Context は消費側が管理する。Start で渡した初期 Context は内部インスタンスが保持する。各 Update の Context は明示 Context の FireAny に渡し、更新後に保持しない。条件は Update 中の固定入力として扱い、外部の時計や可変状態の読み直しを避ける。Update 中の再入呼び出し・操作は InvalidOperationException とする。
 
-汎用 TryStep の条件例外時は汎用側の状態・保留を維持する。ただしアニメーション側は既に再生を評価しており、独自条件・値ソース・追記先コレクションが例外を投げた場合、更新全体の完全なロールバックは保証しない。消費側はその更新結果を適用せず、Stop → Start または実行者の作り直しで復旧する。引数の事前検証に失敗した場合は状態と出力を変更しない。
+汎用 FireAny のガード例外時は汎用側の状態を維持する。アダプターの保留も維持する。退出／Effect／入場／通知の例外時の状態は汎用 ADR の部分完了契約に従う。ただしアニメーション側は既に再生を評価しており、独自条件・値ソース・追記先コレクションが例外を投げた場合、更新全体の完全なロールバックは保証しない。消費側はその更新結果を適用せず、Stop → Start(context) または実行者の作り直しで復旧する。引数の事前検証に失敗した場合は状態と出力を変更しない。
 
 内部の値・イベント格納とトリガー集合は再利用する。定常更新の標準数値型について割り当てゼロを目標とし、状態の切替も有限状態ごとの再生資源を再利用する。独自条件・ソースの割り当てや任意のイベント出力量は保証しない。Native ハンドル・Dispose・実行時リフレクション・動的コード生成は要求しない。
 
@@ -428,7 +434,7 @@ null の必須引数は ArgumentNullException、不整合な定義と未使用�
 本 PR は文書のみを追加する。以下は採用後の実装の受け入れ条件であり、実装・測定済みの結果ではない。
 
 - ManualClock で初期状態、条件・トリガー・完了遷移、自己遷移、最大一遷移、同時刻の再評価を確認する。
-- 優先順位と同順位の登録順、短絡評価、条件の AND、未使用トリガー、保留の消費、Pause 中の保留を確認する。
+- 優先順位と同順位の登録順、候補内の短絡評価・全候補の評価、条件の AND、未使用トリガー、保留の消費、Pause 中の保留を確認する。
 - Pause／Resume、Speed 0、速度変更と入場への継承、Once 終端保持、Loop に完了がないこと、停止・再開始を確認する。
 - 一回の Update が時計を一回だけ読むこと、入場時点が同じであること、ゲームと UI の時計を独立して進められることを確認する。
 - 長い更新間隔で旧マーカーを収集し、新状態を観測時点から開始すること、旧値を破棄しチャネルを復元しないことを確認する。
