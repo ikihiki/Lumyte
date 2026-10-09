@@ -45,11 +45,23 @@ flowchart LR
 
 `AnimationStateContext<TContext>` は消費側の Input と評価済みの Playback 情報を持つ。汎用側はこの型を参照せず、任意の TContext の一つとして扱う。Animation の Builder は `OnCompleted` を `context.Playback.IsCompleted` のガードに変換し、指定した Condition と AND にして汎用 Transition に登録する。Trigger を指定しない遷移には定義ごとの AutomaticTrigger を割り当て、各 Update の入力集合へ追加する。一般用途には OnCompleted という API を追加しない。
 
-アニメーション定義は汎用の Control 定義と、消費側の状態 ID・汎用 State の参照・Timeline／Wrap の対応を持つ。専用 Builder／Composition は両者を一緒に構築する簡便 API とし、既に構築した汎用 Control と再生対応を直接渡す経路も用意する。従ってアニメーション専用の構築 API を使わなくても、このアダプターを利用できる。
+アニメーション定義は汎用の Control 定義と、消費側の状態 ID・汎用 State の参照・Timeline／Wrap の対応を持つ。専用 Builder／Composition は両者を一緒に記述する構築定義とし、実行者が受け取る時点でまとめて生成する。既に構築した汎用 Control と再生対応を直接渡す経路も用意する。従ってアニメーション専用の構築 API を使わなくても、このアダプターを利用できる。
 
 直接渡した Control の OnEnter／OnExit／Effect は汎用契約の順序で実行する。汎用インスタンスの Transitioned をアダプターが購読し、選択した遷移を時計時点付き通知へ変換する。FireAny の全アクションには同じ入力と評価済みの旧状態の Playback 情報を渡す。切替後の再生評価はその後に行い、アダプターはコールバックを無効化・置換しない。専用 Builder が作る Control は再生切替以外のユーザーアクションを暗黙に追加しない。
 
 専用 Builder は Loop 状態の OnCompleted を拒否できる。一方、直接渡された汎用条件の内容は解析しない。Loop の IsCompleted は常に false なので、完了を調べる汎用条件は成立しない。この二つの検証範囲を区別する。
+
+### 定義を受け取る時点での自動構築
+
+通常の入口は `new AnimationStateMachine(clock, compositionDefinition)` とする。コンストラクターが Composition 定義全体を検証・コピーし、子の Timeline と内部の汎用制御定義を一括生成する。呼び出し側が状態機械や子タイムラインごとに Build を呼ぶ必要はない。Composition の状態機械ノードには公開 Build を設けない。
+
+Builder を渡す入口も用意し、初期状態とともに受け取った時点で同じ内部構築処理を実行する。Builder.AddState は既存の不変 Timeline と、Composition の Timeline のどちらも受け入れる。Composition の子は、実行者の作成時点でまとめてコピーする。
+
+生成は各コンストラクター呼び出しで一度だけ行い、Start／Update では繰り返さない。作成後に元の Composition ノード・Builder・子コレクションを変更しても、その実行者に反映しない。同じ可変定義を別の実行者へ渡した場合は、その作成時点の新しいスナップショットとなる。可変ノードに暗黙の生成結果キャッシュを持たせない。
+
+コンストラクターは構築だけを行い、初期入場・再生開始・値評価・イベント配送は行わない。不正な ID、循環、子数、時間、完了条件などは作成時に例外として返す。Start(context) が初期入場と再生を開始する。構築失敗時に入力の Composition ノードや Builder を変更しない。
+
+複数実行者で生成済み定義を共有したい場合だけ、Builder.Build(initialState) による明示確定と既存の不変定義コンストラクターを使用できる。通常の利用経路に明示 Build を要求しない。直接作成した汎用 Control を再利用する経路も維持する。
 
 ### 更新と遷移の順序
 
@@ -73,7 +85,7 @@ flowchart LR
 - `OnCompleted` が true なら、現在状態が Once の終端に達していること。
 - `Condition` が指定されていれば、今回の Context と評価済み再生情報について true を返すこと。
 
-何も指定しない遷移は無条件となる。優先順位は大きい数値を優先する。同順位は安定した登録順とし、数値の差で重み付けや時間制御は行わない。Loop は完了しないため、Loop 状態を出発点に `OnCompleted` を指定した定義は Build で拒否する。
+何も指定しない遷移は無条件となる。優先順位は大きい数値を優先する。同順位は安定した登録順とし、数値の差で重み付けや時間制御は行わない。Loop は完了しないため、Loop 状態を出発点に `OnCompleted` を指定した定義は自動構築または明示確定で拒否する。
 
 `SetTrigger` は同じキーの複数回の入力を一件にまとめる。候補の不成立や優先順位負けも含め、内部 FireAny が通常終了した際に保留トリガー全体を破棄し、次状態へ持ち越さない。その後の出力追記が失敗しても入力の消費は巻き戻さない。条件入力を持続させる場合は Context に状態を保持する。イベントが発生するたびにキューとして処理したい場合は消費側が入力キューを管理する。
 
@@ -129,7 +141,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +public readonly record struct AnimationStateTransition<TState>(
 +    TState From, TState To, TimePoint ObservedAt) where TState : notnull;
 +
-+// Build で構築する不変定義。実行者・対象・現在の Context は保持しない。
++// 自動構築または明示確定した不変定義。実行者・対象・現在の Context は保持しない。
 +public sealed class AnimationStateMachineDefinition<TState, TContext> where TState : notnull
 +{
 +    // 任意の汎用定義をベースにできる。全状態との一対一対応を検証しコピーする。
@@ -147,17 +159,27 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +    // 正の長さを持つ既存タイムラインを登録する。
 +    public void AddState(TState id, AnimationTimeline timeline,
 +        AnimationWrapMode wrap = AnimationWrapMode.Once);
++    // 子の Build を要求しない。実行者の作成または明示 Build でコピーする。
++    public void AddState(TState id, ComposeAnimation.Definitions.Timeline timeline,
++        AnimationWrapMode wrap = AnimationWrapMode.Once);
 +    // 全指定条件の AND。priority が大きい順、同順位は登録順。
 +    public void AddTransition(TState from, TState to,
 +        Func<TContext, AnimationStateInfo, bool>? condition = null,
 +        StateMachineTrigger? trigger = null, bool onCompleted = false,
 +        int priority = 0);
-+    // 汎用 Builder で制御定義を構築し、再生対応を検証しコピーする。
++    // 任意の明示確定。生成済み定義を共有する場合の入口。
 +    public AnimationStateMachineDefinition<TState, TContext> Build(TState initialState);
 +}
 +public sealed class AnimationStateMachine<TState, TContext> where TState : notnull
 +{
-+    // clock／definition の null は ArgumentNullException。
++    // 通常入口。ネストした子も含めて検証・コピー・自動構築する。
++    // clock／definition の null は ArgumentNullException。再生開始はしない。
++    public AnimationStateMachine(IMonotonicClock clock,
++        ComposeAnimation.Definitions.StateMachine<TState, TContext> definition);
++    // Builder も明示 Build を要求せず受け取る。
++    public AnimationStateMachine(IMonotonicClock clock,
++        AnimationStateMachineBuilder<TState, TContext> builder, TState initialState);
++    // 生成済みの不変定義を共有する入口。再構築しない。
 +    public AnimationStateMachine(IMonotonicClock clock,
 +        AnimationStateMachineDefinition<TState, TContext> definition);
 +    public AnimationStateMachineStatus Status { get; }
@@ -202,8 +224,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 +        {
 +            [ComposeParameter] public required TState InitialState { get; init; }
 +            [ComposeContent] public IReadOnlyList<State<TState, TContext>> States { get; set; } = [];
-+            // 各 Timeline を Build し、Builder と同じ検証で不変定義を返す。
-+            public AnimationStateMachineDefinition<TState, TContext> Build();
++            // 構築ノード。実行者へ渡した時点で子を含めて自動構築する。
 +        }
 +        [Composable(Factory = "ComposeAnimation")]
 +        public partial class State<TState, TContext> where TState : notnull
@@ -268,7 +289,7 @@ Once の完了後も機械は Running のまま終端を保持し、後続 Updat
 
 条件デリゲートは例のように型付きの変数で渡す。Optional に包むパラメーターへ匿名関数を直接渡す場合は、まず Func 型へ変換する。
 
-生成される `StateMachineFactory<TState, TContext>()`、`StateFactory<TState, TContext>()`、`TransitionFactory<TState, TContext>()` のデリゲート引数は、それぞれ上記入口と同じとする。Optional、with、インデクサーによる子の置換は既存 Composition 契約に従う。Build は入力コレクションと構築ノードを読み取ってコピーし、その後のノード変更を定義に反映しない。共有タイムライン定義は許可するが、その子の循環は既存 Timeline.Build と同じく拒否する。
+生成される `StateMachineFactory<TState, TContext>()`、`StateFactory<TState, TContext>()`、`TransitionFactory<TState, TContext>()` のデリゲート引数は、それぞれ上記入口と同じとする。Optional、with、インデクサーによる子の置換は既存 Composition 契約に従う。実行者のコンストラクターは入力コレクションと構築ノードを読み取ってコピーし、その後のノード変更を定義に反映しない。共有タイムライン定義は許可するが、その子の循環は既存 Timeline.Build と同じく拒否する。
 
 ## 利用例
 
@@ -290,7 +311,7 @@ var idle = new Tween<float>(0, 0, Duration.FromSeconds(1), AnimationInterpolator
 var moving = new Tween<float>(0, 1, Duration.FromSeconds(1), AnimationInterpolators.Float, AnimationEasing.Linear);
 var pulse = new Tween<float>(0, 1, Duration.FromSeconds(0.2), AnimationInterpolators.Float, AnimationEasing.Linear);
 
-AnimationStateMachineDefinition<Motion, MotionInput> definition =
+ComposeAnimation.Definitions.StateMachine<Motion, MotionInput> definition =
     StateMachine<Motion, MotionInput>(Motion.Idle)[
         State<Motion, MotionInput>(Motion.Idle,
             Timeline()[Track<float>(amount, idle)], wrap: AnimationWrapMode.Loop)[
@@ -310,7 +331,7 @@ AnimationStateMachineDefinition<Motion, MotionInput> definition =
                 condition: isMoving, onCompleted: true, priority: 10),
             Transition<Motion, MotionInput>(Motion.Idle, onCompleted: true)
         ]
-    ].Build();
+    ];
 
 enum Motion { Idle, Moving, Action }
 readonly record struct MotionInput(bool IsMoving);
@@ -325,6 +346,7 @@ Action への切替は入力条件より優先する。Action は Repeat と Rev
 ```csharp
 var clock = new ManualClock();
 var machine = new AnimationStateMachine<Motion, MotionInput>(clock, definition);
+// ここで内部制御定義とすべての Timeline を自動構築する。
 var output = new AnimationOutput();
 var events = new List<AnimationStateEvent<Motion>>();
 var transitions = new List<AnimationStateTransition<Motion>>();
@@ -350,18 +372,19 @@ if (output.TryGet(amount, out float value))
 }
 ```
 
-### Builder でも同じ定義を作る
+### Builder を直接渡す
 
 ```csharp
 var builder = new AnimationStateMachineBuilder<Motion, MotionInput>();
-builder.AddState(Motion.Idle, Timeline()[Track<float>(amount, idle)].Build(), AnimationWrapMode.Loop);
+builder.AddState(Motion.Idle, Timeline()[Track<float>(amount, idle)], AnimationWrapMode.Loop);
 builder.AddState(Motion.Action,
     Timeline()[Sequence()[Repeat(2)[Sequence()[
         Track<float>(amount, pulse), Reverse()[Track<float>(amount, pulse)]
-    ]], Marker("ActionFinished")]].Build());
+    ]], Marker("ActionFinished")]]);
 builder.AddTransition(Motion.Idle, Motion.Action, trigger: action, priority: 100);
 builder.AddTransition(Motion.Action, Motion.Idle, onCompleted: true);
-AnimationStateMachineDefinition<Motion, MotionInput> simple = builder.Build(Motion.Idle);
+var simple = new AnimationStateMachine<Motion, MotionInput>(clock, builder, Motion.Idle);
+// 子の Timeline もここでまとめて構築する。
 ```
 
 ### 汎用状態機械を直接ベースとして使う
@@ -391,7 +414,7 @@ var animation = new AnimationStateMachine<Motion, MotionInput>(clock, adapted);
 
 ## 検証・所有権・失敗時の契約
 
-汎用定義は初期状態と全遷移端点から参照同一性で状態集合を構築する。アニメーション定義は消費側 ID の一意性、Control の全状態と再生対応の一対一の一致、null、Wrap の有効値と正のタイムライン長を検証する。汎用 State の Name を消費側 ID のキーとして使わない。専用 Builder はさらに Loop 状態の OnCompleted を検証する。`TState` の等価比較には `EqualityComparer<TState>.Default` を使用する。ID の等価性とハッシュ値は定義の寿命中に変えてはならない。到達不能な状態と複数の同一条件は許可するが、曖昧な条件に優先順位を付ける責任は定義作成者にある。
+汎用定義は初期状態と全遷移端点から参照同一性で状態集合を構築する。アニメーション定義は消費側 ID の一意性、Control の全状態と再生対応の一対一の一致、null、Wrap の有効値と正のタイムライン長を検証する。汎用 State の Name を消費側 ID のキーとして使わない。自動構築と専用 Builder の明示確定はさらに Loop 状態の OnCompleted を検証する。`TState` の等価比較には `EqualityComparer<TState>.Default` を使用する。ID の等価性とハッシュ値は定義の寿命中に変えてはならない。到達不能な状態と複数の同一条件は許可するが、曖昧な条件に優先順位を付ける責任は定義作成者にある。
 
 null の必須引数は ArgumentNullException、不整合な定義と未使用トリガーは ArgumentException、無効な数値・列挙値は ArgumentOutOfRangeException、時計逆行は InvalidOperationException、時間演算のオーバーフローは OverflowException とする。Pause／Resume は対象状態以外では何もしない。Stop は繰り返しても安全。参照型 Context の null は Update の変更前に拒否する。
 
@@ -402,6 +425,10 @@ null の必須引数は ArgumentNullException、不整合な定義と未使用�
 内部の値・イベント格納とトリガー集合は再利用する。定常更新の標準数値型について割り当てゼロを目標とし、状態の切替も有限状態ごとの再生資源を再利用する。独自条件・ソースの割り当てや任意のイベント出力量は保証しない。Native ハンドル・Dispose・実行時リフレクション・動的コード生成は要求しない。
 
 ## 検討した代替案
+
+### 入れ子ごとに明示 Build を要求する
+
+確定時点が明示的になるが、通常利用で状態機械と各タイムラインの Build が重複する。実行者へ渡す時点で全体を確定し、生成済み定義を共有する場合だけ明示確定を使う。
 
 ### 消費側で状態選択をすべて実装する
 
@@ -423,6 +450,7 @@ null の必須引数は ArgumentNullException、不整合な定義と未使用�
 
 - Context、トリガー、完了条件の評価と優先順位を共通化できる。
 - 既存の時計・タイムライン・Repeat／Reverse と Composition の構築方法を再利用できる。
+- 通常利用の Build 呼び出しを実行者の作成へまとめ、定義の検証エラーも作成時に返せる。
 - 更新単位の切替により履歴入力を要求せず、無限の自動遷移を避けられるが、遷移結果は更新の刻みに依存する。
 - 切替時の値の連続性と、前状態だけが持つチャネルの復元は消費側の責務となる。
 - マーカーと遷移通知はデータとして外へ出すため、UI／ボーン固有のスレッド・配送規則を持ち込まない。
@@ -439,7 +467,9 @@ null の必須引数は ArgumentNullException、不整合な定義と未使用�
 - 一回の Update が時計を一回だけ読むこと、入場時点が同じであること、ゲームと UI の時計を独立して進められることを確認する。
 - 長い更新間隔で旧マーカーを収集し、新状態を観測時点から開始すること、旧値を破棄しチャネルを復元しないことを確認する。
 - 状態をまたぐ UpdateOffset と ObservedAt、Repeat／Reverse／Loop のマーカー、0 マーカーの配送と重複防止を確認する。
-- 汎用 Control を直接渡す構築、専用 Builder／Composition との等価性、Build 後の変更分離、複数実行者の独立性、共有タイムラインと無効定義を確認する。
+- 汎用 Control を直接渡す構築、Composition／Builder の自動構築と明示確定の等価性、作成後の変更分離、複数実行者の独立性、共有タイムラインと無効定義を確認する。
+- コンストラクターが一度だけ生成し、Start／Update が生成しないこと、構築失敗で再生・コールバック・入力変更が起きないことを確認する。
+- 同じ可変ノードからの二つの作成がそれぞれの時点のスナップショットとなり、生成済み定義の共有では再構築しないことを確認する。
 - 実際の Composition Generator と別アセンブリで、二つの型引数・notnull 制約・Optional の条件デリゲート・ネスト例をコンパイルする。
 - 汎用候補選択を一更新で一度だけ呼ぶこと、独自条件例外からの再生側の復旧、入力と再生情報の合成を確認する。
 - ウォームアップ後の定常更新・繰り返し遷移について標準数値型の割り当てを測定する。Windows／Linux／Browser で同じ入力の遷移順と値を比較する。
