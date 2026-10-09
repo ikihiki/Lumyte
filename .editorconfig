@@ -36,6 +36,7 @@ csharp_style_expression_bodied_properties = when_on_single_line:error
 csharp_style_expression_bodied_accessors = when_on_single_line:error
 csharp_style_expression_bodied_indexers = when_on_single_line:error
 csharp_style_expression_bodied_constructors = false:error
+csharp_style_prefer_primary_constructors = true:error
 dotnet_diagnostic.IDE0005.severity = error
 dotnet_diagnostic.IDE0055.severity = error
 dotnet_diagnostic.IDE0065.severity = error
@@ -50,6 +51,7 @@ dotnet_diagnostic.IDE0025.severity = error
 dotnet_diagnostic.IDE0026.severity = error
 dotnet_diagnostic.IDE0027.severity = error
 dotnet_diagnostic.IDE1006.severity = error
+dotnet_diagnostic.IDE0290.severity = error
 
 # More specific rules take precedence over the general member rule.
 dotnet_naming_rule.constants.severity = error

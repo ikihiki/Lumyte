@@ -2,30 +2,24 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class VulkanArgumentTable : IArgumentTable
+internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc desc) : IArgumentTable
 {
-    private readonly VulkanDevice _owner;
     private readonly Dictionary<uint, ArgumentRegistration> _textures = new();
     private readonly Dictionary<uint, ArgumentRegistration> _samplers = new();
     private readonly Dictionary<uint, ArgumentRegistration> _buffers = new();
     private bool _disposed;
 
-    internal VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc desc)
-    {
-        (_owner, TextureCapacity, SamplerCapacity, BufferCapacity) = (owner, desc.TextureCapacity, desc.SamplerCapacity, desc.BufferCapacity);
-    }
+    public uint TextureCapacity { get; } = desc.TextureCapacity;
 
-    public uint TextureCapacity { get; }
+    public uint SamplerCapacity { get; } = desc.SamplerCapacity;
 
-    public uint SamplerCapacity { get; }
-
-    public uint BufferCapacity { get; }
+    public uint BufferCapacity { get; } = desc.BufferCapacity;
 
     public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(view);
-        if (view is not VulkanTextureView resource || !ReferenceEquals(resource.Owner, _owner) || (view.Texture.Usage & TextureUsage.Sampled) == 0)
+        if (view is not VulkanTextureView resource || !ReferenceEquals(resource.Owner, owner) || (view.Texture.Usage & TextureUsage.Sampled) == 0)
         {
             throw new ArgumentException("A sampled view from the same device is required.", nameof(view));
         }
@@ -37,7 +31,7 @@ internal sealed class VulkanArgumentTable : IArgumentTable
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(sampler);
-        if (sampler is not VulkanSampler resource || !ReferenceEquals(resource.Owner, _owner))
+        if (sampler is not VulkanSampler resource || !ReferenceEquals(resource.Owner, owner))
         {
             throw new ArgumentException("A sampler from the same device is required.", nameof(sampler));
         }
@@ -49,7 +43,7 @@ internal sealed class VulkanArgumentTable : IArgumentTable
         where T : unmanaged
     {
         ThrowIfDisposed();
-        if (range.Buffer is not VulkanBuffer<T> resource || !ReferenceEquals(resource.Owner, _owner) || (resource.Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) == 0)
+        if (range.Buffer is not VulkanBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || (resource.Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) == 0)
         {
             throw new ArgumentException("A shader buffer range from the same device is required.", nameof(range));
         }
@@ -80,7 +74,7 @@ internal sealed class VulkanArgumentTable : IArgumentTable
         _samplers.Clear();
         _buffers.Clear();
         _disposed = true;
-        _owner.ReleaseArgumentTable();
+        owner.ReleaseArgumentTable();
     }
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

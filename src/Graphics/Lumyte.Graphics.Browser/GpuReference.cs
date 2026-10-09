@@ -2,25 +2,17 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class GpuReference<T> : IGpuRef<T>
+internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong count, ulong stride, ulong offset, ulong size) : IGpuRef<T>
 {
-    private readonly ArgumentRegistration _registration;
-    private readonly ulong _stride;
+    public ulong Count { get; } = count;
 
-    internal GpuReference(ArgumentRegistration registration, ulong count, ulong stride, ulong offset, ulong size)
-    {
-        (_registration, Count, _stride, OffsetInBytes, SizeInBytes) = (registration, count, stride, offset, size);
-    }
+    internal ulong OffsetInBytes { get; } = offset;
 
-    public ulong Count { get; }
-
-    internal ulong OffsetInBytes { get; }
-
-    internal ulong SizeInBytes { get; }
+    internal ulong SizeInBytes { get; } = size;
 
     public IGpuRef<T> GetElement(ulong index)
     {
-        _registration.Check();
+        registration.Check();
         if (index >= Count)
         {
             throw new ArgumentOutOfRangeException(nameof(index));
@@ -31,13 +23,13 @@ internal sealed class GpuReference<T> : IGpuRef<T>
             return this;
         }
 
-        ulong offset = checked(OffsetInBytes + (index * _stride));
-        return new GpuReference<T>(_registration, 1, _stride, offset, _stride);
+        ulong elementOffset = checked(OffsetInBytes + (index * stride));
+        return new GpuReference<T>(registration, 1, stride, elementOffset, stride);
     }
 
     internal object Resolve()
     {
-        _registration.Check();
-        return _registration.Resource;
+        registration.Check();
+        return registration.Resource;
     }
 }

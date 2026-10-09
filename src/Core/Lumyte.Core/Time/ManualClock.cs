@@ -1,17 +1,11 @@
 namespace Lumyte.Core.Time;
 
 /// <summary>A deterministic monotonic clock for tests and simulations.</summary>
-public sealed class ManualClock : IMonotonicClock
+/// <param name="initial">The initial monotonic time.</param>
+public sealed class ManualClock(TimePoint initial = default) : IMonotonicClock
 {
-    /// <summary>Initializes a new instance of the <see cref="ManualClock"/> class.</summary>
-    /// <param name="initial">The initial.</param>
-    public ManualClock(TimePoint initial = default)
-    {
-        Now = initial;
-    }
-
     /// <summary>Gets the current monotonic time.</summary>
-    public TimePoint Now { get; private set; }
+    public TimePoint Now { get; private set; } = initial;
 
     /// <summary>Advances the monotonic clock by a nonnegative duration.</summary>
     /// <param name="duration">The duration.</param>
