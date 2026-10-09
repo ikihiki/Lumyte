@@ -46,15 +46,19 @@ flowchart LR
 
 ### 定義と凍結
 
-State と Transition は構築中だけ可変であり、定義に所属した時点で凍結する。Builder／Composition の Build で検証を終えてから、状態と遷移をまとめて凍結する。初期状態だけを設定途中で凍結する API は設けない。OnEnter／OnExit／When／Effect／WithPriority を凍結後に呼ぶと InvalidOperationException。
+State と Transition は構築中だけ可変であり、定義に所属した時点で凍結する。Builder／Composition の Build または BuildDefinition で検証を終えてから、状態と遷移をまとめて凍結する。初期状態だけを設定途中で凍結する API は設けない。OnEnter／OnExit／When／Effect／WithPriority を凍結後に呼ぶと InvalidOperationException。
 
 States は InitialState を先頭とし、遷移を登録順に走査して From／To を参照同一性で重複排除する。初期状態以外の明示登録を許す Builder の追加状態は、その後に登録順で含める。Transitions は登録順を保持する。外部から一覧を変更できない読み取り専用の格納とする。
 
-定義の作成は Build に統一し、実行時の定義に再構成用インデクサーを持たせない。Builder と Composition ノードは編集できるが、Build は入力一覧をコピーし、構築済み定義に後から変更を反映しない。空の遷移一覧も有効な確定済み定義とする。状態名とトリガーの等価性・ハッシュ値は定義の寿命中に変更しない。
+通常の構築は Build(context) に統一し、実行時の定義に再構成用インデクサーを持たせない。Builder と Composition ノードは編集できるが、Build は入力一覧をコピーし、構築済み定義に後から変更を反映しない。空の遷移一覧も有効な確定済み定義とする。状態名とトリガーの等価性・ハッシュ値は定義の寿命中に変更しない。
 
 ### インスタンスと評価規則
 
-CreateInstance(context) は Context を保持し、CurrentState を InitialState に設定して OnEnter を登録順に実行する。複数インスタンスで定義を共有しても現在状態は独立する。Context の共有は消費側が明示的に選ぶ。
+Build(context) は定義を検証・確定し、その定義と Context を持つ実行インスタンスを生成して返す。CurrentState を InitialState に設定し、OnEnter を登録順に一度実行する。Build の後に別の生成メソッドを呼ぶ必要はない。複数インスタンスで定義を共有しても現在状態は独立する。Context の共有は消費側が明示的に選ぶ。
+
+Build を同じ Builder／Composition ノードに複数回呼べば、その都度独立した実行インスタンスを作る。各呼び出しで初期入場を実行し、現在状態や Context を前のインスタンスから引き継がない。構築済みの入力オブジェクトの凍結は維持する。
+
+実行者をまだ作らずに定義を共有・接続する場合だけ BuildDefinition() を使える。この入口は検証・コピー・凍結までを行い、Context を要求せず、初期入場も行わない。確定済み定義からの生成は実行インスタンスのコンストラクターに統一する。定義に CreateInstance を設けない。
 
 Fire(trigger) は同期処理で、保持した Context を使って次の順に実行する。
 
@@ -116,12 +120,11 @@ ActivitySourceName は新パッケージと揃えて `Lumyte.StateMachines` と�
 +    public State<TContext> InitialState { get; }
 +    public IReadOnlyList<State<TContext>> States { get; }
 +    public IReadOnlyList<Transition<TContext, TTrigger>> Transitions { get; }
-+    // 同期で初期状態の OnEnter を実行する。
-+    public StateMachineInstance<TContext, TTrigger> CreateInstance(TContext context);
 +}
 +public sealed class StateMachineInstance<TContext, TTrigger>
 +{
-+    internal StateMachineInstance(StateMachine<TContext, TTrigger> definition, TContext context);
++    // 共有する確定済み定義から作る入口。初期 OnEnter を同期実行する。
++    public StateMachineInstance(StateMachine<TContext, TTrigger> definition, TContext context);
 +    public TContext Context { get; }
 +    public State<TContext> CurrentState { get; }
 +    public event Action<Transition<TContext, TTrigger>>? Transitioned;
@@ -151,11 +154,14 @@ ActivitySourceName は新パッケージと揃えて `Lumyte.StateMachines` と�
 +    public StateMachineBuilder(State<TContext> initialState);
 +    public void AddState(State<TContext> state);
 +    public void AddTransition(Transition<TContext, TTrigger> transition);
-+    public StateMachine<TContext, TTrigger> Build();
++    // 定義の確定と実行インスタンスの生成・初期入場を一括実行する。
++    public StateMachineInstance<TContext, TTrigger> Build(TContext context);
++    // 任意の定義のみの確定。共有・他の実行層への接続に使う。
++    public StateMachine<TContext, TTrigger> BuildDefinition();
 +}
 ```
 
-State と Transition は通常のコンストラクターで構築し、定義は Builder または Composition の Build で確定する。遷移ゼロの定義も同じ経路で構築できる。CreateInstance は確定済みの定義だけを受け取る。
+State と Transition は通常のコンストラクターで構築し、Builder または Composition の Build(context) で利用可能な実行インスタンスまで構築する。遷移ゼロの場合も同じ経路を使う。定義だけが必要な場合は BuildDefinition を使う。
 
 ### 構築入口と Composition
 
@@ -177,8 +183,10 @@ State と Transition は通常のコンストラクターで構築し、定義�
 +        {
 +            [ComposeParameter] public required State<TContext> InitialState { get; init; }
 +            [ComposeContent] public IReadOnlyList<Transition<TContext, TTrigger>> Transitions { get; set; } = [];
-+            // Builder と同じ検証と凍結を行う。実行者は作らない。
-+            public StateMachine<TContext, TTrigger> Build();
++            // Builder と同じ検証・凍結・初期入場を行う。
++            public StateMachineInstance<TContext, TTrigger> Build(TContext context);
++            // 定義だけを必要とする場合の任意の入口。
++            public StateMachine<TContext, TTrigger> BuildDefinition();
 +            public Machine<TContext, TTrigger> this[params Transition<TContext, TTrigger>[] content] { get; }
 +        }
 +        public delegate Machine<TContext, TTrigger> MachineFactory<TContext, TTrigger>(
@@ -206,7 +214,7 @@ State<ConnectionContext> disconnected = new State<ConnectionContext>("Disconnect
 State<ConnectionContext> connecting = new State<ConnectionContext>("Connecting")
     .OnEnter(c => c.Log.Add("enter connecting"));
 State<ConnectionContext> connected = new State<ConnectionContext>("Connected");
-StateMachine<ConnectionContext, ConnectionTrigger> definition =
+StateMachineInstance<ConnectionContext, ConnectionTrigger> machine =
     Machine<ConnectionContext, ConnectionTrigger>(disconnected)[
         new Transition<ConnectionContext, ConnectionTrigger>(disconnected, connecting, ConnectionTrigger.Connect)
             .When(c => c.HasConfiguration)
@@ -215,8 +223,7 @@ StateMachine<ConnectionContext, ConnectionTrigger> definition =
             .WithPriority(10),
         new Transition<ConnectionContext, ConnectionTrigger>(connecting, connected, ConnectionTrigger.Ready)
             .When(c => c.IsReady)
-    ].Build();
-var machine = definition.CreateInstance(context);
+    ].Build(context);
 machine.Transitioned += transition => context.Log.Add(transition.To.Name);
 if (machine.CanFire(ConnectionTrigger.Connect))
 {
@@ -242,27 +249,28 @@ enum ConnectionTrigger { Connect, Ready }
 var builder = new StateMachineBuilder<ConnectionContext, ConnectionTrigger>(disconnected);
 builder.AddTransition(new Transition<ConnectionContext, ConnectionTrigger>(
     disconnected, connecting, ConnectionTrigger.Connect).When(c => c.HasConfiguration));
-StateMachine<ConnectionContext, ConnectionTrigger> another = builder.Build();
-StateMachineInstance<ConnectionContext, ConnectionTrigger> second = another.CreateInstance(new ConnectionContext());
+StateMachineInstance<ConnectionContext, ConnectionTrigger> second = builder.Build(new ConnectionContext());
 ```
 
 既存 Composition の生成入口からも、同じ遷移オブジェクトで定義を構築できる。
 
 ```csharp
-StateMachine<ConnectionContext, ConnectionTrigger> composed =
+StateMachineInstance<ConnectionContext, ConnectionTrigger> composed =
     ComposeStateMachines.Machine<ConnectionContext, ConnectionTrigger>(disconnected)[
         new Transition<ConnectionContext, ConnectionTrigger>(
             disconnected, connecting, ConnectionTrigger.Connect).When(c => c.HasConfiguration)
-    ].Build();
+    ].Build(new ConnectionContext());
 ```
 
 ## 所有権と失敗時の契約
 
 定義は Managed の共有オブジェクト。インスタンス、Context、アクション・条件が捕捉するオブジェクト、通知購読の寿命は消費側が管理する。インスタンスの Context は作成時から保持される。明示 Context のオーバーロードでは、指定 Context を呼び出し後に保持しない。Dispose や Native ハンドルは要求しない。単一インスタンスの操作は一スレッドに限定する。
 
+Build は null の Context を検証してから定義を確定する。初期入場が失敗した場合は実行インスタンスを返さず、既に確定した定義の凍結と実行済みアクションの副作用は巻き戻さない。BuildDefinition は初期入場を実行しない。
+
 必須の null は ArgumentNullException、空白の Name と null を含む定義は ArgumentException、凍結後の変更は InvalidOperationException。Fire の null トリガーは一致候補なしとして false を返す。明示 Context と入力一覧の null は副作用前に拒否する。無効な一覧を検証しただけで既存定義を部分更新しない。
 
-条件・アクション・通知は同期処理であり、例外を呼び出し側へ返す。ガード例外時は状態未変更。退出・Effect の例外時は旧状態のまま、入場・Transitioned の例外時は新状態に変更済みとなる。完了したアクションと外部への副作用は巻き戻さない。CreateInstance の初期入場例外はインスタンス作成の失敗として返す。
+条件・アクション・通知は同期処理であり、例外を呼び出し側へ返す。ガード例外時は状態未変更。退出・Effect の例外時は旧状態のまま、入場・Transitioned の例外時は新状態に変更済みとなる。完了したアクションと外部への副作用は巻き戻さない。Build または実行インスタンスのコンストラクターでの初期入場例外は、インスタンス作成の失敗として返す。
 
 旧実装で未定義だった Fire の再入操作は、現在状態の変更順序を壊すため InvalidOperationException で拒否する。通常の同期コールバックと通知は維持し、別の実行インスタンスの操作は許可する。ガードは副作用を持たないものとし、Context と呼び出し回数が同じなら同じ結果を返す。
 
@@ -278,6 +286,10 @@ StateMachine<ConnectionContext, ConnectionTrigger> composed =
 
 参照同一性は便利だが、旧ライブラリで使える enum・文字列・独自型の入力を制限する。TTrigger を維持し、不透明なキーは任意の追加型とする。
 
+### 定義確定と実行者生成を常に二段階にする
+
+通常利用で Build と別の生成呼び出しが必要になる。Build(context) に統合し、定義だけを使う共有・接続用途は BuildDefinition に分ける。
+
 ### 旧 API と候補走査順を維持する
 
 互換入口や全候補のガード評価は、必要な機能を増やさず構築経路と処理量を増やす。互換層を設けず、純粋なガードを優先順位順に短絡評価する。
@@ -285,6 +297,7 @@ StateMachine<ConnectionContext, ConnectionTrigger> composed =
 ## 結果と影響
 
 - 旧ライブラリの状態機械機能を維持し、通常 API と Composition の両方から使える。
+- Build(context) で構築と実行者生成を統合し、通常利用の呼び出しを一つにできる。
 - 型付き入力、Context、複数ガードとアクション、通知・診断を独立した基盤として提供する。
 - コールバックの副作用と例外時の部分完了を利用側が扱う必要がある。
 - 状態同一性は参照であり、Name をキーとして保存・検索する場合は消費側で対応を管理する。
@@ -295,6 +308,7 @@ StateMachine<ConnectionContext, ConnectionTrigger> composed =
 - 旧 StateMachineTests の全 8 ケースが検証する機能を新 API で確認する。旧テストコードの無変更移植は要求しない。型付きトリガー、ガード、優先順位、退出／Effect／入場、独立インスタンス、未知トリガー、凍結、診断タグを含む。
 - 初期入場、複数アクションの登録順、複数ガードの AND／短絡、同順位、成立後のガード省略、自己遷移を確認する。
 - enum・文字列・独自型の Trigger 等価性、同名別状態、CanFire が状態・Effect・通知を変更しないことを確認する。
+- Build の戻り値が利用可能な実行者であること、初期入場が一度だけ実行されること、複数 Build の独立性、BuildDefinition がアクションを実行しないことを確認する。
 - 空定義、Build 後のノード編集と既存定義の分離、入力一覧のコピー、読み取り専用の一覧、通常 Builder と Composition の等価性を確認する。
 - 各コールバック・通知の例外時の状態と診断 Error、再入拒否、通知購読の寿命を確認する。
 - 明示 Context の非保持と、FireAny の一回の候補評価・優先順位・入力重複・空入力・例外を確認する。

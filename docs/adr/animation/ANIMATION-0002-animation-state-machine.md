@@ -59,6 +59,8 @@ Builder を渡す入口も用意し、初期状態とともに受け取った時
 
 生成は各コンストラクター呼び出しで一度だけ行い、Start／Update では繰り返さない。作成後に元の Composition ノード・Builder・子コレクションを変更しても、その実行者に反映しない。同じ可変定義を別の実行者へ渡した場合は、その作成時点の新しいスナップショットとなる。可変ノードに暗黙の生成結果キャッシュを持たせない。
 
+内部の汎用 Builder は BuildDefinition() で制御定義だけを確定する。汎用の Build(context) は初期入場まで実行するため、アニメーション構築時には使わず、Start(context) で汎用実行者を生成する。
+
 コンストラクターは構築だけを行い、初期入場・再生開始・値評価・イベント配送は行わない。不正な ID、循環、子数、時間、完了条件などは作成時に例外として返す。Start(context) が初期入場と再生を開始する。構築失敗時に入力の Composition ノードや Builder を変更しない。
 
 複数実行者で生成済み定義を共有したい場合だけ、Builder.Build(initialState) による明示確定と既存の不変定義コンストラクターを使用できる。通常の利用経路に明示 Build を要求しない。直接作成した汎用 Control を再利用する経路も維持する。
@@ -93,7 +95,7 @@ Builder を渡す入口も用意し、初期状態とともに受け取った時
 
 ### 状態の再生とライフサイクル
 
-Start(context) は停止中にだけ呼べる。初期状態の位置 0 と長さを含む Context で Control.CreateInstance を呼び、初期 OnEnter を実行する。初期状態を位置 0 で開始し、保留入力と前回更新の基準を初期化する。初期状態の選択自体は遷移通知に含めない。実行中の Start は InvalidOperationException とし、最初からやり直す場合は Stop → Start(context) を使う。
+Start(context) は停止中にだけ呼べる。初期状態の位置 0 と長さを含む Context で Control を受け取る汎用実行インスタンスのコンストラクターを呼び、初期 OnEnter を実行する。初期状態を位置 0 で開始し、保留入力と前回更新の基準を初期化する。初期状態の選択自体は遷移通知に含めない。実行中の Start は InvalidOperationException とし、最初からやり直す場合は Stop → Start(context) を使う。
 
 状態へ入場するたびに新しい再生区間を開始する。自己遷移は旧ライブラリと同じく許可し、退出・Effect・入場を実行して再生位置を 0 に戻す。常時再起動を防ぐ条件を定義する責任は作成者にある。
 
@@ -400,7 +402,7 @@ control.AddTransition(new Transition<AnimationStateContext<MotionInput>, StateMa
     idleState, actionState, action));
 control.AddTransition(new Transition<AnimationStateContext<MotionInput>, StateMachineTrigger>(
     actionState, idleState, tick).When(context => context.Playback.IsCompleted));
-var baseDefinition = control.Build();
+var baseDefinition = control.BuildDefinition();
 var adapted = new AnimationStateMachineDefinition<Motion, MotionInput>(baseDefinition,
     new AnimationStateBinding<Motion, MotionInput>[]
     {
