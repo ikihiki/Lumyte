@@ -213,6 +213,82 @@ touchSource が Touch Device を、virtualSource が Logical な Controller Devi
 
 共有取得の寿命は構成側が両 Source より長く保ち、Device の分岐を一つ閉じても残りを破棄しない。終了順は InputSystem → Source → acquisition とする。getTime は InputSystem の構築後に参照可能にし、Initialize では取得・時刻評価を行わず、Update から評価する。
 
+### Lumyte.Settings による補正設定の保存・復元
+
+[設定保存基盤](../settings/SETTINGS-0001-user-settings-persistence.md)と [Lumyte.Settings の登録契約](../../../src/Core/Lumyte.Settings/README.md)を使用する。共通 JSON ドキュメントの `input-processing` セクションに、機器校正・デッドゾーン・筆圧曲線・仮想デバイスの生成設定を保存する。アクション値補正は `input-actions` の責務とし、同じ設定を双方へ重複保存しない。
+
+Processing の実行コアは引き続き Settings に依存しない。構成側の任意の連携モジュール `Lumyte.Input.Settings` が Settings、Processing、Actions を参照し、DTO の登録・検証・実行設定への変換を担当する。OS 取得 Source を設定保存用 Source と混同しない。
+
+保存モデルは引数なしで生成できる class とし、スカラー、読み書き可能なオブジェクト、List / Dictionary 等、Settings の対応型だけを使う。実行中の processor インスタンス、delegate、ポリモーフィックな InputData は保存しない。次は一部の設定を示す設計用 DTO と登録例であり、入力連携型は未実装である。
+
+```csharp
+public sealed class InputProcessingSettings
+{
+    public Dictionary<string, DeviceCorrectionSettings> DeviceProfiles { get; set; } = new();
+}
+
+public sealed class DeviceCorrectionSettings
+{
+    public float DeadZone { get; set; } = 0.15f;
+    public float CenterX { get; set; }
+    public float CenterY { get; set; }
+    public float PressureExponent { get; set; } = 1f;
+}
+
+[JsonSerializable(typeof(InputProcessingSettings))]
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+internal partial class InputSettingsJsonContext : JsonSerializerContext;
+
+var settingsSource = new PersistedJsonFileSource(absoluteSettingsPath);
+builder.Configuration.AddPersistedJsonFile(settingsSource);
+builder.Services.AddSettings(settingsSource);
+builder.Services.AddPersistedOptions<InputProcessingSettings>("input-processing")
+    .Validate(ValidateProcessingSettings, "Invalid input correction settings.")
+    .UseJsonTypeInfo(InputSettingsJsonContext.Default.InputProcessingSettings,
+        schemaVersion: 1);
+```
+
+ValidateProcessingSettings は全プロファイルの有限値、デッドゾーン範囲、中心オフセット、正の筆圧指数、仮想デバイスの参照先と循環を検証する副作用なしの関数とする。ルート Dictionary そのものを Options 型にせず、上記の class のプロパティに置く。AOT では生成 JSON 型情報を登録する。
+
+DeviceProfiles のキーは利用者が選ぶ安定したプロファイル名とする。InputDeviceId、接触 ID、OS の接続スロット、表示名だけによる自動対応を保存しない。再接続時は識別可能な機器情報と利用者の選択からプロファイルを解決し、対応が不明なら既定補正を使って確認を求める。曲線等は名前付き種別と数値パラメーターとして保存する。
+
+#### 編集・保存と適用境界
+
+```csharp
+var editable = provider.GetRequiredService<IEditableOptions<InputProcessingSettings>>();
+SettingsEdit<InputProcessingSettings> edit = editable.BeginEdit();
+edit.Value.DeviceProfiles["player1-controller"].DeadZone = 0.2f;
+SettingsSaveResult<InputProcessingSettings> result =
+    await editable.SaveAsync(edit, cancellationToken);
+if (result.Status != SettingsSaveStatus.Saved)
+{
+    ShowSettingsError(result.Status, result.Errors);
+    return; // 実行中の補正は変更しない。
+}
+// 保存処理から Source / Device を直接操作しない。
+// 管理スレッドの次回更新で Revision の変化を検出する。
+```
+
+BeginEdit の例はプロファイルが既に存在する場合とする。新規作成では DTO を先に追加する。編集を共有して同時変更しない。SaveAsync の保存・検証結果が Saved の場合だけ確定値が変わる。Conflict は再取得して再編集し、StorageFailure / ValidationFailed / RecoveryRequired は診断を表示して旧値を保持する。
+
+構成側は起動時に Current のコピーから不変な補正パイプラインを構築する。実行中は管理スレッドで Revision だけを確認し、変化した場合に Current を取得・変換して更新境界へ適用する。保存後も更新されない IOptions<T> のキャッシュをライブ設定として使わない。読み取り専用の設定コピーを更新ごとに作る必要もない。
+
+```csharp
+// 以下はInputSystemの管理スレッドで実行する。
+if (editable.Revision != appliedProcessingRevision)
+{
+    SettingsSnapshot<InputProcessingSettings> snapshot = editable.Current;
+    var pipeline = BuildImmutableProcessingPipeline(snapshot.Value);
+    acquisition.ScheduleProcessing(pipeline); // 提案する連携API。次の取得境界へ反映。
+    appliedProcessingRevision = snapshot.Revision;
+}
+input.Update();
+```
+
+補正の交換で平滑化・接触ジェスチャーを中断し、必要な中立化・キャンセルを記録する。失敗する実行構成の組み立てを保存後へ先送りせず、設定バリデータで構成可能性を検証する。実機切断等の一時的な非対応は設定エラーとは分けて扱う。
+
+Host は登録設定を起動時に検証する。Host を使わない Engine は起動完了前に ISettingsDocument.ValidateRegisteredSettings を呼ぶ。旧セクションは UseJsonTypeInfo の schemaVersion / upgrade で移行し、未対応・破損データを自動で上書きしない。Browser では ISettingsStore を実装し、PersistedSettingsSource.LoadAsync 後に登録する。保存媒体の所有・原子的更新は Settings に委譲する。
+
 ### エラーとライフサイクル
 
 管理スレッドで処理し、スナップショットだけを他スレッドへ渡す。不正な設定・非有限値・逆行時刻は拒否する。過去記録から再処理する利用者は Sequence と HasGap を検証し、欠落時に加工・ジェスチャー状態をリセットする。現在状態から未観測のジェスチャーを推測しない。
@@ -231,7 +307,7 @@ Source が登録 Device の所有権を InputSystem に渡し、ラッパーは�
 
 ## 検証方針
 
-デッドゾーン境界、筆圧 null、元バッチの不変性、一更新一取得、二接触の入替・キャンセル、派生 Device の登録・切断・中立化、循環拒否、元と派生の二重入力、資源の一度だけの破棄を検証する。
+デッドゾーン境界、筆圧 null、元バッチの不変性、一更新一取得、二接触の入替・キャンセル、派生 Device の登録・切断・中立化、循環拒否、元と派生の二重入力、資源の一度だけの破棄、設定の保存・復元・移行、保存失敗時の旧補正維持、Revision変更の境界適用を検証する。
 
 ## 別途決定する事項
 

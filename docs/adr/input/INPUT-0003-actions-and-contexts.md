@@ -66,7 +66,7 @@ now は入力の RecordedAt と同じ単調経過時間軸とし、逆行を拒�
 
 候補は直ちに設定へ反映せず、同じコンテキスト内の重複を報告する。利用者が許可・拒否・既存割り当て解除を選んで確定する。UIが候補表示を行えるよう、候補と状態を読み取り専用で取得する。捕捉中の入力は対象利用者の通常アクションへ伝播させない。
 
-保存対象はスキーマバージョン、ActionId / BindingId、コントロール指定、加工設定とコンテキスト設定とする。接続期間限定の InputDeviceId は保存せず、デバイス種類・利用者が選ぶプロファイル等の安定した選択条件を保存する。ファイル I/O は構成側へ委譲する。未対応バージョンや欠けた ActionId は明示的なエラーとし、移行または既定復元を利用者が選ぶ。
+保存対象はスキーマバージョン、ActionId / BindingId、コントロール指定、加工設定とコンテキスト設定とする。接続期間限定の InputDeviceId は保存せず、デバイス種類・利用者が選ぶプロファイル等の安定した選択条件を保存する。永続化は Lumyte.Settings へ委譲し、Input 層に独自のファイル I/O を実装しない。未対応バージョンや欠けた ActionId は明示的なエラーとし、移行または既定復元を利用者が選ぶ。
 
 ### 公開 API 一覧
 
@@ -101,6 +101,7 @@ now は入力の RecordedAt と同じ単調経過時間軸とし、逆行を拒�
 +    public int Add(RecognizedAction operation, TimeSpan now);
 +    public bool TryConsume(
 +        string recognitionId, TimeSpan now, out RecognizedAction? operation);
++    public int Clear();
 +    public int ClearContext(string contextId);
 +    public int ClearDevice(InputDeviceId device);
 +    public int Prune(TimeSpan now);
@@ -230,11 +231,10 @@ RebindSession session = actions.BeginRebind("Game.Jump.Primary", options);
 // Tick は継続する。ActionSystem が ReadRecords の入力から候補を捕捉する。
 if (session.Candidate is not null && session.ConflictingBindingIds.Count == 0)
 {
-    session.Confirm(RebindConflictPolicy.Reject);
-    // 設定変更対象の認識・先行入力を旧設定のまま残さない。
-    buffer.ClearContext("Game");
-    ActionProfile updated = actions.ExportProfile();
-    SaveProfile(updated); // ファイルI/Oは構成側。InputSystemは書き換えない。
+    // 現在の割り当てを変更せず、候補を編集用DTOに変換する。
+    QueueRebindSave(session); // 次節の保存処理へ渡す構成側のコード。
+    // 保存成功後、管理スレッドで確定プロファイルを適用する。
+    // 保存失敗時に Confirm して実行設定だけを変更しない。
 }
 ```
 
@@ -243,6 +243,60 @@ if (session.Candidate is not null && session.ConflictingBindingIds.Count == 0)
 #### 終了処理
 
 ActionSystem は InputSystem.Recorded を直接購読する必要はなく、上記サンプルはポーリングだけで駆動する。停止時はゲームループを止めて、コンテキストと外部バッファを解除する。その後 InputSystem.Dispose が Source.Shutdown・Device の最終取得と解放を実行し、DI スコープが Source を破棄する。最終記録をアクション層まで配信する必要がある場合は、構成側が Source の切断を取り込む最後の Tick を実行してからループを停止する。
+
+### Lumyte.Settings によるアクション設定の保存・復元
+
+[設定保存基盤](../settings/SETTINGS-0001-user-settings-persistence.md)の `input-actions` セクションに、プロファイル、ActionId / BindingId、コントロール指定、アクション値補正、認識・入力バッファ設定、コンテキストの定義と優先順位を保存する。現在の押下状態、認識途中の時間、バッファ内候補、一時的なコンテキスト有効化、InputDeviceId は保存しない。
+
+ActionProfile の実行型を直接 JSON 化せず、既知の種別文字列・数値・読み書き可能な設定DTO・List等へ変換する。InputProcessingSettings と同様に、ルートは引数なし class とする。enum の内部連番や実行 delegate に保存形式を依存させない。DTO と実行型の変換は任意の Input.Settings 連携モジュールが担当し、Actions の実行コアは Settings に依存しない。
+
+```csharp
+builder.Services.AddPersistedOptions<InputActionSettings>("input-actions")
+    .Validate(ValidateActionSettings, "Invalid input action profile.")
+    .UseJsonTypeInfo(InputActionSettingsJsonContext.Default.InputActionSettings,
+        schemaVersion: 1);
+
+// 上記はINPUT-0002と同じAddSettingsの保存ドキュメントに登録する。
+var editableActions =
+    provider.GetRequiredService<IEditableOptions<InputActionSettings>>();
+ActionProfile initial = BuildActionProfile(editableActions.Current.Value);
+var actions = new ActionSystem(initial);
+```
+
+InputActionSettings と JSON Context は入力連携モジュールが定義する未実装の型とする。ValidateActionSettings はIDの一意性・参照整合、値型、補正と認識の範囲、割り当て競合方針、保存後の復元可能性を検証する。Settings は保存候補を復元・検証してから確定するため、Configure / PostConfigure とバリデータは副作用なしとする。
+
+#### リバインド候補を保存してから適用する
+
+```csharp
+// UI側の編集・非同期保存。入力の管理スレッドへ再入しない。
+var edit = editableActions.BeginEdit();
+WriteRebindCandidate(edit.Value, bindingId, session.Candidate!, conflictPolicy);
+var result = await editableActions.SaveAsync(edit, cancellationToken);
+if (result.Status != SettingsSaveStatus.Saved)
+{
+    ShowSettingsError(result.Status, result.Errors);
+    return; // 現在のActionProfileを維持し、候補は再確認または中止する。
+}
+```
+
+WriteRebindCandidate は候補と競合解決方針をDTOへ反映する構成側の処理とする。保存前に session.Confirm を呼ばず、保存成功の確定値から ApplyProfile する。保存待ちの間は同じセッションを二重確定せず、捕捉を凍結する。捕捉停止・保留状態の完全な API は実装前に具体化する。保存後に元の候補を再Confirmすると別Revisionを上書きし得るため、保存結果ではなく最新の確定スナップショットを使う。
+
+```csharp
+// ゲームループの開始時。awaitの継続スレッドでは実行しない。
+if (editableActions.Revision != appliedActionRevision)
+{
+    SettingsSnapshot<InputActionSettings> snapshot = editableActions.Current;
+    actions.ApplyProfile(BuildActionProfile(snapshot.Value));
+    buffer.Clear(); // 全プロファイル候補をクリアする追加提案API。
+    appliedActionRevision = snapshot.Revision;
+}
+// ApplyProfileは境界へ保留し、続くAdvanceで認識を中断・中立化する。
+Tick();
+```
+
+全プロファイルの交換時は関連する認識・バッファを中断する。ActionInputBuffer.Clear() は全候補を削除するAPIとして追加提案する。継続中の押下から新しい操作を生成しない。設定変更は InputSystem の履歴や Source の接続構成を書き換えない。
+
+input-processing と input-actions は別のモジュールRevisionを持つため、無関係な編集同士は衝突しない。両セクションを同時に変更する機能は個別 SaveAsync をトランザクションと見なさず、全体保存APIの契約に従うか、一つのセクションへまとめる追加設計を行う。共通ファイル全体のResetは未登録セクションも削除するため、入力設定だけの復元にはモジュールResetAsyncを使う。
 
 ### エラーとライフサイクル
 
