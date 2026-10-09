@@ -31,45 +31,56 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 | 設定定義 `ISettingsDefinition<T>` | JSON 型情報、形式移行、検証前の深いコピー |
 | 永続化設定ソース / プロバイダー | 構成読み込み時の保存データ取得、元 JSON と診断の保持 |
 | 設定ストア `ISettingsStore` | 保存媒体への読み込みと全体置き換え |
-| アプリケーション / Engine の構成側 | ストアと設定定義の選択、設定画面、Input への橋渡し |
+| 共通ドキュメント管理 | 全セクションの保持、保存の直列化、全体復旧 |
+| 各モジュールの有効化 API | 設定型、セクション ID、既定値、バリデータの自動登録 |
+| アプリケーション / Engine の構成側 | 共通ソースの選択、設定画面、Input への橋渡し |
 | Input の上位処理 | スナップショットからのリマッピング表生成とデッドゾーン変換 |
 
 汎用ライブラリは将来 `src/Core/Lumyte.Settings/` に配置する。`Lumyte.Settings` は `Lumyte.Input` や OS 固有 API に依存しない。Input 設定の型と検証は Input 側、アプリ独自のアクション定義はアプリ側に置く。Browser のストアは Platform 側で実装する。プロジェクトは実装時に追加する。
 
 ### データモデルと互換性
 
-設定ファイルは `{ "schemaVersion": 1, "values": { ... } }` のエンベロープとし、現在の設定全体を保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に設定定義の `DeepClone` で候補を深く複製し、以後の UI 編集と分離する。コピーは JSON シリアライズを前提にせず、NaN・Infinity・不正な null なども値を変えずに保持して標準バリデータへ渡す。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
+共通設定ファイルは一つのドキュメントにモジュール別セクションを持つ。例えば `{ "documentVersion": 1, "sections": { "input": { "schemaVersion": 1, "values": {} } } }` とする。documentVersion は共通の外側形式、schemaVersion はモジュールごとの形式であり、個別に移行する。モジュールの保存は対象セクションの値全体を置き換え、媒体には最新のドキュメント全体を原子的に保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に設定定義の `DeepClone` で候補を深く複製し、以後の UI 編集と分離する。コピーは JSON シリアライズを前提にせず、NaN・Infinity・不正な null なども値を変えずに保持して標準バリデータへ渡す。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
 
 永続化サービスは JSON の項目の存在を確認して、新しく追加された未指定項目だけを既定値で補完する。明示的な `false`、`0`、空配列を未指定と扱わない。明示的な `null` の可否は JSON の型情報と標準バリデータで検証する。既存の保存値はアプリの既定値変更後も維持し、リセットで新しい既定値に戻す。
 
-旧バージョンは JSON 上で順に移行し、補完、型付きモデルへの変換、検証を行う。読み込み時の移行だけでは元ファイルを書き換えない。対応バージョンより新しいファイルや、未知の項目を含み再保存によって情報を失うファイルは互換性エラーとして扱う。
+旧バージョンは JSON 上で順に移行し、補完、型付きモデルへの変換、検証を行う。読み込み時の移行だけでは元ファイルを書き換えない。未対応 documentVersion は全体の互換性エラー、モジュール内の未対応 schemaVersion や未知プロパティはそのセクションの互換性エラーとする。未登録モジュールのセクションは互換性エラーにせず、元 JSON のまま保持する。他モジュールの保存によって削除・移行しない。
 
-形式の `schemaVersion` と、実行中の編集競合を検出する `Revision` は別である。Revision はサービス内の単調増加値で、ファイルには保存しない。
+形式の `schemaVersion` と、実行中の編集競合を検出する `Revision` は別である。Revision はモジュールごとの単調増加値で、ファイルには保存しない。
 
-### DI と宣言的な登録
+### 共通基盤とモジュール登録
 
-`AddPersistedOptions<T>` は標準 `OptionsBuilder<T>` を返す拡張メソッドとする。標準の `Configure`、`PostConfigure`、`Validate`、`ValidateDataAnnotations` と独自の保存先・JSON 形式の指定を連結できる。`AddPersistedOptions<T>` は標準の `ValidateOnStart()` も自動登録し、利用側の追加呼び出しを不要にする。バリデータの一覧は DI の解決時に取得するため、チェーンや後続の DI 登録で追加した検証も起動時に実行される。次の例は未実装の API を含む利用例である。
+アプリケーションは共通のソース・保存先を一度設定し、モジュールを有効化する。UseInput などのモジュール API が、設定型、安定したセクション ID、設定定義、既定値、標準バリデータを内部登録する。次の UseInput は後続のモジュール統合 API を示す未実装の利用例である。
 
 ```csharp
 var source = new PersistedJsonFileSource(settingsPath);
 builder.Configuration.AddPersistedJsonFile(source);
 
-builder.Services.AddPersistedOptions<InputSettings>()
-    .Configure(options =>
-    {
-        options.LeftStick.Inner = 0.15f;
-        options.LeftStick.Outer = 1.0f;
-    })
-    .ValidateDataAnnotations()
-    .UseSource(source)
-    .UseJsonDefinition<InputSettings, InputSettingsJsonDefinition>();
+// 共通ソースを一度だけ選ぶ。
+builder.Services.AddSettings(source);
 
-builder.Services.AddSingleton<IValidateOptions<InputSettings>, InputSettingsValidator>();
+// 設定の登録もモジュールに任せる。
+builder.Services.UseInput();
 ```
 
-保存先と取得済みデータは `UseSource` で同じソースに接続する。読み込みと保存に別の保存先を指定しない。一つの設定型につき既定の Options 名だけを初期対象とし、独自 API から名前付き Options を登録しようとした場合は構成エラーにする。複数プロファイルは当面設定モデル内で表す。
+AddSettings はソースの接続、共通ドキュメント管理、保存の直列化を登録する。モジュールは AddPersistedOptions<T>(sectionId) により記述子を登録し、標準 OptionsBuilder<T> を使って既定値や検証を宣言する。利用者がこの低水準 API を呼ぶ必要はない。
 
-利用側は `IEditableOptions<InputSettings>` をコンストラクター注入する。編集は `BeginEdit`、確定は `SaveAsync`、復元は `ResetAsync` で行う。DI の解決中に非同期 I/O を行わず、構成ソースの読み込み完了後にサービスを解決する。公開の初期化メソッドは設けない。
+```csharp
+// UseInput の内部で行う登録の例。
+services.AddPersistedOptions<InputSettings>("input")
+    .Configure(InputDefaults.Configure)
+    .ValidateDataAnnotations()
+    .UseJsonDefinition<InputSettings, InputSettingsJsonDefinition>();
+services.AddSingleton<IValidateOptions<InputSettings>, InputSettingsValidator>();
+```
+
+AddPersistedOptions は ValidateOnStart を自動登録する。モジュールは移行・DeepClone も提供し、保存パスやストアの種類には依存しない。アプリ独自設定は同じ低水準 API で追加できる。利用者の既定値調整はモジュール有効化後の標準 services.Configure<InputSettings>(...) で行う。すべての Configure の後に保存値を適用するため、既存ユーザーの保存値は維持される。
+
+共通基盤とモジュールの DI 登録順は問わず、解決時に接続する。全登録は DI 構築前に完了する。同一ソースの AddSettings は再登録しても重複処理しない。異なるソースの二重登録、同じセクション ID の別型への割り当て、同じ型の複数 ID への割り当て、共通基盤の未登録は構成エラーとする。UseInput などのモジュール有効化も既定値とバリデータを二重登録しない。
+
+セクション ID は型名・表示名に依存しない英語の小文字・数字・ハイフンとし、モジュールの契約として固定する。セクション ID と Options の name は別で、初期対象は Options.DefaultName のみとする。プロファイルはモデル内で表す。
+
+利用側は IEditableOptions<InputSettings> を注入し、BeginEdit、SaveAsync、ResetAsync を使う。ソースは事前ロード済みとし、DI 解決中に非同期 I/O を行わない。
 
 ### 構成の読み込み時点と非同期
 
@@ -86,16 +97,13 @@ var source = await PersistedSettingsSource.LoadAsync(
     browserStore, cancellationToken);
 builder.Configuration.Add(source);
 
-builder.Services.AddPersistedOptions<InputSettings>()
-    .Configure(InputDefaults.Configure)
-    .UseSource(source)
-    .UseJsonDefinition<InputSettings, InputSettingsJsonDefinition>()
-    .ValidateDataAnnotations();
+builder.Services.AddSettings(source);
+builder.Services.UseInput();
 ```
 
-取得済みソースの IConfigurationProvider.Load はメモリ内のデータを公開するだけで、再度非同期 I/O を行わない。GetAwaiter().GetResult、Result、Task.Run による同期化は使用しない。非同期準備の完了前に DI / Host を構築したり、Input を開始したりしない。AddPersistedOptions が自動登録する ValidateOnStart により、未参照の設定型も起動中に確定値の生成・検証を完了する。Generic Host を使わない場合は Engine の起動処理が IEditableOptions<T> を解決してから起動完了を返す。
+取得済みソースの IConfigurationProvider.Load はメモリ内のデータを公開するだけで、再度非同期 I/O を行わない。GetAwaiter().GetResult、Result、Task.Run による同期化は使用しない。非同期準備の完了前に DI / Host を構築したり、Input を開始したりしない。AddPersistedOptions が自動登録する ValidateOnStart により、未参照の設定型も起動中に確定値の生成・検証を完了する。Generic Host を使わない場合は Engine が ISettingsDocument.ValidateRegisteredSettings を呼び、全登録済み設定の生成・検証後に起動完了を返す。
 
-ソースは一つの構成ルートに登録し、一つの設定型に接続する。DI 構築前にソースが読み込まれていることを確認し、未登録・未ロードなら構成エラーにする。外部ファイルの監視と IConfigurationRoot.Reload による再読み込みは初期対象外であり、取得済みデータを再公開する。保存成功時は元 JSON と構成プロバイダーのメモリ内表示も更新するが、変更通知による再読み込みは行わない。
+ソースは一つの構成ルートに登録し、共通ドキュメント管理を通じて複数の設定型へ接続する。DI 構築前にソースが読み込まれていることを確認し、未登録・未ロードなら構成エラーにする。外部ファイルの監視と IConfigurationRoot.Reload による再読み込みは初期対象外であり、取得済みデータを再公開する。保存成功時は元 JSON と構成プロバイダーのメモリ内表示も更新するが、変更通知による再読み込みは行わない。
 
 ### 標準バリデータの採用
 
@@ -109,7 +117,7 @@ builder.Services.AddPersistedOptions<InputSettings>()
 
 ### 設定の構築順序
 
-起動・リセットの既定値は、新しい T に名前が一致する `IConfigureOptions<T>` / `IConfigureNamedOptions<T>` を登録順に適用して作る。読み込みではこの既定値を JSON 化し、構成ソースが取得済みの JSON を移行して、存在する項目を上書きする。型付きオブジェクトは既知のプロパティ単位で補完し、配列・辞書は存在する場合に全体置換する。この分類は JSON の見た目ではなく JsonTypeInfo のモデル種別に基づく。辞書の未指定は既定値、明示的な `{}` は空の辞書とし、保存済み辞書に存在しない既定のキーを補充しない。辞書キーは型付きプロパティの未知項目と区別し、許容するキー・各エントリの内容を標準バリデータで検証する。新しい既定エントリの追加が必要な場合は明示的な形式移行で行う。型付きオブジェクトの未知プロパティと不正な型を拒否する。その後、名前が一致する `IPostConfigureOptions<T>` を適用し、標準バリデータで検証する。
+起動・リセットの既定値は、新しい T に名前が一致する `IConfigureOptions<T>` / `IConfigureNamedOptions<T>` を登録順に適用して作る。読み込みではこの既定値を JSON 化し、共通ドキュメントから取得した対象セクションの JSON を移行して、存在する項目を上書きする。型付きオブジェクトは既知のプロパティ単位で補完し、配列・辞書は存在する場合に全体置換する。この分類は JSON の見た目ではなく JsonTypeInfo のモデル種別に基づく。辞書の未指定は既定値、明示的な `{}` は空の辞書とし、保存済み辞書に存在しない既定のキーを補充しない。辞書キーは型付きプロパティの未知項目と区別し、許容するキー・各エントリの内容を標準バリデータで検証する。新しい既定エントリの追加が必要な場合は明示的な形式移行で行う。型付きオブジェクトの未知プロパティと不正な型を拒否する。その後、名前が一致する `IPostConfigureOptions<T>` を適用し、標準バリデータで検証する。
 
 保存候補は現在の編集内容が全体を持つため、`Configure` を再適用してユーザー値を上書きしない。DeepClone で確保した独立の候補に `PostConfigure` を適用し、標準バリデータで検証してから保存用 JSON に変換する。NaN・Infinity は JSON 変換前に有限値バリデータで拒否して ValidationFailed を返す。検証を通った候補でも保存形式に表現できない場合は、その JSON 変換の診断を ValidationFailed として返し、ストアの書き込みと確定値の公開を行わない。正規化後の値を保存・公開する。`PostConfigure` は繰り返し適用しても結果が変わらない処理に限定する。
 
@@ -185,9 +193,19 @@ builder.Services.AddPersistedOptions<InputSettings>()
 +        // 検証 → Revision 確認 → 保存 → 確定値置換。別サービスの edit は引数エラー。
 +        Task<SettingsSaveResult<T>> SaveAsync(
 +            SettingsEdit<T> edit, CancellationToken cancellationToken = default);
-+        // 既定値を構築し、同じ検証・保存手順で確定。読込障害後の明示復旧にも使う。
++        // 対象セクションを既定値に復元。全体破損時は RecoveryRequired。
 +        Task<SettingsSaveResult<T>> ResetAsync(
 +            long expectedRevision, CancellationToken cancellationToken = default);
++    }
++    public sealed record SettingsDocumentSaveResult(
++        SettingsSaveStatus Status, ImmutableArray<string> Errors);
++    public interface ISettingsDocument
++    {
++        // 非 Host の Engine 起動から使用。全モジュールを生成・検証。失敗は例外。
++        void ValidateRegisteredSettings();
++        // 文書全体の明示復元。未登録モジュールの保存値も失われる。
++        Task<SettingsDocumentSaveResult> ResetAsync(
++            CancellationToken cancellationToken = default);
 +    }
 +    // provider は IConfigurationProvider の同期 Load 契約を実装する。
 +    // flatten した構成表示と別に元 JSON を保持し、null / 空配列 / 未指定を区別する。
@@ -206,12 +224,12 @@ builder.Services.AddPersistedOptions<InputSettings>()
 +    }
 +    public static class PersistedOptionsExtensions
 +    {
-+        // 既定名のみ。ValidateOnStart を自動登録し、通常の Options メソッドを連結できる。
++        // モジュールの登録用。既定名のみ、ValidateOnStart を自動登録する。
 +        public static OptionsBuilder<T> AddPersistedOptions<T>(
-+            this IServiceCollection services) where T : class, new();
-+        // 読み込み済みソースを接続。設定型ごとに一つ、重複登録は構成エラー。
-+        public static OptionsBuilder<T> UseSource<T>(
-+            this OptionsBuilder<T> builder, PersistedSettingsSource source) where T : class, new();
++            this IServiceCollection services, string sectionId) where T : class, new();
++        // アプリが共通ソースを一度接続。同一ソースの再登録は idempotent。
++        public static IServiceCollection AddSettings(
++            this IServiceCollection services, PersistedSettingsSource source);
 +        // 通常の builder では Build 時、ConfigurationManager では追加時に同期ロード。
 +        public static IConfigurationBuilder AddPersistedJsonFile(
 +            this IConfigurationBuilder builder, PersistedJsonFileSource source);
@@ -224,15 +242,17 @@ builder.Services.AddPersistedOptions<InputSettings>()
 
 ### 読み込み・編集・保存の契約
 
-構成ロード時に保存データを取得し、標準 Options の最初の生成または IEditableOptions<T> の解決で共通状態を同期初期化する。LoadResult の診断を UI やログへ渡す。ファイル不在なら既定値で開始し、暗黙にファイルを作成しない。不正データ、未対応版、ストア障害では既定値で開始するが、通常の `SaveAsync` は `RecoveryRequired` を返し、元データを上書きしない。ユーザーが明示的に復元を選んだ場合の `ResetAsync` でのみ上書きし、成功後に通常保存を許可する。
+構成ロード時に保存データを取得し、標準 Options の最初の生成または IEditableOptions<T> の解決で共通状態を同期初期化する。LoadResult の診断を UI やログへ渡す。ファイル不在なら既定値で開始し、暗黙にファイルを作成しない。セクションの不正データ・未対応版では対象モジュールを診断付き既定値で開始し、その SaveAsync を RecoveryRequired で拒否する。当該モジュールの ResetAsync はそのセクションだけを既定値へ復元する。他モジュールの保存では不正なセクションを元 JSON のまま保持できる。
 
-UI は BeginEdit で一貫した BaseRevision と編集コピーを取得する。DeepClone の実行中は同じ編集コピーを別スレッドから変更しない。SaveAsync が候補を確保した後の UI 編集は保存内容に影響しない。保存は全設定を一括で検証し、失敗なら標準バリデータの失敗文字列を返す。保存操作の直列化後に Revision を確認し、古い編集コピーなら `Conflict` を返す。成功時だけ保存内容と同じスナップショットを公開し、Revision を増やす。保存失敗では Current と Revision を維持し、UI の編集コピーから再試行できる。
+ドキュメント全体の JSON 構文破損、未対応 documentVersion、読み込み障害では、全モジュールを診断付き既定値で開始し、通常保存とモジュール単位のリセットを RecoveryRequired で拒否する。明示的な ISettingsDocument.ResetAsync だけを許可し、登録済み全モジュールの既定値を検証してドキュメント全体を再作成する。成功時だけ保護を解除し、全モジュールの Revision を進める。この全体復元では未登録モジュールの値も失われるため、利用側は個別リセットと区別して影響を提示する。
+
+UI は BeginEdit で一貫した BaseRevision と編集コピーを取得する。DeepClone の実行中は同じ編集コピーを別スレッドから変更しない。SaveAsync が候補を確保した後の UI 編集は保存内容に影響しない。保存は全設定を一括で検証し、失敗なら標準バリデータの失敗文字列を返す。共通ドキュメント管理の保存ロック内で対象モジュールの Revision を確認し、古い編集コピーなら Conflict を返す。そのロック内で最新ドキュメントの対象セクションだけを置き換え、全体を原子的に保存する。別モジュールの変更を古いドキュメントコピーで上書きしない。成功時は最新ドキュメントの確定コピーを更新し、対象モジュールの Revision だけを進める。他モジュールの編集コピーは有効なままとする。成功時だけ保存内容と同じスナップショットを公開し、Revision を増やす。保存失敗では Current と Revision を維持し、UI の編集コピーから再試行できる。
 
 内部の確定値全体を一度に置き換え、取得済みのコピーを変更しない。通知コールバックを保存処理に組み込まず、利用側がフレーム開始時などに Revision の変化を検出する。
 
 引数違反と設定定義のプログラミングエラーは例外とする。キャンセルはコミット前なら `OperationCanceledException` とし、設定を変更しない。ストアはコミット開始直前に最後のキャンセル判定を行い、以降は結果を確定させる。コミット成功後は Current の公開まで完了し、キャンセルを保存失敗として報告しない。
 
-一つのストアを一つのサービスが所有する構成とする。Revision は同じサービス内の編集競合を防ぐもので、複数プロセス、複数 Browser タブ、外部エディターとの競合検出や自動リロードは初期対象に含めない。注入ストアのリソースは構成側が所有し、保存完了を待ってから解放する。
+一つのストアは共通ドキュメント管理が借用し、モジュールのサービスはストアへ直接書き込まない。Revision は同じモジュール内の編集競合を防ぐもので、複数プロセス、複数 Browser タブ、外部エディターとの競合検出や自動リロードは初期対象に含めない。注入ストアのリソースは構成側が所有し、保存完了を待ってから解放する。
 
 ### 保存媒体と障害時の扱い
 
@@ -282,6 +302,7 @@ Input の `IValidateOptions<T>` は変換表を構築できることまで保存
 
 - ファイルの読み込みは AddJsonFile と同じ構成ロード段階で完了し、利用者の初期化呼び出しは不要になる。
 - 非同期ストアは構成登録前の await が必要であり、標準の同期 API 内でブロックしない。
+- 利用者は共通ソースとモジュールの有効化を宣言するだけで、設定型の登録は各モジュールが担当する。
 - 読み込みから保存・復旧までを同じ型付き API で扱える。
 - 設定画面と Input 処理は JSON や保存媒体に依存しない。
 - 標準 Options の DI・宣言的登録・バリデータと JSON 機能を活用できる。移行とストアは独自実装する。
@@ -294,6 +315,12 @@ Input の `IValidateOptions<T>` は変換表を構築できることまで保存
 
 実装時に偽ストアと実ストアを使い、以下を検証する。本 PR は設計文書のみを追加する。
 
+- 共通基盤とモジュールの登録順に依存せず、二重有効化で既定値・検証を重複登録しない。
+- 未登録の共通基盤、異なるソースの二重登録、セクション ID / 型の衝突を拒否する。
+- Input と別モジュールの同時保存が両方残り、別モジュールの Revision を進めない。
+- 未登録モジュールのセクションや他モジュールの不正なセクションを保存時に保持する。
+- 全体破損とセクション破損で個別保存・個別リセットの許可を区別する。
+- 全体復元の成功で古い編集を無効化し、失敗時は保護・全 Revision を維持する。
 - 初回起動、通常読み込み、旧形式の移行、未指定項目の補完、明示的な空配列・0・false の保持。
 - 不正データ、未知項目、未対応版、読み込み障害での診断と元データの保護。
 - 明示リセットによる復旧、復旧失敗後の保護状態維持。
