@@ -7,8 +7,8 @@ namespace Lumyte.StateMachines;
 /// <typeparam name="TTrigger">The trigger value type.</typeparam>
 public sealed class StateMachineInstance<TContext, TTrigger>
 {
-    private readonly StateMachine<TContext, TTrigger> _definition;
     private readonly List<TTrigger> _triggers = [];
+    private StateMachine<TContext, TTrigger>.Candidate[] _candidates;
     private bool _evaluating;
 
     /// <summary>Initializes a new instance of the <see cref="StateMachineInstance{TContext, TTrigger}"/> class.</summary>
@@ -18,9 +18,9 @@ public sealed class StateMachineInstance<TContext, TTrigger>
     {
         ArgumentNullException.ThrowIfNull(definition);
         ValidateContext(context);
-        _definition = definition;
         Context = context;
         CurrentState = definition.InitialState;
+        _candidates = definition.InitialCandidates;
         _evaluating = true;
         try
         {
@@ -65,7 +65,7 @@ public sealed class StateMachineInstance<TContext, TTrigger>
             activity = StateMachineDiagnostics.Activities.StartActivity("StateMachine.Fire", ActivityKind.Internal);
             activity?.SetTag("state_machine.state", CurrentState.Name);
             activity?.SetTag("state_machine.trigger", trigger?.ToString());
-            return Take(_definition.Find(CurrentState, trigger, context), context, activity);
+            return Take(StateMachine<TContext, TTrigger>.Find(_candidates, trigger, context), context, activity);
         }
         catch (Exception exception)
         {
@@ -88,7 +88,7 @@ public sealed class StateMachineInstance<TContext, TTrigger>
         EnterEvaluation();
         try
         {
-            return _definition.Find(CurrentState, trigger, context) is not null;
+            return StateMachine<TContext, TTrigger>.Find(_candidates, trigger, context) >= 0;
         }
         finally
         {
@@ -112,7 +112,7 @@ public sealed class StateMachineInstance<TContext, TTrigger>
             CaptureTriggers(triggers);
             activity?.SetTag("state_machine.state", CurrentState.Name);
             activity?.SetTag("state_machine.triggers", string.Join(",", _triggers));
-            return Take(_definition.FindAny(CurrentState, _triggers, context), context, activity);
+            return Take(StateMachine<TContext, TTrigger>.FindAny(_candidates, _triggers, context), context, activity);
         }
         catch (Exception exception)
         {
@@ -138,7 +138,7 @@ public sealed class StateMachineInstance<TContext, TTrigger>
         try
         {
             CaptureTriggers(triggers);
-            return _definition.FindAny(CurrentState, _triggers, context) is not null;
+            return StateMachine<TContext, TTrigger>.FindAny(_candidates, _triggers, context) >= 0;
         }
         finally
         {
@@ -196,17 +196,20 @@ public sealed class StateMachineInstance<TContext, TTrigger>
         }
     }
 
-    private bool Take(Transition<TContext, TTrigger>? transition, TContext context, Activity? activity)
+    private bool Take(int candidateIndex, TContext context, Activity? activity)
     {
-        activity?.SetTag("state_machine.transitioned", transition is not null);
-        if (transition is null)
+        activity?.SetTag("state_machine.transitioned", candidateIndex >= 0);
+        if (candidateIndex < 0)
         {
             return false;
         }
 
+        StateMachine<TContext, TTrigger>.Candidate candidate = _candidates[candidateIndex];
+        Transition<TContext, TTrigger> transition = candidate.Transition;
         CurrentState.Exit(context);
         transition.ApplyEffects(context);
         CurrentState = transition.To;
+        _candidates = candidate.TargetCandidates;
         CurrentState.Enter(context);
         activity?.SetTag("state_machine.target", CurrentState.Name);
         activity?.SetTag("state_machine.priority", transition.Priority);

@@ -5,14 +5,41 @@ namespace Lumyte.StateMachines;
 /// <typeparam name="TTrigger">The trigger value type.</typeparam>
 public sealed class StateMachine<TContext, TTrigger>
 {
-    private readonly Transition<TContext, TTrigger>[] _orderedTransitions;
-
     internal StateMachine(State<TContext> initialState, State<TContext>[] states, Transition<TContext, TTrigger>[] transitions)
     {
         InitialState = initialState;
         States = Array.AsReadOnly(states);
         Transitions = Array.AsReadOnly(transitions);
-        _orderedTransitions = [.. transitions.OrderByDescending(item => item.Priority)];
+        var candidates = new Dictionary<State<TContext>, List<Transition<TContext, TTrigger>>>(ReferenceEqualityComparer.Instance);
+        foreach (Transition<TContext, TTrigger> transition in transitions.OrderByDescending(item => item.Priority))
+        {
+            if (!candidates.TryGetValue(transition.From, out List<Transition<TContext, TTrigger>>? outgoing))
+            {
+                outgoing = [];
+                candidates.Add(transition.From, outgoing);
+            }
+
+            outgoing.Add(transition);
+        }
+
+        var transitionsByState = new Dictionary<State<TContext>, Candidate[]>(states.Length, ReferenceEqualityComparer.Instance);
+        foreach (State<TContext> state in states)
+        {
+            transitionsByState.Add(state, candidates.TryGetValue(state, out List<Transition<TContext, TTrigger>>? outgoing) ? new Candidate[outgoing.Count] : []);
+        }
+
+        // Allocate every state's array before linking targets, including cycles and self-transitions.
+        foreach (KeyValuePair<State<TContext>, List<Transition<TContext, TTrigger>>> entry in candidates)
+        {
+            Candidate[] outgoing = transitionsByState[entry.Key];
+            for (int index = 0; index < outgoing.Length; index++)
+            {
+                Transition<TContext, TTrigger> transition = entry.Value[index];
+                outgoing[index] = new Candidate(transition, transitionsByState[transition.To]);
+            }
+        }
+
+        InitialCandidates = transitionsByState[initialState];
         foreach (State<TContext> state in states)
         {
             state.Freeze();
@@ -33,29 +60,35 @@ public sealed class StateMachine<TContext, TTrigger>
     /// <summary>Gets the transitions.</summary>
     public IReadOnlyList<Transition<TContext, TTrigger>> Transitions { get; }
 
-    internal Transition<TContext, TTrigger>? Find(State<TContext> state, TTrigger trigger, TContext context)
+    internal Candidate[] InitialCandidates { get; }
+
+    internal static int Find(Candidate[] candidates, TTrigger trigger, TContext context)
     {
-        foreach (Transition<TContext, TTrigger> transition in _orderedTransitions)
+        for (int index = 0; index < candidates.Length; index++)
         {
-            if (ReferenceEquals(state, transition.From) && EqualityComparer<TTrigger>.Default.Equals(trigger, transition.Trigger) && transition.CanTake(context))
+            Transition<TContext, TTrigger> transition = candidates[index].Transition;
+            if (EqualityComparer<TTrigger>.Default.Equals(trigger, transition.Trigger) && transition.CanTake(context))
             {
-                return transition;
+                return index;
             }
         }
 
-        return null;
+        return -1;
     }
 
-    internal Transition<TContext, TTrigger>? FindAny(State<TContext> state, List<TTrigger> triggers, TContext context)
+    internal static int FindAny(Candidate[] candidates, List<TTrigger> triggers, TContext context)
     {
-        foreach (Transition<TContext, TTrigger> transition in _orderedTransitions)
+        for (int index = 0; index < candidates.Length; index++)
         {
-            if (ReferenceEquals(state, transition.From) && triggers.Contains(transition.Trigger) && transition.CanTake(context))
+            Transition<TContext, TTrigger> transition = candidates[index].Transition;
+            if (triggers.Contains(transition.Trigger) && transition.CanTake(context))
             {
-                return transition;
+                return index;
             }
         }
 
-        return null;
+        return -1;
     }
+
+    internal readonly record struct Candidate(Transition<TContext, TTrigger> Transition, Candidate[] TargetCandidates);
 }

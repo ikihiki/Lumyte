@@ -58,14 +58,7 @@ public sealed class Tween<T> : IAnimationSource<T>
             return _to;
         }
 
-        float t = (float)((double)time.Ticks / Duration.Ticks);
-        t = _easing switch
-        {
-            AnimationEasing.EaseIn => t * t,
-            AnimationEasing.EaseOut => 1 - ((1 - t) * (1 - t)),
-            AnimationEasing.EaseInOut => t < 0.5f ? 2 * t * t : 1 - (2 * (1 - t) * (1 - t)),
-            _ => t,
-        };
+        float t = AnimationInterpolators.GetInteriorAmount(time.Ticks, Duration.Ticks, _easing);
         return _interpolator.Interpolate(_from, _to, t);
     }
 }
