@@ -27,12 +27,6 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
                 entries.Add(new() { binding = 9, buffer = map, size = (ulong)data.Map.Length });
             }
 
-            var backing = new Dictionary<object, nint>();
-            foreach ((IShaderDataSource source, byte[] bytes) in data.Data)
-            {
-                backing.Add(source, (nint)Buffer(owner, bytes, A.BufferUsage.Storage));
-            }
-
             foreach ((object resource, int index) in data.Textures)
             {
                 entries.Add(new() { binding = data.Binding("texture", index), textureView = ((WgpuTextureView)resource).Native.Handle });
@@ -47,8 +41,8 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
             {
                 foreach ((object resource, int index) in resources)
                 {
-                    nint buffer = resource is IShaderRawBuffer raw ? (nint)raw.ShaderHandle : backing[resource];
-                    ulong size = resource is IShaderRawBuffer storage ? storage.SizeInBytes : (ulong)data.Data[(IShaderDataSource)resource].Length;
+                    nint buffer = resource is IShaderRawBuffer raw ? (nint)raw.ShaderHandle : (nint)((IShaderDataSource)resource).ShaderHandle;
+                    ulong size = resource is IShaderRawBuffer storage ? storage.SizeInBytes : ((IShaderDataSource)resource).SizeInBytes;
                     if (size > owner.Caps.MaxStorageBufferBindingSize)
                     {
                         throw new NotSupportedException("Raw storage allocation exceeds the device binding size.");

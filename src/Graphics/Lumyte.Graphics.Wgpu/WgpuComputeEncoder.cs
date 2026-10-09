@@ -93,7 +93,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
             }
 
             _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments);
+            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
         }
 

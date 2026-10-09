@@ -31,6 +31,8 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             handles[i] = buffer.Native;
         }
 
+        ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
+
         var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
         Result result = owner.Api.CreateFence(owner.NativeDevice, &fenceInfo, null, out Fence fence);
         if (result != Result.Success)

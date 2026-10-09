@@ -62,8 +62,13 @@ internal sealed unsafe partial class VulkanComputePipeline
 
     private string SelectLayout(ShaderBindingSnapshot? arguments)
     {
-        uint textures = arguments == null ? 1 : checked((uint)arguments.References.Select(r => r.Resource).OfType<VulkanTextureView>().Distinct().Count());
-        uint samplers = arguments == null ? 1 : checked((uint)arguments.References.Select(r => r.Resource).OfType<VulkanSampler>().Distinct().Count());
+        uint textures = arguments == null ? 1 : arguments.References.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        uint samplers = arguments == null ? 1 : arguments.References.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        if (textures > _owner.Caps.MaxSampledTexturesPerStage || samplers > _owner.Caps.MaxSamplersPerStage)
+        {
+            throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
+        }
+
         string key = $"{Math.Max(1, textures)}:{Math.Max(1, samplers)}";
         if (_argumentLayouts.TryGetValue(key, out (PipelineLayout Pipeline, DescriptorSetLayout Group) existing))
         {

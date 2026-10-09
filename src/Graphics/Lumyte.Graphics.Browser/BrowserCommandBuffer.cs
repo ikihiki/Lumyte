@@ -4,6 +4,7 @@ namespace Lumyte.Graphics.Browser;
 
 internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
 {
+    private readonly ShaderDataTransferState _shaderData = new();
     private readonly List<IDisposable> _bindings = [];
     private readonly BrowserDevice _owner;
     private readonly List<Action> _resources = [];
@@ -19,6 +20,33 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     public CommandBufferState State { get; private set; } = CommandBufferState.Recording;
 
     internal BrowserDevice Owner => _owner;
+
+    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
+
+    public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
+        where T : struct, IShaderData
+    {
+        RequireRecording();
+        if (source.Buffer is not BrowserShaderDataBuffer<T> src || destination.Buffer is not BrowserShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
+        {
+            throw new ArgumentException("Shader data copy requires equal ranges from this device.");
+        }
+
+        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.Slice(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.Slice(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))), TrackProgram);
+    }
+
+    public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
+        where T : struct, IShaderData
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(barrier);
+        if (barrier.Buffer.Buffer is not BrowserShaderDataBuffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner))
+        {
+            throw new ArgumentException("Shader data barrier belongs to another device.");
+        }
+
+        Barrier(new BufferBarrierDesc<byte> { Buffer = buffer.Storage.Slice(checked(barrier.Buffer.Offset * buffer.ShaderElementStrideInBytes), checked(barrier.Buffer.Count * buffer.ShaderElementStrideInBytes)), Before = barrier.Before, After = barrier.After });
+    }
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
@@ -229,6 +257,8 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         _owner.ReleaseCommand();
     }
 
+    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index, TrackProgram);
+
     internal void ValidateSubmit()
     {
         _owner.ValidateAlive();
@@ -243,7 +273,11 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         }
     }
 
-    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
+    internal void MarkSubmitted()
+    {
+        _shaderData.Publish();
+        State = CommandBufferState.Submitted;
+    }
 
     internal void Complete(bool success) => State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
 

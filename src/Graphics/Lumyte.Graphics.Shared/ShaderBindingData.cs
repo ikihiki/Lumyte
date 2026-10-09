@@ -7,7 +7,6 @@ namespace Lumyte.Graphics.Shared;
 /// <summary>Packs snapshots and finite resource bindings for WGSL backends.</summary>
 public sealed class ShaderBindingData
 {
-    private readonly Dictionary<object, uint> _identities = [];
     private readonly Dictionary<object, int> _textures = [];
     private readonly Dictionary<object, int> _samplers = [];
     private readonly Dictionary<object, int> _buffers = [];
@@ -52,7 +51,11 @@ public sealed class ShaderBindingData
         foreach (IShaderReference reference in snapshot.References)
         {
             object resource = reference.Resource;
-            _identities.TryAdd(resource, checked((uint)_identities.Count));
+            if (resource is IShaderDataSource data && data.SizeInBytes > caps.MaxStorageBufferBindingSize)
+            {
+                throw new NotSupportedException("Shader data exceeds the storage binding size limit.");
+            }
+
             if (resource is IGraphicsTextureView)
             {
                 _textures.TryAdd(resource, _textures.Count);
@@ -78,11 +81,16 @@ public sealed class ShaderBindingData
         }
 
         Root = rootLayout.Pack(snapshot.Root, ReferenceBytes);
-        uint capacity = checked((uint)_identities.Count);
+        uint capacity = snapshot.References.Count == 0 ? 0 : checked(snapshot.References.Max(r => r.Slot) + 1);
+        if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
+        {
+            throw new NotSupportedException("The reference remap exceeds the storage binding size limit.");
+        }
+
         Map = new byte[checked((int)capacity * 16)];
         foreach (IShaderReference reference in snapshot.References)
         {
-            int offset = checked((int)_identities[reference.Resource] * 16);
+            int offset = checked((int)reference.Slot * 16);
             if (_textures.TryGetValue(reference.Resource, out int texture))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset), (uint)texture);
@@ -103,22 +111,6 @@ public sealed class ShaderBindingData
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 12), (uint)writable);
             }
         }
-
-        foreach ((IShaderDataSource source, ulong element) in snapshot.Elements.Keys)
-        {
-            if (!Data.TryGetValue(source, out byte[]? bytes))
-            {
-                if (source.SizeInBytes > caps.MaxStorageBufferBindingSize || source.SizeInBytes > int.MaxValue)
-                {
-                    throw new NotSupportedException("Shader data backing exceeds the storage binding size limit.");
-                }
-
-                bytes = new byte[checked((int)source.SizeInBytes)];
-                Data.Add(source, bytes);
-            }
-
-            source.Layout.Pack(snapshot.Elements[(source, element)], ReferenceBytes).CopyTo(bytes, checked((int)(element * (ulong)source.Layout.Size)));
-        }
     }
 
     /// <summary>Gets the dependency snapshot.</summary>
@@ -129,9 +121,6 @@ public sealed class ShaderBindingData
 
     /// <summary>Gets the resource remapping bytes.</summary>
     public byte[] Map { get; }
-
-    /// <summary>Gets the packed shader data allocations.</summary>
-    public Dictionary<IShaderDataSource, byte[]> Data { get; } = [];
 
     /// <summary>Gets the texture binding indices.</summary>
     public IReadOnlyDictionary<object, int> Textures => _textures;
@@ -166,31 +155,5 @@ public sealed class ShaderBindingData
         _ => throw new ArgumentException("Unknown binding kind."),
     };
 
-    private byte[] ReferenceBytes(ShaderValue value, string kind)
-    {
-        if (value.Reference is not IShaderReference reference)
-        {
-            throw new ArgumentException("Missing resource reference.");
-        }
-
-        object resource = reference.Resource;
-        bool compatible = kind switch
-        {
-            "GpuTextureRef" => resource is IGraphicsTextureView,
-            "GpuSamplerRef" => resource is IGraphicsSampler,
-            "GpuBufferRef" => resource is IShaderDataSource || (resource is IShaderRawBuffer input && (input.Usage & BufferUsage.ShaderRead) != 0),
-            "GpuRWBufferRef" => resource is IShaderRawBuffer output && (output.Usage & BufferUsage.ShaderWrite) != 0,
-            _ => false,
-        };
-        if (!compatible)
-        {
-            throw new ArgumentException("Reference kind does not match the compiled shader member.");
-        }
-
-        byte[] wire = new byte[16];
-        BinaryPrimitives.WriteUInt32LittleEndian(wire, _identities[resource]);
-        BinaryPrimitives.WriteUInt32LittleEndian(wire.AsSpan(4), checked((uint)reference.OffsetInBytes));
-        BinaryPrimitives.WriteUInt32LittleEndian(wire.AsSpan(8), checked((uint)reference.Count));
-        return wire;
-    }
+    private static byte[] ReferenceBytes(ShaderValue value, string kind) => ShaderReferenceEncoding.Pack(value, kind);
 }

@@ -152,11 +152,11 @@ CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返�
 
 ## Shader dataと構造体引数
 
-[ADR-GRAPHICS-0009](../../../docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)のshader data bufferは、CPUの数値とIGpuRefをCopyFromで設定します。raw bufferを公開せず、GPU copyのdestinationやShaderWriteにはしません。通常のbufferに対する明示的copyとbarrierの契約は別に維持します。
+[ADR-GRAPHICS-0009](../../../docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)に従い、AutomaticでGPU storage、Uploadでstagingを作ります。map済みstagingのCopyFromが値をpackし、利用者がcommandのCopyBufferとbarrierを明示します。shader dataへのraw byte aliasとShaderWriteは提供しません。
 
-draw／dispatchで推移的なshader dataのversionをsnapshotし、そのsnapshotのGPU backingを確保してからnative参照をpackします。buffer device addressを使う場合は必要feature・usage・allocation flagを有効化し、循環する参照先も含めて全backingのaddressを確定してから書き込みます。同じ論理bufferの新しいCPU versionは、記録済みcommandが保持するGPU backingを上書きしません。
+GPU storageはshader data作成時に確保します。stagingへ値を書き込む時に参照先の既存GPU buffer device addressを解決し、明示copyでGPUへ転送します。先にbufferを確保・登録できるため循環参照をpackできます。draw／dispatchは転送済みCPU metadataから依存を収集し、shader dataを再転送しません。
 
-snapshotのbackingはhost-visible coherent memoryへ値を設定し、queueへのsubmit前に初期化します。利用者のrender pass内でcopy命令は記録しません。read-only shader dataのbackingとdescriptor setをcommandが保持し、GPU完了後のcommand破棄で解放します。通常resourceとtable登録の寿命・同期は利用者が管理します。
+Upload stagingは明示mapでCPU書き込みを行い、Automatic storageへVkCmdCopyBufferで転送します。shader dataのbarrierは同じallocationのbyte rangeへVkBufferMemoryBarrier2を記録します。root値だけはcommand所有のhost-visible coherent backingで渡します。stagingとGPU storageの有効期間・copy前後の依存は利用者が管理します。
 
 SPIR-Vだけを含むonline artifactも、このbackendの型schemaとhelper ABIが揃っていれば使用できます。WGSL targetがないことだけを理由に拒否しません。
 
@@ -164,7 +164,7 @@ SPIR-Vだけを含むonline artifactも、このbackendの型schemaとhelper ABI
 
 Vulkan 1.2のBufferDeviceAddress、RuntimeDescriptorArray、DescriptorBindingPartiallyBound、ShaderSampledImageArrayNonUniformIndexingとShaderInt64を有効化します。shader用途のraw bufferはShaderDeviceAddress usageとDeviceAddress allocation flagを持ちます。buffer helperは64-bit addressを直接参照し、portableな有限binding用のremapやswitchを使いません。
 
-textureとsamplerは独立したnative descriptor arrayへ登録します。必要な集合のarray数とroot uniformを含むlayoutに対応してnative PSOをcacheします。shader dataの参照先backingをすべて確保してaddressを確定してからpackするため、循環したIGpuRefも扱えます。commandは固定backingとdescriptor poolを保持し、submitで登録identityを再検証します。
+textureとsamplerは種類別の論理slotをnative descriptor array indexとして使用します。到達slotの最大値に対応したarray layoutとroot uniformを使い、PSOをcacheします。物理arrayの上限を超えるslotは拒否します。drawごとにdescriptorを設定しますが、shader data bytesは確保済みGPU bufferのまま使います。commandはroot backingとdescriptor poolを保持し、submitで登録identityとstaging revisionを再検証します。
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 

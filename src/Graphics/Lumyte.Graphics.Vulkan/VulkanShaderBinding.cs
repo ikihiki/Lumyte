@@ -1,7 +1,5 @@
-using System.Buffers.Binary;
 using Lumyte.Graphics.Abstractions;
 using Silk.NET.Vulkan;
-using V = Silk.NET.Vulkan;
 
 namespace Lumyte.Graphics.Vulkan;
 
@@ -17,90 +15,24 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
         snapshot.ValidateLayouts(target);
         try
         {
-            object[] textures = snapshot.References.Select(r => r.Resource).OfType<VulkanTextureView>().Distinct().Cast<object>().ToArray();
-            object[] samplers = snapshot.References.Select(r => r.Resource).OfType<VulkanSampler>().Distinct().Cast<object>().ToArray();
-            if (textures.Length > owner.Caps.MaxSampledTexturesPerStage || samplers.Length > owner.Caps.MaxSamplersPerStage)
+            IShaderReference[] textures = snapshot.References.Where(r => r.Resource is VulkanTextureView).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
+            IShaderReference[] samplers = snapshot.References.Where(r => r.Resource is VulkanSampler).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
+            uint textureCount = textures.Length == 0 ? 1 : checked(textures.Max(r => r.Slot) + 1);
+            uint samplerCount = samplers.Length == 0 ? 1 : checked(samplers.Max(r => r.Slot) + 1);
+            if (textureCount > owner.Caps.MaxSampledTexturesPerStage || samplerCount > owner.Caps.MaxSamplersPerStage)
             {
-                throw new NotSupportedException("Native descriptor arrays exceed the device's per-stage limits.");
+                throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
             }
 
-            var data = new Dictionary<IShaderDataSource, VulkanShaderBacking>();
-            foreach ((IShaderDataSource source, _) in snapshot.Elements.Keys)
-            {
-                if (!data.ContainsKey(source))
-                {
-                    var backing = new VulkanShaderBacking(owner, checked((int)source.SizeInBytes));
-                    _backings.Add(backing);
-                    data.Add(source, backing);
-                }
-            }
-
-            byte[] PackReference(ShaderValue value, string kind)
-            {
-                if (value.Reference is not IShaderReference reference)
-                {
-                    throw new ArgumentException("Missing resource reference.");
-                }
-
-                byte[] wire = new byte[16];
-                object resource = reference.Resource;
-                if (kind == "GpuTextureRef" && resource is VulkanTextureView)
-                {
-                    BinaryPrimitives.WriteUInt32LittleEndian(wire, checked((uint)Array.IndexOf(textures, resource)));
-                }
-                else if (kind == "GpuSamplerRef" && resource is VulkanSampler)
-                {
-                    BinaryPrimitives.WriteUInt32LittleEndian(wire, checked((uint)Array.IndexOf(samplers, resource)));
-                }
-                else if (kind is "GpuBufferRef" or "GpuRWBufferRef")
-                {
-                    ulong address;
-                    if (resource is IShaderDataSource source && kind == "GpuBufferRef")
-                    {
-                        address = data[source].Address;
-                    }
-                    else if (resource is IShaderRawBuffer raw && (raw.Usage & (kind == "GpuBufferRef" ? BufferUsage.ShaderRead : BufferUsage.ShaderWrite)) != 0)
-                    {
-                        var info = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = (V.Buffer)raw.ShaderHandle };
-                        address = owner.Api.GetBufferDeviceAddress(owner.NativeDevice, &info);
-                    }
-                    else
-                    {
-                        throw new ArgumentException("Buffer reference access does not match the shader ABI.");
-                    }
-
-                    BinaryPrimitives.WriteUInt64LittleEndian(wire, checked(address + reference.OffsetInBytes));
-                }
-                else
-                {
-                    throw new ArgumentException("Reference type does not match the shader ABI.");
-                }
-
-                BinaryPrimitives.WriteUInt32LittleEndian(wire.AsSpan(8), checked((uint)reference.Count));
-                return wire;
-            }
-
-            foreach ((IShaderDataSource source, VulkanShaderBacking backing) in data)
-            {
-                byte[] bytes = new byte[checked((int)source.SizeInBytes)];
-                foreach (((IShaderDataSource buffer, ulong element), ShaderValueSnapshot values) in snapshot.Elements)
-                {
-                    if (ReferenceEquals(buffer, source))
-                    {
-                        source.Layout.Pack(values, PackReference).CopyTo(bytes, checked((int)(element * (ulong)source.Layout.Size)));
-                    }
-                }
-
-                backing.Set(bytes);
-            }
+            byte[] PackReference(ShaderValue value, string kind) => VulkanShaderReferenceEncoding.Pack(owner, value, kind);
 
             byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, PackReference);
             var uniform = new VulkanShaderBacking(owner, root.Length);
             _backings.Add(uniform);
             uniform.Set(root);
             DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
-            sizes[0] = new() { Type = DescriptorType.SampledImage, DescriptorCount = checked((uint)Math.Max(1, textures.Length)) };
-            sizes[1] = new() { Type = DescriptorType.Sampler, DescriptorCount = checked((uint)Math.Max(1, samplers.Length)) };
+            sizes[0] = new() { Type = DescriptorType.SampledImage, DescriptorCount = checked((uint)textureCount) };
+            sizes[1] = new() { Type = DescriptorType.Sampler, DescriptorCount = checked((uint)samplerCount) };
             sizes[2] = new() { Type = DescriptorType.UniformBuffer, DescriptorCount = 1 };
             var pool = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1, PoolSizeCount = 3, PPoolSizes = sizes };
             Check(owner.Api.CreateDescriptorPool(owner.NativeDevice, &pool, null, out _pool));
@@ -112,15 +44,15 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             owner.Api.UpdateDescriptorSets(owner.NativeDevice, 1, &write, 0, null);
             for (int i = 0; i < textures.Length; i++)
             {
-                var info = new DescriptorImageInfo { ImageView = ((VulkanTextureView)textures[i]).Native, ImageLayout = ImageLayout.ShaderReadOnlyOptimal };
-                write = new() { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DstArrayElement = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.SampledImage, PImageInfo = &info };
+                var info = new DescriptorImageInfo { ImageView = ((VulkanTextureView)textures[i].Resource).Native, ImageLayout = ImageLayout.ShaderReadOnlyOptimal };
+                write = new() { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DstArrayElement = textures[i].Slot, DescriptorCount = 1, DescriptorType = DescriptorType.SampledImage, PImageInfo = &info };
                 owner.Api.UpdateDescriptorSets(owner.NativeDevice, 1, &write, 0, null);
             }
 
             for (int i = 0; i < samplers.Length; i++)
             {
-                var info = new DescriptorImageInfo { Sampler = ((VulkanSampler)samplers[i]).Native };
-                write = new() { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 1, DstArrayElement = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.Sampler, PImageInfo = &info };
+                var info = new DescriptorImageInfo { Sampler = ((VulkanSampler)samplers[i].Resource).Native };
+                write = new() { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 1, DstArrayElement = samplers[i].Slot, DescriptorCount = 1, DescriptorType = DescriptorType.Sampler, PImageInfo = &info };
                 owner.Api.UpdateDescriptorSets(owner.NativeDevice, 1, &write, 0, null);
             }
         }

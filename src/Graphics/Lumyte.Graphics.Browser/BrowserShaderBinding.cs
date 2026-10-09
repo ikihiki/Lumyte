@@ -37,7 +37,8 @@ internal sealed class BrowserShaderBinding : IDisposable
                     }
                     else
                     {
-                        BrowserInterop.AddShaderData(owner.Handle, _native, checked((int)data.Binding(kind, index)), data.Data[(IShaderDataSource)resource]);
+                        var source = (IShaderDataSource)resource;
+                        BrowserInterop.AddShaderResource(_native, checked((int)data.Binding(kind, index)), 2, (JSObject)source.ShaderHandle, source.SizeInBytes);
                     }
                 }
             }

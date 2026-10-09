@@ -258,11 +258,6 @@ export function createShaderBinding(handle, key, compute, root, map) {
 export function addShaderResource(binding, slot, kind, resource, size) {
     binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, size } });
 }
-export function addShaderData(handle, binding, slot, data) {
-    const buffer = shaderBacking(handle.device, data, GPUBufferUsage.STORAGE);
-    binding.buffers.push(buffer);
-    binding.entries.push({ binding: slot, resource: { buffer, size: data.length } });
-}
 export function finishShaderBinding(handle, binding) { binding.group = handle.device.createBindGroup({ layout: binding.layout, entries: binding.entries }); }
 export function setShaderBinding(pass, binding) { pass.setBindGroup(0, binding.group); }
 export function destroyShaderBinding(binding) { for (const buffer of binding.buffers) buffer.destroy(); }

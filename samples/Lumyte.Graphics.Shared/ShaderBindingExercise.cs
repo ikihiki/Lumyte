@@ -12,11 +12,12 @@ public static class ShaderBindingExercise
     public static async Task<string> RunAsync(IGraphicDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        CheckRegistrationIdentity(device);
+        await CheckRegistrationIdentityAsync(device);
+        await CheckExplicitTransferRequiredAsync(device);
         await ComputeAsync(device);
         await DrawAsync(device);
         await CameraAsync(device);
-        return "Shader binding checks passed: matrix root, cyclic dependencies, immutable dispatch snapshots and twenty distinct textures.";
+        return "Shader binding checks passed: matrix root, cyclic dependencies, explicit staging transfers and twenty distinct textures.";
     }
 
     /// <summary>Checks the same CPU-set data contract with a backend-only online artifact.</summary>
@@ -33,7 +34,7 @@ public static class ShaderBindingExercise
 
     private static ShaderArtifact Artifact(string name) => ShaderArtifact.LoadEmbedded(typeof(ShaderBindingExercise).Assembly, "Lumyte.Shaders." + name + ".lshader");
 
-    private static void CheckRegistrationIdentity(IGraphicDevice device)
+    private static async Task CheckRegistrationIdentityAsync(IGraphicDevice device)
     {
         ShaderArtifact artifact = Artifact("binding-compute");
         using IGraphicsShader shader = device.CreateShader(artifact);
@@ -43,8 +44,12 @@ public static class ShaderBindingExercise
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2 });
         IGpuRef<BindingNode> node = table.WriteBuffer(0, nodes.SliceElements(0, 1));
         IGpuRef<uint> result = table.WriteBuffer(1, output.Slice(0, 1));
-        nodes.CopyFrom([new(1, node)]);
+        using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
+        await staging.MapAsync();
+        staging.CopyFrom([new(1, node)]);
+        staging.Unmap();
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        RecordUpload(commands, staging, nodes);
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
         compute.SetArgumentTable(table);
@@ -78,16 +83,30 @@ public static class ShaderBindingExercise
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2 });
         IGpuRef<BindingNode> node = table.WriteBuffer(0, nodes.SliceElements(0, 2));
         IGpuRef<uint> results = table.WriteBuffer(1, output.Slice(0, 8));
-        nodes.CopyFrom([new(3, node.GetElement(1)), new(7, node.GetElement(0))]);
+        using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateBuffer<BindingNode>(artifact, 2, MemoryPreference.Upload);
+        using IGraphicsShaderDataBuffer<BindingNode> changed = device.CreateBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
+        await staging.MapAsync();
+        staging.CopyFrom([new(3, node.GetElement(1)), new(7, node.GetElement(0))]);
+        staging.Unmap();
+        await changed.MapAsync();
+        changed.CopyFrom([new(9, node.GetElement(1))]);
+        changed.Unmap();
         Require(nodes.Count == 2 && nodes.SizeInBytes == nodes.ShaderElementStrideInBytes * 2, "Shader data count or size changed.");
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        RecordUpload(commands, staging, nodes);
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
         compute.SetArgumentTable(table);
         var first = new BindingComputeArguments(Matrix4x4.CreateScale(3), 20, node.GetElement(0), results.GetElement(3));
         compute.SetArguments(in first);
         compute.Dispatch(1);
-        nodes.CopyFrom([new(9, node.GetElement(1))]);
+        compute.End();
+        commands.Barrier(new ShaderDataBufferBarrierDesc<BindingNode> { Buffer = nodes.SliceElements(0, 1), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
+        RecordUpload(commands, changed, nodes, 1);
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.Slice(0, 8), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
+        compute = commands.BeginComputePass(new());
+        compute.SetPipeline(pipeline);
+        compute.SetArgumentTable(table);
         BindingComputeArguments second = first with { Output = results.GetElement(4) };
         compute.SetArguments(in second);
         compute.Dispatch(1);
@@ -102,7 +121,7 @@ public static class ShaderBindingExercise
         uint[] values = new uint[8];
         readback.CopyTo(values);
         readback.Unmap();
-        Require(values[3] == 36 && values[4] == 48, "Root matrix, recursive references or dispatch snapshots are incorrect.");
+        Require(values[3] == 36 && values[4] == 48, "Root matrix, recursive references or explicit staging copies are incorrect.");
     }
 
     private static async Task DrawAsync(IGraphicDevice device)
@@ -114,6 +133,7 @@ public static class ShaderBindingExercise
         using IGraphicsShader fragment = device.CreateShader(artifact);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
         using IGraphicsShaderDataBuffer<BindingMaterial> materials = device.CreateBuffer<BindingMaterial>(artifact, Count);
+        using IGraphicsShaderDataBuffer<BindingMaterial> staging = device.CreateBuffer<BindingMaterial>(artifact, Count, MemoryPreference.Upload);
         using IGraphicsSampler sampler = device.CreateSampler(new());
         using IGraphicsTexture target = device.CreateTexture(new() { Width = Width, Height = 4, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView targetView = target.CreateView();
@@ -142,7 +162,10 @@ public static class ShaderBindingExercise
                 commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = colorWrite, After = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
             }
 
-            materials.CopyFrom(values);
+            await staging.MapAsync();
+            staging.CopyFrom(values);
+            staging.Unmap();
+            RecordUpload(commands, staging, materials, Count, PipelineStage.FragmentShader);
             IGpuRef<BindingMaterial> materialRef = table.WriteBuffer(0, materials.SliceElements(0, Count));
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, Before = default, AfterState = TextureState.ColorAttachment, After = colorWrite });
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = targetView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
@@ -237,6 +260,78 @@ public static class ShaderBindingExercise
         readback.CopyTo(bytes);
         readback.Unmap();
         Require(Math.Abs(bytes[0] - 64) <= 1 && Math.Abs(bytes[1] - 128) <= 1 && Math.Abs(bytes[2] - 191) <= 1 && bytes[3] == 255, "Numeric root arguments require an unnecessary table or have an incorrect matrix layout.");
+    }
+
+    private static void RecordUpload<T>(IGraphicsCommandBuffer commands, IGraphicsShaderDataBuffer<T> staging, IGraphicsShaderDataBuffer<T> gpu, ulong? count = null, PipelineStage stage = PipelineStage.ComputeShader)
+        where T : struct, IShaderData
+    {
+        ulong length = count ?? staging.Count;
+        commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = staging.SliceElements(0, length), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(staging.SliceElements(0, length), gpu.SliceElements(0, length));
+        commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = gpu.SliceElements(0, length), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(stage, ResourceAccess.ShaderRead) });
+    }
+
+    private static async Task CheckExplicitTransferRequiredAsync(IGraphicDevice device)
+    {
+        ShaderArtifact artifact = Artifact("binding-compute");
+        using IGraphicsShader shader = device.CreateShader(artifact);
+        using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsShaderDataBuffer<BindingNode> nodes = device.CreateBuffer<BindingNode>(artifact, 1);
+        using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
+        using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderWrite });
+        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+        IGpuRef<BindingNode> node = table.WriteBuffer(0, nodes.SliceElements(0, 1));
+        IGpuRef<uint> result = table.WriteBuffer(1, output.Slice(0, 1));
+        RequireThrows(() => nodes.CopyFrom([new(1, node)]), "GPU storage accepted a CPU value write.");
+        RequireThrows(() => staging.CopyFrom([new(1, node)]), "Unmapped staging accepted a CPU value write.");
+        await staging.MapAsync();
+        staging.CopyFrom([new(1, node)]);
+        staging.Unmap();
+        using (IGraphicsCommandBuffer discarded = device.CreateCommandBuffer(new()))
+        {
+            RecordUpload(discarded, staging, nodes);
+            discarded.Finish();
+        }
+
+        using (IGraphicsCommandBuffer stale = device.CreateCommandBuffer(new()))
+        {
+            RecordUpload(stale, staging, nodes);
+            stale.Finish();
+            await staging.MapAsync();
+            staging.CopyFrom([new(2, node)]);
+            staging.Unmap();
+            RequireThrows(
+                () =>
+                {
+                    using IGraphicsSubmission unexpected = device.Queue.Submit([stale]);
+                },
+                "Submit accepted staging bytes rewritten after copy recording.");
+        }
+
+        // An unsubmitted copy must not publish metadata or trigger a draw-time transfer.
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        IComputeEncoder compute = commands.BeginComputePass(new());
+        compute.SetPipeline(pipeline);
+        compute.SetArgumentTable(table);
+        var arguments = new BindingComputeArguments(Matrix4x4.Identity, 0, node, result);
+        compute.SetArguments(in arguments);
+        RequireThrows(() => compute.Dispatch(1), "Dispatch accepted shader data without an explicit submitted or preceding copy.");
+        compute.End();
+        commands.Finish();
+    }
+
+    private static void RequireThrows(Action action, string message)
+    {
+        try
+        {
+            action();
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(message);
     }
 
     private static void Require(bool condition, string message)

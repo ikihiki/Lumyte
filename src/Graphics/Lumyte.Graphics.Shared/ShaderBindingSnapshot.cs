@@ -8,14 +8,14 @@ public sealed class ShaderBindingSnapshot
     private readonly HashSet<IShaderReference> _references = [];
     private readonly Dictionary<(IShaderDataSource Buffer, ulong Element), ShaderValueSnapshot> _elements = [];
 
-    private ShaderBindingSnapshot(object table, ShaderValueSnapshot root)
+    private ShaderBindingSnapshot(object table, ShaderValueSnapshot root, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read)
     {
         Root = root;
         Stack<ShaderValueSnapshot>? pending = null;
-        Collect(table, root, ref pending);
+        Collect(table, root, ref pending, read);
         while (pending != null && pending.TryPop(out ShaderValueSnapshot? value))
         {
-            Collect(table, value, ref pending);
+            Collect(table, value, ref pending, read);
         }
     }
 
@@ -32,7 +32,8 @@ public sealed class ShaderBindingSnapshot
     /// <param name="table">The table input.</param>
     /// <param name="root">The root input.</param>
     /// <returns>The processed result.</returns>
-    public static ShaderBindingSnapshot Capture(object table, ShaderValueSnapshot root) => new(table, root);
+    /// <param name="read">The command-local transferred metadata reader.</param>
+    public static ShaderBindingSnapshot Capture(object table, ShaderValueSnapshot root, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read = null) => new(table, root, read);
 
     /// <summary>Validates captured element schemas against the consuming shader.</summary>
     /// <param name="target">The target input.</param>
@@ -65,7 +66,7 @@ public sealed class ShaderBindingSnapshot
         }
     }
 
-    private void Collect(object table, ShaderValueSnapshot value, ref Stack<ShaderValueSnapshot>? pending)
+    private void Collect(object table, ShaderValueSnapshot value, ref Stack<ShaderValueSnapshot>? pending, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read)
     {
         foreach (ShaderValue member in value.Values)
         {
@@ -100,7 +101,7 @@ public sealed class ShaderBindingSnapshot
                     continue;
                 }
 
-                ShaderValueSnapshot snapshot = source.Read(key.Item2);
+                ShaderValueSnapshot snapshot = read == null ? source.Read(key.Item2) : read(source, key.Item2);
                 _elements.Add(key, snapshot);
                 (pending ??= new()).Push(snapshot);
             }

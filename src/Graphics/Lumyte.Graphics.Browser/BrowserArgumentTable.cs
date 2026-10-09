@@ -56,7 +56,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
         where T : struct, IShaderData
     {
         ThrowIfDisposed();
-        if (range.Buffer is not BrowserShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner))
+        if (range.Buffer is not BrowserShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Shader data range belongs to another device.", nameof(range));
         }

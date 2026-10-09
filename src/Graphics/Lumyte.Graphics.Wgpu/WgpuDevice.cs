@@ -160,12 +160,12 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
-    public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count)
+    public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
-        var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count);
+        var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
         _bufferCount++;
         return buffer;
     }

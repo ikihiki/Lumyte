@@ -93,7 +93,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             }
 
             _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments);
+            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
             bindingSnapshot = snapshot;
         }
 

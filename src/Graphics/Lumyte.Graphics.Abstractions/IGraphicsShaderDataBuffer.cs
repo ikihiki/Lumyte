@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Owns CPU-set shader values and their dependency metadata without raw GPU copy access.</summary>
+/// <summary>Owns typed shader storage and dependency metadata for explicit staging transfers.</summary>
 /// <typeparam name="T">The application shader data structure.</typeparam>
 public interface IGraphicsShaderDataBuffer<T> : IDisposable
     where T : struct, IShaderData
@@ -8,16 +8,29 @@ public interface IGraphicsShaderDataBuffer<T> : IDisposable
     /// <summary>Gets the logical element count.</summary>
     ulong Count { get; }
 
-    /// <summary>Gets the target ABI size, excluding private backing allocations.</summary>
+    /// <summary>Gets the exact target ABI allocation size.</summary>
     ulong SizeInBytes { get; }
 
     /// <summary>Gets the target schema element stride.</summary>
     ulong ShaderElementStrideInBytes { get; }
 
-    /// <summary>Replaces a CPU value range after validation without mapping, GPU commands or waiting.</summary>
+    /// <summary>Gets the allocation memory purpose.</summary>
+    MemoryPreference Memory { get; }
+
+    /// <summary>Gets a value indicating whether upload staging is currently mapped.</summary>
+    bool IsMapped { get; }
+
+    /// <summary>Writes values into mapped upload staging without issuing GPU commands.</summary>
     /// <param name="source">The values to snapshot.</param>
     /// <param name="elementOffset">The first logical element.</param>
     void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0);
+
+    /// <summary>Maps idle upload staging for explicit CPU writes.</summary>
+    /// <returns>The mapping operation.</returns>
+    ValueTask MapAsync();
+
+    /// <summary>Unmaps upload staging before command recording.</summary>
+    void Unmap();
 
     /// <summary>References a nonempty logical range without extending its lifetime.</summary>
     /// <param name="offset">The first logical element.</param>
