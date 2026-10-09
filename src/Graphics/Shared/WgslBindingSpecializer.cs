@@ -93,20 +93,19 @@ internal static class WgslBindingSpecializer
     private static string Expand(string source, string prefix, string type, string addressSpace, int count, int firstBinding, int extraBinding)
     {
         Match declaration = Regex.Match(source, @"@binding\(\d+\)\s*@group\(0\)\s*var(?:<[^>]+>)?\s+(" + prefix + @"_\w+)\s*:[^;]+;");
-        if (!declaration.Success)
+        if (declaration.Success)
         {
-            return source;
+            source = source.Replace(declaration.Groups[1].Value, prefix + "_0", StringComparison.Ordinal);
+            declaration = Regex.Match(source, @"@binding\(\d+\)\s*@group\(0\)\s*var(?:<[^>]+>)?\s+" + prefix + @"_0\s*:[^;]+;");
         }
 
-        source = source.Replace(declaration.Groups[1].Value, prefix + "_0", StringComparison.Ordinal);
-        declaration = Regex.Match(source, @"@binding\(\d+\)\s*@group\(0\)\s*var(?:<[^>]+>)?\s+" + prefix + @"_0\s*:[^;]+;");
         var declarations = new StringBuilder();
         for (int i = 0; i < count; i++)
         {
             declarations.Append("@binding(").Append(i == 0 ? firstBinding : extraBinding + i - 1).Append(") @group(0) var").Append(addressSpace).Append(' ').Append(prefix.Replace("0", i.ToString(), StringComparison.Ordinal)).Append("_0 : ").Append(type).AppendLine(";");
         }
 
-        return source[..declaration.Index] + declarations + source[(declaration.Index + declaration.Length)..];
+        return declaration.Success ? source[..declaration.Index] + declarations + source[(declaration.Index + declaration.Length)..] : source + "\n" + declarations;
     }
 
     private static string Reader(string map, string name, string prefix, int count, string channel)

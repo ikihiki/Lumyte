@@ -201,7 +201,12 @@ internal static class PipelineValidation
     private static Dictionary<uint, string> Inputs(JsonElement entry)
     {
         Dictionary<uint, string> values = [];
-        foreach (JsonElement parameter in entry.GetProperty("parameters").EnumerateArray())
+        if (!entry.TryGetProperty("parameters", out JsonElement parameters))
+        {
+            return values;
+        }
+
+        foreach (JsonElement parameter in parameters.EnumerateArray())
         {
             Varyings(parameter, values, "varyingInput", false);
         }
