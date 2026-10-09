@@ -127,3 +127,11 @@ CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返�
 生成したPSOは記録済みcommandやGPUが参照するため、draw直後には破棄せずprogramの `Dispose` まで保持します。利用者はGPU完了後にprogramを解放してください。無効時はdraw数に比例してnative PSOの保持数と生成費用が増えます。compute pipelineはprogram生成時の一個を使う契約を維持します。
 
 共通APIの同じ画素検証をcache有効・無効の両方で既存CIへ流します。これは描画の正しさの比較で、実GPUの性能比較結果を示すものではありません。
+
+### PSO生成費用の比較方法
+
+`dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan pipeline-benchmark` で共通APIの同一workloadを比較します。各試行は独立したdeviceとprogramを生成し、8×8の単一attachmentに初回drawと同じ状態の200 drawを記録します。8 roundで有効・無効の順を交互に入れ替え、最初の2 roundをwarmupとして除外します。
+
+測定項目は初回drawのCPU時間、200 draw記録のCPU時間、submitから完了までのwall-clock時間、GPU完了後のprogram破棄時間です。device／shader／resource作成と状態設定は測定対象に含めません。完了時間はGPU timestampではなくCPU schedulingを含みます。PSO cache無効時のnative保持数は201個、有効時は1個です。毎drawで状態を再設定する費用や異なるstate variantのworkloadはこの測定に含めません。
+
+既存Linux x64 CIのlavapipeで測定し、raw JSONLをtest-results artifactに保存します。software VulkanのCPU費用を比較するための結果であり、hardware GPUや実シーンのFPSへ一般化しません。median・最小・最大を報告し、速度比は200 draw記録のmedianから計算します。

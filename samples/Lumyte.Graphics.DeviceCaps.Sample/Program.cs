@@ -3,6 +3,23 @@ using Lumyte.Graphics.Shaders;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 
+if (args is ["vulkan", "pipeline-benchmark"])
+{
+    const int rounds = 8;
+    for (int round = 0; round < rounds; round++)
+    {
+        // Alternate order to reduce systematic driver warmup bias; discard two warmup rounds.
+        foreach (bool cache in round % 2 == 0 ? new[] { true, false } : new[] { false, true })
+        {
+            using var device = VulkanDevice.Create(cacheGraphicsPipelines: cache);
+            PipelineBenchmarkResult result = await PipelineBenchmark.RunAsync(device);
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Round = round, Warmup = round < 2, Cache = cache, Result = result }));
+        }
+    }
+
+    return 0;
+}
+
 if (args is ["wgpu"] or ["wgpu", "buffers"] or ["wgpu", "textures"] or ["wgpu", "samplers"] or ["wgpu", "arguments"] or ["wgpu", "shaders"] or ["wgpu", "commands"] or ["wgpu", "pipelines"])
 {
     using var device = WgpuDevice.Create();
@@ -23,7 +40,7 @@ else if (args is ["vulkan"] or ["vulkan", "buffers"] or ["vulkan", "textures"] o
 }
 else
 {
-    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu|vulkan [buffers|textures|samplers|arguments|shaders|commands|pipelines]");
+    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu|vulkan [buffers|textures|samplers|arguments|shaders|commands|pipelines|pipeline-benchmark]");
     return 1;
 }
 
