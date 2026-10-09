@@ -336,6 +336,30 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         }
     }
 
+    internal DiagnosticUiSession[] UiSessions()
+    {
+        lock (_gate)
+        {
+            return _sessions.Values.Select(session => new DiagnosticUiSession(
+                session.Welcome.SessionId,
+                session.Hello.InstanceId,
+                session.Commands.Values.Count(entry => !entry.Completion.Task.IsCompleted),
+                session.Received,
+                session.Dropped)).ToArray();
+        }
+    }
+
+    internal DiagnosticEvent[] UiTelemetry(Guid id)
+    {
+        DiagnosticEvent[] snapshot;
+        lock (_gate)
+        {
+            snapshot = _sessions.TryGetValue(id, out Session? session) ? session.Telemetry.TakeLast(200).Select(item => item.Event).ToArray() : [];
+        }
+
+        return CopyEvents(snapshot);
+    }
+
     internal void CloseAll()
     {
         lock (_gate)

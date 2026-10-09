@@ -1,6 +1,6 @@
 # 診断サーバー
 
-ASP.NET Core / Kestrel で起動する診断サーバー。ゲーム側の接続とカタログを管理し、REST API から Operation を要求する。ゲームは MagicOnion StreamingHub または HTTP 長いポーリングで受信し、同じ DI / Pump / Generator を使って実行する。
+ASP.NET Core / Kestrel で起動する診断サーバー。ゲーム側の接続とカタログを管理し、同梱のWeb UIまたはREST APIからOperationを要求する。ゲームは MagicOnion StreamingHub または HTTP 長いポーリングで受信し、同じ DI / Pump / Generator を使って実行する。
 
 ## 起動
 
@@ -14,7 +14,37 @@ dotnet run --project src/Diagnostics/Lumyte.Diagnostics.Server -c Release
 
 この端末に設定した GameToken を、ゲームを起動する端末にも設定する。既定は **127.0.0.1:5000 の HTTP/1** と **127.0.0.1:5001 の HTTP/2**。後者はローカル開発用の h2c。ポートは LUMYTE_DIAGNOSTICS_HTTP_PORT / LUMYTE_DIAGNOSTICS_GRPC_PORT で変更できる。資格情報なし、両トークンが同じ、無効なポートでは起動を拒否する。
 
-ブラウザーの別 Origin から利用する場合は LUMYTE_DIAGNOSTICS_ALLOWED_ORIGINS に許可する Origin をカンマ区切りで設定する。Authorization / Content-Type / X-Diagnostics-Session の CORS preflight に対応する。空なら cross-origin を許可しない。ブラウザー用 UI と資格情報の配布機構は含まない。
+ブラウザーの別 Origin から利用する場合は LUMYTE_DIAGNOSTICS_ALLOWED_ORIGINS に許可する Origin をカンマ区切りで設定する。Authorization / Content-Type / X-Diagnostics-Session の CORS preflight に対応する。空ならcross-originを許可しない。同梱UIのCookie APIはこの設定によらず同じOrigin専用とする。
+
+## Web UI
+
+**[http://127.0.0.1:5000/](http://127.0.0.1:5000/)** を開き、起動時に設定したOperatorTokenを入力する。HTML・CSS・JavaScriptは診断サーバー自身が配信する。別のUIサーバー、npm install、NodeでのUIビルドは不要。資産はassemblyへ埋め込まれるため、次のpublish成果物だけでも起動できる。
+
+```sh
+dotnet publish src/Diagnostics/Lumyte.Diagnostics.Server -c Release -o artifacts/diagnostics-ui-server
+dotnet artifacts/diagnostics-ui-server/Lumyte.Diagnostics.Server.dll
+```
+
+左のゲーム一覧から対象を選び、OperationsまたはInputタブで公開された操作の引数を入力する。フォームはカタログのBoolean／Int64／Double／String、範囲、最大長、revision要件から生成する。操作名・サブシステムで検索でき、各画面のフォームは最大20操作に限定する。InputタブはOverrideInput権限の操作を表示する。サンプルではbutton=Jump、pressed=true、duration-ms=5000を入力して実行できる。返ったリースIDと成功・拒否結果を右のInspectorへ表示する。
+
+Metrics／Logs／Tracesは選択したゲームの最新最大200件を表示し、名前・フィールド・Trace IDで検索できる。イベント名をクリックすると詳細を表示する。Int64は十進文字列のまま表示・送信する。SSEは変更時にスナップショットを置き換える。ゲーム変更、非表示タブ、ログアウト時に購読を閉じ、復帰・再接続で新しいスナップショットを取得する。
+
+操作用トークンはURLやブラウザーストレージへ保存しない。ログイン後はPath=/api/ui、SameSite=Strict、HttpOnly、固定30分のCookieを使う。変更APIはログインを含めてCSRF検証を行い、ゲーム用トークン・SessionSecretを返さない。既存Bearer APIと認証を分離する。ログインはサーバー全体で毎分10回、SSEは最大16本、各接続は最大2分で終了して再接続時に認証し直す。
+
+ログアウトはInput操作の取消ではない。「ゲーム接続を終了」は確認後に接続を閉じ、その接続のリースをゲーム側で解除する。ゲームが公開していない現在の実入力、個別解除、グラフ、描画結果はUIで推測しない。Metricsの時系列集約やTraceタイムラインは後続範囲。
+
+### UI検証
+
+統合テストでHTML・資産・CSP・Cookie／Bearer分離・CSRF・ログアウト・両ゲーム通信方式の操作／SSE、200件の保持末尾と対象分離、16本の接続上限、ログイン上限を確認する。
+
+Chromiumを使う別プロセス検証は、上記のpublish後に次を実行する。ゲームサンプルのReleaseビルドも必要。Nodeはこの検証だけに使用する。CHROMEでChrome／Chromiumの実行ファイル、DOTNETでdotnetのパスを変更できる。
+
+```sh
+dotnet build samples/Lumyte.Diagnostics.Remote.Sample -c Release
+node tools/diagnostics/verify-browser.mjs
+```
+
+一時トークンで公開サーバーをソースツリー外から起動し、実ブラウザーでログイン、生成フォーム、Input変更、Int64 Metric、Log／Trace相関、切断時解除、ログアウト、狭い画面での表示を確認する。結果・スクリーンショット・ログはartifacts/test-results/diagnostics-uiへ出力する。CIのLinux x64でも実行する。[検証結果](../../../docs/diagnostics/results/browser-ui-processes.json)と[UI ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
 ## ゲームを接続
 
@@ -71,7 +101,7 @@ curl --fail --silent -H "Authorization: Bearer $LUMYTE_DIAGNOSTICS_OPERATOR_TOKE
 - 要求の結果が期限までに届かない場合は expired とする。副作用が実行されなかったという保証ではなく、結果が不明な操作を自動再実行しない。
 - 通信終了で共通エージェントの RunAsync が完了する。ゲームの所有スレッドが Input の ReleaseSession と Pump.Deactivate を実行する。サンプルは finally でこの順序を保証する。
 
-サーバーは loopback で動く開発用の in-memory 実装。診断 UI、外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、グラフ・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
+サーバーは loopback で動く開発用の in-memory 実装。外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、グラフ・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
 
 [実通信の検証結果・再現スクリプト](../../../docs/diagnostics/communication-verification.md) と [ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。
 
