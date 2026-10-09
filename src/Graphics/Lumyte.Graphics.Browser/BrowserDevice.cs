@@ -8,8 +8,9 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
-    private readonly object _bufferGate = new();
+    private readonly object _resourceGate = new();
     private int _bufferCount;
+    private int _textureCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -20,7 +21,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
 
-    internal object BufferGate => _bufferGate;
+    internal object ResourceGate => _resourceGate;
 
     internal JSObject Handle => _handle;
 
@@ -56,7 +57,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        lock (_bufferGate)
+        lock (_resourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
@@ -69,7 +70,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        lock (_bufferGate)
+        lock (_resourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             BufferLayout<T> layout = GetBufferLayout<T>();
@@ -91,14 +92,27 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
     }
 
+    /// <inheritdoc />
+    public IGraphicsTexture CreateTexture(TextureDesc desc)
+    {
+        lock (_resourceGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            TextureValidation.Validate(desc, Caps);
+            var texture = new BrowserTexture(this, desc);
+            _textureCount++;
+            return texture;
+        }
+    }
+
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        lock (_bufferGate)
+        lock (_resourceGate)
         {
-            if (_bufferCount != 0)
+            if (_bufferCount != 0 || _textureCount != 0)
             {
-                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
+                throw new InvalidOperationException("Dispose all buffers and textures before disposing their device.");
             }
 
             if (_disposed)
@@ -112,9 +126,17 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
     }
 
+    internal void ReleaseTexture()
+    {
+        lock (_resourceGate)
+        {
+            _textureCount--;
+        }
+    }
+
     internal void ReleaseBuffer()
     {
-        lock (_bufferGate)
+        lock (_resourceGate)
         {
             _bufferCount--;
         }

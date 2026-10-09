@@ -86,7 +86,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
     {
         get
         {
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 return _mapped && !_pending && !_disposed;
             }
@@ -101,7 +101,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
@@ -113,7 +113,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
@@ -146,7 +146,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public void Unmap()
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!_mapped || _pending)
@@ -160,7 +160,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     public void Dispose()
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             if (_disposed)
             {
@@ -186,7 +186,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ValidateRange(offset, length);
             RequireMapping(MemoryPreference.Upload);
@@ -201,7 +201,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>
 
     void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ValidateRange(offset, length);
             RequireMapping(MemoryPreference.Readback);

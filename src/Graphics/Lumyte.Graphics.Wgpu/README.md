@@ -51,3 +51,11 @@ CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに
 WebGPU の usage は CopySource → COPY_SRC、CopyDestination → COPY_DST、ShaderRead／ShaderWrite → STORAGE、Index → INDEX に対応します。Upload は CopySource のみと MAP_WRITE、Readback は CopyDestination のみと MAP_READ の組み合わせです。CPU-mapped buffer の size は 4 byte の倍数でなければ生成時に拒否します。GPU-only buffer の論理 size はこの理由で丸めません。
 
 Ahjo の BeginMap と device の ProcessEvents を使い、native callback の完了後に mapping 状態を公開します。キャンセルされても callback の保存先を途中で解放せず、request が完了してから Unmap と cleanup を行います。CPU copy は mapped native span に対して行います。
+
+## TextureとView
+
+生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
+
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、同じ資源管理lockの下でview数を更新します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+
+Ahjo.WgpuのCreateTexture／CreateViewを直接使用し、native textureとviewを具象resourceが所有します。dimension、format、usage、mip／layer範囲をWebGPU descriptorに明示的に変換します。Disposeではview／textureの参照をReleaseします。native handleを共通APIへ公開しません。

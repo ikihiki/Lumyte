@@ -15,6 +15,7 @@ export async function createDevice() {
             maxBufferSize: limits.maxBufferSize,
             maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
             maxTextureDimension2D: limits.maxTextureDimension2D,
+            maxTextureArrayLayers: limits.maxTextureArrayLayers,
             maxColorAttachments: limits.maxColorAttachments,
             maxSampledTexturesPerStage: limits.maxSampledTexturesPerShaderStage,
             maxSamplersPerStage: limits.maxSamplersPerShaderStage,
@@ -84,4 +85,36 @@ export function destroyBuffer(handle) {
         handle.buffer.destroy();
         handle.disposed = true;
     }
+}
+
+export function createTexture(handle, width, height, layers, mips, format, flags) {
+    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    let usage = 0;
+    if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
+    if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
+    if (flags & 4) usage |= GPUTextureUsage.TEXTURE_BINDING;
+    if (flags & 8) usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+    return handle.device.createTexture({
+        size: [width, height, layers],
+        mipLevelCount: mips,
+        sampleCount: 1,
+        dimension: "2d",
+        format: formats[format],
+        usage,
+    });
+}
+
+export function createTextureView(texture, dimension, baseMip, mipCount, baseLayer, layerCount) {
+    return texture.createView({
+        dimension: ["2d", "2d-array", "cube", "cube-array"][dimension],
+        aspect: "all",
+        baseMipLevel: baseMip,
+        mipLevelCount: mipCount,
+        baseArrayLayer: baseLayer,
+        arrayLayerCount: layerCount,
+    });
+}
+
+export function destroyTexture(texture) {
+    texture.destroy();
 }

@@ -15,6 +15,9 @@ public sealed record DeviceCaps
     /// <summary>Gets the maximum two-dimensional texture extent in texels.</summary>
     public uint MaxTextureDimension2D { get; init; }
 
+    /// <summary>Gets the maximum two-dimensional texture array layer count.</summary>
+    public uint MaxTextureArrayLayers { get; init; }
+
     /// <summary>Gets the maximum color attachment count.</summary>
     public uint MaxColorAttachments { get; init; }
 

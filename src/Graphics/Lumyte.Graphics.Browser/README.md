@@ -44,3 +44,11 @@ CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに
 WebGPU の usage は CopySource → COPY_SRC、CopyDestination → COPY_DST、ShaderRead／ShaderWrite → STORAGE、Index → INDEX に対応します。Upload は CopySource のみと MAP_WRITE、Readback は CopyDestination のみと MAP_READ の組み合わせです。CPU-mapped buffer の size は 4 byte の倍数でなければ生成時に拒否します。GPU-only buffer の論理 size はこの理由で丸めません。
 
 GPUBuffer.mapAsync の Promise と getMappedRange を使います。.NET／JavaScript 間の CPU copy は MemoryView による span の同期受け渡しで行い、GPUDevice.queue.writeBuffer は呼びません。キャンセル時も native Promise の完了後に mapping を解除します。JavaScript 相互運用が利用できるスレッドで操作してください。
+
+## TextureとView
+
+生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
+
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、同じ資源管理lockの下でview数を更新します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+
+JavaScript moduleはGPUDevice.createTextureとGPUTexture.createViewを呼び、具象resourceがJSObject proxyを保持します。viewの解放はproxyをDisposeし、textureの解放はGPUTexture.destroyとproxyのDisposeを行います。GPUTextureViewにdestroy APIはありません。WebGPUのvalidation／device lostはbrowserのエラー通知にも現れるため、CIのChrome検証はruntime／consoleエラーも監視します。

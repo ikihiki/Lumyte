@@ -73,7 +73,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
     {
         get
         {
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 return _mapped && !_pending && !_disposed;
             }
@@ -88,7 +88,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
@@ -100,7 +100,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
@@ -116,7 +116,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public void Unmap()
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!_mapped || _pending)
@@ -132,7 +132,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     public void Dispose()
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             if (_disposed)
             {
@@ -159,7 +159,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ValidateRange(offset, length);
             RequireMapping(MemoryPreference.Upload);
@@ -174,7 +174,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
     void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ValidateRange(offset, length);
             RequireMapping(MemoryPreference.Readback);
@@ -203,7 +203,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
             request = _native.BeginMap(Memory == MemoryPreference.Upload ? A.MapMode.Write : A.MapMode.Read, 0, (nuint)SizeInBytes);
             while (true)
             {
-                lock (_owner.BufferGate)
+                lock (_owner.ResourceGate)
                 {
                     _owner.NativeDevice.ProcessEvents();
                     if (request.IsComplete)
@@ -215,7 +215,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
                 await Task.Delay(1);
             }
 
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 if (request.Status != WGPUMapAsyncStatus.Success)
                 {
@@ -245,7 +245,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
         finally
         {
             request.Dispose();
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 _pending = false;
             }

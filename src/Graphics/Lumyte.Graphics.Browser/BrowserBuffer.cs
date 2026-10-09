@@ -40,7 +40,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
     {
         get
         {
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 return _mapped && !_pending && !_disposed;
             }
@@ -55,7 +55,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
@@ -67,7 +67,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
@@ -83,7 +83,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     public void Unmap()
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!_mapped || _pending)
@@ -98,7 +98,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     public void Dispose()
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             if (_disposed)
             {
@@ -120,7 +120,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ValidateRange(offset, length);
             RequireMapping(MemoryPreference.Upload);
@@ -135,7 +135,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
-        lock (_owner.BufferGate)
+        lock (_owner.ResourceGate)
         {
             ValidateRange(offset, length);
             RequireMapping(MemoryPreference.Readback);
@@ -161,7 +161,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
         try
         {
             await BrowserInterop.MapBufferAsync(_native, (int)Memory);
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 _mapped = true;
                 if (cancellationToken.IsCancellationRequested)
@@ -174,7 +174,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
         }
         finally
         {
-            lock (_owner.BufferGate)
+            lock (_owner.ResourceGate)
             {
                 _pending = false;
             }

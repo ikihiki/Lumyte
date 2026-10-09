@@ -8,4 +8,9 @@
   <ItemGroup>
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Graphics.Wgpu" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Browser" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Vulkan" />
+  </ItemGroup>
 </Project>
