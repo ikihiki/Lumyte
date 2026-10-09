@@ -11,6 +11,7 @@ export async function createDevice() {
     try {
         const limits = device.limits;
         const caps = Object.freeze({
+            shaderTarget: 0, // WGSL.
             features: 3, // WebGPU core: indirect draw and anisotropic filtering.
             maxBufferSize: limits.maxBufferSize,
             maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
@@ -138,4 +139,8 @@ export function createSampler(handle, descJson) {
     };
     if (desc.compare !== null) native.compare = compares[desc.compare];
     return handle.device.createSampler(native);
+}
+
+export function createShader(handle, code) {
+    return handle.device.createShaderModule({ code });
 }

@@ -3,6 +3,9 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Contains backend-resolved capability values without owning GPU resources.</summary>
 public sealed record DeviceCaps
 {
+    /// <summary>Gets the supported compiled shader target.</summary>
+    public ShaderTarget ShaderTarget { get; init; }
+
     /// <summary>Gets the supported portable feature flags.</summary>
     public GraphicsFeatures Features { get; init; } = GraphicsFeatures.None;
 
