@@ -32,50 +32,41 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (mipLevel >= MipLevels)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (mipLevel >= MipLevels)
-            {
-                throw new ArgumentOutOfRangeException(nameof(mipLevel));
-            }
-
-            return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
+            throw new ArgumentOutOfRangeException(nameof(mipLevel));
         }
+
+        return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
     }
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
-        lock (_owner.ResourceGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            TextureViewInfo info = TextureValidation.Resolve(this, desc);
-            JSObject native = BrowserInterop.CreateTextureView(_native, (int)info.Dimension, checked((int)info.BaseMipLevel), checked((int)info.MipLevelCount), checked((int)info.BaseArrayLayer), checked((int)info.ArrayLayerCount));
-            var view = new BrowserTextureView(this, info, native);
-            _viewCount++;
-            return view;
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureViewInfo info = TextureValidation.Resolve(this, desc);
+        JSObject native = BrowserInterop.CreateTextureView(_native, (int)info.Dimension, checked((int)info.BaseMipLevel), checked((int)info.MipLevelCount), checked((int)info.BaseArrayLayer), checked((int)info.ArrayLayerCount));
+        var view = new BrowserTextureView(this, info, native);
+        _viewCount++;
+        return view;
     }
 
     public void Dispose()
     {
-        lock (_owner.ResourceGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_viewCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all views before disposing their texture.");
-            }
-
-            BrowserInterop.DestroyTexture(_native);
-            _native.Dispose();
-            _disposed = true;
-            _owner.ReleaseTexture();
+            return;
         }
+
+        if (_viewCount != 0)
+        {
+            throw new InvalidOperationException("Dispose all views before disposing their texture.");
+        }
+
+        BrowserInterop.DestroyTexture(_native);
+        _native.Dispose();
+        _disposed = true;
+        _owner.ReleaseTexture();
     }
 
     internal void ReleaseView() => _viewCount--;

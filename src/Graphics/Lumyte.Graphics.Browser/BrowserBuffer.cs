@@ -36,16 +36,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     public MemoryPreference Memory { get; }
 
-    public bool IsMapped
-    {
-        get
-        {
-            lock (_owner.ResourceGate)
-            {
-                return _mapped && !_pending && !_disposed;
-            }
-        }
-    }
+    public bool IsMapped => _mapped && !_pending && !_disposed;
 
     public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);
 
@@ -55,97 +46,79 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
-            {
-                throw new ArgumentOutOfRangeException(nameof(length));
-            }
+            throw new ArgumentOutOfRangeException(nameof(length));
         }
     }
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Memory == MemoryPreference.Automatic || _mapped || _pending)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (Memory == MemoryPreference.Automatic || _mapped || _pending)
-            {
-                throw new InvalidOperationException("Buffer cannot begin a CPU mapping in its current state.");
-            }
-
-            _pending = true;
-            return new(MapCoreAsync(cancellationToken));
+            throw new InvalidOperationException("Buffer cannot begin a CPU mapping in its current state.");
         }
+
+        _pending = true;
+        return new(MapCoreAsync(cancellationToken));
     }
 
     public void Unmap()
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_mapped || _pending)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_mapped || _pending)
-            {
-                throw new InvalidOperationException("No completed mapping is available.");
-            }
-
-            BrowserInterop.UnmapBuffer(_native);
-            _mapped = false;
+            throw new InvalidOperationException("No completed mapping is available.");
         }
+
+        BrowserInterop.UnmapBuffer(_native);
+        _mapped = false;
     }
 
     public void Dispose()
     {
-        lock (_owner.ResourceGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_pending)
-            {
-                throw new InvalidOperationException("Wait for the mapping request before disposal.");
-            }
-
-            BrowserInterop.DestroyBuffer(_native);
-            _native.Dispose();
-            _mapped = false;
-            _disposed = true;
-            _owner.ReleaseBuffer();
+            return;
         }
+
+        if (_pending)
+        {
+            throw new InvalidOperationException("Wait for the mapping request before disposal.");
+        }
+
+        BrowserInterop.DestroyBuffer(_native);
+        _native.Dispose();
+        _mapped = false;
+        _disposed = true;
+        _owner.ReleaseBuffer();
     }
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        lock (_owner.ResourceGate)
+        ValidateRange(offset, length);
+        RequireMapping(MemoryPreference.Upload);
+        if ((ulong)source.Length > length)
         {
-            ValidateRange(offset, length);
-            RequireMapping(MemoryPreference.Upload);
-            if ((ulong)source.Length > length)
-            {
-                throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
-            }
-
-            BrowserInterop.CopyBufferFrom(_native, MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(source), source.Length), checked((int)offset));
+            throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
+
+        BrowserInterop.CopyBufferFrom(_native, MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(source), source.Length), checked((int)offset));
     }
 
     void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
     {
-        lock (_owner.ResourceGate)
+        ValidateRange(offset, length);
+        RequireMapping(MemoryPreference.Readback);
+        if ((ulong)destination.Length < length)
         {
-            ValidateRange(offset, length);
-            RequireMapping(MemoryPreference.Readback);
-            if ((ulong)destination.Length < length)
-            {
-                throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
-            }
-
-            BrowserInterop.CopyBufferTo(_native, destination[..checked((int)length)], checked((int)offset));
+            throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
+
+        BrowserInterop.CopyBufferTo(_native, destination[..checked((int)length)], checked((int)offset));
     }
 
     private void RequireMapping(MemoryPreference memory)
@@ -161,23 +134,17 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
         try
         {
             await BrowserInterop.MapBufferAsync(_native, (int)Memory);
-            lock (_owner.ResourceGate)
+            _mapped = true;
+            if (cancellationToken.IsCancellationRequested)
             {
-                _mapped = true;
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    BrowserInterop.UnmapBuffer(_native);
-                    _mapped = false;
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
+                BrowserInterop.UnmapBuffer(_native);
+                _mapped = false;
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
         finally
         {
-            lock (_owner.ResourceGate)
-            {
-                _pending = false;
-            }
+            _pending = false;
         }
     }
 }

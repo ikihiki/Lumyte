@@ -20,16 +20,13 @@ internal sealed unsafe class VulkanTextureView : IGraphicsTextureView
 
     public void Dispose()
     {
-        lock (_texture.Owner.ResourceGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _texture.Owner.Api.DestroyImageView(_texture.Owner.NativeDevice, _native, null);
-            _disposed = true;
-            _texture.ReleaseView();
+            return;
         }
+
+        _texture.Owner.Api.DestroyImageView(_texture.Owner.NativeDevice, _native, null);
+        _disposed = true;
+        _texture.ReleaseView();
     }
 }

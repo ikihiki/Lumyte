@@ -10,7 +10,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Instance _instance;
     private readonly Device _device;
     private readonly PhysicalDevice _physicalDevice;
-    private readonly object _resourceGate = new();
     private int _bufferCount;
     private int _textureCount;
     private bool _disposed;
@@ -26,8 +25,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public DeviceCaps Caps { get; }
 
     internal bool SupportsCubeArrays { get; }
-
-    internal object ResourceGate => _resourceGate;
 
     internal Vk Api => _api;
 
@@ -96,12 +93,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        lock (_resourceGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
-            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+        return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
 
     /// <inheritdoc />
@@ -109,78 +103,57 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        lock (_resourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        BufferLayout<T> layout = GetBufferLayout<T>();
+        ulong size = layout.GetSizeInBytes(desc.Count);
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            BufferLayout<T> layout = GetBufferLayout<T>();
-            ulong size = layout.GetSizeInBytes(desc.Count);
-            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
-            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
-            {
-                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
-            }
-
-            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
-            {
-                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
-            }
-
-            var buffer = new VulkanBuffer<T>(this, desc, layout, size);
-            _bufferCount++;
-            return buffer;
+            throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
         }
+
+        if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+        {
+            throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+        }
+
+        var buffer = new VulkanBuffer<T>(this, desc, layout, size);
+        _bufferCount++;
+        return buffer;
     }
 
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        lock (_resourceGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            TextureValidation.Validate(desc, Caps);
-            var texture = new VulkanTexture(this, desc);
-            _textureCount++;
-            return texture;
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureValidation.Validate(desc, Caps);
+        var texture = new VulkanTexture(this, desc);
+        _textureCount++;
+        return texture;
     }
 
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        lock (_resourceGate)
+        if (_bufferCount != 0 || _textureCount != 0)
         {
-            if (_bufferCount != 0 || _textureCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all buffers and textures before disposing their device.");
-            }
-
-            if (_disposed)
-            {
-                return;
-            }
-
-            _api.DestroyDevice(_device, null);
-            _api.DestroyInstance(_instance, null);
-            _api.Dispose();
-            _disposed = true;
+            throw new InvalidOperationException("Dispose all buffers and textures before disposing their device.");
         }
+
+        if (_disposed)
+        {
+            return;
+        }
+
+        _api.DestroyDevice(_device, null);
+        _api.DestroyInstance(_instance, null);
+        _api.Dispose();
+        _disposed = true;
     }
 
-    internal void ReleaseTexture()
-    {
-        lock (_resourceGate)
-        {
-            _textureCount--;
-        }
-    }
+    internal void ReleaseTexture() => _textureCount--;
 
-    internal void ReleaseBuffer()
-    {
-        lock (_resourceGate)
-        {
-            _bufferCount--;
-        }
-    }
+    internal void ReleaseBuffer() => _bufferCount--;
 
     private static PhysicalDevice SelectPhysicalDevice(Vk api, Instance instance, uint index)
     {

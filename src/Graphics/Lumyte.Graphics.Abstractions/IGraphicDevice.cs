@@ -1,6 +1,7 @@
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Provides immutable capabilities of a backend-owned graphics device.</summary>
+/// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicDevice
 {
     /// <summary>Gets the immutable device capabilities.</summary>

@@ -69,3 +69,7 @@ using IGraphicsTextureView cube = texture.CreateView(new TextureViewDesc
 ViewはSampledまたはRenderAttachment用途を必要とします。View、Texture、Deviceの順で解放します。生きた子resourceがある親のDisposeは拒否し、GPU完了待機や自動解放は挿入しません。textureのCPU mappingや自動upload／readbackはありません。
 
 設計判断は [GRAPHICS-0003](../../../docs/adr/graphics/GRAPHICS-0003-textures-and-views.md) を参照してください。
+
+## 利用者による同期
+
+resource APIは並列実行の安全性を保証しません。backendが許す並列実行の範囲と、device・buffer・texture・viewの生成・アクセス・mapping・解放に必要な同期は利用者が管理します。live childやmapping状態の検証は必要な同期の代わりにはなりません。GPUアクセスの同期もcommand／submissionの契約に従って利用者が保証します。

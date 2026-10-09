@@ -20,16 +20,13 @@ internal sealed class BrowserTextureView : IGraphicsTextureView
 
     public void Dispose()
     {
-        lock (_texture.Owner.ResourceGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _native.Dispose();
-            _disposed = true;
-            _texture.ReleaseView();
+            return;
         }
+
+        _native.Dispose();
+        _disposed = true;
+        _texture.ReleaseView();
     }
 }

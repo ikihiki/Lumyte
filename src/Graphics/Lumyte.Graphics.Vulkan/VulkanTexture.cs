@@ -109,73 +109,64 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (mipLevel >= MipLevels)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (mipLevel >= MipLevels)
-            {
-                throw new ArgumentOutOfRangeException(nameof(mipLevel));
-            }
-
-            return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
+            throw new ArgumentOutOfRangeException(nameof(mipLevel));
         }
+
+        return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
     }
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureViewInfo info = TextureValidation.Resolve(this, desc);
+        ImageViewType dimension = info.Dimension switch
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            TextureViewInfo info = TextureValidation.Resolve(this, desc);
-            ImageViewType dimension = info.Dimension switch
-            {
-                TextureViewDimension.D2 => ImageViewType.Type2D,
-                TextureViewDimension.D2Array => ImageViewType.Type2DArray,
-                TextureViewDimension.Cube => ImageViewType.TypeCube,
-                TextureViewDimension.CubeArray => ImageViewType.TypeCubeArray,
-                _ => throw new NotSupportedException("Unsupported view dimension."),
-            };
-            if (dimension == ImageViewType.TypeCubeArray && !_owner.SupportsCubeArrays)
-            {
-                throw new NotSupportedException("Vulkan cube array views require imageCubeArray.");
-            }
-
-            var descriptor = new ImageViewCreateInfo
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = _native,
-                ViewType = dimension,
-                Format = NativeFormat(Format),
-                Components = new ComponentMapping(ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity),
-                SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, info.BaseMipLevel, info.MipLevelCount, info.BaseArrayLayer, info.ArrayLayerCount),
-            };
-            ImageView native = default;
-            Check(_owner.Api.CreateImageView(_owner.NativeDevice, &descriptor, null, &native), "CreateImageView");
-            var view = new VulkanTextureView(this, info, native);
-            _viewCount++;
-            return view;
+            TextureViewDimension.D2 => ImageViewType.Type2D,
+            TextureViewDimension.D2Array => ImageViewType.Type2DArray,
+            TextureViewDimension.Cube => ImageViewType.TypeCube,
+            TextureViewDimension.CubeArray => ImageViewType.TypeCubeArray,
+            _ => throw new NotSupportedException("Unsupported view dimension."),
+        };
+        if (dimension == ImageViewType.TypeCubeArray && !_owner.SupportsCubeArrays)
+        {
+            throw new NotSupportedException("Vulkan cube array views require imageCubeArray.");
         }
+
+        var descriptor = new ImageViewCreateInfo
+        {
+            SType = StructureType.ImageViewCreateInfo,
+            Image = _native,
+            ViewType = dimension,
+            Format = NativeFormat(Format),
+            Components = new ComponentMapping(ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity),
+            SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, info.BaseMipLevel, info.MipLevelCount, info.BaseArrayLayer, info.ArrayLayerCount),
+        };
+        ImageView native = default;
+        Check(_owner.Api.CreateImageView(_owner.NativeDevice, &descriptor, null, &native), "CreateImageView");
+        var view = new VulkanTextureView(this, info, native);
+        _viewCount++;
+        return view;
     }
 
     public void Dispose()
     {
-        lock (_owner.ResourceGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_viewCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all views before disposing their texture.");
-            }
-
-            _owner.Api.DestroyImage(_owner.NativeDevice, _native, null);
-            _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
-            _disposed = true;
-            _owner.ReleaseTexture();
+            return;
         }
+
+        if (_viewCount != 0)
+        {
+            throw new InvalidOperationException("Dispose all views before disposing their texture.");
+        }
+
+        _owner.Api.DestroyImage(_owner.NativeDevice, _native, null);
+        _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
+        _disposed = true;
+        _owner.ReleaseTexture();
     }
 
     internal void ReleaseView() => _viewCount--;

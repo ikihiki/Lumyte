@@ -70,65 +70,56 @@ internal sealed class WgpuTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (mipLevel >= MipLevels)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (mipLevel >= MipLevels)
-            {
-                throw new ArgumentOutOfRangeException(nameof(mipLevel));
-            }
-
-            return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
+            throw new ArgumentOutOfRangeException(nameof(mipLevel));
         }
+
+        return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
     }
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
-        lock (_owner.ResourceGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureViewInfo info = TextureValidation.Resolve(this, desc);
+        WGPUTextureViewDimension dimension = info.Dimension switch
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            TextureViewInfo info = TextureValidation.Resolve(this, desc);
-            WGPUTextureViewDimension dimension = info.Dimension switch
-            {
-                TextureViewDimension.D2 => WGPUTextureViewDimension._2D,
-                TextureViewDimension.D2Array => WGPUTextureViewDimension._2DArray,
-                TextureViewDimension.Cube => WGPUTextureViewDimension.Cube,
-                TextureViewDimension.CubeArray => WGPUTextureViewDimension.CubeArray,
-                _ => throw new NotSupportedException("Unsupported view dimension."),
-            };
-            A.TextureView native = _native.CreateView(new A.TextureViewDescriptor
-            {
-                Dimension = dimension,
-                Aspect = WGPUTextureAspect.All,
-                BaseMipLevel = info.BaseMipLevel,
-                MipLevelCount = info.MipLevelCount,
-                BaseArrayLayer = info.BaseArrayLayer,
-                ArrayLayerCount = info.ArrayLayerCount,
-            });
-            var view = new WgpuTextureView(this, info, native);
-            _viewCount++;
-            return view;
-        }
+            TextureViewDimension.D2 => WGPUTextureViewDimension._2D,
+            TextureViewDimension.D2Array => WGPUTextureViewDimension._2DArray,
+            TextureViewDimension.Cube => WGPUTextureViewDimension.Cube,
+            TextureViewDimension.CubeArray => WGPUTextureViewDimension.CubeArray,
+            _ => throw new NotSupportedException("Unsupported view dimension."),
+        };
+        A.TextureView native = _native.CreateView(new A.TextureViewDescriptor
+        {
+            Dimension = dimension,
+            Aspect = WGPUTextureAspect.All,
+            BaseMipLevel = info.BaseMipLevel,
+            MipLevelCount = info.MipLevelCount,
+            BaseArrayLayer = info.BaseArrayLayer,
+            ArrayLayerCount = info.ArrayLayerCount,
+        });
+        var view = new WgpuTextureView(this, info, native);
+        _viewCount++;
+        return view;
     }
 
     public void Dispose()
     {
-        lock (_owner.ResourceGate)
+        if (_disposed)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_viewCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all views before disposing their texture.");
-            }
-
-            _native.Dispose();
-            _disposed = true;
-            _owner.ReleaseTexture();
+            return;
         }
+
+        if (_viewCount != 0)
+        {
+            throw new InvalidOperationException("Dispose all views before disposing their texture.");
+        }
+
+        _native.Dispose();
+        _disposed = true;
+        _owner.ReleaseTexture();
     }
 
     internal void ReleaseView() => _viewCount--;
