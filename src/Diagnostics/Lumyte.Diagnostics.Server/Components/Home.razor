@@ -1,4 +1,6 @@
 @page "/"
+@page "/resources"
+@page "/games/{SessionId:guid}/{PageId}"
 
 @if (HttpContext?.User.Identity?.IsAuthenticated == true)
 {
@@ -27,6 +29,14 @@ else
 }
 
 @code {
+    /// <summary>Gets or sets the requested game.</summary>
+    [Parameter]
+    public Guid SessionId { get; set; }
+
+    /// <summary>Gets or sets the registered page ID.</summary>
+    [Parameter]
+    public string? PageId { get; set; }
+
     /// <summary>Gets or sets the initial HTTP request; never retained inside a Circuit.</summary>
     [CascadingParameter]
     public HttpContext? HttpContext { get; set; }

@@ -33,7 +33,7 @@ Metrics／Logs／Tracesは選択したゲームの最新最大200件を表示し
 
 切断時は購読と操作待機を取消し、接続復帰時に認証を確認して購読を再開する。操作は自動再送しない。認証期限切れとログアウトは同じログインに属するすべてのCircuitを失効させ、表示データを除く。ゲームで実行済み・配送済みの操作の巻き戻しは意味しない。ログアウトはInput操作の取消ではない。「ゲーム接続を終了」は画面上の確認後に接続を閉じ、その接続のリースをゲーム側で解除する。
 
-ゲームが公開していない実入力の現在値、個別解除、オブジェクトグラフ、描画結果はUIで推測しない。構造化ログは最小レベルとTrace IDで絞り込み、表示を一時停止できる。停止中もサーバーの収集は続き、再開すると最新のスナップショットを表示する。Trace IDから関連Logs／Tracesへ移動でき、対象ゲーム・画面・Trace IDはURL queryで共有・再読み込みできる。切断済みのリンク先を別ゲームへ自動変更しない。
+ゲームが公開していない実入力の現在値、個別解除、オブジェクトグラフ、描画結果はUIで推測しない。構造化ログは最小レベルとTrace IDで絞り込み、表示を一時停止できる。停止中もサーバーの収集は続き、再開すると最新のスナップショットを表示する。Trace IDから関連Logs／Tracesへ移動でき、対象ゲーム・画面はURL path、Trace IDはqueryで共有・再読み込みできる。切断済みのリンク先を別ゲームへ自動変更しない。
 
 Tracesは保持Spanの親子関係と処理時間を表示する。バーは最長Spanとの比率で、欠けた親は明示する。Metricsは名前・値の型・タグで分けた最新観測値と受信順のグラフを表示する。Counterの累積・レートやHistogram分布を推測しない。完全な時系列集約やwall-clockのTrace waterfall、OTLP受信、SQLストアは後続範囲。
 
@@ -111,3 +111,29 @@ curl --fail --silent -H "Authorization: Bearer $LUMYTE_DIAGNOSTICS_OPERATOR_TOKE
 [実通信の検証結果・再現スクリプト](../../../docs/diagnostics/communication-verification.md) と [ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。
 
 内部保持用のコピーは scalar / array / dictionary を直接コピーする。コピー目的の JSON 往復は行わない。List / Telemetry の外向きコピーは共有 lock の外へ移し、返却した権限・要求・結果を変更しても内部状態に影響しない。メッセージ重複の 1,024 件キャッシュは受信順の明示 FIFO で保持する。
+
+### ページの追加
+
+`/resources` は全ゲーム一覧、`/games/{sessionId}/overview` はゲーム概要です。
+Engine、Telemetry、Operations のカテゴリと検索を共通シェルが提供します。
+未接続のゲームのリンクを開いても別のゲームへ切り替えません。
+詳細を選択したとき、または操作ページを開いたときに Inspector を表示します。
+
+サーバーの起動時にページ定義を DI へ登録します。
+
+```csharp
+DiagnosticServerApplication.Create(args, ConfigureOptions, services =>
+{
+    services.AddSingleton(new DiagnosticPageDefinition(
+        "physics", "Physics", "Engine", 5, "physics", typeof(PhysicsPage)));
+});
+```
+
+`PhysicsPage` は任意の Razor コンポーネントです。通常の `@inject` と、
+`[CascadingParameter] public DiagnosticPageContext Context { get; set; }` で
+選択中のゲーム、保持イベント、認証済みの操作コールバックを利用できます。
+`Context.Execute.InvokeAsync(invocation)` は共通シェルに結果を表示します。
+RequiredSubsystem は公開カタログの ID と完全一致で判定し、未対応ページはナビゲーションに表示しません。
+直接 URL を開いた場合には未対応状態を表示します。
+Objects、UI、Animation、Rendering は現在カタログと操作を表示する拡張枠です。
+詳細グラフや画像の公開プロトコルは今後追加します。

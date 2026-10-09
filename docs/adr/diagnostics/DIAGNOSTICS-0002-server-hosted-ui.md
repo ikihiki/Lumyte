@@ -79,7 +79,7 @@ Aspire Dashboard v13.6.1の公式実装を参照する。AspireのUIはBlazor／
 | Resourcesの一覧と診断画面へのリンク | Game SessionをResourceとして表示し、対象を保ったままLogs／Traces／Metricsへ移動 |
 | ITelemetryRepositoryのqueryとsubscription | DIのIDiagnosticDashboardReaderでリソース・有界イベントの読み取りと変更待機を分離。操作配送は既存Registryが担当 |
 | StructuredLogsのseverity・field filter・pause | 最小ログレベル、全文／フィールド、Trace IDの絞り込みと表示停止。停止中もサーバーの収集は継続 |
-| Trace詳細からLogsへの相関移動 | Trace IDとResourceをURL queryに保持し、相互移動・再読み込みを可能にする。リンク先が切断済みなら診断対象を未選択とし、別ゲームへ操作対象を自動変更しない |
+| Trace詳細からLogsへの相関移動 | Trace IDをURL query、ResourceをURL pathに保持し、相互移動・再読み込みを可能にする。リンク先が切断済みなら診断対象を未選択とし、別ゲームへ操作対象を自動変更しない |
 | Span詳細と階層 | 保持中のSpanの親子関係、欠けた親、処理時間、最長Spanに対する比率を表示。循環する入力も有限に処理 |
 | InstrumentとtagごとのMetrics | 名前・値の型・タグで系列を分け、保持中の観測値を受信順で表示 |
 
@@ -110,3 +110,40 @@ Blazor／Fluent UIを画面基盤に採用する。OTLP受信、SQLストア、�
 一つの診断サーバーのURLから利用でき、既存ゲームの公開OperationをUI変更なしで操作できる。更新は選択対象と有界スナップショットに限定する。一方でCookie認証・CSRF・静的資産・Circuitごとの画面状態がサーバーへ加わる。
 
 初期実装はloopback開発用途を維持する。外部ID基盤、HTTPS公開ホスティング、永続監査、wall-clockでのMetrics集約、完全なTrace waterfall、オブジェクトグラフ、描画結果の取得は後続範囲。実装・検証結果は[サーバーREADME](../../../src/Diagnostics/Lumyte.Diagnostics.Server/README.md)に記録する。
+
+### ページの拡張とナビゲーション
+
+ページは DI へ登録した定義から構成する。共通シェルがゲーム選択、認証、接続、カテゴリ別ナビゲーションを所有する。Resources は全体一覧、Overview は選択したゲームの概要とする。Engine に Objects、UI、Animation、Input、Rendering、Telemetry に Metrics、Logs、Traces を配置し、Operations は専用ページの有無によらず全操作を公開する。
+
+ゲーム別 URL は `/games/{sessionId}/{pageId}`、全体一覧は `/resources` とする。Trace ID はクエリに保持する。切断済みゲームのリンクから別のゲームへ自動切替しない。Inspector は操作ページ、または詳細選択時に表示する。
+
+公開カタログの subsystem ID を capability 判定に使用する。未対応と対応済み・データなしを区別し、表示の一時停止は収集停止を意味しない。UI、Animation のグラフ、画像、タイムラインは専用プロトコルの追加後に実装する。現時点ではカタログと実行可能な操作を表示する。
+
+```diff
++namespace Lumyte.Diagnostics.Server
++{
++    // Component は任意の Blazor コンポーネント。未指定なら共通カタログ画面。
++    public sealed record DiagnosticPageDefinition(
++        string Id, string Title, string Category, int Order,
++        string? RequiredSubsystem = null, Type? Component = null);
++    // 拡張コンポーネントへの CascadingParameter。操作結果は共通 Inspector で表示。
++    public sealed record DiagnosticPageContext(SessionSnapshot? Resource,
++        IReadOnlyList<DiagnosticEvent> Events, EventCallback<OperationInvocation> Execute);
++    // 組み込み定義と追加定義をまとめる。ID の重複や不正なコンポーネントは起動時に拒否。
++    public sealed class DiagnosticPageRegistry
++    {
++        public DiagnosticPageRegistry(IEnumerable<DiagnosticPageDefinition> pages);
++        public IReadOnlyList<DiagnosticPageDefinition> Pages { get; }
++    }
+     public static class DiagnosticServerApplication
+     {
+-        public static WebApplication Create(string[] args, Action<DiagnosticServerOptions> configure);
++        // configureServices で singleton のページ定義とページ用 DI サービスを登録する。
++        public static WebApplication Create(string[] args,
++            Action<DiagnosticServerOptions> configure,
++            Action<IServiceCollection>? configureServices = null);
++    }
++}
+```
+
+追加ページのコンポーネントは通常の Blazor DI を使用する。ゲーム側の公開 API は画面や通信層に依存しない。組み込みページは共通シェルの認証済み Circuit を利用し、追加ページも認証済みシェル内で描画する。

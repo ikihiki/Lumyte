@@ -10,16 +10,6 @@ namespace Lumyte.Diagnostics.Server.Components;
 /// <summary>The resource-oriented, authenticated diagnostic workspace.</summary>
 public partial class Dashboard : IAsyncDisposable
 {
-    private static readonly Dictionary<string, string> _titles = new(StringComparer.Ordinal)
-    {
-        ["overview"] = "Resources",
-        ["operations"] = "Operations",
-        ["input"] = "Input",
-        ["metrics"] = "Metrics",
-        ["logs"] = "Logs",
-        ["traces"] = "Traces",
-    };
-
     private static readonly DiagnosticJsonContext _prettyJson = new(new JsonSerializerOptions(DiagnosticJson.Context.Options) { WriteIndented = true });
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _subscription;
@@ -36,7 +26,8 @@ public partial class Dashboard : IAsyncDisposable
     private bool _confirmDisconnect;
     private bool _ready;
     private bool _disposed;
-    private string _view = "overview";
+    private string _view = "resources";
+    private string _pageFilter = string.Empty;
     private string _resourceFilter = string.Empty;
     private string _operationFilter = string.Empty;
     private string _eventFilter = string.Empty;
@@ -55,6 +46,17 @@ public partial class Dashboard : IAsyncDisposable
 
     [Inject]
     private NavigationManager Navigation { get; set; } = default!;
+
+    [Inject]
+    private DiagnosticPageRegistry Pages { get; set; } = default!;
+
+    private Dictionary<string, string> Titles { get; set; } = [];
+
+    private DiagnosticPageDefinition CurrentPage => Pages.Pages.First(page => page.Id == _view);
+
+    private bool Supported => CurrentPage.RequiredSubsystem == null || (Selected?.Catalog.Any(item => item.Subsystem.Id == CurrentPage.RequiredSubsystem) ?? false);
+
+    private bool ShowInspector => _view is "operations" or "input" || _inspected != null || ((CurrentPage.Component != null || CurrentPage.RequiredSubsystem != null) && _operationResult.Length > 0);
 
     private SessionSnapshot? Selected => _resources.FirstOrDefault(resource => resource.SessionId == _selectedId);
 
@@ -82,6 +84,9 @@ public partial class Dashboard : IAsyncDisposable
     }
 
     /// <inheritdoc/>
+    protected override void OnInitialized() => Titles = Pages.Pages.ToDictionary(page => page.Id, page => page.Title);
+
+    /// <inheritdoc/>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
@@ -106,15 +111,30 @@ public partial class Dashboard : IAsyncDisposable
         }
     }
 
+    private DiagnosticPageContext PageContext()
+    {
+        Guid? target = _selectedId;
+        long version = _selectionVersion;
+        return new(Selected, _events, EventCallback.Factory.Create<OperationInvocation>(this, invocation =>
+            target == _selectedId && version == _selectionVersion && !_expired ? ExecuteAsync(invocation) : Task.CompletedTask));
+    }
+
     private void ReadResources() => _resources = Session.Resources();
 
     private void ApplyRoute(string? uri = null)
     {
         Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(uri ?? Navigation.Uri).Query);
-        string view = query.GetValueOrDefault("view").ToString();
-        _view = _titles.ContainsKey(view) ? view : "overview";
-        Guid? requested = Guid.TryParse(query.GetValueOrDefault("session"), out Guid id) ? id : null;
-        Guid? selected = query.ContainsKey("session") ? requested.HasValue && _resources.Any(resource => resource.SessionId == requested) ? requested : null : _selectedId.HasValue && Selected != null ? _selectedId : _resources.FirstOrDefault()?.SessionId;
+        string[] segments = Navigation.ToAbsoluteUri(uri ?? Navigation.Uri).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string view = segments.Length == 3 && segments[0] == "games" ? segments[2] : query.GetValueOrDefault("view").ToString();
+        string nextView = Titles.ContainsKey(view) ? view : "resources";
+        if (nextView != _view)
+        {
+            _inspected = null;
+        }
+
+        _view = nextView;
+        Guid? requested = Guid.TryParse(segments.Length == 3 && segments[0] == "games" ? segments[1] : query.GetValueOrDefault("session").ToString(), out Guid id) ? id : null;
+        Guid? selected = (query.ContainsKey("session") || segments.Length == 3) ? requested.HasValue && _resources.Any(resource => resource.SessionId == requested) ? requested : null : _selectedId.HasValue && Selected != null ? _selectedId : _resources.FirstOrDefault()?.SessionId;
         if (selected != _selectedId)
         {
             _selectedId = selected;
@@ -261,8 +281,9 @@ public partial class Dashboard : IAsyncDisposable
 
     private void Navigate(string view, Guid? session = null, string trace = "")
     {
-        var values = new Dictionary<string, string?> { ["view"] = view, ["session"] = (session ?? _selectedId)?.ToString(), ["trace"] = trace.Length > 0 ? trace : null };
-        string uri = QueryHelpers.AddQueryString("/", values);
+        Guid? target = session ?? _selectedId;
+        string path = view == "resources" || !target.HasValue ? "/resources" : $"/games/{target}/{view}";
+        string uri = QueryHelpers.AddQueryString(path, new Dictionary<string, string?> { ["trace"] = trace.Length > 0 ? trace : null });
         Navigation.NavigateTo(uri);
         ApplyRoute(uri);
     }
@@ -271,7 +292,7 @@ public partial class Dashboard : IAsyncDisposable
     {
         if (Guid.TryParse(args.Value?.ToString(), out Guid id))
         {
-            Navigate(_view, id);
+            Navigate(_view == "resources" ? "overview" : _view, id);
         }
         else
         {

@@ -8,7 +8,7 @@
 {
     <section id="expired" class="login-card" role="alert"><h1>ログインが失効しました</h1><p>操作用トークンでログインし直してください。</p><a href="/" data-enhance-nav="false">ログイン画面へ</a></section>
 }
-<div id="workspace" class="workspace" data-ui-framework="blazor-server" data-ready="@(_ready ? "true" : "false")" hidden="@_expired">
+<div id="workspace" class="@(ShowInspector ? "workspace" : "workspace workspace-wide")" data-ui-framework="blazor-server" data-ready="@(_ready ? "true" : "false")" hidden="@_expired">
     <aside class="sidebar">
         <div class="section-heading"><h2>ゲーム</h2><FluentButton Id="refresh" OnClick="Refresh">更新</FluentButton></div>
         <label for="game-select">診断対象</label>
@@ -21,9 +21,14 @@
         </select>
         <dl class="session-info"><dt>Instance</dt><dd id="instance-id">@(Selected?.InstanceId.ToString() ?? "—")</dd><dt>Session</dt><dd id="session-id">@(Selected?.SessionId.ToString() ?? "—")</dd></dl>
         <nav class="tabs" aria-label="診断画面">
-            @foreach (var tab in _titles)
+            <label for="page-filter">ページ検索</label><input id="page-filter" type="search" @bind="_pageFilter" @bind:event="oninput" />
+            @foreach (var group in Pages.Pages.Where(page => page.Title.Contains(_pageFilter, StringComparison.OrdinalIgnoreCase)).GroupBy(page => page.Category))
             {
-                <FluentButton data-tab="@tab.Key" aria-current="@(_view == tab.Key ? "page" : null)" OnClick="() => Navigate(tab.Key)">@tab.Value</FluentButton>
+                <h2>@group.Key</h2>
+                @foreach (DiagnosticPageDefinition page in group.Where(page => page.RequiredSubsystem == null || Selected?.Catalog.Any(item => item.Subsystem.Id == page.RequiredSubsystem) == true))
+                {
+                    <FluentButton data-tab="@(page.Id)" aria-current="@(_view == page.Id ? "page" : null)" Disabled="@(page.Id != "resources" && Selected == null)" OnClick="() => Navigate(page.Id)">@(page.Title)</FluentButton>
+                }
             }
         </nav>
         <h2>サブシステム</h2>
@@ -36,10 +41,10 @@
         <p class="hint">接続の終了により、この接続に属するInputリースも解除されます。</p>
     </aside>
     <section class="content">
-        <div class="page-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h1 id="page-title">@_titles[_view]</h1></div><span class="hint">@_updatedAt</span></div>
+        <div class="page-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h1 id="page-title">@Titles[_view]</h1></div><span class="hint">@_updatedAt</span></div>
         <p id="workspace-error" class="error" role="alert">@_error</p>
         <div class="stats"><article><span>受信イベント</span><strong id="received">@(Selected?.TelemetryReceived ?? 0)</strong></article><article><span>保持からの欠落</span><strong id="dropped">@(Selected?.TelemetryDropped ?? 0)</strong></article><article><span>未完了操作</span><strong id="pending">@(Selected?.PendingCommands ?? 0)</strong></article></div>
-        @if (_view == "overview")
+        @if (_view == "resources")
         {
             <FluentCard Class="card"><h2>Resources — 接続中のゲーム</h2><label for="resource-filter">検索</label><input id="resource-filter" type="search" @bind="_resourceFilter" @bind:event="oninput" />
                 <div id="resource-table" class="table-container"><table><thead><tr><th>Resource</th><th>接続</th><th>受信 / 欠落</th><th>診断</th></tr></thead><tbody>
@@ -48,19 +53,49 @@
                     <tr><td title="@resource.InstanceId">Game @resource.InstanceId.ToString()[..8]</td><td class="resource-state">Connected</td><td>@resource.TelemetryReceived / @resource.TelemetryDropped</td><td><div class="resource-actions">
                     @foreach (string view in new[] { "logs", "traces", "metrics", "operations" })
                     {
-                        <FluentButton data-resource="@resource.SessionId" data-view="@view" OnClick="() => Navigate(view, resource.SessionId)">@_titles[view]</FluentButton>
+                        <FluentButton data-resource="@resource.SessionId" data-view="@view" OnClick="() => Navigate(view, resource.SessionId)">@Titles[view]</FluentButton>
                     }
                     </div></td></tr>
                 }
                 </tbody></table></div>
             </FluentCard>
+        }
+        @if (_view == "overview")
+        {
             <FluentCard Class="card"><h2>公開された操作</h2><p>@(Selected?.Catalog.Length ?? 0) サブシステム / @Operations.Length 操作を公開しています。</p><p class="hint">操作はゲームの実行ポイントで処理されます。結果が不明になった操作は自動で再実行されません。</p></FluentCard>
             <FluentCard Class="card"><h2>最近のイベント</h2><div id="recent-events"><EventTable Items="_events.TakeLast(6).ToArray()" Inspect="Inspect" Trace="Trace" /></div></FluentCard>
+        }
+        @if (CurrentPage.Component != null && Selected != null && Supported)
+        {
+            <CascadingValue Value="@PageContext()"><DynamicComponent @key="(_selectedId, _view)" Type="CurrentPage.Component" /></CascadingValue>
+        }
+        @if (CurrentPage.RequiredSubsystem != null && CurrentPage.Component == null)
+        {
+            <FluentCard Class="card"><h2>@CurrentPage.Title</h2>
+                @if (Selected == null) { <p>リンク先のゲームは接続されていません。</p> }
+                else if (!Supported) { <p>このゲームは @CurrentPage.RequiredSubsystem を公開していません（未対応）。</p> }
+                else
+                {
+                    <p>公開カタログの操作を表示します。詳細なグラフ・画像データは現在のプロトコルでは公開されていません。</p>
+                    @foreach (var item in Operations.Where(item => item.Subsystem.Id == CurrentPage.RequiredSubsystem))
+                    {
+                        <OperationCard @key="(_selectedId, item.Subsystem.Id, item.Operation.Id)" Subsystem="item.Subsystem" Operation="item.Operation" Execute="ExecuteAsync" />
+                    }
+                }
+            </FluentCard>
+        }
+        @if (CurrentPage.Component != null && !Supported)
+        {
+            <p role="status">このゲームは @CurrentPage.RequiredSubsystem を公開していません（未対応）。</p>
         }
         @if (_view is "operations" or "input")
         {
             <label for="operation-filter">操作名・サブシステムで検索</label><input id="operation-filter" type="search" @bind="_operationFilter" @bind:event="oninput" />
             <p class="hint">公開カタログから生成した操作を最大20件表示します。検索で絞り込めます。</p>
+            @if (!FilteredOperations.Any())
+            {
+                <p role="status">@(Selected == null ? "診断対象を選択してください。" : _view == "input" && !Operations.Any(item => item.Operation.RequiredPermission == DiagnosticPermission.OverrideInput) ? "このゲームはInputオーバーライド操作を公開していません（未対応）。" : "公開操作がないか、検索条件に一致しません。")</p>
+            }
             <div id="@(_view == "input" ? "input-forms" : "operation-forms")" class="operation-grid">
                 @foreach (var item in FilteredOperations.Take(20))
                 {
@@ -105,10 +140,16 @@
                     }
                     </div>
                 }
+                @if (FilteredEvents.Length == 0)
+                {
+                    <p role="status">@(Selected == null ? "診断対象を選択してください。" : _events.Length == 0 ? "対応済み：テレメトリーデータを待っています。" : "絞り込み条件に一致するデータはありません。")</p>
+                }
                 <div id="event-table" class="table-container"><EventTable Items="FilteredEvents" Kind="@EventKind" Inspect="Inspect" Trace="Trace" /></div>
             </section>
         }
     </section>
+    @if (ShowInspector)
+    {
     <aside class="inspector"><p class="eyebrow">INSPECTOR</p><h2>操作結果</h2><p id="operation-status" role="status">@_operationStatus</p><pre id="operation-result">@_operationResult</pre><h2>イベント詳細</h2>
         <div id="event-relations" class="telemetry-actions">
         @if (_inspected?.TraceId is string traceId)
@@ -117,4 +158,5 @@
         }
         </div><pre id="event-detail">@(_inspected == null ? "イベントを選択してください。" : JsonSerializer.Serialize(_inspected, _prettyJson.DiagnosticEvent))</pre>
     </aside>
+    }
 </div>

@@ -63,6 +63,13 @@ public sealed class BrowserUiTests
         string stolenCookie = string.Empty;
         string csrf = await LoginAsync(browser, host.OperatorToken, cookie => stolenCookie = cookie);
         browser.DefaultRequestHeaders.Remove("X-Diagnostics-CSRF");
+        foreach (string path in new[] { "/resources", $"/games/{Guid.NewGuid()}/animation" })
+        {
+            using HttpResponseMessage page = await browser.GetAsync(path);
+            Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+            Assert.DoesNotContain("id=\"login-form\"", await page.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
         using (HttpResponseMessage bearerDenied = await browser.GetAsync("/diagnostics/v1/sessions"))
         {
             Assert.Equal(HttpStatusCode.Unauthorized, bearerDenied.StatusCode);

@@ -86,3 +86,6 @@ fluent-button { max-width: 100%; }
 fluent-button.danger::part(control) { color: #9c3329; }
 
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 16px; background: #fff4d6; z-index: 1000; }
+
+.workspace-wide { grid-template-columns: 240px minmax(0, 1fr); }
+@media (max-width: 800px) { .workspace-wide { grid-template-columns: 1fr; } }

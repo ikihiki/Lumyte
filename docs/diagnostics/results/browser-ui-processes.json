@@ -24,6 +24,9 @@
   {
     "scenario": "aspire-dashboard-patterns",
     "resourceNavigation": true,
+    "gamePageRoutes": true,
+    "unsupportedCapability": true,
+    "disconnectedTargetIsolation": true,
     "severityFilter": true,
     "pauseResume": true,
     "traceDeepLink": true,

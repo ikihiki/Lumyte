@@ -18,8 +18,9 @@ public static class DiagnosticServerApplication
     /// <summary>Creates an application with explicit enrollment and operator credentials.</summary>
     /// <param name="args">The host arguments.</param>
     /// <param name="configure">The credentials, capabilities and listener ports.</param>
+    /// <param name="configureServices">Optional page and service registrations.</param>
     /// <returns>The application; callers start and dispose it.</returns>
-    public static WebApplication Create(string[] args, Action<DiagnosticServerOptions> configure)
+    public static WebApplication Create(string[] args, Action<DiagnosticServerOptions> configure, Action<IServiceCollection>? configureServices = null)
     {
         var options = new DiagnosticServerOptions();
         configure(options);
@@ -82,7 +83,7 @@ public static class DiagnosticServerApplication
         });
         builder.Services.AddAuthentication("Diagnostics")
             .AddPolicyScheme("Diagnostics", "Diagnostics", policy => policy.ForwardDefaultSelector = context =>
-                context.Request.Path == "/" || context.Request.Path.StartsWithSegments("/api/ui") || context.Request.Path.StartsWithSegments("/_blazor") ? DiagnosticBrowserUi.Scheme : "DiagnosticBearer")
+                context.Request.Path == "/" || context.Request.Path.StartsWithSegments("/resources") || context.Request.Path.StartsWithSegments("/games") || context.Request.Path.StartsWithSegments("/api/ui") || context.Request.Path.StartsWithSegments("/_blazor") ? DiagnosticBrowserUi.Scheme : "DiagnosticBearer")
             .AddScheme<AuthenticationSchemeOptions, DiagnosticAuthenticationHandler>("DiagnosticBearer", _ => { })
             .AddCookie(DiagnosticBrowserUi.Scheme, cookie =>
             {
@@ -135,7 +136,28 @@ public static class DiagnosticServerApplication
             magic.StreamingHubResponseQueueMaxLength = 256;
             magic.EnableStreamingHubHeartbeat = true;
         });
+        foreach (DiagnosticPageDefinition page in new DiagnosticPageDefinition[]
+        {
+            new("resources", "Resources", "Resources", 0),
+            new("overview", "Overview", "Game", 0),
+            new("objects", "Objects", "Engine", 0, "objects"),
+            new("ui", "UI", "Engine", 1, "ui"),
+            new("animation", "Animation", "Engine", 2, "animation"),
+            new("input", "Input", "Engine", 3),
+            new("rendering", "Rendering", "Engine", 4, "rendering"),
+            new("metrics", "Metrics", "Telemetry", 0),
+            new("logs", "Logs", "Telemetry", 1),
+            new("traces", "Traces", "Telemetry", 2),
+            new("operations", "Operations", "Operations", 0),
+        })
+        {
+            builder.Services.AddSingleton(page);
+        }
+
+        builder.Services.AddSingleton<DiagnosticPageRegistry>();
+        configureServices?.Invoke(builder.Services);
         WebApplication app = builder.Build();
+        _ = app.Services.GetRequiredService<DiagnosticPageRegistry>();
         app.UseCors("Diagnostics");
         app.UseAuthentication();
         app.UseAuthorization();
