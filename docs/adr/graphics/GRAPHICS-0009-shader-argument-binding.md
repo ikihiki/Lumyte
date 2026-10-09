@@ -128,7 +128,7 @@ Matrix4x4はSlangのfloat4x4へ対応する。System.NumericsのM11〜M44を論�
 
 rootParameterとstruct memberの論理pathはtarget固有のbinding番号と分離する。同じlogical pathが複数stageで使われる場合、型と用途の互換性をprogram作成時に検証する。target別の論理layout、binding生成規則、root値の配置、GPU参照helper ABI、schema versionはcompile時に確定してopaque artifact内へ保存する。sourceから物理binding数を調整するtargetでは、変更対象の宣言と参照操作を識別する情報もartifactへ含める。backendはdeviceの有効limitsと使用するresource型から物理配置を確定し、実際のsource・binding plan・pipelineを一体として生成する。runtimeで利用者がlayout補助情報を渡す方式にしない。
 
-offlineは全targetを含む一つのartifactをDLLへ埋め込み、onlineは指定targetまたは全targetを含む同じformatを生成する。使用backendのtarget code・対象型schema・helper ABIが揃っていれば、他targetを含まないonline artifactもshader data buffer生成に使用できる。使用backendのtargetが欠落する場合と、必要なABI/schemaがない場合はNotSupportedExceptionとし、必要な項目を診断する。生成WGSLやreflection JSONをソース管理へ追加しない。
+offlineは全targetを含む一つのartifactをDLLへ埋め込み、onlineは指定targetまたは全targetを含む同じformatを生成する。buffer生成の受理条件は使用backendのtarget code・対象型schema・helper ABIが揃うこととし、他targetのcodeやschemaは要求しない。この条件を満たす単一targetのonline artifactから、shader data bufferを生成できる。全targetの生成はoffline compilerの成果物要件であり、CreateBufferの受理条件には適用しない。使用backendのtargetが欠落する場合と、必要なABI/schemaがない場合はNotSupportedExceptionとし、必要な項目を診断する。生成WGSLやreflection JSONをソース管理へ追加しない。
 
 buffer参照は登録rangeと要素位置を保持する。GetElementで得た参照のbyte位置をbackendが解決し、生addressや整数への変換は提供しない。有限bindingでは、元rangeのbindingと要素位置を別々に表現し、単一要素offsetをnative bindingのalignmentへ暗黙に丸めない。元range自体がalignment・用途・サイズ制約を満たさない場合は拒否する。参照に対応するshader helperのABIがない通常のresource parameterに、要素参照を無理に当てはめない。
 
@@ -181,6 +181,7 @@ IGpuRefを含むstructはunmanagedではない。IGraphicsBufferのunmanaged制�
              where T : unmanaged;
 +
 +        // 使用backendのartifact targetと型schema・helper ABIを検証する。
++        // 他targetのcode／schemaがない単一target artifactも受け入れる。
 +        // countは正の論理要素数。CPU設定専用なのでUsage／Memory指定は不要。
 +        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count)
 +            where T : struct, IShaderData;
