@@ -1,9 +1,12 @@
+using System.Runtime.InteropServices;
+
 namespace Lumyte.Animation;
 
 /// <summary>Stores typed animation results in reusable slots; consumers own value application.</summary>
 public sealed class AnimationOutput
 {
-    private readonly Dictionary<object, object> _slots = [];
+    private readonly Dictionary<object, ISlot> _slots = [];
+    private readonly List<ISlot> _activeSlots = [];
     private long _epoch;
 
     /// <summary>Clears a typed storage slot without boxing its value.</summary>
@@ -13,18 +16,19 @@ public sealed class AnimationOutput
         void Clear();
 
         /// <summary>Copies an active typed contribution to another output.</summary>
-        /// <param name="channel">The channel identity.</param>
         /// <param name="output">The destination output.</param>
-        void CopyTo(object channel, AnimationOutput output);
+        void CopyTo(AnimationOutput output);
     }
 
     /// <summary>Clears contributions while retaining reusable typed storage.</summary>
     public void Clear()
     {
-        foreach (ISlot slot in _slots.Values)
+        foreach (ISlot slot in CollectionsMarshal.AsSpan(_activeSlots))
         {
             slot.Clear();
         }
+
+        _activeSlots.Clear();
     }
 
     /// <summary>Retrieves a computed channel value; returns false when no contribution exists.</summary>
@@ -35,7 +39,7 @@ public sealed class AnimationOutput
     public bool TryGet<T>(AnimationChannel<T> channel, out T value)
     {
         ArgumentNullException.ThrowIfNull(channel);
-        if (_slots.TryGetValue(channel, out object? entry) && entry is Slot<T> { HasValue: true } slot)
+        if (_slots.TryGetValue(channel, out ISlot? entry) && entry is Slot<T> { HasValue: true } slot)
         {
             value = slot.Value;
             return true;
@@ -48,9 +52,9 @@ public sealed class AnimationOutput
     internal void CopyTo(AnimationOutput output)
     {
         output.BeginEvaluation();
-        foreach (KeyValuePair<object, object> entry in _slots)
+        foreach (ISlot slot in CollectionsMarshal.AsSpan(_activeSlots))
         {
-            ((ISlot)entry.Value).CopyTo(entry.Key, output);
+            slot.CopyTo(output);
         }
     }
 
@@ -58,16 +62,23 @@ public sealed class AnimationOutput
 
     internal void Set<T>(AnimationChannel<T> channel, T value, UInt128 priority)
     {
-        if (!_slots.TryGetValue(channel, out object? entry))
+        if (!_slots.TryGetValue(channel, out ISlot? entry))
         {
-            entry = new Slot<T>();
+            entry = new Slot<T>(channel);
             _slots.Add(channel, entry);
         }
 
         var slot = (Slot<T>)entry;
-        if (slot.HasValue && slot.Epoch == _epoch && slot.Priority > priority)
+        if (slot.HasValue)
         {
-            return;
+            if (slot.Epoch == _epoch && slot.Priority > priority)
+            {
+                return;
+            }
+        }
+        else
+        {
+            _activeSlots.Add(slot);
         }
 
         slot.Epoch = _epoch;
@@ -76,7 +87,7 @@ public sealed class AnimationOutput
         slot.HasValue = true;
     }
 
-    private sealed class Slot<T> : ISlot
+    private sealed class Slot<T>(AnimationChannel<T> channel) : ISlot
     {
         /// <summary>Gets or sets the value.</summary>
         public T Value { get; set; } = default!;
@@ -89,15 +100,8 @@ public sealed class AnimationOutput
         internal UInt128 Priority { get; set; }
 
         /// <summary>Copies an active typed contribution without boxing its value.</summary>
-        /// <param name="channel">The channel identity.</param>
         /// <param name="output">The destination output.</param>
-        public void CopyTo(object channel, AnimationOutput output)
-        {
-            if (HasValue)
-            {
-                output.Set((AnimationChannel<T>)channel, Value, 0);
-            }
-        }
+        public void CopyTo(AnimationOutput output) => output.Set(channel, Value, 0);
 
         /// <summary>Clears contributions while retaining reusable typed storage.</summary>
         public void Clear()

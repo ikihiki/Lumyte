@@ -136,6 +136,8 @@ public sealed class PlaybackTraversalTests
         child.Add(Duration.Zero, Linear(0, 1, 1), channel);
         child.Add(Duration.Zero, Linear(1, 2, 1), channel);
         child.Add(Duration.Zero, Linear(2, 3, 1), channel);
+        child.Add(Duration.Zero, Linear(3, 4, 1), channel);
+        child.Add(Duration.Zero, Linear(4, 5, 1), channel);
         AnimationTimeline repeated = child.Build().Repeat(int.MaxValue).Repeat(int.MaxValue);
         var builder = new AnimationTimelineBuilder();
         builder.AddTimeline(Duration.Zero, repeated);
@@ -143,10 +145,21 @@ public sealed class PlaybackTraversalTests
         var clock = new ManualClock();
         var playback = new AnimationPlayback(clock, builder.Build());
         playback.Play();
-        clock.Advance(repeated.Duration);
+        long midpoint = repeated.Duration.Ticks / 2;
+        clock.Advance(Ticks(midpoint));
         var output = new AnimationOutput();
-        Assert.True(playback.Update(output, []));
+
+        // Five parallel tracks place the later sibling above ulong.MaxValue.
+        // At the midpoint, truncating that rank would put it below the active repeat.
+        Assert.False(playback.Update(output, []));
         Assert.True(output.TryGet(channel, out float value));
+        Assert.Equal(42, value);
+
+        // The repeat's own active ranks also exceed ulong.MaxValue at its endpoint.
+        output.Clear();
+        clock.Advance(Ticks(repeated.Duration.Ticks - midpoint));
+        Assert.True(playback.Update(output, []));
+        Assert.True(output.TryGet(channel, out value));
         Assert.Equal(42, value);
     }
 
