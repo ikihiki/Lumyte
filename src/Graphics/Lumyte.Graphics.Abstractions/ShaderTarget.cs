@@ -4,8 +4,8 @@ namespace Lumyte.Graphics.Abstractions;
 public enum ShaderTarget
 {
     /// <summary>Uses the Wgsl representation.</summary>
-    Wgsl,
+    Wgsl = 0,
 
     /// <summary>Uses the SpirV representation.</summary>
-    SpirV,
+    SpirV = 1,
 }

@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.Browser;
 
 internal sealed class BrowserShader(BrowserDevice owner, ShaderArtifact artifact) : IGraphicsShader
 {
-    private readonly JSObject _handle = BrowserInterop.CreateShader(owner.Handle, Encoding.UTF8.GetString(artifact.GetCode()));
+    private readonly JSObject _handle = BrowserInterop.CreateShader(owner.Handle, Encoding.UTF8.GetString(artifact.GetTarget(owner.Caps.ShaderTarget).Code));
     private bool _disposed;
 
     public ShaderArtifact Artifact { get; } = artifact;

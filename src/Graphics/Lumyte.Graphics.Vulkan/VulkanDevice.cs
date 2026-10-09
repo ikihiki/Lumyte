@@ -165,11 +165,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
-        if (artifact.Target != Caps.ShaderTarget)
-        {
-            throw new ArgumentException("The shader target does not match the device.", nameof(artifact));
-        }
-
         var shader = new VulkanShader(this, artifact);
         _shaderCount++;
         return shader;

@@ -4,39 +4,52 @@ using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>Checks DLL artifact loading without requiring a GPU.</summary>
+/// <summary>Checks complete offline binaries without requiring a GPU.</summary>
 public sealed class ShaderArtifactTests
 {
-    /// <summary>Checks both target resources and code ownership.</summary>
-    /// <param name="target">The artifact target embedded by the build.</param>
-    [Theory]
-    [InlineData(ShaderTarget.Wgsl)]
-    [InlineData(ShaderTarget.SpirV)]
-    public void EmbeddedArtifactsOwnTheirCode(ShaderTarget target)
+    /// <summary>Checks every target and compilation metadata are embedded in the same binary.</summary>
+    [Fact]
+    public void OfflineBinaryContainsEveryTargetAndMetadata()
     {
-        var embedded = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment", target, ShaderStage.Compute);
-        byte[] original = embedded.GetCode();
-        byte[] input = (byte[])original.Clone();
-        var artifact = new ShaderArtifact(target, ShaderStage.Compute, "main", input, embedded.ReflectionJson);
-        input[0] ^= 1;
-        Assert.Equal(original, artifact.GetCode());
-        byte[] returned = artifact.GetCode();
-        returned[0] ^= 1;
-        Assert.Equal(original, artifact.GetCode());
-        Assert.Equal(target, artifact.Target);
-        Assert.Equal("main", artifact.EntryPoint);
-        Assert.Contains("entryPoints", artifact.ReflectionJson);
+        var artifact = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment.lshader");
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
+        {
+            ShaderTargetData data = artifact.GetTarget(target);
+            Assert.Equal(target, data.Target);
+            Assert.Equal(ShaderStage.Compute, data.Stage);
+            Assert.Equal("main", data.EntryPoint);
+            Assert.NotEmpty(data.CompilerVersion);
+            Assert.Equal("row-major", data.MatrixLayout);
+            Assert.NotEmpty(data.Code);
+            Assert.Contains("entryPoints", data.ReflectionJson);
+        }
     }
 
-    /// <summary>Checks missing resources and malformed code or reflection before module allocation.</summary>
+    /// <summary>Checks binary copies do not expose mutable artifact storage.</summary>
     [Fact]
-    public void InvalidArtifactsFailBeforeModuleCreation()
+    public void BinaryOwnsItsStorage()
     {
-        System.Reflection.Assembly assembly = typeof(ShaderExercise).Assembly;
-        Assert.Throws<InvalidOperationException>(() => ShaderArtifact.LoadEmbedded(assembly, "missing", ShaderTarget.Wgsl, ShaderStage.Compute));
-        Assert.Throws<ArgumentException>(() => new ShaderArtifact(ShaderTarget.SpirV, ShaderStage.Compute, "main", new byte[20], "{}"));
-        Assert.Throws<ArgumentException>(() => new ShaderArtifact(ShaderTarget.Wgsl, ShaderStage.Compute, "main", ReadOnlySpan<byte>.Empty, "{}"));
-        var valid = ShaderArtifact.LoadEmbedded(assembly, "Lumyte.Shaders.increment", ShaderTarget.Wgsl, ShaderStage.Compute);
-        Assert.Throws<ArgumentException>(() => new ShaderArtifact(valid.Target, valid.Stage, valid.EntryPoint, valid.GetCode(), "[]"));
+        var original = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment.lshader");
+        byte[] bytes = original.GetBinary();
+        var artifact = new ShaderArtifact(bytes);
+        bytes[0] ^= 1;
+        Assert.Equal(original.GetBinary(), artifact.GetBinary());
+        byte[] returned = artifact.GetBinary();
+        returned[0] ^= 1;
+        Assert.Equal(original.GetBinary(), artifact.GetBinary());
+    }
+
+    /// <summary>Checks missing resources, truncation and format validation.</summary>
+    [Fact]
+    public void InvalidBinaryIsRejected()
+    {
+        Assert.Throws<InvalidOperationException>(() => ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "missing"));
+        Assert.Throws<ArgumentException>(() => new ShaderArtifact(ReadOnlySpan<byte>.Empty));
+        var valid = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment.lshader");
+        byte[] bytes = valid.GetBinary();
+        bytes[0] ^= 1;
+        Assert.Throws<ArgumentException>(() => new ShaderArtifact(bytes));
+        bytes = valid.GetBinary();
+        Assert.Throws<ArgumentException>(() => new ShaderArtifact(bytes.AsSpan(0, bytes.Length - 1)));
     }
 }

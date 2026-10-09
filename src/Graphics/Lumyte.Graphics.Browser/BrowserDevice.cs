@@ -126,11 +126,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
-        if (artifact.Target != Caps.ShaderTarget)
-        {
-            throw new ArgumentException("The shader target does not match the device.", nameof(artifact));
-        }
-
         var shader = new BrowserShader(this, artifact);
         _shaderCount++;
         return shader;

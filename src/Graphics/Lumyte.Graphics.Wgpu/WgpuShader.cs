@@ -7,7 +7,7 @@ internal sealed class WgpuShader(WgpuDevice owner, ShaderArtifact artifact) : IG
 {
     private readonly A.ShaderModule _native = owner.NativeDevice.CreateShaderModule(new A.ShaderModuleDescriptor
     {
-        Source = A.ShaderSource.FromWgsl(artifact.GetCode()),
+        Source = A.ShaderSource.FromWgsl(artifact.GetTarget(owner.Caps.ShaderTarget).Code),
     });
 
     private bool _disposed;

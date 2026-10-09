@@ -92,4 +92,4 @@ CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler
 
 共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `SpirV`。Slang の SPIR-V を Silk.NET.Vulkan の `vkCreateShaderModule` に渡し、失敗した Result を例外にします。`Dispose()` は `vkDestroyShaderModule` を呼びます。entry／stage と pipeline の互換性は pipeline 作成時に検証します。
 
-デバイスの target と異なる artifact は `ArgumentException` で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。実行する pipeline や command はこの PR の範囲に含めません。
+artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。実行する pipeline や command はこの PR の範囲に含めません。

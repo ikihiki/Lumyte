@@ -11,20 +11,18 @@ public static class ShaderExercise
     public static string Run(IGraphicDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        var artifact = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment", device.Caps.ShaderTarget, ShaderStage.Compute);
+        var artifact = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment.lshader");
         CheckModule(device, artifact);
-        ShaderTarget otherTarget = device.Caps.ShaderTarget == ShaderTarget.Wgsl ? ShaderTarget.SpirV : ShaderTarget.Wgsl;
-        var other = ShaderArtifact.LoadEmbedded(typeof(ShaderExercise).Assembly, "Lumyte.Shaders.increment", otherTarget, ShaderStage.Compute);
-        try
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
-            using IGraphicsShader unexpected = device.CreateShader(other);
-        }
-        catch (ArgumentException)
-        {
-            return "Shader checks passed: embedded artifacts, target validation and module lifetime.";
+            ShaderTargetData data = artifact.GetTarget(target);
+            if (data.Stage != ShaderStage.Compute || data.EntryPoint != "main" || string.IsNullOrWhiteSpace(data.CompilerVersion) || data.MatrixLayout != "row-major")
+            {
+                throw new InvalidOperationException("Missing offline compilation metadata.");
+            }
         }
 
-        throw new InvalidOperationException("A mismatched shader target was accepted.");
+        return "Shader checks passed: all-target binary, embedded metadata and module lifetime.";
     }
 
     /// <summary>Compiles the same Slang source online and creates a device module.</summary>
@@ -46,7 +44,7 @@ public static class ShaderExercise
     private static void CheckModule(IGraphicDevice device, ShaderArtifact artifact)
     {
         using IGraphicsShader shader = device.CreateShader(artifact);
-        if (!ReferenceEquals(shader.Artifact, artifact) || artifact.GetCode().Length == 0 || string.IsNullOrWhiteSpace(artifact.ReflectionJson))
+        if (!ReferenceEquals(shader.Artifact, artifact) || artifact.GetTarget(device.Caps.ShaderTarget).Code.Length == 0)
         {
             throw new InvalidOperationException("Shader artifact was not retained.");
         }

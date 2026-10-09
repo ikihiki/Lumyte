@@ -38,12 +38,16 @@ using IGraphicsShader shader = device.CreateShader(artifact);
 
 `ResourceName` は source ごとに重複しない値を指定します。entry と stage の既定値は `main` と `compute` です。compiler の変更は `SlangCompilerPath` で指定できます。
 
-ビルドは `obj/<configuration>/<framework>/Slang/` へ WGSL と SPIR-V を生成し、それぞれの反射情報と一緒に DLL に埋め込みます。source、project、targets、compiler のタイムスタンプを入力として増分ビルドし、clean の FileWrites に出力を登録します。各 source は自己完結するものとします。生成 WGSL・SPIR-V・JSON はコミットしません。
+ビルドは `obj/<configuration>/<framework>/Slang/` へ WGSL と SPIR-V を生成し、それぞれの反射情報とコンパイル時のmetadataを一つのbinaryへ格納し、DLLに埋め込みます。source、project、targets、compiler のタイムスタンプを入力として増分ビルドし、clean の FileWrites に出力を登録します。各 source は自己完結するものとします。生成 WGSL・SPIR-V・JSON はコミットしません。
 
 ```csharp
 ShaderArtifact artifact = ShaderArtifact.LoadEmbedded(
-    typeof(Program).Assembly, "MyApp.Shaders.increment",
-    device.Caps.ShaderTarget, ShaderStage.Compute);
+    typeof(Program).Assembly, "MyApp.Shaders.increment.lshader");
+using IGraphicsShader shader = device.CreateShader(artifact);
 ```
 
-resource 名は `<prefix>.wgsl`／`<prefix>.spv` とそれぞれの `.reflection.json` です。stage と entry はコンパイル時の設定を指定します。`ShaderArtifact` は入力 bytes をコピーし、`GetCode()` もコピーを返します。UTF-8／SPIR-V header と JSON object を検証しますが、shader 言語の意味解析はコンパイラーと GPU API が行います。反射情報から GPU 参照を配置する serializer と pipeline／command API は別の設計範囲です。
+offline compilerは全対応targetを必ずコンパイルします。targetを絞る設定はありません。WGSL／SPIR-Vと各reflectionを一つの`.lshader` binaryへpackし、そのbinaryだけをDLLに埋め込みます。同じresourceから取得したartifactを全backendへ渡せます。backendが必要targetを選び、利用者はtarget・stage・entryを指定しません。
+
+binaryはversion、entry、stage、実際のcompiler version、row-major方針とtarget別code／reflectionを持ちます。workgroup size、bindingや型layoutはSlang reflectionに格納されます。runtimeに別のreflectionファイルやmetadata引数は不要です。online compilerは選択した一targetを同形式へpackし、未収録targetを要求したbackendはNotSupportedExceptionを返します。
+
+`ShaderArtifact(ReadOnlySpan<byte>)` はbinaryをコピーして検証し、`GetBinary()` もコピーを返します。`GetTarget` と `PackTarget` はbackend／compiler実装用で、通常の利用側はbinaryをそのまま渡します。反射情報からGPU参照を配置するserializerとpipeline／command APIは別の設計範囲です。

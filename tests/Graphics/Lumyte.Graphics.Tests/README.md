@@ -20,4 +20,4 @@ SamplerTestsはshared projectのSamplerExerciseをWgpu／Vulkanで実行しま�
 
 ArgumentTableTestsはshared projectのArgumentTableExerciseをWgpu／Vulkanで実行し、論理slot・型付き要素・参照失効・resource leaseと別deviceの登録拒否を共通APIだけで検証します。同じexerciseを既存Wasm／Browser CIでも実行します。
 
-`ShaderTests` は wgpu と Vulkan で DLL のオフライン成果物、Slang のオンライン成果物、module lifetime と target 不一致を検証します。共通 API を使う検証本体を Shared に置き、具体的な device／compiler の生成だけをテスト bootstrap に残します。GPU tests は既存 CI の Linux x64 ジョブ、Browser のオフライン module 検証は既存 Wasm ジョブで実行します。
+`ShaderTests` は wgpu と Vulkan で DLL のオフライン成果物、Slang のオンライン成果物、module lifetime、offline binaryの全target収録とmetadata、online binaryの未収録target拒否を検証します。共通 API を使う検証本体を Shared に置き、具体的な device／compiler の生成だけをテスト bootstrap に残します。GPU tests は既存 CI の Linux x64 ジョブ、Browser のオフライン module 検証は既存 Wasm ジョブで実行します。

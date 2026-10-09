@@ -4,11 +4,11 @@ namespace Lumyte.Graphics.Abstractions;
 public enum ShaderStage
 {
     /// <summary>Uses the Vertex representation.</summary>
-    Vertex,
+    Vertex = 0,
 
     /// <summary>Uses the Fragment representation.</summary>
-    Fragment,
+    Fragment = 1,
 
     /// <summary>Uses the Compute representation.</summary>
-    Compute,
+    Compute = 2,
 }

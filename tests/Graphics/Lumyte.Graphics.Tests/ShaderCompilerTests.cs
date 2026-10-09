@@ -20,11 +20,17 @@ public sealed class ShaderCompilerTests
         using Stream source = typeof(ShaderExercise).Assembly.GetManifestResourceStream("Lumyte.Shaders.increment.slang")!;
         using var reader = new StreamReader(source);
         ShaderArtifact artifact = await compiler.CompileAsync(new ShaderCompilationDesc { Source = await reader.ReadToEndAsync(), Target = target });
-        Assert.Equal(target, artifact.Target);
-        Assert.Equal(ShaderStage.Compute, artifact.Stage);
-        Assert.Equal("main", artifact.EntryPoint);
-        Assert.NotEmpty(artifact.GetCode());
-        Assert.Contains("entryPoints", artifact.ReflectionJson);
+        ShaderTargetData data = artifact.GetTarget(target);
+        Assert.Equal(target, data.Target);
+        Assert.Equal(ShaderStage.Compute, data.Stage);
+        Assert.Equal("main", data.EntryPoint);
+        Assert.NotEmpty(data.Code);
+        Assert.Contains("entryPoints", data.ReflectionJson);
+        Assert.NotEmpty(data.CompilerVersion);
+        ShaderTarget missing = target == ShaderTarget.Wgsl ? ShaderTarget.SpirV : ShaderTarget.Wgsl;
+        Assert.Throws<NotSupportedException>(() => artifact.GetTarget(missing));
+        var transported = new ShaderArtifact(artifact.GetBinary());
+        Assert.Equal(data.Code, transported.GetTarget(target).Code);
     }
 
     /// <summary>Checks failed Slang source returns diagnostics.</summary>

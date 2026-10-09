@@ -12,7 +12,7 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
     internal VulkanShader(VulkanDevice owner, ShaderArtifact artifact)
     {
         (_owner, Artifact) = (owner, artifact);
-        byte[] code = artifact.GetCode();
+        byte[] code = artifact.GetTarget(owner.Caps.ShaderTarget).Code;
         fixed (byte* bytes = code)
         {
             var desc = new ShaderModuleCreateInfo

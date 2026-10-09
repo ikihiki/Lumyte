@@ -30,51 +30,65 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             string output = Path.Combine(directory, "shader.bin");
             string reflection = Path.Combine(directory, "reflection.json");
             await File.WriteAllTextAsync(source, desc.Source, cancellationToken);
-            var start = new ProcessStartInfo(compilerPath)
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
             string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", desc.Stage.ToString().ToLowerInvariant(), "-target", desc.Target == ShaderTarget.Wgsl ? "wgsl" : "spirv", "-matrix-layout-row-major", "-reflection-json", reflection, "-o", output];
-            foreach (string argument in arguments)
-            {
-                start.ArgumentList.Add(argument);
-            }
-
-            using Process process = Process.Start(start) ?? throw new InvalidOperationException("Failed to start slangc.");
-            Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-            Task<string> stderr = process.StandardError.ReadToEndAsync();
-            try
-            {
-                await process.WaitForExitAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-
-                await process.WaitForExitAsync(CancellationToken.None);
-                await Task.WhenAll(stdout, stderr);
-                throw;
-            }
-
-            string diagnostics = (await stderr) + (await stdout);
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException($"Slang compilation failed ({process.ExitCode}): {diagnostics}");
-            }
-
+            _ = await RunCompilerAsync(arguments, cancellationToken);
             byte[] code = await File.ReadAllBytesAsync(output, cancellationToken);
             string reflectionJson = await File.ReadAllTextAsync(reflection, cancellationToken);
-            return new(desc.Target, desc.Stage, desc.EntryPoint, code, reflectionJson);
+            string compilerVersion = await RunCompilerAsync(["-version"], cancellationToken);
+            return ShaderArtifact.PackTarget(desc.Target, desc.Stage, desc.EntryPoint, compilerVersion.Trim(), code, reflectionJson);
         }
         finally
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private async Task<string> RunCompilerAsync(IEnumerable<string> arguments, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var start = new ProcessStartInfo(compilerPath)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("Failed to start slangc.");
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException) when (process.HasExited)
+                {
+                }
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None);
+            await Task.WhenAll(stdout, stderr);
+            throw;
+        }
+
+        string diagnostics = (await stderr) + (await stdout);
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Slang compilation failed ({process.ExitCode}): {diagnostics}");
+        }
+
+        return diagnostics;
     }
 }

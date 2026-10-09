@@ -4,84 +4,163 @@ using System.Text.Json;
 
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Contains compiled code and Slang reflection without owning a native module.</summary>
+/// <summary>Owns an opaque shader binary containing target code and compilation metadata.</summary>
 public sealed class ShaderArtifact
 {
-    private readonly byte[] _code;
+    private const uint Magic = 0x4448534C;
+    private readonly byte[] _binary;
 
-    /// <summary>Initializes a new instance of the <see cref="ShaderArtifact"/> class with copied code.</summary>
-    /// <param name="target">The code format.</param>
-    /// <param name="stage">The compiled entry stage.</param>
-    /// <param name="entryPoint">The compiled entry name.</param>
-    /// <param name="code">The nonempty compiled code, copied into this artifact.</param>
-    /// <param name="reflectionJson">The target-specific Slang JSON reflection.</param>
-    public ShaderArtifact(ShaderTarget target, ShaderStage stage, string entryPoint, ReadOnlySpan<byte> code, string reflectionJson)
+    /// <summary>Initializes a new instance of the <see cref="ShaderArtifact"/> class.</summary>
+    /// <param name="binary">The complete versioned shader binary, copied and validated.</param>
+    public ShaderArtifact(ReadOnlySpan<byte> binary)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reflectionJson);
-        if (!Enum.IsDefined(target) || !Enum.IsDefined(stage) || code.IsEmpty)
+        _binary = binary.ToArray();
+        using var stream = new MemoryStream(_binary, false);
+        using var reader = new BinaryReader(stream, new UTF8Encoding(false, true));
+        try
         {
-            throw new ArgumentException("Unknown shader target, stage or empty code.");
-        }
+            if (reader.ReadUInt32() != Magic || reader.ReadUInt32() != 1)
+            {
+                throw new ArgumentException("Unknown shader binary format.", nameof(binary));
+            }
 
-        if (target == ShaderTarget.SpirV && (code.Length < 20 || code.Length % 4 != 0 || System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(code) != 0x07230203))
+            var stage = (ShaderStage)reader.ReadUInt32();
+            string entry = reader.ReadString();
+            string compiler = reader.ReadString();
+            string layout = reader.ReadString();
+            if (!Enum.IsDefined(stage) || string.IsNullOrWhiteSpace(entry) || string.IsNullOrWhiteSpace(compiler) || layout != "row-major")
+            {
+                throw new ArgumentException("Invalid compilation metadata.", nameof(binary));
+            }
+
+            uint count = reader.ReadUInt32();
+            var targets = new HashSet<ShaderTarget>();
+            if (count == 0 || count > (uint)Enum.GetValues<ShaderTarget>().Length)
+            {
+                throw new ArgumentException("Invalid target count.", nameof(binary));
+            }
+
+            for (uint i = 0; i < count; i++)
+            {
+                var target = (ShaderTarget)reader.ReadUInt32();
+                if (!Enum.IsDefined(target) || !targets.Add(target))
+                {
+                    throw new ArgumentException("Unknown or duplicate target.", nameof(binary));
+                }
+
+                byte[] code = ReadCode(reader);
+                string reflectionJson = reader.ReadString();
+                if (target == ShaderTarget.SpirV && (code.Length < 20 || code.Length % 4 != 0 || System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(code) != 0x07230203))
+                {
+                    throw new ArgumentException("Invalid SPIR-V code.", nameof(binary));
+                }
+
+                if (target == ShaderTarget.Wgsl)
+                {
+                    _ = new UTF8Encoding(false, true).GetString(code);
+                }
+
+                using var reflection = JsonDocument.Parse(reflectionJson);
+                if (reflection.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw new ArgumentException("Invalid reflection.", nameof(binary));
+                }
+            }
+
+            if (stream.Position != stream.Length)
+            {
+                throw new ArgumentException("Trailing shader binary data.", nameof(binary));
+            }
+        }
+        catch (EndOfStreamException error)
         {
-            throw new ArgumentException("Invalid SPIR-V header or word length.", nameof(code));
+            throw new ArgumentException("Truncated shader binary.", nameof(binary), error);
         }
-
-        if (target == ShaderTarget.Wgsl)
-        {
-            _ = new UTF8Encoding(false, true).GetString(code);
-        }
-
-        using var reflection = JsonDocument.Parse(reflectionJson);
-        if (reflection.RootElement.ValueKind != JsonValueKind.Object)
-        {
-            throw new ArgumentException("Reflection must be a JSON object.", nameof(reflectionJson));
-        }
-
-        (Target, Stage, EntryPoint, ReflectionJson) = (target, stage, entryPoint, reflectionJson);
-        _code = code.ToArray();
     }
 
-    /// <summary>Gets the compiled code format.</summary>
-    public ShaderTarget Target { get; }
-
-    /// <summary>Gets the compiled entry stage.</summary>
-    public ShaderStage Stage { get; }
-
-    /// <summary>Gets the entry name used during Slang compilation.</summary>
-    public string EntryPoint { get; }
-
-    /// <summary>Gets the target-specific Slang reflection document.</summary>
-    public string ReflectionJson { get; }
-
-    /// <summary>Loads offline compiled code and reflection from assembly resources.</summary>
-    /// <param name="assembly">The DLL containing the embedded artifacts.</param>
-    /// <param name="resourcePrefix">The exact resource prefix preceding target suffixes.</param>
-    /// <param name="target">The required backend target.</param>
-    /// <param name="stage">The compiled entry stage.</param>
-    /// <param name="entryPoint">The compiled entry name.</param>
-    /// <returns>The copied, validated artifact.</returns>
-    public static ShaderArtifact LoadEmbedded(Assembly assembly, string resourcePrefix, ShaderTarget target, ShaderStage stage, string entryPoint = "main")
+    /// <summary>Loads the complete shader binary from a DLL resource.</summary>
+    /// <param name="assembly">The DLL containing the binary.</param>
+    /// <param name="resourceName">The exact resource name.</param>
+    /// <returns>The validated opaque artifact.</returns>
+    public static ShaderArtifact LoadEmbedded(Assembly assembly, string resourceName)
     {
         ArgumentNullException.ThrowIfNull(assembly);
-        ArgumentException.ThrowIfNullOrWhiteSpace(resourcePrefix);
-        if (!Enum.IsDefined(target))
-        {
-            throw new ArgumentOutOfRangeException(nameof(target));
-        }
-
-        string suffix = target == ShaderTarget.Wgsl ? "wgsl" : "spv";
-        using Stream code = assembly.GetManifestResourceStream($"{resourcePrefix}.{suffix}") ?? throw new InvalidOperationException("Embedded shader code was not found.");
-        using Stream reflection = assembly.GetManifestResourceStream($"{resourcePrefix}.{suffix}.reflection.json") ?? throw new InvalidOperationException("Embedded shader reflection was not found.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceName);
+        using Stream resource = assembly.GetManifestResourceStream(resourceName) ?? throw new InvalidOperationException("Embedded shader binary was not found.");
         using var bytes = new MemoryStream();
-        code.CopyTo(bytes);
-        using var reader = new StreamReader(reflection, Encoding.UTF8);
-        return new(target, stage, entryPoint, bytes.ToArray(), reader.ReadToEnd());
+        resource.CopyTo(bytes);
+        return new(bytes.ToArray());
     }
 
-    /// <summary>Copies compiled code to caller-owned storage.</summary>
-    /// <returns>A new copy that does not permit changing this artifact.</returns>
-    public byte[] GetCode() => (byte[])_code.Clone();
+    /// <summary>Packs one online target into the same binary format used offline.</summary>
+    /// <param name="target">The compiler target.</param>
+    /// <param name="stage">The compiled stage.</param>
+    /// <param name="entryPoint">The compiled entry.</param>
+    /// <param name="compilerVersion">The actual compiler version output.</param>
+    /// <param name="code">The generated code.</param>
+    /// <param name="reflectionJson">The corresponding reflection.</param>
+    /// <returns>The validated single-target binary.</returns>
+    public static ShaderArtifact PackTarget(ShaderTarget target, ShaderStage stage, string entryPoint, string compilerVersion, ReadOnlySpan<byte> code, string reflectionJson)
+    {
+        using var bytes = new MemoryStream();
+        using (var writer = new BinaryWriter(bytes, Encoding.UTF8, true))
+        {
+            writer.Write(Magic);
+            writer.Write(1u);
+            writer.Write((uint)stage);
+            writer.Write(entryPoint);
+            writer.Write(compilerVersion);
+            writer.Write("row-major");
+            writer.Write(1u);
+            writer.Write((uint)target);
+            writer.Write(code.Length);
+            writer.Write(code);
+            writer.Write(reflectionJson);
+        }
+
+        return new(bytes.ToArray());
+    }
+
+    /// <summary>Extracts a backend's code and metadata without caller-supplied entry or stage.</summary>
+    /// <param name="target">The backend's required target.</param>
+    /// <returns>The matching compilation data.</returns>
+    public ShaderTargetData GetTarget(ShaderTarget target)
+    {
+        using var stream = new MemoryStream(_binary, false);
+        using var reader = new BinaryReader(stream, Encoding.UTF8);
+        reader.ReadUInt32();
+        reader.ReadUInt32();
+        var stage = (ShaderStage)reader.ReadUInt32();
+        string entry = reader.ReadString();
+        string compiler = reader.ReadString();
+        string layout = reader.ReadString();
+        uint count = reader.ReadUInt32();
+        for (uint i = 0; i < count; i++)
+        {
+            var current = (ShaderTarget)reader.ReadUInt32();
+            byte[] code = ReadCode(reader);
+            string reflection = reader.ReadString();
+            if (current == target)
+            {
+                return new(target, stage, entry, compiler, layout, code, reflection);
+            }
+        }
+
+        throw new NotSupportedException("The shader binary does not contain this backend's target.");
+    }
+
+    /// <summary>Copies the complete opaque binary for storage or transport.</summary>
+    /// <returns>A caller-owned copy.</returns>
+    public byte[] GetBinary() => (byte[])_binary.Clone();
+
+    private static byte[] ReadCode(BinaryReader reader)
+    {
+        int length = reader.ReadInt32();
+        if (length <= 0 || length > reader.BaseStream.Length - reader.BaseStream.Position)
+        {
+            throw new ArgumentException("Invalid shader code length.");
+        }
+
+        return reader.ReadBytes(length);
+    }
 }

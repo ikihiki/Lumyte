@@ -18,8 +18,8 @@
  {
      public interface IGraphicDevice
      {
-+        // artifactのtargetを照合してmoduleを確保。source compile・GPU命令は行わない。
-+        // target不一致はArgumentException、解放済みdeviceはObjectDisposedException。
++        // opaque binaryからbackendのtargetを取得してmoduleを確保。source compile・GPU命令は行わない。
++        // 必要target欠落はNotSupportedException、解放済みdeviceはObjectDisposedException。
 +        IGraphicsShader CreateShader(ShaderArtifact artifact);
      }
      public sealed record DeviceCaps
@@ -43,17 +43,20 @@
 +    }
 +    public sealed class ShaderArtifact
 +    {
-+        // codeをコピーし、target・stage・entry・code header／UTF-8とJSONを検証する。
-+        public ShaderArtifact(ShaderTarget target, ShaderStage stage, string entryPoint, ReadOnlySpan<byte> code, string reflectionJson);
-+        public ShaderTarget Target { get; }
-+        public ShaderStage Stage { get; }
-+        public string EntryPoint { get; }
-+        public string ReflectionJson { get; }
-+        // 呼び出し側が変更してもartifactは変化しない新しいコピー。
-+        public byte[] GetCode();
-+        // DLL resourceからcodeと対応reflectionを読む。欠落はInvalidOperationException。
-+        public static ShaderArtifact LoadEmbedded(Assembly assembly, string resourcePrefix, ShaderTarget target, ShaderStage stage, string entryPoint = "main");
++        // binaryをコピーし、format version、metadata、各targetのcodeとreflectionを検証する。
++        public ShaderArtifact(ReadOnlySpan<byte> binary);
++        // offline artifactの読み込みにtarget・stage・entryを利用者が指定する必要はない。
++        public static ShaderArtifact LoadEmbedded(Assembly assembly, string resourceName);
++        // 保存／転送用のopaque binaryのコピー。
++        public byte[] GetBinary();
++        // compiler実装用。onlineの単一targetも同じbinary形式へ格納する。
++        public static ShaderArtifact PackTarget(ShaderTarget target, ShaderStage stage, string entryPoint, string compilerVersion, ReadOnlySpan<byte> code, string reflectionJson);
++        // backend実装用。codeとmetadataをbinaryから取得する。
++        public ShaderTargetData GetTarget(ShaderTarget target);
 +    }
++    public sealed record ShaderTargetData(
++        ShaderTarget Target, ShaderStage Stage, string EntryPoint,
++        string CompilerVersion, string MatrixLayout, byte[] Code, string ReflectionJson);
 +    public interface IGraphicsShader : IDisposable
 +    {
 +        public ShaderArtifact Artifact { get; }
@@ -63,11 +66,19 @@
 
 ### Offlineとonline
 
-Slang sourceだけをコミットする。offline buildは固定したSlang compilerでtarget別codeとreflectionをobj内へ生成し、同じDLLのEmbeddedResourceへ埋め込む。実行時はDLLから読み、code単独の外部ファイル配布やsourceの再compileを必要としない。生成WGSL・SPIR-V・reflectionはコミットしない。
+Slang sourceだけをコミットする。offline buildは固定したSlang compilerでtarget別codeとreflectionをobj内へ生成し、同じDLLのEmbeddedResourceへ埋め込む。実行時はDLLから読み、code単独の外部ファイル配布やsourceの再compileを必要としない。生成WGSL・SPIR-V・reflection・packed binaryはコミットしない。offline compilerにtarget選択の設定を設けず、対応する全ShaderTargetを必ずcompileし、一つでも失敗した場合は成果物を発行しない。各targetのcodeとreflectionを一つのopaque binaryにまとめ、DLLにはそのbinaryを一つのresourceとして埋め込む。
+
+利用者は同じShaderArtifactをどのbackendにも渡せる。device用targetの選択はbackendが行い、利用者はcode形式やstage、entryを再指定しない。online compilerはtargetを選択でき、単一targetの結果も同じbinary形式を使う。必要targetを含まないonline binaryは、そのbackendがNotSupportedExceptionで拒否する。
+
+binaryはformat識別子・version、entry、stage、compiler version、matrix layout、targetごとのcodeとSlang reflectionを含む。workgroup size、binding配置、型layoutなどcompile時に確定する情報はreflectionに保持し、runtime側の補助設定へ分離しない。現在のcompiler設定は単一entry・stage、row-major、選択targetであり、それらを全てbinaryへ格納する。sourceや外部reflectionファイルを実行時に必要としない。
 
 online compilerはSlang executableを呼び、sourceと出力を一時directoryへ置く。引数は構造化して渡し、shellを介さない。終了code・stdout／stderrを回収し、失敗diagnosticを例外に含める。キャンセル時はprocess treeを終了して完了を待ち、一時出力を回収する。compiler instanceはdeviceやnative moduleを所有しない。browserなどprocess実行できない環境ではhostでcompileしたartifactを渡すかoffline artifactを使用する。
 
 同じtarget、entry、stageとrow-major matrix方針をoffline／onlineで使う。reflectionはそのtargetの生成codeとセットで保持する。module作成はnative codeのvalidationやdevice errorsも受けるが、entryのpipeline互換性はpipelineの契約で扱う。
+
+### Binary形式
+
+version 1はlittle-endianで、magic `0x4448534C`、version `uint32`、stage `uint32`、entry・compiler version・matrix layoutのUTF-8 string、target count `uint32`、target recordを順に格納する。各recordはtarget `uint32`、code length `int32`、code bytes、reflectionのUTF-8 string。stringのbyte lengthは.NET BinaryWriterの7-bit encoded integerで表現する。未知version・target、重複target、空code、不正metadata、途中欠落、末尾余剰を拒否する。codeとreflectionは同じcompileの結果を一組として扱う。利用者はこの形式を解釈せず、ShaderArtifactのconstructor／LoadEmbeddedで渡す。
 
 ### GPU参照とreflection
 

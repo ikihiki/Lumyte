@@ -143,11 +143,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
-        if (artifact.Target != Caps.ShaderTarget)
-        {
-            throw new ArgumentException("The shader target does not match the device.", nameof(artifact));
-        }
-
         var shader = new WgpuShader(this, artifact);
         _shaderCount++;
         return shader;
