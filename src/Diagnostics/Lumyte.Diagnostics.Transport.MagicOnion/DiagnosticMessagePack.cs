@@ -7,8 +7,11 @@ namespace Lumyte.Diagnostics.Transport.MagicOnion;
 /// <summary>Shared generated serializer settings for hub server and clients.</summary>
 public static class DiagnosticMessagePack
 {
-    /// <summary>Gets the bounded-depth, generated wire serializer.</summary>
-    public static MessagePackMagicOnionSerializerProvider Provider { get; } = MessagePackMagicOnionSerializerProvider.Default.WithOptions(
-        MessagePackSerializerOptions.Standard.WithResolver(CompositeResolver.Create(DiagnosticMessagePackResolver.Instance, StandardResolver.Instance))
-            .WithSecurity(MessagePackSecurity.UntrustedData.WithMaximumObjectGraphDepth(32)));
+    /// <summary>Gets the shared immutable direct-write serializer options.</summary>
+    public static MessagePackSerializerOptions Options { get; } = MessagePackSerializerOptions.Standard
+        .WithResolver(CompositeResolver.Create([new DiagnosticMessageFormatter()], [DiagnosticMessagePackResolver.Instance, StandardResolver.Instance]))
+        .WithSecurity(MessagePackSecurity.UntrustedData.WithMaximumObjectGraphDepth(32));
+
+    /// <summary>Gets direct publication writing and generated decoding with bounded depth.</summary>
+    public static MessagePackMagicOnionSerializerProvider Provider { get; } = MessagePackMagicOnionSerializerProvider.Default.WithOptions(Options);
 }

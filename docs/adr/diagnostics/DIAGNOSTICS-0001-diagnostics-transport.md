@@ -2,7 +2,7 @@
 
 - 状態: 採用
 - 日付: 2026-10-08
-- 更新: 2026-10-09（診断サーバー・実通信検証まで実装）
+- 更新: 2026-10-09（送信の直接エンコード・受信の検証保持に変更）
 
 ## 背景
 
@@ -19,6 +19,51 @@ Lumyte の実行状態を外部から観測し、必要に応じて変更でき�
 通信抽象を診断セッションに DI 注入し、MagicOnion と HTTP のアダプターを差し替える。診断サーバーからの要求は共通の非同期受信列として扱い、ゲーム側は安全な実行タイミングで処理して結果を報告する。
 
 観測と変更操作を明示的なプロトコルにする。制御、テレメトリー、大容量データは論理的に分離し、画像や大きなスナップショットを制御メッセージに直接載せない。
+
+### 送受信の非対称性と直接エンコード
+
+ゲームから送る Metrics / Trace / Log、グラフ、画像は継続的または大容量となる。一方、サーバーから受ける購読・編集・Input 操作は通常小さく低頻度である。この非対称性を前提に、送信側は Writer へ値を直接書き、受信側は検証済みの内部コマンドを保持する。実際の比率は利用条件に依存し、測定前の帯域保証は行わない。大容量送信中にも制御応答の待ち時間を測定する。
+
+Operation の結果に転送 DTO や `Dictionary<string, DiagnosticValue>` を生成しない。Generator は戻り値の scalar プロパティを一度読み、文字列と値型を持つ detached snapshot を生成する。snapshot は `DiagnosticOutputValues.WriteTo<TWriter>` から `IDiagnosticValueWriter.Write` の bool / long / double / string overload を呼ぶ。Writer は同期的に使用し、保持しない。ref struct を許容する generic 制約で MessagePackWriter をボックス化せず扱う。snapshot は実行後の変更や送信スレッドからのドメインアクセスを防ぐために必要で、ネットワーク専用 DTO ではない。
+
+HTTP の publication は Utf8JsonWriter から HttpContent のストリームへ書き、MagicOnion の publication は登録した IMessagePackFormatter から MessagePackWriter へ直接書く。MessagePack の WireMessage / WireEvent / WireResult / WireValue を送信時に構築しない。共通の相関 ID と種別を持つ envelope と有界 batch は保持する。MagicOnion のフレーミングはフレームワークが管理し、独自の raw stream へ置き換えない。通信実装を選ぶ DI 境界は維持する。
+
+現行 protocolVersion = 1 の JSON と MessagePack の形は維持する。直接エンコードは wire schema の変更ではない。JSON の Int64 decimal string と型識別を残し、MessagePack の numeric key 順を固定する。タグのように動的なテレメトリーには DiagnosticValue を収集時の scalar snapshot として残すが、送信時に別の値 DTO や辞書へコピーしない。自然な JSON scalar への変更は、動的フィールドの型と Int64 を lossless に復号できる規約を決め、版を変更して別途扱う。
+
+受信側の復号、権限・型・範囲・期限の検証、所有スレッドでの Pump は維持する。ネットワークバッファや Reader をキューへ保持せず、文字列と scalar を所有する要求を保持する。送信の低割り当て化を理由に入力検証を省略しない。結果も送信前に validating Writer で schema を検証する。手動実装と既存利用者向けの dictionary API は維持し、生成 snapshot の dictionary view は明示的に参照した時だけ materialize する。
+
+追加・変更 API（namespace: Lumyte.Diagnostics）:
+
+```csharp
+public interface IDiagnosticValueWriter
+{
+    void Write(string name, bool value);
+    void Write(string name, long value);
+    void Write(string name, double value);
+    void Write(string name, string value);
+}
+
+public abstract class DiagnosticOutputValues
+    : IReadOnlyDictionary<string, DiagnosticValue>
+{
+    public abstract int Count { get; }
+    public abstract void WriteTo<TWriter>(ref TWriter writer)
+        where TWriter : IDiagnosticValueWriter, allows ref struct;
+    // Dictionary の各メンバーは互換用。参照すると materialize する。
+}
+
+public static class DiagnosticValueWriting
+{
+    public static void WriteTo<TWriter>(
+        IReadOnlyDictionary<string, DiagnosticValue> values,
+        ref TWriter writer)
+        where TWriter : IDiagnosticValueWriter, allows ref struct;
+}
+```
+
+HTTP の `DiagnosticJsonMessageEncoder.Write(IBufferWriter<byte>, DiagnosticMessage)` と `Write(Utf8JsonWriter, DiagnosticMessage)` は caller-owned storage へ書き、外部 Writer を破棄しない。MagicOnion は `DiagnosticMessageFormatter` と `DiagnosticMessagePack.Options` に直接書き込みを登録する。生成された snapshot は Count と同数の一意なフィールドを出力し、値を変更しない契約とする。
+
+検証では旧 DTO 経路との wire 一致、4 種の scalar、空・失敗結果、特殊文字、大きい整数、復号・実通信を確認する。送信 benchmark は同じ内容・所有条件で、DTO 構築を含む経路と直接書き込みを比較する。受信の速度やゼロアロケーションはこの測定から推論しない。
 
 ### 実装段階と測定範囲（2026-10-09）
 
@@ -517,7 +562,7 @@ Metrics / Trace / Log は同じ標準計測基盤から生成するが、異な�
 
 ### Operation のソース生成
 
-通常のアダプターは公開するメソッドにだけ `[DiagnosticOperation]` を付ける。クラス属性、引数属性、出力属性は不要とし、C# の名前と型からスキーマを推論する。`Lumyte.Diagnostics.Generators` の Incremental Source Generator が `IDiagnosticContributor.Configure`、記述子、引数変換、型付き結果の変換を生成する。DI による生成・注入、所有スレッドでの実行、通信抽象は変更しない。
+通常のアダプターは公開するメソッドにだけ `[DiagnosticOperation]` を付ける。クラス属性、引数属性、出力属性は不要とし、C# の名前と型からスキーマを推論する。`Lumyte.Diagnostics.Generators` の Incremental Source Generator が `IDiagnosticContributor.Configure`、記述子、引数変換、結果の scalar snapshot と直接 Writer 呼び出しを生成する。DI による生成・注入、所有スレッドでの実行、通信抽象は変更しない。
 
 Generator はビルド時の Analyzer として配布し、属性と結果型は `Lumyte.Diagnostics` に置く。利用側に Roslyn の実行時依存を持たせない。反射、動的コード生成、メソッド名による実行時探索は使わない。生成されるのは明示的な公開操作だけであり、任意メソッドの遠隔実行を許可しない。
 
@@ -882,7 +927,7 @@ Catalog ペイロードを `IDiagnosticConnection.PublishAsync` で送る。カ�
 
 通信処理は要求の検証とキュー投入までを行う。シーンやプロパティの読み書きは所有スレッド、キャプチャーは描画パイプラインの適切な位置、入力変更はゲーム処理へ入力を渡す前に適用する。
 
-読み取ったデータはエンジン所有オブジェクトへの参照を残さない DTO に変換する。シリアライズ、圧縮、ネットワーク待ちは可能な範囲でエンジンスレッドの外へ移す。破棄済み対象は実行時にも検証する。
+読み取ったデータはエンジン所有オブジェクトへの参照を残さない snapshot にコピーする。送信時は snapshot から直接 Writer へ書き、転送専用 DTO の階層へ再変換しない。シリアライズ、圧縮、ネットワーク待ちは可能な範囲でエンジンスレッドの外へ移す。破棄済み対象は実行時にも検証する。
 
 診断処理にはフレームごとの時間・件数予算と有界キューを設け、超過時は分割、延期、拒否する。診断通信を待つためにゲームフレームをブロックしない。
 

@@ -49,6 +49,8 @@ Metric は queue を毎回 drain し、満杯による破棄が高速経路と�
 
 Trace と Log は実際の標準 API で収集・相関を検証したが、収集コストのベンチマークは Counter に限定する。Trace / Log のシリアライズ性能は全測定に含める。
 
+上記は直接エンコード導入前の履歴である。生成 Operation の現在の結果表現と送信経路は [直接エンコードの測定](direct-encoding.md) を参照する。
+
 ## 測定条件
 
 - Debian 13 x64、AMD EPYC 9V74、.NET SDK 10.0.401 / Runtime 10.0.12、Release / RyuJIT。コンテナの CPU quota は 4 CPU 相当で、BenchmarkDotNet が報告する 5 logical cores と異なる。

@@ -27,6 +27,8 @@ services.AddDiagnosticSubsystem<InputDiagnostics, BeforeInputProcessing>(
 
 `TContributor` は Scoped に限定し、既に Scoped 登録されている場合はそのインスタンスを共有する。ポイント ID、サブシステム ID、Contributor の二重登録は拒否する。各ゲーム実行に明示的な `IServiceScope` を作り、そのスコープから Pump とドメインサービスを解決する。
 
+生成結果は `DiagnosticOutputValues` に scalar をコピーし、型別の `IDiagnosticValueWriter.Write` で直接出力する。`DiagnosticValueWriting.WriteTo(values, ref writer)` は snapshot を dictionary に変換せず扱う。既存の `result.Values` の indexer や列挙は互換用で、その時に dictionary を生成する。サブシステムには通信の型・属性を追加しない。動的な計測値とタグには収集キューの scalar として DiagnosticValue を引き続き使う。
+
 ## 実行契約
 
 - `IDiagnosticPump<TPoint>.Activate()` が呼び出しスレッドを所有者として固定し、全スキーマを一括構築する。失敗時は部分公開しない。同じスレッドでの再呼び出しは冪等。

@@ -73,6 +73,7 @@ public sealed class OperationGenerator : IIncrementalGenerator
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var registrations = new List<(string Id, string Code)>();
+        var outputTypes = new List<string>();
         foreach (IMethodSymbol method in methods)
         {
             AttributeData attribute = Attribute(method, "DiagnosticOperation")!;
@@ -130,6 +131,8 @@ public sealed class OperationGenerator : IIncrementalGenerator
 
             var resultFields = new List<string>();
             var encoded = new List<string>();
+            var snapshots = new List<string>();
+            var parameters = new List<string>();
             var outputIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (IPropertySymbol property in shape.GetMembers().OfType<IPropertySymbol>())
             {
@@ -154,16 +157,20 @@ public sealed class OperationGenerator : IIncrementalGenerator
                 }
 
                 resultFields.Add("new(" + Literal(name) + ", global::Lumyte.Diagnostics.DiagnosticValueKind." + kind + Constraints(member, kind, property, Error) + ")");
-                encoded.Add("[" + Literal(name) + "] = global::Lumyte.Diagnostics.DiagnosticValue.From(value.@" + property.Name + ")");
+                string field = "field" + encoded.Count;
+                parameters.Add(property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + " " + field);
+                snapshots.Add("value.@" + property.Name);
+                encoded.Add("writer.Write(" + Literal(name) + ", " + field + ");");
             }
 
+            string outputName = "__DiagnosticOutput" + outputTypes.Count;
+            outputTypes.Add("private sealed class " + outputName + "(" + string.Join(",", parameters) + ") : global::Lumyte.Diagnostics.DiagnosticOutputValues { public override int Count => " + encoded.Count + "; public override void WriteTo<TWriter>(ref TWriter writer) { " + string.Join(string.Empty, encoded) + " } }");
             bool requiresRevision = NamedBool(attribute, "RequiresRevision");
             string code = "builder.Operation(new(" + Literal(id) + ", " + Literal(NamedString(attribute, "DisplayName") ?? method.Name)
                 + ", (global::Lumyte.Diagnostics.DiagnosticPermission)" + permission
                 + ", [" + string.Join(",", inputFields) + "], [" + string.Join(",", resultFields) + "]"
                 + ", RequiresRevision: " + (requiresRevision ? "true" : "false") + "), (context, arguments) => @" + method.Name
-                + "(" + string.Join(",", calls) + ").ToOperationResult(static value => new global::System.Collections.Generic.Dictionary<string, global::Lumyte.Diagnostics.DiagnosticValue> {"
-                + string.Join(",", encoded) + "}));";
+                + "(" + string.Join(",", calls) + ").ToOperationResult(static value => new " + outputName + "(" + string.Join(",", snapshots) + ")));";
             registrations.Add((id, code));
         }
 
@@ -185,7 +192,13 @@ public sealed class OperationGenerator : IIncrementalGenerator
             source.AppendLine(code);
         }
 
-        source.Append("}\n}\n");
+        source.Append("}\n");
+        foreach (string outputType in outputTypes)
+        {
+            source.AppendLine(outputType);
+        }
+
+        source.Append("}\n");
         output.AddSource(type.ToDisplayString() + ".Diagnostics.g.cs", SourceText.From(source.ToString(), Encoding.UTF8));
     }
 

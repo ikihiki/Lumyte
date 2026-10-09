@@ -4,7 +4,7 @@ AddMagicOnionDiagnosticTransport で共通の IDiagnosticTransportFactory を登
 
 MagicOnionDiagnosticTransportOptions は Endpoint と GameToken。HTTP/2 エンドポイントを使い、loopback の開発用 h2c に対応する。loopback 以外は HTTPS を要求する。接続が GrpcChannel と Hub を所有し、DisposeAsync で解放する。受信キューは 256 件で、満杯なら接続失敗として通知する。読み取りは一接続一 reader に限定する。
 
-WireHello / WireWelcome / WireSubsystem / WireOperation / WireField / WireValue / WireCommand / WireResult / WireEvent / WireMessage / WireReceipt を numeric key の MessagePack DTO とし、generated resolver で符号化・復号する。共通モデルとエンジンには MessagePack 属性を持ち込まない。シリアライザーの depth は 32、gRPC メッセージは 4 MiB の上限。JSON を包んで送る実装ではなく、scalar・カタログ・イベントを native MessagePack フィールドへ明示的にマッピングする。
+publication は共通 DiagnosticMessage を引数とし、DiagnosticMessagePack.Options に登録した DiagnosticMessageFormatter が numeric key 順で直接書く。送信時に WireMessage / WireEvent / WireResult / WireValue を構築しない。これらは版 1 の互換復号と旧経路の比較用に残す。低頻度の Hello / Welcome / Command / Receipt は wire DTO と generated resolver を使う。共通モデルとエンジンには MessagePack 属性を持ち込まない。シリアライザーの depth は 32、gRPC メッセージは 4 MiB の上限。JSON を包んで送る実装ではなく、scalar・カタログ・イベントを native MessagePack フィールドへ書く。
 
 実行時の Hub クライアント生成は MagicOnion の既定 factory を使う。Operation は無反射生成だが、通信クライアントの NativeAOT 対応は今回の検証範囲に含まない。
 

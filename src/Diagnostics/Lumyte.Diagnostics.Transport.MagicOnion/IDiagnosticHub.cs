@@ -13,5 +13,5 @@ public interface IDiagnosticHub : IStreamingHub<IDiagnosticHub, IDiagnosticRecei
     /// <summary>Publishes a closed result or telemetry message.</summary>
     /// <param name="message">The message.</param>
     /// <returns>The receipt.</returns>
-    Task<WireReceipt> PublishAsync(WireMessage message);
+    Task<WireReceipt> PublishAsync(DiagnosticMessage message);
 }

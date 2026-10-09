@@ -16,7 +16,7 @@
 - 無認証、誤ったゲームトークン、ゲームによる操作利用者 API の呼び出し、HTTP セッション秘密の不一致を拒否する。
 - 非互換プロトコル、期限切れ操作、重複メッセージの内容変更を拒否し、許可した CORS origin の preflight に応答する。
 
-IntegrationTests の 5 ケースは TestServer や通信モックを使わず、動的ポートの実 TCP 接続を使う。さらにサーバーとゲームを独立プロセスとして起動し、Python の操作利用者から両方式を確認した。[別プロセスの結果](results/communication-smoke-results.json) に PID と確認項目を保存する。
+IntegrationTests の実通信 5 ケースは TestServer や通信モックを使わず、動的ポートの実 TCP 接続を使う。さらにサーバーとゲームを独立プロセスとして起動し、Python の操作利用者から両方式を確認した。[別プロセスの結果](results/communication-smoke-results.json) に PID と確認項目を保存する。
 
 ## 再現
 
@@ -33,6 +33,8 @@ python3 tools/diagnostics/communication-smoke.py
 
 ## 範囲
 
-これは実通信の機能確認であり、スクリプトの単発操作時間はネットワーク性能のベンチマークではない。[シリアライズ比較](../benchmarks/diagnostics/README.md) は別のローカル測定である。
+これは実通信の機能確認であり、直接エンコード追加後も両方式の独立プロセス確認が成功した。[今回の結果](results/direct-encoding-processes.json) を参照する。wire 一致・結果の直接検証など 9 ケースも追加し、統合テストは計 14 件となる。基盤・Generator の 18 件も成功した。
+
+スクリプトの単発操作時間はネットワーク性能のベンチマークではない。[シリアライズ比較](../benchmarks/diagnostics/README.md) は別のローカル測定である。
 
 Input はリースを持つサンプルモデルで、既存 InputSystem のデバイス入力へはまだ統合していない。実オブジェクトグラフ、描画キャプチャー、転送、購読・集約、再接続、Browser/WASM、NativeAOT、Windows 実行は未検証または未実装。サーバーは開発用のメモリー保持と固定トークン認証で、公開ホストの TLS・外部 ID 基盤・永続監査は含まない。HTTP のリクエストと gRPC の個々のメッセージは 4 MiB に制限し、キュー・セッション・保持件数も制限する。

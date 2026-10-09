@@ -1,3 +1,4 @@
+using System.Runtime.Loader;
 using Lumyte.Diagnostics.Generators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -31,6 +32,9 @@ public sealed class GeneratorTests
         Assert.Contains("user-id", generated, StringComparison.Ordinal);
         Assert.Contains("url-value", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("Reflection", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dictionary", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("DiagnosticValue.From", generated, StringComparison.Ordinal);
+        Assert.Contains("WriteTo<TWriter>", generated, StringComparison.Ordinal);
     }
 
     /// <summary>Checks invalid signatures and accidental wire-name collisions are compile errors.</summary>
@@ -77,6 +81,48 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("Internal", generated, StringComparison.Ordinal);
     }
 
+    /// <summary>Checks generated snapshots copy mutable domain properties before background serialization.</summary>
+    [Fact]
+    public void GeneratedOutputSnapshotsMutableProperties()
+    {
+        const string Source = """
+            using Lumyte.Diagnostics;
+            namespace Demo;
+            public sealed partial class Adapter
+            {
+                private readonly Receipt receipt = new();
+                [DiagnosticOperation(DiagnosticPermission.Observe)]
+                private DiagnosticResult<Receipt> Read() => DiagnosticResult<Receipt>.Success(receipt);
+                public void Change() => receipt.Text = "after";
+            }
+            public sealed class Receipt
+            {
+                public string Text { get; set; } = "before";
+            }
+            """;
+        (GeneratorDriverRunResult Run, Compilation Output) generated = Run(Source);
+        using var stream = new MemoryStream();
+        Assert.True(generated.Output.Emit(stream).Success);
+        stream.Position = 0;
+        var context = new AssemblyLoadContext("snapshot-probe", isCollectible: true);
+        try
+        {
+            Type type = context.LoadFromStream(stream).GetType("Demo.Adapter")!;
+            var adapter = (IDiagnosticContributor)Activator.CreateInstance(type)!;
+            var operations = new DiagnosticOperationSet(adapter);
+            DiagnosticOperationResult result = operations.Invoke("read", new Dictionary<string, DiagnosticValue>(), new(Guid.NewGuid(), Guid.NewGuid(), default, "actor", null, default), new HashSet<DiagnosticPermission> { DiagnosticPermission.Observe });
+            type.GetMethod("Change")!.Invoke(adapter, null);
+            DiagnosticOutputValues output = Assert.IsAssignableFrom<DiagnosticOutputValues>(result.Values);
+            StringWriter writer = default;
+            output.WriteTo(ref writer);
+            Assert.Equal("before", writer.Value);
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
+
     private static (GeneratorDriverRunResult Run, Compilation Output) Run(string source)
     {
         string[] paths = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
@@ -90,5 +136,18 @@ public sealed class GeneratorTests
         GeneratorDriver driver = CSharpGeneratorDriver.Create(new OperationGenerator().AsSourceGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out _);
         return (driver.GetRunResult(), output);
+    }
+
+    private struct StringWriter : IDiagnosticValueWriter
+    {
+        public string? Value { get; private set; }
+
+        public void Write(string name, bool value) => throw new NotSupportedException();
+
+        public void Write(string name, long value) => throw new NotSupportedException();
+
+        public void Write(string name, double value) => throw new NotSupportedException();
+
+        public void Write(string name, string value) => Value = value;
     }
 }

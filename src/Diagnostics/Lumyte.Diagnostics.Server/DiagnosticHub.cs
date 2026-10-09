@@ -32,7 +32,7 @@ public sealed class DiagnosticHub(DiagnosticSessionRegistry sessions) : Streamin
     }
 
     /// <inheritdoc/>
-    public Task<WireReceipt> PublishAsync(WireMessage message)
+    public Task<WireReceipt> PublishAsync(Transport.DiagnosticMessage message)
     {
         if (_session == null)
         {
@@ -41,7 +41,7 @@ public sealed class DiagnosticHub(DiagnosticSessionRegistry sessions) : Streamin
 
         try
         {
-            return Task.FromResult(WireMapper.ToWire(sessions.Publish(_session.Value, WireMapper.FromWire(message))));
+            return Task.FromResult(WireMapper.ToWire(sessions.Publish(_session.Value, message)));
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or UnauthorizedAccessException or KeyNotFoundException)
         {

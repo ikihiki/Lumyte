@@ -86,7 +86,7 @@ internal sealed class MagicOnionDiagnosticTransportFactory(Uri address, string t
         {
             try
             {
-                return WireMapper.FromWire(await hub.PublishAsync(WireMapper.ToWire(message)).WaitAsync(cancellationToken).ConfigureAwait(false));
+                return WireMapper.FromWire(await hub.PublishAsync(message).WaitAsync(cancellationToken).ConfigureAwait(false));
             }
             catch (RpcException exception)
             {

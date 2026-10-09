@@ -20,6 +20,19 @@ if (args.Contains("--verify", StringComparer.Ordinal))
             protobuf = Serializers.ProtobufEncode(batch).Length,
         }));
     }
+
+    foreach (int eventCount in new[] { 1, 128 })
+    {
+        var encoding = new SendEncodingBenchmarks { EventCount = eventCount };
+        encoding.Setup();
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            workload = "PublicationDirectEncoding",
+            eventCount,
+            json = encoding.JsonDirect().Length,
+            messagepack = encoding.MessagePackDirect().Length,
+        }));
+    }
 }
 else
 {

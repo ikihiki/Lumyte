@@ -48,6 +48,8 @@ SessionWelcome は SessionId、SessionSecret、Permissions。DiagnosticCommand �
 
 DiagnosticMessageKind は CommandResult / Telemetry / Heartbeat の閉じた集合。Game のカタログは Hello で一括公開する。PublishReceipt.Accepted はサーバーによる受理であり、永続保存を意味しない。アップロード、購読・集約、登録世代、Trace Events / Links は未対応。
 
-HTTP / JSON は source-generated context と Int64 converter を使用する。MessagePack 属性は MagicOnion モジュールの wire-only DTO に限定する。通信失敗は DiagnosticTransportException として伝え、呼び出しのキャンセルは OperationCanceledException を使う。
+送信 publication は HTTP で `DiagnosticJsonMessageEncoder` / Utf8JsonWriter、MagicOnion で `DiagnosticMessageFormatter` / MessagePackWriter へ直接書く。生成結果は snapshot から直接、テレメトリーは収集済み scalar から直接書き、送信時の WireValue / WireEvent / WireResult / WireMessage を生成しない。envelope と batch、非同期送信まで値を保持する snapshot は残る。
+
+低頻度の受信・Hello は source-generated JSON または generated MessagePack resolver で復号し、検証した scalar を所有する内部要求として Pump へ渡す。MessagePack 属性は MagicOnion モジュールの wire-only DTO に限定する。通信失敗は DiagnosticTransportException として伝え、呼び出しのキャンセルは OperationCanceledException を使う。
 
 Agent は IAsyncDisposable なので DI スコープを DisposeAsync で破棄する。エンジンの所有スレッドでの解除を先に済ませ、通信待ちの continuation からドメインにアクセスしない。[実行例](../../../samples/Lumyte.Diagnostics.Remote.Sample/README.md) を参照する。

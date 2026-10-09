@@ -74,6 +74,13 @@ public sealed class DiagnosticOperationSet
             return false;
         }
 
+        if (values is DiagnosticOutputValues output)
+        {
+            var validator = new ValidationWriter(fields);
+            output.WriteTo(ref validator);
+            return validator.IsValid && validator.Written == fields.Length;
+        }
+
         foreach (DiagnosticField field in fields)
         {
             if (!values.TryGetValue(field.Id, out DiagnosticValue value) || value.Kind != field.Kind)
@@ -99,5 +106,65 @@ public sealed class DiagnosticOperationSet
         }
 
         return true;
+    }
+
+    private struct ValidationWriter(DiagnosticField[] fields) : IDiagnosticValueWriter
+    {
+        private readonly HashSet<string>? _seen = fields.Length > 64 ? new(StringComparer.Ordinal) : null;
+        private ulong _seenMask;
+
+        public bool IsValid { get; private set; } = true;
+
+        public int Written { get; private set; }
+
+        public void Write(string name, bool value) => Check(name, DiagnosticValue.From(value));
+
+        public void Write(string name, long value) => Check(name, DiagnosticValue.From(value));
+
+        public void Write(string name, double value) => Check(name, DiagnosticValue.From(value));
+
+        public void Write(string name, string value) => Check(name, DiagnosticValue.From(value));
+
+        private void Check(string name, DiagnosticValue value)
+        {
+            Written++;
+            int index = 0;
+            while (index < fields.Length && fields[index].Id != name)
+            {
+                index++;
+            }
+
+            if (index == fields.Length)
+            {
+                IsValid = false;
+                return;
+            }
+
+            DiagnosticField field = fields[index];
+            ulong bit = 1UL << index;
+            bool unique = _seen != null ? _seen.Add(name) : (_seenMask & bit) == 0;
+            _seenMask |= bit;
+            if (!unique || value.Kind != field.Kind)
+            {
+                IsValid = false;
+                return;
+            }
+
+            if (value.Kind == DiagnosticValueKind.String && (value.String == null || value.String.Length > (field.MaxLength ?? 4096)))
+            {
+                IsValid = false;
+            }
+
+            if (value.Kind == DiagnosticValueKind.Double && (!double.IsFinite(value.Double) || value.Double < field.Minimum || value.Double > field.Maximum))
+            {
+                IsValid = false;
+            }
+
+            if (value.Kind == DiagnosticValueKind.Int64 && ((field.Minimum is double min && (decimal)value.Int64 < (decimal)min)
+                || (field.Maximum is double max && (decimal)value.Int64 > (decimal)max)))
+            {
+                IsValid = false;
+            }
+        }
     }
 }

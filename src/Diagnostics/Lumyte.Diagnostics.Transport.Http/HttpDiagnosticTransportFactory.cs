@@ -52,6 +52,33 @@ internal sealed class HttpDiagnosticTransportFactory(Uri address, string token) 
         return JsonSerializer.Deserialize(body, type) ?? throw new DiagnosticTransportException("Empty diagnostic response.");
     }
 
+    private static HttpContent PublicationBody(DiagnosticMessage message)
+    {
+        var content = new PublicationContent(message);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return content;
+    }
+
+    private sealed class PublicationContent(DiagnosticMessage message) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) => WriteAsync(stream, default);
+
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context, CancellationToken cancellationToken) => WriteAsync(stream, cancellationToken);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        private async Task WriteAsync(Stream stream, CancellationToken cancellationToken)
+        {
+            using var writer = new Utf8JsonWriter(stream);
+            DiagnosticJsonMessageEncoder.Write(writer, message);
+            await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private sealed class HttpDiagnosticConnection(HttpClient client, SessionWelcome welcome) : IDiagnosticConnection
     {
         private int _reader;
@@ -91,7 +118,7 @@ internal sealed class HttpDiagnosticTransportFactory(Uri address, string token) 
         {
             try
             {
-                using HttpResponseMessage response = await client.PostAsync($"diagnostics/v1/sessions/{Welcome.SessionId}/messages", JsonBody(message, DiagnosticJson.Context.DiagnosticMessage), cancellationToken).ConfigureAwait(false);
+                using HttpResponseMessage response = await client.PostAsync($"diagnostics/v1/sessions/{Welcome.SessionId}/messages", PublicationBody(message), cancellationToken).ConfigureAwait(false);
                 EnsureSuccess(response);
                 return await ReadAsync(response, DiagnosticJson.Context.PublishReceipt, cancellationToken).ConfigureAwait(false);
             }
