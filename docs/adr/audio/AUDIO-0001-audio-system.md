@@ -15,7 +15,9 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 共通の再生制御と、デバイス出力を行うバックエンドを分離する。初期対象はモノラル／ステレオの PCM、効果音、ストリーミング BGM、再生・一時停止・停止、ループ、固定の Master／Music／Effects バスとする。3D 音響、録音、任意の DSP グラフ、ピッチ変更、サンプル精度の予約再生は後続設計とする。
 
-[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、実装時に `src/Audio/Lumyte.Audio/` と必要なバックエンドを同じ Audio カテゴリへ置く。共通の名前空間・パッケージ名は `Lumyte.Audio` とし、Engine、Graphics、Settings、ファイルローダー、特定の DI コンテナーに依存しない。構成側がバックエンドをコンストラクター注入する。設定の読み込み・保存や音声形式のデコードは外側のアダプターが担当し、共通層へ PCM を渡す。
+[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、実装時に `src/Audio/Lumyte.Audio/` と必要なバックエンドを同じ Audio カテゴリへ置く。共通の名前空間・パッケージ名は `Lumyte.Audio` とし、Engine、Graphics、Settings、ファイルローダー、特定の DI コンテナーに依存しない。構成側がバックエンドをコンストラクター注入する。設定の読み込み・保存は構成側、音声データの取得・デコード・非同期供給・先読み・ストリーミング用バッファの管理はリソースシステムとその音声アダプターが担当する。オーディオ側は供給された PCM の消費、ミックス、再生制御、デバイス出力を担当する。共通 Audio と共通 Resources は互いに依存せず、両者の接続は統合アダプターに置く。
+
+リソース管理の既存案 ADR-RESOURCES-0001（PR #25）は共有読み込みと lease を扱い、継続供給の契約はまだ定めていない。今回の責務分担はリソース側のストリーミング設計への要求として記録し、既存 API だけで対応できるとは扱わない。
 
 ### 公開 API 案
 
@@ -46,14 +48,10 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 +        public AudioClip CreateClip(AudioFormat format, ReadOnlySpan<float> samples);
 +        // clip は同じ System の有効なもの。上限到達は InvalidOperationException。
 +        public AudioVoice CreateVoice(AudioClip clip, AudioBus bus = AudioBus.Effects);
-+        // source を借用。専属のデコード worker が読む。既定のバッファ量は 250 ms。
-+        // source は同時共有不可。負・ゼロのバッファ時間と Master 指定は拒否。
-+        public AudioVoice CreateStreamingVoice(IAudioPcmSource source,
-+            AudioBus bus = AudioBus.Music, TimeSpan? bufferDuration = null);
 +        // Master は全体、Music／Effects はその内側。gain は有限の [0, 1]、初期値 1。
 +        public void SetBusGain(AudioBus bus, float gain);
-+        // backend の出力処理と worker を停止・join し、全 voice と clip を解放。
-+        // backend と借用 source 自体は破棄しない。二度目以降は何もしない。
++        // backend の出力処理を停止し、全 voice と clip を解放。
++        // 借用 backend 自体は破棄しない。二度目以降は何もしない。
 +        public void Dispose();
 +    }
 +
@@ -72,31 +70,19 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 +        public AudioPlaybackState State { get; }
 +        // 有限の [0, 1]、初期値 1。バスと Master の gain を乗算する。
 +        public float Gain { get; set; }
-+        // 初期値 false。stream では CanSeek が必要、非対応なら NotSupportedException。
++        // 初期値 false。clip の末尾から先頭へ戻って再生する。
 +        public bool Loop { get; set; }
 +        // Stopped／Completed は先頭から、Paused は停止位置から。Playing は冪等。
-+        // 再読込が必要な stream は CanSeek が必要。Failed は再利用しない。
++        // Failed は再利用しない。
 +        public void Play();
 +        // Playing を Paused にする。その他の状態では何もしない。
 +        public void Pause();
-+        // 出力を停止し State を Stopped にする。巻き戻しは次回 Play 時に行う。
++        // 出力を停止し State を Stopped にする。再生位置は次回 Play 時に先頭へ戻す。
 +        public void Stop();
-+        // worker の読込・出力参照を終了し、clip／source の借用を解除。冪等。
++        // 出力参照を終了し、clip の借用を解除。冪等。
 +        public void Dispose();
 +    }
 +
-+    public interface IAudioPcmSource
-+    {
-+        // 借用中は不変。フレーム境界の float PCM を返す。
-+        AudioFormat Format { get; }
-+        bool CanSeek { get; }
-+        // destination 長は Channels の倍数。戻り値は書き込んだフレーム数。
-+        // 0 は EOF。短い正数は EOF ではない。キャンセルに応答する。
-+        ValueTask<int> ReadAsync(Memory<float> destination,
-+            CancellationToken cancellationToken = default);
-+        // CanSeek=false は NotSupportedException。次の Read は先頭から読む。
-+        ValueTask RewindAsync(CancellationToken cancellationToken = default);
-+    }
 +}
 ```
 
@@ -106,25 +92,29 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 制御側の操作を上限付きキューへ格納し、音声処理のブロック境界で適用する。受理は即時反映や可聴完了を意味しない。キューが満杯なら `InvalidOperationException` とし、コマンドを黙って落とさない。同じ voice への操作は受理順に処理する。生成時に上限を検査し、暗黙の voice stealing は行わない。
 
-EOF で残りの PCM を再生し終えたら Completed、デコードや出力の継続不能な失敗は Failed とする。ループでは末尾の再生後に先頭へ戻る。一時停止中は再生位置を進めない。非 seekable source は一度だけ先頭から再生でき、Stop 後や Completed 後の再開には新しい source と voice を必要とする。
+clip の末尾、またはリソース側から通知された EOF までの PCM を再生し終えたら Completed、供給側や出力の継続不能な失敗は Failed とする。一時停止中は再生位置を進めない。clip のループは末尾から先頭へ戻る。ストリーミングの巻き戻し・ループ要求はリソース側との接続契約で定め、オーディオがファイルやデコーダーを操作しない。
 
 状態の反映はキュー受理順を保存し、古い完了通知が後続の Play を Completed に戻さない世代識別を持つ。通知キューも有界とし、終端状態と失敗を保持して Update が取り込めるようにする。詳細なコマンド容量と失敗情報の公開 API は採用前に確定する。
 
 ### スレッド、PCM とストリーミング
 
-音声出力はゲームの Update と独立した周期で進む。デコードと I/O は専属 worker で行い、事前確保した上限付きリングバッファへ PCM を供給する。音声コールバックからファイル I/O、await、利用者のデリゲート、ログ出力、ロック待ち、ヒープ割り当てを行わない。
+音声出力はゲームの Update と独立した周期で進む。リソースシステムは取得・デコード・先読みを非同期に進め、上限付きバッファから準備済み PCM を供給する。オーディオ側は独自のデコード worker やストリーミング用リングバッファを持たない。デバイス出力とミックスに必要な作業バッファはオーディオ側で事前確保する。
 
-サンプルレート変換とモノラル／ステレオ変換は共通のミックス境界で行い、バックエンドへデバイスの出力形式を渡す。音量を乗算して float で加算し、最終出力を [-1, 1] に clamp する。非有限 PCM はクリップ作成時に拒否し、stream 読込時には Failed とする。音量のブロック間変更は短いランプで接続し、期間は実装時の可聴検証で定める。
+音声コールバックは準備済み PCM を待機せずに取り出す。ファイル I/O、await、任意の利用者コールバック、ログ出力、ロック待ち、ヒープ割り当てを行わない。供給境界には「PCM あり」「一時的な供給不足」「EOF」「失敗」を区別できる契約を必要とする。具体的な型と API はリソースのストリーミング ADR で定め、本 ADR では ReadAsync やバッファ容量を持つオーディオ API を公開しない。
 
-stream の供給不足は不足部分を無音で埋め、消費できた PCM だけでソース位置を進める。EOF と供給不足を区別し、供給不足で Completed にしない。出力 Suspended 中は再生位置を保持し、worker はバッファ上限で停止する。無制限の先読みは行わない。
+サンプルレート変換とモノラル／ステレオ変換は共通のミックス境界で行い、バックエンドへデバイスの出力形式を渡す。音量を乗算して float で加算し、最終出力を [-1, 1] に clamp する。非有限 PCM はクリップ作成時に拒否し、供給された PCM に含まれる場合は Failed とする。音量のブロック間変更は短いランプで接続し、期間は実装時の可聴検証で定める。
+
+供給不足は不足部分を無音で埋め、消費できた PCM だけでソース位置を進める。供給不足で Completed にしない。Paused／Suspended 中は再生位置を保持する。リソース側の先読み上限、供給の停止・再開、巻き戻し時に古い PCM を混ぜない世代管理は接続契約で定める。
 
 ### 所有権と終了処理
 
-System は生成した clip と voice を所有し、voice は clip または source を借用する。clip は複数 voice から共有できるが、source は一つの voice 専属とする。呼び出し側は voice の Dispose 完了まで source とその背後のファイル・デコーダーを保持する。
+System は生成した clip と voice を所有し、voice は clip を借用する。clip は複数 voice から共有できる。リソースローダーで生成した clip は manager が解放責任を持ち、利用側は voice の破棄まで lease を保持する。使用中の clip を Unload で解放せず、既存の参照中破棄の契約に従って拒否する。
 
-voice の Dispose は未処理コマンドを失効させ、音声処理が参照を手放し、worker のキャンセル・終了が完了してから戻る。音声スレッドからは呼ばない。worker の ReadAsync／RewindAsync がキャンセルへ応答しないと終了が遅れるため、その応答を source の必須契約とする。終了時に無音へ切り替えてから参照を解放し、借用中の PCM を再利用しない。
+ストリーミングではリソース側が取得元、デコーダー、非同期処理、供給バッファとその終了処理を所有する。共有アセットの lease と、再生ごとの独立したカーソル・供給セッションを分ける。再生ごとのセッションを共有キャッシュへそのまま格納する契約は採用しない。具体的なセッション生成・保持 API はリソース側で定める。
 
-DI スコープは System を先に破棄し、その後に借用した backend と source を破棄する。停止失敗時も残りの終了処理を試み、リソースを解放できていない状態を成功として扱わない。Dispose のエラー集約方式はバックエンド契約とともに定める。
+voice の Dispose は未処理コマンドを失効させ、音声処理が PCM 参照を手放してから戻る。音声スレッドからは呼ばない。供給 PCM は消費終了までリソース側で有効に保ち、参照中にバッファを再利用しない。統合側はオーディオの参照を解除した後、リソース側の供給セッションを終了し、非同期処理の取消・終了を待ち、最後に lease を返す。lease 返却自体には待機や I/O を持ち込まない。
+
+終了時は voice／System の出力参照を解除してから、供給セッションと lease、resource manager、借用 backend の順に各所有者が解放する。停止失敗時も残りの安全に実行できる終了処理を試み、参照解除が確認できない PCM を解放しない。Dispose のエラー集約方式はバックエンド契約とともに定める。
 
 ### プラットフォームと出力状態
 
@@ -146,6 +136,10 @@ DI スコープは System を先に破棄し、その後に借用した backend 
 
 効果音には適するが、長い BGM のメモリ消費と起動時の待ち時間が増える。短い PCM clip と有界バッファの stream を併用する。
 
+### オーディオ側でストリーミングを管理する
+
+音声専用に調整しやすいが、取得・非同期供給・バッファ・寿命管理がリソースシステムと重複する。これらをリソース側へ集約し、オーディオ側は準備済み PCM の消費に限定する。
+
 ### ゲームのフレーム更新で PCM を供給する
 
 実装は単純になるが、描画や GC によるフレーム遅延が音切れへ直結する。音声周期と I/O を独立させ、Update は制御結果の反映だけを担当する。
@@ -160,14 +154,14 @@ DI スコープは System を先に破棄し、その後に借用した backend 
 - PCM、デコード、出力の責務が分かれ、ファイル形式やバックエンドを追加できる。
 - キューと stream バッファの上限により保持メモリを制限する。一方、供給不足やコマンド拒否への対応が必要になる。
 - 非同期反映のため、制御呼び出し直後の State は要求と一致しない場合がある。
-- 終了時に worker を待つため Dispose は待機し得る。音声処理のリアルタイム安全性と終了順序を検証する必要がある。
+- オーディオの参照解除とリソース側の非同期供給終了を分けて扱う。リアルタイム安全性と lease を返す順序の検証が必要になる。
 - 共通ミキサーと Browser 連携に実装コストがかかる。本 PR は設計文書だけであり、性能や対応環境は未検証である。
 
 ## 検証方針
 
-実装時は偽の backend、有限 PCM、キャンセル可能な source を用い、再生・停止・一時停止・EOF・ループ・失敗の状態遷移、コマンド順序、上限超過、古い通知の失効を検証する。フレーム更新を遅延させても音声処理が独立して進むことを確認する。
+実装時は偽の backend、有限 PCM、準備済み PCM の偽の供給境界 を用い、再生・停止・一時停止・EOF・ループ・失敗の状態遷移、コマンド順序、上限超過、古い通知の失効を検証する。フレーム更新を遅延させても音声処理が独立して進むことを確認する。
 
-PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限値、短い読込、供給不足と EOF の区別を検証する。clip の参照中破棄、source の専属利用、読込中の取消、出力中の voice／System 破棄、バックエンド停止失敗で use-after-free や worker の残留が起きないことを確認する。
+PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限値、短い読込、供給不足と EOF の区別を検証する。clip の参照中破棄、再生セッションのカーソル分離、参照解除後のリソース側の取消、出力中の voice／System 破棄、バックエンド停止失敗で use-after-free や 供給セッションの残留が起きないことを確認する。
 
 各実環境ではデバイス不在・切断・復旧、Browser の初回操作・自動再生拒否・タブ停止を検証する。出力コールバックの割り当て、処理時間、供給不足数、開始遅延、メモリ上限を測定し、音量変更とループ境界の可聴ノイズを確認する。数値目標は測定条件とともにバックエンド ADR で定める。
 
@@ -175,7 +169,7 @@ PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限
 
 - バックエンドライブラリ、IAudioBackend の公開契約、Native ABI、パッケージと RID。
 - コマンド容量、通知保持方式、失敗情報・供給不足の診断 API。
-- 対応コーデック、デコーダーとアセット読み込み・キャッシュの統合。
+- リソース側のストリーミング設計: 対応コーデック、デコード、先読み上限、供給セッション、巻き戻し・ループ、PCM の受け渡しと解放。
 - Browser の AudioWorklet、Wasm の共有メモリ、worker の構成と終了方式。
 - デバイス選択、マルチチャンネル、3D 音響、DSP、予約再生と他の時計との同期。
 
