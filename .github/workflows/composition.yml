@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: Linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: Linux
+            arch: aarch64
+          - os: windows-2022
+            platform: Windows
+            arch: x64
+          - os: windows-11-arm
+            platform: Windows
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Mise setup (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash tools/setup/setup.sh
+
+      - name: Mise setup (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\tools\setup\setup.ps1
+
+      - name: Verify environment (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          mise run verify
+
+      - name: Verify environment (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'lumyte-smoke.log'
+          try {
+            & {
+              .\tools\setup\ci-windows-smoke.ps1
+            } *>&1 | Tee-Object -FilePath $log
+          } catch {
+            $details = $_.ToString()
+            if (Test-Path $log) {
+              $details += "`n" + ((Get-Content $log -Tail 60) -join "`n")
+            }
+            $details = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host "::error title=Windows environment verification failed::$details"
+            exit 1
+          }
+
+      - name: Build solution (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet build Lumyte.slnx -c Release
+
+      - name: Build solution (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('build', 'Lumyte.slnx', '-c', 'Release')
+
+      - name: Run solution tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
+            export LUMYTE_GRAPHICS_GPU_TESTS=1
+            export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          fi
+          dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
+
+      - name: Run solution tests (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore',
+            '--logger', 'trx', '--results-directory', 'artifacts/test-results')
+
+      - name: Run Wasm and browser WebGPU tests
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          source tools/setup/activate.sh
+          mise run test-wasm 2>&1 | tee artifacts/test-results/browser-webgpu.log
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
+      - name: Sample, pack and lint
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
+          dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Platform/Lumyte.Input -c Release --no-build -o artifacts/nuget
+          dotnet build Lumyte.slnx --no-restore
+          dotnet format Lumyte.slnx --no-restore --verify-no-changes
+          mise run check-markdown

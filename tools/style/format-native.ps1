@@ -8,7 +8,7 @@ try {
     $fileList = (& git ls-files --cached --others --exclude-standard -z -- @patterns) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate C/C++ sources.' }
     $arguments = if ($Fix) { @('-i') } else { @('--dry-run', '--Werror') }
-    foreach ($file in $fileList.Split([char]0, [StringSplitOptions]::RemoveEmptyEntries)) {
+    foreach ($file in $fileList.Split([char[]]@([char]0), [StringSplitOptions]::RemoveEmptyEntries)) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
         & clang-format "--style=file:$repoRoot/.clang-format" @arguments -- $file
         if ($LASTEXITCODE -ne 0) { throw "clang-format failed: $file" }
