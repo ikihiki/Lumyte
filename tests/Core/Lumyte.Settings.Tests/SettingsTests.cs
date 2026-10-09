@@ -335,6 +335,22 @@ public sealed class SettingsTests
         Assert.Equal(SettingsSaveStatus.ValidationFailed, (await settings.SaveAsync(invalid)).Status);
     }
 
+    /// <summary>Duplicate JSON properties are diagnosed instead of escaping during lazy parsing.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task DuplicateJsonPropertiesProtectTheOriginalDocumentAsync()
+    {
+        var store = new MemoryStore
+        {
+            Data = Encoding.UTF8.GetBytes("{\"documentVersion\":1,\"sections\":{\"input\":{\"schemaVersion\":1,\"values\":{\"bindings\":{\"game\":{},\"game\":{}}}}}}"),
+        };
+        using ServiceProvider provider = await CreateProviderAsync(store);
+        IEditableOptions<InputSettings> input = provider.GetRequiredService<IEditableOptions<InputSettings>>();
+        Assert.Equal(SettingsLoadStatus.InvalidData, input.LoadResult.Status);
+        Assert.Equal(SettingsSaveStatus.RecoveryRequired, (await input.SaveAsync(input.BeginEdit())).Status);
+        Assert.Equal(0, store.Writes);
+    }
+
     private static ServiceProvider CreateFileProvider(PersistedSettingsSource source) => new ServiceCollection().AddSettings(source).UseInput().BuildServiceProvider();
 
     private static async Task<ServiceProvider> CreateProviderAsync(MemoryStore store, Action<IServiceCollection>? configure = null)
