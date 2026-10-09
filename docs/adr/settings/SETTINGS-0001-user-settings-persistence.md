@@ -16,7 +16,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 ### .NET 標準機能の利用範囲
 
-ユーザー設定には型付きの `SettingsService<T>` を設け、読み込み、形式移行、既定値の補完、検証、保存、確定済みスナップショットの公開を一元管理する。JSON の読み書きには .NET 標準の `System.Text.Json` を使用する。`IConfiguration` 全体を置き換える汎用ラッパーは作らない。
+ユーザー設定は .NET の Options パターンを拡張して管理する。DI 登録には `OptionsBuilder<T>` を使用し、既定値を `Configure`、正規化を `PostConfigure`、型付き設定値の検証を `IValidateOptions<T>` で宣言する。独自のバリデータ基盤は作らない。読み込み、形式移行、既定値の補完、原子的保存、編集競合、確定済み設定の公開を永続化サービスが担当する。JSON の読み書きには `System.Text.Json` を使用する。
 
 `Microsoft.Extensions.Configuration` は必要に応じて起動時の構成や環境変数に使用する。ユーザーが編集する同じ項目に環境変数などの上書きを重ねず、保存した値と実際に使う値の対応を維持する。
 
@@ -27,7 +27,8 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 | 構成要素 | 責務 |
 | --- | --- |
 | `Lumyte.Settings` | 汎用サービス、結果型、JSON の読み書き、保存先の共通契約 |
-| 設定定義 `ISettingsDefinition<T>` | アプリごとの既定値、JSON 型情報、移行、補完、検証 |
+| 標準 Options の登録 | `Configure` / `PostConfigure` による既定値・正規化、`IValidateOptions<T>` による検証 |
+| 設定定義 `ISettingsDefinition<T>` | JSON 型情報、形式移行、補完 |
 | 設定ストア `ISettingsStore` | 保存媒体への読み込みと全体置き換え |
 | アプリケーション / Engine の構成側 | ストアと設定定義の選択、設定画面、Input への橋渡し |
 | Input の上位処理 | スナップショットからのリマッピング表生成とデッドゾーン変換 |
@@ -36,7 +37,7 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 ### データモデルと互換性
 
-設定ファイルは `{ "schemaVersion": 1, "values": { ... } }` のエンベロープとし、現在の設定全体を保存する。設定値は不変の型付きモデルとし、内部コレクションも不変にする。UI は独立した編集コピーを持ち、保存時に不変モデルへ変換する。サービスは保存呼び出し時に候補を JSON に変換して再構築し、検証済みの独立した候補を固定する。
+設定ファイルは `{ "schemaVersion": 1, "values": { ... } }` のエンベロープとし、現在の設定全体を保存する。設定モデルは標準 Options と互換の引数なしコンストラクターを持つ class とする。UI は独立した編集コピーを持つ。保存呼び出し時に候補を JSON に変換して再構築し、以後の UI 編集と分離する。内部の確定済みモデルは外部に公開せず、公開スナップショットは内部コレクションまで深く複製する。取得したコピーを変更しても確定済み設定や他の利用者には影響しない。Input 側は取得したコピーから不変の変換表を構築する。
 
 設定定義は JSON の項目の存在を確認して、新しく追加された未指定項目だけを既定値で補完する。明示的な `false`、`0`、空配列を未指定と扱わない。明示的な `null` の可否は設定定義で検証する。既存の保存値はアプリの既定値変更後も維持し、リセットで新しい既定値に戻す。
 
@@ -44,17 +45,61 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 
 形式の `schemaVersion` と、実行中の編集競合を検出する `Revision` は別である。Revision はサービス内の単調増加値で、ファイルには保存しない。
 
+### DI と宣言的な登録
+
+`AddPersistedOptions<T>` は標準 `OptionsBuilder<T>` を返す拡張メソッドとする。標準の `Configure`、`PostConfigure`、`Validate`、`ValidateDataAnnotations` と独自の保存先・JSON 形式の指定を連結できる。次の例は未実装の API を含む利用例である。
+
+```csharp
+services.AddPersistedOptions<InputSettings>()
+    .Configure(options =>
+    {
+        options.LeftStick.Inner = 0.15f;
+        options.LeftStick.Outer = 1.0f;
+    })
+    .ValidateDataAnnotations()
+    .UseJsonFile(settingsPath)
+    .UseJsonDefinition<InputSettings, InputSettingsJsonDefinition>();
+
+services.AddSingleton<IValidateOptions<InputSettings>, InputSettingsValidator>();
+```
+
+`UseStore<T, TStore>` で Browser などの保存ストアを DI に登録できる。一つの設定型につき既定の Options 名だけを初期対象とし、独自 API から名前付き Options を登録しようとした場合は構成エラーにする。複数プロファイルは当面設定モデル内で表す。
+
+利用側は `IEditableOptions<InputSettings>` をコンストラクター注入する。編集は `BeginEdit`、確定は `SaveAsync`、復元は `ResetAsync` で行う。DI の解決中に非同期 I/O を行わず、起動時に `InitializeAsync` を await してから Input や設定画面を開始する。Generic Host を使う場合も、構成側がこの初期化順を保証する。
+
+### 標準バリデータの採用
+
+型付きモデルの検証は DI に登録された `IEnumerable<IValidateOptions<T>>` を使用する。読み込み・保存・リセットのすべてで同じバリデータを実行し、`ValidateOptionsResult.Fail` の失敗文字列を集約する。既定の Options 名 `Options.DefaultName` を渡し、`Skip` は対象外として尊重する。バリデータは同期処理で、副作用を持たず、保存媒体への I/O を行わない。
+
+単純な条件は `OptionsBuilder<T>.Validate`、属性の範囲・必須条件は `ValidateDataAnnotations`、デッドゾーンの有限値・項目間の大小関係や割り当ての衝突は `IValidateOptions<T>` で検証する。`Range` 属性だけでは `inner < outer` を表せない。DataAnnotations の通常のバリデータに任意のオブジェクトグラフの再帰検証を期待しない。ネストやコレクションを属性で検証する場合は標準の Options 検証ソースジェネレーターと `[ValidateObjectMembers]` / `[ValidateEnumeratedItems]` を使用する。
+
+`ValidateOnStart` は標準 Options の生成を起動時に検証する機能であり、独自ストアからの読み込みや保存候補の検証を代行しない。永続化サービスの `InitializeAsync` と各書き込み操作で明示的に検証する。Browser / AOT では JSON と Options 検証のソースジェネレーターを活用し、反射を必須にしない登録方法を提供する。
+
+`ValidateOptionsResult` の診断は文字列であり、標準契約に構造化された項目パス・エラーコードはない。初期設計では文字列をそのまま表示し、解析して項目パスを復元しない。JSON 形式、バージョン、I/O のエラーは永続化側の結果と区別する。
+
+### 設定の構築順序
+
+起動・リセットの既定値は、新しい T に名前が一致する `IConfigureOptions<T>` / `IConfigureNamedOptions<T>` を登録順に適用して作る。読み込みではこの既定値を JSON 化し、移行後の保存 JSON に存在する項目を上書きする。配列は全体置換、オブジェクトは項目単位で補完し、未知項目と不正な型を拒否する。その後、名前が一致する `IPostConfigureOptions<T>` を適用し、標準バリデータで検証する。
+
+保存候補は現在の編集内容が全体を持つため、`Configure` を再適用してユーザー値を上書きしない。独立した候補に `PostConfigure` を適用してから検証し、正規化後の値を保存・公開する。`PostConfigure` は繰り返し適用しても結果が変わらない処理に限定する。
+
+標準 `IOptionsFactory<T>.Create` は検証まで一括で実行するため、保存 JSON の適用前に検証してしまう。永続化サービスは標準の登録済みインターフェースを用いて上記の順序を組み立てる。標準 `IOptions<T>` / `IOptionsMonitor<T>` に保存済み設定を別途公開せず、確定値の読み取り窓口は `IEditableOptions<T>` に統一する。通常の Options API は本設定型の既定構成を生成するもので、永続化された確定値の参照先としては使用しない。
+
 ### 公開 API 案
 
-比較元は `main` の `f69072fdf6089c006ac7a1c8af4712dee1b43579`。同 revision に `Lumyte.Settings` は存在しない。宣言は主要メンバーの抜粋である。
+比較元は `main` の `f69072fdf6089c006ac7a1c8af4712dee1b43579`。同 revision に `Lumyte.Settings` は存在しない。宣言は主要メンバーの抜粋である。`SettingsService<T>` は内部実装とし、標準 DI に singleton として登録する。
 
 ```diff
 +namespace Lumyte.Settings
 +{
-+    // T とその内部コレクションは不変。サービス単位の Revision を持つ。
-+    public sealed record SettingsSnapshot<T>(long Revision, T Value) where T : class;
-+    // Path は設定項目のパス。ユーザーに提示できる診断を返す。
-+    public sealed record SettingsError(string Path, string Code, string Message);
++    // Value は内部確定値と分離した深いコピー。Revision はサービス内の版。
++    public sealed record SettingsSnapshot<T>(long Revision, T Value) where T : class, new();
++    // Value は編集可能。BaseRevision と生成元サービスの識別を保持する。
++    public sealed class SettingsEdit<T> where T : class, new()
++    {
++        public long BaseRevision { get; }
++        public T Value { get; }
++    }
 +    public enum SettingsLoadStatus
 +    {
 +        Loaded, Defaults, InvalidData, UnsupportedVersion, StorageFailure
@@ -63,24 +108,19 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 +    {
 +        Saved, ValidationFailed, Conflict, StorageFailure, RecoveryRequired
 +    }
-+    // ファイル不在と読み込み障害を Status で区別する。
-+    public sealed record SettingsOpenResult<T>(
-+        SettingsService<T> Service, SettingsLoadStatus Status,
-+        ImmutableArray<SettingsError> Errors) where T : class;
-+    // Snapshot は完了時の確定済み設定。失敗時は候補を公開しない。
++    // Errors は標準バリデータまたは形式・I/O の診断文字列。
++    public sealed record SettingsLoadResult(
++        SettingsLoadStatus Status, ImmutableArray<string> Errors);
 +    public sealed record SettingsSaveResult<T>(
 +        SettingsSaveStatus Status, SettingsSnapshot<T> Snapshot,
-+        ImmutableArray<SettingsError> Errors) where T : class;
-+    public interface ISettingsDefinition<T> where T : class
++        ImmutableArray<string> Errors) where T : class, new();
++    public interface ISettingsDefinition<T> where T : class, new()
 +    {
 +        int SchemaVersion { get; }
-+        // source generation の型情報を渡せる。Browser / AOT でも反射を必須にしない。
 +        JsonTypeInfo<T> JsonTypeInfo { get; }
-+        T CreateDefaults();
-+        // エンベロープの values を移行・補完。入力の JSON を変更しない。
-+        // 不正形式・未知項目・未対応版は JsonException / NotSupportedException。
-+        JsonObject UpgradeAndComplete(JsonObject values, int sourceVersion);
-+        ImmutableArray<SettingsError> Validate(T value);
++        // JSON 形式の移行のみ。型付き検証は IValidateOptions<T> に委譲する。
++        // 入力を変更せず、不正形式は JsonException、未対応版は NotSupportedException。
++        JsonObject Upgrade(JsonObject values, int sourceVersion);
 +    }
 +    public interface ISettingsStore
 +    {
@@ -98,33 +138,47 @@ Lumyte では Input のリマッピングとデッドゾーンをユーザーが
 +        public ValueTask WriteAtomicallyAsync(
 +            ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
 +    }
-+    public sealed class SettingsService<T> where T : class
++    public interface IEditableOptions<T> where T : class, new()
 +    {
-+        // 不在は既定値、読込障害は診断付き既定値。キャンセルは例外。
-+        // 不正な既定値や設定定義は構成エラーとして例外にする。
-+        public static Task<SettingsOpenResult<T>> OpenAsync(
-+            ISettingsStore store, ISettingsDefinition<T> definition,
-+            CancellationToken cancellationToken = default);
-+        // 任意スレッドから読み取れる、一貫した確定済みスナップショット。
-+        public SettingsSnapshot<T> Current { get; }
-+        // 検証 → Revision 確認 → 保存 → Current 置換。保存操作を直列化する。
-+        public Task<SettingsSaveResult<T>> SaveAsync(
-+            T candidate, long expectedRevision,
-+            CancellationToken cancellationToken = default);
-+        // 既定値を同じ保存手順で確定。読込障害後は明示的な復旧操作にもなる。
-+        public Task<SettingsSaveResult<T>> ResetAsync(
++        // 同時初期化は InvalidOperationException。完了後は同じ結果を返し、再読込しない。
++        // キャンセルは再試行可能。不正な既定値は OptionsValidationException。
++        Task<SettingsLoadResult> InitializeAsync(CancellationToken cancellationToken = default);
++        // 初期化前は InvalidOperationException。任意スレッドから一貫して取得。
++        SettingsSnapshot<T> Current { get; }
++        // コピーなしの変更検出用。Current の Revision を最終的な基準とする。
++        long Revision { get; }
++        SettingsEdit<T> BeginEdit();
++        // 検証 → Revision 確認 → 保存 → 確定値置換。別サービスの edit は引数エラー。
++        Task<SettingsSaveResult<T>> SaveAsync(
++            SettingsEdit<T> edit, CancellationToken cancellationToken = default);
++        // 既定値を構築し、同じ検証・保存手順で確定。読込障害後の明示復旧にも使う。
++        Task<SettingsSaveResult<T>> ResetAsync(
 +            long expectedRevision, CancellationToken cancellationToken = default);
++    }
++    public static class PersistedOptionsExtensions
++    {
++        // 既定名のみ。通常の Configure / PostConfigure / Validate を連結できる。
++        public static OptionsBuilder<T> AddPersistedOptions<T>(
++            this IServiceCollection services) where T : class, new();
++        // 次の登録は設定型ごとに一つ。重複したストア・定義は構成エラー。
++        public static OptionsBuilder<T> UseJsonFile<T>(
++            this OptionsBuilder<T> builder, string path) where T : class, new();
++        public static OptionsBuilder<T> UseStore<T, TStore>(this OptionsBuilder<T> builder)
++            where T : class, new() where TStore : class, ISettingsStore;
++        public static OptionsBuilder<T> UseJsonDefinition<T, TDefinition>(
++            this OptionsBuilder<T> builder)
++            where T : class, new() where TDefinition : class, ISettingsDefinition<T>;
 +    }
 +}
 ```
 
 ### 読み込み・編集・保存の契約
 
-起動時に `OpenAsync` を一度呼び、結果の診断を UI やログへ渡す。ファイル不在なら既定値で開始し、暗黙にファイルを作成しない。不正データ、未対応版、ストア障害では既定値で開始するが、通常の `SaveAsync` は `RecoveryRequired` を返し、元データを上書きしない。ユーザーが明示的に復元を選んだ場合の `ResetAsync` でのみ上書きし、成功後に通常保存を許可する。
+起動時に DI から解決した `IEditableOptions<T>.InitializeAsync` を一度呼び、結果の診断を UI やログへ渡す。ファイル不在なら既定値で開始し、暗黙にファイルを作成しない。不正データ、未対応版、ストア障害では既定値で開始するが、通常の `SaveAsync` は `RecoveryRequired` を返し、元データを上書きしない。ユーザーが明示的に復元を選んだ場合の `ResetAsync` でのみ上書きし、成功後に通常保存を許可する。
 
-UI は編集開始時の `Current.Revision` を保持する。保存は全設定を一括で検証し、失敗なら項目ごとの診断を返す。保存操作の直列化後に Revision を確認し、古い編集コピーなら `Conflict` を返す。成功時だけ保存内容と同じスナップショットを公開し、Revision を増やす。保存失敗では Current と Revision を維持し、UI の編集コピーから再試行できる。
+UI は編集開始時の `Current.Revision` を保持する。保存は全設定を一括で検証し、失敗なら標準バリデータの失敗文字列を返す。保存操作の直列化後に Revision を確認し、古い編集コピーなら `Conflict` を返す。成功時だけ保存内容と同じスナップショットを公開し、Revision を増やす。保存失敗では Current と Revision を維持し、UI の編集コピーから再試行できる。
 
-スナップショット全体を一度に置き換え、読み取り中の値や取得済みスナップショットを変更しない。通知コールバックを保存処理に組み込まず、利用側がフレーム開始時などに Revision の変化を検出する。
+内部の確定値全体を一度に置き換え、取得済みのコピーを変更しない。通知コールバックを保存処理に組み込まず、利用側がフレーム開始時などに Revision の変化を検出する。
 
 引数違反と設定定義のプログラミングエラーは例外とする。キャンセルはコミット前なら `OperationCanceledException` とし、設定を変更しない。ストアはコミット開始直前に最後のキャンセル判定を行い、以降は結果を確定させる。コミット成功後は Current の公開まで完了し、キャンセルを保存失敗として報告しない。
 
@@ -144,9 +198,9 @@ Browser はファイルパスを前提にせず、Platform が IndexedDB のト�
 
 デッドゾーンは有限値で `0 <= inner < outer <= 1` を満たすものとする。スティックは長さ r を使う放射状の変換を基本とし、出力の長さを `clamp((r - inner) / (outer - inner), 0, 1)` とする。r が 0 の場合はゼロを返し、方向は維持する。トリガーは正規化済みの 0〜1 の値に同じしきい値変換を行う。具体的なしきい値の既定値は Input 設定定義で別途定める。
 
-InputSystem の入力記録・現在状態は元の正規化値を保持する。デッドゾーンとリマッピングは記録の読み取り後に上位層で処理する。構成側は管理スレッドのフレーム開始時に Current を一度取得し、変更された Revision に対して変換表をまとめて切り替える。サービスの保存成功は確定済み設定の公開を意味し、Input への適用は次のフレーム境界で完了する。
+InputSystem の入力記録・現在状態は元の正規化値を保持する。デッドゾーンとリマッピングは記録の読み取り後に上位層で処理する。構成側は管理スレッドのフレーム開始時に Revision を確認し、変更時だけ Current の深いコピーを取得して、変更された Revision に対して変換表をまとめて切り替える。サービスの保存成功は確定済み設定の公開を意味し、Input への適用は次のフレーム境界で完了する。
 
-設定定義は変換表を構築できることまで保存前に検証する。即時プレビューは UI の編集コピーから一時的な変換表を作り、保存せず試す。キャンセル時は最新の確定済みスナップショットへ戻す。保存中に編集が続いた場合、保存候補以降の編集を未保存として維持する。
+Input の `IValidateOptions<T>` は変換表を構築できることまで保存前に検証する。即時プレビューは UI の編集コピーから一時的な変換表を作り、保存せず試す。キャンセル時は最新の確定済みスナップショットへ戻す。保存中に編集が続いた場合、保存候補以降の編集を未保存として維持する。
 
 ## 検討した代替案
 
@@ -157,6 +211,10 @@ InputSystem の入力記録・現在状態は元の正規化値を保持する�
 ### IConfiguration 全体を独自ラッパーで包む
 
 標準機能の読み込み API を再公開しても保存契約は別途必要であり、型付き検証や編集競合の問題も残る。ユーザー設定のライフサイクルに絞ったサービスを提供する。
+
+### 独自のバリデータと手動構築 API を使う
+
+既定値・検証・依存解決の仕組みを重複して提供することになる。標準 Options の登録と IValidateOptions<T> を使い、独自機構を永続化と編集の契約に絞る。
 
 ### 呼び出し側で JSON を直接読み書きする
 
@@ -174,7 +232,8 @@ InputSystem の入力記録・現在状態は元の正規化値を保持する�
 
 - 読み込みから保存・復旧までを同じ型付き API で扱える。
 - 設定画面と Input 処理は JSON や保存媒体に依存しない。
-- .NET 標準の JSON 機能を活用できるが、移行・検証・ストアの実装は必要になる。
+- 標準 Options の DI・宣言的登録・バリデータと JSON 機能を活用できる。移行とストアは独自実装する。
+- Options モデルは編集可能なため、公開時の深いコピーにコストがある。Input は Revision が変わった時だけ取得する。
 - 全体保存により既存のユーザー値が維持される。既定値変更だけでは保存済みの値を更新しない。
 - 保存成功と Input への反映には次のフレーム境界までの時間差がある。
 - 原子的保存の保証と障害処理はストア実装ごとに検証する必要がある。
@@ -192,7 +251,11 @@ InputSystem の入力記録・現在状態は元の正規化値を保持する�
 - コミット後のキャンセルで保存済み内容と Current が一致する。
 - 同時保存を直列化し、古い Revision の候補を拒否する。
 - ファイル置き換え失敗と Browser のトランザクション失敗で旧データを維持する。
-- 不変スナップショットの寿命と、Input の管理スレッドでの一括切り替え。
+- 公開コピーの内部コレクションまで確定値と分離し、Input の管理スレッドで一括切り替えする。
+- DI での解決、非同期初期化の順序、初期化前アクセス、複数の初期化呼び出し。
+- Configure → 保存 JSON の適用 → PostConfigure → 検証の順序と、保存時に Configure を再適用しないこと。
+- 読み込み・保存・リセットで同じ標準バリデータを使い、複数の Fail を集約し Skip を尊重する。
+- ラムダ、DataAnnotations、Options 検証ソースジェネレーターによるネスト・コレクション検証。
 - デッドゾーンのゼロ、境界、斜め入力、外側の飽和、NaN / Infinity の拒否。
 - プレビューのキャンセルが最新の確定済み設定へ戻る。
 
@@ -211,3 +274,5 @@ InputSystem の入力記録・現在状態は元の正規化値を保持する�
 - [ADR-INPUT-0001: デバイス別の入力記録と参照・通知・ポーリング](../input/INPUT-0001-input-system.md)
 - [.NET の構成](https://learn.microsoft.com/dotnet/core/extensions/configuration)
 - [System.Text.Json の概要](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json/overview)
+- [.NET の Options パターン](https://learn.microsoft.com/dotnet/core/extensions/options)
+- [Options 検証ソースジェネレーター](https://learn.microsoft.com/dotnet/core/extensions/options-validation-generator)
