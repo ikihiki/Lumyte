@@ -37,6 +37,7 @@ Lumyte/
 │   ├── Engine/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
+│   │   ├── Lumyte.Graphics.Abstractions/
 │   │   ├── Lumyte.Graphics/
 │   │   ├── Lumyte.Graphics.DirectX/
 │   │   ├── Lumyte.Graphics.DirectX.Native/
@@ -63,7 +64,7 @@ Lumyte/
 ├── mise.toml
 ├── mise.lock
 ├── NuGet.config
-└── Lumyte.sln
+└── Lumyte.slnx
 ```
 
 ### 各ディレクトリの役割
@@ -86,6 +87,8 @@ Lumyte/
 | `artifacts/nuget/` | 生成したパッケージを配置するローカル NuGet フィード |
 
 カテゴリは配置を整理するためのものであり、フォルダ階層だけで名前空間や依存関係を決めない。新しい機能カテゴリも同じ一段の分類ルールで追加する。
+
+描画バックエンドが実装する共通インターフェースと関連型は `Lumyte.Graphics.Abstractions` に配置する。デバイスの共通契約と依存境界は [グラフィックデバイスの設計](graphics/GRAPHICS-0001-graphics-device.md) に従う。バックエンド固有の API と使い方は各バックエンドプロジェクトの README に記載する。
 
 ### ADR のカテゴリ配置
 

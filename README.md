@@ -8,7 +8,16 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
+- [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)
+- [Wgpu](src/Graphics/Lumyte.Graphics.Wgpu/README.md)／[Browser](src/Graphics/Lumyte.Graphics.Browser/README.md)／[Vulkan](src/Graphics/Lumyte.Graphics.Vulkan/README.md)
+- [DeviceCaps サンプル](samples/Lumyte.Graphics.DeviceCaps.Sample/README.md)／[Browser サンプル](samples/Lumyte.Graphics.Browser.Sample/README.md)
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
 - [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
 - [アニメーションシステムの設計](docs/adr/animation/ANIMATION-0001-animation-system.md)
 - [アニメーションの利用例](samples/Lumyte.Animation.Sample/README.md)
+
+ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
+で `tests/` 内のソリューションに登録されたテストを実行できます。
+CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環境検証 → ビルド → テストの順に実行します。
+すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。

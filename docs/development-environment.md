@@ -23,6 +23,8 @@ mise run verify
 ```bash
 mise run setup                 # OS 依存とツールを含む再セットアップ
 mise run setup-native          # vcpkg と lavapipe ICD の準備
+mise run setup-wasm            # 固定 workload-set の wasm-tools を導入
+mise run test-wasm             # Wasm publish と browser WebGPU の検証
 mise run verify                # 開発環境の機能検証
 mise run check-native-format   # C/C++ の書式チェック
 mise run format-native         # C/C++ の書式を修正
@@ -95,7 +97,7 @@ mise run verify
 
 ## GitHub Actions
 
-`.github/workflows/setup-smoke.yml` は push、pull request、手動実行で Ubuntu 24.04 x64、Windows Server 2022 x64、Windows 11 ARM64（`windows-11-arm`）のセットアップから `mise run verify` までを確認する。各環境の結果を個別に表示し、一方の失敗で他方の検証を中止しない。[従来の成功した実行結果](https://github.com/ikihiki/Lumyte/actions/runs/37357250382)では Linux x64 と Windows x64 のセットアップと smoke test が完了した。
+`.github/workflows/composition.yml` は push、pull request、手動実行で Linux x64（`ubuntu-24.04`）、Linux aarch64（`ubuntu-24.04-arm`）、Windows x64（`windows-2022`）、Windows aarch64（`windows-11-arm`）を確認する。各ジョブは mise セットアップ、環境検証（`mise run verify`）、`Lumyte.slnx` の Release ビルド、ソリューションに登録された `tests/` 内のテストの順に実行する。先行ステップが失敗した場合は後続のビルド・テストを実行しない。他の構成の検証は継続する。テスト結果は構成ごとに TRX 形式の artifact として保存する。Linux x64 では追加でサンプル、パッケージ、書式も確認する。
 
 GitHub の Windows runner は管理者権限で動くため、システム依存の導入後に一時的な通常ユーザーで smoke test を実行する。`tools/setup/ci-windows-smoke.ps1` がユーザーの作成、検証プロセスの待機、ユーザーの削除を担当する。このスクリプトは GitHub Actions 専用で、通常の開発環境では管理者権限のないシェルから `mise run verify` を使う。
 
@@ -193,4 +195,20 @@ mise run verify
 
 Linux x64 は検証済み。Linux arm64 向けには取得元・チェックサムとロックを用意しているが、実機での実行検証は別途必要。
 
-Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version`、x64 用の `vars.windows_mesa_sha256`、ARM64 用の `vars.windows_mesa_arm64_sha256` を更新する。Windows x64 は GitHub Actions の Windows Server 2022 で、Vulkan の読み戻しと Direct3D 12 WARP を含む smoke test を検証済み。Windows ARM64 の検証結果は追加した Windows 11 ARM64 の CI で確認する。Browser の WebAssembly workload と WebGPU の実行環境は別途整備する。
+Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version`、x64 用の `vars.windows_mesa_sha256`、ARM64 用の `vars.windows_mesa_arm64_sha256` を更新する。Windows x64 は GitHub Actions の Windows Server 2022 で、Vulkan の読み戻しと Direct3D 12 WARP を含む smoke test を検証済み。Windows ARM64 の検証結果は追加した Windows 11 ARM64 の CI で確認する。Browser の WebAssembly workload は以下の mise タスクで管理する。
+
+## WebAssembly workload と CI
+
+.NET workload は独立したツールではなく、mise が管理する SDK にインストールする追加機能です。`mise.toml` の `vars.dotnet_workload_version` に workload-set のバージョン `10.0.401` を固定し、`mise run setup-wasm` から `dotnet workload install wasm-tools --version ...` を実行します。workload の pack・manifest は mise の SDK インストール先に保存され、NuGet の取得には既存の環境内キャッシュを使います。`mise.lock` は SDK の取得を管理し、workload のバージョンは mise の vars と .NET workload-set が管理します。
+
+```bash
+source tools/setup/activate.sh
+mise run setup-wasm
+CHROME=/usr/bin/google-chrome mise run test-wasm
+```
+
+`test-wasm` は `setup-wasm` に依存し、Browser サンプルの trimmed publish と実ブラウザー上の .NET／WebGPU 検証を順に実行します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
+
+既存 CI の Linux x64 ジョブで同じタスクを実行し、出力ログをテスト結果 artifact に保存します。ブラウザーは runner にある Google Chrome と SwiftShader を使用します。Linux arm64／Windows のジョブは通常のソリューションビルド・テストを実行し、Wasm workload は導入しません。Linux x64 の native GPU テストも、共通環境が準備した lavapipe を使用します。
+
+SDK または workload を更新するときは、mise の SDK バージョン・チェックサム、`global.json`、workload-set の互換性を確認し、`vars.dotnet_workload_version` を更新します。CI で workload の導入、Wasm publish、実 WebGPU の実行が成功することを確認してください。

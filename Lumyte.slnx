@@ -2,6 +2,8 @@
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Animation.Sample/Lumyte.Animation.Sample.csproj" />
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
+    <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
+    <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Animation/">
@@ -12,11 +14,20 @@
     <Project Path="src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" />
     <Project Path="src/Core/Lumyte.Composition/Lumyte.Composition.csproj" />
   </Folder>
+  <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Animation/">
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   </Folder>
 </Solution>
