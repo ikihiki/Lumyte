@@ -12,6 +12,15 @@ internal sealed class WgpuTextureView(WgpuTexture texture, TextureViewInfo info,
 
     public TextureViewInfo Info { get; } = info;
 
+    internal A.TextureView Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return native;
+        }
+    }
+
     internal WgpuDevice Owner => texture.Owner;
 
     public void Dispose()

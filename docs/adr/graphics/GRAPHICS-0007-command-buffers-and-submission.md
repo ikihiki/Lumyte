@@ -1,13 +1,13 @@
-# ADR-GRAPHICS-0008: CommandBufferと明示的なGPU実行
+# ADR-GRAPHICS-0007: CommandBufferと明示的なGPU実行
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-09
 
 ## 背景
 
-GPUコピー、resource barrier、render／compute passと描画命令を、resource自体のAPIから分離して記録する必要がある。CPUのCopyFrom／CopyToとGPU転送、記録とsubmit、submitと完了待機を別の操作にする。
+GPUコピー、resource barrier、render／compute passを、resource自体のAPIから分離して記録する必要がある。CPUのCopyFrom／CopyToとGPU転送、記録とsubmit、submitと完了待機を別の操作にする。
 
-[buffer](GRAPHICS-0002-typed-buffers.md)、[texture](GRAPHICS-0003-textures-and-views.md)、[Argument Table](GRAPHICS-0005-argument-tables-and-gpu-references.md)、[shader](GRAPHICS-0006-shader-compilation-and-modules.md)の契約へ接続する。PSOの分離は[設計PR #19](https://github.com/ikihiki/Lumyte/pull/19)で扱い、CommandBufferの設計を先に独立して進める。GRAPHICS-0007はそのPRの予約番号であり、本ADRは0008とする。
+[buffer](GRAPHICS-0002-typed-buffers.md)、[texture](GRAPHICS-0003-textures-and-views.md)、[Argument Table](GRAPHICS-0005-argument-tables-and-gpu-references.md)、[shader](GRAPHICS-0006-shader-compilation-and-modules.md)の契約へ接続する。
 
 ## 決定
 
@@ -15,7 +15,7 @@ GPUコピー、resource barrier、render／compute passと描画命令を、reso
 
 backendの具象classがIGraphicsCommandBuffer、IGraphicsQueue、IGraphicsSubmissionと各encoderを直接実装する。共通の公開契約とDescはGraphics.Abstractionsへ配置する。device生成を抽象化しない。
 
-初期範囲はdeviceが所有する一つのgraphics／compute／copy対応queue、one-shot command buffer、明示的なbarrier、buffer／2D color textureのGPUコピー、color render pass、compute pass、direct／indirect drawとdispatchである。複数queue、queue ownership transfer、secondary command、command再利用、timestamp、depth/stencil attachment、MSAA resolveは対応するresource／commandの拡張で扱う。
+初期範囲はdeviceが所有する一つのgraphics／compute／copy対応queue、one-shot command buffer、明示的なbarrier、buffer／2D color textureのGPUコピー、clearとstoreを行うcolor render pass、compute passの開始・終了である。複数queue、queue ownership transfer、secondary command、command再利用、timestamp、depth/stencil attachment、MSAA resolveは対応するresource／commandの拡張で扱う。
 
 command bufferの作成直後はRecording。利用者がcopy／barrier／passを記録し、FinishでExecutableへ移行する。queueへSubmitすると初めてGPU実行を開始する。同じcommand bufferを再submitしない。Submitは待機せず完了handleを返し、WaitAsyncは指定したsubmissionの完了だけを待つ。
 
@@ -23,7 +23,7 @@ resourceのCPUコピー、staging確保、map／unmap、GPUコピー、barrier�
 
 ### 公開API
 
-比較元はorigin/main。説明と失敗条件をコメントで示す。PSO選択、描画状態、viewport等とroot dataの設定はそれぞれのAPI設計からIRenderEncoder／IComputeEncoderへ追加する。本ADRはその型やbuffer内容のstructを重複して定義しない。
+比較元はorigin/main。説明と失敗条件をコメントで示す。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
@@ -36,17 +36,6 @@ resourceのCPUコピー、staging確保、map／unmap、GPUコピー、barrier�
 +        IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc);
 +        // textureコピーに必要なbyte単位の値。paddingやstagingを確保しない。
 +        TextureCopyLayout GetTextureCopyLayout(TextureFormat format);
-     }
-     [Flags]
-     public enum BufferUsage
-     {
-+        // GPUに置いたdraw／dispatch argumentの読み出しを許可する。
-+        Indirect = 32,
-     }
-     public sealed record DeviceCaps
-     {
-+        // dispatchの各軸に適用できる実効上限。各軸のnative上限の最小値。
-+        public uint MaxComputeWorkgroupsPerDimension { get; init; }
      }
 +    public sealed record CommandBufferDesc
 +    {
@@ -116,16 +105,16 @@ resourceのCPUコピー、staging確保、map／unmap、GPUコピー、barrier�
 +    [Flags]
 +    public enum PipelineStage
 +    {
-+        None = 0, Host = 1, Copy = 2, DrawIndirect = 4, IndexInput = 8,
++        None = 0, Host = 1, Copy = 2,
 +        VertexShader = 16, FragmentShader = 32, ComputeShader = 64, ColorOutput = 128,
-+        AllGraphics = DrawIndirect | IndexInput | VertexShader | FragmentShader | ColorOutput,
++        AllGraphics = VertexShader | FragmentShader | ColorOutput,
 +        AllCommands = Copy | AllGraphics | ComputeShader,
 +    }
 +    [Flags]
 +    public enum ResourceAccess
 +    {
 +        None = 0, HostRead = 1, HostWrite = 2, CopyRead = 4, CopyWrite = 8,
-+        IndirectRead = 16, IndexRead = 32, ShaderRead = 64, ShaderWrite = 128,
++        ShaderRead = 64, ShaderWrite = 128,
 +        ColorRead = 256, ColorWrite = 512,
 +    }
 +    public readonly record struct BarrierScope(PipelineStage Stages, ResourceAccess Access);
@@ -175,23 +164,11 @@ resourceのCPUコピー、staging確保、map／unmap、GPUコピー、barrier�
 +    }
 +    public interface IRenderEncoder
 +    {
-+        // index sliceの先頭がfirstIndex=0。Index usageとunmappedを検証する。
-+        void SetIndexBuffer(BufferSlice<ushort> indices);
-+        void SetIndexBuffer(BufferSlice<uint> indices);
-+        void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
-+        void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
-+        // 4／5 uintのGPU argument。内容を定義する共通structやCPU readbackを設けない。
-+        void DrawIndirect(BufferSlice<uint> arguments);
-+        void DrawIndexedIndirect(BufferSlice<uint> arguments);
 +        // passを一度だけ終了する。encoderは以後利用不可。command bufferはRecordingへ戻る。
 +        void End();
 +    }
 +    public interface IComputeEncoder
 +    {
-+        // group数。workgroup sizeはshader binaryから取得し、ここでは再指定しない。
-+        void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1);
-+        // 3 uintのGPU argument。CPUへ読み戻して検証しない。
-+        void DispatchIndirect(BufferSlice<uint> arguments);
 +        void End();
 +    }
  }
@@ -203,7 +180,7 @@ command bufferの生存中は同時に一つのpassだけを持てる。BeginRen
 
 Finishはnative command bufferを確定してExecutableにする。Finish後は記録不可。Submit成功後はSubmitted、一つのsubmissionが完了すると含まれるcommand bufferはCompletedとなる。Recording／Executable／CompletedのDisposeはnative resourceを解放し、未submitの記録を破棄できる。active passがあるDisposeは拒否するため、破棄する場合も先にEndする。Submitted中のDisposeは拒否し、完了待機を行わない。Disposeはidempotent。
 
-通常の入力検証に失敗した記録操作は、command状態を変えずnative命令を追加しない。native encoderの継続が不可能な失敗はFaultedへ移し、Finish／Submitを拒否する。未submitでGPU使用がないFaultedは破棄でき、active encoderも無効化する。submitの成否が不明なFaultedは、後述のGPU使用終了確認が必要となる。範囲・数値の不整合はArgumentException／ArgumentOutOfRangeException、状態違反はInvalidOperationException、別deviceはArgumentException、解放済みresourceはObjectDisposedException、非対応featureはNotSupportedException、native失敗は診断を含むInvalidOperationExceptionとする。
+通常の入力検証に失敗した記録操作は、command状態を変えずnative命令を追加しない。native記録の確定に失敗した場合はFaultedへ移し、Finish／Submitを拒否する。未submitでGPU使用がないFaultedは破棄できる。範囲・数値の不整合はArgumentException／ArgumentOutOfRangeException、状態違反はInvalidOperationException、別deviceはArgumentException、解放済みresourceはObjectDisposedException、非対応featureはNotSupportedException、native失敗は診断を含むInvalidOperationExceptionとする。
 
 ### GPUコピー
 
@@ -230,23 +207,21 @@ stage／access flagの未知bit、相互に対応しないstageとaccess、usage
 
 native APIが明示barrierを持つ場合は対応する命令へ変換する。native APIが状態遷移を管理する場合も、宣言したdependencyとusageを検証し、そのAPIの順序・visibility保証で実現する。範囲をnative APIが要求する粒度へ広げることはできるが、転送データの範囲やresource sizeは変更しない。
 
+textureはcommand buffer内での最初の利用前に、利用者が明示的なTextureBarrierを記録してstateを宣言する。記録済みのstateと後続のBeforeStateの不一致を拒否する。command開始時の実際のstateを推測せず、利用者が指定する。
+
 backendは記録済みの宣言を整合性検証に使えるが、resourceのGPU内容から依存を推測したり、不足したbarrierを補完したりしない。command間・submission間の実際のBeforeStateと依存は利用者が管理する。queueの実行順、submissionの完了、resourceのmemory visibilityは同一の概念として扱わない。
 
-### Render／compute passとdraw
+### Render／compute pass
 
 render attachmentは同一deviceの生存viewで、RenderAttachment usage、D2、単一mip・単一layerを必要とする。選択mipの幅・高さが全slotで一致し、重複または重なるsubresourceを複数slotへ指定しない。format・寸法はviewから取得し、利用者に別のattachment layoutを再指定させない。初期texture契約はsample count 1であり、MSAAとresolveはtexture拡張とともに追加する。
 
 Loadは既存内容を読み、ClearはfiniteなClearValueで初期化する。Discard後の内容は未定義で、後続のread／Loadのために保持されない。passはattachmentをColorAttachment stateで使用し、前後のbarrierを自動記録しない。BeginRenderPassではDescとlistをsnapshotにし、呼び出し後の元list変更が記録へ影響しない。
 
-PSO設計のSetPipelineはIGraphicsPipelineを選択し、描画状態はencoderへ設定する。draw時にshader program・状態・現在の実attachmentを検証し、必要なnative PSOの解決を行う。cacheが必要なbackendは内部cacheを使い、他の生成単位は毎回生成との比較から選ぶ。利用側にprepare objectを要求しない。各encoderの開始時はprogram・index binding等が未設定で、pass間で状態を引き継がない。pipeline選択とroot dataの詳細はそれぞれの契約で定める。
-
-DrawIndexedはindex binding、範囲とformatを検証する。indexの範囲はfirstIndexとindexCountで選び、実index値やvertex pulling先の範囲をCPUへ読み戻して検証しない。IndirectはDrawIndirectでCount=4、DrawIndexedIndirectでCount=5、DispatchIndirectでCount=3のuint sliceを使い、4-byte offset alignmentと同一device・unmapped・Indirect usageを検証する。引数のGPU内容は利用者が正しく用意する。feature非対応なら拒否する。初期portable契約のindirect drawではfirstInstanceを0としてargumentを作成し、非zeroを利用する拡張はdevice featureとともに別途設計する。
-
-Dispatchの各group countは正数かつMaxComputeWorkgroupsPerDimension以下。workgroup sizeとその積の検証はshader／compute pipeline作成時に行う。direct drawのvertex／index countかinstance countが0なら、binding等を検証したうえでGPU drawを追加しない。整数の加算とbyte換算はcheckedで処理する。
+compute passは命令記録のscopeを表し、初期範囲では開始とEndを提供する。両encoderはEnd後に利用できず、次のpassは新しいhandleを返す。
 
 ### Submitと完了
 
-Submitはlist全体を検証してsnapshotにし、同一queueへその順番で提出する。通常の入力不備で部分submitしない。native実行開始を確定できない失敗はqueue／deviceの異常として報告し、提出したか不明なbufferを再submit可能なExecutableへ勝手に戻さない。この状態はFaultedとして扱い、GPU使用が終了したと確認できるまでnative memoryを解放しない。device loss／recoveryの追加契約で回収方法を定める。
+Submitはlist全体を検証してsnapshotにし、同一queueへその順番で提出する。通常の入力不備で部分submitしない。native提出の失敗は診断を含む例外として報告する。native APIが提出されていないことを保証する場合だけExecutableを維持する。device lossでGPU使用終了を確定できる場合はFaultedとして再submitを拒否する。
 
 submissionはそのsubmitに含まれる全command bufferの完了を表す。後続のsubmitまでqueue全体をidleにするAPIではない。WaitAsyncは必要なnative event処理を進められるが、追加のsubmitやresourceのmap／readbackを行わない。完了失敗はStatus=Failedとして診断を含む例外を返す。
 
@@ -274,7 +249,7 @@ readback.Unmap();
 
 queueはdeviceが所有し、command bufferとsubmissionはdeviceの子resourceとして数える。生存する子があるdeviceのDisposeは拒否する。encoderはcommand bufferに属する非所有のpass handleで、Endしてからcommand bufferをFinish／破棄する。command bufferはsubmit後もsubmission完了までnative allocator／command memoryを保持する。
 
-resourceやprogramへのCPU参照を記録に保持しても、利用側がDisposeを呼ぶ権利とGPU寿命の責任は移らない。記録からsubmit、GPU完了まで参照先resourceを生存させ、unmappedを要求するGPUアクセス中にmapしない。submit時にも記録したresourceの生存を検証する。CPUアクセス、CPU書き込み、GPU使用、resource解放の同期は利用者が管理する。
+resourceへのCPU参照を記録に保持しても、利用側がDisposeを呼ぶ権利とGPU寿命の責任は移らない。記録からsubmit、GPU完了まで参照先resourceを生存させ、unmappedを要求するGPUアクセス中にmapしない。submit時にも記録したresourceの生存を検証する。CPUアクセス、CPU書き込み、GPU使用、resource解放の同期は利用者が管理する。
 
 内部lock、atomic counter、暗黙のGPU完了待機、複数commandの並列呼び出しに関する保証を設けない。native APIが必要とするCPU cache flush／invalidateは既存のMap／CopyFrom／CopyTo／Unmapの契約で扱い、GPU barrierやsubmitと混同しない。
 
@@ -291,12 +266,12 @@ native command encoder／allocator、queue、completion fence／callback、barri
 
 ## 結果と影響
 
-CPUコピー、GPU記録、submitと待機の境界が明確になる。利用者はstaging、padding、barrier、resource lifetimeを明示的に管理する。one-shotと単一queueに限定することで、最初のcopy・clear・compute／drawの実行経路を共通APIで設計できる。
+CPUコピー、GPU記録、submitと待機の境界が明確になる。利用者はstaging、padding、barrier、resource lifetimeを明示的に管理する。one-shotと単一queueに限定することで、copy・clear・passの実行経路を共通APIで設計できる。
 
-Indirect accessをBufferUsageへ追加する必要がある。初期render passは既存color textureだけで成立し、depth/stencil・MSAAをPSOのためだけに先行してresource APIへ導入しない。
+初期render passは既存color textureを使用する。depth/stencilとMSAAは対応するresourceの拡張で扱う。
 
 ## 検証方針
 
-shared sample／testの本体は共通APIのみを使用し、backend固有deviceの作成はbootstrapに置く。明示的なUpload → copy → Readback → wait → map → CPU copyの全byte一致、textureのrow／layer paddingとpartial region、clearとstore、pass順序、compute書き込み後のcopy、indexed／indirect drawを既存CIで検証する。PSOとroot dataが必要な描画検証はそれらの契約への接続後に追加する。
+shared sample／testの本体は共通APIのみを使用し、backend固有deviceの作成はbootstrapに置く。明示的なUpload → copy → Readback → wait → map → CPU copyの全byte一致、textureのrow／layer paddingとpartial region、clearとstore、pass順序、完了待機を既存CIで検証する。
 
 alignment違反、size／usage／device不一致、mapped buffer、pass中のcopy／barrier、Finish忘れ、二重submit、submit後の元list変更、キャンセル後の再wait、Pending中のDisposeと失敗時の状態を確認する。CPUコピーがnative GPU copy／submitを呼ばないこと、記録がsubmit／waitを起こさないことを検証する。

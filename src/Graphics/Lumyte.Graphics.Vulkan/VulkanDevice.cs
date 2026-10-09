@@ -10,22 +10,35 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Instance _instance;
     private readonly Device _device;
     private readonly PhysicalDevice _physicalDevice;
+    private readonly Queue _nativeQueue;
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
     private int _argumentTableCount;
     private int _shaderCount;
+    private int _commandCount;
+    private int _submissionCount;
     private bool _disposed;
 
-    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays)
+    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily)
     {
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
         SupportsCubeArrays = supportsCubeArrays;
+        QueueFamily = queueFamily;
+        api.GetDeviceQueue(device, queueFamily, 0, out _nativeQueue);
+        Queue = new VulkanQueue(this);
     }
+
+    /// <inheritdoc />
+    public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the enabled capabilities and physical device limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal uint QueueFamily { get; }
+
+    internal Queue NativeQueue => _nativeQueue;
 
     internal bool SupportsCubeArrays { get; }
 
@@ -35,7 +48,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     internal PhysicalDevice PhysicalDevice => _physicalDevice;
 
-    /// <summary>Creates a Vulkan 1.3 device with a graphics and compute queue and maintenance4 support.</summary>
+    /// <summary>Creates a Vulkan 1.3 device with a general queue, maintenance4, dynamic rendering and synchronization2.</summary>
     /// <param name="physicalDeviceIndex">The zero-based device index in the Vulkan enumeration.</param>
     /// <returns>The owned instance and logical device.</returns>
     public static VulkanDevice Create(uint physicalDeviceIndex = 0)
@@ -60,20 +73,20 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
             var supported = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
             api.GetPhysicalDeviceFeatures2(physical, &supported);
-            if (!supported13.Maintenance4)
+            if (!supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2)
             {
-                throw new NotSupportedException("Vulkan maintenance4 is required to report the maximum buffer size.");
+                throw new NotSupportedException("Vulkan maintenance4, dynamic rendering and synchronization2 are required.");
             }
 
             uint queueFamily = SelectQueueFamily(api, physical);
             float priority = 1;
             var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
             var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray };
-            var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, Maintenance4 = true };
+            var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, Maintenance4 = true, DynamicRendering = true, Synchronization2 = true };
             var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
             DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
-            return new(api, instance, device, physical, caps, enabled.ImageCubeArray);
+            return new(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily);
         }
         catch
         {
@@ -90,6 +103,28 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             api.Dispose();
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(desc);
+        var commands = new VulkanCommandBuffer(this);
+        _commandCount++;
+        return commands;
+    }
+
+    /// <inheritdoc />
+    public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
+    {
+        ValidateAlive();
+        if (!Enum.IsDefined(format))
+        {
+            throw new NotSupportedException("Unknown color texture format.");
+        }
+
+        return new() { BytesPerTexel = 4, BufferOffsetAlignmentInBytes = 4, BytesPerRowAlignment = 4 };
     }
 
     /// <inheritdoc />
@@ -173,9 +208,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers and shaders before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, commands and submissions before disposing their device.");
         }
 
         if (_disposed)
@@ -188,6 +223,14 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _api.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseCommand() => _commandCount--;
+
+    internal void RetainSubmission() => _submissionCount++;
+
+    internal void ReleaseSubmission() => _submissionCount--;
+
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     internal void ReleaseShader() => _shaderCount--;
 

@@ -42,3 +42,5 @@ SamplerExerciseも共通APIで実行します。GPU samplerの確保・sampling 
 ArgumentTableExerciseで登録・要素参照・slot置換・解放と寿命、別deviceのresource拒否を確認します。既存Wasm CIは `Argument table checks passed` を検証します。
 
 オフライン WGSL と反射情報も shared DLL から読み込み、`ShaderExercise` で WebGPU module の生成を確認します。ブラウザー内でオンラインコンパイルは実行しません。既存 Wasm CI は shader 検証の report と WebGPU の console error も確認します。
+
+CommandExerciseも共通API経由で実行し、GPUコピーとclear／storeのreadbackを照合します。既存のWasm CIは `Command checks passed` を必須の成功結果として確認します。
