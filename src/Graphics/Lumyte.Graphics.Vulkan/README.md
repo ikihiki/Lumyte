@@ -48,10 +48,32 @@ physical device の properties と features を生成時に取得し、有効に
 
 CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copy と同期の command API は別の設計で追加します。
 
-CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。buffer の操作は device ごとの gate で直列化し、buffer が残った device の Dispose は InvalidOperationException で拒否します。解放済み allocation への access は ObjectDisposedException です。
+CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。必要な同期は利用者が管理し、bufferが残ったdeviceのDisposeはInvalidOperationExceptionで拒否します。解放済み allocation への access は ObjectDisposedException です。
 
 buffer usage は TransferSrcBit、TransferDstBit、StorageBufferBit、IndexBufferBit に対応付けます。Automatic は DEVICE_LOCAL、Upload／Readback は HOST_VISIBLE | HOST_COHERENT の memory type を選びます。指定 usage の VkMemoryRequirements と条件を満たす type がなければ NotSupportedException になります。
 
 VkBuffer の size は正確な論理 SizeInBytes とし、内部の VkDeviceMemory は VkMemoryRequirements.Size に従って確保します。MapMemory／UnmapMemory で CPU access を切り替え、CopyFrom／CopyTo は pointer 上の CPU span をコピーします。HOST_COHERENT を必須にしているため、CPU copy の中に flush／invalidate を挿入しません。Vulkan の MapMemory は GPU の完了待機を行わないので、利用者が同期を保証してください。
 
 Buffer Device Address、GPU address の公開・登録、shader binding はこの buffer API に含めません。
+
+## TextureとView
+
+生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
+
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、利用者による同期を前提にlive view数を管理します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+
+Silk.NET.Vulkanでoptimal tilingのVkImageとdevice-local VkDeviceMemoryを確保し、VkImageViewでcolor aspectの範囲を選びます。GetPhysicalDeviceImageFormatPropertiesでformat・usage・寸法・mip・layerとsample count 1を照合し、不対応はNotSupportedExceptionです。native allocation失敗時はimageとmemoryをcleanupします。初期layoutはUndefinedで、barrierを挿入しません。
+
+squareかつ6 layer以上のimageにはCubeCompatibleを指定します。imageCubeArrayはphysical deviceで対応していればlogical deviceで有効化し、不対応deviceのCubeArray viewはNotSupportedExceptionです。view、image、memoryの順に解放し、GPU完了は利用者が保証します。
+
+DescとView範囲の検証は、このbackend assembly内のinternalなTextureValidationで行います。Abstractionsの内部型へのアクセスやInternalsVisibleToは使いません。
+
+resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。状態検証はデータ競合を防止する機構ではありません。
+
+## Sampler
+
+CreateSamplerは具象backendのIGraphicsSamplerを返し、Descを変更せずにsampling stateを確保します。enum、有限で非負のLOD、min <= max、正のanisotropyとlinear filter条件をbackend内のSamplerValidationで検証します。caps超過はNotSupportedExceptionで、暗黙補正しません。
+
+Silk.NET.VulkanのvkCreateSampler／vkDestroySamplerを使用し、normalized coordinates、LOD bias 0のVkSamplerを確保します。SamplerAnisotropyはdeviceで有効化した機能だけを利用し、上限はphysical MaxSamplerAnisotropyの整数部分と16の小さい方、非対応時は1です。anisotropy > 1の場合だけAnisotropyEnableを有効にし、Compare未指定ならCompareEnable=falseです。生成失敗はResultに応じた例外で返し、live child数を増やしません。
+
+samplerはtexture／Viewを所有せず、deviceのlive childとして数えます。Disposeは一度だけnative資源を解放し、samplerが残るdeviceのDisposeは拒否します。CPU／GPUの利用・解放に必要な同期は利用者の責務です。内部lock、InternalsVisibleTo、sampler cacheは設けません。

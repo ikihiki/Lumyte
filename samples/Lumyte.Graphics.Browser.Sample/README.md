@@ -34,3 +34,7 @@ CHROME=/usr/bin/google-chrome node tools/graphics/verify-browser.mjs
 このサンプルは `wasm-tools` を必要とするため `Lumyte.slnx` に登録していません。Browser library 自体は通常の .NET SDK でソリューションからビルドできます。既存 CI の Linux x64 ジョブは `mise run test-wasm` で、固定 workload の導入・publish・実 WebGPU と WebAssembly による検証を実行します。
 
 BufferExercise も同じ共通 API で実行します。実際の GPUBuffer の確保・map・CPU copy・unmap と境界条件を確認し、成功時には `Buffer checks passed` を表示します。
+
+TextureExerciseも実行し、GPUTextureとGPUTextureViewの確保、mip／layer・cube選択と寿命を確認します。成功時には `Texture checks passed` を表示し、既存Wasm CIがこの結果を検証します。
+
+SamplerExerciseも共通APIで実行します。GPU samplerの確保・sampling stateと所有を確認し、既存Wasm CIは `Sampler checks passed` を検証します。

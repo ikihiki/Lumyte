@@ -15,6 +15,9 @@ public sealed record DeviceCaps
     /// <summary>Gets the maximum two-dimensional texture extent in texels.</summary>
     public uint MaxTextureDimension2D { get; init; }
 
+    /// <summary>Gets the maximum two-dimensional texture array layer count.</summary>
+    public uint MaxTextureArrayLayers { get; init; }
+
     /// <summary>Gets the maximum color attachment count.</summary>
     public uint MaxColorAttachments { get; init; }
 
@@ -23,6 +26,9 @@ public sealed record DeviceCaps
 
     /// <summary>Gets the maximum sampler count per shader stage.</summary>
     public uint MaxSamplersPerStage { get; init; }
+
+    /// <summary>Gets the maximum supported sampler anisotropy; one means anisotropic filtering is unavailable.</summary>
+    public ushort MaxSamplerAnisotropy { get; init; } = 1;
 
     /// <summary>Gets the maximum uniform buffer count per shader stage.</summary>
     public uint MaxUniformBuffersPerStage { get; init; }

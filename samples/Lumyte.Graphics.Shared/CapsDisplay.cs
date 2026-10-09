@@ -16,7 +16,7 @@ public static class CapsDisplay
             throw new InvalidOperationException("Caps must return the same snapshot.");
         }
 
-        if (caps.MaxBufferSize == 0 || caps.MaxTextureDimension2D == 0 || caps.MaxComputeInvocationsPerWorkgroup == 0)
+        if (caps.MaxBufferSize == 0 || caps.MaxTextureDimension2D == 0 || caps.MaxTextureArrayLayers == 0 || caps.MaxComputeInvocationsPerWorkgroup == 0)
         {
             throw new InvalidOperationException("A graphics and compute device must report usable limits.");
         }
@@ -25,9 +25,11 @@ public static class CapsDisplay
             $"MaxBufferSize: {caps.MaxBufferSize} bytes\n" +
             $"MaxStorageBufferBindingSize: {caps.MaxStorageBufferBindingSize} bytes\n" +
             $"MaxTextureDimension2D: {caps.MaxTextureDimension2D} texels\n" +
+            $"MaxTextureArrayLayers: {caps.MaxTextureArrayLayers} layers\n" +
             $"MaxColorAttachments: {caps.MaxColorAttachments}\n" +
             $"MaxSampledTexturesPerStage: {caps.MaxSampledTexturesPerStage}\n" +
             $"MaxSamplersPerStage: {caps.MaxSamplersPerStage}\n" +
+            $"MaxSamplerAnisotropy: {caps.MaxSamplerAnisotropy}\n" +
             $"MaxUniformBuffersPerStage: {caps.MaxUniformBuffersPerStage}\n" +
             $"MaxStorageBuffersPerStage: {caps.MaxStorageBuffersPerStage}\n" +
             $"MaxComputeInvocationsPerWorkgroup: {caps.MaxComputeInvocationsPerWorkgroup}\n" +

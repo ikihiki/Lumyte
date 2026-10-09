@@ -8,8 +8,9 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
-    private readonly object _bufferGate = new();
     private int _bufferCount;
+    private int _textureCount;
+    private int _samplerCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -19,8 +20,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
-
-    internal object BufferGate => _bufferGate;
 
     internal JSObject Handle => _handle;
 
@@ -56,12 +55,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        lock (_bufferGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
-            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+        return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
 
     /// <inheritdoc />
@@ -69,54 +65,66 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        lock (_bufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        BufferLayout<T> layout = GetBufferLayout<T>();
+        ulong size = layout.GetSizeInBytes(desc.Count);
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            BufferLayout<T> layout = GetBufferLayout<T>();
-            ulong size = layout.GetSizeInBytes(desc.Count);
-            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
-            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
-            {
-                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
-            }
-
-            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
-            {
-                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
-            }
-
-            var buffer = new BrowserBuffer<T>(this, desc, layout, size);
-            _bufferCount++;
-            return buffer;
+            throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
         }
+
+        if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+        {
+            throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+        }
+
+        var buffer = new BrowserBuffer<T>(this, desc, layout, size);
+        _bufferCount++;
+        return buffer;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsTexture CreateTexture(TextureDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureValidation.Validate(desc, Caps);
+        var texture = new BrowserTexture(this, desc);
+        _textureCount++;
+        return texture;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new BrowserSampler(this, desc);
+        _samplerCount++;
+        return sampler;
     }
 
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        lock (_bufferGate)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
         {
-            if (_bufferCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
-            }
-
-            if (_disposed)
-            {
-                return;
-            }
-
-            BrowserInterop.DestroyDevice(_handle);
-            _handle.Dispose();
-            _disposed = true;
+            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
         }
+
+        if (_disposed)
+        {
+            return;
+        }
+
+        BrowserInterop.DestroyDevice(_handle);
+        _handle.Dispose();
+        _disposed = true;
     }
 
-    internal void ReleaseBuffer()
-    {
-        lock (_bufferGate)
-        {
-            _bufferCount--;
-        }
-    }
+    internal void ReleaseSampler() => _samplerCount--;
+
+    internal void ReleaseTexture() => _textureCount--;
+
+    internal void ReleaseBuffer() => _bufferCount--;
 }

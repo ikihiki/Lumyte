@@ -10,8 +10,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Instance _instance;
     private readonly A.Adapter _adapter;
     private readonly A.Device _device;
-    private readonly object _bufferGate = new();
     private int _bufferCount;
+    private int _textureCount;
+    private int _samplerCount;
     private bool _disposed;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device)
@@ -24,9 +25,11 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             MaxBufferSize = limits.maxBufferSize,
             MaxStorageBufferBindingSize = limits.maxStorageBufferBindingSize,
             MaxTextureDimension2D = limits.maxTextureDimension2D,
+            MaxTextureArrayLayers = limits.maxTextureArrayLayers,
             MaxColorAttachments = limits.maxColorAttachments,
             MaxSampledTexturesPerStage = limits.maxSampledTexturesPerShaderStage,
             MaxSamplersPerStage = limits.maxSamplersPerShaderStage,
+            MaxSamplerAnisotropy = 16,
             MaxUniformBuffersPerStage = limits.maxUniformBuffersPerShaderStage,
             MaxStorageBuffersPerStage = limits.maxStorageBuffersPerShaderStage,
             MaxComputeInvocationsPerWorkgroup = limits.maxComputeInvocationsPerWorkgroup,
@@ -39,8 +42,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the effective device capabilities captured during creation.</summary>
     public DeviceCaps Caps { get; }
-
-    internal object BufferGate => _bufferGate;
 
     internal A.Device NativeDevice => _device;
 
@@ -70,12 +71,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        lock (_bufferGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
-            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+        return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
 
     /// <inheritdoc />
@@ -83,55 +81,67 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        lock (_bufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        BufferLayout<T> layout = GetBufferLayout<T>();
+        ulong size = layout.GetSizeInBytes(desc.Count);
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            BufferLayout<T> layout = GetBufferLayout<T>();
-            ulong size = layout.GetSizeInBytes(desc.Count);
-            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
-            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
-            {
-                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
-            }
-
-            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
-            {
-                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
-            }
-
-            var buffer = new WgpuBuffer<T>(this, desc, layout, size);
-            _bufferCount++;
-            return buffer;
+            throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
         }
+
+        if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+        {
+            throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+        }
+
+        var buffer = new WgpuBuffer<T>(this, desc, layout, size);
+        _bufferCount++;
+        return buffer;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsTexture CreateTexture(TextureDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureValidation.Validate(desc, Caps);
+        var texture = new WgpuTexture(this, desc);
+        _textureCount++;
+        return texture;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new WgpuSampler(this, desc);
+        _samplerCount++;
+        return sampler;
     }
 
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        lock (_bufferGate)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
         {
-            if (_bufferCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
-            }
-
-            if (_disposed)
-            {
-                return;
-            }
-
-            _device.Dispose();
-            _adapter.Dispose();
-            _instance.Dispose();
-            _disposed = true;
+            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
         }
+
+        if (_disposed)
+        {
+            return;
+        }
+
+        _device.Dispose();
+        _adapter.Dispose();
+        _instance.Dispose();
+        _disposed = true;
     }
 
-    internal void ReleaseBuffer()
-    {
-        lock (_bufferGate)
-        {
-            _bufferCount--;
-        }
-    }
+    internal void ReleaseSampler() => _samplerCount--;
+
+    internal void ReleaseTexture() => _textureCount--;
+
+    internal void ReleaseBuffer() => _bufferCount--;
 }

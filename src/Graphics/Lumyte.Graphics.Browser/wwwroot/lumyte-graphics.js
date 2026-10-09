@@ -15,9 +15,11 @@ export async function createDevice() {
             maxBufferSize: limits.maxBufferSize,
             maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
             maxTextureDimension2D: limits.maxTextureDimension2D,
+            maxTextureArrayLayers: limits.maxTextureArrayLayers,
             maxColorAttachments: limits.maxColorAttachments,
             maxSampledTexturesPerStage: limits.maxSampledTexturesPerShaderStage,
             maxSamplersPerStage: limits.maxSamplersPerShaderStage,
+            maxSamplerAnisotropy: 16,
             maxUniformBuffersPerStage: limits.maxUniformBuffersPerShaderStage,
             maxStorageBuffersPerStage: limits.maxStorageBuffersPerShaderStage,
             maxComputeInvocationsPerWorkgroup: limits.maxComputeInvocationsPerWorkgroup,
@@ -84,4 +86,56 @@ export function destroyBuffer(handle) {
         handle.buffer.destroy();
         handle.disposed = true;
     }
+}
+
+export function createTexture(handle, width, height, layers, mips, format, flags) {
+    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    let usage = 0;
+    if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
+    if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
+    if (flags & 4) usage |= GPUTextureUsage.TEXTURE_BINDING;
+    if (flags & 8) usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+    return handle.device.createTexture({
+        size: [width, height, layers],
+        mipLevelCount: mips,
+        sampleCount: 1,
+        dimension: "2d",
+        format: formats[format],
+        usage,
+    });
+}
+
+export function createTextureView(texture, dimension, baseMip, mipCount, baseLayer, layerCount) {
+    return texture.createView({
+        dimension: ["2d", "2d-array", "cube", "cube-array"][dimension],
+        aspect: "all",
+        baseMipLevel: baseMip,
+        mipLevelCount: mipCount,
+        baseArrayLayer: baseLayer,
+        arrayLayerCount: layerCount,
+    });
+}
+
+export function destroyTexture(texture) {
+    texture.destroy();
+}
+
+export function createSampler(handle, descJson) {
+    const desc = JSON.parse(descJson);
+    const filters = ["nearest", "linear"];
+    const addresses = ["clamp-to-edge", "repeat", "mirror-repeat"];
+    const compares = ["never", "less", "equal", "less-equal", "greater", "not-equal", "greater-equal", "always"];
+    const native = {
+        minFilter: filters[desc.minFilter],
+        magFilter: filters[desc.magFilter],
+        mipmapFilter: filters[desc.mipmapFilter],
+        addressModeU: addresses[desc.addressU],
+        addressModeV: addresses[desc.addressV],
+        addressModeW: addresses[desc.addressW],
+        lodMinClamp: desc.lodMinClamp,
+        lodMaxClamp: desc.lodMaxClamp,
+        maxAnisotropy: desc.maxAnisotropy,
+    };
+    if (desc.compare !== null) native.compare = compares[desc.compare];
+    return handle.device.createSampler(native);
 }

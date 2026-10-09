@@ -10,20 +10,22 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Instance _instance;
     private readonly Device _device;
     private readonly PhysicalDevice _physicalDevice;
-    private readonly object _bufferGate = new();
     private int _bufferCount;
+    private int _textureCount;
+    private int _samplerCount;
     private bool _disposed;
 
-    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps)
+    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays)
     {
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
+        SupportsCubeArrays = supportsCubeArrays;
     }
 
     /// <summary>Gets the enabled capabilities and physical device limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
 
-    internal object BufferGate => _bufferGate;
+    internal bool SupportsCubeArrays { get; }
 
     internal Vk Api => _api;
 
@@ -64,12 +66,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             uint queueFamily = SelectQueueFamily(api, physical);
             float priority = 1;
             var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
-            var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp };
+            var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray };
             var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, Maintenance4 = true };
             var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
             DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
-            return new(api, instance, device, physical, caps);
+            return new(api, instance, device, physical, caps, enabled.ImageCubeArray);
         }
         catch
         {
@@ -92,12 +94,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        lock (_bufferGate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
-            return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+        return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
 
     /// <inheritdoc />
@@ -105,57 +104,69 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        lock (_bufferGate)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        BufferLayout<T> layout = GetBufferLayout<T>();
+        ulong size = layout.GetSizeInBytes(desc.Count);
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            BufferLayout<T> layout = GetBufferLayout<T>();
-            ulong size = layout.GetSizeInBytes(desc.Count);
-            const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
-            if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
-            {
-                throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
-            }
-
-            if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
-            {
-                throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
-            }
-
-            var buffer = new VulkanBuffer<T>(this, desc, layout, size);
-            _bufferCount++;
-            return buffer;
+            throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));
         }
+
+        if (desc.Memory != MemoryPreference.Automatic && size > int.MaxValue)
+        {
+            throw new NotSupportedException("CPU-mapped buffers must fit a managed byte span.");
+        }
+
+        var buffer = new VulkanBuffer<T>(this, desc, layout, size);
+        _bufferCount++;
+        return buffer;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsTexture CreateTexture(TextureDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        TextureValidation.Validate(desc, Caps);
+        var texture = new VulkanTexture(this, desc);
+        _textureCount++;
+        return texture;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new VulkanSampler(this, desc);
+        _samplerCount++;
+        return sampler;
     }
 
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        lock (_bufferGate)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
         {
-            if (_bufferCount != 0)
-            {
-                throw new InvalidOperationException("Dispose all buffers before disposing their device.");
-            }
-
-            if (_disposed)
-            {
-                return;
-            }
-
-            _api.DestroyDevice(_device, null);
-            _api.DestroyInstance(_instance, null);
-            _api.Dispose();
-            _disposed = true;
+            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
         }
+
+        if (_disposed)
+        {
+            return;
+        }
+
+        _api.DestroyDevice(_device, null);
+        _api.DestroyInstance(_instance, null);
+        _api.Dispose();
+        _disposed = true;
     }
 
-    internal void ReleaseBuffer()
-    {
-        lock (_bufferGate)
-        {
-            _bufferCount--;
-        }
-    }
+    internal void ReleaseSampler() => _samplerCount--;
+
+    internal void ReleaseTexture() => _textureCount--;
+
+    internal void ReleaseBuffer() => _bufferCount--;
 
     private static PhysicalDevice SelectPhysicalDevice(Vk api, Instance instance, uint index)
     {
@@ -220,9 +231,11 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             MaxBufferSize = maxBufferSize,
             MaxStorageBufferBindingSize = limits.MaxStorageBufferRange,
             MaxTextureDimension2D = limits.MaxImageDimension2D,
+            MaxTextureArrayLayers = limits.MaxImageArrayLayers,
             MaxColorAttachments = limits.MaxColorAttachments,
             MaxSampledTexturesPerStage = limits.MaxPerStageDescriptorSampledImages,
             MaxSamplersPerStage = limits.MaxPerStageDescriptorSamplers,
+            MaxSamplerAnisotropy = enabled.SamplerAnisotropy ? checked((ushort)Math.Min(16, Math.Floor(limits.MaxSamplerAnisotropy))) : (ushort)1,
             MaxUniformBuffersPerStage = limits.MaxPerStageDescriptorUniformBuffers,
             MaxStorageBuffersPerStage = limits.MaxPerStageDescriptorStorageBuffers,
             MaxComputeInvocationsPerWorkgroup = limits.MaxComputeWorkGroupInvocations,

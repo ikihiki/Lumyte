@@ -17,3 +17,21 @@ dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vul
 ```
 
 共有プロジェクトの BufferExercise が共通 API だけで、要素のサイズ、非所有 slice、明示 mapping、CPU copy の方向・範囲・状態と寿命を確認します。GPU copy や描画は実行しません。
+
+## Texture
+
+```bash
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- wgpu textures
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan textures
+```
+
+shared projectのTextureExerciseが共通APIでallocationとViewの範囲・所有を確認します。画素の転送や描画は実行しません。
+
+## Sampler
+
+```bash
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- wgpu samplers
+dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release -- vulkan samplers
+```
+
+SamplerExerciseが共通APIでsampling stateの指定値・不正入力・capabilityと寿命を検証します。

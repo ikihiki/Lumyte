@@ -13,6 +13,8 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [サンプラーの設計](docs/adr/graphics/GRAPHICS-0004-samplers.md)
+- [テクスチャとViewの設計](docs/adr/graphics/GRAPHICS-0003-textures-and-views.md)
 - [型付きbufferの設計](docs/adr/graphics/GRAPHICS-0002-typed-buffers.md)
 - [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
 - [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)
