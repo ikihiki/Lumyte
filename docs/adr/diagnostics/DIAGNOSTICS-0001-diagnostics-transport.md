@@ -463,19 +463,17 @@ Metrics / Trace / Log は同じ標準計測基盤から生成するが、異な�
 
 ### Operation のソース生成
 
-通常のアダプターは属性付きメソッドで Operation を宣言する。`Lumyte.Diagnostics.Generators` の Incremental Source Generator が `IDiagnosticContributor.Configure`、記述子、引数変換、型付き結果の変換を生成する。DI による生成・注入、所有スレッドでの実行、通信抽象は変更しない。
+通常のアダプターは公開するメソッドにだけ `[DiagnosticOperation]` を付ける。クラス属性、引数属性、出力属性は不要とし、C# の名前と型からスキーマを推論する。`Lumyte.Diagnostics.Generators` の Incremental Source Generator が `IDiagnosticContributor.Configure`、記述子、引数変換、型付き結果の変換を生成する。DI による生成・注入、所有スレッドでの実行、通信抽象は変更しない。
 
 Generator はビルド時の Analyzer として配布し、属性と結果型は `Lumyte.Diagnostics` に置く。利用側に Roslyn の実行時依存を持たせない。反射、動的コード生成、メソッド名による実行時探索は使わない。生成されるのは明示的な公開操作だけであり、任意メソッドの遠隔実行を許可しない。
 
 ```csharp
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
-public sealed class DiagnosticOperationsAttribute : Attribute { }
-
 [AttributeUsage(AttributeTargets.Method, Inherited = false)]
 public sealed class DiagnosticOperationAttribute : Attribute
 {
-    public DiagnosticOperationAttribute(string id, DiagnosticPermission permission);
-    public string Id { get; }
+    public DiagnosticOperationAttribute(
+        DiagnosticPermission permission = DiagnosticPermission.Edit);
+    public string? Id { get; set; }
     public DiagnosticPermission Permission { get; }
     public string? DisplayName { get; set; }
     public bool RequiresRevision { get; set; }
@@ -484,8 +482,8 @@ public sealed class DiagnosticOperationAttribute : Attribute
 [AttributeUsage(AttributeTargets.Parameter, Inherited = false)]
 public sealed class DiagnosticArgumentAttribute : Attribute
 {
-    public DiagnosticArgumentAttribute(string id);
-    public string Id { get; }
+    public DiagnosticArgumentAttribute(string? id = null);
+    public string? Id { get; }
     public double Minimum { get; set; } = double.NegativeInfinity;
     public double Maximum { get; set; } = double.PositiveInfinity;
     public int MaxLength { get; set; }
@@ -494,10 +492,13 @@ public sealed class DiagnosticArgumentAttribute : Attribute
 [AttributeUsage(AttributeTargets.Property, Inherited = false)]
 public sealed class DiagnosticMemberAttribute : Attribute
 {
-    public DiagnosticMemberAttribute(string id);
-    public string Id { get; }
+    public DiagnosticMemberAttribute(string? id = null);
+    public string? Id { get; }
     public int MaxLength { get; set; }
 }
+
+[AttributeUsage(AttributeTargets.Property, Inherited = false)]
+public sealed class DiagnosticIgnoreAttribute : Attribute { }
 
 public sealed class DiagnosticResult<T> where T : notnull
 {
@@ -518,36 +519,43 @@ public sealed class DiagnosticResult<T> where T : notnull
 
 #### 生成対象と契約
 
-- `[DiagnosticOperations]` は名前空間直下の非 generic・非 abstract な public partial class に付ける。コンストラクターは利用者が記述し、DI が依存を注入する。
-- Operation は宣言クラス内の非 static・非 generic・同期メソッドとし、private でもよい。同名 overload、async、Task / ValueTask、ref / out / in、optional / params 引数は初期対応から除外する。
-- 先頭引数は `DiagnosticOperationContext` とする。この引数は注入される実行コンテキストであり、サーバーの入力スキーマに含めない。`SessionId` を追加し、認証済み ActorId とともに診断セッションが設定する。
-- 残る全引数に `[DiagnosticArgument]` を付ける。初期型は非 nullable の bool、long、double、string とし、string の null も拒否する。型から値種別を生成する。未知の引数、欠落、型違い、非有限値、範囲・長さ違反はハンドラーの呼び出し前に拒否する。
-- 戻り値は `DiagnosticResult<T>` とする。T は公開された非 generic の class / record とし、public getter を持つスカラー出力プロパティに `[DiagnosticMember]` を付ける。出力型も bool、long、double、string に限定する。生成コードは入力と違い出力値を読み取るだけであり、DTO のコンストラクターや setter を呼ばない。
-- Operation ID、引数 ID、出力 ID は必須の明示的な文字列とし、C# 名の変更で通信契約を変えない。DisplayName 未指定時のみメソッド名を表示名に使う。型・ID・範囲・出力構造の変更時はサブシステムの SchemaVersion を更新する。
+- Generator は `[DiagnosticOperation]` の付いたメソッドを起点に対象クラスを発見する。クラスは名前空間直下の非 generic・非 abstract な public partial class とし、コンストラクターは利用者が記述して DI が注入する。
+- Operation は非 static・非 generic・同期メソッドとし、private でもよい。同名 overload、async、Task / ValueTask、ref / out / in、optional / params 引数は初期対応から除外する。属性のないメソッドは公開しない。
+- `DiagnosticOperationContext` が必要な場合だけ先頭引数に置く。省略可能であり、サーバーの入力スキーマには含めない。SessionId と認証済み ActorId は診断セッションが設定する。
+- 通常の引数は名前と型から自動公開する。初期型は非 nullable の bool、long、double、string とし、string の null も拒否する。未知の引数、欠落、型違い、非有限値、共通サイズ上限違反は呼び出し前に拒否する。
+- 戻り値は `DiagnosticResult<T>` とする。T は公開された非 generic の class / record とし、宣言された public getter を持つ bool、long、double、string のプロパティを自動公開する。インデクサー、static プロパティ、非対応型は診断エラーとし、黙って省略しない。公開不要のプロパティだけ `[DiagnosticIgnore]` を付ける。Getter は短時間で副作用なく値を返す必要がある。
+- Operation ID はメソッド名、引数 ID は引数名、出力 ID はプロパティ名を kebab-case に変換する。`OverrideButton` は `override-button`、`durationMs` は `duration-ms`、`LeaseId` は `lease-id` になる。小文字・数字から大文字への境界と、大文字列から通常単語への境界を区切り、`URLValue` は `url-value` とする。先頭の `@` は識別子の意味に含めず、underscore はハイフンに変換する。
+- 通信名を固定する場合だけ Operation の `Id`、引数の `[DiagnosticArgument("id")]`、出力の `[DiagnosticMember("id")]` を指定する。推論後の名前の衝突はコンパイルエラーとする。名前推論を使う場合、C# のリネームも通信契約変更になるため、SchemaVersion を更新する。
+- `[DiagnosticArgument(Minimum = 1, Maximum = 5000)]` のように、入力の範囲・長さを UI と共通検証へ公開したいときだけ制約属性を付ける。属性がなくてもドメイン側の検証は必須であり、許可された値域を無制限にする意味ではない。
+- `[DiagnosticOperation]` の既定権限は Edit とする。Observe と OverrideInput は操作の属性で明示する。メソッド名から読み取り権限を推測しない。DisplayName 未指定時はメソッド名を使う。
 - `RequiresRevision = true` は期待リビジョンがない要求を生成ハンドラーで拒否する。現在リビジョンとの比較・更新は対象を所有するメソッドが行う。
 
-Generator は宣言クラスへ `IDiagnosticContributor` の実装を追加し、Operation ID の ordinal 順で一括登録する。使用者が既に Configure を実装しているクラスとの混在は拒否する。属性付きメソッド・引数・出力以外は公開しない。private メソッドを直接呼ぶコードを同じ partial class に生成し、生成コードから IServiceProvider を取得しない。
+Generator は宣言クラスへ `IDiagnosticContributor` の実装を追加し、Operation ID の ordinal 順で一括登録する。使用者が既に Configure を実装しているクラスとの混在は拒否する。private メソッドを直接呼ぶコードを同じ partial class に生成し、生成コードから IServiceProvider を取得しない。
 
 #### Input オーバーライドの宣言例
 
 `IInputOverrideService` は Input 側のローカルサービスであり、通信や診断 DTO に依存しない。例では AcquireButtonOverride が Input 固有の結果（成功、LeaseId、エラーコード・メッセージ）を返し、ReleaseOverride が所有者を検証して bool を返すものとする。
 
 ```csharp
-[DiagnosticOperations]
 public sealed partial class InputDiagnostics
 {
     private readonly IInputOverrideService _input;
 
     public InputDiagnostics(IInputOverrideService input) => _input = input;
 
-    [DiagnosticOperation("override-button", DiagnosticPermission.OverrideInput,
-        DisplayName = "ボタン入力を上書き")]
+    [DiagnosticOperation(DiagnosticPermission.OverrideInput)]
     private DiagnosticResult<ButtonOverrideReceipt> OverrideButton(
         DiagnosticOperationContext context,
-        [DiagnosticArgument("button", MaxLength = 64)] string button,
-        [DiagnosticArgument("pressed")] bool pressed,
-        [DiagnosticArgument("duration-ms", Minimum = 1, Maximum = 5000)] long durationMs)
+        string button,
+        bool pressed,
+        long durationMs)
     {
+        if (button.Length is < 1 or > 64 || durationMs is < 1 or > 5000)
+        {
+            return DiagnosticResult<ButtonOverrideReceipt>.Reject(
+                "invalid-input", "Button or duration is outside the allowed range.");
+        }
+
         var result = _input.AcquireButtonOverride(
             context.SessionId, context.ActorId,
             button, pressed, TimeSpan.FromMilliseconds(durationMs));
@@ -559,11 +567,10 @@ public sealed partial class InputDiagnostics
                 result.ErrorCode, result.ErrorMessage);
     }
 
-    [DiagnosticOperation("release-override", DiagnosticPermission.OverrideInput,
-        DisplayName = "入力の上書きを解除")]
+    [DiagnosticOperation(DiagnosticPermission.OverrideInput)]
     private DiagnosticResult<ReleaseOverrideReceipt> ReleaseOverride(
         DiagnosticOperationContext context,
-        [DiagnosticArgument("lease-id", MaxLength = 36)] string leaseId)
+        string leaseId)
     {
         if (!Guid.TryParseExact(leaseId, "D", out var id))
         {
@@ -578,9 +585,9 @@ public sealed partial class InputDiagnostics
 }
 
 public sealed record ButtonOverrideReceipt(
-    [property: DiagnosticMember("lease-id", MaxLength = 36)] string LeaseId);
+    string LeaseId);
 public sealed record ReleaseOverrideReceipt(
-    [property: DiagnosticMember("released")] bool Released);
+    bool Released);
 ```
 
 リースの競合、対象入力の存在、期限切れ、実入力との合成、セッション終了時の解除は Input サービスの責務である。Generator はこれらのロジックを生成しない。入力処理前に実行する DI 登録は次のとおりで、生成された Configure を手動で呼ぶ必要はない。
@@ -597,7 +604,7 @@ Input 更新は所有スレッドで Pump、期限切れ解除、入力合成の
 
 #### 生成されるコードの例
 
-以下は override-button の生成内容の抜粋である。実際の Configure は release-override も同じように登録する。属性の範囲指定を記述子へ変換し、共通の要求検証後に型付き引数を渡す。
+以下は override-button の生成内容の抜粋である。実際の Configure は release-override も同じように登録する。メソッド名・引数名・出力名と型を記述子へ変換し、共通の要求検証後に型付き引数を渡す。例のドメイン値域はメソッドが検証する。
 
 ```csharp
 public sealed partial class InputDiagnostics : IDiagnosticContributor
@@ -605,17 +612,17 @@ public sealed partial class InputDiagnostics : IDiagnosticContributor
     void IDiagnosticContributor.Configure(DiagnosticBuilder builder)
     {
         builder.Operation(new OperationDescriptor(
-            "override-button", "ボタン入力を上書き",
+            "override-button", "OverrideButton",
             DiagnosticPermission.OverrideInput,
             Arguments:
             [
-                new("button", DiagnosticValueKind.String, MaxLength: 64),
+                new("button", DiagnosticValueKind.String),
                 new("pressed", DiagnosticValueKind.Boolean),
-                new("duration-ms", DiagnosticValueKind.Int64, 1, 5000),
+                new("duration-ms", DiagnosticValueKind.Int64),
             ],
             Results:
             [
-                new("lease-id", DiagnosticValueKind.String, MaxLength: 36),
+                new("lease-id", DiagnosticValueKind.String),
             ]),
             (context, arguments) => OverrideButton(
                 context,
@@ -637,8 +644,8 @@ public sealed partial class InputDiagnostics : IDiagnosticContributor
 | --- | --- |
 | `LMDIAG001` | partial でない型、非対応の包含・generic・継承構造、手動 Configure との衝突 |
 | `LMDIAG002` | 非対応のメソッド修飾子・引数形式・コンテキスト・戻り値 |
-| `LMDIAG003` | 空または重複 ID、同名 overload、属性の欠落 |
-| `LMDIAG004` | 非対応の入力・出力型、アクセス不能な出力、未注釈の出力プロパティ |
+| `LMDIAG003` | 空または重複 ID、名前推論後の衝突、同名 overload |
+| `LMDIAG004` | 非対応の入力・出力型、アクセス不能な出力、無視属性のない非対応出力プロパティ |
 | `LMDIAG005` | 不正な範囲・長さ、型と制約の不一致、未定義の権限 |
 
 診断は Error とし、誤った契約を黙って一部だけ生成しない。対象クラスは object 以外の基底クラスを持たない初期契約とし、操作と出力の継承走査は行わない。生成コードと属性は通信方式に依存せず、MagicOnion / HTTP のどちらを DI 選択しても同じ操作を公開する。
@@ -660,25 +667,21 @@ public sealed partial class InputDiagnostics : IDiagnosticContributor
 以下は `PhysicsWorld` が `LastStepMilliseconds`、`ActiveBodyCount`、`TimeScale`、`Revision` を持つ例である。`Revision` は診断経由以外の `TimeScale` 変更でも進むものとする。
 
 ```csharp
-[DiagnosticOperations]
 public sealed partial class PhysicsDiagnostics
 {
     private readonly PhysicsWorld _world;
 
     public PhysicsDiagnostics(PhysicsWorld world) => _world = world;
 
-    [DiagnosticOperation("get-time-scale", DiagnosticPermission.Observe,
-        DisplayName = "Get time scale")]
-    private DiagnosticResult<TimeScaleReceipt> GetTimeScale(
-        DiagnosticOperationContext context)
+    [DiagnosticOperation(DiagnosticPermission.Observe)]
+    private DiagnosticResult<TimeScaleReceipt> GetTimeScale()
         => DiagnosticResult<TimeScaleReceipt>.Success(
             new(_world.TimeScale), _world.Revision);
 
-    [DiagnosticOperation("set-time-scale", DiagnosticPermission.Edit,
-        DisplayName = "Set time scale", RequiresRevision = true)]
+    [DiagnosticOperation(RequiresRevision = true)]
     private DiagnosticResult<TimeScaleReceipt> SetTimeScale(
         DiagnosticOperationContext context,
-        [DiagnosticArgument("value", Minimum = 0, Maximum = 2)] double value)
+        [DiagnosticArgument(Minimum = 0, Maximum = 2)] double value)
     {
         if (context.ExpectedRevision != _world.Revision)
         {
@@ -692,7 +695,7 @@ public sealed partial class PhysicsDiagnostics
 }
 
 public sealed record TimeScaleReceipt(
-    [property: DiagnosticMember("actual")] double Actual);
+    double Actual);
 ```
 
 標準メトリクスは操作アダプターと独立した Scoped サービスで生成する。
@@ -936,7 +939,7 @@ MagicOnion はプッシュ通知、HTTP は長いポーリングで共通の要�
 - Activity の親子相関、サンプリング、他 Listener による生成、null Activity、切断をまたぐ Span。
 - 構造化ログとスコープ、Trace 相関、並行実行の ID 分離、フォーマッター失敗、転送再帰の防止。
 - Trace・Log の属性制限、秘匿値の除去、バッファ欠落、停止後の Scoped 参照解放。
-- Generator の実コンパイル、private メソッドへの配送、型付き結果、ID 安定性、範囲・権限・期待リビジョンの検証。
+- Generator の実コンパイル、private メソッドへの配送、型付き結果、名前推論・明示名の優先、出力の無視、範囲・権限・期待リビジョンの検証。
 - 不正な宣言への LMDIAG001〜005、DI 制約での生成インターフェース解決、AOT / trimming での無反射実行。
 - カタログ更新と操作の競合。
 - 対象破棄、ID 再利用、競合編集、部分成功、所有スレッドでの実行。
