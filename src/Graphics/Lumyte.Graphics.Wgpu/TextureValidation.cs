@@ -1,6 +1,8 @@
 using System.Numerics;
 
-namespace Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Abstractions;
+
+namespace Lumyte.Graphics.Wgpu;
 
 internal static class TextureValidation
 {
