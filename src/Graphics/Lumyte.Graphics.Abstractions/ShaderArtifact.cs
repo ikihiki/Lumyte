@@ -101,21 +101,42 @@ public sealed class ShaderArtifact
     /// <param name="reflectionJson">The corresponding reflection.</param>
     /// <returns>The validated single-target binary.</returns>
     public static ShaderArtifact PackTarget(ShaderTarget target, ShaderStage stage, string entryPoint, string compilerVersion, ReadOnlySpan<byte> code, string reflectionJson)
+        => PackTargets([new(target, stage, entryPoint, compilerVersion, "row-major", code.ToArray(), reflectionJson)]);
+
+    /// <summary>Packs one or more target results into a single opaque binary.</summary>
+    /// <param name="targets">Distinct targets with matching compilation metadata.</param>
+    /// <returns>The validated single or full-target binary.</returns>
+    public static ShaderArtifact PackTargets(IReadOnlyList<ShaderTargetData> targets)
     {
+        ArgumentNullException.ThrowIfNull(targets);
+        if (targets.Count == 0)
+        {
+            throw new ArgumentException("At least one target is required.", nameof(targets));
+        }
+
+        ShaderTargetData first = targets[0];
         using var bytes = new MemoryStream();
         using (var writer = new BinaryWriter(bytes, Encoding.UTF8, true))
         {
             writer.Write(Magic);
             writer.Write(1u);
-            writer.Write((uint)stage);
-            writer.Write(entryPoint);
-            writer.Write(compilerVersion);
-            writer.Write("row-major");
-            writer.Write(1u);
-            writer.Write((uint)target);
-            writer.Write(code.Length);
-            writer.Write(code);
-            writer.Write(reflectionJson);
+            writer.Write((uint)first.Stage);
+            writer.Write(first.EntryPoint);
+            writer.Write(first.CompilerVersion);
+            writer.Write(first.MatrixLayout);
+            writer.Write((uint)targets.Count);
+            foreach (ShaderTargetData data in targets)
+            {
+                if (data.Stage != first.Stage || data.EntryPoint != first.EntryPoint || data.CompilerVersion != first.CompilerVersion || data.MatrixLayout != first.MatrixLayout)
+                {
+                    throw new ArgumentException("Target compilation metadata must match.", nameof(targets));
+                }
+
+                writer.Write((uint)data.Target);
+                writer.Write(data.Code.Length);
+                writer.Write(data.Code);
+                writer.Write(data.ReflectionJson);
+            }
         }
 
         return new(bytes.ToArray());

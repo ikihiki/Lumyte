@@ -33,7 +33,7 @@
 +        public required string Source { get; init; }
 +        public string EntryPoint { get; init; } = "main";
 +        public ShaderStage Stage { get; init; } = ShaderStage.Compute;
-+        public ShaderTarget Target { get; init; } = ShaderTarget.Wgsl;
++        public ShaderTarget? Target { get; init; }
 +    }
 +    public interface IShaderCompiler
 +    {
@@ -49,8 +49,10 @@
 +        public static ShaderArtifact LoadEmbedded(Assembly assembly, string resourceName);
 +        // 保存／転送用のopaque binaryのコピー。
 +        public byte[] GetBinary();
-+        // compiler実装用。onlineの単一targetも同じbinary形式へ格納する。
++        // compiler実装用。onlineの単一targetを同じbinary形式へ格納する。
 +        public static ShaderArtifact PackTarget(ShaderTarget target, ShaderStage stage, string entryPoint, string compilerVersion, ReadOnlySpan<byte> code, string reflectionJson);
++        // compiler実装用。複数targetも同じbinary形式へ格納する。
++        public static ShaderArtifact PackTargets(IReadOnlyList<ShaderTargetData> targets);
 +        // backend実装用。codeとmetadataをbinaryから取得する。
 +        public ShaderTargetData GetTarget(ShaderTarget target);
 +    }
@@ -68,7 +70,7 @@
 
 Slang sourceだけをコミットする。offline buildは固定したSlang compilerでtarget別codeとreflectionをobj内へ生成し、同じDLLのEmbeddedResourceへ埋め込む。実行時はDLLから読み、code単独の外部ファイル配布やsourceの再compileを必要としない。生成WGSL・SPIR-V・reflection・packed binaryはコミットしない。offline compilerにtarget選択の設定を設けず、対応する全ShaderTargetを必ずcompileし、一つでも失敗した場合は成果物を発行しない。各targetのcodeとreflectionを一つのopaque binaryにまとめ、DLLにはそのbinaryを一つのresourceとして埋め込む。
 
-利用者は同じShaderArtifactをどのbackendにも渡せる。device用targetの選択はbackendが行い、利用者はcode形式やstage、entryを再指定しない。online compilerはtargetを選択でき、単一targetの結果も同じbinary形式を使う。必要targetを含まないonline binaryは、そのbackendがNotSupportedExceptionで拒否する。
+利用者は同じShaderArtifactをどのbackendにも渡せる。device用targetの選択はbackendが行い、利用者はcode形式やstage、entryを再指定しない。online compilerのtarget選択は任意。Target省略／nullの場合は全対応targetをcompileし、指定した場合はそのtargetのみcompileする。どちらも同じbinary形式を使い、全target指定時に一つでもcompileが失敗した場合は部分成果物を返さない。必要targetを含まないonline binaryは、そのbackendがNotSupportedExceptionで拒否する。
 
 binaryはformat識別子・version、entry、stage、compiler version、matrix layout、targetごとのcodeとSlang reflectionを含む。workgroup size、binding配置、型layoutなどcompile時に確定する情報はreflectionに保持し、runtime側の補助設定へ分離しない。現在のcompiler設定は単一entry・stage、row-major、選択targetであり、それらを全てbinaryへ格納する。sourceや外部reflectionファイルを実行時に必要としない。
 

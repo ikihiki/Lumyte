@@ -14,23 +14,32 @@ public sealed class ShaderCompilerTests
     [Theory]
     [InlineData(ShaderTarget.Wgsl)]
     [InlineData(ShaderTarget.SpirV)]
-    public async Task CompilerProducesRequestedTargetAsync(ShaderTarget target)
+    [InlineData(null)]
+    public async Task CompilerProducesRequestedTargetAsync(ShaderTarget? target)
     {
         IShaderCompiler compiler = new SlangShaderCompiler();
         using Stream source = typeof(ShaderExercise).Assembly.GetManifestResourceStream("Lumyte.Shaders.increment.slang")!;
         using var reader = new StreamReader(source);
         ShaderArtifact artifact = await compiler.CompileAsync(new ShaderCompilationDesc { Source = await reader.ReadToEndAsync(), Target = target });
-        ShaderTargetData data = artifact.GetTarget(target);
-        Assert.Equal(target, data.Target);
-        Assert.Equal(ShaderStage.Compute, data.Stage);
-        Assert.Equal("main", data.EntryPoint);
-        Assert.NotEmpty(data.Code);
-        Assert.Contains("entryPoints", data.ReflectionJson);
-        Assert.NotEmpty(data.CompilerVersion);
-        ShaderTarget missing = target == ShaderTarget.Wgsl ? ShaderTarget.SpirV : ShaderTarget.Wgsl;
-        Assert.Throws<NotSupportedException>(() => artifact.GetTarget(missing));
-        var transported = new ShaderArtifact(artifact.GetBinary());
-        Assert.Equal(data.Code, transported.GetTarget(target).Code);
+        ShaderTarget[] expected = target is { } selected ? [selected] : Enum.GetValues<ShaderTarget>();
+        foreach (ShaderTarget current in expected)
+        {
+            ShaderTargetData data = artifact.GetTarget(current);
+            Assert.Equal(current, data.Target);
+            Assert.Equal(ShaderStage.Compute, data.Stage);
+            Assert.Equal("main", data.EntryPoint);
+            Assert.NotEmpty(data.Code);
+            Assert.Contains("entryPoints", data.ReflectionJson);
+            Assert.NotEmpty(data.CompilerVersion);
+            var transported = new ShaderArtifact(artifact.GetBinary());
+            Assert.Equal(data.Code, transported.GetTarget(current).Code);
+        }
+
+        if (target is { } single)
+        {
+            ShaderTarget missing = single == ShaderTarget.Wgsl ? ShaderTarget.SpirV : ShaderTarget.Wgsl;
+            Assert.Throws<NotSupportedException>(() => artifact.GetTarget(missing));
+        }
     }
 
     /// <summary>Checks failed Slang source returns diagnostics.</summary>

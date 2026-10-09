@@ -12,6 +12,6 @@ public sealed record ShaderCompilationDesc
     /// <summary>Gets the entry point stage.</summary>
     public ShaderStage Stage { get; init; } = ShaderStage.Compute;
 
-    /// <summary>Gets the required output code format.</summary>
-    public ShaderTarget Target { get; init; } = ShaderTarget.Wgsl;
+    /// <summary>Gets an optional output target; null compiles every supported target.</summary>
+    public ShaderTarget? Target { get; init; }
 }
