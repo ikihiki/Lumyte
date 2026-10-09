@@ -1,0 +1,25 @@
+using System.Runtime.InteropServices.JavaScript;
+using System.Text;
+using Lumyte.Graphics.Abstractions;
+
+namespace Lumyte.Graphics.Browser;
+
+internal sealed class BrowserShader(BrowserDevice owner, ShaderArtifact artifact) : IGraphicsShader
+{
+    private readonly JSObject _handle = BrowserInterop.CreateShader(owner.Handle, Encoding.UTF8.GetString(artifact.GetCode()));
+    private bool _disposed;
+
+    public ShaderArtifact Artifact { get; } = artifact;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _handle.Dispose();
+        _disposed = true;
+        owner.ReleaseShader();
+    }
+}

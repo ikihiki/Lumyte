@@ -1,0 +1,32 @@
+<Project>
+  <PropertyGroup>
+    <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <SlangShader>
+      <EntryPoint>main</EntryPoint>
+      <Stage>compute</Stage>
+    </SlangShader>
+  </ItemDefinitionGroup>
+  <!-- ResourceName must be unique per source. Generated files never leave obj/. -->
+  <Target Name="CompileSlangShaders"
+          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
+          Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl.reflection.json;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv.reflection.json"
+          Condition="'@(SlangShader)' != ''">
+    <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
+    <MakeDir Directories="$(IntermediateOutputPath)Slang" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target wgsl -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl&quot;" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target spirv -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv&quot;" />
+  </Target>
+  <Target Name="EmbedSlangShaders" BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="CompileSlangShaders" Condition="'@(SlangShader)' != ''">
+    <ItemGroup>
+      <_SlangOutputs Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv.reflection.json')" />
+      <EmbeddedResource Include="@(_SlangOutputs)">
+        <LogicalName>%(_SlangOutputs.Filename)%(_SlangOutputs.Extension)</LogicalName>
+        <WithCulture>false</WithCulture>
+      </EmbeddedResource>
+      <FileWrites Include="@(_SlangOutputs)" />
+    </ItemGroup>
+  </Target>
+</Project>

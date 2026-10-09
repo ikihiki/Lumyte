@@ -21,7 +21,8 @@ public static class CapsDisplay
             throw new InvalidOperationException("A graphics and compute device must report usable limits.");
         }
 
-        return $"Features: {caps.Features}\n" +
+        return $"ShaderTarget: {caps.ShaderTarget}\n" +
+            $"Features: {caps.Features}\n" +
             $"MaxBufferSize: {caps.MaxBufferSize} bytes\n" +
             $"MaxStorageBufferBindingSize: {caps.MaxStorageBufferBindingSize} bytes\n" +
             $"MaxTextureDimension2D: {caps.MaxTextureDimension2D} texels\n" +

@@ -7,4 +7,9 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <SlangShader Include="Shaders/increment.slang" ResourceName="Lumyte.Shaders.increment" />
+    <EmbeddedResource Include="Shaders/increment.slang" LogicalName="Lumyte.Shaders.increment.slang" />
+  </ItemGroup>
+  <Import Project="../../tools/shaders/Slang.targets" />
 </Project>

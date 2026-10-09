@@ -14,6 +14,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private int _textureCount;
     private int _samplerCount;
     private int _argumentTableCount;
+    private int _shaderCount;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays)
@@ -159,12 +160,27 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return table;
     }
 
+    /// <inheritdoc />
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(artifact);
+        if (artifact.Target != Caps.ShaderTarget)
+        {
+            throw new ArgumentException("The shader target does not match the device.", nameof(artifact));
+        }
+
+        var shader = new VulkanShader(this, artifact);
+        _shaderCount++;
+        return shader;
+    }
+
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _shaderCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures and samplers before disposing their device.");
+            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers and shaders before disposing their device.");
         }
 
         if (_disposed)
@@ -177,6 +193,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _api.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseShader() => _shaderCount--;
 
     internal void ReleaseArgumentTable() => _argumentTableCount--;
 
@@ -245,6 +263,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
         return new()
         {
+            ShaderTarget = ShaderTarget.SpirV,
             Features = features,
             MaxBufferSize = maxBufferSize,
             MaxStorageBufferBindingSize = limits.MaxStorageBufferRange,

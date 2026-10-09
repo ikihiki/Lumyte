@@ -87,3 +87,9 @@ CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler
 登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録中resourceの解放は拒否します。置換とReleaseは古い登録を失効させ、失敗した登録で新しいleaseを残しません。tableを解放すると登録を解放してdeviceのchild数を減らし、登録resource自体はDisposeしません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
 
 登録はVkDescriptorSetを確保・更新せず、backendのresource instanceと選択byte rangeを保持します。descriptor set／descriptor indexingやbuffer device addressへの接続はshader／commandの設計で扱います。現在のdeviceでbuffer device addressを有効化したことを意味せず、有限bindingへの変換方式を共通APIから強制しません。
+
+## シェーダーモジュール
+
+共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `SpirV`。Slang の SPIR-V を Silk.NET.Vulkan の `vkCreateShaderModule` に渡し、失敗した Result を例外にします。`Dispose()` は `vkDestroyShaderModule` を呼びます。entry／stage と pipeline の互換性は pipeline 作成時に検証します。
+
+デバイスの target と異なる artifact は `ArgumentException` で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。実行する pipeline や command はこの PR の範囲に含めません。
