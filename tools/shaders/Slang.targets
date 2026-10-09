@@ -69,14 +69,18 @@
     <Task>
       <Using Namespace="System.IO" />
       <Using Namespace="System.Text.RegularExpressions" />
+      <Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         string source = File.ReadAllText(Input);
         source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;");
         if (source.Contains("lumyte.slang")) {
+          var probes = new StringBuilder();
           foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{")) {
             string name = type.Groups[1].Value;
-            source += "\nStructuredBuffer<" + name + "> __lumyte_schema_" + name + ";\n";
+            probes.AppendLine("StructuredBuffer<Ptr<" + name + ">> __lumyte_schema_" + name + ";");
           }
+          // Reflect the pointer's natural layout before same-name root uniform layouts.
+          source = probes.Append(source).ToString();
         }
         File.WriteAllText(Output, source);
       ]]></Code>

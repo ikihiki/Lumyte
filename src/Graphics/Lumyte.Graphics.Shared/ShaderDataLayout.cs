@@ -39,13 +39,13 @@ public sealed class ShaderDataLayout : IShaderDataLayout
             throw new NotSupportedException("The artifact has no supported shader data ABI.");
         }
 
-        JsonElement parameter = document.RootElement.GetProperty("parameters").EnumerateArray().SingleOrDefault(p => p.GetProperty("name").GetString() == "__lumyte_schema_" + name);
-        if (parameter.ValueKind == JsonValueKind.Undefined)
+        JsonElement type = DataType(document.RootElement, name);
+        if (type.ValueKind == JsonValueKind.Undefined)
         {
             throw new NotSupportedException("The artifact is missing the shader data type schema: " + name);
         }
 
-        return new(parameter.GetProperty("type").GetProperty("resultType"), document.RootElement);
+        return new(type, document.RootElement);
     }
 
     /// <summary>Selects the shader stage declaring a root parameter.</summary>
@@ -68,7 +68,7 @@ public sealed class ShaderDataLayout : IShaderDataLayout
         throw new ArgumentException("The program does not declare this root parameter.");
     }
 
-    /// <summary>Validates compatible root layouts across graphics stages.</summary>
+    /// <summary>Validates compatible root and transitively referenced layouts across graphics stages.</summary>
     /// <param name="vertex">The vertex input.</param>
     /// <param name="fragment">The fragment input.</param>
     public static void ValidateProgram(ShaderTargetData vertex, ShaderTargetData? fragment)
@@ -80,9 +80,49 @@ public sealed class ShaderDataLayout : IShaderDataLayout
 
         using var document = JsonDocument.Parse(vertex.ReflectionJson);
         string name = document.RootElement.GetProperty("parameters").EnumerateArray().Single(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer").GetProperty("name").GetString()!;
-        if (!HasRoot(fragment, name) || !Root(vertex, name).Matches(Root(fragment, name)))
+        ShaderDataLayout root = Root(vertex, name);
+        if (!HasRoot(fragment, name) || !root.Matches(Root(fragment, name)))
         {
             throw new ArgumentException("Vertex and fragment root schemas are incompatible.");
+        }
+
+        using var fragmentDocument = JsonDocument.Parse(fragment.ReflectionJson);
+        var pending = new Stack<string>(root._members.Values.Where(member => member.Target != null).Select(member => member.Target!));
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.TryPop(out string? target))
+        {
+            if (!visited.Add(target))
+            {
+                continue;
+            }
+
+            JsonElement vertexType = DataType(document.RootElement, target);
+            JsonElement fragmentType = DataType(fragmentDocument.RootElement, target);
+            if (vertexType.ValueKind == JsonValueKind.Undefined && fragmentType.ValueKind == JsonValueKind.Undefined)
+            {
+                // Intrinsic raw buffer element types have no application structure probe.
+                if (target is "int" or "uint" or "float" or "float2" or "float3" or "float4" or "float4x4")
+                {
+                    continue;
+                }
+
+                throw new NotSupportedException("The artifact is missing the referenced shader data layout: " + target);
+            }
+
+            if (vertexType.ValueKind == JsonValueKind.Undefined || fragmentType.ValueKind == JsonValueKind.Undefined || !JsonElement.DeepEquals(vertexType, fragmentType))
+            {
+                throw new ArgumentException("Vertex and fragment referenced schemas are incompatible: " + target);
+            }
+
+            foreach ((string field, string referenceTarget) in BufferReferenceTargets(vertexType, document.RootElement))
+            {
+                if (!fragmentDocument.RootElement.GetProperty("lumyteReferenceTargets").TryGetProperty(field, out JsonElement otherTarget) || otherTarget.GetString() != referenceTarget)
+                {
+                    throw new ArgumentException("Vertex and fragment reference targets are incompatible: " + field);
+                }
+
+                pending.Push(referenceTarget);
+            }
         }
     }
 
@@ -181,6 +221,104 @@ public sealed class ShaderDataLayout : IShaderDataLayout
         }
 
         return result;
+    }
+
+    private static JsonElement DataType(JsonElement metadata, string name)
+    {
+        JsonElement parameter = metadata.GetProperty("parameters").EnumerateArray().SingleOrDefault(p => p.GetProperty("name").GetString() == "__lumyte_schema_" + name);
+        if (parameter.ValueKind == JsonValueKind.Undefined)
+        {
+            return default;
+        }
+
+        JsonElement pointer = parameter.GetProperty("type").GetProperty("resultType");
+        if (pointer.GetProperty("kind").GetString() != "pointer")
+        {
+            throw new NotSupportedException("The artifact is missing a natural shader data layout: " + name);
+        }
+
+        JsonElement type = pointer.GetProperty("valueType");
+        if (type.ValueKind == JsonValueKind.Object)
+        {
+            return type;
+        }
+
+        if (type.ValueKind == JsonValueKind.String)
+        {
+            foreach (JsonElement probe in metadata.GetProperty("parameters").EnumerateArray().Where(p => p.GetProperty("name").GetString()!.StartsWith("__lumyte_schema_", StringComparison.Ordinal)))
+            {
+                JsonElement candidate = FindStructure(probe.GetProperty("type").GetProperty("resultType"), type.GetString()!);
+                if (candidate.ValueKind != JsonValueKind.Undefined)
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        throw new NotSupportedException("The artifact is missing the referenced shader data layout: " + name);
+    }
+
+    private static JsonElement FindStructure(JsonElement node, string name)
+    {
+        if (node.ValueKind == JsonValueKind.Object)
+        {
+            if (node.TryGetProperty("kind", out JsonElement kind) && kind.GetString() == "struct" && node.GetProperty("name").GetString() == name)
+            {
+                return node;
+            }
+
+            foreach (JsonProperty property in node.EnumerateObject())
+            {
+                JsonElement found = FindStructure(property.Value, name);
+                if (found.ValueKind != JsonValueKind.Undefined)
+                {
+                    return found;
+                }
+            }
+        }
+        else if (node.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement element in node.EnumerateArray())
+            {
+                JsonElement found = FindStructure(element, name);
+                if (found.ValueKind != JsonValueKind.Undefined)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return default;
+    }
+
+    private static IEnumerable<(string Field, string Target)> BufferReferenceTargets(JsonElement type, JsonElement metadata)
+    {
+        if (!type.TryGetProperty("fields", out JsonElement fields))
+        {
+            yield break;
+        }
+
+        foreach (JsonElement field in fields.EnumerateArray())
+        {
+            JsonElement memberType = field.GetProperty("type");
+            if (memberType.TryGetProperty("name", out JsonElement named) && named.GetString() is "GpuBufferRef" or "GpuRWBufferRef")
+            {
+                string path = type.GetProperty("name").GetString() + "." + field.GetProperty("name").GetString();
+                if (!metadata.GetProperty("lumyteReferenceTargets").TryGetProperty(path, out JsonElement target))
+                {
+                    throw new NotSupportedException("The artifact is missing a buffer reference target schema: " + path);
+                }
+
+                yield return (path, target.GetString()!);
+            }
+            else
+            {
+                foreach ((string path, string target) in BufferReferenceTargets(memberType, metadata))
+                {
+                    yield return (path, target);
+                }
+            }
+        }
     }
 
     private static string NumericName(Type type) => type == typeof(uint) ? "uint" : type == typeof(int) ? "int" : type == typeof(float) ? "float" : type == typeof(Vector2) ? "float2" : type == typeof(Vector3) ? "float3" : type == typeof(Vector4) ? "float4" : type.Name;

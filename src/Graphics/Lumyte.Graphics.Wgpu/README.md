@@ -132,8 +132,12 @@ SetArgumentsは生成codecでroot値をsnapshotし、programのschemaへ照合�
 
 artifactのWGSLを直接編集し、texture・sampler・read-only buffer・writable bufferを独立して重複排除した数だけ宣言します。texture samplingとbuffer wordアクセスのABI-owned helperを生成し、論理slotを種類別の物理bindingへ変換するremapを渡します。root uniformとremap storageも含めて有効limitsを検証し、超過時は描画を分割せずNotSupportedExceptionにします。種類別resource数はprogram内のpipeline variant keyに含めます。
 
+bufferは登録したrangeのoffsetとsizeでbindします。GetElementで作った参照も元の登録rangeを保持し、GPUへ渡す要素offsetはそのrangeの先頭から計算します。同じallocationでも登録rangeが異なれば別bindingとして扱い、同じallocationとrangeの組だけを重複排除します。storage binding sizeの上限はallocation全体ではなく登録rangeへ適用し、binding offsetのalignmentも検証します。
+
 root値とdraw用remapだけをmappedAtCreationで初期化してunmapします。shader dataとraw bufferは確保済みのGPU resourceを直接参照します。stagingのCPU変更はGPU storageを更新しません。利用者がcopyとbarrierを記録し、GPU完了までresourceを保持します。commandはroot／remap backingとbind groupを保持し、submitで登録identityとcopy記録後のstaging revisionを検証します。
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
+
+shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。WGSLのraw buffer load／storeと`sizeof(T)`が使うnatural layoutに合わせ、`float3`だけの構造体はstride 12、`uint`と`float3`を持つ構造体はoffset 0／4・stride 16でpackします。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。

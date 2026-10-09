@@ -10,6 +10,10 @@ internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong c
 
     public ulong SizeInBytes { get; } = size;
 
+    public ulong RegistrationOffsetInBytes => registration.OffsetInBytes;
+
+    public ulong RegistrationSizeInBytes => registration.SizeInBytes;
+
     public object Table => registration.Owner;
 
     public object Resource => Resolve();

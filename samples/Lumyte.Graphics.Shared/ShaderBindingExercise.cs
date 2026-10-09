@@ -17,7 +17,8 @@ public static class ShaderBindingExercise
         await ComputeAsync(device);
         await DrawAsync(device);
         await CameraAsync(device);
-        return "Shader binding checks passed: matrix root, cyclic dependencies, explicit staging transfers and twenty distinct textures.";
+        await BindingRegressionExercise.RunAsync(device);
+        return "Shader binding checks passed: matrix root, cyclic dependencies, explicit staging transfers, twenty distinct textures, shader layouts and registered buffer ranges.";
     }
 
     /// <summary>Checks the same CPU-set data contract with a backend-only online artifact.</summary>

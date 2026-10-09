@@ -255,8 +255,8 @@ export function createShaderBinding(handle, key, compute, root, map) {
     }
     return binding;
 }
-export function addShaderResource(binding, slot, kind, resource, size) {
-    binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, size } });
+export function addShaderResource(binding, slot, kind, resource, offset, size) {
+    binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, offset, size } });
 }
 export function finishShaderBinding(handle, binding) { binding.group = handle.device.createBindGroup({ layout: binding.layout, entries: binding.entries }); }
 export function setShaderBinding(pass, binding) { pass.setBindGroup(0, binding.group); }

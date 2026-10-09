@@ -18,6 +18,12 @@ public interface IShaderReference
     /// <summary>Gets the referenced byte length.</summary>
     ulong SizeInBytes { get; }
 
+    /// <summary>Gets the original registered range offset, preserved by element references.</summary>
+    ulong RegistrationOffsetInBytes { get; }
+
+    /// <summary>Gets the original registered range length, preserved by element references.</summary>
+    ulong RegistrationSizeInBytes { get; }
+
     /// <summary>Gets the logical element count.</summary>
     ulong Count { get; }
 

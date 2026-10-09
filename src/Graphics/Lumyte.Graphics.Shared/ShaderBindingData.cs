@@ -9,8 +9,8 @@ public sealed class ShaderBindingData
 {
     private readonly Dictionary<object, int> _textures = [];
     private readonly Dictionary<object, int> _samplers = [];
-    private readonly Dictionary<object, int> _buffers = [];
-    private readonly Dictionary<object, int> _writable = [];
+    private readonly Dictionary<ShaderBufferBinding, int> _buffers = [];
+    private readonly Dictionary<ShaderBufferBinding, int> _writable = [];
 
     /// <summary>Initializes a new instance of the <see cref="ShaderBindingData"/> class.</summary>
     /// <param name="snapshot">The snapshot input.</param>
@@ -21,8 +21,8 @@ public sealed class ShaderBindingData
         Snapshot = snapshot;
         snapshot.ValidateLayouts(target);
         var rootLayout = ShaderDataLayout.Root(target, snapshot.Root.RootParameter);
-        var read = new HashSet<object>();
-        var write = new HashSet<object>();
+        var read = new HashSet<IShaderReference>();
+        var write = new HashSet<IShaderReference>();
         void Uses(IShaderDataLayout layout, ShaderValueSnapshot values)
         {
             foreach (ShaderValue value in values.Values)
@@ -32,11 +32,11 @@ public sealed class ShaderBindingData
                     string kind = layout.ReferenceKind(value.Path);
                     if (kind == "GpuBufferRef")
                     {
-                        read.Add(reference.Resource);
+                        read.Add(reference);
                     }
                     else if (kind == "GpuRWBufferRef")
                     {
-                        write.Add(reference.Resource);
+                        write.Add(reference);
                     }
                 }
             }
@@ -51,11 +51,6 @@ public sealed class ShaderBindingData
         foreach (IShaderReference reference in snapshot.References)
         {
             object resource = reference.Resource;
-            if (resource is IShaderDataSource data && data.SizeInBytes > caps.MaxStorageBufferBindingSize)
-            {
-                throw new NotSupportedException("Shader data exceeds the storage binding size limit.");
-            }
-
             if (resource is IGraphicsTextureView)
             {
                 _textures.TryAdd(resource, _textures.Count);
@@ -64,14 +59,14 @@ public sealed class ShaderBindingData
             {
                 _samplers.TryAdd(resource, _samplers.Count);
             }
-            else if (read.Contains(resource))
+            else if (read.Contains(reference))
             {
-                _buffers.TryAdd(resource, _buffers.Count);
+                _buffers.TryAdd(BufferRange(reference, caps), _buffers.Count);
             }
 
-            if (write.Contains(resource))
+            if (write.Contains(reference))
             {
-                _writable.TryAdd(resource, _writable.Count);
+                _writable.TryAdd(BufferRange(reference, caps), _writable.Count);
             }
         }
 
@@ -101,12 +96,13 @@ public sealed class ShaderBindingData
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 4), (uint)sampler);
             }
 
-            if (_buffers.TryGetValue(reference.Resource, out int buffer))
+            var range = new ShaderBufferBinding(reference.Resource, reference.RegistrationOffsetInBytes, reference.RegistrationSizeInBytes);
+            if (_buffers.TryGetValue(range, out int buffer))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 8), (uint)buffer);
             }
 
-            if (_writable.TryGetValue(reference.Resource, out int writable))
+            if (_writable.TryGetValue(range, out int writable))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 12), (uint)writable);
             }
@@ -129,10 +125,10 @@ public sealed class ShaderBindingData
     public IReadOnlyDictionary<object, int> Samplers => _samplers;
 
     /// <summary>Gets the read-only buffer binding indices.</summary>
-    public IReadOnlyDictionary<object, int> Buffers => _buffers;
+    public IReadOnlyDictionary<ShaderBufferBinding, int> Buffers => _buffers;
 
     /// <summary>Gets the writable buffer binding indices.</summary>
-    public IReadOnlyDictionary<object, int> Writable => _writable;
+    public IReadOnlyDictionary<ShaderBufferBinding, int> Writable => _writable;
 
     /// <summary>Gets the binding shape cache key.</summary>
     public string Key => $"{_textures.Count}:{_samplers.Count}:{_buffers.Count}:{_writable.Count}";
@@ -154,6 +150,23 @@ public sealed class ShaderBindingData
         "writable" => index == 0 ? 3u : checked((uint)(10 + Math.Max(0, _textures.Count - 1) + Math.Max(0, _samplers.Count - 1) + Math.Max(0, _buffers.Count - 1) + index - 1)),
         _ => throw new ArgumentException("Unknown binding kind."),
     };
+
+    private static ShaderBufferBinding BufferRange(IShaderReference reference, DeviceCaps caps)
+    {
+        ulong offset = reference.RegistrationOffsetInBytes;
+        ulong size = reference.RegistrationSizeInBytes;
+        if (offset % caps.StorageBufferOffsetAlignment != 0 || size == 0 || size % 4 != 0)
+        {
+            throw new ArgumentException("The registered storage range does not meet the device binding alignment.");
+        }
+
+        if (size > caps.MaxStorageBufferBindingSize)
+        {
+            throw new NotSupportedException("The registered storage range exceeds the device binding size limit.");
+        }
+
+        return new(reference.Resource, offset, size);
+    }
 
     private static byte[] ReferenceBytes(ShaderValue value, string kind) => ShaderReferenceEncoding.Pack(value, kind);
 }

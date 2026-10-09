@@ -147,3 +147,5 @@ applicationのroot structにShaderArgumentsを付け、IRenderEncoder／ICompute
 生成codecは[Lumyte.Graphics.Generators](../Lumyte.Graphics.Generators/README.md)から導入します。各draw／dispatchは到達可能な要素と参照をsnapshotします。shader dataのCPU値設定はUpload stagingだけに許可します。Automaticへは明示copyし、draw時の自動転送はしません。raw byte aliasとshader writeは公開しません。通常のunmanaged bufferは従来の明示copyとbarrierを使います。同期と登録resourceの寿命は利用者が管理します。
 
 バックエンドと共有実装ライブラリの境界には `IShaderReference`、`IShaderDataSource`、`IShaderRawBuffer`、`IShaderDataLayout` を使用します。参照の登録 identity、CPU 側の要素 snapshot、native storage handle を backend が提供し、[Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) が型配置と依存収集を処理します。利用側のアプリケーションは `IGpuRef<T>` と graphics API を使用します。
+
+`IShaderReference` は参照先のbyte範囲に加え、登録時の `RegistrationOffsetInBytes` と `RegistrationSizeInBytes` を保持します。GetElementでも登録範囲を維持し、bindingのoffset alignmentと要素位置を分けて検証します。元のbuffer全体のサイズで小さな登録範囲を拒否せず、登録範囲をbinding上限へ照合します。

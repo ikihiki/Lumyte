@@ -37,18 +37,12 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
                 entries.Add(new() { binding = data.Binding("sampler", index), sampler = ((WgpuSampler)resource).Native });
             }
 
-            foreach ((string kind, IReadOnlyDictionary<object, int> resources) in new[] { ("buffer", data.Buffers), ("writable", data.Writable) })
+            foreach ((string kind, IReadOnlyDictionary<ShaderBufferBinding, int> resources) in new[] { ("buffer", data.Buffers), ("writable", data.Writable) })
             {
-                foreach ((object resource, int index) in resources)
+                foreach ((ShaderBufferBinding range, int index) in resources)
                 {
-                    nint buffer = resource is IShaderRawBuffer raw ? (nint)raw.ShaderHandle : (nint)((IShaderDataSource)resource).ShaderHandle;
-                    ulong size = resource is IShaderRawBuffer storage ? storage.SizeInBytes : ((IShaderDataSource)resource).SizeInBytes;
-                    if (size > owner.Caps.MaxStorageBufferBindingSize)
-                    {
-                        throw new NotSupportedException("Raw storage allocation exceeds the device binding size.");
-                    }
-
-                    entries.Add(new() { binding = data.Binding(kind, index), buffer = (WGPUBufferImpl*)buffer, size = size });
+                    nint buffer = range.Resource is IShaderRawBuffer raw ? (nint)raw.ShaderHandle : (nint)((IShaderDataSource)range.Resource).ShaderHandle;
+                    entries.Add(new() { binding = data.Binding(kind, index), buffer = (WGPUBufferImpl*)buffer, offset = range.OffsetInBytes, size = range.SizeInBytes });
                 }
             }
 
@@ -110,9 +104,9 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
             entries.Add(new() { binding = data.Binding("sampler", index), visibility = visibility, sampler = new() { type = WGPUSamplerBindingType.Filtering } });
         }
 
-        foreach ((string kind, IReadOnlyDictionary<object, int> resources) in new[] { ("buffer", data.Buffers), ("writable", data.Writable) })
+        foreach ((string kind, IReadOnlyDictionary<ShaderBufferBinding, int> resources) in new[] { ("buffer", data.Buffers), ("writable", data.Writable) })
         {
-            foreach ((object _, int index) in resources)
+            foreach ((ShaderBufferBinding _, int index) in resources)
             {
                 entries.Add(new() { binding = data.Binding(kind, index), visibility = kind == "writable" && !compute ? (ulong)A.ShaderStage.Fragment : visibility, buffer = new() { type = kind == "buffer" ? WGPUBufferBindingType.ReadOnlyStorage : WGPUBufferBindingType.Storage } });
             }

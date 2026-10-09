@@ -26,29 +26,46 @@ public static class WgslBindingSpecializer
             source += "\n@binding(9) @group(0) var<storage, read> " + map + " : array<vec4<u32>>;\n";
         }
 
-        foreach (Match function in Regex.Matches(source, @"fn\s+(Gpu(?:RW)?BufferRef_(?:Load|Store)_\w+)\s*\(\s*(\w+)\s*:\s*ptr<function,\s*(\w+)>").Cast<Match>().Reverse())
+        foreach (Match function in Regex.Matches(source, @"fn\s+(Gpu(?:RW)?BufferRef_(?:Load|Store)_\w+)\s*\(").Cast<Match>().Reverse())
         {
-            string argument = function.Groups[2].Value;
-            string type = function.Groups[3].Value;
-            string id = Id(source, type);
             int start = source.IndexOf('{', function.Index);
+            if (start < 0)
+            {
+                throw new NotSupportedException("Unknown buffer helper ABI.");
+            }
+
+            Match receiver = Regex.Match(source[(function.Index + function.Length)..start], @"^\s*(\w+)\s*:\s*(?:ptr\s*<\s*function\s*,\s*(\w+)\s*>|(\w+))\s*,");
+            if (!receiver.Success)
+            {
+                throw new NotSupportedException("Unknown buffer helper receiver ABI.");
+            }
+
+            string argument = receiver.Groups[1].Value;
+            bool pointer = receiver.Groups[2].Success;
+            string type = receiver.Groups[pointer ? 2 : 3].Value;
+            string id = Id(source, type);
             int end = End(source, start);
             string body = source[(start + 1)..end];
             bool writable = function.Groups[1].Value.StartsWith("GpuRW", StringComparison.Ordinal);
             string variable = Variable(source, writable ? "lumyteRWBuffer0" : "lumyteBuffer0");
-            if (variable.Length == 0)
+            if (id.Length == 0 || variable.Length == 0)
             {
-                continue;
+                throw new NotSupportedException("Unknown buffer helper resource ABI.");
             }
 
             string reader = writable ? "lumyteReadWritable" : "lumyteRead";
-            string reference = "(*" + argument + ")." + id;
+            string reference = (pointer ? "(*" + argument + ")" : argument) + "." + id;
             if (function.Groups[1].Value.Contains("_Store_", StringComparison.Ordinal))
             {
                 body = Regex.Replace(body, Regex.Escape(variable) + @"\[([^\]]+)\]\s*=\s*([^;]+);", m => "lumyteWrite(" + reference + ", " + m.Groups[1].Value + ", " + m.Groups[2].Value + ");");
             }
 
             body = Regex.Replace(body, Regex.Escape(variable) + @"\[([^\]]+)\]", m => reader + "(" + reference + ", " + m.Groups[1].Value + ")");
+            if (Regex.IsMatch(body, @"\b" + Regex.Escape(variable) + @"\b"))
+            {
+                throw new NotSupportedException("Unknown buffer helper access ABI.");
+            }
+
             source = source[..(start + 1)] + body + source[end..];
         }
 

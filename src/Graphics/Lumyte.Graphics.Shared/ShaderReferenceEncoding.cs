@@ -25,7 +25,7 @@ public static class ShaderReferenceEncoding
 
         byte[] wire = new byte[16];
         BinaryPrimitives.WriteUInt32LittleEndian(wire, reference.Slot);
-        BinaryPrimitives.WriteUInt32LittleEndian(wire.AsSpan(4), checked((uint)reference.OffsetInBytes));
+        BinaryPrimitives.WriteUInt32LittleEndian(wire.AsSpan(4), checked((uint)(reference.OffsetInBytes - reference.RegistrationOffsetInBytes)));
         BinaryPrimitives.WriteUInt32LittleEndian(wire.AsSpan(8), checked((uint)reference.Count));
         return wire;
     }

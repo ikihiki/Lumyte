@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -18,13 +19,16 @@ public static class ShaderSourcePreparation
             return source;
         }
 
+        var probes = new StringBuilder();
         foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{"))
         {
             string name = type.Groups[1].Value;
-            source += $"\nStructuredBuffer<{name}> __lumyte_schema_{name};\n";
+            probes.AppendLine($"StructuredBuffer<Ptr<{name}>> __lumyte_schema_{name};");
         }
 
-        return source;
+        // Pointer reflection describes the natural layout used by T* and ByteAddressBuffer.Load<T>.
+        // Emit probes first so a same-name root uniform cannot supply its different layout.
+        return probes.Append(source).ToString();
     }
 
     /// <summary>Records the compiler-owned resource ABI version in target metadata.</summary>

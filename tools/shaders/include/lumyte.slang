@@ -15,6 +15,8 @@ struct GpuSamplerRef { uint Id; uint Offset; uint Count; uint Reserved; };
 [[vk::binding(9, 0)]] StructuredBuffer<uint4> lumyteMap;
 #endif
 
+// T uses Slang's natural layout for pointer access and raw byte-address loads.
+// Offline and online schema probes reflect Ptr<T> to preserve that exact layout.
 struct GpuBufferRef<T>
 {
     uint Id;

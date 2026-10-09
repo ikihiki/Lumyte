@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class ArgumentRegistration(VulkanArgumentTable owner, uint slot, object resource, Action release)
+internal sealed class ArgumentRegistration(VulkanArgumentTable owner, uint slot, object resource, Action release, ulong offset, ulong size)
 {
     private bool _active = true;
 
@@ -9,6 +9,10 @@ internal sealed class ArgumentRegistration(VulkanArgumentTable owner, uint slot,
     internal uint Slot { get; } = slot;
 
     internal object Resource { get; } = resource;
+
+    internal ulong OffsetInBytes { get; } = offset;
+
+    internal ulong SizeInBytes { get; } = size;
 
     internal void Check()
     {

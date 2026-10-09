@@ -98,7 +98,7 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, Action retain, Action release, ulong count, ulong stride, ulong offset, ulong size)
     {
         ValidateSlot(capacity, slot);
-        var entry = new ArgumentRegistration(this, slot, resource, release);
+        var entry = new ArgumentRegistration(this, slot, resource, release, offset, size);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         retain();
         try

@@ -14,32 +14,20 @@ internal sealed class BrowserShaderBinding : IDisposable
         {
             foreach ((object resource, int index) in data.Textures)
             {
-                BrowserInterop.AddShaderResource(_native, checked((int)data.Binding("texture", index)), 0, ((BrowserTextureView)resource).Native, 0);
+                BrowserInterop.AddShaderResource(_native, checked((int)data.Binding("texture", index)), 0, ((BrowserTextureView)resource).Native, 0, 0);
             }
 
             foreach ((object resource, int index) in data.Samplers)
             {
-                BrowserInterop.AddShaderResource(_native, checked((int)data.Binding("sampler", index)), 1, ((BrowserSampler)resource).Native, 0);
+                BrowserInterop.AddShaderResource(_native, checked((int)data.Binding("sampler", index)), 1, ((BrowserSampler)resource).Native, 0, 0);
             }
 
-            foreach ((string kind, IReadOnlyDictionary<object, int> resources) in new[] { ("buffer", data.Buffers), ("writable", data.Writable) })
+            foreach ((string kind, IReadOnlyDictionary<ShaderBufferBinding, int> resources) in new[] { ("buffer", data.Buffers), ("writable", data.Writable) })
             {
-                foreach ((object resource, int index) in resources)
+                foreach ((ShaderBufferBinding range, int index) in resources)
                 {
-                    if (resource is IShaderRawBuffer raw)
-                    {
-                        if (raw.SizeInBytes > owner.Caps.MaxStorageBufferBindingSize)
-                        {
-                            throw new NotSupportedException("Raw storage exceeds the device binding size.");
-                        }
-
-                        BrowserInterop.AddShaderResource(_native, checked((int)data.Binding(kind, index)), 2, (JSObject)raw.ShaderHandle, raw.SizeInBytes);
-                    }
-                    else
-                    {
-                        var source = (IShaderDataSource)resource;
-                        BrowserInterop.AddShaderResource(_native, checked((int)data.Binding(kind, index)), 2, (JSObject)source.ShaderHandle, source.SizeInBytes);
-                    }
+                    object handle = range.Resource is IShaderRawBuffer raw ? raw.ShaderHandle : ((IShaderDataSource)range.Resource).ShaderHandle;
+                    BrowserInterop.AddShaderResource(_native, checked((int)data.Binding(kind, index)), 2, (JSObject)handle, range.OffsetInBytes, range.SizeInBytes);
                 }
             }
 

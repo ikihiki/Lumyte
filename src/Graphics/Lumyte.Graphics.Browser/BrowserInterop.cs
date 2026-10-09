@@ -134,7 +134,7 @@ internal static partial class BrowserInterop
     internal static partial JSObject CreateShaderBinding(JSObject device, string key, bool compute, [JSMarshalAs<JSType.MemoryView>] Span<byte> root, [JSMarshalAs<JSType.MemoryView>] Span<byte> map);
 
     [JSImport("addShaderResource", "Lumyte.Graphics.Browser")]
-    internal static partial void AddShaderResource(JSObject binding, int slot, int kind, JSObject resource, double size);
+    internal static partial void AddShaderResource(JSObject binding, int slot, int kind, JSObject resource, double offset, double size);
 
     [JSImport("finishShaderBinding", "Lumyte.Graphics.Browser")]
     internal static partial void FinishShaderBinding(JSObject device, JSObject binding);

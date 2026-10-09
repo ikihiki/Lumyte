@@ -11,6 +11,12 @@
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/binding-cycle-vertex.slang" ResourceName="Lumyte.Shaders.binding-cycle-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/binding-cycle-fragment.slang" ResourceName="Lumyte.Shaders.binding-cycle-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/binding-layout.slang" ResourceName="Lumyte.Shaders.binding-layout" Stage="compute" />
+    <SlangShader Include="Shaders/binding-ranges.slang" ResourceName="Lumyte.Shaders.binding-ranges" Stage="compute" />
+    <SlangShader Include="Shaders/binding-mismatch-vertex.slang" ResourceName="Lumyte.Shaders.binding-mismatch-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/binding-mismatch-fragment.slang" ResourceName="Lumyte.Shaders.binding-mismatch-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/binding-camera.slang" ResourceName="Lumyte.Shaders.binding-camera" Stage="fragment" />
     <SlangShader Include="Shaders/binding-fragment.slang" ResourceName="Lumyte.Shaders.binding-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/binding-compute.slang" ResourceName="Lumyte.Shaders.binding-compute" Stage="compute" />
