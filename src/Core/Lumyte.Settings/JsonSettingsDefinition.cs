@@ -165,7 +165,7 @@ internal sealed class JsonSettingsDefinition<T> : ISettingsDefinition<T>
             return result;
         }
 
-        object copy = metadata.CreateObject!();
+        object copy = value is IDictionary sourceDictionary ? SettingsDictionary.CreateEmptyLike(sourceDictionary) : metadata.CreateObject!();
         copies.Add(value, copy);
         if (value is IDictionary dictionary)
         {

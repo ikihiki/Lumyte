@@ -280,7 +280,7 @@ public sealed class SettingsTests
     /// <summary>Old sections migrate in memory without rewriting on read.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]
-    public async Task MigrationIsDeferredAndUnknownPropertiesProtectOnlyTheirModuleAsync()
+    public async Task MigrationIsDeferredAndUnknownPropertiesAreRemovedOnSaveAsync()
     {
         var store = new MemoryStore
         {
@@ -290,11 +290,13 @@ public sealed class SettingsTests
         IEditableOptions<OtherSettings> other = provider.GetRequiredService<IEditableOptions<OtherSettings>>();
         IEditableOptions<SampleSettings> sample = provider.GetRequiredService<IEditableOptions<SampleSettings>>();
         Assert.Equal(12, other.Current.Value.Number);
-        Assert.Equal(SettingsLoadStatus.InvalidData, sample.LoadResult.Status);
+        Assert.Equal(SettingsLoadStatus.Loaded, sample.LoadResult.Status);
         Assert.Equal(0, store.Writes);
         await other.SaveAsync(other.BeginEdit());
         Assert.Equal(2, JsonNode.Parse(store.Data!)!["sections"]!["other"]!["schemaVersion"]!.GetValue<int>());
         Assert.True(JsonNode.Parse(store.Data!)!["sections"]!["sample"]!["values"]!["typo"]!.GetValue<bool>());
+        await sample.SaveAsync(sample.BeginEdit());
+        Assert.Null(JsonNode.Parse(store.Data!)!["sections"]!["sample"]!["values"]!["typo"]);
     }
 
     /// <summary>Default configuration, normalization and multiple standard validators run in order.</summary>
@@ -454,6 +456,171 @@ public sealed class SettingsTests
         custom.UseJsonDefinition<OtherSettings, OtherDefinition>();
         Assert.Throws<InvalidOperationException>(() => custom.UseJsonTypeInfo(TestJsonContext.Default.OtherSettings));
         Assert.Throws<InvalidOperationException>(() => services.AddOptions<CollectionSettings>("named").UseJsonTypeInfo(TestJsonContext.Default.CollectionSettings));
+    }
+
+    /// <summary>Saved values are applied before PostConfigure without serializing unnormalized defaults.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task NormalizedDefaultsCanBeSavedAndReloadedAsync()
+    {
+        var store = new MemoryStore { Data = Encoding.UTF8.GetBytes("{\"documentVersion\":1,\"sections\":{\"sample\":{\"schemaVersion\":1,\"values\":{}}}}") };
+        void Register(IServiceCollection services)
+        {
+            services.Configure<SampleSettings>(value => value.PrimaryRange.Minimum = float.NaN);
+            services.PostConfigure<SampleSettings>(value => value.PrimaryRange.Minimum = float.IsFinite(value.PrimaryRange.Minimum) ? value.PrimaryRange.Minimum : 0.2f);
+        }
+
+        using ServiceProvider provider = await CreateProviderAsync(store, Register);
+        IEditableOptions<SampleSettings> settings = provider.GetRequiredService<IEditableOptions<SampleSettings>>();
+        Assert.Equal(SettingsLoadStatus.Loaded, settings.LoadResult.Status);
+        Assert.Equal(0.2f, settings.Current.Value.PrimaryRange.Minimum);
+        SettingsEdit<SampleSettings> edit = settings.BeginEdit();
+        edit.Value.PrimaryRange.Minimum = 0.7f;
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(edit)).Status);
+        using ServiceProvider restarted = await CreateProviderAsync(store, Register);
+        IEditableOptions<SampleSettings> loaded = restarted.GetRequiredService<IEditableOptions<SampleSettings>>();
+        Assert.Equal(SettingsLoadStatus.Loaded, loaded.LoadResult.Status);
+        Assert.Equal(0.7f, loaded.Current.Value.PrimaryRange.Minimum);
+    }
+
+    /// <summary>Configuration callbacks cannot retain mutable aliases after save or either reset.</summary>
+    /// <param name="operation">Zero saves, one resets a section, and two resets the document.</param>
+    /// <param name="postConfigure">Whether the callback runs after the candidate is captured.</param>
+    /// <returns>The asynchronous test operation.</returns>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public async Task CommittedValuesNeverAliasCallbackCollectionsAsync(int operation, bool postConfigure)
+    {
+        var shared = new Dictionary<string, Dictionary<string, string[]>> { ["group"] = new() { ["item"] = ["before"] } };
+        var store = new MemoryStore { PauseWrites = true };
+        using ServiceProvider provider = await CreateProviderAsync(store, services =>
+        {
+            if (postConfigure)
+            {
+                services.PostConfigure<SampleSettings>(value => value.Entries = shared);
+            }
+            else
+            {
+                services.Configure<SampleSettings>(value => value.Entries = shared);
+            }
+        });
+        IEditableOptions<SampleSettings> settings = provider.GetRequiredService<IEditableOptions<SampleSettings>>();
+        Assert.Equal("before", settings.Current.Value.Entries["group"]["item"][0]);
+        shared["group"]["item"][0] = "captured";
+        Assert.Equal("before", settings.Current.Value.Entries["group"]["item"][0]);
+        async Task<SettingsSaveStatus> CommitAsync()
+        {
+            if (operation == 2)
+            {
+                return (await provider.GetRequiredService<ISettingsDocument>().ResetAsync()).Status;
+            }
+
+            SettingsSaveResult<SampleSettings> result = operation == 0
+                ? await settings.SaveAsync(settings.BeginEdit())
+                : await settings.ResetAsync(settings.Revision);
+            return result.Status;
+        }
+
+        Task<SettingsSaveStatus> commit = CommitAsync();
+        await store.Entered.Task;
+        shared["group"]["item"][0] = "after";
+        store.Release.SetResult();
+        Assert.Equal(SettingsSaveStatus.Saved, await commit);
+        Assert.Equal(1, settings.Revision);
+        Assert.Equal("captured", settings.Current.Value.Entries["group"]["item"][0]);
+        Assert.Equal("captured", JsonNode.Parse(store.Data!)!["sections"]!["sample"]!["values"]!["entries"]!["group"]!["item"]![0]!.GetValue<string>());
+    }
+
+    /// <summary>A serializer which writes a shape its reader rejects must never commit.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task UnreadableSerializerOutputIsRejectedBeforeWritingAsync()
+    {
+        var context = new TestJsonContext(new System.Text.Json.JsonSerializerOptions
+        {
+            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.WriteAsString,
+        });
+        var store = new MemoryStore();
+        using ServiceProvider provider = await CreateProviderAsync(store, services => services.AddPersistedOptions<OtherSettings>("other").UseJsonTypeInfo(context.OtherSettings));
+        IEditableOptions<OtherSettings> settings = provider.GetRequiredService<IEditableOptions<OtherSettings>>();
+        SettingsEdit<OtherSettings> edit = settings.BeginEdit();
+        edit.Value.Number = 5;
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, (await settings.SaveAsync(edit)).Status);
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, (await provider.GetRequiredService<ISettingsDocument>().ResetAsync()).Status);
+        Assert.Equal(0, store.Writes);
+        Assert.Equal(0, settings.Revision);
+        Assert.Equal(0, settings.Current.Value.Number);
+    }
+
+    /// <summary>The full document must fit the reader's depth limit before writing.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task UnreadableDepthIsRejectedBeforeSaveOrDocumentResetAsync()
+    {
+        var context = new TestJsonContext(new System.Text.Json.JsonSerializerOptions { MaxDepth = 128 });
+        bool deepDefaults = false;
+        var store = new MemoryStore();
+        void Register(IServiceCollection services) => services.AddPersistedOptions<RecursiveSettings>("recursive")
+            .UseJsonTypeInfo(context.RecursiveSettings)
+            .Configure(value => value.Child = deepDefaults ? Chain(70) : null);
+        using ServiceProvider provider = await CreateProviderAsync(store, Register);
+        IEditableOptions<RecursiveSettings> settings = provider.GetRequiredService<IEditableOptions<RecursiveSettings>>();
+        SettingsEdit<RecursiveSettings> edit = settings.BeginEdit();
+        edit.Value.Child = Chain(70);
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, (await settings.SaveAsync(edit)).Status);
+        Assert.Equal(0, store.Writes);
+        Assert.Equal(0, settings.Revision);
+        edit.Value.Child = Chain(30);
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(edit)).Status);
+        byte[] saved = store.Data!.ToArray();
+        deepDefaults = true;
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, (await provider.GetRequiredService<ISettingsDocument>().ResetAsync()).Status);
+        Assert.Equal(1, store.Writes);
+        Assert.Equal(1, settings.Revision);
+        Assert.Equal(saved, store.Data);
+        deepDefaults = false;
+        using ServiceProvider restarted = await CreateProviderAsync(store, Register);
+        IEditableOptions<RecursiveSettings> loaded = restarted.GetRequiredService<IEditableOptions<RecursiveSettings>>();
+        Assert.Equal(SettingsLoadStatus.Loaded, loaded.LoadResult.Status);
+        Assert.NotNull(loaded.Current.Value.Child);
+
+        static RecursiveSettings Chain(int depth)
+        {
+            var root = new RecursiveSettings();
+            RecursiveSettings current = root;
+            for (int index = 1; index < depth; index++)
+            {
+                current.Child = new();
+                current = current.Child;
+            }
+
+            return root;
+        }
+    }
+
+    /// <summary>Replacing dictionary entries on load retains the configured comparison rules.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task ReloadRetainsDictionaryComparerWithoutRestoringDeletedKeysAsync()
+    {
+        var store = new MemoryStore();
+        void Register(IServiceCollection services) => services.AddPersistedOptions<DictionaryCopySettings>("dictionary")
+            .UseJsonTypeInfo(DictionaryCopyJsonContext.Default.DictionaryCopySettings)
+            .Configure(value => value.Counts = new(StringComparer.OrdinalIgnoreCase) { ["Removed"] = 1 });
+        using ServiceProvider provider = await CreateProviderAsync(store, Register);
+        IEditableOptions<DictionaryCopySettings> settings = provider.GetRequiredService<IEditableOptions<DictionaryCopySettings>>();
+        SettingsEdit<DictionaryCopySettings> edit = settings.BeginEdit();
+        edit.Value.Counts.Clear();
+        edit.Value.Counts["MixedCase"] = 7;
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(edit)).Status);
+        using ServiceProvider restarted = await CreateProviderAsync(store, Register);
+        DictionaryCopySettings loaded = restarted.GetRequiredService<IEditableOptions<DictionaryCopySettings>>().Current.Value;
+        Assert.Equal(7, loaded.Counts["mixedcase"]);
+        Assert.False(loaded.Counts.ContainsKey("Removed"));
     }
 
     private static ServiceProvider CreateFileProvider(PersistedSettingsSource source) => new ServiceCollection().AddSettings(source).UseSampleModule().BuildServiceProvider();

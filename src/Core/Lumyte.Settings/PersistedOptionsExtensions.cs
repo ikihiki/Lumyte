@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Configuration;
@@ -38,7 +39,7 @@ public static class PersistedOptionsExtensions
     /// <summary>Registers a module's settings and automatically enables Host startup validation.</summary>
     /// <param name="services">The service collection.</param>
     /// <param name="sectionId">The stable lowercase module ID.</param>
-    /// <typeparam name="T">The settings type.</typeparam>
+    /// <typeparam name="T">The settings model class. Collection types are not supported as roots.</typeparam>
     /// <returns>A standard Options builder.</returns>
     public static OptionsBuilder<T> AddPersistedOptions<T>(this IServiceCollection services, string sectionId)
         where T : class, new()
@@ -48,6 +49,11 @@ public static class PersistedOptionsExtensions
         if (sectionId.Any(character => character is not (>= 'a' and <= 'z' or >= '0' and <= '9' or '-')))
         {
             throw new ArgumentException("Use lowercase letters, digits and hyphens for a section ID.", nameof(sectionId));
+        }
+
+        if (typeof(IEnumerable).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException("Persisted settings require a model class as the root. Place collections in properties of that class.");
         }
 
         Registration? existing = services.Where(item => item.ServiceType == typeof(Registration))

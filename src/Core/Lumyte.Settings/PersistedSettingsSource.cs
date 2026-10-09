@@ -95,30 +95,6 @@ public abstract class PersistedSettingsSource : IConfigurationSource
 
     private protected virtual byte[]? ReadSynchronously() => throw new InvalidOperationException("The asynchronous source must already be loaded.");
 
-    private static void ValidateProperties(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (JsonProperty property in element.EnumerateObject())
-            {
-                if (!names.Add(property.Name))
-                {
-                    throw new JsonException($"Duplicate settings property: {property.Name}.");
-                }
-
-                ValidateProperties(property.Value);
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (JsonElement item in element.EnumerateArray())
-            {
-                ValidateProperties(item);
-            }
-        }
-    }
-
     private void EnsureLoaded()
     {
         lock (_gate)
@@ -149,9 +125,9 @@ public abstract class PersistedSettingsSource : IConfigurationSource
 
         try
         {
-            using var parsed = JsonDocument.Parse(bytes);
-            ValidateProperties(parsed.RootElement);
-            JsonObject document = JsonNode.Parse(bytes) as JsonObject ?? throw new JsonException("Settings must be a JSON object.");
+            using var parsed = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = SettingsJson.MaxDocumentDepth });
+            SettingsJson.ValidateProperties(parsed.RootElement);
+            JsonObject document = JsonNode.Parse(bytes, documentOptions: new JsonDocumentOptions { MaxDepth = SettingsJson.MaxDocumentDepth }) as JsonObject ?? throw new JsonException("Settings must be a JSON object.");
             if (document["documentVersion"] is not JsonValue version || !version.TryGetValue<int>(out int number))
             {
                 throw new JsonException("documentVersion must be an integer.");

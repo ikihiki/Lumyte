@@ -11,6 +11,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
 {
     private readonly SettingsDocument _document;
     private readonly ISettingsDefinition<T> _definition;
+    private readonly JsonTypeInfo<T> _metadata;
     private readonly IConfigureOptions<T>[] _configure;
     private readonly IPostConfigureOptions<T>[] _post;
     private readonly IValidateOptions<T>[] _validators;
@@ -24,6 +25,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         SectionId = sectionId;
         _document = document;
         _definition = definition;
+        _metadata = SettingsJson.CreatePersistenceMetadata(definition.JsonTypeInfo);
         _configure = configure.ToArray();
         _post = post.ToArray();
         _validators = validators.ToArray();
@@ -82,17 +84,18 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
     {
         EnsureInitialized();
         cancellationToken.ThrowIfCancellationRequested();
-        return SaveCandidateAsync(CreateDefaults(), expectedRevision, recovering: true, cancellationToken);
+        return SaveCandidateAsync(_definition.DeepClone(CreateDefaults()), expectedRevision, recovering: true, cancellationToken);
     }
 
     public void EnsureInitialized() => _ = _initial.Value;
 
     public (object Value, JsonObject Section) PrepareDefaults()
     {
-        T defaults = CreateDefaults();
+        T defaults = _definition.DeepClone(CreateDefaults());
         ImmutableArray<string> errors = NormalizeAndValidate(defaults);
         ThrowValidation(errors);
-        return (defaults, ToSection(defaults));
+        defaults = _definition.DeepClone(defaults);
+        return (defaults, PrepareSection(defaults));
     }
 
     public void Commit(object value, bool recovering)
@@ -113,28 +116,6 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         }
     }
 
-    private static JsonNode Merge(JsonNode? defaults, JsonNode saved, JsonTypeInfo metadata, JsonSerializerOptions options)
-    {
-        if (metadata.Kind != JsonTypeInfoKind.Object || saved is not JsonObject savedObject)
-        {
-            return saved.DeepClone();
-        }
-
-        JsonObject result = defaults?.DeepClone() as JsonObject ?? new JsonObject();
-        foreach ((string name, JsonNode? value) in savedObject)
-        {
-            JsonPropertyInfo? property = metadata.Properties.FirstOrDefault(item => string.Equals(item.Name, name, options.PropertyNameCaseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
-            if (property is null)
-            {
-                throw new JsonException($"Unknown settings property: {name}.");
-            }
-
-            result[property.Name] = value is null ? null : Merge(result[property.Name], value, options.GetTypeInfo(property.PropertyType), options);
-        }
-
-        return result;
-    }
-
     private Initial Initialize()
     {
         if (_definition.SchemaVersion < 1)
@@ -145,6 +126,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         T defaults = CreateDefaults();
         T validatedDefaults = _definition.DeepClone(defaults);
         ThrowValidation(NormalizeAndValidate(validatedDefaults));
+        validatedDefaults = _definition.DeepClone(validatedDefaults);
         lock (_document.Sync)
         {
             SettingsLoadResult result = _document.LoadResult;
@@ -166,14 +148,14 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
 
                     JsonObject values = section["values"] as JsonObject ?? throw new JsonException("Section values must be an object.");
                     JsonObject migrated = _definition.Upgrade((JsonObject)values.DeepClone(), number);
-                    JsonNode merged = Merge(JsonSerializer.SerializeToNode(defaults, _definition.JsonTypeInfo), migrated, _definition.JsonTypeInfo, _definition.JsonTypeInfo.Options);
-                    value = merged.Deserialize(_definition.JsonTypeInfo) ?? throw new JsonException("Settings cannot be null.");
+                    value = SettingsModelOverlay.Read(_definition.DeepClone(defaults), migrated, _metadata);
                     ImmutableArray<string> errors = NormalizeAndValidate(value);
                     if (!errors.IsEmpty)
                     {
                         throw new JsonException(string.Join(Environment.NewLine, errors));
                     }
 
+                    value = _definition.DeepClone(value);
                     result = new(SettingsLoadStatus.Loaded, []);
                 }
                 catch (NotSupportedException error)
@@ -182,7 +164,7 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
                     result = new(SettingsLoadStatus.UnsupportedVersion, [error.Message]);
                     _protected = true;
                 }
-                catch (JsonException error)
+                catch (Exception error) when (error is JsonException or ArgumentException)
                 {
                     value = validatedDefaults;
                     result = new(SettingsLoadStatus.InvalidData, [error.Message]);
@@ -248,7 +230,8 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         JsonObject section;
         try
         {
-            section = ToSection(candidate);
+            candidate = _definition.DeepClone(candidate);
+            section = PrepareSection(candidate);
         }
         catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
         {
@@ -282,6 +265,10 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
             {
                 return new(SettingsSaveStatus.StorageFailure, Current, [error.Message]);
             }
+            catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
+            {
+                return new(SettingsSaveStatus.ValidationFailed, Current, [error.Message]);
+            }
 
             lock (_document.Sync)
             {
@@ -296,10 +283,29 @@ internal sealed class SettingsState<T> : IEditableOptions<T>, ISettingsSlot
         }
     }
 
+    private JsonObject PrepareSection(T value)
+    {
+        JsonObject section = ToSection(value);
+        JsonObject values = section["values"] as JsonObject ?? throw new JsonException("Settings values must be a JSON object.");
+        T restored = SettingsModelOverlay.Read(_definition.DeepClone(CreateDefaults()), values, _metadata);
+        ImmutableArray<string> errors = NormalizeAndValidate(restored);
+        if (!errors.IsEmpty)
+        {
+            throw new JsonException(string.Join(Environment.NewLine, errors));
+        }
+
+        if (!JsonNode.DeepEquals(values, ToSection(restored)["values"]))
+        {
+            throw new JsonException("Settings must round-trip without changing their persisted values.");
+        }
+
+        return section;
+    }
+
     private JsonObject ToSection(T value) => new()
     {
         ["schemaVersion"] = _definition.SchemaVersion,
-        ["values"] = JsonSerializer.SerializeToNode(value, _definition.JsonTypeInfo),
+        ["values"] = JsonSerializer.SerializeToNode(value, _metadata),
     };
 
     private SettingsSnapshot<T> Snapshot() => new(_revision, _definition.DeepClone(_value!));

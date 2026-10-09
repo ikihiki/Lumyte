@@ -7,4 +7,5 @@ namespace Lumyte.Settings.Tests;
 [JsonSerializable(typeof(SampleSettings))]
 [JsonSerializable(typeof(CollectionSettings))]
 [JsonSerializable(typeof(ReadOnlySettings))]
+[JsonSerializable(typeof(RecursiveSettings))]
 internal partial class TestJsonContext : JsonSerializerContext;

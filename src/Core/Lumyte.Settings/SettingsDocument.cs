@@ -1,4 +1,4 @@
-using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Lumyte.Settings;
@@ -44,7 +44,16 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
     public async Task<SettingsDocumentSaveResult> ResetAsync(CancellationToken cancellationToken = default)
     {
         ValidateRegisteredSettings();
-        (ISettingsSlot Slot, (object Value, JsonObject Section) Prepared)[] defaults = _registrations.Select(registration => registration.Resolve(_services)).Select(slot => (Slot: slot, Prepared: slot.PrepareDefaults())).ToArray();
+        (ISettingsSlot Slot, (object Value, JsonObject Section) Prepared)[] defaults;
+        try
+        {
+            defaults = _registrations.Select(registration => registration.Resolve(_services)).Select(slot => (Slot: slot, Prepared: slot.PrepareDefaults())).ToArray();
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
+        {
+            return new(SettingsSaveStatus.ValidationFailed, [error.Message]);
+        }
+
         await Writes.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -62,6 +71,10 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
             catch (IOException error)
             {
                 return new(SettingsSaveStatus.StorageFailure, [error.Message]);
+            }
+            catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
+            {
+                return new(SettingsSaveStatus.ValidationFailed, [error.Message]);
             }
 
             lock (Sync)
@@ -104,5 +117,5 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
         _source.Publish(replacement);
     }
 
-    private static byte[] Serialize(JsonObject document) => Encoding.UTF8.GetBytes(document.ToJsonString());
+    private static byte[] Serialize(JsonObject document) => SettingsJson.SerializeDocument(document);
 }
