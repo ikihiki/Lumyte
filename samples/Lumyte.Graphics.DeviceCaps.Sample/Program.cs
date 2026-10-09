@@ -5,8 +5,8 @@ using Lumyte.Graphics.Wgpu;
 
 if (args is ["vulkan", "pipeline-benchmark"])
 {
-    const int rounds = 8;
-    for (int round = 0; round < rounds; round++)
+    const int Rounds = 8;
+    for (int round = 0; round < Rounds; round++)
     {
         // Alternate order to reduce systematic driver warmup bias; discard two warmup rounds.
         foreach (bool cache in round % 2 == 0 ? new[] { true, false } : new[] { false, true })
