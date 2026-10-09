@@ -36,3 +36,5 @@ CHROME=/usr/bin/google-chrome node tools/graphics/verify-browser.mjs
 BufferExercise も同じ共通 API で実行します。実際の GPUBuffer の確保・map・CPU copy・unmap と境界条件を確認し、成功時には `Buffer checks passed` を表示します。
 
 TextureExerciseも実行し、GPUTextureとGPUTextureViewの確保、mip／layer・cube選択と寿命を確認します。成功時には `Texture checks passed` を表示し、既存Wasm CIがこの結果を検証します。
+
+SamplerExerciseも共通APIで実行します。GPU samplerの確保・sampling stateと所有を確認し、既存Wasm CIは `Sampler checks passed` を検証します。

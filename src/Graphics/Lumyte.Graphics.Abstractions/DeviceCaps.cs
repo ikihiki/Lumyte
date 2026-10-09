@@ -27,6 +27,9 @@ public sealed record DeviceCaps
     /// <summary>Gets the maximum sampler count per shader stage.</summary>
     public uint MaxSamplersPerStage { get; init; }
 
+    /// <summary>Gets the maximum supported sampler anisotropy; one means anisotropic filtering is unavailable.</summary>
+    public ushort MaxSamplerAnisotropy { get; init; } = 1;
+
     /// <summary>Gets the maximum uniform buffer count per shader stage.</summary>
     public uint MaxUniformBuffersPerStage { get; init; }
 

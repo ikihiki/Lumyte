@@ -12,6 +12,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly PhysicalDevice _physicalDevice;
     private int _bufferCount;
     private int _textureCount;
+    private int _samplerCount;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays)
@@ -132,12 +133,22 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return texture;
     }
 
+    /// <inheritdoc />
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SamplerValidation.Validate(desc, Caps);
+        var sampler = new VulkanSampler(this, desc);
+        _samplerCount++;
+        return sampler;
+    }
+
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0)
+        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0)
         {
-            throw new InvalidOperationException("Dispose all buffers and textures before disposing their device.");
+            throw new InvalidOperationException("Dispose all buffers, textures and samplers before disposing their device.");
         }
 
         if (_disposed)
@@ -150,6 +161,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _api.Dispose();
         _disposed = true;
     }
+
+    internal void ReleaseSampler() => _samplerCount--;
 
     internal void ReleaseTexture() => _textureCount--;
 
@@ -222,6 +235,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             MaxColorAttachments = limits.MaxColorAttachments,
             MaxSampledTexturesPerStage = limits.MaxPerStageDescriptorSampledImages,
             MaxSamplersPerStage = limits.MaxPerStageDescriptorSamplers,
+            MaxSamplerAnisotropy = enabled.SamplerAnisotropy ? checked((ushort)Math.Min(16, Math.Floor(limits.MaxSamplerAnisotropy))) : (ushort)1,
             MaxUniformBuffersPerStage = limits.MaxPerStageDescriptorUniformBuffers,
             MaxStorageBuffersPerStage = limits.MaxPerStageDescriptorStorageBuffers,
             MaxComputeInvocationsPerWorkgroup = limits.MaxComputeWorkGroupInvocations,

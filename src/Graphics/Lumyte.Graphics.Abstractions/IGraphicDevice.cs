@@ -24,4 +24,9 @@ public interface IGraphicDevice
     /// <param name="desc">The immutable storage format, usages, dimensions and subresources.</param>
     /// <returns>The concrete backend allocation through its common interface.</returns>
     IGraphicsTexture CreateTexture(TextureDesc desc);
+
+    /// <summary>Creates an owned sampler using the exact requested state.</summary>
+    /// <param name="desc">The immutable filters, addressing, LOD, anisotropy and comparison state.</param>
+    /// <returns>The concrete backend sampler through the common interface.</returns>
+    IGraphicsSampler CreateSampler(SamplerDesc desc);
 }

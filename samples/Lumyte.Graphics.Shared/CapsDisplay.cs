@@ -29,6 +29,7 @@ public static class CapsDisplay
             $"MaxColorAttachments: {caps.MaxColorAttachments}\n" +
             $"MaxSampledTexturesPerStage: {caps.MaxSampledTexturesPerStage}\n" +
             $"MaxSamplersPerStage: {caps.MaxSamplersPerStage}\n" +
+            $"MaxSamplerAnisotropy: {caps.MaxSamplerAnisotropy}\n" +
             $"MaxUniformBuffersPerStage: {caps.MaxUniformBuffersPerStage}\n" +
             $"MaxStorageBuffersPerStage: {caps.MaxStorageBuffersPerStage}\n" +
             $"MaxComputeInvocationsPerWorkgroup: {caps.MaxComputeInvocationsPerWorkgroup}\n" +
