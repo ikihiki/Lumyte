@@ -256,7 +256,7 @@ export function createShaderBinding(handle, key, compute, root, map) {
     return binding;
 }
 export function addShaderResource(binding, slot, kind, resource, size) {
-    binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource, size } });
+    binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, size } });
 }
 export function addShaderData(handle, binding, slot, data) {
     const buffer = shaderBacking(handle.device, data, GPUBufferUsage.STORAGE);
