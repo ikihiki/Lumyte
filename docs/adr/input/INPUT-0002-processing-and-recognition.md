@@ -105,6 +105,57 @@ now はコーディネーターが共有する単調経過時間とし、逆行�
 +public TimeSpan InputSystem.ElapsedTime { get; }
 ```
 
+#### DI で Source と登録窓口をラップする
+
+Platform Source の実装を変更せず補正を差し込む場合は、DI が InputSystem に渡す IInputSource を CorrectingInputSource で包む。補正 Source は Initialize で渡された Registry を CorrectingDeviceRegistry でラップして内側の Source に渡す。Platform Source が RegisterDevice(raw) を呼ぶと、補正 Registry が Device をラップして本来の Registry へ登録する。返された ID と UnregisterDevice はそのまま委譲する。
+
+```text
+DI → InputSystem(IEnumerable<IInputSource>)
+        └─ CorrectingInputSource
+             └─ PlatformInputSource
+
+InputSystem.Initialize(本来の Registry)
+  → CorrectingInputSource.Initialize
+  → PlatformInputSource.Initialize(補正 Registry)
+  → 補正 Registry.RegisterDevice(raw)
+  → 本来の Registry.RegisterDevice(corrected)
+```
+
+次は Microsoft.Extensions.DependencyInjection を使用する構成側の例である。Processing ライブラリ自体に DI コンテナーへの依存を追加するものではない。補正 Source / Registry と具体的な補正クラスは未実装の設計名とする。
+
+```csharp
+services.AddSingleton<TimeProvider>(TimeProvider.System);
+// 具象型として登録し、IInputSource として二重登録しない。
+services.AddSingleton<PlatformInputSource>();
+
+services.AddSingleton<IInputSource>(provider =>
+    new CorrectingInputSource(
+        provider.GetRequiredService<PlatformInputSource>(),
+        descriptor => descriptor.Kind == InputDeviceKind.Controller
+            ? new IDeviceDataProcessor[]
+            {
+                new StickCalibration(centerOffset),
+                new RadialDeadZone(0.15f),
+            }
+            : Array.Empty<IDeviceDataProcessor>(),
+        // Source 構築中に InputSystem を解決せず、更新時に時刻を取得する。
+        () => provider.GetRequiredService<InputSystem>().ElapsedTime));
+
+// IEnumerable<IInputSource> で補正 Source を受け取る。
+// 同じスコープに別の種類の Source も IInputSource として登録できる。
+services.AddSingleton<InputSystem>();
+
+using ServiceProvider provider = services.BuildServiceProvider();
+InputSystem input = provider.GetRequiredService<InputSystem>();
+input.Update();
+```
+
+getTime の呼び出しは構築完了後の DrainEvents / Update まで遅延する。Initialize で実行すると InputSystem の再帰解決になるため禁止する。ElapsedTime は上記の追加提案であり、現行 API に存在するものとして扱わない。
+
+補正 Source の Update / Shutdown は内側 Source へ委譲する。補正 Registry は登録成功時だけ Device の所有権を移し、失敗時は元 Device を呼び出し元 Source の所有のまま残す。未登録ラッパーの後処理で元 Device を二重破棄しないよう、所有権確定前の解除処理を設ける。登録成功後の corrected.Dispose は raw も一度だけ破棄する。
+
+Platform Source は DI が所有し、補正 Source は借用する。補正 Source.Dispose は内側 Source.Dispose を呼ばない。上の例では InputSystem が最後に解決されるため、DI 終了時は InputSystem → 補正 Source → Platform Source の順に破棄される。別コンテナーでもこの順序を保証する。
+
 #### Device 入力を補正して登録する
 
 Source は接続を検出したとき、元 Device をラップして Registry に登録する。登録失敗時のラッパー破棄は Source、登録成功後は InputSystem の責務となる。
