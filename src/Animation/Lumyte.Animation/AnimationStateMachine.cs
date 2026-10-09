@@ -252,8 +252,8 @@ public sealed class AnimationStateMachine<TState, TContext>
             _scratch.Clear();
             if (Status == AnimationStateMachineStatus.Paused)
             {
-                _scratch.BeginEvaluation();
-                previous.Binding.Timeline.Root.Sample(previous.Playback!.Position.Ticks, _scratch, false, 0);
+                _markers.Clear();
+                previous.Playback!.Update(_scratch, _markers);
                 _scratch.CopyTo(output);
                 return false;
             }
@@ -291,7 +291,7 @@ public sealed class AnimationStateMachine<TState, TContext>
                 {
                     UpdateOffset = (eventBase - _lastEventClock) + marker.UpdateOffset,
                 };
-                events.Add(new AnimationStateEvent<TState>(previous.Binding.Id, corrected));
+                events.Add(new AnimationStateEvent<TState>(previous.Binding.Id, corrected, eventBase + marker.UpdateOffset));
             }
 
             if (changed)
@@ -323,7 +323,7 @@ public sealed class AnimationStateMachine<TState, TContext>
     private static AnimationStateMachineDefinition<TState, TContext> Compile(AnimationStateMachineBuilder<TState, TContext> builder, TState initialState)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        return builder.Build(initialState);
+        return builder.Compile(initialState);
     }
 
     private static void ValidateContext(TContext context)

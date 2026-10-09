@@ -6,9 +6,9 @@ internal sealed class GroupNode(PlacedNode[] children, long length) : TimelineNo
 
     internal override bool HasRelease { get; } = children.Any(child => child.Node.HasRelease);
 
-    internal override long ValueCount { get; } = children.Sum(child => child.Node.ValueCount);
+    internal override UInt128 ValueCount { get; } = children.Aggregate(UInt128.Zero, static (count, child) => checked(count + child.Node.ValueCount));
 
-    internal override void Sample(long time, AnimationOutput output, bool backwards, long priority)
+    internal override void Sample(long time, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (time < 0)
         {
@@ -22,7 +22,7 @@ internal sealed class GroupNode(PlacedNode[] children, long length) : TimelineNo
         }
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, long priority)
+    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
     {
         if (!HasRelease)
         {

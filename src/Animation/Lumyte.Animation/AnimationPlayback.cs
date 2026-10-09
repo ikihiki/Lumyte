@@ -185,6 +185,14 @@ public sealed class AnimationPlayback
         TimePoint now = ReadClock();
         long current = At(now);
         output.BeginEvaluation();
+        if (State == AnimationPlaybackState.Paused)
+        {
+            // Sampling a paused position must not consume crossings captured by Pause.
+            Position = Map(current);
+            _timeline.Root.Sample(Position.Ticks, output, false, 0);
+            return false;
+        }
+
         bool advancing = State == AnimationPlaybackState.Playing && current > _lastEvaluation;
         if (advancing)
         {
@@ -199,6 +207,12 @@ public sealed class AnimationPlayback
 
             for (long loop = first; (_timeline.Root.HasEvents || _timeline.Root.HasRelease) && loop <= last; loop++)
             {
+                if (loop > first)
+                {
+                    // A new outer loop supersedes contributions from its predecessor.
+                    output.BeginEvaluation();
+                }
+
                 long origin = checked(loop * length);
                 _events.BeginLoop(loop, origin);
                 _timeline.Root.Events(new EventQuery(_lastEvaluation - origin, current - origin, _includeStart && _lastEvaluation == 0, true, origin, 1), _events);

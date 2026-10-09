@@ -6,20 +6,22 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
 
     internal override bool HasRelease { get; } = child.HasRelease;
 
-    internal override long ValueCount { get; } = child.ValueCount;
+    internal override UInt128 ValueCount { get; } = checked(child.ValueCount * (uint)count);
 
-    internal override void Sample(long time, AnimationOutput output, bool backwards, long priority)
+    internal override void Sample(long time, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (time < 0)
         {
             return;
         }
 
+        long index = time >= Length ? count - 1 : time / child.Length;
         long local = time >= Length ? child.Length : time % child.Length;
-        child.Sample(local, output, backwards, priority);
+        long ordinal = backwards ? count - 1 - index : index;
+        child.Sample(local, output, backwards, checked(priority + ((UInt128)ordinal * child.ValueCount)));
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, long priority)
+    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
     {
         if (!HasRelease)
         {
@@ -50,7 +52,8 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
         {
             long index = to >= from ? cursor : last - (cursor - first);
             long offset = checked(index * child.Length);
-            child.Endpoints(from - offset, to - offset, output, priority);
+            long ordinal = to >= from ? index : count - 1 - index;
+            child.Endpoints(from - offset, to - offset, output, checked(priority + ((UInt128)ordinal * child.ValueCount)));
         }
     }
 
