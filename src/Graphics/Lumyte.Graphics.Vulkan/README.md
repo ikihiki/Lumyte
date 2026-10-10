@@ -48,7 +48,7 @@ physical device の properties と features を生成時に取得し、有効に
 
 CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copyと同期はcommand bufferへ明示的に記録します。
 
-CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。必要な同期は利用者が管理し、bufferが残ったdeviceのDisposeはInvalidOperationExceptionで拒否します。解放済み allocation への access は ObjectDisposedException です。
+CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。bufferとdeviceの解放順、GPU完了とCPU accessの同期は利用者が管理します。親子resource数による解放拒否は行いません。CPU spanの範囲、mapping状態、解放済みinstanceの局所的な検査は維持します。
 
 buffer usage は TransferSrcBit、TransferDstBit、StorageBufferBit、IndexBufferBit に対応付けます。Automatic は DEVICE_LOCAL、Upload／Readback は HOST_VISIBLE | HOST_COHERENT の memory type を選びます。指定 usage の VkMemoryRequirements と条件を満たす type がなければ NotSupportedException になります。
 
@@ -60,7 +60,7 @@ Buffer Device Address、GPU address の公開・登録、shader binding はこ�
 
 生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
 
-CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、利用者による同期を前提にlive view数を管理します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewはsourceへの参照を持ちますが、live view／child数の追跡は行いません。利用者がGPU使用の完了を保証し、View、Texture、Deviceの順に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
 
 Silk.NET.Vulkanでoptimal tilingのVkImageとdevice-local VkDeviceMemoryを確保し、VkImageViewでcolor aspectの範囲を選びます。GetPhysicalDeviceImageFormatPropertiesでformat・usage・寸法・mip・layerとsample count 1を照合し、不対応はNotSupportedExceptionです。native allocation失敗時はimageとmemoryをcleanupします。初期layoutはUndefinedで、barrierを挿入しません。
 
@@ -68,23 +68,23 @@ squareかつ6 layer以上のimageにはCubeCompatibleを指定します。imageC
 
 DescとView範囲の検証は、このbackend assembly内のinternalなTextureValidationで行います。Abstractionsの内部型へのアクセスやInternalsVisibleToは使いません。
 
-resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。状態検証はデータ競合を防止する機構ではありません。
+resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。GPUでの使用中判定や依存resourceの生存走査は行いません。
 
 ## Sampler
 
 CreateSamplerは具象backendのIGraphicsSamplerを返し、Descを変更せずにsampling stateを確保します。enum、有限で非負のLOD、min <= max、正のanisotropyとlinear filter条件をbackend内のSamplerValidationで検証します。caps超過はNotSupportedExceptionで、暗黙補正しません。
 
-Silk.NET.VulkanのvkCreateSampler／vkDestroySamplerを使用し、normalized coordinates、LOD bias 0のVkSamplerを確保します。SamplerAnisotropyはdeviceで有効化した機能だけを利用し、上限はphysical MaxSamplerAnisotropyの整数部分と16の小さい方、非対応時は1です。anisotropy > 1の場合だけAnisotropyEnableを有効にし、Compare未指定ならCompareEnable=falseです。生成失敗はResultに応じた例外で返し、live child数を増やしません。
+Silk.NET.VulkanのvkCreateSampler／vkDestroySamplerを使用し、normalized coordinates、LOD bias 0のVkSamplerを確保します。SamplerAnisotropyはdeviceで有効化した機能だけを利用し、上限はphysical MaxSamplerAnisotropyの整数部分と16の小さい方、非対応時は1です。anisotropy > 1の場合だけAnisotropyEnableを有効にし、Compare未指定ならCompareEnable=falseです。生成失敗はResultに応じた例外で返します。
 
-samplerはtexture／Viewを所有せず、deviceのlive childとして数えます。Disposeは一度だけnative資源を解放し、samplerが残るdeviceのDisposeは拒否します。CPU／GPUの利用・解放に必要な同期は利用者の責務です。内部lock、InternalsVisibleTo、sampler cacheは設けません。
+samplerはtexture／Viewを所有しません。Disposeは一度だけnative資源を解放し、利用者がsamplerをdeviceより先に解放します。子resource数による解放拒否は行いません。CPU／GPUの利用・解放に必要な同期は利用者の責務です。内部lock、InternalsVisibleTo、sampler cacheは設けません。
 
 ## Argument Table
 
 CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler・bufferを種類別のDictionaryへ疎に登録します。capacityは論理slotの上限で、巨大な事前確保やshaderのbinding数を意味しません。別tableの同じslotと、種類ごとの同じslotは独立します。Labelは診断用の指定です。
 
-各登録instanceがidentityを持ち、`GpuReference<T>` は同じ登録の型・Count・byte offset／sizeを保持します。GetElementは登録rangeに対するoffsetをchecked計算し、内部Resolveは登録が生存することを確認してresourceを返します。公開APIへnative handleや整数IDを出しません。
+各登録instanceがidentityを持ち、`GpuReference<T>` は同じ登録の型・Count・byte offset／sizeを保持します。GetElementは登録rangeに対するoffsetをchecked計算し、内部Resolveは登録されたresourceとrangeを返します。登録の世代・失効検出は行いません。公開APIへnative handleや整数IDを出しません。
 
-登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録中resourceの解放は拒否します。置換とReleaseは古い登録を失効させ、失敗した登録で新しいleaseを残しません。tableを解放すると登録を解放してdeviceのchild数を減らし、登録resource自体はDisposeしません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
+登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録、派生IGpuRef、記録済みcommandが使用するresourceの寿命は利用者が管理します。置換・Release・table Dispose後の古い参照は使用しないでください。tableは登録resourceをDisposeせず、登録の保持カウンターや失効検出の走査も行いません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
 
 登録はVkDescriptorSetを確保・更新せず、backendのresource instanceと選択byte rangeを保持します。descriptor set／descriptor indexingやbuffer device addressへの接続はshader／commandの設計で扱います。現在のdeviceでbuffer device addressを有効化したことを意味せず、有限bindingへの変換方式を共通APIから強制しません。
 
@@ -92,7 +92,7 @@ CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler
 
 共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `SpirV`。Slang の SPIR-V を Silk.NET.Vulkan の `vkCreateShaderModule` に渡し、失敗した Result を例外にします。`Dispose()` は `vkDestroyShaderModule` を呼びます。entry／stage と pipeline の互換性は pipeline 作成時に検証します。
 
-artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。pipelineとshader実行命令は別のAPIで扱います。
+artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shaderと、それを使用するpipeline・commandの生存期間は利用者が管理し、deviceより先に解放します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。pipelineとshader実行命令は別のAPIで扱います。
 
 ## CommandBuffer
 
@@ -102,13 +102,13 @@ barrierはMemoryBarrier2／BufferMemoryBarrier2／ImageMemoryBarrier2をCmdPipel
 
 Submitは専用VkFenceを確保してQueueSubmitし、Status／WaitAsyncはそのfenceを非blockingに確認します。GPU全体のidle待機、CPUデータのreadback、resourceの自動解放を挿入しません。提出失敗時のout-of-memoryは未提出として扱い、device lossはFaultedにして再提出を拒否します。fenceとcommand poolはGPU使用終了後に明示的にDisposeします。
 
-共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。commandとsubmissionもdeviceの子として数えます。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。command、submissionとdeviceの解放順は利用者が管理します。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
 
 ## Pipeline
 
 graphics programはshaderの組・topology分類・compile optionを保持し、draw時に描画状態とpassの実attachment formatからnative pipelineを解決します。完全なnative PSOを生成するため、program内でvariantをcacheし、等価なkeyの再利用で生成を繰り返しません。keyにviewport／scissor／blend constant／stencil reference、texture instance、clear値は含めません。variantはprogram Disposeまで保持します。
 
-compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
+compute programは作成時にnative pipelineを生成します。programのshader参照とnative variantを保持します。program・shader・commandの有効期間と解放順は利用者が管理し、保持カウンターによる解放拒否やSubmit時の生存再走査は行いません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
 
 reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color/depth/stencil、direct/indexed/indirect draw、direct/indirect compute dispatchを提供します。MSAA・resolve・multi-draw・count bufferは別の拡張です。
 
@@ -164,9 +164,9 @@ SPIR-Vだけを含むonline artifactも、このbackendの型schemaとhelper ABI
 
 Vulkan 1.2のBufferDeviceAddress、RuntimeDescriptorArray、DescriptorBindingPartiallyBound、ShaderSampledImageArrayNonUniformIndexingとShaderInt64を有効化します。shader用途のraw bufferはShaderDeviceAddress usageとDeviceAddress allocation flagを持ちます。buffer helperは64-bit addressを直接参照し、portableな有限binding用のremapやswitchを使いません。
 
-textureとsamplerは種類別の論理slotをnative descriptor array indexとして使用します。到達slotの最大値に対応したarray layoutとroot uniformを使い、PSOをcacheします。物理arrayの上限を超えるslotは拒否します。drawごとにdescriptorを設定しますが、shader data bytesは確保済みGPU bufferのまま使います。commandはroot backingとdescriptor poolを保持し、submitで登録identityとstaging revisionを再検証します。
+textureとsamplerは種類別の論理slotをnative descriptor array indexとして使用します。到達slotの最大値に対応したarray layoutとroot uniformを使い、PSOをcacheします。物理arrayの上限を超えるslotは拒否します。drawごとにdescriptorを設定しますが、shader data bytesは確保済みGPU bufferのまま使います。commandはroot backingとdescriptor poolを保持し、Submit時の登録identity・staging revisionの再検証は行いません。参照の有効期間と、copy記録後からGPU完了までのstaging内容の維持は利用者が保証します。
 
-Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
+Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
 shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
 
@@ -178,7 +178,7 @@ shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpoi
 
 `SetIndexBuffer`はushort／uintのsliceを受け取り、`DrawIndexed`のfirstIndexはsliceからの相対offsetです。stripは`StripIndexFormat`を一致させ、最大index値でprimitive restartします。indexの値はCPUで走査しません。
 
-`DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、寿命、非mappedを検証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
+`DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、記録時の非mapped条件を検査します。Submit時に命令bufferの寿命やmappingを再走査せず、利用者が有効期間を保証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
 
 `VkImage`ではD32_SFLOAT／D24_UNORM_S8_UINTとDepthStencilAttachment usageを使い、image/view/barrierのaspectにdepthと必要なstencilを設定します。D24_UNORM_S8_UINTの対応はimage format propertiesで検証し、不対応なら生成を拒否します。dynamic renderingのdepth/stencil attachment、pipelineのdepth/stencil state・format、CmdBindIndexBuffer／CmdDrawIndexed／CmdDrawIndirect／CmdDrawIndexedIndirect／CmdDispatchIndirectを使用します。depth formatはキャッシュキーへ含め、キャッシュ無効時も同じ状態から生成します。IndexInput、DrawIndirect、DepthStencilをvertex input、draw indirect、early/late fragment testsへ変換し、対応するaccessをsynchronization2 barrierへ渡します。
 
@@ -189,3 +189,56 @@ Slangの`SV_VertexID`はSPIR-VでVertexIndexからBaseVertexを引きます。ve
 `R8Unorm`, `Rg8Unorm`, `R16Float`, `Rg16Float`, `Rgba16Float`, `Rgb10A2Unorm`をサンプリング・カラーattachment・コピーへ対応付けます。コピーは形式ごとのtexelサイズを使い、オフセットは4 byteとtexelサイズの両方に整列させます。
 
 ネイティブの形式とusage対応を生成時に問い合わせ、非対応は拒否します。
+
+## Surface・Swapchain・Present
+
+Device生成とSurface生成は別々です。platformのinstance extensionは生成時に指定しておきます。
+
+```csharp
+using var device = VulkanDevice.Create(new VulkanDeviceDesc
+{
+    EnablePresentation = true,
+    InstanceExtensions = platformInstanceExtensions,
+});
+using var surface = device.CreateSurface(createSurface);
+```
+
+`Create`はSurfaceを作成せず、callbackも受け取りません。`CreateSurface`へ`Func<Instance, SurfaceKHR>`を渡します。
+callbackは渡されたinstanceに属する新しいnative surfaceを作成し、返却時にその所有権をGraphicsへ移します。実ウインドウのハンドル取得やplatform別のsurface生成は別PRの連携側が担当します。
+追加targetは`device.CreateSurface(createSurface)`へ渡します。同じinstanceで有効化済みのplatform extensionと、既存general queueによるpresent対応が必要です。
+`Create()`のheadless経路にはWSI拡張を要求しません。
+
+提示経路ではVK_KHR_surface、VK_KHR_get_surface_capabilities2、VK_EXT_surface_maintenance1、VK_KHR_swapchain、VK_EXT_swapchain_maintenance1とswapchainMaintenance1 featureを要求します。
+Device生成時にはgraphics／compute queue familyを選び、Surface生成時にそのqueueのpresent対応を確認します。非対応ならNotSupportedExceptionです。別queue familyへのownership transferやadapterの再選択は行いません。
+形式はsurfaceが返すnonlinear-sRGB color spaceの組み合わせを公開します。HDR color spaceの選択は別の契約です。
+画像数はnative limits内でバックエンドが選び、複数frameの取得を共通の単一frame制約で制限しません。
+
+`device.CreateSemaphore()`はnativeの未signal binary VkSemaphoreを生成します。
+取得はtimeout 0のAcquireNextImageです。`AcquireNextFrameAsync(signalSemaphore)`に利用側が渡したsemaphoreだけをsignalします。
+nullならsemaphoreは使わずacquire fenceだけを使用し、利用側がFrame.WaitForReleaseAsyncで取得完了を待ってから画像を使用します。
+`Queue.Submit(QueueSubmitDesc)`のWaitSemaphoresとstageをVkSubmitInfoのwait／pWaitDstStageMaskへ、SignalSemaphoresをsignalへ直接渡します。
+`frame.Present(waitSemaphores)`は指定されたwaitだけをQueuePresentKHRへ渡します。取得waitや描画完了signalを自動追加しません。
+Present layoutへのbarrier、semaphoreを再signalしてよい時点、frame／semaphoreの保持と待機は利用側が管理します。
+提示に使用したsemaphoreの再利用にはGPUのsubmission fenceだけでなく、present fenceによる提示処理の終了を確認します。
+empty commandのwait／signal-only SubmitもVkQueueSubmitへ発行でき、CPUでGPU完了を待たず依存する提出を連続して行えます。
+acquire fenceとswapchain maintenance1のpresent fenceは`WaitForReleaseAsync`で取得・提示完了を明示的に待つために使います。
+FrameはGPU submissionを追跡しないため、利用者が`submission.WaitAsync()`等でGPU使用の完了を別途確認します。Disposeは完了を照会せず、DeviceWaitIdle／QueueWaitIdleや自動submitも行いません。
+semaphoreのsignal／wait履歴や使用中状態は保持せず、指定されたnative handleとstageをそのまま変換して渡します。再利用と解放時点は利用者が保証します。
+未提示の画像はGPU使用完了後にReleaseSwapchainImagesEXTで返却します。
+利用者が古いswapchainのleaseを解放してから再構成します。作成失敗でoldSwapchainがretireされた場合は取得結果をOutdatedとして再構成を要求します。
+
+Native WSIはビルドとハンドル受け取り口の検証を行い、実ウインドウの提示検証はハンドル取得を実装する後続PRで行います。
+
+## 複数ウインドウ
+
+`device.CreateSurfaces(IReadOnlyList<Func<Instance, SurfaceKHR>> factories)`で複数targetを生成済みDeviceへ接続します。
+空リストとnull callbackは呼び出し前に拒否します。各callbackは同じVkInstanceに属する新しいSurfaceKHRを返してください。既存handleの再登録は禁止です。
+各Surfaceについて選択済みphysical deviceとgeneral queueのpresent互換性を確認し、非対応ならNotSupportedExceptionです。
+結果は入力順です。途中で失敗すると今回生成したSurfaceだけを解放し、Deviceと既存Surfaceは保持します。
+`device.CreateSurface(callback)`で単独追加も可能です。必要なplatform extensionは`VulkanDeviceDesc.InstanceExtensions`へ生成時に指定します。
+
+Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとresizeはtargetごとに管理し、他targetのFrameが生きていても独立して操作できます。
+各Presentは別々に呼び、利用側がbinary semaphoreのsignal／waitを一回ずつ割り当てます。複数targetを一つのSubmitへまとめる場合は必要なwait／signalをすべて明示します。
+一つのSurfaceを閉じても共有Deviceと他のSurfaceは残り、DeviceWaitIdle／QueueWaitIdleを挿入しません。
+
+実行時検証の共通方針は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。resourceの保持数、commandからの依存resource走査、subresourceの状態表は検証目的で維持しません。binding生成とshader dataの明示copyに必要な参照収集・metadata伝播は行います。

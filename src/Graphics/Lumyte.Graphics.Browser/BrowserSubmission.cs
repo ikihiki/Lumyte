@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserSubmission(BrowserDevice owner, BrowserCommandBuffer[] commands, JSObject handle) : IGraphicsSubmission
+internal sealed class BrowserSubmission(BrowserCommandBuffer[] commands, JSObject handle) : IGraphicsSubmission
 {
     private SubmissionStatus _status = SubmissionStatus.Pending;
 
@@ -49,13 +49,7 @@ internal sealed class BrowserSubmission(BrowserDevice owner, BrowserCommandBuffe
             return;
         }
 
-        if (Status == SubmissionStatus.Pending)
-        {
-            throw new InvalidOperationException("Complete the submission before disposal.");
-        }
-
         handle.Dispose();
         _status = SubmissionStatus.Disposed;
-        owner.ReleaseSubmission();
     }
 }

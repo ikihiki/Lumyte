@@ -60,6 +60,7 @@ internal static class CommandValidation
         TextureUsage usage = state switch
         {
             Abstractions.TextureState.Undefined when !after => 0,
+            Abstractions.TextureState.Present when texture is VulkanTexture { SurfaceFrame: not null } => 0,
             Abstractions.TextureState.CopySource => TextureUsage.CopySource,
             Abstractions.TextureState.CopyDestination => TextureUsage.CopyDestination,
             Abstractions.TextureState.Sampled => TextureUsage.Sampled,

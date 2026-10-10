@@ -11,7 +11,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     private readonly JSObject _native;
     private bool _mapped;
     private bool _pending;
-    private int _registrationCount;
     private bool _disposed;
 
     internal BrowserBuffer(BrowserDevice owner, BufferDesc<T> desc, BufferLayout<T> layout, ulong size)
@@ -104,11 +103,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             return;
         }
 
-        if (_registrationCount != 0)
-        {
-            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
-        }
-
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
@@ -118,7 +112,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
         _native.Dispose();
         _mapped = false;
         _disposed = true;
-        _owner.ReleaseBuffer();
     }
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
@@ -144,14 +137,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
         BrowserInterop.CopyBufferTo(_native, destination[..checked((int)length)], checked((int)offset));
     }
-
-    internal void RetainRegistration()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _registrationCount = checked(_registrationCount + 1);
-    }
-
-    internal void ReleaseRegistration() => _registrationCount--;
 
     private void RequireMapping(MemoryPreference memory)
     {

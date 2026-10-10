@@ -7,7 +7,6 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
 {
     private readonly VulkanDevice _owner;
     private readonly ShaderModule _native;
-    private int _pipelineCount;
     private bool _disposed;
 
     internal VulkanShader(VulkanDevice owner, ShaderArtifact artifact)
@@ -45,11 +44,6 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
 
     public void Dispose()
     {
-        if (_pipelineCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all programs before their shader module.");
-        }
-
         if (_disposed)
         {
             return;
@@ -57,14 +51,5 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
 
         _owner.Api.DestroyShaderModule(_owner.NativeDevice, _native, null);
         _disposed = true;
-        _owner.ReleaseShader();
     }
-
-    internal void RetainPipeline()
-    {
-        _ = Native;
-        _pipelineCount++;
-    }
-
-    internal void ReleasePipeline() => _pipelineCount--;
 }

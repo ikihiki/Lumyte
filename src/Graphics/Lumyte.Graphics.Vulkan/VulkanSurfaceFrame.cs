@@ -1,0 +1,145 @@
+using Lumyte.Graphics.Abstractions;
+using Silk.NET.Vulkan;
+
+namespace Lumyte.Graphics.Vulkan;
+
+internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
+{
+    private readonly VulkanSwapchain _swapchain;
+    private VulkanTexture? _texture;
+    private uint _index;
+    private bool _presented;
+    private bool _deviceLost;
+
+    internal VulkanSurfaceFrame(VulkanSwapchain swapchain)
+    {
+        _swapchain = swapchain;
+        Lifetime = new(IsNativeReleased);
+        var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
+        try
+        {
+            VulkanPresentation.Check(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence acquireFence), "CreateFence");
+            AcquireFence = acquireFence;
+            VulkanPresentation.Check(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence presentFence), "CreateFence");
+            PresentFence = presentFence;
+        }
+        catch
+        {
+            ReleaseUnacquired();
+            throw;
+        }
+    }
+
+    public SurfaceFrameStatus Status => Lifetime.Status;
+
+    public IGraphicsTexture Texture => _texture ?? throw new InvalidOperationException("This frame has no acquired image.");
+
+    internal VulkanDevice Owner => _swapchain.Owner;
+
+    internal SurfaceFrameLifetime Lifetime { get; }
+
+    internal Fence AcquireFence { get; }
+
+    internal Fence PresentFence { get; }
+
+    public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
+    {
+        Lifetime.ValidatePresent();
+        var waits = new Silk.NET.Vulkan.Semaphore[waitSemaphores?.Count ?? 0];
+        for (int i = 0; i < waits.Length; i++)
+        {
+            if (waitSemaphores![i] is not VulkanSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
+            }
+
+            waits[i] = semaphore.Native;
+        }
+
+        SurfaceStatus status = _swapchain.Present(_index, waits, PresentFence);
+        _presented = true;
+        _deviceLost = status == SurfaceStatus.DeviceLost;
+        Lifetime.MarkPresented();
+        return status;
+    }
+
+    public ValueTask WaitForReleaseAsync(CancellationToken cancellationToken = default) => Lifetime.WaitForReleaseAsync(cancellationToken);
+
+    public void Dispose()
+    {
+        if (Status == SurfaceFrameStatus.Disposed)
+        {
+            return;
+        }
+
+        _texture!.DisposeLease();
+        if (!_presented && !_deviceLost)
+        {
+            _swapchain.ReleaseImage(_index);
+        }
+
+        ReleaseUnacquired();
+        Lifetime.MarkDisposed();
+    }
+
+    internal void SetImage(uint index, Image image)
+    {
+        _index = index;
+        SwapchainDesc desc = _swapchain.Configuration;
+        _texture = new(Owner, new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage }, image, Lifetime);
+    }
+
+    internal void ReleaseUnacquired()
+    {
+        if (PresentFence.Handle != 0)
+        {
+            Owner.Api.DestroyFence(Owner.NativeDevice, PresentFence, null);
+        }
+
+        if (AcquireFence.Handle != 0)
+        {
+            Owner.Api.DestroyFence(Owner.NativeDevice, AcquireFence, null);
+        }
+    }
+
+    private bool IsNativeReleased()
+    {
+        if (_deviceLost)
+        {
+            return true;
+        }
+
+        Result acquired = Owner.Api.GetFenceStatus(Owner.NativeDevice, AcquireFence);
+        if (acquired == Result.ErrorDeviceLost)
+        {
+            _deviceLost = true;
+            return true;
+        }
+
+        if (acquired == Result.NotReady)
+        {
+            return false;
+        }
+
+        VulkanPresentation.Check(acquired, "GetFenceStatus");
+        if (!_presented)
+        {
+            return true;
+        }
+
+        Result presented = Owner.Api.GetFenceStatus(Owner.NativeDevice, PresentFence);
+        if (presented == Result.ErrorDeviceLost)
+        {
+            _deviceLost = true;
+            return true;
+        }
+
+        if (presented == Result.NotReady)
+        {
+            return false;
+        }
+
+        VulkanPresentation.Check(presented, "GetFenceStatus");
+        return true;
+    }
+}

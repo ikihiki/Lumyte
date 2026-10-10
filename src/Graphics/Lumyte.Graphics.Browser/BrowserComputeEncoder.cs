@@ -7,7 +7,6 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 {
     private BrowserComputePipeline? _pipeline;
 
-    private BrowserArgumentTable? _argumentTable;
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
 
@@ -21,7 +20,6 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         }
 
         concrete.ThrowIfDisposed();
-        _argumentTable = concrete;
     }
 
     public void SetArguments<T>(in T value)
@@ -35,20 +33,6 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).Validate(snapshot);
-        foreach (ShaderValue member in snapshot.Values)
-        {
-            if (member.IsReference)
-            {
-                if (member.Reference is not IShaderReference reference || reference.Table is not BrowserArgumentTable referenceTable || !referenceTable.BelongsTo(owner.Owner))
-                {
-                    throw new ArgumentException("Root arguments contain a missing or foreign backend reference.", nameof(value));
-                }
-
-                reference.Validate();
-            }
-        }
-
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -90,7 +74,6 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         BrowserBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
         BrowserInterop.DispatchIndirect(handle, buffer.Native, arguments.OffsetInBytes);
-        owner.TrackProgram(() => { _ = buffer.Native; });
     }
 
     public void End() => owner.EndCompute(this, handle);
@@ -108,21 +91,10 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        if (_arguments == null && ShaderDataLayout.HasRoot(_pipeline.Data))
-        {
-            throw new InvalidOperationException("Set the program's root arguments before execution.");
-        }
-
         ShaderBindingData? bindingData = null;
         if (_arguments != null)
         {
-            if (_argumentTable == null && _arguments.Values.Any(v => v.IsReference))
-            {
-                throw new InvalidOperationException("Select an argument table before using shader arguments.");
-            }
-
-            _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
         }
 
@@ -135,12 +107,5 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
             owner.KeepBinding(binding);
             BrowserInterop.SetShaderBinding(handle, binding.Native);
         }
-
-        if (bindingData != null)
-        {
-            owner.TrackProgram(bindingData.Snapshot.Validate);
-        }
-
-        owner.TrackProgram(_pipeline.ValidateAlive);
     }
 }

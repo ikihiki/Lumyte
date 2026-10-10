@@ -54,13 +54,7 @@ internal sealed class VulkanSubmission(VulkanDevice owner, VulkanCommandBuffer[]
             return;
         }
 
-        if (Status == SubmissionStatus.Pending)
-        {
-            throw new InvalidOperationException("Complete the submission before disposal.");
-        }
-
         owner.Api.DestroyFence(owner.NativeDevice, fence, null);
         _status = SubmissionStatus.Disposed;
-        owner.ReleaseSubmission();
     }
 }

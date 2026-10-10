@@ -14,7 +14,6 @@ internal static unsafe class VulkanShaderReferenceEncoding
             throw new ArgumentException("A shader reference is missing.");
         }
 
-        reference.Validate();
         byte[] wire = new byte[16];
         if (kind is "GpuTextureRef" or "GpuSamplerRef")
         {

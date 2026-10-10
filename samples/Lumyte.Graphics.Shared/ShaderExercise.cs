@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.Samples;
 /// <summary>Exercises embedded Slang artifacts and modules using only common APIs.</summary>
 public static class ShaderExercise
 {
-    /// <summary>Loads the device target from this DLL and checks module ownership.</summary>
+    /// <summary>Loads the device target from this DLL and checks module metadata.</summary>
     /// <param name="device">The already created backend device.</param>
     /// <returns>A report after the shader checks succeed.</returns>
     public static string Run(IGraphicDevice device)
@@ -22,7 +22,7 @@ public static class ShaderExercise
             }
         }
 
-        return "Shader checks passed: all-target binary, embedded metadata and module lifetime.";
+        return "Shader checks passed: all-target binary, embedded metadata and module creation.";
     }
 
     /// <summary>Compiles the same Slang source online and creates a device module.</summary>
@@ -49,20 +49,7 @@ public static class ShaderExercise
             throw new InvalidOperationException("Shader artifact was not retained.");
         }
 
-        if (device is IDisposable owner)
-        {
-            try
-            {
-                owner.Dispose();
-            }
-            catch (InvalidOperationException)
-            {
-                shader.Dispose();
-                shader.Dispose();
-                return;
-            }
-
-            throw new InvalidOperationException("Device was disposed with a live shader.");
-        }
+        shader.Dispose();
+        shader.Dispose();
     }
 }

@@ -85,12 +85,12 @@ internal sealed unsafe partial class WgpuCommandBuffer
     private void BufferBarrierNative<T>(WgpuBuffer<T> buffer, BufferBarrierDesc<T> barrier)
         where T : unmanaged
     {
-        // The explicit dependency is validated by the command layer.
+        // WebGPU provides visibility for ordered buffer usages.
     }
 
     private void TextureBarrierNative(WgpuTexture texture, TextureBarrierDesc barrier)
     {
-        // Logical states are validated; WebGPU owns physical image transitions.
+        // WebGPU owns physical image transitions.
     }
 
     private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth)

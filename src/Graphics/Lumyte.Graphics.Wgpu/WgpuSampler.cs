@@ -7,7 +7,6 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
 {
     private readonly WgpuDevice _owner;
     private readonly WGPUSamplerImpl* _native;
-    private int _registrationCount;
     private bool _disposed;
 
     internal WgpuSampler(WgpuDevice owner, SamplerDesc desc)
@@ -53,23 +52,9 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
             return;
         }
 
-        if (_registrationCount != 0)
-        {
-            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
-        }
-
         WGPU.wgpuSamplerRelease(_native);
         _disposed = true;
-        _owner.ReleaseSampler();
     }
-
-    internal void RetainRegistration()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _registrationCount = checked(_registrationCount + 1);
-    }
-
-    internal void ReleaseRegistration() => _registrationCount--;
 
     private static WGPUAddressMode NativeAddress(AddressMode mode) => mode switch
     {

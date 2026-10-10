@@ -5,32 +5,34 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
 {
-    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers)
+    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers) => Submit(new QueueSubmitDesc { CommandBuffers = commandBuffers });
+
+    public IGraphicsSubmission Submit(QueueSubmitDesc desc)
     {
         owner.ValidateAlive();
-        ArgumentNullException.ThrowIfNull(commandBuffers);
-        IGraphicsCommandBuffer[] snapshot = commandBuffers.ToArray();
-        if (snapshot.Length == 0)
+        ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
+        ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
+        ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
+        if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
-            throw new ArgumentException("Empty submission.");
+            throw new ArgumentException("A submission must contain commands, waits or signals.");
         }
 
-        var commands = new WgpuCommandBuffer[snapshot.Length];
-        nint[] handles = new nint[snapshot.Length];
-        HashSet<WgpuCommandBuffer> seen = [];
-        for (int i = 0; i < snapshot.Length; i++)
+        var commands = new WgpuCommandBuffer[commandBuffers.Count];
+        nint[] handles = new nint[commandBuffers.Count];
+        for (int i = 0; i < commandBuffers.Count; i++)
         {
-            if (snapshot[i] is not WgpuCommandBuffer buffer || !ReferenceEquals(buffer.Owner, owner) || !seen.Add(buffer))
+            if (commandBuffers[i] is not WgpuCommandBuffer buffer || !ReferenceEquals(buffer.Owner, owner))
             {
-                throw new ArgumentException("Invalid device or duplicate command buffer.");
+                throw new ArgumentException("Command buffer belongs to another device.");
             }
 
             buffer.ValidateSubmit();
             commands[i] = buffer;
             handles[i] = (nint)buffer.Native;
         }
-
-        ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
 
         fixed (nint* data = handles)
         {
@@ -42,8 +44,6 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
             buffer.MarkSubmitted();
         }
 
-        var submission = new WgpuSubmission(owner, commands);
-        owner.RetainSubmission();
-        return submission;
+        return new WgpuSubmission(owner, commands);
     }
 }

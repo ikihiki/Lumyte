@@ -24,7 +24,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
             throw new ArgumentException("A sampled view from the same device is required.", nameof(view));
         }
 
-        return Write<IGraphicsTextureView>(_textures, TextureCapacity, slot, resource, resource.RetainRegistration, resource.ReleaseRegistration, 1, 0, 0, 0);
+        return Write<IGraphicsTextureView>(_textures, TextureCapacity, slot, resource, 1, 0, 0, 0);
     }
 
     public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler)
@@ -36,7 +36,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
             throw new ArgumentException("A sampler from the same device is required.", nameof(sampler));
         }
 
-        return Write<IGraphicsSampler>(_samplers, SamplerCapacity, slot, resource, resource.RetainRegistration, resource.ReleaseRegistration, 1, 0, 0, 0);
+        return Write<IGraphicsSampler>(_samplers, SamplerCapacity, slot, resource, 1, 0, 0, 0);
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
@@ -49,7 +49,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
         }
 
         resource.ValidateRange(range.OffsetInBytes, range.SizeInBytes);
-        return Write<T>(_buffers, BufferCapacity, slot, resource, resource.RetainRegistration, resource.ReleaseRegistration, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes);
+        return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes);
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
@@ -63,7 +63,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
 
         resource.ValidateAlive();
         ulong stride = resource.ShaderElementStrideInBytes;
-        return Write<T>(_buffers, BufferCapacity, slot, resource, resource.RetainRegistration, resource.ReleaseRegistration, range.Count, stride, checked(range.Offset * stride), checked(range.Count * stride));
+        return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, stride, checked(range.Offset * stride), checked(range.Count * stride));
     }
 
     public void ReleaseTexture(uint slot) => Release(_textures, TextureCapacity, slot);
@@ -79,50 +79,30 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
             return;
         }
 
-        foreach (ArgumentRegistration entry in _textures.Values.Concat(_samplers.Values).Concat(_buffers.Values))
-        {
-            entry.Release();
-        }
-
         _textures.Clear();
         _samplers.Clear();
         _buffers.Clear();
         _disposed = true;
-        owner.ReleaseArgumentTable();
     }
 
     internal bool BelongsTo(BrowserDevice device) => ReferenceEquals(owner, device);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, Action retain, Action release, ulong count, ulong stride, ulong offset, ulong size)
+    private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size)
     {
         ValidateSlot(capacity, slot);
-        var entry = new ArgumentRegistration(this, slot, resource, release, offset, size);
+        var entry = new ArgumentRegistration(this, slot, resource, offset, size);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
-        retain();
-        try
-        {
-            slots.TryGetValue(slot, out ArgumentRegistration? old);
-            slots[slot] = entry;
-            old?.Release();
-            return reference;
-        }
-        catch
-        {
-            entry.Release();
-            throw;
-        }
+        slots[slot] = entry;
+        return reference;
     }
 
     private void Release(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot)
     {
         ThrowIfDisposed();
         ValidateSlot(capacity, slot);
-        if (slots.Remove(slot, out ArgumentRegistration? entry))
-        {
-            entry.Release();
-        }
+        slots.Remove(slot);
     }
 
     private void ValidateSlot(uint capacity, uint slot)

@@ -43,6 +43,10 @@ public interface IGraphicDevice
     /// <returns>The concrete backend shader through its common interface.</returns>
     IGraphicsShader CreateShader(ShaderArtifact artifact);
 
+    /// <summary>Creates an owned, initially unsignaled binary GPU semaphore.</summary>
+    /// <returns>The same-device ordering signal, retained by the caller until all native uses complete.</returns>
+    IGraphicsSemaphore CreateSemaphore();
+
     /// <summary>Creates a one-shot command buffer in Recording state.</summary>
     /// <param name="desc">The diagnostic description.</param>
     /// <returns>The owned recording.</returns>

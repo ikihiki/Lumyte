@@ -7,8 +7,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     private readonly ShaderDataTransferState _shaderData = new();
     private readonly List<IDisposable> _bindings = [];
     private readonly BrowserDevice _owner;
-    private readonly List<Action> _resources = [];
-    private readonly Dictionary<(IGraphicsTexture Texture, uint Mip, uint Layer), TextureState> _states = [];
     private object? _active;
 
     internal BrowserCommandBuffer(BrowserDevice owner)
@@ -32,7 +30,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.Slice(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.Slice(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))), TrackProgram);
+        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.Slice(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.Slice(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
@@ -62,8 +60,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         }
 
         CopyBufferNative(src, source.OffsetInBytes, dst, destination.OffsetInBytes, source.SizeInBytes);
-        _resources.Add(() => { _ = src.Native; });
-        _resources.Add(() => { _ = dst.Native; });
     }
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination)
@@ -76,11 +72,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Texture copies require distinct allocations and equal format and extent.");
         }
 
-        RequireState(source, TextureState.CopySource);
-        RequireState(destination, TextureState.CopyDestination);
         CopyTextureNative(source, destination);
-        Keep(src);
-        Keep(dst);
     }
 
     public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination)
@@ -88,12 +80,9 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         RequireRecording();
         BrowserTexture texture = Texture(destination, TextureUsage.CopyDestination);
         ArgumentNullException.ThrowIfNull(source);
-        BrowserBuffer<byte> buffer = Buffer(source.Buffer, BufferUsage.CopySource);
+        _ = Buffer(source.Buffer, BufferUsage.CopySource);
         CommandValidation.Layout(source, destination, _owner.GetTextureCopyLayout(texture.Format));
-        RequireState(destination, TextureState.CopyDestination);
         CopyBufferTextureNative(source, destination, true);
-        _resources.Add(() => { _ = buffer.Native; });
-        Keep(texture);
     }
 
     public void CopyTextureToBuffer(TextureCopyRegion source, BufferTextureCopyLayout destination)
@@ -101,12 +90,9 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         RequireRecording();
         BrowserTexture texture = Texture(source, TextureUsage.CopySource);
         ArgumentNullException.ThrowIfNull(destination);
-        BrowserBuffer<byte> buffer = Buffer(destination.Buffer, BufferUsage.CopyDestination);
+        _ = Buffer(destination.Buffer, BufferUsage.CopyDestination);
         CommandValidation.Layout(destination, source, _owner.GetTextureCopyLayout(texture.Format));
-        RequireState(source, TextureState.CopySource);
         CopyBufferTextureNative(destination, source, false);
-        _resources.Add(() => { _ = buffer.Native; });
-        Keep(texture);
     }
 
     public void Barrier(MemoryBarrierDesc barrier)
@@ -129,7 +115,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         CommandValidation.BufferAccess(buffer, barrier.Before);
         CommandValidation.BufferAccess(buffer, barrier.After);
         BufferBarrierNative(buffer, barrier);
-        _resources.Add(() => { _ = buffer.Native; });
     }
 
     public void Barrier(TextureBarrierDesc barrier)
@@ -144,28 +129,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         CommandValidation.Scope(barrier.After);
         CommandValidation.TextureAccess(barrier.BeforeState, barrier.Before);
         CommandValidation.TextureAccess(barrier.AfterState, barrier.After);
-        for (uint mip = 0; mip < barrier.Range.MipLevelCount; mip++)
-        {
-            for (uint layer = 0; layer < barrier.Range.ArrayLayerCount; layer++)
-            {
-                (IGraphicsTexture, uint, uint) key = ((IGraphicsTexture)texture, barrier.Range.BaseMipLevel + mip, barrier.Range.BaseArrayLayer + layer);
-                if (barrier.BeforeState != TextureState.Undefined && _states.TryGetValue(key, out TextureState previous) && previous != barrier.BeforeState)
-                {
-                    throw new ArgumentException("Texture BeforeState conflicts with a recorded transition.");
-                }
-            }
-        }
-
         TextureBarrierNative(texture, barrier);
-        for (uint mip = 0; mip < barrier.Range.MipLevelCount; mip++)
-        {
-            for (uint layer = 0; layer < barrier.Range.ArrayLayerCount; layer++)
-            {
-                _states[(texture, barrier.Range.BaseMipLevel + mip, barrier.Range.BaseArrayLayer + layer)] = barrier.AfterState;
-            }
-        }
-
-        Keep(texture);
     }
 
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
@@ -179,7 +143,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Invalid color attachment count.");
         }
 
-        var seen = new HashSet<(IGraphicsTexture, uint, uint)>();
         (uint Width, uint Height)? size = null;
         foreach (RenderColorAttachmentDesc attachment in attachments)
         {
@@ -195,13 +158,12 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
             ClearColor clear = attachment.ClearValue;
             if (info.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 || (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
-                !seen.Add((texture, info.BaseMipLevel, info.BaseArrayLayer)) || (size is { } expected && expected != (width, height)) ||
+                (size is { } expected && expected != (width, height)) ||
                 !Enum.IsDefined(attachment.LoadOp) || !Enum.IsDefined(attachment.StoreOp) || !double.IsFinite(clear.Red) || !double.IsFinite(clear.Green) || !double.IsFinite(clear.Blue) || !double.IsFinite(clear.Alpha))
             {
                 throw new ArgumentException("Invalid color attachment, operation or dimensions.");
             }
 
-            RequireState(new() { Texture = texture, MipLevel = info.BaseMipLevel, BaseArrayLayer = info.BaseArrayLayer, Width = width, Height = height }, TextureState.ColorAttachment);
             size = (width, height);
         }
 
@@ -225,23 +187,9 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             {
                 throw new ArgumentException("Invalid depth/stencil attachment, operation or dimensions.");
             }
-
-            RequireState(new() { Texture = texture, MipLevel = info.BaseMipLevel, BaseArrayLayer = info.BaseArrayLayer, Width = width, Height = height }, TextureState.DepthStencilAttachment);
         }
 
         IRenderEncoder pass = BeginRenderNative(attachments, depth);
-        if (depth != null)
-        {
-            var view = (BrowserTextureView)depth.View;
-            _resources.Add(() => { _ = view.Native; });
-        }
-
-        foreach (RenderColorAttachmentDesc attachment in attachments)
-        {
-            var view = (BrowserTextureView)attachment.View;
-            _resources.Add(() => { _ = view.Native; });
-        }
-
         _active = pass;
         return pass;
     }
@@ -269,9 +217,9 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             return;
         }
 
-        if (_active != null || State == CommandBufferState.Submitted)
+        if (_active != null)
         {
-            throw new InvalidOperationException("End the pass and complete submission before disposal.");
+            throw new InvalidOperationException("End the pass before disposal.");
         }
 
         DisposeNative();
@@ -281,13 +229,10 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         }
 
         _bindings.Clear();
-        _resources.Clear();
-        _states.Clear();
         State = CommandBufferState.Disposed;
-        _owner.ReleaseCommand();
     }
 
-    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index, TrackProgram);
+    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index);
 
     internal void ValidateSubmit()
     {
@@ -295,11 +240,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         if (State != CommandBufferState.Executable)
         {
             throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
-        }
-
-        foreach (Action validate in _resources)
-        {
-            validate();
         }
     }
 
@@ -309,11 +249,15 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         State = CommandBufferState.Submitted;
     }
 
-    internal void Complete(bool success) => State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
+    internal void Complete(bool success)
+    {
+        if (State != CommandBufferState.Disposed)
+        {
+            State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
+        }
+    }
 
     internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
-
-    internal void TrackProgram(Action validate) => _resources.Add(validate);
 
     internal void ValidatePass(object pass) => ValidateEnd(pass);
 
@@ -356,19 +300,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         CommandValidation.Region(region, usage);
         return OwnTexture(region.Texture);
     }
-
-    private void RequireState(TextureCopyRegion region, TextureState state)
-    {
-        for (uint layer = 0; layer < region.ArrayLayerCount; layer++)
-        {
-            if (!_states.TryGetValue((region.Texture, region.MipLevel, region.BaseArrayLayer + layer), out TextureState current) || current != state)
-            {
-                throw new InvalidOperationException("Declare the texture state with an explicit barrier before use.");
-            }
-        }
-    }
-
-    private void Keep(BrowserTexture texture) => _resources.Add(() => { _ = texture.Native; });
 
     private void ValidateEnd(object pass)
     {

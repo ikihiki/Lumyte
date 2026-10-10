@@ -32,11 +32,6 @@ public static class TextureExercise
         Expect<ArgumentException>(() => device.CreateTexture(desc with { Usage = (TextureUsage)128 }));
         using IGraphicsTexture texture = device.CreateTexture(desc);
         Require(texture.Width == 32 && texture.Height == 32 && texture.ArrayLayers == 12 && texture.MipLevels == 6 && texture.Format == desc.Format && texture.Usage == desc.Usage, "Texture attributes changed.");
-        if (device is IDisposable owner)
-        {
-            Expect<InvalidOperationException>(owner.Dispose);
-        }
-
         Require(texture.GetMipSize(0) == (32U, 32U) && texture.GetMipSize(5) == (1U, 1U), "Mip dimensions are incorrect.");
         Expect<ArgumentOutOfRangeException>(() => texture.GetMipSize(6));
         Expect<ArgumentOutOfRangeException>(() => texture.GetMipSize(uint.MaxValue));
@@ -44,7 +39,6 @@ public static class TextureExercise
         using IGraphicsTextureView full = texture.CreateView();
         Require(ReferenceEquals(full.Texture, texture), "View retained a different texture.");
         Require(full.Info.Dimension == TextureViewDimension.D2Array && full.Info.MipLevelCount == 6 && full.Info.ArrayLayerCount == 12 && full.Info.Format == desc.Format, "Default view range is incorrect.");
-        Expect<InvalidOperationException>(texture.Dispose);
         using IGraphicsTextureView tail = texture.CreateView(new() { Dimension = TextureViewDimension.D2Array, BaseMipLevel = 2, BaseArrayLayer = 9 });
         Require(tail.Info.BaseMipLevel == 2 && tail.Info.MipLevelCount == 4 && tail.Info.BaseArrayLayer == 9 && tail.Info.ArrayLayerCount == 3, "View counts were not normalized.");
         using IGraphicsTextureView single = texture.CreateView(new() { BaseMipLevel = 5, MipLevelCount = 1, BaseArrayLayer = 11 });

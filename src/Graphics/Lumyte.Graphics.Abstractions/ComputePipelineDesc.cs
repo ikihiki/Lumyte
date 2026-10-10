@@ -6,6 +6,6 @@ public sealed record ComputePipelineDesc
     /// <summary>Gets the diagnostic label.</summary>
     public string? Label { get; init; }
 
-    /// <summary>Gets the compute module to retain.</summary>
+    /// <summary>Gets the compute module; the caller manages its lifetime.</summary>
     public required IGraphicsShader ComputeShader { get; init; }
 }

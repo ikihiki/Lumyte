@@ -3,7 +3,7 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>
 /// Owns logical descriptor registrations; physical binding resolution consumes these registrations.
 /// </summary>
-/// <remarks>The caller manages all required lifetime and access synchronization.</remarks>
+/// <remarks>The caller manages all required lifetime and access synchronization; detection of stale reference use is not guaranteed.</remarks>
 public interface IArgumentTable : IDisposable
 {
     /// <summary>Gets the logical texture capacity.</summary>
@@ -35,15 +35,15 @@ public interface IArgumentTable : IDisposable
     IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
         where T : unmanaged;
 
-    /// <summary>Releases an idle texture slot and invalidates its old references.</summary>
+    /// <summary>Releases an idle texture slot; the caller must stop using its old references.</summary>
     /// <param name="slot">The caller-managed logical registration slot.</param>
     void ReleaseTexture(uint slot);
 
-    /// <summary>Releases an idle sampler slot and invalidates its old references.</summary>
+    /// <summary>Releases an idle sampler slot; the caller must stop using its old references.</summary>
     /// <param name="slot">The caller-managed logical registration slot.</param>
     void ReleaseSampler(uint slot);
 
-    /// <summary>Releases an idle buffer slot and invalidates its old references.</summary>
+    /// <summary>Releases an idle buffer slot; the caller must stop using its old references.</summary>
     /// <param name="slot">The caller-managed logical registration slot.</param>
     void ReleaseBuffer(uint slot);
 
