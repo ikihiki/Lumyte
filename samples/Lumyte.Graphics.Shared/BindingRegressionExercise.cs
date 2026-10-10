@@ -7,12 +7,16 @@ internal static class BindingRegressionExercise
 {
     internal static async Task RunAsync(IGraphicDevice device)
     {
+        Console.WriteLine("Shader binding regression: cross-stage schema validation.");
         CheckIncompatibleStages(device);
         CheckCompatibleCyclicStages(device);
+        Console.WriteLine("Shader binding regression: vector and nested layouts.");
         await CheckLayoutsAsync(device);
+        Console.WriteLine("Shader binding regression: separate-buffer cycles.");
         await CheckSeparateCyclesAsync(device);
         ulong alignment = checked(Math.Max(4, device.Caps.StorageBufferOffsetAlignment) * 4UL);
         ulong minimumSize = checked((alignment * 3) + 16);
+        Console.WriteLine($"Shader binding regression: registered ranges in {minimumSize} bytes.");
         await CheckRangesAsync(device, minimumSize, alignment);
 
         // Exercise a small registration inside an allocation that cannot be bound in full.
@@ -24,9 +28,12 @@ internal static class BindingRegressionExercise
             ulong allocationSize = checked(((bindingLimit / 4) + 1) * 4);
             if (allocationSize <= device.Caps.MaxBufferSize)
             {
+                Console.WriteLine($"Shader binding regression: registered ranges in {allocationSize} bytes (binding limit {bindingLimit}).");
                 await CheckRangesAsync(device, allocationSize, alignment);
             }
         }
+
+        Console.WriteLine("Shader binding regressions completed.");
     }
 
     private static ShaderArtifact Artifact(string name) => ShaderArtifact.LoadEmbedded(typeof(BindingRegressionExercise).Assembly, "Lumyte.Shaders." + name + ".lshader");
@@ -181,11 +188,14 @@ internal static class BindingRegressionExercise
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        Console.WriteLine("Shader binding regression: submitted; waiting for GPU.");
         await submission.WaitAsync();
+        Console.WriteLine("Shader binding regression: GPU complete; mapping readback.");
         await readback.MapAsync();
         uint[] values = new uint[checked((int)readback.Count)];
         readback.CopyTo(values);
         readback.Unmap();
+        Console.WriteLine("Shader binding regression: readback completed.");
         return values;
     }
 

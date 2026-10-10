@@ -12,11 +12,17 @@ public static class ShaderBindingExercise
     public static async Task<string> RunAsync(IGraphicDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
+        Console.WriteLine("Shader binding: registration identity.");
         await CheckRegistrationIdentityAsync(device);
+        Console.WriteLine("Shader binding: explicit transfer validation.");
         await CheckExplicitTransferRequiredAsync(device);
+        Console.WriteLine("Shader binding: compute and partial staging copies.");
         await ComputeAsync(device);
+        Console.WriteLine("Shader binding: twenty-texture draw.");
         await DrawAsync(device);
+        Console.WriteLine("Shader binding: camera root arguments.");
         await CameraAsync(device);
+        Console.WriteLine("Shader binding: layout and range regressions.");
         await BindingRegressionExercise.RunAsync(device);
         return "Shader binding checks passed: matrix root, cyclic dependencies, explicit staging transfers, twenty distinct textures, shader layouts and registered buffer ranges.";
     }
