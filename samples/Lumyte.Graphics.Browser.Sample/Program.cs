@@ -30,7 +30,15 @@ internal static partial class Program
         Record(await ShaderBindingExercise.RunAsync(device), reports);
         using JSObject context = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no GPUCanvasContext.");
         using IGraphicsSurface surface = device.CreateSurface(context);
-        Record(await SurfaceExercise.RunAsync(device, surface), reports);
+        try
+        {
+            Record(await SurfaceExercise.RunAsync(device, surface), reports);
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(exception.ToString());
+            throw;
+        }
         using BrowserDevice foreign = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
         ArgumentTableExercise.CheckForeignDevice(device, foreign);
         PipelineExercise.CheckForeignDevice(device, foreign);

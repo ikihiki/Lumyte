@@ -35,7 +35,9 @@ try {
     await readFile(resolve(root, "index.html"));
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-        "--enable-unsafe-webgpu", "--use-angle=swiftshader",
+        "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
+        "--enable-features=Vulkan", "--use-vulkan=swiftshader",
+        "--use-angle=vulkan", "--disable-vulkan-surface",
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
     let diagnostics = "";
