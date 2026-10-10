@@ -11,7 +11,7 @@
 
 読み込みを単一の型別ローダーへ集約すると、中間型の再利用、依存解決、ストリーミング、HotReloadを個別に実装することになる。また、managedな参照だけではunmanagedなコンポーネントを要求するECSからリソースを指せない。型付きPipelineの依存グラフを基盤に、生成物の世代と利用権を統一して管理する。
 
-本ADRのリソースはアセットの実行時オブジェクトである。汎用メモリアロケーター、ECSそのもの、コーデック、アセット変換ツールや配信パック形式は設計対象にしない。以下は公開APIを含む設計案であり、本PRに実装は含めない。
+本ADRのリソースはアセットの実行時オブジェクトである。ECSそのもの、コーデック、アセット変換ツールや配信パック形式は設計対象にしない。メモリ機構は [MEMORY-0001](../memory/MEMORY-0001-memory-management-contracts.md)、deviceのDIとlostは [GRAPHICS-0014](../graphics/GRAPHICS-0014-device-di-and-loss-recovery.md) の契約を使う。以下は公開APIを含む設計案であり、本PRに実装は含めない。
 
 ## 決定
 
@@ -19,9 +19,19 @@
 
 [ADR-0002](../0002-repository-layout.md) に従い、共通基盤を `src/Core/Lumyte.Resources/`、名前空間・パッケージ名を `Lumyte.Resources` とする。空のプロジェクトはこのPRで作成しない。
 
-共通基盤はPipeline登録と実行、型付きキー、共有読み込み、依存グラフ、世代の公開と解放、ストリーミングセッション、unmanagedハンドルを担当する。Graphics、Audio、Platform、DIコンテナーには依存しない。形式の解析やCPU型は対応する機能のステージ、GPU変換はGraphics側のステージ、音声デコードはAudio側のストリームreaderに置く。取得元アダプターと変更監視はPlatform側などに配置し、Engineまたはアプリが接続する。
+共通基盤はPipeline登録と実行、型付きキー、共有読み込み、依存グラフ、世代の公開と解放、ストリーミングセッション、unmanagedハンドルを担当する。Memoryの契約へ依存するが、Graphics、Audio、Platformの具象型には依存しない。標準DIを前提とし、登録・型の解決は `Lumyte.Resources.DependencyInjection` に置く。形式の解析やCPU型は対応する機能のステージ、GPU変換はGraphics側のステージ、音声デコードはAudio側のストリームreaderに置く。取得元アダプターと変更監視はPlatform側などに配置し、Engineまたはアプリが接続する。
 
-managerは取得元とステージを借用する。これらの構成はBuild時に固定し、managerの終了後に構成側が解放する。GPU deviceや固定変換設定が異なる場合はmanagerを分け、グローバルsingletonを前提にしない。
+managerはDIから取得元とステージを借用する。登録構成はDI構築前に固定し、managerの終了後にDI scopeがサービスを解放する。固定変換設定や描画contextが異なる場合はmanagerを分ける。同じ描画contextのdevice復旧はmanagerを作り直さずruntime dependencyの世代変更で扱う。
+
+### Source・Stage・managerのDI
+
+`IServiceCollection.AddResources(name, configure)` を構成の入口とし、名前付きのscopedなResourceManagerをkeyed DIから解決する。登録builderは型とPipelineのmetadataを追加するだけで、Source・Stage instanceやIServiceProviderを受け取って実行するものではない。公開の手動ResourceManagerBuilderは設けない。
+
+Source、Stage、runtime dependencyはconstructor injectionを使う。既定は各manager／Pipelineのkeyed scoped登録とし、同じDI scopeで使う依存サービスを借用する。明示的なsingleton実装を使う場合は、その依存もsingletonとして成立することを登録時に確認する。単に型が同じだから複数Pipelineの可変設定や取得元を共有してはならない。Transientを構築ごとに解決して解放責任を曖昧にする方式は用いない。
+
+業務処理のSource・Stage・BuildContextにはservice locatorを公開しない。SourceにIMemoryManagerや設定、GPU Stageに名前付きIGraphicsDeviceServiceなどを注入する。利用中の生成物やreaderはDI scopeではなくmanagerが作る実行時世代・sessionとして所有する。
+
+DI解決でI/Oやasync初期化を同期ブロックしない。deviceのInitializeAsyncなどはEngineがawaitしてからGPU資源を要求する。同名manager、同名Pipeline、Sourceの重複、未登録依存、scopedを捕捉するsingletonは構成エラーとする。Engineは利用権とsessionを終了し、ResourceManagerの終了成功を確認してからDI scopeを閉じる。登録したSource・StageをmanagerからDisposeせず、DIと二重所有しない。
 
 ### 型付きPipelineとキー
 
@@ -35,7 +45,7 @@ Pipelineは名前付きの型付き出力ノードとして登録する。入力
 
 キャッシュの論理キーはmanager内の `(ResourceAddress, PipelineId)` とする。PipelineIdはmanager内で一意で、その出力型と `ResourceKey<T>` のTが一致する必要がある。物理ファイル、CPU型、GPU型、ファイル内の複数要素は別キーで管理する。実際の生成物はこのキーに内容の `Revision` を加えた世代で識別する。Revisionは非ゼロのmanager内単調増加値である。PublicationVersionは初期値0とし、通常構築を含む公開mapの更新単位ごとに増やす。識別子のcounterは周回させず、枯渇した場合は新規生成・公開を失敗させる。
 
-変換ステージのGetInputが主入力のAddressを決めるため、出力と入力のSubresourceやVariantが異なる変換も表現できる。入力Pipelineは登録時に固定する。GetInputとステージの設定は同じ要求に対して決定的であり、実行中に変更しない。Build時に主入力の未登録・型不一致・静的循環を検証する。
+変換ステージのGetInputが主入力のAddressを決めるため、出力と入力のSubresourceやVariantが異なる変換も表現できる。入力Pipelineは登録時に固定する。GetInputとステージの設定は同じ要求に対して決定的であり、実行中に変更しない。managerの初回DI解決時に主入力の未登録・型不一致・静的循環を検証する。
 
 ### 依存解決と寿命
 
@@ -53,6 +63,18 @@ RequireAsyncの既定値はResidentとする。変換の主入力もInputLifetim
 ファイルを読む操作もcontextを経由し、SourceIdと取得元のRevisionを依存として記録する。Build依存の値をTrimで解放した後も、公開中の根から到達できる軽量な依存情報は残す。これにより、CPUオブジェクトが既に解放されていても、元ファイルの変更からGPU出力への影響を追跡できる。
 
 複合アセットでは、開始ステージがdocumentを解析し、外部バッファ・画像の相対参照をResourceIdへ解決する。同じdocument内のバッファ、画像、mesh、material、sceneなどはSubresourceで選択する。埋め込みバイト列も開始ステージからdocumentをRequireする経路で扱える。バイト範囲、stride、頂点属性、sceneの階層、skinやanimationの解釈は形式別ステージの責務とし、共通基盤へ形式を埋め込まない。
+
+### 単一ファイルの複数出力とdocumentの共有
+
+ファイルの拡張子やResourceIdを一つの出力型へ固定しない。一つのResourceIdにdocumentの根を作り、`mesh/0`、`material/0`、`image/0`、`animation/0` などのselectorとPipelineを組み合わせて独立した型付き出力を要求する。CPU／GPUの違いもPipelineで区別する。同じselectorを異なる出力型で使う場合も、それぞれのPipelineを明示する。
+
+形式別モジュールは一つのdocument Pipelineと複数のprojection StageをDI登録する。各projectionは同じResourceId・空Subresource・document用Variantの根をRequireし、同じ構築viewでは解析と入力snapshotを共有する。projectionが持つデコード用Variantをそのままdocumentへ渡さず、GetInputやRequireのキーで共通documentのVariantへ明示的に写す。
+
+documentはIResourceDocumentを実装して発見用のimmutableな一覧を公開できる。一覧はselector、種類、対応Pipelineのmetadataであり、生成済みの各出力や非所有handleの集合ではない。利用者はdocumentのleaseを取得して一覧を見てから、必要な型付きキーを要求する。全mesh、全画像、全GPU出力を一覧取得時に生成しない。
+
+documentからの共有sliceはResident依存、コピーして独立したCPU型を作る場合はBuild依存とする。個別projectionはdocumentを直接Disposeしない。埋め込みbufferや画像の境界はdocumentから検証し、外部入力も同じcontextの依存へ加える。selectorの意味・安定性は形式別契約とし、未知・重複・範囲外のselectorは黙って別要素へ置換しない。
+
+同じ入力Revisionから作るdocumentとprojectionを世代で結び付け、旧documentの一覧から取得したsliceを新documentへ読み替えない。rootの変更は公開中のprojectionへ逆依存で伝播し、必要な型だけを再構築して一括公開する。原本のバイト列・解析documentのメモリ計上は共有所有者で一回行い、projectionごとに重ねない。
 
 ```mermaid
 flowchart LR
@@ -97,6 +119,18 @@ flowchart LR
 +        public string PipelineId { get; }
 +    }
 +    public enum ResourceDependencyLifetime { Build, Resident }
++    public interface IResourceDocument
++    {
++        ResourceId Id { get; }
++        // 発見用metadata。値の生成・GPU uploadを一覧取得に含めない。
++        IReadOnlyList<ResourceSubresource> Subresources { get; }
++    }
++    public sealed record ResourceSubresource
++    {
++        public required string Selector { get; init; }
++        public required string Kind { get; init; }
++        public required IReadOnlyList<string> PipelineIds { get; init; }
++    }
 +
 +    public interface IResourceSource
 +    {
@@ -150,19 +184,47 @@ flowchart LR
 +        // 補助資源の解放責任を登録時にmanagerへ渡す。出力のReleaseと二重所有しない。
 +        // Buildは構築終了時、Residentは出力の解放後。失敗時には両方を片付ける。
 +        public void RegisterCleanup(Func<ValueTask> cleanup, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Build);
-+    }
-+    public sealed class ResourceManagerBuilder
-+    {
-+        // sourceは借用。nullはArgumentNullException。
-+        public ResourceManagerBuilder(IResourceSource source);
-+        // pipelineIdは全出力型を通じて一意。重複はInvalidOperationException。
-+        public ResourceManagerBuilder AddSourcePipeline<T>(string pipelineId, IResourceSourceStage<T> stage) where T : class;
-+        public ResourceManagerBuilder AddTransformPipeline<TInput, TOutput>(string pipelineId, string inputPipelineId, IResourceTransform<TInput, TOutput> stage) where TInput : class where TOutput : class;
-+        // 主入力の登録・型・循環を検証し、構成snapshotから独立したmanagerを作る。
-+        public ResourceManager Build();
++        // 借用scope。managerが構築終了または出力解放の後に終了する。
++        public Lumyte.Memory.IMemoryScope GetMemoryScope(ResourceDependencyLifetime lifetime);
++        // DI登録されたruntime依存を記録。存在・可用性・Version一致を検証する。
++        public void TrackRuntimeDependency(string dependencyId, ulong expectedVersion, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident);
 +    }
 +}
 ```
+
+### 公開API案: DI登録
+
+```diff
++namespace Lumyte.Resources.DependencyInjection
++{
++    public static class ResourceServiceCollectionExtensions
++    {
++        // named/keyed scoped manager。IMemoryManagerの登録も必要。
++        public static IServiceCollection AddResources(this IServiceCollection services, string name, Action<ResourceRegistrationBuilder> configure);
++    }
++    public sealed class ResourceRegistrationBuilder
++    {
++        // instanceを渡さず、DIがconstructorから生成する型を指定する。
++        public ResourceRegistrationBuilder UseSource<TSource>(ServiceLifetime lifetime = ServiceLifetime.Scoped) where TSource : class, IResourceSource;
++        public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>(string pipelineId, ServiceLifetime lifetime = ServiceLifetime.Scoped)
++            where TOutput : class where TStage : class, IResourceSourceStage<TOutput>;
++        public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>(string pipelineId, string inputPipelineId, ServiceLifetime lifetime = ServiceLifetime.Scoped)
++            where TInput : class where TOutput : class where TStage : class, IResourceTransform<TInput, TOutput>;
++        public ResourceRegistrationBuilder UseRuntimeDependency<TDependency>(string dependencyId)
++            where TDependency : class, IResourceRuntimeDependency;
++    }
++}
+```
+
+### メモリ機構の利用
+
+ResourceManagerはDIでIMemoryManagerを受け取り、contextにBuild用・Resident用のscopeを提供する。ステージはCPU領域をRentAsyncで確保し、GPU／Native領域はReserveAsync、物理確保、Commitの順で計上する。GPU確保量が未知ならEstimateを明示する。物理資源を解放してからchargeまたはscopeを返す。
+
+Build scopeは構築時の補助資源の片付け後、Resident scopeは出力とResident callbackの解放成功後に閉じる。片付け失敗時はscopeとchargeも保持する。共有のdocumentやCPU入力を利用する依存先はchargeを増やさない。Sourceは同じIMemoryManagerをDIで受け取り、snapshot自身のscopeを所有する。
+
+managerはIMemoryReclaimerとして登録し、登録解除tokenを所有する。未使用cacheの実際の解放で返った当該poolのchargeを合算して応答する。source、stage、scopeの利用権を壊す回収はしない。予約不足はMemoryBudgetExceededExceptionとして候補を片付け、回収・再要求はEngineが明示的に判断する。旧値とReload・復旧候補、staging、旧device epochも同じ予算へ合算する。
+
+メモリ機構の内部アルゴリズムは交換可能で、初期版を高度なLRUや専用allocatorへ限定しない。一方、予約の同時消費防止と未解放領域の計上保持は必須とする。
 
 ### 読み込み、所有権、片付け
 
@@ -176,7 +238,7 @@ flowchart LR
 
 外部Acquireのキャンセルはその待機だけを終了し、共有構築を中断しない。lease発行とキャンセル観測の境界を同期し、発行確定後は成功を返す。内部構築にはmanager所有のtokenを渡す。これはReload候補の中止などに用い、依存の待機解除と部分生成物の片付けを行う。通常の共有構築は待機者がゼロでも継続する。取得元はタイムアウトを設け、同期ブロックで非同期処理を待たない。
 
-managerが生成物を所有し、leaseは特定Revisionの利用権を持つ。共有値は読み取り専用として扱い、利用者は直接Disposeせず、leaseより長くValueを使用しない。lease返却はI/O、GPU待機、生成物の解放を行わない。最後の返却後は未使用キャッシュになり、Trimで解放する。
+managerが生成物を所有し、leaseは特定Revisionの利用権を持つ。共有値は読み取り専用として扱い、利用者は直接Disposeせず、leaseより長くValueを使用しない。物理deviceのlostで必要なruntime世代が失効した場合はValueの使用を拒否するが、leaseは解放責任を保持する。lease返却はI/O、GPU待機、生成物の解放を行わない。最後の返却後は未使用キャッシュになり、Trimで解放する。
 
 解放順は出力のRelease、Residentの補助資源、Resident依存の利用権返却とする。依存自身の解放はその利用権がゼロになってから行う。親の解放が失敗したら必要な依存は保持する。Trimは依存辺のある親から処理し、その呼び出しで未使用になった依存も対象にできる。利用権と新規取得を同期し、解放中の世代へleaseを発行しない。各成功世代でRelease成功は一回だけとし、callbackの成功・失敗も個別に記録する。
 
@@ -184,11 +246,11 @@ managerが生成物を所有し、leaseは特定Revisionの利用権を持つ。
 
 `ResourceHandle<T>` はmanaged参照、string、pointerを持たない16 byteの値型である。構成は非ゼロのManagerId、slot番号、slotのGenerationのみとし、Tは型安全性のためのphantom型で、値として保持しない。payloadがmanagedなclassでもhandle自体はunmanagedとしてコンポーネントやNative領域に格納できる。
 
-handleは論理キーを指し、内容Revisionを固定しない。所有は別のmanagedな `ResourceReference<T>` が持つ。CreateReferenceAsyncで最新公開値の常駐を保証するreferenceを作り、そのHandleをECSへコピーする。referenceの登録と現在世代の常駐権を公開処理と同じ同期境界で確定する。コピーだけでは利用権を増やさない。worldやシーンのmanagedな所有表がreferenceを保持し、最後の利用者が消えたときに返す。entityごとに所有する場合も、entity生成・複製・削除に合わせて所有表側でreferenceを追加・返却する。
+handleは論理キーを指し、内容Revisionを固定しない。所有は別のmanagedな `ResourceReference<T>` が持つ。CreateReferenceAsyncで最新公開値の常駐を保証するreferenceを作り、そのHandleをECSへコピーする。referenceの登録と現在世代の常駐権を公開処理と同じ同期境界で確定する。device lost中は論理所有と再構築の要求を残して、値の常駐先を一時的に利用不能にする。コピーだけでは利用権を増やさない。worldやシーンのmanagedな所有表がreferenceを保持し、最後の利用者が消えたときに返す。entityごとに所有する場合も、entity生成・複製・削除に合わせて所有表側でreferenceを追加・返却する。
 
 同じキーの生存中referenceはslotを共有する。最後のreference返却でslotを失効させ、再利用時はGenerationを増やす。ManagerIdはprocess内で再利用せず、Generationが周回するslotは再利用しない。default、別manager、型不一致、返却済みslot、古いGenerationは解決できず、古いhandleが別資源を指すABA問題を避ける。handleはプロセス内の識別子であり、保存データには論理キーを記録する。
 
-TryAcquireはhandleを検証し、その時点の公開Revisionを固定したleaseを返す。I/OやPipeline実行を起こさない。HotReload後もhandleは同じ論理キーを指し、新しいTryAcquireは新Revision、既存leaseは旧Revisionを使用する。handleが失効しても発行済みleaseは有効である。
+TryAcquireはhandleと必要なruntime世代の可用性を検証し、その時点の公開Revisionを固定したleaseを返す。I/OやPipeline実行を起こさない。健康なdeviceのHotReload後もhandleは同じ論理キーを指し、新しいTryAcquireは新Revision、既存leaseは旧Revisionを使用する。handleが失効しても発行済みleaseは利用権を保持する。物理device lostは旧GPU値を使用可能に保つ保証から除外する。
 
 複数のhandleを同じフレームで解決する場合はResourceReadScopeを使う。scopeが公開mapを一つ捕捉して、そのmapからleaseを発行するため、途中のHotReloadで新旧の組み合わせが変わらない。scopeは捕捉した世代を解放から保護し、scope終了後も発行済みleaseは自身の世代を保持する。最後のreference返却によるhandle失効はscope内でも検証し、新たなleaseを発行しない。
 
@@ -212,6 +274,8 @@ unmanagedジョブからmanaged managerを呼べることは保証しない。�
 +    public sealed class ResourceReference<T> : IDisposable where T : class
 +    {
 +        public ResourceKey<T> Key { get; }
++        // 論理所有があってもdevice lost中などはfalse。
++        public bool IsAvailable { get; }
 +        // 非所有のhandle。参照返却後の取得はObjectDisposedException。
 +        public ResourceHandle<T> Handle { get; }
 +        // 常駐権を返す。冪等、非同期I/Oなし。最後の所有者ならslotを失効させる。
@@ -221,7 +285,8 @@ unmanagedジョブからmanaged managerを呼べることは保証しない。�
 +    {
 +        public ResourceKey<T> Key { get; }
 +        public ulong Revision { get; }
-+        // このleaseが生存する間だけ有効。返却後はObjectDisposedException。
++        public bool IsUsable { get; }
++        // 返却後はObjectDisposedException。runtime失効はResourceUnavailableException。
 +        public T Value { get; }
 +        // 特定世代の利用権を返す。冪等、生成物の解放・GPU待機なし。
 +        public void Dispose();
@@ -234,7 +299,7 @@ unmanagedジョブからmanaged managerを呼べることは保証しない。�
 +        // 捕捉した世代の保護を終了。発行済みleaseは有効なまま。冪等。
 +        public void Dispose();
 +    }
-+    public sealed class ResourceManager : IAsyncDisposable
++    public sealed class ResourceManager : IAsyncDisposable, Lumyte.Memory.IMemoryReclaimer
 +    {
 +        public ulong ManagerId { get; }
 +        public ulong PublicationVersion { get; }
@@ -251,6 +316,10 @@ unmanagedジョブからmanaged managerを呼べることは保証しない。�
 +        public ValueTask<int> TrimAsync(CancellationToken cancellationToken = default);
 +        // source変更から影響する公開グラフを再構築。詳細はHotReloadの契約に従う。
 +        public ValueTask<ResourceReloadResult> ReloadAsync(IReadOnlyCollection<ResourceId> changedSources, CancellationToken cancellationToken = default);
++        // source更新と同じ候補グラフで、deviceなどの新runtime世代へ再構築する。
++        public ValueTask<ResourceReloadResult> RebuildRuntimeAsync(IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken = default);
++        // 利用権のない候補だけを回収し、実際に返却した当該poolのcharge量を返す。
++        public ValueTask<ulong> ReclaimAsync(Lumyte.Memory.MemoryPoolId pool, ulong targetBytes, CancellationToken cancellationToken = default);
 +        // 外部利用権・scope・session・構築・Reload・Trimがあれば状態を変えず拒否する。
 +        // 依存利用権は内部のため終了を妨げず、親から解放する。成功後は冪等。
 +        public ValueTask DisposeAsync();
@@ -262,9 +331,9 @@ unmanagedジョブからmanaged managerを呼べることは保証しない。�
 
 長い音声などは「共有可能な不変stream factory」をPipelineの出力にする。ヘッダーと必要なindexだけを構築時に読み、入力snapshotをResident依存として保持する。全デコード結果や可変の再生cursorをリソースキャッシュへ入れない。factoryから開く各セッションは独立したcursor、decoder状態、先読みbufferを持つ。同じ音源の複数再生が位置やseekを共有することはない。
 
-factoryも通常の型付き出力なので、例えば `EncodedStreamFactory → PcmStreamFactory` を変換Pipelineで表せる。後段factoryは前段をResident依存として保持し、OpenReaderAsyncごとに独立したreaderのchainを作る。各要素の実際の変換はreader内でオンデマンドに行い、外側readerが内側readerの終了も所有する。
+factoryも通常の型付き出力なので、例えば `EncodedStreamFactory → PcmStreamFactory` を変換Pipelineで表せる。後段factoryは前段をResident依存として保持し、OpenReaderAsyncごとに独立したreaderのchainを作る。各要素の実際の変換はreader内でオンデマンドに行い、外側readerが内側readerの終了も所有する。Source・StageはDIが作り、独立したreaderはそのfactoryがセッション用に作る。
 
-manager経由でセッションを開き、factoryの特定Revisionのleaseをセッションに持たせる。セッションの寿命がfactoryと入力snapshotの寿命を保証する。decoderは要求された要素を順に読み、managerは単一producer・単一consumerの固定個数の固定長blockへ先読みする。bufferが満杯ならproducerを止め、消費後に再開する。bufferの上限は `BlockSize × MaxBufferedBlocks × sizeof(TElement)` とし、加えてdecoder固有の作業領域が必要になる。readerも作業領域を有界にし、全ファイル展開を前提にしない。
+manager経由でセッションを開き、factoryの特定Revisionのleaseをセッションに持たせる。セッションの寿命がfactoryと入力snapshotの寿命を保証する。decoderは要求された要素を順に読み、managerは単一producer・単一consumerの固定個数の固定長blockへ先読みする。bufferが満杯ならproducerを止め、消費後に再開する。使用できる論理bufferの上限は `BlockSize × MaxBufferedBlocks × sizeof(TElement)` とし、allocatorが丸めた実際のCapacityとdecoder固有の作業領域は別途計上する。readerも作業領域を有界にし、全ファイル展開を前提にしない。
 
 OpenStreamAsyncはreaderとbufferを作り、最初のblockまたは終端を取得してからセッションを返す。このtokenは作成中だけに使い、作成後のtokenキャンセルでセッションを停止しない。作成失敗・キャンセルではproducerを停止し、readerとfactoryのleaseを片付ける。
 
@@ -275,6 +344,8 @@ ReadAsyncの位置は利用者へ渡した要素数で進む。要求キャン�
 入力snapshotはすべてのreadを同じ取得元Revisionへ固定する。取得元は不変blob、版付きストレージ、固定snapshotなどで保証し、後続rangeの取得でその版が失われた場合はI/O失敗にする。変更後のバイト列を旧セッションへ混ぜない。削除やI/O・デコード失敗は当該セッションをFaultedにし、他のセッションと既存の公開factoryは維持する。
 
 セッションのDisposeAsyncはproducerを中断して終了を待ち、reader、buffer、factoryのleaseの順に解放する。片付け失敗時は責任を保持して再試行できる。同時Disposeは同じ終了taskを待つ。HotReloadしても再生中のセッションは旧Revisionで継続し、新規セッションは新Revisionを使用する。再生途中の差し替え、crossfadeや位置移行はAudio側で新セッションを開いて行う。
+
+streamのscopeはsessionが所有し、readerへ借用として渡す。managerの先読みbuffer、reader chainの作業領域、Native decoderのchargeをこのscopeへ登録し、readerの終了成功後にscopeを閉じる。chain内の各readerが共有scope自体をDisposeしてはならない。GPUに依存しない音声のsessionはGraphicsのlostで停止させない。
 
 ### 公開API案: ストリーミング
 
@@ -290,7 +361,8 @@ ReadAsyncの位置は利用者へ渡した要素数で進む。要求キャン�
 +    public interface IResourceStream<TElement> where TElement : unmanaged
 +    {
 +        // 実装はreaderごとに独立したcursorを作る。managerが所有してsessionへ包む。
-+        ValueTask<IResourceStreamReader<TElement>> OpenReaderAsync(ResourceStreamOptions options, CancellationToken cancellationToken = default);
++        // memoryはsessionから借用。確保・予約は追跡し、scope自身は閉じない。
++        ValueTask<IResourceStreamReader<TElement>> OpenReaderAsync(ResourceStreamOptions options, Lumyte.Memory.IMemoryScope memory, CancellationToken cancellationToken = default);
 +    }
 +    public interface IResourceStreamReader<TElement> : IAsyncDisposable where TElement : unmanaged
 +    {
@@ -367,19 +439,82 @@ source削除、形式不正、依存欠落、循環、GPU upload失敗はReload�
 
 Reloadのキャンセルは公開前なら候補を片付けてOperationCanceledExceptionを返す。公開の確定とキャンセル判定を同期し、公開後のキャンセルで失敗を返さない。変更のないsnapshot集合ならUnchangedとし、PublicationVersionを増やさない。内容Revision、取得元Revision、PublicationVersion、slotのGenerationはそれぞれ異なる識別子として扱う。
 
+### runtime dependencyとDeviceLost
+
+sourceとは別に、DI登録されたIResourceRuntimeDependencyを依存グラフへ接続する。Snapshotは単調増加するVersion、IsAvailable、不可逆に失効した上限InvalidatedThroughVersionを持つ。利用可能なVersionは非ゼロかつ失効上限を超える必要があり、Versionと失効上限を減少・周回させない。登録IDとの不一致やこれらの不変条件違反は構成／providerのエラーとして拒否する。変更通知はmetadata更新とEngineへの通知に限定し、callbackから再構築を直接始めない。通知を購読した後にもSnapshotを読み、登録時の変更を取りこぼさない。
+
+Graphics連携は `Lumyte.Resources.Graphics` に置く。このパッケージだけがResources、Graphics.Hosting、Abstractionsに依存する。DIで指定されたdevice serviceの状態をruntime dependencyへ写し、GPUステージにUseGraphicsAsyncを提供する。取得したdevice leaseとReady Versionを同じ構築へ登録し、既定ではdevice leaseをResident callbackとして出力のNative解放後まで保持する。同名の別DI scopeのserviceなど、bridgeに登録したinstanceと異なるserviceは、Versionが同じでも拒否する。
+
+runtime依存もBuildとResidentを区別する。どちらも公開前の検証・再構築のprovenanceには使うが、公開後の物理的な使用可否はResidentなruntime依存とResident辺を通じて伝播する。例えばGPU readbackを完了して独立したCPU値を作るステージはUseGraphicsAsyncをBuildで使い、その後のdevice lostで完成済みCPU値を使用不能にしない。GPU値を保持する出力はResidentで登録する。
+
+device serviceをDIで注入しても、Stageのconstructorで生のdeviceを固定しない。BuildではUseGraphicsAsyncでepochを固定し、生成物のReleaseでは生成時に保持したdevice、dispatcher、chargeを使う。新しいdeviceを再解決して旧GPU資源を解放することは禁止する。
+
+device lostを観測すると、そのVersion以下にResident依存するGPU値とResident辺を通じた推移的な親を利用不能にする。公開mapの常駐先から切り離してRetiredに移し、論理referenceとhandleのslotは再構築要求として保持する。これにより論理referenceだけが旧GPU確保を永久に保持することを避ける。特定世代のlease・read scope・Resident依存がある旧値はその解放まで保持するが、IsUsableはfalseとなる。
+
+ValueとTryAcquireは現在の失効上限を検証する。loss前に捕捉したread scopeも、物理的に失効したGPU値を返せない。失効していないCPU型やstream factory、音声sessionの使用は継続できる。必要なruntimeが利用不能なキーへのAcquireはResourceUnavailableExceptionとし、無期限の復旧待機にしない。
+
+Engineが旧GPU jobとleaseを終了し、backendの退役安全性を確認してからTrimでNative確保とchargeを片付ける。device serviceのRecoverAsyncがReadyになったら、RebuildRuntimeAsyncで失効した根と同じruntimeへ依存する公開値を新epochで再構築する。既存CPU型を再利用できるが、新Capsに合わない型や解放済みCPU型は検証・再生成が必要である。
+
+公開前にruntimeのVersion・可用性とsourceのRevisionを両方検証し、競合なら候補を片付けてConflictを返す。HotReloadとruntime再構築は同じ公開coordinatorで直列化する。失敗時はCPUの公開mapを維持し、GPUは利用不能のままとして旧GPU値を復活させない。成功したGPUグラフの一括公開後、同じhandleから新epochを解決できる。
+
+```diff
++namespace Lumyte.Resources
++{
++    public readonly record struct ResourceRuntimeSnapshot(ulong Version, bool IsAvailable, ulong InvalidatedThroughVersion);
++    public interface IResourceRuntimeDependency
++    {
++        string Id { get; }
++        // Versionは状態変更ごとに増加し、失効上限は減少しない。
++        ResourceRuntimeSnapshot Snapshot { get; }
++        event EventHandler? Changed;
++    }
++    public sealed class ResourceUnavailableException : InvalidOperationException
++    {
++        public string DependencyId { get; }
++        public ulong Version { get; }
++    }
++}
++namespace Lumyte.Resources.Graphics
++{
++    public static class ResourceGraphicsServiceCollectionExtensions
++    {
++        // named managerとnamed device serviceをbridgeで接続。重複・未登録は構成エラー。
++        public static IServiceCollection AddResourceGraphics(this IServiceCollection services, string resourceManagerName, string deviceServiceName, string dependencyId);
++    }
++    public static class ResourceGraphicsBuildExtensions
++    {
++        // device leaseの所有はcontextへ移す。callerは直接Disposeしない。
++        // 失敗時は取得済みleaseも片付け、出力の物理世代をruntimeへ記録する。
++        public static ValueTask<Lumyte.Graphics.Hosting.GraphicsDeviceLease> UseGraphicsAsync(this ResourceBuildContext context, Lumyte.Graphics.Hosting.IGraphicsDeviceService service, string dependencyId, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default);
++    }
++}
+```
+
 ### 利用例
 
 以下のステージ名・資源型は機能側の例であり、共通パッケージが提供する型ではない。
 
 ```csharp
-var builder = new ResourceManagerBuilder(source)
-    .AddSourcePipeline("scene.document", new SceneDocumentStage())
-    .AddSourcePipeline("mesh.cpu", new CpuMeshStage())
-    .AddTransformPipeline("mesh.gpu", "mesh.cpu", new GpuMeshStage(device))
-    .AddSourcePipeline("image.cpu", new CpuImageStage())
-    .AddTransformPipeline("image.gpu", "image.cpu", new GpuTextureStage(device))
-    .AddSourcePipeline("audio.stream", new AudioStreamStage());
-await using var resources = builder.Build();
+var services = new ServiceCollection();
+services.AddMemoryManagement(options =>
+    options.SetBudget(new MemoryPoolId("cpu"), 384UL * 1024 * 1024, 512UL * 1024 * 1024));
+services.AddGraphicsDevice<AppDeviceFactory>("main");
+services.AddResources("scene", pipelines => pipelines
+    .UseSource<FileResourceSource>()
+    .AddSourcePipeline<SceneDocument, SceneDocumentStage>("scene.document")
+    .AddSourcePipeline<CpuMesh, CpuMeshStage>("mesh.cpu")
+    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>("mesh.gpu", "mesh.cpu")
+    .AddSourcePipeline<CpuImage, CpuImageStage>("image.cpu")
+    .AddTransformPipeline<CpuImage, GpuTexture, GpuTextureStage>("image.gpu", "image.cpu")
+    .AddSourcePipeline<AudioStream, AudioStreamStage>("audio.stream"));
+services.AddResourceGraphics("scene", "main", "graphics.main");
+
+await using var provider = services.BuildServiceProvider(
+    new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+await using var world = provider.CreateAsyncScope();
+var devices = world.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+await devices.InitializeAsync();
+var resources = world.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
 
 var address = new ResourceAddress(new ResourceId("scenes/example.scene"), "mesh/0");
 var key = new ResourceKey<GpuMesh>(address, "mesh.gpu");
@@ -409,6 +544,8 @@ await resources.ReloadAsync(new[] { address.Id, audioKey.Address.Id });
 
 CpuMeshStageはcontextから `scene.document` の同じResourceId・空SubresourceをBuild依存として取得し、選択したmeshのバッファを解決する。GpuMeshStageはCpuMeshをBuild依存としてuploadし、完了後にCPU利用権を返す。CPU型を直接取得したい利用者は同じAddressの `ResourceKey<CpuMesh>(address, "mesh.cpu")` を要求する。materialやsceneのステージはRequireでGPU依存をResidentとして組み合わせる。
 
+例のFileResourceSourceのroot設定やAppDeviceFactoryの固有設定もDIへ登録する。GPU Stageのconstructorは `[FromKeyedServices("main")] IGraphicsDeviceService` を受け取り、Build内で `context.UseGraphicsAsync(devices, "graphics.main")` をawaitする。Source・Stageを利用側がnewせず、serviceを同期生成して中でasync初期化を待つこともしない。
+
 ```csharp
 // CpuMeshStage.BuildAsync内。DecodeMeshAsyncは形式別の処理。
 var documentKey = new ResourceKey<SceneDocument>(
@@ -421,15 +558,15 @@ return await DecodeMeshAsync(document, context.Address.Subresource, context, can
 
 ### スレッド、GPU、終了
 
-Acquire、reference返却、lease返却、公開map更新、Trimはmanager内で同期する。ユーザーコード、I/O、GPU処理、callbackをlock内で呼ばない。異なるキーのステージは並列実行され得る。Builderは構成時だけ利用し、並列変更を保証しない。contextは一回の構築専用で、そこで開始した操作はすべてawaitし、構築終了後に使用しない。
+Acquire、reference返却、lease返却、公開map更新、Trimはmanager内で同期する。ユーザーコード、I/O、GPU処理、callbackをlock内で呼ばない。異なるキーのステージは並列実行され得る。DI登録builderは構成時だけ利用し、並列変更を保証しない。contextは一回の構築専用で、そこで開始した操作はすべてawaitし、構築終了後に使用しない。
 
 実行スレッドやSynchronizationContextは保証しない。GPU deviceやAudioにスレッド制約があるステージは自身で指定スレッドへ配送する。Browserでも同期ブロックやTask.Runを必須とせず、非同期I/Oとboundedな先読みを使える構成にする。同じlease・scopeの利用とDisposeは競合させない。
 
-[GRAPHICS-0003](../graphics/GRAPHICS-0003-textures-and-views.md)、[GRAPHICS-0005](../graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md)、[GRAPHICS-0007](../graphics/GRAPHICS-0007-command-buffers-and-submission.md) の所有権を変更しない。GPU変換ステージは明示的なupload、barrier、submitと完了待機を実行する。利用側は記録開始からGPU実行完了までleaseを保持し、登録や子Viewを解除してから返す。lease返却やTrimで暗黙のsubmitやGPU待機を補わない。生存中の登録・子資源・GPU使用があるReleaseは失敗として扱う。
+[GRAPHICS-0003](../graphics/GRAPHICS-0003-textures-and-views.md)、[GRAPHICS-0005](../graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md)、[GRAPHICS-0007](../graphics/GRAPHICS-0007-command-buffers-and-submission.md) の健康なdeviceの所有権を維持する。GPU変換ステージは明示的なupload、barrier、submitと完了待機を実行する。利用側は記録開始からGPU実行完了までleaseを保持し、登録や子Viewを解除してから返す。lease返却やTrimで暗黙のsubmitやGPU待機を補わない。生存中の登録・子資源・GPU使用があるReleaseは失敗として扱う。lost時の失敗終了とNative退役はGRAPHICS-0014の追加契約に従う。
 
 ファイル取得元は設定root外への参照とシンボリックリンク経由の逸脱を拒否する。外部相対参照の正規化は形式別ステージが行い、最終ResourceIdを検証する。HTTP取得元は設定したbase内で解決し、任意ホストへの要求に使わない。source snapshotの版固定とrange対応をアダプターの契約として検証する。
 
-DisposeAsyncは外部reference、lease、read scope、session、進行中の構築・Reload・Trimがあれば状態を変えずInvalidOperationExceptionで拒否する。内部のResident依存は親からの解放で返す。終了開始後は新規操作を拒否し、失敗した片付けを保持してDisposeの再呼び出しで再試行する。同時Disposeは同じ終了taskを待つ。取得元とステージはmanagerが解放しない。
+DisposeAsyncは外部reference、lease、read scope、session、進行中の構築・Reload・runtime再構築・Trim・回収があれば状態を変えずInvalidOperationExceptionで拒否する。内部のResident依存は親からの解放で返す。終了開始後は新規操作を拒否し、回収登録とruntime購読を解除してから解放を進める。失敗した片付けを保持してDisposeの再呼び出しで再試行する。同時Disposeは同じ終了taskを待つ。取得元とステージはmanagerが解放しない。
 
 ### エラーと検証方針
 
@@ -444,6 +581,10 @@ DisposeAsyncは外部reference、lease、read scope、session、進行中の構�
 - 入力Revisionとbuffer上限を固定した長いストリーム、二つの独立cursor、backpressure、短いread、EOFとunderflow、seek・readキャンセル・I/O失敗・Dispose、旧セッションと新セッションの世代分離。
 - 依存先だけの変更による親再構築、中間値Trim後の影響追跡、候補全体の原子的公開、読み込み中の変更・公開競合・削除・依存循環・GPU失敗時の旧map維持。
 - 一つのread scopeが一つの公開mapを見ること、lease・scope・sessionが保持する旧世代を早期解放しないこと、終了拒否と片付け再試行。
+- DIのconstructor injectionとkeyed scope分離、async初期化をDI解決から行わないこと、Source・Stageの二重Dispose防止、寿命不整合の検出。
+- 同一ファイルのdocument共有と複数型へのprojection、発見一覧取得時に出力を全生成しないこと、Variant正規化、shared sliceの寿命と一回計上。
+- pool予算の同時予約、Build／Resident／sessionのscope終了順、解放失敗時のcharge保持、旧GPU epochと復旧候補の合算。
+- device lost中のGPU値・推移的Resident親の拒否、BuildだけでGPUを使ったCPU値の継続、handle維持、sourceとruntimeの公開競合、新Capsでの再検証、旧deviceでのRelease。
 
 共通基盤はfake取得元・ステージ・readerで決定的に検証する。形式別の複合scene、GPU upload、音声の長時間再生とcallback経路、Windows・Linux・Browserのsnapshot・変更監視は各統合テストで検証する。本PRでは文書の必須項目・リンク・APIと本文の整合性を確認し、実行テストは実装PRで行う。
 
@@ -456,6 +597,8 @@ DisposeAsyncは外部reference、lease、read scope、session、進行中の構�
 - ストリーム全体をキャッシュする、または再生cursorを共有する: 長い音声のメモリと複数再生の独立性を満たせないため、不変factoryと独立セッションに分ける。
 - HotReloadで既存値をその場で変更する: フレーム途中の新旧混在やGPU使用中の破棄が起きるため、候補グラフを構築して世代をまとめて公開する。
 - 整数handle自体に参照カウント操作を持たせる: unmanaged値のコピーと所有を対応させられないため、非所有handleとmanagedな所有表・leaseを分離する。
+- Source・Stageのinstanceを利用側の手動builderで渡す: 依存・設定・終了の構成がDIと分かれる。型を登録してconstructor injectionで構成する。
+- 一つのファイルを一つの生成物として全ロードする: 不要なmeshや画像まで生成し、型ごとの要求を扱えない。documentと必要なprojectionを分ける。
 
 ## 結果と影響
 
@@ -464,11 +607,12 @@ DisposeAsyncは外部reference、lease、read scope、session、進行中の構�
 - handleはECSへ格納できるが、所有管理とmanagedな解決境界は必要である。handleのコピーから自動的な寿命延長やunmanagedジョブ内のI/Oは発生しない。
 - ストリームbufferを有界にでき、再生中の旧世代を維持できる。decoderの作業領域、取得元の版保存、underflow対策は機能側でも管理する必要がある。
 - Reload中は旧値、候補値、依存、入力版を同時に保持するため、通常時よりメモリを使う。長いleaseや再生は旧世代の解放を遅らせる。
-- 自動LRUや全体メモリ上限は設けず、明示的なTrimを使う。呼び出し側キャンセル後も共有構築が続く場合がある。
+- メモリbucketの予算・予約・回収インターフェースを使える。初期の回収は明示的なTrim／Reclaimでよく、高度なLRUを必須にしない。呼び出し側キャンセル後も共有構築が続く場合がある。
+- DI scopeのサービス所有と、実行時のリソース・メモリ・device世代の所有を分ける。device lostではGPUの旧値を使い続ける保証を持たず、CPUの継続とGPUの再構築を分離する。
 
 ## 別途決定する事項
 
 - 形式別のCPU／GPU型とステージ、音声コーデック・frame形式・再生機能、取得元の具体的な版保存方式。
 - manifest、インポート・ビルド・パック形式、ネットワーク配信と長期キャッシュ。
-- CPU／GPU／snapshotを含むメモリ予算、自動排除、ロード優先度。
-- DI登録、診断表示、Reloadの通知debounceと再試行方針、Audioのcrossfadeや再生位置移行。
+- メモリ管理の具体的なallocator・計測・自動排除方針、ロード優先度。
+- 診断表示、Reloadの通知debounceと再試行方針、Audioのcrossfadeや再生位置移行、復旧後のrenderer再開手順。
