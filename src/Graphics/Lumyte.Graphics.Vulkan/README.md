@@ -110,7 +110,7 @@ graphics programはshaderの組・topology分類・compile optionを保持し、
 
 compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
 
-reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
+reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color/depth/stencil、direct/indexed/indirect draw、direct/indirect compute dispatchを提供します。MSAA・resolve・multi-draw・count bufferは別の拡張です。
 
 Vulkanはdynamic rendering対応のGraphicsPipelineCreateInfoとroot uniformとnative descriptor arrayのPipelineLayoutを使用します。attachment formatはPipelineRenderingCreateInfo、topology・blend・coverageは完全なnative pipelineへ固定します。viewport・scissor・blend constants・stencil referenceはdynamic stateです。WebGPUと同じ画面座標へ揃えるためviewportのheightを負にし、front faceを対応させます。per-attachment blendに必要なIndependentBlendもdevice生成時に必須として有効化し、fallbackは設けません。
 
@@ -171,3 +171,13 @@ Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>
 shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
+
+## Depth／Stencil、Indexed／Indirect実行
+
+`RenderPassDesc.DepthStencilAttachment`へ単一mip・単一layerのD2 viewを指定します。colorは省略でき、depth-only passではfragment shaderのないprogramを使えます。depth/stencilのload/storeは独立で、利用者が`DepthStencilAttachment`へのbarrierを記録します。Depth32Floatはdepthのみ、Depth24Stencil8はdepthと8bit stencilです。今回のdepth textureはRenderAttachment用途に限定し、sampling/copyは生成時に拒否します。
+
+`SetIndexBuffer`はushort／uintのsliceを受け取り、`DrawIndexed`のfirstIndexはsliceからの相対offsetです。stripは`StripIndexFormat`を一致させ、最大index値でprimitive restartします。indexの値はCPUで走査しません。
+
+`DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、寿命、非mappedを検証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
+
+`VkImage`ではD32_SFLOAT／D24_UNORM_S8_UINTとDepthStencilAttachment usageを使い、image/view/barrierのaspectにdepthと必要なstencilを設定します。D24_UNORM_S8_UINTの対応はimage format propertiesで検証し、不対応なら生成を拒否します。dynamic renderingのdepth/stencil attachment、pipelineのdepth/stencil state・format、CmdBindIndexBuffer／CmdDrawIndexed／CmdDrawIndirect／CmdDrawIndexedIndirect／CmdDispatchIndirectを使用します。depth formatはキャッシュキーへ含め、キャッシュ無効時も同じ状態から生成します。IndexInput、DrawIndirect、DepthStencilをvertex input、draw indirect、early/late fragment testsへ変換し、対応するaccessをsynchronization2 barrierへ渡します。

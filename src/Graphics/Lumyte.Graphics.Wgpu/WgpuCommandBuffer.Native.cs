@@ -93,7 +93,7 @@ internal sealed unsafe partial class WgpuCommandBuffer
         // Logical states are validated; WebGPU owns physical image transitions.
     }
 
-    private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments)
+    private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth)
     {
         Span<WGPURenderPassColorAttachment> colors = stackalloc WGPURenderPassColorAttachment[attachments.Length];
         for (int i = 0; i < attachments.Length; i++)
@@ -109,16 +109,32 @@ internal sealed unsafe partial class WgpuCommandBuffer
             };
         }
 
+        WGPURenderPassDepthStencilAttachment depthAttachment = default;
+        if (depth != null)
+        {
+            bool stencil = depth.View.Info.Format == TextureFormat.Depth24Stencil8;
+            depthAttachment = new()
+            {
+                view = ((WgpuTextureView)depth.View).Native.Handle,
+                depthLoadOp = depth.DepthLoadOp == AttachmentLoadOp.Clear ? WGPULoadOp.Clear : WGPULoadOp.Load,
+                depthStoreOp = depth.DepthStoreOp == AttachmentStoreOp.Store ? WGPUStoreOp.Store : WGPUStoreOp.Discard,
+                depthClearValue = depth.DepthClearValue,
+                stencilLoadOp = stencil ? (depth.StencilLoadOp == AttachmentLoadOp.Clear ? WGPULoadOp.Clear : WGPULoadOp.Load) : WGPULoadOp.Undefined,
+                stencilStoreOp = stencil ? (depth.StencilStoreOp == AttachmentStoreOp.Store ? WGPUStoreOp.Store : WGPUStoreOp.Discard) : WGPUStoreOp.Undefined,
+                stencilClearValue = depth.StencilClearValue,
+            };
+        }
+
         fixed (WGPURenderPassColorAttachment* data = colors)
         {
-            var desc = new WGPURenderPassDescriptor { colorAttachmentCount = (nuint)colors.Length, colorAttachments = data };
+            var desc = new WGPURenderPassDescriptor { colorAttachmentCount = (nuint)colors.Length, colorAttachments = data, depthStencilAttachment = depth == null ? null : &depthAttachment };
             WGPURenderPassEncoderImpl* pass = WGPU.wgpuCommandEncoderBeginRenderPass(_encoder, &desc);
             if (pass == null)
             {
                 throw new InvalidOperationException("WebGPU render pass creation failed.");
             }
 
-            return new WgpuRenderEncoder(this, pass, attachments);
+            return new WgpuRenderEncoder(this, pass, attachments, depth);
         }
     }
 

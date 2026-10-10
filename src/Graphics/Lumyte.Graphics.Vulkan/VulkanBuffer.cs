@@ -40,6 +40,11 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             usage |= BufferUsageFlags.IndexBufferBit;
         }
 
+        if ((Usage & BufferUsage.Indirect) != 0)
+        {
+            usage |= BufferUsageFlags.IndirectBufferBit;
+        }
+
         VkBuffer buffer = default;
         DeviceMemory memory = default;
         try

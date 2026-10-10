@@ -57,7 +57,7 @@ internal sealed partial class BrowserCommandBuffer
         // WebGPU owns physical transitions; the command layer validates logical states.
     }
 
-    private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments)
+    private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth)
     {
         using JSObject desc = BrowserInterop.CreateRenderDescriptor();
         foreach (RenderColorAttachmentDesc a in attachments)
@@ -65,7 +65,12 @@ internal sealed partial class BrowserCommandBuffer
             BrowserInterop.AddColorAttachment(desc, ((BrowserTextureView)a.View).Native, (int)a.LoadOp, (int)a.StoreOp, a.ClearValue.Red, a.ClearValue.Green, a.ClearValue.Blue, a.ClearValue.Alpha);
         }
 
-        return new BrowserRenderEncoder(this, BrowserInterop.BeginRenderPass(_encoder!, desc), attachments);
+        if (depth != null)
+        {
+            BrowserInterop.AddDepthStencilAttachment(desc, ((BrowserTextureView)depth.View).Native, (int)depth.DepthLoadOp, (int)depth.DepthStoreOp, depth.DepthClearValue, depth.View.Info.Format == TextureFormat.Depth24Stencil8, (int)depth.StencilLoadOp, (int)depth.StencilStoreOp, (int)depth.StencilClearValue);
+        }
+
+        return new BrowserRenderEncoder(this, BrowserInterop.BeginRenderPass(_encoder!, desc), attachments, depth);
     }
 
     private IComputeEncoder BeginComputeNative() => new BrowserComputeEncoder(this, BrowserInterop.BeginComputePass(_encoder!));

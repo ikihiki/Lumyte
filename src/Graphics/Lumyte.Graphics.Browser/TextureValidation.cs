@@ -9,6 +9,11 @@ internal static class TextureValidation
     internal static void Validate(TextureDesc desc, DeviceCaps caps)
     {
         ArgumentNullException.ThrowIfNull(desc);
+        if (desc.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 && desc.Usage != TextureUsage.RenderAttachment)
+        {
+            throw new NotSupportedException("Depth/stencil textures currently support attachment usage only.");
+        }
+
         const TextureUsage KnownUsage = TextureUsage.CopySource | TextureUsage.CopyDestination | TextureUsage.Sampled | TextureUsage.RenderAttachment;
         if (desc.Width == 0 || desc.Height == 0 || desc.Width > caps.MaxTextureDimension2D || desc.Height > caps.MaxTextureDimension2D ||
             desc.ArrayLayers == 0 || desc.ArrayLayers > caps.MaxTextureArrayLayers || desc.MipLevels == 0 ||

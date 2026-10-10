@@ -41,6 +41,8 @@ internal sealed class WgpuTexture : IGraphicsTexture
             TextureFormat.Rgba8Srgb => WGPUTextureFormat.RGBA8UnormSrgb,
             TextureFormat.Bgra8Unorm => WGPUTextureFormat.BGRA8Unorm,
             TextureFormat.Bgra8Srgb => WGPUTextureFormat.BGRA8UnormSrgb,
+            TextureFormat.Depth32Float => WGPUTextureFormat.Depth32Float,
+            TextureFormat.Depth24Stencil8 => WGPUTextureFormat.Depth24PlusStencil8,
             _ => throw new NotSupportedException("Unsupported texture format."),
         };
         _native = owner.NativeDevice.CreateTexture(new A.TextureDescriptor

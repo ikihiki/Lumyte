@@ -23,3 +23,5 @@ ArgumentTableTestsはshared projectのArgumentTableExerciseをWgpu／Vulkanで�
 `ShaderTests` は wgpu と Vulkan で DLL のオフライン成果物、Slang のオンライン成果物、module lifetime、offline binaryの全target収録とmetadata、online binaryの未収録target拒否を検証します。共通 API を使う検証本体を Shared に置き、具体的な device／compiler の生成だけをテスト bootstrap に残します。GPU tests は既存 CI の Linux x64 ジョブ、Browser のオフライン module 検証は既存 Wasm ジョブで実行します。
 
 オンラインコンパイルはtargetの省略／nullで全対応targetを生成する経路と、各targetのみを指定する経路を既存CIの全構成で検証します。
+
+AdvancedCommandTestsはIndirect命令のwire layoutと、Wgpu／Vulkan（pipeline cache有効・無効）のdepth/stencil・indexed/indirect GPU検証を行います。同じ共有ライブラリのexerciseをBrowser sampleから実行し、既存CIのBrowser検証でも成功reportを必須にします。

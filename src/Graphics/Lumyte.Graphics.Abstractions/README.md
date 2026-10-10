@@ -136,7 +136,7 @@ resourceはGPU完了まで利用者が生存させます。Submit時に生存と
 
 `CreateComputePipeline(ComputePipelineDesc)` はbinaryのentry・stage・workgroup sizeを使用します。compute encoderでSetPipeline後にDispatchを記録します。workgroup各軸・invocationの積とdispatch group数はcapsで検証し、数値を補正しません。
 
-初期の実行範囲は既存のsingle-sample color attachmentとresource bindingを必要としないshaderです。depth/stencil、MSAA、root data／Argument Tableの物理binding接続はそれぞれのresource・binding契約で追加します。対応するattachmentがないdepth test等と、未接続のresource ABIは明確に拒否します。program → shader → deviceの順で解放し、GPU完了までの寿命と同期は利用者が管理します。
+single-sample color/depth/stencil attachment、root data／Argument Table、direct/indexed/indirect drawとcompute dispatchを扱います。対応するattachmentがないdepth/stencil stateは拒否します。MSAAは別の拡張です。program → shader → deviceの順で解放し、GPU完了までの寿命と同期は利用者が管理します。
 
 設計は [GRAPHICS-0008](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md) を参照してください。
 
@@ -151,3 +151,9 @@ applicationのpartial root structにIShaderArgumentsを実装し、IRenderEncode
 `IShaderReference` は参照先のbyte範囲に加え、登録時の `RegistrationOffsetInBytes` と `RegistrationSizeInBytes` を保持します。GetElementでも登録範囲を維持し、bindingのoffset alignmentと要素位置を分けて検証します。元のbuffer全体のサイズで小さな登録範囲を拒否せず、登録範囲をbinding上限へ照合します。
 
 `IShaderArguments.Capture<T>`はTの静的metadataと生成済みWriteを直接呼び、codec登録やmodule initializerを必要としません。RootParameterは既定でarguments、異なるroot名は型の静的propertyで指定します。IShaderDataはIShaderArgumentsを継承し、partial structへ同じcodecを生成します。
+
+## Depth／StencilとIndexed／Indirect
+
+Depth／Stencil attachmentは`RenderPassDesc.DepthStencilAttachment`へ指定し、colorなしのpassも許可します。depth/stencil load/storeは独立で、実行状態は`SetRenderState`から指定します。Depth32Float／Depth24Stencil8は今回RenderAttachment用途に限定します。
+
+Index bufferは`SetIndexBuffer(BufferSlice<ushort>)`／`SetIndexBuffer(BufferSlice<uint>)`へ設定し、`DrawIndexed`のfirstIndexはそのsliceからの相対offsetです。Indirectは`DrawIndirectArguments`／`DrawIndexedIndirectArguments`／`DispatchIndirectArguments`を1要素含むIndirect usageのsliceを渡します。GPU commandの内容はCPUで解析せず、命令転送、生成後のIndexRead／IndirectRead barrier、submit、寿命は利用者が管理します。詳しい契約は[Depth／Stencil ADR](../../../docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)と[Indexed／Indirect ADR](../../../docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)を参照してください。

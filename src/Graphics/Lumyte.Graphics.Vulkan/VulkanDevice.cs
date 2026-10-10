@@ -145,7 +145,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
         ValidateAlive();
-        if (!Enum.IsDefined(format))
+        if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
         }
@@ -170,7 +170,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
-        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
         if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
             throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));

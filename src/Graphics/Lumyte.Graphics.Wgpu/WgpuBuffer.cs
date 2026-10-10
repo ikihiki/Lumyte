@@ -48,6 +48,11 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             usage |= A.BufferUsage.Index;
         }
 
+        if ((Usage & BufferUsage.Indirect) != 0)
+        {
+            usage |= A.BufferUsage.Indirect;
+        }
+
         if (Memory == MemoryPreference.Upload)
         {
             usage |= A.BufferUsage.MapWrite;

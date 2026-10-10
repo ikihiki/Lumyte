@@ -121,7 +121,7 @@ internal static class PipelineValidation
         return new(snapshot, JsonSerializer.Serialize(snapshot, PipelineJsonContext.Default.GraphicsRenderStateDesc));
     }
 
-    internal static void Draw(GraphicsPipelineDesc program, RenderStateSnapshot state, TextureFormat[] formats, IReadOnlyDictionary<uint, string>? fragment)
+    internal static void Draw(GraphicsPipelineDesc program, RenderStateSnapshot state, TextureFormat[] formats, IReadOnlyDictionary<uint, string>? fragment, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         PrimitiveTopologyClass topology = state.Desc.Topology switch
         {
@@ -129,16 +129,30 @@ internal static class PipelineValidation
             PrimitiveTopology.LineList or PrimitiveTopology.LineStrip => PrimitiveTopologyClass.Line,
             _ => PrimitiveTopologyClass.Triangle,
         };
-        if (program.TopologyClass != topology || state.Desc.ColorTargets.Count != formats.Length || fragment == null || state.Desc.StripIndexFormat != null)
+        if (program.TopologyClass != topology || state.Desc.ColorTargets.Count != formats.Length || (fragment == null && formats.Length != 0) ||
+            (state.Desc.StripIndexFormat != null && state.Desc.StripIndexFormat != indexFormat) ||
+            (indexFormat != null && state.Desc.Topology is PrimitiveTopology.LineStrip or PrimitiveTopology.TriangleStrip && state.Desc.StripIndexFormat != indexFormat))
         {
-            throw new ArgumentException("Program, nonindexed topology or color targets do not match the pass.");
+            throw new ArgumentException("Program, index topology or color targets do not match the pass.");
         }
 
         DepthStencilStateDesc depth = state.Desc.DepthStencil;
-        if (depth.DepthTestEnable || depth.DepthWriteEnable || depth.StencilTestEnable || program.AlphaToCoverageEnable || !state.Desc.Rasterization.DepthClipEnable ||
-            state.Desc.Rasterization.DepthBiasConstant != 0 || state.Desc.Rasterization.DepthBiasSlope != 0 || state.Desc.Rasterization.DepthBiasClamp != 0)
+        if (((depth.DepthTestEnable || depth.DepthWriteEnable || depth.StencilTestEnable) && depthFormat == null) ||
+            (depth.StencilTestEnable && depthFormat != TextureFormat.Depth24Stencil8))
+        {
+            throw new ArgumentException("Depth/stencil state requires a compatible attachment.");
+        }
+
+        if (program.AlphaToCoverageEnable || !state.Desc.Rasterization.DepthClipEnable ||
+            state.Desc.Rasterization.DepthBiasClamp != 0 ||
+            (depthFormat == null && (state.Desc.Rasterization.DepthBiasConstant != 0 || state.Desc.Rasterization.DepthBiasSlope != 0)))
         {
             throw new NotSupportedException("Requested state requires depth/stencil, MSAA or additional enabled rasterization features.");
+        }
+
+        if (fragment == null)
+        {
+            return;
         }
 
         foreach ((uint location, string type) in fragment)

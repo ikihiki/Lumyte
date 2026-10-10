@@ -66,6 +66,21 @@ internal static partial class BrowserInterop
     [JSImport("addColorAttachment", "Lumyte.Graphics.Browser")]
     internal static partial void AddColorAttachment(JSObject desc, JSObject view, int load, int store, double red, double green, double blue, double alpha);
 
+    [JSImport("addDepthStencilAttachment", "Lumyte.Graphics.Browser")]
+    internal static partial void AddDepthStencilAttachment(JSObject desc, JSObject view, int depthLoad, int depthStore, double depthClear, bool stencil, int stencilLoad, int stencilStore, int stencilClear);
+
+    [JSImport("setIndexBuffer", "Lumyte.Graphics.Browser")]
+    internal static partial void SetIndexBuffer(JSObject pass, JSObject buffer, int format, double offset, double size);
+
+    [JSImport("drawIndexed", "Lumyte.Graphics.Browser")]
+    internal static partial void DrawIndexed(JSObject pass, double indices, double instances, double firstIndex, double baseVertex, double firstInstance);
+
+    [JSImport("drawIndirect", "Lumyte.Graphics.Browser")]
+    internal static partial void DrawIndirect(JSObject pass, JSObject buffer, double offset, bool indexed);
+
+    [JSImport("dispatchIndirect", "Lumyte.Graphics.Browser")]
+    internal static partial void DispatchIndirect(JSObject pass, JSObject buffer, double offset);
+
     [JSImport("beginRenderPass", "Lumyte.Graphics.Browser")]
     internal static partial JSObject BeginRenderPass(JSObject encoder, JSObject desc);
 
@@ -101,7 +116,7 @@ internal static partial class BrowserInterop
     internal static partial Task WaitSubmissionAsync(JSObject submission);
 
     [JSImport("createGraphicsPipeline", "Lumyte.Graphics.Browser")]
-    internal static partial JSObject CreateGraphicsPipeline(JSObject device, JSObject vertex, string vertexEntry, JSObject fragment, string fragmentEntry, string state, string formats, string bindingKey = "");
+    internal static partial JSObject CreateGraphicsPipeline(JSObject device, JSObject vertex, string vertexEntry, JSObject? fragment, string fragmentEntry, string state, string formats, int depthFormat, string bindingKey = "");
 
     [JSImport("createComputePipeline", "Lumyte.Graphics.Browser")]
     internal static partial JSObject CreateComputePipeline(JSObject device, JSObject shader, string entry, string bindingKey = "");
