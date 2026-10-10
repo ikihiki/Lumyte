@@ -70,7 +70,7 @@ function readPngDimensions(contents, name) {
     return { width, height };
 }
 
-function renderHtml(manifest, metadata, screenshots) {
+function renderHtml(manifest, metadata, screenshots, homeHref) {
     const pages = [...new Set(screenshots.map(screenshot => screenshot.page))];
     const capturedAt = new Intl.DateTimeFormat('ja-JP', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo',
@@ -105,6 +105,7 @@ function renderHtml(manifest, metadata, screenshots) {
     <div class="shell">
         <header>
             <div class="masthead"><a class="brand" href="https://github.com/${metadata.repository}"><span class="brand-mark" aria-hidden="true">L</span>Lumyte <span class="brand-divider">/</span> Diagnostics</a><span class="status-pill">画面プレビュー</span></div>
+            ${homeHref ? `<nav class="home-link" aria-label="プレビュー一覧"><a href="${homeHref}">← PR・main の一覧へ戻る</a></nav>` : ''}
             <div class="hero">
                 <div><p class="eyebrow">DIAGNOSTICS GALLERY</p><h1>診断画面を、ひと目で。</h1><p class="intro">設定の編集から、ログ・トレースの調査まで。<br>実際に起動した診断サーバーの画面を確認できます。</p></div>
                 <div class="preview-meta"><span class="preview-label">${escapeHtml(metadata.label)}</span><a href="${commitUrl}" class="commit-link">${metadata.commit.slice(0, 7)} <span aria-hidden="true">↗</span></a><span>撮影 <time datetime="${manifest.capturedAt}">${escapeHtml(capturedAt)} JST</time></span></div>
@@ -148,6 +149,7 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
 .brand-mark { display: grid; place-content: center; width: 30px; height: 30px; background: var(--accent); color: white; border-radius: 9px; margin-right: 2px; font-weight: 800; }
 .brand-divider { color: #a6b4b8; padding: 0 3px; }
 .status-pill { color: var(--accent); font-size: 12px; background: #e2efeb; border: 1px solid #cde0da; padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
+.home-link { margin-top: 22px; font-size: 13px; }
 .hero { display: flex; justify-content: space-between; gap: 36px; align-items: center; padding: 54px 0 35px; }
 .eyebrow { font-size: 11px; letter-spacing: 2px; font-weight: 750; color: var(--accent); margin: 0 0 12px; }
 h1 { font-size: clamp(27px, 3vw, 42px); letter-spacing: -.04em; line-height: 1.35; margin: 0 0 20px; font-weight: 750; }
@@ -245,12 +247,20 @@ export async function generateGallery(inputDirectory, outputDirectory, options =
     }
     const repository = options.repository ?? process.env.GITHUB_REPOSITORY;
     const commit = options.commit ?? process.env.PREVIEW_COMMIT;
+    const sourceCommit = options.sourceCommit ?? process.env.PREVIEW_HEAD_COMMIT ?? commit;
+    const homeHref = options.homeHref;
+    if (homeHref !== undefined && homeHref !== '../' && homeHref !== '../../') {
+        throw new Error('homeHref must be ../ or ../../ when provided.');
+    }
     const label = requireText(options.label ?? process.env.PREVIEW_LABEL ?? 'UI プレビュー', 'PREVIEW_LABEL', 160);
     if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) {
         throw new Error('GITHUB_REPOSITORY must be an owner/repository name.');
     }
     if (typeof commit !== 'string' || !/^[a-fA-F0-9]{40}$/u.test(commit)) {
         throw new Error('PREVIEW_COMMIT must be a full 40-character commit SHA.');
+    }
+    if (typeof sourceCommit !== 'string' || !/^[a-fA-F0-9]{40}$/u.test(sourceCommit)) {
+        throw new Error('PREVIEW_HEAD_COMMIT must be a full 40-character commit SHA.');
     }
     const manifest = JSON.parse((await readRegularFile(join(input, 'gallery.json'), maxManifestBytes)).toString('utf8'));
     if (!manifest || manifest.version !== 1 || typeof manifest.capturedAt !== 'string' ||
@@ -304,9 +314,13 @@ export async function generateGallery(inputDirectory, outputDirectory, options =
     }
     await writeFile(join(output, 'gallery.css'), galleryCss);
     await writeFile(join(output, 'gallery.js'), galleryJs);
-    await writeFile(join(output, 'index.html'), renderHtml(manifest, { repository, commit, label }, screenshots));
+    await writeFile(join(output, 'index.html'), renderHtml(manifest, { repository, commit, label }, screenshots, homeHref));
     await writeFile(join(output, 'metadata.json'), JSON.stringify({
-        version: 1, repository, commit, label, capturedAt: manifest.capturedAt, screenshotCount: screenshots.length,
+        version: 1, repository, commit, sourceCommit, label, capturedAt: manifest.capturedAt, screenshotCount: screenshots.length,
+    }, null, 2) + '\n');
+    await writeFile(join(output, 'gallery.json'), JSON.stringify({
+        version: 1, capturedAt: manifest.capturedAt,
+        screenshots: screenshots.map(({ id, title, description, page, viewport, file }) => ({ id, title, description, page, viewport, file })),
     }, null, 2) + '\n');
     return { count: screenshots.length, bytes: totalImageBytes, output };
 }

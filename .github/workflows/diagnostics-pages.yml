@@ -1,0 +1,74 @@
+name: Diagnostic previews
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions: {}
+
+# Every run collects the complete current set, so queued runs may be coalesced.
+# Keep collection and deployment under the same lock to avoid stale overwrites.
+concurrency:
+  group: diagnostics-pages
+  cancel-in-progress: false
+
+jobs:
+  assemble:
+    name: Assemble diagnostic previews
+    if: >-
+      github.repository == 'ikihiki/Lumyte' && github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.path == '.github/workflows/composition.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      # The privileged workflow never checks out or executes a PR revision.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Collect successful galleries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 tools/diagnostics/collect-gallery-artifacts.py
+          --repository "$GITHUB_REPOSITORY" --output incoming
+
+      - name: Assemble preview index and galleries
+        run: node tools/diagnostics/assemble-gallery-site.mjs incoming/catalog.json artifacts/diagnostics-site
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: artifacts/diagnostics-site
+
+  deploy:
+    name: Publish diagnostic previews
+    needs: assemble
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+      - name: Link preview index
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          printf '[PR別の画面プレビューを見る](%s)\n' "$PAGE_URL" >> "$GITHUB_STEP_SUMMARY"

@@ -41,4 +41,4 @@ CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環�
 
 診断サーバーの[同梱Web UI](src/Diagnostics/Lumyte.Diagnostics.Server/README.md#web-ui)はサーバーのURLから利用できる。[配信・認証・更新の設計](docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
-診断画面の見た目は [GitHub Pagesの画面プレビュー](https://ikihiki.github.io/Lumyte/) で確認できます。
+診断画面の見た目は [GitHub Pagesの画面プレビュー](https://ikihiki.github.io/Lumyte/) でmain・PRごとに確認できます。

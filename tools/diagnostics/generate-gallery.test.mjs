@@ -32,7 +32,7 @@ test('publishes only declared PNGs and gallery assets, with relative image links
     await writeFile(join(input, 'screenshots/unlisted.png'), tinyPng);
     const result = await generateGallery(input, output, metadata);
     assert.equal(result.count, 1);
-    assert.deepEqual((await readdir(output)).sort(), ['gallery.css', 'gallery.js', 'index.html', 'metadata.json', 'screenshots']);
+    assert.deepEqual((await readdir(output)).sort(), ['gallery.css', 'gallery.js', 'gallery.json', 'index.html', 'metadata.json', 'screenshots']);
     assert.deepEqual(await readdir(join(output, 'screenshots')), ['settings.png']);
     assert.deepEqual(await readFile(join(output, 'screenshots/settings.png')), tinyPng);
     const html = await readFile(join(output, 'index.html'), 'utf8');
@@ -42,7 +42,7 @@ test('publishes only declared PNGs and gallery assets, with relative image links
     assert.match(html, /10:02 JST/u);
     assert.match(html, /Content-Security-Policy/u);
     assert.deepEqual(JSON.parse(await readFile(join(output, 'metadata.json'), 'utf8')), {
-        version: 1, repository: metadata.repository, commit: metadata.commit, label: metadata.label,
+        version: 1, repository: metadata.repository, commit: metadata.commit, sourceCommit: metadata.commit, label: metadata.label,
         capturedAt: '2026-10-10T01:02:03.000Z', screenshotCount: 1,
     });
 });
@@ -122,4 +122,29 @@ test('rejects invalid metadata, dates and occupied output without modifying exis
     assert.equal(await readFile(join(output, 'server.log'), 'utf8'), 'existing private output');
     const invalid = await fixture(t, manifest => { manifest.capturedAt = '2026-02-30T01:02:03.000Z'; });
     await assert.rejects(generateGallery(invalid.input, invalid.output, metadata), /ISO capturedAt/u);
+});
+
+
+test('emits a normalized manifest and separates source head from the photographed merge commit', async t => {
+    const { input, output, manifest } = await fixture(t, value => {
+        value.private = 'must not publish';
+        value.screenshots[0].private = 'must not publish';
+    });
+    const sourceCommit = 'b'.repeat(40);
+    await generateGallery(input, output, { ...metadata, sourceCommit, homeHref: '../../' });
+    const saved = JSON.parse(await readFile(join(output, 'gallery.json'), 'utf8'));
+    assert.equal(saved.private, undefined);
+    assert.equal(saved.screenshots[0].private, undefined);
+    assert.equal(saved.capturedAt, manifest.capturedAt);
+    assert.equal(JSON.parse(await readFile(join(output, 'metadata.json'), 'utf8')).sourceCommit, sourceCommit);
+    assert.match(await readFile(join(output, 'index.html'), 'utf8'), /href="\.\.\/\.\.\/">← PR・main の一覧へ戻る/u);
+});
+
+test('rejects invalid source commits and nonlocal home links', async t => {
+    const { input, output } = await fixture(t);
+    await assert.rejects(generateGallery(input, output, { ...metadata, sourceCommit: 'main' }), /PREVIEW_HEAD_COMMIT/u);
+    for (const homeHref of ['https://example.com', 'javascript:alert(1)', '../../../', '../<script>', '']) {
+        await assert.rejects(generateGallery(input, output, { ...metadata, homeHref }), /homeHref/u);
+    }
+    await assert.rejects(readdir(output), { code: 'ENOENT' });
 });

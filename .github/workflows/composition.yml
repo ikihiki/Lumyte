@@ -141,10 +141,13 @@ jobs:
         shell: bash
         env:
           PREVIEW_COMMIT: ${{ github.sha }}
+          PREVIEW_HEAD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
           node tools/diagnostics/generate-gallery.test.mjs
+          node tools/diagnostics/assemble-gallery-site.test.mjs
+          python3 -m unittest discover -s tools/diagnostics -p 'test_collect_gallery_artifacts.py'
           node tools/diagnostics/generate-gallery.mjs artifacts/test-results/diagnostics-ui artifacts/diagnostics-gallery
 
       - name: Upload diagnostic gallery
@@ -154,7 +157,7 @@ jobs:
           name: diagnostics-gallery
           path: artifacts/diagnostics-gallery/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload test results
         if: always()
@@ -187,66 +190,3 @@ jobs:
           dotnet build Lumyte.slnx --no-restore
           dotnet format Lumyte.slnx --no-restore --verify-no-changes
           mise run check-markdown
-
-  publish-pages:
-    name: Publish diagnostic gallery
-    needs: validate
-    if: >-
-      github.repository == 'ikihiki/Lumyte' &&
-      (github.ref == 'refs/heads/main' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.number == 26 &&
-      github.event.pull_request.head.repo.full_name == github.repository))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: diagnostics-pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Verify current revision
-        id: current
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          if [ -n "$PR_NUMBER" ]; then
-            actual=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq 'if .state == "open" then .head.sha else "closed" end')
-          else
-            actual=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
-          fi
-          if [ "$actual" = "$EXPECTED_HEAD" ]; then
-            echo 'publish=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'Skipped a superseded source revision.' >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        if: steps.current.outputs.publish == 'true'
-        with:
-          name: diagnostics-gallery
-          path: incoming
-
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
-        if: steps.current.outputs.publish == 'true'
-        with:
-          path: incoming
-
-      - name: Deploy GitHub Pages
-        if: steps.current.outputs.publish == 'true'
-        id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
-
-      - name: Link preview
-        if: steps.current.outputs.publish == 'true'
-        env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-        run: |
-          printf '[画面プレビューを見る](%s)\n' "$PAGE_URL" >> "$GITHUB_STEP_SUMMARY"
