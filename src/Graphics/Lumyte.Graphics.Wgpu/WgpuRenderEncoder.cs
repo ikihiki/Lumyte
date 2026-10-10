@@ -184,6 +184,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         _indexFormat = format;
         _indexCount = indices.Count;
         _validateIndices = () => { _ = buffer.Native; };
+        owner.TrackProgram(_validateIndices);
     }
 
     private WgpuBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -236,7 +237,6 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
             }
 
             _validateIndices();
-            owner.TrackProgram(_validateIndices);
         }
 
         _pipeline.ValidateAlive();

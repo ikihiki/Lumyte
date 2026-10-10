@@ -15,11 +15,13 @@ public static class AdvancedCommandExercise
         using IGraphicsShader fragment = Load(device, "color-fragment");
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
         using IGraphicsPipeline depthOnly = device.CreateGraphicsPipeline(new() { VertexShader = vertex });
-        await CheckDepthAsync(device, pipeline, depthOnly);
+        await CheckDepthAsync(device, pipeline, depthOnly, TextureFormat.Depth32Float);
+        await CheckDepthAsync(device, pipeline, depthOnly, TextureFormat.Depth24Stencil8);
         await CheckStencilAsync(device, pipeline);
         await CheckIndicesAsync(device, pipeline);
         await CheckIndirectAsync(device, pipeline);
         await CheckGpuDispatchAsync(device);
+        CheckIndexLifetime(device);
         return "Advanced command checks passed: depth occlusion, depth-only load, stencil mask, 16/32-bit indexed ranges, signed baseVertex, indirect draw/indexed draw and GPU-generated dispatch.";
     }
 
@@ -65,10 +67,10 @@ public static class AdvancedCommandExercise
         DepthStencilAttachment = depth == null ? null : new() { View = depth, DepthLoadOp = depthLoad },
     };
 
-    private static async Task CheckDepthAsync(IGraphicDevice device, IGraphicsPipeline pipeline, IGraphicsPipeline depthOnly)
+    private static async Task CheckDepthAsync(IGraphicDevice device, IGraphicsPipeline pipeline, IGraphicsPipeline depthOnly, TextureFormat format)
     {
         using IGraphicsTexture color = Color(device);
-        using IGraphicsTexture depth = Depth(device, TextureFormat.Depth32Float);
+        using IGraphicsTexture depth = Depth(device, format);
         using IGraphicsTextureView colorView = color.CreateView();
         using IGraphicsTextureView depthView = depth.CreateView();
         var depthState = new DepthStencilStateDesc { DepthTestEnable = true, DepthWriteEnable = true, DepthCompare = CompareFunction.Less };
@@ -182,6 +184,13 @@ public static class AdvancedCommandExercise
             Expect<ArgumentException>(() => render.DrawIndexed(4, firstIndex: 1));
             render.DrawIndexed(0);
             render.DrawIndexed(3, firstIndex: 1, baseVertex: -2);
+            IndexFormat indexFormat = format == 0 ? IndexFormat.Uint16 : IndexFormat.Uint32;
+            IndexFormat wrongFormat = format == 0 ? IndexFormat.Uint32 : IndexFormat.Uint16;
+            render.SetRenderState(State() with { Topology = PrimitiveTopology.TriangleStrip, StripIndexFormat = wrongFormat });
+            Expect<ArgumentException>(() => render.DrawIndexed(3, firstIndex: 1, baseVertex: -2));
+            render.SetRenderState(State() with { Topology = PrimitiveTopology.TriangleStrip, StripIndexFormat = indexFormat });
+            Expect<ArgumentException>(() => render.Draw(3));
+            render.DrawIndexed(3, firstIndex: 1, baseVertex: -2);
             render.End();
             await ReadPixelsAsync(device, commands, color, _ => new(1, 0, 0, 1));
         }
@@ -270,6 +279,21 @@ public static class AdvancedCommandExercise
         readback.CopyTo(values);
         readback.Unmap();
         Require(values.SequenceEqual(new uint[] { 10, 20, 30 }), "GPU-generated indirect dispatch did not execute three workgroups.");
+    }
+
+    private static void CheckIndexLifetime(IGraphicDevice device)
+    {
+        using IGraphicsTexture color = Color(device);
+        using IGraphicsTextureView view = color.CreateView();
+        using IGraphicsBuffer<uint> indices = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.Index });
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        ColorBarrier(commands, color);
+        IRenderEncoder render = commands.BeginRenderPass(Pass(view));
+        render.SetIndexBuffer(indices.Slice(0, 3));
+        render.End();
+        commands.Finish();
+        indices.Dispose();
+        Expect<ObjectDisposedException>(() => device.Queue.Submit([commands]));
     }
 
     private static async Task<IGraphicsBuffer<T>> UploadAsync<T>(IGraphicDevice device, T[] values)

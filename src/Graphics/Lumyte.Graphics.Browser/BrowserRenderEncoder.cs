@@ -183,6 +183,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         _indexFormat = format;
         _indexCount = indices.Count;
         _validateIndices = () => { _ = buffer.Native; };
+        owner.TrackProgram(_validateIndices);
     }
 
     private BrowserBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -235,7 +236,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
             }
 
             _validateIndices();
-            owner.TrackProgram(_validateIndices);
         }
 
         _pipeline.ValidateAlive();

@@ -186,6 +186,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         _indexFormat = format;
         _indexCount = indices.Count;
         _validateIndices = () => { _ = buffer.Native; };
+        owner.TrackProgram(_validateIndices);
     }
 
     private VulkanBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -238,7 +239,6 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             }
 
             _validateIndices();
-            owner.TrackProgram(_validateIndices);
         }
 
         _pipeline.ValidateAlive();
