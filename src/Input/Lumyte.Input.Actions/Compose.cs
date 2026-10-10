@@ -14,6 +14,11 @@ public static partial class Compose
         [Composable]
         public partial class Action
         {
+            private string? _builtIdentifier;
+
+            /// <summary>Gets the identifier committed by the latest successful profile build.</summary>
+            public string Identifier => _builtIdentifier ?? Id;
+
             /// <summary>Gets or sets the Id value.</summary>
             [ComposeParameter]
             public required string Id { get; set; }
@@ -37,19 +42,30 @@ public static partial class Compose
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
             public ActionDefinition Build() => new(Id, Kind, Sensitivity, Normalize, SmoothingSeconds);
+
+            internal void CommitIdentifier(string id) => _builtIdentifier = id;
         }
 
         /// <summary>Builds an ActionBinding.</summary>
         [Composable]
         public partial class Binding
         {
+            private string? _builtIdentifier;
+
+            /// <summary>Gets the identifier committed by the latest successful profile build.</summary>
+            public string Identifier => _builtIdentifier ?? Id;
+
             /// <summary>Gets or sets the Id value.</summary>
             [ComposeParameter]
             public required string Id { get; set; }
 
             /// <summary>Gets or sets the ActionId value.</summary>
             [ComposeParameter]
-            public required string ActionId { get; set; }
+            public required ActionReference ActionId { get; set; }
+
+            /// <summary>Gets or sets the optional owning context definition.</summary>
+            [ComposeParameter]
+            public Context? Context { get; set; }
 
             /// <summary>Gets or sets the ContextId value.</summary>
             [ComposeParameter]
@@ -73,7 +89,7 @@ public static partial class Compose
 
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
-            public ActionBinding Build() => Build(ContextId ?? throw new InvalidOperationException("A standalone binding requires a context."));
+            public ActionBinding Build() => Build(Context?.Identifier ?? ContextId ?? throw new InvalidOperationException("A standalone binding requires a context."));
 
             internal ActionBinding Build(string contextId)
             {
@@ -82,8 +98,10 @@ public static partial class Compose
                     throw new ArgumentException("A nested binding must belong to its containing context.");
                 }
 
-                return new ActionBinding(Id, ActionId, contextId, Control, Scale, PressThreshold, ReleaseThreshold);
+                return new ActionBinding(Id, ActionId.Id, contextId, Control, Scale, PressThreshold, ReleaseThreshold);
             }
+
+            internal void CommitIdentifier(string id) => _builtIdentifier = id;
         }
 
         /// <summary>Builds an InputContext.</summary>
@@ -93,6 +111,19 @@ public static partial class Compose
             private Action[] _actions = [];
             private Binding[] _bindings = [];
             private Recognition[] _recognitions = [];
+            private string? _builtIdentifier;
+            private string? _builtParentId;
+
+            /// <summary>Gets or sets child contexts whose parent is inferred from nesting.</summary>
+            [ComposeContent]
+            public IReadOnlyList<Context> Children { get; set; } = [];
+
+            /// <summary>Gets or sets an optional parent definition for a flat composition.</summary>
+            [ComposeParameter]
+            public Context? Parent { get; set; }
+
+            /// <summary>Gets the explicit identifier or the identifier assigned by a successful profile build.</summary>
+            public string Identifier => _builtIdentifier ?? Id ?? throw new InvalidOperationException("Build the profile before using an anonymous context.");
 
             /// <summary>Gets or sets the optional parent context identifier.</summary>
             [ComposeParameter]
@@ -100,7 +131,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the Id value.</summary>
             [ComposeParameter]
-            public required string Id { get; set; }
+            public string? Id { get; set; }
 
             /// <summary>Gets or sets the Priority value.</summary>
             [ComposeParameter]
@@ -110,13 +141,23 @@ public static partial class Compose
             [ComposeParameter]
             public bool Exclusive { get; set; } = false;
 
+            internal IReadOnlyList<Action> LocalActions => _actions;
+
+            internal IReadOnlyList<Binding> LocalBindings => _bindings;
+
+            internal IReadOnlyList<Recognition> LocalRecognitions => _recognitions;
+
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
-            public InputContext Build() => new(Id, Priority, Exclusive, ParentId, _actions.Select(node => node.Build()).ToImmutableArray());
+            public InputContext Build() => Build(Identifier, _builtIdentifier is null ? Parent?.Identifier ?? ParentId : _builtParentId);
 
-            internal IEnumerable<ActionBinding> BuildBindings() => _bindings.Select(node => node.Build(Id));
+            internal InputContext Build(string id, string? parentId) => new(id, Priority, Exclusive, parentId, _actions.Select(node => node.Build()).ToImmutableArray());
 
-            internal IEnumerable<RecognitionDefinition> BuildRecognitions() => _recognitions.Select(node => node.Build(Id));
+            internal void CommitIdentifier(string id, string? parentId)
+            {
+                _builtIdentifier = id;
+                _builtParentId = parentId;
+            }
 
             [ComposeSlot]
             private static void Actions(Context target, IReadOnlyList<Action> children) => target._actions = children.ToArray();
@@ -132,9 +173,18 @@ public static partial class Compose
         [Composable]
         public partial class Recognition
         {
+            private string? _builtIdentifier;
+
+            /// <summary>Gets the identifier committed by the latest successful profile build.</summary>
+            public string Identifier => _builtIdentifier ?? Id;
+
             /// <summary>Gets or sets the Id value.</summary>
             [ComposeParameter]
             public required string Id { get; set; }
+
+            /// <summary>Gets or sets the optional owning context definition.</summary>
+            [ComposeParameter]
+            public Context? Context { get; set; }
 
             /// <summary>Gets or sets the ContextId value.</summary>
             [ComposeParameter]
@@ -146,7 +196,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the Actions value.</summary>
             [ComposeParameter]
-            public required ImmutableArray<string> Actions { get; set; }
+            public required ImmutableArray<ActionReference> Actions { get; set; }
 
             /// <summary>Gets or sets the Window value.</summary>
             [ComposeParameter]
@@ -158,7 +208,7 @@ public static partial class Compose
 
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
-            public RecognitionDefinition Build() => Build(ContextId ?? throw new InvalidOperationException("A standalone recognition requires a context."));
+            public RecognitionDefinition Build() => Build(Context?.Identifier ?? ContextId ?? throw new InvalidOperationException("A standalone recognition requires a context."));
 
             internal RecognitionDefinition Build(string contextId)
             {
@@ -167,8 +217,10 @@ public static partial class Compose
                     throw new ArgumentException("A nested recognition must belong to its containing context.");
                 }
 
-                return new RecognitionDefinition(Id, contextId, Kind, Actions, Window, TapCount);
+                return new RecognitionDefinition(Id, contextId, Kind, Actions.Select(action => action.Id).ToImmutableArray(), Window, TapCount);
             }
+
+            internal void CommitIdentifier(string id) => _builtIdentifier = id;
         }
 
         /// <summary>Builds and validates an immutable action profile from named slots.</summary>
@@ -180,18 +232,13 @@ public static partial class Compose
             private Context[] _contexts = [];
             private Recognition[] _recognitions = [];
 
+            /// <summary>Gets or sets the root contexts.</summary>
+            [ComposeContent]
+            public IReadOnlyList<Context> Children { get; set; } = [];
+
             /// <summary>Creates and validates an independent runtime snapshot.</summary>
             /// <returns>The validated immutable profile.</returns>
-            public ActionProfile Build()
-            {
-                var profile = new ActionProfile(
-                    _actions.Select(node => node.Build()).ToImmutableArray(),
-                    _bindings.Select(node => node.Build()).Concat(_contexts.SelectMany(context => context.BuildBindings())).ToImmutableArray(),
-                    _contexts.Select(node => node.Build()).ToImmutableArray(),
-                    _recognitions.Select(node => node.Build()).Concat(_contexts.SelectMany(context => context.BuildRecognitions())).ToImmutableArray());
-                profile.Validate();
-                return profile;
-            }
+            public ActionProfile Build() => CompositionProfileBuilder.Build(_actions, _bindings, _contexts.Concat(Children), _recognitions);
 
             [ComposeSlot]
             private static void Actions(Profile target, IReadOnlyList<Action> children) => target._actions = children.ToArray();

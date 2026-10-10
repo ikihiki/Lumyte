@@ -410,6 +410,72 @@ public sealed class ActionSystem
         _pending.Enqueue(() => ResetCore(device, _now));
     }
 
+    /// <summary>Activates a composed context using its resolved identifier.</summary>
+    /// <param name="context">The composed context.</param>
+    public void ActivateContext(Compose.Definitions.Context context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ActivateContext(context.Identifier);
+    }
+
+    /// <summary>Deactivates a composed context.</summary>
+    /// <param name="context">The composed context.</param>
+    public void DeactivateContext(Compose.Definitions.Context context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        DeactivateContext(context.Identifier);
+    }
+
+    /// <summary>Returns the strongest state for a composed action.</summary>
+    /// <param name="action">The action definition.</param>
+    /// <returns>The immutable action state.</returns>
+    public ActionState GetState(Compose.Definitions.Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        return GetState(action.Identifier);
+    }
+
+    /// <summary>Returns the state of a composed action in a composed context.</summary>
+    /// <param name="context">The context definition.</param>
+    /// <param name="action">The action definition.</param>
+    /// <returns>The immutable context-scoped state.</returns>
+    public ActionState GetState(Compose.Definitions.Context context, Compose.Definitions.Action action)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(action);
+        return GetState(context.Identifier, action.Identifier);
+    }
+
+    /// <summary>Begins capturing input for a composed binding.</summary>
+    /// <param name="binding">The binding definition.</param>
+    /// <param name="options">The capture options.</param>
+    /// <returns>The rebind capture session.</returns>
+    public RebindSession BeginRebind(Compose.Definitions.Binding binding, RebindOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return BeginRebind(binding.Identifier, options);
+    }
+
+    /// <summary>Sets value processors using composed context and action definitions.</summary>
+    /// <param name="context">The context definition.</param>
+    /// <param name="action">The action definition.</param>
+    /// <param name="processors">The independent context-scoped processors.</param>
+    public void SetValueProcessors(Compose.Definitions.Context context, Compose.Definitions.Action action, IEnumerable<IActionValueProcessor> processors)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(action);
+        SetValueProcessors(context.Identifier, action.Identifier, processors);
+    }
+
+    /// <summary>Sets recognizers using a composed context.</summary>
+    /// <param name="context">The context definition.</param>
+    /// <param name="recognizers">The independent context-scoped recognizers.</param>
+    public void SetRecognizers(Compose.Definitions.Context context, IEnumerable<IActionRecognizer> recognizers)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        SetRecognizers(context.Identifier, recognizers);
+    }
+
     internal void CancelRebind(RebindSession session)
     {
         Check();

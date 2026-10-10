@@ -15,12 +15,12 @@ public sealed class ContextInheritanceTests
     public void ChildUsesInheritedActionsWithLocalBindingsAndCorrections()
     {
         ActionProfile profile = Profile()[Profile.Contexts()[
-            Context("base")[
+            Context(id: "base")[
                 Context.Actions()[Action("move", ActionValueKind.Axis1D)],
                 Context.Bindings()[Binding(id: "base-key", actionId: "move", control: InputControl.ForKey(Key.Space))],
                 Context.Recognitions()[Recognition(id: "press", kind: RecognitionKind.Press, actions: ["move"], window: TimeSpan.FromSeconds(1))]],
-            Context("middle", parentId: "base")[Context.Actions()[Action("move", ActionValueKind.Axis1D, sensitivity: 0.5f)]],
-            Context("game", parentId: "middle")[Context.Bindings()[Binding(id: "game-key", actionId: "move", control: InputControl.ForKey(Key.J))]]]].Build();
+            Context(id: "middle", parentId: "base")[Context.Actions()[Action("move", ActionValueKind.Axis1D, sensitivity: 0.5f)]],
+            Context(id: "game", parentId: "middle")[Context.Bindings()[Binding(id: "game-key", actionId: "move", control: InputControl.ForKey(Key.J))]]]].Build();
         var system = new ActionSystem(profile);
         var events = new List<ActionEvent>();
         system.Changed += events.Add;
@@ -172,12 +172,12 @@ public sealed class ContextInheritanceTests
     public void NestedNodesSnapshotLocalActionsAndRejectContextMismatch()
     {
         Compose.Definitions.Action action = Action("jump", ActionValueKind.Button);
-        Compose.Definitions.Profile node = Profile()[Profile.Contexts()[Context("game")[Context.Actions()[action]]]];
+        Compose.Definitions.Profile node = Profile()[Profile.Contexts()[Context(id: "game")[Context.Actions()[action]]]];
         ActionProfile built = node.Build();
         action.Sensitivity = 0.5f;
         Assert.Equal(1, built.Contexts[0].Actions[0].Sensitivity);
         Assert.Equal(0.5f, node.Build().Contexts[0].Actions[0].Sensitivity);
-        Assert.Throws<ArgumentException>(() => Profile()[Profile.Contexts()[Context("game")[Context.Bindings()[Binding(id: "wrong", actionId: "jump", control: InputControl.ForKey(Key.J), contextId: "other")]]]].Build());
+        Assert.Throws<ArgumentException>(() => Profile()[Profile.Contexts()[Context(id: "game")[Context.Bindings()[Binding(id: "wrong", actionId: "jump", control: InputControl.ForKey(Key.J), contextId: "other")]]]].Build());
     }
 
     /// <summary>Verifies flat profiles retain their original timed notification ordering.</summary>
@@ -224,11 +224,11 @@ public sealed class ContextInheritanceTests
     }
 
     private static ActionProfile NestedProfile() => Profile()[Profile.Contexts()[
-        Context("base")[
+        Context(id: "base")[
             Context.Actions()[Action("jump", ActionValueKind.Button)],
             Context.Bindings()[Binding(id: "base-key", actionId: "jump", control: InputControl.ForKey(Key.Space))],
             Context.Recognitions()[Recognition(id: "hold", kind: RecognitionKind.Hold, actions: ["jump"], window: TimeSpan.FromSeconds(1))]],
-        Context("game", parentId: "base")]].Build();
+        Context(id: "game", parentId: "base")]].Build();
 
     private static InputRecord Record(ulong sequence, Key key, bool down) => new(new InputDeviceId(1), sequence, TimeSpan.Zero, new KeyData(key, down, false));
 }

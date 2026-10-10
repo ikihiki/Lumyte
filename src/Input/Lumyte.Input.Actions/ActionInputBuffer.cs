@@ -94,6 +94,30 @@ public sealed class ActionInputBuffer
         return true;
     }
 
+    /// <summary>Consumes a composed recognition without repeating its identifier.</summary>
+    /// <param name="recognition">The recognition definition.</param>
+    /// <param name="now">The monotonic consumption time.</param>
+    /// <param name="action">The consumed operation, or null when absent.</param>
+    /// <returns>Whether an operation was consumed.</returns>
+    public bool TryConsume(Compose.Definitions.Recognition recognition, TimeSpan now, out RecognizedAction? action)
+    {
+        ArgumentNullException.ThrowIfNull(recognition);
+        return TryConsume(recognition.Identifier, now, out action);
+    }
+
+    /// <summary>Consumes a composed recognition in a composed context.</summary>
+    /// <param name="context">The context definition.</param>
+    /// <param name="recognition">The recognition definition.</param>
+    /// <param name="now">The monotonic consumption time.</param>
+    /// <param name="action">The consumed operation, or null when absent.</param>
+    /// <returns>Whether a context-scoped operation was consumed.</returns>
+    public bool TryConsume(Compose.Definitions.Context context, Compose.Definitions.Recognition recognition, TimeSpan now, out RecognizedAction? action)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(recognition);
+        return TryConsume(context.Identifier, recognition.Identifier, now, out action);
+    }
+
     /// <summary>Removes expired operations using monotonic time.</summary>
     /// <param name = "now">The now value.</param>
     public void Prune(TimeSpan now)

@@ -20,13 +20,17 @@ internal static class Program
         services.AddInputSettings();
 
         // Composition builds defaults once; persisted settings remain the source of runtime overrides.
-        Compose.Definitions.Context common = Compose.Context("common")[
-            Compose.Context.Actions()[Compose.Action("jump", ActionValueKind.Button)],
-            Compose.Context.Bindings()[Compose.Binding(id: "common-jump", actionId: "jump", control: InputControl.ForKey(Key.Space))],
-            Compose.Context.Recognitions()[Compose.Recognition(id: "jump-press", kind: RecognitionKind.Press, actions: ["jump"], window: TimeSpan.FromSeconds(1))]];
-        Compose.Definitions.Context game = Compose.Context("game", parentId: "common")[
-            Compose.Context.Bindings()[Compose.Binding(id: "jump-key", actionId: "jump", control: InputControl.ForKey(Key.J))]];
-        ActionProfile defaults = Compose.Profile()[Compose.Profile.Contexts()[common, game]].Build();
+        Compose.Definitions.Action jump = Compose.Action("jump", ActionValueKind.Button);
+        Compose.Definitions.Binding commonBinding = Compose.Binding(id: "common-jump", actionId: jump, control: InputControl.ForKey(Key.Space));
+        Compose.Definitions.Binding gameBinding = Compose.Binding(id: "jump-key", actionId: jump, control: InputControl.ForKey(Key.J));
+        Compose.Definitions.Recognition press = Compose.Recognition(id: "jump-press", kind: RecognitionKind.Press, actions: [jump], window: TimeSpan.FromSeconds(1));
+        Compose.Definitions.Context game = Compose.Context(id: "game")[Compose.Context.Bindings()[gameBinding]];
+        Compose.Definitions.Context common = Compose.Context(id: "common")[
+            Compose.Context.Actions()[jump],
+            Compose.Context.Bindings()[commonBinding],
+            Compose.Context.Recognitions()[press],
+            game];
+        ActionProfile defaults = Compose.Profile()[common].Build();
         services.Configure<InputActionSettings>(settings =>
         {
             InputActionSettings initial = InputSettingsConverter.ToSettings(defaults);
@@ -62,9 +66,9 @@ internal static class Program
         input.Recorded += records.Add;
         actions.Recognized += operation => Console.WriteLine($"recognized: {operation.RecognitionId}");
         coordinator.ApplyCommittedSettings();
-        actions.ActivateContext("game");
+        actions.ActivateContext(game);
         Tick();
-        RebindSession capture = actions.BeginRebind("jump-key", new RebindOptions(TimeSpan.FromSeconds(5)));
+        RebindSession capture = actions.BeginRebind(gameBinding, new RebindOptions(TimeSpan.FromSeconds(5)));
         backend.Send(new KeyData(Key.J, true, false));
         Tick();
         if (capture.Candidate is null)
@@ -81,7 +85,7 @@ internal static class Program
         Tick();
         backend.Send(new KeyData(Key.J, true, false));
         Tick();
-        Console.WriteLine($"jump: {actions.GetState("game", "jump").Value}, buffered: {actions.Buffer.TryConsume("game", "jump-press", input.ElapsedTime, out _)}");
+        Console.WriteLine($"jump: {actions.GetState(game, jump).Value}, buffered: {actions.Buffer.TryConsume(game, press, input.ElapsedTime, out _)}");
         void Tick()
         {
             records.Clear();

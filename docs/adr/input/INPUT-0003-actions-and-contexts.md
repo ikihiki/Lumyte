@@ -157,26 +157,36 @@ void Tick()
 
 ### Composition による宣言的定義
 
-Lumyte.Input.Actions.Compose は Lumyte.Composition の Composable、ComposeParameter、ComposeSlot を使う。生成器は Actions のビルド時だけ実行し、利用側には生成済みファクトリを公開する。
+Lumyte.Input.Actions.Compose は Lumyte.Composition の Composable、ComposeParameter、ComposeContent、ComposeSlot を使う。生成器は Actions のビルド時だけ実行し、利用側には生成済みファクトリを公開する。
 
 ```csharp
 using static Lumyte.Input.Actions.Compose;
 
-ActionProfile defaults = Profile()[Profile.Contexts()[
-    Context("common")[
-        Context.Actions()[Action("jump", ActionValueKind.Button)],
-        Context.Bindings()[Binding(id: "common-jump", actionId: "jump", control: InputControl.ForKey(Key.Space))],
-        Context.Recognitions()[Recognition(id: "jump-press", kind: RecognitionKind.Press,
-            actions: ["jump"], window: TimeSpan.FromSeconds(1))]],
-    Context("game", parentId: "common")[
-        Context.Bindings()[Binding(id: "jump-key", actionId: "jump", control: InputControl.ForKey(Key.J))]]]]
-    .Build();
+var jump = Action("jump", ActionValueKind.Button);
+var press = Recognition(id: "jump-press", kind: RecognitionKind.Press,
+    actions: [jump], window: TimeSpan.FromSeconds(1));
+var gameBinding = Binding(id: "jump-key", actionId: jump, control: InputControl.ForKey(Key.J));
+var game = Context(id: "game")[Context.Bindings()[gameBinding]];
+var common = Context(id: "common")[
+    Context.Actions()[jump],
+    Context.Bindings()[Binding(id: "common-jump", actionId: jump, control: InputControl.ForKey(Key.Space))],
+    Context.Recognitions()[press],
+    game];
+ActionProfile defaults = Profile()[common].Build();
 var actions = new ActionSystem(defaults);
-actions.ActivateContext("game");
+actions.ActivateContext(game);
+ActionState state = actions.GetState(game, jump);
+RebindSession capture = actions.BeginRebind(gameBinding, new RebindOptions(TimeSpan.FromSeconds(5)));
 // InputSystem は従来どおり Source を DI で受け取る。
 // 新規記録を Sequence 順に渡す。空バッチでも時間を進める。
 actions.Advance(records, input.ElapsedTime);
 ```
+
+Context の通常の子要素は Context とし、`Profile()[Context()[Context()]]` のようにネストできる。Actions・Bindings・Recognitions は名前付きスロットへ配置し、子 Context と同じインデクサー内に混在できる。包含 Context を親として単一継承するため、ParentId の再指定は不要。フラットな構成では Parent に定義オブジェクトを渡せる。包含関係と矛盾する親参照、同じノードの重複、循環、プロファイル外の参照を Build で拒否する。
+
+アクションとバインディングの参照、コンテキストの有効化、状態照会、リバインド、加工・認識の設定、入力バッファの消費には定義オブジェクトを渡す。ActionReference はアクション定義と従来の文字列を受け付ける。名前は宣言時だけ指定し、同名でもスコープ外のアクション定義を参照した場合は拒否する。文字列 API は設定 DTO や外部連携用として残す。
+
+Context の Id は省略可能で、Profile.Build はルートからの位置に基づく `@context/0`、`@context/0/0` などを割り当てる。匿名 Context の Identifier は成功した Build 後に取得できる。並べ替え・挿入で位置が変わるため、利用者設定を継続して保存する Context には `id:` を一度だけ明示する。保存 DTO は従来の文字列 ID と ParentId を持ち、同じ定義から保存設定を復元した実行システムにも定義オブジェクトの参照を使える。成功した Build の Identifier を保持し、ノードの Id 編集だけでは既存の実行プロファイルへの参照を変えない。失敗した Build は Identifier を更新しない。
 
 構築ノードは編集可能だが、Profile.Build は全定義を不変レコード・ImmutableArray に変換し、ActionProfile.Validate を実行する。スロットは渡された配列をコピーし、同じスロットの再指定は置換する。Build 後のノード編集は実行中プロファイルへ反映されない。変更は再 Build と ApplyProfile によって更新境界で適用する。
 
@@ -242,6 +252,14 @@ actions.Advance(records, input.ElapsedTime);
 +        void Reset();
 +    }
 +    public sealed record InputBufferOptions(TimeSpan Lifetime, int MaxEntries);
++    public readonly struct ActionReference
++    {
++        public ActionReference(Compose.Definitions.Action definition);
++        public ActionReference(string id);
++        public string Id { get; }
++        public static implicit operator ActionReference(Compose.Definitions.Action definition);
++        public static implicit operator ActionReference(string id);
++    }
 +    public sealed class ActionInputBuffer
 +    {
 +        public ActionInputBuffer(InputBufferOptions options);
@@ -252,6 +270,9 @@ actions.Advance(records, input.ElapsedTime);
 +        // 同じ RecognitionId を継承した親子を区別して消費する。
 +        public bool TryConsume(string contextId, string recognitionId, TimeSpan now,
 +            out RecognizedAction? action);
++        public bool TryConsume(Compose.Definitions.Recognition recognition, TimeSpan now, out RecognizedAction? action);
++        public bool TryConsume(Compose.Definitions.Context context, Compose.Definitions.Recognition recognition,
++            TimeSpan now, out RecognizedAction? action);
 +        public void Prune(TimeSpan now);
 +        public void Clear();
 +        public void ClearContext(string contextId);
@@ -265,6 +286,14 @@ actions.Advance(records, input.ElapsedTime);
 +        public event Action<ActionEvent>? Changed;
 +        public event Action<RecognizedAction>? Recognized;
 +        public void SetDevices(IEnumerable<InputDeviceId> devices);
++        public void ActivateContext(Compose.Definitions.Context context);
++        public void DeactivateContext(Compose.Definitions.Context context);
++        public ActionState GetState(Compose.Definitions.Action action);
++        public ActionState GetState(Compose.Definitions.Context context, Compose.Definitions.Action action);
++        public RebindSession BeginRebind(Compose.Definitions.Binding binding, RebindOptions options);
++        public void SetValueProcessors(Compose.Definitions.Context context, Compose.Definitions.Action action,
++            IEnumerable<IActionValueProcessor> processors);
++        public void SetRecognizers(Compose.Definitions.Context context, IEnumerable<IActionRecognizer> recognizers);
 +        public void ActivateContext(string contextId);
 +        public void DeactivateContext(string contextId);
 +        // パイプラインの置換は次の Advance 境界で適用する。
@@ -373,6 +402,7 @@ actions.Advance(records, input.ElapsedTime);
 +            public partial class Action
 +            {
 +                public Action();
++                public string Identifier { get; }
 +                public required string Id { get; set; }
 +                public required ActionValueKind Kind { get; set; }
 +                public float Sensitivity { get; set; } = 1;
@@ -382,9 +412,10 @@ actions.Advance(records, input.ElapsedTime);
 +            }
 +
 +            public delegate Binding BindingFactory(
-+                string actionId,
++                ActionReference actionId,
 +                InputControl control,
 +                string id,
++                Optional<Context?> context = default,
 +                Optional<string?> contextId = default,
 +                Optional<float> pressThreshold = default,
 +                Optional<float> releaseThreshold = default,
@@ -395,9 +426,11 @@ actions.Advance(records, input.ElapsedTime);
 +            public partial class Binding
 +            {
 +                public Binding();
++                public string Identifier { get; }
 +                public required string Id { get; set; }
-+                public required string ActionId { get; set; }
++                public required ActionReference ActionId { get; set; }
 +                // ネストした定義では包含 Context の ID。単独 Build では明示指定が必要。
++                public Context? Context { get; set; }
 +                public string? ContextId { get; set; }
 +                public required InputControl Control { get; set; }
 +                public Vector2 Scale { get; set; } = Vector2.One;
@@ -407,8 +440,9 @@ actions.Advance(records, input.ElapsedTime);
 +            }
 +
 +            public delegate Context ContextFactory(
-+                string id,
 +                Optional<bool> exclusive = default,
++                Optional<string?> id = default,
++                Optional<Context?> parent = default,
 +                Optional<string?> parentId = default,
 +                Optional<int> priority = default,
 +                IReadOnlyList<System.Action<Context>>? with = null);
@@ -417,20 +451,29 @@ actions.Advance(records, input.ElapsedTime);
 +            public partial class Context
 +            {
 +                public Context();
-+                public required string Id { get; set; }
++                public string Identifier { get; }
++                public string? Id { get; set; }
++                public Context? Parent { get; set; }
++                public IReadOnlyList<Context> Children { get; set; }
 +                public int Priority { get; set; } = 0;
 +                public bool Exclusive { get; set; } = false;
 +                public string? ParentId { get; set; }
 +                // コンテキスト内のアクション・バインディング・認識を適用する。
-+                public Context this[params CompositionSlotAssignment<Context>[] content] { get; }
++                public Context this[params CompositionChild[] content] { get; }
++                public readonly struct CompositionChild
++                {
++                    public static implicit operator CompositionChild(Context child);
++                    public static implicit operator CompositionChild(CompositionSlotAssignment<Context> slot);
++                }
 +                public InputContext Build();
 +            }
 +
 +            public delegate Recognition RecognitionFactory(
-+                ImmutableArray<string> actions,
++                ImmutableArray<ActionReference> actions,
 +                string id,
 +                RecognitionKind kind,
 +                TimeSpan window,
++                Optional<Context?> context = default,
 +                Optional<string?> contextId = default,
 +                Optional<int> tapCount = default,
 +                IReadOnlyList<System.Action<Recognition>>? with = null);
@@ -439,11 +482,13 @@ actions.Advance(records, input.ElapsedTime);
 +            public partial class Recognition
 +            {
 +                public Recognition();
++                public string Identifier { get; }
 +                public required string Id { get; set; }
 +                // ネストした定義では包含 Context の ID。単独 Build では明示指定が必要。
++                public Context? Context { get; set; }
 +                public string? ContextId { get; set; }
 +                public required RecognitionKind Kind { get; set; }
-+                public required ImmutableArray<string> Actions { get; set; }
++                public required ImmutableArray<ActionReference> Actions { get; set; }
 +                public required TimeSpan Window { get; set; }
 +                public int TapCount { get; set; } = 2;
 +                public RecognitionDefinition Build();
@@ -456,8 +501,14 @@ actions.Advance(records, input.ElapsedTime);
 +            public partial class Profile
 +            {
 +                public Profile();
++                public IReadOnlyList<Context> Children { get; set; }
 +                // 指定順にスロットを適用し、同じスロットの再指定は置換する。
-+                public Profile this[params CompositionSlotAssignment<Profile>[] content] { get; }
++                public Profile this[params CompositionChild[] content] { get; }
++                public readonly struct CompositionChild
++                {
++                    public static implicit operator CompositionChild(Context child);
++                    public static implicit operator CompositionChild(CompositionSlotAssignment<Profile> slot);
++                }
 +                // 不変レコードと配列を生成し、ActionProfile.Validate を実行する。
 +                public ActionProfile Build();
 +            }

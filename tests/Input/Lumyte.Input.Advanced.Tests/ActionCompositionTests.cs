@@ -15,7 +15,7 @@ public sealed class ActionCompositionTests
     {
         ActionProfile profile = Profile()[
             Profile.Actions()[Action("jump", ActionValueKind.Button)],
-            Profile.Contexts()[Context("game")],
+            Profile.Contexts()[Context(id: "game")],
             Profile.Bindings()[Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))],
             Profile.Recognitions()[Recognition(id: "jump-press", contextId: "game", kind: RecognitionKind.Press, actions: ["jump"], window: TimeSpan.FromSeconds(1))]].Build();
         var system = new ActionSystem(profile);
@@ -37,7 +37,7 @@ public sealed class ActionCompositionTests
     {
         Compose.Definitions.Action action = Action("move", ActionValueKind.Axis2D);
         Compose.Definitions.Action[] children = [action];
-        Compose.Definitions.Profile node = Profile()[Profile.Actions()[children], Profile.Contexts()[Context("game")]];
+        Compose.Definitions.Profile node = Profile()[Profile.Actions()[children], Profile.Contexts()[Context(id: "game")]];
         ActionProfile first = node.Build();
         children[0] = Action("replacement", ActionValueKind.Button);
         action.Sensitivity = 2;
