@@ -37,11 +37,13 @@ public static class SurfaceExercise
             Expect<InvalidOperationException>(owner.Dispose);
         }
 
+        Console.WriteLine("Surface: configured; drawing frames.");
         for (int i = 0; i < 3; i++)
         {
             await DrawFrameAsync(device, swapchain);
         }
 
+        Console.WriteLine("Surface: checking unsubmitted frames.");
         await CheckUnsubmittedFramesAsync(device, swapchain);
         SurfaceAcquireResult discarded = await swapchain.AcquireNextFrameAsync();
         Require(discarded.Frame != null, "Discard test could not acquire an image.");
@@ -85,7 +87,9 @@ public static class SurfaceExercise
 
     private static async Task DrawFrameAsync(IGraphicDevice device, IGraphicsSwapchain swapchain)
     {
+        Console.WriteLine("Surface: acquiring frame.");
         SurfaceAcquireResult acquired = await swapchain.AcquireNextFrameAsync();
+        Console.WriteLine($"Surface: acquisition {acquired.Status}.");
         Require(acquired.Status is SurfaceStatus.Success or SurfaceStatus.Suboptimal && acquired.Frame != null, "The supplied test target did not produce an image.");
         IGraphicsSurfaceFrame frame = acquired.Frame!;
         Require(frame.Status == SurfaceFrameStatus.Acquired, "New frame state is incorrect.");
@@ -100,45 +104,56 @@ public static class SurfaceExercise
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = checked(pitch * texture.Height), Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         IGraphicsTextureView view = texture.CreateView();
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-        var copy = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
-        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
-        IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(1, 0, 0, 1) }] });
-        render.End();
-        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = color, After = copy });
-        commands.CopyTextureToBuffer(new() { Texture = texture, Width = texture.Width, Height = texture.Height }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = texture.Height });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
-        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopySource, AfterState = TextureState.Present, Before = copy, After = default });
-        commands.Finish();
-        Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
-        using IGraphicsSubmission submission = device.Queue.Submit([commands], frame);
-        Require(frame.Status == SurfaceFrameStatus.Submitted, "Frame submission did not transfer image use.");
-        Expect<InvalidOperationException>(() => texture.CreateView());
-        Require(frame.Present() is SurfaceStatus.Success or SurfaceStatus.Suboptimal, "Presentation failed.");
-        Expect<InvalidOperationException>(() => frame.Present());
-        Require(frame.Status == SurfaceFrameStatus.Presented, "Presentation state was not recorded.");
-        await frame.WaitForReleaseAsync();
-        await submission.WaitAsync();
-        Expect<InvalidOperationException>(frame.Dispose);
-        await readback.MapAsync();
-        byte[] bytes = new byte[checked((int)readback.Count)];
-        readback.CopyTo(bytes);
-        readback.Unmap();
-        byte[] pixel = texture.Format == TextureFormat.Rgba8Unorm ? [255, 0, 0, 255] : [0, 0, 255, 255];
-        for (uint y = 0; y < texture.Height; y++)
+        try
         {
-            for (uint x = 0; x < texture.Width; x++)
+            var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
+            var copy = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
+            commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
+            IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(1, 0, 0, 1) }] });
+            render.End();
+            commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = color, After = copy });
+            commands.CopyTextureToBuffer(new() { Texture = texture, Width = texture.Width, Height = texture.Height }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = texture.Height });
+            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+            commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopySource, AfterState = TextureState.Present, Before = copy, After = default });
+            commands.Finish();
+            Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
+            Console.WriteLine("Surface: submitting frame.");
+            using IGraphicsSubmission submission = device.Queue.Submit([commands], frame);
+            Require(frame.Status == SurfaceFrameStatus.Submitted, "Frame submission did not transfer image use.");
+            Expect<InvalidOperationException>(() => texture.CreateView());
+            Require(frame.Present() is SurfaceStatus.Success or SurfaceStatus.Suboptimal, "Presentation failed.");
+            Expect<InvalidOperationException>(() => frame.Present());
+            Require(frame.Status == SurfaceFrameStatus.Presented, "Presentation state was not recorded.");
+            Console.WriteLine("Surface: presented; waiting for release.");
+            await frame.WaitForReleaseAsync();
+            await submission.WaitAsync();
+            Expect<InvalidOperationException>(frame.Dispose);
+            await readback.MapAsync();
+            byte[] bytes = new byte[checked((int)readback.Count)];
+            readback.CopyTo(bytes);
+            readback.Unmap();
+            byte[] pixel = texture.Format == TextureFormat.Rgba8Unorm ? [255, 0, 0, 255] : [0, 0, 255, 255];
+            for (uint y = 0; y < texture.Height; y++)
             {
-                Require(bytes.AsSpan(checked((int)((y * pitch) + (x * 4))), 4).SequenceEqual(pixel), "Presented image clear/readback changed a pixel.");
+                for (uint x = 0; x < texture.Width; x++)
+                {
+                    Require(bytes.AsSpan(checked((int)((y * pitch) + (x * 4))), 4).SequenceEqual(pixel), "Presented image clear/readback changed a pixel.");
+                }
             }
-        }
 
-        view.Dispose();
-        commands.Dispose();
-        frame.Dispose();
-        frame.Dispose();
-        Expect<ObjectDisposedException>(() => texture.CreateView());
-        Expect<ObjectDisposedException>(() => frame.Present());
+            Console.WriteLine("Surface: readback complete; releasing frame.");
+            view.Dispose();
+            commands.Dispose();
+            frame.Dispose();
+            frame.Dispose();
+            Expect<ObjectDisposedException>(() => texture.CreateView());
+            Expect<ObjectDisposedException>(() => frame.Present());
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(exception.ToString());
+            throw;
+        }
     }
 
     private static void Require(bool condition, string message)
