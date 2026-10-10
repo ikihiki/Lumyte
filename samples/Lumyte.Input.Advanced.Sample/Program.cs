@@ -18,12 +18,20 @@ internal static class Program
         var services = new ServiceCollection();
         services.AddSettings(source);
         services.AddInputSettings();
+
+        // Composition builds defaults once; persisted settings remain the source of runtime overrides.
+        ActionProfile defaults = Compose.Profile()[
+            Compose.Profile.Actions()[Compose.Action("jump", ActionValueKind.Button)],
+            Compose.Profile.Contexts()[Compose.Context("game")],
+            Compose.Profile.Bindings()[Compose.Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))],
+            Compose.Profile.Recognitions()[Compose.Recognition(id: "jump-press", contextId: "game", kind: RecognitionKind.Press, actions: ["jump"], window: TimeSpan.FromSeconds(1))]].Build();
         services.Configure<InputActionSettings>(settings =>
         {
-            settings.Actions.Add(new ActionSettings { Id = "jump" });
-            settings.Contexts.Add(new ContextSettings { Id = "game" });
-            settings.Bindings.Add(new BindingSettings { Id = "jump-key", ActionId = "jump", ContextId = "game", Control = "Space" });
-            settings.Recognitions.Add(new RecognitionSettings { Id = "jump-press", ContextId = "game", Actions = ["jump"] });
+            InputActionSettings initial = InputSettingsConverter.ToSettings(defaults);
+            settings.Actions = initial.Actions;
+            settings.Contexts = initial.Contexts;
+            settings.Bindings = initial.Bindings;
+            settings.Recognitions = initial.Recognitions;
         });
         services.AddSingleton<DemoSource>();
         services.AddSingleton<InputTimeSource>();

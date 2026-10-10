@@ -145,11 +145,39 @@ void Tick()
 
 [実行可能サンプル](../../../samples/Lumyte.Input.Advanced.Sample/Program.cs)は設定の登録・検証、候補保存、更新境界での適用、認識と一回限りの消費を実行する。
 
+### Composition による宣言的定義
+
+Lumyte.Input.Actions.Compose は Lumyte.Composition の Composable、ComposeParameter、ComposeSlot を使う。生成器は Actions のビルド時だけ実行し、利用側には生成済みファクトリを公開する。
+
+```csharp
+using static Lumyte.Input.Actions.Compose;
+
+ActionProfile defaults = Profile()[
+    Profile.Actions()[Action("jump", ActionValueKind.Button)],
+    Profile.Contexts()[Context("game")],
+    Profile.Bindings()[Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))],
+    Profile.Recognitions()[Recognition(id: "jump-press", contextId: "game", kind: RecognitionKind.Press,
+        actions: ["jump"], window: TimeSpan.FromSeconds(1))]
+].Build();
+var actions = new ActionSystem(defaults);
+actions.ActivateContext("game");
+// InputSystem は従来どおり Source を DI で受け取る。
+// 新規記録を Sequence 順に渡す。空バッチでも時間を進める。
+actions.Advance(records, input.ElapsedTime);
+```
+
+構築ノードは編集可能だが、Profile.Build は全定義を不変レコード・ImmutableArray に変換し、ActionProfile.Validate を実行する。スロットは渡された配列をコピーし、同じスロットの再指定は置換する。Build 後のノード編集は実行中プロファイルへ反映されない。変更は再 Build と ApplyProfile によって更新境界で適用する。
+
+設定保存との統合では InputSettingsConverter.ToSettings(defaults) を既定値として登録し、起動時は保存済み設定から BuildProfile して ActionSystem に注入する。保存済みのリバインドを毎回既定値で上書きしない。Composition ノードやデリゲートは保存せず、既存の設定 DTO を保存する。[実行可能サンプル](../../../samples/Lumyte.Input.Advanced.Sample/Program.cs)もこの構成を使う。
+
 ### 公開 API 一覧
 
-主要 API を差分形式で示す。定義のコレクションは ImmutableArray、イベントの Devices も ImmutableArray とする。
+主要 API を差分形式で示す。定義のコレクションは ImmutableArray、イベントの Devices も ImmutableArray とする。Composition ファクトリの `?` は `Optional<T>` で省略できる引数を示す。生成器は必須引数を先に、各グループを名前順に並べるため、利用例では名前付き引数で指定する。
 
 ```diff
+--- /dev/null
++++ b/INPUT-0003-actions-and-contexts-public-api.txt
+@@ -0,0 +1,67 @@
 +ActionProfile(Actions, Bindings, Contexts, Recognitions)
 +ActionProfile.Validate()
 +ActionDefinition(Id, Kind, Sensitivity = 1,
@@ -203,6 +231,20 @@ void Tick()
 +InputSettingsConverter.BuildProfile(InputActionSettings settings)
 +InputSettingsConverter.ToSettings(ActionProfile profile,
 +    InputBufferOptions? bufferOptions = null)
++Compose.Profile(with?) : Compose.Definitions.Profile
++Compose.Action(id, kind, normalize?, sensitivity?, smoothingSeconds?, with?)
++Compose.Binding(actionId, contextId, control, id, pressThreshold?, releaseThreshold?, scale?, with?)
++Compose.Context(id, exclusive?, priority?, with?)
++Compose.Recognition(actions, contextId, id, kind, window, tapCount?, with?)
++Compose.Profile.Actions()[params Compose.Definitions.Action[]]
++Compose.Profile.Bindings()[params Compose.Definitions.Binding[]]
++Compose.Profile.Contexts()[params Compose.Definitions.Context[]]
++Compose.Profile.Recognitions()[params Compose.Definitions.Recognition[]]
++Compose.Definitions.Profile.Build() : ActionProfile
++Compose.Definitions.Action.Build() : ActionDefinition
++Compose.Definitions.Binding.Build() : ActionBinding
++Compose.Definitions.Context.Build() : InputContext
++Compose.Definitions.Recognition.Build() : RecognitionDefinition
 ```
 
 ## 検討した代替案

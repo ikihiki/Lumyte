@@ -131,6 +131,9 @@ var saved = await editable.SaveAsync(edit, cancellationToken);
 主要な追加 API を差分形式で示す。既存 InputSystem の API は ElapsedTime を除いて維持する。
 
 ```diff
+--- /dev/null
++++ b/INPUT-0002-processing-and-recognition-public-api.txt
+@@ -0,0 +1,29 @@
 +InputSystem.ElapsedTime : TimeSpan
 +InputTimeSource.GetElapsedTime() : TimeSpan
 +InputTimeSource.Attach(InputSystem system)

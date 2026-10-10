@@ -22,3 +22,20 @@ and `Lumyte.Input.Settings` provides save-before-apply integration.
 
 See [the ADR](../../../docs/adr/input/INPUT-0003-actions-and-contexts.md)
 and [the runnable sample](../../../samples/Lumyte.Input.Advanced.Sample/README.md).
+
+Declarative definitions use the generated Composition factories:
+
+```csharp
+using static Lumyte.Input.Actions.Compose;
+
+ActionProfile profile = Profile()[
+    Profile.Actions()[Action("jump", ActionValueKind.Button)],
+    Profile.Contexts()[Context("game")],
+    Profile.Bindings()[Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))]
+].Build();
+```
+
+`Build()` validates and snapshots mutable construction nodes. Later edits require
+another `Build()` and `ApplyProfile()`. Save the resulting profile through
+`InputSettingsConverter.ToSettings`; register it as defaults so persisted user
+bindings take precedence. Consumers do not need to install the generator.
