@@ -6,6 +6,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
+- [汎用数学計算](src/Core/Lumyte.Mathematics/README.md)
 - [設定管理](src/Core/Lumyte.Settings/README.md)／[設定管理の設計](docs/adr/settings/SETTINGS-0001-user-settings-persistence.md)
 - [DI で通信方式を選択するゲームエンジン診断システム](docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
 - [診断基盤の API と利用方法](src/Diagnostics/Lumyte.Diagnostics/README.md)
@@ -29,6 +30,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [アニメーションシステムの設計](docs/adr/animation/ANIMATION-0001-animation-system.md)
 - [汎用状態機械の設計](docs/adr/core/CORE-0001-state-machine.md)／[利用例](samples/Lumyte.StateMachines.Sample/README.md)
 - [アニメーション状態機械の構築とイベント時刻](docs/adr/animation/ANIMATION-0003-animation-execution-and-event-time.md)／[利用例](samples/Lumyte.Animation.StateMachine.Sample/README.md)
+- [形式に依存しない補間・値ソースの合成](docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)
 - [アニメーションの利用例](samples/Lumyte.Animation.Sample/README.md)
 
 ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`

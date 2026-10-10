@@ -6,7 +6,9 @@ namespace Lumyte.Animation;
 /// <typeparam name="T">The value type.</typeparam>
 public sealed class AnimationCurve<T> : IAnimationSource<T>
 {
-    private readonly AnimationKey<T>[] _keys;
+    private readonly Key[] _keys;
+
+    private readonly Segment[]? _segments;
 
     private readonly IAnimationInterpolator<T> _interpolator;
 
@@ -24,9 +26,13 @@ public sealed class AnimationCurve<T> : IAnimationSource<T>
             throw new ArgumentException("A curve needs a key.", nameof(keys));
         }
 
-        _keys = [.. keys];
+        AnimationKey<T>[] snapshot = [.. keys];
+        _keys = new Key[snapshot.Length];
+        bool hasSegments = false;
         for (int i = 0; i < _keys.Length; i++)
         {
+            _keys[i] = new Key(snapshot[i].Time, snapshot[i].Value);
+            hasSegments |= i < snapshot.Length - 1 && (snapshot[i].Hold || snapshot[i].Interpolator is not null || snapshot[i].Timing is not null);
             ArgumentOutOfRangeException.ThrowIfNegative(_keys[i].Time.Ticks, nameof(keys));
             ArgumentOutOfRangeException.ThrowIfGreaterThan(_keys[i].Time.Ticks, duration.Ticks, nameof(keys));
             if (i > 0 && _keys[i].Time <= _keys[i - 1].Time)
@@ -35,6 +41,15 @@ public sealed class AnimationCurve<T> : IAnimationSource<T>
             }
 
             AnimationInterpolators.Validate(_keys[i].Value);
+        }
+
+        if (hasSegments)
+        {
+            _segments = new Segment[snapshot.Length - 1];
+            for (int index = 0; index < _segments.Length; index++)
+            {
+                _segments[index] = new Segment(snapshot[index].Hold, snapshot[index].Interpolator, snapshot[index].Timing);
+            }
         }
 
         _interpolator = interpolator;
@@ -76,14 +91,35 @@ public sealed class AnimationCurve<T> : IAnimationSource<T>
             }
         }
 
-        AnimationKey<T> a = _keys[low - 1];
-        AnimationKey<T> b = _keys[low];
+        ref readonly Key a = ref _keys[low - 1];
+        ref readonly Key b = ref _keys[low];
         if (time == a.Time)
         {
             return a.Value;
         }
 
         float t = AnimationInterpolators.GetInteriorAmount(time.Ticks - a.Time.Ticks, b.Time.Ticks - a.Time.Ticks);
-        return _interpolator.Interpolate(a.Value, b.Value, t);
+        if (_segments is null)
+        {
+            return _interpolator.Interpolate(a.Value, b.Value, t);
+        }
+
+        ref readonly Segment segment = ref _segments[low - 1];
+        if (segment.Hold)
+        {
+            return a.Value;
+        }
+
+        T result = (segment.Interpolator ?? _interpolator).Interpolate(a.Value, b.Value, AnimationTimings.Apply(segment.Timing, t));
+        if (!AnimationInterpolators.IsValid(result))
+        {
+            throw new InvalidOperationException("Segment interpolation produced a non-finite value or an unnormalized rotation.");
+        }
+
+        return result;
     }
+
+    private readonly record struct Key(Duration Time, T Value);
+
+    private readonly record struct Segment(bool Hold, IAnimationInterpolator<T>? Interpolator, IAnimationTiming? Timing);
 }

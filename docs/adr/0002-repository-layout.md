@@ -34,7 +34,8 @@ Lumyte/
 │       └── platform/
 ├── src/
 │   ├── Core/
-│   │   └── Lumyte.Core/
+│   │   ├── Lumyte.Core/
+│   │   └── Lumyte.Mathematics/
 │   ├── Diagnostics/
 │   │   ├── Lumyte.Diagnostics/
 │   │   ├── Lumyte.Diagnostics.Generators/
@@ -82,7 +83,7 @@ Lumyte/
 | `docs/adr/` | リポジトリ全体の運用・構成の ADR。直下でプレフィックスなしの連番を採番する |
 | `docs/adr/<category>/` | カテゴリごとの設計判断、採用理由、影響の記録。カテゴリ内で独立して採番する |
 | `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
-| `src/Core/` | 基本型と基盤機能 |
+| `src/Core/` | 基本型と基盤機能。Lumyte.Mathematicsは時計やアニメーションに依存しない数値計算 |
 | `src/Diagnostics/` | 診断の実行・収集基盤、コード生成、共通通信、DI で選ぶ通信アダプター、診断サーバー |
 | `src/Engine/` | エンジン機能の統合 |
 | `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |

@@ -36,3 +36,29 @@ Output とイベントの格納先は再利用し、更新前に消費側がク�
 状態機械の Composition ノードは `definition.Build(clock, context)`、Builder は `builder.Build(clock, initialState, context)` で開始済みの実行者を返します。子の Timeline と汎用制御を一度だけまとめて構築するため、子ごとの Build や追加の Start は不要です。
 
 構築と開始を分ける場合は `new AnimationStateMachine<TState, TContext>(clock, definition)` で停止中の実行者を作り、`Start(context)` で初期入場と再生を開始します。状態マーカーの `OccurredAt` と遷移の `ObservedAt` は同じ時計上の絶対時点なので、消費側で時系列に並べられます。異なる時計の時点は比較しないでください。[構築とイベント時刻の設計](../../../docs/adr/animation/ANIMATION-0003-animation-execution-and-event-time.md)と[実行可能な例](../../../samples/Lumyte.Animation.StateMachine.Sample/README.md)を参照してください。
+
+区間ごとの Hold、時間ベジェ、空間ベジェ、秒単位の接線付き Hermite、時間再マッピングと二入力ブレンドも値ソースとして使用できます。これらはフォーマットに依存せず、読み込みと描画・ボーンへの適用は利用側が担当します。Lottie／Rive 等の完全な再生対応を意味するものではありません。
+
+```csharp
+var duration = Duration.FromSeconds(2);
+var channel = AnimationChannel<float>.Create();
+var curve = Curve<float>(duration, AnimationInterpolators.Float)[
+    new AnimationKey<float>(Duration.Zero, 0)
+    {
+        Timing = AnimationTimings.CubicBezier(0.42, 0, 0.58, 1),
+    },
+    new AnimationKey<float>(duration, 100)];
+var time = Curve<Duration>(duration, AnimationInterpolators.Duration)[
+    new AnimationKey<Duration>(Duration.Zero, duration),
+    new AnimationKey<Duration>(duration, Duration.Zero)];
+var timeline = Timeline()[SourceTrack<float>(channel,
+    TimeRemap<float>(value: curve, timeMap: time))].Build();
+```
+
+子の Curve／TimeRemap／Blend ごとの Build は不要です。単独の値計算を使う場合は Source 定義の Build から `IAnimationSource<T>` を得られます。時間ベジェは x を逆算し、y のオーバーシュートを維持します。離散値にはキーの `Hold = true` を使用してください。時間写像の範囲外や不正な重みは評価時に拒否します。キー配列はコピーしますが、独自ソース・補間器や参照型の値は利用側で不変に保ってください。
+
+[API 差分と契約・合成例](../../../docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)を参照してください。
+
+汎用のベジェ・Hermite・Quaternion・イージング計算は依存パッケージ[Lumyte.Mathematics](../../Core/Lumyte.Mathematics/README.md)が提供します。AnimationはDurationやキーを扱うアダプターです。
+
+同じSource定義を共有する場合、Build内で構築結果を再利用します。共有グラフのSampleでは同じ子・同じ局所時刻の値を一回の評価内で再利用し、時間写像による異なる時刻の呼び出しを区別します。作業領域は評価間でクリアし、並行・再入評価には別の領域を使います。
