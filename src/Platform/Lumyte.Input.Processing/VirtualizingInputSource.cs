@@ -34,7 +34,7 @@ public sealed class VirtualizingInputSource(IInputSource inner, Func<InputDevice
     /// <summary>Prepares the next device input batch.</summary>
     public void Update()
     {
-        var errors = new List<Exception>();
+        List<Exception>? errors = null;
         if (_pending is not null)
         {
             foreach (KeyValuePair<InputDeviceId, IVirtualDeviceGenerator> item in _pending.ToArray())
@@ -45,19 +45,21 @@ public sealed class VirtualizingInputSource(IInputSource inner, Func<InputDevice
                     continue;
                 }
 
-                Capture(
-                    () =>
+                try
+                {
+                    pair.Generator.Reset(item.Key, _getTime());
+                    pair.Virtual.Enqueue(new InputData[] { new FocusData(false) });
+                    pair.Virtual.Enqueue(item.Value.Generate(item.Key, new InputData[] { new FocusData(pair.Focused) }, _getTime()));
+                    _pairs[item.Key] = pair with
                     {
-                        pair.Generator.Reset(item.Key, _getTime());
-                        pair.Virtual.Enqueue(new InputData[] { new FocusData(false) });
-                        pair.Virtual.Enqueue(item.Value.Generate(item.Key, new InputData[] { new FocusData(pair.Focused) }, _getTime()));
-                        _pairs[item.Key] = pair with
-                        {
-                            Generator = item.Value,
-                        };
-                        _pending.Remove(item.Key);
-                    },
-                    errors);
+                        Generator = item.Value,
+                    };
+                    _pending.Remove(item.Key);
+                }
+                catch (Exception exception)
+                {
+                    (errors ??= new List<Exception>()).Add(exception);
+                }
             }
 
             if (_pending.Count == 0)
@@ -66,25 +68,33 @@ public sealed class VirtualizingInputSource(IInputSource inner, Func<InputDevice
             }
         }
 
-        Capture(_inner.Update, errors);
-        foreach (KeyValuePair<InputDeviceId, Pair> item in _pairs)
+        try
         {
-            Capture(() => Acquire(item.Key, item.Value), errors);
+            _inner.Update();
+        }
+        catch (Exception exception)
+        {
+            (errors ??= new List<Exception>()).Add(exception);
         }
 
+        AcquireAll(ref errors);
         ThrowErrors(errors);
     }
 
     /// <summary>Stops the borrowed source without taking its device ownership.</summary>
     public void Shutdown()
     {
-        var errors = new List<Exception>();
-        Capture(_inner.Shutdown, errors);
-        foreach (KeyValuePair<InputDeviceId, Pair> item in _pairs)
+        List<Exception>? errors = null;
+        try
         {
-            Capture(() => Acquire(item.Key, item.Value), errors);
+            _inner.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            (errors ??= new List<Exception>()).Add(exception);
         }
 
+        AcquireAll(ref errors);
         ThrowErrors(errors);
     }
 
@@ -127,44 +137,78 @@ public sealed class VirtualizingInputSource(IInputSource inner, Func<InputDevice
     public void UnregisterDevice(InputDeviceId device)
     {
         IInputDeviceRegistry registry = _registry ?? throw new InvalidOperationException("Source is not initialized.");
-        var errors = new List<Exception>();
+        List<Exception>? errors = null;
         if (_pairs.Remove(device, out Pair? pair))
         {
-            Capture(() => Acquire(device, pair), errors);
-            Capture(() => pair.Generator.Reset(device, _getTime()), errors);
-            Capture(() => registry.UnregisterDevice(pair.VirtualId), errors);
+            try
+            {
+                Acquire(device, pair);
+            }
+            catch (Exception exception)
+            {
+                (errors ??= new List<Exception>()).Add(exception);
+            }
+
+            try
+            {
+                pair.Generator.Reset(device, _getTime());
+            }
+            catch (Exception exception)
+            {
+                (errors ??= new List<Exception>()).Add(exception);
+            }
+
+            Unregister(registry, pair.VirtualId, ref errors);
         }
 
-        Capture(() => registry.UnregisterDevice(device), errors);
+        Unregister(registry, device, ref errors);
         ThrowErrors(errors);
     }
 
-    private static void Capture(Action action, List<Exception> errors)
+    private static void Unregister(IInputDeviceRegistry registry, InputDeviceId device, ref List<Exception>? errors)
     {
         try
         {
-            action();
+            registry.UnregisterDevice(device);
         }
         catch (Exception exception)
         {
-            errors.Add(exception);
+            (errors ??= new List<Exception>()).Add(exception);
         }
     }
 
-    private static void ThrowErrors(List<Exception> errors)
+    private static void ThrowErrors(List<Exception>? errors)
     {
-        if (errors.Count != 0)
+        if (errors is not null)
         {
             throw new AggregateException("Virtual input processing completed with errors.", errors);
+        }
+    }
+
+    private void AcquireAll(ref List<Exception>? errors)
+    {
+        foreach (KeyValuePair<InputDeviceId, Pair> item in _pairs)
+        {
+            try
+            {
+                Acquire(item.Key, item.Value);
+            }
+            catch (Exception exception)
+            {
+                (errors ??= new List<Exception>()).Add(exception);
+            }
         }
     }
 
     private void Acquire(InputDeviceId id, Pair pair)
     {
         IReadOnlyList<InputData> data = pair.Raw.DrainEvents();
-        foreach (FocusData focus in data.OfType<FocusData>())
+        for (int i = 0; i < data.Count; i++)
         {
-            pair.Focused = focus.IsFocused;
+            if (data[i] is FocusData focus)
+            {
+                pair.Focused = focus.IsFocused;
+            }
         }
 
         pair.Physical.Enqueue(data);

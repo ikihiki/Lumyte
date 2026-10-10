@@ -33,29 +33,33 @@ public sealed class TouchControllerGenerator : IVirtualDeviceGenerator
     /// <returns>The result of the operation.</returns>
     public IReadOnlyList<InputData> Generate(InputDeviceId origin, IReadOnlyList<InputData> data, TimeSpan now)
     {
-        var result = new List<InputData>();
-        foreach (InputData item in data)
+        List<InputData>? result = null;
+        for (int i = 0; i < data.Count; i++)
         {
+            InputData item = data[i];
             if (item is FocusData { IsFocused: false } or DeviceDisconnectedData)
             {
                 Reset(origin, now);
                 _focused = false;
+                result ??= new List<InputData>();
                 result.Add(new FocusData(false));
             }
             else if (item is FocusData focus)
             {
                 _focused = focus.IsFocused;
+                result ??= new List<InputData>();
                 result.Add(focus);
             }
             else if (_focused && item is TouchData touch)
             {
+                result ??= new List<InputData>();
                 if (touch.Phase == TouchPhase.Began)
                 {
                     _contacts[touch.ContactId] = new Contact(touch.Position, touch.Position);
                     _distance = null;
                     _angle = null;
                 }
-                else if (_contacts.TryGetValue(touch.ContactId, out Contact? contact))
+                else if (_contacts.TryGetValue(touch.ContactId, out Contact contact))
                 {
                     if (touch.Phase is TouchPhase.Ended or TouchPhase.Canceled)
                     {
@@ -78,13 +82,25 @@ public sealed class TouchControllerGenerator : IVirtualDeviceGenerator
                     }
                 }
 
-                Vector2 stick = _contacts.Count == 1 ? (_contacts.Values.First().Current - _contacts.Values.First().Start) / _radius : Vector2.Zero;
+                Vector2 stick = Vector2.Zero;
+                if (_contacts.Count == 1)
+                {
+                    foreach (Contact active in _contacts.Values)
+                    {
+                        stick = (active.Current - active.Start) / _radius;
+                        break;
+                    }
+                }
+
                 result.Add(new ControllerStickData(ControllerStick.Left, stick.LengthSquared() > 1 ? Vector2.Normalize(stick) : stick));
                 Vector2 gesture = Vector2.Zero;
                 if (_contacts.Count == 2)
                 {
-                    Contact[] pair = _contacts.Values.ToArray();
-                    Vector2 delta = pair[1].Current - pair[0].Current;
+                    using Dictionary<TouchContactId, Contact>.ValueCollection.Enumerator contacts = _contacts.Values.GetEnumerator();
+                    contacts.MoveNext();
+                    Contact first = contacts.Current;
+                    contacts.MoveNext();
+                    Vector2 delta = contacts.Current.Current - first.Current;
                     float distance = delta.Length();
                     float angle = MathF.Atan2(delta.Y, delta.X);
                     _distance ??= distance;
@@ -97,7 +113,7 @@ public sealed class TouchControllerGenerator : IVirtualDeviceGenerator
             }
         }
 
-        return result;
+        return result is null ? Array.Empty<InputData>() : result;
     }
 
     /// <summary>Discards transient recognition or correction state.</summary>
@@ -110,5 +126,5 @@ public sealed class TouchControllerGenerator : IVirtualDeviceGenerator
         _angle = null;
     }
 
-    private sealed record Contact(Vector2 Start, Vector2 Current);
+    private readonly record struct Contact(Vector2 Start, Vector2 Current);
 }

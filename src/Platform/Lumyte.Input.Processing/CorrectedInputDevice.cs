@@ -13,10 +13,11 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
     private readonly HashSet<TouchContactId> _blockedTouches = new();
     private readonly HashSet<PenPointerId> _pens = new();
     private readonly HashSet<PenPointerId> _blockedPens = new();
-    private readonly List<InputData> _completed = new();
+    private readonly List<IReadOnlyList<InputData>> _completed = new();
+    private readonly PendingBatch _batch = new();
     private IDeviceDataProcessor[] _processors = processors.ToArray();
     private IDeviceDataProcessor[]? _pending;
-    private PendingBatch? _batch;
+    private bool _hasBatch;
     private bool _disposed;
     private bool _focused;
 
@@ -32,7 +33,7 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
     public IReadOnlyList<InputData> DrainEvents()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        bool retrying = _batch is not null;
+        bool retrying = _hasBatch;
         if (!retrying)
         {
             AcquireBatch();
@@ -46,7 +47,7 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
             CompleteBatch();
         }
 
-        InputData[] result = _completed.ToArray();
+        IReadOnlyList<InputData> result = CombineCompleted();
         _completed.Clear();
         return result;
     }
@@ -73,7 +74,8 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
             }
         }
 
-        _batch = null;
+        _hasBatch = false;
+        _batch.Release();
         _completed.Clear();
         try
         {
@@ -90,16 +92,85 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
         }
     }
 
+    private static bool ContainsInterruption(IReadOnlyList<InputData> data)
+    {
+        for (int i = 0; i < data.Count; i++)
+        {
+            if (data[i] is FocusData { IsFocused: false } or DeviceDisconnectedData)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private IReadOnlyList<InputData> CombineCompleted()
+    {
+        if (_completed.Count == 0)
+        {
+            return Array.Empty<InputData>();
+        }
+
+        if (_completed.Count == 1)
+        {
+            return _completed[0];
+        }
+
+        int count = 0;
+        foreach (IReadOnlyList<InputData> data in _completed)
+        {
+            count = checked(count + data.Count);
+        }
+
+        var result = new InputData[count];
+        int offset = 0;
+        foreach (IReadOnlyList<InputData> data in _completed)
+        {
+            for (int i = 0; i < data.Count; i++)
+            {
+                result[offset++] = data[i];
+            }
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<InputData> TrackBatch(IReadOnlyList<InputData> data)
+    {
+        List<InputData>? filtered = null;
+        for (int i = 0; i < data.Count; i++)
+        {
+            InputData item = data[i];
+            if (Track(item))
+            {
+                filtered?.Add(item);
+            }
+            else if (filtered is null)
+            {
+                filtered = new List<InputData>(data.Count - 1);
+                for (int previous = 0; previous < i; previous++)
+                {
+                    filtered.Add(data[previous]);
+                }
+            }
+        }
+
+        return filtered is null ? data : filtered;
+    }
+
     private void AcquireBatch()
     {
         TimeSpan now = _getTime();
-        _batch = new PendingBatch(_inner.DrainEvents(), now, _pending);
+        IReadOnlyList<InputData> data = _inner.DrainEvents();
+        _batch.Begin(data, now, _pending);
         _pending = null;
+        _hasBatch = true;
     }
 
     private void CompleteBatch()
     {
-        PendingBatch batch = _batch!;
+        PendingBatch batch = _batch;
         if (!batch.Prepared)
         {
             if (batch.Replacement is not null)
@@ -121,7 +192,7 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
                 batch.Data = boundary.Concat(batch.Data).ToArray();
             }
 
-            batch.Data = batch.Data.Where(Track).ToArray();
+            batch.Data = TrackBatch(batch.Data);
             batch.Prepared = true;
         }
 
@@ -130,7 +201,7 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
             IDeviceDataProcessor processor = _processors[batch.ProcessorIndex];
             if (!batch.ProcessorReset)
             {
-                if (batch.Data.Any(item => item is FocusData { IsFocused: false } or DeviceDisconnectedData))
+                if (ContainsInterruption(batch.Data))
                 {
                     processor.Reset();
                 }
@@ -144,8 +215,13 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
         }
 
         // Keep completed output until every acquisition and processing step in this drain succeeds.
-        _completed.AddRange(batch.Data);
-        _batch = null;
+        if (batch.Data.Count != 0)
+        {
+            _completed.Add(batch.Data);
+        }
+
+        _hasBatch = false;
+        batch.Release();
     }
 
     private bool Track(InputData data)
@@ -204,13 +280,13 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
         return true;
     }
 
-    private sealed class PendingBatch(IReadOnlyList<InputData> data, TimeSpan at, IDeviceDataProcessor[]? replacement)
+    private sealed class PendingBatch
     {
-        public IReadOnlyList<InputData> Data { get; set; } = data;
+        public IReadOnlyList<InputData> Data { get; set; } = Array.Empty<InputData>();
 
-        public TimeSpan At { get; } = at;
+        public TimeSpan At { get; private set; }
 
-        public IDeviceDataProcessor[]? Replacement { get; } = replacement;
+        public IDeviceDataProcessor[]? Replacement { get; private set; }
 
         public int ResetIndex { get; set; }
 
@@ -219,5 +295,22 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
         public bool Prepared { get; set; }
 
         public bool ProcessorReset { get; set; }
+
+        public void Begin(IReadOnlyList<InputData> data, TimeSpan at, IDeviceDataProcessor[]? replacement)
+        {
+            Data = data;
+            At = at;
+            Replacement = replacement;
+            ResetIndex = 0;
+            ProcessorIndex = 0;
+            Prepared = false;
+            ProcessorReset = false;
+        }
+
+        public void Release()
+        {
+            Data = Array.Empty<InputData>();
+            Replacement = null;
+        }
     }
 }

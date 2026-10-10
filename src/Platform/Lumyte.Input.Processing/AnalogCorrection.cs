@@ -26,20 +26,55 @@ public sealed class AnalogCorrection : IDeviceDataProcessor
     }
 
     /// <summary>Corrects a normalized input batch.</summary>
-    /// <param name = "data">The data value.</param>
+    /// <param name = "data">The immutable normalized input batch.</param>
     /// <param name = "now">The now value.</param>
     /// <returns>The result of the operation.</returns>
-    public IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now) => data.Select(item => item switch
+    public IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now)
     {
-        ControllerStickData stick => stick with { Value = Correct(stick.Value) },
-        TouchData touch => touch with { Pressure = Pressure(touch.Pressure) },
-        PenData pen => pen with { Pressure = Pressure(pen.Pressure) },
-        _ => item,
-    }).ToArray();
+        InputData[]? result = null;
+        for (int i = 0; i < data.Count; i++)
+        {
+            InputData item = data[i];
+            InputData corrected = Correct(item);
+            if (result is null && !ReferenceEquals(item, corrected))
+            {
+                result = new InputData[data.Count];
+                for (int previous = 0; previous < i; previous++)
+                {
+                    result[previous] = data[previous];
+                }
+            }
+
+            if (result is not null)
+            {
+                result[i] = corrected;
+            }
+        }
+
+        return result is null ? data : result;
+    }
 
     /// <summary>Discards transient recognition or correction state.</summary>
     public void Reset()
     {
+    }
+
+    private InputData Correct(InputData data)
+    {
+        switch (data)
+        {
+            case ControllerStickData stick:
+                Vector2 value = Correct(stick.Value);
+                return value == stick.Value ? stick : stick with { Value = value };
+            case TouchData touch:
+                float? touchPressure = Pressure(touch.Pressure);
+                return touchPressure == touch.Pressure ? touch : touch with { Pressure = touchPressure };
+            case PenData pen:
+                float? penPressure = Pressure(pen.Pressure);
+                return penPressure == pen.Pressure ? pen : pen with { Pressure = penPressure };
+            default:
+                return data;
+        }
     }
 
     private Vector2 Correct(Vector2 value)
@@ -49,5 +84,14 @@ public sealed class AnalogCorrection : IDeviceDataProcessor
         return length <= _deadZone ? Vector2.Zero : value / length * Math.Clamp((length - _deadZone) / (1 - _deadZone), 0, 1);
     }
 
-    private float? Pressure(float? value) => value is float pressure ? MathF.Pow(Math.Clamp(pressure, 0, 1), _pressureExponent) : null;
+    private float? Pressure(float? value)
+    {
+        if (value is not float pressure)
+        {
+            return null;
+        }
+
+        pressure = Math.Clamp(pressure, 0, 1);
+        return _pressureExponent == 1 ? pressure : MathF.Pow(pressure, _pressureExponent);
+    }
 }

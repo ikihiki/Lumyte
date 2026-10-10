@@ -25,7 +25,7 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
     }
 
     /// <summary>Smooths stick samples and resets on focus loss.</summary>
-    /// <param name="data">The input batch.</param>
+    /// <param name="data">The immutable input batch.</param>
     /// <param name="now">Monotonic sampling time.</param>
     /// <returns>The corrected batch.</returns>
     public IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now)
@@ -39,10 +39,12 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
         _times.AsSpan().CopyTo(times);
         _initialized.AsSpan().CopyTo(initialized);
         bool focused = _focused;
-        var result = new List<InputData>(data.Count + 2);
+        List<InputData>? result = null;
         Span<bool> sampled = stackalloc bool[2];
-        foreach (InputData item in data)
+        for (int i = 0; i < data.Count; i++)
         {
+            InputData item = data[i];
+            InputData output = item;
             if (item is FocusData { IsFocused: false } or DeviceDisconnectedData)
             {
                 initialized.Clear();
@@ -78,12 +80,14 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
                 values[index] = Vector2.Lerp(values[index], stick.Value, amount);
                 times[index] = now;
                 initialized[index] = true;
-                result.Add(stick with { Value = values[index] });
+                if (values[index] != stick.Value)
+                {
+                    output = stick with { Value = values[index] };
+                    result ??= CopyPrefix(data, i);
+                }
             }
-            else
-            {
-                result.Add(item);
-            }
+
+            result?.Add(output);
         }
 
         for (int index = 0; index < 2; index++)
@@ -102,6 +106,7 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
             {
                 float amount = 1 - MathF.Exp(-(float)(now - times[index]).TotalSeconds / _seconds);
                 values[index] = Vector2.Lerp(values[index], targets[index], amount);
+                result ??= CopyPrefix(data, data.Count);
                 result.Add(new ControllerStickData((ControllerStick)index, values[index]));
             }
 
@@ -113,9 +118,20 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
         times.CopyTo(_times);
         initialized.CopyTo(_initialized);
         _focused = focused;
-        return result;
+        return result is null ? data : result;
     }
 
     /// <summary>Discards all smoothing history.</summary>
     public void Reset() => Array.Clear(_initialized);
+
+    private static List<InputData> CopyPrefix(IReadOnlyList<InputData> data, int count)
+    {
+        var result = new List<InputData>(data.Count + 2);
+        for (int i = 0; i < count; i++)
+        {
+            result.Add(data[i]);
+        }
+
+        return result;
+    }
 }

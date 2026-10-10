@@ -53,9 +53,14 @@ public sealed class ActionInputBuffer
     public bool TryConsume(string recognitionId, TimeSpan now, out RecognizedAction? action)
     {
         Prune(now);
-        int index = _entries.FindIndex(entry => entry.RecognitionId == recognitionId);
-        action = index < 0 ? null : _entries[index];
-        if (index < 0)
+        int index = 0;
+        while (index < _entries.Count && _entries[index].RecognitionId != recognitionId)
+        {
+            index++;
+        }
+
+        action = index == _entries.Count ? null : _entries[index];
+        if (action is null)
         {
             return false;
         }
@@ -74,7 +79,27 @@ public sealed class ActionInputBuffer
         }
 
         _now = now;
-        _entries.RemoveAll(entry => now - entry.At >= _options.Lifetime);
+        int retained = 0;
+        for (int index = 0; index < _entries.Count; index++)
+        {
+            RecognizedAction entry = _entries[index];
+            if (now - entry.At >= _options.Lifetime)
+            {
+                continue;
+            }
+
+            if (retained != index)
+            {
+                _entries[retained] = entry;
+            }
+
+            retained++;
+        }
+
+        if (retained != _entries.Count)
+        {
+            _entries.RemoveRange(retained, _entries.Count - retained);
+        }
     }
 
     /// <summary>Discards all buffered operations.</summary>

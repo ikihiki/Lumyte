@@ -410,10 +410,16 @@ public sealed class InputSystem : IDisposable
     {
         foreach (InputRecord record in notifications)
         {
-            Delegate[] handlers = Recorded?.GetInvocationList() ?? [];
-            foreach (Action<InputRecord> handler in handlers.Cast<Action<InputRecord>>())
+            foreach (Action<InputRecord> handler in Delegate.EnumerateInvocationList(Recorded))
             {
-                Capture(() => handler(record), errors);
+                try
+                {
+                    handler(record);
+                }
+                catch (Exception exception)
+                {
+                    errors.Add(exception);
+                }
             }
         }
     }

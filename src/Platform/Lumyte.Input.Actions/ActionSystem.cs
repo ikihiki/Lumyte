@@ -8,6 +8,9 @@ public sealed class ActionSystem
 {
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private readonly Dictionary<(InputDeviceId Device, InputControl Control), Vector2> _controls = new();
+    private readonly Dictionary<InputControl, List<InputDeviceId>> _devicesByControl = new();
+    private readonly HashSet<InputControl> _claimedControls = new();
+    private readonly HashSet<InputDeviceId> _scratchContributors = new();
     private readonly HashSet<(string Context, InputDeviceId Device, InputControl Control)> _suppressed = new();
     private readonly Dictionary<string, long> _active = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Context, string Action), ActionState> _states = new();
@@ -24,12 +27,15 @@ public sealed class ActionSystem
     private readonly Dictionary<string, HashSet<InputDeviceId>> _recognizerDevices = new(StringComparer.Ordinal);
     private HashSet<InputDeviceId>? _devices;
     private ActionProfile _profile;
+    private ProfileIndex _profileIndex;
+    private InputContext[] _orderedContexts = [];
     private RebindSession? _rebind;
     private InputDeviceId? _rebindDevice;
     private ulong _sequence;
     private long _activation;
     private TimeSpan _now;
     private bool _advancing;
+    private bool _controlsChanged;
 
     /// <summary>Initializes a new instance of the <see cref = "ActionSystem"/> class.</summary>
     /// <param name = "profile">The profile value.</param>
@@ -38,6 +44,7 @@ public sealed class ActionSystem
     {
         profile.Validate();
         _profile = profile;
+        _profileIndex = new ProfileIndex(profile);
         Buffer = new ActionInputBuffer(bufferOptions ?? new InputBufferOptions(TimeSpan.FromMilliseconds(200), 32));
     }
 
@@ -113,10 +120,12 @@ public sealed class ActionSystem
     {
         Check();
         profile.Validate();
+        var index = new ProfileIndex(profile);
         _pending.Enqueue(() =>
         {
             CancelAll(_now);
             _profile = profile;
+            _profileIndex = index;
             if (_rebind is not null)
             {
                 _rebind.IsComplete = true;
@@ -127,6 +136,7 @@ public sealed class ActionSystem
                 _active.Remove(id);
             }
 
+            RefreshContextOrder();
             SuppressHeld();
         });
     }
@@ -159,6 +169,7 @@ public sealed class ActionSystem
         {
             CancelContext(contextId, _now);
             _active[contextId] = ++_activation;
+            RefreshContextOrder();
             SuppressHeld(contextId);
         });
     }
@@ -172,6 +183,7 @@ public sealed class ActionSystem
         {
             CancelContext(contextId, _now);
             _active.Remove(contextId);
+            RefreshContextOrder();
         });
     }
 
@@ -181,8 +193,22 @@ public sealed class ActionSystem
     public ActionState GetState(string actionId)
     {
         Check(true);
-        ActionDefinition definition = _profile.Actions.First(action => action.Id == actionId);
-        return _states.Where(pair => pair.Key.Action == actionId).Select(pair => pair.Value).OrderByDescending(state => state.Value.LengthSquared()).FirstOrDefault() ?? new ActionState(definition.Kind, Vector2.Zero);
+        if (actionId is null || !_profileIndex.NeutralStates.TryGetValue(actionId, out ActionState? strongest))
+        {
+            throw new InvalidOperationException("Unknown action.");
+        }
+
+        float strength = -1;
+        foreach (KeyValuePair<(string Context, string Action), ActionState> pair in _states)
+        {
+            if (pair.Key.Action == actionId && pair.Value.Value.LengthSquared() > strength)
+            {
+                strongest = pair.Value;
+                strength = pair.Value.Value.LengthSquared();
+            }
+        }
+
+        return strongest;
     }
 
     /// <summary>Begins capturing an eligible control for a binding.</summary>
@@ -275,11 +301,23 @@ public sealed class ActionSystem
                     continue;
                 }
 
-                _controls[key] = value;
+                if (_controls.TryAdd(key, value))
+                {
+                    _controlsChanged = true;
+                }
+                else
+                {
+                    _controls[key] = value;
+                }
+
                 bool blocked = _captureHeld.Contains(key);
                 if (value == Vector2.Zero)
                 {
-                    _suppressed.RemoveWhere(item => item.Device == key.Device && item.Control == key.Control);
+                    if (_suppressed.Count > 0)
+                    {
+                        ReleaseSuppressedControl(key.Device, key.Control);
+                    }
+
                     _captureHeld.Remove(key);
                 }
 
@@ -295,8 +333,13 @@ public sealed class ActionSystem
 
             Timers(now);
             Recompute(now);
-            foreach (KeyValuePair<string, IActionRecognizer[]> item in _recognizers.Where(item => _active.ContainsKey(item.Key)))
+            foreach (KeyValuePair<string, IActionRecognizer[]> item in _recognizers)
             {
+                if (!_active.ContainsKey(item.Key))
+                {
+                    continue;
+                }
+
                 ActionEvent[] scoped = _events.Skip(_recognizerEventStarts.GetValueOrDefault(item.Key)).Where(action => action.ContextId == item.Key).ToArray();
                 if (!_recognizerDevices.TryGetValue(item.Key, out HashSet<InputDeviceId>? devices))
                 {
@@ -320,9 +363,12 @@ public sealed class ActionSystem
             }
 
             _now = now;
-            foreach (RecognizedAction recognition in _recognized.OrderBy(action => action.At))
+            if (_recognized.Count > 0)
             {
-                Buffer.Add(recognition, now);
+                foreach (RecognizedAction recognition in _recognized.OrderBy(action => action.At))
+                {
+                    Buffer.Add(recognition, now);
+                }
             }
 
             Buffer.Prune(now);
@@ -385,14 +431,14 @@ public sealed class ActionSystem
         };
     }
 
-    private static void Dispatch<T>(Action<T>? handlers, T value, List<Exception> errors)
+    private static void Dispatch<T>(Action<T>? handlers, T value, ref List<Exception>? errors)
     {
         if (handlers is null)
         {
             return;
         }
 
-        foreach (Action<T> handler in handlers.GetInvocationList().Cast<Action<T>>())
+        foreach (Action<T> handler in Delegate.EnumerateInvocationList(handlers))
         {
             try
             {
@@ -400,7 +446,7 @@ public sealed class ActionSystem
             }
             catch (Exception exception)
             {
-                errors.Add(exception);
+                (errors ??= new List<Exception>()).Add(exception);
             }
         }
     }
@@ -431,35 +477,37 @@ public sealed class ActionSystem
 
     private void Recompute(TimeSpan now)
     {
-        var claimed = new HashSet<InputControl>();
-        foreach (InputContext context in _profile.Contexts.Where(context => _active.ContainsKey(context.Id)).OrderByDescending(context => context.Priority).ThenByDescending(context => _active[context.Id]))
+        RefreshControlIndex();
+        _claimedControls.Clear();
+        foreach (InputContext context in _orderedContexts)
         {
             foreach (ActionDefinition definition in _profile.Actions)
             {
                 (string, string) stateKey = (context.Id, definition.Id);
-                ActionState previous = _states.GetValueOrDefault(stateKey) ?? new ActionState(definition.Kind, Vector2.Zero);
+                ActionState neutral = _profileIndex.NeutralStates[definition.Id];
+                ActionState previous = _states.GetValueOrDefault(stateKey) ?? neutral;
                 Vector2 mapped = Vector2.Zero;
-                var contributors = new HashSet<InputDeviceId>();
-                foreach (ActionBinding binding in _profile.Bindings.Where(binding => binding.ContextId == context.Id && binding.ActionId == definition.Id).OrderBy(binding => binding.Id, StringComparer.Ordinal))
+                _scratchContributors.Clear();
+                foreach (ActionBinding binding in _profileIndex.BindingsByAction.GetValueOrDefault(stateKey, []))
                 {
-                    if (claimed.Contains(binding.Control) || _rebind is { IsComplete: false })
+                    if (_claimedControls.Contains(binding.Control) || _rebind is { IsComplete: false } || !_devicesByControl.TryGetValue(binding.Control, out List<InputDeviceId>? devices))
                     {
                         continue;
                     }
 
-                    foreach (KeyValuePair<(InputDeviceId Device, InputControl Control), Vector2> pair in _controls)
+                    foreach (InputDeviceId device in devices)
                     {
-                        if (pair.Key.Control != binding.Control || (_devices is not null && !_devices.Contains(pair.Key.Device)) || _suppressed.Contains((context.Id, pair.Key.Device, pair.Key.Control)))
+                        if ((_devices is not null && !_devices.Contains(device)) || _suppressed.Contains((context.Id, device, binding.Control)))
                         {
                             continue;
                         }
 
-                        Vector2 candidate = pair.Value;
+                        Vector2 candidate = _controls[(device, binding.Control)];
                         if (definition.Kind == ActionValueKind.Button)
                         {
                             float magnitude = candidate.Length();
-                            bool down = _bindingDown.GetValueOrDefault((binding.Id, pair.Key.Device)) ? magnitude > binding.ReleaseThreshold : magnitude >= binding.PressThreshold;
-                            _bindingDown[(binding.Id, pair.Key.Device)] = down;
+                            bool down = _bindingDown.GetValueOrDefault((binding.Id, device)) ? magnitude > binding.ReleaseThreshold : magnitude >= binding.PressThreshold;
+                            _bindingDown[(binding.Id, device)] = down;
                             candidate = down ? Vector2.UnitX : Vector2.Zero;
                         }
                         else if (binding.Control.Kind is InputControlKind.ControllerStick)
@@ -478,7 +526,7 @@ public sealed class ActionSystem
 
                         if (definition.Kind == ActionValueKind.Button && candidate != Vector2.Zero)
                         {
-                            contributors.Add(pair.Key.Device);
+                            _scratchContributors.Add(device);
                         }
 
                         if (candidate.LengthSquared() > mapped.LengthSquared())
@@ -486,8 +534,8 @@ public sealed class ActionSystem
                             mapped = candidate;
                             if (definition.Kind != ActionValueKind.Button)
                             {
-                                contributors.Clear();
-                                contributors.Add(pair.Key.Device);
+                                _scratchContributors.Clear();
+                                _scratchContributors.Add(device);
                             }
                         }
                     }
@@ -508,7 +556,7 @@ public sealed class ActionSystem
 
                 if (_processors.TryGetValue((context.Id, definition.Id), out IActionValueProcessor[]? processors))
                 {
-                    var processed = new ActionState(definition.Kind, mapped);
+                    ActionState processed = mapped == previous.Value ? previous : mapped == Vector2.Zero ? neutral : new ActionState(definition.Kind, mapped);
                     foreach (IActionValueProcessor processor in processors)
                     {
                         processed = processor.Process(processed, now);
@@ -528,37 +576,105 @@ public sealed class ActionSystem
                     ActionValueKind.Axis1D => new Vector2(mapped.X, 0),
                     _ => mapped,
                 };
-                _states[stateKey] = new ActionState(definition.Kind, mapped);
-                var devices = contributors.OrderBy(id => id.Value).ToImmutableArray();
+                _states[stateKey] = mapped == previous.Value ? previous : mapped == Vector2.Zero ? neutral : new ActionState(definition.Kind, mapped);
+                ImmutableArray<InputDeviceId> contributors = SnapshotContributors(_contributors.GetValueOrDefault(stateKey, []));
                 if (mapped != previous.Value)
                 {
                     ActionPhase phase = mapped == Vector2.Zero ? ActionPhase.Canceled : previous.Value == Vector2.Zero ? ActionPhase.Started : ActionPhase.Performed;
                     if (mapped == Vector2.Zero)
                     {
-                        devices = _contributors.GetValueOrDefault(stateKey, []);
+                        contributors = _contributors.GetValueOrDefault(stateKey, []);
                     }
 
-                    Emit(new ActionEvent(definition.Id, phase, mapped, now, devices, context.Id));
+                    Emit(new ActionEvent(definition.Id, phase, mapped, now, contributors, context.Id));
                 }
 
-                _contributors[stateKey] = devices;
+                _contributors[stateKey] = contributors;
             }
 
             if (context.Exclusive)
             {
-                foreach (ActionBinding binding in _profile.Bindings.Where(binding => binding.ContextId == context.Id))
+                foreach (ActionBinding binding in _profileIndex.BindingsByContext.GetValueOrDefault(context.Id, []))
                 {
-                    claimed.Add(binding.Control);
+                    _claimedControls.Add(binding.Control);
                 }
             }
         }
     }
 
+    private void RefreshContextOrder()
+        => _orderedContexts = _profile.Contexts.Where(context => _active.ContainsKey(context.Id)).OrderByDescending(context => context.Priority).ThenByDescending(context => _active[context.Id]).ToArray();
+
+    private void RefreshControlIndex()
+    {
+        if (!_controlsChanged)
+        {
+            return;
+        }
+
+        foreach (List<InputDeviceId> devices in _devicesByControl.Values)
+        {
+            devices.Clear();
+        }
+
+        foreach ((InputDeviceId Device, InputControl Control) key in _controls.Keys)
+        {
+            if (!_devicesByControl.TryGetValue(key.Control, out List<InputDeviceId>? devices))
+            {
+                devices = new List<InputDeviceId>();
+                _devicesByControl.Add(key.Control, devices);
+            }
+
+            devices.Add(key.Device);
+        }
+
+        _controlsChanged = false;
+    }
+
+    private ImmutableArray<InputDeviceId> SnapshotContributors(ImmutableArray<InputDeviceId> previous)
+    {
+        if (_scratchContributors.Count == 0)
+        {
+            return [];
+        }
+
+        bool unchanged = _scratchContributors.Count == previous.Length;
+        if (unchanged)
+        {
+            foreach (InputDeviceId device in previous)
+            {
+                if (!_scratchContributors.Contains(device))
+                {
+                    unchanged = false;
+                    break;
+                }
+            }
+        }
+
+        if (unchanged)
+        {
+            return previous;
+        }
+
+        ImmutableArray<InputDeviceId>.Builder result = ImmutableArray.CreateBuilder<InputDeviceId>(_scratchContributors.Count);
+        result.AddRange(_scratchContributors);
+        result.Sort(static (left, right) => left.Value.CompareTo(right.Value));
+        return result.MoveToImmutable();
+    }
+
+    private void ReleaseSuppressedControl(InputDeviceId device, InputControl control)
+        => _suppressed.RemoveWhere(item => item.Device == device && item.Control == control);
+
     private void Emit(ActionEvent action)
     {
         _events.Add(action);
-        foreach (RecognitionDefinition definition in _profile.Recognitions.Where(definition => definition.ContextId == action.ContextId && definition.Actions.Contains(action.ActionId)))
+        foreach (RecognitionDefinition definition in _profile.Recognitions)
         {
+            if (definition.ContextId != action.ContextId || !definition.Actions.Contains(action.ActionId))
+            {
+                continue;
+            }
+
             if (!_progress.TryGetValue(definition.Id, out RecognitionProgress? progress))
             {
                 progress = new RecognitionProgress();
@@ -626,9 +742,9 @@ public sealed class ActionSystem
             session.IsComplete = true;
         }
 
-        foreach (RecognitionDefinition definition in _profile.Recognitions.Where(definition => definition.Kind == RecognitionKind.Hold))
+        foreach (RecognitionDefinition definition in _profile.Recognitions)
         {
-            if (!_progress.TryGetValue(definition.Id, out RecognitionProgress? progress))
+            if (definition.Kind != RecognitionKind.Hold || !_progress.TryGetValue(definition.Id, out RecognitionProgress? progress))
             {
                 continue;
             }
@@ -655,6 +771,7 @@ public sealed class ActionSystem
         foreach ((InputDeviceId Device, InputControl Control) key in _controls.Keys.Where(key => key.Device == device).ToArray())
         {
             _controls.Remove(key);
+            _controlsChanged = true;
         }
 
         _suppressed.RemoveWhere(item => item.Device == device);
@@ -804,18 +921,18 @@ public sealed class ActionSystem
 
     private void Notify()
     {
-        var errors = new List<Exception>();
+        List<Exception>? errors = null;
         foreach (ActionEvent action in _events)
         {
-            Dispatch(Changed, action, errors);
+            Dispatch(Changed, action, ref errors);
         }
 
         foreach (RecognizedAction action in _recognized)
         {
-            Dispatch(Recognized, action, errors);
+            Dispatch(Recognized, action, ref errors);
         }
 
-        if (errors.Count > 0)
+        if (errors is not null)
         {
             throw new AggregateException(errors);
         }
@@ -827,6 +944,15 @@ public sealed class ActionSystem
         {
             throw new InvalidOperationException("Use the owning thread outside notifications.");
         }
+    }
+
+    private sealed class ProfileIndex(ActionProfile profile)
+    {
+        public Dictionary<string, ActionState> NeutralStates { get; } = profile.Actions.ToDictionary(action => action.Id, action => new ActionState(action.Kind, Vector2.Zero), StringComparer.Ordinal);
+
+        public Dictionary<(string Context, string Action), ActionBinding[]> BindingsByAction { get; } = profile.Bindings.GroupBy(binding => (binding.ContextId, binding.ActionId)).ToDictionary(group => group.Key, group => group.OrderBy(binding => binding.Id, StringComparer.Ordinal).ToArray());
+
+        public Dictionary<string, ActionBinding[]> BindingsByContext { get; } = profile.Bindings.GroupBy(binding => binding.ContextId).ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
     }
 
     private sealed class RecognitionProgress
