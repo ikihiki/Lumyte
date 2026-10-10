@@ -58,3 +58,5 @@ var timeline = Timeline()[SourceTrack<float>(channel,
 子の Curve／TimeRemap／Blend ごとの Build は不要です。単独の値計算を使う場合は Source 定義の Build から `IAnimationSource<T>` を得られます。時間ベジェは x を逆算し、y のオーバーシュートを維持します。離散値にはキーの `Hold = true` を使用してください。時間写像の範囲外や不正な重みは評価時に拒否します。キー配列はコピーしますが、独自ソース・補間器や参照型の値は利用側で不変に保ってください。
 
 [API 差分と契約・合成例](../../../docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)を参照してください。
+
+汎用のベジェ・Hermite・Quaternion・イージング計算は依存パッケージ[Lumyte.Mathematics](../../Core/Lumyte.Mathematics/README.md)が提供します。AnimationはDurationやキーを扱うアダプターです。

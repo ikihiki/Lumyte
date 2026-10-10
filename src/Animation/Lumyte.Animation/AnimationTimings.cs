@@ -1,3 +1,5 @@
+using Lumyte.Mathematics;
+
 namespace Lumyte.Animation;
 
 /// <summary>Provides reusable temporal easing, including inverse-x cubic Bezier curves.</summary>
@@ -61,9 +63,9 @@ public static class AnimationTimings
             ValidateAmount(amount);
             return easing switch
             {
-                AnimationEasing.EaseIn => amount * amount,
-                AnimationEasing.EaseOut => amount * (2 - amount),
-                AnimationEasing.EaseInOut => amount < 0.5 ? 2 * amount * amount : 1 - (2 * (1 - amount) * (1 - amount)),
+                AnimationEasing.EaseIn => Interpolation.EaseIn(amount),
+                AnimationEasing.EaseOut => Interpolation.EaseOut(amount),
+                AnimationEasing.EaseInOut => Interpolation.EaseInOut(amount),
                 _ => amount,
             };
         }
@@ -71,69 +73,9 @@ public static class AnimationTimings
 
     private sealed class Bezier(double x1, double y1, double x2, double y2) : IAnimationTiming
     {
+        private readonly CubicBezierTiming _curve = new(x1, y1, x2, y2);
+
         /// <inheritdoc />
-        public double Transform(double amount)
-        {
-            ValidateAmount(amount);
-            if (amount is 0 or 1)
-            {
-                return amount;
-            }
-
-            double lower = 0;
-            double upper = 1;
-            double t = amount;
-            for (int iteration = 0; iteration < 8; iteration++)
-            {
-                double x = Evaluate(t, x1, x2);
-                if (x == amount)
-                {
-                    return Evaluate(t, y1, y2);
-                }
-
-                if (x < amount)
-                {
-                    lower = t;
-                }
-                else
-                {
-                    upper = t;
-                }
-
-                double inverse = 1 - t;
-                double slope = (3 * inverse * inverse * x1) + (6 * inverse * t * (x2 - x1)) + (3 * t * t * (1 - x2));
-                double next = t - ((x - amount) / slope);
-                t = double.IsFinite(next) && next > lower && next < upper ? next : (lower + upper) / 2;
-            }
-
-            // Bounded bisection also handles zero derivatives and coincident controls.
-            for (int iteration = 0; iteration < 48; iteration++)
-            {
-                double x = Evaluate(t, x1, x2);
-                if (x == amount)
-                {
-                    break;
-                }
-
-                if (x < amount)
-                {
-                    lower = t;
-                }
-                else
-                {
-                    upper = t;
-                }
-
-                t = (lower + upper) / 2;
-            }
-
-            return Evaluate(t, y1, y2);
-        }
-
-        private static double Evaluate(double t, double control1, double control2)
-        {
-            double inverse = 1 - t;
-            return (3 * inverse * inverse * t * control1) + (3 * inverse * t * t * control2) + (t * t * t);
-        }
+        public double Transform(double amount) => _curve.Transform(amount);
     }
 }

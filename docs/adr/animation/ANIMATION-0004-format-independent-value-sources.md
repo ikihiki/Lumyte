@@ -209,6 +209,61 @@ var blend = Blend<float>(
 var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), blend)].Build();
 ```
 
+### 汎用数学計算の配置
+
+`Lumyte.Mathematics`を独立したNuGetプロジェクトとして`src/Core/`へ配置する。AnimationからMathematicsへの一方向の依存とし、MathematicsはAnimation・Core・Compositionに依存しない。線形・二次イージング、ベジェ評価と逆算、Hermiteの重み・成分評価、Quaternion球面補間・正規化を共有する。Animationはキー検証・Durationの秒への変換・補間インターフェースへの適合を担当する。
+
+追加APIは以下。既存Animation APIのシグネチャは維持する。
+
+```diff
++namespace Lumyte.Mathematics;
++public static class Interpolation
++{
++    public static float Linear(float from, float to, float amount);
++    public static double EaseIn(double amount);
++    public static double EaseOut(double amount);
++    public static double EaseInOut(double amount);
++}
++public sealed class CubicBezierTiming
++{
++    public CubicBezierTiming(double x1, double y1, double x2, double y2);
++    public double Transform(double amount);
++}
++public static class BezierInterpolation
++{
++    public static T Cubic<T>(T from, T control1, T control2, T to,
++        float amount, Func<T, T, float, T> interpolate);
++}
++public static class HermiteInterpolation
++{
++    public static float Interpolate(float from, float to, float outgoingTangent,
++        float incomingTangent, double interval, float amount);
++    public static Vector2 Interpolate(Vector2 from, Vector2 to, Vector2 outgoingTangent,
++        Vector2 incomingTangent, double interval, float amount);
++    public static Vector3 Interpolate(Vector3 from, Vector3 to, Vector3 outgoingTangent,
++        Vector3 incomingTangent, double interval, float amount);
++    public static Vector4 Interpolate(Vector4 from, Vector4 to, Vector4 outgoingTangent,
++        Vector4 incomingTangent, double interval, float amount);
++    public static Quaternion Interpolate(Quaternion from, Quaternion to, Quaternion outgoingTangent,
++        Quaternion incomingTangent, double interval, float amount);
++}
++public static class QuaternionInterpolation
++{
++    public static Quaternion Slerp(Quaternion from, Quaternion to, float amount);
++    public static Quaternion Normalize(double x, double y, double z, double w);
++}
+```
+
+MathematicsのHermiteはintervalの単位を定めず、接線と一致する正の有限値を要求する。amountは有限の[0, 1]、端値・接線は有限値、Quaternionの端値は単位回転を前提とする。時間ベジェも有限の[0, 1]を入力とし、不正なパラメーターはArgumentOutOfRangeExceptionになる。線形・空間ベジェ・球面補間は外挿を許す。ゼロ長・非有限Quaternionの正規化とfloatに収まらないHermite成分はInvalidOperationExceptionになる。
+
+```csharp
+using Lumyte.Mathematics;
+
+var easing = new CubicBezierTiming(0.42, 0, 0.58, 1);
+double progress = easing.Transform(0.5);
+float value = HermiteInterpolation.Interpolate(0f, 10f, 2f, 0f, 3, 0.5f);
+```
+
 ## 検討した代替案
 
 ### フォーマット固有のモデルをコアに入れる
@@ -246,7 +301,7 @@ var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), ble
 
 生成済み Composition API と Hermite を NuGet パッケージだけを参照する別プロジェクトから使用できた。サンプルは子ソースの Build を省いたベジェ・時間写像・ブレンドの組合せで、中間値 25.0 を確認した。
 
-main `f3f4f67` と独立した Release DLL を比較し、各版 2 プロセス・各ケース 7 サンプルで測定した。線形の 2／128／1024 キーはそれぞれ約 11.03／18.74／24.46 ns から 11.05／18.65／23.76 ns で、同程度の範囲だった。追加の時間ベジェ、空間ベジェ、Hermite、時間写像、ブレンドを含む 10 ケースの全測定区間で Managed 割り当ては 0 B/op、GC は 0 回だった。
+main `f3f4f67` と独立した Release DLL を比較し、各版 2 プロセス・各ケース 7 サンプルで測定した。線形の 2／128／1024 キーはそれぞれ約 11.03／18.74／24.46 ns から 11.39／18.94／24.08 ns で、同程度の範囲だった。追加の時間ベジェ、空間ベジェ、Hermite、時間写像、ブレンドを含む 10 ケースの全測定区間で Managed 割り当ては 0 B/op、GC は 0 回だった。
 
 測定は Debian 13、AMD EPYC 9V74 の仮想環境、Runtime 10.0.12、単一 CPU 固定、tiered compilation／ReadyToRun 無効で行った。200ms のウォームアップ後に約 100ms の反復バッチを較正し、時刻生成・Sample・デリゲート呼出しと加算を測定した。構築時の時間・保持メモリ、通常の tiered PGO、Windows／Browser の性能は未測定。限定的な値評価の測定であり、描画や実際のフレーム時間を示すものではない。
 
@@ -256,3 +311,5 @@ main `f3f4f67` と独立した Release DLL を比較し、各版 2 プロセス�
 - [ADR-ANIMATION-0003: 実行者の構築とイベント時刻](ANIMATION-0003-animation-execution-and-event-time.md)
 - [glTF 2.0: Animation](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations)
 - [CSS Easing Functions: Cubic Bézier](https://www.w3.org/TR/css-easing-1/#cubic-bezier-easing-functions)
+
+2026-10-10、汎用計算をLumyte.Mathematicsへ分離し、単体Releaseテスト5件とAnimationの89件が成功した。MathematicsのQuaternion正規化は成分をスケールし、doubleの最大値・最小非ゼロ値も扱う。分離後に上記10ケースを再測定し、割り当て0 B/op・GC 0回を維持した。Quaternion Hermiteはこの正規化強化により約54.24 nsから70.88 nsとなった。
