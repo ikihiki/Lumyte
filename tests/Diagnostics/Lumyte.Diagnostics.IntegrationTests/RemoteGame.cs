@@ -4,6 +4,7 @@ using Lumyte.Diagnostics.Sample;
 using Lumyte.Diagnostics.Transport;
 using Lumyte.Diagnostics.Transport.Http;
 using Lumyte.Diagnostics.Transport.MagicOnion;
+using Lumyte.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -18,15 +19,15 @@ internal sealed class RemoteGame : IAsyncDisposable
     private bool _pressed;
     private int _disposed;
 
-    public RemoteGame(Uri address, string gameToken, bool magicOnion)
+    public RemoteGame(Uri address, string gameToken, bool magicOnion, Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLumyteDiagnostics(options =>
         {
             options.Enabled = true;
-            options.AllowedMeterNames = ["Lumyte.Remote.Test"];
-            options.AllowedActivitySourceNames = ["Lumyte.Remote.Test"];
-            options.AllowedLogCategoryPrefixes = ["Lumyte.Remote.Test"];
+            options.AllowedMeterNames = ["Lumyte.Remote.Test", SettingsTelemetry.MeterName];
+            options.AllowedActivitySourceNames = ["Lumyte.Remote.Test", SettingsTelemetry.ActivitySourceName];
+            options.AllowedLogCategoryPrefixes = ["Lumyte.Remote.Test", SettingsTelemetry.LogCategoryName];
             options.TraceSampleRatio = 1;
         });
         services.AddScoped<InputOverrideService>();
@@ -50,6 +51,7 @@ internal sealed class RemoteGame : IAsyncDisposable
             });
         }
 
+        configure?.Invoke(services);
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         new Thread(Run) { IsBackground = true, Name = "diagnostic-test-game" }.Start();
     }
@@ -97,10 +99,10 @@ internal sealed class RemoteGame : IAsyncDisposable
             try
             {
                 IServiceProvider game = scope.ServiceProvider;
+                game.GetRequiredService<DiagnosticTelemetry>().Start();
                 IDiagnosticPump<BeforeInputProcessing> pump = game.GetRequiredService<IDiagnosticPump<BeforeInputProcessing>>();
                 InputOverrideService input = game.GetRequiredService<InputOverrideService>();
                 DiagnosticAgent<BeforeInputProcessing> agent = game.GetRequiredService<DiagnosticAgent<BeforeInputProcessing>>();
-                game.GetRequiredService<DiagnosticTelemetry>().Start();
                 pump.Activate();
                 try
                 {

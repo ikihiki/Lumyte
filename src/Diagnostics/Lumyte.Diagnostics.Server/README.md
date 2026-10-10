@@ -51,6 +51,39 @@ node tools/diagnostics/verify-browser.mjs
 
 一時トークンで公開サーバーをソースツリー外から起動し、実ブラウザーでログイン、BlazorのSignalR WebSocket、Fluent UIコンポーネント、生成フォーム、Input変更、Int64 Metric、Log／Trace相関、切断時解除、ログアウト、狭い画面での表示を確認する。複数リソースの分離、ログレベル、一時停止・再開、Traceリンクの再読み込み、親子Span、相関Logs、大きいInt64のグラフ、HTML文字列の安全な表示、別タブのCircuit失効も確認する。結果・スクリーンショット・ログはartifacts/test-results/diagnostics-uiへ出力する。CIのLinux x64でも実行する。[検証結果](../../../docs/diagnostics/results/browser-ui-processes.json)と[UI ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
+### GitHub Pagesで画面を見る
+
+[画面プレビュー](https://ikihiki.github.io/Lumyte/) は、実際の診断サーバーをChromiumで操作して撮影した静的ギャラリーです。ダウンロードやローカル起動なしで、ページ・画面幅による絞り込みと画像の拡大表示ができます。サーバーを操作するライブデモではありません。
+
+トップページからmainと各PRのギャラリーを選べます。mainは `main/`、同一リポジトリで開いているPRは `pr/26/` のように別のURLへ配置し、同時に掲載します。各ギャラリーから一覧へ戻れます。forkのPRは掲載対象に含めません。
+
+CI全体が成功した実行のうち、取得可能な最新の `diagnostics-gallery` 成果物をPRごとに選びます。最新の変更が検証中・失敗中でも、前回成功した画面を保持し、最新CIの状態と撮影対象との差を一覧に表示します。撮影対象のコミットと撮影日時を確認でき、PRではマージ結果のコミットを撮影します。PRのHEADと撮影したマージコミットは別々に記録します。古い実行を再実行しても、新しい実行の成功画像を巻き戻しません。
+
+`Diagnostic previews` workflowがmain上で全対象を集約し、`upload-pages-artifact` と `deploy-pages` でサイト全体を一度に公開します。CI完了時、毎日03:17 UTC、手動実行時に再集約します。収集から公開まで直列化し、PR同士の更新で他のPRの画面が消えることを防ぎます。閉じたPRは次回の再集約で除外します。定期実行だけの場合、GitHubの実行遅延を除き翌日までに反映します。
+
+保存元はActionsの成果物で、保持期間は30日です。有効な成果物がない場合もPRを一覧に残して理由を表示しますが、画面へのリンクは表示しません。長期間更新していないPRやmainの画面を再掲載する場合はCIを再実行してください。成果物取得の予期しないエラーや検証失敗では公開を中止し、公開済みサイトを維持します。
+
+`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
+
+```sh
+GITHUB_REPOSITORY=ikihiki/Lumyte PREVIEW_COMMIT="$(git rev-parse HEAD)" PREVIEW_LABEL="Local preview" \
+  node tools/diagnostics/generate-gallery.mjs artifacts/test-results/diagnostics-ui artifacts/diagnostics-gallery
+```
+
+複数PRの集約は、GitHubを読み取れる `gh` とPython、Nodeを使って次のように再現できます。出力先は未作成または空のディレクトリを指定します。
+
+```sh
+python3 tools/diagnostics/collect-gallery-artifacts.py --repository ikihiki/Lumyte --output artifacts/gallery-inputs
+node tools/diagnostics/assemble-gallery-site.mjs artifacts/gallery-inputs/catalog.json artifacts/diagnostics-site
+python3 -m http.server 8000 --directory artifacts/diagnostics-site
+```
+
+公開するファイルは閲覧用HTML/CSS/JavaScript、撮影情報、検証済みの一覧・PNGのみです。集約処理はGitHub APIからPRとCIの所属を確認し、ZIPのパス・種類・サイズと画像を検証します。PR成果物のHTMLやJavaScriptは使わず、mainにある生成処理でJSONとPNGから作り直します。テストログ、失敗時のHTML、トークンは公開対象に含めません。
+
+PagesのSourceはGitHub Actionsに設定します。公開ブランチへの生成物のコミットは行いません。公開処理はmain上で動くため、`github-pages` environmentのdeployment branch policyもmainだけの許可で複数PRに対応できます。PRの実行refを個別に許可する必要はありません。収集ジョブには読み取り権限だけを与え、Pages書き込み権限は公開ジョブだけに付与します。
+
+初回は `.github/workflows/diagnostics-pages.yml` と集約スクリプトをmainへ取り込む必要があります。`workflow_run` と定期実行はdefault branchにworkflowが存在して初めて有効になります。取り込み後はmainで `Diagnostic previews` を手動実行するか、CIの完了を待ってください。このworkflowがまだmainにないPR内だけでは、自動公開は開始しません。
+
 ## ゲームを接続
 
 ```sh
@@ -137,3 +170,12 @@ RequiredSubsystem は公開カタログの ID と完全一致で判定し、未�
 直接 URL を開いた場合には未対応状態を表示します。
 Objects、UI、Animation、Rendering は現在カタログと操作を表示する拡張枠です。
 詳細グラフや画像の公開プロトコルは今後追加します。
+
+### 設定の診断
+
+ゲームが`AddSettingsDiagnostics<T, TPoint>`で登録した`settings.{moduleId}`のカタログを、
+EngineカテゴリのSettingsページに表示します。設定が未公開のゲームにはナビゲーションを表示しません。
+公開操作を検索し、readで公開値・LoadStatus・Revisionを確認できます。
+saveは保存開始であり、戻されたjob-idをsave-resultへ渡してSavedを確認します。
+個々の設定値や保存完了をサーバー側で推測せず、ゲーム側の検証と競合制御を使用します。
+登録方法は[設定診断API](../Lumyte.Diagnostics.Settings/README.md)を参照してください。

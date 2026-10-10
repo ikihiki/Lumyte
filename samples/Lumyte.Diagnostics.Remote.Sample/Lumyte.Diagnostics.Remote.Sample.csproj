@@ -6,6 +6,7 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Settings/Lumyte.Diagnostics.Settings.csproj" />
     <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Transport.Http/Lumyte.Diagnostics.Transport.Http.csproj" />
     <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Transport.MagicOnion/Lumyte.Diagnostics.Transport.MagicOnion.csproj" />
     <ProjectReference Include="../Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
