@@ -183,3 +183,9 @@ shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpoi
 `VkImage`ではD32_SFLOAT／D24_UNORM_S8_UINTとDepthStencilAttachment usageを使い、image/view/barrierのaspectにdepthと必要なstencilを設定します。D24_UNORM_S8_UINTの対応はimage format propertiesで検証し、不対応なら生成を拒否します。dynamic renderingのdepth/stencil attachment、pipelineのdepth/stencil state・format、CmdBindIndexBuffer／CmdDrawIndexed／CmdDrawIndirect／CmdDrawIndexedIndirect／CmdDispatchIndirectを使用します。depth formatはキャッシュキーへ含め、キャッシュ無効時も同じ状態から生成します。IndexInput、DrawIndirect、DepthStencilをvertex input、draw indirect、early/late fragment testsへ変換し、対応するaccessをsynchronization2 barrierへ渡します。
 
 Slangの`SV_VertexID`はSPIR-VでVertexIndexからBaseVertexを引きます。vertex pullingでbaseVertex適用後のindexを使う場合は`SV_VulkanVertexID`を指定します。firstInstance適用後は`SV_VulkanInstanceID`です。これらのSlang semanticはWGSL targetでも対応します。SV_VertexID等が要求するDrawParameters capabilityのため、deviceではVulkan 1.1のshaderDrawParametersを検証・有効化します。
+
+## 追加カラー形式
+
+`R8Unorm`, `Rg8Unorm`, `R16Float`, `Rg16Float`, `Rgba16Float`, `Rgb10A2Unorm`をサンプリング・カラーattachment・コピーへ対応付けます。コピーは形式ごとのtexelサイズを使い、オフセットは4 byteとtexelサイズの両方に整列させます。
+
+ネイティブの形式とusage対応を生成時に問い合わせ、非対応は拒否します。

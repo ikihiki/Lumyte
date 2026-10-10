@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Specifies color storage formats without guaranteeing support for every device usage.</summary>
+/// <summary>Specifies texture storage formats without guaranteeing support for every device usage.</summary>
 public enum TextureFormat
 {
     /// <summary>Four normalized linear eight-bit channels.</summary>
@@ -20,4 +20,22 @@ public enum TextureFormat
 
     /// <summary>At least twenty-four-bit depth and eight-bit stencil; depth storage is backend-specific.</summary>
     Depth24Stencil8,
+
+    /// <summary>One normalized eight-bit red channel.</summary>
+    R8Unorm,
+
+    /// <summary>Two normalized eight-bit red and green channels.</summary>
+    Rg8Unorm,
+
+    /// <summary>One sixteen-bit floating-point red channel.</summary>
+    R16Float,
+
+    /// <summary>Two sixteen-bit floating-point red and green channels.</summary>
+    Rg16Float,
+
+    /// <summary>Four sixteen-bit floating-point channels.</summary>
+    Rgba16Float,
+
+    /// <summary>Three normalized ten-bit color channels and two-bit alpha.</summary>
+    Rgb10A2Unorm,
 }

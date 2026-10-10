@@ -71,7 +71,14 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         TextureFormat.Rgba8Unorm => V.Format.R8G8B8A8Unorm,
         TextureFormat.Rgba8Srgb => V.Format.R8G8B8A8Srgb,
         TextureFormat.Bgra8Unorm => V.Format.B8G8R8A8Unorm,
-        _ => V.Format.B8G8R8A8Srgb,
+        TextureFormat.Bgra8Srgb => V.Format.B8G8R8A8Srgb,
+        TextureFormat.R8Unorm => V.Format.R8Unorm,
+        TextureFormat.Rg8Unorm => V.Format.R8G8Unorm,
+        TextureFormat.R16Float => V.Format.R16Sfloat,
+        TextureFormat.Rg16Float => V.Format.R16G16Sfloat,
+        TextureFormat.Rgba16Float => V.Format.R16G16B16A16Sfloat,
+        TextureFormat.Rgb10A2Unorm => V.Format.A2B10G10R10UnormPack32,
+        _ => throw new NotSupportedException("Unsupported color attachment format."),
     };
 
     private static CompareOp Compare(CompareFunction value) => (CompareOp)(int)value;

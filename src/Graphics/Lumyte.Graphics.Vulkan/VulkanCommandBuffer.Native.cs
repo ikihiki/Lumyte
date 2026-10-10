@@ -209,7 +209,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
         var copy = new BufferImageCopy
         {
             BufferOffset = buffer.Buffer.OffsetInBytes,
-            BufferRowLength = buffer.BytesPerRow / 4,
+            BufferRowLength = buffer.BytesPerRow / _owner.GetTextureCopyLayout(region.Texture.Format).BytesPerTexel,
             BufferImageHeight = buffer.RowsPerImage,
             ImageSubresource = Layers(region),
             ImageOffset = Origin(region),

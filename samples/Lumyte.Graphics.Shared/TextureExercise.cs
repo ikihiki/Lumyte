@@ -75,8 +75,17 @@ public static class TextureExercise
         Expect<ArgumentException>(() => rectangle.CreateView(new() { Dimension = TextureViewDimension.Cube }));
         using IGraphicsTexture copyOnly = device.CreateTexture(desc with { ArrayLayers = 1, MipLevels = 1, Usage = TextureUsage.CopySource | TextureUsage.CopyDestination });
         Expect<InvalidOperationException>(() => copyOnly.CreateView());
-        foreach (TextureFormat format in new[] { TextureFormat.Rgba8Unorm, TextureFormat.Rgba8Srgb, TextureFormat.Bgra8Unorm, TextureFormat.Bgra8Srgb })
+        foreach (TextureFormat format in new[] { TextureFormat.Rgba8Unorm, TextureFormat.Rgba8Srgb, TextureFormat.Bgra8Unorm, TextureFormat.Bgra8Srgb, TextureFormat.R8Unorm, TextureFormat.Rg8Unorm, TextureFormat.R16Float, TextureFormat.Rg16Float, TextureFormat.Rgba16Float, TextureFormat.Rgb10A2Unorm })
         {
+            uint bytesPerTexel = format switch
+            {
+                TextureFormat.R8Unorm => 1,
+                TextureFormat.Rg8Unorm or TextureFormat.R16Float => 2,
+                TextureFormat.Rgba16Float => 8,
+                _ => 4,
+            };
+            TextureCopyLayout layout = device.GetTextureCopyLayout(format);
+            Require(layout.BytesPerTexel == bytesPerTexel && layout.BufferOffsetAlignmentInBytes % bytesPerTexel == 0, "Format copy layout is incorrect.");
             using IGraphicsTexture color = device.CreateTexture(desc with { ArrayLayers = 1, Format = format });
             using IGraphicsTextureView view = color.CreateView();
             Require(view.Info.Format == format && view.Info.Dimension == TextureViewDimension.D2, "Storage format was substituted.");
