@@ -30,10 +30,25 @@ internal static partial class Program
         Record(await AdvancedCommandExercise.RunAsync(device), reports);
         Record(await ShaderBindingExercise.RunAsync(device), reports);
         using JSObject context = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no GPUCanvasContext.");
-        using IGraphicsSurface surface = device.CreateSurface(context);
+        using JSObject secondContext = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSecondSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no second GPUCanvasContext.");
+        using JSObject invalidContext = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteInvalidSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no invalid context.");
+        try
+        {
+            device.CreateSurfaces([context, invalidContext]);
+            throw new InvalidOperationException("Invalid context collection was accepted.");
+        }
+        catch (JSException)
+        {
+            // Subsequent creation using the first context verifies cleanup of the partially created collection.
+        }
+
+        IReadOnlyList<IGraphicsSurface> surfaces = device.CreateSurfaces([context, secondContext]);
+        using IGraphicsSurface surface = surfaces[0];
+        using IGraphicsSurface secondSurface = surfaces[1];
         try
         {
             Record(await SurfaceExercise.RunAsync(device, surface), reports);
+            Record(await MultiSurfaceExercise.RunAsync(device, surface, secondSurface), reports);
         }
         catch (Exception exception)
         {

@@ -41,3 +41,7 @@ AdvancedCommandExerciseのvertex pullingはSlangの`SV_VulkanVertexID`でbaseVer
 
 `SemaphoreExercise.RunAsync`は利用側のsignal／waitチェーン、待機stage、semaphore-only Submit、消費後の再利用、重複・未signal・失効・異なるdeviceの拒否を共通APIで検証します。
 SurfaceExerciseも取得signal、Submit wait／signal、Present waitを利用側から明示し、自動同期に依存しません。
+
+`MultiSurfaceExercise.RunAsync(device, first, second)`は二つの外部Surfaceを共通APIだけで操作します。
+同時取得、異なる色の全画素readback、一括／独立Submit、Presentのsignal消費、片方だけのresizeとclose、残るtargetの継続描画を確認します。
+このexerciseはfirst Surfaceを解放し、second Surfaceは呼び出し側の所有のまま返します。ウインドウやcontextの生成・取得は含めません。

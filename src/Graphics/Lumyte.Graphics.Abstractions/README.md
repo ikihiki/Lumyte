@@ -171,3 +171,7 @@ Index bufferは`SetIndexBuffer(BufferSlice<ushort>)`／`SetIndexBuffer(BufferSli
 `device.CreateSemaphore()`でbinary semaphoreを作り、`AcquireNextFrameAsync(acquired)`、Submitの`WaitSemaphores`／`SignalSemaphores`、Presentのwaitへ明示的に渡します。
 FrameをSubmitへ渡すAPIはありません。同期を補完せず、wait stage、semaphoreの再利用と生存期間は利用側が管理します。
 wait／signalだけのSubmitも可能です。GPU完了をCPUで待つ必要はなく、GPUへ発行済みのsignalを後続のwaitに指定します。
+
+同一Deviceで複数のSurface／Swapchainを保持し、ウインドウごとに取得、描画、Present、resize、解放を管理できます。
+複数Frameを一つのSubmitへまとめる場合も、取得ごとのwaitとPresentごとの独立したbinary signalを明示します。
+一つのウインドウのFrameが生きていることを理由に、他のウインドウの操作を禁止しません。DeviceはすべてのSurfaceを解放してから破棄します。

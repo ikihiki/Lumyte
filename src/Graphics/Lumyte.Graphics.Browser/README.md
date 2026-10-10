@@ -176,3 +176,14 @@ WebGPUにはnative semaphoreがないため、GPUへ発行済みのsignalと一�
 wait stageはGPUの非空stageを検証しますが、WebGPUにはstage別のnative待機操作がなく、queue順序へ対応付けます。
 CPU待機、追加submit、queue idleは挿入しません。commandのないwait／signal Submitも明示的に発行できます。
 外部queue・device間の同期や未発行signalへの将来waitは公開しません。使用中のDisposeを拒否し、再利用時点と利用者の同期は呼び出し側が管理します。
+
+## 複数の表示先
+
+`device.CreateSurfaces(IReadOnlyList<JSObject> contexts)`へ既存のGPUCanvasContextを複数渡し、同一GPUDeviceに属する独立したSurfaceを入力順で取得します。
+空／null／重複contextを拒否します。二つ目以降の生成に失敗した場合も、今回作成したSurfaceだけを解放して元のcontextを再接続できる状態へ戻します。外部canvasを破棄しません。
+`device.CreateSurface(context)`でも後から追加できます。active画像はcontextごとに持ち、一つのcontextでしか取得できないDevice全体の制約はありません。
+各canvasのpixel size・configure・現在画像・Present・解放を独立させ、片方のresize／unconfigureは他のcanvasを変更しません。
+複数表示先のcommandを一つのSubmitへまとめても、wait／signalは利用側が明示し、各Presentに別々のbinary signalを用意します。
+
+CIのbootstrapは二つの外部OffscreenCanvas contextを提供します。共有MultiSurfaceExerciseで異なる色を全画素readbackし、一括／独立Submit、別々のPresent、他方のFrame取得中のresize／close、残るtargetの描画継続を確認します。
+context集合の途中で失敗した後、同じcontextを使った再生成も検証します。実ウインドウ／DOMの取得は含めません。

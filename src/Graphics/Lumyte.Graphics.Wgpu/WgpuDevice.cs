@@ -92,25 +92,83 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <returns>The device selected for the supplied target.</returns>
     public static WgpuDevice CreateForPresentation(A.SurfaceSource source, out IGraphicsSurface surface)
     {
-        ValidateSurfaceSource(source);
+        WgpuDevice device = CreateForPresentation(new[] { source }, out IReadOnlyList<IGraphicsSurface> surfaces);
+        surface = surfaces[0];
+        return device;
+    }
+
+    /// <summary>Creates one device and independent surfaces for every supplied native target.</summary>
+    /// <param name="sources">Nonempty distinct borrowed target handles in result order.</param>
+    /// <param name="surfaces">The owned surfaces, all compatible with the selected adapter; no partial result on failure.</param>
+    /// <returns>The owned shared device; adapter selection starts with the first target and validates every target.</returns>
+    public static WgpuDevice CreateForPresentation(IReadOnlyList<A.SurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        A.SurfaceSource[] snapshot = sources.ToArray();
+        if (snapshot.Length == 0)
+        {
+            throw new ArgumentException("Supply at least one native presentation target.", nameof(sources));
+        }
+
+        var targets = new HashSet<(A.SurfaceSource.Kind, nint, nint)>();
+        foreach (A.SurfaceSource source in snapshot)
+        {
+            ValidateSurfaceSource(source);
+            if (!targets.Add((source.Tag, source.Handle0, source.Handle1)))
+            {
+                throw new ArgumentException("Supply distinct native presentation targets.", nameof(sources));
+            }
+        }
+
+        surfaces = [];
         var instance = A.Instance.Create();
-        A.Surface native = default;
+        var native = new A.Surface[snapshot.Length];
+        var created = new List<IGraphicsSurface>();
         A.Adapter? adapter = null;
         A.Device? device = null;
         try
         {
-            native = instance.CreateSurface(source);
-            adapter = instance.RequestAdapterBlocking(native);
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                native[i] = instance.CreateSurface(snapshot[i]);
+            }
+
+            adapter = instance.RequestAdapterBlocking(native[0]);
+            foreach (A.Surface target in native)
+            {
+                A.SurfaceCapabilities caps = target.GetCapabilities(adapter);
+                if (caps.Formats.Length == 0 || (caps.Usages & A.TextureUsage.RenderAttachment) == 0)
+                {
+                    throw new NotSupportedException("The selected adapter must support every supplied target.");
+                }
+            }
+
             device = adapter.RequestDeviceBlocking();
             var owner = new WgpuDevice(instance, adapter, device);
-            surface = new WgpuSurface(owner, native, adapter);
+            for (int i = 0; i < native.Length; i++)
+            {
+                var target = new WgpuSurface(owner, native[i], adapter);
+                created.Add(target);
+                native[i] = default;
+            }
+
+            surfaces = created.AsReadOnly();
             return owner;
         }
         catch
         {
+            foreach (IGraphicsSurface target in created)
+            {
+                target.Dispose();
+            }
+
+            foreach (A.Surface target in native)
+            {
+                target.Dispose();
+            }
+
             device?.Dispose();
             adapter?.Dispose();
-            native.Dispose();
             instance.Dispose();
             throw;
         }

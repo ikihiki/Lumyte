@@ -121,6 +121,7 @@ try {
     assert.match(result.report, /Pipeline checks passed:/);
     assert.match(result.report, /Advanced command checks passed:/);
     assert.match(result.report, /Surface checks passed:/);
+    assert.match(result.report, /Multiple surface checks passed:/);
     assert.match(result.report, /Semaphore checks passed:/);
     assert.match(result.report, /Shader binding checks passed:/);
     assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);

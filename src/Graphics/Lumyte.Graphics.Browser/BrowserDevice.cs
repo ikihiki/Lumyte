@@ -72,6 +72,50 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         return new BrowserSurface(this, context);
     }
 
+    /// <summary>Connects distinct externally supplied canvas contexts to this shared device.</summary>
+    /// <param name="contexts">The nonempty borrowed contexts in result order.</param>
+    /// <returns>The owned independent surfaces; failed creation releases every surface created by this call.</returns>
+    public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<JSObject> contexts)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(contexts);
+        JSObject[] snapshot = contexts.ToArray();
+        if (snapshot.Length == 0)
+        {
+            throw new ArgumentException("Supply at least one GPUCanvasContext.", nameof(contexts));
+        }
+
+        var seen = new HashSet<JSObject>(ReferenceEqualityComparer.Instance);
+        foreach (JSObject context in snapshot)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            if (!seen.Add(context))
+            {
+                throw new ArgumentException("Supply distinct GPUCanvasContexts.", nameof(contexts));
+            }
+        }
+
+        var surfaces = new List<IGraphicsSurface>();
+        try
+        {
+            foreach (JSObject context in snapshot)
+            {
+                surfaces.Add(CreateSurface(context));
+            }
+
+            return surfaces.AsReadOnly();
+        }
+        catch
+        {
+            foreach (IGraphicsSurface surface in surfaces)
+            {
+                surface.Dispose();
+            }
+
+            throw;
+        }
+    }
+
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {

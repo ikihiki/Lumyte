@@ -178,3 +178,14 @@ WebGPUにはnative semaphoreがないため、GPUへ発行済みのsignalと一�
 wait stageはGPUの非空stageを検証しますが、WebGPUにはstage別のnative待機操作がなく、queue順序へ対応付けます。
 CPU待機、追加submit、queue idleは挿入しません。commandのないwait／signal Submitも明示的に発行できます。
 外部queue・device間の同期や未発行signalへの将来waitは公開しません。使用中のDisposeを拒否し、再利用時点と利用者の同期は呼び出し側が管理します。
+
+## 複数ウインドウ
+
+`WgpuDevice.CreateForPresentation(IReadOnlyList<Ahjo.Wgpu.SurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces)`で複数のtargetを一つのDeviceへ接続できます。
+空リスト、欠けたhandle、同じtargetの重複はnative生成前に拒否します。Surfaceは入力順に返し、途中で失敗した場合は今回生成したnative Surface・Device・Adapter・Instanceを解放します。
+adapterは先頭のtargetを指定して要求し、選ばれたadapterに全targetのcapabilitiesとRenderAttachment互換性を確認します。別adapterを自動再選択せず、非互換ならNotSupportedExceptionです。
+既存の単一target overloadもこの経路を使用します。生成後の新しいウインドウは既存の`device.CreateSurface(source)`で追加できます。
+
+active画像の制約は各Surface／Swapchainに適用し、Device全体を一つのウインドウへ制限しません。
+各targetのsize、取得Frame、explicit semaphore、Present、resize、解放は独立しています。同じqueueへまとめてSubmitする場合も、Presentごとのbinary signalを利用側が別々に用意します。
+一つのSurfaceの解放は他のSurfaceをunconfigureせず、全Surfaceの解放後に共有Deviceを解放します。

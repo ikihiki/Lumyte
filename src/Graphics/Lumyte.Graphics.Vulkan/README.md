@@ -216,3 +216,17 @@ acquire fenceとswapchain maintenance1のpresent fenceを使って、image lease
 古いswapchainのleaseが残る再構成を拒否し、作成失敗でoldSwapchainがretireされた場合は取得結果をOutdatedとして再構成を要求します。
 
 Native WSIはビルドとハンドル受け取り口の検証を行い、実ウインドウの提示検証はハンドル取得を実装する後続PRで行います。
+
+## 複数ウインドウ
+
+`VulkanDevice.CreateForPresentation(IReadOnlyList<VulkanSurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces, uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)`で複数targetを受け取ります。
+全descriptorをnative生成前に検証し、必要なplatform instance extensionの和集合を有効にして、各callbackを同じVkInstanceで呼びます。
+callbackは別々の新しいSurfaceKHRを返す必要があり、null／重複handleを拒否します。
+指定されたphysical deviceでgraphics・computeと全Surfaceのpresentに対応する一つのqueue familyを探します。先頭Surfaceだけを基準にqueueを選びません。
+共通のqueueがなければNotSupportedExceptionです。別Deviceや別queueへ自動移行せず、adapter選択とDeviceの分離は利用側が決めます。
+結果は入力順です。途中で失敗すると今回のSurfaceとnative資源をすべて解放し、部分的な所有結果を返しません。単一target overloadも同じ実装を使います。
+
+生成後も`device.CreateSurface(callback)`でウインドウを追加できます。callbackに必要なplatform extensionはInstance生成時に有効にしておき、選択済みqueueの互換性を検証します。
+Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとresizeはtargetごとに管理し、他targetのFrameが生きていても独立して操作できます。
+各Presentは別々に呼び、利用側がbinary semaphoreのsignal／waitを一回ずつ割り当てます。複数targetを一つのSubmitへまとめる場合は必要なwait／signalをすべて明示します。
+一つのSurfaceを閉じても共有Deviceと他のSurfaceは残り、DeviceWaitIdle／QueueWaitIdleを挿入しません。

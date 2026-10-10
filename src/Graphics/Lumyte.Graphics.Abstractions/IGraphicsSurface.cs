@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Owns the graphics connection to a borrowed presentation target.</summary>
+/// <summary>Owns one graphics connection to a borrowed target; a device can own multiple independent surfaces.</summary>
 /// <remarks>The caller keeps the native target alive and manages all access synchronization.</remarks>
 public interface IGraphicsSurface : IDisposable
 {

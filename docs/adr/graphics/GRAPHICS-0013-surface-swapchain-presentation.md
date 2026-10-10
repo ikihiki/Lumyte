@@ -49,6 +49,25 @@ PresentはSubmittedから一度だけ行い、二重Presentを拒否する。
 Frame.Disposeは未submitの画像を提示せず返却でき、submit済みではGPUとネイティブ提示の解放条件が満たされるまで拒否する。
 先にViewとcommandを解放する。Frame、Swapchain、Surface、Deviceの順に所有権を解放する。
 
+### 複数ウインドウと表示先
+
+同一Deviceは複数のSurfaceを所有でき、各Surfaceが一つのSwapchainを持つ。
+生成時に複数targetを渡すバックエンド固有の入口は、返す全Surfaceが同じDeviceとqueueで使用できることを確認する。
+途中で生成・互換性確認に失敗した場合、今回生成したSurfaceとnative資源を解放し、部分的な所有結果を返さない。
+生成後も、互換性のある表示先を同じDeviceへ追加できる。別Deviceが必要な表示先を暗黙に移し替えない。
+
+取得画像、サイズ、mode、取得失敗、再構成、解放条件は各Swapchainへ閉じる。
+一つのウインドウの未提出Frameや生存中のleaseが、別ウインドウの取得・提出・再構成・解放を禁止しない。
+ウインドウごとの画像を独立したcommand／Submitで描画でき、一つのcommandまたはSubmitへ複数ウインドウの描画をまとめることもできる。
+一括Submitでも同期は利用側が明示し、各取得のsemaphoreをwaitへ、各Presentのsemaphoreを別々のsignalへ指定する。
+binary semaphoreの一回のsignalを複数ウインドウのPresentで共有しない。Presentするウインドウごとに一回のwaitを用意する。
+PresentはFrameごとの操作であり、複数ウインドウの同時表示時刻やnative処理の非ブロッキング性は保証しない。
+
+一つのSurface／Swapchainのリサイズ・復旧・解放は、他のSurfaceの設定やleaseを変更しない。
+各ウインドウの更新頻度と停止・再開は利用側が選び、ライブラリは一括idle待機や共通のフレーム境界を設けない。
+Deviceの解放だけは、接続したすべてのSurfaceと子resourceを解放してから行う。
+ウインドウ生成・ハンドル取得は引き続き別PRとし、複数targetの受け取り口と共通APIでの描画を扱う。
+
 ### 明示的なbinary semaphore
 
 IGraphicDevice.CreateSemaphoreは未signalの所有semaphoreを生成する。
@@ -310,4 +329,5 @@ Present前に必ずCPUでsubmission完了を待つ方式はGPUの提示同期が
 表示先の生存、リサイズ、取得失敗への復旧、frameの解放を利用側が明示的に管理する必要がある。
 画像のnative ownershipと同期の実現方法はバックエンドへ閉じ込める。同期オブジェクトの選択・signal／wait・再利用は利用側が管理する。
 共通APIのテストはleaseの失効、再構成、二重提示、明示的なsubmit、コピー読み戻しを確認する。
+複数表示先を同時取得して色を描き分け、一括／別々のSubmitとPresent、片方だけのresize・解放、残る表示先の描画継続を検証する。
 実ウインドウのハンドル取得とそのintegration testは後続PRに分離する。
