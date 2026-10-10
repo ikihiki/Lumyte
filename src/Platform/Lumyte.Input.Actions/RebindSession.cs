@@ -10,6 +10,7 @@ public sealed class RebindSession
     internal RebindSession(ActionSystem owner, string bindingId, RebindOptions options, TimeSpan started)
     {
         _owner = owner;
+        SourceProfile = owner.ExportProfile();
         BindingId = bindingId;
         Options = options;
         Started = started;
@@ -17,6 +18,9 @@ public sealed class RebindSession
 
     /// <summary>Gets binding id.</summary>
     public string BindingId { get; }
+
+    /// <summary>Gets the immutable profile from which this capture started.</summary>
+    public ActionProfile SourceProfile { get; }
 
     /// <summary>Gets candidate.</summary>
     public InputControl? Candidate { get; internal set; }

@@ -14,6 +14,9 @@ thread and queues replacements before InputSystem.Update/ActionSystem.Advance.
 `SaveRebindAsync` persists a frozen candidate without calling Confirm. Only a
 successful committed revision is applied on the next tick. Failure leaves the
 live profile unchanged. Preserve and display SettingsSaveResult diagnostics.
+Rebind saves must originate from the currently applied settings profile. A newer
+revision queued for the next tick already makes older captures conflict, and
+applying that revision does not make the older capture valid again.
 
 Defaults select calibration profiles by device kind names. A `selectProfile`
 callback can map device descriptors to stable user profile names. Processing

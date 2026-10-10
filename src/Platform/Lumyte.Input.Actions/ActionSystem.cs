@@ -21,9 +21,11 @@ public sealed class ActionSystem
     private readonly Dictionary<(string Context, string Action), IActionValueProcessor[]> _processors = new();
     private readonly Dictionary<string, IActionRecognizer[]> _recognizers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _recognizerEventStarts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<InputDeviceId>> _recognizerDevices = new(StringComparer.Ordinal);
     private HashSet<InputDeviceId>? _devices;
     private ActionProfile _profile;
     private RebindSession? _rebind;
+    private InputDeviceId? _rebindDevice;
     private ulong _sequence;
     private long _activation;
     private TimeSpan _now;
@@ -208,6 +210,7 @@ public sealed class ActionSystem
         _captureHeld.Clear();
         _captureHeld.UnionWith(_controls.Where(pair => pair.Value != Vector2.Zero).Select(pair => pair.Key));
         _rebind = new RebindSession(this, bindingId, options, _now);
+        _rebindDevice = null;
         _pending.Enqueue(() =>
         {
             CancelAll(_now);
@@ -255,11 +258,6 @@ public sealed class ActionSystem
             {
                 Timers(record.RecordedAt);
                 _sequence = record.Sequence;
-                if (_devices is not null && !_devices.Contains(record.DeviceId))
-                {
-                    continue;
-                }
-
                 if (record.Data is FocusData { IsFocused: false } or DeviceDisconnectedData)
                 {
                     ResetCore(record.DeviceId, record.RecordedAt);
@@ -285,6 +283,11 @@ public sealed class ActionSystem
                     _captureHeld.Remove(key);
                 }
 
+                if (_devices is not null && !_devices.Contains(record.DeviceId))
+                {
+                    continue;
+                }
+
                 Capture(record, control, value, blocked);
                 Recompute(record.RecordedAt);
                 _now = record.RecordedAt;
@@ -295,6 +298,13 @@ public sealed class ActionSystem
             foreach (KeyValuePair<string, IActionRecognizer[]> item in _recognizers.Where(item => _active.ContainsKey(item.Key)))
             {
                 ActionEvent[] scoped = _events.Skip(_recognizerEventStarts.GetValueOrDefault(item.Key)).Where(action => action.ContextId == item.Key).ToArray();
+                if (!_recognizerDevices.TryGetValue(item.Key, out HashSet<InputDeviceId>? devices))
+                {
+                    devices = new HashSet<InputDeviceId>();
+                    _recognizerDevices.Add(item.Key, devices);
+                }
+
+                devices.UnionWith(scoped.SelectMany(action => action.Devices));
                 foreach (IActionRecognizer recognizer in item.Value)
                 {
                     foreach (RecognizedAction recognition in recognizer.Advance(scoped, now))
@@ -414,6 +424,7 @@ public sealed class ActionSystem
         }
 
         session.Candidate = control;
+        _rebindDevice = record.DeviceId;
         ActionBinding target = _profile.Bindings.First(binding => binding.Id == session.BindingId);
         session.Conflicts = _profile.Bindings.Where(binding => binding.Id != target.Id && binding.ContextId == target.ContextId && binding.Control == control).Select(binding => binding.Id).ToImmutableArray();
     }
@@ -446,8 +457,8 @@ public sealed class ActionSystem
                         Vector2 candidate = pair.Value;
                         if (definition.Kind == ActionValueKind.Button)
                         {
-                            float threshold = _bindingDown.GetValueOrDefault((binding.Id, pair.Key.Device)) ? binding.ReleaseThreshold : binding.PressThreshold;
-                            bool down = candidate.Length() >= threshold;
+                            float magnitude = candidate.Length();
+                            bool down = _bindingDown.GetValueOrDefault((binding.Id, pair.Key.Device)) ? magnitude > binding.ReleaseThreshold : magnitude >= binding.PressThreshold;
                             _bindingDown[(binding.Id, pair.Key.Device)] = down;
                             candidate = down ? Vector2.UnitX : Vector2.Zero;
                         }
@@ -644,34 +655,58 @@ public sealed class ActionSystem
         foreach ((InputDeviceId Device, InputControl Control) key in _controls.Keys.Where(key => key.Device == device).ToArray())
         {
             _controls.Remove(key);
-            _suppressed.RemoveWhere(item => item.Device == device);
         }
 
-        foreach ((string Context, string Action) key in _states.Keys.Where(key => _contributors.GetValueOrDefault(key, []).Contains(device)).ToArray())
+        _suppressed.RemoveWhere(item => item.Device == device);
+        (string Context, string Action)[] affectedStates = _states.Keys.Where(key => _contributors.GetValueOrDefault(key, []).Contains(device)).ToArray();
+        var affectedContexts = affectedStates.Select(key => key.Context).ToHashSet(StringComparer.Ordinal);
+        foreach (string contextId in _recognizers.Keys)
+        {
+            if ((_recognizerDevices.TryGetValue(contextId, out HashSet<InputDeviceId>? devices) && devices.Contains(device)) || _events.Skip(_recognizerEventStarts.GetValueOrDefault(contextId)).Any(action => action.ContextId == contextId && action.Devices.Contains(device)))
+            {
+                affectedContexts.Add(contextId);
+            }
+        }
+
+        foreach ((string Context, string Action) key in affectedStates)
         {
             SuppressHeld(key.Context, _profile.Bindings.Where(binding => binding.ContextId == key.Context && binding.ActionId == key.Action).Select(binding => binding.Control).ToHashSet());
             CancelState(key, now);
+            if (_processors.TryGetValue(key, out IActionValueProcessor[]? processors))
+            {
+                foreach (IActionValueProcessor processor in processors)
+                {
+                    processor.Reset();
+                }
+            }
         }
 
-        foreach (IActionValueProcessor processor in _processors.Values.SelectMany(value => value))
+        foreach (string contextId in affectedContexts)
         {
-            processor.Reset();
+            if (_recognizers.TryGetValue(contextId, out IActionRecognizer[]? recognizers))
+            {
+                foreach (IActionRecognizer recognizer in recognizers)
+                {
+                    recognizer.Reset();
+                }
+            }
+
+            _recognizerEventStarts[contextId] = _events.Count;
+            _recognizerDevices.Remove(contextId);
         }
 
-        foreach (IActionRecognizer recognizer in _recognizers.Values.SelectMany(value => value))
+        foreach (string id in _progress.Where(item => item.Value.Devices.Contains(device) || item.Value.Held.Values.Any(action => action.Devices.Contains(device))).Select(item => item.Key).ToArray())
         {
-            recognizer.Reset();
+            _progress.Remove(id);
         }
 
-        foreach (string id in _recognizers.Keys)
+        foreach ((string Binding, InputDeviceId Device) key in _bindingDown.Keys.Where(key => key.Device == device).ToArray())
         {
-            _recognizerEventStarts[id] = _events.Count;
+            _bindingDown.Remove(key);
         }
 
-        _progress.Clear();
-        _bindingDown.Clear();
         _captureHeld.RemoveWhere(item => item.Device == device);
-        if (_rebind is not null)
+        if (_rebind is not null && _rebindDevice == device)
         {
             _rebind.IsComplete = true;
         }
@@ -709,6 +744,7 @@ public sealed class ActionSystem
         }
 
         _recognizerEventStarts[contextId] = _events.Count;
+        _recognizerDevices.Remove(contextId);
         _recognized.RemoveAll(action => action.ContextId == contextId);
         _suppressed.RemoveWhere(item => item.Context == contextId);
         Buffer.ClearContext(contextId);
@@ -737,6 +773,7 @@ public sealed class ActionSystem
         }
 
         _progress.Clear();
+        _recognizerDevices.Clear();
         _bindingDown.Clear();
         Buffer.Clear();
         _recognized.Clear();

@@ -21,6 +21,7 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
     private readonly VirtualizingInputSource? _virtualSource = virtualSource;
     private readonly Func<InputDeviceDescriptor, string>? _selectProfile = selectProfile;
     private readonly int _thread = Environment.CurrentManagedThreadId;
+    private ActionProfile? _actionProfile;
     private long _processingRevision = -1;
     private long _actionRevision = -1;
 
@@ -45,8 +46,10 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
         if (_actionRevision != _actions.Revision)
         {
             SettingsSnapshot<InputActionSettings> snapshot = _actions.Current;
-            _system.ApplyProfile(InputSettingsConverter.BuildProfile(snapshot.Value));
+            ActionProfile profile = InputSettingsConverter.BuildProfile(snapshot.Value);
+            _system.ApplyProfile(profile);
             _system.SetBufferOptions(new InputBufferOptions(TimeSpan.FromSeconds(snapshot.Value.BufferLifetimeSeconds), snapshot.Value.BufferMaxEntries));
+            _actionProfile = profile;
             _actionRevision = snapshot.Revision;
         }
     }
@@ -58,13 +61,14 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
     /// <returns>The result of the operation.</returns>
     public Task<SettingsSaveResult<InputActionSettings>> SaveRebindAsync(RebindSession session, RebindConflictPolicy policy, CancellationToken cancellationToken = default)
     {
-        ActionProfile candidate = session.PrepareProfile(policy);
+        ArgumentNullException.ThrowIfNull(session);
         SettingsEdit<InputActionSettings> edit = _actions.BeginEdit();
-        if (edit.BaseRevision != _actionRevision)
+        if (edit.BaseRevision != _actionRevision || !ReferenceEquals(_system.ExportProfile(), _actionProfile) || !ReferenceEquals(session.SourceProfile, _actionProfile))
         {
             return Task.FromResult(new SettingsSaveResult<InputActionSettings>(SettingsSaveStatus.Conflict, _actions.Current, ["Input settings changed while rebinding; apply the committed settings and capture again."]));
         }
 
+        ActionProfile candidate = session.PrepareProfile(policy);
         InputActionSettings converted = InputSettingsConverter.ToSettings(candidate);
         edit.Value.Actions = converted.Actions;
         edit.Value.Bindings = converted.Bindings;

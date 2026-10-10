@@ -110,6 +110,71 @@ public sealed class SettingsIntegrationTests
             }
         });
 
+    /// <summary>Verifies queued or applied settings cannot be overwritten by an older capture.</summary>
+    /// <param name="applyBeforeSave">Whether to apply the replacement before saving the stale capture.</param>
+    /// <returns>The asynchronous affine test.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task RebindRefusesReplacedSourceProfileAsync(bool applyBeforeSave)
+        => RunAffineAsync(async () =>
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, "settings.json");
+            try
+            {
+                using ServiceProvider provider = CreateProvider(path);
+                IEditableOptions<InputActionSettings> options = provider.GetRequiredService<IEditableOptions<InputActionSettings>>();
+                var actions = new ActionSystem(InputSettingsConverter.BuildProfile(options.Current.Value));
+                var source = new CorrectingInputSource(new EmptySource(), _ => [], () => TimeSpan.Zero);
+                var coordinator = new InputSettingsCoordinator(provider.GetRequiredService<IEditableOptions<InputProcessingSettings>>(), options, source, actions);
+                coordinator.ApplyCommittedSettings();
+                actions.ActivateContext("game");
+                actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
+                RebindSession stale = actions.BeginRebind("jump-key", new RebindOptions(TimeSpan.FromSeconds(1)));
+                actions.Advance(new[] { new InputRecord(new InputDeviceId(1), 1, TimeSpan.Zero, new KeyData(Key.J, true, false)) }, TimeSpan.Zero);
+
+                SettingsEdit<InputActionSettings> edit = options.BeginEdit();
+                edit.Value.Actions[0].Sensitivity = 0.75f;
+                edit.Value.Bindings[0].Control = "K";
+                Assert.Equal(SettingsSaveStatus.Saved, (await options.SaveAsync(edit)).Status);
+                long revision = options.Revision;
+                string savedDocument = File.ReadAllText(path);
+                coordinator.ApplyCommittedSettings();
+                Assert.Equal(1, actions.ExportProfile().Actions[0].Sensitivity);
+                if (applyBeforeSave)
+                {
+                    actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
+                }
+
+                Assert.Equal(SettingsSaveStatus.Conflict, (await coordinator.SaveRebindAsync(stale, RebindConflictPolicy.Allow)).Status);
+                Assert.Equal(revision, options.Revision);
+                Assert.Equal(savedDocument, File.ReadAllText(path));
+                Assert.Equal(0.75f, options.Current.Value.Actions[0].Sensitivity);
+                Assert.Equal("K", options.Current.Value.Bindings[0].Control);
+
+                actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
+                Assert.True(stale.IsComplete);
+                Assert.Equal(0.75f, actions.ExportProfile().Actions[0].Sensitivity);
+                RebindSession current = actions.BeginRebind("jump-key", new RebindOptions(TimeSpan.FromSeconds(1)));
+                actions.Advance(
+                    new[]
+                    {
+                        new InputRecord(new InputDeviceId(1), 2, TimeSpan.Zero, new KeyData(Key.J, false, false)),
+                        new InputRecord(new InputDeviceId(1), 3, TimeSpan.Zero, new KeyData(Key.J, true, false)),
+                    },
+                    TimeSpan.Zero);
+                Assert.Equal(SettingsSaveStatus.Saved, (await coordinator.SaveRebindAsync(current, RebindConflictPolicy.Allow)).Status);
+                Assert.Equal(0.75f, options.Current.Value.Actions[0].Sensitivity);
+                Assert.Equal("J", options.Current.Value.Bindings[0].Control);
+            }
+            finally
+            {
+                Directory.Delete(directory, true);
+            }
+        });
+
     private static async Task SaveRebindAndRestartAsync()
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

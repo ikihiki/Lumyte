@@ -13,6 +13,8 @@
 
 `Lumyte.Input.Actions` は Input・Processing と .NET に依存し、Settings や DI コンテナーには依存しない。利用者・プレイヤーごとに ActionSystem を作り、SetDevices で対象を選ぶ。指定しない場合は受け渡された全デバイスを使う。物理・仮想デバイスは同じ InputControl の指定で扱う。
 
+対象外デバイスの記録も受け渡し、現在値と解放を追跡する。マッピングとリバインドの捕捉は選択したデバイスに限定する。再選択時は現在のアナログ値を評価し、押下中のボタンは解放後の新しい押下から受け付ける。
+
 Advance は Sequence 順の新しい InputRecord と InputSystem.ElapsedTime を受け取る。入力が空でもタイマーを進める。時刻・Sequence の逆行、未来の記録、再入・別スレッドからの変更を拒否する。履歴から取り出す場合は HasGap を検査し、欠落したデバイスを Reset して途中の操作を捨てる。現在状態から失われた操作を推測しない。
 
 処理順はコンテキスト選別 → バインディング → アクション値補正 → 操作認識 → 入力バッファ → 通知である。InputSystem の履歴を消費・改変しない。通知例外は各ハンドラーの実行後に集約し、確定済みの Sequence を再実行しない。
@@ -28,6 +30,8 @@ ActionProfile は ImmutableArray による不変な ActionDefinition、ActionBin
 | Axis2D | 各軸 -1〜1 | 最大長 |
 
 同値のバインディングは BindingId の ordinal 順で選ぶ。Scale はキーを方向へ変換し、スティックでは各軸へ掛ける。軸から Button への変換では PressThreshold と ReleaseThreshold を分け、デバイスごとにヒステリシスを保持する。既定で複数バインディングを加算しない。
+
+PressThreshold 以上で押下、ReleaseThreshold 以下で解放とする。ReleaseThreshold がゼロでも、完全に中立になれば解放する。
 
 Started はゼロから有効、Performed は有効な値の変化、Canceled は中立化を示す。寄与したデバイス ID と ContextId をイベントに含める。
 
@@ -48,6 +52,8 @@ ActionDefinition の Sensitivity、Normalize、SmoothingSeconds で感度、長�
 | Sequence | 指定順の Started が Window 内で完了 |
 
 通常の解放は長押しを中断する。フォーカス喪失・切断・コンテキスト解除・プロファイル交換では関連する途中状態を破棄する。カスタム認識はコンテキストごとに SetRecognizers を使う。IActionRecognizer.Advance はそのコンテキストのイベントだけを受け取り、空のバッチでもタイマーを更新できる。
+
+デバイスの切断では、そのデバイスが寄与した組み込み認識とアクション値補正だけをリセットする。カスタム認識の Reset はコンテキスト単位なので、そのデバイスのイベントを受け取ったコンテキストを対象とする。
 
 Completed 操作は RecognizedAction として通知し、入力バッファへ追加する。タッチのスワイプ・ピンチ・回転はマッピング前の仮想 Device、長押しやコンボはマッピング後の認識として区別する。
 
@@ -85,6 +91,8 @@ if (session.Candidate is not null)
 ```
 
 失敗・競合時は旧プロファイルと候補を保持し、再確認・再保存または Cancel できる。成功時は ApplyCommittedSettings が最新 Current を予約し、続く Advance でプロファイル交換・バッファ初期化・捕捉終了を行う。保存時の古い候補を二度 Confirm しない。
+
+保存には、確定済み Revision に対応するプロファイルが実際に適用済みで、捕捉開始時のプロファイルとも一致することを要求する。新設定の適用待ちや古いプロファイルからの候補は Conflict とし、適用後に改めて捕捉する。
 
 input-processing と input-actions は個別 Revision を持つ。別セクションの SaveAsync を全体の原子的更新とは扱わない。入力設定の初期化にはそのモジュールの ResetAsync を使う。
 
@@ -180,6 +188,7 @@ void Tick()
 +ActionSystem.ApplyProfile(ActionProfile profile)
 +ActionSystem.SetBufferOptions(InputBufferOptions options)
 +ActionSystem.BeginRebind(string bindingId, RebindOptions options)
++RebindSession.SourceProfile : ActionProfile
 +RebindSession.Candidate : InputControl?
 +RebindSession.Conflicts : ImmutableArray<string>
 +RebindSession.IsComplete : bool

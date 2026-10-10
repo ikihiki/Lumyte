@@ -30,22 +30,31 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
     /// <returns>The corrected batch.</returns>
     public IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now)
     {
+        Span<Vector2> values = stackalloc Vector2[2];
+        Span<Vector2> targets = stackalloc Vector2[2];
+        Span<TimeSpan> times = stackalloc TimeSpan[2];
+        Span<bool> initialized = stackalloc bool[2];
+        _values.AsSpan().CopyTo(values);
+        _targets.AsSpan().CopyTo(targets);
+        _times.AsSpan().CopyTo(times);
+        _initialized.AsSpan().CopyTo(initialized);
+        bool focused = _focused;
         var result = new List<InputData>(data.Count + 2);
         Span<bool> sampled = stackalloc bool[2];
         foreach (InputData item in data)
         {
             if (item is FocusData { IsFocused: false } or DeviceDisconnectedData)
             {
-                Reset();
-                _focused = false;
+                initialized.Clear();
+                focused = false;
             }
 
             if (item is FocusData focus)
             {
-                _focused = focus.IsFocused;
+                focused = focus.IsFocused;
             }
 
-            if (_focused && item is ControllerStickData stick)
+            if (focused && item is ControllerStickData stick)
             {
                 int index = (int)stick.Stick;
                 if ((uint)index >= 2)
@@ -59,17 +68,17 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
                 }
 
                 sampled[index] = true;
-                _targets[index] = stick.Value;
-                if (_initialized[index] && now < _times[index])
+                targets[index] = stick.Value;
+                if (initialized[index] && now < times[index])
                 {
                     throw new ArgumentOutOfRangeException(nameof(now));
                 }
 
-                float amount = _initialized[index] ? 1 - MathF.Exp(-(float)(now - _times[index]).TotalSeconds / _seconds) : 1;
-                _values[index] = Vector2.Lerp(_values[index], stick.Value, amount);
-                _times[index] = now;
-                _initialized[index] = true;
-                result.Add(stick with { Value = _values[index] });
+                float amount = initialized[index] ? 1 - MathF.Exp(-(float)(now - times[index]).TotalSeconds / _seconds) : 1;
+                values[index] = Vector2.Lerp(values[index], stick.Value, amount);
+                times[index] = now;
+                initialized[index] = true;
+                result.Add(stick with { Value = values[index] });
             }
             else
             {
@@ -79,26 +88,31 @@ public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
 
         for (int index = 0; index < 2; index++)
         {
-            if (!_initialized[index] || sampled[index])
+            if (!initialized[index] || sampled[index])
             {
                 continue;
             }
 
-            if (now < _times[index])
+            if (now < times[index])
             {
                 throw new ArgumentOutOfRangeException(nameof(now));
             }
 
-            if (_values[index] != _targets[index])
+            if (values[index] != targets[index])
             {
-                float amount = 1 - MathF.Exp(-(float)(now - _times[index]).TotalSeconds / _seconds);
-                _values[index] = Vector2.Lerp(_values[index], _targets[index], amount);
-                result.Add(new ControllerStickData((ControllerStick)index, _values[index]));
+                float amount = 1 - MathF.Exp(-(float)(now - times[index]).TotalSeconds / _seconds);
+                values[index] = Vector2.Lerp(values[index], targets[index], amount);
+                result.Add(new ControllerStickData((ControllerStick)index, values[index]));
             }
 
-            _times[index] = now;
+            times[index] = now;
         }
 
+        values.CopyTo(_values);
+        targets.CopyTo(_targets);
+        times.CopyTo(_times);
+        initialized.CopyTo(_initialized);
+        _focused = focused;
         return result;
     }
 
