@@ -145,3 +145,9 @@ shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpoi
 `DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、寿命、非mappedを検証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
 
 WebGPUのdepth32float／depth24plus-stencil8、render passのdepthStencilAttachment、pipelineのdepthStencil stateを使用します。depth24plus-stencil8のdepth storageはWebGPU実装が決めます。depth formatはpipeline variantのキーへ含めます。setIndexBuffer／drawIndexed／drawIndirect／drawIndexedIndirect／dispatchWorkgroupsIndirectへ直接対応付け、物理的なbarrierはWebGPUのusage管理へ任せます。indirect-first-instance optional featureは要求しません。command bufferが同じpassでwritable storage bindingにも使われる構成はWebGPUのusage競合になるため、生成passと実行passを分け、実行側のrootには必要な資源だけを渡します。
+
+## 追加カラー形式
+
+`R8Unorm`, `Rg8Unorm`, `R16Float`, `Rg16Float`, `Rgba16Float`, `Rgb10A2Unorm`をサンプリング・カラーattachment・コピーへ対応付けます。コピーは形式ごとのtexelサイズを使い、オフセットは4 byteとtexelサイズの両方に整列させます。
+
+WebGPUの標準filterable形式を使い、追加のオプションfeatureは要求しません。

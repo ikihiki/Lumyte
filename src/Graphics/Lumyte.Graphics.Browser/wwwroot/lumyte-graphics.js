@@ -95,7 +95,7 @@ export function destroyBuffer(handle) {
 }
 
 export function createTexture(handle, width, height, layers, mips, format, flags) {
-    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "depth32float", "depth24plus-stencil8"];
+    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "depth32float", "depth24plus-stencil8", "r8unorm", "rg8unorm", "r16float", "rg16float", "rgba16float", "rgb10a2unorm"];
     let usage = 0;
     if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
     if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
@@ -209,7 +209,7 @@ function stencilFace(face, enabled) {
 }
 export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson, depthFormat, bindingKey) {
     const state = JSON.parse(stateJson), formats = JSON.parse(formatsJson);
-    const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "depth32float", "depth24plus-stencil8"];
+    const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "depth32float", "depth24plus-stencil8", "r8unorm", "rg8unorm", "r16float", "rg16float", "rgba16float", "rgb10a2unorm"];
     const factors = ["zero", "one", "src", "one-minus-src", "src-alpha", "one-minus-src-alpha", "dst", "one-minus-dst", "dst-alpha", "one-minus-dst-alpha", "src-alpha-saturated", "constant", "one-minus-constant"];
     const operations = ["add", "subtract", "reverse-subtract", "min", "max"];
     const blend = b => ({ srcFactor: factors[b.Source], dstFactor: factors[b.Destination], operation: operations[b.Operation] });

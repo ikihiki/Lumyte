@@ -157,3 +157,5 @@ applicationのpartial root structにIShaderArgumentsを実装し、IRenderEncode
 Depth／Stencil attachmentは`RenderPassDesc.DepthStencilAttachment`へ指定し、colorなしのpassも許可します。depth/stencil load/storeは独立で、実行状態は`SetRenderState`から指定します。Depth32Float／Depth24Stencil8は今回RenderAttachment用途に限定します。
 
 Index bufferは`SetIndexBuffer(BufferSlice<ushort>)`／`SetIndexBuffer(BufferSlice<uint>)`へ設定し、`DrawIndexed`のfirstIndexはそのsliceからの相対offsetです。Indirectは`DrawIndirectArguments`／`DrawIndexedIndirectArguments`／`DispatchIndirectArguments`を1要素含むIndirect usageのsliceを渡します。GPU commandの内容はCPUで解析せず、命令転送、生成後のIndexRead／IndirectRead barrier、submit、寿命は利用者が管理します。詳しい契約は[Depth／Stencil ADR](../../../docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)と[Indexed／Indirect ADR](../../../docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)を参照してください。
+
+カラー形式にはR8／RG8、R16／RG16／RGBA16 float、RGB10A2 unormも選択できます。バイト数と転送制約は`GetTextureCopyLayout`で取得します。[形式拡充ADR](../../../docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)を参照してください。

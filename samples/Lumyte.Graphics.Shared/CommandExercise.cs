@@ -19,8 +19,15 @@ public static class CommandExercise
         ArgumentNullException.ThrowIfNull(device);
         CheckReleasedResource(device);
         await CheckBuffersAsync(device);
-        await CheckTexturesAsync(device);
-        await CheckClearAsync(device);
+        foreach (TextureFormat format in Enum.GetValues<TextureFormat>())
+        {
+            if (format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8))
+            {
+                await CheckTexturesAsync(device, format);
+                await CheckClearAsync(device, format);
+            }
+        }
+
         return "Command checks passed: GPU buffer copy, padded mip/layer copies, clear, pass scope and submission.";
     }
 
@@ -99,10 +106,11 @@ public static class CommandExercise
         Require(actual.AsSpan().SequenceEqual(values.AsSpan(2, 4)), "Partial buffer GPU copy changed the bytes.");
     }
 
-    private static async Task CheckTexturesAsync(IGraphicDevice device)
+    private static async Task CheckTexturesAsync(IGraphicDevice device, TextureFormat format)
     {
-        TextureCopyLayout constraints = device.GetTextureCopyLayout(TextureFormat.Rgba8Unorm);
-        uint pitch = checked(((12 + constraints.BytesPerRowAlignment - 1) / constraints.BytesPerRowAlignment) * constraints.BytesPerRowAlignment);
+        TextureCopyLayout constraints = device.GetTextureCopyLayout(format);
+        uint rowBytes = 3 * constraints.BytesPerTexel;
+        uint pitch = checked(((rowBytes + constraints.BytesPerRowAlignment - 1) / constraints.BytesPerRowAlignment) * constraints.BytesPerRowAlignment);
         uint rows = 3;
         uint offset = checked((uint)constraints.BufferOffsetAlignmentInBytes);
         uint bytes = checked(offset + (pitch * rows * 2));
@@ -111,16 +119,16 @@ public static class CommandExercise
         {
             for (uint y = 0; y < 2; y++)
             {
-                for (uint x = 0; x < 12; x++)
+                for (uint x = 0; x < rowBytes; x++)
                 {
-                    expected[offset + (layer * rows * pitch) + (y * pitch) + x] = checked((byte)(1 + (layer * 50) + (y * 12) + x));
+                    expected[offset + (layer * rows * pitch) + (y * pitch) + x] = checked((byte)(1 + (layer * 50) + (y * rowBytes) + x));
                 }
             }
         }
 
         using IGraphicsBuffer<byte> upload = device.CreateBuffer<byte>(new() { Count = bytes, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = bytes, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
-        var desc = new TextureDesc { Width = 8, Height = 8, MipLevels = 2, ArrayLayers = 3, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.CopySource | TextureUsage.CopyDestination };
+        var desc = new TextureDesc { Width = 8, Height = 8, MipLevels = 2, ArrayLayers = 3, Format = format, Usage = TextureUsage.CopySource | TextureUsage.CopyDestination };
         using IGraphicsTexture source = device.CreateTexture(desc);
         using IGraphicsTexture destination = device.CreateTexture(desc);
         var sourceRegion = new TextureCopyRegion { Texture = source, MipLevel = 1, OriginX = 1, OriginY = 1, Width = 3, Height = 2, BaseArrayLayer = 1, ArrayLayerCount = 2 };
@@ -136,6 +144,12 @@ public static class CommandExercise
         Transition(commands, destination, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);
         commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, bytes), Before = _hostWrite, After = _copyRead });
         Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { BytesPerRow = 1 }, sourceRegion));
+        if (format == TextureFormat.Rgba16Float)
+        {
+            Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { Buffer = upload.Slice(4, bytes - 4) }, sourceRegion));
+            Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { BytesPerRow = pitch + 4 }, sourceRegion));
+        }
+
         commands.CopyBufferToTexture(sourceLayout, sourceRegion);
         Transition(commands, source, new(1, 1, 1, 2), TextureState.CopyDestination, TextureState.CopySource, _copyWrite, _copyRead);
         commands.CopyTexture(sourceRegion, destinationRegion);
@@ -154,16 +168,27 @@ public static class CommandExercise
             for (uint y = 0; y < 2; y++)
             {
                 int start = checked((int)(offset + (layer * rows * pitch) + (y * pitch)));
-                Require(actual.AsSpan(start, 12).SequenceEqual(expected.AsSpan(start, 12)), "Layered partial texture GPU copy changed the texels.");
+                Require(actual.AsSpan(start, checked((int)rowBytes)).SequenceEqual(expected.AsSpan(start, checked((int)rowBytes))), "Layered partial texture GPU copy changed the texels.");
             }
         }
     }
 
-    private static async Task CheckClearAsync(IGraphicDevice device)
+    private static async Task CheckClearAsync(IGraphicDevice device, TextureFormat format)
     {
-        uint pitch = device.GetTextureCopyLayout(TextureFormat.Rgba8Unorm).BytesPerRowAlignment;
-        pitch = Math.Max(pitch, 16);
-        using IGraphicsTexture texture = device.CreateTexture(new() { Width = 4, Height = 3, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
+        TextureCopyLayout layout = device.GetTextureCopyLayout(format);
+        uint pitch = Math.Max(layout.BytesPerRowAlignment, 4 * layout.BytesPerTexel);
+        byte[] pixel = format switch
+        {
+            TextureFormat.R8Unorm => [255],
+            TextureFormat.Rg8Unorm => [255, 0],
+            TextureFormat.R16Float => [0, 60],
+            TextureFormat.Rg16Float => [0, 60, 0, 0],
+            TextureFormat.Rgba16Float => [0, 60, 0, 0, 0, 0, 0, 60],
+            TextureFormat.Rgb10A2Unorm => [255, 3, 0, 192],
+            TextureFormat.Bgra8Unorm or TextureFormat.Bgra8Srgb => [0, 0, 255, 255],
+            _ => [255, 0, 0, 255],
+        };
+        using IGraphicsTexture texture = device.CreateTexture(new() { Width = 4, Height = 3, Format = format, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = texture.CreateView();
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 3, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
@@ -186,8 +211,8 @@ public static class CommandExercise
         {
             for (uint x = 0; x < 4; x++)
             {
-                uint index = (y * pitch) + (x * 4);
-                Require(actual[index] == 255 && actual[index + 1] == 0 && actual[index + 2] == 0 && actual[index + 3] == 255, "Render pass clear/store did not preserve the exact red pixels.");
+                uint index = (y * pitch) + (x * layout.BytesPerTexel);
+                Require(actual.AsSpan(checked((int)index), pixel.Length).SequenceEqual(pixel), "Render pass clear/store did not preserve the exact red pixels.");
             }
         }
     }

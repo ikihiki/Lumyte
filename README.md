@@ -15,6 +15,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)
 - [Indexed drawとIndirect実行](docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)
+- [カラーテクスチャ形式の拡充](docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)
 - [PSOのシェーダープログラムと描画状態の分離](docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)
 - [Argument Tableのシェーダー引数への接続](docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)
 - [CommandBufferと明示的なGPU実行](docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md)

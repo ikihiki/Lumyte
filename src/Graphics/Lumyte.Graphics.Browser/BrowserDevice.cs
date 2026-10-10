@@ -99,7 +99,17 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
             throw new NotSupportedException("Unknown color texture format.");
         }
 
-        return new() { BytesPerTexel = 4, BufferOffsetAlignmentInBytes = 4, BytesPerRowAlignment = Caps.CopyBytesPerRowAlignment };
+        uint bytesPerTexel = format switch
+        {
+            TextureFormat.R8Unorm => 1,
+            TextureFormat.Rg8Unorm => 2,
+            TextureFormat.R16Float => 2,
+            TextureFormat.Rg16Float => 4,
+            TextureFormat.Rgba16Float => 8,
+            TextureFormat.Rgb10A2Unorm => 4,
+            _ => 4,
+        };
+        return new() { BytesPerTexel = bytesPerTexel, BufferOffsetAlignmentInBytes = Math.Max(4U, bytesPerTexel), BytesPerRowAlignment = Caps.CopyBytesPerRowAlignment };
     }
 
     /// <inheritdoc />

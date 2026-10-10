@@ -81,7 +81,14 @@ internal sealed unsafe partial class WgpuGraphicsPipeline
         TextureFormat.Rgba8Unorm => WGPUTextureFormat.RGBA8Unorm,
         TextureFormat.Rgba8Srgb => WGPUTextureFormat.RGBA8UnormSrgb,
         TextureFormat.Bgra8Unorm => WGPUTextureFormat.BGRA8Unorm,
-        _ => WGPUTextureFormat.BGRA8UnormSrgb,
+        TextureFormat.Bgra8Srgb => WGPUTextureFormat.BGRA8UnormSrgb,
+        TextureFormat.R8Unorm => WGPUTextureFormat.R8Unorm,
+        TextureFormat.Rg8Unorm => WGPUTextureFormat.RG8Unorm,
+        TextureFormat.R16Float => WGPUTextureFormat.R16Float,
+        TextureFormat.Rg16Float => WGPUTextureFormat.RG16Float,
+        TextureFormat.Rgba16Float => WGPUTextureFormat.RGBA16Float,
+        TextureFormat.Rgb10A2Unorm => WGPUTextureFormat.RGB10A2Unorm,
+        _ => throw new NotSupportedException("Unsupported color attachment format."),
     };
 
     private void Initialize()

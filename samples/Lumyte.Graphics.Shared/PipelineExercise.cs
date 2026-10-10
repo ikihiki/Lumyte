@@ -36,6 +36,12 @@ public static class PipelineExercise
             }
         }
 
+        foreach (TextureFormat format in new[] { TextureFormat.R8Unorm, TextureFormat.Rg8Unorm, TextureFormat.R16Float, TextureFormat.Rg16Float, TextureFormat.Rgba16Float, TextureFormat.Rgb10A2Unorm })
+        {
+            await DrawAsync(device, pipeline, format, false, ColorWriteMask.All, uint.MaxValue);
+            await DrawAsync(device, pipeline, format, false, ColorWriteMask.All, uint.MaxValue);
+        }
+
         using IGraphicsComputePipeline computePipeline = device.CreateComputePipeline(new() { ComputeShader = compute });
         Expect<InvalidOperationException>(compute.Dispose);
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
@@ -75,7 +81,8 @@ public static class PipelineExercise
     {
         using IGraphicsTexture texture = device.CreateTexture(new() { Width = 8, Height = 8, Format = format, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = texture.CreateView();
-        uint pitch = Math.Max(32, device.GetTextureCopyLayout(format).BytesPerRowAlignment);
+        TextureCopyLayout layout = device.GetTextureCopyLayout(format);
+        uint pitch = Math.Max(8 * layout.BytesPerTexel, layout.BytesPerRowAlignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         var write = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
@@ -111,10 +118,28 @@ public static class PipelineExercise
         byte[] bytes = new byte[checked((int)readback.Count)];
         readback.CopyTo(bytes);
         readback.Unmap();
+        byte[]? exact = format switch
+        {
+            TextureFormat.R8Unorm => [255],
+            TextureFormat.Rg8Unorm => [255, 0],
+            TextureFormat.R16Float => [0, 60],
+            TextureFormat.Rg16Float => [0, 60, 0, 0],
+            TextureFormat.Rgba16Float => [0, 60, 0, 0, 0, 0, 0, 56],
+            TextureFormat.Rgb10A2Unorm => [255, 3, 0, 128],
+            _ => null,
+        };
+
         for (uint y = 0; y < 8; y++)
         {
             for (uint x = 0; x < 8; x++)
             {
+                if (exact != null)
+                {
+                    int index = checked((int)((y * pitch) + (x * layout.BytesPerTexel)));
+                    Require(bytes.AsSpan(index, exact.Length).SequenceEqual(exact), "Extended format draw changed a pixel.");
+                    continue;
+                }
+
                 bool skipped = mask == ColorWriteMask.None || sampleMask == 0 || cull == CullMode.Front || x >= scissorWidth;
                 int red = skipped ? 0 : blend ? 128 : 255;
                 int blue = skipped ? 255 : blend ? 128 : 0;
