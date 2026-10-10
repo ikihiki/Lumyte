@@ -33,7 +33,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
         if ((Usage & TextureUsage.RenderAttachment) != 0)
         {
-            usage |= ImageUsageFlags.ColorAttachmentBit;
+            usage |= Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 ? ImageUsageFlags.DepthStencilAttachmentBit : ImageUsageFlags.ColorAttachmentBit;
         }
 
         ImageCreateFlags flags = Width == Height && ArrayLayers >= 6 ? ImageCreateFlags.CreateCubeCompatibleBit : 0;
@@ -151,7 +151,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
             ViewType = dimension,
             Format = NativeFormat(Format),
             Components = new ComponentMapping(ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity),
-            SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, info.BaseMipLevel, info.MipLevelCount, info.BaseArrayLayer, info.ArrayLayerCount),
+            SubresourceRange = new ImageSubresourceRange(Aspect(Format), info.BaseMipLevel, info.MipLevelCount, info.BaseArrayLayer, info.ArrayLayerCount),
         };
         ImageView native = default;
         Check(_owner.Api.CreateImageView(_owner.NativeDevice, &descriptor, null, &native), "CreateImageView");
@@ -178,16 +178,25 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         _owner.ReleaseTexture();
     }
 
-    internal void ReleaseView() => _viewCount--;
+    internal static ImageAspectFlags Aspect(TextureFormat format) => format switch
+    {
+        TextureFormat.Depth32Float => ImageAspectFlags.DepthBit,
+        TextureFormat.Depth24Stencil8 => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+        _ => ImageAspectFlags.ColorBit,
+    };
 
-    private static Format NativeFormat(TextureFormat format) => format switch
+    internal static Format NativeFormat(TextureFormat format) => format switch
     {
         TextureFormat.Rgba8Unorm => Silk.NET.Vulkan.Format.R8G8B8A8Unorm,
         TextureFormat.Rgba8Srgb => Silk.NET.Vulkan.Format.R8G8B8A8Srgb,
         TextureFormat.Bgra8Unorm => Silk.NET.Vulkan.Format.B8G8R8A8Unorm,
         TextureFormat.Bgra8Srgb => Silk.NET.Vulkan.Format.B8G8R8A8Srgb,
+        TextureFormat.Depth32Float => Silk.NET.Vulkan.Format.D32Sfloat,
+        TextureFormat.Depth24Stencil8 => Silk.NET.Vulkan.Format.D24UnormS8Uint,
         _ => throw new NotSupportedException("Unsupported texture format."),
     };
+
+    internal void ReleaseView() => _viewCount--;
 
     private static uint SelectMemoryType(PhysicalDeviceMemoryProperties properties, uint bits)
     {

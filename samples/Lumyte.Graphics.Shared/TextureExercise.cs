@@ -75,7 +75,7 @@ public static class TextureExercise
         Expect<ArgumentException>(() => rectangle.CreateView(new() { Dimension = TextureViewDimension.Cube }));
         using IGraphicsTexture copyOnly = device.CreateTexture(desc with { ArrayLayers = 1, MipLevels = 1, Usage = TextureUsage.CopySource | TextureUsage.CopyDestination });
         Expect<InvalidOperationException>(() => copyOnly.CreateView());
-        foreach (TextureFormat format in Enum.GetValues<TextureFormat>())
+        foreach (TextureFormat format in new[] { TextureFormat.Rgba8Unorm, TextureFormat.Rgba8Srgb, TextureFormat.Bgra8Unorm, TextureFormat.Bgra8Srgb })
         {
             using IGraphicsTexture color = device.CreateTexture(desc with { ArrayLayers = 1, Format = format });
             using IGraphicsTextureView view = color.CreateView();

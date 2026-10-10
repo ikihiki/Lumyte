@@ -69,6 +69,35 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         owner.ValidatePass(this);
+        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
+        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(groupCountX));
+        }
+
+        PrepareDispatch();
+        owner.Owner.Api.CmdDispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
+    }
+
+    public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
+        {
+            throw new ArgumentException("Indirect execution requires one four-byte-aligned command record.");
+        }
+
+        VulkanBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
+        PrepareDispatch();
+        owner.Owner.Api.CmdDispatchIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes);
+        owner.TrackProgram(() => { _ = buffer.Native; });
+    }
+
+    public void End() => owner.EndCompute(this);
+
+    private void PrepareDispatch()
+    {
+        owner.ValidatePass(this);
         if (_pipeline == null)
         {
             throw new InvalidOperationException("Select a compute program before dispatch.");
@@ -98,11 +127,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         }
 
         _pipeline.ValidateAlive();
-        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
-        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
-        {
-            throw new ArgumentOutOfRangeException(nameof(groupCountX));
-        }
 
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(bindingSnapshot));
         if (bindingSnapshot != null)
@@ -113,7 +137,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Compute, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }
 
-        owner.Owner.Api.CmdDispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
         if (bindingSnapshot != null)
         {
             owner.TrackProgram(bindingSnapshot.Validate);
@@ -121,6 +144,4 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         owner.TrackProgram(_pipeline.ValidateAlive);
     }
-
-    public void End() => owner.EndCompute(this);
 }

@@ -17,4 +17,7 @@ public enum TextureState
 
     /// <summary>Specifies ColorAttachment.</summary>
     ColorAttachment,
+
+    /// <summary>Allows depth/stencil attachment reads and writes.</summary>
+    DepthStencilAttachment,
 }

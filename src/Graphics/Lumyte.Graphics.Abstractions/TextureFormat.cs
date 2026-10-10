@@ -14,4 +14,10 @@ public enum TextureFormat
 
     /// <summary>sRGB BGRA color and linear eight-bit alpha.</summary>
     Bgra8Srgb,
+
+    /// <summary>Thirty-two-bit floating point depth.</summary>
+    Depth32Float,
+
+    /// <summary>At least twenty-four-bit depth and eight-bit stencil; depth storage is backend-specific.</summary>
+    Depth24Stencil8,
 }

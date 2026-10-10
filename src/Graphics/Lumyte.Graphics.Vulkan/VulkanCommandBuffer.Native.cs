@@ -57,6 +57,21 @@ internal sealed unsafe partial class VulkanCommandBuffer
             flags |= PipelineStageFlags.ColorAttachmentOutputBit;
         }
 
+        if ((scope.Stages & PipelineStage.DrawIndirect) != 0)
+        {
+            flags |= PipelineStageFlags.DrawIndirectBit;
+        }
+
+        if ((scope.Stages & PipelineStage.IndexInput) != 0)
+        {
+            flags |= PipelineStageFlags.VertexInputBit;
+        }
+
+        if ((scope.Stages & PipelineStage.DepthStencil) != 0)
+        {
+            flags |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
+        }
+
         return (PipelineStageFlags2)flags;
     }
 
@@ -103,6 +118,26 @@ internal sealed unsafe partial class VulkanCommandBuffer
             flags |= AccessFlags.ColorAttachmentWriteBit;
         }
 
+        if ((scope.Access & ResourceAccess.IndexRead) != 0)
+        {
+            flags |= AccessFlags.IndexReadBit;
+        }
+
+        if ((scope.Access & ResourceAccess.IndirectRead) != 0)
+        {
+            flags |= AccessFlags.IndirectCommandReadBit;
+        }
+
+        if ((scope.Access & ResourceAccess.DepthStencilRead) != 0)
+        {
+            flags |= AccessFlags.DepthStencilAttachmentReadBit;
+        }
+
+        if ((scope.Access & ResourceAccess.DepthStencilWrite) != 0)
+        {
+            flags |= AccessFlags.DepthStencilAttachmentWriteBit;
+        }
+
         return (AccessFlags2)flags;
     }
 
@@ -113,6 +148,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
         TextureState.CopyDestination => ImageLayout.TransferDstOptimal,
         TextureState.Sampled => ImageLayout.ShaderReadOnlyOptimal,
         TextureState.ColorAttachment => ImageLayout.ColorAttachmentOptimal,
+        TextureState.DepthStencilAttachment => ImageLayout.DepthStencilAttachmentOptimal,
         _ => throw new ArgumentException("Unknown texture state."),
     };
 
@@ -230,13 +266,13 @@ internal sealed unsafe partial class VulkanCommandBuffer
             SrcQueueFamilyIndex = uint.MaxValue,
             DstQueueFamilyIndex = uint.MaxValue,
             Image = texture.Native,
-            SubresourceRange = new() { AspectMask = ImageAspectFlags.ColorBit, BaseMipLevel = barrier.Range.BaseMipLevel, LevelCount = barrier.Range.MipLevelCount, BaseArrayLayer = barrier.Range.BaseArrayLayer, LayerCount = barrier.Range.ArrayLayerCount },
+            SubresourceRange = new() { AspectMask = VulkanTexture.Aspect(texture.Format), BaseMipLevel = barrier.Range.BaseMipLevel, LevelCount = barrier.Range.MipLevelCount, BaseArrayLayer = barrier.Range.BaseArrayLayer, LayerCount = barrier.Range.ArrayLayerCount },
         };
         var dependency = new DependencyInfo { SType = StructureType.DependencyInfo, ImageMemoryBarrierCount = 1, PImageMemoryBarriers = &memory };
         _owner.Api.CmdPipelineBarrier2(_command, &dependency);
     }
 
-    private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments)
+    private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth)
     {
         Span<RenderingAttachmentInfo> colors = stackalloc RenderingAttachmentInfo[attachments.Length];
         for (int i = 0; i < colors.Length; i++)
@@ -253,15 +289,33 @@ internal sealed unsafe partial class VulkanCommandBuffer
             };
         }
 
-        IGraphicsTextureView view = attachments[0].View;
+        RenderingAttachmentInfo depthAttachment = default;
+        RenderingAttachmentInfo stencilAttachment = default;
+        if (depth != null)
+        {
+            depthAttachment = new()
+            {
+                SType = StructureType.RenderingAttachmentInfo,
+                ImageView = ((VulkanTextureView)depth.View).Native,
+                ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
+                LoadOp = depth.DepthLoadOp == Abstractions.AttachmentLoadOp.Clear ? Silk.NET.Vulkan.AttachmentLoadOp.Clear : Silk.NET.Vulkan.AttachmentLoadOp.Load,
+                StoreOp = depth.DepthStoreOp == Abstractions.AttachmentStoreOp.Store ? Silk.NET.Vulkan.AttachmentStoreOp.Store : Silk.NET.Vulkan.AttachmentStoreOp.DontCare,
+                ClearValue = new() { DepthStencil = new(depth.DepthClearValue, depth.StencilClearValue) },
+            };
+            stencilAttachment = depthAttachment;
+            stencilAttachment.LoadOp = depth.StencilLoadOp == Abstractions.AttachmentLoadOp.Clear ? Silk.NET.Vulkan.AttachmentLoadOp.Clear : Silk.NET.Vulkan.AttachmentLoadOp.Load;
+            stencilAttachment.StoreOp = depth.StencilStoreOp == Abstractions.AttachmentStoreOp.Store ? Silk.NET.Vulkan.AttachmentStoreOp.Store : Silk.NET.Vulkan.AttachmentStoreOp.DontCare;
+        }
+
+        IGraphicsTextureView view = attachments.FirstOrDefault()?.View ?? depth!.View;
         (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
         fixed (RenderingAttachmentInfo* data = colors)
         {
-            var rendering = new RenderingInfo { SType = StructureType.RenderingInfo, LayerCount = 1, RenderArea = new() { Extent = new(width, height) }, ColorAttachmentCount = (uint)colors.Length, PColorAttachments = data };
+            var rendering = new RenderingInfo { SType = StructureType.RenderingInfo, LayerCount = 1, RenderArea = new() { Extent = new(width, height) }, ColorAttachmentCount = (uint)colors.Length, PColorAttachments = data, PDepthAttachment = depth == null ? null : &depthAttachment, PStencilAttachment = depth?.View.Info.Format == TextureFormat.Depth24Stencil8 ? &stencilAttachment : null };
             _owner.Api.CmdBeginRendering(_command, &rendering);
         }
 
-        return new VulkanRenderEncoder(this, attachments);
+        return new VulkanRenderEncoder(this, attachments, depth);
     }
 
     private IComputeEncoder BeginComputeNative() => new VulkanComputeEncoder(this);

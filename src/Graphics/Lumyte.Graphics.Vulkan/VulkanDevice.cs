@@ -75,19 +75,21 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 throw new NotSupportedException("The selected adapter must support Vulkan 1.3.");
             }
 
-            var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
+            var supported11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features };
+            var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &supported11 };
             var supported = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
             api.GetPhysicalDeviceFeatures2(physical, &supported);
-            if (!supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2 || !supported.Features.IndependentBlend)
+            if (!supported11.ShaderDrawParameters || !supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2 || !supported.Features.IndependentBlend)
             {
-                throw new NotSupportedException("Vulkan maintenance4, dynamic rendering, synchronization2 and independent blending are required.");
+                throw new NotSupportedException("Vulkan shader draw parameters, maintenance4, dynamic rendering, synchronization2 and independent blending are required.");
             }
 
             uint queueFamily = SelectQueueFamily(api, physical);
             float priority = 1;
             var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
             var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray, IndependentBlend = true, ShaderInt64 = true };
-            var enabled12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, BufferDeviceAddress = true, RuntimeDescriptorArray = true, DescriptorBindingPartiallyBound = true, ShaderSampledImageArrayNonUniformIndexing = true };
+            var enabled11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, ShaderDrawParameters = true };
+            var enabled12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &enabled11, BufferDeviceAddress = true, RuntimeDescriptorArray = true, DescriptorBindingPartiallyBound = true, ShaderSampledImageArrayNonUniformIndexing = true };
             var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &enabled12, Maintenance4 = true, DynamicRendering = true, Synchronization2 = true };
             var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
@@ -145,7 +147,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
         ValidateAlive();
-        if (!Enum.IsDefined(format))
+        if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
         }
@@ -170,7 +172,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
-        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index;
+        const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
         if (desc.Count == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || (desc.Usage & ~KnownUsage) != 0 || !Enum.IsDefined(desc.Memory))
         {
             throw new ArgumentException("Invalid buffer count, usage, memory preference or device limit.", nameof(desc));

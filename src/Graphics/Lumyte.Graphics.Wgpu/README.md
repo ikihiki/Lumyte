@@ -102,7 +102,7 @@ graphics programはshaderの組・topology分類・compile optionを保持し、
 
 compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
 
-reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
+reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color/depth/stencil、direct/indexed/indirect draw、direct/indirect compute dispatchを提供します。MSAA・resolve・multi-draw・count bufferは別の拡張です。
 
 Ahjo.Wgpuのnative bindingでWGPURenderPipeline／WGPUComputePipelineを生成します。描画状態は完全なrender pipelineのkeyに入り、dynamic値はrender encoderへ直接設定します。write maskとsample maskはnative descriptorへ正確に渡すため、0をdefaultへ置き換えるwrapperは使いません。root引数のあるprogramは種類別resource集合とroot／remap用bindingから明示layoutを生成します。引数のないprogramはauto layoutを使用します。DepthClipControl等の追加featureは有効化せず、必要なstateは拒否します。
 
@@ -141,3 +141,13 @@ Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>
 shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。WGSLのraw buffer load／storeと`sizeof(T)`が使うnatural layoutに合わせ、`float3`だけの構造体はstride 12、`uint`と`float3`を持つ構造体はoffset 0／4・stride 16でpackします。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
+
+## Depth／Stencil、Indexed／Indirect実行
+
+`RenderPassDesc.DepthStencilAttachment`へ単一mip・単一layerのD2 viewを指定します。colorは省略でき、depth-only passではfragment shaderのないprogramを使えます。depth/stencilのload/storeは独立で、利用者が`DepthStencilAttachment`へのbarrierを記録します。Depth32Floatはdepthのみ、Depth24Stencil8はdepthと8bit stencilです。今回のdepth textureはRenderAttachment用途に限定し、sampling/copyは生成時に拒否します。
+
+`SetIndexBuffer`はushort／uintのsliceを受け取り、`DrawIndexed`のfirstIndexはsliceからの相対offsetです。stripは`StripIndexFormat`を一致させ、最大index値でprimitive restartします。indexの値はCPUで走査しません。
+
+`DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、寿命、非mappedを検証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
+
+WebGPUのdepth32float／depth24plus-stencil8、render passのdepthStencilAttachment、pipelineのdepthStencil stateを使用します。depth24plus-stencil8のdepth storageはWebGPU実装が決めます。depth formatはpipeline variantのキーへ含めます。setIndexBuffer／drawIndexed／drawIndirect／drawIndexedIndirect／dispatchWorkgroupsIndirectへ直接対応付け、物理的なbarrierはWebGPUのusage管理へ任せます。indirect-first-instance optional featureは要求しません。command bufferが同じpassでwritable storage bindingにも使われる構成はWebGPUのusage競合になるため、生成passと実行passを分け、実行側のrootには必要な資源だけを渡します。

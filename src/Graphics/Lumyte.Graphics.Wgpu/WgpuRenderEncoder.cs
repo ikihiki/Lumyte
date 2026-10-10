@@ -3,12 +3,16 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURenderPassEncoderImpl* handle, RenderColorAttachmentDesc[] attachments) : IRenderEncoder
+internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURenderPassEncoderImpl* handle, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder
 {
     private readonly TextureFormat[] _formats = attachments.Select(a => a.View.Info.Format).ToArray();
-    private readonly (uint Width, uint Height) _size = attachments[0].View.Texture.GetMipSize(attachments[0].View.Info.BaseMipLevel);
+    private readonly (uint Width, uint Height) _size = (attachments.FirstOrDefault()?.View ?? depth!.View).Texture.GetMipSize((attachments.FirstOrDefault()?.View ?? depth!.View).Info.BaseMipLevel);
+    private readonly TextureFormat? _depthFormat = depth?.View.Info.Format;
     private WgpuGraphicsPipeline? _pipeline;
     private RenderStateSnapshot? _state;
+    private IndexFormat? _indexFormat;
+    private ulong _indexCount;
+    private Action? _validateIndices;
     private bool _viewport;
     private bool _scissor;
     private bool _blend;
@@ -126,7 +130,75 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         _stencil = true;
     }
 
+    public void SetIndexBuffer(BufferSlice<ushort> indices) => SetIndices(indices, IndexFormat.Uint16);
+
+    public void SetIndexBuffer(BufferSlice<uint> indices) => SetIndices(indices, IndexFormat.Uint32);
+
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
+    {
+        _ = checked(firstVertex + vertexCount);
+        _ = checked(firstInstance + instanceCount);
+        PrepareDraw(false);
+        WGPU.wgpuRenderPassEncoderDraw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
+    }
+
+    public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
+    {
+        owner.ValidatePass(this);
+        if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
+        {
+            throw new ArgumentException("Indexed draw exceeds the selected index range or has no index buffer.");
+        }
+
+        _ = checked(firstInstance + instanceCount);
+        PrepareDraw(true);
+        WGPU.wgpuRenderPassEncoderDrawIndexed(handle, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+    }
+
+    public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        WgpuBuffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
+        PrepareDraw(false);
+        WGPU.wgpuRenderPassEncoderDrawIndirect(handle, buffer.Native.Handle, arguments.OffsetInBytes);
+        owner.TrackProgram(() => { _ = buffer.Native; });
+    }
+
+    public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        WgpuBuffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
+        PrepareDraw(true);
+        WGPU.wgpuRenderPassEncoderDrawIndexedIndirect(handle, buffer.Native.Handle, arguments.OffsetInBytes);
+        owner.TrackProgram(() => { _ = buffer.Native; });
+    }
+
+    public void End() => owner.EndRender(this, handle);
+
+    private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
+        where T : unmanaged
+    {
+        owner.ValidatePass(this);
+        WgpuBuffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
+        WGPU.wgpuRenderPassEncoderSetIndexBuffer(handle, buffer.Native.Handle, format == IndexFormat.Uint16 ? WGPUIndexFormat.Uint16 : WGPUIndexFormat.Uint32, indices.OffsetInBytes, indices.SizeInBytes);
+        _indexFormat = format;
+        _indexCount = indices.Count;
+        _validateIndices = () => { _ = buffer.Native; };
+        owner.TrackProgram(_validateIndices);
+    }
+
+    private WgpuBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
+        where T : unmanaged
+    {
+        if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
+        {
+            throw new ArgumentException("Indirect execution requires one four-byte-aligned command record.");
+        }
+
+        return owner.Buffer(arguments, BufferUsage.Indirect);
+    }
+
+    private void PrepareDraw(bool indexed)
     {
         owner.ValidatePass(this);
         if (_pipeline == null || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
@@ -157,23 +229,26 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
             bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);
         }
 
-        _pipeline.ValidateAlive();
-        PipelineValidation.Draw(_pipeline.Desc, _state, _formats, _pipeline.FragmentOutputs);
-        _ = checked(firstVertex + vertexCount);
-        _ = checked(firstInstance + instanceCount);
-        if (vertexCount == 0 || instanceCount == 0)
+        if (indexed)
         {
-            return;
+            if (_indexFormat == null || _validateIndices == null)
+            {
+                throw new InvalidOperationException("Set an index buffer before indexed execution.");
+            }
+
+            _validateIndices();
         }
 
-        WGPURenderPipelineImpl* pipeline = _pipeline.Resolve(_state, _formats, bindingData);
+        _pipeline.ValidateAlive();
+        PipelineValidation.Draw(_pipeline.Desc, _state, _formats, _pipeline.FragmentOutputs, _depthFormat, indexed ? _indexFormat : null);
+
+        WGPURenderPipelineImpl* pipeline = _pipeline.Resolve(_state, _formats, bindingData, _depthFormat, indexed ? _indexFormat : null);
         WGPU.wgpuRenderPassEncoderSetPipeline(handle, pipeline);
         if (bindingData != null)
         {
             UseBinding(bindingData, pipeline);
         }
 
-        WGPU.wgpuRenderPassEncoderDraw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
         if (bindingData != null)
         {
             owner.TrackProgram(bindingData.Snapshot.Validate);
@@ -181,8 +256,6 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
         owner.TrackProgram(_pipeline.ValidateAlive);
     }
-
-    public void End() => owner.EndRender(this, handle);
 
     private void UseBinding(ShaderBindingData data, WGPURenderPipelineImpl* pipeline)
     {

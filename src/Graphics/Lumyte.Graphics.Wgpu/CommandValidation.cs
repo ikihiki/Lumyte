@@ -7,7 +7,7 @@ internal static class CommandValidation
     internal static void Scope(BarrierScope scope)
     {
         const PipelineStage Stages = PipelineStage.AllCommands | PipelineStage.Host;
-        const ResourceAccess Access = ResourceAccess.HostRead | ResourceAccess.HostWrite | ResourceAccess.CopyRead | ResourceAccess.CopyWrite | ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite | ResourceAccess.ColorRead | ResourceAccess.ColorWrite;
+        const ResourceAccess Access = ResourceAccess.HostRead | ResourceAccess.HostWrite | ResourceAccess.CopyRead | ResourceAccess.CopyWrite | ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite | ResourceAccess.ColorRead | ResourceAccess.ColorWrite | ResourceAccess.IndexRead | ResourceAccess.IndirectRead | ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite;
         if ((scope.Stages & ~Stages) != 0 || (scope.Access & ~Access) != 0)
         {
             throw new ArgumentException("Unknown dependency flags.");
@@ -16,6 +16,9 @@ internal static class CommandValidation
         CheckAccess(scope, ResourceAccess.HostRead | ResourceAccess.HostWrite, PipelineStage.Host);
         CheckAccess(scope, ResourceAccess.CopyRead | ResourceAccess.CopyWrite, PipelineStage.Copy);
         CheckAccess(scope, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite, PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader);
+        CheckAccess(scope, ResourceAccess.IndexRead, PipelineStage.IndexInput);
+        CheckAccess(scope, ResourceAccess.IndirectRead, PipelineStage.DrawIndirect);
+        CheckAccess(scope, ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite, PipelineStage.DepthStencil);
         CheckAccess(scope, ResourceAccess.ColorRead | ResourceAccess.ColorWrite, PipelineStage.ColorOutput);
     }
 
@@ -60,7 +63,8 @@ internal static class CommandValidation
             Abstractions.TextureState.CopySource => TextureUsage.CopySource,
             Abstractions.TextureState.CopyDestination => TextureUsage.CopyDestination,
             Abstractions.TextureState.Sampled => TextureUsage.Sampled,
-            Abstractions.TextureState.ColorAttachment => TextureUsage.RenderAttachment,
+            Abstractions.TextureState.ColorAttachment when texture.Format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8) => TextureUsage.RenderAttachment,
+            Abstractions.TextureState.DepthStencilAttachment when texture.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 => TextureUsage.RenderAttachment,
             _ => throw new ArgumentException("Invalid texture state."),
         };
         if ((texture.Usage & usage) != usage)
@@ -79,7 +83,9 @@ internal static class CommandValidation
             ((access & ResourceAccess.ShaderWrite) != 0 && (buffer.Usage & BufferUsage.ShaderWrite) == 0) ||
             ((access & ResourceAccess.HostWrite) != 0 && buffer.Memory != MemoryPreference.Upload) ||
             ((access & ResourceAccess.HostRead) != 0 && buffer.Memory != MemoryPreference.Readback) ||
-            (access & (ResourceAccess.ColorRead | ResourceAccess.ColorWrite)) != 0)
+            ((access & ResourceAccess.IndexRead) != 0 && (buffer.Usage & BufferUsage.Index) == 0) ||
+            ((access & ResourceAccess.IndirectRead) != 0 && (buffer.Usage & BufferUsage.Indirect) == 0) ||
+            (access & (ResourceAccess.ColorRead | ResourceAccess.ColorWrite | ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite)) != 0)
         {
             throw new ArgumentException("Buffer dependency conflicts with allocation usage or memory preference.");
         }
@@ -89,11 +95,12 @@ internal static class CommandValidation
     {
         ResourceAccess permitted = state switch
         {
-            Abstractions.TextureState.Undefined => ResourceAccess.CopyRead | ResourceAccess.CopyWrite | ResourceAccess.ShaderRead | ResourceAccess.ColorRead | ResourceAccess.ColorWrite,
+            Abstractions.TextureState.Undefined => ResourceAccess.CopyRead | ResourceAccess.CopyWrite | ResourceAccess.ShaderRead | ResourceAccess.ColorRead | ResourceAccess.ColorWrite | ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite,
             Abstractions.TextureState.CopySource => ResourceAccess.CopyRead,
             Abstractions.TextureState.CopyDestination => ResourceAccess.CopyWrite,
             Abstractions.TextureState.Sampled => ResourceAccess.ShaderRead,
             Abstractions.TextureState.ColorAttachment => ResourceAccess.ColorRead | ResourceAccess.ColorWrite,
+            Abstractions.TextureState.DepthStencilAttachment => ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite,
             _ => 0,
         };
         if ((scope.Access & ~permitted) != 0)

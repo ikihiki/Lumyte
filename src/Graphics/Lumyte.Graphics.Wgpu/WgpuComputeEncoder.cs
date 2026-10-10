@@ -69,6 +69,35 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         owner.ValidatePass(this);
+        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
+        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(groupCountX));
+        }
+
+        PrepareDispatch();
+        WGPU.wgpuComputePassEncoderDispatchWorkgroups(handle, groupCountX, groupCountY, groupCountZ);
+    }
+
+    public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
+        {
+            throw new ArgumentException("Indirect execution requires one four-byte-aligned command record.");
+        }
+
+        WgpuBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
+        PrepareDispatch();
+        WGPU.wgpuComputePassEncoderDispatchWorkgroupsIndirect(handle, buffer.Native.Handle, arguments.OffsetInBytes);
+        owner.TrackProgram(() => { _ = buffer.Native; });
+    }
+
+    public void End() => owner.EndCompute(this, handle);
+
+    private void PrepareDispatch()
+    {
+        owner.ValidatePass(this);
         if (_pipeline == null)
         {
             throw new InvalidOperationException("Select a compute program before dispatch.");
@@ -98,11 +127,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         }
 
         _pipeline.ValidateAlive();
-        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
-        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
-        {
-            throw new ArgumentOutOfRangeException(nameof(groupCountX));
-        }
 
         WGPUComputePipelineImpl* pipeline = _pipeline.Resolve(bindingData);
         WGPU.wgpuComputePassEncoderSetPipeline(handle, pipeline);
@@ -121,7 +145,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
             }
         }
 
-        WGPU.wgpuComputePassEncoderDispatchWorkgroups(handle, groupCountX, groupCountY, groupCountZ);
         if (bindingData != null)
         {
             owner.TrackProgram(bindingData.Snapshot.Validate);
@@ -129,6 +152,4 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         owner.TrackProgram(_pipeline.ValidateAlive);
     }
-
-    public void End() => owner.EndCompute(this, handle);
 }

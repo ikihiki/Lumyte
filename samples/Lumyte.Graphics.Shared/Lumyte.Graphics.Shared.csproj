@@ -11,6 +11,9 @@
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/advanced-vertex.slang" ResourceName="Lumyte.Shaders.advanced-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/indirect-generate.slang" ResourceName="Lumyte.Shaders.indirect-generate" Stage="compute" />
+    <SlangShader Include="Shaders/indirect-execute.slang" ResourceName="Lumyte.Shaders.indirect-execute" Stage="compute" />
     <SlangShader Include="Shaders/binding-cycle-vertex.slang" ResourceName="Lumyte.Shaders.binding-cycle-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/binding-cycle-fragment.slang" ResourceName="Lumyte.Shaders.binding-cycle-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/binding-layout.slang" ResourceName="Lumyte.Shaders.binding-layout" Stage="compute" />

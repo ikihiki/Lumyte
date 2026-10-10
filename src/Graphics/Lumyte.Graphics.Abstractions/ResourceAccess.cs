@@ -30,4 +30,16 @@ public enum ResourceAccess
 
     /// <summary>Specifies ColorWrite.</summary>
     ColorWrite = 512,
+
+    /// <summary>Allows index fetch.</summary>
+    IndexRead = 16,
+
+    /// <summary>Allows indirect command fetch.</summary>
+    IndirectRead = 32,
+
+    /// <summary>Allows depth/stencil attachment reads.</summary>
+    DepthStencilRead = 1024,
+
+    /// <summary>Allows depth/stencil attachment writes.</summary>
+    DepthStencilWrite = 2048,
 }
