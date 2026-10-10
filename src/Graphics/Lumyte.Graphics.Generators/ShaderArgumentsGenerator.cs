@@ -10,10 +10,10 @@ namespace Lumyte.Graphics.Generators;
 
 /// <summary>Generates direct AOT-safe shader member readers for application structures.</summary>
 [Generator]
-public sealed class ShaderCodecGenerator : IIncrementalGenerator
+public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
 {
     private static readonly DiagnosticDescriptor _unsupported = new(
-        "LUMG001", "Unsupported shader value", "Shader codec cannot serialize '{0}': {1}", "Lumyte.Graphics", DiagnosticSeverity.Error, true);
+        "LUMG001", "Unsupported shader value", "Shader arguments cannot serialize '{0}': {1}", "Lumyte.Graphics", DiagnosticSeverity.Error, true);
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -56,7 +56,7 @@ public sealed class ShaderCodecGenerator : IIncrementalGenerator
 
         if (type.IsGenericType || type.ContainingType != null || type.DeclaredAccessibility == Accessibility.Private)
         {
-            Report(output, type, "generic or nested codec types are not supported");
+            Report(output, type, "generic or nested shader argument types are not supported");
             return;
         }
 
@@ -80,7 +80,7 @@ public sealed class ShaderCodecGenerator : IIncrementalGenerator
             (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(shaderName) + ";\n" : string.Empty) +
             (generateWrite ? "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + body + "    }\n" : string.Empty) + "}\n";
-        output.AddSource("ShaderCodec_" + id + ".g.cs", SourceText.From(source, Encoding.UTF8));
+        output.AddSource("ShaderArguments_" + id + ".g.cs", SourceText.From(source, Encoding.UTF8));
     }
 
     private static bool Members(SourceProductionContext output, INamedTypeSymbol type, string expression, string prefix, StringBuilder body, HashSet<ITypeSymbol> stack)

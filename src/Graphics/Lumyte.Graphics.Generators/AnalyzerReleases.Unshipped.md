@@ -4,4 +4,4 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
-LUMG001 | Lumyte.Graphics | Error | Unsupported shader value member or codec type
+LUMG001 | Lumyte.Graphics | Error | Unsupported shader value member or shader argument type
