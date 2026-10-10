@@ -122,7 +122,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     /// <summary>Connects another supplied native target to this device without adapter reselection.</summary>
     /// <param name="source">The borrowed native handles.</param>
-    /// <returns>The owned surface if this adapter supports the target.</returns>
+    /// <returns>The owned surface; query its capabilities before configuring it.</returns>
     public IGraphicsSurface CreateSurface(A.SurfaceSource source)
     {
         ValidateAlive();

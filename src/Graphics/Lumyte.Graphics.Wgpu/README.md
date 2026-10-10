@@ -161,7 +161,7 @@ WebGPUの標準filterable形式を使い、追加のオプションfeatureは要
 ## Surface・Swapchain・Present
 
 `WgpuDevice.Create()`で表示先から独立してadapterとdeviceを生成します。
-`device.CreateSurface(source)`は同じdeviceで別targetを受け取り、非互換のadapterは拒否します。
+`device.CreateSurface(source)`は同じdeviceで別targetを受け取ります。利用者が`surface.GetCapabilities()`を照会し、対応する設定を選びます。
 `SurfaceSource.WindowsHwnd(hinstance, hwnd)`、`XlibWindow(display, window)`、`WaylandSurface(display, surface)`、`MetalLayer(layer)`、`AndroidNativeWindow(window)`のハンドルは利用側が取得して生存期間を管理します。
 このプロジェクトではウインドウを作成せず、OSのハンドル取得APIも呼びません。
 
@@ -182,7 +182,7 @@ CPU待機、追加submit、queue idleは挿入しません。commandのないwai
 
 `device.CreateSurfaces(IReadOnlyList<Ahjo.Wgpu.SurfaceSource> sources)`で複数targetを生成済みDeviceへ接続できます。
 空リスト、欠けたhandle、同じtargetの重複はnative Surface生成前に拒否します。入力順で返し、途中で失敗した場合は今回生成したSurfaceだけを解放します。Device・Adapter・Instanceと既存Surfaceは保持します。
-選択済みadapterのcapabilitiesで各targetの互換性を確認し、非互換ならNotSupportedExceptionです。adapterは再選択しません。
+Surface生成時にcapabilitiesの列挙は行いません。`GetCapabilities()`で選択済みadapterの対応形式などを取得し、対応形式がなければNotSupportedExceptionです。adapterは再選択しません。
 単一targetは`device.CreateSurface(source)`で追加できます。
 
 active画像の制約は各Surface／Swapchainに適用し、Device全体を一つのウインドウへ制限しません。

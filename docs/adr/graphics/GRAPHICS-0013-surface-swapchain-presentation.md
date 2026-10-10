@@ -53,8 +53,8 @@ Frame.Disposeは利用側がGPU使用とネイティブ取得・提示の完了�
 
 同一Deviceは複数のSurfaceを所有でき、各Surfaceが一つのSwapchainを持つ。
 Device生成とSurface生成は分離する。Device生成には表示先やSurface生成callbackを渡さない。
-生成済みDeviceへtargetを渡すバックエンド固有の入口は、返す全SurfaceがそのDeviceとqueueで使用できることを確認する。
-途中で生成・互換性確認に失敗した場合、今回生成したSurfaceとnative資源を解放し、部分的な所有結果を返さない。
+生成済みDeviceへtargetを渡すバックエンド固有の入口を設ける。利用者は各Surfaceのcapabilitiesを照会し、Deviceとqueueで使用可能な設定を選ぶ。
+途中でnative生成などに失敗した場合、今回生成したSurfaceとnative資源を解放し、部分的な所有結果を返さない。
 生成後も、互換性のある表示先を同じDeviceへ追加できる。別Deviceが必要な表示先を暗黙に移し替えない。
 
 取得画像、サイズ、mode、取得失敗、再構成、解放条件は各Swapchainへ閉じる。
