@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Lumyte.Graphics.Abstractions;
 
-internal sealed class ShaderSnapshotWriter : IShaderValueWriter
+internal readonly struct ShaderSnapshotWriter() : IShaderValueWriter
 {
     internal List<ShaderValue> Values { get; } = [];
 

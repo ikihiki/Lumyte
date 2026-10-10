@@ -11,7 +11,7 @@ public interface IRenderEncoder
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>
     void SetArguments<T>(in T arguments)
-        where T : struct;
+        where T : struct, IShaderArguments;
 
     /// <summary>Selects a program without changing draw state.</summary>
     /// <param name="pipeline">The same-device program.</param>

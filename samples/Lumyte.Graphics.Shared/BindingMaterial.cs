@@ -7,4 +7,4 @@ namespace Lumyte.Graphics.Samples;
 /// <param name="Color">The material multiplier.</param>
 /// <param name="Texture">The sampled texture.</param>
 /// <param name="Sampler">The independently registered sampler.</param>
-public readonly record struct BindingMaterial(Vector4 Color, IGpuRef<IGraphicsTextureView> Texture, IGpuRef<IGraphicsSampler> Sampler) : IShaderData;
+public readonly partial record struct BindingMaterial(Vector4 Color, IGpuRef<IGraphicsTextureView> Texture, IGpuRef<IGraphicsSampler> Sampler) : IShaderData;

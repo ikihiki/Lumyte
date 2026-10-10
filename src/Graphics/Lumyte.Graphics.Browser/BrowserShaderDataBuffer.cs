@@ -17,7 +17,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
         }
 
         T empty = default;
-        ShaderValueSnapshot codec = ShaderCodec<T>.Capture(in empty);
+        ShaderValueSnapshot codec = IShaderArguments.Capture(in empty);
         Layout = ShaderDataLayout.Data(artifact.GetTarget(owner.Caps.ShaderTarget), codec.ShaderTypeName);
         Layout.Validate(codec);
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
@@ -93,7 +93,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
         var snapshots = new ShaderValueSnapshot[source.Length];
         for (int i = 0; i < source.Length; i++)
         {
-            snapshots[i] = ShaderCodec<T>.Capture(in source[i]);
+            snapshots[i] = IShaderArguments.Capture(in source[i]);
             Layout.Validate(snapshots[i]);
             foreach (ShaderValue value in snapshots[i].Values)
             {

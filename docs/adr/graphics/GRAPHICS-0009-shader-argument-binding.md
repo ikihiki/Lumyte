@@ -17,7 +17,7 @@ Argument Tableのslotは種類別の論理登録位置であり、shaderのbindi
 
 最初の契約では一つのtableを選択する。texture・sampler・bufferの登録領域はそのtable内で独立している。backendが実際に設定するheapやbinding集合の数は共通APIへ露出しない。未使用slotをbindingへ含めず、textureとsamplerのペアを強制しない。
 
-shader argumentsはapplicationが定義するstructとし、encoderへ値として渡す。IShaderArguments、CreateShaderArguments、文字列のfield pathを受けるSetValue／SetBuffer／SetTexture／SetSamplerは設けない。対象programのartifact reflectionと、引数型に対して生成したcodecを照合する。共通の所有wrapperやbackend contractは追加しない。
+shader argumentsはIShaderArgumentsを実装するapplicationのstructとし、encoderへ値として渡す。CreateShaderArguments、文字列のfield pathを受けるSetValue／SetBuffer／SetTexture／SetSamplerは設けない。対象programのartifact reflectionと、引数型に対して生成したcodecを照合する。共通の所有wrapperやbackend contractは追加しない。
 
 ### 公開API
 
@@ -26,12 +26,20 @@ shader argumentsはapplicationが定義するstructとし、encoderへ値とし�
 ```diff
  namespace Lumyte.Graphics.Abstractions
  {
-+    // applicationの引数structにcodecを生成するcompile-time marker。
-+    // rootParameterはSlangの論理root parameter名。物理binding番号ではない。
-+    [AttributeUsage(AttributeTargets.Struct)]
-+    public sealed class ShaderArgumentsAttribute(string rootParameter = "arguments") : Attribute
++    // applicationのpartial structが実装する、登録不要のcodec契約。
++    public interface IShaderArguments
 +    {
-+        public string RootParameter { get; } = rootParameter;
++        // Slangの論理root parameter名。型の静的propertyで変更できる。
++        static virtual string RootParameter => "arguments";
++        // generatorが型名またはShaderTypeName属性から実装する。
++        static abstract string ShaderTypeName { get; }
++        // generatorがmemberを直接読み出す実装を型自身へ追加する。
++        // GPU転送、登録、所有権の取得は行わない。
++        // refで渡すgeneric writerは値型でもboxingを発生させない。
++        void Write<TWriter>(ref TWriter writer) where TWriter : IShaderValueWriter;
++        // Tの静的metadataとWriteを直接呼び、managed reflectionを使わない。
++        public static ShaderValueSnapshot Capture<T>(in T value)
++            where T : struct, IShaderArguments;
 +    }
 +
      public interface IRenderEncoder
@@ -42,12 +50,12 @@ shader argumentsはapplicationが定義するstructとし、encoderへ値とし�
 +
 +        // 現在のprogramのroot schemaへ引数structを照合してsnapshotする。
 +        // unmanaged制約は付けない。IGpuRefを含むstructも受け入れる。
-+        // codec未生成・未対応型はNotSupportedException。
++        // codec契約の未実装・未対応型はcompile時に診断する。
 +        // schemaの型・用途・field不一致はArgumentException。
 +        // 独自IGpuRef実装や他deviceの参照もArgumentException。
 +        // 失効済みの登録はInvalidOperationException。
 +        void SetArguments<T>(in T arguments)
-+            where T : struct;
++            where T : struct, IShaderArguments;
      }
 +
      public interface IComputeEncoder
@@ -56,7 +64,7 @@ shader argumentsはapplicationが定義するstructとし、encoderへ値とし�
 +        void SetArgumentTable(IArgumentTable table);
 +
 +        void SetArguments<T>(in T arguments)
-+            where T : struct;
++            where T : struct, IShaderArguments;
      }
  }
 ```
@@ -69,7 +77,7 @@ root引数のないshaderはSetArgumentsを必要としない。値だけのstru
 
 ### 生成codecとbackendの接続
 
-生成codecはapplication assemblyのmodule initializerで登録する。別assemblyのbackendから呼び出せるAOT対応の接続をGraphics.Abstractionsへ置き、managed reflectionやInternalsVisibleToを使わない。以下は生成コードとbackendが使用する契約であり、通常の利用側はSetArgumentsとCopyFromを使う。
+生成codecはapplicationのpartial struct自身にIShaderArgumentsの実装として追加する。SetArgumentsは`IShaderArguments.Capture<T>`を通してTの静的metadataとWriteを直接呼ぶ。codec登録、型別registry、module initializerは設けない。別assemblyのbackendから呼び出せるAOT対応の接続をGraphics.Abstractionsへ置き、managed reflectionやInternalsVisibleToを使わない。以下は生成コードとbackendが使用する契約であり、通常の利用側はSetArgumentsとCopyFromを使う。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
@@ -79,16 +87,6 @@ root引数のないshaderはSetArgumentsを必要としない。値だけのstru
 +    {
 +        void WriteValue<T>(string path, in T value) where T : unmanaged;
 +        void WriteReference<T>(string path, IGpuRef<T>? value);
-+    }
-+
-+    public delegate void ShaderWriteAction<T>(in T value, IShaderValueWriter writer)
-+        where T : struct;
-+
-+    // application assemblyで生成したcodecをmodule initializerから登録する。
-+    public static class ShaderCodec<T> where T : struct
-+    {
-+        public static void Register(string rootParameter, string shaderTypeName, ShaderWriteAction<T> write);
-+        public static ShaderValueSnapshot Capture(in T value);
 +    }
 +
 +    // 数値のCPU snapshotと参照identityを保持し、native addressは公開しない。
@@ -111,10 +109,9 @@ root引数のないshaderはSetArgumentsを必要としない。値だけのstru
 引数struct、camera data、material dataはapplicationに定義する。数値型とIGpuRefを同じstructへ入れられる。
 
 ```csharp
-[ShaderArguments]
-public readonly record struct DrawArguments(
+public readonly partial record struct DrawArguments(
     Matrix4x4 ViewProjection,
-    IGpuRef<MaterialData> Material);
+    IGpuRef<MaterialData> Material) : IShaderArguments;
 
 encoder.SetPipeline(pipeline);
 encoder.SetArgumentTable(table);
@@ -129,8 +126,7 @@ Slangのroot structも同じ論理member名と型で宣言する。数値member�
 カメラ行列だけを渡す最小例は次の対応となる。この場合はtableを設定しなくてよい。
 
 ```csharp
-[ShaderArguments]
-public readonly record struct CameraArguments(Matrix4x4 ViewProjection);
+public readonly partial record struct CameraArguments(Matrix4x4 ViewProjection) : IShaderArguments;
 
 encoder.SetPipeline(pipeline);
 encoder.SetArguments(new CameraArguments(camera.ViewProjection));
@@ -155,13 +151,15 @@ ConstantBuffer宣言はshaderの論理的な受け口を示す。利用者に転
 
 ### 型対応とcodec生成
 
-source generatorはShaderArguments属性を付けたstructの公開instance fieldと読み出せる自動propertyを検査し、直接アクセスするcodecを生成する。readonly record structのprimary constructor由来のpropertyも対象とする。member名はSlangの論理member名と大文字・小文字を含めて一致させ、宣言順やC#のbyte offsetをshader layoutと仮定しない。rootParameterはattributeのcompile-time情報としてcodecへ保持し、setterへ文字列を渡さない。
+source generatorはIShaderArgumentsを実装するpartial structの公開instance fieldと読み出せる自動propertyを検査し、型自身にShaderTypeNameとWriteの明示的interface実装を生成する。IShaderDataもIShaderArgumentsを継承し、同じ生成・呼び出し経路を使う。partialでない生成対象型はcompile時に診断する。手書きの実装はgeneratorなしでも同じ契約で呼び出せる。readonly record structのprimary constructor由来のpropertyも対象とする。member名はSlangの論理member名と大文字・小文字を含めて一致させ、宣言順やC#のbyte offsetをshader layoutと仮定しない。root名はIShaderArguments.RootParameterの既定値argumentsを使い、異なる名前は型の静的propertyで指定する。setterへ文字列やcodecを渡さない。
 
 対応するroot値はint／uint／float、Vector2／Vector3／Vector4、Matrix4x4、それらとIGpuRefを含む入れ子structとする。IGpuRefの論理型・用途をschemaへ照合する。配列、string、任意class、delegate、boolや未定義の数値変換、inline展開で循環する型、custom getterは診断して拒否する。IGpuRefの型引数は参照先schemaを示すedgeとして扱い、inline展開しないため、IGpuRef経由の循環は許可する。buffer要素型Tの有効性はbufferの既存layout契約に従う。
 
 codecは値memberの読み出しとIGpuRefの列挙を行い、backendはprogramに含まれるtarget別reflectionのoffset・stride・alignmentへpackする。型Tとprogram schemaの検証結果は再利用できるが、registrationの有効性は各draw／dispatchでも確認する。source generatorはartifactのlayoutを別のruntime設定で上書きしない。online生成されたartifactにも同じcodecとschema照合を適用する。
 
 Matrix4x4はSlangのfloat4x4へ対応する。System.NumericsのM11〜M44を論理的な行・列として扱い、artifactのrow-major設定に従ってpackする。matrix/vectorの掛ける順序は利用者のshader式で定め、codecが暗黙にtransposeして数学上の意味を変えない。paddingは初期化し、sizeof(T)のmemcpyでshader layoutが一致したと仮定しない。
+
+snapshot用writerは値型とし、genericなref引数でWriteへ渡してwriter本体のヒープ確保とboxingを避ける。snapshotと数値payloadは引数設定後や転送metadataとして保持するため、その保持用メモリの確保は残る。
 
 ### 反射情報とtarget別ABI
 
@@ -201,7 +199,7 @@ shader data用bufferには二つの用途を設ける。MemoryPreference.Upload�
  namespace Lumyte.Graphics.Abstractions
  {
 +    // applicationの論理structに生成codecを付けるmarker。
-+    public interface IShaderData { }
++    public interface IShaderData : IShaderArguments { }
 +
 +    // C#型名と異なるSlangの論理型名を指定する場合に使用する。
 +    [AttributeUsage(AttributeTargets.Struct)]
@@ -335,7 +333,7 @@ drawのsnapshotはroot値と依存metadataを保持する。shader dataの数値
 
 ## 検討した代替案
 
-- 文字列のfield pathへ値を逐次設定するIShaderArguments: 引数を一つのapplication structとして渡す方式を選び、型検証とcodec生成の対象を明確にする。
+- 文字列のfield pathへ値を逐次設定する所有wrapper: 引数を一つのapplication structとして渡す方式を選び、型検証とcodec生成の対象を明確にする。
 - tableの論理slotをshader binding番号へ流用する: 種類別slotとtarget別の物理配置を混同するため採用しない。
 - table全体を常にbindingする: 登録容量が物理上限へ制約され、未使用resourceも保持するため採用しない。
 - shader sourceとは別のruntime binding layoutを利用者へ要求する: compile済み情報をartifactへ保持する方針に反するため採用しない。

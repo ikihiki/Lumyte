@@ -32,7 +32,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     }
 
     public void SetArguments<T>(in T value)
-        where T : struct
+        where T : struct, IShaderArguments
     {
         owner.ValidatePass(this);
         if (_pipeline == null)
@@ -41,7 +41,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         }
 
         _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = ShaderCodec<T>.Capture(in value);
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).Validate(snapshot);
         foreach (ShaderValue member in snapshot.Values)
         {

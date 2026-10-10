@@ -25,7 +25,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     }
 
     public void SetArguments<T>(in T value)
-        where T : struct
+        where T : struct, IShaderArguments
     {
         owner.ValidatePass(this);
         if (_pipeline == null)
@@ -34,7 +34,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         }
 
         _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = ShaderCodec<T>.Capture(in value);
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).Validate(snapshot);
         foreach (ShaderValue member in snapshot.Values)
         {
