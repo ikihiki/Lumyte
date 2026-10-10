@@ -1,5 +1,7 @@
 # Lumyte.Input
 
+`src/Input/` に配置する抽象入力レイヤーです。履歴・状態管理と共通契約を提供し、補正・認識・アクション・設定連携も Input カテゴリで管理します。OS・ハードウェアに近い入力取得と接続監視の実装は `src/Platform/` に配置し、ここで定義する契約を実装します。
+
 デバイス別の入力記録、通知、ポーリングと保持方針を提供する .NET 10 ライブラリ。
 
 `InputSystem` に `IEnumerable<IInputSource>` をコンストラクター注入します。Source は接続・切断時に `IInputDeviceRegistry` から Device を登録・削除し、Device は `DrainEvents` で正規化した入力を提供します。ソースの実装は各 Platform バックエンドの責務です。

@@ -40,6 +40,9 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環境検証 → ビルド → テストの順に実行します。
 すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。
 
+- [デバイス補正・仮想デバイスの設計](docs/adr/input/INPUT-0002-processing-and-recognition.md)
+- [アクション加工・認識・入力管理の設計](docs/adr/input/INPUT-0003-actions-and-contexts.md)
+
 診断の実通信: [サーバー起動](src/Diagnostics/Lumyte.Diagnostics.Server/README.md)、[ゲーム側サンプル](samples/Lumyte.Diagnostics.Remote.Sample/README.md)、[検証結果](docs/diagnostics/communication-verification.md)。
 
 診断サーバーの[同梱Web UI](src/Diagnostics/Lumyte.Diagnostics.Server/README.md#web-ui)はサーバーのURLから利用できる。[配信・認証・更新の設計](docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。

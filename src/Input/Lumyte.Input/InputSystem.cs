@@ -85,6 +85,16 @@ public sealed class InputSystem : IDisposable
         }
     }
 
+    /// <summary>Gets monotonic time relative to this system's creation.</summary>
+    public TimeSpan ElapsedTime
+    {
+        get
+        {
+            Check();
+            return _clock.GetElapsedTime(_started);
+        }
+    }
+
     /// <summary>Gets the active devices, excluding archived disconnected devices.</summary>
     public IReadOnlyDictionary<InputDeviceId, IInputDevice> Devices
     {
@@ -400,10 +410,16 @@ public sealed class InputSystem : IDisposable
     {
         foreach (InputRecord record in notifications)
         {
-            Delegate[] handlers = Recorded?.GetInvocationList() ?? [];
-            foreach (Action<InputRecord> handler in handlers.Cast<Action<InputRecord>>())
+            foreach (Action<InputRecord> handler in Delegate.EnumerateInvocationList(Recorded))
             {
-                Capture(() => handler(record), errors);
+                try
+                {
+                    handler(record);
+                }
+                catch (Exception exception)
+                {
+                    errors.Add(exception);
+                }
             }
         }
     }
