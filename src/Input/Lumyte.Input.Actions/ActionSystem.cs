@@ -15,8 +15,8 @@ public sealed class ActionSystem
     private readonly Dictionary<string, long> _active = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Context, string Action), ActionState> _states = new();
     private readonly Dictionary<(string Context, string Action), ImmutableArray<InputDeviceId>> _contributors = new();
-    private readonly Dictionary<(string Binding, InputDeviceId Device), bool> _bindingDown = new();
-    private readonly Dictionary<string, RecognitionProgress> _progress = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Context, string Binding, InputDeviceId Device), bool> _bindingDown = new();
+    private readonly Dictionary<(string Context, string Recognition), RecognitionProgress> _progress = new();
     private readonly List<ActionEvent> _events = new();
     private readonly List<RecognizedAction> _recognized = new();
     private readonly Queue<Action> _pending = new();
@@ -73,7 +73,7 @@ public sealed class ActionSystem
     public void SetValueProcessors(string contextId, string actionId, IEnumerable<IActionValueProcessor> processors)
     {
         Check();
-        if (!_profile.Actions.Any(action => action.Id == actionId))
+        if (!_profileIndex.ActionsByContext.TryGetValue(contextId, out ActionDefinition[]? definitions) || !definitions.Any(action => action.Id == actionId))
         {
             throw new ArgumentException("Unknown action.", nameof(actionId));
         }
@@ -209,6 +209,22 @@ public sealed class ActionSystem
         }
 
         return strongest;
+    }
+
+    /// <summary>Returns a context-scoped state, including inherited action definitions.</summary>
+    /// <param name="contextId">The context identifier.</param>
+    /// <param name="actionId">The action identifier.</param>
+    /// <returns>The immutable mapped state or its neutral state when inactive.</returns>
+    public ActionState GetState(string contextId, string actionId)
+    {
+        Check(true);
+        (string, string) key = (contextId, actionId);
+        if (!_profileIndex.NeutralStatesByContext.TryGetValue(key, out ActionState? neutral))
+        {
+            throw new InvalidOperationException("Unknown context action.");
+        }
+
+        return _states.GetValueOrDefault(key) ?? neutral;
     }
 
     /// <summary>Begins capturing an eligible control for a binding.</summary>
@@ -472,7 +488,7 @@ public sealed class ActionSystem
         session.Candidate = control;
         _rebindDevice = record.DeviceId;
         ActionBinding target = _profile.Bindings.First(binding => binding.Id == session.BindingId);
-        session.Conflicts = _profile.Bindings.Where(binding => binding.Id != target.Id && binding.ContextId == target.ContextId && binding.Control == control).Select(binding => binding.Id).ToImmutableArray();
+        session.Conflicts = _profileIndex.BindingsByContext.GetValueOrDefault(target.ContextId, []).Where(binding => binding.Id != target.Id && binding.Control == control).Select(binding => binding.Id).ToImmutableArray();
     }
 
     private void Recompute(TimeSpan now)
@@ -481,7 +497,7 @@ public sealed class ActionSystem
         _claimedControls.Clear();
         foreach (InputContext context in _orderedContexts)
         {
-            foreach (ActionDefinition definition in _profile.Actions)
+            foreach (ActionDefinition definition in _profileIndex.ActionsByContext[context.Id])
             {
                 (string, string) stateKey = (context.Id, definition.Id);
                 ActionState neutral = _profileIndex.NeutralStates[definition.Id];
@@ -506,8 +522,8 @@ public sealed class ActionSystem
                         if (definition.Kind == ActionValueKind.Button)
                         {
                             float magnitude = candidate.Length();
-                            bool down = _bindingDown.GetValueOrDefault((binding.Id, device)) ? magnitude > binding.ReleaseThreshold : magnitude >= binding.PressThreshold;
-                            _bindingDown[(binding.Id, device)] = down;
+                            bool down = _bindingDown.GetValueOrDefault((context.Id, binding.Id, device)) ? magnitude > binding.ReleaseThreshold : magnitude >= binding.PressThreshold;
+                            _bindingDown[(context.Id, binding.Id, device)] = down;
                             candidate = down ? Vector2.UnitX : Vector2.Zero;
                         }
                         else if (binding.Control.Kind is InputControlKind.ControllerStick)
@@ -668,17 +684,17 @@ public sealed class ActionSystem
     private void Emit(ActionEvent action)
     {
         _events.Add(action);
-        foreach (RecognitionDefinition definition in _profile.Recognitions)
+        foreach (RecognitionDefinition definition in _profileIndex.Recognitions)
         {
             if (definition.ContextId != action.ContextId || !definition.Actions.Contains(action.ActionId))
             {
                 continue;
             }
 
-            if (!_progress.TryGetValue(definition.Id, out RecognitionProgress? progress))
+            if (!_progress.TryGetValue((definition.ContextId, definition.Id), out RecognitionProgress? progress))
             {
                 progress = new RecognitionProgress();
-                _progress.Add(definition.Id, progress);
+                _progress.Add((definition.ContextId, definition.Id), progress);
             }
 
             if (action.Phase == ActionPhase.Canceled)
@@ -742,9 +758,9 @@ public sealed class ActionSystem
             session.IsComplete = true;
         }
 
-        foreach (RecognitionDefinition definition in _profile.Recognitions)
+        foreach (RecognitionDefinition definition in _profileIndex.Recognitions)
         {
-            if (definition.Kind != RecognitionKind.Hold || !_progress.TryGetValue(definition.Id, out RecognitionProgress? progress))
+            if (definition.Kind != RecognitionKind.Hold || !_progress.TryGetValue((definition.ContextId, definition.Id), out RecognitionProgress? progress))
             {
                 continue;
             }
@@ -787,7 +803,7 @@ public sealed class ActionSystem
 
         foreach ((string Context, string Action) key in affectedStates)
         {
-            SuppressHeld(key.Context, _profile.Bindings.Where(binding => binding.ContextId == key.Context && binding.ActionId == key.Action).Select(binding => binding.Control).ToHashSet());
+            SuppressHeld(key.Context, _profileIndex.BindingsByContext.GetValueOrDefault(key.Context, []).Where(binding => binding.ActionId == key.Action).Select(binding => binding.Control).ToHashSet());
             CancelState(key, now);
             if (_processors.TryGetValue(key, out IActionValueProcessor[]? processors))
             {
@@ -812,12 +828,12 @@ public sealed class ActionSystem
             _recognizerDevices.Remove(contextId);
         }
 
-        foreach (string id in _progress.Where(item => item.Value.Devices.Contains(device) || item.Value.Held.Values.Any(action => action.Devices.Contains(device))).Select(item => item.Key).ToArray())
+        foreach ((string Context, string Recognition) id in _progress.Where(item => item.Value.Devices.Contains(device) || item.Value.Held.Values.Any(action => action.Devices.Contains(device))).Select(item => item.Key).ToArray())
         {
             _progress.Remove(id);
         }
 
-        foreach ((string Binding, InputDeviceId Device) key in _bindingDown.Keys.Where(key => key.Device == device).ToArray())
+        foreach ((string Context, string Binding, InputDeviceId Device) key in _bindingDown.Keys.Where(key => key.Device == device).ToArray())
         {
             _bindingDown.Remove(key);
         }
@@ -839,9 +855,9 @@ public sealed class ActionSystem
             CancelState(key, now);
         }
 
-        foreach (RecognitionDefinition definition in _profile.Recognitions.Where(definition => definition.ContextId == contextId))
+        foreach (RecognitionDefinition definition in _profileIndex.Recognitions.Where(definition => definition.ContextId == contextId))
         {
-            _progress.Remove(definition.Id);
+            _progress.Remove((definition.ContextId, definition.Id));
         }
 
         foreach (KeyValuePair<(string Context, string Action), IActionValueProcessor[]> item in _processors.Where(item => item.Key.Context == contextId))
@@ -946,13 +962,80 @@ public sealed class ActionSystem
         }
     }
 
-    private sealed class ProfileIndex(ActionProfile profile)
+    private sealed class ProfileIndex
     {
-        public Dictionary<string, ActionState> NeutralStates { get; } = profile.Actions.ToDictionary(action => action.Id, action => new ActionState(action.Kind, Vector2.Zero), StringComparer.Ordinal);
+        public ProfileIndex(ActionProfile profile)
+        {
+            NeutralStates = profile.Actions.Concat(profile.Contexts.SelectMany(context => ActionProfile.LocalActions(context))).GroupBy(action => action.Id).ToDictionary(group => group.Key, group => new ActionState(group.First().Kind, Vector2.Zero), StringComparer.Ordinal);
+            var contexts = profile.Contexts.ToDictionary(context => context.Id, StringComparer.Ordinal);
+            var recognitions = profile.Recognitions.ToList();
+            foreach (InputContext context in profile.Contexts)
+            {
+                var lineage = new List<InputContext>();
+                InputContext current = context;
+                while (true)
+                {
+                    lineage.Add(current);
+                    if (current.ParentId is null)
+                    {
+                        break;
+                    }
 
-        public Dictionary<(string Context, string Action), ActionBinding[]> BindingsByAction { get; } = profile.Bindings.GroupBy(binding => (binding.ContextId, binding.ActionId)).ToDictionary(group => group.Key, group => group.OrderBy(binding => binding.Id, StringComparer.Ordinal).ToArray());
+                    current = contexts[current.ParentId];
+                }
 
-        public Dictionary<string, ActionBinding[]> BindingsByContext { get; } = profile.Bindings.GroupBy(binding => binding.ContextId).ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+                lineage.Reverse();
+                var actions = profile.Actions.ToDictionary(action => action.Id, StringComparer.Ordinal);
+                var bindings = new Dictionary<string, ActionBinding[]>(StringComparer.Ordinal);
+                var inheritedRecognitions = new Dictionary<string, RecognitionDefinition>(StringComparer.Ordinal);
+                foreach (InputContext ancestor in lineage)
+                {
+                    foreach (ActionDefinition action in ActionProfile.LocalActions(ancestor))
+                    {
+                        actions[action.Id] = action;
+                    }
+
+                    foreach (IGrouping<string, ActionBinding> group in profile.Bindings.Where(binding => binding.ContextId == ancestor.Id).GroupBy(binding => binding.ActionId))
+                    {
+                        bindings[group.Key] = group.Select(binding => binding with { ContextId = context.Id }).ToArray();
+                    }
+
+                    foreach (RecognitionDefinition recognition in profile.Recognitions.Where(recognition => recognition.ContextId == ancestor.Id))
+                    {
+                        inheritedRecognitions[recognition.Id] = recognition with { ContextId = context.Id };
+                    }
+                }
+
+                ActionsByContext.Add(context.Id, actions.Values.ToArray());
+                foreach (ActionDefinition action in actions.Values)
+                {
+                    NeutralStatesByContext.Add((context.Id, action.Id), NeutralStates[action.Id]);
+                }
+
+                ActionBinding[] contextBindings = bindings.Values.SelectMany(group => group).ToArray();
+                BindingsByContext.Add(context.Id, contextBindings);
+                foreach (IGrouping<string, ActionBinding> group in contextBindings.GroupBy(binding => binding.ActionId))
+                {
+                    BindingsByAction.Add((context.Id, group.Key), group.OrderBy(binding => binding.Id, StringComparer.Ordinal).ToArray());
+                }
+
+                recognitions.AddRange(inheritedRecognitions.Values.Where(recognition => !profile.Recognitions.Any(local => local.ContextId == context.Id && local.Id == recognition.Id)));
+            }
+
+            Recognitions = recognitions.ToArray();
+        }
+
+        public Dictionary<string, ActionState> NeutralStates { get; }
+
+        public Dictionary<(string Context, string Action), ActionState> NeutralStatesByContext { get; } = new();
+
+        public Dictionary<string, ActionDefinition[]> ActionsByContext { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<(string Context, string Action), ActionBinding[]> BindingsByAction { get; } = new();
+
+        public Dictionary<string, ActionBinding[]> BindingsByContext { get; } = new(StringComparer.Ordinal);
+
+        public RecognitionDefinition[] Recognitions { get; }
     }
 
     private sealed class RecognitionProgress

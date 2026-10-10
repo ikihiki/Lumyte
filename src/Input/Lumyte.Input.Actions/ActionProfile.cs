@@ -19,8 +19,44 @@ public sealed record ActionProfile(ImmutableArray<ActionDefinition> Actions, Imm
         Unique(Actions.Select(action => action.Id));
         Unique(Bindings.Select(binding => binding.Id));
         Unique(Contexts.Select(context => context.Id));
-        Unique(Recognitions.Select(recognition => recognition.Id));
-        foreach (ActionDefinition action in Actions)
+        foreach (IGrouping<string, RecognitionDefinition> group in Recognitions.GroupBy(recognition => recognition.ContextId))
+        {
+            Unique(group.Select(recognition => recognition.Id));
+        }
+
+        var contexts = Contexts.ToDictionary(context => context.Id, StringComparer.Ordinal);
+        foreach (InputContext context in Contexts)
+        {
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            InputContext current = context;
+            while (true)
+            {
+                if (!visited.Add(current.Id))
+                {
+                    throw new ArgumentException("Context inheritance contains a cycle.");
+                }
+
+                if (current.ParentId is null)
+                {
+                    break;
+                }
+
+                if (!contexts.TryGetValue(current.ParentId, out current!))
+                {
+                    throw new ArgumentException("Unknown parent context.");
+                }
+            }
+
+            Unique(LocalActions(context).Select(action => action.Id));
+        }
+
+        ActionDefinition[] definitions = Actions.Concat(Contexts.SelectMany(context => LocalActions(context))).ToArray();
+        if (definitions.GroupBy(action => action.Id).Any(group => group.Select(action => action.Kind).Distinct().Count() > 1))
+        {
+            throw new ArgumentException("An action must have the same value kind in every context.");
+        }
+
+        foreach (ActionDefinition action in definitions)
         {
             if (!Enum.IsDefined(action.Kind) || !float.IsFinite(action.Sensitivity) || action.Sensitivity < 0 || !float.IsFinite(action.SmoothingSeconds) || action.SmoothingSeconds < 0)
             {
@@ -30,7 +66,7 @@ public sealed record ActionProfile(ImmutableArray<ActionDefinition> Actions, Imm
 
         foreach (ActionBinding binding in Bindings)
         {
-            if (!Actions.Any(action => action.Id == binding.ActionId) || !Contexts.Any(context => context.Id == binding.ContextId) || !float.IsFinite(binding.Scale.X) || !float.IsFinite(binding.Scale.Y) || !float.IsFinite(binding.ReleaseThreshold) || binding.ReleaseThreshold < 0 || binding.PressThreshold <= binding.ReleaseThreshold || !float.IsFinite(binding.PressThreshold))
+            if (!Available(binding.ContextId, binding.ActionId, contexts) || !float.IsFinite(binding.Scale.X) || !float.IsFinite(binding.Scale.Y) || !float.IsFinite(binding.ReleaseThreshold) || binding.ReleaseThreshold < 0 || binding.PressThreshold <= binding.ReleaseThreshold || !float.IsFinite(binding.PressThreshold))
             {
                 throw new ArgumentException("Invalid binding.");
             }
@@ -52,10 +88,36 @@ public sealed record ActionProfile(ImmutableArray<ActionDefinition> Actions, Imm
 
         foreach (RecognitionDefinition recognition in Recognitions)
         {
-            if (!Enum.IsDefined(recognition.Kind) || !Contexts.Any(context => context.Id == recognition.ContextId) || recognition.Actions.IsDefaultOrEmpty || recognition.Actions.Any(id => !Actions.Any(action => action.Id == id)) || recognition.Window <= TimeSpan.Zero || recognition.TapCount < 1)
+            if (!Enum.IsDefined(recognition.Kind) || !Contexts.Any(context => context.Id == recognition.ContextId) || recognition.Actions.IsDefaultOrEmpty || recognition.Actions.Any(id => !Available(recognition.ContextId, id, contexts)) || recognition.Window <= TimeSpan.Zero || recognition.TapCount < 1)
             {
                 throw new ArgumentException("Invalid recognizer.");
             }
+        }
+    }
+
+    internal static ImmutableArray<ActionDefinition> LocalActions(InputContext context)
+        => context.Actions.IsDefault ? [] : context.Actions;
+
+    private bool Available(string contextId, string actionId, Dictionary<string, InputContext> contexts)
+    {
+        if (!contexts.TryGetValue(contextId, out InputContext? current))
+        {
+            return false;
+        }
+
+        while (true)
+        {
+            if (LocalActions(current).Any(action => action.Id == actionId))
+            {
+                return true;
+            }
+
+            if (current.ParentId is null)
+            {
+                return Actions.Any(action => action.Id == actionId);
+            }
+
+            current = contexts[current.ParentId];
         }
     }
 

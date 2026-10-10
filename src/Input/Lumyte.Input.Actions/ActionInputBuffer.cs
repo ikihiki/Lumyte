@@ -69,6 +69,31 @@ public sealed class ActionInputBuffer
         return true;
     }
 
+    /// <summary>Removes the oldest matching operation in one context.</summary>
+    /// <param name="contextId">The context identifier.</param>
+    /// <param name="recognitionId">The recognition identifier.</param>
+    /// <param name="now">The monotonic consumption time.</param>
+    /// <param name="action">The consumed operation, or null when absent.</param>
+    /// <returns>Whether a matching operation was consumed.</returns>
+    public bool TryConsume(string contextId, string recognitionId, TimeSpan now, out RecognizedAction? action)
+    {
+        Prune(now);
+        int index = 0;
+        while (index < _entries.Count && (_entries[index].ContextId != contextId || _entries[index].RecognitionId != recognitionId))
+        {
+            index++;
+        }
+
+        action = index == _entries.Count ? null : _entries[index];
+        if (action is null)
+        {
+            return false;
+        }
+
+        _entries.RemoveAt(index);
+        return true;
+    }
+
     /// <summary>Removes expired operations using monotonic time.</summary>
     /// <param name = "now">The now value.</param>
     public void Prune(TimeSpan now)

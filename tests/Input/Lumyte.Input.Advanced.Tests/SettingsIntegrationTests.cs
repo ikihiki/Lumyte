@@ -175,6 +175,51 @@ public sealed class SettingsIntegrationTests
             }
         });
 
+    /// <summary>Verifies inherited local definitions survive persistence and invalid cycles cannot be saved.</summary>
+    /// <returns>The asynchronous persistence operation.</returns>
+    [Fact]
+    public async Task ContextInheritanceSaveAndReloadAsync()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "settings.json");
+        try
+        {
+            using ServiceProvider provider = CreateProvider(path);
+            IEditableOptions<InputActionSettings> options = provider.GetRequiredService<IEditableOptions<InputActionSettings>>();
+            SettingsEdit<InputActionSettings> edit = options.BeginEdit();
+            edit.Value.Actions.Clear();
+            edit.Value.Contexts =
+            [
+                new ContextSettings { Id = "common", Actions = [new ActionSettings { Id = "jump" }] },
+                new ContextSettings { Id = "game", ParentId = "common" },
+            ];
+            edit.Value.Bindings[0].ContextId = "common";
+            SettingsSaveResult<InputActionSettings> saved = await options.SaveAsync(edit);
+            Assert.Equal(SettingsSaveStatus.Saved, saved.Status);
+            long revision = options.Revision;
+            string committed = await File.ReadAllTextAsync(path);
+            SettingsEdit<InputActionSettings> invalid = options.BeginEdit();
+            invalid.Value.Contexts[0].ParentId = "game";
+            SettingsSaveResult<InputActionSettings> rejected = await options.SaveAsync(invalid);
+            Assert.Equal(SettingsSaveStatus.ValidationFailed, rejected.Status);
+            Assert.Equal(revision, options.Revision);
+            Assert.Equal(committed, await File.ReadAllTextAsync(path));
+            using ServiceProvider restarted = CreateProvider(path);
+            InputActionSettings current = restarted.GetRequiredService<IEditableOptions<InputActionSettings>>().Current.Value;
+            Assert.Equal("common", current.Contexts[1].ParentId);
+            ActionProfile profile = InputSettingsConverter.BuildProfile(current);
+            var system = new ActionSystem(profile);
+            system.ActivateContext("game");
+            system.Advance(new InputRecord[] { new(new InputDeviceId(1), 1, TimeSpan.Zero, new KeyData(Key.Space, true, false)) }, TimeSpan.Zero);
+            Assert.Equal(1, system.GetState("jump").Value.X);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
     private static async Task SaveRebindAndRestartAsync()
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

@@ -11,7 +11,7 @@
 
 ### 配置と更新
 
-`Lumyte.Input.Actions` は Input・Processing と .NET に依存し、Settings や DI コンテナーには依存しない。利用者・プレイヤーごとに ActionSystem を作り、SetDevices で対象を選ぶ。指定しない場合は受け渡された全デバイスを使う。物理・仮想デバイスは同じ InputControl の指定で扱う。
+`Lumyte.Input.Actions` は Input・Processing・Composition と .NET に依存し、Settings や DI コンテナーには依存しない。利用者・プレイヤーごとに ActionSystem を作り、SetDevices で対象を選ぶ。指定しない場合は受け渡された全デバイスを使う。物理・仮想デバイスは同じ InputControl の指定で扱う。
 
 対象外デバイスの記録も受け渡し、現在値と解放を追跡する。マッピングとリバインドの捕捉は選択したデバイスに限定する。再選択時は現在のアナログ値を評価し、押下中のボタンは解放後の新しい押下から受け付ける。
 
@@ -21,7 +21,7 @@ Advance は Sequence 順の新しい InputRecord と InputSystem.ElapsedTime を
 
 ### プロファイルとマッピング
 
-ActionProfile は ImmutableArray による不変な ActionDefinition、ActionBinding、InputContext、RecognitionDefinition を持つ。ID は空でない一意の永続文字列とし、参照整合性とパラメーターを適用前に検証する。
+ActionProfile は ImmutableArray による不変な ActionDefinition、ActionBinding、InputContext、RecognitionDefinition を持つ。ID は空でない永続文字列とし、ContextId・BindingId はプロファイル内で一意、ActionId と RecognitionId は定義するコンテキスト内で一意とする。参照整合性とパラメーターを適用前に検証する。プロファイル直下の既存 Actions は全コンテキストの共通既定値として引き続き扱う。
 
 プロファイルの準備時にアクション ID と ContextId / ActionId ごとのバインディング索引を構築し、バインディングは BindingId の ordinal 順に整列しておく。現在値はコントロール別に参照し、入力ごとに全バインディングや無関係なコントロールを検索し直さない。コンテキストの評価順はプロファイルと有効化状態の変更時に更新する。
 
@@ -38,6 +38,16 @@ ActionProfile は ImmutableArray による不変な ActionDefinition、ActionBin
 PressThreshold 以上で押下、ReleaseThreshold 以下で解放とする。ReleaseThreshold がゼロでも、完全に中立になれば解放する。
 
 Started はゼロから有効、Performed は有効な値の変化、Canceled は中立化を示す。寄与したデバイス ID と ContextId をイベントに含める。
+
+### コンテキスト内の定義と継承
+
+Composition の Context.Actions、Context.Bindings、Context.Recognitions スロットに定義を記述する。ネストしたバインディング・認識の ContextId は包含するコンテキストから設定し、異なる ContextId の明示指定は拒否する。ActionProfile は Context.Actions にローカルなアクション定義を保持し、Bindings・Recognitions は宣言元の ContextId を持つ。
+
+ParentId による単一継承をサポートする。祖先から子へ解決し、同じ ActionId の子の定義は感度・正規化・平滑化を含めて置き換える。同じ ActionId の値の型は全コンテキストで一致させる。子であるアクションのバインディングを一つでも定義すると、そのアクションの継承したバインディング群全体を置き換える。別アクションのバインディングは継承する。同じ RecognitionId は子の定義で置き換え、異なる ID は追加する。親の不存在・自己参照・循環、兄弟だけに存在するアクションへの参照、不正なローカル定義を Validate で拒否する。
+
+継承は定義の再利用であり、有効化の連動ではない。子だけを ActivateContext して継承した定義を使える。Priority・Exclusive は各コンテキストの明示値を使い、親から引き継がない。親子を同時に有効にした場合は、通常の優先順位・排他規則に従って独立に評価する。認識の途中状態・ヒステリシス・値補正の状態はコンテキストごとに保持し、一方の無効化で他方をキャンセルしない。状態参照は GetState(contextId, actionId)、認識の消費は Buffer.TryConsume(contextId, recognitionId, now, out action) でコンテキストを選べる。既存の GetState(actionId) は全コンテキスト中の最も強い値、TryConsume(recognitionId, ...) はコンテキストを限定しない最古の操作を返す。独自の SetValueProcessors・SetRecognizers は指定したコンテキストだけに適用し、インスタンスを継承しない。
+
+継承の展開は ActionSystem の構築・ApplyProfile 準備時に索引へ取り込み、各 Advance で祖先を辿らない。ExportProfile と設定保存には ParentId・ローカルな定義だけを保持し、継承によるコピーを保存しない。親の編集は次のプロファイル適用境界で子孫にも反映する。継承したバインディングの BindingId をリバインドすると宣言元の親の定義を変更する。子だけ変更したい場合は、子のバインディングを別の BindingId で定義してから捕捉する。
 
 ### アクション値補正
 
@@ -152,13 +162,15 @@ Lumyte.Input.Actions.Compose は Lumyte.Composition の Composable、ComposePara
 ```csharp
 using static Lumyte.Input.Actions.Compose;
 
-ActionProfile defaults = Profile()[
-    Profile.Actions()[Action("jump", ActionValueKind.Button)],
-    Profile.Contexts()[Context("game")],
-    Profile.Bindings()[Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))],
-    Profile.Recognitions()[Recognition(id: "jump-press", contextId: "game", kind: RecognitionKind.Press,
-        actions: ["jump"], window: TimeSpan.FromSeconds(1))]
-].Build();
+ActionProfile defaults = Profile()[Profile.Contexts()[
+    Context("common")[
+        Context.Actions()[Action("jump", ActionValueKind.Button)],
+        Context.Bindings()[Binding(id: "common-jump", actionId: "jump", control: InputControl.ForKey(Key.Space))],
+        Context.Recognitions()[Recognition(id: "jump-press", kind: RecognitionKind.Press,
+            actions: ["jump"], window: TimeSpan.FromSeconds(1))]],
+    Context("game", parentId: "common")[
+        Context.Bindings()[Binding(id: "jump-key", actionId: "jump", control: InputControl.ForKey(Key.J))]]]]
+    .Build();
 var actions = new ActionSystem(defaults);
 actions.ActivateContext("game");
 // InputSystem は従来どおり Source を DI で受け取る。
@@ -201,7 +213,9 @@ actions.Advance(records, input.ElapsedTime);
 +    public sealed record ActionBinding(string Id, string ActionId, string ContextId,
 +        InputControl Control, Vector2 Scale, float PressThreshold = 0.5f,
 +        float ReleaseThreshold = 0.4f);
-+    public sealed record InputContext(string Id, int Priority = 0, bool Exclusive = false);
++    // ローカルな定義と単一の親を保持する。Actions の default は空のローカル定義を表す。
++    public sealed record InputContext(string Id, int Priority = 0, bool Exclusive = false,
++        string? ParentId = null, ImmutableArray<ActionDefinition> Actions = default);
 +    public sealed record RecognitionDefinition(string Id, string ContextId,
 +        RecognitionKind Kind, ImmutableArray<string> Actions, TimeSpan Window, int TapCount = 2);
 +    public readonly record struct InputControl(InputControlKind Kind, int Index)
@@ -235,6 +249,9 @@ actions.Advance(records, input.ElapsedTime);
 +        public void Add(RecognizedAction action, TimeSpan now);
 +        // 寿命内の認識済み操作を一度だけ取り出す。失敗時は false と null を返す。
 +        public bool TryConsume(string recognitionId, TimeSpan now, out RecognizedAction? action);
++        // 同じ RecognitionId を継承した親子を区別して消費する。
++        public bool TryConsume(string contextId, string recognitionId, TimeSpan now,
++            out RecognizedAction? action);
 +        public void Prune(TimeSpan now);
 +        public void Clear();
 +        public void ClearContext(string contextId);
@@ -257,6 +274,8 @@ actions.Advance(records, input.ElapsedTime);
 +        // 全 Device の新規記録を Sequence 順で渡す。再送・時間逆行は拒否する。
 +        public void Advance(ReadOnlyMemory<InputRecord> records, TimeSpan now);
 +        public ActionState GetState(string actionId);
++        // コンテキスト内の状態を照会する。無効なら中立値、未定義なら例外。
++        public ActionState GetState(string contextId, string actionId);
 +        public void Reset(InputDeviceId device, TimeSpan now);
 +        public ActionProfile ExportProfile();
 +        // 検証後、次の Advance 境界で置換する。
@@ -292,6 +311,16 @@ actions.Advance(records, input.ElapsedTime);
 +
 +namespace Lumyte.Input.Settings
 +{
++    public sealed class ContextSettings
++    {
++        public ContextSettings();
++        public string Id { get; set; } = string.Empty;
++        public string? ParentId { get; set; }
++        public System.Collections.Generic.List<ActionSettings> Actions { get; set; } = new();
++        public int Priority { get; set; }
++        public bool Exclusive { get; set; }
++    }
++
 +    public static class InputSettingsConverter
 +    {
 +        // DTO の名前を型付き定義へ変換し、検証する。
@@ -354,9 +383,9 @@ actions.Advance(records, input.ElapsedTime);
 +
 +            public delegate Binding BindingFactory(
 +                string actionId,
-+                string contextId,
 +                InputControl control,
 +                string id,
++                Optional<string?> contextId = default,
 +                Optional<float> pressThreshold = default,
 +                Optional<float> releaseThreshold = default,
 +                Optional<Vector2> scale = default,
@@ -368,7 +397,8 @@ actions.Advance(records, input.ElapsedTime);
 +                public Binding();
 +                public required string Id { get; set; }
 +                public required string ActionId { get; set; }
-+                public required string ContextId { get; set; }
++                // ネストした定義では包含 Context の ID。単独 Build では明示指定が必要。
++                public string? ContextId { get; set; }
 +                public required InputControl Control { get; set; }
 +                public Vector2 Scale { get; set; } = Vector2.One;
 +                public float PressThreshold { get; set; } = 0.5f;
@@ -379,6 +409,7 @@ actions.Advance(records, input.ElapsedTime);
 +            public delegate Context ContextFactory(
 +                string id,
 +                Optional<bool> exclusive = default,
++                Optional<string?> parentId = default,
 +                Optional<int> priority = default,
 +                IReadOnlyList<System.Action<Context>>? with = null);
 +
@@ -389,15 +420,18 @@ actions.Advance(records, input.ElapsedTime);
 +                public required string Id { get; set; }
 +                public int Priority { get; set; } = 0;
 +                public bool Exclusive { get; set; } = false;
++                public string? ParentId { get; set; }
++                // コンテキスト内のアクション・バインディング・認識を適用する。
++                public Context this[params CompositionSlotAssignment<Context>[] content] { get; }
 +                public InputContext Build();
 +            }
 +
 +            public delegate Recognition RecognitionFactory(
 +                ImmutableArray<string> actions,
-+                string contextId,
 +                string id,
 +                RecognitionKind kind,
 +                TimeSpan window,
++                Optional<string?> contextId = default,
 +                Optional<int> tapCount = default,
 +                IReadOnlyList<System.Action<Recognition>>? with = null);
 +
@@ -406,7 +440,8 @@ actions.Advance(records, input.ElapsedTime);
 +            {
 +                public Recognition();
 +                public required string Id { get; set; }
-+                public required string ContextId { get; set; }
++                // ネストした定義では包含 Context の ID。単独 Build では明示指定が必要。
++                public string? ContextId { get; set; }
 +                public required RecognitionKind Kind { get; set; }
 +                public required ImmutableArray<string> Actions { get; set; }
 +                public required TimeSpan Window { get; set; }
@@ -428,6 +463,16 @@ actions.Advance(records, input.ElapsedTime);
 +            }
 +
 +        }
++    }
++
++    public static class ComposeContextCompositionExtensions
++    {
++        public static CompositionSlot<Compose.Definitions.Context, Compose.Definitions.Action>
++            Actions(this Compose.Definitions.ContextFactory __factory);
++        public static CompositionSlot<Compose.Definitions.Context, Compose.Definitions.Binding>
++            Bindings(this Compose.Definitions.ContextFactory __factory);
++        public static CompositionSlot<Compose.Definitions.Context, Compose.Definitions.Recognition>
++            Recognitions(this Compose.Definitions.ContextFactory __factory);
 +    }
 +
 +    public static class ComposeProfileCompositionExtensions

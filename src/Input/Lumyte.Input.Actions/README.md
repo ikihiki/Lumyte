@@ -28,14 +28,32 @@ Declarative definitions use the generated Composition factories:
 ```csharp
 using static Lumyte.Input.Actions.Compose;
 
-ActionProfile profile = Profile()[
-    Profile.Actions()[Action("jump", ActionValueKind.Button)],
-    Profile.Contexts()[Context("game")],
-    Profile.Bindings()[Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))]
-].Build();
+ActionProfile profile = Profile()[Profile.Contexts()[
+    Context("common")[
+        Context.Actions()[Action("jump", ActionValueKind.Button)],
+        Context.Bindings()[Binding(id: "common-jump", actionId: "jump", control: InputControl.ForKey(Key.Space))],
+        Context.Recognitions()[Recognition(id: "jump-press", kind: RecognitionKind.Press,
+            actions: ["jump"], window: TimeSpan.FromSeconds(1))]],
+    Context("game", parentId: "common")[
+        Context.Bindings()[Binding(id: "jump-key", actionId: "jump", control: InputControl.ForKey(Key.J))]]]]
+    .Build();
 ```
 
 `Build()` validates and snapshots mutable construction nodes. Later edits require
 another `Build()` and `ApplyProfile()`. Save the resulting profile through
 `InputSettingsConverter.ToSettings`; register it as defaults so persisted user
 bindings take precedence. Consumers do not need to install the generator.
+
+Contexts own local actions, bindings and recognition definitions. Nested bindings
+and recognitions infer their `ContextId`. `parentId` specifies one parent; child
+activation uses inherited definitions without activating its parent. Child action
+IDs override correction settings (the value kind must remain the same). Local
+bindings for an action replace its entire inherited binding group; recognition
+IDs override within a context. Use `GetState(contextId, actionId)` and
+`Buffer.TryConsume(contextId, recognitionId, now, out action)` for scoped polling
+and consumption when parent and child are active together. Priority and exclusivity belong to each context.
+
+Inheritance is resolved when building runtime indices, with independent hysteresis,
+recognition and action state per context. `ToSettings` retains `ParentId` and local
+actions; inherited copies are not persisted. Rebinding a declaring parent's binding
+updates its descendants; declare a child binding to customize only that child.

@@ -53,7 +53,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the ContextId value.</summary>
             [ComposeParameter]
-            public required string ContextId { get; set; }
+            public string? ContextId { get; set; }
 
             /// <summary>Gets or sets the Control value.</summary>
             [ComposeParameter]
@@ -73,13 +73,31 @@ public static partial class Compose
 
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
-            public ActionBinding Build() => new(Id, ActionId, ContextId, Control, Scale, PressThreshold, ReleaseThreshold);
+            public ActionBinding Build() => Build(ContextId ?? throw new InvalidOperationException("A standalone binding requires a context."));
+
+            internal ActionBinding Build(string contextId)
+            {
+                if (ContextId is not null && ContextId != contextId)
+                {
+                    throw new ArgumentException("A nested binding must belong to its containing context.");
+                }
+
+                return new ActionBinding(Id, ActionId, contextId, Control, Scale, PressThreshold, ReleaseThreshold);
+            }
         }
 
         /// <summary>Builds an InputContext.</summary>
         [Composable]
         public partial class Context
         {
+            private Action[] _actions = [];
+            private Binding[] _bindings = [];
+            private Recognition[] _recognitions = [];
+
+            /// <summary>Gets or sets the optional parent context identifier.</summary>
+            [ComposeParameter]
+            public string? ParentId { get; set; }
+
             /// <summary>Gets or sets the Id value.</summary>
             [ComposeParameter]
             public required string Id { get; set; }
@@ -94,7 +112,20 @@ public static partial class Compose
 
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
-            public InputContext Build() => new(Id, Priority, Exclusive);
+            public InputContext Build() => new(Id, Priority, Exclusive, ParentId, _actions.Select(node => node.Build()).ToImmutableArray());
+
+            internal IEnumerable<ActionBinding> BuildBindings() => _bindings.Select(node => node.Build(Id));
+
+            internal IEnumerable<RecognitionDefinition> BuildRecognitions() => _recognitions.Select(node => node.Build(Id));
+
+            [ComposeSlot]
+            private static void Actions(Context target, IReadOnlyList<Action> children) => target._actions = children.ToArray();
+
+            [ComposeSlot]
+            private static void Bindings(Context target, IReadOnlyList<Binding> children) => target._bindings = children.ToArray();
+
+            [ComposeSlot]
+            private static void Recognitions(Context target, IReadOnlyList<Recognition> children) => target._recognitions = children.ToArray();
         }
 
         /// <summary>Builds a RecognitionDefinition.</summary>
@@ -107,7 +138,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the ContextId value.</summary>
             [ComposeParameter]
-            public required string ContextId { get; set; }
+            public string? ContextId { get; set; }
 
             /// <summary>Gets or sets the Kind value.</summary>
             [ComposeParameter]
@@ -127,7 +158,17 @@ public static partial class Compose
 
             /// <summary>Creates an immutable definition from this node.</summary>
             /// <returns>The immutable definition.</returns>
-            public RecognitionDefinition Build() => new(Id, ContextId, Kind, Actions, Window, TapCount);
+            public RecognitionDefinition Build() => Build(ContextId ?? throw new InvalidOperationException("A standalone recognition requires a context."));
+
+            internal RecognitionDefinition Build(string contextId)
+            {
+                if (ContextId is not null && ContextId != contextId)
+                {
+                    throw new ArgumentException("A nested recognition must belong to its containing context.");
+                }
+
+                return new RecognitionDefinition(Id, contextId, Kind, Actions, Window, TapCount);
+            }
         }
 
         /// <summary>Builds and validates an immutable action profile from named slots.</summary>
@@ -145,9 +186,9 @@ public static partial class Compose
             {
                 var profile = new ActionProfile(
                     _actions.Select(node => node.Build()).ToImmutableArray(),
-                    _bindings.Select(node => node.Build()).ToImmutableArray(),
+                    _bindings.Select(node => node.Build()).Concat(_contexts.SelectMany(context => context.BuildBindings())).ToImmutableArray(),
                     _contexts.Select(node => node.Build()).ToImmutableArray(),
-                    _recognitions.Select(node => node.Build()).ToImmutableArray());
+                    _recognitions.Select(node => node.Build()).Concat(_contexts.SelectMany(context => context.BuildRecognitions())).ToImmutableArray());
                 profile.Validate();
                 return profile;
             }

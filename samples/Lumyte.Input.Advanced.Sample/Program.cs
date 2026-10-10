@@ -20,11 +20,13 @@ internal static class Program
         services.AddInputSettings();
 
         // Composition builds defaults once; persisted settings remain the source of runtime overrides.
-        ActionProfile defaults = Compose.Profile()[
-            Compose.Profile.Actions()[Compose.Action("jump", ActionValueKind.Button)],
-            Compose.Profile.Contexts()[Compose.Context("game")],
-            Compose.Profile.Bindings()[Compose.Binding(id: "jump-key", actionId: "jump", contextId: "game", control: InputControl.ForKey(Key.Space))],
-            Compose.Profile.Recognitions()[Compose.Recognition(id: "jump-press", contextId: "game", kind: RecognitionKind.Press, actions: ["jump"], window: TimeSpan.FromSeconds(1))]].Build();
+        Compose.Definitions.Context common = Compose.Context("common")[
+            Compose.Context.Actions()[Compose.Action("jump", ActionValueKind.Button)],
+            Compose.Context.Bindings()[Compose.Binding(id: "common-jump", actionId: "jump", control: InputControl.ForKey(Key.Space))],
+            Compose.Context.Recognitions()[Compose.Recognition(id: "jump-press", kind: RecognitionKind.Press, actions: ["jump"], window: TimeSpan.FromSeconds(1))]];
+        Compose.Definitions.Context game = Compose.Context("game", parentId: "common")[
+            Compose.Context.Bindings()[Compose.Binding(id: "jump-key", actionId: "jump", control: InputControl.ForKey(Key.J))]];
+        ActionProfile defaults = Compose.Profile()[Compose.Profile.Contexts()[common, game]].Build();
         services.Configure<InputActionSettings>(settings =>
         {
             InputActionSettings initial = InputSettingsConverter.ToSettings(defaults);
@@ -79,7 +81,7 @@ internal static class Program
         Tick();
         backend.Send(new KeyData(Key.J, true, false));
         Tick();
-        Console.WriteLine($"jump: {actions.GetState("jump").Value}, buffered: {actions.Buffer.TryConsume("jump-press", input.ElapsedTime, out _)}");
+        Console.WriteLine($"jump: {actions.GetState("game", "jump").Value}, buffered: {actions.Buffer.TryConsume("game", "jump-press", input.ElapsedTime, out _)}");
         void Tick()
         {
             records.Clear();
