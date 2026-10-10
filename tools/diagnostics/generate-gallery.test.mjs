@@ -6,7 +6,7 @@ import test from 'node:test';
 import { generateGallery } from './generate-gallery.mjs';
 
 const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
-const metadata = { repository: 'example/engine', commit: 'a'.repeat(40), label: 'PR #26' };
+const metadata = { repository: 'example/engine', commit: 'a'.repeat(40), sourceCommit: 'a'.repeat(40), label: 'PR #26' };
 
 async function fixture(t, change = () => {}) {
     const directory = await mkdtemp(join(tmpdir(), 'lumyte-gallery-'));
