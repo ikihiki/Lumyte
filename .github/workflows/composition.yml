@@ -141,7 +141,7 @@ jobs:
         shell: bash
         env:
           PREVIEW_COMMIT: ${{ github.sha }}
-          PREVIEW_LABEL: ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+          PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
           node tools/diagnostics/generate-gallery.test.mjs
