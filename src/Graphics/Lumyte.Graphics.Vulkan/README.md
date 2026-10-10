@@ -110,9 +110,9 @@ graphics programはshaderの組・topology分類・compile optionを保持し、
 
 compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
 
-reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。初期のresource ABIは空で、descriptorやpush constantが必要なprogramはroot-data／binding契約への接続前に拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
+reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color、direct draw、compute dispatchを提供し、depth/stencil・MSAA・indexed／indirectは対応契約の拡張で追加します。
 
-Vulkanはdynamic rendering対応のGraphicsPipelineCreateInfoと空のPipelineLayoutを使用します。attachment formatはPipelineRenderingCreateInfo、topology・blend・coverageは完全なnative pipelineへ固定します。viewport・scissor・blend constants・stencil referenceはdynamic stateです。WebGPUと同じ画面座標へ揃えるためviewportのheightを負にし、front faceを対応させます。per-attachment blendに必要なIndependentBlendもdevice生成時に必須として有効化し、fallbackは設けません。
+Vulkanはdynamic rendering対応のGraphicsPipelineCreateInfoとroot uniformとnative descriptor arrayのPipelineLayoutを使用します。attachment formatはPipelineRenderingCreateInfo、topology・blend・coverageは完全なnative pipelineへ固定します。viewport・scissor・blend constants・stencil referenceはdynamic stateです。WebGPUと同じ画面座標へ揃えるためviewportのheightを負にし、front faceを対応させます。per-attachment blendに必要なIndependentBlendもdevice生成時に必須として有効化し、fallbackは設けません。
 
 CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返された部分的なnative objectを回収してcacheへ登録しません。sample mask 0も正確に渡します。optimization hintは保持しますが、partial graphics programをこの実装では使用せず、両hintともdriverの通常のpipeline生成へ渡します。
 
@@ -149,3 +149,25 @@ CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返�
 | 上記の合計（各試行の合計から算出） | 5.251 (5.069–6.471) | 90.184 (82.813–130.980) |
 
 200 draw記録の中央値は無効時に約97倍、測定した区間の合計は約17.2倍でした。同じPSOの再利用が多いこのworkloadではcacheを維持します。submit完了時間の差にはsoftware driverの実行時処理やCPU schedulingも含まれるため、hardware GPUの描画時間差とは解釈しません。必要な拡張を用いたdynamic state化や部分PSO生成との比較は別のworkloadです。
+
+## Shader dataと構造体引数
+
+[ADR-GRAPHICS-0009](../../../docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)に従い、AutomaticでGPU storage、Uploadでstagingを作ります。map済みstagingのCopyFromが値をpackし、利用者がcommandのCopyBufferとbarrierを明示します。shader dataへのraw byte aliasとShaderWriteは提供しません。
+
+GPU storageはshader data作成時に確保します。stagingへ値を書き込む時に参照先の既存GPU buffer device addressを解決し、明示copyでGPUへ転送します。先にbufferを確保・登録できるため循環参照をpackできます。draw／dispatchは転送済みCPU metadataから依存を収集し、shader dataを再転送しません。
+
+Upload stagingは明示mapでCPU書き込みを行い、Automatic storageへVkCmdCopyBufferで転送します。shader dataのbarrierは同じallocationのbyte rangeへVkBufferMemoryBarrier2を記録します。root値だけはcommand所有のhost-visible coherent backingで渡します。stagingとGPU storageの有効期間・copy前後の依存は利用者が管理します。
+
+SPIR-Vだけを含むonline artifactも、このbackendの型schemaとhelper ABIが揃っていれば使用できます。WGSL targetがないことだけを理由に拒否しません。
+
+## 構造体引数とnative参照
+
+Vulkan 1.2のBufferDeviceAddress、RuntimeDescriptorArray、DescriptorBindingPartiallyBound、ShaderSampledImageArrayNonUniformIndexingとShaderInt64を有効化します。shader用途のraw bufferはShaderDeviceAddress usageとDeviceAddress allocation flagを持ちます。buffer helperは64-bit addressを直接参照し、portableな有限binding用のremapやswitchを使いません。
+
+textureとsamplerは種類別の論理slotをnative descriptor array indexとして使用します。到達slotの最大値に対応したarray layoutとroot uniformを使い、PSOをcacheします。物理arrayの上限を超えるslotは拒否します。drawごとにdescriptorを設定しますが、shader data bytesは確保済みGPU bufferのまま使います。commandはroot backingとdescriptor poolを保持し、submitで登録identityとstaging revisionを再検証します。
+
+Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
+
+shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+
+共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。

@@ -42,9 +42,9 @@ try {
     let launchError;
     browser.on("error", error => { launchError = error; });
     browser.stderr.on("data", data => { diagnostics += data; });
-    const deadline = Date.now() + 60000;
+    const launchDeadline = Date.now() + 60000;
     let debuggerPort;
-    while (!debuggerPort && Date.now() < deadline) {
+    while (!debuggerPort && Date.now() < launchDeadline) {
         if (launchError) { throw launchError; }
         const match = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/.exec(diagnostics);
         debuggerPort = match?.[1];
@@ -62,6 +62,7 @@ try {
     let nextId = 0;
     const pending = new Map();
     const errors = [];
+    const progress = [];
     socket.addEventListener("message", event => {
         const message = JSON.parse(event.data);
         if (message.id) {
@@ -72,8 +73,10 @@ try {
             else { action.resolve(message.result); }
         } else if (message.method === "Runtime.exceptionThrown") {
             errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
-        } else if (message.method === "Runtime.consoleAPICalled" && message.params.type === "error") {
-            errors.push(message.params.args.map(value => value.description ?? String(value.value)).join(" "));
+        } else if (message.method === "Runtime.consoleAPICalled") {
+            const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
+            if (message.params.type === "error") { errors.push(text); }
+            else { progress.push(text); }
         }
     });
     function command(method, params = {}) {
@@ -92,6 +95,7 @@ try {
     }
     await command("Runtime.enable");
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
+    const deadline = Date.now() + 180000;
     let result;
     while (Date.now() < deadline) {
         const response = await command("Runtime.evaluate", {
@@ -102,7 +106,7 @@ try {
         if (result.result) { break; }
         await delay(100);
     }
-    assert.equal(result?.result, "passed", `${result?.report ?? "Browser timed out"}\n${errors.join("\n")}`);
+    assert.equal(result?.result, "passed", `${result?.report ?? "Browser timed out"}\n${progress.slice(-40).join("\n")}\n${errors.join("\n")}\n${diagnostics}`);
     assert.match(result.report, /MaxBufferSize: [1-9]\d* bytes/);
     assert.match(result.report, /MaxTextureDimension2D: [1-9]\d* texels/);
     assert.match(result.report, /StorageBufferOffsetAlignment: [1-9]\d* bytes/);
@@ -113,6 +117,7 @@ try {
     assert.match(result.report, /Shader checks passed:/);
     assert.match(result.report, /Command checks passed:/);
     assert.match(result.report, /Pipeline checks passed:/);
+    assert.match(result.report, /Shader binding checks passed:/);
     assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");
     console.log(`Browser .NET/WebGPU verification passed\n${result.report}`);

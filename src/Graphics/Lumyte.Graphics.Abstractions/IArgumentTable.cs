@@ -46,4 +46,12 @@ public interface IArgumentTable : IDisposable
     /// <summary>Releases an idle buffer slot and invalidates its old references.</summary>
     /// <param name="slot">The caller-managed logical registration slot.</param>
     void ReleaseBuffer(uint slot);
+
+    /// <summary>Registers a CPU-set shader data range without transferring values.</summary>
+    /// <typeparam name="T">The logical shader data element type.</typeparam>
+    /// <param name="slot">The logical buffer slot.</param>
+    /// <param name="range">The nonempty range from this device.</param>
+    /// <returns>The opaque range reference.</returns>
+    IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
+        where T : struct, IShaderData;
 }

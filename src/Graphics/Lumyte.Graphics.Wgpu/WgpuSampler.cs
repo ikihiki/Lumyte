@@ -35,6 +35,15 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
 
     public SamplerDesc Desc { get; }
 
+    internal WGPUSamplerImpl* Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _native;
+        }
+    }
+
     internal WgpuDevice Owner => _owner;
 
     public void Dispose()

@@ -18,6 +18,15 @@ internal sealed class BrowserSampler : IGraphicsSampler
 
     public SamplerDesc Desc { get; }
 
+    internal System.Runtime.InteropServices.JavaScript.JSObject Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _native;
+        }
+    }
+
     internal BrowserDevice Owner => _owner;
 
     public void Dispose()

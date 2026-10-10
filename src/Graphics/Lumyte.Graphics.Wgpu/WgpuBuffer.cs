@@ -6,7 +6,7 @@ using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
+internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     where T : unmanaged
 {
     private readonly WgpuDevice _owner;
@@ -59,6 +59,8 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>
 
         _native = owner.NativeDevice.CreateBuffer(new A.BufferDescriptor { Size = size, Usage = usage });
     }
+
+    public unsafe object ShaderHandle => (nint)Native.Handle;
 
     public BufferLayout<T> Layout { get; }
 

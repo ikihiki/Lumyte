@@ -8,17 +8,17 @@ internal sealed unsafe partial class WgpuGraphicsPipeline
 {
     private readonly Dictionary<string, nint> _variants = [];
 
-    internal WGPURenderPipelineImpl* Resolve(RenderStateSnapshot state, TextureFormat[] formats)
+    internal WGPURenderPipelineImpl* Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingData? arguments = null)
     {
         ValidateAlive();
         PipelineValidation.Draw(Desc, state, formats, FragmentOutputs);
-        string key = state.Key + ":" + string.Join(',', formats);
+        string key = state.Key + ":" + string.Join(',', formats) + ":" + arguments?.Key;
         if (_variants.TryGetValue(key, out nint cached))
         {
             return (WGPURenderPipelineImpl*)cached;
         }
 
-        WGPURenderPipelineImpl* pipeline = CreateNative(state.Desc, formats);
+        WGPURenderPipelineImpl* pipeline = CreateNative(state.Desc, formats, arguments);
         _variants.Add(key, (nint)pipeline);
         return pipeline;
     }
@@ -67,62 +67,76 @@ internal sealed unsafe partial class WgpuGraphicsPipeline
         // Native graphics variants require actual attachment and draw state.
     }
 
-    private WGPURenderPipelineImpl* CreateNative(GraphicsRenderStateDesc state, TextureFormat[] formats)
+    private WGPURenderPipelineImpl* CreateNative(GraphicsRenderStateDesc state, TextureFormat[] formats, ShaderBindingData? arguments)
     {
-        byte[] vertexEntry = Encoding.UTF8.GetBytes(VertexData.EntryPoint);
-        byte[] fragmentEntry = Encoding.UTF8.GetBytes(FragmentData!.EntryPoint);
-        Span<WGPUColorTargetState> colors = stackalloc WGPUColorTargetState[formats.Length];
-        Span<WGPUBlendState> blends = stackalloc WGPUBlendState[formats.Length];
-        fixed (byte* vs = vertexEntry)
+        using Ahjo.Wgpu.ShaderModule? vertexModule = arguments == null ? null : _owner.NativeDevice.CreateShaderModule(new Ahjo.Wgpu.ShaderModuleDescriptor { Source = Ahjo.Wgpu.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(arguments.Specialize(VertexData))) });
+        using Ahjo.Wgpu.ShaderModule? fragmentModule = arguments == null ? null : _owner.NativeDevice.CreateShaderModule(new Ahjo.Wgpu.ShaderModuleDescriptor { Source = Ahjo.Wgpu.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(arguments.Specialize(FragmentData!))) });
+        WGPUPipelineLayoutImpl* layout = arguments == null ? null : WgpuShaderBinding.CreateLayout(_owner, arguments);
+        try
         {
-            fixed (byte* fs = fragmentEntry)
+            byte[] vertexEntry = Encoding.UTF8.GetBytes(VertexData.EntryPoint);
+            byte[] fragmentEntry = Encoding.UTF8.GetBytes(FragmentData!.EntryPoint);
+            Span<WGPUColorTargetState> colors = stackalloc WGPUColorTargetState[formats.Length];
+            Span<WGPUBlendState> blends = stackalloc WGPUBlendState[formats.Length];
+            fixed (byte* vs = vertexEntry)
             {
-                fixed (WGPUColorTargetState* targets = colors)
+                fixed (byte* fs = fragmentEntry)
                 {
-                    fixed (WGPUBlendState* equations = blends)
+                    fixed (WGPUColorTargetState* targets = colors)
                     {
-                        for (int i = 0; i < formats.Length; i++)
+                        fixed (WGPUBlendState* equations = blends)
                         {
-                            ColorBlendStateDesc c = state.ColorTargets[i];
-                            equations[i] = new() { color = Blend(c.Color), alpha = Blend(c.Alpha) };
-                            targets[i] = new() { format = Format(formats[i]), writeMask = (ulong)c.WriteMask, blend = c.BlendEnable ? equations + i : null };
-                        }
-
-                        var fragment = new WGPUFragmentState
-                        {
-                            module = _fragment!.Native.Handle,
-                            entryPoint = new() { data = (sbyte*)fs, length = (nuint)fragmentEntry.Length },
-                            targetCount = (nuint)formats.Length,
-                            targets = targets,
-                        };
-                        var desc = new WGPURenderPipelineDescriptor
-                        {
-                            vertex = new() { module = _vertex.Native.Handle, entryPoint = new() { data = (sbyte*)vs, length = (nuint)vertexEntry.Length } },
-                            fragment = &fragment,
-                            primitive = new()
+                            for (int i = 0; i < formats.Length; i++)
                             {
-                                topology = state.Topology switch
-                                {
-                                    PrimitiveTopology.PointList => WGPUPrimitiveTopology.PointList,
-                                    PrimitiveTopology.LineList => WGPUPrimitiveTopology.LineList,
-                                    PrimitiveTopology.LineStrip => WGPUPrimitiveTopology.LineStrip,
-                                    PrimitiveTopology.TriangleStrip => WGPUPrimitiveTopology.TriangleStrip,
-                                    _ => WGPUPrimitiveTopology.TriangleList,
-                                },
-                                frontFace = state.Rasterization.FrontFace == FrontFace.Clockwise ? WGPUFrontFace.CW : WGPUFrontFace.CCW,
-                                cullMode = state.Rasterization.Cull switch { CullMode.Front => WGPUCullMode.Front, CullMode.Back => WGPUCullMode.Back, _ => WGPUCullMode.None },
-                            },
-                            multisample = new() { count = 1, mask = state.SampleMask },
-                        };
-                        WGPURenderPipelineImpl* pipeline = WGPU.wgpuDeviceCreateRenderPipeline(_owner.NativeDevice.Handle, &desc);
-                        if (pipeline == null)
-                        {
-                            throw new InvalidOperationException("WebGPU graphics pipeline creation failed.");
-                        }
+                                ColorBlendStateDesc c = state.ColorTargets[i];
+                                equations[i] = new() { color = Blend(c.Color), alpha = Blend(c.Alpha) };
+                                targets[i] = new() { format = Format(formats[i]), writeMask = (ulong)c.WriteMask, blend = c.BlendEnable ? equations + i : null };
+                            }
 
-                        return pipeline;
+                            var fragment = new WGPUFragmentState
+                            {
+                                module = (fragmentModule ?? _fragment!.Native).Handle,
+                                entryPoint = new() { data = (sbyte*)fs, length = (nuint)fragmentEntry.Length },
+                                targetCount = (nuint)formats.Length,
+                                targets = targets,
+                            };
+                            var desc = new WGPURenderPipelineDescriptor
+                            {
+                                layout = layout,
+                                vertex = new() { module = (vertexModule ?? _vertex.Native).Handle, entryPoint = new() { data = (sbyte*)vs, length = (nuint)vertexEntry.Length } },
+                                fragment = &fragment,
+                                primitive = new()
+                                {
+                                    topology = state.Topology switch
+                                    {
+                                        PrimitiveTopology.PointList => WGPUPrimitiveTopology.PointList,
+                                        PrimitiveTopology.LineList => WGPUPrimitiveTopology.LineList,
+                                        PrimitiveTopology.LineStrip => WGPUPrimitiveTopology.LineStrip,
+                                        PrimitiveTopology.TriangleStrip => WGPUPrimitiveTopology.TriangleStrip,
+                                        _ => WGPUPrimitiveTopology.TriangleList,
+                                    },
+                                    frontFace = state.Rasterization.FrontFace == FrontFace.Clockwise ? WGPUFrontFace.CW : WGPUFrontFace.CCW,
+                                    cullMode = state.Rasterization.Cull switch { CullMode.Front => WGPUCullMode.Front, CullMode.Back => WGPUCullMode.Back, _ => WGPUCullMode.None },
+                                },
+                                multisample = new() { count = 1, mask = state.SampleMask },
+                            };
+                            WGPURenderPipelineImpl* pipeline = WGPU.wgpuDeviceCreateRenderPipeline(_owner.NativeDevice.Handle, &desc);
+                            if (pipeline == null)
+                            {
+                                throw new InvalidOperationException("WebGPU graphics pipeline creation failed.");
+                            }
+
+                            return pipeline;
+                        }
                     }
                 }
+            }
+        }
+        finally
+        {
+            if (layout != null)
+            {
+                WGPU.wgpuPipelineLayoutRelease(layout);
             }
         }
     }

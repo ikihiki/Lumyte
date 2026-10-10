@@ -30,6 +30,8 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
             handles[i] = (nint)buffer.Native;
         }
 
+        ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
+
         fixed (nint* data = handles)
         {
             WGPU.wgpuQueueSubmit(owner.NativeDevice.Queue.Handle, (nuint)handles.Length, (WGPUCommandBufferImpl**)data);

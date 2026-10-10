@@ -52,6 +52,20 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         return Write<T>(_buffers, BufferCapacity, slot, resource, resource.RetainRegistration, resource.ReleaseRegistration, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes);
     }
 
+    public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
+        where T : struct, IShaderData
+    {
+        ThrowIfDisposed();
+        if (range.Buffer is not VulkanShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)
+        {
+            throw new ArgumentException("Shader data range belongs to another device.", nameof(range));
+        }
+
+        resource.ValidateAlive();
+        ulong stride = resource.ShaderElementStrideInBytes;
+        return Write<T>(_buffers, BufferCapacity, slot, resource, resource.RetainRegistration, resource.ReleaseRegistration, range.Count, stride, checked(range.Offset * stride), checked(range.Count * stride));
+    }
+
     public void ReleaseTexture(uint slot) => Release(_textures, TextureCapacity, slot);
 
     public void ReleaseSampler(uint slot) => Release(_samplers, SamplerCapacity, slot);
@@ -77,12 +91,14 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         owner.ReleaseArgumentTable();
     }
 
+    internal bool BelongsTo(VulkanDevice device) => ReferenceEquals(owner, device);
+
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, Action retain, Action release, ulong count, ulong stride, ulong offset, ulong size)
     {
         ValidateSlot(capacity, slot);
-        var entry = new ArgumentRegistration(this, resource, release);
+        var entry = new ArgumentRegistration(this, slot, resource, release, offset, size);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         retain();
         try

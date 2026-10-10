@@ -42,6 +42,15 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
 
     public SamplerDesc Desc { get; }
 
+    internal Sampler Native
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _native;
+        }
+    }
+
     internal VulkanDevice Owner => _owner;
 
     public void Dispose()

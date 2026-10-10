@@ -1,14 +1,22 @@
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class ArgumentRegistration(BrowserArgumentTable owner, object resource, Action release)
+internal sealed class ArgumentRegistration(BrowserArgumentTable owner, uint slot, object resource, Action release, ulong offset, ulong size)
 {
     private bool _active = true;
 
+    internal BrowserArgumentTable Owner { get; } = owner;
+
+    internal uint Slot { get; } = slot;
+
     internal object Resource { get; } = resource;
+
+    internal ulong OffsetInBytes { get; } = offset;
+
+    internal ulong SizeInBytes { get; } = size;
 
     internal void Check()
     {
-        owner.ThrowIfDisposed();
+        Owner.ThrowIfDisposed();
         if (!_active)
         {
             throw new InvalidOperationException("The argument table registration has been replaced or released.");

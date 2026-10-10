@@ -28,6 +28,8 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
             commands[i] = buffer;
         }
 
+        ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
+
         using JSObject list = BrowserInterop.CreateCommandList();
         foreach (BrowserCommandBuffer command in commands)
         {

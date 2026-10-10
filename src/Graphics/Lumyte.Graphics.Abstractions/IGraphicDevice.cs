@@ -62,4 +62,13 @@ public interface IGraphicDevice
     /// <param name="desc">The compute description.</param>
     /// <returns>The owned executable program.</returns>
     IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc);
+
+    /// <summary>Creates GPU shader data or upload staging using this backend's artifact schema.</summary>
+    /// <typeparam name="T">The application shader data structure.</typeparam>
+    /// <param name="artifact">The compiled target code and schema.</param>
+    /// <param name="count">The positive logical element count.</param>
+    /// <param name="memory">Automatic for GPU storage or Upload for CPU staging.</param>
+    /// <returns>The backend's shader data allocation.</returns>
+    IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
+        where T : struct, IShaderData;
 }

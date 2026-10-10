@@ -2,13 +2,25 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong count, ulong stride, ulong offset, ulong size) : IGpuRef<T>
+internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong count, ulong stride, ulong offset, ulong size) : IGpuRef<T>, IShaderReference
 {
     public ulong Count { get; } = count;
 
-    internal ulong OffsetInBytes { get; } = offset;
+    public ulong OffsetInBytes { get; } = offset;
 
-    internal ulong SizeInBytes { get; } = size;
+    public ulong SizeInBytes { get; } = size;
+
+    public ulong RegistrationOffsetInBytes => registration.OffsetInBytes;
+
+    public ulong RegistrationSizeInBytes => registration.SizeInBytes;
+
+    public object Table => registration.Owner;
+
+    public object Resource => Resolve();
+
+    public uint Slot => registration.Slot;
+
+    public void Validate() => registration.Check();
 
     public IGpuRef<T> GetElement(ulong index)
     {

@@ -9,12 +9,19 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
 {
     private readonly Dictionary<string, Pipeline> _variants = [];
     private readonly List<Pipeline> _uncachedPipelines = [];
+    private readonly Dictionary<string, (PipelineLayout Pipeline, DescriptorSetLayout Group)> _argumentLayouts = [];
     private PipelineLayout _layout;
+    private DescriptorSetLayout _argumentLayout;
 
-    internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats)
+    internal PipelineLayout ArgumentPipelineLayout => _layout;
+
+    internal DescriptorSetLayout ArgumentLayout => _argumentLayout;
+
+    internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingSnapshot? arguments = null)
     {
         ValidateAlive();
         PipelineValidation.Draw(Desc, state, formats, FragmentOutputs);
+        string argumentKey = SelectLayout(arguments);
         if (!_owner.CacheGraphicsPipelines)
         {
             Pipeline fresh = CreateNative(state.Desc, formats);
@@ -22,7 +29,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
             return fresh;
         }
 
-        string key = state.Key + ":" + string.Join(',', formats);
+        string key = state.Key + ":" + string.Join(',', formats) + ":" + argumentKey;
         if (_variants.TryGetValue(key, out Pipeline cached))
         {
             return cached;
@@ -67,9 +74,32 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         _ => V.Format.B8G8R8A8Srgb,
     };
 
-    private void CreateLayout()
+    private string SelectLayout(ShaderBindingSnapshot? arguments)
     {
-        var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo };
+        uint textures = arguments == null ? 1 : arguments.References.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        uint samplers = arguments == null ? 1 : arguments.References.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        if (textures > _owner.Caps.MaxSampledTexturesPerStage || samplers > _owner.Caps.MaxSamplersPerStage)
+        {
+            throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
+        }
+
+        string key = $"{Math.Max(1, textures)}:{Math.Max(1, samplers)}";
+        if (_argumentLayouts.TryGetValue(key, out (PipelineLayout Pipeline, DescriptorSetLayout Group) existing))
+        {
+            (_layout, _argumentLayout) = existing;
+            return key;
+        }
+
+        CreateLayout(textures, samplers);
+        _argumentLayouts.Add(key, (_layout, _argumentLayout));
+        return key;
+    }
+
+    private void CreateLayout(uint textures = 1, uint samplers = 1)
+    {
+        _argumentLayout = VulkanShaderBinding.CreateLayout(_owner, textures, samplers);
+        DescriptorSetLayout group = _argumentLayout;
+        var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &group };
         Result result = _owner.Api.CreatePipelineLayout(_owner.NativeDevice, &info, null, out _layout);
         if (result != Result.Success)
         {
@@ -77,7 +107,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         }
     }
 
-    private void Initialize() => CreateLayout();
+    private void Initialize() => SelectLayout(null);
 
     private Pipeline CreateNative(GraphicsRenderStateDesc state, TextureFormat[] formats)
     {
@@ -192,6 +222,12 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
 
         _uncachedPipelines.Clear();
         _variants.Clear();
-        _owner.Api.DestroyPipelineLayout(_owner.NativeDevice, _layout, null);
+        foreach ((PipelineLayout pipeline, DescriptorSetLayout group) in _argumentLayouts.Values)
+        {
+            _owner.Api.DestroyPipelineLayout(_owner.NativeDevice, pipeline, null);
+            _owner.Api.DestroyDescriptorSetLayout(_owner.NativeDevice, group, null);
+        }
+
+        _argumentLayouts.Clear();
     }
 }
