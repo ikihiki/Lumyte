@@ -59,7 +59,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     internal Instance NativeInstance => _instance;
 
-    internal VulkanPresentation Presentation => _presentation ?? throw new NotSupportedException("Create this device for presentation first.");
+    internal VulkanPresentation Presentation => _presentation ?? throw new NotSupportedException("Enable presentation support in VulkanDeviceDesc when creating the device.");
 
     internal PhysicalDevice PhysicalDevice => _physicalDevice;
 
@@ -68,53 +68,72 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <param name="cacheGraphicsPipelines">Whether to reuse native graphics pipelines for equivalent draw state.</param>
     /// <returns>The owned instance and logical device.</returns>
     public static VulkanDevice Create(uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)
-        => CreateCore(physicalDeviceIndex, cacheGraphicsPipelines, [], out _);
+        => Create(new VulkanDeviceDesc { PhysicalDeviceIndex = physicalDeviceIndex, CacheGraphicsPipelines = cacheGraphicsPipelines });
 
-    /// <summary>Creates a presentation-compatible device using the caller's surface callback and extensions.</summary>
-    /// <param name="source">The external platform extension names and new surface factory.</param>
-    /// <param name="surface">The owned surface; dispose it before the returned device.</param>
-    /// <param name="physicalDeviceIndex">The selected physical device index.</param>
-    /// <param name="cacheGraphicsPipelines">Whether graphics pipeline variants are cached.</param>
-    /// <returns>The device with presentation extensions and a compatible general queue.</returns>
-    public static VulkanDevice CreateForPresentation(VulkanSurfaceSource source, out IGraphicsSurface surface, uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)
+    /// <summary>Creates an instance and device without creating or inspecting any presentation target.</summary>
+    /// <param name="desc">Device selection, platform instance extensions and optional presentation support.</param>
+    /// <returns>The owned device; surfaces are created separately.</returns>
+    public static VulkanDevice Create(VulkanDeviceDesc desc)
     {
-        ArgumentNullException.ThrowIfNull(source);
-        VulkanDevice device = CreateForPresentation(new[] { source }, out IReadOnlyList<IGraphicsSurface> surfaces, physicalDeviceIndex, cacheGraphicsPipelines);
-        surface = surfaces[0];
-        return device;
+        ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.InstanceExtensions);
+        string[] extensions = desc.InstanceExtensions.ToArray();
+        if (extensions.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Supply valid Vulkan instance extension names.", nameof(desc));
+        }
+
+        return CreateCore(desc with { InstanceExtensions = Array.AsReadOnly(extensions) });
     }
 
-    /// <summary>Creates one device and independent surfaces using a queue compatible with every supplied target.</summary>
-    /// <param name="sources">The nonempty platform sources and new surface callbacks in result order.</param>
-    /// <param name="surfaces">The owned surfaces sharing the selected device; no partial result is returned on failure.</param>
-    /// <param name="physicalDeviceIndex">The selected physical device index; it must support every target.</param>
-    /// <param name="cacheGraphicsPipelines">Whether graphics pipeline variants are cached.</param>
-    /// <returns>The device with all required platform extensions and a common graphics/compute/present queue.</returns>
-    public static VulkanDevice CreateForPresentation(IReadOnlyList<VulkanSurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces, uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)
+    /// <summary>Creates independent surfaces on this existing instance and queue.</summary>
+    /// <param name="factories">Nonempty callbacks returning newly owned surfaces in result order.</param>
+    /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
+    public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<Func<Instance, SurfaceKHR>> factories)
     {
-        ArgumentNullException.ThrowIfNull(sources);
-        VulkanSurfaceSource[] snapshot = sources.ToArray();
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(factories);
+        Func<Instance, SurfaceKHR>[] snapshot = factories.ToArray();
         if (snapshot.Length == 0)
         {
-            throw new ArgumentException("Supply at least one native presentation target.", nameof(sources));
+            throw new ArgumentException("Supply at least one surface factory.", nameof(factories));
         }
 
-        for (int i = 0; i < snapshot.Length; i++)
+        foreach (Func<Instance, SurfaceKHR> factory in snapshot)
         {
-            VulkanSurfaceSource source = snapshot[i];
-            ArgumentNullException.ThrowIfNull(source);
-            ArgumentNullException.ThrowIfNull(source.CreateSurface);
-            ArgumentNullException.ThrowIfNull(source.InstanceExtensions);
-            string[] extensions = source.InstanceExtensions.ToArray();
-            if (extensions.Any(string.IsNullOrWhiteSpace))
+            ArgumentNullException.ThrowIfNull(factory);
+        }
+
+        _ = Presentation;
+        var created = new List<IGraphicsSurface>();
+        var handles = new HashSet<ulong>();
+        try
+        {
+            foreach (Func<Instance, SurfaceKHR> factory in snapshot)
             {
-                throw new ArgumentException("Supply valid Vulkan platform extension names.", nameof(sources));
+                created.Add(CreateSurface(instance =>
+                {
+                    SurfaceKHR native = factory(instance);
+                    if (!handles.Add(native.Handle))
+                    {
+                        throw new ArgumentException("Each factory must return a new, distinct native surface.", nameof(factories));
+                    }
+
+                    return native;
+                }));
             }
 
-            snapshot[i] = source with { InstanceExtensions = Array.AsReadOnly(extensions) };
+            return created.AsReadOnly();
         }
+        catch
+        {
+            foreach (IGraphicsSurface surface in created)
+            {
+                surface.Dispose();
+            }
 
-        return CreateCore(physicalDeviceIndex, cacheGraphicsPipelines, snapshot, out surfaces);
+            throw;
+        }
     }
 
     /// <summary>Creates another graphics surface for this presentation-enabled instance and queue.</summary>
@@ -338,24 +357,21 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     internal void ReleaseBuffer() => _bufferCount--;
 
-    private static VulkanDevice CreateCore(uint physicalDeviceIndex, bool cacheGraphicsPipelines, IReadOnlyList<VulkanSurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces)
+    private static VulkanDevice CreateCore(VulkanDeviceDesc desc)
     {
         var api = Vk.GetApi();
         Instance instance = default;
         Device device = default;
-        var nativeSurfaces = new SurfaceKHR[sources.Count];
-        var created = new List<IGraphicsSurface>();
-        bool presenting = sources.Count != 0;
+        bool presenting = desc.EnablePresentation;
         KhrSurface? surfaceApi = null;
         KhrSwapchain? swapchainApi = null;
         ExtSwapchainMaintenance1? maintenanceApi = null;
-        surfaces = [];
         nint instanceNames = 0;
         nint deviceNames = 0;
         try
         {
             var application = new ApplicationInfo { SType = StructureType.ApplicationInfo, ApiVersion = Vk.Version13 };
-            string[] instanceExtensions = !presenting ? [] : sources.SelectMany(source => source.InstanceExtensions).Concat(new[] { "VK_KHR_surface", "VK_KHR_get_surface_capabilities2", "VK_EXT_surface_maintenance1" }).Distinct().ToArray();
+            string[] instanceExtensions = desc.InstanceExtensions.Concat(presenting ? new[] { "VK_KHR_surface", "VK_KHR_get_surface_capabilities2", "VK_EXT_surface_maintenance1" } : Array.Empty<string>()).Distinct().ToArray();
             instanceNames = instanceExtensions.Length == 0 ? 0 : SilkMarshal.StringArrayToPtr(instanceExtensions);
             var instanceInfo = new InstanceCreateInfo { SType = StructureType.InstanceCreateInfo, PApplicationInfo = &application, EnabledExtensionCount = (uint)instanceExtensions.Length, PpEnabledExtensionNames = (byte**)instanceNames };
             Check(api.CreateInstance(&instanceInfo, null, &instance), "CreateInstance");
@@ -365,20 +381,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 {
                     throw new NotSupportedException("Vulkan surface operations are unavailable.");
                 }
-
-                for (int i = 0; i < sources.Count; i++)
-                {
-                    SurfaceKHR target = sources[i].CreateSurface(instance);
-                    if (target.Handle == 0 || nativeSurfaces.Any(previous => previous.Handle == target.Handle))
-                    {
-                        throw new ArgumentException("Each factory must return a new, distinct non-null native surface.", nameof(sources));
-                    }
-
-                    nativeSurfaces[i] = target;
-                }
             }
 
-            PhysicalDevice physical = SelectPhysicalDevice(api, instance, physicalDeviceIndex);
+            PhysicalDevice physical = SelectPhysicalDevice(api, instance, desc.PhysicalDeviceIndex);
             var properties13 = new PhysicalDeviceVulkan13Properties { SType = StructureType.PhysicalDeviceVulkan13Properties };
             var properties = new PhysicalDeviceProperties2 { SType = StructureType.PhysicalDeviceProperties2, PNext = &properties13 };
             api.GetPhysicalDeviceProperties2(physical, &properties);
@@ -402,7 +407,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 throw new NotSupportedException("Vulkan swapchain maintenance1 is required for explicit image release and presentation fences.");
             }
 
-            uint queueFamily = SelectQueueFamily(api, physical, surfaceApi, nativeSurfaces);
+            uint queueFamily = SelectQueueFamily(api, physical);
             float priority = 1;
             var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
             var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray, IndependentBlend = true, ShaderInt64 = true };
@@ -426,32 +431,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 presentation = new(surfaceApi!, swapchainApi!, maintenanceApi!);
             }
 
-            var owner = new VulkanDevice(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily, cacheGraphicsPipelines, presentation);
-            for (int i = 0; i < nativeSurfaces.Length; i++)
-            {
-                var target = new VulkanSurface(owner, nativeSurfaces[i]);
-                created.Add(target);
-                nativeSurfaces[i] = default;
-            }
-
-            surfaces = created.AsReadOnly();
-            return owner;
+            return new VulkanDevice(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily, desc.CacheGraphicsPipelines, presentation);
         }
         catch
         {
-            foreach (IGraphicsSurface target in created)
-            {
-                target.Dispose();
-            }
-
-            foreach (SurfaceKHR target in nativeSurfaces)
-            {
-                if (target.Handle != 0)
-                {
-                    surfaceApi?.DestroySurface(instance, target, null);
-                }
-            }
-
             maintenanceApi?.Dispose();
             swapchainApi?.Dispose();
             surfaceApi?.Dispose();
@@ -505,7 +488,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return devices[index];
     }
 
-    private static uint SelectQueueFamily(Vk api, PhysicalDevice physical, KhrSurface? surfaceApi, IReadOnlyList<SurfaceKHR> surfaces)
+    private static uint SelectQueueFamily(Vk api, PhysicalDevice physical)
     {
         uint count = 0;
         api.GetPhysicalDeviceQueueFamilyProperties(physical, &count, null);
@@ -519,30 +502,11 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         {
             if (families[i].QueueCount != 0 && (families[i].QueueFlags & (QueueFlags.GraphicsBit | QueueFlags.ComputeBit)) == (QueueFlags.GraphicsBit | QueueFlags.ComputeBit))
             {
-                if (surfaceApi != null)
-                {
-                    bool supported = true;
-                    foreach (SurfaceKHR surface in surfaces)
-                    {
-                        VulkanPresentation.Check(surfaceApi.GetPhysicalDeviceSurfaceSupport(physical, i, surface, out Silk.NET.Core.Bool32 present), "GetPhysicalDeviceSurfaceSupport");
-                        if (!present)
-                        {
-                            supported = false;
-                            break;
-                        }
-                    }
-
-                    if (!supported)
-                    {
-                        continue;
-                    }
-                }
-
                 return i;
             }
         }
 
-        throw new NotSupportedException("A Vulkan graphics/compute queue supporting every supplied presentation target is required.");
+        throw new NotSupportedException("A Vulkan graphics/compute queue is required.");
     }
 
     private static DeviceCaps ReadCaps(PhysicalDeviceLimits limits, ulong maxBufferSize, PhysicalDeviceFeatures enabled)

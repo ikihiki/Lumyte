@@ -64,7 +64,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     internal A.Device NativeDevice => _device;
 
-    /// <summary>Creates a headless device using wgpu's default adapter selection and device limits.</summary>
+    /// <summary>Creates a device independently of presentation targets using wgpu's default adapter selection and device limits.</summary>
     /// <returns>The owned native device; dispose it when the owner is finished.</returns>
     public static WgpuDevice Create()
     {
@@ -86,23 +86,12 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
     }
 
-    /// <summary>Creates a device compatible with the supplied native target; no window is created or inspected.</summary>
-    /// <param name="source">The borrowed native window or layer handles supplied by the caller.</param>
-    /// <param name="surface">The owned graphics surface; dispose it before the returned device.</param>
-    /// <returns>The device selected for the supplied target.</returns>
-    public static WgpuDevice CreateForPresentation(A.SurfaceSource source, out IGraphicsSurface surface)
+    /// <summary>Connects distinct targets to this existing device without adapter reselection.</summary>
+    /// <param name="sources">Nonempty borrowed target handles in result order.</param>
+    /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
+    public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<A.SurfaceSource> sources)
     {
-        WgpuDevice device = CreateForPresentation(new[] { source }, out IReadOnlyList<IGraphicsSurface> surfaces);
-        surface = surfaces[0];
-        return device;
-    }
-
-    /// <summary>Creates one device and independent surfaces for every supplied native target.</summary>
-    /// <param name="sources">Nonempty distinct borrowed target handles in result order.</param>
-    /// <param name="surfaces">The owned surfaces, all compatible with the selected adapter; no partial result on failure.</param>
-    /// <returns>The owned shared device; adapter selection starts with the first target and validates every target.</returns>
-    public static WgpuDevice CreateForPresentation(IReadOnlyList<A.SurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces)
-    {
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(sources);
         A.SurfaceSource[] snapshot = sources.ToArray();
         if (snapshot.Length == 0)
@@ -120,56 +109,23 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             }
         }
 
-        surfaces = [];
-        var instance = A.Instance.Create();
-        var native = new A.Surface[snapshot.Length];
         var created = new List<IGraphicsSurface>();
-        A.Adapter? adapter = null;
-        A.Device? device = null;
         try
         {
-            for (int i = 0; i < snapshot.Length; i++)
+            foreach (A.SurfaceSource source in snapshot)
             {
-                native[i] = instance.CreateSurface(snapshot[i]);
+                created.Add(CreateSurface(source));
             }
 
-            adapter = instance.RequestAdapterBlocking(native[0]);
-            foreach (A.Surface target in native)
-            {
-                A.SurfaceCapabilities caps = target.GetCapabilities(adapter);
-                if (caps.Formats.Length == 0 || (caps.Usages & A.TextureUsage.RenderAttachment) == 0)
-                {
-                    throw new NotSupportedException("The selected adapter must support every supplied target.");
-                }
-            }
-
-            device = adapter.RequestDeviceBlocking();
-            var owner = new WgpuDevice(instance, adapter, device);
-            for (int i = 0; i < native.Length; i++)
-            {
-                var target = new WgpuSurface(owner, native[i], adapter);
-                created.Add(target);
-                native[i] = default;
-            }
-
-            surfaces = created.AsReadOnly();
-            return owner;
+            return created.AsReadOnly();
         }
         catch
         {
-            foreach (IGraphicsSurface target in created)
+            foreach (IGraphicsSurface surface in created)
             {
-                target.Dispose();
+                surface.Dispose();
             }
 
-            foreach (A.Surface target in native)
-            {
-                target.Dispose();
-            }
-
-            device?.Dispose();
-            adapter?.Dispose();
-            instance.Dispose();
             throw;
         }
     }

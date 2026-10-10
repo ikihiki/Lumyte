@@ -1,65 +1,53 @@
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Silk.NET.Vulkan;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>Verifies backend target receiving ports before invoking a native window system.</summary>
+/// <summary>Checks independent device options and backend surface creation ports.</summary>
 public sealed class SurfaceSourceTests
 {
-    /// <summary>Rejects null native handles before wgpu instance or device creation.</summary>
+    /// <summary>Checks device options before any native instance is created.</summary>
     [Fact]
-    public void WgpuRejectsMissingTargetHandles() => Assert.Throws<ArgumentException>(() => WgpuDevice.CreateForPresentation(default(Ahjo.Wgpu.SurfaceSource), out _));
-
-    /// <summary>Rejects invalid Vulkan source descriptors before creating an instance.</summary>
-    [Fact]
-    public void VulkanRejectsInvalidSurfaceFactories()
+    public void VulkanRejectsInvalidDeviceOptions()
     {
-        Assert.Throws<ArgumentNullException>(() => VulkanDevice.CreateForPresentation((VulkanSurfaceSource)null!, out _));
-        Assert.Throws<ArgumentNullException>(() => VulkanDevice.CreateForPresentation(new VulkanSurfaceSource { InstanceExtensions = [], CreateSurface = null! }, out _));
-        bool invoked = false;
-        var source = new VulkanSurfaceSource
-        {
-            InstanceExtensions = [string.Empty],
-            CreateSurface = _ =>
-            {
-                invoked = true;
-                return default;
-            },
-        };
-        Assert.Throws<ArgumentException>(() => VulkanDevice.CreateForPresentation(source, out _));
-        Assert.False(invoked);
+        Assert.Throws<ArgumentNullException>(() => VulkanDevice.Create(null!));
+        Assert.Throws<ArgumentNullException>(() => VulkanDevice.Create(new VulkanDeviceDesc { InstanceExtensions = null! }));
+        Assert.Throws<ArgumentException>(() => VulkanDevice.Create(new VulkanDeviceDesc { InstanceExtensions = [string.Empty] }));
     }
 
-    /// <summary>Validates all wgpu targets and duplicates before invoking a native window system.</summary>
-    [Fact]
-    public void WgpuRejectsInvalidTargetCollections()
+    /// <summary>Checks target collection validation on an independently created device.</summary>
+    [GpuFact]
+    public void WgpuRejectsInvalidTargets()
     {
-        Assert.Throws<ArgumentNullException>(() => WgpuDevice.CreateForPresentation((IReadOnlyList<Ahjo.Wgpu.SurfaceSource>)null!, out _));
-        Assert.Throws<ArgumentException>(() => WgpuDevice.CreateForPresentation(Array.Empty<Ahjo.Wgpu.SurfaceSource>(), out _));
-        var validShape = Ahjo.Wgpu.SurfaceSource.WindowsHwnd(1, 2);
-        Assert.Throws<ArgumentException>(() => WgpuDevice.CreateForPresentation(new[] { validShape, default }, out _));
-        Assert.Throws<ArgumentException>(() => WgpuDevice.CreateForPresentation(new[] { validShape, validShape }, out _));
+        using var device = WgpuDevice.Create();
+        Assert.Throws<ArgumentException>(() => device.CreateSurface(default));
+        Assert.Throws<ArgumentNullException>(() => device.CreateSurfaces(null!));
+        Assert.Throws<ArgumentException>(() => device.CreateSurfaces([]));
+        var source = Ahjo.Wgpu.SurfaceSource.WindowsHwnd(1, 2);
+        Assert.Throws<ArgumentException>(() => device.CreateSurfaces([source, default]));
+        Assert.Throws<ArgumentException>(() => device.CreateSurfaces([source, source]));
     }
 
-    /// <summary>Validates every Vulkan descriptor before invoking any callback or creating an instance.</summary>
-    [Fact]
-    public void VulkanRejectsInvalidTargetCollections()
+    /// <summary>Checks surface callbacks are never called without enabled presentation support.</summary>
+    [GpuFact]
+    public void VulkanSurfaceCreationRequiresExplicitExtensions()
     {
-        Assert.Throws<ArgumentNullException>(() => VulkanDevice.CreateForPresentation((IReadOnlyList<VulkanSurfaceSource>)null!, out _));
-        Assert.Throws<ArgumentException>(() => VulkanDevice.CreateForPresentation(Array.Empty<VulkanSurfaceSource>(), out _));
+        using var device = VulkanDevice.Create();
         bool invoked = false;
-        var source = new VulkanSurfaceSource
+        SurfaceKHR Factory(Instance instance)
         {
-            InstanceExtensions = [],
-            CreateSurface = _ =>
-            {
-                invoked = true;
-                return default;
-            },
-        };
-        Assert.Throws<ArgumentNullException>(() => VulkanDevice.CreateForPresentation(new[] { source, null! }, out _));
-        Assert.Throws<ArgumentException>(() => VulkanDevice.CreateForPresentation(new[] { source, source with { InstanceExtensions = [string.Empty] } }, out _));
+            invoked = true;
+            return default;
+        }
+
+        Assert.Throws<ArgumentNullException>(() => device.CreateSurface(null!));
+        Assert.Throws<ArgumentNullException>(() => device.CreateSurfaces(null!));
+        Assert.Throws<ArgumentException>(() => device.CreateSurfaces([]));
+        Assert.Throws<ArgumentNullException>(() => device.CreateSurfaces([Factory, null!]));
+        Assert.Throws<NotSupportedException>(() => device.CreateSurface(Factory));
+        Assert.Throws<NotSupportedException>(() => device.CreateSurfaces([Factory]));
         Assert.False(invoked);
     }
 }

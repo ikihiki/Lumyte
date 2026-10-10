@@ -33,5 +33,5 @@ Wgpu／Vulkanの実ウインドウでのWSI実行は、ハンドル取得を提�
 SemaphoreTestsはWgpu／Vulkanで共通SemaphoreExerciseを実行し、CPU完了を待たずに発行するbinary semaphoreチェーンと検証エラー、再利用・所有権を確認します。
 Browser CIも同じexerciseを実行し、SurfaceExerciseでは取得・Submit・Presentのsemaphoreを明示します。
 
-複数targetのnative入口は、空／null／無効な後続source／重複の拒否と、descriptor検証前にcallbackが呼ばれないことを確認します。
+Deviceの生成設定はnative instance生成前に検証します。生成済みDeviceのSurface入口では空／null／無効な後続source／重複を拒否し、提示用拡張を有効化していないVulkan Deviceではcallbackを呼ばないことを確認します。
 Browser CIは二つの外部contextで共通MultiSurfaceExerciseを実行し、同時取得、全画素readback、一括／別々のSubmit、他方取得中のresize／closeと継続描画を必須reportとして検証します。

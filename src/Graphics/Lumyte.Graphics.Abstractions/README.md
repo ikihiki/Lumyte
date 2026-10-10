@@ -175,3 +175,5 @@ wait／signalだけのSubmitも可能です。GPU完了をCPUで待つ必要は�
 同一Deviceで複数のSurface／Swapchainを保持し、ウインドウごとに取得、描画、Present、resize、解放を管理できます。
 複数Frameを一つのSubmitへまとめる場合も、取得ごとのwaitとPresentごとの独立したbinary signalを明示します。
 一つのウインドウのFrameが生きていることを理由に、他のウインドウの操作を禁止しません。DeviceはすべてのSurfaceを解放してから破棄します。
+
+Device生成とSurface生成は分離し、生成済みDeviceへバックエンド固有の入口で表示先を接続します。

@@ -192,13 +192,24 @@ Slangの`SV_VertexID`はSPIR-VでVertexIndexからBaseVertexを引きます。ve
 
 ## Surface・Swapchain・Present
 
-`VulkanDevice.CreateForPresentation(VulkanSurfaceSource source, out IGraphicsSurface surface, ...)`へ、platformのinstance extension名と`Func<Instance, SurfaceKHR>`を渡します。
+Device生成とSurface生成は別々です。platformのinstance extensionは生成時に指定しておきます。
+
+```csharp
+using var device = VulkanDevice.Create(new VulkanDeviceDesc
+{
+    EnablePresentation = true,
+    InstanceExtensions = platformInstanceExtensions,
+});
+using var surface = device.CreateSurface(createSurface);
+```
+
+`Create`はSurfaceを作成せず、callbackも受け取りません。`CreateSurface`へ`Func<Instance, SurfaceKHR>`を渡します。
 callbackは渡されたinstanceに属する新しいnative surfaceを作成し、返却時にその所有権をGraphicsへ移します。実ウインドウのハンドル取得やplatform別のsurface生成は別PRの連携側が担当します。
 追加targetは`device.CreateSurface(createSurface)`へ渡します。同じinstanceで有効化済みのplatform extensionと、既存general queueによるpresent対応が必要です。
 `Create()`のheadless経路にはWSI拡張を要求しません。
 
 提示経路ではVK_KHR_surface、VK_KHR_get_surface_capabilities2、VK_EXT_surface_maintenance1、VK_KHR_swapchain、VK_EXT_swapchain_maintenance1とswapchainMaintenance1 featureを要求します。
-同じgraphics／compute／present queue familyを選び、別queue familyへのownership transferは行いません。
+Device生成時にはgraphics／compute queue familyを選び、Surface生成時にそのqueueのpresent対応を確認します。非対応ならNotSupportedExceptionです。別queue familyへのownership transferやadapterの再選択は行いません。
 形式はsurfaceが返すnonlinear-sRGB color spaceの組み合わせを公開します。HDR color spaceの選択は別の契約です。
 画像数はnative limits内でバックエンドが選び、複数frameの取得を共通の単一frame制約で制限しません。
 
@@ -219,14 +230,12 @@ Native WSIはビルドとハンドル受け取り口の検証を行い、実ウ�
 
 ## 複数ウインドウ
 
-`VulkanDevice.CreateForPresentation(IReadOnlyList<VulkanSurfaceSource> sources, out IReadOnlyList<IGraphicsSurface> surfaces, uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)`で複数targetを受け取ります。
-全descriptorをnative生成前に検証し、必要なplatform instance extensionの和集合を有効にして、各callbackを同じVkInstanceで呼びます。
-callbackは別々の新しいSurfaceKHRを返す必要があり、null／重複handleを拒否します。
-指定されたphysical deviceでgraphics・computeと全Surfaceのpresentに対応する一つのqueue familyを探します。先頭Surfaceだけを基準にqueueを選びません。
-共通のqueueがなければNotSupportedExceptionです。別Deviceや別queueへ自動移行せず、adapter選択とDeviceの分離は利用側が決めます。
-結果は入力順です。途中で失敗すると今回のSurfaceとnative資源をすべて解放し、部分的な所有結果を返しません。単一target overloadも同じ実装を使います。
+`device.CreateSurfaces(IReadOnlyList<Func<Instance, SurfaceKHR>> factories)`で複数targetを生成済みDeviceへ接続します。
+空リストとnull callbackは呼び出し前に拒否します。各callbackは同じVkInstanceに属する新しいSurfaceKHRを返してください。既存handleの再登録は禁止です。
+各Surfaceについて選択済みphysical deviceとgeneral queueのpresent互換性を確認し、非対応ならNotSupportedExceptionです。
+結果は入力順です。途中で失敗すると今回生成したSurfaceだけを解放し、Deviceと既存Surfaceは保持します。
+`device.CreateSurface(callback)`で単独追加も可能です。必要なplatform extensionは`VulkanDeviceDesc.InstanceExtensions`へ生成時に指定します。
 
-生成後も`device.CreateSurface(callback)`でウインドウを追加できます。callbackに必要なplatform extensionはInstance生成時に有効にしておき、選択済みqueueの互換性を検証します。
 Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとresizeはtargetごとに管理し、他targetのFrameが生きていても独立して操作できます。
 各Presentは別々に呼び、利用側がbinary semaphoreのsignal／waitを一回ずつ割り当てます。複数targetを一つのSubmitへまとめる場合は必要なwait／signalをすべて明示します。
 一つのSurfaceを閉じても共有Deviceと他のSurfaceは残り、DeviceWaitIdle／QueueWaitIdleを挿入しません。

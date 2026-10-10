@@ -52,7 +52,8 @@ Frame.Disposeは未submitの画像を提示せず返却でき、submit済みで�
 ### 複数ウインドウと表示先
 
 同一Deviceは複数のSurfaceを所有でき、各Surfaceが一つのSwapchainを持つ。
-生成時に複数targetを渡すバックエンド固有の入口は、返す全Surfaceが同じDeviceとqueueで使用できることを確認する。
+Device生成とSurface生成は分離する。Device生成には表示先やSurface生成callbackを渡さない。
+生成済みDeviceへtargetを渡すバックエンド固有の入口は、返す全SurfaceがそのDeviceとqueueで使用できることを確認する。
 途中で生成・互換性確認に失敗した場合、今回生成したSurfaceとnative資源を解放し、部分的な所有結果を返さない。
 生成後も、互換性のある表示先を同じDeviceへ追加できる。別Deviceが必要な表示先を暗黙に移し替えない。
 
