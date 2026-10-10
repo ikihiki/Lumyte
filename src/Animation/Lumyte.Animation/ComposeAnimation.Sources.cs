@@ -15,26 +15,44 @@ public static partial class ComposeAnimation
         {
             /// <summary>Validates and snapshots this source graph without applying values.</summary>
             /// <returns>The compiled, pure value source.</returns>
-            public IAnimationSource<T> Build() => Compile(new HashSet<object>(ReferenceEqualityComparer.Instance));
-
-            internal IAnimationSource<T> Compile(HashSet<object> ancestors)
+            public IAnimationSource<T> Build()
             {
-                if (!ancestors.Add(this))
+                var context = new SourceCompilationContext();
+                IAnimationSource<T> source = Compile(context);
+                return context.SharedSources.Count == 0 ? source : new CompiledAnimationSource<T>(source, context.SharedSources);
+            }
+
+            internal IAnimationSource<T> Compile(SourceCompilationContext context)
+            {
+                if (!context.Ancestors.Add(this))
                 {
                     throw new ArgumentException("A source definition cannot contain a cycle.");
                 }
 
                 try
                 {
-                    return CompileCore(ancestors);
+                    if (context.Compiled.TryGetValue(this, out object? cached))
+                    {
+                        context.SharedSources.Add(cached);
+                        return (IAnimationSource<T>)cached;
+                    }
+
+                    IAnimationSource<T> source = CompileCore(context);
+                    context.Compiled.Add(this, source);
+                    if (!context.Sources.Add(source))
+                    {
+                        context.SharedSources.Add(source);
+                    }
+
+                    return source;
                 }
                 finally
                 {
-                    ancestors.Remove(this);
+                    context.Ancestors.Remove(this);
                 }
             }
 
-            internal abstract IAnimationSource<T> CompileCore(HashSet<object> ancestors);
+            internal abstract IAnimationSource<T> CompileCore(SourceCompilationContext context);
         }
 
         /// <summary>Wraps an existing immutable source for use in a source graph.</summary>
@@ -46,7 +64,7 @@ public static partial class ComposeAnimation
             [ComposeParameter]
             public required IAnimationSource<T> Value { get; init; }
 
-            internal override IAnimationSource<T> CompileCore(HashSet<object> ancestors)
+            internal override IAnimationSource<T> CompileCore(SourceCompilationContext context)
             {
                 ArgumentNullException.ThrowIfNull(Value);
                 AnimationSourceValidation.Duration(Value.Duration);
@@ -71,7 +89,7 @@ public static partial class ComposeAnimation
             [ComposeContent]
             public IReadOnlyList<AnimationKey<T>> Keys { get; set; } = [];
 
-            internal override IAnimationSource<T> CompileCore(HashSet<object> ancestors) => new AnimationCurve<T>(Duration, Keys, Interpolator);
+            internal override IAnimationSource<T> CompileCore(SourceCompilationContext context) => new AnimationCurve<T>(Duration, Keys, Interpolator);
         }
 
         /// <summary>Defines a copied Hermite source with per-second key tangents.</summary>
@@ -91,7 +109,7 @@ public static partial class ComposeAnimation
             [ComposeContent]
             public IReadOnlyList<AnimationHermiteKey<T>> Keys { get; set; } = [];
 
-            internal override IAnimationSource<T> CompileCore(HashSet<object> ancestors) => new AnimationHermiteCurve<T>(Duration, Keys, Interpolator);
+            internal override IAnimationSource<T> CompileCore(SourceCompilationContext context) => new AnimationHermiteCurve<T>(Duration, Keys, Interpolator);
         }
 
         /// <summary>Defines value evaluation at time supplied by another source graph.</summary>
@@ -107,11 +125,11 @@ public static partial class ComposeAnimation
             [ComposeParameter]
             public required Source<Duration> TimeMap { get; init; }
 
-            internal override IAnimationSource<T> CompileCore(HashSet<object> ancestors)
+            internal override IAnimationSource<T> CompileCore(SourceCompilationContext context)
             {
                 ArgumentNullException.ThrowIfNull(Value);
                 ArgumentNullException.ThrowIfNull(TimeMap);
-                return new AnimationTimeRemap<T>(Value.Compile(ancestors), TimeMap.Compile(ancestors));
+                return new AnimationTimeRemap<T>(Value.Compile(context), TimeMap.Compile(context));
             }
         }
 
@@ -136,12 +154,12 @@ public static partial class ComposeAnimation
             [ComposeParameter]
             public required IAnimationInterpolator<T> Interpolator { get; init; }
 
-            internal override IAnimationSource<T> CompileCore(HashSet<object> ancestors)
+            internal override IAnimationSource<T> CompileCore(SourceCompilationContext context)
             {
                 ArgumentNullException.ThrowIfNull(From);
                 ArgumentNullException.ThrowIfNull(To);
                 ArgumentNullException.ThrowIfNull(Weight);
-                return new AnimationBlend<T>(From.Compile(ancestors), To.Compile(ancestors), Weight.Compile(ancestors), Interpolator);
+                return new AnimationBlend<T>(From.Compile(context), To.Compile(context), Weight.Compile(context), Interpolator);
             }
         }
 
@@ -173,6 +191,17 @@ public static partial class ComposeAnimation
 
                 return new ValueNode<T>(Source.Build(), Channel, Fill);
             }
+        }
+
+        internal sealed class SourceCompilationContext
+        {
+            internal HashSet<object> Ancestors { get; } = new(ReferenceEqualityComparer.Instance);
+
+            internal Dictionary<object, object> Compiled { get; } = new(ReferenceEqualityComparer.Instance);
+
+            internal HashSet<object> Sources { get; } = new(ReferenceEqualityComparer.Instance);
+
+            internal HashSet<object> SharedSources { get; } = new(ReferenceEqualityComparer.Instance);
         }
     }
 }

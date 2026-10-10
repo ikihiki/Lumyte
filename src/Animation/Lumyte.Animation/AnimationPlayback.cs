@@ -217,6 +217,11 @@ public sealed class AnimationPlayback
                 _events.BeginLoop(loop, origin);
                 _timeline.Root.Events(new EventQuery(_lastEvaluation - origin, current - origin, _includeStart && _lastEvaluation == 0, true, origin, 1), _events);
                 _timeline.Root.Endpoints(_lastEvaluation - origin, current - origin, output, 0);
+                if (loop == last)
+                {
+                    // The final loop index can itself be long.MaxValue.
+                    break;
+                }
             }
 
             _events.CopyTo(events, this);
@@ -235,8 +240,15 @@ public sealed class AnimationPlayback
         }
 
         _lastEvaluationClock = now;
-        _timing.Clear();
-        _timing.Add(new TimingAnchor(current, now, State == AnimationPlaybackState.Playing ? _speed : 0));
+        if (advancing)
+        {
+            // Preserve the clock anchor used by At, including its fractional progress.
+            // Older speed segments are no longer needed once their events were traversed.
+            TimingAnchor active = _timing[^1];
+            _timing.Clear();
+            _timing.Add(active);
+        }
+
         return completed;
     }
 
@@ -248,7 +260,8 @@ public sealed class AnimationPlayback
             long end = index + 1 < _timing.Count ? _timing[index + 1].Position : long.MaxValue;
             if (anchor.Speed > 0 && position >= anchor.Position && position <= end)
             {
-                long elapsed = checked((long)((position - anchor.Position) / anchor.Speed));
+                long distance = position - anchor.Position;
+                long elapsed = anchor.Speed == 1 ? distance : checked((long)(distance / anchor.Speed));
                 return (anchor.Clock + Duration.FromTicks(elapsed)) - _lastEvaluationClock;
             }
         }

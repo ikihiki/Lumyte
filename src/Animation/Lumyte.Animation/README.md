@@ -60,3 +60,5 @@ var timeline = Timeline()[SourceTrack<float>(channel,
 [API 差分と契約・合成例](../../../docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)を参照してください。
 
 汎用のベジェ・Hermite・Quaternion・イージング計算は依存パッケージ[Lumyte.Mathematics](../../Core/Lumyte.Mathematics/README.md)が提供します。AnimationはDurationやキーを扱うアダプターです。
+
+同じSource定義を共有する場合、Build内で構築結果を再利用します。共有グラフのSampleでは同じ子・同じ局所時刻の値を一回の評価内で再利用し、時間写像による異なる時刻の呼び出しを区別します。作業領域は評価間でクリアし、並行・再入評価には別の領域を使います。

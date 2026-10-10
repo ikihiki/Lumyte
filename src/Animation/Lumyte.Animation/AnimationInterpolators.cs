@@ -77,23 +77,7 @@ public static class AnimationInterpolators
         _ => true,
     };
 
-    private static Duration InterpolateDuration(Duration from, Duration to, float amount)
-    {
-        ArgumentOutOfRangeException.ThrowIfNotEqual(float.IsFinite(amount), true, nameof(amount));
-        if (amount == 0 || from == to)
-        {
-            return from;
-        }
-
-        if (amount == 1)
-        {
-            return to;
-        }
-
-        decimal weight = (decimal)(double)amount;
-        decimal ticks = decimal.Round(((1 - weight) * from.Ticks) + (weight * to.Ticks), 0, MidpointRounding.ToEven);
-        return Core.Time.Duration.FromTicks(checked((long)ticks));
-    }
+    private static Duration InterpolateDuration(Duration from, Duration to, float amount) => Core.Time.Duration.FromTicks(IntegerInterpolation.Linear(from.Ticks, to.Ticks, amount));
 
     private sealed class Interpolator<T>(Func<T, T, float, T> interpolate) : IAnimationInterpolator<T>
     {

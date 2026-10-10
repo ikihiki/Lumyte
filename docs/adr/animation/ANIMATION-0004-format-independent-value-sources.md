@@ -170,7 +170,7 @@ Composition の宣言は以下とする。属性からファクトリー、with�
 
 標準の Hermite は有限成分と正の区間長、有限な [0, 1] の進捗を要求する。倍精度で係数と成分を計算し、float へ丸めた結果が非有限の場合は拒否する。Quaternion は成分を倍精度のまま正規化してから float に変換し、有限な大きな接線や微小な接線を変換途中で失わない。三次補間は最短経路の符号反転を行わず、ゼロ長の結果を正規化できない場合は InvalidOperationException とする。
 
-値ソースとタイムラインの構築は別であり、Source の Build は純粋な値計算用の不変ソースを返す。状態機械の Build が開始済み実行者を返す既存契約を変更しない。SourceTrack に入れた Source は Timeline の確定時に内部で Build する。循環した Source 定義は ArgumentException で拒否し、同じ子の共有は許す。キー配列はコピーするが、独自ソース・補間器・Timing・可変参照型の値は利用側が不変性を保証する。
+値ソースとタイムラインの構築は別であり、Source の Build は純粋な値計算用の不変ソースを返す。状態機械の Build が開始済み実行者を返す既存契約を変更しない。SourceTrack に入れた Source は Timeline の確定時に内部で Build する。循環した Source 定義は ArgumentException で拒否し、同じ子の共有は許す。 同じ Build 内では参照同一性で構築結果を再利用し、共有した定義を木へ展開しない。構築結果の再利用はその Build 内だけに限定し、後続の Build は編集後の新しいスナップショットを作る。キー配列はコピーするが、独自ソース・補間器・Timing・可変参照型の値は利用側が不変性を保証する。
 
 ## 例
 
@@ -209,6 +209,12 @@ var blend = Blend<float>(
 var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), blend)].Build();
 ```
 
+### 共有ソースの評価
+
+共有ノードを持つCompositionソースは、Sample呼び出しごとに独立した作業領域を借り、共有ソースの参照と局所時刻の組み合わせで計算結果を再利用する。時間写像が同じ子を異なる時刻で呼ぶ場合は別の値として扱う。Blendの重みが0または1の場合は選択した子だけを評価する。
+
+作業領域は構築済みグラフ内で再利用するが、評価間で値を引き継がない。例外時も値の参照を消去して返却する。並行評価と再入呼び出しには別の作業領域を与え、時計や消費側の状態をキャッシュしない。共有のないグラフと直接構築した値ソースにはこの評価用ラッパーを追加しない。定常的に同じ規模を評価する場合は作業領域の容量を再利用し、初回・容量拡張・同時評価数増加を除いてManaged割り当てゼロを維持する。
+
 ### 汎用数学計算の配置
 
 `Lumyte.Mathematics`を独立したNuGetプロジェクトとして`src/Core/`へ配置する。AnimationからMathematicsへの一方向の依存とし、MathematicsはAnimation・Core・Compositionに依存しない。線形・二次イージング、ベジェ評価と逆算、Hermiteの重み・成分評価、Quaternion球面補間・正規化を共有する。Animationはキー検証・Durationの秒への変換・補間インターフェースへの適合を担当する。
@@ -223,6 +229,11 @@ var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), ble
 +    public static double EaseIn(double amount);
 +    public static double EaseOut(double amount);
 +    public static double EaseInOut(double amount);
++}
++public static class IntegerInterpolation
++{
++    // floatの正確な二進重みを使い、最寄り整数・半分は偶数へ丸める。
++    public static long Linear(long from, long to, float amount);
 +}
 +public sealed class CubicBezierTiming
 +{
@@ -253,6 +264,8 @@ var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), ble
 +    public static Quaternion Normalize(double x, double y, double z, double w);
 +}
 ```
+
+IntegerInterpolationは有限のfloat重みを正確な二進有理数として計算し、最寄りのlongへ偶数丸めする。外挿も許すが、丸めた結果がlongの範囲外ならOverflowException、非有限の重みならArgumentOutOfRangeExceptionを返す。Duration補間はこの計算を利用する。
 
 MathematicsのHermiteはintervalの単位を定めず、接線と一致する正の有限値を要求する。amountは有限の[0, 1]、端値・接線は有限値、Quaternionの端値は単位回転を前提とする。時間ベジェも有限の[0, 1]を入力とし、不正なパラメーターはArgumentOutOfRangeExceptionになる。線形・空間ベジェ・球面補間は外挿を許す。ゼロ長・非有限Quaternionの正規化とfloatに収まらないHermite成分はInvalidOperationExceptionになる。
 
@@ -313,3 +326,7 @@ main `f3f4f67` と独立した Release DLL を比較し、各版 2 プロセス�
 - [CSS Easing Functions: Cubic Bézier](https://www.w3.org/TR/css-easing-1/#cubic-bezier-easing-functions)
 
 2026-10-10、汎用計算をLumyte.Mathematicsへ分離し、単体Releaseテスト5件とAnimationの89件が成功した。MathematicsのQuaternion正規化は成分をスケールし、doubleの最大値・最小非ゼロ値も扱う。分離後に上記10ケースを再測定し、割り当て0 B/op・GC 0回を維持した。Quaternion Hermiteはこの正規化強化により約54.24 nsから70.88 nsとなった。
+
+2026-10-10のレビュー修正後、ReleaseテストはAnimation 113件・Mathematics 20件の計133件が成功した。正確な整数補間は独立したBigInteger有理数計算約9,800組と照合した。共有グラフの並行・再入評価と例外後の清掃、異なる局所時刻、低速イベント時刻・最大Tick／Loop・Reverseの回帰テストを追加した。Debugビルド、整形、NuGetパッケージ経由の共有グラフと整数補間も確認した。
+
+`0866c35`との交互2プロセス・各7サンプルの比較では、27定義の共有グラフのBuild割り当ては約51 MiBから8.75 KiBへ、評価は約13.06 msから3.19 µsへ減った。Duration補間は約61.25 nsから20.23 nsとなった。Loopマーカー評価は約176.94 nsから188.20 nsへ増加した。内部座標のInt128化を含む結果として記録する。全14評価ケースで割り当て0 B/op・GC 0回を確認した。測定環境は上記と同じで、構築と評価を別計測した。

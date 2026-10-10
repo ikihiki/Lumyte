@@ -4,7 +4,7 @@ namespace Lumyte.Animation;
 
 /// <summary>Samples a value source at time supplied by another immutable source.</summary>
 /// <typeparam name="T">The sampled value type.</typeparam>
-public sealed class AnimationTimeRemap<T> : IAnimationSource<T>
+public sealed class AnimationTimeRemap<T> : IAnimationSource<T>, IContextualAnimationSource<T>
 {
     private readonly IAnimationSource<T> _source;
     private readonly IAnimationSource<Duration> _timeMap;
@@ -33,5 +33,14 @@ public sealed class AnimationTimeRemap<T> : IAnimationSource<T>
         Duration mapped = _timeMap.Sample(time);
         AnimationSourceValidation.Time(mapped, _source.Duration);
         return _source.Sample(mapped);
+    }
+
+    /// <inheritdoc />
+    T IContextualAnimationSource<T>.Sample(Duration time, AnimationSourceEvaluationContext context)
+    {
+        AnimationSourceValidation.Time(time, Duration);
+        Duration mapped = context.Evaluate(_timeMap, time);
+        AnimationSourceValidation.Time(mapped, _source.Duration);
+        return context.Evaluate(_source, mapped);
     }
 }

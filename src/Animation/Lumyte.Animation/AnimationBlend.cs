@@ -4,7 +4,7 @@ namespace Lumyte.Animation;
 
 /// <summary>Combines two typed value sources using time-dependent normalized weights.</summary>
 /// <typeparam name="T">The value type.</typeparam>
-public sealed class AnimationBlend<T> : IAnimationSource<T>
+public sealed class AnimationBlend<T> : IAnimationSource<T>, IContextualAnimationSource<T>
 {
     private readonly IAnimationSource<T> _from;
     private readonly IAnimationSource<T> _to;
@@ -55,5 +55,24 @@ public sealed class AnimationBlend<T> : IAnimationSource<T>
         }
 
         return _interpolator.Interpolate(_from.Sample(time), _to.Sample(time), weight);
+    }
+
+    /// <inheritdoc />
+    T IContextualAnimationSource<T>.Sample(Duration time, AnimationSourceEvaluationContext context)
+    {
+        AnimationSourceValidation.Time(time, Duration);
+        float weight = context.Evaluate(_weight, time);
+        AnimationTimings.ValidateAmount(weight);
+        if (weight == 0)
+        {
+            return context.Evaluate(_from, time);
+        }
+
+        if (weight == 1)
+        {
+            return context.Evaluate(_to, time);
+        }
+
+        return _interpolator.Interpolate(context.Evaluate(_from, time), context.Evaluate(_to, time), weight);
     }
 }

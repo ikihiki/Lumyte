@@ -25,7 +25,7 @@ internal sealed class MarkerNode(AnimationEvent marker) : TimelineNode(0)
 
         if (query.Contains(0))
         {
-            collector.Add(marker, query.Origin);
+            collector.Add(marker, checked((long)query.Origin));
         }
     }
 }
