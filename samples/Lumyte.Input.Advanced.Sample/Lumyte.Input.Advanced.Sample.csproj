@@ -6,6 +6,6 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Platform/Lumyte.Input.Settings/Lumyte.Input.Settings.csproj" />
+    <ProjectReference Include="../../src/Input/Lumyte.Input.Settings/Lumyte.Input.Settings.csproj" />
   </ItemGroup>
 </Project>

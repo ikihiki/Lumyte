@@ -23,7 +23,7 @@ InputSystem はコンストラクター DI で受け取るすべての IInputSou
 
 ### 責務と依存関係
 
-[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、共通ライブラリを `src/Platform/Lumyte.Input/` に配置する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
+[リポジトリのフォルダ構成](../../0002-repository-layout.md) に従い、抽象入力システムを `src/Input/Lumyte.Input/` に配置する。補正・認識、アクション、設定連携も `src/Input/`、対応するテストは `tests/Input/` に置く。OS・ハードウェアに近い入力取得と接続監視の実装は `src/Platform/` に置き、Input の契約を実装する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
 
 | 構成要素 | 責務 | 依存先 |
 | --- | --- | --- |
@@ -53,7 +53,7 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 
 ### 公開 API 一覧
 
-以下は `Lumyte.Input` 名前空間に追加する主要 API を diff 形式で示した設計案である。すべて新規追加のため `+` 行とする。宣言の本体と内部メンバーを省略した API 一覧であり、このコードブロック自体はコンパイル用の実装ではない。実装は `src/Platform/Lumyte.Input/` に置く。
+以下は `Lumyte.Input` 名前空間に追加する主要 API を diff 形式で示した設計案である。すべて新規追加のため `+` 行とする。宣言の本体と内部メンバーを省略した API 一覧であり、このコードブロック自体はコンパイル用の実装ではない。実装は `src/Input/Lumyte.Input/` に置く。
 
 ```diff
 --- /dev/null
@@ -383,5 +383,5 @@ Device は DrainEvents の失敗時に入力を消費しない。取得例外は
 
 ## 参考資料
 
-- [ADR-0001: ADR の書き方と運用](../0001-adr-writing-policy.md)
-- [ADR-0002: リポジトリのフォルダ構成](../0002-repository-layout.md)
+- [ADR-0001: ADR の書き方と運用](../../0001-adr-writing-policy.md)
+- [ADR-0002: リポジトリのフォルダ構成](../../0002-repository-layout.md)
