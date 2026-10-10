@@ -51,6 +51,24 @@ node tools/diagnostics/verify-browser.mjs
 
 一時トークンで公開サーバーをソースツリー外から起動し、実ブラウザーでログイン、BlazorのSignalR WebSocket、Fluent UIコンポーネント、生成フォーム、Input変更、Int64 Metric、Log／Trace相関、切断時解除、ログアウト、狭い画面での表示を確認する。複数リソースの分離、ログレベル、一時停止・再開、Traceリンクの再読み込み、親子Span、相関Logs、大きいInt64のグラフ、HTML文字列の安全な表示、別タブのCircuit失効も確認する。結果・スクリーンショット・ログはartifacts/test-results/diagnostics-uiへ出力する。CIのLinux x64でも実行する。[検証結果](../../../docs/diagnostics/results/browser-ui-processes.json)と[UI ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
+### GitHub Pagesで画面を見る
+
+[画面プレビュー](https://ikihiki.github.io/Lumyte/) は、実際の診断サーバーをChromiumで操作して撮影した静的ギャラリーです。ダウンロードやローカル起動なしで、ページ・画面幅による絞り込みと画像の拡大表示ができます。サーバーを操作するライブデモではありません。
+
+同一リポジトリのPRは `previews/pr-<番号>/`、mainは `previews/main/` に公開します。全CI検証の成功後に公開し、撮影対象のコミットと撮影日時を表示します。PRではマージ結果のコミットを撮影します。各PRの最新画像を `gh-pages` ブランチに保持し、mainと最近撮影した最大20件のPRを掲載し、公開画像全体を800 MiB未満に制限します。古いコミットのCIを再実行した場合は公開を省略します。CIが失敗したときは最後に成功したプレビューを維持します。
+
+`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
+
+```sh
+GITHUB_REPOSITORY=ikihiki/Lumyte PREVIEW_COMMIT="$(git rev-parse HEAD)" PREVIEW_LABEL="Local preview" \
+  node tools/diagnostics/generate-gallery.mjs artifacts/test-results/diagnostics-ui artifacts/diagnostics-gallery
+node tools/diagnostics/assemble-gallery-site.mjs artifacts/diagnostics-gallery artifacts/pages pr-26
+```
+
+生成先ギャラリーは空ディレクトリを指定します。公開するファイルは閲覧用HTML/CSS/JavaScript、撮影情報、一覧に記載したPNGのみです。テストログ、失敗時のHTML、トークンは公開対象に含めません。
+
+PagesはGitHub Actionsを公開元とし、`github-pages` environmentのdeployment branch policyで `main` と `refs/pull/*/merge` を許可します。公開ジョブは同一リポジトリのPRに限定し、forkのPRは公開しません。`gh-pages` は生成物の保存専用です。公開ジョブを直列化し、別PRの画像を保持したままPagesサイト全体を更新します。
+
 ## ゲームを接続
 
 ```sh
