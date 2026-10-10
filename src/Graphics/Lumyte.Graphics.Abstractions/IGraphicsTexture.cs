@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Owns one backend texture allocation; dispose views before disposing their texture.</summary>
+/// <summary>Exposes an owned allocation or a borrowed frame image; dispose views before releasing its owner.</summary>
 /// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicsTexture : IDisposable
 {

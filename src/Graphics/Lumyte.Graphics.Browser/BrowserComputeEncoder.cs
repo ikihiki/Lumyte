@@ -138,7 +138,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 
         if (bindingData != null)
         {
-            owner.TrackProgram(bindingData.Snapshot.Validate);
+            owner.TrackShaderSnapshot(bindingData.Snapshot);
         }
 
         owner.TrackProgram(_pipeline.ValidateAlive);

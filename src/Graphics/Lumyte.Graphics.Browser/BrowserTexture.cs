@@ -7,6 +7,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
 {
     private readonly BrowserDevice _owner;
     private readonly JSObject _native;
+    private readonly SurfaceFrameLifetime? _surfaceFrame;
     private int _viewCount;
     private bool _disposed;
 
@@ -14,6 +15,11 @@ internal sealed class BrowserTexture : IGraphicsTexture
     {
         (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage) = (owner, desc.Width, desc.Height, desc.MipLevels, desc.ArrayLayers, desc.Format, desc.Usage);
         _native = BrowserInterop.CreateTexture(owner.Handle, checked((int)Width), checked((int)Height), checked((int)ArrayLayers), checked((int)MipLevels), (int)Format, (int)Usage);
+    }
+
+    internal BrowserTexture(BrowserDevice owner, TextureDesc desc, JSObject native, SurfaceFrameLifetime lifetime)
+    {
+        (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage, _native, _surfaceFrame) = (owner, desc.Width, desc.Height, 1, 1, desc.Format, desc.Usage, native, lifetime);
     }
 
     public uint Width { get; }
@@ -33,15 +39,19 @@ internal sealed class BrowserTexture : IGraphicsTexture
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            _surfaceFrame?.ValidateRecording();
             return _native;
         }
     }
 
     internal BrowserDevice Owner => _owner;
 
+    internal SurfaceFrameLifetime? SurfaceFrame => _surfaceFrame;
+
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _surfaceFrame?.ValidateRecording();
         if (mipLevel >= MipLevels)
         {
             throw new ArgumentOutOfRangeException(nameof(mipLevel));
@@ -53,6 +63,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _surfaceFrame?.ValidateRecording();
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
         JSObject native = BrowserInterop.CreateTextureView(_native, (int)info.Dimension, checked((int)info.BaseMipLevel), checked((int)info.MipLevelCount), checked((int)info.BaseArrayLayer), checked((int)info.ArrayLayerCount));
         var view = new BrowserTextureView(this, info, native);
@@ -61,6 +72,16 @@ internal sealed class BrowserTexture : IGraphicsTexture
     }
 
     public void Dispose()
+    {
+        if (_surfaceFrame != null)
+        {
+            throw new InvalidOperationException("The frame owns this borrowed presentation image.");
+        }
+
+        DisposeLease();
+    }
+
+    internal void DisposeLease()
     {
         if (_disposed)
         {
@@ -72,10 +93,21 @@ internal sealed class BrowserTexture : IGraphicsTexture
             throw new InvalidOperationException("Dispose all views before disposing their texture.");
         }
 
-        BrowserInterop.DestroyTexture(_native);
+        if (_surfaceFrame == null)
+        {
+            BrowserInterop.DestroyTexture(_native);
+        }
+        else
+        {
+            BrowserInterop.ReleaseSurfaceTexture(_native);
+        }
+
         _native.Dispose();
         _disposed = true;
-        _owner.ReleaseTexture();
+        if (_surfaceFrame == null)
+        {
+            _owner.ReleaseTexture();
+        }
     }
 
     internal void ReleaseView() => _viewCount--;

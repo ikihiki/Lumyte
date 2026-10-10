@@ -35,3 +35,6 @@ shader dataの追加検証では、float3だけの構造体、uintとfloat3を�
 `AdvancedCommandExercise.RunAsync`は共通APIのみでdepth遮蔽、depth-only passからのload、stencil mask、16/32bit indexのsliceとsigned baseVertex、indirect draw/indexed draw、GPU生成dispatchを検証します。Slang shaderは全targetをoffline compileしてDLLへ埋め込み、WGSLをコミットしません。
 
 AdvancedCommandExerciseのvertex pullingはSlangの`SV_VulkanVertexID`でbaseVertex適用後のindexを受け取ります。このsemanticはWGSL／SPIR-V両targetで同じ用途に使えます。
+
+`SurfaceExercise.RunAsync(device, surface)`は外部から渡されたsurfaceへ共通APIだけで描画し、pixel readback、明示的なsubmit／Present、lease寿命、discard、resizeを確認します。
+ウインドウやcanvasの生成・取得はこのライブラリに含めません。BrowserのテストbootstrapがOffscreenCanvas contextを提供します。

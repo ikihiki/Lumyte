@@ -25,3 +25,7 @@ ArgumentTableTestsはshared projectのArgumentTableExerciseをWgpu／Vulkanで�
 オンラインコンパイルはtargetの省略／nullで全対応targetを生成する経路と、各targetのみを指定する経路を既存CIの全構成で検証します。
 
 AdvancedCommandTestsはIndirect命令のwire layoutと、Wgpu／Vulkan（pipeline cache有効・無効）のdepth/stencil・indexed/indirect GPU検証を行います。同じ共有ライブラリのexerciseをBrowser sampleから実行し、既存CIのBrowser検証でも成功reportを必須にします。
+
+Surfaceのnativeハンドル受け取り口は、無効なsourceをネイティブ生成前に拒否するテストで確認します。
+Browser CIは外部OffscreenCanvas contextと共通SurfaceExerciseを使って取得、clear／readback、提示、失効、再構成を検証します。
+Wgpu／Vulkanの実ウインドウでのWSI実行は、ハンドル取得を提供する後続PRで検証します。

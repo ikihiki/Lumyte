@@ -147,7 +147,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         if (bindingData != null)
         {
-            owner.TrackProgram(bindingData.Snapshot.Validate);
+            owner.TrackShaderSnapshot(bindingData.Snapshot);
         }
 
         owner.TrackProgram(_pipeline.ValidateAlive);

@@ -149,6 +149,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
         TextureState.Sampled => ImageLayout.ShaderReadOnlyOptimal,
         TextureState.ColorAttachment => ImageLayout.ColorAttachmentOptimal,
         TextureState.DepthStencilAttachment => ImageLayout.DepthStencilAttachmentOptimal,
+        TextureState.Present => ImageLayout.PresentSrcKhr,
         _ => throw new ArgumentException("Unknown texture state."),
     };
 

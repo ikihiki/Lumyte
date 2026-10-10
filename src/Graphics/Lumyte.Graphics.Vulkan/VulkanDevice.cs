@@ -1,5 +1,8 @@
 using Lumyte.Graphics.Abstractions;
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace Lumyte.Graphics.Vulkan;
 
@@ -11,6 +14,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Device _device;
     private readonly PhysicalDevice _physicalDevice;
     private readonly Queue _nativeQueue;
+    private readonly VulkanPresentation? _presentation;
+    private int _surfaceCount;
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
@@ -21,10 +26,11 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private int _submissionCount;
     private bool _disposed;
 
-    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines)
+    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
     {
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
+        _presentation = presentation;
         SupportsCubeArrays = supportsCubeArrays;
         CacheGraphicsPipelines = cacheGraphicsPipelines;
         QueueFamily = queueFamily;
@@ -50,6 +56,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     internal Device NativeDevice => _device;
 
+    internal Instance NativeInstance => _instance;
+
+    internal VulkanPresentation Presentation => _presentation ?? throw new NotSupportedException("Create this device for presentation first.");
+
     internal PhysicalDevice PhysicalDevice => _physicalDevice;
 
     /// <summary>Creates a Vulkan 1.3 device with a general queue, maintenance4, dynamic rendering and synchronization2.</summary>
@@ -57,58 +67,50 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <param name="cacheGraphicsPipelines">Whether to reuse native graphics pipelines for equivalent draw state.</param>
     /// <returns>The owned instance and logical device.</returns>
     public static VulkanDevice Create(uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)
+        => CreateCore(physicalDeviceIndex, cacheGraphicsPipelines, null, out _);
+
+    /// <summary>Creates a presentation-compatible device using the caller's surface callback and extensions.</summary>
+    /// <param name="source">The external platform extension names and new surface factory.</param>
+    /// <param name="surface">The owned surface; dispose it before the returned device.</param>
+    /// <param name="physicalDeviceIndex">The selected physical device index.</param>
+    /// <param name="cacheGraphicsPipelines">Whether graphics pipeline variants are cached.</param>
+    /// <returns>The device with presentation extensions and a compatible general queue.</returns>
+    public static VulkanDevice CreateForPresentation(VulkanSurfaceSource source, out IGraphicsSurface surface, uint physicalDeviceIndex = 0, bool cacheGraphicsPipelines = true)
     {
-        var api = Vk.GetApi();
-        Instance instance = default;
-        Device device = default;
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(source.CreateSurface);
+        ArgumentNullException.ThrowIfNull(source.InstanceExtensions);
+        if (source.InstanceExtensions.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Supply valid Vulkan platform extension names.", nameof(source));
+        }
+
+        VulkanDevice device = CreateCore(physicalDeviceIndex, cacheGraphicsPipelines, source, out IGraphicsSurface? created);
+        surface = created!;
+        return device;
+    }
+
+    /// <summary>Creates another graphics surface for this presentation-enabled instance and queue.</summary>
+    /// <param name="createSurface">Creates a new surface with this instance; ownership transfers to the device.</param>
+    /// <returns>The owned surface if the device's general queue supports it.</returns>
+    public IGraphicsSurface CreateSurface(Func<Instance, SurfaceKHR> createSurface)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(createSurface);
+        _ = Presentation;
+        SurfaceKHR native = createSurface(_instance);
+        if (native.Handle == 0)
+        {
+            throw new ArgumentException("The surface factory returned a null native surface.", nameof(createSurface));
+        }
+
         try
         {
-            var application = new ApplicationInfo { SType = StructureType.ApplicationInfo, ApiVersion = Vk.Version13 };
-            var instanceInfo = new InstanceCreateInfo { SType = StructureType.InstanceCreateInfo, PApplicationInfo = &application };
-            Check(api.CreateInstance(&instanceInfo, null, &instance), "CreateInstance");
-            PhysicalDevice physical = SelectPhysicalDevice(api, instance, physicalDeviceIndex);
-            var properties13 = new PhysicalDeviceVulkan13Properties { SType = StructureType.PhysicalDeviceVulkan13Properties };
-            var properties = new PhysicalDeviceProperties2 { SType = StructureType.PhysicalDeviceProperties2, PNext = &properties13 };
-            api.GetPhysicalDeviceProperties2(physical, &properties);
-            if (properties.Properties.ApiVersion < Vk.Version13)
-            {
-                throw new NotSupportedException("The selected adapter must support Vulkan 1.3.");
-            }
-
-            var supported11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features };
-            var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &supported11 };
-            var supported = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
-            api.GetPhysicalDeviceFeatures2(physical, &supported);
-            if (!supported11.ShaderDrawParameters || !supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2 || !supported.Features.IndependentBlend)
-            {
-                throw new NotSupportedException("Vulkan shader draw parameters, maintenance4, dynamic rendering, synchronization2 and independent blending are required.");
-            }
-
-            uint queueFamily = SelectQueueFamily(api, physical);
-            float priority = 1;
-            var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
-            var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray, IndependentBlend = true, ShaderInt64 = true };
-            var enabled11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, ShaderDrawParameters = true };
-            var enabled12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &enabled11, BufferDeviceAddress = true, RuntimeDescriptorArray = true, DescriptorBindingPartiallyBound = true, ShaderSampledImageArrayNonUniformIndexing = true };
-            var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &enabled12, Maintenance4 = true, DynamicRendering = true, Synchronization2 = true };
-            var deviceInfo = new DeviceCreateInfo { SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
-            Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
-            DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
-            return new(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily, cacheGraphicsPipelines);
+            return new VulkanSurface(this, native);
         }
         catch
         {
-            if (device.Handle != 0)
-            {
-                api.DestroyDevice(device, null);
-            }
-
-            if (instance.Handle != 0)
-            {
-                api.DestroyInstance(instance, null);
-            }
-
-            api.Dispose();
+            Presentation.Surface.DestroySurface(_instance, native, null);
             throw;
         }
     }
@@ -257,7 +259,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
             throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
@@ -267,6 +269,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             return;
         }
 
+        _presentation?.Dispose();
         _api.DestroyDevice(_device, null);
         _api.DestroyInstance(_instance, null);
         _api.Dispose();
@@ -289,9 +292,139 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     internal void ReleaseSampler() => _samplerCount--;
 
+    internal void RetainSurface() => _surfaceCount++;
+
+    internal void ReleaseSurface() => _surfaceCount--;
+
     internal void ReleaseTexture() => _textureCount--;
 
     internal void ReleaseBuffer() => _bufferCount--;
+
+    private static VulkanDevice CreateCore(uint physicalDeviceIndex, bool cacheGraphicsPipelines, VulkanSurfaceSource? source, out IGraphicsSurface? surface)
+    {
+        var api = Vk.GetApi();
+        Instance instance = default;
+        Device device = default;
+        SurfaceKHR nativeSurface = default;
+        KhrSurface? surfaceApi = null;
+        KhrSwapchain? swapchainApi = null;
+        ExtSwapchainMaintenance1? maintenanceApi = null;
+        surface = null;
+        nint instanceNames = 0;
+        nint deviceNames = 0;
+        try
+        {
+            var application = new ApplicationInfo { SType = StructureType.ApplicationInfo, ApiVersion = Vk.Version13 };
+            string[] instanceExtensions = source == null ? [] : source.InstanceExtensions.Concat(new[] { "VK_KHR_surface", "VK_KHR_get_surface_capabilities2", "VK_EXT_surface_maintenance1" }).Distinct().ToArray();
+            instanceNames = instanceExtensions.Length == 0 ? 0 : SilkMarshal.StringArrayToPtr(instanceExtensions);
+            var instanceInfo = new InstanceCreateInfo { SType = StructureType.InstanceCreateInfo, PApplicationInfo = &application, EnabledExtensionCount = (uint)instanceExtensions.Length, PpEnabledExtensionNames = (byte**)instanceNames };
+            Check(api.CreateInstance(&instanceInfo, null, &instance), "CreateInstance");
+            if (source != null)
+            {
+                if (!api.TryGetInstanceExtension(instance, out surfaceApi))
+                {
+                    throw new NotSupportedException("Vulkan surface operations are unavailable.");
+                }
+
+                nativeSurface = source.CreateSurface(instance);
+                if (nativeSurface.Handle == 0)
+                {
+                    throw new ArgumentException("The surface factory returned a null native surface.", nameof(source));
+                }
+            }
+
+            PhysicalDevice physical = SelectPhysicalDevice(api, instance, physicalDeviceIndex);
+            var properties13 = new PhysicalDeviceVulkan13Properties { SType = StructureType.PhysicalDeviceVulkan13Properties };
+            var properties = new PhysicalDeviceProperties2 { SType = StructureType.PhysicalDeviceProperties2, PNext = &properties13 };
+            api.GetPhysicalDeviceProperties2(physical, &properties);
+            if (properties.Properties.ApiVersion < Vk.Version13)
+            {
+                throw new NotSupportedException("The selected adapter must support Vulkan 1.3.");
+            }
+
+            var supportedMaintenance = new PhysicalDeviceSwapchainMaintenance1FeaturesEXT { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt };
+            var supported11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = source == null ? null : &supportedMaintenance };
+            var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &supported11 };
+            var supported = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
+            api.GetPhysicalDeviceFeatures2(physical, &supported);
+            if (!supported11.ShaderDrawParameters || !supported13.Maintenance4 || !supported13.DynamicRendering || !supported13.Synchronization2 || !supported.Features.IndependentBlend)
+            {
+                throw new NotSupportedException("Vulkan shader draw parameters, maintenance4, dynamic rendering, synchronization2 and independent blending are required.");
+            }
+
+            if (source != null && !supportedMaintenance.SwapchainMaintenance1)
+            {
+                throw new NotSupportedException("Vulkan swapchain maintenance1 is required for explicit image release and presentation fences.");
+            }
+
+            uint queueFamily = SelectQueueFamily(api, physical, surfaceApi, nativeSurface);
+            float priority = 1;
+            var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
+            var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray, IndependentBlend = true, ShaderInt64 = true };
+            var enabledMaintenance = new PhysicalDeviceSwapchainMaintenance1FeaturesEXT { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt, SwapchainMaintenance1 = true };
+            var enabled11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, ShaderDrawParameters = true, PNext = source == null ? null : &enabledMaintenance };
+            var enabled12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &enabled11, BufferDeviceAddress = true, RuntimeDescriptorArray = true, DescriptorBindingPartiallyBound = true, ShaderSampledImageArrayNonUniformIndexing = true };
+            var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &enabled12, Maintenance4 = true, DynamicRendering = true, Synchronization2 = true };
+            string[] deviceExtensions = source == null ? [] : ["VK_KHR_swapchain", "VK_EXT_swapchain_maintenance1"];
+            deviceNames = deviceExtensions.Length == 0 ? 0 : SilkMarshal.StringArrayToPtr(deviceExtensions);
+            var deviceInfo = new DeviceCreateInfo { EnabledExtensionCount = (uint)deviceExtensions.Length, PpEnabledExtensionNames = (byte**)deviceNames, SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
+            Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
+            DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
+            VulkanPresentation? presentation = null;
+            if (source != null)
+            {
+                if (!api.TryGetDeviceExtension(instance, device, out swapchainApi) || !api.TryGetDeviceExtension(instance, device, out maintenanceApi))
+                {
+                    throw new NotSupportedException("Vulkan swapchain operations are unavailable.");
+                }
+
+                presentation = new(surfaceApi!, swapchainApi!, maintenanceApi!);
+            }
+
+            var owner = new VulkanDevice(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily, cacheGraphicsPipelines, presentation);
+            if (source != null)
+            {
+                surface = new VulkanSurface(owner, nativeSurface);
+            }
+
+            return owner;
+        }
+        catch
+        {
+            if (nativeSurface.Handle != 0)
+            {
+                surfaceApi?.DestroySurface(instance, nativeSurface, null);
+            }
+
+            maintenanceApi?.Dispose();
+            swapchainApi?.Dispose();
+            surfaceApi?.Dispose();
+            if (device.Handle != 0)
+            {
+                api.DestroyDevice(device, null);
+            }
+
+            if (instance.Handle != 0)
+            {
+                api.DestroyInstance(instance, null);
+            }
+
+            api.Dispose();
+            throw;
+        }
+        finally
+        {
+            if (instanceNames != 0)
+            {
+                SilkMarshal.Free(instanceNames);
+            }
+
+            if (deviceNames != 0)
+            {
+                SilkMarshal.Free(deviceNames);
+            }
+        }
+    }
 
     private static PhysicalDevice SelectPhysicalDevice(Vk api, Instance instance, uint index)
     {
@@ -316,7 +449,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return devices[index];
     }
 
-    private static uint SelectQueueFamily(Vk api, PhysicalDevice physical)
+    private static uint SelectQueueFamily(Vk api, PhysicalDevice physical, KhrSurface? surfaceApi = null, SurfaceKHR surface = default)
     {
         uint count = 0;
         api.GetPhysicalDeviceQueueFamilyProperties(physical, &count, null);
@@ -330,6 +463,15 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         {
             if (families[i].QueueCount != 0 && (families[i].QueueFlags & (QueueFlags.GraphicsBit | QueueFlags.ComputeBit)) == (QueueFlags.GraphicsBit | QueueFlags.ComputeBit))
             {
+                if (surfaceApi != null)
+                {
+                    VulkanPresentation.Check(surfaceApi.GetPhysicalDeviceSurfaceSupport(physical, i, surface, out Silk.NET.Core.Bool32 present), "GetPhysicalDeviceSurfaceSupport");
+                    if (!present)
+                    {
+                        continue;
+                    }
+                }
+
                 return i;
             }
         }

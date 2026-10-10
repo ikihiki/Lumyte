@@ -151,3 +151,19 @@ WebGPUのdepth32float／depth24plus-stencil8、render passのdepthStencilAttachm
 `R8Unorm`, `Rg8Unorm`, `R16Float`, `Rg16Float`, `Rgba16Float`, `Rgb10A2Unorm`をサンプリング・カラーattachment・コピーへ対応付けます。コピーは形式ごとのtexelサイズを使い、オフセットは4 byteとtexelサイズの両方に整列させます。
 
 WebGPUの標準filterable形式を使い、追加のオプションfeatureは要求しません。
+
+## Surface・Swapchain・Present
+
+`device.CreateSurface(JSObject context)`へ、既存のHTMLCanvasElementまたはOffscreenCanvasの`GPUCanvasContext`を渡します。
+ライブラリはDOM検索、canvas生成、ウインドウからのハンドル取得を行いません。contextとcanvasは利用側がSurfaceの解放まで保持します。
+同じcontextの二重接続を拒否し、外部canvasの所有権は取得しません。
+
+canvas configureでRGBA8／BGRA8／RGBA16 float、usage、pixel size、opaque／premultiplied alphaを設定します。
+ブラウザーのcomposition schedulingを利用するため、共通のPresentModeはFifoだけを公開します。
+`Present()`は明示的なsubmit後に論理frameを閉じる操作です。WebGPUには独立したnative present呼び出しがなく、実際のcompositionはブラウザーが行うため、その時刻や同期intervalをこのAPIで制御しません。
+取得から記録・submit・Presentまでは同じブラウザー描画turn内に行い、その間に任意の非同期処理へyieldしないでください。
+取得画像を解放するときも`GPUTexture.destroy()`は呼ばず、canvas contextの画像所有権とcompositionを維持します。
+GPU完了とframeの解放待機は、その後に明示的に行えます。
+
+既存Browser CIへ外部OffscreenCanvas contextを渡し、共通SurfaceExerciseでclear結果の読み戻し、lease失効、二重Present、discard、resizeを検証します。
+実ウインドウ／DOMから表示先を取得する連携は別PRです。

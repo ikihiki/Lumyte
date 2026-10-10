@@ -118,6 +118,7 @@ try {
     assert.match(result.report, /Command checks passed:/);
     assert.match(result.report, /Pipeline checks passed:/);
     assert.match(result.report, /Advanced command checks passed:/);
+    assert.match(result.report, /Surface checks passed:/);
     assert.match(result.report, /Shader binding checks passed:/);
     assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");

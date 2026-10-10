@@ -10,6 +10,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Instance _instance;
     private readonly A.Adapter _adapter;
     private readonly A.Device _device;
+    private int _surfaceCount;
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
@@ -80,6 +81,55 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             device?.Dispose();
             adapter?.Dispose();
             instance.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Creates a device compatible with the supplied native target; no window is created or inspected.</summary>
+    /// <param name="source">The borrowed native window or layer handles supplied by the caller.</param>
+    /// <param name="surface">The owned graphics surface; dispose it before the returned device.</param>
+    /// <returns>The device selected for the supplied target.</returns>
+    public static WgpuDevice CreateForPresentation(A.SurfaceSource source, out IGraphicsSurface surface)
+    {
+        ValidateSurfaceSource(source);
+        var instance = A.Instance.Create();
+        A.Surface native = default;
+        A.Adapter? adapter = null;
+        A.Device? device = null;
+        try
+        {
+            native = instance.CreateSurface(source);
+            adapter = instance.RequestAdapterBlocking(native);
+            device = adapter.RequestDeviceBlocking();
+            var owner = new WgpuDevice(instance, adapter, device);
+            surface = new WgpuSurface(owner, native, adapter);
+            return owner;
+        }
+        catch
+        {
+            device?.Dispose();
+            adapter?.Dispose();
+            native.Dispose();
+            instance.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Connects another supplied native target to this device without adapter reselection.</summary>
+    /// <param name="source">The borrowed native handles.</param>
+    /// <returns>The owned surface if this adapter supports the target.</returns>
+    public IGraphicsSurface CreateSurface(A.SurfaceSource source)
+    {
+        ValidateAlive();
+        ValidateSurfaceSource(source);
+        A.Surface native = _instance.CreateSurface(source);
+        try
+        {
+            return new WgpuSurface(this, native, _adapter);
+        }
+        catch
+        {
+            native.Dispose();
             throw;
         }
     }
@@ -228,7 +278,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
             throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
@@ -260,7 +310,20 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     internal void ReleaseSampler() => _samplerCount--;
 
+    internal void RetainSurface() => _surfaceCount++;
+
+    internal void ReleaseSurface() => _surfaceCount--;
+
     internal void ReleaseTexture() => _textureCount--;
 
     internal void ReleaseBuffer() => _bufferCount--;
+
+    private static void ValidateSurfaceSource(A.SurfaceSource source)
+    {
+        if (!Enum.IsDefined(source.Tag) || source.Handle0 == 0 ||
+            (source.Tag is A.SurfaceSource.Kind.WindowsHwnd or A.SurfaceSource.Kind.XlibWindow or A.SurfaceSource.Kind.WaylandSurface && source.Handle1 == 0))
+        {
+            throw new ArgumentException("Supply valid native target handles.", nameof(source));
+        }
+    }
 }

@@ -17,6 +17,7 @@ internal sealed unsafe class VulkanTextureView(VulkanTexture texture, TextureVie
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            _ = texture.Native;
             return native;
         }
     }
@@ -43,6 +44,7 @@ internal sealed unsafe class VulkanTextureView(VulkanTexture texture, TextureVie
     internal void RetainRegistration()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = texture.Native;
         _registrationCount = checked(_registrationCount + 1);
     }
 

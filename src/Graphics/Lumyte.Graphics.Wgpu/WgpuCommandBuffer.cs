@@ -9,6 +9,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
     private readonly WgpuDevice _owner;
     private readonly List<Action> _resources = [];
     private readonly Dictionary<(IGraphicsTexture Texture, uint Mip, uint Layer), TextureState> _states = [];
+    private readonly HashSet<SurfaceFrameLifetime> _surfaceFrames = [];
     private object? _active;
 
     internal WgpuCommandBuffer(WgpuDevice owner)
@@ -303,6 +304,16 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
         }
     }
 
+    internal TextureState? ValidateSurfaceSubmission(SurfaceFrameLifetime? frame)
+    {
+        if (_surfaceFrames.Any(used => !ReferenceEquals(used, frame)))
+        {
+            throw new InvalidOperationException("Submit acquired images with their explicit frame and no other frame.");
+        }
+
+        return _states.Where(pair => pair.Key.Texture is WgpuTexture texture && ReferenceEquals(texture.SurfaceFrame, frame) && frame != null).Select(pair => (TextureState?)pair.Value).LastOrDefault();
+    }
+
     internal void MarkSubmitted()
     {
         _shaderData.Publish();
@@ -312,6 +323,17 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
     internal void Complete(bool success) => State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
 
     internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
+
+    internal void TrackShaderSnapshot(ShaderBindingSnapshot snapshot)
+    {
+        foreach (WgpuTextureView view in snapshot.References.Select(reference => reference.Resource).OfType<WgpuTextureView>())
+        {
+            Keep(OwnTexture(view.Texture));
+            _resources.Add(() => { _ = view.Native; });
+        }
+
+        _resources.Add(snapshot.Validate);
+    }
 
     internal void TrackProgram(Action validate) => _resources.Add(validate);
 
@@ -368,7 +390,14 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
         }
     }
 
-    private void Keep(WgpuTexture texture) => _resources.Add(() => { _ = texture.Native; });
+    private void Keep(WgpuTexture texture)
+    {
+        _resources.Add(() => { _ = texture.Native; });
+        if (texture.SurfaceFrame is { } frame)
+        {
+            _surfaceFrames.Add(frame);
+        }
+    }
 
     private void ValidateEnd(object pass)
     {

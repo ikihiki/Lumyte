@@ -17,6 +17,7 @@ internal sealed class BrowserTextureView(BrowserTexture texture, TextureViewInfo
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            _ = texture.Native;
             return native;
         }
     }
@@ -43,6 +44,7 @@ internal sealed class BrowserTextureView(BrowserTexture texture, TextureViewInfo
     internal void RetainRegistration()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = texture.Native;
         _registrationCount = checked(_registrationCount + 1);
     }
 

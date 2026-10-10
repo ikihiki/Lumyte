@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
+using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
 
 namespace Lumyte.Graphics.Browser.Sample;
@@ -27,6 +28,9 @@ internal static partial class Program
         Record(await PipelineExercise.RunAsync(device), reports);
         Record(await AdvancedCommandExercise.RunAsync(device), reports);
         Record(await ShaderBindingExercise.RunAsync(device), reports);
+        using JSObject context = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no GPUCanvasContext.");
+        using IGraphicsSurface surface = device.CreateSurface(context);
+        Record(await SurfaceExercise.RunAsync(device, surface), reports);
         using BrowserDevice foreign = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
         ArgumentTableExercise.CheckForeignDevice(device, foreign);
         PipelineExercise.CheckForeignDevice(device, foreign);

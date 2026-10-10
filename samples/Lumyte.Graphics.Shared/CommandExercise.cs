@@ -139,6 +139,7 @@ public static class CommandExercise
         upload.CopyFrom(expected);
         upload.Unmap();
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        Expect<ArgumentException>(() => commands.Barrier(new TextureBarrierDesc { Texture = source, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.Present, Before = default, After = default }));
         Expect<InvalidOperationException>(() => commands.CopyBufferToTexture(sourceLayout, sourceRegion));
         Transition(commands, source, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);
         Transition(commands, destination, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);

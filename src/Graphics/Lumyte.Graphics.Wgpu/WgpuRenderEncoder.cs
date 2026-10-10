@@ -251,7 +251,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
         if (bindingData != null)
         {
-            owner.TrackProgram(bindingData.Snapshot.Validate);
+            owner.TrackShaderSnapshot(bindingData.Snapshot);
         }
 
         owner.TrackProgram(_pipeline.ValidateAlive);

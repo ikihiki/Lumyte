@@ -5,7 +5,20 @@ namespace Lumyte.Graphics.Browser;
 
 internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
 {
-    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers)
+    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers) => SubmitCore(commandBuffers, null);
+
+    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers, IGraphicsSurfaceFrame frame)
+    {
+        if (frame is not BrowserSurfaceFrame acquired || !ReferenceEquals(acquired.Owner, owner))
+        {
+            throw new ArgumentException("Presentation frame belongs to another device.", nameof(frame));
+        }
+
+        acquired.Lifetime.ValidateRecording();
+        return SubmitCore(commandBuffers, acquired);
+    }
+
+    private IGraphicsSubmission SubmitCore(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers, BrowserSurfaceFrame? frame)
     {
         owner.ValidateAlive();
         ArgumentNullException.ThrowIfNull(commandBuffers);
@@ -28,6 +41,17 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
             commands[i] = buffer;
         }
 
+        TextureState? finalSurfaceState = null;
+        foreach (BrowserCommandBuffer command in commands)
+        {
+            finalSurfaceState = command.ValidateSurfaceSubmission(frame?.Lifetime) ?? finalSurfaceState;
+        }
+
+        if (frame != null && finalSurfaceState != TextureState.Present)
+        {
+            throw new InvalidOperationException("A frame submission must use its image and end in explicit Present state.");
+        }
+
         ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
 
         using JSObject list = BrowserInterop.CreateCommandList();
@@ -44,6 +68,7 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
 
         var submission = new BrowserSubmission(owner, commands, handle);
         owner.RetainSubmission();
+        frame?.Lifetime.MarkSubmitted(submission);
         return submission;
     }
 }

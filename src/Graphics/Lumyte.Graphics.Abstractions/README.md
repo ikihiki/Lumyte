@@ -159,3 +159,11 @@ Depth／Stencil attachmentは`RenderPassDesc.DepthStencilAttachment`へ指定し
 Index bufferは`SetIndexBuffer(BufferSlice<ushort>)`／`SetIndexBuffer(BufferSlice<uint>)`へ設定し、`DrawIndexed`のfirstIndexはそのsliceからの相対offsetです。Indirectは`DrawIndirectArguments`／`DrawIndexedIndirectArguments`／`DispatchIndirectArguments`を1要素含むIndirect usageのsliceを渡します。GPU commandの内容はCPUで解析せず、命令転送、生成後のIndexRead／IndirectRead barrier、submit、寿命は利用者が管理します。詳しい契約は[Depth／Stencil ADR](../../../docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)と[Indexed／Indirect ADR](../../../docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)を参照してください。
 
 カラー形式にはR8／RG8、R16／RG16／RGBA16 float、RGB10A2 unormも選択できます。バイト数と転送制約は`GetTextureCopyLayout`で取得します。[形式拡充ADR](../../../docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)を参照してください。
+
+## Surface・Swapchain・Present
+
+外部targetを受け取るバックエンド固有の生成口から`IGraphicsSurface`を取得します。
+共通APIはcapabilities照会、`CreateSwapchain`、`AcquireNextFrameAsync`、借用TextureのViewへの描画、`Queue.Submit(commands, frame)`、`frame.Present()`、明示的な解放待機を提供します。
+最後に取得画像を`TextureState.Present`へ遷移し、GPUや提示が使用中のframeを解放しないでください。
+サイズはpixel単位で、ゼロサイズの間は利用側が取得を止めます。リサイズとOutdatedからの復旧は`Reconfigure`で明示します。
+詳細は[Surface・Swapchain・Present ADR](../../../docs/adr/graphics/GRAPHICS-0013-surface-swapchain-presentation.md)と各バックエンドのREADMEを参照してください。

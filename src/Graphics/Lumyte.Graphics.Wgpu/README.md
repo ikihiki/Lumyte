@@ -157,3 +157,15 @@ WebGPUのdepth32float／depth24plus-stencil8、render passのdepthStencilAttachm
 `R8Unorm`, `Rg8Unorm`, `R16Float`, `Rg16Float`, `Rgba16Float`, `Rgb10A2Unorm`をサンプリング・カラーattachment・コピーへ対応付けます。コピーは形式ごとのtexelサイズを使い、オフセットは4 byteとtexelサイズの両方に整列させます。
 
 WebGPUの標準filterable形式を使い、追加のオプションfeatureは要求しません。
+
+## Surface・Swapchain・Present
+
+`WgpuDevice.CreateForPresentation(Ahjo.Wgpu.SurfaceSource source, out IGraphicsSurface surface)`は、渡されたtargetと互換性のあるadapterを選びます。
+`device.CreateSurface(source)`は同じdeviceで別targetを受け取り、非互換のadapterは拒否します。
+`SurfaceSource.WindowsHwnd(hinstance, hwnd)`、`XlibWindow(display, window)`、`WaylandSurface(display, surface)`、`MetalLayer(layer)`、`AndroidNativeWindow(window)`のハンドルは利用側が取得して生存期間を管理します。
+このプロジェクトではウインドウを作成せず、OSのハンドル取得APIも呼びません。
+
+ネイティブsurface capabilitiesから形式・usage・present mode・alpha modeを照会し、configure、get-current-texture、surface-presentへ対応します。
+wgpuのactive画像は一つです。Present後は以前のframe leaseがGPU使用中でも次の取得を行えますが、再構成は全leaseの解放後に行います。
+取得画像はAhjoのtexture参照だけを解放し、通常の所有allocationとして生成・破棄しません。
+Native WSIの実ウインドウ接続と実機検証は、ハンドル取得を実装する後続PRで行います。

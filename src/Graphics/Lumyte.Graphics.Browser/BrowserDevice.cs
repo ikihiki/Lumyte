@@ -8,6 +8,7 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
+    private int _surfaceCount;
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
@@ -58,6 +59,16 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
             handle.Dispose();
             throw;
         }
+    }
+
+    /// <summary>Connects an already supplied GPUCanvasContext without querying the DOM or creating a canvas.</summary>
+    /// <param name="context">The borrowed GPUCanvasContext of an HTMLCanvasElement or OffscreenCanvas.</param>
+    /// <returns>The owned surface; the caller retains the context and canvas.</returns>
+    public IGraphicsSurface CreateSurface(JSObject context)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(context);
+        return new BrowserSurface(this, context);
     }
 
     /// <inheritdoc />
@@ -204,7 +215,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
             throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
@@ -234,6 +245,10 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     internal void ReleaseArgumentTable() => _argumentTableCount--;
 
     internal void ReleaseSampler() => _samplerCount--;
+
+    internal void RetainSurface() => _surfaceCount++;
+
+    internal void ReleaseSurface() => _surfaceCount--;
 
     internal void ReleaseTexture() => _textureCount--;
 

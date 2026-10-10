@@ -17,6 +17,7 @@ internal sealed class WgpuTextureView(WgpuTexture texture, TextureViewInfo info,
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            _ = texture.Native;
             return native;
         }
     }
@@ -43,6 +44,7 @@ internal sealed class WgpuTextureView(WgpuTexture texture, TextureViewInfo info,
     internal void RetainRegistration()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = texture.Native;
         _registrationCount = checked(_registrationCount + 1);
     }
 

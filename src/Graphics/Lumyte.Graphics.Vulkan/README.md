@@ -189,3 +189,24 @@ Slangの`SV_VertexID`はSPIR-VでVertexIndexからBaseVertexを引きます。ve
 `R8Unorm`, `Rg8Unorm`, `R16Float`, `Rg16Float`, `Rgba16Float`, `Rgb10A2Unorm`をサンプリング・カラーattachment・コピーへ対応付けます。コピーは形式ごとのtexelサイズを使い、オフセットは4 byteとtexelサイズの両方に整列させます。
 
 ネイティブの形式とusage対応を生成時に問い合わせ、非対応は拒否します。
+
+## Surface・Swapchain・Present
+
+`VulkanDevice.CreateForPresentation(VulkanSurfaceSource source, out IGraphicsSurface surface, ...)`へ、platformのinstance extension名と`Func<Instance, SurfaceKHR>`を渡します。
+callbackは渡されたinstanceに属する新しいnative surfaceを作成し、返却時にその所有権をGraphicsへ移します。実ウインドウのハンドル取得やplatform別のsurface生成は別PRの連携側が担当します。
+追加targetは`device.CreateSurface(createSurface)`へ渡します。同じinstanceで有効化済みのplatform extensionと、既存general queueによるpresent対応が必要です。
+`Create()`のheadless経路にはWSI拡張を要求しません。
+
+提示経路ではVK_KHR_surface、VK_KHR_get_surface_capabilities2、VK_EXT_surface_maintenance1、VK_KHR_swapchain、VK_EXT_swapchain_maintenance1とswapchainMaintenance1 featureを要求します。
+同じgraphics／compute／present queue familyを選び、別queue familyへのownership transferは行いません。
+形式はsurfaceが返すnonlinear-sRGB color spaceの組み合わせを公開します。HDR color spaceの選択は別の契約です。
+画像数はnative limits内でバックエンドが選び、複数frameの取得を共通の単一frame制約で制限しません。
+
+取得はtimeout 0のAcquireNextImageです。返却画像の準備をCPUで待たず、acquire semaphoreをframeを指定したQueue.Submitのwaitへ関連付けます。
+同じsubmitでrender-finished semaphoreをsignalし、QueuePresentKHRがwaitします。利用側はPresent layoutへのbarrierを明示します。
+acquire fenceとswapchain maintenance1のpresent fenceを使って、image leaseとbinary semaphoreの安全な解放を非ブロッキングで照会します。
+`WaitForReleaseAsync`だけが明示的にその完了を待ち、DeviceWaitIdle／QueueWaitIdleや自動submitは行いません。
+未提示の画像はGPU使用完了後にReleaseSwapchainImagesEXTで返却します。
+古いswapchainのleaseが残る再構成を拒否し、作成失敗でoldSwapchainがretireされた場合は取得結果をOutdatedとして再構成を要求します。
+
+Native WSIはビルドとハンドル受け取り口の検証を行い、実ウインドウの提示検証はハンドル取得を実装する後続PRで行います。
