@@ -39,6 +39,7 @@ internal static partial class Program
             Console.Error.WriteLine(exception.ToString());
             throw;
         }
+
         using BrowserDevice foreign = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
         ArgumentTableExercise.CheckForeignDevice(device, foreign);
         PipelineExercise.CheckForeignDevice(device, foreign);
