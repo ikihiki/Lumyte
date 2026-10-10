@@ -140,13 +140,13 @@ public static class WgslBindingSpecializer
             return string.Empty;
         }
 
-        var result = new StringBuilder("\nfn " + name + "(id:u32, index:u32)->u32 { switch " + map + "[id]." + channel + " {\n");
+        var result = new StringBuilder("\nfn " + name + "(id:u32, index:u32)->u32 { var result:u32 = 0u; switch " + map + "[id]." + channel + " {\n");
         for (int i = 0; i < count; i++)
         {
-            result.Append("case ").Append(i).Append(": { return ").Append(prefix).Append(i).Append("_0[index]; }\n");
+            result.Append("case ").Append(i).Append(": { result = ").Append(prefix).Append(i).Append("_0[index]; }\n");
         }
 
-        return result.Append("default: { return 0u; }\n} }\n").ToString();
+        return result.Append("default: {}\n} return result; }\n").ToString();
     }
 
     private static string Variable(string source, string prefix) => Regex.Match(source, @"var(?:<[^>]+>)?\s+(" + prefix + @"_\w+)\s*:").Groups[1].Value;
