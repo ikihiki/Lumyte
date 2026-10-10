@@ -11,3 +11,7 @@
 バックエンドが実装する `IShaderReference`、`IShaderDataSource`、`IShaderRawBuffer`、`IShaderDataLayout` は `Lumyte.Graphics.Abstractions` に定義します。バックエンド向けの公開 API を経由するため `InternalsVisibleTo` は必要ありません。利用側のアプリケーションは従来どおり共通 graphics API を使用します。
 
 同期とリソースの有効期間は利用者が管理します。このライブラリは内部同期や転送命令の自動発行を追加しません。
+
+`BinarySemaphoreState`と`SemaphoreValidation`は利用側が明示したsignal／waitの発行と使用中の解放を検証します。
+同期オブジェクトやGPU命令を自動生成せず、queue／acquire／presentの完了照会だけを各バックエンドから受け取ります。
+`SurfaceFrameLifetime`はcommandから検出した画像leaseの寿命を管理し、SubmitへFrameを引数として渡す必要はありません。

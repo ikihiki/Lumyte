@@ -169,3 +169,12 @@ WebGPUの標準filterable形式を使い、追加のオプションfeatureは要
 wgpuのactive画像は一つです。Present後は以前のframe leaseがGPU使用中でも次の取得を行えますが、再構成は全leaseの解放後に行います。
 取得画像はAhjoのtexture参照だけを解放し、通常の所有allocationとして生成・破棄しません。
 Native WSIの実ウインドウ接続と実機検証は、ハンドル取得を実装する後続PRで行います。
+
+## 明示的なGPU semaphore
+
+`device.CreateSemaphore()`は単一device queueの発行順序を表すbinary semaphoreを生成します。
+WebGPUにはnative semaphoreがないため、GPUへ発行済みのsignalと一回のwaitを検証し、同じqueueの順序保証へ対応付けます。
+取得に渡されたsemaphoreだけをsignal済みにし、Submit／Presentに渡されたwaitだけを消費します。
+wait stageはGPUの非空stageを検証しますが、WebGPUにはstage別のnative待機操作がなく、queue順序へ対応付けます。
+CPU待機、追加submit、queue idleは挿入しません。commandのないwait／signal Submitも明示的に発行できます。
+外部queue・device間の同期や未発行signalへの将来waitは公開しません。使用中のDisposeを拒否し、再利用時点と利用者の同期は呼び出し側が管理します。

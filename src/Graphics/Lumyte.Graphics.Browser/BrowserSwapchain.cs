@@ -32,10 +32,22 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
         Configuration = desc;
     }
 
-    public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(CancellationToken cancellationToken = default)
+    public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(IGraphicsSemaphore? signalSemaphore = null, CancellationToken cancellationToken = default)
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+        BrowserSemaphore? signal = null;
+        if (signalSemaphore != null)
+        {
+            if (signalSemaphore is not BrowserSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
+            }
+
+            semaphore.State.ValidateSignal();
+            signal = semaphore;
+        }
+
         if (_active != null)
         {
             throw new InvalidOperationException("Submit and present or discard the active canvas image before acquisition.");
@@ -48,6 +60,7 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
         }
 
         _active = new(this, BrowserInterop.AcquireSurfaceTexture(_surface.Native));
+        signal?.State.MarkSignal(() => true);
         _frameCount++;
         return ValueTask.FromResult(new SurfaceAcquireResult(SurfaceStatus.Success, _active));
     }

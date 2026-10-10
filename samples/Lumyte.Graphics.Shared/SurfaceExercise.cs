@@ -54,7 +54,7 @@ public static class SurfaceExercise
         cancellation.Cancel();
         try
         {
-            await swapchain.AcquireNextFrameAsync(cancellation.Token);
+            await swapchain.AcquireNextFrameAsync(cancellationToken: cancellation.Token);
             throw new InvalidOperationException("Acquisition ignored cancellation.");
         }
         catch (OperationCanceledException)
@@ -68,7 +68,7 @@ public static class SurfaceExercise
         swapchain.Dispose();
         swapchain.Dispose();
         Expect<ObjectDisposedException>(() => swapchain.Reconfigure(desc));
-        return "Surface checks passed: exact configuration, borrowed images, explicit submit/present, invalidation, discard, resize and pixel readback.";
+        return "Surface checks passed: exact configuration, borrowed images, caller-selected acquisition/submit/present semaphores, invalidation, discard, resize and pixel readback.";
     }
 
     private static async Task CheckUnsubmittedFramesAsync(IGraphicDevice device, IGraphicsSwapchain swapchain)
@@ -78,7 +78,7 @@ public static class SurfaceExercise
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         commands.Barrier(new TextureBarrierDesc { Texture = frame.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite) });
         commands.Finish();
-        Expect<InvalidOperationException>(() => device.Queue.Submit([commands], frame));
+        Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
         Require(frame.Status == SurfaceFrameStatus.Acquired && commands.State == CommandBufferState.Executable, "Invalid submission consumed a frame or command.");
         await frame.WaitForReleaseAsync();
         frame.Dispose();
@@ -87,8 +87,10 @@ public static class SurfaceExercise
 
     private static async Task DrawFrameAsync(IGraphicDevice device, IGraphicsSwapchain swapchain)
     {
+        using IGraphicsSemaphore acquiredSignal = device.CreateSemaphore();
+        using IGraphicsSemaphore renderedSignal = device.CreateSemaphore();
         Console.WriteLine("Surface: acquiring frame.");
-        SurfaceAcquireResult acquired = await swapchain.AcquireNextFrameAsync();
+        SurfaceAcquireResult acquired = await swapchain.AcquireNextFrameAsync(acquiredSignal);
         Console.WriteLine($"Surface: acquisition {acquired.Status}.");
         Require(acquired.Status is SurfaceStatus.Success or SurfaceStatus.Suboptimal && acquired.Frame != null, "The supplied test target did not produce an image.");
         IGraphicsSurfaceFrame frame = acquired.Frame!;
@@ -116,12 +118,18 @@ public static class SurfaceExercise
             commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
             commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopySource, AfterState = TextureState.Present, Before = copy, After = default });
             commands.Finish();
-            Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
             Console.WriteLine("Surface: submitting frame.");
-            using IGraphicsSubmission submission = device.Queue.Submit([commands], frame);
+            using IGraphicsSubmission submission = device.Queue.Submit(new QueueSubmitDesc
+            {
+                CommandBuffers = [commands],
+                WaitSemaphores = [new() { Semaphore = acquiredSignal, Stages = PipelineStage.AllCommands }],
+                SignalSemaphores = [renderedSignal],
+            });
             Require(frame.Status == SurfaceFrameStatus.Submitted, "Frame submission did not transfer image use.");
             Expect<InvalidOperationException>(() => texture.CreateView());
-            Require(frame.Present() is SurfaceStatus.Success or SurfaceStatus.Suboptimal, "Presentation failed.");
+            Expect<ArgumentException>(() => frame.Present([renderedSignal, renderedSignal]));
+            Expect<InvalidOperationException>(() => frame.Present([acquiredSignal]));
+            Require(frame.Present([renderedSignal]) is SurfaceStatus.Success or SurfaceStatus.Suboptimal, "Presentation failed.");
             Expect<InvalidOperationException>(() => frame.Present());
             Require(frame.Status == SurfaceFrameStatus.Presented, "Presentation state was not recorded.");
             Console.WriteLine("Surface: presented; waiting for release.");

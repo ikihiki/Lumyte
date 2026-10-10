@@ -33,10 +33,22 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
         Configuration = desc;
     }
 
-    public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(CancellationToken cancellationToken = default)
+    public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(IGraphicsSemaphore? signalSemaphore = null, CancellationToken cancellationToken = default)
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+        WgpuSemaphore? signal = null;
+        if (signalSemaphore != null)
+        {
+            if (signalSemaphore is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
+            }
+
+            semaphore.State.ValidateSignal();
+            signal = semaphore;
+        }
+
         if (_active != null)
         {
             throw new InvalidOperationException("Submit and present or discard the active wgpu image before acquisition.");
@@ -59,6 +71,7 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
         }
 
         _active = new(this, acquired.Texture);
+        signal?.State.MarkSignal(() => true);
         _frameCount++;
         return ValueTask.FromResult(new SurfaceAcquireResult(status, _active));
     }

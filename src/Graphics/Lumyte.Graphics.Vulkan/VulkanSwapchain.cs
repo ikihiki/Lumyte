@@ -38,10 +38,22 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         Configure(desc);
     }
 
-    public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(CancellationToken cancellationToken = default)
+    public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(IGraphicsSemaphore? signalSemaphore = null, CancellationToken cancellationToken = default)
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+        VulkanSemaphore? signal = null;
+        if (signalSemaphore != null)
+        {
+            if (signalSemaphore is not VulkanSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
+            }
+
+            semaphore.State.ValidateSignal();
+            signal = semaphore;
+        }
+
         if (_outdated)
         {
             return ValueTask.FromResult(new SurfaceAcquireResult(SurfaceStatus.Outdated, null));
@@ -49,7 +61,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
 
         var frame = new VulkanSurfaceFrame(this);
         uint index = 0;
-        Result result = Owner.Presentation.Swapchain.AcquireNextImage(Owner.NativeDevice, _native, 0, frame.AcquireSemaphore, frame.AcquireFence, &index);
+        Result result = Owner.Presentation.Swapchain.AcquireNextImage(Owner.NativeDevice, _native, 0, signal?.Native ?? default, frame.AcquireFence, &index);
         SurfaceStatus status;
         try
         {
@@ -73,6 +85,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         }
 
         frame.SetImage(index, _images[index]);
+        signal?.State.MarkSignal(() => frame.Lifetime.IsReleased);
         _frameCount++;
         return ValueTask.FromResult(new SurfaceAcquireResult(status, frame));
     }
@@ -94,12 +107,26 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         _surface.ReleaseSwapchain();
     }
 
-    internal SurfaceStatus Present(uint index, Semaphore wait, Fence fence)
+    internal SurfaceStatus Present(uint index, Semaphore[] waits, Fence fence)
     {
         SwapchainKHR native = _native;
         var fences = new SwapchainPresentFenceInfoEXT { SType = StructureType.SwapchainPresentFenceInfoExt, SwapchainCount = 1, PFences = &fence };
-        var present = new PresentInfoKHR { SType = StructureType.PresentInfoKhr, PNext = &fences, WaitSemaphoreCount = 1, PWaitSemaphores = &wait, SwapchainCount = 1, PSwapchains = &native, PImageIndices = &index };
-        SurfaceStatus status = VulkanPresentation.Status(Owner.Presentation.Swapchain.QueuePresent(Owner.NativeQueue, &present));
+        SurfaceStatus status;
+        fixed (Semaphore* waitData = waits)
+        {
+            var present = new PresentInfoKHR
+            {
+                SType = StructureType.PresentInfoKhr,
+                PNext = &fences,
+                WaitSemaphoreCount = (uint)waits.Length,
+                PWaitSemaphores = waitData,
+                SwapchainCount = 1,
+                PSwapchains = &native,
+                PImageIndices = &index,
+            };
+            status = VulkanPresentation.Status(Owner.Presentation.Swapchain.QueuePresent(Owner.NativeQueue, &present));
+        }
+
         if (status == SurfaceStatus.Outdated)
         {
             _outdated = true;

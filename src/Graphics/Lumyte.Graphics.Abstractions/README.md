@@ -163,7 +163,11 @@ Index bufferは`SetIndexBuffer(BufferSlice<ushort>)`／`SetIndexBuffer(BufferSli
 ## Surface・Swapchain・Present
 
 外部targetを受け取るバックエンド固有の生成口から`IGraphicsSurface`を取得します。
-共通APIはcapabilities照会、`CreateSwapchain`、`AcquireNextFrameAsync`、借用TextureのViewへの描画、`Queue.Submit(commands, frame)`、`frame.Present()`、明示的な解放待機を提供します。
+共通APIはcapabilities照会、`CreateSwapchain`、`AcquireNextFrameAsync`、借用TextureのViewへの描画、`Queue.Submit(QueueSubmitDesc)`、`frame.Present(waitSemaphores)`、明示的な解放待機を提供します。
 最後に取得画像を`TextureState.Present`へ遷移し、GPUや提示が使用中のframeを解放しないでください。
 サイズはpixel単位で、ゼロサイズの間は利用側が取得を止めます。リサイズとOutdatedからの復旧は`Reconfigure`で明示します。
 詳細は[Surface・Swapchain・Present ADR](../../../docs/adr/graphics/GRAPHICS-0013-surface-swapchain-presentation.md)と各バックエンドのREADMEを参照してください。
+
+`device.CreateSemaphore()`でbinary semaphoreを作り、`AcquireNextFrameAsync(acquired)`、Submitの`WaitSemaphores`／`SignalSemaphores`、Presentのwaitへ明示的に渡します。
+FrameをSubmitへ渡すAPIはありません。同期を補完せず、wait stage、semaphoreの再利用と生存期間は利用側が管理します。
+wait／signalだけのSubmitも可能です。GPU完了をCPUで待つ必要はなく、GPUへ発行済みのsignalを後続のwaitに指定します。

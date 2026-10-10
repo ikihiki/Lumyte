@@ -9,6 +9,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
     private int _surfaceCount;
+    private int _semaphoreCount;
     private int _bufferCount;
     private int _textureCount;
     private int _samplerCount;
@@ -89,6 +90,15 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         var program = new BrowserComputePipeline(this, desc);
         _pipelineCount++;
         return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsSemaphore CreateSemaphore()
+    {
+        ValidateAlive();
+        var semaphore = new BrowserSemaphore(this);
+        _semaphoreCount++;
+        return semaphore;
     }
 
     /// <inheritdoc />
@@ -215,9 +225,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
+        if (_semaphoreCount != 0 || _surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
         {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
+            throw new InvalidOperationException("Dispose all surfaces, semaphores, argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
         }
 
         if (_disposed)
@@ -249,6 +259,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     internal void RetainSurface() => _surfaceCount++;
 
     internal void ReleaseSurface() => _surfaceCount--;
+
+    internal void ReleaseSemaphore() => _semaphoreCount--;
 
     internal void ReleaseTexture() => _textureCount--;
 

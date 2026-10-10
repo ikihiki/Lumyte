@@ -19,8 +19,9 @@ Surfaceの生成は各バックエンド固有の入口で既存のハンドル�
 
 利用側は対応形式とmodeを照会し、正確なpixel sizeでSwapchainを生成する。
 フレームを取得してTextureからViewを作り、明示的なbarrierとcommandを記録する。
-取得画像の最後の状態はPresentとし、Queue.Submit(commands, frame)へ渡す。
-このsubmitはバックエンドに必要な取得・提示のネイティブ同期を関連付けるが、描画や転送、barrier、Presentを自動発行しない。
+取得画像の最後の状態はPresentとし、Queue.Submitへcommandを渡す。FrameはSubmitの引数にしない。
+利用側がbinary semaphoreを生成し、画像取得のsignal、Submitのwait／signal、Presentのwaitをそれぞれ指定する。
+バックエンドは渡された同期だけを実行し、取得waitや描画完了signal、Present waitを補完しない。
 Frame.PresentはGPUのCPU完了待機を要求せず提示を要求する。
 Frame.WaitForReleaseAsyncは画像leaseの解放条件を明示的に待つ操作であり、実際の表示時刻を保証しない。
 
@@ -42,10 +43,44 @@ Surfaceにつき一つのactive Swapchainを持つ。再構成・解放はすべ
 FrameのTextureは借用品であり、利用側から直接Disposeできない。
 記録・submitはAcquiredの間だけ許可し、frameごとに一度のsubmitへ必要なcommandをまとめる。
 Frameを使うsubmitでは取得画像を使ったcommandと最終Present状態を検証する。
-通常のsubmitへ取得画像を混入させる、別のframeを混入させる、失効した画像・Viewを再利用する操作は拒否する。
+Submitはcommandが参照する取得画像を追跡して寿命と最終状態を検証し、同期を生成しない。
+一回のSubmitで複数Frameを使用できる。失効した画像・Viewを再利用する操作は拒否する。
 PresentはSubmittedから一度だけ行い、二重Presentを拒否する。
 Frame.Disposeは未submitの画像を提示せず返却でき、submit済みではGPUとネイティブ提示の解放条件が満たされるまで拒否する。
 先にViewとcommandを解放する。Frame、Swapchain、Surface、Deviceの順に所有権を解放する。
+
+### 明示的なbinary semaphore
+
+IGraphicDevice.CreateSemaphoreは未signalの所有semaphoreを生成する。
+画像取得には任意のsignal semaphoreを渡し、Success／Suboptimalの場合だけsignalが発行されたものとして扱う。
+nullならsemaphoreのsignalを発行せず、利用側が画像の取得完了を明示的に待ってから使用する。
+SubmitのwaitにはsemaphoreとGPUの待機stageを渡し、signalはそのSubmitのcommand実行完了後に行う。
+Presentには待機semaphoreのリストを渡す。空リストも許可するが、画像取得・描画完了・提示の依存を満たす責任は利用側にある。
+
+一回のsignalは一回のwaitで消費する。signal済みへの再signal、signal未発行へのwait、重複、同じSubmitでの同一semaphoreのwaitとsignal、異なるDeviceのsemaphoreを拒否する。
+GPUへ発行済みのsignalはCPU完了前からwaitに指定できる。未発行のsignalを将来待つ方式は今回の単一queue契約には含めない。
+waitが発行されると次のsignalを指定できるが、nativeで許される再利用時点と呼び出しの同期は利用側が管理する。
+semaphoreは発行済みのGPU／提示／取得処理が完了するまでDisposeを拒否し、DisposeのためのCPU待機を自動挿入しない。
+失敗した画像取得、検証エラー、ネイティブ発行前の失敗はsemaphoreのsignal／wait状態を変更しない。
+commandが空でもwait／signalがあればSubmitを許可し、取得を破棄する場合のsignal消費などにも使用できる。
+同期は実行順序を表すもので、明示的なbarrierやTextureState.Presentへの遷移を代替しない。
+
+```csharp
+using IGraphicsSemaphore acquired = device.CreateSemaphore();
+using IGraphicsSemaphore rendered = device.CreateSemaphore();
+SurfaceAcquireResult result = await swapchain.AcquireNextFrameAsync(acquired);
+IGraphicsSurfaceFrame frame = result.Frame!;
+// Frame.Textureを使って記録し、最後にPresentへ遷移する。
+using IGraphicsSubmission submission = device.Queue.Submit(new QueueSubmitDesc
+{
+    CommandBuffers = [commands],
+    WaitSemaphores = [new() { Semaphore = acquired, Stages = PipelineStage.AllCommands }],
+    SignalSemaphores = [rendered],
+});
+frame.Present([rendered]);
+await frame.WaitForReleaseAsync();
+// Viewとcommandを先に解放してからFrameとsemaphoreを解放する。
+```
 
 ### 公開API差分
 
@@ -131,13 +166,14 @@ Frame.Disposeは未submitの画像を提示せず返却でき、submit済みで�
 +    void Reconfigure(SwapchainDesc desc);
 +
 +    // Attempts acquisition without waiting for an unavailable image.
-+    ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(CancellationToken cancellationToken = default);
++    // signalSemaphoreは成功時だけsignal。nullではsemaphoreを自動生成しない。
++    ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(IGraphicsSemaphore? signalSemaphore = null, CancellationToken cancellationToken = default);
 +}
 +
 +// Returns a leased image only for Success or Suboptimal.
 +public readonly record struct SurfaceAcquireResult(SurfaceStatus Status, IGraphicsSurfaceFrame? Frame);
 +
-+// Owns one presentation image lease and its native synchronization objects.
++// Owns one presentation image lease; semaphores are owned and selected by the caller.
 +public interface IGraphicsSurfaceFrame : IDisposable
 +{
 +    // Gets the acquisition, submission and presentation lifetime state.
@@ -147,7 +183,7 @@ Frame.Disposeは未submitの画像を提示せず返却でき、submit済みで�
 +    IGraphicsTexture Texture { get; }
 +
 +    // Requests presentation after the frame's explicit queue submission without a CPU completion wait.
-+    SurfaceStatus Present();
++    SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null);
 +
 +    // Explicitly waits until GPU and presentation use allow frame disposal.
 +    ValueTask WaitForReleaseAsync(CancellationToken cancellationToken = default);
@@ -217,10 +253,36 @@ Frame.Disposeは未submitの画像を提示せず返却でき、submit済みで�
 +    Premultiplied,
 +}
 +
++// 未signalで生成する所有binary semaphore。native使用中のDisposeは拒否する。
++public interface IGraphicsSemaphore : IDisposable { }
++
++public sealed record SemaphoreWaitDesc
++{
++    // 同じdeviceの、signalが発行済みのsemaphore。
++    public required IGraphicsSemaphore Semaphore { get; init; }
++    // GPUの待機stage。None／Host／未知bitは拒否する。
++    public required PipelineStage Stages { get; init; }
++}
++
++public sealed record QueueSubmitDesc
++{
++    // 実行順。空ならwaitまたはsignalが必須。
++    public IReadOnlyList<IGraphicsCommandBuffer> CommandBuffers { get; init; } = [];
++    // 自動追加なし。同じsemaphoreの重複を拒否する。
++    public IReadOnlyList<SemaphoreWaitDesc> WaitSemaphores { get; init; } = [];
++    // command完了後にsignalする。waitとの同一semaphoreを拒否する。
++    public IReadOnlyList<IGraphicsSemaphore> SignalSemaphores { get; init; } = [];
++}
++
+ public interface IGraphicDevice
+ {
++    // 未signalのbinary semaphoreを生成する。
++    IGraphicsSemaphore CreateSemaphore();
+ }
  public interface IGraphicsQueue
  {
-+    // acquired frameを一度だけsubmit。commandは取得画像を使い、最後にPresentへ遷移する。
-+    IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers, IGraphicsSurfaceFrame frame);
++    // 指定されたwait／signalだけを発行。Frameを引数に取らない。
++    IGraphicsSubmission Submit(QueueSubmitDesc desc);
  }
  public enum TextureState
  {
@@ -239,12 +301,13 @@ Present stateのbarrierはネイティブ同期に必要な状態遷移を記録
 取得、submit、present、resizeを一つのrender loopへ自動化すると利用側のcommand発行と同期方針を制約するため採用しない。
 Frameを通常の所有Textureとして返すとネイティブSwapchain画像を誤って解放できるためleaseにする。
 共通のWindowHandle型を定義するとWindowingとの結合が増えるため、生成はバックエンド固有にする。
+FrameをSubmitへ渡して同期を自動接続する方式は利用側のwait／signal管理を隠すため採用しない。
 Present前に必ずCPUでsubmission完了を待つ方式はGPUの提示同期が可能な実装で直列化を強制するため採用しない。
 
 ## 結果と影響
 
 既存のRenderPass、TextureView、command APIを取得画像にも使える。
 表示先の生存、リサイズ、取得失敗への復旧、frameの解放を利用側が明示的に管理する必要がある。
-画像のnative ownershipと同期の差はバックエンドへ閉じ込める。
+画像のnative ownershipと同期の実現方法はバックエンドへ閉じ込める。同期オブジェクトの選択・signal／wait・再利用は利用側が管理する。
 共通APIのテストはleaseの失効、再構成、二重提示、明示的なsubmit、コピー読み戻しを確認する。
 実ウインドウのハンドル取得とそのintegration testは後続PRに分離する。

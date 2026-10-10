@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Owns one presentation image lease and its native synchronization objects.</summary>
+/// <summary>Owns one presentation image lease; caller-owned semaphores are supplied explicitly.</summary>
 public interface IGraphicsSurfaceFrame : IDisposable
 {
     /// <summary>Gets the acquisition, submission and presentation lifetime state.</summary>
@@ -10,8 +10,9 @@ public interface IGraphicsSurfaceFrame : IDisposable
     IGraphicsTexture Texture { get; }
 
     /// <summary>Requests presentation after the frame's explicit queue submission without a CPU completion wait.</summary>
+    /// <param name="waitSemaphores">The caller-selected same-device binary waits; omitted waits are not inserted automatically.</param>
     /// <returns>The native presentation outcome; no automatic resize or recovery occurs.</returns>
-    SurfaceStatus Present();
+    SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null);
 
     /// <summary>Explicitly waits until GPU and presentation use allow frame disposal.</summary>
     /// <param name="cancellationToken">Cancels waiting without releasing the frame.</param>

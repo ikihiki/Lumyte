@@ -1,6 +1,5 @@
 using Lumyte.Graphics.Abstractions;
 using Silk.NET.Vulkan;
-using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Lumyte.Graphics.Vulkan;
 
@@ -16,14 +15,9 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     {
         _swapchain = swapchain;
         Lifetime = new(IsNativeReleased);
-        var semaphoreInfo = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
         var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
         try
         {
-            VulkanPresentation.Check(Owner.Api.CreateSemaphore(Owner.NativeDevice, &semaphoreInfo, null, out Semaphore acquire), "CreateSemaphore");
-            AcquireSemaphore = acquire;
-            VulkanPresentation.Check(Owner.Api.CreateSemaphore(Owner.NativeDevice, &semaphoreInfo, null, out Semaphore render), "CreateSemaphore");
-            RenderSemaphore = render;
             VulkanPresentation.Check(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence acquireFence), "CreateFence");
             AcquireFence = acquireFence;
             VulkanPresentation.Check(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence presentFence), "CreateFence");
@@ -44,21 +38,34 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
 
     internal SurfaceFrameLifetime Lifetime { get; }
 
-    internal Semaphore AcquireSemaphore { get; }
-
-    internal Semaphore RenderSemaphore { get; }
-
     internal Fence AcquireFence { get; }
 
     internal Fence PresentFence { get; }
 
-    public SurfaceStatus Present()
+    public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
-        SurfaceStatus status = _swapchain.Present(_index, RenderSemaphore, PresentFence);
+        IGraphicsSemaphore[] snapshot = waitSemaphores?.ToArray() ?? [];
+        SemaphoreValidation.Presentation(snapshot);
+        VulkanSemaphore[] waits = snapshot.Select(value =>
+        {
+            if (value is not VulkanSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
+            }
+
+            semaphore.State.ValidateWait();
+            return semaphore;
+        }).ToArray();
+        SurfaceStatus status = _swapchain.Present(_index, waits.Select(semaphore => semaphore.Native).ToArray(), PresentFence);
         _presented = true;
         _deviceLost = status == SurfaceStatus.DeviceLost;
         Lifetime.MarkPresented();
+        foreach (VulkanSemaphore semaphore in waits)
+        {
+            semaphore.State.MarkWait(() => Lifetime.IsReleased);
+        }
+
         return status;
     }
 
@@ -100,16 +107,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         if (AcquireFence.Handle != 0)
         {
             Owner.Api.DestroyFence(Owner.NativeDevice, AcquireFence, null);
-        }
-
-        if (RenderSemaphore.Handle != 0)
-        {
-            Owner.Api.DestroySemaphore(Owner.NativeDevice, RenderSemaphore, null);
-        }
-
-        if (AcquireSemaphore.Handle != 0)
-        {
-            Owner.Api.DestroySemaphore(Owner.NativeDevice, AcquireSemaphore, null);
         }
     }
 

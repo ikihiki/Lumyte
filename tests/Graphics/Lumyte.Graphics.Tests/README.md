@@ -29,3 +29,6 @@ AdvancedCommandTestsはIndirect命令のwire layoutと、Wgpu／Vulkan（pipelin
 Surfaceのnativeハンドル受け取り口は、無効なsourceをネイティブ生成前に拒否するテストで確認します。
 Browser CIは外部OffscreenCanvas contextと共通SurfaceExerciseを使って取得、clear／readback、提示、失効、再構成を検証します。
 Wgpu／Vulkanの実ウインドウでのWSI実行は、ハンドル取得を提供する後続PRで検証します。
+
+SemaphoreTestsはWgpu／Vulkanで共通SemaphoreExerciseを実行し、CPU完了を待たずに発行するbinary semaphoreチェーンと検証エラー、再利用・所有権を確認します。
+Browser CIも同じexerciseを実行し、SurfaceExerciseでは取得・Submit・Presentのsemaphoreを明示します。

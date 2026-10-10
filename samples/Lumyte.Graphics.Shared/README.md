@@ -38,3 +38,6 @@ AdvancedCommandExerciseのvertex pullingはSlangの`SV_VulkanVertexID`でbaseVer
 
 `SurfaceExercise.RunAsync(device, surface)`は外部から渡されたsurfaceへ共通APIだけで描画し、pixel readback、明示的なsubmit／Present、lease寿命、discard、resizeを確認します。
 ウインドウやcanvasの生成・取得はこのライブラリに含めません。BrowserのテストbootstrapがOffscreenCanvas contextを提供します。
+
+`SemaphoreExercise.RunAsync`は利用側のsignal／waitチェーン、待機stage、semaphore-only Submit、消費後の再利用、重複・未signal・失効・異なるdeviceの拒否を共通APIで検証します。
+SurfaceExerciseも取得signal、Submit wait／signal、Present waitを利用側から明示し、自動同期に依存しません。

@@ -5,27 +5,34 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
 {
-    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers) => SubmitCore(commandBuffers, null);
+    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers) => Submit(new QueueSubmitDesc { CommandBuffers = commandBuffers });
 
-    public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers, IGraphicsSurfaceFrame frame)
-    {
-        if (frame is not WgpuSurfaceFrame acquired || !ReferenceEquals(acquired.Owner, owner))
-        {
-            throw new ArgumentException("Presentation frame belongs to another device.", nameof(frame));
-        }
-
-        acquired.Lifetime.ValidateRecording();
-        return SubmitCore(commandBuffers, acquired);
-    }
-
-    private IGraphicsSubmission SubmitCore(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers, WgpuSurfaceFrame? frame)
+    public IGraphicsSubmission Submit(QueueSubmitDesc desc)
     {
         owner.ValidateAlive();
-        ArgumentNullException.ThrowIfNull(commandBuffers);
-        IGraphicsCommandBuffer[] snapshot = commandBuffers.ToArray();
-        if (snapshot.Length == 0)
+        ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
+        ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
+        ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        IGraphicsCommandBuffer[] snapshot = desc.CommandBuffers.ToArray();
+        SemaphoreWaitDesc[] waits = desc.WaitSemaphores.ToArray();
+        IGraphicsSemaphore[] signals = desc.SignalSemaphores.ToArray();
+        if (snapshot.Length == 0 && waits.Length == 0 && signals.Length == 0)
         {
-            throw new ArgumentException("Empty submission.");
+            throw new ArgumentException("A submission must contain commands, waits or signals.");
+        }
+
+        SemaphoreValidation.Submission(waits, signals);
+        WgpuSemaphore[] waiting = waits.Select(wait => OwnSemaphore(wait.Semaphore)).ToArray();
+        WgpuSemaphore[] signaling = signals.Select(OwnSemaphore).ToArray();
+        foreach (WgpuSemaphore semaphore in waiting)
+        {
+            semaphore.State.ValidateWait();
+        }
+
+        foreach (WgpuSemaphore semaphore in signaling)
+        {
+            semaphore.State.ValidateSignal();
         }
 
         var commands = new WgpuCommandBuffer[snapshot.Length];
@@ -43,15 +50,15 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
             handles[i] = (nint)buffer.Native;
         }
 
-        TextureState? finalSurfaceState = null;
-        foreach (WgpuCommandBuffer command in commands)
+        SurfaceFrameLifetime[] frames = commands.SelectMany(command => command.SurfaceFrames).Distinct().ToArray();
+        foreach (SurfaceFrameLifetime frame in frames)
         {
-            finalSurfaceState = command.ValidateSurfaceSubmission(frame?.Lifetime) ?? finalSurfaceState;
-        }
-
-        if (frame != null && finalSurfaceState != TextureState.Present)
-        {
-            throw new InvalidOperationException("A frame submission must use its image and end in explicit Present state.");
+            frame.ValidateRecording();
+            TextureState? finalState = commands.Select(command => command.GetSurfaceFinalState(frame)).Where(state => state.HasValue).LastOrDefault();
+            if (finalState != TextureState.Present)
+            {
+                throw new InvalidOperationException("Commands using an acquired image must end in explicit Present state.");
+            }
         }
 
         ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
@@ -68,7 +75,32 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
 
         var submission = new WgpuSubmission(owner, commands);
         owner.RetainSubmission();
-        frame?.Lifetime.MarkSubmitted(submission);
+        foreach (SurfaceFrameLifetime frame in frames)
+        {
+            frame.MarkSubmitted(submission);
+        }
+
+        foreach (WgpuSemaphore semaphore in waiting)
+        {
+            semaphore.State.MarkWait(() => submission.Status != SubmissionStatus.Pending);
+        }
+
+        foreach (WgpuSemaphore semaphore in signaling)
+        {
+            semaphore.State.MarkSignal(() => submission.Status != SubmissionStatus.Pending);
+        }
+
         return submission;
+    }
+
+    private WgpuSemaphore OwnSemaphore(IGraphicsSemaphore value)
+    {
+        if (value is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, owner))
+        {
+            throw new ArgumentException("Semaphore belongs to another device.", nameof(value));
+        }
+
+        semaphore.State.ValidateAlive();
+        return semaphore;
     }
 }

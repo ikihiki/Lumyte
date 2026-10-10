@@ -25,6 +25,7 @@ internal static partial class Program
         Record(ArgumentTableExercise.Run(device), reports);
         Record(ShaderExercise.Run(device), reports);
         Record(await CommandExercise.RunAsync(device), reports);
+        Record(await SemaphoreExercise.RunAsync(device), reports);
         Record(await PipelineExercise.RunAsync(device), reports);
         Record(await AdvancedCommandExercise.RunAsync(device), reports);
         Record(await ShaderBindingExercise.RunAsync(device), reports);
@@ -41,6 +42,7 @@ internal static partial class Program
         }
 
         using BrowserDevice foreign = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
+        SemaphoreExercise.CheckForeignDevice(device, foreign);
         ArgumentTableExercise.CheckForeignDevice(device, foreign);
         PipelineExercise.CheckForeignDevice(device, foreign);
         _report = string.Join("\n", reports);

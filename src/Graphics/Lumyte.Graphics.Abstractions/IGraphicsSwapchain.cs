@@ -11,7 +11,8 @@ public interface IGraphicsSwapchain : IDisposable
     void Reconfigure(SwapchainDesc desc);
 
     /// <summary>Attempts acquisition without waiting for an unavailable image.</summary>
+    /// <param name="signalSemaphore">An optional same-device binary semaphore signaled by successful acquisition; null requests no semaphore signal.</param>
     /// <param name="cancellationToken">Cancels before native acquisition; a successful acquisition always returns its owned lease.</param>
     /// <returns>A usable frame or a recovery status without waiting for GPU image readiness on the CPU.</returns>
-    ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(CancellationToken cancellationToken = default);
+    ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(IGraphicsSemaphore? signalSemaphore = null, CancellationToken cancellationToken = default);
 }

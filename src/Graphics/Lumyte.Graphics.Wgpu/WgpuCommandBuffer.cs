@@ -22,6 +22,8 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
 
     internal WgpuDevice Owner => _owner;
 
+    internal IReadOnlyCollection<SurfaceFrameLifetime> SurfaceFrames => _surfaceFrames;
+
     internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
@@ -304,15 +306,8 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
         }
     }
 
-    internal TextureState? ValidateSurfaceSubmission(SurfaceFrameLifetime? frame)
-    {
-        if (_surfaceFrames.Any(used => !ReferenceEquals(used, frame)))
-        {
-            throw new InvalidOperationException("Submit acquired images with their explicit frame and no other frame.");
-        }
-
-        return _states.Where(pair => pair.Key.Texture is WgpuTexture texture && ReferenceEquals(texture.SurfaceFrame, frame) && frame != null).Select(pair => (TextureState?)pair.Value).LastOrDefault();
-    }
+    internal TextureState? GetSurfaceFinalState(SurfaceFrameLifetime frame) =>
+        _states.Where(pair => pair.Key.Texture is WgpuTexture texture && ReferenceEquals(texture.SurfaceFrame, frame)).Select(pair => (TextureState?)pair.Value).LastOrDefault();
 
     internal void MarkSubmitted()
     {

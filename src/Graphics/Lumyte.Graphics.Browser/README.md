@@ -160,10 +160,19 @@ WebGPUの標準filterable形式を使い、追加のオプションfeatureは要
 
 canvas configureでRGBA8／BGRA8／RGBA16 float、usage、pixel size、opaque／premultiplied alphaを設定します。
 ブラウザーのcomposition schedulingを利用するため、共通のPresentModeはFifoだけを公開します。
-`Present()`は明示的なsubmit後に論理frameを閉じる操作です。WebGPUには独立したnative present呼び出しがなく、実際のcompositionはブラウザーが行うため、その時刻や同期intervalをこのAPIで制御しません。
+`Present(waitSemaphores)`は明示的なsubmit後に論理frameを閉じる操作です。WebGPUには独立したnative present呼び出しがなく、実際のcompositionはブラウザーが行うため、その時刻や同期intervalをこのAPIで制御しません。
 取得から記録・submit・Presentまでは同じブラウザー描画turn内に行い、その間に任意の非同期処理へyieldしないでください。
 取得画像を解放するときも`GPUTexture.destroy()`は呼ばず、canvas contextの画像所有権とcompositionを維持します。
 GPU完了とframeの解放待機は、その後に明示的に行えます。
 
 既存Browser CIへ外部OffscreenCanvas contextを渡し、共通SurfaceExerciseでclear結果の読み戻し、lease失効、二重Present、discard、resizeを検証します。
 実ウインドウ／DOMから表示先を取得する連携は別PRです。
+
+## 明示的なGPU semaphore
+
+`device.CreateSemaphore()`は単一device queueの発行順序を表すbinary semaphoreを生成します。
+WebGPUにはnative semaphoreがないため、GPUへ発行済みのsignalと一回のwaitを検証し、同じqueueの順序保証へ対応付けます。
+取得に渡されたsemaphoreだけをsignal済みにし、Submit／Presentに渡されたwaitだけを消費します。
+wait stageはGPUの非空stageを検証しますが、WebGPUにはstage別のnative待機操作がなく、queue順序へ対応付けます。
+CPU待機、追加submit、queue idleは挿入しません。commandのないwait／signal Submitも明示的に発行できます。
+外部queue・device間の同期や未発行signalへの将来waitは公開しません。使用中のDisposeを拒否し、再利用時点と利用者の同期は呼び出し側が管理します。

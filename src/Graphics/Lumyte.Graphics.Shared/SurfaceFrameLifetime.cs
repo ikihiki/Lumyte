@@ -11,6 +11,9 @@ public sealed class SurfaceFrameLifetime(Func<bool> isNativeReleased)
     /// <summary>Gets the current lease state.</summary>
     public SurfaceFrameStatus Status { get; private set; } = SurfaceFrameStatus.Acquired;
 
+    /// <summary>Gets a value indicating whether all recorded GPU and native image-lease uses have ended without inserting a wait.</summary>
+    public bool IsReleased => Status == SurfaceFrameStatus.Disposed || (_submission?.Status != SubmissionStatus.Pending && isNativeReleased());
+
     /// <summary>Rejects new recording after submission or image release.</summary>
     public void ValidateRecording()
     {
@@ -56,7 +59,7 @@ public sealed class SurfaceFrameLifetime(Func<bool> isNativeReleased)
             return;
         }
 
-        if (_submission?.Status == SubmissionStatus.Pending || !isNativeReleased())
+        if (!IsReleased)
         {
             throw new InvalidOperationException("Wait for GPU and presentation use before releasing the frame.");
         }
@@ -69,7 +72,7 @@ public sealed class SurfaceFrameLifetime(Func<bool> isNativeReleased)
     {
         ObjectDisposedException.ThrowIf(Status == SurfaceFrameStatus.Disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        while (_submission?.Status == SubmissionStatus.Pending || !isNativeReleased())
+        while (!IsReleased)
         {
             await Task.Delay(1, cancellationToken);
         }

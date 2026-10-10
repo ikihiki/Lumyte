@@ -23,10 +23,29 @@ internal sealed class BrowserSurfaceFrame : IGraphicsSurfaceFrame
 
     internal BrowserDevice Owner => _swapchain.Owner;
 
-    public SurfaceStatus Present()
+    public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
+        Lifetime.ValidatePresent();
+        IGraphicsSemaphore[] snapshot = waitSemaphores?.ToArray() ?? [];
+        SemaphoreValidation.Presentation(snapshot);
+        BrowserSemaphore[] waits = snapshot.Select(value =>
+        {
+            if (value is not BrowserSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
+            }
+
+            semaphore.State.ValidateWait();
+            return semaphore;
+        }).ToArray();
         Lifetime.MarkPresented();
-        return _swapchain.Present();
+        SurfaceStatus status = _swapchain.Present();
+        foreach (BrowserSemaphore semaphore in waits)
+        {
+            semaphore.State.MarkWait(() => Lifetime.IsReleased);
+        }
+
+        return status;
     }
 
     public ValueTask WaitForReleaseAsync(CancellationToken cancellationToken = default) => Lifetime.WaitForReleaseAsync(cancellationToken);

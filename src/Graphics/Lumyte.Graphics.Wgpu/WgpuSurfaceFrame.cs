@@ -22,11 +22,29 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
 
     internal WgpuDevice Owner => _swapchain.Owner;
 
-    public SurfaceStatus Present()
+    public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
+        IGraphicsSemaphore[] snapshot = waitSemaphores?.ToArray() ?? [];
+        SemaphoreValidation.Presentation(snapshot);
+        WgpuSemaphore[] waits = snapshot.Select(value =>
+        {
+            if (value is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
+            }
+
+            semaphore.State.ValidateWait();
+            return semaphore;
+        }).ToArray();
         Lifetime.MarkPresented();
-        return _swapchain.Present();
+        SurfaceStatus status = _swapchain.Present();
+        foreach (WgpuSemaphore semaphore in waits)
+        {
+            semaphore.State.MarkWait(() => Lifetime.IsReleased);
+        }
+
+        return status;
     }
 
     public ValueTask WaitForReleaseAsync(CancellationToken cancellationToken = default) => Lifetime.WaitForReleaseAsync(cancellationToken);
