@@ -128,41 +128,154 @@ var saved = await editable.SaveAsync(edit, cancellationToken);
 
 ### 公開 API 一覧
 
-主要な追加 API を差分形式で示す。既存 InputSystem の API は ElapsedTime を除いて維持する。
+比較元は `5bf75e46ec8320a889315a0707ca16ea29e54b34`（本 PR 取り込み前の main）。InputSystem の既存宣言は文脈として残し、ElapsedTime と Processing・Settings の主要な公開契約を追加として示す。
 
 ```diff
---- /dev/null
-+++ b/INPUT-0002-processing-and-recognition-public-api.txt
-@@ -0,0 +1,29 @@
-+InputSystem.ElapsedTime : TimeSpan
-+InputTimeSource.GetElapsedTime() : TimeSpan
-+InputTimeSource.Attach(InputSystem system)
-+IDeviceDataProcessor.Process(IReadOnlyList<InputData> data, TimeSpan now)
-+IDeviceDataProcessor.Reset()
-+AnalogCorrection(Vector2 center, float deadZone = 0.15f,
-+    float pressureExponent = 1)
-+ExponentialStickSmoothing(float seconds)
-+CorrectedInputDevice(IInputDevice inner,
-+    IEnumerable<IDeviceDataProcessor> processors, Func<TimeSpan> getTime)
-+CorrectedInputDevice.SetProcessors(IEnumerable<IDeviceDataProcessor> processors)
-+CorrectingInputSource(IInputSource inner,
-+    Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory,
-+    Func<TimeSpan> getTime)
-+CorrectingInputSource.SetProcessorFactory(
-+    Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory)
-+IVirtualDeviceGenerator.Generate(InputDeviceId origin,
-+    IReadOnlyList<InputData> data, TimeSpan now)
-+IVirtualDeviceGenerator.Reset(InputDeviceId origin, TimeSpan now)
-+TouchControllerGenerator(float radius = 100, float swipeDistance = 80)
-+VirtualizingInputSource(IInputSource inner,
-+    Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory,
-+    Func<TimeSpan> getTime)
-+VirtualizingInputSource.SetGeneratorFactory(
-+    Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory)
-+IServiceCollection.AddInputSettings()
-+InputSettingsConverter.BuildCorrections(InputProcessingSettings settings,
-+    Func<InputDeviceDescriptor, string>? selectProfile = null)
-+InputSettingsCoordinator.ApplyCommittedSettings()
+ using System;
+
+ namespace Lumyte.Input
+ {
+     public sealed class InputSystem : IDisposable
+     {
++        // 開始からの単調増加時刻。記録・補正・アクションで共有する。
++        public TimeSpan ElapsedTime { get; }
+     }
+ }
+```
+
+```diff
++using System;
++using System.Collections.Generic;
++using System.Numerics;
++using Lumyte.Input;
++
++namespace Lumyte.Input.Processing
++{
++    // InputSystem と補正層で同じ単調増加時計を使う。Attach 前は 0。
++    public sealed class InputTimeSource
++    {
++        public InputTimeSource();
++        public TimeSpan ElapsedTime { get; }
++        public TimeSpan GetElapsedTime();
++        public void Attach(InputSystem system);
++    }
++
++    public interface IDeviceDataProcessor
++    {
++        // 入出力バッチは不変。失敗時は内部状態を維持し、同じ入力と時刻で再試行できる。
++        IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now);
++        // 一時状態を破棄する。失敗時は状態を維持し、再試行できる。
++        void Reset();
++    }
++    public sealed class AnalogCorrection : IDeviceDataProcessor
++    {
++        // 中心補正、スティックのデッドゾーン、筆圧カーブ。取得不能の筆圧は null を維持する。
++        public AnalogCorrection(Vector2 center, float deadZone = 0.15f,
++            float pressureExponent = 1);
++        public IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now);
++        public void Reset();
++    }
++    public sealed class ExponentialStickSmoothing : IDeviceDataProcessor
++    {
++        // seconds は正の有限値。空バッチでも時計の検証と経過時間の追跡を行う。
++        public ExponentialStickSmoothing(float seconds);
++        public IReadOnlyList<InputData> Process(IReadOnlyList<InputData> data, TimeSpan now);
++        public void Reset();
++    }
++    public sealed class CorrectedInputDevice : IInputDevice
++    {
++        // inner を所有する。取得してから、指定順に補正して InputSystem に返す。
++        public CorrectedInputDevice(IInputDevice inner,
++            IEnumerable<IDeviceDataProcessor> processors, Func<TimeSpan> getTime);
++        public InputDeviceDescriptor Descriptor { get; }
++        // 置換を予約し、次の取得境界で適用する。
++        public void SetProcessors(IEnumerable<IDeviceDataProcessor> processors);
++        // 失敗した加工段から再試行する。完了済みの加工段は再実行しない。
++        public IReadOnlyList<InputData> DrainEvents();
++        public void Dispose();
++    }
++    public sealed class CorrectingInputSource : IInputSource, IInputDeviceRegistry
++    {
++        // inner は借用する。Device ごとに独立した補正器を生成する。
++        public CorrectingInputSource(IInputSource inner,
++            Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory,
++            Func<TimeSpan> getTime);
++        public void Initialize(IInputDeviceRegistry registry);
++        public void Update();
++        public void Shutdown();
++        public void Dispose();
++        public InputDeviceId RegisterDevice(IInputDevice device);
++        public void UnregisterDevice(InputDeviceId device);
++        public void SetProcessorFactory(
++            Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory);
++    }
++
++    public interface IVirtualDeviceGenerator
++    {
++        // 補正済みの物理入力から、同じ更新内で仮想デバイスの入力を生成する。
++        IReadOnlyList<InputData> Generate(InputDeviceId origin,
++            IReadOnlyList<InputData> data, TimeSpan now);
++        void Reset(InputDeviceId origin, TimeSpan now);
++    }
++    public sealed class TouchControllerGenerator : IVirtualDeviceGenerator
++    {
++        // 接触移動をスティック、スワイプ・ピンチ・回転をコントローラー入力へ変換する。
++        public TouchControllerGenerator(float radius = 100, float swipeDistance = 80);
++        public IReadOnlyList<InputData> Generate(InputDeviceId origin,
++            IReadOnlyList<InputData> data, TimeSpan now);
++        public void Reset(InputDeviceId origin, TimeSpan now);
++    }
++    public sealed class VirtualizingInputSource : IInputSource, IInputDeviceRegistry
++    {
++        // factory が null を返す Device は物理入力だけ登録する。inner は借用する。
++        public VirtualizingInputSource(IInputSource inner,
++            Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory,
++            Func<TimeSpan> getTime);
++        public void Initialize(IInputDeviceRegistry registry);
++        public void Update();
++        public void Shutdown();
++        public void Dispose();
++        public InputDeviceId RegisterDevice(IInputDevice device);
++        public void UnregisterDevice(InputDeviceId device);
++        public void SetGeneratorFactory(
++            Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory);
++    }
++}
+```
+
+```diff
++using System;
++using System.Collections.Generic;
++using Lumyte.Input;
++using Lumyte.Input.Actions;
++using Lumyte.Input.Processing;
++using Lumyte.Settings;
++using Microsoft.Extensions.DependencyInjection;
++
++namespace Lumyte.Input.Settings
++{
++    public static class InputSettingsExtensions
++    {
++        // 補正とアクションの設定セクション・検証・JSON 型情報を登録する。
++        public static IServiceCollection AddInputSettings(this IServiceCollection services);
++    }
++    public static class InputSettingsConverter
++    {
++        // 保存済みの補正値を Device ごとの補正器ファクトリへ変換する。
++        public static Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>>
++            BuildCorrections(InputProcessingSettings settings,
++                Func<InputDeviceDescriptor, string>? selectProfile = null);
++    }
++    public sealed class InputSettingsCoordinator
++    {
++        public InputSettingsCoordinator(IEditableOptions<InputProcessingSettings> processing,
++            IEditableOptions<InputActionSettings> actions, CorrectingInputSource source,
++            ActionSystem system, VirtualizingInputSource? virtualSource = null,
++            Func<InputDeviceDescriptor, string>? selectProfile = null);
++        // 管理スレッドで呼ぶ。確定済み Revision の変更を更新境界へ反映する。
++        public void ApplyCommittedSettings();
++    }
++}
 ```
 
 ## 検討した代替案

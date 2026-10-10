@@ -172,79 +172,276 @@ actions.Advance(records, input.ElapsedTime);
 
 ### 公開 API 一覧
 
-主要 API を差分形式で示す。定義のコレクションは ImmutableArray、イベントの Devices も ImmutableArray とする。Composition ファクトリの `?` は `Optional<T>` で省略できる引数を示す。生成器は必須引数を先に、各グループを名前順に並べるため、利用例では名前付き引数で指定する。
+比較元は `5bf75e46ec8320a889315a0707ca16ea29e54b34`（本 PR 取り込み前の main）。Actions・設定連携・Composition 定義の主要な公開契約を追加として示す。Composition は生成済みのファクトリプロパティ、型付きデリゲートと名前付きスロット拡張も掲載する。
 
 ```diff
---- /dev/null
-+++ b/INPUT-0003-actions-and-contexts-public-api.txt
-@@ -0,0 +1,67 @@
-+ActionProfile(Actions, Bindings, Contexts, Recognitions)
-+ActionProfile.Validate()
-+ActionDefinition(Id, Kind, Sensitivity = 1,
-+    Normalize = false, SmoothingSeconds = 0)
-+ActionBinding(Id, ActionId, ContextId, Control, Scale,
-+    PressThreshold = 0.5f, ReleaseThreshold = 0.4f)
-+InputContext(Id, Priority = 0, Exclusive = false)
-+RecognitionDefinition(Id, ContextId, Kind, Actions, Window, TapCount = 2)
-+InputControl(InputControlKind Kind, int Index)
-+InputControl.ForKey(Key key)
-+InputControl.ForButton(ControllerButton button)
-+ActionState(ActionValueKind Kind, Vector2 Value)
-+ActionEvent(ActionId, Phase, Value, At, Devices, ContextId)
-+RecognizedAction(RecognitionId, ContextId, At, Value, Devices)
-+IActionValueProcessor.Process(ActionState mapped, TimeSpan now)
-+IActionValueProcessor.Reset()
-+IActionRecognizer.Advance(IReadOnlyList<ActionEvent> events, TimeSpan now)
-+IActionRecognizer.Reset()
-+InputBufferOptions(TimeSpan Lifetime, int MaxEntries)
-+ActionInputBuffer(InputBufferOptions options)
-+ActionInputBuffer.Add(RecognizedAction action, TimeSpan now)
-+ActionInputBuffer.TryConsume(string id, TimeSpan now,
-+    out RecognizedAction? action)
-+ActionInputBuffer.Clear() / ClearContext(string id)
-+ActionInputBuffer.ClearDevice(InputDeviceId id) / Prune(TimeSpan now)
-+ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions = null)
-+ActionSystem.SetDevices(IEnumerable<InputDeviceId> devices)
-+ActionSystem.ActivateContext(string id) / DeactivateContext(string id)
-+ActionSystem.SetValueProcessors(string contextId, string actionId,
-+    IEnumerable<IActionValueProcessor> processors)
-+ActionSystem.SetRecognizers(string contextId,
-+    IEnumerable<IActionRecognizer> recognizers)
-+ActionSystem.Advance(ReadOnlyMemory<InputRecord> records, TimeSpan now)
-+ActionSystem.GetState(string actionId) : ActionState
-+ActionSystem.Buffer : ActionInputBuffer
-+ActionSystem.Changed : event Action<ActionEvent>
-+ActionSystem.Recognized : event Action<RecognizedAction>
-+ActionSystem.Reset(InputDeviceId device, TimeSpan now)
-+ActionSystem.ExportProfile() : ActionProfile
-+ActionSystem.ApplyProfile(ActionProfile profile)
-+ActionSystem.SetBufferOptions(InputBufferOptions options)
-+ActionSystem.BeginRebind(string bindingId, RebindOptions options)
-+RebindSession.SourceProfile : ActionProfile
-+RebindSession.Candidate : InputControl?
-+RebindSession.Conflicts : ImmutableArray<string>
-+RebindSession.IsComplete : bool
-+RebindSession.PrepareProfile(RebindConflictPolicy policy) : ActionProfile
-+RebindSession.Confirm(RebindConflictPolicy policy) / Cancel()
-+InputSettingsCoordinator.SaveRebindAsync(RebindSession session,
-+    RebindConflictPolicy policy, CancellationToken cancellationToken = default)
-+InputSettingsConverter.BuildProfile(InputActionSettings settings)
-+InputSettingsConverter.ToSettings(ActionProfile profile,
-+    InputBufferOptions? bufferOptions = null)
-+Compose.Profile(with?) : Compose.Definitions.Profile
-+Compose.Action(id, kind, normalize?, sensitivity?, smoothingSeconds?, with?)
-+Compose.Binding(actionId, contextId, control, id, pressThreshold?, releaseThreshold?, scale?, with?)
-+Compose.Context(id, exclusive?, priority?, with?)
-+Compose.Recognition(actions, contextId, id, kind, window, tapCount?, with?)
-+Compose.Profile.Actions()[params Compose.Definitions.Action[]]
-+Compose.Profile.Bindings()[params Compose.Definitions.Binding[]]
-+Compose.Profile.Contexts()[params Compose.Definitions.Context[]]
-+Compose.Profile.Recognitions()[params Compose.Definitions.Recognition[]]
-+Compose.Definitions.Profile.Build() : ActionProfile
-+Compose.Definitions.Action.Build() : ActionDefinition
-+Compose.Definitions.Binding.Build() : ActionBinding
-+Compose.Definitions.Context.Build() : InputContext
-+Compose.Definitions.Recognition.Build() : RecognitionDefinition
++using System;
++using System.Collections.Generic;
++using System.Collections.Immutable;
++using System.Numerics;
++using Lumyte.Input;
++
++namespace Lumyte.Input.Actions
++{
++    public enum ActionValueKind { Button, Axis1D, Axis2D }
++    public enum ActionPhase { Started, Performed, Canceled }
++    public enum InputControlKind { Key, MouseButton, ControllerButton, ControllerStick, ControllerTrigger }
++    public enum RecognitionKind { Press, Hold, MultiTap, Chord, Sequence }
++    public enum RebindConflictPolicy { Reject, Allow, ReplaceConflicts }
++
++    // 不変の実行時定義。空配列は許可し、未初期化配列・重複 ID・不正参照・不正値は拒否する。
++    public sealed record ActionProfile(
++        ImmutableArray<ActionDefinition> Actions, ImmutableArray<ActionBinding> Bindings,
++        ImmutableArray<InputContext> Contexts, ImmutableArray<RecognitionDefinition> Recognitions)
++    {
++        public void Validate();
++    }
++    public sealed record ActionDefinition(string Id, ActionValueKind Kind,
++        float Sensitivity = 1, bool Normalize = false, float SmoothingSeconds = 0);
++    public sealed record ActionBinding(string Id, string ActionId, string ContextId,
++        InputControl Control, Vector2 Scale, float PressThreshold = 0.5f,
++        float ReleaseThreshold = 0.4f);
++    public sealed record InputContext(string Id, int Priority = 0, bool Exclusive = false);
++    public sealed record RecognitionDefinition(string Id, string ContextId,
++        RecognitionKind Kind, ImmutableArray<string> Actions, TimeSpan Window, int TapCount = 2);
++    public readonly record struct InputControl(InputControlKind Kind, int Index)
++    {
++        public static InputControl ForKey(Key key);
++        public static InputControl ForButton(ControllerButton button);
++    }
++    public sealed record ActionState(ActionValueKind Kind, Vector2 Value);
++    public sealed record ActionEvent(string ActionId, ActionPhase Phase, Vector2 Value,
++        TimeSpan At, ImmutableArray<InputDeviceId> Devices, string ContextId);
++    public sealed record RecognizedAction(string RecognitionId, string ContextId,
++        TimeSpan At, Vector2 Value, ImmutableArray<InputDeviceId> Devices);
++
++    public interface IActionValueProcessor
++    {
++        // Device のマッピング後の値を補正する。now は InputSystem の単調増加時刻。
++        ActionState Process(ActionState mapped, TimeSpan now);
++        void Reset();
++    }
++    public interface IActionRecognizer
++    {
++        // コンテキスト内の新規イベントを処理し、空バッチでもタイマーを進める。
++        IReadOnlyList<RecognizedAction> Advance(IReadOnlyList<ActionEvent> events, TimeSpan now);
++        void Reset();
++    }
++    public sealed record InputBufferOptions(TimeSpan Lifetime, int MaxEntries);
++    public sealed class ActionInputBuffer
++    {
++        public ActionInputBuffer(InputBufferOptions options);
++        public int Count { get; }
++        public void Add(RecognizedAction action, TimeSpan now);
++        // 寿命内の認識済み操作を一度だけ取り出す。失敗時は false と null を返す。
++        public bool TryConsume(string recognitionId, TimeSpan now, out RecognizedAction? action);
++        public void Prune(TimeSpan now);
++        public void Clear();
++        public void ClearContext(string contextId);
++        public void ClearDevice(InputDeviceId device);
++    }
++    public sealed class ActionSystem
++    {
++        // プレイヤー・利用者ごとに生成する。profile は構築時に検証する。
++        public ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions = null);
++        public ActionInputBuffer Buffer { get; }
++        public event Action<ActionEvent>? Changed;
++        public event Action<RecognizedAction>? Recognized;
++        public void SetDevices(IEnumerable<InputDeviceId> devices);
++        public void ActivateContext(string contextId);
++        public void DeactivateContext(string contextId);
++        // パイプラインの置換は次の Advance 境界で適用する。
++        public void SetValueProcessors(string contextId, string actionId,
++            IEnumerable<IActionValueProcessor> processors);
++        public void SetRecognizers(string contextId, IEnumerable<IActionRecognizer> recognizers);
++        // 全 Device の新規記録を Sequence 順で渡す。再送・時間逆行は拒否する。
++        public void Advance(ReadOnlyMemory<InputRecord> records, TimeSpan now);
++        public ActionState GetState(string actionId);
++        public void Reset(InputDeviceId device, TimeSpan now);
++        public ActionProfile ExportProfile();
++        // 検証後、次の Advance 境界で置換する。
++        public void ApplyProfile(ActionProfile profile);
++        public void SetBufferOptions(InputBufferOptions options);
++        public RebindSession BeginRebind(string bindingId, RebindOptions options);
++    }
++    public sealed record RebindOptions(TimeSpan Timeout, float AxisThreshold = 0.6f,
++        Key CancelKey = Key.Escape);
++    public sealed class RebindSession
++    {
++        // ActionSystem.BeginRebind が生成する。公開コンストラクターはない。
++        public string BindingId { get; }
++        public ActionProfile SourceProfile { get; }
++        public InputControl? Candidate { get; }
++        public ImmutableArray<string> Conflicts { get; }
++        public bool IsComplete { get; }
++        // 現在の割り当てを変えずに、保存する候補プロファイルを作る。
++        public ActionProfile PrepareProfile(RebindConflictPolicy policy);
++        // 保存を伴わず置換を予約する。永続化する場合は SaveRebindAsync を使う。
++        public void Confirm(RebindConflictPolicy policy);
++        public void Cancel();
++    }
++}
+```
+
+```diff
++using System;
++using System.Threading;
++using System.Threading.Tasks;
++using Lumyte.Input.Actions;
++using Lumyte.Settings;
++
++namespace Lumyte.Input.Settings
++{
++    public static class InputSettingsConverter
++    {
++        // DTO の名前を型付き定義へ変換し、検証する。
++        public static ActionProfile BuildProfile(InputActionSettings settings);
++        public static InputActionSettings ToSettings(ActionProfile profile,
++            InputBufferOptions? bufferOptions = null);
++        public static bool ValidateProcessing(InputProcessingSettings settings);
++        public static bool ValidateActions(InputActionSettings settings);
++    }
++    public sealed class InputSettingsCoordinator
++    {
++        // 捕捉開始時の定義と確定 Revision を照合し、保存成功後だけ適用を予約する。
++        // 構築と更新境界の API は INPUT-0002 に示す。
++        public Task<SettingsSaveResult<InputActionSettings>> SaveRebindAsync(
++            RebindSession session, RebindConflictPolicy policy,
++            CancellationToken cancellationToken = default);
++    }
++}
+```
+
+```diff
++using System;
++using System.Collections.Generic;
++using System.Collections.Immutable;
++using System.Numerics;
++using Lumyte.Composition;
++
++namespace Lumyte.Input.Actions
++{
++    // Composition 生成器によるファクトリ。利用側は Generator を追加せずに呼べる。
++    public static partial class Compose
++    {
++        public static Definitions.ActionFactory Action { get; }
++        public static Definitions.BindingFactory Binding { get; }
++        public static Definitions.ContextFactory Context { get; }
++        public static Definitions.RecognitionFactory Recognition { get; }
++        public static Definitions.ProfileFactory Profile { get; }
++
++        public static partial class Definitions
++        {
++            public delegate Action ActionFactory(
++                string id,
++                ActionValueKind kind,
++                Optional<bool> normalize = default,
++                Optional<float> sensitivity = default,
++                Optional<float> smoothingSeconds = default,
++                IReadOnlyList<System.Action<Action>>? with = null);
++
++            // 編集可能な構築ノード。実行中の ActionProfile を直接変更しない。
++            public partial class Action
++            {
++                public Action();
++                public required string Id { get; set; }
++                public required ActionValueKind Kind { get; set; }
++                public float Sensitivity { get; set; } = 1;
++                public bool Normalize { get; set; } = false;
++                public float SmoothingSeconds { get; set; } = 0;
++                public ActionDefinition Build();
++            }
++
++            public delegate Binding BindingFactory(
++                string actionId,
++                string contextId,
++                InputControl control,
++                string id,
++                Optional<float> pressThreshold = default,
++                Optional<float> releaseThreshold = default,
++                Optional<Vector2> scale = default,
++                IReadOnlyList<System.Action<Binding>>? with = null);
++
++            // 編集可能な構築ノード。実行中の ActionProfile を直接変更しない。
++            public partial class Binding
++            {
++                public Binding();
++                public required string Id { get; set; }
++                public required string ActionId { get; set; }
++                public required string ContextId { get; set; }
++                public required InputControl Control { get; set; }
++                public Vector2 Scale { get; set; } = Vector2.One;
++                public float PressThreshold { get; set; } = 0.5f;
++                public float ReleaseThreshold { get; set; } = 0.4f;
++                public ActionBinding Build();
++            }
++
++            public delegate Context ContextFactory(
++                string id,
++                Optional<bool> exclusive = default,
++                Optional<int> priority = default,
++                IReadOnlyList<System.Action<Context>>? with = null);
++
++            // 編集可能な構築ノード。実行中の ActionProfile を直接変更しない。
++            public partial class Context
++            {
++                public Context();
++                public required string Id { get; set; }
++                public int Priority { get; set; } = 0;
++                public bool Exclusive { get; set; } = false;
++                public InputContext Build();
++            }
++
++            public delegate Recognition RecognitionFactory(
++                ImmutableArray<string> actions,
++                string contextId,
++                string id,
++                RecognitionKind kind,
++                TimeSpan window,
++                Optional<int> tapCount = default,
++                IReadOnlyList<System.Action<Recognition>>? with = null);
++
++            // 編集可能な構築ノード。実行中の ActionProfile を直接変更しない。
++            public partial class Recognition
++            {
++                public Recognition();
++                public required string Id { get; set; }
++                public required string ContextId { get; set; }
++                public required RecognitionKind Kind { get; set; }
++                public required ImmutableArray<string> Actions { get; set; }
++                public required TimeSpan Window { get; set; }
++                public int TapCount { get; set; } = 2;
++                public RecognitionDefinition Build();
++            }
++
++            public delegate Profile ProfileFactory(
++                IReadOnlyList<System.Action<Profile>>? with = null);
++
++            // 編集可能な構築ノード。実行中の ActionProfile を直接変更しない。
++            public partial class Profile
++            {
++                public Profile();
++                // 指定順にスロットを適用し、同じスロットの再指定は置換する。
++                public Profile this[params CompositionSlotAssignment<Profile>[] content] { get; }
++                // 不変レコードと配列を生成し、ActionProfile.Validate を実行する。
++                public ActionProfile Build();
++            }
++
++        }
++    }
++
++    public static class ComposeProfileCompositionExtensions
++    {
++        public static CompositionSlot<Compose.Definitions.Profile, Compose.Definitions.Action>
++            Actions(this Compose.Definitions.ProfileFactory __factory);
++        public static CompositionSlot<Compose.Definitions.Profile, Compose.Definitions.Binding>
++            Bindings(this Compose.Definitions.ProfileFactory __factory);
++        public static CompositionSlot<Compose.Definitions.Profile, Compose.Definitions.Context>
++            Contexts(this Compose.Definitions.ProfileFactory __factory);
++        public static CompositionSlot<Compose.Definitions.Profile, Compose.Definitions.Recognition>
++            Recognitions(this Compose.Definitions.ProfileFactory __factory);
++    }
++}
 ```
 
 ## 検討した代替案

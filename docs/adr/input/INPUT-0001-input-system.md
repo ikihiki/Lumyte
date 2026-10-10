@@ -53,12 +53,9 @@ InputSystem と Source は同じ寿命の DI スコープに置き、一つの S
 
 ### 公開 API 一覧
 
-以下は `Lumyte.Input` 名前空間に追加する主要 API を diff 形式で示した設計案である。すべて新規追加のため `+` 行とする。宣言の本体と内部メンバーを省略した API 一覧であり、このコードブロック自体はコンパイル用の実装ではない。実装は `src/Input/Lumyte.Input/` に置く。
+比較元は `99cbbcbd2c248a2d9b213612a072e5aa579dd051`（Input 基盤実装前）。以下は追加する主要な公開契約の宣言。実装は `src/Input/Lumyte.Input/` に配置する。
 
 ```diff
---- /dev/null
-+++ b/INPUT-0001-input-system-public-api.txt
-@@ -0,0 +1,163 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
