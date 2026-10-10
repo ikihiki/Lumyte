@@ -55,19 +55,18 @@ node tools/diagnostics/verify-browser.mjs
 
 [画面プレビュー](https://ikihiki.github.io/Lumyte/) は、実際の診断サーバーをChromiumで操作して撮影した静的ギャラリーです。ダウンロードやローカル起動なしで、ページ・画面幅による絞り込みと画像の拡大表示ができます。サーバーを操作するライブデモではありません。
 
-許可した同一リポジトリのPRは `previews/pr-<番号>/`、mainは `previews/main/` に公開します。全CI検証の成功後に公開し、撮影対象のコミットと撮影日時を表示します。PRではマージ結果のコミットを撮影します。各PRの最新画像を `gh-pages` ブランチに保持し、mainと最近撮影した最大20件のPRを掲載し、公開画像全体を800 MiB未満に制限します。古いコミットのCIを再実行した場合は公開を省略します。CIが失敗したときは最後に成功したプレビューを維持します。
+CIで生成した最新のギャラリーを、`upload-pages-artifact` と `deploy-pages` でGitHub Actionsから直接公開します。全CI検証の成功後に更新し、撮影対象のコミットと撮影日時を表示します。PRではマージ結果のコミットを撮影します。CIが失敗したときは最後に成功したプレビューを維持します。過去PRのギャラリーは公開先に蓄積しません。
 
 `verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
 
 ```sh
 GITHUB_REPOSITORY=ikihiki/Lumyte PREVIEW_COMMIT="$(git rev-parse HEAD)" PREVIEW_LABEL="Local preview" \
   node tools/diagnostics/generate-gallery.mjs artifacts/test-results/diagnostics-ui artifacts/diagnostics-gallery
-node tools/diagnostics/assemble-gallery-site.mjs artifacts/diagnostics-gallery artifacts/pages pr-26
 ```
 
 生成先ギャラリーは空ディレクトリを指定します。公開するファイルは閲覧用HTML/CSS/JavaScript、撮影情報、一覧に記載したPNGのみです。テストログ、失敗時のHTML、トークンは公開対象に含めません。
 
-PagesはGitHub Actionsを公開元とし、`github-pages` environmentのdeployment branch policyで `main` と今回の `refs/pull/26/merge` を許可します。公開ジョブはmainと同一リポジトリのPR #26に限定し、forkのPRは公開しません。他のPRへ公開を広げるときは、対象番号と対応するenvironmentの許可を明示的に追加します。`gh-pages` は生成物の保存専用です。公開ジョブを直列化し、別PRの画像を保持したままPagesサイト全体を更新します。
+PagesのSourceはGitHub Actionsに設定します。公開ブランチへの生成物のコミットは行いません。`github-pages` environmentのdeployment branch policyはSourceとは別の保護設定です。mainのみ許可されている場合、main上のActionsだけが公開できます。PR #26から先行公開するときだけ、既存のPR実行ref `refs/pull/26/merge` の許可が必要です（新しいブランチを作る操作ではありません）。公開ジョブはmainと同一リポジトリのPR #26に限定し、forkのPRは公開しません。古いソースコミットの公開を省略し、公開ジョブを直列化します。
 
 ## ゲームを接続
 

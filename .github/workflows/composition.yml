@@ -145,7 +145,6 @@ jobs:
         run: |
           source tools/setup/activate.sh
           node tools/diagnostics/generate-gallery.test.mjs
-          node tools/diagnostics/assemble-gallery-site.test.mjs
           node tools/diagnostics/generate-gallery.mjs artifacts/test-results/diagnostics-ui artifacts/diagnostics-gallery
 
       - name: Upload diagnostic gallery
@@ -228,43 +227,16 @@ jobs:
             echo 'Skipped a superseded source revision.' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        if: steps.current.outputs.publish == 'true'
-        with:
-          path: source
-
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        if: steps.current.outputs.publish == 'true'
-        with:
-          ref: gh-pages
-          path: site
-
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         if: steps.current.outputs.publish == 'true'
         with:
           name: diagnostics-gallery
           path: incoming
 
-      - name: Update preview archive
-        if: steps.current.outputs.publish == 'true'
-        env:
-          PREVIEW_KEY: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'main' }}
-        run: |
-          node source/tools/diagnostics/assemble-gallery-site.mjs incoming site "$PREVIEW_KEY"
-          git -C site config user.name 'github-actions[bot]'
-          git -C site config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C site add .
-          if ! git -C site diff --cached --quiet; then
-            git -C site commit -m "Update diagnostic preview $PREVIEW_KEY"
-            git -C site push origin HEAD:gh-pages
-          fi
-          mkdir public
-          git -C site archive HEAD | tar -x -C public
-
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         if: steps.current.outputs.publish == 'true'
         with:
-          path: public
+          path: incoming
 
       - name: Deploy GitHub Pages
         if: steps.current.outputs.publish == 'true'
@@ -275,6 +247,5 @@ jobs:
         if: steps.current.outputs.publish == 'true'
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-          PREVIEW_KEY: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'main' }}
         run: |
-          printf '[画面プレビューを見る](%spreviews/%s/)\n' "$PAGE_URL" "$PREVIEW_KEY" >> "$GITHUB_STEP_SUMMARY"
+          printf '[画面プレビューを見る](%s)\n' "$PAGE_URL" >> "$GITHUB_STEP_SUMMARY"
