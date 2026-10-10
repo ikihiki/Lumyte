@@ -199,7 +199,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
+      pull-requests: read
       pages: write
       id-token: write
     concurrency:
@@ -217,7 +218,7 @@ jobs:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ -n "$PR_NUMBER" ]; then
-            actual=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)
+            actual=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq 'if .state == "open" then .head.sha else "closed" end')
           else
             actual=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           fi
