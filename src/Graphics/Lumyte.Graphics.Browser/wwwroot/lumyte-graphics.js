@@ -330,7 +330,7 @@ export function getSurfaceStatus(surface) {
 }
 
 export function acquireSurfaceTexture(surface) {
-    return { texture: surface.context.getCurrentTexture(), disposed: false };
+    return surface.context.getCurrentTexture();
 }
 
 export function unconfigureSurface(surface) {
@@ -344,9 +344,4 @@ export function destroySurface(surface) {
         activeSurfaceContexts.delete(surface.context);
         surface.disposed = true;
     }
-}
-
-export function releaseSurfaceTexture(texture) {
-    // The GPUCanvasContext owns its textures and implicit composition. Never destroy a borrowed canvas image.
-    texture.disposed = true;
 }

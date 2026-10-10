@@ -29,9 +29,6 @@ internal static partial class BrowserInterop
     [JSImport("acquireSurfaceTexture", "Lumyte.Graphics.Browser")]
     internal static partial JSObject AcquireSurfaceTexture(JSObject surface);
 
-    [JSImport("releaseSurfaceTexture", "Lumyte.Graphics.Browser")]
-    internal static partial void ReleaseSurfaceTexture(JSObject texture);
-
     [JSImport("unconfigureSurface", "Lumyte.Graphics.Browser")]
     internal static partial void UnconfigureSurface(JSObject surface);
 

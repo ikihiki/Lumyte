@@ -97,11 +97,8 @@ internal sealed class BrowserTexture : IGraphicsTexture
         {
             BrowserInterop.DestroyTexture(_native);
         }
-        else
-        {
-            BrowserInterop.ReleaseSurfaceTexture(_native);
-        }
 
+        // A canvas owns borrowed images; releasing the managed reference must not destroy them.
         _native.Dispose();
         _disposed = true;
         if (_surfaceFrame == null)
