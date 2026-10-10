@@ -8,16 +8,6 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
-    private int _surfaceCount;
-    private int _semaphoreCount;
-    private int _bufferCount;
-    private int _textureCount;
-    private int _samplerCount;
-    private int _argumentTableCount;
-    private int _shaderCount;
-    private int _pipelineCount;
-    private int _commandCount;
-    private int _submissionCount;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -122,7 +112,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserGraphicsPipeline(this, desc);
-        _pipelineCount++;
         return program;
     }
 
@@ -132,7 +121,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserComputePipeline(this, desc);
-        _pipelineCount++;
         return program;
     }
 
@@ -141,7 +129,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     {
         ValidateAlive();
         var semaphore = new BrowserSemaphore(this);
-        _semaphoreCount++;
         return semaphore;
     }
 
@@ -151,7 +138,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new BrowserCommandBuffer(this);
-        _commandCount++;
         return commands;
     }
 
@@ -206,7 +192,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new BrowserBuffer<T>(this, desc, layout, size);
-        _bufferCount++;
         return buffer;
     }
 
@@ -217,7 +202,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new BrowserShaderDataBuffer<T>(this, artifact, count, memory);
-        _bufferCount++;
         return buffer;
     }
 
@@ -227,7 +211,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new BrowserTexture(this, desc);
-        _textureCount++;
         return texture;
     }
 
@@ -237,7 +220,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new BrowserSampler(this, desc);
-        _samplerCount++;
         return sampler;
     }
 
@@ -252,7 +234,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
 
         var table = new BrowserArgumentTable(this, desc);
-        _argumentTableCount++;
         return table;
     }
 
@@ -262,18 +243,12 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new BrowserShader(this, artifact);
-        _shaderCount++;
         return shader;
     }
 
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_semaphoreCount != 0 || _surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all surfaces, semaphores, argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
-        }
-
         if (_disposed)
         {
             return;
@@ -284,29 +259,5 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         _disposed = true;
     }
 
-    internal void ReleasePipeline() => _pipelineCount--;
-
-    internal void ReleaseCommand() => _commandCount--;
-
-    internal void RetainSubmission() => _submissionCount++;
-
-    internal void ReleaseSubmission() => _submissionCount--;
-
     internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
-
-    internal void ReleaseShader() => _shaderCount--;
-
-    internal void ReleaseArgumentTable() => _argumentTableCount--;
-
-    internal void ReleaseSampler() => _samplerCount--;
-
-    internal void RetainSurface() => _surfaceCount++;
-
-    internal void ReleaseSurface() => _surfaceCount--;
-
-    internal void ReleaseSemaphore() => _semaphoreCount--;
-
-    internal void ReleaseTexture() => _textureCount--;
-
-    internal void ReleaseBuffer() => _bufferCount--;
 }

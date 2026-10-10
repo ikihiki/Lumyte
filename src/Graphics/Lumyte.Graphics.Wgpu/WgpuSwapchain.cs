@@ -6,8 +6,6 @@ namespace Lumyte.Graphics.Wgpu;
 internal sealed class WgpuSwapchain : IGraphicsSwapchain
 {
     private readonly WgpuSurface _surface;
-    private int _frameCount;
-    private WgpuSurfaceFrame? _active;
     private bool _disposed;
 
     internal WgpuSwapchain(WgpuSurface surface, SwapchainDesc desc)
@@ -24,11 +22,6 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
     public void Reconfigure(SwapchainDesc desc)
     {
         ValidateAlive();
-        if (_frameCount != 0)
-        {
-            throw new InvalidOperationException("Release all frames before reconfiguration.");
-        }
-
         _surface.Configure(desc);
         Configuration = desc;
     }
@@ -37,23 +30,6 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
-        WgpuSemaphore? signal = null;
-        if (signalSemaphore != null)
-        {
-            if (signalSemaphore is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
-            {
-                throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
-            }
-
-            semaphore.State.ValidateSignal();
-            signal = semaphore;
-        }
-
-        if (_active != null)
-        {
-            throw new InvalidOperationException("Submit and present or discard the active wgpu image before acquisition.");
-        }
-
         Ahjo.Wgpu.SurfaceAcquireResult acquired = _surface.Native.GetCurrentTexture();
         SurfaceStatus status = acquired.Status switch
         {
@@ -70,10 +46,8 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
             return ValueTask.FromResult(new SurfaceAcquireResult(status, null));
         }
 
-        _active = new(this, acquired.Texture);
-        signal?.State.MarkSignal(() => true);
-        _frameCount++;
-        return ValueTask.FromResult(new SurfaceAcquireResult(status, _active));
+        var frame = new WgpuSurfaceFrame(this, acquired.Texture);
+        return ValueTask.FromResult(new SurfaceAcquireResult(status, frame));
     }
 
     public unsafe void Dispose()
@@ -83,36 +57,19 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
             return;
         }
 
-        if (_frameCount != 0)
-        {
-            throw new InvalidOperationException("Release all frames before swapchain disposal.");
-        }
-
         WGPU.wgpuSurfaceUnconfigure(_surface.Native.Handle);
         _disposed = true;
-        _surface.ReleaseSwapchain();
     }
 
     internal unsafe SurfaceStatus Present()
     {
         WGPUStatus status = WGPU.wgpuSurfacePresent(_surface.Native.Handle);
-        _active = null;
         if (status != WGPUStatus.Success)
         {
             throw new InvalidOperationException("wgpu presentation failed.");
         }
 
         return SurfaceStatus.Success;
-    }
-
-    internal void ReleaseFrame(WgpuSurfaceFrame frame)
-    {
-        if (ReferenceEquals(_active, frame))
-        {
-            _active = null;
-        }
-
-        _frameCount--;
     }
 
     private void ValidateAlive()

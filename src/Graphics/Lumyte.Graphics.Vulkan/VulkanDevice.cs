@@ -15,16 +15,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly PhysicalDevice _physicalDevice;
     private readonly Queue _nativeQueue;
     private readonly VulkanPresentation? _presentation;
-    private int _surfaceCount;
-    private int _semaphoreCount;
-    private int _bufferCount;
-    private int _textureCount;
-    private int _samplerCount;
-    private int _argumentTableCount;
-    private int _shaderCount;
-    private int _pipelineCount;
-    private int _commandCount;
-    private int _submissionCount;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
@@ -167,7 +157,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanGraphicsPipeline(this, desc);
-        _pipelineCount++;
         return program;
     }
 
@@ -177,7 +166,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanComputePipeline(this, desc);
-        _pipelineCount++;
         return program;
     }
 
@@ -186,7 +174,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     {
         ValidateAlive();
         var semaphore = new VulkanSemaphore(this);
-        _semaphoreCount++;
         return semaphore;
     }
 
@@ -196,7 +183,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new VulkanCommandBuffer(this);
-        _commandCount++;
         return commands;
     }
 
@@ -251,7 +237,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new VulkanBuffer<T>(this, desc, layout, size);
-        _bufferCount++;
         return buffer;
     }
 
@@ -262,7 +247,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new VulkanShaderDataBuffer<T>(this, artifact, count, memory);
-        _bufferCount++;
         return buffer;
     }
 
@@ -272,7 +256,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new VulkanTexture(this, desc);
-        _textureCount++;
         return texture;
     }
 
@@ -282,7 +265,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new VulkanSampler(this, desc);
-        _samplerCount++;
         return sampler;
     }
 
@@ -297,7 +279,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
 
         var table = new VulkanArgumentTable(this, desc);
-        _argumentTableCount++;
         return table;
     }
 
@@ -307,18 +288,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new VulkanShader(this, artifact);
-        _shaderCount++;
         return shader;
     }
 
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_semaphoreCount != 0 || _surfaceCount != 0 || _bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all surfaces, semaphores, argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
-        }
-
         if (_disposed)
         {
             return;
@@ -331,31 +306,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _disposed = true;
     }
 
-    internal void ReleasePipeline() => _pipelineCount--;
-
-    internal void ReleaseCommand() => _commandCount--;
-
-    internal void RetainSubmission() => _submissionCount++;
-
-    internal void ReleaseSubmission() => _submissionCount--;
-
     internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
-
-    internal void ReleaseShader() => _shaderCount--;
-
-    internal void ReleaseArgumentTable() => _argumentTableCount--;
-
-    internal void ReleaseSampler() => _samplerCount--;
-
-    internal void RetainSurface() => _surfaceCount++;
-
-    internal void ReleaseSurface() => _surfaceCount--;
-
-    internal void ReleaseSemaphore() => _semaphoreCount--;
-
-    internal void ReleaseTexture() => _textureCount--;
-
-    internal void ReleaseBuffer() => _bufferCount--;
 
     private static VulkanDevice CreateCore(VulkanDeviceDesc desc)
     {

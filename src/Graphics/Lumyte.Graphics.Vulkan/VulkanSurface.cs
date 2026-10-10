@@ -8,7 +8,6 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
 {
     private readonly VulkanDevice _owner;
     private readonly SurfaceKHR _native;
-    private VulkanSwapchain? _swapchain;
     private bool _disposed;
 
     internal VulkanSurface(VulkanDevice owner, SurfaceKHR native)
@@ -19,9 +18,6 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
         {
             throw new NotSupportedException("The device queue cannot present to this supplied surface.");
         }
-
-        _ = GetCapabilities();
-        owner.RetainSurface();
     }
 
     internal VulkanDevice Owner => _owner;
@@ -90,13 +86,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
     public IGraphicsSwapchain CreateSwapchain(SwapchainDesc desc)
     {
         ValidateAlive();
-        if (_swapchain != null)
-        {
-            throw new InvalidOperationException("The surface already owns a swapchain.");
-        }
-
-        _swapchain = new(this, desc);
-        return _swapchain;
+        return new VulkanSwapchain(this, desc);
     }
 
     public void Dispose()
@@ -106,14 +96,8 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
             return;
         }
 
-        if (_swapchain != null)
-        {
-            throw new InvalidOperationException("Dispose the swapchain before its surface.");
-        }
-
         _owner.Presentation.Surface.DestroySurface(_owner.NativeInstance, _native, null);
         _disposed = true;
-        _owner.ReleaseSurface();
     }
 
     internal static PresentModeKHR Mode(PresentMode mode) => mode switch
@@ -128,8 +112,6 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
         VulkanPresentation.Check(_owner.Presentation.Surface.GetPhysicalDeviceSurfaceCapabilities(_owner.PhysicalDevice, _native, out SurfaceCapabilitiesKHR caps), "GetPhysicalDeviceSurfaceCapabilities");
         return caps;
     }
-
-    internal void ReleaseSwapchain() => _swapchain = null;
 
     internal void ValidateAlive()
     {

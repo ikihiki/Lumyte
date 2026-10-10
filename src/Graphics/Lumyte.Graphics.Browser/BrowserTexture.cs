@@ -8,7 +8,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
     private readonly BrowserDevice _owner;
     private readonly JSObject _native;
     private readonly SurfaceFrameLifetime? _surfaceFrame;
-    private int _viewCount;
     private bool _disposed;
 
     internal BrowserTexture(BrowserDevice owner, TextureDesc desc)
@@ -39,7 +38,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            _surfaceFrame?.ValidateRecording();
+
             return _native;
         }
     }
@@ -51,7 +50,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _surfaceFrame?.ValidateRecording();
+
         if (mipLevel >= MipLevels)
         {
             throw new ArgumentOutOfRangeException(nameof(mipLevel));
@@ -63,11 +62,10 @@ internal sealed class BrowserTexture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _surfaceFrame?.ValidateRecording();
+
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
         JSObject native = BrowserInterop.CreateTextureView(_native, (int)info.Dimension, checked((int)info.BaseMipLevel), checked((int)info.MipLevelCount), checked((int)info.BaseArrayLayer), checked((int)info.ArrayLayerCount));
         var view = new BrowserTextureView(this, info, native);
-        _viewCount++;
         return view;
     }
 
@@ -88,11 +86,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
             return;
         }
 
-        if (_viewCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all views before disposing their texture.");
-        }
-
         if (_surfaceFrame == null)
         {
             BrowserInterop.DestroyTexture(_native);
@@ -101,11 +94,5 @@ internal sealed class BrowserTexture : IGraphicsTexture
         // A canvas owns borrowed images; releasing the managed reference must not destroy them.
         _native.Dispose();
         _disposed = true;
-        if (_surfaceFrame == null)
-        {
-            _owner.ReleaseTexture();
-        }
     }
-
-    internal void ReleaseView() => _viewCount--;
 }

@@ -25,25 +25,8 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
     public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
-        IGraphicsSemaphore[] snapshot = waitSemaphores?.ToArray() ?? [];
-        SemaphoreValidation.Presentation(snapshot);
-        WgpuSemaphore[] waits = snapshot.Select(value =>
-        {
-            if (value is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
-            {
-                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
-            }
-
-            semaphore.State.ValidateWait();
-            return semaphore;
-        }).ToArray();
-        Lifetime.MarkPresented();
         SurfaceStatus status = _swapchain.Present();
-        foreach (WgpuSemaphore semaphore in waits)
-        {
-            semaphore.State.MarkWait(() => Lifetime.IsReleased);
-        }
-
+        Lifetime.MarkPresented();
         return status;
     }
 
@@ -56,9 +39,7 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        Lifetime.ValidateRelease();
         _texture.DisposeLease();
         Lifetime.MarkDisposed();
-        _swapchain.ReleaseFrame(this);
     }
 }

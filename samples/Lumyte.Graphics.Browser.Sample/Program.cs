@@ -57,7 +57,6 @@ internal static partial class Program
         }
 
         using BrowserDevice foreign = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
-        SemaphoreExercise.CheckForeignDevice(device, foreign);
         ArgumentTableExercise.CheckForeignDevice(device, foreign);
         PipelineExercise.CheckForeignDevice(device, foreign);
         _report = string.Join("\n", reports);

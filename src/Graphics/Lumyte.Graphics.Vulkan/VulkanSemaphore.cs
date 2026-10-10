@@ -20,8 +20,6 @@ internal sealed unsafe class VulkanSemaphore : IGraphicsSemaphore
 
     internal Semaphore Native { get; }
 
-    internal BinarySemaphoreState State { get; } = new();
-
     public void Dispose()
     {
         if (_disposed)
@@ -29,10 +27,7 @@ internal sealed unsafe class VulkanSemaphore : IGraphicsSemaphore
             return;
         }
 
-        State.ValidateDispose();
         Owner.Api.DestroySemaphore(Owner.NativeDevice, Native, null);
-        State.MarkDisposed();
         _disposed = true;
-        Owner.ReleaseSemaphore();
     }
 }

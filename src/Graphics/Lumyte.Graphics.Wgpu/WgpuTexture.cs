@@ -9,7 +9,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
     private readonly WgpuDevice _owner;
     private readonly A.Texture _native;
     private readonly SurfaceFrameLifetime? _surfaceFrame;
-    private int _viewCount;
     private bool _disposed;
 
     internal WgpuTexture(WgpuDevice owner, TextureDesc desc)
@@ -70,7 +69,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            _surfaceFrame?.ValidateRecording();
+
             return _native;
         }
     }
@@ -82,7 +81,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _surfaceFrame?.ValidateRecording();
+
         if (mipLevel >= MipLevels)
         {
             throw new ArgumentOutOfRangeException(nameof(mipLevel));
@@ -94,7 +93,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _surfaceFrame?.ValidateRecording();
+
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
         WGPUTextureViewDimension dimension = info.Dimension switch
         {
@@ -114,7 +113,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
             ArrayLayerCount = info.ArrayLayerCount,
         });
         var view = new WgpuTextureView(this, info, native);
-        _viewCount++;
         return view;
     }
 
@@ -152,18 +150,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
             return;
         }
 
-        if (_viewCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all views before disposing their texture.");
-        }
-
         _native.Dispose();
         _disposed = true;
-        if (_surfaceFrame == null)
-        {
-            _owner.ReleaseTexture();
-        }
     }
-
-    internal void ReleaseView() => _viewCount--;
 }

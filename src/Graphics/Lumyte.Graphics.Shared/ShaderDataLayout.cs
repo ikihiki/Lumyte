@@ -159,54 +159,8 @@ public sealed class ShaderDataLayout : IShaderDataLayout
     public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member);
 
     /// <inheritdoc/>
-    public void Validate(ShaderValueSnapshot snapshot)
-    {
-        if (snapshot.ShaderTypeName != Name || snapshot.Values.Count != _members.Count)
-        {
-            throw new ArgumentException("Shader structure and application codec do not match.");
-        }
-
-        var paths = new HashSet<string>(StringComparer.Ordinal);
-        foreach (ShaderValue value in snapshot.Values)
-        {
-            if (!paths.Add(value.Path) || !_members.TryGetValue(value.Path, out ShaderMember? member) || member.Reference != value.IsReference ||
-                (!member.Reference && (member.ValueType != value.ValueType || value.Data.Length != member.Size)))
-            {
-                throw new ArgumentException("Shader member layout and application codec do not match: " + value.Path);
-            }
-
-            if (member.Reference && value.Reference is IShaderReference resourceReference)
-            {
-                object resource = resourceReference.Resource;
-                bool supported = member.Kind switch
-                {
-                    "GpuTextureRef" => resource is IGraphicsTextureView view && view.Info.Dimension == TextureViewDimension.D2,
-                    "GpuSamplerRef" => resource is IGraphicsSampler sampler && sampler.Desc.Compare == null,
-                    "GpuBufferRef" => resource is IShaderDataSource || (resource is IShaderRawBuffer raw && (raw.Usage & BufferUsage.ShaderRead) != 0),
-                    "GpuRWBufferRef" => resource is IShaderRawBuffer raw && (raw.Usage & BufferUsage.ShaderWrite) != 0,
-                    _ => false,
-                };
-                if (!supported)
-                {
-                    throw new ArgumentException("Reference resource type or access differs from the compiled member: " + value.Path);
-                }
-            }
-
-            if (member.Target != null && value.Reference != null)
-            {
-                string logicalType = value.Reference is IShaderReference reference && reference.Resource is IShaderDataSource data ? data.Layout.Name : NumericName(value.ValueType);
-                if (logicalType != member.Target)
-                {
-                    throw new ArgumentException("Buffer reference element type differs from the compiled member: " + value.Path);
-                }
-            }
-        }
-    }
-
-    /// <inheritdoc/>
     public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference)
     {
-        Validate(snapshot);
         byte[] result = new byte[Size];
         foreach (ShaderValue value in snapshot.Values)
         {
@@ -320,8 +274,6 @@ public sealed class ShaderDataLayout : IShaderDataLayout
             }
         }
     }
-
-    private static string NumericName(Type type) => type == typeof(uint) ? "uint" : type == typeof(int) ? "int" : type == typeof(float) ? "float" : type == typeof(Vector2) ? "float2" : type == typeof(Vector3) ? "float3" : type == typeof(Vector4) ? "float4" : type.Name;
 
     private void Add(JsonElement type, string prefix, int baseOffset)
     {

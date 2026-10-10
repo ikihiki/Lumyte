@@ -28,11 +28,6 @@ public static class BufferExercise
         Expect<ArgumentOutOfRangeException>(() => upload.Slice(16, 1));
         Expect<ArgumentOutOfRangeException>(() => upload.Slice(ulong.MaxValue, 1));
         Expect<ArgumentException>(() => default(BufferSlice<uint>).CopyFrom(source));
-        if (device is IDisposable owner)
-        {
-            Expect<InvalidOperationException>(owner.Dispose);
-        }
-
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await ExpectAsync<OperationCanceledException>(() => upload.MapAsync(cancellation.Token));

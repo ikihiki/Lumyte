@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.Shared;
 /// <summary>Encodes stable logical slots for WGSL resource references.</summary>
 public static class ShaderReferenceEncoding
 {
-    /// <summary>Packs a validated reference without draw-dependent resource indices.</summary>
+    /// <summary>Packs a reference without draw-dependent resource indices.</summary>
     /// <param name="value">The reference value.</param>
     /// <param name="kind">The compiled reference kind.</param>
     /// <returns>The helper ABI bytes.</returns>
@@ -17,7 +17,6 @@ public static class ShaderReferenceEncoding
             throw new ArgumentException("A shader reference is missing.");
         }
 
-        reference.Validate();
         if (reference.Resource is IShaderDataSource data && data.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Upload staging cannot be referenced by a shader.");

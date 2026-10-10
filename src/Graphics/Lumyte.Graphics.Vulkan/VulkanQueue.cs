@@ -16,35 +16,19 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
-        IGraphicsCommandBuffer[] snapshot = desc.CommandBuffers.ToArray();
-        SemaphoreWaitDesc[] waits = desc.WaitSemaphores.ToArray();
-        IGraphicsSemaphore[] signals = desc.SignalSemaphores.ToArray();
-        if (snapshot.Length == 0 && waits.Length == 0 && signals.Length == 0)
+        IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
+        if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
             throw new ArgumentException("A submission must contain commands, waits or signals.");
         }
 
-        SemaphoreValidation.Submission(waits, signals);
-        VulkanSemaphore[] waiting = waits.Select(wait => OwnSemaphore(wait.Semaphore)).ToArray();
-        VulkanSemaphore[] signaling = signals.Select(OwnSemaphore).ToArray();
-        foreach (VulkanSemaphore semaphore in waiting)
+        var commands = new VulkanCommandBuffer[commandBuffers.Count];
+        var handles = new VkCommandBuffer[commandBuffers.Count];
+        for (int i = 0; i < commandBuffers.Count; i++)
         {
-            semaphore.State.ValidateWait();
-        }
-
-        foreach (VulkanSemaphore semaphore in signaling)
-        {
-            semaphore.State.ValidateSignal();
-        }
-
-        var commands = new VulkanCommandBuffer[snapshot.Length];
-        var handles = new VkCommandBuffer[snapshot.Length];
-        var seen = new HashSet<VulkanCommandBuffer>();
-        for (int i = 0; i < snapshot.Length; i++)
-        {
-            if (snapshot[i] is not VulkanCommandBuffer buffer || !ReferenceEquals(buffer.Owner, owner) || !seen.Add(buffer))
+            if (commandBuffers[i] is not VulkanCommandBuffer buffer || !ReferenceEquals(buffer.Owner, owner))
             {
-                throw new ArgumentException("Invalid device or duplicate command buffer.");
+                throw new ArgumentException("Command buffer belongs to another device.");
             }
 
             buffer.ValidateSubmit();
@@ -52,18 +36,20 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             handles[i] = buffer.Native;
         }
 
-        SurfaceFrameLifetime[] frames = commands.SelectMany(command => command.SurfaceFrames).Distinct().ToArray();
-        foreach (SurfaceFrameLifetime frame in frames)
+        var waitHandles = new Semaphore[desc.WaitSemaphores.Count];
+        var stages = new PipelineStageFlags[waitHandles.Length];
+        for (int i = 0; i < waitHandles.Length; i++)
         {
-            frame.ValidateRecording();
-            TextureState? finalState = commands.Select(command => command.GetSurfaceFinalState(frame)).Where(state => state.HasValue).LastOrDefault();
-            if (finalState != TextureState.Present)
-            {
-                throw new InvalidOperationException("Commands using an acquired image must end in explicit Present state.");
-            }
+            SemaphoreWaitDesc wait = desc.WaitSemaphores[i];
+            waitHandles[i] = OwnSemaphore(wait.Semaphore).Native;
+            stages[i] = NativeStages(wait.Stages);
         }
 
-        ShaderDataTransferState.ValidateSubmission(commands.Select(c => c.ShaderDataTransfers));
+        var signalHandles = new Semaphore[desc.SignalSemaphores.Count];
+        for (int i = 0; i < signalHandles.Length; i++)
+        {
+            signalHandles[i] = OwnSemaphore(desc.SignalSemaphores[i]).Native;
+        }
 
         var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
         Result result = owner.Api.CreateFence(owner.NativeDevice, &fenceInfo, null, out Fence fence);
@@ -72,9 +58,6 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             throw new InvalidOperationException($"Vulkan CreateFence failed: {result}.");
         }
 
-        Semaphore[] waitHandles = waiting.Select(semaphore => semaphore.Native).ToArray();
-        Semaphore[] signalHandles = signaling.Select(semaphore => semaphore.Native).ToArray();
-        PipelineStageFlags[] stages = waits.Select(wait => NativeStages(wait.Stages)).ToArray();
         fixed (VkCommandBuffer* data = handles)
         {
             fixed (Semaphore* waitData = waitHandles, signalData = signalHandles)
@@ -116,24 +99,7 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             command.MarkSubmitted();
         }
 
-        var submission = new VulkanSubmission(owner, commands, fence);
-        owner.RetainSubmission();
-        foreach (SurfaceFrameLifetime frame in frames)
-        {
-            frame.MarkSubmitted(submission);
-        }
-
-        foreach (VulkanSemaphore semaphore in waiting)
-        {
-            semaphore.State.MarkWait(() => submission.Status != SubmissionStatus.Pending);
-        }
-
-        foreach (VulkanSemaphore semaphore in signaling)
-        {
-            semaphore.State.MarkSignal(() => submission.Status != SubmissionStatus.Pending);
-        }
-
-        return submission;
+        return new VulkanSubmission(owner, commands, fence);
     }
 
     private static PipelineStageFlags NativeStages(PipelineStage stages)
@@ -194,7 +160,6 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             throw new ArgumentException("Semaphore belongs to another device.", nameof(value));
         }
 
-        semaphore.State.ValidateAlive();
         return semaphore;
     }
 }

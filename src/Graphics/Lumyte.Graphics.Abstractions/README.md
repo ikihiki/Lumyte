@@ -40,7 +40,7 @@ upload.Unmap();
 
 `BufferLayout<T>` の byte alignment と要素単位の倍数は backend が数値で提供します。要素数や論理 SizeInBytes を丸めず、コピー条件を満たさない場合は利用側の command 記録時に拒否します。
 
-`IGraphicsBuffer<T>` に byte 範囲検証と CPU copy の契約も含め、slice は同じ allocation に処理を委譲します。buffer は device より先に解放します。各 backend の device は所有 buffer・texture・sampler が残っている場合に Dispose を拒否します。
+`IGraphicsBuffer<T>` に byte 範囲検証と CPU copy の契約も含め、slice は同じ allocation に処理を委譲します。buffer は device より先に解放します。resourceの有効期間と親子の解放順は利用者が保証します。
 
 設計判断は [GRAPHICS-0002](../../../docs/adr/graphics/GRAPHICS-0002-typed-buffers.md) を参照してください。
 
@@ -66,13 +66,13 @@ using IGraphicsTextureView cube = texture.CreateView(new TextureViewDesc
 
 `IGraphicsTexture` と `IGraphicsTextureView` は具象backend自身が実装します。初期範囲は単一sampleの2D color textureで、mipとarray layerを指定できます。ViewのInfoはnull countを解決済みで、sourceと同じformatを保持します。GetMipSizeはmipの幅・高さを返します。Cube系はsquareなtextureの連続6 layer単位です。
 
-ViewはSampledまたはRenderAttachment用途を必要とします。View、Texture、Deviceの順で解放します。生きた子resourceがある親のDisposeは拒否し、GPU完了待機や自動解放は挿入しません。textureのCPU mappingや自動upload／readbackはありません。
+ViewはSampledまたはRenderAttachment用途を必要とします。View、Texture、Deviceの順で解放します。子resource数による解放拒否、GPU完了待機、自動解放は行いません。textureのCPU mappingや自動upload／readbackはありません。
 
 設計判断は [GRAPHICS-0003](../../../docs/adr/graphics/GRAPHICS-0003-textures-and-views.md) を参照してください。
 
 ## 利用者による同期
 
-resource APIは並列実行の安全性を保証しません。backendが許す並列実行の範囲と、device・buffer・texture・viewの生成・アクセス・mapping・解放に必要な同期は利用者が管理します。live childやmapping状態の検証は必要な同期の代わりにはなりません。GPUアクセスの同期もcommand／submissionの契約に従って利用者が保証します。
+resource APIは並列実行の安全性を保証しません。backendが許す並列実行の範囲と、device・buffer・texture・viewの生成・アクセス・mapping・解放に必要な同期は利用者が管理します。子resourceの保持数やGPU使用中のresource一覧を検証目的で維持しません。GPUアクセスの同期もcommand／submissionの契約に従って利用者が保証します。
 
 ## Sampler
 
@@ -91,7 +91,7 @@ using IGraphicsSampler sampler = device.CreateSampler(new SamplerDesc
 
 SamplerはTexture／Viewとは独立した所有resourceで、複数textureで同じinstanceを共有できます。Descは生成時の指定値を保持します。LODは有限・非負かつmin <= maxで、max=0を暗黙に変更しません。MaxAnisotropyはcaps以下で、1より大きい場合はすべてのfilterにLinearが必要です。Compareがnull以外なら比較samplerとして確保します。shader／textureとの互換性はbinding側で検証します。
 
-samplerを先にDisposeし、samplerが残ったdeviceの解放は拒否します。同期は利用者が管理し、内部lock・アトミックカウンター・自動cacheを追加しません。設計は [GRAPHICS-0004](../../../docs/adr/graphics/GRAPHICS-0004-samplers.md) を参照してください。
+samplerをdeviceより先にDisposeしてください。同期は利用者が管理し、内部lock・アトミックカウンター・自動cacheを追加しません。設計は [GRAPHICS-0004](../../../docs/adr/graphics/GRAPHICS-0004-samplers.md) を参照してください。
 
 ## Argument TableとGPU参照
 
@@ -110,9 +110,9 @@ IGpuRef<uint> value = values.GetElement(2);
 
 slotは利用者が管理する論理位置です。種類ごとに独立し、同時shader binding数ではありません。IGpuRefのCountは論理要素数で、bufferのGetElementは登録範囲から単一要素を選びます。GPU addressやbinding番号への変換は公開しません。
 
-slotの置換・Release・table Disposeは古い参照と派生要素を失効させます。tableは登録したresourceを保持し、登録中のbuffer／view／samplerのDisposeは拒否します。tableまたは登録を先に解放してください。tableを解放しても登録resource自体はDisposeしません。
+slotの置換・Release・table Dispose後の古い参照と派生要素は使用できません。その有効期間を利用者が管理し、登録世代やresourceの生存を走査して検証しません。登録・参照を使い終わってからbuffer／view／samplerを解放してください。tableを解放しても登録resource自体はDisposeしません。
 
-今回のAPIは登録・要素参照・失効と寿命の基盤です。IGpuRefをGPU dataへpackするserializerと、root参照から物理bindingを構築するshader／commandの接続はそのAPIで扱います。IGpuRefを含む論理structはunmanagedではないため、raw bufferのCopyFromへそのまま渡しません。登録はGPU copy・upload・bind group生成を行いません。
+このAPIは登録と要素参照を提供します。IGpuRefをGPU dataへpackするserializerと、root参照から物理bindingを構築するshader／commandの接続はそのAPIで扱います。IGpuRefを含む論理structはunmanagedではないため、raw bufferのCopyFromへそのまま渡しません。登録はGPU copy・upload・bind group生成を行いません。
 
 設計判断は [GRAPHICS-0005](../../../docs/adr/graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md) を参照してください。
 
@@ -128,7 +128,7 @@ opaque binaryのartifactをそのまま `IGraphicDevice.CreateShader` に渡す�
 
 textureは利用前に `TextureBarrierDesc` でstateを宣言します。pass内ではcopy・barrier・Finishを拒否します。render passはcolor attachmentのclear／load・store／discardを扱い、両encoderは `End()` で終了します。draw／dispatchとpipeline設定は次の契約を使用します。
 
-resourceはGPU完了まで利用者が生存させます。Submit時に生存とmappingを再検証し、Pending中のsubmissionとSubmitted状態のcommand bufferのDisposeを拒否します。待機のキャンセルでGPU実行は取り消しません。内部lockや並列呼び出しの保証は設けません。設計は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。
+resourceはGPU完了まで利用者が生存させます。Submit時のresource生存・mappingの再走査や、Dispose時のGPU完了照会は行いません。待機のキャンセルでGPU実行は取り消しません。内部lockや並列呼び出しの保証は設けません。設計は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。
 
 ## Pipelineと描画状態
 
@@ -163,8 +163,8 @@ Index bufferは`SetIndexBuffer(BufferSlice<ushort>)`／`SetIndexBuffer(BufferSli
 ## Surface・Swapchain・Present
 
 外部targetを受け取るバックエンド固有の生成口から`IGraphicsSurface`を取得します。
-共通APIはcapabilities照会、`CreateSwapchain`、`AcquireNextFrameAsync`、借用TextureのViewへの描画、`Queue.Submit(QueueSubmitDesc)`、`frame.Present(waitSemaphores)`、明示的な解放待機を提供します。
-最後に取得画像を`TextureState.Present`へ遷移し、GPUや提示が使用中のframeを解放しないでください。
+共通APIはcapabilities照会、`CreateSwapchain`、`AcquireNextFrameAsync`、借用TextureのViewへの描画、`Queue.Submit(QueueSubmitDesc)`、`frame.Present(waitSemaphores)`、ネイティブ取得・提示の明示的な完了待機を提供します。
+最後に取得画像を`TextureState.Present`へ遷移し、GPUや提示が使用中のframeを解放しないでください。Frameはsubmissionを追跡せず、`WaitForReleaseAsync`はGPUのcommand完了を待ちません。GPU使用の完了は`submission.WaitAsync()`等で別途確認します。
 サイズはpixel単位で、ゼロサイズの間は利用側が取得を止めます。リサイズとOutdatedからの復旧は`Reconfigure`で明示します。
 詳細は[Surface・Swapchain・Present ADR](../../../docs/adr/graphics/GRAPHICS-0013-surface-swapchain-presentation.md)と各バックエンドのREADMEを参照してください。
 
@@ -177,3 +177,5 @@ wait／signalだけのSubmitも可能です。GPU完了をCPUで待つ必要は�
 一つのウインドウのFrameが生きていることを理由に、他のウインドウの操作を禁止しません。DeviceはすべてのSurfaceを解放してから破棄します。
 
 Device生成とSurface生成は分離し、生成済みDeviceへバックエンド固有の入口で表示先を接続します。
+
+リソースの寿命、登録の有効期間、barrierの前後状態、semaphoreの再利用は利用者の責務です。検証だけを目的としたカウンター、依存走査、Submit時のvalidator保持、状態履歴は設けません。CPU memoryへの安全な範囲検査、引数の形式、nativeの失敗結果、shader ABIとbinding構築に必要なmetadataは扱います。[実行時検証の方針](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。

@@ -20,23 +20,7 @@ public static class SurfaceExercise
             Format = format,
             Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource,
         };
-        Expect<ArgumentException>(() => surface.CreateSwapchain(desc with { Width = 0 }));
-        Expect<ArgumentException>(() => surface.CreateSwapchain(desc with { Height = 0 }));
-        Expect<ArgumentException>(() => surface.CreateSwapchain(desc with { Format = (TextureFormat)999 }));
-        Expect<NotSupportedException>(() => surface.CreateSwapchain(desc with { Format = TextureFormat.Depth32Float }));
-        foreach (PresentMode mode in Enum.GetValues<PresentMode>().Except(caps.PresentModes))
-        {
-            Expect<NotSupportedException>(() => surface.CreateSwapchain(desc with { PresentMode = mode }));
-        }
-
         using IGraphicsSwapchain swapchain = surface.CreateSwapchain(desc);
-        Expect<InvalidOperationException>(() => surface.CreateSwapchain(desc));
-        Expect<InvalidOperationException>(surface.Dispose);
-        if (device is IDisposable owner)
-        {
-            Expect<InvalidOperationException>(owner.Dispose);
-        }
-
         Console.WriteLine("Surface: configured; drawing frames.");
         for (int i = 0; i < 3; i++)
         {
@@ -44,7 +28,6 @@ public static class SurfaceExercise
         }
 
         Console.WriteLine("Surface: checking unsubmitted frames.");
-        await CheckUnsubmittedFramesAsync(device, swapchain);
         SurfaceAcquireResult discarded = await swapchain.AcquireNextFrameAsync();
         Require(discarded.Frame != null, "Discard test could not acquire an image.");
         await discarded.Frame!.WaitForReleaseAsync();
@@ -68,21 +51,7 @@ public static class SurfaceExercise
         swapchain.Dispose();
         swapchain.Dispose();
         Expect<ObjectDisposedException>(() => swapchain.Reconfigure(desc));
-        return "Surface checks passed: exact configuration, borrowed images, caller-selected acquisition/submit/present semaphores, invalidation, discard, resize and pixel readback.";
-    }
-
-    private static async Task CheckUnsubmittedFramesAsync(IGraphicDevice device, IGraphicsSwapchain swapchain)
-    {
-        SurfaceAcquireResult acquired = await swapchain.AcquireNextFrameAsync();
-        IGraphicsSurfaceFrame frame = acquired.Frame ?? throw new InvalidOperationException("No image for frame submission validation.");
-        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        commands.Barrier(new TextureBarrierDesc { Texture = frame.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite) });
-        commands.Finish();
-        Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
-        Require(frame.Status == SurfaceFrameStatus.Acquired && commands.State == CommandBufferState.Executable, "Invalid submission consumed a frame or command.");
-        await frame.WaitForReleaseAsync();
-        frame.Dispose();
-        Expect<ObjectDisposedException>(() => device.Queue.Submit([commands]));
+        return "Surface checks passed: exact configuration, borrowed images, caller-selected acquisition/submit/present semaphores, discard, resize and pixel readback.";
     }
 
     private static async Task DrawFrameAsync(IGraphicDevice device, IGraphicsSwapchain swapchain)
@@ -97,10 +66,6 @@ public static class SurfaceExercise
         Require(frame.Status == SurfaceFrameStatus.Acquired, "New frame state is incorrect.");
         IGraphicsTexture texture = frame.Texture;
         Require(texture.Width == swapchain.Configuration.Width && texture.Height == swapchain.Configuration.Height && texture.MipLevels == 1 && texture.ArrayLayers == 1, "Acquired image dimensions changed.");
-        Expect<InvalidOperationException>(texture.Dispose);
-        Expect<InvalidOperationException>(() => frame.Present());
-        Expect<InvalidOperationException>(() => swapchain.Reconfigure(swapchain.Configuration));
-        Expect<InvalidOperationException>(swapchain.Dispose);
         uint alignment = device.GetTextureCopyLayout(texture.Format).BytesPerRowAlignment;
         uint pitch = checked((((texture.Width * 4) + alignment - 1) / alignment) * alignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = checked(pitch * texture.Height), Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
@@ -125,17 +90,11 @@ public static class SurfaceExercise
                 WaitSemaphores = [new() { Semaphore = acquiredSignal, Stages = PipelineStage.AllCommands }],
                 SignalSemaphores = [renderedSignal],
             });
-            Require(frame.Status == SurfaceFrameStatus.Submitted, "Frame submission did not transfer image use.");
-            Expect<InvalidOperationException>(() => texture.CreateView());
-            Expect<ArgumentException>(() => frame.Present([renderedSignal, renderedSignal]));
-            Expect<InvalidOperationException>(() => frame.Present([acquiredSignal]));
             Require(frame.Present([renderedSignal]) is SurfaceStatus.Success or SurfaceStatus.Suboptimal, "Presentation failed.");
-            Expect<InvalidOperationException>(() => frame.Present());
             Require(frame.Status == SurfaceFrameStatus.Presented, "Presentation state was not recorded.");
             Console.WriteLine("Surface: presented; waiting for release.");
             await frame.WaitForReleaseAsync();
             await submission.WaitAsync();
-            Expect<InvalidOperationException>(frame.Dispose);
             await readback.MapAsync();
             byte[] bytes = new byte[checked((int)readback.Count)];
             readback.CopyTo(bytes);

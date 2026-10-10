@@ -45,27 +45,21 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
-        IGraphicsSemaphore[] snapshot = waitSemaphores?.ToArray() ?? [];
-        SemaphoreValidation.Presentation(snapshot);
-        VulkanSemaphore[] waits = snapshot.Select(value =>
+        var waits = new Silk.NET.Vulkan.Semaphore[waitSemaphores?.Count ?? 0];
+        for (int i = 0; i < waits.Length; i++)
         {
-            if (value is not VulkanSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            if (waitSemaphores![i] is not VulkanSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
             {
                 throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
             }
 
-            semaphore.State.ValidateWait();
-            return semaphore;
-        }).ToArray();
-        SurfaceStatus status = _swapchain.Present(_index, waits.Select(semaphore => semaphore.Native).ToArray(), PresentFence);
+            waits[i] = semaphore.Native;
+        }
+
+        SurfaceStatus status = _swapchain.Present(_index, waits, PresentFence);
         _presented = true;
         _deviceLost = status == SurfaceStatus.DeviceLost;
         Lifetime.MarkPresented();
-        foreach (VulkanSemaphore semaphore in waits)
-        {
-            semaphore.State.MarkWait(() => Lifetime.IsReleased);
-        }
-
         return status;
     }
 
@@ -78,7 +72,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        Lifetime.ValidateRelease();
         _texture!.DisposeLease();
         if (!_presented && !_deviceLost)
         {
@@ -87,7 +80,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
 
         ReleaseUnacquired();
         Lifetime.MarkDisposed();
-        _swapchain.ReleaseFrame();
     }
 
     internal void SetImage(uint index, Image image)

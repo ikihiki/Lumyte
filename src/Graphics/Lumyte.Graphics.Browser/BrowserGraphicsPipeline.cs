@@ -29,10 +29,7 @@ internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
         VertexData = PipelineValidation.Shader(vertex, owner.Caps.ShaderTarget, ShaderStage.Vertex, owner.Caps);
         FragmentData = _fragment == null ? null : PipelineValidation.Shader(_fragment, owner.Caps.ShaderTarget, ShaderStage.Fragment, owner.Caps);
         PipelineValidation.Program(desc, VertexData, FragmentData);
-        FragmentOutputs = PipelineValidation.FragmentOutputs(FragmentData);
         Initialize();
-        _vertex.RetainPipeline();
-        _fragment?.RetainPipeline();
     }
 
     public GraphicsPipelineDesc Desc { get; }
@@ -43,8 +40,6 @@ internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
 
     internal ShaderTargetData? FragmentData { get; }
 
-    internal IReadOnlyDictionary<uint, string>? FragmentOutputs { get; }
-
     public void Dispose()
     {
         if (_disposed)
@@ -53,19 +48,8 @@ internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
         }
 
         DisposeNative();
-        _vertex.ReleasePipeline();
-        _fragment?.ReleasePipeline();
         _disposed = true;
-        _owner.ReleasePipeline();
     }
 
-    internal void ValidateAlive()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = _vertex.Native;
-        if (_fragment != null)
-        {
-            _ = _fragment.Native;
-        }
-    }
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 }

@@ -37,7 +37,7 @@ public interface IRenderEncoder
     /// <param name="reference">The reference value.</param>
     void SetStencilReference(uint reference);
 
-    /// <summary>Records a direct draw after validating all explicit state.</summary>
+    /// <summary>Records a direct draw with the explicit pipeline, state and arguments.</summary>
     /// <param name="vertexCount">The vertex count.</param>
     /// <param name="instanceCount">The instance count.</param>
     /// <param name="firstVertex">The first vertex index.</param>

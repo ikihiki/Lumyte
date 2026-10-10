@@ -39,7 +39,7 @@ GPU buffer copy の offset／length alignment は 4 byte、encoded image copy �
 
 CPU access は `MemoryPreference.Upload` の MapAsync → CopyFrom → Unmap、`Readback` の MapAsync → CopyTo → Unmap で明示します。Automatic は map できません。CopyFrom／CopyTo では map、待機、GPU copy、submit を行いません。GPU copyと同期はcommand bufferへ明示的に記録します。
 
-CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。必要な同期は利用者が管理し、bufferが残ったdeviceのDisposeはInvalidOperationExceptionで拒否します。解放済み allocation への access は ObjectDisposedException です。
+CPU-mapped buffer は managed byte span で扱える int.MaxValue byte までに制限します。mapping pending 中の再 map・Unmap・Dispose は拒否します。API内部では並列操作を同期しません。bufferとdeviceの解放順、GPU完了とCPU accessの同期は利用者が管理します。親子resource数による解放拒否は行いません。CPU spanの範囲、mapping状態、解放済みinstanceの局所的な検査は維持します。
 
 WebGPU の usage は CopySource → COPY_SRC、CopyDestination → COPY_DST、ShaderRead／ShaderWrite → STORAGE、Index → INDEX に対応します。Upload は CopySource のみと MAP_WRITE、Readback は CopyDestination のみと MAP_READ の組み合わせです。CPU-mapped buffer の size は 4 byte の倍数でなければ生成時に拒否します。GPU-only buffer の論理 size はこの理由で丸めません。
 
@@ -49,13 +49,13 @@ GPUBuffer.mapAsync の Promise と getMappedRange を使います。.NET／JavaS
 
 生成済みの `IGraphicDevice.CreateTexture(TextureDesc)` から2D imageを確保します。RGBA8／BGRA8のUnorm／sRGB、単一sample、mip／array layer、CopySource／CopyDestination／Sampled／RenderAttachmentを扱います。属性は変更・丸め・暗黙変換しません。capsのMaxTextureDimension2DとMaxTextureArrayLayersを照合し、mip数とusageを検証します。
 
-CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewが生きているTextureのDispose、bufferまたはtextureが残るDeviceのDisposeは拒否します。Viewはsourceを保持し、利用者による同期を前提にlive view数を管理します。Viewから先に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
+CreateViewはD2・D2Array・Cube・CubeArrayのsubresourceを選択し、Infoで解決済みのcountを返します。Viewはsourceへの参照を持ちますが、live view／child数の追跡は行いません。利用者がGPU使用の完了を保証し、View、Texture、Deviceの順に解放してください。textureへ自動upload／readbackやGPU待機は追加していません。
 
 JavaScript moduleはGPUDevice.createTextureとGPUTexture.createViewを呼び、具象resourceがJSObject proxyを保持します。viewの解放はproxyをDisposeし、textureの解放はGPUTexture.destroyとproxyのDisposeを行います。GPUTextureViewにdestroy APIはありません。WebGPUのvalidation／device lostはbrowserのエラー通知にも現れるため、CIのChrome検証はruntime／consoleエラーも監視します。
 
 DescとView範囲の検証は、このbackend assembly内のinternalなTextureValidationで行います。Abstractionsの内部型へのアクセスやInternalsVisibleToは使いません。
 
-resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。状態検証はデータ競合を防止する機構ではありません。
+resource APIは並列実行の安全性を保証しません。内部lockやアトミックな所有カウンターは設けず、backendの実行制約と、生成・CPUコピー・map／unmap・解放の競合に必要な同期を利用者が管理します。GPUでの使用中判定や依存resourceの生存走査は行いません。
 BrowserではJSObjectが属する実行contextの制約も利用者が守ります。
 
 ## Sampler
@@ -64,15 +64,15 @@ CreateSamplerは具象backendのIGraphicsSamplerを返し、Descを変更せず�
 
 source-generated JSONでDescをJavaScriptへ渡し、GPUDevice.createSamplerのdictionaryへfilter／address／comparison・LOD・anisotropyを変換します。比較未指定のcompareはdictionaryへ設定しません。GPUSamplerにはdestroyがないため、解放ではJSObject proxyをDisposeします。GPUエラーはWebGPUの通知にも現れます。JSObjectの実行context制約を利用者が守り、CIはruntime／consoleエラーも監視します。上限はWebGPUの16です。
 
-samplerはtexture／Viewを所有せず、deviceのlive childとして数えます。Disposeは一度だけnative資源を解放し、samplerが残るdeviceのDisposeは拒否します。CPU／GPUの利用・解放に必要な同期は利用者の責務です。内部lock、InternalsVisibleTo、sampler cacheは設けません。
+samplerはtexture／Viewを所有しません。Disposeは一度だけnative資源を解放し、利用者がsamplerをdeviceより先に解放します。子resource数による解放拒否は行いません。CPU／GPUの利用・解放に必要な同期は利用者の責務です。内部lock、InternalsVisibleTo、sampler cacheは設けません。
 
 ## Argument Table
 
 CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler・bufferを種類別のDictionaryへ疎に登録します。capacityは論理slotの上限で、巨大な事前確保やshaderのbinding数を意味しません。別tableの同じslotと、種類ごとの同じslotは独立します。Labelは診断用の指定です。
 
-各登録instanceがidentityを持ち、`GpuReference<T>` は同じ登録の型・Count・byte offset／sizeを保持します。GetElementは登録rangeに対するoffsetをchecked計算し、内部Resolveは登録が生存することを確認してresourceを返します。公開APIへnative handleや整数IDを出しません。
+各登録instanceがidentityを持ち、`GpuReference<T>` は同じ登録の型・Count・byte offset／sizeを保持します。GetElementは登録rangeに対するoffsetをchecked計算し、内部Resolveは登録されたresourceとrangeを返します。登録の世代・失効検出は行いません。公開APIへnative handleや整数IDを出しません。
 
-登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録中resourceの解放は拒否します。置換とReleaseは古い登録を失効させ、失敗した登録で新しいleaseを残しません。tableを解放すると登録を解放してdeviceのchild数を減らし、登録resource自体はDisposeしません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
+登録resourceは同じdeviceの具象型に限定します。textureはSampled view、bufferはShaderRead／ShaderWrite用途を検証します。登録、派生IGpuRef、記録済みcommandが使用するresourceの寿命は利用者が管理します。置換・Release・table Dispose後の古い参照は使用しないでください。tableは登録resourceをDisposeせず、登録の保持カウンターや失効検出の走査も行いません。同期は利用者の責務で、lock・アトミックカウンター・InternalsVisibleToを使いません。
 
 登録はJavaScriptやGPUDeviceのbinding APIを呼ばず、C#のbackend resource instanceと選択byte rangeを保持します。shader binding planとroot参照から必要なGPUTextureView／GPUSampler／GPUBufferを解決し、有限bind groupへ構築する処理はshader／commandとの接続で実装します。JSObjectの実行context制約は引き続き利用者が守ります。
 
@@ -80,21 +80,21 @@ CreateArgumentTableはbackendのIArgumentTableを返し、texture view・sampler
 
 共通 API は `IGraphicDevice.CreateShader(ShaderArtifact)` と `IGraphicsShader` です。`Caps.ShaderTarget` は `Wgsl`。DLL から取り出した UTF-8 WGSL を `GPUDevice.createShaderModule` に渡します。ブラウザーの shader validation／非同期 device error は WebGPU に従い、この同期 API は `getCompilationInfo()` を待ちません。`Dispose()` は JavaScript proxy を解放します。WebGPU の GPUShaderModule には destroy メソッドがありません。ブラウザー内で slangc を起動せず、オフライン成果物を使用します。
 
-artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shader はデバイスの子 resource として数え、残っている間の device Dispose を拒否します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。pipelineとshader実行命令は別のAPIで扱います。
+artifactのopaque binaryからbackendのtarget codeとmetadataを取得します。同じoffline binaryを全backendへ渡せます。必要targetを含まないonline binaryは`NotSupportedException`で拒否します。shaderと、それを使用するpipeline・commandの生存期間は利用者が管理し、deviceより先に解放します。shader 解放で GPU 完了待機や暗黙の同期は行いません。artifact は GPU module を所有せず、reflection も native API に直接渡しません。pipelineとshader実行命令は別のAPIで扱います。
 
 ## CommandBuffer
 
 ブラウザーのGPUCommandEncoder／GPUCommandBufferをJSObjectで保持します。JS moduleへbuffer／textureコピー、render／compute pass、finish、queue.submitを委譲します。JSONのregionにはmip・origin・layerとextentのみを渡し、resourceそのものはJSObjectで渡します。GPUへの書き込みにqueue.writeBuffer／writeTextureは使用せず、利用者が明示的なcopyを記録します。
 
-GetTextureCopyLayoutはcolor texel size 4、buffer offset alignment 4、row alignment 256です。barrierの入力と論理stateを検証し、物理的な同期はWebGPUが行います。submitはqueue.onSubmittedWorkDoneのPromiseを保持し、Status／WaitAsyncからその完了・失敗を確認します。待機のキャンセルはPromiseやGPU仕事を取り消しません。JSObjectは対応するcommand／submissionのDisposeで解放します。
+GetTextureCopyLayoutはcolor texel size 4、buffer offset alignment 4、row alignment 256です。barrierの入力は検査し、論理stateの履歴は記録しません。利用者が状態遷移を指定し、物理的な同期はWebGPUが行います。submitはqueue.onSubmittedWorkDoneのPromiseを保持し、Status／WaitAsyncからその完了・失敗を確認します。待機のキャンセルはPromiseやGPU仕事を取り消しません。JSObjectは対応するcommand／submissionのDisposeで解放します。
 
-共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。commandとsubmissionもdeviceの子として数えます。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。command、submissionとdeviceの解放順は利用者が管理します。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
 
 ## Pipeline
 
 graphics programはshaderの組・topology分類・compile optionを保持し、draw時に描画状態とpassの実attachment formatからnative pipelineを解決します。完全なnative PSOを生成するため、program内でvariantをcacheし、等価なkeyの再利用で生成を繰り返しません。keyにviewport／scissor／blend constant／stencil reference、texture instance、clear値は含めません。variantはprogram Disposeまで保持します。
 
-compute programは作成時にnative pipelineを生成します。shader moduleをprogramから保持し、保持中のshader解放を拒否します。commandは使用programを保持してsubmit時に生存を再確認しますが、GPU完了前の利用者による解放を自動的に同期しません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
+compute programは作成時にnative pipelineを生成します。programのshader参照とnative variantを保持します。program・shader・commandの有効期間と解放順は利用者が管理し、保持カウンターによる解放拒否やSubmit時の生存再走査は行いません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
 
 reflectionでstage・location・型、vertex pulling入力、workgroup各軸と積を検証します。root-dataとresource helperのABIをartifactから検証し、通常のresource globalを直接受け取るprogramは拒否します。single-sample color/depth/stencil、direct/indexed/indirect draw、direct/indirect compute dispatchを提供します。MSAA・resolve・multi-draw・count bufferは別の拡張です。
 
@@ -122,15 +122,15 @@ WGSLだけを含むonline artifactも、このbackendの型schemaとhelper ABI�
 
 ## 構造体引数とWGSL binding生成
 
-SetArgumentsは生成codecでroot値をsnapshotし、programのschemaへ照合します。shader dataは明示copyで伝播したCPU metadataを使って選択要素からIGpuRefを収集します。循環は要素の訪問済み集合で止めます。command内のpartial copyはmetadata overlayを更新し、submit成功後に後続commandへ公開します。
+SetArgumentsは生成codecでroot値をsnapshotします。利用者がprogramに対応する型を渡し、backendは確定したschemaに従ってpackします。shader dataは明示copyで伝播したCPU metadataを使って選択要素からIGpuRefを収集します。循環は要素の訪問済み集合で止めます。command内のpartial copyはmetadata overlayを更新し、submit成功後に後続commandへ公開します。
 
 artifactのWGSLを直接編集し、texture・sampler・read-only buffer・writable bufferを独立して重複排除した数だけ宣言します。texture samplingとbuffer wordアクセスのABI-owned helperを生成し、論理slotを種類別の物理bindingへ変換するremapを渡します。root uniformとremap storageも含めて有効limitsを検証し、超過時は描画を分割せずNotSupportedExceptionにします。種類別resource数はprogram内のpipeline variant keyに含めます。
 
 bufferは登録したrangeのoffsetとsizeでbindします。GetElementで作った参照も元の登録rangeを保持し、GPUへ渡す要素offsetはそのrangeの先頭から計算します。同じallocationでも登録rangeが異なれば別bindingとして扱い、同じallocationとrangeの組だけを重複排除します。storage binding sizeの上限はallocation全体ではなく登録rangeへ適用し、binding offsetのalignmentも検証します。
 
-root値とdraw用remapだけをmappedAtCreationで初期化してunmapします。shader dataとraw bufferは確保済みのGPU resourceを直接参照します。stagingのCPU変更はGPU storageを更新しません。利用者がcopyとbarrierを記録し、GPU完了までresourceを保持します。commandはroot／remap backingとbind groupを保持し、submitで登録identityとcopy記録後のstaging revisionを検証します。
+root値とdraw用remapだけをmappedAtCreationで初期化してunmapします。shader dataとraw bufferは確保済みのGPU resourceを直接参照します。stagingのCPU変更はGPU storageを更新しません。利用者がcopyとbarrierを記録し、GPU完了までresourceを保持します。commandはroot／remap backingとbind groupを保持し、Submit時の登録identity・staging revisionの再検証は行いません。参照の有効期間と、copy記録後からGPU完了までのstaging内容の維持は利用者が保証します。
 
-Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、用途が異なる参照はschema照合で拒否します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
+Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
 shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。WGSLのraw buffer load／storeと`sizeof(T)`が使うnatural layoutに合わせ、`float3`だけの構造体はstride 12、`uint`と`float3`を持つ構造体はoffset 0／4・stride 16でpackします。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
 
@@ -142,7 +142,7 @@ shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpoi
 
 `SetIndexBuffer`はushort／uintのsliceを受け取り、`DrawIndexed`のfirstIndexはsliceからの相対offsetです。stripは`StripIndexFormat`を一致させ、最大index値でprimitive restartします。indexの値はCPUで走査しません。
 
-`DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、寿命、非mappedを検証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
+`DrawIndirect`／`DrawIndexedIndirect`／`DispatchIndirect`はそれぞれ16／20／12byteの1要素sliceをGPU命令として実行します。Indirect usage、4byte alignment、device、記録時の非mapped条件を検査します。Submit時に命令bufferの寿命やmappingを再走査せず、利用者が有効期間を保証します。命令内容はCPUで読み出さず、portable drawのFirstInstance=0、index範囲、workgroup limitsは利用者が守ります。GPU生成後の`ShaderWrite`から`IndirectRead`へのbarrier、転送とsubmitも利用者が明示します。命令bufferの参照とshader root引数は独立で、引数からの資源収集はdirect実行と同じです。
 
 WebGPUのdepth32float／depth24plus-stencil8、render passのdepthStencilAttachment、pipelineのdepthStencil stateを使用します。depth24plus-stencil8のdepth storageはWebGPU実装が決めます。depth formatはpipeline variantのキーへ含めます。setIndexBuffer／drawIndexed／drawIndirect／drawIndexedIndirect／dispatchWorkgroupsIndirectへ直接対応付け、物理的なbarrierはWebGPUのusage管理へ任せます。indirect-first-instance optional featureは要求しません。command bufferが同じpassでwritable storage bindingにも使われる構成はWebGPUのusage競合になるため、生成passと実行passを分け、実行側のrootには必要な資源だけを渡します。
 
@@ -165,17 +165,16 @@ canvas configureでRGBA8／BGRA8／RGBA16 float、usage、pixel size、opaque／
 取得画像を解放するときも`GPUTexture.destroy()`は呼ばず、canvas contextの画像所有権とcompositionを維持します。
 GPU完了とframeの解放待機は、その後に明示的に行えます。
 
-既存Browser CIへ外部OffscreenCanvas contextを渡し、共通SurfaceExerciseでclear結果の読み戻し、lease失効、二重Present、discard、resizeを検証します。
+既存Browser CIへ外部OffscreenCanvas contextを渡し、共通SurfaceExerciseでclear結果の読み戻し、正しいlease寿命、局所的な二重Presentの拒否、discard、resizeを検証します。
 実ウインドウ／DOMから表示先を取得する連携は別PRです。
 
 ## 明示的なGPU semaphore
 
 `device.CreateSemaphore()`は単一device queueの発行順序を表すbinary semaphoreを生成します。
-WebGPUにはnative semaphoreがないため、GPUへ発行済みのsignalと一回のwaitを検証し、同じqueueの順序保証へ対応付けます。
-取得に渡されたsemaphoreだけをsignal済みにし、Submit／Presentに渡されたwaitだけを消費します。
-wait stageはGPUの非空stageを検証しますが、WebGPUにはstage別のnative待機操作がなく、queue順序へ対応付けます。
+WebGPUにはnative semaphoreがないため、同じqueueの順序保証へ対応付けます。
+semaphoreのsignal／wait履歴や使用中状態は保持せず、wait／signalリストの検証走査も行いません。stage別のnative待機操作はなく、同期が成立する順序での呼び出しを利用者が保証します。
 CPU待機、追加submit、queue idleは挿入しません。commandのないwait／signal Submitも明示的に発行できます。
-外部queue・device間の同期や未発行signalへの将来waitは公開しません。使用中のDisposeを拒否し、再利用時点と利用者の同期は呼び出し側が管理します。
+外部queue・device間の同期や未発行signalへの将来waitは公開しません。使用中のDisposeを検出せず、再利用時点と解放・同期を利用者が管理します。
 
 ## 複数の表示先
 
@@ -187,3 +186,7 @@ CPU待機、追加submit、queue idleは挿入しません。commandのないwai
 
 CIのbootstrapは二つの外部OffscreenCanvas contextを提供します。共有MultiSurfaceExerciseで異なる色を全画素readbackし、一括／独立Submit、別々のPresent、他方のFrame取得中のresize／close、残るtargetの描画継続を確認します。
 context集合の途中で失敗した後、同じcontextを使った再生成も検証します。実ウインドウ／DOMの取得は含めません。
+
+実行時検証の共通方針は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。resourceの保持数、commandからの依存resource走査、subresourceの状態表は検証目的で維持しません。binding生成とshader dataの明示copyに必要な参照収集・metadata伝播は行います。
+
+FrameはGPU submissionを追跡しません。`WaitForReleaseAsync`はこのbackendで追加のGPU待機を行わないため、利用者が`submission.WaitAsync()`等でGPU使用の完了を確認してからFrame・View・commandを解放します。

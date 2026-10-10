@@ -23,7 +23,7 @@ Surfaceの生成は各バックエンド固有の入口で既存のハンドル�
 利用側がbinary semaphoreを生成し、画像取得のsignal、Submitのwait／signal、Presentのwaitをそれぞれ指定する。
 バックエンドは渡された同期だけを実行し、取得waitや描画完了signal、Present waitを補完しない。
 Frame.PresentはGPUのCPU完了待機を要求せず提示を要求する。
-Frame.WaitForReleaseAsyncは画像leaseの解放条件を明示的に待つ操作であり、実際の表示時刻を保証しない。
+Frame.WaitForReleaseAsyncはネイティブの取得・提示処理の完了を明示的に待つ操作であり、GPUのcommand完了や実際の表示時刻を保証しない。GPU使用の完了は利用側がsubmissionから別途確認する。
 
 ### サイズと復旧
 
@@ -41,12 +41,12 @@ Surfaceにつき一つのactive Swapchainを持つ。再構成・解放はすべ
 同期と呼び出しの排他は利用側が管理し、ライブラリはlockや自動のGPU idle待機を追加しない。
 
 FrameのTextureは借用品であり、利用側から直接Disposeできない。
-記録・submitはAcquiredの間だけ許可し、frameごとに一度のsubmitへ必要なcommandをまとめる。
-Frameを使うsubmitでは取得画像を使ったcommandと最終Present状態を検証する。
-Submitはcommandが参照する取得画像を追跡して寿命と最終状態を検証し、同期を生成しない。
-一回のSubmitで複数Frameを使用できる。失効した画像・Viewを再利用する操作は拒否する。
-PresentはSubmittedから一度だけ行い、二重Presentを拒否する。
-Frame.Disposeは未submitの画像を提示せず返却でき、submit済みではGPUとネイティブ提示の解放条件が満たされるまで拒否する。
+利用側は取得から提示までに必要なcommandを記録・提出し、画像をPresent状態へ遷移させる。
+SubmitはcommandからFrameを収集せず、画像の寿命、提出回数、最終状態を追跡しない。一回のSubmitで複数Frameを使用できる。
+失効した画像・Viewを再利用しないこと、すべてのGPU使用と提示の依存を満たすことは利用側が保証する。
+PresentはAcquiredから一度だけ行い、局所的な二重Presentの検査は維持する。
+Frame.Disposeは利用側がGPU使用とネイティブ取得・提示の完了を確認してから呼ぶ。未提示画像は提示せず返却する。
+子resource数による解放拒否やDispose時のGPU完了照会は行わない。
 先にViewとcommandを解放する。Frame、Swapchain、Surface、Deviceの順に所有権を解放する。
 
 ### 複数ウインドウと表示先
@@ -77,11 +77,11 @@ nullならsemaphoreのsignalを発行せず、利用側が画像の取得完了�
 SubmitのwaitにはsemaphoreとGPUの待機stageを渡し、signalはそのSubmitのcommand実行完了後に行う。
 Presentには待機semaphoreのリストを渡す。空リストも許可するが、画像取得・描画完了・提示の依存を満たす責任は利用側にある。
 
-一回のsignalは一回のwaitで消費する。signal済みへの再signal、signal未発行へのwait、重複、同じSubmitでの同一semaphoreのwaitとsignal、異なるDeviceのsemaphoreを拒否する。
+一回のsignalは一回のwaitで消費する。signal済みへの再signal、signal未発行へのwait、重複、同じSubmitでの同一semaphoreのwaitとsignalを避け、同じDeviceのsemaphoreだけを指定する責任は利用側にある。ライブラリはsignal／wait履歴や重複集合を維持しない。
 GPUへ発行済みのsignalはCPU完了前からwaitに指定できる。未発行のsignalを将来待つ方式は今回の単一queue契約には含めない。
 waitが発行されると次のsignalを指定できるが、nativeで許される再利用時点と呼び出しの同期は利用側が管理する。
-semaphoreは発行済みのGPU／提示／取得処理が完了するまでDisposeを拒否し、DisposeのためのCPU待機を自動挿入しない。
-失敗した画像取得、検証エラー、ネイティブ発行前の失敗はsemaphoreのsignal／wait状態を変更しない。
+semaphoreは発行済みのGPU／提示／取得処理が完了してから利用側がDisposeする。解放時の完了照会やCPU待機は行わない。
+失敗した画像取得やネイティブ発行前の失敗については、利用側が結果に従って同期の発行有無を扱う。
 commandが空でもwait／signalがあればSubmitを許可し、取得を破棄する場合のsignal消費などにも使用できる。
 同期は実行順序を表すもので、明示的なbarrierやTextureState.Presentへの遷移を代替しない。
 
@@ -98,6 +98,7 @@ using IGraphicsSubmission submission = device.Queue.Submit(new QueueSubmitDesc
     SignalSemaphores = [rendered],
 });
 frame.Present([rendered]);
+await submission.WaitAsync();
 await frame.WaitForReleaseAsync();
 // Viewとcommandを先に解放してからFrameとsemaphoreを解放する。
 ```
@@ -196,27 +197,24 @@ await frame.WaitForReleaseAsync();
 +// Owns one presentation image lease; semaphores are owned and selected by the caller.
 +public interface IGraphicsSurfaceFrame : IDisposable
 +{
-+    // Gets the acquisition, submission and presentation lifetime state.
++    // Gets local acquisition and presentation state; GPU submissions are not tracked.
 +    SurfaceFrameStatus Status { get; }
 +
 +    // Gets the borrowed image; do not dispose it directly.
 +    IGraphicsTexture Texture { get; }
 +
-+    // Requests presentation after the frame's explicit queue submission without a CPU completion wait.
++    // Requests presentation with caller-supplied synchronization; GPU submissions are not inspected.
 +    SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null);
 +
-+    // Explicitly waits until GPU and presentation use allow frame disposal.
++    // Waits for native acquisition and presentation; wait for GPU submission separately.
 +    ValueTask WaitForReleaseAsync(CancellationToken cancellationToken = default);
 +}
 +
 +// Specifies the lifetime of one acquired presentation image.
 +public enum SurfaceFrameStatus
 +{
-+    // The texture may be recorded and submitted once.
++    // The caller may record and submit use before presentation.
 +    Acquired,
-+
-+    // The explicit queue submission owns the image's GPU use.
-+    Submitted,
 +
 +    // Presentation was requested; the image cannot be reused.
 +    Presented,
@@ -273,14 +271,14 @@ await frame.WaitForReleaseAsync();
 +    Premultiplied,
 +}
 +
-+// 未signalで生成する所有binary semaphore。native使用中のDisposeは拒否する。
++// 未signalで生成する所有binary semaphore。利用側が使用終了を確認してDisposeする。
 +public interface IGraphicsSemaphore : IDisposable { }
 +
 +public sealed record SemaphoreWaitDesc
 +{
 +    // 同じdeviceの、signalが発行済みのsemaphore。
 +    public required IGraphicsSemaphore Semaphore { get; init; }
-+    // GPUの待機stage。None／Host／未知bitは拒否する。
++    // GPUの待機stage。None／Host／未知bitを指定しない。
 +    public required PipelineStage Stages { get; init; }
 +}
 +
@@ -288,9 +286,9 @@ await frame.WaitForReleaseAsync();
 +{
 +    // 実行順。空ならwaitまたはsignalが必須。
 +    public IReadOnlyList<IGraphicsCommandBuffer> CommandBuffers { get; init; } = [];
-+    // 自動追加なし。同じsemaphoreの重複を拒否する。
++    // 自動追加なし。重複とsignal／waitの順序は利用側が管理する。
 +    public IReadOnlyList<SemaphoreWaitDesc> WaitSemaphores { get; init; } = [];
-+    // command完了後にsignalする。waitとの同一semaphoreを拒否する。
++    // command完了後にsignalする。waitと同じsemaphoreを指定しない。
 +    public IReadOnlyList<IGraphicsSemaphore> SignalSemaphores { get; init; } = [];
 +}
 +
@@ -313,8 +311,10 @@ await frame.WaitForReleaseAsync();
 
 Present stateのbarrierはネイティブ同期に必要な状態遷移を記録し、Present自体は実行しない。
 通常のTextureにPresent stateを指定するとArgumentExceptionになる。
-設定の値が不正ならArgumentException、対応外の形式・usage・modeならNotSupportedExceptionを返す。
-不正な所有権や状態遷移はInvalidOperationException、解放済みのリソースはObjectDisposedExceptionで拒否する。
+利用側はcapsに対応する形式・usage・modeと正の寸法を指定する。構成のたびにcapsの全照会や対応リストの再走査は行わず、局所的な引数検査とネイティブ結果の処理を行う。
+所有権、GPU使用中の解放、状態遷移の履歴、同期の正しさは利用側が保証する。検証専用の追跡・走査は行わない。
+現在操作するinstanceの解放済み状態や局所的な二重Presentの検査と、ネイティブエラー処理は維持する。
+共通方針は[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)に従う。
 
 ## 検討した代替案
 
@@ -329,6 +329,6 @@ Present前に必ずCPUでsubmission完了を待つ方式はGPUの提示同期が
 既存のRenderPass、TextureView、command APIを取得画像にも使える。
 表示先の生存、リサイズ、取得失敗への復旧、frameの解放を利用側が明示的に管理する必要がある。
 画像のnative ownershipと同期の実現方法はバックエンドへ閉じ込める。同期オブジェクトの選択・signal／wait・再利用は利用側が管理する。
-共通APIのテストはleaseの失効、再構成、二重提示、明示的なsubmit、コピー読み戻しを確認する。
+共通APIのテストは正しいlease寿命の下で再構成、局所的な二重提示の拒否、明示的なsubmitと完了待機、コピー読み戻しを確認する。
 複数表示先を同時取得して色を描き分け、一括／別々のSubmitとPresent、片方だけのresize・解放、残る表示先の描画継続を検証する。
 実ウインドウのハンドル取得とそのintegration testは後続PRに分離する。

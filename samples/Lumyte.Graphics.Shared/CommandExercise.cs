@@ -17,8 +17,8 @@ public static class CommandExercise
     public static async Task<string> RunAsync(IGraphicDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        CheckReleasedResource(device);
         await CheckBuffersAsync(device);
+        await CheckQueueCompletionDisposalAsync(device);
         foreach (TextureFormat format in Enum.GetValues<TextureFormat>())
         {
             if (format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8))
@@ -28,19 +28,7 @@ public static class CommandExercise
             }
         }
 
-        return "Command checks passed: GPU buffer copy, padded mip/layer copies, clear, pass scope and submission.";
-    }
-
-    private static void CheckReleasedResource(IGraphicDevice device)
-    {
-        using IGraphicsBuffer<uint> source = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopySource });
-        using IGraphicsBuffer<uint> destination = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopyDestination });
-        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        commands.CopyBuffer(source.Slice(0, 4), destination.Slice(0, 4));
-        commands.Finish();
-        source.Dispose();
-        Expect<ObjectDisposedException>(() => device.Queue.Submit([commands]));
-        Require(commands.State == CommandBufferState.Executable, "Input failure changed the command state.");
+        return "Command checks passed: GPU buffer copy, padded mip/layer copies, clear, pass scope, submission and caller-managed completion.";
     }
 
     private static async Task CheckBuffersAsync(IGraphicDevice device)
@@ -73,17 +61,12 @@ public static class CommandExercise
         commands.Finish();
         Require(commands.State == CommandBufferState.Executable, "Finish did not finalize recording.");
         Expect<InvalidOperationException>(commands.Finish);
-        Expect<ArgumentException>(() => device.Queue.Submit([commands, commands]));
-        await upload.MapAsync();
-        Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
-        upload.Unmap();
         var submitted = new List<IGraphicsCommandBuffer> { commands };
         using IGraphicsSubmission submission = device.Queue.Submit(submitted);
         submitted.Clear();
 
         // Completion is acknowledged by Status or WaitAsync; observing Pending cannot freeze GPU progress.
         Require(commands.State == CommandBufferState.Submitted, "Submit did not mark the commands as submitted.");
-        Expect<InvalidOperationException>(commands.Dispose);
         Expect<InvalidOperationException>(() => device.Queue.Submit([commands]));
         using var canceled = new CancellationTokenSource();
         canceled.Cancel();
@@ -104,6 +87,47 @@ public static class CommandExercise
         readback.CopyTo(actual);
         readback.Unmap();
         Require(actual.AsSpan().SequenceEqual(values.AsSpan(2, 4)), "Partial buffer GPU copy changed the bytes.");
+    }
+
+    private static async Task CheckQueueCompletionDisposalAsync(IGraphicDevice device)
+    {
+        uint[] expected = [13, 29, 47, 71];
+        using IGraphicsBuffer<uint> upload = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        using IGraphicsBuffer<uint> gpu = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopySource | BufferUsage.CopyDestination });
+        using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        await upload.MapAsync();
+        upload.CopyFrom(expected);
+        upload.Unmap();
+
+        using IGraphicsCommandBuffer first = device.CreateCommandBuffer(new());
+        first.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.Slice(0, 4), Before = _hostWrite, After = _copyRead });
+        first.CopyBuffer(upload.Slice(0, 4), gpu.Slice(0, 4));
+        first.Finish();
+        using IGraphicsSubmission firstSubmission = device.Queue.Submit([first]);
+
+        using IGraphicsCommandBuffer second = device.CreateCommandBuffer(new());
+        second.Barrier(new BufferBarrierDesc<uint> { Buffer = gpu.Slice(0, 4), Before = _copyWrite, After = _copyRead });
+        second.CopyBuffer(gpu.Slice(0, 4), readback.Slice(0, 4));
+        second.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.Slice(0, 4), Before = _copyWrite, After = _hostRead });
+        second.Finish();
+        using IGraphicsSubmission secondSubmission = device.Queue.Submit([second]);
+        await secondSubmission.WaitAsync();
+
+        // The later submission's completion also establishes completion of the earlier queue work.
+        // The caller can release its command buffer without first querying its own submission.
+        first.Dispose();
+        Require(first.State == CommandBufferState.Disposed, "A command buffer could not be released after later queue work completed.");
+        Require(firstSubmission.Status == SubmissionStatus.Completed, "Earlier queue work did not complete before the later submission.");
+        Require(first.State == CommandBufferState.Disposed, "A completion query changed the disposed command state.");
+        await firstSubmission.WaitAsync();
+        first.Dispose();
+        Require(first.State == CommandBufferState.Disposed, "Waiting for completion revived a disposed command buffer.");
+
+        await readback.MapAsync();
+        uint[] actual = new uint[4];
+        readback.CopyTo(actual);
+        readback.Unmap();
+        Require(actual.AsSpan().SequenceEqual(expected), "Dependent submissions did not preserve the uploaded values.");
     }
 
     private static async Task CheckTexturesAsync(IGraphicDevice device, TextureFormat format)
@@ -140,7 +164,6 @@ public static class CommandExercise
         upload.Unmap();
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         Expect<ArgumentException>(() => commands.Barrier(new TextureBarrierDesc { Texture = source, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.Present, Before = default, After = default }));
-        Expect<InvalidOperationException>(() => commands.CopyBufferToTexture(sourceLayout, sourceRegion));
         Transition(commands, source, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);
         Transition(commands, destination, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);
         commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, bytes), Before = _hostWrite, After = _copyRead });

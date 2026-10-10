@@ -36,7 +36,6 @@ public static class MultiSurfaceExercise
                 SignalSemaphores = [a.Rendered, b.Rendered],
             });
             Present(b);
-            Expect<InvalidOperationException>(() => a.Frame.Present([b.Rendered]));
             Present(a);
             await a.Frame.WaitForReleaseAsync();
             await b.Frame.WaitForReleaseAsync();
@@ -70,11 +69,6 @@ public static class MultiSurfaceExercise
             firstSwapchain.Dispose();
             first.Dispose();
             Expect<ObjectDisposedException>(() => first.GetCapabilities());
-            if (device is IDisposable owner)
-            {
-                Expect<InvalidOperationException>(owner.Dispose);
-            }
-
             Require(b.Frame.Status == SurfaceFrameStatus.Acquired && secondSwapchain.Configuration == secondDesc, "Closing one target invalidated the other target.");
             using IGraphicsSubmission submission = Submit(device, b);
             Present(b);

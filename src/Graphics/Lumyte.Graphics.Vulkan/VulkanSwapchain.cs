@@ -9,7 +9,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
     private readonly VulkanSurface _surface;
     private SwapchainKHR _native;
     private Image[] _images = [];
-    private int _frameCount;
     private bool _outdated;
     private bool _retired;
     private bool _disposed;
@@ -30,11 +29,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
     public void Reconfigure(SwapchainDesc desc)
     {
         ValidateAlive();
-        if (_frameCount != 0)
-        {
-            throw new InvalidOperationException("Release all frames before reconfiguration.");
-        }
-
         Configure(desc);
     }
 
@@ -50,7 +44,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
                 throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
             }
 
-            semaphore.State.ValidateSignal();
             signal = semaphore;
         }
 
@@ -85,8 +78,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         }
 
         frame.SetImage(index, _images[index]);
-        signal?.State.MarkSignal(() => frame.Lifetime.IsReleased);
-        _frameCount++;
         return ValueTask.FromResult(new SurfaceAcquireResult(status, frame));
     }
 
@@ -97,14 +88,8 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
             return;
         }
 
-        if (_frameCount != 0)
-        {
-            throw new InvalidOperationException("Release all frames before swapchain disposal.");
-        }
-
         Owner.Presentation.Swapchain.DestroySwapchain(Owner.NativeDevice, _native, null);
         _disposed = true;
-        _surface.ReleaseSwapchain();
     }
 
     internal SurfaceStatus Present(uint index, Semaphore[] waits, Fence fence)
@@ -141,11 +126,8 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         VulkanPresentation.Check(Owner.Presentation.Maintenance.ReleaseSwapchainImages(Owner.NativeDevice, &release), "ReleaseSwapchainImagesEXT");
     }
 
-    internal void ReleaseFrame() => _frameCount--;
-
     private void Configure(SwapchainDesc desc)
     {
-        SurfaceValidation.Validate(desc, _surface.GetCapabilities());
         SurfaceCapabilitiesKHR caps = _surface.ReadNativeCapabilities();
         ImageUsageFlags usage = ImageUsageFlags.ColorAttachmentBit;
         if ((desc.Usage & TextureUsage.CopySource) != 0)

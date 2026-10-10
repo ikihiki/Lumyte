@@ -9,14 +9,11 @@ internal sealed class WgpuSurface : IGraphicsSurface
     private readonly WgpuDevice _owner;
     private readonly A.Surface _native;
     private readonly A.Adapter _adapter;
-    private WgpuSwapchain? _swapchain;
     private bool _disposed;
 
     internal WgpuSurface(WgpuDevice owner, A.Surface native, A.Adapter adapter)
     {
         (_owner, _native, _adapter) = (owner, native, adapter);
-        _ = GetCapabilities();
-        owner.RetainSurface();
     }
 
     internal A.Surface Native => _native;
@@ -79,13 +76,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
     public IGraphicsSwapchain CreateSwapchain(SwapchainDesc desc)
     {
         ValidateAlive();
-        if (_swapchain != null)
-        {
-            throw new InvalidOperationException("The surface already owns a swapchain.");
-        }
-
-        _swapchain = new(this, desc);
-        return _swapchain;
+        return new WgpuSwapchain(this, desc);
     }
 
     public void Dispose()
@@ -95,19 +86,12 @@ internal sealed class WgpuSurface : IGraphicsSurface
             return;
         }
 
-        if (_swapchain != null)
-        {
-            throw new InvalidOperationException("Dispose the swapchain before its surface.");
-        }
-
         _native.Dispose();
         _disposed = true;
-        _owner.ReleaseSurface();
     }
 
     internal void Configure(SwapchainDesc desc)
     {
-        SurfaceValidation.Validate(desc, GetCapabilities());
         A.TextureUsage usage = A.TextureUsage.RenderAttachment;
         if ((desc.Usage & TextureUsage.CopySource) != 0)
         {
@@ -132,8 +116,6 @@ internal sealed class WgpuSurface : IGraphicsSurface
         };
         _native.Configure(_owner.NativeDevice, WgpuTexture.NativeFormat(desc.Format), usage, desc.Width, desc.Height, Mode(desc.PresentMode), alpha);
     }
-
-    internal void ReleaseSwapchain() => _swapchain = null;
 
     internal void ValidateAlive()
     {

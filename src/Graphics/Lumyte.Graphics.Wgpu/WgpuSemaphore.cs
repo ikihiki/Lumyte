@@ -8,8 +8,6 @@ internal sealed class WgpuSemaphore(WgpuDevice owner) : IGraphicsSemaphore
 
     internal WgpuDevice Owner => owner;
 
-    internal BinarySemaphoreState State { get; } = new();
-
     public void Dispose()
     {
         if (_disposed)
@@ -17,9 +15,6 @@ internal sealed class WgpuSemaphore(WgpuDevice owner) : IGraphicsSemaphore
             return;
         }
 
-        State.ValidateDispose();
-        State.MarkDisposed();
         _disposed = true;
-        owner.ReleaseSemaphore();
     }
 }

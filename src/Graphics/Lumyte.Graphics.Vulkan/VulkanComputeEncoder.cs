@@ -7,7 +7,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 {
     private VulkanComputePipeline? _pipeline;
 
-    private VulkanArgumentTable? _argumentTable;
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
 
@@ -21,7 +20,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         }
 
         concrete.ThrowIfDisposed();
-        _argumentTable = concrete;
     }
 
     public void SetArguments<T>(in T value)
@@ -35,20 +33,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).Validate(snapshot);
-        foreach (ShaderValue member in snapshot.Values)
-        {
-            if (member.IsReference)
-            {
-                if (member.Reference is not IShaderReference reference || reference.Table is not VulkanArgumentTable referenceTable || !referenceTable.BelongsTo(owner.Owner))
-                {
-                    throw new ArgumentException("Root arguments contain a missing or foreign backend reference.", nameof(value));
-                }
-
-                reference.Validate();
-            }
-        }
-
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -90,7 +74,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         VulkanBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
         owner.Owner.Api.CmdDispatchIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes);
-        owner.TrackProgram(() => { _ = buffer.Native; });
     }
 
     public void End() => owner.EndCompute(this);
@@ -108,21 +91,10 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        if (_arguments == null && ShaderDataLayout.HasRoot(_pipeline.Data))
-        {
-            throw new InvalidOperationException("Set the program's root arguments before execution.");
-        }
-
         ShaderBindingSnapshot? bindingSnapshot = null;
         if (_arguments != null)
         {
-            if (_argumentTable == null && _arguments.Values.Any(v => v.IsReference))
-            {
-                throw new InvalidOperationException("Select an argument table before using shader arguments.");
-            }
-
-            _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingSnapshot = snapshot;
         }
 
@@ -136,12 +108,5 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Compute, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }
-
-        if (bindingSnapshot != null)
-        {
-            owner.TrackProgram(bindingSnapshot.Validate);
-        }
-
-        owner.TrackProgram(_pipeline.ValidateAlive);
     }
 }
