@@ -41,9 +41,15 @@
         <p class="hint">接続の終了により、この接続に属するInputリースも解除されます。</p>
     </aside>
     <section class="content">
+        @if (_view != "settings")
+        {
         <div class="page-heading"><div><p class="eyebrow">LIVE DIAGNOSTICS</p><h1 id="page-title">@Titles[_view]</h1></div><span class="hint">@_updatedAt</span></div>
+        }
         <p id="workspace-error" class="error" role="alert">@_error</p>
+        @if (_view != "settings")
+        {
         <div class="stats"><article><span>受信イベント</span><strong id="received">@(Selected?.TelemetryReceived ?? 0)</strong></article><article><span>保持からの欠落</span><strong id="dropped">@(Selected?.TelemetryDropped ?? 0)</strong></article><article><span>未完了操作</span><strong id="pending">@(Selected?.PendingCommands ?? 0)</strong></article></div>
+        }
         @if (_view == "resources")
         {
             <FluentCard Class="card"><h2>Resources — 接続中のゲーム</h2><label for="resource-filter">検索</label><input id="resource-filter" type="search" @bind="_resourceFilter" @bind:event="oninput" />
@@ -88,12 +94,12 @@
         {
             <p role="status">このゲームは @CurrentPage.RequiredSubsystem を公開していません（未対応）。</p>
         }
-        @if (_view is "operations" or "input" or "settings")
+        @if (_view == "settings" && Selected != null)
         {
-            @if (_view == "settings")
-            {
-                <FluentCard Class="card"><h2>Settings</h2><p>readで値とRevisionを確認し、saveへ編集可能項目とExpectedRevisionを送信します。</p><p>saveの受付は保存完了ではありません。戻されたjob-idでsave-resultを実行し、Savedを確認してください。</p></FluentCard>
-            }
+            <SettingsPage Resource="Selected" Events="_events" Invoke="InvokeSettingsAsync" />
+        }
+        @if (_view is "operations" or "input")
+        {
             <label for="operation-filter">操作名・サブシステムで検索</label><input id="operation-filter" type="search" @bind="_operationFilter" @bind:event="oninput" />
             <p class="hint">公開カタログから生成した操作を最大20件表示します。検索で絞り込めます。</p>
             @if (!FilteredOperations.Any())
@@ -110,7 +116,7 @@
         @if (_view is "metrics" or "logs" or "traces")
         {
             <section id="telemetry-panel">
-                <div class="filter-bar"><label for="event-filter">名前・フィールドで検索</label><input id="event-filter" type="search" @bind="_eventFilter" @bind:event="oninput" />
+                <div class="filter-bar">@if (_view != "logs") { <label for="event-filter">名前・フィールドで検索</label><input id="event-filter" type="search" @bind="_eventFilter" @bind:event="oninput" /> }
                     @if (_view != "metrics")
                     {
                         <label for="trace-filter">Trace ID</label><input id="trace-filter" type="search" maxlength="32" @bind="_traceFilter" @bind:event="oninput" />
@@ -148,7 +154,14 @@
                 {
                     <p role="status">@(Selected == null ? "診断対象を選択してください。" : _events.Length == 0 ? "対応済み：テレメトリーデータを待っています。" : "絞り込み条件に一致するデータはありません。")</p>
                 }
-                <div id="event-table" class="table-container"><EventTable Items="FilteredEvents" Kind="@EventKind" Inspect="Inspect" Trace="Trace" /></div>
+                @if (_view == "logs")
+                {
+                    <div id="event-table"><LogViewer Items="FilteredEvents" Inspect="Inspect" Trace="Trace" /></div>
+                }
+                else
+                {
+                    <div id="event-table" class="table-container"><EventTable Items="FilteredEvents" Kind="@EventKind" Inspect="Inspect" Trace="Trace" /></div>
+                }
             </section>
         }
     </section>
