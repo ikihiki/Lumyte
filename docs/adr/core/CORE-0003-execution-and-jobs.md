@@ -8,7 +8,7 @@
 
 Lumyteには、構築した物理スレッドで操作するInput、Activate時に所有者を固定する診断の実行ポイント、BrowserのJS interopなどのスレッド制約と、独立したデータに対して並列化できるCPU処理がある。Graphicsは各backendの制約と呼び出し側の同期に従い、RenderGraphはowner threadで記録する。すべての描画deviceへ一律の構築スレッド制約を追加するものではない。lockによる排他、仕事の順序、物理スレッドの固定は異なる契約である。また、Browserではmanaged threadを作れない構成が通常であり、非同期APIがあることは並列に実行できることを意味しない。
 
-本ADRは固定所有スレッドへの配送とCPUジョブを共通の実行基盤として定義する。所有者・有界キュー・ホストのPump、CPUジョブの依存関係、スレッドなしでの進行、起動と終了を一つの契約として扱う。配置はcoreカテゴリとし、ホストや各機能はこの基盤を明示的に組み合わせる。
+本ADRは固定所有スレッドへの配送とCPUジョブを共通の実行基盤として定義する。所有者・有界キュー・ホストのPump、専用thread自身が駆動する周期更新、CPUジョブの依存関係、スレッドなしでの進行、起動と終了を一つの契約として扱う。配置はcoreカテゴリとし、ホストや各機能はこの基盤を明示的に組み合わせる。
 
 このPRの成果物は設計案である。実装プロジェクト、API実装、性能測定結果は含まない。実装時の検証条件を後述し、調査した他ライブラリの性能特性をLumyteの実測値として使わない。
 
@@ -87,7 +87,7 @@ flowchart LR
 +        // 専用managed threadを起動し、受付準備完了後に返す。OS loop／STAは提供しない。
 +        // Browserは初期対象外。他のthread非対応環境もPlatformNotSupportedExceptionで失敗する。
 +        public static ValueTask<DedicatedThreadExecutor> CreateAsync(string name, int capacity = 256);
-+        // thread-safe・冪等。受付を閉じ、専用threadで受理済み仕事をdrainして停止する。
++        // thread-safe・冪等。受付を閉じ、周期更新を停止して受理済み仕事をdrainする。
 +        public void Complete();
 +        // 以後callbackを実行せず、専用threadの終了処理を終えた時点で完了。
 +        public Task Completion { get; }
@@ -104,7 +104,7 @@ HostThreadExecutorのownerはコンストラクターを呼んだ物理thread、
 
 Host／Game／Render／Audioの役割へ、構成側がexecutorをコンストラクター引数などで明示的に渡す。staticな現在のexecutorやサービスロケーターは設けない。初期構成では同じhost executorを共有し、既存backendの契約が許す場合だけRenderやAudioを専用threadへ分離する。Window・Input取得などOSイベントやSTAが必要な役割を汎用の専用executorへ移さない。HostThreadExecutorはOSメッセージループやrequestAnimationFrameを開始・停止しない。
 
-専用executorは仕事を配送するだけで、GameのtickやAudio.Updateを生成しない。更新頻度と次回要求は統合側が管理し、遅れた更新を無制限に積まない。Game／Renderを分離するときはframe番号付きの不変snapshotまたは所有権を移したbufferを有界の枠で渡す。受け手が返す前に書き換えず、frame省略の方針も統合側が決める。
+専用executorは通常の配送に加え、明示的に登録した周期更新を所有threadから直接駆動できる。周期と制御要求の取り込み予算は統合側が起動時に指定し、毎回のUpdateを外側から配送しない。Game／Renderを分離するときはframe番号付きの不変snapshotまたは所有権を移したbufferを有界の枠で渡す。受け手が返す前に書き換えず、frame省略の方針も統合側が決める。
 
 ### 受付・順序・キャンセル
 
@@ -126,7 +126,7 @@ ownerから未完了の配送、I/OやCPUジョブを `.Wait()`、`.Result`、`G
 
 完了継続はcallback内でinline実行しない。BCL／host runtimeがTaskの継続を配送することと、owner callbackを実行するthreadの固定は別の契約である。InvokeAsyncのawait後がownerであるとは保証しないため、次のowner操作も明示的に配送する。Browserでも通常のイベントループによる継続とPumpを維持し、主threadをblockしない。
 
-Completeは受付を閉じるだけで、受理済みcallbackを取り消さずdrainする。Hostではその後もownerからPumpを続け、専用executorは自身の処理ループで進める。通常のcallback失敗は個々のInvokeAsyncに残し、全受理済み仕事と実行器の後始末が終わればexecutorのCompletionは正常に完了する。完了後のHost.Pumpは0を返す。executorは借用host threadを終了せず、資源の自動解放、GPU完了、Audio再生、callbackが開始した外部I/Oの完了も追跡しない。
+Completeは受付を閉じ、受理済みの単発callbackを取り消さずdrainする。Dedicatedで周期更新が有効なら、後述のloop停止も要求する。Hostではその後もownerからPumpを続け、専用executorは自身の処理ループで進める。通常のcallback失敗は個々のInvokeAsyncに残し、全受理済み仕事と実行器の後始末が終わればexecutorのCompletionは正常に完了する。完了後のHost.Pumpは0を返す。executorは借用host threadを終了せず、資源の自動解放、GPU完了、Audio再生、callbackが開始した外部I/Oの完了も追跡しない。
 
 UI、ユーザー操作を要するWeb Audioの再開、Browserのframe取得からPresentまでの同期区間はhostの既存制約に従う。一般queueへ移すことでユーザー操作の有効期間や借用frameを次turnへ持ち越してはならない。例えばAudioの再開はユーザー操作handler内で最初のawaitより前に開始し、同一turnが必要な描画は準備を済ませてからframeを取得する。
 
@@ -137,6 +137,110 @@ deviceを固定ownerで扱う構成では、生成、子の生成・利用・解
 device復旧やscene終了をまたぐ要求には統合側の世代番号を持たせ、実行時にも有効性を確認する。古い要求を新しいdeviceへ無条件に適用しない。既に生成した資源の解放は元のownerへ戻し、未受理や失敗時も参照と解放責任を保持する。cleanupには取り消されたload tokenを流用しない。
 
 音声のリアルタイムcallbackはmanaged配送queueやCPUジョブへ投入して完了を待つ場所ではない。将来のstream接続は事前に準備した有界bufferから消費し、callbackへ割り当て、I/O、lock、Task待機を持ち込まない。
+
+### 所有スレッドが駆動する周期更新
+
+継続的なAudio制御や一定周期のSimulationは、外側が毎回InvokeAsyncでUpdateを配送する構成にしない。DedicatedThreadExecutorへ同期更新callbackを一度だけ登録し、以後は同じ専用threadが自身の単調時計と待機機構で直接呼ぶ。更新ごとのTask、queue entry、他threadとの要求・完了の往復を作らず、送り手のframeやThreadPoolの空きを周期の起点にしない。
+
+初期化・単発の制御・解放には既存InvokeAsyncを使い、周期更新中は制御要求を各更新境界で取り込む。周期更新、制御callback、初期化・解放はいずれも同じownerで非並行に実行する。一つのexecutorにつき有効な周期更新は一つとし、同じ周期の複数機能は一つのcallbackが決めた順に直接更新する。OSメッセージ処理や描画のPresentをこの周期へ無条件に移さない。
+
+以下は同じ比較元mainに対する `Lumyte.Threading` の追加API案である。
+
+```diff
++namespace Lumyte.Threading
++{
++    // 同期・短時間で返す。async、I/O／GPU／別executor／job完了の待機は禁止。
++    public delegate void ThreadLoopAction(in ThreadLoopTick tick);
++
++    public sealed class ThreadLoopOptions
++    {
++        // period > 0、maxControlWorkItems > 0、0 < maxControlTime < period。
++        // 値は構築後不変。周期と予算は用途ごとに明示する。
++        public ThreadLoopOptions(TimeSpan period, int maxControlWorkItems, TimeSpan maxControlTime);
++        public TimeSpan Period { get; }
++        public int MaxControlWorkItems { get; }
++        public TimeSpan MaxControlTime { get; }
++    }
++
++    public readonly struct ThreadLoopTick
++    {
++        // 起点からの周期番号。最初の予定は1。初回実行も遅延で1より大きくなり得る。
++        public long Index { get; }
++        public TimeSpan Period { get; }
++        // いずれも登録時の単調時計の起点からの経過時間。
++        public TimeSpan ScheduledTime { get; }
++        public TimeSpan StartedTime { get; }
++        // 前のUpdate開始からの実経過時間。初回は起点から。
++        public TimeSpan Elapsed { get; }
++        // 前回実行のIndexとの間に実行しなかった周期数。初回も起点から数える。
++        public long SkippedTicks { get; }
++    }
++
++    public sealed class ThreadLoopHandle
++    {
++        // 任意threadから呼べる冪等な停止要求。通常の制御queue容量を消費しない。
++        public void RequestStop();
++        // 以後Updateを開始せず、開始済みUpdateが返ると完了。失敗時は例外を伝える。
++        // Taskは登録ごとに一つ。完了は制御queueのdrainや資源解放を意味しない。
++        public Task Completion { get; }
++    }
++
++    public sealed class DedicatedThreadExecutor : IThreadExecutor
++    {
++        // owner限定。通常は初期化完了後のInvokeAsync内で一度呼ぶ。
++        // 最初の予定時刻は登録時刻 + period。呼び出し内でUpdateは実行しない。
++        public ThreadLoopHandle StartPeriodic(ThreadLoopOptions options, ThreadLoopAction update);
++        // 前節のCreateAsync、InvokeAsync、Complete等も実装する。
++    }
++}
+```
+
+null引数、非正または表現可能範囲を超える周期・予算は引数例外とする。StartPeriodicは別threadからの呼び出し、有効なloopが既にある場合、そのexecutorの更新callback内からの呼び出しを `InvalidOperationException`、受付終了後を `ObjectDisposedException` として同期的に拒否する。登録に失敗した場合はloopを残さない。成功すると現在の制御callbackが返った後から周期駆動へ切り替える。停止済みhandleを再利用せず、再開は停止完了の観測後に新たなStartPeriodicで行う。
+
+StartPeriodicとCompleteは同じlifecycleの確定点で順序付ける。登録が先ならCompleteはそのloopも停止し、Completeが先ならStartPeriodicは未登録のまま受付終了で失敗する。受付確認とloop設置の間に終了処理が抜ける競合を許さない。
+
+#### 周期、締切と遅れた更新
+
+起点を `t0`、周期を `P` として、予定時刻を `t0 + n * P`、当該更新の終了目標を `t0 + (n + 1) * P` とする。wall clockの変更に影響されない単調時計を使い、Update終了後にPだけsleepして周期を累積的にずらさない。native待機実装は、次の予定時刻までの残り時間と停止通知を扱い、早いwakeやspurious wakeでは時計を再確認する。Task.DelayやThreadPool timerを一回ごとの起動源にはしない。idle時の待機はexecutor内部だけで行い、callback内の同期待機を許可するものではない。
+
+初期方式は遅延分を省略する方式に統一する。内部では次の予定番号と直近に実行した番号を保持し、次の順で進める。
+
+1. 予定時刻に達したら、wake時点で到来済みの最新の周期番号nを選ぶ。飛ばした周期のUpdateをqueueへ積まない。
+2. 後述の制御要求取り込みを行い、その後の実時刻をStartedTimeとしてUpdateを一度直接呼ぶ。制御処理中に時間を超過しても、このnを後ろへ付け替えて遅延を隠さない。
+3. SkippedTicksは `n - 前回実行番号 - 1`、Elapsedは前回Update開始から今回開始までの実時間とする。初回の前回番号は0、前回開始はt0とする。
+4. Update終了時刻より後にある最初の予定時刻を次に選ぶ。実行中に過ぎた周期は省略し、次のSkippedTicksにも含める。経過した回数だけ連続Updateするcatch-upは行わない。
+
+例えば周期10msで初回予定が10ms、実行開始が12ms、終了が37msなら、次回予定は40msとなる。初回Index=1、次回Index=4、次回SkippedTicks=2であり、20msと30msの更新を後追いしない。途中で停止して次回callbackがない場合も、省略と締切超過は診断集計へ残す。
+
+固定stepのsimulationが必要なら、componentがElapsedをaccumulatorへ加え、明示した最大substep数と残余時間の破棄／持ち越し方針を持つ。schedulerが可変Elapsedを固定stepへ変換したり、無制限catch-upで制御要求や他の仕事を止めたりしない。初期APIは動的な周期変更を持たず、停止して新しい登録で起点を設定し直す。
+
+#### 制御要求を取り込む境界
+
+loop稼働中のInvokeAsyncは、次の周期境界で取り込む有界FIFOへ入る。投入は更新を早めたり予定時刻をリセットしたりしない。各境界の開始時点のqueueから、MaxControlWorkItemsまたはMaxControlTimeのどちらかに達するまで同期callbackを処理し、その後にUpdateを呼ぶ。途中の新しい投入は次の境界へ回す。取り消された要求の整理でも時間予算を確認し、callbackは内部lockの外で実行する。
+
+実行中callbackは中断できないため、一件の制御要求が予算を超える可能性は残る。通常の待機時間は周期と滞留件数に依存し、満杯時は未受理で返す。長いupload、I/O、shader compileなどを同じ周期executorへ投入せず、事前準備するかloop停止中に行う。短い制御要求とUpdateの合計が周期に収まるよう測定する。
+
+値の最新状態だけが必要な音量などは、統合側が更新を集約して送ることもできる。再生・停止・解放のような順序を持つ操作はFIFOを維持し、queueが勝手に捨てない。外側は要求完了を観測するが、各frameでUpdateの配送と完了を待つ構成にはしない。ownerから外側へは完成したsnapshotや有界bufferを公開し、他threadがその場で返事をすることをUpdateの進行条件にしない。
+
+#### 停止、失敗と資源寿命
+
+RequestStopは通常queueとは別の状態とwake通知で受理し、満杯や次回予定時刻を待たずに専用threadへ通知する。停止とUpdate開始は原子的な確定点で競合を解決し、停止が勝てば次のUpdateを開始しない。開始が勝てばその一回の終了を待つ。制御callback実行中も強制中断せず、返った時点で停止を確認する。停止要求はUpdate自身からも呼べるが、そのCompletionをcallback内で待ってはならない。
+
+handleは一回の登録に結び付く。停止済みの古いhandleへRequestStopしても、後から登録した別のloopには作用しない。
+
+handleのCompletionは開始済みUpdate終了後に確定し、書き込みを観測側へ公開する。停止後は通常の専用executorへ戻って受理済み制御要求を処理できる。loop停止は制御要求の取消や受付終了ではない。停止完了後にも古い制御要求が実行され得るため、通常終了ではproducerを先に止め、FIFOでownerのcleanupへ進む。
+
+Update例外では自動再試行せずloopを停止し、handleのCompletionを失敗させる。executorの配送機構は後始末のため維持する。通常の制御callback例外はそのInvokeAsyncだけを失敗させ、loopを止めない。回復不能なexecutor内部障害では、既存の受付閉鎖と要求の失敗に加えて有効なloopも失敗させ、開始済みcallbackの終了を追跡する。新しいloopを開始するかは呼び出し側が状態を検査して決める。
+
+正常終了はproducer停止 → loopのRequestStopとCompletion観測 → CPU仕事・外部I/Oの完了 → ownerで資源解放 → executor.CompleteとCompletion観測の順とする。executor.Complete自体も有効なloopへ停止を要求してから受理済み制御要求をdrainするが、資源解放を代行しない。先にCompleteしてからcleanupを投入してはならない。handleやexecutorの完了継続はcallback内でinline実行しない。
+
+#### host・Browserと音声の実時間処理
+
+HostThreadExecutorへは自動timerやStartPeriodicを追加しない。host自身が持つframe／イベントloopの適切なphaseで同期Updateを直接呼ぶ。threadなし環境では同じcomponentをhostへ割り当て、必要ならhostの単調時刻で更新要否を判定する。hostのturnより短い周期を保証できず、非表示タブで停止すればその間は進まない。OSイベント、requestAnimationFrame、vsync、AudioWorkletなど既存hostの駆動源を尊重し、専用managed thread用の待機をBrowserへ持ち込まない。
+
+周期Audio.Updateは再生状態の管理や制御要求の反映であり、音声sampleの供給時計にはしない。実際のPCM消費・生成はnative device callback、既存ミキサー、AudioWorkletなど音声backendの駆動源に従う。そこからInvokeAsync、CPUジョブや周期loopの完了を待たない。データは事前に用意した有界bufferや状態snapshotで渡し、buffer不足時の無音化などは音声backend側で定義する。OS／GC／timerの遅延があるmanaged周期loopで音声のhard realtimeを保証するものではない。
+
+専用thread化で外側のframe遅延とThreadPoolのqueue待ちを周期から分離できるが、GC、OS scheduling、長い制御callback、Update自体の超過は残る。既定でbusy spin、OSのrealtime優先度、プロセス全体のtimer分解能変更、GC停止を要求しない。予定時刻との差、実行時間、締切超過、省略数、制御要求の反映遅延を測定し、soft realtimeとして評価する。
 
 ### CPUジョブの単位と依存関係
 
@@ -269,7 +373,7 @@ Pumpは開始時点までに受理したrunを対象とし、そのrun内で新�
 
 | 環境 | owner処理 | CPU backend | 同期待機 |
 | --- | --- | --- | --- |
-| Windows／Linux | Host、必要時だけDedicated | ThreadPoolまたはCooperativeを明示選択 | owner／job callbackでは禁止 |
+| Windows／Linux | Host、必要時だけDedicatedと周期loop | ThreadPoolまたはCooperativeを明示選択 | owner／job callbackでは禁止 |
 | Browser・通常のthreadなしWasm | main contextのHost | Cooperative | 禁止。各turnをJSへ返す |
 | Browser・thread対応Wasm | JS interopのownerは別途維持 | 初期実装ではCooperative | mainをblockしない |
 | その他のthread作成不可host | 既存host threadのHost | Cooperative | hostイベント処理を止めない |
@@ -288,16 +392,16 @@ I/Oは本来のasync APIを直接使い、待つだけの `Task.Run` を作ら�
 
 ### DIを使わない登録と起動の利用例
 
-マルチスレッドを使えるnative hostで、HostとGameは既存host thread、Renderは専用thread、CPUジョブはThreadPoolへ配置する例を示す。ここでの「登録」は、役割に対応するexecutorの参照をアプリの構成オブジェクトへ保持することである。名前からthreadを検索したり、DIや属性から自動検出したりしない。`ExecutionRoles`、`NoDiApplication`、`OwnerComponent`は例のアプリ側の型であり、Lumyteの追加公開APIではない。
+マルチスレッドを使えるnative hostで、Host・Game・Renderは既存host thread、Audio制御は専用thread、CPUジョブはThreadPoolへ配置する例を示す。ここでの「登録」は、役割に対応するexecutorの参照をアプリの構成オブジェクトへ保持することである。名前からthreadを検索したり、DIや属性から自動検出したりしない。`ExecutionRoles`、`NoDiApplication`、`OwnerComponent`は例のアプリ側の型であり、Lumyteの追加公開APIではない。
 
 起動は次の順で進む。
 
 1. 既存hostの開始callbackでHostThreadExecutorを生成し、現在の物理threadをownerとして固定する。この操作は新しいthreadを作らない。
 2. 初期化中も呼ばれるhostのturnへPumpを接続する。通常のゲーム更新を開始する前から駆動する。
-3. StartAsyncがDedicatedThreadExecutor.CreateAsyncを呼ぶ。この呼び出しがRender用threadを起動し、受付準備完了後にexecutorを返す。
-4. 返されたexecutorをRenderの役割へ、host executorをHostとGameの役割へ登録する。登録自体はthreadを作らない。
+3. StartAsyncがDedicatedThreadExecutor.CreateAsyncを呼ぶ。この呼び出しがAudio用threadを起動し、受付準備完了後にexecutorを返す。
+4. 返されたexecutorをAudioの役割へ、host executorをHost・Game・Renderの役割へ登録する。登録自体はthreadを作らない。
 5. 各executorのInvokeAsync内で、その役割を使うcomponentを生成・初期化する。constructorには同じexecutor参照を渡す。これにより、生成する場所と利用側が認識するownerが一致する。
-6. 全componentの初期化後にStartAsyncを完了させ、hostが成功を確認してゲーム更新を開始する。
+6. 全componentの初期化後、AudioのownerでStartPeriodicを一度呼ぶ。以後のAudio制御更新は専用threadが駆動する。StartAsyncの成功をhostが確認してから通常のGame更新も開始する。
 
 ```csharp
 using Lumyte.Jobs;
@@ -305,14 +409,14 @@ using Lumyte.Threading;
 
 // アプリの役割割り当て。実行器を所有・停止するのはNoDiApplication。
 sealed record ExecutionRoles(
-    IThreadExecutor Host, IThreadExecutor Game, IThreadExecutor Render);
+    IThreadExecutor Host, IThreadExecutor Game, IThreadExecutor Render, IThreadExecutor Audio);
 
 sealed class NoDiApplication
 {
-    private DedicatedThreadExecutor? _renderThread;
+    private DedicatedThreadExecutor? _audioThread;
     private JobScheduler? _jobs;
     private OwnerComponent? _game;
-    private OwnerComponent? _render;
+    private OwnerComponent? _audio;
 
     // 必ず実際のhost thread上でnewする。async継続上で遅延生成しない。
     public NoDiApplication()
@@ -324,24 +428,25 @@ sealed class NoDiApplication
 
     // StartAsyncの成功を観測するまでは利用側へ公開しない。
     public ExecutionRoles? Roles { get; private set; }
+    public ThreadLoopHandle? AudioLoop { get; private set; }
 
     // 起動は一度。呼び出し側はこのTaskを保持して完了と失敗を観測する。
     public async Task StartAsync()
     {
         // ここで新しい物理threadを起動する。await後がhostとは限らない。
-        _renderThread = await DedicatedThreadExecutor.CreateAsync("render", capacity: 256);
+        _audioThread = await DedicatedThreadExecutor.CreateAsync("audio-control", capacity: 256);
 
-        var roles = new ExecutionRoles(Host, Host, _renderThread);
-        Roles = roles; // 役割への登録。HostとGameは同じinstance。
+        var roles = new ExecutionRoles(Host, Host, Host, _audioThread);
+        Roles = roles; // 役割への登録。Host・Game・Renderは同じinstance。
 
         // CPU計算の同時数を指定する。専用threadを2本作る指定ではない。
         _jobs = JobScheduler.CreateThreadPool(maxConcurrency: 2);
 
-        await roles.Render.InvokeAsync(() =>
+        await roles.Audio.InvokeAsync(() =>
         {
-            // constructorも専用Render threadで呼ばれる。
-            _render = new OwnerComponent(roles.Render);
-            _render.Initialize();
+            // constructorも専用Audio threadで呼ばれる。
+            _audio = new OwnerComponent(roles.Audio);
+            _audio.Initialize();
         });
 
         await roles.Game.InvokeAsync(() =>
@@ -350,12 +455,40 @@ sealed class NoDiApplication
             _game = new OwnerComponent(roles.Game);
             _game.Initialize();
         });
+
+        await roles.Audio.InvokeAsync(() =>
+        {
+            // 周期と制御予算は説明用。必要な初期化が全て終わってから一度だけ登録。
+            var options = new ThreadLoopOptions(TimeSpan.FromMilliseconds(10),
+                maxControlWorkItems: 16, maxControlTime: TimeSpan.FromMilliseconds(1));
+            AudioLoop = _audioThread.StartPeriodic(options,
+                (in ThreadLoopTick tick) => _audio!.Update(tick.Elapsed));
+        });
     }
+
+    // 状態が変わった時だけ呼ぶ。呼び出し側は返されたValueTaskを観測する。
+    // 起動成功後からproducer停止前までの利用に限定する。
+    public ValueTask SetAudioPausedAsync(bool paused) =>
+        Roles!.Audio.InvokeAsync(() => _audio!.SetPaused(paused));
 
     // StartAsyncの終了と業務producerの停止後、一度に一呼び出しだけ行う。
     // 初期化失敗時も、生成済みの参照はfieldsに残るため同じ手順で片付けられる。
     public async Task StopAsync()
     {
+        if (AudioLoop is not null)
+        {
+            AudioLoop.RequestStop(); // queue満杯でも停止要求を受け付ける。
+            try
+            {
+                await AudioLoop.Completion; // Updateが返るまで資源を解放しない。
+            }
+            catch (Exception error)
+            {
+                // loopの失敗を観測して記録する。ownerでの後始末は続ける。
+                Console.Error.WriteLine(error);
+            }
+        }
+
         if (_jobs is not null)
         {
             _jobs.BeginShutdown(JobShutdownMode.CancelPending);
@@ -367,15 +500,15 @@ sealed class NoDiApplication
             _game?.Dispose();
             _game = null; // Disposeが成功した場合だけ参照を外す。
         });
-        if (_renderThread is not null)
+        if (_audioThread is not null)
         {
-            await _renderThread.InvokeAsync(() =>
+            await _audioThread.InvokeAsync(() =>
             {
-                _render?.Dispose();
-                _render = null;
+                _audio?.Dispose();
+                _audio = null;
             });
-            _renderThread.Complete();
-            await _renderThread.Completion;
+            _audioThread.Complete();
+            await _audioThread.Completion;
         }
 
         Roles = null;
@@ -384,10 +517,12 @@ sealed class NoDiApplication
     }
 }
 
-// Game／Renderのスレッド制約を示す最小component。実際のdevice APIではない。
+// Game／Audio制御のスレッド制約を示す最小component。実際の音声deviceではない。
 sealed class OwnerComponent
 {
     private readonly IThreadExecutor _owner;
+    private bool _paused;
+    private long _updates;
 
     public OwnerComponent(IThreadExecutor owner)
     {
@@ -401,11 +536,26 @@ sealed class OwnerComponent
         Console.WriteLine($"{_owner.Name}: thread {Environment.CurrentManagedThreadId}");
     }
 
+    public void Update(TimeSpan elapsed)
+    {
+        _owner.VerifyAccess();
+        if (!_paused)
+        {
+            _updates++; // 実際には短い状態更新。ここでPCMを供給する例ではない。
+        }
+    }
+
+    public void SetPaused(bool paused)
+    {
+        _owner.VerifyAccess();
+        _paused = paused;
+    }
+
     public void Dispose() => _owner.VerifyAccess();
 }
 ```
 
-`OwnerComponent.Initialize`の出力で、GameがhostのID、Renderが別のIDになることを確認できる。Nameは表示用であり、同名のexecutorでも同じthreadとは限らない。ThreadPoolのworkerはCPU仕事の投入時にruntimeが管理するため、役割へ登録せず、固定thread IDも利用側へ渡さない。
+`OwnerComponent.Initialize`の出力で、GameがhostのID、Audioが別のIDになることを確認できる。Nameは表示用であり、同名のexecutorでも同じthreadとは限らない。ThreadPoolのworkerはCPU仕事の投入時にruntimeが管理するため、役割へ登録せず、固定thread IDも利用側へ渡さない。
 
 hostとの接続は以下のようにする。OnHostStartedとOnHostTurnは、アプリが既存のOSイベントループへ接続する同期callbackの例である。Lumyteがこのイベントループを実装するわけではない。hostは両方を同じ物理threadで呼び、起動・通常更新・終了処理中にOnHostTurnを繰り返す。
 
@@ -413,6 +563,7 @@ hostとの接続は以下のようにする。OnHostStartedとOnHostTurnは、�
 NoDiApplication app = null!;
 Task startup = null!;
 bool startupObserved = false;
+bool stopRequested = false;
 bool ready = false;
 
 void OnHostStarted()
@@ -433,12 +584,28 @@ void OnHostTurn()
             // 完了済みTaskの結果だけを取得する。未完了Taskを同期waitしない。
             startup.GetAwaiter().GetResult();
             app.Roles!.Game.VerifyAccess();
-            ready = true; // この後のhost turnから通常のGame更新を許可する。
+            // 起動中に終了要求が来ていればGame更新を再開しない。Audioは専用loopで進む。
+            ready = !stopRequested;
         }
         catch (Exception error)
         {
             Console.Error.WriteLine(error);
+            stopRequested = true;
             // 更新を開始せず、生成済み資源のStopAsyncを外側の終了処理から呼ぶ。
+        }
+    }
+
+    if (ready && app.AudioLoop!.Completion.IsCompleted)
+    {
+        stopRequested = true;
+        ready = false; // 外側の終了処理へ移る。失敗したloopを放置しない。
+        try
+        {
+            app.AudioLoop.Completion.GetAwaiter().GetResult(); // 完了済みのみ観測。
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(error);
         }
     }
 }
@@ -446,9 +613,11 @@ void OnHostTurn()
 
 hostの接続順は「両callbackを登録 → OnHostStarted → OnHostTurnの反復」とする。起動Taskをawaitする外側のworkflowを使う場合も、hostのイベントループ自体は止めない。開始callbackをasync voidにしたり、StartAsyncが終わってからPumpを登録したりしない。
 
-終了要求時はreadyをfalseにして新規更新・I/Oなどのproducerを止め、startupが終了したことを確認した後、StopAsyncが返すTaskを保持する。OnHostTurnを続けながらそのTaskを非同期に観測し、正常終了後にhostのイベントループを終了する。起動失敗時も同様である。StopAsyncの失敗時はappと生存資源を保持して必要なPumpを続け、失敗箇所を確認して後始末を再試行する。無条件のfinallyでexecutorをCompleteしてはならない。実資源を生成するconstructor自身が失敗した場合の部分生成物は、そのconstructorが片付ける。
+終了要求時はhost上でstopRequestedをtrue、readyをfalseにして新規更新・I/Oなどのproducerを止め、startupが終了したことを確認した後、StopAsyncが返すTaskを保持する。起動中の終了要求でも、後の起動成功でproducerを再開しない。OnHostTurnを続けながらそのTaskを非同期に観測し、正常終了後にhostのイベントループを終了する。起動失敗時も同様である。StopAsyncの失敗時はappと生存資源を保持して必要なPumpを続け、失敗箇所を確認して後始末を再試行する。無条件のfinallyでexecutorをCompleteしてはならない。実資源を生成するconstructor自身が失敗した場合の部分生成物は、そのconstructorが片付ける。
 
-この例は起動順を説明するもので、フレームを自動生成したり描画backendを選択したりしない。threadなし構成では専用threadを作らずRenderにもHostを割り当て、CPU側をCreateCooperativeにして同じhost turnからPumpする。DIを後から導入する場合も、この役割割り当てと起動順を保ち、DIは設定と参照の受け渡しを担当する。
+Audioの定期Updateは一度のStartPeriodic登録で続き、OnHostTurnやGameから更新要求を送り続けない。SetAudioPausedAsyncのような状態変更だけが制御queueを通る。例の10ms周期と1ms予算は推奨値ではなく、音声sampleの供給周期も意味しない。登録が成功すると最初の予定時刻から動くため、loopが触る依存対象はStartPeriodicより前に全て初期化する。
+
+threadなし構成ではAudioにもHostを割り当て、StartPeriodicは使わずhostの安全な更新phaseから、hostが測った実経過時間を渡してUpdateを直接呼ぶ。componentはThreadLoopTickに依存せず、専用loopではadapterがtick.Elapsedを渡す。CPU側をCreateCooperativeにする場合は、同じhost turnからそのPumpも呼ぶ。上のnative用例をfactory一行の変更だけでthreadless対応とせず、Audioの駆動と後始末もhostの契約に合わせる。DIを後から導入する場合も、この役割割り当てと起動順を保ち、DIは設定と参照の受け渡しを担当する。
 
 ### フレームへの接続例
 
@@ -516,7 +685,7 @@ Cooperativeの初期化でジョブを使うなら初期化用turnでもPumpを�
 
 終了は次の順で行う。
 
-1. 業務の新規producerを止め、I/O workflowを完了または取消し、後からCPU仕事が投入されない状態にする。ownerの受付・PumpとCooperativeのPumpは、この待機中から終了手順全体を通して継続する。
+1. 業務の新規producerを止める。周期loopはRequestStopし、開始済みUpdateの終了と各handleのCompletionを観測する。ownerの受付・PumpとCooperativeのPumpは、この待機中から終了手順全体を通して継続する。その上でI/O workflowを完了または取消し、後からCPU仕事が投入されない状態にする。
 2. `BeginShutdown(Drain)`、または未開始計算を不要とする場合は `CancelPending` を呼ぶ。どちらも新規runを拒否する。CancelPendingは全未完了runに取消を要求し、開始済みcallbackは強制停止しない。
 3. ホストのCooperative Pumpを継続してschedulerのCompletionを非同期に待つ。受理済みrunごとの結果を観測し、必要なowner適用・後始末を配送して、借用bufferを返す。
 4. 外部GPU／Audioの完了条件も満たして子資源、device、scopeをownerで解放する。全機能の後始末が成功したら共有instanceにつき一度executorをCompleteし、Host.Pumpを続けながらそのCompletionを非同期に待つ。drainと実行器の後始末が完了してからホストを終了する。
@@ -543,6 +712,10 @@ executorをCompleteしてからcleanupを配送しても未受理になる。通
 
 追加の.NET 10固有資料は [Wasm features](https://github.com/dotnet/runtime/blob/v10.0.0/src/mono/wasm/features.md#multi-threading)、[Threadの実装](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Threading/Thread.cs)、[ThreadPoolTaskScheduler](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/ThreadPoolTaskScheduler.cs)。`Thread.IsThreadStartSupported`はinternalで公開契約に利用できない。`LongRunning`もthread非対応環境の回避策ではない。[UnsafeQueueUserWorkItem](https://learn.microsoft.com/en-us/dotnet/api/system.threading.threadpool.unsafequeueuserworkitem?view=net-10.0)のExecutionContext非伝播を前提とする場合も、前述のContext契約を維持する。
 
+周期駆動については [.NET PeriodicTimer](https://learn.microsoft.com/en-us/dotnet/api/system.threading.periodictimer.waitfornexttickasync?view=net-10.0) のtick集約と単一consumer、[System.Threading.Timer](https://learn.microsoft.com/en-us/dotnet/api/system.threading.timer?view=net-10.0) のThreadPool callbackと重複実行の説明を確認した。PeriodicTimerのawaitは物理threadの固定を保証せず、Threading.Timerもowner executorの代用にならない。所有threadが直接Updateを呼ぶ方式を選ぶ。
+
+[Linux clock_nanosleep](https://www.man7.org/linux/man-pages/man2/clock_nanosleep.2.html) は絶対時刻による待機が相対sleepのdriftを避けることと、実際の開始にはscheduling遅延があることを説明する。本設計はこの原則を単調時計の予定時刻へ適用するもので、全環境にPOSIX APIを要求しない。[PortAudioのcallback指針](https://portaudio.com/docs/v19-doxydocs/writing_a_callback.html) は音声需要に応じたcallbackと、allocation・I/O・mutexなど実行時間が不定な処理を避けることを示す。これをAudio制御loopと音声供給の分離の根拠とする。
+
 性能上の初期方針は次とする。
 
 - graphの構築・循環検出・依存配列の確保をフレーム外へ置く。delegateをgraph内に保持し、runは状態配列をpoolから借りる。実行中node数と容量予約を一致させ、動的な無制限配列拡大で上限を回避しない。
@@ -550,6 +723,7 @@ executorをCompleteしてからcleanupを配送しても未受理になる。通
 - 一つのrunにJobRunを一つ確保し、Completionを参照した場合だけTaskを確保する。全経路でzero allocationとは宣言しない。例外・取消・診断有効時の確保も別に測る。
 - 完了したrunの枠を返し、job数ではなくnode数＋最大同時数に比例するready情報を保持する。Contextが参照するデータ量は含まれないため、Resources／frameのbyte予算を統合側で制限する。
 - ownerの配送遅延、runの待機／実行時間、拒否件数、ready数、実行中数、取消／失敗を集約する。詳細トレースはopt-inとし、要素ごとのActivity・文字列生成・高cardinalityタグを既定で発行しない。
+- 周期loopは初期登録時にdelegate・handle・待機資源を用意し、各tickは値型の時刻情報と直接呼出しで進める。定常tickにTask／queue entryを作らず、制御要求の空queue確認・wake頻度も測る。ログやActivityを毎tick生成せず、遅延・締切超過・省略数を集約する。
 - 独自work stealing deque、spin時間、cache line padding、専用CPU pool、frame優先度は計測後に決める。ThreadPoolの共有負荷がp95／p99を悪化させる場合に固定poolを比較し、既存backendと同じAPI契約を保つ。
 
 ### 実装時の性能測定
@@ -563,6 +737,7 @@ executorをCompleteしてからcleanupを配送しても未受理になる。通
 | 仕事量が偏る範囲・fan-out／fan-in | 分布、依存深さ、巨大range | worker遊休、末尾遅延、claim競合。work stealing導入判断 |
 | owner配送＋CPU＋async I/O混在 | poolの外部負荷、frame頻度 | frame時間と配送遅延のp50／p95／p99、queue滞留、拒否率 |
 | threadなしの大きなrun | batchSize、Pump時間・件数 | 一回のPump最大時間、host入力遅延、完了までのturn数 |
+| 外側から毎回配送／所有threadの直接周期更新 | 同じ同期Update、同じ周期、senderのframe遅延、CPU／GC負荷、制御要求burst | 予定時刻からの開始遅延p50／p95／p99／max、更新時間、終了目標超過数、省略tick、control反映遅延、割り当て、wake／context switch。送り手依存を外した効果と残るばらつきを比較 |
 | 長時間繰返し・取消・容量飽和 | run数、成功／失敗率、停止mode | GC回数、最大保持memory、上限の遵守、停止所要時間 |
 
 CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復数、入力データ、実行コマンドと生データを残す。平均だけで判断せず分散とtail latencyを比較する。全threadの割り当てを観測し、投入threadだけのallocated bytesを総量としない。ブラウザー性能は実イベントループとWasm成果物で測る。具体的な性能目標・最適なbatch値は実測後に定める。
@@ -575,7 +750,12 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 - executorの引数例外とfaulted／canceled ValueTaskの区別、満杯・受付終了・開始前取消と開始の競合、開始後取消でも生成した資源を失わないこと。callback例外後の継続、内部障害時の未実行要求とCompletionの失敗。
 - Hostの借用threadとDedicatedの生成threadでのowner一致、専用threadの起動失敗時cleanup、Completeの冪等性・受理競合、全受理済み仕事のdrain。Taskを返すcallbackの外側workflowが内側の完了と資源寿命を追跡すること。
 - 通常frame開始前の初期化Pump、途中失敗の逆順cleanup、共有executorの終了、cleanup満杯・解放失敗の再試行、取消済みload tokenをcleanupへ流用しないこと。
-- DIなしの起動例で、hostの事前Pump接続、専用thread起動後の役割登録、owner上のconstructor／初期化、起動成功前の通常更新禁止を確認する。初期化途中の失敗でも参照を保持し、Pump継続下で後始末できること。
+- DIなしの起動例で、hostの事前Pump接続、専用thread起動後の役割登録、owner上のconstructor／初期化、依存対象の初期化後の周期loop登録、起動成功前のhost通常更新禁止を確認する。初期化途中の失敗でも参照を保持し、Pump継続下で後始末できること。起動中の終了要求後にproducerを再開しないこと。
+- 周期loopの一度だけの登録、Updateと初期化・制御・解放のowner一致、同時登録・誤owner・再入登録の拒否、毎tickのTask／投入要求がないこと。送り手のframeを止めても専用loopが進むこと。
+- 制御可能な単調時計で、初回時刻、絶対予定によるdrift回避、早いwake、長いUpdate、長い制御callback、suspend相当の遅延を検証する。SkippedTicks／Elapsed／終了目標の一致、省略回数分のcatch-upをしないことを確認する。
+- 制御要求の有界FIFO・境界snapshot・件数／時間予算、満杯と連続producer下でもUpdateへ進むこと、投入による周期リセットなし、停止通知のlost wakeupなしを確認する。
+- queue満杯中・長周期の待機中・制御処理中・Update開始との競合でもRequestStopを受け付けること。開始済みUpdateの終了後にhandleを完了し、停止後のcleanupと新規loop登録が可能で、古いhandleの停止が新しいloopへ作用しないこと。Update例外でloopだけが停止し、Complete時はloop停止と受理済み要求drainを両方追跡すること。StartPeriodicとCompleteの競合で未追跡のloopが残らないこと。
+- Audio制御loopの停止・遅延と音声backendのsample供給周期を分離する。音声callbackからmanaged queue／job待機へ入らないこと。host割り当てでは専用threadやtimerを起動せず、安全なphaseで直接更新すること。
 - chain／diamond／独立枝の依存順と一度だけ実行、循環／無効IDの拒否、0件・端数・大きなlengthの範囲重複／欠落なし、先行結果のメモリ可視性。
 - 同じgraphの複数runと独立Context、異なるrun間の枠再利用、古いJobRunを保持したまま新しいrunが完了しても状態が混ざらないこと。
 - 任意producerの容量競合、予約中の受付終了、getLength例外、受理直前／直後の取消、run単位の全受理または全拒否、ready追加とdrain終了のlost wakeup。
@@ -586,12 +766,15 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 - 入力snapshot、独立Animation評価、owner結果適用、既存Diagnostics execution point、同一turn内Presentをつないだ統合。CPU成功だけでGPU資源を解放しないこと。
 - Drain／CancelPending、I/O中でqueueが空の終了、owner cleanup中の満杯、停止期限超過を検証し、未完了handleや生存bufferを成功として破棄しない。
 
-実装は、まずHostThreadExecutorとgraph／Cooperativeで契約を確立し、次にDedicatedThreadExecutorとThreadPoolを各契約の検証へ通し、最後に実ホスト統合と性能測定を行う。NativeのテストだけでBrowser対応済みとはしない。
+実装は、まずHostThreadExecutorとgraph／Cooperativeで契約を確立し、次にDedicatedThreadExecutorの配送・周期更新とThreadPoolを各契約の検証へ通し、最後に実ホスト統合と性能測定を行う。NativeのテストだけでBrowser対応済みとはしない。
 
 ## 検討した代替案
 
 | 代替案 | 採用しない理由／再検討条件 |
 | --- | --- |
+| 各Updateを外側からInvokeAsyncで配送 | 送り手のframe遅延、queue待ち、wake待ちが周期へ伝わる。専用ownerに一度登録し、状態変更だけを配送する |
+| await PeriodicTimer／Threading.Timerで固定ownerを代用 | await後の物理threadやcallbackの非重複を同時に保証できない。専用threadの同期loopと単調時計を使う |
+| 遅れたtickを全てcatch-upする | 負荷増加がさらに遅れを生む。schedulerは省略数を通知し、必要な固定stepだけcomponentが上限付きで処理する |
 | すべてTask.Run＋lock | 物理thread、phase、threadlessでの進行を保証せず、細粒度では管理費用が大きい |
 | 機能ごとに専用thread | 機能数に伴う過剰なthreadと配送が増える。owner固定が必要な役割だけに限定 |
 | 独自の固定pool＋work stealingを最初から実装 | correctness・wake・停止・移植の負担に対する実測根拠がない。共有poolのtail latencyが問題なら比較する |
@@ -604,15 +787,15 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 
 ## 結果と影響
 
-- 物理thread固定、順序・排他、並列計算を明確に扱い、threadなしでも同じgraphを進行できる。
+- 物理thread固定、所有者自身の周期更新、順序・排他、並列計算を明確に扱い、threadなしでも同じgraphを進行できる。
 - 既存のowner契約・GPU完了・診断phaseを維持し、backendへ暗黙の配送やlockを加えない。
 - reusable graphとchunk処理で定常時の管理費用を抑える設計だが、直接ループより速いことは未検証である。小仕事には直接実行を選ぶ余地を残す。
 - 同期CPU callback、明示Context、ownerとの外側workflowという制約が利用コードに加わる。bufferの寿命、データ競合、frameの遅延・省略方針をschedulerだけで解決するものではない。
-- ThreadPool共有の競合と、Cooperativeの非preemptiveな予算超過は残る。粒度調整と実測が必要になる。
+- 周期Updateごとの配送を省けるが、OS／GCによる遅れとcallbackの予算超過は残る。ThreadPool共有の競合、Cooperativeの非preemptiveな予算超過も含め、粒度調整と実測が必要になる。
 
 ## 別途決定する事項
 
-- ホスト別のwake通知、Engineのframe phaseとDI登録API。owner配送とCPUジョブの基本契約は本ADRで定める。
+- ホスト別のwake通知、Engineのframe phaseとDI登録API。owner配送・専用threadの周期更新・CPUジョブの基本契約は本ADRで定める。
 - 固定専用CPU pool、優先度、複数pool、動的な子ジョブ、跨run依存、協調joinの必要性と公開API。
 - Browserのmanaged worker、JS interop所有者、OffscreenCanvasを含む対応構成。
 - ECSの読み書き宣言による依存自動生成、Native／SIMDカーネル、可変graphの差分更新。
