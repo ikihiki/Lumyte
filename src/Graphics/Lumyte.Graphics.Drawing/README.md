@@ -76,3 +76,23 @@ dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
 `Slang.targets` が WGSL と SPIR-V、ABI reflection を `.lshader` にまとめて DLL に埋め込みます。
 実行時の Slang installation は不要です。テストは形状の巻き方向・閉じ方・不正値、
 生成 serializer と全 shader の両 target を GPU なしで確認します。
+
+## 3D モデルとエフェクト
+
+[glTF／GLB モデル描画](Gltf/README.md) は静的モデルの読み込み、mesh upload、indexed drawing、
+metallic-roughness の材質、normal map、方向ライト、ambient、AO、発光、透明・両面描画を提供します。
+`ModelVertex`、`ModelMaterial`、`ModelDrawArguments` は既存の shader serializer を使用します。
+
+[エフェクト](Effects.md) はモデルの距離フォグと、fullscreen pass の露出・彩度・ビネット・
+Reinhard tone mapping を提供します。どちらも WGSL／SPIR-V の offline artifact を使用します。
+
+通常のテスト実行では GPU テスト 2 件を skip します。Vulkan GPU または software driver を
+設定した環境では、以下で 23 件（CPU 21 件、GPU pixel readback 2 件）を実行できます。
+
+```sh
+LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
+```
+
+GPU テストは upload から indexed model draw、HDR scene、フォグ、fullscreen effect、
+readback までの結果を確認します。CPU テストは glTF／GLB、external／data URI、sparse／
+interleaved accessor、scene transform、material、生成 codec の compiled ABI を確認します。

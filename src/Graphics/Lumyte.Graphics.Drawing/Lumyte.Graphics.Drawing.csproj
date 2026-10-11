@@ -12,6 +12,10 @@
     <SlangShader Include="Shaders/color-fragment.slang" ResourceName="Lumyte.Drawing.color-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/texture-vertex.slang" ResourceName="Lumyte.Drawing.texture-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/texture-fragment.slang" ResourceName="Lumyte.Drawing.texture-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/model-vertex.slang" ResourceName="Lumyte.Drawing.model-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/model-fragment.slang" ResourceName="Lumyte.Drawing.model-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/postprocess-vertex.slang" ResourceName="Lumyte.Drawing.postprocess-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/postprocess-fragment.slang" ResourceName="Lumyte.Drawing.postprocess-fragment" Stage="fragment" />
   </ItemGroup>
   <Import Project="../../../tools/shaders/Slang.targets" />
 </Project>

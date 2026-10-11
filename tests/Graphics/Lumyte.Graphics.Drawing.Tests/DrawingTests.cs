@@ -52,7 +52,7 @@ public sealed class DrawingTests
     [Fact]
     public void DrawingShadersContainBothTargets()
     {
-        ShaderArtifact[] artifacts = [DrawingShaders.LoadColorVertex(), DrawingShaders.LoadColorFragment(), DrawingShaders.LoadTextureVertex(), DrawingShaders.LoadTextureFragment()];
+        ShaderArtifact[] artifacts = [DrawingShaders.LoadColorVertex(), DrawingShaders.LoadColorFragment(), DrawingShaders.LoadTextureVertex(), DrawingShaders.LoadTextureFragment(), DrawingShaders.LoadModelVertex(), DrawingShaders.LoadModelFragment(), DrawingShaders.LoadPostProcessVertex(), DrawingShaders.LoadPostProcessFragment()];
         for (int i = 0; i < artifacts.Length; i++)
         {
             foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())

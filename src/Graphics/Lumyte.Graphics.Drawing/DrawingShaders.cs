@@ -21,6 +21,22 @@ public static class DrawingShaders
     /// <returns>The WGSL and SPIR-V artifact.</returns>
     public static ShaderArtifact LoadTextureFragment() => Load("texture-fragment");
 
+    /// <summary>Loads the metallic-roughness model vertex shader.</summary>
+    /// <returns>The WGSL and SPIR-V artifact.</returns>
+    public static ShaderArtifact LoadModelVertex() => Load("model-vertex");
+
+    /// <summary>Loads the metallic-roughness model fragment shader.</summary>
+    /// <returns>The WGSL and SPIR-V artifact.</returns>
+    public static ShaderArtifact LoadModelFragment() => Load("model-fragment");
+
+    /// <summary>Loads the fullscreen effect vertex shader.</summary>
+    /// <returns>The WGSL and SPIR-V artifact.</returns>
+    public static ShaderArtifact LoadPostProcessVertex() => Load("postprocess-vertex");
+
+    /// <summary>Loads the fullscreen effect fragment shader.</summary>
+    /// <returns>The WGSL and SPIR-V artifact.</returns>
+    public static ShaderArtifact LoadPostProcessFragment() => Load("postprocess-fragment");
+
     private static ShaderArtifact Load(string name) => ShaderArtifact.LoadEmbedded(
         typeof(DrawingShaders).Assembly, $"Lumyte.Drawing.{name}.lshader");
 }
