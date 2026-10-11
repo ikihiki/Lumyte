@@ -19,7 +19,6 @@ public sealed class ShaderBindingData
     public ShaderBindingData(ShaderBindingSnapshot snapshot, ShaderTargetData target, DeviceCaps caps)
     {
         Snapshot = snapshot;
-        snapshot.ValidateLayouts(target);
         var rootLayout = ShaderDataLayout.Root(target, snapshot.Root.RootParameter);
         var read = new HashSet<IShaderReference>();
         var write = new HashSet<IShaderReference>();

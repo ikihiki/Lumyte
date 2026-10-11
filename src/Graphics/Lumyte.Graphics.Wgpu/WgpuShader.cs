@@ -10,7 +10,6 @@ internal sealed class WgpuShader(WgpuDevice owner, ShaderArtifact artifact) : IG
         Source = A.ShaderSource.FromWgsl(artifact.GetTarget(owner.Caps.ShaderTarget).Code),
     });
 
-    private int _pipelineCount;
     private bool _disposed;
 
     public ShaderArtifact Artifact { get; } = artifact;
@@ -28,11 +27,6 @@ internal sealed class WgpuShader(WgpuDevice owner, ShaderArtifact artifact) : IG
 
     public void Dispose()
     {
-        if (_pipelineCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all programs before their shader module.");
-        }
-
         if (_disposed)
         {
             return;
@@ -40,14 +34,5 @@ internal sealed class WgpuShader(WgpuDevice owner, ShaderArtifact artifact) : IG
 
         _native.Dispose();
         _disposed = true;
-        owner.ReleaseShader();
     }
-
-    internal void RetainPipeline()
-    {
-        _ = Native;
-        _pipelineCount++;
-    }
-
-    internal void ReleasePipeline() => _pipelineCount--;
 }

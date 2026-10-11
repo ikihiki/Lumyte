@@ -26,7 +26,4 @@ public interface IShaderReference
 
     /// <summary>Gets the logical element count.</summary>
     ulong Count { get; }
-
-    /// <summary>Validates the registration identity and resource lifetime.</summary>
-    void Validate();
 }

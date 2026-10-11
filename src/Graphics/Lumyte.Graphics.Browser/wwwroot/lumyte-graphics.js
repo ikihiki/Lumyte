@@ -33,7 +33,9 @@ export async function createDevice() {
             copyBytesPerRowAlignment: 256,
             storageBufferOffsetAlignment: limits.minStorageBufferOffsetAlignment,
         });
-        return { device, caps, disposed: false };
+        const handle = { device, caps, disposed: false, lost: false };
+        device.lost.then(() => { handle.lost = true; });
+        return handle;
     } catch (error) {
         device.destroy();
         throw error;
@@ -290,3 +292,56 @@ export function addShaderResource(binding, slot, kind, resource, offset, size) {
 export function finishShaderBinding(handle, binding) { binding.group = handle.device.createBindGroup({ layout: binding.layout, entries: binding.entries }); }
 export function setShaderBinding(pass, binding) { pass.setBindGroup(0, binding.group); }
 export function destroyShaderBinding(binding) { for (const buffer of binding.buffers) buffer.destroy(); }
+
+const activeSurfaceContexts = new WeakSet();
+
+export function createSurface(device, context) {
+    if (!context || typeof context.configure !== "function" || typeof context.getCurrentTexture !== "function" || !context.canvas) {
+        throw new Error("Supply an existing GPUCanvasContext.");
+    }
+    if (activeSurfaceContexts.has(context)) throw new Error("The GPUCanvasContext already owns a graphics surface.");
+    activeSurfaceContexts.add(context);
+    return { device, context, width: 0, height: 0, configured: false, disposed: false };
+}
+
+export function getSurfacePreferredFormat(surface) {
+    return navigator.gpu.getPreferredCanvasFormat() === "bgra8unorm" ? 2 : 0;
+}
+
+export function configureSurface(surface, width, height, format, flags, alphaMode) {
+    const formats = { 0: "rgba8unorm", 2: "bgra8unorm", 10: "rgba16float" };
+    let usage = GPUTextureUsage.RENDER_ATTACHMENT;
+    if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
+    if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
+    if (flags & 4) usage |= GPUTextureUsage.TEXTURE_BINDING;
+    surface.context.canvas.width = width;
+    surface.context.canvas.height = height;
+    surface.context.configure({ device: surface.device.device, format: formats[format], usage, alphaMode: alphaMode === 2 ? "premultiplied" : "opaque" });
+    surface.width = width;
+    surface.height = height;
+    surface.configured = true;
+}
+
+export function getSurfaceStatus(surface) {
+    if (surface.device.lost) return 5;
+    if (surface.disposed) return 4;
+    if (!surface.configured || surface.context.canvas.width !== surface.width || surface.context.canvas.height !== surface.height) return 3;
+    return 0;
+}
+
+export function acquireSurfaceTexture(surface) {
+    return surface.context.getCurrentTexture();
+}
+
+export function unconfigureSurface(surface) {
+    surface.context.unconfigure();
+    surface.configured = false;
+}
+
+export function destroySurface(surface) {
+    if (!surface.disposed) {
+        if (surface.configured) surface.context.unconfigure();
+        activeSurfaceContexts.delete(surface.context);
+        surface.disposed = true;
+    }
+}

@@ -20,7 +20,6 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
     internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingSnapshot? arguments = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
-        PipelineValidation.Draw(Desc, state, formats, FragmentOutputs, depthFormat, indexFormat);
         string argumentKey = SelectLayout(arguments);
         if (!_owner.CacheGraphicsPipelines)
         {

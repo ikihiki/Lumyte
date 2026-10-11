@@ -7,4 +7,9 @@ public interface IGraphicsQueue
     /// <param name="commandBuffers">The commandBuffers value.</param>
     /// <returns>The owned completion handle.</returns>
     IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers);
+
+    /// <summary>Submits exactly the caller's commands, consuming waits and completion signals without a CPU wait.</summary>
+    /// <param name="desc">The explicit submission; no surface frame or automatically inserted synchronization.</param>
+    /// <returns>The owned GPU completion handle.</returns>
+    IGraphicsSubmission Submit(QueueSubmitDesc desc);
 }

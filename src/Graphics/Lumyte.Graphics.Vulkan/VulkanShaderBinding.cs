@@ -12,7 +12,6 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
     internal VulkanShaderBinding(VulkanDevice owner, ShaderBindingSnapshot snapshot, ShaderTargetData target, DescriptorSetLayout layout)
     {
         _owner = owner;
-        snapshot.ValidateLayouts(target);
         try
         {
             IShaderReference[] textures = snapshot.References.Where(r => r.Resource is VulkanTextureView).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();

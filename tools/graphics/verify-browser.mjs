@@ -35,7 +35,9 @@ try {
     await readFile(resolve(root, "index.html"));
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-        "--enable-unsafe-webgpu", "--use-angle=swiftshader",
+        "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
+        "--enable-features=Vulkan", "--use-vulkan=swiftshader",
+        "--use-angle=vulkan", "--disable-vulkan-surface",
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
     let diagnostics = "";
@@ -118,6 +120,9 @@ try {
     assert.match(result.report, /Command checks passed:/);
     assert.match(result.report, /Pipeline checks passed:/);
     assert.match(result.report, /Advanced command checks passed:/);
+    assert.match(result.report, /Surface checks passed:/);
+    assert.match(result.report, /Multiple surface checks passed:/);
+    assert.match(result.report, /Semaphore checks passed:/);
     assert.match(result.report, /Shader binding checks passed:/);
     assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");

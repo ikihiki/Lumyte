@@ -14,6 +14,27 @@ internal static partial class BrowserInterop
     [JSImport("destroyDevice", "Lumyte.Graphics.Browser")]
     internal static partial void DestroyDevice(JSObject handle);
 
+    [JSImport("createSurface", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject CreateSurface(JSObject device, JSObject context);
+
+    [JSImport("getSurfacePreferredFormat", "Lumyte.Graphics.Browser")]
+    internal static partial int GetSurfacePreferredFormat(JSObject surface);
+
+    [JSImport("configureSurface", "Lumyte.Graphics.Browser")]
+    internal static partial void ConfigureSurface(JSObject surface, int width, int height, int format, int usage, int alphaMode);
+
+    [JSImport("getSurfaceStatus", "Lumyte.Graphics.Browser")]
+    internal static partial int GetSurfaceStatus(JSObject surface);
+
+    [JSImport("acquireSurfaceTexture", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject AcquireSurfaceTexture(JSObject surface);
+
+    [JSImport("unconfigureSurface", "Lumyte.Graphics.Browser")]
+    internal static partial void UnconfigureSurface(JSObject surface);
+
+    [JSImport("destroySurface", "Lumyte.Graphics.Browser")]
+    internal static partial void DestroySurface(JSObject surface);
+
     [JSImport("createBuffer", "Lumyte.Graphics.Browser")]
     internal static partial JSObject CreateBuffer(JSObject device, double size, int usage, int memory);
 

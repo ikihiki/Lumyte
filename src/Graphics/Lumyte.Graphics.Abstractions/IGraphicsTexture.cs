@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Owns one backend texture allocation; dispose views before disposing their texture.</summary>
+/// <summary>Exposes an owned allocation or a borrowed frame image; dispose views before releasing its owner.</summary>
 /// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicsTexture : IDisposable
 {
@@ -29,6 +29,6 @@ public interface IGraphicsTexture : IDisposable
 
     /// <summary>Creates an owned view in the source format; null selects the full default view.</summary>
     /// <param name="desc">The requested ranges and dimension, or null for D2 or D2Array according to layer count.</param>
-    /// <returns>The backend view retaining its texture until disposal.</returns>
+    /// <returns>The backend view; the caller keeps the texture alive until all views are released.</returns>
     IGraphicsTextureView CreateView(TextureViewDesc? desc = null);
 }

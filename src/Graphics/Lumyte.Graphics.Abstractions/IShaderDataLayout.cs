@@ -19,10 +19,6 @@ public interface IShaderDataLayout
     /// <returns>Whether the layouts match.</returns>
     bool Matches(IShaderDataLayout layout);
 
-    /// <summary>Validates an application snapshot against the compiled schema.</summary>
-    /// <param name="snapshot">The captured application values.</param>
-    void Validate(ShaderValueSnapshot snapshot);
-
     /// <summary>Packs numeric values and backend-encoded resource references.</summary>
     /// <param name="snapshot">The captured application values.</param>
     /// <param name="reference">The backend reference encoder.</param>

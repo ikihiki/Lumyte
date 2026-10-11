@@ -8,7 +8,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
 {
     private readonly WgpuDevice _owner;
     private readonly A.Texture _native;
-    private int _viewCount;
+    private readonly SurfaceFrameLifetime? _surfaceFrame;
     private bool _disposed;
 
     internal WgpuTexture(WgpuDevice owner, TextureDesc desc)
@@ -35,22 +35,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
             usage |= A.TextureUsage.RenderAttachment;
         }
 
-        WGPUTextureFormat format = Format switch
-        {
-            TextureFormat.Rgba8Unorm => WGPUTextureFormat.RGBA8Unorm,
-            TextureFormat.Rgba8Srgb => WGPUTextureFormat.RGBA8UnormSrgb,
-            TextureFormat.Bgra8Unorm => WGPUTextureFormat.BGRA8Unorm,
-            TextureFormat.Bgra8Srgb => WGPUTextureFormat.BGRA8UnormSrgb,
-            TextureFormat.R8Unorm => WGPUTextureFormat.R8Unorm,
-            TextureFormat.Rg8Unorm => WGPUTextureFormat.RG8Unorm,
-            TextureFormat.R16Float => WGPUTextureFormat.R16Float,
-            TextureFormat.Rg16Float => WGPUTextureFormat.RG16Float,
-            TextureFormat.Rgba16Float => WGPUTextureFormat.RGBA16Float,
-            TextureFormat.Rgb10A2Unorm => WGPUTextureFormat.RGB10A2Unorm,
-            TextureFormat.Depth32Float => WGPUTextureFormat.Depth32Float,
-            TextureFormat.Depth24Stencil8 => WGPUTextureFormat.Depth24PlusStencil8,
-            _ => throw new NotSupportedException("Unsupported texture format."),
-        };
+        WGPUTextureFormat format = NativeFormat(Format);
         _native = owner.NativeDevice.CreateTexture(new A.TextureDescriptor
         {
             Size = new WGPUExtent3D { width = Width, height = Height, depthOrArrayLayers = ArrayLayers },
@@ -60,6 +45,11 @@ internal sealed class WgpuTexture : IGraphicsTexture
             MipLevelCount = MipLevels,
             SampleCount = 1,
         });
+    }
+
+    internal WgpuTexture(WgpuDevice owner, TextureDesc desc, A.Texture native, SurfaceFrameLifetime lifetime)
+    {
+        (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage, _native, _surfaceFrame) = (owner, desc.Width, desc.Height, 1, 1, desc.Format, desc.Usage, native, lifetime);
     }
 
     public uint Width { get; }
@@ -79,15 +69,19 @@ internal sealed class WgpuTexture : IGraphicsTexture
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+
             return _native;
         }
     }
 
     internal WgpuDevice Owner => _owner;
 
+    internal SurfaceFrameLifetime? SurfaceFrame => _surfaceFrame;
+
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (mipLevel >= MipLevels)
         {
             throw new ArgumentOutOfRangeException(nameof(mipLevel));
@@ -99,6 +93,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
         WGPUTextureViewDimension dimension = info.Dimension switch
         {
@@ -118,26 +113,44 @@ internal sealed class WgpuTexture : IGraphicsTexture
             ArrayLayerCount = info.ArrayLayerCount,
         });
         var view = new WgpuTextureView(this, info, native);
-        _viewCount++;
         return view;
     }
 
     public void Dispose()
+    {
+        if (_surfaceFrame != null)
+        {
+            throw new InvalidOperationException("The frame owns this borrowed presentation image.");
+        }
+
+        DisposeLease();
+    }
+
+    internal static WGPUTextureFormat NativeFormat(TextureFormat format) => format switch
+    {
+        TextureFormat.Rgba8Unorm => WGPUTextureFormat.RGBA8Unorm,
+        TextureFormat.Rgba8Srgb => WGPUTextureFormat.RGBA8UnormSrgb,
+        TextureFormat.Bgra8Unorm => WGPUTextureFormat.BGRA8Unorm,
+        TextureFormat.Bgra8Srgb => WGPUTextureFormat.BGRA8UnormSrgb,
+        TextureFormat.R8Unorm => WGPUTextureFormat.R8Unorm,
+        TextureFormat.Rg8Unorm => WGPUTextureFormat.RG8Unorm,
+        TextureFormat.R16Float => WGPUTextureFormat.R16Float,
+        TextureFormat.Rg16Float => WGPUTextureFormat.RG16Float,
+        TextureFormat.Rgba16Float => WGPUTextureFormat.RGBA16Float,
+        TextureFormat.Rgb10A2Unorm => WGPUTextureFormat.RGB10A2Unorm,
+        TextureFormat.Depth32Float => WGPUTextureFormat.Depth32Float,
+        TextureFormat.Depth24Stencil8 => WGPUTextureFormat.Depth24PlusStencil8,
+        _ => throw new NotSupportedException("Unsupported texture format."),
+    };
+
+    internal void DisposeLease()
     {
         if (_disposed)
         {
             return;
         }
 
-        if (_viewCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all views before disposing their texture.");
-        }
-
         _native.Dispose();
         _disposed = true;
-        _owner.ReleaseTexture();
     }
-
-    internal void ReleaseView() => _viewCount--;
 }

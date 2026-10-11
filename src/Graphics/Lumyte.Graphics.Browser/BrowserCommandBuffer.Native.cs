@@ -49,12 +49,12 @@ internal sealed partial class BrowserCommandBuffer
     private void BufferBarrierNative<T>(BrowserBuffer<T> buffer, BufferBarrierDesc<T> barrier)
         where T : unmanaged
     {
-        // The command layer validates the explicit dependency.
+        // WebGPU provides visibility for ordered buffer usages.
     }
 
     private void TextureBarrierNative(BrowserTexture texture, TextureBarrierDesc barrier)
     {
-        // WebGPU owns physical transitions; the command layer validates logical states.
+        // WebGPU owns physical image transitions.
     }
 
     private IRenderEncoder BeginRenderNative(RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth)

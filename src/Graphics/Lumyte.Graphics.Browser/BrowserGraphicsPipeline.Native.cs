@@ -10,7 +10,6 @@ internal sealed partial class BrowserGraphicsPipeline
     internal JSObject Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingData? arguments = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
-        PipelineValidation.Draw(Desc, state, formats, FragmentOutputs, depthFormat, indexFormat);
         string formatJson = "[" + string.Join(',', formats.Select(f => (int)f)) + "]";
         string key = state.Key + ":" + depthFormat + ":" + formatJson + ":" + arguments?.Key;
         if (_variants.TryGetValue(key, out JSObject? cached))
