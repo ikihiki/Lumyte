@@ -14,12 +14,13 @@
 
 ### 立ち位置と依存方向
 
-`src/Platform/Lumyte.Windowing/`、名前空間・NuGet を `Lumyte.Windowing` とする。Windowing は Platform.Abstractions を参照し、Platform / 各バックエンドは Windowing を参照しない。Windowing のための IWindowBackend や Native 命令転送 interface は設けない。
+`src/Platform/Lumyte.Windowing/`、名前空間・NuGet を `Lumyte.Windowing` とする。Windowing は Platform.Abstractions と Windowing.Abstractions を参照し、Platform / 各バックエンドは Windowing.Abstractions のみを参照して管理実装を参照しない。Windowing のための IWindowBackend や Native 命令転送 interface は設けない。
 
 Native の生成・操作・観測・OS イベント取得・ハンドル・寿命保持は IPlatform / IWindow が担当する。Windowing の WindowSystem は IPlatform を借用し、必要な IWindow を作成または明示登録する。IWindow を共通の Native wrapper に置き換えない。Hosted の領域は Windowing の管理ノードであり、IWindow を実装しない。
 
 | 構成要素 | 責務 |
 | --- | --- |
+| Windowing.Abstractions | IWindow と Native の操作・状態・要求・寿命の共通契約 |
 | Platform.Abstractions / Platform バックエンド | IPlatform による生成、IWindow の直接実装、入力取得と Native の操作・寿命 |
 | Windowing | 複数 IWindow の管理、明示所有、管理ノードの親子関係、Hosted の配置・クリップ・描画順、一時表示の寿命 |
 | Framework 層の統合システム | Platform と Graphics の接続、Surface・Swapchain・同期・終了の管理。単一 Window では Windowing 不要 |
@@ -27,7 +28,102 @@ Native の生成・操作・観測・OS イベント取得・ハンドル・寿�
 
 単一 Native は IPlatform.CreateWindow → IWindow 操作 → Framework 統合または利用側の直接 Graphics 接続で使える。WindowSystem の生成・参照・DI 登録を必要としない。単一 Native の上に Hosted メニューを表示する場合は、必要に応じて Windowing を追加する。
 
-Window も Input と同じく旧 API との互換性を要件にしない。Native の共通契約 IWindow は Lumyte.Platform.Abstractions、管理 API は Lumyte.Windowing に直接定義する。旧 API の別名、型転送、互換ラッパーは設けず、利用箇所を新しい契約へ更新する。
+Window も Input と同じく旧 API との互換性を要件にしない。Native の共通契約 IWindow は Lumyte.Windowing.Abstractions、管理 API は Lumyte.Windowing に直接定義する。旧 API の別名、型転送、互換ラッパーは設けず、利用箇所を新しい契約へ更新する。
+
+### Native Window の共通契約
+
+`src/Platform/Lumyte.Windowing.Abstractions/`、名前空間・assembly・NuGet を `Lumyte.Windowing.Abstractions` とする。IWindow とその宣言に必要な WindowId、記述子、状態、要求、通知、enum をまとめて配置する。.NET 10 を対象とし、.NET ランタイム以外に依存しない。Platform、Input、Graphics、Windowing の管理実装を参照しない。
+
+各 Platform バックエンドがこの IWindow を直接実装し、IPlatform.CreateWindow が返す。WindowId の PlatformId は識別値であり、Platform の型への依存を持たない。単一ウインドウでも契約パッケージは利用するが、Lumyte.Windowing の管理実装は不要である。以下は main の `cc766f2` に対して新規追加する宣言の抜粋であり、動作の詳細は Platform ADR と共通の契約とする。
+
+```diff
++namespace Lumyte.Windowing.Abstractions;
++
++// Platform の寿命内で一意。空の PlatformId / Value 0 は無効。
++public readonly record struct WindowId(Guid PlatformId, ulong Value);
++public readonly record struct WindowRequestId(ulong Value);
++public readonly record struct WindowRect(float X, float Y, float Width, float Height);
++public readonly record struct WindowPixelSize(int Width, int Height);
++public enum WindowKind { Normal, Tool, Popup }
++public enum WindowActivation { Activate, PreserveFocus }
++public enum WindowDisplayMode { Normal, Minimized, Maximized, Fullscreen }
++public enum WindowLifetime { Open, Closing, Closed }
++public enum WindowPlacementSide { Below, Above, Right, Left }
++public enum WindowRequestStatus { Applied, Denied, Unsupported, Failed, Superseded }
++[Flags]
++public enum WindowFeatures
++{
++    None = 0, OwnedWindow = 1, NonActivating = 2, AnchorPlacement = 4,
++    Minimize = 8, Maximize = 16, Fullscreen = 32,
++}
++
++public sealed record WindowDescriptor
++{
++    public string Title { get; init; } = "";
++    public WindowKind Kind { get; init; } = WindowKind.Normal;
++    // 同じ Platform の Open な Native。所有関係であって座標上の親ではない。
++    public IWindow? Owner { get; init; }
++    public System.Numerics.Vector2 ClientSize { get; init; } = new(800, 600);
++    public WindowActivation Activation { get; init; } = WindowActivation.Activate;
++    public bool IsResizable { get; init; } = true;
++}
++public sealed record WindowPlacement(
++    WindowRect Anchor, WindowPlacementSide PreferredSide, float Gap = 0);
++
++// 各 Backend が直接実装する Native 表示先。Hosted はこの interface にしない。
++public interface IWindow : IDisposable
++{
++    public WindowId Id { get; }
++    public WindowState State { get; }
++    public WindowRequestId Show();
++    public WindowRequestId Hide();
++    public WindowRequestId SetTitle(string title);
++    public WindowRequestId Resize(System.Numerics.Vector2 clientSize);
++    // Owner のクライアント座標にあるアンカーから配置する。Owner 必須。
++    public WindowRequestId Place(WindowPlacement placement);
++    public WindowRequestId Activate();
++    public WindowRequestId BringToFront();
++    public WindowRequestId SetDisplayMode(WindowDisplayMode mode);
++    // 明示終了は取消不能。生存する所有者付き Window があれば Denied。
++    // 保持トークンがあれば Closing に移し、物理破棄は保持解除後へ延期する。
++    public WindowRequestId Close();
++    // 外部 Surface より先に Native を破棄しないための明示的な保持。
++    public IDisposable RetainNativeTarget();
++    // 不変の観測値。PumpEvents で管理スレッドへ通知する。
++    public event Action<WindowState>? StateChanged;
++    public event Action<WindowRequestResult>? RequestCompleted;
++    // Native のユーザー終了要求だけ取消可能。通知中は Cancel の設定のみ許可。
++    public event EventHandler<WindowClosingEventArgs>? Closing;
++    // 生存する owned Window / 保持トークンがあれば変更前に拒否。
++    // 完了済みなら Native を冪等に解放。GPU 同期は呼び出し側の責務。
++}
++
++// Backend が生成する不変スナップショット。要求値と観測値を区別する。
++public sealed record WindowState
++{
++    public required WindowId Id { get; init; }
++    public required WindowId? Owner { get; init; }
++    public required WindowKind Kind { get; init; }
++    public required WindowActivation Activation { get; init; }
++    public required string Title { get; init; }
++    public required System.Numerics.Vector2 ClientSize { get; init; }
++    public required WindowPixelSize PixelSize { get; init; }
++    public required System.Numerics.Vector2 Scale { get; init; }
++    public required bool IsVisible { get; init; }
++    public required bool IsActive { get; init; }
++    public required WindowDisplayMode DisplayMode { get; init; }
++    public required WindowLifetime Lifetime { get; init; }
++    public required WindowFeatures Features { get; init; }
++}
++public sealed record WindowRequestResult(
++    WindowId Window, WindowRequestId Request, WindowRequestStatus Status, string? Error);
++public sealed class WindowClosingEventArgs : EventArgs
++{
++    public WindowClosingEventArgs(WindowId window);
++    public WindowId Window { get; }
++    public bool Cancel { get; set; }
++}
+```
 
 ### Native と Hosted の管理単位
 
@@ -44,10 +140,11 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 
 ### 公開 API 案
 
-比較元は main の `cc766f2`。Windowing は存在しないため以下はすべて追加する主要宣言である。Native の型は Platform.Abstractions の契約を使用する。
+比較元は main の `cc766f2`。Windowing は存在しないため以下はすべて追加する主要宣言である。Native の型は Windowing.Abstractions、IPlatform は Platform.Abstractions の契約を使用する。
 
 ```diff
 +using Lumyte.Platform.Abstractions;
++using Lumyte.Windowing.Abstractions;
 +
 +namespace Lumyte.Windowing;
 +
@@ -132,7 +229,7 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +    WindowNodeId Node, WindowNodeRequestId Request, WindowRequestStatus Status, string? Error);
 ```
 
-SystemId は System ごとに異なる識別子、番号 0 は無効とする。Platform.WindowId、管理ノード ID、各 RequestId の採番範囲を混同しない。Native の要求結果は `(IWindow.Id, WindowRequestId)` で管理要求へ対応づける。同じ IWindow の重複 Attach、別 Platform、別 System の親、不正役割・数値は ArgumentException 系、終了済みノードは KeyNotFoundException、破棄後は ObjectDisposedException とする。
+SystemId は System ごとに異なる識別子、番号 0 は無効とする。Windowing.Abstractions の WindowId、管理ノード ID、各 RequestId の採番範囲を混同しない。Native の要求結果は `(IWindow.Id, WindowRequestId)` で管理要求へ対応づける。同じ IWindow の重複 Attach、別 Platform、別 System の親、不正役割・数値は ArgumentException 系、終了済みノードは KeyNotFoundException、破棄後は ObjectDisposedException とする。
 
 Attach は対象が Open の場合だけ許可する。所有権は登録成功後に移転し、失敗時は呼び出し側に残る。CreateNativeWindow の登録失敗では今回生成した IWindow を解放する。共有による二重管理を避けるため、一つの IWindow を同時に複数 WindowSystem で管理しない責任は構成側にある。
 
@@ -213,8 +310,9 @@ Platform と Native の契約は単独で利用でき、複数ウインドウ・
 
 ## 検証方針
 
+- Windowing.Abstractions の参照 assembly と NuGet の依存閉包に Platform と Windowing 管理実装が含まれない。
 - 偽の IPlatform と直接実装した IWindow を使い、Windowing が Backend 転送 interface を要求しないことを確認する。
-- 単一 Window サンプルが Windowing を参照せず、同じ IWindow を任意に Attach / Detach できる。
+- 単一 Window サンプルが Windowing.Abstractions を参照し、Windowing 管理実装を参照せず、同じ IWindow を任意に Attach / Detach できる。
 - Owned / Borrowed の登録失敗・終了・Dispose、同一 Window の重複、ID の混同と親の不整合を拒否する。
 - Native の状態追従、要求完了の対応づけ、PumpEvents の二重取得防止、Close 延期と子から親の終了を検証する。
 - Hosted の層・部分木・クリップ・ヒットテスト、アンカーの反転・クランプ、DPI を検証する。

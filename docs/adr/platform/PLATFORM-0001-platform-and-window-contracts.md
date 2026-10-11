@@ -13,16 +13,19 @@ Lumyte の OS ごとの機能は、Graphics が生成済みの Device から共�
 
 ### 配置と依存方向
 
-共通インターフェースを `src/Platform/Lumyte.Platform.Abstractions/`、名前空間・NuGet を `Lumyte.Platform.Abstractions` とする。Windows、Linux、Browser の具象 Platform は対応する `Lumyte.Platform.Windows`、`Lumyte.Platform.Linux`、`Lumyte.Platform.Browser` に配置する。
+IPlatform と PlatformFeatures を `src/Platform/Lumyte.Platform.Abstractions/`、名前空間・NuGet を `Lumyte.Platform.Abstractions` とする。Windows、Linux、Browser の具象 Platform は対応する `Lumyte.Platform.Windows`、`Lumyte.Platform.Linux`、`Lumyte.Platform.Browser` に配置する。
 
 起動コードが対象の具象 Platform を作成し、以後は `IPlatform` から共通インターフェースを生成する。共通層に OS 自動選択 factory や共通 Platform wrapper を置かない。各バックエンドが `IPlatform` と生成物の `IWindow` を直接実装し、共通 WindowSystem がバックエンドへ命令を転送する方式は採用しない。
 
 ```mermaid
 flowchart TD
-    App[アプリケーション] --> Platform[IPlatform / IWindow]
+    App[アプリケーション] --> Platform[IPlatform]
     App --> Graphics[Graphics 共通契約]
     App --> Optional[Windowing: 任意]
     Optional --> Platform
+    Optional --> Window[Lumyte.Windowing.Abstractions: IWindow]
+    Platform --> Window
+    Native --> Window
     Framework[Framework 統合システム] --> Platform
     Framework --> Graphics
     Framework --> Optional
@@ -30,39 +33,25 @@ flowchart TD
     Platform --> Input[Lumyte.Input.Abstractions: 取得契約]
 ```
 
-Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstractions](../input/INPUT-0005-input-abstractions.md) の取得契約だけを参照する。IInputSource の名前空間と所属 assembly は Lumyte.Input.Abstractions とする。Lumyte.Input 本体、Processing、Actions、Settings を Platform の依存として導入しない。履歴・状態・保持の実装は Input 本体に残し、Framework が必要な場合だけ参照・生成する。Input は Platform に依存せず、既存 InputRecord / InputSystem の挙動を変更しない。Platform.Abstractions は Windowing、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
+Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstractions](../input/INPUT-0005-input-abstractions.md) の取得契約だけを参照する。IInputSource の名前空間と所属 assembly は Lumyte.Input.Abstractions とする。Lumyte.Input 本体、Processing、Actions、Settings を Platform の依存として導入しない。履歴・状態・保持の実装は Input 本体に残し、Framework が必要な場合だけ参照・生成する。Input は Platform に依存せず、既存 InputRecord / InputSystem の挙動を変更しない。Platform.Abstractions は Windowing の管理実装、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
+
+IWindow とそのシグネチャに必要な型は [Lumyte.Windowing.Abstractions](../window/WINDOW-0001-window-system.md#native-window-の共通契約) に定義する。Platform.Abstractions と各バックエンドはこの契約パッケージを参照し、Windowing の管理実装には依存しない。Windowing.Abstractions は .NET ランタイム以外に依存せず、Platform への逆参照を持たない。
 
 最初の生成対象は IWindow と IInputSource とする。今後の文字入力、clipboard、display、ファイルダイアログなども対応する共通契約を定義した上で IPlatform に生成メソッドを追加し、利用側が生成物を所有する形に揃える。この PR では未定義の機能に空の interface や汎用 GetService を設けない。
 
-現在はライブラリの利用者がいないため、Platform と IWindow も旧 API との互換性を要件にしない。共通契約は Lumyte.Platform.Abstractions に直接定義し、旧 API の別名、型転送、互換ラッパーは設けない。各バックエンドはこの IWindow を直接実装する。
+現在はライブラリの利用者がいないため、Platform と IWindow も旧 API との互換性を要件にしない。IPlatform は Lumyte.Platform.Abstractions、IWindow は Lumyte.Windowing.Abstractions に直接定義し、旧 API の別名、型転送、互換ラッパーは設けない。各バックエンドはこの IWindow を直接実装する。
 
 ### 公開 API 案
 
-比較元は `main` の `cc766f2`。以下はすべて新規追加する宣言の抜粋である。Platform.Abstractions に OS ハンドル union や Graphics の型を入れない。
+比較元は `main` の `cc766f2`。以下はすべて新規追加する宣言の抜粋である。IWindow と関連する Window 型の宣言は Window ADR に記載する。両 Abstractions に OS ハンドル union や Graphics の型を入れない。
 
 ```diff
++using Lumyte.Windowing.Abstractions;
++
 +namespace Lumyte.Platform.Abstractions;
 +
-+// Platform の寿命内で一意。空の PlatformId / Value 0 は無効。
-+public readonly record struct WindowId(Guid PlatformId, ulong Value);
-+public readonly record struct WindowRequestId(ulong Value);
-+public readonly record struct WindowRect(float X, float Y, float Width, float Height);
-+public readonly record struct WindowPixelSize(int Width, int Height);
-+public enum WindowKind { Normal, Tool, Popup }
-+public enum WindowActivation { Activate, PreserveFocus }
-+public enum WindowDisplayMode { Normal, Minimized, Maximized, Fullscreen }
-+public enum WindowLifetime { Open, Closing, Closed }
-+public enum WindowPlacementSide { Below, Above, Right, Left }
-+public enum WindowRequestStatus { Applied, Denied, Unsupported, Failed, Superseded }
 +[Flags]
 +public enum PlatformFeatures { None = 0, NativeWindows = 1, DeviceInput = 2 }
-+[Flags]
-+public enum WindowFeatures
-+{
-+    None = 0, OwnedWindow = 1, NonActivating = 2, AnchorPlacement = 4,
-+    Minimize = 8, Maximize = 16, Fullscreen = 32,
-+}
-+
 +public interface IPlatform : IDisposable
 +{
 +    public Guid Id { get; }
@@ -80,72 +69,6 @@ Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstracti
 +    // GPU 待機や子の暗黙 Dispose は行わない。成功後は冪等。
 +}
 +
-+public sealed record WindowDescriptor
-+{
-+    public string Title { get; init; } = "";
-+    public WindowKind Kind { get; init; } = WindowKind.Normal;
-+    // 同じ Platform の Open な Native。所有関係であって座標上の親ではない。
-+    public IWindow? Owner { get; init; }
-+    public System.Numerics.Vector2 ClientSize { get; init; } = new(800, 600);
-+    public WindowActivation Activation { get; init; } = WindowActivation.Activate;
-+    public bool IsResizable { get; init; } = true;
-+}
-+public sealed record WindowPlacement(
-+    WindowRect Anchor, WindowPlacementSide PreferredSide, float Gap = 0);
-+
-+// 各 Backend が直接実装する Native 表示先。Hosted はこの interface にしない。
-+public interface IWindow : IDisposable
-+{
-+    public WindowId Id { get; }
-+    public WindowState State { get; }
-+    public WindowRequestId Show();
-+    public WindowRequestId Hide();
-+    public WindowRequestId SetTitle(string title);
-+    public WindowRequestId Resize(System.Numerics.Vector2 clientSize);
-+    // Owner のクライアント座標にあるアンカーから配置する。Owner 必須。
-+    public WindowRequestId Place(WindowPlacement placement);
-+    public WindowRequestId Activate();
-+    public WindowRequestId BringToFront();
-+    public WindowRequestId SetDisplayMode(WindowDisplayMode mode);
-+    // 明示終了は取消不能。生存する所有者付き Window があれば Denied。
-+    // 保持トークンがあれば Closing に移し、物理破棄は保持解除後へ延期する。
-+    public WindowRequestId Close();
-+    // 外部 Surface より先に Native を破棄しないための明示的な保持。
-+    public IDisposable RetainNativeTarget();
-+    // 不変の観測値。PumpEvents で管理スレッドへ通知する。
-+    public event Action<WindowState>? StateChanged;
-+    public event Action<WindowRequestResult>? RequestCompleted;
-+    // Native のユーザー終了要求だけ取消可能。通知中は Cancel の設定のみ許可。
-+    public event EventHandler<WindowClosingEventArgs>? Closing;
-+    // 生存する owned Window / 保持トークンがあれば変更前に拒否。
-+    // 完了済みなら Native を冪等に解放。GPU 同期は呼び出し側の責務。
-+}
-+
-+// Backend が生成する不変スナップショット。要求値と観測値を区別する。
-+public sealed record WindowState
-+{
-+    public required WindowId Id { get; init; }
-+    public required WindowId? Owner { get; init; }
-+    public required WindowKind Kind { get; init; }
-+    public required WindowActivation Activation { get; init; }
-+    public required string Title { get; init; }
-+    public required System.Numerics.Vector2 ClientSize { get; init; }
-+    public required WindowPixelSize PixelSize { get; init; }
-+    public required System.Numerics.Vector2 Scale { get; init; }
-+    public required bool IsVisible { get; init; }
-+    public required bool IsActive { get; init; }
-+    public required WindowDisplayMode DisplayMode { get; init; }
-+    public required WindowLifetime Lifetime { get; init; }
-+    public required WindowFeatures Features { get; init; }
-+}
-+public sealed record WindowRequestResult(
-+    WindowId Window, WindowRequestId Request, WindowRequestStatus Status, string? Error);
-+public sealed class WindowClosingEventArgs : EventArgs
-+{
-+    public WindowClosingEventArgs(WindowId window);
-+    public WindowId Window { get; }
-+    public bool Cancel { get; set; }
-+}
 ```
 
 ### Factory・操作・座標の契約
@@ -202,6 +125,7 @@ Framework の統合を使わない利用側も、同じ具象 Window クラス�
 
 ```csharp
 // platform は起動コードが生成した IPlatform。
+// IPlatform: Lumyte.Platform.Abstractions、IWindow / WindowDescriptor: Lumyte.Windowing.Abstractions
 IWindow window = platform.CreateWindow(new WindowDescriptor { Title = "Lumyte" });
 window.Show();
 platform.PumpEvents();
@@ -240,7 +164,7 @@ WindowState state = window.State;
 - Windowing を ProjectReference に含めない単一 Window サンプルを各対象環境で動かす。
 - 同じ Platform から複数 Window を生成し、サイズ・状態・要求・寿命が混ざらない。
 - Source の一度の生成、OS キューの一度の取得、InputSystem / Source / Platform の終了順を検証する。
-- Platform だけを参照する最小アプリの依存・publish 出力に Input 本体が含まれないことを実装時に検証する。
+- Platform と契約パッケージだけを使う最小アプリの依存・publish 出力に Input 本体と Windowing 管理実装が含まれないことを実装時に検証する。
 - 要求と観測、拒否・置換・期限切れ、通知例外・再入、生成失敗の部分解放を検証する。
 - 保持中 Close の延期、子から親の終了、保持中 Dispose の変更前拒否、強制喪失を検証する。
 - Framework の統合と利用側の直接接続で Surface より先に Native を解放しないことを検証する。
