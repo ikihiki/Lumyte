@@ -118,6 +118,7 @@ try {
     assert.match(result.report, /Argument table checks passed:/);
     assert.match(result.report, /Shader checks passed:/);
     assert.match(result.report, /Command checks passed:/);
+    assert.match(result.report, /Render graph checks passed:/);
     assert.match(result.report, /Pipeline checks passed:/);
     assert.match(result.report, /Advanced command checks passed:/);
     assert.match(result.report, /Surface checks passed:/);
