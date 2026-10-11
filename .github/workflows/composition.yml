@@ -190,6 +190,7 @@ jobs:
           dotnet pack src/Input/Lumyte.Input.Actions -c Release --no-build -o artifacts/nuget
           dotnet pack src/Input/Lumyte.Input.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Diagnostics/Lumyte.Diagnostics.Animation -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics.Generators -c Release --no-build -o artifacts/nuget
           dotnet build Lumyte.slnx --no-restore
