@@ -8,7 +8,7 @@
 
 Lumyteには、構築した物理スレッドで操作するInput、Activate時に所有者を固定する診断の実行ポイント、BrowserのJS interopなどのスレッド制約と、独立したデータに対して並列化できるCPU処理がある。Graphicsは各backendの制約と呼び出し側の同期に従い、RenderGraphはowner threadで記録する。すべての描画deviceへ一律の構築スレッド制約を追加するものではない。lockによる排他、仕事の順序、物理スレッドの固定は異なる契約である。また、Browserではmanaged threadを作れない構成が通常であり、非同期APIがあることは並列に実行できることを意味しない。
 
-[PR #28](https://github.com/ikihiki/Lumyte/pull/28) は所有スレッドへの配送を `ENGINE-0001` として提案している。本ADRは、その固定所有者・有界配送・ホストのPumpという境界を維持し、CPUジョブの依存関係、単一スレッドでの進行、性能方針を追加する。参照した提案は commit `27b5e2bd71e198312836bfae081144d43855fb08` の [ENGINE-0001](https://github.com/ikihiki/Lumyte/blob/27b5e2bd71e198312836bfae081144d43855fb08/docs/adr/engine/ENGINE-0001-thread-execution.md) であり、mainに採用済みとは扱わない。共通の実行基盤を扱うため、本ADRはcoreカテゴリへ配置する。
+本ADRは固定所有スレッドへの配送とCPUジョブを共通の実行基盤として定義する。所有者・有界キュー・ホストのPump、CPUジョブの依存関係、スレッドなしでの進行、起動と終了を一つの契約として扱う。配置はcoreカテゴリとし、ホストや各機能はこの基盤を明示的に組み合わせる。
 
 このPRの成果物は設計案である。実装プロジェクト、API実装、性能測定結果は含まない。実装時の検証条件を後述し、調査した他ライブラリの性能特性をLumyteの実測値として使わない。
 
@@ -28,7 +28,7 @@ Lumyteには、構築した物理スレッドで操作するInput、Activate時�
 
 CPUジョブにowner指定を混在させない。ジョブグラフはCPU計算だけで閉じ、Inputのsnapshot取得 → CPU計算 → ownerで結果適用という外側のworkflowで接続する。これにより、CPUジョブの進行が描画phaseのPumpを待つ循環を作らない。複数graphや複数frameで同じ可変対象を扱う場合も、外側のworkflowが先行runの完了を確認してから次を投入する。
 
-配置は、配送契約を提案済みの `src/Core/Lumyte.Threading/`、CPUジョブを新しい `src/Core/Lumyte.Jobs/` とする。名前空間・NuGet名も各プロジェクト名に揃える。どちらもBCLに依存し、互いとInput／Graphics／Diagnostics／DIには依存しない。Engineまたはアプリの統合コードが両方を構成する。この設計PRではフォルダや空プロジェクトを追加しない。
+配置は、所有スレッドへの配送を `src/Core/Lumyte.Threading/`、CPUジョブを `src/Core/Lumyte.Jobs/` とする。名前空間・NuGet名も各プロジェクト名に揃える。どちらもBCLに依存し、互いとInput／Graphics／Diagnostics／DIには依存しない。Engineまたはアプリの統合コードが両方を構成する。この設計PRではフォルダや空プロジェクトを追加しない。
 
 ```mermaid
 flowchart LR
@@ -41,47 +41,102 @@ flowchart LR
     O --> B[Input・Graphics・Audio]
 ```
 
-### 所有スレッドの契約
+### 所有スレッドへの配送API
 
-`ENGINE-0001` の以下の公開境界を使用する。これは参照先の提案APIの抜粋であり、本ADRで別のexecutorを再定義しない。
+比較元はmain `81bba9e6a30ae7d2e926d0cf3247c140cca3502c`。そこには `Lumyte.Threading` がなく、以下はすべて追加の提案である。所有スレッドへの配送とCPUジョブを本ADRで一緒に定義する。宣言は主要メンバーの抜粋とする。
 
-```csharp
-namespace Lumyte.Threading
-{
-    public interface IThreadExecutor
-    {
-        string Name { get; }
-        bool CheckAccess();
-        void VerifyAccess();
-        ValueTask InvokeAsync(Action action, CancellationToken cancellationToken = default);
-        ValueTask<T> InvokeAsync<T>(Func<T> action, CancellationToken cancellationToken = default);
-    }
-
-    // IThreadExecutorの実装メンバーは省略。
-    public sealed class HostThreadExecutor : IThreadExecutor
-    {
-        public HostThreadExecutor(string name, int capacity = 256);
-        public int Pump(int maxWorkItems = 64);
-        public void Complete();
-        public Task Completion { get; }
-    }
-
-    public sealed class DedicatedThreadExecutor : IThreadExecutor
-    {
-        public static ValueTask<DedicatedThreadExecutor> CreateAsync(string name, int capacity = 256);
-        public void Complete();
-        public Task Completion { get; }
-    }
-}
+```diff
++namespace Lumyte.Threading
++{
++    public interface IThreadExecutor
++    {
++        // 非空の診断用名称。一意性やthread識別には使用しない。
++        string Name { get; }
++        // 固定ownerかを確認する。受付状態や安全なframe phaseは保証しない。
++        bool CheckAccess();
++        // owner以外ならInvalidOperationException。
++        void VerifyAccess();
++        // 任意producerから同期区間をenqueueし、その終了を通知。async voidは禁止。
++        ValueTask InvokeAsync(Action action, CancellationToken cancellationToken = default);
++        // TがTask／ValueTaskでも内側の完了は追跡しない。
++        ValueTask<T> InvokeAsync<T>(Func<T> action, CancellationToken cancellationToken = default);
++    }
++
++    public sealed class ExecutionQueueFullException : InvalidOperationException
++    {
++        // 未受理を表す。callbackは一度も実行されていない。
++        public ExecutionQueueFullException(string executorName);
++        public string ExecutorName { get; }
++    }
++
++    public sealed class HostThreadExecutor : IThreadExecutor
++    {
++        // 現在のhost threadを借用。capacity > 0、待機件数の上限。
++        public HostThreadExecutor(string name, int capacity = 256);
++        // owner限定・再入拒否。開始時点の待機仕事から最大件数を実行。
++        public int Pump(int maxWorkItems = 64);
++        // thread-safe・冪等。受付を閉じ、受理済み仕事はdrainする。
++        public void Complete();
++        // 全受理済み仕事と内部後始末の終了。待機中もhostがPumpを続ける。
++        public Task Completion { get; }
++        // IThreadExecutorの全メンバーを実装する。
++    }
++
++    public sealed class DedicatedThreadExecutor : IThreadExecutor
++    {
++        // 専用managed threadを起動し、受付準備完了後に返す。OS loop／STAは提供しない。
++        // Browserは初期対象外。他のthread非対応環境もPlatformNotSupportedExceptionで失敗する。
++        public static ValueTask<DedicatedThreadExecutor> CreateAsync(string name, int capacity = 256);
++        // thread-safe・冪等。受付を閉じ、専用threadで受理済み仕事をdrainして停止する。
++        public void Complete();
++        // 以後callbackを実行せず、専用threadの終了処理を終えた時点で完了。
++        public Task Completion { get; }
++        // IThreadExecutorの全メンバーを実装する。
++    }
++}
 ```
 
-構築時に固定した物理threadだけがownerとなる。`AsyncLocal`、Task ID、たまたまworkerが一つであることを判定に使わない。`CheckAccess`は安全なframe phaseまで保証しない。専用executorはOSイベントループを提供せず、Browserでは初期対象外とする。
+`name`と例外の`executorName`は非空、capacityとmaxWorkItemsは正値とする。null callbackを含む引数不正は同期的に引数例外を投げる。専用thread非対応や起動失敗はCreateAsyncの返すValueTaskを失敗させ、部分的に生成した実行資源を片付ける。ホストはthread利用可能性を確認して構成を選び、非対応時に起動失敗を試してからfallbackする運用にしない。
 
-配送は同期区間に限り、ownerからの投入も常にenqueueする。同時producerを受付時点で順序付け、受理順に一度だけ実行する。満杯は `ExecutionQueueFullException`、受付終了は `ObjectDisposedException` により未受理を返す。容量は待機件数であり、捕捉するデータのbyte上限ではない。未受理なら資源の所有権は呼び出し側に残る。開始前の取消が勝てばcallbackを呼ばず、開始が勝てば終了まで追跡して結果／例外を返す。
+### 所有者とホストの責務
 
-ホストは安全な更新位置でPumpを呼ぶ。Pump再入は拒否し、開始時点の待機仕事から件数予算までを処理する。新しい投入は次のPumpへ残す。callback内の例外はその要求へ返し、後続要求を止めない。完了継続はcallback内でinline実行しない。`InvokeAsync`のawait後がownerであるとは保証しないため、次のowner操作も明示的に配送する。
+HostThreadExecutorのownerはコンストラクターを呼んだ物理thread、DedicatedThreadExecutorのownerは新しく起動した専用threadである。一度決めたownerは終了まで変更しない。`AsyncLocal`、Task ID、たまたまworkerが一つであることを判定に使わない。CheckAccess／VerifyAccessは終了後も同じowner判定を行い、受付終了を確認するAPIの代用にはならない。
 
-UI、ユーザー操作を要するWeb Audioの再開、Browserのframe取得からPresentまでの同期区間はホストの既存制約に従う。毎回配送する必要はなく、適切なphaseのownerからは `VerifyAccess` 後に直接呼べる。一般キューへ移すことでユーザー操作の有効期間や借用frameを次turnへ持ち越してはならない。
+Host／Game／Render／Audioの役割へ、構成側がexecutorをコンストラクター引数などで明示的に渡す。staticな現在のexecutorやサービスロケーターは設けない。初期構成では同じhost executorを共有し、既存backendの契約が許す場合だけRenderやAudioを専用threadへ分離する。Window・Input取得などOSイベントやSTAが必要な役割を汎用の専用executorへ移さない。HostThreadExecutorはOSメッセージループやrequestAnimationFrameを開始・停止しない。
+
+専用executorは仕事を配送するだけで、GameのtickやAudio.Updateを生成しない。更新頻度と次回要求は統合側が管理し、遅れた更新を無制限に積まない。Game／Renderを分離するときはframe番号付きの不変snapshotまたは所有権を移したbufferを有界の枠で渡す。受け手が返す前に書き換えず、frame省略の方針も統合側が決める。
+
+### 受付・順序・キャンセル
+
+配送は同期区間に限り、ownerからのInvokeAsyncも常にenqueueする。同時producerを受付地点で順序付け、受理したcallbackをFIFOで一度だけ実行する。取消で開始を抑止した要求は実行しない。異なるexecutor間の全順序は保証しない。適切なphaseのownerからはVerifyAccess後に直接操作できるが、その操作はqueueのFIFO順序に含まれない。
+
+容量は待機件数の上限であり、実行中の一件は別に数える。捕捉するPCMやsnapshotのbyte上限は統合側が管理する。満杯は `ExecutionQueueFullException`、受付終了は `ObjectDisposedException` として返すValueTaskを失敗させ、callbackを受理しない。隠れた無制限の待機queueは作らない。未受理なら資源と解放責任は呼び出し側に残る。要求元への拒否、後のturnでの再試行、音量など最新値の明示的な集約は利用側が選び、executorが再生・停止・解放を勝手に捨てたり集約したりしない。
+
+既に取消済みのtokenは受付前にcanceled ValueTaskを返す。受理後の取消と開始は原子的な確定点で競合を解決する。取消が勝てばcallbackを呼ばず待機枠を返し、ValueTaskを取り消す。開始が勝てば同期callbackを最後まで追跡し、成功結果または例外を返す。開始後の取消だけで通知を先に終わらせないため、生成した資源が返却前に所有者を失うことを防げる。引数検証、受付前取消、受付状態と容量の順に確認し、Completeと受理の競合も同じ受付地点で決める。
+
+callbackの例外はそのInvokeAsyncへ伝え、他の仕事やexecutorの正常終了を妨げない。返されたValueTaskは呼び出し側が一度観測する。複数箇所で観測する必要があれば一度AsTaskして共有し、fire-and-forgetのPostは設けない。予期しない内部障害では受付を閉じ、未実行要求を失敗させる。開始済みcallbackは終了まで追跡し、その後executorのCompletionも失敗させる。
+
+### Pump・非同期処理・配送の完了
+
+hostは安全な更新位置でPumpを呼ぶ。誤ownerとPump再入は `InvalidOperationException`。開始時点の待機仕事から最大maxWorkItems件のcallbackを処理し、途中で投入された仕事は次のPumpへ残す。戻り値は実行したcallback数で、開始前に取り消した要求を含めない。予算は件数であり時間の上限ではない。実行中のcallbackを中断できないため、大きなuploadや長い処理は呼び出し側で分割する。
+
+配送するcallbackにasync void、ブロッキングI/O、GPU待機を使わない。`Func<T>`がTask／ValueTaskを返しても、executorが追跡するのは内側の非同期処理を開始して戻るまでである。必要ならownerで開始したTaskをcallback外でawaitし、関連する資源の寿命も外側のworkflowが追跡する。内側の継続がownerを要求する場合は、その非同期APIとhost自身が契約を満たす必要がある。executorがSynchronizationContextを差し替えて任意のasync delegateを固定threadへ閉じ込めることはしない。
+
+ownerから未完了の配送、I/OやCPUジョブを `.Wait()`、`.Result`、`GetAwaiter().GetResult()` で待たない。同じexecutorだけでなく別executorとの相互待機や、複数の役割が同じinstanceを指す場合にも適用する。待機中の再入Pumpも使わない。外側のworkflowが非同期に順序を組み立て、hostは独立してPumpを駆動する。
+
+完了継続はcallback内でinline実行しない。BCL／host runtimeがTaskの継続を配送することと、owner callbackを実行するthreadの固定は別の契約である。InvokeAsyncのawait後がownerであるとは保証しないため、次のowner操作も明示的に配送する。Browserでも通常のイベントループによる継続とPumpを維持し、主threadをblockしない。
+
+Completeは受付を閉じるだけで、受理済みcallbackを取り消さずdrainする。Hostではその後もownerからPumpを続け、専用executorは自身の処理ループで進める。通常のcallback失敗は個々のInvokeAsyncに残し、全受理済み仕事と実行器の後始末が終わればexecutorのCompletionは正常に完了する。完了後のHost.Pumpは0を返す。executorは借用host threadを終了せず、資源の自動解放、GPU完了、Audio再生、callbackが開始した外部I/Oの完了も追跡しない。
+
+UI、ユーザー操作を要するWeb Audioの再開、Browserのframe取得からPresentまでの同期区間はhostの既存制約に従う。一般queueへ移すことでユーザー操作の有効期間や借用frameを次turnへ持ち越してはならない。例えばAudioの再開はユーザー操作handler内で最初のawaitより前に開始し、同一turnが必要な描画は準備を済ませてからframeを取得する。
+
+### 所有資源と統合側の契約
+
+deviceを固定ownerで扱う構成では、生成、子の生成・利用・解放、device解放まで同じownerへ配置する。リソース取得とデコードは外で進め、deviceへ依存する生成・転送・解放だけを配送する。resource managerなどのlockを保持してcallbackを呼んだり配送完了を待ったりしない。借用bufferとdeviceの利用権は、配送の完了と外部側の使用終了の両方を満たすまで保持する。
+
+device復旧やscene終了をまたぐ要求には統合側の世代番号を持たせ、実行時にも有効性を確認する。古い要求を新しいdeviceへ無条件に適用しない。既に生成した資源の解放は元のownerへ戻し、未受理や失敗時も参照と解放責任を保持する。cleanupには取り消されたload tokenを流用しない。
+
+音声のリアルタイムcallbackはmanaged配送queueやCPUジョブへ投入して完了を待つ場所ではない。将来のstream接続は事前に準備した有界bufferから消費し、callbackへ割り当て、I/O、lock、Task待機を持ち込まない。
 
 ### CPUジョブの単位と依存関係
 
@@ -95,7 +150,7 @@ Contextは値型としてrunにコピーするが、含まれる参照先は深�
 
 単一runで直列にしたい操作は辺で結ぶ。別run間にも非重複が必要なら先行run完了後に次を受理させる。グローバルなSerialフラグや暗黙のresource lockを設けない。同じ再生者、出力、イベントsinkへ同時にアクセスしないことは利用者の契約であり、並行アクセスの自動推論は初期対象外である。
 
-### 公開APIの追加差分
+### CPUジョブAPIの追加差分
 
 比較元はmain `81bba9e6a30ae7d2e926d0cf3247c140cca3502c`。そこには `Lumyte.Jobs` がなく、以下はすべて追加の提案である。宣言は主要メンバーの抜粋とする。
 
@@ -291,16 +346,20 @@ if (pendingRun is { IsCompleted: true })
 
 ### 起動・停止と所有権
 
-ホストを起動し、ownerの実行場所とCPU backendを選び、ownerでdevice・機能を構築する。Cooperativeの初期化でジョブを使うなら初期化用turnでもPumpを駆動する。初期化完了後だけ開始する通常frameに進行を依存させない。
+ホストを起動し、ownerの実行場所とCPU backendを選び、ownerでdevice・機能を構築する。Host.Pumpの開始前はowner上で同期初期化を直接呼ぶ。InvokeAsyncが必要な初期化は、先に起動用のイベントループへPumpを接続してから非同期に待つ。DedicatedはCreateAsync完了時点で自身の処理ループが稼働している。DIの同期factoryで非同期初期化をblockしない。
+
+Cooperativeの初期化でジョブを使うなら初期化用turnでもPumpを駆動する。初期化完了後だけ開始する通常frameに進行を依存させない。途中失敗時は成功済みの子からowner上で解放し、実行器の受付と必要なPumpを後始末が終わるまで残す。
 
 終了は次の順で行う。
 
 1. 業務の新規producerを止め、I/O workflowを完了または取消し、後からCPU仕事が投入されない状態にする。ownerの受付・PumpとCooperativeのPumpは、この待機中から終了手順全体を通して継続する。
 2. `BeginShutdown(Drain)`、または未開始計算を不要とする場合は `CancelPending` を呼ぶ。どちらも新規runを拒否する。CancelPendingは全未完了runに取消を要求し、開始済みcallbackは強制停止しない。
 3. ホストのCooperative Pumpを継続してschedulerのCompletionを非同期に待つ。受理済みrunごとの結果を観測し、必要なowner適用・後始末を配送して、借用bufferを返す。
-4. 外部GPU／Audioの完了条件も満たして子資源、device、scopeをownerで解放する。その後executorをCompleteし、drain完了後にホストを終了する。
+4. 外部GPU／Audioの完了条件も満たして子資源、device、scopeをownerで解放する。全機能の後始末が成功したら共有instanceにつき一度executorをCompleteし、Host.Pumpを続けながらそのCompletionを非同期に待つ。drainと実行器の後始末が完了してからホストを終了する。
 
 `JobScheduler.Completion`はジョブの個別失敗では失敗せず、それらを各JobRunに残して正常に停止する。内部障害はschedulerのCompletionも失敗させる。停止後にPumpを呼べば残りを進められ、停止完了後は0を返す。ThreadPool modeでPumpを呼ぶことは `InvalidOperationException`。停止を開始しただけではbufferを解放してはならない。
+
+executorをCompleteしてからcleanupを配送しても未受理になる。通常queueが満杯なら受付とownerを保ったまま先行仕事を進めて再試行する。子やdeviceの解放が失敗した場合も、失敗と生存資源の参照を保持する。安全に片付けられる独立した機能だけを進め、参照が残るdeviceやexecutorを先に閉じない。
 
 キューが空でもI/O workflowが生きていればエンジン全体の停止完了ではない。停止期限はホストが管理し、期限超過でも実行中の参照を解放したりthreadを強制終了したりしない。呼び出し側へ未完了を報告する。非表示タブではrequestAnimationFrameだけに頼らず終了用のhost turnも使うが、ブラウザーに停止された間の進行は保証できない。
 
@@ -349,6 +408,9 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 以下は今後の実装を受け入れるための検証であり、この文書PRで実行済みとは扱わない。
 
 - ownerの生成・操作・解放のthread一致、複数役割の同一executor、誤thread／再入Pumpの拒否、開始時snapshotによるPump予算、FIFOと満杯時の未受理。CPU Pumpでは全長さ0のDAG、広いfan-out、取消整理でも時間予算を再確認し、途中から再開できること。
+- executorの引数例外とfaulted／canceled ValueTaskの区別、満杯・受付終了・開始前取消と開始の競合、開始後取消でも生成した資源を失わないこと。callback例外後の継続、内部障害時の未実行要求とCompletionの失敗。
+- Hostの借用threadとDedicatedの生成threadでのowner一致、専用threadの起動失敗時cleanup、Completeの冪等性・受理競合、全受理済み仕事のdrain。Taskを返すcallbackの外側workflowが内側の完了と資源寿命を追跡すること。
+- 通常frame開始前の初期化Pump、途中失敗の逆順cleanup、共有executorの終了、cleanup満杯・解放失敗の再試行、取消済みload tokenをcleanupへ流用しないこと。
 - chain／diamond／独立枝の依存順と一度だけ実行、循環／無効IDの拒否、0件・端数・大きなlengthの範囲重複／欠落なし、先行結果のメモリ可視性。
 - 同じgraphの複数runと独立Context、異なるrun間の枠再利用、古いJobRunを保持したまま新しいrunが完了しても状態が混ざらないこと。
 - 任意producerの容量競合、予約中の受付終了、getLength例外、受理直前／直後の取消、run単位の全受理または全拒否、ready追加とdrain終了のlost wakeup。
@@ -359,7 +421,7 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 - 入力snapshot、独立Animation評価、owner結果適用、既存Diagnostics execution point、同一turn内Presentをつないだ統合。CPU成功だけでGPU資源を解放しないこと。
 - Drain／CancelPending、I/O中でqueueが空の終了、owner cleanup中の満杯、停止期限超過を検証し、未完了handleや生存bufferを成功として破棄しない。
 
-実装は、まずgraphとCooperativeで契約を確立し、次にThreadPoolを同じ検証へ通し、最後に実ホスト統合と性能測定を行う。NativeのテストだけでBrowser対応済みとはしない。
+実装は、まずHostThreadExecutorとgraph／Cooperativeで契約を確立し、次にDedicatedThreadExecutorとThreadPoolを各契約の検証へ通し、最後に実ホスト統合と性能測定を行う。NativeのテストだけでBrowser対応済みとはしない。
 
 ## 検討した代替案
 
@@ -371,6 +433,8 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 | owner taskをCPU DAGに混在させ、wait中に実行 | owner phaseの暗黙再入や、ownerのPump待ちによる循環が生じる。外側のworkflowで分離する |
 | threadなしは未対応／即時inlineのみ | Browserを除外するか、一度に長い処理でhostを止める。共通の依存関係と予算付きPumpを選ぶ |
 | 汎用async delegate・nested join | 継続の配置、再入、終了、threadlessの進行が複雑化する。同期CPU区間とI/O workflowを分ける |
+| ownerからのInvokeAsyncを暗黙にinline実行 | 先行要求を追い越し、更新途中へ再入し得る。常時enqueueと適切なphaseの直接呼出しを分ける |
+| backendごとの自動配送・無制限queue | 呼出しの完了条件とframe境界が見えにくく、遅いuploadや停止タブでmemoryが増える。有界配送と明示的な負荷制御を選ぶ |
 | 外部ライブラリを直接導入 | enkiTS／Taskflow／oneTBBは主にC++、Rayon／BevyはRust、Unity JobsはUnityの実行・データモデルに依存する。C#のAOTとBrowserを含む現状ではBCLと小さな独自契約を選ぶ |
 
 ## 結果と影響
@@ -383,7 +447,7 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 
 ## 別途決定する事項
 
-- ENGINE-0001の採用と具体実装、ホストのwake通知、Engineのframe phaseとDI登録API。両ADRの採用前にAPIと終了順序を再照合する。
+- ホスト別のwake通知、Engineのframe phaseとDI登録API。owner配送とCPUジョブの基本契約は本ADRで定める。
 - 固定専用CPU pool、優先度、複数pool、動的な子ジョブ、跨run依存、協調joinの必要性と公開API。
 - Browserのmanaged worker、JS interop所有者、OffscreenCanvasを含む対応構成。
 - ECSの読み書き宣言による依存自動生成、Native／SIMDカーネル、可変graphの差分更新。
