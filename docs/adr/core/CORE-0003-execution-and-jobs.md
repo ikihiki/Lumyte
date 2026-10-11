@@ -196,9 +196,18 @@ AOTで必要な型を明示登録し、実行時のassembly走査、MakeGenericT
 +        // 生成名の基底。省略時はメソッド名。空文字や不正な識別子は診断する。
 +        public string? Name { get; set; }
 +        public ExecutionInputKind Input { get; set; } = ExecutionInputKind.PackArguments;
++        // 対象を保持する送信structの名前。nullなら従来の単独portを生成する。
++        public string? Sender { get; set; }
 +        // 同期メソッドがpending operationを結果のデータとして返す場合だけ明示する。
 +        // asyncメソッドを許可したり、結果をawait/unwrapしたりする指定ではない。
 +        public bool AllowAwaitableResult { get; set; }
++    }
++
++    [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false, Inherited = false)]
++    public sealed class ExecutionTargetAttribute : Attribute
++    {
++        // Senderへ束縛する元インスタンス。各メソッドで一つだけ指定する。
++        public ExecutionTargetAttribute();
 +    }
 +
 +    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
@@ -269,7 +278,7 @@ var applyKey = work.DeclareApply(builder, audioOptions).Key;
 +    // Name、型、handlerは生成側で確定。optionsの所有者・条件は通常の検査を受ける。
 +    public CreateVoiceWork DeclareCreateVoice(ModuleBuilder builder, WorkOptions options);
 +
-+    public sealed class CreateVoiceWork
++    public readonly struct CreateVoiceWork
 +    {
 +        public WorkKey<CreateVoiceCommand, AudioVoice> Key { get; }
 +        // runtime.Bindを使う。別plan、無効key、Startupの通常port化は同じく拒否する。
@@ -279,7 +288,7 @@ var applyKey = work.DeclareApply(builder, audioOptions).Key;
 +            CancellationToken cancellationToken = default);
 +    }
 +
-+    public sealed class CreateVoicePort
++    public readonly struct CreateVoicePort
 +    {
 +        public CommandPort<CreateVoiceCommand, AudioVoice> Port { get; }
 +        // payload構築とPort.ExecuteAsyncへの直接forward。async state machineは不要。
@@ -291,9 +300,9 @@ var applyKey = work.DeclareApply(builder, audioOptions).Key;
 +}
 ```
 
-Work／Portは構成時に保持する参照objectで、公開constructorを生成しない。型が同じmoduleを複数登録してもKeyは個々の登録に属し、static fieldへplan keyやruntimeを保持しない。Bindを呼び出しごとに繰り返さず、戻ったportをサービスへ渡す。生成されたpayloadとKeyは公開し、手書きbatch／graphとも組み合わせられる。
+生成するWork／Portも薄いreadonly structとし、それぞれkeyの値／生CommandPortへの参照を保持する。wrapperだけのheap objectを作らず、公開constructorを生成しない。defaultは未登録／未束縛として使用時に拒否する。型が同じmoduleを複数登録してもKeyは個々の登録に属し、static fieldへplan keyやruntimeを保持しない。Bindを呼び出しごとに繰り返さず、戻ったportをサービスへ渡す。生成されたpayloadとKeyは公開し、手書きbatch／graphとも組み合わせられる。
 
-`Play(AudioVoice voice)`では同じ規則でPlayCommand、PlayWork、PlayPortを生成し、ExecuteAsyncの結果は`ValueTask<Unit>`、AddToの結果は`CommandResultKey<Unit>`になる。voidをfire-and-forgetへ変換せず、受付失敗、開始前取消、backend例外を観測できる。戻り値は実体生成完了後に返し、生成前の仮handleへ変換しない。
+Senderを指定しない`Play(AudioVoice voice)`では同じ規則でPlayCommand、PlayWork、PlayPortを生成し、ExecuteAsyncの結果は`ValueTask<Unit>`、AddToの結果は`CommandResultKey<Unit>`になる。voidをfire-and-forgetへ変換せず、受付失敗、開始前取消、backend例外を観測できる。戻り値は実体生成完了後に返し、生成前の仮handleへ変換しない。
 
 同じpartial classの内部へ置く生成adapterの本体は概ね次の形である。module参照は登録時に一度保持する。投入のたびにメソッドをdelegateへ変換せず、object配列、boxing、Reflection、DynamicInvokeも使わない。
 
@@ -315,6 +324,114 @@ private sealed class __LumyteExecutionCreateVoiceHandler
 
 async／iteratorメソッドは生成対象にしない。Task／ValueTask等のawaitableを返す同期メソッドも既定では診断し、AllowAwaitableResult=trueでpending operationをデータとして返す場合だけ許す。AllowAwaitableResultを指定した仕事のDeclare helperはAdmission.Startupだけを許し、Normal／Cleanupへの登録を引数例外で拒否する。Browserの初期化開始はこの指定、またはoperationを格納した明示structを使える。後者も起動workflowの仕事として登録する。generatorはawait／unwrapせず、実operationの待機とowner上の確定・cleanupは既存の外側workflowが追跡する。メソッド本体の同期waitや隠れた非同期処理をすべて静的に検出できるとは扱わない。
 
+#### 元インスタンスを保持する送信struct
+
+対象を引数で渡すportに加え、元インスタンスを保持するreadonly structを生成する。そのstructの `Play()` 等を呼ぶと、対象参照を含む型付きcommandをその場で受付へ渡す。元メソッドの本体は変更せず、生成structが送信用の入口になる。
+
+同じmodule classのメソッドへ `ExecutionCommand(Sender = "Voice")` を指定し、対象引数一つへExecutionTargetを付ける。同じSender名の仕事を一つの送信structへまとめる。例えばPlay、Stop、DestroyからAudioState.Voiceを生成する。通常引数から対象だけを取り除いたメソッドをstructへ生成し、送信時に保持した対象を元の位置へ戻してpayloadを構築する。
+
+```csharp
+sealed partial class AudioState
+{
+    [ExecutionCommand(Sender = "Voice")]
+    private void Play([ExecutionTarget] AudioVoice voice)
+    {
+        voice.VerifyUsableBy(this);
+        voice.Backend.Play();
+    }
+    // Stop、Destroyも同じSenderと対象型で宣言する。
+}
+```
+
+登録はmoduleごとに一度行う。同じgroupの全仕事を登録するDeclareVoice、結果のVoiceWork、runtimeへ結び付けるVoiceBinding、対象を保持するVoiceを生成する。Sender対象の仕事には個別のDeclarePlay／PlayWork／PlayPortを生成せず、二重登録と不要なwrapperを避ける。各command型は元partial classから、WorkKeyはgroupのVoiceWorkから公開し、手書きbatch／graph／ModuleContextでも利用できる。
+
+```diff
++partial class AudioState
++{
++    // すべて検証してから登録する。順序を仕事名や引数の記載順から推測しない。
++    public VoiceWork DeclareVoice(ModuleBuilder builder,
++        WorkOptions destroy, WorkOptions play, WorkOptions stop);
++
++    public readonly struct VoiceWork
++    {
++        public WorkKey<PlayCommand, Unit> Play { get; }
++        public WorkKey<StopCommand, Unit> Stop { get; }
++        public WorkKey<DestroyCommand, Unit> Destroy { get; }
++        // shared bindingは構成時に一度作って保持する。
++        public VoiceBinding Bind(ExecutionRuntime runtime);
++    }
++
++    public sealed class VoiceBinding
++    {
++        // nullを拒否。新しい仕事やheap上のsenderを作らず、2参照のstructを返す。
++        // 所属・生存の最終検査は従来どおりowner上のhandlerが行う。
++        public Voice For(AudioVoice target);
++    }
++
++    public readonly struct Voice
++    {
++        private readonly AudioVoice target;
++        private readonly VoiceBinding binding;
++
++        // 呼び出した時点で受付を試みる。awaitは実行完了・失敗を観測する。
++        public ValueTask<Unit> Play(CancellationToken cancellationToken = default);
++        public ValueTask<Unit> Stop(CancellationToken cancellationToken = default);
++        public ValueTask<Unit> Destroy(CancellationToken cancellationToken = default);
++        // こちらは明示的なstaging。TrySubmit成功まで送信・実行されない。
++        public CommandResultKey<Unit> AddPlayTo(CommandBatch batch);
++        public CommandResultKey<Unit> AddStopTo(CommandBatch batch);
++        public CommandResultKey<Unit> AddDestroyTo(CommandBatch batch);
++    }
++}
+```
+
+VoiceBindingは各操作の生CommandPortだけを保持し、多数のvoiceで共有する。Voiceにはport配列、delegate、interface、診断文字列、完了状態、batch用cursorを保持しない。典型的な64bit環境では参照2本分の大きさを狙うが、ABI上のサイズを保証せず実装後に測る。structは格納先によってheap上にも存在し、常にstackへ置かれるとは言わない。
+
+Voiceのconstructorは公開せず、binding.Forで生成する。defaultのVoiceは未束縛とし、送信メソッドは受付前にInvalidOperationExceptionを投げる。immutableなfieldだけなので、structのコピーや同じsenderからの複数producerの投入に、sender自身のlockや新しい参照objectは必要ない。実際のqueue同期はruntimeが行い、CommandBatchは従来どおり単一producerで扱う。
+
+コピーしてもvoiceの所有権やclip leaseを増減しない。Destroy受付時にはsenderの他のコピーを無効化せず、受付順の先行仕事を実行する。owner上でDestroyが成功した後は、すべてのコピーからの通常操作が同じ破棄済み状態で拒否される。IDisposable／IAsyncDisposable／IAudioVoiceは実装せず、structコピーのDisposeで暗黙にnative資源を破棄する契約にしない。明示的なDestroy仕事とmodule cleanupを使う。
+
+同じSenderに含める仕事はPackArgumentsに限定し、ExecutionTargetは非nullableなclass型の引数一つとする。対象型、登録元module instance、owner、OrderGroupはgroup内で一致させる。RequiredGatesとNormal／Cleanupの違いは許す。Startup、AllowAwaitableResult、CPU target、Update／Rangeをsender groupへ混在させない。型・属性の矛盾は生成時、WorkOptionsの不一致はDeclareVoiceで登録前に拒否する。group内の生成memberとDeclare引数は生成する仕事名のordinal順で安定化し、呼び出し側はnamed argumentでWorkOptionsを対応させる。これは実行順序を指定するものではない。
+
+元AudioVoiceへの参照が送信structに入っても、所属検査やnative寿命の契約は変えない。Forは対象参照を束縛するだけで、別threadからbackend状態を読んだり、その場でPlayを実行したりしない。Browserで同じHostになっても同じ受付とphaseを通す。
+
+#### 呼び出し段数とスタックトレースの削減
+
+生成senderは既存の生CommandPortへ直接forwardする。生成PlayPort→汎用helper→別の送信adapterという中継を重ねず、完了型も `ValueTask<Unit>` または `ValueTask<TResult>` をそのまま返す。非generic ValueTaskへの変換や単なるforwardのためのasync state machineを作らない。
+
+次は生成されたVoice.Playの本体の例である。bindingの検査以外の分岐を増やさず、所有者・状態・容量の正しさを維持する検査はruntimeとhandlerへ残す。
+
+```csharp
+[StackTraceHidden]
+public ValueTask<Unit> Play(CancellationToken cancellationToken = default)
+{
+    if (binding is null) ThrowUnbound(); // cold path。明示的な未束縛例外
+    return binding.PlayPort.ExecuteAsync(
+        new PlayCommand(target), cancellationToken);
+}
+
+[StackTraceHidden]
+public CommandResultKey<Unit> AddPlayTo(CommandBatch batch)
+{
+    if (binding is null) ThrowUnbound();
+    var command = new PlayCommand(target);
+    return batch.Add(binding.PlayPort, in command);
+}
+
+[StackTraceHidden]
+[DoesNotReturn]
+private static void ThrowUnbound()
+    => throw new InvalidOperationException("Sender is not bound.");
+```
+
+PlayPortはVoiceBinding内の生CommandPortを指し、generatorが通常生成するPlayPort型のwrapperではない。対象メソッドへ渡す側も閉じたhandlerから直接呼ぶ。正常経路でcatch／wrap、reflection、delegate生成、object配列、boxing、送信元StackTraceの取得を追加しない。小さいforwarderのインライン化は測定して判断し、AggressiveInliningを使ってもJIT／AOTで実際にインライン化される保証とはしない。
+
+StackTraceHiddenは生成したforwarder、adapter、cold-pathのthrow helperだけへ付ける。ユーザーのpartial class全体、元メソッド、backend、runtimeの実質的な処理へは付けず、取得できた実処理の位置情報を保持する。この属性は対応するスタックトレース表示を短くするもので、実際の呼び出しframeや例外captureの費用を消すものではない。インライン化で元メソッドのframe自体がなくなる場合もあるため、JIT／AOTで固定のframe一覧は保証しない。
+
+例外はruntimeのhandler境界で捕捉し、ExceptionDispatchInfo等で元のDomain／backendのtraceを保って完了へ伝える。生成層ごとに例外を包み直さない。単一失敗は元の例外を通知し、複数失敗だけを集約する。成功送信ごとの文字列化やActivityは作らず、必要な相関は既存の仕事IDとrun IDで扱う。詳細な送信元traceは明示的な診断設定でだけ取得する。
+
+送信structの生成・コピー自体は新しいheap objectを必要としないが、単発メソッドは既存の一件runと完了管理の費用を持つ。構造体化だけで全経路を無割り当てとしない。高頻度のECS／Audio制御は再利用CommandBatchへ追加し、一つのrunへまとめてポーリングする。単発の返値も必ず観測し、新しいfire-and-forget経路や失敗を無視するvoidメソッドは生成しない。
+
 #### 生成時の診断と互換性
 
 初期版の対象は名前空間直下のpublic／internalな非generic・非abstract・非static・非record・非file-localのpartial class、およびそのクラス自身に定義した通常の同期instanceメソッドとする。生成memberはpublicとし、包含型のaccessibilityで外部公開範囲を制限する。入力・結果型の有効なaccessibilityがその公開範囲より狭ければエラーにする。privateメソッドをpublicへ変更する必要はない。
@@ -329,8 +446,9 @@ async／iteratorメソッドは生成対象にしない。Task／ValueTask等の
 | LMEXEC004 | 不正・重複する生成名、複数の仕事属性、overload間の名前衝突、payload fieldの名前衝突 |
 | LMEXEC005 | ExistingCommand、WorkContext注入、Update／Range／length methodの型や引数の不一致 |
 | LMEXEC006 | 明示許可のないawaitable結果、不正なenum値、生成helperのcontrol引数と衝突するpayload引数名 |
+| LMEXEC007 | Sender名・ExecutionTargetの不足／重複／型不一致、SenderなしのExecutionTarget、非対応入力modeやawaitable結果との併用 |
 
-Nameを省略した場合はメソッド名を基底とする。overloadは異なるNameを明示すれば登録できる。payloadのfieldは引数名の先頭を大文字にした名前とし、C# keywordをescapeする。変換後に重複するfieldや生成する包含型名と同名になるfieldは診断する。生成helperが使うcontext／batch／cancellationTokenとpayload引数名が衝突する場合は、初期版では引数名を変更するよう診断する。注入するWorkContextの引数名はこの制限に含めない。
+Nameを省略した場合はメソッド名を基底とする。overloadは異なるNameを明示すれば登録できる。payloadのfieldは引数名の先頭を大文字にした名前とし、C# keywordをescapeする。変換後に重複するfieldや生成する包含型名と同名になるfieldは診断する。生成するSender、Work、Binding、メソッド、AddXxxToと既存・生成memberとの衝突も検査する。group登録helperのWorkOptions引数は仕事名から生成し、呼び出しはnamed argumentを使える。生成helperが使うcontext／batch／cancellationTokenとpayload引数名が衝突する場合は、初期版では引数名を変更するよう診断する。注入するWorkContextの引数名はこの制限に含めない。
 
 同じメソッド集合から生成するコードはsource fileの走査順、絶対path、cultureへ依存させない。型名はglobal::付きの完全修飾名で出力し、nullable注釈を維持する。生成名やsource上の並びから永続ID、frame順序、依存関係を作らず、受付sequenceと明示したgraphで順序を決める。
 
@@ -586,14 +704,14 @@ sequenceDiagram
     Runtime->>Owner: 条件成立後に登録handlerを実行
     Owner->>Owner: IAudioDevice.CreateVoice・所有表へ記録
     Owner-->>Caller: 実体生成後にAudioVoiceを完了通知
-    Caller->>Port: PlayVoice(AudioVoice)
+    Caller->>Port: Voice.Play() → PlayCommand(対象参照)
     Runtime->>Owner: 同じOrderGroupでPlayを実行
     Owner-->>Caller: Playの呼び出し完了
 ```
 
-`IAudioVoice.Play()`など既存低レベルAPIの契約は同期・owner限定のままとする。別threadから使うAudio統合APIが `PlayVoice` を送る。voidのPlayを裏で配送して、成功・失敗や実行時点だけを変える互換性変更はしない。完了はbackendのPlayが返った時点であり、音が聞こえ始めた時刻ではない。
+`IAudioVoice.Play()`など既存低レベルAPIの契約は同期・owner限定のままとする。別threadから使う生成Voice structのPlayが `PlayCommand` を送る。voidのPlayを裏で配送して、成功・失敗や実行時点だけを変える互換性変更はしない。完了はbackendのPlayが返った時点であり、音が聞こえ始めた時刻ではない。
 
-以下はメソッド属性を使うAudio統合層の宣言例である。型とhelperは提案例であり、既存Audio公開APIへの追加が確定済みという意味ではない。`AudioState`はdevice・clip・voiceの所有記録を持ち、clip IDの世代とvoice参照の所属・生存を検査する。`CreateVoiceAndRecord`は実体を生成して所有表へ記録し、記録失敗時も元ownerで回収する。clipの利用権はvoice破棄成功まで保持する。例のClipIdは統合側のresident clipを解決するための識別子であり、DeviceGenerationはprocess内のmodule／device再生成をまたいで再利用せず、上限で発行を拒否する。voice操作の対象はAudioVoice参照を直接渡す。
+以下はメソッド属性を使うAudio統合層の宣言例である。利用側のVoiceは生成した送信struct、AudioVoiceは実体を保持する参照型として区別する。型とhelperは提案例であり、既存Audio公開APIへの追加が確定済みという意味ではない。`AudioState`はdevice・clip・voiceの所有記録を持ち、clip IDの世代とvoice参照の所属・生存を検査する。`CreateVoiceAndRecord`は実体を生成して所有表へ記録し、記録失敗時も元ownerで回収する。clipの利用権はvoice破棄成功まで保持する。例のClipIdは統合側のresident clipを解決するための識別子であり、DeviceGenerationはprocess内のmodule／device再生成をまたいで再利用せず、上限で発行を拒否する。voice操作の対象はAudioVoice参照を直接渡す。
 
 ```csharp
 readonly record struct ClipId(ulong DeviceGeneration, int Slot, int Generation);
@@ -606,24 +724,24 @@ sealed partial class AudioState
     [ExecutionCommand]
     private AudioVoice CreateVoice(ClipId clip) => CreateVoiceAndRecord(clip);
 
-    [ExecutionCommand]
-    private void Play(AudioVoice voice)
+    [ExecutionCommand(Sender = "Voice")]
+    private void Play([ExecutionTarget] AudioVoice voice)
     {
         ArgumentNullException.ThrowIfNull(voice);
         voice.VerifyUsableBy(this);
         voice.Backend.Play();
     }
 
-    [ExecutionCommand]
-    private void Stop(AudioVoice voice)
+    [ExecutionCommand(Sender = "Voice")]
+    private void Stop([ExecutionTarget] AudioVoice voice)
     {
         ArgumentNullException.ThrowIfNull(voice);
         voice.VerifyUsableBy(this);
         voice.Backend.Stop();
     }
 
-    [ExecutionCommand]
-    private void Destroy(AudioVoice voice)
+    [ExecutionCommand(Sender = "Voice")]
+    private void Destroy([ExecutionTarget] AudioVoice voice)
     {
         ArgumentNullException.ThrowIfNull(voice);
         voice.DestroyOnOwner(this); // 所属検査→backend.Dispose→lease返却。成功後は冪等
@@ -642,14 +760,12 @@ sealed partial class AudioState
 sealed class AudioModule : IExecutionModule
 {
     private readonly AudioState state;
-    private AudioState.InitializeWork initialize = null!;
-    private AudioState.CloseWork close = null!;
+    private AudioState.InitializeWork initialize;
+    private AudioState.CloseWork close;
     public OwnerKey Owner { get; private set; }
     public UpdateKey Update { get; private set; }
-    public AudioState.CreateVoiceWork Create { get; private set; } = null!;
-    public AudioState.PlayWork Play { get; private set; } = null!;
-    public AudioState.StopWork Stop { get; private set; } = null!;
-    public AudioState.DestroyWork Destroy { get; private set; } = null!;
+    public AudioState.CreateVoiceWork Create { get; private set; }
+    public AudioState.VoiceWork Voices { get; private set; }
 
     public AudioModule(AudioState state) => this.state = state;
 
@@ -667,10 +783,8 @@ sealed class AudioModule : IExecutionModule
             new WorkOptions { Target = normal.Target, OrderGroup = group,
                 Admission = WorkAdmission.Cleanup });
         Create = state.DeclareCreateVoice(b, normal);
-        Play = state.DeclarePlay(b, normal);
-        Stop = state.DeclareStop(b, normal);
-        Destroy = state.DeclareDestroy(b,
-            new WorkOptions { Target = normal.Target, OrderGroup = group,
+        Voices = state.DeclareVoice(b, play: normal, stop: normal,
+            destroy: new WorkOptions { Target = normal.Target, OrderGroup = group,
                 Admission = WorkAdmission.Cleanup });
         Update = state.DeclareUpdate(b, Owner);
     }
@@ -687,7 +801,7 @@ sealed class AudioModule : IExecutionModule
 }
 ```
 
-メソッドは同期であり、生成handlerがownerを検査して直接呼ぶ。`InitializeOnOwner`でdeviceを作るため、モジュールやDIの構成threadでnative deviceを作ってしまうことはない。生成したCreateVoiceWorkのKeyは `WorkKey<AudioState.CreateVoiceCommand, AudioVoice>`、PlayWorkのKeyは `WorkKey<AudioState.PlayCommand, Unit>` になる。生成されるcommand型やhandlerをAudio側で重ねて手書きする必要はない。
+メソッドは同期であり、生成handlerがownerを検査して直接呼ぶ。`InitializeOnOwner`でdeviceを作るため、モジュールやDIの構成threadでnative deviceを作ってしまうことはない。生成したCreateVoiceWorkのKeyは `WorkKey<AudioState.CreateVoiceCommand, AudioVoice>`、VoiceWork.Playは `WorkKey<AudioState.PlayCommand, Unit>` になる。生成されるcommand型やhandlerをAudio側で重ねて手書きする必要はない。
 
 この方式ではPlayの送信ごとに `() => voice.Play()` を作らず、生成PlayCommandへ対象のAudioVoice参照を格納する。実体生成を終えた後の参照を返すため、未生成の仮handleにはならない。所有記録は終了時の回収に使い、通常操作でIDから実体を検索するためには使わない。
 
@@ -709,7 +823,7 @@ AudioVoiceはcoreが強制する型ではない。既存IAudioVoiceを直接comm
 
 ECSのworld／entity世代、Resourcesのkey／handle、runtimeのslot／result世代はそれぞれ別の同一性を表すので維持する。対象参照はprocessをまたぐ識別子や保存形式には使わず、遅延snapshotが退役したworldの状態を適用しないためのsequence検査も残す。
 
-対象参照を送れることと、既存の `IAudioVoice.Play()` を呼んだだけで自動転送されることは別である。本案の入口は生成した `play.ExecuteAsync(voice)`／`play.AddTo(batch, voice)` とする。インスタンス形式の送信用facadeを設ける場合も、そのfacadeが対象参照と登録済みportを保持してこの経路へ渡せばよく、voiceごとの仕事登録やID表を追加する必要はない。今回のgeneratorは既存メソッドの本体を書き換えたり、同期Playを暗黙に非同期化したりしない。
+対象参照を送れることと、既存の `IAudioVoice.Play()` を呼んだだけで自動転送されることは別である。本案では生成したreadonly structの `voice.Play()` を送信用の入口にする。元AudioVoiceとbindingを保持して型付きcommandを送るため、voiceごとの仕事登録やID表は不要である。既存IAudioVoiceのメソッド本体は書き換えず、送信structのメソッドは完了を観測するValueTaskを返す。
 
 ### DIなしで登録から実thread起動まで進める
 
@@ -727,9 +841,7 @@ plan.DrivePeriodic(audio.Update,
 var runtime = plan.BuildOnCurrentHost(CpuExecutionMode.ThreadPool,
     maxCpuConcurrency: 4, new ExecutionOptions());
 var create = audio.Create.Bind(runtime);
-var play = audio.Play.Bind(runtime);
-var stop = audio.Stop.Bind(runtime);
-var destroy = audio.Destroy.Bind(runtime);
+var voices = audio.Voices.Bind(runtime); // module/runtimeで共有する送信先を一度作る
 
 Task? startup = null;
 Task? shutdown = null;
@@ -778,10 +890,11 @@ startup = runtime.StartAsync().AsTask();
 // StartAsyncがthreadを起動→Initialize handler→device生成→全体起動完了。
 
 // event loopを動かしたまま、外側のworkflowから利用する。
-async ValueTask<AudioVoice> CreateAndPlayAsync(ClipId residentClip)
+async ValueTask<AudioState.Voice> CreateAndPlayAsync(ClipId residentClip)
 {
-    var voice = await create.ExecuteAsync(residentClip);
-    await play.ExecuteAsync(voice);
+    var original = await create.ExecuteAsync(residentClip); // 実体の生成完了を待つ
+    var voice = voices.For(original); // 元参照を持つreadonly struct。追加のheap objectなし
+    await voice.Play();
     return voice;
 }
 
@@ -800,8 +913,10 @@ GetResultは必ずIsCompleted確認後に限る。起動・終了失敗を通常
 
 ```csharp
 var batch = new CommandBatch(maxCommands: 256); // producerごとに一度確保
-var played = play.AddTo(batch, voiceA);
-var stopped = stop.AddTo(batch, voiceB);
+var voiceA = voices.For(originalVoiceA);
+var voiceB = voices.For(originalVoiceB);
+var played = voiceA.AddPlayTo(batch);
+var stopped = voiceB.AddStopTo(batch);
 if (runtime.TrySubmit(batch, out var run))
 {
     // runを追跡表へ保持。後のturnでIsCompletedを確認して結果を観測する。
@@ -934,6 +1049,8 @@ CPU jobと駆動では次を参考にする。
 | 比較対象・負荷 | 記録する値 |
 | --- | --- |
 | owner上の直接loop／capture付きlambda配送／cached delegate配送／型付き単発／型付きbatch | 件数ごとのthroughput、全threadのallocated bytes、GC回数、受付～handler開始／完了のp50／p95／p99／max |
+| 生port／生成struct単発／生成struct batch、voice数・操作種類数 | senderの実サイズ、binding個数、bytes/voice、全threadのbytes/commandとbytes/batch、run数、copy量、p95／p99。構造体化とbatch化の効果を分離 |
+| 生成forwarder／adapterの例外、StackTraceHidden、JIT／AOT | 実際の呼び出し段数とインライン化、正常時費用、例外capture／整形の時間とbytes、表示frame数、元method・backendの取得可能な位置情報の保持 |
 | 手書きhandler／生成handler、登録時／定常送信、incremental生成 | 生成コードの閉じた直接呼び出し、追加の割り当て・boxingの有無、同じ実行契約、ビルド時の再生成範囲 |
 | 1／複数producer、同一／複数型、Play→Stopと生成結果、gate閉鎖、満杯 | 同期競合、copy bytes、wake回数、context switch、拒否率、順序、最大保持memory、再開遅延 |
 | voiceのID検索／対象参照、参照を含むstruct、長時間のbatch再利用 | 実行費用、GC write barrier、所有者検査、payload／result／staging返却後の不要な保持、native解放との順序 |
@@ -946,7 +1063,7 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 
 実装は次の順で進める。各段階の実装はこのPRでは未実施である。
 
-1. 宣言・型検査・Hostのtyped store・OrderGroup・結果・有界受付・cleanupとメソッド起点generatorを実装する。手書き登録と生成登録の同等性を確認し、DIなしで同期nativeの生成→Play／Stop→解放を通す。
+1. 宣言・型検査・Hostのtyped store・OrderGroup・結果・有界受付・cleanupとメソッド起点generatorを実装する。手書き登録と生成登録、対象を保持するreadonly structの送信・batch追加の同等性を確認し、DIなしで同期nativeの生成→Play／Stop→解放を通す。
 2. Dedicatedの起動・到着wake・周期UpdateとHost phase／gateを追加する。BrowserはCooperativeと非同期初期化・resumeを実環境で確認する。
 3. 宣言済みCPU／owner graphとrange処理をCooperativeから実装し、ThreadPoolにも同じ依存・取消・容量契約を適用する。
 4. ResourcesのBuildAsync／ReleaseAsyncと元owner／leaseを接続する。ECS snapshot→CPU準備→Audio適用→feedbackを追加する。
@@ -959,6 +1076,8 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 - 未登録／default／別planのkey、型不一致、owner/group不一致、未配置、循環を構築・受付前に拒否する。型名走査・動的generic生成なしでNative AOTを通す。
 - 構成→専用thread起動→ownerで初期化→起動完了→通常受付の順、部分起動失敗、起動中停止をDIなしで確認する。Browserでは初期化・終了中もHostが進む。
 - generatorの有効例をRoslynで生成後までコンパイルし、privateメソッドの直接呼び出し、引数なし・複数引数、void／結果、nullable、ExistingCommand、Update、Range、lifecycle配送、batch helperを確認する。非対応定義・file-local・dynamic・delegate入力・名前衝突は対応する診断で失敗させ、file順の変更や無関係な編集で生成物が変わらないことを確認する。
+- 生成senderがreadonly structで対象と共有bindingだけを持ち、各メソッドが対象をpayloadへ正しく戻すことを生成後コンパイルと実行で確認する。default／null／別module、コピー後のDestroy、複数producer、追加引数、batchの未送信、gate／Admissionの不一致、生成名の衝突を検証する。
+- sender生成・コピーに追加のheap objectやboxing、送信wrapperのasync state machineがないことを測る。単発のrun費用は別計上する。インライン化を抑えた検証用methodでStackTraceHiddenが元method／backendのframeを隠さず、単一失敗を不必要に包み直さないことを確認する。実際のRelease構成ではJIT／AOTの実frame数と表示frame数を区別して測る。
 - 同型moduleの複数instance／runtimeで生成key・portが混ざらず、Startupを通常port／graphから実行できないことを確認する。生成登録と手書き登録の順序・gate・容量・取消・生成結果・cleanupを比較し、Native AOTと実Browserでも生成物を検証する。
 - 投入ごとのclosure／delegate／payload boxingがないことをallocation traceで確認し、単発、batch、Task観測、取消、失敗の費用は別々に記録する。
 - 複数型のPlay→Stop、複数producer、batchの連続sequence、同じgroupの複数commandを一つのHost passで進められること、同じgroupのgate待ち、別groupの進行、公平性、ready通知と待機のlost wakeupを検証する。
@@ -980,6 +1099,9 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 | --- | --- |
 | InvokeAsync(Action／Func)を汎用の公開投入APIにする | 実行条件とowner選択が利用側へ分散する。型とhandlerを一度宣言し、データを送る契約を選ぶ |
 | メソッド属性をruntimeでReflection探索してdelegate化する | 起動時の動的型探索とAOT制約が増える。コンパイル時に閉じたhandlerと登録コードを生成する |
+| voiceごとに参照型proxyや仕事を登録する | 生成・破棄のたびにwrapperと登録が増える。仕事はmodule単位、送信先は共有binding、対象ごとの入口は2参照のreadonly structにする |
+| 送信structの各メソッドでasync/awaitや多段wrapperを挟む | 完了型を変えないforwardにstate machineは不要。生port/batchへ直接渡し、ValueTaskをそのまま返す |
+| StackTraceHiddenだけで高速化したと扱う | 表示の省略と実呼び出し・capture費用は異なる。生成中継だけを省略し、実処理のtrace保持と計測を行う |
 | commandとhandlerの手書きだけを提供する | メソッドとpayload・登録の型定義が重複する。generatorを標準の記述手段として追加し、低レベルAPIも保持する |
 | Audio専用のcommand queueだけを実装する | Resources・Graphics・ECSも同じ容量、型、完了、owner、終了処理を必要とする。共通coreへ置く |
 | commandをobject／interfaceへboxして送る | 簡単だが定常時の割り当てを増やす。閉じたgeneric storeと共通headerを使う |
@@ -1000,6 +1122,7 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 
 - モジュールが仕事と実行条件を宣言し、同じ型付きportをnative専用threadとBrowserのHost共有で使える。DIに依存せず、Audioの実体生成・制御・解放を追跡できる。
 - メソッドの引数・結果からcommand、handler、登録、送信APIを生成できる。generatorと診断の保守は必要だが、実行時のReflectionや新しい配送方式は増やさない。
+- 元インスタンスを持つreadonly structのメソッドから送信できる。共有bindingと生portへの直接forwardで対象ごとのheap wrapperと不要な中継を省き、生成部分のtrace表示を短くする。単発完了管理の費用は残り、高頻度にはbatchを使う。
 - Audioの対象はインスタンス参照を直接渡し、通常操作のID検索を省ける。nativeの寿命は強参照だけでは保護されないので、owner上の破棄順序と所属・生存検査を維持する。
 - 高頻度の投入を小さいデータとbatchにでき、投入ごとのclosure・boxingを避ける設計になる。全経路で無割り当て、直接loopより高速、hard realtimeとは保証しない。
 - 宣言、順序group、gate、所有記録、cleanupの実装が必要になる。基盤だけでDomainの資源寿命、データ競合、音声sample精度の同時反映を解決するものではない。
@@ -1018,6 +1141,9 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 - [Inputの所有権](../input/INPUT-0001-input-system.md)
 - [Animationの共有定義と実行者](../animation/ANIMATION-0001-animation-system.md)
 - [Diagnosticsの実行ポイントとメソッド起点generator](../diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
+- [StackTraceHiddenAttributeの表示上の契約](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.stacktracehiddenattribute?view=net-10.0)
+- [MethodImplOptionsのインライン化hint](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.compilerservices.methodimploptions?view=net-10.0)
+- [ExceptionDispatchInfoによる例外情報の保持](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.exceptionservices.exceptiondispatchinfo?view=net-10.0)
 - [既存OperationGenerator](../../../src/Diagnostics/Lumyte.Diagnostics.Generators/OperationGenerator.cs)
 - [既存generatorの配布設定](../../../src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj)
 - [生成後コンパイルを含む既存の検証](../../../tests/Diagnostics/Lumyte.Diagnostics.Tests/GeneratorTests.cs)
