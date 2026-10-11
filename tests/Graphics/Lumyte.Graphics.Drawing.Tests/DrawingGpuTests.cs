@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Vulkan;
 using Xunit;
@@ -17,6 +18,16 @@ public sealed class DrawingGpuTests
     /// <returns>The asynchronous rendering check.</returns>
     [DrawingGpuFact]
     public async Task LitModelFogAndEffectsRenderAsync() => await RenderAsync(lit: true, expected: 95);
+
+    /// <summary>Checks the base-color UV transform samples the selected texel rather than the original coordinates.</summary>
+    /// <returns>The asynchronous rendering check.</returns>
+    [DrawingGpuFact]
+    public async Task MaterialTextureTransformRendersAsync() => await RenderAsync(lit: false, expected: 37, transformed: true);
+
+    /// <summary>Checks HDR emissive strength multiplies the emitted material color.</summary>
+    /// <returns>The asynchronous rendering check.</returns>
+    [DrawingGpuFact]
+    public async Task EmissiveStrengthRendersAsync() => await RenderAsync(lit: true, expected: 237, strongEmission: true);
 
     private static void Transition(IGraphicsCommandBuffer commands, IGraphicsTexture texture, TextureState beforeState, TextureState afterState, BarrierScope before, BarrierScope after) => commands.Barrier(new TextureBarrierDesc
     {
@@ -38,7 +49,7 @@ public sealed class DrawingGpuTests
         render.SetStencilReference(0);
     }
 
-    private static async Task RenderAsync(bool lit, int expected)
+    private static async Task RenderAsync(bool lit, int expected, bool transformed = false, bool strongEmission = false)
     {
         using var device = VulkanDevice.Create();
         ShaderArtifact vertexArtifact = DrawingShaders.LoadModelVertex();
@@ -48,7 +59,11 @@ public sealed class DrawingGpuTests
             new(new(3, -1, 0.5f), Vector3.UnitZ, new(1, 0, 0, 1), Vector2.UnitX, Vector4.One),
             new(new(-1, 3, 0.5f), Vector3.UnitZ, new(1, 0, 0, 1), Vector2.UnitY, Vector4.One),
         ];
-        using ModelMesh mesh = await ModelMesh.CreateAsync(device, vertices, new uint[] { 0, 1, 2 }, vertexArtifact);
+        using ModelMesh mesh = lit
+            ? await ModelMesh.CreatePackedAsync(device, MemoryMarshal.AsBytes(vertices.AsSpan()).ToArray(), new ushort[] { 0, 1, 2 }, vertexArtifact)
+            : await ModelMesh.CreateAsync(device, vertices, new uint[] { 0, 1, 2 }, vertexArtifact);
+        Assert.Equal(lit ? IndexFormat.Uint16 : IndexFormat.Uint32, mesh.IndexFormat);
+        Assert.Equal(3u, mesh.IndexCount);
         using IGraphicsShader vertex = device.CreateShader(vertexArtifact);
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders.LoadModelFragment());
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
@@ -58,7 +73,7 @@ public sealed class DrawingGpuTests
         using IGraphicsTexture scene = device.CreateTexture(new() { Width = 8, Height = 8, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled });
         using IGraphicsTexture output = device.CreateTexture(new() { Width = 8, Height = 8, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTexture depth = device.CreateTexture(new() { Width = 8, Height = 8, Format = TextureFormat.Depth32Float, Usage = TextureUsage.RenderAttachment });
-        using IGraphicsTexture white = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.CopyDestination | TextureUsage.Sampled });
+        using IGraphicsTexture white = device.CreateTexture(new() { Width = 2, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.CopyDestination | TextureUsage.Sampled });
         using IGraphicsTexture normal = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.CopyDestination | TextureUsage.Sampled });
         using IGraphicsTextureView sceneView = scene.CreateView();
         using IGraphicsTextureView outputView = output.CreateView();
@@ -66,28 +81,40 @@ public sealed class DrawingGpuTests
         using IGraphicsTextureView whiteView = white.CreateView();
         using IGraphicsTextureView normalView = normal.CreateView();
         using IGraphicsSampler sampler = device.CreateSampler(new() { AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
-        using IGraphicsBuffer<byte> upload = device.CreateBuffer<byte>(new() { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        using IGraphicsBuffer<byte> upload = device.CreateBuffer<byte>(new() { Count = 12, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         await upload.MapAsync();
-        upload.CopyFrom(new byte[] { 255, 255, 255, 255, 128, 128, 255, 255 });
+        upload.CopyFrom(transformed
+            ? new byte[] { 255, 0, 0, 255, 0, 0, 255, 255, 128, 128, 255, 255 }
+            : new byte[] { 255, 255, 255, 255, 255, 255, 255, 255, 128, 128, 255, 255 });
         upload.Unmap();
         TextureCopyLayout copyLayout = device.GetTextureCopyLayout(TextureFormat.Rgba8Unorm);
         uint pitch = ((32 + copyLayout.BytesPerRowAlignment - 1) / copyLayout.BytesPerRowAlignment) * copyLayout.BytesPerRowAlignment;
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 1, TextureCapacity = 3, SamplerCapacity = 1 });
-        IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.SliceElements(0, mesh.Vertices.Count));
+        IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.Slice(0, mesh.Vertices.Count));
+        object vertexResource = Assert.IsAssignableFrom<IShaderReference>(vertexRef).Resource;
+        Assert.IsAssignableFrom<IShaderRawBuffer>(vertexResource);
+        Assert.False(vertexResource is IShaderDataSource);
         IGpuRef<IGraphicsSampler> samplerRef = table.WriteSampler(0, sampler);
         var whiteRef = new SampledTexture(table.WriteTexture(0, whiteView), samplerRef);
         var normalRef = new SampledTexture(table.WriteTexture(1, normalView), samplerRef);
         IGpuRef<IGraphicsTextureView> sceneRef = table.WriteTexture(2, sceneView);
         ModelMaterial factors = ModelDrawing.DefaultMaterial with { BaseColor = new(0.2f, 0.4f, 0.6f, 1), Emissive = new(0.2f, 0.4f, 0.6f), Unlit = lit ? 0u : 1u };
-        ModelMaterial material = factors;
+        ModelMaterial material = transformed
+            ? factors with { BaseColor = Vector4.One, BaseColorUv = new(new(0.75f, 0.5f), Vector2.Zero, 0) }
+            : factors;
+        if (strongEmission)
+        {
+            material = material with { EmissiveStrength = 1.25f };
+        }
+
         ModelDrawArguments arguments = ModelDrawing.CreateArguments(vertexRef, material, whiteRef, normalRef) with
         {
             CameraPosition = new(0, 0, 10),
             LightColor = Vector3.Zero,
             AmbientColor = Vector3.Zero,
             FogColor = new(0.1f, 0.2f, 0.3f),
-            FogDensity = lit ? 1 : 0,
+            FogDensity = lit && !strongEmission ? 1 : 0,
         };
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
@@ -95,11 +122,11 @@ public sealed class DrawingGpuTests
         var sampleRead = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
         var colorWrite = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
         mesh.RecordInitialUpload(commands);
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, 8), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, 12), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
         Transition(commands, white, TextureState.Undefined, TextureState.CopyDestination, new(PipelineStage.None, ResourceAccess.None), copyWrite);
         Transition(commands, normal, TextureState.Undefined, TextureState.CopyDestination, new(PipelineStage.None, ResourceAccess.None), copyWrite);
-        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(0, 4), BytesPerRow = 4, RowsPerImage = 1 }, new() { Texture = white, Width = 1, Height = 1 });
-        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(4, 4), BytesPerRow = 4, RowsPerImage = 1 }, new() { Texture = normal, Width = 1, Height = 1 });
+        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(0, 8), BytesPerRow = 8, RowsPerImage = 1 }, new() { Texture = white, Width = 2, Height = 1 });
+        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(8, 4), BytesPerRow = 4, RowsPerImage = 1 }, new() { Texture = normal, Width = 1, Height = 1 });
         Transition(commands, white, TextureState.CopyDestination, TextureState.Sampled, copyWrite, sampleRead);
         Transition(commands, normal, TextureState.CopyDestination, TextureState.Sampled, copyWrite, sampleRead);
         Transition(commands, scene, TextureState.Undefined, TextureState.ColorAttachment, new(PipelineStage.None, ResourceAccess.None), colorWrite);

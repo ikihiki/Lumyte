@@ -1,6 +1,6 @@
 # 静的モデル描画
 
-モデルの描画形式は `ModelVertex` の頂点列と `uint` の triangle-list インデックス列に統一します。
+モデルの描画形式は `ModelVertex` の頂点列と `ushort` または `uint` の triangle-list インデックス列に統一します。
 `ModelMesh` はそれらを GPU resource に変換し、`ModelMaterial` と `ModelDrawArguments` で描画します。
 ファイル形式、parser、画像 decoder、scene の読み込みを扱う API は含みません。
 
@@ -33,16 +33,38 @@ using IArgumentTable table = device.CreateArgumentTable(new()
     TextureCapacity = 5,
     SamplerCapacity = 5,
 });
-IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.SliceElements(0, mesh.Vertices.Count));
+IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.Slice(0, mesh.Vertices.Count));
 using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
 mesh.RecordInitialUpload(commands);
 ```
 
 `CreateAsync` は GPU storage と staging を確保し、CPU 配列を staging に書き込みます。
-GPU 上の頂点の byte 配置と stride は shader artifact の reflection に従います。
-C# の struct の bytes をそのまま GPU に転送せず、各 backend の shader ABI に pack します。
+頂点は C# と shader 共通の 64-byte 配置を検証し、raw buffer に一括コピーします。
+頂点ごとの shader snapshot の生成・pack・描画時の参照走査を行いません。
+16bit インデックスはそのまま保持します。奇数個の場合は転送用 storage の末尾だけを
+4-byte 境界まで padding し、draw には元の個数を使用します。
 `RecordInitialUpload` はコピーと host→copy→vertex/index の依存を記録し、submit／wait は行いません。
 初回描画前に一度呼びます。CPU 配列は `CreateAsync` 完了後に保持する必要はありません。
+
+## glTF と接続する byte 配置
+
+`ModelVertex.AsVertices(ReadOnlySpan<byte>)` は `MemoryMarshal.Cast` による再解釈です。
+`ModelMesh.CreatePackedAsync(device, vertexBytes, indices, vertexArtifact)` なら、変換済みの
+interleaved bytes から頂点配列を追加確保せず staging にコピーできます。CPU→GPU 転送自体は必要です。
+
+| 属性 | 型 | byte offset |
+|---|---|---:|
+| Position | float3 | 0 |
+| Normal | float3 | 12 |
+| Tangent | float4 | 24 |
+| TexCoord | float2 | 40 |
+| Color | float4 | 48 |
+
+stride は 64、little-endian、全属性 float32 です。glTF の accessor がこの配置と一致する場合のみ
+直接再解釈できます。属性の分離、別の stride、normalized 整数、sparse accessor、圧縮、
+欠けた法線・接線・頂点色は外部の変換工程でこの配置に揃えます。ファイル全体を cast する API ではありません。
+mesh 作成時に `ValidateShaderLayout` を実行します。shader だけを HotReload する場合も、
+既存 mesh と組み合わせる前に呼び出してください。ABI の変更は拒否されます。
 
 ## 材質・texture・描画
 
@@ -52,6 +74,11 @@ tangent.w は bitangent の符号（±1）、UV は画像の左上が `(0, 0)` �
 
 `ModelMaterial` は metallic-roughness、base color、emissive、normal scale、AO、alpha の数値を持ちます。
 base color／emissive texture は sRGB、normal／metallic-roughness／AO は linear format にします。
+各 texture の `BaseColorUv`／`MetallicRoughnessUv`／`NormalUv`／`OcclusionUv`／`EmissiveUv` は
+`KHR_texture_transform` と同じ offset + rotation(scale × UV) を指定できます。既定値は identity。
+normal texture の軸変換時には shader が微分から tangent frame を再構成します。
+`EmissiveStrength` は `KHR_materials_emissive_strength` 相当の倍率で、既定値は 1 です。
+
 texture と通常の sampler を argument table に登録した `SampledTexture` を使用します。
 同じ元画像を色とデータに使用する場合は、それぞれの color space の GPU texture を選択してください。
 
@@ -111,3 +138,15 @@ HotReload は、新しい配列から別の `ModelMesh` を作り、upload の G
 このライブラリには含みません。
 
 `ModelMesh.Dispose` は GPU 完了待機や登録解放を行いません。
+
+## glTF 機能との対応範囲
+
+metallic-roughness、5 種の texture、頂点色、alpha mask／blend、両面、unlit、UV 変換、
+HDR 発光強度は描画側で扱います。node の transform は draw arguments に渡し、
+primitive／material ごとに mesh と draw を用意します。材質は GPU texture／sampler への参照が必要なため、
+glTF の texture index を含むデータをそのまま cast できません。
+
+現在の UV は TEXCOORD_0 のみです。TEXCOORD_1 を使う lightmap／AO、skin、morph、animation、
+IBL、clearcoat／transmission／volume／sheen／anisotropy 等は未対応です。
+UV や変形を追加する場合は固定の `ModelVertex` を肥大化させず、必要な mesh だけに補助 stream と
+対応 shader を追加する方針が適しています。圧縮や画像形式は外部の importer／decoder の担当です。

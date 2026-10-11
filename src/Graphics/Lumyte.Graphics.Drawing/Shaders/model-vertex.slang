@@ -8,6 +8,12 @@ struct ModelVertex
     float2 TexCoord;
     float4 Color;
 };
+struct ModelTextureTransform
+{
+    float2 Offset;
+    float2 Scale;
+    float Rotation;
+};
 struct ModelMaterial
 {
     float4 BaseColor;
@@ -19,6 +25,12 @@ struct ModelMaterial
     float AlphaCutoff;
     uint AlphaMode;
     uint Unlit;
+    ModelTextureTransform BaseColorUv;
+    ModelTextureTransform MetallicRoughnessUv;
+    ModelTextureTransform NormalUv;
+    ModelTextureTransform OcclusionUv;
+    ModelTextureTransform EmissiveUv;
+    float EmissiveStrength;
 };
 struct ModelDrawArguments
 {

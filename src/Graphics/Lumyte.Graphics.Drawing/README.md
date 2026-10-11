@@ -81,13 +81,14 @@ dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
 
 [静的モデル描画](Models.md) は共通の頂点・インデックス配列からの mesh upload、indexed drawing、
 metallic-roughness の材質、normal map、方向ライト、ambient、AO、発光、透明・両面描画を提供します。
-`ModelVertex`、`ModelMaterial`、`ModelDrawArguments` は既存の shader serializer を使用します。
+`ModelVertex` は shader と共通の固定 64-byte ABI で一括転送し、packed bytes と16／32bit index に対応します。
+材質・draw arguments は既存の shader serializer を使用し、texture ごとの UV 変換と発光強度も指定できます。
 
 [エフェクト](Effects.md) はモデルの距離フォグと、fullscreen pass の露出・彩度・ビネット・
 Reinhard tone mapping を提供します。どちらも WGSL／SPIR-V の offline artifact を使用します。
 
-通常のテスト実行では GPU テスト 2 件を skip します。Vulkan GPU または software driver を
-設定した環境では、以下で 10 件（CPU 8 件、GPU pixel readback 2 件）を実行できます。
+通常のテスト実行では GPU テスト 4 件を skip します。Vulkan GPU または software driver を
+設定した環境では、以下で 14 件（CPU 10 件、GPU pixel readback 4 件）を実行できます。
 
 ```sh
 LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests

@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
 using Xunit;
@@ -26,12 +28,16 @@ public sealed class ModelAndEffectsTests
         PostProcessArguments effects = default(PostProcessArguments) with { Exposure = 1, Saturation = 0.5f, AspectRatio = 2, Vignette = 0.25f, ToneMap = 1 };
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
+            ModelVertex.ValidateShaderLayout(DrawingShaders.LoadModelVertex(), target);
+            ModelVertex.ValidateShaderLayout(DrawingShaders.LoadModelFragment(), target);
             ShaderTargetData vs = DrawingShaders.LoadModelVertex().GetTarget(target);
             ShaderTargetData fs = DrawingShaders.LoadModelFragment().GetTarget(target);
             ShaderDataLayout.ValidateProgram(vs, fs);
             var layout = ShaderDataLayout.Data(vs, "ModelVertex");
             byte[] packed = layout.Pack(IShaderArguments.Capture(in vertex), (_, _) => throw new InvalidOperationException());
-            Assert.Equal(layout.Size, packed.Length);
+            Assert.Equal(ModelVertex.SizeInBytes, packed.Length);
+            Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref vertex, 1)).ToArray(), packed);
+            Assert.Equal(vertex, ModelVertex.AsVertices(packed)[0]);
             Assert.True(layout.Matches(ShaderDataLayout.Data(fs, "ModelVertex")));
             Assert.Equal(1, BitConverter.ToSingle(packed, 0));
             var materialLayout = ShaderDataLayout.Data(vs, "ModelMaterial");
@@ -48,6 +54,23 @@ public sealed class ModelAndEffectsTests
             ShaderTargetData effectFragment = DrawingShaders.LoadPostProcessFragment().GetTarget(target);
             Assert.Same(effectFragment, ShaderDataLayout.RootTarget(effectVertex, effectFragment, "arguments"));
             Assert.NotEmpty(ShaderDataLayout.Root(effectFragment, "arguments").Pack(IShaderArguments.Capture(in effects), (_, _) => new byte[16]));
+        }
+    }
+
+    /// <summary>Checks a changed compiled stride is rejected rather than silently repacked.</summary>
+    [Fact]
+    public void ChangedVertexAbiIsRejected()
+    {
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
+        {
+            ShaderTargetData data = DrawingShaders.LoadModelVertex().GetTarget(target);
+            JsonNode reflection = JsonNode.Parse(data.ReflectionJson)!;
+            JsonNode schema = reflection["parameters"]!.AsArray().Single(parameter => parameter!["name"]!.GetValue<string>() == "__lumyte_schema_ModelVertex")!;
+            JsonNode type = schema["type"]!["resultType"]!["valueType"]!;
+            JsonNode size = type["sizes"]!.AsArray().Single(entry => entry!["kind"]!.GetValue<string>() == "uniform")!;
+            size["value"] = 68;
+            var changed = ShaderArtifact.PackTarget(target, data.Stage, data.EntryPoint, data.CompilerVersion, data.Code, reflection.ToJsonString());
+            Assert.Throws<NotSupportedException>(() => ModelVertex.ValidateShaderLayout(changed, target));
         }
     }
 
@@ -96,6 +119,17 @@ public sealed class ModelAndEffectsTests
         Assert.Same(normal.Sampler, arguments.NormalSampler);
         Assert.Equal(material, arguments.Material);
         Assert.Throws<ArgumentNullException>(() => ModelDrawing.CreateArguments(new TestReference<ModelVertex>(), material, default, normal));
+    }
+
+    /// <summary>Checks packed input rejects incomplete vertices and accepts empty spans.</summary>
+    [Fact]
+    public void PackedVerticesRequireCompleteElements()
+    {
+        Assert.Throws<ArgumentException>(() => ModelVertex.AsVertices(new byte[63]));
+        Assert.Throws<ArgumentException>(() => ModelVertex.AsVertices(new byte[65]));
+        Assert.True(ModelVertex.AsVertices(ReadOnlySpan<byte>.Empty).IsEmpty);
+        Assert.Equal(ModelTextureTransform.Identity, ModelDrawing.DefaultMaterial.NormalUv);
+        Assert.Equal(1, ModelDrawing.DefaultMaterial.EmissiveStrength);
     }
 
     private sealed class TestReference<T> : IGpuRef<T>
