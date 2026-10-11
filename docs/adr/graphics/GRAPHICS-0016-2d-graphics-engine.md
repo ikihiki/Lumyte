@@ -32,7 +32,7 @@ Canvas2D → DrawList2D → Renderer2D ─────────────�
 
 新規ライブラリは `src/Graphics/` に配置し、プロジェクト・NuGet・namespaceを上記名称に揃える。backend具象型、Window、Input、Compositionには依存せず、shaderは既存Slang基盤で用意する。
 
-RenderGraphの接続契約は [PR #35](https://github.com/ikihiki/Lumyte/pull/35) のGRAPHICS-0015、revision `b1721647f3fcf0276d3a0b0d165e948e3ece40e5` を参照する。実装ブランチにはこの前提を取り込み、公開契約に従って接続する。独自のパス実行基盤は追加せず、単独2D利用も私有RenderGraphで実行する。
+RenderGraphの接続契約はmain `81bba9e` に統合された [GRAPHICS-0015](./GRAPHICS-0015-render-graph.md) を参照する。独自のパス実行基盤は追加せず、単独2D利用も私有RenderGraphで実行する。
 
 レイアウト、ヒットテスト、画像デコード、ファイル資産管理、フォント探索・shaping・行分割、必須のシーングラフは対象外とする。3Dのカメラ・深度・履歴・トーンマッピングの適用位置も各描画システムが管理する。
 
@@ -100,9 +100,32 @@ ImagePatternは整数texelのSource、座標変換、軸別Clamp/Repeat/Mirror/D
 
 DrawGlyphRunと文字の描画形式選択は外部文字ライブラリが担当する。パス・mesh・coverage・距離場・RGBA・COLRv1をそれぞれ汎用命令へ渡す。COLRv1の3点linear、2円radial、sweep、重複stopの順序、参照glyph、変換・clip、全28合成modeを保持する。variation・CPAL・foreground・font unitsとY反転・cacheは文字側で解決する。
 
-### 5. 共通画像エフェクトと2Dレイヤー
+### 5. 共通画像エフェクトの設計と2Dへの適用
 
-ImageEffectGraphは描画済み画像を処理する不変DAGとし、paint DAGやCanvasのレイヤー構造とは分ける。初期演算はColorMatrix、GaussianBlur、Opacity、Compositeで、Sourceを入力画像へ束縛する。演算別interfaceとImageEffectRenderersで実装を固定し、同じ演算を2D・3Dから利用する。
+#### 共有する処理と適用側の責務
+
+ImageEffectsは描画済み画像の演算とパス生成を2D・3Dで共有する。paint DAGは図形内部の塗り、ImageEffectGraphは画像化後の処理、RenderGraphはGPUパスと資源依存を表し、それぞれの意味を混在させない。
+
+2D側はレイヤーの画像化、clip・group opacityの適用位置、描画順、背景snapshotを管理する。3D側はカメラ、画像を取り出す時点、露出・トーンマッピングとの前後関係を管理し、条件を満たすcolor画像を同じcompilerへ渡す。深度・法線・motion vector・frame履歴を必要とする演算と、その入力を用意する3D側の接続は今回の共通APIに含めない。
+
+#### 定義からRenderGraphへの変換
+
+ImageEffectGraphはGPU資源を持たない不変DAGとし、SourceとColorMatrix、GaussianBlur、Opacity、Compositeのfactoryで構築する。同じ定義を別の入力・frameにも使えるが、準備結果は各回に作る。
+
+```text
+ImageEffectGraph + EffectImage
+  → ImageEffectCompiler（入力束縛・子の展開・演算別配送）
+  → RenderGraphのpass群 + PreparedImageEffect.Output
+  → 呼び出し側の後続pass → Compile・Record・Submit
+```
+
+AppendPassesはすべてのSource葉を一つの入力画像へ束縛し、子から順に演算別rendererへ渡す。同じnode参照は一回のAppend内で一度だけ展開する。構造が等しい別nodeの統合や、別入力・graph・frameへのGPU結果の流用は行わない。定義の深さは256、展開する異なるnodeは4096を上限とする。
+
+各rendererは入力画像から出力画像とその範囲を求め、必要な一時texture・pass・全資源アクセスをRenderGraphへ追加する。初期標準実装はColorMatrix・Opacity・Compositeを各一つのfragment pass、GaussianBlurをsigmaが0でない軸ごとのfragment passへ展開する。Sourceは入力をそのまま返す。依存解析、barrier、不要passの除去、一時allocationの確保・解放はRenderGraphへ任せ、compilerはSubmitしない。
+
+PreparedImageEffectはcallbackが使う固定資源を保持し、Outputは同じRenderGraph内で後続処理へ渡すhandleである。出力を最終成果物にする側がMarkOutput/Exportを宣言する。固定資源はEffectPreparationContext.Ownへ移し、GPU使用終了まで保持する。graph・一時画像との所有分担と失敗時の扱いは第7節に従う。
+
+#### 画像・領域・色の契約
 
 | 演算・入力 | 契約 |
 | --- | --- |
@@ -113,7 +136,19 @@ ImageEffectGraphは描画済み画像を処理する不変DAGとし、paint DAG�
 | Opacity | 合成済みRGBAへ一度適用 |
 | Composite | SrcOver/Plus、整数pixelのsource移動、両画像を含む外接矩形。隙間も透明pixelとして後続演算へ渡す |
 
-初期blurはfragment shaderによる横・縦の分離filterとし、縮小近似を暗黙に行わない。影・glowは基本演算の組み立てで表す。画像へ直接書くcompute経路には、現Graphicsにないstorage texture契約が必要となる。
+画像は同じ出力pixel grid上の有限範囲を持ち、Boundsの左上がtextureの原点に対応する。GetRequiredSourceBoundsは、要求する出力からblurの余白やCompositeの逆移動を伝播し、必要入力を保守的に返す。この照会は背景取得の範囲決定に使い、Append全体を自動で部分描画へ変換するものではない。透明なpixelもColorMatrixの定数項で可視になるため、alphaが0の領域を単純に除去しない。
+
+影・glowは基本演算の組み立てで表す。演算式、範囲計算、alpha・HDRの扱いは末尾の詳細契約にまとめる。標準実装は縮小blur、低精度format、色の意味の変更を暗黙に行わない。
+
+#### 差し替えと今後の拡張
+
+ImageEffectRenderersは4演算の専用interfaceをコンストラクターで受け取り、compilerは演算型から対応するfieldへ直接配送する。CanHandleによる探索は行わない。UseImageEffectsはTryAddScopedで標準実装を補完し、後から登録した実装が単一サービス解決で選ばれる。DIを使わない場合はCreateDefaultまたは明示的なコンストラクター呼び出しで組み立てる。登録表とcompilerの生成時にはGPU資源を作らない。
+
+差し替えるのは既存演算の実行方式であり、色・alpha・出力範囲・必要入力範囲の意味は維持する。特にGetRequiredSourceBoundsは演算定義から計算するため、独自rendererだけでfilter半径や座標系を変更しない。複数passを追加する実装も同じinterfaceを使える。画像へ直接書くcompute実装には、Graphicsのstorage texture契約の追加が必要となる。
+
+任意の外部nodeをgraphへ追加する仕組みは設けない。演算を増やす際はnode・factory・compilerの配送と必要範囲計算・専用interface・登録表・標準実装・CreateDefault・DI登録を一緒に拡張する。複数の独立した入力画像、履歴効果、pass融合、frameをまたぐ画像・pipeline cacheは別途決定する。初期実装は同一Append内のnode共有に限定し、未定義のcache寿命や履歴の更新規則を持ち込まない。
+
+#### 2Dレイヤーと背景への適用
 
 BeginLayerは有限のContentBounds、Effects、Opacity、任意のOutputClipをsnapshotする。内容を透明面へ描き、EndLayerで次の順に処理して開始時の状態へ戻す。
 
@@ -181,6 +216,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 | --- | --- |
 | 2D・3Dで画像エフェクトを別実装 | 同じ画像演算と資源管理が重複する |
 | paint・任意描画グループ・カメラを一つのgraphへ統合 | 塗り、描画順、画像処理、3D固有入力の責務が混在する |
+| エフェクトを直列の処理列だけで表す | 影と元画像の合成などの分岐・再合流や共有入力を自然に表せず、同じ中間結果を再計算する |
 | CanHandle・優先順位による方式探索 | 命令ごとに指定した実装が固定されない |
 | 単色専用命令とpaint種別ごとのDI登録 | 図形とpaintの組み合わせでAPI・登録が増える |
 | GPU処理をRecordだけへ隠す | RenderGraphから依存と一時資源を解析できない |
@@ -192,7 +228,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 
 図形・画像・外部文字描画が同じpaintと描画順の契約を共有し、命令別の実装をDIでも手動でも差し替えられる。2Dレイヤーと3D画像に同じ画像演算を適用し、GPU処理をRenderGraphへまとめられる。
 
-一方、順序保持によって全体ソートほどバッチを減らせない場合があり、複雑なpaint・clip・エフェクトでは中間画像と複数passが必要になる。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を利用側が管理する。命令・演算の追加時にはinterface、登録表、標準実装、CreateDefault、DI登録を同時に更新する。
+一方、順序保持によって全体ソートほどバッチを減らせない場合があり、複雑なpaint・clip・エフェクトでは中間画像と複数passが必要になる。初期エフェクトはpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を利用側が管理する。命令・演算の追加時にはinterface、登録表、標準実装、CreateDefault、DI登録を同時に更新し、演算には必要入力範囲の計算も定義する。
 
 既存GraphicsのAPIは変更しない。GPU実装はRenderGraphの採用・契約に依存し、初期のwhole-allocation同期と単一queueの制約に従う。
 
@@ -204,6 +240,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 | paint・画像 | 6命令のColor/Solid等価性、gradientの退化・stop・extend、tap別tileと負座標、透明境界の補間、shape/clip相関、group opacity |
 | 文字・COLRv1 | 全gradient・全28合成・参照glyph・variation・palette・foreground・clipを固定fontと参照画像で比較 |
 | エフェクト・レイヤー | kernelと範囲、HDR/alpha、DPIとoffset、前後clip、ネスト、画面外からの影、透明背景・重なるパネルの置換 |
+| エフェクトcompiler | Sourceの単一入力束縛、共有nodeの一回展開、別Appendの分離、SceneLinearの保持、範囲の逆算と実際のsamplingの一致 |
 | RenderGraph | 単独/共有経路の画像一致、全資源宣言、重複import防止、Loadと部分更新の保持、culling・export・snapshot順序 |
 | 失敗・寿命 | Append/Compile/Recordの失敗、待機キャンセル、一回実行、GPU使用終了後の解放、複数frameでの非上書き |
 
@@ -219,9 +256,9 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 
 ## API・詳細契約・利用例
 
-比較元はmain `c1f7c1d`。以下の5つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元はmain `81bba9e`。以下の5つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
-RenderGraph型は [PR #35](https://github.com/ikihiki/Lumyte/pull/35) のrevision `b1721647f3fcf0276d3a0b0d165e948e3ece40e5` を前提とし、実装ブランチに取り込んで使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。
+RenderGraph型は同じmainに含まれる公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。
 
 ### 公開API
 
