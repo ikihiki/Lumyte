@@ -136,6 +136,29 @@ jobs:
           dotnet publish src/Diagnostics/Lumyte.Diagnostics.Server -c Release --no-build --no-restore -o artifacts/diagnostics-ui-server
           node tools/diagnostics/verify-browser.mjs
 
+      - name: Generate diagnostic gallery
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          PREVIEW_COMMIT: ${{ github.sha }}
+          PREVIEW_HEAD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
+        run: |
+          source tools/setup/activate.sh
+          node tools/diagnostics/generate-gallery.test.mjs
+          node tools/diagnostics/assemble-gallery-site.test.mjs
+          python3 -m unittest discover -s tools/diagnostics -p 'test_collect_gallery_artifacts.py'
+          node tools/diagnostics/generate-gallery.mjs artifacts/test-results/diagnostics-ui artifacts/diagnostics-gallery
+
+      - name: Upload diagnostic gallery
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: diagnostics-gallery
+          path: artifacts/diagnostics-gallery/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -166,6 +189,7 @@ jobs:
           dotnet pack src/Input/Lumyte.Input.Actions -c Release --no-build -o artifacts/nuget
           dotnet pack src/Input/Lumyte.Input.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Diagnostics/Lumyte.Diagnostics.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Diagnostics/Lumyte.Diagnostics.Generators -c Release --no-build -o artifacts/nuget
           dotnet build Lumyte.slnx --no-restore
           dotnet format Lumyte.slnx --no-restore --verify-no-changes
