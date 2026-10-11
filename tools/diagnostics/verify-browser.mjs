@@ -160,6 +160,7 @@ try {
         await evaluate("document.querySelector('[data-tab=settings]').click()");
         await waitFor(() => evaluate("Boolean(document.querySelector('[data-setting-path=\"/output/sampleRate\"]'))"), 'complete settings tree');
         assert.equal(await evaluate("Boolean(document.querySelector('#settings-page fluent-accordion')) && Boolean(document.querySelector('#settings-page fluent-tree')) && Boolean(document.querySelector('#settings-page fluent-text-input')) && Boolean(document.querySelector('#settings-page fluent-switch'))"), true, 'Fluent UI settings components');
+        assert.equal(await evaluate("{ const rows = [...document.querySelectorAll('.settings-leaf')].map(item => item.getBoundingClientRect()).sort((a, b) => a.top - b.top); rows.every((row, index) => index === 0 || row.top >= rows[index - 1].bottom); }"), true, 'settings tree rows do not overlap');
         assert.equal(await evaluate("document.querySelector('#settings-logs fluent-accordion-item')?.getAttribute('aria-expanded') === 'true'"), false, 'settings logs collapsed by default');
         assert.equal(await evaluate("document.fonts.check('12px \\\"Noto Sans CJK JP\\\"', '設定システム')"), true, 'Japanese font installed');
         assert.equal(await evaluate("Boolean(document.querySelector('[data-setting-path=\"/buses/0/name\"]')) && Boolean(document.querySelector('[data-setting-path=\"/labels/locale\"]'))"), true, 'nested arrays and dictionaries visible');

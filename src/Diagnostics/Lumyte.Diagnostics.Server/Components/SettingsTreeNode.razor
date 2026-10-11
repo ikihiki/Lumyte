@@ -10,7 +10,7 @@
 }
 else
 {
-    <FluentTreeItem data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
+    <FluentTreeItem Height="48" data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
         <div class="settings-leaf">
             <label for="@InputId"><span class="settings-key">@Node.Name</span><FluentBadge Appearance="BadgeAppearance.Outline">@KindName</FluentBadge></label>
             @if (Node.Kind is JsonValueKind.True or JsonValueKind.False)
