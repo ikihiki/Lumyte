@@ -15,43 +15,42 @@
 
 入力固有の観測・リース管理は `src/Input/Lumyte.Input.Inspection/` に置く。Input・Processing・Actionsへ依存し、Diagnostics・通信・設定DTOへ依存しない。診断アダプターは `src/Input/Lumyte.Input.Diagnostics/` に置き、Inspection・Diagnostics・DIと診断生成器を利用する。Settingsとの連携は構成ルートで既存のInputSettingsCoordinatorを使う。PlatformはOS・ハードウェアから取得する責務を維持する。
 
-InputSystemは引き続きDIからIInputSourceを受け取り、Sourceの登録機構からDeviceを取得する。全Sourceに対する監視・置換はInputSystemのDevice取得境界へ注入するIInputDevicePipelineで適用する。SourceやDeviceの実体、Descriptor、登録順を維持する。既存の補正・仮想化デコレーターと同じRegistry契約を使い、Initialize・Shutdownの巻き戻しとDevice破棄を二重実行しない。
+InputSystemは引き続きDIからIInputSourceを受け取り、Sourceの登録機構からDeviceを取得する。全Sourceに対する監視・置換はInputSystemのコンストラクターから受け取るIInputInspectionで適用する。SourceやDeviceの実体、Descriptor、登録順を維持する。InputSystem自身がSourceの呼び出しとRegistry登録・Device取得を仲介し、Initialize・Shutdownの巻き戻しとDevice破棄を二重実行しない。
 
 Actions側に通信非依存のIActionInspectionフックを定義し、Inspectionが実装する。ActionsはInspectionパッケージへ依存しない。ActionSystemにはこの任意フックを追加注入できるようにする。診断を使わない構成は従来のコンストラクターで動作する。アダプターは内部辞書をリフレクションで読み書きしない。
 
 ```mermaid
 flowchart LR
-    S[Hardware Source] --> R[取得値の観測]
-    R --> C[補正と仮想化]
-    C --> D[Device置換と観測]
-    D --> I[InputSystem: 履歴とポーリング]
-    I --> M[Contextとマッピング]
-    M --> P[アクション値補正]
-    P --> A[Action置換と観測]
+    S[DI登録済みの全Source] --> I[InputSystem: Source呼び出しとDevice取得]
+    O[コンストラクター注入されたInspection] <--> I
+    I --> H[有効値の履歴とポーリング]
+    H --> M[マッピングとアクション値補正]
+    M --> A[Action置換と観測]
     A --> G[認識とバッファ]
-    O[Inspection: スナップショットとリース] -.-> D
     O -.-> A
     O --> X[Diagnosticsアダプター]
     X --> U[既存のInputタブ]
 ```
 
-### Useで登録されるSourceへの一括適用
+### コンストラクターDIによる全Sourceへの適用
 
-標準構成は `AddInspectedInputSystem()` とし、各SourceをObservingInputSourceで個別に包まない。この登録は同じスコープのInputInspectionSessionとIInputDevicePipeline、およびInputSystemのファクトリーを追加する。InputSystemを解決した時点の `IEnumerable<IInputSource>` と `IEnumerable<IInputDevicePipeline>` を注入するため、各バックエンドのUse関数が直接型・ファクトリー・インスタンスのどれでSourceを登録しても対象になる。ServiceDescriptorの書き換えや実装型の推測、IInputSourceを解決するIInputSourceファクトリーによる循環は行わない。
+InputSystemは `IEnumerable<IInputSource>` と単一の `IInputInspection` をコンストラクターから受け取る。DIでは同じゲームスコープのInputInspectionSessionをIInputInspectionとして登録する。Use関数で登録されたSourceもInputSystemの構築時に列挙され、その全てにinspectionが自動的に作用する。Source・Deviceの許可リストや個別の監視登録、Sourceデコレーター、段階別のパイプライン列は設けない。
 
-InputSystemは全Sourceから登録されたDeviceへ同じパイプライン列を登録順に適用する。初期Deviceだけでなく実行中の追加・切断も対象になる。RegisteredはInputDeviceId割り当て後かつ初回取得前、ProcessはDrainEvents後かつ状態更新・履歴記録前に呼ぶ。入力が空のDeviceにもProcessを呼び、リース開始・期限・解除の差分を生成できるようにする。Unregisteredは最終取得後に呼び、リースと関連ハンドルを失効させる。通常の切断・Focus喪失による合成解放をオーバーライドで押下へ戻さない。初期化失敗時にも登録済みパイプラインを逆順で巻き戻す。
+InputSystemはSourceのInitialize・Update・Shutdown、RegistryによるDevice登録・削除、DeviceのDrainEventsと状態・履歴への反映をinspectionへ通知する。DeviceのRegisteredはID割り当て後かつ初回取得前、ProcessはDrainEvents後かつ状態更新・履歴記録前に呼ぶ。入力が空のDeviceにもProcessを呼び、リース開始・期限・解除の差分を生成する。Unregisteredは最終取得後に呼び、リースとハンドルを失効させる。初期化失敗時にも対応する終了通知を行い、通常の切断・Focus喪失による合成解放を置換で押下へ戻さない。
 
-パイプラインの入力配列は呼び出し中だけ借用し、保持する観測記録はコピーする。出力はInputSystemが同期的に読み終えるまで有効とし、入力変更がなければ同じメモリーを返せる。InputSystemの既存DrainEvents契約との変換では、配列を借用できない場合だけ作業バッファへコピーする。パイプラインなしの経路にコピーを追加しない。所有スレッド・再入禁止・通知例外の契約はInputSystemに従い、Process失敗時に一部の入力を記録してバッチ全体を再送する設計にしない。
+Sourceが物理・仮想のどちらであるか、補正済みかどうかによってinspectionの適用可否を変えない。InputSystemへ渡る全InputDataを受け取り、置換前と置換後を観測する。Source内部の処理で消費され、InputSystemへ一度も返らない中間値はこの境界から取得できない。補正段階をSourceの型から推測せず、InputSystemが受け取った値として表示する。補正前の値を見るためだけのObservingInputSourceはこの設計から除く。
 
-この境界で取得できるのはSourceが最終的に提供する値であり、Source内部で補正済みなら補正後の値になる。Inspectionは同じProcess内で置換前と置換後を観測する。補正前の取得値を観測するObservingInputSourceは任意の上流フックとして残す。共通パイプラインへObservingInputSourceの結果を重ねて適用せず、同じ段階の二重記録を避ける。
+観測範囲と、一回のオーバーライド操作で変更する入力の指定は区別する。inspectionの接続には対象指定が不要で、全Source・全Deviceへ適用する。リース操作だけは変更するDevice/ControlやActionを選ぶ。対象ハンドルはinspectionが自動発行し、RegisterControlやRegisterActionによる公開対象の事前登録を要求しない。
 
-AddInspectedInputSystemはInputSystem未登録の構成で一度だけ呼ぶ。既存のInputSystem登録がある場合は重複登録で隠さず構成エラーとし、そのファクトリーへパイプライン列を渡す形に変更する。診断を使わない構成は従来のInputSystemコンストラクターを使う。Sourceは一つのInputSystemだけに接続し、複数ゲームではスコープごとに独立したSource・パイプラインを用意する。バックエンドUseがSingleton Sourceを登録する場合はゲームスコープ間で共有してInitializeせず、単一Systemに限定するかバックエンド側の登録ライフタイムを調整する。DIスコープが借用Sourceとパイプラインを破棄し、InputSystemはDeviceとRegistryの終了を担当する。
+入力メモリーは同期呼び出し中だけ借用し、保持する観測記録はコピーする。出力はInputSystemが読み終えるまで有効とし、変更がなければ同じメモリーを返す。既存DrainEvents契約から必要な場合だけ作業バッファへコピーし、inspectionなしの経路にコピーを追加しない。所有スレッド・再入禁止・通知例外の契約はInputSystemに従う。処理失敗時に一部だけを記録してバッチ全体を再送しない。
+
+Sourceとinspectionの所有者はDIスコープとし、InputSystemは借用してDeviceとRegistryの終了を担当する。Sourceは一つのInputSystemだけに接続し、Singleton Sourceを複数ゲームスコープで共有してInitializeしない。診断なしの手動構築には従来のコンストラクターを残す。DIはinspection付きのコンストラクターを使用し、既存のSystemファクトリーもinspectionを明示的に渡す。IInputSourceのServiceDescriptorを書き換えたり、同じサービスを再解決する循環ファクトリーを作ったりしない。
 
 ### 監視する内容
 
-観測対象はSourceとDeviceの接続状態、取得値・補正後の値・有効値、履歴のSequence範囲とHasGap、有効Contextと継承元、宣言バインディングと実効バインディング、補正前後と置換後のアクション値、認識結果、バッファ件数、リバインド状態、適用中設定Revisionとする。タッチ・ペン・筆圧も既存InputDataの種類を維持して観測する。テキスト入力の内容は既定で収集しない。
+観測対象はSourceとDeviceの接続状態、InputSystemが受け取った値・inspectionによる有効値、履歴のSequence範囲とHasGap、有効Contextと継承元、宣言バインディングと実効バインディング、補正前後と置換後のアクション値、認識結果、バッファ件数、リバインド状態、適用中設定Revisionとする。タッチ・ペン・筆圧も既存InputDataの種類を維持して観測する。テキスト入力の内容は既定で収集しない。
 
-値は処理段階を示すInputObservationStage付きで記録する。取得値・補正値はデコレーターの読み取り専用フックで取得し、入力処理を再実行しない。仮想Deviceは生成元との対応を記録する。InputSystemの履歴はそのSystemへ渡された有効値であり、上流の取得値を含む診断記録は独立した有界リングに保持する。原本となるSourceの入力と公開済みInputRecordを変更せず、既存InputRecordのSequenceを診断側で採番・再利用しない。
+InputSystem側の記録はReceivedとEffectiveDevice、ActionSystem側はMapped・CorrectedAction・EffectiveAction・Recognizedで区別する。InputSystemの履歴はinspection適用後の有効値で、受け取った値の診断記録は独立した有界リングへ保持する。元のSourceの入力と公開済みInputRecordを変更せず、既存InputRecordのSequenceを診断側で採番・再利用しない。仮想Deviceは提供されるDescriptorの情報を表示する。
 
 同じフレーム内の上流観測は独自のObservation番号とDevice登録世代で関連付ける。InputSystemへ記録された時点で対応するSequenceを付け、マッピング後の値にはContext・Actionと寄与Deviceを付ける。Sequenceをまだ持たない値やタイマー由来の認識に架空のSequenceを付けない。
 
@@ -63,10 +62,10 @@ AddInspectedInputSystemはInputSystem未登録の構成で一度だけ呼ぶ。�
 
 | 対象 | 適用位置 | 検証できる範囲 |
 | --- | --- | --- |
-| DeviceのInputControl | 補正・仮想化後、InputSystemがDeviceからDrainEventsした直後の共通パイプライン | 履歴・イベント・ポーリング、マッピング、アクション補正、認識 |
+| DeviceのInputControl | Sourceの種類・補正状態によらず、InputSystem内のDevice取得境界 | 履歴・イベント・ポーリング、マッピング、アクション補正、認識 |
 | Context内のAction | アクション値補正後、認識前 | 最終的な操作値に対する認識とゲーム処理 |
 
-Device側の置換はInputSystemの共通パイプラインでDevice単位・Control単位とし、InputSystemのイベント・ポーリング・保持履歴に同じ有効値を渡す。置換中も上流入力を取り出して実値を追跡する。押下・値変化・開始・解除の差分をDeviceのバッチへ生成し、InputSystemが通常どおり時刻とSequenceを付ける。押し続けるリースで毎フレーム押下イベントを生成しない。
+Device側の置換はInputSystemに注入されたinspectionでDevice単位・Control単位とし、InputSystemのイベント・ポーリング・保持履歴に同じ有効値を渡す。置換中も上流入力を取り出して実値を追跡する。押下・値変化・開始・解除の差分をDeviceのバッチへ生成し、InputSystemが通常どおり時刻とSequenceを付ける。押し続けるリースで毎フレーム押下イベントを生成しない。
 
 Action側の置換はActionSystemの補正を通った実値を保持してから最終値へ適用する。Contextの優先順位・排他・有効化・選択Deviceは先に評価する。無効なContextへ入力を送り込まず、子Contextのリースを親や兄弟へ継承しない。通常のActionEventと認識経路を通し、認識済み操作や入力バッファを直接注入・編集しない。Action置換の寄与Deviceを架空に生成せず、診断記録のLeaseIdで置換由来を示す。
 
@@ -78,7 +77,7 @@ Action側の置換はActionSystemの補正を通った実値を保持してか�
 
 ローカルコードはInputDeviceId・InputControl、登録されたActionSystemのハンドルとCompositionのContext・Action定義オブジェクトで対象を指定する。診断UIにはスナップショットで発行したGuidのTargetIdを渡し、自由入力の文字列でDevice・Contextを検索しない。TargetIdはSystem登録とプロファイル世代に結び付け、再接続やApplyProfile後の古いハンドルはtarget-goneとする。
 
-Actionの公開は構成側のRegisterActionで明示する。内部索引から全アクションを無条件に公開しない。Deviceは登録時に公開方針を評価する。実行上のSystem識別と画面表示名を分け、同名Contextを持つ複数プレイヤーを混同しない。
+ActionSystemをinspectionへ接続すると全Context・Actionのハンドルを自動発行する。DeviceもInputSystemの登録通知から自動的に追跡する。実行上のSystem識別と画面表示名を分け、同名Contextを持つ複数プレイヤーを混同しない。
 
 ### リース、競合、解除
 
@@ -112,7 +111,8 @@ Observeはスナップショットの照会、OverrideInputはリース操作、
 
 ```csharp
 services.UseWindowsInput(); // 例: バックエンドがIInputSourceを自動登録する。
-services.AddInspectedInputSystem(); // 全SourceのDeviceを共通の取得境界で観測・置換する。
+services.AddInputInspection(); // 同じスコープのinspectionをDI登録する。
+services.AddScoped<InputSystem>(); // コンストラクターからSourceとinspectionを注入する。
 services.AddScoped(p => new ActionSystem(profile, bufferOptions: null,
     inspection: p.GetRequiredService<InputInspectionSession>()));
 services.AddDiagnosticExecutionPoint<BeforeInputProcessing>("before-input-processing");
@@ -120,22 +120,20 @@ services.AddDiagnosticSubsystem<InputDiagnostics, BeforeInputProcessing>(
     new SubsystemDescriptor("input", "Input", 1));
 ```
 
-AddInspectedInputSystemが登録するInputSystemファクトリーは次の構成に相当する。Sourceの登録は解決時に列挙するため、構築前なら別のUseで追加したSourceも含む。既存のInputTimeSourceを使う構成では同じファクトリー内でAttachし、補正器の時計も接続する。
+明示的なInputSystemファクトリーが必要な場合も、個別Sourceを包まずinspectionをコンストラクターへ渡す。InputTimeSourceを使う構成では同じファクトリー内でAttachする。
 
 ```csharp
 services.AddScoped(p => new InputSystem(
     p.GetServices<IInputSource>(),
-    timeProvider: null,
-    devicePipelines: p.GetServices<IInputDevicePipeline>()));
+    p.GetRequiredService<IInputInspection>(),
+    timeProvider: null));
 ```
-
-補正前の取得値も必要なら、該当する上流境界に限ってObservingInputSourceを追加する。標準の全Device監視のために各Sourceを包む必要はない。
 
 SystemとActionの登録、Pump.Activateは入力所有スレッドで実行する。登録したハンドルは同じゲームスコープでのみ有効。
 
 ```csharp
 using var systemRegistration = inspection.Register(actions);
-InputOverrideTarget jumpTarget = inspection.RegisterAction(systemRegistration, game, jump);
+InputOverrideTarget jumpTarget = inspection.GetActionTarget(systemRegistration, game, jump);
 // ローカルコードは定義オブジェクトから対象を得る。診断UIは公開TargetIdを使う。
 InputOverrideResult result = overrides.Acquire(
     new InputOverrideOwner(sessionId, actorId),
@@ -163,7 +161,7 @@ ActionState effective = actions.GetState(game, jump);
 ```diff
 +namespace Lumyte.Input.Inspection
 +{
-+    public enum InputObservationStage { Acquired, Corrected, EffectiveDevice, Mapped, CorrectedAction, EffectiveAction, Recognized }
++    public enum InputObservationStage { Received, EffectiveDevice, Mapped, CorrectedAction, EffectiveAction, Recognized }
 +    public enum InputOverrideMode { Replace, Add }
 +    public readonly record struct InputOverrideOwner(Guid SessionId, string ActorId);
 +    // 値そのものではなく登録世代に結び付いた不透明な対象ハンドル。
@@ -189,16 +187,19 @@ ActionState effective = actions.GetState(game, jump);
 +        public void Dispose();
 +    }
 +    public sealed record InputInspectionPage(long Snapshot, string Json, string? NextCursor, long Dropped);
-+    public sealed class InputInspectionSession : IInputOverrideService, IInputDevicePipeline, IActionInspection, IDisposable
++    public sealed class InputInspectionSession : IInputOverrideService, IInputInspection, IActionInspection, IDisposable
 +    {
 +        public InputInspectionSession(TimeProvider? clock = null);
++        public void SourceInitializing(IInputSource source);
++        public void SourceUpdated(IInputSource source);
++        public void SourceShutdown(IInputSource source);
 +        public void Registered(InputDeviceId device, InputDeviceDescriptor descriptor);
 +        public ReadOnlyMemory<InputData> Process(InputDeviceId device, ReadOnlyMemory<InputData> data, TimeSpan now);
 +        public void Unregistered(InputDeviceId device);
 +        public InputActionRegistration Register(ActionSystem system);
-+        public InputOverrideTarget RegisterAction(InputActionRegistration registration,
++        public InputOverrideTarget GetActionTarget(InputActionRegistration registration,
 +            Compose.Definitions.Context context, Compose.Definitions.Action action);
-+        public InputOverrideTarget RegisterControl(InputDeviceId device, InputControl control);
++        public InputOverrideTarget GetControlTarget(InputDeviceId device, InputControl control);
 +        // 有界記録の上限と観測段階を設定。空の集合なら取得値の収集を止める。
 +        public void ConfigureCapture(IReadOnlyCollection<InputObservationStage> stages, int maxEntries);
 +        public void BeginFrame(long frame);
@@ -218,21 +219,15 @@ ActionState effective = actions.GetState(game, jump);
 +        public InputOverrideResult GetLease(InputOverrideOwner owner, Guid leaseId);
 +        public void Dispose();
 +    }
-+    // Sourceの取得値を観測する。RegistryとDeviceの所有権を移さない。
-+    public sealed class ObservingInputSource : IInputSource
-+    {
-+        public ObservingInputSource(IInputSource inner, InputInspectionSession inspection, InputObservationStage stage);
-+        public void Initialize(IInputDeviceRegistry registry);
-+        public void Update();
-+        public void Shutdown();
-+        public void Dispose();
-+    }
 +}
  namespace Lumyte.Input
  {
 +    // Inputが所有する共通取得境界。InputはInspectionへ依存しない。
-+    public interface IInputDevicePipeline
++    public interface IInputInspection
 +    {
++        void SourceInitializing(IInputSource source);
++        void SourceUpdated(IInputSource source);
++        void SourceShutdown(IInputSource source);
 +        void Registered(InputDeviceId device, InputDeviceDescriptor descriptor);
 +        ReadOnlyMemory<InputData> Process(InputDeviceId device, ReadOnlyMemory<InputData> data, TimeSpan now);
 +        void Unregistered(InputDeviceId device);
@@ -240,8 +235,8 @@ ActionState effective = actions.GetState(game, jump);
      public sealed class InputSystem
      {
 +        // 従来のコンストラクターは維持。全Sourceの全Deviceへ適用する。
-+        public InputSystem(IEnumerable<IInputSource> sources, TimeProvider? timeProvider,
-+            IEnumerable<IInputDevicePipeline> devicePipelines);
++        public InputSystem(IEnumerable<IInputSource> sources, IInputInspection inspection,
++            TimeProvider? timeProvider = null);
      }
  }
  namespace Lumyte.Input.Actions
@@ -265,8 +260,8 @@ ActionState effective = actions.GetState(game, jump);
 +{
 +    public static class InputInspectionServiceCollectionExtensions
 +    {
-+        // Inspectionとパイプラインを共有登録し、全Sourceを解決するInputSystemを登録する。
-+        public static IServiceCollection AddInspectedInputSystem(this IServiceCollection services);
++        // 同じInspectionをIInputInspection・IInputOverrideServiceとして登録する。
++        public static IServiceCollection AddInputInspection(this IServiceCollection services);
 +    }
 +    public sealed class BeforeInputProcessing { }
 +    // 生成器でIDiagnosticContributorを実装。操作はDiagnosticOperation属性で公開する。
@@ -282,9 +277,9 @@ ActionState effective = actions.GetState(game, jump);
 
 ### 性能と検証方針
 
-診断無効時はパイプライン・デコレーター・観測収集・System登録を作らず、通常の無入力更新の割り当てを増やさない。監視のみ・置換ありの負荷を分けて測定する。値の観測は購読段階と対象を絞り、既定の記録上限4096件、ページ上限128件、同時リース64件、期間上限5秒、予約開始は最大120フレーム先とする。上限値は測定後に変更可能にする。欠落を件数で報告し、InputSystemの保持ポリシーを診断の都合で変更しない。DeviceやAction IDを無制限のMetricsタグにせず、集約した処理時間・観測欠落・リース数を公開する。
+診断無効時はinspection・観測収集・System登録を作らず、通常の無入力更新の割り当てを増やさない。監視のみ・置換ありの負荷を分けて測定する。全Sourceへの適用を維持したまま観測記録を有界化し、既定の記録上限4096件、ページ上限128件、同時リース64件、期間上限5秒、予約開始は最大120フレーム先とする。上限値は測定後に変更可能にする。欠落を件数で報告し、InputSystemの保持ポリシーを診断の都合で変更しない。DeviceやAction IDを無制限のMetricsタグにせず、集約した処理時間・観測欠落・リース数を公開する。
 
-受け入れ検証は、監視が認識・バッファ消費へ影響しないこと、Device置換のイベント/履歴/ポーリングの一致、Action置換の認識順序、実押下中の解除、軸復帰、無入力時とポーズ時の期限、未来開始、再送と競合、他所有者の解除拒否、Device切断・Context無効化・ApplyProfileによる失効、親子Contextの独立性、複数プレイヤーの分離、リバインドとの排他、通知例外後の重複実行防止、リング欠落時の再同期、DI終了順、Useが自動登録する複数Sourceと実行中のDevice追加への一括適用、解決前に追加したSourceの包含、パイプライン未登録時の既存動作、空バッチでの解除を含む。保存済み設定にリースが混入しないことと、AOT・トリミング環境で診断アダプターとJSON出力が動作することも確認する。
+受け入れ検証は、監視が認識・バッファ消費へ影響しないこと、Device置換のイベント/履歴/ポーリングの一致、Action置換の認識順序、実押下中の解除、軸復帰、無入力時とポーズ時の期限、未来開始、再送と競合、他所有者の解除拒否、Device切断・Context無効化・ApplyProfileによる失効、親子Contextの独立性、複数プレイヤーの分離、リバインドとの排他、通知例外後の重複実行防止、リング欠落時の再同期、DI終了順、Useが自動登録する複数Sourceと実行中のDevice追加への一括適用、解決前に追加したSourceの包含、inspectionなしの既存動作、空バッチでの解除を含む。保存済み設定にリースが混入しないことと、AOT・トリミング環境で診断アダプターとJSON出力が動作することも確認する。
 
 ## 検討した代替案
 
@@ -304,4 +299,4 @@ ActionState effective = actions.GetState(game, jump);
 
 Inputの各段階を比較し、型付きの対象を選んで期限付き操作を実行できる。診断通信への依存をアダプターへ限定し、既存のSource DI・履歴保持・設定保存の契約を維持する。
 
-解除時の差分生成、認識の抑止、DeviceからActionへの依存追跡、対象世代の管理が追加で必要になる。上流入力の観測は任意デコレーターが提供するフックの範囲に限られ、補正器の内部状態を自動的に可視化するものではない。フレーム番号とリース時計を別に扱い、この設計だけでは決定的な記録再生を保証しない。
+解除時の差分生成、認識の抑止、DeviceからActionへの依存追跡、対象世代の管理が追加で必要になる。観測できるのはInputSystemへ返された値であり、Source内部の未公開中間値まで自動的に可視化するものではない。フレーム番号とリース時計を別に扱い、この設計だけでは決定的な記録再生を保証しない。
