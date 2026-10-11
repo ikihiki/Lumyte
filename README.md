@@ -12,6 +12,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [診断基盤の API と利用方法](src/Diagnostics/Lumyte.Diagnostics/README.md)
 - [診断 Input サンプル](samples/Lumyte.Diagnostics.Sample/README.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
+- [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)

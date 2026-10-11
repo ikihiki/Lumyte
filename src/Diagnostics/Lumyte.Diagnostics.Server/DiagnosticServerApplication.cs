@@ -143,7 +143,7 @@ public static class DiagnosticServerApplication
             new("objects", "Objects", "Engine", 0, "objects"),
             new("ui", "UI", "Engine", 1, "ui"),
             new("animation", "Animation", "Engine", 2, "animation"),
-            new("input", "Input", "Engine", 3),
+            new("input", "Input", "Engine", 3, "input", typeof(InputPage)),
             new("settings", "Settings", "Engine", 5),
             new("rendering", "Rendering", "Engine", 4, "rendering"),
             new("metrics", "Metrics", "Telemetry", 0),

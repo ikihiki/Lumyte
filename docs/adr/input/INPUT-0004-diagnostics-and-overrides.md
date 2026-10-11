@@ -1,6 +1,6 @@
 # ADR-INPUT-0004: 診断システムによる入力監視と期限付きオーバーライド
 
-- 状態: 提案（設計のみ、未実装）
+- 状態: 一部採用（監視ページを実装、オーバーライド・Tape実行は提案）
 - 日付: 2026-10-11
 
 ## 背景
@@ -259,7 +259,87 @@ ActionState effective = actions.GetState(game, jump);
 
 ### 公開 API 一覧
 
-比較元はmainの `cc766f2`。以下は追加を提案する主要APIであり、まだ実装されていない。Systemへの観測フック・内部評価契約は実装時に具体化し、本ADRへ追記する。
+比較元はmainの `cc766f2`。監視ページに必要な次のAPIと `Lumyte.Input.Diagnostics` パッケージを実装した。InputSystemは全Source・Device、ActionSystemはプロファイル・状態変化・認識結果を、同じDIスコープのInputInspectionSessionへ通知する。診断サーバーのInputページは500 msごとにStream操作 `input/get-snapshot` を読み、Devices / Actions / Tapeのビューを表示する。
+
+```diff
++namespace Lumyte.Input
++{
++    public interface IInputInspection
++    {
++        void SystemCreated(InputSystem system);
++        void SourceInitializing(InputSystem system, IInputSource source);
++        void SourceUpdated(InputSystem system, IInputSource source);
++        void SourceShutdown(InputSystem system, IInputSource source);
++        void Registered(InputSystem system, InputDeviceId device,
++            InputDeviceDescriptor descriptor);
++        void DeviceUpdated(InputSystem system, InputDeviceId device,
++            InputDeviceState state, ulong latestSequence);
++        void Unregistered(InputSystem system, InputDeviceId device);
++        void SystemDisposed(InputSystem system);
++    }
++    public sealed class InputSystem
++    {
++        public InputSystem(IEnumerable<IInputSource> sources, IInputInspection inspection,
++            TimeProvider? timeProvider = null);
++    }
++}
++namespace Lumyte.Input.Actions
++{
++    public interface IActionInspection
++    {
++        void SystemCreated(ActionSystem system, ActionProfile profile);
++        void ProfileChanged(ActionSystem system, ActionProfile profile);
++        void Advanced(ActionSystem system, ReadOnlyMemory<ActionEvent> events,
++            ReadOnlyMemory<RecognizedAction> recognized, TimeSpan now);
++        void SystemDisposed(ActionSystem system);
++    }
+-    public sealed class ActionSystem
++    public sealed class ActionSystem : IDisposable
++    {
++        public ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions,
++            IActionInspection inspection);
++        public void Dispose();
++    }
++}
++namespace Lumyte.Input.Diagnostics
++{
++    public sealed class BeforeInputProcessing;
++    public sealed record InputSnapshotReceipt(string Json);
++    public sealed class InputInspectionSession : IInputInspection, IActionInspection, IDisposable
++    {
++        public long Revision { get; }
++        public void SystemCreated(InputSystem system);
++        public void SourceInitializing(InputSystem system, IInputSource source);
++        public void SourceUpdated(InputSystem system, IInputSource source);
++        public void SourceShutdown(InputSystem system, IInputSource source);
++        public void Registered(InputSystem system, InputDeviceId device,
++            InputDeviceDescriptor descriptor);
++        public void DeviceUpdated(InputSystem system, InputDeviceId device,
++            InputDeviceState state, ulong latestSequence);
++        public void Unregistered(InputSystem system, InputDeviceId device);
++        public void SystemDisposed(InputSystem system);
++        public void SystemCreated(ActionSystem system, ActionProfile profile);
++        public void ProfileChanged(ActionSystem system, ActionProfile profile);
++        public void Advanced(ActionSystem system, ReadOnlyMemory<ActionEvent> events,
++            ReadOnlyMemory<RecognizedAction> recognized, TimeSpan now);
++        public void SystemDisposed(ActionSystem system);
++        public string CreateSnapshot();
++        public void Dispose();
++    }
++    public sealed partial class InputDiagnostics
++    {
++        public InputDiagnostics(InputInspectionSession inspection);
++    }
++    public static class InputInspectionServiceCollectionExtensions
++    {
++        public static IServiceCollection AddInputInspection(this IServiceCollection services);
++        public static IServiceCollection AddInputDiagnostics<TPoint>(this IServiceCollection services,
++            SubsystemDescriptor? descriptor = null) where TPoint : class;
++    }
++}
+```
+
+以下はオーバーライド・Tape・ライブ入力を実装する際に追加する提案APIである。監視実装はこの将来APIを先取りして公開しない。
 
 ```diff
 +namespace Lumyte.Input.Inspection

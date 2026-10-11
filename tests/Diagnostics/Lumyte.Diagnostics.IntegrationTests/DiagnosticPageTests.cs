@@ -1,4 +1,5 @@
 using Lumyte.Diagnostics.Server;
+using Lumyte.Diagnostics.Server.Components;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,6 +52,7 @@ public sealed class DiagnosticPageTests
         DiagnosticPageRegistry registry = app.Services.GetRequiredService<DiagnosticPageRegistry>();
         Assert.Contains(registry.Pages, page => page.Id == "physics" && page.Component == typeof(TestPage));
         Assert.Contains(registry.Pages, page => page.Id == "resources");
+        Assert.Contains(registry.Pages, page => page.Id == "input" && page.Component == typeof(InputPage) && page.RequiredSubsystem == "input");
     }
 
     private sealed class TestPage : ComponentBase;
