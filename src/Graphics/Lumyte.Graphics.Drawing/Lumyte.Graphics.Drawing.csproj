@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <SlangShader Include="Shaders/color-vertex.slang" ResourceName="Lumyte.Drawing.color-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/color-fragment.slang" ResourceName="Lumyte.Drawing.color-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/texture-vertex.slang" ResourceName="Lumyte.Drawing.texture-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/texture-fragment.slang" ResourceName="Lumyte.Drawing.texture-fragment" Stage="fragment" />
+  </ItemGroup>
+  <Import Project="../../../tools/shaders/Slang.targets" />
+</Project>

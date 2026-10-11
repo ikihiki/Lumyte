@@ -179,3 +179,7 @@ wait／signalだけのSubmitも可能です。GPU完了をCPUで待つ必要は�
 Device生成とSurface生成は分離し、生成済みDeviceへバックエンド固有の入口で表示先を接続します。
 
 リソースの寿命、登録の有効期間、barrierの前後状態、semaphoreの再利用は利用者の責務です。検証だけを目的としたカウンター、依存走査、Submit時のvalidator保持、状態履歴は設けません。CPU memoryへの安全な範囲検査、引数の形式、nativeの失敗結果、shader ABIとbinding構築に必要なmetadataは扱います。[実行時検証の方針](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。
+
+## 描画用ライブラリ
+
+[Graphics.Drawing](../Lumyte.Graphics.Drawing/README.md) は頂点・描画引数の構造体、矩形・円・線の形状生成、頂点カラー／テクスチャ描画の portable shader を提供します。既存の明示的な転送・描画 API と組み合わせて使用します。
