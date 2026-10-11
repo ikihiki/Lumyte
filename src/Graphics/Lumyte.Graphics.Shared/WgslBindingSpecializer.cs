@@ -104,20 +104,23 @@ public static class WgslBindingSpecializer
 
         foreach (Match function in Regex.Matches(source, @"fn\s+LumyteSampleGrad_\w+\s*\(([^)]*)\)\s*->\s*vec4<f32>").Cast<Match>().Reverse())
         {
-            MatchCollection parameters = Regex.Matches(function.Groups[1].Value, @"(\w+)\s*:\s*(\w+)(?:<[^>]+>)?");
+            MatchCollection parameters = Regex.Matches(function.Groups[1].Value, @"(\w+)\s*:\s*(\w+)\s*(?:<[^>]+>)?");
             if (parameters.Count != 5)
             {
                 throw new NotSupportedException("Unknown texture helper ABI.");
             }
 
-            string texture = parameters[0].Groups[1].Value;
-            string sampler = parameters[1].Groups[1].Value;
-            string textureId = Id(source, parameters[0].Groups[2].Value);
-            string samplerId = Id(source, parameters[1].Groups[2].Value);
-            var body = new StringBuilder("\n switch " + map + "[" + texture + "." + textureId + "].x {\n");
+            string texture = ResourceReference(source, parameters[0].Value);
+            string sampler = ResourceReference(source, parameters[1].Value);
+            if (map.Length == 0)
+            {
+                throw new NotSupportedException("Unknown texture helper mapping ABI.");
+            }
+
+            var body = new StringBuilder("\n switch " + map + "[" + texture + "].x {\n");
             for (int t = 0; t < textureCount; t++)
             {
-                body.Append("case ").Append(t).Append(": { switch ").Append(map).Append('[').Append(sampler).Append('.').Append(samplerId).Append("].y {\n");
+                body.Append("case ").Append(t).Append(": { switch ").Append(map).Append('[').Append(sampler).Append("].y {\n");
                 for (int s = 0; s < samplerCount; s++)
                 {
                     body.Append("case ").Append(s).Append(": { return textureSampleGrad(lumyteTexture").Append(t).Append("_0, lumyteSampler").Append(s).Append("_0, ").Append(parameters[2].Groups[1].Value).Append(", ").Append(parameters[3].Groups[1].Value).Append(", ").Append(parameters[4].Groups[1].Value).Append("); }\n");
@@ -204,6 +207,26 @@ public static class WgslBindingSpecializer
         }
 
         return string.Join(", ", names);
+    }
+
+    private static string ResourceReference(string source, string parameter)
+    {
+        Match receiver = Regex.Match(parameter, @"^\s*(\w+)\s*:\s*(?:ptr\s*<\s*function\s*,\s*(\w+)\s*>|(\w+))\s*$");
+        if (!receiver.Success)
+        {
+            throw new NotSupportedException("Unknown texture helper reference ABI.");
+        }
+
+        bool pointer = receiver.Groups[2].Success;
+        string argument = receiver.Groups[1].Value;
+        string type = receiver.Groups[pointer ? 2 : 3].Value;
+        string id = Id(source, type);
+        if (id.Length == 0)
+        {
+            throw new NotSupportedException("Unknown texture helper resource ABI.");
+        }
+
+        return (pointer ? "(*" + argument + ")" : argument) + "." + id;
     }
 
     private static string Variable(string source, string prefix) => Regex.Match(source, @"var(?:<[^>]+>)?\s+(" + prefix + @"_\w+)\s*:").Groups[1].Value;

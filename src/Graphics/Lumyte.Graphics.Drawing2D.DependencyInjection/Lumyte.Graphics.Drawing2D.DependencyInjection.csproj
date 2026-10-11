@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Optional scoped registrations for Drawing2D command and image effect renderers.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <ProjectReference Include="../Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.ImageEffects.DependencyInjection/Lumyte.Graphics.ImageEffects.DependencyInjection.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,55 @@
+# Lumyte.Graphics.Drawing2D
+
+Canvasに記録した図形・画像・paint graphを、共通Graphics APIとRenderGraphで描画する。文字組みは外部ライブラリが担当し、パス・mesh・coverage・SDF/MSDF/MTSDF・画像のいずれでも描画を依頼できる。
+
+## DIを使わない接続
+
+`device` はアプリケーションが作成した `IGraphicDevice`、`targetView` は同じdeviceの `Rgba8Srgb` または `Rgba16Float` のRenderAttachment viewとする。device・描画先・入力画像の所有権はアプリケーションに残る。
+
+```csharp
+using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D;
+
+var canvas = new Canvas2D();
+canvas.Begin();
+canvas.FillRoundedRect(
+    new Rect2D(20, 20, 240, 80),
+    12,
+    PaintGraph2D.LinearGradient(
+        new(20, 20), new(260, 20),
+        [new(0, new(0.1f, 0.4f, 1, 1)), new(1, new(0.6f, 0.2f, 0.9f, 1))]));
+DrawList2D list = canvas.End();
+
+using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new()
+{
+    View = targetView,
+    LoadOp = AttachmentLoadOp.Clear,
+    ClearColor = new(0, 0, 0, 0),
+});
+using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
+{
+    prepared.Record(commands);
+    commands.Finish();
+    using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+    await submission.WaitAsync();
+}
+```
+
+`PrepareAsync` の入口と出口で描画先は `ColorAttachment`、入力画像は `Sampled` とする。初回の描画先状態遷移やPresentへの遷移はアプリケーションで記録する。`AppendPassesAsync` を使う場合は、外部画像を共通graphへ一度だけimportして `DrawingGraphBindings2D` へ登録する。
+
+準備結果は一回の記録に使う。再描画は同じ `DrawList2D` から改めて準備する。GPU使用完了後にcommand buffer、compiled graph、準備結果の順で解放する。待機のキャンセルはGPU完了を意味しない。
+
+## 描画方式の差し替え
+
+11命令にはそれぞれ専用interfaceがある。例えば `IFillPathRenderer2D` を差し替えると `FillPath` を独自のcompute経路にできる。準備結果の `AppendPasses` でcopy・compute・renderの複数passを宣言し、各resourceへのアクセスをRenderGraphへ渡す。
+
+`DrawingCommandRenderers2D` のconstructorには11個の実装を直接渡す。DIを使う場合は別packageの `UseGraphics2D` が標準実装を登録し、その後の `AddScoped<IFillPathRenderer2D, CustomFillPathRenderer>()` で上書きできる。
+
+## Paint・エフェクト
+
+塗りと線は単色、linear/radial/sweep gradient、image pattern、opacity、path clip、transform、layer、COLRv1の全28合成modeを受け付ける。色はstraight sRGBで入力し、描画時はlinear premultiplied RGBAとして評価する。
+
+`BeginLayer` / `EndLayer` はグループ全体へのエフェクトとopacity、`DrawBackdropEffect` はそこまでに描いた背景へのエフェクトを表す。色行列・Gaussian blur・opacity・合成は、2Dと3Dから使える `Lumyte.Graphics.ImageEffects` が処理する。
+
+詳細な数値契約、API一覧、共通graphへの接続例は [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-2d-graphics-engine.md) を参照する。
