@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Audio.Sample/Lumyte.Audio.Sample.csproj" />
+    <Project Path="samples/Lumyte.Audio.Shared/Lumyte.Audio.Shared.csproj" />
     <Project Path="samples/Lumyte.Input.Advanced.Sample/Lumyte.Input.Advanced.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Remote.Sample/Lumyte.Diagnostics.Remote.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
@@ -9,6 +11,11 @@
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+  </Folder>
+  <Folder Name="/src/Audio/">
+    <Project Path="src/Audio/Lumyte.Audio.Abstractions/Lumyte.Audio.Abstractions.csproj" />
+    <Project Path="src/Audio/Lumyte.Audio.OpenAL/Lumyte.Audio.OpenAL.csproj" />
+    <Project Path="src/Audio/Lumyte.Audio.Browser/Lumyte.Audio.Browser.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Animation/">
