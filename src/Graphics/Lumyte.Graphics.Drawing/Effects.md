@@ -5,7 +5,7 @@
 `ModelDrawArguments` でカメラ・方向ライト・ambient・フォグを指定します。
 `LightDirection` は表面からライトへ向かう world-space の方向です。
 `FogDensity = 0` でフォグを無効にし、正値でカメラからの距離に対する exponential fog を適用します。
-計算と出力は linear color、HDR 値を保持します。詳細は [glTF モデル描画](Gltf/README.md) を参照してください。
+計算と出力は linear color、HDR 値を保持します。詳細は [静的モデル描画](Models.md) を参照してください。
 
 ## 画面全体の色調整
 

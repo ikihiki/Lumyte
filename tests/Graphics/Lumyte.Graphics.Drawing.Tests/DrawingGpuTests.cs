@@ -1,6 +1,5 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Drawing.Gltf;
 using Lumyte.Graphics.Vulkan;
 using Xunit;
 
@@ -49,7 +48,7 @@ public sealed class DrawingGpuTests
             new(new(3, -1, 0.5f), Vector3.UnitZ, new(1, 0, 0, 1), Vector2.UnitX, Vector4.One),
             new(new(-1, 3, 0.5f), Vector3.UnitZ, new(1, 0, 0, 1), Vector2.UnitY, Vector4.One),
         ];
-        using ModelMesh mesh = await ModelMesh.CreateAsync(device, new(vertices, [0, 1, 2], 0), vertexArtifact);
+        using ModelMesh mesh = await ModelMesh.CreateAsync(device, vertices, new uint[] { 0, 1, 2 }, vertexArtifact);
         using IGraphicsShader vertex = device.CreateShader(vertexArtifact);
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders.LoadModelFragment());
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
@@ -81,7 +80,7 @@ public sealed class DrawingGpuTests
         var normalRef = new SampledTexture(table.WriteTexture(1, normalView), samplerRef);
         IGpuRef<IGraphicsTextureView> sceneRef = table.WriteTexture(2, sceneView);
         ModelMaterial factors = ModelDrawing.DefaultMaterial with { BaseColor = new(0.2f, 0.4f, 0.6f, 1), Emissive = new(0.2f, 0.4f, 0.6f), Unlit = lit ? 0u : 1u };
-        var material = new GltfMaterial(null, factors, true, null, null, null, null, null);
+        ModelMaterial material = factors;
         ModelDrawArguments arguments = ModelDrawing.CreateArguments(vertexRef, material, whiteRef, normalRef) with
         {
             CameraPosition = new(0, 0, 10),
@@ -106,7 +105,7 @@ public sealed class DrawingGpuTests
         Transition(commands, scene, TextureState.Undefined, TextureState.ColorAttachment, new(PipelineStage.None, ResourceAccess.None), colorWrite);
         Transition(commands, depth, TextureState.Undefined, TextureState.DepthStencilAttachment, new(PipelineStage.None, ResourceAccess.None), new(PipelineStage.DepthStencil, ResourceAccess.DepthStencilWrite));
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = sceneView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }], DepthStencilAttachment = new() { View = depthView } });
-        Setup(render, pipeline, ModelDrawing.CreateRenderState(material));
+        Setup(render, pipeline, ModelDrawing.CreateRenderState(material, doubleSided: true));
         render.SetArguments(in arguments);
         mesh.Draw(render);
         render.End();

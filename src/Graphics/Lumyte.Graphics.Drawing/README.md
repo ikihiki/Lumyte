@@ -79,7 +79,7 @@ dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
 
 ## 3D モデルとエフェクト
 
-[glTF／GLB モデル描画](Gltf/README.md) は静的モデルの読み込み、mesh upload、indexed drawing、
+[静的モデル描画](Models.md) は共通の頂点・インデックス配列からの mesh upload、indexed drawing、
 metallic-roughness の材質、normal map、方向ライト、ambient、AO、発光、透明・両面描画を提供します。
 `ModelVertex`、`ModelMaterial`、`ModelDrawArguments` は既存の shader serializer を使用します。
 
@@ -87,12 +87,12 @@ metallic-roughness の材質、normal map、方向ライト、ambient、AO、発
 Reinhard tone mapping を提供します。どちらも WGSL／SPIR-V の offline artifact を使用します。
 
 通常のテスト実行では GPU テスト 2 件を skip します。Vulkan GPU または software driver を
-設定した環境では、以下で 23 件（CPU 21 件、GPU pixel readback 2 件）を実行できます。
+設定した環境では、以下で 10 件（CPU 8 件、GPU pixel readback 2 件）を実行できます。
 
 ```sh
 LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
 ```
 
 GPU テストは upload から indexed model draw、HDR scene、フォグ、fullscreen effect、
-readback までの結果を確認します。CPU テストは glTF／GLB、external／data URI、sparse／
-interleaved accessor、scene transform、material、生成 codec の compiled ABI を確認します。
+readback までの結果を確認します。CPU テストは形状、material／render state、normal transform、
+生成 codec の compiled ABI を確認します。ファイル形式のインポーターは含みません。

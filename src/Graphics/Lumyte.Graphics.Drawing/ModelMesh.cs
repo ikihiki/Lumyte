@@ -1,5 +1,4 @@
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Drawing.Gltf;
 
 namespace Lumyte.Graphics.Drawing;
 
@@ -25,17 +24,17 @@ public sealed class ModelMesh : IDisposable
 
     /// <summary>Allocates storage and fills upload staging without recording or submitting GPU commands.</summary>
     /// <param name="device">The owning device.</param>
-    /// <param name="primitive">The validated CPU primitive.</param>
+    /// <param name="vertexData">The object-space vertices in the common model layout.</param>
+    /// <param name="indexData">The in-range thirty-two-bit triangle-list indices.</param>
     /// <param name="vertexArtifact">The model vertex shader artifact.</param>
     /// <returns>The mesh with filled, unmapped staging.</returns>
-    public static async Task<ModelMesh> CreateAsync(IGraphicDevice device, GltfPrimitive primitive, ShaderArtifact vertexArtifact)
+    public static async Task<ModelMesh> CreateAsync(IGraphicDevice device, ReadOnlyMemory<ModelVertex> vertexData, ReadOnlyMemory<uint> indexData, ShaderArtifact vertexArtifact)
     {
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(primitive);
         ArgumentNullException.ThrowIfNull(vertexArtifact);
-        if (primitive.Vertices.Length == 0 || primitive.Indices.Length == 0 || primitive.Indices.Length % 3 != 0 || primitive.Indices.Any(x => x >= primitive.Vertices.Length))
+        if (vertexData.Length == 0 || indexData.Length == 0 || indexData.Length % 3 != 0 || ContainsInvalidIndex(indexData.Span, vertexData.Length))
         {
-            throw new ArgumentException("A mesh requires in-range triangle indices and vertices.", nameof(primitive));
+            throw new ArgumentException("A mesh requires in-range triangle indices and vertices.", nameof(indexData));
         }
 
         IGraphicsShaderDataBuffer<ModelVertex>? vertices = null;
@@ -44,8 +43,8 @@ public sealed class ModelMesh : IDisposable
         IGraphicsBuffer<uint>? indexUpload = null;
         try
         {
-            ulong vertexCount = (ulong)primitive.Vertices.Length;
-            ulong indexCount = (ulong)primitive.Indices.Length;
+            ulong vertexCount = (ulong)vertexData.Length;
+            ulong indexCount = (ulong)indexData.Length;
             vertices = device.CreateBuffer<ModelVertex>(vertexArtifact, vertexCount);
             vertexUpload = device.CreateBuffer<ModelVertex>(vertexArtifact, vertexCount, MemoryPreference.Upload);
             indices = device.CreateBuffer<uint>(new() { Count = indexCount, Usage = BufferUsage.Index | BufferUsage.CopyDestination });
@@ -53,7 +52,7 @@ public sealed class ModelMesh : IDisposable
             await vertexUpload.MapAsync().ConfigureAwait(false);
             try
             {
-                vertexUpload.CopyFrom(primitive.Vertices);
+                vertexUpload.CopyFrom(vertexData.Span);
             }
             finally
             {
@@ -63,7 +62,7 @@ public sealed class ModelMesh : IDisposable
             await indexUpload.MapAsync().ConfigureAwait(false);
             try
             {
-                indexUpload.Slice(0, indexCount).CopyFrom(primitive.Indices);
+                indexUpload.Slice(0, indexCount).CopyFrom(indexData.Span);
             }
             finally
             {
@@ -115,5 +114,18 @@ public sealed class ModelMesh : IDisposable
         Vertices.Dispose();
         _indexUpload.Dispose();
         _vertexUpload.Dispose();
+    }
+
+    private static bool ContainsInvalidIndex(ReadOnlySpan<uint> indices, int vertexCount)
+    {
+        foreach (uint index in indices)
+        {
+            if (index >= vertexCount)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

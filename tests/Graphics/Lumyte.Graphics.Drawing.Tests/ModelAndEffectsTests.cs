@@ -1,6 +1,5 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Drawing.Gltf;
 using Lumyte.Graphics.Shared;
 using Xunit;
 
@@ -70,12 +69,12 @@ public sealed class ModelAndEffectsTests
     [Fact]
     public void MaterialRenderStateHandlesAlphaAndOrientation()
     {
-        var material = new GltfMaterial(null, ModelDrawing.DefaultMaterial, false, null, null, null, null, null);
+        ModelMaterial material = ModelDrawing.DefaultMaterial;
         GraphicsRenderStateDesc opaque = ModelDrawing.CreateRenderState(material);
         Assert.True(opaque.DepthStencil.DepthWriteEnable);
         Assert.False(opaque.ColorTargets[0].BlendEnable);
         Assert.Equal(CullMode.Back, opaque.Rasterization.Cull);
-        GraphicsRenderStateDesc blend = ModelDrawing.CreateRenderState(material with { Factors = material.Factors with { AlphaMode = 2 }, DoubleSided = true }, mirrored: true);
+        GraphicsRenderStateDesc blend = ModelDrawing.CreateRenderState(material with { AlphaMode = 2 }, doubleSided: true, mirrored: true);
         Assert.True(blend.DepthStencil.DepthTestEnable);
         Assert.False(blend.DepthStencil.DepthWriteEnable);
         Assert.Equal(BlendFactor.SourceAlpha, blend.ColorTargets[0].Color.Source);
@@ -83,24 +82,20 @@ public sealed class ModelAndEffectsTests
         Assert.Equal(FrontFace.Clockwise, blend.Rasterization.FrontFace);
     }
 
-    /// <summary>Checks one glTF texture can resolve to different color spaces by material role.</summary>
+    /// <summary>Checks default model arguments use explicitly provided neutral texture references.</summary>
     [Fact]
-    public void TextureResolutionPreservesColorSpaceRoles()
+    public void DefaultArgumentsUseNeutralTextureReferences()
     {
-        var texture = new TestReference<IGraphicsTextureView>();
-        var sampler = new TestReference<IGraphicsSampler>();
-        var fallback = new SampledTexture(texture, sampler);
-        var material = new GltfMaterial(null, ModelDrawing.DefaultMaterial, false, 0, 0, 0, 0, 0);
-        var roles = new List<ModelTextureRole>();
-        ModelDrawArguments arguments = ModelDrawing.CreateArguments(new TestReference<ModelVertex>(), material, fallback, fallback, (index, role) =>
-        {
-            Assert.Equal(0, index);
-            roles.Add(role);
-            return fallback;
-        });
-        Assert.Equal(Enum.GetValues<ModelTextureRole>(), roles);
-        Assert.Equal(material.Factors, arguments.Material);
-        Assert.Throws<ArgumentException>(() => ModelDrawing.CreateArguments(new TestReference<ModelVertex>(), material, fallback, fallback));
+        var white = new SampledTexture(new TestReference<IGraphicsTextureView>(), new TestReference<IGraphicsSampler>());
+        var normal = new SampledTexture(new TestReference<IGraphicsTextureView>(), new TestReference<IGraphicsSampler>());
+        ModelMaterial material = ModelDrawing.DefaultMaterial;
+        ModelDrawArguments arguments = ModelDrawing.CreateArguments(new TestReference<ModelVertex>(), material, white, normal);
+        Assert.Same(white.Texture, arguments.BaseColorTexture);
+        Assert.Same(white.Texture, arguments.MetallicRoughnessTexture);
+        Assert.Same(normal.Texture, arguments.NormalTexture);
+        Assert.Same(normal.Sampler, arguments.NormalSampler);
+        Assert.Equal(material, arguments.Material);
+        Assert.Throws<ArgumentNullException>(() => ModelDrawing.CreateArguments(new TestReference<ModelVertex>(), material, default, normal));
     }
 
     private sealed class TestReference<T> : IGpuRef<T>

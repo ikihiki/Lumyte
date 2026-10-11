@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing;
 
-/// <summary>Defines a glTF-compatible model vertex in object space.</summary>
+/// <summary>Defines a format-independent model vertex in object space.</summary>
 /// <param name="Position">The position.</param>
 /// <param name="Normal">The unit surface normal.</param>
 /// <param name="Tangent">The tangent and bitangent handedness.</param>

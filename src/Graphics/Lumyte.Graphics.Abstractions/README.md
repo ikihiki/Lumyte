@@ -182,4 +182,4 @@ Device生成とSurface生成は分離し、生成済みDeviceへバックエン�
 
 ## 描画用ライブラリ
 
-[Graphics.Drawing](../Lumyte.Graphics.Drawing/README.md) は頂点・描画引数の構造体、矩形・円・線の形状生成、頂点カラー／テクスチャ描画の portable shader、glTF／GLB の静的モデル読み込みと描画、metallic-roughness の材質、ライティング・フォグ・画面エフェクトを提供します。既存の明示的な転送・描画 API と組み合わせて使用します。
+[Graphics.Drawing](../Lumyte.Graphics.Drawing/README.md) は頂点・描画引数の構造体、矩形・円・線の形状生成、頂点カラー／テクスチャ描画の portable shader、共通の頂点・インデックス配列からの静的モデル描画、metallic-roughness の材質、ライティング・フォグ・画面エフェクトを提供します。既存の明示的な転送・描画 API と組み合わせて使用します。

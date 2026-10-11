@@ -1,47 +1,32 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Drawing.Gltf;
 
 namespace Lumyte.Graphics.Drawing;
 
 /// <summary>Provides explicit transform and render-state setup for model drawing.</summary>
 public static class ModelDrawing
 {
-    /// <summary>Gets the glTF default metallic-roughness factors.</summary>
+    /// <summary>Gets the default metallic-roughness factors.</summary>
     public static ModelMaterial DefaultMaterial => new(Vector4.One, Vector3.Zero, 1, 1, 1, 1, 0.5f, 0, 0);
 
     /// <summary>Builds model root values with identity transforms, default lighting and explicit neutral texture fallbacks.</summary>
     /// <param name="vertices">The registered model vertex range.</param>
-    /// <param name="material">The loaded glTF material.</param>
+    /// <param name="material">The surface factors.</param>
     /// <param name="white">The white texture and sampler used for missing color, scalar and emissive slots.</param>
     /// <param name="neutralNormal">The linear (0.5, 0.5, 1) texture and sampler used for missing normals.</param>
-    /// <param name="resolveTexture">The resolver for glTF texture indices, with the correct color space and uploaded mip chain.</param>
     /// <returns>Root values to customize with camera, transforms, light and fog before drawing.</returns>
     public static ModelDrawArguments CreateArguments(
         IGpuRef<ModelVertex> vertices,
-        GltfMaterial material,
+        ModelMaterial material,
         SampledTexture white,
-        SampledTexture neutralNormal,
-        Func<int, ModelTextureRole, SampledTexture>? resolveTexture = null)
+        SampledTexture neutralNormal)
     {
         ArgumentNullException.ThrowIfNull(vertices);
-        ArgumentNullException.ThrowIfNull(material);
-        SampledTexture baseColor = Resolve(material.BaseColorTexture, ModelTextureRole.BaseColor, white);
-        SampledTexture metallicRoughness = Resolve(material.MetallicRoughnessTexture, ModelTextureRole.MetallicRoughness, white);
-        SampledTexture normal = Resolve(material.NormalTexture, ModelTextureRole.Normal, neutralNormal);
-        SampledTexture occlusion = Resolve(material.OcclusionTexture, ModelTextureRole.Occlusion, white);
-        SampledTexture emissive = Resolve(material.EmissiveTexture, ModelTextureRole.Emissive, white);
-        return new(vertices, Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity, material.Factors, new(0, 0, 1), Vector3.UnitZ, Vector3.One, new(0.03f), Vector3.Zero, 0, baseColor.Texture, baseColor.Sampler, metallicRoughness.Texture, metallicRoughness.Sampler, normal.Texture, normal.Sampler, occlusion.Texture, occlusion.Sampler, emissive.Texture, emissive.Sampler);
-
-        SampledTexture Resolve(int? index, ModelTextureRole role, SampledTexture fallback)
-        {
-            SampledTexture result = index.HasValue
-                ? (resolveTexture ?? throw new ArgumentException("A textured material requires a texture resolver.", nameof(resolveTexture)))(index.Value, role)
-                : fallback;
-            ArgumentNullException.ThrowIfNull(result.Texture);
-            ArgumentNullException.ThrowIfNull(result.Sampler);
-            return result;
-        }
+        ArgumentNullException.ThrowIfNull(white.Texture);
+        ArgumentNullException.ThrowIfNull(white.Sampler);
+        ArgumentNullException.ThrowIfNull(neutralNormal.Texture);
+        ArgumentNullException.ThrowIfNull(neutralNormal.Sampler);
+        return new(vertices, Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity, material, new(0, 0, 1), Vector3.UnitZ, Vector3.One, new(0.03f), Vector3.Zero, 0, white.Texture, white.Sampler, white.Texture, white.Sampler, neutralNormal.Texture, neutralNormal.Sampler, white.Texture, white.Sampler, white.Texture, white.Sampler);
     }
 
     /// <summary>Computes the row-vector normal transform for nonuniform scale.</summary>
@@ -59,18 +44,18 @@ public static class ModelDrawing
 
     /// <summary>Creates depth, straight-alpha blend and face-culling state for one color/depth pass.</summary>
     /// <param name="material">The material surface flags.</param>
+    /// <param name="doubleSided">Whether both faces are rendered.</param>
     /// <param name="mirrored">Whether the world transform reverses orientation.</param>
     /// <returns>The explicit state; blend instances must still be sorted back to front by the caller.</returns>
-    public static GraphicsRenderStateDesc CreateRenderState(GltfMaterial material, bool mirrored = false)
+    public static GraphicsRenderStateDesc CreateRenderState(ModelMaterial material, bool doubleSided = false, bool mirrored = false)
     {
-        ArgumentNullException.ThrowIfNull(material);
-        bool blend = material.Factors.AlphaMode == 2;
+        bool blend = material.AlphaMode == 2;
         return new()
         {
             DepthStencil = new() { DepthTestEnable = true, DepthWriteEnable = !blend },
             Rasterization = new()
             {
-                Cull = material.DoubleSided ? CullMode.None : CullMode.Back,
+                Cull = doubleSided ? CullMode.None : CullMode.Back,
                 FrontFace = mirrored ? FrontFace.Clockwise : FrontFace.CounterClockwise,
             },
             ColorTargets =
