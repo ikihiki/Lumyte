@@ -67,7 +67,8 @@ public sealed class WindowsNativeTests
         using IInputSource source = platform.CreateInputSource();
         var registry = new DeviceRegistry();
         source.Initialize(registry);
-        Assert.All(registry.Devices, device => Assert.Contains(device.DrainEvents(), data => data is FocusData { IsFocused: true }));
+        bool expected = window.State.IsActive;
+        Assert.All(registry.Devices, device => Assert.Contains(device.DrainEvents(), data => data is FocusData focus && focus.IsFocused == expected));
         source.Shutdown();
         foreach (IInputDevice device in registry.Devices)
         {
