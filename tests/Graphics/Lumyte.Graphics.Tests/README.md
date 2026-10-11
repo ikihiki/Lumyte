@@ -37,3 +37,5 @@ Deviceの生成設定はnative instance生成前に検証します。生成済�
 Browser CIは二つの外部contextで共通MultiSurfaceExerciseを実行し、同時取得、全画素readback、一括／別々のSubmit、他方取得中のresize／closeと継続描画を必須reportとして検証します。
 
 resourceの寿命・登録参照の有効性・shader ABI・texture状態・wait／signalの整合性は利用者側の契約です。draw／Submit時にこれらの不正使用をAPIが検出することはテストせず、明示的な同期・転送とGPU結果の正しさを既存CIで検証します。
+
+RenderGraphTests は共通 RenderGraphExercise を使い、一時 buffer／texture、plan-owned view、culling と自動 barrier による GPU readback を Wgpu／Vulkan で確認します。Browser sample と verifier も同じ exercise の成功 report を必須にします。GPU 不要の依存・寿命・診断検証は `Lumyte.Graphics.RenderGraph.Tests` に配置します。

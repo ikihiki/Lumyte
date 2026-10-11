@@ -25,6 +25,7 @@ internal static partial class Program
         Record(ArgumentTableExercise.Run(device), reports);
         Record(ShaderExercise.Run(device), reports);
         Record(await CommandExercise.RunAsync(device), reports);
+        Record(await RenderGraphExercise.RunAsync(device), reports);
         Record(await SemaphoreExercise.RunAsync(device), reports);
         Record(await PipelineExercise.RunAsync(device), reports);
         Record(await AdvancedCommandExercise.RunAsync(device), reports);
