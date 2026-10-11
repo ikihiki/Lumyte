@@ -168,7 +168,7 @@ System.Dispose は Framework または利用側が Owned Native の Graphics 資
 
 Graphics 接続は [Framework 層の統合責務](../platform/PLATFORM-0001-platform-and-window-contracts.md#framework-層による-graphics-統合)に従う。Windowing は Native の IWindow と描画に必要な管理状態を提供し、Framework が Platform と Graphics を接続する。
 
-Native の GetNativeWindow の結果を Framework の統合システムへ渡す。Hosted は root の IWindow / Surface に描画し、独立した Surface を作らない。WindowSystem は Surface、Frame、GPU 使用を追跡せず、Framework がその対応と寿命・同期を管理する。
+Native の GetNativeWindow の結果を Framework の統合システムへ渡す。Framework はその IWindow をバックエンドの具象 Window クラスへキャストして表示先を取得する。Windowing はハンドル取得の共通 API や具象型変換を代行しない。Hosted は root の IWindow / Surface に描画し、独立した Surface を作らない。WindowSystem は Surface、Frame、GPU 使用を追跡せず、Framework がその対応と寿命・同期を管理する。
 
 Framework と Renderer は観測 PixelSize から Swapchain を明示設定し、ClientSize / Scale / Hosted 配置・クリップ・GetHostedOrder を同じ更新境界の不変スナップショットへまとめる。別スレッドへの受け渡しは利用側が同期し、古い寸法と新しい倍率を混ぜない。GPU 用の投影・viewport・scissor・shader 引数は Renderer が既存 Graphics API へ変換する。
 

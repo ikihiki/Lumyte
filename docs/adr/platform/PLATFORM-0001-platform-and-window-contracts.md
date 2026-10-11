@@ -107,8 +107,6 @@ Platform.Abstractions は既存 `Lumyte.Input` の IInputSource を生成結果�
 +    // 明示終了は取消不能。生存する所有者付き Window があれば Denied。
 +    // 保持トークンがあれば Closing に移し、物理破棄は保持解除後へ延期する。
 +    public WindowRequestId Close();
-+    // Backend 固有の型で表示先を借用。未対応 TTarget は NotSupportedException。
-+    public TTarget GetNativeTarget<TTarget>();
 +    // 外部 Surface より先に Native を破棄しないための明示的な保持。
 +    public IDisposable RetainNativeTarget();
 +    // 不変の観測値。PumpEvents で管理スレッドへ通知する。
@@ -189,11 +187,11 @@ IWindow.Dispose は active 子や保持トークンがあれば変更前に拒�
 
 Platform と Graphics の接続は Framework 層の統合システムが担当する。Platform / Windowing に Graphics 接続パッケージや接続用の公開 API を追加しない。Framework は生成済み IWindow と Graphics Device を受け取り、環境・バックエンドに対応した表示先を取得して、既存 Graphics のバックエンド固有 CreateSurface へ渡す。
 
-IWindow は GetNativeTarget と RetainNativeTarget だけを提供し、Graphics の型を扱わない。Framework は Surface と Native 保持トークンの対応、Swapchain の設定、リサイズ、描画・提示の停止と再開、GPU / 提示完了、解放順を一元管理する。Surface の解放が完了してから保持を解除し、Window の終了を進める。Framework の統合システムの型・生成・登録 API は後続の Framework ADR で定め、この PR では宣言しない。
+HWND などの表示先は、Framework が IWindow を対象バックエンドの具象 Window クラスへキャストし、その具象クラスのプロパティから取得する。IWindow には汎用の表示先取得 API やハンドルのプロパティを追加しない。IWindow は共通操作と RetainNativeTarget を提供し、Graphics の型を扱わない。Framework は Surface と Native 保持トークンの対応、Swapchain の設定、リサイズ、描画・提示の停止と再開、GPU / 提示完了、解放順を一元管理する。Surface の解放が完了してから保持を解除し、Window の終了を進める。Framework の統合システムの型・生成・登録 API は後続の Framework ADR で定め、この PR では宣言しない。
 
-表示先のハンドル型と Browser canvas の所有権は各 Platform ADR に記載する。Graphics 側の対応形式・寸法・mode、Frame、semaphore、Submit、Present、再構成、解放は [GRAPHICS-0013](../graphics/GRAPHICS-0013-surface-swapchain-presentation.md) と [GRAPHICS-0014](../graphics/GRAPHICS-0014-caller-managed-resource-validation.md) に従う。Framework がこれらの呼び出しと同期を担い、低水準の Platform / Graphics 自体に暗黙の GPU 待機や相互依存を持ち込まない。
+具象 Window クラスの公開型・ハンドルのプロパティと Browser canvas の所有権は各 Platform ADR に記載する。Windows は HWND / HINSTANCE、X11 は Display / Window、Wayland は wl_display / wl_surface、Browser は GPUCanvasContext を対応する具象型から取得する。キャスト先が構成に適合しない場合は Framework が接続を拒否し、別型への推測変換やゼロハンドルでの接続を行わない。取得値は借用であり、Surface を解放するまで Native の保持を継続する。Graphics 側の対応形式・寸法・mode、Frame、semaphore、Submit、Present、再構成、解放は [GRAPHICS-0013](../graphics/GRAPHICS-0013-surface-swapchain-presentation.md) と [GRAPHICS-0014](../graphics/GRAPHICS-0014-caller-managed-resource-validation.md) に従う。Framework がこれらの呼び出しと同期を担い、低水準の Platform / Graphics 自体に暗黙の GPU 待機や相互依存を持ち込まない。
 
-Framework の統合を使わない利用側も、同じ型付き表示先と既存 Graphics API から直接接続できる。その場合は利用側が表示先の生存と同期・終了順を管理する。使用する Graphics バックエンドの組み合わせを、この Platform ADR では固定しない。
+Framework の統合を使わない利用側も、同じ具象 Window クラスへのキャストと既存 Graphics API から直接接続できる。その場合は利用側が表示先の生存と同期・終了順を管理する。使用する Graphics バックエンドの組み合わせを、この Platform ADR では固定しない。
 
 ### 単一ウインドウの利用フロー
 
@@ -242,13 +240,13 @@ WindowState state = window.State;
 - 要求と観測、拒否・置換・期限切れ、通知例外・再入、生成失敗の部分解放を検証する。
 - 保持中 Close の延期、子から親の終了、保持中 Dispose の変更前拒否、強制喪失を検証する。
 - Framework の統合と利用側の直接接続で Surface より先に Native を解放しないことを検証する。
-- 型付き表示先、DPI、ゼロサイズ、再構成、片側だけの終了と他 Window の描画継続を実環境で確認する。
+- 具象 Window クラスへのキャストによる表示先取得、不適合な型の接続拒否、DPI、ゼロサイズ、再構成、片側だけの終了と他 Window の描画継続を実環境で確認する。
 
 設計 PR 自体は Markdown lint、相対リンク、API diff と本文の整合を検証する。実装・性能・実機対応は未検証。
 
 ## 別途決定する事項
 
-- 具象 Platform の生成 API、OS ライブラリ、Native ABI、Browser canvas の所有権と型付き target。
+- 具象 Platform の生成 API、OS ライブラリ、Native ABI、Browser canvas の所有権と具象 Window クラスのハンドル取得 API。
 - Native の非同期生成、要求完了期限、ヘッドレスの機能報告。
 - 対象付き入力、文字入力セッション、IME、clipboard、display などの生成契約。
 - Framework 統合システムの公開 API、バックエンド構成、更新・描画・復旧・終了の統合契約。
