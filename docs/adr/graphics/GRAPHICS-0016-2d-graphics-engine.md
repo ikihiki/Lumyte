@@ -6,26 +6,25 @@
 
 ## 背景
 
-図形、画像、文字の描画形式、画像エフェクトを既存Graphics APIの上で扱いたい。描画順・クリッピング・色の合成を共通化しつつ、命令ごとのGPU描画方式を外部実装へ差し替えられる必要がある。2Dと3Dは画像処理とGPU資源管理を共有し、それぞれの描画対象や適用位置を管理する。
+図形、画像、文字の描画形式を既存Graphics APIの上で扱いたい。描画順・クリッピング・色の合成を共通化しつつ、命令ごとのGPU描画方式を外部実装へ差し替えられる必要がある。レイヤーや背景へのエフェクト適用では、画像処理の前後で描画順とclipの意味を保持する。
 
-本ADRは構成と実行契約を定め、公開APIと詳細契約・利用例を末尾にまとめる。実装と検証の範囲はPRに記録し、設計上の受け入れ条件と実測結果を区別する。
+本ADRは2D描画の構成と実行契約を定め、公開APIと詳細契約・利用例を末尾にまとめる。共通画像エフェクトの設計とAPIは [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) に分離し、本ADRでは2D側の適用方法を定める。実装と検証の範囲はPRに記録し、設計上の受け入れ条件と実測結果を区別する。
 
 ## 決定
 
 ### 1. 構成と責務
 
 ```text
-Canvas2D → DrawList2D → Renderer2D ──────────────┐
-                            └→ ImageEffects ──┤
-3D側の画像・エフェクト適用制御 → ImageEffects ──┤
-                                              ↓
-                                  RenderGraph → Graphics
+Canvas2D → DrawList2D → Renderer2D ─────────────┐
+                            └→ ImageEffects ─┤
+                                             ↓
+                                 RenderGraph → Graphics
 ```
 
 | 構成要素 | 責務と依存 |
 | --- | --- |
 | `Lumyte.Graphics.Drawing2D` | CPU命令記録、描画順、幾何・paint、レイヤー、背景取得。Abstractions・ImageEffects・RenderGraphへ依存 |
-| `Lumyte.Graphics.ImageEffects` | 描画済み画像の演算DAGとGPUパス生成。Abstractions・RenderGraphへ依存し、2D・3Dの具象型を要求しない |
+| `Lumyte.Graphics.ImageEffects` | レイヤー・背景の画像処理を委譲する接続先。[GRAPHICS-0017](GRAPHICS-0017-image-effects.md) の契約に従う |
 | `Lumyte.Graphics.RenderGraph` | パス依存、barrier、不要パスの除去、論理一時資源の確保と解放 |
 | 各 `DependencyInjection` パッケージ | 標準実装の任意登録。本体からDIコンテナーへ依存させない |
 | アプリケーション | device、外部資源、Submit・完了確認・Present、DI scopeの所有 |
@@ -34,7 +33,7 @@ Canvas2D → DrawList2D → Renderer2D ─────────────�
 
 RenderGraphの接続契約はmain `81bba9e` に統合された [GRAPHICS-0015](./GRAPHICS-0015-render-graph.md) を参照する。独自のパス実行基盤は追加せず、単独2D利用も私有RenderGraphで実行する。
 
-レイアウト、ヒットテスト、画像デコード、ファイル資産管理、フォント探索・shaping・行分割、必須のシーングラフは対象外とする。3Dのカメラ・深度・履歴・トーンマッピングの適用位置も各描画システムが管理する。
+レイアウト、ヒットテスト、画像デコード、ファイル資産管理、フォント探索・shaping・行分割、必須のシーングラフは対象外とする。
 
 ### 2. 命令と描画方式
 
@@ -72,7 +71,7 @@ Save/Restore、変換、ClipRect/ClipPathはCPU状態操作である。BeginLaye
 
 実装の選択は構築時に固定する。CanHandle、候補探索、自動fallback、描画中のDI解決・Type辞書検索は設けない。入力やGPU機能に対応できない場合は準備時に明示的に失敗する。interface呼び出し自体は残るため、インライン化や性能向上は実測前に保証しない。
 
-DrawingCommandRenderers2D.CreateDefault()は登録表と11標準実装を毎回newし、DI・device・GPU資源を必要としない。UseGraphics2Dは11標準実装と登録表をTryAddScopedし、UseImageEffectsで4エフェクトとその登録表も補完する。
+DrawingCommandRenderers2D.CreateDefault()は登録表と11標準実装を毎回newし、DI・device・GPU資源を必要としない。UseGraphics2Dは11標準実装と登録表をTryAddScopedし、UseImageEffectsを呼んでエフェクト側の標準登録も補完する。
 
 外部実装は後続AddScopedの単一解決が優先され、先行登録と再Useも保持する。Graphicsへは解決済み登録表を通常のRenderer2Dコンストラクターへ渡す。
 
@@ -100,55 +99,11 @@ ImagePatternは整数texelのSource、座標変換、軸別Clamp/Repeat/Mirror/D
 
 DrawGlyphRunと文字の描画形式選択は外部文字ライブラリが担当する。パス・mesh・coverage・距離場・RGBA・COLRv1をそれぞれ汎用命令へ渡す。COLRv1の3点linear、2円radial、sweep、重複stopの順序、参照glyph、変換・clip、全28合成modeを保持する。variation・CPAL・foreground・font unitsとY反転・cacheは文字側で解決する。
 
-### 5. 共通画像エフェクトの設計と2Dへの適用
+### 5. エフェクトを考慮したレイヤーと背景描画
 
-#### 共有する処理と適用側の責務
+画像演算は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) のImageEffectGraphとcompilerへ委譲する。2D側は画像化する内容と適用位置、clip・group opacity、背景snapshot、親への合成を管理する。PaintGraph2Dは図形内部の塗り、ImageEffectGraphは画像化後の処理として分け、paintの隔離合成をレイヤーの画像エフェクトへ置き換えない。
 
-ImageEffectsは描画済み画像の演算とパス生成を2D・3Dで共有する。paint DAGは図形内部の塗り、ImageEffectGraphは画像化後の処理、RenderGraphはGPUパスと資源依存を表し、それぞれの意味を混在させない。
-
-2D側はレイヤーの画像化、clip・group opacityの適用位置、描画順、背景snapshotを管理する。3D側はカメラ、画像を取り出す時点、露出・トーンマッピングとの前後関係を管理し、条件を満たすcolor画像を同じcompilerへ渡す。深度・法線・motion vector・frame履歴を必要とする演算と、その入力を用意する3D側の接続は今回の共通APIに含めない。
-
-#### 定義からRenderGraphへの変換
-
-ImageEffectGraphはGPU資源を持たない不変DAGとし、SourceとColorMatrix、GaussianBlur、Opacity、Compositeのfactoryで構築する。同じ定義を別の入力・frameにも使えるが、準備結果は各回に作る。
-
-```text
-ImageEffectGraph + EffectImage
-  → ImageEffectCompiler（入力束縛・子の展開・演算別配送）
-  → RenderGraphのpass群 + PreparedImageEffect.Output
-  → 呼び出し側の後続pass → Compile・Record・Submit
-```
-
-AppendPassesはすべてのSource葉を一つの入力画像へ束縛し、子から順に演算別rendererへ渡す。同じnode参照は一回のAppend内で一度だけ展開する。構造が等しい別nodeの統合や、別入力・graph・frameへのGPU結果の流用は行わない。定義の深さは256、展開する異なるnodeは4096を上限とする。
-
-各rendererは入力画像から出力画像とその範囲を求め、必要な一時texture・pass・全資源アクセスをRenderGraphへ追加する。初期標準実装はColorMatrix・Opacity・Compositeを各一つのfragment pass、GaussianBlurをsigmaが0でない軸ごとのfragment passへ展開する。Sourceは入力をそのまま返す。依存解析、barrier、不要passの除去、一時allocationの確保・解放はRenderGraphへ任せ、compilerはSubmitしない。
-
-PreparedImageEffectはcallbackが使う固定資源を保持し、Outputは同じRenderGraph内で後続処理へ渡すhandleである。出力を最終成果物にする側がMarkOutput/Exportを宣言する。固定資源はEffectPreparationContext.Ownへ移し、GPU使用終了まで保持する。graph・一時画像との所有分担と失敗時の扱いは第7節に従う。
-
-#### 画像・領域・色の契約
-
-| 演算・入力 | 契約 |
-| --- | --- |
-| EffectImage | 原点を含むdevice-pixel範囲と、linear premultipliedのRgba16Float画像 |
-| 色の意味 | DisplayLinear/SceneLinearを明示。異なる意味の画像を暗黙に合成・変換しない |
-| ColorMatrix | straight linearへ戻して4×5行列を適用し、alphaを制限して再premultiply。HDRのRGBはclampしない |
-| GaussianBlur | device pixel単位のsigma、各軸半径ceil(3σ)、正規化kernel、範囲外透明。必要入力と拡張出力を計算 |
-| Opacity | 合成済みRGBAへ一度適用 |
-| Composite | SrcOver/Plus、整数pixelのsource移動、両画像を含む外接矩形。隙間も透明pixelとして後続演算へ渡す |
-
-画像は同じ出力pixel grid上の有限範囲を持ち、Boundsの左上がtextureの原点に対応する。GetRequiredSourceBoundsは、要求する出力からblurの余白やCompositeの逆移動を伝播し、必要入力を保守的に返す。この照会は背景取得の範囲決定に使い、Append全体を自動で部分描画へ変換するものではない。透明なpixelもColorMatrixの定数項で可視になるため、alphaが0の領域を単純に除去しない。
-
-影・glowは基本演算の組み立てで表す。演算式、範囲計算、alpha・HDRの扱いは末尾の詳細契約にまとめる。標準実装は縮小blur、低精度format、色の意味の変更を暗黙に行わない。
-
-#### 差し替えと今後の拡張
-
-ImageEffectRenderersは4演算の専用interfaceをコンストラクターで受け取り、compilerは演算型から対応するfieldへ直接配送する。CanHandleによる探索は行わない。UseImageEffectsはTryAddScopedで標準実装を補完し、後から登録した実装が単一サービス解決で選ばれる。DIを使わない場合はCreateDefaultまたは明示的なコンストラクター呼び出しで組み立てる。登録表とcompilerの生成時にはGPU資源を作らない。
-
-差し替えるのは既存演算の実行方式であり、色・alpha・出力範囲・必要入力範囲の意味は維持する。特にGetRequiredSourceBoundsは演算定義から計算するため、独自rendererだけでfilter半径や座標系を変更しない。複数passを追加する実装も同じinterfaceを使える。画像へ直接書くcompute実装には、Graphicsのstorage texture契約の追加が必要となる。
-
-任意の外部nodeをgraphへ追加する仕組みは設けない。演算を増やす際はnode・factory・compilerの配送と必要範囲計算・専用interface・登録表・標準実装・CreateDefault・DI登録を一緒に拡張する。複数の独立した入力画像、履歴効果、pass融合、frameをまたぐ画像・pipeline cacheは別途決定する。初期実装は同一Append内のnode共有に限定し、未定義のcache寿命や履歴の更新規則を持ち込まない。
-
-#### 2Dレイヤーと背景への適用
+レイヤーと背景はDisplayLinearのlinear premultiplied Rgba16Float画像として、原点と有限範囲を保って渡す。coverageや距離場は先に色画像へ描画し、SDF値自体をfilterへ渡さない。効果で拡張された出力範囲を親の描画先へ戻し、背景取得にはGetRequiredSourceBoundsで求めた必要入力範囲を使う。エフェクトのpassは2Dと同じRenderGraphへ追加し、単独利用でも共有graphでも描画順と資源依存を保持する。
 
 BeginLayerは有限のContentBounds、Effects、Opacity、任意のOutputClipをsnapshotする。内容を透明面へ描き、EndLayerで次の順に処理して開始時の状態へ戻す。
 
@@ -192,7 +147,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 | --- | --- |
 | importしたtexture・view・sampler等 | アプリケーション。viewだけでなく親textureもGPU使用終了まで保持 |
 | 一時allocationとcontext生成view | CompiledRenderGraph |
-| CPU snapshot、pipeline、argument table、upload、私有shader-data | PreparedDrawingPasses2D / PreparedImageEffect |
+| CPU snapshot、pipeline、argument table、upload、私有shader-dataとエフェクト準備owner | PreparedDrawingPasses2D |
 | 単独利用のplanと準備owner | PreparedDraw2D |
 
 準備ownerのcallback集合は、一つのcompiled planの一回のRecordにだけ使う。再実行にはAppendから新しく準備し、先行GPUが使うtableやstagingを上書きしない。owner解放後のgraphをCompile/Recordしない。
@@ -214,9 +169,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 
 | 代替案 | 採用しない理由 |
 | --- | --- |
-| 2D・3Dで画像エフェクトを別実装 | 同じ画像演算と資源管理が重複する |
-| paint・任意描画グループ・カメラを一つのgraphへ統合 | 塗り、描画順、画像処理、3D固有入力の責務が混在する |
-| エフェクトを直列の処理列だけで表す | 影と元画像の合成などの分岐・再合流や共有入力を自然に表せず、同じ中間結果を再計算する |
+| paintとレイヤーの画像エフェクトを同じgraphで表す | 塗りのcoverageと画像化前後のclip・描画順の責務が混在する |
 | CanHandle・優先順位による方式探索 | 命令ごとに指定した実装が固定されない |
 | 単色専用命令とpaint種別ごとのDI登録 | 図形とpaintの組み合わせでAPI・登録が増える |
 | GPU処理をRecordだけへ隠す | RenderGraphから依存と一時資源を解析できない |
@@ -226,9 +179,9 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 
 ## 結果と影響
 
-図形・画像・外部文字描画が同じpaintと描画順の契約を共有し、命令別の実装をDIでも手動でも差し替えられる。2Dレイヤーと3D画像に同じ画像演算を適用し、GPU処理をRenderGraphへまとめられる。
+図形・画像・外部文字描画が同じpaintと描画順の契約を共有し、命令別の実装をDIでも手動でも差し替えられる。レイヤーと背景へ共通エフェクトを適用し、GPU処理をRenderGraphへまとめられる。
 
-一方、順序保持によって全体ソートほどバッチを減らせない場合があり、複雑なpaint・clip・エフェクトでは中間画像と複数passが必要になる。初期エフェクトはpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を利用側が管理する。命令・演算の追加時にはinterface、登録表、標準実装、CreateDefault、DI登録を同時に更新し、演算には必要入力範囲の計算も定義する。
+一方、順序保持によって全体ソートほどバッチを減らせない場合があり、複雑なpaint・clip・エフェクトでは中間画像と複数passが必要になる。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を利用側が管理する。描画命令の追加時にはinterface、登録表、標準実装、CreateDefault、DI登録を同時に更新する。
 
 既存GraphicsのAPIは変更しない。GPU実装はRenderGraphの採用・契約に依存し、初期のwhole-allocation同期と単一queueの制約に従う。
 
@@ -236,11 +189,10 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 
 | 領域 | 受け入れ条件 |
 | --- | --- |
-| 命令・DI | 11命令と4エフェクトの登録対応、後勝ち・再Use・CreateDefault、配送順と独立した差し替え、登録表構築時のGPU生成と描画中のDI解決がないこと |
+| 命令・DI | 11命令とエフェクト接続先の登録対応、後勝ち・再Use・CreateDefault、配送順と独立した差し替え、登録表構築時のGPU生成と描画中のDI解決がないこと |
 | paint・画像 | 6命令のColor/Solid等価性、gradientの退化・stop・extend、tap別tileと負座標、透明境界の補間、shape/clip相関、group opacity |
 | 文字・COLRv1 | 全gradient・全28合成・参照glyph・variation・palette・foreground・clipを固定fontと参照画像で比較 |
-| エフェクト・レイヤー | kernelと範囲、HDR/alpha、DPIとoffset、前後clip、ネスト、画面外からの影、透明背景・重なるパネルの置換 |
-| エフェクトcompiler | Sourceの単一入力束縛、共有nodeの一回展開、別Appendの分離、SceneLinearの保持、範囲の逆算と実際のsamplingの一致 |
+| エフェクトへの接続・レイヤー | DisplayLinear画像の受け渡し、DPIとoffset、前後clip、group opacity、ネスト、画面外からの影、必要入力の背景取得、透明背景・重なるパネルの置換 |
 | RenderGraph | 単独/共有経路の画像一致、全資源宣言、重複import防止、Loadと部分更新の保持、culling・export・snapshot順序 |
 | 失敗・寿命 | Append/Compile/Recordの失敗、待機キャンセル、一回実行、GPU使用終了後の解放、複数frameでの非上書き |
 
@@ -249,16 +201,15 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 ## 別途決定する事項
 
 - RenderGraphのsubresource/byte範囲、pool/alias、パス統合、複数queue、GPU timestamp、compile cache。
-- storage textureによるcompute画像処理、LUT・畳み込み・変形・morphology・Bloom・履歴効果のAPIと品質。
 - instancing、pathのtile化・三角形rasterizerの利用、mask/paintのcacheとatlas最適化。
 - shaping、font fallback、OpenType outline/COLRv1 adapterのライブラリと公開API。
 - HDR・広色域のCanvas出力、追加blend mode、シーングラフ、並列準備、frame pool。
 
 ## API・詳細契約・利用例
 
-比較元はmain `81bba9e`。以下の5つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元はmain `81bba9e`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
-RenderGraph型は同じmainに含まれる公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。
+RenderGraph型は同じmainに含まれる公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectGraph・ImageEffectRenderersなどの宣言と契約は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) を参照する。
 
 ### 公開API
 
@@ -757,127 +708,6 @@ RenderGraph型は同じmainに含まれる公開APIを使用する。`RenderGrap
 +}
 ```
 
-#### 共通画像エフェクト
-
-ImageEffectGraphはSource葉と4演算の不変DAGとし、公開nodeは読み取り用snapshotとする。各標準クラスのAppendPassesは対応interfaceの明示実装。UseImageEffectsは4組とImageEffectRenderersをTryAddScopedで補完し、device・compiler・providerを生成しない。
-
-```diff
-+namespace Lumyte.Graphics.ImageEffects
-+{
-+    // 同じ出力pixel grid上の半開区間。Width/Heightは0以上。加減算overflowは拒否。
-+    public readonly record struct EffectPixelRect(int X, int Y, int Width, int Height);
-+    // いずれもlinear sRGB primaries。HDRと表示側の適用位置を区別する。
-+    public enum EffectColorSemantic { DisplayLinear, SceneLinear }
-+    // Bounds左上がtextureの(0,0)、寸法はBoundsのWidth/Heightと一致する単一mip/layer。
-+    // 初期入力はRgba16Floatのlinear premultiplied RGBA。handleは同じgraphに属する。
-+    // Width/Heightは正、allocationは単一mip/layerで寸法が一致する。
-+    public readonly record struct EffectImage(RenderGraphTexture Texture,
-+        EffectPixelRect Bounds, EffectColorSemantic ColorSemantic);
-+    public sealed class ColorMatrix4x5
-+    {
-+        // 20個のfinite係数を行優先でコピー。各行はR,G,B,A,定数項の係数。
-+        public ColorMatrix4x5(ReadOnlySpan<float> coefficients);
-+        public IReadOnlyList<float> Coefficients { get; }
-+    }
-+    public enum EffectCompositeMode { SrcOver, Plus }
-+    public sealed class ImageEffectGraph
-+    {
-+        public ImageEffectNode Root { get; }
-+        public static ImageEffectGraph Source();
-+        public static ImageEffectGraph ColorMatrix(ColorMatrix4x5 matrix, ImageEffectGraph input);
-+        // sigmaはfull-resolutionのdevice pixel単位、finiteかつ0以上。
-+        public static ImageEffectGraph GaussianBlur(float sigmaX, float sigmaY, ImageEffectGraph input);
-+        public static ImageEffectGraph Opacity(float opacity, ImageEffectGraph input);
-+        // sourceだけを指定整数pixel分移動してから合成する。backdropはgraph内の子。
-+        public static ImageEffectGraph Composite(ImageEffectGraph source, ImageEffectGraph backdrop,
-+            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
-+    }
-+    public abstract record ImageEffectNode;
-+    public sealed record SourceEffectNode : ImageEffectNode;
-+    public sealed record ColorMatrixEffectNode(ColorMatrix4x5 Matrix, ImageEffectNode Input) : ImageEffectNode;
-+    public sealed record GaussianBlurEffectNode(float SigmaX, float SigmaY, ImageEffectNode Input) : ImageEffectNode;
-+    public sealed record OpacityEffectNode(float Opacity, ImageEffectNode Input) : ImageEffectNode;
-+    public sealed record CompositeEffectNode(ImageEffectNode Source, ImageEffectNode Backdrop,
-+        EffectCompositeMode Mode, int SourceOffsetX, int SourceOffsetY) : ImageEffectNode;
-+    public sealed class EffectPreparationContext
-+    {
-+        public IGraphicDevice Device { get; }
-+        // 固定資源を準備ownerへ移す。一時textureはRenderGraphへ宣言する。
-+        public void Own(IDisposable resource);
-+    }
-+    public interface IColorMatrixEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            ColorMatrixEffectNode effect, EffectImage input);
-+    }
-+    public interface IGaussianBlurEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            GaussianBlurEffectNode effect, EffectImage input);
-+    }
-+    public interface IOpacityEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            OpacityEffectNode effect, EffectImage input);
-+    }
-+    public interface ICompositeEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            CompositeEffectNode effect, EffectImage source, EffectImage backdrop);
-+    }
-+    public sealed class ImageEffectRenderers
-+    {
-+        // 表と4標準実装を毎回newする。device・GPU資源・DIは不要。
-+        public static ImageEffectRenderers CreateDefault();
-+        public ImageEffectRenderers(IColorMatrixEffectRenderer colorMatrix,
-+            IGaussianBlurEffectRenderer gaussianBlur, IOpacityEffectRenderer opacity,
-+            ICompositeEffectRenderer composite);
-+        public IColorMatrixEffectRenderer ColorMatrix { get; }
-+        public IGaussianBlurEffectRenderer GaussianBlur { get; }
-+        public IOpacityEffectRenderer Opacity { get; }
-+        public ICompositeEffectRenderer Composite { get; }
-+    }
-+    public sealed class DefaultColorMatrixEffectRenderer : IColorMatrixEffectRenderer
-+    {
-+        public DefaultColorMatrixEffectRenderer();
-+    }
-+    public sealed class DefaultGaussianBlurEffectRenderer : IGaussianBlurEffectRenderer
-+    {
-+        public DefaultGaussianBlurEffectRenderer();
-+    }
-+    public sealed class DefaultOpacityEffectRenderer : IOpacityEffectRenderer
-+    {
-+        public DefaultOpacityEffectRenderer();
-+    }
-+    public sealed class DefaultCompositeEffectRenderer : ICompositeEffectRenderer
-+    {
-+        public DefaultCompositeEffectRenderer();
-+    }
-+    public sealed class PreparedImageEffect : IDisposable
-+    {
-+        public EffectImage Output { get; }
-+        // graph callbackの固定資源を所有。関連GPU処理とplanの解放後に呼ぶ。
-+        public void Dispose();
-+    }
-+    public sealed class ImageEffectCompiler
-+    {
-+        // deviceとrenderersは借用する。生成だけではGPU資源を確保しない。
-+        public ImageEffectCompiler(IGraphicDevice device, ImageEffectRenderers renderers);
-+        // Source葉をsourceへ束縛し、同一planへパスを追加して出力画像を返す。
-+        public PreparedImageEffect AppendPasses(RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source);
-+        // 所望の出力を得るために必要なSource領域を逆向きに計算する。資源確保なし。
-+        public EffectPixelRect GetRequiredSourceBounds(ImageEffectGraph graph, EffectPixelRect output);
-+    }
-+}
-+namespace Lumyte.Graphics.ImageEffects.DependencyInjection
-+{
-+    public static class ImageEffectsServiceCollectionExtensions
-+    {
-+        public static IServiceCollection UseImageEffects(this IServiceCollection services);
-+    }
-+}
-```
-
 #### 2Dレイヤーと背景エフェクト
 
 Canvas2Dへ追加するメンバーを以下に示す。BeginLayer・EndLayer・DrawBackdropEffectはホストが扱う構造命令であり、11描画命令のinterfaceを増やさない。
@@ -965,20 +795,6 @@ Clear/Src/DestInは透明領域も結果へ影響するため、子の輪郭unio
 
 参照: [OpenType COLR](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)、[CPAL](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal)、[Compositing and Blending Level 1](https://www.w3.org/TR/compositing-1/)。
 
-#### エフェクトの演算・領域
-
-EffectImageは同じ出力pixel grid上の有限領域とRgba16Floatのlinear premultiplied RGBAを持つ。DisplayLinear/SceneLinearを形式から推測せず、異なるsemanticのCompositeを拒否する。SceneLinearのHDR値を保持し、暗黙の露出・トーンマッピング・色域変換を行わない。通常の2DレイヤーはDisplayLinearとする。
-
-ColorMatrixはalpha>0ならunpremultiply、alpha=0ならRGB=0としたstraight linear RGBAへ4×5行列を適用し、結果alphaを[0,1]へ制限してからRGBへ乗算する。RGBのHDR・負値は保持する。領域を拡大せず、定数項も入力の有限矩形内だけへ作用する。Opacityはfiniteな[0,1]をpremultiplied RGBAへ一度掛ける。
-
-CompositeのSrcOverは `Cs + Cb*(1-As)`、`As + Ab*(1-As)`。PlusはRGB加算、alphaは `min(1,As+Ab)` とする。sourceを指定整数pixel移動し、backdropとの和集合を含む最小外接矩形を出力する。範囲外は透明で、各画像の位置を維持する。離れた画像間の透明な隙間も領域に含み、後続ColorMatrixの定数項はその隙間へも作用する。
-
-GaussianBlurは各軸で `radius=ceil(3*sigma)` とし、離散kernel `exp(-i*i/(2*sigma*sigma))` を正規化してpremultiplied RGBAへ適用する。sigma=0の軸はidentity。出力を半径分拡張し、範囲外は透明をsampleする。初期実装は横・縦のfragment passで別画像へ描き、近似縮小blurを使わない。sigmaは常にfull-resolution device pixelで、資源・領域・sigma上限を超える入力は拒否し黙って半径を縮めない。
-
-GetRequiredSourceBoundsは必要な出力から入力ROIを保守的に逆算する。blurは半径分拡張し、Compositeはsource側のoffsetを逆移動して各子へ伝播し、その和集合を取る。ColorMatrix/Opacityは領域を維持する。Source葉は一回のAppend内で同一入力へ束縛し、共有nodeはmemoizeできるが、別入力・plan・frameへ結果を流用しない。
-
-DropShadowはalphaの着色→blur→移動→元画像の背後へ合成で表す。移動は影をsource、Opacity(0, Source())を透明backdropとするCompositeを挟み、元画像をその前へ合成する。Glowは移動なしとする。幾何coverageや距離場は画像化してからfilterへ渡し、SDF値自体を色画像としてぼかさない。
-
 #### レイヤーのclip順序と背景置換
 
 BeginLayerはoptions・変換・親clipをsnapshot化する。ContentBoundsは入力を実際に幾何clipする有限矩形で、cullingヒントではない。変換後のpixel外接矩形を外向きに丸めて中間画像を作り、元矩形の幾何clipも保持する。画面外の入力が画面内へ影響し得るため、最終target範囲へ先に切り詰めない。空のContentBoundsは出力なしとし、0寸法画像を作らない。
@@ -995,7 +811,7 @@ DrawBackdropEffectはその位置より前の現在レイヤーの描画先だ�
 
 #### 準備・RenderGraph・解放
 
-準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。effect実装の固定資源はEffectPreparationContext.Ownへ移し、Drawing2D経由のPreparedImageEffectはPreparedDrawingPasses2Dが所有する。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
+準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。Drawing2D経由のPreparedImageEffectはPreparedDrawingPasses2Dが所有し、同じGPU使用期間を通じて保持する。エフェクト内部の資源管理は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) に従う。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
 
 外部textureはparent allocationごとに一度だけimportし、DrawingGraphBindings2Dへ同じhandleを登録する。準備時にbindingを確定し、後の表変更で追加済みcallbackの入力を変えない。target Descriptionは実際の宣言と一致させる。標準passは全アクセスを宣言し、同じ資源のstage/accessを合併する。初期graphはallocation全体で同期し、同一allocationのsampleとattachmentを同時使用しない。shader-dataは準備側で所有してimportし、通常bufferはtyped handleを使う。
 

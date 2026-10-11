@@ -11,3 +11,5 @@ Registration does not create or register a graphics device, an effect compiler,
 or a service provider. The application supplies the device to
 `ImageEffectCompiler`, retains prepared work until GPU completion, and disposes
 the scope after that work has been released.
+
+See [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) for the effect system design and API contracts.
