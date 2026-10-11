@@ -75,6 +75,101 @@ pass はアクセスごとに state と BarrierScope を宣言し、Access flags
 +}
 ```
 
+### 使用例
+
+color attachment を clear してから別 texture へ copy する例を示す。`device` は呼び出し側が生成した同一 device であり、texture と view も呼び出し側が所有する。shader や pipeline を必要としない二つの pass で、resource 宣言と記録、明示的な GPU 実行の接続を示す。
+
+```csharp
+using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.RenderGraph;
+
+static async Task ClearAndCopyAsync(IGraphicDevice device)
+{
+    using IGraphicsTexture source = device.CreateTexture(new TextureDesc
+    {
+        Width = 64,
+        Height = 64,
+        Format = TextureFormat.Rgba8Unorm,
+        Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource,
+    });
+    using IGraphicsTexture destination = device.CreateTexture(new TextureDesc
+    {
+        Width = 64,
+        Height = 64,
+        Format = TextureFormat.Rgba8Unorm,
+        Usage = TextureUsage.CopyDestination,
+    });
+    using IGraphicsTextureView view = source.CreateView();
+
+    var graph = new RenderGraph();
+    RenderGraphTexture color = graph.ImportTexture(source, TextureState.Undefined, default);
+    RenderGraphTexture copied = graph.ImportTexture(destination, TextureState.Undefined, default);
+
+    graph.AddPass("clear", context =>
+    {
+        IRenderEncoder encoder = context.Commands.BeginRenderPass(new RenderPassDesc
+        {
+            ColorAttachments = new[]
+            {
+                new RenderColorAttachmentDesc
+                {
+                    View = view,
+                    LoadOp = AttachmentLoadOp.Clear,
+                    StoreOp = AttachmentStoreOp.Store,
+                    ClearValue = new ClearColor(0, 0, 0, 1),
+                },
+            },
+        });
+        encoder.End();
+    }).UseTexture(color, TextureState.ColorAttachment,
+        new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
+
+    graph.AddPass("copy", context =>
+    {
+        context.Commands.CopyTexture(
+            new TextureCopyRegion
+            {
+                Texture = context.GetTexture(color),
+                Width = 64,
+                Height = 64,
+            },
+            new TextureCopyRegion
+            {
+                Texture = context.GetTexture(copied),
+                Width = 64,
+                Height = 64,
+            });
+    }).UseTexture(color, TextureState.CopySource,
+        new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead))
+      .UseTexture(copied, TextureState.CopyDestination,
+        new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite));
+
+    CompiledRenderGraph plan = graph.Compile();
+    using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new CommandBufferDesc());
+    plan.Record(commands);
+    commands.Finish();
+    using IGraphicsSubmission submission = device.Queue.Submit(new[] { commands });
+    await submission.WaitAsync();
+    // 完了後にこの関数を抜け、command、view、texture を解放する。
+}
+```
+
+`UseTexture` が callback 内の実アクセスを宣言する。Clear は `ColorWrite`、copy 元は `CopyRead`、copy 先は `CopyWrite` を指定する。共有する color の write→read から clear→copy の依存が生成されるため、この二つの pass に `DependsOn` を追加する必要はない。resource を共有しない pass の順序を指定するときは、後続 pass の `DependsOn(先行pass)` を使用する。
+
+Compile が生成する実行順は `plan.PassNames` の `clear`、`copy` となる。clear の前に source を Undefined→ColorAttachment へ遷移させ、copy の前に source を ColorAttachment→CopySource、destination を Undefined→CopyDestination へ遷移させる。source の copy 前 barrier は ColorOutput／ColorWrite→Copy／CopyRead の依存も含む。これらの barrier を callback が手書きする必要はない。
+
+plan の Record は barrier と callback を記録するだけで、Finish、Submit、WaitAsync は上記のように呼び出し側が行う。render／compute encoder は各 callback が返る前に End で閉じ、resource と view は GPU 完了まで保持する。
+
+同じ source を次の graph でも使う場合は、resource が生存するスコープ内で、正常実行後の状態を次のように引き継ぐ。new graph では新しい handle を使用し、one-shot の plan を再記録しない。
+
+```csharp
+var nextGraph = new RenderGraph();
+RenderGraphTexture nextColor = nextGraph.ImportTexture(
+    source,
+    plan.GetFinalTextureState(color), // CopySource
+    plan.GetFinalScope(color));      // Copy／CopyRead
+```
+
 ### 所有権と失敗
 
 graph は resource／view／command／submission を所有しない。利用者が同じ device の allocation と commands を渡し、必要な GPU 完了まで寿命を維持する。全 mip／layer／buffer 要素を barrier 範囲とする。Compile は宣言を snapshot するが callback の capture 値は利用者が管理する。
