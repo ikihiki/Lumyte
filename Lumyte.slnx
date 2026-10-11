@@ -49,6 +49,9 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/tests/" />
+  <Folder Name="/tests/Audio/">
+    <Project Path="tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Animation/">
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>

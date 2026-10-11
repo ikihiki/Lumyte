@@ -43,20 +43,64 @@ try:
             const bytes = new Uint8Array(samples.buffer);
             const clip = audio.createClip(device, 48000, 2,
                 { byteLength: bytes.length, copyTo: target => target.set(bytes) });
-            const voice = audio.createVoice(device, clip);
-            audio.setGain(voice, 0.3);
+            const voice = audio.createVoice(device, clip, 1);
             audio.play(voice);
+            audio.setGain(voice, 0.3);
             const rendered = await context.startRendering();
             const left = rendered.getChannelData(0)[1000];
             const right = rendered.getChannelData(1)[1000];
             if (Math.abs(left - 0.15) > 0.00001 || Math.abs(right + 0.075) > 0.00001)
                 throw new Error(`Unexpected PCM output ${left}, ${right}`);
+            // Muted buses and gains set before Play must be silent from the first frame.
+            async function renderMuted(initialGain, changeBeforePlay) {
+                const context = new OfflineAudioContext(1, 480, 48000);
+                const clip = context.createBuffer(1, 480, 48000);
+                clip.getChannelData(0).fill(0.5);
+                const voice = audio.createVoice({ context, closed: false }, clip, initialGain);
+                if (changeBeforePlay) audio.setGain(voice, 0);
+                audio.play(voice);
+                const rendered = await context.startRendering();
+                const peak = rendered.getChannelData(0).reduce((peak, value) => Math.max(peak, Math.abs(value)), 0);
+                if (peak !== 0) throw new Error(`Muted voice leaked PCM: ${peak}`);
+                audio.destroyVoice(voice);
+                return peak;
+            }
+            const mutedAtCreation = await renderMuted(0, false);
+            const mutedBeforePlay = await renderMuted(1, true);
+
+            // Disabling looping after multiple iterations must retain the current clip position.
+            const loopContext = new OfflineAudioContext(1, 48000, 48000);
+            const loopClip = loopContext.createBuffer(1, 4800, 48000);
+            const loopSamples = loopClip.getChannelData(0);
+            for (let i = 0; i < loopSamples.length; i++) loopSamples[i] = (i + 1) / 9600;
+            const looping = audio.createVoice({ context: loopContext, closed: false }, loopClip, 1);
+            audio.setLoop(looping, true);
+            audio.play(looping);
+            const suspended = loopContext.suspend(0.25);
+            const loopRendering = loopContext.startRendering();
+            await suspended;
+            const resumeFrame = Math.round(loopContext.currentTime * 48000);
+            const clipFrame = resumeFrame % loopSamples.length;
+            audio.setLoop(looping, false);
+            audio.pause(looping);
+            audio.play(looping);
+            await loopContext.resume();
+            const loopResult = (await loopRendering).getChannelData(0);
+            for (const delta of [0, 128, 512, 2000]) {
+                const expected = loopSamples[clipFrame + delta];
+                const actual = loopResult[resumeFrame + delta];
+                if (Math.abs(actual - expected) > 0.00001)
+                    throw new Error(`Loop resume skipped PCM at ${delta}: ${actual}, expected ${expected}`);
+            }
+            if (loopResult[resumeFrame + loopSamples.length - clipFrame + 128] !== 0 || !audio.completed(looping))
+                throw new Error('Loop-disabled voice did not complete at the clip boundary');
+            audio.destroyVoice(looping);
             // A stopped node's delayed callback must not complete a restarted voice.
             const live = { context: new AudioContext(), closed: false };
             await live.context.resume();
             const liveClip = audio.createClip(live, 48000, 2,
                 { byteLength: bytes.length, copyTo: target => target.set(bytes) });
-            const active = audio.createVoice(live, liveClip);
+            const active = audio.createVoice(live, liveClip, 1);
             audio.play(active);
             const oldHandler = active.source.onended;
             audio.stop(active);
@@ -65,7 +109,7 @@ try:
             if (audio.completed(active)) throw new Error('Stale completion changed new playback');
             audio.destroyVoice(active);
             await live.context.close();
-            return { left, right, staleCompletionRejected: true };
+            return { left, right, mutedAtCreation, mutedBeforePlay, loopResumeFrame: clipFrame, staleCompletionRejected: true };
         }''')
         assert not errors, errors
         print(json.dumps(rendering))

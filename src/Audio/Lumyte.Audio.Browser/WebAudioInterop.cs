@@ -21,7 +21,7 @@ internal static partial class WebAudioInterop
     internal static partial JSObject CreateClip(JSObject device, int rate, int channels, [JSMarshalAs<JSType.MemoryView>] Span<byte> samples);
 
     [JSImport("createVoice", "Lumyte.Audio.Browser")]
-    internal static partial JSObject CreateVoice(JSObject device, JSObject clip);
+    internal static partial JSObject CreateVoice(JSObject device, JSObject clip, float gain);
 
     [JSImport("play", "Lumyte.Audio.Browser")]
     internal static partial void Play(JSObject voice);

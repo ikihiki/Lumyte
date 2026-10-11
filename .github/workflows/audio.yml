@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'src/Audio/**'
+      - 'tests/Audio/**'
       - 'samples/Lumyte.Audio.*/**'
       - 'tools/audio/**'
       - '.github/workflows/audio.yml'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'src/Audio/**'
+      - 'tests/Audio/**'
       - 'samples/Lumyte.Audio.*/**'
       - 'tools/audio/**'
       - '.github/workflows/audio.yml'
@@ -40,6 +42,7 @@ jobs:
           source tools/setup/activate.sh
           mkdir -p artifacts/nuget
           ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Sample -c Release
+          LUMYTE_OPENAL_TESTS=1 ALSOFT_DRIVERS=null dotnet test tests/Audio/Lumyte.Audio.OpenAL.Tests -c Release
           dotnet workload install wasm-tools
           dotnet publish samples/Lumyte.Audio.Browser.Sample -c Release -o artifacts/audio-browser
           /tmp/audio-playwright/bin/python tools/audio/verify_browser.py artifacts/audio-browser/wwwroot

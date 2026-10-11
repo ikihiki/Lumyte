@@ -19,6 +19,7 @@ internal sealed class OpenALVoice : IAudioVoice
     {
         (_device, _clip, _bus) = (device, clip, bus);
         _handle = device.Api.GenSource();
+        device.CheckError();
         try
         {
             device.Api.SetSourceProperty(_handle, SourceInteger.Buffer, (int)clip.Handle);
@@ -29,6 +30,7 @@ internal sealed class OpenALVoice : IAudioVoice
         catch
         {
             device.Api.DeleteSource(_handle);
+            device.CheckError();
             throw;
         }
     }
@@ -122,6 +124,7 @@ internal sealed class OpenALVoice : IAudioVoice
 
         Validate();
         _device.Api.SourceStop(_handle);
+        _device.CheckError();
         _device.Api.DeleteSource(_handle);
         _device.CheckError();
         _disposed = true;

@@ -17,7 +17,7 @@ voice.Play();
 
 `wwwroot/lumyte-audio.js` をアプリから配信してください。パッケージでは `contentFiles/any/net10.0/wwwroot/` に格納します。実行サンプルは明示的に JS を publish 出力へコピーします。
 
-clip 作成時に interleaved float PCM を JS 所有の AudioBuffer へコピーします。一時停止で経過した AudioContext 時刻から offset を保存し、再開時は新しい SourceNode を生成します。停止時に旧 onended を外し、古い完了通知を新しい再生に反映しません。音量変更には 5 ms のランプを使用します。
+clip 作成時に interleaved float PCM を JS 所有の AudioBuffer へコピーします。一時停止で経過した AudioContext 時刻から offset を保存し、再開時は新しい SourceNode を生成します。再生中にループを変更する場合も、その時点の clip 内の位置を保存します。停止時に旧 onended を外し、古い完了通知を新しい再生に反映しません。voice 生成時は現在のバス音量を初期値として設定し、停止・一時停止中の音量変更は次の再生前に適用します。再生中の音量変更には 5 ms のランプを使用します。
 
 AudioContext が suspended／interrupted なら `Suspended`、closed なら `Unavailable` を返します。ユーザー操作から Resume を呼び、自動再生制限を解除してください。キャンセルは待機の終了だけで、JS の resume を巻き戻しません。同期 Dispose は子の解放確認と context.close の開始までを保証します。close の非同期失敗は console.error へ通知します。
 

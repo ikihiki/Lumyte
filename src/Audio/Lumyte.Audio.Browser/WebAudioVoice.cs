@@ -18,8 +18,7 @@ internal sealed class WebAudioVoice : IAudioVoice
     internal WebAudioVoice(WebAudioDevice device, WebAudioClip clip, AudioBus bus)
     {
         (_device, _clip, _bus) = (device, clip, bus);
-        _handle = WebAudioInterop.CreateVoice(device.Handle, clip.Handle);
-        ApplyGain();
+        _handle = WebAudioInterop.CreateVoice(device.Handle, clip.Handle, device.Gain(bus));
     }
 
     public AudioPlaybackState State

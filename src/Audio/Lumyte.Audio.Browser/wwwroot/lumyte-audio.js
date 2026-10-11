@@ -26,8 +26,9 @@ export function createClip(device, rate, channels, memory) {
     }
     return buffer;
 }
-export function createVoice(device, clip) {
+export function createVoice(device, clip, initialGain) {
     const gain = device.context.createGain();
+    gain.gain.value = initialGain;
     gain.connect(device.context.destination);
     return { device, clip, gain, source: null, offset: 0, start: 0, loop: false, ended: false };
 }
@@ -60,9 +61,14 @@ export function play(voice) {
 }
 export function pause(voice) {
     if (!voice.source) return;
-    const position = voice.offset + voice.device.context.currentTime - voice.start;
-    voice.offset = voice.loop ? position % voice.clip.duration : Math.min(position, voice.clip.duration);
+    capturePosition(voice);
     detach(voice);
+}
+function capturePosition(voice) {
+    const time = voice.device.context.currentTime;
+    const position = voice.offset + time - voice.start;
+    voice.offset = voice.loop ? position % voice.clip.duration : Math.min(position, voice.clip.duration);
+    voice.start = time;
 }
 export function stop(voice) {
     detach(voice);
@@ -73,12 +79,21 @@ export function completed(voice) { return voice.ended; }
 export function setGain(voice, gain) {
     const param = voice.gain.gain;
     const time = voice.device.context.currentTime;
+    if (!voice.source) {
+        param.cancelScheduledValues(time);
+        param.setValueAtTime(gain, time);
+        return;
+    }
     param.cancelAndHoldAtTime(time);
     param.linearRampToValueAtTime(gain, time + 0.005);
 }
 export function setLoop(voice, loop) {
+    if (voice.loop === loop) return;
+    if (voice.source) {
+        capturePosition(voice);
+        voice.source.loop = loop;
+    }
     voice.loop = loop;
-    if (voice.source) voice.source.loop = loop;
 }
 export function destroyVoice(voice) {
     stop(voice);

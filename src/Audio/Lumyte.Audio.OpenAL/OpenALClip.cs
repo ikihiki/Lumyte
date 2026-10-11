@@ -13,6 +13,7 @@ internal sealed class OpenALClip : IAudioClip
         Format = format;
         FrameCount = samples.Length / format.Channels;
         Handle = device.Api.GenBuffer();
+        device.CheckError();
         try
         {
             short[] pcm = new short[samples.Length];
@@ -27,6 +28,7 @@ internal sealed class OpenALClip : IAudioClip
         catch
         {
             device.Api.DeleteBuffer(Handle);
+            device.CheckError();
             throw;
         }
     }
