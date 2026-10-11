@@ -184,8 +184,7 @@ try {
         await evaluate("document.querySelector('[data-tab=rendering]').click()");
         await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Rendering' && document.getElementById('render-graph')?.getAttribute('data-supported') === 'true'"), `${transport} Rendering capability`);
         assert.equal(await evaluate("document.getElementById('rg-live').checked"), false, 'Rendering live refresh starts disabled');
-        await evaluate("document.getElementById('rg-refresh-summary').click()");
-        await waitFor(() => evaluate("BigInt(document.getElementById('rg-summary')?.getAttribute('data-compiles') || '0') > 0n"), `${transport} lightweight render graph summary`);
+        await waitFor(() => evaluate("BigInt(document.getElementById('rg-summary')?.getAttribute('data-compiles') || '0') > 0n && !document.getElementById('rg-refresh-summary').disabled && !document.getElementById('rg-request-capture').disabled"), `${transport} initial render graph summary ready`);
         assert.equal(await evaluate("document.querySelectorAll('#rg-detail-rows tr').length"), 0, 'summary does not request capture details');
         await evaluate("document.getElementById('rg-graph-name').value = 'sample-frame'; document.getElementById('rg-graph-name').dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('rg-capture-form').requestSubmit();");
         await waitFor(() => evaluate("document.getElementById('rg-capture-state')?.getAttribute('data-state') === 'compiled'"), `${transport} real compiled render graph capture`);
@@ -227,13 +226,14 @@ try {
             if (transport === 'http' && detail === 'resources') await capture('rendering-resources', 'Rendering — リソースの使用範囲', 'キャプチャに保存されたリソースの種別と所有形態、graph内で使用される最初と最後のPassを表示します。使用範囲の図はGPU allocationの寿命を示すものではありません。', 'rendering', 'desktop', true);
             if (transport === 'http' && detail === 'barriers') await capture('rendering-barriers', 'Rendering — リソース同期', '同じCapture IDに保存されたBarrier一覧です。書き込みと読み取りの間に必要な同期を、パスとリソースごとに確認できます。', 'rendering', 'desktop', true);
         }
-        await delay(300);
+        const beforeSummaryRefresh = await evaluate("document.getElementById('rg-summary').getAttribute('data-compiles')");
+        await delay(50);
         await evaluate("document.getElementById('rg-refresh-summary').click()");
-        await waitFor(() => evaluate("!document.getElementById('rg-refresh-summary').disabled"), `${transport} refreshed render graph summary`);
+        await waitFor(() => evaluate(`BigInt(document.getElementById('rg-summary').getAttribute('data-compiles')) > BigInt('${beforeSummaryRefresh}') && !document.getElementById('rg-refresh-summary').disabled && !document.getElementById('rg-open-capture').disabled`), `${transport} refreshed render graph summary`);
         assert.equal(await evaluate("document.getElementById('rg-capture-id').value"), renderCaptureId, 'live frames do not replace the capture');
         assert.equal(await evaluate("document.getElementById('rg-capture-details').textContent"), captureDetails, 'captured graph and frame identity stays stable');
         await evaluate(`document.getElementById('rg-capture-id').value = '${randomUUID()}'; document.getElementById('rg-capture-id').dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('rg-open-form').requestSubmit();`);
-        await waitFor(() => evaluate("document.getElementById('rg-error')?.textContent.includes('not-found')"), `${transport} unknown capture feedback`);
+        await waitFor(() => evaluate("document.getElementById('rg-error')?.textContent.includes('not-found') && !document.getElementById('rg-open-capture').disabled"), `${transport} unknown capture feedback`);
         await evaluate(`document.getElementById('rg-capture-id').value = '${renderCaptureId}'; document.getElementById('rg-capture-id').dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('rg-open-form').requestSubmit();`);
         await waitFor(() => evaluate("document.getElementById('rg-capture-state')?.getAttribute('data-state') === 'compiled' && document.querySelectorAll('#rg-detail-rows tr[data-index]').length > 0 && !(document.getElementById('rg-error')?.textContent.trim())"), `${transport} reopen retained capture`);
         assert.equal(await evaluate("document.getElementById('rg-capture-details').textContent"), captureDetails);
