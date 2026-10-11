@@ -73,3 +73,27 @@ builder.Services.UseMyModule(); // モジュール側で設定を登録する AP
 ストアは借用し、構成側がリソースを所有します。書き込み失敗・コミット前のキャンセルでは旧データを保持し、コミット後はキャンセルで失敗を報告しない契約です。外部編集の監視や複数プロセス・タブ間の競合制御は提供しません。
 
 設計判断は [ADR-SETTINGS-0001](../../../docs/adr/settings/SETTINGS-0001-user-settings-persistence.md) を参照してください。
+
+`AddSettings` は標準 .NET の `IMeterFactory`、`ActivitySource`、`ILogger` を使用して、読み込み・保存・リセットを観測できます。Meter、ActivitySource、ログカテゴリの名前はいずれも `Lumyte.Settings` です。
+
+| Metric | 意味 |
+| --- | --- |
+| `settings.operations` | 結果別の完了件数 |
+| `settings.operation.duration` | 操作の所要時間（ms） |
+| `settings.write.wait.duration` | 書き込み権の待ち時間（ms） |
+| `settings.writes.active` | 保存・リセットの処理中件数（待機中を含む） |
+
+操作は `document-load`、`load`、`save`、`reset`、`document-reset`、`store` に分類します。`store` はシリアライズとストアへの書き込み、`save` はコピー・検証・待機・書き込み・確定を含みます。操作・セクション・結果をタグに含めます。Revision は Span のみに付与し、設定値、JSON、保存先を専用フィールドとして記録しません。例外は標準 ILogger に元の Exception を渡し、Span の `exception` イベントと `exception.type`／`exception.message`／`exception.stacktrace` タグへ記録します。原文には保存先や検証内容を含む場合があります。診断操作の応答には含めず、認証済みのテレメトリーで確認できます。診断転送では文字列を最大 4096 文字に制限します。値の参照だけではテレメトリーを増やしません。
+
+構成登録時の物理ロードは DI の構築より先に実行されるため、保持した結果と実測時間を SettingsDocument の初回解決時に一度記録します。このロードには過去の Span を作りません。各モジュールの初期化と保存・リセット・書き込みには `Settings.load` / `Settings.save` などの Span を作成します。テレメトリーの購読は設定サービスを解決する前に開始してください。
+
+診断サーバーへ送信するには、診断収集の許可リストへ `SettingsTelemetry.MeterName`、`SettingsTelemetry.ActivitySourceName`、`SettingsTelemetry.LogCategoryName` を追加します。設定の診断アダプターはゲーム ID を自動付与します。通常のゲーム処理から保存する場合も、対象のゲーム ID をスコープに指定できます。
+
+```csharp
+using (SettingsTelemetry.BeginScope(identity.InstanceId))
+{
+    var result = await settings.SaveAsync(edit, cancellationToken);
+}
+```
+
+スコープは非同期処理にも引き継がれ、破棄時に以前の ID を復元します。通信方法への依存はなく、標準の OpenTelemetry などでも同じ計測を購読できます。競合・復旧待ちは Warning、検証・ストレージ失敗は Error、キャンセルは通常の完了ログとして扱います。

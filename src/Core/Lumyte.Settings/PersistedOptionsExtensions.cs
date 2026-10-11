@@ -30,6 +30,9 @@ public static class PersistedOptionsExtensions
             return services;
         }
 
+        services.AddMetrics();
+        services.AddLogging();
+        services.TryAddSingleton<SettingsTelemetryCollector>();
         services.AddSingleton(source);
         services.AddSingleton<SettingsDocument>();
         services.AddSingleton<ISettingsDocument>(provider => provider.GetRequiredService<SettingsDocument>());
@@ -74,6 +77,7 @@ public static class PersistedOptionsExtensions
         services.AddSingleton(provider => new SettingsState<T>(
             sectionId,
             provider.GetRequiredService<SettingsDocument>(),
+            provider.GetRequiredService<SettingsTelemetryCollector>(),
             provider.GetRequiredService<ISettingsDefinition<T>>(),
             provider.GetServices<IConfigureOptions<T>>(),
             provider.GetServices<IPostConfigureOptions<T>>(),

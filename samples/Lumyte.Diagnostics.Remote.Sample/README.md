@@ -25,3 +25,17 @@ Counter / ActivitySource / ILogger を使って Metrics / Trace / Log を生成�
 終了時は Agent を停止してから所有スレッドで ReleaseSession と Deactivate を呼び、その後に DI スコープを DisposeAsync で解放する。切断後の自動再接続は行わない。Input は小さなドメインモデルであり、既存デバイス入力の InputSystem への統合はまだ含まない。
 
 [サーバー側の操作方法](../../src/Diagnostics/Lumyte.Diagnostics.Server/README.md)、[自動で別プロセス起動する再現スクリプト](../../docs/diagnostics/communication-verification.md) を参照する。
+
+## 設定診断
+
+絶対パスの `LUMYTE_DIAGNOSTICS_SETTINGS_PATH` を指定すると、音声設定を同じ実行ポイントで公開します。
+
+```sh
+export LUMYTE_DIAGNOSTICS_SETTINGS_PATH=/tmp/lumyte-audio-settings.json
+dotnet run --project samples/Lumyte.Diagnostics.Remote.Sample -c Release -- http http://127.0.0.1:5000 60
+```
+
+サーバーのSettingsページで`settings.audio`の`read`、`save`、`save-result`を操作します。
+volumeとmutedを編集でき、deviceは読み取り専用です。保存にはreadで取得したRevisionが必要です。
+saveのjob-idでsave-resultを実行し、Savedを確認してください。保存ファイルはサンプル終了後も保持します。
+設定診断APIの詳細は[Lumyte.Diagnostics.Settings](../../src/Diagnostics/Lumyte.Diagnostics.Settings/README.md)を参照してください。

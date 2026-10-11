@@ -7,7 +7,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 {
     private WgpuComputePipeline? _pipeline;
 
-    private WgpuArgumentTable? _argumentTable;
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
 
@@ -21,7 +20,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         }
 
         concrete.ThrowIfDisposed();
-        _argumentTable = concrete;
     }
 
     public void SetArguments<T>(in T value)
@@ -35,20 +33,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).Validate(snapshot);
-        foreach (ShaderValue member in snapshot.Values)
-        {
-            if (member.IsReference)
-            {
-                if (member.Reference is not IShaderReference reference || reference.Table is not WgpuArgumentTable referenceTable || !referenceTable.BelongsTo(owner.Owner))
-                {
-                    throw new ArgumentException("Root arguments contain a missing or foreign backend reference.", nameof(value));
-                }
-
-                reference.Validate();
-            }
-        }
-
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -69,6 +53,34 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         owner.ValidatePass(this);
+        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
+        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(groupCountX));
+        }
+
+        PrepareDispatch();
+        WGPU.wgpuComputePassEncoderDispatchWorkgroups(handle, groupCountX, groupCountY, groupCountZ);
+    }
+
+    public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
+        {
+            throw new ArgumentException("Indirect execution requires one four-byte-aligned command record.");
+        }
+
+        WgpuBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
+        PrepareDispatch();
+        WGPU.wgpuComputePassEncoderDispatchWorkgroupsIndirect(handle, buffer.Native.Handle, arguments.OffsetInBytes);
+    }
+
+    public void End() => owner.EndCompute(this, handle);
+
+    private void PrepareDispatch()
+    {
+        owner.ValidatePass(this);
         if (_pipeline == null)
         {
             throw new InvalidOperationException("Select a compute program before dispatch.");
@@ -79,30 +91,14 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        if (_arguments == null && ShaderDataLayout.HasRoot(_pipeline.Data))
-        {
-            throw new InvalidOperationException("Set the program's root arguments before execution.");
-        }
-
         ShaderBindingData? bindingData = null;
         if (_arguments != null)
         {
-            if (_argumentTable == null && _arguments.Values.Any(v => v.IsReference))
-            {
-                throw new InvalidOperationException("Select an argument table before using shader arguments.");
-            }
-
-            _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
         }
 
         _pipeline.ValidateAlive();
-        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
-        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
-        {
-            throw new ArgumentOutOfRangeException(nameof(groupCountX));
-        }
 
         WGPUComputePipelineImpl* pipeline = _pipeline.Resolve(bindingData);
         WGPU.wgpuComputePassEncoderSetPipeline(handle, pipeline);
@@ -120,15 +116,5 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
                 WGPU.wgpuBindGroupLayoutRelease(layout);
             }
         }
-
-        WGPU.wgpuComputePassEncoderDispatchWorkgroups(handle, groupCountX, groupCountY, groupCountZ);
-        if (bindingData != null)
-        {
-            owner.TrackProgram(bindingData.Snapshot.Validate);
-        }
-
-        owner.TrackProgram(_pipeline.ValidateAlive);
     }
-
-    public void End() => owner.EndCompute(this, handle);
 }

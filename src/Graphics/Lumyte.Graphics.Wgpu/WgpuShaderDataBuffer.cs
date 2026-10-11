@@ -6,7 +6,6 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
     where T : struct, IShaderData
 {
     private readonly ShaderValueSnapshot?[] _values;
-    private int _registrations;
     private bool _disposed;
 
     internal WgpuShaderDataBuffer(WgpuDevice owner, ShaderArtifact artifact, ulong count, MemoryPreference memory)
@@ -19,7 +18,6 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         T empty = default;
         ShaderValueSnapshot codec = IShaderArguments.Capture(in empty);
         Layout = ShaderDataLayout.Data(artifact.GetTarget(owner.Caps.ShaderTarget), codec.ShaderTypeName);
-        Layout.Validate(codec);
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));
@@ -94,16 +92,6 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         for (int i = 0; i < source.Length; i++)
         {
             snapshots[i] = IShaderArguments.Capture(in source[i]);
-            Layout.Validate(snapshots[i]);
-            foreach (ShaderValue value in snapshots[i].Values)
-            {
-                if (value.IsReference && (value.Reference is not IShaderReference reference || reference.Table is not WgpuArgumentTable table || !table.BelongsTo(Owner)))
-                {
-                    throw new ArgumentException("Shader data requires live references from the same device.", nameof(source));
-                }
-
-                (value.Reference as IShaderReference)?.Validate();
-            }
         }
 
         byte[] bytes = new byte[checked(source.Length * Layout.Size)];
@@ -153,24 +141,10 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
             return;
         }
 
-        if (_registrations != 0)
-        {
-            throw new InvalidOperationException("Release shader data registrations before disposing the buffer.");
-        }
-
         Storage.Dispose();
         Array.Clear(_values);
         _disposed = true;
-        Owner.ReleaseBuffer();
     }
-
-    internal void RetainRegistration()
-    {
-        ValidateAlive();
-        _registrations++;
-    }
-
-    internal void ReleaseRegistration() => _registrations--;
 
     private byte[] PackReference(ShaderValue value, string kind) => ShaderReferenceEncoding.Pack(value, kind);
 }

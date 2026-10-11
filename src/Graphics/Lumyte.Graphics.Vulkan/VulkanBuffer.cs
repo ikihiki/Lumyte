@@ -13,7 +13,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
     private byte* _pointer;
     private bool _mapped;
     private bool _pending;
-    private int _registrationCount;
     private bool _disposed;
 
     internal VulkanBuffer(VulkanDevice owner, BufferDesc<T> desc, BufferLayout<T> layout, ulong size)
@@ -38,6 +37,11 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         if ((Usage & BufferUsage.Index) != 0)
         {
             usage |= BufferUsageFlags.IndexBufferBit;
+        }
+
+        if ((Usage & BufferUsage.Indirect) != 0)
+        {
+            usage |= BufferUsageFlags.IndirectBufferBit;
         }
 
         VkBuffer buffer = default;
@@ -167,11 +171,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             return;
         }
 
-        if (_registrationCount != 0)
-        {
-            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
-        }
-
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
@@ -185,7 +184,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         _owner.Api.DestroyBuffer(_owner.NativeDevice, _native, null);
         _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
         _disposed = true;
-        _owner.ReleaseBuffer();
     }
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
@@ -211,14 +209,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
         new ReadOnlySpan<byte>(_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
     }
-
-    internal void RetainRegistration()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _registrationCount = checked(_registrationCount + 1);
-    }
-
-    internal void ReleaseRegistration() => _registrationCount--;
 
     private static uint SelectMemoryType(PhysicalDeviceMemoryProperties properties, uint bits, MemoryPropertyFlags required)
     {

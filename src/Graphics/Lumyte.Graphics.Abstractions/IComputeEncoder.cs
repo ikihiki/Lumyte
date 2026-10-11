@@ -23,6 +23,10 @@ public interface IComputeEncoder
     /// <param name="groupCountZ">The positive Z group count.</param>
     void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1);
 
+    /// <summary>Records one GPU-sourced dispatch without CPU command-data inspection.</summary>
+    /// <param name="arguments">Exactly one unmapped record with Indirect usage; counts must respect device limits.</param>
+    void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments);
+
     /// <summary>Ends this pass once without submitting or waiting.</summary>
     void End();
 }

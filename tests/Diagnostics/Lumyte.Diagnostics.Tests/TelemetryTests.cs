@@ -164,13 +164,15 @@ public sealed class TelemetryTests
         }
 
         DiagnosticEvent log = Assert.Single(Drain(collector));
-        Assert.Equal(36, log.Fields.Count);
+        Assert.Equal(37, log.Fields.Count);
         Assert.Equal(0, log.Fields["state-0"].Int64);
         Assert.Equal(21, log.Fields["outer-21"].Int64);
         Assert.False(log.Fields.ContainsKey("outer-22"));
         Assert.False(log.Fields.ContainsKey("lumyte.instance.id"));
         Assert.Equal("Warning", log.Fields["log.level"].String);
         Assert.Equal("Error", log.Fields["exception.message"].String);
+        Assert.Equal(typeof(InvalidOperationException).FullName, log.Fields["exception.type"].String);
+        Assert.Equal("System.InvalidOperationException: Error", log.Fields["exception.stacktrace"].String);
     }
 
     /// <summary>Checks metric span snapshots keep their field limit, reject nonfinite values and detach source tags.</summary>

@@ -7,7 +7,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 {
     private VulkanComputePipeline? _pipeline;
 
-    private VulkanArgumentTable? _argumentTable;
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
 
@@ -21,7 +20,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         }
 
         concrete.ThrowIfDisposed();
-        _argumentTable = concrete;
     }
 
     public void SetArguments<T>(in T value)
@@ -35,20 +33,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).Validate(snapshot);
-        foreach (ShaderValue member in snapshot.Values)
-        {
-            if (member.IsReference)
-            {
-                if (member.Reference is not IShaderReference reference || reference.Table is not VulkanArgumentTable referenceTable || !referenceTable.BelongsTo(owner.Owner))
-                {
-                    throw new ArgumentException("Root arguments contain a missing or foreign backend reference.", nameof(value));
-                }
-
-                reference.Validate();
-            }
-        }
-
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -69,6 +53,34 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         owner.ValidatePass(this);
+        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
+        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(groupCountX));
+        }
+
+        PrepareDispatch();
+        owner.Owner.Api.CmdDispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
+    }
+
+    public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
+        {
+            throw new ArgumentException("Indirect execution requires one four-byte-aligned command record.");
+        }
+
+        VulkanBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
+        PrepareDispatch();
+        owner.Owner.Api.CmdDispatchIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes);
+    }
+
+    public void End() => owner.EndCompute(this);
+
+    private void PrepareDispatch()
+    {
+        owner.ValidatePass(this);
         if (_pipeline == null)
         {
             throw new InvalidOperationException("Select a compute program before dispatch.");
@@ -79,30 +91,14 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        if (_arguments == null && ShaderDataLayout.HasRoot(_pipeline.Data))
-        {
-            throw new InvalidOperationException("Set the program's root arguments before execution.");
-        }
-
         ShaderBindingSnapshot? bindingSnapshot = null;
         if (_arguments != null)
         {
-            if (_argumentTable == null && _arguments.Values.Any(v => v.IsReference))
-            {
-                throw new InvalidOperationException("Select an argument table before using shader arguments.");
-            }
-
-            _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingSnapshot = snapshot;
         }
 
         _pipeline.ValidateAlive();
-        uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
-        if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
-        {
-            throw new ArgumentOutOfRangeException(nameof(groupCountX));
-        }
 
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(bindingSnapshot));
         if (bindingSnapshot != null)
@@ -112,15 +108,5 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Compute, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }
-
-        owner.Owner.Api.CmdDispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
-        if (bindingSnapshot != null)
-        {
-            owner.TrackProgram(bindingSnapshot.Validate);
-        }
-
-        owner.TrackProgram(_pipeline.ValidateAlive);
     }
-
-    public void End() => owner.EndCompute(this);
 }

@@ -52,6 +52,11 @@ Lumyte/
 │   │   ├── Lumyte.Graphics.Vulkan/
 │   │   ├── Lumyte.Graphics.Vulkan.Native/
 │   │   └── Lumyte.Graphics.WebGPU/
+│   ├── Input/
+│   │   ├── Lumyte.Input/
+│   │   ├── Lumyte.Input.Processing/
+│   │   ├── Lumyte.Input.Actions/
+│   │   └── Lumyte.Input.Settings/
 │   └── Platform/
 │       ├── Lumyte.Platform/
 │       ├── Lumyte.Platform.Windows/
@@ -86,7 +91,8 @@ Lumyte/
 | `src/Diagnostics/` | 診断の実行・収集基盤、コード生成、共通通信、DI で選ぶ通信アダプター、診断サーバー |
 | `src/Engine/` | エンジン機能の統合 |
 | `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |
-| `src/Platform/` | ウィンドウ、入力などの共通契約と環境ごとの実装 |
+| `src/Input/` | 入力ソース・デバイスの抽象契約、入力履歴・状態管理、補正・認識・アクション・設定連携 |
+| `src/Platform/` | ウィンドウや OS・ハードウェアに近い入力取得、接続監視と環境ごとの実装 |
 | `tests/` | C# の単体テスト・統合テスト。必要に応じてカテゴリとプロジェクト単位で整理する |
 | `samples/` | 利用例と最小起動・描画サンプル |
 | `tools/` | ビルドやパッケージ生成の補助ツール |
@@ -94,6 +100,8 @@ Lumyte/
 | `packaging/nuget/` | 必要な共通パッケージ定義や MSBuild 統合ファイル |
 | `artifacts/` | ビルド生成物。導入時に Git 管理対象外とする |
 | `artifacts/nuget/` | 生成したパッケージを配置するローカル NuGet フィード |
+
+`tests/Input/` には抽象入力システムのテストを配置する。Platform の入力バックエンドは Input の契約を実装し、Input は Platform 実装へ依存しない。
 
 カテゴリは配置を整理するためのものであり、フォルダ階層だけで名前空間や依存関係を決めない。新しい機能カテゴリも同じ一段の分類ルールで追加する。
 
@@ -103,7 +111,7 @@ Lumyte/
 
 リポジトリ全体の運用・構成に関する ADR は `docs/adr/NNNN-short-description.md` に配置し、タイトルは `ADR-NNNN` とする。機能の設計判断は `docs/adr/<category>/CATEGORY-NNNN-short-description.md` に配置する。採番・命名・変更履歴の詳細は [ADR-0001: ADR の書き方と運用](0001-adr-writing-policy.md) に従う。直下と各カテゴリはそれぞれ `0001` から独立して採番し、別カテゴリの進行中の作業によって番号が衝突しない構成とする。同じ採番範囲内の重複は番号予約で防ぐ。
 
-入力システムの ADR は `docs/adr/input/` に配置し、識別子を `INPUT-0001`、`INPUT-0002` のように採番する。ADR の分類は設計判断の責務を表し、入力実装をどの `src/` カテゴリに配置するかは入力システムの設計 ADR で決定する。
+入力システムの ADR は `docs/adr/input/` に配置し、識別子を `INPUT-0001`、`INPUT-0002` のように採番する。ADR の分類は設計判断の責務を表し、抽象入力システムは `src/Input/`、OS・ハードウェアに近い入力バックエンドは `src/Platform/` に配置する。
 
 構成図のカテゴリディレクトリは目標構成であり、最初の ADR が必要になった時点で作成する。
 
