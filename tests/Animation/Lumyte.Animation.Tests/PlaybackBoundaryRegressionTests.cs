@@ -183,7 +183,7 @@ public sealed class PlaybackBoundaryRegressionTests
 
     /// <summary>A large reverse transform cannot invent a release crossing before the next track starts.</summary>
     [Fact]
-    public void ReversedLoopClampsReleaseTraversalBeforeReflectingTime()
+    public void ReversedLoopPreservesReleaseTraversalAtWideIntermediatePositions()
     {
         long length = (long.MaxValue / 2) + 1;
         var channel = AnimationChannel<float>.Create();

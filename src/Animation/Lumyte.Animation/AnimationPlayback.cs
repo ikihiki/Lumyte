@@ -218,7 +218,7 @@ public sealed class AnimationPlayback
                 long traversalFrom = _includeStart && _lastEvaluation == 0 && loop == 0 ? -1 : _lastEvaluation - origin;
                 _events.BeginLoop(loop, origin);
                 _timeline.Root.Events(new EventQuery(traversalFrom, current - origin, _includeStart && _lastEvaluation == 0, true, origin, 1), _events);
-                _timeline.Root.Endpoints(traversalFrom, current - origin, output, 0);
+                _timeline.Root.Endpoints(traversalFrom, current - origin, output, false, 0);
                 if (loop == last)
                 {
                     // The final loop index can itself be long.MaxValue.

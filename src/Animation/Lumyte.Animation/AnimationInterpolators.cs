@@ -11,13 +11,13 @@ public static class AnimationInterpolators
     public static IAnimationInterpolator<float> Float { get; } = new Interpolator<float>(Interpolation.Linear);
 
     /// <summary>Gets the vector2.</summary>
-    public static IAnimationInterpolator<Vector2> Vector2 { get; } = new Interpolator<Vector2>(System.Numerics.Vector2.Lerp);
+    public static IAnimationInterpolator<Vector2> Vector2 { get; } = new Interpolator<Vector2>(Interpolation.Linear);
 
     /// <summary>Gets the vector3.</summary>
-    public static IAnimationInterpolator<Vector3> Vector3 { get; } = new Interpolator<Vector3>(System.Numerics.Vector3.Lerp);
+    public static IAnimationInterpolator<Vector3> Vector3 { get; } = new Interpolator<Vector3>(Interpolation.Linear);
 
     /// <summary>Gets the vector4.</summary>
-    public static IAnimationInterpolator<Vector4> Vector4 { get; } = new Interpolator<Vector4>(System.Numerics.Vector4.Lerp);
+    public static IAnimationInterpolator<Vector4> Vector4 { get; } = new Interpolator<Vector4>(Interpolation.Linear);
 
     /// <summary>Gets the quaternion.</summary>
     public static IAnimationInterpolator<Quaternion> Quaternion { get; } = new Interpolator<Quaternion>(QuaternionInterpolation.Slerp);

@@ -298,7 +298,11 @@ public sealed class AnimationStateMachine<TState, TContext>
             {
                 foreach (AnimationEventOccurrence marker in _incomingMarkers)
                 {
-                    events.Add(new AnimationStateEvent<TState>(_current!.Binding.Id, marker, now + marker.UpdateOffset));
+                    AnimationEventOccurrence corrected = marker with
+                    {
+                        UpdateOffset = (now - _lastEventClock) + marker.UpdateOffset,
+                    };
+                    events.Add(new AnimationStateEvent<TState>(_current!.Binding.Id, corrected, now + marker.UpdateOffset));
                 }
             }
 

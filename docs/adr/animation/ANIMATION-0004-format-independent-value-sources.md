@@ -125,7 +125,7 @@ Lottie の属性カーブは区間ごとの Hold と時間ベジェ、位置の�
 +}
 +public sealed class AnimationTimelineBuilder
 +{
-+    // channels.Count は source.ComponentCount と一致し、Build 後の配列をコピーする。
++    // channels.Count は source.ComponentCount と一致。AddComponents 時に配列をコピーする。
 +    // 一回のキー探索で全チャンネルを AnimationOutput へ書く。
 +    public void AddComponents(Duration start, AnimationComponentCurve source,
 +        IReadOnlyList<AnimationChannel<float>> channels,
@@ -133,16 +133,74 @@ Lottie の属性カーブは区間ごとの Hold と時間ベジェ、位置の�
 +}
 +public static partial class ComposeAnimation
 +{
-+    public static Definitions.ComponentCurve ComponentCurve(Duration duration,
-+        int componentCount, AnimationComponentInterpolation interpolation,
-+        IReadOnlyList<Action<Definitions.ComponentCurve>>? @with = null);
-+    public static Definitions.ComponentTrack ComponentTrack(
-+        IReadOnlyList<AnimationChannel<float>> channels,
-+        Definitions.ComponentCurve source,
-+        Lumyte.Composition.Optional<AnimationFillMode> fill = default,
-+        IReadOnlyList<Action<Definitions.ComponentTrack>>? @with = null);
++    // 非 generic 定義には、呼び出し可能なデリゲートのプロパティを生成する。
++    public static Definitions.ComponentKeyFactory ComponentKey { get; }
++    public static Definitions.ComponentCurveFactory ComponentCurve { get; }
++    public static Definitions.ComponentTrackFactory ComponentTrack { get; }
++
++    public static partial class Definitions
++    {
++        // required の引数を先に置き、同じ区分ではプロパティ名順とする。
++        public delegate ComponentKey ComponentKeyFactory(Duration time,
++            Lumyte.Composition.Optional<IReadOnlyList<float>?> incomingTangents = default,
++            Lumyte.Composition.Optional<IReadOnlyList<float>?> outgoingTangents = default,
++            IReadOnlyList<Action<ComponentKey>>? @with = null);
++        public delegate ComponentCurve ComponentCurveFactory(int componentCount,
++            Duration duration, AnimationComponentInterpolation interpolation,
++            IReadOnlyList<Action<ComponentCurve>>? @with = null);
++        public delegate ComponentTrack ComponentTrackFactory(
++            IReadOnlyList<AnimationChannel<float>> channels, ComponentCurve source,
++            Lumyte.Composition.Optional<AnimationFillMode> fill = default,
++            IReadOnlyList<Action<ComponentTrack>>? @with = null);
++
++        [Lumyte.Composition.Composable(Factory = "ComposeAnimation")]
++        public partial class ComponentKey
++        {
++            [Lumyte.Composition.ComposeParameter]
++            public required Duration Time { get; init; }
++            // 一つのキーの全要素。ComponentCount と同じ要素数を要求する。
++            [Lumyte.Composition.ComposeContent]
++            public IReadOnlyList<float> Values { get; set; } = [];
++            // 既定は null。CubicSpline では両方に ComponentCount 個の値／秒を指定する。
++            [Lumyte.Composition.ComposeParameter]
++            public IReadOnlyList<float>? IncomingTangents { get; init; }
++            [Lumyte.Composition.ComposeParameter]
++            public IReadOnlyList<float>? OutgoingTangents { get; init; }
++            // ComposeContent から生成。値を置換し、同じ定義を返す。
++            public ComponentKey this[params float[] content] { get; }
++        }
++        [Lumyte.Composition.Composable(Factory = "ComposeAnimation")]
++        public partial class ComponentCurve
++        {
++            [Lumyte.Composition.ComposeParameter]
++            public required int ComponentCount { get; init; }
++            [Lumyte.Composition.ComposeParameter]
++            public required Duration Duration { get; init; }
++            [Lumyte.Composition.ComposeParameter]
++            public required AnimationComponentInterpolation Interpolation { get; init; }
++            // 非空・厳密な時刻順。Timeline.Build 時に値と接線を平坦化してコピーする。
++            [Lumyte.Composition.ComposeContent]
++            public IReadOnlyList<ComponentKey> Keys { get; set; } = [];
++            // ComposeContent から生成。キーを置換し、同じ定義を返す。
++            public ComponentCurve this[params ComponentKey[] content] { get; }
++        }
++        [Lumyte.Composition.Composable(Factory = "ComposeAnimation")]
++        public partial class ComponentTrack : TimelineItem
++        {
++            // ComponentCount と同じ要素数。null のチャンネルは拒否する。
++            [Lumyte.Composition.ComposeParameter]
++            public required IReadOnlyList<AnimationChannel<float>> Channels { get; init; }
++            [Lumyte.Composition.ComposeParameter]
++            public required ComponentCurve Source { get; init; }
++            // 未定義の列挙値は Timeline.Build 時に拒否する。
++            [Lumyte.Composition.ComposeParameter]
++            public AnimationFillMode Fill { get; init; } = AnimationFillMode.Hold;
++        }
++    }
 +}
 ```
+
+ComponentKey と ComponentCurve は編集用の定義であり、子ごとの公開 Build は追加しない。ComponentTrack を含む Timeline の Build がキー・接線・チャンネル列を検証してコピーし、不変の AnimationComponentCurve と複数チャンネルへ寄与する内部ノードを生成する。単独で値を計算する用途では、上記の AnimationComponentCurve コンストラクターを直接使用する。定義のインデクサーは既存の Composition と同じく渡された配列を保持するため、スナップショットの境界はインデクサー呼び出し時ではなく Timeline.Build とする。
 
 Composition の宣言は以下とする。属性からファクトリー、with、子置換とインデクサーを生成する。SourceTrack は既存 Track と同じ寄与・Fill 契約を使用する。
 
@@ -212,7 +270,11 @@ Composition の宣言は以下とする。属性からファクトリー、with�
 
 すべての値ソースは非負の Duration と、副作用のない Sample を持つ。0 Duration の詳細は [ADR-ANIMATION-0005](ANIMATION-0005-zero-duration.md) に従う。Sample の入力は [0, Duration] とし、範囲外を拒否する。キーの前後は端値を保持し、正確なキー時刻では保存値を直接返す。時間と値の補間を分離する。Hold はイージング結果に依存しない。
 
-`AnimationComponentCurve` はキーごとの値を一次元の連続領域へコピーする。要素数は曲線ごとに固定し、曲線間では異なってよい。Step／Linear は values、CubicSpline は values と同じ長さの入出力接線を要求する。評価時はキー区間を一度だけ二分探索し、その区間の全要素を連続走査する。Timeline の内部ノードは一時配列を作らず Output へ直接設定し、初期化後の定常評価で Managed 割り当てを行わない。公開 `Sample` は呼び出し側の Span を使うため、配列の所有権を移さない。
+`AnimationComponentCurve` はキーごとの値を一次元の連続領域へコピーする。要素数は曲線ごとに固定し、曲線間では異なってよい。Step／Linear は values のみを使用し、入出力接線は null を要求する。CubicSpline は values と同じ長さの両接線を要求し、Composition の各 ComponentKey では Values／IncomingTangents／OutgoingTangents がそれぞれ ComponentCount 個となる。値・接線の全成分は有限値を要求する。モーフウェイトも汎用スカラーとして扱い、[0, 1] への制限や要素の合計の正規化は行わない。
+
+曲線のコンストラクター、または Composition の Timeline.Build は、負の Duration、正でない ComponentCount、範囲外のキー時刻、非有限成分、未定義の補間方式を ArgumentOutOfRangeException で拒否する。times／values と定義の Keys／Values／Channels／Source、またはそのキー・チャンネルの null は ArgumentNullException とする。空のキー列、厳密増加でない時刻、値・接線・チャンネルの要素数の不一致、CubicSpline の接線省略を含む補間方式と接線指定の不一致は ArgumentException とする。0 Duration では時刻 0 のキー一つだけを許す。要素数の積が配列で表現できない場合は OverflowException とし、検証後の値・接線・キー時刻・チャンネル配列の変更は構築済み Timeline に影響させない。チャンネルオブジェクトの同一性は保持し、同じチャンネルを複数の要素へ指定した場合は要素順で後の寄与を優先する。
+
+評価時はキー区間を一度だけ二分探索し、その区間の全要素を連続走査する。Timeline の内部ノードは一時配列を作らず Output へ直接設定し、初期化後の定常評価で Managed 割り当てを行わない。公開 `Sample` は呼び出し側の Span を使い、先頭 ComponentCount 要素だけを書き込み、配列の所有権を移さない。短すぎる destination は ArgumentException とする。これらは後続実装の契約と検証目標であり、可変長コンポーネント曲線の実装・測定結果ではない。
 
 時間の進捗は既存の float の内点表現を維持する。Duration の内点補間は最寄りの Tick へ丸め、ちょうど半分は偶数丸めとする。境界は元の Ticks を直接返す。ベジェ y のオーバーシュートは潰さないが、独自 Timing の NaN／Infinity と float の表現範囲を超える結果は評価時に拒否する。区間設定を使うカーブで、計算後の標準値が非有限または非単位の回転になった場合も InvalidOperationException とする。独自補間器は受け取るオーバーシュートに対して意味を定める必要がある。離散値には Hold を指定する。
 
@@ -257,6 +319,29 @@ var blend = Blend<float>(
 var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), blend)].Build();
 ```
 
+可変長のモーフウェイトを二要素とした、後続実装向けの Composition 利用例は次のとおり。要素数を増やす場合もチャンネル列と各キーの値・接線を同じ個数へ変更する。
+
+```csharp
+var weightChannels = new[]
+{
+    AnimationChannel<float>.Create(),
+    AnimationChannel<float>.Create(),
+};
+IReadOnlyList<float> zeroTangents = new float[] { 0, 0 };
+var morphTimeline = Timeline()[
+    Sequence()[
+        Delay(Duration.FromSeconds(0.25)),
+        ComponentTrack(channels: weightChannels,
+            source: ComponentCurve(componentCount: weightChannels.Length,
+                duration: duration, interpolation: AnimationComponentInterpolation.CubicSpline)[
+                ComponentKey(time: Duration.Zero,
+                    incomingTangents: zeroTangents, outgoingTangents: zeroTangents)[0f, 1f],
+                ComponentKey(time: duration,
+                    incomingTangents: zeroTangents, outgoingTangents: zeroTangents)[1f, 0f]])]].Build();
+// 子の ComponentCurve／ComponentKey ごとの Build は不要。
+// 消費側が Output の weightChannels[i] を対応するモーフへ反映する。
+```
+
 ### 共有ソースの評価
 
 共有ノードを持つCompositionソースは、Sample呼び出しごとに独立した作業領域を借り、共有ソースの参照と局所時刻の組み合わせで計算結果を再利用する。時間写像が同じ子を異なる時刻で呼ぶ場合は別の値として扱う。Blendの重みが0または1の場合は選択した子だけを評価する。
@@ -273,7 +358,11 @@ var values = Timeline()[SourceTrack<float>(AnimationChannel<float>.Create(), ble
 +namespace Lumyte.Mathematics;
 +public static class Interpolation
 +{
++    // 有限な端値と進捗。範囲外も外挿し、端値が等しい場合は定数を保つ。
 +    public static float Linear(float from, float to, float amount);
++    public static Vector2 Linear(Vector2 from, Vector2 to, float amount);
++    public static Vector3 Linear(Vector3 from, Vector3 to, float amount);
++    public static Vector4 Linear(Vector4 from, Vector4 to, float amount);
 +    public static double EaseIn(double amount);
 +    public static double EaseOut(double amount);
 +    public static double EaseInOut(double amount);
@@ -317,6 +406,8 @@ IntegerInterpolationは有限のfloat重みを正確な二進有理数として�
 
 MathematicsのHermiteはintervalの単位を定めず、接線と一致する正の有限値を要求する。amountは有限の[0, 1]、端値・接線は有限値、Quaternionの端値は単位回転を前提とする。時間ベジェも有限の[0, 1]を入力とし、不正なパラメーターはArgumentOutOfRangeExceptionになる。線形・空間ベジェ・球面補間は外挿を許す。ゼロ長・非有限Quaternionの正規化とfloatに収まらないHermite成分はInvalidOperationExceptionになる。
 
+大きな有限の外挿でも、同じ端値を持つスカラー・ベクトル・回転のカーブは定数を保つ。線形補間は外挿時に倍精度の差分を使い、大きな重み同士の相殺を避ける。Quaternion の外挿は倍精度の相対回転から球面角度を求め、近接回転を線形近似で引き延ばさない。通常の [0, 1] の補間経路は維持する。極端な外挿における回転角の精度は倍精度演算の範囲に制限される。
+
 ```csharp
 using Lumyte.Mathematics;
 
@@ -354,6 +445,7 @@ float value = HermiteInterpolation.Interpolate(0f, 10f, 2f, 0f, 3, 0.5f);
 - Hermite の秒単位接線、非等間隔キー、Quaternion 接線と正規化、非有限値を確認する。
 - 逆行・停止の時間写像、無効写像、時変ブレンドと 0／1 の短絡を確認する。
 - Composition の生成 API、定義のスナップショット、共有子と循環検証、SourceTrack の Fill を確認する。
+- 可変長コンポーネント曲線の後続実装では、上記のネスト例、Step／Linear／CubicSpline、0 Duration、配列長の不一致、非有限成分、構築後の入力変更、チャンネル順と Release／Repeat／Reverse、定常評価時の割り当てゼロを確認する。
 - Release で新しい数値ソースのウォームアップ後の割り当てゼロと既存回帰テストを確認する。
 
 ## 実装・検証記録
@@ -378,3 +470,5 @@ main `f3f4f67` と独立した Release DLL を比較し、各版 2 プロセス�
 2026-10-10のレビュー修正後、ReleaseテストはAnimation 113件・Mathematics 20件の計133件が成功した。正確な整数補間は独立したBigInteger有理数計算約9,800組と照合した。共有グラフの並行・再入評価と例外後の清掃、異なる局所時刻、低速イベント時刻・最大Tick／Loop・Reverseの回帰テストを追加した。Debugビルド、整形、NuGetパッケージ経由の共有グラフと整数補間も確認した。
 
 `0866c35`との交互2プロセス・各7サンプルの比較では、27定義の共有グラフのBuild割り当ては約51 MiBから8.75 KiBへ、評価は約13.06 msから3.19 µsへ減った。Duration補間は約61.25 nsから20.23 nsとなった。Loopマーカー評価は約176.94 nsから188.20 nsへ増加した。内部座標のInt128化を含む結果として記録する。全14評価ケースで割り当て0 B/op・GC 0回を確認した。測定環境は上記と同じで、構築と評価を別計測した。
+
+2026-10-11、有限の大きな外挿でスカラー・ベクトル・Quaternion の定数保持を修正し、Mathematics 33 件・Animation 145 件の Release テストが成功した。可変長コンポーネント曲線の Composition 定義とネスト例も補完したが、同曲線の実装は後続変更のままとする。[ADR-ANIMATION-0005 の測定条件](ANIMATION-0005-zero-duration.md#実装検証記録)で `2cc91d4` と比較すると、通常範囲の scalar Linear は 3.63 → 3.66 ns、Quaternion Slerp は 28.19 → 30.82 ns で、両方とも 0 B/op だった。Vector3 は 31.60 → 5.07 ns だったが、比較元のプロセス中央値が 38.33／24.86 ns とばらついたため、改善率の根拠としては扱わない。

@@ -25,7 +25,7 @@ internal sealed class ValueNode<T>(IAnimationSource<T> source, AnimationChannel<
         output.Set(channel, source.Sample(Duration.FromTicks(Math.Min(time, Length))), priority);
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
+    internal override void Endpoints(Int128 from, Int128 to, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (!HasRelease)
         {
