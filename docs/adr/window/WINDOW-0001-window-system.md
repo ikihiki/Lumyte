@@ -27,6 +27,8 @@ Native の生成・操作・観測・OS イベント取得・ハンドル・寿�
 
 単一 Native は IPlatform.CreateWindow → IWindow 操作 → Framework 統合または利用側の直接 Graphics 接続で使える。WindowSystem の生成・参照・DI 登録を必要としない。単一 Native の上に Hosted メニューを表示する場合は、必要に応じて Windowing を追加する。
 
+Window も Input と同じく旧 API との互換性を要件にしない。Native の共通契約 IWindow は Lumyte.Platform.Abstractions、管理 API は Lumyte.Windowing に直接定義する。旧 API の別名、型転送、互換ラッパーは設けず、利用箇所を新しい契約へ更新する。
+
 ### Native と Hosted の管理単位
 
 WindowSystem は二つの種類の管理ノードを持つ。

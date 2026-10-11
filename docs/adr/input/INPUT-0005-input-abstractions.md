@@ -37,18 +37,18 @@ InputData と全派生データを同じ assembly に移し、private protected 
 
 本体には InputSystem、内部 DeviceState、InputDeviceState、InputRecord、InputReadResult、InputRetentionPolicy を残す。これらは取得インターフェースのシグネチャに不要な、記録・状態参照・保持を提供する実装側の API である。
 
-### 公開 API の所属と互換性
+### 公開 API の所属と名前空間
 
-比較元は main の cc766f2。既存型は Lumyte.Input assembly から新しい Lumyte.Input.Abstractions assembly へ移動する。名前空間は Lumyte.Input のまま維持し、下記の追加行は新しい assembly の公開境界を表す。型名やシグネチャを変更する提案ではない。
+比較元は main の cc766f2。既存型は Lumyte.Input assembly から新しい Lumyte.Input.Abstractions assembly へ移動する。名前空間も Lumyte.Input.Abstractions に変更し、下記の追加行は新しい assembly の公開境界を表す。現在はライブラリの利用者がいないため、旧 API との互換性は要件にしない。
 
 ```diff
 +using System;
 +using System.Collections.Generic;
 +using System.Numerics;
 +
-+namespace Lumyte.Input;
++namespace Lumyte.Input.Abstractions;
 +
-+// 移動先 assembly の公開 API。名前空間・シグネチャ・enum 値は変更しない。
++// 移動先 assembly の公開 API。名前空間を分離し、データの意味と enum 値を維持する。
 +public enum ControllerButton
 +{
 +    South,
@@ -231,28 +231,26 @@ InputData と全派生データを同じ assembly に移し、private protected 
 +}
 ```
 
-IPlatform.CreateInputSource の宣言は Lumyte.Input.IInputSource のままであり、参照する assembly だけが Abstractions に変わる。Platform に using / namespace の新旧変換層や InputSystem の factory を設けない。
+IPlatform.CreateInputSource は Lumyte.Input.Abstractions.IInputSource を返す。Platform と取得契約を使うプロジェクトは Abstractions を直接参照する。InputSystem など実装側の名前空間は Lumyte.Input とする。
 
-既存の Lumyte.Input パッケージは Abstractions への依存と移動31型の TypeForwardedTo を追加する。既存利用者の using、型名、InputSystem への Source 注入を維持し、旧 assembly の型を参照するバイナリも転送先へ解決する。Platform は転送元の本体を参照せず、直接 Abstractions を参照する。同じ型を両 assembly に定義したり、契約をリンクソースで複製したりしない。
-
-TypeForwardedTo は移動する型すべてに追加し、base / derived の record や enum も対象とする。リフレクションの AssemblyQualifiedName は移動先に変わるため、assembly 名を永続化した独自形式は別途移行が必要である。これらの入力型の永続形式は本 ADR では新設しない。
+Lumyte.Input 本体は Abstractions への依存を追加する。リポジトリ内の利用箇所は参照と using を新しい境界に合わせて更新し、再ビルドする。旧名前空間の別名、型転送、互換ラッパーは設けず、同じ契約型を両 assembly に定義したりリンクソースで複製したりしない。
 
 ### 所有権・実装順
 
 Source.Initialize / Update / Shutdown、Registry の Source ごとの登録制限、登録成功時の Device 所有権移転、DrainEvents の非消費失敗契約を維持する。通常の所有者は InputSystem、直接消費する場合はその Registry 実装の所有者となる。InputDeviceId はその入力管理スコープ内で一意であり再利用しない。Source を複数消費者へ共有しない。
 
-実装時は契約ファイルを一度だけ移動し、本体へ参照と型転送を追加して全利用プロジェクトを再ビルドする。Platform は契約側だけを参照する。ソリューション、pack、CI の対象に新パッケージを追加し、既存 Input の単体テストと Source / Device の契約テストを維持する。
+実装時は契約ファイルを一度だけ移動し、本体へ Abstractions の参照を追加し、全利用プロジェクトの名前空間と参照を更新して再ビルドする。Platform は契約側だけを参照する。ソリューション、pack、CI の対象に新パッケージを追加し、既存 Input の単体テストと Source / Device の契約テストを維持する。
 
 ## 検討した代替案
 
 - Platform が本体を参照し trimming で削る: 依存として実装を持ち込むため採用しない。
 - 3 interface だけを移す: 入出力型から実装への依存が残るため、必要な型の閉包を移す。
-- 名前空間を Lumyte.Input.Abstractions に変える: 本案では所属 assembly の分離だけで目的を満たせるため、既存利用者の型名変更を避ける。
+- 旧名前空間の維持や型転送で互換性を提供する: 現在は利用者がいないため、互換層を設けず新しい境界へ直接変更する。
 - 全 Input API を Abstractions に置く: 履歴・状態・保持の実装境界を曖昧にするため採用しない。
 
 ## 結果と影響
 
-Platform を使うだけなら Input の契約 assembly だけが必要になる。履歴・状態・保持を使うアプリだけ Input 本体を追加できる。契約 assembly と本体のリリース、型転送、既存利用者の互換性を検証する必要がある。
+Platform を使うだけなら Input の契約 assembly だけが必要になる。履歴・状態・保持を使うアプリだけ Input 本体を追加できる。契約 assembly と本体の依存関係、リポジトリ内の参照更新、パッケージの出力を検証する必要がある。
 
 ## 検証方針
 
@@ -261,10 +259,10 @@ Platform を使うだけなら Input の契約 assembly だけが必要になる
 - Platform と Native Window の最小アプリの復元・publish 出力に Input 本体、Processing、Actions が含まれない。
 - 入力未使用時に Framework が InputSystem を必須生成しない。
 - 全31型の依存閉包、InputData の派生制限、enum の値、record の生成・分解を維持する。
-- 分割前にビルドした利用側バイナリが全移動型の型転送で解決できる。
+- 全利用プロジェクトが新しい名前空間と参照でビルドでき、旧名前空間に契約型や互換層が残らない。
 - 既存 Input / Processing / Actions / Settings のテストとサンプル、pack、書式・静的解析を実装時に実行する。
 
-この設計 PR では Markdown lint、リンク、分離31型と残す6型の一覧、API diff と既存ソースの対応を確認する。assembly の分割・型転送・publish は未実装であり、検証済みとは扱わない。
+この設計 PR では Markdown lint、リンク、分離31型と残す6型の一覧、API diff と既存ソースの対応を確認する。assembly の分割・名前空間変更・publish は未実装であり、検証済みとは扱わない。
 
 ## 参考資料
 

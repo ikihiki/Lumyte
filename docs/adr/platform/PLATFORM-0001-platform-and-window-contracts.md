@@ -30,9 +30,11 @@ flowchart TD
     Platform --> Input[Lumyte.Input.Abstractions: 取得契約]
 ```
 
-Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstractions](../input/INPUT-0005-input-abstractions.md) の取得契約だけを参照する。IInputSource の名前空間は互換性のため Lumyte.Input のまま維持するが、所属 assembly は Abstractions とする。Lumyte.Input 本体、Processing、Actions、Settings を Platform の依存として導入しない。履歴・状態・保持の実装は Input 本体に残し、Framework が必要な場合だけ参照・生成する。Input は Platform に依存せず、既存 InputRecord / InputSystem の挙動を変更しない。Platform.Abstractions は Windowing、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
+Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstractions](../input/INPUT-0005-input-abstractions.md) の取得契約だけを参照する。IInputSource の名前空間と所属 assembly は Lumyte.Input.Abstractions とする。Lumyte.Input 本体、Processing、Actions、Settings を Platform の依存として導入しない。履歴・状態・保持の実装は Input 本体に残し、Framework が必要な場合だけ参照・生成する。Input は Platform に依存せず、既存 InputRecord / InputSystem の挙動を変更しない。Platform.Abstractions は Windowing、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
 
 最初の生成対象は IWindow と IInputSource とする。今後の文字入力、clipboard、display、ファイルダイアログなども対応する共通契約を定義した上で IPlatform に生成メソッドを追加し、利用側が生成物を所有する形に揃える。この PR では未定義の機能に空の interface や汎用 GetService を設けない。
+
+現在はライブラリの利用者がいないため、Platform と IWindow も旧 API との互換性を要件にしない。共通契約は Lumyte.Platform.Abstractions に直接定義し、旧 API の別名、型転送、互換ラッパーは設けない。各バックエンドはこの IWindow を直接実装する。
 
 ### 公開 API 案
 
@@ -70,7 +72,7 @@ Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstracti
 +    // この Platform の全対象デバイスを取得する Source。呼び出し側が所有する。
 +    // 同一 Platform の同時生成は一つまで。同じ物理入力の重複取得を避ける。
 +    // Lumyte.Input.Abstractions assembly の型。本体の参照は不要。
-+    public Lumyte.Input.IInputSource CreateInputSource();
++    public Lumyte.Input.Abstractions.IInputSource CreateInputSource();
 +    // OS キューを一度だけ取得し、Window 通知と Source 用キューへ振り分ける。
 +    // System / Windowing を使わないアプリもこの一つの取得入口を使う。
 +    public void PumpEvents();
