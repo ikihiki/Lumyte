@@ -22,10 +22,10 @@ Native の生成・操作・観測・OS イベント取得・ハンドル・寿�
 | --- | --- |
 | Platform.Abstractions / Platform バックエンド | IPlatform による生成、IWindow の直接実装、入力取得と Native の操作・寿命 |
 | Windowing | 複数 IWindow の管理、明示所有、管理ノードの親子関係、Hosted の配置・クリップ・描画順、一時表示の寿命 |
-| 唯一の標準 Platform.Graphics 接続 | IWindow を直接受け取り Surface を生成。Windowing に依存しない |
+| Framework 層の統合システム | Platform と Graphics の接続、Surface・Swapchain・同期・終了の管理。単一 Window では Windowing 不要 |
 | UI / Engine / 利用側 | 内容描画、文字編集、入力スコープ、GPU 同期・提示、外部リソースの終了 |
 
-単一 Native は IPlatform.CreateWindow → IWindow 操作 → Platform.Graphics.Connect または直接 Graphics 接続で使える。WindowSystem の生成・参照・DI 登録を必要としない。単一 Native の上に Hosted メニューを表示する場合は、必要に応じて Windowing を追加する。
+単一 Native は IPlatform.CreateWindow → IWindow 操作 → Framework 統合または利用側の直接 Graphics 接続で使える。WindowSystem の生成・参照・DI 登録を必要としない。単一 Native の上に Hosted メニューを表示する場合は、必要に応じて Windowing を追加する。
 
 ### Native と Hosted の管理単位
 
@@ -154,7 +154,7 @@ Owned Native は System が IWindow.Close / Dispose する。Borrowed Native は
 
 通常は System 経由で管理対象を操作する。GetNativeWindow は Graphics 接続や Backend 固有操作のための借用であり、Owned の Native を利用側が勝手に Dispose しない。利用側が IWindow を直接操作した場合も、System は StateChanged を受けて観測値に追従する。
 
-Close は対象部分木を子から親の順に終了する。Borrowed Native が部分木にあれば Close を事前に拒否し、利用側が先に Detach して所有者側で終了する。Owned Native の親は、子 Native の物理 Closed を確認してから Close する。Hosted は即座に終了できる。Native が保持中なら Closing のまま待ち、Graphics 資源を利用側が解放した後に Platform.PumpEvents で Closed へ進む。
+Close は対象部分木を子から親の順に終了する。Borrowed Native が部分木にあれば Close を事前に拒否し、利用側が先に Detach して所有者側で終了する。Owned Native の親は、子 Native の物理 Closed を確認してから Close する。Hosted は即座に終了できる。Native が保持中なら Closing のまま待ち、Graphics 資源を Framework または利用側が解放した後に Platform.PumpEvents で Closed へ進む。
 
 Close の管理要求は対象が閉じて管理一覧から除去されたとき完了する。Detach は Owned / Hosted 子を先に終了し、借用子は借用のまま購読解除してから対象を登録解除する。外部所有の Native の終了や登録解除と、管理ノードの Removed 通知を混同しない。
 
@@ -162,15 +162,15 @@ Native のユーザー終了要求では管理下の子の終了が必要な場�
 
 Hide は対象の表示意図を false にし、通常の Hosted 子の表示意図は維持して実効非表示にする。一時表示の Owned / Hosted 子は終了し、親を再表示しても復活しない。借用の一時表示 Native は自動 Close せず非表示と CloseRequested の通知に留める。最小化・アプリ非活性化も同じ方針とする。OS の強制喪失では利用側が他 Native の描画継続と Lost / DeviceLost を処理する。
 
-System.Dispose は UI / Graphics が Owned の接続を先に解放した状態で呼ぶ。Native の保持や解放失敗が残る場合は独立した他ノードの解放を続けて例外を集約し、後の Dispose で残りだけ再試行する。借用 Native は Dispose しない。Platform 自体は全 Native と Source の解放後に利用側が Dispose する。
+System.Dispose は Framework または利用側が Owned Native の Graphics 資源を先に解放した状態で呼ぶ。Native の保持や解放失敗が残る場合は独立した他ノードの解放を続けて例外を集約し、後の Dispose で残りだけ再試行する。借用 Native は Dispose しない。Platform 自体は全 Native と Source の解放後に利用側が Dispose する。
 
 ### Graphics との接続
 
-Graphics 接続は [Platform の標準アダプター契約](../platform/PLATFORM-0001-platform-and-window-contracts.md#graphics-接続は単一ウインドウから利用できる)を使う。公式の標準アダプターは一つ、標準外は利用側が直接接続する方針を維持する。Windowing 専用の Graphics 接続パッケージや組み合わせ別のアダプターは追加しない。
+Graphics 接続は [Framework 層の統合責務](../platform/PLATFORM-0001-platform-and-window-contracts.md#framework-層による-graphics-統合)に従う。Windowing は Native の IWindow と描画に必要な管理状態を提供し、Framework が Platform と Graphics を接続する。
 
-Native の GetNativeWindow の結果を StandardWindowGraphicsAdapter.Connect にそのまま渡す。Hosted は root の IWindow / Surface に描画し、独立した Surface を作らない。WindowSystem は Surface、Frame、GPU 使用を追跡しない。
+Native の GetNativeWindow の結果を Framework の統合システムへ渡す。Hosted は root の IWindow / Surface に描画し、独立した Surface を作らない。WindowSystem は Surface、Frame、GPU 使用を追跡せず、Framework がその対応と寿命・同期を管理する。
 
-Renderer は観測 PixelSize から Swapchain を明示設定し、ClientSize / Scale / Hosted 配置・クリップ・GetHostedOrder を同じ更新境界の不変スナップショットへまとめる。別スレッドへの受け渡しは利用側が同期し、古い寸法と新しい倍率を混ぜない。GPU 用の投影・viewport・scissor・shader 引数は Renderer が既存 Graphics API へ変換する。
+Framework と Renderer は観測 PixelSize から Swapchain を明示設定し、ClientSize / Scale / Hosted 配置・クリップ・GetHostedOrder を同じ更新境界の不変スナップショットへまとめる。別スレッドへの受け渡しは利用側が同期し、古い寸法と新しい倍率を混ぜない。GPU 用の投影・viewport・scissor・shader 引数は Renderer が既存 Graphics API へ変換する。
 
 リサイズでは当該 root の GPU 使用と提示処理の完了、Frame・子資源の解放を確認して再構成し、他 root を一括停止しない。通常終了は新規描画停止 → GPU / 提示完了 → 子資源・Swapchain・接続解放 → Native 保持解除 → Owned IWindow の終了・解放とする。
 
@@ -228,6 +228,7 @@ Platform と Native の契約は単独で利用でき、複数ウインドウ・
 - Window 対象付き入力の envelope、キャプチャ・ポインターロック、UI 入力スコープ。
 - Platform の文字入力・IME セッション、候補 snapshot、選択、終了時の確定 / キャンセル方針。
 - モーダル画面、永続配置、アクセシビリティ、性能目標。
+- Framework 統合システムの具体 API と、Windowing を使用する場合の接続・更新・終了順。
 
 ## 参考資料
 

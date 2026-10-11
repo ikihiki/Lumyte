@@ -23,13 +23,14 @@ flowchart TD
     App --> Graphics[Graphics 共通契約]
     App --> Optional[Windowing: 任意]
     Optional --> Platform
-    Bridge[唯一の標準 Graphics 接続] --> Platform
-    Bridge --> Graphics
+    Framework[Framework 統合システム] --> Platform
+    Framework --> Graphics
+    Framework --> Optional
     Native[Windows / Linux / Browser 実装] --> Platform
     Platform --> Input[Input 共通契約]
 ```
 
-Platform.Abstractions は既存 `Lumyte.Input` の IInputSource を生成結果に使用するため Input 共通契約を参照する。Input は Platform に依存せず、既存 InputRecord / InputSystem の契約を変更しない。Platform.Abstractions は Windowing、Graphics、Engine、特定の DI コンテナーに依存しない。
+Platform.Abstractions は既存 `Lumyte.Input` の IInputSource を生成結果に使用するため Input 共通契約を参照する。Input は Platform に依存せず、既存 InputRecord / InputSystem の契約を変更しない。Platform.Abstractions は Windowing、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
 
 最初の生成対象は IWindow と IInputSource とする。今後の文字入力、clipboard、display、ファイルダイアログなども対応する共通契約を定義した上で IPlatform に生成メソッドを追加し、利用側が生成物を所有する形に揃える。この PR では未定義の機能に空の interface や汎用 GetService を設けない。
 
@@ -184,68 +185,40 @@ IWindow.Dispose は active 子や保持トークンがあれば変更前に拒�
 
 通常終了は新規描画停止 → GPU 使用と取得・提示の完了確認 → Frame と子資源の解放 → Swapchain・Surface の解放 → Native 保持解除 → IWindow → Source → IPlatform とする。InputSystem は Source より先に終了する。強制喪失では保持トークンが Native の存続を保証できず、Graphics は Lost / DeviceLost を処理する。
 
-### Graphics 接続は単一ウインドウから利用できる
+### Framework 層による Graphics 統合
 
-標準アダプターは `src/Platform/Lumyte.Platform.Graphics/`、名前空間・パッケージも `Lumyte.Platform.Graphics` とする。Platform.Abstractions と標準 Platform、Graphics.Abstractions と標準 Graphics を参照し、Windowing を参照しない。公式に提供する接続アダプターはこの一つに限定する。
+Platform と Graphics の接続は Framework 層の統合システムが担当する。Platform / Windowing に Graphics 接続パッケージや接続用の公開 API を追加しない。Framework は生成済み IWindow と Graphics Device を受け取り、環境・バックエンドに対応した表示先を取得して、既存 Graphics のバックエンド固有 CreateSurface へ渡す。
 
-Windows / X11 / Wayland の標準経路は Wgpu、Browser は BrowserDevice とし、環境による変換は同じ Connect の内部に置く。Window × Graphics の全組み合わせへの接続、登録 factory、組み合わせ探索は提供しない。対象環境別の依存はビルドで切り替える。
+IWindow は GetNativeTarget と RetainNativeTarget だけを提供し、Graphics の型を扱わない。Framework は Surface と Native 保持トークンの対応、Swapchain の設定、リサイズ、描画・提示の停止と再開、GPU / 提示完了、解放順を一元管理する。Surface の解放が完了してから保持を解除し、Window の終了を進める。Framework の統合システムの型・生成・登録 API は後続の Framework ADR で定め、この PR では宣言しない。
 
-```diff
-+namespace Lumyte.Platform.Graphics;
-+
-+public static class StandardWindowGraphicsAdapter
-+{
-+    // IWindow を直接受け取る。WindowSystem や managed ID は不要。
-+    // window / device は借用。Native 保持と Surface を一つの接続が所有する。
-+    // 標準外は NotSupportedException。別 Device を自動生成しない。
-+    // 部分生成失敗では Surface を解放してから保持を解除する。
-+    public static WindowGraphicsConnection Connect(
-+        Lumyte.Platform.Abstractions.IWindow window,
-+        Lumyte.Graphics.Abstractions.IGraphicDevice device);
-+}
-+public sealed class WindowGraphicsConnection : IDisposable
-+{
-+    public Lumyte.Platform.Abstractions.IWindow Window { get; }
-+    // 接続が所有する Surface の借用。直接 Dispose しない。
-+    public Lumyte.Graphics.Abstractions.IGraphicsSurface Surface { get; }
-+    // GPU / 提示の完了と子資源の解放を利用側が確認してから呼ぶ。
-+    // Surface 解放成功後に保持を解除。失敗時は保持を維持して再試行可能。
-+    // 冪等。待機・Present・Window.Close は行わない。
-+    public void Dispose();
-+}
-```
+表示先のハンドル型と Browser canvas の所有権は各 Platform ADR に記載する。Graphics 側の対応形式・寸法・mode、Frame、semaphore、Submit、Present、再構成、解放は [GRAPHICS-0013](../graphics/GRAPHICS-0013-surface-swapchain-presentation.md) と [GRAPHICS-0014](../graphics/GRAPHICS-0014-caller-managed-resource-validation.md) に従う。Framework がこれらの呼び出しと同期を担い、低水準の Platform / Graphics 自体に暗黙の GPU 待機や相互依存を持ち込まない。
 
-Wgpu は GetNativeTarget から HWND / Xlib / Wayland の型付き値を取得して対応する SurfaceSource へ変換し、生成済み Device の CreateSurface に渡す。Browser は既存 canvas の GPUCanvasContext を渡す。ハンドル型と Browser canvas の所有権は各 Platform ADR で定義する。
-
-他の Graphics / Window の組み合わせは利用側が RetainNativeTarget と GetNativeTarget を使い、既存バックエンド固有 CreateSurface へ直接接続する。例えば独立 Vulkan は利用側の callback と必要な instance extension / present queue を用意する。公式の組み合わせ別アダプターは追加しない。
-
-capabilities、正確な PixelSize による Swapchain 設定、Frame、semaphore、Submit、Present、再構成、解放は [GRAPHICS-0013](../graphics/GRAPHICS-0013-surface-swapchain-presentation.md) と [GRAPHICS-0014](../graphics/GRAPHICS-0014-caller-managed-resource-validation.md) に従い利用側が明示管理する。サイズ 0 / 非表示 / 最小化 / Closing では新規取得・提示を停止する。接続アダプターに render loop や暗黙の GPU 待機を置かない。
+Framework の統合を使わない利用側も、同じ型付き表示先と既存 Graphics API から直接接続できる。その場合は利用側が表示先の生存と同期・終了順を管理する。使用する Graphics バックエンドの組み合わせを、この Platform ADR では固定しない。
 
 ### 単一ウインドウの利用フロー
 
-起動コードが具象 Platform と具象 Graphics Device を作る。その後は以下の共通契約だけを使用する。これは未実装の API 案に基づく利用抜粋であり、GPU 描画・同期・終了処理は省略している。
+起動コードが具象 Platform を生成し、IPlatform.CreateWindow から IWindow を取得する。描画する場合はその IWindow を Framework の統合システムへ渡し、または利用側が直接 Graphics へ接続する。これは未実装の API 案に基づく Platform 操作の抜粋である。
 
 ```csharp
-// platform / device は起動コードが生成した IPlatform / IGraphicDevice。
+// platform は起動コードが生成した IPlatform。
 IWindow window = platform.CreateWindow(new WindowDescriptor { Title = "Lumyte" });
-WindowGraphicsConnection connection = StandardWindowGraphicsAdapter.Connect(window, device);
 window.Show();
 platform.PumpEvents();
 WindowState state = window.State;
-// state.PixelSize と connection.Surface から Swapchain を明示設定して描画する。
-// 終了時は GPU / 提示完了と子資源解放の後、connection → window → platform。
+// 描画は Framework の統合システムが window と Graphics Device を接続して行う。
+// Framework の具体 API は後続 ADR で定める。
 ```
 
-この経路には WindowSystem、Hosted、Windowing の参照も生成も必要ない。入力を使う場合だけ CreateInputSource の結果を既存 InputSystem に注入する。
+この経路には WindowSystem、Hosted、Windowing の参照も生成も必要ない。Framework の単一ウインドウ経路も Windowing を必須にしない。入力を使う場合は CreateInputSource の結果を既存 InputSystem に注入し、Framework が使用時の更新・終了順を統合する。
 
 ### 各環境の受け入れ条件
 
-| 対象 | Window と入力の制約 | 標準接続 |
+| 対象 | Window と入力の制約 | Graphics に渡せる表示先 |
 | --- | --- | --- |
-| Windows | 複数 Native、所有関係、非活性表示、モニター DPI を検証 | Wgpu / HWND |
-| X11 | WM による配置・活性化拒否を結果として報告 | Wgpu / Xlib |
-| Wayland | 任意の絶対位置・前面化を保証せず popup の protocol 制約を反映 | Wgpu / Wayland |
-| Browser | 初期対象は構成側が提供した canvas。独立画面生成は未対応 | BrowserDevice / GPUCanvasContext |
+| Windows | 複数 Native、所有関係、非活性表示、モニター DPI を検証 | HWND / HINSTANCE |
+| X11 | WM による配置・活性化拒否を結果として報告 | Xlib の Display / Window |
+| Wayland | 任意の絶対位置・前面化を保証せず popup の protocol 制約を反映 | wl_display / wl_surface |
+| Browser | 初期対象は構成側が提供した canvas。独立画面生成は未対応 | GPUCanvasContext |
 
 これは設計の受け入れ条件であり実機対応済み一覧ではない。Browser の fullscreen など、能力と当該要求の許可も区別する。
 
@@ -254,7 +227,7 @@ WindowState state = window.State;
 - 共通 WindowSystem が IWindowBackend へすべての操作を転送する: 単一 Window でも管理層を必須とするため採用しない。
 - 共通 factory が OS を選ぶ: バックエンド選択と生成設定は起動コードに残す。
 - IWindow に Hosted やメニューを含める: OS の生成物と上位 UI の表示領域を混ぜるため Native に限定する。
-- 組み合わせ別の Graphics アダプターを提供する: 維持対象が増えるため標準の一つと利用側の直接接続に分ける。
+- Platform に Graphics 接続を含める: 各共通層を結合するため採用せず、Framework 層の統合システムが接続を担当する。
 
 ## 結果と影響
 
@@ -268,7 +241,7 @@ WindowState state = window.State;
 - Source の一度の生成、OS キューの一度の取得、InputSystem / Source / Platform の終了順を検証する。
 - 要求と観測、拒否・置換・期限切れ、通知例外・再入、生成失敗の部分解放を検証する。
 - 保持中 Close の延期、子から親の終了、保持中 Dispose の変更前拒否、強制喪失を検証する。
-- 標準の一つの Connect と、標準外の直接接続の両方で正しい Surface の借用寿命を検証する。
+- Framework の統合と利用側の直接接続で Surface より先に Native を解放しないことを検証する。
 - 型付き表示先、DPI、ゼロサイズ、再構成、片側だけの終了と他 Window の描画継続を実環境で確認する。
 
 設計 PR 自体は Markdown lint、相対リンク、API diff と本文の整合を検証する。実装・性能・実機対応は未検証。
@@ -278,7 +251,7 @@ WindowState state = window.State;
 - 具象 Platform の生成 API、OS ライブラリ、Native ABI、Browser canvas の所有権と型付き target。
 - Native の非同期生成、要求完了期限、ヘッドレスの機能報告。
 - 対象付き入力、文字入力セッション、IME、clipboard、display などの生成契約。
-- 対象環境別の標準 Graphics 接続パッケージのビルド構成。
+- Framework 統合システムの公開 API、バックエンド構成、更新・描画・復旧・終了の統合契約。
 
 ## 参考資料
 
