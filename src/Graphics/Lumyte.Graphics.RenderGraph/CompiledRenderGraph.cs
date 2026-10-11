@@ -20,10 +20,11 @@ public sealed class CompiledRenderGraph : IDisposable
     private bool _successful;
     private bool _disposed;
 
-    internal CompiledRenderGraph(RenderGraph owner, RenderGraphPass[] declared, IReadOnlyList<int> order, RenderGraphResource[] resources, HashSet<RenderGraphResource> outputs, RenderGraphUse[] exports, HashSet<int>[] ordering)
+    internal CompiledRenderGraph(RenderGraph owner, RenderGraphPass[] declared, IReadOnlyList<int> order, RenderGraphResource[] resources, HashSet<RenderGraphResource> outputs, RenderGraphUse[] exports, HashSet<int>[] ordering, RenderGraphRun run, RenderGraphCaptureOptions? capture)
     {
         _owner = owner;
         _outputs = outputs;
+        Run = run;
         foreach (RenderGraphResource resource in resources)
         {
             _states.Add(resource, (resource.InitialState, resource.InitialScope));
@@ -35,7 +36,6 @@ public sealed class CompiledRenderGraph : IDisposable
 
         RenderGraphPass[] live = order.Select(index => declared[index]).ToArray();
         var initialized = resources.Where(resource => resource.InitiallyInitialized).ToHashSet();
-        var barrierInfo = new List<RenderGraphBarrierInfo>();
         for (int index = 0; index < live.Length; index++)
         {
             RenderGraphPass pass = live[index];
@@ -55,7 +55,7 @@ public sealed class CompiledRenderGraph : IDisposable
                 }
 
                 BarrierScope after = FollowingReaderScope(live, index, use, exports);
-                PlanBarrier(use, after, barriers, barrierInfo, index, resources);
+                PlanBarrier(use, after, barriers);
             }
 
             _passes.Add(new CompiledPass(pass.Record, uses, barriers));
@@ -68,18 +68,32 @@ public sealed class CompiledRenderGraph : IDisposable
                 throw new InvalidOperationException($"Export '{export.Resource.Name}' is uninitialized.");
             }
 
-            PlanBarrier(export, export.Scope, _exports, barrierInfo, live.Length, resources);
+            PlanBarrier(export, export.Scope, _exports);
         }
 
         var execution = order.Select((declaredIndex, index) => (declaredIndex, index)).ToDictionary(item => item.declaredIndex, item => item.index);
-        RenderGraphPassInfo[] passInfo = declared.Select((pass, index) => new RenderGraphPassInfo(pass.Name, execution.GetValueOrDefault(index, -1), pass.IsRoot)).ToArray();
-        RenderGraphResourceInfo[] resourceInfo = resources.Select(resource =>
+        int dependencies = 0;
+        foreach (int index in order)
         {
-            int[] uses = live.Select((pass, index) => (pass, index)).Where(item => item.pass.Uses.Any(use => use.Resource == resource)).Select(item => item.index).ToArray();
-            return new RenderGraphResourceInfo(resource.Name, resource.Kind, resource.IsTransient, outputs.Contains(resource), uses.FirstOrDefault(-1), uses.LastOrDefault(-1));
-        }).ToArray();
-        RenderGraphDependencyInfo[] dependencies = order.SelectMany(index => ordering[index].Where(execution.ContainsKey).Order().Select(before => new RenderGraphDependencyInfo(execution[before], execution[index]))).ToArray();
-        Snapshot = new RenderGraphSnapshot(owner.Name, passInfo, resourceInfo, dependencies, barrierInfo.ToArray());
+            foreach (int before in ordering[index])
+            {
+                if (execution.ContainsKey(before))
+                {
+                    dependencies++;
+                }
+            }
+        }
+
+        Statistics = new RenderGraphStatistics(live.Length, declared.Length - live.Length, resources.Length, resources.Count(resource => resource.IsTransient), dependencies, _passes.Sum(pass => pass.Barriers.Count) + _exports.Count);
+        if (capture is not null)
+        {
+            long estimatedBytes = EstimateSnapshotBytes(declared, resources, Statistics);
+            if (estimatedBytes <= capture.MaxBytes)
+            {
+                Snapshot = CaptureSnapshot(declared, order, resources, ordering, execution, estimatedBytes);
+            }
+        }
+
         PassNames = Array.AsReadOnly(live.Select(pass => pass.Name).ToArray());
         CulledPassNames = Array.AsReadOnly(declared.Where((_, index) => !execution.ContainsKey(index)).Select(pass => pass.Name).ToArray());
     }
@@ -90,8 +104,14 @@ public sealed class CompiledRenderGraph : IDisposable
     /// <summary>Gets names of passes removed because their outputs were not needed.</summary>
     public IReadOnlyList<string> CulledPassNames { get; }
 
-    /// <summary>Gets detached graph descriptions suitable for diagnostic operations.</summary>
-    public RenderGraphSnapshot Snapshot { get; }
+    /// <summary>Gets the identity shared by compilation, recording and failures.</summary>
+    public RenderGraphRun Run { get; }
+
+    /// <summary>Gets counts computed without detailed diagnostic descriptions.</summary>
+    public RenderGraphStatistics Statistics { get; }
+
+    /// <summary>Gets requested detached descriptions, or null when not requested or over the capture byte limit.</summary>
+    public RenderGraphSnapshot? Snapshot { get; }
 
     /// <summary>Gets the planned final texture state without querying the GPU.</summary>
     /// <param name="texture">A handle present at compilation.</param>
@@ -144,8 +164,9 @@ public sealed class CompiledRenderGraph : IDisposable
 
         _recorded = true;
         _commands = commands;
-        using IDisposable? diagnostic = _owner.Observer?.Begin("record");
-        long started = Stopwatch.GetTimestamp();
+        IRenderGraphObserver? observer = _owner.Observer is { IsEnabled: true } ? _owner.Observer : null;
+        using IDisposable? diagnostic = observer?.Begin(Run, "record");
+        long started = observer is null ? 0 : Stopwatch.GetTimestamp();
         try
         {
             foreach (CompiledPass pass in _passes)
@@ -173,11 +194,11 @@ public sealed class CompiledRenderGraph : IDisposable
 
             RecordBarriers(commands, _exports);
             _successful = true;
-            _owner.Observer?.Recorded(Snapshot, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            observer?.Recorded(Run, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         }
         catch (Exception exception)
         {
-            _owner.Observer?.Failed("record", exception);
+            observer?.Failed(Run, "record", exception);
             throw;
         }
     }
@@ -263,16 +284,77 @@ public sealed class CompiledRenderGraph : IDisposable
         return result;
     }
 
-    private void PlanBarrier(RenderGraphUse use, BarrierScope after, List<PlannedBarrier> barriers, List<RenderGraphBarrierInfo> descriptions, int passIndex, RenderGraphResource[] resources)
+    private static long EstimateSnapshotBytes(RenderGraphPass[] declared, RenderGraphResource[] resources, RenderGraphStatistics statistics)
+    {
+        // Includes object/array headers, references, wrappers, UTF-16 strings and alignment margin.
+        // This is a conservative metadata budget, not an estimate of native allocation size.
+        long bytes = 1024 + (96L * declared.Length) + (128L * resources.Length)
+            + (32L * statistics.Dependencies) + (112L * statistics.Barriers);
+        foreach (RenderGraphPass pass in declared)
+        {
+            bytes += 2L * pass.Name.Length;
+        }
+
+        foreach (RenderGraphResource resource in resources)
+        {
+            bytes += 2L * (resource.Name.Length + resource.Kind.Length);
+        }
+
+        return bytes;
+    }
+
+    private RenderGraphSnapshot CaptureSnapshot(RenderGraphPass[] declared, IReadOnlyList<int> order, RenderGraphResource[] resources, HashSet<int>[] ordering, Dictionary<int, int> execution, long estimatedBytes)
+    {
+        var indexes = resources.Select((resource, index) => (resource, index)).ToDictionary(item => item.resource, item => item.index);
+        int[] first = Enumerable.Repeat(-1, resources.Length).ToArray();
+        int[] last = Enumerable.Repeat(-1, resources.Length).ToArray();
+        var barriers = new RenderGraphBarrierInfo[Statistics.Barriers];
+        int barrierIndex = 0;
+        for (int passIndex = 0; passIndex < _passes.Count; passIndex++)
+        {
+            CompiledPass pass = _passes[passIndex];
+            foreach (RenderGraphUse use in pass.Uses)
+            {
+                int resourceIndex = indexes[use.Resource];
+                if (first[resourceIndex] == -1)
+                {
+                    first[resourceIndex] = passIndex;
+                }
+
+                last[resourceIndex] = passIndex;
+            }
+
+            foreach (PlannedBarrier barrier in pass.Barriers)
+            {
+                barriers[barrierIndex++] = new RenderGraphBarrierInfo(passIndex, indexes[barrier.Resource], barrier.BeforeState, barrier.AfterState, barrier.Before, barrier.After);
+            }
+        }
+
+        foreach (PlannedBarrier barrier in _exports)
+        {
+            barriers[barrierIndex++] = new RenderGraphBarrierInfo(_passes.Count, indexes[barrier.Resource], barrier.BeforeState, barrier.AfterState, barrier.Before, barrier.After);
+        }
+
+        RenderGraphPassInfo[] passes = declared.Select((pass, index) => new RenderGraphPassInfo(pass.Name, execution.GetValueOrDefault(index, -1), pass.IsRoot)).ToArray();
+        RenderGraphResourceInfo[] resourceInfo = resources.Select((resource, index) => new RenderGraphResourceInfo(resource.Name, resource.Kind, resource.IsTransient, _outputs.Contains(resource), first[index], last[index])).ToArray();
+        RenderGraphDependencyInfo[] dependencies = order.SelectMany(index => ordering[index].Where(execution.ContainsKey).Order().Select(before => new RenderGraphDependencyInfo(execution[before], execution[index]))).ToArray();
+        return new RenderGraphSnapshot(_owner.Name, estimatedBytes, passes, resourceInfo, dependencies, barriers);
+    }
+
+    private void PlanBarrier(RenderGraphUse use, BarrierScope after, List<PlannedBarrier> barriers)
     {
         (TextureState state, BarrierScope before) = _states[use.Resource];
         bool transition = state != use.State;
         bool hazard = before.Access != ResourceAccess.None && (RenderGraphValidation.IsWrite(before) || RenderGraphValidation.IsWrite(after));
-        if (transition || hazard)
+        bool expandsReaders = before.Access != ResourceAccess.None &&
+            !RenderGraphValidation.IsWrite(before) && !RenderGraphValidation.IsWrite(after) &&
+            ((after.Stages & ~before.Stages) != 0 || (after.Access & ~before.Access) != 0);
+        if (transition || hazard || expandsReaders)
         {
             barriers.Add(new PlannedBarrier(use.Resource, state, use.State, before, after));
-            descriptions.Add(new RenderGraphBarrierInfo(passIndex, Array.IndexOf(resources, use.Resource), state, use.State, before, after));
-            _states[use.Resource] = (use.State, after);
+            _states[use.Resource] = (use.State, transition || hazard
+                ? after
+                : new BarrierScope(before.Stages | after.Stages, before.Access | after.Access));
         }
         else
         {

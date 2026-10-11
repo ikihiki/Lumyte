@@ -2,4 +2,4 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph;
 
-internal readonly record struct RenderGraphUse(RenderGraphResource Resource, TextureState State, BarrierScope Scope);
+internal readonly record struct RenderGraphUse(RenderGraphResource Resource, TextureState State, BarrierScope Scope, bool Discard = false);

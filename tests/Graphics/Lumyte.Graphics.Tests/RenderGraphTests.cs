@@ -5,10 +5,10 @@ using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>Checks automatic graph barriers and temporary ownership on native devices.</summary>
+/// <summary>Checks graph barriers, partial write retention and temporary ownership on native devices.</summary>
 public sealed class RenderGraphTests
 {
-    /// <summary>Verifies wgpu graph execution with exact buffer and texture readback.</summary>
+    /// <summary>Verifies wgpu graph execution with exact readback of buffer ranges and texture layers.</summary>
     /// <returns>The asynchronous verification.</returns>
     [GpuFact]
     public async Task WgpuRenderGraphReadbackAsync()
@@ -17,7 +17,7 @@ public sealed class RenderGraphTests
         Assert.Contains("Render graph checks passed", await RenderGraphExercise.RunAsync(device));
     }
 
-    /// <summary>Verifies Vulkan graph execution with exact buffer and texture readback.</summary>
+    /// <summary>Verifies Vulkan graph execution with exact readback of buffer ranges and texture layers.</summary>
     /// <returns>The asynchronous verification.</returns>
     [GpuFact]
     public async Task VulkanRenderGraphReadbackAsync()

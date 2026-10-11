@@ -31,30 +31,32 @@ public sealed class RenderGraphPass
     internal IReadOnlySet<RenderGraphPass> Dependencies => _dependencies;
 
     /// <summary>Declares a whole-texture access; use a combined scope for read/write attachments.</summary>
-    /// <param name="texture">A texture imported into this graph.</param>
+    /// <param name="texture">A texture declared in this graph.</param>
     /// <param name="state">The required state during the callback.</param>
     /// <param name="scope">The actual stages and accesses.</param>
+    /// <param name="discard">Promises to overwrite every mip and layer without preserving prior contents; requires write-only access.</param>
     /// <returns>This pass for further declarations.</returns>
-    public RenderGraphPass UseTexture(RenderGraphTexture texture, TextureState state, BarrierScope scope)
+    public RenderGraphPass UseTexture(RenderGraphTexture texture, TextureState state, BarrierScope scope, bool discard = false)
     {
         if (state is TextureState.Undefined or TextureState.Present)
         {
             throw new ArgumentException("A pass must declare a defined texture state.", nameof(state));
         }
 
-        AddUse(texture, state, scope);
+        AddUse(texture, state, scope, discard);
         return this;
     }
 
     /// <summary>Declares a whole-buffer access with its actual stages and accesses.</summary>
     /// <typeparam name="T">The unmanaged storage element type.</typeparam>
-    /// <param name="buffer">A buffer imported into this graph.</param>
+    /// <param name="buffer">A buffer declared in this graph.</param>
     /// <param name="scope">The actual stages and accesses.</param>
+    /// <param name="discard">Promises to overwrite every element without preserving prior contents; requires write-only access.</param>
     /// <returns>This pass for further declarations.</returns>
-    public RenderGraphPass UseBuffer<T>(RenderGraphBuffer<T> buffer, BarrierScope scope)
+    public RenderGraphPass UseBuffer<T>(RenderGraphBuffer<T> buffer, BarrierScope scope, bool discard = false)
         where T : unmanaged
     {
-        AddUse(buffer, TextureState.Undefined, scope);
+        AddUse(buffer, TextureState.Undefined, scope, discard);
         return this;
     }
 
@@ -62,11 +64,12 @@ public sealed class RenderGraphPass
     /// <typeparam name="T">The application shader data structure.</typeparam>
     /// <param name="buffer">The imported shader data.</param>
     /// <param name="scope">The actual stages and accesses.</param>
+    /// <param name="discard">Promises to overwrite every element without preserving prior contents; requires write-only access.</param>
     /// <returns>This pass.</returns>
-    public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope)
+    public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope, bool discard = false)
         where T : struct, IShaderData
     {
-        AddUse(buffer, TextureState.Undefined, scope);
+        AddUse(buffer, TextureState.Undefined, scope, discard);
         return this;
     }
 
@@ -93,7 +96,7 @@ public sealed class RenderGraphPass
         return this;
     }
 
-    private void AddUse(RenderGraphResource resource, TextureState state, BarrierScope scope)
+    private void AddUse(RenderGraphResource resource, TextureState state, BarrierScope scope, bool discard)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (resource.Owner != Owner)
@@ -103,11 +106,16 @@ public sealed class RenderGraphPass
 
         RenderGraphValidation.Scope(scope, required: true);
         resource.Validate(state, scope);
+        if (discard && (!RenderGraphValidation.IsWrite(scope) || (scope.Access & ~RenderGraphValidation.Writes) != 0))
+        {
+            throw new ArgumentException("Discard requires write-only access and overwrites the entire allocation.", nameof(discard));
+        }
+
         if (_uses.Any(use => use.Resource == resource))
         {
             throw new ArgumentException("Declare each resource once per pass, combining its accesses.", nameof(resource));
         }
 
-        _uses.Add(new RenderGraphUse(resource, state, scope));
+        _uses.Add(new RenderGraphUse(resource, state, scope, discard));
     }
 }
