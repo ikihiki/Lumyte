@@ -64,7 +64,66 @@ InputSystem側の記録はReceivedとEffectiveDevice、ActionSystem側はMapped�
 
 所有スレッド上で更新を完了した後、不変のスナップショットを発行する。通信とUIはそのコピーだけを読む。Deviceや認識一覧は上限付きページ照会とし、スナップショット番号と次カーソルを返す。世代違い・リング欠落は再同期を要求する。バッファ監視は件数と非消費のコピーを使い、TryConsumeを呼ばない。
 
-初期診断カタログはscalar制約に合わせ、概要取得・対象一覧のページ取得・選択対象の照会・リース取得/更新/解除/照会を生成する。InputData配列やCompositionノードをDiagnosticResultへ直接返さない。ページ上限と符号化サイズを決めたJSON文字列として返し、使用するDTOとJSONコンテキストはソース生成する。既存Inputタブのフォームで操作を公開し、専用可視化UIは後続実装で追加する。
+初期診断カタログはscalar制約に合わせ、概要取得・対象一覧のページ取得・選択対象の照会・リース取得/更新/解除/照会を生成する。InputData配列やCompositionノードをDiagnosticResultへ直接返さない。ページ上限と符号化サイズを決めたJSON文字列として返し、使用するDTOとJSONコンテキストはソース生成する。InputタブにDeviceのグラフィカル表示、診断側Deviceによるライブ操作、Tapeエディター、Actionマッピングの表示・編集を実装する。汎用操作フォームも残し、同じゲーム側操作へ接続する。
+
+### Deviceのグラフィカル表示
+
+既存Blazor Server / Fluent UIのInputタブをDevices・Tape・Actionsの3ビューに分ける。DevicesはInputSystemごとの接続一覧からDeviceを選び、Keyboardのキー配列と押下表示、Mouseの位置・移動・ボタン・ホイール、Controllerのボタン・スティック平面・トリガーバー、Touchの接触点と軌跡、Penの位置・接触・傾き・筆圧バーを表示する。公開Descriptorで判定できない配置は汎用の型別値表示へ落とす。座標系・単位・範囲を表示し、不明な範囲を推測して正規化しない。
+
+現在値は履歴イベントをUIで積算せず、ゲーム側のDevice状態スナップショットから表示する。受け取った実値とinspection適用後の値を同じ図の別色で示し、操作元（実Device・ライブ転送・Tape）と有効リース・残り期限を添える。軌跡と短時間グラフだけは有界の観測記録を使う。履歴の欠落と現在値の不明を区別し、切断・初期状態・未提供の値を0と偽装しない。
+
+表示更新は診断UIの200 ms集約に従い、選択Deviceの描画を優先する。ボタンの短い押下は観測イベントのフラッシュ表示を併用し、描画更新を待って入力処理を止めない。表示停止は入力オーバーライドの停止とは別操作とする。
+
+### 診断側に接続したDeviceによるライブ転送
+
+操作元はゲームに接続されたDeviceではなく、診断を開いている端末のKeyboard・Mouse・Gamepad、または診断ホストのローカル入力アダプターとする。ブラウザーの場合はInputビュー内の専用領域でKeyboard/PointerイベントとGamepad APIを取得し、必要な小さなJavaScriptモジュールからBlazorへ渡す。サーバー上のDeviceをブラウザーが列挙できるとは扱わない。非対応環境には画面上のボタン・スティック操作を提供する。入力捕捉の開始/終了を明示し、設定エディターに入力したキーは転送しない。
+
+UIで操作元Controlとゲーム側Controlを型付きに対応付け、取得した値を同じInputOverrideServiceへ送る。Sourceの監視範囲は引き続き全体であり、この対応付けは変更する入力の選択だけに使う。ゲーム側に診断Deviceを勝手に物理Deviceとして登録しない。対応するControlを持たない場合は拒否して利用者に示す。画面上の直接操作・ライブ転送・Tape再生は同じ対象のリースを共有できず、開始時に競合を表示する。
+
+転送は診断Sessionとゲームの登録世代に結び付いたLiveSessionを先に作り、操作元の値を連番付きバッチで送る。ボタンのPress/Release順は保ち、軸の連続更新だけを最新値へ集約する。重複バッチは再適用せず、古いバッチを拒否する。ボタン列の欠落・キュー溢れでは転送を停止してリースを解除し、最新値から失われた操作を推測しない。診断側の時刻は順序参考用で、適用時刻とSequenceはゲーム側で付ける。
+
+心拍は初期値500 ms、ゲーム側の期限は2秒とし、両方とも既存の最大5秒リース上限以内に収める。操作元Deviceの切断、捕捉領域のフォーカス喪失、タブ非表示、Circuit終了、認証失効で停止要求を送り、送信不能でも期限で解除する。既存のUIログアウトでゲーム接続全体を切らない契約は維持し、このUIが所有するLiveSessionとTape再生だけを止める。遠隔入力には遅延があるため、フレーム精度の試験には事前送信したTapeを使う。
+
+### Tapeによる時系列オーバーライド
+
+[Termlessの記録・再生](https://github.com/beorn/termless#recording--playback)にある短い操作列を編集・再生する使い方を参考にする。Termlessをランタイム依存にせず、端末用.tapeとの互換を約束しない。Lumyte用のバージョン付きInputTapeとして、手書きスクリプト・ライブ操作の記録・ゲーム側の受信値記録を同じ命令列へ変換する。
+
+初期命令はPress、Release、Set、WaitFramesとする。Control名は公開enumから解決し、対象はヘッダーのDevice/Context/Actionエイリアスへ明示的に関連付ける。名前はスクリプトの可読表現に限り、実行計画は型付き対象ハンドルを持つ。自動選択で別Deviceへ再接続せず、読み込み時に現在の対象と割り当てを確認する。
+
+```text
+Tape 1
+Target pad = Device "test-controller"
+Press pad.ControllerButton.A
+WaitFrames 2
+Release pad.ControllerButton.A
+Set pad.ControllerStick.Left 0.5 -0.25
+WaitFrames 30
+Set pad.ControllerStick.Left 0 0
+```
+
+上記は提案構文。画面では命令リスト・対象トラック・現在フレームを表示し、手書きとグラフィカル編集を相互変換する。Press/ReleaseはButtonの0/1、Setは軸のReplaceへ変換し、WaitFramesは相対フレーム位置を進める。同じフレームの命令は記述順に実行する。記録は開始時の現在値を先頭Set/Pressとして含め、終了時に全リースを解放する。記録リングに欠落があれば不完全なTapeとし、実行用への変換を拒否する。
+
+再生前にゲーム側で全命令・値・対象世代・順序・上限を検証し、対象Controlのリースを全て一括確保する。一つでも競合・不正な対象があれば何も再生しない。開始フレームを合意した後はゲーム側所有スレッドが計画を進める。通信往復を待って命令ごとに実行したり、過去のInputRecordを再送したりしない。同じフレーム内のPress/Releaseも中間値を消さず、DeviceバッチまたはAction評価列へ順に展開し、通常の認識経路を通す。
+
+既存のフレーム指定リースと同様に、開始フレームを過ぎた新規再生は拒否する。再生開始後の予定は再生起点からの相対フレームで管理し、処理しなかったフレームを次にまとめて追いつき再生しない。フレーム飛び・プロファイル置換・対象消失では停止して解除する。ライブと同じ心拍/期限を使い、長いTapeも一回の無期限リースにしない。ゲームのフレームが停止していても期限は単調時計で進む。
+
+再生・停止・一フレーム送り・一時停止・最初から再生を提供する。一時停止は対象リースを解除する。停止位置からの再開はその位置のControl状態を再構築した新しい再生として開始し、認識途中状態やゲーム状態を復元したとは扱わない。スクラブは記録表示だけを移動し、ゲームへの巻き戻しは実行しない。ループは明示回数を指定し、各周の末尾で解放と認識Resetを行う。完了・中止・切断は停止理由と実行済みの最終命令番号を返す。
+
+記録はReceived / EffectiveDevice / EffectiveActionのどれかをメタデータで区別する。同じ操作のDevice段階とAction段階を同時に再注入せず、どちらを再生するか選ぶ。Tapeは入力シナリオの再現であり、時計・乱数・ゲーム状態まで含む決定的な再現を保証しない。初期の再生Controlは前述のキー・マウスボタン・Controller・アクション値に合わせ、Touch/Penはグラフィカル表示と記録を行うが、非対応の再生命令を黙って捨てない。
+
+Tapeの保存/読込は専用ファイルとして診断端末で行い、InputActionSettingsへ混ぜない。ゲームへ送る計画はJSONの有界チャンクとしてアップロードし、全体のサイズ・ハッシュ・版を検証してから確定する。再生開始だけがOverrideInput権限とリースを取得する。初期上限は1 MiB、10,000命令、10,000フレーム、8トラック、ループ10回。チャンクは32 KiBまでとし、未確定アップロードは30秒で破棄する。ファイルの解析で任意コードやシェルコマンドを実行しない。
+
+### Actionのマッピング表示と編集
+
+ActionsビューはActionSystem → Contextの継承ツリー → Actionの順に表示し、現在値のバー/平面表示と現在適用中のマッピングを並べる。各Actionに宣言元Context、継承後の実効バインディング、InputControl、対象Device選択、Scale、押下/解放閾値、Normalize・Sensitivity・Smoothing、認識定義を示す。無効Contextは無効と表示し、設定Revisionと実行中の適用Revisionを別に表示する。
+
+宣言したバインディングと継承した実効バインディングを区別する。親の定義を編集すると継承する子に及ぶことを表示し、子だけを変える操作は子のローカル定義へコピーして別BindingIdを割り当てる。子で一つでも同じActionのバインディングを定義すると親の群全体を置換する既存規則をUIにも反映する。ローカル群の削除で継承へ戻す操作も提供する。
+
+Control・Device・Actionの選択は公開カタログから行い、自由入力の文字列IDを繰り返し指定しない。編集候補は元の設定Revisionを保持し、InputSettingsConverter.BuildProfileとActionProfile.Validateで親参照・循環・型・閾値・参照整合性を検証する。Device Controlの重複割り当ては表示し、意図的な共有を認める既存規則とリバインドの競合方針を使う。
+
+永続編集は[SETTINGS-0002](../settings/SETTINGS-0002-diagnostic-operations.md)のInputActionSettingsツリー取得・編集候補・save-tree/save-resultを利用する。入力専用エディターは候補JSONを組み立て、既存Settingsアダプターへ送る。新しい独立した保存経路やサーバーからのActionSystem直接変更は作らない。非同期保存のSaved確認後、InputSettingsCoordinatorが次の更新境界で反映する。失敗・Revision競合では実行中プロファイルを変えず、競合した候補を保持して再読み込みと差分確認を促す。保存成功から反映完了までを画面で区別する。
+
+マッピング監視にはObserve、編集・保存にはEdit、ライブ/Tape/一時値置換にはOverrideInputを要求する。InputActionSettingsの診断保存への登録は既存Settings契約に従うが、inspectionが全Actionを監視するための個別登録は不要。設定保存を構成していないSystemはマッピングを読み取り専用で表示する。保存によるプロファイル変更では関連リース・Tape・LiveSessionを停止し、古いTargetIdで操作を続けない。
 
 ### オーバーライドを適用する位置
 
@@ -180,6 +239,31 @@ ActionState effective = actions.GetState(game, jump);
 +    // 失敗時はLeaseがnull。所有者・対象・競合・型・期限のエラーを返す。
 +    public sealed record InputOverrideResult(bool IsSuccess, InputOverrideLease? Lease,
 +        string? ErrorCode = null, string? ErrorMessage = null);
++    public enum InputTapeCommandKind { Press, Release, Set, WaitFrames }
++    public sealed record InputTapeCommand(InputTapeCommandKind Kind, int Track, Vector2 Value, long Frames = 0);
++    // 名前は保存用。再生前に全トラックを現在の型付きTargetへ関連付ける。
++    public sealed record InputTapeTrack(string Alias, ActionValueKind Kind);
++    public sealed record InputTape(int Version, InputObservationStage RecordedStage,
++        ImmutableArray<InputTapeTrack> Tracks, ImmutableArray<InputTapeCommand> Commands);
++    public sealed record InputTapePlayback(Guid Id, long Revision, long CommandIndex, bool IsRunning, string? StopReason);
++    public sealed record InputLiveSession(Guid Id, long Revision);
++    public sealed record InputLiveValue(InputOverrideTarget Target, Vector2 Value);
++    public interface IInputTapeService
++    {
++        // 全対象を一括検証・確保する。失敗は部分再生せず例外としてアダプターでRejectへ変換。
++        InputTapePlayback Play(InputOverrideOwner owner, InputTape tape,
++            IReadOnlyList<InputOverrideTarget> tracks, long startFrame, int repeatCount = 1);
++        InputTapePlayback GetPlayback(InputOverrideOwner owner, Guid playbackId);
++        InputTapePlayback Stop(InputOverrideOwner owner, Guid playbackId, long expectedRevision);
++    }
++    public interface IInputLiveService
++    {
++        InputLiveSession Begin(InputOverrideOwner owner, IReadOnlyList<InputOverrideTarget> targets);
++        void Send(InputOverrideOwner owner, Guid sessionId, long batchSequence,
++            IReadOnlyList<InputLiveValue> orderedValues);
++        void Heartbeat(InputOverrideOwner owner, Guid sessionId);
++        void Stop(InputOverrideOwner owner, Guid sessionId);
++    }
 +    public interface IInputOverrideService
 +    {
 +        InputOverrideResult Acquire(InputOverrideOwner owner, InputOverrideTarget target, InputOverrideSpec spec);
@@ -285,13 +369,13 @@ ActionState effective = actions.GetState(game, jump);
 +}
 ```
 
-観測スナップショットのページDTOと対象リストの具体的なscalar出力は、診断生成器・通信の上限に合わせて実装前に本ADRで確定する。上記DI例のActionSystem呼び出しは `bufferOptions: null` も指定する。
+Tape/Liveサービスの実装はinspectionの同じリース台帳を共有する。心拍・一時停止・一フレーム送り・記録取得とアップロード操作の詳細API、観測スナップショットのページDTOと対象リストの具体的なscalar出力は、診断生成器・通信の上限に合わせて実装前に本ADRで確定する。上記DI例のActionSystem呼び出しは `bufferOptions: null` も指定する。
 
 ### 性能と検証方針
 
 診断無効時はinspection・観測収集・System登録を作らず、通常の無入力更新の割り当てを増やさない。監視のみ・置換ありの負荷を分けて測定する。全Source・全Context・全Actionへの適用を維持したまま観測記録を有界化し、既定の記録上限4096件、ページ上限128件、同時リース64件、期間上限5秒、予約開始は最大120フレーム先とする。上限値は測定後に変更可能にする。欠落を件数で報告し、InputSystemの保持ポリシーを診断の都合で変更しない。DeviceやAction IDを無制限のMetricsタグにせず、集約した処理時間・観測欠落・リース数を公開する。
 
-受け入れ検証は、監視が認識・バッファ消費へ影響しないこと、Device置換のイベント/履歴/ポーリングの一致、Action置換の認識順序、実押下中の解除、軸復帰、無入力時とポーズ時の期限、未来開始、再送と競合、他所有者の解除拒否、Device切断・Context無効化・ApplyProfileによる失効、親子Contextの独立性、複数プレイヤーの分離、リバインドとの排他、通知例外後の重複実行防止、リング欠落時の再同期、DI終了順、Useが自動登録する複数Sourceと実行中のDevice追加への一括適用、解決前に追加したSourceの包含、inspectionなしの既存動作、空バッチでの解除、ActionSystemのコンストラクターDIだけで全定義が接続されること、プロファイル差し替え時の自動追跡、System破棄と構築失敗時の登録回収を含む。保存済み設定にリースが混入しないことと、AOT・トリミング環境で診断アダプターとJSON出力が動作することも確認する。
+受け入れ検証は、監視が認識・バッファ消費へ影響しないこと、Device置換のイベント/履歴/ポーリングの一致、Action置換の認識順序、実押下中の解除、軸復帰、無入力時とポーズ時の期限、未来開始、再送と競合、他所有者の解除拒否、Device切断・Context無効化・ApplyProfileによる失効、親子Contextの独立性、複数プレイヤーの分離、リバインドとの排他、通知例外後の重複実行防止、リング欠落時の再同期、DI終了順、Useが自動登録する複数Sourceと実行中のDevice追加への一括適用、解決前に追加したSourceの包含、inspectionなしの既存動作、空バッチでの解除、ActionSystemのコンストラクターDIだけで全定義が接続されること、プロファイル差し替え時の自動追跡、System破棄と構築失敗時の登録回収、Device現在値の型別描画、短い押下と履歴欠落の表示、ライブ転送の欠落停止、Tapeの一括確保・同フレーム内順序・停止時復帰・フレーム飛び、マッピングの親子編集とRevision競合、保存成功後の適用表示を含む。保存済み設定にリースが混入しないことと、AOT・トリミング環境で診断アダプターとJSON出力が動作することも確認する。
 
 ## 検討した代替案
 
