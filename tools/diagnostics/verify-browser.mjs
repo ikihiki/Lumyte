@@ -152,6 +152,9 @@ try {
             await capture('overview', 'Overview — ゲームの概要', '選択したゲームが公開するサブシステムと操作数、最近受信したイベントを確認できます。', 'overview');
         }
         await evaluate("document.querySelector('[data-tab=input]').click()");
+        await waitFor(() => evaluate("Boolean(document.getElementById('input-page'))"), 'Input diagnostic page');
+        await waitFor(() => evaluate("document.getElementById('input-status')?.textContent.includes('Inputスナップショット操作を公開していません')"), 'unsupported Input snapshot status');
+        await evaluate("document.querySelector('[data-input-view=tape]').click()");
         await waitFor(() => evaluate("Boolean(document.querySelector('#input-forms form'))"), 'generated Input form');
         await evaluate(`{ const form = document.querySelector('#input-forms form'); form.elements.namedItem('button').value = 'Jump'; form.elements.namedItem('pressed').value = 'true'; form.elements.namedItem('duration-ms').value = '5000'; for (const input of form.querySelectorAll('input,select')) input.dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
         await waitFor(() => evaluate("document.getElementById('operation-result').textContent.includes('\"status\": \"success\"')"), `${transport} operation result`);

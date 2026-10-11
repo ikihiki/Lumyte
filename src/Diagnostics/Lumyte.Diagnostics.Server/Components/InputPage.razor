@@ -84,7 +84,7 @@
     else
     {
         <FluentCard Class="card"><h2>Tape・ライブ入力</h2><p>ゲームが公開しているInput操作を表示します。Tapeのアップロード、再生、停止、ライブ入力の操作は同じリースと優先制御を使います。</p></FluentCard>
-        <div class="operation-grid">
+        <div id="input-forms" class="operation-grid">
         @foreach ((SubsystemDescriptor subsystem, OperationDescriptor operation) in InputOperations)
         {
             <OperationCard @key="(Context.Resource?.SessionId, subsystem.Id, operation.Id)" Subsystem="subsystem" Operation="operation" Execute="Context.Execute" />
