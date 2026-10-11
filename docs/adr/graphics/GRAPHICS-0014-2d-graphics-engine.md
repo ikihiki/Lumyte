@@ -2,7 +2,7 @@
 
 - 状態: 提案
 - 日付: 2026-10-10
-- 更新: 2026-10-11 — 命令別の専用interface、UseGraphics2DとDIの後勝ち登録、Graphicsとの直接接続を具体化
+- 更新: 2026-10-11 — 命令別の専用interface、UseGraphics2DとDIの後勝ち登録、DIなしのCreateDefaultとGraphicsへの直接接続を具体化
 
 ## 背景
 
@@ -20,7 +20,7 @@ Lumyteには既に [Graphics device](GRAPHICS-0001-graphics-device.md)、[Comman
 
 DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInjection` に置き、同名のプロジェクト・名前空間を使う。このパッケージだけが本体と `Microsoft.Extensions.DependencyInjection.Abstractions` を参照する。UseGraphics2DはIServiceCollectionの拡張とし、DIコンテナーの生成はアプリケーションが行う。本体のコンストラクターは通常の引数を受け取るため、DIを使わない手動構築もできる。
 
-構成は「アプリケーション → Canvas2D → DrawList2D → Renderer2D → IGraphicDevice」とする。CanvasはCPU側の変換・クリップ・描画コマンドを記録し、Rendererは命令ごとにDIで指定された実装へ処理を渡し、連続コマンドのバッチ化、転送用リソースとGPU描画命令を組み立てる。deviceの生成・破棄、queue送信、完了待機、画面への表示はアプリケーションが所有する。
+構成は「アプリケーション → Canvas2D → DrawList2D → Renderer2D → IGraphicDevice」とする。CanvasはCPU側の変換・クリップ・描画コマンドを記録し、Rendererは命令ごとに構築時に指定された実装へ処理を渡し、連続コマンドのバッチ化、転送用リソースとGPU描画命令を組み立てる。deviceの生成・破棄、queue送信、完了待機、画面への表示はアプリケーションが所有する。
 
 矩形、角丸矩形、円、線、ベジェ曲線を含むパス、画像、coverage画像、距離場、三角形mesh、paint graph、オフスクリーン描画を対象とする。最初に矩形・画像・変換・矩形クリップを実装し、その後にパスとpaint graphを追加する。文字の描画形式の選択とDrawGlyphRunは別の文字ライブラリが担当し、Drawing2Dには汎用描画命令を渡す。シーングラフは必要な利用者がCanvasの上に構築し、必須にしない。レイアウト、ヒットテスト、画像デコード、フォント探索、文字列のシェーピング、行分割は本ライブラリの責務に含めない。
 
@@ -350,6 +350,9 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +    }
 +    public sealed class DrawingCommandRenderers2D
 +    {
++        // DIなしで全11標準実装を生成し、下記constructorへ渡した新しい登録表を返す。
++        // 呼び出すたびに表と各実装を新規生成。device・GPU資源・DIサービスは生成しない。
++        public static DrawingCommandRenderers2D CreateDefault();
 +        // 全実装を借用し、型付きreadonly fieldへ保持。nullは拒否。
 +        public DrawingCommandRenderers2D(
 +            IFillRectRenderer2D fillRect,
@@ -378,6 +381,20 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +    }
 +}
 ```
+
+### DIなしでの標準構成
+
+DrawingCommandRenderers2D.CreateDefaultは本体パッケージに置く引数なしの静的メソッドとする。全11命令に対応するDefault*Renderer2Dを一つずつnewし、公開コンストラクターへ渡す。UseGraphics2Dの標準登録と同じ命令・実装の対応を使い、呼び出すたびに新しい登録表と11個の新しい標準実装を返す。
+
+DIパッケージ、IServiceProvider、deviceを必要とせず、GPU資源も確保しない。標準実装はstatelessで破棄が必要な資源を持たないため、生成した登録表と実装にDisposeは不要である。GPU資源はPrepare以降の既存の寿命契約に従う。
+
+```csharp
+var renderers = DrawingCommandRenderers2D.CreateDefault();
+using var renderer = new Renderer2D(device, renderers);
+// 以後は同じPrepareAsync → Record → Submitの描画手順を使う。
+```
+
+DIなしで個別の外部実装を使う場合は、公開コンストラクターに各専用interfaceの実装を渡す。変更しない命令にはCreateDefaultの対応propertyを渡せる。生成済み登録表の変更や描画中の実装探索は行わない。
 
 ### 固定された呼び出し経路
 
@@ -466,7 +483,7 @@ switch (batch.Kind)
 +}
 ```
 
-UseGraphics2Dの登録内容は次のとおり。IServiceCollectionはMicrosoft.Extensions.DependencyInjection、TryAddScopedは同.Extensions名前空間の拡張を使う。
+UseGraphics2Dの登録内容は次のとおり。IServiceCollectionはMicrosoft.Extensions.DependencyInjection、TryAddScopedは同.Extensions名前空間の拡張を使う。DI経路ではCreateDefaultを呼ばず、各専用interfaceを単一解決してDrawingCommandRenderers2Dのコンストラクターへ渡すことで、後勝ちの上書きを反映する。
 
 ```csharp
 public static IServiceCollection UseGraphics2D(this IServiceCollection services)
@@ -512,7 +529,7 @@ UseGraphics2Dは未登録のサービス型だけを補完するので、事前�
 
 ### Graphicsシステムとの直接接続
 
-UseGraphics2DはIGraphicDeviceやRenderer2Dを登録しない。アプリケーションはDIで組み立てたDrawingCommandRenderers2Dを受け取り、既存Graphicsのdeviceを通常の引数として渡す。GPU資源の生成にはRenderPreparationContext2D.Deviceを使えるので、標準の命令実装はdeviceをDIから取得する必要がない。
+UseGraphics2DはIGraphicDeviceやRenderer2Dを登録しない。アプリケーションはDIまたはCreateDefaultで組み立てたDrawingCommandRenderers2Dと、既存Graphicsのdeviceを通常の引数として渡す。GPU資源の生成にはRenderPreparationContext2D.Deviceを使えるので、標準の命令実装はdeviceをDIから取得する必要がない。
 
 次は既存の描画先へ2Dを重ねる正常終了時の例である。drawListはCanvas.Endの結果、targetViewは同じdeviceの有効な既存内容を持つview、targetToAttachmentはその範囲を直前の実使用状態からColorAttachmentへ遷移させるTextureBarrierDescとする。入力画像等はSampled stateにしておく。
 
@@ -538,10 +555,10 @@ await submission.WaitAsync();
 commands.Dispose();
 prepared.Dispose();
 submission.Dispose();
-// rendererの破棄後に、上のscopeを破棄する。
+// DIを使う場合は、rendererの破棄後にscopeを破棄する。
 ```
 
-Graphicsとの接続点はdevice、targetView、command buffer、submissionである。新規targetはClearで初期化する。毎frameの完了待ちは説明用で、実際にはアプリケーションのframe管理が完了確認と解放を遅延できる。DIを使わない場合も11個の専用interface実装をDrawingCommandRenderers2Dのコンストラクターへ渡すだけで、同じ描画手順になる。
+Graphicsとの接続点はdevice、targetView、command buffer、submissionである。新規targetはClearで初期化する。毎frameの完了待ちは説明用で、実際にはアプリケーションのframe管理が完了確認と解放を遅延できる。DIを使わない場合はCreateDefault、または各実装を指定するコンストラクターで登録表を用意し、同じ描画手順を使う。
 
 GPU機能不足は実装の生成時、またはPrepareAsyncの全体検証で報告する。Prepareは描画ごとの入力検証と資源確保を行うが、別実装の再試行を行わない。途中のPrepare失敗・キャンセルでは、それまでに作った全batchを破棄する。Record中の失敗では部分記録を再使用せず、未送信command bufferを先に破棄してからbatchを破棄する。
 
@@ -669,7 +686,7 @@ Clear、Src、DestIn等では透明領域も結果へ影響するため、単な
 
 - CanHandleと優先順位で命令ごとに実装を探索する: DIで設定した経路が入力や環境によって変わるため採用しない。命令別interfaceの単一解決と固定保持を使う。
 - genericな描画interfaceと型の辞書で実装を取得する: 宣言量は減るが、今回の固定された11命令には専用interfaceと型付きfieldを使い、バッチごとの呼び出し経路を明確にする。
-- 独自の標準登録factoryや置換APIを設ける: DIの登録内容と別の登録表を編集する手順が増えるため採用しない。UseGraphics2Dで標準を補完し、後続のDI登録を優先する。
+- DI解決後に独自の置換APIで登録表を編集する: DIの登録内容と別の登録表を編集する手順が増えるため採用しない。DIではUseGraphics2Dで標準を補完し、後続のDI登録を優先する。DIなしの標準構築にはCreateDefaultを提供する。
 - 描画ごとにGPUへ送信する: 小さな描画で送信回数が増え、アプリケーションのcopyや他のrender passとの同期を組み立てにくいため採用しない。
 - textureごとにコマンドを並べ替える: 半透明の重なりとUIの前後関係が変わるため採用しない。連続コマンドだけをまとめる。
 - グリフを単色atlasまたは色付きpathの平坦な列に限定する: COLRv1のgradient、参照、隔離合成を保持できないため採用しない。パスにpaint DAGを組み合わせる。
@@ -683,9 +700,11 @@ Clear、Src、DestIn等では透明領域も結果へ影響するため、単な
 
 CPUコマンド記録、GPU準備、記録、完了の境界を持つため、即時描画より呼び出し手順が増える。上位アプリケーションはframeごとの所有者にその手順を集約できる。既存Graphicsの契約は変更せず、新規ライブラリとそのshader・サンプル・テストを追加する。
 
-専用interfaceと型付き登録表により、描画中のDI解決と型の辞書検索を避けられる。一方、命令追加時は専用interface、コンストラクター、dispatch、標準実装とUseGraphics2Dの登録を同時に追加する必要があり、登録表のコンストラクターも変更になる。登録用パッケージを分離するため、本体と併せたバージョン管理が必要になる。
+専用interfaceと型付き登録表により、描画中のDI解決と型の辞書検索を避けられる。一方、命令追加時は専用interface、コンストラクター、dispatch、標準実装、CreateDefaultとUseGraphics2Dの登録を同時に追加する必要があり、登録表のコンストラクターも変更になる。登録用パッケージを分離するため、本体と併せたバージョン管理が必要になる。
 
 ## 検証方針
+
+CreateDefaultはDIパッケージとdeviceなしで呼び出せること、全11propertyの実装型がUseGraphics2Dの標準登録と一致すること、複数回の呼び出しで表と各実装が別instanceになること、生成時にGPU資源を確保しないことを確認する。DI経路の外部登録がCreateDefaultで無視されず、コンストラクターへ届くことも検証する。
 
 DIの検証ではUseGraphics2Dだけで11標準実装とDrawingCommandRenderers2Dを解決できること、後続のAddScopedで指定した最後の実装が使われること、UseGraphics2Dの再呼び出しや先行する外部登録で意図した実装が保持されることを確認する。provider構築後の登録変更が既存provider・Rendererへ波及しないこと、null引数の拒否、IGraphicDeviceの登録なしで登録表を解決できることも確認する。
 
