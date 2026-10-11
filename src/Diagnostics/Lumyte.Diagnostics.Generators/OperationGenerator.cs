@@ -79,6 +79,7 @@ public sealed class OperationGenerator : IIncrementalGenerator
             AttributeData attribute = Attribute(method, "DiagnosticOperation")!;
             string id = NamedString(attribute, "Id") ?? Kebab(method.Name);
             int permission = attribute.ConstructorArguments.Length == 0 ? 1 : (int)attribute.ConstructorArguments[0].Value!;
+            int traffic = (int)(attribute.NamedArguments.FirstOrDefault(pair => pair.Key == "Traffic").Value.Value ?? 0);
             if (string.IsNullOrWhiteSpace(id) || !ids.Add(id) || type.GetMembers(method.Name).OfType<IMethodSymbol>().Count() != 1)
             {
                 Error(3, method, "Operation IDs must be unique and overloads are unsupported.");
@@ -87,6 +88,11 @@ public sealed class OperationGenerator : IIncrementalGenerator
             if (permission < 0 || permission > 2)
             {
                 Error(5, method, "Unknown permission.");
+            }
+
+            if (traffic < 0 || traffic > 2)
+            {
+                Error(5, method, "Unknown traffic class.");
             }
 
             bool hasContext = method.Parameters.Length > 0 && method.Parameters[0].Type.ToDisplayString() == Prefix + "DiagnosticOperationContext";
@@ -169,7 +175,8 @@ public sealed class OperationGenerator : IIncrementalGenerator
             string code = "builder.Operation(new(" + Literal(id) + ", " + Literal(NamedString(attribute, "DisplayName") ?? method.Name)
                 + ", (global::Lumyte.Diagnostics.DiagnosticPermission)" + permission
                 + ", [" + string.Join(",", inputFields) + "], [" + string.Join(",", resultFields) + "]"
-                + ", RequiresRevision: " + (requiresRevision ? "true" : "false") + "), (context, arguments) => @" + method.Name
+                + ", RequiresRevision: " + (requiresRevision ? "true" : "false")
+                + ", Traffic: (global::Lumyte.Diagnostics.DiagnosticOperationTraffic)" + traffic + "), (context, arguments) => @" + method.Name
                 + "(" + string.Join(",", calls) + ").ToOperationResult(static value => new " + outputName + "(" + string.Join(",", snapshots) + ")));";
             registrations.Add((id, code));
         }
