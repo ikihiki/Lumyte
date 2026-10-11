@@ -2,7 +2,7 @@
 
 - 状態: 提案
 - 日付: 2026-10-10
-- 更新: 2026-10-11 — 命令別の専用interface、UseGraphics2DとDIの後勝ち登録、DIなしのCreateDefaultとGraphicsへの直接接続を具体化
+- 更新: 2026-10-11 — 専用interfaceと固定DIを維持し、共通paintによる図形の塗り・線、画像パターン、group opacityを具体化
 
 ## 背景
 
@@ -77,6 +77,23 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +        public IGraphicsTextureView View { get; }
 +        public IGraphicsSampler Sampler { get; }
 +    }
++    // source領域を基準に各軸を独立して延長する。Decalの範囲外は透明。
++    public enum ImageTileMode2D { Clamp, Repeat, Mirror, Decal }
++    public enum ImageFilter2D { Nearest, Linear }
++    // samplerを持たない画像paint記述。factoryが値を検証・snapshot化する。
++    public sealed record ImagePattern2D
++    {
++        // 単一mip/layerのSampled D2 viewを借用。描画deviceとの一致はPrepareで検証。
++        public required IGraphicsTextureView View { get; init; }
++        // viewの選択mip内のtexel矩形。全成分整数、幅・高さは正、範囲外は拒否。
++        public required Rect2D Source { get; init; }
++        public AlphaRepresentation2D Alpha { get; init; } = AlphaRepresentation2D.Straight;
++        // source左上を原点とするtexel座標→paintローカル座標。逆行列も含めfiniteかつ逆変換可能。
++        public Matrix3x2 PatternToLocal { get; init; } = Matrix3x2.Identity;
++        public ImageTileMode2D TileX { get; init; } = ImageTileMode2D.Repeat;
++        public ImageTileMode2D TileY { get; init; } = ImageTileMode2D.Repeat;
++        public ImageFilter2D Filter { get; init; } = ImageFilter2D.Linear;
++    }
 +    public sealed class CoverageImage2D
 +    {
 +        // R8UnormのRを[0,1]のcoverageとして読む。view/samplerは同一deviceから借用。
@@ -124,15 +141,25 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +        public PaintNode2D Root { get; }
 +        // 無限平面のpaint。実際の評価範囲はpath、clip、targetで制限する。
 +        public static PaintGraph2D Solid(Color2D color);
++        // 一般的な2点linear。finiteかつ異なる2点。既存3点nodeへ正規化する。
++        public static PaintGraph2D LinearGradient(Vector2 start, Vector2 end,
++            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend = ExtendMode2D.Pad);
 +        // p0/p1/p2はCOLRv1の3点定義。p2を省略して2点へ縮約しない。
 +        public static PaintGraph2D LinearGradient(Vector2 p0, Vector2 p1, Vector2 p2,
 +            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend);
 +        // 2円定義。radiusはfiniteかつ0以上。単一中心へ縮約しない。
 +        public static PaintGraph2D RadialGradient(Vector2 c0, float r0, Vector2 c1, float r1,
 +            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend);
++        // 中心から外周へのradial。radiusはfiniteかつ正数。同心の2円nodeへ正規化する。
++        public static PaintGraph2D RadialGradient(Vector2 center, float radius,
++            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend = ExtendMode2D.Pad);
 +        // angleはradian、+X基準、Y下向きで時計回り。入力adapterで変換する。
 +        public static PaintGraph2D SweepGradient(Vector2 center, float startAngle,
 +            float endAngle, ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend);
++        // 設定をsnapshot化しviewを借用。GPU資源を確保しない。
++        public static PaintGraph2D ImagePattern(ImagePattern2D pattern);
++        // 子graphの合成後のpremultiplied RGBA全体を倍率変更。finiteかつ[0,1]。
++        public static PaintGraph2D Opacity(float opacity, PaintGraph2D child);
 +        // paintをpath coverageで切り抜く。paintとpathは同じローカル座標系。
 +        public static PaintGraph2D Clip(Path2D path, PaintGraph2D paint,
 +            FillRule2D rule = FillRule2D.NonZero);
@@ -153,6 +180,8 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +        IReadOnlyList<ColorStop2D> Stops, ExtendMode2D Extend) : PaintNode2D;
 +    public sealed record SweepPaintNode2D(Vector2 Center, float StartAngle, float EndAngle,
 +        IReadOnlyList<ColorStop2D> Stops, ExtendMode2D Extend) : PaintNode2D;
++    public sealed record ImagePaintNode2D(ImagePattern2D Pattern) : PaintNode2D;
++    public sealed record OpacityPaintNode2D(float Opacity, PaintNode2D Child) : PaintNode2D;
 +    public sealed record ClipPaintNode2D(Path2D Path, FillRule2D Rule, PaintNode2D Child) : PaintNode2D;
 +    public sealed record TransformPaintNode2D(Matrix3x2 Transform, PaintNode2D Child) : PaintNode2D;
 +    public sealed record LayersPaintNode2D(IReadOnlyList<PaintNode2D> Children) : PaintNode2D;
@@ -174,13 +203,20 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +        // 呼び出し時の変換で固定し、現在のclipとの積集合にする。
 +        public void ClipRect(Rect2D rect);
 +        public void ClipPath(Path2D path, FillRule2D rule = FillRule2D.NonZero);
++        // Color2D版はSolid(color)として同じ命令を記録する。以下の塗り・線も同様。
 +        public void FillRect(Rect2D rect, Color2D color);
++        public void FillRect(Rect2D rect, PaintGraph2D paint);
 +        // radiusはfiniteかつ0以上。描画時に短辺の半分まで縮める。
 +        public void FillRoundedRect(Rect2D rect, float radius, Color2D color);
++        public void FillRoundedRect(Rect2D rect, float radius, PaintGraph2D paint);
 +        public void FillCircle(Vector2 center, float radius, Color2D color);
++        public void FillCircle(Vector2 center, float radius, PaintGraph2D paint);
 +        public void DrawLine(Vector2 start, Vector2 end, Color2D color, StrokeStyle2D style);
++        public void DrawLine(Vector2 start, Vector2 end, PaintGraph2D paint, StrokeStyle2D style);
 +        public void FillPath(Path2D path, Color2D color, FillRule2D rule = FillRule2D.NonZero);
++        public void FillPath(Path2D path, PaintGraph2D paint, FillRule2D rule = FillRule2D.NonZero);
 +        public void StrokePath(Path2D path, Color2D color, StrokeStyle2D style);
++        public void StrokePath(Path2D path, PaintGraph2D paint, StrokeStyle2D style);
 +        // sourceはview内のtexel座標、destinationは論理座標。
 +        public void DrawImage(Image2D image, Rect2D source, Rect2D destination);
 +        // 不変graphを記録。補間・合成は線形光RGBで評価する。
@@ -234,6 +270,81 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +}
 ```
 
+### 共通paintによる塗りと線
+
+FillRect、FillRoundedRect、FillCircle、FillPathはPaintGraph2Dを受け取り、単色・gradient・画像パターン・複数paintの合成を同じ形状へ適用する。DrawLineとStrokePathも同じpaintを受け取り、線の輪郭を塗る。Color2Dの便利overloadはSolidへ正規化し、対応する一つの命令を記録する。FillRectへgradientを渡してもFillRectCommand2Dのままであり、DrawPaintGraphCommand2Dへの書き換えや別のDI登録への転送は行わない。11個の専用interfaceとCreateDefault・UseGraphics2Dの対応を維持する。
+
+paintは命令の変換前の論理座標で評価し、形状のboundsへ自動で引き伸ばさない。Canvasの変換は形状とpaintの両方へ適用する。paintだけを動かす場合はPaintGraph2D.Transformを使い、画像パターンの位置・拡大・回転にはPatternToLocalを使う。
+
+| 塗りの機能 | 指定方法と意味 |
+| --- | --- |
+| 単色・半透明 | Color2DまたはSolid。色ごとのalphaを保持 |
+| 線形gradient | 2点の便利overload、またはCOLRv1の3点定義。複数stopを保持 |
+| 放射gradient | 中心と半径の便利overload、または中心の異なる2円定義 |
+| 角度gradient | SweepGradient。開始・終了角度と複数stopを指定 |
+| gradientの延長 | Pad・Repeat・Reflect |
+| 画像パターン | 画像の切り出し、座標変換、軸別Clamp・Repeat・Mirror・Decal |
+| paint全体の透明度 | Opacity。子graphを合成した結果のRGBAへ一度だけ適用 |
+| paintの組み合わせ | Layers・Composite・Clip・Transform。既存の全28合成modeを利用 |
+
+2点linearはp0=start、p1=end、p2=start+perp(end-start)へ正規化し、perp(x,y)=(-y,x)とする。中心・半径radialはc0=c1=center、r0=0、r1=radiusへ正規化する。便利overloadは非退化の入力を要求し、既存の3点・2円APIとCOLRv1の退化規則は保持する。
+
+形状をpaintの外側の幾何clipとして扱い、Canvas clip、graph内Clipと相関を保って評価する。外側形状のcoverageはLayersの各子へ分配せず、graph全体を覆う位置で一度だけ適用する。同じ境界を含むshapeとClipを別々にAA済みmaskへ解決して乗算すると境界が薄くなるため、その方法は使わない。解析coverageだけで相関を保持できない組み合わせでは、登録実装内で共通サンプルまたは幾何的交差を評価する。
+
+Opacityは子graphを透明背景上で評価・合成した結果のプリマルチプライドRGBとalphaを共に倍率変更する。各子のalphaへ分配しない。例えば重なる二つの不透明な図形をLayersにし、その全体へOpacity(0.5)を適用した場合、重なり部分のalphaも0.5となる。必要なら隔離中間面を使用し、数学的に同じ結果を保てる場合だけ省略する。
+
+### 画像パターンの座標とsampling
+
+ImagePattern2Dはviewとsampling設定を持ち、外部samplerは受け取らない。Image2Dから使う場合はViewとAlphaを明示的に渡す。FilterとTileX/TileYを唯一の設定元とし、DrawImageが使うImage2D.Samplerとの優先順位を設けない。描画実装が必要な内部samplerや変換面を所有する。
+
+Sourceはviewが選択したmip内の整数texel矩形で、幅・高さは正数かつ全体がview内に収まるものとする。source左上をpattern原点(0,0)とし、texel中心は(i+0.5,j+0.5)、周期はsourceの幅・高さである。PatternToLocalはその座標をpaintローカル座標へ変換する。samplingでは逆変換を使い、外側のgraph変換、Canvas変換、PixelScaleとの関係を維持する。factoryはnull view、範囲、未知のenum、非finite値、逆変換不能または逆行列に非finite値を生むPatternToLocalを拒否する。Prepareではdevice、sample可能な色format、Sampled用途を検証する。
+
+Clampは端のtexelへ固定し、Repeatは周期反復、Mirrorは2周期で往復反復する。負の座標でも同じ規則を使う。Decalは領域外のtexelを透明として扱う。X/Yは独立に指定できる。
+
+各軸のsource寸法をN、整数tap座標をiとすると、Repeatの参照先はpositiveMod(i,N)、Mirrorはr=positiveMod(i,2*N)としてr<Nならr、そうでなければ2*N-1-rとする。positiveModは結果が0以上となる剰余であり、負の座標も同じ端処理になる。
+
+Nearestはpattern座標の各成分をfloorしたtexelを選ぶ。Linearはtexel中心を基準とする4tapの双線形補間とし、各tapの整数座標に対してSource相対のtile規則を適用する。Repeatの端をまたぐtapは同じSourceの反対側、Mirrorは反射先、Clampは端、Decalの範囲外tapは透明になる。座標の中心だけをwrapしてatlas全体へhardware linear samplingする方法は使わない。指定した領域の外側にある隣接画像を読まず、この画像paintにはatlas paddingを要求しない。
+
+色付き画像の補間は線形RGBのプリマルチプライド値に対して行う。各texelをsRGBならdecodeし、Straight入力ならalphaを乗算してから補間する。Premultiplied入力へ再乗算しない。透明texelのRGBが境界へ混入しないよう、hardware sampling、tap単位の処理、内部面への事前変換はこの結果と等価な場合だけ使う。初期の画像パターンは単一mipのNearest/Linearであり、縮小時のmipmap・異方性filterは別途設計する。
+
+ImagePatternを含むgraphは画像の参照を保持するが、viewやtextureのGPU所有権は持たない。graph内の全画像をPrepareからGPU完了まで生存させ、Record前にSampled stateへ遷移させる。targetと同一subresourceを読むgraphは、どの深さに参照があっても拒否する。
+
+次は利用例である。imageは少なくとも32×32 texelのImage2D、outlineは呼び出し側が用意したPath2Dとする。画像patternにはimage.Samplerを渡さない。
+
+```csharp
+var stops = new[]
+{
+    new ColorStop2D(0, new Color2D(1, 0.2f, 0, 1)),
+    new ColorStop2D(1, new Color2D(0, 0.4f, 1, 1))
+};
+var linear = PaintGraph2D.LinearGradient(
+    new Vector2(20, 20), new Vector2(220, 20), stops);
+var radial = PaintGraph2D.RadialGradient(new Vector2(300, 70), 50, stops);
+var sweep = PaintGraph2D.SweepGradient(
+    new Vector2(100, 100), 0, MathF.Tau, stops, ExtendMode2D.Repeat);
+var pattern = PaintGraph2D.ImagePattern(new ImagePattern2D
+{
+    View = image.View,
+    Alpha = image.Alpha,
+    Source = new Rect2D(0, 0, 32, 32),
+    PatternToLocal = Matrix3x2.CreateScale(2)
+        * Matrix3x2.CreateRotation(0.2f)
+        * Matrix3x2.CreateTranslation(20, 140),
+    TileX = ImageTileMode2D.Repeat,
+    TileY = ImageTileMode2D.Mirror,
+    Filter = ImageFilter2D.Linear
+});
+
+canvas.Begin();
+canvas.FillRect(new Rect2D(20, 20, 200, 100), linear);
+canvas.FillCircle(new Vector2(300, 70), 50, radial);
+canvas.FillRoundedRect(new Rect2D(20, 140, 320, 120), 16,
+    PaintGraph2D.Opacity(0.8f, pattern));
+canvas.FillPath(outline, sweep, FillRule2D.EvenOdd);
+canvas.StrokePath(outline, linear, new StrokeStyle2D { Width = 3 });
+var drawList = canvas.End();
+```
+
 ### 命令別の専用interfaceとコンストラクター注入
 
 各描画命令型に実装を一つ割り当て、Renderer生成時に登録表を固定する。RendererはCanHandle、優先順位、性能推定による実装探索を行わない。指定された実装が入力やdevice機能に対応しない場合はNotSupportedExceptionを返し、別実装へのfallbackは行わない。通常の値検証とdevice機能の検証は必須だが、実装を選ぶための問い合わせには使わない。
@@ -254,17 +365,18 @@ DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInje
 +    }
 +    public sealed record DrawingState2D(Matrix3x2 Transform, ClipStack2D Clip);
 +    public abstract record DrawingCommand2D(DrawingState2D State);
-+    public sealed record FillRectCommand2D(Rect2D Rect, Color2D Color,
++    // Color2D overloadもSolidのPaintへ正規化。paintの種類で命令型を分けない。
++    public sealed record FillRectCommand2D(Rect2D Rect, PaintGraph2D Paint,
 +        DrawingState2D State) : DrawingCommand2D(State);
-+    public sealed record FillRoundedRectCommand2D(Rect2D Rect, float Radius, Color2D Color,
++    public sealed record FillRoundedRectCommand2D(Rect2D Rect, float Radius, PaintGraph2D Paint,
 +        DrawingState2D State) : DrawingCommand2D(State);
-+    public sealed record FillCircleCommand2D(Vector2 Center, float Radius, Color2D Color,
++    public sealed record FillCircleCommand2D(Vector2 Center, float Radius, PaintGraph2D Paint,
 +        DrawingState2D State) : DrawingCommand2D(State);
-+    public sealed record DrawLineCommand2D(Vector2 Start, Vector2 End, Color2D Color,
++    public sealed record DrawLineCommand2D(Vector2 Start, Vector2 End, PaintGraph2D Paint,
 +        StrokeStyle2D Style, DrawingState2D State) : DrawingCommand2D(State);
-+    public sealed record FillPathCommand2D(Path2D Path, Color2D Color, FillRule2D Rule,
++    public sealed record FillPathCommand2D(Path2D Path, PaintGraph2D Paint, FillRule2D Rule,
 +        DrawingState2D State) : DrawingCommand2D(State);
-+    public sealed record StrokePathCommand2D(Path2D Path, Color2D Color, StrokeStyle2D Style,
++    public sealed record StrokePathCommand2D(Path2D Path, PaintGraph2D Paint, StrokeStyle2D Style,
 +        DrawingState2D State) : DrawingCommand2D(State);
 +    public sealed record DrawImageCommand2D(Image2D Image, Rect2D Source, Rect2D Destination,
 +        DrawingState2D State) : DrawingCommand2D(State);
@@ -568,23 +680,25 @@ GPU機能不足は実装の生成時、またはPrepareAsyncの全体検証で�
 
 | 命令 | 標準登録の描画方式 | AI実装難度 |
 | --- | --- | --- |
-| FillRect | quadと解析的な境界coverage | 1〜2 |
-| FillRoundedRect | quadと角丸の解析coverage | 2〜3 |
-| FillCircle | quadと円・変換後の楕円の解析coverage | 2〜3 |
-| DrawLine | 線分を覆うquadと線分・capの解析coverage | 2〜3 |
-| FillPath | CPU前処理とGPUタイルcoverage。別途compute実装を固定登録可能 | 4、compute実装は5 |
-| StrokePath | stroke輪郭の展開と汎用coverage | 4 |
-| DrawMesh | 入力頂点・indexによる三角形描画 | 2〜3 |
-| DrawImage | RGBA texture付きquadとalpha合成 | 2 |
-| DrawCoverageMask | coverage texture付きquadとpaint評価 | 2〜3 |
-| DrawDistanceField | 距離場復元shaderとpaint評価 | 3 |
-| DrawPaintGraph | graph走査、パスcoverage、gradient、隔離合成 | 4 |
+| FillRect | quadと解析的な境界coverage、共通paint評価 | 1〜2＋paint |
+| FillRoundedRect | quadと角丸の解析coverage、共通paint評価 | 2〜3＋paint |
+| FillCircle | quadと円・変換後の楕円の解析coverage、共通paint評価 | 2〜3＋paint |
+| DrawLine | 線分を覆うquadと線分・capの解析coverage、共通paint評価 | 2〜3＋paint |
+| FillPath | CPU前処理とGPUタイルcoverage、共通paint評価。別途compute実装を固定登録可能 | 4＋paint、compute実装は5＋paint |
+| StrokePath | stroke輪郭の展開と汎用coverage、共通paint評価 | 4＋paint |
+| DrawMesh | 入力頂点・indexによる三角形描画、共通paint評価 | 2〜3＋paint |
+| DrawImage | RGBA texture付きquad、premultiplied補間とalpha合成 | 2〜3 |
+| DrawCoverageMask | coverage texture付きquadとpaint評価 | 2〜3＋paint |
+| DrawDistanceField | 距離場復元shaderとpaint評価 | 3＋paint |
+| DrawPaintGraph | graph走査、パスcoverage、gradient・画像pattern、隔離合成 | 4 |
 
-一つの登録実装は命令の意味、clip、品質契約を満たす全処理を所有する。標準実装は共通のパス・paint処理を内部で再利用できるが、別の登録実装への自動委譲はしない。特にStrokePath内部の輪郭処理とDrawPaintGraph内部のパスは、それぞれに登録した実装の一部である。FillPathだけを置換しても両者の内部は変わらない。画像・mesh・距離場に渡されたpaintも、その命令実装の責務である。
+表の「＋paint」は下記graph評価の難度も必要という意味で、数値の加算ではない。単純なSolid・gradient・画像patternは形状のcoverageと同じfragment shaderで評価できる。複雑なclip、Layers、Composite、Opacityでは相関を保つcoverage処理や隔離中間面を用い、矩形でも一つのdrawに収まるとは限らない。GPUコマンド数は命令数から独立させる。
+
+一つの登録実装は命令の意味、paint、clip、品質契約を満たす全処理を所有する。標準実装は共通のパス・paint処理を内部で再利用できるが、別の登録実装への自動委譲はしない。特にStrokePath内部の輪郭処理とDrawPaintGraph内部のパスは、それぞれに登録した実装の一部である。FillPathだけを置換しても両者の内部は変わらない。図形・線・mesh・coverage画像・距離場に渡されたpaintも、その命令実装の責務である。paint非対応の外部実装はPrepareでNotSupportedExceptionを返し、別命令へのfallbackは行わない。
 
 ClipRect/ClipPathはCPU状態命令であり、ClipStack2Dへ元の形状と変換を記録する。clipのGPU評価は、そのclipを使用する描画命令の登録実装が担当する。これにより個別に平均化したmaskの乗算を必須とせず、形状とclipを同じサンプルで評価できる。異なる登録実装間でもclipの意味と共通の品質契約を満たす必要がある。
 
-Solid、LinearGradient、RadialGradient、SweepGradient、Clip、Transform、Layers、Compositeは不変graphの構築操作であり、独立した描画命令ではない。DrawPaintGraphまたはpaintを引数に取る命令の実装が、下記の評価方式を持つ。
+Solid、LinearGradient、RadialGradient、SweepGradient、ImagePattern、Opacity、Clip、Transform、Layers、Compositeは不変graphの構築操作であり、独立した描画命令ではない。DrawPaintGraphまたはpaintを引数に取る命令の実装が、下記の評価方式を持つ。
 
 | graph構築操作 | 評価方式 | AI実装難度 |
 | --- | --- | --- |
@@ -592,6 +706,8 @@ Solid、LinearGradient、RadialGradient、SweepGradient、Clip、Transform、Lay
 | LinearGradient | 3点定義の射影とstop補間 | 2〜3 |
 | RadialGradient | 2円の解・描画有効領域とstop補間 | 4 |
 | SweepGradient | 角度とstop補間 | 3 |
+| ImagePattern | 座標逆変換、source相対のtap別tile処理、線形光のpremultiplied画像補間 | 3〜4 |
+| Opacity | 子graphの合成後のRGBAを倍率変更。必要に応じて隔離中間面 | 3〜4 |
 | Clip | 子graphへの幾何的clip | 4 |
 | Transform | geometryとpaint座標系の変換 | 2 |
 | Layers | 配列順のsource-over | 2〜3 |
@@ -601,17 +717,17 @@ Begin、Save/Restore、ConcatTransform、Translate/Rotate/Scale、End、Cancel�
 
 ### 外部描画形式の契約
 
-DrawImageはalpha表現を尊重し、sRGB viewはhardware decode後の値を使う。Premultiplied入力へ再度alphaを掛けない。入力画像は表示用の色であり、coverage・距離場textureとは区別する。
+DrawImageとImagePatternはalpha表現を尊重し、sRGB texelをdecodeして線形RGBのプリマルチプライド値で補間する。Straight画像を補間してからalphaを乗算する処理で代用しない。必要ならtapごとの処理や内部変換を使う。Premultiplied入力へ再度alphaを掛けない。入力画像は表示用の色であり、coverage・距離場textureとは区別する。
 
 DrawCoverageMaskのcoverageはsampling後の[0,1]値を使う。DrawDistanceFieldではSDFはR、MSDFはRGBの中央値を輪郭距離とし、MTSDFはRGBを輪郭、Aをtrue signed distanceの情報として保持する。距離range・符号・paddingの規約を供給側と一致させ、画面上のpixel幅でAAを評価する。sampling kernelが隣のatlas領域を読まないpaddingとsource範囲は供給側が確保する。
 
 DrawMeshは入力のCoverageを補間する。境界用頂点がないmeshに自動でAA済みの品質を仮定しない。paintは変換前の論理座標で評価し、変換とclipは他の描画命令と同じ意味を持つ。
 
-単色、gradient、graph出力をcoverageで覆ってからCanvasへsource-over合成する。一般のCompositeModeではcoverageとopacityを混同せず、Clear/Src/DestIn等の境界で必要なdestination側の処理も仕様に従う。
+単色、gradient、画像patternを含むgraphの結果を、形状とclipとの相関を保ってcoverageで覆い、Canvasへsource-over合成する。一般のCompositeModeではcoverageとopacityを混同せず、Clear/Src/DestIn等の境界で必要なdestination側の処理も仕様に従う。
 
 ### コマンド、描画順、クリッピング
 
-CanvasはBegin中だけ操作できる。Endは未対応のSaveがある場合に失敗し、記録を維持する。入力不備はコマンドを追加せず、状態を変更しない。End成功またはCancel後は新しい記録を開始できる。描画コマンドは変換、clip、色、stroke設定をsnapshotにし、後続の変更の影響を受けない。PathBuilderはMoveTo前の線・曲線・Closeを拒否する。
+CanvasはBegin中だけ操作できる。Endは未対応のSaveがある場合に失敗し、記録を維持する。入力不備はコマンドを追加せず、状態を変更しない。End成功またはCancel後は新しい記録を開始できる。描画コマンドは変換、clip、不変paintへの参照、stroke設定をsnapshotにし、後続の設定変更の影響を受けない。paintが借用する画像の内容とGPU寿命は外部リソースの契約に従う。PathBuilderはMoveTo前の線・曲線・Closeを拒否する。
 
 描画順は記録順で固定する。バッチ化は連続し、pipeline、texture、sampler、clip、合成設定が一致するコマンドに限る。透明度やtextureを理由に並べ替えない。標準実装では画像はquad、図形のパスは共通のcoverage処理へ変換し、既存のtyped bufferとshader引数で渡す。上限を超えるバッチは順序を維持して分割する。
 
@@ -623,13 +739,13 @@ CanvasはBegin中だけ操作できる。Endは未対応のSaveがある場合�
 
 左上原点、右がX正方向、下がY正方向の論理座標とする。Canvasの行列適用後にPixelScaleを掛け、targetの実寸法でclip spaceへ変換する。回転はこの座標系で正の値が時計回りとなる。非整数の座標も保持し、pixelへの丸めはscissor範囲の計算に限定する。
 
-色はAPIのsRGB入力を線形へ変換し、alphaとcoverageを掛けたプリマルチプライド値としてshaderから出力する。画像のRGBはsRGB viewでdecodeし、Straight入力の場合だけalphaを掛ける。通常合成はsource-overで、RGBとalphaともsource factor=One、destination factor=OneMinusSourceAlphaを使用する。sRGB targetへのencodeはattachmentに任せる。clear値も線形RGBへ変換して渡す。
+色はAPIのsRGB入力を線形へ変換し、プリマルチプライド値でpaintを評価する。画像はtexelごとにdecodeし、Straight入力の場合だけalphaを掛けてから補間する。最終出力は形状・clipのcoverageを反映し、alphaを二重に乗算しない。通常合成はsource-overで、RGBとalphaともsource factor=One、destination factor=OneMinusSourceAlphaを使用する。sRGB targetへのencodeはattachmentに任せる。clear値も線形RGBへ変換して渡す。
 
 初期出力は透明またはプリマルチプライドの線形合成結果をsRGB格納したtargetとする。Loadを使う場合、既存内容も同じ表現を満たす必要がある。自身のオフスクリーン出力を画像として再利用する際はImage2Dのalpha表現を明示する。COLRv1用のグラデーションとgraph内部の合成は下記で規定する。HDR、広色域、Canvas全体の追加blend modeは別途設計する。
 
 ### GPU実行、所有権、エラー
 
-アプリケーションは入力画像・mask・距離場をupload済みかつSampled stateにし、targetをColorAttachment stateへ遷移させてからRecordを呼ぶ。外部リソースの前後のbarrierとsubmission間の同期はアプリケーションが管理する。各命令実装は自分のupload・描画buffer・mask・合成用中間面に必要なcopy/computeとbarrierを記録する。同じtarget subresourceを同時に画像として読む操作は拒否する。
+アプリケーションはpaint graph内の画像を含む全入力画像・mask・距離場をupload済みかつSampled stateにし、targetをColorAttachment stateへ遷移させてからRecordを呼ぶ。外部リソースの前後のbarrierとsubmission間の同期はアプリケーションが管理する。各命令実装は自分のupload・描画buffer・mask・合成用中間面に必要なcopy/computeとbarrierを記録する。同じtarget subresourceを同時に画像として読む操作は拒否する。
 
 利用順は「Canvas.End → PrepareAsync → 外部barrier → Record → 必要な後続barrier → commands.Finish → Queue.Submit → TrackSubmission → 完了確認 → commands.Dispose → PreparedDraw2D.Dispose」である。ホストは最初にTarget.LoadOp/ClearColorを一度だけ適用し、以後のbatchへLoad/Storeで使うtargetを渡す。各batchはtargetをColorAttachment stateへ戻してStoreし、開いたpassを残さない。内部textureは必要な最終stateへ遷移させ、外部入力のSampled stateを維持する。queue送信やPresentを内部で呼ばず、既存のオフスクリーンtargetで使用できる。未採用のSurface設計を前提にしない。
 
@@ -676,7 +792,7 @@ COLRv1を含むgraphの補間・合成は線形光RGBで評価する。CPALやCo
 
 Compositeのsourceとbackdropはそれぞれ独立した透明面に評価する。backdropはgraphの子であり、Canvasに既に描かれた内容ではない。子同士を合成した結果を一つの描画として外側へSrcOver合成する。Layersもgraph内部の順序で評価し、nested compositeを外側の描画列へ平坦化しない。graphと中間面境界を越えたバッチ化を禁止する。
 
-Clear、Src、DestIn等では透明領域も結果へ影響するため、単なる輪郭のunionを評価領域にしない。現在のclipとtargetで定まる有限領域を正しい評価範囲とし、boundsを狭める最適化は各演算の透明領域の意味を保存できる場合だけ行う。clip maskのcoverageはgraphの指定箇所で適用し、graph全体の再合成時に二重乗算しない。
+Clear、Src、DestIn等では透明領域も結果へ影響するため、単なる子paintの輪郭のunionを評価領域にしない。target、Canvas clip、図形命令では外側形状も含めた有限領域を評価範囲とし、boundsを狭める最適化は各演算の透明領域の意味を保存できる場合だけ行う。clip maskのcoverageはgraphの指定箇所で適用し、graph全体の再合成時に二重乗算しない。ImagePatternとOpacityは一般描画用の拡張nodeであり、COLRv1 adapterに追加のOpenType形式を要求するものではない。
 
 内部面の生成、render/compute pass分割、copyと必要なresource state遷移はRecordへ組み込む。アプリケーションへの追加submitやGPU待機は要求しない。中間面・maskの寿命はPreparedDraw2Dに属する。最大面積、深さ、評価数、総メモリの上限をPrepareで検証し、超過時に単色化・レイヤー省略で代用しない。
 
@@ -684,6 +800,9 @@ Clear、Src、DestIn等では透明領域も結果へ影響するため、単な
 
 ## 検討した代替案
 
+- 図形の塗りを単色だけにし、gradient・画像をすべてDrawPaintGraphへ変換する: 矩形等の専用描画経路と命令単位のDIを活かすため、形状命令自体に共通paintを持たせる。
+- paint種別ごとに描画命令とDI登録を増やす: 形状との組み合わせで登録数が増えるため採用しない。各形状の専用interfaceがpaint評価を含めて処理する。
+- 画像patternにImage2D.Samplerと独立したtile/filter指定を同時に渡す: 設定の優先順位が生まれるため採用しない。画像paint用の記述にsampling設定を集約する。
 - CanHandleと優先順位で命令ごとに実装を探索する: DIで設定した経路が入力や環境によって変わるため採用しない。命令別interfaceの単一解決と固定保持を使う。
 - genericな描画interfaceと型の辞書で実装を取得する: 宣言量は減るが、今回の固定された11命令には専用interfaceと型付きfieldを使い、バッチごとの呼び出し経路を明確にする。
 - DI解決後に独自の置換APIで登録表を編集する: DIの登録内容と別の登録表を編集する手順が増えるため採用しない。DIではUseGraphics2Dで標準を補完し、後続のDI登録を優先する。DIなしの標準構築にはCreateDefaultを提供する。
@@ -696,6 +815,8 @@ Clear、Src、DestIn等では透明領域も結果へ影響するため、単な
 
 ## 結果と影響
 
+図形の塗り、線、mesh、文字ライブラリから渡すcoverage・距離場で同じpaintを共有できる。画像patternとgroup opacityによりUIの背景や装飾も描画できる。一方、単純な矩形実装も指定されたpaintの評価が必要になり、複雑なgraphでは中間面と複数passを要する。画像のtap別tile処理と正しいalpha補間は単純なtexture samplingより実装・検証コストが増える。
+
 ゲーム、UI、図形描画はbackendに依存せず同じCanvasを使用できる。描画順を維持するため結果を予測でき、GPU送信は他の描画処理とまとめられる。一方、texture切り替えの多い描画では全体ソートよりバッチ数が増え、複雑なclipとCOLRv1ではmask・隔離合成のpassとメモリが必要になる。文字は輪郭を共有して拡大に対応できる一方、単色atlas方式よりパス評価と合成のコストが増える。
 
 CPUコマンド記録、GPU準備、記録、完了の境界を持つため、即時描画より呼び出し手順が増える。上位アプリケーションはframeごとの所有者にその手順を集約できる。既存Graphicsの契約は変更せず、新規ライブラリとそのshader・サンプル・テストを追加する。
@@ -703,6 +824,10 @@ CPUコマンド記録、GPU準備、記録、完了の境界を持つため、�
 専用interfaceと型付き登録表により、描画中のDI解決と型の辞書検索を避けられる。一方、命令追加時は専用interface、コンストラクター、dispatch、標準実装、CreateDefaultとUseGraphics2Dの登録を同時に追加する必要があり、登録表のコンストラクターも変更になる。登録用パッケージを分離するため、本体と併せたバージョン管理が必要になる。
 
 ## 検証方針
+
+塗りの検証では6種類の図形・線命令でColor2D版とSolid版が同じ結果になり、全paint種別を同じ専用interfaceへ渡せることを確認する。2点/3点linearと単一中心/2円radialの等価条件、複数stop、Repeat/Reflect、変換前のpaint座標、形状boundsへ自動伸縮しないことを確認する。shape・Canvas clip・graph Clipに同じ境界を使ってもAAが二重に薄くならないこと、Opacity(0.5)を適用した不透明Layersの重なりもalphaが0.5になること、全体opacityと子ごとのalpha指定が区別されることを画像比較する。
+
+画像patternはatlas隣接領域に強い別色を置き、全tile mode、X/Y別指定、負座標、1texel幅、切り出し、回転・拡大縮小、Nearest/Linear、Decal境界を検証する。透明texelに任意のRGBを置いても色が漏れないこと、Straightと等価なPremultiplied入力の結果が一致すること、sRGBと線形formatを正しく扱うことを確認する。既存DrawImageのalpha補間も含める。source範囲違反、特異行列、画像viewのdevice不一致、graph内部のtarget自己参照をRecord前に拒否し、borrowed viewと内部変換面をGPU完了まで維持することを確認する。
 
 CreateDefaultはDIパッケージとdeviceなしで呼び出せること、全11propertyの実装型がUseGraphics2Dの標準登録と一致すること、複数回の呼び出しで表と各実装が別instanceになること、生成時にGPU資源を確保しないことを確認する。DI経路の外部登録がCreateDefaultで無視されず、コンストラクターへ届くことも検証する。
 
