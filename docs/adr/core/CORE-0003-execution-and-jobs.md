@@ -180,7 +180,7 @@ AOTで必要な型を明示登録し、実行時のassembly走査、MakeGenericT
 
 ### メソッドから仕事を生成するsource generator
 
-モジュールの通常の同期メソッドから、型付きcommand、結果型を保持する仕事定義、handler、登録helper、送信用portを生成する。`Lumyte.Execution.Generators`を初期設計に含め、手書きのICommandHandler実装だけを利用者へ要求しない。生成物は本ADRのModuleBuilder／CommandPort／CommandBatchを使い、別のschedulerや配送経路を作らない。
+モジュールの通常の同期メソッドから、型付きcommand、結果型を保持する仕事定義、handler、登録helper、送信用portを生成する。`Lumyte.Execution.Generators`を初期設計に含め、手書きのICommandHandler実装だけを利用者へ要求しない。生成物は本ADRのModuleBuilder／型付き受付primitive／CommandBatchを使い、別のschedulerや配送経路を作らない。単発送信はExecuteAsyncへ転送せず、その便宜処理を生成メソッド本体へ展開する。
 
 属性はruntime側の `Lumyte.Execution` に置き、generatorは `src/Core/Lumyte.Execution.Generators/` の独立したAnalyzer packageとする。既存のDiagnostics／Composition generatorに合わせ、IIncrementalGeneratorとForAttributeWithMetadataNameを使う。generatorはnetstandard2.0をtargetにRoslynをPrivateAssetsで参照し、`analyzers/dotnet/cs`へ配布する。runtimeや利用者の実行成果物へRoslynの依存を持ち込まない。このPRはその設計であり、generator projectの実装は追加しない。
 
@@ -283,7 +283,7 @@ var applyKey = work.DeclareApply(builder, audioOptions).Key;
 +        public WorkKey<CreateVoiceCommand, AudioVoice> Key { get; }
 +        // runtime.Bindを使う。別plan、無効key、Startupの通常port化は同じく拒否する。
 +        public CreateVoicePort Bind(ExecutionRuntime runtime);
-+        // 起動・終了workflow用。contextの権限を迂回しない。
++        // 起動・終了workflow用。context.TryEnqueueと完了構築を本体へ展開する。
 +        public ValueTask<AudioVoice> ExecuteAsync(ModuleContext context, ClipId clip,
 +            CancellationToken cancellationToken = default);
 +    }
@@ -291,7 +291,7 @@ var applyKey = work.DeclareApply(builder, audioOptions).Key;
 +    public readonly struct CreateVoicePort
 +    {
 +        public CommandPort<CreateVoiceCommand, AudioVoice> Port { get; }
-+        // payload構築とPort.ExecuteAsyncへの直接forward。async state machineは不要。
++        // payload構築、Port.TryEnqueue、受付結果の変換を本体へ展開する。
 +        public ValueTask<AudioVoice> ExecuteAsync(ClipId clip,
 +            CancellationToken cancellationToken = default);
 +        // 高頻度経路。単発runを作らず、同じtyped payloadをbatchへ追加する。
@@ -395,42 +395,61 @@ Voiceのconstructorは公開せず、binding.Forで生成する。defaultのVoic
 
 元AudioVoiceへの参照が送信structに入っても、所属検査やnative寿命の契約は変えない。Forは対象参照を束縛するだけで、別threadからbackend状態を読んだり、その場でPlayを実行したりしない。Browserで同じHostになっても同じ受付とphaseを通す。
 
-#### 呼び出し段数とスタックトレースの削減
+#### 単発送信の本体展開と呼び出し段数の削減
 
-生成senderは既存の生CommandPortへ直接forwardする。生成PlayPort→汎用helper→別の送信adapterという中継を重ねず、完了型も `ValueTask<Unit>` または `ValueTask<TResult>` をそのまま返す。非generic ValueTaskへの変換や単なるforwardのためのasync state machineを作らない。
+生成senderのメソッドに、ExecuteAsyncが担うpayloadの組み立て、受付結果の分岐、ValueTaskの構築を展開する。`Voice.Play → CommandPort.ExecuteAsync → 完了待ちhelper` という中継を作らず、`Voice.Play → CommandPort.TryEnqueue` で型付き受付へ直接入る。生成する単独portのExecuteAsyncとlifecycle用Work.ExecuteAsyncも同じ本体展開を使い、coreのExecuteAsyncを呼ばない。戻り値は `ValueTask<Unit>` または `ValueTask<TResult>` とし、生成メソッドにasync／await、完了変換helper、共通送信wrapperを追加しない。
 
-次は生成されたVoice.Playの本体の例である。bindingの検査以外の分岐を増やさず、所有者・状態・容量の正しさを維持する検査はruntimeとhandlerへ残す。
+次は生成されたVoice.Playの本体の例である。TryEnqueueは後述する受付primitiveで、ValueTaskを返す便宜APIとは責務を分ける。PlayPortはVoiceBinding内の生CommandPortを指す。
 
 ```csharp
-[StackTraceHidden]
 public ValueTask<Unit> Play(CancellationToken cancellationToken = default)
 {
-    if (binding is null) ThrowUnbound(); // cold path。明示的な未束縛例外
-    return binding.PlayPort.ExecuteAsync(
-        new PlayCommand(target), cancellationToken);
+    if (binding is null)
+        throw new InvalidOperationException("Sender is not bound.");
+
+    var command = new PlayCommand(target);
+    var status = binding.PlayPort.TryEnqueue(
+        in command, cancellationToken, out var completion);
+
+    switch (status)
+    {
+        case CommandEnqueueStatus.Accepted:
+            return new ValueTask<Unit>(completion!, 0);
+        case CommandEnqueueStatus.Canceled:
+            return ValueTask.FromCanceled<Unit>(cancellationToken);
+        case CommandEnqueueStatus.NotRunning:
+            return ValueTask.FromException<Unit>(
+                new InvalidOperationException("Command admission is closed."));
+        case CommandEnqueueStatus.QueueFull:
+            return ValueTask.FromException<Unit>(
+                new ExecutionQueueFullException("Command capacity is exhausted."));
+        default:
+            throw new InvalidOperationException("Unknown enqueue status.");
+    }
 }
 
-[StackTraceHidden]
 public CommandResultKey<Unit> AddPlayTo(CommandBatch batch)
 {
-    if (binding is null) ThrowUnbound();
+    if (binding is null)
+        throw new InvalidOperationException("Sender is not bound.");
     var command = new PlayCommand(target);
     return batch.Add(binding.PlayPort, in command);
 }
-
-[StackTraceHidden]
-[DoesNotReturn]
-private static void ThrowUnbound()
-    => throw new InvalidOperationException("Sender is not bound.");
 ```
 
-PlayPortはVoiceBinding内の生CommandPortを指し、generatorが通常生成するPlayPort型のwrapperではない。対象メソッドへ渡す側も閉じたhandlerから直接呼ぶ。正常経路でcatch／wrap、reflection、delegate生成、object配列、boxing、送信元StackTraceの取得を追加しない。小さいforwarderのインライン化は測定して判断し、AggressiveInliningを使ってもJIT／AOTで実際にインライン化される保証とはしない。
+TryEnqueueは一件分の容量予約、payload格納、順序の確定、受付commitと到着通知を行うcoreの入口である。ExecuteAsync、CommandBatchの構築、asyncな結果待ちhelperを内部で呼ばず、ValueTaskの作成も担当しない。単なるExecuteAsyncの改名や別wrapperへの転送ではなく、その前後の便宜処理を生成本体へ移す。queueの原子性・会計・owner／権限検査・cancel競合を各送信メソッドへ複製せず、runtime内の共通受付処理に残す。複数段階の予約／commit APIを利用側へ公開しない。
 
-StackTraceHiddenは生成したforwarder、adapter、cold-pathのthrow helperだけへ付ける。ユーザーのpartial class全体、元メソッド、backend、runtimeの実質的な処理へは付けず、取得できた実処理の位置情報を保持する。この属性は対応するスタックトレース表示を短くするもので、実際の呼び出しframeや例外captureの費用を消すものではない。インライン化で元メソッドのframe自体がなくなる場合もあるため、JIT／AOTで固定のframe一覧は保証しない。
+生成物は利用者側のassemblyに入るため、受付primitiveはpublicとしてAPI一覧へ含める。internal field、InternalsVisibleTo、UnsafeAccessor、Reflectionに頼らない。手書きのCommandPort.ExecuteAsync／ModuleContext.ExecuteAsyncも同じprimitiveを使い、受付結果の変換と例外契約を生成版と一致させる。generatorは必要なprimitiveのsignatureをビルド時に検査し、対応しないruntimeとの組み合わせを診断する。
 
-例外はruntimeのhandler境界で捕捉し、ExceptionDispatchInfo等で元のDomain／backendのtraceを保って完了へ伝える。生成層ごとに例外を包み直さない。単一失敗は元の例外を通知し、複数失敗だけを集約する。成功送信ごとの文字列化やActivityは作らず、必要な相関は既存の仕事IDとrun IDで扱う。詳細な送信元traceは明示的な診断設定でだけ取得する。
+受理時のcompletionは、安定した単発run自身が実装する `IValueTaskSource<TResult>` への参照である。public CommandRunの外側に別の完了wrapperを確保せず、この専用run一つで完了と結果回収を扱う。source instanceはpool再利用せず、ValueTaskのtokenは0に固定する。公開batch runと単発runは同じ容量・取消・静止条件で会計し、単発のためのCommandBatchやCompletion Taskを作らない。IValueTaskSourceへの変換は参照型なのでboxingを伴わない。
 
-送信structの生成・コピー自体は新しいheap objectを必要としないが、単発メソッドは既存の一件runと完了管理の費用を持つ。構造体化だけで全経路を無割り当てとしない。高頻度のECS／Audio制御は再利用CommandBatchへ追加し、一つのrunへまとめてポーリングする。単発の返値も必ず観測し、新しいfire-and-forget経路や失敗を無視するvoidメソッドは生成しない。
+GetResultはtoken、完了と単一consumerを検査してから、実際の結果／取消／例外を取り出し、finallyで結果slotなどを一度だけ返す。未完了または二重のGetResultは拒否し、進行中のslotを返さない。成功・取消・失敗のすべてで回収し、返却済みのsourceがpayloadや結果を保持し続けない。戻ったValueTaskは一度だけ観測し、未観測の結果も有界容量を使う。sourceが先に完了した場合と継続登録が先の場合の両方を扱い、OnCompletedのcontext指定flagsを尊重しつつ、外部継続をhandler内でinline実行しない。開始後の取消で実際の生成結果を失わない契約も維持する。
+
+StackTraceHiddenは使用しない。生成した中継メソッドやthrow helper自体を作らず、必要なチェックと返値構築を本体へ置いて実際の呼び出し段数を減らす。対象メソッドへ渡す側は閉じたhandlerから直接呼び、元メソッドの業務処理をgeneratorがコピーすることはない。正常経路にcatch／wrap、reflection、delegate生成、object配列、boxing、送信元StackTraceの取得を追加しない。JIT／AOTのインライン化hintに依存した削減とせず、生成ソースとILでも中継callがないことを確認する。
+
+例外はruntimeのhandler境界で捕捉し、ExceptionDispatchInfo等で取得できた元のDomain／backendのtraceを保って完了へ伝える。生成層で例外を包み直さず、単一失敗は元の例外、複数失敗だけを集約する。成功送信ごとの文字列化やActivityは作らず、必要な相関は既存の仕事IDとrun IDで扱う。詳細な送信元traceは明示的な診断設定でだけ取得する。実際のframeはJIT／AOTで変わり、全経路の固定の段数は保証しない。
+
+本体展開で生成コード量は増えるため、展開は上記の便宜処理に限り、生成IL量・native code size・命令cacheへの影響も測る。送信structの生成・コピー自体は新しいheap objectを必要としないが、単発runの確保と完了管理の費用は残る。高頻度のECS／Audio制御は再利用CommandBatchへ追加し、一つのrunへまとめてポーリングする。新しいfire-and-forget経路や失敗を無視するvoidメソッドは生成しない。
 
 #### 生成時の診断と互換性
 
@@ -447,12 +466,13 @@ StackTraceHiddenは生成したforwarder、adapter、cold-pathのthrow helperだ
 | LMEXEC005 | ExistingCommand、WorkContext注入、Update／Range／length methodの型や引数の不一致 |
 | LMEXEC006 | 明示許可のないawaitable結果、不正なenum値、生成helperのcontrol引数と衝突するpayload引数名 |
 | LMEXEC007 | Sender名・ExecutionTargetの不足／重複／型不一致、SenderなしのExecutionTarget、非対応入力modeやawaitable結果との併用 |
+| LMEXEC008 | 参照runtimeが生成コードに必要な受付primitive・結果型のsignatureと対応しない |
 
 Nameを省略した場合はメソッド名を基底とする。overloadは異なるNameを明示すれば登録できる。payloadのfieldは引数名の先頭を大文字にした名前とし、C# keywordをescapeする。変換後に重複するfieldや生成する包含型名と同名になるfieldは診断する。生成するSender、Work、Binding、メソッド、AddXxxToと既存・生成memberとの衝突も検査する。group登録helperのWorkOptions引数は仕事名から生成し、呼び出しはnamed argumentを使える。生成helperが使うcontext／batch／cancellationTokenとpayload引数名が衝突する場合は、初期版では引数名を変更するよう診断する。注入するWorkContextの引数名はこの制限に含めない。
 
-同じメソッド集合から生成するコードはsource fileの走査順、絶対path、cultureへ依存させない。型名はglobal::付きの完全修飾名で出力し、nullable注釈を維持する。生成名やsource上の並びから永続ID、frame順序、依存関係を作らず、受付sequenceと明示したgraphで順序を決める。
+同じメソッド集合から生成するコードはsource fileの走査順、絶対path、cultureへ依存させない。型名はglobal::付きの完全修飾名で出力し、nullable注釈を維持する。展開する本体のlocal名はpayload引数と衝突しないよう決定的に生成する。生成名やsource上の並びから永続ID、frame順序、依存関係を作らず、受付sequenceと明示したgraphで順序を決める。
 
-手書き登録APIも残す。生成物はその薄いadapterなので、両方式は同じruntimeへ登録できる。ただし同じ仕事を二重登録しない。生成される型・member名は利用側のソースAPIとなるため、メソッド名・Name・引数／結果型の変更は生成APIの互換性変更として扱う。wire形式や保存形式の互換性は保証しない。
+手書き登録APIも残し、両方式は同じruntimeへ登録できる。ただし同じ仕事を二重登録しない。生成される型・member名と、展開した送信本体が使う受付primitiveは利用側のソースAPIとなる。メソッド名・Name・引数／結果型の変更は生成APIの互換性変更として扱い、runtime／generatorは対応するversionを組にして検証する。wire形式や保存形式の互換性は保証しない。
 
 ### 型付きport、batchと結果
 
@@ -478,12 +498,27 @@ Nameを省略した場合はメソッド名を基底とする。overloadは異�
 +        public ExecutionQueueFullException(string message);
 +    }
 +
++    public enum CommandEnqueueStatus
++    {
++        Accepted,   // 受理済み。completionは必ず非null。
++        Canceled,   // 渡されたtokenが取消済みのため未受理。
++        NotRunning, // 該当経路の受付が閉じているため未受理。
++        QueueFull   // 必要な有界容量を確保できず未受理。
++    }
++
 +    public sealed class CommandPort<TCommand, TResult> where TCommand : struct
 +    {
-+        // 一件batchの便宜API。実行は常にruntimeへ配送し、inline実行しない。
++        // 単発受付の便宜API。batchを構築せず、TryEnqueueと返値構築を行う。
++        // 生成senderからは呼ばない。実行は常にruntimeへ配送する。
 +        // 未受理・実行失敗は返すValueTaskへ伝える。結果は一度だけ観測する。
 +        public ValueTask<TResult> ExecuteAsync(TCommand command,
 +            CancellationToken token = default);
++        // 生成コードも使う単発受付primitive。予約・格納・commit・通知を行う。
++        // Accepted以外はcompletion=null。sourceのtokenは0、一度だけ観測する。
++        // ValueTask構築や結果待機は行わない。
++        public CommandEnqueueStatus TryEnqueue(in TCommand command,
++            CancellationToken token,
++            out System.Threading.Tasks.Sources.IValueTaskSource<TResult>? completion);
 +    }
 +
 +    // builder世代と結果位置を保持し、対応するrun以外では使用できない。
@@ -520,6 +555,11 @@ Nameを省略した場合はメソッド名を基底とする。overloadは異�
 +        public ValueTask<TResult> ExecuteAsync<TCommand, TResult>(
 +            WorkKey<TCommand, TResult> key, TCommand command,
 +            CancellationToken token = default) where TCommand : struct;
++        // 同じ権限検査を行う受付primitive。生成WorkはExecuteAsyncを経由しない。
++        public CommandEnqueueStatus TryEnqueue<TCommand, TResult>(
++            WorkKey<TCommand, TResult> key, in TCommand command, CancellationToken token,
++            out System.Threading.Tasks.Sources.IValueTaskSource<TResult>? completion)
++            where TCommand : struct;
 +        public GateControl GetGate(GateKey key);
 +    }
 +
@@ -553,7 +593,11 @@ Nameを省略した場合はメソッド名を基底とする。overloadは異�
 +}
 ```
 
-portはruntime、module instance、登録世代へ結び付く。利用側は受け取ったportへ入力を渡し、ownerやhandlerを毎回指定しない。ExecuteAsyncの引数不正は同期的な引数例外、起動前や終了後の外部受付は失敗ValueTask内の状態例外、単発APIの容量不足は `ExecutionQueueFullException` として返すValueTaskを失敗させる。既に取消済みなら未受理とし、TrySubmitはOperationCanceledExceptionを同期的に返す。成功したTrySubmitは必ずrunを返す。TrySubmitの無効batch・状態違反は同期例外、容量不足だけはfalseとrun=nullになる。
+portはruntime、module instance、登録世代へ結び付く。利用側は受け取ったportへ入力を渡し、ownerやhandlerを毎回指定しない。ExecuteAsyncと本体展開した生成メソッドは同じ例外契約とする。引数不正は同期的な引数例外、起動前や終了後の外部受付は失敗ValueTask内の状態例外、単発APIの容量不足は `ExecutionQueueFullException` として返すValueTaskを失敗させる。既に取消済みなら未受理の取消ValueTaskを返す。TrySubmitは事前取消をOperationCanceledExceptionとして同期的に返す。成功したTrySubmitは必ずrunを返す。TrySubmitの無効batch・状態違反は同期例外、容量不足だけはfalseとrun=nullになる。
+
+TryEnqueueは登録・引数・handler内投入禁止を検査し、ModuleContext経由ではcontextの有効期間、module所属、lifecycle権限と依存先も検査する。不正は同期例外とし、生成コードから来たことを理由に検査を省かない。その後、該当経路の受付が閉じていればNotRunning、渡されたtokenが取消済みならCanceled、容量不足ならQueueFullを返す。Canceledは必ずtoken.IsCancellationRequestedがtrueの場合だけ返し、停止やcontext失効を取消に置き換えない。元API・生成版・手書きprimitive呼び出しで同じ優先順とする。
+
+受付状態・取消とcommitの競合はruntimeで解決する。Acceptedはpayloadのcopyと必要枠の予約・公開が済んだことを示し、handlerの完了を意味しない。未受理のstatusやcommit前例外ではすべての予約を戻してcompletion=nullとし、一件も実行しない。commit後の取消は開始前抑止／開始済み追跡の規則に従う。受理後の内部障害は有効なcompletionへ通知し、進行中の仕事を未受理と偽って再送させない。single／batch／graphは同じ順序groupと会計へ入り、同じHostでも再入しない。
 
 初期batchは同じowner・OrderGroupへ属する複数command、または非順序化CPU commandだけを受け付ける。異なるtargetをまたぐ依存はgraphで表す。同じowner batch内の異なるcommand型でも共通の受付sequenceを割り当て、同じOrderGroupの他batchが間へ割り込まない。別groupの仕事は公平性のため間で実行でき、CPU batchの実行順序は保証しない。原子的なのは受付であり、副作用のrollbackや音声sample精度の同時反映は保証しない。実行時の一件の失敗は後続未開始commandを抑止し、開始済み仕事の終了後にrunを失敗させる。成功済みの結果は失敗runでも個別に取得できる。
 
@@ -561,7 +605,7 @@ CommandBatchはBuilding→Submitted→対応run完了・Dispose→Reset→Buildi
 
 CommandRunはbatchごとに一つの安定した参照objectを確保し、公開instanceをpool再利用しない。結果はTResult専用storeへ保持し、GetResultは同じ結果を返すが、そのcopyは資源の所有権を増やさない。Disposeは冪等とし、以後の結果取得は拒否する。未完了runをDisposeしてborrowを失わせない。完了Taskを取得済みなら、そのTaskはrunのDispose後も同じ結果を保つ。
 
-外部の投入はhandlerからでもownerからでもinlineに切り替えない。特にBrowserで同じ物理threadになっても、CPU処理中へAudio操作を再入させない。handler内のExecuteAsync／TrySubmit／Pump／Stopは契約違反として拒否する。moduleのStartAsync／StopAsyncはhandlerではなく、非同期workflowとして明示的に配送できる。
+外部の投入はhandlerからでもownerからでもinlineに切り替えない。特にBrowserで同じ物理threadになっても、CPU処理中へAudio操作を再入させない。handler内のExecuteAsync／TryEnqueue／生成senderからの投入／TrySubmit／Pump／Stopは契約違反として拒否する。moduleのStartAsync／StopAsyncはhandlerではなく、非同期workflowとして明示的に配送できる。
 
 ### 実行条件、順序と条件待ち
 
@@ -583,7 +627,7 @@ gateはDomainのready状態を表すが、voiceの生存やdevice所属の検査
 
 runtimeはrun、header、payload、result、graph nodeの必要枠を受付前に予約して一括commitする。失敗時は一件も実行せず枠を戻す。不要になったpayloadの参照はhandler静止／開始前取消後のslot返却時にclearする。batch stagingはReset／Dispose時、resultはrun.Dispose時にclearし、空きslotやpoolがvoice・device・bufferを保持し続けないようにする。受理済みpayloadがstagingの強参照に依存する構成にはしない。型付きstoreのblock拡張とTResultの格納も総容量・byte上限へ含め、予算外の自動拡張で回避しない。別型の確保が必要な場合は未使用blockを返却して予算を回せるようにし、古い型のcacheだけで受付を永久拒否しない。slotのgenerationを検査し、古い通知やresult keyを再利用後の仕事へ適用しない。generationを安全に更新できないslotは再利用しない。
 
-完了済みで未DisposeのCommandRunの結果も有界容量を使う。単発ExecuteAsyncは内部で一件runを作り、結果を返すまで追跡して内部slotを返す。ValueTaskだから無割り当てとは宣言しない。取消登録、例外、Task継続、最初のstore確保、batchごとのrun objectの費用を測る。高頻度の制御はbatchとポーリングを使えば、commandごとの完了Taskを必要としない。
+完了済みで未DisposeのCommandRunの結果も有界容量を使う。単発のTryEnqueueはcompletion sourceを兼ねる一件runを作り、ExecuteAsyncまたは展開した生成本体がValueTaskを構築する。結果の観測時にGetResultが内部slotを返し、未観測の結果をGCやfinalizerで早期回収しない。ValueTaskだから無割り当てとは宣言しない。取消登録、例外、AsTaskを使う場合のTask化、最初のstore確保、単発／batchごとのrun objectの費用を測る。高頻度の制御はbatchとポーリングを使えば、commandごとの完了sourceを必要としない。
 
 structをcopyしても参照先はdeep copyしない。PCMやECS snapshotなどのbuffer・leaseは、未受理なら送信側が保持し、受理後は全handlerが静止するまで変更・返却しない。参照をstructへ代入すること自体に新しい対象objectの確保は不要だが、GC write barrier、保持期間、参照先へのcache missは残る。MaxPayloadBytesはpayloadとresultのstoreが保持する領域を制限するもので、参照先の巨大bufferのbyte予算はResources／統合側が別に制限する。
 
@@ -1050,7 +1094,8 @@ CPU jobと駆動では次を参考にする。
 | --- | --- |
 | owner上の直接loop／capture付きlambda配送／cached delegate配送／型付き単発／型付きbatch | 件数ごとのthroughput、全threadのallocated bytes、GC回数、受付～handler開始／完了のp50／p95／p99／max |
 | 生port／生成struct単発／生成struct batch、voice数・操作種類数 | senderの実サイズ、binding個数、bytes/voice、全threadのbytes/commandとbytes/batch、run数、copy量、p95／p99。構造体化とbatch化の効果を分離 |
-| 生成forwarder／adapterの例外、StackTraceHidden、JIT／AOT | 実際の呼び出し段数とインライン化、正常時費用、例外capture／整形の時間とbytes、表示frame数、元method・backendの取得可能な位置情報の保持 |
+| ExecuteAsyncへの転送／生成本体への展開、送信側／実行側、JIT／AOT | ソース・ILのcall数、実際の呼び出し段数、正常時費用、例外capture／整形の時間とbytes、元method・backendの取得可能な位置情報。trace非表示属性を使わず比較 |
+| 送信メソッド数・payload型数を増やした本体展開 | 生成IL量、native code size、JIT時間、命令cacheへの影響、p95／p99。queue処理を複製せず便宜処理だけ展開した費用 |
 | 手書きhandler／生成handler、登録時／定常送信、incremental生成 | 生成コードの閉じた直接呼び出し、追加の割り当て・boxingの有無、同じ実行契約、ビルド時の再生成範囲 |
 | 1／複数producer、同一／複数型、Play→Stopと生成結果、gate閉鎖、満杯 | 同期競合、copy bytes、wake回数、context switch、拒否率、順序、最大保持memory、再開遅延 |
 | voiceのID検索／対象参照、参照を含むstruct、長時間のbatch再利用 | 実行費用、GC write barrier、所有者検査、payload／result／staging返却後の不要な保持、native解放との順序 |
@@ -1063,7 +1108,7 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 
 実装は次の順で進める。各段階の実装はこのPRでは未実施である。
 
-1. 宣言・型検査・Hostのtyped store・OrderGroup・結果・有界受付・cleanupとメソッド起点generatorを実装する。手書き登録と生成登録、対象を保持するreadonly structの送信・batch追加の同等性を確認し、DIなしで同期nativeの生成→Play／Stop→解放を通す。
+1. 宣言・型検査・Hostのtyped store・OrderGroup・結果・有界受付・cleanupとメソッド起点generatorを実装する。単発受付primitiveとrun自身の完了sourceを作り、生成送信本体へ返値構築まで展開する。手書き登録と生成登録、対象を保持するreadonly structの送信・batch追加の同等性を確認し、DIなしで同期nativeの生成→Play／Stop→解放を通す。
 2. Dedicatedの起動・到着wake・周期UpdateとHost phase／gateを追加する。BrowserはCooperativeと非同期初期化・resumeを実環境で確認する。
 3. 宣言済みCPU／owner graphとrange処理をCooperativeから実装し、ThreadPoolにも同じ依存・取消・容量契約を適用する。
 4. ResourcesのBuildAsync／ReleaseAsyncと元owner／leaseを接続する。ECS snapshot→CPU準備→Audio適用→feedbackを追加する。
@@ -1077,7 +1122,10 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 - 構成→専用thread起動→ownerで初期化→起動完了→通常受付の順、部分起動失敗、起動中停止をDIなしで確認する。Browserでは初期化・終了中もHostが進む。
 - generatorの有効例をRoslynで生成後までコンパイルし、privateメソッドの直接呼び出し、引数なし・複数引数、void／結果、nullable、ExistingCommand、Update、Range、lifecycle配送、batch helperを確認する。非対応定義・file-local・dynamic・delegate入力・名前衝突は対応する診断で失敗させ、file順の変更や無関係な編集で生成物が変わらないことを確認する。
 - 生成senderがreadonly structで対象と共有bindingだけを持ち、各メソッドが対象をpayloadへ正しく戻すことを生成後コンパイルと実行で確認する。default／null／別module、コピー後のDestroy、複数producer、追加引数、batchの未送信、gate／Admissionの不一致、生成名の衝突を検証する。
-- sender生成・コピーに追加のheap objectやboxing、送信wrapperのasync state machineがないことを測る。単発のrun費用は別計上する。インライン化を抑えた検証用methodでStackTraceHiddenが元method／backendのframeを隠さず、単一失敗を不必要に包み直さないことを確認する。実際のRelease構成ではJIT／AOTの実frame数と表示frame数を区別して測る。
+- 生成メソッドのソース・ILにcoreのExecuteAsync、完了待ちhelper、送信wrapper、throw helperへの中継call、async state machine、StackTraceHiddenの適用がないことを確認する。別assemblyから公開primitiveだけで生成後コンパイルでき、非対応runtimeをLMEXEC008で拒否する。単独portとModuleContext経由の生成Workも検証する。
+- sender生成・コピーに追加のheap objectやboxingがなく、単発runの外側に完了wrapper・CommandBatch・Taskを確保しないことを測る。完了が先／継続登録が先、取消／成功／失敗、早すぎる／二重のGetResult、未観測、slot返却後の参照解放と非pool sourceの古い参照を検証する。単発のrun費用は別計上する。
+- 本体展開と手書きExecuteAsyncで引数・状態・事前取消・容量不足・handler例外の契約が一致することを確認する。受付と停止／取消の競合で部分公開や予約漏れを起こさず、ModuleContextの権限とhandler内投入禁止をprimitive直呼びでも迂回できないことを検証する。
+- traceを隠さず、送信側とownerの実行側を分けて実frame数、生成コード量、JIT／AOTの最適化を測る。元method／backendの取得可能な位置を保持し、単一失敗を不必要に包み直さないことを確認する。
 - 同型moduleの複数instance／runtimeで生成key・portが混ざらず、Startupを通常port／graphから実行できないことを確認する。生成登録と手書き登録の順序・gate・容量・取消・生成結果・cleanupを比較し、Native AOTと実Browserでも生成物を検証する。
 - 投入ごとのclosure／delegate／payload boxingがないことをallocation traceで確認し、単発、batch、Task観測、取消、失敗の費用は別々に記録する。
 - 複数型のPlay→Stop、複数producer、batchの連続sequence、同じgroupの複数commandを一つのHost passで進められること、同じgroupのgate待ち、別groupの進行、公平性、ready通知と待機のlost wakeupを検証する。
@@ -1100,8 +1148,9 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 | InvokeAsync(Action／Func)を汎用の公開投入APIにする | 実行条件とowner選択が利用側へ分散する。型とhandlerを一度宣言し、データを送る契約を選ぶ |
 | メソッド属性をruntimeでReflection探索してdelegate化する | 起動時の動的型探索とAOT制約が増える。コンパイル時に閉じたhandlerと登録コードを生成する |
 | voiceごとに参照型proxyや仕事を登録する | 生成・破棄のたびにwrapperと登録が増える。仕事はmodule単位、送信先は共有binding、対象ごとの入口は2参照のreadonly structにする |
-| 送信structの各メソッドでasync/awaitや多段wrapperを挟む | 完了型を変えないforwardにstate machineは不要。生port/batchへ直接渡し、ValueTaskをそのまま返す |
-| StackTraceHiddenだけで高速化したと扱う | 表示の省略と実呼び出し・capture費用は異なる。生成中継だけを省略し、実処理のtrace保持と計測を行う |
+| 生成メソッドからExecuteAsyncや完了待ちhelperへ転送する | 受付前後の便宜処理を本体へ展開し、ValueTaskを直接構築する。中継callとasync state machineを作らない |
+| StackTraceHiddenで中継frameを非表示にする | 使用しない。中継メソッド自体を生成せず、実際の呼び出し段数を減らす |
+| queueの予約・commit処理まで各送信メソッドへコピーする | 順序・容量・取消の原子性を公開コードへ分散し、生成物も肥大化する。共通の受付primitiveを一度呼ぶ境界を保つ |
 | commandとhandlerの手書きだけを提供する | メソッドとpayload・登録の型定義が重複する。generatorを標準の記述手段として追加し、低レベルAPIも保持する |
 | Audio専用のcommand queueだけを実装する | Resources・Graphics・ECSも同じ容量、型、完了、owner、終了処理を必要とする。共通coreへ置く |
 | commandをobject／interfaceへboxして送る | 簡単だが定常時の割り当てを増やす。閉じたgeneric storeと共通headerを使う |
@@ -1122,7 +1171,7 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 
 - モジュールが仕事と実行条件を宣言し、同じ型付きportをnative専用threadとBrowserのHost共有で使える。DIに依存せず、Audioの実体生成・制御・解放を追跡できる。
 - メソッドの引数・結果からcommand、handler、登録、送信APIを生成できる。generatorと診断の保守は必要だが、実行時のReflectionや新しい配送方式は増やさない。
-- 元インスタンスを持つreadonly structのメソッドから送信できる。共有bindingと生portへの直接forwardで対象ごとのheap wrapperと不要な中継を省き、生成部分のtrace表示を短くする。単発完了管理の費用は残り、高頻度にはbatchを使う。
+- 元インスタンスを持つreadonly structのメソッドから送信できる。共有bindingで対象ごとのheap wrapperを省き、ExecuteAsyncの便宜処理を本体へ展開して中継callと完了待ちhelperをなくす。traceは隠さない。生成コード量とruntime／generator間の互換性管理は増え、単発runの費用も残るため、高頻度にはbatchを使う。
 - Audioの対象はインスタンス参照を直接渡し、通常操作のID検索を省ける。nativeの寿命は強参照だけでは保護されないので、owner上の破棄順序と所属・生存検査を維持する。
 - 高頻度の投入を小さいデータとbatchにでき、投入ごとのclosure・boxingを避ける設計になる。全経路で無割り当て、直接loopより高速、hard realtimeとは保証しない。
 - 宣言、順序group、gate、所有記録、cleanupの実装が必要になる。基盤だけでDomainの資源寿命、データ競合、音声sample精度の同時反映を解決するものではない。
@@ -1141,8 +1190,8 @@ CPU・OS・.NET／Browser版、構成、warmup、反復数、入力、生デー�
 - [Inputの所有権](../input/INPUT-0001-input-system.md)
 - [Animationの共有定義と実行者](../animation/ANIMATION-0001-animation-system.md)
 - [Diagnosticsの実行ポイントとメソッド起点generator](../diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
-- [StackTraceHiddenAttributeの表示上の契約](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.stacktracehiddenattribute?view=net-10.0)
-- [MethodImplOptionsのインライン化hint](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.compilerservices.methodimploptions?view=net-10.0)
+- [IValueTaskSourceの完了契約](https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.sources.ivaluetasksource-1?view=net-10.0)
+- [ValueTaskの一度限りの観測とsource constructor](https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.valuetask-1?view=net-10.0)
 - [ExceptionDispatchInfoによる例外情報の保持](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.exceptionservices.exceptiondispatchinfo?view=net-10.0)
 - [既存OperationGenerator](../../../src/Diagnostics/Lumyte.Diagnostics.Generators/OperationGenerator.cs)
 - [既存generatorの配布設定](../../../src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj)
