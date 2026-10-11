@@ -31,6 +31,11 @@ public sealed class SettingsDiagnosticsTests
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         var set = new DiagnosticOperationSet(scope.ServiceProvider.GetRequiredService<SettingsDiagnostics<SettingsDiagnosticModel>>());
         OperationDescriptor read = Assert.Single(set.Catalog, operation => operation.Id == "read");
+        OperationDescriptor readTree = Assert.Single(set.Catalog, operation => operation.Id == "read-tree");
+        Assert.Equal(1_048_576, Assert.Single(readTree.Results, field => field.Id == "document").MaxLength);
+        string document = Invoke(set, "read-tree").Values!["document"].String!;
+        Assert.Contains("\"secret\":\"not-for-diagnostics\"", document, StringComparison.Ordinal);
+        Assert.Contains("\"sampleRate\":48000", document, StringComparison.Ordinal);
         Assert.DoesNotContain(read.Results, field => field.Id == "secret");
         Assert.Contains(read.Results, field => field.Id == "device");
         Assert.DoesNotContain(Assert.Single(set.Catalog, operation => operation.Id == "save").Arguments, field => field.Id == "device");
@@ -44,6 +49,28 @@ public sealed class SettingsDiagnosticsTests
         Assert.Equal("forbidden", Invoke(set, "save", Edit(), 0, [DiagnosticPermission.Observe]).Code);
         Assert.Equal("conflict", Invoke(set, "save", Edit(), 99).Status);
         Assert.Null(store.Bytes);
+    }
+
+    /// <summary>Checks a complete nested document can be validated and saved with revision protection.</summary>
+    /// <returns>The test completion.</returns>
+    [Fact]
+    public async Task SavesCompleteTreeAsync()
+    {
+        var store = new Store();
+        await using ServiceProvider provider = await CreateAsync(store);
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        var set = new DiagnosticOperationSet(scope.ServiceProvider.GetRequiredService<SettingsDiagnostics<SettingsDiagnosticModel>>());
+        string document = Invoke(set, "read-tree").Values!["document"].String!
+            .Replace("\"sampleRate\":48000", "\"sampleRate\":96000", StringComparison.Ordinal)
+            .Replace("\"headphones\"", "\"speakers\"", StringComparison.Ordinal);
+        var arguments = new Dictionary<string, DiagnosticValue> { ["document"] = DiagnosticValue.From(document) };
+        Assert.Equal("invalid-document", Invoke(set, "save-tree", new() { ["document"] = DiagnosticValue.From("{") }, 0).Code);
+        Assert.Equal("conflict", Invoke(set, "save-tree", arguments, 2).Status);
+        DiagnosticOperationResult receipt = Invoke(set, "save-tree", arguments, 0);
+        Assert.Equal("Saved", (await WaitAsync(set, receipt.Values!["job-id"].String!)).Values!["write-status"].String);
+        SettingsDiagnosticModel saved = provider.GetRequiredService<IEditableOptions<SettingsDiagnosticModel>>().Current.Value;
+        Assert.Equal(96000, saved.Nested.SampleRate);
+        Assert.Equal("speakers", saved.Profiles[1]);
     }
 
     /// <summary>Checks pending saves do not block, bound jobs, preserve hidden fields and cancel before commit.</summary>
@@ -168,7 +195,7 @@ public sealed class SettingsDiagnosticsTests
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         var set = new DiagnosticOperationSet(scope.ServiceProvider.GetRequiredService<SettingsDiagnostics<SettingsDiagnosticModel>>());
-        Assert.Equal("read", Assert.Single(set.Catalog).Id);
+        Assert.Equal(["read-tree", "save-tree", "save-result", "read"], set.Catalog.Select(operation => operation.Id));
         Assert.Throws<ArgumentException>(() => services.AddSettingsDiagnostics<SettingsDiagnosticModel, BeforeInputProcessing>("other", fields => fields.Double("volume", model => model.Volume)));
         var fields = new SettingsDiagnosticFields<SettingsDiagnosticModel>();
         Assert.Throws<ArgumentException>(() => fields.String("load-status", model => model.Device));

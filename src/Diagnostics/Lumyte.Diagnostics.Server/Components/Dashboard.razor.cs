@@ -56,7 +56,7 @@ public partial class Dashboard : IAsyncDisposable
 
     private bool Supported => CurrentPage.RequiredSubsystem == null || (Selected?.Catalog.Any(item => item.Subsystem.Id == CurrentPage.RequiredSubsystem) ?? false);
 
-    private bool ShowInspector => _view is "operations" or "input" or "settings" || _inspected != null || ((CurrentPage.Component != null || CurrentPage.RequiredSubsystem != null) && _operationResult.Length > 0);
+    private bool ShowInspector => _view is "operations" or "input" || _inspected != null || ((CurrentPage.Component != null || CurrentPage.RequiredSubsystem != null) && _operationResult.Length > 0);
 
     private SessionSnapshot? Selected => _resources.FirstOrDefault(resource => resource.SessionId == _selectedId);
 
@@ -381,6 +381,35 @@ public partial class Dashboard : IAsyncDisposable
                 _error = exception.Message;
             }
         }
+    }
+
+    private async Task<DiagnosticOperationResult?> InvokeSettingsAsync(OperationInvocation invocation)
+    {
+        Guid? target = _selectedId;
+        long version = _selectionVersion;
+        if (!target.HasValue)
+        {
+            return null;
+        }
+
+        try
+        {
+            DiagnosticOperationResult result = await Session.InvokeAsync(target.Value, invocation, _lifetime.Token);
+            return target == _selectedId && version == _selectionVersion && !_expired ? result : null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Expire();
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or InvalidOperationException or KeyNotFoundException or ArgumentException)
+        {
+            if (target == _selectedId && version == _selectionVersion && !_expired)
+            {
+                _error = "設定操作の結果を確認できませんでした。";
+            }
+        }
+
+        return null;
     }
 
     private void Expire()

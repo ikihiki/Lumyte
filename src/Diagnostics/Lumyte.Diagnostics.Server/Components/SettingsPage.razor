@@ -1,0 +1,136 @@
+<section id="settings-page" aria-busy="@_busy.ToString().ToLowerInvariant()">
+    <details id="settings-logs" class="settings-logs">
+        <summary>設定システムのログ <span>@SettingsLogs.Length 件</span></summary>
+        <div class="table-container"><EventTable Items="SettingsLogs" Kind="log" /></div>
+    </details>
+    <div class="settings-toolbar" role="toolbar" aria-label="設定操作">
+        <FluentButton Id="settings-reload" Disabled="_busy" OnClick="LoadAsync">再読み込み</FluentButton>
+        <FluentButton Id="settings-save" Class="primary" Disabled="@(_busy || _documents.Count == 0)" OnClick="SaveAsync">保存</FluentButton>
+        <span id="settings-status" role="status">@_status</span>
+    </div>
+    @foreach (Document document in _documents)
+    {
+        <section class="settings-document" data-subsystem="@document.SubsystemId">
+            <SettingsTreeNode Node="document.Root" />
+        </section>
+    }
+</section>
+
+@code {
+    private readonly List<Document> _documents = [];
+    private bool _busy;
+    private string _status = "設定を読み込んでいます…";
+    private Guid? _loadedSession;
+
+    [Parameter, EditorRequired]
+    public SessionSnapshot Resource { get; set; } = default!;
+
+    [Parameter]
+    public DiagnosticEvent[] Events { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public Func<OperationInvocation, Task<DiagnosticOperationResult?>> Invoke { get; set; } = default!;
+
+    private DiagnosticEvent[] SettingsLogs => Events.Where(item => item.Kind == "log" && (item.Name.StartsWith("Lumyte.Settings", StringComparison.Ordinal) || item.Fields.Keys.Any(key => key.StartsWith("settings.", StringComparison.Ordinal)))).ToArray();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedSession != Resource.SessionId)
+        {
+            _loadedSession = Resource.SessionId;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _status = "設定を読み込んでいます…";
+        var loaded = new List<Document>();
+        try
+        {
+            foreach (DiagnosticSubsystemCatalog subsystem in Resource.Catalog.Where(item => item.Subsystem.Id.StartsWith("settings.", StringComparison.Ordinal) && item.Operations.Any(operation => operation.Id == "read-tree")))
+            {
+                DiagnosticOperationResult? result = await Invoke(new(Guid.NewGuid(), subsystem.Subsystem.Id, "read-tree", []));
+                if (result?.Status != "success" || result.Values == null || result.Revision == null)
+                {
+                    _status = "設定を読み込めませんでした。";
+                    return;
+                }
+
+                loaded.Add(new(subsystem.Subsystem.Id, result.Revision.Value, SettingsTreeModel.Parse(subsystem.Subsystem.DisplayName, result.Values["document"].String!)));
+            }
+
+            _documents.Clear();
+            _documents.AddRange(loaded);
+            _status = loaded.Count == 0 ? "ツリー表示に対応した設定がありません。" : $"{loaded.Count} 件の設定を読み込みました。";
+        }
+        catch (Exception exception) when (exception is JsonException or FormatException)
+        {
+            _status = "設定データの形式を読み取れませんでした。";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            foreach (Document document in _documents)
+            {
+                var arguments = new Dictionary<string, DiagnosticValue> { ["document"] = DiagnosticValue.From(document.Root.ToJson()) };
+                DiagnosticOperationResult? receipt = await Invoke(new(Guid.NewGuid(), document.SubsystemId, "save-tree", arguments, document.Revision));
+                if (receipt?.Status != "success" || receipt.Values == null)
+                {
+                    _status = receipt?.Status == "conflict" ? "別の操作で設定が更新されました。再読み込みしてください。" : "設定を保存できませんでした。";
+                    return;
+                }
+
+                string job = receipt.Values["job-id"].String!;
+                bool saved = false;
+                for (int attempt = 0; attempt < 50; attempt++)
+                {
+                    await Task.Delay(100);
+                    DiagnosticOperationResult? outcome = await Invoke(new(Guid.NewGuid(), document.SubsystemId, "save-result", new() { ["job-id"] = DiagnosticValue.From(job) }));
+                    string? status = outcome?.Values?.GetValueOrDefault("write-status").String;
+                    if (status == "Pending")
+                    {
+                        continue;
+                    }
+
+                    if (status != "Saved")
+                    {
+                        _status = $"設定を保存できませんでした（{status ?? outcome?.Code ?? "unknown"}）。";
+                        return;
+                    }
+
+                    saved = true;
+                    break;
+                }
+
+                if (!saved)
+                {
+                    _status = "設定の保存完了を確認できませんでした。";
+                    return;
+                }
+            }
+
+            await LoadAsync();
+            _status = "設定を保存しました。";
+        }
+        catch (Exception exception) when (exception is JsonException or FormatException)
+        {
+            _status = "入力値の形式が正しくありません。";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed record Document(string SubsystemId, long Revision, SettingsTreeModel Root);
+}
