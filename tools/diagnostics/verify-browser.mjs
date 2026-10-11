@@ -158,40 +158,28 @@ try {
         await waitFor(() => logs.get(transport).includes('Input state: Jump=True'), `${transport} input change`);
         if (transport === 'http') await capture('input-success', 'Input — オーバーライドの実行', '公開カタログから生成されたフォームでJumpを押下し、ゲーム側の入力が変更された後の実行結果です。', 'input');
         await evaluate("document.querySelector('[data-tab=settings]').click()");
-        await waitFor(() => evaluate("Boolean(document.querySelector('[data-subsystem=\"settings.audio\"][data-operation=read] form'))"), 'settings forms');
-        await evaluate("document.querySelector('[data-subsystem=\"settings.audio\"][data-operation=read] form').requestSubmit()");
-        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('load-status')"), 'settings snapshot');
-        const beforeSettings = JSON.parse(await evaluate("document.getElementById('operation-result').textContent"));
-        assert.equal(beforeSettings.revision, '0');
-        if (transport === 'http') await capture('settings-read', 'Settings — 設定の読み込み', 'readで公開された設定値・ロード状態・Revisionを取得した画面です。編集可能な項目をsaveフォームに表示します。', 'settings', 'desktop', true);
-        await evaluate(`{ const form = document.querySelector('[data-subsystem="settings.audio"][data-operation=save] form'); form.elements.namedItem('volume').value = '0.75'; form.elements.namedItem('muted').value = 'true'; form.elements.namedItem('expected-revision').value = '${beforeSettings.revision}'; for (const input of form.querySelectorAll('input,select')) input.dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
-        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('job-id')"), 'settings save receipt');
-        const saveReceipt = JSON.parse(await evaluate("document.getElementById('operation-result').textContent"));
-        for (let attempt = 0; attempt < 50; attempt++) {
-            await evaluate(`{ const form = document.querySelector('[data-subsystem="settings.audio"][data-operation=save-result] form'); form.elements.namedItem('job-id').value = '${saveReceipt.values['job-id'].string}'; form.elements.namedItem('job-id').dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
-            await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('write-status')"), 'settings save outcome');
-            if (await evaluate("document.getElementById('operation-result').textContent.includes('Saved')")) break;
-            await delay(100);
-        }
-        assert.equal(await evaluate("document.getElementById('operation-result').textContent.includes('Saved')"), true);
-        if (transport === 'http') await capture('settings-saved', 'Settings — 保存完了', 'saveで受け取ったjob-idを使ってsave-resultを呼び、Savedと更新後のRevisionを確認した状態です。', 'settings', 'desktop', true);
-        await evaluate("document.querySelector('[data-subsystem=\"settings.audio\"][data-operation=read] form').requestSubmit()");
-        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('load-status')"), 'updated settings');
-        const afterSettings = JSON.parse(await evaluate("document.getElementById('operation-result').textContent"));
-        assert.equal(afterSettings.revision, '1');
-        assert.equal(afterSettings.values.volume.double, 0.75);
+        await waitFor(() => evaluate("Boolean(document.querySelector('[data-setting-path=\"/output/sampleRate\"]'))"), 'complete settings tree');
+        assert.equal(await evaluate("Boolean(document.querySelector('#settings-page fluent-accordion')) && Boolean(document.querySelector('#settings-page fluent-tree')) && Boolean(document.querySelector('#settings-page fluent-text-input')) && Boolean(document.querySelector('#settings-page fluent-switch'))"), true, 'Fluent UI settings components');
+        assert.equal(await evaluate("{ const rows = [...document.querySelectorAll('.settings-leaf')].map(item => item.getBoundingClientRect()).sort((a, b) => a.top - b.top); rows.every((row, index) => index === 0 || row.top >= rows[index - 1].bottom); }"), true, 'settings tree rows do not overlap');
+        assert.equal(await evaluate("document.querySelector('#settings-logs fluent-accordion-item')?.getAttribute('aria-expanded') === 'true'"), false, 'settings logs collapsed by default');
+        assert.equal(await evaluate("{ const body = document.getElementById('settings-log-body'); const style = getComputedStyle(body); style.resize === 'vertical' && style.overflowY === 'auto' && style.minHeight === '120px' && style.maxHeight !== 'none'; }"), true, 'settings logs have a bounded resizable height');
+        assert.equal(await evaluate("(() => { const body = document.getElementById('settings-log-body'); body.style.height = '360px'; return getComputedStyle(body).height === '360px'; })()"), true, 'settings log height can change');
+        assert.equal(await evaluate("document.fonts.check('12px \\\"Noto Sans CJK JP\\\"', '設定システム')"), true, 'Japanese font installed');
+        assert.equal(await evaluate("Boolean(document.querySelector('[data-setting-path=\"/buses/0/name\"]')) && Boolean(document.querySelector('[data-setting-path=\"/labels/locale\"]'))"), true, 'nested arrays and dictionaries visible');
+        if (transport === 'http') await capture('settings-read', 'Settings — 設定ツリー', '設定モデル全体をオブジェクトと配列のツリーで表示します。設定システムのログは上部で折りたたまれています。', 'settings', 'desktop', true);
+        await evaluate(`{ for (const [path, value] of [['/volume', '0.75'], ['/buses/1/name', '環境効果音']]) { const input = document.querySelector('[data-setting-path="' + path + '"]'); input.value = value; input.dispatchEvent(new Event('change', { bubbles: true })); } document.getElementById('settings-save').click(); }`);
+        await waitFor(() => evaluate("document.getElementById('settings-status')?.textContent.includes('保存しました')"), 'settings tree save');
+        assert.equal(await evaluate("document.querySelector('[data-setting-path=\"/volume\"]')?.value"), '0.75');
+        assert.equal(await evaluate("document.querySelector('[data-setting-path=\"/buses/1/name\"]')?.value"), '環境効果音');
+        if (transport === 'http') await capture('settings-saved', 'Settings — ツリーの保存', 'ツリーで編集したscalarを保存し、ゲーム側の検証・永続化完了後に全体を再読み込みした状態です。', 'settings', 'desktop', true);
         const persistedSettings = JSON.parse(await readFile(resolve(profile, `${transport}-settings.json`), 'utf8'));
         assert.equal(persistedSettings.sections.audio.values.volume, 0.75);
+        assert.equal(persistedSettings.sections.audio.values.buses[1].name, '環境効果音');
         if (transport === 'http') {
             await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
             assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile settings overflow');
-            await capture('settings-mobile', 'Settings — 狭い画面', '幅390pxで設定画面全体を撮影しています。保存後の値とRevisionをreadで再取得した状態です。', 'settings', 'mobile', true);
+            await capture('settings-mobile', 'Settings — 狭い画面', '幅390pxでもログ、ツールバー、設定ツリーを横にはみ出さず表示します。', 'settings', 'mobile', true);
             await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
-            await evaluate(`{ const form = document.querySelector('[data-subsystem="settings.audio"][data-operation=save] form'); form.elements.namedItem('expected-revision').value = '${beforeSettings.revision}'; form.elements.namedItem('expected-revision').dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
-            await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('\"status\": \"conflict\"')"), 'stale settings revision');
-            await capture('settings-conflict', 'Settings — Revisionの競合', '保存済みの設定へ古いExpectedRevisionで保存を要求した結果です。競合として拒否され、保存済みの値は保持されます。', 'settings', 'desktop', true);
-            const unchangedSettings = JSON.parse(await readFile(resolve(profile, `${transport}-settings.json`), 'utf8'));
-            assert.equal(unchangedSettings.sections.audio.values.volume, 0.75);
         }
         await evaluate("document.querySelector('[data-tab=metrics]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('9007199254740993')"), 'lossless Int64 Metric');
@@ -199,8 +187,15 @@ try {
         await evaluate("document.querySelector('[data-tab=logs]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'Log display');
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Settings save completed with Saved')"), 'settings Log');
+        assert.equal(await evaluate("document.querySelector('#event-table [data-virtualized=true]') !== null && document.querySelector('#event-table .log-search fluent-text-input') !== null"), true, 'shared virtualized log viewer');
+        await evaluate("{ const search = document.querySelector('#event-table .log-search fluent-text-input'); search.value = 'Settings save completed'; search.dispatchEvent(new Event('input', { bubbles: true })); }");
+        await waitFor(() => evaluate("document.querySelectorAll('#event-table .log-row').length === 1 && document.getElementById('event-table').textContent.includes('Settings save completed')"), 'shared log search');
+        await evaluate("{ const search = document.querySelector('#event-table .log-search fluent-text-input'); search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#event-table fluent-switch').click(); }");
+        await waitFor(() => evaluate("document.querySelector('#event-table th')?.textContent === '経過時刻'"), 'log elapsed time toggle');
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'cleared shared log search');
         await evaluate("[...document.querySelectorAll('#event-table tr')].find(row => row.textContent.includes('Game instance connected')).querySelector('fluent-button').click()");
         await waitFor(() => evaluate("document.getElementById('event-detail')?.textContent.includes('\"kind\": \"log\"')"), 'log detail');
+        await waitFor(() => evaluate("document.querySelector('#event-table [data-log-structure=true]')?.textContent.includes('log.level')"), 'structured log fields');
         const log = JSON.parse(await evaluate("document.getElementById('event-detail').textContent"));
         if (transport === 'http') await capture('logs-detail', 'Logs — イベント詳細', 'ゲーム接続と設定処理のログを表示します。選択したログの詳細から、同じTraceのイベントへ移動できます。', 'logs');
         await evaluate("document.querySelector('[data-tab=traces]').click()");
@@ -220,7 +215,7 @@ try {
         assert.equal(game.exitCode, 0);
         assert.ok(logs.get(transport).includes('Disconnected: Jump=False'));
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
-        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
+        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsTreeReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, japaneseFont: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
     // Controlled resources exercise the resource-oriented query and navigation model.
     async function gameRequest(method, path, body, secret) {

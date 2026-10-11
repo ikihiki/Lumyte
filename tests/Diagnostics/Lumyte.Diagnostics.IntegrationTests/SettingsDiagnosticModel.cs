@@ -11,4 +11,8 @@ internal sealed class SettingsDiagnosticModel
     public string Device { get; set; } = "default";
 
     public string Secret { get; set; } = "not-for-diagnostics";
+
+    public SettingsDiagnosticNested Nested { get; set; } = new();
+
+    public List<string> Profiles { get; set; } = ["default", "headphones"];
 }

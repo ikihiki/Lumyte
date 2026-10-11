@@ -33,6 +33,10 @@ if [[ -d "$LUMYTE_ENV_ROOT/sysroot/usr/lib" ]]; then
     fi
 fi
 
+if [[ -f "$LUMYTE_ENV_ROOT/fontconfig/fonts.conf" ]]; then
+    export FONTCONFIG_FILE="$LUMYTE_ENV_ROOT/fontconfig/fonts.conf"
+fi
+
 # Verification uses this path explicitly; do not globally override Vulkan drivers.
 export LUMYTE_LAVAPIPE_ICD="$LUMYTE_ENV_ROOT/lavapipe.json"
 unset _lumyte_repo_root _lumyte_arch

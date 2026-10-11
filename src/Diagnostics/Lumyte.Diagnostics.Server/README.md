@@ -175,7 +175,9 @@ Objects、UI、Animation、Rendering は現在カタログと操作を表示す�
 
 ゲームが`AddSettingsDiagnostics<T, TPoint>`で登録した`settings.{moduleId}`のカタログを、
 EngineカテゴリのSettingsページに表示します。設定が未公開のゲームにはナビゲーションを表示しません。
-公開操作を検索し、readで公開値・LoadStatus・Revisionを確認できます。
-saveは保存開始であり、戻されたjob-idをsave-resultへ渡してSavedを確認します。
+設定システムのログを折りたたんで表示し、read-treeでモデル全体をツリーとして読み込みます。
+ログを開いたときは高さ240pxの内部スクロール領域になり、下端をドラッグして120pxから画面高の70%まで変更できます。
+設定ログと通常のLogsページは共通の`LogViewer`を使います。固定高の仮想化行、全文検索、経過時刻列の表示切替、選択ログの構造化フィールド表示を提供します。
+ツールバーの保存はsave-treeを開始し、戻されたjob-idをsave-resultへ自動で渡してSavedを確認してから再読み込みします。
 個々の設定値や保存完了をサーバー側で推測せず、ゲーム側の検証と競合制御を使用します。
 登録方法は[設定診断API](../Lumyte.Diagnostics.Settings/README.md)を参照してください。

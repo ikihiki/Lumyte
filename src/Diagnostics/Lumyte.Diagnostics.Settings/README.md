@@ -1,6 +1,6 @@
 # Lumyte.Diagnostics.Settings
 
-設定の公開項目をDIで選び、既存の診断通信から参照・保存します。
+設定モデルをDIで明示的に公開し、既存の診断通信から全体をツリー表示・保存します。
 Settings本体とゲーム側アダプターはHTTP、MagicOnion、Blazorに依存しません。
 
 ```csharp
@@ -19,10 +19,9 @@ services.AddSettingsDiagnostics<AudioSettings, BeforeUpdate>("audio", fields => 
 追加属性は不要です。`IEditableOptions<T>`と診断の実行ポイントは既存のDI登録を使用します。
 モデルごとに一度登録し、公開項目は最大64件、文字列は最大4096文字です。
 getter／setterは副作用を持たず、getterは正常な有限値を返す必要があります。
-未登録プロパティと秘密は診断に送られず、保存時も保持されます。
+`AddSettingsDiagnostics`を登録した型は、`UseJsonTypeInfo`のメタデータに含まれる全プロパティが診断対象です。秘密を含む型は登録しないか、診断用の設定型へ分けてください。
 
-診断サブシステムは`settings.audio`、操作は`read`、`save`、`save-result`です。
-全項目が読み取り専用なら`read`だけを公開します。
+診断サブシステムは`settings.audio`です。全体操作は`read-tree`、`save-tree`、`save-result`、互換性のある個別操作は`read`、`save`です。
 
 1. `read`で値、初回`load-status`、Revisionを取得する（Observe権限）。
 2. `save`へ全編集可能項目とExpectedRevisionを送る（Edit権限）。
@@ -40,9 +39,9 @@ getter／setterは副作用を持たず、getterは正常な有限値を返す�
 非同期I/Oの完了をゲームループで待ちません。接続終了またはスコープ破棄で
 未コミットの保存を取り消し、コミット後はSettingsの成功契約を守ります。
 読み取り結果は独立したスナップショットから直接writerへ出力します。
-エラーの原文、保存先パス、設定全体のJSONは公開しません。
+エラーの原文と保存先パスは公開しません。設定全体のJSONは1 MiBを上限に、登録済みのsource-generated metadataで生成して直接writerへ書きます。
 
-サーバーのSettingsページは該当カタログの操作を表示し、操作結果をInspectorに表示します。
+サーバーのSettingsページは、折りたたまれた設定ログ、再読み込み・保存ツールバー、設定モデル全体のツリーだけを表示します。
 設計判断は[ADR-SETTINGS-0002](../../../docs/adr/settings/SETTINGS-0002-diagnostic-operations.md)を参照してください。
 
 ## テレメトリー
