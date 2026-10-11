@@ -27,10 +27,10 @@ flowchart TD
     Framework --> Graphics
     Framework --> Optional
     Native[Windows / Linux / Browser 実装] --> Platform
-    Platform --> Input[Input 共通契約]
+    Platform --> Input[Lumyte.Input.Abstractions: 取得契約]
 ```
 
-Platform.Abstractions は既存 `Lumyte.Input` の IInputSource を生成結果に使用するため Input 共通契約を参照する。Input は Platform に依存せず、既存 InputRecord / InputSystem の契約を変更しない。Platform.Abstractions は Windowing、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
+Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstractions](../input/INPUT-0005-input-abstractions.md) の取得契約だけを参照する。IInputSource の名前空間は互換性のため Lumyte.Input のまま維持するが、所属 assembly は Abstractions とする。Lumyte.Input 本体、Processing、Actions、Settings を Platform の依存として導入しない。履歴・状態・保持の実装は Input 本体に残し、Framework が必要な場合だけ参照・生成する。Input は Platform に依存せず、既存 InputRecord / InputSystem の挙動を変更しない。Platform.Abstractions は Windowing、Graphics、Framework、Engine、特定の DI コンテナーに依存しない。
 
 最初の生成対象は IWindow と IInputSource とする。今後の文字入力、clipboard、display、ファイルダイアログなども対応する共通契約を定義した上で IPlatform に生成メソッドを追加し、利用側が生成物を所有する形に揃える。この PR では未定義の機能に空の interface や汎用 GetService を設けない。
 
@@ -69,6 +69,7 @@ Platform.Abstractions は既存 `Lumyte.Input` の IInputSource を生成結果�
 +    public IWindow CreateWindow(WindowDescriptor descriptor);
 +    // この Platform の全対象デバイスを取得する Source。呼び出し側が所有する。
 +    // 同一 Platform の同時生成は一つまで。同じ物理入力の重複取得を避ける。
++    // Lumyte.Input.Abstractions assembly の型。本体の参照は不要。
 +    public Lumyte.Input.IInputSource CreateInputSource();
 +    // OS キューを一度だけ取得し、Window 通知と Source 用キューへ振り分ける。
 +    // System / Windowing を使わないアプリもこの一つの取得入口を使う。
@@ -237,6 +238,7 @@ WindowState state = window.State;
 - Windowing を ProjectReference に含めない単一 Window サンプルを各対象環境で動かす。
 - 同じ Platform から複数 Window を生成し、サイズ・状態・要求・寿命が混ざらない。
 - Source の一度の生成、OS キューの一度の取得、InputSystem / Source / Platform の終了順を検証する。
+- Platform だけを参照する最小アプリの依存・publish 出力に Input 本体が含まれないことを実装時に検証する。
 - 要求と観測、拒否・置換・期限切れ、通知例外・再入、生成失敗の部分解放を検証する。
 - 保持中 Close の延期、子から親の終了、保持中 Dispose の変更前拒否、強制喪失を検証する。
 - Framework の統合と利用側の直接接続で Surface より先に Native を解放しないことを検証する。
@@ -257,4 +259,5 @@ WindowState state = window.State;
 - [ADR-0002: リポジトリのフォルダ構成](../0002-repository-layout.md)
 - [Windowing: 任意の複数ウインドウ管理](../window/WINDOW-0001-window-system.md)
 - [Input のデバイス記録と Source 契約](../input/INPUT-0001-input-system.md)
+- [Input の取得契約を Abstractions へ分離する設計案](../input/INPUT-0005-input-abstractions.md)
 - [Graphics の提示契約](../graphics/GRAPHICS-0013-surface-swapchain-presentation.md)

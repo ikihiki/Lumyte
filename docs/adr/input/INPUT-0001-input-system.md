@@ -3,6 +3,8 @@
 - 状態: 採用
 - 日付: 2026-10-08
 
+関連する後続提案: [INPUT-0005: 入力取得契約の分離](INPUT-0005-input-abstractions.md)。採用時に配置・依存方針を変更する。本 ADR の採用済み契約は現時点では維持する。
+
 ## 背景
 
 Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジンである。OS 固有の入力 API をゲーム側で直接扱うと、入力状態と履歴の管理が利用コードに分散する。
@@ -23,7 +25,7 @@ InputSystem はコンストラクター DI で受け取るすべての IInputSou
 
 ### 責務と依存関係
 
-[リポジトリのフォルダ構成](../../0002-repository-layout.md) に従い、抽象入力システムを `src/Input/Lumyte.Input/` に配置する。補正・認識、アクション、設定連携も `src/Input/`、対応するテストは `tests/Input/` に置く。OS・ハードウェアに近い入力取得と接続監視の実装は `src/Platform/` に置き、Input の契約を実装する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
+[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、抽象入力システムを `src/Input/Lumyte.Input/` に配置する。補正・認識、アクション、設定連携も `src/Input/`、対応するテストは `tests/Input/` に置く。OS・ハードウェアに近い入力取得と接続監視の実装は `src/Platform/` に置き、Input の契約を実装する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
 
 | 構成要素 | 責務 | 依存先 |
 | --- | --- | --- |
@@ -380,5 +382,5 @@ Device は DrainEvents の失敗時に入力を消費しない。取得例外は
 
 ## 参考資料
 
-- [ADR-0001: ADR の書き方と運用](../../0001-adr-writing-policy.md)
-- [ADR-0002: リポジトリのフォルダ構成](../../0002-repository-layout.md)
+- [ADR-0001: ADR の書き方と運用](../0001-adr-writing-policy.md)
+- [ADR-0002: リポジトリのフォルダ構成](../0002-repository-layout.md)
