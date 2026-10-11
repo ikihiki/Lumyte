@@ -24,7 +24,7 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 Abstractions は Engine、Graphics、Settings、Resources、特定の DI コンテナーに依存しない。設定の読み込み・保存は構成側、音声データの取得・デコード・非同期供給・先読み・ストリーミング用バッファの管理はリソースシステムとその音声アダプターが担当する。オーディオ側は供給された PCM の消費、ミックス、再生制御、デバイス出力を担当する。共通 Audio と共通 Resources は互いに依存せず、両者の接続は統合アダプターに置く。
 
-リソース管理の既存案 ADR-RESOURCES-0001（PR #25）は共有読み込みと lease を扱い、継続供給の契約はまだ定めていない。今回の責務分担はリソース側のストリーミング設計への要求として記録し、既存 API だけで対応できるとは扱わない。
+リソース管理の既存案 ADR-RESOURCES-0001（[PR #25](https://github.com/ikihiki/Lumyte/pull/25)、確認revision `e7c219e2a223e3fcb60b4d279fefe5f1b142caa1`）は、型付きPipeline、lease、独立したストリームセッションを提案している。音声PCMの形式とリアルタイム消費への接続は別途必要であり、今回の実装だけでストリーミングに対応したとは扱わない。
 
 ### 公開 API
 
@@ -101,6 +101,7 @@ Abstractions は Engine、Graphics、Settings、Resources、特定の DI コン�
 +namespace Lumyte.Audio.OpenAL
 +{
 +    // OpenAL Soft はホストが用意する。生成と制御は同じ所有スレッド。
++    // ALC_EXT_thread_local_contextがない環境ではNotSupportedException。
 +    public sealed class OpenALDevice : IAudioDevice
 +    {
 +        // deviceName=null は既定出力。maxVoices は正数、初期化失敗は例外。
@@ -166,7 +167,7 @@ effect.Pause();
 
 #### リソース lease を保持して再生する
 
-次の断片は PR #25 の `Lumyte.Resources` 提案 API と組み合わせる例。音声ローダーは同じ `IAudioDevice` 上で clip を作成し、Unload で clip を解放する。ローダー登録と所有スレッドへの配送は統合側で用意する。
+次の断片は上記revisionの PR #25 の `Lumyte.Resources` 提案 API と組み合わせる例。音声Stageは同じ `IAudioDevice` 上で clip を作成し、ReleaseAsyncで clip を解放する。Pipeline登録と所有スレッドへの配送は統合側で用意する。この断片はホストの同期contextでawait前後の所有スレッドを維持する構成を前提とし、その他の構成では下記の実行機構案のように制御区間を明示的に配送する。
 
 ```csharp
 using Lumyte.Audio.Abstractions;
@@ -174,8 +175,9 @@ using Lumyte.Resources;
 
 // audio と resources は構成側から借用する。
 // await 後は audio の所有スレッドへ戻る。
-using (var lease = await resources.AcquireAsync<IAudioClip>(
-    new ResourceId("audio/effects/confirm"), cancellationToken))
+var key = new ResourceKey<IAudioClip>(
+    new ResourceAddress(new ResourceId("audio/effects/confirm")), "audio-clip");
+using (var lease = await resources.AcquireAsync(key, cancellationToken))
 {
     using (var voice = audio.CreateVoice(lease.Value, AudioBus.Effects))
     {
@@ -220,23 +222,27 @@ OpenAL は source の状態を Update で取得する。Browser は再生ごと�
 
 ### スレッド、PCM とストリーミング
 
+各デバイスとその子は生成時の所有スレッドで制御する。OpenALは各操作前に `ALC_EXT_thread_local_context` でそのスレッドのcontextを選び、プロセス共通current contextを変更しない。この拡張を必須とし、別の所有スレッドにあるデバイスの同時操作を分離する。同じ所有スレッドに複数のデバイスを作成することもできる。
+
+Engine全体での所有スレッドへの配送、非同期処理との接続、起動・終了順は [ENGINE-0001](../engine/ENGINE-0001-thread-execution.md) に提案として記録する。Audio API自身は自動配送せず、構成側が各制御と解放を適切な所有者で実行する。実行機構の実装はこのPRに含めない。
+
 音声出力はゲームの Update と独立した周期で進む。リソースシステムは取得・デコード・先読みを非同期に進め、上限付きバッファから準備済み PCM を供給する。オーディオ側は独自のデコード worker やストリーミング用リングバッファを持たない。デバイス出力とミックスに必要な作業バッファはオーディオ側で事前確保する。
 
 音声コールバックは準備済み PCM を待機せずに取り出す。ファイル I/O、await、任意の利用者コールバック、ログ出力、ロック待ち、ヒープ割り当てを行わない。供給境界には「PCM あり」「一時的な供給不足」「EOF」「失敗」を区別できる契約を必要とする。具体的な型と API はリソースのストリーミング ADR で定め、本 ADR では ReadAsync やバッファ容量を持つオーディオ API を公開しない。
 
-サンプルレート変換とモノラル／ステレオ変換はバックエンドのミックス境界で行い、デバイスの出力形式へ変換する。音量を乗算して float で加算し、最終出力への変換は各バックエンドの出力実装に委ねる。非有限 PCM はクリップ作成時に拒否し、供給された PCM に含まれる場合は Failed とする。Browser の gain 変更には 5 ms のランプを使う。OpenAL は source gain を設定し、その平滑化は実装側に委ねる。初期実装は OpenAL へ clamp 済みの PCM16 を渡すため、量子化がある。最終ミックスの clamp と変換は各出力実装に委ね、バックエンド間のビット一致は保証しない。
+サンプルレート変換とモノラル／ステレオ変換はバックエンドのミックス境界で行い、デバイスの出力形式へ変換する。音量を乗算して float で加算し、最終出力への変換は各バックエンドの出力実装に委ねる。非有限 PCM はクリップ作成時に拒否し、供給された PCM に含まれる場合は Failed とする。Browser の再生中の gain 変更には 5 ms のランプを使う。生成時と停止・一時停止中は再生前に gain を直接適用し、ミュート状態からの開始で音が漏れないようにする。OpenAL は source gain を設定し、その平滑化は実装側に委ねる。初期実装は OpenAL へ clamp 済みの PCM16 を渡すため、量子化がある。最終ミックスの clamp と変換は各出力実装に委ね、バックエンド間のビット一致は保証しない。
 
 供給不足は不足部分を無音で埋め、消費できた PCM だけでソース位置を進める。供給不足で Completed にしない。Paused／Suspended 中は再生位置を保持する。リソース側の先読み上限、供給の停止・再開、巻き戻し時に古い PCM を混ぜない世代管理は接続契約で定める。
 
 ### 所有権と終了処理
 
-デバイスは生成した clip と voice の所属と生存状態を追跡し、呼び出し側が子の解放責任を持つ。voice は clip を借用する。デバイスの Dispose は生存中の子があれば拒否し、暗黙に子を破棄しない。clip は複数 voice から共有できる。リソースローダーで生成した clip は manager が解放責任を持ち、利用側は voice の破棄まで lease を保持する。使用中の clip を Unload で解放せず、既存の参照中破棄の契約に従って拒否する。
+デバイスは生成した clip と voice の所属と生存状態を追跡し、呼び出し側が子の解放責任を持つ。voice は clip を借用する。デバイスの Dispose は生存中の子があれば拒否し、暗黙に子を破棄しない。clip は複数 voice から共有できる。リソースの音声Stageで生成した clip は manager が解放責任を持ち、利用側は voice の破棄まで lease を保持する。使用中の clip をReleaseAsyncで解放せず、既存の参照中破棄の契約に従って拒否する。
 
 ストリーミングではリソース側が取得元、デコーダー、非同期処理、供給バッファとその終了処理を所有する。共有アセットの lease と、再生ごとの独立したカーソル・供給セッションを分ける。再生ごとのセッションを共有キャッシュへそのまま格納する契約は採用しない。具体的なセッション生成・保持 API はリソース側で定める。
 
 voice の Dispose は source を停止・解放して、PCM 参照を解除してから戻る。音声スレッドからは呼ばない。供給 PCM は消費終了までリソース側で有効に保ち、参照中にバッファを再利用しない。統合側はオーディオの参照を解除した後、リソース側の供給セッションを終了し、非同期処理の取消・終了を待ち、最後に lease を返す。lease 返却自体には待機や I/O を持ち込まない。
 
-終了時は voice の出力参照を解除してから、供給セッションと lease、resource manager と残りの clip を解放し、最後にデバイスを破棄する。リソースローダーの Unload がデバイスを必要とする間は、デバイスを保持する。停止失敗時も残りの安全に実行できる終了処理を試み、参照解除が確認できない PCM を解放しない。Browser の AudioContext.close は非同期である。同期 Dispose は子の解放と close の開始までを保証し、閉鎖完了は保証しない。close の拒否は console.error へ通知する。
+終了時は voice の出力参照を解除してから、供給セッションと lease、resource manager と残りの clip を解放し、最後にデバイスを破棄する。音声StageのReleaseAsyncがデバイスを必要とする間は、デバイスを保持する。停止失敗時も残りの安全に実行できる終了処理を試み、参照解除が確認できない PCM を解放しない。Browser の AudioContext.close は非同期である。同期 Dispose は子の解放と close の開始までを保証し、閉鎖完了は保証しない。close の拒否は console.error へ通知する。
 
 ### プラットフォームと出力状態
 
@@ -295,7 +301,9 @@ PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限
 
 Linux x64／.NET 10 で OpenAL Soft の null driver による実バックエンド検証と、Chromium 上の発行済み Wasm サンプルの検証を実行した。共通の引数・所有権・voice 上限・再生状態の契約に加え、自然終了と clip 境界を越えるループを確認した。OpenAL は所有スレッド外からの操作を拒否することを確認した。
 
-Browser は OfflineAudioContext の実レンダリングでステレオのチャネル分離と gain 適用後の波形を照合し、停止した旧 SourceNode の完了通知が新しい再生に影響しないことも確認した。物理スピーカー、Windows／ARM64 の実機、デバイス切断・復旧、可聴品質・性能は未検証である。
+OpenALの回帰テストでは、Native source枯渇後の既存voiceの解放・再割り当て、同じ所有スレッドの複数device、異なる所有スレッドの並行制御を確認した。割り当て直後にエラーを検査し、無効handleへのcleanupで後続操作のエラー状態を汚さない。
+
+Browser は OfflineAudioContext の実レンダリングでステレオのチャネル分離と gain 適用後の波形を照合し、停止した旧 SourceNode の完了通知が新しい再生に影響しないことも確認した。消音状態で生成・開始したvoiceの全サンプルが0であること、複数周回後にループを解除してpause／resumeしてもclip内の位置が維持されることを回帰検証した。物理スピーカー、Windows／ARM64 の実機、デバイス切断・復旧、可聴品質・性能は未検証である。
 
 ## 別途決定する事項
 
