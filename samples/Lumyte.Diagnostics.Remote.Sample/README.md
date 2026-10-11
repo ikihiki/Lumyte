@@ -39,3 +39,26 @@ dotnet run --project samples/Lumyte.Diagnostics.Remote.Sample -c Release -- http
 volumeとmutedを編集でき、deviceは読み取り専用です。保存にはreadで取得したRevisionが必要です。
 saveのjob-idでsave-resultを実行し、Savedを確認してください。保存ファイルはサンプル終了後も保持します。
 設定診断APIの詳細は[Lumyte.Diagnostics.Settings](../../src/Diagnostics/Lumyte.Diagnostics.Settings/README.md)を参照してください。
+
+## レンダーグラフ診断
+
+`LUMYTE_DIAGNOSTICS_RENDER_GRAPH=1` を指定すると、`graphics.render-graph` を同じ実行ポイントに登録します。
+
+```sh
+export LUMYTE_DIAGNOSTICS_RENDER_GRAPH=1
+dotnet run --project samples/Lumyte.Diagnostics.Remote.Sample -c Release -- http http://127.0.0.1:5000 120
+```
+
+`sample-frame` グラフを所有スレッドで約 16 ms ごとに Compile し、同じスレッドの Pump で診断要求を処理します。
+描画を模した宣言から本物の render graph compiler が依存関係・culling・barrier・resource lifetime を計算します。
+GPU コマンドの Record と実行は行わず、GPU や native graphics library は不要です。
+capture の状態は `compiled`、Record 件数は 0 になります。FrameId は Compile ごとに増加します。
+
+19 個の宣言 pass のうち 17 個が保持され、13 個の temporary resource を含みます。
+`obsolete-scene-upload` は次の `upload-scene` が全面上書きするため除去され、`unused-debug` は未使用のため除去されます。
+depth、shadow、lighting、bloom、UI、最終 copy の依存関係に加え、`frame-marker` は明示的な副作用として保持されます。
+サーバーの Render graph ページで graph 名に `sample-frame` を指定して capture を要求すると、後続 Compile の構造を同じ capture ID で参照できます。
+要求しない期間は軽量集計だけを行い、詳細 snapshot を生成しません。
+
+HTTP と MagicOnion の両方で利用できます。環境変数を省略した通常実行にはグラフを追加しません。
+診断 API と保持予算の詳細は [Lumyte.Diagnostics.RenderGraph](../../src/Diagnostics/Lumyte.Diagnostics.RenderGraph/README.md) を参照してください。
