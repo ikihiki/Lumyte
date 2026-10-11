@@ -17,7 +17,7 @@
 
 InputSystemは引き続きDIからIInputSourceを受け取り、Sourceの登録機構からDeviceを取得する。全Sourceに対する監視・置換はInputSystemのコンストラクターから受け取るIInputInspectionで適用する。SourceやDeviceの実体、Descriptor、登録順を維持する。InputSystem自身がSourceの呼び出しとRegistry登録・Device取得を仲介し、Initialize・Shutdownの巻き戻しとDevice破棄を二重実行しない。
 
-Actions側に通信非依存のIActionInspectionフックを定義し、Inspectionが実装する。ActionsはInspectionパッケージへ依存しない。ActionSystemにはこの任意フックを追加注入できるようにする。診断を使わない構成は従来のコンストラクターで動作する。アダプターは内部辞書をリフレクションで読み書きしない。
+Actions側に通信非依存のIActionInspectionフックを定義し、Inspectionが実装する。ActionsはInspectionパッケージへ依存しない。ActionSystemもコンストラクターDIで単一のIActionInspectionを受け取り、全Context・全Actionの評価、補正、認識、ライフサイクルへ自動的に作用させる。診断を使わない構成は従来のコンストラクターで動作する。アダプターは内部辞書をリフレクションで読み書きしない。
 
 ```mermaid
 flowchart LR
@@ -45,6 +45,14 @@ Sourceが物理・仮想のどちらであるか、補正済みかどうかに�
 入力メモリーは同期呼び出し中だけ借用し、保持する観測記録はコピーする。出力はInputSystemが読み終えるまで有効とし、変更がなければ同じメモリーを返す。既存DrainEvents契約から必要な場合だけ作業バッファへコピーし、inspectionなしの経路にコピーを追加しない。所有スレッド・再入禁止・通知例外の契約はInputSystemに従う。処理失敗時に一部だけを記録してバッチ全体を再送しない。
 
 Sourceとinspectionの所有者はDIスコープとし、InputSystemは借用してDeviceとRegistryの終了を担当する。Sourceは一つのInputSystemだけに接続し、Singleton Sourceを複数ゲームスコープで共有してInitializeしない。診断なしの手動構築には従来のコンストラクターを残す。DIはinspection付きのコンストラクターを使用し、既存のSystemファクトリーもinspectionを明示的に渡す。IInputSourceのServiceDescriptorを書き換えたり、同じサービスを再解決する循環ファクトリーを作ったりしない。
+
+### ActionSystemへの自動適用
+
+DIでは同じInputInspectionSessionをIActionInspectionとしても登録し、ActionSystemのコンストラクターへ注入する。ActionSystemは構築成功時に自身とプロファイルをinspectionへ通知する。呼び出し側のRegister、Context/Actionの個別登録、公開対象の許可リストは不要。プロファイル内の全Context・全Actionと継承後の実効定義を自動的に追跡する。ApplyProfileで追加・削除・変更された定義も同じ経路で反映する。
+
+inspectionへの通知はマッピング値、補正値、有効値、認識結果を含み、補正の有無によって適用範囲を変えない。置換は全ての評価で同じフックを通す一方、有効Contextと通常の認識順序を維持するため、最終値の置換位置は認識前とする。無効Contextもプロファイルとして監視するが、診断のために有効化・認識を実行しない。
+
+ActionSystemは終了時にinspectionへ通知して全ハンドル・リースを失効させる。終了通知のためIDisposableを実装し、DIが破棄する。従来のコンストラクターで作ったSystemも破棄後の変更・照会を拒否する。構築失敗時は暫定登録を取り消し、共有inspectionそのものをActionSystemが破棄しない。複数ActionSystemはオブジェクト識別とプロファイル世代で分離する。
 
 ### 監視する内容
 
@@ -75,7 +83,7 @@ Action側の置換はActionSystemの補正を通った実値を保持してか�
 
 ### 型付き対象と公開識別子
 
-ローカルコードはInputDeviceId・InputControl、登録されたActionSystemのハンドルとCompositionのContext・Action定義オブジェクトで対象を指定する。診断UIにはスナップショットで発行したGuidのTargetIdを渡し、自由入力の文字列でDevice・Contextを検索しない。TargetIdはSystem登録とプロファイル世代に結び付け、再接続やApplyProfile後の古いハンドルはtarget-goneとする。
+ローカルコードはInputDeviceId・InputControl、ActionSystemオブジェクトとCompositionのContext・Action定義オブジェクトで対象を指定する。診断UIにはスナップショットで発行したGuidのTargetIdを渡し、自由入力の文字列でDevice・Contextを検索しない。TargetIdはSystemの自動接続とプロファイル世代に結び付け、再接続やApplyProfile後の古いハンドルはtarget-goneとする。
 
 ActionSystemをinspectionへ接続すると全Context・Actionのハンドルを自動発行する。DeviceもInputSystemの登録通知から自動的に追跡する。実行上のSystem識別と画面表示名を分け、同名Contextを持つ複数プレイヤーを混同しない。
 
@@ -114,7 +122,7 @@ services.UseWindowsInput(); // 例: バックエンドがIInputSourceを自動�
 services.AddInputInspection(); // 同じスコープのinspectionをDI登録する。
 services.AddScoped<InputSystem>(); // コンストラクターからSourceとinspectionを注入する。
 services.AddScoped(p => new ActionSystem(profile, bufferOptions: null,
-    inspection: p.GetRequiredService<InputInspectionSession>()));
+    inspection: p.GetRequiredService<IActionInspection>()));
 services.AddDiagnosticExecutionPoint<BeforeInputProcessing>("before-input-processing");
 services.AddDiagnosticSubsystem<InputDiagnostics, BeforeInputProcessing>(
     new SubsystemDescriptor("input", "Input", 1));
@@ -129,11 +137,10 @@ services.AddScoped(p => new InputSystem(
     timeProvider: null));
 ```
 
-SystemとActionの登録、Pump.Activateは入力所有スレッドで実行する。登録したハンドルは同じゲームスコープでのみ有効。
+Systemの構築とPump.Activateは入力所有スレッドで実行する。System構築時にハンドルを自動発行し、同じゲームスコープでのみ有効とする。
 
 ```csharp
-using var systemRegistration = inspection.Register(actions);
-InputOverrideTarget jumpTarget = inspection.GetActionTarget(systemRegistration, game, jump);
+InputOverrideTarget jumpTarget = inspection.GetActionTarget(actions, game, jump);
 // ローカルコードは定義オブジェクトから対象を得る。診断UIは公開TargetIdを使う。
 InputOverrideResult result = overrides.Acquire(
     new InputOverrideOwner(sessionId, actorId),
@@ -181,11 +188,6 @@ ActionState effective = actions.GetState(game, jump);
 +        InputOverrideResult Release(InputOverrideOwner owner, Guid leaseId, long expectedRevision);
 +        InputOverrideResult GetLease(InputOverrideOwner owner, Guid leaseId);
 +    }
-+    // 対応するActionSystemを登録から除き、関連リースを解除する。
-+    public sealed class InputActionRegistration : IDisposable
-+    {
-+        public void Dispose();
-+    }
 +    public sealed record InputInspectionPage(long Snapshot, string Json, string? NextCursor, long Dropped);
 +    public sealed class InputInspectionSession : IInputOverrideService, IInputInspection, IActionInspection, IDisposable
 +    {
@@ -196,8 +198,7 @@ ActionState effective = actions.GetState(game, jump);
 +        public void Registered(InputDeviceId device, InputDeviceDescriptor descriptor);
 +        public ReadOnlyMemory<InputData> Process(InputDeviceId device, ReadOnlyMemory<InputData> data, TimeSpan now);
 +        public void Unregistered(InputDeviceId device);
-+        public InputActionRegistration Register(ActionSystem system);
-+        public InputOverrideTarget GetActionTarget(InputActionRegistration registration,
++        public InputOverrideTarget GetActionTarget(ActionSystem system,
 +            Compose.Definitions.Context context, Compose.Definitions.Action action);
 +        public InputOverrideTarget GetControlTarget(InputDeviceId device, InputControl control);
 +        // 有界記録の上限と観測段階を設定。空の集合なら取得値の収集を止める。
@@ -206,6 +207,10 @@ ActionState effective = actions.GetState(game, jump);
 +        public void CompleteFrame();
 +        // 最後に完了した不変スナップショットを読む。通信スレッドでも呼べる。
 +        public InputInspectionPage ReadPage(long? snapshot = null, string? cursor = null, int maxEntries = 128);
++        public void SystemCreated(ActionSystem system, ActionProfile profile);
++        public void SystemDisposed(ActionSystem system);
++        public void ObserveMapped(ActionSystem system, string contextId, string actionId, Vector2 value);
++        public void ObserveRecognized(ActionSystem system, RecognizedAction recognition);
 +        public Vector2 EvaluateValue(ActionSystem system, string contextId, string actionId,
 +            ActionValueKind kind, Vector2 correctedValue, TimeSpan now);
 +        public void ContextDeactivated(ActionSystem system, string contextId);
@@ -244,23 +249,30 @@ ActionState effective = actions.GetState(game, jump);
 +    // Actionsが所有する評価契約。Inspectionパッケージへの逆依存を作らない。
 +    public interface IActionInspection
 +    {
++        void SystemCreated(ActionSystem system, ActionProfile profile);
++        void SystemDisposed(ActionSystem system);
++        void ObserveMapped(ActionSystem system, string contextId, string actionId, Vector2 value);
++        void ObserveRecognized(ActionSystem system, RecognizedAction recognition);
 +        Vector2 EvaluateValue(ActionSystem system, string contextId, string actionId,
 +            ActionValueKind kind, Vector2 correctedValue, TimeSpan now);
 +        void ContextDeactivated(ActionSystem system, string contextId);
 +        void ProfileChanged(ActionSystem system);
 +    }
-     public sealed class ActionSystem
+-    public sealed class ActionSystem
++    public sealed class ActionSystem : IDisposable
      {
 +        // 従来のコンストラクターも残す。inspectionは同じゲームスコープで共有する。
 +        public ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions,
 +            IActionInspection inspection);
++        // DI終了で自動接続とリースを解除。inspection自体は借用する。
++        public void Dispose();
      }
  }
 +namespace Lumyte.Input.Diagnostics
 +{
 +    public static class InputInspectionServiceCollectionExtensions
 +    {
-+        // 同じInspectionをIInputInspection・IInputOverrideServiceとして登録する。
++        // 同じInspectionをIInputInspection・IActionInspection・IInputOverrideServiceとして登録する。
 +        public static IServiceCollection AddInputInspection(this IServiceCollection services);
 +    }
 +    public sealed class BeforeInputProcessing { }
@@ -277,9 +289,9 @@ ActionState effective = actions.GetState(game, jump);
 
 ### 性能と検証方針
 
-診断無効時はinspection・観測収集・System登録を作らず、通常の無入力更新の割り当てを増やさない。監視のみ・置換ありの負荷を分けて測定する。全Sourceへの適用を維持したまま観測記録を有界化し、既定の記録上限4096件、ページ上限128件、同時リース64件、期間上限5秒、予約開始は最大120フレーム先とする。上限値は測定後に変更可能にする。欠落を件数で報告し、InputSystemの保持ポリシーを診断の都合で変更しない。DeviceやAction IDを無制限のMetricsタグにせず、集約した処理時間・観測欠落・リース数を公開する。
+診断無効時はinspection・観測収集・System登録を作らず、通常の無入力更新の割り当てを増やさない。監視のみ・置換ありの負荷を分けて測定する。全Source・全Context・全Actionへの適用を維持したまま観測記録を有界化し、既定の記録上限4096件、ページ上限128件、同時リース64件、期間上限5秒、予約開始は最大120フレーム先とする。上限値は測定後に変更可能にする。欠落を件数で報告し、InputSystemの保持ポリシーを診断の都合で変更しない。DeviceやAction IDを無制限のMetricsタグにせず、集約した処理時間・観測欠落・リース数を公開する。
 
-受け入れ検証は、監視が認識・バッファ消費へ影響しないこと、Device置換のイベント/履歴/ポーリングの一致、Action置換の認識順序、実押下中の解除、軸復帰、無入力時とポーズ時の期限、未来開始、再送と競合、他所有者の解除拒否、Device切断・Context無効化・ApplyProfileによる失効、親子Contextの独立性、複数プレイヤーの分離、リバインドとの排他、通知例外後の重複実行防止、リング欠落時の再同期、DI終了順、Useが自動登録する複数Sourceと実行中のDevice追加への一括適用、解決前に追加したSourceの包含、inspectionなしの既存動作、空バッチでの解除を含む。保存済み設定にリースが混入しないことと、AOT・トリミング環境で診断アダプターとJSON出力が動作することも確認する。
+受け入れ検証は、監視が認識・バッファ消費へ影響しないこと、Device置換のイベント/履歴/ポーリングの一致、Action置換の認識順序、実押下中の解除、軸復帰、無入力時とポーズ時の期限、未来開始、再送と競合、他所有者の解除拒否、Device切断・Context無効化・ApplyProfileによる失効、親子Contextの独立性、複数プレイヤーの分離、リバインドとの排他、通知例外後の重複実行防止、リング欠落時の再同期、DI終了順、Useが自動登録する複数Sourceと実行中のDevice追加への一括適用、解決前に追加したSourceの包含、inspectionなしの既存動作、空バッチでの解除、ActionSystemのコンストラクターDIだけで全定義が接続されること、プロファイル差し替え時の自動追跡、System破棄と構築失敗時の登録回収を含む。保存済み設定にリースが混入しないことと、AOT・トリミング環境で診断アダプターとJSON出力が動作することも確認する。
 
 ## 検討した代替案
 
