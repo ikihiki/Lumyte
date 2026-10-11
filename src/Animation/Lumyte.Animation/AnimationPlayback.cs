@@ -194,12 +194,13 @@ public sealed class AnimationPlayback
         }
 
         bool advancing = State == AnimationPlaybackState.Playing && current > _lastEvaluation;
-        if (advancing)
+        bool initialInstant = State == AnimationPlaybackState.Playing && _timeline.Duration == Duration.Zero && _includeStart;
+        if (advancing || initialInstant)
         {
             _events.Reset();
             long length = _timeline.Duration.Ticks;
-            long first = _wrapMode == AnimationWrapMode.Loop ? Math.Max(0, (_lastEvaluation / length) - 1) : 0;
-            long last = _wrapMode == AnimationWrapMode.Loop ? current / length : 0;
+            long first = length > 0 && _wrapMode == AnimationWrapMode.Loop ? Math.Max(0, (_lastEvaluation / length) - 1) : 0;
+            long last = length > 0 && _wrapMode == AnimationWrapMode.Loop ? current / length : 0;
             if (!_timeline.Root.HasEvents)
             {
                 first = Math.Max(first, last - 1);
@@ -214,9 +215,10 @@ public sealed class AnimationPlayback
                 }
 
                 long origin = checked(loop * length);
+                long traversalFrom = _includeStart && _lastEvaluation == 0 && loop == 0 ? -1 : _lastEvaluation - origin;
                 _events.BeginLoop(loop, origin);
-                _timeline.Root.Events(new EventQuery(_lastEvaluation - origin, current - origin, _includeStart && _lastEvaluation == 0, true, origin, 1), _events);
-                _timeline.Root.Endpoints(_lastEvaluation - origin, current - origin, output, 0);
+                _timeline.Root.Events(new EventQuery(traversalFrom, current - origin, _includeStart && _lastEvaluation == 0, true, origin, 1), _events);
+                _timeline.Root.Endpoints(traversalFrom, current - origin, output, 0);
                 if (loop == last)
                 {
                     // The final loop index can itself be long.MaxValue.
@@ -283,6 +285,11 @@ public sealed class AnimationPlayback
 
     private long At(TimePoint now)
     {
+        if (_timeline.Duration == Duration.Zero)
+        {
+            return 0;
+        }
+
         if (State != AnimationPlaybackState.Playing)
         {
             return _anchorPosition;
@@ -294,7 +301,9 @@ public sealed class AnimationPlayback
         return _wrapMode == AnimationWrapMode.Once ? Math.Min(position, _timeline.Duration.Ticks) : position;
     }
 
-    private Duration Map(long position) => Duration.FromTicks(_wrapMode == AnimationWrapMode.Loop ? position % _timeline.Duration.Ticks : position);
+    private Duration Map(long position) => _timeline.Duration == Duration.Zero
+        ? Duration.Zero
+        : Duration.FromTicks(_wrapMode == AnimationWrapMode.Loop ? position % _timeline.Duration.Ticks : position);
 
     private readonly record struct TimingAnchor(long Position, TimePoint Clock, double Speed);
 }

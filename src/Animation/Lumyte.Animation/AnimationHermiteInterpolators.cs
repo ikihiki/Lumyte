@@ -27,7 +27,7 @@ public static class AnimationHermiteInterpolators
         /// <inheritdoc />
         public T Interpolate(T from, T to, T outgoingTangent, T incomingTangent, Duration interval, float amount)
         {
-            AnimationSourceValidation.Duration(interval);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(interval.Ticks, nameof(interval));
             AnimationTimings.ValidateAmount(amount);
             AnimationInterpolators.Validate(from);
             AnimationInterpolators.Validate(to);

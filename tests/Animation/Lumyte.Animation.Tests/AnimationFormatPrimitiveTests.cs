@@ -157,12 +157,13 @@ public sealed class AnimationFormatPrimitiveTests
     [Fact]
     public void HermiteRejectsInvalidDefinitionsAndNonFiniteResults()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationHermiteCurve<float>(Duration.Zero, [new(Duration.Zero, 1, 0, 0)], AnimationHermiteInterpolators.Float));
+        Assert.Equal(1, new AnimationHermiteCurve<float>(Duration.Zero, [new(Duration.Zero, 1, 0, 0)], AnimationHermiteInterpolators.Float).Sample(Duration.Zero));
         Assert.Throws<ArgumentException>(() => new AnimationHermiteCurve<float>(Ticks(10), [], AnimationHermiteInterpolators.Float));
         Assert.Throws<ArgumentException>(() => new AnimationHermiteCurve<float>(Ticks(10), [new(Ticks(5), 1, 0, 0), new(Ticks(5), 2, 0, 0)], AnimationHermiteInterpolators.Float));
         Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationHermiteCurve<float>(Ticks(10), [new(Ticks(11), 1, 0, 0)], AnimationHermiteInterpolators.Float));
         Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationHermiteCurve<float>(Ticks(10), [new(Duration.Zero, 1, float.NaN, 0)], AnimationHermiteInterpolators.Float));
         Assert.Throws<ArgumentOutOfRangeException>(() => AnimationHermiteInterpolators.Float.Interpolate(0, 1, 0, 0, Ticks(10), float.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AnimationHermiteInterpolators.Float.Interpolate(0, 1, 0, 0, Duration.Zero, 0));
         Assert.Throws<InvalidOperationException>(() => AnimationHermiteInterpolators.Float.Interpolate(0, 0, float.MaxValue, 0, Duration.FromSeconds(100), 0.5f));
     }
 

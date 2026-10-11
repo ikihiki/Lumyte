@@ -296,6 +296,14 @@ public sealed class AnimationStateMachine<TState, TContext>
 
             if (changed)
             {
+                foreach (AnimationEventOccurrence marker in _incomingMarkers)
+                {
+                    events.Add(new AnimationStateEvent<TState>(_current!.Binding.Id, marker, now + marker.UpdateOffset));
+                }
+            }
+
+            if (changed)
+            {
                 transitions.Add(new AnimationStateTransition<TState>(previous.Binding.Id, _current!.Binding.Id, now));
             }
 

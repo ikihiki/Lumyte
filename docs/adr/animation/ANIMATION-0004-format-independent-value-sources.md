@@ -20,6 +20,7 @@ Lottie の属性カーブは区間ごとの Hold と時間ベジェ、位置の�
 - 時間再マッピングは `IAnimationSource<Duration>` が返す子の局所時間で値ソースを評価する。逆行・停止・速度変化を表現できる。値ソースのイベントは持たないため、非単調な写像でのイベント配送規則を追加する必要はない。
 - 二つの値ソースを時間依存の [0, 1] の重みでブレンドする。Output の後評価優先規則を変更せず、一つの値ソースの内部で合成する。複数入力はネストできるが、Quaternion 等では合成順に意味がある。
 - Source 定義、Curve、HermiteCurve、Sampled、TimeRemap、Blend と SourceTrack を Lumyte.Composition の生成対象にする。Timeline の Build が子ソースを内部で確定し、利用側で子ごとの Build を呼ぶ必要をなくす。
+- 可変個数のスカラーを同じキー時刻で補間する用途には `AnimationComponentCurve` を追加する。モーフウェイトに限定せず、要素数を実行時に決める汎用ソースとする。キー時刻を一度だけ探索し、要素ごとの `AnimationChannel<float>` へ直接書き込む。
 
 レンダラー、画像・パス・ボーンのデータ構造、IK、スキン、マスク、描画順、フォーマットのローダー、Rive の状態機械との API 互換、状態遷移のクロスフェードはこの値ソース拡張の対象に含めない。図形やメッシュの変形データは利用側の T と補間器で表現できる。
 
@@ -75,14 +76,14 @@ Lottie の属性カーブは区間ごとの Hold と時間ベジェ、位置の�
 +}
 +public sealed class AnimationHermiteCurve<T> : IAnimationSource<T>
 +{
-+    // 正の duration、非空のキー、厳密増加かつ範囲内の Time。キー配列をコピーする。
++    // 非負の duration、非空のキー、厳密増加かつ範囲内の Time。キー配列をコピーする。
 +    public AnimationHermiteCurve(Duration duration, IReadOnlyList<AnimationHermiteKey<T>> keys, IAnimationHermiteInterpolator<T> interpolator);
 +    public Duration Duration { get; }
 +    public T Sample(Duration time);
 +}
 +public sealed class AnimationTimeRemap<T> : IAnimationSource<T>
 +{
-+    // 両子は正の長さ。外側の長さは timeMap.Duration。
++    // 両子は非負の長さ。外側の長さは timeMap.Duration。
 +    public AnimationTimeRemap(IAnimationSource<T> source, IAnimationSource<Duration> timeMap);
 +    public Duration Duration { get; }
 +    // 写像結果が子の [0, Duration] 外なら ArgumentOutOfRangeException。
@@ -90,11 +91,56 @@ Lottie の属性カーブは区間ごとの Hold と時間ベジェ、位置の�
 +}
 +public sealed class AnimationBlend<T> : IAnimationSource<T>
 +{
-+    // 三つの子は同じ正の長さ。
++    // 三つの子は同じ非負の長さ。
 +    public AnimationBlend(IAnimationSource<T> from, IAnimationSource<T> to, IAnimationSource<float> weight, IAnimationInterpolator<T> interpolator);
 +    public Duration Duration { get; }
 +    // 有限な [0, 1] の重み。0/1 は対応する子だけを評価する。
 +    public T Sample(Duration time);
++}
+```
+
+可変長コンポーネント曲線の追加 API は次のとおりとする。この部分は設計済みであり、実装は後続変更で行う。
+
+```diff
++public enum AnimationComponentInterpolation
++{
++    Step,
++    Linear,
++    CubicSpline,
++}
++public sealed class AnimationComponentCurve
++{
++    // componentCount は正。times は非空・厳密増加・範囲内。
++    // values は keyCount * componentCount の key-major 配列。
++    // CubicSpline の接線も同じ配置で、単位は値／秒。入力をすべてコピーする。
++    public AnimationComponentCurve(Duration duration, int componentCount,
++        IReadOnlyList<Duration> times, IReadOnlyList<float> values,
++        AnimationComponentInterpolation interpolation,
++        IReadOnlyList<float>? incomingTangents = null,
++        IReadOnlyList<float>? outgoingTangents = null);
++    public Duration Duration { get; }
++    public int ComponentCount { get; }
++    // destination.Length は ComponentCount 以上。評価中だけ書き込み、参照を保持しない。
++    public void Sample(Duration time, Span<float> destination);
++}
++public sealed class AnimationTimelineBuilder
++{
++    // channels.Count は source.ComponentCount と一致し、Build 後の配列をコピーする。
++    // 一回のキー探索で全チャンネルを AnimationOutput へ書く。
++    public void AddComponents(Duration start, AnimationComponentCurve source,
++        IReadOnlyList<AnimationChannel<float>> channels,
++        AnimationFillMode fill = AnimationFillMode.Hold);
++}
++public static partial class ComposeAnimation
++{
++    public static Definitions.ComponentCurve ComponentCurve(Duration duration,
++        int componentCount, AnimationComponentInterpolation interpolation,
++        IReadOnlyList<Action<Definitions.ComponentCurve>>? @with = null);
++    public static Definitions.ComponentTrack ComponentTrack(
++        IReadOnlyList<AnimationChannel<float>> channels,
++        Definitions.ComponentCurve source,
++        Lumyte.Composition.Optional<AnimationFillMode> fill = default,
++        IReadOnlyList<Action<Definitions.ComponentTrack>>? @with = null);
 +}
 ```
 
@@ -120,12 +166,12 @@ Composition の宣言は以下とする。属性からファクトリー、with�
 +        }
 +        public partial class Sampled<T> : Source<T>
 +        {
-+            // 正の長さを持つ不変ソース。子の実装は共有する。
++            // 非負の長さを持つ不変ソース。子の実装は共有する。
 +            public required IAnimationSource<T> Value { get; init; }
 +        }
 +        public partial class Curve<T> : Source<T>
 +        {
-+            // 正の値。
++            // 非負の値。
 +            public required Duration Duration { get; init; }
 +            public required IAnimationInterpolator<T> Interpolator { get; init; }
 +            // 非空・厳密な時刻順。Build 時にキーをコピーする。
@@ -133,7 +179,7 @@ Composition の宣言は以下とする。属性からファクトリー、with�
 +        }
 +        public partial class HermiteCurve<T> : Source<T>
 +        {
-+            // 正の値。
++            // 非負の値。
 +            public required Duration Duration { get; init; }
 +            public required IAnimationHermiteInterpolator<T> Interpolator { get; init; }
 +            // 非空・厳密な時刻順。接線の単位は値／秒。
@@ -164,7 +210,9 @@ Composition の宣言は以下とする。属性からファクトリー、with�
 
 ## 契約と数値
 
-すべての値ソースは正の Duration と、副作用のない Sample を持つ。Sample の入力は [0, Duration] とし、範囲外を拒否する。キーの前後は端値を保持し、正確なキー時刻では保存値を直接返す。時間と値の補間を分離する。Hold はイージング結果に依存しない。
+すべての値ソースは非負の Duration と、副作用のない Sample を持つ。0 Duration の詳細は [ADR-ANIMATION-0005](ANIMATION-0005-zero-duration.md) に従う。Sample の入力は [0, Duration] とし、範囲外を拒否する。キーの前後は端値を保持し、正確なキー時刻では保存値を直接返す。時間と値の補間を分離する。Hold はイージング結果に依存しない。
+
+`AnimationComponentCurve` はキーごとの値を一次元の連続領域へコピーする。要素数は曲線ごとに固定し、曲線間では異なってよい。Step／Linear は values、CubicSpline は values と同じ長さの入出力接線を要求する。評価時はキー区間を一度だけ二分探索し、その区間の全要素を連続走査する。Timeline の内部ノードは一時配列を作らず Output へ直接設定し、初期化後の定常評価で Managed 割り当てを行わない。公開 `Sample` は呼び出し側の Span を使うため、配列の所有権を移さない。
 
 時間の進捗は既存の float の内点表現を維持する。Duration の内点補間は最寄りの Tick へ丸め、ちょうど半分は偶数丸めとする。境界は元の Ticks を直接返す。ベジェ y のオーバーシュートは潰さないが、独自 Timing の NaN／Infinity と float の表現範囲を超える結果は評価時に拒否する。区間設定を使うカーブで、計算後の標準値が非有限または非単位の回転になった場合も InvalidOperationException とする。独自補間器は受け取るオーバーシュートに対して意味を定める必要がある。離散値には Hold を指定する。
 

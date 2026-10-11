@@ -25,7 +25,7 @@ public sealed class AnimationBlend<T> : IAnimationSource<T>, IContextualAnimatio
         AnimationSourceValidation.Duration(from.Duration);
         if (from.Duration != to.Duration || from.Duration != weight.Duration)
         {
-            throw new ArgumentException("Blend sources must have equal positive durations.");
+            throw new ArgumentException("Blend sources must have equal durations.");
         }
 
         _from = from;

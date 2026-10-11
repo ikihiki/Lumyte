@@ -15,7 +15,7 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
             return;
         }
 
-        long index = time >= Length ? count - 1 : time / child.Length;
+        long index = child.Length == 0 || time >= Length ? count - 1 : time / child.Length;
         long local = time >= Length ? child.Length : time % child.Length;
         long ordinal = backwards ? count - 1 - index : index;
         child.Sample(local, output, backwards, checked(priority + ((UInt128)ordinal * child.ValueCount)));
@@ -25,6 +25,12 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
     {
         if (!HasRelease)
         {
+            return;
+        }
+
+        if (child.Length == 0)
+        {
+            child.Endpoints(from, to, output, checked(priority + ((UInt128)(count - 1) * child.ValueCount)));
             return;
         }
 
@@ -66,6 +72,16 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
 
         if (!query.Clamp(Length, out EventQuery bounded))
         {
+            return;
+        }
+
+        if (child.Length == 0)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                child.Events(bounded, collector);
+            }
+
             return;
         }
 

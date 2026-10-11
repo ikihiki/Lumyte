@@ -77,7 +77,7 @@ public static partial class ComposeAnimation
         [Composable(Factory = "ComposeAnimation")]
         public partial class Curve<T> : Source<T>
         {
-            /// <summary>Gets the positive source duration.</summary>
+            /// <summary>Gets the nonnegative source duration.</summary>
             [ComposeParameter]
             public required Duration Duration { get; init; }
 
@@ -97,7 +97,7 @@ public static partial class ComposeAnimation
         [Composable(Factory = "ComposeAnimation")]
         public partial class HermiteCurve<T> : Source<T>
         {
-            /// <summary>Gets the positive source duration.</summary>
+            /// <summary>Gets the nonnegative source duration.</summary>
             [ComposeParameter]
             public required Duration Duration { get; init; }
 

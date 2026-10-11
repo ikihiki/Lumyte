@@ -18,7 +18,7 @@ public sealed class AnimationCurve<T> : IAnimationSource<T>
     /// <param name="interpolator">The interpolator.</param>
     public AnimationCurve(Duration duration, IReadOnlyList<AnimationKey<T>> keys, IAnimationInterpolator<T> interpolator)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(duration.Ticks, nameof(duration));
+        ArgumentOutOfRangeException.ThrowIfNegative(duration.Ticks, nameof(duration));
         ArgumentNullException.ThrowIfNull(keys);
         ArgumentNullException.ThrowIfNull(interpolator);
         if (keys.Count == 0)

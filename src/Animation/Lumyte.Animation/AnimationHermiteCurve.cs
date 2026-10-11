@@ -10,7 +10,7 @@ public sealed class AnimationHermiteCurve<T> : IAnimationSource<T>
     private readonly IAnimationHermiteInterpolator<T> _interpolator;
 
     /// <summary>Initializes a new instance of the <see cref="AnimationHermiteCurve{T}"/> class.</summary>
-    /// <param name="duration">The positive curve duration.</param>
+    /// <param name="duration">The nonnegative curve duration.</param>
     /// <param name="keys">The keys, including per-second tangents.</param>
     /// <param name="interpolator">The value interpolation implementation.</param>
     public AnimationHermiteCurve(Duration duration, IReadOnlyList<AnimationHermiteKey<T>> keys, IAnimationHermiteInterpolator<T> interpolator)
