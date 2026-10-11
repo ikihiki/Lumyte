@@ -8,7 +8,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
     private readonly VulkanDevice _owner;
     private readonly Image _native;
     private readonly DeviceMemory _memory;
-    private int _viewCount;
+    private readonly SurfaceFrameLifetime? _surfaceFrame;
     private bool _disposed;
 
     internal VulkanTexture(VulkanDevice owner, TextureDesc desc)
@@ -33,7 +33,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
         if ((Usage & TextureUsage.RenderAttachment) != 0)
         {
-            usage |= ImageUsageFlags.ColorAttachmentBit;
+            usage |= Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 ? ImageUsageFlags.DepthStencilAttachmentBit : ImageUsageFlags.ColorAttachmentBit;
         }
 
         ImageCreateFlags flags = Width == Height && ArrayLayers >= 6 ? ImageCreateFlags.CreateCubeCompatibleBit : 0;
@@ -93,6 +93,11 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         }
     }
 
+    internal VulkanTexture(VulkanDevice owner, TextureDesc desc, Image native, SurfaceFrameLifetime lifetime)
+    {
+        (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage, _native, _surfaceFrame) = (owner, desc.Width, desc.Height, 1, 1, desc.Format, desc.Usage, native, lifetime);
+    }
+
     public uint Width { get; }
 
     public uint Height { get; }
@@ -110,15 +115,19 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+
             return _native;
         }
     }
 
     internal VulkanDevice Owner => _owner;
 
+    internal SurfaceFrameLifetime? SurfaceFrame => _surfaceFrame;
+
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (mipLevel >= MipLevels)
         {
             throw new ArgumentOutOfRangeException(nameof(mipLevel));
@@ -130,6 +139,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
         ImageViewType dimension = info.Dimension switch
         {
@@ -151,43 +161,63 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
             ViewType = dimension,
             Format = NativeFormat(Format),
             Components = new ComponentMapping(ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity, ComponentSwizzle.Identity),
-            SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, info.BaseMipLevel, info.MipLevelCount, info.BaseArrayLayer, info.ArrayLayerCount),
+            SubresourceRange = new ImageSubresourceRange(Aspect(Format), info.BaseMipLevel, info.MipLevelCount, info.BaseArrayLayer, info.ArrayLayerCount),
         };
         ImageView native = default;
         Check(_owner.Api.CreateImageView(_owner.NativeDevice, &descriptor, null, &native), "CreateImageView");
         var view = new VulkanTextureView(this, info, native);
-        _viewCount++;
         return view;
     }
 
     public void Dispose()
+    {
+        if (_surfaceFrame != null)
+        {
+            throw new InvalidOperationException("The frame owns this borrowed presentation image.");
+        }
+
+        DisposeLease();
+    }
+
+    internal static ImageAspectFlags Aspect(TextureFormat format) => format switch
+    {
+        TextureFormat.Depth32Float => ImageAspectFlags.DepthBit,
+        TextureFormat.Depth24Stencil8 => ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+        _ => ImageAspectFlags.ColorBit,
+    };
+
+    internal static Format NativeFormat(TextureFormat format) => format switch
+    {
+        TextureFormat.Rgba8Unorm => Silk.NET.Vulkan.Format.R8G8B8A8Unorm,
+        TextureFormat.Rgba8Srgb => Silk.NET.Vulkan.Format.R8G8B8A8Srgb,
+        TextureFormat.Bgra8Unorm => Silk.NET.Vulkan.Format.B8G8R8A8Unorm,
+        TextureFormat.Bgra8Srgb => Silk.NET.Vulkan.Format.B8G8R8A8Srgb,
+        TextureFormat.R8Unorm => Silk.NET.Vulkan.Format.R8Unorm,
+        TextureFormat.Rg8Unorm => Silk.NET.Vulkan.Format.R8G8Unorm,
+        TextureFormat.R16Float => Silk.NET.Vulkan.Format.R16Sfloat,
+        TextureFormat.Rg16Float => Silk.NET.Vulkan.Format.R16G16Sfloat,
+        TextureFormat.Rgba16Float => Silk.NET.Vulkan.Format.R16G16B16A16Sfloat,
+        TextureFormat.Rgb10A2Unorm => Silk.NET.Vulkan.Format.A2B10G10R10UnormPack32,
+        TextureFormat.Depth32Float => Silk.NET.Vulkan.Format.D32Sfloat,
+        TextureFormat.Depth24Stencil8 => Silk.NET.Vulkan.Format.D24UnormS8Uint,
+        _ => throw new NotSupportedException("Unsupported texture format."),
+    };
+
+    internal void DisposeLease()
     {
         if (_disposed)
         {
             return;
         }
 
-        if (_viewCount != 0)
+        if (_surfaceFrame == null)
         {
-            throw new InvalidOperationException("Dispose all views before disposing their texture.");
+            _owner.Api.DestroyImage(_owner.NativeDevice, _native, null);
+            _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
         }
 
-        _owner.Api.DestroyImage(_owner.NativeDevice, _native, null);
-        _owner.Api.FreeMemory(_owner.NativeDevice, _memory, null);
         _disposed = true;
-        _owner.ReleaseTexture();
     }
-
-    internal void ReleaseView() => _viewCount--;
-
-    private static Format NativeFormat(TextureFormat format) => format switch
-    {
-        TextureFormat.Rgba8Unorm => Silk.NET.Vulkan.Format.R8G8B8A8Unorm,
-        TextureFormat.Rgba8Srgb => Silk.NET.Vulkan.Format.R8G8B8A8Srgb,
-        TextureFormat.Bgra8Unorm => Silk.NET.Vulkan.Format.B8G8R8A8Unorm,
-        TextureFormat.Bgra8Srgb => Silk.NET.Vulkan.Format.B8G8R8A8Srgb,
-        _ => throw new NotSupportedException("Unsupported texture format."),
-    };
 
     private static uint SelectMemoryType(PhysicalDeviceMemoryProperties properties, uint bits)
     {

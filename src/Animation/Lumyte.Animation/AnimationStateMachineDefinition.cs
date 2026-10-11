@@ -29,9 +29,9 @@ public sealed class AnimationStateMachineDefinition<TState, TContext>
                 throw new ArgumentOutOfRangeException(nameof(states));
             }
 
-            if (binding.Timeline.Duration.Ticks <= 0 || !ids.Add(binding.Id) || !references.Add(binding.State))
+            if (!ids.Add(binding.Id) || !references.Add(binding.State))
             {
-                throw new ArgumentException("State bindings must be unique and have positive timelines.", nameof(states));
+                throw new ArgumentException("State bindings must be unique.", nameof(states));
             }
         }
 

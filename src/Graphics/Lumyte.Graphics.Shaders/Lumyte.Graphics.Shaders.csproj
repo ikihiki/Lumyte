@@ -6,4 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../../tools/shaders/include/lumyte.slang" LogicalName="Lumyte.Shaders.lumyte.slang" />
+  </ItemGroup>
 </Project>

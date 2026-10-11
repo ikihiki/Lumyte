@@ -4,9 +4,9 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffer
 {
+    private readonly ShaderDataTransferState _shaderData = new();
+    private readonly List<IDisposable> _bindings = [];
     private readonly VulkanDevice _owner;
-    private readonly List<Action> _resources = [];
-    private readonly Dictionary<(IGraphicsTexture Texture, uint Mip, uint Layer), TextureState> _states = [];
     private object? _active;
 
     internal VulkanCommandBuffer(VulkanDevice owner)
@@ -18,6 +18,33 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
     public CommandBufferState State { get; private set; } = CommandBufferState.Recording;
 
     internal VulkanDevice Owner => _owner;
+
+    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
+
+    public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
+        where T : struct, IShaderData
+    {
+        RequireRecording();
+        if (source.Buffer is not VulkanShaderDataBuffer<T> src || destination.Buffer is not VulkanShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
+        {
+            throw new ArgumentException("Shader data copy requires equal ranges from this device.");
+        }
+
+        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.Slice(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.Slice(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+    }
+
+    public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
+        where T : struct, IShaderData
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(barrier);
+        if (barrier.Buffer.Buffer is not VulkanShaderDataBuffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner))
+        {
+            throw new ArgumentException("Shader data barrier belongs to another device.");
+        }
+
+        Barrier(new BufferBarrierDesc<byte> { Buffer = buffer.Storage.Slice(checked(barrier.Buffer.Offset * buffer.ShaderElementStrideInBytes), checked(barrier.Buffer.Count * buffer.ShaderElementStrideInBytes)), Before = barrier.Before, After = barrier.After });
+    }
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
@@ -33,8 +60,6 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         }
 
         CopyBufferNative(src, source.OffsetInBytes, dst, destination.OffsetInBytes, source.SizeInBytes);
-        _resources.Add(() => { _ = src.Native; });
-        _resources.Add(() => { _ = dst.Native; });
     }
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination)
@@ -47,11 +72,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
             throw new ArgumentException("Texture copies require distinct allocations and equal format and extent.");
         }
 
-        RequireState(source, TextureState.CopySource);
-        RequireState(destination, TextureState.CopyDestination);
         CopyTextureNative(source, destination);
-        Keep(src);
-        Keep(dst);
     }
 
     public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination)
@@ -59,12 +80,9 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         RequireRecording();
         VulkanTexture texture = Texture(destination, TextureUsage.CopyDestination);
         ArgumentNullException.ThrowIfNull(source);
-        VulkanBuffer<byte> buffer = Buffer(source.Buffer, BufferUsage.CopySource);
+        _ = Buffer(source.Buffer, BufferUsage.CopySource);
         CommandValidation.Layout(source, destination, _owner.GetTextureCopyLayout(texture.Format));
-        RequireState(destination, TextureState.CopyDestination);
         CopyBufferTextureNative(source, destination, true);
-        _resources.Add(() => { _ = buffer.Native; });
-        Keep(texture);
     }
 
     public void CopyTextureToBuffer(TextureCopyRegion source, BufferTextureCopyLayout destination)
@@ -72,12 +90,9 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         RequireRecording();
         VulkanTexture texture = Texture(source, TextureUsage.CopySource);
         ArgumentNullException.ThrowIfNull(destination);
-        VulkanBuffer<byte> buffer = Buffer(destination.Buffer, BufferUsage.CopyDestination);
+        _ = Buffer(destination.Buffer, BufferUsage.CopyDestination);
         CommandValidation.Layout(destination, source, _owner.GetTextureCopyLayout(texture.Format));
-        RequireState(source, TextureState.CopySource);
         CopyBufferTextureNative(destination, source, false);
-        _resources.Add(() => { _ = buffer.Native; });
-        Keep(texture);
     }
 
     public void Barrier(MemoryBarrierDesc barrier)
@@ -100,7 +115,6 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         CommandValidation.BufferAccess(buffer, barrier.Before);
         CommandValidation.BufferAccess(buffer, barrier.After);
         BufferBarrierNative(buffer, barrier);
-        _resources.Add(() => { _ = buffer.Native; });
     }
 
     public void Barrier(TextureBarrierDesc barrier)
@@ -115,28 +129,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         CommandValidation.Scope(barrier.After);
         CommandValidation.TextureAccess(barrier.BeforeState, barrier.Before);
         CommandValidation.TextureAccess(barrier.AfterState, barrier.After);
-        for (uint mip = 0; mip < barrier.Range.MipLevelCount; mip++)
-        {
-            for (uint layer = 0; layer < barrier.Range.ArrayLayerCount; layer++)
-            {
-                (IGraphicsTexture, uint, uint) key = ((IGraphicsTexture)texture, barrier.Range.BaseMipLevel + mip, barrier.Range.BaseArrayLayer + layer);
-                if (barrier.BeforeState != TextureState.Undefined && _states.TryGetValue(key, out TextureState previous) && previous != barrier.BeforeState)
-                {
-                    throw new ArgumentException("Texture BeforeState conflicts with a recorded transition.");
-                }
-            }
-        }
-
         TextureBarrierNative(texture, barrier);
-        for (uint mip = 0; mip < barrier.Range.MipLevelCount; mip++)
-        {
-            for (uint layer = 0; layer < barrier.Range.ArrayLayerCount; layer++)
-            {
-                _states[(texture, barrier.Range.BaseMipLevel + mip, barrier.Range.BaseArrayLayer + layer)] = barrier.AfterState;
-            }
-        }
-
-        Keep(texture);
     }
 
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
@@ -145,12 +138,11 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
         RenderColorAttachmentDesc[] attachments = desc.ColorAttachments.ToArray();
-        if (attachments.Length == 0 || (uint)attachments.Length > _owner.Caps.MaxColorAttachments)
+        if ((attachments.Length == 0 && desc.DepthStencilAttachment == null) || (uint)attachments.Length > _owner.Caps.MaxColorAttachments)
         {
             throw new ArgumentException("Invalid color attachment count.");
         }
 
-        var seen = new HashSet<(IGraphicsTexture, uint, uint)>();
         (uint Width, uint Height)? size = null;
         foreach (RenderColorAttachmentDesc attachment in attachments)
         {
@@ -165,24 +157,39 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
             VulkanTexture texture = OwnTexture(view.Texture);
             (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
             ClearColor clear = attachment.ClearValue;
-            if ((texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
-                !seen.Add((texture, info.BaseMipLevel, info.BaseArrayLayer)) || (size is { } expected && expected != (width, height)) ||
+            if (info.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 || (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
+                (size is { } expected && expected != (width, height)) ||
                 !Enum.IsDefined(attachment.LoadOp) || !Enum.IsDefined(attachment.StoreOp) || !double.IsFinite(clear.Red) || !double.IsFinite(clear.Green) || !double.IsFinite(clear.Blue) || !double.IsFinite(clear.Alpha))
             {
                 throw new ArgumentException("Invalid color attachment, operation or dimensions.");
             }
 
-            RequireState(new() { Texture = texture, MipLevel = info.BaseMipLevel, BaseArrayLayer = info.BaseArrayLayer, Width = width, Height = height }, TextureState.ColorAttachment);
             size = (width, height);
         }
 
-        IRenderEncoder pass = BeginRenderNative(attachments);
-        foreach (RenderColorAttachmentDesc attachment in attachments)
+        RenderDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
+        if (depth != null)
         {
-            var view = (VulkanTextureView)attachment.View;
-            _resources.Add(() => { _ = view.Native; });
+            if (depth.View is not VulkanTextureView view || !ReferenceEquals(view.Owner, _owner))
+            {
+                throw new ArgumentException("Depth attachment belongs to another device.");
+            }
+
+            _ = view.Native;
+            TextureViewInfo info = view.Info;
+            VulkanTexture texture = OwnTexture(view.Texture);
+            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
+            if (info.Format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8) ||
+                (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
+                (size is { } expected && expected != (width, height)) || !Enum.IsDefined(depth.DepthLoadOp) || !Enum.IsDefined(depth.DepthStoreOp) ||
+                !Enum.IsDefined(depth.StencilLoadOp) || !Enum.IsDefined(depth.StencilStoreOp) || !float.IsFinite(depth.DepthClearValue) ||
+                depth.DepthClearValue < 0 || depth.DepthClearValue > 1 || depth.StencilClearValue > 255)
+            {
+                throw new ArgumentException("Invalid depth/stencil attachment, operation or dimensions.");
+            }
         }
 
+        IRenderEncoder pass = BeginRenderNative(attachments, depth);
         _active = pass;
         return pass;
     }
@@ -210,17 +217,22 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
             return;
         }
 
-        if (_active != null || State == CommandBufferState.Submitted)
+        if (_active != null)
         {
-            throw new InvalidOperationException("End the pass and complete submission before disposal.");
+            throw new InvalidOperationException("End the pass before disposal.");
         }
 
         DisposeNative();
-        _resources.Clear();
-        _states.Clear();
+        foreach (IDisposable binding in _bindings)
+        {
+            binding.Dispose();
+        }
+
+        _bindings.Clear();
         State = CommandBufferState.Disposed;
-        _owner.ReleaseCommand();
     }
+
+    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index);
 
     internal void ValidateSubmit()
     {
@@ -229,32 +241,27 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         {
             throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
         }
+    }
 
-        foreach (Action validate in _resources)
+    internal void MarkSubmitted()
+    {
+        _shaderData.Publish();
+        State = CommandBufferState.Submitted;
+    }
+
+    internal void Complete(bool success)
+    {
+        if (State != CommandBufferState.Disposed)
         {
-            validate();
+            State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
         }
     }
 
-    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
-
-    internal void Complete(bool success) => State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
-
-    internal void TrackProgram(Action validate) => _resources.Add(validate);
+    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
 
     internal void ValidatePass(object pass) => ValidateEnd(pass);
 
-    private void RequireRecording()
-    {
-        _owner.ValidateAlive();
-        ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
-        if (State != CommandBufferState.Recording || _active != null)
-        {
-            throw new InvalidOperationException("Commands require Recording state outside a pass.");
-        }
-    }
-
-    private VulkanBuffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
+    internal VulkanBuffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
         where T : unmanaged
     {
         if (slice.Buffer is not VulkanBuffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner) || (buffer.Usage & usage) != usage)
@@ -265,6 +272,16 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         buffer.ValidateRange(slice.OffsetInBytes, slice.SizeInBytes);
         _ = buffer.Native;
         return buffer;
+    }
+
+    private void RequireRecording()
+    {
+        _owner.ValidateAlive();
+        ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
+        if (State != CommandBufferState.Recording || _active != null)
+        {
+            throw new InvalidOperationException("Commands require Recording state outside a pass.");
+        }
     }
 
     private VulkanTexture OwnTexture(IGraphicsTexture resource)
@@ -283,19 +300,6 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         CommandValidation.Region(region, usage);
         return OwnTexture(region.Texture);
     }
-
-    private void RequireState(TextureCopyRegion region, TextureState state)
-    {
-        for (uint layer = 0; layer < region.ArrayLayerCount; layer++)
-        {
-            if (!_states.TryGetValue((region.Texture, region.MipLevel, region.BaseArrayLayer + layer), out TextureState current) || current != state)
-            {
-                throw new InvalidOperationException("Declare the texture state with an explicit barrier before use.");
-            }
-        }
-    }
-
-    private void Keep(VulkanTexture texture) => _resources.Add(() => { _ = texture.Native; });
 
     private void ValidateEnd(object pass)
     {

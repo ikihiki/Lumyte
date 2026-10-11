@@ -7,6 +7,36 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 {
     private VulkanComputePipeline? _pipeline;
 
+    private ShaderValueSnapshot? _arguments;
+    private object? _argumentProgram;
+
+    public void SetArgumentTable(IArgumentTable table)
+    {
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(table);
+        if (table is not VulkanArgumentTable concrete || !concrete.BelongsTo(owner.Owner))
+        {
+            throw new ArgumentException("Argument table belongs to another device.", nameof(table));
+        }
+
+        concrete.ThrowIfDisposed();
+    }
+
+    public void SetArguments<T>(in T value)
+        where T : struct, IShaderArguments
+    {
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        _arguments = snapshot;
+        _argumentProgram = _pipeline;
+    }
+
     public void SetPipeline(IGraphicsComputePipeline pipeline)
     {
         owner.ValidatePass(this);
@@ -23,22 +53,60 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         owner.ValidatePass(this);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a compute program before dispatch.");
-        }
-
-        _pipeline.ValidateAlive();
         uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
         if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
         {
             throw new ArgumentOutOfRangeException(nameof(groupCountX));
         }
 
-        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Native);
+        PrepareDispatch();
         owner.Owner.Api.CmdDispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
-        owner.TrackProgram(_pipeline.ValidateAlive);
+    }
+
+    public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
+    {
+        owner.ValidatePass(this);
+        if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
+        {
+            throw new ArgumentException("Indirect execution requires one four-byte-aligned command record.");
+        }
+
+        VulkanBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
+        PrepareDispatch();
+        owner.Owner.Api.CmdDispatchIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes);
     }
 
     public void End() => owner.EndCompute(this);
+
+    private void PrepareDispatch()
+    {
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a compute program before dispatch.");
+        }
+
+        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        {
+            throw new InvalidOperationException("Set arguments again after switching to a different program.");
+        }
+
+        ShaderBindingSnapshot? bindingSnapshot = null;
+        if (_arguments != null)
+        {
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
+            bindingSnapshot = snapshot;
+        }
+
+        _pipeline.ValidateAlive();
+
+        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(bindingSnapshot));
+        if (bindingSnapshot != null)
+        {
+            var binding = new VulkanShaderBinding(owner.Owner, bindingSnapshot, _pipeline.Data, _pipeline.ArgumentLayout);
+            owner.KeepBinding(binding);
+            V.DescriptorSet set = binding.Native;
+            owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Compute, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
+        }
+    }
 }

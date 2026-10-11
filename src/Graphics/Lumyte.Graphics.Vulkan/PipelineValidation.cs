@@ -17,10 +17,28 @@ internal static class PipelineValidation
         using var document = JsonDocument.Parse(data.ReflectionJson);
         JsonElement root = document.RootElement;
         JsonElement entry = root.GetProperty("entryPoints").EnumerateArray().Single(e => e.GetProperty("name").GetString() == data.EntryPoint);
-        if ((root.TryGetProperty("parameters", out JsonElement globals) && globals.GetArrayLength() != 0) ||
-            (entry.TryGetProperty("bindings", out JsonElement bindings) && bindings.GetArrayLength() != 0))
+        if (root.TryGetProperty("parameters", out JsonElement globals))
         {
-            throw new NotSupportedException("Resource ABI requires the root-data and binding contract.");
+            int roots = globals.EnumerateArray().Count(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer");
+            if (roots > 1)
+            {
+                throw new NotSupportedException("A stage accepts one logical root structure.");
+            }
+
+            if (globals.GetArrayLength() != 0 && (!root.TryGetProperty("lumyteAbi", out JsonElement abi) || abi.GetInt32() != 1))
+            {
+                throw new NotSupportedException("The shader artifact has no supported root-data helper ABI.");
+            }
+
+            foreach (JsonElement parameter in globals.EnumerateArray())
+            {
+                string name = parameter.GetProperty("name").GetString()!;
+                string kind = parameter.GetProperty("type").GetProperty("kind").GetString()!;
+                if (kind != "constantBuffer" && !name.StartsWith("lumyte", StringComparison.Ordinal) && !name.StartsWith("__lumyte_schema_", StringComparison.Ordinal))
+                {
+                    throw new NotSupportedException("Shader resources must use the generated root-data and reference ABI.");
+                }
+            }
         }
 
         if (stage == ShaderStage.Compute)
@@ -45,6 +63,7 @@ internal static class PipelineValidation
 
     internal static void Program(GraphicsPipelineDesc desc, ShaderTargetData vertex, ShaderTargetData? fragment)
     {
+        ShaderDataLayout.ValidateProgram(vertex, fragment);
         if (!Enum.IsDefined(desc.TopologyClass) || !Enum.IsDefined(desc.Optimization) || (desc.AlphaToCoverageEnable && fragment == null))
         {
             throw new ArgumentException("Invalid compilation options.");
@@ -102,46 +121,6 @@ internal static class PipelineValidation
         return new(snapshot, JsonSerializer.Serialize(snapshot, PipelineJsonContext.Default.GraphicsRenderStateDesc));
     }
 
-    internal static void Draw(GraphicsPipelineDesc program, RenderStateSnapshot state, TextureFormat[] formats, IReadOnlyDictionary<uint, string>? fragment)
-    {
-        PrimitiveTopologyClass topology = state.Desc.Topology switch
-        {
-            PrimitiveTopology.PointList => PrimitiveTopologyClass.Point,
-            PrimitiveTopology.LineList or PrimitiveTopology.LineStrip => PrimitiveTopologyClass.Line,
-            _ => PrimitiveTopologyClass.Triangle,
-        };
-        if (program.TopologyClass != topology || state.Desc.ColorTargets.Count != formats.Length || fragment == null || state.Desc.StripIndexFormat != null)
-        {
-            throw new ArgumentException("Program, nonindexed topology or color targets do not match the pass.");
-        }
-
-        DepthStencilStateDesc depth = state.Desc.DepthStencil;
-        if (depth.DepthTestEnable || depth.DepthWriteEnable || depth.StencilTestEnable || program.AlphaToCoverageEnable || !state.Desc.Rasterization.DepthClipEnable ||
-            state.Desc.Rasterization.DepthBiasConstant != 0 || state.Desc.Rasterization.DepthBiasSlope != 0 || state.Desc.Rasterization.DepthBiasClamp != 0)
-        {
-            throw new NotSupportedException("Requested state requires depth/stencil, MSAA or additional enabled rasterization features.");
-        }
-
-        foreach ((uint location, string type) in fragment)
-        {
-            if (location >= (uint)formats.Length || type != "vector:4:scalar:float32")
-            {
-                throw new ArgumentException("Fragment output does not match the color attachment slots.");
-            }
-        }
-    }
-
-    internal static IReadOnlyDictionary<uint, string>? FragmentOutputs(ShaderTargetData? fragment)
-    {
-        if (fragment == null)
-        {
-            return null;
-        }
-
-        using var document = JsonDocument.Parse(fragment.ReflectionJson);
-        return Outputs(document.RootElement.GetProperty("entryPoints")[0], true);
-    }
-
     internal static void Viewport(Viewport v)
     {
         if (!float.IsFinite(v.X) || !float.IsFinite(v.Y) || !float.IsFinite(v.Width) || !float.IsFinite(v.Height) || v.Width <= 0 || v.Height <= 0 ||
@@ -182,7 +161,12 @@ internal static class PipelineValidation
     private static Dictionary<uint, string> Inputs(JsonElement entry)
     {
         Dictionary<uint, string> values = [];
-        foreach (JsonElement parameter in entry.GetProperty("parameters").EnumerateArray())
+        if (!entry.TryGetProperty("parameters", out JsonElement parameters))
+        {
+            return values;
+        }
+
+        foreach (JsonElement parameter in parameters.EnumerateArray())
         {
             Varyings(parameter, values, "varyingInput", false);
         }

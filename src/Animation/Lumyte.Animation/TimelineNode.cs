@@ -14,7 +14,7 @@ internal abstract class TimelineNode(long length)
 
     internal abstract void Sample(long time, AnimationOutput output, bool backwards, UInt128 priority);
 
-    internal abstract void Endpoints(long from, long to, AnimationOutput output, UInt128 priority);
+    internal abstract void Endpoints(Int128 from, Int128 to, AnimationOutput output, bool backwards, UInt128 priority);
 
     internal abstract void Events(EventQuery query, EventCollector collector);
 }

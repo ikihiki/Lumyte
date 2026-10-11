@@ -1,6 +1,7 @@
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Owns one-shot GPU command memory; the caller manages synchronization.</summary>
+/// <remarks>The caller keeps referenced resources and command memory alive until GPU use completes; submission does not rescan their lifetimes.</remarks>
 public interface IGraphicsCommandBuffer : IDisposable
 {
     /// <summary>Gets the recording and execution state.</summary>
@@ -56,4 +57,17 @@ public interface IGraphicsCommandBuffer : IDisposable
 
     /// <summary>Finalizes recording without submitting or waiting.</summary>
     void Finish();
+
+    /// <summary>Records an explicit upload-staging to GPU shader data copy.</summary>
+    /// <typeparam name="T">The application shader data structure.</typeparam>
+    /// <param name="source">The unmapped upload staging range.</param>
+    /// <param name="destination">The compatible GPU destination range.</param>
+    void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
+        where T : struct, IShaderData;
+
+    /// <summary>Records a dependency for a shader data range.</summary>
+    /// <typeparam name="T">The application shader data structure.</typeparam>
+    /// <param name="barrier">The explicit dependency.</param>
+    void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
+        where T : struct, IShaderData;
 }

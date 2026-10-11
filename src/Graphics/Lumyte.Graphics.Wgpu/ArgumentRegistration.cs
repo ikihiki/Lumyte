@@ -1,28 +1,14 @@
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class ArgumentRegistration(WgpuArgumentTable owner, object resource, Action release)
+internal sealed class ArgumentRegistration(WgpuArgumentTable owner, uint slot, object resource, ulong offset, ulong size)
 {
-    private bool _active = true;
+    internal WgpuArgumentTable Owner { get; } = owner;
+
+    internal uint Slot { get; } = slot;
 
     internal object Resource { get; } = resource;
 
-    internal void Check()
-    {
-        owner.ThrowIfDisposed();
-        if (!_active)
-        {
-            throw new InvalidOperationException("The argument table registration has been replaced or released.");
-        }
-    }
+    internal ulong OffsetInBytes { get; } = offset;
 
-    internal void Release()
-    {
-        if (!_active)
-        {
-            return;
-        }
-
-        _active = false;
-        release();
-    }
+    internal ulong SizeInBytes { get; } = size;
 }

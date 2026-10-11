@@ -17,4 +17,10 @@ public enum TextureState
 
     /// <summary>Specifies ColorAttachment.</summary>
     ColorAttachment,
+
+    /// <summary>Allows depth/stencil attachment reads and writes.</summary>
+    DepthStencilAttachment,
+
+    /// <summary>Releases an acquired swapchain image for presentation; ordinary allocations cannot use this state.</summary>
+    Present,
 }

@@ -42,6 +42,26 @@ public sealed class ShaderCompilerTests
         }
     }
 
+    /// <summary>Checks a single-target artifact carries reference targets, type schema and helper version.</summary>
+    /// <param name="target">The selected compiler target.</param>
+    /// <returns>The compiler verification.</returns>
+    [Theory]
+    [InlineData(ShaderTarget.Wgsl)]
+    [InlineData(ShaderTarget.SpirV)]
+    public async Task CompilerEmbedsReferenceAbiAsync(ShaderTarget target)
+    {
+        IShaderCompiler compiler = new SlangShaderCompiler();
+        using Stream source = typeof(ShaderBindingExercise).Assembly.GetManifestResourceStream("Lumyte.Shaders.binding-compute.slang")!;
+        using var reader = new StreamReader(source);
+        ShaderArtifact artifact = await compiler.CompileAsync(new() { Source = await reader.ReadToEndAsync(), Target = target });
+        using var reflection = System.Text.Json.JsonDocument.Parse(artifact.GetTarget(target).ReflectionJson);
+        Assert.Equal(1, reflection.RootElement.GetProperty("lumyteAbi").GetInt32());
+        Assert.Equal("BindingNode", reflection.RootElement.GetProperty("lumyteReferenceTargets").GetProperty("BindingComputeArguments.Node").GetString());
+        Assert.Contains(reflection.RootElement.GetProperty("parameters").EnumerateArray(), p => p.GetProperty("name").GetString() == "__lumyte_schema_BindingNode");
+        ShaderTarget missing = target == ShaderTarget.Wgsl ? ShaderTarget.SpirV : ShaderTarget.Wgsl;
+        Assert.Throws<NotSupportedException>(() => artifact.GetTarget(missing));
+    }
+
     /// <summary>Checks failed Slang source returns diagnostics.</summary>
     /// <returns>The completion of the compiler checks.</returns>
     [Fact]

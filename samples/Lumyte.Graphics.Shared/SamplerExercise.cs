@@ -15,11 +15,6 @@ public static class SamplerExercise
         Require(device.Caps.MaxSamplerAnisotropy >= 1, "Sampler anisotropy limit is invalid.");
         using IGraphicsSampler sampler = device.CreateSampler(desc);
         Require(sampler.Desc == desc, "Sampler state was changed.");
-        if (device is IDisposable owner)
-        {
-            Expect<InvalidOperationException>(owner.Dispose);
-        }
-
         using IGraphicsSampler baseMip = device.CreateSampler(desc with { LodMinClamp = 0, LodMaxClamp = 0 });
         Require(baseMip.Desc.LodMaxClamp == 0, "Zero LOD clamp was replaced by a default.");
         using IGraphicsSampler range = device.CreateSampler(desc with { LodMinClamp = 2, LodMaxClamp = 5 });

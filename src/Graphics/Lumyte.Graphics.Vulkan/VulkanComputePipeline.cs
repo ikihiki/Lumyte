@@ -20,7 +20,6 @@ internal sealed unsafe partial class VulkanComputePipeline : IGraphicsComputePip
         _ = shader.Native;
         Data = PipelineValidation.Shader(shader, owner.Caps.ShaderTarget, ShaderStage.Compute, owner.Caps);
         Initialize();
-        _compute.RetainPipeline();
     }
 
     public ComputePipelineDesc Desc { get; }
@@ -37,14 +36,8 @@ internal sealed unsafe partial class VulkanComputePipeline : IGraphicsComputePip
         }
 
         DisposeNative();
-        _compute.ReleasePipeline();
         _disposed = true;
-        _owner.ReleasePipeline();
     }
 
-    internal void ValidateAlive()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = _compute.Native;
-    }
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 }

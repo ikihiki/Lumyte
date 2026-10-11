@@ -7,6 +7,8 @@
     <Description>Graphics Wgpu device capabilities.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="Lumyte.Graphics.Shared" />
+    <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <PackageReference Include="Ahjo.Wgpu" Version="0.7.0" />
     <None Update="README.md" Pack="true" PackagePath="/" />

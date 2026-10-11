@@ -33,7 +33,9 @@ export async function createDevice() {
             copyBytesPerRowAlignment: 256,
             storageBufferOffsetAlignment: limits.minStorageBufferOffsetAlignment,
         });
-        return { device, caps, disposed: false };
+        const handle = { device, caps, disposed: false, lost: false };
+        device.lost.then(() => { handle.lost = true; });
+        return handle;
     } catch (error) {
         device.destroy();
         throw error;
@@ -57,6 +59,7 @@ export function createBuffer(device, size, flags, memory) {
     if (flags & 2) usage |= GPUBufferUsage.COPY_DST;
     if (flags & 12) usage |= GPUBufferUsage.STORAGE;
     if (flags & 16) usage |= GPUBufferUsage.INDEX;
+    if (flags & 32) usage |= GPUBufferUsage.INDIRECT;
     if (memory === 2) usage |= GPUBufferUsage.MAP_WRITE;
     if (memory === 1) usage |= GPUBufferUsage.MAP_READ;
     return { buffer: device.device.createBuffer({ size, usage }), mapped: null, disposed: false };
@@ -94,7 +97,7 @@ export function destroyBuffer(handle) {
 }
 
 export function createTexture(handle, width, height, layers, mips, format, flags) {
-    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    const formats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "depth32float", "depth24plus-stencil8", "r8unorm", "rg8unorm", "r16float", "rg16float", "rgba16float", "rgb10a2unorm"];
     let usage = 0;
     if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
     if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
@@ -170,6 +173,18 @@ export function createRenderDescriptor() { return { colorAttachments: [] }; }
 export function addColorAttachment(desc, view, load, store, r, g, b, a) {
     desc.colorAttachments.push({ view, loadOp: load === 0 ? "load" : "clear", storeOp: store === 0 ? "store" : "discard", clearValue: { r, g, b, a } });
 }
+export function addDepthStencilAttachment(desc, view, depthLoad, depthStore, depthClear, stencil, stencilLoad, stencilStore, stencilClear) {
+    const attachment = { view, depthLoadOp: depthLoad === 0 ? "load" : "clear", depthStoreOp: depthStore === 0 ? "store" : "discard", depthClearValue: depthClear };
+    if (stencil) Object.assign(attachment, { stencilLoadOp: stencilLoad === 0 ? "load" : "clear", stencilStoreOp: stencilStore === 0 ? "store" : "discard", stencilClearValue: stencilClear });
+    desc.depthStencilAttachment = attachment;
+}
+export function setIndexBuffer(pass, buffer, format, offset, size) { pass.setIndexBuffer(buffer.buffer, format === 0 ? "uint16" : "uint32", offset, size); }
+export function drawIndexed(pass, indices, instances, firstIndex, baseVertex, firstInstance) { pass.drawIndexed(indices, instances, firstIndex, baseVertex, firstInstance); }
+export function drawIndirect(pass, buffer, offset, indexed) {
+    if (indexed) pass.drawIndexedIndirect(buffer.buffer, offset);
+    else pass.drawIndirect(buffer.buffer, offset);
+}
+export function dispatchIndirect(pass, buffer, offset) { pass.dispatchWorkgroupsIndirect(buffer.buffer, offset); }
 export function beginRenderPass(encoder, desc) { return encoder.beginRenderPass(desc); }
 export function beginComputePass(encoder) { return encoder.beginComputePass(); }
 export function endRenderPass(pass) { pass.end(); }
@@ -189,26 +204,42 @@ export function getSubmissionStatus(result) { return result.status; }
 export function getSubmissionError(result) { return result.error; }
 export async function waitSubmission(result) { await result.promise; }
 
-export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson) {
+function stencilFace(face, enabled) {
+    const operations = ["keep", "zero", "replace", "increment-clamp", "decrement-clamp", "invert", "increment-wrap", "decrement-wrap"];
+    return enabled ? { compare: ["never", "less", "equal", "less-equal", "greater", "not-equal", "greater-equal", "always"][face.Compare], failOp: operations[face.Fail], depthFailOp: operations[face.DepthFail], passOp: operations[face.Pass] }
+        : { compare: "always", failOp: "keep", depthFailOp: "keep", passOp: "keep" };
+}
+export function createGraphicsPipeline(handle, vertex, vertexEntry, fragment, fragmentEntry, stateJson, formatsJson, depthFormat, bindingKey) {
     const state = JSON.parse(stateJson), formats = JSON.parse(formatsJson);
-    const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb"];
+    const nativeFormats = ["rgba8unorm", "rgba8unorm-srgb", "bgra8unorm", "bgra8unorm-srgb", "depth32float", "depth24plus-stencil8", "r8unorm", "rg8unorm", "r16float", "rg16float", "rgba16float", "rgb10a2unorm"];
     const factors = ["zero", "one", "src", "one-minus-src", "src-alpha", "one-minus-src-alpha", "dst", "one-minus-dst", "dst-alpha", "one-minus-dst-alpha", "src-alpha-saturated", "constant", "one-minus-constant"];
     const operations = ["add", "subtract", "reverse-subtract", "min", "max"];
     const blend = b => ({ srcFactor: factors[b.Source], dstFactor: factors[b.Destination], operation: operations[b.Operation] });
     return handle.device.createRenderPipeline({
-        layout: "auto",
+        layout: bindingKey ? handle.device.createPipelineLayout({ bindGroupLayouts: [shaderLayout(handle.device, bindingKey)] }) : "auto",
         vertex: { module: vertex, entryPoint: vertexEntry },
-        fragment: { module: fragment, entryPoint: fragmentEntry, targets: formats.map((format, i) => {
+        fragment: fragment ? { module: fragment, entryPoint: fragmentEntry, targets: formats.map((format, i) => {
             const c = state.ColorTargets[i];
             const result = { format: nativeFormats[format], writeMask: c.WriteMask };
             if (c.BlendEnable) result.blend = { color: blend(c.Color), alpha: blend(c.Alpha) };
             return result;
-        }) },
-        primitive: { topology: ["point-list", "line-list", "line-strip", "triangle-list", "triangle-strip"][state.Topology], frontFace: state.Rasterization.FrontFace === 0 ? "ccw" : "cw", cullMode: ["none", "front", "back"][state.Rasterization.Cull] },
+        }) } : undefined,
+        primitive: { stripIndexFormat: state.StripIndexFormat === null ? undefined : state.StripIndexFormat === 0 ? "uint16" : "uint32", topology: ["point-list", "line-list", "line-strip", "triangle-list", "triangle-strip"][state.Topology], frontFace: state.Rasterization.FrontFace === 0 ? "ccw" : "cw", cullMode: ["none", "front", "back"][state.Rasterization.Cull] },
+        depthStencil: depthFormat < 0 ? undefined : {
+            format: nativeFormats[depthFormat],
+            depthWriteEnabled: state.DepthStencil.DepthWriteEnable,
+            depthCompare: state.DepthStencil.DepthTestEnable ? ["never", "less", "equal", "less-equal", "greater", "not-equal", "greater-equal", "always"][state.DepthStencil.DepthCompare] : "always",
+            stencilFront: stencilFace(state.DepthStencil.Front, state.DepthStencil.StencilTestEnable),
+            stencilBack: stencilFace(state.DepthStencil.Back, state.DepthStencil.StencilTestEnable),
+            stencilReadMask: state.DepthStencil.StencilReadMask,
+            stencilWriteMask: state.DepthStencil.StencilTestEnable ? state.DepthStencil.StencilWriteMask : 0,
+            depthBias: state.Rasterization.DepthBiasConstant,
+            depthBiasSlopeScale: state.Rasterization.DepthBiasSlope,
+        },
         multisample: { count: 1, mask: state.SampleMask },
     });
 }
-export function createComputePipeline(handle, shader, entry) { return handle.device.createComputePipeline({ layout: "auto", compute: { module: shader, entryPoint: entry } }); }
+export function createComputePipeline(handle, shader, entry, bindingKey) { return handle.device.createComputePipeline({ layout: bindingKey ? handle.device.createPipelineLayout({ bindGroupLayouts: [shaderLayout(handle.device, bindingKey, true)] }) : "auto", compute: { module: shader, entryPoint: entry } }); }
 export function setRenderPipeline(pass, pipeline) { pass.setPipeline(pipeline); }
 export function setComputePipeline(pass, pipeline) { pass.setPipeline(pipeline); }
 export function setViewport(pass, x, y, width, height, min, max) { pass.setViewport(x, y, width, height, min, max); }
@@ -217,3 +248,100 @@ export function setBlendConstant(pass, r, g, b, a) { pass.setBlendConstant({ r, 
 export function setStencilReference(pass, reference) { pass.setStencilReference(reference); }
 export function draw(pass, vertices, instances, firstVertex, firstInstance) { pass.draw(vertices, instances, firstVertex, firstInstance); }
 export function dispatch(pass, x, y, z) { pass.dispatchWorkgroups(x, y, z); }
+
+function shaderLayout(device, key, compute = false) {
+    const [textures, samplers, buffers, writable] = key.split(":").map(Number);
+    const visibility = compute ? GPUShaderStage.COMPUTE : GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+    const entries = [{ binding: 8, visibility, buffer: { type: "uniform" } }];
+    if (textures + samplers + buffers + writable > 0) entries.push({ binding: 9, visibility, buffer: { type: "read-only-storage" } });
+    const extra = [10, 10 + Math.max(0, textures - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1) + Math.max(0, buffers - 1)];
+    [textures, samplers, buffers, writable].forEach((count, kind) => {
+        for (let i = 0; i < count; i++) {
+            const binding = i === 0 ? kind : extra[kind] + i - 1;
+            const entry = { binding, visibility: kind === 3 && !compute ? GPUShaderStage.FRAGMENT : visibility };
+            if (kind === 0) entry.texture = { sampleType: "float", viewDimension: "2d" };
+            else if (kind === 1) entry.sampler = { type: "filtering" };
+            else entry.buffer = { type: kind === 2 ? "read-only-storage" : "storage" };
+            entries.push(entry);
+        }
+    });
+    if (entries.length > device.limits.maxBindingsPerBindGroup) throw new Error("Shader arguments exceed maxBindingsPerBindGroup.");
+    return device.createBindGroupLayout({ entries });
+}
+function shaderBacking(device, view, usage) {
+    const bytes = view.slice();
+    const buffer = device.createBuffer({ size: (bytes.length + 3) & ~3, usage, mappedAtCreation: true });
+    new Uint8Array(buffer.getMappedRange()).set(bytes);
+    buffer.unmap();
+    return buffer;
+}
+export function createShaderBinding(handle, key, compute, root, map) {
+    if (root.length > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
+    const uniform = shaderBacking(handle.device, root, GPUBufferUsage.UNIFORM);
+    const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [uniform], entries: [{ binding: 8, resource: { buffer: uniform, size: root.length } }] };
+    if (map.length > 0) {
+        const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
+        binding.buffers.push(remap);
+        binding.entries.push({ binding: 9, resource: { buffer: remap, size: map.length } });
+    }
+    return binding;
+}
+export function addShaderResource(binding, slot, kind, resource, offset, size) {
+    binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, offset, size } });
+}
+export function finishShaderBinding(handle, binding) { binding.group = handle.device.createBindGroup({ layout: binding.layout, entries: binding.entries }); }
+export function setShaderBinding(pass, binding) { pass.setBindGroup(0, binding.group); }
+export function destroyShaderBinding(binding) { for (const buffer of binding.buffers) buffer.destroy(); }
+
+const activeSurfaceContexts = new WeakSet();
+
+export function createSurface(device, context) {
+    if (!context || typeof context.configure !== "function" || typeof context.getCurrentTexture !== "function" || !context.canvas) {
+        throw new Error("Supply an existing GPUCanvasContext.");
+    }
+    if (activeSurfaceContexts.has(context)) throw new Error("The GPUCanvasContext already owns a graphics surface.");
+    activeSurfaceContexts.add(context);
+    return { device, context, width: 0, height: 0, configured: false, disposed: false };
+}
+
+export function getSurfacePreferredFormat(surface) {
+    return navigator.gpu.getPreferredCanvasFormat() === "bgra8unorm" ? 2 : 0;
+}
+
+export function configureSurface(surface, width, height, format, flags, alphaMode) {
+    const formats = { 0: "rgba8unorm", 2: "bgra8unorm", 10: "rgba16float" };
+    let usage = GPUTextureUsage.RENDER_ATTACHMENT;
+    if (flags & 1) usage |= GPUTextureUsage.COPY_SRC;
+    if (flags & 2) usage |= GPUTextureUsage.COPY_DST;
+    if (flags & 4) usage |= GPUTextureUsage.TEXTURE_BINDING;
+    surface.context.canvas.width = width;
+    surface.context.canvas.height = height;
+    surface.context.configure({ device: surface.device.device, format: formats[format], usage, alphaMode: alphaMode === 2 ? "premultiplied" : "opaque" });
+    surface.width = width;
+    surface.height = height;
+    surface.configured = true;
+}
+
+export function getSurfaceStatus(surface) {
+    if (surface.device.lost) return 5;
+    if (surface.disposed) return 4;
+    if (!surface.configured || surface.context.canvas.width !== surface.width || surface.context.canvas.height !== surface.height) return 3;
+    return 0;
+}
+
+export function acquireSurfaceTexture(surface) {
+    return surface.context.getCurrentTexture();
+}
+
+export function unconfigureSurface(surface) {
+    surface.context.unconfigure();
+    surface.configured = false;
+}
+
+export function destroySurface(surface) {
+    if (!surface.disposed) {
+        if (surface.configured) surface.context.unconfigure();
+        activeSurfaceContexts.delete(surface.context);
+        surface.disposed = true;
+    }
+}

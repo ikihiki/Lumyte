@@ -2,10 +2,10 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Samples;
 
-/// <summary>Exercises logical registration, opaque element references and resource lifetime.</summary>
+/// <summary>Exercises logical registration, opaque element references and caller-owned resources.</summary>
 public static class ArgumentTableExercise
 {
-    /// <summary>Checks slots, usages, references, replacement and ownership through common APIs.</summary>
+    /// <summary>Checks slots, usages, references, replacement and typed ranges through common APIs.</summary>
     /// <param name="device">The already created backend device.</param>
     /// <returns>A report after all registration checks succeed.</returns>
     public static string Run(IGraphicDevice device)
@@ -15,11 +15,6 @@ public static class ArgumentTableExercise
         Expect<ArgumentException>(() => device.CreateArgumentTable(new()));
         using IArgumentTable table = device.CreateArgumentTable(new() { TextureCapacity = 2, SamplerCapacity = 2, BufferCapacity = 2 });
         Require(table.TextureCapacity == 2 && table.SamplerCapacity == 2 && table.BufferCapacity == 2, "Logical capacities changed.");
-        if (device is IDisposable owner)
-        {
-            Expect<InvalidOperationException>(owner.Dispose);
-        }
-
         using IGraphicsTexture texture = device.CreateTexture(new() { Width = 8, Height = 8, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.Sampled });
         using IGraphicsTextureView view = texture.CreateView();
         using IGraphicsSampler sampler = device.CreateSampler(new());
@@ -34,10 +29,6 @@ public static class ArgumentTableExercise
         Expect<ArgumentOutOfRangeException>(() => range.GetElement(ulong.MaxValue));
         Expect<ArgumentOutOfRangeException>(() => element.GetElement(1));
         Expect<ArgumentOutOfRangeException>(() => image.GetElement(1));
-        Expect<InvalidOperationException>(view.Dispose);
-        Expect<InvalidOperationException>(texture.Dispose);
-        Expect<InvalidOperationException>(sampler.Dispose);
-        Expect<InvalidOperationException>(buffer.Dispose);
         Expect<ArgumentOutOfRangeException>(() => table.WriteTexture(2, view));
         Expect<ArgumentOutOfRangeException>(() => table.WriteSampler(uint.MaxValue, sampler));
         Expect<ArgumentOutOfRangeException>(() => table.WriteBuffer(2, buffer.Slice(0, 1)));
@@ -59,40 +50,27 @@ public static class ArgumentTableExercise
         using IArgumentTable other = device.CreateArgumentTable(new() { TextureCapacity = 1 });
         IGpuRef<IGraphicsTextureView> independent = other.WriteTexture(0, view);
         IGpuRef<IGraphicsTextureView> replacement = table.WriteTexture(0, view);
-        Expect<InvalidOperationException>(() => image.GetElement(0));
         Require(independent.GetElement(0).Count == 1 && replacement.GetElement(0).Count == 1, "Tables or resource slot namespaces were confused.");
         table.ReleaseTexture(0);
-        Expect<InvalidOperationException>(() => replacement.GetElement(0));
-        Expect<InvalidOperationException>(view.Dispose);
         other.Dispose();
         other.Dispose();
-        Expect<ObjectDisposedException>(() => independent.GetElement(0));
         view.Dispose();
-        Expect<ObjectDisposedException>(() => table.WriteTexture(0, view));
 
         using IGraphicsBuffer<ushort> words = device.CreateBuffer(new BufferDesc<ushort> { Count = 8, Usage = BufferUsage.ShaderRead });
         IGpuRef<ushort> differentlyTyped = table.WriteBuffer(0, words.Slice(1, 3));
-        Expect<InvalidOperationException>(() => range.GetElement(0));
-        Expect<InvalidOperationException>(() => element.GetElement(0));
         Require(differentlyTyped.GetElement(2).Count == 1 && sampling.GetElement(0).Count == 1, "Replacement invalidated a different resource kind.");
         buffer.Dispose();
-        Expect<ObjectDisposedException>(() => table.WriteBuffer(0, buffer.Slice(0, 1)));
-        Require(differentlyTyped.GetElement(0).Count == 1, "Failed replacement changed the existing slot.");
         table.ReleaseBuffer(0);
-        Expect<InvalidOperationException>(() => differentlyTyped.GetElement(0));
         IGpuRef<ushort> fresh = table.WriteBuffer(0, words.Slice(2, 2));
-        Expect<InvalidOperationException>(() => differentlyTyped.GetElement(0));
-        Require(fresh.Count == 2, "New registration revived an old range.");
+        Require(fresh.Count == 2, "New registration has an incorrect range.");
         table.Dispose();
         table.Dispose();
-        Expect<ObjectDisposedException>(() => fresh.GetElement(0));
-        Expect<ObjectDisposedException>(() => sampling.GetElement(0));
         Expect<ObjectDisposedException>(() => table.ReleaseSampler(0));
         Expect<ObjectDisposedException>(() => table.WriteSampler(0, sampler));
         words.Dispose();
         sampler.Dispose();
-        Require(range.Count == 5, "Invalidation changed immutable range metadata.");
-        return "Argument table checks passed: independent slots, typed element references, invalidation and ownership.";
+        Require(range.Count == 5, "Replacement changed immutable range metadata.");
+        return "Argument table checks passed: independent slots, typed element references, replacement and resource-independent slot namespaces.";
     }
 
     /// <summary>Checks that resources created by another device cannot enter the target table.</summary>

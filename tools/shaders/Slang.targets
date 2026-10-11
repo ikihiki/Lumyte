@@ -18,6 +18,8 @@
     </ParameterGroup>
     <Task>
       <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Using Namespace="System.Collections.Generic" />
       <Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         uint stage;
@@ -42,15 +44,51 @@
             writer.Write(target);
             writer.Write(code.Length);
             writer.Write(code);
-            writer.Write(File.ReadAllText(Prefix + "." + suffixes[target] + ".reflection.json"));
+            string reflection = File.ReadAllText(Prefix + "." + suffixes[target] + ".reflection.json");
+            int start = reflection.IndexOf('{');
+            var referenceTargets = new List<string>();
+            string source = File.ReadAllText(Prefix + ".slang");
+            foreach (Match structure in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{([^}]+)\}", RegexOptions.Singleline)) {
+              foreach (Match field in Regex.Matches(structure.Groups[2].Value, @"Gpu(?:RW)?BufferRef\s*<\s*(\w+)\s*>\s+(\w+)\s*;")) {
+                referenceTargets.Add("\"" + structure.Groups[1].Value + "." + field.Groups[2].Value + "\":\"" + field.Groups[1].Value + "\"");
+              }
+            }
+            reflection = reflection.Insert(start + 1, "\"lumyteAbi\":1,\"lumyteRootBinding\":8,\"lumyteReferenceTargets\":{" + string.Join(",", referenceTargets) + "},");
+            writer.Write(reflection);
           }
         }
       ]]></Code>
     </Task>
   </UsingTask>
+  <UsingTask TaskName="PrepareSlangSource" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Input ParameterType="System.String" Required="true" />
+      <Output ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        string source = File.ReadAllText(Input);
+        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;");
+        if (source.Contains("lumyte.slang")) {
+          var probes = new StringBuilder();
+          foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{")) {
+            string name = type.Groups[1].Value;
+            probes.AppendLine("StructuredBuffer<Ptr<" + name + ">> __lumyte_schema_" + name + ";");
+          }
+          // Reflect the pointer's natural layout before same-name root uniform layouts.
+          source = probes.Append(source).ToString();
+        }
+        File.WriteAllText(Output, source);
+      ]]></Code>
+    </Task>
+  </UsingTask>
   <!-- Every offline binary contains every ShaderTarget; no target selector is exposed. -->
   <Target Name="CompileSlangShaders"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
+          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != ''">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
@@ -58,8 +96,9 @@
     <Exec Command="&quot;$(SlangCompilerPath)&quot; -version" ConsoleToMSBuild="true">
       <Output TaskParameter="ConsoleOutput" ItemName="_SlangCompilerVersion" />
     </Exec>
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target wgsl -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl&quot;" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;%(SlangShader.FullPath)&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target spirv -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv&quot;" />
+    <PrepareSlangSource Input="%(SlangShader.FullPath)" Output="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target wgsl -DLUMYTE_WGSL=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl&quot;" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target spirv -DLUMYTE_SPIRV=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv&quot;" />
     <PackSlangBinary Prefix="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName)"
                      EntryPoint="%(SlangShader.EntryPoint)" Stage="%(SlangShader.Stage)"
                      CompilerVersion="@(_SlangCompilerVersion, ' ')" />

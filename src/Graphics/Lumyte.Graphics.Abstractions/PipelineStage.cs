@@ -13,6 +13,15 @@ public enum PipelineStage
     /// <summary>Specifies Copy.</summary>
     Copy = 2,
 
+    /// <summary>Specifies indirect command fetch.</summary>
+    DrawIndirect = 4,
+
+    /// <summary>Specifies index fetch.</summary>
+    IndexInput = 8,
+
+    /// <summary>Specifies early and late depth/stencil tests.</summary>
+    DepthStencil = 256,
+
     /// <summary>Specifies VertexShader.</summary>
     VertexShader = 16,
 
@@ -26,8 +35,8 @@ public enum PipelineStage
     ColorOutput = 128,
 
     /// <summary>Specifies AllGraphics.</summary>
-    AllGraphics = VertexShader | FragmentShader | ColorOutput,
+    AllGraphics = IndexInput | VertexShader | FragmentShader | ColorOutput | DepthStencil,
 
     /// <summary>Specifies AllCommands.</summary>
-    AllCommands = Copy | AllGraphics | ComputeShader,
+    AllCommands = Copy | DrawIndirect | AllGraphics | ComputeShader,
 }

@@ -3,6 +3,16 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Provides a non-owning recording scope.</summary>
 public interface IRenderEncoder
 {
+    /// <summary>Selects the device's logical registration table for subsequent execution.</summary>
+    /// <param name="table">The live table from this device.</param>
+    void SetArgumentTable(IArgumentTable table);
+
+    /// <summary>Snapshots application root values using their interface serializer.</summary>
+    /// <typeparam name="T">The generated argument structure.</typeparam>
+    /// <param name="arguments">The root values for the selected program.</param>
+    void SetArguments<T>(in T arguments)
+        where T : struct, IShaderArguments;
+
     /// <summary>Selects a program without changing draw state.</summary>
     /// <param name="pipeline">The same-device program.</param>
     void SetPipeline(IGraphicsPipeline pipeline);
@@ -27,12 +37,36 @@ public interface IRenderEncoder
     /// <param name="reference">The reference value.</param>
     void SetStencilReference(uint reference);
 
-    /// <summary>Records a direct draw after validating all explicit state.</summary>
+    /// <summary>Records a direct draw with the explicit pipeline, state and arguments.</summary>
     /// <param name="vertexCount">The vertex count.</param>
     /// <param name="instanceCount">The instance count.</param>
     /// <param name="firstVertex">The first vertex index.</param>
     /// <param name="firstInstance">The first instance index.</param>
     void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
+
+    /// <summary>Sets a non-owning sixteen-bit index range relative to which firstIndex is interpreted.</summary>
+    /// <param name="indices">The same-device unmapped buffer range with Index usage.</param>
+    void SetIndexBuffer(BufferSlice<ushort> indices);
+
+    /// <summary>Sets a non-owning thirty-two-bit index range relative to which firstIndex is interpreted.</summary>
+    /// <param name="indices">The same-device unmapped buffer range with Index usage.</param>
+    void SetIndexBuffer(BufferSlice<uint> indices);
+
+    /// <summary>Records an indexed draw using the selected index range.</summary>
+    /// <param name="indexCount">The index count within the selected range.</param>
+    /// <param name="instanceCount">The instance count.</param>
+    /// <param name="firstIndex">The first index relative to the selected range.</param>
+    /// <param name="baseVertex">The signed offset added to fetched indices.</param>
+    /// <param name="firstInstance">The first instance.</param>
+    void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
+
+    /// <summary>Records one GPU-sourced draw without reading command data on the CPU.</summary>
+    /// <param name="arguments">Exactly one unmapped record with Indirect usage; FirstInstance must be zero.</param>
+    void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments);
+
+    /// <summary>Records one GPU-sourced indexed draw with the selected index range.</summary>
+    /// <param name="arguments">Exactly one unmapped record with Indirect usage; FirstInstance must be zero.</param>
+    void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments);
 
     /// <summary>Ends this pass once without submitting or waiting.</summary>
     void End();

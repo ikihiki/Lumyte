@@ -4,14 +4,13 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
+internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     where T : unmanaged
 {
     private readonly BrowserDevice _owner;
     private readonly JSObject _native;
     private bool _mapped;
     private bool _pending;
-    private int _registrationCount;
     private bool _disposed;
 
     internal BrowserBuffer(BrowserDevice owner, BufferDesc<T> desc, BufferLayout<T> layout, ulong size)
@@ -26,6 +25,8 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
         _native = BrowserInterop.CreateBuffer(owner.Handle, size, (int)Usage, (int)Memory);
     }
+
+    public object ShaderHandle => Native;
 
     public BufferLayout<T> Layout { get; }
 
@@ -102,11 +103,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
             return;
         }
 
-        if (_registrationCount != 0)
-        {
-            throw new InvalidOperationException("Release all argument table registrations before disposing their resource.");
-        }
-
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
@@ -116,7 +112,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
         _native.Dispose();
         _mapped = false;
         _disposed = true;
-        _owner.ReleaseBuffer();
     }
 
     void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
@@ -142,14 +137,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>
 
         BrowserInterop.CopyBufferTo(_native, destination[..checked((int)length)], checked((int)offset));
     }
-
-    internal void RetainRegistration()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _registrationCount = checked(_registrationCount + 1);
-    }
-
-    internal void ReleaseRegistration() => _registrationCount--;
 
     private void RequireMapping(MemoryPreference memory)
     {

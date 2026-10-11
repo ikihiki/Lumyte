@@ -1,0 +1,97 @@
+@using System.Diagnostics
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+
+<section class="log-viewer">
+    <FluentCard Class="log-viewer-toolbar">
+        <FluentTextInput Id="@SearchId" Class="log-search" Placeholder="ログを検索" Immediate="true" @bind-Value="_query" />
+        <FluentSwitch Id="@TimeToggleId" @bind-Value="_showTime">経過時刻を表示</FluentSwitch>
+        <span class="hint">@Filtered.Length / @Items.Length 件</span>
+    </FluentCard>
+    <div class="log-virtual-container" data-virtualized="true">
+        <table class="log-table">
+            <thead><tr>@if (_showTime) { <th>経過時刻</th> }<th>レベル</th><th>Category</th><th>メッセージ</th><th>Trace ID</th></tr></thead>
+            <tbody>
+                <Virtualize Items="Filtered" Context="item" ItemSize="44" OverscanCount="6" SpacerElement="tr">
+                    <tr class="log-row" data-log-timestamp="@item.Timestamp">
+                        @if (_showTime) { <td class="log-time">@Elapsed(item.Timestamp)</td> }
+                        <td class="@("severity-" + DiagnosticTelemetryModel.Level(item).ToLowerInvariant())">@DiagnosticTelemetryModel.Level(item)</td>
+                        <td><FluentButton OnClick="() => SelectAsync(item)">@item.Name</FluentButton></td>
+                        <td>@DiagnosticTelemetryModel.Text(item.Value)</td>
+                        <td>
+                            @if (item.TraceId is string traceId)
+                            {
+                                @if (Trace.HasDelegate)
+                                {
+                                    <FluentButton Class="trace-id" data-trace-link="@traceId" OnClick="() => Trace.InvokeAsync(traceId)">@traceId</FluentButton>
+                                }
+                                else
+                                {
+                                    <span class="trace-id">@traceId</span>
+                                }
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                    </tr>
+                </Virtualize>
+            </tbody>
+        </table>
+        @if (Filtered.Length == 0)
+        {
+            <p class="hint log-empty">該当するログはありません。</p>
+        }
+    </div>
+    @if (_selected != null)
+    {
+        <FluentCard Class="log-structure" data-log-structure="true">
+            <div class="section-heading"><h2>構造化データ</h2><FluentButton Appearance="ButtonAppearance.Subtle" OnClick="() => _selected = null">閉じる</FluentButton></div>
+            <dl>
+                <dt>category</dt><dd>@_selected.Name</dd>
+                <dt>message</dt><dd>@DiagnosticTelemetryModel.Text(_selected.Value)</dd>
+                @if (_selected.TraceId != null) { <dt>trace.id</dt><dd>@_selected.TraceId</dd> }
+                @foreach ((string key, DiagnosticValue value) in _selected.Fields.OrderBy(field => field.Key, StringComparer.Ordinal))
+                {
+                    <dt>@key</dt><dd>@DiagnosticTelemetryModel.Text(value)</dd>
+                }
+            </dl>
+        </FluentCard>
+    }
+</section>
+
+@code {
+    private readonly string _id = Guid.NewGuid().ToString("N");
+    private string _query = string.Empty;
+    private bool _showTime;
+    private DiagnosticEvent? _selected;
+
+    [Parameter]
+    public DiagnosticEvent[] Items { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<DiagnosticEvent> Inspect { get; set; }
+
+    [Parameter]
+    public EventCallback<string> Trace { get; set; }
+
+    private string SearchId => "log-search-" + _id;
+
+    private string TimeToggleId => "log-time-" + _id;
+
+    private DiagnosticEvent[] Filtered => string.IsNullOrWhiteSpace(_query) ? Items : Items.Where(Matches).ToArray();
+
+    private bool Matches(DiagnosticEvent item) => string.Join(' ', item.Name, DiagnosticTelemetryModel.Text(item.Value), item.TraceId, item.Fields.Select(field => field.Key + "=" + DiagnosticTelemetryModel.Text(field.Value))).Contains(_query, StringComparison.OrdinalIgnoreCase);
+
+    private string Elapsed(long timestamp)
+    {
+        long first = Items.Length == 0 ? timestamp : Items.Min(item => item.Timestamp);
+        return Stopwatch.GetElapsedTime(first, timestamp).ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture);
+    }
+
+    private async Task SelectAsync(DiagnosticEvent item)
+    {
+        _selected = item;
+        await Inspect.InvokeAsync(item);
+    }
+}

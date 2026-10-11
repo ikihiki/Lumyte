@@ -1,6 +1,7 @@
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Owns completion tracking without implicitly waiting during disposal.</summary>
+/// <remarks>The caller confirms completion before disposal; disposal does not query outstanding GPU use.</remarks>
 public interface IGraphicsSubmission : IDisposable
 {
     /// <summary>Gets the nonblocking completion status.</summary>

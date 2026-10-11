@@ -33,7 +33,7 @@ Build は必須引数と定義を検証してから、同じ Start(context) を�
 - `Occurrence.UpdateOffset` は、状態機械の前回イベント走査基準からの時計上の時間幅。
 - `OccurredAt` は、速度変更と一時停止を反映した、同じ時計上のマーカー通過時点。
 
-OccurredAt は、内部で保持したイベント走査基準と補正済み UpdateOffset から算出する。消費側へ基準を推定させず、追加の時計読み出しも行わない。Pause 前の未通知マーカーを Resume 後に配送する場合も、OccurredAt は元の通過時点を保持する。UpdateOffset の基準は Pause 中の Update では進めない。
+OccurredAt は、内部で保持したイベント走査基準と補正済み UpdateOffset から算出する。消費側へ基準を推定させず、追加の時計読み出しも行わない。Pause 前の未通知マーカーを Resume 後に配送する場合も、OccurredAt は元の通過時点を保持する。UpdateOffset の基準は Pause 中の Update では進めない。低速再生で整数Tickの位置が進まない更新を挟んだ場合、最初の前進で通知する開始マーカーのOccurredAtは開始時点を保持する。この場合、符号付きDurationであるUpdateOffsetは負になり得る。
 
 同じ時計を使うマーカーの OccurredAt と遷移の ObservedAt は直接比較できる。異なる時計の TimePoint 同士は比較しない。時刻の計算精度と Tick への丸めは [ADR-ANIMATION-0001](ANIMATION-0001-animation-system.md) に従う。複数コレクションの配送順と同時刻の優先順は消費側が決める。
 

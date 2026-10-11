@@ -30,4 +30,7 @@ public enum BufferUsage
     /// Allows use as an index buffer.
     /// </summary>
     Index = 16,
+
+    /// <summary>Allows the GPU to read indirect draw or dispatch commands.</summary>
+    Indirect = 32,
 }
