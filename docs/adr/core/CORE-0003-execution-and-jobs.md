@@ -286,6 +286,170 @@ CPU callbackは同期処理のみである。`async void`、Taskを内部に起�
 
 I/Oは本来のasync APIを直接使い、待つだけの `Task.Run` を作らない。I/Oで準備したデータをCPUジョブへ渡し、CPU完了後にownerへ適用を配送する。`SynchronizationContext`や`ExecutionContext`をジョブごとにcaptureしない。AsyncLocal、thread local、ambientなDI scope／Activity／cultureに計算入力や所有権を依存させず、必要な値をContextに明示する。Cooperativeでもホストのambient状態に依存するcallbackを移植可能とは扱わない。
 
+### DIを使わない登録と起動の利用例
+
+マルチスレッドを使えるnative hostで、HostとGameは既存host thread、Renderは専用thread、CPUジョブはThreadPoolへ配置する例を示す。ここでの「登録」は、役割に対応するexecutorの参照をアプリの構成オブジェクトへ保持することである。名前からthreadを検索したり、DIや属性から自動検出したりしない。`ExecutionRoles`、`NoDiApplication`、`OwnerComponent`は例のアプリ側の型であり、Lumyteの追加公開APIではない。
+
+起動は次の順で進む。
+
+1. 既存hostの開始callbackでHostThreadExecutorを生成し、現在の物理threadをownerとして固定する。この操作は新しいthreadを作らない。
+2. 初期化中も呼ばれるhostのturnへPumpを接続する。通常のゲーム更新を開始する前から駆動する。
+3. StartAsyncがDedicatedThreadExecutor.CreateAsyncを呼ぶ。この呼び出しがRender用threadを起動し、受付準備完了後にexecutorを返す。
+4. 返されたexecutorをRenderの役割へ、host executorをHostとGameの役割へ登録する。登録自体はthreadを作らない。
+5. 各executorのInvokeAsync内で、その役割を使うcomponentを生成・初期化する。constructorには同じexecutor参照を渡す。これにより、生成する場所と利用側が認識するownerが一致する。
+6. 全componentの初期化後にStartAsyncを完了させ、hostが成功を確認してゲーム更新を開始する。
+
+```csharp
+using Lumyte.Jobs;
+using Lumyte.Threading;
+
+// アプリの役割割り当て。実行器を所有・停止するのはNoDiApplication。
+sealed record ExecutionRoles(
+    IThreadExecutor Host, IThreadExecutor Game, IThreadExecutor Render);
+
+sealed class NoDiApplication
+{
+    private DedicatedThreadExecutor? _renderThread;
+    private JobScheduler? _jobs;
+    private OwnerComponent? _game;
+    private OwnerComponent? _render;
+
+    // 必ず実際のhost thread上でnewする。async継続上で遅延生成しない。
+    public NoDiApplication()
+    {
+        Host = new HostThreadExecutor("host", capacity: 256);
+    }
+
+    public HostThreadExecutor Host { get; }
+
+    // StartAsyncの成功を観測するまでは利用側へ公開しない。
+    public ExecutionRoles? Roles { get; private set; }
+
+    // 起動は一度。呼び出し側はこのTaskを保持して完了と失敗を観測する。
+    public async Task StartAsync()
+    {
+        // ここで新しい物理threadを起動する。await後がhostとは限らない。
+        _renderThread = await DedicatedThreadExecutor.CreateAsync("render", capacity: 256);
+
+        var roles = new ExecutionRoles(Host, Host, _renderThread);
+        Roles = roles; // 役割への登録。HostとGameは同じinstance。
+
+        // CPU計算の同時数を指定する。専用threadを2本作る指定ではない。
+        _jobs = JobScheduler.CreateThreadPool(maxConcurrency: 2);
+
+        await roles.Render.InvokeAsync(() =>
+        {
+            // constructorも専用Render threadで呼ばれる。
+            _render = new OwnerComponent(roles.Render);
+            _render.Initialize();
+        });
+
+        await roles.Game.InvokeAsync(() =>
+        {
+            // awaitの継続threadに依存せず、hostのPumpから呼ばれる。
+            _game = new OwnerComponent(roles.Game);
+            _game.Initialize();
+        });
+    }
+
+    // StartAsyncの終了と業務producerの停止後、一度に一呼び出しだけ行う。
+    // 初期化失敗時も、生成済みの参照はfieldsに残るため同じ手順で片付けられる。
+    public async Task StopAsync()
+    {
+        if (_jobs is not null)
+        {
+            _jobs.BeginShutdown(JobShutdownMode.CancelPending);
+            await _jobs.Completion;
+        }
+
+        await Host.InvokeAsync(() =>
+        {
+            _game?.Dispose();
+            _game = null; // Disposeが成功した場合だけ参照を外す。
+        });
+        if (_renderThread is not null)
+        {
+            await _renderThread.InvokeAsync(() =>
+            {
+                _render?.Dispose();
+                _render = null;
+            });
+            _renderThread.Complete();
+            await _renderThread.Completion;
+        }
+
+        Roles = null;
+        Host.Complete();
+        await Host.Completion; // hostはこの待機中もPumpを継続する。
+    }
+}
+
+// Game／Renderのスレッド制約を示す最小component。実際のdevice APIではない。
+sealed class OwnerComponent
+{
+    private readonly IThreadExecutor _owner;
+
+    public OwnerComponent(IThreadExecutor owner)
+    {
+        owner.VerifyAccess();
+        _owner = owner; // 利用側はこの参照から自分のownerを認識する。
+    }
+
+    public void Initialize()
+    {
+        _owner.VerifyAccess();
+        Console.WriteLine($"{_owner.Name}: thread {Environment.CurrentManagedThreadId}");
+    }
+
+    public void Dispose() => _owner.VerifyAccess();
+}
+```
+
+`OwnerComponent.Initialize`の出力で、GameがhostのID、Renderが別のIDになることを確認できる。Nameは表示用であり、同名のexecutorでも同じthreadとは限らない。ThreadPoolのworkerはCPU仕事の投入時にruntimeが管理するため、役割へ登録せず、固定thread IDも利用側へ渡さない。
+
+hostとの接続は以下のようにする。OnHostStartedとOnHostTurnは、アプリが既存のOSイベントループへ接続する同期callbackの例である。Lumyteがこのイベントループを実装するわけではない。hostは両方を同じ物理threadで呼び、起動・通常更新・終了処理中にOnHostTurnを繰り返す。
+
+```csharp
+NoDiApplication app = null!;
+Task startup = null!;
+bool startupObserved = false;
+bool ready = false;
+
+void OnHostStarted()
+{
+    app = new NoDiApplication(); // 実際のhost threadをここで登録する。
+    startup = app.StartAsync(); // awaitせずTaskを保持し、イベントループへ戻る。
+}
+
+void OnHostTurn()
+{
+    // 起動完了を条件にしてはいけない。StartAsync内のGame初期化もここで進む。
+    app.Host.Pump(maxWorkItems: 32);
+    if (!startupObserved && startup.IsCompleted)
+    {
+        startupObserved = true;
+        try
+        {
+            // 完了済みTaskの結果だけを取得する。未完了Taskを同期waitしない。
+            startup.GetAwaiter().GetResult();
+            app.Roles!.Game.VerifyAccess();
+            ready = true; // この後のhost turnから通常のGame更新を許可する。
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(error);
+            // 更新を開始せず、生成済み資源のStopAsyncを外側の終了処理から呼ぶ。
+        }
+    }
+}
+```
+
+hostの接続順は「両callbackを登録 → OnHostStarted → OnHostTurnの反復」とする。起動Taskをawaitする外側のworkflowを使う場合も、hostのイベントループ自体は止めない。開始callbackをasync voidにしたり、StartAsyncが終わってからPumpを登録したりしない。
+
+終了要求時はreadyをfalseにして新規更新・I/Oなどのproducerを止め、startupが終了したことを確認した後、StopAsyncが返すTaskを保持する。OnHostTurnを続けながらそのTaskを非同期に観測し、正常終了後にhostのイベントループを終了する。起動失敗時も同様である。StopAsyncの失敗時はappと生存資源を保持して必要なPumpを続け、失敗箇所を確認して後始末を再試行する。無条件のfinallyでexecutorをCompleteしてはならない。実資源を生成するconstructor自身が失敗した場合の部分生成物は、そのconstructorが片付ける。
+
+この例は起動順を説明するもので、フレームを自動生成したり描画backendを選択したりしない。threadなし構成では専用threadを作らずRenderにもHostを割り当て、CPU側をCreateCooperativeにして同じhost turnからPumpする。DIを後から導入する場合も、この役割割り当てと起動順を保ち、DIは設定と参照の受け渡しを担当する。
+
 ### フレームへの接続例
 
 典型的な一回のフレームは、ownerでイベント取得・診断Pump・Input更新・snapshot作成、CPUジョブ、ownerで結果適用・イベント配送・描画の順とする。複数frameを重ねる場合はsnapshotと出力bufferも世代ごとに分離し、有界の受け渡し枠を設ける。
@@ -411,6 +575,7 @@ CPU、OS、.NET／Browser版、ビルド設定、論理CPU数、warmup・反復�
 - executorの引数例外とfaulted／canceled ValueTaskの区別、満杯・受付終了・開始前取消と開始の競合、開始後取消でも生成した資源を失わないこと。callback例外後の継続、内部障害時の未実行要求とCompletionの失敗。
 - Hostの借用threadとDedicatedの生成threadでのowner一致、専用threadの起動失敗時cleanup、Completeの冪等性・受理競合、全受理済み仕事のdrain。Taskを返すcallbackの外側workflowが内側の完了と資源寿命を追跡すること。
 - 通常frame開始前の初期化Pump、途中失敗の逆順cleanup、共有executorの終了、cleanup満杯・解放失敗の再試行、取消済みload tokenをcleanupへ流用しないこと。
+- DIなしの起動例で、hostの事前Pump接続、専用thread起動後の役割登録、owner上のconstructor／初期化、起動成功前の通常更新禁止を確認する。初期化途中の失敗でも参照を保持し、Pump継続下で後始末できること。
 - chain／diamond／独立枝の依存順と一度だけ実行、循環／無効IDの拒否、0件・端数・大きなlengthの範囲重複／欠落なし、先行結果のメモリ可視性。
 - 同じgraphの複数runと独立Context、異なるrun間の枠再利用、古いJobRunを保持したまま新しいrunが完了しても状態が混ざらないこと。
 - 任意producerの容量競合、予約中の受付終了、getLength例外、受理直前／直後の取消、run単位の全受理または全拒否、ready追加とdrain終了のlost wakeup。
