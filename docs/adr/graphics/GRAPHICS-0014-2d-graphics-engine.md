@@ -2,7 +2,7 @@
 
 - 状態: 提案
 - 日付: 2026-10-10
-- 更新: 2026-10-11 — 命令単位の固定DI、外部文字ライブラリとの境界、線形光RGBでのCOLRv1評価を具体化
+- 更新: 2026-10-11 — 命令別の専用interface、UseGraphics2DとDIの後勝ち登録、Graphicsとの直接接続を具体化
 
 ## 背景
 
@@ -17,6 +17,8 @@ Lumyteには既に [Graphics device](GRAPHICS-0001-graphics-device.md)、[Comman
 ### 適用範囲と責務
 
 `src/Graphics/Lumyte.Graphics.Drawing2D` にC#ライブラリを配置する。プロジェクト名、NuGet名、名前空間は `Lumyte.Graphics.Drawing2D` とする。実行時にはBCLと `Lumyte.Graphics.Abstractions` を参照し、backendの具象型、Window、Input、Compositionへ依存しない。shader成果物は既存のSlang・shader生成基盤で用意する。
+
+DI登録は任意の別パッケージ `Lumyte.Graphics.Drawing2D.DependencyInjection` に置き、同名のプロジェクト・名前空間を使う。このパッケージだけが本体と `Microsoft.Extensions.DependencyInjection.Abstractions` を参照する。UseGraphics2DはIServiceCollectionの拡張とし、DIコンテナーの生成はアプリケーションが行う。本体のコンストラクターは通常の引数を受け取るため、DIを使わない手動構築もできる。
 
 構成は「アプリケーション → Canvas2D → DrawList2D → Renderer2D → IGraphicDevice」とする。CanvasはCPU側の変換・クリップ・描画コマンドを記録し、Rendererは命令ごとにDIで指定された実装へ処理を渡し、連続コマンドのバッチ化、転送用リソースとGPU描画命令を組み立てる。deviceの生成・破棄、queue送信、完了待機、画面への表示はアプリケーションが所有する。
 
@@ -232,11 +234,11 @@ Lumyteには既に [Graphics device](GRAPHICS-0001-graphics-device.md)、[Comman
 +}
 ```
 
-### 命令単位で固定するDIと外部実装
+### 命令別の専用interfaceとコンストラクター注入
 
 各描画命令型に実装を一つ割り当て、Renderer生成時に登録表を固定する。RendererはCanHandle、優先順位、性能推定による実装探索を行わない。指定された実装が入力やdevice機能に対応しない場合はNotSupportedExceptionを返し、別実装へのfallbackは行わない。通常の値検証とdevice機能の検証は必須だが、実装を選ぶための問い合わせには使わない。
 
-本体は特定のDI容器に依存せず、constructor injectionで登録表を受け取る。Microsoft.Extensions.DependencyInjection等の利用はアプリケーションのcomposition rootに置く。登録の変更は明示的なWithで新しい表を生成する。既存Rendererの登録は変わらず、変更した表で新しいRendererを構築する。CreateDefaultは標準実装を固定登録する便利APIであり、実行時のfallback候補を作るものではない。
+各命令に専用の非generic interfaceを設け、DrawingCommandRenderers2Dの単一の公開コンストラクターで11実装を受け取る。各引数は必須でnullを拒否し、対応する型付きreadonly fieldに保持する。登録表は構築後に変更できない。DIは構築時に各interfaceを単一解決し、Rendererは描画中にサービスを解決しない。
 
 比較元は上記の公開API差分と同じmain revision。以下の命令型はCanvasが作成する不変snapshotであり、外部実装が読み取れる。DrawList内部の配列やbackendのprivate型は公開しない。
 
@@ -280,12 +282,63 @@ Lumyteには既に [Graphics device](GRAPHICS-0001-graphics-device.md)、[Comman
 +        public IGraphicDevice Device { get; }
 +        public RenderTarget2D Target { get; }
 +    }
-+    public interface ICommandRenderer2D<TCommand> where TCommand : DrawingCommand2D
++    // 以下の全PrepareAsyncに共通する契約:
++    // 同型・同一clip/合成境界の連続命令。並べ替え不可。snapshotは準備結果の寿命まで有効。
++    // CPU処理、資源確保、GPU実行計画を準備する。submit/waitは禁止。
++    public interface IFillRectRenderer2D
 +    {
-+        // 同型・同一clip/合成境界の連続命令。並べ替え不可。snapshotは準備結果の寿命まで有効。
-+        // CPU処理、資源確保、GPU実行計画を準備する。submit/waitは禁止。
 +        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
-+            ReadOnlyMemory<TCommand> commands, CancellationToken cancellationToken = default);
++            ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IFillRoundedRectRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<FillRoundedRectCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IFillCircleRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<FillCircleCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IDrawLineRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<DrawLineCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IFillPathRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<FillPathCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IStrokePathRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<StrokePathCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IDrawImageRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<DrawImageCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IDrawCoverageMaskRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<DrawCoverageMaskCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IDrawDistanceFieldRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<DrawDistanceFieldCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IDrawMeshRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<DrawMeshCommand2D> commands, CancellationToken cancellationToken = default);
++    }
++    public interface IDrawPaintGraphRenderer2D
++    {
++        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
++            ReadOnlyMemory<DrawPaintGraphCommand2D> commands, CancellationToken cancellationToken = default);
 +    }
 +    public interface IPreparedCommandBatch2D : IDisposable
 +    {
@@ -297,32 +350,198 @@ Lumyteには既に [Graphics device](GRAPHICS-0001-graphics-device.md)、[Comman
 +    }
 +    public sealed class DrawingCommandRenderers2D
 +    {
-+        // 必須11命令すべてを明示登録。実装はstateless、GPU資源は準備結果が所有。
-+        public static DrawingCommandRenderers2D CreateDefault();
-+        // 既存の1命令だけを置換した新しい不変表。null・未知の命令型は拒否。
-+        public DrawingCommandRenderers2D With<TCommand>(ICommandRenderer2D<TCommand> renderer)
-+            where TCommand : DrawingCommand2D;
-+        // この表に固定登録された1実装を返す。候補探索はしない。
-+        public ICommandRenderer2D<TCommand> Get<TCommand>() where TCommand : DrawingCommand2D;
++        // 全実装を借用し、型付きreadonly fieldへ保持。nullは拒否。
++        public DrawingCommandRenderers2D(
++            IFillRectRenderer2D fillRect,
++            IFillRoundedRectRenderer2D fillRoundedRect,
++            IFillCircleRenderer2D fillCircle,
++            IDrawLineRenderer2D drawLine,
++            IFillPathRenderer2D fillPath,
++            IStrokePathRenderer2D strokePath,
++            IDrawImageRenderer2D drawImage,
++            IDrawCoverageMaskRenderer2D drawCoverageMask,
++            IDrawDistanceFieldRenderer2D drawDistanceField,
++            IDrawMeshRenderer2D drawMesh,
++            IDrawPaintGraphRenderer2D drawPaintGraph);
++        // 構築時に指定された実装をそのまま返す。探索・再解決なし。
++        public IFillRectRenderer2D FillRect { get; }
++        public IFillRoundedRectRenderer2D FillRoundedRect { get; }
++        public IFillCircleRenderer2D FillCircle { get; }
++        public IDrawLineRenderer2D DrawLine { get; }
++        public IFillPathRenderer2D FillPath { get; }
++        public IStrokePathRenderer2D StrokePath { get; }
++        public IDrawImageRenderer2D DrawImage { get; }
++        public IDrawCoverageMaskRenderer2D DrawCoverageMask { get; }
++        public IDrawDistanceFieldRenderer2D DrawDistanceField { get; }
++        public IDrawMeshRenderer2D DrawMesh { get; }
++        public IDrawPaintGraphRenderer2D DrawPaintGraph { get; }
 +    }
 +}
 ```
 
-例えばアプリケーションは次のように登録する。ExternalComputeFillPathRendererは外部ライブラリが提供する実装例の名前で、Drawing2Dの組み込み型ではない。
+### 固定された呼び出し経路
+
+DrawListは内部に命令別の型付き領域と、元の描画順を表すkind・範囲の列を持つ。Canvas.Endで不変snapshotにし、Prepareのたびに基底型配列から型別の配列を抽出・コピーしない。Rendererは元の順序を走査し、連続する同型・同一状態・同一clip/合成境界の範囲だけをバッチ化する。FillPath → FillRect → FillPathは3つのバッチを維持し、別の位置にある同型命令を結合しない。
+
+Prepareでは内部の固定kindでバッチごとに一度分岐し、対応する専用interfaceを直接呼ぶ。次は内部実装の抜粋イメージであり、kindや型付き領域を公開APIにはしない。
 
 ```csharp
-services.AddScoped<ICommandRenderer2D<FillPathCommand2D>, ExternalComputeFillPathRenderer>();
-services.AddScoped<DrawingCommandRenderers2D>(sp =>
-    DrawingCommandRenderers2D.CreateDefault()
-        .With<FillPathCommand2D>(
-            sp.GetRequiredService<ICommandRenderer2D<FillPathCommand2D>>()));
-services.AddScoped<Renderer2D>();
-// IGraphicDeviceは同じdevice scopeにアプリケーションが別途登録する。
+switch (batch.Kind)
+{
+    case DrawingCommandKind2D.FillRect:
+        preparedBatches.Add(await renderers.FillRect.PrepareAsync(
+            context, list.FillRects.Slice(batch.Offset, batch.Count), cancellationToken));
+        break;
+    case DrawingCommandKind2D.FillPath:
+        preparedBatches.Add(await renderers.FillPath.PrepareAsync(
+            context, list.FillPaths.Slice(batch.Offset, batch.Count), cancellationToken));
+        break;
+    // 残り9命令も、それぞれの型付き領域と専用interfaceを使う。
+}
 ```
 
-この設定ではすべてのFillPathがExternalComputeFillPathRendererへ渡る。パスのサイズ、静的・動的、GPU機能によって別の登録へ切り替えない。StrokePath、DrawPaintGraph、画像系の命令はそれぞれの登録のままである。同じ経路へ変更したい命令は個別にWithする。
+命令のdispatchにType辞書、reflection、dynamic、DI解決、候補列挙を使わない。共通のIPreparedCommandBatch2DはGPU実行計画と資源寿命の境界として維持し、Recordもバッチ単位で呼ぶ。専用interfaceでもinterface呼び出しは残る。探索と呼び出し回数を抑える構成を採用し、JIT/Native AOTでのインライン化や性能向上を測定前に保証しない。
 
-DI scopeはdevice・Renderer単位にし、描画実装を異なるdeviceで共有しない。Rendererは注入された実装を借用し、その所有者であるscopeをすべてのPreparedDraw2Dの破棄まで維持する。標準のstateless実装のみ共有できる。重複したDI登録の順序で実装を選ぶ構成にはせず、各閉じたICommandRenderer2D<TCommand>を一つだけ解決する。
+### UseGraphics2Dによる標準登録と後勝ちの上書き
+
+本体は各専用interfaceの標準実装を公開し、登録用パッケージや手動構築から生成できるようにする。すべてstatelessで、GPU資源は準備結果が所有する。次はコンストラクターの宣言であり、PrepareAsyncは対応する専用interfaceを明示的に実装する。標準実装の描画方式は後述の対応表で定める。
+
+```diff
++namespace Lumyte.Graphics.Drawing2D
++{
++    public sealed class DefaultFillRectRenderer2D : IFillRectRenderer2D
++    {
++        public DefaultFillRectRenderer2D();
++    }
++    public sealed class DefaultFillRoundedRectRenderer2D : IFillRoundedRectRenderer2D
++    {
++        public DefaultFillRoundedRectRenderer2D();
++    }
++    public sealed class DefaultFillCircleRenderer2D : IFillCircleRenderer2D
++    {
++        public DefaultFillCircleRenderer2D();
++    }
++    public sealed class DefaultDrawLineRenderer2D : IDrawLineRenderer2D
++    {
++        public DefaultDrawLineRenderer2D();
++    }
++    public sealed class DefaultFillPathRenderer2D : IFillPathRenderer2D
++    {
++        public DefaultFillPathRenderer2D();
++    }
++    public sealed class DefaultStrokePathRenderer2D : IStrokePathRenderer2D
++    {
++        public DefaultStrokePathRenderer2D();
++    }
++    public sealed class DefaultDrawImageRenderer2D : IDrawImageRenderer2D
++    {
++        public DefaultDrawImageRenderer2D();
++    }
++    public sealed class DefaultDrawCoverageMaskRenderer2D : IDrawCoverageMaskRenderer2D
++    {
++        public DefaultDrawCoverageMaskRenderer2D();
++    }
++    public sealed class DefaultDrawDistanceFieldRenderer2D : IDrawDistanceFieldRenderer2D
++    {
++        public DefaultDrawDistanceFieldRenderer2D();
++    }
++    public sealed class DefaultDrawMeshRenderer2D : IDrawMeshRenderer2D
++    {
++        public DefaultDrawMeshRenderer2D();
++    }
++    public sealed class DefaultDrawPaintGraphRenderer2D : IDrawPaintGraphRenderer2D
++    {
++        public DefaultDrawPaintGraphRenderer2D();
++    }
++}
++namespace Lumyte.Graphics.Drawing2D.DependencyInjection
++{
++    public static class Graphics2DServiceCollectionExtensions
++    {
++        // 全11専用interfaceとDrawingCommandRenderers2DをTryAddScopedで登録。
++        // 未登録分だけを補完し、再呼び出しで既存の上書きを消さない。
++        // servicesのnullは拒否。provider生成やサービス解決は行わず、同じservicesを返す。
++        public static IServiceCollection UseGraphics2D(this IServiceCollection services);
++    }
++}
+```
+
+UseGraphics2Dの登録内容は次のとおり。IServiceCollectionはMicrosoft.Extensions.DependencyInjection、TryAddScopedは同.Extensions名前空間の拡張を使う。
+
+```csharp
+public static IServiceCollection UseGraphics2D(this IServiceCollection services)
+{
+    ArgumentNullException.ThrowIfNull(services);
+    services.TryAddScoped<IFillRectRenderer2D, DefaultFillRectRenderer2D>();
+    services.TryAddScoped<IFillRoundedRectRenderer2D, DefaultFillRoundedRectRenderer2D>();
+    services.TryAddScoped<IFillCircleRenderer2D, DefaultFillCircleRenderer2D>();
+    services.TryAddScoped<IDrawLineRenderer2D, DefaultDrawLineRenderer2D>();
+    services.TryAddScoped<IFillPathRenderer2D, DefaultFillPathRenderer2D>();
+    services.TryAddScoped<IStrokePathRenderer2D, DefaultStrokePathRenderer2D>();
+    services.TryAddScoped<IDrawImageRenderer2D, DefaultDrawImageRenderer2D>();
+    services.TryAddScoped<IDrawCoverageMaskRenderer2D, DefaultDrawCoverageMaskRenderer2D>();
+    services.TryAddScoped<IDrawDistanceFieldRenderer2D, DefaultDrawDistanceFieldRenderer2D>();
+    services.TryAddScoped<IDrawMeshRenderer2D, DefaultDrawMeshRenderer2D>();
+    services.TryAddScoped<IDrawPaintGraphRenderer2D, DefaultDrawPaintGraphRenderer2D>();
+    services.TryAddScoped<DrawingCommandRenderers2D>();
+    return services;
+}
+```
+
+アプリケーションはUseGraphics2Dの後で上書きしたいinterfaceをAddScopedする。Microsoft.Extensions.DependencyInjectionの単一サービス解決は同じサービス型の最後の登録を使うため、専用の置換APIは設けない。標準登録を削除する必要もなく、IEnumerableで候補を取得しない。ExternalComputeFillPathRendererはIFillPathRenderer2Dを実装する外部ライブラリの例で、組み込み型ではない。
+
+```csharp
+var services = new ServiceCollection();
+services.UseGraphics2D();
+services.AddScoped<IFillPathRenderer2D, ExternalComputeFillPathRenderer>();
+
+using var provider = services.BuildServiceProvider(
+    new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+using var scope = provider.CreateScope();
+
+// constructorの11引数をDIが解決。FillPathだけ最後の登録を受け取る。
+var renderers = scope.ServiceProvider
+    .GetRequiredService<DrawingCommandRenderers2D>();
+```
+
+この設定ではすべてのFillPathがExternalComputeFillPathRendererへ渡る。パスのサイズ、静的・動的、GPU機能によって別の登録へ切り替えない。StrokePath、DrawPaintGraph、画像系の命令はそれぞれの登録のままである。同じ経路へ変更したい命令は、その専用interfaceも個別に登録する。
+
+UseGraphics2Dは未登録のサービス型だけを補完するので、事前に登録された外部実装も保持する。再呼び出しても後から追加した上書きは失われない。外部実装を複数Addした場合は最後の登録が使われる。すべての登録はprovider構築前に完了させる。構築後のIServiceCollection変更は既存provider・登録表・Rendererへ反映せず、設定変更には新しいproviderとRendererを使う。
+
+標準のサービス寿命はScopedとし、scopeをdevice・Renderer単位で作る。DrawingCommandRenderers2DとRendererは注入された実装を借用し、異なるdevice間で状態を持つ外部実装を共有しない。全PreparedDraw2Dを解放し、Rendererを破棄してからscopeを破棄する。外部実装をfactoryやinstance登録で供給する場合も、その登録方式の所有権に従ってこの寿命を維持する。標準のstateless実装のみ手動共有できる。
+
+### Graphicsシステムとの直接接続
+
+UseGraphics2DはIGraphicDeviceやRenderer2Dを登録しない。アプリケーションはDIで組み立てたDrawingCommandRenderers2Dを受け取り、既存Graphicsのdeviceを通常の引数として渡す。GPU資源の生成にはRenderPreparationContext2D.Deviceを使えるので、標準の命令実装はdeviceをDIから取得する必要がない。
+
+次は既存の描画先へ2Dを重ねる正常終了時の例である。drawListはCanvas.Endの結果、targetViewは同じdeviceの有効な既存内容を持つview、targetToAttachmentはその範囲を直前の実使用状態からColorAttachmentへ遷移させるTextureBarrierDescとする。入力画像等はSampled stateにしておく。
+
+```csharp
+// deviceはアプリケーション所有。DIへ登録せず直接接続する。
+using var renderer = new Renderer2D(device, renderers);
+var prepared = await renderer.PrepareAsync(drawList, new RenderTarget2D
+{
+    View = targetView,
+    LoadOp = AttachmentLoadOp.Load
+});
+
+var commands = device.CreateCommandBuffer(new CommandBufferDesc());
+commands.Barrier(targetToAttachment);
+prepared.Record(commands); // active passの外から呼ぶ。内部のpassも閉じて返す。
+// 必要なら、後続Graphics処理のbarrierと命令をここへ追加する。
+commands.Finish();
+
+var submission = device.Queue.Submit([commands]);
+prepared.TrackSubmission(submission);
+await submission.WaitAsync();
+
+commands.Dispose();
+prepared.Dispose();
+submission.Dispose();
+// rendererの破棄後に、上のscopeを破棄する。
+```
+
+Graphicsとの接続点はdevice、targetView、command buffer、submissionである。新規targetはClearで初期化する。毎frameの完了待ちは説明用で、実際にはアプリケーションのframe管理が完了確認と解放を遅延できる。DIを使わない場合も11個の専用interface実装をDrawingCommandRenderers2Dのコンストラクターへ渡すだけで、同じ描画手順になる。
 
 GPU機能不足は実装の生成時、またはPrepareAsyncの全体検証で報告する。Prepareは描画ごとの入力検証と資源確保を行うが、別実装の再試行を行わない。途中のPrepare失敗・キャンセルでは、それまでに作った全batchを破棄する。Record中の失敗では部分記録を再使用せず、未送信command bufferを先に破棄してからbatchを破棄する。
 
@@ -448,7 +667,9 @@ Clear、Src、DestIn等では透明領域も結果へ影響するため、単な
 
 ## 検討した代替案
 
-- CanHandleと優先順位で命令ごとに実装を探索する: DIで設定した経路が入力や環境によって変わるため採用しない。命令型ごとの固定登録と明示的な置換を使う。
+- CanHandleと優先順位で命令ごとに実装を探索する: DIで設定した経路が入力や環境によって変わるため採用しない。命令別interfaceの単一解決と固定保持を使う。
+- genericな描画interfaceと型の辞書で実装を取得する: 宣言量は減るが、今回の固定された11命令には専用interfaceと型付きfieldを使い、バッチごとの呼び出し経路を明確にする。
+- 独自の標準登録factoryや置換APIを設ける: DIの登録内容と別の登録表を編集する手順が増えるため採用しない。UseGraphics2Dで標準を補完し、後続のDI登録を優先する。
 - 描画ごとにGPUへ送信する: 小さな描画で送信回数が増え、アプリケーションのcopyや他のrender passとの同期を組み立てにくいため採用しない。
 - textureごとにコマンドを並べ替える: 半透明の重なりとUIの前後関係が変わるため採用しない。連続コマンドだけをまとめる。
 - グリフを単色atlasまたは色付きpathの平坦な列に限定する: COLRv1のgradient、参照、隔離合成を保持できないため採用しない。パスにpaint DAGを組み合わせる。
@@ -462,9 +683,13 @@ Clear、Src、DestIn等では透明領域も結果へ影響するため、単な
 
 CPUコマンド記録、GPU準備、記録、完了の境界を持つため、即時描画より呼び出し手順が増える。上位アプリケーションはframeごとの所有者にその手順を集約できる。既存Graphicsの契約は変更せず、新規ライブラリとそのshader・サンプル・テストを追加する。
 
+専用interfaceと型付き登録表により、描画中のDI解決と型の辞書検索を避けられる。一方、命令追加時は専用interface、コンストラクター、dispatch、標準実装とUseGraphics2Dの登録を同時に追加する必要があり、登録表のコンストラクターも変更になる。登録用パッケージを分離するため、本体と併せたバージョン管理が必要になる。
+
 ## 検証方針
 
-固定DIの検証ではFillPathだけを外部実装へ置換したとき、すべてのFillPathがそこへ届き、StrokePathやDrawPaintGraphへ影響しないことを確認する。未対応入力・device機能不足で別実装を呼ばないこと、既存RendererにWithの変更が波及しないこと、公開snapshotだけで外部実装できることを確認する。CPU経路とcompute経路は同じfixtureで比較し、順序、clip境界、合成、許容誤差を一致させる。
+DIの検証ではUseGraphics2Dだけで11標準実装とDrawingCommandRenderers2Dを解決できること、後続のAddScopedで指定した最後の実装が使われること、UseGraphics2Dの再呼び出しや先行する外部登録で意図した実装が保持されることを確認する。provider構築後の登録変更が既存provider・Rendererへ波及しないこと、null引数の拒否、IGraphicDeviceの登録なしで登録表を解決できることも確認する。
+
+11専用interfaceへの配送をそれぞれ確認し、FillPathだけを外部実装へ置換した場合にStrokePathやDrawPaintGraphへ影響しないことを検証する。FillPath → FillRect → FillPathの順序とバッチ境界、描画中のDI解決・型の辞書検索がないこと、未対応入力・device機能不足で別実装を呼ばないこと、公開snapshotだけで外部実装できることを確認する。CPU経路とcompute経路は同じfixtureで比較し、順序、clip境界、合成、許容誤差を一致させる。小さなバッチが多い条件でもCPU準備時間と割り当て量を測定し、専用interface化の効果を評価する。
 
 実装時は共通APIを使うsample/testを用意し、backend固有device生成はbootstrapへ置く。CPUテストでは変換順、Save/Restore、snapshot、不正入力後の状態、fill rule、stroke join、バッチ境界を確認する。
 
