@@ -75,7 +75,7 @@ public sealed class BrowserPlatform : IPlatform
             throw new InvalidOperationException("Only one input source is supported.");
         }
 
-        _source = new BufferedInputSource(CheckMutation, _ => _source = null, "Browser");
+        _source = new BufferedInputSource(CheckMutation, _ => _source = null, () => _window?.State.IsActive == true, "Browser");
         return _source;
     }
 
@@ -174,6 +174,14 @@ public sealed class BrowserPlatform : IPlatform
     }
 
     internal void Enqueue(Action operation) => _operations.Enqueue(operation);
+
+    internal void StopInput(BrowserWindow window)
+    {
+        if (window.State.IsActive)
+        {
+            _source?.Focus(false);
+        }
+    }
 
     internal void ReceiveInput(string json)
     {

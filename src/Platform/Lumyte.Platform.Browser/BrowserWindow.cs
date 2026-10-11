@@ -165,7 +165,9 @@ public sealed class BrowserWindow : IWindow
         {
             if (!_disposed)
             {
-                SetState(_state with { Lifetime = WindowLifetime.Closing });
+                _platform.StopInput(this);
+                BrowserInterop.Show(_handle, false);
+                SetState(_state with { Lifetime = WindowLifetime.Closing, IsVisible = false, IsActive = false });
                 AdvanceClose();
             }
         });
@@ -231,7 +233,11 @@ public sealed class BrowserWindow : IWindow
             }
 
             ApplySnapshot(BrowserInterop.Snapshot(_handle), 0);
-            _platform.ReceiveInput(BrowserInterop.DrainInput(_handle));
+            string input = BrowserInterop.DrainInput(_handle);
+            if (_state.Lifetime == WindowLifetime.Open)
+            {
+                _platform.ReceiveInput(input);
+            }
         }
 
         AdvanceClose();

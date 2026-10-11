@@ -2,7 +2,7 @@ using Lumyte.Input.Abstractions;
 
 namespace Lumyte.Platform.Internal;
 
-internal sealed class BufferedInputSource(Action check, Action<BufferedInputSource> release, string platformName) : IInputSource
+internal sealed class BufferedInputSource(Action check, Action<BufferedInputSource> release, Func<bool> isFocused, string platformName) : IInputSource
 {
     private Device? _keyboard;
     private Device? _mouse;
@@ -46,6 +46,7 @@ internal sealed class BufferedInputSource(Action check, Action<BufferedInputSour
         _keyboard = keyboard;
         _mouse = mouse;
         _active = true;
+        Focus(isFocused());
     }
 
     public void Update() => Check();

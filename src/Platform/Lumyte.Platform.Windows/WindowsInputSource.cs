@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.Versioning;
 using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Internal;
+using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Windows;
 
@@ -59,6 +60,9 @@ public sealed class WindowsInputSource : IInputSource
         _keyboard = keyboard;
         _mouse = mouse;
         _active = true;
+        var focus = new FocusData(_platform.Windows.Any(window => window.State.IsActive));
+        keyboard.Add(focus);
+        mouse.Add(focus);
     }
 
     /// <inheritdoc/>
@@ -91,7 +95,7 @@ public sealed class WindowsInputSource : IInputSource
 
     internal void Receive(WindowsWindow window, uint message, nuint wParam, nint lParam)
     {
-        if (!_active)
+        if (!_active || window.State.Lifetime != WindowLifetime.Open)
         {
             return;
         }
@@ -130,6 +134,16 @@ public sealed class WindowsInputSource : IInputSource
                 _ => (wParam >> 16) == 1 ? MouseButton.X1 : MouseButton.X2,
             };
             _mouse!.Add(new MouseButtonData(button, message is not (0x202 or 0x205 or 0x208 or 0x20C)));
+        }
+    }
+
+    internal void Deactivate()
+    {
+        if (_active)
+        {
+            var data = new FocusData(false);
+            _keyboard!.Add(data);
+            _mouse!.Add(data);
         }
     }
 

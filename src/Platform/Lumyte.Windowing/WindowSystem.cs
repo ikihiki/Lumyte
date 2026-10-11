@@ -118,6 +118,10 @@ public sealed class WindowSystem : IDisposable
         {
             parent = _nodes.Values.SingleOrDefault(n => n.Native?.Id == owner)?.Id
                 ?? throw new ArgumentException("Register the native owner first.", nameof(window));
+            if (_terminations.Any(termination => termination.Nodes.Contains(parent.Value)))
+            {
+                throw new ArgumentException("The native owner is closing.", nameof(window));
+            }
         }
 
         if (_registrations.TryGetValue(window, out _) || _nodes.Values.Any(n => n.Native?.Id == window.Id))
@@ -709,6 +713,7 @@ public sealed class WindowSystem : IDisposable
                 }
 
                 Remove(node);
+                ReapClosedAncestors(node.Parent);
                 return;
             }
         }
@@ -836,7 +841,7 @@ public sealed class WindowSystem : IDisposable
 
         if (_keyboardTarget == node.Id)
         {
-            _keyboardTarget = node.Parent;
+            _keyboardTarget = ClosestFocusableAncestor(node.Parent);
         }
 
         foreach ((WindowId, WindowRequestId) key in _requests.Where(x => x.Value.Item1 == node.Id).Select(x => x.Key).ToArray())
@@ -848,6 +853,38 @@ public sealed class WindowSystem : IDisposable
 
         _nodes.Remove(node.Id);
         Notify(Removed, node.Id);
+    }
+
+    private WindowNodeId? ClosestFocusableAncestor(WindowNodeId? ancestor)
+    {
+        while (ancestor is { } id && _nodes.TryGetValue(id, out Node? node))
+        {
+            if (node.Activation != WindowActivation.PreserveFocus && Snapshot(node).IsEffectivelyVisible)
+            {
+                return id;
+            }
+
+            ancestor = node.Parent;
+        }
+
+        return null;
+    }
+
+    private void ReapClosedAncestors(WindowNodeId? ancestor)
+    {
+        while (ancestor is { } id && _nodes.TryGetValue(id, out Node? node)
+            && node.Observed?.Lifetime == WindowLifetime.Closed
+            && !_nodes.Values.Any(child => child.Parent == id)
+            && !_terminations.Any(termination => termination.Nodes.Contains(id)))
+        {
+            ancestor = node.Parent;
+            if (node.Ownership == WindowOwnership.Owned)
+            {
+                node.Native!.Dispose();
+            }
+
+            Remove(node);
+        }
     }
 
     private void Publish(Node node)

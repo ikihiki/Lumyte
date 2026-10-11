@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Windows;
 using Lumyte.Windowing.Abstractions;
@@ -21,12 +22,17 @@ public sealed class WindowsNativeTests
         WindowsWindow native = Assert.IsType<WindowsWindow>(window);
         Assert.NotEqual(0, native.Hwnd);
         Assert.NotEqual(0, native.HInstance);
+        window.Show();
+        platform.PumpEvents();
+        Assert.True(window.State.IsVisible);
         using IDisposable retained = window.RetainNativeTarget();
         var results = new List<WindowRequestResult>();
         window.RequestCompleted += results.Add;
         WindowRequestId close = window.Close();
         platform.PumpEvents();
         Assert.Equal(WindowLifetime.Closing, window.State.Lifetime);
+        Assert.False(window.State.IsVisible);
+        Assert.False(window.State.IsActive);
         Assert.NotEqual(0, native.Hwnd);
         Assert.Empty(results);
         Assert.Throws<InvalidOperationException>(window.Dispose);
@@ -36,6 +42,37 @@ public sealed class WindowsNativeTests
         Assert.Equal(close, Assert.Single(results).Request);
         Assert.Equal(WindowRequestStatus.Applied, results[0].Status);
         Assert.Throws<InvalidOperationException>(() => native.Hwnd);
+    });
+
+    /// <summary>Checks creation preserves the requested logical client size at the target DPI.</summary>
+    [WindowsFact]
+    public void InitialClientSizeUsesTheWindowDpi() => RunSta(() =>
+    {
+        using var platform = new WindowsPlatform();
+        using IWindow window = platform.CreateWindow(new WindowDescriptor { ClientSize = new System.Numerics.Vector2(640, 360) });
+        Assert.InRange(window.State.ClientSize.X, 639, 641);
+        Assert.InRange(window.State.ClientSize.Y, 359, 361);
+    });
+
+    /// <summary>Checks a source initialized after activation reports its current focus.</summary>
+    [WindowsFact]
+    public void InputSourceStartsWithCurrentFocus() => RunSta(() =>
+    {
+        using var platform = new WindowsPlatform();
+        using IWindow window = platform.CreateWindow(new WindowDescriptor());
+        window.Show();
+        platform.PumpEvents();
+        window.Activate();
+        platform.PumpEvents();
+        using IInputSource source = platform.CreateInputSource();
+        var registry = new DeviceRegistry();
+        source.Initialize(registry);
+        Assert.All(registry.Devices, device => Assert.Contains(device.DrainEvents(), data => data is FocusData { IsFocused: true }));
+        source.Shutdown();
+        foreach (IInputDevice device in registry.Devices)
+        {
+            device.Dispose();
+        }
     });
 
     /// <summary>Checks native owners cannot close before native children.</summary>
@@ -167,6 +204,21 @@ public sealed class WindowsNativeTests
         if (failure is not null)
         {
             ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    private sealed class DeviceRegistry : IInputDeviceRegistry
+    {
+        public List<IInputDevice> Devices { get; } = [];
+
+        public InputDeviceId RegisterDevice(IInputDevice device)
+        {
+            Devices.Add(device);
+            return new InputDeviceId((ulong)Devices.Count);
+        }
+
+        public void UnregisterDevice(InputDeviceId device)
+        {
         }
     }
 

@@ -32,7 +32,7 @@ class Canvas {
 }
 
 globalThis.HTMLCanvasElement = Canvas;
-globalThis.document = { activeElement: null };
+globalThis.document = { activeElement: null, hasFocus: () => true };
 globalThis.window = new Canvas();
 window.devicePixelRatio = 2;
 globalThis.ResizeObserver = class {
@@ -95,4 +95,27 @@ test("browser clipboard capabilities and permission rejection are explicit", asy
     assert.equal(api.hasClipboard(), true);
     assert.equal(await api.readClipboard(), "日本語");
     await assert.rejects(api.writeClipboard("x"), /permission denied/);
+});
+
+test("preserve-focus canvases cannot take focus and outside mouse releases are retained", () => {
+    const canvas = new Canvas();
+    canvas.tabIndex = 0;
+    canvas.setAttribute("tabindex", "0");
+    const prior = {};
+    document.activeElement = prior;
+    const handle = api.attach(canvas, "popup", 100, 50, true);
+    api.show(handle, true);
+    let prevented = false;
+    canvas.dispatch("mousedown", { button: 0, preventDefault: () => { prevented = true; } });
+    window.dispatch("mouseup", { button: 0 });
+    assert.equal(prevented, true);
+    assert.equal(canvas.tabIndex, -1);
+    assert.equal(document.activeElement, prior);
+    assert.deepEqual(JSON.parse(api.drainInput(handle)).filter(event => event.type === 2).map(event => event.down), [true, false]);
+    document.hasFocus = () => false;
+    document.activeElement = canvas;
+    assert.equal(api.snapshot(handle)[6], 0);
+    document.hasFocus = () => true;
+    api.detach(handle);
+    assert.equal(canvas.getAttribute("tabindex"), "0");
 });

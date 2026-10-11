@@ -290,6 +290,80 @@ public sealed class WindowSystemTests
         Assert.Equal(WindowRequestStatus.Denied, Assert.Single(results, r => r.Request == request).Status);
     }
 
+    /// <summary>Checks that native children cannot be added after their owner starts terminating.</summary>
+    [Fact]
+    public void ClosingOwnerRejectsNewNativeChildren()
+    {
+        using var platform = new TestPlatform();
+        using var system = new WindowSystem(platform);
+        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        system.Close(root);
+        Assert.Throws<ArgumentException>(() => system.CreateNativeWindow(
+            new WindowDescriptor
+            {
+                Owner = system.GetNativeWindow(root),
+                Kind = WindowKind.Tool,
+            },
+            WindowRole.Tool,
+            root));
+    }
+
+    /// <summary>Checks focus returns past a preserve-focus ancestor to the nearest eligible ancestor.</summary>
+    [Fact]
+    public void RemovedTargetRestoresNearestFocusableAncestor()
+    {
+        using var platform = new TestPlatform();
+        using var system = new WindowSystem(platform);
+        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        system.Show(root);
+        Pump(platform, system);
+        system.Activate(root);
+        Pump(platform, system);
+        WindowNodeId focusable = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(0, 0, 100, 100) });
+        WindowNodeId preserving = system.CreateHostedWindow(new HostedWindowDescriptor
+        {
+            Parent = focusable,
+            Bounds = new WindowRect(0, 0, 90, 90),
+            Activation = WindowActivation.PreserveFocus,
+        });
+        WindowNodeId target = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = preserving, Bounds = new WindowRect(0, 0, 80, 80) });
+        system.Show(focusable);
+        system.Show(preserving);
+        system.Show(target);
+        system.Update();
+        system.Activate(target);
+        system.Update();
+        system.Close(target);
+        system.Update();
+        Assert.Equal(focusable, system.KeyboardTarget);
+    }
+
+    /// <summary>Checks externally closed parents are reaped after their final child closes.</summary>
+    [Fact]
+    public void ExternallyClosedParentIsReapedAfterChild()
+    {
+        using var platform = new TestPlatform();
+        using var system = new WindowSystem(platform);
+        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNodeId child = system.CreateNativeWindow(
+            new WindowDescriptor
+            {
+                Owner = system.GetNativeWindow(root),
+                Kind = WindowKind.Tool,
+            },
+            WindowRole.Tool,
+            root);
+        var rootWindow = (TestWindow)system.GetNativeWindow(root);
+        var childWindow = (TestWindow)system.GetNativeWindow(child);
+        system.Update();
+        rootWindow.Change(rootWindow.State with { Lifetime = WindowLifetime.Closed });
+        childWindow.Change(childWindow.State with { Lifetime = WindowLifetime.Closed });
+        system.Update();
+        Assert.Empty(system.Windows);
+        Assert.True(rootWindow.Disposed);
+        Assert.True(childWindow.Disposed);
+    }
+
     /// <summary>Checks dependency boundaries independently of native availability.</summary>
     [Fact]
     public void ContractsDoNotDependOnRuntimeLibraries()
@@ -297,5 +371,12 @@ public sealed class WindowSystemTests
         Assert.DoesNotContain(typeof(IWindow).Assembly.GetReferencedAssemblies(), a => a.Name!.StartsWith("Lumyte.", StringComparison.Ordinal));
         Assert.DoesNotContain(typeof(IPlatform).Assembly.GetReferencedAssemblies(), a => a.Name is "Lumyte.Input" or "Lumyte.Windowing");
         Assert.DoesNotContain(typeof(Lumyte.Input.Abstractions.IInputSource).Assembly.GetReferencedAssemblies(), a => a.Name!.StartsWith("Lumyte.", StringComparison.Ordinal));
+    }
+
+    private static void Pump(TestPlatform platform, WindowSystem system)
+    {
+        system.Update();
+        platform.PumpEvents();
+        system.Update();
     }
 }

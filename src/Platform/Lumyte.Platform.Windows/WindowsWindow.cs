@@ -51,6 +51,15 @@ public sealed class WindowsWindow : IWindow
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
 
+        uint dpi = Math.Max(96, NativeMethods.GetDpiForWindow(_handle));
+        rect = new NativeMethods.Rect
+        {
+            Right = (int)Math.Ceiling(descriptor.ClientSize.X * dpi / 96f),
+            Bottom = (int)Math.Ceiling(descriptor.ClientSize.Y * dpi / 96f),
+        };
+        CheckNative(NativeMethods.AdjustWindowRectExForDpi(ref rect, _style, false, _extendedStyle, dpi));
+        CheckNative(NativeMethods.SetWindowPos(_handle, 0, 0, 0, rect.Right - rect.Left, rect.Bottom - rect.Top, 0x16));
+
         WindowFeatures features = WindowFeatures.OwnedWindow | WindowFeatures.NonActivating | WindowFeatures.AnchorPlacement;
         if (descriptor.Kind != WindowKind.Popup)
         {
@@ -307,7 +316,9 @@ public sealed class WindowsWindow : IWindow
             }
             else
             {
-                SetState(_state with { Lifetime = WindowLifetime.Closing });
+                _platform.StopInput(this);
+                NativeMethods.ShowWindow(_handle, 0);
+                SetState(_state with { Lifetime = WindowLifetime.Closing, IsVisible = false, IsActive = false });
                 AdvanceClose();
             }
         });

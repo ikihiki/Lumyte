@@ -295,6 +295,16 @@ public sealed class WindowsPlatform : IPlatform
 
     internal void ForgetHandle(nint handle) => _handles.Remove(handle);
 
+    internal void StopInput(WindowsWindow window)
+    {
+        if (window.State.IsActive)
+        {
+            _source?.Deactivate();
+        }
+
+        _text?.WindowMessage(window, 0x8, 0);
+    }
+
     internal void Release(WindowsInputSource source)
     {
         if (ReferenceEquals(_source, source))

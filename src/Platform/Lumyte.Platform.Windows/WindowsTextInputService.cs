@@ -121,7 +121,7 @@ public sealed class WindowsTextInputService : ITextInputService
 
     internal bool ProcessKey(NativeMethods.Message message)
     {
-        if (_focused is null || _focused.Window.State.Lifetime == WindowLifetime.Closed || message.Window != _focused.Window.Hwnd || !_focused.Window.State.IsActive)
+        if (_focused is null || _focused.Window.State.Lifetime != WindowLifetime.Open || message.Window != _focused.Window.Hwnd || !_focused.Window.State.IsActive)
         {
             return false;
         }

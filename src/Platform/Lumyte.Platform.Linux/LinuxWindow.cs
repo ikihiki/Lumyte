@@ -191,7 +191,9 @@ public sealed class LinuxWindow : IWindow
             }
             else
             {
-                SetState(_state with { Lifetime = WindowLifetime.Closing });
+                _platform.StopInput(this);
+                Xlib.XUnmapWindow(XDisplay, _window);
+                SetState(_state with { Lifetime = WindowLifetime.Closing, IsVisible = false, IsActive = false });
                 Advance();
             }
         });

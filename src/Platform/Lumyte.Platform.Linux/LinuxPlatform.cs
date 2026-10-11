@@ -89,7 +89,7 @@ public sealed class LinuxPlatform : IPlatform
             throw new InvalidOperationException("Only one input source is supported.");
         }
 
-        _source = new BufferedInputSource(CheckMutation, _ => _source = null, "X11");
+        _source = new BufferedInputSource(CheckMutation, _ => _source = null, () => _windows.Values.Any(window => window.State.IsActive), "X11");
         return _source;
     }
 
@@ -206,6 +206,15 @@ public sealed class LinuxPlatform : IPlatform
 
     internal void Enqueue(Action operation) => _operations.Enqueue(operation);
 
+    internal void StopInput(LinuxWindow window)
+    {
+        if (window.State.IsActive)
+        {
+            _pressed.Clear();
+            _source?.Focus(false);
+        }
+    }
+
     internal void Notify<T>(Action<T>? handlers, T value) => _notifications.Enqueue(() =>
     {
         if (handlers is not null)
@@ -234,7 +243,7 @@ public sealed class LinuxPlatform : IPlatform
 
     private void Receive(Xlib.Event data)
     {
-        if (_source is null)
+        if (_source is null || !_windows.TryGetValue(data.Window, out LinuxWindow? window) || window.State.Lifetime != WindowLifetime.Open)
         {
             return;
         }
