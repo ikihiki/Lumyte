@@ -93,7 +93,10 @@ fluent-button.danger::part(control) { color: #9c3329; }
 .settings-logs { margin-bottom: 14px; }
 .settings-logs fluent-accordion { width: 100%; }
 .settings-logs fluent-accordion-item::part(heading) { font-size: 13px; font-weight: 600; }
-.settings-logs .table-container { margin-top: 8px; border-top: 1px solid var(--line); }
+.settings-log-body { position: relative; height: 240px; min-height: 120px; max-height: 70vh; overflow: auto; resize: vertical; margin-top: 8px; padding-bottom: 22px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.settings-log-body .table-container { min-width: 560px; }
+.settings-resize-hint { position: sticky; display: block; bottom: 0; height: 22px; padding: 3px 28px 3px 8px; background: color-mix(in srgb, var(--surface) 94%, var(--line)); color: var(--muted); font-size: 10px; text-align: right; pointer-events: none; }
+.settings-resize-hint::after { content: ""; position: absolute; right: 5px; bottom: 4px; width: 12px; height: 12px; background: linear-gradient(135deg, transparent 45%, var(--muted) 46% 52%, transparent 53% 65%, var(--muted) 66% 72%, transparent 73%); }
 .settings-toolbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 12px; background: color-mix(in srgb, var(--paper) 92%, transparent); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(8px); }
 .settings-toolbar #settings-status { margin-left: 8px; font-size: 12px; color: var(--muted); }
 .settings-progress { width: 20px; height: 20px; }
