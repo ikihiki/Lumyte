@@ -3,7 +3,7 @@
         <FluentAccordion Block="true">
             <FluentAccordionItem Header="@($"設定システムのログ　{SettingsLogs.Length} 件")" Expanded="false">
                 <div id="settings-log-body" class="settings-log-body">
-                    <div class="table-container"><EventTable Items="SettingsLogs" Kind="log" /></div>
+                    <LogViewer Items="SettingsLogs" />
                     <span class="settings-resize-hint">下端をドラッグして高さを変更</span>
                 </div>
             </FluentAccordionItem>

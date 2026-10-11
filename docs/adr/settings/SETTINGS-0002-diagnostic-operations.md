@@ -51,7 +51,7 @@
 
 setter は診断の所有スレッドで編集候補だけに作用する。SaveAsync は候補を同期コピーしてから非同期 I/O を開始するため、コピー・検証の時間は実行ポイントの予算に含まれる。Task.Run や同期 wait による保存待機は行わない。正常で有限な公開値と、副作用のない getter／setter を登録側の契約とする。
 
-診断サーバーの Settings ページは Fluent UI Blazor の Accordion、Card、Button、TreeView、TextInput、Switch、Badge で構成する。最上部に設定システムのログ一覧を折りたたんで置き、その下に再読み込み・保存ツールバーと設定ツリーだけを表示する。ツリーは object、array、dictionary、null、scalar を省略せず再帰表示する。保存は画面が保持する Revision で `save-tree` を開始し、job-id を自動でポーリングして Saved を確認後に再読み込みする。HTTP と MagicOnion のゲーム接続で同じ API を使う。
+診断サーバーの Settings ページは Fluent UI Blazor の Accordion、Card、Button、TreeView、TextInput、Switch、Badge で構成する。最上部に設定システムのログ一覧を折りたたんで置き、その下に再読み込み・保存ツールバーと設定ツリーだけを表示する。設定ログは通常の Logs ページと同じ `LogViewer` を使い、固定高の仮想化行、検索、単調増加Timestampから求めた経過時刻の表示切替、構造化フィールド詳細を共有する。ツリーは object、array、dictionary、null、scalar を省略せず再帰表示する。保存は画面が保持する Revision で `save-tree` を開始し、job-id を自動でポーリングして Saved を確認後に再読み込みする。HTTP と MagicOnion のゲーム接続で同じ API を使う。
 
 ## 検討した代替案
 

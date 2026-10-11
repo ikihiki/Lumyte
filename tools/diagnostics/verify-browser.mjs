@@ -187,8 +187,15 @@ try {
         await evaluate("document.querySelector('[data-tab=logs]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'Log display');
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Settings save completed with Saved')"), 'settings Log');
+        assert.equal(await evaluate("document.querySelector('#event-table [data-virtualized=true]') !== null && document.querySelector('#event-table .log-search fluent-text-input') !== null"), true, 'shared virtualized log viewer');
+        await evaluate("{ const search = document.querySelector('#event-table .log-search fluent-text-input'); search.value = 'Settings save completed'; search.dispatchEvent(new Event('input', { bubbles: true })); }");
+        await waitFor(() => evaluate("document.querySelectorAll('#event-table .log-row').length === 1 && document.getElementById('event-table').textContent.includes('Settings save completed')"), 'shared log search');
+        await evaluate("{ const search = document.querySelector('#event-table .log-search fluent-text-input'); search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#event-table fluent-switch').click(); }");
+        await waitFor(() => evaluate("document.querySelector('#event-table th')?.textContent === '経過時刻'"), 'log elapsed time toggle');
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'cleared shared log search');
         await evaluate("[...document.querySelectorAll('#event-table tr')].find(row => row.textContent.includes('Game instance connected')).querySelector('fluent-button').click()");
         await waitFor(() => evaluate("document.getElementById('event-detail')?.textContent.includes('\"kind\": \"log\"')"), 'log detail');
+        await waitFor(() => evaluate("document.querySelector('#event-table [data-log-structure=true]')?.textContent.includes('log.level')"), 'structured log fields');
         const log = JSON.parse(await evaluate("document.getElementById('event-detail').textContent"));
         if (transport === 'http') await capture('logs-detail', 'Logs — イベント詳細', 'ゲーム接続と設定処理のログを表示します。選択したログの詳細から、同じTraceのイベントへ移動できます。', 'logs');
         await evaluate("document.querySelector('[data-tab=traces]').click()");

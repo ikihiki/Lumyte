@@ -116,7 +116,7 @@
         @if (_view is "metrics" or "logs" or "traces")
         {
             <section id="telemetry-panel">
-                <div class="filter-bar"><label for="event-filter">名前・フィールドで検索</label><input id="event-filter" type="search" @bind="_eventFilter" @bind:event="oninput" />
+                <div class="filter-bar">@if (_view != "logs") { <label for="event-filter">名前・フィールドで検索</label><input id="event-filter" type="search" @bind="_eventFilter" @bind:event="oninput" /> }
                     @if (_view != "metrics")
                     {
                         <label for="trace-filter">Trace ID</label><input id="trace-filter" type="search" maxlength="32" @bind="_traceFilter" @bind:event="oninput" />
@@ -154,7 +154,14 @@
                 {
                     <p role="status">@(Selected == null ? "診断対象を選択してください。" : _events.Length == 0 ? "対応済み：テレメトリーデータを待っています。" : "絞り込み条件に一致するデータはありません。")</p>
                 }
-                <div id="event-table" class="table-container"><EventTable Items="FilteredEvents" Kind="@EventKind" Inspect="Inspect" Trace="Trace" /></div>
+                @if (_view == "logs")
+                {
+                    <div id="event-table"><LogViewer Items="FilteredEvents" Inspect="Inspect" Trace="Trace" /></div>
+                }
+                else
+                {
+                    <div id="event-table" class="table-container"><EventTable Items="FilteredEvents" Kind="@EventKind" Inspect="Inspect" Trace="Trace" /></div>
+                }
             </section>
         }
     </section>
