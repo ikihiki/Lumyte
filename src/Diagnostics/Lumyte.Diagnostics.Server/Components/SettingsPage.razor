@@ -1,18 +1,27 @@
 <section id="settings-page" aria-busy="@_busy.ToString().ToLowerInvariant()">
-    <details id="settings-logs" class="settings-logs">
-        <summary>設定システムのログ <span>@SettingsLogs.Length 件</span></summary>
-        <div class="table-container"><EventTable Items="SettingsLogs" Kind="log" /></div>
-    </details>
-    <div class="settings-toolbar" role="toolbar" aria-label="設定操作">
-        <FluentButton Id="settings-reload" Disabled="_busy" OnClick="LoadAsync">再読み込み</FluentButton>
-        <FluentButton Id="settings-save" Class="primary" Disabled="@(_busy || _documents.Count == 0)" OnClick="SaveAsync">保存</FluentButton>
-        <span id="settings-status" role="status">@_status</span>
+    <div id="settings-logs" class="settings-logs" data-expanded="false">
+        <FluentAccordion Block="true">
+            <FluentAccordionItem Header="@($"設定システムのログ　{SettingsLogs.Length} 件")" Expanded="false">
+                <div class="table-container"><EventTable Items="SettingsLogs" Kind="log" /></div>
+            </FluentAccordionItem>
+        </FluentAccordion>
     </div>
+    <FluentCard Class="settings-toolbar" role="toolbar" aria-label="設定操作">
+        <FluentButton Id="settings-reload" Appearance="ButtonAppearance.Outline" Disabled="_busy" OnClick="LoadAsync">再読み込み</FluentButton>
+        <FluentButton Id="settings-save" Appearance="ButtonAppearance.Primary" Disabled="@(_busy || _documents.Count == 0)" OnClick="SaveAsync">保存</FluentButton>
+        @if (_busy)
+        {
+            <FluentSpinner Class="settings-progress" aria-label="処理中" />
+        }
+        <span id="settings-status" role="status">@_status</span>
+    </FluentCard>
     @foreach (Document document in _documents)
     {
-        <section class="settings-document" data-subsystem="@document.SubsystemId">
-            <SettingsTreeNode Node="document.Root" />
-        </section>
+        <FluentCard Class="settings-document" data-subsystem="@document.SubsystemId">
+            <FluentTreeView HideSelection="true" Size="TreeSize.Medium">
+                <SettingsTreeNode Node="document.Root" />
+            </FluentTreeView>
+        </FluentCard>
     }
 </section>
 

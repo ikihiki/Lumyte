@@ -1,35 +1,33 @@
-<div class="settings-node" data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
-    @if (Node.IsContainer)
-    {
-        <details open>
-            <summary><span class="settings-key">@Node.Name</span><span class="settings-kind">@(Node.Kind == JsonValueKind.Array ? $"Array ({Node.Children.Count})" : $"Object ({Node.Children.Count})")</span></summary>
-            <div class="settings-children">
-                @foreach (SettingsTreeModel child in Node.Children)
-                {
-                    <SettingsTreeNode @key="child.Path" Node="child" />
-                }
-            </div>
-        </details>
-    }
-    else
-    {
+@if (Node.IsContainer)
+{
+    <FluentTreeItem Expanded="true" data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
+        <div class="settings-branch"><span class="settings-key">@Node.Name</span><FluentBadge Appearance="BadgeAppearance.Outline">@(Node.Kind == JsonValueKind.Array ? $"Array · {Node.Children.Count}" : $"Object · {Node.Children.Count}")</FluentBadge></div>
+        @foreach (SettingsTreeModel child in Node.Children)
+        {
+            <SettingsTreeNode @key="child.Path" Node="child" />
+        }
+    </FluentTreeItem>
+}
+else
+{
+    <FluentTreeItem data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
         <div class="settings-leaf">
-            <label for="@InputId"><span class="settings-key">@Node.Name</span><span class="settings-kind">@KindName</span></label>
+            <label for="@InputId"><span class="settings-key">@Node.Name</span><FluentBadge Appearance="BadgeAppearance.Outline">@KindName</FluentBadge></label>
             @if (Node.Kind is JsonValueKind.True or JsonValueKind.False)
             {
-                <select id="@InputId" data-setting-path="@Node.Path" @bind="Node.Value"><option value="true">true</option><option value="false">false</option></select>
+                <FluentSwitch Id="@InputId" data-setting-path="@Node.Path" @bind-Value="Node.BooleanValue">@(Node.BooleanValue ? "true" : "false")</FluentSwitch>
             }
             else if (Node.Kind == JsonValueKind.Null)
             {
-                <span class="settings-null">null</span>
+                <FluentBadge Class="settings-null" Appearance="BadgeAppearance.Outline">null</FluentBadge>
             }
             else
             {
-                <input id="@InputId" data-setting-path="@Node.Path" type="@(Node.Kind == JsonValueKind.Number ? "number" : "text")" step="any" @bind="Node.Value" />
+                <FluentTextInput Id="@InputId" data-setting-path="@Node.Path" @bind-Value="Node.Value" />
             }
         </div>
-    }
-</div>
+    </FluentTreeItem>
+}
 
 @code {
     [Parameter, EditorRequired]

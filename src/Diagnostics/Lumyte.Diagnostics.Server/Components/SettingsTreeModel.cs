@@ -34,6 +34,13 @@ public sealed class SettingsTreeModel
     /// <summary>Gets a value indicating whether this node contains children.</summary>
     public bool IsContainer => Kind is JsonValueKind.Object or JsonValueKind.Array;
 
+    /// <summary>Gets or sets a value indicating whether the Boolean scalar is true.</summary>
+    public bool BooleanValue
+    {
+        get => bool.TryParse(Value, out bool value) && value;
+        set => Value = value ? "true" : "false";
+    }
+
     /// <summary>Parses one settings document.</summary>
     /// <param name="name">The root display name.</param>
     /// <param name="json">The JSON document.</param>
