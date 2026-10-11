@@ -1,3 +1,5 @@
+using Lumyte.Input.Abstractions;
+
 namespace Lumyte.Input;
 
 /// <summary>Associates normalized input with its device, sequence and monotonic receipt time.</summary>

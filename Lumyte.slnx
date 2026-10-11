@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Platform.Windows.Sample/Lumyte.Platform.Windows.Sample.csproj" />
     <Project Path="samples/Lumyte.Input.Advanced.Sample/Lumyte.Input.Advanced.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Remote.Sample/Lumyte.Diagnostics.Remote.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
@@ -11,6 +12,14 @@
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
+    <Project Path="src/Platform/Lumyte.Windowing.Abstractions/Lumyte.Windowing.Abstractions.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Abstractions/Lumyte.Platform.Abstractions.csproj" />
+    <Project Path="src/Platform/Lumyte.Windowing/Lumyte.Windowing.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+  </Folder>
   <Folder Name="/src/Animation/">
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
@@ -41,6 +50,9 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/tests/" />
+  <Folder Name="/tests/Platform/">
+    <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Animation/">
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
@@ -50,6 +62,7 @@
     <Project Path="tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Input/">
+    <Project Path="src/Input/Lumyte.Input.Abstractions/Lumyte.Input.Abstractions.csproj" />
     <Project Path="src/Input/Lumyte.Input.Processing/Lumyte.Input.Processing.csproj" />
     <Project Path="src/Input/Lumyte.Input.Actions/Lumyte.Input.Actions.csproj" />
     <Project Path="src/Input/Lumyte.Input.Settings/Lumyte.Input.Settings.csproj" />

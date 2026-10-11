@@ -1,6 +1,6 @@
 # ADR-WINDOW-0001: Platform の上に置く任意の複数ウインドウ管理
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-10
 - 更新日: 2026-10-11
 
@@ -8,7 +8,7 @@
 
 ゲームの複数画面、ツール、ポップアップ、コンテキストメニュー、IME 候補一覧は、親子関係、表示順、フォーカス、配置、終了の管理を必要とする。一方、単一ウインドウのアプリケーションには、その管理ライブラリを必須にする必要がない。
 
-[Platform の共通契約](../platform/PLATFORM-0001-platform-and-window-contracts.md)が Native の IWindow を生成し、各バックエンドが IWindow を直接実装する。Windowing は生成された IWindow を利用する上位ライブラリとして、複数ウインドウと Hosted の一時表示を管理する。本 PR は設計案だけを追加し、以下の API は未実装である。
+[Platform の共通契約](../platform/PLATFORM-0001-platform-and-window-contracts.md)が Native の IWindow を生成し、各バックエンドが IWindow を直接実装する。Windowing は生成された IWindow を利用する上位ライブラリとして、複数ウインドウと Hosted の一時表示を管理する。本 PR に共通契約と WindowSystem の管理実装を追加する。各バックエンドの対応範囲は Platform ADR に記載する。
 
 ## 決定
 
@@ -167,21 +167,21 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +// System が生成する不変値。Native の実体と観測は IWindow.State を正とする。
 +public sealed record WindowNodeState
 +{
-+    public WindowNodeId Id { get; }
-+    public WindowNodeId? Parent { get; }
-+    public WindowNodeId PresentationRoot { get; }
-+    public WindowNodeKind Kind { get; }
-+    public WindowRole Role { get; }
-+    public WindowOwnership Ownership { get; }
++    public WindowNodeId Id { get; init; }
++    public WindowNodeId? Parent { get; init; }
++    public WindowNodeId PresentationRoot { get; init; }
++    public WindowNodeKind Kind { get; init; }
++    public WindowRole Role { get; init; }
++    public WindowOwnership Ownership { get; init; }
 +    // Native だけ値を持つ。Hosted の ID を Platform の ID として扱わない。
-+    public WindowId? NativeWindow { get; }
-+    public WindowRect Bounds { get; }
-+    public System.Numerics.Vector2 ClientSize { get; }
-+    public WindowPixelSize PixelSize { get; }
-+    public System.Numerics.Vector2 Scale { get; }
-+    public bool IsVisible { get; }
-+    public bool IsEffectivelyVisible { get; }
-+    public WindowLifetime Lifetime { get; }
++    public WindowId? NativeWindow { get; init; }
++    public WindowRect Bounds { get; init; }
++    public System.Numerics.Vector2 ClientSize { get; init; }
++    public WindowPixelSize PixelSize { get; init; }
++    public System.Numerics.Vector2 Scale { get; init; }
++    public bool IsVisible { get; init; }
++    public bool IsEffectivelyVisible { get; init; }
++    public WindowLifetime Lifetime { get; init; }
 +}
 +
 +public sealed class WindowSystem : IDisposable
@@ -230,6 +230,8 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 ```
 
 SystemId は System ごとに異なる識別子、番号 0 は無効とする。Windowing.Abstractions の WindowId、管理ノード ID、各 RequestId の採番範囲を混同しない。Native の要求結果は `(IWindow.Id, WindowRequestId)` で管理要求へ対応づける。同じ IWindow の重複 Attach、別 Platform、別 System の親、不正役割・数値は ArgumentException 系、終了済みノードは KeyNotFoundException、破棄後は ObjectDisposedException とする。
+
+Native の Role は Normal / Tool / 一時表示をそれぞれ WindowKind.Normal / Tool / Popup に対応させ、一時表示は PreserveFocus を必須とする。異なるポリシーの生成・登録は変更前に拒否する。
 
 Attach は対象が Open の場合だけ許可する。所有権は登録成功後に移転し、失敗時は呼び出し側に残る。CreateNativeWindow の登録失敗では今回生成した IWindow を解放する。共有による二重管理を避けるため、一つの IWindow を同時に複数 WindowSystem で管理しない責任は構成側にある。
 
@@ -308,6 +310,8 @@ System は Hosted の状態と管理要求を確定し、Native の要求は IWi
 
 Platform と Native の契約は単独で利用でき、複数ウインドウ・Hosted 管理が必要なアプリだけ Windowing を追加できる。Native の操作・通知は Backend が担当し、Windowing は UI の管理方針に集中する。二種類の ID と明示所有権が必要となり、利用側は借用と所有の終了責任を区別する必要がある。
 
+Dispose が未処理の管理要求・終了要求を打ち切る場合は Superseded を一度通知する。通知ハンドラーが例外を送出しても他の通知と解放処理を続け、最後に例外を集約する。
+
 ## 検証方針
 
 - Windowing.Abstractions の参照 assembly と NuGet の依存閉包に Platform と Windowing 管理実装が含まれない。
@@ -321,12 +325,12 @@ Platform と Native の契約は単独で利用でき、複数ウインドウ・
 - 通知例外・再入・解放失敗の再試行、借用 Native を勝手に閉じないことを検証する。
 - 実環境で二つの Native の DPI 変更、片方の最小化・終了、Hosted メニュー、IME の二重候補表示防止と候補 revision を確認する。
 
-設計 PR 自体は Markdown lint、相対リンク、API diff と責務・所有権の整合を確認する。実装・性能・実機対応は未検証。
+WindowSystem のテストで所有・借用、Native の保持と子から親の終了、Hosted の層・クリップ・ヒットテスト・配置、通知の再入と解放再試行を確認する。バックエンドごとの Native 動作は Platform のテストで扱う。Window 対象付き入力 envelope、独自 IME 候補、性能・実機の全受け入れ条件は未検証である。
 
 ## 別途決定する事項
 
 - Window 対象付き入力の envelope、キャプチャ・ポインターロック、UI 入力スコープ。
-- Platform の文字入力・IME セッション、候補 snapshot、選択、終了時の確定 / キャンセル方針。
+- 独自 IME 候補 snapshot・選択・標準 UI 抑止。文字入力の初期契約と TSF の標準候補 UI は [PLATFORM-0002](../platform/PLATFORM-0002-clipboard-and-text-input.md) に記載する。
 - モーダル画面、永続配置、アクセシビリティ、性能目標。
 - Framework 統合システムの具体 API と、Windowing を使用する場合の接続・更新・終了順。
 

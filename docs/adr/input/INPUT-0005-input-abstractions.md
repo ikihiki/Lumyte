@@ -1,13 +1,13 @@
 # ADR-INPUT-0005: Platform が参照する入力取得契約の分離
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-11
 
 ## 背景
 
 Platform の IPlatform.CreateInputSource は既存 IInputSource を返す。ただしその契約の参照だけで、InputSystem の履歴・状態・保持処理を含む Lumyte.Input 本体まで配布対象にする必要はない。入力取得の Backend と管理実装が依存する最小の共通契約を分離する。
 
-本 ADR は [INPUT-0001](INPUT-0001-input-system.md) の配置・依存方針を変更する提案である。入力データの意味、Source / Device の所有権、記録・保持の挙動は維持する。本 PR は設計文書のみであり、実際のプロジェクト分割は本案を採用した後に行う。採用時に INPUT-0001 の状態と後継参照を更新する。
+本 ADR は [INPUT-0001](INPUT-0001-input-system.md) の配置・依存方針を置き換える。取得契約は本 ADR に従って分離し、それ以外の入力データの意味、Source / Device の所有権、記録・保持の判断は INPUT-0001 から引き継ぐ。本 PR にプロジェクト分割とリポジトリ内の参照更新を追加する。
 
 ## 決定
 
@@ -262,7 +262,7 @@ Platform を使うだけなら Input の契約 assembly だけが必要になる
 - 全利用プロジェクトが新しい名前空間と参照でビルドでき、旧名前空間に契約型や互換層が残らない。
 - 既存 Input / Processing / Actions / Settings のテストとサンプル、pack、書式・静的解析を実装時に実行する。
 
-この設計 PR では Markdown lint、リンク、分離31型と残す6型の一覧、API diff と既存ソースの対応を確認する。assembly の分割・名前空間変更・publish は未実装であり、検証済みとは扱わない。
+実装は取得契約31型を Lumyte.Input.Abstractions へ移動し、本体に6型を残す。既存 Input / Processing / Actions / Settings のテスト、契約の参照 assembly、pack、単一 Window サンプルの publish 出力で依存境界を検証する。
 
 ## 参考資料
 
