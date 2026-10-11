@@ -88,6 +88,94 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 `CreateVoice` も Master 指定を拒否する。未定義 enum、不正な数値、別 System のリソースは受理前に拒否し、副作用を残さない。破棄済みリソースの制御は `ObjectDisposedException`、契約外の状態操作は `InvalidOperationException` とする。`IAudioBackend` の具体的な公開メンバーは、出力コールバックと Browser の連携方式を確定するバックエンド ADR で定める。本案の公開 API はその契約確定後に採用する。
 
+### 使用例
+
+以下は提案 API の利用例であり、現在実行できるサンプルではない。backend は構成側が用意し、制御と Dispose は同じ所有スレッドで行う。非同期処理の継続はそのスレッドへ戻す。
+
+#### 効果音の生成・再生・音量調整
+
+デコード済み PCM を受け取る最小例。`samples` は有限 float の interleaved PCM とする。実際のゲームでは取得・デコードをリソース側へ任せる。
+
+```csharp
+using Lumyte.Audio;
+
+// backend、format、samples は構成側とリソース側が用意する。
+using var audio = new AudioSystem(backend);
+using var clip = audio.CreateClip(format, samples);
+using var effect = audio.CreateVoice(clip, AudioBus.Effects);
+
+audio.SetBusGain(AudioBus.Master, 0.8f);
+audio.SetBusGain(AudioBus.Effects, 0.5f);
+effect.Gain = 0.75f; // 最終 gain は 0.8 × 0.5 × 0.75 = 0.3。
+effect.Play();
+
+// ここでスコープを終了せず、ゲームループから毎回呼ぶ。
+// 音声そのものは Update と独立して進む。
+audio.Update();
+if (effect.State == AudioPlaybackState.Completed)
+{
+    // 再生完了をゲーム側へ反映する。
+}
+
+// 別の入力イベントから要求する操作の例。
+effect.Pause();
+// 音声処理が Pause を適用した後、次の Update で Paused を確認する。
+// その後の Play は一時停止位置から再開する。
+// effect.Play();
+// effect.Stop(); // 次の Play は先頭から再生。
+
+// ゲーム終了時にスコープを抜ける。
+// using の逆順で effect → clip → audio を破棄し、backend は構成側で解放する。
+```
+
+`Play` の直後に `State` を見て開始や完了を判断しない。状態は後続の `Update` で確認する。連続した操作も受理順に処理される。clip のループ再生では、停止中に `effect.Loop = true` を指定してから `Play` を呼ぶ。
+
+#### リソース lease を保持して再生する
+
+次の断片は PR #25 の `Lumyte.Resources` 提案 API と組み合わせる例。音声ローダーは同じ `AudioSystem` 上で clip を作成し、Unload で clip を解放する。ローダー登録と所有スレッドへの配送は統合側で用意する。
+
+```csharp
+using Lumyte.Audio;
+using Lumyte.Resources;
+
+// audio と resources は構成側から借用する。
+// await 後は audio の所有スレッドへ戻る。
+using (var lease = await resources.AcquireAsync<AudioClip>(
+    new ResourceId("audio/effects/confirm"), cancellationToken))
+{
+    using (var voice = audio.CreateVoice(lease.Value, AudioBus.Effects))
+    {
+        voice.Play();
+        // ゲームループを継続し、毎回 audio.Update() を呼ぶ。
+        // 完了・画面離脱・終了まで、このスコープと lease を保持する。
+    } // voice.Dispose() が出力参照を解除。
+} // その後に lease を返却。lease.Value を直接 Dispose しない。
+
+// シーン終了など、未使用キャッシュを解放する時点で構成側が呼ぶ。
+await resources.TrimAsync(cancellationToken);
+```
+
+この断片のコメント部分はゲームループとの接続位置を示す。`Play` の直後にスコープを抜けると voice が破棄され、再生は終了する。音声用 manager は対応する System ごとに構成し、System 終了後に新たな取得を行わない。
+
+#### Browser の出力再開とストリーミングの接続
+
+Browser ではユーザーの開始ボタンなどの操作ハンドラーから次を呼ぶ。所有スレッド上で完了を待つ間は他の制御 API を呼ばず、拒否やデバイス不在の例外は呼び出し側で扱う。
+
+```csharp
+await audio.ResumeOutputAsync(cancellationToken);
+// 所有スレッドへ戻った後、準備済みの voice を再生する。
+voice.Play();
+```
+
+ストリーミング BGM は供給・接続 API が未確定のため、架空のメソッドを C# 使用例へ追加しない。統合側の利用順序は次のとおりとする。
+
+1. リソース側で音声アセットの lease と、再生専用の供給セッションを取得する。
+2. リソース側でデコードと先読みを進め、オーディオへ準備済み PCM を接続する。
+3. オーディオ側で Music バスへ再生し、ゲームループから状態を反映する。
+4. 終了時はオーディオの参照を解除し、リソース側の供給セッションの終了を待ってから lease を返す。
+
+先読み容量や I/O の取消はリソース側で設定・処理する。接続 API が確定した後、その契約に基づく C# 使用例を追加する。
+
 ### 再生状態とコマンド
 
 制御側の操作を上限付きキューへ格納し、音声処理のブロック境界で適用する。受理は即時反映や可聴完了を意味しない。キューが満杯なら `InvalidOperationException` とし、コマンドを黙って落とさない。同じ voice への操作は受理順に処理する。生成時に上限を検査し、暗黙の voice stealing は行わない。
@@ -159,9 +247,9 @@ voice の Dispose は未処理コマンドを失効させ、音声処理が PCM 
 
 ## 検証方針
 
-実装時は偽の backend、有限 PCM、準備済み PCM の偽の供給境界 を用い、再生・停止・一時停止・EOF・ループ・失敗の状態遷移、コマンド順序、上限超過、古い通知の失効を検証する。フレーム更新を遅延させても音声処理が独立して進むことを確認する。
+実装時は偽の backend、有限 PCM、準備済み PCM の偽の供給境界を用い、再生・停止・一時停止・EOF・ループ・失敗の状態遷移、コマンド順序、上限超過、古い通知の失効を検証する。フレーム更新を遅延させても音声処理が独立して進むことを確認する。
 
-PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限値、短い読込、供給不足と EOF の区別を検証する。clip の参照中破棄、再生セッションのカーソル分離、参照解除後のリソース側の取消、出力中の voice／System 破棄、バックエンド停止失敗で use-after-free や 供給セッションの残留が起きないことを確認する。
+PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限値、短い読込、供給不足と EOF の区別を検証する。clip の参照中破棄、再生セッションのカーソル分離、参照解除後のリソース側の取消、出力中の voice／System 破棄、バックエンド停止失敗で use-after-free や供給セッションの残留が起きないことを確認する。
 
 各実環境ではデバイス不在・切断・復旧、Browser の初回操作・自動再生拒否・タブ停止を検証する。出力コールバックの割り当て、処理時間、供給不足数、開始遅延、メモリ上限を測定し、音量変更とループ境界の可聴ノイズを確認する。数値目標は測定条件とともにバックエンド ADR で定める。
 
