@@ -46,6 +46,7 @@ Lumyte/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
 │   │   ├── Lumyte.Graphics.Abstractions/
+│   │   ├── Lumyte.Graphics.RenderGraph/
 │   │   ├── Lumyte.Graphics/
 │   │   ├── Lumyte.Graphics.DirectX/
 │   │   ├── Lumyte.Graphics.DirectX.Native/
@@ -90,7 +91,7 @@ Lumyte/
 | `src/Core/` | 基本型と基盤機能 |
 | `src/Diagnostics/` | 診断の実行・収集基盤、コード生成、共通通信、DI で選ぶ通信アダプター、診断サーバー |
 | `src/Engine/` | エンジン機能の統合 |
-| `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |
+| `src/Graphics/` | 描画の共通契約、レンダーグラフと描画 API ごとの実装 |
 | `src/Input/` | 入力ソース・デバイスの抽象契約、入力履歴・状態管理、補正・認識・アクション・設定連携 |
 | `src/Platform/` | ウィンドウや OS・ハードウェアに近い入力取得、接続監視と環境ごとの実装 |
 | `tests/` | C# の単体テスト・統合テスト。必要に応じてカテゴリとプロジェクト単位で整理する |
@@ -106,6 +107,8 @@ Lumyte/
 カテゴリは配置を整理するためのものであり、フォルダ階層だけで名前空間や依存関係を決めない。新しい機能カテゴリも同じ一段の分類ルールで追加する。
 
 描画バックエンドが実装する共通インターフェースと関連型は `Lumyte.Graphics.Abstractions` に配置する。デバイスの共通契約と依存境界は [グラフィックデバイスの設計](graphics/GRAPHICS-0001-graphics-device.md) に従う。バックエンド固有の API と使い方は各バックエンドプロジェクトの README に記載する。
+
+`Lumyte.Graphics.RenderGraph` は共通 command API 上で pass の依存関係と barrier を組み立てる。`Lumyte.Graphics.Abstractions` のみに依存し、backend ごとの実装は参照しない。設計案は [GRAPHICS-0015](graphics/GRAPHICS-0015-render-graph.md)、検証は `tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/` に配置する。
 
 ### ADR のカテゴリ配置
 
