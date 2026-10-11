@@ -50,7 +50,7 @@ public sealed class PracticalRenderGraphTests
         var graph = new RenderGraph(new TestDevice());
         RenderGraphBuffer<uint> output = graph.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.CopyDestination });
         graph.AddPass("obsolete", _ => throw new InvalidOperationException()).UseBuffer(output, CopyWrite);
-        graph.AddPass("final", _ => { }).UseBuffer(output, CopyWrite);
+        graph.AddPass("final", _ => { }).UseBuffer(output, CopyWrite, discard: true);
         graph.MarkOutput(output);
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Equal(new[] { "final" }, plan.PassNames);

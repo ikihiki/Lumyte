@@ -31,7 +31,7 @@ graph.AddPass("clear", context =>
     });
     encoder.End();
 }).UseTexture(color, TextureState.ColorAttachment,
-    new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
+    new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite), discard: true);
 graph.ExportTexture(color, TextureState.Sampled,
     new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
 
@@ -51,7 +51,8 @@ IGraphicsTexture result = plan.GetTexture(color); // 借用。plan の Dispose �
 - `CreateTexture`／`CreateBuffer<T>` は未初期化 resource を宣言します。Compile は GPU work を行わず、live pass の Record 時に descriptor どおり確保します。graph constructor に同じ device を渡してください。shader data buffer は import を提供します。
 - `UseTexture`／`UseBuffer`／`UseShaderDataBuffer` の Access flags から read／write を判定します。attachment Load は read＋write、Clear は write。shader arguments、参照先、index／indirect buffer、copy 元・先も宣言してください。初回未初期化 read／read-write を Compile 時に拒否します。部分 write の初期化範囲と attachment discard 後の内容は callback の責任です。
 - `MarkOutput` が最後の producer を保持します。`ExportTexture`／`ExportBuffer`／`ExportShaderDataBuffer` はさらに末尾の final barrier を指定します。readback は Host／HostRead、借用 frame texture の提示は Present／空 scope を指定します。Acquire／Submit／Present と semaphore は従来どおり利用者が管理します。
-- 外部 resource への write は副作用として保持します。resource 宣言で表せない副作用は `KeepAlive()` を指定します。root の read が必要とする直前の producer と明示 dependency を保持し、不要な pass と allocation は除去します。純粋な上書きは古い producer を必要としません。
+- 外部 resource への write は副作用として保持します。resource 宣言で表せない副作用は `KeepAlive()` を指定します。root の read と通常 write が必要とする直前の producer、および明示 dependency を保持し、不要な pass と allocation は除去します。
+- `UseTexture`／`UseBuffer`／`UseShaderDataBuffer` の `discard` は既定で false です。部分 copy や単一 layer／mip の clear でも先行 producer を保持します。全 allocation を上書きすると保証できる場合だけ `discard: true` にすると、古い producer の値への依存を除けます。read-only／read-write と true の組合せは拒否します。上の例は単一 mip／layer 全体の clear なので true を指定できます。
 
 ## 順序と同期
 
@@ -59,11 +60,11 @@ resource hazard は追加順を保ち、RAW／WAR／WAW と texture state 変更
 
 全 mip／layer／buffer 要素を同期します。同 state の write 間にも barrier を発行し、read scope は合併します。write／state 変更から read への barrier の After には、次の write／state 変更までの全 reader stage と同 state の外部 export reader を含めます。
 
-`GetFinalTextureState`／`GetFinalScope` は正常実行後の予定値で、GPU query ではありません。次の graph には生存する allocation と成功した実行の state／scope を渡してください。
+`GetFinalTextureState`／`GetFinalScope` は正常実行後の予定値で、GPU query ではありません。次の graph には生存する allocation と成功した実行の state／scope を渡してください。import 後に同じ state の read が新しい stage／access へ広がる場合も、その可視性を確保する barrier を生成します。利用者は command の順序を保証してください。
 
 ## 記録と所有権
 
-Compile は宣言と callback を snapshot します。builder の後続変更は既存 plan に影響しません。callback が capture する mutable 値は利用者が管理します。`PassNames` は実行順、`CulledPassNames` は除去された pass、`Snapshot` は native resource を保持しない診断用情報です。
+Compile は宣言と callback を snapshot します。builder の後続変更は既存 plan に影響しません。callback が capture する mutable 値は利用者が管理します。`PassNames` は実行順、`CulledPassNames` は除去された pass、`Statistics` は固定サイズの件数です。`Snapshot` は単発要求がある場合だけ生成される nullable な診断用情報で、native resource と callback を保持しません。
 
 Record は一度だけで、callback 失敗時も消費されます。context の Get 系 API は当該 pass の宣言だけを解決し、callback 後は無効です。encoder を End してから返し、callback 内で Finish／Submit／Wait／resource 解放を行わないでください。実命令と宣言の一致、同一 device と owner thread は利用者の契約です。
 
@@ -73,7 +74,23 @@ plan は一時 allocation と context が作成した view を所有します。
 
 ## 診断と検証
 
-[診断 adapter](../../Diagnostics/Lumyte.Diagnostics.RenderGraph/README.md) を既存診断の execution point に登録し、scoped observer を graph constructor に渡します。summary／pass／resource／dependency／barrier と CPU compile／record 時間、失敗を既存の収集・通信経路へ公開します。
+[診断 adapter](../../Diagnostics/Lumyte.Diagnostics.RenderGraph/README.md) を既存診断の execution point に登録し、scoped observer を graph constructor に渡します。通常は CPU compile／record 時間と件数を集計し、指定間隔で既存の収集・通信経路へ公開します。失敗ログには graph／run／frame の識別子を含めます。observer 未指定または `IsEnabled == false` なら計時・通知・trace scope を行いません。
+
+`graph.Id` は builder ごとの固定 ID、`plan.Run.RunId` は Compile ごとの ID です。`Compile(frameId: 42)` の FrameId はアプリケーション側の任意の frame 番号で、0 は未指定です。同じ run を Record と失敗通知にも使います。
+
+通常の `Compile()` は詳細 snapshot を作りません。構造を調べる一回だけ、次のように明示要求できます。
+
+```csharp
+using CompiledRenderGraph captured = graph.Compile(
+    frameId: 42, capture: new RenderGraphCaptureOptions { MaxBytes = 4 * 1024 * 1024 });
+if (captured.Snapshot is RenderGraphSnapshot snapshot)
+{
+    // snapshot.Passes／Resources／Dependencies／Barriers を検査する。
+}
+// 事前の推定保持 byte 数が上限を超えると Snapshot は null。実行 plan は利用できる。
+```
+
+診断経由では `request-capture` が返す `capture-id` で一回の Compile を指定し、`get-capture`／`get-pass`／`get-resource`／`get-dependency`／`get-barrier` を取得します。後続 frame が進んでも ID が指す snapshot は変わらず、revision による再取得は不要です。保管数・byte 数・有効期限を adapter の options で制限します。GPU timestamp、resource 内容、replay、複数 graph／frame をまとめる capture は扱いません。
 
 設計と clear→copy、Present、shader data、診断登録の使用例は [GRAPHICS-0015](../../../docs/adr/graphics/GRAPHICS-0015-render-graph.md) を参照してください。
 
@@ -82,4 +99,4 @@ dotnet test tests/Graphics/Lumyte.Graphics.RenderGraph.Tests -c Release
 LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter FullyQualifiedName~RenderGraphTests
 ```
 
-GPU／Browser は共通 `RenderGraphExercise` で buffer upload→temporary→readback と texture clear→copy→readback の値を検証します。単一 queue と allocation 全体の追跡を扱い、pool／alias、subresource、async compute、再実行可能な compile cache と GPU timestamp は今回の範囲に含めません。
+GPU／Browser は共通 `RenderGraphExercise` で部分 buffer upload→temporary→readback、texture clear→copy→readback と別々の array layer への clear の値を検証します。単一 queue と allocation 全体の追跡を扱い、pool／alias、subresource、複数 queue／Timeline semaphore、再実行可能な compile cache は後続で設計します。

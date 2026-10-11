@@ -28,6 +28,9 @@ public sealed class RenderGraph
     /// <summary>Gets the graph's diagnostic name.</summary>
     public string Name { get; }
 
+    /// <summary>Gets the stable builder identity used in diagnostic runs.</summary>
+    public Guid Id { get; } = Guid.NewGuid();
+
     internal IGraphicDevice? Device { get; }
 
     internal IRenderGraphObserver? Observer { get; }
@@ -178,20 +181,36 @@ public sealed class RenderGraph
     }
 
     /// <summary>Compiles dependencies, culls unused work and plans barriers without GPU allocation.</summary>
+    /// <param name="frameId">The nonnegative application frame number, or zero when unspecified.</param>
+    /// <param name="capture">Optional bounded descriptions for this compilation; otherwise only an observer request enables capture.</param>
     /// <returns>A disposable one-shot recording plan.</returns>
-    public CompiledRenderGraph Compile()
+    public CompiledRenderGraph Compile(long frameId = 0, RenderGraphCaptureOptions? capture = null)
     {
-        using IDisposable? diagnostic = Observer?.Begin("compile");
-        long started = Stopwatch.GetTimestamp();
+        ArgumentOutOfRangeException.ThrowIfNegative(frameId);
+        if (capture is not null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capture.MaxBytes);
+        }
+
+        var run = new RenderGraphRun(Id, Guid.NewGuid(), Name, frameId);
+        IRenderGraphObserver? observer = Observer is { IsEnabled: true } ? Observer : null;
+        RenderGraphCaptureOptions? requested = observer?.RequestCapture(run);
+        if (requested is not null && (capture is null || requested.MaxBytes < capture.MaxBytes))
+        {
+            capture = requested;
+        }
+
+        using IDisposable? diagnostic = observer?.Begin(run, "compile");
+        long started = observer is null ? 0 : Stopwatch.GetTimestamp();
         try
         {
-            CompiledRenderGraph plan = CompileCore();
-            Observer?.Compiled(plan.Snapshot, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            CompiledRenderGraph plan = CompileCore(run, capture);
+            observer?.Compiled(run, plan.Statistics, plan.Snapshot, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return plan;
         }
         catch (Exception exception)
         {
-            Observer?.Failed("compile", exception);
+            observer?.Failed(run, "compile", exception);
             throw;
         }
     }
@@ -214,7 +233,7 @@ public sealed class RenderGraph
         }
     }
 
-    private CompiledRenderGraph CompileCore()
+    private CompiledRenderGraph CompileCore(RenderGraphRun run, RenderGraphCaptureOptions? capture)
     {
         var indexes = _passes.Select((pass, index) => (pass, index)).ToDictionary(item => item.pass, item => item.index);
         HashSet<int>[] ordering = _passes.Select(pass => pass.Dependencies.Select(dependency => indexes[dependency]).ToHashSet()).ToArray();
@@ -233,7 +252,8 @@ public sealed class RenderGraph
             foreach (RenderGraphUse use in pass.Uses)
             {
                 bool write = RenderGraphValidation.IsWrite(use.Scope);
-                if ((use.Scope.Access & ~RenderGraphValidation.Writes) != 0 && lastWriters.TryGetValue(use.Resource, out int producer))
+                bool requiresContents = (use.Scope.Access & ~RenderGraphValidation.Writes) != 0 || (write && !use.Discard);
+                if (requiresContents && lastWriters.TryGetValue(use.Resource, out int producer))
                 {
                     required[index].Add(producer);
                 }
@@ -325,7 +345,7 @@ public sealed class RenderGraph
             throw new InvalidOperationException("Render graph dependencies contain a cycle: " + string.Join(", ", _passes.Where((_, index) => degree[index] != 0).Select(pass => pass.Name)));
         }
 
-        return new CompiledRenderGraph(this, _passes.ToArray(), ordered, _resources.ToArray(), _outputs.ToHashSet(), _exports.Values.ToArray(), ordering);
+        return new CompiledRenderGraph(this, _passes.ToArray(), ordered, _resources.ToArray(), _outputs.ToHashSet(), _exports.Values.ToArray(), ordering, run, capture);
     }
 
     private void Export(RenderGraphResource resource, TextureState state, BarrierScope scope)
