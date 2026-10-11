@@ -1,14 +1,14 @@
-# ADR-ENGINE-0002: 所有スレッドとスレッド非依存のCPUジョブ実行
+# ADR-CORE-0003: 所有スレッドとスレッド非依存のCPUジョブ実行
 
 - 状態: 提案
 - 日付: 2026-10-11
-- 関連カテゴリ: core、platform、input、graphics、animation、diagnostics
+- 関連カテゴリ: engine、platform、input、graphics、animation、diagnostics
 
 ## 背景
 
 Lumyteには、構築した物理スレッドで操作するInput、Activate時に所有者を固定する診断の実行ポイント、BrowserのJS interopなどのスレッド制約と、独立したデータに対して並列化できるCPU処理がある。Graphicsは各backendの制約と呼び出し側の同期に従い、RenderGraphはowner threadで記録する。すべての描画deviceへ一律の構築スレッド制約を追加するものではない。lockによる排他、仕事の順序、物理スレッドの固定は異なる契約である。また、Browserではmanaged threadを作れない構成が通常であり、非同期APIがあることは並列に実行できることを意味しない。
 
-[PR #28](https://github.com/ikihiki/Lumyte/pull/28) は所有スレッドへの配送を `ENGINE-0001` として提案している。本ADRは、その固定所有者・有界配送・ホストのPumpという境界を維持し、CPUジョブの依存関係、単一スレッドでの進行、性能方針を追加する。参照した提案は commit `27b5e2bd71e198312836bfae081144d43855fb08` の [ENGINE-0001](https://github.com/ikihiki/Lumyte/blob/27b5e2bd71e198312836bfae081144d43855fb08/docs/adr/engine/ENGINE-0001-thread-execution.md) であり、mainに採用済みとは扱わない。番号はmainと進行中PRを確認し、同PRの `ENGINE-0001` に続けて割り当てる。
+[PR #28](https://github.com/ikihiki/Lumyte/pull/28) は所有スレッドへの配送を `ENGINE-0001` として提案している。本ADRは、その固定所有者・有界配送・ホストのPumpという境界を維持し、CPUジョブの依存関係、単一スレッドでの進行、性能方針を追加する。参照した提案は commit `27b5e2bd71e198312836bfae081144d43855fb08` の [ENGINE-0001](https://github.com/ikihiki/Lumyte/blob/27b5e2bd71e198312836bfae081144d43855fb08/docs/adr/engine/ENGINE-0001-thread-execution.md) であり、mainに採用済みとは扱わない。共通の実行基盤を扱うため、本ADRはcoreカテゴリへ配置する。
 
 このPRの成果物は設計案である。実装プロジェクト、API実装、性能測定結果は含まない。実装時の検証条件を後述し、調査した他ライブラリの性能特性をLumyteの実測値として使わない。
 
