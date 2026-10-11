@@ -29,7 +29,7 @@ public sealed class RenderGraphTests
             ((RecordingCommands)context.Commands).Events.Add("clear");
         }).UseTexture(texture, TextureState.ColorAttachment, ColorWrite);
         graph.AddPass("sample", context => ((RecordingCommands)context.Commands).Events.Add("sample"))
-            .UseTexture(texture, TextureState.Sampled, FragmentRead);
+            .UseTexture(texture, TextureState.Sampled, FragmentRead).KeepAlive();
         using var commands = new RecordingCommands();
         CompiledRenderGraph plan = graph.Compile();
         Assert.Empty(commands.Events);
@@ -64,8 +64,8 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestBuffer();
         RenderGraphBuffer<uint> buffer = graph.ImportBuffer(allocation, default);
-        graph.AddPass("fragment", _ => { }).UseBuffer(buffer, FragmentRead);
-        graph.AddPass("compute", _ => { }).UseBuffer(buffer, ComputeRead);
+        graph.AddPass("fragment", _ => { }).UseBuffer(buffer, FragmentRead).KeepAlive();
+        graph.AddPass("compute", _ => { }).UseBuffer(buffer, ComputeRead).KeepAlive();
         graph.AddPass("overwrite", _ => { }).UseBuffer(buffer, CopyWrite);
         using var commands = new RecordingCommands();
         graph.Compile().Record(commands);
@@ -84,11 +84,11 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestBuffer();
         RenderGraphBuffer<uint> buffer = graph.ImportBuffer(allocation, CopyWrite);
-        graph.AddPass("fragment", _ => { }).UseBuffer(buffer, FragmentRead);
+        graph.AddPass("fragment", _ => { }).UseBuffer(buffer, FragmentRead).KeepAlive();
         graph.AddPass("unrelated", _ => { });
-        graph.AddPass("compute", _ => { }).UseBuffer(buffer, ComputeRead);
+        graph.AddPass("compute", _ => { }).UseBuffer(buffer, ComputeRead).KeepAlive();
         graph.AddPass("overwrite", _ => { }).UseBuffer(buffer, CopyWrite);
-        graph.AddPass("copy", _ => { }).UseBuffer(buffer, CopyRead);
+        graph.AddPass("copy", _ => { }).UseBuffer(buffer, CopyRead).KeepAlive();
         using var commands = new RecordingCommands();
         graph.Compile().Record(commands);
         Assert.Equal(3, commands.Events.Count);
@@ -109,8 +109,8 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestTexture();
         RenderGraphTexture texture = graph.ImportTexture(allocation, TextureState.ColorAttachment, ColorWrite);
-        graph.AddPass("fragment", _ => { }).UseTexture(texture, TextureState.Sampled, FragmentRead);
-        graph.AddPass("compute", _ => { }).UseTexture(texture, TextureState.Sampled, ComputeRead);
+        graph.AddPass("fragment", _ => { }).UseTexture(texture, TextureState.Sampled, FragmentRead).KeepAlive();
+        graph.AddPass("compute", _ => { }).UseTexture(texture, TextureState.Sampled, ComputeRead).KeepAlive();
         CompiledRenderGraph plan = graph.Compile();
         Assert.Equal(TextureState.Sampled, plan.GetFinalTextureState(texture));
         Assert.Equal(new BarrierScope(PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead), plan.GetFinalScope(texture));
@@ -118,9 +118,9 @@ public sealed class RenderGraphTests
         RenderGraphTexture foreign = new RenderGraph().ImportTexture(otherAllocation, TextureState.Undefined, default);
         Assert.Throws<ArgumentException>(() => plan.GetFinalScope(foreign));
         Assert.Throws<ArgumentException>(() => plan.GetFinalTextureState(foreign));
-        CompiledRenderGraph empty = graph.Compile();
         using var unusedAllocation = new TestTexture();
         RenderGraphTexture unused = graph.ImportTexture(unusedAllocation, TextureState.CopySource, CopyRead);
+        CompiledRenderGraph empty = graph.Compile();
         Assert.Equal(CopyRead, empty.GetFinalScope(unused));
         Assert.Equal(TextureState.CopySource, empty.GetFinalTextureState(unused));
     }
@@ -163,9 +163,9 @@ public sealed class RenderGraphTests
     public void IndependentPassesHaveAStableTopologicalOrder()
     {
         var graph = new RenderGraph();
-        RenderGraphPass first = graph.AddPass("first", _ => { });
-        graph.AddPass("independent", _ => { });
-        RenderGraphPass last = graph.AddPass("last", _ => { });
+        RenderGraphPass first = graph.AddPass("first", _ => { }).KeepAlive();
+        graph.AddPass("independent", _ => { }).KeepAlive();
+        RenderGraphPass last = graph.AddPass("last", _ => { }).KeepAlive();
         first.DependsOn(last);
         Assert.Equal(new[] { "independent", "last", "first" }, graph.Compile().PassNames);
     }
@@ -177,7 +177,7 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestTexture();
         RenderGraphTexture texture = graph.ImportTexture(allocation, TextureState.Sampled, FragmentRead);
-        RenderGraphPass first = graph.AddPass("sample", _ => { }).UseTexture(texture, TextureState.Sampled, FragmentRead);
+        RenderGraphPass first = graph.AddPass("sample", _ => { }).UseTexture(texture, TextureState.Sampled, FragmentRead).KeepAlive();
         RenderGraphPass second = graph.AddPass("copy", _ => { }).UseTexture(texture, TextureState.CopySource, CopyRead);
         first.DependsOn(second);
         Assert.Throws<InvalidOperationException>(() => graph.Compile());
@@ -190,7 +190,7 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestTexture();
         RenderGraphTexture texture = graph.ImportTexture(allocation, TextureState.Undefined, default);
-        graph.AddPass("read", _ => { }).UseTexture(texture, TextureState.Sampled, FragmentRead);
+        graph.AddPass("read", _ => { }).UseTexture(texture, TextureState.Sampled, FragmentRead).KeepAlive();
         Assert.Throws<InvalidOperationException>(() => graph.Compile());
     }
 
@@ -201,7 +201,7 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestTexture();
         RenderGraphTexture texture = graph.ImportTexture(allocation, TextureState.Undefined, default);
-        RenderGraphPass pass = graph.AddPass("original", _ => { });
+        RenderGraphPass pass = graph.AddPass("original", _ => { }).KeepAlive();
         CompiledRenderGraph plan = graph.Compile();
         pass.UseTexture(texture, TextureState.ColorAttachment, ColorWrite);
         graph.AddPass("added", _ => throw new InvalidOperationException());
@@ -221,7 +221,7 @@ public sealed class RenderGraphTests
         {
             captured = context;
             throw new InvalidOperationException("failure");
-        });
+        }).KeepAlive();
         CompiledRenderGraph plan = graph.Compile();
         using var commands = new RecordingCommands();
         Assert.Throws<InvalidOperationException>(() => plan.Record(commands));
@@ -237,7 +237,7 @@ public sealed class RenderGraphTests
         var graph = new RenderGraph();
         using var allocation = new TestBuffer();
         RenderGraphBuffer<uint> buffer = graph.ImportBuffer(allocation, default);
-        graph.AddPass("undeclared", context => context.GetBuffer(buffer));
+        graph.AddPass("undeclared", context => context.GetBuffer(buffer)).KeepAlive();
         using var commands = new RecordingCommands();
         Assert.Throws<ArgumentException>(() => graph.Compile().Record(commands));
     }

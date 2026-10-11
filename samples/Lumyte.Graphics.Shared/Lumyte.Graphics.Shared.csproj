@@ -7,6 +7,7 @@
     <PackageId>Lumyte.Graphics.Samples.Shared</PackageId>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

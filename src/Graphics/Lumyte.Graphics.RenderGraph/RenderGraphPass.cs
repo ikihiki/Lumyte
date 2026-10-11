@@ -18,6 +18,10 @@ public sealed class RenderGraphPass
     /// <summary>Gets the diagnostic pass name.</summary>
     public string Name { get; }
 
+    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && RenderGraphValidation.IsWrite(use.Scope));
+
+    internal bool HasSideEffects { get; private set; }
+
     internal RenderGraph Owner { get; }
 
     internal Action<RenderGraphContext> Record { get; }
@@ -33,7 +37,7 @@ public sealed class RenderGraphPass
     /// <returns>This pass for further declarations.</returns>
     public RenderGraphPass UseTexture(RenderGraphTexture texture, TextureState state, BarrierScope scope)
     {
-        if (state == TextureState.Undefined)
+        if (state is TextureState.Undefined or TextureState.Present)
         {
             throw new ArgumentException("A pass must declare a defined texture state.", nameof(state));
         }
@@ -51,6 +55,26 @@ public sealed class RenderGraphPass
         where T : unmanaged
     {
         AddUse(buffer, TextureState.Undefined, scope);
+        return this;
+    }
+
+    /// <summary>Declares a shader data access without bypassing transfer metadata.</summary>
+    /// <typeparam name="T">The application shader data structure.</typeparam>
+    /// <param name="buffer">The imported shader data.</param>
+    /// <param name="scope">The actual stages and accesses.</param>
+    /// <returns>This pass.</returns>
+    public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope)
+        where T : struct, IShaderData
+    {
+        AddUse(buffer, TextureState.Undefined, scope);
+        return this;
+    }
+
+    /// <summary>Retains this pass for side effects not expressed as imported resource writes.</summary>
+    /// <returns>This pass.</returns>
+    public RenderGraphPass KeepAlive()
+    {
+        HasSideEffects = true;
         return this;
     }
 

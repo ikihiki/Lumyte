@@ -16,7 +16,7 @@ internal sealed class RecordingCommands : IGraphicsCommandBuffer
     public void Barrier(TextureBarrierDesc barrier) => Events.Add(barrier);
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData => throw new NotSupportedException();
+        where T : struct, IShaderData => Events.Add(barrier);
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
@@ -25,7 +25,7 @@ internal sealed class RecordingCommands : IGraphicsCommandBuffer
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
         where T : struct, IShaderData => throw new NotSupportedException();
 
-    public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => throw new NotSupportedException();
+    public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 
     public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination) => throw new NotSupportedException();
 
@@ -38,4 +38,8 @@ internal sealed class RecordingCommands : IGraphicsCommandBuffer
     public void Finish() => State = CommandBufferState.Executable;
 
     public void Dispose() => State = CommandBufferState.Disposed;
+
+    internal void Complete() => State = CommandBufferState.Completed;
+
+    internal void Submit() => State = CommandBufferState.Submitted;
 }
