@@ -1,6 +1,7 @@
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Owns one-shot GPU command memory; the caller manages synchronization.</summary>
+/// <remarks>The caller keeps referenced resources and command memory alive until GPU use completes; submission does not rescan their lifetimes.</remarks>
 public interface IGraphicsCommandBuffer : IDisposable
 {
     /// <summary>Gets the recording and execution state.</summary>

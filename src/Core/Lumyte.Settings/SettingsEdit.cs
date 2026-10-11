@@ -16,7 +16,15 @@ public sealed class SettingsEdit<T>
     public long BaseRevision { get; }
 
     /// <summary>Gets the editable value.</summary>
-    public T Value { get; }
+    public T Value { get; private set; }
 
     internal object Owner { get; }
+
+    /// <summary>Replaces the complete detached candidate while retaining its base revision.</summary>
+    /// <param name="value">The replacement candidate.</param>
+    public void ReplaceValue(T value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        Value = value;
+    }
 }

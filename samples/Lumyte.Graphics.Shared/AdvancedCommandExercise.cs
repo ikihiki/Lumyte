@@ -21,7 +21,6 @@ public static class AdvancedCommandExercise
         await CheckIndicesAsync(device, pipeline);
         await CheckIndirectAsync(device, pipeline);
         await CheckGpuDispatchAsync(device);
-        CheckIndexLifetime(device);
         return "Advanced command checks passed: depth occlusion, depth-only load, stencil mask, 16/32-bit indexed ranges, signed baseVertex, indirect draw/indexed draw and GPU-generated dispatch.";
     }
 
@@ -108,13 +107,6 @@ public static class AdvancedCommandExercise
         Expect<ArgumentException>(() => invalid.BeginRenderPass(new() { ColorAttachments = [new() { View = depthView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] }));
         Expect<ArgumentException>(() => invalid.BeginRenderPass(new() { DepthStencilAttachment = new() { View = colorView } }));
         Expect<ArgumentException>(() => invalid.BeginRenderPass(new() { DepthStencilAttachment = new() { View = depthView, DepthClearValue = float.NaN } }));
-        ColorBarrier(invalid, color);
-        IRenderEncoder colorOnly = invalid.BeginRenderPass(Pass(colorView));
-        Setup(colorOnly, pipeline, State(depthState));
-        var root = new AdvancedDrawArguments(Vector4.One, 0.5f);
-        colorOnly.SetArguments(in root);
-        Expect<ArgumentException>(() => colorOnly.Draw(3));
-        colorOnly.End();
         Expect<NotSupportedException>(() => device.GetTextureCopyLayout(TextureFormat.Depth32Float));
         Expect<NotSupportedException>(() => device.CreateTexture(new() { Width = 8, Height = 8, Format = TextureFormat.Depth32Float, Usage = TextureUsage.Sampled }));
     }
@@ -185,11 +177,7 @@ public static class AdvancedCommandExercise
             render.DrawIndexed(0);
             render.DrawIndexed(3, firstIndex: 1, baseVertex: -2);
             IndexFormat indexFormat = format == 0 ? IndexFormat.Uint16 : IndexFormat.Uint32;
-            IndexFormat wrongFormat = format == 0 ? IndexFormat.Uint32 : IndexFormat.Uint16;
-            render.SetRenderState(State() with { Topology = PrimitiveTopology.TriangleStrip, StripIndexFormat = wrongFormat });
-            Expect<ArgumentException>(() => render.DrawIndexed(3, firstIndex: 1, baseVertex: -2));
             render.SetRenderState(State() with { Topology = PrimitiveTopology.TriangleStrip, StripIndexFormat = indexFormat });
-            Expect<ArgumentException>(() => render.Draw(3));
             render.DrawIndexed(3, firstIndex: 1, baseVertex: -2);
             render.End();
             await ReadPixelsAsync(device, commands, color, _ => new(1, 0, 0, 1));
@@ -279,21 +267,6 @@ public static class AdvancedCommandExercise
         readback.CopyTo(values);
         readback.Unmap();
         Require(values.SequenceEqual(new uint[] { 10, 20, 30 }), "GPU-generated indirect dispatch did not execute three workgroups.");
-    }
-
-    private static void CheckIndexLifetime(IGraphicDevice device)
-    {
-        using IGraphicsTexture color = Color(device);
-        using IGraphicsTextureView view = color.CreateView();
-        using IGraphicsBuffer<uint> indices = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.Index });
-        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        ColorBarrier(commands, color);
-        IRenderEncoder render = commands.BeginRenderPass(Pass(view));
-        render.SetIndexBuffer(indices.Slice(0, 3));
-        render.End();
-        commands.Finish();
-        indices.Dispose();
-        Expect<ObjectDisposedException>(() => device.Queue.Submit([commands]));
     }
 
     private static async Task<IGraphicsBuffer<T>> UploadAsync<T>(IGraphicDevice device, T[] values)

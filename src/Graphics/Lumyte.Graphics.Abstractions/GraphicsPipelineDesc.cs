@@ -6,7 +6,7 @@ public sealed record GraphicsPipelineDesc
     /// <summary>Gets the optional diagnostic label.</summary>
     public string? Label { get; init; }
 
-    /// <summary>Gets the vertex module to retain.</summary>
+    /// <summary>Gets the vertex module; the caller manages its lifetime.</summary>
     public required IGraphicsShader VertexShader { get; init; }
 
     /// <summary>Gets the optional fragment module.</summary>

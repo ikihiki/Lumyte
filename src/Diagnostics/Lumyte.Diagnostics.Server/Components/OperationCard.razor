@@ -1,4 +1,4 @@
-<FluentCard Class="card">
+<FluentCard Class="card" data-subsystem="@Subsystem.Id" data-operation="@Operation.Id">
     <p class="eyebrow">@Subsystem.DisplayName</p><h2>@Operation.DisplayName</h2><p class="hint">@Operation.Id</p>
     <form @onsubmit="ExecuteAsync" @onsubmit:preventDefault>
         @foreach (DiagnosticField field in Operation.Arguments)

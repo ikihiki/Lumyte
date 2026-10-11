@@ -51,13 +51,7 @@ internal sealed class WgpuSubmission(WgpuDevice owner, WgpuCommandBuffer[] comma
             return;
         }
 
-        if (Status == SubmissionStatus.Pending)
-        {
-            throw new InvalidOperationException("Complete the submission before disposal.");
-        }
-
         _request.Dispose();
         _status = SubmissionStatus.Disposed;
-        owner.ReleaseSubmission();
     }
 }

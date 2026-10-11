@@ -69,6 +69,7 @@ public partial class Dashboard : IAsyncDisposable
     private (SubsystemDescriptor Subsystem, OperationDescriptor Operation)[] Operations => (Selected?.Catalog ?? []).SelectMany(item => item.Operations.Select(operation => (item.Subsystem, operation))).ToArray();
 
     private IEnumerable<(SubsystemDescriptor Subsystem, OperationDescriptor Operation)> FilteredOperations => Operations.Where(item => (_view != "input" || item.Operation.RequiredPermission == DiagnosticPermission.OverrideInput)
+        && (_view != "settings" || item.Subsystem.Id.StartsWith("settings.", StringComparison.Ordinal))
         && string.Join(' ', item.Subsystem.Id, item.Subsystem.DisplayName, item.Operation.Id, item.Operation.DisplayName).Contains(_operationFilter, StringComparison.OrdinalIgnoreCase));
 
     /// <inheritdoc/>
@@ -380,6 +381,35 @@ public partial class Dashboard : IAsyncDisposable
                 _error = exception.Message;
             }
         }
+    }
+
+    private async Task<DiagnosticOperationResult?> InvokeSettingsAsync(OperationInvocation invocation)
+    {
+        Guid? target = _selectedId;
+        long version = _selectionVersion;
+        if (!target.HasValue)
+        {
+            return null;
+        }
+
+        try
+        {
+            DiagnosticOperationResult result = await Session.InvokeAsync(target.Value, invocation, _lifetime.Token);
+            return target == _selectedId && version == _selectionVersion && !_expired ? result : null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Expire();
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or InvalidOperationException or KeyNotFoundException or ArgumentException)
+        {
+            if (target == _selectedId && version == _selectionVersion && !_expired)
+            {
+                _error = "設定操作の結果を確認できませんでした。";
+            }
+        }
+
+        return null;
     }
 
     private void Expire()

@@ -12,13 +12,11 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private RenderStateSnapshot? _state;
     private IndexFormat? _indexFormat;
     private ulong _indexCount;
-    private Action? _validateIndices;
     private bool _viewport;
     private bool _scissor;
     private bool _blend;
     private bool _stencil;
 
-    private BrowserArgumentTable? _argumentTable;
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
 
@@ -32,7 +30,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         }
 
         concrete.ThrowIfDisposed();
-        _argumentTable = concrete;
     }
 
     public void SetArguments<T>(in T value)
@@ -46,20 +43,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).Validate(snapshot);
-        foreach (ShaderValue member in snapshot.Values)
-        {
-            if (member.IsReference)
-            {
-                if (member.Reference is not IShaderReference reference || reference.Table is not BrowserArgumentTable referenceTable || !referenceTable.BelongsTo(owner.Owner))
-                {
-                    throw new ArgumentException("Root arguments contain a missing or foreign backend reference.", nameof(value));
-                }
-
-                reference.Validate();
-            }
-        }
-
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -160,7 +143,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         BrowserBuffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
         BrowserInterop.DrawIndirect(handle, buffer.Native, arguments.OffsetInBytes, false);
-        owner.TrackProgram(() => { _ = buffer.Native; });
     }
 
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
@@ -169,7 +151,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         BrowserBuffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
         BrowserInterop.DrawIndirect(handle, buffer.Native, arguments.OffsetInBytes, true);
-        owner.TrackProgram(() => { _ = buffer.Native; });
     }
 
     public void End() => owner.EndRender(this, handle);
@@ -182,8 +163,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         BrowserInterop.SetIndexBuffer(handle, buffer.Native, (int)format, indices.OffsetInBytes, indices.SizeInBytes);
         _indexFormat = format;
         _indexCount = indices.Count;
-        _validateIndices = () => { _ = buffer.Native; };
-        owner.TrackProgram(_validateIndices);
     }
 
     private BrowserBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -210,36 +189,22 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        if (_arguments == null && (ShaderDataLayout.HasRoot(_pipeline.VertexData) || (_pipeline.FragmentData != null && ShaderDataLayout.HasRoot(_pipeline.FragmentData))))
-        {
-            throw new InvalidOperationException("Set the program's root arguments before execution.");
-        }
-
         ShaderBindingData? bindingData = null;
         if (_arguments != null)
         {
-            if (_argumentTable == null && _arguments.Values.Any(v => v.IsReference))
-            {
-                throw new InvalidOperationException("Select an argument table before using shader arguments.");
-            }
-
-            _argumentTable?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture((object?)_argumentTable ?? this, _arguments, owner.ReadShaderData);
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);
         }
 
         if (indexed)
         {
-            if (_indexFormat == null || _validateIndices == null)
+            if (_indexFormat == null)
             {
                 throw new InvalidOperationException("Set an index buffer before indexed execution.");
             }
-
-            _validateIndices();
         }
 
         _pipeline.ValidateAlive();
-        PipelineValidation.Draw(_pipeline.Desc, _state, _formats, _pipeline.FragmentOutputs, _depthFormat, indexed ? _indexFormat : null);
 
         JSObject pipeline = _pipeline.Resolve(_state, _formats, bindingData, _depthFormat, indexed ? _indexFormat : null);
         BrowserInterop.SetRenderPipeline(handle, pipeline);
@@ -249,12 +214,5 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
             owner.KeepBinding(binding);
             BrowserInterop.SetShaderBinding(handle, binding.Native);
         }
-
-        if (bindingData != null)
-        {
-            owner.TrackProgram(bindingData.Snapshot.Validate);
-        }
-
-        owner.TrackProgram(_pipeline.ValidateAlive);
     }
 }

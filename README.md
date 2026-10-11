@@ -8,6 +8,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [設定管理](src/Core/Lumyte.Settings/README.md)／[設定管理の設計](docs/adr/settings/SETTINGS-0001-user-settings-persistence.md)
 - [DI で通信方式を選択するゲームエンジン診断システム](docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
+- [設定の診断公開](src/Diagnostics/Lumyte.Diagnostics.Settings/README.md)／[設定診断の設計](docs/adr/settings/SETTINGS-0002-diagnostic-operations.md)
 - [診断基盤の API と利用方法](src/Diagnostics/Lumyte.Diagnostics/README.md)
 - [診断 Input サンプル](samples/Lumyte.Diagnostics.Sample/README.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
@@ -17,6 +18,8 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [2Dグラフィックエンジンの設計案](docs/adr/graphics/GRAPHICS-0014-2d-graphics-engine.md)
 - [Indexed drawとIndirect実行](docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)
 - [カラーテクスチャ形式の拡充](docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)
+- [Surface・Swapchain・Present](docs/adr/graphics/GRAPHICS-0013-surface-swapchain-presentation.md)
+- [利用者が管理するリソース寿命と実行時検証](docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)
 - [PSOのシェーダープログラムと描画状態の分離](docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)
 - [Argument Tableのシェーダー引数への接続](docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)
 - [CommandBufferと明示的なGPU実行](docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md)
@@ -47,3 +50,5 @@ CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環�
 診断の実通信: [サーバー起動](src/Diagnostics/Lumyte.Diagnostics.Server/README.md)、[ゲーム側サンプル](samples/Lumyte.Diagnostics.Remote.Sample/README.md)、[検証結果](docs/diagnostics/communication-verification.md)。
 
 診断サーバーの[同梱Web UI](src/Diagnostics/Lumyte.Diagnostics.Server/README.md#web-ui)はサーバーのURLから利用できる。[配信・認証・更新の設計](docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
+
+診断画面の見た目は [GitHub Pagesの画面プレビュー](https://ikihiki.github.io/Lumyte/) でmain・PRごとに確認できます。

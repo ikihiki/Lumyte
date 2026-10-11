@@ -10,14 +10,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Instance _instance;
     private readonly A.Adapter _adapter;
     private readonly A.Device _device;
-    private int _bufferCount;
-    private int _textureCount;
-    private int _samplerCount;
-    private int _argumentTableCount;
-    private int _shaderCount;
-    private int _pipelineCount;
-    private int _commandCount;
-    private int _submissionCount;
     private bool _disposed;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device)
@@ -62,7 +54,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     internal A.Device NativeDevice => _device;
 
-    /// <summary>Creates a headless device using wgpu's default adapter selection and device limits.</summary>
+    /// <summary>Creates a device independently of presentation targets using wgpu's default adapter selection and device limits.</summary>
     /// <returns>The owned native device; dispose it when the owner is finished.</returns>
     public static WgpuDevice Create()
     {
@@ -84,13 +76,75 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
     }
 
+    /// <summary>Connects distinct targets to this existing device without adapter reselection.</summary>
+    /// <param name="sources">Nonempty borrowed target handles in result order.</param>
+    /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
+    public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<A.SurfaceSource> sources)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(sources);
+        A.SurfaceSource[] snapshot = sources.ToArray();
+        if (snapshot.Length == 0)
+        {
+            throw new ArgumentException("Supply at least one native presentation target.", nameof(sources));
+        }
+
+        var targets = new HashSet<(A.SurfaceSource.Kind, nint, nint)>();
+        foreach (A.SurfaceSource source in snapshot)
+        {
+            ValidateSurfaceSource(source);
+            if (!targets.Add((source.Tag, source.Handle0, source.Handle1)))
+            {
+                throw new ArgumentException("Supply distinct native presentation targets.", nameof(sources));
+            }
+        }
+
+        var created = new List<IGraphicsSurface>();
+        try
+        {
+            foreach (A.SurfaceSource source in snapshot)
+            {
+                created.Add(CreateSurface(source));
+            }
+
+            return created.AsReadOnly();
+        }
+        catch
+        {
+            foreach (IGraphicsSurface surface in created)
+            {
+                surface.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>Connects another supplied native target to this device without adapter reselection.</summary>
+    /// <param name="source">The borrowed native handles.</param>
+    /// <returns>The owned surface; query its capabilities before configuring it.</returns>
+    public IGraphicsSurface CreateSurface(A.SurfaceSource source)
+    {
+        ValidateAlive();
+        ValidateSurfaceSource(source);
+        A.Surface native = _instance.CreateSurface(source);
+        try
+        {
+            return new WgpuSurface(this, native, _adapter);
+        }
+        catch
+        {
+            native.Dispose();
+            throw;
+        }
+    }
+
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuGraphicsPipeline(this, desc);
-        _pipelineCount++;
         return program;
     }
 
@@ -100,8 +154,15 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuComputePipeline(this, desc);
-        _pipelineCount++;
         return program;
+    }
+
+    /// <inheritdoc />
+    public IGraphicsSemaphore CreateSemaphore()
+    {
+        ValidateAlive();
+        var semaphore = new WgpuSemaphore(this);
+        return semaphore;
     }
 
     /// <inheritdoc />
@@ -110,7 +171,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new WgpuCommandBuffer(this);
-        _commandCount++;
         return commands;
     }
 
@@ -165,7 +225,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new WgpuBuffer<T>(this, desc, layout, size);
-        _bufferCount++;
         return buffer;
     }
 
@@ -176,7 +235,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
-        _bufferCount++;
         return buffer;
     }
 
@@ -186,7 +244,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new WgpuTexture(this, desc);
-        _textureCount++;
         return texture;
     }
 
@@ -196,7 +253,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new WgpuSampler(this, desc);
-        _samplerCount++;
         return sampler;
     }
 
@@ -211,7 +267,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var table = new WgpuArgumentTable(this, desc);
-        _argumentTableCount++;
         return table;
     }
 
@@ -221,18 +276,12 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new WgpuShader(this, artifact);
-        _shaderCount++;
         return shader;
     }
 
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        if (_bufferCount != 0 || _textureCount != 0 || _samplerCount != 0 || _argumentTableCount != 0 || _pipelineCount != 0 || _shaderCount != 0 || _commandCount != 0 || _submissionCount != 0)
-        {
-            throw new InvalidOperationException("Dispose all argument tables, buffers, textures, samplers, shaders, pipelines, commands and submissions before disposing their device.");
-        }
-
         if (_disposed)
         {
             return;
@@ -244,23 +293,14 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _disposed = true;
     }
 
-    internal void ReleasePipeline() => _pipelineCount--;
-
-    internal void ReleaseCommand() => _commandCount--;
-
-    internal void RetainSubmission() => _submissionCount++;
-
-    internal void ReleaseSubmission() => _submissionCount--;
-
     internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    internal void ReleaseShader() => _shaderCount--;
-
-    internal void ReleaseArgumentTable() => _argumentTableCount--;
-
-    internal void ReleaseSampler() => _samplerCount--;
-
-    internal void ReleaseTexture() => _textureCount--;
-
-    internal void ReleaseBuffer() => _bufferCount--;
+    private static void ValidateSurfaceSource(A.SurfaceSource source)
+    {
+        if (!Enum.IsDefined(source.Tag) || source.Handle0 == 0 ||
+            (source.Tag is A.SurfaceSource.Kind.WindowsHwnd or A.SurfaceSource.Kind.XlibWindow or A.SurfaceSource.Kind.WaylandSurface && source.Handle1 == 0))
+        {
+            throw new ArgumentException("Supply valid native target handles.", nameof(source));
+        }
+    }
 }

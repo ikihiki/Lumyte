@@ -7,7 +7,7 @@ public static class PipelineExercise
 {
     /// <summary>Draws with one program across formats and blend states, then dispatches compute.</summary>
     /// <param name="device">The already created backend device.</param>
-    /// <returns>The report after GPU readback and lifecycle checks pass.</returns>
+    /// <returns>The report after GPU readback and explicit completion pass.</returns>
     public static async Task<string> RunAsync(IGraphicDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -19,8 +19,6 @@ public static class PipelineExercise
         using IGraphicsShader bound = Load(device, "increment");
         Expect<NotSupportedException>(() => device.CreateComputePipeline(new() { ComputeShader = bound }));
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
-        Expect<InvalidOperationException>(vertex.Dispose);
-        Expect<InvalidOperationException>(fragment.Dispose);
         foreach (TextureFormat format in new[] { TextureFormat.Rgba8Unorm, TextureFormat.Bgra8Unorm })
         {
             // Repeating equivalent new state snapshots also exercises variant reuse.
@@ -43,7 +41,6 @@ public static class PipelineExercise
         }
 
         using IGraphicsComputePipeline computePipeline = device.CreateComputePipeline(new() { ComputeShader = compute });
-        Expect<InvalidOperationException>(compute.Dispose);
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         IComputeEncoder encoder = commands.BeginComputePass(new());
         Expect<InvalidOperationException>(() => encoder.Dispatch(1));

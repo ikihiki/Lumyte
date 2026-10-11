@@ -2,6 +2,10 @@ import { dotnet } from "./_framework/dotnet.js";
 
 const output = document.getElementById("caps");
 try {
+    // Test bootstrap supplies a canvas context; graphics code never obtains a DOM/window handle.
+    globalThis.lumyteSurfaceContext = new OffscreenCanvas(8, 6).getContext("webgpu");
+    globalThis.lumyteSecondSurfaceContext = new OffscreenCanvas(5, 9).getContext("webgpu");
+    globalThis.lumyteInvalidSurfaceContext = {};
     const runtime = await dotnet.create();
     const exitCode = await runtime.runMain();
     if (exitCode !== 0) {

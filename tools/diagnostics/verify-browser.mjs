@@ -15,6 +15,9 @@ const output = resolve(root, process.argv[2] ?? 'artifacts/test-results/diagnost
 const serverDll = resolve(root, 'artifacts/diagnostics-ui-server/Lumyte.Diagnostics.Server.dll');
 const gameDll = resolve(root, 'samples/Lumyte.Diagnostics.Remote.Sample/bin/Release/net10.0/Lumyte.Diagnostics.Remote.Sample.dll');
 await mkdir(output, { recursive: true });
+await rm(resolve(output, 'gallery.json'), { force: true });
+await rm(resolve(output, 'screenshots'), { recursive: true, force: true });
+await mkdir(resolve(output, 'screenshots'), { recursive: true });
 const profile = await mkdtemp(resolve(tmpdir(), 'lumyte-diagnostics-ui-'));
 const gameToken = randomBytes(32).toString('hex');
 const operatorToken = randomBytes(32).toString('hex');
@@ -49,6 +52,7 @@ let socket;
 let captureFailure = async () => {};
 const errors = [];
 const results = [];
+const screenshots = [];
 try {
     await readFile(serverDll);
     await readFile(gameDll);
@@ -98,10 +102,23 @@ try {
         if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
         return result.result.value;
     }
+    async function capture(id, title, description, page, viewport = 'desktop', fullPage = false) {
+        assert.ok(!screenshots.some(item => item.id === id), `Duplicate gallery screenshot: ${id}`);
+        await evaluate("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
+        const parameters = { captureBeyondViewport: fullPage };
+        if (fullPage) {
+            const { cssContentSize } = await command('Page.getLayoutMetrics');
+            parameters.clip = { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 };
+        }
+        const file = `screenshots/${id}.png`;
+        const image = await command('Page.captureScreenshot', parameters);
+        await writeFile(resolve(output, file), Buffer.from(image.data, 'base64'));
+        screenshots.push({ id, title, description, page, viewport, file });
+    }
     captureFailure = async () => {
         const html = await evaluate("{ const copy = document.documentElement.cloneNode(true); for (const input of copy.querySelectorAll('input')) input.setAttribute('value', '[redacted]'); copy.outerHTML; }");
         await writeFile(resolve(output, 'failure.html'), String(html).replaceAll(gameToken, '[redacted]').replaceAll(operatorToken, '[redacted]'));
-        await command('Page.captureScreenshot').then(result => writeFile(resolve(output, 'failure.png'), Buffer.from(result.data, 'base64')));
+        await command('Page.captureScreenshot').then(result => writeFile(resolve(output, 'screenshots/failure.png'), Buffer.from(result.data, 'base64')));
     };
     async function reload() {
         const previous = navigationCount;
@@ -112,6 +129,7 @@ try {
     await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: origin });
     await waitFor(() => evaluate("Boolean(document.querySelector('#login-form button:not(:disabled)'))"), 'login form');
+    await capture('login', 'ログイン', '診断サーバーが配信するログイン画面です。操作用トークンを入力する前の状態を撮影しています。', 'login');
     await evaluate(`document.getElementById('operator-token').value = ${JSON.stringify(operatorToken)}; document.getElementById('login-form').requestSubmit();`);
     await waitFor(() => evaluate("Boolean(document.getElementById('workspace')) && document.getElementById('workspace').hidden === false"), 'cookie login');
     assert.equal(await evaluate("document.getElementById('operator-token') === null"), true);
@@ -121,29 +139,72 @@ try {
     await waitFor(() => evaluate("Boolean(document.getElementById('workspace')) && document.getElementById('workspace').hidden === false"), 'cookie login after reload');
     for (const transport of ['http', 'magiconion']) {
         const endpoint = transport === 'http' ? httpPort : grpcPort;
-        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '60'], root);
+        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '60'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`) });
         await waitFor(() => evaluate("Array.from(document.querySelectorAll('#game-select option')).filter(option => option.value.length === 36).length === 1"), `${transport} catalog`);
         await evaluate("{ const choice = Array.from(document.querySelectorAll('#game-select option')).find(option => option.value.length === 36); document.getElementById('game-select').value = choice.value; document.getElementById('game-select').dispatchEvent(new Event('change', { bubbles: true })); }");
         await waitFor(() => evaluate("document.querySelector('[data-tab=input]')?.disabled === false"), 'selected game navigation');
+        if (transport === 'http') {
+            await evaluate("document.querySelector('[data-tab=resources]').click()");
+            await waitFor(() => evaluate("document.querySelectorAll('#resource-table fluent-button[data-view=logs]').length === 1"), 'gallery connected resource');
+            await capture('resources', 'Resources — 接続中のゲーム', '接続されたサンプルゲームと、Logs・Traces・Metrics・Operationsへの導線を表示します。', 'resources');
+            await evaluate("document.querySelector('[data-tab=overview]').click()");
+            await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Overview' && Boolean(document.getElementById('recent-events'))"), 'gallery overview');
+            await capture('overview', 'Overview — ゲームの概要', '選択したゲームが公開するサブシステムと操作数、最近受信したイベントを確認できます。', 'overview');
+        }
         await evaluate("document.querySelector('[data-tab=input]').click()");
         await waitFor(() => evaluate("Boolean(document.querySelector('#input-forms form'))"), 'generated Input form');
         await evaluate(`{ const form = document.querySelector('#input-forms form'); form.elements.namedItem('button').value = 'Jump'; form.elements.namedItem('pressed').value = 'true'; form.elements.namedItem('duration-ms').value = '5000'; for (const input of form.querySelectorAll('input,select')) input.dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
         await waitFor(() => evaluate("document.getElementById('operation-result').textContent.includes('\"status\": \"success\"')"), `${transport} operation result`);
         await waitFor(() => logs.get(transport).includes('Input state: Jump=True'), `${transport} input change`);
+        if (transport === 'http') await capture('input-success', 'Input — オーバーライドの実行', '公開カタログから生成されたフォームでJumpを押下し、ゲーム側の入力が変更された後の実行結果です。', 'input');
+        await evaluate("document.querySelector('[data-tab=settings]').click()");
+        await waitFor(() => evaluate("Boolean(document.querySelector('[data-setting-path=\"/output/sampleRate\"]'))"), 'complete settings tree');
+        assert.equal(await evaluate("Boolean(document.querySelector('#settings-page fluent-accordion')) && Boolean(document.querySelector('#settings-page fluent-tree')) && Boolean(document.querySelector('#settings-page fluent-text-input')) && Boolean(document.querySelector('#settings-page fluent-switch'))"), true, 'Fluent UI settings components');
+        assert.equal(await evaluate("{ const rows = [...document.querySelectorAll('.settings-leaf')].map(item => item.getBoundingClientRect()).sort((a, b) => a.top - b.top); rows.every((row, index) => index === 0 || row.top >= rows[index - 1].bottom); }"), true, 'settings tree rows do not overlap');
+        assert.equal(await evaluate("document.querySelector('#settings-logs fluent-accordion-item')?.getAttribute('aria-expanded') === 'true'"), false, 'settings logs collapsed by default');
+        assert.equal(await evaluate("{ const body = document.getElementById('settings-log-body'); const style = getComputedStyle(body); style.resize === 'vertical' && style.overflowY === 'auto' && style.minHeight === '120px' && style.maxHeight !== 'none'; }"), true, 'settings logs have a bounded resizable height');
+        assert.equal(await evaluate("(() => { const body = document.getElementById('settings-log-body'); body.style.height = '360px'; return getComputedStyle(body).height === '360px'; })()"), true, 'settings log height can change');
+        assert.equal(await evaluate("document.fonts.check('12px \\\"Noto Sans CJK JP\\\"', '設定システム')"), true, 'Japanese font installed');
+        assert.equal(await evaluate("Boolean(document.querySelector('[data-setting-path=\"/buses/0/name\"]')) && Boolean(document.querySelector('[data-setting-path=\"/labels/locale\"]'))"), true, 'nested arrays and dictionaries visible');
+        if (transport === 'http') await capture('settings-read', 'Settings — 設定ツリー', '設定モデル全体をオブジェクトと配列のツリーで表示します。設定システムのログは上部で折りたたまれています。', 'settings', 'desktop', true);
+        await evaluate(`{ for (const [path, value] of [['/volume', '0.75'], ['/buses/1/name', '環境効果音']]) { const input = document.querySelector('[data-setting-path="' + path + '"]'); input.value = value; input.dispatchEvent(new Event('change', { bubbles: true })); } document.getElementById('settings-save').click(); }`);
+        await waitFor(() => evaluate("document.getElementById('settings-status')?.textContent.includes('保存しました')"), 'settings tree save');
+        assert.equal(await evaluate("document.querySelector('[data-setting-path=\"/volume\"]')?.value"), '0.75');
+        assert.equal(await evaluate("document.querySelector('[data-setting-path=\"/buses/1/name\"]')?.value"), '環境効果音');
+        if (transport === 'http') await capture('settings-saved', 'Settings — ツリーの保存', 'ツリーで編集したscalarを保存し、ゲーム側の検証・永続化完了後に全体を再読み込みした状態です。', 'settings', 'desktop', true);
+        const persistedSettings = JSON.parse(await readFile(resolve(profile, `${transport}-settings.json`), 'utf8'));
+        assert.equal(persistedSettings.sections.audio.values.volume, 0.75);
+        assert.equal(persistedSettings.sections.audio.values.buses[1].name, '環境効果音');
+        if (transport === 'http') {
+            await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+            assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile settings overflow');
+            await capture('settings-mobile', 'Settings — 狭い画面', '幅390pxでもログ、ツールバー、設定ツリーを横にはみ出さず表示します。', 'settings', 'mobile', true);
+            await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
+        }
         await evaluate("document.querySelector('[data-tab=metrics]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('9007199254740993')"), 'lossless Int64 Metric');
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('settings.operations')"), 'settings Metric');
         await evaluate("document.querySelector('[data-tab=logs]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'Log display');
-        await evaluate("document.querySelector('#event-table td fluent-button').click()");
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Settings save completed with Saved')"), 'settings Log');
+        assert.equal(await evaluate("document.querySelector('#event-table [data-virtualized=true]') !== null && document.querySelector('#event-table .log-search fluent-text-input') !== null"), true, 'shared virtualized log viewer');
+        await evaluate("{ const search = document.querySelector('#event-table .log-search fluent-text-input'); search.value = 'Settings save completed'; search.dispatchEvent(new Event('input', { bubbles: true })); }");
+        await waitFor(() => evaluate("document.querySelectorAll('#event-table .log-row').length === 1 && document.getElementById('event-table').textContent.includes('Settings save completed')"), 'shared log search');
+        await evaluate("{ const search = document.querySelector('#event-table .log-search fluent-text-input'); search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#event-table fluent-switch').click(); }");
+        await waitFor(() => evaluate("document.querySelector('#event-table th')?.textContent === '経過時刻'"), 'log elapsed time toggle');
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Game instance connected')"), 'cleared shared log search');
+        await evaluate("[...document.querySelectorAll('#event-table tr')].find(row => row.textContent.includes('Game instance connected')).querySelector('fluent-button').click()");
         await waitFor(() => evaluate("document.getElementById('event-detail')?.textContent.includes('\"kind\": \"log\"')"), 'log detail');
+        await waitFor(() => evaluate("document.querySelector('#event-table [data-log-structure=true]')?.textContent.includes('log.level')"), 'structured log fields');
         const log = JSON.parse(await evaluate("document.getElementById('event-detail').textContent"));
+        if (transport === 'http') await capture('logs-detail', 'Logs — イベント詳細', 'ゲーム接続と設定処理のログを表示します。選択したログの詳細から、同じTraceのイベントへ移動できます。', 'logs');
         await evaluate("document.querySelector('[data-tab=traces]').click()");
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('remote.start')"), 'Trace display');
-        await evaluate("document.querySelector('#event-table td fluent-button').click()");
+        await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('Settings.save')"), 'settings Trace');
+        await evaluate("[...document.querySelectorAll('#event-table tr')].find(row => row.textContent.includes('remote.start')).querySelector('fluent-button').click()");
         await waitFor(() => evaluate("document.getElementById('event-detail')?.textContent.includes('\"kind\": \"span\"')"), 'span detail');
         const trace = JSON.parse(await evaluate("document.getElementById('event-detail').textContent"));
         assert.equal(trace.traceId, log.traceId);
-        await command('Page.captureScreenshot').then(result => writeFile(resolve(output, `${transport}-desktop.png`), Buffer.from(result.data, 'base64')));
         await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
         assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile overflow');
         await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
@@ -154,7 +215,7 @@ try {
         assert.equal(game.exitCode, 0);
         assert.ok(logs.get(transport).includes('Disconnected: Jump=False'));
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
-        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
+        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsTreeReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, japaneseFont: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
     // Controlled resources exercise the resource-oriented query and navigation model.
     async function gameRequest(method, path, body, secret) {
@@ -200,6 +261,7 @@ try {
     assert.equal(await evaluate("document.getElementById('trace-filter').value"), traceId);
     await reload();
     await waitFor(() => evaluate("Boolean(document.getElementById('event-table')) && document.getElementById('event-table')?.textContent.includes('Child 1')"), 'trace deep link after reload');
+    await capture('traces-hierarchy', 'Traces — Spanの親子関係', '検証用イベントを診断サーバーへ送信し、親Spanと子Spanの階層・処理時間・関連Logsへの導線を表示した実画面です。', 'traces');
     await evaluate("document.querySelector('#trace-summary fluent-button[data-correlated=logs]').click()");
     await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Logs' && document.getElementById('event-table')?.textContent.includes('failure')"), 'Trace to Logs');
     assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('wrong-trace'));
@@ -215,7 +277,7 @@ try {
     await waitFor(() => evaluate("document.getElementById('metric-charts')?.textContent.includes('9223372036854775807')"), 'metric series chart');
     const points = await evaluate("document.querySelector('#metric-charts polyline').getAttribute('points')");
     assert.equal(points, '0,72 150,40 300,8');
-    await command('Page.captureScreenshot').then(result => writeFile(resolve(output, 'aspire-metrics-desktop.png'), Buffer.from(result.data, 'base64')));
+    await capture('metrics-chart', 'Metrics — 観測値の推移', '検証用のInt64メトリックを受信順に表示します。大きな整数でも値を保持したままグラフと一覧で確認できます。', 'metrics');
     await evaluate(`document.getElementById('game-select').value = '${second.sessionId}'; document.getElementById('game-select').dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('[data-tab=logs]').click();`);
     await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('other-resource')"), 'switch resource');
     assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('later-error'));
@@ -239,6 +301,7 @@ try {
     results.push({ scenario: 'blazor-server', signalRWebSocket: true, fluentUiComponents: true, noLegacySse: true, logoutRevokesOtherCircuit: true });
     assert.deepEqual(errors, [], 'browser errors');
     await writeFile(resolve(output, 'results.json'), JSON.stringify(results, null, 2) + '\n');
+    await writeFile(resolve(output, 'gallery.json'), JSON.stringify({ version: 1, capturedAt: new Date().toISOString(), screenshots }, null, 2) + '\n');
     console.log(JSON.stringify({ results, browserErrors: errors.length }));
 } catch (error) {
     await captureFailure().catch(() => {});

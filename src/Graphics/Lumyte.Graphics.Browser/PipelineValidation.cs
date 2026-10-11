@@ -121,60 +121,6 @@ internal static class PipelineValidation
         return new(snapshot, JsonSerializer.Serialize(snapshot, PipelineJsonContext.Default.GraphicsRenderStateDesc));
     }
 
-    internal static void Draw(GraphicsPipelineDesc program, RenderStateSnapshot state, TextureFormat[] formats, IReadOnlyDictionary<uint, string>? fragment, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
-    {
-        PrimitiveTopologyClass topology = state.Desc.Topology switch
-        {
-            PrimitiveTopology.PointList => PrimitiveTopologyClass.Point,
-            PrimitiveTopology.LineList or PrimitiveTopology.LineStrip => PrimitiveTopologyClass.Line,
-            _ => PrimitiveTopologyClass.Triangle,
-        };
-        if (program.TopologyClass != topology || state.Desc.ColorTargets.Count != formats.Length || (fragment == null && formats.Length != 0) ||
-            (state.Desc.StripIndexFormat != null && state.Desc.StripIndexFormat != indexFormat) ||
-            (indexFormat != null && state.Desc.Topology is PrimitiveTopology.LineStrip or PrimitiveTopology.TriangleStrip && state.Desc.StripIndexFormat != indexFormat))
-        {
-            throw new ArgumentException("Program, index topology or color targets do not match the pass.");
-        }
-
-        DepthStencilStateDesc depth = state.Desc.DepthStencil;
-        if (((depth.DepthTestEnable || depth.DepthWriteEnable || depth.StencilTestEnable) && depthFormat == null) ||
-            (depth.StencilTestEnable && depthFormat != TextureFormat.Depth24Stencil8))
-        {
-            throw new ArgumentException("Depth/stencil state requires a compatible attachment.");
-        }
-
-        if (program.AlphaToCoverageEnable || !state.Desc.Rasterization.DepthClipEnable ||
-            state.Desc.Rasterization.DepthBiasClamp != 0 ||
-            (depthFormat == null && (state.Desc.Rasterization.DepthBiasConstant != 0 || state.Desc.Rasterization.DepthBiasSlope != 0)))
-        {
-            throw new NotSupportedException("Requested state requires depth/stencil, MSAA or additional enabled rasterization features.");
-        }
-
-        if (fragment == null)
-        {
-            return;
-        }
-
-        foreach ((uint location, string type) in fragment)
-        {
-            if (location >= (uint)formats.Length || type != "vector:4:scalar:float32")
-            {
-                throw new ArgumentException("Fragment output does not match the color attachment slots.");
-            }
-        }
-    }
-
-    internal static IReadOnlyDictionary<uint, string>? FragmentOutputs(ShaderTargetData? fragment)
-    {
-        if (fragment == null)
-        {
-            return null;
-        }
-
-        using var document = JsonDocument.Parse(fragment.ReflectionJson);
-        return Outputs(document.RootElement.GetProperty("entryPoints")[0], true);
-    }
-
     internal static void Viewport(Viewport v)
     {
         if (!float.IsFinite(v.X) || !float.IsFinite(v.Y) || !float.IsFinite(v.Width) || !float.IsFinite(v.Height) || v.Width <= 0 || v.Height <= 0 ||
