@@ -47,8 +47,30 @@ public sealed class ModuleCollectionTests
     }
 
     /// <summary>Stopping cannot strand cleanup after an uncancelable external startup operation finishes.</summary>
+    /// <returns>The test completion.</returns>
     [Fact]
-    public void QuiescingStartupContextCanFinishCleanup()
+    public async Task QuiescingStartupContextCanFinishCleanupAsync()
+    {
+        // Keep the fixed Host off the pool while awaiting pool-scheduled startup/stop continuations.
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var host = new Thread(() =>
+        {
+            try
+            {
+                RunQuiescingStartupContext();
+                completion.SetResult();
+            }
+            catch (Exception error)
+            {
+                completion.SetException(error);
+            }
+        })
+        { IsBackground = true };
+        host.Start();
+        await completion.Task;
+    }
+
+    private static void RunQuiescingStartupContext()
     {
         var module = new PendingStartupModule();
         var runtime = new ExecutionRuntime([module]);
