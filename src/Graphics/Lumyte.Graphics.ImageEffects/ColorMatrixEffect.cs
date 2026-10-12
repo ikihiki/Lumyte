@@ -37,7 +37,7 @@ public sealed record ColorMatrixEffect : ImageEffectDefinition
 
         EffectImage input = inputs[0];
 
-        ArgumentNullException.ThrowIfNull(this.Matrix);
-        return EffectGpuPass.Append(context, plan, input, input, input.Bounds, new(0, 0, 0, 0), this.Matrix);
+        ArgumentNullException.ThrowIfNull(Matrix);
+        return EffectGpuPass.Append(context, plan, input, input, input.Bounds, new(0, 0, 0, 0), Matrix);
     }
 }

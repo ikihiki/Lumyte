@@ -41,11 +41,11 @@ public sealed record OpacityEffect : ImageEffectDefinition
 
         EffectImage input = inputs[0];
 
-        if (!float.IsFinite(this.Opacity) || this.Opacity < 0 || this.Opacity > 1)
+        if (!float.IsFinite(Opacity) || Opacity < 0 || Opacity > 1)
         {
             throw new ArgumentOutOfRangeException(nameof(inputs));
         }
 
-        return EffectGpuPass.Append(context, plan, input, input, input.Bounds, new(3, 0, 0, this.Opacity));
+        return EffectGpuPass.Append(context, plan, input, input, input.Bounds, new(3, 0, 0, Opacity));
     }
 }
