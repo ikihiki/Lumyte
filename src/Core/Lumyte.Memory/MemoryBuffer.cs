@@ -1,28 +1,29 @@
-using System.Buffers;
+using System.Runtime.CompilerServices;
 
 namespace Lumyte.Memory;
 
-internal sealed class MemoryBuffer<T>(MemoryScope scope, MemoryCharge charge, T[] array, int length, ulong chargedBytes) : IMemoryBuffer<T>
+internal sealed class MemoryBuffer<T>(MemoryScope scope, MemoryChunk<T> chunk, int offset, int length) : IMemoryBuffer<T>, IMemoryAllocation
     where T : unmanaged
 {
-    private T[]? _array = array;
+    private MemoryChunk<T>? _chunk = chunk;
 
-    public int Capacity { get; } = array.Length;
+    public int Capacity => length;
 
-    public ulong ChargedBytes { get; } = chargedBytes;
+    public ulong ChargedBytes => checked((ulong)length * (uint)Unsafe.SizeOf<T>());
 
-    public Memory<T> Memory => (_array ?? throw new ObjectDisposedException(GetType().Name)).AsMemory(0, length);
+    public Memory<T> Memory => (Volatile.Read(ref _chunk) ?? throw new ObjectDisposedException(GetType().Name)).GetMemory(offset, length);
 
-    public void Dispose()
+    public void Dispose() => scope.DisposeAllocation(this);
+
+    public void Release()
     {
-        T[]? returned = Interlocked.Exchange(ref _array, null);
+        MemoryChunk<T>? returned = Interlocked.Exchange(ref _chunk, null);
         if (returned is null)
         {
             return;
         }
 
-        ArrayPool<T>.Shared.Return(returned);
-        charge.Dispose();
+        returned.Release();
         scope.Forget(this);
     }
 }

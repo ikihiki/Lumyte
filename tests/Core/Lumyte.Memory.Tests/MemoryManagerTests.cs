@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Lumyte.Memory.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -29,6 +30,70 @@ public sealed class MemoryManagerTests
 
         charge.Dispose();
         charge.Dispose();
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
+    }
+
+    /// <summary>Returning a committed reservation preserves its charge until the charge or scope is disposed.</summary>
+    /// <returns>Completion of the scope's ownership checks.</returns>
+    [Fact]
+    public async Task DisposedCommittedReservationKeepsChargeOwnedByScopeAsync()
+    {
+        await using MemoryManager manager = CreateManager(100, 100);
+        await using IMemoryScope scope = manager.CreateScope("committed owner");
+        using IMemoryReservation reservation = await scope.ReserveAsync(Request(40));
+        using IMemoryCharge charge = reservation.Commit(new(60, MemoryAccuracy.Estimate));
+
+        reservation.Dispose();
+        reservation.Dispose();
+        Assert.Equal(60UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(60UL, manager.GetSnapshot(_cpu).EstimatedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).ReservedBytes);
+
+        await scope.DisposeAsync();
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).EstimatedBytes);
+        charge.Dispose();
+        charge.Dispose();
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
+    }
+
+    /// <summary>An overflowing commit leaves its reservation pending so callers can retry or return it.</summary>
+    /// <param name="retryCommit">Whether to retry the commit instead of returning the pending reservation.</param>
+    /// <returns>Completion of reservation recovery.</returns>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task FailedCommitPreservesPendingReservationAsync(bool retryCommit)
+    {
+        await using MemoryManager manager = CreateManager(ulong.MaxValue, ulong.MaxValue);
+        await using IMemoryScope scope = manager.CreateScope("overflow recovery");
+        using IMemoryReservation original = await scope.ReserveAsync(Request(1));
+        using IMemoryCharge originalCharge = original.Commit(new(1, MemoryAccuracy.Exact));
+        using IMemoryReservation pending = await scope.ReserveAsync(Request(1));
+
+        Assert.Throws<OverflowException>(() => pending.Commit(new(ulong.MaxValue, MemoryAccuracy.Estimate)));
+        Assert.Equal(1UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(1UL, manager.GetSnapshot(_cpu).ReservedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).EstimatedBytes);
+
+        if (retryCommit)
+        {
+            using IMemoryCharge retried = pending.Commit(new(2, MemoryAccuracy.Estimate));
+            Assert.Equal(3UL, manager.GetSnapshot(_cpu).CommittedBytes);
+            Assert.Equal(2UL, manager.GetSnapshot(_cpu).EstimatedBytes);
+            Assert.Equal(0UL, manager.GetSnapshot(_cpu).ReservedBytes);
+            pending.Dispose();
+            Assert.Equal(3UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        }
+        else
+        {
+            pending.Dispose();
+        }
+
+        Assert.Equal(1UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).ReservedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).EstimatedBytes);
+        originalCharge.Dispose();
         Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
     }
 
@@ -75,7 +140,7 @@ public sealed class MemoryManagerTests
         accepted[0].Dispose();
     }
 
-    /// <summary>A pooled buffer exposes the requested length and charges its actual capacity.</summary>
+    /// <summary>A buffer exposes its slice while the manager accounts for its backing chunk.</summary>
     /// <returns>Completion of buffer disposal.</returns>
     [Fact]
     public async Task RentTracksCapacityAndReturnsWithScopeAsync()
@@ -85,9 +150,9 @@ public sealed class MemoryManagerTests
         IMemoryBuffer<int> buffer = await scope.RentAsync<int>(_cpu, 17, MemoryPurpose.Streaming);
 
         Assert.Equal(17, buffer.Memory.Length);
-        Assert.True(buffer.Capacity >= 17);
+        Assert.Equal(17, buffer.Capacity);
         Assert.Equal(checked((ulong)buffer.Capacity * sizeof(int)), buffer.ChargedBytes);
-        Assert.Equal(buffer.ChargedBytes, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.True(manager.GetSnapshot(_cpu).CommittedBytes >= buffer.ChargedBytes);
 
         await scope.DisposeAsync();
         Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
@@ -95,14 +160,18 @@ public sealed class MemoryManagerTests
         buffer.Dispose();
     }
 
-    /// <summary>A CPU rent whose actual pool capacity exceeds the hard limit is not published or charged.</summary>
-    /// <returns>Completion of the rejected rent.</returns>
+    /// <summary>A chunk falls back to the requested size when the preferred size exceeds the budget.</summary>
+    /// <returns>Completion of the bounded rent.</returns>
     [Fact]
-    public async Task RentRejectsActualCapacityOverBudgetAsync()
+    public async Task RentFallsBackToRequestedCapacityWithinBudgetAsync()
     {
         await using MemoryManager manager = CreateManager(68, 68);
         await using IMemoryScope scope = manager.CreateScope("small");
-        await Assert.ThrowsAsync<MemoryBudgetExceededException>(async () => await scope.RentAsync<int>(_cpu, 17, MemoryPurpose.Build));
+        using IMemoryBuffer<int> buffer = await scope.RentAsync<int>(_cpu, 17, MemoryPurpose.Build);
+        Assert.Equal(17, buffer.Capacity);
+        Assert.Equal(68UL, buffer.ChargedBytes);
+        Assert.Equal(68UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        buffer.Dispose();
         Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
         Assert.Equal(0UL, manager.GetSnapshot(_cpu).ReservedBytes);
     }
@@ -130,6 +199,62 @@ public sealed class MemoryManagerTests
         Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
         Assert.Equal(1, release.Calls);
         Assert.Equal(1, failure.Calls);
+    }
+
+    /// <summary>Reclamation counts released bytes even when an existing reservation commits during the callback.</summary>
+    /// <returns>Completion of the reclamation request.</returns>
+    [Fact]
+    public async Task ReclaimTracksReleasesDespiteConcurrentCommitAsync()
+    {
+        await using MemoryManager manager = CreateManager(100, 100);
+        await using IMemoryScope scope = manager.CreateScope("cache replacement");
+        using IMemoryReservation original = await scope.ReserveAsync(Request(40));
+        using IMemoryCharge originalCharge = original.Commit(new(40, MemoryAccuracy.Exact));
+        using IMemoryReservation replacement = await scope.ReserveAsync(Request(40));
+        using IDisposable registration = manager.RegisterReclaimer(new DelegateReclaimer((_, _, _) =>
+        {
+            replacement.Commit(new(40, MemoryAccuracy.Exact));
+            originalCharge.Dispose();
+            return ValueTask.FromResult(0UL);
+        }));
+
+        Assert.Equal(40UL, await manager.ReclaimAsync(_cpu, 40));
+        Assert.Equal(40UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).ReservedBytes);
+    }
+
+    /// <summary>Active and cancelled queued reclamations release their manager ownership before shutdown.</summary>
+    /// <returns>Completion of both reclamation requests and manager shutdown.</returns>
+    [Fact]
+    public async Task CancelledQueuedReclaimReleasesManagerOwnershipAsync()
+    {
+        await using MemoryManager manager = CreateManager(100, 100);
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using IDisposable registration = manager.RegisterReclaimer(new DelegateReclaimer(async (_, _, _) =>
+        {
+            entered.SetResult();
+            await release.Task;
+            return 0;
+        }));
+        Task<ulong> active = manager.ReclaimAsync(_cpu, 1).AsTask();
+        await entered.Task;
+        registration.Dispose();
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(async () => await manager.DisposeAsync());
+            using CancellationTokenSource cancellation = new();
+            Task<ulong> queued = manager.ReclaimAsync(_cpu, 1, cancellation.Token).AsTask();
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await queued);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await active;
+        }
+
+        await manager.DisposeAsync();
     }
 
     /// <summary>The manager refuses shutdown without losing ownership and succeeds after every owner leaves.</summary>
@@ -161,6 +286,30 @@ public sealed class MemoryManagerTests
         IMemoryManager second = provider.GetRequiredService<IMemoryManager>();
         Assert.Same(first, second);
         Assert.Equal(128UL, first.GetSnapshot(_cpu).HardLimitBytes);
+    }
+
+    /// <summary>DI forwards the configured chunk size to both allocation capacity and budget accounting.</summary>
+    /// <returns>Completion of allocation and provider shutdown.</returns>
+    [Fact]
+    public async Task DependencyInjectionUsesConfiguredChunkCapacityAsync()
+    {
+        ServiceCollection services = new();
+        services.AddMemoryManagement(options =>
+        {
+            options.ChunkSizeBytes = 96;
+            options.SetBudget(_cpu, 1024, 1024);
+        });
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        IMemoryManager manager = provider.GetRequiredService<IMemoryManager>();
+        await using IMemoryScope scope = manager.CreateScope("configured chunk");
+        using IMemoryBuffer<byte> buffer = await scope.RentAsync<byte>(_cpu, 7, MemoryPurpose.Build);
+
+        Assert.True(MemoryMarshal.TryGetArray<byte>(buffer.Memory, out ArraySegment<byte> segment));
+        Assert.NotNull(segment.Array);
+        Assert.Equal(96, segment.Array.Length);
+        Assert.Equal(96UL, manager.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(7, buffer.Capacity);
+        Assert.Equal(7UL, buffer.ChargedBytes);
     }
 
     private static MemoryManager CreateManager(ulong softLimit, ulong hardLimit)

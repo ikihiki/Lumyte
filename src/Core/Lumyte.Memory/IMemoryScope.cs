@@ -12,7 +12,7 @@ public interface IMemoryScope : IAsyncDisposable
     /// <returns>The owned reservation.</returns>
     ValueTask<IMemoryReservation> ReserveAsync(MemoryRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>Rents and charges a typed CPU buffer.</summary>
+    /// <summary>Synchronously rents a typed slice from the calling thread's chunk without allocator locks.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="pool">The charged pool.</param>
     /// <param name="length">The requested element length.</param>

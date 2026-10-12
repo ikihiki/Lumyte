@@ -3,7 +3,7 @@ namespace Lumyte.Memory;
 /// <summary>Contains an immutable snapshot of one pool's tracked usage and budget.</summary>
 public sealed record MemorySnapshot
 {
-    /// <summary>Gets the total committed bytes, including estimates.</summary>
+    /// <summary>Gets total committed bytes, including estimates and the full capacity of each live CPU chunk once.</summary>
     public required ulong CommittedBytes { get; init; }
 
     /// <summary>Gets the total uncommitted reserved bytes.</summary>

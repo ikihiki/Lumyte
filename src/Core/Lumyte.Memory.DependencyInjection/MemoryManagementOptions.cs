@@ -1,9 +1,12 @@
 namespace Lumyte.Memory.DependencyInjection;
 
-/// <summary>Collects immutable pool budgets during dependency injection configuration.</summary>
+/// <summary>Collects pool budgets and CPU chunk sizing during dependency injection configuration.</summary>
 public sealed class MemoryManagementOptions
 {
     private readonly Dictionary<MemoryPoolId, MemoryBudget> _budgets = [];
+
+    /// <summary>Gets or sets the preferred byte capacity of each thread-owned CPU chunk; defaults to 64 KiB.</summary>
+    public int ChunkSizeBytes { get; set; } = 65536;
 
     internal IReadOnlyDictionary<MemoryPoolId, MemoryBudget> Budgets => _budgets;
 

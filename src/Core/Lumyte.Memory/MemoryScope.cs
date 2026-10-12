@@ -1,25 +1,35 @@
-using System.Buffers;
-using System.Runtime.CompilerServices;
+using System.Collections.Immutable;
 
 namespace Lumyte.Memory;
 
 internal sealed class MemoryScope(MemoryManager manager, string owner) : IMemoryScope
 {
-    private readonly object _gate = new();
-    private readonly HashSet<IDisposable> _owned = new(ReferenceEqualityComparer.Instance);
-    private bool _disposed;
+    private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private ScopeState _state = new([], 0, false);
 
     public string Owner { get; } = owner;
 
     public ValueTask<IMemoryReservation> ReserveAsync(MemoryRequest request, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (_gate)
+        EnterOperation();
+        try
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
             MemoryReservation reservation = manager.Reserve(this, request);
-            _owned.Add(reservation);
-            return ValueTask.FromResult<IMemoryReservation>(reservation);
+            try
+            {
+                Track(reservation);
+                return ValueTask.FromResult<IMemoryReservation>(reservation);
+            }
+            catch
+            {
+                reservation.Release();
+                throw;
+            }
+        }
+        finally
+        {
+            ExitOperation();
         }
     }
 
@@ -27,90 +37,166 @@ internal sealed class MemoryScope(MemoryManager manager, string owner) : IMemory
         where T : unmanaged
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (length <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(length));
-        }
-
-        ulong requestedBytes = checked((ulong)length * (uint)Unsafe.SizeOf<T>());
-        MemoryReservation reservation;
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            reservation = manager.Reserve(this, new() { Pool = pool, Bytes = requestedBytes, Purpose = purpose });
-            _owned.Add(reservation);
-        }
-
-        T[]? array = null;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        EnterOperation();
         try
         {
-            array = ArrayPool<T>.Shared.Rent(length);
-            ulong chargedBytes = checked((ulong)array.Length * (uint)Unsafe.SizeOf<T>());
-            MemoryCharge charge = reservation.CommitCore(new(chargedBytes, MemoryAccuracy.Exact), true);
-            var buffer = new MemoryBuffer<T>(this, charge, array, length, chargedBytes);
-            Replace(charge, buffer);
-            return ValueTask.FromResult<IMemoryBuffer<T>>(buffer);
-        }
-        catch
-        {
-            if (array is not null)
+            MemoryPoolState allocationPool = manager.GetAllocationPool(pool);
+            allocationPool.CheckCanRent();
+            MemoryChunk<T> chunk = ThreadMemoryChunks<T>.Rent(allocationPool, length, manager.ChunkSizeBytes, out int offset);
+            MemoryBuffer<T>? buffer = null;
+            try
             {
-                ArrayPool<T>.Shared.Return(array);
+                buffer = new(this, chunk, offset, length);
+                Track(buffer);
+                return ValueTask.FromResult<IMemoryBuffer<T>>(buffer);
             }
+            catch
+            {
+                if (buffer is null)
+                {
+                    chunk.Release();
+                }
+                else
+                {
+                    buffer.Release();
+                }
 
-            reservation.Dispose();
-            throw;
+                throw;
+            }
+        }
+        finally
+        {
+            ExitOperation();
         }
     }
 
     public ValueTask DisposeAsync()
     {
-        IDisposable[] owned;
-        lock (_gate)
+        while (true)
         {
-            if (_disposed)
+            ScopeState previous = Volatile.Read(ref _state);
+            if (previous.Closed)
             {
-                return ValueTask.CompletedTask;
+                return new(_completion.Task);
             }
 
-            _disposed = true;
-            owned = [.. _owned];
-            _owned.Clear();
-        }
+            ScopeState next = previous with { Closed = true };
+            if (!ReferenceEquals(Interlocked.CompareExchange(ref _state, next, previous), previous))
+            {
+                continue;
+            }
 
-        foreach (IDisposable item in owned)
-        {
-            item.Dispose();
-        }
+            if (next.Operations == 0)
+            {
+                Drain(next);
+            }
 
-        manager.ReleaseScope(this);
-        return ValueTask.CompletedTask;
+            return new(_completion.Task);
+        }
     }
 
-    internal void Replace(IDisposable previous, IDisposable next)
+    internal void EnterOperation() => ObjectDisposedException.ThrowIf(!TryEnterOperation(), this);
+
+    internal void ExitOperation()
     {
-        bool dispose;
-        lock (_gate)
+        while (true)
         {
-            _owned.Remove(previous);
-            dispose = _disposed;
-            if (!dispose)
+            ScopeState previous = Volatile.Read(ref _state);
+            ScopeState next = previous with { Operations = previous.Operations - 1 };
+            if (!ReferenceEquals(Interlocked.CompareExchange(ref _state, next, previous), previous))
             {
-                _owned.Add(next);
+                continue;
+            }
+
+            if (next.Closed && next.Operations == 0)
+            {
+                Drain(next);
+            }
+
+            return;
+        }
+    }
+
+    internal void DisposeAllocation(IMemoryAllocation allocation)
+    {
+        // A closed scope already owns the release, including any operation it is draining.
+        if (!TryEnterOperation())
+        {
+            return;
+        }
+
+        try
+        {
+            allocation.Release();
+        }
+        finally
+        {
+            ExitOperation();
+        }
+    }
+
+    internal void Forget(IMemoryAllocation allocation)
+    {
+        while (true)
+        {
+            ScopeState previous = Volatile.Read(ref _state);
+            ScopeState next = previous with { Owned = previous.Owned.Remove(allocation) };
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, next, previous), previous))
+            {
+                return;
             }
         }
-
-        if (dispose)
-        {
-            next.Dispose();
-        }
     }
 
-    internal void Forget(IDisposable item)
+    internal bool TryEnterOperation()
     {
-        lock (_gate)
+        while (true)
         {
-            _owned.Remove(item);
+            ScopeState previous = Volatile.Read(ref _state);
+            if (previous.Closed)
+            {
+                return false;
+            }
+
+            ScopeState next = previous with { Operations = checked(previous.Operations + 1) };
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, next, previous), previous))
+            {
+                return true;
+            }
         }
     }
+
+    private void Track(IMemoryAllocation allocation)
+    {
+        while (true)
+        {
+            ScopeState previous = Volatile.Read(ref _state);
+            ScopeState next = previous with { Owned = previous.Owned.Add(allocation) };
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, next, previous), previous))
+            {
+                return;
+            }
+        }
+    }
+
+    private void Drain(ScopeState closed)
+    {
+        try
+        {
+            foreach (IMemoryAllocation allocation in closed.Owned)
+            {
+                allocation.Release();
+            }
+
+            manager.ReleaseScope(this);
+            _completion.TrySetResult();
+        }
+        catch (Exception error)
+        {
+            _completion.TrySetException(error);
+        }
+    }
+
+    private sealed record ScopeState(ImmutableHashSet<IMemoryAllocation> Owned, int Operations, bool Closed);
 }

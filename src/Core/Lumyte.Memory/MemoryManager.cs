@@ -1,14 +1,14 @@
+using System.Collections.Immutable;
+
 namespace Lumyte.Memory;
 
-/// <summary>Implements scoped budgets with pooled CPU buffers and explicit reclamation.</summary>
+/// <summary>Implements scoped budgets with thread-owned CPU chunks and explicit reclamation.</summary>
 public sealed class MemoryManager : IMemoryManager
 {
-    private readonly object _gate = new();
     private readonly Dictionary<MemoryPoolId, MemoryBudget> _budgets;
-    private readonly Dictionary<MemoryPoolId, PoolState> _pools = [];
-    private readonly HashSet<MemoryScope> _scopes = [];
-    private readonly HashSet<IMemoryReclaimer> _reclaimers = new(ReferenceEqualityComparer.Instance);
-    private bool _disposed;
+    private ImmutableDictionary<MemoryPoolId, MemoryPoolState> _pools = ImmutableDictionary<MemoryPoolId, MemoryPoolState>.Empty;
+    private ReclaimerRegistration[] _reclaimers = [];
+    private int _owners;
 
     /// <summary>Initializes a new instance of the <see cref="MemoryManager"/> class with unlimited pools.</summary>
     public MemoryManager()
@@ -18,9 +18,12 @@ public sealed class MemoryManager : IMemoryManager
 
     /// <summary>Initializes a new instance of the <see cref="MemoryManager"/> class with immutable pool budgets.</summary>
     /// <param name="budgets">The configured per-pool budgets.</param>
-    public MemoryManager(IReadOnlyDictionary<MemoryPoolId, MemoryBudget> budgets)
+    /// <param name="chunkSizeBytes">The preferred byte capacity of each thread-owned CPU chunk.</param>
+    public MemoryManager(IReadOnlyDictionary<MemoryPoolId, MemoryBudget> budgets, int chunkSizeBytes = 65536)
     {
         ArgumentNullException.ThrowIfNull(budgets);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSizeBytes);
+        ChunkSizeBytes = chunkSizeBytes;
         _budgets = new(budgets.Count);
         foreach ((MemoryPoolId pool, MemoryBudget budget) in budgets)
         {
@@ -34,16 +37,21 @@ public sealed class MemoryManager : IMemoryManager
         }
     }
 
+    internal int ChunkSizeBytes { get; }
+
     /// <inheritdoc />
     public IMemoryScope CreateScope(string owner)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(owner);
-        lock (_gate)
+        AcquireOwner();
+        try
         {
-            ThrowIfDisposed();
-            var scope = new MemoryScope(this, owner);
-            _scopes.Add(scope);
-            return scope;
+            return new MemoryScope(this, owner);
+        }
+        catch
+        {
+            ReleaseOwner();
+            throw;
         }
     }
 
@@ -51,25 +59,36 @@ public sealed class MemoryManager : IMemoryManager
     public MemorySnapshot GetSnapshot(MemoryPoolId pool)
     {
         ValidatePool(pool);
-        lock (_gate)
-        {
-            return Snapshot(pool, GetPool(pool));
-        }
+        return GetPool(pool).GetSnapshot();
     }
 
     /// <inheritdoc />
     public IDisposable RegisterReclaimer(IMemoryReclaimer reclaimer)
     {
         ArgumentNullException.ThrowIfNull(reclaimer);
-        lock (_gate)
+        AcquireOwner();
+        try
         {
-            ThrowIfDisposed();
-            if (!_reclaimers.Add(reclaimer))
+            var registration = new ReclaimerRegistration(this, reclaimer);
+            while (true)
             {
-                throw new InvalidOperationException("The memory reclaimer is already registered.");
-            }
+                ReclaimerRegistration[] before = Volatile.Read(ref _reclaimers);
+                if (Array.Exists(before, existing => ReferenceEquals(existing.Reclaimer, reclaimer)))
+                {
+                    throw new InvalidOperationException("The memory reclaimer is already registered.");
+                }
 
-            return new ReclaimerRegistration(this, reclaimer);
+                ReclaimerRegistration[] after = [.. before, registration];
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _reclaimers, after, before), before))
+                {
+                    return registration;
+                }
+            }
+        }
+        catch
+        {
+            ReleaseOwner();
+            throw;
         }
     }
 
@@ -77,208 +96,104 @@ public sealed class MemoryManager : IMemoryManager
     public async ValueTask<ulong> ReclaimAsync(MemoryPoolId pool, ulong targetBytes, CancellationToken cancellationToken = default)
     {
         ValidatePool(pool);
-        if (targetBytes == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(targetBytes));
-        }
-
-        SemaphoreSlim serial;
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            serial = GetPool(pool).ReclaimSerial;
-        }
-
-        await serial.WaitAsync(cancellationToken).ConfigureAwait(false);
-        List<Exception>? failures = null;
-        ulong reclaimed = 0;
+        ArgumentOutOfRangeException.ThrowIfZero(targetBytes);
+        AcquireOwner();
         try
         {
-            IMemoryReclaimer[] reclaimers;
-            lock (_gate)
+            MemoryPoolState state = GetPool(pool);
+            await state.ReclaimSerial.WaitAsync(cancellationToken).ConfigureAwait(false);
+            List<Exception>? failures = null;
+            ulong reclaimed = 0;
+            try
             {
-                ThrowIfDisposed();
-                GetPool(pool).IsReclaiming = true;
-                reclaimers = [.. _reclaimers];
+                state.SetReclaiming(true);
+                ReclaimerRegistration[] reclaimers = Volatile.Read(ref _reclaimers);
+                foreach (ReclaimerRegistration registration in reclaimers)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    ulong before = state.ReleasedBytes;
+                    try
+                    {
+                        await registration.Reclaimer.ReclaimAsync(pool, targetBytes - Math.Min(targetBytes, reclaimed), cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception error)
+                    {
+                        (failures ??= []).Add(error);
+                    }
+
+                    // The cumulative release counter also observes frees obscured by concurrent commits.
+                    reclaimed = checked(reclaimed + unchecked(state.ReleasedBytes - before));
+                    if (reclaimed >= targetBytes)
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                state.SetReclaiming(false);
+                state.ReclaimSerial.Release();
             }
 
-            foreach (IMemoryReclaimer reclaimer in reclaimers)
+            if (failures is not null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                ulong before = Committed(pool);
-                try
-                {
-                    await reclaimer.ReclaimAsync(pool, targetBytes - Math.Min(targetBytes, reclaimed), cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception error)
-                {
-                    (failures ??= []).Add(error);
-                }
-
-                ulong after = Committed(pool);
-                reclaimed = checked(reclaimed + (before > after ? before - after : 0));
-                if (reclaimed >= targetBytes)
-                {
-                    break;
-                }
+                throw new AggregateException("One or more memory reclaimers failed.", failures);
             }
+
+            return reclaimed;
         }
         finally
         {
-            lock (_gate)
-            {
-                GetPool(pool).IsReclaiming = false;
-            }
-
-            serial.Release();
+            ReleaseOwner();
         }
-
-        if (failures is not null)
-        {
-            throw new AggregateException("One or more memory reclaimers failed.", failures);
-        }
-
-        return reclaimed;
     }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
-        lock (_gate)
+        int owners = Interlocked.CompareExchange(ref _owners, -1, 0);
+        if (owners > 0)
         {
-            if (_disposed)
-            {
-                return ValueTask.CompletedTask;
-            }
-
-            if (_scopes.Count != 0 || _reclaimers.Count != 0 || _pools.Values.Any(static state => state.ReservedBytes != 0 || state.CommittedBytes != 0 || state.IsReclaiming))
-            {
-                throw new InvalidOperationException("Dispose all memory scopes, charges, reservations and reclaimer registrations before disposing the manager.");
-            }
-
-            _disposed = true;
-            return ValueTask.CompletedTask;
+            throw new InvalidOperationException("Dispose all memory scopes, charges, reservations and reclaimer registrations before disposing the manager.");
         }
+
+        return ValueTask.CompletedTask;
+    }
+
+    internal MemoryPoolState GetAllocationPool(MemoryPoolId pool)
+    {
+        ValidatePool(pool);
+        ThrowIfDisposed();
+        return GetPool(pool);
     }
 
     internal MemoryReservation Reserve(MemoryScope scope, MemoryRequest request)
     {
         ValidateRequest(request);
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            PoolState state = GetPool(request.Pool);
-            if (state.IsReclaiming)
-            {
-                throw new InvalidOperationException($"Memory pool '{request.Pool}' cannot be reserved from a reclaimer callback.");
-            }
-
-            MemoryBudget budget = GetBudget(request.Pool);
-            if (!Fits(state.CommittedBytes, state.ReservedBytes, request.Bytes, budget.HardLimitBytes))
-            {
-                throw new MemoryBudgetExceededException(request.Pool, request.Bytes, Snapshot(request.Pool, state));
-            }
-
-            state.ReservedBytes = checked(state.ReservedBytes + request.Bytes);
-            return new(this, scope, request);
-        }
+        ThrowIfDisposed();
+        var reservation = new MemoryReservation(this, scope, request);
+        GetPool(request.Pool).Reserve(request.Bytes);
+        return reservation;
     }
 
     internal MemoryCharge Commit(MemoryReservation reservation, MemoryUsage usage, bool enforceHardLimit)
     {
-        lock (_gate)
-        {
-            PoolState state = GetPool(reservation.Request.Pool);
-            ulong remainingReserved = state.ReservedBytes - reservation.Request.Bytes;
-            if (enforceHardLimit && !Fits(state.CommittedBytes, remainingReserved, usage.Bytes, GetBudget(reservation.Request.Pool).HardLimitBytes))
-            {
-                throw new MemoryBudgetExceededException(reservation.Request.Pool, usage.Bytes, Snapshot(reservation.Request.Pool, state));
-            }
-
-            ulong committedBytes = checked(state.CommittedBytes + usage.Bytes);
-            ulong estimatedBytes = usage.Accuracy == MemoryAccuracy.Estimate ? checked(state.EstimatedBytes + usage.Bytes) : state.EstimatedBytes;
-            state.ReservedBytes = remainingReserved;
-            state.CommittedBytes = committedBytes;
-            state.EstimatedBytes = estimatedBytes;
-
-            return new(this, reservation.Request.Pool, usage);
-        }
+        var charge = new MemoryCharge(this, reservation, reservation.Request.Pool, usage);
+        GetPool(reservation.Request.Pool).Commit(reservation.Request.Bytes, usage, enforceHardLimit);
+        return charge;
     }
 
-    internal void ReleaseReservation(MemoryRequest request)
-    {
-        lock (_gate)
-        {
-            PoolState state = GetPool(request.Pool);
-            state.ReservedBytes -= request.Bytes;
-        }
-    }
+    internal void ReleaseReservation(MemoryRequest request) => GetPool(request.Pool).ReleaseReservation(request.Bytes);
 
-    internal void ReleaseCharge(MemoryPoolId pool, MemoryUsage usage)
-    {
-        lock (_gate)
-        {
-            PoolState state = GetPool(pool);
-            state.CommittedBytes -= usage.Bytes;
-            if (usage.Accuracy == MemoryAccuracy.Estimate)
-            {
-                state.EstimatedBytes -= usage.Bytes;
-            }
-        }
-    }
+    internal void ReleaseCharge(MemoryPoolId pool, MemoryUsage usage) => GetPool(pool).ReleaseCharge(usage);
 
-    internal void ReleaseScope(MemoryScope scope)
-    {
-        lock (_gate)
-        {
-            _scopes.Remove(scope);
-        }
-    }
+    internal void ReleaseScope(MemoryScope scope) => ReleaseOwner();
 
-    private bool Fits(ulong committed, ulong reserved, ulong requested, ulong hardLimit)
-        => committed <= hardLimit && reserved <= hardLimit - committed && requested <= hardLimit - committed - reserved;
-
-    private ulong Committed(MemoryPoolId pool)
-    {
-        lock (_gate)
-        {
-            return GetPool(pool).CommittedBytes;
-        }
-    }
-
-    private MemoryBudget GetBudget(MemoryPoolId pool) => _budgets.GetValueOrDefault(pool, MemoryBudget.Unlimited);
-
-    private PoolState GetPool(MemoryPoolId pool)
-    {
-        if (!_pools.TryGetValue(pool, out PoolState? state))
-        {
-            state = new();
-            _pools.Add(pool, state);
-        }
-
-        return state;
-    }
-
-    private MemorySnapshot Snapshot(MemoryPoolId pool, PoolState state)
-    {
-        MemoryBudget budget = GetBudget(pool);
-        bool overBudget = state.CommittedBytes > budget.HardLimitBytes || state.ReservedBytes > budget.HardLimitBytes - Math.Min(state.CommittedBytes, budget.HardLimitBytes);
-        return new()
-        {
-            CommittedBytes = state.CommittedBytes,
-            ReservedBytes = state.ReservedBytes,
-            EstimatedBytes = state.EstimatedBytes,
-            SoftLimitBytes = budget.SoftLimitBytes,
-            HardLimitBytes = budget.HardLimitBytes,
-            IsOverBudget = overBudget,
-        };
-    }
-
-    private void ValidatePool(MemoryPoolId pool)
+    private static void ValidatePool(MemoryPoolId pool)
     {
         if (string.IsNullOrWhiteSpace(pool.Value))
         {
@@ -286,7 +201,7 @@ public sealed class MemoryManager : IMemoryManager
         }
     }
 
-    private void ValidateRequest(MemoryRequest request)
+    private static void ValidateRequest(MemoryRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidatePool(request.Pool);
@@ -296,36 +211,72 @@ public sealed class MemoryManager : IMemoryManager
         }
     }
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
-
-    private sealed class PoolState
+    private MemoryPoolState GetPool(MemoryPoolId pool)
     {
-        internal ulong CommittedBytes { get; set; }
+        MemoryPoolState? candidate = null;
+        while (true)
+        {
+            ImmutableDictionary<MemoryPoolId, MemoryPoolState> before = Volatile.Read(ref _pools);
+            if (before.TryGetValue(pool, out MemoryPoolState? existing))
+            {
+                return existing;
+            }
 
-        internal ulong ReservedBytes { get; set; }
+            candidate ??= new(pool, _budgets.GetValueOrDefault(pool, MemoryBudget.Unlimited));
+            ImmutableDictionary<MemoryPoolId, MemoryPoolState> after = before.Add(pool, candidate);
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _pools, after, before), before))
+            {
+                return candidate;
+            }
+        }
+    }
 
-        internal ulong EstimatedBytes { get; set; }
+    private void AcquireOwner()
+    {
+        while (true)
+        {
+            int before = Volatile.Read(ref _owners);
+            ObjectDisposedException.ThrowIf(before < 0, this);
+            int after = checked(before + 1);
+            if (Interlocked.CompareExchange(ref _owners, after, before) == before)
+            {
+                return;
+            }
+        }
+    }
 
-        internal bool IsReclaiming { get; set; }
+    private void ReleaseOwner() => Interlocked.Decrement(ref _owners);
 
-        internal SemaphoreSlim ReclaimSerial { get; } = new(1, 1);
+    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _owners) < 0, this);
+
+    private void Unregister(ReclaimerRegistration registration)
+    {
+        while (true)
+        {
+            ReclaimerRegistration[] before = Volatile.Read(ref _reclaimers);
+            int index = Array.IndexOf(before, registration);
+            var after = new ReclaimerRegistration[before.Length - 1];
+            Array.Copy(before, 0, after, 0, index);
+            Array.Copy(before, index + 1, after, index, before.Length - index - 1);
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _reclaimers, after, before), before))
+            {
+                ReleaseOwner();
+                return;
+            }
+        }
     }
 
     private sealed class ReclaimerRegistration(MemoryManager owner, IMemoryReclaimer reclaimer) : IDisposable
     {
-        private bool _disposed;
+        private int _disposed;
+
+        internal IMemoryReclaimer Reclaimer { get; } = reclaimer;
 
         public void Dispose()
         {
-            lock (owner._gate)
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
-                owner._reclaimers.Remove(reclaimer);
+                owner.Unregister(this);
             }
         }
     }

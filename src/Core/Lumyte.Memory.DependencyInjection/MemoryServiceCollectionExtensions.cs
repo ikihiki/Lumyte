@@ -7,7 +7,7 @@ public static class MemoryServiceCollectionExtensions
 {
     /// <summary>Registers the standard singleton memory manager.</summary>
     /// <param name="services">The target service collection.</param>
-    /// <param name="configure">An optional immutable budget configuration callback.</param>
+    /// <param name="configure">An optional callback configuring pool budgets and CPU chunk sizing.</param>
     /// <returns>The supplied service collection.</returns>
     public static IServiceCollection AddMemoryManagement(this IServiceCollection services, Action<MemoryManagementOptions>? configure = null)
     {
@@ -15,7 +15,10 @@ public static class MemoryServiceCollectionExtensions
         RejectDuplicate(services);
         var options = new MemoryManagementOptions();
         configure?.Invoke(options);
-        services.AddSingleton<IMemoryManager>(_ => new MemoryManager(options.Budgets));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.ChunkSizeBytes);
+        var budgets = new Dictionary<MemoryPoolId, MemoryBudget>(options.Budgets);
+        int chunkSizeBytes = options.ChunkSizeBytes;
+        services.AddSingleton<IMemoryManager>(_ => new MemoryManager(budgets, chunkSizeBytes));
         return services;
     }
 
