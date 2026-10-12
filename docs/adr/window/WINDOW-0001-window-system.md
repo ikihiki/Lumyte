@@ -148,8 +148,6 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +
 +namespace Lumyte.Windowing;
 +
-+// Platform の WindowId と区別する。Hosted にも割り当て、終了後は再利用しない。
-+public readonly record struct WindowNodeId(Guid SystemId, ulong Value);
 +public readonly record struct WindowNodeRequestId(ulong Value);
 +public enum WindowRole { Normal, Tool, Popup, ContextMenu, ImeCandidates }
 +public enum WindowNodeKind { Native, Hosted }
@@ -157,7 +155,7 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +
 +public sealed record HostedWindowDescriptor
 +{
-+    public required WindowNodeId Parent { get; init; }
++    public required WindowNode Parent { get; init; }
 +    // 親のクライアント座標。有限値、Width / Height は正。
 +    public required WindowRect Bounds { get; init; }
 +    public WindowRole Role { get; init; } = WindowRole.Normal;
@@ -167,13 +165,12 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +// System が生成する不変値。Native の実体と観測は IWindow.State を正とする。
 +public sealed record WindowNodeState
 +{
-+    public WindowNodeId Id { get; init; }
-+    public WindowNodeId? Parent { get; init; }
-+    public WindowNodeId PresentationRoot { get; init; }
++    public WindowNode? Parent { get; init; }
++    public required WindowNode PresentationRoot { get; init; }
 +    public WindowNodeKind Kind { get; init; }
 +    public WindowRole Role { get; init; }
 +    public WindowOwnership Ownership { get; init; }
-+    // Native だけ値を持つ。Hosted の ID を Platform の ID として扱わない。
++    // Native だけ値を持つ。Hosted を Platform の WindowId として扱わない。
 +    public WindowId? NativeWindow { get; init; }
 +    public WindowRect Bounds { get; init; }
 +    public System.Numerics.Vector2 ClientSize { get; init; }
@@ -184,52 +181,55 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +    public WindowLifetime Lifetime { get; init; }
 +}
 +
++public sealed class WindowNode
++{
++    public WindowNodeState State { get; }
++    // Native にのみ許可。Hosted は PresentationRoot.NativeWindow を使う。
++    public IWindow NativeWindow { get; }
++    public IReadOnlyList<WindowNode> GetHostedOrder();
++    public WindowNode? HitTest(System.Numerics.Vector2 point);
++    public WindowNodeRequestId Show();
++    public WindowNodeRequestId Hide();
++    public WindowNodeRequestId Activate();
++    public WindowNodeRequestId BringToFront();
++    public WindowNodeRequestId Place(WindowPlacement placement);
++    public WindowNodeRequestId SetHostedBounds(WindowRect bounds);
++    // Hosted / Owned Native を子から親へ終了する。Borrowed Native は拒否。
++    public WindowNodeRequestId Close();
++    // 借用 Native の登録解除。対象の IWindow は Close / Dispose しない。
++    public WindowNodeRequestId Detach();
++}
++
 +public sealed class WindowSystem : IDisposable
 +{
 +    // Platform を借用。OS 選択や Native Backend の実装は行わない。
 +    public WindowSystem(IPlatform platform);
-+    public IReadOnlyList<WindowNodeState> Windows { get; }
-+    public WindowNodeId? KeyboardTarget { get; }
++    public IReadOnlyList<WindowNode> Windows { get; }
++    public WindowNode? KeyboardTarget { get; }
 +    // IPlatform.CreateWindow の結果を System 所有として登録する。
 +    // descriptor.Owner と Native 親の整合を事前検証する。
-+    public WindowNodeId CreateNativeWindow(
-+        WindowDescriptor descriptor, WindowRole role, WindowNodeId? parent = null);
++    public WindowNode CreateNativeWindow(
++        WindowDescriptor descriptor, WindowRole role, WindowNode? parent = null);
 +    // 同じ Platform の IWindow を明示登録。Owned は登録成功後に所有権移転。
 +    // Borrowed は Close / Dispose せず、利用側が所有し続ける。
-+    public WindowNodeId Attach(IWindow window, WindowRole role, WindowOwnership ownership);
-+    public WindowNodeId CreateHostedWindow(HostedWindowDescriptor descriptor);
-+    public WindowNodeState GetState(WindowNodeId node);
-+    // Native にのみ許可。Hosted なら PresentationRoot を明示して取り直す。
-+    public IWindow GetNativeWindow(WindowNodeId node);
-+    public IReadOnlyList<WindowNodeId> GetHostedOrder(WindowNodeId presentationRoot);
-+    public WindowNodeId? HitTest(WindowNodeId presentationRoot, System.Numerics.Vector2 point);
-+    public WindowNodeRequestId Show(WindowNodeId node);
-+    public WindowNodeRequestId Hide(WindowNodeId node);
-+    public WindowNodeRequestId Activate(WindowNodeId node);
-+    public WindowNodeRequestId BringToFront(WindowNodeId node);
-+    public WindowNodeRequestId Place(WindowNodeId node, WindowPlacement placement);
-+    public WindowNodeRequestId SetHostedBounds(WindowNodeId node, WindowRect bounds);
-+    // Hosted / Owned Native を子から親へ終了する。Borrowed Native は拒否。
-+    public WindowNodeRequestId Close(WindowNodeId node);
-+    // 借用 Native の登録解除。管理下の Owned / Hosted 子は先に終了する。
-+    // 解除対象の IWindow は Close / Dispose しない。
-+    public WindowNodeRequestId Detach(WindowNodeId node);
++    public WindowNode Attach(IWindow window, WindowRole role, WindowOwnership ownership);
++    public WindowNode CreateHostedWindow(HostedWindowDescriptor descriptor);
 +    // Platform 通知と保留管理操作を反映する。PumpEvents を呼ばない。
 +    public void Update();
-+    public event Action<WindowNodeState>? Changed;
-+    public event Action<WindowNodeId>? Removed;
++    public event Action<WindowNode>? Changed;
++    public event Action<WindowNode>? Removed;
 +    public event Action<WindowNodeRequestResult>? RequestCompleted;
 +    // 借用 Native のユーザー終了要求などを利用側の終了方針へ通知する。
-+    public event Action<WindowNodeId>? CloseRequested;
++    public event Action<WindowNode>? CloseRequested;
 +    // 所有 Native と Hosted を解放、借用 Native は購読解除するだけ。
 +    // 保持中の Native は解放せず失敗を報告、解放済みは再試行で重複処理しない。
 +    public void Dispose();
 +}
 +public sealed record WindowNodeRequestResult(
-+    WindowNodeId Node, WindowNodeRequestId Request, WindowRequestStatus Status, string? Error);
++    WindowNode Node, WindowNodeRequestId Request, WindowRequestStatus Status, string? Error);
 ```
 
-SystemId は System ごとに異なる識別子、番号 0 は無効とする。Windowing.Abstractions の WindowId、管理ノード ID、各 RequestId の採番範囲を混同しない。Native の要求結果は `(IWindow.Id, WindowRequestId)` で管理要求へ対応づける。同じ IWindow の重複 Attach、別 Platform、別 System の親、不正役割・数値は ArgumentException 系、終了済みノードは KeyNotFoundException、破棄後は ObjectDisposedException とする。
+WindowNode は生成した WindowSystem に結び付き、内部識別子を公開しない。状態照会と操作は同じ WindowNode から行う。Native の要求結果は `(IWindow.Id, WindowRequestId)` で管理要求へ対応づける。同じ IWindow の重複 Attach、別 Platform、別 System の親、不正役割・数値は ArgumentException 系、終了済みノードの操作は KeyNotFoundException、破棄後は ObjectDisposedException とする。
 
 Native の Role は Normal / Tool / 一時表示をそれぞれ WindowKind.Normal / Tool / Popup に対応させ、一時表示は PreserveFocus を必須とする。異なるポリシーの生成・登録は変更前に拒否する。
 
@@ -279,7 +279,7 @@ Framework と Renderer は観測 PixelSize から Swapchain を明示設定し�
 
 OS の取得は IPlatform.PumpEvents 一回で行い、IWindow の状態と Input Source のキューを同じ取得順で更新する。WindowSystem は入力取得器にならず、既存 InputSystem は独立して利用できる。
 
-最終入力配送先は発生時点の Native、Hosted 構造・座標・フォーカスから決める。更新後の最終状態だけで過去入力を再ヒットテストしない。共通順序を持つ envelope と InputRecord の対応は後続 Input / Platform ADR で具体化する。Platform の WindowId、管理ノード ID、各 System の Sequence を大小比較して統合しない。
+最終入力配送先は発生時点の Native、Hosted 構造・座標・フォーカスから決める。更新後の最終状態だけで過去入力を再ヒットテストしない。共通順序を持つ envelope と InputRecord の対応は後続 Input / Platform ADR で具体化する。Platform の WindowId と各 System の Sequence を大小比較して統合しない。
 
 IME 候補表示はセッションごとに次のどちらか一方とする。
 
@@ -306,7 +306,7 @@ System は Hosted の状態と管理要求を確定し、Native の要求は IWi
 
 ## 結果と影響
 
-Platform と Native の契約は単独で利用でき、複数ウインドウ・Hosted 管理が必要なアプリだけ Windowing を追加できる。Native の操作・通知は Backend が担当し、Windowing は UI の管理方針に集中する。二種類の ID と明示所有権が必要となり、利用側は借用と所有の終了責任を区別する必要がある。
+Platform と Native の契約は単独で利用でき、複数ウインドウ・Hosted 管理が必要なアプリだけ Windowing を追加できる。Native の操作・通知は Backend が担当し、Windowing は UI の管理方針に集中する。利用側は WindowNode オブジェクトと明示所有権を使い、借用と所有の終了責任を区別する必要がある。
 
 Dispose が未処理の管理要求・終了要求を打ち切る場合は Superseded を一度通知する。通知ハンドラーが例外を送出しても他の通知と解放処理を続け、最後に例外を集約する。
 
@@ -315,7 +315,7 @@ Dispose が未処理の管理要求・終了要求を打ち切る場合は Super
 - Windowing.Abstractions の参照 assembly と NuGet の依存閉包に Platform と Windowing 管理実装が含まれない。
 - 偽の IPlatform と直接実装した IWindow を使い、Windowing が Backend 転送 interface を要求しないことを確認する。
 - 単一 Window サンプルが Windowing.Abstractions を参照し、Windowing 管理実装を参照せず、同じ IWindow を任意に Attach / Detach できる。
-- Owned / Borrowed の登録失敗・終了・Dispose、同一 Window の重複、ID の混同と親の不整合を拒否する。
+- Owned / Borrowed の登録失敗・終了・Dispose、同一 Window の重複、別 System の WindowNode と親の不整合を拒否する。
 - Native の状態追従、要求完了の対応づけ、PumpEvents の二重取得防止、Close 延期と子から親の終了を検証する。
 - Hosted の層・部分木・クリップ・ヒットテスト、アンカーの反転・クランプ、DPI を検証する。
 - PreserveFocus、root 切り替え、祖先復帰、外側クリック・Escape の UI 方針、非活性化と一時表示の終了を検証する。

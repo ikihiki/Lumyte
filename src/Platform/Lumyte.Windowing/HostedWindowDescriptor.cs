@@ -6,7 +6,7 @@ namespace Lumyte.Windowing;
 public sealed record HostedWindowDescriptor
 {
     /// <summary>Gets Parent.</summary>
-    public required WindowNodeId Parent { get; init; }
+    public required WindowNode Parent { get; init; }
 
     /// <summary>Gets Bounds.</summary>
     public required WindowRect Bounds { get; init; }

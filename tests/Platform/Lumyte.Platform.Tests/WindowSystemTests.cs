@@ -16,9 +16,9 @@ public sealed class WindowSystemTests
         using var platform = new TestPlatform();
         using IWindow native = platform.CreateWindow(new WindowDescriptor());
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.Attach(native, WindowRole.Normal, WindowOwnership.Borrowed);
-        Assert.Same(native, system.GetNativeWindow(root));
-        WindowNodeRequestId request = system.Detach(root);
+        WindowNode root = system.Attach(native, WindowRole.Normal, WindowOwnership.Borrowed);
+        Assert.Same(native, root.NativeWindow);
+        WindowNodeRequestId request = root.Detach();
         var completed = new List<WindowNodeRequestResult>();
         system.RequestCompleted += completed.Add;
         system.Update();
@@ -38,10 +38,14 @@ public sealed class WindowSystemTests
         using var first = new WindowSystem(platform);
         using var second = new WindowSystem(platform);
         IWindow native = platform.CreateWindow(new WindowDescriptor());
-        first.Attach(native, WindowRole.Normal, WindowOwnership.Borrowed);
+        WindowNode root = first.Attach(native, WindowRole.Normal, WindowOwnership.Borrowed);
         Assert.Throws<ArgumentException>(() => second.Attach(native, WindowRole.Normal, WindowOwnership.Owned));
         Assert.Throws<ArgumentException>(() => first.Attach(other.CreateWindow(new WindowDescriptor()), WindowRole.Normal, WindowOwnership.Borrowed));
-        Assert.Throws<ArgumentException>(() => first.GetState(new WindowNodeId(Guid.NewGuid(), 1)));
+        Assert.Throws<ArgumentException>(() => second.CreateHostedWindow(new HostedWindowDescriptor
+        {
+            Parent = root,
+            Bounds = new WindowRect(0, 0, 10, 10),
+        }));
     }
 
     /// <summary>Checks clipping, layer order and focus preservation for temporary displays.</summary>
@@ -50,33 +54,33 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor { ClientSize = new Vector2(100, 100) }, WindowRole.Normal);
-        system.Show(root);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor { ClientSize = new Vector2(100, 100) }, WindowRole.Normal);
+        root.Show();
         system.Update();
         platform.PumpEvents();
-        system.Activate(root);
+        root.Activate();
         system.Update();
         platform.PumpEvents();
         system.Update();
-        WindowNodeId child = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(80, 80, 50, 50) });
-        WindowNodeId popup = system.CreateHostedWindow(new HostedWindowDescriptor
+        WindowNode child = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(80, 80, 50, 50) });
+        WindowNode popup = system.CreateHostedWindow(new HostedWindowDescriptor
         {
             Parent = child,
             Bounds = new WindowRect(5, 5, 50, 50),
             Role = WindowRole.ContextMenu,
             Activation = WindowActivation.PreserveFocus,
         });
-        system.Show(child);
-        system.Show(popup);
+        child.Show();
+        popup.Show();
         system.Update();
-        Assert.Equal(new[] { child, popup }, system.GetHostedOrder(root));
-        Assert.Equal(popup, system.HitTest(root, new Vector2(90, 90)));
-        Assert.Null(system.HitTest(root, new Vector2(110, 110)));
+        Assert.Equal(new[] { child, popup }, root.GetHostedOrder());
+        Assert.Equal(popup, root.HitTest(new Vector2(90, 90)));
+        Assert.Null(root.HitTest(new Vector2(110, 110)));
         Assert.Equal(root, system.KeyboardTarget);
-        system.Activate(child);
+        child.Activate();
         system.Update();
         Assert.Equal(child, system.KeyboardTarget);
-        system.BringToFront(popup);
+        popup.BringToFront();
         system.Update();
         Assert.Equal(child, system.KeyboardTarget);
         Assert.Throws<ArgumentException>(() => system.CreateHostedWindow(new HostedWindowDescriptor
@@ -93,21 +97,21 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor { ClientSize = new Vector2(100, 100) }, WindowRole.Normal);
-        WindowNodeId popup = system.CreateHostedWindow(new HostedWindowDescriptor
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor { ClientSize = new Vector2(100, 100) }, WindowRole.Normal);
+        WindowNode popup = system.CreateHostedWindow(new HostedWindowDescriptor
         {
             Parent = root,
             Bounds = new WindowRect(0, 0, 30, 20),
             Role = WindowRole.Popup,
             Activation = WindowActivation.PreserveFocus,
         });
-        system.Place(popup, new WindowPlacement(new WindowRect(90, 90, 10, 10), WindowPlacementSide.Below));
+        popup.Place(new WindowPlacement(new WindowRect(90, 90, 10, 10), WindowPlacementSide.Below));
         system.Update();
-        Assert.Equal(new WindowRect(70, 70, 30, 20), system.GetState(popup).Bounds);
-        system.GetNativeWindow(root).Resize(new Vector2(60, 60));
+        Assert.Equal(new WindowRect(70, 70, 30, 20), popup.State.Bounds);
+        root.NativeWindow.Resize(new Vector2(60, 60));
         platform.PumpEvents();
         system.Update();
-        Assert.Equal(new WindowRect(30, 40, 30, 20), system.GetState(popup).Bounds);
+        Assert.Equal(new WindowRect(30, 40, 30, 20), popup.State.Bounds);
     }
 
     /// <summary>Checks physical child closure before parent closure and deferred native retention.</summary>
@@ -116,16 +120,16 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        IWindow parent = system.GetNativeWindow(root);
-        WindowNodeId child = system.CreateNativeWindow(new WindowDescriptor { Owner = parent, Kind = WindowKind.Tool }, WindowRole.Tool, root);
-        IWindow native = system.GetNativeWindow(child);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        IWindow parent = root.NativeWindow;
+        WindowNode child = system.CreateNativeWindow(new WindowDescriptor { Owner = parent, Kind = WindowKind.Tool }, WindowRole.Tool, root);
+        IWindow native = child.NativeWindow;
         using IDisposable retained = native.RetainNativeTarget();
         var completed = new List<WindowNodeRequestResult>();
-        var removed = new List<WindowNodeId>();
+        var removed = new List<WindowNode>();
         system.RequestCompleted += completed.Add;
         system.Removed += removed.Add;
-        WindowNodeRequestId request = system.Close(root);
+        WindowNodeRequestId request = root.Close();
         system.Update();
         platform.PumpEvents();
         system.Update();
@@ -151,17 +155,17 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
         var results = new List<WindowNodeRequestResult>();
         system.RequestCompleted += results.Add;
-        WindowNodeRequestId show = system.Show(root);
+        WindowNodeRequestId show = root.Show();
         system.Update();
         Assert.Empty(results);
-        Assert.False(system.GetState(root).IsVisible);
+        Assert.False(root.State.IsVisible);
         platform.PumpEvents();
         system.Update();
         Assert.Equal(show, Assert.Single(results).Request);
-        Assert.True(system.GetState(root).IsVisible);
+        Assert.True(root.State.IsVisible);
     }
 
     /// <summary>Checks that hidden temporary regions terminate while ordinary children remain.</summary>
@@ -170,33 +174,33 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        WindowNodeId child = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(0, 0, 50, 50) });
-        WindowNodeId popup = system.CreateHostedWindow(new HostedWindowDescriptor
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNode child = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(0, 0, 50, 50) });
+        WindowNode popup = system.CreateHostedWindow(new HostedWindowDescriptor
         {
             Parent = child,
             Bounds = new WindowRect(0, 0, 10, 10),
             Role = WindowRole.Popup,
             Activation = WindowActivation.PreserveFocus,
         });
-        system.Show(root);
-        system.Show(child);
-        system.Show(popup);
+        root.Show();
+        child.Show();
+        popup.Show();
         system.Update();
         platform.PumpEvents();
         system.Update();
-        system.Hide(root);
+        root.Hide();
         system.Update();
         platform.PumpEvents();
         system.Update();
-        Assert.Throws<KeyNotFoundException>(() => system.GetState(popup));
-        Assert.True(system.GetState(child).IsVisible);
-        Assert.False(system.GetState(child).IsEffectivelyVisible);
-        system.Show(root);
+        Assert.Throws<KeyNotFoundException>(() => popup.State);
+        Assert.True(child.State.IsVisible);
+        Assert.False(child.State.IsEffectivelyVisible);
+        root.Show();
         system.Update();
         platform.PumpEvents();
         system.Update();
-        Assert.True(system.GetState(child).IsEffectivelyVisible);
+        Assert.True(child.State.IsEffectivelyVisible);
     }
 
     /// <summary>Checks callback isolation and rejection of reentrant mutation.</summary>
@@ -205,9 +209,9 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
         int observed = 0;
-        system.Changed += _ => system.Show(root);
+        system.Changed += _ => root.Show();
         system.Changed += _ => observed++;
         Assert.Throws<AggregateException>(system.Update);
         Assert.Equal(1, observed);
@@ -220,8 +224,8 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         var system = new WindowSystem(platform);
-        WindowNodeId owned = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        var first = (TestWindow)system.GetNativeWindow(owned);
+        WindowNode owned = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        var first = (TestWindow)owned.NativeWindow;
         first.FailDispose = true;
         var borrowed = (TestWindow)platform.CreateWindow(new WindowDescriptor());
         system.Attach(borrowed, WindowRole.Normal, WindowOwnership.Borrowed);
@@ -240,9 +244,9 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        WindowNodeRequestId show = system.Show(root);
-        WindowNodeRequestId close = system.Close(root);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNodeRequestId show = root.Show();
+        WindowNodeRequestId close = root.Close();
         var completed = new List<WindowNodeRequestResult>();
         system.RequestCompleted += completed.Add;
         system.Dispose();
@@ -258,14 +262,14 @@ public sealed class WindowSystemTests
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
         var native = (TestWindow)platform.CreateWindow(new WindowDescriptor());
-        WindowNodeId root = system.Attach(native, WindowRole.Normal, WindowOwnership.Borrowed);
-        var requests = new List<WindowNodeId>();
+        WindowNode root = system.Attach(native, WindowRole.Normal, WindowOwnership.Borrowed);
+        var requests = new List<WindowNode>();
         system.CloseRequested += requests.Add;
         native.UserClose();
         system.Update();
         Assert.Equal(root, Assert.Single(requests));
         Assert.Equal(WindowLifetime.Open, native.State.Lifetime);
-        Assert.Throws<InvalidOperationException>(() => system.Close(root));
+        Assert.Throws<InvalidOperationException>(() => root.Close());
     }
 
     /// <summary>Checks temporary native policies and denied hosted activation.</summary>
@@ -275,8 +279,8 @@ public sealed class WindowSystemTests
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
         Assert.Throws<ArgumentException>(() => system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Popup));
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        WindowNodeId popup = system.CreateHostedWindow(new HostedWindowDescriptor
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNode popup = system.CreateHostedWindow(new HostedWindowDescriptor
         {
             Parent = root,
             Bounds = new WindowRect(0, 0, 10, 10),
@@ -285,7 +289,7 @@ public sealed class WindowSystemTests
         });
         var results = new List<WindowNodeRequestResult>();
         system.RequestCompleted += results.Add;
-        WindowNodeRequestId request = system.Activate(popup);
+        WindowNodeRequestId request = popup.Activate();
         system.Update();
         Assert.Equal(WindowRequestStatus.Denied, Assert.Single(results, r => r.Request == request).Status);
     }
@@ -296,12 +300,12 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        system.Close(root);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        root.Close();
         Assert.Throws<ArgumentException>(() => system.CreateNativeWindow(
             new WindowDescriptor
             {
-                Owner = system.GetNativeWindow(root),
+                Owner = root.NativeWindow,
                 Kind = WindowKind.Tool,
             },
             WindowRole.Tool,
@@ -314,26 +318,26 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        system.Show(root);
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        root.Show();
         Pump(platform, system);
-        system.Activate(root);
+        root.Activate();
         Pump(platform, system);
-        WindowNodeId focusable = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(0, 0, 100, 100) });
-        WindowNodeId preserving = system.CreateHostedWindow(new HostedWindowDescriptor
+        WindowNode focusable = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = root, Bounds = new WindowRect(0, 0, 100, 100) });
+        WindowNode preserving = system.CreateHostedWindow(new HostedWindowDescriptor
         {
             Parent = focusable,
             Bounds = new WindowRect(0, 0, 90, 90),
             Activation = WindowActivation.PreserveFocus,
         });
-        WindowNodeId target = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = preserving, Bounds = new WindowRect(0, 0, 80, 80) });
-        system.Show(focusable);
-        system.Show(preserving);
-        system.Show(target);
+        WindowNode target = system.CreateHostedWindow(new HostedWindowDescriptor { Parent = preserving, Bounds = new WindowRect(0, 0, 80, 80) });
+        focusable.Show();
+        preserving.Show();
+        target.Show();
         system.Update();
-        system.Activate(target);
+        target.Activate();
         system.Update();
-        system.Close(target);
+        target.Close();
         system.Update();
         Assert.Equal(focusable, system.KeyboardTarget);
     }
@@ -344,17 +348,17 @@ public sealed class WindowSystemTests
     {
         using var platform = new TestPlatform();
         using var system = new WindowSystem(platform);
-        WindowNodeId root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-        WindowNodeId child = system.CreateNativeWindow(
+        WindowNode root = system.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
+        WindowNode child = system.CreateNativeWindow(
             new WindowDescriptor
             {
-                Owner = system.GetNativeWindow(root),
+                Owner = root.NativeWindow,
                 Kind = WindowKind.Tool,
             },
             WindowRole.Tool,
             root);
-        var rootWindow = (TestWindow)system.GetNativeWindow(root);
-        var childWindow = (TestWindow)system.GetNativeWindow(child);
+        var rootWindow = (TestWindow)root.NativeWindow;
+        var childWindow = (TestWindow)child.NativeWindow;
         system.Update();
         rootWindow.Change(rootWindow.State with { Lifetime = WindowLifetime.Closed });
         childWindow.Change(childWindow.State with { Lifetime = WindowLifetime.Closed });

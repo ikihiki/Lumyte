@@ -5,14 +5,11 @@ namespace Lumyte.Windowing;
 /// <summary>Defines WindowNodeState.</summary>
 public sealed record WindowNodeState
 {
-    /// <summary>Gets Id.</summary>
-    public WindowNodeId Id { get; init; }
-
     /// <summary>Gets Parent.</summary>
-    public WindowNodeId? Parent { get; init; }
+    public WindowNode? Parent { get; init; }
 
     /// <summary>Gets PresentationRoot.</summary>
-    public WindowNodeId PresentationRoot { get; init; }
+    public required WindowNode PresentationRoot { get; init; }
 
     /// <summary>Gets Kind.</summary>
     public WindowNodeKind Kind { get; init; }

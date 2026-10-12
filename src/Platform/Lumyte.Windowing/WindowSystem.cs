@@ -6,6 +6,7 @@ using Lumyte.Windowing.Abstractions;
 namespace Lumyte.Windowing;
 
 /// <summary>Optionally manages native windows and hosted display regions on one thread.</summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "SA1202", Justification = "The public object API delegates to internal identifier operations.")]
 public sealed class WindowSystem : IDisposable
 {
     private static readonly ConditionalWeakTable<IWindow, WindowSystem> _registrations = new();
@@ -14,7 +15,7 @@ public sealed class WindowSystem : IDisposable
     private readonly Guid _id = Guid.NewGuid();
     private readonly Dictionary<WindowNodeId, Node> _nodes = [];
     private readonly Queue<Action> _pending = new();
-    private readonly Dictionary<WindowNodeRequestId, WindowNodeId> _outstanding = [];
+    private readonly Dictionary<WindowNodeRequestId, WindowNode> _outstanding = [];
     private readonly Queue<Action> _nativeEvents = new();
     private readonly Dictionary<(WindowId, WindowRequestId), (WindowNodeId, WindowNodeRequestId)> _requests = [];
     private readonly List<Termination> _terminations = [];
@@ -36,34 +37,34 @@ public sealed class WindowSystem : IDisposable
     }
 
     /// <summary>Occurs after a managed state changes.</summary>
-    public event Action<WindowNodeState>? Changed;
+    public event Action<WindowNode>? Changed;
 
     /// <summary>Occurs after a node is unregistered.</summary>
-    public event Action<WindowNodeId>? Removed;
+    public event Action<WindowNode>? Removed;
 
     /// <summary>Occurs once for each completed management request.</summary>
     public event Action<WindowNodeRequestResult>? RequestCompleted;
 
     /// <summary>Asks the owner of a borrowed native window to close or detach it.</summary>
-    public event Action<WindowNodeId>? CloseRequested;
+    public event Action<WindowNode>? CloseRequested;
 
     /// <summary>Gets immutable snapshots of the managed windows.</summary>
-    public IReadOnlyList<WindowNodeState> Windows
+    public IReadOnlyList<WindowNode> Windows
     {
         get
         {
             Check();
-            return Array.AsReadOnly(_nodes.Values.Select(Snapshot).ToArray());
+            return Array.AsReadOnly(_nodes.Values.Select(node => node.Handle).ToArray());
         }
     }
 
     /// <summary>Gets the logical keyboard target in the active native window.</summary>
-    public WindowNodeId? KeyboardTarget
+    public WindowNode? KeyboardTarget
     {
         get
         {
             Check();
-            return _keyboardTarget;
+            return _keyboardTarget is { } id ? GetNode(id).Handle : null;
         }
     }
 
@@ -71,14 +72,14 @@ public sealed class WindowSystem : IDisposable
     /// <param name="descriptor">Native creation options.</param>
     /// <param name="role">The management role.</param>
     /// <param name="parent">The registered native owner, if present.</param>
-    /// <returns>The new management identifier.</returns>
-    public WindowNodeId CreateNativeWindow(WindowDescriptor descriptor, WindowRole role, WindowNodeId? parent = null)
+    /// <returns>The managed window object.</returns>
+    public WindowNode CreateNativeWindow(WindowDescriptor descriptor, WindowRole role, WindowNode? parent = null)
     {
         CheckMutation();
         ArgumentNullException.ThrowIfNull(descriptor);
         ValidateRole(role);
         ValidateNativeRole(role, descriptor.Kind, descriptor.Activation);
-        IWindow? owner = parent is { } id ? GetNativeWindow(id) : null;
+        IWindow? owner = parent is not null ? GetNativeWindow(parent.Id) : null;
         if (!ReferenceEquals(owner, descriptor.Owner))
         {
             throw new ArgumentException("Parent must match the descriptor's native owner.", nameof(parent));
@@ -100,8 +101,8 @@ public sealed class WindowSystem : IDisposable
     /// <param name="window">The open native window on this platform.</param>
     /// <param name="role">The management role.</param>
     /// <param name="ownership">Whether ownership transfers after successful registration.</param>
-    /// <returns>The management identifier.</returns>
-    public WindowNodeId Attach(IWindow window, WindowRole role, WindowOwnership ownership)
+    /// <returns>The managed window object.</returns>
+    public WindowNode Attach(IWindow window, WindowRole role, WindowOwnership ownership)
     {
         CheckMutation();
         ArgumentNullException.ThrowIfNull(window);
@@ -130,7 +131,7 @@ public sealed class WindowSystem : IDisposable
         }
 
         var id = new WindowNodeId(_id, checked(++_nextNode));
-        var node = new Node(id, parent, role, ownership, window.State.Activation, checked(++_nextOrder)) { Native = window };
+        var node = new Node(this, id, parent, role, ownership, window.State.Activation, checked(++_nextOrder)) { Native = window };
         node.Observed = window.State;
         node.WasActive = window.State.IsActive;
         node.StateHandler = state => _nativeEvents.Enqueue(() => NativeChanged(node, state));
@@ -147,17 +148,17 @@ public sealed class WindowSystem : IDisposable
         window.RequestCompleted += node.ResultHandler;
         window.Closing += node.ClosingHandler;
         _nativeEvents.Enqueue(() => Publish(node));
-        return id;
+        return node.Handle;
     }
 
     /// <summary>Creates a hosted region on its nearest native ancestor's presentation target.</summary>
     /// <param name="descriptor">The parent, bounds and interaction policy.</param>
-    /// <returns>The new management identifier.</returns>
-    public WindowNodeId CreateHostedWindow(HostedWindowDescriptor descriptor)
+    /// <returns>The managed window object.</returns>
+    public WindowNode CreateHostedWindow(HostedWindowDescriptor descriptor)
     {
         CheckMutation();
         ArgumentNullException.ThrowIfNull(descriptor);
-        Node parent = GetNode(descriptor.Parent);
+        Node parent = GetNode(descriptor.Parent.Id);
         ValidateBounds(descriptor.Bounds);
         ValidateRole(descriptor.Role);
         if (!Enum.IsDefined(descriptor.Activation) || Layer(descriptor.Role) < Layer(parent.Role) || Snapshot(parent).Lifetime != WindowLifetime.Open || Root(parent).Native!.State.Lifetime != WindowLifetime.Open
@@ -172,42 +173,42 @@ public sealed class WindowSystem : IDisposable
         }
 
         var id = new WindowNodeId(_id, checked(++_nextNode));
-        var node = new Node(id, parent.Id, descriptor.Role, WindowOwnership.Owned, descriptor.Activation, checked(++_nextOrder))
+        var node = new Node(this, id, parent.Id, descriptor.Role, WindowOwnership.Owned, descriptor.Activation, checked(++_nextOrder))
         {
             Bounds = descriptor.Bounds,
         };
         _nodes.Add(id, node);
         _nativeEvents.Enqueue(() => Publish(node));
-        return id;
+        return node.Handle;
     }
 
     /// <summary>Returns an immutable observation of a node.</summary>
     /// <param name="node">The management identifier.</param>
     /// <returns>The current snapshot.</returns>
-    public WindowNodeState GetState(WindowNodeId node) => Snapshot(GetNode(node));
+    internal WindowNodeState GetState(WindowNodeId node) => Snapshot(GetNode(node));
 
     /// <summary>Borrows a native window for backend-specific operations.</summary>
     /// <param name="node">A native management identifier.</param>
     /// <returns>The original native object.</returns>
-    public IWindow GetNativeWindow(WindowNodeId node) => GetNode(node).Native
-        ?? throw new ArgumentException("Hosted regions do not implement IWindow.", nameof(node));
+    internal IWindow GetNativeWindow(WindowNodeId node) => GetNode(node).Native
+        ?? throw new InvalidOperationException("Hosted regions do not implement IWindow.");
 
     /// <summary>Returns back-to-front hosted order for one presentation target.</summary>
     /// <param name="presentationRoot">A native node.</param>
     /// <returns>An immutable sequence of hosted identifiers.</returns>
-    public IReadOnlyList<WindowNodeId> GetHostedOrder(WindowNodeId presentationRoot)
+    internal IReadOnlyList<WindowNode> GetHostedOrder(WindowNodeId presentationRoot)
     {
         Node root = GetNode(presentationRoot);
         _ = GetNativeWindow(root.Id);
         return Array.AsReadOnly(_nodes.Values.Where(n => n.Native is null && Root(n).Id == root.Id)
-            .OrderBy(n => Layer(n.Role)).ThenBy(n => n.Order).Select(n => n.Id).ToArray());
+            .OrderBy(n => Layer(n.Role)).ThenBy(n => n.Order).Select(n => n.Handle).ToArray());
     }
 
     /// <summary>Finds the frontmost visible region using native client coordinates.</summary>
     /// <param name="presentationRoot">The native presentation target.</param>
     /// <param name="point">A point in logical client coordinates.</param>
     /// <returns>The target, or null outside the visible target.</returns>
-    public WindowNodeId? HitTest(WindowNodeId presentationRoot, Vector2 point)
+    internal WindowNode? HitTest(WindowNodeId presentationRoot, Vector2 point)
     {
         Node root = GetNode(presentationRoot);
         if (!float.IsFinite(point.X) || !float.IsFinite(point.Y))
@@ -220,22 +221,22 @@ public sealed class WindowSystem : IDisposable
             return null;
         }
 
-        foreach (WindowNodeId id in GetHostedOrder(presentationRoot).Reverse())
+        foreach (WindowNode handle in GetHostedOrder(presentationRoot).Reverse())
         {
-            Node node = GetNode(id);
+            Node node = GetNode(handle.Id);
             if (Snapshot(node).IsEffectivelyVisible && Contains(Clip(node), point))
             {
-                return id;
+                return handle;
             }
         }
 
-        return root.Id;
+        return root.Handle;
     }
 
     /// <summary>Requests visibility.</summary>
     /// <param name="node">The target.</param>
     /// <returns>The management request identifier.</returns>
-    public WindowNodeRequestId Show(WindowNodeId node) => Submit(node, n =>
+    internal WindowNodeRequestId Show(WindowNodeId node) => Submit(node, n =>
     {
         n.Visible = true;
         return n.Native?.Show();
@@ -244,7 +245,7 @@ public sealed class WindowSystem : IDisposable
     /// <summary>Hides a node and ends temporary child displays.</summary>
     /// <param name="node">The target.</param>
     /// <returns>The management request identifier.</returns>
-    public WindowNodeRequestId Hide(WindowNodeId node) => Submit(node, n =>
+    internal WindowNodeRequestId Hide(WindowNodeId node) => Submit(node, n =>
     {
         n.Visible = false;
         EndTemporaryChildren(n);
@@ -254,7 +255,7 @@ public sealed class WindowSystem : IDisposable
     /// <summary>Activates an eligible native or hosted target.</summary>
     /// <param name="node">The target.</param>
     /// <returns>The management request identifier.</returns>
-    public WindowNodeRequestId Activate(WindowNodeId node) => Submit(node, n =>
+    internal WindowNodeRequestId Activate(WindowNodeId node) => Submit(node, n =>
     {
         if (n.Activation == WindowActivation.PreserveFocus || !Snapshot(n).IsEffectivelyVisible)
         {
@@ -278,7 +279,7 @@ public sealed class WindowSystem : IDisposable
     /// <summary>Raises a native window or a hosted subtree within its layer.</summary>
     /// <param name="node">The target.</param>
     /// <returns>The management request identifier.</returns>
-    public WindowNodeRequestId BringToFront(WindowNodeId node) => Submit(node, n =>
+    internal WindowNodeRequestId BringToFront(WindowNodeId node) => Submit(node, n =>
     {
         foreach (Node item in Subtree(n).Reverse())
         {
@@ -292,7 +293,7 @@ public sealed class WindowSystem : IDisposable
     /// <param name="node">The target.</param>
     /// <param name="placement">An anchor in parent coordinates.</param>
     /// <returns>The management request identifier.</returns>
-    public WindowNodeRequestId Place(WindowNodeId node, WindowPlacement placement)
+    internal WindowNodeRequestId Place(WindowNodeId node, WindowPlacement placement)
     {
         ArgumentNullException.ThrowIfNull(placement);
         ValidateBounds(placement.Anchor);
@@ -318,7 +319,7 @@ public sealed class WindowSystem : IDisposable
     /// <param name="node">The hosted target.</param>
     /// <param name="bounds">Positive finite bounds in parent coordinates.</param>
     /// <returns>The management request identifier.</returns>
-    public WindowNodeRequestId SetHostedBounds(WindowNodeId node, WindowRect bounds)
+    internal WindowNodeRequestId SetHostedBounds(WindowNodeId node, WindowRect bounds)
     {
         ValidateBounds(bounds);
         if (GetNode(node).Native is not null)
@@ -337,12 +338,12 @@ public sealed class WindowSystem : IDisposable
     /// <summary>Closes an owned subtree from children to parents.</summary>
     /// <param name="node">The subtree root.</param>
     /// <returns>A request completed after physical closure.</returns>
-    public WindowNodeRequestId Close(WindowNodeId node) => Terminate(node, false);
+    internal WindowNodeRequestId Close(WindowNodeId node) => Terminate(node, false);
 
     /// <summary>Detaches a borrowed native subtree, ending owned children first.</summary>
     /// <param name="node">A borrowed native root.</param>
     /// <returns>A request completed after unregistration.</returns>
-    public WindowNodeRequestId Detach(WindowNodeId node) => Terminate(node, true);
+    internal WindowNodeRequestId Detach(WindowNodeId node) => Terminate(node, true);
 
     /// <summary>Processes observations and management requests without pumping OS events.</summary>
     public void Update()
@@ -421,9 +422,9 @@ public sealed class WindowSystem : IDisposable
             _disposed = _nodes.Count == 0;
             if (_disposed)
             {
-                foreach ((WindowNodeRequestId request, WindowNodeId node) in _outstanding.ToArray())
+                foreach ((WindowNodeRequestId request, WindowNode node) in _outstanding.ToArray())
                 {
-                    Complete(node, request, WindowRequestStatus.Superseded);
+                    Complete(node.Id, request, WindowRequestStatus.Superseded);
                 }
 
                 _pending.Clear();
@@ -541,9 +542,8 @@ public sealed class WindowSystem : IDisposable
 
         return new WindowNodeState
         {
-            Id = node.Id,
-            Parent = node.Parent,
-            PresentationRoot = root.Id,
+            Parent = node.Parent is { } parent ? GetNode(parent).Handle : null,
+            PresentationRoot = root.Handle,
             Kind = node.Native is null ? WindowNodeKind.Hosted : WindowNodeKind.Native,
             Role = node.Role,
             Ownership = node.Ownership,
@@ -730,7 +730,7 @@ public sealed class WindowSystem : IDisposable
 
         if (node.Ownership == WindowOwnership.Borrowed || Subtree(node).Any(n => n.Ownership == WindowOwnership.Borrowed))
         {
-            Notify(CloseRequested, node.Id);
+            Notify(CloseRequested, node.Handle);
             return;
         }
 
@@ -753,7 +753,7 @@ public sealed class WindowSystem : IDisposable
             if (child.Ownership == WindowOwnership.Borrowed)
             {
                 child.Native!.Hide();
-                Notify(CloseRequested, child.Id);
+                Notify(CloseRequested, child.Handle);
             }
             else if (Subtree(child).All(n => n.Ownership == WindowOwnership.Owned))
             {
@@ -852,7 +852,7 @@ public sealed class WindowSystem : IDisposable
         }
 
         _nodes.Remove(node.Id);
-        Notify(Removed, node.Id);
+        Notify(Removed, node.Handle);
     }
 
     private WindowNodeId? ClosestFocusableAncestor(WindowNodeId? ancestor)
@@ -898,22 +898,22 @@ public sealed class WindowSystem : IDisposable
         if (snapshot != node.Last)
         {
             node.Last = snapshot;
-            Notify(Changed, snapshot);
+            Notify(Changed, node.Handle);
         }
     }
 
     private WindowNodeRequestId Issue(WindowNodeId node)
     {
         var request = new WindowNodeRequestId(checked(++_nextRequest));
-        _outstanding.Add(request, node);
+        _outstanding.Add(request, GetNode(node).Handle);
         return request;
     }
 
     private void Complete(WindowNodeId node, WindowNodeRequestId request, WindowRequestStatus status, string? error = null)
     {
-        if (_outstanding.Remove(request))
+        if (_outstanding.Remove(request, out WindowNode? target))
         {
-            Notify(RequestCompleted, new WindowNodeRequestResult(node, request, status, error));
+            Notify(RequestCompleted, new WindowNodeRequestResult(target, request, status, error));
         }
     }
 
@@ -970,9 +970,11 @@ public sealed class WindowSystem : IDisposable
         }
     }
 
-    private sealed class Node(WindowNodeId id, WindowNodeId? parent, WindowRole role, WindowOwnership ownership, WindowActivation activation, ulong order)
+    private sealed class Node(WindowSystem system, WindowNodeId id, WindowNodeId? parent, WindowRole role, WindowOwnership ownership, WindowActivation activation, ulong order)
     {
         public WindowNodeId Id { get; } = id;
+
+        public WindowNode Handle { get; } = new(system, id);
 
         public WindowNodeId? Parent { get; } = parent;
 
