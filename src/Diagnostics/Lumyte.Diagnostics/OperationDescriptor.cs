@@ -7,5 +7,7 @@ namespace Lumyte.Diagnostics;
 /// <param name="Arguments">The Arguments argument.</param>
 /// <param name="Results">The Results argument.</param>
 /// <param name="RequiresRevision">The RequiresRevision argument.</param>
+/// <param name="Traffic">The trusted scheduling and retention class.</param>
 public sealed record OperationDescriptor(
-    string Id, string DisplayName, DiagnosticPermission RequiredPermission, DiagnosticField[] Arguments, DiagnosticField[] Results, bool RequiresRevision = false);
+    string Id, string DisplayName, DiagnosticPermission RequiredPermission, DiagnosticField[] Arguments, DiagnosticField[] Results,
+    bool RequiresRevision = false, DiagnosticOperationTraffic Traffic = DiagnosticOperationTraffic.Standard);

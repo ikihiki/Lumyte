@@ -6,6 +6,21 @@ internal sealed class TestDevice : IGraphicDevice
 {
     private int _allocations;
 
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add
+        {
+        }
+
+        remove
+        {
+        }
+    }
+
+    public GraphicsDeviceStatus Status => GraphicsDeviceStatus.Ready;
+
+    public GraphicsDeviceLoss? Loss => null;
+
     public DeviceCaps Caps => throw new NotSupportedException();
 
     public IGraphicsQueue Queue => throw new NotSupportedException();
@@ -17,6 +32,8 @@ internal sealed class TestDevice : IGraphicDevice
     internal int Textures { get; private set; }
 
     internal int Buffers { get; private set; }
+
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default) => throw new InvalidOperationException();
 
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {

@@ -13,7 +13,7 @@ internal sealed class DiagnosticOperationForm(OperationDescriptor operation)
     {
         Dictionary<string, DiagnosticValue> arguments = operation.Arguments.ToDictionary(field => field.Id, field => Parse(field, Values[field.Id]), StringComparer.Ordinal);
         long? revision = operation.RequiresRevision ? Parse(new("expected-revision", DiagnosticValueKind.Int64), Revision).Int64 : null;
-        return new(Guid.NewGuid(), subsystemId, operation.Id, arguments, revision, 5000);
+        return new(Guid.NewGuid(), subsystemId, operation.Id, arguments, revision, operation.Traffic == DiagnosticOperationTraffic.Stream ? 1000 : 5000);
     }
 
     internal static DiagnosticValue Parse(DiagnosticField field, string raw)

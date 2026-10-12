@@ -142,7 +142,7 @@ try {
         const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '120'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`), LUMYTE_DIAGNOSTICS_RENDER_GRAPH: '1', LUMYTE_DIAGNOSTICS_ANIMATION: '1' });
         await waitFor(() => evaluate("Array.from(document.querySelectorAll('#game-select option')).filter(option => option.value.length === 36).length === 1"), `${transport} catalog`);
         await evaluate("{ const choice = Array.from(document.querySelectorAll('#game-select option')).find(option => option.value.length === 36); document.getElementById('game-select').value = choice.value; document.getElementById('game-select').dispatchEvent(new Event('change', { bubbles: true })); }");
-        await waitFor(() => evaluate("document.querySelector('[data-tab=input]')?.disabled === false"), 'selected game navigation');
+        await waitFor(() => evaluate("Boolean(document.querySelector('[data-tab=input]:not([disabled])'))"), 'selected game navigation');
         if (transport === 'http') {
             await evaluate("document.querySelector('[data-tab=resources]').click()");
             await waitFor(() => evaluate("document.querySelectorAll('#resource-table fluent-button[data-view=logs]').length === 1"), 'gallery connected resource');
@@ -152,9 +152,12 @@ try {
             await capture('overview', 'Overview — ゲームの概要', '選択したゲームが公開するサブシステムと操作数、最近受信したイベントを確認できます。', 'overview');
         }
         await evaluate("document.querySelector('[data-tab=input]').click()");
+        await waitFor(() => evaluate("Boolean(document.getElementById('input-page'))"), 'Input diagnostic page');
+        await waitFor(() => evaluate("document.getElementById('input-status')?.textContent.includes('Inputスナップショット操作を公開していません')"), 'unsupported Input snapshot status');
+        await evaluate("document.querySelector('[data-input-view=tape]').click()");
         await waitFor(() => evaluate("Boolean(document.querySelector('#input-forms form'))"), 'generated Input form');
         await evaluate(`{ const form = document.querySelector('#input-forms form'); form.elements.namedItem('button').value = 'Jump'; form.elements.namedItem('pressed').value = 'true'; form.elements.namedItem('duration-ms').value = '5000'; for (const input of form.querySelectorAll('input,select')) input.dispatchEvent(new Event('change', { bubbles: true })); form.requestSubmit(); }`);
-        await waitFor(() => evaluate("document.getElementById('operation-result').textContent.includes('\"status\": \"success\"')"), `${transport} operation result`);
+        await waitFor(() => evaluate("document.getElementById('operation-result')?.textContent.includes('\"status\": \"success\"') === true"), `${transport} operation result`);
         await waitFor(() => logs.get(transport).includes('Input state: Jump=True'), `${transport} input change`);
         if (transport === 'http') await capture('input-success', 'Input — オーバーライドの実行', '公開カタログから生成されたフォームでJumpを押下し、ゲーム側の入力が変更された後の実行結果です。', 'input');
         await evaluate("document.querySelector('[data-tab=settings]').click()");

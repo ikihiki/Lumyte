@@ -133,6 +133,38 @@ fluent-button.danger::part(control) { color: #9c3329; }
 .log-structure dd { font: 11px/1.5 ui-monospace, monospace; }
 @media (max-width: 640px) { .log-viewer-toolbar { align-items: stretch; flex-direction: column; } .log-structure dl { grid-template-columns: 1fr; } .log-structure dd { border-top: 0; padding-top: 0; } }
 
+.input-toolbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 12px; background: color-mix(in srgb, var(--paper) 92%, transparent); }
+.input-view-tabs { display: flex; gap: 4px; flex: 1; }
+.input-view-tabs fluent-button[aria-current]::part(control) { color: var(--accent); background: #e2eee2; }
+.input-system-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 24px; }
+.input-system-heading h2 { margin-bottom: 4px; }
+.input-system-heading span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.input-device-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.input-device { padding: 16px; min-width: 0; }
+.input-device-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.input-device-heading h2 { margin: 0 0 3px; }
+.input-device-heading span { color: var(--muted); font-size: 11px; }
+.input-state { padding: 4px 7px; border-radius: 999px; background: #edf0eb; white-space: nowrap; }
+.input-state.connected { color: #17633d; background: #dff3e5; }
+.input-state.disconnected { color: #8a352c; background: #f9e4e1; }
+.key-grid { display: flex; flex-wrap: wrap; gap: 5px; min-height: 34px; }
+.key-grid span { padding: 5px 8px; border: 1px solid #8bb99a; border-radius: 5px; background: #e5f3e9; font: 11px ui-monospace, monospace; }
+.pointer-pad { position: relative; height: 120px; border: 1px solid var(--line); border-radius: 6px; background: linear-gradient(90deg, transparent 49.5%, var(--line) 50%, transparent 50.5%), linear-gradient(transparent 49.5%, var(--line) 50%, transparent 50.5%); overflow: hidden; }
+.pointer-pad span { position: absolute; width: 11px; height: 11px; transform: translate(-50%, -50%); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px #fff8; }
+.controller-sticks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.controller-sticks div { text-align: center; font: 10px ui-monospace, monospace; }
+.controller-sticks svg { display: block; width: 100%; max-height: 120px; }
+.stick-range { fill: #f4f7f2; stroke: var(--line); stroke-width: 2; }
+.controller-sticks line { stroke: var(--accent); stroke-width: 3; }
+.stick-value { fill: var(--accent); }
+.trigger-list label { display: grid; grid-template-columns: 80px 1fr 38px; gap: 7px; align-items: center; margin: 5px 0; }
+.trigger-list progress, .pointer-row progress { width: 100%; accent-color: var(--accent); }
+.pointer-row { display: grid; grid-template-columns: 70px 1fr minmax(60px, 1fr) 34px; gap: 8px; align-items: center; margin: 8px 0; font-size: 11px; }
+.action-context { margin-top: 12px; padding: 14px; }
+.action-value { width: 90px; height: 6px; margin-bottom: 5px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.action-value span { display: block; height: 100%; background: var(--accent); }
+@media (max-width: 640px) { .input-toolbar, .input-system-heading { align-items: stretch; flex-direction: column; } .input-view-tabs { flex-wrap: wrap; } .input-device-grid { grid-template-columns: 1fr; } }
+
 .rg-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
 .rg-heading h2 { margin: 0; font-size: 20px; }
 .rg-badge { background: #e8f0e8; color: #246645; border: 1px solid #d3e1d3; border-radius: 20px; padding: 6px 12px; font-size: 11px; overflow-wrap: anywhere; }
