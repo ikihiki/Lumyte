@@ -444,8 +444,7 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
         EffectImage output = effect.Output;
         if (layer.Options.Opacity != 1)
         {
-            var opacity = new OpacityEffect(layer.Options.Opacity);
-            PreparedImageEffect faded = _effects.AppendOpacity(graph, opacity, output);
+            PreparedImageEffect faded = _effects.AppendOpacity(graph, output, layer.Options.Opacity);
             owner.Own(faded);
             output = faded.Output;
         }

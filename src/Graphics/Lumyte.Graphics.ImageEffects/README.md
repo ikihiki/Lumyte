@@ -6,20 +6,19 @@
 
 ```csharp
 var compiler = new ImageEffectCompiler(device);
-var blur = new GaussianBlurEffect(3, 3);
-var opacity = new OpacityEffect(0.5f);
-var blurred = compiler.AppendGaussianBlur(graph, blur, source);
-var faded = compiler.AppendOpacity(graph, opacity, blurred.Output);
+var blurred = compiler.AppendGaussianBlur(graph, source, 3, 3);
+var faded = compiler.AppendOpacity(graph, blurred.Output, 0.5f);
 ```
 
-Append拡張メソッドは作成済みの効果と入力画像を受け取り、パスだけを追加します。
-効果やDAGを生成しません。レンダラーの差し替え・DI登録はなく、処理方式を変えるときは新しい効果型を追加します。
+Append拡張メソッドは入力画像と数値・行列などのパラメーターを受け取り、パスだけを追加します。
+効果やDAGを返しません。利用者が効果をnewする必要はありません。レンダラーの差し替え・DI登録はなく、処理方式を変えるときは新しい効果型を追加します。
 利用者はImageEffectDefinitionの領域計算とAppendPassesを実装し、独自のAppend拡張メソッドから
 compiler.AppendEffect(graph, effect, inputs)を呼べます。
 
 再利用するDAGや2Dへの適用には、別途明示的に効果とgraphを組み立てます。
 
 ```csharp
+var blur = new GaussianBlurEffect(3, 3);
 var effect = ImageEffectGraph.Create(blur, ImageEffectGraph.Source());
 var owner = compiler.AppendPasses(graph, effect, source);
 ```

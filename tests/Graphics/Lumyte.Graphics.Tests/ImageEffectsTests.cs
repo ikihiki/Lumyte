@@ -169,10 +169,10 @@ public sealed class ImageEffectsTests
         PreparedImageEffect prepared = effect.Root is EffectOperationNode operation && operation.Inputs.All(input => input is SourceEffectNode)
             ? operation.Definition switch
             {
-                GaussianBlurEffect blur => compiler.AppendGaussianBlur(graph, blur, sourceImage),
-                ColorMatrixEffect matrix => compiler.AppendColorMatrix(graph, matrix, sourceImage),
-                OpacityEffect opacity => compiler.AppendOpacity(graph, opacity, sourceImage),
-                CompositeEffect composite => compiler.AppendComposite(graph, composite, sourceImage, sourceImage),
+                GaussianBlurEffect blur => compiler.AppendGaussianBlur(graph, sourceImage, blur.SigmaX, blur.SigmaY),
+                ColorMatrixEffect matrix => compiler.AppendColorMatrix(graph, sourceImage, matrix.Matrix),
+                OpacityEffect opacity => compiler.AppendOpacity(graph, sourceImage, opacity.Opacity),
+                CompositeEffect composite => compiler.AppendComposite(graph, sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY),
                 _ => compiler.AppendPasses(graph, effect, sourceImage),
             }
             : compiler.AppendPasses(graph, effect, sourceImage);
