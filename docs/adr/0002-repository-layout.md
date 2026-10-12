@@ -116,7 +116,9 @@ Lumyte/
 
 `Lumyte.Graphics.RenderGraph` は共通 command API 上で pass の依存関係、culling、barrier と一時 resource の寿命を管理する。`Lumyte.Graphics.Abstractions` のみに依存し、backend ごとの実装は参照しない。設計は [GRAPHICS-0015](graphics/GRAPHICS-0015-render-graph.md)、検証は `tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/` に配置する。
 
-`Lumyte.Graphics.Drawing2D` は不変の2D描画命令と命令別GPUレンダラーを提供する。`Lumyte.Graphics.ImageEffects` は2D・3Dから使える画像エフェクトのgraphを提供する。両者のDI登録はそれぞれの `.DependencyInjection` packageに分離する。2D描画の設計とAPIは [GRAPHICS-0016](graphics/GRAPHICS-0016-2d-graphics-engine.md)、共通画像エフェクトは [GRAPHICS-0017](graphics/GRAPHICS-0017-image-effects.md) に記載する。CPU検証は `tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/`、GPU検証は既存の `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
+`Lumyte.Graphics.ImageEffects` は2D・3Dから使える画像エフェクトのgraphとRenderGraphへのパス展開を提供する。DI登録は `.DependencyInjection` packageに分離する。設計とAPIは [GRAPHICS-0016](graphics/GRAPHICS-0016-image-effects.md)、CPU検証は `tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/`、GPU検証は既存の `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
+
+`Lumyte.Graphics.Drawing2D` は不変の2D描画命令と命令別GPUレンダラー、共通エフェクトへのレイヤー・背景の接続を提供する。DI登録は `.DependencyInjection` packageに分離する。設計とAPIは [GRAPHICS-0017](graphics/GRAPHICS-0017-2d-graphics-engine.md)、CPU検証は `tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/`、GPU検証は既存の `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
 
 `Lumyte.Diagnostics.RenderGraph` は Graphics.RenderGraph の observer と既存 Diagnostics を接続する。game scope の最新 snapshot を既存 execution point で公開し、標準 telemetry を収集する。Graphics.RenderGraph 自体は Diagnostics に依存しない。
 

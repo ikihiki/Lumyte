@@ -52,4 +52,4 @@ using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
 
 `BeginLayer` / `EndLayer` はグループ全体へのエフェクトとopacity、`DrawBackdropEffect` はそこまでに描いた背景へのエフェクトを表す。色行列・Gaussian blur・opacity・合成は、2Dと3Dから使える `Lumyte.Graphics.ImageEffects` が処理する。
 
-2D描画とエフェクト適用時の契約、API一覧、共通graphへの接続例は [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-2d-graphics-engine.md) を参照する。画像エフェクト自体の設計とAPIは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) に記載する。
+2D描画とエフェクト適用時の契約、API一覧、共通graphへの接続例は [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-2d-graphics-engine.md) を参照する。画像エフェクト自体の設計とAPIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) に記載する。

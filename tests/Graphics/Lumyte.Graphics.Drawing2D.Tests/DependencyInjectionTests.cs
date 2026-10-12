@@ -132,20 +132,6 @@ public sealed class DependencyInjectionTests
         Assert.Equal(2, resolutions);
     }
 
-    /// <summary>Checks image effect registration can be used without drawing registration.</summary>
-    [Fact]
-    public void ImageEffectsCanBeRegisteredIndependently()
-    {
-        var services = new ServiceCollection();
-        Assert.Same(services, services.UseImageEffects());
-        Assert.Same(services, services.UseImageEffects());
-        Assert.Equal(5, services.Count);
-        using ServiceProvider provider = services.BuildServiceProvider();
-        using IServiceScope scope = provider.CreateScope();
-        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>());
-        Assert.Null(scope.ServiceProvider.GetService<DrawingCommandRenderers2D>());
-    }
-
     /// <summary>Checks manual factories create independent registries and implementations without a provider.</summary>
     [Fact]
     public void DefaultFactoriesProduceIndependentInstances()

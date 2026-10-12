@@ -1,10 +1,9 @@
 using System.Reflection;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.ImageEffects;
 using Xunit;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
-namespace Lumyte.Graphics.Drawing2D.Tests;
+namespace Lumyte.Graphics.ImageEffects.Tests;
 
 /// <summary>Checks immutable effect values, source-region propagation, DAG sharing and ownership.</summary>
 public sealed class ImageEffectTests

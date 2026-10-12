@@ -68,6 +68,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/Lumyte.Graphics.Drawing2D.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />

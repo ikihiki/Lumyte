@@ -12,4 +12,4 @@ Gaussian blurはdevice pixel単位の分離カーネルで、各軸の半径は 
 コマンドバッファとコンパイル済みRenderGraphを破棄した後で `PreparedImageEffect.Dispose()` を呼びます。
 失敗したAppend後はRenderGraph全体を破棄してください。
 
-設計判断、公開APIと演算・領域・所有権の詳細契約は [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。
+設計判断、公開APIと演算・領域・所有権の詳細契約は [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) を参照してください。

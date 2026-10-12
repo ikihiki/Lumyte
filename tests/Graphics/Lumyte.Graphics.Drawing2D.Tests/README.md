@@ -1,6 +1,6 @@
-# Drawing2D・ImageEffectsの検証
+# Drawing2Dの検証
 
-CPU側の不変snapshot、入力検証、Canvasの状態とlayer境界、DI登録、エフェクトのboundsと実行契約を検証する。
+CPU側の不変snapshot、入力検証、Canvasの状態とlayer境界、DI登録、エフェクトシステムへの接続を検証する。共通エフェクト自体は `Lumyte.Graphics.ImageEffects.Tests` で独立して検証する。
 
 ```bash
 source tools/setup/activate.sh
