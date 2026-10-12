@@ -65,6 +65,7 @@
     <Project Path="tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Input/">
+    <Project Path="src/Input/Lumyte.Input.Diagnostics/Lumyte.Input.Diagnostics.csproj" />
     <Project Path="src/Input/Lumyte.Input.Processing/Lumyte.Input.Processing.csproj" />
     <Project Path="src/Input/Lumyte.Input.Actions/Lumyte.Input.Actions.csproj" />
     <Project Path="src/Input/Lumyte.Input.Settings/Lumyte.Input.Settings.csproj" />

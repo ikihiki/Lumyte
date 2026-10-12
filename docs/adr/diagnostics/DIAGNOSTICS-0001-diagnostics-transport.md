@@ -4,6 +4,8 @@
 - 日付: 2026-10-08
 - 更新: 2026-10-09（送信の直接エンコード・受信の検証保持に変更）
 
+操作ペイロードの上限、Stream / Control の受付枠、ProtocolVersion 2への拡張は [DIAGNOSTICS-0003](DIAGNOSTICS-0003-command-payloads-and-traffic.md) に従う。本ADRの版1・通常操作の記述は、その範囲で更新される。
+
 ## 背景
 
 Lumyte の実行状態を外部から観測し、必要に応じて変更できる診断機能を提供する。診断システムをサーバー、ゲームに組み込む診断エージェントをクライアントとして通信する。Desktop では MagicOnion、Browser では HTTP を DI で選択し、診断機能とサブシステムは通信方式に依存させない。

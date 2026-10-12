@@ -2,7 +2,7 @@ using MessagePack;
 
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
-/// <summary>Version-one numeric-key wire schema for WireOperation.</summary>
+/// <summary>Append-only numeric-key operation schema; version two adds traffic classification.</summary>
 [MessagePackObject]
 public sealed partial class WireOperation
 {
@@ -29,4 +29,8 @@ public sealed partial class WireOperation
     /// <summary>Gets or sets a value indicating whether RequiresRevision is enabled.</summary>
     [Key(5)]
     public bool RequiresRevision { get; set; }
+
+    /// <summary>Gets or sets the traffic class; omitted version-one fields default to Standard.</summary>
+    [Key(6)]
+    public int Traffic { get; set; }
 }

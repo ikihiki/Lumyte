@@ -16,6 +16,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [OpenAL オーディオ](src/Audio/Lumyte.Audio.OpenAL/README.md)／[Web Audio](src/Audio/Lumyte.Audio.Browser/README.md)／[共通 API](src/Audio/Lumyte.Audio.Abstractions/README.md)
 - [オーディオ機構の設計](docs/adr/audio/AUDIO-0001-audio-system.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
+- [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)

@@ -83,6 +83,9 @@ public sealed class DashboardModelTests
         var form = new DiagnosticOperationForm(new("edit", "Edit", DiagnosticPermission.Edit, [], [], true)) { Revision = "9223372036854775807" };
         Assert.Equal(long.MaxValue, form.Build("sample").ExpectedRevision);
         Assert.NotEqual(form.Build("sample").RequestId, form.Build("sample").RequestId);
+        var streamForm = new DiagnosticOperationForm(new("send", "Send", DiagnosticPermission.OverrideInput, [], [], Traffic: DiagnosticOperationTraffic.Stream));
+        Assert.Equal(1000, streamForm.Build("sample").TimeoutMilliseconds);
+        Assert.Equal(5000, form.Build("sample").TimeoutMilliseconds);
     }
 
     /// <summary>Checks ticket expiry and the finite browser-login budget.</summary>
