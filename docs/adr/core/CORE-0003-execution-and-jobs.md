@@ -484,6 +484,38 @@ async ValueTask<AudioState.Voice> CreateAndPlayAsync(ClipId clip)
 
 Browserは別の初回構成としてBindHost／DriveOnHostとCooperative（同時数1）を選び、Running／QuiescingのturnでRunHostPhaseも呼ぶ。起動・停止中もPumpを続け、未完了のGetResult／Waitでevent loopを止めない。
 
+### DIありの構成例
+
+アプリ側で `Microsoft.Extensions.DependencyInjection` を使う場合は、前節の構成部分を次で置き換える。coreへDI依存を追加せず、同じAudioModuleをsingletonとして登録・解決する。登録時やconstructorではdeviceを作らない。
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+
+var services = new ServiceCollection();
+services.AddSingleton(static _ => new AudioState());
+services.AddSingleton(static sp => new AudioModule(sp.GetRequiredService<AudioState>()));
+services.AddSingleton<ExecutionRuntime>(static sp =>
+{
+    var audio = sp.GetRequiredService<AudioModule>();
+    var plan = new ExecutionPlanBuilder();
+    plan.AddModule("Audio", audio); // 同じinstanceのDeclareを呼ぶ。自動探索はしない
+    var thread = plan.DedicatedThread("Audio.Control");
+    plan.BindDedicated(audio.Owner, thread);
+    plan.DrivePeriodic(audio.Update,
+        new ThreadLoopOptions(TimeSpan.FromMilliseconds(10), 64, TimeSpan.FromMilliseconds(2)));
+    return plan.BuildOnCurrentHost(CpuExecutionMode.ThreadPool, 4, new ExecutionOptions());
+});
+var provider = services.BuildServiceProvider(); // まだruntimeもthreadも作らない
+
+// 最初の解決は必ず固定Host上。ここでfactoryが構成と静的入口の接続を完了する。
+var runtime = provider.GetRequiredService<ExecutionRuntime>();
+// 以降は前節のTask状態、OnHostTurn、BeginStop、CreateAndPlayAsyncを共用する。
+```
+
+このruntimeへ前節のOnHostTurnを接続し、`startup = runtime.StartAsync().AsTask()` を明示的に呼ぶと、専用threadの起動とowner上の初期化が始まる。DI factory内では起動・同期waitを行わない。登録用ラムダはsingleton構築時だけ実行され、仕事として配送されない。Browserではfactory内の配置を前節と同じHost＋Cooperativeへ変更する。
+
+root providerは一つとし、scopeごとにruntimeを作らない。停止中もproviderとPumpを維持し、StopAsyncの成功をOnHostTurnで観測した後にproviderを破棄する（この例ではOnStopped内で `provider.Dispose()`）。停止失敗時は破棄せずcleanupを再試行する。DIのDisposeでnative解放やruntime.StopAsyncを代行せず、生成Voiceの静的送信先もDIで差し替えない。
+
 ### Audio・Resources・ECSとの接続
 
 AudioVoiceはGCが追跡する元インスタンス参照であり、unsafe pointerやVoiceId検索へ変換しない。所属module・device・破棄状態をowner上で検査し、公開objectを別のvoice寿命へ再利用しない。強参照だけでnative寿命を保護できるとは扱わず、Play／Stop／Destroyを同じgroupで順序付ける。既存IAudioVoice.Playは同期・owner限定のままで、生成Voice.Playが送信用APIとなる。
@@ -515,7 +547,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 実装はHostの宣言・有界配送・生成コードから始め、Dedicated／周期駆動、Cooperative／ThreadPool graph、Resources／ECS統合へ進める。受け入れ条件は次に集約する。
 
 - 生成後コンパイル、診断、決定的生成、AOT／実Browser。元参照1本、静的入口、本体展開、中継call・boxing・async state machine・StackTraceHiddenの不在を確認する。
-- DIなしの起動／停止、Build競合とrollback、権限、同じ静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
+- DIなし／ありの起動・停止、DIの初回解決が固定Host上で行われること、Build競合とrollback、権限、同じ静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
 - 異型commandのFIFO、batch全件受付、公平性、gate・取消・停止との競合、slot世代、全仕事静止後の完了、cleanup予約と失敗再試行を確認する。
 - graphの依存・範囲・owner予約、Hostの予算と継続cursor、周期遅延と省略、通知の取りこぼし、Browserのgesture／実operation追跡を確認する。
 - 単発sourceの先行完了／先行継続登録、未完了・二重GetResult、成功／取消／失敗の回収、Audioの所属・破棄・leaseとECS snapshot寿命を確認する。
