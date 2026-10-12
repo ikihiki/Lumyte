@@ -15,19 +15,18 @@ public sealed class DependencyInjectionTests
         var services = new ServiceCollection();
         Assert.Same(services, services.UseImageEffects());
         Assert.Same(services, services.UseImageEffects());
-        Assert.Equal(5, services.Count);
+        Assert.Equal(4, services.Count);
         using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         using IServiceScope scope = provider.CreateScope();
-        ImageEffectRenderers effects = scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
-        Assert.IsType<DefaultColorMatrixEffectRenderer>(effects.ColorMatrix);
-        Assert.IsType<DefaultGaussianBlurEffectRenderer>(effects.GaussianBlur);
-        Assert.IsType<DefaultOpacityEffectRenderer>(effects.Opacity);
-        Assert.IsType<DefaultCompositeEffectRenderer>(effects.Composite);
+        Assert.IsType<DefaultColorMatrixEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<ColorMatrixEffect>>());
+        Assert.IsType<DefaultGaussianBlurEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<GaussianBlurEffect>>());
+        Assert.IsType<DefaultOpacityEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>());
+        Assert.IsType<DefaultCompositeEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<CompositeEffect>>());
         Assert.Null(scope.ServiceProvider.GetService<IGraphicDevice>());
         Assert.Null(scope.ServiceProvider.GetService<ImageEffectCompiler>());
     }
 
-    /// <summary>Checks all defaults and the table share their scope, but not another scope.</summary>
+    /// <summary>Checks all typed renderers share their scope, but not another scope.</summary>
     [Fact]
     public void DefaultsHaveScopedIdentity()
     {
@@ -36,18 +35,10 @@ public sealed class DependencyInjectionTests
         using ServiceProvider provider = services.BuildServiceProvider();
         using IServiceScope first = provider.CreateScope();
         using IServiceScope second = provider.CreateScope();
-        ImageEffectRenderers a = first.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
-        ImageEffectRenderers b = second.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
-        Assert.Same(a, first.ServiceProvider.GetRequiredService<ImageEffectRenderers>());
-        Assert.Same(a.ColorMatrix, first.ServiceProvider.GetRequiredService<IColorMatrixEffectRenderer>());
-        Assert.Same(a.GaussianBlur, first.ServiceProvider.GetRequiredService<IGaussianBlurEffectRenderer>());
-        Assert.Same(a.Opacity, first.ServiceProvider.GetRequiredService<IOpacityEffectRenderer>());
-        Assert.Same(a.Composite, first.ServiceProvider.GetRequiredService<ICompositeEffectRenderer>());
-        Assert.NotSame(a, b);
-        Assert.NotSame(a.ColorMatrix, b.ColorMatrix);
-        Assert.NotSame(a.GaussianBlur, b.GaussianBlur);
-        Assert.NotSame(a.Opacity, b.Opacity);
-        Assert.NotSame(a.Composite, b.Composite);
+        AssertScope<IImageEffectRenderer<ColorMatrixEffect>>(first, second);
+        AssertScope<IImageEffectRenderer<GaussianBlurEffect>>(first, second);
+        AssertScope<IImageEffectRenderer<OpacityEffect>>(first, second);
+        AssertScope<IImageEffectRenderer<CompositeEffect>>(first, second);
     }
 
     /// <summary>Checks replacement factories are deferred and survive repeated registration.</summary>
@@ -65,7 +56,7 @@ public sealed class DependencyInjectionTests
             services.UseImageEffects();
         }
 
-        services.AddScoped<IOpacityEffectRenderer>(_ =>
+        services.AddScoped<IImageEffectRenderer<OpacityEffect>>(_ =>
         {
             resolutions++;
             return opacity;
@@ -77,23 +68,31 @@ public sealed class DependencyInjectionTests
         Assert.Equal(0, resolutions);
         using ServiceProvider provider = services.BuildServiceProvider();
         using IServiceScope scope = provider.CreateScope();
-        ImageEffectRenderers effects = scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
-        Assert.Same(opacity, effects.Opacity);
+        IImageEffectRenderer<OpacityEffect> resolved = scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
+        Assert.Same(opacity, resolved);
+        var definition = new OpacityEffect(0.5f);
+        var effect = ImageEffectGraph.Create(definition, resolved, ImageEffectGraph.Source());
+        Assert.Same(definition, Assert.IsType<EffectOperationNode>(effect.Root).Definition);
         Assert.Equal(1, resolutions);
-        Assert.IsType<DefaultGaussianBlurEffectRenderer>(effects.GaussianBlur);
+        Assert.IsType<DefaultGaussianBlurEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<GaussianBlurEffect>>());
     }
 
-    /// <summary>Checks manual composition creates independent defaults and rejects null DI collections.</summary>
+    /// <summary>Checks convenience factories create independent effect graphs and rejects null DI collections.</summary>
     [Fact]
     public void DefaultFactoryAndNullCollectionContracts()
     {
-        var a = ImageEffectRenderers.CreateDefault();
-        var b = ImageEffectRenderers.CreateDefault();
+        var a = ImageEffectGraph.Opacity(0.5f, ImageEffectGraph.Source());
+        var b = ImageEffectGraph.Opacity(0.5f, ImageEffectGraph.Source());
         Assert.NotSame(a, b);
-        Assert.NotSame(a.ColorMatrix, b.ColorMatrix);
-        Assert.NotSame(a.GaussianBlur, b.GaussianBlur);
-        Assert.NotSame(a.Opacity, b.Opacity);
-        Assert.NotSame(a.Composite, b.Composite);
+        Assert.IsType<OpacityEffect>(Assert.IsType<EffectOperationNode>(a.Root).Definition);
         Assert.Throws<ArgumentNullException>(() => ImageEffectsServiceCollectionExtensions.UseImageEffects(null!));
+    }
+
+    private static void AssertScope<T>(IServiceScope first, IServiceScope second)
+        where T : class
+    {
+        T a = first.ServiceProvider.GetRequiredService<T>();
+        Assert.Same(a, first.ServiceProvider.GetRequiredService<T>());
+        Assert.NotSame(a, second.ServiceProvider.GetRequiredService<T>());
     }
 }

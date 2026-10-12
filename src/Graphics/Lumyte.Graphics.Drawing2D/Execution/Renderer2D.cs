@@ -14,27 +14,29 @@ public sealed class Renderer2D : IDisposable
     private readonly IGraphicDevice _device;
     private readonly DrawingCommandRenderers2D _renderers;
     private readonly ImageEffectCompiler _effects;
+    private readonly IImageEffectRenderer<OpacityEffect> _groupOpacity;
     private bool _disposed;
     private int _preparing;
 
-    /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class using default effects.</summary>
+    /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class using the provided group-opacity renderer.</summary>
     /// <param name="device">The borrowed rendering device.</param>
     /// <param name="renderers">The borrowed fixed command renderer table.</param>
     public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers)
-        : this(device, renderers, ImageEffectRenderers.CreateDefault())
+        : this(device, renderers, new DefaultOpacityEffectRenderer())
     {
     }
 
     /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class.</summary>
     /// <param name="device">The borrowed rendering device.</param>
     /// <param name="renderers">The borrowed fixed command renderer table.</param>
-    /// <param name="effects">The borrowed fixed image effect renderer table.</param>
-    public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, ImageEffectRenderers effects)
+    /// <param name="groupOpacity">The borrowed renderer for the layer opacity operation.</param>
+    public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IImageEffectRenderer<OpacityEffect> groupOpacity)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-        ArgumentNullException.ThrowIfNull(effects);
-        _effects = new ImageEffectCompiler(device, effects);
+        ArgumentNullException.ThrowIfNull(groupOpacity);
+        _groupOpacity = groupOpacity;
+        _effects = new ImageEffectCompiler(device);
     }
 
     /// <summary>Prepares and compiles a private graph, leaving submission and completion to the caller.</summary>
@@ -457,7 +459,7 @@ public sealed class Renderer2D : IDisposable
         RenderTargetBinding2D target = CreateIntermediate(graph, bounds, parent.Target.PixelScale, "drawing2d.layer");
         AppendClear(graph, target);
         await AppendCommandsAsync(graph, list, begin, end, target with { LoadOp = AttachmentLoadOp.Load }, parent.Bindings, owner, cancellationToken).ConfigureAwait(false);
-        ImageEffectGraph effects = layer.Options.Opacity == 1 ? layer.Options.Effects : ImageEffectGraph.Opacity(layer.Options.Opacity, layer.Options.Effects);
+        ImageEffectGraph effects = layer.Options.Opacity == 1 ? layer.Options.Effects : ImageEffectGraph.Opacity(layer.Options.Opacity, layer.Options.Effects, _groupOpacity);
         PreparedImageEffect effect = _effects.AppendPasses(graph, effects, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear));
         owner.Own(effect);
         IPreparedCommandBatch2D composite = await DrawingGraphCompositor.PrepareAsync(parent, ImageSource(effect.Output), WithClip(layer.State, layer.Options.OutputClip), ct: cancellationToken).ConfigureAwait(false);

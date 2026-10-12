@@ -54,12 +54,12 @@ using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
 
 2D描画とエフェクト適用時の契約、API一覧、共通graphへの接続例は [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-2d-graphics-engine.md) を参照する。画像エフェクト自体の設計とAPIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) に記載する。
 
-独自エフェクトは共通ライブラリの `ImageEffectDefinition` と `IImageEffectRenderer<TDefinition>` を実装し、
-`ImageEffectGraph.Custom` で構築します。標準効果と組み合わせた同じgraphを、記録中のCanvasへ渡せます。
+すべてのエフェクトは共通ライブラリの `ImageEffectDefinition` と `IImageEffectRenderer<TDefinition>` を実装し、
+`ImageEffectGraph.Create` で構築します。他の効果と組み合わせた同じgraphを、記録中のCanvasへ渡せます。
 
 ```csharp
-var custom = ImageEffectGraph.Custom(definition, customRenderer, ImageEffectGraph.Source());
-var effects = ImageEffectGraph.GaussianBlur(3, 3, custom);
+var effect = ImageEffectGraph.Create(definition, effectRenderer, ImageEffectGraph.Source());
+var effects = ImageEffectGraph.GaussianBlur(3, 3, effect);
 
 canvas.BeginLayer(new LayerOptions2D
 {

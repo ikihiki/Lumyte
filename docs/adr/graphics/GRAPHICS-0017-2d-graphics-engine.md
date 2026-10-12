@@ -103,7 +103,7 @@ DrawGlyphRunと文字の描画形式選択は外部文字ライブラリが担�
 
 画像演算は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) のImageEffectGraphとcompilerへ委譲する。2D側は画像化する内容と適用位置、clip・group opacity、背景snapshot、親への合成を管理する。PaintGraph2Dは図形内部の塗り、ImageEffectGraphは画像化後の処理として分け、paintの隔離合成をレイヤーの画像エフェクトへ置き換えない。
 
-標準効果と利用者定義のCustomを同じEffectsへ指定できる。2Dは効果の種類を固定せず、定義が返す出力範囲と必要入力範囲を使ってレイヤー合成と背景取得を行う。独自効果を追加しても11描画命令やレイヤーAPIの変更は不要であり、必要なrendererを構築時に結び付けたgraphを利用者が渡す。
+すべての効果を共通のImageEffectGraph.Createで構築し、同じEffectsへ指定できる。2Dは効果の種類を固定せず、定義が返す出力範囲と必要入力範囲を使ってレイヤー合成と背景取得を行う。独自効果を追加しても11描画命令やレイヤーAPIの変更は不要であり、必要なrendererを構築時に結び付けたgraphを利用者が渡す。
 
 レイヤーと背景はDisplayLinearのlinear premultiplied Rgba16Float画像として、原点と有限範囲を保って渡す。coverageや距離場は先に色画像へ描画し、SDF値自体をfilterへ渡さない。効果で拡張された出力範囲を親の描画先へ戻し、背景取得にはGetRequiredSourceBoundsで求めた必要入力範囲を使う。エフェクトのpassは2Dと同じRenderGraphへ追加し、単独利用でも共有graphでも描画順と資源依存を保持する。
 
@@ -191,7 +191,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 
 | 領域 | 受け入れ条件 |
 | --- | --- |
-| 命令・DI | 11命令とエフェクト接続先の登録対応、後勝ち・再Use・CreateDefault、配送順と独立した差し替え、登録表構築時のGPU生成と描画中のDI解決がないこと |
+| 命令・DI | 11命令とエフェクト接続先の登録対応、後勝ち・再Use・CreateDefault、配送順と独立した差し替え、描画登録表構築時のGPU生成と描画中のDI解決がないこと |
 | paint・画像 | 6命令のColor/Solid等価性、gradientの退化・stop・extend、tap別tileと負座標、透明境界の補間、shape/clip相関、group opacity |
 | 文字・COLRv1 | 全gradient・全28合成・参照glyph・variation・palette・foreground・clipを固定fontと参照画像で比較 |
 | エフェクトへの接続・レイヤー | DisplayLinear画像の受け渡し、DPIとoffset、前後clip、group opacity、ネスト、画面外からの影、必要入力の背景取得、透明背景・重なるパネルの置換 |
@@ -209,9 +209,9 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 
 ## API・詳細契約・利用例
 
-比較元は先行エフェクトブランチ `feat/image-effects` のrevision `7d955af`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元は先行エフェクトブランチ `feat/image-effects` のrevision `975ed94`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
-RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectGraph・ImageEffectRenderersなどの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
+RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectGraph・ImageEffectDefinition・型付きrendererの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
 
 ### 公開API
 
@@ -462,11 +462,11 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    }
 +    public sealed class Renderer2D : IDisposable
 +    {
-+        // deviceは借用。2引数版は標準ImageEffectRenderersを生成して使用する。
++        // deviceは借用。2引数版は提供するOpacity rendererをグループ透明度に使用する。
 +        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers);
-+        // 明示的なエフェクト設定も借用。DI利用時は解決した両登録表を渡す。
++        // グループ透明度用rendererは借用。各Effects graphのrendererはgraph構築時に固定。
 +        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers,
-+            ImageEffectRenderers effects);
++            IImageEffectRenderer<OpacityEffect> groupOpacity);
 +        // 単独実行の便利API。私有graphへimport→AppendPassesAsync→Compileを行う。
 +        // submit/waitは行わない。キャンセル時は内部確保を解放する。
 +        public ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list,
@@ -831,7 +831,7 @@ opaque callbackは全外部アクセスを宣言し、内部barrierと私有資�
 
 #### 固定DI構成
 
-登録はprovider構築前に完了する。単一サービス解決の後勝ちを使い、UseGraphics2DのTryAddは先行登録・再登録時の上書きを保持する。CreateDefaultはDIを使わず表と全標準実装を毎回newし、GPU資源を作らない。両登録表は実装を借用する。ExternalComputeFillPathRendererは利用者側の実装例で、FillPathだけを置換する。
+登録はprovider構築前に完了する。単一サービス解決の後勝ちを使い、UseGraphics2DのTryAddは先行登録・再登録時の上書きを保持する。CreateDefaultはDIを使わず表と全標準実装を毎回newし、GPU資源を作らない。描画登録表と各graphは実装を借用する。ExternalComputeFillPathRendererは利用者側の実装例で、FillPathだけを置換する。
 
 ```csharp
 var services = new ServiceCollection();
@@ -844,8 +844,8 @@ using var scope = provider.CreateScope();
 
 var renderers = scope.ServiceProvider
     .GetRequiredService<DrawingCommandRenderers2D>();
-var effects = scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
-using var renderer = new Renderer2D(device, renderers, effects);
+var opacity = scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
+using var renderer = new Renderer2D(device, renderers, opacity);
 ```
 
 #### DIなしのGraphics接続

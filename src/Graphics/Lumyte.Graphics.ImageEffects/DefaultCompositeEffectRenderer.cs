@@ -3,14 +3,22 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 namespace Lumyte.Graphics.ImageEffects;
 
 /// <summary>Implements Composite using full-resolution fragment passes and graph-owned textures.</summary>
-public sealed class DefaultCompositeEffectRenderer : ICompositeEffectRenderer
+public sealed class DefaultCompositeEffectRenderer : IImageEffectRenderer<CompositeEffect>
 {
     /// <inheritdoc/>
-    EffectImage ICompositeEffectRenderer.AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, CompositeEffectNode effect, EffectImage source, EffectImage backdrop)
+    public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, CompositeEffect effect, ReadOnlySpan<EffectImage> inputs)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(effect);
+        if (inputs.Length != 2)
+        {
+            throw new ArgumentException("Composite requires two images.", nameof(inputs));
+        }
+
+        EffectImage source = inputs[0];
+        EffectImage backdrop = inputs[1];
+
         if (!Enum.IsDefined(effect.Mode))
         {
             throw new ArgumentOutOfRangeException(nameof(effect));

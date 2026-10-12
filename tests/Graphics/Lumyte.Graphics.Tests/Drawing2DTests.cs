@@ -92,7 +92,7 @@ public sealed class Drawing2DTests
         await CheckLayersAsync(device);
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
-        await CheckCustomEffectsAsync(device);
+        await CheckComposedEffectsAsync(device);
     }
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
@@ -104,7 +104,7 @@ public sealed class Drawing2DTests
         await CheckLayersAsync(device);
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
-        await CheckCustomEffectsAsync(device);
+        await CheckComposedEffectsAsync(device);
     }
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
@@ -545,10 +545,10 @@ public sealed class Drawing2DTests
         AssertPixel(blur, 5, 4, 0, Vector4.Zero);
     }
 
-    private static async Task CheckCustomEffectsAsync(IGraphicDevice device)
+    private static async Task CheckComposedEffectsAsync(IGraphicDevice device)
     {
         var renderer = new TranslateLayerRenderer();
-        var translated = ImageEffectGraph.Custom(new TranslateLayerEffect(4, 0), renderer, ImageEffectGraph.Source());
+        var translated = ImageEffectGraph.Create(new TranslateLayerEffect(4, 0), renderer, ImageEffectGraph.Source());
         var faded = ImageEffectGraph.Opacity(0.5f, translated);
         Vector4[] layer = await RenderAsync(device, 8, 4, canvas =>
         {
@@ -561,7 +561,7 @@ public sealed class Drawing2DTests
         AssertPixel(layer, 8, 5, 1, new(0.5f));
         AssertPixel(layer, 8, 6, 1, Vector4.Zero);
 
-        var shiftedBackground = ImageEffectGraph.Custom(new TranslateLayerEffect(3, 0), renderer, ImageEffectGraph.Source());
+        var shiftedBackground = ImageEffectGraph.Create(new TranslateLayerEffect(3, 0), renderer, ImageEffectGraph.Source());
         Vector4[] backdrop = await RenderAsync(device, 5, 1, canvas =>
         {
             canvas.FillRect(new(0, 0, 5, 1), _blue);

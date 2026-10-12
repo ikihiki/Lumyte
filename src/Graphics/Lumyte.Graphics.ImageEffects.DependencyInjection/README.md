@@ -1,15 +1,15 @@
 # Lumyte.Graphics.ImageEffects.DependencyInjection
 
-Optional dependency injection registrations for `Lumyte.Graphics.ImageEffects`.
+Optional registrations for the four provided `IImageEffectRenderer<TDefinition>` implementations.
+`services.UseImageEffects()` uses scoped lifetimes and preserves existing registrations on repeated calls.
+A later typed renderer registration takes precedence when the renderer is resolved.
 
-`services.UseImageEffects()` registers the default color matrix, Gaussian blur,
-opacity, and composite renderers and `ImageEffectRenderers` with scoped lifetimes.
-Existing registrations survive repeated calls; a later interface registration
-takes precedence when the registry is resolved.
+Resolve the renderer before constructing an effect graph, then pass it to `ImageEffectGraph.Create`
+or one of the convenience factories. The graph retains that renderer without capability selection,
+type lookup, or DI resolution during preparation or recording. User-defined effects follow the same API.
 
-Registration does not create or register a graphics device, an effect compiler,
-or a service provider. The application supplies the device to
-`ImageEffectCompiler`, retains prepared work until GPU completion, and disposes
-the scope after that work has been released.
+No fixed renderer table is registered. Registration does not create or register a graphics device,
+effect compiler, or service provider. The application supplies the device to `ImageEffectCompiler`,
+retains prepared work until GPU completion, and disposes the scope after that work has been released.
 
-See [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) for the effect system design and API contracts.
+See [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) for the design and API contracts.

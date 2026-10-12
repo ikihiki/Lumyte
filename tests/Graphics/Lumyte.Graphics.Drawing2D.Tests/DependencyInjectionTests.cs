@@ -15,7 +15,7 @@ public sealed class DependencyInjectionTests
     {
         var services = new ServiceCollection();
         Assert.Same(services, services.UseGraphics2D());
-        Assert.Equal(17, services.Count);
+        Assert.Equal(16, services.Count);
         Assert.All(services, descriptor => Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime));
 
         using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -25,7 +25,7 @@ public sealed class DependencyInjectionTests
         });
         using IServiceScope scope = provider.CreateScope();
         DrawingCommandRenderers2D renderers = scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>();
-        ImageEffectRenderers effects = scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
+        IImageEffectRenderer<OpacityEffect> effects = scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
 
         Assert.IsType<DefaultFillRectRenderer2D>(renderers.FillRect);
         Assert.IsType<DefaultFillRoundedRectRenderer2D>(renderers.FillRoundedRect);
@@ -38,12 +38,12 @@ public sealed class DependencyInjectionTests
         Assert.IsType<DefaultDrawDistanceFieldRenderer2D>(renderers.DrawDistanceField);
         Assert.IsType<DefaultDrawMeshRenderer2D>(renderers.DrawMesh);
         Assert.IsType<DefaultDrawPaintGraphRenderer2D>(renderers.DrawPaintGraph);
-        Assert.IsType<DefaultColorMatrixEffectRenderer>(effects.ColorMatrix);
-        Assert.IsType<DefaultGaussianBlurEffectRenderer>(effects.GaussianBlur);
-        Assert.IsType<DefaultOpacityEffectRenderer>(effects.Opacity);
-        Assert.IsType<DefaultCompositeEffectRenderer>(effects.Composite);
+        Assert.IsType<DefaultColorMatrixEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<ColorMatrixEffect>>());
+        Assert.IsType<DefaultGaussianBlurEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<GaussianBlurEffect>>());
+        Assert.IsType<DefaultOpacityEffectRenderer>(effects);
+        Assert.IsType<DefaultCompositeEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<CompositeEffect>>());
         Assert.Same(scope.ServiceProvider.GetRequiredService<IFillPathRenderer2D>(), renderers.FillPath);
-        Assert.Same(scope.ServiceProvider.GetRequiredService<IOpacityEffectRenderer>(), effects.Opacity);
+        Assert.Same(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>(), effects);
     }
 
     /// <summary>Checks that registry and implementations are shared only within their scope.</summary>
@@ -57,15 +57,14 @@ public sealed class DependencyInjectionTests
         using IServiceScope second = provider.CreateScope();
         DrawingCommandRenderers2D firstCommands = first.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>();
         DrawingCommandRenderers2D secondCommands = second.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>();
-        ImageEffectRenderers firstEffects = first.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
-        ImageEffectRenderers secondEffects = second.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
+        IImageEffectRenderer<OpacityEffect> firstEffects = first.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
+        IImageEffectRenderer<OpacityEffect> secondEffects = second.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
 
         Assert.Same(firstCommands, first.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>());
-        Assert.Same(firstEffects, first.ServiceProvider.GetRequiredService<ImageEffectRenderers>());
+        Assert.Same(firstEffects, first.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>());
         Assert.NotSame(firstCommands, secondCommands);
         Assert.NotSame(firstCommands.FillPath, secondCommands.FillPath);
         Assert.NotSame(firstEffects, secondEffects);
-        Assert.NotSame(firstEffects.Opacity, secondEffects.Opacity);
     }
 
     /// <summary>Checks that replacements before or after default registration survive repeated calls.</summary>
@@ -84,7 +83,7 @@ public sealed class DependencyInjectionTests
         }
 
         services.AddScoped<IFillPathRenderer2D>(_ => fillPath);
-        services.AddScoped<IOpacityEffectRenderer>(_ => opacity);
+        services.AddScoped<IImageEffectRenderer<OpacityEffect>>(_ => opacity);
         services.UseGraphics2D();
         int registrationCount = services.Count;
         services.UseGraphics2D();
@@ -94,13 +93,13 @@ public sealed class DependencyInjectionTests
         using ServiceProvider provider = services.BuildServiceProvider();
         using IServiceScope scope = provider.CreateScope();
         DrawingCommandRenderers2D renderers = scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>();
-        ImageEffectRenderers effects = scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>();
+        IImageEffectRenderer<OpacityEffect> effects = scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
 
         Assert.Same(fillPath, renderers.FillPath);
-        Assert.Same(opacity, effects.Opacity);
+        Assert.Same(opacity, effects);
         Assert.IsType<DefaultStrokePathRenderer2D>(renderers.StrokePath);
         Assert.IsType<DefaultDrawPaintGraphRenderer2D>(renderers.DrawPaintGraph);
-        Assert.IsType<DefaultGaussianBlurEffectRenderer>(effects.GaussianBlur);
+        Assert.IsType<DefaultGaussianBlurEffectRenderer>(scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<GaussianBlurEffect>>());
     }
 
     /// <summary>Checks that registration does not resolve user factories and defaults are not used by DI.</summary>
@@ -109,14 +108,14 @@ public sealed class DependencyInjectionTests
     {
         var services = new ServiceCollection();
         var commands = DrawingCommandRenderers2D.CreateDefault();
-        var effects = ImageEffectRenderers.CreateDefault();
+        var effects = new DefaultOpacityEffectRenderer();
         int resolutions = 0;
         services.AddScoped(_ =>
         {
             resolutions++;
             return commands;
         });
-        services.AddScoped(_ =>
+        services.AddScoped<IImageEffectRenderer<OpacityEffect>>(_ =>
         {
             resolutions++;
             return effects;
@@ -128,7 +127,7 @@ public sealed class DependencyInjectionTests
         using ServiceProvider provider = services.BuildServiceProvider();
         using IServiceScope scope = provider.CreateScope();
         Assert.Same(commands, scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>());
-        Assert.Same(effects, scope.ServiceProvider.GetRequiredService<ImageEffectRenderers>());
+        Assert.Same(effects, scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>());
         Assert.Equal(2, resolutions);
     }
 
@@ -138,8 +137,8 @@ public sealed class DependencyInjectionTests
     {
         var firstCommands = DrawingCommandRenderers2D.CreateDefault();
         var secondCommands = DrawingCommandRenderers2D.CreateDefault();
-        var firstEffects = ImageEffectRenderers.CreateDefault();
-        var secondEffects = ImageEffectRenderers.CreateDefault();
+        var firstEffects = new DefaultOpacityEffectRenderer();
+        var secondEffects = new DefaultOpacityEffectRenderer();
 
         Assert.NotSame(firstCommands, secondCommands);
         Assert.NotSame(firstCommands.FillRect, secondCommands.FillRect);
@@ -154,10 +153,6 @@ public sealed class DependencyInjectionTests
         Assert.NotSame(firstCommands.DrawMesh, secondCommands.DrawMesh);
         Assert.NotSame(firstCommands.DrawPaintGraph, secondCommands.DrawPaintGraph);
         Assert.NotSame(firstEffects, secondEffects);
-        Assert.NotSame(firstEffects.ColorMatrix, secondEffects.ColorMatrix);
-        Assert.NotSame(firstEffects.GaussianBlur, secondEffects.GaussianBlur);
-        Assert.NotSame(firstEffects.Opacity, secondEffects.Opacity);
-        Assert.NotSame(firstEffects.Composite, secondEffects.Composite);
     }
 
     /// <summary>Checks null collections fail before any registration work begins.</summary>

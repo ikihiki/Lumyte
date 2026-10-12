@@ -115,16 +115,16 @@ public sealed class ImageEffectsTests
     private static async Task CheckCustomEffectsAsync(IGraphicDevice device)
     {
         var definition = new TranslatedFade(7, -3, 0.5f);
-        var custom = ImageEffectGraph.Custom(definition, new TranslatedFadeRenderer(), ImageEffectGraph.Source());
+        var custom = ImageEffectGraph.Create(definition, new TranslatedFadeRenderer(), ImageEffectGraph.Source());
         var effect = ImageEffectGraph.Opacity(0.5f, custom);
-        var compiler = new ImageEffectCompiler(device, ImageEffectRenderers.CreateDefault());
+        var compiler = new ImageEffectCompiler(device);
         Assert.Equal(new EffectPixelRect(16_777_217, -16_777_219, 1, 1), compiler.GetRequiredSourceBounds(effect, new(16_777_224, -16_777_222, 1, 1)));
         (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, effect, new(16_777_217, -16_777_219, 1, 1), Vector4.One);
         Assert.Equal(new EffectPixelRect(16_777_224, -16_777_222, 1, 1), bounds);
         AssertPixel(Assert.Single(pixels), new(0.125f));
 
         var generator = new SolidImage(new(-5, 7, 2, 3), new(1.5f, -0.25f, 0.125f, 0.5f));
-        var generated = ImageEffectGraph.Custom(generator, new SolidImageRenderer());
+        var generated = ImageEffectGraph.Create(generator, new SolidImageRenderer());
         var generatedAndFaded = ImageEffectGraph.Opacity(0.5f, generated);
         (bounds, pixels) = await RenderAsync(device, generatedAndFaded, new(0, 0, 1, 1), Vector4.One);
         Assert.Equal(generator.Bounds, bounds);
@@ -151,7 +151,7 @@ public sealed class ImageEffectsTests
             });
             clear.End();
         }).UseTexture(source, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
-        var compiler = new ImageEffectCompiler(device, ImageEffectRenderers.CreateDefault());
+        var compiler = new ImageEffectCompiler(device);
         PreparedImageEffect prepared = compiler.AppendPasses(graph, effect, new(source, sourceBounds, EffectColorSemantic.SceneLinear));
         Assert.Equal(EffectColorSemantic.SceneLinear, prepared.Output.ColorSemantic);
         EffectPixelRect bounds = prepared.Output.Bounds;
@@ -227,14 +227,14 @@ public sealed class ImageEffectsTests
 
     private sealed class TranslatedFadeRenderer : IImageEffectRenderer<TranslatedFade>
     {
-        private readonly IOpacityEffectRenderer _opacity = new DefaultOpacityEffectRenderer();
+        private readonly IImageEffectRenderer<OpacityEffect> _opacity = new DefaultOpacityEffectRenderer();
 
         /// <inheritdoc/>
         public EffectImage AppendPasses(EffectPreparationContext context, Graph plan, TranslatedFade effect, ReadOnlySpan<EffectImage> inputs)
         {
-            var operation = new OpacityEffectNode(effect.Opacity, new SourceEffectNode());
-            EffectImage first = _opacity.AppendPasses(context, plan, operation, inputs[0]);
-            EffectImage second = _opacity.AppendPasses(context, plan, operation, first);
+            var operation = new OpacityEffect(effect.Opacity);
+            EffectImage first = _opacity.AppendPasses(context, plan, operation, [inputs[0]]);
+            EffectImage second = _opacity.AppendPasses(context, plan, operation, [first]);
             return second with { Bounds = second.Bounds.Offset(effect.X, effect.Y) };
         }
     }
