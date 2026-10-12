@@ -68,7 +68,7 @@
                         <div class="table-container"><table><thead><tr><th>Action</th><th>値</th><th>Phase</th><th>Binding</th><th>補正</th></tr></thead><tbody>
                         @foreach (ActionModel action in context.Actions)
                         {
-                            <tr><td><strong>@action.Id</strong><br/><span class="hint">@action.Kind</span></td><td><div class="action-value"><span style="width:@Strength(action.Value)"></span></div>@Vector(action.Value)</td><td>@action.Phase</td><td>@foreach (BindingModel binding in action.Bindings) { <div><code>@binding.Control</code> × @Vector(binding.Scale)</div> }</td><td>sens @action.Sensitivity.ToString("0.##", CultureInfo.InvariantCulture)<br/>smooth @action.SmoothingMs.ToString("0", CultureInfo.InvariantCulture) ms</td></tr>
+                            <tr><td><strong>@action.Id</strong><br/><span class="hint">@action.Kind · target <code>@action.Target</code></span></td><td><div class="action-value"><span style="width:@Strength(action.Value)"></span></div>@Vector(action.Value)</td><td>@action.Phase</td><td>@foreach (BindingModel binding in action.Bindings) { <div><code>@binding.Control</code> × @Vector(binding.Scale)</div> }</td><td>sens @action.Sensitivity.ToString("0.##", CultureInfo.InvariantCulture)<br/>smooth @action.SmoothingMs.ToString("0", CultureInfo.InvariantCulture) ms</td></tr>
                         }
                         </tbody></table></div>
                     </FluentCard>

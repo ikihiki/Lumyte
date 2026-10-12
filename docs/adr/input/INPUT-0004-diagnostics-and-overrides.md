@@ -339,7 +339,80 @@ ActionState effective = actions.GetState(game, jump);
 +}
 ```
 
-以下はオーバーライド・Tape・ライブ入力を実装する際に追加する提案APIである。監視実装はこの将来APIを先取りして公開しない。
+以下のうちAction段階のオーバーライド・Tape・ライブ入力APIを実装した。Action補正後、ActionValueKindの正規化と認識より前に値を適用する。TargetはActionProfile世代に結び付き、同一Targetの直接Override・Tape・Liveは排他的に確保する。直接Overrideは論理入力時間、Tapeは`BeginFrame`で通知されるframe番号、Liveは単調増加するbatch sequenceで進行する。profile変更、ActionSystem破棄、診断session切断で確実に解除する。
+
+Device入力の差し替え、補正前の観測ページ、`InputInspectionInput`による予約入力は引き続き提案であり、この実装では公開しない。Actionマッピング編集は設定保存・Revision確定を含む別PRとする。
+
+今回実装した公開API差分は次のとおりである。
+
+```diff
+ namespace Lumyte.Input.Actions
+ {
+     public interface IActionInspection
+     {
++        Vector2 EvaluateValue(ActionSystem system, string contextId, string actionId,
++            ActionValueKind kind, Vector2 value, TimeSpan now);
+     }
+ }
++namespace Lumyte.Input.Diagnostics
++{
++    public enum InputOverrideMode { Replace, Add }
++    public readonly record struct InputOverrideOwner(Guid SessionId, string ActorId);
++    public readonly record struct InputOverrideTarget(Guid Id);
++    public sealed record InputOverrideSpec(InputOverrideMode Mode, Vector2 Value, TimeSpan Duration);
++    public sealed record InputOverrideLease(Guid Id, InputOverrideTarget Target,
++        InputOverrideSpec Spec, long Revision, TimeSpan Remaining, bool IsActive);
++    public sealed record InputOverrideResult(bool IsSuccess, InputOverrideLease? Lease,
++        string? ErrorCode = null, string? ErrorMessage = null);
++    public enum InputTapeCommandKind { Press, Release, Set, WaitFrames }
++    public sealed record InputTapeCommand(InputTapeCommandKind Kind, int Track,
++        Vector2 Value, long Frames = 0);
++    public sealed record InputTapeTrack(string Alias, ActionValueKind Kind);
++    public sealed record InputTape(int Version, ImmutableArray<InputTapeTrack> Tracks,
++        ImmutableArray<InputTapeCommand> Commands);
++    public sealed record InputTapePlayback(Guid Id, long Revision, long CommandIndex,
++        bool IsRunning, string? StopReason);
++    public sealed record InputLiveSession(Guid Id, long Revision);
++    public sealed record InputLiveValue(InputOverrideTarget Target, Vector2 Value);
++    public interface IInputOverrideService
++    {
++        InputOverrideResult Acquire(InputOverrideOwner owner, InputOverrideTarget target,
++            InputOverrideSpec spec);
++        InputOverrideResult Update(InputOverrideOwner owner, Guid leaseId,
++            long expectedRevision, InputOverrideSpec spec);
++        InputOverrideResult Release(InputOverrideOwner owner, Guid leaseId,
++            long expectedRevision);
++        InputOverrideResult GetLease(InputOverrideOwner owner, Guid leaseId);
++    }
++    public interface IInputTapeService
++    {
++        InputTapePlayback Play(InputOverrideOwner owner, InputTape tape,
++            IReadOnlyList<InputOverrideTarget> tracks, long startFrame, int repeatCount = 1);
++        InputTapePlayback GetPlayback(InputOverrideOwner owner, Guid playbackId);
++        InputTapePlayback Stop(InputOverrideOwner owner, Guid playbackId,
++            long expectedRevision);
++    }
++    public interface IInputLiveService
++    {
++        InputLiveSession Begin(InputOverrideOwner owner,
++            IReadOnlyList<InputOverrideTarget> targets);
++        void Send(InputOverrideOwner owner, Guid sessionId, long batchSequence,
++            IReadOnlyList<InputLiveValue> orderedValues);
++        void Heartbeat(InputOverrideOwner owner, Guid sessionId);
++        void Stop(InputOverrideOwner owner, Guid sessionId);
++    }
++    public sealed partial class InputInspectionSession : IInputOverrideService,
++        IInputTapeService, IInputLiveService
++    {
++        public InputOverrideTarget GetActionTarget(ActionSystem system,
++            string contextId, string actionId);
++        public void BeginFrame(long frame);
++        public void NotifySessionClosed(Guid sessionId);
++    }
++}
+```
+
+以下のdiffはDevice段階や観測ページまで含む当初の全体設計案であり、今回未実装のAPIを含む。
 
 ```diff
 +namespace Lumyte.Input.Inspection

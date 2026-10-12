@@ -16,6 +16,9 @@ public static class InputInspectionServiceCollectionExtensions
         services.AddScoped<InputInspectionSession>();
         services.AddScoped<IInputInspection>(provider => provider.GetRequiredService<InputInspectionSession>());
         services.AddScoped<IActionInspection>(provider => provider.GetRequiredService<InputInspectionSession>());
+        services.AddScoped<IInputOverrideService>(provider => provider.GetRequiredService<InputInspectionSession>());
+        services.AddScoped<IInputTapeService>(provider => provider.GetRequiredService<InputInspectionSession>());
+        services.AddScoped<IInputLiveService>(provider => provider.GetRequiredService<InputInspectionSession>());
         services.AddScoped<InputDiagnostics>();
         return services;
     }

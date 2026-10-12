@@ -7,7 +7,7 @@ using Lumyte.Input.Actions;
 namespace Lumyte.Input.Diagnostics;
 
 /// <summary>Collects detached, bounded state from all injected Input and Action systems.</summary>
-public sealed class InputInspectionSession : IInputInspection, IActionInspection, IDisposable
+public sealed partial class InputInspectionSession : IInputInspection, IActionInspection, IInputOverrideService, IInputTapeService, IInputLiveService, IDisposable
 {
     private readonly Dictionary<InputSystem, InputView> _inputs = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ActionSystem, ActionView> _actions = new(ReferenceEqualityComparer.Instance);
@@ -122,6 +122,7 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
             throw new InvalidOperationException("Action inspection system capacity reached or the system is already registered.");
         }
 
+        RegisterTargets(system, profile);
         _revision++;
     }
 
@@ -130,7 +131,9 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
     {
         ActionView view = Action(system);
         ArgumentNullException.ThrowIfNull(profile);
+        InvalidateTargets(system, "profile-changed");
         view.Profile = profile;
+        RegisterTargets(system, profile);
         view.States.Clear();
         view.Recognized.Clear();
         _revision++;
@@ -163,6 +166,7 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
     public void SystemDisposed(ActionSystem system)
     {
         Check();
+        InvalidateTargets(system, "system-disposed");
         if (_actions.Remove(system))
         {
             _revision++;
@@ -187,9 +191,9 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
 
             writer.WriteEndArray();
             writer.WriteStartArray("actionSystems");
-            foreach (ActionView action in _actions.Values)
+            foreach ((ActionSystem system, ActionView action) in _actions)
             {
-                WriteActions(writer, action);
+                WriteActions(writer, system, action, _targetLookup);
             }
 
             writer.WriteEndArray();
@@ -210,6 +214,12 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
         Check();
         _inputs.Clear();
         _actions.Clear();
+        _targets.Clear();
+        _targetLookup.Clear();
+        _leases.Clear();
+        _reservations.Clear();
+        _playbacks.Clear();
+        _live.Clear();
         _disposed = true;
     }
 
@@ -327,7 +337,7 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
         }
     }
 
-    private static void WriteActions(Utf8JsonWriter writer, ActionView view)
+    private static void WriteActions(Utf8JsonWriter writer, ActionSystem system, ActionView view, Dictionary<(ActionSystem System, string Context, string Action), InputOverrideTarget> targets)
     {
         writer.WriteStartObject();
         writer.WriteString("id", view.Id);
@@ -355,6 +365,7 @@ public sealed class InputInspectionSession : IInputInspection, IActionInspection
                 writer.WriteStartObject();
                 writer.WriteString("id", action.Id);
                 writer.WriteString("kind", action.Kind.ToString());
+                writer.WriteString("target", targets[(system, context.Id, action.Id)].Id);
                 writer.WriteNumber("sensitivity", action.Sensitivity);
                 writer.WriteBoolean("normalize", action.Normalize);
                 writer.WriteNumber("smoothingMs", action.SmoothingSeconds * 1000);

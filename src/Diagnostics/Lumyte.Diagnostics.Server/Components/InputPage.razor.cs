@@ -137,6 +137,7 @@ public partial class InputPage
         context.GetProperty("exclusive").GetBoolean(),
         context.GetProperty("actions").EnumerateArray().Select(action => new ActionModel(
             action.GetProperty("id").GetString()!,
+            action.GetProperty("target").GetGuid(),
             action.GetProperty("kind").GetString()!,
             Point(action.GetProperty("value")),
             action.GetProperty("phase").GetString()!,
@@ -179,7 +180,7 @@ public partial class InputPage
 
     private sealed record ContextModel(string Id, string? Parent, int Priority, bool Exclusive, ActionModel[] Actions);
 
-    private sealed record ActionModel(string Id, string Kind, PointModel Value, string Phase, double Sensitivity, double SmoothingMs, BindingModel[] Bindings);
+    private sealed record ActionModel(string Id, Guid Target, string Kind, PointModel Value, string Phase, double Sensitivity, double SmoothingMs, BindingModel[] Bindings);
 
     private sealed record BindingModel(string Id, string Control, PointModel Scale);
 
