@@ -32,15 +32,36 @@ public readonly record struct EffectPixelRect
     /// <summary>Gets the nonnegative height.</summary>
     public int Height { get; }
 
-    internal bool IsEmpty => Width == 0 || Height == 0;
+    /// <summary>Gets a value indicating whether either dimension is zero.</summary>
+    public bool IsEmpty => Width == 0 || Height == 0;
 
-    internal EffectPixelRect Offset(int x, int y) => new(checked(X + x), checked(Y + y), Width, Height);
+    /// <summary>Translates the rectangle, rejecting integer overflow.</summary>
+    /// <param name="x">The horizontal device-pixel offset.</param>
+    /// <param name="y">The vertical device-pixel offset.</param>
+    /// <returns>The translated rectangle.</returns>
+    public EffectPixelRect Offset(int x, int y) => new(checked(X + x), checked(Y + y), Width, Height);
 
-    internal EffectPixelRect OffsetInverse(int x, int y) => new(checked(X - x), checked(Y - y), Width, Height);
+    /// <summary>Applies the inverse of a translation, rejecting integer overflow.</summary>
+    /// <param name="x">The forward horizontal offset.</param>
+    /// <param name="y">The forward vertical offset.</param>
+    /// <returns>The inversely translated rectangle.</returns>
+    public EffectPixelRect OffsetInverse(int x, int y) => new(checked(X - x), checked(Y - y), Width, Height);
 
-    internal EffectPixelRect Outset(int x, int y) => IsEmpty ? this : new(checked(X - x), checked(Y - y), checked(Width + (2 * x)), checked(Height + (2 * y)));
+    /// <summary>Expands nonempty bounds by nonnegative margins on both sides of each axis.</summary>
+    /// <param name="x">The horizontal margin.</param>
+    /// <param name="y">The vertical margin.</param>
+    /// <returns>The expanded rectangle, or the unchanged empty rectangle.</returns>
+    public EffectPixelRect Outset(int x, int y)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(x);
+        ArgumentOutOfRangeException.ThrowIfNegative(y);
+        return IsEmpty ? this : new(checked(X - x), checked(Y - y), checked(Width + (2 * x)), checked(Height + (2 * y)));
+    }
 
-    internal EffectPixelRect Union(EffectPixelRect other)
+    /// <summary>Returns the smallest rectangle containing both finite inputs.</summary>
+    /// <param name="other">The second rectangle.</param>
+    /// <returns>The bounding union, treating empty rectangles as absent.</returns>
+    public EffectPixelRect Union(EffectPixelRect other)
     {
         if (IsEmpty)
         {

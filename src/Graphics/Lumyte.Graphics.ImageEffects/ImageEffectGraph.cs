@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.ImageEffects;
 
-/// <summary>Builds immutable, bounded-depth effect DAGs without accepting mutable external nodes.</summary>
+/// <summary>Builds immutable, bounded-depth effect DAGs with standard and user-defined operations.</summary>
 public sealed class ImageEffectGraph
 {
     private readonly int _depth;
@@ -79,6 +79,36 @@ public sealed class ImageEffectGraph
         }
 
         return new(new CompositeEffectNode(source.Root, backdrop.Root, mode, sourceOffsetX, sourceOffsetY), Math.Max(source._depth, backdrop._depth) + 1);
+    }
+
+    /// <summary>Binds an immutable user definition to its typed renderer and copied child graphs.</summary>
+    /// <typeparam name="TDefinition">The immutable user definition.</typeparam>
+    /// <param name="definition">CPU-only parameters and region mappings, retained without mutation.</param>
+    /// <param name="renderer">The borrowed renderer retained for every preparation of this graph.</param>
+    /// <param name="inputs">Child graphs in definition order. Zero inputs are permitted for image generators.</param>
+    /// <returns>The new custom graph.</returns>
+    public static ImageEffectGraph Custom<TDefinition>(TDefinition definition, IImageEffectRenderer<TDefinition> renderer, params ImageEffectGraph[] inputs)
+        where TDefinition : ImageEffectDefinition
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(renderer);
+        ArgumentNullException.ThrowIfNull(inputs);
+        int inputCount = definition.InputCount;
+        if (inputCount < 0 || inputCount != inputs.Length)
+        {
+            throw new ArgumentException("The child count must match the definition's nonnegative input count.", nameof(inputs));
+        }
+
+        var nodes = new ImageEffectNode[inputs.Length];
+        int depth = 1;
+        for (int i = 0; i < inputs.Length; i++)
+        {
+            ArgumentNullException.ThrowIfNull(inputs[i]);
+            nodes[i] = inputs[i].Root;
+            depth = Math.Max(depth, inputs[i]._depth + 1);
+        }
+
+        return new(CustomEffectNode.Create(definition, renderer, nodes), depth);
     }
 
     internal static int Radius(float sigma)
