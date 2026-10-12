@@ -86,7 +86,11 @@ public sealed class ModuleCollectionTests
             return stop.IsCompleted;
         }
 
-        Assert.True(SpinWait.SpinUntil(PumpWhileAwaitingStop, TimeSpan.FromSeconds(5)));
+        // Shared CI runners may delay asynchronous continuations while other test assemblies compile.
+        // This is a lifecycle correctness test, not a five-second shutdown latency requirement.
+        Assert.True(
+            SpinWait.SpinUntil(PumpWhileAwaitingStop, TimeSpan.FromSeconds(30)),
+            $"Shutdown timed out: runtime={runtime.Status}, startup={startup.Status}, stop={stop.Status}, cleaned={module.Cleaned}.");
         CompletedResult.Read(stop);
         Assert.True(module.Cleaned);
         Assert.Throws<OperationCanceledException>(() => CompletedResult.Read(startup));
