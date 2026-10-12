@@ -1,4 +1,4 @@
-# ADR-GRAPHICS-0014: DIによるデバイス世代の提供とDeviceLost後の再生成
+# ADR-GRAPHICS-0016: DIによるデバイス世代の提供とDeviceLost後の再生成
 
 - 状態: 提案
 - 日付: 2026-10-10

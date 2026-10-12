@@ -5,7 +5,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [開発環境のセットアップ](docs/development-environment.md)
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
-- [GraphicsのDI・デバイスロスト復旧](docs/adr/graphics/GRAPHICS-0014-device-di-and-loss-recovery.md)／[Hosting API](src/Graphics/Lumyte.Graphics.Hosting/README.md)
+- [GraphicsのDI・デバイスロスト復旧](docs/adr/graphics/GRAPHICS-0016-device-di-and-loss-recovery.md)／[Hosting API](src/Graphics/Lumyte.Graphics.Hosting/README.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [汎用数学計算](src/Core/Lumyte.Mathematics/README.md)
 - [設定管理](src/Core/Lumyte.Settings/README.md)／[設定管理の設計](docs/adr/settings/SETTINGS-0001-user-settings-persistence.md)
@@ -24,6 +24,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [2D・3D共通画像エフェクトの設計](docs/adr/graphics/GRAPHICS-0017-image-effects.md)／[利用方法](src/Graphics/Lumyte.Graphics.ImageEffects/README.md)
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)
 - [Indexed drawとIndirect実行](docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)
 - [カラーテクスチャ形式の拡充](docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)

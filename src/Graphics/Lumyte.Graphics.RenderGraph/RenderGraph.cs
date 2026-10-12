@@ -31,7 +31,8 @@ public sealed class RenderGraph
     /// <summary>Gets the stable builder identity used in diagnostic runs.</summary>
     public Guid Id { get; } = Guid.NewGuid();
 
-    internal IGraphicDevice? Device { get; }
+    /// <summary>Gets the borrowed device used by graph extensions and temporary allocations, or null for import-only graphs.</summary>
+    public IGraphicDevice? Device { get; }
 
     internal IRenderGraphObserver? Observer { get; }
 
