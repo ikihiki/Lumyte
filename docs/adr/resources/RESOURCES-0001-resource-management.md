@@ -2,7 +2,7 @@
 
 - 状態: 提案
 - 日付: 2026-10-09
-- 更新日: 2026-10-10
+- 更新日: 2026-10-12
 - 関連カテゴリ: core、graphics、platform
 
 ## 背景
@@ -11,7 +11,7 @@
 
 読み込みを単一の型別ローダーへ集約すると、中間型の再利用、依存解決、ストリーミング、HotReloadを個別に実装することになる。また、managedな参照だけではunmanagedなコンポーネントを要求するECSからリソースを指せない。型付きPipelineの依存グラフを基盤に、生成物の世代と利用権を統一して管理する。
 
-本ADRのリソースはアセットの実行時オブジェクトである。ECSそのもの、コーデック、アセット変換ツールや配信パック形式は設計対象にしない。メモリ機構は [MEMORY-0001](../memory/MEMORY-0001-memory-management-contracts.md)、deviceのDIとlostは [GRAPHICS-0014](../graphics/GRAPHICS-0014-device-di-and-loss-recovery.md) の契約を使う。以下は公開APIを含む設計案であり、本PRに実装は含めない。
+本ADRのリソースはアセットの実行時オブジェクトである。ECSそのもの、コーデック、アセット変換ツールや配信パック形式は設計対象にしない。メモリ機構は [MEMORY-0001](../memory/MEMORY-0001-memory-management-contracts.md)、deviceのDIとlostは [GRAPHICS-0014](https://github.com/ikihiki/Lumyte/pull/43) の契約を使う。デバイス管理のADRと実装は独立PR #43へ移し、本PRにはリソース側の連携設計を残す。以下は公開APIを含む設計案であり、本PRに実装は含めない。
 
 ## 決定
 
