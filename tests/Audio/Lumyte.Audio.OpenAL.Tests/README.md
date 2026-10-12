@@ -1,6 +1,6 @@
 # OpenAL 回帰テスト
 
-OpenAL Soft をインストールし、明示的に有効化して実行します。通常のsolutionテストではスキップし、Audio専用CIで実行します。ヘッドレス環境では null driver を指定します。
+OpenAL Soft をインストールし、明示的に有効化して実行します。通常のsolutionテストではスキップし、共通CIのLinux x64で有効化して実行します。ヘッドレス環境では null driver を指定します。
 
 ```sh
 LUMYTE_OPENAL_TESTS=1 ALSOFT_DRIVERS=null dotnet test tests/Audio/Lumyte.Audio.OpenAL.Tests -c Release
