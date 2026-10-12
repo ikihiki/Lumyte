@@ -354,6 +354,9 @@ public sealed class TranslateEffectRenderer : IImageEffectRenderer<TranslateEffe
         => inputs[0] with { Bounds = inputs[0].Bounds.Offset(effect.X, effect.Y) };
 }
 
+```
+
+```csharp
 var moved = ImageEffectGraph.Custom(new TranslateEffect(8, 4),
     new TranslateEffectRenderer(), ImageEffectGraph.Source());
 var effect = ImageEffectGraph.GaussianBlur(3, 3, moved);
