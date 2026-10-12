@@ -139,7 +139,7 @@ try {
     await waitFor(() => evaluate("Boolean(document.getElementById('workspace')) && document.getElementById('workspace').hidden === false"), 'cookie login after reload');
     for (const transport of ['http', 'magiconion']) {
         const endpoint = transport === 'http' ? httpPort : grpcPort;
-        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '60'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`) });
+        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '120'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`), LUMYTE_DIAGNOSTICS_RENDER_GRAPH: '1', LUMYTE_DIAGNOSTICS_ANIMATION: '1' });
         await waitFor(() => evaluate("Array.from(document.querySelectorAll('#game-select option')).filter(option => option.value.length === 36).length === 1"), `${transport} catalog`);
         await evaluate("{ const choice = Array.from(document.querySelectorAll('#game-select option')).find(option => option.value.length === 36); document.getElementById('game-select').value = choice.value; document.getElementById('game-select').dispatchEvent(new Event('change', { bubbles: true })); }");
         await waitFor(() => evaluate("document.querySelector('[data-tab=input]')?.disabled === false"), 'selected game navigation');
@@ -181,7 +181,96 @@ try {
             await capture('settings-mobile', 'Settings — 狭い画面', '幅390pxでもログ、ツールバー、設定ツリーを横にはみ出さず表示します。', 'settings', 'mobile', true);
             await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
         }
+        await evaluate("document.querySelector('[data-tab=animation]').click()");
+        await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Animation' && document.getElementById('animation-diagnostics')?.getAttribute('data-supported') === 'true' && document.querySelectorAll('[data-animation-target]').length === 2"), `${transport} Animation capability`);
+        await evaluate("document.querySelector('[data-animation-target=\"sample.playback\"]').click()");
+        await waitFor(() => evaluate("document.getElementById('animation-selected')?.textContent === 'sample.playback' && !document.getElementById('animation-pause').disabled"), `${transport} animation playback`);
+        await evaluate("document.getElementById('animation-pause').click()");
+        await waitFor(() => evaluate("document.querySelector('.animation-status')?.textContent === 'Paused'"), `${transport} pause animation playback`);
+        await evaluate("{ const position = document.getElementById('animation-position-input'); position.value = '2500000'; position.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('animation-seek-form').requestSubmit(); }");
+        await waitFor(() => evaluate("document.getElementById('animation-position')?.textContent.includes('2,500,000')"), `${transport} seek animation playback`);
+        await evaluate("{ const speed = document.getElementById('animation-speed-input'); speed.value = '1.5'; speed.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('animation-speed-form').requestSubmit(); }");
+        await waitFor(() => evaluate("document.getElementById('animation-speed')?.textContent === '1.5×'"), `${transport} animation speed`);
+        if (transport === 'http') await capture('animation-playback', 'Animation — Playbackの制御', '明示公開されたPlaybackを選択し、Pause、Seek、速度変更を所有スレッド上の診断操作として実行した状態です。', 'animation', 'desktop', true);
+        await evaluate("document.querySelector('[data-animation-target=\"sample.motion\"]').click()");
+        await waitFor(() => evaluate("document.getElementById('animation-selected')?.textContent === 'sample.motion' && document.getElementById('animation-state')?.textContent === 'Idle'"), `${transport} animation state machine`);
+        await evaluate("{ const trigger = document.getElementById('animation-trigger-input'); trigger.value = 'action'; trigger.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('animation-trigger-form').requestSubmit(); }");
+        await waitFor(() => evaluate("!document.getElementById('animation-read').disabled"), `${transport} animation trigger result`);
+        await delay(100);
+        await evaluate("document.getElementById('animation-read').click()");
+        await waitFor(() => evaluate("document.getElementById('animation-state')?.textContent === 'Action'"), `${transport} animation transition`);
+        if (transport === 'http') {
+            await capture('animation-state-machine', 'Animation — 状態機械', '公開Triggerを設定し、実行中のアニメーション状態機械がIdleからActionへ遷移した状態です。', 'animation', 'desktop', true);
+            await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+            assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile Animation overflow');
+            await capture('animation-mobile', 'Animation — 狭い画面', '幅390pxで公開対象、状態、再生・Trigger操作を縦に配置した画面です。', 'animation', 'mobile', true);
+            await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
+        }
+        await evaluate("document.querySelector('[data-tab=rendering]').click()");
+        await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Rendering' && document.getElementById('render-graph')?.getAttribute('data-supported') === 'true'"), `${transport} Rendering capability`);
+        assert.equal(await evaluate("document.getElementById('rg-live').checked"), false, 'Rendering live refresh starts disabled');
+        await waitFor(() => evaluate("BigInt(document.getElementById('rg-summary')?.getAttribute('data-compiles') || '0') > 0n && !document.getElementById('rg-refresh-summary').disabled && !document.getElementById('rg-request-capture').disabled"), `${transport} initial render graph summary ready`);
+        assert.equal(await evaluate("document.querySelectorAll('#rg-detail-rows tr').length"), 0, 'summary does not request capture details');
+        await evaluate("document.getElementById('rg-graph-name').value = 'sample-frame'; document.getElementById('rg-graph-name').dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('rg-capture-form').requestSubmit();");
+        await waitFor(() => evaluate("document.getElementById('rg-capture-state')?.getAttribute('data-state') === 'compiled'"), `${transport} real compiled render graph capture`);
+        await waitFor(() => evaluate("document.querySelectorAll('#rg-detail-rows tr[data-index]').length === 10 && document.querySelector('#rg-detail-rows tr')?.getAttribute('data-index') === '0'"), `${transport} first capture page`);
+        const renderCaptureId = await evaluate("document.getElementById('rg-capture-id').value");
+        assert.match(renderCaptureId, /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
+        const captureDetails = await evaluate("document.getElementById('rg-capture-details').textContent");
+        assert.ok(captureDetails.includes('sample-frame'), 'capture identifies the sampled graph');
+        assert.ok(captureDetails.includes(renderCaptureId), 'capture identifies its immutable snapshot');
+        const captureCounts = await evaluate("Object.fromEntries([...document.querySelectorAll('#rg-capture-details > div')].map(item => [item.querySelector('dt').textContent.trim(), item.querySelector('dd').textContent.trim().replace(/\\s+/g, ' ')]))");
+        assert.equal(captureCounts['Pass / culled'], '17 / 2', 'capture reports live and culled pass counts');
+        assert.equal(captureCounts['Resource / transient'], '13 / 13', 'capture reports resource counts');
+        assert.equal(captureCounts['Dependency / barrier'], '27 / 27', 'capture reports dependency and barrier counts');
+        assert.ok((await evaluate("document.getElementById('rg-detail-rows').textContent")).includes('obsolete-scene-upload'), 'capture includes culled passes');
+        if (transport === 'http') await capture('rendering-passes', 'Rendering — レンダーグラフのキャプチャ', '実行中のサンプルから要求時に取得したレンダーグラフです。固定されたCapture IDで、除去されたパスを含む最初の10件を表示します。', 'rendering', 'desktop', true);
+        await evaluate("document.getElementById('rg-stop-poll').click()");
+        await waitFor(() => evaluate("document.getElementById('rg-stop-poll') === null"), `${transport} stop capture polling`);
+        const beforeLiveCompiles = await evaluate("document.getElementById('rg-summary').getAttribute('data-compiles')");
+        await evaluate("document.getElementById('rg-live').click()");
+        await waitFor(() => evaluate(`document.getElementById('rg-live').checked && BigInt(document.getElementById('rg-summary').getAttribute('data-compiles')) > BigInt('${beforeLiveCompiles}')`), `${transport} live aggregate refresh`);
+        await evaluate("document.getElementById('rg-live').click()");
+        await waitFor(() => evaluate("!document.getElementById('rg-live').checked && document.querySelector('#render-graph > .rg-heading .rg-badge')?.textContent === '集計表示を停止中' && !document.getElementById('rg-refresh-summary').disabled"), `${transport} pause aggregate refresh`);
+        const pausedCompiles = await evaluate("document.getElementById('rg-summary').getAttribute('data-compiles')");
+        await delay(1200);
+        assert.equal(await evaluate("document.getElementById('rg-summary').getAttribute('data-compiles')"), pausedCompiles, 'paused aggregate display stays fixed');
+        assert.equal(await evaluate("document.getElementById('rg-capture-id').value"), renderCaptureId, 'live aggregate updates preserve the selected capture');
+        assert.equal(await evaluate("document.getElementById('rg-capture-details').textContent"), captureDetails, 'live aggregate updates preserve captured graph and frame identity');
+        await evaluate("document.getElementById('rg-next').click()");
+        await waitFor(() => evaluate("document.querySelector('#rg-detail-rows tr')?.getAttribute('data-index') === '10' && document.querySelectorAll('#rg-detail-rows tr[data-index]').length === 9"), `${transport} second capture page`);
+        assert.ok((await evaluate("document.getElementById('rg-detail-rows').textContent")).includes('unused-debug'), 'second page includes the final culled pass');
+        assert.equal(await evaluate("document.getElementById('rg-next').disabled"), true, 'last capture page has no next page');
+        await evaluate("document.getElementById('rg-prev').click()");
+        await waitFor(() => evaluate("document.querySelector('#rg-detail-rows tr')?.getAttribute('data-index') === '0' && document.querySelectorAll('#rg-detail-rows tr[data-index]').length === 10"), `${transport} previous capture page`);
+        for (const detail of ['resources', 'dependencies', 'barriers']) {
+            const previousRows = await evaluate("document.getElementById('rg-detail-rows').textContent");
+            await evaluate(`document.querySelector('[data-rg-detail=${detail}]').click()`);
+            await waitFor(() => evaluate(`document.querySelector('#rg-detail-rows tr')?.getAttribute('data-index') === '0' && document.querySelectorAll('#rg-detail-rows tr[data-index]').length > 0 && document.getElementById('rg-detail-rows').textContent !== ${JSON.stringify(previousRows)}`), `${transport} ${detail} capture details`);
+            assert.ok(await evaluate("document.querySelectorAll('#rg-detail-rows tr[data-index]').length <= 10"), 'details fetch only one bounded page');
+            if (transport === 'http' && detail === 'resources') await capture('rendering-resources', 'Rendering — リソースの使用範囲', 'キャプチャに保存されたリソースの種別と所有形態、graph内で使用される最初と最後のPassを表示します。使用範囲の図はGPU allocationの寿命を示すものではありません。', 'rendering', 'desktop', true);
+            if (transport === 'http' && detail === 'barriers') await capture('rendering-barriers', 'Rendering — リソース同期', '同じCapture IDに保存されたBarrier一覧です。書き込みと読み取りの間に必要な同期を、パスとリソースごとに確認できます。', 'rendering', 'desktop', true);
+        }
+        const beforeSummaryRefresh = await evaluate("document.getElementById('rg-summary').getAttribute('data-compiles')");
+        await delay(50);
+        await evaluate("document.getElementById('rg-refresh-summary').click()");
+        await waitFor(() => evaluate(`BigInt(document.getElementById('rg-summary').getAttribute('data-compiles')) > BigInt('${beforeSummaryRefresh}') && !document.getElementById('rg-refresh-summary').disabled && !document.getElementById('rg-open-capture').disabled`), `${transport} refreshed render graph summary`);
+        assert.equal(await evaluate("document.getElementById('rg-capture-id').value"), renderCaptureId, 'live frames do not replace the capture');
+        assert.equal(await evaluate("document.getElementById('rg-capture-details').textContent"), captureDetails, 'captured graph and frame identity stays stable');
+        await evaluate(`document.getElementById('rg-capture-id').value = '${randomUUID()}'; document.getElementById('rg-capture-id').dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('rg-open-form').requestSubmit();`);
+        await waitFor(() => evaluate("document.getElementById('rg-error')?.textContent.includes('not-found') && !document.getElementById('rg-open-capture').disabled"), `${transport} unknown capture feedback`);
+        await evaluate(`document.getElementById('rg-capture-id').value = '${renderCaptureId}'; document.getElementById('rg-capture-id').dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('rg-open-form').requestSubmit();`);
+        await waitFor(() => evaluate("document.getElementById('rg-capture-state')?.getAttribute('data-state') === 'compiled' && document.querySelectorAll('#rg-detail-rows tr[data-index]').length > 0 && !(document.getElementById('rg-error')?.textContent.trim())"), `${transport} reopen retained capture`);
+        assert.equal(await evaluate("document.getElementById('rg-capture-details').textContent"), captureDetails);
+        if (transport === 'http') {
+            await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+            assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile Rendering overflow');
+            await capture('rendering-mobile', 'Rendering — 狭い画面', '幅390pxで要求時キャプチャの操作と詳細を表示しています。長いIDや同期情報を含む表は画面幅の中で確認できます。', 'rendering', 'mobile', true);
+            await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
+        }
         await evaluate("document.querySelector('[data-tab=metrics]').click()");
+        await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Metrics'"), `${transport} leave Rendering`);
+        assert.equal(await evaluate("document.getElementById('render-graph') === null"), true, 'leaving Rendering removes capture display');
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('9007199254740993')"), 'lossless Int64 Metric');
         await waitFor(() => evaluate("document.getElementById('event-table')?.textContent.includes('settings.operations')"), 'settings Metric');
         await evaluate("document.querySelector('[data-tab=logs]').click()");
@@ -215,7 +304,7 @@ try {
         assert.equal(game.exitCode, 0);
         assert.ok(logs.get(transport).includes('Disconnected: Jump=False'));
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
-        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsTreeReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, japaneseFont: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
+        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsTreeReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, japaneseFont: true, animationPlaybackControl: true, animationStateMachineTrigger: true, renderGraphSummary: true, renderGraphLivePause: true, realRenderGraphCapture: true, renderGraphCaptureCounts: true, renderGraphPollingStopped: true, renderGraphPagination: true, stableCaptureIdentity: true, retainedCaptureReopened: true, captureNotFoundFeedback: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
     // Controlled resources exercise the resource-oriented query and navigation model.
     async function gameRequest(method, path, body, secret) {
@@ -270,6 +359,16 @@ try {
     await waitFor(() => evaluate("document.getElementById('workspace')?.getAttribute('data-ready') === 'true' && document.getElementById('page-title')?.textContent === 'UI'"), 'unsupported UI page');
     await waitFor(() => evaluate("document.querySelector('.content').textContent.includes('未対応')"), 'capability status');
     assert.equal(await evaluate("document.querySelector('[data-tab=ui]') === null"), true);
+    await command('Page.navigate', { url: `${origin}/games/${first.sessionId}/rendering` });
+    await waitFor(() => evaluate("document.getElementById('workspace')?.getAttribute('data-ready') === 'true' && document.getElementById('page-title')?.textContent === 'Rendering'"), 'unsupported Rendering page');
+    await waitFor(() => evaluate("document.querySelector('.content').textContent.includes('未対応')"), 'Rendering capability status');
+    assert.equal(await evaluate("document.querySelector('[data-tab=rendering]') === null"), true, 'Rendering navigation requires a published capability');
+    assert.equal(await evaluate("document.getElementById('rg-capture-details') === null"), true, 'another resource cannot expose the previous capture');
+    await command('Page.navigate', { url: `${origin}/games/${first.sessionId}/animation` });
+    await waitFor(() => evaluate("document.getElementById('workspace')?.getAttribute('data-ready') === 'true' && document.getElementById('page-title')?.textContent === 'Animation'"), 'unsupported Animation page');
+    await waitFor(() => evaluate("document.querySelector('.content').textContent.includes('未対応')"), 'Animation capability status');
+    assert.equal(await evaluate("document.querySelector('[data-tab=animation]') === null"), true, 'Animation navigation requires a published capability');
+    assert.equal(await evaluate("document.getElementById('animation-selected') === null"), true, 'another resource cannot expose the previous animation target');
     await command('Page.navigate', { url: `${origin}/games/${randomUUID()}/logs` });
     await waitFor(() => evaluate("document.getElementById('workspace-error')?.textContent.includes('接続されていません')"), 'disconnected target');
     assert.equal(await evaluate("document.getElementById('session-id').textContent"), '—');
@@ -283,7 +382,7 @@ try {
     assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('later-error'));
     await gameRequest('DELETE', `sessions/${first.sessionId}`, undefined, first.sessionSecret);
     await gameRequest('DELETE', `sessions/${second.sessionId}`, undefined, second.sessionSecret);
-    results.push({ scenario: 'aspire-dashboard-patterns', resourceNavigation: true, gamePageRoutes: true, unsupportedCapability: true, disconnectedTargetIsolation: true, severityFilter: true, pauseResume: true, traceDeepLink: true, spanHierarchy: true, traceToLogs: true, metricSeriesChart: true, int64ChartPrecision: true, resourceIsolation: true, untrustedText: true });
+    results.push({ scenario: 'aspire-dashboard-patterns', resourceNavigation: true, gamePageRoutes: true, unsupportedCapability: true, animationCapabilityIsolation: true, renderGraphCapabilityIsolation: true, disconnectedTargetIsolation: true, severityFilter: true, pauseResume: true, traceDeepLink: true, spanHierarchy: true, traceToLogs: true, metricSeriesChart: true, int64ChartPrecision: true, resourceIsolation: true, untrustedText: true });
     assert.equal(signalRConnection, true, 'Blazor SignalR WebSocket');
     assert.equal(legacyStream, false, 'legacy SSE removed');
     assert.equal(await evaluate("document.querySelectorAll('fluent-button').length > 0"), true, 'Fluent UI components');

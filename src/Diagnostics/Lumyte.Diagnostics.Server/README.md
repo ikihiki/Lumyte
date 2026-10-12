@@ -63,7 +63,7 @@ CI全体が成功した実行のうち、取得可能な最新の `diagnostics-g
 
 保存元はActionsの成果物で、保持期間は30日です。有効な成果物がない場合もPRを一覧に残して理由を表示しますが、画面へのリンクは表示しません。長期間更新していないPRやmainの画面を再掲載する場合はCIを再実行してください。成果物取得の予期しないエラーや検証失敗では公開を中止し、公開済みサイトを維持します。
 
-`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
+`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、AnimationのPlayback・状態機械・狭い画面、Renderingのcapture・詳細・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
 
 ```sh
 GITHUB_REPOSITORY=ikihiki/Lumyte PREVIEW_COMMIT="$(git rev-parse HEAD)" PREVIEW_LABEL="Local preview" \
@@ -139,7 +139,7 @@ curl --fail --silent -H "Authorization: Bearer $LUMYTE_DIAGNOSTICS_OPERATOR_TOKE
 - 要求の結果が期限までに届かない場合は expired とする。副作用が実行されなかったという保証ではなく、結果が不明な操作を自動再実行しない。
 - 通信終了で共通エージェントの RunAsync が完了する。ゲームの所有スレッドが Input の ReleaseSession と Pump.Deactivate を実行する。サンプルは finally でこの順序を保証する。
 
-サーバーは loopback で動く開発用の in-memory 実装。外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、グラフ・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
+サーバーは loopback で動く開発用の in-memory 実装。外部 ID プロバイダー、TLS 公開ホスティング、永続保存・監査、GPU resource 内容・画像転送は後続範囲。HTTP クライアントと MagicOnion クライアントは、loopback 以外への平文認証送信を拒否する。
 
 [実通信の検証結果・再現スクリプト](../../../docs/diagnostics/communication-verification.md) と [ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md) を参照する。
 
@@ -168,8 +168,39 @@ DiagnosticServerApplication.Create(args, ConfigureOptions, services =>
 `Context.Execute.InvokeAsync(invocation)` は共通シェルに結果を表示します。
 RequiredSubsystem は公開カタログの ID と完全一致で判定し、未対応ページはナビゲーションに表示しません。
 直接 URL を開いた場合には未対応状態を表示します。
-Objects、UI、Animation、Rendering は現在カタログと操作を表示する拡張枠です。
-詳細グラフや画像の公開プロトコルは今後追加します。
+Objects、UIは現在カタログと操作を表示する拡張枠です。
+Rendering は以下のレンダーグラフ診断を表示します。GPU resource 内容や画像の公開プロトコルは今後追加します。
+
+### アニメーションの診断
+
+EngineカテゴリのAnimationページは、`animation`サブシステムの完全なschema version 1に対応します。一覧から明示登録された対象を選択し、種別、状態、位置Tick、速度、状態機械の現在状態を表示します。PlaybackのSeek、再生、Pause、Stop、速度変更と、状態機械の公開Trigger設定・全解除を実行できます。
+
+一覧と状態は利用者が更新したときに読み取り、毎フレームpollingしません。切断、期限切れ、拒否された変更を自動再送しません。チャンネル値、骨、モーフウェイト、Compositionグラフ、タイムライン図は公開しません。登録と操作の詳細は[Lumyte.Diagnostics.Animation](../Lumyte.Diagnostics.Animation/README.md)を参照してください。
+
+### レンダーグラフの診断
+
+EngineカテゴリのRenderingページは、既定の`graphics.render-graph` moduleが公開するschema version 2のObserve操作に対応します。
+ゲーム側で`AddRenderGraphDiagnostics<TPoint>()`を登録し、graphとdiagnostic pumpを同じ所有スレッドで実行してください。
+独自のmodule IDで登録した場合は、Operationsページから同じ診断操作を実行できます。
+GPU不要の[ゲームサンプル](../../../samples/Lumyte.Diagnostics.Remote.Sample/README.md#レンダーグラフ診断)は`LUMYTE_DIAGNOSTICS_RENDER_GRAPH=1`で有効になります。
+
+ページを開くと集計を一回取得します。「集計を1秒ごとに更新」を有効にすると、Compile／Record件数、CPU平均・最大時間、失敗件数、保持状況を1秒間隔で読み取ります。
+これらはゲームscope開始以来の累積集計で、時間はCPU処理時間です。
+
+Graph名を指定して「次の実行をキャプチャ」を押すと、一致する次回Compileを一度だけ保存します。名前を空欄にすると次の任意graphが対象です。
+既知のCapture IDから保存期限内のcaptureを開くこともできます。
+対象の取得とRecord完了を確認するため、pending／capturing／compiledの状態は最大30回、1秒間隔で確認します。
+「自動確認を停止」はUIの読み取りを止める操作で、ゲーム側のcapture要求は取り消しません。以降は「状態を更新」で確認できます。
+`compiled`は構造の保存、`recorded`はCPUでのコマンド記録完了を表し、GPUの完了を表しません。
+
+Passes／Resources／Dependencies／Barriersの4タブを10行ずつ取得します。前後のページ移動とIndex指定に対応し、フレームが進んでも同じCapture IDの構造を参照します。
+PassesのIndexは宣言順で、Execution indexと依存関係・barrierのPass番号はculling後の実行順です。
+Resourcesのバーはgraph内で最初から最後に使用する実行Passの範囲を示します。GPU allocationの寿命やサイズではありません。
+Export barrierはgraph末尾の外部利用への同期として表示します。期限切れ・容量による削除・上限超過は画面に理由を表示します。
+
+保持上限、captureの状態、APIの詳細は[Lumyte.Diagnostics.RenderGraph](../Lumyte.Diagnostics.RenderGraph/README.md)を参照してください。
+
+Renderingの設計判断は[ADR-DIAGNOSTICS-0004](../../../docs/adr/diagnostics/DIAGNOSTICS-0004-render-graph-inspection-ui.md)を参照してください。
 
 ### 設定の診断
 
