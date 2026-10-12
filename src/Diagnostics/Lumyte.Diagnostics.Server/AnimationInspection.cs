@@ -78,10 +78,10 @@ internal sealed class AnimationInspection(Func<OperationInvocation, Cancellation
         }
 
         Snapshot snapshot = await ReadSnapshotAsync("read", new() { ["id"] = DiagnosticValue.From(id) }, token);
-            if (snapshot.Id != id)
-            {
-                throw new InvalidDataException();
-            }
+        if (snapshot.Id != id)
+        {
+            throw new InvalidDataException();
+        }
 
         token.ThrowIfCancellationRequested();
         Selected = snapshot;
