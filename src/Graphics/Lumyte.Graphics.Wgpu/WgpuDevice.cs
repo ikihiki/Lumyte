@@ -368,20 +368,20 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _lifetime.ValidateAlive();
     }
 
-    private bool HasPendingRequests()
-    {
-        lock (_requestGate)
-        {
-            return _pendingRequests.Any(isComplete => !isComplete());
-        }
-    }
-
     private static void ValidateSurfaceSource(A.SurfaceSource source)
     {
         if (!Enum.IsDefined(source.Tag) || source.Handle0 == 0 ||
             (source.Tag is A.SurfaceSource.Kind.WindowsHwnd or A.SurfaceSource.Kind.XlibWindow or A.SurfaceSource.Kind.WaylandSurface && source.Handle1 == 0))
         {
             throw new ArgumentException("Supply valid native target handles.", nameof(source));
+        }
+    }
+
+    private bool HasPendingRequests()
+    {
+        lock (_requestGate)
+        {
+            return _pendingRequests.Any(isComplete => !isComplete());
         }
     }
 }
