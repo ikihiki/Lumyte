@@ -16,4 +16,6 @@ using WindowDiagnosticRegistration registration = registry.Register("main", wind
 
 レジストリ、登録対象、診断PumpはWindowSystemと同じ所有スレッドで使用してください。スナップショットはscalar値だけを保持し、`IWindow`、`WindowNode`、HWNDなどのNative資源を診断通信へ渡しません。
 
+対応する診断Serverでは、`Window`ページからWindowSystemとWindowを選択し、親子関係、寸法、可視性、寿命を確認できます。Edit権限がある場合は表示、非表示、活性化、前面化、終了を要求できます。管理要求は自動再送せず、状態の確定は「状態を更新」で明示的に再取得します。
+
 設計判断は[Window診断ADR](../../../docs/adr/diagnostics/DIAGNOSTICS-0005-window-inspection.md)を参照してください。

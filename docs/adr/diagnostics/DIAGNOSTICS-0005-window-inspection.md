@@ -17,8 +17,10 @@ Edit操作は`WindowNode`の`Show`、`Hide`、`Activate`、`BringToFront`、`Clo
 
 すべての操作は既存の診断Pumpを通じてWindowSystemの所有スレッドで実行する。通信スレッドからWindowSystemを直接操作しない。登録解除時はイベント購読と診断IDの対応を破棄する。
 
+診断Serverにschema version 1の完全なWindow診断契約を検証する専用ページを追加する。ページはSystem一覧、Window一覧、選択したscalar snapshotを段階的に取得する。Edit操作は要求IDの受理だけを表示し、自動再送や完了状態の推測を行わない。利用者が状態更新を明示したときだけsnapshotを再取得する。
+
 ## Consequences
 
 Windowing本体の依存境界とID非公開方針を維持したまま、NativeとHostedを同じ診断手順で観測・操作できる。診断IDは永続IDではなく、再登録後に変わり得る。Edit権限を持つ利用者はWindowを閉じられるため、診断Server側の既存の認証・権限制御を必須とする。
 
-専用のWindow診断UI、毎フレームpolling、画像取得、入力イベント、Native handleの公開はこの決定に含めない。
+毎フレームpolling、画像取得、入力イベント、Native handleの公開はこの決定に含めない。
