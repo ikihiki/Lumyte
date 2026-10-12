@@ -1,0 +1,95 @@
+@implements IAsyncDisposable
+
+<section id="input-page" aria-busy="@_busy.ToString().ToLowerInvariant()">
+    <FluentCard Class="input-toolbar" role="toolbar" aria-label="Input診断操作">
+        <div class="input-view-tabs">
+            @foreach (string view in new[] { "devices", "actions", "tape" })
+            {
+                <FluentButton data-input-view="@view" aria-current="@(_view == view ? "page" : null)" OnClick="() => _view = view">@ViewTitle(view)</FluentButton>
+            }
+        </div>
+        <FluentButton Id="input-refresh" Disabled="_busy" OnClick="LoadAsync">再読み込み</FluentButton>
+        @if (_busy) { <FluentSpinner Class="settings-progress" aria-label="処理中" /> }
+        <span id="input-status" role="status">@_status</span>
+    </FluentCard>
+
+    @if (_view == "devices")
+    {
+        @if (_snapshot?.Inputs.SelectMany(system => system.Devices).Any() != true)
+        {
+            <p role="status">接続されたInputDeviceを待っています。</p>
+        }
+        @foreach (InputSystemModel system in _snapshot?.Inputs ?? [])
+        {
+            <div class="input-system-heading"><h2>InputSystem @Short(system.Id)</h2><span>@string.Join(" · ", system.Sources)</span></div>
+            <div class="input-device-grid">
+            @foreach (DeviceModel device in system.Devices)
+            {
+                <FluentCard Class="input-device" data-device-kind="@device.Kind.ToLowerInvariant()">
+                    <div class="input-device-heading"><div><h2>@device.Name</h2><span>@device.Kind · #@device.Id</span></div><span class="input-state @(device.Connected ? "connected" : "disconnected")">@(device.Connected ? device.Focused ? "Focused" : "Connected" : "Disconnected")</span></div>
+                    <p class="hint">@device.Identity · sequence @device.Sequence</p>
+                    @if (device.Kind == "Keyboard")
+                    {
+                        <div class="key-grid" aria-label="押されているキー">@foreach (string key in device.Pressed) { <span>@key</span> }</div>
+                        @if (device.Pressed.Length == 0) { <p class="hint">押されているキーはありません。</p> }
+                    }
+                    else if (device.Kind == "Mouse")
+                    {
+                        <div class="pointer-pad"><span style="left:@Percent(device.Position?.X ?? 0); top:@Percent(device.Position?.Y ?? 0)"></span></div>
+                        <p>Position @Vector(device.Position)</p><p>Buttons @List(device.Pressed)</p>
+                    }
+                    else if (device.Kind == "Controller")
+                    {
+                        <div class="controller-sticks">@foreach ((string name, PointModel point) in device.Sticks) { <div><svg viewBox="0 0 100 100" role="img" aria-label="@name"><circle class="stick-range" cx="50" cy="50" r="40"/><line x1="50" y1="50" x2="@StickX(point)" y2="@StickY(point)"/><circle class="stick-value" cx="@StickX(point)" cy="@StickY(point)" r="6"/></svg><span>@name @Vector(point)</span></div> }</div>
+                        <div class="trigger-list">@foreach ((string name, double value) in device.Triggers) { <label>@name <progress max="1" value="@value"></progress> @value.ToString("0.00", CultureInfo.InvariantCulture)</label> }</div>
+                        <p>Buttons @List(device.Pressed)</p>
+                    }
+                    else if (device.Kind is "Touch" or "Pen")
+                    {
+                        @foreach (PointerModel pointer in device.Pointers) { <div class="pointer-row"><strong>@pointer.Id</strong><span>@pointer.Phase · @Vector(pointer.Position)</span><progress max="1" value="@(pointer.Pressure ?? 0)"></progress><span>@(pointer.Pressure?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—")</span></div> }
+                        @if (device.Pointers.Length == 0) { <p class="hint">アクティブなポインターはありません。</p> }
+                    }
+                </FluentCard>
+            }
+            </div>
+        }
+    }
+    else if (_view == "actions")
+    {
+        @if (_snapshot?.Actions.Length > 0)
+        {
+            @foreach (ActionSystemModel system in _snapshot.Actions)
+            {
+                <div class="input-system-heading"><h2>ActionSystem @Short(system.Id)</h2><span>@system.TimeMs.ToString("0.0", CultureInfo.InvariantCulture) ms</span></div>
+                @foreach (ContextModel context in system.Contexts)
+                {
+                    <FluentCard Class="action-context">
+                        <div class="input-device-heading"><div><h2>@context.Id</h2><span>priority @context.Priority · @(context.Exclusive ? "exclusive" : "shared")</span></div><span>@(context.Parent == null ? "root" : "inherits " + context.Parent)</span></div>
+                        <div class="table-container"><table><thead><tr><th>Action</th><th>値</th><th>Phase</th><th>Binding</th><th>補正</th></tr></thead><tbody>
+                        @foreach (ActionModel action in context.Actions)
+                        {
+                            <tr><td><strong>@action.Id</strong><br/><span class="hint">@action.Kind · target <code>@action.Target</code></span></td><td><div class="action-value"><span style="width:@Strength(action.Value)"></span></div>@Vector(action.Value)</td><td>@action.Phase</td><td>@foreach (BindingModel binding in action.Bindings) { <div><code>@binding.Control</code> × @Vector(binding.Scale)</div> }</td><td>sens @action.Sensitivity.ToString("0.##", CultureInfo.InvariantCulture)<br/>smooth @action.SmoothingMs.ToString("0", CultureInfo.InvariantCulture) ms</td></tr>
+                        }
+                        </tbody></table></div>
+                    </FluentCard>
+                }
+                @if (system.Recognized.Length > 0) { <FluentCard Class="card"><h2>最近の認識</h2>@foreach (RecognitionModel item in system.Recognized) { <p><strong>@item.Id</strong> · @item.Context · @item.AtMs.ToString("0.0", CultureInfo.InvariantCulture) ms · @Vector(item.Value)</p> }</FluentCard> }
+            }
+        }
+        else
+        {
+            <p role="status">ActionSystemがinspectionへ接続されていません。</p>
+        }
+    }
+    else
+    {
+        <FluentCard Class="card"><h2>Tape・ライブ入力</h2><p>ゲームが公開しているInput操作を表示します。Tapeのアップロード、再生、停止、ライブ入力の操作は同じリースと優先制御を使います。</p></FluentCard>
+        <div id="input-forms" class="operation-grid">
+        @foreach ((SubsystemDescriptor subsystem, OperationDescriptor operation) in InputOperations)
+        {
+            <OperationCard @key="(Context.Resource?.SessionId, subsystem.Id, operation.Id)" Subsystem="subsystem" Operation="operation" Execute="Context.Execute" />
+        }
+        </div>
+        @if (!InputOperations.Any()) { <p role="status">Tapeまたは入力操作はまだ公開されていません。</p> }
+    }
+</section>

@@ -1,4 +1,4 @@
-# ADR-GRAPHICS-0016: 2D・3Dで共有する画像エフェクトDAGとRenderGraphへの展開
+# ADR-GRAPHICS-0017: 2D・3Dで共有する画像エフェクトDAGとRenderGraphへの展開
 
 - 状態: 採用
 - 日付: 2026-10-11
@@ -353,17 +353,3 @@ var moved = graph.AppendTranslate(source, 8, 4);
 var blurred = graph.AppendGaussianBlur(moved.Output, 3, 3);
 // movedとblurredをGPU使用終了後まで保持する。
 ```
-
-#### DAGを構築して2Dへ適用する
-
-効果とDAGの作成はAppend拡張メソッドから分離する。分岐や共有入力をImageEffectGraphで表す場合は、作成済みの効果をCreateへ渡す。
-
-```csharp
-var translation = new TranslateEffect(8, 4);
-var blur = new GaussianBlurEffect(3, 3);
-var moved = ImageEffectGraph.Create(translation, ImageEffectGraph.Source());
-var effect = ImageEffectGraph.Create(blur, moved);
-var owner = graph.AppendEffects(effect, source);
-```
-
-このDAGは任意のRenderGraphへAppendEffectsで展開できる。2DのレイヤーではDAGを設定する代わりに、ImageEffectSubgraphを受け取るEffectsコールバックでパスを追加する。部分ビューは親graphと同じ資源・パスを使い、別のCompileやSubmitを行わない。

@@ -217,11 +217,12 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
             return;
         }
 
-        if (_active != null)
+        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
         {
             throw new InvalidOperationException("End the pass before disposal.");
         }
 
+        DiscardActivePassNative();
         DisposeNative();
         foreach (IDisposable binding in _bindings)
         {
@@ -236,7 +237,6 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
 
     internal void ValidateSubmit()
     {
-        _owner.ValidateAlive();
         if (State != CommandBufferState.Executable)
         {
             throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
@@ -276,7 +276,6 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
 
     private void RequireRecording()
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
         if (State != CommandBufferState.Recording || _active != null)
         {

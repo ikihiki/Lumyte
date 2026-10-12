@@ -16,4 +16,7 @@ public sealed class DiagnosticOperationAttribute(DiagnosticPermission permission
 
     /// <summary>Gets or sets a value indicating whether a revision must be supplied.</summary>
     public bool RequiresRevision { get; set; }
+
+    /// <summary>Gets or sets the trusted scheduling and retention class.</summary>
+    public DiagnosticOperationTraffic Traffic { get; set; }
 }

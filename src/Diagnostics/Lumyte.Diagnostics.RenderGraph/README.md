@@ -2,6 +2,9 @@
 
 RenderGraph の CPU 集計と要求時の構造 capture を既存 `Lumyte.Diagnostics` に接続します。既存の catalog、execution point、HTTP／MagicOnion と telemetry collector を使用します。
 
+既定の module ID `graphics.render-graph` は[診断サーバーのRenderingページ](../Lumyte.Diagnostics.Server/README.md#レンダーグラフの診断)から操作できます。
+集計の更新、次回Compileのcapture要求、Capture IDによる構造の参照に対応します。独自のmodule IDはOperationsページで操作してください。
+
 ```csharp
 using Lumyte.Diagnostics;
 using Lumyte.Diagnostics.RenderGraph;

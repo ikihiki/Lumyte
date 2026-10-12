@@ -131,6 +131,11 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         DescriptorSetLayout group = _argumentLayout;
         var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &group };
         Result result = _owner.Api.CreatePipelineLayout(_owner.NativeDevice, &info, null, out _layout);
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan pipeline creation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan pipeline layout creation failed: {result}.");
@@ -240,6 +245,11 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
                                 BasePipelineIndex = -1,
                             };
                             Result result = _owner.Api.CreateGraphicsPipelines(_owner.NativeDevice, default, 1, &info, null, out Pipeline pipeline);
+                            if (result == Result.ErrorDeviceLost)
+                            {
+                                _owner.ReportLoss("Vulkan pipeline creation failed: device lost.");
+                            }
+
                             if (result != Result.Success)
                             {
                                 if (pipeline.Handle != 0)

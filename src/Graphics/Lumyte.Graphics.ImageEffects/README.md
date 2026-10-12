@@ -31,7 +31,7 @@ DAG経路ではSourceのsemanticを、直接AppendEffectの0入力生成ではDi
 呼び出し側がCompile・Record・Submitと完了待機を行い、commandとcompiled planの解放後に
 すべてのPreparedImageEffectをDisposeします。Append失敗後はRenderGraph全体を破棄してください。
 
-設計と公開APIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) を参照してください。
+設計と公開APIは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。
 
 画像処理はRenderGraph.Deviceの借用deviceを使い、CreateTexture・AddPass・UseTextureで宣言します。
 画像・依存順・barrier・一時allocationはRenderGraphが管理します。別のcompilerや実行器はありません。

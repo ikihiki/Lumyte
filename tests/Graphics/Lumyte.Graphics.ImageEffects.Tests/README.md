@@ -14,4 +14,4 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" \
   dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter ImageEffectsTests
 ```
 
-設計とAPIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) を参照する。
+設計とAPIは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照する。

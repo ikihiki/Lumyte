@@ -47,6 +47,7 @@ public sealed class GeneratorTests
     [InlineData("public partial class Adapter { [DiagnosticOperation] private DiagnosticResult<R> Go([DiagnosticArgument(Minimum = 2, Maximum = 1)] long x) => null!; }", "LMDIAG005")]
     [InlineData("public partial class Adapter { [DiagnosticOperation] private DiagnosticResult<R> GetURL() => null!; [DiagnosticOperation] private DiagnosticResult<R> GetUrl() => null!; }", "LMDIAG003")]
     [InlineData("public partial class Adapter { private sealed class __LumyteDiagnosticOutput0 {} [DiagnosticOperation] private DiagnosticResult<R> Go() => null!; }", "LMDIAG001")]
+    [InlineData("public partial class Adapter { [DiagnosticOperation(Traffic = (DiagnosticOperationTraffic)3)] private DiagnosticResult<R> Go() => null!; }", "LMDIAG005")]
     public void InvalidDeclarationsAreRejected(string declaration, string code)
     {
         (GeneratorDriverRunResult Run, Compilation Output) result = Run("using Lumyte.Diagnostics; namespace Demo; " + declaration + " public sealed record R(bool Ok);");
@@ -63,7 +64,7 @@ public sealed class GeneratorTests
             namespace Demo;
             public sealed partial class Adapter
             {
-                [DiagnosticOperation(Id = "stable", RequiresRevision = true)]
+                [DiagnosticOperation(Id = "stable", RequiresRevision = true, Traffic = DiagnosticOperationTraffic.Stream)]
                 private DiagnosticResult<Receipt> Go([DiagnosticArgument("amount", Minimum = 1, Maximum = 5)] long count)
                     => DiagnosticResult<Receipt>.Success(new(count, new object()));
             }
@@ -79,6 +80,7 @@ public sealed class GeneratorTests
         Assert.Contains("\"amount\"", generated, StringComparison.Ordinal);
         Assert.Contains("\"result\"", generated, StringComparison.Ordinal);
         Assert.Contains("RequiresRevision: true", generated, StringComparison.Ordinal);
+        Assert.Contains("Traffic: (global::Lumyte.Diagnostics.DiagnosticOperationTraffic)1", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("Internal", generated, StringComparison.Ordinal);
     }
 

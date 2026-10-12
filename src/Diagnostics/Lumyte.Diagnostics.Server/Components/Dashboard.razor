@@ -98,7 +98,7 @@
         {
             <SettingsPage Resource="Selected" Events="_events" Invoke="InvokeSettingsAsync" />
         }
-        @if (_view is "operations" or "input")
+        @if (_view == "operations")
         {
             <label for="operation-filter">操作名・サブシステムで検索</label><input id="operation-filter" type="search" @bind="_operationFilter" @bind:event="oninput" />
             <p class="hint">公開カタログから生成した操作を最大20件表示します。検索で絞り込めます。</p>

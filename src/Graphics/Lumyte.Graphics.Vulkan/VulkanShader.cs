@@ -22,6 +22,11 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
                 PCode = (uint*)bytes,
             };
             Result result = owner.Api.CreateShaderModule(owner.NativeDevice, &desc, null, out _native);
+            if (result == Result.ErrorDeviceLost)
+            {
+                _owner.ReportLoss("Vulkan operation failed: device lost.");
+            }
+
             if (result != Result.Success)
             {
                 throw new InvalidOperationException($"Vulkan shader module creation failed: {result}.");

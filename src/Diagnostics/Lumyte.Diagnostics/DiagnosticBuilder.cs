@@ -20,7 +20,7 @@ public sealed class DiagnosticBuilder
 
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(handler);
-        if (string.IsNullOrWhiteSpace(descriptor.Id) || !Enum.IsDefined(descriptor.RequiredPermission))
+        if (string.IsNullOrWhiteSpace(descriptor.Id) || !Enum.IsDefined(descriptor.RequiredPermission) || !Enum.IsDefined(descriptor.Traffic))
         {
             throw new ArgumentException("Invalid operation descriptor.", nameof(descriptor));
         }

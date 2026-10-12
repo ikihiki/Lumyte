@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../src/Diagnostics/Lumyte.Diagnostics.Settings/Lumyte.Diagnostics.Settings.csproj" />
     <ProjectReference Include="../../../src/Diagnostics/Lumyte.Diagnostics.Server/Lumyte.Diagnostics.Server.csproj" />
+    <ProjectReference Include="../../../src/Input/Lumyte.Input.Diagnostics/Lumyte.Input.Diagnostics.csproj" />
     <ProjectReference Include="../../../samples/Lumyte.Diagnostics.Sample/Lumyte.Diagnostics.Sample.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />

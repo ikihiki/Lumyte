@@ -190,3 +190,9 @@ context集合の途中で失敗した後、同じcontextを使った再生成も
 実行時検証の共通方針は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。resourceの保持数、commandからの依存resource走査、subresourceの状態表は検証目的で維持しません。binding生成とshader dataの明示copyに必要な参照収集・metadata伝播は行います。
 
 FrameはGPU submissionを追跡しません。`WaitForReleaseAsync`はこのbackendで追加のGPU待機を行わないため、利用者が`submission.WaitAsync()`等でGPU使用の完了を確認してからFrame・View・commandを解放します。
+
+## デバイスロスト
+
+GPUDevice.lostの解決を共通DeviceLostへ接続します。queueの完了待機もlossと競合させ、失敗として終了します。Engineがloss後にWaitForRetirementAsyncで破棄境界を確認してから子資源をDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。Interopでlossを観測できない場合は安全な退役を確認したとはみなしません。
+
+Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
