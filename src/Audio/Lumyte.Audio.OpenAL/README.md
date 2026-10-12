@@ -16,7 +16,9 @@ voice.Play();
 
 OpenAL Soft の Native ライブラリはアプリ／ホストが用意します。Linux では `libopenal1`、Windows ではプロセスのアーキテクチャに合う `OpenAL32.dll` をランタイムの検索先へ配置してください。この NuGet パッケージは Native バイナリを同梱しません。
 
-所有スレッドで各操作前に `ALC_EXT_thread_local_context` の context を current にします。同じスレッドに複数 device を構成でき、別の所有スレッドに生成した device も並行して制御できます。各 device とその子は、生成した所有スレッドからだけ操作します。process 全体の current context は変更しません。外部コードからこのバックエンドの context と source を操作しないでください。拡張またはその関数がないホストでは、生成時に `NotSupportedException` を返します。Silk.NET 2.23.0 が未提供の拡張関数 2 個だけを `ALContext.GetProcAddress` で取得します。
+各 device とその子は、生成した所有スレッドから操作します。所有スレッド外からの制御は例外で拒否します。実行スレッドの選択、ジョブからの要求配送、非同期処理後の復帰は利用者が管理してください。
+
+各操作前に `alcMakeContextCurrent` で context を current にします。current context はプロセスで共有されるため、利用者は複数 device を含む生成・制御・解放の呼び出し全体を直列化し、外部の OpenAL 呼び出しとも競合させないでください。同じスレッドに複数 device を構成できますが、異なる所有スレッドでの並行操作は保証しません。所有スレッドの一致検査だけでは、この排他は保証しません。外部コードからこのバックエンドの context と source を直接操作しないでください。
 
 初期化失敗時は部分生成物を解放します。`maxVoices` はバックエンドの管理上限であり、OpenAL の source 上限より大きい場合もあります。Native の割り当て失敗は例外で通知し、既存 voice の制御・解放と、解放後の新規割り当てを継続できます。
 
@@ -26,4 +28,4 @@ float PCM は [-1, 1] に clamp して PCM16 に変換します。mono／stereo 
 
 [実行サンプル](../../../samples/Lumyte.Audio.Sample/README.md) で契約を確認できます。検証済み: Linux x64／OpenAL Soft の null driver。物理出力の可聴品質、Windows・ARM64 の実機実行は未検証です。
 
-[回帰テスト](../../../tests/Audio/Lumyte.Audio.OpenAL.Tests/README.md) は Native の source 枯渇からの回復と、複数所有スレッド間の context 分離を確認します。
+[回帰テスト](../../../tests/Audio/Lumyte.Audio.OpenAL.Tests/README.md) は Native の source 枯渇からの回復を確認します。

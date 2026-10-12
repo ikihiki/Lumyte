@@ -14,7 +14,6 @@ public sealed class OpenALDevice : IAudioDevice
 
     private readonly AL _al;
     private readonly ALContext _alc;
-    private readonly OpenALThreadContext _threadContext;
     private readonly unsafe Device* _device;
     private readonly unsafe Context* _context;
 
@@ -47,14 +46,12 @@ public sealed class OpenALDevice : IAudioDevice
                 throw new InvalidOperationException("OpenAL could not open the output device.");
             }
 
-            _threadContext = new OpenALThreadContext(_alc, _device);
             _context = _alc.CreateContext(_device, null);
-            if (_context == null)
+            if (_context == null || !_alc.MakeContextCurrent(_context))
             {
-                throw new InvalidOperationException("OpenAL could not create its context.");
+                throw new InvalidOperationException("OpenAL could not create or activate its context.");
             }
 
-            _threadContext.SetCurrent(_context);
             _al.DistanceModel(DistanceModel.None);
             CheckError();
         }
@@ -62,7 +59,7 @@ public sealed class OpenALDevice : IAudioDevice
         {
             if (_context != null)
             {
-                _threadContext?.ClearIfCurrent(_context);
+                _alc.MakeContextCurrent(null);
                 _alc.DestroyContext(_context);
             }
 
@@ -194,7 +191,7 @@ public sealed class OpenALDevice : IAudioDevice
         {
             if (!_contextDestroyed)
             {
-                _threadContext.ClearIfCurrent(_context);
+                _alc.MakeContextCurrent(null);
                 _alc.DestroyContext(_context);
                 _contextDestroyed = true;
             }
@@ -240,7 +237,10 @@ public sealed class OpenALDevice : IAudioDevice
 
         unsafe
         {
-            _threadContext.SetCurrent(_context);
+            if (!_alc.MakeContextCurrent(_context))
+            {
+                throw new InvalidOperationException("OpenAL context activation failed.");
+            }
         }
     }
 }

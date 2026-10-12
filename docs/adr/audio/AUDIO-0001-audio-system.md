@@ -1,7 +1,7 @@
 # ADR-AUDIO-0001: バックエンドが共通インターフェースを直接実装するオーディオ機構
 
 - 状態: 採用
-- 更新日: 2026-10-11
+- 更新日: 2026-10-12
 - 日付: 2026-10-09
 
 ## 背景
@@ -101,7 +101,6 @@ Abstractions は Engine、Graphics、Settings、Resources、特定の DI コン�
 +namespace Lumyte.Audio.OpenAL
 +{
 +    // OpenAL Soft はホストが用意する。生成と制御は同じ所有スレッド。
-+    // ALC_EXT_thread_local_contextがない環境ではNotSupportedException。
 +    public sealed class OpenALDevice : IAudioDevice
 +    {
 +        // deviceName=null は既定出力。maxVoices は正数、初期化失敗は例外。
@@ -167,7 +166,7 @@ effect.Pause();
 
 #### リソース lease を保持して再生する
 
-次の断片は上記revisionの PR #25 の `Lumyte.Resources` 提案 API と組み合わせる例。音声Stageは同じ `IAudioDevice` 上で clip を作成し、ReleaseAsyncで clip を解放する。Pipeline登録と所有スレッドへの配送は統合側で用意する。この断片はホストの同期contextでawait前後の所有スレッドを維持する構成を前提とし、その他の構成では下記の実行機構案のように制御区間を明示的に配送する。
+次の断片は上記revisionの PR #25 の `Lumyte.Resources` 提案 API と組み合わせる例。音声Stageは同じ `IAudioDevice` 上で clip を作成し、ReleaseAsyncで clip を解放する。Pipeline登録と、await前後で所有スレッドの制約を守るための処理は利用者が用意する。この断片はホストの同期contextでawait前後の所有スレッドを維持する構成を前提とする。
 
 ```csharp
 using Lumyte.Audio.Abstractions;
@@ -222,9 +221,9 @@ OpenAL は source の状態を Update で取得する。Browser は再生ごと�
 
 ### スレッド、PCM とストリーミング
 
-各デバイスとその子は生成時の所有スレッドで制御する。OpenALは各操作前に `ALC_EXT_thread_local_context` でそのスレッドのcontextを選び、プロセス共通current contextを変更しない。この拡張を必須とし、別の所有スレッドにあるデバイスの同時操作を分離する。同じ所有スレッドに複数のデバイスを作成することもできる。
+各デバイスとその子の制御・状態参照・解放を生成時の所有スレッドで行い、必要な同期と非同期処理後の復帰を保証する責任は利用者が持つ。所有スレッド外からの制御は例外で拒否する。スレッド構成、ジョブからの要求配送、実行キューの設計・実装は本PRの対象外とする。
 
-Engine全体での所有スレッドへの配送、非同期処理との接続、起動・終了順は [ENGINE-0001](../engine/ENGINE-0001-thread-execution.md) に提案として記録する。Audio API自身は自動配送せず、構成側が各制御と解放を適切な所有者で実行する。実行機構の実装はこのPRに含めない。
+OpenALは各操作前に `alcMakeContextCurrent` でcontextを選択する。current contextはプロセスで共有されるため、複数デバイスを含む生成・制御・解放の呼び出し全体を利用者が直列化し、外部のOpenAL呼び出しとも競合させない。所有スレッドの一致検査だけでは、この排他は保証しない。
 
 音声出力はゲームの Update と独立した周期で進む。リソースシステムは取得・デコード・先読みを非同期に進め、上限付きバッファから準備済み PCM を供給する。オーディオ側は独自のデコード worker やストリーミング用リングバッファを持たない。デバイス出力とミックスに必要な作業バッファはオーディオ側で事前確保する。
 
@@ -301,7 +300,7 @@ PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限
 
 Linux x64／.NET 10 で OpenAL Soft の null driver による実バックエンド検証と、Chromium 上の発行済み Wasm サンプルの検証を実行した。共通の引数・所有権・voice 上限・再生状態の契約に加え、自然終了と clip 境界を越えるループを確認した。OpenAL は所有スレッド外からの操作を拒否することを確認した。
 
-OpenALの回帰テストでは、Native source枯渇後の既存voiceの解放・再割り当て、同じ所有スレッドの複数device、異なる所有スレッドの並行制御を確認した。割り当て直後にエラーを検査し、無効handleへのcleanupで後続操作のエラー状態を汚さない。
+OpenALの回帰テストでは、Native source枯渇後の既存voiceの解放・再割り当てを確認した。割り当て直後にエラーを検査し、無効handleへのcleanupで後続操作のエラー状態を汚さない。
 
 Browser は OfflineAudioContext の実レンダリングでステレオのチャネル分離と gain 適用後の波形を照合し、停止した旧 SourceNode の完了通知が新しい再生に影響しないことも確認した。消音状態で生成・開始したvoiceの全サンプルが0であること、複数周回後にループを解除してpause／resumeしてもclip内の位置が維持されることを回帰検証した。物理スピーカー、Windows／ARM64 の実機、デバイス切断・復旧、可聴品質・性能は未検証である。
 
