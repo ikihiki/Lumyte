@@ -34,15 +34,19 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 
 ### 固定構成とライフサイクル
 
-1. `AddModule` が `Declare` を呼び、仕事・owner・依存先・静的queue入口を登録する。この段階ではdeviceやthreadを作らない。
-2. アプリがHost／Dedicated、CPU backend、phase、周期、容量を選ぶ。
-3. `BuildOnCurrentHost` が固定Host上で検証・freezeし、静的入口を一括予約・接続する。競合するBuildも部分接続を公開せず、失敗時は未公開の予約を戻す。
+1. `ExecutionRuntime(IEnumerable<IExecutionModule>)` がmodule一覧を一度だけ収集し、全moduleの名前・実装型を登録してから各 `Declare` を一度呼ぶ。仕事・owner・依存先・静的queue入口の定義だけを取得し、Hostを捕捉せずdeviceやthreadも作らない。
+2. アプリが固定Host上で `PrepareOnCurrentHost` を呼び、FixedThreadの配置方針、CPU backend、容量を渡す。runtimeは各moduleの `Configure` を呼び、ownerの配置とphase・周期を集める。HostOnlyは常にHostとする。
+3. Prepareが検証・freezeし、静的入口を一括予約・接続する。競合するPrepareも部分接続を公開せず、失敗時は未公開の予約を戻す。
 4. HostのPumpを接続してから `StartAsync` を呼ぶ。専用threadが起動し、依存順にowner上で初期化する。全体成功後だけ通常受付と更新を有効にする。
 5. 停止は通常受付・更新を閉じ、仕事の静止、依存の逆順のcleanup、専用thread終了の順に進める。借りたHost自体は終了しない。
 
-生成する入口は仕事ごとの `static readonly CommandPort<TCommand, TResult>` とする。成功Build後は型の寿命中一度だけ同じmodule・runtime・owner・設定へ接続し、二重登録・差し替え・停止後の再接続を拒否する。static初期化は空のmanaged入口だけを作る。仕事ごとの入口は共通のOrderGroup queueを使い、型ごとの独立FIFOにはしない。
+収集時はnull、同一instance・実装型・名前の重複を拒否する。依存は `DependsOn<TModule>()` の厳密な実装型で解決し、未登録・自己依存・循環を拒否する。DI登録順には依存しない。Declare／Configureは定義だけを扱い、取得したbuilderを保持しない。構成失敗時はruntimeとmoduleを再利用せず組み直す。
 
-状態は `Created → Starting → Running → Quiescing → Stopping → Stopped`。起動中の停止は実初期化の静止と部分生成物のcleanupを待ち、通常受付を再開しない。Startは一回限りで、進行中のStart／Stopへの同時呼び出しは同じ結果を観測する。
+Configure用builderは自moduleのowner・updateだけを設定できる。Prepareで配置・駆動設定の欠落や重複、OwnerRequirement／選択したOwnerPlacementとの不一致を拒否する。
+
+生成する入口は仕事ごとの `static readonly CommandPort<TCommand, TResult>` とする。成功Prepare後は型の寿命中一度だけ同じmodule・runtime・owner・設定へ接続し、二重登録・差し替え・停止後の再接続を拒否する。static初期化は空のmanaged入口だけを作る。仕事ごとの入口は共通のOrderGroup queueを使い、型ごとの独立FIFOにはしない。
+
+状態は `Unprepared → Created → Starting → Running → Quiescing → Stopping → Stopped`。Prepareは一回限りで、成功前のStart／Pumpは拒否する。起動中の停止は実初期化の静止と部分生成物のcleanupを待ち、通常受付を再開しない。Startは一回限りで、進行中のStart／Stopへの同時呼び出しは同じ結果を観測する。
 
 停止成功後は静的入口を閉鎖済みのまま残し、runtime・handler・device・不要なstoreへの強参照を外す。未観測結果はrunが保持する。cleanup失敗時は元ownerと残存stateを保持し、Stopの再試行で未解放分だけ処理する。失敗moduleの依存先は先に停止しない。別構成の生成APIテストは別process等へ分離する。
 
@@ -54,7 +58,6 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 +namespace Lumyte.Execution
 +{
 +    public readonly struct Unit;
-+    public readonly struct ModuleKey;
 +    public readonly struct OwnerKey;
 +    public readonly struct ThreadKey;
 +    public readonly struct PhaseKey;
@@ -64,10 +67,11 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 +    public readonly struct WorkKey<TCommand, TResult> where TCommand : struct;
 +    public readonly struct RangeWorkKey<TContext> where TContext : struct;
 +    public enum OwnerRequirement { HostOnly, FixedThread }
++    public enum OwnerPlacement { Host, Dedicated }
 +    public enum WorkAdmission { Normal, Startup, Cleanup }
 +    public enum CpuExecutionMode { Cooperative, ThreadPool }
 +    public enum ShutdownMode { Drain, CancelPending }
-+    public enum ExecutionStatus { Created, Starting, Running, Quiescing, Stopping, Stopped }
++    public enum ExecutionStatus { Unprepared, Created, Starting, Running, Quiescing, Stopping, Stopped }
 +    public readonly struct WorkTarget
 +    {
 +        public static WorkTarget Cpu { get; }
@@ -87,7 +91,9 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 +    }
 +    public interface IExecutionModule
 +    {
++        string Name { get; }
 +        void Declare(ModuleBuilder builder); // 宣言だけ。device生成禁止
++        void Configure(ExecutionPlanBuilder builder, OwnerPlacement placement);
 +        ValueTask StartAsync(ModuleContext context, CancellationToken token);
 +        ValueTask StopAsync(ModuleContext context);
 +    }
@@ -96,8 +102,8 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 +        public OwnerKey Owner(string name, OwnerRequirement requirement);
 +        public OrderGroupKey OrderGroup(string name, OwnerKey owner);
 +        public GateKey Gate(string name);
-+        public void DependsOn(ModuleKey dependency);
-+        // port省略時も登録専用入口を一つ作る。接続はBuild時。
++        public void DependsOn<TModule>() where TModule : IExecutionModule;
++        // port省略時も登録専用入口を一つ作る。接続はPrepare時。
 +        public WorkKey<TCommand, TResult> Command<TCommand, TResult, THandler>(
 +            string name, THandler handler, WorkOptions options,
 +            CommandPort<TCommand, TResult>? port = null)
@@ -109,16 +115,13 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 +    }
 +    public sealed class ExecutionPlanBuilder
 +    {
-+        public ExecutionPlanBuilder();
-+        public ModuleKey AddModule(string name, IExecutionModule module); // Declare失敗時はbuilder破棄
++        // runtimeがmoduleごとに渡す配置builder。名前はmodule内で一意。
 +        public PhaseKey HostPhase(string name);
 +        public ThreadKey DedicatedThread(string name); // 宣言だけ。まだ起動しない
 +        public void BindHost(OwnerKey owner, PhaseKey phase);
 +        public void BindDedicated(OwnerKey owner, ThreadKey thread);
 +        public void DriveOnHost(UpdateKey update, PhaseKey phase);
 +        public void DrivePeriodic(UpdateKey update, ThreadLoopOptions options);
-+        public ExecutionRuntime BuildOnCurrentHost(CpuExecutionMode cpuMode,
-+            int maxCpuConcurrency, ExecutionOptions options);
 +    }
 +    public sealed class ExecutionOptions
 +    {
@@ -184,6 +187,9 @@ HostOnlyの処理は専用threadへ移さない。thread非対応環境のDedica
 +    }
 +    public sealed class ExecutionRuntime
 +    {
++        public ExecutionRuntime(IEnumerable<IExecutionModule> modules); // 定義を収集する唯一の公開constructor
++        public void PrepareOnCurrentHost(OwnerPlacement placement, CpuExecutionMode cpuMode,
++            int maxCpuConcurrency, ExecutionOptions options);
 +        public ExecutionStatus Status { get; }
 +        public Exception? Failure { get; }
 +        public CommandPort<TCommand, TResult> Bind<TCommand, TResult>(WorkKey<TCommand, TResult> key)
@@ -418,25 +424,42 @@ StartのModuleContextは自moduleの全Admissionと、初期化済み依存先�
 
 Drainは受付済み仕事を待ち、CancelPendingは未開始分を抑止する。DrainからCancelPendingへの強化だけ許し、閉じたgateや実行中仕事を残して成功扱いしない。更新例外・内部障害はruntimeのFailureへ記録し通常受付を閉じる。通常commandのDomain例外はそのrunへ返す。
 
-停止中のcontext経由cleanupにはrun・header・payload・result・完了領域を含む独立した予約枠を使う。Buildで各Cleanup一件が収まることを確認する。Running中の外部Cleanupは通常枠を使う。予約不足は外側workflowで進行中cleanupを待って再試行し、進行も回収余地もない場合は失敗を報告する。未回収の通常結果でcleanupを閉塞させない。
+停止中のcontext経由cleanupにはrun・header・payload・result・完了領域を含む独立した予約枠を使う。Prepareで各Cleanup一件が収まることを確認する。Running中の外部Cleanupは通常枠を使う。予約不足は外側workflowで進行中cleanupを待って再試行し、進行も回収余地もない場合は失敗を報告する。未回収の通常結果でcleanupを閉塞させない。
 
 アプリは外部producer／I/O workflowの終了も追跡する。native資源はmodule所有表からowner上で回収し、run.Disposeに任せない。停止後に結果を読めても、そのnative実体が生存しているとは限らない。実体の独立した利用権を渡す場合は返却をcleanupで確認する。失敗したownerの未解放物や過去のFailureを隠さない。
 
 ### DIなしの起動と利用例
 
-AudioModuleはDeclareでowner・group、Create／Play／StopのNormal仕事、Destroy／CloseのCleanup仕事、InitializeのStartup仕事、Updateを登録する。StartAsyncはInitializeをModuleContextから送って待ち、StopAsyncは同様にCloseを送る。deviceはInitialize handler内で作り、構成threadでは作らない。
+AudioModuleは引数なしのconstructorを持ち、内部にmanagedなAudioStateを一つ保持する。Nameは `"Audio"`、DeclareでFixedThreadのOwner・group、Create／Play／StopのNormal仕事、Destroy／CloseのCleanup仕事、InitializeのStartup仕事、Updateを登録する。StartAsyncはInitializeをModuleContextから送って待ち、StopAsyncは同様にCloseを送る。deviceはInitialize handler内で作る。
+
+AudioModuleのConfigureは次のように配置と更新条件を宣言する。HostPhaseはmoduleの公開propertyに保存し、Host構成のアプリがPump時に参照する。
+
+```csharp
+public void Configure(ExecutionPlanBuilder builder, OwnerPlacement placement)
+{
+    if (placement == OwnerPlacement.Host)
+    {
+        HostPhase = builder.HostPhase("Control");
+        builder.BindHost(Owner, HostPhase);
+        builder.DriveOnHost(Update, HostPhase);
+    }
+    else
+    {
+        var thread = builder.DedicatedThread("Control");
+        builder.BindDedicated(Owner, thread);
+        builder.DrivePeriodic(Update,
+            new ThreadLoopOptions(TimeSpan.FromMilliseconds(10), 64, TimeSpan.FromMilliseconds(2)));
+    }
+}
+```
 
 以下のhostは固定threadのevent loopからOnHostTurnを呼ぶ。例は提案APIの使用順を示し、ReportFailure等のアプリ処理とAudioModule本体は省略する。
 
 ```csharp
-var plan = new ExecutionPlanBuilder();
-var audio = new AudioModule(new AudioState());
-plan.AddModule("Audio", audio); // Declare。静的入口の接続予定を登録
-var thread = plan.DedicatedThread("Audio.Control");
-plan.BindDedicated(audio.Owner, thread);
-plan.DrivePeriodic(audio.Update,
-    new ThreadLoopOptions(TimeSpan.FromMilliseconds(10), 64, TimeSpan.FromMilliseconds(2)));
-var runtime = plan.BuildOnCurrentHost(CpuExecutionMode.ThreadPool, 4, new ExecutionOptions());
+var audio = new AudioModule();
+var runtime = new ExecutionRuntime([audio]); // Declare。定義を収集
+runtime.PrepareOnCurrentHost(OwnerPlacement.Dedicated,
+    CpuExecutionMode.ThreadPool, 4, new ExecutionOptions()); // Configure、検証・接続
 
 Task? startup = null;
 Task? shutdown = null;
@@ -482,37 +505,30 @@ async ValueTask<AudioState.Voice> CreateAndPlayAsync(ClipId clip)
 
 高頻度の制御は `voice.AddPlayTo(batch)` 等でstagingし、TrySubmitで一括送信する。完了をpollし、結果観測→run.Dispose→batch.Resetの順で再利用する。単発のValueTaskも必ず観測する。終了ではproducerを止め、cleanup失敗から回復したら同じruntime.StopAsyncを再試行し、成功観測後だけevent loopを閉じる。
 
-Browserは別の初回構成としてBindHost／DriveOnHostとCooperative（同時数1）を選び、Running／QuiescingのturnでRunHostPhaseも呼ぶ。起動・停止中もPumpを続け、未完了のGetResult／Waitでevent loopを止めない。
+BrowserではPrepareの引数を `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions()` とし、Running／Quiescingのturnで `runtime.RunHostPhase(audio.HostPhase, 64, TimeSpan.FromMilliseconds(2))` も呼ぶ。起動・停止中もPumpを続け、未完了のGetResult／Waitでevent loopを止めない。
 
 ### DIありの構成例
 
-アプリ側で `Microsoft.Extensions.DependencyInjection` を使う場合は、前節の構成部分を次で置き換える。coreへDI依存を追加せず、同じAudioModuleをsingletonとして登録・解決する。登録時やconstructorではdeviceを作らない。
+アプリ側で `Microsoft.Extensions.DependencyInjection` を使う場合は、前節の構成部分を次で置き換える。登録は引数・factory不要とし、ExecutionRuntimeがDIの収集した `IEnumerable<IExecutionModule>` をconstructorで受け取る。coreにはDI依存やIServiceProviderを持ち込まない。
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 
 var services = new ServiceCollection();
-services.AddSingleton(static _ => new AudioState());
-services.AddSingleton(static sp => new AudioModule(sp.GetRequiredService<AudioState>()));
-services.AddSingleton<ExecutionRuntime>(static sp =>
-{
-    var audio = sp.GetRequiredService<AudioModule>();
-    var plan = new ExecutionPlanBuilder();
-    plan.AddModule("Audio", audio); // 同じinstanceのDeclareを呼ぶ。自動探索はしない
-    var thread = plan.DedicatedThread("Audio.Control");
-    plan.BindDedicated(audio.Owner, thread);
-    plan.DrivePeriodic(audio.Update,
-        new ThreadLoopOptions(TimeSpan.FromMilliseconds(10), 64, TimeSpan.FromMilliseconds(2)));
-    return plan.BuildOnCurrentHost(CpuExecutionMode.ThreadPool, 4, new ExecutionOptions());
-});
+services.AddSingleton<IExecutionModule, AudioModule>();
+services.AddSingleton<ExecutionRuntime>();
 var provider = services.BuildServiceProvider(); // まだruntimeもthreadも作らない
 
-// 最初の解決は必ず固定Host上。ここでfactoryが構成と静的入口の接続を完了する。
-var runtime = provider.GetRequiredService<ExecutionRuntime>();
+var runtime = provider.GetRequiredService<ExecutionRuntime>(); // module収集→Declare。Host未確定
+// Prepareは必ず固定Host上で行う。ここで配置と静的入口の接続を確定する。
+runtime.PrepareOnCurrentHost(OwnerPlacement.Dedicated,
+    CpuExecutionMode.ThreadPool, 4, new ExecutionOptions());
 // 以降は前節のTask状態、OnHostTurn、BeginStop、CreateAndPlayAsyncを共用する。
 ```
 
-このruntimeへ前節のOnHostTurnを接続し、`startup = runtime.StartAsync().AsTask()` を明示的に呼ぶと、専用threadの起動とowner上の初期化が始まる。DI factory内では起動・同期waitを行わない。登録用ラムダはsingleton構築時だけ実行され、仕事として配送されない。Browserではfactory内の配置を前節と同じHost＋Cooperativeへ変更する。
+他のmoduleも `AddSingleton<IExecutionModule, TModule>()` で追加する。標準DIの `AddSingleton<AudioModule>()` だけではこの一覧に入らない。moduleはExecutionRuntimeへconstructor依存せず、Declare／Configureとlifecycle contextから接続する。
+
+このruntimeへ前節のOnHostTurnを接続し、`startup = runtime.StartAsync().AsTask()` を明示的に呼ぶと、専用threadの起動とowner上の初期化が始まる。Browserは前節と同じHost＋CooperativeをPrepareへ渡し、`provider.GetServices<IExecutionModule>().OfType<AudioModule>().Single()` で同じmoduleのHostPhaseを取得してPumpする。AudioModuleを具象型として重ねて登録しない。
 
 root providerは一つとし、scopeごとにruntimeを作らない。停止中もproviderとPumpを維持し、StopAsyncの成功をOnHostTurnで観測した後にproviderを破棄する（この例ではOnStopped内で `provider.Dispose()`）。停止失敗時は破棄せずcleanupを再試行する。DIのDisposeでnative解放やruntime.StopAsyncを代行せず、生成Voiceの静的送信先もDIで差し替えない。
 
@@ -547,7 +563,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 実装はHostの宣言・有界配送・生成コードから始め、Dedicated／周期駆動、Cooperative／ThreadPool graph、Resources／ECS統合へ進める。受け入れ条件は次に集約する。
 
 - 生成後コンパイル、診断、決定的生成、AOT／実Browser。元参照1本、静的入口、本体展開、中継call・boxing・async state machine・StackTraceHiddenの不在を確認する。
-- DIなし／ありの起動・停止、DIの初回解決が固定Host上で行われること、Build競合とrollback、権限、同じ静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
+- DIなし／引数なしのDI登録からの収集・起動・停止、登録順に依存しない宣言と依存検証、Prepare／Pumpの固定Host制約、Prepare競合とrollback、権限、静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
 - 異型commandのFIFO、batch全件受付、公平性、gate・取消・停止との競合、slot世代、全仕事静止後の完了、cleanup予約と失敗再試行を確認する。
 - graphの依存・範囲・owner予約、Hostの予算と継続cursor、周期遅延と省略、通知の取りこぼし、Browserのgesture／実operation追跡を確認する。
 - 単発sourceの先行完了／先行継続登録、未完了・二重GetResult、成功／取消／失敗の回収、Audioの所属・破棄・leaseとECS snapshot寿命を確認する。
