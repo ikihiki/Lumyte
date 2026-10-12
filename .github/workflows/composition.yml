@@ -172,6 +172,10 @@ jobs:
         shell: bash
         run: |
           source tools/setup/activate.sh
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --di
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host --di
           dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Diagnostics.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Animation.Sample -c Release --no-build
@@ -181,6 +185,13 @@ jobs:
           dotnet pack src/Core/Lumyte.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Mathematics -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Core -c Release --no-build -o artifacts/nuget
+          dotnet publish samples/Lumyte.Execution.Sample -c Release -p:PublishAot=true -o artifacts/execution-aot
+          artifacts/execution-aot/Lumyte.Execution.Sample
+          artifacts/execution-aot/Lumyte.Execution.Sample --di
+          artifacts/execution-aot/Lumyte.Execution.Sample --host
+          artifacts/execution-aot/Lumyte.Execution.Sample --host --di
+          dotnet pack src/Core/Lumyte.Execution -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Execution.Generators -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.StateMachines -c Release --no-build -o artifacts/nuget

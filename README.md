@@ -36,7 +36,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
 - [Composition の利用例](samples/Lumyte.Composition.Sample/README.md)
 - [アニメーションシステムの設計](docs/adr/animation/ANIMATION-0001-animation-system.md)
-- [宣言した仕事と型付きコマンドによる実行基盤の設計案](docs/adr/core/CORE-0003-execution-and-jobs.md)
+- [実行基盤のAPIと使い方](src/Core/Lumyte.Execution/README.md)／[Source generator](src/Core/Lumyte.Execution.Generators/README.md)／[Audio・DIサンプル](samples/Lumyte.Execution.Sample/README.md)／[実行基盤の設計](docs/adr/core/CORE-0003-execution-and-jobs.md)
 - [汎用状態機械の設計](docs/adr/core/CORE-0001-state-machine.md)／[利用例](samples/Lumyte.StateMachines.Sample/README.md)
 - [アニメーション状態機械の構築とイベント時刻](docs/adr/animation/ANIMATION-0003-animation-execution-and-event-time.md)／[利用例](samples/Lumyte.Animation.StateMachine.Sample/README.md)
 - [形式に依存しない補間・値ソースの合成](docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)

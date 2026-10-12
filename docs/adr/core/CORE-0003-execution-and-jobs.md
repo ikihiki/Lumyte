@@ -1,6 +1,6 @@
 # ADR-CORE-0003: 宣言した仕事と型付きコマンドによる実行基盤
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-11
 - 関連カテゴリ: engine、platform、input、graphics、audio、resources、ecs、animation、diagnostics
 
@@ -8,7 +8,7 @@
 
 Audioの生成・操作・解放など、同じ所有スレッドが必要な処理と、並列化できるCPU処理を共通の仕組みで扱う。Browserのようにmanaged threadを作れない環境でも、同じ仕事をHost上で実行できる必要がある。
 
-呼び出し側からラムダを配送する方式では、実行条件・順序・寿命の管理が分散する。モジュールが仕事を宣言し、利用側が型付きデータを送る設計を採る。このPRは設計文書のみで、実装・動作検証・性能測定は未実施である。PR #28の削除予定のスレッド設計には依存しない。
+呼び出し側からラムダを配送する方式では、実行条件・順序・寿命の管理が分散する。モジュールが仕事を宣言し、利用側が型付きデータを送る設計を採る。coreの実行基盤とgeneratorを実装し、型付きAudioサンプルで所有制約・DI・Host統合を検証する。実Audio backend／Resources／ECSの接続は各統合層で行う。PR #28の削除予定のスレッド設計には依存しない。
 
 ## 決定
 
@@ -52,7 +52,7 @@ Configure用builderは自moduleのowner・updateだけを設定できる。Prepa
 
 ### 主要API
 
-比較元はmain `81bba9e6a30ae7d2e926d0cf3247c140cca3502c`。以下は追加APIの主要メンバーの抜粋である。keyはbuilder／plan所属の不透明値で、default・別plan・型不一致は拒否する。
+比較元はmain `81bba9e6a30ae7d2e926d0cf3247c140cca3502c`。以下は追加APIの主要メンバーの抜粋である。実装と利用方法は[実行基盤](../../../src/Core/Lumyte.Execution/README.md)を参照する。keyはbuilder／plan所属の不透明値で、default・別plan・型不一致は拒否する。
 
 ```diff
 +namespace Lumyte.Execution
@@ -322,7 +322,7 @@ sealed partial class AudioState
 +    private static readonly CommandPort<PlayCommand, Unit> __LumyteExecutionPlayQueue = new();
 +    public CreateVoiceWork DeclareCreateVoice(ModuleBuilder builder, WorkOptions options);
 +    public VoiceWork DeclareVoice(ModuleBuilder builder,
-+        WorkOptions destroy, WorkOptions play, WorkOptions stop);
++        WorkOptions options0, WorkOptions options1, WorkOptions options2); // Destroy、Play、Stopのordinal順
 +    public readonly struct CreateVoiceWork
 +    {
 +        public WorkKey<CreateVoiceCommand, AudioVoice> Key { get; }
@@ -402,9 +402,9 @@ generatorの初期対象は名前空間直下の非generic・非abstract・非st
 - TrySubmit／TryScheduleはRunning中のみ。引数・状態違反・事前取消は同期例外、容量不足だけfalseとrun=null。受理済みbatchの変更・再投入は禁止し、run完了・Dispose後にResetする。未受理なら内容を保って再試行できる。
 - 取消が開始より先なら副作用なし、開始が先なら実際の結果／例外を保持する。一件の失敗は同じrunの未開始の後続を抑止し、全開始済みhandlerの静止後に完了する。失敗、開始前取消、成功の順で全体結果を決め、成功済みの個別結果は失敗runでも取得できる。handler自身のOperationCanceledExceptionはhandler失敗として扱う。
 
-payload／resultはGCが追跡する型付きstoreへ格納し、objectへのboxingやmanaged参照のraw byte化をしない。run・header・payload・result・graph nodeを受付前に一括予約し、失敗時は全返却する。未回収結果と空きblockも容量へ含め、不要blockは別型へ再配分できるようにする。参照はpayloadの静止後、batchのReset／Dispose時、結果回収時にclearし、slot／result keyの世代を検査する。参照先bufferの予算とleaseは統合側が管理する。
+payload／resultはGCが追跡する型付きstoreへ格納し、objectへのboxingやmanaged参照のraw byte化をしない。run・header・payload・result・graph nodeを受付前に一括予約し、失敗時は全返却する。初期実装では型付きcommand object自身をqueue nodeとし、MaxPayloadBytesへinput／resultと保守的な管理費を課金する。MaxGraphNodesにはedgeとrange workerも含める。未回収結果と空きblockも容量へ含め、不要blockは別型へ再配分できるようにする。参照はpayloadの静止後、batchのReset／Dispose時、結果回収時にclearし、slot／result keyの世代を検査する。参照先bufferの予算とleaseは統合側が管理する。
 
-単発run自身が非poolのIValueTaskSourceを実装し、token=0のValueTaskを一度だけ観測する。GetResultはtoken・完了・単一consumerを検査した後、成功／取消／失敗のfinallyでslotを返す。別の完了wrapper・CommandBatch・Taskは作らない。batchの公開CommandRunも再利用せず、結果をDisposeまで保持する。未観測結果をGCで早期回収しない。
+キャンセル可能なgate待ちCPU仕事とgraphにはtokenの通知を必要時だけ登録する。単発run自身が非poolのIValueTaskSourceを実装し、token=0のValueTaskを一度だけ観測する。GetResultはtoken・完了・単一consumerを検査した後、成功／取消／失敗のfinallyでslotを返す。別の完了wrapper・CommandBatch・Taskは作らない。batchの公開CommandRunも再利用せず、結果をDisposeまで保持する。未観測結果をGCで早期回収しない。
 
 結果と先行の書き込みはrelease/acquire相当で公開する。外部継続をhandler内でinline実行せず、OnCompletedのcontext指定を尊重する。await後のownerは保証しない。完了は同期handlerの終了を表し、音が聞こえる時刻、GPU fence、外部I/Oの終了とは区別する。
 
@@ -424,7 +424,7 @@ StartのModuleContextは自moduleの全Admissionと、初期化済み依存先�
 
 Drainは受付済み仕事を待ち、CancelPendingは未開始分を抑止する。DrainからCancelPendingへの強化だけ許し、閉じたgateや実行中仕事を残して成功扱いしない。更新例外・内部障害はruntimeのFailureへ記録し通常受付を閉じる。通常commandのDomain例外はそのrunへ返す。
 
-停止中のcontext経由cleanupにはrun・header・payload・result・完了領域を含む独立した予約枠を使う。Prepareで各Cleanup一件が収まることを確認する。Running中の外部Cleanupは通常枠を使う。予約不足は外側workflowで進行中cleanupを待って再試行し、進行も回収余地もない場合は失敗を報告する。未回収の通常結果でcleanupを閉塞させない。
+停止中（起動workflowがQuiescing中に行う終了処理も含む）のcontext経由cleanupにはrun・header・payload・result・完了領域を含む独立した予約枠を使う。Prepareで各Cleanup一件が収まることを確認する。Running中の外部Cleanupは通常枠を使う。予約不足は外側workflowで進行中cleanupを待って再試行し、進行も回収余地もない場合は失敗を報告する。未回収の通常結果でcleanupを閉塞させない。
 
 アプリは外部producer／I/O workflowの終了も追跡する。native資源はmodule所有表からowner上で回収し、run.Disposeに任せない。停止後に結果を読めても、そのnative実体が生存しているとは限らない。実体の独立した利用権を渡す場合は返却をcleanupで確認する。失敗したownerの未解放物や過去のFailureを隠さない。
 
@@ -544,7 +544,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ### 他ライブラリの調査
 
-2026-10-11の一次資料を基にした比較であり、C#での性能は未測定である。
+2026-10-11の一次資料を基にした比較である。初期実装のHost上の割当と平均送信費用は[サンプル](../../../samples/Lumyte.Execution.Sample/README.md)で測定し、各ライブラリとの実性能比較は別途行う。
 
 | 参考 | 確認した方式と採用点 |
 | --- | --- |
@@ -560,7 +560,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ## 検証と実装順序
 
-実装はHostの宣言・有界配送・生成コードから始め、Dedicated／周期駆動、Cooperative／ThreadPool graph、Resources／ECS統合へ進める。受け入れ条件は次に集約する。
+Host／Dedicated、周期駆動、Cooperative／ThreadPool graph、generatorを実装した。検証結果と再現手順は[実行サンプル](../../../samples/Lumyte.Execution.Sample/README.md)を参照し、実Browser、実backend、Resources／ECS統合と詳細な性能分布は後続で確認する。受け入れ条件は次に集約する。
 
 - 生成後コンパイル、診断、決定的生成、AOT／実Browser。元参照1本、静的入口、本体展開、中継call・boxing・async state machine・StackTraceHiddenの不在を確認する。
 - DIなし／引数なしのDI登録からの収集・起動・停止、登録順に依存しない宣言と依存検証、Prepare／Pumpの固定Host制約、Prepare競合とrollback、権限、静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
