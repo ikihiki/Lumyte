@@ -1,0 +1,80 @@
+@implements IAsyncDisposable
+
+<section id="animation-diagnostics" data-supported="@(_supported ? "true" : "false")">
+    @if (!_supported)
+    {
+        <FluentCard Class="card"><h2>Animation</h2><p role="status">このゲームのAnimation診断スキーマには対応していません。schema version 1の全操作が必要です。</p></FluentCard>
+    }
+    else if (_model is not null)
+    {
+        <div class="animation-heading"><div><h2>Animation</h2><p class="hint">明示的に公開された再生実行者と状態機械を、所有スレッド上の診断操作として観測・制御します。</p></div><FluentButton Id="animation-refresh" Disabled="@Busy" OnClick="RefreshAsync">一覧を更新</FluentButton></div>
+        <p id="animation-error" class="error" role="alert">@Error</p>
+        @if (!Session.Connected)
+        {
+            <p class="error" role="status">ブラウザーの接続が切れています。操作は自動で再送しません。</p>
+        }
+        <div class="animation-layout">
+            <FluentCard Class="card animation-targets">
+                <h2>公開対象 <span>@_model.Targets.Count</span></h2>
+                @if (_model.Targets.Count == 0)
+                {
+                    <p id="animation-empty" role="status">公開されている対象はありません。</p>
+                }
+                else
+                {
+                    <div class="animation-target-list" role="list" aria-label="Animation診断対象">
+                        @foreach (string target in _model.Targets)
+                        {
+                            <button type="button" role="listitem" data-animation-target="@target" aria-current="@(_model.Selected?.Id == target ? "true" : null)" disabled="@Busy" @onclick="() => SelectAsync(target)">@target</button>
+                        }
+                    </div>
+                }
+            </FluentCard>
+
+            @if (_model.Selected is { } selected)
+            {
+                <div class="animation-details">
+                    <FluentCard Class="card">
+                        <div class="animation-heading"><div><p class="eyebrow">@KindName(selected.Kind)</p><h2 id="animation-selected">@selected.Id</h2></div><span class="animation-status">@selected.Status</span></div>
+                        <dl class="animation-facts">
+                            <div><dt>位置</dt><dd id="animation-position">@selected.PositionTicks.ToString("N0", CultureInfo.CurrentCulture) ticks</dd></div>
+                            <div><dt>速度</dt><dd id="animation-speed">@selected.Speed.ToString("0.###", CultureInfo.InvariantCulture)×</dd></div>
+                            @if (selected.Kind == "state-machine")
+                            {
+                                <div><dt>現在状態</dt><dd id="animation-state">@(selected.State.Length == 0 ? "—" : selected.State)</dd></div>
+                            }
+                        </dl>
+                        <div class="animation-transport" aria-label="再生操作">
+                            <button id="animation-play" class="primary" type="button" disabled="@Busy" @onclick="PlayAsync">Play / Resume</button>
+                            <button id="animation-pause" type="button" disabled="@Busy" @onclick="PauseAsync">Pause</button>
+                            <button id="animation-stop" type="button" disabled="@Busy" @onclick="StopAsync">Stop</button>
+                            <button id="animation-read" type="button" disabled="@Busy" @onclick="ReadSelectedAsync">状態を更新</button>
+                        </div>
+                    </FluentCard>
+
+                    <FluentCard Class="card animation-controls">
+                        <form id="animation-speed-form" @onsubmit="SetSpeedAsync" @onsubmit:preventDefault>
+                            <h2>速度</h2><label for="animation-speed-input">倍率</label><input id="animation-speed-input" type="number" min="0" step="any" @bind="_speed" disabled="@Busy" /><button type="submit" disabled="@Busy">速度を設定</button>
+                        </form>
+                        @if (selected.Kind == "playback")
+                        {
+                            <form id="animation-seek-form" @onsubmit="SeekAsync" @onsubmit:preventDefault>
+                                <h2>Seek</h2><label for="animation-position-input">位置（ticks）</label><input id="animation-position-input" type="number" min="0" step="1" @bind="_position" disabled="@Busy" /><button type="submit" disabled="@Busy">位置を設定</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form id="animation-trigger-form" @onsubmit="SetTriggerAsync" @onsubmit:preventDefault>
+                                <h2>Trigger</h2><label for="animation-trigger-input">公開Trigger名</label><input id="animation-trigger-input" maxlength="128" autocomplete="off" @bind="_trigger" disabled="@Busy" /><div class="animation-form-actions"><button class="primary" type="submit" disabled="@(Busy || string.IsNullOrWhiteSpace(_trigger))">Triggerを設定</button><button id="animation-clear-triggers" type="button" disabled="@Busy" @onclick="ClearTriggersAsync">すべて解除</button></div>
+                            </form>
+                        }
+                    </FluentCard>
+                </div>
+            }
+            else
+            {
+                <FluentCard Class="card animation-placeholder"><p role="status">左の一覧から対象を選択してください。</p></FluentCard>
+            }
+        </div>
+    }
+</section>

@@ -163,3 +163,23 @@ fluent-button.danger::part(control) { color: #9c3329; }
 .rg-jump input { width: 120px; }
 @media (max-width: 1150px) { .rg-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .rg-capture-controls, .rg-capture-info { grid-template-columns: minmax(0, 1fr); } .rg-metrics article { padding: 12px; } .rg-metrics strong { font-size: 14px; } .rg-pagination { gap: 6px; } }
+
+.animation-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.animation-heading h2 { margin: 0; }
+.animation-layout { display: grid; grid-template-columns: minmax(210px, .65fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.animation-targets h2 { display: flex; justify-content: space-between; }
+.animation-targets h2 span { color: var(--muted); font: 12px ui-monospace, monospace; }
+.animation-target-list { display: flex; flex-direction: column; gap: 5px; max-height: 520px; overflow: auto; }
+.animation-target-list button { text-align: left; overflow-wrap: anywhere; }
+.animation-target-list button[aria-current] { color: white; background: var(--accent); border-color: var(--accent); }
+.animation-details > .card:first-child { margin-top: 16px; }
+.animation-status { padding: 5px 10px; border-radius: 20px; border: 1px solid var(--line); background: #e8f0e8; color: var(--accent); font-size: 11px; }
+.animation-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.animation-facts div { min-width: 0; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.animation-transport { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.animation-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.animation-controls form button { margin-top: 12px; }
+.animation-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.animation-placeholder { min-height: 160px; display: grid; place-items: center; color: var(--muted); }
+@media (max-width: 800px) { .animation-layout { grid-template-columns: minmax(0, 1fr); } .animation-target-list { max-height: 240px; } }
+@media (max-width: 640px) { .animation-controls, .animation-facts { grid-template-columns: minmax(0, 1fr); } }

@@ -17,6 +17,7 @@ AnimationDiagnosticRegistration registration = registry.Register("character.main
 
 サブシステムIDは`animation`です。`list`と`read`はObserve権限、`play`、`pause`、`stop`、`seek`、`set-speed`、`set-trigger`、`clear-triggers`はEdit権限を要求します。
 操作は診断実行ポイントで同期実行され、通信スレッドからAnimationへ直接アクセスしません。
+対応する診断Serverでは、`Animation`ページから公開対象の選択、scalar状態の更新、再生・Seek・速度・Trigger操作を利用できます。ページは毎フレームpollingせず、操作結果を自動再送しません。
 
 状態機械では、状態を文字列化する関数と、診断へ明示的に公開するTriggerだけを登録します。
 
