@@ -309,6 +309,7 @@ Dispose が未処理の管理要求・終了要求を打ち切る場合は Super
 - Windowing.Abstractions の参照 assembly と NuGet の依存閉包に Platform と Windowing 管理実装が含まれない。
 - 偽の IPlatform と直接実装した IWindow を使い、Windowing が Backend 転送 interface を要求しないことを確認する。
 - 単一 Window サンプルが Windowing.Abstractions を参照し、Windowing 管理実装を参照せず、同じ IWindow を任意に Attach / Detach できる。
+- 複数 Window サンプルが CreateNativeWindow の返す WindowNode で Native 親子を操作し、Hosted コンテキストメニューを同じ System で管理できる。
 - Owned / Borrowed の登録失敗・終了・Dispose、同一 Window の重複、別 System の WindowNode と親の不整合を拒否する。
 - Native の状態追従、要求完了の対応づけ、PumpEvents の二重取得防止、Close 延期と子から親の終了を検証する。
 - Hosted の層・部分木・クリップ・ヒットテスト、アンカーの反転・クランプ、DPI を検証する。

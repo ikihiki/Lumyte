@@ -30,4 +30,6 @@ Hosted は UI 内容を描画しません。描画側は `WindowNode.Bounds`、`
 
 `Attach` は Owned / Borrowed を明示します。Borrowed の終了は利用側が担当し、`Detach` は元の Native を閉じません。Owned を閉じる前に Graphics の保持を解放してください。保持中の終了は `PumpEvents` / `Update` を継続して待ちます。System 自体は Platform を解放しません。
 
+Windows での Native 親子と Hosted コンテキストメニューを含む実行例は、[Lumyte.Windowing.Windows.Sample](../../../samples/Lumyte.Windowing.Windows.Sample/README.md)を参照してください。
+
 [設計と所有権](../../../docs/adr/window/WINDOW-0001-window-system.md)を参照してください。

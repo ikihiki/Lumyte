@@ -18,7 +18,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [Input の取得契約の分離](docs/adr/input/INPUT-0005-input-abstractions.md)
 - [Platform・IWindow の設計](docs/adr/platform/PLATFORM-0001-platform-and-window-contracts.md)／[Window契約の分離と任意の Windowing 管理](docs/adr/window/WINDOW-0001-window-system.md)
-- [Windowing の利用方法](src/Platform/Lumyte.Windowing/README.md)／[Windows の単一 Window サンプル](samples/Lumyte.Platform.Windows.Sample/README.md)
+- [Windowing の利用方法](src/Platform/Lumyte.Windowing/README.md)／[複数 Window・Hosted サンプル](samples/Lumyte.Windowing.Windows.Sample/README.md)／[Windows の単一 Window サンプル](samples/Lumyte.Platform.Windows.Sample/README.md)
 - [Clipboard の設計](docs/adr/platform/PLATFORM-0002-clipboard.md)
 - [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
