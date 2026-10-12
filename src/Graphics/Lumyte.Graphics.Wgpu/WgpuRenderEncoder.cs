@@ -156,6 +156,15 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
     public void End() => owner.EndRender(this, handle);
 
+    internal void ReleaseNative()
+    {
+        if (handle != null)
+        {
+            WGPU.wgpuRenderPassEncoderRelease(handle);
+            handle = null;
+        }
+    }
+
     private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
         where T : unmanaged
     {

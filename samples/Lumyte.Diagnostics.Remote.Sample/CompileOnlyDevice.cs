@@ -6,9 +6,21 @@ namespace Lumyte.Diagnostics.Remote.Sample;
 // so the remote diagnostic sample cannot silently pretend to record or execute GPU work.
 internal sealed class CompileOnlyDevice : IGraphicDevice
 {
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => throw Unsupported();
+        remove => throw Unsupported();
+    }
+
+    public GraphicsDeviceStatus Status => throw Unsupported();
+
+    public GraphicsDeviceLoss? Loss => throw Unsupported();
+
     public DeviceCaps Caps => throw Unsupported();
 
     public IGraphicsQueue Queue => throw Unsupported();
+
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default) => throw Unsupported();
 
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged => throw Unsupported();

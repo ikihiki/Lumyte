@@ -78,6 +78,15 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
     public void End() => owner.EndCompute(this, handle);
 
+    internal void ReleaseNative()
+    {
+        if (handle != null)
+        {
+            WGPU.wgpuComputePassEncoderRelease(handle);
+            handle = null;
+        }
+    }
+
     private void PrepareDispatch()
     {
         owner.ValidatePass(this);

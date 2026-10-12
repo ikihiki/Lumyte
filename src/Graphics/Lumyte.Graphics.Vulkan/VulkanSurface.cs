@@ -13,7 +13,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
     internal VulkanSurface(VulkanDevice owner, SurfaceKHR native)
     {
         (_owner, _native) = (owner, native);
-        VulkanPresentation.Check(owner.Presentation.Surface.GetPhysicalDeviceSurfaceSupport(owner.PhysicalDevice, owner.QueueFamily, native, out Silk.NET.Core.Bool32 supported), "GetPhysicalDeviceSurfaceSupport");
+        _owner.CheckResult(owner.Presentation.Surface.GetPhysicalDeviceSurfaceSupport(owner.PhysicalDevice, owner.QueueFamily, native, out Silk.NET.Core.Bool32 supported), "GetPhysicalDeviceSurfaceSupport");
         if (!supported)
         {
             throw new NotSupportedException("The device queue cannot present to this supplied surface.");
@@ -109,22 +109,18 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
 
     internal SurfaceCapabilitiesKHR ReadNativeCapabilities()
     {
-        VulkanPresentation.Check(_owner.Presentation.Surface.GetPhysicalDeviceSurfaceCapabilities(_owner.PhysicalDevice, _native, out SurfaceCapabilitiesKHR caps), "GetPhysicalDeviceSurfaceCapabilities");
+        _owner.CheckResult(_owner.Presentation.Surface.GetPhysicalDeviceSurfaceCapabilities(_owner.PhysicalDevice, _native, out SurfaceCapabilitiesKHR caps), "GetPhysicalDeviceSurfaceCapabilities");
         return caps;
     }
 
-    internal void ValidateAlive()
-    {
-        _owner.ValidateAlive();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-    }
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private SurfaceFormatKHR[] ReadFormats()
     {
         while (true)
         {
             uint count = 0;
-            VulkanPresentation.Check(_owner.Presentation.Surface.GetPhysicalDeviceSurfaceFormats(_owner.PhysicalDevice, _native, &count, null), "GetPhysicalDeviceSurfaceFormats");
+            _owner.CheckResult(_owner.Presentation.Surface.GetPhysicalDeviceSurfaceFormats(_owner.PhysicalDevice, _native, &count, null), "GetPhysicalDeviceSurfaceFormats");
             var formats = new SurfaceFormatKHR[count];
             fixed (SurfaceFormatKHR* pointer = formats)
             {
@@ -134,7 +130,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
                     continue;
                 }
 
-                VulkanPresentation.Check(result, "GetPhysicalDeviceSurfaceFormats");
+                _owner.CheckResult(result, "GetPhysicalDeviceSurfaceFormats");
             }
 
             return formats.AsSpan(0, checked((int)count)).ToArray();
@@ -146,7 +142,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
         while (true)
         {
             uint count = 0;
-            VulkanPresentation.Check(_owner.Presentation.Surface.GetPhysicalDeviceSurfacePresentModes(_owner.PhysicalDevice, _native, &count, null), "GetPhysicalDeviceSurfacePresentModes");
+            _owner.CheckResult(_owner.Presentation.Surface.GetPhysicalDeviceSurfacePresentModes(_owner.PhysicalDevice, _native, &count, null), "GetPhysicalDeviceSurfacePresentModes");
             var modes = new PresentModeKHR[count];
             fixed (PresentModeKHR* pointer = modes)
             {
@@ -156,7 +152,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
                     continue;
                 }
 
-                VulkanPresentation.Check(result, "GetPhysicalDeviceSurfacePresentModes");
+                _owner.CheckResult(result, "GetPhysicalDeviceSurfacePresentModes");
             }
 
             return modes.AsSpan(0, checked((int)count)).ToArray();

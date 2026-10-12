@@ -223,8 +223,13 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         throw new NotSupportedException("No Vulkan memory type satisfies the required buffer access.");
     }
 
-    private static void Check(Result result, string operation)
+    private void Check(Result result, string operation)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");

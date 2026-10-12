@@ -8,6 +8,16 @@ internal static partial class BrowserInterop
     [return: JSMarshalAs<JSType.Promise<JSType.Object>>]
     internal static partial Task<JSObject> CreateDeviceAsync();
 
+    [JSImport("waitDeviceLost", "Lumyte.Graphics.Browser")]
+    [return: JSMarshalAs<JSType.Promise<JSType.Void>>]
+    internal static partial Task WaitDeviceLostAsync(JSObject handle);
+
+    [JSImport("getDeviceLossReason", "Lumyte.Graphics.Browser")]
+    internal static partial string GetDeviceLossReason(JSObject handle);
+
+    [JSImport("getDeviceLossMessage", "Lumyte.Graphics.Browser")]
+    internal static partial string GetDeviceLossMessage(JSObject handle);
+
     [JSImport("getCapsJson", "Lumyte.Graphics.Browser")]
     internal static partial string GetCapsJson(JSObject handle);
 

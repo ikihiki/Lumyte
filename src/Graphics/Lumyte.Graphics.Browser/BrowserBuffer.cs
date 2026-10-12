@@ -151,6 +151,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
         try
         {
             await BrowserInterop.MapBufferAsync(_native, (int)Memory);
+
             _mapped = true;
             if (cancellationToken.IsCancellationRequested)
             {

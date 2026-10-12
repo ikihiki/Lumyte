@@ -5,6 +5,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [開発環境のセットアップ](docs/development-environment.md)
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
+- [GraphicsのDI・デバイスロスト復旧](docs/adr/graphics/GRAPHICS-0014-device-di-and-loss-recovery.md)／[Hosting API](src/Graphics/Lumyte.Graphics.Hosting/README.md)
 - [mise による共通開発環境の設計](docs/adr/0003-development-environment.md)
 - [汎用数学計算](src/Core/Lumyte.Mathematics/README.md)
 - [設定管理](src/Core/Lumyte.Settings/README.md)／[設定管理の設計](docs/adr/settings/SETTINGS-0001-user-settings-persistence.md)

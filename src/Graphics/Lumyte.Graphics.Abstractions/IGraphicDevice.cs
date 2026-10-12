@@ -4,11 +4,25 @@ namespace Lumyte.Graphics.Abstractions;
 /// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicDevice
 {
+    /// <summary>Notifies loss once; subscribers must also check Status after subscribing.</summary>
+    event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost;
+
+    /// <summary>Gets the cached physical device state.</summary>
+    GraphicsDeviceStatus Status { get; }
+
+    /// <summary>Gets the irreversible loss diagnosis, if any.</summary>
+    GraphicsDeviceLoss? Loss { get; }
+
     /// <summary>Gets the immutable device capabilities.</summary>
     public DeviceCaps Caps { get; }
 
     /// <summary>Gets the device-owned general queue.</summary>
     IGraphicsQueue Queue { get; }
+
+    /// <summary>Explicitly confirms safe native destruction after loss without disposing children.</summary>
+    /// <param name="cancellationToken">Cancels only this confirmation wait.</param>
+    /// <returns>Completion when native use has ended or safe destruction is guaranteed.</returns>
+    ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets the raw element layout and GPU copy alignment expressed for T.</summary>
     /// <typeparam name="T">The unmanaged storage element type.</typeparam>
