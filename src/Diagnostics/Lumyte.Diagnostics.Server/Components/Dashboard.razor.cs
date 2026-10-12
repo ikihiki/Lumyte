@@ -56,7 +56,7 @@ public partial class Dashboard : IAsyncDisposable
 
     private bool Supported => CurrentPage.RequiredSubsystem == null || (Selected?.Catalog.Any(item => item.Subsystem.Id == CurrentPage.RequiredSubsystem) ?? false);
 
-    private bool ShowInspector => _view == "operations" || _inspected != null || ((CurrentPage.Component != null || CurrentPage.RequiredSubsystem != null) && _operationResult.Length > 0);
+    private bool ShowInspector => _view == "operations" || _inspected != null || (_view != "rendering" && (CurrentPage.Component != null || CurrentPage.RequiredSubsystem != null) && _operationResult.Length > 0);
 
     private SessionSnapshot? Selected => _resources.FirstOrDefault(resource => resource.SessionId == _selectedId);
 

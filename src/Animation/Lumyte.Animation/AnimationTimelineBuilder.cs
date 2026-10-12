@@ -20,7 +20,7 @@ public sealed class AnimationTimelineBuilder
         ArgumentOutOfRangeException.ThrowIfNegative(start.Ticks, nameof(start));
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(channel);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(source.Duration.Ticks, nameof(source));
+        ArgumentOutOfRangeException.ThrowIfNegative(source.Duration.Ticks, nameof(source));
         if (!Enum.IsDefined(fill))
         {
             throw new ArgumentOutOfRangeException(nameof(fill));
@@ -52,11 +52,11 @@ public sealed class AnimationTimelineBuilder
         _items.Add(new PlacedNode(time.Ticks, new MarkerNode(new AnimationEvent(Duration.Zero, name, payload))));
     }
 
-    /// <summary>Sets a positive explicit timeline length, checked against item ends during Build.</summary>
+    /// <summary>Sets a nonnegative explicit timeline length, checked against item ends during Build.</summary>
     /// <param name="duration">The duration.</param>
     public void SetDuration(Duration duration)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(duration.Ticks, nameof(duration));
+        ArgumentOutOfRangeException.ThrowIfNegative(duration.Ticks, nameof(duration));
         _duration = duration.Ticks;
     }
 
@@ -71,9 +71,9 @@ public sealed class AnimationTimelineBuilder
         }
 
         long length = _duration ?? minimum;
-        if (length < minimum || length == 0)
+        if (length < minimum)
         {
-            throw new ArgumentException("The timeline needs a positive duration covering every item.");
+            throw new ArgumentException("The timeline duration must cover every item.");
         }
 
         return new AnimationTimeline(new GroupNode([.. _items], length));

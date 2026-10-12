@@ -145,7 +145,7 @@ public static class DiagnosticServerApplication
             new("animation", "Animation", "Engine", 2, "animation"),
             new("input", "Input", "Engine", 3, "input", typeof(InputPage)),
             new("settings", "Settings", "Engine", 5),
-            new("rendering", "Rendering", "Engine", 4, "rendering"),
+            new("rendering", "Rendering", "Engine", 4, "graphics.render-graph", typeof(Components.RenderGraphPage)),
             new("metrics", "Metrics", "Telemetry", 0),
             new("logs", "Logs", "Telemetry", 1),
             new("traces", "Traces", "Telemetry", 2),

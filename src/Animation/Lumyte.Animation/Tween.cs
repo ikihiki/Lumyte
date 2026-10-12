@@ -2,7 +2,7 @@ using Lumyte.Core.Time;
 
 namespace Lumyte.Animation;
 
-/// <summary>A pure interpolation between explicit endpoints using a positive typed duration.</summary>
+/// <summary>A pure interpolation between explicit endpoints using a nonnegative typed duration.</summary>
 /// <typeparam name="T">The value type.</typeparam>
 public sealed class Tween<T> : IAnimationSource<T>
 {
@@ -22,7 +22,7 @@ public sealed class Tween<T> : IAnimationSource<T>
     /// <param name="easing">The easing.</param>
     public Tween(T from, T to, Duration duration, IAnimationInterpolator<T> interpolator, AnimationEasing easing)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(duration.Ticks, nameof(duration));
+        ArgumentOutOfRangeException.ThrowIfNegative(duration.Ticks, nameof(duration));
         ArgumentNullException.ThrowIfNull(interpolator);
         if (!Enum.IsDefined(easing))
         {
@@ -48,14 +48,14 @@ public sealed class Tween<T> : IAnimationSource<T>
     {
         ArgumentOutOfRangeException.ThrowIfNegative(time.Ticks, nameof(time));
         ArgumentOutOfRangeException.ThrowIfGreaterThan(time.Ticks, Duration.Ticks, nameof(time));
-        if (time == Duration.Zero)
-        {
-            return _from;
-        }
-
         if (time == Duration)
         {
             return _to;
+        }
+
+        if (time == Duration.Zero)
+        {
+            return _from;
         }
 
         float t = AnimationInterpolators.GetInteriorAmount(time.Ticks, Duration.Ticks, _easing);

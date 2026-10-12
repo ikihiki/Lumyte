@@ -1,0 +1,122 @@
+@implements IAsyncDisposable
+
+<section id="render-graph" data-supported="@(_supported ? "true" : "false")">
+    @if (!_supported)
+    {
+        <FluentCard Class="card"><h2>Render graph</h2><p role="status">このゲームは対応するレンダーグラフ診断を公開していません。capture に対応した schema version 2 が必要です。</p></FluentCard>
+    }
+    else if (_model is not null)
+    {
+        <div class="rg-heading"><div><h2>Render graph</h2><p class="hint">通常は集計だけを読み取り、構造は指定した実行を一度だけキャプチャします。</p></div><span class="rg-badge">@(_live ? "集計を更新中" : "集計表示を停止中")</span></div>
+        <div class="rg-toolbar"><label class="rg-check"><input id="rg-live" type="checkbox" @bind="_live" />集計を1秒ごとに更新</label><FluentButton Id="rg-refresh-summary" Disabled="@Busy" OnClick="RefreshSummaryAsync">集計を更新</FluentButton></div>
+        <p id="rg-error" class="error" role="alert">@Error</p>
+        @if (!Session.Connected)
+        {
+            <p class="error" role="status">ブラウザーの接続が切れています。進行中の待機を停止しました。</p>
+        }
+        <section id="rg-summary" data-compiles="@_model.Summary?.Compiles" aria-label="レンダーグラフの累積集計">
+            @if (_model.Summary is { } summary)
+            {
+                <div class="rg-metrics">
+                    <article><span>Compile / Record 件数</span><strong>@summary.Compiles.ToString("N0") / @summary.Records.ToString("N0")</strong></article>
+                    <article><span>Compile CPU 平均 / 最大</span><strong>@Average(summary.CompileMilliseconds, summary.Compiles) / @Milliseconds(summary.CompileMaximumMilliseconds)</strong></article>
+                    <article><span>Record CPU 平均 / 最大</span><strong>@Average(summary.RecordMilliseconds, summary.Records) / @Milliseconds(summary.RecordMaximumMilliseconds)</strong></article>
+                    <article><span>失敗</span><strong>@summary.Failures.ToString("N0")</strong></article>
+                </div>
+                <p class="hint">ゲームscope開始以来の集計です。GPU時間ではありません。Pass合計 @summary.LivePasses.ToString("N0") / culling @summary.CulledPasses.ToString("N0") / barrier @summary.Barriers.ToString("N0")。保持capture @summary.Captures、推定保持量 @Bytes(summary.RetainedBytes)@(summary.CapturePending ? "、capture要求が待機中" : string.Empty)。</p>
+            }
+            else
+            {
+                <p role="status">集計を読み込んでいます。</p>
+            }
+        </section>
+
+        <FluentCard Class="card rg-capture-controls">
+            <div><p class="eyebrow">ON-DEMAND CAPTURE</p><h2>次の実行をキャプチャ</h2><p class="hint">名前に一致する次のCompileを一度だけ保存します。空欄は次の任意のgraphです。</p>
+                <form id="rg-capture-form" @onsubmit="RequestCaptureAsync" @onsubmit:preventDefault>
+                    <label for="rg-graph-name">Graph名</label><input id="rg-graph-name" maxlength="256" placeholder="例: main-frame" @bind="_graphName" disabled="@Busy" />
+                    <button id="rg-request-capture" class="primary" type="submit" disabled="@Busy">次の実行をキャプチャ</button>
+                </form>
+            </div>
+            <div><h2>保存されたキャプチャを開く</h2><p class="hint">既知のcapture IDを指定します。保存期限内のキャプチャを取得できます。</p>
+                <form id="rg-open-form" @onsubmit="OpenCaptureAsync" @onsubmit:preventDefault>
+                    <label for="rg-capture-id">Capture ID</label><input id="rg-capture-id" maxlength="36" placeholder="00000000-0000-0000-0000-000000000000" @bind="_captureInput" disabled="@Busy" />
+                    <button id="rg-open-capture" type="submit" disabled="@(Busy || string.IsNullOrWhiteSpace(_captureInput))">キャプチャを開く</button>
+                </form>
+            </div>
+        </FluentCard>
+
+        @if (_model.CaptureId.Length > 0)
+        {
+            <FluentCard Class="card">
+                <div class="rg-heading"><h2>キャプチャ</h2><span id="rg-capture-state" class="rg-badge" data-state="@(_model.Capture?.State ?? "unavailable")">@StateName(_model.Capture?.State)</span></div>
+                <div class="rg-toolbar"><FluentButton Id="rg-capture-refresh" Disabled="@Busy" OnClick="RefreshCaptureAsync">状態を更新</FluentButton>
+                    @if (_pollsRemaining > 0)
+                    {
+                        <button id="rg-stop-poll" type="button" @onclick="StopPolling">自動確認を停止</button><span class="hint">1秒間隔で状態を確認中 · あと最大 @_pollsRemaining 回</span>
+                    }
+                </div>
+                <p class="hint">状態の確認を停止してもゲーム側のcapture要求は取り消されません。recordedはCPUでの記録完了を表します。</p>
+                @if (_model.Capture is { } capture)
+                {
+                    <dl id="rg-capture-details" class="rg-capture-info" data-capture-id="@capture.CaptureId">
+                        <div><dt>Graph</dt><dd>@(capture.Name.Length == 0 ? "次の任意graphを待機" : capture.Name)</dd></div>
+                        <div><dt>Frame</dt><dd>@(capture.FrameId < 0 ? "待機中" : capture.FrameId == 0 ? "未指定" : capture.FrameId.ToString(CultureInfo.InvariantCulture))</dd></div>
+                        <div><dt>Capture ID</dt><dd>@capture.CaptureId</dd></div>
+                        <div><dt>Graph ID</dt><dd>@(capture.GraphId.Length == 0 ? "—" : capture.GraphId)</dd></div>
+                        <div><dt>Run ID</dt><dd>@(capture.RunId.Length == 0 ? "—" : capture.RunId)</dd></div>
+                        <div><dt>Compile / Record CPU</dt><dd>@Milliseconds(capture.CompileMilliseconds) / @(capture.State == "recorded" ? Milliseconds(capture.RecordMilliseconds) : "未完了")</dd></div>
+                        <div><dt>Pass / culled</dt><dd>@capture.LivePasses / @capture.CulledPasses</dd></div>
+                        <div><dt>Resource / transient</dt><dd>@capture.Resources / @capture.TransientResources</dd></div>
+                        <div><dt>Dependency / barrier</dt><dd>@capture.Dependencies / @capture.Barriers</dd></div>
+                        <div><dt>推定保持量</dt><dd>@Bytes(capture.EstimatedBytes)</dd></div>
+                    </dl>
+                    @if (HasDetails(capture.State))
+                    {
+                        <div class="rg-tabs" aria-label="キャプチャの詳細">
+                            @foreach ((string id, string title) in _details)
+                            {
+                                <button type="button" data-rg-detail="@id" aria-current="@(_model.Detail == id ? "page" : null)" disabled="@Busy" @onclick="() => SelectDetailsAsync(id)">@title</button>
+                            }
+                        </div>
+                        <h3 id="rg-detail-title">@DetailTitle</h3>
+                        <p class="hint">@DetailHint</p>
+                        <div class="table-container rg-table"><table><thead><tr>
+                            <th>Index</th>
+                            @if (_model.Detail == "passes") { <th>Pass</th><th>実行順</th><th>状態</th><th>副作用</th> }
+                            else if (_model.Detail == "resources") { <th>Resource</th><th>種別</th><th>所有 / 出力</th><th>最初 → 最後のPass</th><th>graph内の使用範囲</th> }
+                            else if (_model.Detail == "dependencies") { <th>先行Pass（実行順）</th><th>後続Pass（実行順）</th> }
+                            else { <th>Pass（実行順）</th><th>Resource index</th><th>State</th><th>Stage</th><th>Access</th> }
+                        </tr></thead><tbody id="rg-detail-rows" data-detail="@_model.Detail">
+                            @foreach (RenderGraphInspection.Row row in _model.Rows)
+                            {
+                                <tr data-index="@row.Index"><td>@row.Index</td>
+                                    @if (_model.Detail == "passes")
+                                    {
+                                        <td>@Text(row, "name")</td><td>@Index(row, "execution-index")</td><td><span class="@(Number(row, "execution-index") < 0 ? "rg-culled" : "rg-active")">@(Number(row, "execution-index") < 0 ? "Culled" : "実行")</span></td><td>@(Boolean(row, "has-side-effects") ? "あり" : "なし")</td>
+                                    }
+                                    else if (_model.Detail == "resources")
+                                    {
+                                        <td>@Text(row, "name")</td><td>@Text(row, "kind")</td><td>@(Boolean(row, "transient") ? "Transient" : "Imported") @(Boolean(row, "output") ? "· Output" : string.Empty)</td><td>@Index(row, "first-pass") → @Index(row, "last-pass")</td>
+                                        <td>@if (Number(row, "first-pass") < 0) { <span>未使用</span> } else { <svg class="rg-lifetime" viewBox="0 0 200 20" role="img" aria-label="@($"実行Pass {Number(row, "first-pass")} から {Number(row, "last-pass")} まで使用")"><line x1="0" y1="10" x2="200" y2="10" /><rect x="@LifetimeStart(row)" y="5" width="@LifetimeWidth(row)" height="10" rx="3" /></svg> }</td>
+                                    }
+                                    else if (_model.Detail == "dependencies")
+                                    {
+                                        <td>@Number(row, "before")</td><td>@Number(row, "after")</td>
+                                    }
+                                    else
+                                    {
+                                        <td>@(Number(row, "pass-index") == capture.LivePasses ? "Export（graph末尾）" : Number(row, "pass-index").ToString(CultureInfo.InvariantCulture))</td><td>@Number(row, "resource-index")</td><td>@Text(row, "before-state") → @Text(row, "after-state")</td><td>@Flags(Number(row, "before-stages"), _stages) → @Flags(Number(row, "after-stages"), _stages)</td><td>@Flags(Number(row, "before-access"), _accesses) → @Flags(Number(row, "after-access"), _accesses)</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody></table></div>
+                        @if (_model.Rows.Count == 0 && !Busy) { <p role="status">表示できる行はありません。</p> }
+                        <div class="rg-toolbar rg-pagination"><button id="rg-prev" type="button" disabled="@(Busy || _model.Offset == 0)" @onclick="PreviousAsync">前の10件</button><span id="rg-page-range">@(_model.Rows.Count == 0 ? "0" : $"{_model.Offset + 1}–{_model.Offset + _model.Rows.Count}") / @_model.Total</span><button id="rg-next" type="button" disabled="@(Busy || _model.Offset + RenderGraphInspection.PageSize >= _model.Total)" @onclick="NextAsync">次の10件</button></div>
+                        <form class="rg-jump" @onsubmit="JumpAsync" @onsubmit:preventDefault><label for="rg-index">Indexへ移動</label><input id="rg-index" type="number" min="0" max="@(Math.Max(0, _model.Total - 1))" @bind="_jumpIndex" /><button type="submit" disabled="@(Busy || _model.Total == 0)">移動</button></form>
+                    }
+                }
+            </FluentCard>
+        }
+    }
+</section>
