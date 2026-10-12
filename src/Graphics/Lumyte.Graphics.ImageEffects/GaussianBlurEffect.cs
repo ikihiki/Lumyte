@@ -46,16 +46,16 @@ public sealed record GaussianBlurEffect : ImageEffectDefinition
         context.EnsureAlive();
         ImageEffectRenderGraphExtensions.ValidateImage(input);
         EffectImage output = input;
-        int radiusX = ImageEffectGraph.Radius(this.SigmaX);
-        int radiusY = ImageEffectGraph.Radius(this.SigmaY);
+        int radiusX = ImageEffectGraph.Radius(SigmaX);
+        int radiusY = ImageEffectGraph.Radius(SigmaY);
         if (radiusX > 0)
         {
-            output = EffectGpuPass.Append(context, plan, output, output, output.Bounds.Outset(radiusX, 0), new(1, this.SigmaX, radiusX, 0));
+            output = EffectGpuPass.Append(context, plan, output, output, output.Bounds.Outset(radiusX, 0), new(1, SigmaX, radiusX, 0));
         }
 
         if (radiusY > 0)
         {
-            output = EffectGpuPass.Append(context, plan, output, output, output.Bounds.Outset(0, radiusY), new(2, this.SigmaY, radiusY, 0));
+            output = EffectGpuPass.Append(context, plan, output, output, output.Bounds.Outset(0, radiusY), new(2, SigmaY, radiusY, 0));
         }
 
         return output;

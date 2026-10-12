@@ -248,10 +248,10 @@ public sealed class ImageEffectsTests
         /// <inheritdoc/>
         public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
         {
-            var operation = new OpacityEffect(this.Opacity);
+            var operation = new OpacityEffect(Opacity);
             EffectImage first = operation.AppendPasses(context, plan, [inputs[0]]);
             EffectImage second = operation.AppendPasses(context, plan, [first]);
-            return second with { Bounds = second.Bounds.Offset(this.X, this.Y) };
+            return second with { Bounds = second.Bounds.Offset(X, Y) };
         }
     }
 
@@ -269,16 +269,16 @@ public sealed class ImageEffectsTests
         /// <inheritdoc/>
         public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
         {
-            RenderGraphTexture texture = plan.CreateTexture(new() { Width = checked((uint)this.Bounds.Width), Height = checked((uint)this.Bounds.Height), Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment });
+            RenderGraphTexture texture = plan.CreateTexture(new() { Width = checked((uint)Bounds.Width), Height = checked((uint)Bounds.Height), Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment });
             plan.AddPass("custom-solid-image", pass =>
             {
                 IRenderEncoder encoder = pass.Commands.BeginRenderPass(new()
                 {
-                    ColorAttachments = [new() { View = pass.CreateTextureView(texture), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(this.Color.X, this.Color.Y, this.Color.Z, this.Color.W) }],
+                    ColorAttachments = [new() { View = pass.CreateTextureView(texture), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(Color.X, Color.Y, Color.Z, Color.W) }],
                 });
                 encoder.End();
             }).UseTexture(texture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
-            return new(texture, this.Bounds, context.ColorSemantic);
+            return new(texture, Bounds, context.ColorSemantic);
         }
     }
 }
