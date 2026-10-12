@@ -257,142 +257,34 @@ Configure用builderは自moduleのowner・updateだけを設定できる。Prepa
 
 ### メソッドから生成する仕事と送信構造体
 
-generatorは同期instanceメソッドからcommand、閉じたhandler、Declare helper、送信APIを生成する。生成先は同じpartial classなのでprivateメソッドを直接呼べる。owner・順序・gate・AdmissionはDeclare時のWorkOptionsで明示し、生成コードと手書き登録で同じruntimeを使う。
-
-```diff
-+namespace Lumyte.Execution
-+{
-+    public enum ExecutionInputKind { PackArguments, ExistingCommand }
-+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-+    public sealed class ExecutionCommandAttribute : Attribute
-+    {
-+        public ExecutionCommandAttribute();
-+        public string? Name { get; set; } // 省略時はメソッド名
-+        public ExecutionInputKind Input { get; set; } = ExecutionInputKind.PackArguments;
-+        public string? Sender { get; set; } // 対象を保持するstruct名。nullなら単独port
-+        public bool AllowAwaitableResult { get; set; } // Startupのpending operationだけ
-+    }
-+    [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false, Inherited = false)]
-+    public sealed class ExecutionTargetAttribute : Attribute { public ExecutionTargetAttribute(); }
-+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-+    public sealed class ExecutionUpdateAttribute : Attribute
-+    {
-+        public ExecutionUpdateAttribute();
-+        public string? Name { get; set; }
-+    }
-+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-+    public sealed class ExecutionRangeAttribute : Attribute
-+    {
-+        public ExecutionRangeAttribute(string lengthMethod);
-+        public string LengthMethod { get; }
-+        public string? Name { get; set; }
-+    }
-+}
-```
-
-- PackArgumentsは引数をreadonly fieldへ格納し、戻り値なしをUnitとする。ExistingCommandは単一の `in TCommand` を入力型に使う。末尾の `in WorkContext` はpayloadへ入れず注入し、handlerは常にownerを検査する。
-- 同じSender名のメソッドをまとめ、各メソッドの非nullableなclass引数一つにExecutionTargetを付ける。生成structはその元参照一つだけを保持し、各送信メソッドが対象をpayloadへ戻す。binding object・対象ごとの登録・ID検索は不要。
-- Sender groupはPackArguments、同じmodule instance・対象型・owner・OrderGroupに限定する。Normal／Cleanupとgateの違いは許し、Startup・CPU・awaitable結果・Update／Rangeの混在は拒否する。
-- Updateは `void Method(in UpdateTick tick)`（末尾WorkContextも可）、Rangeは `void Method(in TContext, int first, int endExclusive)` と `int Length(in TContext)` の組とする。更新ごとのcommandは作らない。
-- awaitable結果は明示許可した同期Startupメソッドだけで扱う。generatorはawait／unwrapせず、実operation待機とowner上の確定・cleanupを外側workflowが追跡する。
-
-例えばAudio統合層で次を宣言する。CreateVoiceは生成物を所有表へ記録し、Play／Stop／Destroyは同じowner上で所属・生存を検査する。
+コマンドの定義は、元インスタンスへの参照一本を持つreadonly partial structへ置く。このラッパー自体が送信APIを持ち、別のsender型やbinding object、ID表を作らない。Sender／UseReceiver／ExecutionTargetによる切り替えは提供しない。
 
 ```csharp
-sealed partial class AudioState
+public readonly partial struct AudioVoice(IAudioVoice original)
 {
+    private readonly IAudioVoice _original = original
+        ?? throw new ArgumentNullException(nameof(original));
+
     [ExecutionCommand]
-    private AudioVoice CreateVoice(ClipId clip) => CreateVoiceAndRecordOnOwner(clip);
-
-    [ExecutionCommand(Sender = "Voice")]
-    private void Play([ExecutionTarget] AudioVoice voice)
-    {
-        voice.VerifyUsableBy(this);
-        voice.Backend.Play();
-    }
-    // Stop、Destroyも同じSenderで宣言する。
+    private void PlayCore() => _original.Play();
 }
+
+// Module.Declareでstatic queueへ一度だけ接続する。
+AudioVoice.DeclarePlay(builder, options);
+
+// 実体生成を待ってから利用する。
+var voice = new AudioVoice(original);
+await voice.Play();
+voice.AddPlayTo(batch);
 ```
 
-生成APIの代表部分は次の形になる。Workは登録keyを持つreadonly struct、単独Portはstatic classとする。VoiceのdefaultとFor(null)は拒否し、コピーは同じ実体を指す。Destroy成功後はすべてのコピーからの通常操作を拒否する。
+ExecutionCommandAttributeはName、Input、AllowAwaitableResultだけを持つ。Core接尾辞を外した名前からtyped command、statelessなreadonly struct handler、静的なDeclareメソッドとWork key、直接送信メソッド、AddToを生成する。classによるコマンド宣言、非readonly struct、複数instance field、value field、nullable参照は拒否する。defaultラッパーの送信も拒否する。
 
-```diff
-+partial class AudioState
-+{
-+    private static readonly CommandPort<PlayCommand, Unit> __LumyteExecutionPlayQueue = new();
-+    public CreateVoiceWork DeclareCreateVoice(ModuleBuilder builder, WorkOptions options);
-+    public VoiceWork DeclareVoice(ModuleBuilder builder,
-+        WorkOptions options0, WorkOptions options1, WorkOptions options2); // Destroy、Play、Stopのordinal順
-+    public readonly struct CreateVoiceWork
-+    {
-+        public WorkKey<CreateVoiceCommand, AudioVoice> Key { get; }
-+        public ValueTask<AudioVoice> ExecuteAsync(ModuleContext context, ClipId clip,
-+            CancellationToken cancellationToken = default); // lifecycle用も本体展開
-+    }
-+    public readonly struct VoiceWork
-+    {
-+        public WorkKey<PlayCommand, Unit> Play { get; }
-+        public WorkKey<StopCommand, Unit> Stop { get; }
-+        public WorkKey<DestroyCommand, Unit> Destroy { get; }
-+    }
-+    public static class CreateVoicePort
-+    {
-+        public static CommandPort<CreateVoiceCommand, AudioVoice> Port { get; }
-+        public static ValueTask<AudioVoice> ExecuteAsync(ClipId clip,
-+            CancellationToken cancellationToken = default);
-+        public static CommandResultKey<AudioVoice> AddTo(CommandBatch batch, ClipId clip);
-+    }
-+    public readonly struct Voice
-+    {
-+        private readonly AudioVoice target; // instance fieldはこの参照一つだけ
-+        public static Voice For(AudioVoice target);
-+        public ValueTask<Unit> Play(CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> Stop(CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> Destroy(CancellationToken cancellationToken = default);
-+        public CommandResultKey<Unit> AddPlayTo(CommandBatch batch);
-+        public CommandResultKey<Unit> AddStopTo(CommandBatch batch);
-+        public CommandResultKey<Unit> AddDestroyTo(CommandBatch batch);
-+    }
-+}
-```
+commandはラッパー値と引数を保持する。ラッパーは参照一本なので、元インスタンスを保持するための追加allocationはない。handlerはWorkContext.VerifyAccess後にラッパーのCoreメソッドを直接呼ぶ。送信メソッドはTryEnqueueとValueTask構築を本体へ展開し、ExecuteAsyncの中継、lambda、async state machine、reflection、StackTraceHiddenを生成しない。
 
-Declareは各静的入口とhandlerをModuleBuilder.Commandへ登録する。groupの個別Declare／PortやVoiceBindingは生成しない。command型とWorkKeyは公開し、batch／graphにも使える。senderはIDisposableやIAudioVoiceを実装せず、native破棄は明示的なDestroy仕事とmodule cleanupで行う。
+返り値なしはUnit。ExistingCommand入力は一つのin structをtyped envelopeへ入れ、receiverも保持する。末尾のin WorkContextは実行時に注入する。生成Workのlifecycle送信はExecuteAsync(context, receiver, arguments...)で、対象を明示する。pending Task／ValueTaskを同期handlerから返す場合はAllowAwaitableResultでStartup限定を宣言し、外側で実operationを待ってowner上で確定する。
 
-送信本体にはExecuteAsyncの便宜処理を展開する。以下のPlayは呼び出した時点で受付を試み、awaitが実行結果を観測する。単独Portとlifecycle用Workも同様にcoreのExecuteAsyncを経由しない。
-
-```csharp
-public ValueTask<Unit> Play(CancellationToken cancellationToken = default)
-{
-    if (target is null)
-        throw new InvalidOperationException("Sender has no target.");
-    var command = new PlayCommand(target);
-    var status = __LumyteExecutionPlayQueue.TryEnqueue(
-        in command, cancellationToken, out var completion);
-    return status switch
-    {
-        CommandEnqueueStatus.Accepted => new ValueTask<Unit>(completion!, 0),
-        CommandEnqueueStatus.Canceled => ValueTask.FromCanceled<Unit>(cancellationToken),
-        CommandEnqueueStatus.NotRunning => ValueTask.FromException<Unit>(
-            new InvalidOperationException("Command admission is closed.")),
-        CommandEnqueueStatus.QueueFull => ValueTask.FromException<Unit>(
-            new ExecutionQueueFullException("Command capacity is exhausted.")),
-        _ => throw new InvalidOperationException("Unknown enqueue status.")
-    };
-}
-```
-
-生成メソッドにasync state machine、送信／完了待ち／throw用helper、StackTraceHiddenを追加しない。queue予約・順序・commit・取消競合は共通のTryEnqueueに残し、別assemblyの生成コードから呼べるpublic APIにする。TryEnqueueもExecuteAsyncやCommandBatchを経由しない。handlerは元メソッドを直接呼び、例外を層ごとに包み直さず元のtraceを保持する。
-
-generatorの初期対象は名前空間直下の非generic・非abstract・非static・非record・非file-localなpublic／internal partial classと、その通常の同期instanceメソッドとする。非対応形式を黙って除外せず、class単位で生成を止める。
-
-| 診断 | 主な拒否対象 |
-| --- | --- |
-| LMEXEC001–002 | partial不足、包含型・generic、予約名衝突、static／virtual／override／extern／async／iterator／partial method |
-| LMEXEC003 | ref／out／ref return、pointer、ref-like、dynamic／delegate／Expressionを含む型、PackArgumentsのin、optional／params、公開範囲不足 |
-| LMEXEC004–006 | 不正・重複名、属性競合、入力／更新／範囲signature不一致、未許可awaitable、制御引数名との衝突 |
-| LMEXEC007–008 | Sender／ExecutionTargetの不整合、対応しないruntime primitiveのsignature |
-
-生成名は明示Nameまたはメソッド名、group member・Declare引数はordinal順とする。field／local／既存memberとの衝突を検査し、完全修飾名・nullableを維持する。file順・culture・絶対pathへ依存させない。IIncrementalGeneratorとForAttributeWithMetadataNameを使い、netstandard2.0／Roslyn PrivateAssets／analyzers配布とする。runtimeにRoslynを持ち込まず、生成APIとruntimeの対応versionを検証する。
+ExecutionUpdateとExecutionRangeはowner駆動・CPU範囲処理のhandlerを生成し、ラッパーまたは専用partial classに宣言できる。詳細な公開APIと診断は[generator](../../../src/Core/Lumyte.Execution.Generators/README.md)を参照する。
 
 ### 受付・順序・結果の契約
 
@@ -496,8 +388,8 @@ startup = runtime.StartAsync().AsTask();
 // ready後、event loopを止めない外側workflowから呼ぶ。
 async ValueTask<AudioState.Voice> CreateAndPlayAsync(ClipId clip)
 {
-    var original = await AudioState.CreateVoicePort.ExecuteAsync(clip); // 実体完成を待つ
-    var voice = AudioState.Voice.For(original); // 元参照一つ。Bind不要
+    var original = await audio.State.CreateVoice(clip); // 実体完成を待つ
+    var voice = new AudioVoice(original); // 元参照一本
     await voice.Play();
     return voice;
 }
@@ -520,6 +412,7 @@ services.AddSingleton<ExecutionRuntime>();
 var provider = services.BuildServiceProvider(); // まだruntimeもthreadも作らない
 
 var runtime = provider.GetRequiredService<ExecutionRuntime>(); // module収集→Declare。Host未確定
+var audio = provider.GetServices<IExecutionModule>().OfType<AudioModule>().Single();
 // Prepareは必ず固定Host上で行う。ここで配置と静的入口の接続を確定する。
 runtime.PrepareOnCurrentHost(OwnerPlacement.Dedicated,
     CpuExecutionMode.ThreadPool, 4, new ExecutionOptions());
@@ -544,7 +437,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ### 他ライブラリの調査
 
-実Audioの生成・制御は`AudioDevice.CreateClipPort`、`AudioClip.Commands.For(clip).CreateVoice`と`AudioVoice.Commands.For(original)`から送る。仕事の定義は対応するDevice／Clip／Voiceラッパーに置く。Clip／VoiceはUseReceiverで自身のインスタンスメソッドを宣言し、静的なDeclareCommandsで登録する。生成するhandlerはstatelessなreadonly structとし、対象のprivateメソッドを直接呼ぶ。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。実行層はclip／voiceの一覧や所属・解放状態の管理を行わない。利用者／Resourcesがvoice→clipを解放してからdeviceを終了する。所属・寿命・借用の検証はbackendで行い、残った子のdevice解放は拒否する。State／Gain／Loop getterはbackendのlockでcached値を読み、呼び出し元のスレッドで処理する。生成・制御・解放は所有スレッドへ配送する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
+実Audioの生成・制御は`audio.State.CreateClip`、`new AudioClip(original).CreateVoice`と`new AudioVoice(original).Play`から送る。仕事の定義は対応するDevice／Clip／Voiceラッパーに置く。Clip／Voiceは参照一本のreadonly structで、Coreメソッドから公開送信APIを生成し、仕事ごとの静的なDeclareメソッドで登録する。生成するhandlerはstatelessなreadonly structとし、対象のprivateメソッドを直接呼ぶ。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。実行層はclip／voiceの一覧や所属・解放状態の管理を行わない。利用者／Resourcesがvoice→clipを解放してからdeviceを終了する。所属・寿命・借用の検証はbackendで行い、残った子のdevice解放は拒否する。State／Gain／Loop getterはbackendのlockでcached値を読み、呼び出し元のスレッドで処理する。生成・制御・解放は所有スレッドへ配送する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
 
 2026-10-11の一次資料を基にした比較である。初期実装のHost上の割当と平均送信費用は[サンプル](../../../samples/Lumyte.Execution.Sample/README.md)で測定し、各ライブラリとの実性能比較は別途行う。
 

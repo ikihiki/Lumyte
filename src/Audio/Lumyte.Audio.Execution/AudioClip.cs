@@ -3,28 +3,21 @@ using Lumyte.Execution;
 
 namespace Lumyte.Audio.Execution;
 
-/// <summary>Reference to an actual backend instance; controls are sent through generated senders.</summary>
-public sealed partial class AudioClip
+/// <summary>A one-reference sender wrapping an actual backend clip.</summary>
+/// <param name="original">The fully created original instance.</param>
+public readonly partial struct AudioClip(IAudioClip original)
 {
-    internal AudioClip(IAudioDevice device, IAudioClip backend)
-    {
-        Device = device;
-        Backend = backend;
-    }
+    private readonly IAudioClip _original = original ?? throw new ArgumentNullException(nameof(original));
 
-    /// <summary>Gets the immutable PCM format directly from the backend.</summary>
-    public AudioFormat Format => Backend.Format;
+    /// <summary>Gets the immutable PCM format.</summary>
+    public AudioFormat Format => _original.Format;
 
-    /// <summary>Gets the immutable PCM frame count directly from the backend.</summary>
-    public long FrameCount => Backend.FrameCount;
+    /// <summary>Gets the immutable PCM frame count.</summary>
+    public long FrameCount => _original.FrameCount;
 
-    internal IAudioDevice Device { get; }
+    [ExecutionCommand]
+    private IAudioVoice CreateVoiceCore(AudioBus bus) => _original.Device.CreateVoice(_original, bus);
 
-    internal IAudioClip Backend { get; }
-
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private AudioVoice CreateVoice(AudioBus bus) => new(Device.CreateVoice(Backend, bus));
-
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void DestroyClip() => Backend.Dispose();
+    [ExecutionCommand]
+    private void DestroyClipCore() => _original.Dispose();
 }

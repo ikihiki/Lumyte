@@ -42,14 +42,14 @@ public sealed class AudioIntegrationTests
         PumpUntil(() => start.IsCompleted);
         CompletedResult.Read(start);
         Assert.NotEqual(Environment.CurrentManagedThreadId, audio.State.ThreadId);
-        ValueTask<AudioVoice> creation = AudioState.CreateVoicePort.ExecuteAsync(1);
+        ValueTask<AudioVoiceData> creation = audio.State.CreateVoice(1);
         PumpUntil(() => creation.IsCompleted);
-        AudioVoice original = CompletedResult.Read(creation);
-        var voice = AudioState.Voice.For(original);
-        AudioState.Voice copy = voice;
-        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioState.Voice>());
-        Assert.Throws<ArgumentNullException>(() => AudioState.Voice.For(null!));
-        Assert.Throws<InvalidOperationException>(() => default(AudioState.Voice).Play());
+        AudioVoiceData original = CompletedResult.Read(creation);
+        var voice = new AudioVoice(original);
+        AudioVoice copy = voice;
+        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioVoice>());
+        Assert.Throws<ArgumentNullException>(() => new AudioVoice(null!));
+        Assert.Throws<InvalidOperationException>(() => default(AudioVoice).Play());
         ValueTask<Unit> play = voice.Play();
         PumpUntil(() => play.IsCompleted);
         CompletedResult.Read(play);
@@ -72,7 +72,8 @@ public sealed class AudioIntegrationTests
         Task shutdown = runtime.StopAsync().AsTask();
         PumpUntil(() => shutdown.IsCompleted);
         CompletedResult.Read(shutdown);
-        Assert.Equal(CommandEnqueueStatus.NotRunning, AudioState.CreateVoicePort.Port.TryEnqueue(new AudioState.CreateVoiceCommand(2), default, out _));
+        ValueTask<AudioVoiceData> closed = audio.State.CreateVoice(2);
+        Assert.Throws<InvalidOperationException>(() => CompletedResult.Read(closed));
         var replacement = new ExecutionRuntime([new AudioModule()]);
         Assert.Throws<InvalidOperationException>(() => replacement.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions()));
     }

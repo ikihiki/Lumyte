@@ -10,5 +10,5 @@ LMEXEC003 | Lumyte.Execution | Error | Unsupported input or result type
 LMEXEC004 | Lumyte.Execution | Error | Invalid names or conflicting attributes
 LMEXEC005 | Lumyte.Execution | Error | Invalid execution signature
 LMEXEC006 | Lumyte.Execution | Error | Invalid pending operation result
-LMEXEC007 | Lumyte.Execution | Error | Invalid instance sender target
+LMEXEC007 | Lumyte.Execution | Error | Invalid one-reference wrapper shape or hidden capture
 LMEXEC008 | Lumyte.Execution | Error | Incompatible runtime primitive

@@ -6,7 +6,7 @@ namespace Lumyte.Audio.Execution;
 /// <param name="factory">Factory called on the configured owner.</param>
 public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
 {
-    private readonly AudioDevice _state = new(factory ?? throw new ArgumentNullException(nameof(factory)));
+    private readonly AudioDevice _state = new(new AudioDeviceState(factory ?? throw new ArgumentNullException(nameof(factory))));
     private AudioDevice.BeginCreateWork _begin;
 
     private AudioDevice.AttachWork _initialize;
@@ -35,14 +35,20 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         _owner = builder.Owner("Device", OwnerRequirement.FixedThread);
         OrderGroupKey group = builder.OrderGroup("Control", _owner);
         WorkOptions Options(WorkAdmission admission) => new() { Target = WorkTarget.On(_owner), OrderGroup = group, Admission = admission };
-        _begin = _state.DeclareBeginCreate(builder, Options(WorkAdmission.Startup));
-        _initialize = _state.DeclareAttach(builder, Options(WorkAdmission.Startup));
-        _close = _state.DeclareClose(builder, Options(WorkAdmission.Cleanup));
-        _state.DeclareCreateClip(builder, Options(WorkAdmission.Normal));
-        AudioClip.DeclareCommands(builder, Options(WorkAdmission.Normal), Options(WorkAdmission.Cleanup));
-        _state.DeclareSetBusGain(builder, Options(WorkAdmission.Normal));
-        _state.DeclareRefresh(builder, Options(WorkAdmission.Normal));
-        AudioVoice.DeclareCommands(builder, Options(WorkAdmission.Cleanup), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal));
+        _begin = AudioDevice.DeclareBeginCreate(builder, Options(WorkAdmission.Startup));
+        _initialize = AudioDevice.DeclareAttach(builder, Options(WorkAdmission.Startup));
+        _close = AudioDevice.DeclareClose(builder, Options(WorkAdmission.Cleanup));
+        AudioDevice.DeclareCreateClip(builder, Options(WorkAdmission.Normal));
+        AudioClip.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
+        AudioClip.DeclareDestroyClip(builder, Options(WorkAdmission.Cleanup));
+        AudioDevice.DeclareSetBusGain(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareRefresh(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareDestroy(builder, Options(WorkAdmission.Cleanup));
+        AudioVoice.DeclarePause(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclarePlay(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareSetGain(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareSetLoop(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareStop(builder, Options(WorkAdmission.Normal));
         _update = _state.DeclareUpdate(builder, _owner).Key;
     }
 
@@ -66,11 +72,11 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     /// <inheritdoc/>
     public async ValueTask StartAsync(ModuleContext context, CancellationToken token)
     {
-        Task<Lumyte.Audio.Abstractions.IAudioDevice> pending = await _begin.ExecuteAsync(context, token).ConfigureAwait(false);
+        Task<Lumyte.Audio.Abstractions.IAudioDevice> pending = await _begin.ExecuteAsync(context, _state, token).ConfigureAwait(false);
         Lumyte.Audio.Abstractions.IAudioDevice device = await pending.ConfigureAwait(false);
-        await _initialize.ExecuteAsync(context, device).ConfigureAwait(false);
+        await _initialize.ExecuteAsync(context, _state, device).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public async ValueTask StopAsync(ModuleContext context) => await _close.ExecuteAsync(context).ConfigureAwait(false);
+    public async ValueTask StopAsync(ModuleContext context) => await _close.ExecuteAsync(context, _state).ConfigureAwait(false);
 }

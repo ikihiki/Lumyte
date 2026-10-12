@@ -3,40 +3,36 @@ using Lumyte.Execution;
 
 namespace Lumyte.Audio.Execution;
 
-/// <summary>Reference to an actual backend instance; controls are sent through generated senders.</summary>
-public sealed partial class AudioVoice
+/// <summary>A one-reference sender wrapping an actual backend voice.</summary>
+/// <param name="original">The fully created original instance.</param>
+public readonly partial struct AudioVoice(IAudioVoice original)
 {
-    internal AudioVoice(IAudioVoice backend)
-    {
-        Backend = backend;
-    }
+    private readonly IAudioVoice _original = original ?? throw new ArgumentNullException(nameof(original));
 
-    /// <summary>Gets the backend snapshot from any thread without submitting work.</summary>
-    public AudioPlaybackState State => Backend.State;
+    /// <summary>Gets the backend snapshot from any thread.</summary>
+    public AudioPlaybackState State => _original.State;
 
     /// <summary>Gets the cached backend gain from any thread.</summary>
-    public float Gain => Backend.Gain;
+    public float Gain => _original.Gain;
 
-    /// <summary>Gets a value indicating whether the cached backend loop setting is enabled, from any thread.</summary>
-    public bool Loop => Backend.Loop;
+    /// <summary>Gets a value indicating whether the cached loop setting is enabled.</summary>
+    public bool Loop => _original.Loop;
 
-    internal IAudioVoice Backend { get; }
+    [ExecutionCommand]
+    private void PlayCore() => _original.Play();
 
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void Play() => Backend.Play();
+    [ExecutionCommand]
+    private void PauseCore() => _original.Pause();
 
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void Pause() => Backend.Pause();
+    [ExecutionCommand]
+    private void StopCore() => _original.Stop();
 
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void Stop() => Backend.Stop();
+    [ExecutionCommand]
+    private void SetGainCore(float gain) => _original.Gain = gain;
 
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void SetGain(float gain) => Backend.Gain = gain;
+    [ExecutionCommand]
+    private void SetLoopCore(bool loop) => _original.Loop = loop;
 
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void SetLoop(bool loop) => Backend.Loop = loop;
-
-    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void Destroy() => Backend.Dispose();
+    [ExecutionCommand]
+    private void DestroyCore() => _original.Dispose();
 }

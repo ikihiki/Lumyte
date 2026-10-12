@@ -1,22 +1,17 @@
 namespace Lumyte.Execution.Sample;
 
-/// <summary>An owned voice used to verify thread affinity without a native audio dependency.</summary>
-public sealed class AudioVoice
+/// <summary>A one-reference sender wrapping a fully created backend voice.</summary>
+/// <param name="original">The fully created original instance.</param>
+public readonly partial struct AudioVoice(AudioVoiceData original)
 {
-    internal AudioVoice(AudioState owner, int clip)
-    {
-        Owner = owner;
-        Clip = clip;
-    }
+    private readonly AudioVoiceData _original = original ?? throw new ArgumentNullException(nameof(original));
 
-    /// <summary>Gets the clip identity.</summary>
-    public int Clip { get; }
+    [ExecutionCommand]
+    private void PlayCore() => _original.Owner.Play(_original);
 
-    /// <summary>Gets a value indicating whether playback was requested on the owner.</summary>
-    public bool Playing { get; internal set; }
+    [ExecutionCommand]
+    private void StopCore() => _original.Owner.Stop(_original);
 
-    /// <summary>Gets a value indicating whether destruction completed.</summary>
-    public bool Destroyed { get; internal set; }
-
-    internal AudioState Owner { get; }
+    [ExecutionCommand]
+    private void DestroyCore() => _original.Owner.Destroy(_original);
 }

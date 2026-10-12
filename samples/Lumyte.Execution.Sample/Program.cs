@@ -60,8 +60,8 @@ internal static class Program
             Wait(runtime.StartAsync().AsTask());
             async Task UseVoiceAsync()
             {
-                AudioVoice original = await AudioState.CreateVoicePort.ExecuteAsync(7);
-                var voice = AudioState.Voice.For(original);
+                AudioVoiceData original = await audio.State.CreateVoice(7);
+                var voice = new AudioVoice(original);
                 await voice.Play();
                 await voice.Stop();
                 await voice.Destroy();
@@ -79,8 +79,8 @@ internal static class Program
                     throw new ArgumentException("The allocation benchmark requires --host.");
                 }
 
-                ValueTask<AudioVoice> creation = AudioState.CreateVoicePort.ExecuteAsync(9);
-                Task<AudioVoice> created = creation.AsTask();
+                ValueTask<AudioVoiceData> creation = audio.State.CreateVoice(9);
+                Task<AudioVoiceData> created = creation.AsTask();
                 Wait(created);
                 ExecutionBenchmarks.Run(runtime, audio, created.GetAwaiter().GetResult());
             }

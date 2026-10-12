@@ -20,11 +20,11 @@ Runtimeの唯一の公開constructorは `ExecutionRuntime(IEnumerable<IExecution
 
 Prepareは固定Hostで一度だけ行い、全endpointを検証して接続する。Startで専用threadを起動し、依存順にmoduleを初期化する。Hostの各turnでは `PumpHostLifecycle` と `PumpJobs` を呼び、Host配置の通常仕事と更新には `RunHostPhase` も呼ぶ。起動・停止の未完了TaskをHost上で同期waitしない。
 
-Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示的に選ぶ。HostOnlyは常にHostに置く。所有者と呼び出し側が同じ物理threadでもcommandは必ずenqueueする。実Browserでの検証は未実施。
+Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示的に選ぶ。HostOnlyは常にHostに置く。所有者と呼び出し側が同じ物理threadでもcommandは必ずenqueueする。WebAudioサンプルをChromiumで検証した。
 
 ## 型付き送信と所有権
 
-[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[Audioサンプル](../../../samples/Lumyte.Execution.Sample/README.md)の生成Voiceは元インスタンス参照一本のreadonly structで、`voice.Play()` が固定のstatic endpointへ送信する。
+[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[Audioサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のAudioVoice自体が元インスタンス参照一本のreadonly structで、`new AudioVoice(original)`から作り、`voice.Play()` が固定のstatic endpointへ送信する。
 
 単発はtyped payloadと結果を保持する一つの非pool `IValueTaskSource<TResult>` を使い、Task／batch／完了wrapperを作らない。生成senderは受付とValueTask構築を本体に展開し、coreのExecuteAsyncを中継しない。ValueTaskは一度だけ観測する。AsTaskへ変換した場合はそのTaskを観測する。
 

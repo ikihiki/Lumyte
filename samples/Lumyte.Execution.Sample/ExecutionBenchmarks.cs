@@ -10,9 +10,9 @@ internal static class ExecutionBenchmarks
     private const int BatchSize = 16;
     private static Action? _escaped;
 
-    internal static void Run(ExecutionRuntime runtime, AudioModule audio, AudioVoice original)
+    internal static void Run(ExecutionRuntime runtime, AudioModule audio, AudioVoiceData original)
     {
-        var voice = AudioState.Voice.For(original);
+        var voice = new AudioVoice(original);
         Action cached = () => audio.State.PlayDirect(original);
         Print("direct", MeasureDirect(audio.State, original, Iterations));
         Print("cached_delegate", Measure(cached, Iterations));
@@ -44,19 +44,19 @@ internal static class ExecutionBenchmarks
         };
         (double Nanoseconds, double Bytes) measured = Measure(executeBatch, Iterations / BatchSize);
         Print("typed_batch_16", (measured.Nanoseconds / BatchSize, measured.Bytes / BatchSize));
-        Console.WriteLine($"sender_bytes={Unsafe.SizeOf<AudioState.Voice>()}, runtime={Environment.Version}, os={Environment.OSVersion}, cpu_count={Environment.ProcessorCount}");
+        Console.WriteLine($"sender_bytes={Unsafe.SizeOf<AudioVoice>()}, runtime={Environment.Version}, os={Environment.OSVersion}, cpu_count={Environment.ProcessorCount}");
         _escaped = null;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static Action CreateCaptured(AudioState state, AudioVoice original)
+    private static Action CreateCaptured(AudioState state, AudioVoiceData original)
     {
         // The escape prevents stack allocation or immediate-invocation delegate elimination.
         _escaped = () => state.PlayDirect(original);
         return _escaped;
     }
 
-    private static (double Nanoseconds, double Bytes) MeasureDirect(AudioState state, AudioVoice voice, int iterations)
+    private static (double Nanoseconds, double Bytes) MeasureDirect(AudioState state, AudioVoiceData voice, int iterations)
     {
         for (int i = 0; i < 1000; i++)
         {

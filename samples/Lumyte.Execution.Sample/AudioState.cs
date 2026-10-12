@@ -1,95 +1,28 @@
 namespace Lumyte.Execution.Sample;
 
-/// <summary>Declares audio-like operations which all require their creation thread.</summary>
-public sealed partial class AudioState
+/// <summary>A one-reference sender for the sample backend.</summary>
+/// <param name="original">The fully created original instance.</param>
+public readonly partial struct AudioState(AudioBackend original)
 {
-    private readonly HashSet<AudioVoice> _voices = [];
-    private int _threadId;
-    private int _updates;
-    private bool _initialized;
+    private readonly AudioBackend _original = original ?? throw new ArgumentNullException(nameof(original));
 
-    /// <summary>Gets the owner thread which performed initialization.</summary>
-    public int ThreadId => Volatile.Read(ref _threadId);
+    /// <summary>Gets the backend creation thread.</summary>
+    public int ThreadId => _original.ThreadId;
 
-    /// <summary>Gets the directly driven update count.</summary>
-    public int UpdateCount => Volatile.Read(ref _updates);
+    /// <summary>Gets the backend update count.</summary>
+    public int UpdateCount => _original.UpdateCount;
 
-    internal void PlayDirect(AudioVoice voice) => Play(voice);
+    internal void PlayDirect(AudioVoiceData voice) => _original.Play(voice);
 
     [ExecutionCommand]
-    private void Initialize()
-    {
-        _threadId = Environment.CurrentManagedThreadId;
-        _initialized = true;
-    }
+    private void InitializeCore() => _original.Initialize();
 
     [ExecutionCommand]
-    private AudioVoice CreateVoice(int clip)
-    {
-        VerifyOwner();
-        var voice = new AudioVoice(this, clip);
-        _voices.Add(voice);
-        return voice;
-    }
-
-    [ExecutionCommand(Sender = "Voice")]
-    private void Play([ExecutionTarget] AudioVoice voice)
-    {
-        VerifyVoice(voice);
-        voice.Playing = true;
-    }
-
-    [ExecutionCommand(Sender = "Voice")]
-    private void Stop([ExecutionTarget] AudioVoice voice)
-    {
-        VerifyVoice(voice);
-        voice.Playing = false;
-    }
-
-    [ExecutionCommand(Sender = "Voice")]
-    private void Destroy([ExecutionTarget] AudioVoice voice)
-    {
-        VerifyVoice(voice);
-        voice.Playing = false;
-        voice.Destroyed = true;
-        _voices.Remove(voice);
-    }
+    private AudioVoiceData CreateVoiceCore(int clip) => _original.CreateVoice(clip);
 
     [ExecutionCommand]
-    private void Close()
-    {
-        VerifyOwner();
-        foreach (AudioVoice voice in _voices)
-        {
-            voice.Destroyed = true;
-            voice.Playing = false;
-        }
-
-        _voices.Clear();
-        _initialized = false;
-    }
+    private void CloseCore() => _original.Close();
 
     [ExecutionUpdate]
-    private void UpdateControl(in UpdateTick tick)
-    {
-        VerifyOwner();
-        _updates++;
-    }
-
-    private void VerifyOwner()
-    {
-        if (!_initialized || _threadId != Environment.CurrentManagedThreadId)
-        {
-            throw new InvalidOperationException("Audio operations require the device creation thread.");
-        }
-    }
-
-    private void VerifyVoice(AudioVoice voice)
-    {
-        VerifyOwner();
-        if (voice.Owner != this || voice.Destroyed || !_voices.Contains(voice))
-        {
-            throw new InvalidOperationException("Voice belongs to another device or has been destroyed.");
-        }
-    }
+    private void UpdateControl(in UpdateTick tick) => _original.UpdateControl(in tick);
 }

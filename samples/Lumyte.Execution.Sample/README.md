@@ -1,6 +1,6 @@
 # Execution / Audio sample
 
-引数なしのAudioModuleを登録し、所有スレッド上で初期化・voice生成・Play／Stop／Destroy・周期更新・解放を行うサンプル。AudioVoiceは実際のOpenALを使わず、作成threadと寿命の制約を検証する。
+引数なしのAudioModuleを登録し、所有スレッド上で初期化・voice生成・Play／Stop／Destroy・周期更新・解放を行うサンプル。AudioVoiceは元のAudioVoiceDataへの参照一本を持つreadonly structで、実際のOpenALを使わず、作成threadと寿命の制約を検証する。
 
 ```sh
 dotnet run --project samples/Lumyte.Execution.Sample -c Release
@@ -18,7 +18,7 @@ services.AddSingleton<IExecutionModule, AudioModule>();
 services.AddSingleton<ExecutionRuntime>();
 ```
 
-[Program.cs](Program.cs)は固定HostでPrepareし、Pumpを回しながらStartとStopを観測する。生成・制御は外側のasync workflowから送り、実体の生成完了を待つ。providerの破棄はStop成功後に行う。[AudioModule.cs](AudioModule.cs)は物理配置と10msの制御更新周期を宣言し、[AudioState.cs](AudioState.cs)のprivateメソッドから送信APIが生成される。
+[Program.cs](Program.cs)は固定HostでPrepareし、Pumpを回しながらStartとStopを観測する。生成・制御は外側のasync workflowから送り、実体の生成完了を待つ。providerの破棄はStop成功後に行う。[AudioModule.cs](AudioModule.cs)は物理配置と10msの制御更新周期を宣言し、[AudioState.cs](AudioState.cs)と[AudioVoice.cs](AudioVoice.cs)のCoreメソッドからラッパー自身の送信APIが生成される。
 
 ## 初期ベンチマーク
 

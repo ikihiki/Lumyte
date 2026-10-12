@@ -3,7 +3,7 @@ namespace Lumyte.Execution.Sample;
 /// <summary>A parameterless module with generated audio commands and owner-driven updates.</summary>
 public sealed class AudioModule : IExecutionModule
 {
-    private readonly AudioState _state = new();
+    private readonly AudioState _state = new(new AudioBackend());
     private AudioState.InitializeWork _initialize;
     private AudioState.CloseWork _close;
     private OwnerKey _owner;
@@ -24,10 +24,12 @@ public sealed class AudioModule : IExecutionModule
         _owner = builder.Owner("Device", OwnerRequirement.FixedThread);
         OrderGroupKey group = builder.OrderGroup("Control", _owner);
         WorkOptions Options(WorkAdmission admission) => new() { Target = WorkTarget.On(_owner), OrderGroup = group, Admission = admission };
-        _initialize = _state.DeclareInitialize(builder, Options(WorkAdmission.Startup));
-        _close = _state.DeclareClose(builder, Options(WorkAdmission.Cleanup));
-        _state.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
-        _state.DeclareVoice(builder, Options(WorkAdmission.Cleanup), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal));
+        _initialize = AudioState.DeclareInitialize(builder, Options(WorkAdmission.Startup));
+        _close = AudioState.DeclareClose(builder, Options(WorkAdmission.Cleanup));
+        AudioState.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareDestroy(builder, Options(WorkAdmission.Cleanup));
+        AudioVoice.DeclarePlay(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareStop(builder, Options(WorkAdmission.Normal));
         _update = _state.DeclareUpdateControl(builder, _owner).Key;
     }
 
@@ -49,8 +51,8 @@ public sealed class AudioModule : IExecutionModule
     }
 
     /// <inheritdoc/>
-    public async ValueTask StartAsync(ModuleContext context, CancellationToken token) => await _initialize.ExecuteAsync(context, token).ConfigureAwait(false);
+    public async ValueTask StartAsync(ModuleContext context, CancellationToken token) => await _initialize.ExecuteAsync(context, _state, token).ConfigureAwait(false);
 
     /// <inheritdoc/>
-    public async ValueTask StopAsync(ModuleContext context) => await _close.ExecuteAsync(context).ConfigureAwait(false);
+    public async ValueTask StopAsync(ModuleContext context) => await _close.ExecuteAsync(context, _state).ConfigureAwait(false);
 }

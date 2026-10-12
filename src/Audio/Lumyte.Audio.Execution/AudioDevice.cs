@@ -3,56 +3,37 @@ using Lumyte.Execution;
 
 namespace Lumyte.Audio.Execution;
 
-/// <summary>Typed commands operating on real backend instances on their creation thread.</summary>
-public sealed partial class AudioDevice
+/// <summary>A one-reference device sender with owner-driven lifecycle and updates.</summary>
+public readonly partial struct AudioDevice
 {
-    private readonly IAudioDeviceFactory _factory;
-    private IAudioDevice? _device;
-    private Task<IAudioDevice>? _pending;
-    private int _ownerThreadId;
+    private readonly AudioDeviceState _original;
 
-    internal AudioDevice(IAudioDeviceFactory factory)
+    internal AudioDevice(AudioDeviceState original)
     {
-        _factory = factory;
+        _original = original;
     }
 
-    /// <summary>Gets the thread on which backend creation was started.</summary>
-    public int OwnerThreadId => Volatile.Read(ref _ownerThreadId);
-
-    internal IAudioDevice Backend => _device ?? throw new InvalidOperationException("Audio is not initialized.");
+    /// <summary>Gets the thread which started backend creation.</summary>
+    public int OwnerThreadId => _original.OwnerThreadId;
 
     [ExecutionCommand(AllowAwaitableResult = true)]
-    private Task<IAudioDevice> BeginCreate()
-    {
-        Volatile.Write(ref _ownerThreadId, Environment.CurrentManagedThreadId);
-        return _pending = _factory.CreateAsync();
-    }
+    private Task<IAudioDevice> BeginCreateCore() => _original.BeginCreate();
 
     [ExecutionCommand]
-    private void Attach(IAudioDevice device)
-    {
-        _device = device;
-        _pending = null;
-    }
+    private void AttachCore(IAudioDevice device) => _original.Attach(device);
 
     [ExecutionCommand]
-    private AudioClip CreateClip(AudioFormat format, ReadOnlyMemory<float> samples) => new(Backend, Backend.CreateClip(format, samples.Span));
+    private IAudioClip CreateClipCore(AudioFormat format, ReadOnlyMemory<float> samples) => _original.CreateClip(format, samples);
 
     [ExecutionCommand]
-    private void SetBusGain(AudioBus bus, float gain) => Backend.SetBusGain(bus, gain);
+    private void SetBusGainCore(AudioBus bus, float gain) => _original.SetBusGain(bus, gain);
 
     [ExecutionCommand]
-    private void Refresh() => Backend.Update();
+    private void RefreshCore() => _original.Refresh();
 
     [ExecutionUpdate]
-    private void Update(in UpdateTick tick) => Backend.Update();
+    private void Update(in UpdateTick tick) => _original.Update(in tick);
 
     [ExecutionCommand]
-    private void Close()
-    {
-        IAudioDevice? device = _device ?? (_pending?.IsCompletedSuccessfully == true ? _pending.Result : null);
-        device?.Dispose();
-        _device = null;
-        _pending = null;
-    }
+    private void CloseCore() => _original.Close();
 }

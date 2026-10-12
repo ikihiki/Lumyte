@@ -15,12 +15,13 @@ public sealed class GeneratorTests
         const string Source = """
             using Lumyte.Execution;
             namespace Example;
-            public sealed partial class State
+            public readonly partial struct State(object original)
             {
-                [ExecutionCommand] private Target Create(int clip) => new();
-                [ExecutionCommand(Sender = "Voice")] private void Play([ExecutionTarget] Target voice, float volume) { }
-                [ExecutionCommand(Sender = "Voice")] private void Destroy([ExecutionTarget] Target voice) { }
-                [ExecutionCommand(Input = ExecutionInputKind.ExistingCommand)] private int Probe(in int input, in WorkContext work) => input;
+                private readonly object _original = original;
+                [ExecutionCommand] private Target CreateCore(int clip) => new();
+                [ExecutionCommand] private void PlayCore(Target voice, float volume) { }
+                [ExecutionCommand] private void DestroyCore(Target voice) { }
+                [ExecutionCommand(Input = ExecutionInputKind.ExistingCommand)] private int ProbeCore(in int input, in WorkContext work) => input;
                 [ExecutionUpdate] private void Tick(in UpdateTick tick, in WorkContext work) { }
                 [ExecutionRange(nameof(Length))] private void Fill(in int context, int first, int endExclusive) { }
                 private int Length(in int input) => input;
@@ -31,7 +32,8 @@ public sealed class GeneratorTests
         Assert.Empty(result.Run.Diagnostics);
         Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         string generated = Assert.Single(result.Run.GeneratedTrees).ToString();
-        Assert.Contains("public readonly struct Voice", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("struct Voice", generated, StringComparison.Ordinal);
+        Assert.Contains("public global::System.Threading.Tasks.ValueTask", generated, StringComparison.Ordinal);
         Assert.Contains("static readonly global::Lumyte.Execution.CommandPort", generated, StringComparison.Ordinal);
         Assert.Contains(".TryEnqueue(in __command", generated, StringComparison.Ordinal);
         Assert.Contains("context.TryEnqueue(Key", generated, StringComparison.Ordinal);
@@ -40,21 +42,21 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("async ", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("VoiceBinding", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("Reflection", generated, StringComparison.Ordinal);
-        Assert.DoesNotContain("ProbeCommand", generated, StringComparison.Ordinal);
+        Assert.Contains("ProbeCommand", generated, StringComparison.Ordinal);
     }
 
     /// <summary>Wrapper receiver declarations register stateless handlers and invoke the actual target.</summary>
     [Fact]
     public void WrapperReceiversCompileWithoutRegistrationInstances()
     {
-        const string ReceiverSource = "using Lumyte.Execution; namespace Example; public partial class Voice { [ExecutionCommand(Sender = \"Commands\", UseReceiver = true)] private void Play(int gain) {} }";
+        const string ReceiverSource = "using Lumyte.Execution; namespace Example; public readonly partial struct Voice(object original) { private readonly object _original = original; [ExecutionCommand] private void PlayCore(int gain) {} }";
         (GeneratorDriverRunResult Run, Compilation Output) result = Run(ReceiverSource);
         Assert.Empty(result.Run.Diagnostics);
         Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         string generated = Assert.Single(result.Run.GeneratedTrees).ToString();
-        Assert.Contains("static CommandsWork DeclareCommands", generated, StringComparison.Ordinal);
+        Assert.Contains("static PlayWork DeclarePlay", generated, StringComparison.Ordinal);
         Assert.Contains("private readonly struct __LumyteExecutionPlayHandler", generated, StringComparison.Ordinal);
-        Assert.Contains("command.__Target.@Play(command.F0)", generated, StringComparison.Ordinal);
+        Assert.Contains("command.__Target.@PlayCore(command.F0)", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("new(this)", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("state.", generated, StringComparison.Ordinal);
     }
@@ -63,23 +65,23 @@ public sealed class GeneratorTests
     /// <param name="declaration">The invalid container or method.</param>
     /// <param name="id">The required diagnostic.</param>
     [Theory]
-    [InlineData("public class State { [ExecutionCommand] private void Go() {} }", "LMEXEC001")]
-    [InlineData("public partial class State { [ExecutionCommand] private async System.Threading.Tasks.Task Go() { await System.Threading.Tasks.Task.Yield(); } }", "LMEXEC002")]
-    [InlineData("public partial class State { [ExecutionCommand] private void Go(ref int x) {} }", "LMEXEC005")]
-    [InlineData("public partial class State { [ExecutionCommand] private void Go(System.Action action) {} }", "LMEXEC003")]
-    [InlineData("public partial class State { [ExecutionCommand] private void Go(System.Span<int> data) {} }", "LMEXEC003")]
-    [InlineData("public partial class State { [ExecutionCommand(Name = \"\")] private void Go() {} }", "LMEXEC004")]
-    [InlineData("public partial class State { [ExecutionCommand] [ExecutionUpdate] private void Go() {} }", "LMEXEC004")]
-    [InlineData("public partial class State { [ExecutionCommand] private System.Threading.Tasks.Task Go() => System.Threading.Tasks.Task.CompletedTask; }", "LMEXEC006")]
-    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\")] private void Play(Target x) {} }", "LMEXEC007")]
-    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\")] private void Play([ExecutionTarget] Target? x) {} }", "LMEXEC007")]
-    [InlineData("public partial class State { [ExecutionCommand(Input = ExecutionInputKind.ExistingCommand)] private void Go(in int? x) {} }", "LMEXEC005")]
-    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\")] private void Voice([ExecutionTarget] Target x) {} }", "LMEXEC007")]
-    [InlineData("public partial class State { private sealed class __LumyteExecutionCollision {} [ExecutionCommand] private void Go() {} }", "LMEXEC001")]
+    [InlineData("public partial class State { [ExecutionCommand] private void GoCore() {} }", "LMEXEC001")]
+    [InlineData("public partial struct State { [ExecutionCommand] private void GoCore() {} }", "LMEXEC001")]
+    [InlineData("public readonly partial struct State { private readonly int _original; [ExecutionCommand] private void GoCore() {} }", "LMEXEC007")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private async System.Threading.Tasks.Task GoCore() { await System.Threading.Tasks.Task.Yield(); } }", "LMEXEC002")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoCore(ref int x) {} }", "LMEXEC005")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoCore(System.Action action) {} }", "LMEXEC003")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoCore(System.Span<int> data) {} }", "LMEXEC003")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand(Name = \"\")] private void GoCore() {} }", "LMEXEC004")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] [ExecutionUpdate] private void GoCore() {} }", "LMEXEC004")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private System.Threading.Tasks.Task GoCore() => System.Threading.Tasks.Task.CompletedTask; }", "LMEXEC006")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand(Input = ExecutionInputKind.ExistingCommand)] private void GoCore(in int? x) {} }", "LMEXEC005")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; private sealed class __LumyteExecutionCollision {} [ExecutionCommand] private void GoCore() {} }", "LMEXEC001")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void Go() {} }", "LMEXEC001")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; private readonly object _other = original; [ExecutionCommand] private void GoCore() {} }", "LMEXEC007")]
     [InlineData("public partial class State { [ExecutionRange(\"Length\")] private void Go(in int x, int a, int b) {} private int Length(in int x) => x; private int Length(int x) => x; }", "LMEXEC005")]
-    [InlineData("public partial class State { [ExecutionCommand(UseReceiver = true)] private void Play() {} }", "LMEXEC007")]
-    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\", UseReceiver = true)] private void Play([ExecutionTarget] Target x) {} }", "LMEXEC007")]
-    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\", UseReceiver = true, Input = ExecutionInputKind.ExistingCommand)] private void Play(in int x) {} }", "LMEXEC007")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoCore() { System.GC.KeepAlive(original); } }", "LMEXEC007")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoCore(int receiver) {} }", "LMEXEC003")]
     public void InvalidDeclarationsFailWholeContainer(string declaration, string id)
     {
         (GeneratorDriverRunResult Run, Compilation Output) result = Run("#nullable enable\nusing Lumyte.Execution; namespace Example; " + declaration + " public sealed class Target {}");
@@ -87,14 +89,23 @@ public sealed class GeneratorTests
         Assert.Empty(result.Run.GeneratedTrees);
     }
 
+    /// <summary>Only the direct wrapper API is available; legacy switches and targets are removed.</summary>
+    [Fact]
+    public void LegacySenderModesAreRemoved()
+    {
+        Assert.Null(typeof(ExecutionCommandAttribute).GetProperty("Sender"));
+        Assert.Null(typeof(ExecutionCommandAttribute).GetProperty("UseReceiver"));
+        Assert.Null(typeof(ExecutionRuntime).Assembly.GetType("Lumyte.Execution.ExecutionTargetAttribute"));
+    }
+
     /// <summary>Ordering and hints do not depend on source path or method source order.</summary>
     [Fact]
     public void GeneratedOutputIsDeterministic()
     {
-        const string A = "[ExecutionCommand] private void Z(int value) {}";
-        const string B = "[ExecutionCommand] private void A(int value) {}";
-        string first = Assert.Single(Run("using Lumyte.Execution; namespace Example; public partial class State { " + A + B + " }", "/first/state.cs").Run.GeneratedTrees).ToString();
-        string second = Assert.Single(Run("using Lumyte.Execution; namespace Example; public partial class State { " + B + A + " }", "/other/state.cs").Run.GeneratedTrees).ToString();
+        const string A = "[ExecutionCommand] private void ZCore(int value) {}";
+        const string B = "[ExecutionCommand] private void ACore(int value) {}";
+        string first = Assert.Single(Run("using Lumyte.Execution; namespace Example; public readonly partial struct State(object original) { private readonly object _original = original; " + A + B + " }", "/first/state.cs").Run.GeneratedTrees).ToString();
+        string second = Assert.Single(Run("using Lumyte.Execution; namespace Example; public readonly partial struct State(object original) { private readonly object _original = original; " + B + A + " }", "/other/state.cs").Run.GeneratedTrees).ToString();
         Assert.Equal(first, second);
     }
 
@@ -104,10 +115,11 @@ public sealed class GeneratorTests
     {
         const string Source = """
             using Lumyte.Execution;
-            public partial class State
+            public readonly partial struct State(object original)
             {
+                private readonly object _original = original;
                 [ExecutionCommand(AllowAwaitableResult = true)]
-                private System.Threading.Tasks.Task Initialize() => System.Threading.Tasks.Task.CompletedTask;
+                private System.Threading.Tasks.Task InitializeCore() => System.Threading.Tasks.Task.CompletedTask;
             }
             """;
         (GeneratorDriverRunResult Run, Compilation Output) result = Run(Source);

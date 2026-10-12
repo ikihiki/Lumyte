@@ -33,12 +33,12 @@ internal static partial class Program
                 pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
             }
 
-            AudioClip clip = await AudioDevice.CreateClipPort.ExecuteAsync(new AudioFormat(48000, 1), pcm);
-            AudioVoice original = await AudioClip.Commands.For(clip).CreateVoice(AudioBus.Effects);
-            var voice = AudioVoice.Commands.For(original);
+            var clip = new AudioClip(await _audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
+            IAudioVoice original = await clip.CreateVoice(AudioBus.Effects);
+            var voice = new AudioVoice(original);
             await voice.Play();
             await voice.Pause();
-            await AudioDevice.RefreshPort.ExecuteAsync();
+            await _audio.State.Refresh();
             if (original.State != AudioPlaybackState.Paused)
             {
                 throw new InvalidOperationException("Browser voice is not paused.");
@@ -48,7 +48,7 @@ internal static partial class Program
             await voice.Play();
             await voice.Stop();
             await voice.Destroy();
-            await AudioClip.Commands.For(clip).DestroyClip();
+            await clip.DestroyClip();
             _report = "WebAudio typed commands passed on the single Host thread.";
         }
         finally
