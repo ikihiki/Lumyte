@@ -13,6 +13,8 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [アニメーションの診断公開](src/Diagnostics/Lumyte.Diagnostics.Animation/README.md)／[アニメーション診断の設計](docs/adr/diagnostics/DIAGNOSTICS-0003-animation-operations.md)
 - [診断基盤の API と利用方法](src/Diagnostics/Lumyte.Diagnostics/README.md)
 - [診断 Input サンプル](samples/Lumyte.Diagnostics.Sample/README.md)
+- [OpenAL オーディオ](src/Audio/Lumyte.Audio.OpenAL/README.md)／[Web Audio](src/Audio/Lumyte.Audio.Browser/README.md)／[共通 API](src/Audio/Lumyte.Audio.Abstractions/README.md)
+- [オーディオ機構の設計](docs/adr/audio/AUDIO-0001-audio-system.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
@@ -31,6 +33,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [型付きbufferの設計](docs/adr/graphics/GRAPHICS-0002-typed-buffers.md)
 - [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
 - [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)
+- [RenderGraph の利用方法](src/Graphics/Lumyte.Graphics.RenderGraph/README.md)／[設計](docs/adr/graphics/GRAPHICS-0015-render-graph.md)／[診断連携](src/Diagnostics/Lumyte.Diagnostics.RenderGraph/README.md)
 - [Wgpu](src/Graphics/Lumyte.Graphics.Wgpu/README.md)／[Browser](src/Graphics/Lumyte.Graphics.Browser/README.md)／[Vulkan](src/Graphics/Lumyte.Graphics.Vulkan/README.md)
 - [DeviceCaps サンプル](samples/Lumyte.Graphics.DeviceCaps.Sample/README.md)／[Browser サンプル](samples/Lumyte.Graphics.Browser.Sample/README.md)
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)
