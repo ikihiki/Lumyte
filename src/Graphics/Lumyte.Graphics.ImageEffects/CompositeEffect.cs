@@ -1,3 +1,5 @@
+using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
+
 namespace Lumyte.Graphics.ImageEffects;
 
 /// <summary>Defines immutable parameters and region mappings for Composite.</summary>
@@ -36,4 +38,26 @@ public sealed record CompositeEffect : ImageEffectDefinition
 
     /// <inheritdoc/>
     public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => inputIndex switch { 0 => output.OffsetInverse(SourceOffsetX, SourceOffsetY), 1 => output, _ => throw new ArgumentOutOfRangeException(nameof(inputIndex)) };
+
+    /// <inheritdoc/>
+    public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(plan);
+        if (inputs.Length != 2)
+        {
+            throw new ArgumentException("Composite requires two images.", nameof(inputs));
+        }
+
+        EffectImage source = inputs[0];
+        EffectImage backdrop = inputs[1];
+
+        if (!Enum.IsDefined(this.Mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(inputs));
+        }
+
+        EffectPixelRect bounds = source.Bounds.Offset(this.SourceOffsetX, this.SourceOffsetY).Union(backdrop.Bounds);
+        return EffectGpuPass.Append(context, plan, source, backdrop, bounds, new(this.Mode == EffectCompositeMode.SrcOver ? 4 : 5, 0, 0, 0), offsetX: this.SourceOffsetX, offsetY: this.SourceOffsetY);
+    }
 }
