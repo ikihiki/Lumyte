@@ -45,6 +45,8 @@ public sealed class Drawing2DTests
     {
         using var device = VulkanDevice.Create();
         await CheckGradientsAsync(device);
+        await CheckCompositesAsync(device);
+        await CheckPaintOpacityAsync(device);
     }
 
     /// <summary>Checks linear-light paints and all COLRv1 composite modes on wgpu.</summary>
@@ -54,6 +56,8 @@ public sealed class Drawing2DTests
     {
         using var device = WgpuDevice.Create();
         await CheckGradientsAsync(device);
+        await CheckCompositesAsync(device);
+        await CheckPaintOpacityAsync(device);
     }
 
     /// <summary>Checks images, atlas sampling and external glyph representations on Vulkan.</summary>
@@ -63,6 +67,7 @@ public sealed class Drawing2DTests
     {
         using var device = VulkanDevice.Create();
         await CheckImagesAsync(device);
+        await CheckGlyphRepresentationsAsync(device);
     }
 
     /// <summary>Checks images, atlas sampling and external glyph representations on wgpu.</summary>
@@ -72,6 +77,7 @@ public sealed class Drawing2DTests
     {
         using var device = WgpuDevice.Create();
         await CheckImagesAsync(device);
+        await CheckGlyphRepresentationsAsync(device);
     }
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
@@ -250,6 +256,78 @@ public sealed class Drawing2DTests
         AssertPixel(otherGradients, 12, 10, 0, new(0.5f, 0.5f, 0.5f, 1), 0.02f);
     }
 
+    private static async Task CheckCompositesAsync(IGraphicDevice device)
+    {
+        // Source is straight red at alpha 1/2; backdrop is straight blue at alpha 1/4.
+        // The W3C blend equation contributes (3/8, 0, 1/8) plus B(Cb,Cs)/8.
+        (CompositeMode2D Mode, Vector4 Expected)[] cases =
+        [
+            (CompositeMode2D.Clear, Vector4.Zero),
+            (CompositeMode2D.Src, new(0.5f, 0, 0, 0.5f)),
+            (CompositeMode2D.Dest, new(0, 0, 0.25f, 0.25f)),
+            (CompositeMode2D.SrcOver, new(0.5f, 0, 0.125f, 0.625f)),
+            (CompositeMode2D.DestOver, new(0.375f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.SrcIn, new(0.125f, 0, 0, 0.125f)),
+            (CompositeMode2D.DestIn, new(0, 0, 0.125f, 0.125f)),
+            (CompositeMode2D.SrcOut, new(0.375f, 0, 0, 0.375f)),
+            (CompositeMode2D.DestOut, new(0, 0, 0.125f, 0.125f)),
+            (CompositeMode2D.SrcAtop, new(0.125f, 0, 0.125f, 0.25f)),
+            (CompositeMode2D.DestAtop, new(0.375f, 0, 0.125f, 0.5f)),
+            (CompositeMode2D.Xor, new(0.375f, 0, 0.125f, 0.5f)),
+            (CompositeMode2D.Plus, new(0.5f, 0, 0.25f, 0.75f)),
+            (CompositeMode2D.Screen, new(0.5f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.Overlay, new(0.375f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.Darken, new(0.375f, 0, 0.125f, 0.625f)),
+            (CompositeMode2D.Lighten, new(0.5f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.ColorDodge, new(0.375f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.ColorBurn, new(0.375f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.HardLight, new(0.5f, 0, 0.125f, 0.625f)),
+            (CompositeMode2D.SoftLight, new(0.375f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.Difference, new(0.5f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.Exclusion, new(0.5f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.Multiply, new(0.375f, 0, 0.125f, 0.625f)),
+            (CompositeMode2D.HslHue, new(0.42083333f, 0, 0.125f, 0.625f)),
+            (CompositeMode2D.HslSaturation, new(0.375f, 0, 0.25f, 0.625f)),
+            (CompositeMode2D.HslColor, new(0.42083333f, 0, 0.125f, 0.625f)),
+            (CompositeMode2D.HslLuminosity, new(0.4016854f, 0.026685394f, 0.25f, 0.625f)),
+        ];
+        Assert.Equal(Enum.GetValues<CompositeMode2D>(), cases.Select(item => item.Mode));
+        var source = PaintGraph2D.Solid(new(1, 0, 0, 0.5f));
+        var backdrop = PaintGraph2D.Solid(new(0, 0, 1, 0.25f));
+        Vector4[] pixels = await RenderAsync(device, cases.Length, 1, canvas =>
+        {
+            for (int x = 0; x < cases.Length; x++)
+            {
+                canvas.FillRect(new(x, 0, 1, 1), PaintGraph2D.Composite(source, backdrop, cases[x].Mode));
+            }
+        });
+        for (int x = 0; x < cases.Length; x++)
+        {
+            AssertPixel(pixels, cases.Length, x, 0, cases[x].Expected);
+        }
+
+        Vector4[] transparentDomain = await RenderAsync(device, 4, 1, canvas => canvas.DrawPaintGraph(PaintGraph2D.Composite(
+            PaintGraph2D.Clip(Rectangle(0, 0, 1, 1), PaintGraph2D.Solid(_red)),
+            PaintGraph2D.Clip(Rectangle(0, 0, 4, 1), PaintGraph2D.Solid(_blue)),
+            CompositeMode2D.DestIn)));
+        AssertPixel(transparentDomain, 4, 0, 0, new(0, 0, 1, 1));
+        AssertPixel(transparentDomain, 4, 2, 0, Vector4.Zero);
+    }
+
+    private static async Task CheckPaintOpacityAsync(IGraphicDevice device)
+    {
+        var paint = PaintGraph2D.Opacity(0.5f, PaintGraph2D.Layers(
+        [
+            PaintGraph2D.Clip(Rectangle(0, 0, 4, 2), PaintGraph2D.Solid(_red)),
+            PaintGraph2D.Clip(Rectangle(2, 0, 4, 2), PaintGraph2D.Solid(_blue)),
+        ]));
+        Vector4[] pixels = await RenderAsync(device, 8, 3, canvas => canvas.DrawPaintGraph(PaintGraph2D.Transform(Matrix3x2.CreateTranslation(1, 1), paint)));
+        AssertPixel(pixels, 8, 1, 1, new(0.5f, 0, 0, 0.5f));
+        AssertPixel(pixels, 8, 3, 1, new(0, 0, 0.5f, 0.5f));
+        AssertPixel(pixels, 8, 6, 1, new(0, 0, 0.5f, 0.5f));
+        AssertPixel(pixels, 8, 0, 1, Vector4.Zero);
+    }
+
     private static async Task CheckImagesAsync(IGraphicDevice device)
     {
         using IGraphicsTexture atlas = device.CreateTexture(new() { Width = 4, Height = 1, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
@@ -302,6 +380,40 @@ public sealed class Drawing2DTests
         AssertPixel(mirrored, 6, 3, 0, Vector4.Zero);
         AssertPixel(mirrored, 6, 4, 0, Vector4.Zero);
         AssertPixel(mirrored, 6, 5, 0, new(1, 0, 0, 1));
+    }
+
+    private static async Task CheckGlyphRepresentationsAsync(IGraphicDevice device)
+    {
+        using IGraphicsTexture coverage = device.CreateTexture(new() { Width = 3, Height = 1, Format = TextureFormat.R8Unorm, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
+        using IGraphicsTextureView coverageView = coverage.CreateView();
+        using IGraphicsTexture msdf = device.CreateTexture(new() { Width = 2, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
+        using IGraphicsTextureView msdfView = msdf.CreateView();
+        using IGraphicsSampler sampler = device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge });
+        await UploadAsync(device, coverage, [0, 128, 255]);
+
+        // Deliberately oppose alpha to the RGB median to distinguish the two stored distances.
+        await UploadAsync(device, msdf, [0, 255, 255, 0, 255, 0, 0, 255]);
+        Vector4[] pixels = await RenderAsync(
+            device,
+            3,
+            4,
+            canvas =>
+        {
+            canvas.DrawCoverageMask(new(coverageView, sampler), new(0, 0, 3, 1), new(0, 0, 3, 1), PaintGraph2D.Solid(_red));
+            canvas.DrawDistanceField(new(coverageView, sampler, DistanceFieldEncoding2D.Sdf, 4), new(0, 0, 3, 1), new(0, 1, 3, 1), PaintGraph2D.Solid(_white));
+            canvas.DrawDistanceField(new(msdfView, sampler, DistanceFieldEncoding2D.Msdf, 4), new(0, 0, 2, 1), new(0, 2, 2, 1), PaintGraph2D.Solid(_white));
+            canvas.DrawDistanceField(new(msdfView, sampler, DistanceFieldEncoding2D.Mtsdf, 4), new(0, 0, 2, 1), new(0, 3, 2, 1), PaintGraph2D.Solid(_white));
+        },
+            [coverage, msdf]);
+        AssertPixel(pixels, 3, 0, 0, Vector4.Zero);
+        AssertPixel(pixels, 3, 1, 0, new(128f / 255, 0, 0, 128f / 255));
+        AssertPixel(pixels, 3, 2, 0, new(1, 0, 0, 1));
+        AssertPixel(pixels, 3, 0, 1, Vector4.Zero);
+        AssertPixel(pixels, 3, 2, 1, Vector4.One);
+        AssertPixel(pixels, 3, 0, 2, Vector4.One);
+        AssertPixel(pixels, 3, 1, 2, Vector4.Zero);
+        AssertPixel(pixels, 3, 0, 3, Vector4.One);
+        AssertPixel(pixels, 3, 1, 3, Vector4.Zero);
     }
 
     private static async Task UploadAsync(IGraphicDevice device, IGraphicsTexture texture, byte[] texels)
