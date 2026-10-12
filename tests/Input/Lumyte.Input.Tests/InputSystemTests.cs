@@ -85,7 +85,7 @@ public sealed class InputSystemTests
     {
         var clock = new Clock();
         var source = new Source(new Device(InputDeviceKind.Mouse));
-        using var input = new InputSystem([source], clock);
+        using var input = new InputSystem([source], timeProvider: clock);
         input.Update();
         input.SetRetentionPolicy(source.Id, new InputRetentionPolicy(MaxAge: TimeSpan.FromSeconds(2)));
         clock.Advance(TimeSpan.FromSeconds(1));
@@ -291,7 +291,7 @@ public sealed class InputSystemTests
         var clock = new Clock();
         var device = new Device(InputDeviceKind.Mouse);
         var source = new Source(device);
-        using var input = new InputSystem([source], clock);
+        using var input = new InputSystem([source], timeProvider: clock);
         device.Add(new FocusData(true));
         input.Update();
         ulong old = input.ReadRecords(source.Id, 0).NextSequence;

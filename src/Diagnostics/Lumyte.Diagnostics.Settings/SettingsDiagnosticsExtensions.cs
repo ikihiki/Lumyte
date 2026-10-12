@@ -36,7 +36,11 @@ public static class SettingsDiagnosticsExtensions
         {
             IGameExecutionIdentity identity = provider.GetRequiredService<IGameExecutionIdentity>();
             using IDisposable correlation = SettingsTelemetry.BeginScope(identity.InstanceId);
-            return new SettingsDiagnostics<T>(provider.GetRequiredService<IEditableOptions<T>>(), fields, identity);
+            return new SettingsDiagnostics<T>(
+                provider.GetRequiredService<IEditableOptions<T>>(),
+                provider.GetRequiredService<ISettingsDefinition<T>>(),
+                fields,
+                identity);
         });
         return services;
     }

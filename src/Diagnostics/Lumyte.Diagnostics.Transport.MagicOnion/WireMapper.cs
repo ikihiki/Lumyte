@@ -23,6 +23,7 @@ public static class WireMapper
                 Arguments = operation.Arguments.Select(Field).ToArray(),
                 Results = operation.Results.Select(Field).ToArray(),
                 RequiresRevision = operation.RequiresRevision,
+                Traffic = (int)operation.Traffic,
             }).ToArray(),
         }).ToArray(),
     };
@@ -30,7 +31,7 @@ public static class WireMapper
     /// <summary>Maps a game hello.</summary>
     /// <param name="value">The wire value.</param>
     /// <returns>The common value.</returns>
-    public static ClientHello FromWire(WireHello value) => new(Guid.Parse(value.InstanceId), value.ProtocolVersion, value.Catalog.Select(subsystem => new DiagnosticSubsystemCatalog(new(subsystem.Id, subsystem.DisplayName, subsystem.SchemaVersion), subsystem.Operations.Select(operation => new OperationDescriptor(operation.Id, operation.DisplayName, (DiagnosticPermission)operation.Permission, operation.Arguments.Select(field => new DiagnosticField(field.Id, (DiagnosticValueKind)field.Kind, field.Minimum, field.Maximum, field.MaxLength)).ToArray(), operation.Results.Select(field => new DiagnosticField(field.Id, (DiagnosticValueKind)field.Kind, field.Minimum, field.Maximum, field.MaxLength)).ToArray(), operation.RequiresRevision)).ToArray())).ToArray());
+    public static ClientHello FromWire(WireHello value) => new(Guid.Parse(value.InstanceId), value.ProtocolVersion, value.Catalog.Select(subsystem => new DiagnosticSubsystemCatalog(new(subsystem.Id, subsystem.DisplayName, subsystem.SchemaVersion), subsystem.Operations.Select(operation => new OperationDescriptor(operation.Id, operation.DisplayName, (DiagnosticPermission)operation.Permission, operation.Arguments.Select(field => new DiagnosticField(field.Id, (DiagnosticValueKind)field.Kind, field.Minimum, field.Maximum, field.MaxLength)).ToArray(), operation.Results.Select(field => new DiagnosticField(field.Id, (DiagnosticValueKind)field.Kind, field.Minimum, field.Maximum, field.MaxLength)).ToArray(), operation.RequiresRevision, (DiagnosticOperationTraffic)operation.Traffic)).ToArray())).ToArray());
 
     /// <summary>Maps a session.</summary>
     /// <param name="value">The common value.</param>

@@ -18,7 +18,17 @@ internal sealed class ReverseNode(TimelineNode child) : TimelineNode(child.Lengt
         child.Sample(Length - Math.Min(time, Length), output, !backwards, priority);
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority) => child.Endpoints(Length - from, Length - to, output, priority);
+    internal override void Endpoints(Int128 from, Int128 to, AnimationOutput output, bool backwards, UInt128 priority)
+    {
+        if (!HasRelease)
+        {
+            return;
+        }
+
+        // Preserve crossings just outside either endpoint, including instantaneous tracks.
+        // The reflected start sentinel can exceed long.MaxValue for a valid timeline.
+        child.Endpoints(Length - from, Length - to, output, !backwards, priority);
+    }
 
     internal override void Events(EventQuery query, EventCollector collector)
     {

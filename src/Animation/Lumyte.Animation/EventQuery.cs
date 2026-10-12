@@ -1,6 +1,6 @@
 namespace Lumyte.Animation;
 
-internal readonly record struct EventQuery(long From, long To, bool IncludeFrom, bool IncludeTo, long Origin, int Direction)
+internal readonly record struct EventQuery(long From, long To, bool IncludeFrom, bool IncludeTo, Int128 Origin, int Direction)
 {
     internal bool Contains(long time) => (time > From || (IncludeFrom && time == From)) && (time < To || (IncludeTo && time == To));
 

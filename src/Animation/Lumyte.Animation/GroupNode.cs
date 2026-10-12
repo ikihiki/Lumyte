@@ -22,7 +22,7 @@ internal sealed class GroupNode(PlacedNode[] children, long length) : TimelineNo
         }
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
+    internal override void Endpoints(Int128 from, Int128 to, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (!HasRelease)
         {
@@ -31,7 +31,7 @@ internal sealed class GroupNode(PlacedNode[] children, long length) : TimelineNo
 
         foreach (PlacedNode child in children)
         {
-            child.Node.Endpoints(from - child.Start, to - child.Start, output, priority);
+            child.Node.Endpoints(from - child.Start, to - child.Start, output, backwards, priority);
             priority = checked(priority + child.Node.ValueCount);
         }
     }

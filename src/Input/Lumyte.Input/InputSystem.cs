@@ -11,6 +11,7 @@ public sealed class InputSystem : IDisposable
     private readonly Dictionary<InputDeviceId, Entry> _entries = [];
     private readonly List<Entry> _activeEntries = [];
     private readonly TimeProvider _clock;
+    private readonly IInputInspection? _inspection;
     private readonly long _started;
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private ulong _nextId;
@@ -22,8 +23,28 @@ public sealed class InputSystem : IDisposable
     /// <param name="sources">The borrowed sources, each used by only one system.</param>
     /// <param name="timeProvider">The monotonic clock, defaulting to the system clock.</param>
     public InputSystem(IEnumerable<IInputSource> sources, TimeProvider? timeProvider = null)
+        : this(sources, null, timeProvider, inspectionRequired: false)
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="InputSystem"/> class whose complete state is observed.</summary>
+    /// <param name="sources">The borrowed sources, each used by only one system.</param>
+    /// <param name="inspection">The scoped observer applied to every source and device.</param>
+    /// <param name="timeProvider">The monotonic clock, defaulting to the system clock.</param>
+    public InputSystem(IEnumerable<IInputSource> sources, IInputInspection inspection, TimeProvider? timeProvider = null)
+        : this(sources, inspection, timeProvider, inspectionRequired: true)
+    {
+    }
+
+    private InputSystem(IEnumerable<IInputSource> sources, IInputInspection? inspection, TimeProvider? timeProvider, bool inspectionRequired)
     {
         ArgumentNullException.ThrowIfNull(sources);
+        if (inspectionRequired)
+        {
+            ArgumentNullException.ThrowIfNull(inspection);
+        }
+
+        _inspection = inspection;
         _sources = sources.ToArray();
         var seen = new HashSet<IInputSource>(ReferenceEqualityComparer.Instance);
         foreach (IInputSource source in _sources)
@@ -41,9 +62,11 @@ public sealed class InputSystem : IDisposable
         var initialized = new List<Registry>();
         try
         {
+            _inspection?.SystemCreated(this);
             foreach (Registry registry in _registries)
             {
                 initialized.Add(registry);
+                _inspection?.SourceInitializing(this, registry.Source);
                 registry.Allowed = true;
                 try
                 {
@@ -61,11 +84,20 @@ public sealed class InputSystem : IDisposable
             foreach (Registry registry in initialized.AsEnumerable().Reverse())
             {
                 Capture(registry.Source.Shutdown, errors);
+                if (_inspection != null)
+                {
+                    Capture(() => _inspection.SourceShutdown(this, registry.Source), errors);
+                }
             }
 
             foreach (Entry entry in _entries.Values)
             {
                 Capture(entry.Device.Dispose, errors);
+            }
+
+            if (_inspection != null)
+            {
+                Capture(() => _inspection.SystemDisposed(this), errors);
             }
 
             _disposed = true;
@@ -132,6 +164,10 @@ public sealed class InputSystem : IDisposable
                 try
                 {
                     Capture(registry.Source.Update, errors);
+                    if (_inspection != null)
+                    {
+                        Capture(() => _inspection.SourceUpdated(this, registry.Source), errors);
+                    }
                 }
                 finally
                 {
@@ -258,11 +294,21 @@ public sealed class InputSystem : IDisposable
             foreach (Registry registry in _registries.Reverse())
             {
                 Capture(registry.Source.Shutdown, errors);
+                if (_inspection != null)
+                {
+                    Capture(() => _inspection.SourceShutdown(this, registry.Source), errors);
+                }
+
                 foreach (Entry entry in _entries.Values.Where(entry => entry.Owner == registry && entry.State.Connected))
                 {
                     entry.Removing = true;
                     Collect(entry, notifications, errors);
                 }
+            }
+
+            if (_inspection != null)
+            {
+                Capture(() => _inspection.SystemDisposed(this), errors);
             }
 
             Notify(notifications, errors);
@@ -397,12 +443,22 @@ public sealed class InputSystem : IDisposable
                 Append(entry, data, notifications);
             }
         }
+
+        if (_inspection != null)
+        {
+            Capture(() => _inspection.DeviceUpdated(this, entry.Info.Id, new InputDeviceState(entry.State), entry.LatestSequence), errors);
+            if (entry.Removing)
+            {
+                Capture(() => _inspection.Unregistered(this, entry.Info.Id), errors);
+            }
+        }
     }
 
     private void Append(Entry entry, InputData data, List<InputRecord> notifications)
     {
         var record = new InputRecord(entry.Info.Id, checked(++_sequence), _clock.GetElapsedTime(_started), data);
         entry.Records.Add(record);
+        entry.LatestSequence = record.Sequence;
         entry.RecordSnapshot = null;
         notifications.Add(record);
     }
@@ -477,6 +533,8 @@ public sealed class InputSystem : IDisposable
 
         internal ulong RemovedThrough { get; set; }
 
+        internal ulong LatestSequence { get; set; }
+
         internal bool Published { get; set; }
 
         internal bool Removing { get; set; }
@@ -508,6 +566,7 @@ public sealed class InputSystem : IDisposable
             var entry = new Entry(device, this, info);
             system._entries.Add(id, entry);
             system._activeEntries.Add(entry);
+            system._inspection?.Registered(system, id, descriptor);
             return id;
         }
 

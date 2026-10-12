@@ -12,7 +12,7 @@ internal sealed class MarkerNode(AnimationEvent marker) : TimelineNode(0)
     {
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
+    internal override void Endpoints(Int128 from, Int128 to, AnimationOutput output, bool backwards, UInt128 priority)
     {
     }
 
@@ -25,7 +25,7 @@ internal sealed class MarkerNode(AnimationEvent marker) : TimelineNode(0)
 
         if (query.Contains(0))
         {
-            collector.Add(marker, query.Origin);
+            collector.Add(marker, checked((long)query.Origin));
         }
     }
 }

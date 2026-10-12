@@ -16,7 +16,7 @@ case "$(uname -m)" in
 esac
 
 packages=(build-essential pkg-config curl ca-certificates git
-    unzip zip tar python3 libicu-dev libssl-dev zlib1g-dev libvulkan-dev
+    unzip zip tar python3 fontconfig fonts-noto-cjk libicu-dev libssl-dev zlib1g-dev libvulkan-dev
     mesa-vulkan-drivers vulkan-tools)
 
 if [[ "${LUMYTE_SETUP_ROOTLESS:-0}" != 1 ]] && [[ "$EUID" == 0 ]]; then
@@ -83,3 +83,14 @@ EOF
     done
     shopt -u nullglob
 fi
+
+mkdir -p "$LUMYTE_ENV_ROOT/fontconfig" "$LUMYTE_ENV_ROOT/font-cache"
+cat > "$LUMYTE_ENV_ROOT/fontconfig/fonts.conf" <<EOF
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <dir>/usr/share/fonts</dir>
+  <dir>$LUMYTE_ENV_ROOT/sysroot/usr/share/fonts</dir>
+  <cachedir>$LUMYTE_ENV_ROOT/font-cache</cachedir>
+</fontconfig>
+EOF

@@ -28,11 +28,6 @@ public static partial class ComposeAnimation
             public AnimationTimeline Build()
             {
                 TimelineNode node = Compile([]);
-                if (node.Length == 0)
-                {
-                    throw new ArgumentException("The timeline needs a positive duration.");
-                }
-
                 return new AnimationTimeline(node);
             }
 
@@ -194,7 +189,7 @@ public static partial class ComposeAnimation
                 {
                     ArgumentNullException.ThrowIfNull(Channel);
                     ArgumentNullException.ThrowIfNull(Source);
-                    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Source.Duration.Ticks, nameof(Source));
+                    ArgumentOutOfRangeException.ThrowIfNegative(Source.Duration.Ticks, nameof(Source));
                     if (!Enum.IsDefined(Fill))
                     {
                         throw new ArgumentOutOfRangeException(nameof(Fill));
@@ -269,11 +264,6 @@ public static partial class ComposeAnimation
 
                     ArgumentNullException.ThrowIfNull(Children[0]);
                     TimelineNode child = Children[0].Compile(ancestors);
-                    if (child.Length == 0)
-                    {
-                        throw new ArgumentException("This operator needs a positive child duration.");
-                    }
-
                     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Count);
                     return new RepeatNode(child, Count);
                 }
@@ -309,11 +299,6 @@ public static partial class ComposeAnimation
 
                     ArgumentNullException.ThrowIfNull(Children[0]);
                     TimelineNode child = Children[0].Compile(ancestors);
-                    if (child.Length == 0)
-                    {
-                        throw new ArgumentException("This operator needs a positive child duration.");
-                    }
-
                     return new ReverseNode(child);
                 }
                 finally

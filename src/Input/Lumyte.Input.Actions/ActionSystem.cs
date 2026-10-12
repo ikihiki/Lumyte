@@ -5,7 +5,7 @@ using Lumyte.Input.Abstractions;
 namespace Lumyte.Input.Actions;
 
 /// <summary>Maps ordered input records to context-scoped actions and recognized operations.</summary>
-public sealed class ActionSystem
+public sealed class ActionSystem : IDisposable
 {
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private readonly Dictionary<(InputDeviceId Device, InputControl Control), Vector2> _controls = new();
@@ -26,6 +26,7 @@ public sealed class ActionSystem
     private readonly Dictionary<string, IActionRecognizer[]> _recognizers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _recognizerEventStarts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<InputDeviceId>> _recognizerDevices = new(StringComparer.Ordinal);
+    private readonly IActionInspection? _inspection;
     private HashSet<InputDeviceId>? _devices;
     private ActionProfile _profile;
     private ProfileIndex _profileIndex;
@@ -37,16 +38,38 @@ public sealed class ActionSystem
     private TimeSpan _now;
     private bool _advancing;
     private bool _controlsChanged;
+    private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref = "ActionSystem"/> class.</summary>
     /// <param name = "profile">The profile value.</param>
     /// <param name = "bufferOptions">The bufferOptions value.</param>
     public ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions = null)
+        : this(profile, bufferOptions, null, inspectionRequired: false)
     {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="ActionSystem"/> class observed by the scoped inspection service.</summary>
+    /// <param name="profile">The immutable action profile.</param>
+    /// <param name="bufferOptions">The optional recognition buffer policy.</param>
+    /// <param name="inspection">The observer receiving definitions and evaluated values.</param>
+    public ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions, IActionInspection inspection)
+        : this(profile, bufferOptions, inspection, inspectionRequired: true)
+    {
+    }
+
+    private ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions, IActionInspection? inspection, bool inspectionRequired)
+    {
+        if (inspectionRequired)
+        {
+            ArgumentNullException.ThrowIfNull(inspection);
+        }
+
         profile.Validate();
+        _inspection = inspection;
         _profile = profile;
         _profileIndex = new ProfileIndex(profile);
         Buffer = new ActionInputBuffer(bufferOptions ?? new InputBufferOptions(TimeSpan.FromMilliseconds(200), 32));
+        _inspection?.SystemCreated(this, profile);
     }
 
     /// <summary>Occurs when an action state changes.</summary>
@@ -127,6 +150,7 @@ public sealed class ActionSystem
             CancelAll(_now);
             _profile = profile;
             _profileIndex = index;
+            _inspection?.ProfileChanged(this, profile);
             if (_rebind is not null)
             {
                 _rebind.IsComplete = true;
@@ -397,6 +421,21 @@ public sealed class ActionSystem
         }
     }
 
+    /// <summary>Releases the inspection registration owned by this action system.</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Check();
+        _inspection?.SystemDisposed(this);
+        Changed = null;
+        Recognized = null;
+        _disposed = true;
+    }
+
     /// <summary>Discards transient recognition or correction state.</summary>
     /// <param name = "device">The device value.</param>
     /// <param name = "now">The now value.</param>
@@ -651,6 +690,17 @@ public sealed class ActionSystem
                     }
 
                     mapped = Vector2.Clamp(processed.Value, -Vector2.One, Vector2.One);
+                }
+
+                if (_inspection != null)
+                {
+                    mapped = _inspection.EvaluateValue(this, context.Id, definition.Id, definition.Kind, mapped, now);
+                    if (!float.IsFinite(mapped.X) || !float.IsFinite(mapped.Y))
+                    {
+                        throw new InvalidOperationException("Inspection returned an invalid action value.");
+                    }
+
+                    mapped = Vector2.Clamp(mapped, -Vector2.One, Vector2.One);
                 }
 
                 mapped = definition.Kind switch
@@ -1005,6 +1055,18 @@ public sealed class ActionSystem
     private void Notify()
     {
         List<Exception>? errors = null;
+        if (_inspection != null)
+        {
+            try
+            {
+                _inspection.Advanced(this, _events.ToArray(), _recognized.ToArray(), _now);
+            }
+            catch (Exception exception)
+            {
+                errors = [exception];
+            }
+        }
+
         foreach (ActionEvent action in _events)
         {
             Dispatch(Changed, action, ref errors);
@@ -1023,6 +1085,7 @@ public sealed class ActionSystem
 
     private void Check(bool allowDuringAdvance = false)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (Environment.CurrentManagedThreadId != _thread || (_advancing && !allowDuringAdvance))
         {
             throw new InvalidOperationException("Use the owning thread outside notifications.");
