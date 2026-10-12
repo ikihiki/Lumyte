@@ -15,6 +15,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [2D・3D共通画像エフェクトの設計](docs/adr/graphics/GRAPHICS-0016-image-effects.md)／[利用方法](src/Graphics/Lumyte.Graphics.ImageEffects/README.md)
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)
 - [Indexed drawとIndirect実行](docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)
 - [カラーテクスチャ形式の拡充](docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)

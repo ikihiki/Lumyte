@@ -286,7 +286,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
                 ImageLayout = ImageLayout.ColorAttachmentOptimal,
                 LoadOp = a.LoadOp == Abstractions.AttachmentLoadOp.Clear ? Silk.NET.Vulkan.AttachmentLoadOp.Clear : Silk.NET.Vulkan.AttachmentLoadOp.Load,
                 StoreOp = a.StoreOp == Abstractions.AttachmentStoreOp.Store ? Silk.NET.Vulkan.AttachmentStoreOp.Store : Silk.NET.Vulkan.AttachmentStoreOp.DontCare,
-                ClearValue = new() { Color = new ClearColorValue((float)Math.Clamp(a.ClearValue.Red, 0, 1), (float)Math.Clamp(a.ClearValue.Green, 0, 1), (float)Math.Clamp(a.ClearValue.Blue, 0, 1), (float)Math.Clamp(a.ClearValue.Alpha, 0, 1)) },
+                ClearValue = new() { Color = new ClearColorValue((float)a.ClearValue.Red, (float)a.ClearValue.Green, (float)a.ClearValue.Blue, (float)a.ClearValue.Alpha) },
             };
         }
 
