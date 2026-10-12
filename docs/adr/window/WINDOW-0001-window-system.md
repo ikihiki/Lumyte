@@ -229,6 +229,60 @@ Native の Role は Normal / Tool / 一時表示をそれぞれ WindowKind.Norma
 
 Attach は対象が Open の場合だけ許可する。所有権は登録成功後に移転し、失敗時は呼び出し側に残る。CreateNativeWindow の登録失敗では今回生成した IWindow を解放する。共有による二重管理を避けるため、一つの IWindow を同時に複数 WindowSystem で管理しない責任は構成側にある。
 
+### 利用例
+
+複数の Native Window と Hosted 領域が必要な場合だけ `WindowSystem` を生成する。`CreateNativeWindow` と `CreateHostedWindow` が返す `WindowNode` を保持し、状態参照と操作をそのオブジェクトに対して行う。管理 ID は利用側へ公開しない。
+
+```csharp
+using System.Numerics;
+using Lumyte.Platform.Windows;
+using Lumyte.Windowing;
+using Lumyte.Windowing.Abstractions;
+
+using var platform = new WindowsPlatform();
+using var windows = new WindowSystem(platform);
+
+WindowNode mainWindow = windows.CreateNativeWindow(
+    new WindowDescriptor
+    {
+        Title = "Lumyte Windowing",
+        ClientSize = new Vector2(800, 600),
+    },
+    WindowRole.Normal);
+
+WindowNode toolWindow = windows.CreateNativeWindow(
+    new WindowDescriptor
+    {
+        Title = "Tool window",
+        Kind = WindowKind.Tool,
+        Owner = mainWindow.NativeWindow,
+        ClientSize = new Vector2(320, 240),
+    },
+    WindowRole.Tool,
+    mainWindow);
+
+WindowNode contextMenu = windows.CreateHostedWindow(
+    new HostedWindowDescriptor
+    {
+        Parent = mainWindow,
+        Bounds = new WindowRect(24, 24, 240, 160),
+        Role = WindowRole.ContextMenu,
+        Activation = WindowActivation.PreserveFocus,
+    });
+
+mainWindow.Show();
+toolWindow.Show();
+contextMenu.Show();
+
+while (windows.Windows.Count > 0 && !platform.IsQuitRequested)
+{
+    platform.PumpEvents();
+    windows.Update();
+}
+```
+
+Graphics は `mainWindow.NativeWindow` を実装バックエンドの具象型へ変換して HWND などを取得する。Hosted の内容は Framework が `Bounds`、`GetHostedOrder()`、`HitTest()` を Graphics と Input に接続して描画・配送する。終了時は Graphics が保持する Surface などを先に解放し、親の `mainWindow.Close()` で Owned の子を含む部分木を閉じる。
+
 ### 描画順・座標・フォーカス
 
 Native ノードの Bounds は `(0, 0, ClientSize.X, ClientSize.Y)`、PixelSize / Scale / 可視性は IWindow.State に従う。Hosted は親クライアント座標であり、祖先を合成して root へ配置し、祖先のクリップを交差する。整数ピクセル寸法は実際の Native PixelSize を基準とし、Native の OS 枠や取得不能な画面絶対位置を推測しない。
@@ -309,7 +363,7 @@ Dispose が未処理の管理要求・終了要求を打ち切る場合は Super
 - Windowing.Abstractions の参照 assembly と NuGet の依存閉包に Platform と Windowing 管理実装が含まれない。
 - 偽の IPlatform と直接実装した IWindow を使い、Windowing が Backend 転送 interface を要求しないことを確認する。
 - 単一 Window サンプルが Windowing.Abstractions を参照し、Windowing 管理実装を参照せず、同じ IWindow を任意に Attach / Detach できる。
-- 複数 Window サンプルが CreateNativeWindow の返す WindowNode で Native 親子を操作し、Hosted コンテキストメニューを同じ System で管理できる。
+- ADR の利用例どおり、CreateNativeWindow の返す WindowNode で Native 親子を操作し、Hosted コンテキストメニューを同じ System で管理できる。
 - Owned / Borrowed の登録失敗・終了・Dispose、同一 Window の重複、別 System の WindowNode と親の不整合を拒否する。
 - Native の状態追従、要求完了の対応づけ、PumpEvents の二重取得防止、Close 延期と子から親の終了を検証する。
 - Hosted の層・部分木・クリップ・ヒットテスト、アンカーの反転・クランプ、DPI を検証する。

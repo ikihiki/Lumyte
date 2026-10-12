@@ -4,32 +4,8 @@
 
 単一 Window なら `IPlatform.CreateWindow` と `IWindow` だけを使用でき、このパッケージは不要です。
 
-```csharp
-using Lumyte.Platform.Abstractions;
-using Lumyte.Windowing;
-using Lumyte.Windowing.Abstractions;
-
-// platform は起動コードが生成し、最後に解放する。
-using var windows = new WindowSystem(platform);
-WindowNode root = windows.CreateNativeWindow(new WindowDescriptor(), WindowRole.Normal);
-WindowNode menu = windows.CreateHostedWindow(new HostedWindowDescriptor
-{
-    Parent = root,
-    Bounds = new WindowRect(20, 20, 240, 160),
-    Role = WindowRole.ContextMenu,
-    Activation = WindowActivation.PreserveFocus,
-});
-root.Show();
-menu.Show();
-windows.Update();
-platform.PumpEvents();
-windows.Update();
-```
-
 Hosted は UI 内容を描画しません。描画側は `WindowNode.Bounds`、`GetHostedOrder`、`PresentationRoot` を使い、親からの座標合成とクリップを適用します。入力の当たり判定には Native クライアント座標の `HitTest` を使用します。状態参照と操作は `WindowNode` に対して行い、内部管理 ID は公開しません。入力のイベント時点の配送先を保持する envelope は未実装です。
 
 `Attach` は Owned / Borrowed を明示します。Borrowed の終了は利用側が担当し、`Detach` は元の Native を閉じません。Owned を閉じる前に Graphics の保持を解放してください。保持中の終了は `PumpEvents` / `Update` を継続して待ちます。System 自体は Platform を解放しません。
 
-Windows での Native 親子と Hosted コンテキストメニューを含む実行例は、[Lumyte.Windowing.Windows.Sample](../../../samples/Lumyte.Windowing.Windows.Sample/README.md)を参照してください。
-
-[設計と所有権](../../../docs/adr/window/WINDOW-0001-window-system.md)を参照してください。
+[設計、所有権、利用例](../../../docs/adr/window/WINDOW-0001-window-system.md#利用例)を参照してください。
