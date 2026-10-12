@@ -455,7 +455,7 @@ public sealed class Drawing2DTests
         AssertPixel(opacity, 6, 3, 0, new(0, 0, 0.5f, 0.5f));
 
         var source = ImageEffectGraph.Source();
-        var shifted = ImageEffectGraph.Composite(source, ImageEffectGraph.Opacity(0, source), EffectCompositeMode.SrcOver, 4, 0);
+        ImageEffectGraph shifted = new ImageEffectCompiler(device).Composite(source, new ImageEffectCompiler(device).Opacity(0, source), EffectCompositeMode.SrcOver, 4, 0);
         Vector4[] translated = await RenderAsync(device, 8, 4, canvas =>
         {
             canvas.ClipRect(new(5, 0, 1, 4));
@@ -483,7 +483,7 @@ public sealed class Drawing2DTests
         var source = ImageEffectGraph.Source();
         Vector4[] blur = await RenderAsync(device, 12, 6, canvas =>
         {
-            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = ImageEffectGraph.GaussianBlur(1, 0, source) });
+            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = new ImageEffectCompiler(device).GaussianBlur(1, 0, source) });
             canvas.FillRect(new(4, 1, 4, 4), _white);
             canvas.EndLayer();
         });
@@ -504,17 +504,17 @@ public sealed class Drawing2DTests
         ]);
         Vector4[] matrix = await RenderAsync(device, 4, 2, canvas =>
         {
-            canvas.BeginLayer(new() { ContentBounds = new(1, 0, 2, 2), Effects = ImageEffectGraph.ColorMatrix(hdrMatrix, source) });
+            canvas.BeginLayer(new() { ContentBounds = new(1, 0, 2, 2), Effects = new ImageEffectCompiler(device).ColorMatrix(hdrMatrix, source) });
             canvas.FillRect(new(1, 0, 2, 2), _white);
             canvas.EndLayer();
         });
         AssertPixel(matrix, 4, 1, 0, new(1, -0.125f, 0, 0.5f));
         AssertPixel(matrix, 4, 0, 0, Vector4.Zero);
 
-        var part = ImageEffectGraph.Opacity(0.75f, source);
+        ImageEffectGraph part = new ImageEffectCompiler(device).Opacity(0.75f, source);
         Vector4[] plus = await RenderAsync(device, 2, 2, canvas =>
         {
-            canvas.BeginLayer(new() { ContentBounds = new(0, 0, 2, 2), Effects = ImageEffectGraph.Composite(part, part, EffectCompositeMode.Plus) });
+            canvas.BeginLayer(new() { ContentBounds = new(0, 0, 2, 2), Effects = new ImageEffectCompiler(device).Composite(part, part, EffectCompositeMode.Plus) });
             canvas.FillRect(new(0, 0, 2, 2), _white);
             canvas.EndLayer();
         });
@@ -526,7 +526,7 @@ public sealed class Drawing2DTests
         Vector4[] translucent = await RenderAsync(device, 4, 2, canvas =>
         {
             canvas.FillRect(new(0, 0, 4, 2), new Color2D(1, 0, 0, 0.5f));
-            canvas.DrawBackdropEffect(new() { OutputBounds = new(1.5f, 0, 2.5f, 2), Effects = ImageEffectGraph.Opacity(0.5f, ImageEffectGraph.Source()) });
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(1.5f, 0, 2.5f, 2), Effects = new ImageEffectCompiler(device).Opacity(0.5f, ImageEffectGraph.Source()) });
             canvas.FillRect(new(3, 0, 1, 2), _blue);
         });
         AssertPixel(translucent, 4, 0, 0, new(0.5f, 0, 0, 0.5f));
@@ -537,7 +537,7 @@ public sealed class Drawing2DTests
         Vector4[] blur = await RenderAsync(device, 5, 1, canvas =>
         {
             canvas.FillRect(new(0, 0, 1, 1), _white);
-            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = ImageEffectGraph.GaussianBlur(1, 0, ImageEffectGraph.Source()) });
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = new ImageEffectCompiler(device).GaussianBlur(1, 0, ImageEffectGraph.Source()) });
         });
         AssertPixel(blur, 5, 0, 0, Vector4.One);
         AssertPixel(blur, 5, 1, 0, new(0.24203623f), 0.003f);
@@ -548,8 +548,8 @@ public sealed class Drawing2DTests
     private static async Task CheckComposedEffectsAsync(IGraphicDevice device)
     {
         var renderer = new TranslateLayerRenderer();
-        var translated = ImageEffectGraph.Create(new TranslateLayerEffect(4, 0), renderer, ImageEffectGraph.Source());
-        var faded = ImageEffectGraph.Opacity(0.5f, translated);
+        ImageEffectGraph translated = new ImageEffectCompiler(device).Effect(new TranslateLayerEffect(4, 0), renderer, ImageEffectGraph.Source());
+        ImageEffectGraph faded = new ImageEffectCompiler(device).Opacity(0.5f, translated);
         Vector4[] layer = await RenderAsync(device, 8, 4, canvas =>
         {
             canvas.ClipRect(new(5, 0, 1, 4));
@@ -561,7 +561,7 @@ public sealed class Drawing2DTests
         AssertPixel(layer, 8, 5, 1, new(0.5f));
         AssertPixel(layer, 8, 6, 1, Vector4.Zero);
 
-        var shiftedBackground = ImageEffectGraph.Create(new TranslateLayerEffect(3, 0), renderer, ImageEffectGraph.Source());
+        ImageEffectGraph shiftedBackground = new ImageEffectCompiler(device).Effect(new TranslateLayerEffect(3, 0), renderer, ImageEffectGraph.Source());
         Vector4[] backdrop = await RenderAsync(device, 5, 1, canvas =>
         {
             canvas.FillRect(new(0, 0, 5, 1), _blue);

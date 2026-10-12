@@ -23,42 +23,6 @@ public sealed class ImageEffectGraph
     /// <returns>The source graph.</returns>
     public static ImageEffectGraph Source() => new(new SourceEffectNode(), 1);
 
-    /// <summary>Creates a color-matrix operation using a supplied or newly created renderer.</summary>
-    /// <param name="matrix">The immutable matrix.</param>
-    /// <param name="input">The input graph.</param>
-    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
-    /// <returns>The graph constructed by the common effect factory.</returns>
-    public static ImageEffectGraph ColorMatrix(ColorMatrix4x5 matrix, ImageEffectGraph input, IImageEffectRenderer<ColorMatrixEffect>? renderer = null)
-        => Create(new ColorMatrixEffect(matrix), renderer ?? new DefaultColorMatrixEffectRenderer(), input);
-
-    /// <summary>Creates a Gaussian operation using a supplied or newly created renderer.</summary>
-    /// <param name="sigmaX">The finite nonnegative horizontal device-pixel sigma.</param>
-    /// <param name="sigmaY">The finite nonnegative vertical device-pixel sigma.</param>
-    /// <param name="input">The input graph.</param>
-    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
-    /// <returns>The graph constructed by the common effect factory.</returns>
-    public static ImageEffectGraph GaussianBlur(float sigmaX, float sigmaY, ImageEffectGraph input, IImageEffectRenderer<GaussianBlurEffect>? renderer = null)
-        => Create(new GaussianBlurEffect(sigmaX, sigmaY), renderer ?? new DefaultGaussianBlurEffectRenderer(), input);
-
-    /// <summary>Creates an opacity operation using a supplied or newly created renderer.</summary>
-    /// <param name="opacity">A finite multiplier in [0, 1].</param>
-    /// <param name="input">The input graph.</param>
-    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
-    /// <returns>The graph constructed by the common effect factory.</returns>
-    public static ImageEffectGraph Opacity(float opacity, ImageEffectGraph input, IImageEffectRenderer<OpacityEffect>? renderer = null)
-        => Create(new OpacityEffect(opacity), renderer ?? new DefaultOpacityEffectRenderer(), input);
-
-    /// <summary>Creates a composition operation using a supplied or newly created renderer.</summary>
-    /// <param name="source">The source graph.</param>
-    /// <param name="backdrop">The backdrop graph.</param>
-    /// <param name="mode">The composition mode.</param>
-    /// <param name="sourceOffsetX">The integer horizontal source translation.</param>
-    /// <param name="sourceOffsetY">The integer vertical source translation.</param>
-    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
-    /// <returns>The graph constructed by the common effect factory.</returns>
-    public static ImageEffectGraph Composite(ImageEffectGraph source, ImageEffectGraph backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IImageEffectRenderer<CompositeEffect>? renderer = null)
-        => Create(new CompositeEffect(mode, sourceOffsetX, sourceOffsetY), renderer ?? new DefaultCompositeEffectRenderer(), source, backdrop);
-
     /// <summary>Binds an immutable effect definition to its typed renderer and copied child graphs.</summary>
     /// <typeparam name="TDefinition">The immutable effect definition.</typeparam>
     /// <param name="definition">CPU-only parameters and region mappings, retained without mutation.</param>

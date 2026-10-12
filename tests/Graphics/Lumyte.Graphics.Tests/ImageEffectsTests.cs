@@ -52,20 +52,20 @@ public sealed class ImageEffectsTests
         ];
         var origin = new EffectPixelRect(16_777_217, -16_777_219, 1, 1);
         var source = ImageEffectGraph.Source();
-        (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, ImageEffectGraph.ColorMatrix(new(coefficients), source), origin, new(0.2f, -0.1f, 0.3f, 0.25f));
+        (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, new ImageEffectCompiler(device).ColorMatrix(new(coefficients), source), origin, new(0.2f, -0.1f, 0.3f, 0.25f));
         Assert.Equal(origin, bounds);
         AssertPixel(pixels[0], new(1.6f, -0.2f, 0.6f, 0.5f));
 
         // Only alpha is clamped; RGB remains HDR and may be negative.
         coefficients[19] = 2;
-        (_, pixels) = await RenderAsync(device, ImageEffectGraph.ColorMatrix(new(coefficients), source), origin, new(0.2f, -0.1f, 0.3f, 0.25f));
+        (_, pixels) = await RenderAsync(device, new ImageEffectCompiler(device).ColorMatrix(new(coefficients), source), origin, new(0.2f, -0.1f, 0.3f, 0.25f));
         AssertPixel(pixels[0], new(3.2f, -0.4f, 1.2f, 1));
     }
 
     private static async Task CheckCompositeGapAsync(IGraphicDevice device)
     {
         var source = ImageEffectGraph.Source();
-        var separated = ImageEffectGraph.Composite(source, source, EffectCompositeMode.SrcOver, 4, 0);
+        ImageEffectGraph separated = new ImageEffectCompiler(device).Composite(source, source, EffectCompositeMode.SrcOver, 4, 0);
         var constants = new ColorMatrix4x5(
         [
             0, 0, 0, 0, 1.5f,
@@ -73,7 +73,7 @@ public sealed class ImageEffectsTests
             0, 0, 0, 0, 0.125f,
             0, 0, 0, 0, 0.5f,
         ]);
-        (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, ImageEffectGraph.ColorMatrix(constants, separated), new(-17, 9, 1, 1), Vector4.One);
+        (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, new ImageEffectCompiler(device).ColorMatrix(constants, separated), new(-17, 9, 1, 1), Vector4.One);
         Assert.Equal(new EffectPixelRect(-17, 9, 5, 1), bounds);
         Assert.Equal(5, pixels.Length);
         foreach (Vector4 pixel in pixels)
@@ -86,7 +86,7 @@ public sealed class ImageEffectsTests
     private static async Task CheckLargeOriginOffsetAsync(IGraphicDevice device)
     {
         var source = ImageEffectGraph.Source();
-        var shifted = ImageEffectGraph.Composite(ImageEffectGraph.Opacity(0.25f, source), source, EffectCompositeMode.SrcOver, 1, 0);
+        ImageEffectGraph shifted = new ImageEffectCompiler(device).Composite(new ImageEffectCompiler(device).Opacity(0.25f, source), source, EffectCompositeMode.SrcOver, 1, 0);
         (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, shifted, new(16_777_219, -16_777_219, 1, 1), Vector4.One);
         Assert.Equal(new EffectPixelRect(16_777_219, -16_777_219, 2, 1), bounds);
         AssertPixel(pixels[0], Vector4.One);
@@ -95,7 +95,7 @@ public sealed class ImageEffectsTests
 
     private static async Task CheckTwoAxisBlurAsync(IGraphicDevice device)
     {
-        var blur = ImageEffectGraph.GaussianBlur(1, 2, ImageEffectGraph.Source());
+        ImageEffectGraph blur = new ImageEffectCompiler(device).GaussianBlur(1, 2, ImageEffectGraph.Source());
         (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, blur, new(16_777_217, -16_777_219, 1, 1), Vector4.One);
         Assert.Equal(new EffectPixelRect(16_777_214, -16_777_225, 7, 13), bounds);
 
@@ -115,8 +115,8 @@ public sealed class ImageEffectsTests
     private static async Task CheckCustomEffectsAsync(IGraphicDevice device)
     {
         var definition = new TranslatedFade(7, -3, 0.5f);
-        var custom = ImageEffectGraph.Create(definition, new TranslatedFadeRenderer(), ImageEffectGraph.Source());
-        var effect = ImageEffectGraph.Opacity(0.5f, custom);
+        ImageEffectGraph custom = new ImageEffectCompiler(device).Effect(definition, new TranslatedFadeRenderer(), ImageEffectGraph.Source());
+        ImageEffectGraph effect = new ImageEffectCompiler(device).Opacity(0.5f, custom);
         var compiler = new ImageEffectCompiler(device);
         Assert.Equal(new EffectPixelRect(16_777_217, -16_777_219, 1, 1), compiler.GetRequiredSourceBounds(effect, new(16_777_224, -16_777_222, 1, 1)));
         (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, effect, new(16_777_217, -16_777_219, 1, 1), Vector4.One);
@@ -124,8 +124,8 @@ public sealed class ImageEffectsTests
         AssertPixel(Assert.Single(pixels), new(0.125f));
 
         var generator = new SolidImage(new(-5, 7, 2, 3), new(1.5f, -0.25f, 0.125f, 0.5f));
-        var generated = ImageEffectGraph.Create(generator, new SolidImageRenderer());
-        var generatedAndFaded = ImageEffectGraph.Opacity(0.5f, generated);
+        ImageEffectGraph generated = new ImageEffectCompiler(device).Effect(generator, new SolidImageRenderer());
+        ImageEffectGraph generatedAndFaded = new ImageEffectCompiler(device).Opacity(0.5f, generated);
         (bounds, pixels) = await RenderAsync(device, generatedAndFaded, new(0, 0, 1, 1), Vector4.One);
         Assert.Equal(generator.Bounds, bounds);
         Assert.All(pixels, pixel => AssertPixel(pixel, generator.Color * 0.5f));

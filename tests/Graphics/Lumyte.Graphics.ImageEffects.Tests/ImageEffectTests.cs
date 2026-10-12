@@ -38,12 +38,12 @@ public sealed class ImageEffectTests
     public void GraphFactoriesRejectInvalidParameters()
     {
         var source = ImageEffectGraph.Source();
-        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.GaussianBlur(float.PositiveInfinity, 1, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.GaussianBlur(1, -1, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Opacity(float.NaN, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Opacity(1.01f, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Composite(source, source, (EffectCompositeMode)99));
-        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.ColorMatrix(null!, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().GaussianBlur(float.PositiveInfinity, 1, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().GaussianBlur(1, -1, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().Opacity(float.NaN, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().Opacity(1.01f, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().Composite(source, source, (EffectCompositeMode)99));
+        Assert.Throws<ArgumentNullException>(() => Compiler().ColorMatrix(null!, source));
     }
 
     /// <summary>Checks reverse traversal through shared blurred and translated children.</summary>
@@ -52,8 +52,8 @@ public sealed class ImageEffectTests
     {
         ImageEffectCompiler compiler = Compiler();
         var source = ImageEffectGraph.Source();
-        var blurred = ImageEffectGraph.GaussianBlur(2, 3, source);
-        var graph = ImageEffectGraph.Composite(blurred, source, EffectCompositeMode.SrcOver, 10, -4);
+        ImageEffectGraph blurred = Compiler().GaussianBlur(2, 3, source);
+        ImageEffectGraph graph = Compiler().Composite(blurred, source, EffectCompositeMode.SrcOver, 10, -4);
         Assert.Equal(new EffectPixelRect(4, 25, 26, 38), compiler.GetRequiredSourceBounds(graph, new(20, 30, 10, 20)));
         Assert.Equal(new EffectPixelRect(3, 5, 0, 1), compiler.GetRequiredSourceBounds(graph, new(3, 5, 0, 1)));
     }
@@ -64,10 +64,10 @@ public sealed class ImageEffectTests
     {
         ImageEffectCompiler compiler = Compiler();
         var source = ImageEffectGraph.Source();
-        var shared = ImageEffectGraph.GaussianBlur(1, 0, source);
-        var left = ImageEffectGraph.Composite(shared, source, EffectCompositeMode.Plus, -10, 0);
-        var right = ImageEffectGraph.Composite(shared, source, EffectCompositeMode.Plus, 10, 0);
-        var graph = ImageEffectGraph.Composite(left, right, EffectCompositeMode.SrcOver);
+        ImageEffectGraph shared = Compiler().GaussianBlur(1, 0, source);
+        ImageEffectGraph left = Compiler().Composite(shared, source, EffectCompositeMode.Plus, -10, 0);
+        ImageEffectGraph right = Compiler().Composite(shared, source, EffectCompositeMode.Plus, 10, 0);
+        ImageEffectGraph graph = Compiler().Composite(left, right, EffectCompositeMode.SrcOver);
         Assert.Equal(new EffectPixelRect(-13, 0, 27, 1), compiler.GetRequiredSourceBounds(graph, new(0, 0, 1, 1)));
     }
 
@@ -78,8 +78,8 @@ public sealed class ImageEffectTests
         var opacity = new CountingOpacityRenderer();
         var composite = new ForwardCompositeRenderer();
         var compiler = new ImageEffectCompiler(Device());
-        var shared = ImageEffectGraph.Opacity(0.5f, ImageEffectGraph.Source(), opacity);
-        var graph = ImageEffectGraph.Composite(shared, shared, EffectCompositeMode.Plus, renderer: composite);
+        ImageEffectGraph shared = Compiler().Opacity(0.5f, ImageEffectGraph.Source(), opacity);
+        ImageEffectGraph graph = Compiler().Composite(shared, shared, EffectCompositeMode.Plus, renderer: composite);
         var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
         using PreparedImageEffect first = compiler.AppendPasses(plan, graph, source);
@@ -96,7 +96,7 @@ public sealed class ImageEffectTests
         var resource = new TrackedResource();
         var compiler = new ImageEffectCompiler(Device());
         var plan = new RenderGraphBuilder(Device());
-        Assert.Throws<InvalidOperationException>(() => compiler.AppendPasses(plan, ImageEffectGraph.Opacity(0.5f, ImageEffectGraph.Source(), new FailingOpacityRenderer(resource)), Source(plan)));
+        Assert.Throws<InvalidOperationException>(() => compiler.AppendPasses(plan, Compiler().Opacity(0.5f, ImageEffectGraph.Source(), new FailingOpacityRenderer(resource)), Source(plan)));
         Assert.Equal(1, resource.DisposeCount);
     }
 
@@ -106,7 +106,7 @@ public sealed class ImageEffectTests
     {
         var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
-        using PreparedImageEffect prepared = Compiler().AppendPasses(plan, ImageEffectGraph.GaussianBlur(0, 0, ImageEffectGraph.Source()), source);
+        using PreparedImageEffect prepared = Compiler().AppendPasses(plan, Compiler().GaussianBlur(0, 0, ImageEffectGraph.Source()), source);
         Assert.Equal(source, prepared.Output);
     }
 
@@ -117,10 +117,10 @@ public sealed class ImageEffectTests
         var graph = ImageEffectGraph.Source();
         for (int i = 1; i < 256; i++)
         {
-            graph = ImageEffectGraph.Opacity(1, graph);
+            graph = Compiler().Opacity(1, graph);
         }
 
-        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Opacity(1, graph));
+        Assert.Throws<ArgumentException>(() => Compiler().Opacity(1, graph));
     }
 
     private static ImageEffectCompiler Compiler() => new(Device());

@@ -459,7 +459,7 @@ public sealed class Renderer2D : IDisposable
         RenderTargetBinding2D target = CreateIntermediate(graph, bounds, parent.Target.PixelScale, "drawing2d.layer");
         AppendClear(graph, target);
         await AppendCommandsAsync(graph, list, begin, end, target with { LoadOp = AttachmentLoadOp.Load }, parent.Bindings, owner, cancellationToken).ConfigureAwait(false);
-        ImageEffectGraph effects = layer.Options.Opacity == 1 ? layer.Options.Effects : ImageEffectGraph.Opacity(layer.Options.Opacity, layer.Options.Effects, _groupOpacity);
+        ImageEffectGraph effects = layer.Options.Opacity == 1 ? layer.Options.Effects : _effects.Opacity(layer.Options.Opacity, layer.Options.Effects, _groupOpacity);
         PreparedImageEffect effect = _effects.AppendPasses(graph, effects, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear));
         owner.Own(effect);
         IPreparedCommandBatch2D composite = await DrawingGraphCompositor.PrepareAsync(parent, ImageSource(effect.Output), WithClip(layer.State, layer.Options.OutputClip), ct: cancellationToken).ConfigureAwait(false);
