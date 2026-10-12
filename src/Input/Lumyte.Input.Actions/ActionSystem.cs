@@ -691,6 +691,17 @@ public sealed class ActionSystem : IDisposable
                     mapped = Vector2.Clamp(processed.Value, -Vector2.One, Vector2.One);
                 }
 
+                if (_inspection != null)
+                {
+                    mapped = _inspection.EvaluateValue(this, context.Id, definition.Id, definition.Kind, mapped, now);
+                    if (!float.IsFinite(mapped.X) || !float.IsFinite(mapped.Y))
+                    {
+                        throw new InvalidOperationException("Inspection returned an invalid action value.");
+                    }
+
+                    mapped = Vector2.Clamp(mapped, -Vector2.One, Vector2.One);
+                }
+
                 mapped = definition.Kind switch
                 {
                     ActionValueKind.Button => new Vector2(mapped.X >= 0.5f ? 1 : 0, 0),
