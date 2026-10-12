@@ -69,6 +69,34 @@ internal sealed class DrawingProgram2D
                 shape = Stroke(c.Path, c.Style, transform);
                 paint = Paint(c.Paint.Root, transform);
                 break;
+            case DrawImageCommand2D c:
+                if (c.Image.Sampler.Desc.MaxAnisotropy != 1)
+                {
+                    throw new NotSupportedException("The default image renderer does not support anisotropic sampling.");
+                }
+
+                if (c.Source.Width == 0 || c.Source.Height == 0 || c.Destination.Width == 0 || c.Destination.Height == 0)
+                {
+                    return Solid(default);
+                }
+
+                shape = Rect(c.Destination, transform);
+                Matrix3x2 imageTransform = Matrix3x2.CreateScale(c.Destination.Width / c.Source.Width, c.Destination.Height / c.Source.Height) * Matrix3x2.CreateTranslation(c.Destination.X, c.Destination.Y) * transform;
+                (uint imageWidth, uint imageHeight) = c.Image.View.Texture.GetMipSize(c.Image.View.Info.BaseMipLevel);
+                Matrix3x2 viewTransform = Matrix3x2.CreateTranslation(-c.Source.X, -c.Source.Y) * imageTransform;
+                paint = Image(c.Image.View, new(0, 0, imageWidth, imageHeight), c.Image.Alpha, TileMode(c.Image.Sampler.Desc.AddressU), TileMode(c.Image.Sampler.Desc.AddressV), ImageFilter(c.Image.Sampler.Desc, imageTransform), viewTransform);
+                break;
+            case DrawMeshCommand2D c:
+                uint first = (uint)Data.Count;
+                foreach (uint index in c.Mesh.Indices)
+                {
+                    MeshVertex2D vertex = c.Mesh.Vertices[(int)index];
+                    Data.Add(new(vertex.Position, vertex.Coverage, 0));
+                }
+
+                shape = Add(Node(5, transform) with { First = first, Count = (uint)c.Mesh.Indices.Count / 3, Mode = 1 });
+                paint = Paint(c.Paint.Root, transform);
+                break;
             default:
                 throw new ArgumentException("Unknown drawing command.", nameof(command));
         }
@@ -115,6 +143,22 @@ internal sealed class DrawingProgram2D
         }
 
         return new(new(inverse.M11, inverse.M21, inverse.M31, 0), new(inverse.M12, inverse.M22, inverse.M32, 0), default, default, default, default, kind, 0, 0, 0, null!, null!);
+    }
+
+    private static ImageTileMode2D TileMode(AddressMode mode) => mode switch
+    {
+        AddressMode.ClampToEdge => ImageTileMode2D.Clamp,
+        AddressMode.Repeat => ImageTileMode2D.Repeat,
+        AddressMode.MirrorRepeat => ImageTileMode2D.Mirror,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
+    private static ImageFilter2D ImageFilter(SamplerDesc sampler, Matrix3x2 texelToPixel)
+    {
+        Matrix3x2.Invert(texelToPixel, out Matrix3x2 inverse);
+        float footprint = MathF.Max(new Vector2(inverse.M11, inverse.M12).Length(), new Vector2(inverse.M21, inverse.M22).Length());
+        FilterMode filter = footprint > 1 ? sampler.MinFilter : sampler.MagFilter;
+        return filter == FilterMode.Nearest ? ImageFilter2D.Nearest : ImageFilter2D.Linear;
     }
 
     private static bool Invertible(Matrix3x2 transform) => Matrix3x2.Invert(transform, out Matrix3x2 inverse) && float.IsFinite(inverse.M11) && float.IsFinite(inverse.M12) && float.IsFinite(inverse.M21) && float.IsFinite(inverse.M22) && float.IsFinite(inverse.M31) && float.IsFinite(inverse.M32);
