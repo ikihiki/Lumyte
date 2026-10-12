@@ -8,7 +8,7 @@
 
 Audioの生成・操作・解放など、同じ所有スレッドが必要な処理と、並列化できるCPU処理を共通の仕組みで扱う。Browserのようにmanaged threadを作れない環境でも、同じ仕事をHost上で実行できる必要がある。
 
-呼び出し側からラムダを配送する方式では、実行条件・順序・寿命の管理が分散する。モジュールが仕事を宣言し、利用側が型付きデータを送る設計を採る。coreの実行基盤とgeneratorを実装し、型付きAudioサンプルで所有制約・DI・Host統合を検証する。実Audio backend／Resources／ECSの接続は各統合層で行う。PR #28の削除予定のスレッド設計には依存しない。
+呼び出し側からラムダを配送する方式では、実行条件・順序・寿命の管理が分散する。モジュールが仕事を宣言し、利用側が型付きデータを送る設計を採る。coreの実行基盤とgeneratorを実装し、型付きAudioサンプルで所有制約・DI・Host統合を検証する。実Audio backendはLumyte.Audio.Executionで接続し、Resources／ECSの接続は各統合層で行う。PR #28の削除予定のスレッド設計には依存しない。
 
 ## 決定
 
@@ -544,6 +544,8 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ### 他ライブラリの調査
 
+実Audioの生成・制御は`AudioCommands.CreateClipPort`、`CreateVoicePort`と`AudioCommands.Voice.For(original)`から送る。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。終了時は未解放voice→clip→deviceの順で解放し、失敗した実体を保持して再試行する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
+
 2026-10-11の一次資料を基にした比較である。初期実装のHost上の割当と平均送信費用は[サンプル](../../../samples/Lumyte.Execution.Sample/README.md)で測定し、各ライブラリとの実性能比較は別途行う。
 
 | 参考 | 確認した方式と採用点 |
@@ -560,7 +562,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ## 検証と実装順序
 
-Host／Dedicated、周期駆動、Cooperative／ThreadPool graph、generatorを実装した。検証結果と再現手順は[実行サンプル](../../../samples/Lumyte.Execution.Sample/README.md)を参照し、実Browser、実backend、Resources／ECS統合と詳細な性能分布は後続で確認する。受け入れ条件は次に集約する。
+Host／Dedicated、周期駆動、Cooperative／ThreadPool graph、generatorを実装した。検証結果と再現手順は[実行サンプル](../../../samples/Lumyte.Execution.Sample/README.md)を参照し、実OpenALの接続は[Audio実行サンプル](../../../samples/Lumyte.Audio.Execution.Sample/README.md)、WebAudioのHost統合は[Browserサンプル](../../../samples/Lumyte.Audio.Execution.Browser.Sample/README.md)で検証する。Resources／ECS統合と詳細な性能分布は後続で確認する。受け入れ条件は次に集約する。
 
 - 生成後コンパイル、診断、決定的生成、AOT／実Browser。元参照1本、静的入口、本体展開、中継call・boxing・async state machine・StackTraceHiddenの不在を確認する。
 - DIなし／引数なしのDI登録からの収集・起動・停止、登録順に依存しない宣言と依存検証、Prepare／Pumpの固定Host制約、Prepare競合とrollback、権限、静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
