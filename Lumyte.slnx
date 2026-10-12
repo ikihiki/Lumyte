@@ -23,6 +23,8 @@
   </Folder>
   <Folder Name="/src/Core/">
     <Project Path="src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
+    <Project Path="src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
+    <Project Path="src/Core/Lumyte.Memory/Lumyte.Memory.csproj" />
     <Project Path="src/Core/Lumyte.Settings/Lumyte.Settings.csproj" />
     <Project Path="src/Core/Lumyte.Core/Lumyte.Core.csproj" />
     <Project Path="src/Core/Lumyte.StateMachines/Lumyte.StateMachines.csproj" />
@@ -61,6 +63,7 @@
   </Folder>
   <Folder Name="/tests/Core/">
     <Project Path="tests/Core/Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />
+    <Project Path="tests/Core/Lumyte.Memory.Tests/Lumyte.Memory.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Settings.Tests/Lumyte.Settings.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj" />
