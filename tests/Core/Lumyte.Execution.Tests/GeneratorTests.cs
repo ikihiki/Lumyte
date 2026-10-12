@@ -43,6 +43,22 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("ProbeCommand", generated, StringComparison.Ordinal);
     }
 
+    /// <summary>Wrapper receiver declarations register stateless handlers and invoke the actual target.</summary>
+    [Fact]
+    public void WrapperReceiversCompileWithoutRegistrationInstances()
+    {
+        const string ReceiverSource = "using Lumyte.Execution; namespace Example; public partial class Voice { [ExecutionCommand(Sender = \"Commands\", UseReceiver = true)] private void Play(int gain) {} }";
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(ReceiverSource);
+        Assert.Empty(result.Run.Diagnostics);
+        Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        string generated = Assert.Single(result.Run.GeneratedTrees).ToString();
+        Assert.Contains("static CommandsWork DeclareCommands", generated, StringComparison.Ordinal);
+        Assert.Contains("private readonly struct __LumyteExecutionPlayHandler", generated, StringComparison.Ordinal);
+        Assert.Contains("command.__Target.@Play(command.F0)", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("new(this)", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("state.", generated, StringComparison.Ordinal);
+    }
+
     /// <summary>Invalid forms receive deterministic errors without partially generated classes.</summary>
     /// <param name="declaration">The invalid container or method.</param>
     /// <param name="id">The required diagnostic.</param>
@@ -61,6 +77,9 @@ public sealed class GeneratorTests
     [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\")] private void Voice([ExecutionTarget] Target x) {} }", "LMEXEC007")]
     [InlineData("public partial class State { private sealed class __LumyteExecutionCollision {} [ExecutionCommand] private void Go() {} }", "LMEXEC001")]
     [InlineData("public partial class State { [ExecutionRange(\"Length\")] private void Go(in int x, int a, int b) {} private int Length(in int x) => x; private int Length(int x) => x; }", "LMEXEC005")]
+    [InlineData("public partial class State { [ExecutionCommand(UseReceiver = true)] private void Play() {} }", "LMEXEC007")]
+    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\", UseReceiver = true)] private void Play([ExecutionTarget] Target x) {} }", "LMEXEC007")]
+    [InlineData("public partial class State { [ExecutionCommand(Sender = \"Voice\", UseReceiver = true, Input = ExecutionInputKind.ExistingCommand)] private void Play(in int x) {} }", "LMEXEC007")]
     public void InvalidDeclarationsFailWholeContainer(string declaration, string id)
     {
         (GeneratorDriverRunResult Run, Compilation Output) result = Run("#nullable enable\nusing Lumyte.Execution; namespace Example; " + declaration + " public sealed class Target {}");

@@ -1,17 +1,17 @@
 # Lumyte.Audio.Execution
 
-実際のOpenALデバイスとclip・voiceをAudio owner上で生成・制御・解放します。Coreの型付きコマンド生成器を使用します。
+AudioDeviceがデバイス生成・clip生成・bus gain・更新・終了を、AudioClipがvoice生成とclip解放を、AudioVoiceが再生・一時停止・停止・Gain・Loop・状態取得・解放を宣言します。実際のOpenALデバイスとclip・voiceをAudio owner上で生成・制御・解放します。Coreの型付きコマンド生成器を使用します。
 
 `new AudioModule()` またはDIの `AddSingleton<IExecutionModule, AudioModule>()` で登録し、ExecutionRuntimeを起動します。デバイスは起動時に所有スレッド上で生成されます。
 
 ```csharp
-AudioClip clip = await AudioCommands.CreateClipPort.ExecuteAsync(new AudioFormat(48000, 1), pcm);
-AudioVoice original = await AudioCommands.CreateVoicePort.ExecuteAsync(clip, AudioBus.Effects);
-var voice = AudioCommands.Voice.For(original);
+AudioClip clip = await AudioDevice.CreateClipPort.ExecuteAsync(new AudioFormat(48000, 1), pcm);
+AudioVoice original = await AudioClip.Commands.For(clip).CreateVoice(AudioBus.Effects);
+var voice = AudioVoice.Commands.For(original);
 await voice.Play();
 await voice.Stop();
 await voice.Destroy();
-await AudioCommands.Clip.For(clip).DestroyClip();
+await AudioClip.Commands.For(clip).DestroyClip();
 ```
 
 PCMは生成完了まで変更しないでください。返された参照は生成済み実体を保持します。voiceはclipより先に解放します。終了時は未解放voice、clip、deviceの順に所有スレッド上で解放します。失敗した解放は再試行可能です。

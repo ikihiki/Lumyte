@@ -108,6 +108,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
             bool hasContext = method.Parameters.Length > 0 && method.Parameters[method.Parameters.Length - 1].Type.ToDisplayString() == Prefix + "WorkContext";
             IParameterSymbol[] payload = method.Parameters.Take(method.Parameters.Length - (hasContext ? 1 : 0)).ToArray();
             var model = new MethodModel(method, name, kind, sender, existing, allowAwaitable, hasContext, payload);
+            model.UseReceiver = NamedBool(attribute, "UseReceiver");
             models.Add(model);
 
             if (!Identifier(name) || (sender is not null && !Identifier(sender)) || !generatedNames.Add(name))
@@ -166,7 +167,12 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
                 }
 
                 IParameterSymbol[] targets = method.Parameters.Where(parameter => parameter.GetAttributes().Any(data => data.AttributeClass?.ToDisplayString() == Prefix + "ExecutionTargetAttribute")).ToArray();
-                if ((sender is null && targets.Length != 0) || (sender is not null && (existing || targets.Length != 1 || targets[0].Type.TypeKind != TypeKind.Class || targets[0].NullableAnnotation == NullableAnnotation.Annotated)))
+                if (model.UseReceiver && (sender is null || existing || targets.Length != 0))
+                {
+                    Error(7, method, "UseReceiver requires a packed sender without explicit ExecutionTarget parameters.");
+                }
+
+                if (!model.UseReceiver && ((sender is null && targets.Length != 0) || (sender is not null && (existing || targets.Length != 1 || targets[0].Type.TypeKind != TypeKind.Class || targets[0].NullableAnnotation == NullableAnnotation.Annotated))))
                 {
                     Error(7, method, "Sender groups require packed inputs and exactly one nonnullable class target per method.");
                 }
@@ -232,7 +238,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
             }
 
             MethodModel[] group = models.Where(model => model.Sender == sender).OrderBy(model => model.Name, StringComparer.Ordinal).ToArray();
-            if (group.Any(model => model.Target is null || !SymbolEqualityComparer.Default.Equals(model.Target.Type, group[0].Target?.Type))
+            if (group.Any(model => model.UseReceiver != group[0].UseReceiver || model.TargetType is null || !SymbolEqualityComparer.Default.Equals(model.TargetType, group[0].TargetType))
                 || group.Any(model => model.Name == sender || "Add" + model.Name + "To" == sender || model.Name is "For" or "__target" || group.Any(other => other != model && "Add" + other.Name + "To" == model.Name)))
             {
                 Error(7, type, "Sender target types must agree and generated sender methods must not collide.");
@@ -281,14 +287,30 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         if (!model.Existing)
         {
             text.Append("public readonly struct ").Append(model.Name).AppendLine("Command\n{");
+            if (model.UseReceiver)
+            {
+                text.Append("public readonly ").Append(Type(type)).AppendLine(" __Target;");
+            }
+
             for (int i = 0; i < model.Payload.Length; i++)
             {
                 text.Append("public readonly ").Append(Type(model.Payload[i].Type)).Append(" F").Append(i).AppendLine(";");
             }
 
-            if (model.Payload.Length > 0)
+            if (model.Payload.Length > 0 || model.UseReceiver)
             {
-                text.Append("public ").Append(model.Name).Append("Command(").Append(Parameters(model.Payload)).AppendLine(")\n{");
+                text.Append("public ").Append(model.Name).Append("Command(");
+                if (model.UseReceiver)
+                {
+                    text.Append(Type(type)).Append(" __receiver").Append(model.Payload.Length > 0 ? ", " : string.Empty);
+                }
+
+                text.Append(Parameters(model.Payload)).AppendLine(")\n{");
+                if (model.UseReceiver)
+                {
+                    text.AppendLine("__Target = __receiver;");
+                }
+
                 for (int i = 0; i < model.Payload.Length; i++)
                 {
                     text.Append('F').Append(i).Append(" = ").Append(Escape(model.Payload[i].Name)).AppendLine(";");
@@ -301,14 +323,20 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         }
 
         text.Append("private static readonly ").Append(Execution).Append("CommandPort<").Append(command).Append(", ").Append(result).Append("> ").Append(queue).AppendLine(" = new();");
-        text.Append("private sealed class ").Append(handler).Append("(").Append(Type(type)).Append(" state) : ").Append(Execution).Append("ICommandHandler<").Append(command).Append(", ").Append(result).AppendLine(">\n{");
+        text.Append(model.UseReceiver ? "private readonly struct " : "private sealed class ").Append(handler);
+        if (!model.UseReceiver)
+        {
+            text.Append('(').Append(Type(type)).Append(" state)");
+        }
+
+        text.Append(" : ").Append(Execution).Append("ICommandHandler<").Append(command).Append(", ").Append(result).AppendLine(">\n{");
         text.Append("public ").Append(result).Append(" Execute(in ").Append(command).Append(" command, in ").Append(Execution).AppendLine("WorkContext context)\n{\ncontext.VerifyAccess();");
         if (!model.Method.ReturnsVoid)
         {
             text.Append("return ");
         }
 
-        text.Append("state.").Append(Escape(model.Method.Name)).Append('(');
+        text.Append(model.UseReceiver ? "command.__Target." : "state.").Append(Escape(model.Method.Name)).Append('(');
         text.Append(model.Existing ? "in command" : string.Join(", ", model.Payload.Select((_, index) => "command.F" + index)));
         if (model.HasContext)
         {
@@ -398,7 +426,13 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         }
         else
         {
-            text.Append("new ").Append(model.Command).Append('(').Append(string.Join(", ", model.Payload.Select(parameter => target && SymbolEqualityComparer.Default.Equals(parameter, model.Target) ? "__target" : Escape(parameter.Name)))).Append(')');
+            text.Append("new ").Append(model.Command).Append('(');
+            if (model.UseReceiver)
+            {
+                text.Append("__target").Append(model.Payload.Length > 0 ? ", " : string.Empty);
+            }
+
+            text.Append(string.Join(", ", model.Payload.Select(parameter => target && SymbolEqualityComparer.Default.Equals(parameter, model.Target) ? "__target" : Escape(parameter.Name)))).Append(')');
         }
 
         text.AppendLine(";");
@@ -406,7 +440,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
 
     private static void EmitSender(StringBuilder text, string sender, MethodModel[] group)
     {
-        text.Append("public ").Append(sender).Append("Work Declare").Append(sender).Append('(').Append(Execution).Append("ModuleBuilder builder");
+        text.Append("public ").Append(group[0].UseReceiver ? "static " : string.Empty).Append(sender).Append("Work Declare").Append(sender).Append('(').Append(Execution).Append("ModuleBuilder builder");
         for (int i = 0; i < group.Length; i++)
         {
             text.Append(", ").Append(Execution).Append("WorkOptions options").Append(i);
@@ -427,7 +461,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
                 text.Append(", ");
             }
 
-            text.Append("builder.Command<").Append(model.Command).Append(", ").Append(model.Result).Append(", __LumyteExecution").Append(model.Name).Append("Handler>(").Append(Literal(model.Name)).Append(", new(this), options").Append(i).Append(", __LumyteExecution").Append(model.Name).Append("Queue)");
+            text.Append("builder.Command<").Append(model.Command).Append(", ").Append(model.Result).Append(", __LumyteExecution").Append(model.Name).Append("Handler>(").Append(Literal(model.Name)).Append(model.UseReceiver ? ", default, options" : ", new(this), options").Append(i).Append(", __LumyteExecution").Append(model.Name).Append("Queue)");
         }
 
         text.AppendLine(");\n}");
@@ -447,7 +481,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         }
 
         text.AppendLine("}");
-        string targetType = Type(group[0].Target!.Type);
+        string targetType = Type(group[0].TargetType!);
         text.Append("public readonly struct ").Append(sender).AppendLine("\n{");
         text.Append("private readonly ").Append(targetType).AppendLine(" __target;");
         text.Append("private ").Append(sender).Append('(').Append(targetType).AppendLine(" target) { this.__target = target; }");
@@ -601,6 +635,10 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         internal bool HasContext { get; } = hasContext;
 
         internal IParameterSymbol[] Payload { get; } = payload;
+
+        internal bool UseReceiver { get; set; }
+
+        internal ITypeSymbol? TargetType => UseReceiver ? Method.ContainingType : Target?.Type;
 
         internal IParameterSymbol? Target { get; set; }
 

@@ -544,7 +544,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ### 他ライブラリの調査
 
-実Audioの生成・制御は`AudioCommands.CreateClipPort`、`CreateVoicePort`と`AudioCommands.Voice.For(original)`から送る。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。終了時は未解放voice→clip→deviceの順で解放し、失敗した実体を保持して再試行する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
+実Audioの生成・制御は`AudioDevice.CreateClipPort`、`AudioClip.Commands.For(clip).CreateVoice`と`AudioVoice.Commands.For(original)`から送る。仕事の定義は対応するDevice／Clip／Voiceラッパーに置く。Clip／VoiceはUseReceiverで自身のインスタンスメソッドを宣言し、静的なDeclareCommandsで登録する。生成するhandlerはstatelessなreadonly structとし、対象のprivateメソッドを直接呼ぶ。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。終了時は未解放voice→clip→deviceの順で解放し、失敗した実体を保持して再試行する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
 
 2026-10-11の一次資料を基にした比較である。初期実装のHost上の割当と平均送信費用は[サンプル](../../../samples/Lumyte.Execution.Sample/README.md)で測定し、各ライブラリとの実性能比較は別途行う。
 

@@ -6,11 +6,11 @@ namespace Lumyte.Audio.Execution;
 /// <param name="factory">Factory called on the configured owner.</param>
 public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
 {
-    private readonly AudioCommands _state = new(factory ?? throw new ArgumentNullException(nameof(factory)));
-    private AudioCommands.BeginCreateWork _begin;
+    private readonly AudioDevice _state = new(factory ?? throw new ArgumentNullException(nameof(factory)));
+    private AudioDevice.BeginCreateWork _begin;
 
-    private AudioCommands.AttachWork _initialize;
-    private AudioCommands.CloseWork _close;
+    private AudioDevice.AttachWork _initialize;
+    private AudioDevice.CloseWork _close;
     private OwnerKey _owner;
     private UpdateKey _update;
 
@@ -24,7 +24,7 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     public string Name => "Audio";
 
     /// <summary>Gets the generated command declarations and owner diagnostics.</summary>
-    public AudioCommands State => _state;
+    public AudioDevice State => _state;
 
     /// <summary>Gets the host phase in host placement mode.</summary>
     public PhaseKey HostPhase { get; private set; }
@@ -39,11 +39,10 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         _initialize = _state.DeclareAttach(builder, Options(WorkAdmission.Startup));
         _close = _state.DeclareClose(builder, Options(WorkAdmission.Cleanup));
         _state.DeclareCreateClip(builder, Options(WorkAdmission.Normal));
-        _state.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
-        _state.DeclareClip(builder, Options(WorkAdmission.Cleanup));
+        AudioClip.DeclareCommands(builder, Options(WorkAdmission.Normal), Options(WorkAdmission.Cleanup));
         _state.DeclareSetBusGain(builder, Options(WorkAdmission.Normal));
         _state.DeclareRefresh(builder, Options(WorkAdmission.Normal));
-        _state.DeclareVoice(builder, Options(WorkAdmission.Cleanup), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal));
+        AudioVoice.DeclareCommands(builder, Options(WorkAdmission.Cleanup), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal));
         _update = _state.DeclareUpdate(builder, _owner).Key;
     }
 

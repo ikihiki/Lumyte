@@ -33,3 +33,15 @@ Senderは対象classへの参照一本だけを保持する。登録時にowner�
 LMEXEC001–008でcontainer／signature／名前衝突／型／属性／awaitable／target／runtime不一致を報告する。不正なclassには一部だけのコードを生成しない。privateな出力型、ref/out、pointer、ref-like、delegate、dynamic、Expression、optional／paramsなどは初期対象外。
 
 [実行基盤](../Lumyte.Execution/README.md)と[動くAudioサンプル](../../../samples/Lumyte.Execution.Sample/README.md)を参照。
+
+ラッパー自身を対象にする場合は、privateなインスタンスメソッドへ`UseReceiver = true`を指定します。
+
+```csharp
+public sealed partial class AudioVoice
+{
+    [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
+    private void Play() => Backend.Play();
+}
+```
+
+`AudioVoice.DeclareCommands(builder, options)`は静的な登録メソッドになります。`AudioVoice.Commands.For(original).Play()`は元インスタンスをpayloadに保持し、statelessなreadonly struct handlerが`original.Play()`を直接呼びます。登録用のインスタンスやhandler用のclass allocationは不要です。`UseReceiver`にはSenderとPackArgumentsが必要で、同じgroupに明示的なExecutionTarget方式を混在させません。
