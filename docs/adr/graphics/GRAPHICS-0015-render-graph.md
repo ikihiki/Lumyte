@@ -53,6 +53,8 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // 一時 allocation を使う場合は device が必要。observer は省略可能。
 +    public RenderGraph(IGraphicDevice? device = null, string name = "render-graph", IRenderGraphObserver? observer = null);
 +    // name は空でない 256 文字以下。Id は builder の生存中不変。
++    // 拡張メソッドも同じdeviceを借用する。import専用graphではnull。
++    public IGraphicDevice? Device { get; }
 +    public string Name { get; }
 +    public Guid Id { get; }
 +    // 外部所有 allocation を借用し、実際の初期 state／scope を指定する。

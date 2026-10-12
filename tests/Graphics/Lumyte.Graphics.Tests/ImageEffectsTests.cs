@@ -130,8 +130,7 @@ public sealed class ImageEffectsTests
         var definition = new TranslatedFade(7, -3, 0.5f);
         var custom = ImageEffectGraph.Create(definition, ImageEffectGraph.Source());
         var effect = ImageEffectGraph.Create(new OpacityEffect(0.5f), custom);
-        var compiler = new ImageEffectCompiler(device);
-        Assert.Equal(new EffectPixelRect(16_777_217, -16_777_219, 1, 1), compiler.GetRequiredSourceBounds(effect, new(16_777_224, -16_777_222, 1, 1)));
+        Assert.Equal(new EffectPixelRect(16_777_217, -16_777_219, 1, 1), effect.GetRequiredSourceBounds(new(16_777_224, -16_777_222, 1, 1)));
         (EffectPixelRect bounds, Vector4[] pixels) = await RenderAsync(device, effect, new(16_777_217, -16_777_219, 1, 1), Vector4.One);
         Assert.Equal(new EffectPixelRect(16_777_224, -16_777_222, 1, 1), bounds);
         AssertPixel(Assert.Single(pixels), new(0.125f));
@@ -164,18 +163,17 @@ public sealed class ImageEffectsTests
             });
             clear.End();
         }).UseTexture(source, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
-        var compiler = new ImageEffectCompiler(device);
         var sourceImage = new EffectImage(source, sourceBounds, EffectColorSemantic.SceneLinear);
         PreparedImageEffect prepared = effect.Root is EffectOperationNode operation && operation.Inputs.All(input => input is SourceEffectNode)
             ? operation.Definition switch
             {
-                GaussianBlurEffect blur => compiler.AppendGaussianBlur(graph, sourceImage, blur.SigmaX, blur.SigmaY),
-                ColorMatrixEffect matrix => compiler.AppendColorMatrix(graph, sourceImage, matrix.Matrix),
-                OpacityEffect opacity => compiler.AppendOpacity(graph, sourceImage, opacity.Opacity),
-                CompositeEffect composite => compiler.AppendComposite(graph, sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY),
-                _ => compiler.AppendPasses(graph, effect, sourceImage),
+                GaussianBlurEffect blur => graph.AppendGaussianBlur(sourceImage, blur.SigmaX, blur.SigmaY),
+                ColorMatrixEffect matrix => graph.AppendColorMatrix(sourceImage, matrix.Matrix),
+                OpacityEffect opacity => graph.AppendOpacity(sourceImage, opacity.Opacity),
+                CompositeEffect composite => graph.AppendComposite(sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY),
+                _ => graph.AppendEffects(effect, sourceImage),
             }
-            : compiler.AppendPasses(graph, effect, sourceImage);
+            : graph.AppendEffects(effect, sourceImage);
         Assert.Equal(EffectColorSemantic.SceneLinear, prepared.Output.ColorSemantic);
         EffectPixelRect bounds = prepared.Output.Bounds;
         uint width = checked((uint)bounds.Width);

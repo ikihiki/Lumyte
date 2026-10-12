@@ -50,42 +50,39 @@ public sealed class ImageEffectTests
     [Fact]
     public void RequiredSourceBoundsIncludesKernelAndInverseOffsets()
     {
-        ImageEffectCompiler compiler = Compiler();
         var source = ImageEffectGraph.Source();
         var blurred = ImageEffectGraph.Create(new GaussianBlurEffect(2, 3), source);
         var graph = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.SrcOver, 10, -4), blurred, source);
-        Assert.Equal(new EffectPixelRect(4, 25, 26, 38), compiler.GetRequiredSourceBounds(graph, new(20, 30, 10, 20)));
-        Assert.Equal(new EffectPixelRect(3, 5, 0, 1), compiler.GetRequiredSourceBounds(graph, new(3, 5, 0, 1)));
+        Assert.Equal(new EffectPixelRect(4, 25, 26, 38), graph.GetRequiredSourceBounds(new(20, 30, 10, 20)));
+        Assert.Equal(new EffectPixelRect(3, 5, 0, 1), graph.GetRequiredSourceBounds(new(3, 5, 0, 1)));
     }
 
     /// <summary>Checks that separately shared effect branches accumulate their requested regions.</summary>
     [Fact]
     public void RequiredSourceBoundsAccumulatesAllSharedParents()
     {
-        ImageEffectCompiler compiler = Compiler();
         var source = ImageEffectGraph.Source();
         var shared = ImageEffectGraph.Create(new GaussianBlurEffect(1, 0), source);
         var left = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.Plus, -10, 0), shared, source);
         var right = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.Plus, 10, 0), shared, source);
         var graph = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.SrcOver), left, right);
-        Assert.Equal(new EffectPixelRect(-13, 0, 27, 1), compiler.GetRequiredSourceBounds(graph, new(0, 0, 1, 1)));
+        Assert.Equal(new EffectPixelRect(-13, 0, 27, 1), graph.GetRequiredSourceBounds(new(0, 0, 1, 1)));
     }
 
     /// <summary>Checks shared operations compile once per invocation, never once for all invocations.</summary>
     [Fact]
-    public void CompilerMemoizesOnlyWithinOnePreparation()
+    public void RenderGraphExpansionMemoizesOnlyWithinOneAppend()
     {
         var opacity = new CountingEffect();
         var composite = new ForwardEffect();
-        var compiler = new ImageEffectCompiler(Device());
         var shared = ImageEffectGraph.Create(opacity, ImageEffectGraph.Source());
         var graph = ImageEffectGraph.Create(composite, shared, shared);
         var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
-        using PreparedImageEffect first = compiler.AppendPasses(plan, graph, source);
+        using PreparedImageEffect first = plan.AppendEffects(graph, source);
         Assert.Equal(1, opacity.Count);
         Assert.Equal(source, first.Output);
-        using PreparedImageEffect second = compiler.AppendPasses(plan, graph, source);
+        using PreparedImageEffect second = plan.AppendEffects(graph, source);
         Assert.Equal(2, opacity.Count);
     }
 
@@ -94,9 +91,8 @@ public sealed class ImageEffectTests
     public void AppendFailureReleasesOwnedResources()
     {
         var resource = new TrackedResource();
-        var compiler = new ImageEffectCompiler(Device());
         var plan = new RenderGraphBuilder(Device());
-        Assert.Throws<InvalidOperationException>(() => compiler.AppendPasses(plan, ImageEffectGraph.Create(new FailingEffect(resource), ImageEffectGraph.Source()), Source(plan)));
+        Assert.Throws<InvalidOperationException>(() => plan.AppendEffects(ImageEffectGraph.Create(new FailingEffect(resource), ImageEffectGraph.Source()), Source(plan)));
         Assert.Equal(1, resource.DisposeCount);
     }
 
@@ -106,7 +102,7 @@ public sealed class ImageEffectTests
     {
         var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
-        using PreparedImageEffect prepared = Compiler().AppendPasses(plan, ImageEffectGraph.Create(new GaussianBlurEffect(0, 0), ImageEffectGraph.Source()), source);
+        using PreparedImageEffect prepared = plan.AppendEffects(ImageEffectGraph.Create(new GaussianBlurEffect(0, 0), ImageEffectGraph.Source()), source);
         Assert.Equal(source, prepared.Output);
     }
 
@@ -122,8 +118,6 @@ public sealed class ImageEffectTests
 
         Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(new OpacityEffect(1), graph));
     }
-
-    private static ImageEffectCompiler Compiler() => new(Device());
 
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, UnusedDeviceProxy>();
 

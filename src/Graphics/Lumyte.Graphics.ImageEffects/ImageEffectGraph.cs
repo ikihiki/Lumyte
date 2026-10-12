@@ -19,7 +19,7 @@ public sealed class ImageEffectGraph
     /// <summary>Gets the immutable root snapshot.</summary>
     public ImageEffectNode Root { get; }
 
-    /// <summary>Creates a reference to the compiler's source image.</summary>
+    /// <summary>Creates a reference to the source image bound during RenderGraph expansion.</summary>
     /// <returns>The source graph.</returns>
     public static ImageEffectGraph Source() => new(new SourceEffectNode(), 1);
 
@@ -47,6 +47,76 @@ public sealed class ImageEffectGraph
         }
 
         return new(EffectOperationNode.Create(definition, nodes), depth);
+    }
+
+    /// <summary>Calculates a conservative finite source region without allocating GPU resources.</summary>
+    /// <param name="output">The desired output rectangle.</param>
+    /// <returns>The union of all source regions required by the output.</returns>
+    public EffectPixelRect GetRequiredSourceBounds(EffectPixelRect output)
+    {
+        if (output.IsEmpty)
+        {
+            return output;
+        }
+
+        var required = new Dictionary<ImageEffectNode, EffectPixelRect>(ReferenceEqualityComparer.Instance);
+        var order = new List<ImageEffectNode>();
+        var visited = new HashSet<ImageEffectNode>(ReferenceEqualityComparer.Instance);
+        Collect(Root);
+        required.Add(Root, output);
+        EffectPixelRect? result = null;
+        for (int i = order.Count - 1; i >= 0; i--)
+        {
+            ImageEffectNode node = order[i];
+            if (!required.TryGetValue(node, out EffectPixelRect bounds) || bounds.IsEmpty)
+            {
+                continue;
+            }
+
+            switch (node)
+            {
+                case SourceEffectNode:
+                    result = result?.Union(bounds) ?? bounds;
+                    break;
+                case EffectOperationNode operation:
+                    for (int inputIndex = 0; inputIndex < operation.Inputs.Count; inputIndex++)
+                    {
+                        Add(operation.Inputs[inputIndex], operation.Definition.GetRequiredInputBounds(inputIndex, bounds));
+                    }
+
+                    break;
+            }
+        }
+
+        return result ?? new(output.X, output.Y, 0, 0);
+
+        void Add(ImageEffectNode node, EffectPixelRect bounds) => required[node] = required.TryGetValue(node, out EffectPixelRect previous) ? previous.Union(bounds) : bounds;
+
+        void Collect(ImageEffectNode node)
+        {
+            if (!visited.Add(node))
+            {
+                return;
+            }
+
+            if (visited.Count > 4096)
+            {
+                throw new NotSupportedException("An effect graph may contain at most 4096 distinct operations.");
+            }
+
+            switch (node)
+            {
+                case EffectOperationNode operation:
+                    foreach (ImageEffectNode input in operation.Inputs)
+                    {
+                        Collect(input);
+                    }
+
+                    break;
+            }
+
+            order.Add(node);
+        }
     }
 
     internal static int Radius(float sigma)

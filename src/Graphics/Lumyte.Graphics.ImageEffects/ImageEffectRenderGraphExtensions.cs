@@ -3,17 +3,55 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.ImageEffects;
 
-/// <summary>Compiles immutable image operations into passes in a caller-owned render graph.</summary>
-public sealed class ImageEffectCompiler
+/// <summary>Adds image-effect passes to RenderGraph, which manages dependencies, barriers and temporary images.</summary>
+public static class ImageEffectRenderGraphExtensions
 {
-    private readonly IGraphicDevice _device;
-
-    /// <summary>Initializes a new instance of the <see cref="ImageEffectCompiler"/> class without allocating GPU resources.</summary>
-    /// <param name="device">The borrowed graphics device.</param>
-    public ImageEffectCompiler(IGraphicDevice device)
+    /// <summary>Appends ColorMatrix passes from parameters and returns the owned output.</summary>
+    /// <param name="plan">The caller-owned render graph.</param>
+    /// <param name="input">The graph-local input image.</param>
+    /// <param name="matrix">The immutable color matrix.</param>
+    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
+    public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix)
     {
-        ArgumentNullException.ThrowIfNull(device);
-        _device = device;
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.AppendEffect(new ColorMatrixEffect(matrix), input);
+    }
+
+    /// <summary>Appends GaussianBlur passes from parameters and returns the owned output.</summary>
+    /// <param name="plan">The caller-owned render graph.</param>
+    /// <param name="input">The graph-local input image.</param>
+    /// <param name="sigmaX">The finite nonnegative horizontal device-pixel sigma.</param>
+    /// <param name="sigmaY">The finite nonnegative vertical device-pixel sigma.</param>
+    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
+    public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.AppendEffect(new GaussianBlurEffect(sigmaX, sigmaY), input);
+    }
+
+    /// <summary>Appends Opacity passes from parameters and returns the owned output.</summary>
+    /// <param name="plan">The caller-owned render graph.</param>
+    /// <param name="input">The graph-local input image.</param>
+    /// <param name="opacity">The finite multiplier in [0, 1].</param>
+    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
+    public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.AppendEffect(new OpacityEffect(opacity), input);
+    }
+
+    /// <summary>Appends Composite passes from parameters and returns the owned output.</summary>
+    /// <param name="plan">The caller-owned render graph.</param>
+    /// <param name="source">The graph-local source image.</param>
+    /// <param name="backdrop">The graph-local backdrop image.</param>
+    /// <param name="mode">The composition mode.</param>
+    /// <param name="sourceOffsetX">The integer horizontal source translation.</param>
+    /// <param name="sourceOffsetY">The integer vertical source translation.</param>
+    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
+    public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.AppendEffect(new CompositeEffect(mode, sourceOffsetX, sourceOffsetY), source, backdrop);
     }
 
     /// <summary>Appends the graph once; failure releases new resources and requires discarding the render graph.</summary>
@@ -21,12 +59,12 @@ public sealed class ImageEffectCompiler
     /// <param name="graph">The immutable effect graph.</param>
     /// <param name="source">The source image, already bound to the same render graph.</param>
     /// <returns>The owner of the result's fixed resources.</returns>
-    public PreparedImageEffect AppendPasses(RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source)
+    public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(graph);
         ValidateImage(source);
-        var context = new EffectPreparationContext(_device, source.ColorSemantic);
+        var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic);
         var results = new Dictionary<ImageEffectNode, EffectImage>(ReferenceEqualityComparer.Instance);
         try
         {
@@ -102,7 +140,7 @@ public sealed class ImageEffectCompiler
     /// <param name="effect">The existing immutable effect with its fixed implementation.</param>
     /// <param name="inputs">Ordered graph-local input images.</param>
     /// <returns>The output and its fixed-resource owner, disposed after GPU completion.</returns>
-    public PreparedImageEffect AppendEffect(RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
+    public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(effect);
@@ -131,7 +169,7 @@ public sealed class ImageEffectCompiler
             throw new InvalidOperationException("An effect must declare positive output dimensions.");
         }
 
-        var context = new EffectPreparationContext(_device, semantic);
+        var context = new EffectPreparationContext(RequireDevice(plan), semantic);
         try
         {
             EffectImage output = effect.AppendPasses(context, plan, inputs);
@@ -150,78 +188,6 @@ public sealed class ImageEffectCompiler
         }
     }
 
-    /// <summary>Calculates a conservative finite source region without allocating GPU resources.</summary>
-    /// <param name="graph">The immutable effect graph.</param>
-    /// <param name="output">The desired output rectangle.</param>
-    /// <returns>The union of all source regions required by the output.</returns>
-    public EffectPixelRect GetRequiredSourceBounds(ImageEffectGraph graph, EffectPixelRect output)
-    {
-        ArgumentNullException.ThrowIfNull(graph);
-        if (output.IsEmpty)
-        {
-            return output;
-        }
-
-        var required = new Dictionary<ImageEffectNode, EffectPixelRect>(ReferenceEqualityComparer.Instance);
-        var order = new List<ImageEffectNode>();
-        var visited = new HashSet<ImageEffectNode>(ReferenceEqualityComparer.Instance);
-        Collect(graph.Root);
-        required.Add(graph.Root, output);
-        EffectPixelRect? result = null;
-        for (int i = order.Count - 1; i >= 0; i--)
-        {
-            ImageEffectNode node = order[i];
-            if (!required.TryGetValue(node, out EffectPixelRect bounds) || bounds.IsEmpty)
-            {
-                continue;
-            }
-
-            switch (node)
-            {
-                case SourceEffectNode:
-                    result = result?.Union(bounds) ?? bounds;
-                    break;
-                case EffectOperationNode operation:
-                    for (int inputIndex = 0; inputIndex < operation.Inputs.Count; inputIndex++)
-                    {
-                        Add(operation.Inputs[inputIndex], operation.Definition.GetRequiredInputBounds(inputIndex, bounds));
-                    }
-
-                    break;
-            }
-        }
-
-        return result ?? new(output.X, output.Y, 0, 0);
-
-        void Add(ImageEffectNode node, EffectPixelRect bounds) => required[node] = required.TryGetValue(node, out EffectPixelRect previous) ? previous.Union(bounds) : bounds;
-
-        void Collect(ImageEffectNode node)
-        {
-            if (!visited.Add(node))
-            {
-                return;
-            }
-
-            if (visited.Count > 4096)
-            {
-                throw new NotSupportedException("An effect graph may contain at most 4096 distinct operations.");
-            }
-
-            switch (node)
-            {
-                case EffectOperationNode operation:
-                    foreach (ImageEffectNode input in operation.Inputs)
-                    {
-                        Collect(input);
-                    }
-
-                    break;
-            }
-
-            order.Add(node);
-        }
-    }
-
     internal static void ValidateImage(EffectImage image)
     {
         ArgumentNullException.ThrowIfNull(image.Texture);
@@ -235,4 +201,7 @@ public sealed class ImageEffectCompiler
             throw new ArgumentException("Unknown effect color semantic.", nameof(image));
         }
     }
+
+    private static IGraphicDevice RequireDevice(RenderGraphBuilder plan)
+        => plan.Device ?? throw new InvalidOperationException("Image-effect passes require a RenderGraph with a graphics device.");
 }
