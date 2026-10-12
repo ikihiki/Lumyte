@@ -1,6 +1,6 @@
 # ImageEffectsの検証
 
-CPU側の不変graph、数値検証、必要入力範囲、共有nodeの展開、失敗時の解放、単独DI登録を検証する。
+CPU側の不変graph、数値検証、必要入力範囲、共有nodeの展開、失敗時の解放、単独DI登録を検証する。独自エフェクトについても、型付き配送・子snapshot・領域計算・0入力生成・複数入力・予算・出力検証・複数pass・失敗時解放を検証する。
 
 ```bash
 source tools/setup/activate.sh

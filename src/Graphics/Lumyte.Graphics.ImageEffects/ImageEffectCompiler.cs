@@ -30,7 +30,7 @@ public sealed class ImageEffectCompiler
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(graph);
         ValidateImage(source);
-        var context = new EffectPreparationContext(_device);
+        var context = new EffectPreparationContext(_device, source.ColorSemantic);
         var results = new Dictionary<ImageEffectNode, EffectImage>(ReferenceEqualityComparer.Instance);
         try
         {
@@ -61,6 +61,7 @@ public sealed class ImageEffectCompiler
                 GaussianBlurEffectNode blur => _renderers.GaussianBlur.AppendPasses(context, plan, blur, Visit(blur.Input)),
                 OpacityEffectNode opacity => _renderers.Opacity.AppendPasses(context, plan, opacity, Visit(opacity.Input)),
                 CompositeEffectNode composite => _renderers.Composite.AppendPasses(context, plan, composite, Visit(composite.Source), Visit(composite.Backdrop)),
+                CustomEffectNode custom => AppendCustom(custom),
                 _ => throw new NotSupportedException("Unknown effect operation."),
             };
             ValidateImage(result);
@@ -75,6 +76,31 @@ public sealed class ImageEffectCompiler
             }
 
             results.Add(node, result);
+            return result;
+        }
+
+        EffectImage AppendCustom(CustomEffectNode custom)
+        {
+            var images = new EffectImage[custom.Inputs.Count];
+            var bounds = new EffectPixelRect[custom.Inputs.Count];
+            for (int i = 0; i < custom.Inputs.Count; i++)
+            {
+                images[i] = Visit(custom.Inputs[i]);
+                bounds[i] = images[i].Bounds;
+            }
+
+            EffectPixelRect expected = custom.Definition.GetOutputBounds(bounds);
+            if (expected.IsEmpty)
+            {
+                throw new InvalidOperationException("A custom effect must declare positive output dimensions.");
+            }
+
+            EffectImage result = custom.AppendPasses(context, plan, images);
+            if (result.Bounds != expected)
+            {
+                throw new InvalidOperationException("A custom renderer must preserve its definition's declared output bounds.");
+            }
+
             return result;
         }
     }
@@ -100,7 +126,11 @@ public sealed class ImageEffectCompiler
         for (int i = order.Count - 1; i >= 0; i--)
         {
             ImageEffectNode node = order[i];
-            EffectPixelRect bounds = required[node];
+            if (!required.TryGetValue(node, out EffectPixelRect bounds) || bounds.IsEmpty)
+            {
+                continue;
+            }
+
             switch (node)
             {
                 case SourceEffectNode:
@@ -119,10 +149,17 @@ public sealed class ImageEffectCompiler
                     Add(composite.Source, bounds.OffsetInverse(composite.SourceOffsetX, composite.SourceOffsetY));
                     Add(composite.Backdrop, bounds);
                     break;
+                case CustomEffectNode custom:
+                    for (int inputIndex = 0; inputIndex < custom.Inputs.Count; inputIndex++)
+                    {
+                        Add(custom.Inputs[inputIndex], custom.Definition.GetRequiredInputBounds(inputIndex, bounds));
+                    }
+
+                    break;
             }
         }
 
-        return result ?? output;
+        return result ?? new(output.X, output.Y, 0, 0);
 
         void Add(ImageEffectNode node, EffectPixelRect bounds) => required[node] = required.TryGetValue(node, out EffectPixelRect previous) ? previous.Union(bounds) : bounds;
 
@@ -152,6 +189,13 @@ public sealed class ImageEffectCompiler
                 case CompositeEffectNode composite:
                     Collect(composite.Source);
                     Collect(composite.Backdrop);
+                    break;
+                case CustomEffectNode custom:
+                    foreach (ImageEffectNode input in custom.Inputs)
+                    {
+                        Collect(input);
+                    }
+
                     break;
             }
 

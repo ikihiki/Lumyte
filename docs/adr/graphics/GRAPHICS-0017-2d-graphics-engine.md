@@ -103,6 +103,8 @@ DrawGlyphRunと文字の描画形式選択は外部文字ライブラリが担�
 
 画像演算は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) のImageEffectGraphとcompilerへ委譲する。2D側は画像化する内容と適用位置、clip・group opacity、背景snapshot、親への合成を管理する。PaintGraph2Dは図形内部の塗り、ImageEffectGraphは画像化後の処理として分け、paintの隔離合成をレイヤーの画像エフェクトへ置き換えない。
 
+標準効果と利用者定義のCustomを同じEffectsへ指定できる。2Dは効果の種類を固定せず、定義が返す出力範囲と必要入力範囲を使ってレイヤー合成と背景取得を行う。独自効果を追加しても11描画命令やレイヤーAPIの変更は不要であり、必要なrendererを構築時に結び付けたgraphを利用者が渡す。
+
 レイヤーと背景はDisplayLinearのlinear premultiplied Rgba16Float画像として、原点と有限範囲を保って渡す。coverageや距離場は先に色画像へ描画し、SDF値自体をfilterへ渡さない。効果で拡張された出力範囲を親の描画先へ戻し、背景取得にはGetRequiredSourceBoundsで求めた必要入力範囲を使う。エフェクトのpassは2Dと同じRenderGraphへ追加し、単独利用でも共有graphでも描画順と資源依存を保持する。
 
 BeginLayerは有限のContentBounds、Effects、Opacity、任意のOutputClipをsnapshotする。内容を透明面へ描き、EndLayerで次の順に処理して開始時の状態へ戻す。
@@ -207,7 +209,7 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 
 ## API・詳細契約・利用例
 
-比較元は先行エフェクトブランチ `feat/image-effects` のrevision `4318a9e`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元は先行エフェクトブランチ `feat/image-effects` のrevision `7d955af`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
 RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectGraph・ImageEffectRenderersなどの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
 

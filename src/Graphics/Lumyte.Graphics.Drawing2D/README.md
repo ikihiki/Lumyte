@@ -53,3 +53,28 @@ using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
 `BeginLayer` / `EndLayer` はグループ全体へのエフェクトとopacity、`DrawBackdropEffect` はそこまでに描いた背景へのエフェクトを表す。色行列・Gaussian blur・opacity・合成は、2Dと3Dから使える `Lumyte.Graphics.ImageEffects` が処理する。
 
 2D描画とエフェクト適用時の契約、API一覧、共通graphへの接続例は [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-2d-graphics-engine.md) を参照する。画像エフェクト自体の設計とAPIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) に記載する。
+
+独自エフェクトは共通ライブラリの `ImageEffectDefinition` と `IImageEffectRenderer<TDefinition>` を実装し、
+`ImageEffectGraph.Custom` で構築します。標準効果と組み合わせた同じgraphを、記録中のCanvasへ渡せます。
+
+```csharp
+var custom = ImageEffectGraph.Custom(definition, customRenderer, ImageEffectGraph.Source());
+var effects = ImageEffectGraph.GaussianBlur(3, 3, custom);
+
+canvas.BeginLayer(new LayerOptions2D
+{
+    ContentBounds = new Rect2D(10, 10, 100, 50),
+    Effects = effects,
+});
+canvas.FillRect(new Rect2D(10, 10, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.EndLayer();
+
+canvas.DrawBackdropEffect(new BackdropEffectOptions2D
+{
+    OutputBounds = new Rect2D(150, 10, 100, 50),
+    Effects = effects,
+});
+```
+
+背景取得は独自定義の必要入力範囲を含めて行い、独自効果の出力にも通常の親clip・opacity・合成を適用します。
+定義とrendererの実装例は [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) を参照してください。

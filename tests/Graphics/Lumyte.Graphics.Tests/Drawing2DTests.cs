@@ -92,6 +92,7 @@ public sealed class Drawing2DTests
         await CheckLayersAsync(device);
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
+        await CheckCustomEffectsAsync(device);
     }
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
@@ -103,6 +104,7 @@ public sealed class Drawing2DTests
         await CheckLayersAsync(device);
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
+        await CheckCustomEffectsAsync(device);
     }
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
@@ -543,6 +545,35 @@ public sealed class Drawing2DTests
         AssertPixel(blur, 5, 4, 0, Vector4.Zero);
     }
 
+    private static async Task CheckCustomEffectsAsync(IGraphicDevice device)
+    {
+        var renderer = new TranslateLayerRenderer();
+        var translated = ImageEffectGraph.Custom(new TranslateLayerEffect(4, 0), renderer, ImageEffectGraph.Source());
+        var faded = ImageEffectGraph.Opacity(0.5f, translated);
+        Vector4[] layer = await RenderAsync(device, 8, 4, canvas =>
+        {
+            canvas.ClipRect(new(5, 0, 1, 4));
+            canvas.BeginLayer(new() { ContentBounds = new(1, 1, 2, 2), Effects = faded });
+            canvas.FillRect(new(1, 1, 2, 2), _white);
+            canvas.EndLayer();
+        });
+        AssertPixel(layer, 8, 1, 1, Vector4.Zero);
+        AssertPixel(layer, 8, 5, 1, new(0.5f));
+        AssertPixel(layer, 8, 6, 1, Vector4.Zero);
+
+        var shiftedBackground = ImageEffectGraph.Custom(new TranslateLayerEffect(3, 0), renderer, ImageEffectGraph.Source());
+        Vector4[] backdrop = await RenderAsync(device, 5, 1, canvas =>
+        {
+            canvas.FillRect(new(0, 0, 5, 1), _blue);
+            canvas.FillRect(new(0, 0, 1, 1), _red);
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(3, 0, 1, 1), Effects = shiftedBackground });
+        });
+        AssertPixel(backdrop, 5, 0, 0, new(1, 0, 0, 1));
+        AssertPixel(backdrop, 5, 2, 0, new(0, 0, 1, 1));
+        AssertPixel(backdrop, 5, 3, 0, new(1, 0, 0, 1));
+        AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
+    }
+
     private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<Canvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)
     {
         var canvas = new Canvas2D();
@@ -673,5 +704,23 @@ public sealed class Drawing2DTests
         Vector4 actual = pixels[(y * width) + x];
         var difference = Vector4.Abs(actual - expected);
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Pixel ({x}, {y}): expected {expected}, actual {actual}, tolerance {tolerance}.");
+    }
+
+    private sealed record TranslateLayerEffect(int X, int Y) : ImageEffectDefinition
+    {
+        /// <inheritdoc/>
+        public override int InputCount => 1;
+
+        /// <inheritdoc/>
+        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs) => inputs[0].Offset(X, Y);
+
+        /// <inheritdoc/>
+        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => output.OffsetInverse(X, Y);
+    }
+
+    private sealed class TranslateLayerRenderer : IImageEffectRenderer<TranslateLayerEffect>
+    {
+        /// <inheritdoc/>
+        public EffectImage AppendPasses(EffectPreparationContext context, Graph plan, TranslateLayerEffect effect, ReadOnlySpan<EffectImage> inputs) => inputs[0] with { Bounds = inputs[0].Bounds.Offset(effect.X, effect.Y) };
     }
 }
