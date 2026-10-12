@@ -407,6 +407,11 @@ public sealed class InputSystem : IDisposable
         try
         {
             IReadOnlyList<InputData> batch = entry.Device.DrainEvents() ?? throw new ArgumentException("A device returned a null batch.");
+            if (_inspection != null)
+            {
+                batch = _inspection.Process(this, entry.Info.Id, batch, _clock.GetElapsedTime(_started)) ?? throw new ArgumentException("Input inspection returned a null batch.");
+            }
+
             if (batch.Count != 0)
             {
                 DeviceState candidate = entry.State.Clone();

@@ -28,6 +28,14 @@ public interface IInputInspection
     /// <param name="descriptor">The device metadata.</param>
     void Registered(InputSystem system, InputDeviceId device, InputDeviceDescriptor descriptor);
 
+    /// <summary>Transforms one device batch before state, history, and notifications are updated.</summary>
+    /// <param name="system">The input system.</param>
+    /// <param name="device">The scoped device identifier.</param>
+    /// <param name="data">The physical device batch.</param>
+    /// <param name="now">The current input-system time.</param>
+    /// <returns>The effective batch. Returning <paramref name="data"/> avoids an allocation.</returns>
+    IReadOnlyList<InputData> Process(InputSystem system, InputDeviceId device, IReadOnlyList<InputData> data, TimeSpan now) => data;
+
     /// <summary>Receives the immutable current state after a device has been processed.</summary>
     /// <param name="system">The input system.</param>
     /// <param name="device">The scoped device identifier.</param>
