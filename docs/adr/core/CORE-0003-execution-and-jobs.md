@@ -426,7 +426,7 @@ Drainは受付済み仕事を待ち、CancelPendingは未開始分を抑止す�
 
 停止中（起動workflowがQuiescing中に行う終了処理も含む）のcontext経由cleanupにはrun・header・payload・result・完了領域を含む独立した予約枠を使う。Prepareで各Cleanup一件が収まることを確認する。Running中の外部Cleanupは通常枠を使う。予約不足は外側workflowで進行中cleanupを待って再試行し、進行も回収余地もない場合は失敗を報告する。未回収の通常結果でcleanupを閉塞させない。
 
-アプリは外部producer／I/O workflowの終了も追跡する。native資源はmodule所有表からowner上で回収し、run.Disposeに任せない。停止後に結果を読めても、そのnative実体が生存しているとは限らない。実体の独立した利用権を渡す場合は返却をcleanupで確認する。失敗したownerの未解放物や過去のFailureを隠さない。
+アプリは外部producer／I/O workflowの終了も追跡する。native資源は利用者／Resourcesが生成結果の利用権を保持し、owner上で明示的に解放する。実行層の生成物一覧やrun.Disposeによる自動回収に任せない。停止後に結果を読めても、そのnative実体が生存しているとは限らない。実体の独立した利用権を渡す場合は返却をcleanupで確認する。失敗したownerの未解放物や過去のFailureを隠さない。
 
 ### DIなしの起動と利用例
 
@@ -544,7 +544,7 @@ WebAudioの非同期生成はStartupで開始し、外側で実operationをawait
 
 ### 他ライブラリの調査
 
-実Audioの生成・制御は`AudioDevice.CreateClipPort`、`AudioClip.Commands.For(clip).CreateVoice`と`AudioVoice.Commands.For(original)`から送る。仕事の定義は対応するDevice／Clip／Voiceラッパーに置く。Clip／VoiceはUseReceiverで自身のインスタンスメソッドを宣言し、静的なDeclareCommandsで登録する。生成するhandlerはstatelessなreadonly structとし、対象のprivateメソッドを直接呼ぶ。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。終了時は未解放voice→clip→deviceの順で解放し、失敗した実体を保持して再試行する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
+実Audioの生成・制御は`AudioDevice.CreateClipPort`、`AudioClip.Commands.For(clip).CreateVoice`と`AudioVoice.Commands.For(original)`から送る。仕事の定義は対応するDevice／Clip／Voiceラッパーに置く。Clip／VoiceはUseReceiverで自身のインスタンスメソッドを宣言し、静的なDeclareCommandsで登録する。生成するhandlerはstatelessなreadonly structとし、対象のprivateメソッドを直接呼ぶ。originalは生成済みbackendを保持する参照で、ID表は用いない。モジュールは起動時にowner上でfactoryを呼び、非同期生成の完了後に同じownerで確定する。実行層はclip／voiceの一覧や所属・解放状態の管理を行わない。利用者／Resourcesがvoice→clipを解放してからdeviceを終了する。所属・寿命・借用の検証はbackendで行い、残った子のdevice解放は拒否する。State／Gain／Loop getterはbackendのlockでcached値を読み、呼び出し元のスレッドで処理する。生成・制御・解放は所有スレッドへ配送する。実装の契約は[Audio.Execution](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
 
 2026-10-11の一次資料を基にした比較である。初期実装のHost上の割当と平均送信費用は[サンプル](../../../samples/Lumyte.Execution.Sample/README.md)で測定し、各ライブラリとの実性能比較は別途行う。
 

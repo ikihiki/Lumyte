@@ -6,30 +6,25 @@ namespace Lumyte.Audio.Execution;
 /// <summary>Reference to an actual backend instance; controls are sent through generated senders.</summary>
 public sealed partial class AudioClip
 {
-    internal AudioClip(AudioDevice owner, IAudioClip backend)
+    internal AudioClip(IAudioDevice device, IAudioClip backend)
     {
-        Owner = owner;
+        Device = device;
         Backend = backend;
     }
 
-    internal AudioDevice Owner { get; }
+    /// <summary>Gets the immutable PCM format directly from the backend.</summary>
+    public AudioFormat Format => Backend.Format;
+
+    /// <summary>Gets the immutable PCM frame count directly from the backend.</summary>
+    public long FrameCount => Backend.FrameCount;
+
+    internal IAudioDevice Device { get; }
 
     internal IAudioClip Backend { get; }
 
     [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private AudioVoice CreateVoice(AudioBus bus)
-    {
-        Owner.VerifyClip(this);
-        var voice = new AudioVoice(Owner, Owner.Backend.CreateVoice(Backend, bus));
-        Owner.RegisterVoice(voice);
-        return voice;
-    }
+    private AudioVoice CreateVoice(AudioBus bus) => new(Device.CreateVoice(Backend, bus));
 
     [ExecutionCommand(Sender = "Commands", UseReceiver = true)]
-    private void DestroyClip()
-    {
-        Owner.VerifyClip(this);
-        Backend.Dispose();
-        Owner.RemoveClip(this);
-    }
+    private void DestroyClip() => Backend.Dispose();
 }

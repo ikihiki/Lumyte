@@ -42,7 +42,7 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         AudioClip.DeclareCommands(builder, Options(WorkAdmission.Normal), Options(WorkAdmission.Cleanup));
         _state.DeclareSetBusGain(builder, Options(WorkAdmission.Normal));
         _state.DeclareRefresh(builder, Options(WorkAdmission.Normal));
-        AudioVoice.DeclareCommands(builder, Options(WorkAdmission.Cleanup), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal));
+        AudioVoice.DeclareCommands(builder, Options(WorkAdmission.Cleanup), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal), Options(WorkAdmission.Normal));
         _update = _state.DeclareUpdate(builder, _owner).Key;
     }
 

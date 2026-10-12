@@ -39,7 +39,7 @@ internal static partial class Program
             await voice.Play();
             await voice.Pause();
             await AudioDevice.RefreshPort.ExecuteAsync();
-            if (await voice.ReadState() != AudioPlaybackState.Paused)
+            if (original.State != AudioPlaybackState.Paused)
             {
                 throw new InvalidOperationException("Browser voice is not paused.");
             }
