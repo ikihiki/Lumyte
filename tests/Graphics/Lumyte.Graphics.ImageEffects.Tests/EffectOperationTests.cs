@@ -14,20 +14,19 @@ public sealed class EffectOperationTests
     public void AppendExtensionsRejectNullCompiler()
     {
         ImageEffectCompiler compiler = null!;
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendGaussianBlur(null!, new(0, 0), default));
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendOpacity(null!, new(1), default));
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendColorMatrix(null!, new(new(new float[20])), default));
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendComposite(null!, new(EffectCompositeMode.Plus), default, default));
+        Assert.Throws<ArgumentNullException>(() => compiler.AppendGaussianBlur(null!, default, 0, 0));
+        Assert.Throws<ArgumentNullException>(() => compiler.AppendOpacity(null!, default, 1));
+        Assert.Throws<ArgumentNullException>(() => compiler.AppendColorMatrix(null!, default, new(new float[20])));
+        Assert.Throws<ArgumentNullException>(() => compiler.AppendComposite(null!, default, default, EffectCompositeMode.Plus));
     }
 
     /// <summary>Checks pass extensions return graph-local outputs instead of new effect graphs.</summary>
     [Fact]
-    public void AppendGaussianBlurUsesExistingEffectAndSource()
+    public void AppendGaussianBlurUsesParametersAndSource()
     {
         var graph = new Graph(Device());
         EffectImage source = Source(graph);
-        var effect = new GaussianBlurEffect(0, 0);
-        using PreparedImageEffect owner = Compiler().AppendGaussianBlur(graph, effect, source);
+        using PreparedImageEffect owner = Compiler().AppendGaussianBlur(graph, source, 0, 0);
         Assert.Equal(source, owner.Output);
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Empty(plan.PassNames);
@@ -114,9 +113,8 @@ public sealed class EffectOperationTests
         Assert.Throws<ArgumentNullException>(() => Compiler().AppendEffect(graph, null!, Source(graph)));
         Assert.Throws<ArgumentException>(() => Compiler().AppendEffect(graph, effect));
         Assert.Throws<ArgumentNullException>(() => Compiler().AppendEffect(graph, effect, default(EffectImage)));
-        var composite = new CompositeEffect(EffectCompositeMode.Plus);
         EffectImage source = Source(graph);
-        Assert.Throws<ArgumentException>(() => Compiler().AppendComposite(graph, composite, source, source with { ColorSemantic = EffectColorSemantic.SceneLinear }));
+        Assert.Throws<ArgumentException>(() => Compiler().AppendComposite(graph, source, source with { ColorSemantic = EffectColorSemantic.SceneLinear }, EffectCompositeMode.Plus));
     }
 
     /// <summary>Checks generators need no source region and preserve the requested graph color semantic.</summary>

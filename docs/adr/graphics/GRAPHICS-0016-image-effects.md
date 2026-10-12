@@ -28,7 +28,7 @@ paint DAGは図形内部の塗り、ImageEffectGraphは画像化後の処理、R
 
 ### 2. 定義とRenderGraphへの変換
 
-ImageEffectGraphはGPU資源を生成・所有しない不変DAGとし、SourceとImageEffectGraph.Createで構築する。利用者がエフェクトを明示的に生成し、子graphと結合する。同じ定義を別の入力・frameにも使えるが、準備結果は各回に作る。コンパイラーのAppend拡張メソッドは、作成済みのエフェクトとEffectImageを受け取り、直接RenderGraphへパスを追加する。エフェクトやImageEffectGraphを生成しない。
+ImageEffectGraphはGPU資源を生成・所有しない不変DAGとし、SourceとImageEffectGraph.Createで構築する。利用者がエフェクトを明示的に生成し、子graphと結合する。同じ定義を別の入力・frameにも使えるが、準備結果は各回に作る。コンパイラーのAppend拡張メソッドは、入力EffectImageと効果のパラメーターを受け取り、直接RenderGraphへパスを追加する。戻り値は準備済み出力であり、エフェクトやImageEffectGraphを返さない。
 
 ```text
 ImageEffectGraph + EffectImage
@@ -57,7 +57,7 @@ GetRequiredSourceBoundsは要求する出力からblurの余白やCompositeの�
 
 エフェクトレンダラーのinterface、差し替え引数、アダプター、登録表、DI設定は設けない。提供する効果型はsealedとし、実装を変更したい場合は新しい効果型を追加する。利用者の効果も同じ基底型を継承し、独自のAppend拡張メソッドをライブラリとして提供できる。コンパイラー本体の変更は不要である。
 
-AppendColorMatrix・AppendGaussianBlur・AppendOpacity・AppendCompositeは作成済みの効果と入力画像を受け取り、compiler.AppendEffectへ渡すパス追加専用の拡張メソッドとする。戻り値はPreparedImageEffectで、出力と固定資源の所有者を保持する。複数回のAppendはowner.Outputを次の入力にし、すべてのownerをGPU使用終了まで保持する。拡張メソッドでエフェクト作成やDAG組み立てを行わない。
+AppendColorMatrix・AppendGaussianBlur・AppendOpacity・AppendCompositeは入力画像と数値・行列などのパラメーターを受け取り、compiler.AppendEffectへ渡すパス追加専用の拡張メソッドとする。戻り値はPreparedImageEffectで、出力と固定資源の所有者を保持する。複数回のAppendはowner.Outputを次の入力にし、すべてのownerをGPU使用終了まで保持する。利用者は効果オブジェクトをnewせずに呼び出す。内部で検証用の不変定義を作り、固定実装へ渡すが、効果やDAGを返す組み立てAPIにはしない。単純な設定は直接引数とし、複雑な設定が必要になった場合だけ設定オブジェクトを使う。
 
 DAGの構築はImageEffectGraph.Create(effect, inputs)で明示する。入力数は0以上で子graphの数と一致させ、子列をコピーする。Source葉は一つの画像へ束縛する。DAG経路の0入力生成はSourceの色semanticを保持し、直接AppendEffectする0入力生成はDisplayLinearを使う。必要領域が空の子は逆向きの領域計算を省略する。
 
@@ -134,7 +134,7 @@ MarkOutputは必要出力の保持、Exportはさらにfinal state/scopeの指�
 
 ### 公開API
 
-ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべての演算はImageEffectDefinition自身に固定のAppendPassesを持つ。公開nodeは読み取り用snapshotとし、compilerの拡張メソッドは既存の効果と画像からパスだけを追加する。
+ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべての演算はImageEffectDefinition自身に固定のAppendPassesを持つ。公開nodeは読み取り用snapshotとし、compilerの拡張メソッドは入力画像とパラメーターからパスだけを追加する。
 
 ```diff
 +namespace Lumyte.Graphics.ImageEffects
@@ -177,15 +177,16 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +    }
 +    public static class ImageEffectCompilerExtensions
 +    {
-+        // 作成済みの効果のパスだけを追加する。効果やDAGは生成しない。
++        // 入力画像とパラメーターからパスを追加する。効果やDAGを返さない。
 +        public static PreparedImageEffect AppendColorMatrix(this ImageEffectCompiler compiler,
-+            RenderGraphBuilder plan, ColorMatrixEffect effect, EffectImage input);
++            RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix);
 +        public static PreparedImageEffect AppendGaussianBlur(this ImageEffectCompiler compiler,
-+            RenderGraphBuilder plan, GaussianBlurEffect effect, EffectImage input);
++            RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY);
 +        public static PreparedImageEffect AppendOpacity(this ImageEffectCompiler compiler,
-+            RenderGraphBuilder plan, OpacityEffect effect, EffectImage input);
++            RenderGraphBuilder plan, EffectImage input, float opacity);
 +        public static PreparedImageEffect AppendComposite(this ImageEffectCompiler compiler,
-+            RenderGraphBuilder plan, CompositeEffect effect, EffectImage source, EffectImage backdrop);
++            RenderGraphBuilder plan, EffectImage source, EffectImage backdrop,
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
 +    }
 +    // すべての効果が継承する不変の定義。領域計算はGPU資源を確保しない。
 +    public abstract record ImageEffectDefinition
@@ -295,18 +296,16 @@ DropShadowはalphaの着色→blur→移動→元画像の背後へ合成で表�
 
 ### 利用例
 
-#### 作成済みのエフェクトを直接追加する
+#### パラメーターを渡してパスを直接追加する
 
-呼び出し側が用意したdevice、graph、同じgraphに属する入力EffectImageを使う。AppendGaussianBlurは効果を生成せず、渡されたblurのパスだけを追加する。
+呼び出し側が用意したdevice、graph、同じgraphに属する入力EffectImageを使う。AppendGaussianBlurへ入力画像とsigmaを直接渡す。利用者がGaussianBlurEffectを生成する必要はない。
 
 ```csharp
 using Lumyte.Graphics.ImageEffects;
 
 var compiler = new ImageEffectCompiler(device);
-var blur = new GaussianBlurEffect(4, 4);
-var opacity = new OpacityEffect(0.5f);
-var blurred = compiler.AppendGaussianBlur(graph, blur, source);
-var faded = compiler.AppendOpacity(graph, opacity, blurred.Output);
+var blurred = compiler.AppendGaussianBlur(graph, source, 4, 4);
+var faded = compiler.AppendOpacity(graph, blurred.Output, 0.5f);
 EffectImage output = faded.Output;
 // outputを同じgraphの後続passへ接続し、Compile・Record・Submitする。
 // GPU使用終了後、commandとcompiled planを解放してから両ownerをDisposeする。
@@ -335,17 +334,15 @@ public sealed record TranslateEffect(int X, int Y) : ImageEffectDefinition
 public static class TranslateEffectCompilerExtensions
 {
     public static PreparedImageEffect AppendTranslate(this ImageEffectCompiler compiler,
-        RenderGraphBuilder graph, TranslateEffect effect, EffectImage input)
-        => compiler.AppendEffect(graph, effect, input);
+        RenderGraphBuilder graph, EffectImage input, int x, int y)
+        => compiler.AppendEffect(graph, new TranslateEffect(x, y), input);
 }
 ```
 
 ```csharp
 var compiler = new ImageEffectCompiler(device);
-var translation = new TranslateEffect(8, 4);
-var blur = new GaussianBlurEffect(3, 3);
-var moved = compiler.AppendTranslate(graph, translation, source);
-var blurred = compiler.AppendGaussianBlur(graph, blur, moved.Output);
+var moved = compiler.AppendTranslate(graph, source, 8, 4);
+var blurred = compiler.AppendGaussianBlur(graph, moved.Output, 3, 3);
 // movedとblurredをGPU使用終了後まで保持する。
 ```
 
