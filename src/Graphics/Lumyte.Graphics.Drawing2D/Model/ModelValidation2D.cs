@@ -83,6 +83,19 @@ internal static class ModelValidation2D
         }
     }
 
+    internal static void Stroke(StrokeStyle2D style, string name)
+    {
+        ArgumentNullException.ThrowIfNull(style, name);
+        Positive(style.Width, name);
+        EnumValue(style.Cap, name);
+        EnumValue(style.Join, name);
+        Finite(style.MiterLimit, name);
+        if (style.MiterLimit < 1)
+        {
+            throw new ArgumentOutOfRangeException(name, "The miter limit must be at least one.");
+        }
+    }
+
     internal static void SampledView(IGraphicsTextureView view, string name)
     {
         ArgumentNullException.ThrowIfNull(view, name);

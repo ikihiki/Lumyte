@@ -82,6 +82,21 @@ float pathCoverage(DrawingInstruction n,float2 p)
     }
     return n.Mode==0 ? (winding!=0 ? 1 : 0) : ((abs(winding)%2)!=0 ? 1 : 0);
 }
+float meshCoverage(DrawingInstruction n,float2 p)
+{
+    float result=0;
+    for(uint i=0;i<n.Count;i++)
+    {
+        float4 a=arguments.Data.Load(n.First+i*3),b=arguments.Data.Load(n.First+i*3+1),c=arguments.Data.Load(n.First+i*3+2);
+        float area=cross2(b.xy-a.xy,c.xy-a.xy);
+        if(abs(area)<1e-20) continue;
+        float u=cross2(b.xy-p,c.xy-p)/area;
+        float v=cross2(c.xy-p,a.xy-p)/area;
+        float w=1-u-v;
+        if(u>=0 && v>=0 && w>=0) result=max(result,saturate(u*a.z+v*b.z+w*c.z));
+    }
+    return result;
+}
 float4 evaluate(float2 pixel)
 {
     float4 values[256];
@@ -100,6 +115,12 @@ float4 evaluate(float2 pixel)
         }
         else if(n.Kind==3) value=distance(p,n.A.xy)<n.A.z ? 1 : 0;
         else if(n.Kind==4) value=pathCoverage(n,p);
+        else if(n.Kind==5)
+        {
+            float2 center=floor(pixel)+0.5;
+            float2 meshPoint=n.Mode==1 ? float2(dot(n.T0.xyz,float3(center,1)),dot(n.T1.xyz,float3(center,1))) : p;
+            value=meshCoverage(n,meshPoint);
+        }
         else if(n.Kind==6)
         {
             float2 perpendicular=float2(n.B.y-n.A.y,n.A.x-n.B.x);

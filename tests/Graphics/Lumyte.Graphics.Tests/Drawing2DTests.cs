@@ -128,16 +128,46 @@ public sealed class Drawing2DTests
 
     private static async Task CheckGeometryAsync(IGraphicDevice device)
     {
+        var winding = new PathBuilder2D();
+        AddRectangle(winding, 1, 1, 8, 8);
+        AddRectangle(winding, 3, 3, 4, 4, reverse: true);
+        var evenOdd = new PathBuilder2D();
+        AddRectangle(evenOdd, 12, 1, 8, 8);
+        AddRectangle(evenOdd, 14, 3, 4, 4);
+        var stroke = new PathBuilder2D();
+        stroke.MoveTo(new(23, 13));
+        stroke.LineTo(new(29, 13));
+        stroke.LineTo(new(29, 18));
+        var curves = new PathBuilder2D();
+        curves.MoveTo(new(33, 1));
+        curves.QuadraticTo(new(39, 1), new(39, 7));
+        curves.CubicTo(new(39, 9), new(33, 9), new(33, 1));
+        curves.Close();
         Vector4[] pixels = await RenderAsync(device, 40, 20, canvas =>
         {
+            canvas.FillPath(winding.Build(), _white);
+            canvas.FillPath(evenOdd.Build(), _white, FillRule2D.EvenOdd);
             canvas.FillRoundedRect(new(23, 1, 8, 8), 3, _white);
+            canvas.FillPath(curves.Build(), _white);
             canvas.FillCircle(new(5, 15), 3, _white);
+            canvas.DrawLine(new(11, 15), new(18, 15), _white, new() { Width = 2 });
+            canvas.StrokePath(stroke.Build(), _white, new() { Width = 2, Join = LineJoin2D.Round });
         });
+        AssertPixel(pixels, 40, 2, 2, Vector4.One);
+        AssertPixel(pixels, 40, 4, 4, Vector4.Zero);
+        AssertPixel(pixels, 40, 13, 2, Vector4.One);
+        AssertPixel(pixels, 40, 15, 4, Vector4.Zero);
         AssertPixel(pixels, 40, 27, 5, Vector4.One);
         AssertPixel(pixels, 40, 23, 1, Vector4.Zero, 0.03f);
+        AssertPixel(pixels, 40, 36, 5, Vector4.One);
+        AssertPixel(pixels, 40, 32, 5, Vector4.Zero);
         AssertPixel(pixels, 40, 4, 14, Vector4.One);
         Assert.InRange(pixels[(13 * 40) + 7].W, 0.2f, 0.9f);
         AssertPixel(pixels, 40, 1, 11, Vector4.Zero);
+        AssertPixel(pixels, 40, 14, 14, Vector4.One);
+        AssertPixel(pixels, 40, 10, 14, Vector4.Zero);
+        AssertPixel(pixels, 40, 25, 12, Vector4.One);
+        AssertPixel(pixels, 40, 28, 16, Vector4.One);
     }
 
     private static async Task CheckClipsAsync(IGraphicDevice device)

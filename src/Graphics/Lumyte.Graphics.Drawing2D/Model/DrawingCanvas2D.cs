@@ -163,6 +163,66 @@ public abstract class DrawingCanvas2D
         _commands.Add(new FillCircleCommand2D(center, radius, paint, _state));
     }
 
+    /// <summary>Records DrawLine using a solid color.</summary>
+    /// <param name="start">The finite logical start.</param>
+    /// <param name="end">The finite logical end.</param>
+    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void DrawLine(Vector2 start, Vector2 end, Color2D color, StrokeStyle2D style) => DrawLine(start, end, PaintGraph2D.Solid(color), style);
+
+    /// <summary>Records DrawLine using an immutable paint graph.</summary>
+    /// <param name="start">The finite logical start.</param>
+    /// <param name="end">The finite logical end.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void DrawLine(Vector2 start, Vector2 end, PaintGraph2D paint, StrokeStyle2D style)
+    {
+        RequireRecording();
+        ModelValidation2D.Vector(start, nameof(start));
+        ModelValidation2D.Vector(end, nameof(end));
+        ModelValidation2D.Stroke(style, nameof(style));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawLineCommand2D(start, end, paint, style with { }, _state));
+    }
+
+    /// <summary>Records FillPath using a solid color.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="rule">The contour fill rule.</param>
+    public void FillPath(Path2D path, Color2D color, FillRule2D rule = FillRule2D.NonZero) => FillPath(path, PaintGraph2D.Solid(color), rule);
+
+    /// <summary>Records FillPath using an immutable paint graph.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    /// <param name="rule">The contour fill rule.</param>
+    public void FillPath(Path2D path, PaintGraph2D paint, FillRule2D rule = FillRule2D.NonZero)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(path);
+        ModelValidation2D.EnumValue(rule, nameof(rule));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new FillPathCommand2D(path, paint, rule, _state));
+    }
+
+    /// <summary>Records StrokePath using a solid color.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void StrokePath(Path2D path, Color2D color, StrokeStyle2D style) => StrokePath(path, PaintGraph2D.Solid(color), style);
+
+    /// <summary>Records StrokePath using an immutable paint graph.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void StrokePath(Path2D path, PaintGraph2D paint, StrokeStyle2D style)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(path);
+        ModelValidation2D.Stroke(style, nameof(style));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new StrokePathCommand2D(path, paint, style with { }, _state));
+    }
+
     /// <summary>Discards all commands and state from the active recording.</summary>
     public void Cancel()
     {

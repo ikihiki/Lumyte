@@ -7,10 +7,16 @@ public sealed class DrawingCommandRenderers2D
     /// <param name="fillRect">The FillRect renderer, borrowed by this table.</param>
     /// <param name="fillRoundedRect">The FillRoundedRect renderer, borrowed by this table.</param>
     /// <param name="fillCircle">The FillCircle renderer, borrowed by this table.</param>
+    /// <param name="drawLine">The DrawLine renderer, borrowed by this table.</param>
+    /// <param name="fillPath">The FillPath renderer, borrowed by this table.</param>
+    /// <param name="strokePath">The StrokePath renderer, borrowed by this table.</param>
     public DrawingCommandRenderers2D(
         IFillRectRenderer2D fillRect,
         IFillRoundedRectRenderer2D fillRoundedRect,
-        IFillCircleRenderer2D fillCircle)
+        IFillCircleRenderer2D fillCircle,
+        IDrawLineRenderer2D drawLine,
+        IFillPathRenderer2D fillPath,
+        IStrokePathRenderer2D strokePath)
     {
         ArgumentNullException.ThrowIfNull(fillRect);
         FillRect = fillRect;
@@ -18,6 +24,12 @@ public sealed class DrawingCommandRenderers2D
         FillRoundedRect = fillRoundedRect;
         ArgumentNullException.ThrowIfNull(fillCircle);
         FillCircle = fillCircle;
+        ArgumentNullException.ThrowIfNull(drawLine);
+        DrawLine = drawLine;
+        ArgumentNullException.ThrowIfNull(fillPath);
+        FillPath = fillPath;
+        ArgumentNullException.ThrowIfNull(strokePath);
+        StrokePath = strokePath;
     }
 
     /// <summary>Gets the configured FillRect renderer.</summary>
@@ -29,10 +41,22 @@ public sealed class DrawingCommandRenderers2D
     /// <summary>Gets the configured FillCircle renderer.</summary>
     public IFillCircleRenderer2D FillCircle { get; }
 
-    /// <summary>Creates a new table and 3 stateless defaults without DI or GPU allocations.</summary>
+    /// <summary>Gets the configured DrawLine renderer.</summary>
+    public IDrawLineRenderer2D DrawLine { get; }
+
+    /// <summary>Gets the configured FillPath renderer.</summary>
+    public IFillPathRenderer2D FillPath { get; }
+
+    /// <summary>Gets the configured StrokePath renderer.</summary>
+    public IStrokePathRenderer2D StrokePath { get; }
+
+    /// <summary>Creates a new table and 6 stateless defaults without DI or GPU allocations.</summary>
     /// <returns>The new rendering strategy table.</returns>
     public static DrawingCommandRenderers2D CreateDefault() => new(
         new DefaultFillRectRenderer2D(),
         new DefaultFillRoundedRectRenderer2D(),
-        new DefaultFillCircleRenderer2D());
+        new DefaultFillCircleRenderer2D(),
+        new DefaultDrawLineRenderer2D(),
+        new DefaultFillPathRenderer2D(),
+        new DefaultStrokePathRenderer2D());
 }

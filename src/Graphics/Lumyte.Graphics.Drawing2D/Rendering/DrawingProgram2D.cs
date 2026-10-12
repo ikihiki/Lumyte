@@ -54,6 +54,21 @@ internal sealed class DrawingProgram2D
                 shape = Add(Node(3, transform) with { A = new(c.Center, c.Radius, 0) });
                 paint = Paint(c.Paint.Root, transform);
                 break;
+            case DrawLineCommand2D c:
+                var path = new PathBuilder2D();
+                path.MoveTo(c.Start);
+                path.LineTo(c.End);
+                shape = Stroke(path.Build(), c.Style, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case FillPathCommand2D c:
+                shape = Path(c.Path, c.Rule, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case StrokePathCommand2D c:
+                shape = Stroke(c.Path, c.Style, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
             default:
                 throw new ArgumentException("Unknown drawing command.", nameof(command));
         }
@@ -183,6 +198,13 @@ internal sealed class DrawingProgram2D
         }
 
         return Add(Node(4, transform) with { First = first, Count = (uint)Data.Count - first, Mode = (uint)rule });
+    }
+
+    private uint Stroke(Path2D path, StrokeStyle2D style, Matrix3x2 transform)
+    {
+        uint first = (uint)Data.Count;
+        Data.AddRange(PathFlattening2D.Stroke(PathFlattening2D.Flatten(path, transform), style, transform));
+        return Add(Node(5, transform) with { First = first, Count = ((uint)Data.Count - first) / 3 });
     }
 
     private uint Rect(Rect2D rect, Matrix3x2 transform) => Add(Node(1, transform) with { A = Vector(rect) });

@@ -26,20 +26,24 @@ public sealed class ExtensionDispatchTests
         var rect = new Rect2D(0, 0, 8, 8);
         var color = new Color2D(1, 0, 0, 0.5f);
         var paint = PaintGraph2D.Solid(color);
+        var style = new StrokeStyle2D();
         canvas.Begin();
         canvas.FillRect(rect, color);
         canvas.FillRect(rect with { X = 1 }, paint);
         canvas.FillRoundedRect(rect, 2, paint);
         canvas.FillCircle(new Vector2(4), 4, paint);
+        canvas.DrawLine(Vector2.Zero, new Vector2(8), paint, style);
+        canvas.FillPath(path, paint);
+        canvas.StrokePath(path, paint, style);
         canvas.FillRect(rect with { X = 2 }, color);
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new RenderTarget2D { View = targetView });
         Type[] expected =
         [
-            typeof(FillRectCommand2D), typeof(FillRectCommand2D), typeof(FillRoundedRectCommand2D), typeof(FillCircleCommand2D), typeof(FillRectCommand2D),
+            typeof(FillRectCommand2D), typeof(FillRectCommand2D), typeof(FillRoundedRectCommand2D), typeof(FillCircleCommand2D), typeof(DrawLineCommand2D), typeof(FillPathCommand2D), typeof(StrokePathCommand2D), typeof(FillRectCommand2D),
         ];
         Assert.Equal(expected, strategies.Commands.Select(command => command.GetType()));
-        Assert.Equal(4, strategies.Batches.Count);
+        Assert.Equal(7, strategies.Batches.Count);
         Assert.All(strategies.Batches, batch => Assert.Equal(0, batch.DisposeCount));
         using var commands = new DispatchCommands();
         prepared.Record(commands);
