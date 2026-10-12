@@ -48,12 +48,12 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         WGPU.wgpuSamplerRelease(_native);
         _disposed = true;
     }

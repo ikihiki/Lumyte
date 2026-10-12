@@ -42,12 +42,12 @@ internal sealed unsafe partial class VulkanGraphicsPipeline : IGraphicsPipeline
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         DisposeNative();
         _disposed = true;
     }

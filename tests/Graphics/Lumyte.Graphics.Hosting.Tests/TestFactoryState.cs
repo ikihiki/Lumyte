@@ -11,4 +11,6 @@ internal sealed class TestFactoryState
     internal int Calls { get; set; }
 
     internal bool ReturnLost { get; set; }
+
+    internal bool WrapDeviceOwner { get; set; }
 }

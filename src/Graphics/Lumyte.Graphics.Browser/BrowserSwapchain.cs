@@ -41,12 +41,12 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
 
     public void Dispose()
     {
-        Owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        Owner.ValidateDisposal();
         BrowserInterop.UnconfigureSurface(_surface.Native);
         _disposed = true;
     }

@@ -42,14 +42,14 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         lock (_gate)
         {
             ValidateOpen();
-            if (_state.Status != GraphicsDeviceServiceStatus.Ready || _current is null || _current.Owner.Device.Status != GraphicsDeviceStatus.Ready)
+            if (_state.Status != GraphicsDeviceServiceStatus.Ready || _current is null || _current.Device.Status != GraphicsDeviceStatus.Ready)
             {
                 throw new GraphicsDeviceUnavailableException(_state);
             }
 
             Entry entry = _current;
             entry.Leases = checked(entry.Leases + 1);
-            return ValueTask.FromResult(new GraphicsDeviceLease(entry.Owner.Device, _state, () => Release(entry)));
+            return ValueTask.FromResult(new GraphicsDeviceLease(entry.Device, _state, () => Release(entry)));
         }
     }
 
@@ -63,7 +63,7 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         {
             ValidateOpen();
             entry = _entries.Find(x => x.Epoch == epoch) ?? throw new ArgumentException("Unknown retained epoch.", nameof(epoch));
-            if (entry.Owner.Device.Status != GraphicsDeviceStatus.Lost || entry.Cleaning)
+            if (entry.Device.Status != GraphicsDeviceStatus.Lost || entry.Cleaning)
             {
                 throw new InvalidOperationException("Epoch is not available for loss retirement confirmation.");
             }
@@ -176,22 +176,23 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         {
             IGraphicsDeviceOwner owner = await _factory.CreateAsync();
             ArgumentNullException.ThrowIfNull(owner);
-            ArgumentNullException.ThrowIfNull(owner.Device);
+            IGraphicDevice device = owner.Device;
+            ArgumentNullException.ThrowIfNull(device);
             Entry entry;
             lock (_gate)
             {
                 ulong epoch = checked(_state.Epoch + 1);
-                entry = new(owner, epoch);
+                entry = new(owner, device, epoch);
                 entry.Handler = (_, _) => OnLost(entry);
                 _entries.Add(entry);
                 _current = entry;
                 _state = _state with { Epoch = epoch };
             }
 
-            owner.Device.DeviceLost += entry.Handler;
+            entry.Device.DeviceLost += entry.Handler;
             lock (_gate)
             {
-                if (owner.Device.Status != GraphicsDeviceStatus.Ready)
+                if (entry.Device.Status != GraphicsDeviceStatus.Ready)
                 {
                     ChangeState(GraphicsDeviceServiceStatus.Failed);
                     throw new GraphicsDeviceUnavailableException(_state);
@@ -202,7 +203,7 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
             }
 
             // Catch a loss racing with subscription or the Ready publication.
-            if (owner.Device.Status == GraphicsDeviceStatus.Lost)
+            if (entry.Device.Status == GraphicsDeviceStatus.Lost)
             {
                 OnLost(entry);
             }
@@ -254,7 +255,7 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
     {
         try
         {
-            await entry.Owner.Device.WaitForRetirementAsync(cancellationToken);
+            await entry.Device.WaitForRetirementAsync(cancellationToken);
         }
         finally
         {
@@ -280,13 +281,13 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
             foreach (Entry entry in candidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (entry.Owner.Device.Status == GraphicsDeviceStatus.Lost)
+                if (entry.Device.Status == GraphicsDeviceStatus.Lost)
                 {
-                    await entry.Owner.Device.WaitForRetirementAsync(cancellationToken);
+                    await entry.Device.WaitForRetirementAsync(cancellationToken);
                 }
 
                 await entry.Owner.DisposeAsync();
-                entry.Owner.Device.DeviceLost -= entry.Handler;
+                entry.Device.DeviceLost -= entry.Handler;
                 lock (_gate)
                 {
                     _entries.Remove(entry);
@@ -340,9 +341,11 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         }
     }
 
-    private sealed class Entry(IGraphicsDeviceOwner owner, ulong epoch)
+    private sealed class Entry(IGraphicsDeviceOwner owner, IGraphicDevice device, ulong epoch)
     {
         internal IGraphicsDeviceOwner Owner { get; } = owner;
+
+        internal IGraphicDevice Device { get; } = device;
 
         internal ulong Epoch { get; } = epoch;
 

@@ -96,6 +96,39 @@ public sealed class DeviceServiceTests
         Assert.Equal(GraphicsDeviceServiceStatus.Ready, service.State.Status);
     }
 
+    /// <summary>Cleanup does not access a disposed owner or dispose a released epoch twice.</summary>
+    /// <param name="loseDevice">Whether the epoch is retired after a loss before the scope closes.</param>
+    /// <returns>Completion of the scenario.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OwnerMayRejectDeviceAccessAfterDisposalAsync(bool loseDevice)
+    {
+        var state = new TestFactoryState { WrapDeviceOwner = true };
+        await using ServiceProvider provider = CreateProvider(state);
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        await service.InitializeAsync();
+        using (GraphicsDeviceLease lease = await service.AcquireAsync())
+        {
+            Assert.Same(state.Devices[0], lease.Device);
+        }
+
+        if (loseDevice)
+        {
+            state.Devices[0].Lose();
+            await service.WaitForRetirementAsync(service.State.Epoch);
+            Assert.Equal(1, await service.RetireAsync());
+            Assert.Equal(0, await service.RetireAsync());
+        }
+
+        await scope.DisposeAsync();
+        Assert.Equal(GraphicsDeviceServiceStatus.Disposed, service.State.Status);
+        Assert.Equal(1, state.Devices[0].Disposals);
+        await service.DisposeAsync();
+        Assert.Equal(1, state.Devices[0].Disposals);
+    }
+
     /// <summary>Failed factories and already lost returned devices never become Ready.</summary>
     /// <returns>Completion of the scenario.</returns>
     [Fact]

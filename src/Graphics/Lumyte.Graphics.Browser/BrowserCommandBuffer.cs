@@ -212,12 +212,12 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (State == CommandBufferState.Disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
         {
             throw new InvalidOperationException("End the pass before disposal.");

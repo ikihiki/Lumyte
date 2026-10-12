@@ -102,12 +102,12 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");

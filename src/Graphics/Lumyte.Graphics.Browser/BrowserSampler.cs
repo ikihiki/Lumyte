@@ -31,12 +31,12 @@ internal sealed class BrowserSampler : IGraphicsSampler
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         _native.Dispose();
         _disposed = true;
     }

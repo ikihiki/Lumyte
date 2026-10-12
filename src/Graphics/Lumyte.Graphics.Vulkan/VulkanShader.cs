@@ -50,12 +50,12 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         _owner.Api.DestroyShaderModule(_owner.NativeDevice, _native, null);
         _disposed = true;
     }

@@ -121,7 +121,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_surfaceFrame != null)
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
@@ -149,12 +148,12 @@ internal sealed class WgpuTexture : IGraphicsTexture
 
     internal void DisposeLease()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         _native.Dispose();
         _disposed = true;
     }

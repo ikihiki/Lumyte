@@ -52,12 +52,12 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
 
     public unsafe void Dispose()
     {
-        Owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        Owner.ValidateDisposal();
         WGPU.wgpuSurfaceUnconfigure(_surface.Native.Handle);
         _disposed = true;
     }

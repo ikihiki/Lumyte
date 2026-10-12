@@ -60,12 +60,12 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         _owner.Api.DestroySampler(_owner.NativeDevice, _native, null);
         _disposed = true;
     }

@@ -33,8 +33,15 @@ export async function createDevice() {
             copyBytesPerRowAlignment: 256,
             storageBufferOffsetAlignment: limits.minStorageBufferOffsetAlignment,
         });
-        const handle = { device, caps, disposed: false, lost: false, loss: null, lostPromise: null };
-        handle.lostPromise = device.lost.then(info => { handle.lost = true; handle.loss = info; });
+        const handle = { device, caps, disposed: false, lost: false, loss: null, lostPromise: null, pendingSubmissions: new Set(), submissionLoss: null };
+        handle.lostPromise = device.lost.then(info => {
+            handle.lost = true;
+            handle.loss = info;
+            failPendingSubmissions(handle, new Error(getDeviceLossMessage(handle)));
+        }, error => {
+            failPendingSubmissions(handle, error);
+            throw error;
+        });
         return handle;
     } catch (error) {
         device.destroy();
@@ -196,12 +203,26 @@ export function endComputePass(pass) { pass.end(); }
 export function finishCommands(encoder) { return encoder.finish(); }
 export function createCommandList() { return []; }
 export function addCommand(list, commands) { list.push(commands); }
+function failPendingSubmissions(handle, error) {
+    handle.submissionLoss = { error };
+    for (const finish of handle.pendingSubmissions) finish(2, error);
+}
 export function submitCommands(handle, list) {
     handle.device.queue.submit(list);
+    const completion = handle.device.queue.onSubmittedWorkDone();
     const result = { status: 0, error: "", promise: null };
-    result.promise = Promise.race([handle.device.queue.onSubmittedWorkDone(), handle.lostPromise.then(() => { throw new Error(getDeviceLossMessage(handle)); })]).then(
-        () => { result.status = 1; },
-        error => { result.status = 2; result.error = String(error); });
+    // A per-submission lostPromise reaction would retain completed work until device loss.
+    result.promise = new Promise(resolve => {
+        const finish = (status, error) => {
+            if (!handle.pendingSubmissions.delete(finish)) return;
+            result.status = status;
+            if (status === 2) result.error = String(error);
+            resolve();
+        };
+        handle.pendingSubmissions.add(finish);
+        completion.then(() => finish(1), error => finish(2, error));
+        if (handle.submissionLoss !== null) finish(2, handle.submissionLoss.error);
+    });
     return result;
 }
 export function getSubmissionStatus(result) { return result.status; }

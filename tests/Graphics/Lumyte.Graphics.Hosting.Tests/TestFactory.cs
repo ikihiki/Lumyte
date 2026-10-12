@@ -23,6 +23,6 @@ internal sealed class TestFactory(TestFactoryState state) : IGraphicsDeviceFacto
             device.Lose();
         }
 
-        return device;
+        return state.WrapDeviceOwner ? new TestDeviceOwner(device) : device;
     }
 }

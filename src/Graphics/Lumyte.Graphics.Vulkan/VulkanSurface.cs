@@ -91,12 +91,12 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         _owner.Presentation.Surface.DestroySurface(_owner.NativeInstance, _native, null);
         _disposed = true;
     }

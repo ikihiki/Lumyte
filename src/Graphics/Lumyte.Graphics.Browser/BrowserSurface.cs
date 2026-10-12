@@ -42,12 +42,12 @@ internal sealed class BrowserSurface : IGraphicsSurface
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         BrowserInterop.DestroySurface(_native);
         _native.Dispose();
         _disposed = true;

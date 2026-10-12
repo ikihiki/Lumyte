@@ -174,7 +174,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public void Dispose()
     {
-        _owner.ValidateDisposal();
         if (_surfaceFrame != null)
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
@@ -209,12 +208,12 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     internal void DisposeLease()
     {
-        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
         }
 
+        _owner.ValidateDisposal();
         if (_surfaceFrame == null)
         {
             _owner.Api.DestroyImage(_owner.NativeDevice, _native, null);
