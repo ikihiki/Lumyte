@@ -31,6 +31,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Worlds/Lumyte.Worlds.csproj" />
     <Project Path="src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <Project Path="src/Core/Lumyte.Settings/Lumyte.Settings.csproj" />
     <Project Path="src/Core/Lumyte.Core/Lumyte.Core.csproj" />
@@ -73,6 +74,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Settings.Tests/Lumyte.Settings.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
