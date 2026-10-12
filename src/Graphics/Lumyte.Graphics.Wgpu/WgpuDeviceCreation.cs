@@ -56,7 +56,17 @@ internal sealed class WgpuDeviceCreation
             throw new InvalidOperationException($"WebGPU device creation failed: {_status}.");
         }
 
-        return Wrap((WGPUDeviceImpl*)_native, instance);
+        try
+        {
+            return Wrap((WGPUDeviceImpl*)_native, instance);
+        }
+        catch
+        {
+            WGPU.wgpuDeviceRelease((WGPUDeviceImpl*)_native);
+            instance.ProcessEvents();
+            Release();
+            throw;
+        }
     }
 
     internal void Attach(GraphicsDeviceLifetime lifetime)

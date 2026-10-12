@@ -12,6 +12,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Device _device;
     private readonly WgpuDeviceCreation _creation;
     private readonly GraphicsDeviceLifetime _lifetime;
+    private readonly object _requestGate = new();
     private readonly List<Func<bool>> _pendingRequests = [];
     private bool _disposed;
 
@@ -80,16 +81,18 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         var instance = A.Instance.Create();
         A.Adapter? adapter = null;
         A.Device? device = null;
+        var creation = new WgpuDeviceCreation();
         try
         {
             adapter = instance.RequestAdapterBlocking();
-            var creation = new WgpuDeviceCreation();
             device = creation.Create(instance, adapter);
             return new(instance, adapter, device, creation);
         }
         catch
         {
             device?.Dispose();
+            instance.ProcessEvents();
+            creation.Release();
             adapter?.Dispose();
             instance.Dispose();
             throw;
@@ -332,7 +335,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _lifetime.ValidateRetirement();
 
         // Native loss ends GPU use, but request callbacks still own their status slots.
-        while (_pendingRequests.Any(isComplete => !isComplete()))
+        while (HasPendingRequests())
         {
             ProcessEvents();
             await Task.Delay(1, cancellationToken);
@@ -341,9 +344,21 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         _lifetime.ConfirmRetirement();
     }
 
-    internal void TrackRequest(Func<bool> isComplete) => _pendingRequests.Add(isComplete);
+    internal void TrackRequest(Func<bool> isComplete)
+    {
+        lock (_requestGate)
+        {
+            _pendingRequests.Add(isComplete);
+        }
+    }
 
-    internal void UntrackRequest(Func<bool> isComplete) => _pendingRequests.Remove(isComplete);
+    internal void UntrackRequest(Func<bool> isComplete)
+    {
+        lock (_requestGate)
+        {
+            _pendingRequests.Remove(isComplete);
+        }
+    }
 
     internal void ValidateDisposal() => _lifetime.ValidateDisposal();
 
@@ -351,6 +366,14 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     {
         ProcessEvents();
         _lifetime.ValidateAlive();
+    }
+
+    private bool HasPendingRequests()
+    {
+        lock (_requestGate)
+        {
+            return _pendingRequests.Any(isComplete => !isComplete());
+        }
     }
 
     private static void ValidateSurfaceSource(A.SurfaceSource source)
