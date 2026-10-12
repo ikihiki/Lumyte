@@ -44,7 +44,7 @@ public sealed record GaussianBlurEffect : ImageEffectDefinition
         EffectImage input = inputs[0];
 
         context.EnsureAlive();
-        ImageEffectCompiler.ValidateImage(input);
+        ImageEffectRenderGraphExtensions.ValidateImage(input);
         EffectImage output = input;
         int radiusX = ImageEffectGraph.Radius(this.SigmaX);
         int radiusY = ImageEffectGraph.Radius(this.SigmaY);

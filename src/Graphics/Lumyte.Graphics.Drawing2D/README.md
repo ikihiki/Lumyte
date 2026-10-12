@@ -50,7 +50,7 @@ using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
 
 塗りと線は単色、linear/radial/sweep gradient、image pattern、opacity、path clip、transform、layer、COLRv1の全28合成modeを受け付ける。色はstraight sRGBで入力し、描画時はlinear premultiplied RGBAとして評価する。
 
-`BeginLayer` / `EndLayer` はグループ全体へのエフェクトとopacity、`DrawBackdropEffect` はそこまでに描いた背景へのエフェクトを表す。色行列・Gaussian blur・opacity・合成は、2Dと3Dから使える `Lumyte.Graphics.ImageEffects` が処理する。
+`BeginLayer` / `EndLayer` はグループ全体へのエフェクトとopacity、`DrawBackdropEffect` はそこまでに描いた背景へのエフェクトを表す。色行列・Gaussian blur・opacity・合成は、`Lumyte.Graphics.ImageEffects` が提供するRenderGraphの拡張メソッドで同じgraphへパスを追加する。
 
 2D描画とエフェクト適用時の契約、API一覧、共通graphへの接続例は [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-2d-graphics-engine.md) を参照する。画像エフェクト自体の設計とAPIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) に記載する。
 

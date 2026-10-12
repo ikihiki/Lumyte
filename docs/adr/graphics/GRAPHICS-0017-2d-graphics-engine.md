@@ -71,11 +71,11 @@ Save/Restore、変換、ClipRect/ClipPathはCPU状態操作である。BeginLaye
 
 実装の選択は構築時に固定する。CanHandle、候補探索、自動fallback、描画中のDI解決・Type辞書検索は設けない。入力やGPU機能に対応できない場合は準備時に明示的に失敗する。interface呼び出し自体は残るため、インライン化や性能向上は実測前に保証しない。
 
-DrawingCommandRenderers2D.CreateDefault()は登録表と11標準実装を毎回newし、DI・device・GPU資源を必要としない。UseGraphics2Dは11標準描画実装と描画登録表をTryAddScopedする。エフェクトは明示的に生成してImageEffectGraph.Createで組み立て、DIへ登録しない。Append拡張メソッドへ画像とパラメーターを直接渡してパスだけを追加する。
+DrawingCommandRenderers2D.CreateDefault()は登録表と11標準実装を毎回newし、DI・device・GPU資源を必要としない。UseGraphics2Dは11標準描画実装と描画登録表をTryAddScopedする。エフェクトは明示的に生成してImageEffectGraph.Createで組み立て、DIへ登録しない。RenderGraphのAppend拡張メソッドへ画像とパラメーターを直接渡してパスだけを追加する。
 
 外部実装は後続AddScopedの単一解決が優先され、先行登録と再Useも保持する。Graphicsへは解決済み登録表を通常のRenderer2Dコンストラクターへ渡す。
 
-DI経路ではCreateDefaultを呼ばず、各interfaceをコンストラクターへ注入する。登録はprovider構築前に完了させ、既存provider・rendererの設定は後から変更しない。device・renderer・providerは描画登録拡張で生成・解決しない。compiler・効果定義は直接構築する。scopeはdevice単位とし、GPU使用、準備結果、rendererの解放後に破棄する。
+DI経路ではCreateDefaultを呼ばず、各interfaceをコンストラクターへ注入する。登録はprovider構築前に完了させ、既存provider・rendererの設定は後から変更しない。device・renderer・providerは描画登録拡張で生成・解決しない。効果定義は直接構築する。画像処理はRenderGraphの拡張メソッドとして呼び出す。scopeはdevice単位とし、GPU使用、準備結果、rendererの解放後に破棄する。
 
 ### 4. paint・色・外部文字描画
 
@@ -101,11 +101,11 @@ DrawGlyphRunと文字の描画形式選択は外部文字ライブラリが担�
 
 ### 5. エフェクトを考慮したレイヤーと背景描画
 
-画像演算は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) のImageEffectGraphとcompilerへ委譲する。2D側は画像化する内容と適用位置、clip・group opacity、背景snapshot、親への合成を管理する。PaintGraph2Dは図形内部の塗り、ImageEffectGraphは画像化後の処理として分け、paintの隔離合成をレイヤーの画像エフェクトへ置き換えない。
+画像演算は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) のImageEffectGraphとRenderGraphの画像エフェクト拡張へ委譲する。2D側は画像化する内容と適用位置、clip・group opacity、背景snapshot、親への合成を管理する。PaintGraph2Dは図形内部の塗り、ImageEffectGraphは画像化後の処理として分け、paintの隔離合成をレイヤーの画像エフェクトへ置き換えない。
 
 すべての効果を明示的に生成してImageEffectGraph.Createへ渡し、同じEffectsへ指定できる。2Dは効果の種類を固定せず、定義が返す出力範囲と必要入力範囲を使ってレイヤー合成と背景取得を行う。独自効果を追加しても11描画命令やレイヤーAPIの変更は不要であり、固定のAppendPassesを持つエフェクトのgraphを利用者が渡す。実装を変える場合は新しいエフェクト型を追加し、レンダラーの差し替えは行わない。
 
-レイヤーと背景はDisplayLinearのlinear premultiplied Rgba16Float画像として、原点と有限範囲を保って渡す。coverageや距離場は先に色画像へ描画し、SDF値自体をfilterへ渡さない。効果で拡張された出力範囲を親の描画先へ戻し、背景取得にはGetRequiredSourceBoundsで求めた必要入力範囲を使う。エフェクトのpassは2Dと同じRenderGraphへ追加し、単独利用でも共有graphでも描画順と資源依存を保持する。
+レイヤーと背景はDisplayLinearのlinear premultiplied Rgba16Float画像として、原点と有限範囲を保って渡す。coverageや距離場は先に色画像へ描画し、SDF値自体をfilterへ渡さない。効果で拡張された出力範囲を親の描画先へ戻し、背景取得にはImageEffectGraph.GetRequiredSourceBoundsで求めた必要入力範囲を使う。エフェクトはgraph.AppendEffectsとgraph.AppendOpacityで2Dと同じRenderGraphへパスを追加し、単独利用でも共有graphでも描画順と資源依存を保持する。
 
 BeginLayerは有限のContentBounds、Effects、Opacity、任意のOutputClipをsnapshotする。内容を透明面へ描き、EndLayerで次の順に処理して開始時の状態へ戻す。
 
@@ -209,7 +209,7 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 
 ## API・詳細契約・利用例
 
-比較元は先行エフェクトブランチ `feat/image-effects` のrevision `f3a4392`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元は先行エフェクトブランチ `feat/image-effects` のrevision `82a35ba`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
 RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectGraph・ImageEffectDefinition・Append拡張メソッドの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
 
@@ -462,7 +462,7 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    }
 +    public sealed class Renderer2D : IDisposable
 +    {
-+        // deviceは借用。グループ透明度はAppendOpacityへ画像とopacityを直接渡して追加する。
++        // deviceは借用。グループ透明度はRenderGraph.AppendOpacityへ画像とopacityを直接渡して追加する。
 +        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers);
 +        // 単独実行の便利API。私有graphへimport→AppendPassesAsync→Compileを行う。
 +        // submit/waitは行わない。キャンセル時は内部確保を解放する。

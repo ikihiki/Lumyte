@@ -15,7 +15,6 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
     private static readonly BarrierScope _imageScope = new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-    private readonly ImageEffectCompiler _effects = new(device);
     private bool _disposed;
     private int _preparing;
 
@@ -439,12 +438,12 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
         RenderTargetBinding2D target = CreateIntermediate(graph, bounds, parent.Target.PixelScale, "drawing2d.layer");
         AppendClear(graph, target);
         await AppendCommandsAsync(graph, list, begin, end, target with { LoadOp = AttachmentLoadOp.Load }, parent.Bindings, owner, cancellationToken).ConfigureAwait(false);
-        PreparedImageEffect effect = _effects.AppendPasses(graph, layer.Options.Effects, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear));
+        PreparedImageEffect effect = graph.AppendEffects(layer.Options.Effects, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear));
         owner.Own(effect);
         EffectImage output = effect.Output;
         if (layer.Options.Opacity != 1)
         {
-            PreparedImageEffect faded = _effects.AppendOpacity(graph, output, layer.Options.Opacity);
+            PreparedImageEffect faded = graph.AppendOpacity(output, layer.Options.Opacity);
             owner.Own(faded);
             output = faded.Output;
         }
@@ -468,7 +467,7 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
             return;
         }
 
-        EffectPixelRect captureBounds = Union(outputBounds, _effects.GetRequiredSourceBounds(command.Options.Effects, outputBounds));
+        EffectPixelRect captureBounds = Union(outputBounds, command.Options.Effects.GetRequiredSourceBounds(outputBounds));
         RenderTargetBinding2D capture = CreateIntermediate(context.Graph, captureBounds, context.Target.PixelScale, "drawing2d.backdrop.snapshot");
         AppendClear(context.Graph, capture);
         var captureContext = new RenderPreparationContext2D(_device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load });
@@ -477,7 +476,7 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
         IPreparedCommandBatch2D snapshot = await DrawingGraphCompositor.PrepareAsync(captureContext, targetSource, emptyState, replace: true, ct: cancellationToken).ConfigureAwait(false);
         owner.Own(snapshot);
         snapshot.AppendPasses(context.Graph, captureContext.Target);
-        PreparedImageEffect effect = _effects.AppendPasses(context.Graph, command.Options.Effects, new EffectImage(capture.Texture, captureBounds, EffectColorSemantic.DisplayLinear));
+        PreparedImageEffect effect = context.Graph.AppendEffects(command.Options.Effects, new EffectImage(capture.Texture, captureBounds, EffectColorSemantic.DisplayLinear));
         owner.Own(effect);
         var original = new GraphImageSource2D(capture.Texture, capture.Description, captureBounds);
         IPreparedCommandBatch2D replacement = await DrawingGraphCompositor.PrepareAsync(context, ImageSource(effect.Output), WithClip(command.State, output), original: original, replace: true, ct: cancellationToken).ConfigureAwait(false);

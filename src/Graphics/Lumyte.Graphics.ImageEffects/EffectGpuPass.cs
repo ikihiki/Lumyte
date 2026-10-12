@@ -15,8 +15,8 @@ internal static class EffectGpuPass
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(graph);
         owner.EnsureAlive();
-        ImageEffectCompiler.ValidateImage(input);
-        ImageEffectCompiler.ValidateImage(backdrop);
+        ImageEffectRenderGraphExtensions.ValidateImage(input);
+        ImageEffectRenderGraphExtensions.ValidateImage(backdrop);
         if (input.ColorSemantic != backdrop.ColorSemantic)
         {
             throw new ArgumentException("Effect inputs must have the same color semantic.", nameof(backdrop));

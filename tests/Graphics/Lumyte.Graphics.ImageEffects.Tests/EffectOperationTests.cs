@@ -9,15 +9,15 @@ namespace Lumyte.Graphics.ImageEffects.Tests;
 /// <summary>Checks self-contained user effects and direct pass appending without renderer replacement.</summary>
 public sealed class EffectOperationTests
 {
-    /// <summary>Checks every pass extension rejects a missing compiler before touching the graph.</summary>
+    /// <summary>Checks every pass extension rejects a missing RenderGraph before touching the graph.</summary>
     [Fact]
-    public void AppendExtensionsRejectNullCompiler()
+    public void AppendExtensionsRejectNullGraph()
     {
-        ImageEffectCompiler compiler = null!;
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendGaussianBlur(null!, default, 0, 0));
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendOpacity(null!, default, 1));
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendColorMatrix(null!, default, new(new float[20])));
-        Assert.Throws<ArgumentNullException>(() => compiler.AppendComposite(null!, default, default, EffectCompositeMode.Plus));
+        Graph graph = null!;
+        Assert.Throws<ArgumentNullException>(() => graph.AppendGaussianBlur(default, 0, 0));
+        Assert.Throws<ArgumentNullException>(() => graph.AppendOpacity(default, 1));
+        Assert.Throws<ArgumentNullException>(() => graph.AppendColorMatrix(default, new(new float[20])));
+        Assert.Throws<ArgumentNullException>(() => graph.AppendComposite(default, default, EffectCompositeMode.Plus));
     }
 
     /// <summary>Checks pass extensions return graph-local outputs instead of new effect graphs.</summary>
@@ -26,8 +26,19 @@ public sealed class EffectOperationTests
     {
         var graph = new Graph(Device());
         EffectImage source = Source(graph);
-        using PreparedImageEffect owner = Compiler().AppendGaussianBlur(graph, source, 0, 0);
+        using PreparedImageEffect owner = graph.AppendGaussianBlur(source, 0, 0);
         Assert.Equal(source, owner.Output);
+        using CompiledRenderGraph plan = graph.Compile();
+        Assert.Empty(plan.PassNames);
+    }
+
+    /// <summary>Checks graph extensions require the graph's own device, even for an input-free generator.</summary>
+    [Fact]
+    public void EffectPassesRequireRenderGraphDevice()
+    {
+        var graph = new Graph();
+        Assert.Null(graph.Device);
+        Assert.Throws<InvalidOperationException>(() => graph.AppendEffect(new Generator(new(0, 0, 2, 3))));
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Empty(plan.PassNames);
     }
@@ -59,7 +70,7 @@ public sealed class EffectOperationTests
         var left = ImageEffectGraph.Create(new Translation(-10, 0), blurred);
         var right = ImageEffectGraph.Create(new Translation(10, 0), blurred);
         var effect = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.SrcOver), left, right);
-        Assert.Equal(new EffectPixelRect(-13, -6, 27, 13), Compiler().GetRequiredSourceBounds(effect, new(0, 0, 1, 1)));
+        Assert.Equal(new EffectPixelRect(-13, -6, 27, 13), effect.GetRequiredSourceBounds(new(0, 0, 1, 1)));
     }
 
     /// <summary>Checks direct appending adds multiple passes and owns resources until disposal.</summary>
@@ -70,7 +81,7 @@ public sealed class EffectOperationTests
         var effect = new Translation(3, -4, resource, AddPasses: true);
         var graph = new Graph(Device());
         EffectImage source = Source(graph);
-        PreparedImageEffect owner = Compiler().AppendEffect(graph, effect, source);
+        PreparedImageEffect owner = graph.AppendEffect(effect, source);
         Assert.Equal(source.Bounds.Offset(3, -4), owner.Output.Bounds);
         using (CompiledRenderGraph plan = graph.Compile())
         {
@@ -98,8 +109,8 @@ public sealed class EffectOperationTests
         var graph = new Graph(Device());
         EffectImage source = Source(graph);
         Assert.Throws<InvalidOperationException>(() => direct
-            ? Compiler().AppendEffect(graph, effect, source)
-            : Compiler().AppendPasses(graph, ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source));
+            ? graph.AppendEffect(effect, source)
+            : graph.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source));
         Assert.Equal(1, resource.Disposals);
     }
 
@@ -109,12 +120,12 @@ public sealed class EffectOperationTests
     {
         var graph = new Graph(Device());
         var effect = new Translation(0, 0);
-        Assert.Throws<ArgumentNullException>(() => Compiler().AppendEffect(null!, effect, Source(graph)));
-        Assert.Throws<ArgumentNullException>(() => Compiler().AppendEffect(graph, null!, Source(graph)));
-        Assert.Throws<ArgumentException>(() => Compiler().AppendEffect(graph, effect));
-        Assert.Throws<ArgumentNullException>(() => Compiler().AppendEffect(graph, effect, default(EffectImage)));
+        Assert.Throws<ArgumentNullException>(() => ((Graph)null!).AppendEffect(effect, Source(graph)));
+        Assert.Throws<ArgumentNullException>(() => graph.AppendEffect(null!, Source(graph)));
+        Assert.Throws<ArgumentException>(() => graph.AppendEffect(effect));
+        Assert.Throws<ArgumentNullException>(() => graph.AppendEffect(effect, default(EffectImage)));
         EffectImage source = Source(graph);
-        Assert.Throws<ArgumentException>(() => Compiler().AppendComposite(graph, source, source with { ColorSemantic = EffectColorSemantic.SceneLinear }, EffectCompositeMode.Plus));
+        Assert.Throws<ArgumentException>(() => graph.AppendComposite(source, source with { ColorSemantic = EffectColorSemantic.SceneLinear }, EffectCompositeMode.Plus));
     }
 
     /// <summary>Checks generators need no source region and preserve the requested graph color semantic.</summary>
@@ -124,11 +135,11 @@ public sealed class EffectOperationTests
         var effect = new Generator(new(-5, 9, 2, 3));
         var snapshot = ImageEffectGraph.Create(effect);
         var graph = new Graph(Device());
-        using PreparedImageEffect owner = Compiler().AppendPasses(graph, snapshot, Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear });
+        using PreparedImageEffect owner = graph.AppendEffects(snapshot, Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear });
         Assert.Equal(effect.Bounds, owner.Output.Bounds);
         Assert.Equal(EffectColorSemantic.SceneLinear, owner.Output.ColorSemantic);
-        Assert.Equal(new EffectPixelRect(7, 8, 0, 0), Compiler().GetRequiredSourceBounds(snapshot, new(7, 8, 1, 1)));
-        using PreparedImageEffect direct = Compiler().AppendEffect(graph, effect);
+        Assert.Equal(new EffectPixelRect(7, 8, 0, 0), snapshot.GetRequiredSourceBounds(new(7, 8, 1, 1)));
+        using PreparedImageEffect direct = graph.AppendEffect(effect);
         Assert.Equal(effect.Bounds, direct.Output.Bounds);
     }
 
@@ -145,10 +156,8 @@ public sealed class EffectOperationTests
         Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(new Translation(0, 0), snapshot));
         ImageEffectGraph[] children = Enumerable.Range(0, 4096).Select(_ => ImageEffectGraph.Source()).ToArray();
         var wide = ImageEffectGraph.Create(new ManyInputs(children.Length), children);
-        Assert.Throws<NotSupportedException>(() => Compiler().GetRequiredSourceBounds(wide, new(0, 0, 1, 1)));
+        Assert.Throws<NotSupportedException>(() => wide.GetRequiredSourceBounds(new(0, 0, 1, 1)));
     }
-
-    private static ImageEffectCompiler Compiler() => new(Device());
 
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
