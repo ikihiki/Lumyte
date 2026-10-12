@@ -13,5 +13,6 @@
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </ItemGroup>
 </Project>

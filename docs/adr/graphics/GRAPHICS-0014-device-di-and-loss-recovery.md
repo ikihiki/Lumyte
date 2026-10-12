@@ -17,6 +17,8 @@ GPUステージに生成済みIGraphicDeviceを直接注入すると、DI scope�
 
 backend具象型はIGraphicDeviceを直接実装する。Status・loss通知・lost後の退役確認をGraphics.Abstractionsへ追加する。backendのNative APIをforwardする共通device wrapperは作らない。
 
+各backendが共通して使う保存済み状態とloss通知の実装は `Lumyte.Graphics.Shared` の `GraphicsDeviceLifetime` に置く。backendはSharedの公開APIを直接使用し、assembly間の内部公開は行わない。
+
 DI登録・async初期化・世代の所有を `src/Graphics/Lumyte.Graphics.Hosting/`、名前空間・パッケージ名 `Lumyte.Graphics.Hosting` に置く。Hostingは標準DIとAbstractionsに依存するが、特定backendやResourcesには依存しない。
 
 backendまたはアプリがIGraphicsDeviceFactoryをDI登録する。factoryのconstructorでbackend固有のoptions、adapter選択、表示先、必要なdispatcherを受け取る。共通DeviceDesc、backend列挙、自動backend選択をAbstractionsへ追加しない。factoryは固有生成APIを使い、具体的な所有者をIGraphicsDeviceOwnerとして返す。ownerは寿命だけを包み、Deviceは実際のbackend instanceである。

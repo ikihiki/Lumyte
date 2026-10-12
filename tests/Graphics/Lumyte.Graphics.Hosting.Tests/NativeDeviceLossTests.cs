@@ -1,8 +1,10 @@
+using System.Runtime.CompilerServices;
 using Ahjo.Wgpu.Native;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
+using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Hosting.Tests;
 
@@ -50,8 +52,8 @@ public sealed class NativeDeviceLossTests
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         int notifications = 0;
         device.DeviceLost += (_, _) => notifications++;
-        Assert.Throws<GraphicsDeviceLostException>(() => device.CheckResult(Silk.NET.Vulkan.Result.ErrorDeviceLost, "Injected native result"));
-        device.ReportLoss("Repeated native result");
+        Assert.Throws<GraphicsDeviceLostException>(() => CheckResult(device, Silk.NET.Vulkan.Result.ErrorDeviceLost, "Injected native result"));
+        ReportLoss(device, "Repeated native result");
         Assert.Equal(1, notifications);
         Assert.Equal(SubmissionStatus.Failed, submission.Status);
         Assert.Equal(CommandBufferState.Faulted, commands.State);
@@ -74,21 +76,31 @@ public sealed class NativeDeviceLossTests
     public async Task VulkanRepeatedDisposalAfterLossIsIdempotentAsync()
     {
         using var device = VulkanDevice.Create();
-        await AssertRepeatedDisposalAsync(device, () => device.ReportLoss("Injected loss after resource disposal"));
+        await AssertRepeatedDisposalAsync(device, () => ReportLoss(device, "Injected loss after resource disposal"));
     }
 
     internal static unsafe void Destroy(WgpuDevice device)
     {
-        WGPU.wgpuDeviceDestroy(device.NativeDevice.Handle);
+        A.Device nativeDevice = GetNativeDevice(device);
+        WGPU.wgpuDeviceDestroy(nativeDevice.Handle);
 
         // wgpu-native reports the destroyed-device error at the next native operation.
         var desc = new WGPUCommandEncoderDescriptor { label = new() { length = nuint.MaxValue } };
-        WGPUCommandEncoderImpl* encoder = WGPU.wgpuDeviceCreateCommandEncoder(device.NativeDevice.Handle, &desc);
+        WGPUCommandEncoderImpl* encoder = WGPU.wgpuDeviceCreateCommandEncoder(nativeDevice.Handle, &desc);
         if (encoder != null)
         {
             WGPU.wgpuCommandEncoderRelease(encoder);
         }
     }
+
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_NativeDevice")]
+    private static extern A.Device GetNativeDevice(WgpuDevice device);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "CheckResult")]
+    private static extern void CheckResult(VulkanDevice device, Silk.NET.Vulkan.Result result, string operation);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "ReportLoss")]
+    private static extern void ReportLoss(VulkanDevice device, string message);
 
     private static async Task AssertRepeatedDisposalAsync(IGraphicDevice device, Action lose)
     {
