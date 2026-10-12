@@ -5,8 +5,8 @@
 ライブラリが提供するColorMatrix・GaussianBlur・Opacity・Compositeも同じ仕組みを使います。
 
 ```csharp
-var effect = ImageEffectGraph.Create(definition, renderer, ImageEffectGraph.Source());
 var compiler = new ImageEffectCompiler(device);
+var effect = compiler.Effect(definition, renderer, ImageEffectGraph.Source());
 var owner = compiler.AppendPasses(graph, effect, source);
 ```
 
@@ -15,18 +15,17 @@ var owner = compiler.AppendPasses(graph, effect, source);
 子graphは0個以上で、0入力では画像生成もできます。出力は定義の範囲と
 `EffectPreparationContext.ColorSemantic` を保持します。共有nodeは一度だけ展開します。
 
-提供する4種類の便利factoryも `Create` を呼びます。rendererを省略すると提供実装を新しく生成し、
-明示的に渡すとそのrendererを構築時に固定します。新しい効果は定義・renderer・必要ならfactoryを追加して提供でき、
-compilerの変更や固定登録表を必要としません。
+提供する4種類もcompilerの拡張メソッドで組み立てます。rendererを省略すると提供実装を新しく生成し、
+直接渡すとそのrendererをgraph構築時に固定します。設定用のDIパッケージや登録APIはありません。
+新しい効果は定義・rendererとcompilerをreceiverにした拡張メソッドを追加して提供できます。
 
 ```csharp
-var renderer = scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<OpacityEffect>>();
-var effect = ImageEffectGraph.Create(new OpacityEffect(0.5f), renderer, ImageEffectGraph.Source());
-// 同じ組立経路を使う便利factory。
-var same = ImageEffectGraph.Opacity(0.5f, ImageEffectGraph.Source(), renderer);
+var faded = compiler.Opacity(0.5f, effect, new DefaultOpacityEffectRenderer());
+var blurred = compiler.GaussianBlur(3, 3, faded);
+var owner = compiler.AppendPasses(graph, blurred, source);
 ```
 
-DIなしでもrendererを直接生成して同じCreateへ渡します。型の探索、CanHandle、記録中のDI解決はありません。
+拡張メソッドはgraphの組立だけを行います。GPUパスはAppendPassesが追加し、compilerはSubmitしません。
 spanをcallbackへ保持せず、必要なhandle・値をコピーし、固定GPU資源は `context.Own` へ移してください。
 呼び出し側がSubmitと完了待機を行い、commandとcompiled planの解放後に `PreparedImageEffect.Dispose()` を呼びます。
 失敗したAppend後はRenderGraph全体を破棄してください。

@@ -35,7 +35,6 @@
   </Folder>
   <Folder Name="/src/Graphics/">
     <Project Path="src/Graphics/Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
-    <Project Path="src/Graphics/Lumyte.Graphics.ImageEffects.DependencyInjection/Lumyte.Graphics.ImageEffects.DependencyInjection.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
