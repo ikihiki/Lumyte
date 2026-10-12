@@ -17,6 +17,10 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [OpenAL オーディオ](src/Audio/Lumyte.Audio.OpenAL/README.md)／[Web Audio](src/Audio/Lumyte.Audio.Browser/README.md)／[共通 API](src/Audio/Lumyte.Audio.Abstractions/README.md)
 - [オーディオ機構の設計](docs/adr/audio/AUDIO-0001-audio-system.md)
 - [Input システムの設計](docs/adr/input/INPUT-0001-input-system.md)
+- [Input の取得契約の分離](docs/adr/input/INPUT-0005-input-abstractions.md)
+- [Platform・IWindow の設計](docs/adr/platform/PLATFORM-0001-platform-and-window-contracts.md)／[Window契約の分離と任意の Windowing 管理](docs/adr/window/WINDOW-0001-window-system.md)
+- [Windowing の利用方法](docs/adr/window/WINDOW-0001-window-system.md#利用例)／[Windows の単一 Window サンプル](samples/Lumyte.Platform.Windows.Sample/README.md)
+- [Clipboard の設計](docs/adr/platform/PLATFORM-0002-clipboard.md)
 - [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 

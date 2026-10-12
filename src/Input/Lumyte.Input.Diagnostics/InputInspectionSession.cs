@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using Lumyte.Input.Abstractions;
 using Lumyte.Input.Actions;
 
 namespace Lumyte.Input.Diagnostics;

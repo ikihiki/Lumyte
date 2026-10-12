@@ -56,12 +56,15 @@ Lumyte/
 │   │   ├── Lumyte.Graphics.Vulkan.Native/
 │   │   └── Lumyte.Graphics.WebGPU/
 │   ├── Input/
+│   │   ├── Lumyte.Input.Abstractions/
 │   │   ├── Lumyte.Input/
 │   │   ├── Lumyte.Input.Processing/
 │   │   ├── Lumyte.Input.Actions/
 │   │   └── Lumyte.Input.Settings/
 │   └── Platform/
-│       ├── Lumyte.Platform/
+│       ├── Lumyte.Platform.Abstractions/
+│       ├── Lumyte.Windowing.Abstractions/
+│       ├── Lumyte.Windowing/
 │       ├── Lumyte.Platform.Windows/
 │       ├── Lumyte.Platform.Linux/
 │       └── Lumyte.Platform.Browser/
