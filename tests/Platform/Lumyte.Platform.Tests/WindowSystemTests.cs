@@ -107,11 +107,11 @@ public sealed class WindowSystemTests
         });
         popup.Place(new WindowPlacement(new WindowRect(90, 90, 10, 10), WindowPlacementSide.Below));
         system.Update();
-        Assert.Equal(new WindowRect(70, 70, 30, 20), popup.State.Bounds);
+        Assert.Equal(new WindowRect(70, 70, 30, 20), popup.Bounds);
         root.NativeWindow.Resize(new Vector2(60, 60));
         platform.PumpEvents();
         system.Update();
-        Assert.Equal(new WindowRect(30, 40, 30, 20), popup.State.Bounds);
+        Assert.Equal(new WindowRect(30, 40, 30, 20), popup.Bounds);
     }
 
     /// <summary>Checks physical child closure before parent closure and deferred native retention.</summary>
@@ -161,11 +161,11 @@ public sealed class WindowSystemTests
         WindowNodeRequestId show = root.Show();
         system.Update();
         Assert.Empty(results);
-        Assert.False(root.State.IsVisible);
+        Assert.False(root.IsVisible);
         platform.PumpEvents();
         system.Update();
         Assert.Equal(show, Assert.Single(results).Request);
-        Assert.True(root.State.IsVisible);
+        Assert.True(root.IsVisible);
     }
 
     /// <summary>Checks that hidden temporary regions terminate while ordinary children remain.</summary>
@@ -193,14 +193,14 @@ public sealed class WindowSystemTests
         system.Update();
         platform.PumpEvents();
         system.Update();
-        Assert.Throws<KeyNotFoundException>(() => popup.State);
-        Assert.True(child.State.IsVisible);
-        Assert.False(child.State.IsEffectivelyVisible);
+        Assert.Throws<KeyNotFoundException>(() => popup.IsVisible);
+        Assert.True(child.IsVisible);
+        Assert.False(child.IsEffectivelyVisible);
         root.Show();
         system.Update();
         platform.PumpEvents();
         system.Update();
-        Assert.True(child.State.IsEffectivelyVisible);
+        Assert.True(child.IsEffectivelyVisible);
     }
 
     /// <summary>Checks callback isolation and rejection of reentrant mutation.</summary>

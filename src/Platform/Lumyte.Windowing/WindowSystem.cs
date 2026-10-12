@@ -185,7 +185,7 @@ public sealed class WindowSystem : IDisposable
     /// <summary>Returns an immutable observation of a node.</summary>
     /// <param name="node">The management identifier.</param>
     /// <returns>The current snapshot.</returns>
-    internal WindowNodeState GetState(WindowNodeId node) => Snapshot(GetNode(node));
+    internal WindowNodeSnapshot GetSnapshot(WindowNodeId node) => Snapshot(GetNode(node));
 
     /// <summary>Borrows a native window for backend-specific operations.</summary>
     /// <param name="node">A native management identifier.</param>
@@ -528,7 +528,7 @@ public sealed class WindowSystem : IDisposable
         return node.Native is not null ? bounds : Intersect(bounds, Clip(_nodes[node.Parent!.Value]));
     }
 
-    private WindowNodeState Snapshot(Node node)
+    private WindowNodeSnapshot Snapshot(Node node)
     {
         Node root = Root(node);
         WindowState native = root.Observed!;
@@ -540,7 +540,7 @@ public sealed class WindowSystem : IDisposable
             effective &= Snapshot(_nodes[node.Parent!.Value]).IsEffectivelyVisible;
         }
 
-        return new WindowNodeState
+        return new WindowNodeSnapshot
         {
             Parent = node.Parent is { } parent ? GetNode(parent).Handle : null,
             PresentationRoot = root.Handle,
@@ -687,7 +687,7 @@ public sealed class WindowSystem : IDisposable
         }
 
         node.Observed = observed;
-        WindowNodeState state = Snapshot(node);
+        WindowNodeSnapshot state = Snapshot(node);
         bool deactivated = node.WasActive && !observed.IsActive;
         node.WasActive = observed.IsActive;
         if ((node.Last?.IsEffectivelyVisible == true && !state.IsEffectivelyVisible) || deactivated)
@@ -894,7 +894,7 @@ public sealed class WindowSystem : IDisposable
             return;
         }
 
-        WindowNodeState snapshot = Snapshot(node);
+        WindowNodeSnapshot snapshot = Snapshot(node);
         if (snapshot != node.Last)
         {
             node.Last = snapshot;
@@ -1000,7 +1000,7 @@ public sealed class WindowSystem : IDisposable
 
         public WindowRequestId? CloseRequest { get; set; }
 
-        public WindowNodeState? Last { get; set; }
+        public WindowNodeSnapshot? Last { get; set; }
 
         public Action<WindowState>? StateHandler { get; set; }
 

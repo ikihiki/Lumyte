@@ -17,8 +17,46 @@ public sealed class WindowNode
 
     internal WindowNodeId Id { get; }
 
-    /// <summary>Gets the current immutable state.</summary>
-    public WindowNodeState State => _system.GetState(Id);
+    private WindowNodeSnapshot Snapshot => _system.GetSnapshot(Id);
+
+    /// <summary>Gets the parent managed window.</summary>
+    public WindowNode? Parent => Snapshot.Parent;
+
+    /// <summary>Gets the native presentation root.</summary>
+    public WindowNode PresentationRoot => Snapshot.PresentationRoot;
+
+    /// <summary>Gets whether this is a native window or hosted region.</summary>
+    public WindowNodeKind Kind => Snapshot.Kind;
+
+    /// <summary>Gets the management role.</summary>
+    public WindowRole Role => Snapshot.Role;
+
+    /// <summary>Gets the ownership policy.</summary>
+    public WindowOwnership Ownership => Snapshot.Ownership;
+
+    /// <summary>Gets the native window identifier for native nodes.</summary>
+    public WindowId? NativeWindowId => Snapshot.NativeWindow;
+
+    /// <summary>Gets the bounds in parent coordinates.</summary>
+    public WindowRect Bounds => Snapshot.Bounds;
+
+    /// <summary>Gets the logical client size.</summary>
+    public Vector2 ClientSize => Snapshot.ClientSize;
+
+    /// <summary>Gets the physical pixel size.</summary>
+    public WindowPixelSize PixelSize => Snapshot.PixelSize;
+
+    /// <summary>Gets the logical-to-physical scale.</summary>
+    public Vector2 Scale => Snapshot.Scale;
+
+    /// <summary>Gets a value indicating whether this node is explicitly visible.</summary>
+    public bool IsVisible => Snapshot.IsVisible;
+
+    /// <summary>Gets a value indicating whether this node and its ancestors are visible.</summary>
+    public bool IsEffectivelyVisible => Snapshot.IsEffectivelyVisible;
+
+    /// <summary>Gets the current lifetime.</summary>
+    public WindowLifetime Lifetime => Snapshot.Lifetime;
 
     /// <summary>Gets the original native window.</summary>
     /// <exception cref="InvalidOperationException">This node is a hosted region.</exception>

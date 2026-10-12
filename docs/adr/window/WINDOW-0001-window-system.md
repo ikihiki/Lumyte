@@ -162,28 +162,22 @@ Native の非対応機能を黙って Hosted に切り替えない。利用側�
 +    public WindowActivation Activation { get; init; } = WindowActivation.Activate;
 +}
 +
-+// System が生成する不変値。Native の実体と観測は IWindow.State を正とする。
-+public sealed record WindowNodeState
-+{
-+    public WindowNode? Parent { get; init; }
-+    public required WindowNode PresentationRoot { get; init; }
-+    public WindowNodeKind Kind { get; init; }
-+    public WindowRole Role { get; init; }
-+    public WindowOwnership Ownership { get; init; }
-+    // Native だけ値を持つ。Hosted を Platform の WindowId として扱わない。
-+    public WindowId? NativeWindow { get; init; }
-+    public WindowRect Bounds { get; init; }
-+    public System.Numerics.Vector2 ClientSize { get; init; }
-+    public WindowPixelSize PixelSize { get; init; }
-+    public System.Numerics.Vector2 Scale { get; init; }
-+    public bool IsVisible { get; init; }
-+    public bool IsEffectivelyVisible { get; init; }
-+    public WindowLifetime Lifetime { get; init; }
-+}
-+
 +public sealed class WindowNode
 +{
-+    public WindowNodeState State { get; }
++    // Native の実体と観測は IWindow.State を正とする。
++    public WindowNode? Parent { get; }
++    public WindowNode PresentationRoot { get; }
++    public WindowNodeKind Kind { get; }
++    public WindowRole Role { get; }
++    public WindowOwnership Ownership { get; }
++    public WindowId? NativeWindowId { get; }
++    public WindowRect Bounds { get; }
++    public System.Numerics.Vector2 ClientSize { get; }
++    public WindowPixelSize PixelSize { get; }
++    public System.Numerics.Vector2 Scale { get; }
++    public bool IsVisible { get; }
++    public bool IsEffectivelyVisible { get; }
++    public WindowLifetime Lifetime { get; }
 +    // Native にのみ許可。Hosted は PresentationRoot.NativeWindow を使う。
 +    public IWindow NativeWindow { get; }
 +    public IReadOnlyList<WindowNode> GetHostedOrder();
