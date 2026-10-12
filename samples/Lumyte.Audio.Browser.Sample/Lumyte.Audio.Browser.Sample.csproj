@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Audio/Lumyte.Audio.Browser/Lumyte.Audio.Browser.csproj" />
+    <ProjectReference Include="../Lumyte.Audio.Shared/Lumyte.Audio.Shared.csproj" />
+    <Content Include="../../src/Audio/Lumyte.Audio.Browser/wwwroot/lumyte-audio.js" Link="wwwroot/lumyte-audio.js" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -10,10 +10,17 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Instance _instance;
     private readonly A.Adapter _adapter;
     private readonly A.Device _device;
+    private readonly WgpuDeviceCreation _creation;
+    private readonly GraphicsDeviceLifetime _lifetime;
+    private readonly object _requestGate = new();
+    private readonly List<Func<bool>> _pendingRequests = [];
     private bool _disposed;
 
-    private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device)
+    private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device, WgpuDeviceCreation creation)
     {
+        _creation = creation;
+        _lifetime = new(this);
+        creation.Attach(_lifetime);
         (_instance, _adapter, _device) = (instance, adapter, device);
         Queue = new WgpuQueue(this);
         WGPULimits limits = device.GetLimits();
@@ -45,6 +52,19 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => _lifetime.DeviceLost += value;
+        remove => _lifetime.DeviceLost -= value;
+    }
+
+    /// <inheritdoc />
+    public GraphicsDeviceStatus Status => _lifetime.Status;
+
+    /// <inheritdoc />
+    public GraphicsDeviceLoss? Loss => _lifetime.Loss;
+
+    /// <inheritdoc />
     public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the effective device capabilities captured during creation.</summary>
@@ -61,15 +81,18 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         var instance = A.Instance.Create();
         A.Adapter? adapter = null;
         A.Device? device = null;
+        var creation = new WgpuDeviceCreation();
         try
         {
             adapter = instance.RequestAdapterBlocking();
-            device = adapter.RequestDeviceBlocking();
-            return new(instance, adapter, device);
+            device = creation.Create(instance, adapter);
+            return new(instance, adapter, device, creation);
         }
         catch
         {
             device?.Dispose();
+            instance.ProcessEvents();
+            creation.Release();
             adapter?.Dispose();
             instance.Dispose();
             throw;
@@ -81,7 +104,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
     public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<A.SurfaceSource> sources)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(sources);
         A.SurfaceSource[] snapshot = sources.ToArray();
         if (snapshot.Length == 0)
@@ -125,7 +148,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surface; query its capabilities before configuring it.</returns>
     public IGraphicsSurface CreateSurface(A.SurfaceSource source)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ValidateSurfaceSource(source);
         A.Surface native = _instance.CreateSurface(source);
         try
@@ -142,7 +165,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuGraphicsPipeline(this, desc);
         return program;
@@ -151,7 +174,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuComputePipeline(this, desc);
         return program;
@@ -160,7 +183,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new WgpuSemaphore(this);
         return semaphore;
     }
@@ -168,7 +191,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new WgpuCommandBuffer(this);
         return commands;
@@ -177,7 +200,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
@@ -232,7 +255,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -287,13 +310,51 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             return;
         }
 
+        _lifetime.Dispose();
         _device.Dispose();
+        _instance.ProcessEvents();
+        _creation.Release();
         _adapter.Dispose();
         _instance.Dispose();
         _disposed = true;
+        _lifetime.Dispose();
     }
 
-    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    /// <summary>Pumps native callbacks and delivers the device loss callback without waiting.</summary>
+    public void ProcessEvents()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _device.ProcessEvents();
+    }
+
+    /// <inheritdoc />
+    public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Native loss ends GPU use, but request callbacks still own their status slots.
+        while (HasPendingRequests())
+        {
+            ProcessEvents();
+            await Task.Delay(1, cancellationToken);
+        }
+    }
+
+    internal void TrackRequest(Func<bool> isComplete)
+    {
+        lock (_requestGate)
+        {
+            _pendingRequests.Add(isComplete);
+        }
+    }
+
+    internal void UntrackRequest(Func<bool> isComplete)
+    {
+        lock (_requestGate)
+        {
+            _pendingRequests.Remove(isComplete);
+        }
+    }
 
     private static void ValidateSurfaceSource(A.SurfaceSource source)
     {
@@ -301,6 +362,14 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             (source.Tag is A.SurfaceSource.Kind.WindowsHwnd or A.SurfaceSource.Kind.XlibWindow or A.SurfaceSource.Kind.WaylandSurface && source.Handle1 == 0))
         {
             throw new ArgumentException("Supply valid native target handles.", nameof(source));
+        }
+    }
+
+    private bool HasPendingRequests()
+    {
+        lock (_requestGate)
+        {
+            return _pendingRequests.Any(isComplete => !isComplete());
         }
     }
 }

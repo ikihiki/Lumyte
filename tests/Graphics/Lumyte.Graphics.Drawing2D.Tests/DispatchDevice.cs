@@ -4,9 +4,26 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 
 internal sealed class DispatchDevice : IGraphicDevice
 {
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add
+        {
+        }
+
+        remove
+        {
+        }
+    }
+
+    public GraphicsDeviceStatus Status => GraphicsDeviceStatus.Ready;
+
+    public GraphicsDeviceLoss? Loss => null;
+
     public DeviceCaps Caps { get; } = new() { MaxTextureDimension2D = 4096 };
 
     public IGraphicsQueue Queue => throw new InvalidOperationException("Drawing preparation must not access the queue.");
+
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Drawing preparation must not wait for device retirement.");
 
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged => throw new NotSupportedException();

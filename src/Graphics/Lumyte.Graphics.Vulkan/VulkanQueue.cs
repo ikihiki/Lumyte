@@ -11,7 +11,6 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
 
     public IGraphicsSubmission Submit(QueueSubmitDesc desc)
     {
-        owner.ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
@@ -53,6 +52,11 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
 
         var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
         Result result = owner.Api.CreateFence(owner.NativeDevice, &fenceInfo, null, out Fence fence);
+        if (result == Result.ErrorDeviceLost)
+        {
+            owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan CreateFence failed: {result}.");
@@ -78,6 +82,11 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
                     result = owner.Api.QueueSubmit(owner.NativeQueue, 1, &submit, fence);
                 }
             }
+        }
+
+        if (result == Result.ErrorDeviceLost)
+        {
+            owner.ReportLoss("Vulkan operation failed: device lost.");
         }
 
         if (result != Result.Success)

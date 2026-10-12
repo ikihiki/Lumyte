@@ -8,19 +8,37 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
+    private readonly GraphicsDeviceLifetime _lifetime;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
     {
+        _lifetime = new(this);
         (_handle, Caps) = (handle, caps);
         Queue = new BrowserQueue(this);
+        _ = ObserveLossAsync();
     }
+
+    /// <inheritdoc />
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => _lifetime.DeviceLost += value;
+        remove => _lifetime.DeviceLost -= value;
+    }
+
+    /// <inheritdoc />
+    public GraphicsDeviceStatus Status => _lifetime.Status;
+
+    /// <inheritdoc />
+    public GraphicsDeviceLoss? Loss => _lifetime.Loss;
 
     /// <inheritdoc />
     public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal Task<GraphicsDeviceLoss> LostTask => _lifetime.LostTask;
 
     internal JSObject Handle => _handle;
 
@@ -57,7 +75,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surface; the caller retains the context and canvas.</returns>
     public IGraphicsSurface CreateSurface(JSObject context)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(context);
         return new BrowserSurface(this, context);
     }
@@ -67,7 +85,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <returns>The owned independent surfaces; failed creation releases every surface created by this call.</returns>
     public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<JSObject> contexts)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(contexts);
         JSObject[] snapshot = contexts.ToArray();
         if (snapshot.Length == 0)
@@ -109,7 +127,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserGraphicsPipeline(this, desc);
         return program;
@@ -118,7 +136,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserComputePipeline(this, desc);
         return program;
@@ -127,7 +145,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new BrowserSemaphore(this);
         return semaphore;
     }
@@ -135,7 +153,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new BrowserCommandBuffer(this);
         return commands;
@@ -144,7 +162,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
@@ -199,7 +217,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new BrowserShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -257,7 +275,39 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         BrowserInterop.DestroyDevice(_handle);
         _handle.Dispose();
         _disposed = true;
+        _lifetime.Dispose();
     }
 
-    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    /// <inheritdoc />
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Loss?.Reason == "LossObservationFailed")
+        {
+            throw new InvalidOperationException("Browser loss observation failed; safe retirement is unconfirmed.");
+        }
+
+        // GPUDevice.lost resolution establishes WebGPU's safe destruction boundary.
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task ObserveLossAsync()
+    {
+        try
+        {
+            await BrowserInterop.WaitDeviceLostAsync(_handle);
+            if (!_disposed)
+            {
+                _lifetime.ReportLoss(BrowserInterop.GetDeviceLossReason(_handle), BrowserInterop.GetDeviceLossMessage(_handle));
+            }
+        }
+        catch (Exception error)
+        {
+            // Interop observation failure must not leave a device falsely usable.
+            if (!_disposed)
+            {
+                _lifetime.ReportLoss("LossObservationFailed", error.Message);
+            }
+        }
+    }
 }

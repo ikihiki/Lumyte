@@ -1,4 +1,4 @@
-# ADR-GRAPHICS-0017: 描画順を保持するコマンド記録型2Dグラフィックエンジン
+# ADR-GRAPHICS-0018: 描画順を保持するコマンド記録型2Dグラフィックエンジン
 
 - 状態: 採用
 - 日付: 2026-10-10
@@ -8,7 +8,7 @@
 
 図形、画像、文字の描画形式を既存Graphics APIの上で扱いたい。描画順・クリッピング・色の合成を共通化しつつ、命令ごとのGPU描画方式を外部実装へ差し替えられる必要がある。レイヤーや背景へのエフェクト適用では、画像処理の前後で描画順とclipの意味を保持する。
 
-本ADRは2D描画の構成と実行契約を定め、公開APIと詳細契約・利用例を末尾にまとめる。共通画像エフェクトの設計とAPIは [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) に分離し、本ADRでは2D側の適用方法を定める。実装と検証の範囲はPRに記録し、設計上の受け入れ条件と実測結果を区別する。
+本ADRは2D描画の構成と実行契約を定め、公開APIと詳細契約・利用例を末尾にまとめる。共通画像エフェクトの設計とAPIは [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) に分離し、本ADRでは2D側の適用方法を定める。実装と検証の範囲はPRに記録し、設計上の受け入れ条件と実測結果を区別する。
 
 ## 決定
 
@@ -26,7 +26,7 @@ RenderGraphCanvas2D → RenderGraphDrawList2D → RenderGraphRenderer2D
 | --- | --- |
 | `Lumyte.Graphics.Drawing2D` | 通常のCPU命令記録、幾何・paint、直接GPU記録。Abstractionsだけへ実行時依存し、RenderGraph・ImageEffectsへ依存しない |
 | `Lumyte.Graphics.Drawing2D.RenderGraph` | レイヤーCanvas、背景取得、Effectsコールバック、親graphへのAppend2D。Drawing2D・ImageEffects・RenderGraphへ依存 |
-| `Lumyte.Graphics.ImageEffects` | レイヤー・背景の画像処理を委譲する接続先。[GRAPHICS-0016](GRAPHICS-0016-image-effects.md) の契約に従う |
+| `Lumyte.Graphics.ImageEffects` | レイヤー・背景の画像処理を委譲する接続先。[GRAPHICS-0017](GRAPHICS-0017-image-effects.md) の契約に従う |
 | `Lumyte.Graphics.RenderGraph` | パス依存、barrier、不要パスの除去、論理一時資源の確保と解放 |
 | 各 `DependencyInjection` パッケージ | 標準実装の任意登録。本体からDIコンテナーへ依存させない |
 | アプリケーション | device、外部資源、Submit・完了確認・Present、DI scopeの所有 |
@@ -181,9 +181,9 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 
 ## API・詳細契約・利用例
 
-比較元は先行エフェクトブランチ `feat/image-effects` のrevision `c6d0c09`。以下の差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元は先行エフェクトブランチ `feat/image-effects` のrevision `dc4c8a9`。以下の差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
-RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectSubgraph・ImageEffectDefinition・Append拡張メソッドの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
+RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectSubgraph・ImageEffectDefinition・Append拡張メソッドの宣言と契約は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) を参照する。
 
 ### 公開API
 
@@ -796,7 +796,7 @@ DrawBackdropEffectはその位置より前の現在レイヤーの描画先だ�
 
 #### 準備・RenderGraph・解放
 
-準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。Drawing2D経由のPreparedImageEffectはPreparedDrawingPasses2Dが所有し、同じGPU使用期間を通じて保持する。エフェクト内部の資源管理は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) に従う。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
+準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。Drawing2D経由のPreparedImageEffectはPreparedDrawingPasses2Dが所有し、同じGPU使用期間を通じて保持する。エフェクト内部の資源管理は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) に従う。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
 
 外部textureはparent allocationごとに一度だけimportし、DrawingGraphBindings2Dへ同じhandleを登録する。準備時にbindingを確定し、後の表変更で追加済みcallbackの入力を変えない。target Descriptionは実際の宣言と一致させる。graph adapterは全外部共有アクセスを宣言し、同じ資源のstage/accessを合併する。通常batchの私有資源はbatchが所有して内部barrierを記録する。初期graphはallocation全体で同期し、同一allocationのsampleとattachmentを同時使用しない。外部共有bufferとshader-dataはbindingsで既存typed handleへ対応付ける。graph compositorの一時資源はRenderGraphへ宣言する。
 

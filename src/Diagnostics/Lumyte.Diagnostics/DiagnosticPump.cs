@@ -9,13 +9,18 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
     private readonly DiagnosticRegistration[] _registrations = registrations.Where(item => item.Point == typeof(TPoint)).ToArray();
     private readonly TimeProvider _clock = clock;
     private readonly object _gate = new();
-    private readonly Queue<Entry> _pending = new();
+    private readonly Lane _standard = new(192, 1024);
+    private readonly Lane _stream = new(48, 1024);
+    private readonly Lane _control = new(16, 256);
     private readonly Dictionary<(Guid Session, Guid Request), Entry> _requests = [];
+    private readonly PriorityQueue<Entry, long> _expirations = new();
     private Dictionary<string, DiagnosticOperationSet> _sets = [];
+    private Dictionary<(string Subsystem, string Operation), DiagnosticOperationTraffic> _traffic = [];
     private int? _owner;
     private bool _active;
     private bool _busy;
     private bool _disposed;
+    private bool _streamNext = true;
 
     public IReadOnlyList<DiagnosticSubsystemCatalog> Catalog
     {
@@ -41,12 +46,19 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
             }
 
             var sets = new Dictionary<string, DiagnosticOperationSet>(StringComparer.Ordinal);
+            var traffic = new Dictionary<(string Subsystem, string Operation), DiagnosticOperationTraffic>();
             foreach (DiagnosticRegistration registration in _registrations)
             {
-                sets.Add(registration.Descriptor.Id, new(registration.Resolve(_services)));
+                var set = new DiagnosticOperationSet(registration.Resolve(_services));
+                sets.Add(registration.Descriptor.Id, set);
+                foreach (OperationDescriptor operation in set.Catalog)
+                {
+                    traffic.Add((registration.Descriptor.Id, operation.Id), operation.Traffic);
+                }
             }
 
             _sets = sets;
+            _traffic = traffic;
             _active = true;
         }
     }
@@ -66,10 +78,7 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
                 return Task.FromResult(DiagnosticOperationResult.Reject("expired", "Request has expired."));
             }
 
-            foreach ((Guid Session, Guid Request) key in _requests.Where(pair => pair.Value.Request.DeadlineTimestamp <= now && pair.Value.Completion.Task.IsCompleted).Select(pair => pair.Key).ToArray())
-            {
-                _requests.Remove(key);
-            }
+            Prune(now);
 
             (Guid SessionId, Guid RequestId) id = (request.Context.SessionId, request.Context.RequestId);
             if (_requests.TryGetValue(id, out Entry? existing))
@@ -78,7 +87,19 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
                     : Task.FromResult(DiagnosticOperationResult.Reject("request-id-conflict", "Request ID was reused with different content."));
             }
 
-            if (_pending.Count >= 256 || _requests.Count >= 1024)
+            DiagnosticOperationTraffic traffic = _traffic.GetValueOrDefault((request.SubsystemId, request.OperationId));
+            if (traffic == DiagnosticOperationTraffic.Stream && _clock.GetElapsedTime(now, request.DeadlineTimestamp) > TimeSpan.FromSeconds(1))
+            {
+                return Task.FromResult(DiagnosticOperationResult.Reject("invalid-timeout", "Stream requests must expire within one second."));
+            }
+
+            Lane lane = traffic switch
+            {
+                DiagnosticOperationTraffic.Stream => _stream,
+                DiagnosticOperationTraffic.Control => _control,
+                _ => _standard,
+            };
+            if (lane.Pending.Count >= lane.PendingCapacity || lane.RetainedCount >= lane.RetainedCapacity)
             {
                 return Task.FromResult(DiagnosticOperationResult.Reject("busy", "Diagnostic queue is full."));
             }
@@ -88,9 +109,11 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
                 Arguments = new Dictionary<string, DiagnosticValue>(request.Arguments, StringComparer.Ordinal),
                 Permissions = new HashSet<DiagnosticPermission>(request.Permissions),
             };
-            var entry = new Entry(owned);
+            var entry = new Entry(owned, lane);
             _requests.Add(id, entry);
-            _pending.Enqueue(entry);
+            lane.RetainedCount++;
+            lane.Pending.Enqueue(entry);
+            _expirations.Enqueue(entry, owned.DeadlineTimestamp);
             return entry.Completion.Task;
         }
     }
@@ -121,7 +144,7 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
                 Entry entry;
                 lock (_gate)
                 {
-                    if (!_active || !_pending.TryDequeue(out entry!))
+                    if (!_active || !TryDequeue(out entry!))
                     {
                         break;
                     }
@@ -189,23 +212,96 @@ internal sealed class DiagnosticPump<TPoint>(IServiceProvider services, IEnumera
         }
     }
 
+    private void Prune(long now)
+    {
+        Entry? running = null;
+        while (_expirations.TryPeek(out Entry? entry, out long deadline) && deadline <= now)
+        {
+            _expirations.Dequeue();
+            if (entry.Started && !entry.Completion.Task.IsCompleted)
+            {
+                // A pump executes at most one handler; retain its identity without blocking other expirations.
+                running = entry;
+                continue;
+            }
+
+            _requests.Remove((entry.Request.Context.SessionId, entry.Request.Context.RequestId));
+            entry.Lane.RetainedCount--;
+            if (!entry.Started)
+            {
+                entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("expired", "Request expired before execution."));
+            }
+        }
+
+        if (running != null)
+        {
+            _expirations.Enqueue(running, running.Request.DeadlineTimestamp);
+        }
+    }
+
+    private bool TryDequeue(out Entry? entry)
+    {
+        if (_control.Pending.TryDequeue(out entry))
+        {
+            entry.Started = true;
+            return true;
+        }
+
+        Lane first = _streamNext ? _stream : _standard;
+        Lane second = _streamNext ? _standard : _stream;
+        if (!first.Pending.TryDequeue(out entry) && !second.Pending.TryDequeue(out entry))
+        {
+            return false;
+        }
+
+        _streamNext = entry.Lane == _standard;
+        entry.Started = true;
+        return true;
+    }
+
     private void Clear()
     {
         _active = false;
-        foreach (Entry entry in _pending)
+        foreach (Entry entry in _requests.Values)
         {
             entry.Completion.TrySetResult(DiagnosticOperationResult.Reject("target-gone", "Execution point was stopped."));
         }
 
-        _pending.Clear();
+        _standard.Clear();
+        _stream.Clear();
+        _control.Clear();
         _requests.Clear();
+        _expirations.Clear();
         _sets.Clear();
+        _traffic.Clear();
+        _streamNext = true;
     }
 
-    private sealed class Entry(DiagnosticRequest request)
+    private sealed class Entry(DiagnosticRequest request, Lane lane)
     {
         public DiagnosticRequest Request { get; } = request;
 
+        public Lane Lane { get; } = lane;
+
+        public bool Started { get; set; }
+
         public TaskCompletionSource<DiagnosticOperationResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class Lane(int pendingCapacity, int retainedCapacity)
+    {
+        public Queue<Entry> Pending { get; } = new();
+
+        public int PendingCapacity { get; } = pendingCapacity;
+
+        public int RetainedCapacity { get; } = retainedCapacity;
+
+        public int RetainedCount { get; set; }
+
+        public void Clear()
+        {
+            Pending.Clear();
+            RetainedCount = 0;
+        }
     }
 }
