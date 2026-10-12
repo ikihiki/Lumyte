@@ -63,7 +63,7 @@ CI全体が成功した実行のうち、取得可能な最新の `diagnostics-g
 
 保存元はActionsの成果物で、保持期間は30日です。有効な成果物がない場合もPRを一覧に残して理由を表示しますが、画面へのリンクは表示しません。長期間更新していないPRやmainの画面を再掲載する場合はCIを再実行してください。成果物取得の予期しないエラーや検証失敗では公開を中止し、公開済みサイトを維持します。
 
-`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、Renderingのcapture・詳細・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
+`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、AnimationのPlayback・状態機械・狭い画面、Renderingのcapture・詳細・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
 
 ```sh
 GITHUB_REPOSITORY=ikihiki/Lumyte PREVIEW_COMMIT="$(git rev-parse HEAD)" PREVIEW_LABEL="Local preview" \
@@ -168,8 +168,14 @@ DiagnosticServerApplication.Create(args, ConfigureOptions, services =>
 `Context.Execute.InvokeAsync(invocation)` は共通シェルに結果を表示します。
 RequiredSubsystem は公開カタログの ID と完全一致で判定し、未対応ページはナビゲーションに表示しません。
 直接 URL を開いた場合には未対応状態を表示します。
-Objects、UI、Animation は現在カタログと操作を表示する拡張枠です。
+Objects、UIは現在カタログと操作を表示する拡張枠です。
 Rendering は以下のレンダーグラフ診断を表示します。GPU resource 内容や画像の公開プロトコルは今後追加します。
+
+### アニメーションの診断
+
+EngineカテゴリのAnimationページは、`animation`サブシステムの完全なschema version 1に対応します。一覧から明示登録された対象を選択し、種別、状態、位置Tick、速度、状態機械の現在状態を表示します。PlaybackのSeek、再生、Pause、Stop、速度変更と、状態機械の公開Trigger設定・全解除を実行できます。
+
+一覧と状態は利用者が更新したときに読み取り、毎フレームpollingしません。切断、期限切れ、拒否された変更を自動再送しません。チャンネル値、骨、モーフウェイト、Compositionグラフ、タイムライン図は公開しません。登録と操作の詳細は[Lumyte.Diagnostics.Animation](../Lumyte.Diagnostics.Animation/README.md)を参照してください。
 
 ### レンダーグラフの診断
 

@@ -139,7 +139,7 @@ try {
     await waitFor(() => evaluate("Boolean(document.getElementById('workspace')) && document.getElementById('workspace').hidden === false"), 'cookie login after reload');
     for (const transport of ['http', 'magiconion']) {
         const endpoint = transport === 'http' ? httpPort : grpcPort;
-        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '120'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`), LUMYTE_DIAGNOSTICS_RENDER_GRAPH: '1' });
+        const game = launch(transport, dotnet, [gameDll, transport, `http://127.0.0.1:${endpoint}`, '120'], root, { ...env, LUMYTE_DIAGNOSTICS_SETTINGS_PATH: resolve(profile, `${transport}-settings.json`), LUMYTE_DIAGNOSTICS_RENDER_GRAPH: '1', LUMYTE_DIAGNOSTICS_ANIMATION: '1' });
         await waitFor(() => evaluate("Array.from(document.querySelectorAll('#game-select option')).filter(option => option.value.length === 36).length === 1"), `${transport} catalog`);
         await evaluate("{ const choice = Array.from(document.querySelectorAll('#game-select option')).find(option => option.value.length === 36); document.getElementById('game-select').value = choice.value; document.getElementById('game-select').dispatchEvent(new Event('change', { bubbles: true })); }");
         await waitFor(() => evaluate("document.querySelector('[data-tab=input]')?.disabled === false"), 'selected game navigation');
@@ -179,6 +179,31 @@ try {
             await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
             assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile settings overflow');
             await capture('settings-mobile', 'Settings — 狭い画面', '幅390pxでもログ、ツールバー、設定ツリーを横にはみ出さず表示します。', 'settings', 'mobile', true);
+            await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
+        }
+        await evaluate("document.querySelector('[data-tab=animation]').click()");
+        await waitFor(() => evaluate("document.getElementById('page-title')?.textContent === 'Animation' && document.getElementById('animation-diagnostics')?.getAttribute('data-supported') === 'true' && document.querySelectorAll('[data-animation-target]').length === 2"), `${transport} Animation capability`);
+        await evaluate("document.querySelector('[data-animation-target=\"sample.playback\"]').click()");
+        await waitFor(() => evaluate("document.getElementById('animation-selected')?.textContent === 'sample.playback' && !document.getElementById('animation-pause').disabled"), `${transport} animation playback`);
+        await evaluate("document.getElementById('animation-pause').click()");
+        await waitFor(() => evaluate("document.querySelector('.animation-status')?.textContent === 'Paused'"), `${transport} pause animation playback`);
+        await evaluate("{ const position = document.getElementById('animation-position-input'); position.value = '2500000'; position.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('animation-seek-form').requestSubmit(); }");
+        await waitFor(() => evaluate("document.getElementById('animation-position')?.textContent.includes('2,500,000')"), `${transport} seek animation playback`);
+        await evaluate("{ const speed = document.getElementById('animation-speed-input'); speed.value = '1.5'; speed.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('animation-speed-form').requestSubmit(); }");
+        await waitFor(() => evaluate("document.getElementById('animation-speed')?.textContent === '1.5×'"), `${transport} animation speed`);
+        if (transport === 'http') await capture('animation-playback', 'Animation — Playbackの制御', '明示公開されたPlaybackを選択し、Pause、Seek、速度変更を所有スレッド上の診断操作として実行した状態です。', 'animation', 'desktop', true);
+        await evaluate("document.querySelector('[data-animation-target=\"sample.motion\"]').click()");
+        await waitFor(() => evaluate("document.getElementById('animation-selected')?.textContent === 'sample.motion' && document.getElementById('animation-state')?.textContent === 'Idle'"), `${transport} animation state machine`);
+        await evaluate("{ const trigger = document.getElementById('animation-trigger-input'); trigger.value = 'action'; trigger.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('animation-trigger-form').requestSubmit(); }");
+        await waitFor(() => evaluate("!document.getElementById('animation-read').disabled"), `${transport} animation trigger result`);
+        await delay(100);
+        await evaluate("document.getElementById('animation-read').click()");
+        await waitFor(() => evaluate("document.getElementById('animation-state')?.textContent === 'Action'"), `${transport} animation transition`);
+        if (transport === 'http') {
+            await capture('animation-state-machine', 'Animation — 状態機械', '公開Triggerを設定し、実行中のアニメーション状態機械がIdleからActionへ遷移した状態です。', 'animation', 'desktop', true);
+            await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+            assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'mobile Animation overflow');
+            await capture('animation-mobile', 'Animation — 狭い画面', '幅390pxで公開対象、状態、再生・Trigger操作を縦に配置した画面です。', 'animation', 'mobile', true);
             await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
         }
         await evaluate("document.querySelector('[data-tab=rendering]').click()");
@@ -279,7 +304,7 @@ try {
         assert.equal(game.exitCode, 0);
         assert.ok(logs.get(transport).includes('Disconnected: Jump=False'));
         await waitFor(() => evaluate("document.getElementById('disconnect').disabled"), 'removed game');
-        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsTreeReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, japaneseFont: true, renderGraphSummary: true, renderGraphLivePause: true, realRenderGraphCapture: true, renderGraphCaptureCounts: true, renderGraphPollingStopped: true, renderGraphPagination: true, stableCaptureIdentity: true, retainedCaptureReopened: true, captureNotFoundFeedback: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
+        results.push({ transport, publishedServer: true, cookieLogin: true, generatedOperation: true, settingsTreeReadSavePoll: true, settingsFilePersisted: true, settingsTelemetry: true, japaneseFont: true, animationPlaybackControl: true, animationStateMachineTrigger: true, renderGraphSummary: true, renderGraphLivePause: true, realRenderGraphCapture: true, renderGraphCaptureCounts: true, renderGraphPollingStopped: true, renderGraphPagination: true, stableCaptureIdentity: true, retainedCaptureReopened: true, captureNotFoundFeedback: true, inputChanged: true, metricInt64: '9007199254740993', traceLogCorrelated: true, disconnectReleasedInput: true, mobileOverflow: false });
     }
     // Controlled resources exercise the resource-oriented query and navigation model.
     async function gameRequest(method, path, body, secret) {
@@ -339,6 +364,11 @@ try {
     await waitFor(() => evaluate("document.querySelector('.content').textContent.includes('未対応')"), 'Rendering capability status');
     assert.equal(await evaluate("document.querySelector('[data-tab=rendering]') === null"), true, 'Rendering navigation requires a published capability');
     assert.equal(await evaluate("document.getElementById('rg-capture-details') === null"), true, 'another resource cannot expose the previous capture');
+    await command('Page.navigate', { url: `${origin}/games/${first.sessionId}/animation` });
+    await waitFor(() => evaluate("document.getElementById('workspace')?.getAttribute('data-ready') === 'true' && document.getElementById('page-title')?.textContent === 'Animation'"), 'unsupported Animation page');
+    await waitFor(() => evaluate("document.querySelector('.content').textContent.includes('未対応')"), 'Animation capability status');
+    assert.equal(await evaluate("document.querySelector('[data-tab=animation]') === null"), true, 'Animation navigation requires a published capability');
+    assert.equal(await evaluate("document.getElementById('animation-selected') === null"), true, 'another resource cannot expose the previous animation target');
     await command('Page.navigate', { url: `${origin}/games/${randomUUID()}/logs` });
     await waitFor(() => evaluate("document.getElementById('workspace-error')?.textContent.includes('接続されていません')"), 'disconnected target');
     assert.equal(await evaluate("document.getElementById('session-id').textContent"), '—');
@@ -352,7 +382,7 @@ try {
     assert.ok(!(await evaluate("document.getElementById('event-table').textContent")).includes('later-error'));
     await gameRequest('DELETE', `sessions/${first.sessionId}`, undefined, first.sessionSecret);
     await gameRequest('DELETE', `sessions/${second.sessionId}`, undefined, second.sessionSecret);
-    results.push({ scenario: 'aspire-dashboard-patterns', resourceNavigation: true, gamePageRoutes: true, unsupportedCapability: true, renderGraphCapabilityIsolation: true, disconnectedTargetIsolation: true, severityFilter: true, pauseResume: true, traceDeepLink: true, spanHierarchy: true, traceToLogs: true, metricSeriesChart: true, int64ChartPrecision: true, resourceIsolation: true, untrustedText: true });
+    results.push({ scenario: 'aspire-dashboard-patterns', resourceNavigation: true, gamePageRoutes: true, unsupportedCapability: true, animationCapabilityIsolation: true, renderGraphCapabilityIsolation: true, disconnectedTargetIsolation: true, severityFilter: true, pauseResume: true, traceDeepLink: true, spanHierarchy: true, traceToLogs: true, metricSeriesChart: true, int64ChartPrecision: true, resourceIsolation: true, untrustedText: true });
     assert.equal(signalRConnection, true, 'Blazor SignalR WebSocket');
     assert.equal(legacyStream, false, 'legacy SSE removed');
     assert.equal(await evaluate("document.querySelectorAll('fluent-button').length > 0"), true, 'Fluent UI components');
