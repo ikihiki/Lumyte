@@ -36,3 +36,7 @@ DAG経路ではSourceのsemanticを、直接AppendEffectの0入力生成ではDi
 画像処理はRenderGraph.Deviceの借用deviceを使い、CreateTexture・AddPass・UseTextureで宣言します。
 画像・依存順・barrier・一時allocationはRenderGraphが管理します。別のcompilerや実行器はありません。
 ImageEffectGraph.GetRequiredSourceBounds(output)は遅延設定のCPU上の領域照会として使えます。
+
+ImageEffectSubgraphは親graphとSource画像を持つ部分ビューです。レイヤー等のコールバックで
+scope.AppendGaussianBlur(scope.Source, 3, 3)を呼ぶとEffectImageを返し、固定資源のownerはscopeが保持します。
+独立したgraphやplanは生成せず、すべての処理を親graphへ追加します。

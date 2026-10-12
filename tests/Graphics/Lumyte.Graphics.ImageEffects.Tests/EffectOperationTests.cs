@@ -159,6 +159,31 @@ public sealed class EffectOperationTests
         Assert.Throws<NotSupportedException>(() => wide.GetRequiredSourceBounds(new(0, 0, 1, 1)));
     }
 
+    /// <summary>Checks effect subgraphs share the parent and own callback resources without a nested plan.</summary>
+    [Fact]
+    public void SubgraphSharesParentAndOwnsEffectResources()
+    {
+        var graph = new Graph(Device());
+        EffectImage source = Source(graph);
+        var resource = new TrackedResource();
+        var scope = new ImageEffectSubgraph(graph, source);
+        Assert.Same(graph, scope.Graph);
+        Assert.Equal(source, scope.Source);
+        EffectImage translated = scope.AppendEffect(new Translation(2, 3, resource, AddPasses: true), scope.Source);
+        EffectImage result = scope.AppendGaussianBlur(translated, 0, 0);
+        Assert.Equal(source.Bounds.Offset(2, 3), result.Bounds);
+        using (CompiledRenderGraph plan = graph.Compile())
+        {
+            Assert.Equal(new[] { "effect.first", "effect.second" }, plan.PassNames);
+            Assert.Equal(0, resource.Disposals);
+        }
+
+        scope.Dispose();
+        scope.Dispose();
+        Assert.Equal(1, resource.Disposals);
+        Assert.Throws<ObjectDisposedException>(() => scope.AppendOpacity(source, 1));
+    }
+
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
     private static EffectImage Source(Graph graph) => new(graph.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);
