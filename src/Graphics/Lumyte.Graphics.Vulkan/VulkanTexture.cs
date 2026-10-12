@@ -114,7 +114,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             return _native;
@@ -127,7 +126,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (mipLevel >= MipLevels)
@@ -140,7 +138,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
@@ -213,7 +210,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
             return;
         }
 
-        _owner.ValidateDisposal();
         if (_surfaceFrame == null)
         {
             _owner.Api.DestroyImage(_owner.NativeDevice, _native, null);
@@ -241,7 +237,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         if (result == Result.ErrorDeviceLost)
         {
             _owner.ReportLoss("Vulkan operation failed: device lost.");
-            _owner.ValidateAlive();
         }
 
         if (result != Result.Success)

@@ -68,7 +68,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             return _native;
@@ -81,7 +80,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (mipLevel >= MipLevels)
@@ -94,7 +92,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
@@ -153,7 +150,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
             return;
         }
 
-        _owner.ValidateDisposal();
         _native.Dispose();
         _disposed = true;
     }

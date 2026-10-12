@@ -132,11 +132,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         _values[checked((int)index)] = value;
     }
 
-    public void ValidateAlive()
-    {
-        Owner.ValidateAlive();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-    }
+    public void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     public void Dispose()
     {

@@ -75,7 +75,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surface; the caller retains the context and canvas.</returns>
     public IGraphicsSurface CreateSurface(JSObject context)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(context);
         return new BrowserSurface(this, context);
     }
@@ -85,7 +85,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <returns>The owned independent surfaces; failed creation releases every surface created by this call.</returns>
     public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<JSObject> contexts)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(contexts);
         JSObject[] snapshot = contexts.ToArray();
         if (snapshot.Length == 0)
@@ -127,7 +127,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserGraphicsPipeline(this, desc);
         return program;
@@ -136,7 +136,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserComputePipeline(this, desc);
         return program;
@@ -145,7 +145,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new BrowserSemaphore(this);
         return semaphore;
     }
@@ -153,7 +153,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new BrowserCommandBuffer(this);
         return commands;
@@ -162,7 +162,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
@@ -185,7 +185,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
@@ -195,7 +195,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
         const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
@@ -217,7 +217,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new BrowserShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -226,7 +226,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new BrowserTexture(this, desc);
         return texture;
@@ -235,7 +235,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSampler CreateSampler(SamplerDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new BrowserSampler(this, desc);
         return sampler;
@@ -244,7 +244,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
         {
@@ -258,7 +258,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsShader CreateShader(ShaderArtifact artifact)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new BrowserShader(this, artifact);
         return shader;
@@ -272,7 +272,6 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
             return;
         }
 
-        _lifetime.ValidateDisposal();
         BrowserInterop.DestroyDevice(_handle);
         _handle.Dispose();
         _disposed = true;
@@ -283,20 +282,14 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _lifetime.ValidateRetirement();
         if (Loss?.Reason == "LossObservationFailed")
         {
             throw new InvalidOperationException("Browser loss observation failed; safe retirement is unconfirmed.");
         }
 
         // GPUDevice.lost resolution establishes WebGPU's safe destruction boundary.
-        _lifetime.ConfirmRetirement();
         return ValueTask.CompletedTask;
     }
-
-    internal void ValidateDisposal() => _lifetime.ValidateDisposal();
-
-    internal void ValidateAlive() => _lifetime.ValidateAlive();
 
     private async Task ObserveLossAsync()
     {

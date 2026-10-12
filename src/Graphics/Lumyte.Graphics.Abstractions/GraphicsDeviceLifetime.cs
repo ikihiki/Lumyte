@@ -8,7 +8,6 @@ internal sealed class GraphicsDeviceLifetime(object owner)
     private readonly TaskCompletionSource<GraphicsDeviceLoss> _lost = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private GraphicsDeviceStatus _status;
     private GraphicsDeviceLoss? _loss;
-    private bool _retired;
 
     public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost;
 
@@ -60,49 +59,6 @@ internal sealed class GraphicsDeviceLifetime(object owner)
             catch (Exception error)
             {
                 Trace.TraceError("Device loss subscriber failed: {0}", error);
-            }
-        }
-    }
-
-    internal void ValidateAlive()
-    {
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_status == GraphicsDeviceStatus.Disposed, owner);
-            if (_loss is not null)
-            {
-                throw new GraphicsDeviceLostException(_loss);
-            }
-        }
-    }
-
-    internal void ValidateRetirement()
-    {
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_status == GraphicsDeviceStatus.Disposed, owner);
-            if (_status != GraphicsDeviceStatus.Lost)
-            {
-                throw new InvalidOperationException("Retirement confirmation requires a lost device.");
-            }
-        }
-    }
-
-    internal void ConfirmRetirement()
-    {
-        lock (_gate)
-        {
-            _retired = true;
-        }
-    }
-
-    internal void ValidateDisposal()
-    {
-        lock (_gate)
-        {
-            if (_status == GraphicsDeviceStatus.Lost && !_retired)
-            {
-                throw new InvalidOperationException("Confirm lost device retirement before releasing native resources.");
             }
         }
     }

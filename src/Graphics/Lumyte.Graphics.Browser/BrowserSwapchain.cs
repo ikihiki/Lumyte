@@ -46,7 +46,6 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
             return;
         }
 
-        Owner.ValidateDisposal();
         BrowserInterop.UnconfigureSurface(_surface.Native);
         _disposed = true;
     }

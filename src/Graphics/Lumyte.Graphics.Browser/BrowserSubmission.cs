@@ -59,7 +59,6 @@ internal sealed class BrowserSubmission(BrowserDevice owner, BrowserCommandBuffe
             throw new InvalidOperationException("Complete the submission before disposal.");
         }
 
-        owner.ValidateDisposal();
         handle.Dispose();
         _status = SubmissionStatus.Disposed;
     }

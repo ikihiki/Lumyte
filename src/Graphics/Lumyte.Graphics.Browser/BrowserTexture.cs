@@ -37,7 +37,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             return _native;
@@ -50,7 +49,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (mipLevel >= MipLevels)
@@ -63,7 +61,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
@@ -89,7 +86,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
             return;
         }
 
-        _owner.ValidateDisposal();
         if (_surfaceFrame == null)
         {
             BrowserInterop.DestroyTexture(_native);

@@ -66,7 +66,6 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
-        _lifetime.ValidateRetirement();
         if (RejectRetirement)
         {
             throw new InvalidOperationException("Native retirement is not proven.");
@@ -78,12 +77,10 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
         }
 
         Confirmations++;
-        _lifetime.ConfirmRetirement();
     }
 
     public ValueTask DisposeAsync()
     {
-        _lifetime.ValidateDisposal();
         if (DisposeFailures > 0)
         {
             DisposeFailures--;

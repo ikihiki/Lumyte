@@ -72,7 +72,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        Owner.ValidateDisposal();
         _texture!.DisposeLease();
         if (!_presented && !_deviceLost && Owner.Status == GraphicsDeviceStatus.Ready)
         {
@@ -107,7 +106,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     {
         if (_deviceLost || Owner.Status == GraphicsDeviceStatus.Lost)
         {
-            Owner.ValidateDisposal();
             return true;
         }
 
@@ -116,7 +114,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         {
             Owner.ReportLoss("Vulkan surface fence failed: device lost.");
             _deviceLost = true;
-            Owner.ValidateDisposal();
             return true;
         }
 
@@ -136,7 +133,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         {
             Owner.ReportLoss("Vulkan surface fence failed: device lost.");
             _deviceLost = true;
-            Owner.ValidateDisposal();
             return true;
         }
 

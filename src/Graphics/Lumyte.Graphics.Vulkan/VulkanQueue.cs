@@ -11,7 +11,6 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
 
     public IGraphicsSubmission Submit(QueueSubmitDesc desc)
     {
-        owner.ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);

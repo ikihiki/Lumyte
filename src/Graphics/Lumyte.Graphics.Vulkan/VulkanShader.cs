@@ -42,7 +42,6 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             return _native;
         }
@@ -55,7 +54,6 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
             return;
         }
 
-        _owner.ValidateDisposal();
         _owner.Api.DestroyShaderModule(_owner.NativeDevice, _native, null);
         _disposed = true;
     }

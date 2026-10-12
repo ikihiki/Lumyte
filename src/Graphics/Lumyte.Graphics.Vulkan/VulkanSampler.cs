@@ -50,7 +50,6 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             return _native;
         }
@@ -65,7 +64,6 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
             return;
         }
 
-        _owner.ValidateDisposal();
         _owner.Api.DestroySampler(_owner.NativeDevice, _native, null);
         _disposed = true;
     }

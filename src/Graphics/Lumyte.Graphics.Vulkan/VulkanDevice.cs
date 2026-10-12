@@ -96,7 +96,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
     public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<Func<Instance, SurfaceKHR>> factories)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(factories);
         Func<Instance, SurfaceKHR>[] snapshot = factories.ToArray();
         if (snapshot.Length == 0)
@@ -146,7 +146,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surface if the device's general queue supports it.</returns>
     public IGraphicsSurface CreateSurface(Func<Instance, SurfaceKHR> createSurface)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(createSurface);
         _ = Presentation;
         SurfaceKHR native = createSurface(_instance);
@@ -169,7 +169,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanGraphicsPipeline(this, desc);
         return program;
@@ -178,7 +178,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanComputePipeline(this, desc);
         return program;
@@ -187,7 +187,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new VulkanSemaphore(this);
         return semaphore;
     }
@@ -195,7 +195,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new VulkanCommandBuffer(this);
         return commands;
@@ -204,7 +204,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
@@ -227,7 +227,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
@@ -237,7 +237,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
         const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
@@ -259,7 +259,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new VulkanShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -268,7 +268,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new VulkanTexture(this, desc);
         return texture;
@@ -277,7 +277,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSampler CreateSampler(SamplerDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new VulkanSampler(this, desc);
         return sampler;
@@ -286,7 +286,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
         {
@@ -300,7 +300,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsShader CreateShader(ShaderArtifact artifact)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new VulkanShader(this, artifact);
         return shader;
@@ -314,7 +314,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             return;
         }
 
-        _lifetime.ValidateDisposal();
         _presentation?.Dispose();
         _api.DestroyDevice(_device, null);
         _api.DestroyInstance(_instance, null);
@@ -327,7 +326,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _lifetime.ValidateRetirement();
         Result result = _api.DeviceWaitIdle(_device);
 
         // Vulkan permits child destruction after device loss; an explicit idle call
@@ -337,13 +335,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             throw new InvalidOperationException($"Vulkan retirement confirmation failed: {result}.");
         }
 
-        _lifetime.ConfirmRetirement();
         return ValueTask.CompletedTask;
     }
 
     internal void ReportLoss(string message) => _lifetime.ReportLoss("VK_ERROR_DEVICE_LOST", message);
-
-    internal void ValidateDisposal() => _lifetime.ValidateDisposal();
 
     internal SurfaceStatus PresentationStatus(Result result)
     {
@@ -360,13 +355,11 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         if (result == Result.ErrorDeviceLost)
         {
             ReportLoss($"Vulkan {operation} failed: device lost.");
-            ValidateAlive();
+            throw new GraphicsDeviceLostException(Loss!);
         }
 
         VulkanPresentation.Check(result, operation);
     }
-
-    internal void ValidateAlive() => _lifetime.ValidateAlive();
 
     private static VulkanDevice CreateCore(VulkanDeviceDesc desc)
     {

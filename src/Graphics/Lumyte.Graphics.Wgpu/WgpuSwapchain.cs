@@ -57,14 +57,12 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
             return;
         }
 
-        Owner.ValidateDisposal();
         WGPU.wgpuSurfaceUnconfigure(_surface.Native.Handle);
         _disposed = true;
     }
 
     internal unsafe SurfaceStatus Present()
     {
-        Owner.ValidateAlive();
         WGPUStatus status = WGPU.wgpuSurfacePresent(_surface.Native.Handle);
         if (status != WGPUStatus.Success)
         {

@@ -96,7 +96,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_mapped || _pending)
             {
@@ -117,7 +116,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -127,7 +125,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -158,7 +155,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void Unmap()
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -175,7 +171,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             return;
         }
 
-        _owner.ValidateDisposal();
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
@@ -233,7 +228,6 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         if (result == Result.ErrorDeviceLost)
         {
             _owner.ReportLoss("Vulkan operation failed: device lost.");
-            _owner.ValidateAlive();
         }
 
         if (result != Result.Success)

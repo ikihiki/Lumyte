@@ -39,7 +39,6 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        Owner.ValidateDisposal();
         _texture.DisposeLease();
         Lifetime.MarkDisposed();
     }

@@ -44,7 +44,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     {
         get
         {
-            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_mapped || _pending)
             {
@@ -65,7 +64,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void ValidateRange(ulong offset, ulong length)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -75,7 +73,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -89,7 +86,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Unmap()
     {
-        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -107,7 +103,6 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             return;
         }
 
-        _owner.ValidateDisposal();
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
@@ -155,17 +150,8 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     {
         try
         {
-            try
-            {
-                await BrowserInterop.MapBufferAsync(_native, (int)Memory);
-            }
-            catch
-            {
-                _owner.ValidateAlive();
-                throw;
-            }
+            await BrowserInterop.MapBufferAsync(_native, (int)Memory);
 
-            _owner.ValidateAlive();
             _mapped = true;
             if (cancellationToken.IsCancellationRequested)
             {

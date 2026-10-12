@@ -35,7 +35,6 @@ internal sealed partial class BrowserComputePipeline : IGraphicsComputePipeline
             return;
         }
 
-        _owner.ValidateDisposal();
         DisposeNative();
         _disposed = true;
     }

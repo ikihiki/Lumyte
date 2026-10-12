@@ -104,7 +104,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
     public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<A.SurfaceSource> sources)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(sources);
         A.SurfaceSource[] snapshot = sources.ToArray();
         if (snapshot.Length == 0)
@@ -148,7 +148,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surface; query its capabilities before configuring it.</returns>
     public IGraphicsSurface CreateSurface(A.SurfaceSource source)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ValidateSurfaceSource(source);
         A.Surface native = _instance.CreateSurface(source);
         try
@@ -165,7 +165,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuGraphicsPipeline(this, desc);
         return program;
@@ -174,7 +174,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuComputePipeline(this, desc);
         return program;
@@ -183,7 +183,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new WgpuSemaphore(this);
         return semaphore;
     }
@@ -191,7 +191,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new WgpuCommandBuffer(this);
         return commands;
@@ -200,7 +200,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
@@ -223,7 +223,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
@@ -233,7 +233,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
         const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
@@ -255,7 +255,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -264,7 +264,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new WgpuTexture(this, desc);
         return texture;
@@ -273,7 +273,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSampler CreateSampler(SamplerDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new WgpuSampler(this, desc);
         return sampler;
@@ -282,7 +282,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
         {
@@ -296,7 +296,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsShader CreateShader(ShaderArtifact artifact)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new WgpuShader(this, artifact);
         return shader;
@@ -310,7 +310,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             return;
         }
 
-        _lifetime.ValidateDisposal();
         _lifetime.Dispose();
         _device.Dispose();
         _instance.ProcessEvents();
@@ -332,7 +331,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _lifetime.ValidateRetirement();
 
         // Native loss ends GPU use, but request callbacks still own their status slots.
         while (HasPendingRequests())
@@ -340,8 +338,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             ProcessEvents();
             await Task.Delay(1, cancellationToken);
         }
-
-        _lifetime.ConfirmRetirement();
     }
 
     internal void TrackRequest(Func<bool> isComplete)
@@ -358,14 +354,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         {
             _pendingRequests.Remove(isComplete);
         }
-    }
-
-    internal void ValidateDisposal() => _lifetime.ValidateDisposal();
-
-    internal void ValidateAlive()
-    {
-        ProcessEvents();
-        _lifetime.ValidateAlive();
     }
 
     private static void ValidateSurfaceSource(A.SurfaceSource source)

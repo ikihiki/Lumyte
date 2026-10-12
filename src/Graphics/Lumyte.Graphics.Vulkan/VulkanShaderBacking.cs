@@ -94,7 +94,6 @@ internal sealed unsafe class VulkanShaderBacking : IDisposable
         if (result == Result.ErrorDeviceLost)
         {
             _owner.ReportLoss("Vulkan operation failed: device lost.");
-            _owner.ValidateAlive();
         }
 
         if (result != Result.Success)

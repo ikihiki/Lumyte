@@ -72,7 +72,6 @@ internal sealed class WgpuSubmission : IGraphicsSubmission
             throw new InvalidOperationException("Complete the submission before disposal.");
         }
 
-        _owner.ValidateDisposal();
         if (!_request.IsComplete)
         {
             throw new InvalidOperationException("Confirm native request retirement before releasing its callback storage.");

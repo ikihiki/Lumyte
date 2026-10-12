@@ -86,7 +86,6 @@ internal sealed class WgpuSurface : IGraphicsSurface
             return;
         }
 
-        _owner.ValidateDisposal();
         _native.Dispose();
         _disposed = true;
     }
@@ -118,12 +117,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
         _native.Configure(_owner.NativeDevice, WgpuTexture.NativeFormat(desc.Format), usage, desc.Width, desc.Height, Mode(desc.PresentMode), alpha);
     }
 
-    internal void ValidateAlive()
-    {
-        _owner.ValidateAlive();
-        _owner.ValidateAlive();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-    }
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private static WGPUPresentMode Mode(PresentMode mode) => mode switch
     {

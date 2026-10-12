@@ -170,7 +170,6 @@ internal sealed unsafe partial class VulkanCommandBuffer
         if (result == Result.ErrorDeviceLost)
         {
             _owner.ReportLoss("Vulkan operation failed: device lost.");
-            _owner.ValidateAlive();
         }
 
         if (result != Result.Success)
@@ -333,7 +332,6 @@ internal sealed unsafe partial class VulkanCommandBuffer
         if (result == Result.ErrorDeviceLost)
         {
             _owner.ReportLoss("Vulkan operation failed: device lost.");
-            _owner.ValidateAlive();
         }
 
         if (result != Result.Success)

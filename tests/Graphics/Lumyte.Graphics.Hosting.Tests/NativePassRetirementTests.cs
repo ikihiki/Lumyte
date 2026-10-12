@@ -34,8 +34,6 @@ public sealed class NativePassRetirementTests
             await Task.Delay(1, timeout.Token);
         }
 
-        Assert.Throws<InvalidOperationException>(() => renderCommands.Dispose());
-        Assert.Throws<InvalidOperationException>(() => computeCommands.Dispose());
         await device.WaitForRetirementAsync(timeout.Token);
         renderCommands.Dispose();
         computeCommands.Dispose();

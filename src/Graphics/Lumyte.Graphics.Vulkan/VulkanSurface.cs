@@ -96,7 +96,6 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
             return;
         }
 
-        _owner.ValidateDisposal();
         _owner.Presentation.Surface.DestroySurface(_owner.NativeInstance, _native, null);
         _disposed = true;
     }
@@ -114,12 +113,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
         return caps;
     }
 
-    internal void ValidateAlive()
-    {
-        _owner.ValidateAlive();
-        _owner.ValidateAlive();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-    }
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private SurfaceFormatKHR[] ReadFormats()
     {

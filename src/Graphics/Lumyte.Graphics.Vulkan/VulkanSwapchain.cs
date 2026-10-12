@@ -88,7 +88,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
             return;
         }
 
-        Owner.ValidateDisposal();
         Owner.Presentation.Swapchain.DestroySwapchain(Owner.NativeDevice, _native, null);
         _disposed = true;
     }
