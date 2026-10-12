@@ -169,12 +169,12 @@ public sealed class RenderingGeometryTests
         path.LineTo(new Vector2(70, 70));
         canvas.StrokePath(path.Build(), new Color2D(1, 1, 1, 1), style);
         DrawList2D draws = canvas.End();
-        RenderTargetBinding2D target = Target() with { PixelScale = 2, PixelOrigin = new Vector2(5, 10) };
+        DrawingTargetInfo2D target = Target() with { PixelScale = 2, PixelOrigin = new Vector2(5, 10) };
         float extent = 10 * MathF.Sqrt(2);
         Vector2[] corners = [new(30 - extent, 30), new(30, 30 - extent), new(70 + extent, 70), new(70, 70 + extent)];
         foreach (DrawingCommand2D command in draws.Commands)
         {
-            ScissorRect bounds = DrawingBounds2D.GetScissor(command, null, target, null, null, false);
+            ScissorRect bounds = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
             foreach (Vector2 corner in corners)
             {
                 Vector2 pixel = (Vector2.Transform(corner, command.State.Transform) * target.PixelScale) - target.PixelOrigin;
@@ -204,11 +204,10 @@ public sealed class RenderingGeometryTests
         Assert.InRange(compiler.Instructions.Count, 1, DrawingProgram2D.MaximumInstructions);
     }
 
-    private static RenderTargetBinding2D Target()
+    private static DrawingTargetInfo2D Target()
     {
         var description = new TextureDesc { Width = 512, Height = 512, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment };
-        var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(new DispatchDevice());
-        return new RenderTargetBinding2D { Texture = graph.CreateTexture(description), Description = description };
+        return new DrawingTargetInfo2D { Description = description };
     }
 
     private static List<PathFlattening2D.Contour> Line(Vector2 start, Vector2 end)

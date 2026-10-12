@@ -11,7 +11,7 @@ internal sealed class DrawingProgram2D
     private readonly Matrix3x2 _pixelTransform;
     private uint _textureSlot;
 
-    internal DrawingProgram2D(IArgumentTable table, IGpuRef<IGraphicsSampler> nearest, RenderTargetBinding2D target)
+    internal DrawingProgram2D(IArgumentTable table, IGpuRef<IGraphicsSampler> nearest, DrawingTargetInfo2D target)
     {
         _table = table;
         _nearest = nearest;

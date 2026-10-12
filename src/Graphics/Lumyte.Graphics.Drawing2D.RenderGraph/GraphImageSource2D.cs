@@ -2,6 +2,6 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
 
-namespace Lumyte.Graphics.Drawing2D;
+namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
 internal sealed record GraphImageSource2D(RenderGraphTexture Texture, TextureDesc Description, EffectPixelRect Bounds);

@@ -1,20 +1,13 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.RenderGraph;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-/// <summary>Describes a graph-local destination on the root drawing's physical pixel grid.</summary>
-public sealed record RenderTargetBinding2D
+/// <summary>Describes a destination geometry on the root drawing's physical pixel grid.</summary>
+public record DrawingTargetInfo2D
 {
-    /// <summary>Gets the graph-local texture handle.</summary>
-    public required RenderGraphTexture Texture { get; init; }
-
     /// <summary>Gets the allocation's exact descriptor.</summary>
     public required TextureDesc Description { get; init; }
-
-    /// <summary>Gets the complete single-mip and single-layer range.</summary>
-    public TextureSubresourceRange Range { get; init; } = new(0, 1, 0, 1);
 
     /// <summary>Gets the finite positive logical-to-physical pixel scale.</summary>
     public float PixelScale { get; init; } = 1;

@@ -11,6 +11,7 @@ services.AddScoped<IFillPathRenderer2D, CustomFillPathRenderer>();
 ```
 
 The application creates `Renderer2D` with the resolved command table and controls GPU submission and completion.
-Effects are constructed directly through `ImageEffectCompiler` extension methods with their definitions and renderers.
+Layered drawing uses the separate `Lumyte.Graphics.Drawing2D.RenderGraph` package and its Effects callbacks.
+Pass the resolved command table to either `Renderer2D` or `RenderGraphRenderer2D`.
 This package registers no effect services. Dispose the scope after prepared drawing work and the renderer are released.
 Registration does not create a provider, resolve services, or allocate GPU resources.

@@ -1,4 +1,4 @@
-namespace Lumyte.Graphics.Drawing2D;
+namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
 /// <summary>Owns CPU snapshots and fixed resources referenced by one graph recording.</summary>
 /// <remarks>Dispose after GPU completion, command disposal, and compiled graph disposal; no wait is performed.</remarks>

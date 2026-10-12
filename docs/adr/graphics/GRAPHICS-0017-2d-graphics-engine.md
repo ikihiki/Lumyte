@@ -15,15 +15,17 @@
 ### 1. 構成と責務
 
 ```text
-Canvas2D → DrawList2D → Renderer2D ─────────────┐
-                            └→ ImageEffects ─┤
-                                             ↓
-                                 RenderGraph → Graphics
+Canvas2D → DrawList2D → Renderer2D → Graphics command buffer
+
+RenderGraphCanvas2D → RenderGraphDrawList2D → RenderGraphRenderer2D
+  Effects(callback) → ImageEffectSubgraph ────────────┘
+  親RenderGraph.Append2D(renderer) → 同じgraphのpass群 → Graphics
 ```
 
 | 構成要素 | 責務と依存 |
 | --- | --- |
-| `Lumyte.Graphics.Drawing2D` | CPU命令記録、描画順、幾何・paint、レイヤー、背景取得。Abstractions・ImageEffects・RenderGraphへ依存 |
+| `Lumyte.Graphics.Drawing2D` | 通常のCPU命令記録、幾何・paint、直接GPU記録。Abstractionsだけへ実行時依存し、RenderGraph・ImageEffectsへ依存しない |
+| `Lumyte.Graphics.Drawing2D.RenderGraph` | レイヤーCanvas、背景取得、Effectsコールバック、親graphへのAppend2D。Drawing2D・ImageEffects・RenderGraphへ依存 |
 | `Lumyte.Graphics.ImageEffects` | レイヤー・背景の画像処理を委譲する接続先。[GRAPHICS-0016](GRAPHICS-0016-image-effects.md) の契約に従う |
 | `Lumyte.Graphics.RenderGraph` | パス依存、barrier、不要パスの除去、論理一時資源の確保と解放 |
 | 各 `DependencyInjection` パッケージ | 標準実装の任意登録。本体からDIコンテナーへ依存させない |
@@ -31,7 +33,7 @@ Canvas2D → DrawList2D → Renderer2D ─────────────�
 
 新規ライブラリは `src/Graphics/` に配置し、プロジェクト・NuGet・namespaceを上記名称に揃える。backend具象型、Window、Input、Compositionには依存せず、shaderは既存Slang基盤で用意する。
 
-RenderGraphの接続契約はmain `81bba9e` に統合された [GRAPHICS-0015](./GRAPHICS-0015-render-graph.md) を参照する。独自のパス実行基盤は追加せず、単独2D利用も私有RenderGraphで実行する。
+RenderGraphの接続契約はmain `81bba9e` に統合された [GRAPHICS-0015](./GRAPHICS-0015-render-graph.md) を参照する。通常のCanvas2DとRenderer2Dはgraphを生成せず、Graphics command bufferへ直接記録する。レイヤーと画像エフェクトはRenderGraphCanvas2Dに分離し、RenderGraphRenderer2Dを親graph.Append2D(renderer)で追加する。内部に別のgraphやcompiled planを作らない。
 
 レイアウト、ヒットテスト、画像デコード、ファイル資産管理、フォント探索・shaping・行分割、必須のシーングラフは対象外とする。
 
@@ -39,7 +41,7 @@ RenderGraphの接続契約はmain `81bba9e` に統合された [GRAPHICS-0015](.
 
 CanvasはCPU上に不変のDrawListを作る。描画順を固定し、連続する同型・同一状態の範囲だけをバッチ化する。レイヤー・clip・隔離合成の境界を越えてまとめず、textureや透明度による全体ソートは行わない。
 
-初期標準実装は、描画先を覆うtriangleを保守的なboundsのscissorで制限し、fragment shaderで形状とpaintを評価する。命令ごとにuploadと描画passを宣言し、同一バッチのpipelineを共有する。表はこの実装の方式を示す。
+初期標準実装は、描画先を覆うtriangleを保守的なboundsのscissorで制限し、fragment shaderで形状とpaintを評価する。通常描画はbatch.Recordでupload・内部barrier・描画を直接記録し、同一バッチのpipelineを共有する。graph経路は同じbatchを一つのopaque passとして追加し、共有資源の依存を宣言する。表はこの実装の方式を示す。
 
 | 描画命令 | 初期標準実装の方式 |
 | --- | --- |
@@ -63,7 +65,7 @@ instancing、GPUでのtile化、三角形rasterizerを使うpath/mesh描画、co
 
 各命令は指定されたpaintとclipを含む処理全体を担当し、必要なら複数GPUパスを宣言する。FillPathだけを差し替えても、StrokePathの輪郭処理やDrawPaintGraph内部のpath処理には波及しない。
 
-Save/Restore、変換、ClipRect/ClipPathはCPU状態操作である。BeginLayer/EndLayerとDrawBackdropEffectはホストが展開する構造命令とし、上記11命令の専用interfaceを増やさない。Canvas.Endは未完了のSave・レイヤーがあれば失敗し、Cancelは記録全体を破棄する。
+Save/Restore、変換、ClipRect/ClipPathはCPU状態操作である。BeginLayer/EndLayerとDrawBackdropEffectはホストが展開する構造命令とし、上記11命令の専用interfaceを増やさない。Canvas2D.Endは未完了のSave、RenderGraphCanvas2D.Endは未完了のSave・レイヤーがあれば失敗し、Cancelは記録全体を破棄する。
 
 ### 3. 固定DIと外部実装
 
@@ -71,11 +73,11 @@ Save/Restore、変換、ClipRect/ClipPathはCPU状態操作である。BeginLaye
 
 実装の選択は構築時に固定する。CanHandle、候補探索、自動fallback、描画中のDI解決・Type辞書検索は設けない。入力やGPU機能に対応できない場合は準備時に明示的に失敗する。interface呼び出し自体は残るため、インライン化や性能向上は実測前に保証しない。
 
-DrawingCommandRenderers2D.CreateDefault()は登録表と11標準実装を毎回newし、DI・device・GPU資源を必要としない。UseGraphics2Dは11標準描画実装と描画登録表をTryAddScopedする。エフェクトは明示的に生成してImageEffectGraph.Createで組み立て、DIへ登録しない。RenderGraphのAppend拡張メソッドへ画像とパラメーターを直接渡してパスだけを追加する。
+DrawingCommandRenderers2D.CreateDefault()は登録表と11標準実装を毎回newし、DI・device・GPU資源を必要としない。UseGraphics2Dは11標準描画実装と描画登録表をTryAddScopedする。エフェクトはDIへ登録しない。RenderGraphCanvas2DのEffectsコールバックへImageEffectSubgraphを渡し、画像とパラメーターからパスを追加する。
 
 外部実装は後続AddScopedの単一解決が優先され、先行登録と再Useも保持する。Graphicsへは解決済み登録表を通常のRenderer2Dコンストラクターへ渡す。
 
-DI経路ではCreateDefaultを呼ばず、各interfaceをコンストラクターへ注入する。登録はprovider構築前に完了させ、既存provider・rendererの設定は後から変更しない。device・renderer・providerは描画登録拡張で生成・解決しない。効果定義は直接構築する。画像処理はRenderGraphの拡張メソッドとして呼び出す。scopeはdevice単位とし、GPU使用、準備結果、rendererの解放後に破棄する。
+DI経路ではCreateDefaultを呼ばず、各interfaceをコンストラクターへ注入する。登録はprovider構築前に完了させ、既存provider・rendererの設定は後から変更しない。device・renderer・providerは描画登録拡張で生成・解決しない。画像処理はEffectsコールバックからRenderGraphの部分ビューへ追加する。scopeはdevice単位とし、GPU使用、準備結果、rendererの解放後に破棄する。
 
 ### 4. paint・色・外部文字描画
 
@@ -99,62 +101,32 @@ ImagePatternは整数texelのSource、座標変換、軸別Clamp/Repeat/Mirror/D
 
 DrawGlyphRunと文字の描画形式選択は外部文字ライブラリが担当する。パス・mesh・coverage・距離場・RGBA・COLRv1をそれぞれ汎用命令へ渡す。COLRv1の3点linear、2円radial、sweep、重複stopの順序、参照glyph、変換・clip、全28合成modeを保持する。variation・CPAL・foreground・font unitsとY反転・cacheは文字側で解決する。
 
-### 5. エフェクトを考慮したレイヤーと背景描画
+### 5. RenderGraph用Canvasとエフェクト部分グラフ
 
-画像演算は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) のImageEffectGraphとRenderGraphの画像エフェクト拡張へ委譲する。2D側は画像化する内容と適用位置、clip・group opacity、背景snapshot、親への合成を管理する。PaintGraph2Dは図形内部の塗り、ImageEffectGraphは画像化後の処理として分け、paintの隔離合成をレイヤーの画像エフェクトへ置き換えない。
+通常のCanvas2DにはBeginLayer・EndLayer・DrawBackdropEffectを持たせない。共通のCPU描画・変換・clip操作はDrawingCanvas2Dにまとめ、RenderGraphCanvas2Dだけがレイヤー操作を追加する。通常のEndはDrawList2D、graph用Endは別のRenderGraphDrawList2Dを返し、通常Renderer2Dへレイヤーを渡せない型にする。
 
-すべての効果を明示的に生成してImageEffectGraph.Createへ渡し、同じEffectsへ指定できる。2Dは効果の種類を固定せず、定義が返す出力範囲と必要入力範囲を使ってレイヤー合成と背景取得を行う。独自効果を追加しても11描画命令やレイヤーAPIの変更は不要であり、固定のAppendPassesを持つエフェクトのgraphを利用者が渡す。実装を変える場合は新しいエフェクト型を追加し、レンダラーの差し替えは行わない。
+LayerOptions2D.EffectsとBackdropEffectOptions2D.Effectsは `Func<ImageEffectSubgraph, EffectImage>` とする。レイヤーのEffectsはnullならidentityで、背景効果は必須とする。記録時はdelegateを保存するだけで、効果型のnewやImageEffectGraphの組立を利用者へ要求しない。設定値はコールバック内でgraph.AppendGaussianBlur(graph.Source, 3, 3)のように直接渡す。
 
-レイヤーと背景はDisplayLinearのlinear premultiplied Rgba16Float画像として、原点と有限範囲を保って渡す。coverageや距離場は先に色画像へ描画し、SDF値自体をfilterへ渡さない。効果で拡張された出力範囲を親の描画先へ戻し、背景取得にはImageEffectGraph.GetRequiredSourceBoundsで求めた必要入力範囲を使う。エフェクトはgraph.AppendEffectsとgraph.AppendOpacityで2Dと同じRenderGraphへパスを追加し、単独利用でも共有graphでも描画順と資源依存を保持する。
+Append2Dの準備中に内容を画像化し、一回だけEffectsを呼び出す。ImageEffectSubgraph.Sourceはそのレイヤーまたは背景の入力画像で、Graphは親RenderGraphの借用参照である。独立したgraph・import・Compile・Record・Submitは行わない。拡張メソッドは同じ親graphへpassを追加し、EffectImageを返す。途中結果の固定資源は部分ビューが所有し、2Dの準備ownerがGPU完了まで保持する。delegateのclosureには不変の設定を保持し、別Appendごとに新しい部分ビューと出力を作る。
 
-BeginLayerは有限のContentBounds、Effects、Opacity、任意のOutputClipをsnapshotする。内容を透明面へ描き、EndLayerで次の順に処理して開始時の状態へ戻す。
+BeginLayerは有限のContentBounds、Effects、Opacity、任意のOutputClipをsnapshotする。適用順は「内容描画 → Effects → group opacity → 最終clip → 親targetへSrcOver」。ContentBoundsは効果前の幾何clipであり、親clipとOutputClipは効果後に適用する。入力を最終targetへ先に切らず、効果で拡張した出力をContentBoundsで再度切らない。親clipのcoverageは一度だけ適用する。
 
-```text
-内容描画 → Effects → group opacity → 最終clip → 親targetへSrcOver
-```
+DrawBackdropEffectは直前までの現在レイヤーをsnapshotし、結果を `effect × coverage + original × (1 − coverage)` で置換する。任意のパス追加コールバックから必要入力ROIを逆算する契約はないため、初期実装は現在targetの有限領域全体を取得する。ぼかし・移動・独自効果の入力を取りこぼさず、コールバックを計画用に再実行しない。必要ROIを明示する最適化は別途設計する。
 
-ContentBoundsは効果前の幾何clipであり、単なるculling用boundsではない。親clipとOutputClipは効果後、レイヤー内の追加clipは効果前に適用する。画面外から届く影を保つため入力を最終targetへ先に切らず、拡張後の出力をContentBoundsで再び切らない。画像化の前後のclipは独立した操作で、同一幾何段階のAA相関とは区別する。
+2Dから渡す画像はDisplayLinearのlinear premultiplied Rgba16Floatとし、原点と有限範囲を保持する。コールバックの出力は非空画像で同じ色semanticとする。効果前の入力原点と、拡張後の出力原点を保持する。coverageや距離場は先に色画像へ描画する。別の実装は新しい効果と拡張メソッドで追加し、効果レンダラーの差し替え機構は持たない。
 
-Save/Restoreは各レイヤー内で完結させ、外側のSaveを内側から消費しない。空のレイヤーは出力なしとし、0寸法のtextureを作らない。sigmaと画像offsetはCanvas変換・DPIから独立した出力pixel単位である。
-
-DrawBackdropEffectは呼び出し直前までの現在レイヤーだけを別画像へ取得する。出力領域から必要入力余白を逆算し、効果結果を `effect × coverage + original × (1 − coverage)` で置換する。元背景をSrcOverで二重合成せず、取得→効果→置換→後続描画の順序を保持する。
-
-背景取得には初期化済みのSampled | RenderAttachment targetを要求する。sRGB背景はshaderでdecodeしてRgba16Floatへ取得し、alphaを再乗算しない。読出しできない表示先には、対応するオフスクリーン面を使ってから合成する。
-
-### 6. RenderGraphとの接続
-
-Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを宣言する。callbackは一つのrender/compute passまたはcopy群を記録し、encoderを閉じて返す。callback中に新たな依存先を追加せず、pass間barrierはRenderGraphが生成する。複数dispatchが必要な実装もこの境界で表す。
-
-単独利用のPrepareAsyncと共有graphへのAppendPassesAsyncを用意する。公開APIと命令別interfaceは本ADR末尾に示す。
-
-| 接続事項 | 契約 |
-| --- | --- |
-| 入力 | 外部allocationを一度だけimportし、DrawingGraphBindings2Dで既存handleを共有。対応はAppend時に固定 |
-| 一時画像 | graphの論理handleで接続し、物理画像へ変換して再importしない |
-| target | 確定したdescriptor・range・原点を渡し、viewはRecord時に解決。初期targetは単一mip/layer |
-| アクセス | shader参照先、copy元/先、index/indirect、typed buffer・shader dataを含める。同resourceのUseはscopeを合併して一回 |
-| 内容の保持 | Load・部分更新・SrcOverはColorRead \| ColorWrite。初回全面Clearだけをwrite-onlyにできる |
-| 観測と順序 | MarkOutput/Exportは必要出力、DependsOnは順序、KeepAliveは副作用の保持を表す |
-| 状態 | exportしない資源はimport状態へ自動復帰しない。入口の実state・scopeと外部同期は利用者が保証 |
-
-初期RenderGraphはallocation全体を追跡する。同じallocationを同じpassでsampleとattachmentに使わず、深いpaint参照や別subresourceでもtargetへのfeedbackを拒否する。背景処理はsnapshotへ分離する。shader-dataの一時生成は準備ownerが行ってimportし、転送metadataの既存契約も維持する。
-
-単独PrepareAsyncは入力をSampled、targetをColorAttachmentとしてimport/exportする。入力はVertexShader | FragmentShader | ComputeShaderのShaderReadまで可視化済みとし、targetはColorOutputのColorRead | ColorWriteを入口scopeとする。共有graphでは利用者が実際のstate・scopeを渡し、read-only importでも最初の利用stageまで外部producerの可視性を保証する。
-
-外部実装を一つのopaque callbackへ包む場合も、全アクセスと入口stateを宣言し、内部barrierを自身で管理して同じstateへ戻す。別のexit stateは現RenderGraphで宣言できない。一つのUseで表せないcopy→sample等の異なるstateは複数passへ分割する。宣言できない方式を推測して実行しない。
-
-### 7. 所有権・完了・失敗
+### 6. 所有権・完了・失敗
 
 | 対象 | 所有者 |
 | --- | --- |
 | importしたtexture・view・sampler等 | アプリケーション。viewだけでなく親textureもGPU使用終了まで保持 |
 | 一時allocationとcontext生成view | CompiledRenderGraph |
 | CPU snapshot、pipeline、argument table、upload、私有shader-dataとエフェクト準備owner | PreparedDrawingPasses2D |
-| 単独利用のplanと準備owner | PreparedDraw2D |
+| 通常描画のCPU snapshotと固定GPU資源 | PreparedDraw2D。graphやplanは生成・所有しない |
 
 準備ownerのcallback集合は、一つのcompiled planの一回のRecordにだけ使う。再実行にはAppendから新しく準備し、先行GPUが使うtableやstagingを上書きしない。owner解放後のgraphをCompile/Recordしない。
 
-正常系は「準備・Compile → Record → Finish → Submit → 明示完了確認 → command → plan → 準備owner → submissionの解放」とする。最後にrendererとDI scopeを解放する。単独利用ではPreparedDraw2Dがplanと準備ownerの解放をまとめる。plan出力を後続submissionでも使う場合は、その完了まで保持する。
+正常系は「準備・Compile → Record → Finish → Submit → 明示完了確認 → command → plan → 準備owner → submissionの解放」とする。最後にrendererとDI scopeを解放する。通常描画のPreparedDraw2Dは固定資源だけを所有し、graphやplanを所有しない。plan出力を後続submissionでも使う場合は、その完了まで保持する。
 
 | 失敗位置 | 処理 |
 | --- | --- |
@@ -174,7 +146,7 @@ Renderer2Dは各命令実装の準備結果からpassと全資源アクセスを
 | paintとレイヤーの画像エフェクトを同じgraphで表す | 塗りのcoverageと画像化前後のclip・描画順の責務が混在する |
 | CanHandle・優先順位による方式探索 | 命令ごとに指定した実装が固定されない |
 | 単色専用命令とpaint種別ごとのDI登録 | 図形とpaintの組み合わせでAPI・登録が増える |
-| GPU処理をRecordだけへ隠す | RenderGraphから依存と一時資源を解析できない |
+| graph経路で外部共有資源を宣言しない | 前後の描画やエフェクトとの依存を解析できない |
 | 独自のGPU backend・パス実行器 | 既存Graphics・RenderGraphの契約と重複する |
 | texture順の全体ソート・描画ごとのSubmit | 半透明の順序とアプリ側のGPU実行管理を崩す |
 | 文字を単色atlasや平坦なpath列に限定 | 外部の形式選択とCOLRv1の隔離合成を保持できない |
@@ -209,9 +181,9 @@ CPU準備時間、GPU時間、draw数、転送量、割り当て量、中間面�
 
 ## API・詳細契約・利用例
 
-比較元は先行エフェクトブランチ `feat/image-effects` のrevision `82a35ba`。以下の4つの差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
+比較元は先行エフェクトブランチ `feat/image-effects` のrevision `c6d0c09`。以下の差分は追加する公開メンバーの宣言であり、同じ型の宣言は一つの公開型へ統合する。Graphics型は `Lumyte.Graphics.Abstractions`、行列・ベクトルは `System.Numerics`、DI型は `Microsoft.Extensions.DependencyInjection` を使用する。
 
-RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectGraph・ImageEffectDefinition・Append拡張メソッドの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
+RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。相互参照するDrawing2D・ImageEffects・RenderGraphの型はそれぞれの名前空間を使用する。ImageEffectSubgraph・ImageEffectDefinition・Append拡張メソッドの宣言と契約は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) を参照する。
 
 ### 公開API
 
@@ -376,9 +348,8 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    public sealed record LayersPaintNode2D(IReadOnlyList<PaintNode2D> Children) : PaintNode2D;
 +    public sealed record CompositePaintNode2D(PaintNode2D Source, PaintNode2D Backdrop,
 +        CompositeMode2D Mode) : PaintNode2D;
-+    public sealed class Canvas2D
++    public abstract class DrawingCanvas2D
 +    {
-+        public Canvas2D();
 +        // 記録なし・スタックなしの状態から開始する。ネスト開始は拒否。
 +        public void Begin();
 +        public void Save();
@@ -419,16 +390,27 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +        // 外部で三角形化済みのデータを描く。
 +        public void DrawMesh(Mesh2D mesh, PaintGraph2D paint);
 +        // Save/Restoreの対応を検証し、不変のCPUコマンド列を返す。GPU実行なし。
-+        public DrawList2D End();
 +        // 記録中のCPUコマンドを破棄し、再びBeginできる状態へ戻す。
 +        public void Cancel();
++        protected DrawList2D CompleteRecording();
++        protected void RequireRecording();
++        protected DrawingState2D State { get; set; }
++        protected int SaveDepth { get; }
++        protected virtual int SaveBoundary { get; }
++        protected void AddCommand(DrawingCommand2D command);
++        protected virtual void ValidateComplete();
++        protected virtual void ResetAdditionalState();
++    }
++    public sealed class Canvas2D : DrawingCanvas2D
++    {
++        public DrawList2D End();
 +    }
 +    // 再使用可能なCPU snapshot。参照する画像のGPU所有権は持たない。
 +    public sealed class DrawList2D { }
 +    public sealed record RenderTarget2D
 +    {
 +        // 同一device、親textureも単一sample/mip/layerのD2、RenderAttachment view。
-+        // 背景エフェクトを含む場合は親textureのSampled用途も必須。
++        // 通常描画はSampled用途をtargetへ要求しない。背景効果は別パッケージの契約に従う。
 +        // 初期対応はRgba8SrgbとRgba16Float。寸法はviewから取得する。
 +        // Rgba16Floatも初期2Dではdisplay-linearのpremultiplied値を保持する。
 +        public required IGraphicsTextureView View { get; init; }
@@ -437,57 +419,29 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +        public AttachmentLoadOp LoadOp { get; init; } = AttachmentLoadOp.Load;
 +        public Color2D ClearColor { get; init; }
 +    }
-+    public sealed record RenderTargetBinding2D
++    public record DrawingTargetInfo2D
 +    {
-+        // 同じgraphのtexture。Descriptionはallocationの実際の宣言と一致させる。
-+        public required RenderGraphTexture Texture { get; init; }
 +        public required TextureDesc Description { get; init; }
-+        // 初期targetはallocation全体の単一mip/layer。このrange以外は未対応。
-+        public TextureSubresourceRange Range { get; init; } = new(0, 1, 0, 1);
 +        public float PixelScale { get; init; } = 1;
-+        // この画像の左上が、ルート描画先の物理pixel座標のどこにあるか。finiteな整数。
 +        public Vector2 PixelOrigin { get; init; }
 +        public AttachmentLoadOp LoadOp { get; init; } = AttachmentLoadOp.Load;
 +        public Color2D ClearColor { get; init; }
 +    }
-+    // 外部画像は呼び出し側が一度だけimportし、同じallocationのhandleを共有する。
-+    public sealed class DrawingGraphBindings2D
-+    {
-+        public DrawingGraphBindings2D(RenderGraphBuilder graph);
-+        // 同じtexture/handleの再指定は許可、既存対応と異なる再指定は拒否。
-+        // 正しいallocationとhandleの対応・同一device・寿命は利用者が保証する。
-+        public void BindTexture(IGraphicsTexture texture, RenderGraphTexture resource);
-+        // 未登録は準備時に拒否。viewは親textureからこの対応を引く。
-+        public RenderGraphTexture GetTexture(IGraphicsTexture texture);
-+    }
 +    public sealed class Renderer2D : IDisposable
 +    {
-+        // deviceは借用。グループ透明度はRenderGraph.AppendOpacityへ画像とopacityを直接渡して追加する。
 +        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers);
-+        // 単独実行の便利API。私有graphへimport→AppendPassesAsync→Compileを行う。
-+        // submit/waitは行わない。キャンセル時は内部確保を解放する。
++        // graphを作らず、固定資源と直接記録するbatchを準備する。
 +        public ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list,
 +            RenderTarget2D target, CancellationToken cancellationToken = default);
-+        // 共通graphへ追加。物理target viewは不要。返却ownerをGPU完了まで保持する。
-+        // 失敗時はgraph全体を再構築。同時追加・追加中のCompileは禁止。
-+        public ValueTask<PreparedDrawingPasses2D> AppendPassesAsync(RenderGraphBuilder graph,
-+            DrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings,
-+            CancellationToken cancellationToken = default);
-+        // 利用者は全準備・GPU使用・準備結果の解放を先に完了させる。暗黙のwaitなし。
 +        public void Dispose();
 +    }
-+    public sealed class PreparedDrawingPasses2D : IDisposable
-+    {
-+        // callbackのCPU snapshot・pipeline・table・upload等を所有。graphは所有しない。
-+        // 一つのcompiled planで一回だけ実行。GPU使用終了と記録先の破棄後に呼ぶ。
-+        public void Dispose();
-+    }
+
 +    public sealed class PreparedDraw2D : IDisposable
 +    {
 +        // 一度だけ。Recordingかつactive passなしの同一device commandに記録する。
 +        // 内部copy/compute/barrier/render passを記録し、active passを残さない。
 +        public void Record(IGraphicsCommandBuffer commands);
-+        // GPU完了→commands破棄後に呼ぶ。CompiledRenderGraphと準備ownerを解放する。
++        // GPU完了→commands破棄後に呼ぶ。固定GPU資源を解放する。
 +        // Disposeから完了照会・waitを行わず、寿命違反の検出を保証しない。idempotent。
 +        public void Dispose();
 +    }
@@ -535,17 +489,13 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +        DrawingState2D State) : DrawingCommand2D(State);
 +    public sealed class RenderPreparationContext2D
 +    {
-+        // いずれも借用。pass追加はbatch.AppendPassesで行う。
 +        public IGraphicDevice Device { get; }
-+        public RenderGraphBuilder Graph { get; }
-+        public DrawingGraphBindings2D Bindings { get; }
-+        // Loadへ正規化。ホストが必要な初回clearのpassを先に宣言する。
-+        public RenderTargetBinding2D Target { get; }
++        public DrawingTargetInfo2D Target { get; }
 +    }
 +    // 以下の全PrepareAsyncに共通する契約:
 +    // 同型・同一clip/合成境界の連続命令。並べ替え不可。snapshotは準備結果の寿命まで有効。
 +    // CPU処理とpass追加に必要なsnapshot・固定資源を準備する。submit/waitは禁止。
-+    // 一時texture/bufferはAppendPassesで論理宣言し、物理確保は実行器へ任せる。
++    // batch私有texture/bufferは準備ownerが所有し、Record内でupload・barrier・描画を記録する。
 +    public interface IFillRectRenderer2D
 +    {
 +        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
@@ -603,11 +553,16 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    }
 +    public interface IPreparedCommandBatch2D : IDisposable
 +    {
-+        // 準備時と同じgraph/targetへ一度だけpassとアクセスを宣言する。
-+        // target更新順序を保つ。barrier・一時資源はgraph、Submitはアプリが担当。
-+        void AppendPasses(RenderGraphBuilder graph, RenderTargetBinding2D target);
-+        // PreparedDrawingPasses2Dが所有。graphの一時textureを直接Disposeしない。
-+        void Dispose();
++        // 外部共有資源を宣言する。batch私有資源はRecordで内部同期する。
++        void DeclareResources(IDrawingResourceDeclarations2D resources);
++        void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target);
++    }
++    public interface IDrawingResourceDeclarations2D
++    {
++        void UseTexture(IGraphicsTexture texture, TextureState state, BarrierScope scope);
++        void UseBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope scope) where T : unmanaged;
++        void UseShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
++            where T : struct, IShaderData;
 +    }
 +    public sealed class DrawingCommandRenderers2D
 +    {
@@ -707,34 +662,65 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +}
 ```
 
-#### 2Dレイヤーと背景エフェクト
+#### RenderGraph用Canvas・レイヤー・親graphへの接続
 
-Canvas2Dへ追加するメンバーを以下に示す。BeginLayer・EndLayer・DrawBackdropEffectはホストが扱う構造命令であり、11描画命令のinterfaceを増やさない。
+以下は別パッケージの公開APIである。通常Canvas2DにはレイヤーAPIを追加しない。
 
 ```diff
-+namespace Lumyte.Graphics.Drawing2D
++namespace Lumyte.Graphics.Drawing2D.RenderGraph
 +{
-+    public sealed record LayerOptions2D
-+    {
-+        // BeginLayer時のローカル座標。効果前の内容をこの有限矩形にclipする。
-+        public required Rect2D ContentBounds { get; init; }
-+        public ImageEffectGraph Effects { get; init; } = ImageEffectGraph.Source();
-+        // エフェクトの後にグループ全体へ一度適用。finiteかつ[0,1]。
-+        public float Opacity { get; init; } = 1;
-+        // 指定時は効果後の出力だけをclip。BeginLayer時のローカル座標で固定。
-+        public Rect2D? OutputClip { get; init; }
-+    }
-+    public sealed record BackdropEffectOptions2D
-+    {
-+        // 背景への効果を表示する矩形。必要入力のsnapshot領域とは別。
-+        public required Rect2D OutputBounds { get; init; }
-+        public required ImageEffectGraph Effects { get; init; }
-+    }
-+    public sealed class Canvas2D
++    public sealed class RenderGraphCanvas2D : DrawingCanvas2D
 +    {
 +        public void BeginLayer(LayerOptions2D options);
 +        public void EndLayer();
 +        public void DrawBackdropEffect(BackdropEffectOptions2D options);
++        public RenderGraphDrawList2D End();
++    }
++    public sealed class RenderGraphDrawList2D;
++    public sealed record LayerOptions2D
++    {
++        public required Rect2D ContentBounds { get; init; }
++        public Func<ImageEffectSubgraph, EffectImage>? Effects { get; init; }
++        public float Opacity { get; init; } = 1;
++        public Rect2D? OutputClip { get; init; }
++    }
++    public sealed record BackdropEffectOptions2D
++    {
++        public required Rect2D OutputBounds { get; init; }
++        public required Func<ImageEffectSubgraph, EffectImage> Effects { get; init; }
++    }
++    public sealed record RenderTargetBinding2D : DrawingTargetInfo2D
++    {
++        public required RenderGraphTexture Texture { get; init; }
++        public TextureSubresourceRange Range { get; init; } = new(0, 1, 0, 1);
++    }
++    public sealed class DrawingGraphBindings2D
++    {
++        public DrawingGraphBindings2D(RenderGraphBuilder graph);
++        public void BindTexture(IGraphicsTexture texture, RenderGraphTexture resource);
++        public RenderGraphTexture GetTexture(IGraphicsTexture texture);
++        public void BindBuffer<T>(IGraphicsBuffer<T> buffer, RenderGraphBuffer<T> resource) where T : unmanaged;
++        public RenderGraphBuffer<T> GetBuffer<T>(IGraphicsBuffer<T> buffer) where T : unmanaged;
++        public void BindShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer,
++            RenderGraphShaderDataBuffer<T> resource) where T : struct, IShaderData;
++        public RenderGraphShaderDataBuffer<T> GetShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer)
++            where T : struct, IShaderData;
++    }
++    public sealed class RenderGraphRenderer2D : IDisposable
++    {
++        public RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list,
++            RenderTargetBinding2D target, DrawingGraphBindings2D bindings);
++        public void Dispose();
++    }
++    public static class Drawing2DRenderGraphExtensions
++    {
++        public static ValueTask<PreparedDrawingPasses2D> Append2D(this RenderGraphBuilder graph,
++            RenderGraphRenderer2D renderer, CancellationToken cancellationToken = default);
++    }
++    public sealed class PreparedDrawingPasses2D : IDisposable
++    {
++        // batch・effect部分ビュー・compositorの固定資源を所有。親graphは所有しない。
++        public void Dispose();
 +    }
 +}
 ```
@@ -806,19 +792,19 @@ coverage相関を保つのは同じ幾何評価段階内であり、画像化を
 
 DrawBackdropEffectはその位置より前の現在レイヤーの描画先だけを取得し、祖先・後続・自分自身を読まない。targetはSampled | RenderAttachment用途と有効内容を要求する。初期Clearまたは有効なLoadが必要で、読出し不能ならPrepareで拒否する。Rgba8Srgbはsample時にdecodeし、既にpremultipliedの値を再乗算せずRgba16Floatへ描く。異形式のraw copyを色変換の代用にしない。
 
-変換後のOutputBoundsと現在clipから出力pixel領域を求め、GetRequiredSourceBoundsで入力領域を逆算する。必要入力と置換用originalの出力領域の和集合を別textureへsnapshotし、取得元の有効範囲外を透明とする。sample領域をOutputBoundsへ先に切らない。元背景が半透明でも二重合成しないよう、coverageをcとして `result = effect*c + original*(1-c)` で置換する。originalもsnapshotから読み、attachmentはblend無効で書き、clip外は保持する。
+変換後のOutputBoundsと現在clipから出力pixel領域を求め、任意のEffectsコールバックのため現在targetの有限領域全体を別textureへsnapshotし、取得元の有効範囲外を透明とする。sample領域をOutputBoundsへ先に切らない。元背景が半透明でも二重合成しないよう、coverageをcとして `result = effect*c + original*(1-c)` で置換する。originalもsnapshotから読み、attachmentはblend無効で書き、clip外は保持する。
 
 #### 準備・RenderGraph・解放
 
 準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。Drawing2D経由のPreparedImageEffectはPreparedDrawingPasses2Dが所有し、同じGPU使用期間を通じて保持する。エフェクト内部の資源管理は [GRAPHICS-0016](GRAPHICS-0016-image-effects.md) に従う。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
 
-外部textureはparent allocationごとに一度だけimportし、DrawingGraphBindings2Dへ同じhandleを登録する。準備時にbindingを確定し、後の表変更で追加済みcallbackの入力を変えない。target Descriptionは実際の宣言と一致させる。標準passは全アクセスを宣言し、同じ資源のstage/accessを合併する。初期graphはallocation全体で同期し、同一allocationのsampleとattachmentを同時使用しない。shader-dataは準備側で所有してimportし、通常bufferはtyped handleを使う。
+外部textureはparent allocationごとに一度だけimportし、DrawingGraphBindings2Dへ同じhandleを登録する。準備時にbindingを確定し、後の表変更で追加済みcallbackの入力を変えない。target Descriptionは実際の宣言と一致させる。graph adapterは全外部共有アクセスを宣言し、同じ資源のstage/accessを合併する。通常batchの私有資源はbatchが所有して内部barrierを記録する。初期graphはallocation全体で同期し、同一allocationのsampleとattachmentを同時使用しない。外部共有bufferとshader-dataはbindingsで既存typed handleへ対応付ける。graph compositorの一時資源はRenderGraphへ宣言する。
 
 Load・部分更新・source-overはColorRead | ColorWrite、全体ClearのみColorWriteとして前内容の依存を保持する。未初期化領域・Discard後の内容を読まない。背景は更新→snapshot→effect→置換→後続描画の依存を宣言する。MarkOutputは出力を保持し、Exportはさらにfinal state/scopeを指定する。DependsOnは順序、KeepAliveは副作用による保持であり代替しない。exportしない画像は自動でimport状態へ戻らない。
 
 準備ownerは一つのcompiled planで一回のRecordだけに使い、記録失敗も消費済みとする。Append失敗・キャンセルでは途中graphを破棄して再構築し、その呼び出しの新規ownerは内部cleanup、先行する成功ownerは利用者が解放する。Compile失敗ならownerを解放でき、Record失敗・送信取消ならcommandを先に破棄する。Submit後は全GPU使用終了を待ち、command→plan→準備owner→submissionの順で解放する。後続submissionが出力を使う間も元planを保持する。
 
-WaitのキャンセルやFailedという状態名だけをGPU終了とみなさない。Disposeは完了照会・waitを行わず、寿命違反の検出も保証しない。利用者は準備結果→renderer→DI scopeの寿命を保証する。単独Prepareは入力をSampledかつVertexShader | FragmentShader | ComputeShaderのShaderReadへ、targetをColorAttachmentへ可視化済みとしてimportする。共有graphは実際の入口state/scopeを渡し、read-only importも最初の利用stageまで外部producerとの依存を満たす。
+WaitのキャンセルやFailedという状態名だけをGPU終了とみなさない。Disposeは完了照会・waitを行わず、寿命違反の検出も保証しない。利用者は準備結果→renderer→DI scopeの寿命を保証する。通常Prepareはgraphを作らず、入力をSampled、targetをColorAttachmentへ可視化済みとしてRecordする。共有graphは実際の入口state/scopeを渡し、read-only importも最初の利用stageまで外部producerとの依存を満たす。
 
 opaque callbackは全外部アクセスを宣言し、内部barrierと私有資源を実装側で管理する。終了時は宣言した入口stateへ戻す。現RenderGraphには別exit stateの宣言がなく、単一Useで表せない複数stateはpassへ分割する。宣言できない経路を推測で実行しない。
 
@@ -826,103 +812,99 @@ opaque callbackは全外部アクセスを宣言し、内部barrierと私有資�
 
 ### 利用例
 
-#### 固定DI構成
+#### RenderGraphを使わない通常描画
 
-登録はprovider構築前に完了する。単一サービス解決の後勝ちを使い、UseGraphics2DのTryAddは先行登録・再登録時の上書きを保持する。CreateDefaultはDIを使わず表と全標準実装を毎回newし、GPU資源を作らない。描画登録表と各graphは実装を借用する。ExternalComputeFillPathRendererは利用者側の実装例で、FillPathだけを置換する。
-
-```csharp
-var services = new ServiceCollection();
-services.UseGraphics2D();
-services.AddScoped<IFillPathRenderer2D, ExternalComputeFillPathRenderer>();
-
-using var provider = services.BuildServiceProvider(
-    new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
-using var scope = provider.CreateScope();
-
-var renderers = scope.ServiceProvider
-    .GetRequiredService<DrawingCommandRenderers2D>();
-using var renderer = new Renderer2D(device, renderers);
-// 効果の生成とDAG構築はパス追加APIから分離する。
-var blur = new GaussianBlurEffect(3, 3);
-var effects = ImageEffectGraph.Create(blur, ImageEffectGraph.Source());
-```
-
-#### DIなしのGraphics接続
-
-正常系の例。device・targetView・入力画像はアプリ所有。targetToAttachmentは初期化済みtarget allocation全体を実際の前状態からColorAttachmentへ移すbarrierとする。入力画像は前述の入口state/scopeへ可視化済みとし、新規targetはClearで初期化する。
-
-```csharp
-var renderers = DrawingCommandRenderers2D.CreateDefault();
-using var renderer = new Renderer2D(device, renderers);
-var prepared = await renderer.PrepareAsync(drawList, new RenderTarget2D
-{
-    View = targetView,
-    LoadOp = AttachmentLoadOp.Load
-});
-
-var commands = device.CreateCommandBuffer(new CommandBufferDesc());
-commands.Barrier(targetToAttachment);
-prepared.Record(commands); // active passの外から呼ぶ。内部のpassも閉じて返す。
-commands.Finish();
-
-var submission = device.Queue.Submit([commands]);
-await submission.WaitAsync();
-
-commands.Dispose();
-prepared.Dispose();
-submission.Dispose();
-```
-
-#### 共有RenderGraphへの接続
-
-正常系の例。targetは初期化済み単一mip/layer画像で、sampledInputsは重複のない別allocationとする。例のsampleScopeを入口として渡すには、外部producerから必要な読出しstageへの可視性を利用者が満たす。prepared ownerとcompiled planの両方をGPU使用終了まで保持する。
+deviceとtargetViewはアプリ所有とする。targetはColorAttachment、入力画像はSampledへ可視化済みとし、通常描画はRenderGraphを生成しない。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+
+var canvas = new Canvas2D();
+canvas.Begin();
+canvas.FillRect(new Rect2D(20, 20, 100, 50), new Color2D(1, 0, 0, 1));
+DrawList2D list = canvas.End();
+
+using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new RenderTarget2D
+{
+    View = targetView,
+    LoadOp = AttachmentLoadOp.Clear,
+});
+using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
+{
+    prepared.Record(commands);
+    commands.Finish();
+    using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+    await submission.WaitAsync();
+}
+```
+
+#### Effectsコールバックと親graph.Append2D
+
+Effectsには、その時点のレイヤー入力Sourceと親RenderGraphを持つ部分ビューが渡る。値を直接指定し、効果オブジェクトのnewや効果DAGの組立は行わない。
+
+```csharp
+using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
-var graph = new RenderGraphBuilder(device, "2d-and-effects");
-var bindings = new DrawingGraphBindings2D(graph);
-var colorScope = new BarrierScope(PipelineStage.ColorOutput,
-    ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
-var sampleScope = new BarrierScope(PipelineStage.FragmentShader,
-    ResourceAccess.ShaderRead);
-var targetHandle = graph.ImportTexture(target, TextureState.ColorAttachment,
-    colorScope, "canvas");
-bindings.BindTexture(target, targetHandle);
-foreach (IGraphicsTexture input in sampledInputs)
+var canvas = new RenderGraphCanvas2D();
+canvas.Begin();
+canvas.BeginLayer(new LayerOptions2D
 {
-    var handle = graph.ImportTexture(input, TextureState.Sampled, sampleScope);
-    bindings.BindTexture(input, handle);
-}
-var targetBinding = new RenderTargetBinding2D
+    ContentBounds = new Rect2D(20, 20, 200, 100),
+    Effects = graph => graph.AppendGaussianBlur(graph.Source, 3, 3),
+    Opacity = 0.8f,
+});
+canvas.FillRoundedRect(new Rect2D(40, 40, 100, 50), 8, new Color2D(1, 0, 0, 1));
+canvas.EndLayer();
+RenderGraphDrawList2D list = canvas.End();
+
+var parent = new RenderGraphBuilder(device, "frame");
+var description = new TextureDesc
 {
-    Texture = targetHandle,
-    Description = new TextureDesc
-    {
-        Width = target.Width,
-        Height = target.Height,
-        Format = target.Format,
-        Usage = target.Usage,
-        MipLevels = target.MipLevels,
-        ArrayLayers = target.ArrayLayers,
-    },
-    Range = new TextureSubresourceRange(0, 1, 0, 1),
-    PixelScale = 1,
-    LoadOp = AttachmentLoadOp.Load,
+    Width = 512,
+    Height = 256,
+    Format = TextureFormat.Rgba16Float,
+    Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled,
 };
-var drawingOwner = await renderer.AppendPassesAsync(graph, drawList,
-    targetBinding, bindings);
-graph.ExportTexture(targetHandle, TextureState.ColorAttachment, colorScope);
-var plan = graph.Compile();
-var commands = device.CreateCommandBuffer(new CommandBufferDesc());
-plan.Record(commands);
-commands.Finish();
-var submission = device.Queue.Submit(new[] { commands });
-await submission.WaitAsync();
-commands.Dispose();
-plan.Dispose();
-drawingOwner.Dispose();
-submission.Dispose();
+var target = new RenderTargetBinding2D
+{
+    Texture = parent.CreateTexture(description, "2d-output"),
+    Description = description,
+    LoadOp = AttachmentLoadOp.Clear,
+};
+using var renderer = new RenderGraphRenderer2D(
+    DrawingCommandRenderers2D.CreateDefault(), list, target,
+    new DrawingGraphBindings2D(parent));
+using PreparedDrawingPasses2D drawing = await parent.Append2D(renderer);
+parent.MarkOutput(target.Texture);
+// 同じparentへ3Dや後処理のpassを追加できる。
+using (var plan = parent.Compile())
+using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
+{
+    plan.Record(commands);
+    commands.Finish();
+    using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+    await submission.WaitAsync();
+}
 ```
+
+背景効果はRenderGraphCanvas2Dの記録中に追加する。複数の効果を連結しても、部分ビューがすべての固定資源を保持する。
+
+```csharp
+canvas.DrawBackdropEffect(new BackdropEffectOptions2D
+{
+    OutputBounds = new Rect2D(250, 20, 200, 100),
+    Effects = graph =>
+    {
+        var source = graph.Source;
+        var blurred = graph.AppendGaussianBlur(source, 3, 3);
+        return graph.AppendOpacity(blurred, 0.8f);
+    },
+});
+```
+
+通常描画とgraph描画のどちらにも、DIで解決したDrawingCommandRenderers2DまたはCreateDefault()を渡す。UseGraphics2Dが登録するのは11描画実装と命令登録表だけであり、レイヤーやEffectsはDIへ登録しない。

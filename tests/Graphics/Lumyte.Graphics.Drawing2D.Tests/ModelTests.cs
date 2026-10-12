@@ -1,6 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.ImageEffects;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -104,7 +104,7 @@ public sealed class ModelTests
     [Fact]
     public void LayersDeferParentClipAndEnforceIndependentSaveScopes()
     {
-        var canvas = new Canvas2D();
+        var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         canvas.ClipRect(new Rect2D(0, 0, 10, 10));
         canvas.Save();
@@ -117,8 +117,8 @@ public sealed class ModelTests
         canvas.FillRect(new Rect2D(-5, -5, 20, 20), new Color2D(1, 0, 0, 1));
         canvas.EndLayer();
         canvas.Restore();
-        canvas.DrawBackdropEffect(new BackdropEffectOptions2D { OutputBounds = new Rect2D(0, 0, 10, 10), Effects = ImageEffectGraph.Source() });
-        DrawList2D draws = canvas.End();
+        canvas.DrawBackdropEffect(new BackdropEffectOptions2D { OutputBounds = new Rect2D(0, 0, 10, 10), Effects = graph => graph.Source });
+        DrawList2D draws = canvas.End().Commands;
         BeginLayerCommand2D begin = Assert.IsType<BeginLayerCommand2D>(draws.Commands[0]);
         FillRectCommand2D fill = Assert.IsType<FillRectCommand2D>(draws.Commands[1]);
         EndLayerCommand2D end = Assert.IsType<EndLayerCommand2D>(draws.Commands[2]);
@@ -167,14 +167,14 @@ public sealed class ModelTests
     [Fact]
     public void CancelDiscardsAllNestedRecordingState()
     {
-        var canvas = new Canvas2D();
+        var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         canvas.Save();
         canvas.BeginLayer(new LayerOptions2D { ContentBounds = new Rect2D(0, 0, 4, 4) });
         canvas.Save();
         canvas.Cancel();
         canvas.Begin();
-        Assert.Empty(canvas.End().Commands);
+        Assert.Empty(canvas.End().Commands.Commands);
         Assert.Throws<InvalidOperationException>(canvas.Cancel);
     }
 

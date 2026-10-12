@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.Drawing2D;
 
 internal static class DrawingBounds2D
 {
-    internal static ScissorRect GetScissor(DrawingCommand2D? command, DrawingState2D? clip, RenderTargetBinding2D target, GraphImageSource2D? source, GraphImageSource2D? original, bool replace)
+    internal static ScissorRect GetScissor(DrawingCommand2D? command, DrawingState2D? clip, DrawingTargetInfo2D target, Rect2D? source, bool hasOriginal, bool replace)
     {
         Vector2 minimum = Vector2.Zero;
         Vector2 maximum = new(target.Description.Width, target.Description.Height);
@@ -32,9 +32,9 @@ internal static class DrawingBounds2D
                 Intersect(bounds.Value, command.State.Transform * pixels);
             }
         }
-        else if (source is not null && !replace && original is null)
+        else if (source is not null && !replace && !hasOriginal)
         {
-            Intersect(new(source.Bounds.X, source.Bounds.Y, source.Bounds.Width, source.Bounds.Height), Matrix3x2.CreateTranslation(-target.PixelOrigin));
+            Intersect(source.Value, Matrix3x2.CreateTranslation(-target.PixelOrigin));
         }
 
         if (state is not null)

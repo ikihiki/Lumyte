@@ -1,6 +1,6 @@
 using Lumyte.Graphics.ImageEffects;
 
-namespace Lumyte.Graphics.Drawing2D;
+namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
 /// <summary>Describes finite layer contents and post-composition effects.</summary>
 public sealed record LayerOptions2D
@@ -8,8 +8,8 @@ public sealed record LayerOptions2D
     /// <summary>Gets the local input clip captured at BeginLayer.</summary>
     public required Rect2D ContentBounds { get; init; }
 
-    /// <summary>Gets the effect graph applied to the completed layer.</summary>
-    public ImageEffectGraph Effects { get; init; } = ImageEffectGraph.Source();
+    /// <summary>Gets the effect subgraph callback applied to the completed layer.</summary>
+    public Func<ImageEffectSubgraph, EffectImage>? Effects { get; init; }
 
     /// <summary>Gets the finite opacity applied once after effects.</summary>
     public float Opacity { get; init; } = 1;

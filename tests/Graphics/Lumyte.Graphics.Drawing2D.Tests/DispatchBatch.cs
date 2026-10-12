@@ -1,6 +1,4 @@
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.RenderGraph;
-using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
 
@@ -13,33 +11,22 @@ internal sealed class DispatchBatch(
 {
     internal int DisposeCount { get; private set; }
 
-    public void AppendPasses(RenderGraphBuilder graph, RenderTargetBinding2D target)
+    public void DeclareResources(IDrawingResourceDeclarations2D resources) => onAppend?.Invoke();
+
+    public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
     {
-        if (!ReferenceEquals(graph, preparation.Graph) || !ReferenceEquals(target.Texture, preparation.Target.Texture))
+        if (target.Texture.Width != preparation.Target.Description.Width)
         {
-            throw new InvalidOperationException("The prepared batch must be appended to its original graph and target.");
+            throw new InvalidOperationException("The batch target must match its prepared geometry.");
         }
 
-        onAppend?.Invoke();
-        RenderGraphPass? preparationPass = null;
         if (multiplePasses)
         {
-            preparationPass = graph.AddPass(name + ".prepare", context =>
-            {
-                _ = context.GetTexture(target.Texture);
-                recorded.Add(name + ".prepare");
-            }).UseTexture(target.Texture, TextureState.Sampled, new BarrierScope(PipelineStage.ComputeShader, ResourceAccess.ShaderRead));
+            recorded.Add(name + ".prepare");
+            commands.Barrier(new MemoryBarrierDesc { Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.VertexShader, ResourceAccess.ShaderRead) });
         }
 
-        RenderGraphPass draw = graph.AddPass(name + ".draw", context =>
-        {
-            _ = context.GetTexture(target.Texture);
-            recorded.Add(name + ".draw");
-        }).UseTexture(target.Texture, TextureState.ColorAttachment, new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite));
-        if (preparationPass is not null)
-        {
-            draw.DependsOn(preparationPass);
-        }
+        recorded.Add(name + ".draw");
     }
 
     public void Dispose() => DisposeCount++;

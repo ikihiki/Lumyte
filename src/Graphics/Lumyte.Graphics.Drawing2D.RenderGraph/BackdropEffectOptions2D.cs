@@ -1,6 +1,6 @@
 using Lumyte.Graphics.ImageEffects;
 
-namespace Lumyte.Graphics.Drawing2D;
+namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
 /// <summary>Describes an effect on the current layer contents preceding this command.</summary>
 public sealed record BackdropEffectOptions2D
@@ -8,6 +8,6 @@ public sealed record BackdropEffectOptions2D
     /// <summary>Gets the local rectangle where the effected background replaces the original.</summary>
     public required Rect2D OutputBounds { get; init; }
 
-    /// <summary>Gets the effect graph evaluated against the preceding background snapshot.</summary>
-    public required ImageEffectGraph Effects { get; init; }
+    /// <summary>Gets the effect subgraph callback evaluated against the preceding background snapshot.</summary>
+    public required Func<ImageEffectSubgraph, EffectImage> Effects { get; init; }
 }

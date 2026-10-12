@@ -47,6 +47,8 @@ AppendEffectsはすべてのSource葉を一つの入力画像へ束縛し、子�
 
 PreparedImageEffect.Outputは同じRenderGraph内で後続処理へ渡す論理handleである。物理画像へ変換して再importしない。出力を最終成果物にする側がMarkOutput/Exportを宣言し、依存解析、barrier、不要passの除去、一時allocationの確保・解放をRenderGraphへ任せる。拡張メソッドはRenderGraphへパスを宣言するだけで、Compile・Record・Submit・Wait・Presentは呼び出し側が行う。
 
+ImageEffectSubgraphはEffectsコールバックへ渡す親RenderGraphの部分ビューとする。独立したgraphやcompiled planを生成せず、Sourceに適用対象の画像を渡す。AppendGaussianBlurなどはEffectImageを返し、内部のPreparedImageEffectを部分ビューが所有する。複数効果の途中結果も同じparent graphのhandleであり、2D側が部分ビューを準備ownerへ移してGPU完了まで保持する。独自passはGraphへ宣言でき、独自の準備ownerはOwnへ移す。
+
 ### 3. 画像・領域・色
 
 EffectImageは原点を含むdevice-pixel範囲と、Rgba16Floatのlinear premultiplied RGBAを組にする。画像は同じ出力pixel grid上の有限範囲を持ち、Bounds左上がtextureの原点に対応する。入力allocationはBoundsと寸法が一致する単一mip/layerで、Sampled用途を持つ。物理allocationの形式・寸法はRecord時に検査する。
@@ -193,6 +195,20 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +        public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity);
 +        public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop,
 +            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++    }
++    public sealed class ImageEffectSubgraph : IDisposable
++    {
++        public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source);
++        public RenderGraphBuilder Graph { get; }
++        public EffectImage Source { get; }
++        public EffectImage AppendGaussianBlur(EffectImage input, float sigmaX, float sigmaY);
++        public EffectImage AppendOpacity(EffectImage input, float opacity);
++        public EffectImage AppendColorMatrix(EffectImage input, ColorMatrix4x5 matrix);
++        public EffectImage AppendComposite(EffectImage source, EffectImage backdrop,
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++        public EffectImage AppendEffect(ImageEffectDefinition effect, params EffectImage[] inputs);
++        public EffectImage Own(PreparedImageEffect effect);
++        public void Dispose();
 +    }
 +    // すべての効果が継承する不変の定義。領域計算はGPU資源を確保しない。
 +    public abstract record ImageEffectDefinition
@@ -350,4 +366,4 @@ var effect = ImageEffectGraph.Create(blur, moved);
 var owner = graph.AppendEffects(effect, source);
 ```
 
-このeffectは2D側のLayerOptions2D.EffectsまたはBackdropEffectOptions2D.Effectsへ指定できる。利用者の効果も提供効果も同じCreateとRenderGraph.AppendEffectsの経路を使う。
+このDAGは任意のRenderGraphへAppendEffectsで展開できる。2DのレイヤーではDAGを設定する代わりに、ImageEffectSubgraphを受け取るEffectsコールバックでパスを追加する。部分ビューは親graphと同じ資源・パスを使い、別のCompileやSubmitを行わない。

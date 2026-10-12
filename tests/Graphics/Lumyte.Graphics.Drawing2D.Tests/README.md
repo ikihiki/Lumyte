@@ -13,3 +13,6 @@ GPU描画は `Lumyte.Graphics.Tests/Drawing2DTests.cs` でVulkanとwgpuのreadba
 LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" \
   dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter Drawing2DTests
 ```
+
+通常CanvasとレイヤーCanvasの型・assembly依存を分離し、RenderGraph非依存の直接記録、
+親graphへのAppend2D、Effectsコールバックの遅延呼び出しと失敗時解放を検証します。

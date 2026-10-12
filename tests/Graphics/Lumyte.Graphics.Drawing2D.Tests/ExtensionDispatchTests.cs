@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
 using Xunit;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
@@ -124,20 +125,19 @@ public sealed class ExtensionDispatchTests
     {
         var device = new DispatchDevice();
         var strategies = new DispatchRenderers { MultiplePasses = true };
-        using var renderer = new Renderer2D(device, strategies.CreateTable());
         var graph = new RenderGraphBuilder(device);
         using var texture = new DispatchTexture();
         (RenderTargetBinding2D target, DrawingGraphBindings2D bindings) = BindTarget(graph, texture);
-        using PreparedDrawingPasses2D prepared = await renderer.AppendPassesAsync(graph, RectList(), target, bindings);
+        using var renderer = new RenderGraphRenderer2D(strategies.CreateTable(), RectList(), target, bindings);
+        using PreparedDrawingPasses2D prepared = await graph.Append2D(renderer);
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new DispatchCommands();
         plan.Record(commands);
 
         Assert.Equal(["FillRectCommand2D.prepare", "FillRectCommand2D.draw"], strategies.Recorded);
         TextureBarrierDesc[] barriers = commands.Events.OfType<TextureBarrierDesc>().ToArray();
-        Assert.Equal(2, barriers.Length);
-        Assert.Equal(TextureState.Sampled, barriers[0].AfterState);
-        Assert.Equal(TextureState.ColorAttachment, barriers[1].AfterState);
+        Assert.Single(commands.Events.OfType<MemoryBarrierDesc>());
+        Assert.All(barriers, barrier => Assert.Equal(TextureState.ColorAttachment, barrier.AfterState));
         Assert.Equal(CommandBufferState.Recording, commands.State);
     }
 
@@ -157,12 +157,12 @@ public sealed class ExtensionDispatchTests
             },
         };
         var device = new DispatchDevice();
-        using var renderer = new Renderer2D(device, strategies.CreateTable());
         var graph = new RenderGraphBuilder(device);
         using var texture = new DispatchTexture();
         (RenderTargetBinding2D target, DrawingGraphBindings2D bindings) = BindTarget(graph, texture);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => renderer.AppendPassesAsync(graph, RectAndPathList(), target, bindings).AsTask());
+        using var renderer = new RenderGraphRenderer2D(strategies.CreateTable(), RectAndPathList(), target, bindings);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => graph.Append2D(renderer).AsTask());
         Assert.Equal(1, Assert.Single(strategies.Batches).DisposeCount);
         Assert.Empty(strategies.Recorded);
     }
@@ -184,12 +184,12 @@ public sealed class ExtensionDispatchTests
             },
         };
         var device = new DispatchDevice();
-        using var renderer = new Renderer2D(device, strategies.CreateTable());
         var graph = new RenderGraphBuilder(device);
         using var texture = new DispatchTexture();
         (RenderTargetBinding2D target, DrawingGraphBindings2D bindings) = BindTarget(graph, texture);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => renderer.AppendPassesAsync(graph, RectAndPathList(), target, bindings, cancellation.Token).AsTask());
+        using var renderer = new RenderGraphRenderer2D(strategies.CreateTable(), RectAndPathList(), target, bindings);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => graph.Append2D(renderer, cancellation.Token).AsTask());
         Assert.Equal(2, strategies.Batches.Count);
         Assert.All(strategies.Batches, batch => Assert.Equal(1, batch.DisposeCount));
         Assert.Empty(strategies.Recorded);
@@ -202,12 +202,12 @@ public sealed class ExtensionDispatchTests
     {
         var strategies = new DispatchRenderers { OnAppend = () => throw new InvalidOperationException("External append failed.") };
         var device = new DispatchDevice();
-        using var renderer = new Renderer2D(device, strategies.CreateTable());
         var graph = new RenderGraphBuilder(device);
         using var texture = new DispatchTexture();
         (RenderTargetBinding2D target, DrawingGraphBindings2D bindings) = BindTarget(graph, texture);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => renderer.AppendPassesAsync(graph, RectList(), target, bindings).AsTask());
+        using var renderer = new RenderGraphRenderer2D(strategies.CreateTable(), RectList(), target, bindings);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => graph.Append2D(renderer).AsTask());
         Assert.Equal(1, Assert.Single(strategies.Batches).DisposeCount);
     }
 
@@ -218,11 +218,11 @@ public sealed class ExtensionDispatchTests
     {
         var device = new DispatchDevice();
         var strategies = new DispatchRenderers();
-        using var renderer = new Renderer2D(device, strategies.CreateTable());
         var graph = new RenderGraphBuilder(device);
         using var texture = new DispatchTexture();
         (RenderTargetBinding2D target, DrawingGraphBindings2D bindings) = BindTarget(graph, texture);
-        using PreparedDrawingPasses2D prepared = await renderer.AppendPassesAsync(graph, RectList(), target, bindings);
+        using var renderer = new RenderGraphRenderer2D(strategies.CreateTable(), RectList(), target, bindings);
+        using PreparedDrawingPasses2D prepared = await graph.Append2D(renderer);
         using CompiledRenderGraph first = graph.Compile();
         using CompiledRenderGraph second = graph.Compile();
         using var firstCommands = new DispatchCommands();
@@ -242,17 +242,17 @@ public sealed class ExtensionDispatchTests
         return builder.Build();
     }
 
-    private static DrawList2D RectList()
+    private static RenderGraphDrawList2D RectList()
     {
-        var canvas = new Canvas2D();
+        var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         canvas.FillRect(new Rect2D(0, 0, 8, 8), new Color2D(1, 1, 1, 1));
         return canvas.End();
     }
 
-    private static DrawList2D RectAndPathList()
+    private static RenderGraphDrawList2D RectAndPathList()
     {
-        var canvas = new Canvas2D();
+        var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         var color = new Color2D(1, 1, 1, 1);
         canvas.FillRect(new Rect2D(0, 0, 8, 8), color);

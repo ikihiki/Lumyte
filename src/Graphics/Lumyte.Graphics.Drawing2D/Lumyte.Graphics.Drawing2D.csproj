@@ -3,14 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Retained 2D drawing commands with replaceable GPU renderers and render graph integration.</Description>
+    <Description>Pure 2D drawing commands and direct GPU rendering without a render graph dependency.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
-    <ProjectReference Include="../Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
-    <ProjectReference Include="../Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.RenderGraph" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
