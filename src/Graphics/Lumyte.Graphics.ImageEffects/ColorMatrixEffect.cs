@@ -1,3 +1,5 @@
+using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
+
 namespace Lumyte.Graphics.ImageEffects;
 
 /// <summary>Defines immutable parameters and region mappings for ColorMatrix.</summary>
@@ -22,4 +24,20 @@ public sealed record ColorMatrixEffect : ImageEffectDefinition
 
     /// <inheritdoc/>
     public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => output;
+
+    /// <inheritdoc/>
+    public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(plan);
+        if (inputs.Length != 1)
+        {
+            throw new ArgumentException("The effect requires one image.", nameof(inputs));
+        }
+
+        EffectImage input = inputs[0];
+
+        ArgumentNullException.ThrowIfNull(this.Matrix);
+        return EffectGpuPass.Append(context, plan, input, input, input.Bounds, new(0, 0, 0, 0), this.Matrix);
+    }
 }

@@ -7,37 +7,17 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 namespace Lumyte.Graphics.Drawing2D;
 
 /// <summary>Prepares typed drawing commands and image effects for a single-queue render graph.</summary>
-public sealed class Renderer2D : IDisposable
+/// <param name="device">The borrowed rendering device.</param>
+/// <param name="renderers">The borrowed fixed command renderer table.</param>
+public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers) : IDisposable
 {
     private static readonly BarrierScope _attachmentScope = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
     private static readonly BarrierScope _imageScope = new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
-    private readonly IGraphicDevice _device;
-    private readonly DrawingCommandRenderers2D _renderers;
-    private readonly ImageEffectCompiler _effects;
-    private readonly IImageEffectRenderer<OpacityEffect> _groupOpacity;
+    private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
+    private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
+    private readonly ImageEffectCompiler _effects = new(device);
     private bool _disposed;
     private int _preparing;
-
-    /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class using the provided group-opacity renderer.</summary>
-    /// <param name="device">The borrowed rendering device.</param>
-    /// <param name="renderers">The borrowed fixed command renderer table.</param>
-    public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers)
-        : this(device, renderers, new DefaultOpacityEffectRenderer())
-    {
-    }
-
-    /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class.</summary>
-    /// <param name="device">The borrowed rendering device.</param>
-    /// <param name="renderers">The borrowed fixed command renderer table.</param>
-    /// <param name="groupOpacity">The borrowed renderer for the layer opacity operation.</param>
-    public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IImageEffectRenderer<OpacityEffect> groupOpacity)
-    {
-        _device = device ?? throw new ArgumentNullException(nameof(device));
-        _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-        ArgumentNullException.ThrowIfNull(groupOpacity);
-        _groupOpacity = groupOpacity;
-        _effects = new ImageEffectCompiler(device);
-    }
 
     /// <summary>Prepares and compiles a private graph, leaving submission and completion to the caller.</summary>
     /// <param name="list">The reusable drawing snapshot.</param>
@@ -459,10 +439,18 @@ public sealed class Renderer2D : IDisposable
         RenderTargetBinding2D target = CreateIntermediate(graph, bounds, parent.Target.PixelScale, "drawing2d.layer");
         AppendClear(graph, target);
         await AppendCommandsAsync(graph, list, begin, end, target with { LoadOp = AttachmentLoadOp.Load }, parent.Bindings, owner, cancellationToken).ConfigureAwait(false);
-        ImageEffectGraph effects = layer.Options.Opacity == 1 ? layer.Options.Effects : _effects.Opacity(layer.Options.Opacity, layer.Options.Effects, _groupOpacity);
-        PreparedImageEffect effect = _effects.AppendPasses(graph, effects, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear));
+        PreparedImageEffect effect = _effects.AppendPasses(graph, layer.Options.Effects, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear));
         owner.Own(effect);
-        IPreparedCommandBatch2D composite = await DrawingGraphCompositor.PrepareAsync(parent, ImageSource(effect.Output), WithClip(layer.State, layer.Options.OutputClip), ct: cancellationToken).ConfigureAwait(false);
+        EffectImage output = effect.Output;
+        if (layer.Options.Opacity != 1)
+        {
+            var opacity = new OpacityEffect(layer.Options.Opacity);
+            PreparedImageEffect faded = _effects.AppendOpacity(graph, opacity, output);
+            owner.Own(faded);
+            output = faded.Output;
+        }
+
+        IPreparedCommandBatch2D composite = await DrawingGraphCompositor.PrepareAsync(parent, ImageSource(output), WithClip(layer.State, layer.Options.OutputClip), ct: cancellationToken).ConfigureAwait(false);
         owner.Own(composite);
         composite.AppendPasses(graph, parent.Target);
     }

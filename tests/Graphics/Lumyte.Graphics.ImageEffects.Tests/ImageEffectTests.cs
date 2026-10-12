@@ -38,12 +38,12 @@ public sealed class ImageEffectTests
     public void GraphFactoriesRejectInvalidParameters()
     {
         var source = ImageEffectGraph.Source();
-        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().GaussianBlur(float.PositiveInfinity, 1, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().GaussianBlur(1, -1, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().Opacity(float.NaN, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().Opacity(1.01f, source));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Compiler().Composite(source, source, (EffectCompositeMode)99));
-        Assert.Throws<ArgumentNullException>(() => Compiler().ColorMatrix(null!, source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Create(new GaussianBlurEffect(float.PositiveInfinity, 1), source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Create(new GaussianBlurEffect(1, -1), source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Create(new OpacityEffect(float.NaN), source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Create(new OpacityEffect(1.01f), source));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ImageEffectGraph.Create(new CompositeEffect((EffectCompositeMode)99), source, source));
+        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Create(new ColorMatrixEffect(null!), source));
     }
 
     /// <summary>Checks reverse traversal through shared blurred and translated children.</summary>
@@ -52,8 +52,8 @@ public sealed class ImageEffectTests
     {
         ImageEffectCompiler compiler = Compiler();
         var source = ImageEffectGraph.Source();
-        ImageEffectGraph blurred = Compiler().GaussianBlur(2, 3, source);
-        ImageEffectGraph graph = Compiler().Composite(blurred, source, EffectCompositeMode.SrcOver, 10, -4);
+        var blurred = ImageEffectGraph.Create(new GaussianBlurEffect(2, 3), source);
+        var graph = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.SrcOver, 10, -4), blurred, source);
         Assert.Equal(new EffectPixelRect(4, 25, 26, 38), compiler.GetRequiredSourceBounds(graph, new(20, 30, 10, 20)));
         Assert.Equal(new EffectPixelRect(3, 5, 0, 1), compiler.GetRequiredSourceBounds(graph, new(3, 5, 0, 1)));
     }
@@ -64,10 +64,10 @@ public sealed class ImageEffectTests
     {
         ImageEffectCompiler compiler = Compiler();
         var source = ImageEffectGraph.Source();
-        ImageEffectGraph shared = Compiler().GaussianBlur(1, 0, source);
-        ImageEffectGraph left = Compiler().Composite(shared, source, EffectCompositeMode.Plus, -10, 0);
-        ImageEffectGraph right = Compiler().Composite(shared, source, EffectCompositeMode.Plus, 10, 0);
-        ImageEffectGraph graph = Compiler().Composite(left, right, EffectCompositeMode.SrcOver);
+        var shared = ImageEffectGraph.Create(new GaussianBlurEffect(1, 0), source);
+        var left = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.Plus, -10, 0), shared, source);
+        var right = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.Plus, 10, 0), shared, source);
+        var graph = ImageEffectGraph.Create(new CompositeEffect(EffectCompositeMode.SrcOver), left, right);
         Assert.Equal(new EffectPixelRect(-13, 0, 27, 1), compiler.GetRequiredSourceBounds(graph, new(0, 0, 1, 1)));
     }
 
@@ -75,11 +75,11 @@ public sealed class ImageEffectTests
     [Fact]
     public void CompilerMemoizesOnlyWithinOnePreparation()
     {
-        var opacity = new CountingOpacityRenderer();
-        var composite = new ForwardCompositeRenderer();
+        var opacity = new CountingEffect();
+        var composite = new ForwardEffect();
         var compiler = new ImageEffectCompiler(Device());
-        ImageEffectGraph shared = Compiler().Opacity(0.5f, ImageEffectGraph.Source(), opacity);
-        ImageEffectGraph graph = Compiler().Composite(shared, shared, EffectCompositeMode.Plus, renderer: composite);
+        var shared = ImageEffectGraph.Create(opacity, ImageEffectGraph.Source());
+        var graph = ImageEffectGraph.Create(composite, shared, shared);
         var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
         using PreparedImageEffect first = compiler.AppendPasses(plan, graph, source);
@@ -89,14 +89,14 @@ public sealed class ImageEffectTests
         Assert.Equal(2, opacity.Count);
     }
 
-    /// <summary>Checks new fixed resources are released if a renderer fails while appending.</summary>
+    /// <summary>Checks new fixed resources are released if an effect fails while appending.</summary>
     [Fact]
     public void AppendFailureReleasesOwnedResources()
     {
         var resource = new TrackedResource();
         var compiler = new ImageEffectCompiler(Device());
         var plan = new RenderGraphBuilder(Device());
-        Assert.Throws<InvalidOperationException>(() => compiler.AppendPasses(plan, Compiler().Opacity(0.5f, ImageEffectGraph.Source(), new FailingOpacityRenderer(resource)), Source(plan)));
+        Assert.Throws<InvalidOperationException>(() => compiler.AppendPasses(plan, ImageEffectGraph.Create(new FailingEffect(resource), ImageEffectGraph.Source()), Source(plan)));
         Assert.Equal(1, resource.DisposeCount);
     }
 
@@ -106,7 +106,7 @@ public sealed class ImageEffectTests
     {
         var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
-        using PreparedImageEffect prepared = Compiler().AppendPasses(plan, Compiler().GaussianBlur(0, 0, ImageEffectGraph.Source()), source);
+        using PreparedImageEffect prepared = Compiler().AppendPasses(plan, ImageEffectGraph.Create(new GaussianBlurEffect(0, 0), ImageEffectGraph.Source()), source);
         Assert.Equal(source, prepared.Output);
     }
 
@@ -117,10 +117,10 @@ public sealed class ImageEffectTests
         var graph = ImageEffectGraph.Source();
         for (int i = 1; i < 256; i++)
         {
-            graph = Compiler().Opacity(1, graph);
+            graph = ImageEffectGraph.Create(new OpacityEffect(1), graph);
         }
 
-        Assert.Throws<ArgumentException>(() => Compiler().Opacity(1, graph));
+        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(new OpacityEffect(1), graph));
     }
 
     private static ImageEffectCompiler Compiler() => new(Device());
@@ -136,31 +136,46 @@ public sealed class ImageEffectTests
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => throw new InvalidOperationException("CPU-only test called the graphics device.");
     }
 
-    private sealed class CountingOpacityRenderer : IImageEffectRenderer<OpacityEffect>
+    private abstract record IdentityEffect : ImageEffectDefinition
+    {
+        /// <inheritdoc/>
+        public override int InputCount => 1;
+
+        /// <inheritdoc/>
+        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs) => inputs[0];
+
+        /// <inheritdoc/>
+        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => output;
+    }
+
+    private sealed record CountingEffect : IdentityEffect
     {
         internal int Count { get; private set; }
 
         /// <inheritdoc/>
-        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, OpacityEffect effect, ReadOnlySpan<EffectImage> inputs)
+        public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)
         {
             Count++;
             return inputs[0];
         }
     }
 
-    private sealed class ForwardCompositeRenderer : IImageEffectRenderer<CompositeEffect>
+    private sealed record ForwardEffect : IdentityEffect
     {
         /// <inheritdoc/>
-        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, CompositeEffect effect, ReadOnlySpan<EffectImage> inputs) => inputs[0];
+        public override int InputCount => 2;
+
+        /// <inheritdoc/>
+        public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs) => inputs[0];
     }
 
-    private sealed class FailingOpacityRenderer(TrackedResource resource) : IImageEffectRenderer<OpacityEffect>
+    private sealed record FailingEffect(TrackedResource Resource) : IdentityEffect
     {
         /// <inheritdoc/>
-        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, OpacityEffect effect, ReadOnlySpan<EffectImage> inputs)
+        public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)
         {
-            context.Own(resource);
-            throw new InvalidOperationException("Injected renderer failure.");
+            context.Own(Resource);
+            throw new InvalidOperationException("Injected effect failure.");
         }
     }
 

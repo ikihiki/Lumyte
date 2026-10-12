@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.ImageEffects;
 
-/// <summary>Builds immutable, bounded-depth effect DAGs with uniformly bound effect operations.</summary>
+/// <summary>Builds immutable, bounded-depth effect DAGs with self-contained effect operations.</summary>
 public sealed class ImageEffectGraph
 {
     private readonly int _depth;
@@ -23,17 +23,13 @@ public sealed class ImageEffectGraph
     /// <returns>The source graph.</returns>
     public static ImageEffectGraph Source() => new(new SourceEffectNode(), 1);
 
-    /// <summary>Binds an immutable effect definition to its typed renderer and copied child graphs.</summary>
-    /// <typeparam name="TDefinition">The immutable effect definition.</typeparam>
+    /// <summary>Combines an immutable effect with copied child graphs.</summary>
     /// <param name="definition">CPU-only parameters and region mappings, retained without mutation.</param>
-    /// <param name="renderer">The borrowed renderer retained for every preparation of this graph.</param>
     /// <param name="inputs">Child graphs in definition order. Zero inputs are permitted for image generators.</param>
     /// <returns>The new effect graph.</returns>
-    public static ImageEffectGraph Create<TDefinition>(TDefinition definition, IImageEffectRenderer<TDefinition> renderer, params ImageEffectGraph[] inputs)
-        where TDefinition : ImageEffectDefinition
+    public static ImageEffectGraph Create(ImageEffectDefinition definition, params ImageEffectGraph[] inputs)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        ArgumentNullException.ThrowIfNull(renderer);
         ArgumentNullException.ThrowIfNull(inputs);
         int inputCount = definition.InputCount;
         if (inputCount < 0 || inputCount != inputs.Length)
@@ -50,7 +46,7 @@ public sealed class ImageEffectGraph
             depth = Math.Max(depth, inputs[i]._depth + 1);
         }
 
-        return new(EffectOperationNode.Create(definition, renderer, nodes), depth);
+        return new(EffectOperationNode.Create(definition, nodes), depth);
     }
 
     internal static int Radius(float sigma)

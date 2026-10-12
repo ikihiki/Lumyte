@@ -59,7 +59,7 @@ public sealed class ImageEffectCompiler
             ValidateImage(result);
             if (result.ColorSemantic != source.ColorSemantic)
             {
-                throw new InvalidOperationException("An effect renderer cannot implicitly change the color semantic.");
+                throw new InvalidOperationException("An effect cannot implicitly change the color semantic.");
             }
 
             if (results.Count >= 4096)
@@ -87,13 +87,66 @@ public sealed class ImageEffectCompiler
                 throw new InvalidOperationException("An effect must declare positive output dimensions.");
             }
 
-            EffectImage result = operation.AppendPasses(context, plan, images);
+            EffectImage result = operation.Definition.AppendPasses(context, plan, images);
             if (result.Bounds != expected)
             {
-                throw new InvalidOperationException("An effect renderer must preserve its definition's declared output bounds.");
+                throw new InvalidOperationException("An effect must preserve its definition's declared output bounds.");
             }
 
             return result;
+        }
+    }
+
+    /// <summary>Appends one existing effect directly, without constructing an effect graph.</summary>
+    /// <param name="plan">The caller-owned render graph; discard it if append fails.</param>
+    /// <param name="effect">The existing immutable effect with its fixed implementation.</param>
+    /// <param name="inputs">Ordered graph-local input images.</param>
+    /// <returns>The output and its fixed-resource owner, disposed after GPU completion.</returns>
+    public PreparedImageEffect AppendEffect(RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(effect);
+        ArgumentNullException.ThrowIfNull(inputs);
+        if (effect.InputCount < 0 || effect.InputCount != inputs.Length)
+        {
+            throw new ArgumentException("The image count must match the effect input count.", nameof(inputs));
+        }
+
+        EffectColorSemantic semantic = inputs.Length == 0 ? EffectColorSemantic.DisplayLinear : inputs[0].ColorSemantic;
+        var bounds = new EffectPixelRect[inputs.Length];
+        for (int i = 0; i < inputs.Length; i++)
+        {
+            ValidateImage(inputs[i]);
+            if (inputs[i].ColorSemantic != semantic)
+            {
+                throw new ArgumentException("Effect inputs must use the same color semantic.", nameof(inputs));
+            }
+
+            bounds[i] = inputs[i].Bounds;
+        }
+
+        EffectPixelRect expected = effect.GetOutputBounds(bounds);
+        if (expected.IsEmpty)
+        {
+            throw new InvalidOperationException("An effect must declare positive output dimensions.");
+        }
+
+        var context = new EffectPreparationContext(_device, semantic);
+        try
+        {
+            EffectImage output = effect.AppendPasses(context, plan, inputs);
+            ValidateImage(output);
+            if (output.Bounds != expected || output.ColorSemantic != semantic)
+            {
+                throw new InvalidOperationException("An effect must preserve its declared bounds and color semantic.");
+            }
+
+            return new(output, context);
+        }
+        catch
+        {
+            context.Release();
+            throw;
         }
     }
 

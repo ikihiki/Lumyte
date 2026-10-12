@@ -54,13 +54,13 @@ using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
 
 2D描画とエフェクト適用時の契約、API一覧、共通graphへの接続例は [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-2d-graphics-engine.md) を参照する。画像エフェクト自体の設計とAPIは [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) に記載する。
 
-すべてのエフェクトは共通ライブラリの `ImageEffectDefinition` と `IImageEffectRenderer<TDefinition>` を実装し、
-コンパイラーの `Effect` 拡張メソッドで構築します。他の効果と組み合わせた同じgraphを、記録中のCanvasへ渡せます。
+すべてのエフェクトは共通ライブラリの `ImageEffectDefinition` に領域計算と固定のAppendPassesを実装し、
+明示的に生成してImageEffectGraph.Createで組み立てます。他の効果と組み合わせた同じgraphを、記録中のCanvasへ渡せます。
 
 ```csharp
-var compiler = new ImageEffectCompiler(device);
-var effect = compiler.Effect(definition, effectRenderer, ImageEffectGraph.Source());
-var effects = compiler.GaussianBlur(3, 3, effect);
+var effect = ImageEffectGraph.Create(definition, ImageEffectGraph.Source());
+var blur = new GaussianBlurEffect(3, 3);
+var effects = ImageEffectGraph.Create(blur, effect);
 
 canvas.BeginLayer(new LayerOptions2D
 {
@@ -78,6 +78,6 @@ canvas.DrawBackdropEffect(new BackdropEffectOptions2D
 ```
 
 背景取得は独自定義の必要入力範囲を含めて行い、独自効果の出力にも通常の親clip・opacity・合成を適用します。
-定義とrendererの実装例は [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) を参照してください。
+エフェクトとAppend拡張メソッドの実装例は [GRAPHICS-0016](../../../docs/adr/graphics/GRAPHICS-0016-image-effects.md) を参照してください。
 
-エフェクトはDIへ登録せず、定義とrendererを直接生成します。UseGraphics2Dが登録するのは描画命令の実装と描画登録表だけです。
+エフェクトはDIへ登録せず、直接生成します。エフェクトレンダラーの差し替えはなく、新しい処理は別の効果型を追加します。UseGraphics2Dが登録するのは描画命令の実装と描画登録表だけです。
