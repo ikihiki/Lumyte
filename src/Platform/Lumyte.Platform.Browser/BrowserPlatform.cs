@@ -94,9 +94,6 @@ public sealed class BrowserPlatform : IPlatform
     }
 
     /// <inheritdoc/>
-    public ITextInputService CreateTextInputService() => throw new NotSupportedException("DOM text input is not included in this backend.");
-
-    /// <inheritdoc/>
     public void PumpEvents()
     {
         CheckMutation();

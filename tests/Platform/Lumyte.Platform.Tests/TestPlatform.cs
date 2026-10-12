@@ -27,8 +27,6 @@ internal sealed class TestPlatform : IPlatform
 
     public IClipboard CreateClipboard() => throw new NotSupportedException();
 
-    public ITextInputService CreateTextInputService() => throw new NotSupportedException();
-
     public void PumpEvents()
     {
         Pumps++;

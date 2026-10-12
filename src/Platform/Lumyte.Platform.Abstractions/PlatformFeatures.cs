@@ -15,7 +15,4 @@ public enum PlatformFeatures
 
     /// <summary>Unicode clipboard access.</summary>
     Clipboard = 4,
-
-    /// <summary>Native text input sessions.</summary>
-    TextInput = 8,
 }

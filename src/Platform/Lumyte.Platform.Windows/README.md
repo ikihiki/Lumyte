@@ -23,7 +23,7 @@ nint instance = native.HInstance;
 
 CreateInputSource は論理キーボードとマウスを登録し、PumpEvents が集めた入力を排出します。Raw Input による物理デバイス分離、ゲームパッド、タッチ、ペンは未実装です。
 
-文字入力と IME は今回未実装です。`PlatformFeatures.TextInput` は広告せず、`CreateTextInputService` は `NotSupportedException` を送出します。Clipboard は Unicode テキストを読み書きし、内容を含まない変更通知を提供します。
+Clipboard は Unicode テキストを読み書きし、内容を含まない変更通知を提供します。
 
 Graphics と入力管理を先に終了してから Window を解放し、最後に Platform を解放します。通常の入力管理では InputSystem を先に終了し、その後に Source を Dispose します。
 

@@ -115,13 +115,6 @@ public sealed class WindowsPlatform : IPlatform
     }
 
     /// <inheritdoc/>
-    public ITextInputService CreateTextInputService()
-    {
-        CheckMutation();
-        throw new NotSupportedException("Windows text input is not included in this release.");
-    }
-
-    /// <inheritdoc/>
     public void PumpEvents()
     {
         CheckMutation();

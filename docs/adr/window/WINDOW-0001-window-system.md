@@ -281,8 +281,6 @@ OS の取得は IPlatform.PumpEvents 一回で行い、IWindow の状態と Inpu
 
 最終入力配送先は発生時点の Native、Hosted 構造・座標・フォーカスから決める。更新後の最終状態だけで過去入力を再ヒットテストしない。共通順序を持つ envelope と InputRecord の対応は後続 Input / Platform ADR で具体化する。Platform の WindowId、管理ノード ID、各 System の Sequence を大小比較して統合しない。
 
-単一 Window の文字入力も Platform のテキスト入力セッションで扱い、Windowing を必須にしない。Windowing 使用時の Hosted 編集領域は Platform の対象 Native と、root 座標へ変換したキャレット矩形を渡す。スクロール・親配置・DPI 変更で再計算する。入力フォーカス喪失・終了時にセッションを停止し、古いセッションの遅着通知を適用しない。
-
 IME 候補表示はセッションごとに次のどちらか一方とする。
 
 - Platform 表示: OS / Browser が標準候補 UI を表示する。Windowing はそれを所有 Window として登録しない。
@@ -330,7 +328,7 @@ WindowSystem のテストで所有・借用、Native の保持と子から親の
 ## 別途決定する事項
 
 - Window 対象付き入力の envelope、キャプチャ・ポインターロック、UI 入力スコープ。
-- 独自 IME 候補 snapshot・選択・標準 UI 抑止。文字入力の共通契約と後続の TSF 設計は [PLATFORM-0002](../platform/PLATFORM-0002-clipboard-and-text-input.md) に記載する。
+- 独自 IME 候補 snapshot・選択・標準 UI 抑止。
 - モーダル画面、永続配置、アクセシビリティ、性能目標。
 - Framework 統合システムの具体 API と、Windowing を使用する場合の接続・更新・終了順。
 

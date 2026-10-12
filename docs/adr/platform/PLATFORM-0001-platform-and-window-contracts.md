@@ -37,7 +37,7 @@ Platform.Abstractions と Platform バックエンドは [Lumyte.Input.Abstracti
 
 IWindow とそのシグネチャに必要な型は [Lumyte.Windowing.Abstractions](../window/WINDOW-0001-window-system.md#native-window-の共通契約) に定義する。Platform.Abstractions と各バックエンドはこの契約パッケージを参照し、Windowing の管理実装には依存しない。Windowing.Abstractions は .NET ランタイム以外に依存せず、Platform への逆参照を持たない。
 
-生成対象は IWindow、IInputSource、[Clipboard と文字入力サービス](PLATFORM-0002-clipboard-and-text-input.md)とする。今後の display、ファイルダイアログなども対応する共通契約を定義した上で IPlatform に生成メソッドを追加し、利用側が生成物を所有する形に揃える。この PR では未定義の機能に空の interface や汎用 GetService を設けない。
+生成対象は IWindow、IInputSource、[Clipboard](PLATFORM-0002-clipboard.md)とする。今後の display、ファイルダイアログなども対応する共通契約を定義した上で IPlatform に生成メソッドを追加し、利用側が生成物を所有する形に揃える。この PR では未定義の機能に空の interface や汎用 GetService を設けない。
 
 現在はライブラリの利用者がいないため、Platform と IWindow も旧 API との互換性を要件にしない。IPlatform は Lumyte.Platform.Abstractions、IWindow は Lumyte.Windowing.Abstractions に直接定義し、旧 API の別名、型転送、互換ラッパーは設けない。各バックエンドはこの IWindow を直接実装する。
 
@@ -51,7 +51,7 @@ IWindow とそのシグネチャに必要な型は [Lumyte.Windowing.Abstraction
 +namespace Lumyte.Platform.Abstractions;
 +
 +[Flags]
-+public enum PlatformFeatures { None = 0, NativeWindows = 1, DeviceInput = 2, Clipboard = 4, TextInput = 8 }
++public enum PlatformFeatures { None = 0, NativeWindows = 1, DeviceInput = 2, Clipboard = 4 }
 +public interface IPlatform : IDisposable
 +{
 +    public Guid Id { get; }
@@ -65,7 +65,6 @@ IWindow とそのシグネチャに必要な型は [Lumyte.Windowing.Abstraction
 +    // OS キューを一度だけ取得し、Window 通知と Source 用キューへ振り分ける。
 +    // System / Windowing を使わないアプリもこの一つの取得入口を使う。
 +    public IClipboard CreateClipboard();
-+    public ITextInputService CreateTextInputService();
 +    public void PumpEvents();
 +    // 子 Window / Source が未解放なら変更前に InvalidOperationException。
 +    // GPU 待機や子の暗黙 Dispose は行わない。成功後は冪等。
@@ -95,7 +94,7 @@ CreateInputSource は同一 Platform の active Source を一つに制限する�
 
 購読者の例外は状態を巻き戻さず、他の購読者と Window の処理を続け、最後に AggregateException とする。Closing 購読者の例外時は取消として扱う。不正な Backend 観測値は当該 Window で拒否・報告し、独立した Window の処理を続ける。Native 失敗は診断へ返し、入力文字や候補文字列を診断に混ぜない。
 
-Window 対象付き入力、共通取得順の envelope、キャプチャは後続 Input / Platform ADR で具体化する。文字入力セッションは PLATFORM-0002 に定義する。WindowId を既存 InputRecord へ追加したとは扱わない。単一ウインドウでも対象付き入力の取得器は Platform 内部で使い、Windowing を要求しない。
+Window 対象付き入力、共通取得順の envelope、キャプチャは後続 Input / Platform ADR で具体化する。WindowId を既存 InputRecord へ追加したとは扱わない。単一ウインドウでも対象付き入力の取得器は Platform 内部で使い、Windowing を要求しない。
 
 ### 寿命・所有者・終了
 

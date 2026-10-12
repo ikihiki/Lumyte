@@ -1,7 +1,6 @@
 using System.Runtime.ExceptionServices;
 using System.Runtime.Versioning;
 using Lumyte.Input.Abstractions;
-using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Windows;
 using Lumyte.Windowing.Abstractions;
 using Xunit;
@@ -98,15 +97,6 @@ public sealed class WindowsNativeTests
         owner.Close();
         platform.PumpEvents();
         Assert.Equal(WindowLifetime.Closed, owner.State.Lifetime);
-    });
-
-    /// <summary>Checks Windows does not advertise the deferred text input backend.</summary>
-    [WindowsFact]
-    public void TextInputIsNotSupported() => RunSta(() =>
-    {
-        using var platform = new WindowsPlatform();
-        Assert.False(platform.Features.HasFlag(PlatformFeatures.TextInput));
-        Assert.Throws<NotSupportedException>(platform.CreateTextInputService);
     });
 
     [SupportedOSPlatform("windows10.0.17763")]

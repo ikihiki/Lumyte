@@ -26,10 +26,6 @@ public interface IPlatform : IDisposable
     /// <returns>The clipboard service.</returns>
     IClipboard CreateClipboard();
 
-    /// <summary>Creates a caller-owned native text input service.</summary>
-    /// <returns>The text service.</returns>
-    ITextInputService CreateTextInputService();
-
     /// <summary>Acquires OS events once, updates native observations and queues normalized input.</summary>
     /// <remarks>Does not call WindowSystem.Update or InputSystem.Update. Reentrant pumping is forbidden.</remarks>
     void PumpEvents();

@@ -97,9 +97,6 @@ public sealed class LinuxPlatform : IPlatform
     public IClipboard CreateClipboard() => throw new NotSupportedException("X11 selection transfers are not supported by this backend.");
 
     /// <inheritdoc/>
-    public ITextInputService CreateTextInputService() => throw new NotSupportedException("XIM and Wayland text input are not supported by this backend.");
-
-    /// <inheritdoc/>
     public void PumpEvents()
     {
         CheckMutation();
