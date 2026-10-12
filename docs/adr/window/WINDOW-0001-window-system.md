@@ -323,14 +323,14 @@ Dispose が未処理の管理要求・終了要求を打ち切る場合は Super
 - PreserveFocus、root 切り替え、祖先復帰、外側クリック・Escape の UI 方針、非活性化と一時表示の終了を検証する。
 - 同一取得バッチの配置・フォーカス変更と入力で発生時点の配送先を保持する。
 - 通知例外・再入・解放失敗の再試行、借用 Native を勝手に閉じないことを検証する。
-- 実環境で二つの Native の DPI 変更、片方の最小化・終了、Hosted メニュー、IME の二重候補表示防止と候補 revision を確認する。
+- 実環境で二つの Native の DPI 変更、片方の最小化・終了、Hosted メニューを確認する。IME の二重候補表示防止と候補 revision は backend 実装後に確認する。
 
 WindowSystem のテストで所有・借用、Native の保持と子から親の終了、Hosted の層・クリップ・ヒットテスト・配置、通知の再入と解放再試行を確認する。バックエンドごとの Native 動作は Platform のテストで扱う。Window 対象付き入力 envelope、独自 IME 候補、性能・実機の全受け入れ条件は未検証である。
 
 ## 別途決定する事項
 
 - Window 対象付き入力の envelope、キャプチャ・ポインターロック、UI 入力スコープ。
-- 独自 IME 候補 snapshot・選択・標準 UI 抑止。文字入力の初期契約と TSF の標準候補 UI は [PLATFORM-0002](../platform/PLATFORM-0002-clipboard-and-text-input.md) に記載する。
+- 独自 IME 候補 snapshot・選択・標準 UI 抑止。文字入力の共通契約と後続の TSF 設計は [PLATFORM-0002](../platform/PLATFORM-0002-clipboard-and-text-input.md) に記載する。
 - モーダル画面、永続配置、アクセシビリティ、性能目標。
 - Framework 統合システムの具体 API と、Windowing を使用する場合の接続・更新・終了順。
 

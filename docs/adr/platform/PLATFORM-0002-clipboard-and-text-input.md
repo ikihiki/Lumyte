@@ -65,9 +65,11 @@ Clipboard は Unicode テキストの非同期読み書きと内容を含まな�
 +}
 ```
 
-### Windows TSF
+### Windows TSF（後続実装）
 
-WindowsPlatform は STA スレッドごとに一つとする。WindowsTextInputService が ITfThreadMgr を Activate し、各セッションが ITfDocumentMgr と ITfContext、ITextStoreACP の実装を保持する。Focus が Window と文書を関連付け、OS のフォーカス通知に従って TSF の対象を更新する。
+今回の Windows backend は文字入力を実装しない。`PlatformFeatures.TextInput` を広告せず、`CreateTextInputService` は `NotSupportedException` を送出する。以下は後続の TSF 実装が満たす設計条件である。
+
+WindowsPlatform は STA スレッドごとに一つとする。将来の WindowsTextInputService は ITfThreadMgr を Activate し、各セッションが ITfDocumentMgr と ITfContext、ITextStoreACP の実装を保持する。Focus が Window と文書を関連付け、OS のフォーカス通知に従って TSF の対象を更新する。
 
 PumpEvents はキーメッセージを ITfKeystrokeMgr の TestKeyDown / TestKeyUp と KeyDown / KeyUp に渡す。TSF が消費したメッセージを TranslateMessage に渡さず、WM_CHAR と TSF 編集の二重適用を防ぐ。物理キーの Input Source への記録は文字入力による消費と独立する。通常の未消費の WM_CHAR は現在の編集セッションへ渡す。Backspace、矢印、Enter などの編集方針は UI が物理入力から処理する。
 
@@ -75,7 +77,7 @@ ITextStoreACP は read / read-write ロックを守る。ロック中の同期�
 
 アプリ側の編集、選択移動、スクロール・DPI 変更は NotifyTextChanged / NotifySelectionChanged / NotifyLayoutChanged で TSF へ伝える。Native 編集中に同じ変更を再通知しない。Blur / Dispose は TSF の変換終了処理を呼び、現在の文書を維持する。独自のキャンセルや元文書の復元は本契約で保証しない。
 
-初期実装は OS 標準の候補 UI のみを使用し、UsesSystemCandidateUi は true とする。独自候補 UI 用の列挙・選択・標準表示抑止は未実装である。Windowing の ImeCandidates は表示領域を管理できるが、それだけで TSF の候補情報を取得できるとは扱わない。リッチテキスト、埋め込みオブジェクト、位置から文字への逆ヒットテストも初期 TSF 実装には含めない。
+将来の初期実装は OS 標準の候補 UI のみを使用し、UsesSystemCandidateUi は true とする。独自候補 UI 用の列挙・選択・標準表示抑止は含めない。Windowing の ImeCandidates は表示領域を管理できるが、それだけで TSF の候補情報を取得できるとは扱わない。リッチテキスト、埋め込みオブジェクト、位置から文字への逆ヒットテストも初期 TSF 実装には含めない。
 
 ### Clipboard の非同期処理
 
@@ -87,7 +89,7 @@ BrowserClipboard は secure context の navigator.clipboard を使用する。�
 
 | Backend | Clipboard | 文字入力 |
 | --- | --- | --- |
-| Windows | Unicode 読み書き、変更通知 | TSF、UTF-16 文書、選択、範囲 geometry、変換開始・終了、標準候補 UI |
+| Windows | Unicode 読み書き、変更通知 | 未実装。TSF 対応は後続。factory は NotSupportedException |
 | X11 | 未実装。factory は NotSupportedException | XIM は未実装。factory は NotSupportedException |
 | Browser | 非同期 Unicode 読み書き。権限・secure context が必要 | DOM 編集・composition は未実装。factory は NotSupportedException |
 
@@ -102,11 +104,11 @@ BrowserClipboard は secure context の navigator.clipboard を使用する。�
 
 ## 結果と影響
 
-単一 Window でも Platform の Clipboard と文字入力を使用できる。UI は編集文書と Native 用の同期アクセスを実装する必要がある。Windows では作成 STA スレッド、Browser では対応する JS context に戻って利用する。サービスの生成だけでは文字の描画や UI 編集機能を提供しない。
+単一 Window でも Platform の Clipboard を使用できる。文字入力の共通契約は backend 実装を追加するための境界を定めるが、今回の全 backend は未対応である。対応 backend を使う UI は編集文書と Native 用の同期アクセスを実装する必要がある。サービスの生成だけでは文字の描画や UI 編集機能を提供しない。
 
 ## 検証方針
 
-Windows の Native テストで TSF コンテキスト生成、保持トークン、文書ロックの同期拒否と非同期昇格、UTF-16 編集と重複通知防止を確認する。Linux 上ではこれらの Windows テストをスキップする。実際の IME による変換・候補位置は Windows のサンプルを使って別途確認する。
+Windows の Native テストで `TextInput` capability を広告せず、factory が `NotSupportedException` を送出することを確認する。TSF の文書ロック、UTF-16 編集、実際の IME 変換と候補位置は後続実装で検証する。
 
 Browser の JS テストでは Clipboard の secure context 判定と権限エラー伝達を確認する。DOM / WebGPU / Clipboard の実ブラウザー統合動作をこの単体テストだけで検証済みとは扱わない。
 

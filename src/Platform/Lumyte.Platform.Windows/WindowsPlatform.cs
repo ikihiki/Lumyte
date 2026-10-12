@@ -30,7 +30,6 @@ public sealed class WindowsPlatform : IPlatform
     private bool _pumping;
     private bool _notifying;
     private WindowsInputSource? _source;
-    private WindowsTextInputService? _text;
 
     /// <summary>Initializes a new instance of the <see cref="WindowsPlatform"/> class.</summary>
     public WindowsPlatform()
@@ -74,7 +73,7 @@ public sealed class WindowsPlatform : IPlatform
     public Guid Id { get; } = Guid.NewGuid();
 
     /// <summary>Gets supported platform services.</summary>
-    public PlatformFeatures Features => PlatformFeatures.NativeWindows | PlatformFeatures.DeviceInput | PlatformFeatures.Clipboard | PlatformFeatures.TextInput;
+    public PlatformFeatures Features => PlatformFeatures.NativeWindows | PlatformFeatures.DeviceInput | PlatformFeatures.Clipboard;
 
     /// <summary>Gets a value indicating whether the thread received WM_QUIT.</summary>
     public bool IsQuitRequested { get; private set; }
@@ -119,13 +118,7 @@ public sealed class WindowsPlatform : IPlatform
     public ITextInputService CreateTextInputService()
     {
         CheckMutation();
-        if (_text is not null)
-        {
-            throw new InvalidOperationException("Only one TSF service is allowed per platform.");
-        }
-
-        _text = new WindowsTextInputService(this);
-        return _text;
+        throw new NotSupportedException("Windows text input is not included in this release.");
     }
 
     /// <inheritdoc/>
@@ -157,13 +150,6 @@ public sealed class WindowsPlatform : IPlatform
                 if (message.Id is 0x100 or 0x101 or 0x104 or 0x105 && _handles.TryGetValue(message.Window, out WindowsWindow? target))
                 {
                     _source?.Receive(target, message.Id, message.WParam, message.LParam);
-                }
-
-                bool consumed = false;
-                Execute(() => consumed = _text?.ProcessKey(message) == true);
-                if (consumed)
-                {
-                    continue;
                 }
 
                 NativeMethods.TranslateMessage(ref message);
@@ -210,7 +196,7 @@ public sealed class WindowsPlatform : IPlatform
         }
 
         CheckMutation();
-        if (_pumping || _windows.Count > 0 || _hosts.Count > 0 || _source is not null || _text is not null)
+        if (_pumping || _windows.Count > 0 || _hosts.Count > 0 || _source is not null)
         {
             throw new InvalidOperationException("Dispose all created services and windows before the platform.");
         }
@@ -301,8 +287,6 @@ public sealed class WindowsPlatform : IPlatform
         {
             _source?.Deactivate();
         }
-
-        _text?.WindowMessage(window, 0x8, 0);
     }
 
     internal void Release(WindowsInputSource source)
@@ -310,14 +294,6 @@ public sealed class WindowsPlatform : IPlatform
         if (ReferenceEquals(_source, source))
         {
             _source = null;
-        }
-    }
-
-    internal void Release(WindowsTextInputService text)
-    {
-        if (ReferenceEquals(_text, text))
-        {
-            _text = null;
         }
     }
 
@@ -392,8 +368,6 @@ public sealed class WindowsPlatform : IPlatform
                 {
                     _source?.Receive(window, message, wParam, lParam);
                 }
-
-                _text?.WindowMessage(window, message, wParam);
             }
         }
         catch (Exception ex)

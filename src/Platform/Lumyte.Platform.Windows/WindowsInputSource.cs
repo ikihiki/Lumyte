@@ -7,7 +7,7 @@ using Lumyte.Windowing.Abstractions;
 namespace Lumyte.Platform.Windows;
 
 /// <summary>Acquires logical keyboard and mouse input from the platform's single event pump.</summary>
-/// <remarks>Text and IME input belong to the text service. This source does not acquire gamepads, touch or pen.</remarks>
+/// <remarks>This source does not acquire text, IME, gamepads, touch or pen.</remarks>
 [SupportedOSPlatform("windows10.0.17763")]
 public sealed class WindowsInputSource : IInputSource
 {

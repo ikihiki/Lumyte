@@ -180,7 +180,7 @@ X11 は Native 要求を観測値で確認し、反映されない場合は二�
 - Framework の統合と利用側の直接接続で Surface より先に Native を解放しないことを検証する。
 - 具象 Window クラスへのキャストによる表示先取得、不適合な型の接続拒否、DPI、ゼロサイズ、再構成、片側だけの終了と他 Window の描画継続を実環境で確認する。
 
-共通契約・Windowing の単体テスト、Xvfb 上の Native 生成・表示・リサイズ・終了、Input の既存テスト、Browser の JS 単体テストで検証する。Windows の Native / TSF テストは Windows で実行する。GPU 接続、実際の IME、実ブラウザー、実 WM ごとの挙動は別途確認が必要である。
+共通契約・Windowing の単体テスト、Xvfb 上の Native 生成・表示・リサイズ・終了、Input の既存テスト、Browser の JS 単体テストで検証する。Windows の Native テストは Windows で実行する。GPU 接続、実ブラウザー、実 WM ごとの挙動は別途確認が必要である。IME backend は今回の実装範囲に含めない。
 
 ## 別途決定する事項
 
