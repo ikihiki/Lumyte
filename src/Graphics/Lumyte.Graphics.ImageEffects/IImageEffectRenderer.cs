@@ -2,7 +2,7 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.ImageEffects;
 
-/// <summary>Prepares a user-defined effect with a renderer bound at graph construction.</summary>
+/// <summary>Prepares a effect with a renderer bound at graph construction.</summary>
 /// <typeparam name="TDefinition">The immutable definition accepted by this renderer.</typeparam>
 public interface IImageEffectRenderer<in TDefinition>
     where TDefinition : ImageEffectDefinition

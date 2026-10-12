@@ -7,17 +7,13 @@ namespace Lumyte.Graphics.ImageEffects;
 public sealed class ImageEffectCompiler
 {
     private readonly IGraphicDevice _device;
-    private readonly ImageEffectRenderers _renderers;
 
     /// <summary>Initializes a new instance of the <see cref="ImageEffectCompiler"/> class without allocating GPU resources.</summary>
     /// <param name="device">The borrowed graphics device.</param>
-    /// <param name="renderers">The fixed, borrowed operation table.</param>
-    public ImageEffectCompiler(IGraphicDevice device, ImageEffectRenderers renderers)
+    public ImageEffectCompiler(IGraphicDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(renderers);
         _device = device;
-        _renderers = renderers;
     }
 
     /// <summary>Appends the graph once; failure releases new resources and requires discarding the render graph.</summary>
@@ -57,11 +53,7 @@ public sealed class ImageEffectCompiler
             result = node switch
             {
                 SourceEffectNode => source,
-                ColorMatrixEffectNode matrix => _renderers.ColorMatrix.AppendPasses(context, plan, matrix, Visit(matrix.Input)),
-                GaussianBlurEffectNode blur => _renderers.GaussianBlur.AppendPasses(context, plan, blur, Visit(blur.Input)),
-                OpacityEffectNode opacity => _renderers.Opacity.AppendPasses(context, plan, opacity, Visit(opacity.Input)),
-                CompositeEffectNode composite => _renderers.Composite.AppendPasses(context, plan, composite, Visit(composite.Source), Visit(composite.Backdrop)),
-                CustomEffectNode custom => AppendCustom(custom),
+                EffectOperationNode operation => AppendOperation(operation),
                 _ => throw new NotSupportedException("Unknown effect operation."),
             };
             ValidateImage(result);
@@ -79,26 +71,26 @@ public sealed class ImageEffectCompiler
             return result;
         }
 
-        EffectImage AppendCustom(CustomEffectNode custom)
+        EffectImage AppendOperation(EffectOperationNode operation)
         {
-            var images = new EffectImage[custom.Inputs.Count];
-            var bounds = new EffectPixelRect[custom.Inputs.Count];
-            for (int i = 0; i < custom.Inputs.Count; i++)
+            var images = new EffectImage[operation.Inputs.Count];
+            var bounds = new EffectPixelRect[operation.Inputs.Count];
+            for (int i = 0; i < operation.Inputs.Count; i++)
             {
-                images[i] = Visit(custom.Inputs[i]);
+                images[i] = Visit(operation.Inputs[i]);
                 bounds[i] = images[i].Bounds;
             }
 
-            EffectPixelRect expected = custom.Definition.GetOutputBounds(bounds);
+            EffectPixelRect expected = operation.Definition.GetOutputBounds(bounds);
             if (expected.IsEmpty)
             {
-                throw new InvalidOperationException("A custom effect must declare positive output dimensions.");
+                throw new InvalidOperationException("An effect must declare positive output dimensions.");
             }
 
-            EffectImage result = custom.AppendPasses(context, plan, images);
+            EffectImage result = operation.AppendPasses(context, plan, images);
             if (result.Bounds != expected)
             {
-                throw new InvalidOperationException("A custom renderer must preserve its definition's declared output bounds.");
+                throw new InvalidOperationException("An effect renderer must preserve its definition's declared output bounds.");
             }
 
             return result;
@@ -136,23 +128,10 @@ public sealed class ImageEffectCompiler
                 case SourceEffectNode:
                     result = result?.Union(bounds) ?? bounds;
                     break;
-                case ColorMatrixEffectNode matrix:
-                    Add(matrix.Input, bounds);
-                    break;
-                case OpacityEffectNode opacity:
-                    Add(opacity.Input, bounds);
-                    break;
-                case GaussianBlurEffectNode blur:
-                    Add(blur.Input, bounds.Outset(ImageEffectGraph.Radius(blur.SigmaX), ImageEffectGraph.Radius(blur.SigmaY)));
-                    break;
-                case CompositeEffectNode composite:
-                    Add(composite.Source, bounds.OffsetInverse(composite.SourceOffsetX, composite.SourceOffsetY));
-                    Add(composite.Backdrop, bounds);
-                    break;
-                case CustomEffectNode custom:
-                    for (int inputIndex = 0; inputIndex < custom.Inputs.Count; inputIndex++)
+                case EffectOperationNode operation:
+                    for (int inputIndex = 0; inputIndex < operation.Inputs.Count; inputIndex++)
                     {
-                        Add(custom.Inputs[inputIndex], custom.Definition.GetRequiredInputBounds(inputIndex, bounds));
+                        Add(operation.Inputs[inputIndex], operation.Definition.GetRequiredInputBounds(inputIndex, bounds));
                     }
 
                     break;
@@ -177,21 +156,8 @@ public sealed class ImageEffectCompiler
 
             switch (node)
             {
-                case ColorMatrixEffectNode matrix:
-                    Collect(matrix.Input);
-                    break;
-                case OpacityEffectNode opacity:
-                    Collect(opacity.Input);
-                    break;
-                case GaussianBlurEffectNode blur:
-                    Collect(blur.Input);
-                    break;
-                case CompositeEffectNode composite:
-                    Collect(composite.Source);
-                    Collect(composite.Backdrop);
-                    break;
-                case CustomEffectNode custom:
-                    foreach (ImageEffectNode input in custom.Inputs)
+                case EffectOperationNode operation:
+                    foreach (ImageEffectNode input in operation.Inputs)
                     {
                         Collect(input);
                     }

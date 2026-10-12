@@ -8,8 +8,18 @@ using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 namespace Lumyte.Graphics.ImageEffects.Tests;
 
 /// <summary>Checks user-defined operations without changing the built-in registry or accessing the GPU.</summary>
-public sealed class CustomEffectTests
+public sealed class EffectOperationTests
 {
+    /// <summary>Checks the four provided definitions use the same bound-renderer validation and cleanup.</summary>
+    [Fact]
+    public void EveryProvidedDefinitionUsesCommonOutputValidation()
+    {
+        RejectWrongBounds(new ColorMatrixEffect(new(new float[20])));
+        RejectWrongBounds(new GaussianBlurEffect(1, 2));
+        RejectWrongBounds(new OpacityEffect(0.5f));
+        RejectWrongBounds(new CompositeEffect(EffectCompositeMode.SrcOver));
+    }
+
     /// <summary>Checks child arrays are copied and invalid bindings fail before graph construction.</summary>
     [Fact]
     public void FactoryCopiesInputsAndValidatesBindings()
@@ -18,49 +28,49 @@ public sealed class CustomEffectTests
         var renderer = new TranslationRenderer();
         var source = ImageEffectGraph.Source();
         ImageEffectGraph[] inputs = [source];
-        var effect = ImageEffectGraph.Custom(definition, renderer, inputs);
+        var effect = ImageEffectGraph.Create(definition, renderer, inputs);
         inputs[0] = ImageEffectGraph.Opacity(0, source);
-        CustomEffectNode node = Assert.IsType<CustomEffectNode>(effect.Root);
+        EffectOperationNode node = Assert.IsType<EffectOperationNode>(effect.Root);
         Assert.Same(definition, node.Definition);
         Assert.Same(source.Root, Assert.Single(node.Inputs));
         Assert.Throws<NotSupportedException>(() => ((IList<ImageEffectNode>)node.Inputs)[0] = inputs[0].Root);
-        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Custom<Translation>(null!, renderer, source));
-        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Custom(definition, null!, source));
-        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Custom(definition, renderer, (ImageEffectGraph[])null!));
-        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Custom(definition, renderer, [null!]));
-        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Custom(definition, renderer));
-        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Custom(definition, renderer, source, source));
+        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Create<Translation>(null!, renderer, source));
+        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Create(definition, null!, source));
+        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Create(definition, renderer, (ImageEffectGraph[])null!));
+        Assert.Throws<ArgumentNullException>(() => ImageEffectGraph.Create(definition, renderer, [null!]));
+        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(definition, renderer));
+        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(definition, renderer, source, source));
     }
 
-    /// <summary>Checks custom inverse mappings propagate through standard blur and shared branch inputs.</summary>
+    /// <summary>Checks operation inverse mappings propagate through standard blur and shared branch inputs.</summary>
     [Fact]
-    public void RegionsComposeAcrossCustomAndStandardNodes()
+    public void RegionsComposeAcrossOperationAndStandardNodes()
     {
         var source = ImageEffectGraph.Source();
         var blurred = ImageEffectGraph.GaussianBlur(1, 2, source);
         var renderer = new TranslationRenderer();
-        var left = ImageEffectGraph.Custom(new Translation(-10, 0), renderer, blurred);
-        var right = ImageEffectGraph.Custom(new Translation(10, 0), renderer, blurred);
+        var left = ImageEffectGraph.Create(new Translation(-10, 0), renderer, blurred);
+        var right = ImageEffectGraph.Create(new Translation(10, 0), renderer, blurred);
         var effect = ImageEffectGraph.Composite(left, right, EffectCompositeMode.SrcOver);
         Assert.Equal(new EffectPixelRect(-13, -6, 27, 13), Compiler().GetRequiredSourceBounds(effect, new(0, 0, 1, 1)));
     }
 
-    /// <summary>Checks all custom input slots contribute regions even when they refer to the same child.</summary>
+    /// <summary>Checks all operation input slots contribute regions even when they refer to the same child.</summary>
     [Fact]
     public void MultipleInputsAccumulateTheirRequiredRegions()
     {
         var source = ImageEffectGraph.Source();
-        var effect = ImageEffectGraph.Custom(new Branches(), new BranchRenderer(), source, source);
+        var effect = ImageEffectGraph.Create(new Branches(), new BranchRenderer(), source, source);
         Assert.Equal(new EffectPixelRect(-10, 0, 21, 1), Compiler().GetRequiredSourceBounds(effect, new(0, 0, 1, 1)));
     }
 
-    /// <summary>Checks custom nodes share results only within one preparation and preserve typed parameters.</summary>
+    /// <summary>Checks operation nodes share results only within one preparation and preserve typed parameters.</summary>
     [Fact]
-    public void CustomDispatchSharesNodesOnlyWithinEachAppend()
+    public void OperationDispatchSharesNodesOnlyWithinEachAppend()
     {
         var renderer = new TranslationRenderer();
-        var shared = ImageEffectGraph.Custom(new Translation(3, -4), renderer, ImageEffectGraph.Source());
-        var effect = ImageEffectGraph.Custom(new Branches(), new BranchRenderer(), shared, shared);
+        var shared = ImageEffectGraph.Create(new Translation(3, -4), renderer, ImageEffectGraph.Source());
+        var effect = ImageEffectGraph.Create(new Branches(), new BranchRenderer(), shared, shared);
         var plan = new Graph(Device());
         EffectImage source = Source(plan);
         using PreparedImageEffect first = Compiler().AppendPasses(plan, effect, source);
@@ -73,15 +83,15 @@ public sealed class CustomEffectTests
 
     /// <summary>Checks user operations can declare multiple passes and transfer fixed-resource ownership.</summary>
     [Fact]
-    public void CustomRendererOwnsResourcesAndAddsMultiplePasses()
+    public void OperationRendererOwnsResourcesAndAddsMultiplePasses()
     {
         var resource = new TrackedResource();
         var renderer = new TranslationRenderer(resource, addPasses: true);
         var graph = new Graph(Device());
-        PreparedImageEffect owner = Compiler().AppendPasses(graph, ImageEffectGraph.Custom(new Translation(0, 0), renderer, ImageEffectGraph.Source()), Source(graph));
+        PreparedImageEffect owner = Compiler().AppendPasses(graph, ImageEffectGraph.Create(new Translation(0, 0), renderer, ImageEffectGraph.Source()), Source(graph));
         using (CompiledRenderGraph plan = graph.Compile())
         {
-            Assert.Equal(new[] { "custom.first", "custom.second" }, plan.PassNames);
+            Assert.Equal(new[] { "operation.first", "operation.second" }, plan.PassNames);
             Assert.Equal(0, resource.Disposals);
         }
 
@@ -95,12 +105,12 @@ public sealed class CustomEffectTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void InvalidCustomOutputsReleaseFixedResources(bool wrongBounds)
+    public void InvalidOperationOutputsReleaseFixedResources(bool wrongBounds)
     {
         var resource = new TrackedResource();
         var renderer = new InvalidRenderer(resource, wrongBounds);
         var graph = new Graph(Device());
-        Assert.Throws<InvalidOperationException>(() => Compiler().AppendPasses(graph, ImageEffectGraph.Custom(new Translation(0, 0), renderer, ImageEffectGraph.Source()), Source(graph)));
+        Assert.Throws<InvalidOperationException>(() => Compiler().AppendPasses(graph, ImageEffectGraph.Create(new Translation(0, 0), renderer, ImageEffectGraph.Source()), Source(graph)));
         Assert.Equal(1, resource.Disposals);
     }
 
@@ -109,7 +119,7 @@ public sealed class CustomEffectTests
     public void ZeroInputGeneratorNeedsNoSourcePixels()
     {
         var definition = new Generator(new(-5, 9, 2, 3));
-        var effect = ImageEffectGraph.Custom(definition, new GeneratorRenderer());
+        var effect = ImageEffectGraph.Create(definition, new GeneratorRenderer());
         var graph = new Graph(Device());
         using PreparedImageEffect owner = Compiler().AppendPasses(graph, effect, Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear });
         Assert.Equal(definition.Bounds, owner.Output.Bounds);
@@ -121,35 +131,35 @@ public sealed class CustomEffectTests
     [Fact]
     public void UnneededInputsDoNotPropagateSourceRegions()
     {
-        var child = ImageEffectGraph.Custom(new IgnoreInput(ThrowOnQuery: true), new IgnoreRenderer(), ImageEffectGraph.Source());
-        var effect = ImageEffectGraph.Custom(new IgnoreInput(ThrowOnQuery: false), new IgnoreRenderer(), child);
+        var child = ImageEffectGraph.Create(new IgnoreInput(ThrowOnQuery: true), new IgnoreRenderer(), ImageEffectGraph.Source());
+        var effect = ImageEffectGraph.Create(new IgnoreInput(ThrowOnQuery: false), new IgnoreRenderer(), child);
         Assert.Equal(new EffectPixelRect(7, 8, 0, 0), Compiler().GetRequiredSourceBounds(effect, new(7, 8, 1, 1)));
     }
 
-    /// <summary>Checks custom generators cannot request a zero-sized texture output.</summary>
+    /// <summary>Checks operation generators cannot request a zero-sized texture output.</summary>
     [Fact]
     public void EmptyDeclaredOutputFailsBeforeRenderer()
     {
         var renderer = new GeneratorRenderer();
         var graph = new Graph(Device());
-        Assert.Throws<InvalidOperationException>(() => Compiler().AppendPasses(graph, ImageEffectGraph.Custom(new Generator(default), renderer), Source(graph)));
+        Assert.Throws<InvalidOperationException>(() => Compiler().AppendPasses(graph, ImageEffectGraph.Create(new Generator(default), renderer), Source(graph)));
         Assert.Equal(0, renderer.Calls);
     }
 
-    /// <summary>Checks custom graphs follow the same depth and distinct-node budgets as built-in operations.</summary>
+    /// <summary>Checks operation graphs follow the same depth and distinct-node budgets as built-in operations.</summary>
     [Fact]
-    public void CustomGraphsKeepDepthAndNodeBudgets()
+    public void OperationGraphsKeepDepthAndNodeBudgets()
     {
         var effect = ImageEffectGraph.Source();
         var renderer = new TranslationRenderer();
         for (int depth = 1; depth < 256; depth++)
         {
-            effect = ImageEffectGraph.Custom(new Translation(0, 0), renderer, effect);
+            effect = ImageEffectGraph.Create(new Translation(0, 0), renderer, effect);
         }
 
-        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Custom(new Translation(0, 0), renderer, effect));
+        Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(new Translation(0, 0), renderer, effect));
         ImageEffectGraph[] children = Enumerable.Range(0, 4096).Select(_ => ImageEffectGraph.Source()).ToArray();
-        var wide = ImageEffectGraph.Custom(new Branches(children.Length), new BranchRenderer(), children);
+        var wide = ImageEffectGraph.Create(new Branches(children.Length), new BranchRenderer(), children);
         var graph = new Graph(Device());
         Assert.Throws<NotSupportedException>(() => Compiler().AppendPasses(graph, wide, Source(graph)));
         Assert.Throws<NotSupportedException>(() => Compiler().GetRequiredSourceBounds(wide, new(0, 0, 1, 1)));
@@ -157,7 +167,7 @@ public sealed class CustomEffectTests
 
     /// <summary>Checks ordinary DI registration binds a typed renderer without extending the built-in table.</summary>
     [Fact]
-    public void CustomRenderersUseOrdinaryTypedDiRegistration()
+    public void OperationRenderersUseOrdinaryTypedDiRegistration()
     {
         var services = new ServiceCollection();
         services.AddScoped<IImageEffectRenderer<Translation>>(_ => new TranslationRenderer());
@@ -165,11 +175,23 @@ public sealed class CustomEffectTests
         using IServiceScope scope = provider.CreateScope();
         IImageEffectRenderer<Translation> renderer = scope.ServiceProvider.GetRequiredService<IImageEffectRenderer<Translation>>();
         var graph = new Graph(Device());
-        using PreparedImageEffect owner = Compiler().AppendPasses(graph, ImageEffectGraph.Custom(new Translation(1, 2), renderer, ImageEffectGraph.Source()), Source(graph));
+        using PreparedImageEffect owner = Compiler().AppendPasses(graph, ImageEffectGraph.Create(new Translation(1, 2), renderer, ImageEffectGraph.Source()), Source(graph));
         Assert.Equal(new EffectPixelRect(1, 2, 4, 4), owner.Output.Bounds);
     }
 
-    private static ImageEffectCompiler Compiler() => new(Device(), ImageEffectRenderers.CreateDefault());
+    private static void RejectWrongBounds<TDefinition>(TDefinition definition)
+        where TDefinition : ImageEffectDefinition
+    {
+        var resource = new TrackedResource();
+        var graph = new Graph(Device());
+        var source = ImageEffectGraph.Source();
+        ImageEffectGraph[] inputs = Enumerable.Repeat(source, definition.InputCount).ToArray();
+        var effect = ImageEffectGraph.Create(definition, new WrongBoundsRenderer<TDefinition>(resource), inputs);
+        Assert.Throws<InvalidOperationException>(() => Compiler().AppendPasses(graph, effect, Source(graph)));
+        Assert.Equal(1, resource.Disposals);
+    }
+
+    private static ImageEffectCompiler Compiler() => new(Device());
 
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
@@ -202,8 +224,8 @@ public sealed class CustomEffectTests
 
             if (addPasses)
             {
-                RenderGraphPass first = plan.AddPass("custom.first", _ => { }).KeepAlive();
-                plan.AddPass("custom.second", _ => { }).DependsOn(first).KeepAlive();
+                RenderGraphPass first = plan.AddPass("operation.first", _ => { }).KeepAlive();
+                plan.AddPass("operation.second", _ => { }).DependsOn(first).KeepAlive();
             }
 
             return inputs[0] with { Bounds = inputs[0].Bounds.Offset(effect.X, effect.Y) };
@@ -280,6 +302,17 @@ public sealed class CustomEffectTests
     {
         /// <inheritdoc/>
         public EffectImage AppendPasses(EffectPreparationContext context, Graph plan, IgnoreInput effect, ReadOnlySpan<EffectImage> inputs) => inputs[0];
+    }
+
+    private sealed class WrongBoundsRenderer<TDefinition>(TrackedResource resource) : IImageEffectRenderer<TDefinition>
+        where TDefinition : ImageEffectDefinition
+    {
+        /// <inheritdoc/>
+        public EffectImage AppendPasses(EffectPreparationContext context, Graph plan, TDefinition effect, ReadOnlySpan<EffectImage> inputs)
+        {
+            context.Own(resource);
+            return inputs[0] with { Bounds = inputs[0].Bounds.Offset(1, 0) };
+        }
     }
 
     private sealed class TrackedResource : IDisposable

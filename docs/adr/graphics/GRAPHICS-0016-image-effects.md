@@ -28,7 +28,7 @@ paint DAGは図形内部の塗り、ImageEffectGraphは画像化後の処理、R
 
 ### 2. 定義とRenderGraphへの変換
 
-ImageEffectGraphはGPU資源を生成・所有しない不変DAGとし、Source、標準4演算、Customのfactoryで構築する。同じ定義を別の入力・frameにも使えるが、準備結果は各回に作る。Customは利用者定義と型付きrendererを構築時に結び付け、標準演算と同じDAGに組み込む。
+ImageEffectGraphはGPU資源を生成・所有しない不変DAGとし、Sourceと共通のCreate factoryで構築する。同じ定義を別の入力・frameにも使えるが、準備結果は各回に作る。Createはすべての定義と型付きrendererを構築時に結び付ける。提供する4種類の便利factoryもこのCreate経路で構築する。
 
 ```text
 ImageEffectGraph + EffectImage
@@ -39,7 +39,7 @@ ImageEffectGraph + EffectImage
 
 AppendPassesはすべてのSource葉を一つの入力画像へ束縛し、子から順に演算別rendererへ渡す。同じnode参照は一回のAppend内で一度だけ展開する。構造が等しい別nodeの統合や、別入力・graph・frameへのGPU結果の流用は行わない。定義の深さは256、展開する異なるnodeは4096を上限とする。
 
-各rendererは入力画像から出力画像とその範囲を求め、一時texture・pass・全資源アクセスをRenderGraphへ追加する。初期標準実装はColorMatrix・Opacity・Compositeを各一つのfragment pass、GaussianBlurをsigmaが0でない軸ごとのfragment passへ展開する。Sourceは入力をそのまま返す。影・glowは基本演算の組み立てで表す。
+各rendererは入力画像から出力画像とその範囲を求め、一時texture・pass・全資源アクセスをRenderGraphへ追加する。提供する初期実装はColorMatrix・Opacity・Compositeを各一つのfragment pass、GaussianBlurをsigmaが0でない軸ごとのfragment passへ展開する。Sourceは入力をそのまま返す。影・glowは基本演算の組み立てで表す。
 
 PreparedImageEffect.Outputは同じRenderGraph内で後続処理へ渡す論理handleである。物理画像へ変換して再importしない。出力を最終成果物にする側がMarkOutput/Exportを宣言し、依存解析、barrier、不要passの除去、一時allocationの確保・解放をRenderGraphへ任せる。compilerはCompile・Submit・Wait・Presentを行わない。
 
@@ -51,21 +51,17 @@ DisplayLinear/SceneLinearを明示し、いずれもlinear sRGB primariesとす�
 
 GetRequiredSourceBoundsは要求する出力からblurの余白やCompositeの逆移動を伝播し、必要入力を保守的に返す。この照会は呼び出し側の画像取得範囲の決定に使い、Append全体を自動で部分描画へ変換するものではない。透明pixelもColorMatrixの定数項で可視になるため、alphaが0の領域を単純に除去しない。
 
-### 4. 固定DIと差し替え
+### 4. 全効果を共通の定義と型付きrendererで構成する
 
-ImageEffectRenderersは4演算の専用interfaceをコンストラクターで受け取り、nullを拒否して型付きreadonlyの参照を保持する。compilerは演算型から対応するfieldへ直接配送する。CanHandle、候補探索、自動fallback、描画中のDI解決は設けず、未対応の入力やGPU機能は明示的に失敗させる。
+すべての演算を不変のImageEffectDefinitionと型付きの `IImageEffectRenderer<TDefinition>` で表す。ImageEffectGraph.Createは定義・renderer・子graphを構築時に結び付ける。提供するColorMatrix・GaussianBlur・Opacity・Compositeも同じEffectOperationNodeで表し、compilerは演算の型を判別しない。定義が出力範囲と入力ごとの必要範囲を計算し、rendererがGPUパスを宣言する。
 
-UseImageEffectsは4標準実装と登録表をTryAddScopedで補完する。先行登録と再Useを保持し、後続AddScopedの単一解決が優先される。DIを使わない場合はCreateDefaultまたは明示的なコンストラクター呼び出しで組み立てる。CreateDefaultは登録表と4標準実装を毎回newし、device・GPU資源・DIを必要としない。DI経路はCreateDefaultを呼ばず、各interfaceをコンストラクターへ注入する。
+専用の4演算interface、演算別node、固定登録表は設けない。Sourceは入力を束縛する構造nodeであり、画像演算ではない。新しい効果を追加するときは定義・renderer・任意の便利factoryを追加すればよく、compilerや登録表の変更を必要としない。4種類の便利factoryはCreateを呼ぶ薄い組立処理とし、rendererを省略するとライブラリ提供の実装を毎回生成する。
 
-登録はprovider構築前に完了させ、既存provider・compilerの設定は後から変更しない。登録拡張はdevice・compiler・providerを生成・解決せず、compilerの構築だけでもGPU資源を作らない。scopeはdevice単位とし、GPU使用と準備資源の解放後に破棄する。
+UseImageEffectsは4つの型付きrendererをTryAddScopedで補完する。先行登録と再Useを保持し、後続登録の単一解決が優先される。DIで解決したrendererはCreateまたは便利factoryへ渡して構築時に固定する。DIを使わない場合も同じCreateへ直接生成したrendererを渡す。CanHandle、候補探索、Type辞書、描画中のDI解決を設けない。device・compiler・providerは登録拡張で生成・解決せず、scopeはGPU使用と準備資源の解放後に破棄する。
 
-標準演算の差し替えでは色・alpha・出力範囲・必要入力範囲の意味を維持する。独自演算では定義にその意味を明記し、rendererと必要範囲計算を一致させる。GetRequiredSourceBoundsは定義から計算するため、rendererだけでfilter半径や座標系を変更しない。複数passを追加する実装も同じinterfaceを使える。画像へ直接書くcompute実装にはGraphicsのstorage texture契約の追加が必要となる。
+定義はパラメーターをsnapshotし、入力数、出力範囲、必要領域をCPU上で決定する。入力数は0以上で子graphの数と一致させる。0入力では画像生成ができ、rendererはEffectPreparationContext.ColorSemanticを保持する。子graphは同じSourceから派生する分岐であり、独立画像のSource束縛は別途決定する。必要領域が空の子は逆向きの領域計算を省略する。
 
-利用者は不変recordのImageEffectDefinitionを継承し、入力数、出力範囲、出力から各入力への必要範囲を定義する。`IImageEffectRenderer<TDefinition>` がGPUパス生成を担当し、ImageEffectGraph.Customで定義・renderer・子graphを結び付ける。compilerは子の展開と共有、必要領域の伝播、色の意味と宣言した出力範囲の検証を行う。rendererは複数のrender/compute/copy passを宣言でき、固定資源をOwnへ移す。定義はCPU上のsnapshot、rendererは借用する実行依存とし、Appendの間やGPU使用中に変更しない。
-
-Customの入力数は0以上で、子graphの数と一致させる。0入力では定義から有限画像を生成でき、EffectPreparationContext.ColorSemanticで要求された色の意味を取得する。複数の子は同じSource画像から派生した分岐であり、独立した外部画像をSource葉に束縛するAPIは別途決定する。必要範囲が空の子は逆向きの領域計算を省略する。
-
-標準4演算は型別interfaceと固定登録表を維持する。新しい演算はまずCustomを使う独立したライブラリ・利用者実装として追加でき、4引数のImageEffectRenderersやcompilerのswitchを変更する必要はない。DIを使う場合は独自の型付きrendererを通常のサービスとして登録・解決し、Customへ渡す。任意nodeの直接挿入、Type辞書やCanHandleによる実行中の検索は設けない。標準効果の追加もまずCustom経路と専用の定義・renderer・factoryを用いて提供できる。専用の高速経路へ昇格する場合はnode・factory・interface・登録表・標準実装・CreateDefault・DI登録を一緒に拡張し、既存コンストラクターと4演算の契約を維持する。
+rendererは複数のrender/compute/copy passを追加でき、固定資源をOwnへ移す。定義と実際のsamplingを一致させ、宣言した出力範囲・色・alphaを保持する。定義とrendererはgraphから借用し、準備・GPU使用中に変更しない。画像へ直接書くcompute処理にはGraphicsのstorage texture契約が必要となる。
 
 ### 5. 資源宣言・所有権・失敗
 
@@ -103,23 +99,23 @@ MarkOutputは必要出力の保持、Exportはさらにfinal state/scopeの指�
 | 直列の処理列だけで表す | 分岐・再合流と共有入力を自然に表せず、同じ中間結果を再計算する |
 | CanHandle・優先順位による方式探索 | 演算ごとに指定した実装が固定されない |
 | GPU処理をRecordだけへ隠す | RenderGraphから依存と一時資源を解析できない |
-| 標準演算の固定switchだけを公開する | 利用者の新しい演算ごとにライブラリ本体と登録表の変更が必要になる |
+| 提供効果と利用者効果に別のnode・配送・登録方式を設ける | 領域計算・出力検証・拡張方法が二重化する |
 | 独自のGPU backend・パス実行器 | 既存Graphics・RenderGraphの契約と重複する |
 
 ## 結果と影響
 
-2Dレイヤーと3D画像に同じ画像演算を適用し、色・alpha・領域の契約とGPU処理を共有できる。適用側の描画順やカメラの責務を維持しながら、演算ごとの実行方式をDIでも手動でも差し替えられる。
+2Dレイヤーと3D画像に同じ画像演算を適用し、色・alpha・領域の契約とGPU処理を共有できる。適用側の描画順やカメラの責務を維持しながら、すべての演算の実行方式を同じ型付きinterfaceでDIでも手動でも差し替えられる。
 
-初期実装はpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を呼び出し側が管理する。独自演算を利用者のライブラリとして追加でき、compilerや標準登録表の変更は不要である。定義の不変性、正しい必要入力範囲、全資源アクセスの宣言は独自実装側の責務となる。既存GraphicsのAPIは変更せず、RenderGraphのwhole-allocation同期と単一queueの制約に従う。
+初期実装はpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を呼び出し側が管理する。演算を利用者のライブラリとして追加でき、compilerや固定登録表の変更は不要である。定義の不変性、正しい必要入力範囲、全資源アクセスの宣言は独自実装側の責務となる。既存GraphicsのAPIは変更せず、RenderGraphのwhole-allocation同期と単一queueの制約に従う。
 
 ## 検証方針
 
 | 領域 | 受け入れ条件 |
 | --- | --- |
-| compiler | Sourceの単一入力束縛、標準・独自nodeの一回展開、別Appendの分離、深さとnode数の上限 |
+| compiler | Sourceの単一入力束縛、すべての演算nodeの一回展開、別Appendの分離、深さとnode数の上限 |
 | 独自効果 | 入力数とsnapshot、0入力生成、複数入力の必要範囲の合併、空の必要範囲、出力範囲・色の検証、複数pass、失敗時の固定資源解放、通常DI登録と2D適用 |
 | 演算・領域 | kernelと範囲、HDR/alpha、SceneLinearの保持、整数offset、透明な隙間、必要入力範囲とsamplingの一致 |
-| 固定DI | 4演算の登録対応、後勝ち・再Use・CreateDefault、独立した差し替え、登録表構築時のGPU生成と描画中のDI解決がないこと |
+| DIと構築 | 型付きrendererの登録対応、後勝ち・再Use、直接生成とDI解決の同一経路、構築時のGPU生成と実行中のDI解決がないこと |
 | RenderGraph | 全資源宣言、重複import防止、culling・export、後続passへの出力接続 |
 | 失敗・寿命 | Append/Compile/Recordの失敗、待機キャンセル、一回実行、GPU使用終了後の解放、複数frameでの非上書き |
 
@@ -138,7 +134,7 @@ MarkOutputは必要出力の保持、Exportはさらにfinal state/scopeの指�
 
 ### 公開API
 
-ImageEffectGraphはSource葉、標準4演算、Customの不変DAGとし、公開nodeは読み取り用snapshotとする。各標準クラスのAppendPassesは対応interfaceの明示実装。UseImageEffectsは4組とImageEffectRenderersをTryAddScopedで補完し、device・compiler・providerを生成しない。
+ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべての演算はImageEffectDefinitionと型付きrendererを持ち、公開nodeは読み取り用snapshotとする。UseImageEffectsは提供する4つの型付きrendererをTryAddScopedで補完し、device・compiler・providerを生成しない。
 
 ```diff
 +namespace Lumyte.Graphics.ImageEffects
@@ -177,18 +173,22 @@ ImageEffectGraphはSource葉、標準4演算、Customの不変DAGとし、公開
 +        public ImageEffectNode Root { get; }
 +        public static ImageEffectGraph Source();
 +        // 入力数の一致とnullを検査し、子列をコピー。定義とrendererを構築時に固定。
-+        public static ImageEffectGraph Custom<TDefinition>(TDefinition definition,
++        public static ImageEffectGraph Create<TDefinition>(TDefinition definition,
 +            IImageEffectRenderer<TDefinition> renderer, params ImageEffectGraph[] inputs)
 +            where TDefinition : ImageEffectDefinition;
-+        public static ImageEffectGraph ColorMatrix(ColorMatrix4x5 matrix, ImageEffectGraph input);
++        public static ImageEffectGraph ColorMatrix(ColorMatrix4x5 matrix, ImageEffectGraph input,
++            IImageEffectRenderer<ColorMatrixEffect>? renderer = null);
 +        // sigmaはfull-resolutionのdevice pixel単位、finiteかつ0以上。
-+        public static ImageEffectGraph GaussianBlur(float sigmaX, float sigmaY, ImageEffectGraph input);
-+        public static ImageEffectGraph Opacity(float opacity, ImageEffectGraph input);
++        public static ImageEffectGraph GaussianBlur(float sigmaX, float sigmaY, ImageEffectGraph input,
++            IImageEffectRenderer<GaussianBlurEffect>? renderer = null);
++        public static ImageEffectGraph Opacity(float opacity, ImageEffectGraph input,
++            IImageEffectRenderer<OpacityEffect>? renderer = null);
 +        // sourceだけを指定整数pixel分移動してから合成する。backdropはgraph内の子。
 +        public static ImageEffectGraph Composite(ImageEffectGraph source, ImageEffectGraph backdrop,
-+            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0,
++            IImageEffectRenderer<CompositeEffect>? renderer = null);
 +    }
-+    // 利用者が継承する不変の定義。領域計算はGPU資源を確保しない。
++    // すべての効果が継承する不変の定義。領域計算はGPU資源を確保しない。
 +    public abstract record ImageEffectDefinition
 +    {
 +        public abstract int InputCount { get; }
@@ -204,19 +204,49 @@ ImageEffectGraphはSource葉、標準4演算、Customの不変DAGとし、公開
 +        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
 +            TDefinition effect, ReadOnlySpan<EffectImage> inputs);
 +    }
++    public sealed record ColorMatrixEffect : ImageEffectDefinition
++    {
++        public ColorMatrixEffect(ColorMatrix4x5 matrix);
++        public ColorMatrix4x5 Matrix { get; }
++        public override int InputCount { get; }
++        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs);
++        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output);
++    }
++    public sealed record GaussianBlurEffect : ImageEffectDefinition
++    {
++        public GaussianBlurEffect(float sigmaX, float sigmaY);
++        public float SigmaX { get; }
++        public float SigmaY { get; }
++        public override int InputCount { get; }
++        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs);
++        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output);
++    }
++    public sealed record OpacityEffect : ImageEffectDefinition
++    {
++        public OpacityEffect(float opacity);
++        public float Opacity { get; }
++        public override int InputCount { get; }
++        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs);
++        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output);
++    }
++    public sealed record CompositeEffect : ImageEffectDefinition
++    {
++        public CompositeEffect(EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++        public EffectCompositeMode Mode { get; }
++        public int SourceOffsetX { get; }
++        public int SourceOffsetY { get; }
++        public override int InputCount { get; }
++        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs);
++        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output);
++    }
 +    public abstract record ImageEffectNode;
-+    // Custom factoryのみが構築。Definitionは不変として借用、Inputsはコピー済みreadonly列。
-+    public sealed record CustomEffectNode : ImageEffectNode
++    // Create factoryのみが構築。Definitionは不変として借用、Inputsはコピー済みreadonly列。
++    public sealed record EffectOperationNode : ImageEffectNode
 +    {
 +        public ImageEffectDefinition Definition { get; }
 +        public IReadOnlyList<ImageEffectNode> Inputs { get; }
 +    }
 +    public sealed record SourceEffectNode : ImageEffectNode;
-+    public sealed record ColorMatrixEffectNode(ColorMatrix4x5 Matrix, ImageEffectNode Input) : ImageEffectNode;
-+    public sealed record GaussianBlurEffectNode(float SigmaX, float SigmaY, ImageEffectNode Input) : ImageEffectNode;
-+    public sealed record OpacityEffectNode(float Opacity, ImageEffectNode Input) : ImageEffectNode;
-+    public sealed record CompositeEffectNode(ImageEffectNode Source, ImageEffectNode Backdrop,
-+        EffectCompositeMode Mode, int SourceOffsetX, int SourceOffsetY) : ImageEffectNode;
 +    public sealed class EffectPreparationContext
 +    {
 +        public IGraphicDevice Device { get; }
@@ -224,53 +254,29 @@ ImageEffectGraphはSource葉、標準4演算、Customの不変DAGとし、公開
 +        // 固定資源を準備ownerへ移す。一時textureはRenderGraphへ宣言する。
 +        public void Own(IDisposable resource);
 +    }
-+    public interface IColorMatrixEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            ColorMatrixEffectNode effect, EffectImage input);
-+    }
-+    public interface IGaussianBlurEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            GaussianBlurEffectNode effect, EffectImage input);
-+    }
-+    public interface IOpacityEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            OpacityEffectNode effect, EffectImage input);
-+    }
-+    public interface ICompositeEffectRenderer
-+    {
-+        EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
-+            CompositeEffectNode effect, EffectImage source, EffectImage backdrop);
-+    }
-+    public sealed class ImageEffectRenderers
-+    {
-+        // 表と4標準実装を毎回newする。device・GPU資源・DIは不要。
-+        public static ImageEffectRenderers CreateDefault();
-+        public ImageEffectRenderers(IColorMatrixEffectRenderer colorMatrix,
-+            IGaussianBlurEffectRenderer gaussianBlur, IOpacityEffectRenderer opacity,
-+            ICompositeEffectRenderer composite);
-+        public IColorMatrixEffectRenderer ColorMatrix { get; }
-+        public IGaussianBlurEffectRenderer GaussianBlur { get; }
-+        public IOpacityEffectRenderer Opacity { get; }
-+        public ICompositeEffectRenderer Composite { get; }
-+    }
-+    public sealed class DefaultColorMatrixEffectRenderer : IColorMatrixEffectRenderer
++    public sealed class DefaultColorMatrixEffectRenderer : IImageEffectRenderer<ColorMatrixEffect>
 +    {
 +        public DefaultColorMatrixEffectRenderer();
++        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
++            ColorMatrixEffect effect, ReadOnlySpan<EffectImage> inputs);
 +    }
-+    public sealed class DefaultGaussianBlurEffectRenderer : IGaussianBlurEffectRenderer
++    public sealed class DefaultGaussianBlurEffectRenderer : IImageEffectRenderer<GaussianBlurEffect>
 +    {
 +        public DefaultGaussianBlurEffectRenderer();
++        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
++            GaussianBlurEffect effect, ReadOnlySpan<EffectImage> inputs);
 +    }
-+    public sealed class DefaultOpacityEffectRenderer : IOpacityEffectRenderer
++    public sealed class DefaultOpacityEffectRenderer : IImageEffectRenderer<OpacityEffect>
 +    {
 +        public DefaultOpacityEffectRenderer();
++        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
++            OpacityEffect effect, ReadOnlySpan<EffectImage> inputs);
 +    }
-+    public sealed class DefaultCompositeEffectRenderer : ICompositeEffectRenderer
++    public sealed class DefaultCompositeEffectRenderer : IImageEffectRenderer<CompositeEffect>
 +    {
 +        public DefaultCompositeEffectRenderer();
++        public EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan,
++            CompositeEffect effect, ReadOnlySpan<EffectImage> inputs);
 +    }
 +    public sealed class PreparedImageEffect : IDisposable
 +    {
@@ -280,8 +286,8 @@ ImageEffectGraphはSource葉、標準4演算、Customの不変DAGとし、公開
 +    }
 +    public sealed class ImageEffectCompiler
 +    {
-+        // deviceとrenderersは借用する。生成だけではGPU資源を確保しない。
-+        public ImageEffectCompiler(IGraphicDevice device, ImageEffectRenderers renderers);
++        // deviceを借用する。生成だけではGPU資源を確保しない。
++        public ImageEffectCompiler(IGraphicDevice device);
 +        // Source葉をsourceへ束縛し、同一planへパスを追加して出力画像を返す。
 +        public PreparedImageEffect AppendPasses(RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source);
 +        // 所望の出力を得るために必要なSource領域を逆向きに計算する。資源確保なし。
@@ -322,8 +328,7 @@ DropShadowはalphaの着色→blur→移動→元画像の背後へ合成で表�
 ```csharp
 using Lumyte.Graphics.ImageEffects;
 
-var renderers = ImageEffectRenderers.CreateDefault();
-var compiler = new ImageEffectCompiler(device, renderers);
+var compiler = new ImageEffectCompiler(device);
 var effect = ImageEffectGraph.GaussianBlur(4, 4, ImageEffectGraph.Source());
 var owner = compiler.AppendPasses(graph, effect, source);
 EffectImage output = owner.Output;
@@ -331,11 +336,11 @@ EffectImage output = owner.Output;
 // GPU使用終了後、commandとcompiled planを解放してからowner.Dispose()する。
 ```
 
-DIを使う場合はUseImageEffectsの後に置き換えたい演算のinterfaceを登録し、解決したImageEffectRenderersを同じcompilerコンストラクターへ渡す。Graphicsへの接続方法は変わらない。
+DIを使う場合はUseImageEffectsの後に置き換えたい型付きrendererを登録し、解決したrendererをCreateまたは便利factoryへ渡す。compilerはdeviceだけを受け取る。
 
 #### 独自エフェクトの定義と適用
 
-位置を移す利用者定義の例。画像原点を変えるだけなのでGPUパスを追加しない。ぼかし・色変換などの標準効果と同じgraphで組み合わせられる。shaderを使う効果ではAppendPasses内で一時textureとpassを追加し、すべての入力・出力を宣言する。
+位置を移す利用者定義の例。画像原点を変えるだけなのでGPUパスを追加しない。ぼかし・色変換などの提供する効果と同じgraphで組み合わせられる。shaderを使う効果ではAppendPasses内で一時textureとpassを追加し、すべての入力・出力を宣言する。
 
 ```csharp
 public sealed record TranslateEffect(int X, int Y) : ImageEffectDefinition
@@ -357,10 +362,10 @@ public sealed class TranslateEffectRenderer : IImageEffectRenderer<TranslateEffe
 ```
 
 ```csharp
-var moved = ImageEffectGraph.Custom(new TranslateEffect(8, 4),
+var moved = ImageEffectGraph.Create(new TranslateEffect(8, 4),
     new TranslateEffectRenderer(), ImageEffectGraph.Source());
 var effect = ImageEffectGraph.GaussianBlur(3, 3, moved);
 var owner = compiler.AppendPasses(graph, effect, source);
 ```
 
-このeffectは2D側のLayerOptions2D.EffectsまたはBackdropEffectOptions2D.Effectsにも指定できる。DIを使う場合は `services.AddScoped<IImageEffectRenderer<TranslateEffect>, TranslateEffectRenderer>()` で登録し、解決したrendererをCustomへ渡す。独自実装を標準4演算の登録表へ追加する必要はない。
+このeffectは2D側のLayerOptions2D.EffectsまたはBackdropEffectOptions2D.Effectsにも指定できる。DIを使う場合は `services.AddScoped<IImageEffectRenderer<TranslateEffect>, TranslateEffectRenderer>()` で登録し、解決したrendererをCreateへ渡す。効果別の固定登録表を作る必要はない。

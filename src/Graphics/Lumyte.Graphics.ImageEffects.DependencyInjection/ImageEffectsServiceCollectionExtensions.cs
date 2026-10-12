@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.ImageEffects.DependencyInjection;
 /// <summary>Registers the optional scoped image effect renderer composition.</summary>
 public static class ImageEffectsServiceCollectionExtensions
 {
-    /// <summary>Completes the four standard image effect renderer registrations.</summary>
+    /// <summary>Completes the four provided image effect renderer registrations.</summary>
     /// <remarks>
     /// Existing registrations are preserved, including when this method is called again.
     /// Later interface registrations take precedence for single-service resolution.
@@ -18,11 +18,10 @@ public static class ImageEffectsServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddScoped<IColorMatrixEffectRenderer, DefaultColorMatrixEffectRenderer>();
-        services.TryAddScoped<IGaussianBlurEffectRenderer, DefaultGaussianBlurEffectRenderer>();
-        services.TryAddScoped<IOpacityEffectRenderer, DefaultOpacityEffectRenderer>();
-        services.TryAddScoped<ICompositeEffectRenderer, DefaultCompositeEffectRenderer>();
-        services.TryAddScoped<ImageEffectRenderers>();
+        services.TryAddScoped<IImageEffectRenderer<ColorMatrixEffect>, DefaultColorMatrixEffectRenderer>();
+        services.TryAddScoped<IImageEffectRenderer<GaussianBlurEffect>, DefaultGaussianBlurEffectRenderer>();
+        services.TryAddScoped<IImageEffectRenderer<OpacityEffect>, DefaultOpacityEffectRenderer>();
+        services.TryAddScoped<IImageEffectRenderer<CompositeEffect>, DefaultCompositeEffectRenderer>();
         return services;
     }
 }

@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.ImageEffects;
 
-/// <summary>Builds immutable, bounded-depth effect DAGs with standard and user-defined operations.</summary>
+/// <summary>Builds immutable, bounded-depth effect DAGs with uniformly bound effect operations.</summary>
 public sealed class ImageEffectGraph
 {
     private readonly int _depth;
@@ -23,71 +23,49 @@ public sealed class ImageEffectGraph
     /// <returns>The source graph.</returns>
     public static ImageEffectGraph Source() => new(new SourceEffectNode(), 1);
 
-    /// <summary>Transforms straight linear RGBA and premultiplies the result.</summary>
-    /// <param name="matrix">The matrix.</param>
+    /// <summary>Creates a color-matrix operation using a supplied or newly created renderer.</summary>
+    /// <param name="matrix">The immutable matrix.</param>
     /// <param name="input">The input graph.</param>
-    /// <returns>The new graph.</returns>
-    public static ImageEffectGraph ColorMatrix(ColorMatrix4x5 matrix, ImageEffectGraph input)
-    {
-        ArgumentNullException.ThrowIfNull(matrix);
-        ArgumentNullException.ThrowIfNull(input);
-        return new(new ColorMatrixEffectNode(matrix, input.Root), input._depth + 1);
-    }
+    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
+    /// <returns>The graph constructed by the common effect factory.</returns>
+    public static ImageEffectGraph ColorMatrix(ColorMatrix4x5 matrix, ImageEffectGraph input, IImageEffectRenderer<ColorMatrixEffect>? renderer = null)
+        => Create(new ColorMatrixEffect(matrix), renderer ?? new DefaultColorMatrixEffectRenderer(), input);
 
-    /// <summary>Blurs with normalized kernels of radius ceil(3 * sigma).</summary>
+    /// <summary>Creates a Gaussian operation using a supplied or newly created renderer.</summary>
     /// <param name="sigmaX">The finite nonnegative horizontal device-pixel sigma.</param>
     /// <param name="sigmaY">The finite nonnegative vertical device-pixel sigma.</param>
     /// <param name="input">The input graph.</param>
-    /// <returns>The new graph.</returns>
-    public static ImageEffectGraph GaussianBlur(float sigmaX, float sigmaY, ImageEffectGraph input)
-    {
-        ArgumentNullException.ThrowIfNull(input);
-        _ = Radius(sigmaX);
-        _ = Radius(sigmaY);
-        return new(new GaussianBlurEffectNode(sigmaX, sigmaY, input.Root), input._depth + 1);
-    }
+    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
+    /// <returns>The graph constructed by the common effect factory.</returns>
+    public static ImageEffectGraph GaussianBlur(float sigmaX, float sigmaY, ImageEffectGraph input, IImageEffectRenderer<GaussianBlurEffect>? renderer = null)
+        => Create(new GaussianBlurEffect(sigmaX, sigmaY), renderer ?? new DefaultGaussianBlurEffectRenderer(), input);
 
-    /// <summary>Multiplies a completed image by opacity.</summary>
+    /// <summary>Creates an opacity operation using a supplied or newly created renderer.</summary>
     /// <param name="opacity">A finite multiplier in [0, 1].</param>
     /// <param name="input">The input graph.</param>
-    /// <returns>The new graph.</returns>
-    public static ImageEffectGraph Opacity(float opacity, ImageEffectGraph input)
-    {
-        ArgumentNullException.ThrowIfNull(input);
-        if (!float.IsFinite(opacity) || opacity < 0 || opacity > 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(opacity));
-        }
+    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
+    /// <returns>The graph constructed by the common effect factory.</returns>
+    public static ImageEffectGraph Opacity(float opacity, ImageEffectGraph input, IImageEffectRenderer<OpacityEffect>? renderer = null)
+        => Create(new OpacityEffect(opacity), renderer ?? new DefaultOpacityEffectRenderer(), input);
 
-        return new(new OpacityEffectNode(opacity, input.Root), input._depth + 1);
-    }
-
-    /// <summary>Composes graph children over their finite bounding-rectangle union.</summary>
+    /// <summary>Creates a composition operation using a supplied or newly created renderer.</summary>
     /// <param name="source">The source graph.</param>
     /// <param name="backdrop">The backdrop graph.</param>
     /// <param name="mode">The composition mode.</param>
     /// <param name="sourceOffsetX">The integer horizontal source translation.</param>
     /// <param name="sourceOffsetY">The integer vertical source translation.</param>
-    /// <returns>The new graph.</returns>
-    public static ImageEffectGraph Composite(ImageEffectGraph source, ImageEffectGraph backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(backdrop);
-        if (!Enum.IsDefined(mode))
-        {
-            throw new ArgumentOutOfRangeException(nameof(mode));
-        }
+    /// <param name="renderer">The renderer to bind, or null to create the provided implementation.</param>
+    /// <returns>The graph constructed by the common effect factory.</returns>
+    public static ImageEffectGraph Composite(ImageEffectGraph source, ImageEffectGraph backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IImageEffectRenderer<CompositeEffect>? renderer = null)
+        => Create(new CompositeEffect(mode, sourceOffsetX, sourceOffsetY), renderer ?? new DefaultCompositeEffectRenderer(), source, backdrop);
 
-        return new(new CompositeEffectNode(source.Root, backdrop.Root, mode, sourceOffsetX, sourceOffsetY), Math.Max(source._depth, backdrop._depth) + 1);
-    }
-
-    /// <summary>Binds an immutable user definition to its typed renderer and copied child graphs.</summary>
-    /// <typeparam name="TDefinition">The immutable user definition.</typeparam>
+    /// <summary>Binds an immutable effect definition to its typed renderer and copied child graphs.</summary>
+    /// <typeparam name="TDefinition">The immutable effect definition.</typeparam>
     /// <param name="definition">CPU-only parameters and region mappings, retained without mutation.</param>
     /// <param name="renderer">The borrowed renderer retained for every preparation of this graph.</param>
     /// <param name="inputs">Child graphs in definition order. Zero inputs are permitted for image generators.</param>
-    /// <returns>The new custom graph.</returns>
-    public static ImageEffectGraph Custom<TDefinition>(TDefinition definition, IImageEffectRenderer<TDefinition> renderer, params ImageEffectGraph[] inputs)
+    /// <returns>The new effect graph.</returns>
+    public static ImageEffectGraph Create<TDefinition>(TDefinition definition, IImageEffectRenderer<TDefinition> renderer, params ImageEffectGraph[] inputs)
         where TDefinition : ImageEffectDefinition
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -108,7 +86,7 @@ public sealed class ImageEffectGraph
             depth = Math.Max(depth, inputs[i]._depth + 1);
         }
 
-        return new(CustomEffectNode.Create(definition, renderer, nodes), depth);
+        return new(EffectOperationNode.Create(definition, renderer, nodes), depth);
     }
 
     internal static int Radius(float sigma)

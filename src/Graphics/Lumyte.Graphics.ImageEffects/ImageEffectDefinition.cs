@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.ImageEffects;
 
-/// <summary>Defines immutable custom effect parameters and CPU-only image-region mappings.</summary>
+/// <summary>Defines immutable effect parameters and CPU-only image-region mappings.</summary>
 /// <remarks>Implementations must snapshot their parameters and keep all methods deterministic for the lifetime of their graph.</remarks>
 public abstract record ImageEffectDefinition
 {
