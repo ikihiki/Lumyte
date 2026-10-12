@@ -44,6 +44,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_mapped || _pending)
             {
@@ -64,6 +65,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void ValidateRange(ulong offset, ulong length)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -73,6 +75,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -86,6 +89,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Unmap()
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -98,6 +102,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -150,7 +155,17 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     {
         try
         {
-            await BrowserInterop.MapBufferAsync(_native, (int)Memory);
+            try
+            {
+                await BrowserInterop.MapBufferAsync(_native, (int)Memory);
+            }
+            catch
+            {
+                _owner.ValidateAlive();
+                throw;
+            }
+
+            _owner.ValidateAlive();
             _mapped = true;
             if (cancellationToken.IsCancellationRequested)
             {

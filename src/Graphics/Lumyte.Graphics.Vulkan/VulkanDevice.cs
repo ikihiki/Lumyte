@@ -15,10 +15,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly PhysicalDevice _physicalDevice;
     private readonly Queue _nativeQueue;
     private readonly VulkanPresentation? _presentation;
+    private readonly GraphicsDeviceLifetime _lifetime;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
     {
+        _lifetime = new(this);
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
         _presentation = presentation;
@@ -28,6 +30,19 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         api.GetDeviceQueue(device, queueFamily, 0, out _nativeQueue);
         Queue = new VulkanQueue(this);
     }
+
+    /// <inheritdoc />
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => _lifetime.DeviceLost += value;
+        remove => _lifetime.DeviceLost -= value;
+    }
+
+    /// <inheritdoc />
+    public GraphicsDeviceStatus Status => _lifetime.Status;
+
+    /// <inheritdoc />
+    public GraphicsDeviceLoss? Loss => _lifetime.Loss;
 
     /// <inheritdoc />
     public IGraphicsQueue Queue { get; }
@@ -212,7 +227,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
@@ -222,7 +237,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
         const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
@@ -253,7 +268,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         TextureValidation.Validate(desc, Caps);
         var texture = new VulkanTexture(this, desc);
         return texture;
@@ -262,7 +277,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSampler CreateSampler(SamplerDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         SamplerValidation.Validate(desc, Caps);
         var sampler = new VulkanSampler(this, desc);
         return sampler;
@@ -271,7 +286,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
         {
@@ -285,7 +300,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsShader CreateShader(ShaderArtifact artifact)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new VulkanShader(this, artifact);
         return shader;
@@ -299,14 +314,59 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             return;
         }
 
+        _lifetime.ValidateDisposal();
         _presentation?.Dispose();
         _api.DestroyDevice(_device, null);
         _api.DestroyInstance(_instance, null);
         _api.Dispose();
         _disposed = true;
+        _lifetime.Dispose();
     }
 
-    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    /// <inheritdoc />
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _lifetime.ValidateRetirement();
+        Result result = _api.DeviceWaitIdle(_device);
+
+        // Vulkan permits child destruction after device loss; an explicit idle call
+        // completes host synchronization and may itself report ERROR_DEVICE_LOST.
+        if (result != Result.Success && result != Result.ErrorDeviceLost)
+        {
+            throw new InvalidOperationException($"Vulkan retirement confirmation failed: {result}.");
+        }
+
+        _lifetime.ConfirmRetirement();
+        return ValueTask.CompletedTask;
+    }
+
+    internal void ReportLoss(string message) => _lifetime.ReportLoss("VK_ERROR_DEVICE_LOST", message);
+
+    internal void ValidateDisposal() => _lifetime.ValidateDisposal();
+
+    internal SurfaceStatus PresentationStatus(Result result)
+    {
+        if (result == Result.ErrorDeviceLost)
+        {
+            ReportLoss("Vulkan presentation failed: device lost.");
+        }
+
+        return VulkanPresentation.Status(result);
+    }
+
+    internal void CheckResult(Result result, string operation)
+    {
+        if (result == Result.ErrorDeviceLost)
+        {
+            ReportLoss($"Vulkan {operation} failed: device lost.");
+            ValidateAlive();
+        }
+
+        VulkanPresentation.Check(result, operation);
+    }
+
+    internal void ValidateAlive() => _lifetime.ValidateAlive();
 
     private static VulkanDevice CreateCore(VulkanDeviceDesc desc)
     {

@@ -81,6 +81,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -119,6 +120,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
 
     internal void ValidateAlive()
     {
+        _owner.ValidateAlive();
         _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
     }

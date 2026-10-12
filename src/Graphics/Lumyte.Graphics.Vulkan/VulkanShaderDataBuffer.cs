@@ -132,7 +132,11 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         _values[checked((int)index)] = value;
     }
 
-    public void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    public void ValidateAlive()
+    {
+        Owner.ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
 
     public void Dispose()
     {

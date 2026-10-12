@@ -18,9 +18,9 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
         try
         {
-            VulkanPresentation.Check(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence acquireFence), "CreateFence");
+            Owner.CheckResult(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence acquireFence), "CreateFence");
             AcquireFence = acquireFence;
-            VulkanPresentation.Check(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence presentFence), "CreateFence");
+            Owner.CheckResult(Owner.Api.CreateFence(Owner.NativeDevice, &fenceInfo, null, out Fence presentFence), "CreateFence");
             PresentFence = presentFence;
         }
         catch
@@ -72,8 +72,9 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
+        Owner.ValidateDisposal();
         _texture!.DisposeLease();
-        if (!_presented && !_deviceLost)
+        if (!_presented && !_deviceLost && Owner.Status == GraphicsDeviceStatus.Ready)
         {
             _swapchain.ReleaseImage(_index);
         }
@@ -104,15 +105,18 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
 
     private bool IsNativeReleased()
     {
-        if (_deviceLost)
+        if (_deviceLost || Owner.Status == GraphicsDeviceStatus.Lost)
         {
+            Owner.ValidateDisposal();
             return true;
         }
 
         Result acquired = Owner.Api.GetFenceStatus(Owner.NativeDevice, AcquireFence);
         if (acquired == Result.ErrorDeviceLost)
         {
+            Owner.ReportLoss("Vulkan surface fence failed: device lost.");
             _deviceLost = true;
+            Owner.ValidateDisposal();
             return true;
         }
 
@@ -121,7 +125,7 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return false;
         }
 
-        VulkanPresentation.Check(acquired, "GetFenceStatus");
+        Owner.CheckResult(acquired, "GetFenceStatus");
         if (!_presented)
         {
             return true;
@@ -130,7 +134,9 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         Result presented = Owner.Api.GetFenceStatus(Owner.NativeDevice, PresentFence);
         if (presented == Result.ErrorDeviceLost)
         {
+            Owner.ReportLoss("Vulkan surface fence failed: device lost.");
             _deviceLost = true;
+            Owner.ValidateDisposal();
             return true;
         }
 
@@ -139,7 +145,7 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return false;
         }
 
-        VulkanPresentation.Check(presented, "GetFenceStatus");
+        Owner.CheckResult(presented, "GetFenceStatus");
         return true;
     }
 }

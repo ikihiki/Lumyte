@@ -42,6 +42,7 @@ internal sealed class BrowserSurface : IGraphicsSurface
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -56,6 +57,7 @@ internal sealed class BrowserSurface : IGraphicsSurface
 
     internal void ValidateAlive()
     {
+        _owner.ValidateAlive();
         _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
     }

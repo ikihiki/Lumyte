@@ -40,6 +40,7 @@ internal sealed class BrowserSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
+        Owner.ValidateDisposal();
         _texture.DisposeLease();
         Lifetime.MarkDisposed();
     }

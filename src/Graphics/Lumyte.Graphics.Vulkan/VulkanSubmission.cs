@@ -13,7 +13,12 @@ internal sealed class VulkanSubmission(VulkanDevice owner, VulkanCommandBuffer[]
         {
             if (_status == SubmissionStatus.Pending)
             {
-                Result result = owner.Api.GetFenceStatus(owner.NativeDevice, fence);
+                Result result = owner.Status == GraphicsDeviceStatus.Lost ? Result.ErrorDeviceLost : owner.Api.GetFenceStatus(owner.NativeDevice, fence);
+                if (result == Result.ErrorDeviceLost)
+                {
+                    owner.ReportLoss("Vulkan fence query failed: device lost.");
+                }
+
                 if (result == Result.Success || result == Result.ErrorDeviceLost)
                 {
                     _status = result == Result.Success ? SubmissionStatus.Completed : SubmissionStatus.Failed;
@@ -43,7 +48,7 @@ internal sealed class VulkanSubmission(VulkanDevice owner, VulkanCommandBuffer[]
 
         if (_status == SubmissionStatus.Failed)
         {
-            throw new InvalidOperationException("Vulkan submission failed: device lost.");
+            throw new GraphicsDeviceLostException(owner.Loss!);
         }
     }
 
@@ -54,6 +59,12 @@ internal sealed class VulkanSubmission(VulkanDevice owner, VulkanCommandBuffer[]
             return;
         }
 
+        if (Status == SubmissionStatus.Pending)
+        {
+            throw new InvalidOperationException("Complete the submission before disposal.");
+        }
+
+        owner.ValidateDisposal();
         owner.Api.DestroyFence(owner.NativeDevice, fence, null);
         _status = SubmissionStatus.Disposed;
     }

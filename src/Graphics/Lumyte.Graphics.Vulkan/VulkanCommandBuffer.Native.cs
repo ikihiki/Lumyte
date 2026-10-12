@@ -165,8 +165,14 @@ internal sealed unsafe partial class VulkanCommandBuffer
 
     private static Extent3D Extent(TextureCopyRegion region) => new(region.Width, region.Height, 1);
 
-    private static void Check(Result result, string operation)
+    private void Check(Result result, string operation)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+            _owner.ValidateAlive();
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");
@@ -324,6 +330,12 @@ internal sealed unsafe partial class VulkanCommandBuffer
     private void FinishNative()
     {
         Result result = _owner.Api.EndCommandBuffer(_command);
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+            _owner.ValidateAlive();
+        }
+
         if (result != Result.Success)
         {
             State = CommandBufferState.Faulted;

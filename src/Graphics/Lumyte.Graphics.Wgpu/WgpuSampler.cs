@@ -38,6 +38,7 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             return _native;
         }
@@ -47,6 +48,7 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

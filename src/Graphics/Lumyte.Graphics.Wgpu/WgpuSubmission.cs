@@ -3,10 +3,21 @@ using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class WgpuSubmission(WgpuDevice owner, WgpuCommandBuffer[] commands) : IGraphicsSubmission
+internal sealed class WgpuSubmission : IGraphicsSubmission
 {
-    private readonly A.QueueWorkDoneRequest _request = owner.NativeDevice.Queue.BeginOnSubmittedWorkDone();
+    private readonly WgpuDevice _owner;
+    private readonly WgpuCommandBuffer[] _commands;
+    private readonly A.QueueWorkDoneRequest _request;
+    private readonly Func<bool> _isComplete;
     private SubmissionStatus _status = SubmissionStatus.Pending;
+
+    internal WgpuSubmission(WgpuDevice owner, WgpuCommandBuffer[] commands)
+    {
+        (_owner, _commands) = (owner, commands);
+        _request = owner.NativeDevice.Queue.BeginOnSubmittedWorkDone();
+        _isComplete = () => _request.IsComplete;
+        owner.TrackRequest(_isComplete);
+    }
 
     public SubmissionStatus Status
     {
@@ -14,13 +25,13 @@ internal sealed class WgpuSubmission(WgpuDevice owner, WgpuCommandBuffer[] comma
         {
             if (_status == SubmissionStatus.Pending)
             {
-                owner.NativeDevice.ProcessEvents();
-                if (_request.IsComplete)
+                _owner.ProcessEvents();
+                if (_request.IsComplete || _owner.Status == GraphicsDeviceStatus.Lost)
                 {
-                    _status = _request.IsSuccess ? SubmissionStatus.Completed : SubmissionStatus.Failed;
-                    foreach (WgpuCommandBuffer command in commands)
+                    _status = _owner.Status == GraphicsDeviceStatus.Ready && _request.IsSuccess ? SubmissionStatus.Completed : SubmissionStatus.Failed;
+                    foreach (WgpuCommandBuffer command in _commands)
                     {
-                        command.Complete(_request.IsSuccess);
+                        command.Complete(_status == SubmissionStatus.Completed);
                     }
                 }
             }
@@ -40,6 +51,11 @@ internal sealed class WgpuSubmission(WgpuDevice owner, WgpuCommandBuffer[] comma
 
         if (_status == SubmissionStatus.Failed)
         {
+            if (_owner.Loss is { } loss)
+            {
+                throw new GraphicsDeviceLostException(loss);
+            }
+
             throw new InvalidOperationException($"WebGPU submission failed: {_request.Status}.");
         }
     }
@@ -51,6 +67,18 @@ internal sealed class WgpuSubmission(WgpuDevice owner, WgpuCommandBuffer[] comma
             return;
         }
 
+        if (Status == SubmissionStatus.Pending)
+        {
+            throw new InvalidOperationException("Complete the submission before disposal.");
+        }
+
+        _owner.ValidateDisposal();
+        if (!_request.IsComplete)
+        {
+            throw new InvalidOperationException("Confirm native request retirement before releasing its callback storage.");
+        }
+
+        _owner.UntrackRequest(_isComplete);
         _request.Dispose();
         _status = SubmissionStatus.Disposed;
     }

@@ -82,6 +82,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_mapped || _pending)
             {
@@ -102,6 +103,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void ValidateRange(ulong offset, ulong length)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -111,6 +113,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -124,6 +127,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Unmap()
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -137,6 +141,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -193,12 +198,15 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     private async Task MapCoreAsync(CancellationToken cancellationToken)
     {
         A.BufferMapRequest request = default;
+        Func<bool>? isComplete = null;
         try
         {
             request = _native.BeginMap(Memory == MemoryPreference.Upload ? A.MapMode.Write : A.MapMode.Read, 0, (nuint)SizeInBytes);
+            isComplete = () => request.IsComplete;
+            _owner.TrackRequest(isComplete);
             while (true)
             {
-                _owner.NativeDevice.ProcessEvents();
+                _owner.ProcessEvents();
                 if (request.IsComplete)
                 {
                     break;
@@ -207,6 +215,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
                 await Task.Delay(1);
             }
 
+            _owner.ValidateAlive();
             if (request.Status != WGPUMapAsyncStatus.Success)
             {
                 throw new InvalidOperationException($"WebGPU mapping failed: {request.Status}.");
@@ -233,6 +242,11 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
         }
         finally
         {
+            if (isComplete is not null)
+            {
+                _owner.UntrackRequest(isComplete);
+            }
+
             request.Dispose();
             _pending = false;
         }

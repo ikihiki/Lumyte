@@ -114,6 +114,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             return _native;
@@ -126,6 +127,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (mipLevel >= MipLevels)
@@ -138,6 +140,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
@@ -171,6 +174,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_surfaceFrame != null)
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
@@ -205,6 +209,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
 
     internal void DisposeLease()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -232,8 +237,14 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         throw new NotSupportedException("No device-local Vulkan image memory type is available.");
     }
 
-    private static void Check(Result result, string operation)
+    private void Check(Result result, string operation)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+            _owner.ValidateAlive();
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");

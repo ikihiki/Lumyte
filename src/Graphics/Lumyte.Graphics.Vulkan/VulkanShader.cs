@@ -22,6 +22,11 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
                 PCode = (uint*)bytes,
             };
             Result result = owner.Api.CreateShaderModule(owner.NativeDevice, &desc, null, out _native);
+            if (result == Result.ErrorDeviceLost)
+            {
+                _owner.ReportLoss("Vulkan operation failed: device lost.");
+            }
+
             if (result != Result.Success)
             {
                 throw new InvalidOperationException($"Vulkan shader module creation failed: {result}.");
@@ -37,6 +42,7 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             return _native;
         }
@@ -44,6 +50,7 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

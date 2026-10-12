@@ -42,6 +42,7 @@ internal sealed unsafe partial class WgpuGraphicsPipeline : IGraphicsPipeline
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

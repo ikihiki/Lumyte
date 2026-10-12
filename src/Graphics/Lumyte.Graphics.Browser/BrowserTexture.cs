@@ -37,6 +37,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             return _native;
@@ -49,6 +50,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public (uint Width, uint Height) GetMipSize(uint mipLevel)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (mipLevel >= MipLevels)
@@ -61,6 +63,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
@@ -71,6 +74,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_surfaceFrame != null)
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
@@ -81,6 +85,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
 
     internal void DisposeLease()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

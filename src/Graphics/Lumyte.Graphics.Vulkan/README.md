@@ -242,3 +242,9 @@ Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとr
 一つのSurfaceを閉じても共有Deviceと他のSurfaceは残り、DeviceWaitIdle／QueueWaitIdleを挿入しません。
 
 実行時検証の共通方針は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。resourceの保持数、commandからの依存resource走査、subresourceの状態表は検証目的で維持しません。binding生成とshader dataの明示copyに必要な参照収集・metadata伝播は行います。
+
+## デバイスロスト
+
+VK_ERROR_DEVICE_LOSTをdevice・子資源・submission・presentationから共通状態へ接続します。Pending submissionはFailed、commandはFaultedとなり、WaitAsyncはGraphicsDeviceLostExceptionを返します。loss後のWaitForRetirementAsyncは明示的にvkDeviceWaitIdleを呼び、Success／ErrorDeviceLostを破棄安全性の確認として扱います。その後に子資源とdeviceを明示的にDisposeします。
+
+新しい生成・記録・map・submitはloss後に拒否します。保存済みのSpan／Native pointerは失効を後から強制できないため、EngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。

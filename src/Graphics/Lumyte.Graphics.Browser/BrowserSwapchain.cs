@@ -41,6 +41,7 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
 
     public void Dispose()
     {
+        Owner.ValidateDisposal();
         if (_disposed)
         {
             return;

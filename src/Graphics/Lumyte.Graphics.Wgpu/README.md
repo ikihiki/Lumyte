@@ -192,3 +192,9 @@ active画像の制約は各Surface／Swapchainに適用し、Device全体を一�
 実行時検証の共通方針は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。resourceの保持数、commandからの依存resource走査、subresourceの状態表は検証目的で維持しません。binding生成とshader dataの明示copyに必要な参照収集・metadata伝播は行います。
 
 FrameはGPU submissionを追跡しません。`WaitForReleaseAsync`はこのbackendで追加のGPU待機を行わないため、利用者が`submission.WaitAsync()`等でGPU使用の完了を確認してからFrame・View・commandを解放します。
+
+## デバイスロスト
+
+WgpuDevice.ProcessEventsをEngineのevent loopで定期的に呼んでNative loss callbackを配送します。Status／Lossはcached値です。Ahjo.Wgpu 0.7.0の非公開Device constructorへのアクセスはWgpuDeviceCreationだけに隔離しています。依存更新時はNative生成・lossテストを実行してください。loss後はWaitForRetirementAsyncでmap／queue callbackの完了を確認してから子資源をDisposeします。Native status slotはcallback完了前に解放しません。
+
+新しい生成・記録・map・submitはloss後に拒否します。保存済みのSpan／Native pointerは失効を後から強制できないため、EngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。

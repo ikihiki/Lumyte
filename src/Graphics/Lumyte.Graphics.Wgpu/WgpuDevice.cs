@@ -10,10 +10,16 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Instance _instance;
     private readonly A.Adapter _adapter;
     private readonly A.Device _device;
+    private readonly WgpuDeviceCreation _creation;
+    private readonly GraphicsDeviceLifetime _lifetime;
+    private readonly List<Func<bool>> _pendingRequests = [];
     private bool _disposed;
 
-    private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device)
+    private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device, WgpuDeviceCreation creation)
     {
+        _creation = creation;
+        _lifetime = new(this);
+        creation.Attach(_lifetime);
         (_instance, _adapter, _device) = (instance, adapter, device);
         Queue = new WgpuQueue(this);
         WGPULimits limits = device.GetLimits();
@@ -45,6 +51,19 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => _lifetime.DeviceLost += value;
+        remove => _lifetime.DeviceLost -= value;
+    }
+
+    /// <inheritdoc />
+    public GraphicsDeviceStatus Status => _lifetime.Status;
+
+    /// <inheritdoc />
+    public GraphicsDeviceLoss? Loss => _lifetime.Loss;
+
+    /// <inheritdoc />
     public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the effective device capabilities captured during creation.</summary>
@@ -64,8 +83,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         try
         {
             adapter = instance.RequestAdapterBlocking();
-            device = adapter.RequestDeviceBlocking();
-            return new(instance, adapter, device);
+            var creation = new WgpuDeviceCreation();
+            device = creation.Create(instance, adapter);
+            return new(instance, adapter, device, creation);
         }
         catch
         {
@@ -200,7 +220,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
@@ -210,7 +230,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
         const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
@@ -241,7 +261,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         TextureValidation.Validate(desc, Caps);
         var texture = new WgpuTexture(this, desc);
         return texture;
@@ -250,7 +270,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSampler CreateSampler(SamplerDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         SamplerValidation.Validate(desc, Caps);
         var sampler = new WgpuSampler(this, desc);
         return sampler;
@@ -259,7 +279,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
         {
@@ -273,7 +293,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsShader CreateShader(ShaderArtifact artifact)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new WgpuShader(this, artifact);
         return shader;
@@ -287,13 +307,51 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
             return;
         }
 
+        _lifetime.ValidateDisposal();
+        _lifetime.Dispose();
         _device.Dispose();
+        _instance.ProcessEvents();
+        _creation.Release();
         _adapter.Dispose();
         _instance.Dispose();
         _disposed = true;
+        _lifetime.Dispose();
     }
 
-    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    /// <summary>Pumps native callbacks and delivers the device loss callback without waiting.</summary>
+    public void ProcessEvents()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _device.ProcessEvents();
+    }
+
+    /// <inheritdoc />
+    public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _lifetime.ValidateRetirement();
+
+        // Native loss ends GPU use, but request callbacks still own their status slots.
+        while (_pendingRequests.Any(isComplete => !isComplete()))
+        {
+            ProcessEvents();
+            await Task.Delay(1, cancellationToken);
+        }
+
+        _lifetime.ConfirmRetirement();
+    }
+
+    internal void TrackRequest(Func<bool> isComplete) => _pendingRequests.Add(isComplete);
+
+    internal void UntrackRequest(Func<bool> isComplete) => _pendingRequests.Remove(isComplete);
+
+    internal void ValidateDisposal() => _lifetime.ValidateDisposal();
+
+    internal void ValidateAlive()
+    {
+        ProcessEvents();
+        _lifetime.ValidateAlive();
+    }
 
     private static void ValidateSurfaceSource(A.SurfaceSource source)
     {

@@ -31,6 +31,11 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
         };
         Sampler native = default;
         Result result = owner.Api.CreateSampler(owner.NativeDevice, &descriptor, null, &native);
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan CreateSampler failed: {result}.");
@@ -45,6 +50,7 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             return _native;
         }
@@ -54,6 +60,7 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

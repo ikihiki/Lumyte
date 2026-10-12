@@ -96,6 +96,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_mapped || _pending)
             {
@@ -116,6 +117,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void ValidateRange(ulong offset, ulong length)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -125,6 +127,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -155,6 +158,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void Unmap()
     {
+        _owner.ValidateAlive();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -166,6 +170,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -223,8 +228,14 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         throw new NotSupportedException("No Vulkan memory type satisfies the required buffer access.");
     }
 
-    private static void Check(Result result, string operation)
+    private void Check(Result result, string operation)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+            _owner.ValidateAlive();
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");

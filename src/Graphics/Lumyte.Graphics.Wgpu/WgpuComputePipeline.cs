@@ -30,6 +30,7 @@ internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipel
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

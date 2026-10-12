@@ -21,6 +21,7 @@ internal sealed class BrowserSampler : IGraphicsSampler
     {
         get
         {
+            _owner.ValidateAlive();
             ObjectDisposedException.ThrowIf(_disposed, this);
             return _native;
         }
@@ -30,6 +31,7 @@ internal sealed class BrowserSampler : IGraphicsSampler
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (_disposed)
         {
             return;

@@ -58,7 +58,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         SurfaceStatus status;
         try
         {
-            status = VulkanPresentation.Status(result);
+            status = Owner.PresentationStatus(result);
         }
         catch
         {
@@ -83,6 +83,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
 
     public void Dispose()
     {
+        Owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -109,7 +110,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
                 PSwapchains = &native,
                 PImageIndices = &index,
             };
-            status = VulkanPresentation.Status(Owner.Presentation.Swapchain.QueuePresent(Owner.NativeQueue, &present));
+            status = Owner.PresentationStatus(Owner.Presentation.Swapchain.QueuePresent(Owner.NativeQueue, &present));
         }
 
         if (status == SurfaceStatus.Outdated)
@@ -123,7 +124,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
     internal void ReleaseImage(uint index)
     {
         var release = new ReleaseSwapchainImagesInfoKHR { SType = StructureType.ReleaseSwapchainImagesInfoExt, Swapchain = _native, ImageIndexCount = 1, PImageIndices = &index };
-        VulkanPresentation.Check(Owner.Presentation.Maintenance.ReleaseSwapchainImages(Owner.NativeDevice, &release), "ReleaseSwapchainImagesEXT");
+        Owner.CheckResult(Owner.Presentation.Maintenance.ReleaseSwapchainImages(Owner.NativeDevice, &release), "ReleaseSwapchainImagesEXT");
     }
 
     private void Configure(SwapchainDesc desc)
@@ -177,14 +178,14 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         SwapchainKHR next = default;
         _outdated = true;
         _retired = _native.Handle != 0;
-        VulkanPresentation.Check(Owner.Presentation.Swapchain.CreateSwapchain(Owner.NativeDevice, &info, null, &next), "CreateSwapchainKHR");
+        Owner.CheckResult(Owner.Presentation.Swapchain.CreateSwapchain(Owner.NativeDevice, &info, null, &next), "CreateSwapchainKHR");
         try
         {
-            VulkanPresentation.Check(Owner.Presentation.Swapchain.GetSwapchainImages(Owner.NativeDevice, next, &count, null), "GetSwapchainImagesKHR");
+            Owner.CheckResult(Owner.Presentation.Swapchain.GetSwapchainImages(Owner.NativeDevice, next, &count, null), "GetSwapchainImagesKHR");
             var images = new Image[count];
             fixed (Image* pointer = images)
             {
-                VulkanPresentation.Check(Owner.Presentation.Swapchain.GetSwapchainImages(Owner.NativeDevice, next, &count, pointer), "GetSwapchainImagesKHR");
+                Owner.CheckResult(Owner.Presentation.Swapchain.GetSwapchainImages(Owner.NativeDevice, next, &count, pointer), "GetSwapchainImagesKHR");
             }
 
             if (_native.Handle != 0)

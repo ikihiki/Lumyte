@@ -33,14 +33,18 @@ export async function createDevice() {
             copyBytesPerRowAlignment: 256,
             storageBufferOffsetAlignment: limits.minStorageBufferOffsetAlignment,
         });
-        const handle = { device, caps, disposed: false, lost: false };
-        device.lost.then(() => { handle.lost = true; });
+        const handle = { device, caps, disposed: false, lost: false, loss: null, lostPromise: null };
+        handle.lostPromise = device.lost.then(info => { handle.lost = true; handle.loss = info; });
         return handle;
     } catch (error) {
         device.destroy();
         throw error;
     }
 }
+
+export async function waitDeviceLost(handle) { await handle.lostPromise; }
+export function getDeviceLossReason(handle) { return String(handle.loss?.reason ?? "unknown"); }
+export function getDeviceLossMessage(handle) { return handle.loss?.message ?? "WebGPU device lost."; }
 
 export function getCapsJson(handle) {
     return JSON.stringify(handle.caps);
@@ -195,7 +199,7 @@ export function addCommand(list, commands) { list.push(commands); }
 export function submitCommands(handle, list) {
     handle.device.queue.submit(list);
     const result = { status: 0, error: "", promise: null };
-    result.promise = handle.device.queue.onSubmittedWorkDone().then(
+    result.promise = Promise.race([handle.device.queue.onSubmittedWorkDone(), handle.lostPromise.then(() => { throw new Error(getDeviceLossMessage(handle)); })]).then(
         () => { result.status = 1; },
         error => { result.status = 2; result.error = String(error); });
     return result;

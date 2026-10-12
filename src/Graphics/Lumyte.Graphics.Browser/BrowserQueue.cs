@@ -44,6 +44,6 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
             command.MarkSubmitted();
         }
 
-        return new BrowserSubmission(commands, handle);
+        return new BrowserSubmission(owner, commands, handle);
     }
 }

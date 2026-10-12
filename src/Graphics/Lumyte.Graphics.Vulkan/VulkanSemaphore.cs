@@ -12,7 +12,7 @@ internal sealed unsafe class VulkanSemaphore : IGraphicsSemaphore
     {
         Owner = owner;
         var info = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
-        VulkanPresentation.Check(owner.Api.CreateSemaphore(owner.NativeDevice, &info, null, out Semaphore native), "CreateSemaphore");
+        Owner.CheckResult(owner.Api.CreateSemaphore(owner.NativeDevice, &info, null, out Semaphore native), "CreateSemaphore");
         Native = native;
     }
 
@@ -27,6 +27,7 @@ internal sealed unsafe class VulkanSemaphore : IGraphicsSemaphore
             return;
         }
 
+        Owner.ValidateDisposal();
         Owner.Api.DestroySemaphore(Owner.NativeDevice, Native, null);
         _disposed = true;
     }

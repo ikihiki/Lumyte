@@ -89,12 +89,18 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
         DescriptorBindingFlags* flags = stackalloc DescriptorBindingFlags[3] { DescriptorBindingFlags.PartiallyBoundBit, DescriptorBindingFlags.PartiallyBoundBit, 0 };
         var extension = new DescriptorSetLayoutBindingFlagsCreateInfo { SType = StructureType.DescriptorSetLayoutBindingFlagsCreateInfo, BindingCount = 3, PBindingFlags = flags };
         var info = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, PNext = &extension, BindingCount = 3, PBindings = bindings };
-        Check(owner.Api.CreateDescriptorSetLayout(owner.NativeDevice, &info, null, out DescriptorSetLayout layout));
+        owner.CheckResult(owner.Api.CreateDescriptorSetLayout(owner.NativeDevice, &info, null, out DescriptorSetLayout layout), "CreateDescriptorSetLayout");
         return layout;
     }
 
-    private static void Check(Result result)
+    private void Check(Result result)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+            _owner.ValidateAlive();
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan shader binding operation failed: {result}.");

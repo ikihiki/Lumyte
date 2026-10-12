@@ -52,6 +52,7 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
 
     public unsafe void Dispose()
     {
+        Owner.ValidateDisposal();
         if (_disposed)
         {
             return;
@@ -63,6 +64,7 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
 
     internal unsafe SurfaceStatus Present()
     {
+        Owner.ValidateAlive();
         WGPUStatus status = WGPU.wgpuSurfacePresent(_surface.Native.Handle);
         if (status != WGPUStatus.Success)
         {

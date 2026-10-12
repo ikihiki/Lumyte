@@ -8,19 +8,37 @@ namespace Lumyte.Graphics.Browser;
 public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
+    private readonly GraphicsDeviceLifetime _lifetime;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
     {
+        _lifetime = new(this);
         (_handle, Caps) = (handle, caps);
         Queue = new BrowserQueue(this);
+        _ = ObserveLossAsync();
     }
+
+    /// <inheritdoc />
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => _lifetime.DeviceLost += value;
+        remove => _lifetime.DeviceLost -= value;
+    }
+
+    /// <inheritdoc />
+    public GraphicsDeviceStatus Status => _lifetime.Status;
+
+    /// <inheritdoc />
+    public GraphicsDeviceLoss? Loss => _lifetime.Loss;
 
     /// <inheritdoc />
     public IGraphicsQueue Queue { get; }
 
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    internal Task<GraphicsDeviceLoss> LostTask => _lifetime.LostTask;
 
     internal JSObject Handle => _handle;
 
@@ -167,7 +185,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ulong size = (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return new(size, size, Caps.CopyBufferOffsetAlignment, Caps.CopyBufferSizeAlignment);
     }
@@ -177,7 +195,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(desc);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
         const BufferUsage KnownUsage = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
@@ -208,7 +226,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsTexture CreateTexture(TextureDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         TextureValidation.Validate(desc, Caps);
         var texture = new BrowserTexture(this, desc);
         return texture;
@@ -217,7 +235,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSampler CreateSampler(SamplerDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         SamplerValidation.Validate(desc, Caps);
         var sampler = new BrowserSampler(this, desc);
         return sampler;
@@ -226,7 +244,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
         {
@@ -240,7 +258,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsShader CreateShader(ShaderArtifact artifact)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidateAlive();
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new BrowserShader(this, artifact);
         return shader;
@@ -254,10 +272,49 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
             return;
         }
 
+        _lifetime.ValidateDisposal();
         BrowserInterop.DestroyDevice(_handle);
         _handle.Dispose();
         _disposed = true;
+        _lifetime.Dispose();
     }
 
-    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    /// <inheritdoc />
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _lifetime.ValidateRetirement();
+        if (Loss?.Reason == "LossObservationFailed")
+        {
+            throw new InvalidOperationException("Browser loss observation failed; safe retirement is unconfirmed.");
+        }
+
+        // GPUDevice.lost resolution establishes WebGPU's safe destruction boundary.
+        _lifetime.ConfirmRetirement();
+        return ValueTask.CompletedTask;
+    }
+
+    internal void ValidateDisposal() => _lifetime.ValidateDisposal();
+
+    internal void ValidateAlive() => _lifetime.ValidateAlive();
+
+    private async Task ObserveLossAsync()
+    {
+        try
+        {
+            await BrowserInterop.WaitDeviceLostAsync(_handle);
+            if (!_disposed)
+            {
+                _lifetime.ReportLoss(BrowserInterop.GetDeviceLossReason(_handle), BrowserInterop.GetDeviceLossMessage(_handle));
+            }
+        }
+        catch (Exception error)
+        {
+            // Interop observation failure must not leave a device falsely usable.
+            if (!_disposed)
+            {
+                _lifetime.ReportLoss("LossObservationFailed", error.Message);
+            }
+        }
+    }
 }

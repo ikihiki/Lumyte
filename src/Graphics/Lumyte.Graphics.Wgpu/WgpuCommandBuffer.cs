@@ -212,15 +212,18 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
 
     public void Dispose()
     {
+        _owner.ValidateDisposal();
         if (State == CommandBufferState.Disposed)
         {
             return;
         }
 
-        if (_active != null)
+        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
         {
             throw new InvalidOperationException("End the pass before disposal.");
         }
+
+        _active = null;
 
         DisposeNative();
         foreach (IDisposable binding in _bindings)

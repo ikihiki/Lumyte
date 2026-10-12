@@ -109,6 +109,7 @@ jobs:
             export ALSOFT_DRIVERS=null
           fi
           dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
+          node --test tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
             dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release --no-build -- vulkan pipeline-benchmark | tee artifacts/test-results/vulkan-pipeline-benchmark.jsonl
           fi
