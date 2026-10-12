@@ -40,6 +40,19 @@ volumeとmutedを編集でき、deviceは読み取り専用です。保存には
 saveのjob-idでsave-resultを実行し、Savedを確認してください。保存ファイルはサンプル終了後も保持します。
 設定診断APIの詳細は[Lumyte.Diagnostics.Settings](../../src/Diagnostics/Lumyte.Diagnostics.Settings/README.md)を参照してください。
 
+## アニメーション診断
+
+`LUMYTE_DIAGNOSTICS_ANIMATION=1`を指定すると、`animation`を同じ実行ポイントに登録します。
+
+```sh
+export LUMYTE_DIAGNOSTICS_ANIMATION=1
+dotnet run --project samples/Lumyte.Diagnostics.Remote.Sample -c Release -- http http://127.0.0.1:5000 120
+```
+
+`sample.playback`と`sample.motion`を公開し、所有スレッドのゲームループで更新します。AnimationページではPlaybackの再生、Pause、Stop、Seek、速度変更と、状態機械の`action` Triggerを確認できます。環境変数を省略した通常実行にはAnimation対象を追加しません。
+
+診断APIと公開範囲の詳細は[Lumyte.Diagnostics.Animation](../../src/Diagnostics/Lumyte.Diagnostics.Animation/README.md)を参照してください。
+
 ## レンダーグラフ診断
 
 `LUMYTE_DIAGNOSTICS_RENDER_GRAPH=1` を指定すると、`graphics.render-graph` を同じ実行ポイントに登録します。

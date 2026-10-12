@@ -63,7 +63,7 @@ CI全体が成功した実行のうち、取得可能な最新の `diagnostics-g
 
 保存元はActionsの成果物で、保持期間は30日です。有効な成果物がない場合もPRを一覧に残して理由を表示しますが、画面へのリンクは表示しません。長期間更新していないPRやmainの画面を再掲載する場合はCIを再実行してください。成果物取得の予期しないエラーや検証失敗では公開を中止し、公開済みサイトを維持します。
 
-`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、Renderingのcapture・詳細・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
+`verify-browser.mjs` はログイン前、Resources、Overview、Input、Settingsの読み込み・保存・競合・狭い画面、AnimationのPlayback・状態機械・狭い画面、Renderingのcapture・詳細・狭い画面、Logs、Traces、Metricsを撮影し、成功時のみ `gallery.json` を出力します。ページ追加時は実画面の撮影シナリオと説明をこの一覧へ追加してください。
 
 ```sh
 GITHUB_REPOSITORY=ikihiki/Lumyte PREVIEW_COMMIT="$(git rev-parse HEAD)" PREVIEW_LABEL="Local preview" \
