@@ -1,5 +1,7 @@
 using Lumyte.Diagnostics;
+using Lumyte.Diagnostics.Settings;
 using Lumyte.Input.Actions;
+using Lumyte.Input.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Input.Diagnostics;
@@ -33,6 +35,18 @@ public static class InputInspectionServiceCollectionExtensions
     {
         services.AddInputInspection();
         services.AddDiagnosticSubsystem<InputDiagnostics, TPoint>(descriptor ?? new("input", "Input", 1));
+        return services;
+    }
+
+    /// <summary>Publishes the persisted Action mapping tree through the shared settings diagnostics.</summary>
+    /// <typeparam name="TPoint">The owning-thread execution point.</typeparam>
+    /// <param name="services">The service collection containing <c>AddInputSettings()</c>.</param>
+    /// <returns>The same service collection.</returns>
+    public static IServiceCollection AddInputActionSettingsDiagnostics<TPoint>(this IServiceCollection services)
+        where TPoint : class
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddSettingsDiagnostics<InputActionSettings, TPoint>("input-actions", _ => { });
         return services;
     }
 }

@@ -49,6 +49,12 @@
                         @foreach (PointerModel pointer in device.Pointers) { <div class="pointer-row"><strong>@pointer.Id</strong><span>@pointer.Phase · @Vector(pointer.Position)</span><progress max="1" value="@(pointer.Pressure ?? 0)"></progress><span>@(pointer.Pressure?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—")</span></div> }
                         @if (device.Pointers.Length == 0) { <p class="hint">アクティブなポインターはありません。</p> }
                     }
+                    @if (device.Targets.Count > 0)
+                    {
+                        <details><summary>診断Control targets (@device.Targets.Count)</summary><div class="table-container"><table><thead><tr><th>Control</th><th>Target</th></tr></thead><tbody>
+                        @foreach ((string control, Guid target) in device.Targets) { <tr><td><code>@control</code></td><td><code>@target</code></td></tr> }
+                        </tbody></table></div></details>
+                    }
                 </FluentCard>
             }
             </div>
@@ -79,6 +85,20 @@
         else
         {
             <p role="status">ActionSystemがinspectionへ接続されていません。</p>
+        }
+        @if (MappingOperations.Any())
+        {
+            <FluentCard Class="card"><h2>Action mapping設定</h2><p>現在のInputActionSettingsツリーを読み込み、Revision競合を検証して保存します。保存後の設定はゲーム側のInputSettingsCoordinatorが次の更新境界で適用します。</p></FluentCard>
+            <div id="input-mapping-forms" class="operation-grid">
+            @foreach ((SubsystemDescriptor subsystem, OperationDescriptor operation) in MappingOperations)
+            {
+                <OperationCard @key="(Context.Resource?.SessionId, subsystem.Id, operation.Id)" Subsystem="subsystem" Operation="operation" Execute="Context.Execute" />
+            }
+            </div>
+        }
+        else
+        {
+            <p class="hint">設定編集を有効にするにはAddInputActionSettingsDiagnosticsを登録してください。</p>
         }
     }
     else
