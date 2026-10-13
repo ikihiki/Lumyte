@@ -150,6 +150,8 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
+          dotnet publish samples/Lumyte.Audio.Execution.Browser.Sample -c Release -o artifacts/audio-execution-browser
+          "$RUNNER_TEMP/audio-playwright/bin/python" tools/audio/verify_browser.py artifacts/audio-execution-browser/wwwroot --chromium "$CHROME" 2>&1 | tee artifacts/test-results/browser-audio-execution.log
           dotnet publish samples/Lumyte.Audio.Browser.Sample -c Release -o artifacts/audio-browser
           "$RUNNER_TEMP/audio-playwright/bin/python" tools/audio/verify_browser.py artifacts/audio-browser/wwwroot --chromium "$CHROME" 2>&1 | tee artifacts/test-results/browser-audio.log
 
@@ -206,6 +208,10 @@ jobs:
         shell: bash
         run: |
           source tools/setup/activate.sh
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --di
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host --di
           dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Diagnostics.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Animation.Sample -c Release --no-build
@@ -213,12 +219,24 @@ jobs:
           dotnet run --project samples/Lumyte.Animation.StateMachine.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Input.Advanced.Sample -c Release --no-build -- "$RUNNER_TEMP/input-settings.json"
           ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Sample -c Release --no-build
+          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build
+          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build -- --di
+          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build -- --host
+          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build -- --host --di
+          dotnet pack src/Audio/Lumyte.Audio.Execution -c Release --no-build -o artifacts/nuget
           dotnet pack src/Audio/Lumyte.Audio.Abstractions -c Release --no-build -o artifacts/nuget
           dotnet pack src/Audio/Lumyte.Audio.OpenAL -c Release --no-build -o artifacts/nuget
           dotnet pack src/Audio/Lumyte.Audio.Browser -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Mathematics -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Core -c Release --no-build -o artifacts/nuget
+          dotnet publish samples/Lumyte.Execution.Sample -c Release -p:PublishAot=true -o artifacts/execution-aot
+          artifacts/execution-aot/Lumyte.Execution.Sample
+          artifacts/execution-aot/Lumyte.Execution.Sample --di
+          artifacts/execution-aot/Lumyte.Execution.Sample --host
+          artifacts/execution-aot/Lumyte.Execution.Sample --host --di
+          dotnet pack src/Core/Lumyte.Execution -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Execution.Generators -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.StateMachines -c Release --no-build -o artifacts/nuget

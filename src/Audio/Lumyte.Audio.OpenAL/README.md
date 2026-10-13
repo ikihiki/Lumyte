@@ -29,3 +29,5 @@ float PCM は [-1, 1] に clamp して PCM16 に変換します。mono／stereo 
 [実行サンプル](../../../samples/Lumyte.Audio.Sample/README.md) で契約を確認できます。検証済み: Linux x64／OpenAL Soft の null driver。物理出力の可聴品質、Windows・ARM64 の実機実行は未検証です。
 
 [回帰テスト](../../../tests/Audio/Lumyte.Audio.OpenAL.Tests/README.md) は Native の source 枯渇からの回復を確認します。
+
+voiceのState／Gain／Loop getterはbackendのlock内でcached値を読み、任意のスレッドから呼べます。native／JavaScriptの操作は行いません。setter・再生制御・Update・解放は所有スレッドで実行します。clipのFormat／FrameCountは不変のmetadataです。
