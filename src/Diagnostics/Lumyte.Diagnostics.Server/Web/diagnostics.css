@@ -215,3 +215,9 @@ fluent-button.danger::part(control) { color: #9c3329; }
 .animation-placeholder { min-height: 160px; display: grid; place-items: center; color: var(--muted); }
 @media (max-width: 800px) { .animation-layout { grid-template-columns: minmax(0, 1fr); } .animation-target-list { max-height: 240px; } }
 @media (max-width: 640px) { .animation-controls, .animation-facts { grid-template-columns: minmax(0, 1fr); } }
+.window-layout { display: grid; grid-template-columns: minmax(180px, .45fr) minmax(180px, .45fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }
+.window-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.window-facts div { min-width: 0; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.window-native { overflow-wrap: anywhere; font: 12px ui-monospace, monospace; }
+@media (max-width: 1000px) { .window-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); } .window-details { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .window-layout, .window-facts { grid-template-columns: minmax(0, 1fr); } .window-details { grid-column: auto; } }
