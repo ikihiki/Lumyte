@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Platform.Windows.Sample/Lumyte.Platform.Windows.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Sample/Lumyte.Audio.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Shared/Lumyte.Audio.Shared.csproj" />
     <Project Path="samples/Lumyte.Input.Advanced.Sample/Lumyte.Input.Advanced.Sample.csproj" />
@@ -18,11 +19,21 @@
     <Project Path="src/Audio/Lumyte.Audio.Browser/Lumyte.Audio.Browser.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
+    <Project Path="src/Platform/Lumyte.Windowing.Abstractions/Lumyte.Windowing.Abstractions.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Abstractions/Lumyte.Platform.Abstractions.csproj" />
+    <Project Path="src/Platform/Lumyte.Windowing/Lumyte.Windowing.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+  </Folder>
   <Folder Name="/src/Animation/">
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
     <Project Path="src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
+    <Project Path="src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
+    <Project Path="src/Core/Lumyte.Memory/Lumyte.Memory.csproj" />
     <Project Path="src/Core/Lumyte.Settings/Lumyte.Settings.csproj" />
     <Project Path="src/Core/Lumyte.Core/Lumyte.Core.csproj" />
     <Project Path="src/Core/Lumyte.StateMachines/Lumyte.StateMachines.csproj" />
@@ -54,6 +65,9 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/tests/" />
+  <Folder Name="/tests/Platform/">
+    <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Audio/">
     <Project Path="tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj" />
   </Folder>
@@ -62,11 +76,13 @@
   </Folder>
   <Folder Name="/tests/Core/">
     <Project Path="tests/Core/Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />
+    <Project Path="tests/Core/Lumyte.Memory.Tests/Lumyte.Memory.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Settings.Tests/Lumyte.Settings.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Input/">
+    <Project Path="src/Input/Lumyte.Input.Abstractions/Lumyte.Input.Abstractions.csproj" />
     <Project Path="src/Input/Lumyte.Input.Diagnostics/Lumyte.Input.Diagnostics.csproj" />
     <Project Path="src/Input/Lumyte.Input.Processing/Lumyte.Input.Processing.csproj" />
     <Project Path="src/Input/Lumyte.Input.Actions/Lumyte.Input.Actions.csproj" />

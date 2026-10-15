@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.Json;
+using Lumyte.Input.Abstractions;
 using Lumyte.Input.Actions;
 using Lumyte.Input.Settings;
 using Xunit;
