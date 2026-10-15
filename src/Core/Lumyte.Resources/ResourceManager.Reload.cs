@@ -18,6 +18,13 @@ public sealed partial class ResourceManager
         return ReloadCoreAsync(changedSources, [], cancellationToken);
     }
 
+    /// <summary>Rechecks all tracked input revisions and atomically rebuilds the graph affected by changes.</summary>
+    /// <remarks>Includes provenance of trimmed build-only inputs. Resources that have never been loaded are not discovered or built.</remarks>
+    /// <param name="cancellationToken">Cancels candidate construction before publication.</param>
+    /// <returns>The publication outcome.</returns>
+    public ValueTask<ResourceReloadResult> ReloadAllAsync(CancellationToken cancellationToken = default)
+        => ReloadCoreAsync([], [], cancellationToken, recheckAllSources: true);
+
     /// <summary>Rebuilds resources affected by runtime generation changes, including invalidated handles.</summary>
     /// <param name="dependencyIds">The registered runtimes whose current versions should be used.</param>
     /// <param name="cancellationToken">Cancels candidate construction before publication.</param>
@@ -59,7 +66,7 @@ public sealed partial class ResourceManager
         return false;
     }
 
-    private async ValueTask<ResourceReloadResult> ReloadCoreAsync(IReadOnlyCollection<ResourceId> changedSources, IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken)
+    private async ValueTask<ResourceReloadResult> ReloadCoreAsync(IReadOnlyCollection<ResourceId> changedSources, IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken, bool recheckAllSources = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
@@ -88,7 +95,11 @@ public sealed partial class ResourceManager
             }
 
             Dictionary<ResourceId, string?> revisions = [];
-            foreach (ResourceId id in changedSources.Distinct())
+            var trackedSources = view.Metadata.Values.SelectMany(static metadata => metadata.Sources.Keys).ToHashSet();
+            IEnumerable<ResourceId> sources = recheckAllSources
+                ? trackedSources
+                : changedSources.Where(trackedSources.Contains).Distinct();
+            foreach (ResourceId id in sources)
             {
                 revisions[id] = await _source.GetRevisionAsync(id, cancellationToken).ConfigureAwait(false);
             }

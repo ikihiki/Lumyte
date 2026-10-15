@@ -23,9 +23,12 @@ it does not retain the document's borrowed JSON elements.
 
 Managed references keep two logical resources resident. Their nonowning,
 unmanaged handles can be copied into ECS components; resolution happens through
-a managed read scope. The sample changes the JSON file and explicitly calls
-`ReloadAsync`. Its existing mesh lease and original read scope retain the old
-values; the same handles resolve the new values in a new read scope.
+a managed read scope. The sample registers `WatchChanges<FileResourceChangeSource>()`
+and starts the scoped `ResourceReloadService`. It changes the JSON file and waits
+for automatic reload without calling `ReloadAsync`. Its existing mesh lease and
+original read scope retain the old values; the same handles resolve the new
+values in a new read scope. Monitoring is stopped and joined before the resource
+manager is closed.
 
 Expected output includes:
 
@@ -33,6 +36,7 @@ Expected output includes:
 Document elements: mesh/0, material/0
 Projection builds during discovery: 0
 Initial mesh: 3 vertices; shared document builds: 1
+Automatic reload: Published; publication 4; document builds: 2
 Existing lease: 3 vertices; same handle after reload: 6 vertices
 Original view: copper; current view: silver
 Document buffer after release: 0 bytes

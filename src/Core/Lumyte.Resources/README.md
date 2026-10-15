@@ -29,9 +29,17 @@
 
 `ReloadAsync`は変更通知を入力Revisionの再確認のきっかけとして使い、逆依存をたどって候補を構築します。Build依存の値をTrimした後も、親が残る間は再構築用の依存情報を保持します。候補の構築・入力確認がすべて成功した後、値とhandleの解決先を一括公開します。途中で入力や公開mapが変わった場合は`Conflict`になり、候補を片付けます。構築失敗では例外を返し、旧公開値を維持します。
 
-通常の新規取得でもsourceの変更を検出した場合、旧親と新しい中間値だけが混在する公開を拒否します。変更したIDを`ReloadAsync`へ渡してから取得を再試行してください。既存の公開値への取得は、明示的なReloadまでその世代を使用します。変更監視、debounce、Conflictの再試行はアプリ側が制御します。
+通常の新規取得でもsourceの変更を検出した場合、旧親と新しい中間値だけが混在する公開を拒否します。変更したIDを`ReloadAsync`へ渡してから取得を再試行してください。既存の公開値への取得は、Reloadが公開するまでその世代を使用します。通知されたIDのうち追跡中の入力だけを再確認し、未ロードの無関係なファイルは読み込みません。`ReloadAllAsync`は同じ構築viewに含まれるすべての入力Revisionを再確認します。
 
 既存lease・read scope・stream sessionは旧Revisionを保持します。runtime依存の不可逆な失効は例外で、Resident依存する値とその親を利用不能にします。論理referenceとhandleは維持し、復旧後の`RebuildRuntimeAsync`で新世代へ接続します。Buildだけでruntimeを使った独立CPU値は利用を継続できます。Graphicsとの接続は`Lumyte.Resources.Graphics`を使用します。
+
+## 自動変更監視
+
+`IResourceChangeSource`は非同期の変更通知を返します。`ResourceReloadService`を開始すると通知をまとめ、IDの重複を除いてHotReloadします。連続更新で待機し続けないよう集約時間に上限を設け、再構築中に届いた通知も次のバッチへ保持します。保留できるID数を超えた場合や`ResourceSourceChange.Rescan`を受信した場合は、追跡中の入力をすべて再確認します。
+
+`Conflict`と構築・入力読み取りの失敗は、設定された間隔・上限回数で再試行します。失敗時は旧公開値を維持し、再試行を使い切った後も新しい通知は受け付けます。`LastResult`・`LastError`と`Reloaded`・`ReloadFailed`で経過を確認でき、監視列挙自体の失敗は`Completion`へ伝わります。イベントはバックグラウンド処理上で実行されるため、UIなどへの配送は利用側で行います。
+
+DIでは`WatchChanges<TChangeSource>()`を登録し、同じ名前の`ResourceReloadService`を取得して`Start()`します。`StopAsync`は監視と再構築をキャンセルし、終了まで待ちます。DI scopeも監視サービスをmanagerより先に停止します。managerを明示的に閉じる場合は、その前に監視を停止してください。ファイル監視には`Lumyte.Resources.FileSystem`の`FileResourceChangeSource`を使用します。
 
 ## ストリーミング
 

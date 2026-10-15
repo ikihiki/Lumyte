@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Root-confined file snapshots for resource pipelines.</Description>
+    <Description>Root-confined file snapshots and bounded change monitoring for resource pipelines.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Core/Lumyte.Resources/Lumyte.Resources.csproj" />

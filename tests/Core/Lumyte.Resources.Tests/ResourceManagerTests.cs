@@ -452,9 +452,12 @@ public sealed class ResourceManagerTests
     }
 
     /// <summary>Source provenance survives releasing a build input and still selects its parent for reload.</summary>
+    /// <param name="rescan">Whether to recheck all tracked sources instead of a specific identifier.</param>
     /// <returns>Completion of reload after intermediate trimming.</returns>
-    [Fact]
-    public async Task ReloadTracksTrimmedBuildDependencyAsync()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReloadTracksTrimmedBuildDependencyAsync(bool rescan)
     {
         await using Fixture fixture = CreatePlannedFixture("root", "leaf");
         fixture.Source.Set("asset", "old");
@@ -468,7 +471,9 @@ public sealed class ResourceManagerTests
         Assert.Equal(1, fixture.Plan.BuildCounts["leaf"]);
         fixture.Source.Set("asset", "new");
 
-        ResourceReloadResult result = await fixture.Manager.ReloadAsync([new("asset")]);
+        ResourceReloadResult result = rescan
+            ? await fixture.Manager.ReloadAllAsync()
+            : await fixture.Manager.ReloadAsync([new("asset")]);
         Assert.Equal(ResourceReloadStatus.Published, result.Status);
         AssertHandleText(fixture.Manager, owner.Handle, "new");
         Assert.Equal(2, fixture.Plan.BuildCounts["root"]);

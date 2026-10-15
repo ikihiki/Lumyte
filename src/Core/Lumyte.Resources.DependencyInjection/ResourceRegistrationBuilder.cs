@@ -10,6 +10,7 @@ public sealed class ResourceRegistrationBuilder
     private readonly HashSet<string> _pipelines = new(StringComparer.Ordinal);
     private readonly HashSet<string> _runtimeDependencies = new(StringComparer.Ordinal);
     private Func<IServiceProvider, IResourceSource>? _source;
+    private bool _watchChanges;
     private bool _completed;
 
     internal ResourceRegistrationBuilder(string managerName)
@@ -34,6 +35,33 @@ public sealed class ResourceRegistrationBuilder
         var key = new RegistrationKey(_managerName, "source", string.Empty);
         _registrations.Add(services => services.AddKeyedScoped<TSource>(key));
         _source = provider => provider.GetRequiredKeyedService<TSource>(key);
+        return this;
+    }
+
+    /// <summary>Registers a scoped automatic reload service and its constructor-injected change source.</summary>
+    /// <typeparam name="TChangeSource">The source of asynchronous change notifications.</typeparam>
+    /// <param name="options">Immutable batching and retry settings, or null for defaults.</param>
+    /// <returns>This builder.</returns>
+    /// <remarks>Resolve the named <see cref="ResourceReloadService"/> and call its Start method to begin monitoring. Scope disposal stops monitoring before disposing the manager.</remarks>
+    public ResourceRegistrationBuilder WatchChanges<TChangeSource>(ResourceReloadOptions? options = null)
+        where TChangeSource : class, IResourceChangeSource
+    {
+        EnsureConfiguring();
+        if (_watchChanges)
+        {
+            throw new InvalidOperationException("A resource change source is already registered for this manager.");
+        }
+
+        _watchChanges = true;
+        var key = new RegistrationKey(_managerName, "changes", string.Empty);
+        _registrations.Add(services =>
+        {
+            services.AddKeyedScoped<TChangeSource>(key);
+            services.AddKeyedScoped<ResourceReloadService>(_managerName, (provider, _) => new ResourceReloadService(
+                provider.GetRequiredKeyedService<ResourceManager>(_managerName),
+                provider.GetRequiredKeyedService<TChangeSource>(key),
+                options));
+        });
         return this;
     }
 
