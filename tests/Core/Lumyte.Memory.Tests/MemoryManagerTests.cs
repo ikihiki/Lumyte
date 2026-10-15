@@ -33,6 +33,32 @@ public sealed class MemoryManagerTests
         Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
     }
 
+    /// <summary>Cumulative releases remain observable when replacement allocations increase current usage.</summary>
+    /// <returns>Completion of the release-counter checks.</returns>
+    [Fact]
+    public async Task SnapshotCountsReleasedChargesIndependentlyOfNewCommitsAsync()
+    {
+        await using MemoryManager manager = CreateManager(200, 200);
+        await using IMemoryScope scope = manager.CreateScope("replacement accounting");
+        using IMemoryReservation original = await scope.ReserveAsync(Request(40));
+        using IMemoryCharge originalCharge = original.Commit(new(40, MemoryAccuracy.Exact));
+        MemorySnapshot before = manager.GetSnapshot(_cpu);
+
+        originalCharge.Dispose();
+        using IMemoryReservation replacement = await scope.ReserveAsync(Request(80));
+        using IMemoryCharge replacementCharge = replacement.Commit(new(80, MemoryAccuracy.Estimate));
+        MemorySnapshot after = manager.GetSnapshot(_cpu);
+        Assert.Equal(80UL, after.CommittedBytes);
+        Assert.Equal(40UL, unchecked(after.ReleasedBytes - before.ReleasedBytes));
+
+        replacementCharge.Dispose();
+        replacementCharge.Dispose();
+        using IMemoryReservation uncommitted = await scope.ReserveAsync(Request(20));
+        uncommitted.Dispose();
+        Assert.Equal(120UL, manager.GetSnapshot(_cpu).ReleasedBytes);
+        Assert.Equal(0UL, manager.GetSnapshot(_cpu).CommittedBytes);
+    }
+
     /// <summary>Returning a committed reservation preserves its charge until the charge or scope is disposed.</summary>
     /// <returns>Completion of the scope's ownership checks.</returns>
     [Fact]
