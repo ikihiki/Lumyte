@@ -1,3 +1,4 @@
+using Lumyte.Graphics.Abstractions;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.ImageEffects;
@@ -12,12 +13,14 @@ public sealed class ImageEffectSubgraph : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ImageEffectSubgraph"/> class.</summary>
     /// <param name="graph">The parent graph receiving every pass.</param>
     /// <param name="source">The graph-local image supplied to this callback.</param>
-    public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source)
+    /// <param name="programs">The optional borrowed program provider, frozen for the callback.</param>
+    public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source, IGraphicsProgramProvider? programs = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ImageEffectRenderGraphExtensions.ValidateImage(source);
         Graph = graph;
         Source = source;
+        Programs = programs ?? ImageEffectPrograms.DefaultProvider;
     }
 
     /// <summary>Gets the borrowed parent graph for custom pass and resource declarations.</summary>
@@ -25,6 +28,9 @@ public sealed class ImageEffectSubgraph : IDisposable
 
     /// <summary>Gets this callback's layer or background input image.</summary>
     public EffectImage Source { get; }
+
+    /// <summary>Gets the borrowed program provider for appended effects.</summary>
+    public IGraphicsProgramProvider Programs { get; }
 
     /// <summary>Appends a blur and retains its fixed resources in this scope.</summary>
     /// <param name="input">The graph-local input.</param>
@@ -34,7 +40,7 @@ public sealed class ImageEffectSubgraph : IDisposable
     public EffectImage AppendGaussianBlur(EffectImage input, float sigmaX, float sigmaY)
     {
         EnsureAlive();
-        return Own(Graph.AppendGaussianBlur(input, sigmaX, sigmaY));
+        return Own(Graph.AppendGaussianBlur(input, sigmaX, sigmaY, Programs));
     }
 
     /// <summary>Appends opacity and retains its fixed resources in this scope.</summary>
@@ -44,7 +50,7 @@ public sealed class ImageEffectSubgraph : IDisposable
     public EffectImage AppendOpacity(EffectImage input, float opacity)
     {
         EnsureAlive();
-        return Own(Graph.AppendOpacity(input, opacity));
+        return Own(Graph.AppendOpacity(input, opacity, Programs));
     }
 
     /// <summary>Appends a matrix and retains its fixed resources in this scope.</summary>
@@ -54,7 +60,7 @@ public sealed class ImageEffectSubgraph : IDisposable
     public EffectImage AppendColorMatrix(EffectImage input, ColorMatrix4x5 matrix)
     {
         EnsureAlive();
-        return Own(Graph.AppendColorMatrix(input, matrix));
+        return Own(Graph.AppendColorMatrix(input, matrix, Programs));
     }
 
     /// <summary>Appends composition and retains its fixed resources in this scope.</summary>
@@ -67,7 +73,7 @@ public sealed class ImageEffectSubgraph : IDisposable
     public EffectImage AppendComposite(EffectImage source, EffectImage backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0)
     {
         EnsureAlive();
-        return Own(Graph.AppendComposite(source, backdrop, mode, sourceOffsetX, sourceOffsetY));
+        return Own(Graph.AppendComposite(source, backdrop, mode, sourceOffsetX, sourceOffsetY, Programs));
     }
 
     /// <summary>Appends a new user effect's fixed implementation and retains its resources.</summary>
@@ -77,7 +83,7 @@ public sealed class ImageEffectSubgraph : IDisposable
     public EffectImage AppendEffect(ImageEffectDefinition effect, params EffectImage[] inputs)
     {
         EnsureAlive();
-        return Own(Graph.AppendEffect(effect, inputs));
+        return Own(Graph.AppendEffect(effect, inputs, Programs));
     }
 
     /// <summary>Transfers ownership of a custom prepared effect to this scope.</summary>
