@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Numerics;
 using System.Text.Json;
 using Lumyte.Input;
+using Lumyte.Input.Abstractions;
 using Lumyte.Input.Actions;
 using Lumyte.Input.Diagnostics;
 using Xunit;

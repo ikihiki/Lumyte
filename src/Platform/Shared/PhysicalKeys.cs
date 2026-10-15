@@ -1,0 +1,162 @@
+using Lumyte.Input.Abstractions;
+
+namespace Lumyte.Platform.Internal;
+
+internal static class PhysicalKeys
+{
+    internal static Key FromPcScan(int scan, bool extended)
+    {
+        if (extended)
+        {
+            return scan switch
+            {
+                0x1C => Key.NumpadEnter,
+                0x1D => Key.RightControl,
+                0x35 => Key.NumpadDivide,
+                0x37 => Key.PrintScreen,
+                0x38 => Key.RightAlt,
+                0x47 => Key.Home,
+                0x48 => Key.ArrowUp,
+                0x49 => Key.PageUp,
+                0x4B => Key.ArrowLeft,
+                0x4D => Key.ArrowRight,
+                0x4F => Key.End,
+                0x50 => Key.ArrowDown,
+                0x51 => Key.PageDown,
+                0x52 => Key.Insert,
+                0x53 => Key.Delete,
+                0x5B => Key.LeftMeta,
+                0x5C => Key.RightMeta,
+                0x5D => Key.Unknown,
+                _ => Key.Unknown,
+            };
+        }
+
+        return scan switch
+        {
+            0x01 => Key.Escape,
+            0x02 => Key.Digit1,
+            0x03 => Key.Digit2,
+            0x04 => Key.Digit3,
+            0x05 => Key.Digit4,
+            0x06 => Key.Digit5,
+            0x07 => Key.Digit6,
+            0x08 => Key.Digit7,
+            0x09 => Key.Digit8,
+            0x0A => Key.Digit9,
+            0x0B => Key.Digit0,
+            0x0C => Key.Minus,
+            0x0D => Key.Equal,
+            0x0E => Key.Backspace,
+            0x0F => Key.Tab,
+            0x10 => Key.Q,
+            0x11 => Key.W,
+            0x12 => Key.E,
+            0x13 => Key.R,
+            0x14 => Key.T,
+            0x15 => Key.Y,
+            0x16 => Key.U,
+            0x17 => Key.I,
+            0x18 => Key.O,
+            0x19 => Key.P,
+            0x1A => Key.LeftBracket,
+            0x1B => Key.RightBracket,
+            0x1C => Key.Enter,
+            0x1D => Key.LeftControl,
+            0x1E => Key.A,
+            0x1F => Key.S,
+            0x20 => Key.D,
+            0x21 => Key.F,
+            0x22 => Key.G,
+            0x23 => Key.H,
+            0x24 => Key.J,
+            0x25 => Key.K,
+            0x26 => Key.L,
+            0x27 => Key.Semicolon,
+            0x28 => Key.Quote,
+            0x29 => Key.Backquote,
+            0x2A => Key.LeftShift,
+            0x2B => Key.Backslash,
+            0x2C => Key.Z,
+            0x2D => Key.X,
+            0x2E => Key.C,
+            0x2F => Key.V,
+            0x30 => Key.B,
+            0x31 => Key.N,
+            0x32 => Key.M,
+            0x33 => Key.Comma,
+            0x34 => Key.Period,
+            0x35 => Key.Slash,
+            0x36 => Key.RightShift,
+            0x37 => Key.NumpadMultiply,
+            0x38 => Key.LeftAlt,
+            0x39 => Key.Space,
+            0x3A => Key.CapsLock,
+            >= 0x3B and <= 0x44 => Key.F1 + (scan - 0x3B),
+            0x45 => Key.NumLock,
+            0x46 => Key.ScrollLock,
+            0x47 => Key.Numpad7,
+            0x48 => Key.Numpad8,
+            0x49 => Key.Numpad9,
+            0x4A => Key.NumpadSubtract,
+            0x4B => Key.Numpad4,
+            0x4C => Key.Numpad5,
+            0x4D => Key.Numpad6,
+            0x4E => Key.NumpadAdd,
+            0x4F => Key.Numpad1,
+            0x50 => Key.Numpad2,
+            0x51 => Key.Numpad3,
+            0x52 => Key.Numpad0,
+            0x53 => Key.NumpadDecimal,
+            0x56 => Key.IntlBackslash,
+            0x57 => Key.F11,
+            0x58 => Key.F12,
+            0x73 => Key.IntlRo,
+            0x7D => Key.IntlYen,
+            _ => Key.Unknown,
+        };
+    }
+
+    internal static Key FromEvdevCode(uint code) => code switch
+    {
+        96 => Key.NumpadEnter,
+        97 => Key.RightControl,
+        98 => Key.NumpadDivide,
+        99 => Key.PrintScreen,
+        100 => Key.RightAlt,
+        102 => Key.Home,
+        103 => Key.ArrowUp,
+        104 => Key.PageUp,
+        105 => Key.ArrowLeft,
+        106 => Key.ArrowRight,
+        107 => Key.End,
+        108 => Key.ArrowDown,
+        109 => Key.PageDown,
+        110 => Key.Insert,
+        111 => Key.Delete,
+        119 => Key.Pause,
+        125 => Key.LeftMeta,
+        126 => Key.RightMeta,
+        _ => FromPcScan((int)code, false),
+    };
+
+    internal static Key FromDomCode(string code)
+    {
+        string name = code switch
+        {
+            "ShiftLeft" => "LeftShift",
+            "ShiftRight" => "RightShift",
+            "ControlLeft" => "LeftControl",
+            "ControlRight" => "RightControl",
+            "AltLeft" => "LeftAlt",
+            "AltRight" => "RightAlt",
+            "MetaLeft" => "LeftMeta",
+            "MetaRight" => "RightMeta",
+            "BracketLeft" => "LeftBracket",
+            "BracketRight" => "RightBracket",
+            "Backquote" => "Backquote",
+            _ => code.StartsWith("Key", StringComparison.Ordinal) ? code[3..] : code,
+        };
+        return Enum.TryParse(name, out Key key) && Enum.IsDefined(key) ? key : Key.Unknown;
+    }
+}
