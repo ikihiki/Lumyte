@@ -96,6 +96,15 @@ MarkOutputは必要出力の保持、Exportはさらにfinal state/scopeの指�
 
 数値・範囲違反はArgumentException/ArgumentOutOfRangeException、局所的な呼び出し順違反はInvalidOperationException、破棄後操作はObjectDisposedException、非対応形式・機能はNotSupportedExceptionとする。初期実行は一つの一般queueとcommand bufferを使い、共有graphへの同時操作は保証しない。
 
+### 6. 外部プログラムの取得
+
+各組み込み演算もEffectPreparationContext.Programsから `ImageEffectPrograms.ProgramId` のprogram leaseを取得する。
+AppendGaussianBlur等の末尾のprograms引数、またはImageEffectSubgraphのconstructorでproviderを指定する。
+未指定時は埋め込みproviderを使う。providerの差し替えは同じABIの資源取得元・所有期間を変え、効果の実装選択やDI登録には使わない。
+新しい演算は従来どおり新しいeffectとして定義する。独自effectもcontext.Programsから自身のABI識別子のprogramを取得できる。
+取得したleaseはcontextの固定資源として保持する。復旧時には旧ownerを解放し、新deviceでAppendから再構築する。
+取得契約と復旧境界は [GRAPHICS-0006](./GRAPHICS-0006-shader-compilation-and-modules.md) に従う。
+
 ## 検討した代替案
 
 | 代替案 | 採用しない理由 |
@@ -112,7 +121,7 @@ MarkOutputは必要出力の保持、Exportはさらにfinal state/scopeの指�
 
 2Dレイヤーと3D画像に同じ画像演算を適用し、色・alpha・領域の契約とGPU処理を共有できる。適用側の描画順やカメラの責務を維持しながら、すべての演算を同じ自己完結した効果の契約で追加できる。実行方式を変える場合は別の効果型を定義する。
 
-初期実装はpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を呼び出し側が管理する。演算を利用者のライブラリとして追加でき、RenderGraph本体や固定登録表の変更は不要である。定義の不変性、正しい必要入力範囲、全資源アクセスの宣言は独自実装側の責務となる。RenderGraph.Deviceを拡張用に公開し、GraphicsのAPIは変更せず、RenderGraphのwhole-allocation同期と単一queueの制約に従う。
+初期実装はpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を呼び出し側が管理する。演算を利用者のライブラリとして追加でき、RenderGraph本体や固定登録表の変更は不要である。定義の不変性、正しい必要入力範囲、全資源アクセスの宣言は独自実装側の責務となる。RenderGraph.Deviceを拡張用に公開し、Graphicsのプログラム取得契約を利用し、RenderGraphのwhole-allocation同期と単一queueの制約に従う。
 
 ## 検証方針
 

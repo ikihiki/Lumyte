@@ -10,11 +10,12 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="input">The graph-local input image.</param>
     /// <param name="matrix">The immutable color matrix.</param>
+    /// <param name="programs">The optional borrowed provider; null selects embedded programs.</param>
     /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix)
+    public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix, IGraphicsProgramProvider? programs = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.AppendEffect(new ColorMatrixEffect(matrix), input);
+        return plan.AppendEffect(new ColorMatrixEffect(matrix), [input], programs);
     }
 
     /// <summary>Appends GaussianBlur passes from parameters and returns the owned output.</summary>
@@ -22,22 +23,24 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="input">The graph-local input image.</param>
     /// <param name="sigmaX">The finite nonnegative horizontal device-pixel sigma.</param>
     /// <param name="sigmaY">The finite nonnegative vertical device-pixel sigma.</param>
+    /// <param name="programs">The optional borrowed provider; null selects embedded programs.</param>
     /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY)
+    public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY, IGraphicsProgramProvider? programs = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.AppendEffect(new GaussianBlurEffect(sigmaX, sigmaY), input);
+        return plan.AppendEffect(new GaussianBlurEffect(sigmaX, sigmaY), [input], programs);
     }
 
     /// <summary>Appends Opacity passes from parameters and returns the owned output.</summary>
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="input">The graph-local input image.</param>
     /// <param name="opacity">The finite multiplier in [0, 1].</param>
+    /// <param name="programs">The optional borrowed provider; null selects embedded programs.</param>
     /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity)
+    public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity, IGraphicsProgramProvider? programs = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.AppendEffect(new OpacityEffect(opacity), input);
+        return plan.AppendEffect(new OpacityEffect(opacity), [input], programs);
     }
 
     /// <summary>Appends Composite passes from parameters and returns the owned output.</summary>
@@ -47,24 +50,26 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="mode">The composition mode.</param>
     /// <param name="sourceOffsetX">The integer horizontal source translation.</param>
     /// <param name="sourceOffsetY">The integer vertical source translation.</param>
+    /// <param name="programs">The optional borrowed provider; null selects embedded programs.</param>
     /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0)
+    public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IGraphicsProgramProvider? programs = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.AppendEffect(new CompositeEffect(mode, sourceOffsetX, sourceOffsetY), source, backdrop);
+        return plan.AppendEffect(new CompositeEffect(mode, sourceOffsetX, sourceOffsetY), [source, backdrop], programs);
     }
 
     /// <summary>Appends the graph once; failure releases new resources and requires discarding the render graph.</summary>
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="graph">The immutable effect graph.</param>
     /// <param name="source">The source image, already bound to the same render graph.</param>
+    /// <param name="programs">The optional borrowed provider; null selects embedded programs.</param>
     /// <returns>The owner of the result's fixed resources.</returns>
-    public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source)
+    public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source, IGraphicsProgramProvider? programs = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(graph);
         ValidateImage(source);
-        var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic);
+        var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic, programs);
         var results = new Dictionary<ImageEffectNode, EffectImage>(ReferenceEqualityComparer.Instance);
         try
         {
@@ -141,6 +146,15 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="inputs">Ordered graph-local input images.</param>
     /// <returns>The output and its fixed-resource owner, disposed after GPU completion.</returns>
     public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
+        => plan.AppendEffect(effect, inputs, null);
+
+    /// <summary>Appends an effect using externally prepared program leases.</summary>
+    /// <param name="plan">The caller-owned graph, discarded on failure.</param>
+    /// <param name="effect">The fixed effect implementation.</param>
+    /// <param name="inputs">The ordered input images.</param>
+    /// <param name="programs">The borrowed provider with a frozen publication view.</param>
+    /// <returns>The output and fixed-resource owner.</returns>
+    public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan, ImageEffectDefinition effect, EffectImage[] inputs, IGraphicsProgramProvider? programs)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(effect);
@@ -169,7 +183,7 @@ public static class ImageEffectRenderGraphExtensions
             throw new InvalidOperationException("An effect must declare positive output dimensions.");
         }
 
-        var context = new EffectPreparationContext(RequireDevice(plan), semantic);
+        var context = new EffectPreparationContext(RequireDevice(plan), semantic, programs);
         try
         {
             EffectImage output = effect.AppendPasses(context, plan, inputs);

@@ -9,8 +9,6 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
     private readonly RenderPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
     private readonly List<PreparedCommand> _commands = [];
-    private readonly IGraphicsShader _vertex;
-    private readonly IGraphicsShader _fragment;
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
     private readonly IGraphicsTexture _fallback;
@@ -19,15 +17,23 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
     private bool _recorded;
     private bool _disposed;
 
-    private PreparedGpuBatch2D(RenderPreparationContext2D context)
+    private PreparedGpuBatch2D(RenderPreparationContext2D context, CancellationToken cancellationToken)
     {
         _context = context;
-        _artifact = ShaderArtifact.LoadEmbedded(typeof(PreparedGpuBatch2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader");
         try
         {
-            _vertex = Own(context.Device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(PreparedGpuBatch2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader")));
-            _fragment = Own(context.Device.CreateShader(_artifact));
-            _pipeline = Own(context.Device.CreateGraphicsPipeline(new() { VertexShader = _vertex, FragmentShader = _fragment }));
+            GraphicsProgramLease program = context.Programs.Acquire(context.Device, DrawingPrograms2D.ProgramId);
+            ArgumentNullException.ThrowIfNull(program);
+            Own(program);
+            cancellationToken.ThrowIfCancellationRequested();
+            GraphicsProgramResources resources = program.Resources;
+            if (!ReferenceEquals(resources.Device, context.Device))
+            {
+                throw new ArgumentException("The program belongs to a different physical device.");
+            }
+
+            _artifact = resources.FragmentArtifact;
+            _pipeline = resources.Pipeline;
             _sampler = Own(context.Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
             _fallback = Own(context.Device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled }));
             _fallbackView = Own(_fallback.CreateView());
@@ -98,7 +104,7 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
-        var batch = new PreparedGpuBatch2D(context);
+        var batch = new PreparedGpuBatch2D(context, cancellationToken);
         try
         {
             for (int i = 0; i < commands.Length; i++)
