@@ -112,6 +112,7 @@ jobs:
           node --test tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
             dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release --no-build -- vulkan pipeline-benchmark | tee artifacts/test-results/vulkan-pipeline-benchmark.jsonl
+            dotnet run --project samples/Lumyte.Resources.Gltf.Sample -c Release --no-build -- artifacts/test-results/gltf-render.png
           fi
 
       - name: Run solution tests (Windows)
@@ -208,6 +209,7 @@ jobs:
           source tools/setup/activate.sh
           dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Resources.Sample -c Release --no-build
+          dotnet run --project samples/Lumyte.Resources.Gltf.Sample -c Release --no-build -- --validate
           dotnet run --project samples/Lumyte.Diagnostics.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Animation.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.StateMachines.Sample -c Release --no-build

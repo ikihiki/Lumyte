@@ -74,3 +74,5 @@ readのキャンセルは待機だけを中断します。seekは旧先読みを
 公開mapと所有数の更新は短い同期区間で行い、ステージ、I/O、解放callbackをその区間で実行しません。Memoryの取得・返却は既存のスレッド専用チャンクを使います。実行スレッドは保証しないため、GPUやAudio固有の配送・完了待ちはステージ側で行います。
 
 複合document、二つの型へのprojection、handleとHotReloadを組み合わせた実行例は[sample](../../../samples/Lumyte.Resources.Sample/README.md)を参照してください。
+
+外部glTF・BIN・PNGからCPU→GPU変換を経て深度テスト付きで3D描画する実行例は、[glTF sample](../../../samples/Lumyte.Resources.Gltf.Sample/README.md)を参照してください。画像ファイルだけの変更による自動HotReloadと、旧GPU世代を保持した再描画も検証します。
