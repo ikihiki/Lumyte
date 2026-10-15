@@ -14,9 +14,11 @@ pipelines
     .AddTransformPipeline<SceneDocument, CpuMesh, MeshStage>()
     .AddTransformPipeline<CpuMesh, GpuMesh, UploadStage>();
 
-var key = new ResourceKey<CpuMesh>(new(new("scene.json"), "mesh/0"));
+var key = new ResourceKey<CpuMesh>("scene.json", "mesh/0");
 using ResourceLease<CpuMesh> mesh = await resources.AcquireAsync(key);
 ```
+
+通常はパス文字列から直接キーを作成します。SubresourceとVariantは省略でき、`new ResourceKey<SceneDocument>("scene.json")`や`new ResourceKey<CpuMesh>("scene.json", "mesh/0", variant: "geometry:v1")`と記述できます。既存の`ResourceId`または`ResourceAddress`を渡すこともできます。
 
 ステージは`ResourceBuildContext.RequireAsync`で依存を要求します。互換な構築view内の同じキーを一つの構築へ集約し、別々に開始した構築間の循環も検出します。入力そのものを別の所有出力として返すことはできません。値は共有されるため、利用中は読み取り専用として扱います。
 

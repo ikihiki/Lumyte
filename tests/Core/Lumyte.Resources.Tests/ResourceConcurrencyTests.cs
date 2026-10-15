@@ -256,7 +256,7 @@ public sealed class ResourceConcurrencyTests
         Assert.Contains("runtime provider", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ResourceKey<TestValue> Key(string selector) => new(new(new("asset"), selector));
+    private static ResourceKey<TestValue> Key(string selector) => new("asset", selector);
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 

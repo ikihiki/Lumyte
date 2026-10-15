@@ -145,7 +145,7 @@ public sealed class EmbeddedResourceSourceTests
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("dll");
-        var key = new ResourceKey<TextValue>(new(_alias));
+        var key = new ResourceKey<TextValue>(_alias);
         using ResourceReference<TextValue> owner = await manager.CreateReferenceAsync(key);
         using ResourceLease<TextValue> first = await manager.AcquireAsync(key);
         Assert.Equal("0123456789", first.Value.Text.TrimEnd('\r', '\n'));

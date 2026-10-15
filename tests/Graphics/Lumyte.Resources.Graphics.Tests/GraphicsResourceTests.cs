@@ -9,10 +9,9 @@ namespace Lumyte.Resources.Graphics.Tests;
 /// <summary>Verifies resource generations against the real hosting lease and DI contracts.</summary>
 public sealed class GraphicsResourceTests
 {
-    private static readonly ResourceAddress _address = new(new ResourceId("models/test"));
-    private static readonly ResourceKey<CpuValue> _cpuKey = new(_address);
-    private static readonly ResourceKey<GpuValue> _gpuKey = new(_address);
-    private static readonly ResourceKey<ReadbackValue> _readbackKey = new(_address);
+    private static readonly ResourceKey<CpuValue> _cpuKey = new("models/test");
+    private static readonly ResourceKey<GpuValue> _gpuKey = new("models/test");
+    private static readonly ResourceKey<ReadbackValue> _readbackKey = new("models/test");
 
     /// <summary>Recovery rebuilds the GPU generation while preserving its cached CPU input.</summary>
     /// <returns>Completion of the scenario.</returns>

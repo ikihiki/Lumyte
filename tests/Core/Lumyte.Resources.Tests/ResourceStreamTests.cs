@@ -9,7 +9,7 @@ namespace Lumyte.Resources.Tests;
 /// <summary>Tests bounded streaming, independent cursors and retryable session ownership.</summary>
 public sealed class ResourceStreamTests
 {
-    private static readonly ResourceKey<TestFactory> _key = new(new ResourceAddress(new ResourceId("audio/track")));
+    private static readonly ResourceKey<TestFactory> _key = new("audio/track");
     private static readonly MemoryPoolId _cpu = new("cpu");
     private static readonly ResourceStreamOptions _options = new() { BlockSize = 4, MaxBufferedBlocks = 2 };
 

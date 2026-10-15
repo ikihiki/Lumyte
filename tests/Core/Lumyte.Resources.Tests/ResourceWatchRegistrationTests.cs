@@ -12,7 +12,7 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourceWatchRegistrationTests
 {
     private static readonly ResourceId _known = new("asset");
-    private static readonly ResourceKey<Value> _key = new(new(_known));
+    private static readonly ResourceKey<Value> _key = new(_known);
 
     /// <summary>Each named manager and DI scope owns one change source, which is stopped and disposed exactly once.</summary>
     /// <returns>Completion of all independently owned monitors.</returns>

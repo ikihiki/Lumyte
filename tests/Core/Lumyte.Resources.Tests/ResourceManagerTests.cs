@@ -94,12 +94,9 @@ public sealed class ResourceManagerTests
             .AddTransformPipeline<DocumentValue, CpuValue, MeshProjection>()
             .AddTransformPipeline<DocumentValue, ImageValue, ImageProjection>());
         fixture.Source.Set("asset", "document bytes");
-        ResourceAddress meshAddress = new(new("asset"), "mesh/0", "tangent");
-        ResourceAddress otherVariant = new(new("asset"), "mesh/0", "position");
-        ResourceAddress imageAddress = new(new("asset"), "image/1", "linear");
-        using ResourceLease<CpuValue> mesh = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>(meshAddress));
-        using ResourceLease<CpuValue> other = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>(otherVariant));
-        using ResourceLease<ImageValue> image = await fixture.Manager.AcquireAsync(new ResourceKey<ImageValue>(imageAddress));
+        using ResourceLease<CpuValue> mesh = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>("asset", "mesh/0", "tangent"));
+        using ResourceLease<CpuValue> other = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>("asset", "mesh/0", "position"));
+        using ResourceLease<ImageValue> image = await fixture.Manager.AcquireAsync(new ResourceKey<ImageValue>("asset", "image/1", "linear"));
 
         Assert.Equal("mesh/0:tangent", mesh.Value.Text);
         Assert.Equal("mesh/0:position", other.Value.Text);
@@ -569,7 +566,7 @@ public sealed class ResourceManagerTests
         Assert.NotEqual(first.ManagerId, second.ManagerId);
         Assert.Same(first, scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first"));
         using (ResourceLease<TestValue> one = await first.AcquireAsync(Key("one")))
-        using (ResourceLease<CpuValue> two = await first.AcquireAsync(new ResourceKey<CpuValue>(Key("one").Address)))
+        using (ResourceLease<CpuValue> two = await first.AcquireAsync(new ResourceKey<CpuValue>("asset", "one")))
         using (ResourceLease<TestValue> other = await second.AcquireAsync(Key("one")))
         {
             Assert.NotEqual(one.Value.Text, two.Value.Text);
@@ -678,7 +675,7 @@ public sealed class ResourceManagerTests
 
     private static Fixture CreatePlannedFixture() => new(builder => builder.AddSourcePipeline<TestValue, PlannedStage>());
 
-    private static ResourceKey<TestValue> Key(string selector) => new(new(new("asset"), selector));
+    private static ResourceKey<TestValue> Key(string selector) => new("asset", selector);
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 

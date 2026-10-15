@@ -19,7 +19,8 @@ Both transforms normalize their input address to the same document root, so
 different element selectors and variants share one parse per published input
 revision. The document exposes element metadata without constructing both
 projections. The metadata stores actual output type handles, and keys such as
-`new ResourceKey<MeshInfo>(address)` select pipelines through `typeof(MeshInfo).TypeHandle`.
+`new ResourceKey<MeshInfo>("scene.json", "mesh/0", "geometry:v1")` select pipelines
+through `typeof(MeshInfo).TypeHandle` and construct their source ID and address internally.
 Each projection copies its data and uses a `Build` dependency, so
 it does not retain the document's borrowed JSON elements.
 

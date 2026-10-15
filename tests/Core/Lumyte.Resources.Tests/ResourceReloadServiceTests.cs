@@ -11,7 +11,7 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourceReloadServiceTests
 {
     private static readonly ResourceId _asset = new("asset");
-    private static readonly ResourceKey<Value> _key = new(new(_asset));
+    private static readonly ResourceKey<Value> _key = new(_asset);
     private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(10);
 
     /// <summary>A burst of repeated hints produces one reload while its original lease remains valid.</summary>
