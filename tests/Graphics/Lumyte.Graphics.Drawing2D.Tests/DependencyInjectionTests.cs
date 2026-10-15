@@ -13,7 +13,7 @@ public sealed class DependencyInjectionTests
     {
         var services = new ServiceCollection();
         Assert.Same(services, services.UseGraphics2D());
-        Assert.Equal(9, services.Count);
+        Assert.Equal(12, services.Count);
         Assert.All(services, descriptor => Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime));
 
         using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -31,7 +31,10 @@ public sealed class DependencyInjectionTests
         Assert.IsType<DefaultFillPathRenderer2D>(renderers.FillPath);
         Assert.IsType<DefaultStrokePathRenderer2D>(renderers.StrokePath);
         Assert.IsType<DefaultDrawImageRenderer2D>(renderers.DrawImage);
+        Assert.IsType<DefaultDrawCoverageMaskRenderer2D>(renderers.DrawCoverageMask);
+        Assert.IsType<DefaultDrawDistanceFieldRenderer2D>(renderers.DrawDistanceField);
         Assert.IsType<DefaultDrawMeshRenderer2D>(renderers.DrawMesh);
+        Assert.IsType<DefaultDrawPaintGraphRenderer2D>(renderers.DrawPaintGraph);
         Assert.Same(scope.ServiceProvider.GetRequiredService<IFillPathRenderer2D>(), renderers.FillPath);
     }
 
@@ -78,6 +81,7 @@ public sealed class DependencyInjectionTests
 
         Assert.Same(fillPath, renderers.FillPath);
         Assert.IsType<DefaultStrokePathRenderer2D>(renderers.StrokePath);
+        Assert.IsType<DefaultDrawPaintGraphRenderer2D>(renderers.DrawPaintGraph);
     }
 
     /// <summary>Checks that registration does not resolve user factories and defaults are not used by DI.</summary>
@@ -117,7 +121,10 @@ public sealed class DependencyInjectionTests
         Assert.NotSame(firstCommands.FillPath, secondCommands.FillPath);
         Assert.NotSame(firstCommands.StrokePath, secondCommands.StrokePath);
         Assert.NotSame(firstCommands.DrawImage, secondCommands.DrawImage);
+        Assert.NotSame(firstCommands.DrawCoverageMask, secondCommands.DrawCoverageMask);
+        Assert.NotSame(firstCommands.DrawDistanceField, secondCommands.DrawDistanceField);
         Assert.NotSame(firstCommands.DrawMesh, secondCommands.DrawMesh);
+        Assert.NotSame(firstCommands.DrawPaintGraph, secondCommands.DrawPaintGraph);
     }
 
     /// <summary>Checks null collections fail before any registration work begins.</summary>

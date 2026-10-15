@@ -86,6 +86,14 @@ internal sealed class DrawingProgram2D
                 Matrix3x2 viewTransform = Matrix3x2.CreateTranslation(-c.Source.X, -c.Source.Y) * imageTransform;
                 paint = Image(c.Image.View, new(0, 0, imageWidth, imageHeight), c.Image.Alpha, TileMode(c.Image.Sampler.Desc.AddressU), TileMode(c.Image.Sampler.Desc.AddressV), ImageFilter(c.Image.Sampler.Desc, imageTransform), viewTransform);
                 break;
+            case DrawCoverageMaskCommand2D c:
+                shape = SampleMask(c.Mask.View, c.Mask.Sampler, c.Source, c.Destination, 13, 0, 0, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case DrawDistanceFieldCommand2D c:
+                shape = SampleMask(c.Field.View, c.Field.Sampler, c.Source, c.Destination, 14, (uint)c.Field.Encoding, c.Field.DistanceRange, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
             case DrawMeshCommand2D c:
                 uint first = (uint)Data.Count;
                 foreach (uint index in c.Mesh.Indices)
@@ -96,6 +104,10 @@ internal sealed class DrawingProgram2D
 
                 shape = Add(Node(5, transform) with { First = first, Count = (uint)c.Mesh.Indices.Count / 3, Mode = 1 });
                 paint = Paint(c.Paint.Root, transform);
+                break;
+            case DrawPaintGraphCommand2D c:
+                shape = Solid(Vector4.One);
+                paint = Paint(c.Graph.Root, transform);
                 break;
             default:
                 throw new ArgumentException("Unknown drawing command.", nameof(command));
@@ -220,6 +232,16 @@ internal sealed class DrawingProgram2D
                 return Multiply(Path(node.Path, node.Rule, transform), Paint(node.Child, transform, depth + 1));
             case TransformPaintNode2D node:
                 return Paint(node.Child, node.Transform * transform, depth + 1);
+            case LayersPaintNode2D node:
+                uint result = Solid(default);
+                foreach (PaintNode2D child in node.Children)
+                {
+                    result = Composite(Paint(child, transform, depth + 1), result, CompositeMode2D.SrcOver);
+                }
+
+                return result;
+            case CompositePaintNode2D node:
+                return Composite(Paint(node.Source, transform, depth + 1), Paint(node.Backdrop, transform, depth + 1), node.Mode);
             default:
                 throw new ArgumentException("Unknown paint node.", nameof(paint));
         }
@@ -257,6 +279,8 @@ internal sealed class DrawingProgram2D
 
     private uint Multiply(uint a, uint b) => Add(Node(11, Matrix3x2.Identity) with { First = a, Count = b });
 
+    private uint Composite(uint source, uint backdrop, CompositeMode2D mode) => Add(Node(12, Matrix3x2.Identity) with { First = source, Count = backdrop, Mode = (uint)mode });
+
     private uint Gradient(DrawingInstruction instruction, IReadOnlyList<ColorStop2D> stops)
     {
         if (stops.Count > 0 && instruction.Mode != 0 && stops[0].Offset == stops[^1].Offset)
@@ -284,6 +308,31 @@ internal sealed class DrawingProgram2D
             C = new((float)filter, (float)alpha, 0, 0),
             Texture = Register(view),
             Sampler = _nearest,
+        });
+    }
+
+    private uint SampleMask(IGraphicsTextureView view, IGraphicsSampler sampler, Rect2D source, Rect2D destination, uint kind, uint mode, float range, Matrix3x2 transform)
+    {
+        if (sampler.Desc.MaxAnisotropy != 1)
+        {
+            throw new NotSupportedException("The default mask renderer does not support anisotropic sampling.");
+        }
+
+        if (source.Width == 0 || source.Height == 0 || destination.Width == 0 || destination.Height == 0)
+        {
+            return Solid(default);
+        }
+
+        (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
+        uint samplerSlot = _textureSlot + 1;
+        return Add(Node(kind, transform) with
+        {
+            A = Vector(destination),
+            B = Vector(source),
+            C = new(width, height, range, 0),
+            Mode = mode,
+            Texture = Register(view),
+            Sampler = _table.WriteSampler(samplerSlot, sampler),
         });
     }
 

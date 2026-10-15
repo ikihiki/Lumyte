@@ -236,6 +236,45 @@ public abstract class DrawingCanvas2D
         _commands.Add(new DrawImageCommand2D(image, source, destination, _state));
     }
 
+    /// <summary>Records DrawCoverageMask in the current transform and clip.</summary>
+    /// <param name="mask">The borrowed immutable image descriptor.</param>
+    /// <param name="source">The source texel rectangle within the selected mip.</param>
+    /// <param name="destination">The finite logical output rectangle.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    public void DrawCoverageMask(CoverageImage2D mask, Rect2D source, Rect2D destination, PaintGraph2D paint)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(mask);
+        ModelValidation2D.Source(source, mask.View, nameof(source));
+        ModelValidation2D.Rectangle(destination, nameof(destination));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawCoverageMaskCommand2D(mask, source, destination, paint, _state));
+    }
+
+    /// <summary>Records DrawDistanceField in the current transform and clip.</summary>
+    /// <param name="field">The borrowed immutable image descriptor.</param>
+    /// <param name="source">The source texel rectangle within the selected mip.</param>
+    /// <param name="destination">The finite logical output rectangle.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    public void DrawDistanceField(DistanceField2D field, Rect2D source, Rect2D destination, PaintGraph2D paint)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(field);
+        ModelValidation2D.Source(source, field.View, nameof(source));
+        ModelValidation2D.Rectangle(destination, nameof(destination));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawDistanceFieldCommand2D(field, source, destination, paint, _state));
+    }
+
+    /// <summary>Records a paint graph within the current clip and finite drawing target.</summary>
+    /// <param name="graph">The immutable paint DAG.</param>
+    public void DrawPaintGraph(PaintGraph2D graph)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(graph);
+        _commands.Add(new DrawPaintGraphCommand2D(graph, _state));
+    }
+
     /// <summary>Records a triangle mesh using its caller-provided coverage.</summary>
     /// <param name="mesh">The immutable triangle mesh with explicit coverage.</param>
     /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>

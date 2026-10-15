@@ -184,6 +184,26 @@ public sealed class RenderingGeometryTests
         }
     }
 
+    /// <summary>Repeated shared paint children count their real evaluation cost against the finite shader budget.</summary>
+    [Fact]
+    public void SharedPaintDagExpansionFailsBeforeExceedingShaderCapacity()
+    {
+        var paint = PaintGraph2D.Solid(new Color2D(1, 0, 0, 1));
+        for (int i = 0; i < 8; i++)
+        {
+            paint = PaintGraph2D.Composite(paint, paint, CompositeMode2D.SrcOver);
+        }
+
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.DrawPaintGraph(paint);
+        DrawingCommand2D command = Assert.Single(canvas.End().Commands);
+        using var table = new RejectingArgumentTable();
+        var compiler = new DrawingProgram2D(table, new UnusedSamplerReference(), Target());
+        Assert.Throws<NotSupportedException>(() => compiler.Compile(command));
+        Assert.InRange(compiler.Instructions.Count, 1, DrawingProgram2D.MaximumInstructions);
+    }
+
     private static DrawingTargetInfo2D Target()
     {
         var description = new TextureDesc { Width = 512, Height = 512, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment };
@@ -233,4 +253,40 @@ public sealed class RenderingGeometryTests
     }
 
     private static float Cross(Vector2 a, Vector2 b) => (a.X * b.Y) - (a.Y * b.X);
+
+    private sealed class UnusedSamplerReference : IGpuRef<IGraphicsSampler>
+    {
+        public ulong Count => 1;
+
+        public IGpuRef<IGraphicsSampler> GetElement(ulong index) => throw new InvalidOperationException("Solid paint compilation must not use sampler references.");
+    }
+
+    private sealed class RejectingArgumentTable : IArgumentTable
+    {
+        public uint TextureCapacity => 0;
+
+        public uint SamplerCapacity => 0;
+
+        public uint BufferCapacity => 0;
+
+        public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view) => throw new InvalidOperationException("Solid paint must not bind textures.");
+
+        public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => throw new InvalidOperationException("Solid paint must not bind samplers.");
+
+        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
+            where T : unmanaged => throw new InvalidOperationException("Paint compilation must not bind buffers.");
+
+        public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
+            where T : struct, IShaderData => throw new InvalidOperationException("Paint compilation must not bind buffers.");
+
+        public void ReleaseTexture(uint slot) => throw new InvalidOperationException("Paint compilation must not release textures.");
+
+        public void ReleaseSampler(uint slot) => throw new InvalidOperationException("Paint compilation must not release samplers.");
+
+        public void ReleaseBuffer(uint slot) => throw new InvalidOperationException("Paint compilation must not release buffers.");
+
+        public void Dispose()
+        {
+        }
+    }
 }
