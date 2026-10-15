@@ -12,6 +12,8 @@
 
 ファイルを読む操作も`OpenSourceAsync`を経由します。snapshotは一つの入力Revisionに固定され、contextが所有します。ステージが開いたstreamはステージが閉じます。具体的な取得元には`Lumyte.Resources.FileSystem`を使用できます。
 
+DLLの埋め込みデータには`Lumyte.Resources.Embedded`の`EmbeddedResourceSource`を使用できます。Assemblyと必要に応じて論理ID・manifest resource名の対応をDIで渡し、同じPipelineから読み込みます。埋め込みデータの範囲読み込みも可能です。
+
 ## 所有権とメモリ
 
 - `ResourceLease<T>`は内容Revisionを固定し、返却はI/OやGPU待機を行いません。
