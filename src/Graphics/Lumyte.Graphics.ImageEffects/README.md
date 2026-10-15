@@ -40,3 +40,17 @@ ImageEffectGraph.GetRequiredSourceBounds(output)は遅延設定のCPU上の領�
 ImageEffectSubgraphは親graphとSource画像を持つ部分ビューです。レイヤー等のコールバックで
 scope.AppendGaussianBlur(scope.Source, 3, 3)を呼ぶとEffectImageを返し、固定資源のownerはscopeが保持します。
 独立したgraphやplanは生成せず、すべての処理を親graphへ追加します。
+
+## 外部からのプログラム取得
+
+```csharp
+// programsは事前ロードした資源を返すIGraphicsProgramProvider。
+using PreparedImageEffect effect = graph.AppendGaussianBlur(source, 3, 3, programs);
+// Record、Submit、GPU完了、commandとcompiled planの解放後にeffectを解放する。
+```
+
+ImageEffectSubgraphにもconstructorのprograms引数で同じproviderを渡せます。
+組み込み効果のABI識別子は `ImageEffectPrograms.ProgramId` です。providerは同じ演算・引数配置を実装するprogramを返します。
+外部providerを渡した場合に埋め込みへfallbackしません。新しい効果は新しいeffectとして追加します。
+providerは準備中の内容世代を固定し、返すleaseはexact deviceとshader・pipelineをGPU使用終了まで保持します。
+デバイスロストの際は旧prepared effectを解放し、資源復元後の新deviceでAppendをやり直します。
