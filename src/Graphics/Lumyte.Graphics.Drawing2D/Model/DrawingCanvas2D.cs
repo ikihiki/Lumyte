@@ -223,6 +223,30 @@ public abstract class DrawingCanvas2D
         _commands.Add(new StrokePathCommand2D(path, paint, style with { }, _state));
     }
 
+    /// <summary>Records DrawImage in the current transform and clip.</summary>
+    /// <param name="image">The borrowed immutable image descriptor.</param>
+    /// <param name="source">The source texel rectangle within the selected mip.</param>
+    /// <param name="destination">The finite logical output rectangle.</param>
+    public void DrawImage(Image2D image, Rect2D source, Rect2D destination)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(image);
+        ModelValidation2D.Source(source, image.View, nameof(source));
+        ModelValidation2D.Rectangle(destination, nameof(destination));
+        _commands.Add(new DrawImageCommand2D(image, source, destination, _state));
+    }
+
+    /// <summary>Records a triangle mesh using its caller-provided coverage.</summary>
+    /// <param name="mesh">The immutable triangle mesh with explicit coverage.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    public void DrawMesh(Mesh2D mesh, PaintGraph2D paint)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawMeshCommand2D(mesh, paint, _state));
+    }
+
     /// <summary>Discards all commands and state from the active recording.</summary>
     public void Cancel()
     {

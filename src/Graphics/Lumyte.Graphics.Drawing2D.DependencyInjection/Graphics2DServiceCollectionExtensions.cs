@@ -24,6 +24,8 @@ public static class Graphics2DServiceCollectionExtensions
         services.TryAddScoped<IDrawLineRenderer2D, DefaultDrawLineRenderer2D>();
         services.TryAddScoped<IFillPathRenderer2D, DefaultFillPathRenderer2D>();
         services.TryAddScoped<IStrokePathRenderer2D, DefaultStrokePathRenderer2D>();
+        services.TryAddScoped<IDrawImageRenderer2D, DefaultDrawImageRenderer2D>();
+        services.TryAddScoped<IDrawMeshRenderer2D, DefaultDrawMeshRenderer2D>();
         services.TryAddScoped<DrawingCommandRenderers2D>();
         return services;
     }

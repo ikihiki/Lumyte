@@ -8,7 +8,9 @@ internal sealed class DispatchRenderers :
     IFillCircleRenderer2D,
     IDrawLineRenderer2D,
     IFillPathRenderer2D,
-    IStrokePathRenderer2D
+    IStrokePathRenderer2D,
+    IDrawImageRenderer2D,
+    IDrawMeshRenderer2D
 {
     internal List<DrawingCommand2D> Commands { get; } = [];
 
@@ -34,8 +36,12 @@ internal sealed class DispatchRenderers :
 
     ValueTask<IPreparedCommandBatch2D> IStrokePathRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<StrokePathCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
 
+    ValueTask<IPreparedCommandBatch2D> IDrawImageRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawImageCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
+
+    ValueTask<IPreparedCommandBatch2D> IDrawMeshRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawMeshCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
+
     internal DrawingCommandRenderers2D CreateTable(IFillPathRenderer2D? fillPath = null) =>
-        new(this, this, this, this, fillPath ?? this, this);
+        new(this, this, this, this, fillPath ?? this, this, this, this);
 
     private ValueTask<IPreparedCommandBatch2D> Prepare<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands)
         where T : DrawingCommand2D
