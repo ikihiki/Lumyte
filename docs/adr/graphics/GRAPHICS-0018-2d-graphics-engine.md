@@ -139,6 +139,20 @@ DrawBackdropEffectは直前までの現在レイヤーをsnapshotし、結果を
 
 初期実行は一つの一般queueとcommand bufferを使い、内部Submit・Wait・Presentは行わない。Surfaceの取得・semaphore・提示解放、複数command間の転送metadata公開はアプリ側の既存Graphics契約に従う。Canvas・renderer・共有graphへの同時操作は保証しない。
 
+### 外部プログラムとdevice世代
+
+Renderer2DとRenderGraphRenderer2Dはconstructorで任意のIGraphicsProgramProviderを借用する。
+通常描画とレイヤー合成はDrawingPrograms2D.ProgramId、画像エフェクトはImageEffectPrograms.ProgramIdで取得する。
+各命令rendererにはRenderPreparationContext2D.Programsを渡す。DIでのprogram登録や効果実装の差し替えは追加しない。
+providerを省略した経路だけがパッケージの埋め込みproviderを使用する。外部providerでは資源の未準備・失効を呼び出し側へ返す。
+program leaseはprepared batchに保持し、GPU使用とcommand/compiled planの解放後に返却する。
+内容の公開世代は一回の準備全体で固定し、pipelineとfragment artifactを同じ世代から取得する。
+
+復旧はアプリのcoordinatorが使用停止・退役確認・旧prepared owner解放・device復旧・GPU資源再構築を順に行う。
+新deviceと復元済みprogramを取得して、Renderer2Dまたは親graphのAppend2Dから準備し直す。
+旧DrawListにGPU viewが入っている場合はそのviewも再解決して記録を作り直す。
+取得契約は [GRAPHICS-0006](./GRAPHICS-0006-shader-compilation-and-modules.md) に従い、2D本体はResources・Hostingに依存しない。
+
 ## 検討した代替案
 
 | 代替案 | 採用しない理由 |
@@ -908,3 +922,21 @@ canvas.DrawBackdropEffect(new BackdropEffectOptions2D
 ```
 
 通常描画とgraph描画のどちらにも、DIで解決したDrawingCommandRenderers2DまたはCreateDefault()を渡す。UseGraphics2Dが登録するのは11描画実装と命令登録表だけであり、レイヤーやEffectsはDIへ登録しない。
+
+#### 外部プログラムprovider
+
+```csharp
+// programsは必要なABI識別子を解決するIGraphicsProgramProvider。
+// Resources adapterはread scopeを準備全体で固定して作る。
+using var direct = new Renderer2D(device, commandRenderers, programs);
+using PreparedDraw2D prepared = await direct.PrepareAsync(list, target);
+
+using var layered = new RenderGraphRenderer2D(
+    commandRenderers, layeredList, graphTarget, bindings, programs);
+PreparedDrawingPasses2D passes = await parent.Append2D(layered);
+// GPU使用・commandとcompiled planの解放後にprepared/passesを解放する。
+```
+
+programsはDrawingPrograms2D.ProgramId、および効果を使う場合はImageEffectPrograms.ProgramIdを解決する。
+新しいeffectが別shader ABIを使う場合はその識別子も解決する。
+取得時にI/Oや復旧待機を隠さず、事前に準備した資源のleaseを返す。

@@ -108,3 +108,24 @@ shaderはdeviceの子resource。shaderが残るdeviceのDisposeは拒否し、sh
 ## 検証方針
 
 shared sample projectのSlang sourceをoffline compileしDLLへ埋め込み、共通APIだけでロードとmodule確保を検証する。native testsではIShaderCompiler経由のonline compilationと不正source・キャンセルも確認する。GPU／Wasmテストは既存CIへ組み込む。module確保はdispatchや描画結果の検証とは分ける。
+
+## 外部プログラムの取得
+
+パッケージ内部の描画も `IGraphicsProgramProvider.Acquire(device, programId)` を通してshader programを取得する。
+programIdはパッケージが公開するABI version付き識別子であり、argument・shader data配置と演算の意味を含む。
+外部providerは取得時にI/O・コンパイル・復旧待機をせず、アプリが事前に読み込み・構築した出力を解決する。
+Resourcesへの依存は追加しない。Resources adapterはread scopeを一回の準備全体で固定して、内容世代の混在を防ぐ。
+
+`GraphicsProgramResources` はexact device、pipeline、pipelineと対応するfragment artifactの不変な組である。
+providerはshader・pipelineと生成deviceの所有者を保持し、毎回独立した `GraphicsProgramLease` を返す。
+leaseのcallbackは共有cacheやResourceLeaseを返却できる。`GraphicsProgramLease.Create` は外部artifactから専有のshader・pipelineを作る簡便APIである。
+既定の `EmbeddedGraphicsProgramProvider` はAcquire時だけDLLからartifactを読み、新しいprogramを生成する。
+外部providerを設定した利用経路で、内部が埋め込み読み込みへfallbackすることはない。
+
+準備ownerはGPU使用・command/plan解放が終わるまでleaseを保持し、依存するbuffer・table等を先に解放する。
+異なるphysical deviceのprogramは準備時に拒否し、そのleaseも返す。artifactのschema検査に加えて、識別子に対応する演算の互換性はproviderの責務となる。
+生成途中に失敗したshader pairはpipeline、fragment、vertexの逆依存順でcleanupする。
+
+デバイスロスト後は旧leaseの中身を新deviceへ差し替えない。アプリのcoordinatorが停止・退役確認・旧prepared owner解放・device復旧・GPU資源再構築を行い、
+新deviceと新program leaseで準備をやり直す。deviceのReadyと資源の復元完了を分ける。失効したprepared batchやcompiled graphは再利用しない。
+Resourcesとの接続と復旧coordinatorはこの取得契約の利用側で実装する。

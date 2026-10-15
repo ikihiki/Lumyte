@@ -5,10 +5,12 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <summary>Prepares pure drawing batches for direct command-buffer recording without RenderGraph.</summary>
 /// <param name="device">The borrowed rendering device.</param>
 /// <param name="renderers">The borrowed fixed command renderer table.</param>
-public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers) : IDisposable
+/// <param name="programs">The optional borrowed provider, frozen for each preparation.</param>
+public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IGraphicsProgramProvider? programs = null) : IDisposable
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
+    private readonly IGraphicsProgramProvider _programs = programs ?? DrawingPrograms2D.DefaultProvider;
     private bool _disposed;
     private int _preparing;
 
@@ -35,7 +37,7 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
         var batches = new List<IPreparedCommandBatch2D>();
         try
         {
-            var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load });
+            var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _programs);
             int index = 0;
             while (index < list.Commands.Count)
             {

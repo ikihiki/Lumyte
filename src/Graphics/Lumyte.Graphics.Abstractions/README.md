@@ -122,6 +122,18 @@ slotの置換・Release・table Dispose後の古い参照と派生要素は使�
 
 opaque binaryのartifactをそのまま `IGraphicDevice.CreateShader` に渡すと、backendが自分用のtargetを取り出し、バックエンド所有の `IGraphicsShader` が返ります。必要な同期は利用側が管理します。[設計](../../../docs/adr/graphics/GRAPHICS-0006-shader-compilation-and-modules.md)／[Slang コンパイラーとオフライン設定](../Lumyte.Graphics.Shaders/README.md)を参照してください。
 
+## 外部プログラムprovider
+
+`IGraphicsProgramProvider.Acquire(device, programId)` は準備済みprogramの `GraphicsProgramLease` を返します。
+`GraphicsProgramResources` はexact physical device、pipeline、対応するfragment artifactを保持します。
+providerはパッケージのABI識別子を解決し、native shaderとpipelineをlease返却まで保持します。
+共有資源には `new GraphicsProgramLease(resources, release)`、外部artifactから専有資源を作る場合には
+`GraphicsProgramLease.Create(device, vertexArtifact, fragmentArtifact)` を使用します。
+
+外部providerは事前ロードした資源を取得時に解決します。Resourcesを使う場合、read scopeを準備単位で固定し、
+返却callbackでそのResourceLeaseを返します。native資源の解放はGPU使用終了後です。旧deviceのleaseを復旧後の資源へ差し替えません。
+既定の `EmbeddedGraphicsProgramProvider` は明示Acquire時に読み込み・生成し、外部providerでは呼び出されません。
+
 ## CommandBufferとGPU実行
 
 `CreateCommandBuffer(new())` はRecording状態のone-shot記録を返します。GPUのbuffer／textureコピー、明示的なbarrier、render／compute passを記録し、`Finish()` の後で `device.Queue.Submit([commands])` を呼びます。`IGraphicsSubmission.WaitAsync()` でその提出分の完了を待ちます。各操作はstagingの確保、CPUコピー、map／unmapやGPU待機を自動実行しません。
