@@ -199,17 +199,18 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +        public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan,
 +            ImageEffectGraph graph, EffectImage source);
 +        // 入力画像とパラメーターからパスを追加する。効果やDAGを返さない。
-+        public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix);
-+        public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY);
-+        public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity);
++        public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix, IGraphicsProgramProvider? programs = null);
++        public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY, IGraphicsProgramProvider? programs = null);
++        public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity, IGraphicsProgramProvider? programs = null);
 +        public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop,
 +            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
 +    }
 +    public sealed class ImageEffectSubgraph : IDisposable
 +    {
-+        public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source);
++        public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source, IGraphicsProgramProvider? programs = null);
 +        public RenderGraphBuilder Graph { get; }
 +        public EffectImage Source { get; }
++        public IGraphicsProgramProvider Programs { get; }
 +        public EffectImage AppendGaussianBlur(EffectImage input, float sigmaX, float sigmaY);
 +        public EffectImage AppendOpacity(EffectImage input, float opacity);
 +        public EffectImage AppendColorMatrix(EffectImage input, ColorMatrix4x5 matrix);
@@ -286,6 +287,7 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +    {
 +        public IGraphicDevice Device { get; }
 +        public EffectColorSemantic ColorSemantic { get; }
++        public IGraphicsProgramProvider Programs { get; }
 +        // 固定資源を準備ownerへ移す。一時textureはRenderGraphへ宣言する。
 +        public void Own(IDisposable resource);
 +    }
