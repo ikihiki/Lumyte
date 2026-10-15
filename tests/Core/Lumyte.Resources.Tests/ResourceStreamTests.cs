@@ -9,7 +9,7 @@ namespace Lumyte.Resources.Tests;
 /// <summary>Tests bounded streaming, independent cursors and retryable session ownership.</summary>
 public sealed class ResourceStreamTests
 {
-    private static readonly ResourceKey<TestFactory> _key = new(new ResourceAddress(new ResourceId("audio/track")), "audio");
+    private static readonly ResourceKey<TestFactory> _key = new(new ResourceAddress(new ResourceId("audio/track")));
     private static readonly MemoryPoolId _cpu = new("cpu");
     private static readonly ResourceStreamOptions _options = new() { BlockSize = 4, MaxBufferedBlocks = 2 };
 
@@ -373,7 +373,7 @@ public sealed class ResourceStreamTests
             var services = new ServiceCollection();
             services.AddSingleton(settings);
             services.AddMemoryManagement(options => options.ChunkSizeBytes = 32);
-            services.AddResources("streaming", builder => builder.UseSource<TestSource>().AddSourcePipeline<TestFactory, TestStage>("audio"));
+            services.AddResources("streaming", builder => builder.UseSource<TestSource>().AddSourcePipeline<TestFactory, TestStage>());
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             _scope = _provider.CreateAsyncScope();
             Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("streaming");

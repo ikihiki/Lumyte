@@ -49,7 +49,7 @@ traversal and alternate data stream names are rejected by `ResourceId`.
 ```csharp
 services.AddResources("assets", resources => resources
     .UseSource<FileResourceSource>()
-    .AddSourcePipeline<MyResource, MyResourceStage>("asset")
+    .AddSourcePipeline<MyResource, MyResourceStage>()
     .WatchChanges<FileResourceChangeSource>());
 
 // Resolve within the same async DI scope as the named resource manager.

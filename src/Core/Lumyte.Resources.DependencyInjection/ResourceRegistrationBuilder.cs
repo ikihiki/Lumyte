@@ -7,7 +7,7 @@ public sealed class ResourceRegistrationBuilder
 {
     private readonly string _managerName;
     private readonly List<Action<IServiceCollection>> _registrations = [];
-    private readonly HashSet<string> _pipelines = new(StringComparer.Ordinal);
+    private readonly HashSet<RuntimeTypeHandle> _pipelines = [];
     private readonly HashSet<string> _runtimeDependencies = new(StringComparer.Ordinal);
     private Func<IServiceProvider, IResourceSource>? _source;
     private bool _watchChanges;
@@ -68,22 +68,21 @@ public sealed class ResourceRegistrationBuilder
     /// <summary>Registers a typed starting stage without a fixed primary input.</summary>
     /// <typeparam name="TOutput">The exact completed output type.</typeparam>
     /// <typeparam name="TStage">The constructor-injected stage implementation.</typeparam>
-    /// <param name="pipelineId">The unique manager-local pipeline name.</param>
     /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>(string pipelineId, ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TOutput : class
         where TStage : class, IResourceSourceStage<TOutput>
     {
         EnsureConfiguring();
         ValidateLifetime(lifetime);
-        AddPipelineId(pipelineId);
-        var key = new RegistrationKey(_managerName, "stage", pipelineId);
+        AddPipelineType<TOutput>();
+        var key = new PipelineRegistrationKey(_managerName, typeof(TOutput).TypeHandle);
         _registrations.Add(services =>
         {
             services.AddKeyedScoped<TStage>(key);
             services.AddKeyedScoped<ResourcePipeline>(_managerName, (provider, _) =>
-                new SourcePipeline<TOutput>(pipelineId, provider.GetRequiredKeyedService<TStage>(key)));
+                new SourcePipeline<TOutput>(provider.GetRequiredKeyedService<TStage>(key)));
         });
         return this;
     }
@@ -92,25 +91,22 @@ public sealed class ResourceRegistrationBuilder
     /// <typeparam name="TInput">The exact primary input type.</typeparam>
     /// <typeparam name="TOutput">The exact completed output type.</typeparam>
     /// <typeparam name="TStage">The constructor-injected transform implementation.</typeparam>
-    /// <param name="pipelineId">The unique manager-local output pipeline name.</param>
-    /// <param name="inputPipelineId">The registered primary input pipeline name.</param>
     /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>(string pipelineId, string inputPipelineId, ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TInput : class
         where TOutput : class
         where TStage : class, IResourceTransform<TInput, TOutput>
     {
         EnsureConfiguring();
         ValidateLifetime(lifetime);
-        ArgumentException.ThrowIfNullOrWhiteSpace(inputPipelineId);
-        AddPipelineId(pipelineId);
-        var key = new RegistrationKey(_managerName, "stage", pipelineId);
+        AddPipelineType<TOutput>();
+        var key = new PipelineRegistrationKey(_managerName, typeof(TOutput).TypeHandle);
         _registrations.Add(services =>
         {
             services.AddKeyedScoped<TStage>(key);
             services.AddKeyedScoped<ResourcePipeline>(_managerName, (provider, _) =>
-                new TransformPipeline<TInput, TOutput>(pipelineId, inputPipelineId, provider.GetRequiredKeyedService<TStage>(key)));
+                new TransformPipeline<TInput, TOutput>(provider.GetRequiredKeyedService<TStage>(key)));
         });
         return this;
     }
@@ -174,19 +170,20 @@ public sealed class ResourceRegistrationBuilder
         }
     }
 
-    private void AddPipelineId(string pipelineId)
+    private void AddPipelineType<TOutput>()
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pipelineId);
-        if (!_pipelines.Add(pipelineId))
+        if (!_pipelines.Add(typeof(TOutput).TypeHandle))
         {
-            throw new ArgumentException("The pipeline name is already registered.", nameof(pipelineId));
+            throw new ArgumentException($"A pipeline for '{typeof(TOutput)}' is already registered.");
         }
     }
 
     private sealed record RegistrationKey(string ManagerName, string Kind, string Id);
 
-    private sealed class SourcePipeline<TOutput>(string id, IResourceSourceStage<TOutput> stage)
-        : ResourcePipeline(id, typeof(TOutput))
+    private sealed record PipelineRegistrationKey(string ManagerName, RuntimeTypeHandle OutputType);
+
+    private sealed class SourcePipeline<TOutput>(IResourceSourceStage<TOutput> stage)
+        : ResourcePipeline(typeof(TOutput))
         where TOutput : class
     {
         public override async ValueTask<object> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
@@ -195,14 +192,14 @@ public sealed class ResourceRegistrationBuilder
         public override ValueTask ReleaseAsync(object resource) => stage.ReleaseAsync((TOutput)resource);
     }
 
-    private sealed class TransformPipeline<TInput, TOutput>(string id, string inputId, IResourceTransform<TInput, TOutput> stage)
-        : ResourcePipeline(id, typeof(TOutput), inputId, typeof(TInput))
+    private sealed class TransformPipeline<TInput, TOutput>(IResourceTransform<TInput, TOutput> stage)
+        : ResourcePipeline(typeof(TOutput), typeof(TInput))
         where TInput : class
         where TOutput : class
     {
         public override async ValueTask<object> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
-            var key = new ResourceKey<TInput>(stage.GetInput(context.Address), InputPipelineId!);
+            var key = new ResourceKey<TInput>(stage.GetInput(context.Address));
             TInput input = await context.RequireAsync(key, stage.InputLifetime, cancellationToken).ConfigureAwait(false);
             return await stage.BuildAsync(input, context, cancellationToken).ConfigureAwait(false);
         }

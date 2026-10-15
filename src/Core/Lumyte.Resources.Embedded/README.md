@@ -19,7 +19,7 @@ services.AddSingleton(new EmbeddedResourceSourceOptions
 });
 services.AddResources("assets", pipelines => pipelines
     .UseSource<EmbeddedResourceSource>()
-    .AddSourcePipeline<CpuShader, ShaderStage>("shader.cpu"));
+    .AddSourcePipeline<CpuShader, ShaderStage>());
 ```
 
 Stageは通常どおり`context.OpenSourceAsync(new("shaders/basic.spv"))`でsnapshotを取得し、`snapshot.OpenReadAsync()`で読み込みます。Stage型はアプリ側の実装です。GPUへの変換には後続のtransformと`Lumyte.Resources.Graphics`を利用できます。ファイルSourceと同じ論理IDを対応付ければ、Pipelineを共通にできます。

@@ -1,10 +1,22 @@
 # Lumyte.Resources
 
-名前付きの型付きPipelineで、入力snapshot、CPU中間型、GPUなどの実行時出力を管理します。SourceとStageはconstructor injectionで構成し、登録は`Lumyte.Resources.DependencyInjection`の`AddResources`を使います。Memory以外のGraphics・Audio・Platform実装には依存しません。
+出力の型で識別するPipelineで、入力snapshot、CPU中間型、GPUなどの実行時出力を管理します。SourceとStageはconstructor injectionで構成し、登録は`Lumyte.Resources.DependencyInjection`の`AddResources`を使います。Memory以外のGraphics・Audio・Platform実装には依存しません。
 
 ## Pipelineと依存
 
-`ResourceKey<T>`は`ResourceAddress`とPipeline名の組み合わせです。AddressのSubresourceで単一ファイル内の要素、Variantで変換方法を選びます。同じ型でもPipelineを分けられ、`Document → CpuMesh → GpuMesh`のような多段変換や、documentから異なる型へのprojectionを登録できます。`IResourceDocument.Subresources`は発見用のmetadataだけを返します。
+`ResourceKey<T>`は`ResourceAddress`と`T`本体の組み合わせです。Pipelineの登録・検索、内部キー、依存解決には`typeof(T).TypeHandle`を使い、型名の文字列を識別子にしません。manager内では出力型ごとに一つのPipelineを登録し、transformの入力も`TInput`の型から解決します。`Document → CpuMesh → GpuMesh`のようにCPU・GPUや意味が異なる出力はそれぞれの型で表現します。
+
+AddressのSubresourceで単一ファイル内の要素、Variantで同じ型の変換条件を選びます。閉じたジェネリック型や、別のAssemblyLoadContextに読み込まれた同名型も、それぞれ別の型として扱います。`IResourceDocument.Subresources`は発見用のmetadataだけを返し、`OutputTypes`に取得可能な出力型の`RuntimeTypeHandle`を保持します。これらのhandleはプロセス内の識別用で、ファイルへの保存や通信には使いません。
+
+```csharp
+pipelines
+    .AddSourcePipeline<SceneDocument, DocumentStage>()
+    .AddTransformPipeline<SceneDocument, CpuMesh, MeshStage>()
+    .AddTransformPipeline<CpuMesh, GpuMesh, UploadStage>();
+
+var key = new ResourceKey<CpuMesh>(new(new("scene.json"), "mesh/0"));
+using ResourceLease<CpuMesh> mesh = await resources.AcquireAsync(key);
+```
 
 ステージは`ResourceBuildContext.RequireAsync`で依存を要求します。互換な構築view内の同じキーを一つの構築へ集約し、別々に開始した構築間の循環も検出します。入力そのものを別の所有出力として返すことはできません。値は共有されるため、利用中は読み取り専用として扱います。
 

@@ -8,8 +8,8 @@ internal sealed class SceneDocument(ResourceId id, JsonDocument document) : IRes
 
     public IReadOnlyList<ResourceSubresource> Subresources { get; } = Array.AsReadOnly<ResourceSubresource>(
     [
-        new() { Selector = "mesh/0", Kind = "mesh", PipelineIds = ["mesh.cpu"] },
-        new() { Selector = "material/0", Kind = "material", PipelineIds = ["material.info"] },
+        new() { Selector = "mesh/0", OutputTypes = [typeof(MeshInfo).TypeHandle] },
+        new() { Selector = "material/0", OutputTypes = [typeof(MaterialInfo).TypeHandle] },
     ]);
 
     internal JsonElement Root => document.RootElement;

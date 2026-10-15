@@ -6,9 +6,6 @@ public sealed record ResourceSubresource
     /// <summary>Gets the document-defined selector.</summary>
     public required string Selector { get; init; }
 
-    /// <summary>Gets the element kind, such as mesh, image or animation.</summary>
-    public required string Kind { get; init; }
-
-    /// <summary>Gets the registered pipelines that can produce this element.</summary>
-    public required IReadOnlyList<string> PipelineIds { get; init; }
+    /// <summary>Gets the exact output type identities that can be requested for this element.</summary>
+    public required IReadOnlyList<RuntimeTypeHandle> OutputTypes { get; init; }
 }

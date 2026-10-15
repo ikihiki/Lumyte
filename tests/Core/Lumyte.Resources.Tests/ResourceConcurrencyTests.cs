@@ -15,7 +15,7 @@ public sealed class ResourceConcurrencyTests
     [Fact]
     public async Task AcquireAfterTrimDoesNotJoinPublishedLoadWithPendingCleanupAsync()
     {
-        await using Fixture fixture = new("value", "failed", "unpublished");
+        await using Fixture fixture = new();
         TaskCompletionSource valueStarted = Signal();
         TaskCompletionSource finishValue = Signal();
         TaskCompletionSource cleanupStarted = Signal();
@@ -78,7 +78,7 @@ public sealed class ResourceConcurrencyTests
     [Fact]
     public async Task CachedMetadataDetectsCycleThroughTrimmedBuildDependencyAsync()
     {
-        await using Fixture fixture = new("parent", "child");
+        await using Fixture fixture = new();
         bool reverse = false;
         fixture.Plan.Builds["parent"] = async (context, token) =>
         {
@@ -112,7 +112,7 @@ public sealed class ResourceConcurrencyTests
     [Fact]
     public async Task ReloadAllowsAcyclicDependencyDirectionToReverseAsync()
     {
-        await using Fixture fixture = new("first", "second");
+        await using Fixture fixture = new();
         fixture.Plan.Builds["first"] = async (context, token) =>
         {
             ResourceSourceSnapshot source = await context.OpenSourceAsync(context.Address.Id, cancellationToken: token);
@@ -151,7 +151,7 @@ public sealed class ResourceConcurrencyTests
     [Fact]
     public async Task RuntimeAdvanceWithoutInvalidationPreservesOlderLeasesAsync()
     {
-        await using Fixture fixture = new("value");
+        await using Fixture fixture = new();
         fixture.Plan.Builds["value"] = (context, _) =>
         {
             ulong version = fixture.Runtime.Snapshot.Version;
@@ -214,8 +214,7 @@ public sealed class ResourceConcurrencyTests
                 }
 
                 current?.Dispose();
-            },
-            "value");
+            });
         fixture.Plan.Builds["value"] = (context, _) =>
         {
             context.TrackRuntimeDependency("runtime", fixture.Runtime.Snapshot.Version);
@@ -246,7 +245,7 @@ public sealed class ResourceConcurrencyTests
     [InlineData(2UL, true, 2UL)]
     public async Task RuntimeContractViolationPoisonsOperationsWithoutThrowingFromEventAsync(ulong version, bool available, ulong invalidated)
     {
-        await using Fixture fixture = new("value");
+        await using Fixture fixture = new();
         fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
         using ResourceLease<TestValue> lease = await fixture.Manager.AcquireAsync(Key("value"));
 
@@ -257,7 +256,7 @@ public sealed class ResourceConcurrencyTests
         Assert.Contains("runtime provider", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ResourceKey<TestValue> Key(string pipeline) => new(new(new("asset")), pipeline);
+    private static ResourceKey<TestValue> Key(string selector) => new(new(new("asset"), selector));
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -266,12 +265,12 @@ public sealed class ResourceConcurrencyTests
         private readonly ServiceProvider _provider;
         private readonly AsyncServiceScope _scope;
 
-        internal Fixture(params string[] pipelines)
-            : this(null, pipelines)
+        internal Fixture()
+            : this(null)
         {
         }
 
-        internal Fixture(Action<RuntimeState>? beforeManager, params string[] pipelines)
+        internal Fixture(Action<RuntimeState>? beforeManager)
         {
             ServiceCollection services = new();
             services.AddSingleton(Plan);
@@ -280,10 +279,7 @@ public sealed class ResourceConcurrencyTests
             services.AddResources("test", builder =>
             {
                 builder.UseSource<TestSource>().UseRuntimeDependency<TestRuntime>("runtime");
-                foreach (string pipeline in pipelines)
-                {
-                    builder.AddSourcePipeline<TestValue, TestStage>(pipeline);
-                }
+                builder.AddSourcePipeline<TestValue, TestStage>();
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             _scope = _provider.CreateAsyncScope();
@@ -338,7 +334,7 @@ public sealed class ResourceConcurrencyTests
     private sealed class TestStage(BuildPlan plan) : IResourceSourceStage<TestValue>
     {
         public ValueTask<TestValue> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
-            => plan.Builds[context.PipelineId](context, cancellationToken);
+            => plan.Builds[context.Address.Subresource](context, cancellationToken);
 
         public async ValueTask ReleaseAsync(TestValue resource)
         {

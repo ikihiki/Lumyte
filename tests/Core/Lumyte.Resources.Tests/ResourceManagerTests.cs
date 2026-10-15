@@ -20,9 +20,9 @@ public sealed class ResourceManagerTests
     public async Task MultiStagePipelineReleasesBuildInputsAsync()
     {
         await using Fixture fixture = new(builder => builder
-            .AddSourcePipeline<DocumentValue, DocumentStage>("document")
-            .AddTransformPipeline<DocumentValue, CpuValue, CpuStage>("cpu", "document")
-            .AddTransformPipeline<CpuValue, TestValue, UploadStage>("gpu", "cpu"));
+            .AddSourcePipeline<DocumentValue, DocumentStage>()
+            .AddTransformPipeline<DocumentValue, CpuValue, CpuStage>()
+            .AddTransformPipeline<CpuValue, TestValue, UploadStage>());
         fixture.Source.Set("asset", "encoded");
 
         using ResourceLease<TestValue> first = await fixture.Manager.AcquireAsync(Key("gpu"));
@@ -41,10 +41,7 @@ public sealed class ResourceManagerTests
     public async Task ResidentDiamondSharesLeafAndTrimsParentsFirstAsync()
     {
         await using Fixture fixture = new(builder => builder
-            .AddSourcePipeline<TestValue, PlannedStage>("root")
-            .AddSourcePipeline<TestValue, PlannedStage>("left")
-            .AddSourcePipeline<TestValue, PlannedStage>("right")
-            .AddSourcePipeline<TestValue, PlannedStage>("leaf"));
+            .AddSourcePipeline<TestValue, PlannedStage>());
         fixture.Plan.Builds["leaf"] = (_, _) => ValueTask.FromResult(new TestValue("leaf"));
         fixture.Plan.Builds["left"] = async (context, token) =>
             new("left", await context.RequireAsync(Key("leaf"), cancellationToken: token));
@@ -74,7 +71,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task BorrowedDependencyCannotBecomeAnotherOwnedOutputAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["leaf"] = (_, _) => ValueTask.FromResult(new TestValue("leaf"));
         fixture.Plan.Builds["root"] = (context, token) => context.RequireAsync(Key("leaf"), cancellationToken: token);
         ResourceLease<TestValue> leaf = await fixture.Manager.AcquireAsync(Key("leaf"));
@@ -93,16 +90,16 @@ public sealed class ResourceManagerTests
     public async Task DocumentProjectionsNormalizeInputAddressAsync()
     {
         await using Fixture fixture = new(builder => builder
-            .AddSourcePipeline<DocumentValue, DocumentStage>("document")
-            .AddTransformPipeline<DocumentValue, CpuValue, MeshProjection>("mesh", "document")
-            .AddTransformPipeline<DocumentValue, ImageValue, ImageProjection>("image", "document"));
+            .AddSourcePipeline<DocumentValue, DocumentStage>()
+            .AddTransformPipeline<DocumentValue, CpuValue, MeshProjection>()
+            .AddTransformPipeline<DocumentValue, ImageValue, ImageProjection>());
         fixture.Source.Set("asset", "document bytes");
         ResourceAddress meshAddress = new(new("asset"), "mesh/0", "tangent");
         ResourceAddress otherVariant = new(new("asset"), "mesh/0", "position");
         ResourceAddress imageAddress = new(new("asset"), "image/1", "linear");
-        using ResourceLease<CpuValue> mesh = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>(meshAddress, "mesh"));
-        using ResourceLease<CpuValue> other = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>(otherVariant, "mesh"));
-        using ResourceLease<ImageValue> image = await fixture.Manager.AcquireAsync(new ResourceKey<ImageValue>(imageAddress, "image"));
+        using ResourceLease<CpuValue> mesh = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>(meshAddress));
+        using ResourceLease<CpuValue> other = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>(otherVariant));
+        using ResourceLease<ImageValue> image = await fixture.Manager.AcquireAsync(new ResourceKey<ImageValue>(imageAddress));
 
         Assert.Equal("mesh/0:tangent", mesh.Value.Text);
         Assert.Equal("mesh/0:position", other.Value.Text);
@@ -112,6 +109,8 @@ public sealed class ResourceManagerTests
         Assert.Same(mesh.Value.Document, image.Value.Document);
         Assert.Equal(1, fixture.Source.OpenCount);
         Assert.Equal(2, mesh.Value.Document!.Subresources.Count);
+        Assert.Equal(typeof(CpuValue).TypeHandle, Assert.Single(mesh.Value.Document.Subresources[0].OutputTypes));
+        Assert.Equal(typeof(ImageValue).TypeHandle, Assert.Single(mesh.Value.Document.Subresources[1].OutputTypes));
         Assert.Equal(0, await fixture.Manager.TrimAsync());
     }
 
@@ -120,7 +119,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task ConcurrentAcquireSharesBuildAndIsolatesCallerCancellationAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("value");
+        await using Fixture fixture = CreatePlannedFixture();
         TaskCompletionSource entered = NewSignal();
         TaskCompletionSource resume = NewSignal();
         fixture.Plan.Builds["value"] = async (_, token) =>
@@ -156,7 +155,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task IndependentBuildTasksDetectDynamicCycleAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("left", "right");
+        await using Fixture fixture = CreatePlannedFixture();
         TaskCompletionSource bothStarted = NewSignal();
         int started = 0;
         async ValueTask<TestValue> BuildAsync(ResourceBuildContext context, CancellationToken token)
@@ -167,8 +166,8 @@ public sealed class ResourceManagerTests
             }
 
             await bothStarted.Task.WaitAsync(token);
-            string dependency = context.PipelineId == "left" ? "right" : "left";
-            return new(context.PipelineId, await context.RequireAsync(Key(dependency), cancellationToken: token));
+            string dependency = context.Address.Subresource == "left" ? "right" : "left";
+            return new(context.Address.Subresource, await context.RequireAsync(Key(dependency), cancellationToken: token));
         }
 
         fixture.Plan.Builds["left"] = BuildAsync;
@@ -190,7 +189,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task ReleaseFailureRetainsMemoryAndDependenciesForRetryAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["leaf"] = (_, _) => ValueTask.FromResult(new TestValue("leaf"));
         fixture.Plan.Builds["root"] = async (context, token) =>
         {
@@ -225,7 +224,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task RequiringBuildThenResidentPromotesOneSharedDependencyAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["leaf"] = (_, _) => ValueTask.FromResult(new TestValue("leaf"));
         fixture.Plan.Builds["root"] = async (context, token) =>
         {
@@ -248,7 +247,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task FailedBuildCleanupRetainsChargeAndRetriesOnlyUnfinishedWorkAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("value");
+        await using Fixture fixture = CreatePlannedFixture();
         bool cleanupBlocked = true;
         int completedCleanupCalls = 0;
         fixture.Plan.Builds["value"] = async (context, token) =>
@@ -296,8 +295,8 @@ public sealed class ResourceManagerTests
     {
         Assert.Equal(16, UnmanagedSize<ResourceHandle<TestValue>>());
         Assert.False(RuntimeHelpers.IsReferenceOrContainsReferences<ResourceHandle<TestValue>>());
-        await using Fixture fixture = CreatePlannedFixture("value");
-        await using Fixture other = CreatePlannedFixture("value");
+        await using Fixture fixture = CreatePlannedFixture();
+        await using Fixture other = CreatePlannedFixture();
         fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
         using ResourceReference<TestValue> owner = await fixture.Manager.CreateReferenceAsync(Key("value"));
         ResourceHandle<TestValue> handle = owner.Handle;
@@ -333,7 +332,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task ReloadPublishesAtomicallyAndKeepsOldLeasesAndReadScopesAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
         TaskCompletionSource candidateReady = NewSignal();
         TaskCompletionSource publish = NewSignal();
@@ -393,7 +392,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task FailedReloadPreservesPublishedGraphAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
         fixture.Plan.Builds["root"] = async (context, token) =>
         {
@@ -421,7 +420,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task ReloadRejectsSourceRevisionChangedDuringConstructionAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
         TaskCompletionSource candidateReady = NewSignal();
         TaskCompletionSource finish = NewSignal();
@@ -459,7 +458,7 @@ public sealed class ResourceManagerTests
     [InlineData(true)]
     public async Task ReloadTracksTrimmedBuildDependencyAsync(bool rescan)
     {
-        await using Fixture fixture = CreatePlannedFixture("root", "leaf");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
         fixture.Plan.Builds["root"] = async (context, token) =>
         {
@@ -485,7 +484,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task RuntimeLossInvalidatesResidentsAndRebuildsExistingHandleAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("gpu", "scene", "cpu");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["gpu"] = (context, _) =>
         {
             context.TrackRuntimeDependency("device", fixture.Runtime.Snapshot.Version);
@@ -531,7 +530,7 @@ public sealed class ResourceManagerTests
     [Fact]
     public async Task ShutdownRejectsReferencesLeasesAndReadScopesAsync()
     {
-        await using Fixture fixture = CreatePlannedFixture("value");
+        await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
         ResourceReference<TestValue> owner = await fixture.Manager.CreateReferenceAsync(Key("value"));
         ResourceLease<TestValue> lease = await fixture.Manager.AcquireAsync(Key("value"));
@@ -559,8 +558,8 @@ public sealed class ResourceManagerTests
         foreach (string name in new[] { "first", "second" })
         {
             services.AddResources(name, builder => builder.UseSource<CountingSource>()
-                .AddSourcePipeline<TestValue, CountingStage>("one")
-                .AddSourcePipeline<TestValue, CountingStage>("two"));
+                .AddSourcePipeline<TestValue, CountingStage>()
+                .AddSourcePipeline<CpuValue, CountingStage>());
         }
 
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -570,7 +569,7 @@ public sealed class ResourceManagerTests
         Assert.NotEqual(first.ManagerId, second.ManagerId);
         Assert.Same(first, scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first"));
         using (ResourceLease<TestValue> one = await first.AcquireAsync(Key("one")))
-        using (ResourceLease<TestValue> two = await first.AcquireAsync(Key("two")))
+        using (ResourceLease<CpuValue> two = await first.AcquireAsync(new ResourceKey<CpuValue>(Key("one").Address)))
         using (ResourceLease<TestValue> other = await second.AcquireAsync(Key("one")))
         {
             Assert.NotEqual(one.Value.Text, two.Value.Text);
@@ -597,20 +596,20 @@ public sealed class ResourceManagerTests
         services.AddResources("main", builder =>
         {
             captured = builder;
-            builder.UseSource<CountingSource>().AddSourcePipeline<TestValue, CountingStage>("value");
+            builder.UseSource<CountingSource>().AddSourcePipeline<TestValue, CountingStage>();
             Assert.Throws<InvalidOperationException>(() => builder.UseSource<CountingSource>());
-            Assert.Throws<ArgumentException>(() => builder.AddSourcePipeline<TestValue, CountingStage>("value"));
+            Assert.Throws<ArgumentException>(() => builder.AddSourcePipeline<TestValue, CountingStage>());
         });
         Assert.Throws<ArgumentException>(() => services.AddResources("main", _ => { }));
-        Assert.Throws<InvalidOperationException>(() => captured!.AddSourcePipeline<TestValue, CountingStage>("late"));
+        Assert.Throws<InvalidOperationException>(() => captured!.AddSourcePipeline<TestValue, CountingStage>());
         Assert.Throws<NotSupportedException>(() => new ServiceCollection().AddResources("singleton", builder =>
             builder.UseSource<CountingSource>(ServiceLifetime.Singleton)));
         Assert.Throws<NotSupportedException>(() => new ServiceCollection().AddResources("transient", builder =>
-            builder.UseSource<CountingSource>().AddSourcePipeline<TestValue, CountingStage>("value", ServiceLifetime.Transient)));
+            builder.UseSource<CountingSource>().AddSourcePipeline<TestValue, CountingStage>(ServiceLifetime.Transient)));
     }
 
-    /// <summary>Manager resolution rejects a missing or incorrectly typed static transform input.</summary>
-    /// <param name="missing">Whether the input is absent instead of having the wrong output type.</param>
+    /// <summary>Manager resolution requires the exact static input type; an unrelated output type cannot satisfy it.</summary>
+    /// <param name="missing">Whether there is no other producer instead of a producer for an unrelated type.</param>
     /// <returns>Completion of service provider disposal.</returns>
     [Theory]
     [InlineData(true)]
@@ -623,10 +622,10 @@ public sealed class ResourceManagerTests
         services.AddMemoryManagement();
         services.AddResources("invalid", builder =>
         {
-            builder.UseSource<FakeSource>().AddTransformPipeline<DocumentValue, CpuValue, CpuStage>("cpu", "input");
+            builder.UseSource<FakeSource>().AddTransformPipeline<DocumentValue, CpuValue, CpuStage>();
             if (!missing)
             {
-                builder.AddSourcePipeline<TestValue, PlannedStage>("input");
+                builder.AddSourcePipeline<TestValue, PlannedStage>();
             }
         });
         await using ServiceProvider provider = services.BuildServiceProvider();
@@ -645,7 +644,7 @@ public sealed class ResourceManagerTests
         services.AddSingleton(new RuntimeState());
         services.AddMemoryManagement();
         services.AddResources("invalid", builder => builder.UseSource<FakeSource>()
-            .AddSourcePipeline<TestValue, PlannedStage>("value").UseRuntimeDependency<FakeRuntime>("other"));
+            .AddSourcePipeline<TestValue, PlannedStage>().UseRuntimeDependency<FakeRuntime>("other"));
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         Assert.Throws<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("invalid"));
@@ -677,15 +676,9 @@ public sealed class ResourceManagerTests
         Assert.Equal("images/%20", new ResourceId("images/%20").Value);
     }
 
-    private static Fixture CreatePlannedFixture(params string[] pipelines) => new(builder =>
-    {
-        foreach (string pipeline in pipelines)
-        {
-            builder.AddSourcePipeline<TestValue, PlannedStage>(pipeline);
-        }
-    });
+    private static Fixture CreatePlannedFixture() => new(builder => builder.AddSourcePipeline<TestValue, PlannedStage>());
 
-    private static ResourceKey<TestValue> Key(string pipeline) => new(new(new("asset")), pipeline);
+    private static ResourceKey<TestValue> Key(string selector) => new(new(new("asset"), selector));
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -770,8 +763,8 @@ public sealed class ResourceManagerTests
     {
         public async ValueTask<TestValue> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
-            plan.BuildCounts.AddOrUpdate(context.PipelineId, 1, static (_, count) => count + 1);
-            if (plan.Builds.TryGetValue(context.PipelineId, out Func<ResourceBuildContext, CancellationToken, ValueTask<TestValue>>? build))
+            plan.BuildCounts.AddOrUpdate(context.Address.Subresource, 1, static (_, count) => count + 1);
+            if (plan.Builds.TryGetValue(context.Address.Subresource, out Func<ResourceBuildContext, CancellationToken, ValueTask<TestValue>>? build))
             {
                 return await build(context, cancellationToken);
             }
@@ -801,8 +794,8 @@ public sealed class ResourceManagerTests
 
         public IReadOnlyList<ResourceSubresource> Subresources { get; } =
         [
-            new() { Selector = "mesh/0", Kind = "mesh", PipelineIds = ["mesh"] },
-            new() { Selector = "image/1", Kind = "image", PipelineIds = ["image"] },
+            new() { Selector = "mesh/0", OutputTypes = [typeof(CpuValue).TypeHandle] },
+            new() { Selector = "image/1", OutputTypes = [typeof(ImageValue).TypeHandle] },
         ];
 
         internal string Text { get; } = text;
@@ -1016,7 +1009,7 @@ public sealed class ResourceManagerTests
         public void Dispose() => _counts.SourceDisposals++;
     }
 
-    private sealed class CountingStage(ServiceCounts counts) : IResourceSourceStage<TestValue>, IDisposable
+    private sealed class CountingStage(ServiceCounts counts) : IResourceSourceStage<TestValue>, IResourceSourceStage<CpuValue>, IDisposable
     {
         private readonly string _id = (++counts.StageInstances).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -1024,6 +1017,11 @@ public sealed class ResourceManagerTests
             => ValueTask.FromResult(new TestValue(_id));
 
         public ValueTask ReleaseAsync(TestValue resource) => ValueTask.CompletedTask;
+
+        ValueTask<CpuValue> IResourceSourceStage<CpuValue>.BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+            => ValueTask.FromResult(new CpuValue(_id));
+
+        public ValueTask ReleaseAsync(CpuValue resource) => ValueTask.CompletedTask;
 
         public void Dispose() => counts.StageDisposals++;
     }

@@ -10,7 +10,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
-    private readonly Dictionary<string, ResourcePipeline> _pipelines;
+    private readonly Dictionary<RuntimeTypeHandle, ResourcePipeline> _pipelines;
     private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
@@ -48,7 +48,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         _name = name;
         _source = source;
         _memory = memory;
-        _pipelines = pipelines.ToDictionary(static pipeline => pipeline.Id, StringComparer.Ordinal);
+        _pipelines = pipelines.ToDictionary(static pipeline => pipeline.OutputTypeHandle);
         ValidatePipelines();
         ManagerId = NextManagerId();
         try
@@ -269,7 +269,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         ResourceStreamSession<TElement>? session = null;
         try
         {
-            memory = _memory.CreateScope($"{_name}/stream/{key.PipelineId}/{lease.Revision}");
+            memory = _memory.CreateScope($"{_name}/stream/{typeof(TResource)}/{lease.Revision}");
             session = new(memory, lease, lease.Revision, options, () => ReturnSession(session!));
             lock (_gate)
             {
@@ -330,40 +330,35 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private ResourceNode GetNode<T>(ResourceKey<T> key)
         where T : class
     {
-        if (key.Address.Id.Value is null || key.Address.Subresource is null || key.Address.Variant is null || string.IsNullOrWhiteSpace(key.PipelineId))
+        if (key.Address.Id.Value is null || key.Address.Subresource is null || key.Address.Variant is null)
         {
             throw new ArgumentException("Supply an initialized typed resource key.", nameof(key));
         }
 
-        if (!_pipelines.TryGetValue(key.PipelineId, out ResourcePipeline? pipeline))
+        if (!_pipelines.ContainsKey(key.TypeHandle))
         {
-            throw new NotSupportedException($"Resource pipeline '{key.PipelineId}' is not registered.");
+            throw new NotSupportedException($"A resource pipeline for '{typeof(T)}' is not registered.");
         }
 
-        if (pipeline.OutputType != typeof(T))
-        {
-            throw new ArgumentException($"Pipeline '{key.PipelineId}' produces {pipeline.OutputType}, not {typeof(T)}.", nameof(key));
-        }
-
-        return new(key.Address, key.PipelineId, typeof(T));
+        return new(key.Address, key.TypeHandle);
     }
 
     private void ValidatePipelines()
     {
         foreach (ResourcePipeline pipeline in _pipelines.Values)
         {
-            HashSet<string> visited = new(StringComparer.Ordinal);
+            HashSet<RuntimeTypeHandle> visited = [];
             ResourcePipeline current = pipeline;
-            while (current.InputPipelineId is { } input)
+            while (current.InputType is { } input)
             {
-                if (!visited.Add(current.Id))
+                if (!visited.Add(current.OutputTypeHandle))
                 {
-                    throw new ArgumentException($"Static resource pipeline cycle includes '{current.Id}'.", nameof(pipeline));
+                    throw new ArgumentException($"Static resource pipeline cycle includes '{current.OutputType}'.", nameof(pipeline));
                 }
 
-                if (!_pipelines.TryGetValue(input, out ResourcePipeline? dependency) || dependency.OutputType != current.InputType)
+                if (!_pipelines.TryGetValue(input.TypeHandle, out ResourcePipeline? dependency))
                 {
-                    throw new ArgumentException($"Pipeline '{current.Id}' has an unregistered or incorrectly typed input '{input}'.", nameof(pipeline));
+                    throw new ArgumentException($"Pipeline for '{current.OutputType}' has an unregistered input '{input}'.", nameof(pipeline));
                 }
 
                 current = dependency;
@@ -385,7 +380,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     {
         generation.Pins++;
         _externalOwners++;
-        ResourceKey<T> key = new(generation.Node.Address, generation.Node.PipelineId);
+        ResourceKey<T> key = new(generation.Node.Address);
         return new(key, generation.Revision, (T)generation.Value!, () => GetUnavailableThreadSafe(generation), () => ReturnLease(generation));
     }
 
@@ -414,7 +409,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
 
         ResourceSlot candidate = _slots[(int)handle.Slot];
-        if (candidate.References == 0 || candidate.Generation != handle.Generation || candidate.Node.OutputType != typeof(T))
+        if (candidate.References == 0 || candidate.Generation != handle.Generation || !candidate.Node.TypeHandle.Equals(typeof(T).TypeHandle))
         {
             return false;
         }

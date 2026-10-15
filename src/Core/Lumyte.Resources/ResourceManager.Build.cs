@@ -337,7 +337,7 @@ public sealed partial class ResourceManager
                 throw new InvalidOperationException($"Cleanup for {node} must complete before another build; call TrimAsync first.");
             }
 
-            ResourceGeneration candidate = new(node, checked(++_revision), _pipelines[node.PipelineId]);
+            ResourceGeneration candidate = new(node, checked(++_revision), _pipelines[node.TypeHandle]);
             slot = new(candidate);
             _generations.Add(candidate);
             view.Builds.Add(node, slot);
@@ -358,9 +358,9 @@ public sealed partial class ResourceManager
             view.CancellationToken.ThrowIfCancellationRequested();
             object value = await generation.Pipeline.BuildAsync(context, view.CancellationToken).ConfigureAwait(false);
             context.Close();
-            if (value is null || !generation.Node.OutputType.IsInstanceOfType(value))
+            if (value is null || !generation.Pipeline.OutputType.IsInstanceOfType(value))
             {
-                throw new InvalidOperationException($"Pipeline '{generation.Node.PipelineId}' returned an invalid output.");
+                throw new InvalidOperationException($"Pipeline for '{generation.Pipeline.OutputType}' returned an invalid output.");
             }
 
             lock (_gate)

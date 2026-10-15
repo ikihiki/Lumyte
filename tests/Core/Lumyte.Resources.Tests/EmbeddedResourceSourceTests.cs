@@ -141,11 +141,11 @@ public sealed class EmbeddedResourceSourceTests
         ServiceCollection services = new();
         services.AddMemoryManagement();
         services.AddSingleton(Options());
-        services.AddResources("dll", pipelines => pipelines.UseSource<EmbeddedResourceSource>().AddSourcePipeline<TextValue, TextStage>("text"));
+        services.AddResources("dll", pipelines => pipelines.UseSource<EmbeddedResourceSource>().AddSourcePipeline<TextValue, TextStage>());
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("dll");
-        var key = new ResourceKey<TextValue>(new(_alias), "text");
+        var key = new ResourceKey<TextValue>(new(_alias));
         using ResourceReference<TextValue> owner = await manager.CreateReferenceAsync(key);
         using ResourceLease<TextValue> first = await manager.AcquireAsync(key);
         Assert.Equal("0123456789", first.Value.Text.TrimEnd('\r', '\n'));

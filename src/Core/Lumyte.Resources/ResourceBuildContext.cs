@@ -20,8 +20,8 @@ public sealed class ResourceBuildContext
     /// <summary>Gets the requested element and variant.</summary>
     public ResourceAddress Address => _generation.Node.Address;
 
-    /// <summary>Gets the current pipeline name.</summary>
-    public string PipelineId => _generation.Node.PipelineId;
+    /// <summary>Gets the runtime identity of the exact output type being constructed.</summary>
+    public RuntimeTypeHandle OutputTypeHandle => _generation.Node.TypeHandle;
 
     /// <summary>Requires a shared dependency and records its lifetime and provenance.</summary>
     /// <typeparam name="T">The exact registered output type.</typeparam>

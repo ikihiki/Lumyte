@@ -10,9 +10,9 @@ namespace Lumyte.Resources.Graphics.Tests;
 public sealed class GraphicsResourceTests
 {
     private static readonly ResourceAddress _address = new(new ResourceId("models/test"));
-    private static readonly ResourceKey<CpuValue> _cpuKey = new(_address, "cpu");
-    private static readonly ResourceKey<GpuValue> _gpuKey = new(_address, "gpu");
-    private static readonly ResourceKey<CpuValue> _readbackKey = new(_address, "readback");
+    private static readonly ResourceKey<CpuValue> _cpuKey = new(_address);
+    private static readonly ResourceKey<GpuValue> _gpuKey = new(_address);
+    private static readonly ResourceKey<ReadbackValue> _readbackKey = new(_address);
 
     /// <summary>Recovery rebuilds the GPU generation while preserving its cached CPU input.</summary>
     /// <returns>Completion of the scenario.</returns>
@@ -62,8 +62,8 @@ public sealed class GraphicsResourceTests
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
         ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
-        using ResourceLease<CpuValue> value = await resources.AcquireAsync(_readbackKey);
-        CpuValue original = value.Value;
+        using ResourceLease<ReadbackValue> value = await resources.AcquireAsync(_readbackKey);
+        ReadbackValue original = value.Value;
         state.Devices[0].Lose();
         Assert.True(value.IsUsable);
         Assert.Same(original, value.Value);
@@ -158,7 +158,7 @@ public sealed class GraphicsResourceTests
         var services = new ServiceCollection();
         services.AddMemoryManagement();
         services.AddSingleton(new GraphicsTestState());
-        services.AddResources("scene", builder => builder.UseSource<TestSource>().AddSourcePipeline<CpuValue, CpuStage>("cpu"));
+        services.AddResources("scene", builder => builder.UseSource<TestSource>().AddSourcePipeline<CpuValue, CpuStage>());
         Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("scene", "missing", "graphics.main"));
         services.AddGraphicsDevice<TestFactory>("main");
         services.AddResourceGraphics("scene", "main", "graphics.main");
@@ -173,9 +173,9 @@ public sealed class GraphicsResourceTests
         services.AddGraphicsDevice<TestFactory>("main");
         services.AddResources("scene", builder => builder
             .UseSource<TestSource>()
-            .AddSourcePipeline<CpuValue, CpuStage>("cpu")
-            .AddTransformPipeline<CpuValue, GpuValue, GpuStage>("gpu", "cpu")
-            .AddSourcePipeline<CpuValue, ReadbackStage>("readback"));
+            .AddSourcePipeline<CpuValue, CpuStage>()
+            .AddTransformPipeline<CpuValue, GpuValue, GpuStage>()
+            .AddSourcePipeline<ReadbackValue, ReadbackStage>());
         services.AddResourceGraphics("scene", "main", "graphics.main");
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }

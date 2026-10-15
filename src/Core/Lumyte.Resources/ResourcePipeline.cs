@@ -4,47 +4,33 @@ namespace Lumyte.Resources;
 public abstract class ResourcePipeline
 {
     /// <summary>Initializes a new instance of the <see cref="ResourcePipeline"/> class.</summary>
-    /// <param name="id">The unique manager-local pipeline name.</param>
     /// <param name="outputType">The exact reference type produced by this pipeline.</param>
-    /// <param name="inputPipelineId">The fixed primary input pipeline, or null for a source stage.</param>
     /// <param name="inputType">The primary input's exact type, or null for a source stage.</param>
-    protected ResourcePipeline(string id, Type outputType, string? inputPipelineId = null, Type? inputType = null)
+    protected ResourcePipeline(Type outputType, Type? inputType = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentNullException.ThrowIfNull(outputType);
         if (outputType.IsValueType || outputType.ContainsGenericParameters)
         {
             throw new ArgumentException("A pipeline output must be a closed reference type.", nameof(outputType));
         }
 
-        if ((inputPipelineId is null) != (inputType is null))
+        if (inputType is not null)
         {
-            throw new ArgumentException("Supply both the primary input pipeline and its type, or neither.", nameof(inputPipelineId));
-        }
-
-        if (inputPipelineId is not null)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(inputPipelineId);
-            if (inputType!.IsValueType || inputType.ContainsGenericParameters)
+            if (inputType.IsValueType || inputType.ContainsGenericParameters)
             {
                 throw new ArgumentException("A pipeline input must be a closed reference type.", nameof(inputType));
             }
         }
 
-        Id = id;
         OutputType = outputType;
-        InputPipelineId = inputPipelineId;
         InputType = inputType;
     }
-
-    /// <summary>Gets the manager-local pipeline name.</summary>
-    public string Id { get; }
 
     /// <summary>Gets the exact output type.</summary>
     public Type OutputType { get; }
 
-    /// <summary>Gets the fixed primary input pipeline, or null.</summary>
-    public string? InputPipelineId { get; }
+    /// <summary>Gets the runtime identity used to register and select this pipeline.</summary>
+    public RuntimeTypeHandle OutputTypeHandle => OutputType.TypeHandle;
 
     /// <summary>Gets the exact primary input type, or null.</summary>
     public Type? InputType { get; }

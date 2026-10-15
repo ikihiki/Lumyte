@@ -6,8 +6,8 @@ Resourcesのruntime依存を、Graphics.Hostingの名前付きdevice serviceへ�
 services.AddGraphicsDevice<AppDeviceFactory>("main");
 services.AddResources("scene", builder => builder
     .UseSource<AppResourceSource>()
-    .AddSourcePipeline<CpuMesh, CpuMeshStage>("mesh.cpu")
-    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>("mesh.gpu", "mesh.cpu"));
+    .AddSourcePipeline<CpuMesh, CpuMeshStage>()
+    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>());
 services.AddResourceGraphics("scene", "main", "graphics.main");
 ```
 

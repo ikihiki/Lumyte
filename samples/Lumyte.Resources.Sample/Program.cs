@@ -42,9 +42,9 @@ internal static class Program
         services.AddResources("scene", resources => resources
             .UseSource<FileResourceSource>()
             .WatchChanges<FileResourceChangeSource>()
-            .AddSourcePipeline<SceneDocument, SceneDocumentStage>("scene.document")
-            .AddTransformPipeline<SceneDocument, MeshInfo, MeshStage>("mesh.cpu", "scene.document")
-            .AddTransformPipeline<SceneDocument, MaterialInfo, MaterialStage>("material.info", "scene.document"));
+            .AddSourcePipeline<SceneDocument, SceneDocumentStage>()
+            .AddTransformPipeline<SceneDocument, MeshInfo, MeshStage>()
+            .AddTransformPipeline<SceneDocument, MaterialInfo, MaterialStage>());
 
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using AsyncServiceScope world = provider.CreateAsyncScope();
@@ -52,7 +52,7 @@ internal static class Program
         ResourceReloadService changes = world.ServiceProvider.GetRequiredKeyedService<ResourceReloadService>("scene");
         SampleCounters counters = provider.GetRequiredService<SampleCounters>();
         var sourceId = new ResourceId("scene.json");
-        var documentKey = new ResourceKey<SceneDocument>(new(sourceId), "scene.document");
+        var documentKey = new ResourceKey<SceneDocument>(new(sourceId));
         using (ResourceLease<SceneDocument> document = await resources.AcquireAsync(documentKey).ConfigureAwait(false))
         {
             Console.WriteLine($"Document elements: {string.Join(", ", document.Value.Subresources.Select(element => element.Selector))}");
@@ -68,8 +68,8 @@ internal static class Program
 
     private static async Task DemonstrateReloadAsync(ResourceManager resources, ResourceReloadService changes, ResourceId sourceId, string path, SampleCounters counters)
     {
-        var meshKey = new ResourceKey<MeshInfo>(new(sourceId, "mesh/0", "geometry:v1"), "mesh.cpu");
-        var materialKey = new ResourceKey<MaterialInfo>(new(sourceId, "material/0", "preview:v1"), "material.info");
+        var meshKey = new ResourceKey<MeshInfo>(new(sourceId, "mesh/0", "geometry:v1"));
+        var materialKey = new ResourceKey<MaterialInfo>(new(sourceId, "material/0", "preview:v1"));
         using ResourceReference<MeshInfo> meshOwner = await resources.CreateReferenceAsync(meshKey).ConfigureAwait(false);
         using ResourceReference<MaterialInfo> materialOwner = await resources.CreateReferenceAsync(materialKey).ConfigureAwait(false);
         ResourceHandle<MeshInfo> meshHandle = meshOwner.Handle;

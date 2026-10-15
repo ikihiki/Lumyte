@@ -12,7 +12,7 @@ namespace Lumyte.Resources.Tests;
 public sealed class ResourceWatchRegistrationTests
 {
     private static readonly ResourceId _known = new("asset");
-    private static readonly ResourceKey<Value> _key = new(new(_known), "value");
+    private static readonly ResourceKey<Value> _key = new(new(_known));
 
     /// <summary>Each named manager and DI scope owns one change source, which is stopped and disposed exactly once.</summary>
     /// <returns>Completion of all independently owned monitors.</returns>
@@ -127,7 +127,7 @@ public sealed class ResourceWatchRegistrationTests
         {
             captured = builder;
             builder.UseSource<TrackedSource>()
-                .AddSourcePipeline<Value, ValueStage>("value")
+                .AddSourcePipeline<Value, ValueStage>()
                 .WatchChanges<BlockingChangeSource>();
             Assert.Throws<InvalidOperationException>(() => builder.WatchChanges<BlockingChangeSource>());
         });
@@ -173,7 +173,7 @@ public sealed class ResourceWatchRegistrationTests
         foreach (string name in names)
         {
             services.AddResources(name, builder => builder.UseSource<TrackedSource>()
-                .AddSourcePipeline<Value, ValueStage>("value")
+                .AddSourcePipeline<Value, ValueStage>()
                 .WatchChanges<BlockingChangeSource>());
         }
 

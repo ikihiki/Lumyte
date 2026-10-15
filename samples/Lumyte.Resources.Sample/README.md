@@ -8,17 +8,19 @@ dotnet run --project samples/Lumyte.Resources.Sample
 
 The console sample creates a temporary JSON compound asset with a mesh and a
 material. It registers the file source and stages by type in DI and configures
-three named pipelines:
+three pipelines identified by their output types:
 
 ```text
-scene.json -> scene.document -> mesh.cpu      (mesh/0, geometry:v1)
-                            -> material.info (material/0, preview:v1)
+scene.json -> SceneDocument -> MeshInfo     (mesh/0, geometry:v1)
+                           -> MaterialInfo (material/0, preview:v1)
 ```
 
 Both transforms normalize their input address to the same document root, so
 different element selectors and variants share one parse per published input
 revision. The document exposes element metadata without constructing both
-projections. Each projection copies its data and uses a `Build` dependency, so
+projections. The metadata stores actual output type handles, and keys such as
+`new ResourceKey<MeshInfo>(address)` select pipelines through `typeof(MeshInfo).TypeHandle`.
+Each projection copies its data and uses a `Build` dependency, so
 it does not retain the document's borrowed JSON elements.
 
 Managed references keep two logical resources resident. Their nonowning,
