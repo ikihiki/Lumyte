@@ -6,16 +6,20 @@ namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 /// <summary>Exposes borrowed resources during preparation of a typed command batch.</summary>
 internal sealed class GraphPreparationContext2D
 {
-    internal GraphPreparationContext2D(IGraphicDevice device, RenderGraphBuilder graph, DrawingGraphBindings2D bindings, RenderTargetBinding2D target)
+    internal GraphPreparationContext2D(IGraphicDevice device, RenderGraphBuilder graph, DrawingGraphBindings2D bindings, RenderTargetBinding2D target, IGraphicsProgramProvider? programs = null)
     {
         Device = device;
         Graph = graph;
         Bindings = bindings;
         Target = target;
+        Programs = programs ?? DrawingPrograms2D.DefaultProvider;
     }
 
     /// <summary>Gets the borrowed graphic device.</summary>
     public IGraphicDevice Device { get; }
+
+    /// <summary>Gets the borrowed drawing-program provider.</summary>
+    public IGraphicsProgramProvider Programs { get; }
 
     /// <summary>Gets the graph receiving the batch's passes.</summary>
     public RenderGraphBuilder Graph { get; }

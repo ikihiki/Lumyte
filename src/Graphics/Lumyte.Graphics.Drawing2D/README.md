@@ -42,3 +42,16 @@ batch私有資源はbatchが所有・同期し、外部資源の入口・出口�
 塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換、隔離合成、COLRv1の28合成modeを扱います。
 文字組みは外部ライブラリが担当し、パス・mesh・coverage・SDF/MSDF/MTSDF・画像で描画を依頼できます。
 設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) を参照してください。
+
+## 外部プログラムの取得
+
+```csharp
+using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
+```
+
+programsは事前に準備した資源を返す `IGraphicsProgramProvider` です。
+ABI識別子は `DrawingPrograms2D.ProgramId` で、argument・instruction配置と演算の意味を含みます。
+program leaseはprepared batchが保持し、GPU使用とcommandの解放後にPreparedDraw2Dとともに返却します。
+providerを省略すると `DrawingPrograms2D.DefaultProvider` が埋め込みartifactから生成します。外部providerで内部fallbackは行いません。
+Resources adapterはread scopeを一回のPrepareAsync全体で固定し、同じ内容世代を返します。
+デバイスロスト後は旧batchを解放し、新device・復元済みprogramで準備し直します。

@@ -77,3 +77,12 @@ Append失敗時は親graphを捨てて再構築します。GPU完了後にcomman
 
 設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)、
 共通の部分グラフは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。
+
+## 外部プログラムprovider
+
+RenderGraphRenderer2Dのconstructorの末尾にIGraphicsProgramProviderを渡すと、
+通常命令・レイヤー合成・Effectsコールバックが同じ取得元を使用します。
+providerはDrawingPrograms2D.ProgramIdと、効果を使う場合はImageEffectPrograms.ProgramIdを解決します。
+省略時は各packageの埋め込みproviderを選択します。外部providerの失敗はそのまま伝達します。
+一回のAppend2D全体で公開世代を固定し、取得したleaseはPreparedDrawingPasses2DがGPU使用終了まで保持します。
+ロスト後は旧compiled planと準備ownerを解放し、新deviceと復元済みGPU資源で親graphとAppend2Dを作り直します。

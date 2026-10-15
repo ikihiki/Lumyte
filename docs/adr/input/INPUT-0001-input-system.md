@@ -1,7 +1,10 @@
 # ADR-INPUT-0001: デバイス別の入力記録と参照・通知・ポーリング
 
-- 状態: 採用
+- 状態: 置換済み
+- 更新日: 2026-10-11
 - 日付: 2026-10-08
+
+後継: [INPUT-0005: 入力取得契約の分離](INPUT-0005-input-abstractions.md)。Platform が Input 本体へ依存しないよう、取得契約の配置・名前空間・依存方針を置き換える。それ以外の入力データ・所有権・記録・保持の判断は後継 ADR が本 ADR から引き継ぐ。
 
 ## 背景
 
@@ -23,7 +26,7 @@ InputSystem はコンストラクター DI で受け取るすべての IInputSou
 
 ### 責務と依存関係
 
-[リポジトリのフォルダ構成](../../0002-repository-layout.md) に従い、抽象入力システムを `src/Input/Lumyte.Input/` に配置する。補正・認識、アクション、設定連携も `src/Input/`、対応するテストは `tests/Input/` に置く。OS・ハードウェアに近い入力取得と接続監視の実装は `src/Platform/` に置き、Input の契約を実装する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
+[リポジトリのフォルダ構成](../0002-repository-layout.md) に従い、抽象入力システムを `src/Input/Lumyte.Input/` に配置する。補正・認識、アクション、設定連携も `src/Input/`、対応するテストは `tests/Input/` に置く。OS・ハードウェアに近い入力取得と接続監視の実装は `src/Platform/` に置き、Input の契約を実装する。プロジェクト名、NuGet パッケージ名、名前空間は `Lumyte.Input` とする。
 
 | 構成要素 | 責務 | 依存先 |
 | --- | --- | --- |
@@ -380,5 +383,5 @@ Device は DrainEvents の失敗時に入力を消費しない。取得例外は
 
 ## 参考資料
 
-- [ADR-0001: ADR の書き方と運用](../../0001-adr-writing-policy.md)
-- [ADR-0002: リポジトリのフォルダ構成](../../0002-repository-layout.md)
+- [ADR-0001: ADR の書き方と運用](../0001-adr-writing-policy.md)
+- [ADR-0002: リポジトリのフォルダ構成](../0002-repository-layout.md)

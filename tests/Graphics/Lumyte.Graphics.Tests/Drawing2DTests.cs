@@ -135,7 +135,8 @@ public sealed class Drawing2DTests
         DrawList2D list = canvas.End();
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        var programs = new ExternalDrawingPrograms();
+        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
         PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 0.25f) });
         uint pitch = Math.Max(16, device.GetTextureCopyLayout(TextureFormat.Rgba8Srgb).BytesPerRowAlignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 2, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
@@ -173,7 +174,10 @@ public sealed class Drawing2DTests
         finally
         {
             commands.Dispose();
+            Assert.True(programs.Acquired > 0);
+            Assert.Equal(0, programs.Returned);
             prepared.Dispose();
+            Assert.Equal(programs.Acquired, programs.Returned);
             submission?.Dispose();
         }
     }
@@ -482,7 +486,7 @@ public sealed class Drawing2DTests
     {
         Vector4[] blur = await RenderAsync(device, 12, 6, canvas =>
         {
-            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = graph => graph.AppendGaussianBlur(graph.Source, 1, 0) });
+            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = graph => RequirePrograms(graph).AppendGaussianBlur(graph.Source, 1, 0) });
             canvas.FillRect(new(4, 1, 4, 4), _white);
             canvas.EndLayer();
         });
@@ -543,7 +547,7 @@ public sealed class Drawing2DTests
         Vector4[] blur = await RenderAsync(device, 5, 1, canvas =>
         {
             canvas.FillRect(new(0, 0, 1, 1), _white);
-            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = graph => graph.AppendGaussianBlur(graph.Source, 1, 0) });
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = graph => RequirePrograms(graph).AppendGaussianBlur(graph.Source, 1, 0) });
         });
         AssertPixel(blur, 5, 0, 0, Vector4.One);
         AssertPixel(blur, 5, 1, 0, new(0.24203623f), 0.003f);
@@ -578,6 +582,7 @@ public sealed class Drawing2DTests
 
     private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)
     {
+        var programs = new ExternalDrawingPrograms();
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         draw(canvas);
@@ -597,7 +602,7 @@ public sealed class Drawing2DTests
             Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled | TextureUsage.CopySource,
         };
         RenderGraphTexture target = graph.CreateTexture(description, "canvas");
-        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings);
+        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, programs);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
         uint rowBytes = checked((uint)width * layout.BytesPerTexel);
@@ -641,7 +646,10 @@ public sealed class Drawing2DTests
         {
             commands?.Dispose();
             plan?.Dispose();
+            Assert.True(programs.Acquired > 0);
+            Assert.Equal(0, programs.Returned);
             drawing.Dispose();
+            Assert.Equal(programs.Acquired, programs.Returned);
             submission?.Dispose();
         }
     }
@@ -706,6 +714,40 @@ public sealed class Drawing2DTests
         Vector4 actual = pixels[(y * width) + x];
         var difference = Vector4.Abs(actual - expected);
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Pixel ({x}, {y}): expected {expected}, actual {actual}, tolerance {tolerance}.");
+    }
+
+    private static ImageEffectSubgraph RequirePrograms(ImageEffectSubgraph scope)
+    {
+        Assert.IsType<ExternalDrawingPrograms>(scope.Programs);
+        return scope;
+    }
+
+    private sealed class ExternalDrawingPrograms : IGraphicsProgramProvider
+    {
+        private readonly ShaderArtifact _vertex = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader").GetBinary());
+        private readonly ShaderArtifact _fragment = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader").GetBinary());
+        private readonly ShaderArtifact _effectVertex = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.fullscreen.lshader").GetBinary());
+        private readonly ShaderArtifact _effectFragment = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.effects.lshader").GetBinary());
+
+        internal int Acquired { get; private set; }
+
+        internal int Returned { get; private set; }
+
+        public GraphicsProgramLease Acquire(IGraphicDevice device, string programId)
+        {
+            GraphicsProgramLease native = programId switch
+            {
+                DrawingPrograms2D.ProgramId => GraphicsProgramLease.Create(device, _vertex, _fragment),
+                ImageEffectPrograms.ProgramId => GraphicsProgramLease.Create(device, _effectVertex, _effectFragment),
+                _ => throw new NotSupportedException("Unknown drawing program ABI."),
+            };
+            Acquired++;
+            return new(native.Resources, () =>
+            {
+                Returned++;
+                native.Dispose();
+            });
+        }
     }
 
     private sealed record TranslateLayerEffect(int X, int Y) : ImageEffectDefinition

@@ -1,3 +1,5 @@
+using Lumyte.Input.Abstractions;
+
 namespace Lumyte.Input;
 
 /// <summary>Observes every source and device owned by one input system.</summary>
