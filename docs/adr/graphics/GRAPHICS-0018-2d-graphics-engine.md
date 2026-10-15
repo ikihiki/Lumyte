@@ -441,9 +441,14 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +        public AttachmentLoadOp LoadOp { get; init; } = AttachmentLoadOp.Load;
 +        public Color2D ClearColor { get; init; }
 +    }
++    public static class DrawingPrograms2D
++    {
++        public const string ProgramId = "Lumyte.Drawing2D.paint-coverage.v1";
++        public static IGraphicsProgramProvider DefaultProvider { get; }
++    }
 +    public sealed class Renderer2D : IDisposable
 +    {
-+        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers);
++        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IGraphicsProgramProvider? programs = null);
 +        // graphを作らず、固定資源と直接記録するbatchを準備する。
 +        public ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list,
 +            RenderTarget2D target, CancellationToken cancellationToken = default);
@@ -505,6 +510,7 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    {
 +        public IGraphicDevice Device { get; }
 +        public DrawingTargetInfo2D Target { get; }
++        public IGraphicsProgramProvider Programs { get; }
 +    }
 +    // 以下の全PrepareAsyncに共通する契約:
 +    // 同型・同一clip/合成境界の連続命令。並べ替え不可。snapshotは準備結果の寿命まで有効。
@@ -723,7 +729,7 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    public sealed class RenderGraphRenderer2D : IDisposable
 +    {
 +        public RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list,
-+            RenderTargetBinding2D target, DrawingGraphBindings2D bindings);
++            RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null);
 +        public void Dispose();
 +    }
 +    public static class Drawing2DRenderGraphExtensions
