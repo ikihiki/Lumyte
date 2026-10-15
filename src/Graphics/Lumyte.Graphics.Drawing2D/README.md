@@ -1,9 +1,8 @@
 # Lumyte.Graphics.Drawing2D
 
 通常のCanvas2DとRenderer2DはRenderGraph・ImageEffectsへ依存しません。
-塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
-この段階で利用できる命令は FillRect, FillRoundedRect, FillCircle, DrawLine, FillPath, StrokePath, DrawImage, DrawCoverageMask, DrawDistanceField, DrawMesh, DrawPaintGraph です。
-レイヤーと画像エフェクトは後続PRで別パッケージのDrawing2D.RenderGraphに追加します。
+図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
+レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;

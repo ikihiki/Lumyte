@@ -2,9 +2,13 @@ using System.Buffers.Binary;
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
+using Lumyte.Graphics.ImageEffects;
+using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
+using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.Tests;
 
@@ -78,6 +82,30 @@ public sealed class Drawing2DTests
         using var device = WgpuDevice.Create();
         await CheckImagesAsync(device);
         await CheckGlyphRepresentationsAsync(device);
+    }
+
+    /// <summary>Checks layer effects, clip timing and backdrop replacement on Vulkan.</summary>
+    /// <returns>The asynchronous GPU checks.</returns>
+    [GpuFact]
+    public async Task VulkanLayersEffectsAndBackdropAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await CheckLayersAsync(device);
+        await CheckEffectsAsync(device);
+        await CheckBackdropAsync(device);
+        await CheckComposedEffectsAsync(device);
+    }
+
+    /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
+    /// <returns>The asynchronous GPU checks.</returns>
+    [GpuFact]
+    public async Task WgpuLayersEffectsAndBackdropAsync()
+    {
+        using var device = WgpuDevice.Create();
+        await CheckLayersAsync(device);
+        await CheckEffectsAsync(device);
+        await CheckBackdropAsync(device);
+        await CheckComposedEffectsAsync(device);
     }
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
@@ -420,6 +448,212 @@ public sealed class Drawing2DTests
         AssertPixel(pixels, 3, 1, 3, Vector4.Zero);
     }
 
+    private static async Task CheckLayersAsync(IGraphicDevice device)
+    {
+        Vector4[] opacity = await RenderAsync(device, 6, 2, canvas =>
+        {
+            canvas.BeginLayer(new() { ContentBounds = new(0, 0, 6, 2), Opacity = 0.5f });
+            canvas.FillRect(new(0, 0, 4, 2), _red);
+            canvas.FillRect(new(2, 0, 4, 2), _blue);
+            canvas.EndLayer();
+        });
+        AssertPixel(opacity, 6, 0, 0, new(0.5f, 0, 0, 0.5f));
+        AssertPixel(opacity, 6, 3, 0, new(0, 0, 0.5f, 0.5f));
+
+        Vector4[] translated = await RenderAsync(device, 8, 4, canvas =>
+        {
+            canvas.ClipRect(new(5, 0, 1, 4));
+            canvas.BeginLayer(new() { ContentBounds = new(1, 1, 2, 2), Effects = graph => graph.AppendComposite(graph.Source, graph.AppendOpacity(graph.Source, 0), EffectCompositeMode.SrcOver, 4, 0) });
+            canvas.FillRect(new(1, 1, 2, 2), _white);
+            canvas.EndLayer();
+        });
+        AssertPixel(translated, 8, 1, 1, Vector4.Zero);
+        AssertPixel(translated, 8, 5, 1, Vector4.One);
+        AssertPixel(translated, 8, 6, 1, Vector4.Zero);
+
+        Vector4[] flattenedClips = await RenderAsync(device, 4, 2, canvas =>
+        {
+            canvas.ClipRect(new(0.5f, 0, 3, 2));
+            canvas.BeginLayer(new() { ContentBounds = new(0.5f, 0, 3, 2) });
+            canvas.FillRect(new(0, 0, 4, 2), _white);
+            canvas.EndLayer();
+        });
+        AssertPixel(flattenedClips, 4, 0, 0, new(0.25f));
+        AssertPixel(flattenedClips, 4, 1, 0, Vector4.One);
+    }
+
+    private static async Task CheckEffectsAsync(IGraphicDevice device)
+    {
+        Vector4[] blur = await RenderAsync(device, 12, 6, canvas =>
+        {
+            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = graph => RequirePrograms(graph).AppendGaussianBlur(graph.Source, 1, 0) });
+            canvas.FillRect(new(4, 1, 4, 4), _white);
+            canvas.EndLayer();
+        });
+
+        // The normalized radius-three Gaussian has weights .39905028, .24203623, .05400558, .00443305.
+        AssertPixel(blur, 12, 3, 2, new(0.30047486f), 0.003f);
+        AssertPixel(blur, 12, 2, 2, new(0.05843863f), 0.003f);
+        float mass = Enumerable.Range(0, 12).Sum(x => blur[(2 * 12) + x].W);
+        Assert.InRange(mass, 3.98f, 4.02f);
+        AssertPixel(blur, 12, 5, 0, Vector4.Zero);
+
+        var hdrMatrix = new ColorMatrix4x5(
+        [
+            0, 0, 0, 0, 2,
+            0, 0, 0, 0, -0.25f,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0.5f,
+        ]);
+        Vector4[] matrix = await RenderAsync(device, 4, 2, canvas =>
+        {
+            canvas.BeginLayer(new() { ContentBounds = new(1, 0, 2, 2), Effects = graph => graph.AppendColorMatrix(graph.Source, hdrMatrix) });
+            canvas.FillRect(new(1, 0, 2, 2), _white);
+            canvas.EndLayer();
+        });
+        AssertPixel(matrix, 4, 1, 0, new(1, -0.125f, 0, 0.5f));
+        AssertPixel(matrix, 4, 0, 0, Vector4.Zero);
+
+        Vector4[] plus = await RenderAsync(device, 2, 2, canvas =>
+        {
+            canvas.BeginLayer(new()
+            {
+                ContentBounds = new(0, 0, 2, 2),
+                Effects = graph =>
+                {
+                    EffectImage part = graph.AppendOpacity(graph.Source, 0.75f);
+                    return graph.AppendComposite(part, part, EffectCompositeMode.Plus);
+                },
+            });
+            canvas.FillRect(new(0, 0, 2, 2), _white);
+            canvas.EndLayer();
+        });
+        AssertPixel(plus, 2, 0, 0, new(1.5f, 1.5f, 1.5f, 1));
+    }
+
+    private static async Task CheckBackdropAsync(IGraphicDevice device)
+    {
+        Vector4[] translucent = await RenderAsync(device, 4, 2, canvas =>
+        {
+            canvas.FillRect(new(0, 0, 4, 2), new Color2D(1, 0, 0, 0.5f));
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(1.5f, 0, 2.5f, 2), Effects = graph => graph.AppendOpacity(graph.Source, 0.5f) });
+            canvas.FillRect(new(3, 0, 1, 2), _blue);
+        });
+        AssertPixel(translucent, 4, 0, 0, new(0.5f, 0, 0, 0.5f));
+        AssertPixel(translucent, 4, 1, 0, new(0.375f, 0, 0, 0.375f));
+        AssertPixel(translucent, 4, 2, 0, new(0.25f, 0, 0, 0.25f));
+        AssertPixel(translucent, 4, 3, 0, new(0, 0, 1, 1));
+
+        Vector4[] blur = await RenderAsync(device, 5, 1, canvas =>
+        {
+            canvas.FillRect(new(0, 0, 1, 1), _white);
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = graph => RequirePrograms(graph).AppendGaussianBlur(graph.Source, 1, 0) });
+        });
+        AssertPixel(blur, 5, 0, 0, Vector4.One);
+        AssertPixel(blur, 5, 1, 0, new(0.24203623f), 0.003f);
+        AssertPixel(blur, 5, 2, 0, new(0.05400558f), 0.003f);
+        AssertPixel(blur, 5, 4, 0, Vector4.Zero);
+    }
+
+    private static async Task CheckComposedEffectsAsync(IGraphicDevice device)
+    {
+        Vector4[] layer = await RenderAsync(device, 8, 4, canvas =>
+        {
+            canvas.ClipRect(new(5, 0, 1, 4));
+            canvas.BeginLayer(new() { ContentBounds = new(1, 1, 2, 2), Effects = graph => graph.AppendOpacity(graph.AppendEffect(new TranslateLayerEffect(4, 0), graph.Source), 0.5f) });
+            canvas.FillRect(new(1, 1, 2, 2), _white);
+            canvas.EndLayer();
+        });
+        AssertPixel(layer, 8, 1, 1, Vector4.Zero);
+        AssertPixel(layer, 8, 5, 1, new(0.5f));
+        AssertPixel(layer, 8, 6, 1, Vector4.Zero);
+
+        Vector4[] backdrop = await RenderAsync(device, 5, 1, canvas =>
+        {
+            canvas.FillRect(new(0, 0, 5, 1), _blue);
+            canvas.FillRect(new(0, 0, 1, 1), _red);
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(3, 0, 1, 1), Effects = graph => graph.AppendEffect(new TranslateLayerEffect(3, 0), graph.Source) });
+        });
+        AssertPixel(backdrop, 5, 0, 0, new(1, 0, 0, 1));
+        AssertPixel(backdrop, 5, 2, 0, new(0, 0, 1, 1));
+        AssertPixel(backdrop, 5, 3, 0, new(1, 0, 0, 1));
+        AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
+    }
+
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)
+    {
+        var programs = new ExternalDrawingPrograms();
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        draw(canvas);
+        RenderGraphDrawList2D list = canvas.End();
+        var graph = new Graph(device, "drawing-2d-readback");
+        var bindings = new DrawingGraphBindings2D(graph);
+        foreach (IGraphicsTexture input in inputs ?? [])
+        {
+            bindings.BindTexture(input, graph.ImportTexture(input, TextureState.Sampled, _sampleRead));
+        }
+
+        var description = new TextureDesc
+        {
+            Width = checked((uint)width),
+            Height = checked((uint)height),
+            Format = TextureFormat.Rgba16Float,
+            Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled | TextureUsage.CopySource,
+        };
+        RenderGraphTexture target = graph.CreateTexture(description, "canvas");
+        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, programs);
+        PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
+        TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
+        uint rowBytes = checked((uint)width * layout.BytesPerTexel);
+        uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
+        uint byteCount = checked(pitch * (uint)height);
+        RenderGraphBuffer<byte> result = graph.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
+        graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
+            new() { Texture = context.GetTexture(target), Width = checked((uint)width), Height = checked((uint)height) },
+            new() { Buffer = context.GetBuffer(result).Slice(0, byteCount), BytesPerRow = pitch, RowsPerImage = checked((uint)height) }))
+            .UseTexture(target, TextureState.CopySource, _copyRead).UseBuffer(result, _copyWrite);
+        graph.ExportBuffer(result, new(PipelineStage.Host, ResourceAccess.HostRead));
+        CompiledRenderGraph? plan = null;
+        IGraphicsCommandBuffer? commands = null;
+        IGraphicsSubmission? submission = null;
+        try
+        {
+            plan = graph.Compile();
+            commands = device.CreateCommandBuffer(new());
+            plan.Record(commands);
+            commands.Finish();
+            submission = device.Queue.Submit([commands]);
+            await submission.WaitAsync();
+            IGraphicsBuffer<byte> readback = plan.GetBuffer(result);
+            await readback.MapAsync();
+            byte[] bytes = new byte[byteCount];
+            readback.CopyTo(bytes);
+            readback.Unmap();
+            var pixels = new Vector4[checked(width * height)];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int offset = checked((int)((y * pitch) + (x * 8)));
+                    pixels[(y * width) + x] = new(ReadHalf(bytes, offset), ReadHalf(bytes, offset + 2), ReadHalf(bytes, offset + 4), ReadHalf(bytes, offset + 6));
+                }
+            }
+
+            return pixels;
+        }
+        finally
+        {
+            commands?.Dispose();
+            plan?.Dispose();
+            Assert.True(programs.Acquired > 0);
+            Assert.Equal(0, programs.Returned);
+            drawing.Dispose();
+            Assert.Equal(programs.Acquired, programs.Returned);
+            submission?.Dispose();
+        }
+    }
+
     private static async Task UploadAsync(IGraphicDevice device, IGraphicsTexture texture, byte[] texels)
     {
         TextureCopyLayout layout = device.GetTextureCopyLayout(texture.Format);
@@ -445,53 +679,6 @@ public sealed class Drawing2DTests
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();
         commands.Dispose();
-    }
-
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<Canvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)
-    {
-        var canvas = new Canvas2D();
-        canvas.Begin();
-        draw(canvas);
-        using IGraphicsTexture target = device.CreateTexture(new() { Width = (uint)width, Height = (uint)height, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
-        using IGraphicsTextureView view = target.CreateView();
-        var programs = new ExternalDrawingPrograms();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
-        using PreparedDraw2D drawing = await renderer.PrepareAsync(canvas.End(), new() { View = view, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale });
-        TextureCopyLayout layout = device.GetTextureCopyLayout(target.Format);
-        uint rowBytes = checked((uint)width * layout.BytesPerTexel);
-        uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
-        uint byteCount = checked(pitch * (uint)height);
-        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
-        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        var colorScope = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-        commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = colorScope });
-        drawing.Record(commands);
-        commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = colorScope, After = _copyRead });
-        commands.CopyTextureToBuffer(new() { Texture = target, Width = (uint)width, Height = (uint)height }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = (uint)height });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
-        commands.Finish();
-        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
-        await submission.WaitAsync();
-        await readback.MapAsync();
-        byte[] bytes = new byte[byteCount];
-        readback.CopyTo(bytes);
-        readback.Unmap();
-        var pixels = new Vector4[checked(width * height)];
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int offset = checked((int)((y * pitch) + (x * 8)));
-                pixels[(y * width) + x] = new(ReadHalf(bytes, offset), ReadHalf(bytes, offset + 2), ReadHalf(bytes, offset + 4), ReadHalf(bytes, offset + 6));
-            }
-        }
-
-        commands.Dispose();
-        Assert.True(programs.Acquired > 0);
-        Assert.Equal(0, programs.Returned);
-        drawing.Dispose();
-        Assert.Equal(programs.Acquired, programs.Returned);
-        return pixels;
     }
 
     private static Path2D Rectangle(float x, float y, float width, float height)
@@ -529,10 +716,18 @@ public sealed class Drawing2DTests
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Pixel ({x}, {y}): expected {expected}, actual {actual}, tolerance {tolerance}.");
     }
 
+    private static ImageEffectSubgraph RequirePrograms(ImageEffectSubgraph scope)
+    {
+        Assert.IsType<ExternalDrawingPrograms>(scope.Programs);
+        return scope;
+    }
+
     private sealed class ExternalDrawingPrograms : IGraphicsProgramProvider
     {
         private readonly ShaderArtifact _vertex = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader").GetBinary());
         private readonly ShaderArtifact _fragment = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader").GetBinary());
+        private readonly ShaderArtifact _effectVertex = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.fullscreen.lshader").GetBinary());
+        private readonly ShaderArtifact _effectFragment = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.effects.lshader").GetBinary());
 
         internal int Acquired { get; private set; }
 
@@ -540,8 +735,12 @@ public sealed class Drawing2DTests
 
         public GraphicsProgramLease Acquire(IGraphicDevice device, string programId)
         {
-            Assert.Equal(DrawingPrograms2D.ProgramId, programId);
-            var native = GraphicsProgramLease.Create(device, _vertex, _fragment);
+            GraphicsProgramLease native = programId switch
+            {
+                DrawingPrograms2D.ProgramId => GraphicsProgramLease.Create(device, _vertex, _fragment),
+                ImageEffectPrograms.ProgramId => GraphicsProgramLease.Create(device, _effectVertex, _effectFragment),
+                _ => throw new NotSupportedException("Unknown drawing program ABI."),
+            };
             Acquired++;
             return new(native.Resources, () =>
             {
@@ -549,5 +748,20 @@ public sealed class Drawing2DTests
                 native.Dispose();
             });
         }
+    }
+
+    private sealed record TranslateLayerEffect(int X, int Y) : ImageEffectDefinition
+    {
+        /// <inheritdoc/>
+        public override int InputCount => 1;
+
+        /// <inheritdoc/>
+        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs) => inputs[0].Offset(X, Y);
+
+        /// <inheritdoc/>
+        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => output.OffsetInverse(X, Y);
+
+        /// <inheritdoc/>
+        public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs) => inputs[0] with { Bounds = inputs[0].Bounds.Offset(X, Y) };
     }
 }
