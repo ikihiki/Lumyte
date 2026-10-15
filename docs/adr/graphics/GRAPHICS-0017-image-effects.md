@@ -196,14 +196,16 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +    {
 +        public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan,
 +            ImageEffectDefinition effect, params EffectImage[] inputs);
++        public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan,
++            ImageEffectDefinition effect, EffectImage[] inputs, IGraphicsProgramProvider? programs);
 +        public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan,
-+            ImageEffectGraph graph, EffectImage source);
++            ImageEffectGraph graph, EffectImage source, IGraphicsProgramProvider? programs = null);
 +        // 入力画像とパラメーターからパスを追加する。効果やDAGを返さない。
 +        public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix, IGraphicsProgramProvider? programs = null);
 +        public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY, IGraphicsProgramProvider? programs = null);
 +        public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity, IGraphicsProgramProvider? programs = null);
 +        public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop,
-+            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IGraphicsProgramProvider? programs = null);
 +    }
 +    public sealed class ImageEffectSubgraph : IDisposable
 +    {
@@ -215,7 +217,7 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +        public EffectImage AppendOpacity(EffectImage input, float opacity);
 +        public EffectImage AppendColorMatrix(EffectImage input, ColorMatrix4x5 matrix);
 +        public EffectImage AppendComposite(EffectImage source, EffectImage backdrop,
-+            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IGraphicsProgramProvider? programs = null);
 +        public EffectImage AppendEffect(ImageEffectDefinition effect, params EffectImage[] inputs);
 +        public EffectImage Own(PreparedImageEffect effect);
 +        public void Dispose();
