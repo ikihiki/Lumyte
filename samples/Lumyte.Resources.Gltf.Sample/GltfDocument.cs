@@ -62,7 +62,7 @@ internal sealed class GltfDocument(ResourceId id, JsonDocument json) : IResource
         {
             ("meshes", "mesh", new[] { typeof(CpuMesh), typeof(GpuMesh) }),
             ("materials", "material", new[] { typeof(CpuMaterial) }),
-            ("scenes", "scene", new[] { typeof(GpuScene) }),
+            ("scenes", "scene", new[] { typeof(CpuScene), typeof(GpuScene) }),
         })
         {
             if (root.TryGetProperty(array, out JsonElement values))

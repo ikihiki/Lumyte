@@ -39,7 +39,7 @@ internal sealed class MeshStage : IResourceTransform<GltfDocument, CpuMesh>
         }
 
         var materialKey = new ResourceKey<CpuMaterial>(context.Address.Id, $"material/{primitive.GetProperty("material").GetInt32()}");
-        CpuMaterial material = await context.RequireAsync(materialKey, ResourceDependencyLifetime.Build, cancellationToken);
+        CpuMaterial material = await context.RequireAsync(materialKey, cancellationToken: cancellationToken);
         IMemoryBuffer<GltfVertex> vertices = await context.GetMemoryScope(ResourceDependencyLifetime.Resident).RentAsync<GltfVertex>(new("gltf.cpu"), indices.Count, MemoryPurpose.Resident, cancellationToken);
         for (int i = 0; i < indices.Count; i++)
         {
@@ -53,8 +53,7 @@ internal sealed class MeshStage : IResourceTransform<GltfDocument, CpuMesh>
             vertices.Memory.Span[i] = new(positions.Vector3(vertex), normals.Vector3(vertex), coords.Vector2(vertex));
         }
 
-        // Copy the material values: the build-only dependency is not retained as an owned result.
-        return new(vertices, new(material.Color, material.Texture));
+        return new(vertices, material);
     }
 
     public ValueTask ReleaseAsync(CpuMesh resource) => ValueTask.CompletedTask;

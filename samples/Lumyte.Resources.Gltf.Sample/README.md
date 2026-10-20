@@ -35,13 +35,14 @@ flowchart LR
   doc --> material[CpuMaterial]
   doc --> mesh[CpuMesh]
   bin[External BIN snapshot] --> bytes[SourceBytes] --> mesh
+  png[External PNG snapshot] --> image[CpuImage] --> material
   material --> mesh
-  png[External PNG snapshot] --> image[CpuImage] --> texture[GpuTexture]
-  mesh --> gpu[GpuMesh]
-  texture --> gpu
+  doc --> cpu[CpuScene: hierarchy / transforms]
+  mesh --> cpu
+  cpu --> scene[GpuScene]
+  mesh --> gpu[GpuMesh] --> scene
+  image --> texture[GpuTexture] --> gpu
   dll[DLL shader snapshot] --> shader[ShaderArtifact] --> gpu
-  doc --> scene[GpuScene]
-  gpu --> scene
   scene --> draw[Depth-tested 3D draw / PNG]
 ```
 
@@ -49,7 +50,20 @@ Source、Stage、デバイスFactoryはDIで登録します。サンプルの合
 `shaders/` をDLL埋め込みへ、それ以外をFileSystemへ振り分けます。
 `IResourceDocument.Subresources` は同一文書から得られる出力型を公開します。
 メッシュとマテリアルの入力アドレスは文書のルートに正規化し、文書を共有します。
+`GltfDocument → CpuScene → GpuScene` の順に変換します。`CpuScene`の取得が完了した時点で、
+ノードの親子関係・local/world行列・共有CPUメッシュ・マテリアル・デコード済み画像が
+揃っています。CPUシーンのロードにはデバイスの初期化やGPUリソースの作成は不要です。
+メッシュからマテリアル、マテリアルから画像への依存はResidentで保持し、CPUシーンの
+利用中にtrimしても頂点・画像を参照できます。CPU側にはGPU型のリソースキーを持たせません。
+
+GPUシーンStageは完成済みCPUシーンの階層をたどり、同じアドレスのGPUメッシュを要求します。
+各GPUメッシュPipelineは共有されたCPUメッシュを入力とし、テクスチャも個別のPipelineで
+GPUへ転送します。GPUシーンにおけるCPUシーンの入力寿命はBuildです。
 二つのノードは同じGPUメッシュとテクスチャを共有し、別々の変換行列で描画します。
+PNG変更時にはCPU画像・マテリアル・メッシュ・シーンも新世代となり、その後GPU出力を構築します。
+
+`--validate` はGPU未初期化のままCPUシーンを取得し、階層・行列の合成・共有・trim後の寿命、
+循環ノードや画像欠落時の旧世代保持を確認します。
 
 CPUの頂点・画像・文書バッファはMemory scopeから取得します。
 GPU頂点の実サイズとテクスチャの概算サイズを予約・計上し、native childを解放した後に

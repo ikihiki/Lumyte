@@ -3,28 +3,28 @@ using System.Text.Json;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
-internal sealed class SceneStage : IResourceTransform<GltfDocument, GpuScene>
+internal sealed class SceneStage : IResourceTransform<GltfDocument, CpuScene>
 {
     public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
 
     public ResourceAddress GetInput(ResourceAddress output) => new(output.Id);
 
-    public async ValueTask<GpuScene> BuildAsync(GltfDocument input, ResourceBuildContext context, CancellationToken cancellationToken)
+    public async ValueTask<CpuScene> BuildAsync(GltfDocument input, ResourceBuildContext context, CancellationToken cancellationToken)
     {
         JsonElement scene = input.Root.GetProperty("scenes")[GltfDocument.Select(context.Address, "scene")];
-        var draws = new List<SceneDraw>();
+        var roots = new List<CpuSceneNode>();
         var visited = new HashSet<int>();
         foreach (JsonElement node in scene.GetProperty("nodes").EnumerateArray())
         {
-            await VisitAsync(node.GetInt32(), Matrix4x4.Identity, input, context, draws, visited, cancellationToken);
+            roots.Add(await VisitAsync(node.GetInt32(), Matrix4x4.Identity, input, context, visited, cancellationToken));
         }
 
-        return new(draws.AsReadOnly());
+        return new(roots.AsReadOnly());
     }
 
-    public ValueTask ReleaseAsync(GpuScene resource) => ValueTask.CompletedTask;
+    public ValueTask ReleaseAsync(CpuScene resource) => ValueTask.CompletedTask;
 
-    private static async ValueTask VisitAsync(int index, Matrix4x4 parent, GltfDocument document, ResourceBuildContext context, List<SceneDraw> draws, HashSet<int> visited, CancellationToken cancellationToken)
+    private static async ValueTask<CpuSceneNode> VisitAsync(int index, Matrix4x4 parent, GltfDocument document, ResourceBuildContext context, HashSet<int> visited, CancellationToken cancellationToken)
     {
         if (!visited.Add(index) || visited.Count > 1024)
         {
@@ -37,20 +37,26 @@ internal sealed class SceneStage : IResourceTransform<GltfDocument, GpuScene>
             throw new NotSupportedException("Skinned meshes are outside this sample's subset.");
         }
 
-        Matrix4x4 world = LocalTransform(node) * parent;
+        Matrix4x4 local = LocalTransform(node);
+        Matrix4x4 world = local * parent;
+        ResourceKey<CpuMesh>? meshKey = null;
+        CpuMesh? cpu = null;
         if (node.TryGetProperty("mesh", out JsonElement mesh))
         {
-            GpuMesh gpu = await context.RequireAsync(new ResourceKey<GpuMesh>(document.Id, $"mesh/{mesh.GetInt32()}"), cancellationToken: cancellationToken);
-            draws.Add(new(gpu, world));
+            meshKey = new(document.Id, $"mesh/{mesh.GetInt32()}");
+            cpu = await context.RequireAsync(meshKey.Value, cancellationToken: cancellationToken);
         }
 
+        var nodes = new List<CpuSceneNode>();
         if (node.TryGetProperty("children", out JsonElement children))
         {
             foreach (JsonElement child in children.EnumerateArray())
             {
-                await VisitAsync(child.GetInt32(), world, document, context, draws, visited, cancellationToken);
+                nodes.Add(await VisitAsync(child.GetInt32(), world, document, context, visited, cancellationToken));
             }
         }
+
+        return new(index, local, world, meshKey, cpu, nodes.AsReadOnly());
     }
 
     private static Matrix4x4 LocalTransform(JsonElement node)

@@ -14,7 +14,7 @@ internal sealed class MeshUploadStage([FromKeyedServices("main")] IGraphicsDevic
 
     public async ValueTask<GpuMesh> BuildAsync(CpuMesh input, ResourceBuildContext context, CancellationToken cancellationToken)
     {
-        GpuTexture texture = await context.RequireAsync(input.Material.Texture, cancellationToken: cancellationToken);
+        GpuTexture texture = await context.RequireAsync(new ResourceKey<GpuTexture>(input.Material.TextureKey.Address), cancellationToken: cancellationToken);
         ShaderArtifact vertexArtifact = await context.RequireAsync(new ResourceKey<ShaderArtifact>("shaders/vertex"), ResourceDependencyLifetime.Build, cancellationToken);
         ShaderArtifact fragmentArtifact = await context.RequireAsync(new ResourceKey<ShaderArtifact>("shaders/fragment"), ResourceDependencyLifetime.Build, cancellationToken);
         GraphicsDeviceLease lease = await context.UseGraphicsAsync(devices, "graphics.main", cancellationToken: cancellationToken);

@@ -9,7 +9,7 @@ internal sealed class MaterialStage : IResourceTransform<GltfDocument, CpuMateri
 
     public ResourceAddress GetInput(ResourceAddress output) => new(output.Id);
 
-    public ValueTask<CpuMaterial> BuildAsync(GltfDocument input, ResourceBuildContext context, CancellationToken cancellationToken)
+    public async ValueTask<CpuMaterial> BuildAsync(GltfDocument input, ResourceBuildContext context, CancellationToken cancellationToken)
     {
         JsonElement material = input.Root.GetProperty("materials")[GltfDocument.Select(context.Address, "material")];
         if ((material.TryGetProperty("alphaMode", out JsonElement alpha) && alpha.GetString() != "OPAQUE") ||
@@ -29,7 +29,9 @@ internal sealed class MaterialStage : IResourceTransform<GltfDocument, CpuMateri
         JsonElement texture = input.Root.GetProperty("textures")[info.GetProperty("index").GetInt32()];
         JsonElement image = input.Root.GetProperty("images")[texture.GetProperty("source").GetInt32()];
         ResourceId id = input.Resolve(image.GetProperty("uri").GetString()!);
-        return ValueTask.FromResult(new CpuMaterial(color, new(id)));
+        var key = new ResourceKey<CpuImage>(id);
+        CpuImage decoded = await context.RequireAsync(key, cancellationToken: cancellationToken);
+        return new(color, key, decoded);
     }
 
     public ValueTask ReleaseAsync(CpuMaterial resource) => ValueTask.CompletedTask;

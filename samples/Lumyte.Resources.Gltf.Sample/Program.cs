@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Text.Json.Nodes;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Hosting;
@@ -64,7 +65,8 @@ internal static class Program
             .AddTransformPipeline<GltfDocument, CpuMesh, MeshStage>()
             .AddTransformPipeline<CpuImage, GpuTexture, TextureUploadStage>()
             .AddTransformPipeline<CpuMesh, GpuMesh, MeshUploadStage>()
-            .AddTransformPipeline<GltfDocument, GpuScene, SceneStage>());
+            .AddTransformPipeline<GltfDocument, CpuScene, SceneStage>()
+            .AddTransformPipeline<CpuScene, GpuScene, SceneUploadStage>());
         services.AddResourceGraphics("gltf", "main", "graphics.main");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
@@ -75,9 +77,10 @@ internal static class Program
         }
 
         await ValidateCpuAsync(resources, directory);
+        IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        Require(devices.State.Status == GraphicsDeviceServiceStatus.Uninitialized, "CPU scene loading initialized a graphics device.");
         if (!args.Contains("--validate", StringComparer.Ordinal))
         {
-            IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
             await devices.InitializeAsync();
             ResourceReloadService changes = scope.ServiceProvider.GetRequiredKeyedService<ResourceReloadService>("gltf");
             string output = Path.GetFullPath(args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "gltf-render.png");
@@ -98,10 +101,16 @@ internal static class Program
 
     private static async Task ValidateCpuAsync(ResourceManager resources, string directory)
     {
+        var sceneKey = new ResourceKey<CpuScene>("models/cubes.gltf", "scene/0");
+        using ResourceLease<CpuScene> scene = await resources.AcquireAsync(sceneKey);
+        Require(scene.Value.Roots.Count == 2 && ReferenceEquals(scene.Value.Roots[0].Mesh, scene.Value.Roots[1].Mesh), "CPU scene instances did not share the decoded mesh.");
+        Require(scene.Value.Roots[0].World.Translation.X == -0.8f && scene.Value.Roots[1].World.Translation.X == 0.85f, "CPU scene transforms were not assembled.");
+        await resources.TrimAsync();
+        Require(scene.Value.Roots[0].Mesh!.Material.Texture.Pixels.Memory.Length == 64 * 64 * 4, "CPU scene did not retain its decoded texture after trimming.");
         var key = new ResourceKey<CpuMesh>("models/cubes.gltf", "mesh/0");
         using ResourceLease<CpuMesh> mesh = await resources.AcquireAsync(key);
         Require(mesh.Value.Vertices.Memory.Length == 36, "Expected the cube's twelve triangles.");
-        Require(mesh.Value.Material.Texture.Address.Id.Value == "textures/checker.png", "External texture URI did not resolve relative to the document.");
+        Require(mesh.Value.Material.TextureKey.Address.Id.Value == "textures/checker.png", "External texture URI did not resolve relative to the document.");
         using ResourceLease<CpuImage> image = await resources.AcquireAsync(new ResourceKey<CpuImage>("textures/checker.png"));
         Require(image.Value.Width == 64 && image.Value.Height == 64, "External PNG did not decode.");
 
@@ -135,7 +144,59 @@ internal static class Program
 
         await File.WriteAllBytesAsync(path, original);
         await resources.ReloadAsync([new("models/cubes.bin")]);
-        Console.WriteLine("CPU pipeline: external BIN/PNG resolved; BIN reload isolated generations; malformed buffers/documents preserved the published mesh.");
+        await ValidateSceneHierarchyAsync(resources, directory, sceneKey);
+        Console.WriteLine("CPU scene: hierarchy, transforms, shared meshes/materials and decoded PNGs assembled without a GPU; reload preserved old generations.");
+    }
+
+    private static async Task ValidateSceneHierarchyAsync(ResourceManager resources, string directory, ResourceKey<CpuScene> key)
+    {
+        string path = Path.Combine(directory, "models", "cubes.gltf");
+        string original = await File.ReadAllTextAsync(path);
+        JsonNode document = JsonNode.Parse(original)!;
+        document["scenes"]![0]!["nodes"] = new JsonArray(2);
+        document["nodes"]!.AsArray().Add(new JsonObject
+        {
+            ["translation"] = new JsonArray(1, 2, 3),
+            ["children"] = new JsonArray(0, 1),
+        });
+        await File.WriteAllTextAsync(path, document.ToJsonString());
+        await resources.ReloadAsync([new("models/cubes.gltf")]);
+        using ResourceLease<CpuScene> hierarchy = await resources.AcquireAsync(key);
+        CpuSceneNode root = hierarchy.Value.Roots.Single();
+        Require(root.Mesh is null && root.Children.Count == 2, "CPU scene did not preserve the non-mesh parent and child hierarchy.");
+        Require(root.Children[0].Local.Translation.X == -0.8f && Vector3.Distance(root.Children[0].World.Translation, new(0.2f, 2, 3)) < 0.00001f, "CPU scene did not compose local and world transforms.");
+        Require(ReferenceEquals(root.Children[0].Mesh, root.Children[1].Mesh), "Nested CPU scene instances duplicated the mesh.");
+        document["nodes"]![0]!["children"] = new JsonArray(2);
+        await File.WriteAllTextAsync(path, document.ToJsonString());
+        try
+        {
+            await resources.ReloadAsync([new("models/cubes.gltf")]);
+            throw new InvalidOperationException("A cyclic CPU scene was published.");
+        }
+        catch (InvalidDataException)
+        {
+            using ResourceLease<CpuScene> retained = await resources.AcquireAsync(key);
+            Require(ReferenceEquals(hierarchy.Value, retained.Value), "Failed hierarchy reload replaced the CPU scene.");
+        }
+
+        document["nodes"]![0]!.AsObject().Remove("children");
+        await File.WriteAllTextAsync(path, document.ToJsonString());
+        string imagePath = Path.Combine(directory, "textures", "checker.png");
+        byte[] image = await File.ReadAllBytesAsync(imagePath);
+        File.Delete(imagePath);
+        try
+        {
+            await resources.ReloadAsync([new("textures/checker.png")]);
+            throw new InvalidOperationException("A CPU scene with a missing image was published.");
+        }
+        catch (FileNotFoundException)
+        {
+            Require(root.Children[0].Mesh!.Material.Texture.Pixels.Memory.Span[0] == 240, "Failed image reload invalidated the retained CPU image.");
+        }
+
+        await File.WriteAllBytesAsync(imagePath, image);
+        await File.WriteAllTextAsync(path, original);
+        await resources.ReloadAsync([new("models/cubes.gltf"), new("textures/checker.png")]);
     }
 
     private static async Task ValidateDocumentFailuresAsync(ResourceManager resources, string directory, ResourceKey<CpuMesh> key, CpuMesh expected)
@@ -217,13 +278,15 @@ internal static class Program
             using (current)
             {
                 byte[] after = await SceneRenderer.RenderAsync(device.Device, current!.Value);
+                using ResourceLease<CpuScene> cpu = await resources.AcquireAsync(new ResourceKey<CpuScene>(key.Address));
+                Require(cpu.Value.Roots[0].Mesh!.Material.Texture.Pixels.Memory.Span[0] == 255, "Texture reload did not update the CPU scene.");
                 Require(!after.AsSpan().SequenceEqual(before), "Changing only the external PNG did not alter the GPU scene.");
                 byte[] old = await SceneRenderer.RenderAsync(device.Device, original.Value);
                 Require(old.AsSpan().SequenceEqual(before), "Texture reload mutated the old leased GPU generation.");
                 PngFile.Write(Path.Combine(Path.GetDirectoryName(output)!, Path.GetFileNameWithoutExtension(output) + "-reloaded.png"), 512, 512, after);
             }
 
-            Console.WriteLine("Automatic PNG reload propagated image → GPU texture → GPU mesh → scene; the same handle resolved the new image and the old lease rendered unchanged.");
+            Console.WriteLine("Automatic PNG reload propagated image → CPU material/mesh/scene → GPU scene; the same handle resolved the new image and the old lease rendered unchanged.");
         }
         finally
         {

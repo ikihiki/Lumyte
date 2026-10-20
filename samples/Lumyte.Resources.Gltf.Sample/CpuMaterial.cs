@@ -2,4 +2,4 @@ using System.Numerics;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
-internal sealed record CpuMaterial(Vector4 Color, ResourceKey<GpuTexture> Texture);
+internal sealed record CpuMaterial(Vector4 Color, ResourceKey<CpuImage> TextureKey, CpuImage Texture);
