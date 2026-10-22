@@ -207,6 +207,7 @@ jobs:
         run: |
           source tools/setup/activate.sh
           dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
+          dotnet run --project samples/Lumyte.Resources.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Diagnostics.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Animation.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.StateMachines.Sample -c Release --no-build

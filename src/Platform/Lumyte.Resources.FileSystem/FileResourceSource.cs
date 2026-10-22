@@ -10,10 +10,12 @@ public sealed class FileResourceSource
     : IResourceSource
 {
     private readonly string _root;
+    private readonly FileResourceChangeSource _changes;
 
     /// <summary>Initializes a new instance of the <see cref="FileResourceSource"/> class.</summary>
     /// <param name="options">The source root configuration.</param>
-    public FileResourceSource(FileResourceSourceOptions options)
+    /// <param name="changeOptions">The optional notification and native buffer limits.</param>
+    public FileResourceSource(FileResourceSourceOptions options, FileResourceChangeSourceOptions? changeOptions = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.RootPath);
@@ -23,7 +25,12 @@ public sealed class FileResourceSource
         {
             throw new DirectoryNotFoundException($"The resource root '{_root}' does not exist.");
         }
+
+        _changes = new FileResourceChangeSource(options, changeOptions);
     }
+
+    /// <inheritdoc />
+    public IResourceChangeSource Changes => _changes;
 
     /// <inheritdoc />
     public ValueTask<ResourceSourceSnapshot> OpenSnapshotAsync(ResourceId id, CancellationToken cancellationToken = default)

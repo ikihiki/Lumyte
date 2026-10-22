@@ -1,0 +1,142 @@
+using Lumyte.Memory;
+using Lumyte.Memory.DependencyInjection;
+using Lumyte.Resources.DependencyInjection;
+using Lumyte.Resources.FileSystem;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Lumyte.Resources.Sample;
+
+internal static class Program
+{
+    private static async Task Main()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"lumyte-resources-sample-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await RunAsync(directory).ConfigureAwait(false);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    private static async Task RunAsync(string directory)
+    {
+        string path = Path.Combine(directory, "scene.json");
+        const string InitialScene = """
+            { "meshes": [ { "vertexCount": 3 } ], "materials": [ { "name": "copper" } ] }
+            """;
+        await File.WriteAllTextAsync(path, InitialScene).ConfigureAwait(false);
+
+        var services = new ServiceCollection();
+        services.AddMemoryManagement();
+        services.AddSingleton(new FileResourceSourceOptions
+        {
+            RootPath = directory,
+        });
+        services.AddSingleton<SampleCounters>();
+        services.AddSingleton(new SampleSettings(new("sample.document")));
+        services.AddResources("scene", resources => resources
+            .UseSource<FileResourceSource>()
+            .AddSourcePipeline<SceneDocument, SceneDocumentStage>()
+            .AddTransformPipeline<SceneDocument, MeshInfo, MeshStage>()
+            .AddTransformPipeline<SceneDocument, MaterialInfo, MaterialStage>()
+            .AddTransformPipeline<SceneDocument, SceneResource, SceneStage>());
+
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using AsyncServiceScope world = provider.CreateAsyncScope();
+        ResourceManager resources = world.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+        ResourceReloadService changes = resources.HotReload!;
+        SampleCounters counters = provider.GetRequiredService<SampleCounters>();
+        using (ResourceReference<SceneResource> sceneReference = await resources.AcquireAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))
+        using (ResourceLease<SceneResource> scene = sceneReference.Acquire())
+        {
+            Console.WriteLine($"Scene: {scene.Value.Mesh.VertexCount} vertices; material: {scene.Value.Material.Name}");
+            Console.WriteLine($"Projection builds: {counters.ProjectionBuilds}");
+        }
+
+        await DemonstrateReloadAsync(resources, changes, "scene.json", path, counters).ConfigureAwait(false);
+        await resources.TrimAsync().ConfigureAwait(false);
+        await resources.DisposeAsync().ConfigureAwait(false);
+        IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
+        Console.WriteLine($"Document buffer after release: {memory.GetSnapshot(new("sample.document")).CommittedBytes} bytes");
+    }
+
+    private static async Task DemonstrateReloadAsync(ResourceManager resources, ResourceReloadService changes, string sourceId, string path, SampleCounters counters)
+    {
+        var meshKey = new ResourceKey<MeshInfo>(sourceId, "mesh/0", "geometry:v1");
+        var materialKey = new ResourceKey<MaterialInfo>(sourceId, "material/0", "preview:v1");
+        using ResourceReference<MeshInfo> meshOwner = await resources.AcquireAsync(meshKey).ConfigureAwait(false);
+        using ResourceReference<MaterialInfo> materialOwner = await resources.AcquireAsync(materialKey).ConfigureAwait(false);
+        ResourceHandle<MeshInfo> meshHandle = meshOwner.Handle;
+        ResourceHandle<MaterialInfo> materialHandle = materialOwner.Handle;
+
+        using ResourceReference<SceneResource> sceneOwner = await resources.AcquireAsync(new ResourceKey<SceneResource>(sourceId)).ConfigureAwait(false);
+        using ResourceLease<SceneResource> oldScene = sceneOwner.Acquire();
+        using ResourceLease<MeshInfo> oldMesh = meshOwner.Acquire();
+        using ResourceReadScope originalView = resources.BeginRead();
+        Console.WriteLine($"Initial mesh: {oldMesh.Value.VertexCount} vertices; shared document builds: {counters.DocumentBuilds}");
+        const string UpdatedScene = """
+            { "meshes": [ { "vertexCount": 6 } ], "materials": [ { "name": "silver" } ] }
+            """;
+        ResourceReloadResult reload = await RewriteAndWaitAsync(changes, path, UpdatedScene).ConfigureAwait(false);
+
+        using ResourceReadScope currentView = resources.BeginRead();
+        using ResourceLease<MeshInfo> newMesh = AcquireFrom(currentView, meshHandle);
+        using ResourceLease<MaterialInfo> oldMaterial = AcquireFrom(originalView, materialHandle);
+        using ResourceLease<MaterialInfo> newMaterial = AcquireFrom(currentView, materialHandle);
+        Console.WriteLine($"Automatic reload: {reload.Status}; publication {reload.PublicationVersion}; document builds: {counters.DocumentBuilds}");
+        Console.WriteLine($"Existing lease: {oldMesh.Value.VertexCount} vertices; same handle after reload: {newMesh.Value.VertexCount} vertices");
+        using ResourceLease<SceneResource> newScene = AcquireFrom(currentView, sceneOwner.Handle);
+        if (!ReferenceEquals(oldScene.Value.Mesh, oldMesh.Value) || !ReferenceEquals(newScene.Value.Mesh, newMesh.Value) ||
+            !ReferenceEquals(oldScene.Value.Material, oldMaterial.Value) || !ReferenceEquals(newScene.Value.Material, newMaterial.Value))
+        {
+            throw new InvalidOperationException("Composite resource references did not retain their matching generations.");
+        }
+
+        Console.WriteLine($"Original view: {oldMaterial.Value.Name}; current view: {newMaterial.Value.Name}");
+    }
+
+    private static async Task<ResourceReloadResult> RewriteAndWaitAsync(ResourceReloadService changes, string path, string contents)
+    {
+        TaskCompletionSource<ResourceReloadResult> published = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnReloaded(object? sender, ResourceReloadEventArgs args)
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                published.TrySetResult(args.Result);
+            }
+        }
+
+        changes.Reloaded += OnReloaded;
+        try
+        {
+            await File.WriteAllTextAsync(path, contents).ConfigureAwait(false);
+            return await WaitForReloadAsync(changes, published.Task).ConfigureAwait(false);
+        }
+        finally
+        {
+            changes.Reloaded -= OnReloaded;
+        }
+    }
+
+    private static async Task<ResourceReloadResult> WaitForReloadAsync(ResourceReloadService changes, Task<ResourceReloadResult> expected)
+    {
+        Task completed = await Task.WhenAny(expected, changes.Completion).WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+        if (completed == changes.Completion)
+        {
+            await changes.Completion.ConfigureAwait(false);
+            throw new InvalidOperationException("File monitoring ended before completing the expected reload.");
+        }
+
+        return await expected.ConfigureAwait(false);
+    }
+
+    private static ResourceLease<T> AcquireFrom<T>(ResourceReadScope view, ResourceHandle<T> handle)
+        where T : class
+        => view.TryAcquire(handle, out ResourceLease<T>? lease)
+            ? lease!
+            : throw new InvalidOperationException("The sample's owned handle has no published generation.");
+}

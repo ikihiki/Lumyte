@@ -44,4 +44,63 @@ root directory tree. These portable checks are not atomic with opening and are
 not a security boundary against hostile directory replacement. `ResourceId`
 rejects absolute paths, parent traversal and alternate data stream names.
 
-[ADR-RESOURCES-0004](../../../docs/adr/resources/RESOURCES-0004-source-access.md)を参照してください。
+`FileResourceSource.Changes` provides notifications from the same root used for
+stream reads. The manager subscribes automatically; the internal native watcher
+is not registered independently:
+
+```csharp
+services.AddResources("assets", resources => resources
+    .UseSource<FileResourceSource>()
+    .AddSourcePipeline<MyResource, MyResourceStage>());
+
+// Resolve within the same async DI scope as the named resource manager.
+ResourceManager manager = scope.ServiceProvider
+    .GetRequiredKeyedService<ResourceManager>("assets");
+ResourceReloadService reload = manager.HotReload!;
+reload.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
+```
+
+The coordinator debounces and deduplicates changes, retries transient reload
+failures and publication conflicts within configured limits, and keeps the old
+published resources on failure. Its `Reloaded`, `ReloadFailed`, `LastError` and
+`Completion` members expose the outcome. The manager starts watching automatically
+and cancels and joins its worker before releasing resources during disposal.
+See [`Lumyte.Resources`](../../Core/Lumyte.Resources/README.md) for coordinator
+options and ownership. The [resource sample](../../../samples/Lumyte.Resources.Sample/README.md)
+demonstrates a real filesystem edit and automatic reload.
+
+The manager passes a live, immutable input-ID set to the watcher. Only events
+matching the currently loaded graph enter the notification queue; loading or
+reclaiming inputs updates that set without restarting the watcher. Native
+watching covers the entire root. The watcher reports normalized, source-relative
+IDs for tracked file updates.
+Directory changes, deletions and all renames request
+revalidation of all tracked sources so moved or deleted descendants are covered.
+Windows and macOS notifications likewise request full revalidation because case
+aliases can differ from ordinal resource IDs. Every new subscription emits a
+rescan after enabling native notifications to cover the startup interval.
+Rescanning checks known source revisions; it does not import unreferenced files.
+
+The source supplies the notification provider. Each enumeration owns its native
+watcher and releases it on cancellation or
+enumerator disposal. Keep the root directory itself in place throughout the
+subscription; moving, deleting or replacing it requires restarting monitoring.
+Native buffer overflow or a full bounded notification queue
+coalesces pending hints into `ResourceSourceChange.Rescan`; changes are never
+silently discarded due to those limits. Other watcher errors fail enumeration
+and fault the coordinator's `Completion`. Watcher callbacks perform no hashing
+or resource builds. Configure `FileResourceChangeSourceOptions` in DI to change
+the notification capacity (default 256) or native buffer size (default 8192 bytes,
+allowed range 4096–65536).
+
+The source performs no scratch writes, so no snapshot directories or filenames
+are reserved or excluded. The root has the same symbolic-link restrictions as
+`FileResourceSource`; event paths containing links are ignored because that
+source cannot address them.
+
+This adapter targets desktop filesystems. Filesystem notifications are change
+hints rather than a durable event log; revisions are verified by the resource
+manager before publication. Pass the stream source to `ResourceManager` or
+register it with `UseSource<FileResourceSource>()`; it supplies both input data
+and matching notifications. Configure batching, retries or `Enabled = false`
+through `ResourceReloadOptions`; public manual reload commands are not required.
