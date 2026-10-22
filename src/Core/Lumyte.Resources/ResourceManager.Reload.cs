@@ -1,8 +1,27 @@
 namespace Lumyte.Resources;
 
-/// <summary>Coordinates transactional source graph publication.</summary>
+/// <summary>Coordinates transactional source and runtime graph publication.</summary>
 public sealed partial class ResourceManager
 {
+    /// <summary>Rebuilds resources affected by runtime generation changes, including invalidated handles.</summary>
+    /// <param name="dependencyIds">The registered runtimes whose current versions should be used.</param>
+    /// <param name="cancellationToken">Cancels candidate construction before publication.</param>
+    /// <returns>The publication outcome.</returns>
+    public ValueTask<ResourceReloadResult> RebuildRuntimeAsync(IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dependencyIds);
+        foreach (string id in dependencyIds)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(id);
+            if (!_runtimes.ContainsKey(id))
+            {
+                throw new ArgumentException($"Runtime dependency '{id}' is not registered.", nameof(dependencyIds));
+            }
+        }
+
+        return ReloadCoreAsync([], dependencyIds, cancellationToken);
+    }
+
     /// <summary>Rebuilds the graph affected by changed input revisions and publishes it atomically.</summary>
     /// <param name="changedSources">Source identifiers to recheck; notifications are only hints.</param>
     /// <param name="cancellationToken">Cancels candidate construction before publication.</param>
@@ -15,7 +34,7 @@ public sealed partial class ResourceManager
             ArgumentException.ThrowIfNullOrWhiteSpace(id.Value);
         }
 
-        return ReloadCoreAsync(changedSources, cancellationToken);
+        return ReloadCoreAsync(changedSources, [], cancellationToken);
     }
 
     /// <summary>Rechecks all tracked input revisions and atomically rebuilds the graph affected by changes.</summary>
@@ -23,10 +42,10 @@ public sealed partial class ResourceManager
     /// <param name="cancellationToken">Cancels candidate construction before publication.</param>
     /// <returns>The publication outcome.</returns>
     internal ValueTask<ResourceReloadResult> ReloadAllAsync(CancellationToken cancellationToken = default)
-        => ReloadCoreAsync([], cancellationToken, recheckAllSources: true);
+        => ReloadCoreAsync([], [], cancellationToken, recheckAllSources: true);
 
     internal ValueTask<ResourceReloadResult> ReloadFromChangesAsync(IReadOnlyCollection<ResourceId> changes, bool rescan, CancellationToken cancellationToken)
-        => ReloadCoreAsync(changes, cancellationToken, recheckAllSources: rescan, automatic: true);
+        => ReloadCoreAsync(changes, [], cancellationToken, recheckAllSources: rescan, automatic: true);
 
     private static bool HasUnrebuiltSourceDependents(ResourceBuildView view, HashSet<ResourceNode> used)
     {
@@ -50,7 +69,7 @@ public sealed partial class ResourceManager
         return false;
     }
 
-    private async ValueTask<ResourceReloadResult> ReloadCoreAsync(IReadOnlyCollection<ResourceId> changedSources, CancellationToken cancellationToken, bool recheckAllSources = false, bool automatic = false)
+    private async ValueTask<ResourceReloadResult> ReloadCoreAsync(IReadOnlyCollection<ResourceId> changedSources, IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken, bool recheckAllSources = false, bool automatic = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
@@ -71,6 +90,11 @@ public sealed partial class ResourceManager
         {
             await _maintenance.WaitAsync(cancellationToken).ConfigureAwait(false);
             entered = true;
+            foreach (string id in dependencyIds.Distinct(StringComparer.Ordinal))
+            {
+                RefreshRuntime(_runtimes[id]);
+            }
+
             lock (_gate)
             {
                 EnsureRunning();
@@ -93,7 +117,11 @@ public sealed partial class ResourceManager
             {
                 foreach ((ResourceNode node, ResourceMetadata metadata) in view.Metadata)
                 {
-                    if (metadata.Sources.Any(pair => revisions.TryGetValue(pair.Key, out string? revision) && revision != pair.Value))
+                    if (metadata.Sources.Any(pair => revisions.TryGetValue(pair.Key, out string? revision) && revision != pair.Value)
+                        || metadata.Runtimes.Any(pair => dependencyIds.Contains(pair.Key)
+                            && (pair.Value.Version != _runtimes[pair.Key].Snapshot.Version
+                                || !_runtimes[pair.Key].Snapshot.IsAvailable
+                                || pair.Value.Version <= _runtimes[pair.Key].Snapshot.InvalidatedThroughVersion)))
                     {
                         affected.Add(node);
                     }
@@ -120,7 +148,7 @@ public sealed partial class ResourceManager
                     view.Edges[node] = [];
                 }
 
-                roots = affected.Where(node => view.Published.ContainsKey(node) || _slotByKey.ContainsKey(node)).ToArray();
+                roots = affected.Where(node => view.Published.ContainsKey(node) || _invalidated.Contains(node) || _slotByKey.ContainsKey(node)).ToArray();
             }
 
             if (roots.Length == 0)
@@ -137,11 +165,22 @@ public sealed partial class ResourceManager
                 }
 
                 bool validSources = await ValidateSourcesAsync(view, used, cancellationToken).ConfigureAwait(false);
+                RefreshUsedRuntimes(view, used);
                 lock (_gate)
                 {
                     EnsureRunning();
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!validSources || _publicationVersion != view.PublicationVersion || HasUnrebuiltSourceDependents(view, used))
+                    bool validRuntimes = true;
+                    try
+                    {
+                        ValidateRuntimeVersions(view, used);
+                    }
+                    catch (ResourceUnavailableException)
+                    {
+                        validRuntimes = false;
+                    }
+
+                    if (!validSources || !validRuntimes || _publicationVersion != view.PublicationVersion || HasUnrebuiltSourceDependents(view, used))
                     {
                         result = ReloadResult(ResourceReloadStatus.Conflict, 0);
                     }

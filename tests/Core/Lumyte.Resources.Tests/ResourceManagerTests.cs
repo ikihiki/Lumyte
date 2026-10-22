@@ -650,6 +650,52 @@ public sealed class ResourceManagerTests
         Assert.Equal(2, fixture.Plan.BuildCounts["leaf"]);
     }
 
+    /// <summary>Runtime invalidation propagates through resident edges while independent build results remain usable.</summary>
+    /// <returns>Completion of runtime loss and recovery.</returns>
+    [Fact]
+    public async Task RuntimeLossInvalidatesResidentsAndRebuildsExistingHandleAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Plan.Builds["gpu"] = (context, _) =>
+        {
+            context.TrackRuntimeDependency("device", fixture.Runtime.Snapshot.Version);
+            return ValueTask.FromResult(new TestValue($"gpu:{fixture.Runtime.Snapshot.Version}"));
+        };
+        fixture.Plan.Builds["scene"] = async (context, token) =>
+            new("scene", await context.RequireAsync(Key("gpu"), cancellationToken: token));
+        fixture.Plan.Builds["cpu"] = (context, _) =>
+        {
+            context.TrackRuntimeDependency("device", fixture.Runtime.Snapshot.Version, ResourceDependencyLifetime.Build);
+            return ValueTask.FromResult(new TestValue("cpu"));
+        };
+        using ResourceReference<TestValue> gpu = await fixture.Manager.AcquireAsync(Key("gpu"));
+        using ResourceReference<TestValue> scene = await fixture.Manager.AcquireAsync(Key("scene"));
+        using ResourceReference<TestValue> cpu = await fixture.Manager.AcquireAsync(Key("cpu"));
+        using ResourceLease<TestValue> oldGpu = await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu"));
+        using ResourceReadScope oldFrame = fixture.Manager.BeginRead();
+        ResourceHandle<TestValue> handle = gpu.Handle;
+        fixture.Runtime.Set(new(2, false, 1));
+
+        Assert.False(gpu.IsAvailable);
+        Assert.False(scene.IsAvailable);
+        Assert.False(oldGpu.IsUsable);
+        Assert.Throws<ResourceUnavailableException>(() => oldGpu.Value);
+        Assert.False(fixture.Manager.TryAcquireLeaseForTest(handle, out ResourceLease<TestValue>? invalid));
+        Assert.Null(invalid);
+        Assert.False(oldFrame.TryAcquire(handle, out invalid));
+        AssertHandleText(fixture.Manager, cpu.Handle, "cpu");
+        await Assert.ThrowsAsync<ResourceUnavailableException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu")));
+
+        fixture.Runtime.Set(new(3, true, 1));
+        ResourceReloadResult rebuilt = await fixture.Manager.RebuildRuntimeAsync(["device"]);
+        Assert.Equal(ResourceReloadStatus.Published, rebuilt.Status);
+        Assert.Equal(handle, gpu.Handle);
+        Assert.True(scene.IsAvailable);
+        AssertHandleText(fixture.Manager, handle, "gpu:3");
+        Assert.False(oldGpu.IsUsable);
+        Assert.False(oldFrame.TryAcquire(handle, out invalid));
+    }
+
     /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
     /// <returns>Completion of the shutdown retries.</returns>
     [Fact]
@@ -758,6 +804,23 @@ public sealed class ResourceManagerTests
         Assert.ThrowsAny<ArgumentException>(() => scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("invalid"));
     }
 
+    /// <summary>Runtime provider IDs must match the manager registration.</summary>
+    /// <returns>Completion of service provider disposal.</returns>
+    [Fact]
+    public async Task DependencyInjectionRejectsMismatchedRuntimeIdentifierAsync()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton(new BuildPlan());
+        services.AddSingleton(new SourceStore());
+        services.AddSingleton(new RuntimeState());
+        services.AddMemoryManagement();
+        services.AddResources("invalid", builder => builder.UseSource<FakeSource>()
+            .AddSourcePipeline<TestValue, PlannedStage>().UseRuntimeDependency<FakeRuntime>("other"));
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        Assert.Throws<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("invalid"));
+    }
+
     /// <summary>Logical source identifiers cannot escape their source or embed platform-specific addressing.</summary>
     /// <param name="value">The rejected identifier.</param>
     [Theory]
@@ -812,6 +875,7 @@ public sealed class ResourceManagerTests
             ServiceCollection services = new();
             services.AddSingleton(Plan);
             services.AddSingleton(Source);
+            services.AddSingleton(Runtime);
             services.AddMemoryManagement(options =>
             {
                 options.ChunkSizeBytes = 64;
@@ -819,7 +883,7 @@ public sealed class ResourceManagerTests
             });
             services.AddResources("test", builder =>
             {
-                builder.UseSource<FakeSource>();
+                builder.UseSource<FakeSource>().UseRuntimeDependency<FakeRuntime>("device");
                 configure(builder);
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -831,6 +895,8 @@ public sealed class ResourceManagerTests
         internal BuildPlan Plan { get; } = new();
 
         internal SourceStore Source { get; } = new();
+
+        internal RuntimeState Runtime { get; } = new();
 
         internal IMemoryManager Memory { get; }
 
@@ -1050,6 +1116,32 @@ public sealed class ResourceManagerTests
         }
 
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RuntimeState
+    {
+        public event EventHandler? Changed;
+
+        internal ResourceRuntimeSnapshot Snapshot { get; private set; } = new(1, true, 0);
+
+        internal void Set(ResourceRuntimeSnapshot snapshot)
+        {
+            Snapshot = snapshot;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private sealed class FakeRuntime(RuntimeState state) : IResourceRuntimeDependency
+    {
+        public event EventHandler? Changed
+        {
+            add => state.Changed += value;
+            remove => state.Changed -= value;
+        }
+
+        public string Id => "device";
+
+        public ResourceRuntimeSnapshot Snapshot => state.Snapshot;
     }
 
     private sealed class ServiceCounts

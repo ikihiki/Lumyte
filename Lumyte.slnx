@@ -58,6 +58,7 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
@@ -101,6 +102,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Hosting.Tests/Lumyte.Graphics.Hosting.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj" />
