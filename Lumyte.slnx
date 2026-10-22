@@ -20,6 +20,7 @@
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Resources.FileSystem/Lumyte.Resources.FileSystem.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
     <Project Path="src/Platform/Lumyte.Windowing.Abstractions/Lumyte.Windowing.Abstractions.csproj" />
@@ -31,6 +32,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
     <Project Path="src/Core/Lumyte.Resources/Lumyte.Resources.csproj" />
     <Project Path="src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
     <Project Path="src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
