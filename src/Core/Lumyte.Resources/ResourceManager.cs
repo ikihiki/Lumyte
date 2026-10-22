@@ -5,14 +5,19 @@ namespace Lumyte.Resources;
 /// <summary>Owns pipeline generations, tracked dependencies and atomic publication within its configured service lifetime.</summary>
 public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 {
+    private static long _nextManagerId;
     private readonly object _gate = new();
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
+    private readonly ResourceWatchTargets _watchTargets = new();
+    private readonly ResourceReloadService? _hotReload;
     private readonly Dictionary<RuntimeTypeHandle, IResourceStage> _stages;
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
     private readonly Dictionary<ResourceNode, ResourceLoad> _loads = [];
+    private readonly List<ResourceSlot> _slots = [];
+    private readonly Dictionary<ResourceNode, uint> _slotByKey = [];
     private readonly SemaphoreSlim _maintenance = new(1, 1);
     private readonly IDisposable _reclaimerRegistration;
     private Dictionary<ResourceNode, ResourceGeneration> _published = [];
@@ -22,6 +27,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private ulong _revision;
     private int _externalOwners;
     private int _operations;
+    private int _reloadOperations;
     private bool _closing;
     private bool _disposed;
 
@@ -30,7 +36,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="source">The borrowed input source.</param>
     /// <param name="stages">The borrowed source stages and transforms, with one producer per output type.</param>
     /// <param name="memory">The shared memory budget manager.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory)
+    /// <param name="reloadOptions">Batching and retry settings for automatic reload.</param>
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, ResourceReloadOptions? reloadOptions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(source);
@@ -41,15 +48,194 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         _memory = memory;
         _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle);
         ValidatePipelines();
+        ManagerId = NextManagerId();
+        _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes
+            ? new ResourceReloadService(this, changes, reloadOptions) : null;
         _reclaimerRegistration = memory.RegisterReclaimer(this);
+        _hotReload?.Start();
     }
+
+    /// <summary>Gets the manager-owned automatic reload worker, or null when the source has no notifications or automatic reload is disabled.</summary>
+    public ResourceReloadService? HotReload => _hotReload;
+
+    /// <summary>Gets the process-local identity, never reused by another manager.</summary>
+    public ulong ManagerId { get; }
+
+    /// <summary>Gets the version of the currently published resource map.</summary>
+    public ulong PublicationVersion
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _publicationVersion;
+            }
+        }
+    }
+
+    internal IResourceWatchTargets WatchTargets => _watchTargets;
+
+    /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
+    /// <typeparam name="T">The registered output type.</typeparam>
+    /// <param name="key">The requested resource.</param>
+    /// <param name="cancellationToken">Cancels the initial acquisition wait.</param>
+    /// <returns>The managed owner of the handle.</returns>
+    public async ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+        where T : class
+    {
+        using ResourceLease<T> lease = await AcquireLeaseAsync(key, cancellationToken).ConfigureAwait(false);
+        ResourceNode node = GetNode(key);
+        lock (_gate)
+        {
+            EnsureRunning();
+            if (!_slotByKey.TryGetValue(node, out uint index))
+            {
+                index = checked((uint)_slots.Count);
+                for (int candidate = 0; candidate < _slots.Count; candidate++)
+                {
+                    ResourceSlot old = _slots[candidate];
+                    if (old.References == 0 && old.Generation < uint.MaxValue)
+                    {
+                        index = (uint)candidate;
+                        break;
+                    }
+                }
+
+                uint generation = index == _slots.Count ? 1 : checked(_slots[(int)index].Generation + 1);
+                ResourceSlot slot = new(node, generation);
+                if (index == _slots.Count)
+                {
+                    _slots.Add(slot);
+                }
+                else
+                {
+                    _slots[(int)index] = slot;
+                }
+
+                _slotByKey.Add(node, index);
+            }
+
+            ResourceSlot current = _slots[(int)index];
+            current.Current = _published.GetValueOrDefault(node);
+            ResourceHandle<T> handle = new(ManagerId, index, current.Generation);
+            return CreateReference(handle, current);
+        }
+    }
+
+    /// <summary>Acquires an owning reference from a live handle without I/O or pipeline work.</summary>
+    /// <typeparam name="T">The resource output type.</typeparam>
+    /// <param name="handle">The logical handle to resolve.</param>
+    /// <param name="reference">The owning reference, or null when resolution fails.</param>
+    /// <returns>Whether a reference was acquired.</returns>
+    public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference)
+        where T : class
+    {
+        lock (_gate)
+        {
+            EnsureRunning();
+            reference = null;
+            if (!TryGetSlot(handle, out ResourceSlot? slot)
+                || !_published.TryGetValue(slot!.Node, out ResourceGeneration? generation)
+                || generation.State != ResourceGenerationState.Ready)
+            {
+                return false;
+            }
+
+            reference = CreateReference(handle, slot);
+            return true;
+        }
+    }
+
+    /// <summary>Pins one publication map so multiple handle reads observe the same generations.</summary>
+    /// <returns>A read scope owned by the caller.</returns>
+    public ResourceReadScope BeginRead()
+    {
+        lock (_gate)
+        {
+            EnsureRunning();
+            Dictionary<ResourceNode, ResourceGeneration> map = _published;
+            foreach (ResourceGeneration generation in map.Values)
+            {
+                generation.Pins++;
+            }
+
+            _externalOwners++;
+            return new(_publicationVersion, new ReadView(this, map), () => ReturnReadView(map));
+        }
+    }
+
+    private static IResourceStage ValidateStage(IResourceStage stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+        if (stage.OutputType.IsValueType || stage.OutputType.ContainsGenericParameters
+            || (stage.InputType is { } input && (input.IsValueType || input.ContainsGenericParameters)))
+        {
+            throw new ArgumentException("Stage input and output types must be closed reference types.", nameof(stage));
+        }
+
+        return stage;
+    }
+
+    private static ulong NextManagerId()
+    {
+        while (true)
+        {
+            long previous = Volatile.Read(ref _nextManagerId);
+            long next = checked(previous + 1);
+            if (Interlocked.CompareExchange(ref _nextManagerId, next, previous) == previous)
+            {
+                return (ulong)next;
+            }
+        }
+    }
+
+    private ResourceNode GetNode<T>(ResourceKey<T> key)
+        where T : class
+    {
+        if (key.Address.Id.Value is null || key.Address.Subresource is null || key.Address.Variant is null)
+        {
+            throw new ArgumentException("Supply an initialized typed resource key.", nameof(key));
+        }
+
+        if (!_stages.ContainsKey(key.TypeHandle))
+        {
+            throw new NotSupportedException($"A resource pipeline for '{typeof(T)}' is not registered.");
+        }
+
+        return new(key.Address, key.TypeHandle);
+    }
+
+    private void ValidatePipelines()
+    {
+        foreach (IResourceStage pipeline in _stages.Values)
+        {
+            HashSet<RuntimeTypeHandle> visited = [];
+            IResourceStage current = pipeline;
+            while (current.InputType is { } input)
+            {
+                if (!visited.Add(current.OutputType.TypeHandle))
+                {
+                    throw new ArgumentException($"Static resource pipeline cycle includes '{current.OutputType}'.", nameof(pipeline));
+                }
+
+                if (!_stages.TryGetValue(input.TypeHandle, out IResourceStage? dependency))
+                {
+                    throw new ArgumentException($"Pipeline for '{current.OutputType}' has an unregistered input '{input}'.", nameof(pipeline));
+                }
+
+                current = dependency;
+            }
+        }
+    }
+
+    private void EnsureRunning() => ObjectDisposedException.ThrowIf(_closing || _disposed, this);
 
     /// <summary>Acquires a revision-fixed lease, sharing compatible in-flight builds.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
     /// <param name="key">The requested logical resource.</param>
     /// <param name="cancellationToken">Cancels this wait without cancelling shared construction.</param>
     /// <returns>A lease owned by the caller.</returns>
-    public async ValueTask<ResourceLease<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+    private async ValueTask<ResourceLease<T>> AcquireLeaseAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
         where T : class
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -110,58 +296,29 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    private static IResourceStage ValidateStage(IResourceStage stage)
-    {
-        ArgumentNullException.ThrowIfNull(stage);
-        if (stage.OutputType.IsValueType || stage.OutputType.ContainsGenericParameters
-            || (stage.InputType is { } input && (input.IsValueType || input.ContainsGenericParameters)))
-        {
-            throw new ArgumentException("Stage input and output types must be closed reference types.", nameof(stage));
-        }
-
-        return stage;
-    }
-
-    private ResourceNode GetNode<T>(ResourceKey<T> key)
+    private ResourceReference<T> CreateReference<T>(ResourceHandle<T> handle, ResourceSlot slot)
         where T : class
     {
-        if (key.Address.Id.Value is null || key.Address.Subresource is null || key.Address.Variant is null)
+        slot.References++;
+        if (slot.Current is { } resident)
         {
-            throw new ArgumentException("Supply an initialized typed resource key.", nameof(key));
+            resident.Pins++;
         }
 
-        if (!_stages.ContainsKey(key.TypeHandle))
-        {
-            throw new NotSupportedException($"A resource pipeline for '{typeof(T)}' is not registered.");
-        }
-
-        return new(key.Address, key.TypeHandle);
+        _externalOwners++;
+        ResourceKey<T> key = new(slot.Node.Address);
+        return new(key, handle, () => IsHandleAvailable(handle), () => AcquireCurrentLease(handle), () => ReturnReference(handle));
     }
 
-    private void ValidatePipelines()
+    private ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
+        where T : class
     {
-        foreach (IResourceStage pipeline in _stages.Values)
+        lock (_gate)
         {
-            HashSet<RuntimeTypeHandle> visited = [];
-            IResourceStage current = pipeline;
-            while (current.InputType is { } input)
-            {
-                if (!visited.Add(current.OutputType.TypeHandle))
-                {
-                    throw new ArgumentException($"Static resource pipeline cycle includes '{current.OutputType}'.", nameof(pipeline));
-                }
-
-                if (!_stages.TryGetValue(input.TypeHandle, out IResourceStage? dependency))
-                {
-                    throw new ArgumentException($"Pipeline for '{current.OutputType}' has an unregistered input '{input}'.", nameof(pipeline));
-                }
-
-                current = dependency;
-            }
+            EnsureRunning();
+            return TryAcquireFrom(handle, _published, out ResourceLease<T>? lease) ? lease : null;
         }
     }
-
-    private void EnsureRunning() => ObjectDisposedException.ThrowIf(_closing || _disposed, this);
 
     private ResourceLease<T> CreateLease<T>(ResourceGeneration generation)
         where T : class
@@ -172,12 +329,104 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         return new(key, generation.Revision, (T)generation.Value!, () => ReturnLease(generation));
     }
 
+    private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
+        where T : class
+    {
+        lease = null;
+        if (!TryGetSlot(handle, out ResourceSlot? slot)
+            || !map.TryGetValue(slot!.Node, out ResourceGeneration? generation)
+            || generation.State != ResourceGenerationState.Ready)
+        {
+            return false;
+        }
+
+        lease = CreateLease<T>(generation);
+        return true;
+    }
+
+    private bool TryGetSlot<T>(ResourceHandle<T> handle, out ResourceSlot? slot)
+        where T : class
+    {
+        slot = null;
+        if (handle.ManagerId != ManagerId || handle.Generation == 0 || handle.Slot >= _slots.Count)
+        {
+            return false;
+        }
+
+        ResourceSlot candidate = _slots[(int)handle.Slot];
+        if (candidate.References == 0 || candidate.Generation != handle.Generation || !candidate.Node.TypeHandle.Equals(typeof(T).TypeHandle))
+        {
+            return false;
+        }
+
+        slot = candidate;
+        return true;
+    }
+
+    private bool IsHandleAvailable<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is not null;
+        }
+    }
+
+    private void ReturnReference<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        lock (_gate)
+        {
+            ResourceSlot slot = _slots[(int)handle.Slot];
+            slot.References--;
+            if (slot.Current is { } current)
+            {
+                current.Pins--;
+            }
+
+            if (slot.References == 0)
+            {
+                _slotByKey.Remove(slot.Node);
+                slot.Current = null;
+            }
+
+            _externalOwners--;
+        }
+    }
+
     private void ReturnLease(ResourceGeneration generation)
     {
         lock (_gate)
         {
             generation.Pins--;
             _externalOwners--;
+        }
+    }
+
+    private void ReturnReadView(Dictionary<ResourceNode, ResourceGeneration> map)
+    {
+        lock (_gate)
+        {
+            foreach (ResourceGeneration generation in map.Values)
+            {
+                generation.Pins--;
+            }
+
+            _externalOwners--;
+        }
+    }
+
+    private sealed class ReadView(ResourceManager manager, Dictionary<ResourceNode, ResourceGeneration> map) : IResourceReadView
+    {
+        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
+            where T : class
+        {
+            lock (manager._gate)
+            {
+                manager.EnsureRunning();
+                return manager.TryAcquireFrom(handle, map, out lease);
+            }
         }
     }
 }

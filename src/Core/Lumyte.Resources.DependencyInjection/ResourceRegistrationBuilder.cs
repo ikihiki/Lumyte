@@ -9,12 +9,15 @@ public sealed class ResourceRegistrationBuilder
     private readonly List<Action<IServiceCollection>> _registrations = [];
     private readonly HashSet<RuntimeTypeHandle> _pipelines = [];
     private Func<IServiceProvider, IResourceSource>? _source;
+    private ResourceReloadOptions? _reloadOptions;
     private bool _completed;
 
     internal ResourceRegistrationBuilder(string managerName)
     {
         _managerName = managerName;
     }
+
+    internal ResourceReloadOptions? ReloadOptions => _reloadOptions;
 
     /// <summary>Registers the one source borrowed by this manager.</summary>
     /// <typeparam name="TSource">The constructor-injected source implementation.</typeparam>
@@ -33,6 +36,22 @@ public sealed class ResourceRegistrationBuilder
         var key = new RegistrationKey(_managerName, "source", string.Empty);
         _registrations.Add(services => services.AddKeyedScoped<TSource>(key));
         _source = provider => provider.GetRequiredKeyedService<TSource>(key);
+        return this;
+    }
+
+    /// <summary>Configures automatic reload of changes reported by the registered resource source.</summary>
+    /// <param name="options">Whether to subscribe, together with batching and retry settings.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder ConfigureHotReload(ResourceReloadOptions options)
+    {
+        EnsureConfiguring();
+        ArgumentNullException.ThrowIfNull(options);
+        if (_reloadOptions is not null)
+        {
+            throw new InvalidOperationException("Automatic reload is already configured for this manager.");
+        }
+
+        _reloadOptions = options;
         return this;
     }
 

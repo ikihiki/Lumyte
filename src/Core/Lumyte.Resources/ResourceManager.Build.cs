@@ -53,6 +53,7 @@ public sealed partial class ResourceManager
             {
                 source = new(lifetime);
                 owner.Sources.Add(id, source);
+                _watchTargets.Track(id);
                 start = true;
             }
             else if (lifetime == ResourceDependencyLifetime.Resident)
@@ -211,7 +212,7 @@ public sealed partial class ResourceManager
                     {
                         if (_metadata.Values.Any(metadata => metadata.Sources.TryGetValue(source, out string? revision) && revision != use.Revision))
                         {
-                            throw new InvalidOperationException($"Source '{source.Value}' changed; return leases and trim the graph before loading the changed source.");
+                            throw new InvalidOperationException($"Source '{source.Value}' changed; signal a source change to publish its dependent graph together.");
                         }
                     }
                 }
@@ -497,6 +498,7 @@ public sealed partial class ResourceManager
 
     private void PublishCandidates(ResourceBuildView view, HashSet<ResourceNode> used)
     {
+        var previouslyTracked = _metadata.Values.SelectMany(static metadata => metadata.Sources.Keys).ToHashSet();
         Dictionary<ResourceNode, ResourceGeneration> map = new(_published);
         bool changed = false;
         foreach (ResourceNode node in used)
@@ -522,6 +524,13 @@ public sealed partial class ResourceManager
         if (changed)
         {
             SetPublished(map);
+        }
+
+        RefreshWatchTargets();
+        if (_watchTargets.Resources.Any(id => !previouslyTracked.Contains(id)))
+        {
+            // A change hint can arrive before an initial build has published its provenance.
+            _hotReload?.RequestRescan();
         }
     }
 }

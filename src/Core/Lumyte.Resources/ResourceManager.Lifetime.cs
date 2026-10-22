@@ -67,9 +67,9 @@ public sealed partial class ResourceManager
                 return new(pending);
             }
 
-            if (_externalOwners != 0 || _operations != 0 || _loads.Count != 0)
+            if (_externalOwners != 0 || _operations != (_hotReload is null ? 0 : _reloadOperations) || _loads.Count != 0)
             {
-                throw new InvalidOperationException("Return resource leases and complete all operations before disposing the manager.");
+                throw new InvalidOperationException("Return resource references, leases and read scopes, and complete all operations before disposing the manager.");
             }
 
             _closing = true;
@@ -85,6 +85,11 @@ public sealed partial class ResourceManager
     {
         try
         {
+            if (_hotReload is not null)
+            {
+                await _hotReload.DisposeAsync().ConfigureAwait(false);
+            }
+
             _reclaimerRegistration.Dispose();
             await _maintenance.WaitAsync().ConfigureAwait(false);
             try
@@ -330,20 +335,63 @@ public sealed partial class ResourceManager
             candidates.RemoveWhere(static generation => generation.State is ResourceGenerationState.CleanupFailed or ResourceGenerationState.RetryingCleanup);
         }
 
-        await ReleaseUnusedAsync(candidates, CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await ReleaseUnusedAsync(candidates, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                RefreshWatchTargets();
+            }
+        }
     }
 
     private void SetPublished(Dictionary<ResourceNode, ResourceGeneration> updated)
     {
         ulong version = checked(_publicationVersion + 1);
+        foreach (ResourceSlot slot in _slots)
+        {
+            if (slot.References == 0)
+            {
+                continue;
+            }
+
+            ResourceGeneration? replacement = updated.GetValueOrDefault(slot.Node);
+            if (ReferenceEquals(slot.Current, replacement))
+            {
+                continue;
+            }
+
+            if (slot.Current is { } previous)
+            {
+                previous.Pins -= slot.References;
+            }
+
+            if (replacement is not null)
+            {
+                replacement.Pins += slot.References;
+            }
+
+            slot.Current = replacement;
+        }
+
         _published = updated;
         _publicationVersion = version;
+    }
+
+    private void RefreshWatchTargets()
+    {
+        _watchTargets.Set(_metadata.Values.SelectMany(static metadata => metadata.Sources.Keys)
+            .Concat(_generations.Where(static generation => generation.State == ResourceGenerationState.Building)
+                .SelectMany(static generation => generation.Sources.Keys)));
     }
 
     private void PruneMetadata()
     {
         HashSet<ResourceNode> reachable = [];
-        Stack<ResourceNode> pending = new(_published.Keys
+        Stack<ResourceNode> pending = new(_published.Keys.Concat(_slotByKey.Keys)
             .Concat(_loads.Keys).Concat(_generations.Select(static generation => generation.Node)));
         while (pending.TryPop(out ResourceNode node))
         {
@@ -362,5 +410,7 @@ public sealed partial class ResourceManager
         {
             _metadata.Remove(node);
         }
+
+        RefreshWatchTargets();
     }
 }
