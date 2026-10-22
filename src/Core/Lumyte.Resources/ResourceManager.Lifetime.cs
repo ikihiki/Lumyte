@@ -51,6 +51,7 @@ public sealed partial class ResourceManager
     }
 
     /// <summary>Ends the manager after external owners and operations finish, retaining failed cleanup for a later retry.</summary>
+    /// <remarks>Failed stream creation can retain a factory lease; call <see cref="TrimAsync"/> to retry its cleanup before shutdown.</remarks>
     /// <returns>The shared shutdown attempt.</returns>
     public ValueTask DisposeAsync()
     {
@@ -67,9 +68,9 @@ public sealed partial class ResourceManager
                 return new(pending);
             }
 
-            if (_externalOwners != 0 || _operations != (_hotReload is null ? 0 : _reloadOperations) || _loads.Count != 0)
+            if (_externalOwners != 0 || _operations != (_hotReload is null ? 0 : _reloadOperations) || _loads.Count != 0 || _sessions.Count != 0)
             {
-                throw new InvalidOperationException("Return resource references, leases and read scopes, and complete all operations before disposing the manager.");
+                throw new InvalidOperationException("Return resource references, leases, read scopes and sessions, and complete all operations before disposing the manager. Retry failed session cleanup with TrimAsync first.");
             }
 
             _closing = true;
@@ -121,7 +122,26 @@ public sealed partial class ResourceManager
 
     private async ValueTask<int> TrimCoreAsync(CancellationToken cancellationToken)
     {
+        IAsyncDisposable[] failedSessions;
+        lock (_gate)
+        {
+            failedSessions = _failedSessions.ToArray();
+        }
+
         List<Exception>? errors = null;
+        foreach (IAsyncDisposable session in failedSessions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await session.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                (errors ??= []).Add(error);
+            }
+        }
+
         int released = 0;
         try
         {

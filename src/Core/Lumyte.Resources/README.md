@@ -22,6 +22,16 @@ ReloadAsync／ReloadAllAsyncは内部のデバッグ用コマンドに限定し�
 
 [ADR-RESOURCES-0002](../../../docs/adr/resources/RESOURCES-0002-generations-reload.md)を参照してください。
 
+## ストリーミング
+
+OpenStreamAsyncは不変factoryを保持し、独立したreaderとboundedな先読みbufferを作ります。
+factoryの保持は旧入力ファイルの保存を意味しません。直接読み込み中の変更検出でsessionがfaultになった場合は開き直します。
+ReadAvailableの定常経路ではlock・I/O・割り当てを行いません。0はunderflowにもなるため、
+EndOfStreamで終端を区別します。readとseekのconsumerは一つとします。
+producer・reader・buffer/scope・factory leaseの順で終了し、失敗した解放はTrimAsyncで再試行します。
+
+[ADR-RESOURCES-0003](../../../docs/adr/resources/RESOURCES-0003-bounded-streaming.md)を参照してください。
+
 ## DIを使わない構築
 
 `IResourceSourceStage<T>`と`IResourceTransform<TInput, TOutput>`は共通の`IResourceStage`を実装します。
