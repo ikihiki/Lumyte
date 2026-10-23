@@ -2,7 +2,6 @@ using Lumyte.Audio.Abstractions;
 using Lumyte.Audio.Execution;
 using Lumyte.Execution;
 using Lumyte.Resources.DependencyInjection;
-using Lumyte.Resources.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -21,8 +20,6 @@ public static class AudioResourceServiceCollectionExtensions
     {
         AddModule<AudioModule>(services);
         AddModule<AudioResourceRuntime>(services);
-        AddModule<ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>>(services);
-        services.TryAddSingleton<ExecutionRuntime>();
         services.AddResources(name, builder => builder.UseSource<TSource>().AddAudioPipeline());
         return services.AddResourceRuntimeDependency(name, "Audio", static provider => provider.GetRequiredService<AudioResourceRuntime>());
     }

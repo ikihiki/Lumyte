@@ -25,7 +25,9 @@ public sealed class AudioRegistrationTests
         Assert.Equal(3, modules.Length);
         Assert.Same(provider.GetRequiredService<AudioModule>(), Assert.Single(modules.OfType<AudioModule>()));
         Assert.Same(provider.GetRequiredService<AudioResourceRuntime>(), Assert.Single(modules.OfType<AudioResourceRuntime>()));
-        Assert.Same(provider.GetRequiredService<ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>>(), Assert.Single(modules.OfType<ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>>()));
+        ResourceRuntime runtime = provider.GetRequiredService<ResourceRuntime>();
+        Assert.Same(runtime, Assert.Single(modules.OfType<ResourceRuntime>()));
+        Assert.Same(runtime, provider.GetRequiredService<IResourceRuntime>());
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager first = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first");
         ResourceManager second = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("second");
