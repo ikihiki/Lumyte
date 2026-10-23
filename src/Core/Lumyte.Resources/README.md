@@ -15,7 +15,7 @@ SourceとStageはDI scopeから借用します。利用権を返してからmana
 ## 世代とHotReload
 
 ResourceReferenceは論理リソースを所有し、unmanagedなResourceHandleは非所有で参照します。
-ResourceLeaseは内容世代、ResourceReadScopeは公開mapを保持します。
+ResourceLeaseは内容世代、ResourceSnapshotは公開mapを保持します。
 変更通知からSourceのRevisionを確認し、逆依存を再構築して検証した候補を一括公開します。
 ReloadAsync／ReloadAllAsyncは内部のデバッグ用コマンドに限定し、公開APIには含めません。
 失敗時は旧公開を保持し、競合はConflictを返します。
@@ -48,7 +48,7 @@ DI登録も同じStageを直接渡し、必要なサービスをコンストラ�
 
 Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返します。
 Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
-複数リソースを一つの公開状態から取得する場合は`BeginRead()`のscopeを`reference.Acquire(scope)`へ渡します。
+複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`のscopeを`reference.Acquire(scope)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
 HotReloadは新世代を別に公開するため、利用中のLeaseの値は切り替わりません。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。

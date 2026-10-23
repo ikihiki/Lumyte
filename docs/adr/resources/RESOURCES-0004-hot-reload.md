@@ -39,7 +39,7 @@ Managerはロード中・公開中の入力集合を `IResourceWatchTargets.Reso
 
 構築中に観測した共有入力のRevisionが、再構築されていない公開出力と食い違う場合も公開を拒否する。構築失敗やキャンセル時は旧公開mapを維持し、開始済み候補の終了とcleanupを待つ。公開後のcleanup失敗は公開済みの内容を巻き戻さず、未完了の解放責任を保持する。
 
-既存のResourceLeaseとResourceReadScopeは取得時の旧内容を保持する。ResourceReferenceとHandleは新しい公開から次のLeaseを取得できる。通常の入力変更で旧値を失効させず、物理Runtimeのlossによる使用不能は別の契約として適用する。
+既存のResourceLeaseとResourceSnapshotは取得時の旧内容を保持する。ResourceReferenceとHandleは新しい公開から次のLeaseを取得できる。通常の入力変更で旧値を失効させず、物理Runtimeのlossによる使用不能は別の契約として適用する。
 
 ### 再試行、観測、終了
 
@@ -162,7 +162,7 @@ StopAsyncは通知の列挙と実行中の再構築をキャンセルして両�
 
 偽の通知Sourceと制御可能なStageで、重複通知、連続通知の最大待機、保留数超過の再走査、構築中の追加通知、初回公開との競合を検証する。Build入力回収後の来歴保持、未追跡入力の無視、親解放後の監視対象除去を確認する。
 
-旧Lease・ReadScopeの保持、複数出力の一括公開、入力・Runtime・公開versionの競合、失敗と再試行上限、新通知による回復を確認する。Sourceやhandlerの例外、取消callbackの例外があっても両方の非同期処理をjoinし、SourceやStageの破棄より先に停止することを検証する。
+旧Lease・Snapshotの保持、複数出力の一括公開、入力・Runtime・公開versionの競合、失敗と再試行上限、新通知による回復を確認する。Sourceやhandlerの例外、取消callbackの例外があっても両方の非同期処理をjoinし、SourceやStageの破棄より先に停止することを検証する。
 
 ## 関連ADR
 

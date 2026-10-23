@@ -40,7 +40,7 @@ BrowserのSuspended／interruptedは再開可能なため世代を失効させ�
 ```csharp
 await audio.Devices.RecoverAsync(cancellationToken);
 await resources.RebuildRuntimeAsync(["Audio"], cancellationToken);
-// 旧世代のLease・ReadScopeを返した後に、旧生成物とdeviceを解放する。
+// 旧世代のLease・Snapshotを返した後に、旧生成物とdeviceを解放する。
 await resources.TrimAsync(cancellationToken);
 await audio.Devices.RetireAsync(cancellationToken);
 ```
@@ -50,6 +50,6 @@ Stageは再構築ごとに新しい世代を取得します。構築中にロス
 旧生成物のCleanupは生成元deviceへ送り、旧世代のleaseが残る間はdeviceを破棄しません。
 復旧失敗は再試行できます。回復と停止が重なる場合も、factoryの実完了と候補の解放を待ちます。
 
-終了時はロード・監視を停止し、全Reference・Lease・ReadScopeを返してResourceManagerを破棄します。
+終了時はロード・監視を停止し、全Reference・Lease・Snapshotを返してResourceManagerを破棄します。
 その間もホストはPumpを続け、AudioがCleanupを受け付ける状態を維持します。
 その後ExecutionRuntimeを停止し、AudioModuleの世代失効通知、device解放の順に進みます。
