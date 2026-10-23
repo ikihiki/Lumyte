@@ -98,6 +98,21 @@ public sealed class ModuleBuilder
         return new WorkKey<TCommand, TResult>(work);
     }
 
+    /// <summary>Declares an asynchronous CPU workflow with bounded synchronous steps.</summary>
+    /// <typeparam name="TCommand">The operation input.</typeparam>
+    /// <typeparam name="TResult">The operation result.</typeparam>
+    /// <typeparam name="THandler">The retained handler type.</typeparam>
+    /// <param name="name">The unique name.</param>
+    /// <param name="handler">The retained handler.</param>
+    /// <param name="port">The fixed endpoint.</param>
+    public void Workflow<TCommand, TResult, THandler>(string name, THandler handler, WorkflowPort<TCommand, TResult> port)
+        where TCommand : struct
+        where THandler : IWorkflowHandler<TCommand, TResult>
+    {
+        ClaimName(name);
+        _module.Runtime.Works.Add(new TypedWorkflowDefinition<TCommand, TResult, THandler>(_module, name, handler, port));
+    }
+
     /// <summary>Declares a CPU range handler.</summary>
     /// <typeparam name="TContext">The range input type.</typeparam>
     /// <typeparam name="THandler">The handler.</typeparam>
