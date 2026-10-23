@@ -8,7 +8,7 @@ Stageは`RequireAsync`で依存を追加し、`OpenSourceAsync`で観測した�
 Build依存は構築後、Resident依存は親の解放後に返します。
 Memory scopeはmanagerが所有し、出力・cleanup・snapshot・memory・依存の順に解放します。
 解放失敗は所有を保持して`TrimAsync`で再試行します。
-Source・Stage・実行Runtimeは借用します。利用権を返し、managerを閉じてから実行Runtimeを停止します。
+Source・Stage・Runtimeは借用します。利用権を返し、managerを閉じてからRuntimeを終了します。
 
 設計判断は[ADR-RESOURCES-0001](../../../docs/adr/resources/RESOURCES-0001-typed-pipelines.md)を参照してください。
 
@@ -37,6 +37,7 @@ producer・reader・buffer/scope・factory leaseの順で終了し、失敗し�
 Stage instanceを直接渡せるため、Pipelineラッパーは不要です。一つのStage instanceは一つの出力型を担当します。
 Source・Stage・Memory・IResourceRuntimeは借用であり、managerを閉じるまで呼出側が保持します。
 既定のResourceRuntimeをExecutionRuntimeのmodule集合へ登録し、起動してからロードします。
+出力型ごとの環境はstageRuntimesで選択し、指定のないStageは既定Runtimeを使います。
 
 ```csharp
 var resourceRuntime = new ResourceRuntime();
@@ -54,6 +55,17 @@ await using (var manager = new ResourceManager(
 }
 
 await execution.StopAsync();
+```
+
+特定の出力だけにdevice環境が必要なら、Manager構築時に対応を追加します。
+次のMeshRuntimeは、既定ジョブ環境とdevice serviceを組み合わせるアプリ定義の例です。
+deviceのmoduleもExecutionRuntimeへ起動前に登録してください。
+
+```csharp
+var meshRuntime = new MeshRuntime(resourceRuntime, deviceService);
+await using var manager = new ResourceManager(
+    "assets", source, stages, memory, resourceRuntime,
+    stageRuntimes: [new(typeof(Mesh), meshRuntime)]);
 ```
 
 型付きインターフェースの既定実装が主入力の取得と型付き呼び出しを行います。
@@ -97,17 +109,21 @@ DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終�
 
 ## Runtimeと非同期ロード
 
-ResourceManagerは初回ロード・再構築・出力解放を`IResourceRuntime`へ渡します。
-既定の`ResourceRuntime`がStageの開始とawait継続をExecutionのジョブへ送り、Stageは実行基盤を参照しません。
-I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
-StageとCPU処理を含む補助メソッドは通常の`await`を使い、同期区間を有限に保ちます。
-`ConfigureAwait(false)`やTask.Runで逃がした処理はスケジューラーの保証対象外です。
-Host/Cooperativeでは同じ処理をPumpで進め、非同期待機中もホストのループを止めません。
+`IResourceRuntime`はStageが必要とする実行先・device・owner・世代の借用をまとめるリソース環境です。
+ResourceManagerは出力型の対応を固定し、選択したRuntimeを各内容世代に保存してBuildAsyncとReleaseAsyncへ使います。
+Stageは`ResourceBuildContext.Runtime`で選択された安定した環境を取得します。
+既定のResourceRuntimeは開始とawait継続をジョブへ配送し、モジュールRuntimeもこの共通ジョブ環境を利用できます。
 
-Audio・GraphicsのRuntime依存は実行Runtimeとは別に、provider identity・version・失効を記録して公開前に再検証します。
-Stageは構築ごとに現在のdevice世代を借り、生成・解放を各モジュールの所有スレッドへ配送します。
-既定の実行Runtimeはdeviceを保持しません。
-初回ロードと変更後の再構築は同じStageと実行経路を使います。
-監視と新規ロードを止め、リソース解放を完了してからExecutionRuntimeを停止してください。
+I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
+StageとCPU処理を含む補助メソッドは通常のawaitを使い、同期区間を有限に保ちます。
+ConfigureAwait(false)やTask.Runで逃がした処理はスケジューラーの保証対象外です。
+Host/CooperativeではPumpで処理を進め、非同期待機中もホストのループを止めません。
+RuntimeはCPU処理とowner処理を調整し、Stage全体への固定スレッド親和性は保証しません。
+
+RuntimeがIResourceRuntimeDependencyを実装すると、Managerはproviderを自動収集します。
+Stageは構築ごとに現在のdevice世代を借り、実際のidentity・versionを記録して公開前に検証します。
+生deviceをStageに固定せず、旧出力の解放には生成時の世代Lease・ownerを使います。
+初回ロードと変更後の再構築は同じStageと選択Runtimeを使います。
+監視と新規ロードを止め、リソース解放を完了してからExecutionRuntimeと各環境を終了してください。
 
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。

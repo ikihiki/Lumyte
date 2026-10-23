@@ -1,7 +1,11 @@
 namespace Lumyte.Resources;
 
-/// <summary>Executes resource construction and destruction while the manager owns their dependencies.</summary>
-/// <remarks>The manager borrows this service and must finish its cleanup before the runtime stops.</remarks>
+/// <summary>Manages the execution environment used to construct and destroy resources.</summary>
+/// <remarks>
+/// An environment coordinates job dispatch, owner access and any device services needed by its stages.
+/// Device environments acquire current epochs for each build and can also implement <see cref="IResourceRuntimeDependency"/>.
+/// The manager borrows the stable environment, captures it for each output generation and finishes cleanup before it stops.
+/// </remarks>
 public interface IResourceRuntime
 {
     /// <summary>Dispatches a stage and returns its actual completed output.</summary>
