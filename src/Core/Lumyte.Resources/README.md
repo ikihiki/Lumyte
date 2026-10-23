@@ -37,7 +37,7 @@ DI登録も同じStageを直接渡し、必要なサービスをコンストラ�
 
 Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返します。
 Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
-複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`を`reference.Acquire(snapshot)`へ渡します。
+複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`で取得した`ResourceSnapshot`を`reference.Acquire(snapshot)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
 取得済みLeaseは、取得時の値とRevisionを保持します。
 変更通知とHotReloadは後続の独立PRで追加します。
