@@ -360,7 +360,7 @@ public sealed class ResourceManagerTests
     {
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "value");
-        using ResourceReadScope frame = fixture.Manager.BeginRead();
+        using ResourceSnapshot frame = fixture.Manager.CaptureSnapshot();
         using ResourceReference<TestValue> reference = await fixture.Manager.AcquireAsync(Key("value"));
         Assert.False(reference.TryAcquire(out ResourceLease<TestValue>? missing, frame));
         Assert.Null(missing);
@@ -385,7 +385,7 @@ public sealed class ResourceManagerTests
         ResourceHandle<TestValue> handle = owner.Handle;
         ResourceHandle<TestValue> copy = handle;
         ResourceHandle<CpuValue> wrongType = Unsafe.As<ResourceHandle<TestValue>, ResourceHandle<CpuValue>>(ref copy);
-        using ResourceReadScope captured = fixture.Manager.BeginRead();
+        using ResourceSnapshot captured = fixture.Manager.CaptureSnapshot();
         Assert.False(handle.IsDefault);
         Assert.False(other.Manager.TryAcquireLeaseForTest(copy, out ResourceLease<TestValue>? foreign));
         Assert.Null(foreign);
@@ -413,13 +413,13 @@ public sealed class ResourceManagerTests
     /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
     /// <returns>Completion of the shutdown retries.</returns>
     [Fact]
-    public async Task ShutdownRejectsReferencesLeasesAndReadScopesAsync()
+    public async Task ShutdownRejectsReferencesLeasesAndSnapshotsAsync()
     {
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
         ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("value"));
         ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
-        ResourceReadScope read = fixture.Manager.BeginRead();
+        ResourceSnapshot read = fixture.Manager.CaptureSnapshot();
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());
         owner.Dispose();
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());

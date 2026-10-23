@@ -131,9 +131,9 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    /// <summary>Pins one publication map so multiple handle reads observe the same generations.</summary>
-    /// <returns>A read scope owned by the caller.</returns>
-    public ResourceReadScope BeginRead()
+    /// <summary>Captures the published resource generations so multiple acquisitions share one publication.</summary>
+    /// <returns>A snapshot retaining all published generations until disposed; no loading or value copying occurs.</returns>
+    public ResourceSnapshot CaptureSnapshot()
     {
         lock (_gate)
         {

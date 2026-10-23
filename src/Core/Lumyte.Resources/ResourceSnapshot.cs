@@ -1,18 +1,18 @@
 namespace Lumyte.Resources;
 
 /// <summary>Retains a consistent publication view for resolving multiple resource handles.</summary>
-/// <remarks>Use and disposal of the same scope must not overlap.</remarks>
-public sealed class ResourceReadScope : IDisposable
+/// <remarks>Use and disposal of the same snapshot must not overlap.</remarks>
+public sealed class ResourceSnapshot : IDisposable
 {
     private readonly IResourceReadView _view;
     private Action? _release;
 
-    internal ResourceReadScope(ulong publicationVersion, IResourceReadView view, Action release)
+    internal ResourceSnapshot(ulong publicationVersion, IResourceReadView view, Action release)
     {
         (PublicationVersion, _view, _release) = (publicationVersion, view, release);
     }
 
-    /// <summary>Gets the publication version captured when this scope was opened.</summary>
+    /// <summary>Gets the publication version captured by this snapshot.</summary>
     public ulong PublicationVersion { get; }
 
     /// <summary>Attempts to retain a revision from the captured view without I/O or pipeline execution.</summary>
@@ -20,7 +20,7 @@ public sealed class ResourceReadScope : IDisposable
     /// <param name="handle">The nonowning handle to resolve.</param>
     /// <param name="lease">The retained revision, or <see langword="null"/> if the handle is unavailable.</param>
     /// <returns>Whether a usable revision was retained.</returns>
-    /// <exception cref="ObjectDisposedException">This scope has been returned.</exception>
+    /// <exception cref="ObjectDisposedException">This snapshot has been returned.</exception>
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
         where T : class
     {
