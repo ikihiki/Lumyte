@@ -26,7 +26,7 @@ await using var scope = provider.CreateAsyncScope();
 var manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
 manager.HotReload!.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 // ファイル更新は自動的に再読み込みされる。
-// scope終了前に、利用中のresource reference・lease・read scope・sessionを返す。
+// scope終了前に、利用中のresource reference・lease・resource snapshot・sessionを返す。
 ```
 
 通知元はStreamを提供するSourceが所有し、Managerはその購読を所有します。終了時は監視・進行中の自動再構築をキャンセルしてjoinしてからリソースを解放します。DI scopeはManager終了後にSourceを破棄します。明示的な`Start`／`StopAsync`は不要です。`manager.HotReload.Completion`で監視元の異常終了を確認できます。`ConfigureHotReload`は集約・再試行の設定のみを受け取り、`Enabled = false`で自動監視を無効にできます。
