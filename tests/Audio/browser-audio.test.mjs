@@ -5,6 +5,45 @@ import test from 'node:test';
 const source = await readFile(new URL('../../src/Audio/Lumyte.Audio.Browser/wwwroot/lumyte-audio.js', import.meta.url), 'utf8');
 const audio = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
+for (const channels of [1, 2]) {
+    test(`clip copies ${channels}-channel PCM synchronously without retaining or modifying its input`, () => {
+        const input = new Float32Array([0.25, -0.5, 0.75, -1, 0.125, 0.5]);
+        const original = input.slice();
+        let borrowed = true;
+        let copiedInto;
+        const memory = {
+            byteLength: input.byteLength,
+            copyTo(destination) {
+                assert.ok(borrowed);
+                copiedInto = destination;
+                destination.set(new Uint8Array(input.buffer));
+            },
+        };
+        const output = [];
+        const device = {
+            context: {
+                createBuffer(channelCount, frames, rate) {
+                    assert.equal(channelCount, channels);
+                    assert.equal(frames, input.length / channels);
+                    assert.equal(rate, 48000);
+                    // Exercise nonzero byte offsets, as the copy must respect each channel's view.
+                    for (let c = 0; c < channels; c++) output.push(new Float32Array(frames + 2).subarray(1, frames + 1));
+                    return { getChannelData(channel) { return output[channel]; } };
+                },
+            },
+        };
+        const clip = audio.createClip(device, 48000, channels, memory);
+        borrowed = false;
+        assert.deepEqual(input, original);
+        if (channels === 1) assert.equal(copiedInto.buffer, output[0].buffer);
+        input.fill(0);
+        for (let c = 0; c < channels; c++) {
+            assert.equal(clip.getChannelData(c), output[c]);
+            assert.deepEqual(Array.from(output[c]), Array.from(original).filter((_, i) => i % channels === c));
+        }
+    });
+}
+
 test('suspension and interruption can resume without replacing the context', async () => {
     const context = { state: 'suspended', async resume() { this.state = 'running'; } };
     const device = { context, closed: false };

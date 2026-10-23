@@ -16,7 +16,7 @@ public sealed class CommandBatch : IDisposable
         _maxCommands = maxCommands;
     }
 
-    internal IReadOnlyList<BatchItem> Items => _items;
+    internal List<BatchItem> Items => _items;
 
     internal CommandRun? ActiveRun { get; set; }
 
