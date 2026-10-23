@@ -112,14 +112,18 @@ public sealed partial class ExecutionRuntime
             }
 
             // Decide completion and publish reusable work atomically; continuations never run inline.
-            if (pending.Finish(error))
+            WorkFinish finish = pending.Finish(error);
+            if (finish == WorkFinish.Requeue)
             {
                 QueueReady(pending);
             }
             else
             {
                 pending.Definition = null;
-                FinishPending();
+                if (finish == WorkFinish.Completed)
+                {
+                    FinishPending();
+                }
             }
 
             Notify(error is not null);

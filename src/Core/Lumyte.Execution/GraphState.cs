@@ -12,7 +12,8 @@ internal abstract class GraphState(ExecutionRuntime runtime, JobRun run, Cancell
 
     internal abstract bool HasPropagation { get; }
 
-    internal abstract void Step();
+    // Called under Runtime.Sync; true means this step published final graph completion.
+    internal abstract bool Step();
 
     internal abstract void Clear();
 }

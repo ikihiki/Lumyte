@@ -7,9 +7,9 @@ internal sealed class GraphCommand<TContext>(GraphState<TContext> state, int nod
 
     internal override void Perform(in WorkContext context) => work.Invoke(in state.Context, in context);
 
-    internal override bool Finish(Exception? error)
+    internal override WorkFinish Finish(Exception? error)
     {
         state.WorkerFinished(node, error, CanceledBeforeStart);
-        return false;
+        return WorkFinish.GraphWorkerCompleted;
     }
 }
