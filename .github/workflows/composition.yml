@@ -110,7 +110,6 @@ jobs:
           fi
           dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
           node --test tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs
-          node --test tests/Audio/browser-audio.test.mjs
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
             dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release --no-build -- vulkan pipeline-benchmark | tee artifacts/test-results/vulkan-pipeline-benchmark.jsonl
           fi
@@ -151,8 +150,6 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet publish samples/Lumyte.Audio.Execution.Browser.Sample -c Release -o artifacts/audio-execution-browser
-          "$RUNNER_TEMP/audio-playwright/bin/python" tools/audio/verify_browser.py artifacts/audio-execution-browser/wwwroot --chromium "$CHROME" 2>&1 | tee artifacts/test-results/browser-audio-execution.log
           dotnet publish samples/Lumyte.Audio.Browser.Sample -c Release -o artifacts/audio-browser
           "$RUNNER_TEMP/audio-playwright/bin/python" tools/audio/verify_browser.py artifacts/audio-browser/wwwroot --chromium "$CHROME" 2>&1 | tee artifacts/test-results/browser-audio.log
 
@@ -220,11 +217,6 @@ jobs:
           dotnet run --project samples/Lumyte.Animation.StateMachine.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Input.Advanced.Sample -c Release --no-build -- "$RUNNER_TEMP/input-settings.json"
           ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Sample -c Release --no-build
-          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build
-          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build -- --di
-          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build -- --host
-          ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Audio.Execution.Sample -c Release --no-build -- --host --di
-          dotnet pack src/Audio/Lumyte.Audio.Execution -c Release --no-build -o artifacts/nuget
           dotnet pack src/Audio/Lumyte.Audio.Abstractions -c Release --no-build -o artifacts/nuget
           dotnet pack src/Audio/Lumyte.Audio.OpenAL -c Release --no-build -o artifacts/nuget
           dotnet pack src/Audio/Lumyte.Audio.Browser -c Release --no-build -o artifacts/nuget
