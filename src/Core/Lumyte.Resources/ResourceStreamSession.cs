@@ -189,8 +189,7 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
                 cancellationToken).ConfigureAwait(false);
         }
 
-        _reader = await factory.OpenReaderAsync(_options, _memory, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("A resource stream factory returned a null reader.");
+        _reader = await factory.OpenReaderAsync(_options, _memory, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         _initialized = true;
         StartProducer();

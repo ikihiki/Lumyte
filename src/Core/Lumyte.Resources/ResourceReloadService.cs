@@ -39,8 +39,6 @@ public sealed class ResourceReloadService : IAsyncDisposable
     /// <param name="options">Batching and retry limits, or null for defaults.</param>
     public ResourceReloadService(ResourceManager manager, IResourceChangeSource source, ResourceReloadOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(manager);
-        ArgumentNullException.ThrowIfNull(source);
         _manager = manager;
         _source = source;
         _options = options ?? new();

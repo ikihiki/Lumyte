@@ -9,7 +9,6 @@ public sealed partial class ResourceManager
     /// <returns>The publication outcome.</returns>
     internal ValueTask<ResourceReloadResult> ReloadAsync(IReadOnlyCollection<ResourceId> changedSources, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(changedSources);
         foreach (ResourceId id in changedSources)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id.Value);

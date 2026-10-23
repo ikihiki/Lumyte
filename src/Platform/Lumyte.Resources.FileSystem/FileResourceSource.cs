@@ -15,7 +15,6 @@ public sealed class FileResourceSource
     /// <param name="options">The source root configuration.</param>
     public FileResourceSource(FileResourceSourceOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.RootPath);
         _root = Path.GetFullPath(options.RootPath);
         RejectLinks(_root);
