@@ -304,7 +304,7 @@ payload／resultはGCが追跡する型付きstoreへ格納し、objectへのbox
 
 Resourcesなどの非同期処理には`IWorkflowHandler<TCommand, TResult>.ExecuteAsync`と
 `WorkflowPort<TCommand, TResult>`を用い、`ModuleBuilder.Workflow`でCPU仕事として宣言する。
-通常commandの有限同期handlerとは別の契約とし、workflowから個別のCommandPort／WorkflowPortへ送ってawaitできる。
+通常commandの有限同期handlerとは別の契約とし、workflowから同じRuntimeの個別CommandPort／WorkflowPortへ送ってawaitできる。
 batch・graphの組立て、投入、結果取得はworkflow外で行う。
 Pump、同期Wait、runtimeの起動・停止をworkflow内から行わない。
 
