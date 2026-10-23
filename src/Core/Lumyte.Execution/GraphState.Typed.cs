@@ -45,7 +45,7 @@ internal sealed class GraphState<TContext> : GraphState
         }
     }
 
-    internal override void Step()
+    internal override bool Step()
     {
         if (IsCancellationRequested && _cancelCursor < _states.Length)
         {
@@ -56,7 +56,6 @@ internal sealed class GraphState<TContext> : GraphState
                 foreach (QueuedWork worker in _workers[node])
                 {
                     worker.Definition = null;
-                    Runtime.FinishGraphPending();
                 }
 
                 Run.Record(new OperationCanceledException(Token), true);
@@ -89,11 +88,13 @@ internal sealed class GraphState<TContext> : GraphState
                 if (++_finishedNodes == _states.Length)
                 {
                     Context = default;
-                    Runtime.FinishGraphPending();
                     Run.Complete();
+                    return true;
                 }
             }
         }
+
+        return false;
     }
 
     internal override void Clear()
