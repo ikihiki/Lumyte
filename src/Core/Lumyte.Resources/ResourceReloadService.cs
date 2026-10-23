@@ -209,9 +209,9 @@ public sealed class ResourceReloadService : IAsyncDisposable
                     {
                         _pending.Add(change.Id);
                     }
-                }
 
-                SignalChange();
+                    SignalChange();
+                }
             }
         }
         finally
@@ -219,9 +219,8 @@ public sealed class ResourceReloadService : IAsyncDisposable
             lock (_gate)
             {
                 _watchFinished = true;
+                SignalChange();
             }
-
-            SignalChange();
         }
     }
 
@@ -309,7 +308,7 @@ public sealed class ResourceReloadService : IAsyncDisposable
 
     private void SignalChange()
     {
-        // The watcher is the only producer; the consumer can only decrease this count.
+        // All producers hold _gate; the consumer can only decrease this count.
         if (_changed.CurrentCount == 0)
         {
             _changed.Release();

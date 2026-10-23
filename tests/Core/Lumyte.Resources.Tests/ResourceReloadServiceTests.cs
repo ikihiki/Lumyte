@@ -106,6 +106,57 @@ public sealed class ResourceReloadServiceTests
         Assert.True(service.Completion.IsCompletedSuccessfully);
     }
 
+    /// <summary>Initial publications can request rescans while source notifications continuously wake the same consumer.</summary>
+    /// <returns>Completion of concurrent publication, a subsequent reload and clean shutdown.</returns>
+    [Fact]
+    public async Task InitialPublicationAndSourceHintsShareOneNotificationSignalAsync()
+    {
+        SynchronousChanges changes = new();
+        FakeSource source = new() { Changes = changes };
+        await using MemoryManager memory = new();
+        await using ResourceManager manager = new("concurrent notifications", source, [new Pipeline()], memory, reloadOptions: new()
+        {
+            DebounceDelay = TimeSpan.FromMilliseconds(20),
+            MaximumBatchDelay = TimeSpan.FromMilliseconds(30),
+        });
+        ResourceReloadService service = manager.HotReload!;
+        TaskCompletionSource published = NewSignal();
+        service.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                published.TrySetResult();
+            }
+        };
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        await changes.Started.Task.WaitAsync(timeout.Token);
+        using ResourceReference<Value> original = await manager.AcquireAsync(_key, timeout.Token);
+        for (int i = 0; i < 4096; i++)
+        {
+            using (ResourceReference<Value> reference = await manager.AcquireAsync(new ResourceKey<Value>($"asset-{i}"), timeout.Token))
+            {
+                using ResourceLease<Value> lease = reference.Acquire();
+                Assert.Equal("first", lease.Value.Text);
+            }
+
+            if (i % 32 == 31)
+            {
+                await manager.TrimAsync(timeout.Token);
+            }
+        }
+
+        source.Revision = "second";
+        await published.Task.WaitAsync(timeout.Token);
+        using (ResourceLease<Value> current = original.Acquire())
+        {
+            Assert.Equal("second", current.Value.Text);
+        }
+
+        await service.StopAsync().WaitAsync(timeout.Token);
+        Assert.True(service.Completion.IsCompletedSuccessfully);
+        Assert.Null(service.LastError);
+    }
+
     /// <summary>A hint arriving during a blocked build survives the current batch and its conflict.</summary>
     /// <returns>Completion of the subsequent graph publication.</returns>
     [Fact]
@@ -414,6 +465,8 @@ public sealed class ResourceReloadServiceTests
     {
         private string _revision = "first";
 
+        public IResourceChangeSource? Changes { get; init; }
+
         internal string Revision
         {
             get => Volatile.Read(ref _revision);
@@ -491,9 +544,12 @@ public sealed class ResourceReloadServiceTests
 
     private sealed class SynchronousChanges : IResourceChangeSource
     {
+        internal TaskCompletionSource Started { get; } = NewSignal();
+
         public async IAsyncEnumerable<ResourceSourceChange> WatchAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.CompletedTask;
+            Started.TrySetResult();
             while (true)
             {
                 yield return new(_asset, null);
