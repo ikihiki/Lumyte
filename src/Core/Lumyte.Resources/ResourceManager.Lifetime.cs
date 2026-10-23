@@ -69,7 +69,7 @@ public sealed partial class ResourceManager
 
             if (_externalOwners != 0 || _operations != 0 || _loads.Count != 0)
             {
-                throw new InvalidOperationException("Return resource references, leases and read scopes, and complete all operations before disposing the manager.");
+                throw new InvalidOperationException("Return resource references, leases and resource snapshots, and complete all operations before disposing the manager.");
             }
 
             _closing = true;
