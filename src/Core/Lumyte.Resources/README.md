@@ -26,8 +26,7 @@ ReloadAsync／ReloadAllAsyncは内部のデバッグ用コマンドに限定し�
 
 OpenStreamAsyncは不変factoryを保持し、独立したreaderとboundedな先読みbufferを作ります。
 factoryの保持は旧入力ファイルの保存を意味しません。直接読み込み中の変更検出でsessionがfaultになった場合は開き直します。
-ReadAvailableの定常経路ではlock・I/O・割り当てを行いません。0はunderflowにもなるため、
-EndOfStreamで終端を区別します。readとseekのconsumerは一つとします。
+`ReadAvailable`は待機・I/O・デコードを行わず、準備済みの要素だけを返します。blockの解放時には再利用するwork itemでproducerを通知し、readerの継続をconsumer上でinline実行しません。通知ごとのTaskやdelegateは生成しませんが、ThreadPool内部の初期化・queue拡張まで無割り当てとは保証しません。0はunderflowにもなるため`EndOfStream`と区別します。producerの満杯待機は通知方式、`ReadAsync`のunderflow待機は1 msの非同期pollです。デバイスcallbackでは`ReadAvailable`を使い、consumerは一つとしてreadとseekを並行させないでください。
 producer・reader・buffer/scope・factory leaseの順で終了し、失敗した解放はTrimAsyncで再試行します。
 
 [ADR-RESOURCES-0005](../../../docs/adr/resources/RESOURCES-0005-bounded-streaming.md)を参照してください。

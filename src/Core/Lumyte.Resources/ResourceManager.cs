@@ -109,42 +109,67 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     public async ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
         where T : class
     {
-        using ResourceLease<T> lease = await AcquireLeaseAsync(key, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         ResourceNode node = GetNode(key);
+        RefreshRuntimes();
+        ResourceLoad load;
+        bool start = false;
         lock (_gate)
         {
             EnsureRunning();
-            if (!_slotByKey.TryGetValue(node, out uint index))
+            if (_published.TryGetValue(node, out ResourceGeneration? cached))
             {
-                index = checked((uint)_slots.Count);
-                for (int candidate = 0; candidate < _slots.Count; candidate++)
-                {
-                    ResourceSlot old = _slots[candidate];
-                    if (old.References == 0 && old.Generation < uint.MaxValue)
-                    {
-                        index = (uint)candidate;
-                        break;
-                    }
-                }
-
-                uint generation = index == _slots.Count ? 1 : checked(_slots[(int)index].Generation + 1);
-                ResourceSlot slot = new(node, generation);
-                if (index == _slots.Count)
-                {
-                    _slots.Add(slot);
-                }
-                else
-                {
-                    _slots[(int)index] = slot;
-                }
-
-                _slotByKey.Add(node, index);
+                ThrowIfUnavailable(cached);
+                return CreateReference<T>(node);
             }
 
-            ResourceSlot current = _slots[(int)index];
-            current.Current = _published.GetValueOrDefault(node);
-            ResourceHandle<T> handle = new(ManagerId, index, current.Generation);
-            return CreateReference(handle, current);
+            ThrowIfKnownUnavailable(node);
+            if (!_loads.TryGetValue(node, out load!))
+            {
+                ResourceBuildView view = _normalView is { } existing && existing.PublicationVersion == _publicationVersion
+                    ? existing
+                    : CreateView([], CancellationToken.None);
+                _normalView = view;
+                view.Roots++;
+                load = new(view);
+                _loads.Add(node, load);
+                _operations++;
+                start = true;
+            }
+
+            load.Waiters++;
+            _operations++;
+        }
+
+        if (start)
+        {
+            _ = RunLoadAsync(node, load);
+        }
+
+        try
+        {
+            ResourceGeneration generation = await load.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            RefreshRuntimes();
+            lock (_gate)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                EnsureRunning();
+                ThrowIfUnavailable(generation);
+                return CreateReference<T>(node);
+            }
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                load.Waiters--;
+                if (load.Generation is { } generation)
+                {
+                    generation.Pins--;
+                }
+
+                _operations--;
+            }
         }
     }
 
@@ -163,7 +188,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             reference = null;
             if (!TryGetSlot(handle, out ResourceSlot? slot)
                 || !_published.TryGetValue(slot!.Node, out ResourceGeneration? generation)
-                || generation.State != ResourceGenerationState.Ready || GetUnavailable(generation) is not null)
+                || generation.State != ResourceGenerationState.Ready || TryGetUnavailable(generation, out _))
             {
                 return false;
             }
@@ -187,7 +212,84 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             }
 
             _externalOwners++;
-            return new(_publicationVersion, new ReadView(this, map), () => ReturnReadView(map));
+            return new(this, _publicationVersion, map);
+        }
+    }
+
+    internal ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryAcquireFrom(handle, _published, out ResourceLease<T>? lease) ? lease : null;
+        }
+    }
+
+    internal bool IsHandleAvailable<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is { } current && !TryGetUnavailable(current, out _);
+        }
+    }
+
+    internal void ReturnReference<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        lock (_gate)
+        {
+            ResourceSlot slot = _slots[(int)handle.Slot];
+            slot.References--;
+            if (slot.Current is { } current)
+            {
+                current.Pins--;
+            }
+
+            if (slot.References == 0)
+            {
+                _slotByKey.Remove(slot.Node);
+                slot.Current = null;
+            }
+
+            _externalOwners--;
+        }
+    }
+
+    internal void ReturnLease(ResourceGeneration generation)
+    {
+        lock (_gate)
+        {
+            generation.Pins--;
+            _externalOwners--;
+        }
+    }
+
+    internal void ReturnReadView(Dictionary<ResourceNode, ResourceGeneration> map)
+    {
+        lock (_gate)
+        {
+            foreach (ResourceGeneration generation in map.Values)
+            {
+                generation.Pins--;
+            }
+
+            _externalOwners--;
+        }
+    }
+
+    internal bool TryAcquireFromView<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
+        where T : class
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryAcquireFrom(handle, map, out lease);
         }
     }
 
@@ -326,75 +428,40 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    /// <summary>Acquires a revision-fixed lease, sharing compatible in-flight builds.</summary>
-    /// <typeparam name="T">The registered output type.</typeparam>
-    /// <param name="key">The requested logical resource.</param>
-    /// <param name="cancellationToken">Cancels this wait without cancelling shared construction.</param>
-    /// <returns>A lease owned by the caller.</returns>
-    private async ValueTask<ResourceLease<T>> AcquireLeaseAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+    private ResourceReference<T> CreateReference<T>(ResourceNode node)
         where T : class
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ResourceNode node = GetNode(key);
-        RefreshRuntimes();
-        ResourceLoad load;
-        bool start = false;
-        lock (_gate)
+        if (!_slotByKey.TryGetValue(node, out uint index))
         {
-            EnsureRunning();
-            if (_published.TryGetValue(node, out ResourceGeneration? cached))
+            index = checked((uint)_slots.Count);
+            for (int candidate = 0; candidate < _slots.Count; candidate++)
             {
-                ThrowIfUnavailable(cached);
-                return CreateLease<T>(cached);
-            }
-
-            ThrowIfKnownUnavailable(node);
-            if (!_loads.TryGetValue(node, out load!))
-            {
-                ResourceBuildView view = _normalView is { } existing && existing.PublicationVersion == _publicationVersion
-                    ? existing
-                    : CreateView([], CancellationToken.None);
-                _normalView = view;
-                view.Roots++;
-                load = new(view);
-                _loads.Add(node, load);
-                _operations++;
-                start = true;
-            }
-
-            load.Waiters++;
-            _operations++;
-        }
-
-        if (start)
-        {
-            _ = RunLoadAsync(node, load);
-        }
-
-        try
-        {
-            ResourceGeneration generation = await load.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            RefreshRuntimes();
-            lock (_gate)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ThrowIfUnavailable(generation);
-                return CreateLease<T>(generation);
-            }
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                load.Waiters--;
-                if (load.Generation is { } generation)
+                ResourceSlot old = _slots[candidate];
+                if (old.References == 0 && old.Generation < uint.MaxValue)
                 {
-                    generation.Pins--;
+                    index = (uint)candidate;
+                    break;
                 }
-
-                _operations--;
             }
+
+            uint generation = index == _slots.Count ? 1 : checked(_slots[(int)index].Generation + 1);
+            ResourceSlot slot = new(node, generation);
+            if (index == _slots.Count)
+            {
+                _slots.Add(slot);
+            }
+            else
+            {
+                _slots[(int)index] = slot;
+            }
+
+            _slotByKey.Add(node, index);
         }
+
+        ResourceSlot current = _slots[(int)index];
+        current.Current = _published.GetValueOrDefault(node);
+        ResourceHandle<T> handle = new(ManagerId, index, current.Generation);
+        return CreateReference(handle, current);
     }
 
     private ResourceReference<T> CreateReference<T>(ResourceHandle<T> handle, ResourceSlot slot)
@@ -408,18 +475,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
         _externalOwners++;
         ResourceKey<T> key = new(slot.Node.Address);
-        return new(key, handle, () => IsHandleAvailable(handle), () => AcquireCurrentLease(handle), () => ReturnReference(handle));
-    }
-
-    private ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
-        where T : class
-    {
-        RefreshRuntimes();
-        lock (_gate)
-        {
-            EnsureRunning();
-            return TryAcquireFrom(handle, _published, out ResourceLease<T>? lease) ? lease : null;
-        }
+        return new(this, key, handle);
     }
 
     private ResourceLease<T> CreateLease<T>(ResourceGeneration generation)
@@ -427,8 +483,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     {
         generation.Pins++;
         _externalOwners++;
-        ResourceKey<T> key = new(generation.Node.Address);
-        return new(key, generation.Revision, (T)generation.Value!, () => GetUnavailableThreadSafe(generation), () => ReturnLease(generation));
+        return new(this, generation);
     }
 
     private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
@@ -437,7 +492,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         lease = null;
         if (!TryGetSlot(handle, out ResourceSlot? slot)
             || !map.TryGetValue(slot!.Node, out ResourceGeneration? generation)
-            || generation.State != ResourceGenerationState.Ready || GetUnavailable(generation) is not null)
+            || generation.State != ResourceGenerationState.Ready || TryGetUnavailable(generation, out _))
         {
             return false;
         }
@@ -465,81 +520,12 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         return true;
     }
 
-    private bool IsHandleAvailable<T>(ResourceHandle<T> handle)
-        where T : class
-    {
-        RefreshRuntimes();
-        lock (_gate)
-        {
-            EnsureRunning();
-            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is { } current && GetUnavailable(current) is null;
-        }
-    }
-
-    private void ReturnReference<T>(ResourceHandle<T> handle)
-        where T : class
-    {
-        lock (_gate)
-        {
-            ResourceSlot slot = _slots[(int)handle.Slot];
-            slot.References--;
-            if (slot.Current is { } current)
-            {
-                current.Pins--;
-            }
-
-            if (slot.References == 0)
-            {
-                _slotByKey.Remove(slot.Node);
-                slot.Current = null;
-            }
-
-            _externalOwners--;
-        }
-    }
-
-    private void ReturnLease(ResourceGeneration generation)
-    {
-        lock (_gate)
-        {
-            generation.Pins--;
-            _externalOwners--;
-        }
-    }
-
-    private void ReturnReadView(Dictionary<ResourceNode, ResourceGeneration> map)
-    {
-        lock (_gate)
-        {
-            foreach (ResourceGeneration generation in map.Values)
-            {
-                generation.Pins--;
-            }
-
-            _externalOwners--;
-        }
-    }
-
     private void ReturnSession(IAsyncDisposable session)
     {
         lock (_gate)
         {
             _sessions.Remove(session);
             _failedSessions.Remove(session);
-        }
-    }
-
-    private sealed class ReadView(ResourceManager manager, Dictionary<ResourceNode, ResourceGeneration> map) : IResourceReadView
-    {
-        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
-            where T : class
-        {
-            manager.RefreshRuntimes();
-            lock (manager._gate)
-            {
-                manager.EnsureRunning();
-                return manager.TryAcquireFrom(handle, map, out lease);
-            }
         }
     }
 }
