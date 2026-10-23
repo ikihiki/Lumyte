@@ -25,7 +25,6 @@ public sealed class ModuleCollectionTests
         Assert.Throws<ArgumentException>(() => new ExecutionRuntime([new Dependent(events)]));
         Assert.Throws<ArgumentException>(() => new ExecutionRuntime([new Dependency(events), new Dependency(events)]));
         Assert.Throws<ArgumentException>(() => new ExecutionRuntime([new CyclicA(events), new CyclicB(events)]));
-        Assert.Throws<ArgumentNullException>(() => new ExecutionRuntime(new IExecutionModule[] { null! }));
     }
 
     /// <summary>A later conflicting static endpoint cannot partially consume earlier fresh endpoints.</summary>

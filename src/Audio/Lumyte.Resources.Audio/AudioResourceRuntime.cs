@@ -8,7 +8,7 @@ namespace Lumyte.Resources.Audio;
 /// <param name="audio">The same audio module collected by the execution runtime.</param>
 public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, IResourceRuntimeDependency
 {
-    private readonly AudioModule _audio = audio ?? throw new ArgumentNullException(nameof(audio));
+    private readonly AudioModule _audio = audio;
     private readonly object _gate = new();
     private ResourceRuntimeSnapshot _snapshot;
 
@@ -40,7 +40,6 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     /// <returns>The actual backend clip, never a placeholder.</returns>
     public ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(data);
         Track(context);
         return _audio.State.CreateClip(data.Format, data.Samples, cancellationToken);
     }
@@ -52,7 +51,6 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     /// <returns>The actual stopped backend voice.</returns>
     public ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(clip);
         Track(context);
         return new AudioClip(clip).CreateVoice(AudioBus.Effects, cancellationToken);
     }
@@ -81,10 +79,7 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     }
 
     private void Track(ResourceBuildContext context)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        context.TrackRuntimeDependency(Id, Snapshot.Version, providerIdentity: this);
-    }
+        => context.TrackRuntimeDependency(Id, Snapshot.Version, providerIdentity: this);
 
     private void SetSnapshot(ResourceRuntimeSnapshot snapshot)
     {

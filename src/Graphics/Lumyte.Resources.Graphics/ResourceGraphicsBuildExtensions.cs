@@ -15,8 +15,6 @@ public static class ResourceGraphicsBuildExtensions
     /// <remarks>The stage releases native children before context cleanup returns the lease. Device retirement and thread dispatch remain the stage's responsibility.</remarks>
     public static async ValueTask<GraphicsDeviceLease> UseGraphicsAsync(this ResourceBuildContext context, IGraphicsDeviceService service, string dependencyId, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(service);
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
         GraphicsDeviceLease lease = await service.AcquireAsync(cancellationToken);
         try

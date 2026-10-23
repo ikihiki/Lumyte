@@ -7,7 +7,7 @@ namespace Lumyte.Audio.Execution;
 /// <param name="original">The fully created original instance.</param>
 public readonly partial struct AudioClip(IAudioClip original)
 {
-    private readonly IAudioClip _original = original ?? throw new ArgumentNullException(nameof(original));
+    private readonly IAudioClip _original = original;
 
     /// <summary>Gets the immutable PCM format.</summary>
     public AudioFormat Format => _original.Format;
