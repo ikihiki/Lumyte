@@ -38,7 +38,7 @@ LeaseはReferenceやSnapshotから独立して所有を持つため、それら�
 
 CaptureSnapshotは呼出時点の公開mapとPublicationVersionを捕捉し、そのmap内の全世代を保持する。
 複数のReferenceから同じSnapshotを指定して取得すると、一つの公開状態に存在した値を選べる。
-scopeの開始後に追加されたキーは、そのscopeから取得できない。
+snapshotの取得後に追加されたキーは、そのsnapshotから取得できない。
 公開mapを保持していても論理slotの有効性は毎回検証するため、最後のReference返却後に古いhandleから新しいLeaseは取得できない。
 
 ### 失効・失敗・スレッド契約
@@ -90,7 +90,7 @@ Snapshotを長く保持すると参照した値だけでなくmap全体の世代
 +        public ResourceKey<T> Key { get; }
 +        public ResourceHandle<T> Handle { get; }
 +        public bool IsAvailable { get; }
-+        // scope未指定は現在の公開値、指定時は捕捉した公開値を選ぶ。
++        // snapshot未指定は現在の公開値、指定時は捕捉した公開値を選ぶ。
 +        public ResourceLease<T> Acquire(ResourceSnapshot? snapshot = null);
 +        public bool TryAcquire(out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null);
 +        // 論理所有を一度返す。既存Leaseの内容は保持される。
@@ -136,8 +136,8 @@ handleのコピーは16 byteの値コピーで、ヒープ確保や所有数の�
 slot解決は同期区間内で識別子・世代・型を検証するため、lock-freeとは規定しない。
 
 CaptureSnapshotとSnapshot.Disposeは捕捉したmapの全世代を保持・返却するので、公開リソース数に比例した処理がある。
-slotの新規割当では再利用候補の走査を行う。性能測定ではhandleのコピー、単一Lease取得、scope開始・終了、slotの再取得を分ける。
-公開mapを保持する方式は一貫した複数読取りを簡単にする一方、長いscopeの保持によって回収が遅れる。
+slotの新規割当では再利用候補の走査を行う。性能測定ではhandleのコピー、単一Lease取得、snapshot取得・返却、slotの再取得を分ける。
+公開mapを保持する方式は一貫した複数読取りを簡単にする一方、長いsnapshotの保持によって回収が遅れる。
 
 ## 検討した代替案
 
@@ -157,7 +157,7 @@ Snapshotは入力の内容を複製せず、保持中の値を回収しないこ
 - handleが16 byteかつmanaged参照を含まないことと、コピーによって寿命が延びないことを確認する。
 - default・別manager・異なる型・返却済みslot・slot再利用前のhandleを拒否する。
 - handleから取得した複数Referenceの独立所有と、最後のReference返却後も取得済みLeaseが値を保持することを確認する。
-- Snapshot開始後に公開したキーの取得を拒否し、scopeから発行済みのLeaseがscope返却後も使えることを確認する。
+- Snapshot取得後に公開したキーの取得を拒否し、snapshotから発行済みのLeaseがsnapshot返却後も使えることを確認する。
 - Reference・Lease・Snapshotが残る場合の終了拒否と、返却後の正常な終了を検証する。
 
 ## 関連ADR
