@@ -7,15 +7,17 @@ internal sealed class RangeGraphNode<TContext>(RangeDefinition<TContext> work, i
 
     internal override int WorkerCount(int length, int concurrency) => (int)Math.Min(concurrency, ((long)length + batchSize - 1) / batchSize);
 
-    internal override QueuedWork[] Create(GraphState<TContext> state, int node, int length, int workers)
+    internal override void Create(GraphState<TContext> state, int node, int length, Span<QueuedWork> workers)
     {
-        var range = new RangeClaim(length, batchSize);
-        var items = new QueuedWork[workers];
-        for (int i = 0; i < workers; i++)
+        if (workers.IsEmpty)
         {
-            items[i] = new GraphRangeWorker<TContext>(state, node, work, range);
+            return;
         }
 
-        return items;
+        var range = new RangeClaim(length, batchSize);
+        for (int i = 0; i < workers.Length; i++)
+        {
+            workers[i] = new GraphRangeWorker<TContext>(state, node, work, range);
+        }
     }
 }
