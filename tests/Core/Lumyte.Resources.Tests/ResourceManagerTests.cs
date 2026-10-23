@@ -336,7 +336,7 @@ public sealed class ResourceManagerTests
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
         using ResourceReference<TestValue> reference = await fixture.Manager.AcquireAsync(Key("value"));
-        using ResourceReadScope frame = fixture.Manager.BeginRead();
+        using ResourceSnapshot frame = fixture.Manager.CaptureSnapshot();
         using ResourceLease<TestValue> old = reference.Acquire();
         fixture.Source.Set("asset", "new");
         Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.ReloadForTestAsync([new("asset")])).Status);
@@ -388,7 +388,7 @@ public sealed class ResourceManagerTests
     {
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "value");
-        using ResourceReadScope frame = fixture.Manager.BeginRead();
+        using ResourceSnapshot frame = fixture.Manager.CaptureSnapshot();
         using ResourceReference<TestValue> reference = await fixture.Manager.AcquireAsync(Key("value"));
         Assert.False(reference.TryAcquire(out ResourceLease<TestValue>? missing, frame));
         Assert.Null(missing);
@@ -413,7 +413,7 @@ public sealed class ResourceManagerTests
         ResourceHandle<TestValue> handle = owner.Handle;
         ResourceHandle<TestValue> copy = handle;
         ResourceHandle<CpuValue> wrongType = Unsafe.As<ResourceHandle<TestValue>, ResourceHandle<CpuValue>>(ref copy);
-        using ResourceReadScope captured = fixture.Manager.BeginRead();
+        using ResourceSnapshot captured = fixture.Manager.CaptureSnapshot();
         Assert.False(handle.IsDefault);
         Assert.False(other.Manager.TryAcquireLeaseForTest(copy, out ResourceLease<TestValue>? foreign));
         Assert.Null(foreign);
@@ -438,10 +438,10 @@ public sealed class ResourceManagerTests
         }
     }
 
-    /// <summary>Reload publishes all affected outputs together and captured read scopes keep the earlier map.</summary>
+    /// <summary>Reload publishes all affected outputs together and captured resource snapshots keep the earlier map.</summary>
     /// <returns>Completion of atomic reload and old-generation ownership checks.</returns>
     [Fact]
-    public async Task ReloadPublishesAtomicallyAndKeepsOldLeasesAndReadScopesAsync()
+    public async Task ReloadPublishesAtomicallyAndKeepsOldLeasesAndSnapshotsAsync()
     {
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
@@ -460,7 +460,7 @@ public sealed class ResourceManagerTests
         };
         using ResourceReference<TestValue> root = await fixture.Manager.AcquireAsync(Key("root"));
         using ResourceReference<TestValue> leaf = await fixture.Manager.AcquireAsync(Key("leaf"));
-        using ResourceReadScope before = fixture.Manager.BeginRead();
+        using ResourceSnapshot before = fixture.Manager.CaptureSnapshot();
         using ResourceLease<TestValue> oldLease = await fixture.Manager.AcquireLeaseForTestAsync(Key("root"));
         ResourceHandle<TestValue> handle = root.Handle;
         ulong version = fixture.Manager.PublicationVersion;
@@ -672,7 +672,7 @@ public sealed class ResourceManagerTests
         using ResourceReference<TestValue> scene = await fixture.Manager.AcquireAsync(Key("scene"));
         using ResourceReference<TestValue> cpu = await fixture.Manager.AcquireAsync(Key("cpu"));
         using ResourceLease<TestValue> oldGpu = await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu"));
-        using ResourceReadScope oldFrame = fixture.Manager.BeginRead();
+        using ResourceSnapshot oldFrame = fixture.Manager.CaptureSnapshot();
         ResourceHandle<TestValue> handle = gpu.Handle;
         fixture.Runtime.Set(new(2, false, 1));
 
@@ -699,13 +699,13 @@ public sealed class ResourceManagerTests
     /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
     /// <returns>Completion of the shutdown retries.</returns>
     [Fact]
-    public async Task ShutdownRejectsReferencesLeasesAndReadScopesAsync()
+    public async Task ShutdownRejectsReferencesLeasesAndSnapshotsAsync()
     {
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
         ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("value"));
         ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
-        ResourceReadScope read = fixture.Manager.BeginRead();
+        ResourceSnapshot read = fixture.Manager.CaptureSnapshot();
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());
         owner.Dispose();
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());

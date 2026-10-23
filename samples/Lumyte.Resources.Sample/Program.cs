@@ -76,20 +76,20 @@ internal static class Program
         using ResourceReference<SceneResource> sceneOwner = await resources.AcquireAsync(new ResourceKey<SceneResource>(sourceId)).ConfigureAwait(false);
         using ResourceLease<SceneResource> oldScene = sceneOwner.Acquire();
         using ResourceLease<MeshInfo> oldMesh = meshOwner.Acquire();
-        using ResourceReadScope originalView = resources.BeginRead();
+        using ResourceSnapshot originalSnapshot = resources.CaptureSnapshot();
         Console.WriteLine($"Initial mesh: {oldMesh.Value.VertexCount} vertices; shared document builds: {counters.DocumentBuilds}");
         const string UpdatedScene = """
             { "meshes": [ { "vertexCount": 6 } ], "materials": [ { "name": "silver" } ] }
             """;
         ResourceReloadResult reload = await RewriteAndWaitAsync(changes, path, UpdatedScene).ConfigureAwait(false);
 
-        using ResourceReadScope currentView = resources.BeginRead();
-        using ResourceLease<MeshInfo> newMesh = AcquireFrom(currentView, meshHandle);
-        using ResourceLease<MaterialInfo> oldMaterial = AcquireFrom(originalView, materialHandle);
-        using ResourceLease<MaterialInfo> newMaterial = AcquireFrom(currentView, materialHandle);
+        using ResourceSnapshot currentSnapshot = resources.CaptureSnapshot();
+        using ResourceLease<MeshInfo> newMesh = AcquireFrom(currentSnapshot, meshHandle);
+        using ResourceLease<MaterialInfo> oldMaterial = AcquireFrom(originalSnapshot, materialHandle);
+        using ResourceLease<MaterialInfo> newMaterial = AcquireFrom(currentSnapshot, materialHandle);
         Console.WriteLine($"Automatic reload: {reload.Status}; publication {reload.PublicationVersion}; document builds: {counters.DocumentBuilds}");
         Console.WriteLine($"Existing lease: {oldMesh.Value.VertexCount} vertices; same handle after reload: {newMesh.Value.VertexCount} vertices");
-        using ResourceLease<SceneResource> newScene = AcquireFrom(currentView, sceneOwner.Handle);
+        using ResourceLease<SceneResource> newScene = AcquireFrom(currentSnapshot, sceneOwner.Handle);
         if (!ReferenceEquals(oldScene.Value.Mesh, oldMesh.Value) || !ReferenceEquals(newScene.Value.Mesh, newMesh.Value) ||
             !ReferenceEquals(oldScene.Value.Material, oldMaterial.Value) || !ReferenceEquals(newScene.Value.Material, newMaterial.Value))
         {
@@ -134,9 +134,9 @@ internal static class Program
         return await expected.ConfigureAwait(false);
     }
 
-    private static ResourceLease<T> AcquireFrom<T>(ResourceReadScope view, ResourceHandle<T> handle)
+    private static ResourceLease<T> AcquireFrom<T>(ResourceSnapshot snapshot, ResourceHandle<T> handle)
         where T : class
-        => view.TryAcquire(handle, out ResourceLease<T>? lease)
+        => snapshot.TryAcquire(handle, out ResourceLease<T>? lease)
             ? lease!
             : throw new InvalidOperationException("The sample's owned handle has no published generation.");
 }
