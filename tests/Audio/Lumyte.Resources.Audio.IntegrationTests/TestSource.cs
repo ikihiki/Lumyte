@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace Lumyte.Resources.Audio.Sample;
+namespace Lumyte.Resources.Audio.IntegrationTests;
 
 internal sealed class TestSource : IResourceSource, IResourceChangeSource
 {

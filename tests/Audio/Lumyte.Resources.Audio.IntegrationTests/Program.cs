@@ -4,11 +4,11 @@ using Lumyte.Audio.Execution;
 using Lumyte.Execution;
 using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
-using Lumyte.Resources.DependencyInjection;
+using Lumyte.Resources.Audio.DependencyInjection;
 using Lumyte.Resources.Execution;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Lumyte.Resources.Audio.Sample;
+namespace Lumyte.Resources.Audio.IntegrationTests;
 
 internal static class Program
 {
@@ -33,7 +33,7 @@ internal static class Program
         var factory = new TestFactory();
         var audio = new AudioModule(native ? new OpenALDeviceFactory() : factory);
         var bridge = new AudioResourceRuntime(audio);
-        var jobs = new ResourceJob<DecodeRequest, AudioPcmData, DecodeHandler>();
+        var jobs = new ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>();
         var source = new TestSource();
         ServiceProvider? provider = null;
         AsyncServiceScope? scope = null;
@@ -43,28 +43,20 @@ internal static class Program
         {
             var services = new ServiceCollection();
             services.AddSingleton(audio);
-            services.AddSingleton(bridge);
-            services.AddSingleton(jobs);
-            services.AddSingleton<IExecutionModule>(provider => provider.GetRequiredService<AudioModule>());
-            services.AddSingleton<IExecutionModule>(provider => provider.GetRequiredService<AudioResourceRuntime>());
-            services.AddSingleton<IExecutionModule>(provider => provider.GetRequiredService<ResourceJob<DecodeRequest, AudioPcmData, DecodeHandler>>());
-            services.AddSingleton<ExecutionRuntime>();
             services.AddSingleton(source);
             services.AddMemoryManagement();
-            services.AddResources("audio", builder => builder.UseSource<SharedTestSource>()
-                .AddSourcePipeline<AudioPcmData, DecodeStage>()
-                .AddTransformPipeline<AudioPcmData, IAudioClip, AudioClipStage>()
-                .AddTransformPipeline<IAudioClip, IAudioVoice, AudioVoiceStage>());
-            services.AddResourceRuntimeDependency("audio", "Audio", provider => provider.GetRequiredService<AudioResourceRuntime>());
+            services.AddAudioResources<SharedTestSource>("audio");
             provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             execution = provider.GetRequiredService<ExecutionRuntime>();
+            bridge = provider.GetRequiredService<AudioResourceRuntime>();
+            jobs = provider.GetRequiredService<ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>>();
             scope = provider.CreateAsyncScope();
             manager = scope.Value.ServiceProvider.GetRequiredKeyedService<ResourceManager>("audio");
         }
         else
         {
             execution = new ExecutionRuntime([audio, bridge, jobs]);
-            manager = new ResourceManager("audio", source, [new DecodeStage(jobs), new AudioClipStage(bridge), new AudioVoiceStage(bridge)], new MemoryManager(), [bridge]);
+            manager = new ResourceManager("audio", source, [new AudioDecodeStage(jobs), new AudioClipStage(bridge), new AudioVoiceStage(bridge)], new MemoryManager(), [bridge]);
         }
 
         execution.PrepareOnCurrentHost(host ? OwnerPlacement.Host : OwnerPlacement.Dedicated, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, host ? 1 : 2, recover ? new ExecutionOptions { MaxCommands = 16 } : new ExecutionOptions());
@@ -161,7 +153,7 @@ internal static class Program
             canceled.Cancel();
             try
             {
-                Wait(jobs.Execute(new DecodeRequest([1]), canceled.Token).AsTask());
+                Wait(jobs.Execute(new AudioDecodeRequest(new byte[] { 1 }), canceled.Token).AsTask());
                 throw new InvalidOperationException("Canceled CPU work executed.");
             }
             catch (OperationCanceledException)
@@ -184,7 +176,7 @@ internal static class Program
             }
 
             Wait(execution.StopAsync().AsTask());
-            Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}, owner={audio.State.OwnerThreadId}, decode={DecodeHandler.LastThreadId}");
+            Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}, owner={audio.State.OwnerThreadId}");
         }
         finally
         {
