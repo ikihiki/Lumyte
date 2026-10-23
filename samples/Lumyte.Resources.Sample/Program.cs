@@ -1,3 +1,4 @@
+using Lumyte.Execution;
 using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
@@ -46,22 +47,32 @@ internal static class Program
             .AddTransformPipeline<SceneDocument, SceneResource, SceneStage>());
 
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
-        await using AsyncServiceScope world = provider.CreateAsyncScope();
-        ResourceManager resources = world.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
-        ResourceReloadService changes = resources.HotReload!;
-        SampleCounters counters = provider.GetRequiredService<SampleCounters>();
-        using (ResourceReference<SceneResource> sceneReference = await resources.AcquireAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))
-        using (ResourceLease<SceneResource> scene = sceneReference.Acquire())
+        ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
+        execution.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, Environment.ProcessorCount, new ExecutionOptions());
+        await execution.StartAsync().ConfigureAwait(false);
+        try
         {
-            Console.WriteLine($"Scene: {scene.Value.Mesh.VertexCount} vertices; material: {scene.Value.Material.Name}");
-            Console.WriteLine($"Projection builds: {counters.ProjectionBuilds}");
-        }
+            await using AsyncServiceScope world = provider.CreateAsyncScope();
+            ResourceManager resources = world.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+            ResourceReloadService changes = resources.HotReload!;
+            SampleCounters counters = provider.GetRequiredService<SampleCounters>();
+            using (ResourceReference<SceneResource> sceneReference = await resources.AcquireAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))
+            using (ResourceLease<SceneResource> scene = sceneReference.Acquire())
+            {
+                Console.WriteLine($"Scene: {scene.Value.Mesh.VertexCount} vertices; material: {scene.Value.Material.Name}");
+                Console.WriteLine($"Projection builds: {counters.ProjectionBuilds}");
+            }
 
-        await DemonstrateReloadAsync(resources, changes, "scene.json", path, counters).ConfigureAwait(false);
-        await resources.TrimAsync().ConfigureAwait(false);
-        await resources.DisposeAsync().ConfigureAwait(false);
-        IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
-        Console.WriteLine($"Document buffer after release: {memory.GetSnapshot(new("sample.document")).CommittedBytes} bytes");
+            await DemonstrateReloadAsync(resources, changes, "scene.json", path, counters).ConfigureAwait(false);
+            await resources.TrimAsync().ConfigureAwait(false);
+            await resources.DisposeAsync().ConfigureAwait(false);
+            IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
+            Console.WriteLine($"Document buffer after release: {memory.GetSnapshot(new("sample.document")).CommittedBytes} bytes");
+        }
+        finally
+        {
+            await execution.StopAsync().ConfigureAwait(false);
+        }
     }
 
     private static async Task DemonstrateReloadAsync(ResourceManager resources, ResourceReloadService changes, string sourceId, string path, SampleCounters counters)

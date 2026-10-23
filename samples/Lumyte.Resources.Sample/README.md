@@ -16,6 +16,13 @@ scene.json -> SceneDocument -> MeshInfo     (mesh/0, geometry:v1)
 MeshInfo + MaterialInfo     -> SceneResource (typed child references)
 ```
 
+`AddResources` registers the default resource runtime and `ExecutionRuntime`.
+The host prepares and starts execution before opening resource scopes, with
+`CpuExecutionMode.ThreadPool` and an explicit concurrency limit. Stage builds,
+releases and their continuations run as CPU jobs; stages use ordinary `await` to
+return to that scheduler after source reads or child-resource loads. Waiting for
+I/O or a child resource does not occupy a CPU worker slot.
+
 Both transforms normalize their input address to the same document root, so
 different element selectors and variants share one parse per published input
 revision. Each compound type defines its own typed child references. The sample
@@ -57,7 +64,7 @@ memory. The file source reads inputs directly without storing historical copies;
 detected changes fail reads and the reload coordinator retries within its configured limits.
 
 The sample closes leases, resource snapshots and references before trimming and closing
-the manager, then disposes its DI scope and deletes the temporary directory. It
+the manager, then disposes its DI scope, stops execution and deletes the temporary directory. It
 demonstrates compound-document projection and hot reload, with no format-specific
 model importer, GPU upload or audio codec.
 
