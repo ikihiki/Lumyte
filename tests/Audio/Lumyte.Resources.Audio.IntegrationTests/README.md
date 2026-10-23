@@ -19,7 +19,7 @@ DIありでは本体の`AddAudioResources<TestSource>`を使用します。DIな
 AudioClipStage、AudioVoiceStageを使用します。汎用ResourceRuntimeをmanagerの既定実行先とし、
 clipとvoiceのstageRuntimesには同じAudioResourceRuntimeを指定します。
 AudioResourceRuntimeは汎用RuntimeへCPU配送を委譲し、device世代の依存先にも自動登録されます。
-Stageはcontext.RuntimeからAudio環境を取得し、解放には生成時に保持したRuntimeと元backendを使用します。
+StageはBuildAsyncの型付きAudioResourceRuntime引数で選択済み環境を受け取り、解放には生成時に保持したRuntimeと元backendを使用します。
 TestSourceはWAVEファイルを供給し、fake backendだけをテスト用に置き換えます。
 登録とPumpは[Program.cs](Program.cs)を参照してください。
 
