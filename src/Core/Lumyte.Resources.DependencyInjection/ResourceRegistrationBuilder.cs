@@ -8,6 +8,7 @@ public sealed class ResourceRegistrationBuilder
     private readonly string _managerName;
     private readonly List<Action<IServiceCollection>> _registrations = [];
     private readonly HashSet<RuntimeTypeHandle> _pipelines = [];
+    private readonly HashSet<string> _runtimeDependencies = new(StringComparer.Ordinal);
     private Func<IServiceProvider, IResourceSource>? _source;
     private bool _completed;
 
@@ -67,6 +68,24 @@ public sealed class ResourceRegistrationBuilder
         ValidateLifetime(lifetime);
         AddPipelineType<TOutput>();
         _registrations.Add(services => services.AddKeyedScoped<IResourceStage, TStage>(_managerName));
+        return this;
+    }
+
+    /// <summary>Registers a constructor-injected scoped runtime dependency.</summary>
+    /// <typeparam name="TDependency">The runtime provider implementation.</typeparam>
+    /// <param name="dependencyId">The unique manager-local runtime dependency name.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseRuntimeDependency<TDependency>(string dependencyId)
+        where TDependency : class, IResourceRuntimeDependency
+    {
+        EnsureConfiguring();
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
+        if (!_runtimeDependencies.Add(dependencyId))
+        {
+            throw new ArgumentException("The runtime dependency name is already registered.", nameof(dependencyId));
+        }
+
+        _registrations.Add(services => ResourceServiceCollectionExtensions.AddRuntimeDependency<TDependency>(services, _managerName, dependencyId));
         return this;
     }
 
