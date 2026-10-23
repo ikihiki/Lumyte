@@ -24,10 +24,8 @@ OpenAL Soft の Native ライブラリはアプリ／ホストが用意します
 
 float PCM は [-1, 1] に clamp して PCM16 に変換します。mono／stereo のデバイス形式への変換とミックスは OpenAL に任せます。3D 減衰は使わず、voice gain に Master と所属バスの gain を乗算します。量子化と平滑化は Browser と一致しません。
 
-`ALC_EXT_disconnect` がある環境では切断を `Unavailable` として返します。検出した切断は不可逆で、生成・再生制御・Update・Resumeは `AudioDeviceUnavailableException` になります。旧voice・clipのDisposeは引き続き許可し、最後に旧deviceを解放します。旧contextをcurrentにできない場合、子のNative回収はcontext破棄に委ねます。拡張がない環境では切断検出を保証しません。解放失敗後にcontextが終了済みならDisposeの再試行だけを許します。
+`ALC_EXT_disconnect` がある環境では切断を `Unavailable` として返します。切断後の `ResumeOutputAsync` は `NotSupportedException` となり、子を解放して device を再生成します。拡張がない環境では切断検出を保証しません。解放失敗後に context が終了済みなら Dispose の再試行だけを許します。
 
 [実行サンプル](../../../samples/Lumyte.Audio.Sample/README.md) で契約を確認できます。検証済み: Linux x64／OpenAL Soft の null driver。物理出力の可聴品質、Windows・ARM64 の実機実行は未検証です。
 
 [回帰テスト](../../../tests/Audio/Lumyte.Audio.OpenAL.Tests/README.md) は Native の source 枯渇からの回復を確認します。
-
-voiceのState／Gain／Loop getterはbackendのlock内でcached値を読み、任意のスレッドから呼べます。native／JavaScriptの操作は行いません。setter・再生制御・Update・解放は所有スレッドで実行します。clipのFormat／FrameCountは不変のmetadataです。

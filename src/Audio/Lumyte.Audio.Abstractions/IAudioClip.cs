@@ -3,9 +3,6 @@ namespace Lumyte.Audio.Abstractions;
 /// <summary>Backend-owned PCM storage. Disposal is rejected while a voice borrows it.</summary>
 public interface IAudioClip : IDisposable
 {
-    /// <summary>Gets the backend device which created this clip.</summary>
-    IAudioDevice Device { get; }
-
     /// <summary>Gets the input PCM format.</summary>
     AudioFormat Format { get; }
 

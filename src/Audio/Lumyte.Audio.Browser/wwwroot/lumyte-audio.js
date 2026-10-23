@@ -10,10 +10,6 @@ export async function resume(device) {
     if (device.context.state !== "running") throw new Error("Audio output could not resume.");
 }
 export function destroyDevice(device) {
-    if (device.closed || device.context.state === "closed") {
-        device.closed = true;
-        return;
-    }
     // close() initiates shutdown synchronously; completion is owned by the context.
     const closing = device.context.close();
     device.closed = true;
@@ -39,11 +35,7 @@ export function createVoice(device, clip, initialGain) {
 function detach(voice) {
     if (voice.source) {
         voice.source.onended = null;
-        try {
-            voice.source.stop();
-        } catch (error) {
-            if (outputState(voice.device) !== 2) throw error;
-        }
+        voice.source.stop();
         voice.source.disconnect();
         voice.source = null;
     }

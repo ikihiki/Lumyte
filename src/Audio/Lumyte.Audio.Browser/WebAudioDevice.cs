@@ -14,7 +14,6 @@ public sealed class WebAudioDevice : IAudioDevice
 
     private readonly JSObject _handle;
 
-    private bool _unavailable;
     private bool _disposed;
 
     private WebAudioDevice(JSObject handle, int maxVoices)
@@ -28,10 +27,8 @@ public sealed class WebAudioDevice : IAudioDevice
     {
         get
         {
-            Validate(false);
-            var state = (AudioOutputState)WebAudioInterop.OutputState(_handle);
-            _unavailable |= state == AudioOutputState.Unavailable;
-            return _unavailable ? AudioOutputState.Unavailable : state;
+            Validate();
+            return (AudioOutputState)WebAudioInterop.OutputState(_handle);
         }
     }
 
@@ -125,7 +122,7 @@ public sealed class WebAudioDevice : IAudioDevice
             return;
         }
 
-        Validate(false);
+        Validate();
         if (_clips.Count != 0 || _voices.Count != 0)
         {
             throw new InvalidOperationException("Dispose all clips and voices before the device.");
@@ -142,21 +139,12 @@ public sealed class WebAudioDevice : IAudioDevice
 
     internal void Remove(WebAudioVoice voice) => _voices.Remove(voice);
 
-    internal void Validate(bool requireAvailable = true)
+    internal void Validate()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (Environment.CurrentManagedThreadId != _threadId)
         {
             throw new InvalidOperationException("Audio control must run on the owning thread.");
-        }
-
-        if (requireAvailable)
-        {
-            _unavailable |= WebAudioInterop.OutputState(_handle) == (int)AudioOutputState.Unavailable;
-            if (_unavailable)
-            {
-                throw new AudioDeviceUnavailableException();
-            }
         }
     }
 }
