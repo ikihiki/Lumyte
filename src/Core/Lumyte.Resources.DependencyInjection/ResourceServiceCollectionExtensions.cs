@@ -13,9 +13,7 @@ public static class ResourceServiceCollectionExtensions
     /// <returns>The supplied service collection.</returns>
     public static IServiceCollection AddResources(this IServiceCollection services, string name, Action<ResourceRegistrationBuilder> configure)
     {
-        ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(configure);
         if (HasManager(services, name))
         {
             throw new ArgumentException("The resource manager name is already registered.", nameof(name));
@@ -45,7 +43,6 @@ public static class ResourceServiceCollectionExtensions
     public static IServiceCollection AddResourceRuntimeDependency<TDependency>(this IServiceCollection services, string managerName, string dependencyId, Func<IServiceProvider, TDependency> factory)
         where TDependency : class, IResourceRuntimeDependency
     {
-        ArgumentNullException.ThrowIfNull(factory);
         ValidateRuntimeRegistration(services, managerName, dependencyId);
         var key = new RuntimeServiceKey(managerName, dependencyId);
         services.AddKeyedScoped<TDependency>(key, (provider, _) => factory(provider));
@@ -67,7 +64,6 @@ public static class ResourceServiceCollectionExtensions
 
     private static void ValidateRuntimeRegistration(IServiceCollection services, string managerName, string dependencyId)
     {
-        ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(managerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
         if (!HasManager(services, managerName))
