@@ -107,45 +107,6 @@ public sealed class ResourceConcurrencyTests
         Assert.Equal("parent", parent.Value.Label);
     }
 
-    /// <summary>Reload replaces every forced node's old outgoing edges before checking the replacement graph.</summary>
-    /// <returns>Completion of a valid dependency reversal.</returns>
-    [Fact]
-    public async Task ReloadAllowsAcyclicDependencyDirectionToReverseAsync()
-    {
-        await using Fixture fixture = new();
-        fixture.Plan.Builds["first"] = async (context, token) =>
-        {
-            ResourceSourceSnapshot source = await context.OpenSourceAsync(context.Address.Id, cancellationToken: token);
-            if (source.Revision == "2")
-            {
-                await context.RequireAsync(Key("second"), cancellationToken: token);
-            }
-
-            return new($"first:{source.Revision}");
-        };
-        fixture.Plan.Builds["second"] = async (context, token) =>
-        {
-            ResourceSourceSnapshot source = await context.OpenSourceAsync(context.Address.Id, cancellationToken: token);
-            if (source.Revision == "1")
-            {
-                await context.RequireAsync(Key("first"), cancellationToken: token);
-            }
-
-            return new($"second:{source.Revision}");
-        };
-        using ResourceReference<TestValue> first = await fixture.Manager.AcquireAsync(Key("first"));
-        using ResourceReference<TestValue> second = await fixture.Manager.AcquireAsync(Key("second"));
-        fixture.Plan.SourceRevision = 2;
-
-        ResourceReloadResult result = await fixture.Manager.ReloadForTestAsync([new("asset")]);
-        Assert.Equal(ResourceReloadStatus.Published, result.Status);
-        Assert.Equal(2, result.UpdatedResources);
-        using ResourceLease<TestValue> firstValue = await fixture.Manager.AcquireLeaseForTestAsync(Key("first"));
-        using ResourceLease<TestValue> secondValue = await fixture.Manager.AcquireLeaseForTestAsync(Key("second"));
-        Assert.Equal("first:2", firstValue.Value.Label);
-        Assert.Equal("second:2", secondValue.Value.Label);
-    }
-
     private static ResourceKey<TestValue> Key(string selector) => new("asset", selector);
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -67,7 +67,7 @@ public sealed partial class ResourceManager
                 return new(pending);
             }
 
-            if (_externalOwners != 0 || _operations != (_hotReload is null ? 0 : _reloadOperations) || _loads.Count != 0)
+            if (_externalOwners != 0 || _operations != 0 || _loads.Count != 0)
             {
                 throw new InvalidOperationException("Return resource references, leases and read scopes, and complete all operations before disposing the manager.");
             }
@@ -85,11 +85,6 @@ public sealed partial class ResourceManager
     {
         try
         {
-            if (_hotReload is not null)
-            {
-                await _hotReload.DisposeAsync().ConfigureAwait(false);
-            }
-
             _reclaimerRegistration.Dispose();
             await _maintenance.WaitAsync().ConfigureAwait(false);
             try
@@ -335,17 +330,7 @@ public sealed partial class ResourceManager
             candidates.RemoveWhere(static generation => generation.State is ResourceGenerationState.CleanupFailed or ResourceGenerationState.RetryingCleanup);
         }
 
-        try
-        {
-            await ReleaseUnusedAsync(candidates, CancellationToken.None).ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                RefreshWatchTargets();
-            }
-        }
+        await ReleaseUnusedAsync(candidates, CancellationToken.None).ConfigureAwait(false);
     }
 
     private void SetPublished(Dictionary<ResourceNode, ResourceGeneration> updated)
@@ -381,13 +366,6 @@ public sealed partial class ResourceManager
         _publicationVersion = version;
     }
 
-    private void RefreshWatchTargets()
-    {
-        _watchTargets.Set(_metadata.Values.SelectMany(static metadata => metadata.Sources.Keys)
-            .Concat(_generations.Where(static generation => generation.State == ResourceGenerationState.Building)
-                .SelectMany(static generation => generation.Sources.Keys)));
-    }
-
     private void PruneMetadata()
     {
         HashSet<ResourceNode> reachable = [];
@@ -410,7 +388,5 @@ public sealed partial class ResourceManager
         {
             _metadata.Remove(node);
         }
-
-        RefreshWatchTargets();
     }
 }

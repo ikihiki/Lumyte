@@ -1,6 +1,3 @@
-using System.Reflection;
-using System.Runtime.ExceptionServices;
-
 namespace Lumyte.Resources.Tests;
 
 /// <summary>Acquires short-lived test leases through the public reference contract.</summary>
@@ -37,34 +34,6 @@ internal static class ResourceTestAcquisition
         using (reference)
         {
             return reference!.TryAcquire(out lease);
-        }
-    }
-
-    /// <summary>Runs the internal reload debug command for graph regression tests.</summary>
-    /// <param name="manager">The manager under test.</param>
-    /// <param name="sources">The changed input identifiers.</param>
-    /// <param name="cancellationToken">Cancels the debug command.</param>
-    /// <returns>The reload result.</returns>
-    internal static ValueTask<ResourceReloadResult> ReloadForTestAsync(this ResourceManager manager, IReadOnlyCollection<ResourceId> sources, CancellationToken cancellationToken = default)
-        => InvokeReload(manager, "ReloadAsync", [sources, cancellationToken]);
-
-    /// <summary>Runs the internal tracked-input rescan debug command.</summary>
-    /// <param name="manager">The manager under test.</param>
-    /// <param name="cancellationToken">Cancels the debug command.</param>
-    /// <returns>The reload result.</returns>
-    internal static ValueTask<ResourceReloadResult> ReloadAllForTestAsync(this ResourceManager manager, CancellationToken cancellationToken = default)
-        => InvokeReload(manager, "ReloadAllAsync", [cancellationToken]);
-
-    private static ValueTask<ResourceReloadResult> InvokeReload(ResourceManager manager, string method, object[] arguments)
-    {
-        try
-        {
-            return (ValueTask<ResourceReloadResult>)typeof(ResourceManager).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(manager, arguments)!;
-        }
-        catch (TargetInvocationException error) when (error.InnerException is not null)
-        {
-            ExceptionDispatchInfo.Capture(error.InnerException).Throw();
-            throw;
         }
     }
 }

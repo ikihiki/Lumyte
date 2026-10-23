@@ -28,8 +28,7 @@ public static class ResourceServiceCollectionExtensions
             name,
             source(provider),
             provider.GetKeyedServices<IResourceStage>(name),
-            provider.GetRequiredService<IMemoryManager>(),
-            builder.ReloadOptions));
+            provider.GetRequiredService<IMemoryManager>()));
         builder.Apply(services);
         return services;
     }
