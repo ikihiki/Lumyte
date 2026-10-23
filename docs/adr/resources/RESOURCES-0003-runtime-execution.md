@@ -142,7 +142,10 @@ Runtimeの構築・解放、Stageとの対応付け、環境世代の検証を�
 +        Type RuntimeType => typeof(IResourceRuntime);
 +    }
 +    public interface IResourceStage<TRuntime> : IResourceStage
-+        where TRuntime : class, IResourceRuntime;
++        where TRuntime : class, IResourceRuntime
++    {
++        Type IResourceStage.RuntimeType => typeof(TRuntime);
++    }
 +    public interface IResourceSourceStage<T, TRuntime> : IResourceSourceStage<T>, IResourceStage<TRuntime>
 +        where T : class where TRuntime : class, IResourceRuntime
 +    {
