@@ -36,6 +36,7 @@ public sealed partial class ResourceManager
         ResourceGeneration generation = await dependency.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         lock (_gate)
         {
+            ThrowIfUnavailable(generation);
             return (T)generation.Value!;
         }
     }
@@ -116,6 +117,46 @@ public sealed partial class ResourceManager
         }
     }
 
+    internal void TrackRuntimeDependency(ResourceGeneration owner, string dependencyId, ulong expectedVersion, ResourceDependencyLifetime lifetime, object? providerIdentity)
+    {
+        ValidateLifetime(lifetime);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
+        if (!_runtimes.TryGetValue(dependencyId, out ResourceRuntimeState? runtime))
+        {
+            throw new ArgumentException($"Runtime dependency '{dependencyId}' is not registered.", nameof(dependencyId));
+        }
+
+        RefreshRuntime(runtime);
+        lock (_gate)
+        {
+            if (providerIdentity is not null && !ReferenceEquals(runtime.Identity, providerIdentity))
+            {
+                throw new InvalidOperationException($"Runtime dependency '{dependencyId}' belongs to another service instance.");
+            }
+
+            ResourceRuntimeSnapshot snapshot = runtime.Snapshot;
+            if (!snapshot.IsAvailable || expectedVersion == 0 || snapshot.Version != expectedVersion || expectedVersion <= snapshot.InvalidatedThroughVersion)
+            {
+                throw new ResourceUnavailableException(dependencyId, expectedVersion);
+            }
+
+            if (owner.Runtimes.TryGetValue(dependencyId, out ResourceRuntimeUse previous))
+            {
+                if (previous.Version != expectedVersion)
+                {
+                    throw new InvalidOperationException($"A build cannot combine versions of runtime '{dependencyId}'.");
+                }
+
+                if (previous.Lifetime == ResourceDependencyLifetime.Resident)
+                {
+                    lifetime = previous.Lifetime;
+                }
+            }
+
+            owner.Runtimes[dependencyId] = new(expectedVersion, lifetime);
+        }
+    }
+
     private static void ValidateLifetime(ResourceDependencyLifetime lifetime)
     {
         if (lifetime is not (ResourceDependencyLifetime.Build or ResourceDependencyLifetime.Resident))
@@ -193,9 +234,11 @@ public sealed partial class ResourceManager
                 throw new InvalidOperationException($"Input revisions changed while constructing {node}; reload and retry the request.");
             }
 
+            RefreshUsedRuntimes(load.View, used);
             lock (_gate)
             {
                 EnsureRunning();
+                ValidateRuntimeVersions(load.View, used);
                 if (!CanMerge(load.View, used))
                 {
                     throw new InvalidOperationException($"Publication changed while constructing {node}; retry the request.");
@@ -281,6 +324,7 @@ public sealed partial class ResourceManager
         {
             if (!view.Forced.Contains(node) && view.Published.TryGetValue(node, out ResourceGeneration? cached))
             {
+                ThrowIfUnavailable(cached);
                 return Task.FromResult(cached);
             }
 
@@ -480,6 +524,47 @@ public sealed partial class ResourceManager
         return true;
     }
 
+    private void RefreshUsedRuntimes(ResourceBuildView view, HashSet<ResourceNode> used)
+    {
+        string[] dependencies;
+        lock (_gate)
+        {
+            dependencies = used.SelectMany(node => view.Builds.TryGetValue(node, out ResourceBuildSlot? built)
+                ? built.Generation.Runtimes.Keys
+                : view.Metadata.TryGetValue(node, out ResourceMetadata? metadata) ? metadata.Runtimes.Keys : []).Distinct(StringComparer.Ordinal).ToArray();
+        }
+
+        foreach (string dependency in dependencies)
+        {
+            RefreshRuntime(_runtimes[dependency]);
+        }
+    }
+
+    private void ValidateRuntimeVersions(ResourceBuildView view, HashSet<ResourceNode> used)
+    {
+        foreach (ResourceNode node in used)
+        {
+            if (!view.Builds.TryGetValue(node, out ResourceBuildSlot? built))
+            {
+                if (view.Published.TryGetValue(node, out ResourceGeneration? existing))
+                {
+                    ThrowIfUnavailable(existing);
+                }
+
+                continue;
+            }
+
+            foreach ((string id, ResourceRuntimeUse usage) in built.Generation.Runtimes)
+            {
+                ResourceRuntimeSnapshot current = _runtimes[id].Snapshot;
+                if (!current.IsAvailable || current.Version != usage.Version || usage.Version <= current.InvalidatedThroughVersion)
+                {
+                    throw new ResourceUnavailableException(id, usage.Version);
+                }
+            }
+        }
+    }
+
     private bool CanMerge(ResourceBuildView view, HashSet<ResourceNode> used)
     {
         foreach (ResourceNode node in used)
@@ -518,7 +603,9 @@ public sealed partial class ResourceManager
             map[node] = generation;
             _metadata[node] = new(
                 generation.Dependencies.Keys.ToArray(),
-                generation.Sources.ToDictionary(static pair => pair.Key, static pair => pair.Value.Revision));
+                generation.Sources.ToDictionary(static pair => pair.Key, static pair => pair.Value.Revision),
+                new Dictionary<string, ResourceRuntimeUse>(generation.Runtimes, StringComparer.Ordinal));
+            _invalidated.Remove(node);
         }
 
         if (changed)

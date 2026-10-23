@@ -65,6 +65,17 @@ public sealed class ResourceBuildContext
         return _manager.GetMemoryScope(_generation, lifetime);
     }
 
+    /// <summary>Records the exact runtime version used to construct this output.</summary>
+    /// <param name="dependencyId">The registered runtime name.</param>
+    /// <param name="expectedVersion">The version captured by the stage.</param>
+    /// <param name="lifetime">Whether runtime loss also invalidates the completed value.</param>
+    /// <param name="providerIdentity">An optional identity that must match the registered provider.</param>
+    public void TrackRuntimeDependency(string dependencyId, ulong expectedVersion, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, object? providerIdentity = null)
+    {
+        EnsureOpen();
+        _manager.TrackRuntimeDependency(_generation, dependencyId, expectedVersion, lifetime, providerIdentity);
+    }
+
     internal void Close() => _closed = true;
 
     private void EnsureOpen() => ObjectDisposedException.ThrowIf(_closed, this);

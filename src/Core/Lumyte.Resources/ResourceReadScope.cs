@@ -18,7 +18,7 @@ public sealed class ResourceReadScope : IDisposable
     /// <summary>Attempts to retain a revision from the captured view without I/O or pipeline execution.</summary>
     /// <typeparam name="T">The handle's exact resource output type.</typeparam>
     /// <param name="handle">The nonowning handle to resolve.</param>
-    /// <param name="lease">The retained revision, or <see langword="null"/> if the handle is unavailable.</param>
+    /// <param name="lease">The retained revision, or <see langword="null"/> if the handle or runtime is unavailable.</param>
     /// <returns>Whether a usable revision was retained.</returns>
     /// <exception cref="ObjectDisposedException">This scope has been returned.</exception>
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
