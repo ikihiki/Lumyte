@@ -30,7 +30,7 @@ ReadAvailableの定常経路ではlock・I/O・割り当てを行いません。
 EndOfStreamで終端を区別します。readとseekのconsumerは一つとします。
 producer・reader・buffer/scope・factory leaseの順で終了し、失敗した解放はTrimAsyncで再試行します。
 
-[ADR-RESOURCES-0003](../../../docs/adr/resources/RESOURCES-0003-bounded-streaming.md)を参照してください。
+[ADR-RESOURCES-0005](../../../docs/adr/resources/RESOURCES-0005-bounded-streaming.md)を参照してください。
 
 ## DIを使わない構築
 
@@ -83,7 +83,6 @@ DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終�
 
 ## Runtimeと非同期ロード
 
-Runtime基盤はハンドル・世代管理の直後に導入します。
 非同期I/O → Executionの型付きCPUジョブ → 各モジュールの所有スレッドで生成完了 → 公開の順で進めます。
 各モジュールのStageが実行先を選び、Runtimeの世代依存を記録します。
 Host/Cooperative配置では同じ処理をホストへ統合します。
@@ -91,4 +90,4 @@ Runtimeのversion・失効・provider identityを記録し、公開前に再検�
 初回ロードとHotReloadは同じStageと実行経路を使用します。
 監視停止とリソース解放を完了してからExecutionRuntimeを停止してください。
 
-[Runtime設計](../../../docs/adr/resources/RESOURCES-0009-runtime-execution.md)を参照してください。
+[Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。
