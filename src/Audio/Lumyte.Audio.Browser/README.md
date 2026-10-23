@@ -22,3 +22,5 @@ clip 作成時に interleaved float PCM を JS 所有の AudioBuffer へコピ�
 AudioContext が suspended／interrupted なら `Suspended`、closed なら `Unavailable` を返します。ユーザー操作から Resume を呼び、自動再生制限を解除してください。キャンセルは待機の終了だけで、JS の resume を巻き戻しません。同期 Dispose は子の解放確認と context.close の開始までを保証します。close の非同期失敗は console.error へ通知します。
 
 [実行サンプル](../../../samples/Lumyte.Audio.Browser.Sample/README.md) は開始ボタンから .NET と JS の両方を実行します。検証済み: Linux x64 Chromium／.NET 10 Wasm。継続供給と AudioWorklet はリソース側の契約確定後に追加します。
+
+voiceのState／Gain／Loop getterはbackendのlock内でcached値を読み、任意のスレッドから呼べます。native／JavaScriptの操作は行いません。setter・再生制御・Update・解放は所有スレッドで実行します。clipのFormat／FrameCountは不変のmetadataです。

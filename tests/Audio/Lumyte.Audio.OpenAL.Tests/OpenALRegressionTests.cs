@@ -6,6 +6,52 @@ namespace Lumyte.Audio.OpenAL.Tests;
 /// <summary>Exercises allocation recovery against OpenAL Soft.</summary>
 public sealed class OpenALRegressionTests
 {
+    /// <summary>Cached getters are synchronized with owner updates without native calls on the reader.</summary>
+    [OpenALFact]
+    public void CachedStateCanBeReadFromAnotherThread()
+    {
+        using var device = new OpenALDevice();
+        using IAudioClip clip = device.CreateClip(new(48000, 1), new float[48000]);
+        using IAudioVoice voice = device.CreateVoice(clip);
+        Exception? failure = null;
+        var reader = new Thread(() =>
+        {
+            try
+            {
+                for (int i = 0; i < 1000; i++)
+                {
+                    Assert.InRange(voice.Gain, 0, 1);
+                    _ = voice.Loop;
+                    Assert.True(Enum.IsDefined(voice.State));
+                }
+
+                Assert.Throws<InvalidOperationException>(voice.Play);
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+        });
+        reader.Start();
+        try
+        {
+            for (int i = 0; i < 100; i++)
+            {
+                voice.Gain = (i % 2) * 0.5f;
+                voice.Loop = i % 2 == 0;
+                device.Update();
+            }
+        }
+        finally
+        {
+            reader.Join();
+        }
+
+        Assert.Null(failure);
+        voice.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => voice.State);
+    }
+
     /// <summary>Checks that a failed native allocation does not poison existing resources.</summary>
     [OpenALFact]
     public void NativeSourceExhaustionPreservesExistingVoicesAndAllowsRecovery()
