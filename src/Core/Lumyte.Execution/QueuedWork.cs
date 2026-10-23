@@ -18,6 +18,6 @@ internal abstract class QueuedWork(WorkDefinition? definition, CancellationToken
 
     internal abstract void Perform(in WorkContext context);
 
-    // Called under Runtime.Sync; true asks the scheduler to requeue this work.
-    internal abstract bool Finish(Exception? error);
+    // Called under Runtime.Sync; graph workers leave lifetime accounting to their graph.
+    internal abstract WorkFinish Finish(Exception? error);
 }

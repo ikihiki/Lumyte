@@ -75,12 +75,11 @@ public sealed partial class ExecutionRuntime
                     throw;
                 }
 
-                if (_pending == 0)
+                if (_pending++ == 0)
                 {
                     _quiet = null;
                 }
 
-                _pending += commands + 1; // Future work plus one bounded propagation controller.
                 Notify();
                 return true;
             }
@@ -91,8 +90,6 @@ public sealed partial class ExecutionRuntime
         }
     }
 
-    internal void FinishGraphPending() => FinishPending();
-
     private bool PumpGraphPropagation()
     {
         for (int i = 0; i < _graphs.Count; i++)
@@ -100,16 +97,15 @@ public sealed partial class ExecutionRuntime
             int index = _graphCursor++ % _graphs.Count;
             _graphCursor %= _graphs.Count;
             GraphState state = _graphs[index];
-            if (state.Run.IsCompleted)
-            {
-                _graphs.RemoveAt(index);
-                _graphCursor = 0;
-                return true;
-            }
-
             if (state.HasPropagation)
             {
-                state.Step();
+                if (state.Step())
+                {
+                    _graphs.RemoveAt(index);
+                    _graphCursor = 0;
+                    FinishPending();
+                }
+
                 return true;
             }
         }

@@ -13,15 +13,15 @@ internal sealed class GraphRangeWorker<TContext>(GraphState<TContext> state, int
         }
     }
 
-    internal override bool Finish(Exception? error)
+    internal override WorkFinish Finish(Exception? error)
     {
         if (error is null && !state.IsCancellationRequested && range.HasMore)
         {
-            return true;
+            return WorkFinish.Requeue;
         }
 
         bool incomplete = error is null && state.IsCancellationRequested && range.HasMore;
         state.WorkerFinished(node, incomplete ? new OperationCanceledException(Token) : error, CanceledBeforeStart || incomplete);
-        return false;
+        return WorkFinish.GraphWorkerCompleted;
     }
 }
