@@ -121,7 +121,6 @@ HotReloadは新世代を別に公開するため、利用中のLeaseの値は切
 
 ## Runtimeと非同期ロード
 
-Runtime基盤はハンドル・世代管理の直後に導入します。
 非同期I/O → Executionの型付きCPUジョブ → 各モジュールの所有スレッドで生成完了 → 公開の順で進めます。
 各モジュールのStageが実行先を選び、Runtimeの世代依存を記録します。
 Host/Cooperative配置では同じ処理をホストへ統合します。
@@ -129,4 +128,4 @@ Runtimeのversion・失効・provider identityを記録し、公開前に再検�
 初回ロードとHotReloadは同じStageと実行経路を使用します。
 監視停止とリソース解放を完了してからExecutionRuntimeを停止してください。
 
-[Runtime設計](../../../docs/adr/resources/RESOURCES-0009-runtime-execution.md)を参照してください。
+[Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。
