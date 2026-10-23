@@ -81,7 +81,6 @@ public sealed class ExecutionPlanBuilder
     /// <param name="options">The periodic budgets.</param>
     public void DrivePeriodic(UpdateKey update, ThreadLoopOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         UpdateDefinition definition = Verify(update.Definition);
         EnsureUndriven(definition);
         definition.Options = options;

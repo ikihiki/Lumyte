@@ -40,7 +40,6 @@ public sealed class GateControl
     /// <param name="error">The cause.</param>
     public void Fail(Exception error)
     {
-        ArgumentNullException.ThrowIfNull(error);
         lock (_gate.Module.Runtime.Sync)
         {
             Verify();

@@ -43,12 +43,10 @@ public sealed partial class ExecutionRuntime
     /// <param name="modules">The explicit module instances, commonly injected by DI.</param>
     public ExecutionRuntime(IEnumerable<IExecutionModule> modules)
     {
-        ArgumentNullException.ThrowIfNull(modules);
         IExecutionModule[] snapshot = modules.ToArray();
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (IExecutionModule module in snapshot)
         {
-            ArgumentNullException.ThrowIfNull(module);
             ArgumentException.ThrowIfNullOrWhiteSpace(module.Name);
             var definition = new ModuleDefinition(this, module);
             if (!names.Add(definition.Name) || !_moduleTypes.TryAdd(definition.Type, definition))
@@ -115,7 +113,6 @@ public sealed partial class ExecutionRuntime
             _prepareAttempted = true;
         }
 
-        ArgumentNullException.ThrowIfNull(options);
         options.Validate();
         if (!Enum.IsDefined(placement) || !Enum.IsDefined(cpuMode) || maxCpuConcurrency <= 0
             || (cpuMode == CpuExecutionMode.Cooperative && maxCpuConcurrency != 1))

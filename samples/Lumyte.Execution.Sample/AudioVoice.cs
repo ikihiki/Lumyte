@@ -4,7 +4,7 @@ namespace Lumyte.Execution.Sample;
 /// <param name="original">The fully created original instance.</param>
 public readonly partial struct AudioVoice(AudioVoiceData original)
 {
-    private readonly AudioVoiceData _original = original ?? throw new ArgumentNullException(nameof(original));
+    private readonly AudioVoiceData _original = original;
 
     [ExecutionCommand]
     private void PlayCore() => _original.Owner.Play(_original);

@@ -9,7 +9,6 @@ public sealed partial class ResourceManager
     /// <returns>The publication outcome.</returns>
     public ValueTask<ResourceReloadResult> RebuildRuntimeAsync(IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(dependencyIds);
         foreach (string id in dependencyIds)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
