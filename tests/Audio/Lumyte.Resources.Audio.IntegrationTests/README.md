@@ -1,6 +1,6 @@
 # Resources Audio integration tests
 
-既定RuntimeでStageをCPUジョブへ配送 → 非同期Source読み込みとWAVEデコード → 所有スレッドでclip・voice生成 → 公開・再生 → 依存順解放を実行します。
+出力型で選んだRuntimeからCPUジョブへ配送 → 非同期Source読み込みとWAVEデコード → Audio環境の所有スレッドでclip・voice生成 → 公開・再生 → 依存順解放を実行します。
 初期化・生成の実体が完成するまで待機し、キャンセル済みロードとデコード失敗の非公開も検証します。
 既定のテストbackendは全native操作のスレッドと、voice → clip → deviceの解放順を検証します。
 
@@ -16,8 +16,10 @@ ALSOFT_DRIVERS=null dotnet run --project tests/Audio/Lumyte.Resources.Audio.Inte
 各実行は新しいprocessで起動し、生成済みAudioのstatic endpointは一回だけ接続します。
 
 DIありでは本体の`AddAudioResources<TestSource>`を使用します。DIなしでも本体のAudioDecodeStage、
-AudioClipStage、AudioVoiceStageを使用し、汎用ResourceRuntimeをmanagerの実行先へ渡します。
-AudioResourceRuntimeはdevice世代の依存先として別に登録します。
+AudioClipStage、AudioVoiceStageを使用します。汎用ResourceRuntimeをmanagerの既定実行先とし、
+clipとvoiceのstageRuntimesには同じAudioResourceRuntimeを指定します。
+AudioResourceRuntimeは汎用RuntimeへCPU配送を委譲し、device世代の依存先にも自動登録されます。
+Stageはcontext.RuntimeからAudio環境を取得し、解放には生成時に保持したRuntimeと元backendを使用します。
 TestSourceはWAVEファイルを供給し、fake backendだけをテスト用に置き換えます。
 登録とPumpは[Program.cs](Program.cs)を参照してください。
 
