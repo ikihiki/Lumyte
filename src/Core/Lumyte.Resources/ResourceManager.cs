@@ -10,8 +10,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
-    private readonly IResourceRuntime _runtime;
-    private readonly Dictionary<RuntimeTypeHandle, IResourceStage> _stages;
+    private readonly Dictionary<RuntimeTypeHandle, (IResourceStage Stage, IResourceRuntime Runtime)> _stages;
     private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
@@ -38,26 +37,53 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="source">The borrowed input source.</param>
     /// <param name="stages">The borrowed source stages and transforms, with one producer per output type.</param>
     /// <param name="memory">The shared memory budget manager.</param>
-    /// <param name="runtime">The borrowed executor for stage construction and destruction.</param>
+    /// <param name="runtime">The shared default environment for stages without an override.</param>
     /// <param name="runtimeDependencies">The borrowed runtime generation providers.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null)
+    /// <param name="stageRuntimes">Optional stage environments, selected by their exact output type and fixed during construction.</param>
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, IEnumerable<ResourceStageRuntime>? stageRuntimes = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _name = name;
         _source = source;
         _memory = memory;
-        _runtime = runtime;
-        _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle);
+        _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle, stage => (stage, runtime));
+        HashSet<RuntimeTypeHandle>? configured = null;
+        foreach (ResourceStageRuntime binding in stageRuntimes ?? [])
+        {
+            if (binding.OutputType is null || binding.Runtime is null)
+            {
+                throw new ArgumentException("Supply an initialized stage runtime binding.", nameof(stageRuntimes));
+            }
+
+            RuntimeTypeHandle type = binding.OutputType.TypeHandle;
+            if (!_stages.TryGetValue(type, out (IResourceStage Stage, IResourceRuntime Runtime) selected))
+            {
+                throw new ArgumentException($"No stage produces '{binding.OutputType}'.", nameof(stageRuntimes));
+            }
+
+            if (!(configured ??= []).Add(type))
+            {
+                throw new ArgumentException($"A runtime is already selected for '{binding.OutputType}'.", nameof(stageRuntimes));
+            }
+
+            _stages[type] = (selected.Stage, binding.Runtime);
+        }
+
         ValidatePipelines();
         ManagerId = NextManagerId();
         try
         {
             foreach (IResourceRuntimeDependency provider in runtimeDependencies ?? [])
             {
-                ArgumentException.ThrowIfNullOrWhiteSpace(provider.Id);
-                ResourceRuntimeSnapshot snapshot = provider.Snapshot;
-                ValidateRuntimeSnapshot(default, snapshot);
-                _runtimes.Add(provider.Id, new(provider, provider.Identity, snapshot));
+                RegisterRuntimeProvider(provider);
+            }
+
+            foreach ((IResourceStage _, IResourceRuntime selectedRuntime) in _stages.Values)
+            {
+                if (selectedRuntime is IResourceRuntimeDependency provider)
+                {
+                    RegisterRuntimeProvider(provider);
+                }
             }
 
             foreach (ResourceRuntimeState dependency in _runtimes.Values)
@@ -325,7 +351,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
     private void ValidatePipelines()
     {
-        foreach (IResourceStage pipeline in _stages.Values)
+        foreach ((IResourceStage pipeline, IResourceRuntime _) in _stages.Values)
         {
             HashSet<RuntimeTypeHandle> visited = [];
             IResourceStage current = pipeline;
@@ -336,12 +362,12 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
                     throw new ArgumentException($"Static resource pipeline cycle includes '{current.OutputType}'.", nameof(pipeline));
                 }
 
-                if (!_stages.TryGetValue(input.TypeHandle, out IResourceStage? dependency))
+                if (!_stages.TryGetValue(input.TypeHandle, out (IResourceStage Stage, IResourceRuntime Runtime) dependency))
                 {
                     throw new ArgumentException($"Pipeline for '{current.OutputType}' has an unregistered input '{input}'.", nameof(pipeline));
                 }
 
-                current = dependency;
+                current = dependency.Stage;
             }
         }
     }

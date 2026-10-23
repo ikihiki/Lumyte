@@ -43,7 +43,8 @@ public static class ResourceServiceCollectionExtensions
             provider.GetKeyedServices<IResourceStage>(name),
             provider.GetRequiredService<IMemoryManager>(),
             provider.GetRequiredService<IResourceRuntime>(),
-            provider.GetKeyedServices<RuntimeDependencyRegistration>(name).Select(registration => registration.Resolve(provider))));
+            provider.GetKeyedServices<RuntimeDependencyRegistration>(name).Select(registration => registration.Resolve(provider)),
+            builder.ResolveStageRuntimes(provider)));
         builder.Apply(services);
         return services;
     }
