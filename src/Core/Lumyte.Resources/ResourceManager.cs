@@ -72,6 +72,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             _stages[type] = (selected.Stage, binding.Runtime);
         }
 
+        foreach ((IResourceStage stage, IResourceRuntime selectedRuntime) in _stages.Values)
+        {
+            if (!stage.RuntimeType.IsInstanceOfType(selectedRuntime))
+            {
+                throw new ArgumentException($"Stage '{stage.GetType()}' requires runtime '{stage.RuntimeType}', but '{selectedRuntime.GetType()}' was selected.", nameof(stageRuntimes));
+            }
+        }
+
         ValidatePipelines();
         ManagerId = NextManagerId();
         try
