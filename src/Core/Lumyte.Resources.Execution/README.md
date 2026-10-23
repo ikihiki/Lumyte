@@ -48,7 +48,7 @@ workflow内からジョブやownerコマンドを送れますが、同期Wait/Re
 ## StageごとのRuntime
 
 Managerの`stageRuntimes`へ出力型とRuntimeの対応を渡すと、そのStageの環境を選択できます。
-未指定のStageは既定Runtimeを使い、選択した環境は`ResourceBuildContext.Runtime`で取得できます。
+未指定のStageは既定Runtimeを使います。`IResourceSourceStage<T, TRuntime>`／`IResourceTransform<TInput, TOutput, TRuntime>`は選択済み環境を型付きのBuildAsync引数で受け取り、Stage側のキャストを省けます。宣言型はManager構築時に検証します。共通層は`ResourceBuildContext.Runtime`でも取得できます。
 次のMeshRuntimeは、共通ジョブ環境とdevice serviceを組み合わせるアプリ定義の安定した窓口です。
 
 ```csharp
