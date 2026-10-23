@@ -46,7 +46,6 @@ public sealed class ResourceRegistrationBuilder
     public ResourceRegistrationBuilder ConfigureHotReload(ResourceReloadOptions options)
     {
         EnsureConfiguring();
-        ArgumentNullException.ThrowIfNull(options);
         if (_reloadOptions is not null)
         {
             throw new InvalidOperationException("Automatic reload is already configured for this manager.");

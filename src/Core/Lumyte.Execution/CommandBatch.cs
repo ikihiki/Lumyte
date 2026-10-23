@@ -33,7 +33,6 @@ public sealed class CommandBatch : IDisposable
     {
         ExecutionRuntime.VerifyOutsideHandler();
         CheckMutable();
-        ArgumentNullException.ThrowIfNull(port);
         if (_items.Count == _maxCommands)
         {
             throw new ExecutionQueueFullException("Batch staging capacity is exhausted.");

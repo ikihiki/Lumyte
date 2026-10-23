@@ -4,7 +4,7 @@ namespace Lumyte.Execution.Sample;
 /// <param name="original">The fully created original instance.</param>
 public readonly partial struct AudioState(AudioBackend original)
 {
-    private readonly AudioBackend _original = original ?? throw new ArgumentNullException(nameof(original));
+    private readonly AudioBackend _original = original;
 
     /// <summary>Gets the backend creation thread.</summary>
     public int ThreadId => _original.ThreadId;

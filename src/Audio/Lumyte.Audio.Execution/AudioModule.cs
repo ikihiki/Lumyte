@@ -6,7 +6,7 @@ namespace Lumyte.Audio.Execution;
 /// <param name="factory">Factory called on the configured owner.</param>
 public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
 {
-    private readonly AudioDevice _state = new(new AudioDeviceState(factory ?? throw new ArgumentNullException(nameof(factory))));
+    private readonly AudioDevice _state = new(new AudioDeviceState(factory));
     private AudioDevice.BeginCreateWork _begin;
 
     private AudioDevice.AttachWork _initialize;

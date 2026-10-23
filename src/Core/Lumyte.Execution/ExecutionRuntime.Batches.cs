@@ -11,7 +11,6 @@ public sealed partial class ExecutionRuntime
     public bool TrySubmit(CommandBatch batch, out CommandRun? run, CancellationToken token = default)
     {
         VerifyOutsideHandler();
-        ArgumentNullException.ThrowIfNull(batch);
         token.ThrowIfCancellationRequested();
         lock (Sync)
         {
