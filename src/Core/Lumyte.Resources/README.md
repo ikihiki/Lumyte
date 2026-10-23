@@ -118,3 +118,16 @@ Referenceを利用期間中保持し、描画・ジョブの開始時に`referen
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
 HotReloadは新世代を別に公開するため、利用中のLeaseの値は切り替わりません。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。
+
+## Runtimeと非同期ロード
+
+Runtime基盤はハンドル・世代管理の直後に導入します。
+非同期I/O → Executionの型付きCPUジョブ → 各モジュールの所有スレッドで生成完了 → 公開の順で進めます。
+AudioはAudioResourceRuntimeとAudioClipStage/AudioVoiceStageを使い、生成・解放をAudio所有スレッドへ送ります。
+Host/Cooperative配置では同じ処理をホストへ統合します。
+Runtimeのversion・失効・provider identityを記録し、公開前に再検証します。
+初回ロードとHotReloadは同じStageと実行経路を使用します。
+監視停止とリソース解放を完了してからExecutionRuntimeを停止してください。
+
+[Runtime設計](../../../docs/adr/resources/RESOURCES-0009-runtime-execution.md)と
+[DIあり・なしの実例](../../../samples/Lumyte.Resources.Audio.Sample/README.md)を参照してください。
