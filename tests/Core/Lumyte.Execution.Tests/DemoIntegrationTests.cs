@@ -7,18 +7,18 @@ using Xunit;
 namespace Lumyte.Execution.Tests;
 
 /// <summary>Exercises actual generated commands, one-reference voices, and factory-free DI collection.</summary>
-public sealed class AudioIntegrationTests
+public sealed class DemoIntegrationTests
 {
     /// <summary>DI resolves modules, startup chooses the owner, and voice copies forward to that owner.</summary>
     [Fact]
     public void ParameterlessDiRegistrationDrivesGeneratedVoiceOnDedicatedOwner()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IExecutionModule, AudioModule>();
+        services.AddSingleton<IExecutionModule, DemoModule>();
         services.AddSingleton<ExecutionRuntime>();
         using ServiceProvider provider = services.BuildServiceProvider();
         ExecutionRuntime runtime = provider.GetRequiredService<ExecutionRuntime>();
-        AudioModule audio = provider.GetServices<IExecutionModule>().OfType<AudioModule>().Single();
+        DemoModule audio = provider.GetServices<IExecutionModule>().OfType<DemoModule>().Single();
         Assert.Equal(0, audio.State.ThreadId);
         Assert.Equal(ExecutionStatus.Unprepared, runtime.Status);
         runtime.PrepareOnCurrentHost(OwnerPlacement.Dedicated, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
@@ -42,13 +42,13 @@ public sealed class AudioIntegrationTests
         PumpUntil(() => start.IsCompleted);
         CompletedResult.Read(start);
         Assert.NotEqual(Environment.CurrentManagedThreadId, audio.State.ThreadId);
-        ValueTask<AudioVoiceData> creation = audio.State.CreateVoice(1);
+        ValueTask<DemoVoiceData> creation = audio.State.CreateVoice(1);
         PumpUntil(() => creation.IsCompleted);
-        AudioVoiceData original = CompletedResult.Read(creation);
-        var voice = new AudioVoice(original);
-        AudioVoice copy = voice;
-        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioVoice>());
-        Assert.Throws<InvalidOperationException>(() => default(AudioVoice).Play());
+        DemoVoiceData original = CompletedResult.Read(creation);
+        var voice = new DemoVoice(original);
+        DemoVoice copy = voice;
+        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<DemoVoice>());
+        Assert.Throws<InvalidOperationException>(() => default(DemoVoice).Play());
         ValueTask<Unit> play = voice.Play();
         PumpUntil(() => play.IsCompleted);
         CompletedResult.Read(play);
@@ -71,9 +71,9 @@ public sealed class AudioIntegrationTests
         Task shutdown = runtime.StopAsync().AsTask();
         PumpUntil(() => shutdown.IsCompleted);
         CompletedResult.Read(shutdown);
-        ValueTask<AudioVoiceData> closed = audio.State.CreateVoice(2);
+        ValueTask<DemoVoiceData> closed = audio.State.CreateVoice(2);
         Assert.Throws<InvalidOperationException>(() => CompletedResult.Read(closed));
-        var replacement = new ExecutionRuntime([new AudioModule()]);
+        var replacement = new ExecutionRuntime([new DemoModule()]);
         Assert.Throws<InvalidOperationException>(() => replacement.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions()));
     }
 }

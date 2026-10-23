@@ -7,7 +7,7 @@ coreに置く、BCLだけに依存した実行基盤。モジュールが同期�
 Microsoft.Extensions.DependencyInjectionを使うアプリでは、factoryを用意せず登録できる。
 
 ```csharp
-services.AddSingleton<IExecutionModule, AudioModule>();
+services.AddSingleton<IExecutionModule, DemoModule>();
 services.AddSingleton<ExecutionRuntime>();
 var runtime = provider.GetRequiredService<ExecutionRuntime>();
 runtime.PrepareOnCurrentHost(OwnerPlacement.Dedicated,
@@ -16,15 +16,15 @@ runtime.PrepareOnCurrentHost(OwnerPlacement.Dedicated,
 Task startup = runtime.StartAsync().AsTask();
 ```
 
-Runtimeの唯一の公開constructorは `ExecutionRuntime(IEnumerable<IExecutionModule>)`。一覧を一度だけ収集し、名前・実装型の重複と依存を検証する。`Declare` は仕事、owner、FIFO group、gateを登録し、`Configure` はowner配置と更新駆動を登録する。どちらもdeviceやthreadを作らない。DIなしでも `new ExecutionRuntime([new AudioModule()])` から同じ経路を使う。
+Runtimeの唯一の公開constructorは `ExecutionRuntime(IEnumerable<IExecutionModule>)`。一覧を一度だけ収集し、名前・実装型の重複と依存を検証する。`Declare` は仕事、owner、FIFO group、gateを登録し、`Configure` はowner配置と更新駆動を登録する。どちらもdeviceやthreadを作らない。DIなしでも `new ExecutionRuntime([new DemoModule()])` から同じ経路を使う。
 
 Prepareは固定Hostで一度だけ行い、全endpointを検証して接続する。Startで専用threadを起動し、依存順にmoduleを初期化する。Hostの各turnでは `PumpHostLifecycle` と `PumpJobs` を呼び、Host配置の通常仕事と更新には `RunHostPhase` も呼ぶ。起動・停止の未完了TaskをHost上で同期waitしない。
 
-Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示的に選ぶ。HostOnlyは常にHostに置く。所有者と呼び出し側が同じ物理threadでもcommandは必ずenqueueする。WebAudioサンプルをChromiumで検証した。
+Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示的に選ぶ。HostOnlyは常にHostに置く。所有者と呼び出し側が同じ物理threadでもcommandは必ずenqueueする。Web型付きコマンドサンプルをChromiumで検証した。
 
 ## 型付き送信と所有権
 
-[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[Audioサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のAudioVoice自体が元インスタンス参照一本のreadonly structで、`new AudioVoice(original)`から作り、`voice.Play()` が固定のstatic endpointへ送信する。
+[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[型付きコマンドサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のDemoVoice自体が元インスタンス参照一本のreadonly structで、`new DemoVoice(original)`から作り、`voice.Play()` が固定のstatic endpointへ送信する。
 
 単発はtyped payloadと結果を保持する一つの非pool `IValueTaskSource<TResult>` を使い、Task／batch／完了wrapperを作らない。生成senderは受付とValueTask構築を本体に展開し、coreのExecuteAsyncを中継しない。ValueTaskは一度だけ観測する。AsTaskへ変換した場合はそのTaskを観測する。
 

@@ -2,9 +2,9 @@ namespace Lumyte.Execution.Sample;
 
 /// <summary>A one-reference sender wrapping a fully created backend voice.</summary>
 /// <param name="original">The fully created original instance.</param>
-public readonly partial struct AudioVoice(AudioVoiceData original)
+public readonly partial struct DemoVoice(DemoVoiceData original)
 {
-    private readonly AudioVoiceData _original = original;
+    private readonly DemoVoiceData _original = original;
 
     [ExecutionCommand]
     private void PlayCore() => _original.Owner.Play(_original);

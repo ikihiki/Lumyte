@@ -19,8 +19,6 @@ internal sealed class WebAudioClip : IAudioClip
 
     public long FrameCount { get; }
 
-    IAudioDevice IAudioClip.Device => Device;
-
     internal WebAudioDevice Device { get; }
 
     internal JSObject Handle { get; }
@@ -34,7 +32,7 @@ internal sealed class WebAudioClip : IAudioClip
             return;
         }
 
-        Device.Validate(false);
+        Validate();
         if (References != 0)
         {
             throw new InvalidOperationException("Clip is borrowed by a live voice.");
