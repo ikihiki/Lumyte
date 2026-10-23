@@ -18,5 +18,5 @@ public sealed class AudioVoiceStage(AudioResourceRuntime runtime) : IResourceTra
         => runtime.CreateVoiceAsync(input, context, cancellationToken);
 
     /// <inheritdoc/>
-    public async ValueTask ReleaseAsync(IAudioVoice resource) => await new AudioVoice(resource).Destroy().ConfigureAwait(false);
+    public async ValueTask ReleaseAsync(IAudioVoice resource) => await new AudioVoice(resource).Destroy();
 }

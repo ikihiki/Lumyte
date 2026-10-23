@@ -16,7 +16,8 @@ public sealed class FileResourceChangeSourceTests
         await File.WriteAllTextAsync(path, "before");
         var source = new FileResourceSource(new() { RootPath = files.Root });
         await using Lumyte.Memory.MemoryManager memory = new();
-        await using ResourceManager manager = new("files", source, [new TextStage()], memory);
+        await using ResourceExecutionHost execution = new();
+        await using ResourceManager manager = new("files", source, [new TextStage()], memory, execution.Resources);
         using ResourceReference<TextValue> reference = await manager.AcquireAsync(new ResourceKey<TextValue>("asset.txt"));
         using ResourceLease<TextValue> original = reference.Acquire();
         TaskCompletionSource published = new(TaskCreationOptions.RunContinuationsAsynchronously);

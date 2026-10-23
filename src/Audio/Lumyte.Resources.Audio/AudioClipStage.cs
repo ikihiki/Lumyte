@@ -18,5 +18,5 @@ public sealed class AudioClipStage(AudioResourceRuntime runtime) : IResourceTran
         => runtime.CreateClipAsync(input, context, cancellationToken);
 
     /// <inheritdoc/>
-    public async ValueTask ReleaseAsync(IAudioClip resource) => await new AudioClip(resource).DestroyClip().ConfigureAwait(false);
+    public async ValueTask ReleaseAsync(IAudioClip resource) => await new AudioClip(resource).DestroyClip();
 }
