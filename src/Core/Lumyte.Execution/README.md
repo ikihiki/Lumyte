@@ -34,6 +34,8 @@ Ownerの異型commandは同じgroupのFIFOで処理する。queue nodeはcommand
 
 `JobGraph<TContext>` は不変で、Unit結果の仕事と範囲を依存辺でつなぐ。Rangeの長さは受付前に一度評価し、同時数分以下のworkerがchunkをclaimする。owner待ちはCPU枠を使わない。将来の配送枠、node・edge・worker管理領域も受付時に予約し、依存伝播と取消は有界のstepで進める。
 
+仕事の完了・再投入・未完了数の更新はRuntimeの同じlock内で確定する。workerは継続の要否だけを返し、再投入後に共有状態を読み直さない。CPUの起動数は実行中の仕事と実行可能な待機仕事から決める。
+
 ## 容量・取消・停止
 
 通常枠と停止時cleanup枠は独立する。MaxInFlightRuns、MaxCommands、MaxGraphNodes、MaxPayloadBytesは完了後の未回収分にも適用する。typed input／resultと保守的なcommand管理費を課金し、参照先buffer・native資源は統合層が管理する。MaxGraphNodesにはnode・edge・range workerを含める。stagingと不変graphは利用側の所有物である。
