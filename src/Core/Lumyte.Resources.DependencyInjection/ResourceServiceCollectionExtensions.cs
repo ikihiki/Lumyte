@@ -13,9 +13,7 @@ public static class ResourceServiceCollectionExtensions
     /// <returns>The supplied service collection.</returns>
     public static IServiceCollection AddResources(this IServiceCollection services, string name, Action<ResourceRegistrationBuilder> configure)
     {
-        ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(configure);
         if (HasManager(services, name))
         {
             throw new ArgumentException("The resource manager name is already registered.", nameof(name));

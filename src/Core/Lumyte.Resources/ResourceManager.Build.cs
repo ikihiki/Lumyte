@@ -71,7 +71,6 @@ public sealed partial class ResourceManager
 
     internal void RegisterCleanup(ResourceGeneration owner, Func<ValueTask> cleanup, ResourceDependencyLifetime lifetime)
     {
-        ArgumentNullException.ThrowIfNull(cleanup);
         ValidateLifetime(lifetime);
         lock (_gate)
         {
@@ -314,7 +313,7 @@ public sealed partial class ResourceManager
             view.CancellationToken.ThrowIfCancellationRequested();
             object value = await generation.Stage.BuildAsync(context, view.CancellationToken).ConfigureAwait(false);
             context.Close();
-            if (value is null || !generation.Stage.OutputType.IsInstanceOfType(value))
+            if (!generation.Stage.OutputType.IsInstanceOfType(value))
             {
                 throw new InvalidOperationException($"Pipeline for '{generation.Stage.OutputType}' returned an invalid output.");
             }
