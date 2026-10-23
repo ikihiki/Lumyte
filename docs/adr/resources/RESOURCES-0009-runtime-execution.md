@@ -29,7 +29,11 @@ IResourceRuntimeDependencyはversion・可用性・失効watermark・provider id
 Resident依存の失効は旧Leaseにも伝播し、Build依存で完成した独立した値は失効させない。
 ResidentのRuntime依存は世代の構築完了時に平坦化し、Leaseの読み取りでは一時メモリ確保や依存グラフの再探索を行わない。
 RebuildRuntimeAsyncは保持されたhandleへ新世代を公開する共通のtransactional再構築を使う。
-Audio接続は一回のdevice寿命を扱う。device再作成を行うGraphics接続は後段の別PRで追加する。
+AudioModuleは固定のdevice serviceを持ち、所有スレッドでロストを検知して旧世代を失効させる。
+Stageは構築ごとに正確なdevice世代のleaseを取得・記録し、子資源の解放完了まで保持する。
+復旧は同じmoduleとendpointでdeviceを再生成し、RebuildRuntimeAsyncで新世代へ再構築する。
+旧clipと新deviceの混在を拒否し、構築中のロストは公開前検証でも拒否する。
+Suspendedは再開可能なので失効させない。Graphicsのdevice接続は後段の別PRで追加する。
 
 HotReloadは通知を集約する起動側であり、CPU・Audioの別実行経路を作らない。
 同じStageで候補を構築し、入力Revision・Runtime version・公開versionを検証して一括公開する。
@@ -59,6 +63,7 @@ Stage全体をTask.Runで包むだけでは、native操作の所有スレッド�
 Runtime世代・失効・復旧と公開競合をCoreで検証する。
 CPUジョブとAudio生成・解放をDedicated/ThreadPool、Host/Cooperative、DIあり・なしで実行する。
 開始前・キャンセル・不正入力で未完成値を公開しないことを確認する。
+Audioのロスト・復旧・旧世代の保持、失敗時の再試行、復旧と停止の競合も同じ構成で検証する。
 HotReload PRでは同じ経路での差し替え、旧Lease保持、失敗時の旧公開保持と終了順を検証する。
 
 ## 関連ADR

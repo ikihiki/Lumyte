@@ -23,3 +23,26 @@ Browserの接続例は[WebAudioサンプル](../../../samples/Lumyte.Audio.Execu
 実OpenALのNativeAOT公開は、現行Silk.NET loaderのIL3000／IL3002により未対応です。
 
 AudioVoiceとAudioClipは参照一本のreadonly structです。元のIAudioVoice／IAudioClipから直接構築できます。clipのDeviceは生成元のbackend deviceへの不変参照で、voice生成もそのbackendへ配送します。
+
+## デバイス世代と復旧
+
+`audio.Devices` は同じAudioModule内で存続する `IAudioDeviceService` です。`State` と `StateChanged` は現在のVersion、物理Epoch、利用可否と失効済みVersionを公開します。所有スレッドの周期更新が出力状態を確認し、Unavailableになった世代を不可逆に失効させます。BrowserのSuspended／interruptedは同じ利用可能な世代として扱い、復旧や資源再生成を要求しません。
+
+```csharp
+AudioDeviceLease lease = await audio.Devices.AcquireAsync();
+IAudioClip original = await audio.State.CreateClipForLease(lease, format, pcm);
+// originalを利用する間はleaseを保持する。
+await new AudioClip(original).DestroyClip();
+lease.Dispose();
+
+// Lost／Failed時。新しいdeviceも同じ所有スレッドで生成する。
+AudioDeviceSnapshot ready = await audio.Devices.RecoverAsync();
+// 利用側／Resourcesが新世代のclip・voiceを再構築する。
+int retired = await audio.Devices.RetireAsync();
+```
+
+leaseは取得時の正確な世代を保持し、新しいdeviceへ追随しません。`CreateVoiceForLease` はclipが同じdeviceから生成されていることを確認します。失効したclip・voiceの操作は失敗しますが、Cleanupは元のdeviceで引き続き実行できます。旧子資源の解放とlease返却後にRetireAsyncを呼びます。leaseなしで直接生成した子資源もbackendが保持している間はdevice破棄を拒否します。サービスはclip／voiceの一覧を追加しません。
+
+RecoverAsyncは同時要求で一つの生成operationを共有します。呼び出し側の取消は待機だけを取り消します。生成完了のコマンド受付が容量不足で失敗した場合、次のRecoverAsyncが保持済みoperationの完了処理を再試行します。factory失敗やdevice解放失敗の後も再試行できます。終了は新しい取得と復旧を閉じ、進行中factoryの実完了を待ち、未接続の生成物も所有スレッドで解放します。未返却leaseや解放できない子資源がある場合は停止を失敗させ、所有権を保持します。
+
+Resourcesへの世代失効・再構築の接続は `Lumyte.Resources.Audio` が担当します。音声の再生位置や再生中状態の復元は利用側の方針です。静的portの再登録やExecutionRuntime全体の再作成は行いません。
