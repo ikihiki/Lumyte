@@ -3,15 +3,14 @@ using Lumyte.Graphics.Hosting;
 
 namespace Lumyte.Resources.Graphics.Tests;
 
-internal sealed class GpuStage(GraphicsTestState state) : IResourceTransform<CpuValue, GpuValue>
+internal sealed class GpuStage(GraphicsTestState state) : IResourceTransform<CpuValue, GpuValue, GraphicsResourceRuntime>
 {
     public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
 
     public ResourceAddress GetInput(ResourceAddress output) => output;
 
-    public async ValueTask<GpuValue> BuildAsync(CpuValue input, ResourceBuildContext context, CancellationToken cancellationToken)
+    public async ValueTask<GpuValue> BuildAsync(CpuValue input, GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
     {
-        var runtime = (GraphicsResourceRuntime)context.Runtime;
         GraphicsDeviceLease lease = state.OverrideService is { } other
             ? await context.UseGraphicsAsync(other, runtime.Id, cancellationToken: cancellationToken)
             : await runtime.AcquireAsync(context, cancellationToken: cancellationToken);

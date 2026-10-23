@@ -13,6 +13,9 @@ public interface IResourceStage
     /// <summary>Gets the exact primary input type, or null for a source stage.</summary>
     Type? InputType { get; }
 
+    /// <summary>Gets the environment contract required by this stage.</summary>
+    Type RuntimeType => typeof(IResourceRuntime);
+
     /// <summary>Builds an owned output with tracked dependencies.</summary>
     /// <param name="context">The construction context.</param>
     /// <param name="cancellationToken">Cancels the manager-owned build.</param>

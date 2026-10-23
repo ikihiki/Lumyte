@@ -22,7 +22,7 @@ Graphics.Hostingが物理デバイスの初期化、loss検出、復旧、旧own
 
 ### 安定したserviceと構築ごとの世代取得
 
-Stageは各 `BuildAsync` 内で `context.Runtime` から選択済みの `GraphicsResourceRuntime` を取得し、`AcquireAsync(context, ...)` を呼ぶ。Runtimeは安定したserviceを保持し、毎回現在の正確な `GraphicsDeviceLease` を取得する。取得時のVersionとservice instanceを構築contextへ記録するため、deviceをStageへキャッシュしない。
+Stageは `IResourceSourceStage<T, GraphicsResourceRuntime>` または `IResourceTransform<TInput, TOutput, GraphicsResourceRuntime>` を宣言し、BuildAsyncの型付きruntime引数で選択済み環境を受け取り、`AcquireAsync(context, ...)` を呼ぶ。Runtimeは安定したserviceを保持し、毎回現在の正確な `GraphicsDeviceLease` を取得する。取得時のVersionとservice instanceを構築contextへ記録するため、deviceをStageへキャッシュしない。
 
 Managerは内容世代に選択済みRuntimeを保存し、解放も同じRuntimeへ依頼する。Native解放に必要な元Runtime、実際のdeviceとepochは出力またはcleanupが保持する。新しい構築で使う環境と旧世代の解放環境を混同しない。
 
@@ -105,7 +105,7 @@ services.AddResources("scene", builder => builder
 services.AddResourceGraphics("scene", "main", "graphics.main");
 
 // GpuMeshStageは登録で選ばれたRuntimeを使う。
-var runtime = (GraphicsResourceRuntime)context.Runtime;
+// BuildAsyncのGraphicsResourceRuntime runtime引数を使用する。
 GraphicsDeviceLease lease = await runtime.AcquireAsync(
     context, cancellationToken: cancellationToken);
 IGraphicDevice device = lease.Device;

@@ -33,12 +33,35 @@ ResourceManager → 出力型に対応するIResourceRuntime
 ManagerはStage・依存グラフ・内容世代・公開mapを管理する。
 出力型ごとの`ResourceStageRuntime`を構築時に固定し、指定のないStageには既定Runtimeを使う。
 選択したRuntimeを各内容世代に保存し、初回ロード・再構築のBuildAsyncと、その出力のReleaseAsyncに使う。
-Stageは`ResourceBuildContext.Runtime`から自身の環境を取得でき、ジョブAPIやExecutionRuntimeの参照は不要である。
+Stageは`IResourceSourceStage<T, TRuntime>`または`IResourceTransform<TInput, TOutput, TRuntime>`で環境型を宣言する。
+選択済み環境をBuildAsyncのTRuntime引数へ渡すため、Stage内での型変換は不要である。
+Manager構築時にStageのRuntimeTypeと選択したinstanceの互換性を検証し、不一致は実行前に拒否する。
+従来の型引数数のStageも利用でき、`ResourceBuildContext.Runtime`は共通実行層・補助処理向けに維持する。
 
 ExecutionRuntimeは配置・容量・CPU並列度を管理し、Resourcesのキーや公開mapを知らない。
 動的なロード依存グラフをExecutionのJobGraphへ変換しない。
 RuntimeはCPU処理と所有スレッドの処理を調整するものであり、Stage全体を一つの固定スレッドへ置く契約ではない。
 Native生成・解放はRuntimeが提供するownerコマンドへ配送し、実完了を待つ。
+
+### 型付きRuntimeの利用
+
+```csharp
+public sealed class MeshStage : IResourceTransform<CpuMesh, Mesh, MeshRuntime>
+{
+    public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
+    public ResourceAddress GetInput(ResourceAddress output) => output;
+
+    public ValueTask<Mesh> BuildAsync(CpuMesh input, MeshRuntime runtime,
+        ResourceBuildContext context, CancellationToken cancellationToken)
+        => runtime.CreateMeshAsync(input, context, cancellationToken);
+
+    public ValueTask ReleaseAsync(Mesh resource) => resource.DisposeAsync();
+}
+```
+
+MeshRuntime、Mesh、CpuMeshはアプリが定義する例である。
+型付き入口は既存の構築contextを使い、追加のcontextラッパーを確保しない。
+transformの依存取得とtyped BuildAsync呼出しは同じinterface dispatch内で行う。
 
 ### 非同期Stageの実行
 
@@ -66,7 +89,7 @@ Stageに選択されたRuntime（既定を含む）が実装していればManag
 同じprovider instanceの重複だけを除き、同じIdを持つ別instanceは拒否する。
 IdはManager内で一意、Identityは安定したservice identityとし、登録後に変更しない。
 
-Stageはcontext.Runtimeから構築ごとに現在のdevice世代を借りる。Stageへ生deviceを固定注入しない。
+Stageは型付きのRuntime引数から構築ごとに現在のdevice世代を借りる。Stageへ生deviceを固定注入しない。
 自動収集はproviderの登録であり、使用した世代の記録は省略しない。
 TrackRuntimeDependencyへ実際に借りたVersionとprovider identityを渡し、別serviceの同名登録との混同を拒否する。
 identity引数の省略は許すが、モジュールRuntimeから取得元を明示する。
@@ -113,6 +136,25 @@ Runtimeの構築・解放、Stageとの対応付け、環境世代の検証を�
 +        ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context,
 +            CancellationToken cancellationToken);
 +        ValueTask ReleaseAsync(IResourceStage stage, object resource);
++    }
++    public interface IResourceStage
++    {
++        Type RuntimeType => typeof(IResourceRuntime);
++    }
++    public interface IResourceStage<TRuntime> : IResourceStage
++        where TRuntime : class, IResourceRuntime;
++    public interface IResourceSourceStage<T, TRuntime> : IResourceSourceStage<T>, IResourceStage<TRuntime>
++        where T : class where TRuntime : class, IResourceRuntime
++    {
++        ValueTask<T> BuildAsync(TRuntime runtime, ResourceBuildContext context,
++            CancellationToken cancellationToken);
++    }
++    public interface IResourceTransform<TInput, TOutput, TRuntime>
++        : IResourceTransform<TInput, TOutput>, IResourceStage<TRuntime>
++        where TInput : class where TOutput : class where TRuntime : class, IResourceRuntime
++    {
++        ValueTask<TOutput> BuildAsync(TInput input, TRuntime runtime,
++            ResourceBuildContext context, CancellationToken cancellationToken);
 +    }
 +    public readonly record struct ResourceStageRuntime(Type OutputType, IResourceRuntime Runtime);
 +    public interface IResourceRuntimeDependency
