@@ -25,8 +25,11 @@ internal sealed class WebAudioVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _state;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _state;
+            }
         }
     }
 
@@ -34,15 +37,22 @@ internal sealed class WebAudioVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _gain;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _gain;
+            }
         }
 
         set
         {
             Validate();
             AudioValidation.Gain(value);
-            _gain = value;
+            lock (this)
+            {
+                _gain = value;
+            }
+
             ApplyGain();
         }
     }
@@ -51,15 +61,21 @@ internal sealed class WebAudioVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _loop;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _loop;
+            }
         }
 
         set
         {
             Validate();
             WebAudioInterop.SetLoop(_handle, value);
-            _loop = value;
+            lock (this)
+            {
+                _loop = value;
+            }
         }
     }
 
@@ -103,10 +119,14 @@ internal sealed class WebAudioVoice : IAudioVoice
             return;
         }
 
-        Validate();
+        _device.Validate(false);
         WebAudioInterop.DestroyVoice(_handle);
         _handle.Dispose();
-        _disposed = true;
+        lock (this)
+        {
+            _disposed = true;
+        }
+
         _clip.References--;
         _device.Remove(this);
     }
@@ -114,7 +134,10 @@ internal sealed class WebAudioVoice : IAudioVoice
     internal void Refresh()
     {
         Observe();
-        _state = _requested;
+        lock (this)
+        {
+            _state = _requested;
+        }
     }
 
     internal void ApplyGain()
