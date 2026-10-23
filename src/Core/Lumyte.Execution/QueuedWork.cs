@@ -10,11 +10,17 @@ internal abstract class QueuedWork(WorkDefinition? definition, CancellationToken
 
     internal bool CanceledBeforeStart { get; set; }
 
+    internal bool ContinueOnShutdown { get; set; }
+
     internal CancellationToken Token { get; set; } = token;
 
     internal long Sequence { get; set; }
 
     internal virtual bool IsCanceled => Token.IsCancellationRequested;
+
+    internal virtual bool CancelOnShutdown => !ContinueOnShutdown;
+
+    internal virtual bool IsWorkflow => false;
 
     internal abstract void Perform(in WorkContext context);
 

@@ -26,7 +26,9 @@ Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御�
 
 ### Sourceから実体までの所有権
 
-`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。Sourceの非同期I/Oを待ち、完全なWAVE入力を `ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>` へ送る。handlerは有限な同期デコードだけを実行し、I/Oや他リソースのロードを待たない。
+`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは既定の `ResourceRuntime` を通じてStageの構築と解放をCPUジョブへ配送する。AudioDecodeStageは無引数で作成でき、Sourceの非同期I/Oを待ってWAVEを同期デコードする。ジョブへの登録と配送は汎用Runtimeが管理する。
+
+通常のawait後の継続もRuntimeがジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。Stageはこの継続先を保持し、ConfigureAwait(false)で汎用Runtimeの配送を外れない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
 
 標準decoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱う。chunk境界・padding・alignment・sample rate・byte rate・非有限sampleを検証し、不正データは `InvalidDataException`、未対応codecや形式は `NotSupportedException` で失敗する。圧縮形式やストリーミングは別のStageで表す。
 
@@ -54,13 +56,13 @@ ownerの更新や生成時の確認でUnavailableを観測すると旧epochを�
 
 ### DI、起動と終了
 
-`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntime・デコードjobをsingletonとして登録し、同じ実体をIExecutionModuleへ渡す。ExecutionRuntimeも登録し、名前付きResourceManagerへ同じRuntime依存を接続する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
+`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntimeをsingletonとして登録する。AddResourcesの既定登録が汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ渡す。名前付きResourceManagerの実行先にはResourceRuntime、device世代の依存先には同じAudioResourceRuntimeを接続する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
 
-DIなしでも同じ三つのmoduleをExecutionRuntimeへ渡し、同じRuntimeとStageをResourceManagerへ渡す。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
+DIなしでもAudioModule・AudioResourceRuntime・汎用ResourceRuntimeをExecutionRuntimeへ渡す。ResourceManagerのruntimeには汎用ResourceRuntime、runtimeDependenciesにはAudioResourceRuntimeを渡し、標準Stageを登録する。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
 
 BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawait中もホストの同期コンテキストとPumpを維持する。出力のresumeはuser gesture内で開始するbackend固有の操作として扱う。音声供給callbackからmanaged jobの完了を待たない。
 
-終了時はロード・監視を止め、Reference／Lease／ReadScopeを返してResourceManagerの解放を完了させる。その間もAudioのCleanup受付とHost Pumpを維持し、最後にExecutionRuntimeを停止する。AudioModuleはStoppingで新しい取得・復旧を閉じ、進行中factoryと復旧operationの実完了を待つ。未接続の生成物もownerで解放する。子やleaseが残る場合は停止を失敗させて所有を保持し、解放後に停止を再試行する。
+終了時はロード・監視を止め、Reference／Lease／Snapshotを返してResourceManagerの解放を完了させる。その間もAudioのCleanup受付とHost Pumpを維持し、最後にExecutionRuntimeを停止する。AudioModuleはStoppingで新しい取得・復旧を閉じ、進行中factoryと復旧operationの実完了を待つ。未接続の生成物もownerで解放する。子やleaseが残る場合は停止を失敗させて所有を保持し、解放後に停止を再試行する。
 
 ## 公開APIと契約
 
@@ -163,18 +165,13 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 +        public AudioFormat Format { get; }
 +        public ReadOnlyMemory<float> Samples { get; }
 +    }
-+    public readonly record struct AudioDecodeRequest(ReadOnlyMemory<byte> Bytes);
-+    public readonly struct AudioDecodeHandler : ICommandHandler<AudioDecodeRequest, AudioPcmData>
-+    {
-+        public AudioPcmData Execute(in AudioDecodeRequest command, in WorkContext context);
-+    }
 +    public static class WaveAudioDecoder
 +    {
 +        public static AudioPcmData Decode(ReadOnlySpan<byte> bytes);
 +    }
 +    public sealed class AudioDecodeStage : IResourceSourceStage<AudioPcmData>
 +    {
-+        public AudioDecodeStage(ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler> jobs);
++        public AudioDecodeStage(); // Stageの配送はResourceManagerの既定Runtimeが担当する。
 +    }
 +    public sealed class AudioClipStage : IResourceTransform<AudioPcmData, IAudioClip>
 +    {

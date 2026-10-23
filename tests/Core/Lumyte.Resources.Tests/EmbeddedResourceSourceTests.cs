@@ -143,6 +143,7 @@ public sealed class EmbeddedResourceSourceTests
         services.AddSingleton(Options());
         services.AddResources("dll", pipelines => pipelines.UseSource<EmbeddedResourceSource>().AddSourcePipeline<TextValue, TextStage>());
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("dll");
         Assert.Null(manager.HotReload);
