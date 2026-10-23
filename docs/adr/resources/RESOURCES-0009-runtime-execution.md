@@ -27,6 +27,7 @@ AudioModuleがdeviceを所有し、ResourcesはStageの出力と依存グラフ�
 IResourceRuntimeDependencyはversion・可用性・失効watermark・provider identityを提供する。
 構築時に使用versionを記録し、公開前にも検証する。
 Resident依存の失効は旧Leaseにも伝播し、Build依存で完成した独立した値は失効させない。
+ResidentのRuntime依存は世代の構築完了時に平坦化し、Leaseの読み取りでは一時メモリ確保や依存グラフの再探索を行わない。
 RebuildRuntimeAsyncは保持されたhandleへ新世代を公開する共通のtransactional再構築を使う。
 Audio接続は一回のdevice寿命を扱う。device再作成を行うGraphics接続は後段の別PRで追加する。
 

@@ -376,6 +376,7 @@ public sealed partial class ResourceManager
             await CleanupGenerationAsync(generation, true).ConfigureAwait(false);
             lock (_gate)
             {
+                CaptureResidentRuntimes(generation);
                 generation.State = ResourceGenerationState.Ready;
                 slot.Completion.TrySetResult(generation);
             }

@@ -133,6 +133,94 @@ public sealed class ResourceConcurrencyTests
         Assert.Equal("version:1", old.Value.Label);
     }
 
+    /// <summary>Warm value and usability reads do not allocate regardless of runtime participation.</summary>
+    /// <param name="registered">Whether a runtime provider is registered.</param>
+    /// <param name="tracked">Whether the resource depends on the runtime.</param>
+    /// <returns>Completion of resource construction and the allocation measurement.</returns>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task LeaseReadsDoNotAllocateAsync(bool registered, bool tracked)
+    {
+        await using Fixture fixture = new(null, registered);
+        fixture.Plan.Builds["value"] = (context, _) =>
+        {
+            if (tracked)
+            {
+                context.TrackRuntimeDependency("runtime", fixture.Runtime.Snapshot.Version);
+            }
+
+            return ValueTask.FromResult(new TestValue("value"));
+        };
+        using ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
+        for (int i = 0; i < 10000; i++)
+        {
+            GC.KeepAlive(lease.Value);
+            _ = lease.IsUsable;
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++)
+        {
+            GC.KeepAlive(lease.Value);
+            _ = lease.IsUsable;
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0, allocated);
+    }
+
+    /// <summary>Resident paths preserve older runtime versions, and build-only edges stop invalidation propagation.</summary>
+    /// <returns>Completion of the shared dependency graph and runtime invalidation.</returns>
+    [Fact]
+    public async Task ResidentPathsPreserveDistinctVersionsAndBuildBoundariesAsync()
+    {
+        await using Fixture fixture = new();
+        fixture.Plan.Builds["old"] = (context, _) =>
+        {
+            context.TrackRuntimeDependency("runtime", fixture.Runtime.Snapshot.Version);
+            return ValueTask.FromResult(new TestValue("old"));
+        };
+        using ResourceLease<TestValue> old = await fixture.Manager.AcquireLeaseForTestAsync(Key("old"));
+        fixture.Runtime.Set(new(2, true, 0));
+        foreach (string branch in new[] { "left", "right" })
+        {
+            fixture.Plan.Builds[branch] = async (context, token) =>
+            {
+                await context.RequireAsync(Key("old"), cancellationToken: token);
+                return new(branch);
+            };
+        }
+
+        fixture.Plan.Builds["parent"] = async (context, token) =>
+        {
+            context.TrackRuntimeDependency("runtime", fixture.Runtime.Snapshot.Version);
+            await context.RequireAsync(Key("left"), cancellationToken: token);
+            await context.RequireAsync(Key("right"), cancellationToken: token);
+            return new("parent");
+        };
+        fixture.Plan.Builds["compiled"] = async (context, token) =>
+        {
+            await context.RequireAsync(Key("parent"), ResourceDependencyLifetime.Build, token);
+            return new("compiled");
+        };
+        fixture.Plan.Builds["scene"] = async (context, token) =>
+        {
+            await context.RequireAsync(Key("compiled"), cancellationToken: token);
+            return new("scene");
+        };
+        using ResourceLease<TestValue> parent = await fixture.Manager.AcquireLeaseForTestAsync(Key("parent"));
+        using ResourceLease<TestValue> scene = await fixture.Manager.AcquireLeaseForTestAsync(Key("scene"));
+        fixture.Runtime.Set(new(3, true, 1));
+
+        Assert.False(old.IsUsable);
+        Assert.False(parent.IsUsable);
+        Assert.Equal(1UL, Assert.Throws<ResourceUnavailableException>(() => parent.Value).Version);
+        Assert.True(scene.IsUsable);
+        Assert.Equal("scene", scene.Value.Label);
+    }
+
     /// <summary>An already invalid runtime snapshot cannot be used while its change notification is still being delivered.</summary>
     /// <param name="access">The first resource access performed by the earlier change subscriber.</param>
     /// <returns>Completion of the ordered change notification and all availability checks.</returns>
@@ -231,7 +319,7 @@ public sealed class ResourceConcurrencyTests
         {
         }
 
-        internal Fixture(Action<RuntimeState>? beforeManager)
+        internal Fixture(Action<RuntimeState>? beforeManager, bool registerRuntime = true)
         {
             ServiceCollection services = new();
             services.AddSingleton(Plan);
@@ -239,7 +327,12 @@ public sealed class ResourceConcurrencyTests
             services.AddMemoryManagement();
             services.AddResources("test", builder =>
             {
-                builder.UseSource<TestSource>().UseRuntimeDependency<TestRuntime>("runtime");
+                builder.UseSource<TestSource>();
+                if (registerRuntime)
+                {
+                    builder.UseRuntimeDependency<TestRuntime>("runtime");
+                }
+
                 builder.AddSourcePipeline<TestValue, TestStage>();
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
