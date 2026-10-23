@@ -120,7 +120,7 @@ jobs:
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore',
+          Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore', '-m:1',
             '--logger', 'trx', '--results-directory', 'artifacts/test-results')
 
       - name: Run X11 and browser Windowing tests
