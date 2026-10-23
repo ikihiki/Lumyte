@@ -246,6 +246,7 @@ public sealed class ResourceStreamTests
         await using var harness = new StreamHarness(new StreamSettings { Length = 1024 });
         var options = new ResourceStreamOptions { BlockSize = 1, MaxBufferedBlocks = 1 };
         await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
+
         // ReadAsync polls on underflow; 1,024 waits can exceed 10 seconds with Windows timer granularity.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         int[] destination = new int[1];
