@@ -43,7 +43,7 @@ GPU readbackで得た独立したCPU配列など、構築完了後にデバイ�
 
 loss通知で旧Ready Versionが失効すると、Resident依存を持つResourceLeaseとその親が使用不能になる。既存leaseの保持は寿命を保証するだけであり、lostしたGPUを利用可能にはしない。Stage実行中や公開直前にlossした候補も公開しない。
 
-アプリは描画・GPU job・mapped領域へのアクセスを止め、旧epochの `WaitForRetirementAsync` で安全なNative解放を確認する。利用側の旧ResourceLease・ReadScopeを返し、Stageの子資源解放、contextのdevice lease返却、serviceの `RetireAsync` による旧owner解放を進める。安全性を確認できなければ所有権とメモリ計上を保持する。
+アプリは描画・GPU job・mapped領域へのアクセスを止め、旧epochの `WaitForRetirementAsync` で安全なNative解放を確認する。利用側の旧ResourceLease・Snapshotを返し、Stageの子資源解放、contextのdevice lease返却、serviceの `RetireAsync` による旧owner解放を進める。安全性を確認できなければ所有権とメモリ計上を保持する。
 
 `RecoverAsync` で新デバイスがReadyになった後、`RebuildRuntimeAsync([dependencyId])` で既存の論理ハンドルへ新世代を一括公開する。新Capsへの適合、描画対象の復元完了、描画再開はアプリが判断する。構築失敗や公開競合は旧公開mapを置換せず、失効済みの旧値を復活させることもない。
 

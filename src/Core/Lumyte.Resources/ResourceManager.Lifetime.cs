@@ -70,7 +70,7 @@ public sealed partial class ResourceManager
 
             if (_externalOwners != 0 || _operations != (_hotReload is null ? 0 : _reloadOperations) || _loads.Count != 0 || _sessions.Count != 0)
             {
-                throw new InvalidOperationException("Return resource references, leases, read scopes and sessions, and complete all operations before disposing the manager. Retry failed session cleanup with TrimAsync first.");
+                throw new InvalidOperationException("Return resource references, leases, resource snapshots and sessions, and complete all operations before disposing the manager. Retry failed session cleanup with TrimAsync first.");
             }
 
             _closing = true;
