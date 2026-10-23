@@ -37,6 +37,8 @@ internal sealed class OpenALClip : IAudioClip
 
     public long FrameCount { get; }
 
+    IAudioDevice IAudioClip.Device => Device;
+
     internal OpenALDevice Device { get; }
 
     internal uint Handle { get; }
