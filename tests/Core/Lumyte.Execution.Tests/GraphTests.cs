@@ -140,6 +140,47 @@ public sealed class GraphTests
         Stop(runtime, module);
     }
 
+    /// <summary>Adjacent ranges with different worker counts retain independent claims across graph reuse.</summary>
+    /// <param name="mode">The CPU scheduling mode.</param>
+    [Theory]
+    [InlineData(CpuExecutionMode.Cooperative)]
+    [InlineData(CpuExecutionMode.ThreadPool)]
+    public void MultipleRangesWithDifferentChunkSizesCompleteExactlyOnce(CpuExecutionMode mode)
+    {
+        var module = new GraphModule();
+        var runtime = new ExecutionRuntime([module]);
+        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, mode, mode == CpuExecutionMode.Cooperative ? 1 : 3, new ExecutionOptions());
+        CompletedResult.Read(runtime.StartAsync());
+        module.Gate!.Open();
+        var builder = new JobGraphBuilder<GraphInput>();
+        JobNodeId previous = builder.Add("Prepare", module.Prepare);
+        foreach (int chunkSize in new[] { 1, 8, 64 })
+        {
+            JobNodeId range = builder.AddRange($"Range{chunkSize}", module.Range, chunkSize);
+            builder.DependsOn(range, previous);
+            previous = range;
+        }
+
+        JobNodeId apply = builder.Add("Apply", module.Apply);
+        builder.DependsOn(apply, previous);
+        JobGraph<GraphInput> graph = builder.Build();
+        foreach (int length in new[] { 0, 1, 17 })
+        {
+            var data = new GraphData(length);
+            var input = new GraphInput(data);
+            Assert.True(runtime.TrySchedule(graph, in input, out JobRun? run));
+            PumpUntil(runtime, module, () => run!.IsCompleted);
+            run!.ThrowIfFailed();
+            Assert.Equal(length * (length + 1) / 2, data.Total);
+            Assert.Equal(length + ((length + 7) / 8) + ((length + 63) / 64), data.Events.Count(value => value == "range"));
+            Assert.Equal("prepare", data.Events.First());
+            Assert.Equal("apply", data.Events.Last());
+            run.Dispose();
+        }
+
+        Stop(runtime, module);
+    }
+
     /// <summary>Cycles, cross-builder nodes, and empty graphs fail before submission.</summary>
     [Fact]
     public void InvalidGraphDefinitionsAreRejected()

@@ -12,6 +12,8 @@ ResourcesのRuntimeを既存のAudioModuleと接続します。
 voiceはclipをResident依存として保持し、PCMはclipへのコピー完了までBuild依存として保持します。
 標準のWaveAudioDecoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱います。
 圧縮形式・ストリーミング・巨大ファイルのチャンク分割は独自Stageで追加します。
+入力長が既知なら最大1 MiBを初期容量として確保し、読み取り中の配列拡張を減らします。
+これは事前確保の上限で、入力サイズの制限やMemory予算ではありません。全入力とデコード後PCMはメモリへ保持します。
 AudioResourceRuntimeはAudioModuleにDependsOnを宣言し、起動完了後に利用可能になります。
 RuntimeはAudioModule.Devicesの世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
 UseAudioAsyncは取得した正確な世代を依存として記録し、deviceのleaseをcontextへ渡します。

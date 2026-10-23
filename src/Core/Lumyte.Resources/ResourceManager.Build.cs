@@ -481,6 +481,11 @@ public sealed partial class ResourceManager
 
     private void AddEdge(ResourceBuildView view, ResourceNode from, ResourceNode to)
     {
+        if (view.Edges[from].Contains(to))
+        {
+            return;
+        }
+
         HashSet<ResourceNode> visited = [];
         List<ResourceNode> path = [];
         if (FindPath(view, to, from, visited, path))
@@ -583,7 +588,9 @@ public sealed partial class ResourceManager
 
     private void PublishCandidates(ResourceBuildView view, HashSet<ResourceNode> used)
     {
-        var previouslyTracked = _metadata.Values.SelectMany(static metadata => metadata.Sources.Keys).ToHashSet();
+        HashSet<ResourceId>? previouslyTracked = _hotReload is not null
+            ? _metadata.Values.SelectMany(static metadata => metadata.Sources.Keys).ToHashSet()
+            : null;
         Dictionary<ResourceNode, ResourceGeneration> map = new(_published);
         bool changed = false;
         foreach (ResourceNode node in used)
@@ -614,7 +621,7 @@ public sealed partial class ResourceManager
         }
 
         RefreshWatchTargets();
-        if (_watchTargets.Resources.Any(id => !previouslyTracked.Contains(id)))
+        if (previouslyTracked is not null && _watchTargets.Resources.Any(id => !previouslyTracked.Contains(id)))
         {
             // A change hint can arrive before an initial build has published its provenance.
             _hotReload?.RequestRescan();
