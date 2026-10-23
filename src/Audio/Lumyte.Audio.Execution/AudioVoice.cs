@@ -7,7 +7,7 @@ namespace Lumyte.Audio.Execution;
 /// <param name="original">The fully created original instance.</param>
 public readonly partial struct AudioVoice(IAudioVoice original)
 {
-    private readonly IAudioVoice _original = original ?? throw new ArgumentNullException(nameof(original));
+    private readonly IAudioVoice _original = original;
 
     /// <summary>Gets the backend snapshot from any thread.</summary>
     public AudioPlaybackState State => _original.State;
