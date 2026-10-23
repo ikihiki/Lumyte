@@ -217,7 +217,7 @@ public sealed partial class ResourceManager
             {
                 if (generation.Value is { } output)
                 {
-                    await generation.Stage.ReleaseAsync(output).ConfigureAwait(false);
+                    await _runtime.ReleaseAsync(generation.Stage, output).ConfigureAwait(false);
                 }
 
                 generation.CleanupPhase = ResourceGenerationCleanupPhase.Resources;

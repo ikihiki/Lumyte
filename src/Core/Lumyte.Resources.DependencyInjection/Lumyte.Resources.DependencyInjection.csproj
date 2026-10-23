@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <ProjectReference Include="../Lumyte.Resources/Lumyte.Resources.csproj" />
+    <ProjectReference Include="../Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

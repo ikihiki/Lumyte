@@ -41,6 +41,7 @@ public sealed class ResourceManagerTests
     public async Task ManualConstructionAcceptsTypedStagesDirectlyAsync()
     {
         await using MemoryManager memory = new();
+        await using ResourceExecutionHost execution = new();
         BuildPlan plan = new();
         SourceStore store = new();
         store.Set("asset", "initial");
@@ -48,7 +49,8 @@ public sealed class ResourceManagerTests
             "manual",
             new FakeSource(store),
             [new DocumentStage(plan), new CpuStage(plan), new UploadStage(plan)],
-            memory);
+            memory,
+            execution.Resources);
         using ResourceLease<TestValue> first = await manager.AcquireLeaseForTestAsync(Key("value"));
         using (ResourceLease<TestValue> second = await manager.AcquireLeaseForTestAsync(Key("value")))
         {
@@ -494,6 +496,7 @@ public sealed class ResourceManagerTests
         }
 
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager first = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first");
         ResourceManager second = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("second");
@@ -628,6 +631,7 @@ public sealed class ResourceManagerTests
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly ServiceProvider _provider;
+        private readonly ResourceExecutionHost _execution;
         private readonly AsyncServiceScope _scope;
 
         internal Fixture(Action<ResourceRegistrationBuilder> configure)
@@ -647,6 +651,7 @@ public sealed class ResourceManagerTests
                 configure(builder);
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+            _execution = new ResourceExecutionHost(_provider);
             _scope = _provider.CreateAsyncScope();
             Memory = _scope.ServiceProvider.GetRequiredService<IMemoryManager>();
             Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("test");
@@ -666,6 +671,7 @@ public sealed class ResourceManagerTests
         {
             await Manager.DisposeAsync();
             await _scope.DisposeAsync();
+            await _execution.DisposeAsync();
             await _provider.DisposeAsync();
         }
     }

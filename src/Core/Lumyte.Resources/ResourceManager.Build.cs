@@ -355,7 +355,7 @@ public sealed partial class ResourceManager
         try
         {
             view.CancellationToken.ThrowIfCancellationRequested();
-            object value = await generation.Stage.BuildAsync(context, view.CancellationToken).ConfigureAwait(false);
+            object value = await _runtime.BuildAsync(generation.Stage, context, view.CancellationToken).ConfigureAwait(false);
             context.Close();
             if (!generation.Stage.OutputType.IsInstanceOfType(value))
             {
