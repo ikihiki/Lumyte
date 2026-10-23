@@ -14,11 +14,10 @@ internal abstract class QueuedWork(WorkDefinition? definition, CancellationToken
 
     internal long Sequence { get; set; }
 
-    internal virtual bool KeepAlive => false;
-
     internal virtual bool IsCanceled => Token.IsCancellationRequested;
 
     internal abstract void Perform(in WorkContext context);
 
-    internal abstract void Finish(Exception? error);
+    // Called under Runtime.Sync; true asks the scheduler to requeue this work.
+    internal abstract bool Finish(Exception? error);
 }

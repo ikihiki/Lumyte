@@ -19,11 +19,11 @@ internal sealed class BatchItem<TCommand, TResult>(WorkDefinition<TCommand, TRes
         }
     }
 
-    internal override void Finish(Exception? error)
+    internal override bool Finish(Exception? error)
     {
         _command = default;
         _work = null;
-        base.Finish(error);
+        return base.Finish(error);
     }
 
     internal override TResult GetResult()

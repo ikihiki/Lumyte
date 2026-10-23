@@ -21,6 +21,30 @@ public sealed partial class ResourceManager
         }
     }
 
+    private static void CaptureResidentRuntimes(ResourceGeneration generation)
+    {
+        // Dependencies are complete before Ready is published. Flatten their immutable
+        // resident uses once, keeping distinct versions of the same runtime.
+        HashSet<(string Id, ulong Version)>? resident = null;
+        foreach ((string id, ResourceRuntimeUse use) in generation.Runtimes)
+        {
+            if (use.Lifetime == ResourceDependencyLifetime.Resident)
+            {
+                (resident ??= []).Add((id, use.Version));
+            }
+        }
+
+        foreach (ResourceDependency dependency in generation.Dependencies.Values)
+        {
+            if (dependency.Lifetime == ResourceDependencyLifetime.Resident && dependency.Generation is { ResidentRuntimes.Length: > 0 } child)
+            {
+                (resident ??= []).UnionWith(child.ResidentRuntimes);
+            }
+        }
+
+        generation.ResidentRuntimes = resident?.ToArray() ?? [];
+    }
+
     private void RefreshRuntimes()
     {
         if (_runtimes.Count == 0)
@@ -174,34 +198,13 @@ public sealed partial class ResourceManager
 
     private ResourceUnavailableException? GetUnavailable(ResourceGeneration generation)
     {
-        HashSet<ResourceGeneration> visited = [];
-        return FindUnavailable(generation, visited);
-    }
-
-    private ResourceUnavailableException? FindUnavailable(ResourceGeneration generation, HashSet<ResourceGeneration> visited)
-    {
-        if (!visited.Add(generation))
+        foreach ((string id, ulong version) in generation.ResidentRuntimes)
         {
-            return null;
-        }
-
-        foreach ((string id, ResourceRuntimeUse use) in generation.Runtimes)
-        {
-            if (use.Lifetime == ResourceDependencyLifetime.Resident
-                && (!_runtimes.TryGetValue(id, out ResourceRuntimeState? runtime)
-                    || !runtime.Snapshot.IsAvailable || use.Version == 0
-                    || use.Version > runtime.Snapshot.Version || use.Version <= runtime.Snapshot.InvalidatedThroughVersion))
+            if (!_runtimes.TryGetValue(id, out ResourceRuntimeState? runtime)
+                || !runtime.Snapshot.IsAvailable || version == 0
+                || version > runtime.Snapshot.Version || version <= runtime.Snapshot.InvalidatedThroughVersion)
             {
-                return new(id, use.Version);
-            }
-        }
-
-        foreach (ResourceDependency dependency in generation.Dependencies.Values)
-        {
-            if (dependency.Lifetime == ResourceDependencyLifetime.Resident && dependency.Generation is { } child
-                && FindUnavailable(child, visited) is { } unavailable)
-            {
-                return unavailable;
+                return new(id, version);
             }
         }
 
