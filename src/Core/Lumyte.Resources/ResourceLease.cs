@@ -6,23 +6,22 @@ namespace Lumyte.Resources;
 public sealed class ResourceLease<T> : IDisposable
     where T : class
 {
-    private readonly T _value;
-    private readonly Func<ResourceUnavailableException?> _getUnavailable;
-    private Action? _release;
+    private readonly ResourceGeneration _generation;
+    private ResourceManager? _manager;
 
-    internal ResourceLease(ResourceKey<T> key, ulong revision, T value, Func<ResourceUnavailableException?> getUnavailable, Action release)
+    internal ResourceLease(ResourceManager manager, ResourceGeneration generation)
     {
-        (Key, Revision, _value, _getUnavailable, _release) = (key, revision, value, getUnavailable, release);
+        (_manager, _generation) = (manager, generation);
     }
 
     /// <summary>Gets the logical key of the retained resource.</summary>
-    public ResourceKey<T> Key { get; }
+    public ResourceKey<T> Key => new(_generation.Node.Address);
 
     /// <summary>Gets the exact content revision retained by this lease.</summary>
-    public ulong Revision { get; }
+    public ulong Revision => _generation.Revision;
 
     /// <summary>Gets a value indicating whether the lease is retained and its runtime dependencies remain usable.</summary>
-    public bool IsUsable => Volatile.Read(ref _release) is not null && _getUnavailable() is null;
+    public bool IsUsable => Volatile.Read(ref _manager) is { } manager && manager.IsUsable(_generation);
 
     /// <summary>Gets the retained value, rejecting returned leases and invalidated runtime dependencies.</summary>
     /// <exception cref="ObjectDisposedException">This lease has been returned.</exception>
@@ -31,16 +30,13 @@ public sealed class ResourceLease<T> : IDisposable
     {
         get
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _release) is null, this);
-            if (_getUnavailable() is { } unavailable)
-            {
-                throw unavailable;
-            }
-
-            return _value;
+            ResourceManager? manager = Volatile.Read(ref _manager);
+            ObjectDisposedException.ThrowIf(manager is null, this);
+            manager.ValidateLease(_generation);
+            return (T)_generation.Value!;
         }
     }
 
     /// <summary>Returns the revision's ownership once without I/O, resource destruction or GPU waits.</summary>
-    public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    public void Dispose() => Interlocked.Exchange(ref _manager, null)?.ReturnLease(_generation);
 }
