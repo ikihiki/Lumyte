@@ -61,7 +61,10 @@ internal static class Program
         services.AddResources("gltf", pipelines =>
         {
             ConfigurePipelines(pipelines);
-            pipelines.UseStageRuntime<GpuTexture>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
+            pipelines.AddTransformPipeline<CpuImage, GpuTexture, TextureUploadStage>()
+                .AddTransformPipeline<CpuMesh, GpuMesh, MeshUploadStage>()
+                .AddTransformPipeline<CpuScene, GpuScene, SceneUploadStage>()
+                .UseStageRuntime<GpuTexture>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
                 .UseStageRuntime<GpuMesh>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
                 .UseStageRuntime<GpuScene>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"));
         });
@@ -116,10 +119,7 @@ internal static class Program
             .AddSourcePipeline<ShaderArtifact, ShaderStage>()
             .AddTransformPipeline<GltfDocument, CpuMaterial, MaterialStage>()
             .AddTransformPipeline<GltfDocument, CpuMesh, MeshStage>()
-            .AddTransformPipeline<CpuImage, GpuTexture, TextureUploadStage>()
-            .AddTransformPipeline<CpuMesh, GpuMesh, MeshUploadStage>()
-            .AddTransformPipeline<GltfDocument, CpuScene, SceneStage>()
-            .AddTransformPipeline<CpuScene, GpuScene, SceneUploadStage>();
+            .AddTransformPipeline<GltfDocument, CpuScene, SceneStage>();
     }
 
     private static async Task ValidateCpuAsync(ResourceManager resources, string directory)
