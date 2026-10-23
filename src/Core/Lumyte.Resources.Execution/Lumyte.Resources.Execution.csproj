@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Typed CPU execution modules for asynchronous resource pipelines.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Resources/Lumyte.Resources.csproj" />
+    <ProjectReference Include="../Lumyte.Execution/Lumyte.Execution.csproj" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
