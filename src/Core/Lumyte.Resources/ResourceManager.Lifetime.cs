@@ -92,6 +92,7 @@ public sealed partial class ResourceManager
             }
 
             _reclaimerRegistration.Dispose();
+            UnsubscribeRuntimes();
             await _maintenance.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -104,6 +105,7 @@ public sealed partial class ResourceManager
                     }
 
                     _metadata.Clear();
+                    _invalidated.Clear();
                     _disposed = true;
                 }
             }
@@ -411,7 +413,7 @@ public sealed partial class ResourceManager
     private void PruneMetadata()
     {
         HashSet<ResourceNode> reachable = [];
-        Stack<ResourceNode> pending = new(_published.Keys.Concat(_slotByKey.Keys)
+        Stack<ResourceNode> pending = new(_published.Keys.Concat(_invalidated).Concat(_slotByKey.Keys)
             .Concat(_loads.Keys).Concat(_generations.Select(static generation => generation.Node)));
         while (pending.TryPop(out ResourceNode node))
         {

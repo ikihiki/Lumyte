@@ -146,6 +146,116 @@ public sealed class ResourceConcurrencyTests
         Assert.Equal("second:2", secondValue.Value.Label);
     }
 
+    /// <summary>Advancing an available runtime without invalidation leaves retained older revisions usable.</summary>
+    /// <returns>Completion of the runtime update and explicit rebuild.</returns>
+    [Fact]
+    public async Task RuntimeAdvanceWithoutInvalidationPreservesOlderLeasesAsync()
+    {
+        await using Fixture fixture = new();
+        fixture.Plan.Builds["value"] = (context, _) =>
+        {
+            ulong version = fixture.Runtime.Snapshot.Version;
+            context.TrackRuntimeDependency("runtime", version);
+            return ValueTask.FromResult(new TestValue($"version:{version}"));
+        };
+        using ResourceLease<TestValue> old = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
+        fixture.Runtime.Set(new(2, true, 0));
+        Assert.True(old.IsUsable);
+        Assert.Equal("version:1", old.Value.Label);
+
+        ResourceReloadResult result = await fixture.Manager.RebuildRuntimeAsync(["runtime"]);
+        Assert.Equal(ResourceReloadStatus.Published, result.Status);
+        using ResourceLease<TestValue> current = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
+        Assert.Equal("version:2", current.Value.Label);
+        Assert.NotEqual(old.Revision, current.Revision);
+        Assert.True(old.IsUsable);
+        Assert.Equal("version:1", old.Value.Label);
+    }
+
+    /// <summary>An already invalid runtime snapshot cannot be used while its change notification is still being delivered.</summary>
+    /// <param name="access">The first resource access performed by the earlier change subscriber.</param>
+    /// <returns>Completion of the ordered change notification and all availability checks.</returns>
+    [Theory]
+    [InlineData("lease")]
+    [InlineData("value")]
+    [InlineData("reference")]
+    [InlineData("manager")]
+    [InlineData("frame")]
+    public async Task RuntimeInvalidationIsObservedBeforeManagerChangedCallbackAsync(string access)
+    {
+        ResourceLease<TestValue>? old = null;
+        ResourceReference<TestValue>? owner = null;
+        ResourceReadScope? frame = null;
+        ResourceManager? manager = null;
+        bool usable = true;
+        Exception? valueError = null;
+        await using Fixture fixture = new(
+            runtime => runtime.Changed += (_, _) =>
+            {
+                ResourceLease<TestValue>? current = null;
+                switch (access)
+                {
+                    case "lease":
+                        usable = old!.IsUsable;
+                        break;
+                    case "value":
+                        valueError = Record.Exception(() => old!.Value);
+                        usable = valueError is null;
+                        break;
+                    case "reference":
+                        usable = owner!.IsAvailable;
+                        break;
+                    case "manager":
+                        usable = manager!.TryAcquireLeaseForTest(owner!.Handle, out current);
+                        break;
+                    case "frame":
+                        usable = frame!.TryAcquire(owner!.Handle, out current);
+                        break;
+                }
+
+                current?.Dispose();
+            });
+        fixture.Plan.Builds["value"] = (context, _) =>
+        {
+            context.TrackRuntimeDependency("runtime", fixture.Runtime.Snapshot.Version);
+            return ValueTask.FromResult(new TestValue("value"));
+        };
+        manager = fixture.Manager;
+        using (owner = await manager.AcquireAsync(Key("value")))
+        using (old = await manager.AcquireLeaseForTestAsync(Key("value")))
+        using (frame = manager.BeginRead())
+        {
+            fixture.Runtime.Set(new(2, false, 1));
+            Assert.False(usable);
+            if (access == "value")
+            {
+                Assert.IsType<ResourceUnavailableException>(valueError);
+            }
+        }
+    }
+
+    /// <summary>Invalid provider updates are reported by manager operations without escaping into host event callbacks.</summary>
+    /// <param name="version">The malformed runtime version.</param>
+    /// <param name="available">The malformed availability.</param>
+    /// <param name="invalidated">The malformed invalidation watermark.</param>
+    /// <returns>Completion of event delivery and manager rejection.</returns>
+    [Theory]
+    [InlineData(0UL, false, 0UL)]
+    [InlineData(1UL, false, 0UL)]
+    [InlineData(2UL, true, 2UL)]
+    public async Task RuntimeContractViolationPoisonsOperationsWithoutThrowingFromEventAsync(ulong version, bool available, ulong invalidated)
+    {
+        await using Fixture fixture = new();
+        fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
+        using ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
+
+        Assert.Null(Record.Exception(() => fixture.Runtime.Set(new(version, available, invalidated))));
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await fixture.Manager.AcquireLeaseForTestAsync(Key("value")));
+        Assert.IsType<InvalidOperationException>(error.InnerException);
+        Assert.Contains("runtime provider", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ResourceKey<TestValue> Key(string selector) => new("asset", selector);
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -156,21 +266,30 @@ public sealed class ResourceConcurrencyTests
         private readonly AsyncServiceScope _scope;
 
         internal Fixture()
+            : this(null)
+        {
+        }
+
+        internal Fixture(Action<RuntimeState>? beforeManager)
         {
             ServiceCollection services = new();
             services.AddSingleton(Plan);
+            services.AddSingleton(Runtime);
             services.AddMemoryManagement();
             services.AddResources("test", builder =>
             {
-                builder.UseSource<TestSource>();
+                builder.UseSource<TestSource>().UseRuntimeDependency<TestRuntime>("runtime");
                 builder.AddSourcePipeline<TestValue, TestStage>();
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             _scope = _provider.CreateAsyncScope();
+            beforeManager?.Invoke(Runtime);
             Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("test");
         }
 
         internal BuildPlan Plan { get; } = new();
+
+        internal RuntimeState Runtime { get; } = new();
 
         internal ResourceManager Manager { get; }
 
@@ -252,5 +371,31 @@ public sealed class ResourceConcurrencyTests
             => ValueTask.FromResult<Stream>(new MemoryStream());
 
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RuntimeState
+    {
+        internal event EventHandler? Changed;
+
+        internal ResourceRuntimeSnapshot Snapshot { get; private set; } = new(1, true, 0);
+
+        internal void Set(ResourceRuntimeSnapshot snapshot)
+        {
+            Snapshot = snapshot;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private sealed class TestRuntime(RuntimeState state) : IResourceRuntimeDependency
+    {
+        public event EventHandler? Changed
+        {
+            add => state.Changed += value;
+            remove => state.Changed -= value;
+        }
+
+        public string Id => "runtime";
+
+        public ResourceRuntimeSnapshot Snapshot => state.Snapshot;
     }
 }

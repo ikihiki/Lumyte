@@ -35,7 +35,9 @@ ReloadAsyncとReloadAllAsyncは内部のデバッグ用コマンドで、公開A
 
 世代管理のみのPRはバックグラウンド監視を持たず、本PRで自動更新を追加する。
 監視の起動停止、通知集約、再試行の実装は本PRで独立して見直せる。
-今回の分割では既存の実行方式を変更しない。
+初回ロードと同じRuntime・型付きCPUジョブ・Audio所有スレッドのStageを使う。
+公開前に入力RevisionだけでなくRuntime versionと失効状態も検証する。
+旧Leaseは旧voiceとclipを保持し、新voiceは停止状態で公開する。
 
 ## 検証方針
 
@@ -44,4 +46,5 @@ ReloadAsyncとReloadAllAsyncは内部のデバッグ用コマンドで、公開A
 
 ## 関連ADR
 
+- [Runtimeと実行先](RESOURCES-0009-runtime-execution.md)
 - [ADR-RESOURCES-0002](RESOURCES-0002-generations-reload.md)
