@@ -3,6 +3,26 @@ namespace Lumyte.Resources;
 /// <summary>Tracks runtime availability and irreversible resource invalidation.</summary>
 public sealed partial class ResourceManager
 {
+    internal bool IsUsable(ResourceGeneration generation)
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return !TryGetUnavailable(generation, out _);
+        }
+    }
+
+    internal void ValidateLease(ResourceGeneration generation)
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            ThrowIfUnavailable(generation);
+        }
+    }
+
     private static void ValidateRuntimeSnapshot(ResourceRuntimeSnapshot previous, ResourceRuntimeSnapshot next)
     {
         if (next.Version < previous.Version || next.InvalidatedThroughVersion < previous.InvalidatedThroughVersion)
@@ -126,7 +146,7 @@ public sealed partial class ResourceManager
                 Dictionary<ResourceNode, ResourceGeneration>? updated = null;
                 foreach ((ResourceNode node, ResourceGeneration generation) in _published)
                 {
-                    if (GetUnavailable(generation) is not null)
+                    if (TryGetUnavailable(generation, out _))
                     {
                         updated ??= new(_published);
                         updated.Remove(node);
@@ -186,17 +206,7 @@ public sealed partial class ResourceManager
         }
     }
 
-    private ResourceUnavailableException? GetUnavailableThreadSafe(ResourceGeneration generation)
-    {
-        RefreshRuntimes();
-        lock (_gate)
-        {
-            EnsureRunning();
-            return GetUnavailable(generation);
-        }
-    }
-
-    private ResourceUnavailableException? GetUnavailable(ResourceGeneration generation)
+    private bool TryGetUnavailable(ResourceGeneration generation, out (string Id, ulong Version) unavailable)
     {
         foreach ((string id, ulong version) in generation.ResidentRuntimes)
         {
@@ -204,18 +214,20 @@ public sealed partial class ResourceManager
                 || !runtime.Snapshot.IsAvailable || version == 0
                 || version > runtime.Snapshot.Version || version <= runtime.Snapshot.InvalidatedThroughVersion)
             {
-                return new(id, version);
+                unavailable = (id, version);
+                return true;
             }
         }
 
-        return null;
+        unavailable = default;
+        return false;
     }
 
     private void ThrowIfUnavailable(ResourceGeneration generation)
     {
-        if (GetUnavailable(generation) is { } unavailable)
+        if (TryGetUnavailable(generation, out (string Id, ulong Version) unavailable))
         {
-            throw unavailable;
+            throw new ResourceUnavailableException(unavailable.Id, unavailable.Version);
         }
     }
 
