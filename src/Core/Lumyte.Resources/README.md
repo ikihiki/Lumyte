@@ -70,4 +70,3 @@ using ResourceLease<MyResource> frame = reference.Acquire();
 `Conflict`と構築・入力読み取りの失敗は、設定された間隔・上限回数で再試行します。失敗時は旧公開値を維持し、再試行を使い切った後も新しい通知は受け付けます。`LastResult`・`LastError`と`Reloaded`・`ReloadFailed`で経過を確認でき、監視列挙自体の失敗は`Completion`へ伝わります。イベントはバックグラウンド処理上で実行されるため、UIなどへの配送は利用側で行います。
 
 DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終了時に監視と進行中の自動再構築をキャンセルしてjoinしてからリソースを解放します。利用側の`Start`／`StopAsync`は不要です。`manager.HotReload`から結果・失敗・`Completion`を観測できます。通知元はSourceに属し、Managerは購読の寿命を管理します。実ファイルSourceの監視対応は後続PRで追加します。`ConfigureHotReload(new() { Enabled = false })`で購読を無効にでき、DIを使わない場合はconstructorの`reloadOptions`へ設定します。複合SourceではStreamの振り分けと同じ規則で監視対象を振り分けてください。
-
