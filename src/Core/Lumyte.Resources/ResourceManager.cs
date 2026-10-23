@@ -13,17 +13,20 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly ResourceWatchTargets _watchTargets = new();
     private readonly ResourceReloadService? _hotReload;
     private readonly Dictionary<RuntimeTypeHandle, IResourceStage> _stages;
+    private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
     private readonly Dictionary<ResourceNode, ResourceLoad> _loads = [];
     private readonly List<ResourceSlot> _slots = [];
     private readonly Dictionary<ResourceNode, uint> _slotByKey = [];
+    private readonly HashSet<ResourceNode> _invalidated = [];
     private readonly HashSet<IAsyncDisposable> _sessions = [];
     private readonly HashSet<IAsyncDisposable> _failedSessions = [];
     private readonly SemaphoreSlim _maintenance = new(1, 1);
     private readonly IDisposable _reclaimerRegistration;
     private Dictionary<ResourceNode, ResourceGeneration> _published = [];
     private ResourceBuildView? _normalView;
+    private Exception? _runtimeFailure;
     private Task? _disposeTask;
     private ulong _publicationVersion;
     private ulong _revision;
@@ -38,8 +41,9 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="source">The borrowed input source.</param>
     /// <param name="stages">The borrowed source stages and transforms, with one producer per output type.</param>
     /// <param name="memory">The shared memory budget manager.</param>
+    /// <param name="runtimeDependencies">The borrowed runtime generation providers.</param>
     /// <param name="reloadOptions">Batching and retry settings for automatic reload.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, ResourceReloadOptions? reloadOptions = null)
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, ResourceReloadOptions? reloadOptions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(source);
@@ -51,10 +55,33 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle);
         ValidatePipelines();
         ManagerId = NextManagerId();
-        _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes
-            ? new ResourceReloadService(this, changes, reloadOptions) : null;
-        _reclaimerRegistration = memory.RegisterReclaimer(this);
-        _hotReload?.Start();
+        try
+        {
+            foreach (IResourceRuntimeDependency provider in runtimeDependencies ?? [])
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(provider.Id);
+                ResourceRuntimeSnapshot snapshot = provider.Snapshot;
+                ValidateRuntimeSnapshot(default, snapshot);
+                _runtimes.Add(provider.Id, new(provider, provider.Identity, snapshot));
+            }
+
+            foreach (ResourceRuntimeState runtime in _runtimes.Values)
+            {
+                runtime.Handler = (_, _) => ObserveRuntime(runtime);
+                runtime.Provider.Changed += runtime.Handler;
+                RefreshRuntime(runtime);
+            }
+
+            _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes
+                ? new ResourceReloadService(this, changes, reloadOptions) : null;
+            _reclaimerRegistration = memory.RegisterReclaimer(this);
+            _hotReload?.Start();
+        }
+        catch
+        {
+            UnsubscribeRuntimes();
+            throw;
+        }
     }
 
     /// <summary>Gets the manager-owned automatic reload worker, or null when the source has no notifications or automatic reload is disabled.</summary>
@@ -132,13 +159,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference)
         where T : class
     {
+        RefreshRuntimes();
         lock (_gate)
         {
             EnsureRunning();
             reference = null;
             if (!TryGetSlot(handle, out ResourceSlot? slot)
                 || !_published.TryGetValue(slot!.Node, out ResourceGeneration? generation)
-                || generation.State != ResourceGenerationState.Ready)
+                || generation.State != ResourceGenerationState.Ready || GetUnavailable(generation) is not null)
             {
                 return false;
             }
@@ -294,7 +322,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    private void EnsureRunning() => ObjectDisposedException.ThrowIf(_closing || _disposed, this);
+    private void EnsureRunning()
+    {
+        ObjectDisposedException.ThrowIf(_closing || _disposed, this);
+        if (_runtimeFailure is { } failure)
+        {
+            throw new InvalidOperationException("A resource runtime provider violated its version contract.", failure);
+        }
+    }
 
     /// <summary>Acquires a revision-fixed lease, sharing compatible in-flight builds.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
@@ -306,6 +341,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     {
         cancellationToken.ThrowIfCancellationRequested();
         ResourceNode node = GetNode(key);
+        RefreshRuntimes();
         ResourceLoad load;
         bool start = false;
         lock (_gate)
@@ -313,9 +349,11 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             EnsureRunning();
             if (_published.TryGetValue(node, out ResourceGeneration? cached))
             {
+                ThrowIfUnavailable(cached);
                 return CreateLease<T>(cached);
             }
 
+            ThrowIfKnownUnavailable(node);
             if (!_loads.TryGetValue(node, out load!))
             {
                 ResourceBuildView view = _normalView is { } existing && existing.PublicationVersion == _publicationVersion
@@ -341,9 +379,11 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         try
         {
             ResourceGeneration generation = await load.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            RefreshRuntimes();
             lock (_gate)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                ThrowIfUnavailable(generation);
                 return CreateLease<T>(generation);
             }
         }
@@ -379,6 +419,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
         where T : class
     {
+        RefreshRuntimes();
         lock (_gate)
         {
             EnsureRunning();
@@ -392,7 +433,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         generation.Pins++;
         _externalOwners++;
         ResourceKey<T> key = new(generation.Node.Address);
-        return new(key, generation.Revision, (T)generation.Value!, () => ReturnLease(generation));
+        return new(key, generation.Revision, (T)generation.Value!, () => GetUnavailableThreadSafe(generation), () => ReturnLease(generation));
     }
 
     private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
@@ -401,7 +442,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         lease = null;
         if (!TryGetSlot(handle, out ResourceSlot? slot)
             || !map.TryGetValue(slot!.Node, out ResourceGeneration? generation)
-            || generation.State != ResourceGenerationState.Ready)
+            || generation.State != ResourceGenerationState.Ready || GetUnavailable(generation) is not null)
         {
             return false;
         }
@@ -432,10 +473,11 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private bool IsHandleAvailable<T>(ResourceHandle<T> handle)
         where T : class
     {
+        RefreshRuntimes();
         lock (_gate)
         {
             EnsureRunning();
-            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is not null;
+            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is { } current && GetUnavailable(current) is null;
         }
     }
 
@@ -497,6 +539,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
             where T : class
         {
+            manager.RefreshRuntimes();
             lock (manager._gate)
             {
                 manager.EnsureRunning();

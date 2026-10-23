@@ -19,6 +19,8 @@ internal sealed class WebAudioClip : IAudioClip
 
     public long FrameCount { get; }
 
+    IAudioDevice IAudioClip.Device => Device;
+
     internal WebAudioDevice Device { get; }
 
     internal JSObject Handle { get; }
