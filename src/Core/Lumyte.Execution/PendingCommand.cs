@@ -84,7 +84,7 @@ internal sealed class PendingCommand<TCommand, TResult> : QueuedWork, System.Thr
         _source.SetResult(result);
     }
 
-    internal override bool Finish(Exception? error)
+    internal override WorkFinish Finish(Exception? error)
     {
         _cancellation.Unregister();
         _command = default;
@@ -95,6 +95,6 @@ internal sealed class PendingCommand<TCommand, TResult> : QueuedWork, System.Thr
             _source.SetException(error);
         }
 
-        return false;
+        return WorkFinish.Completed;
     }
 }
