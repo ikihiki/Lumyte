@@ -7,8 +7,9 @@
 ## 背景
 
 リソース構築は入力I/O、CPU変換、特定スレッド上の実体生成を組み合わせる。
-Stage全体をCPUジョブにすると、依存ロードや所有スレッドへの配送を待つ間もCPU枠を占有し、
-単一スレッド環境では進行を止める。デバイスの復旧で実体が交換されると、
+Stageが個別にジョブを送る構成では、実行基盤を知らないStageの同期処理が呼出元を占有する。
+一方、非同期処理の完了までworkerを拘束すると、依存ロードや所有スレッドへの配送で進行が止まる。
+デバイスの復旧で実体が交換されると、
 長寿命Stageが保持した古い参照から使用不能なリソースを公開するおそれもある。
 
 実行先の選択と、生成に使用した外部サービスの世代を検証する仕組みを分ける。
@@ -18,17 +19,41 @@ Stage全体をCPUジョブにすると、依存ロードや所有スレッドへ
 
 ### 責務と依存方向
 
-`Lumyte.Resources`はStage、依存グラフ、内容世代、公開mapとRuntime依存を扱う。
-ここでのRuntime依存は外部サービスの利用可否を表すメタデータであり、実行器ではない。
-`Lumyte.Resources.Execution`がResourcesの処理をCoreのExecutionRuntimeへ接続する。
-ExecutionRuntimeはモジュールの宣言から配置・容量・並列度を決め、Resourcesのキーや公開mapを知らない。
+`Lumyte.Resources`はStage、依存グラフ、内容世代、公開mapを管理し、実行を`IResourceRuntime`へ委譲する。
+既定の`ResourceRuntime`は`Lumyte.Resources.Execution`に置き、CoreのExecutionRuntimeへ接続する。
+Managerは初回ロードと再構築の`BuildAsync`、出力の`ReleaseAsync`を同じ実行Runtimeへ渡す。
+StageはSource、依存、出力の生成・解放を記述し、ジョブAPIやExecutionRuntimeを参照しない。
 
-Stageは非同期workflowとしてSource I/OとRequireAsyncを待ち、有限なCPU処理だけを
-ResourceJobへ送る。同期handler内で依存ロード・I/O待機・所有スレッド待機を行わない。
-Resourcesのロード依存グラフをExecutionのJobGraphへ変換せず、動的なキー解決と、
-有限なCPU処理のスケジューリングをそれぞれの管理者に置く。
-Native実体の生成・解放はStageが個別モジュールのコマンドへ配送し、実体の完成を待つ。
-Stageの非同期継続にはスレッド親和性を仮定しない。Resources自身はThreadやTask.Runワーカーを追加しない。
+```text
+ResourceManager → IResourceRuntime → ResourceRuntime → Executionのworkflowジョブ
+                                                        ↓
+                                                 Stageの開始・継続・解放
+```
+
+ExecutionRuntimeは配置・容量・CPU並列度を管理し、Resourcesのキーや公開mapを知らない。
+動的なロード依存グラフをExecutionのJobGraphへ変換しない。
+AudioやGraphicsなどの`IResourceRuntimeDependency`は、外部サービスのidentity・世代・可用性を表す別の契約とする。
+実行Runtimeはdeviceを保持せず、Stageが構築ごとに各モジュールから現在の世代を借りる。
+Native生成・解放は、そのモジュールのコマンドで所有スレッドへ配送して実完了を待つ。
+
+### 非同期Stageの実行
+
+既定RuntimeはStageの開始をworkflowジョブへ送り、通常の`await`の継続もCPUキューへ戻す。
+ThreadPoolではworker、Cooperativeではホストの`PumpJobs`で同期区間を実行する。
+同じworkerへ戻る保証はなく、device操作は各モジュールのownerコマンドへ配送する。
+I/O、依存Stage、所有スレッドの処理を待つ間はCPU枠を解放するため、並列数1でも子の処理を進められる。
+workflow内から別ジョブや所有スレッドのコマンドを送れるが、同期的なWait/Resultや再入Pumpは許さない。
+通常の有限CPUコマンドhandlerの再入制約は維持する。
+
+StageとCPU処理を含む補助メソッドは通常の`await`を使い、実行RuntimeのSynchronizationContextを捕捉する。
+`ConfigureAwait(false)`、Task.Run、独自スレッドで処理を逃がした場合、CPU並列度とPump予算の保証対象外となる。
+Sourceやdevice service内部の非同期実装は`ConfigureAwait(false)`を使える。呼び出したStage側の通常のawaitが実行先を復元する。
+同期区間を途中で中断する仕組みはないため、大きなCPU変換は有限の区間に分け、必要に応じてTask.Yieldをawaitして次の区間をキューへ戻す。
+
+workflowは未完了の非同期操作とその継続を追跡し、実際のStage完了まで入力と出力の所有を維持する。
+未開始の処理は取消で実行を省略できる。開始後はCancelPendingでも継続を維持し、渡したtokenによる協調取消と実完了を待つ。
+公開はBuildAsyncの実完了と依存検証の後に行う。取消要求だけで実行中の出力を捨てない。
+共有ロードに対するAcquireの取消は呼出元の待機だけに適用し、Manager所有の構築取消とは分ける。
 
 ### Runtimeの識別と世代
 
@@ -69,11 +94,17 @@ Stageの出力解放を先に完了させ、世代Leaseなどの補助cleanupを
 
 ## 公開APIと契約
 
-比較元はハンドル・世代管理のrevision `c3a8686`。判断対象の追加・変更を示す。
+Stageの実行契約と、外部Runtime世代の依存契約を追加する。
 
 ```diff
  namespace Lumyte.Resources
  {
++    public interface IResourceRuntime
++    {
++        ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context,
++            CancellationToken cancellationToken);
++        ValueTask ReleaseAsync(IResourceStage stage, object resource);
++    }
 +    public interface IResourceRuntimeDependency
 +    {
 +        // 登録中はIdとIdentityを変更しない。Identityの既定値はthis。
@@ -96,9 +127,9 @@ Stageの出力解放を先に完了させ、世代Leaseなどの補助cleanupを
      {
 -        public ResourceManager(string name, IResourceSource source,
 -            IEnumerable<IResourceStage> stages, IMemoryManager memory);
-+        // Runtime providerも借用し、終了時に通知購読を解除する。
++        // 実行Runtimeと世代providerは借用し、providerの通知購読は終了時に解除する。
 +        public ResourceManager(string name, IResourceSource source,
-+            IEnumerable<IResourceStage> stages, IMemoryManager memory,
++            IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime,
 +            IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null);
 +        public ValueTask<ResourceReloadResult> RebuildRuntimeAsync(
 +            IReadOnlyCollection<string> dependencyIds, CancellationToken cancellationToken = default);
@@ -127,14 +158,13 @@ Stageの出力解放を先に完了させ、世代Leaseなどの補助cleanupを
  }
 +namespace Lumyte.Resources.Execution
 +{
-+    // 同じ閉じた型のstatic portを共有するIExecutionModule。
-+    public sealed class ResourceJob<TCommand, TResult, THandler> : IExecutionModule
-+        where TCommand : struct
-+        where THandler : struct, ICommandHandler<TCommand, TResult>
++    // 複数Managerで共有する既定の実行Runtime。portはinstanceに属する。
++    public sealed class ResourceRuntime : IResourceRuntime, IExecutionModule
 +    {
-+        // 戻り値は一度だけawaitする。容量不足はExecutionQueueFullException。
-+        // 起動前/停止後はInvalidOperationException。実行開始後は実結果を返す。
-+        public ValueTask<TResult> Execute(TCommand command, CancellationToken cancellationToken = default);
++        public ResourceRuntime();
++        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context,
++            CancellationToken cancellationToken);
++        public ValueTask ReleaseAsync(IResourceStage stage, object resource);
 +    }
 +}
  namespace Lumyte.Resources.DependencyInjection
@@ -158,29 +188,79 @@ Stageの出力解放を先に完了させ、世代Leaseなどの補助cleanupを
 
 ## 起動・実行・終了
 
-DIではResourceJobを具象型とIExecutionModuleから同じinstanceとして解決する。
-Stageへそのjobを注入し、ExecutionRuntimeへ収集したmodule集合を渡す。
-Runtime adapterはUseRuntimeDependencyまたはAddResourceRuntimeDependencyで名前付きManagerへ登録する。
-DIなしでは同じmodule・Stage・provider実体をそれぞれのconstructorへ渡す。
-DI解決やManager構築だけではExecutionRuntimeは起動しない。
+`AddResources`は既定のResourceRuntime、IResourceRuntime、IExecutionModule、ExecutionRuntimeをsingleton登録する。
+複数の名前付きManagerは同じ実行Runtimeを借り、既存の登録は上書きしない。
+ResourceRuntimeのmodule登録はAddResourcesに任せ、同じinstanceを別途IExecutionModuleへ重複登録しない。
+Stageへのジョブ注入は不要である。Runtime世代adapterはUseRuntimeDependencyまたはAddResourceRuntimeDependencyで登録する。
+DI解決やManager構築だけではworkerを起動せず、ホストがPrepare/Start/Pump/Stopを管理する。
 
-ホストがPrepareOnCurrentHostで配置とportを確定し、StartAsyncの完了後にロードを受け付ける。
-ResourceJobのportは閉じたgeneric型ごとに一つで、同じプロセスで停止後に再登録しない。
-ThreadPoolはCPU handlerをworkerへ、CooperativeはPumpJobsへ配置する。
-Host上の実体生成もホストのPumpで進めるため、待機中に同期Wait/Resultでホストを止めない。
+DIなしでは実行Runtimeを作り、ExecutionRuntimeのmodule集合とManagerへ同じinstanceを渡す。
+次はCPU処理だけをThreadPoolで進める例で、Source・Stage・Memoryは呼出側が生存期間を保証する。
 
-commandの入力bufferはhandlerの実完了まで保持する。取消が実行開始より先なら副作用なしで終え、
-開始後は結果または例外まで待ち、未回収のNative出力や入力の早期解放を生まない。
-Managerの共有ロード待機の取消と、単一CPUコマンドの実行取消を同じものと扱わない。
-終了時はロード受付を止め、Reference・Lease・Snapshotを返し、ResourceManagerの解放を完了する。
-その間も元ownerのcleanup受付とHost Pumpを維持し、最後にExecutionRuntimeを停止する。
-Managerは借用したSource・Stage・Runtime providerの寿命を所有しない。
+```csharp
+var resourceRuntime = new ResourceRuntime();
+var execution = new ExecutionRuntime([resourceRuntime]);
+execution.PrepareOnCurrentHost(
+    OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
+await execution.StartAsync();
+
+await using (var manager = new ResourceManager(
+    "assets", source, [new DocumentStage(), new MeshStage()], memory, resourceRuntime))
+{
+    using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
+    using ResourceLease<Mesh> lease = mesh.Acquire();
+    Consume(lease.Value);
+}
+
+await execution.StopAsync();
+```
+
+同じ構成をDIで登録する例を示す。別の実体生成moduleを使う場合は、そのmoduleも起動前に登録する。
+
+```csharp
+services.AddSingleton<IMemoryManager>(memory);
+services.AddResources("assets", resources => resources
+    .UseSource<MySource>()
+    .AddSourcePipeline<Document, DocumentStage>()
+    .AddTransformPipeline<Document, Mesh, MeshStage>());
+await using ServiceProvider provider = services.BuildServiceProvider();
+ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
+execution.PrepareOnCurrentHost(
+    OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
+await execution.StartAsync();
+
+AsyncServiceScope scope = provider.CreateAsyncScope();
+ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("assets");
+{
+    using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
+    using ResourceLease<Mesh> lease = mesh.Acquire();
+    Consume(lease.Value);
+}
+
+await manager.DisposeAsync(); // 失敗時は同じmanagerで再試行し、成功してからscopeを閉じる。
+await scope.DisposeAsync();
+await execution.StopAsync();
+```
+
+portはResourceRuntime instanceに属し、独立したホストやDI root間で接続を共有しない。
+同じホストの全Managerで実行Runtimeを共有し、Managerごとにworkerを追加しない。
+起動前・停止後の配送は拒否し、容量不足はExecutionQueueFullExceptionで通知する。
+
+BrowserはHost/Cooperativeに配置し、イベントループからPumpJobsと所有スレッドのHost phaseを進める。
+ロード・解放をawaitしている間もPumpを続け、同期Wait/Resultでホストを止めない。
+終了時は新規ロードを止め、Reference・Lease・Snapshotを返し、Managerの構築と解放を完了する。
+その間も継続と元ownerのcleanup受付を維持し、最後にExecutionRuntimeを停止する。
+解放は通常の受付容量を使う。容量不足やbackend解放失敗では所有を保ち、回復後に同じManagerのDisposeAsyncを再試行する。
+上の例は解放成功時の経路であり、失敗時はManager・scope・実行Runtimeを保持して処理する。
+Managerの解放が成功する前にDI scopeを破棄せず、scope自体のDisposeAsyncの再試行には依存しない。
+Managerは借用したSource・Stage・実行Runtime・世代providerの寿命を所有しない。
 
 ## 性能と制約
 
-ジョブ送信は型付きstructとstatic portを使い、送信ごとのラムダやTask.Runを追加しない。
-I/Oや依存待機はCPU実行枠の外へ置くが、Stageの非同期状態機械やロードグラフの確保は残る。
-ResourceJob全体を無割り当てとする保証はしない。
+開始・解放の送信は型付きstructとRuntimeが保持するportを使い、送信ごとのラムダやTask.Runを追加しない。
+workflowは実行待ちと継続のための状態を保持する。非同期状態機械、継続callback、ロードグラフの確保は残り、無割り当てを保証しない。
+I/O待機はCPU枠を占有しない。未完了workflowは実完了まで追跡し、受付容量は返したValueTaskの結果を一度awaitして回収するまで保持する。
+停止待機は実完了までであり、完了結果の回収そのものは待たない。
 
 Leaseの検証では全登録providerのSnapshotを確認した後、平坦なRuntime依存を走査する。
 provider状態が変わるとManager lock内で公開mapを走査し、必要時にコピーする。
@@ -192,14 +272,16 @@ provider状態が変わるとManager lock内で公開mapを走査し、必要時
 
 ## 検討した代替案
 
-- Stage全体をJobGraphへ載せる: 動的な依存探索やI/O待機までCPU枠の管理と結合するため採用しない。
+- Stageの完了を同期handler内で待つ: I/Oや子の処理を待つ間にCPU枠を占有するため、継続を別の実行区間へ配送する。
+- Stageごとに明示的なジョブ配送を行う: Stage作者へ実行基盤の知識を要求するため、既定Runtimeが開始・継続を配送する。
 - Stageへ生deviceを固定注入する: 復旧後に交換された世代を取得できず、旧世代の解放先も曖昧になる。
 - 現在Versionとの不一致をすべて失効とする: 有効な旧Leaseまで利用不能にするため、不可逆な失効はwatermarkで区別する。
 - Lease参照のたびに依存グラフを再探索する: 繰り返しアクセス時の探索・一時確保を避け、完成時にResident依存を平坦化する。
 
 ## 結果と影響
 
-同じStageを初回ロードとRuntime再構築で使い、実行器の配置と公開の整合性を独立して管理できる。
+実行基盤を知らない同じStageを初回ロードとRuntime再構築で使い、既定Runtimeが開始・継続・解放をジョブへ配送する。
+Stage作者は通常のawaitと有限な同期区間を守り、外部サービスのスレッド制約は各モジュールの配送APIで満たす。
 一方、外部サービスのadapterには安定したidentity、正確な世代借用、失効通知の契約が必要になる。
 ExecutionRuntimeの起動とcleanupを含む終了順はホストの責任として残る。
 
@@ -210,7 +292,10 @@ Build依存の独立値、生成中のVersion変化、Changed通知より先の�
 Snapshotの巻き戻しと同Versionでの状態変更を確認する。
 再構築と通常ロードの競合では一括公開かConflictのどちらかとなり、失敗候補が公開されないことを確認する。
 旧世代の保持・解放失敗の再試行はManagerの公開APIで検証する。
-CPU配送はCoreの容量・取消・ThreadPool/Cooperativeの契約に従い、
+既定Runtimeについて、Pump前にStageが始まらないこと、await後もPumpで継続すること、
+並列数1でI/O待機と依存Stage・ownerコマンドが進むことを検証する。
+受付前の取消、容量不足、開始後の取消、例外、未完了中の終了で所有を失わないことを確認する。
+複数Managerの共有と独立DI rootのport分離、初回・再構築・解放の共通配送経路も対象とする。
 個別実体の生成・解放スレッドはそのモジュールの結合テストで確認する。
 
 ## 関連ADR

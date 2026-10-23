@@ -32,8 +32,6 @@ internal static class Program
 
         var factory = new TestFactory();
         var audio = new AudioModule(native ? new OpenALDeviceFactory() : factory);
-        var bridge = new AudioResourceRuntime(audio);
-        var jobs = new ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>();
         var source = new TestSource();
         ServiceProvider? provider = null;
         AsyncServiceScope? scope = null;
@@ -48,15 +46,15 @@ internal static class Program
             services.AddAudioResources<SharedTestSource>("audio");
             provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             execution = provider.GetRequiredService<ExecutionRuntime>();
-            bridge = provider.GetRequiredService<AudioResourceRuntime>();
-            jobs = provider.GetRequiredService<ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>>();
             scope = provider.CreateAsyncScope();
             manager = scope.Value.ServiceProvider.GetRequiredKeyedService<ResourceManager>("audio");
         }
         else
         {
-            execution = new ExecutionRuntime([audio, bridge, jobs]);
-            manager = new ResourceManager("audio", source, [new AudioDecodeStage(jobs), new AudioClipStage(bridge), new AudioVoiceStage(bridge)], new MemoryManager(), [bridge]);
+            var bridge = new AudioResourceRuntime(audio);
+            var runtime = new ResourceRuntime();
+            execution = new ExecutionRuntime([audio, bridge, runtime]);
+            manager = new ResourceManager("audio", source, [new AudioDecodeStage(), new AudioClipStage(bridge), new AudioVoiceStage(bridge)], new MemoryManager(), runtime, [bridge]);
         }
 
         execution.PrepareOnCurrentHost(host ? OwnerPlacement.Host : OwnerPlacement.Dedicated, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, host ? 1 : 2, recover ? new ExecutionOptions { MaxCommands = 16 } : new ExecutionOptions());
@@ -153,8 +151,8 @@ internal static class Program
             canceled.Cancel();
             try
             {
-                Wait(jobs.Execute(new AudioDecodeRequest(new byte[] { 1 }), canceled.Token).AsTask());
-                throw new InvalidOperationException("Canceled CPU work executed.");
+                Wait(manager.AcquireAsync(new ResourceKey<AudioPcmData>("canceled"), canceled.Token).AsTask());
+                throw new InvalidOperationException("Canceled resource loading executed.");
             }
             catch (OperationCanceledException)
             {

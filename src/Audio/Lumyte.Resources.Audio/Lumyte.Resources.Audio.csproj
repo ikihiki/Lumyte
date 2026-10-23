@@ -6,7 +6,7 @@
     <Description>Resource runtime stages creating and releasing audio on its execution owner.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Resources/Lumyte.Resources.csproj" />
     <ProjectReference Include="../Lumyte.Audio.Execution/Lumyte.Audio.Execution.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>

@@ -114,7 +114,8 @@ public sealed class ResourceReloadServiceTests
         SynchronousChanges changes = new();
         FakeSource source = new() { Changes = changes };
         await using MemoryManager memory = new();
-        await using ResourceManager manager = new("concurrent notifications", source, [new Pipeline()], memory, reloadOptions: new()
+        await using ResourceExecutionHost execution = new();
+        await using ResourceManager manager = new("concurrent notifications", source, [new Pipeline()], memory, execution.Resources, reloadOptions: new()
         {
             DebounceDelay = TimeSpan.FromMilliseconds(20),
             MaximumBatchDelay = TimeSpan.FromMilliseconds(30),
@@ -420,9 +421,12 @@ public sealed class ResourceReloadServiceTests
 
     private sealed class Fixture : IAsyncDisposable
     {
+        private readonly MemoryManager _memory = new();
+        private readonly ResourceExecutionHost _execution = new();
+
         internal Fixture()
         {
-            Manager = new("reload", Source, [Pipeline], new MemoryManager());
+            Manager = new("reload", Source, [Pipeline], _memory, _execution.Resources);
         }
 
         internal ResourceManager Manager { get; }
@@ -433,7 +437,12 @@ public sealed class ResourceReloadServiceTests
 
         internal Pipeline Pipeline { get; } = new();
 
-        public ValueTask DisposeAsync() => Manager.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            await Manager.DisposeAsync();
+            await _execution.DisposeAsync();
+            await _memory.DisposeAsync();
+        }
     }
 
     private sealed record Value(string Text);

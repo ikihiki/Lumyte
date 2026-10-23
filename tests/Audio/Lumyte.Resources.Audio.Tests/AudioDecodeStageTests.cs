@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Lumyte.Resources.Audio.Tests;
 
-/// <summary>Checks source-length hints without changing the bytes passed to the decode job.</summary>
+/// <summary>Checks source-length hints while the default runtime schedules the parameterless decode stage.</summary>
 public sealed class AudioDecodeStageTests
 {
     /// <summary>Unknown and inaccurate lengths neither truncate input nor trigger unbounded preallocation.</summary>
@@ -17,11 +17,11 @@ public sealed class AudioDecodeStageTests
     {
         byte[] wave = CreateWave();
         var source = new ObservedSource(wave);
-        var jobs = new ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>();
-        var execution = new ExecutionRuntime([jobs]);
+        var runtime = new ResourceRuntime();
+        var execution = new ExecutionRuntime([runtime]);
         execution.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
         var memory = new MemoryManager();
-        var manager = new ResourceManager("decode", source, [new AudioDecodeStage(jobs)], memory);
+        var manager = new ResourceManager("decode", source, [new AudioDecodeStage()], memory, runtime);
         try
         {
             Wait(execution, execution.StartAsync().AsTask());
@@ -118,10 +118,11 @@ public sealed class AudioDecodeStageTests
 
     private sealed class ObservedStream(ObservedSource source, byte[] bytes) : MemoryStream(bytes, writable: false)
     {
-        public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+        public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
         {
             source.InitialCapacity = Assert.IsType<MemoryStream>(destination).Capacity;
-            return base.CopyToAsync(destination, bufferSize, cancellationToken);
+            await Task.Yield();
+            await base.CopyToAsync(destination, bufferSize, cancellationToken);
         }
     }
 }
