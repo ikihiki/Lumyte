@@ -20,7 +20,7 @@ services.AddSingleton<ExecutionRuntime>();
 
 [Program.cs](Program.cs)は固定HostでPrepareし、Pumpを回しながらStartとStopを観測する。生成・制御は外側のasync workflowから送り、実体の生成完了を待つ。providerの破棄はStop成功後に行う。[DemoModule.cs](DemoModule.cs)は物理配置と10msの制御更新周期を宣言し、[DemoState.cs](DemoState.cs)と[DemoVoice.cs](DemoVoice.cs)のCoreメソッドからラッパー自身の送信APIが生成される。
 
-## 初期ベンチマーク
+## ベンチマーク
 
 ```sh
 dotnet run --project samples/Lumyte.Execution.Sample -c Release -- --host --benchmark
@@ -28,7 +28,17 @@ dotnet run --project samples/Lumyte.Execution.Sample -c Release -- --host --benc
 
 Hostで直接実行、cached delegate、escapeするcapture delegate、型付き単発、16件batchを比較する。1,000回warmup後に平均ns/commandと送信・実行threadのbytes/commandを出す。型付き送信にはRunHostPhaseと更新処理も含み、直接実行との差は配送と完了観測の費用を含む。capture delegateのfactoryはインライン化しない。
 
-2026-10-12のLinux x64／.NET 10.0.12のRelease測定では、Voiceは8bytes、割当は単発152bytes／command、16件batchは123.5bytes／commandだった。直接実行とcached delegateは0bytes、escapeするcapture delegateは96bytes。平均時間はJITのtieringと実行順でも変わるため、割当結果と分けて評価する。
+2026-10-23のLinux x64／.NET 10.0.12、4論理CPUの共有環境で、Release・Host／Cooperative・DIなしを測定した。Voiceは参照1個を持つ8bytesのstruct。`GC.GetAllocatedBytesForCurrentThread`による管理ヒープ割当は次のとおり。
+
+| 処理 | bytes／command |
+| --- | ---: |
+| 直接実行 | 0 |
+| cached delegate | 0 |
+| escapeするcapture delegate | 96 |
+| 型付き単発 | 152 |
+| 型付き16件batch | 121 |
+
+単発はPendingCommand、batchは項目ごとのBatchItemと送信時の配列・CommandRunを生成する。ラッパーのstruct化やbatch化だけで割当がなくなるわけではない。測定は同一Host threadでの正常完了経路で、別threadのawait継続・キャンセル・例外の割当は含まない。平均時間は共有環境の負荷、JITのtiering、実行順で変動するため、速度向上の根拠には使わない。
 
 Linux x64のNative AOTでも、DI有無とHost／専用threadの4構成を起動から終了まで確認した。
 
