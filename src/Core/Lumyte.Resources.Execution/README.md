@@ -16,5 +16,5 @@ ThreadPoolモードではワーカーへ、Cooperativeモードではホスト�
 ブラウザでの同期WaitやResultによる待機は行わず、ホストのループを回したままawaitします。
 Resources自身はスレッドを追加せず、ExecutionRuntimeはホストが起動・停止します。
 
-[Runtime設計](../../../docs/adr/resources/RESOURCES-0009-runtime-execution.md)と
-[Audioの実例](../../../samples/Lumyte.Resources.Audio.Sample/README.md)を参照してください。
+[Runtime設計](../../../docs/adr/resources/RESOURCES-0009-runtime-execution.md)を参照してください。
+Audio固有のStage・デコード・DI登録は独立したAudio機能で提供します。
