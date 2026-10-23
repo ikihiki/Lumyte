@@ -36,9 +36,6 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(stages);
-        ArgumentNullException.ThrowIfNull(memory);
         _name = name;
         _source = source;
         _memory = memory;
@@ -154,7 +151,6 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
     private static IResourceStage ValidateStage(IResourceStage stage)
     {
-        ArgumentNullException.ThrowIfNull(stage);
         if (stage.OutputType.IsValueType || stage.OutputType.ContainsGenericParameters
             || (stage.InputType is { } input && (input.IsValueType || input.ContainsGenericParameters)))
         {

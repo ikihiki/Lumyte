@@ -14,8 +14,6 @@ public readonly record struct ResourceAddress
             throw new ArgumentException("Supply an initialized resource identifier.", nameof(id));
         }
 
-        ArgumentNullException.ThrowIfNull(subresource);
-        ArgumentNullException.ThrowIfNull(variant);
         Id = id;
         Subresource = subresource;
         Variant = variant;
