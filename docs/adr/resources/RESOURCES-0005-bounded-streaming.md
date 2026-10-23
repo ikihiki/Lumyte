@@ -23,7 +23,7 @@ sessionはfactoryの内容世代を保持するが、外部ファイルの旧内
 
 固定長・固定個数のblockを単一producerと単一consumerで共有する。producerは空blockだけをreaderへ渡し、正の要素数を公開してから次へ進む。consumerは公開済み要素をコピーし、block全体の消費後に空へ戻す。readerの短いreadは許可し、0を終端とする。負数または渡した領域を超える要素数はreaderの契約違反としてsessionを失敗させる。
 
-`ReadAvailable` の正常経路ではI/O・待機・lock・割り当て・producerへの通知を行わない。戻り値0はunderflowにも終端にもなり得る。`EndOfStream` はproducerが終端へ到達し、準備済み要素を消費し終えたときだけtrueになる。`ReadAsync` は準備を待ち、空のdestinationまたは終端の場合だけ0を返す。
+`ReadAvailable` は準備済み要素をコピーし、I/O・デコード・待機を行わない。blockを空にすると、待機中のproducerへ再利用するwork itemで通知する。readerとproducerの継続をconsumer上でinline実行せず、通知ごとのTaskやdelegateも生成しない。戻り値0はunderflowにも終端にもなり得る。`EndOfStream` はproducerが終端へ到達し、準備済み要素を消費し終えたときだけtrueになる。`ReadAsync` は準備を待ち、空のdestinationまたは終端の場合だけ0を返す。
 
 同じsessionのRead・Seek・Disposeを重ねて呼んではならない。異なるsessionは独立して利用できる。`DisposeAsync` 同士の並行呼び出しだけは同じ解放試行を共有する。consumerを常駐スレッドへ固定する契約は設けないが、呼び出しの直列化は利用側の責任とする。
 
@@ -47,7 +47,9 @@ sessionはproducer、reader、buffer、memory scope、factory Leaseを所有す�
 
 要求するbuffer要素数は `BlockSize × MaxBufferedBlocks` に固定し、入力の長さに応じて増やさない。実際のメモリ計上はpoolの確保単位に従い、codec作業領域とsessionの管理オブジェクトは別に必要となる。buffer数・長さは正数とし、積のoverflowを生成前に拒否する。
 
-producerが満杯の場合と `ReadAsync` のunderflow待機には `Task.Delay(1)` を使う。専用threadやbusy spinは作らないが、1 msの復帰期限を保証するものではなく、timer・schedulerの負担と遅延がある。`ReadAvailable` の無割り当て契約はこの待機経路へ拡張しない。buffer量、underflow時の無音補填、供給周期は利用するcodec・デバイス側が決める。
+producerは満杯時に再利用する通知を待ち、timerを繰り返し生成しない。通知を登録してから空きと取消を再確認することで、登録直前の消費でも再開を失わない。Seek・Disposeも通知で待機を解除し、producer完了後に状態を変更する。通知はThreadPoolへqueueするため、専用threadやbusy spinは不要だが、runtime内部の初期化・queue拡張を含む厳密な無割り当てや復帰期限は保証しない。
+
+`ReadAsync` のunderflow待機には `Task.Delay(1)` を使う。この便利APIはtimer・schedulerの負担と割り当てを伴い、1 msの復帰期限も保証しない。デバイスcallbackは待機しない `ReadAvailable` を使う。buffer量、underflow時の無音補填、供給周期は利用するcodec・デバイス側が決める。
 
 ## 公開APIと契約
 
@@ -106,7 +108,7 @@ producerが満杯の場合と `ReadAsync` のunderflow待機には `Task.Delay(1
 - 全量デコードして共有する: cursorは単純になるが、入力の長さに比例する常駐領域を必要とする。
 - readerを共有する: 同時利用者のseekと先読みが干渉し、所有と同期が複雑になる。
 - consumerから直接I/O・デコードする: bufferは減るが、定常処理へ入力待ちと割り当てが入り込む。
-- consumerが空blockごとにproducerを通知する: timer待機を減らせる一方、消費経路に同期primitiveや継続の起動が加わる。消費経路の小ささを優先し、待機側のpollを採用する。
+- producerが満杯の間もpollする: consumerからの通知は省けるが、停止したconsumerを待つだけでtimerとTaskを生成し続ける。通知を再利用し、readerの継続をconsumerから切り離す方式を採用する。
 
 ## 結果と影響
 
@@ -114,6 +116,6 @@ producerが満杯の場合と `ReadAsync` のunderflow待機には `Task.Delay(1
 
 ## 検証方針
 
-`ResourceStreamTests` で独立cursor、短いread、空入力、終端、underflow、満杯時の先読み停止、長い入力での固定buffer量を確認する。準備済みの `ReadAvailable` に入力readと割り当てがないことも測定する。
+`ResourceStreamTests` で独立cursor、短いread、空入力、終端、underflow、満杯時の先読み停止、長い入力での固定buffer量を確認する。準備済みの `ReadAvailable` とblock解放の通知経路をwarmup後に測定し、consumer側の割り当てがないことを確認する。readerをinline実行しないこと、単一blockの反復で通知を失わないこと、満杯のまま終了できることも検証する。
 
 seekでは停止中producerの完了待ち、古い先読みの破棄、非対応時の継続、失敗後のfaultを確認する。生成・readの取消範囲、HotReload前後のsession世代、並行Dispose、reader解放失敗時のbuffer・Lease保持と再試行、生成失敗後のManagerによる後始末を検証する。timerの実際の復帰遅延やデバイスの供給期限は別途実環境で測定する。

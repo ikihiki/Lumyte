@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Threading.Tasks.Sources;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -6,8 +7,8 @@ namespace Lumyte.Resources;
 /// <summary>Owns an independent reader and a bounded single-producer, single-consumer buffer.</summary>
 /// <remarks>
 /// Reads and seeks require one consumer and must not overlap each other or disposal.
-/// The producer polls asynchronously while the buffer is full so consuming buffered elements never
-/// signals a lock-based primitive or schedules work on the consumer's thread.
+/// Consuming a block wakes a waiting producer through a reusable queued notification.
+/// Reader work and producer continuations never run inline on the consumer's thread.
 /// </remarks>
 /// <typeparam name="TElement">The unmanaged stream element.</typeparam>
 public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
@@ -18,6 +19,7 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
     private readonly ResourceStreamOptions _options;
     private readonly Action _onDisposed;
     private readonly Block[] _blocks;
+    private readonly ProducerSignal _spaceAvailable = new();
     private IResourceStreamReader<TElement>? _reader;
     private CancellationTokenSource? _producerCancellation;
     private Task _producer = Task.CompletedTask;
@@ -82,7 +84,7 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         }
     }
 
-    /// <summary>Copies buffered elements without I/O, waiting, locks or allocation on the healthy path.</summary>
+    /// <summary>Copies buffered elements without I/O or waiting, reusing producer notifications.</summary>
     /// <param name="destination">Storage for decoded elements.</param>
     /// <returns>The number consumed; zero can mean underflow or end of stream.</returns>
     public int ReadAvailable(Span<TElement> destination)
@@ -109,6 +111,7 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
                 _readOffset = 0;
                 _readIndex = (_readIndex + 1) % _blocks.Length;
                 block.Count = 0;
+                _spaceAvailable.Signal();
             }
         }
 
@@ -223,7 +226,15 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
                 Block block = _blocks[_writeIndex];
                 if (block.Count != 0)
                 {
-                    await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                    ValueTask available = _spaceAvailable.WaitAsync();
+
+                    // Register before checking again so consuming the block cannot lose a wakeup.
+                    if (block.Count == 0 || cancellationToken.IsCancellationRequested)
+                    {
+                        _spaceAvailable.Signal();
+                    }
+
+                    await available.ConfigureAwait(false);
                     continue;
                 }
 
@@ -264,6 +275,7 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
                 await _producerCancellation.CancelAsync().ConfigureAwait(false);
             }
 
+            _spaceAvailable.Signal();
             await _producer.ConfigureAwait(false);
             _producerCancellation.Dispose();
             _producerCancellation = null;
@@ -305,6 +317,38 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         catch (Exception exception)
         {
             attempt.TrySetException(exception);
+        }
+    }
+
+    // There is one producer wait at a time. Completion runs on the reusable work item,
+    // so releasing a block neither allocates a Task nor invokes the reader inline.
+    private sealed class ProducerSignal : IValueTaskSource, IThreadPoolWorkItem
+    {
+        private ManualResetValueTaskSourceCore<bool> _completion;
+        private int _waiting;
+
+        public void Execute() => _completion.SetResult(true);
+
+        public void GetResult(short token) => _completion.GetResult(token);
+
+        public ValueTaskSourceStatus GetStatus(short token) => _completion.GetStatus(token);
+
+        public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
+            => _completion.OnCompleted(continuation, state, token, flags);
+
+        internal ValueTask WaitAsync()
+        {
+            _completion.Reset();
+            Volatile.Write(ref _waiting, 1);
+            return new ValueTask(this, _completion.Version);
+        }
+
+        internal void Signal()
+        {
+            if (Interlocked.Exchange(ref _waiting, 0) != 0)
+            {
+                ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
+            }
         }
     }
 
