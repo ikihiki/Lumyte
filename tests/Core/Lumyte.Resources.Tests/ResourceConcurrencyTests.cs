@@ -273,7 +273,7 @@ public sealed class ResourceConcurrencyTests
     {
         ResourceLease<TestValue>? old = null;
         ResourceReference<TestValue>? owner = null;
-        ResourceReadScope? frame = null;
+        ResourceSnapshot? frame = null;
         ResourceManager? manager = null;
         bool usable = true;
         Exception? valueError = null;
@@ -311,7 +311,7 @@ public sealed class ResourceConcurrencyTests
         manager = fixture.Manager;
         using (owner = await manager.AcquireAsync(Key("value")))
         using (old = await manager.AcquireLeaseForTestAsync(Key("value")))
-        using (frame = manager.BeginRead())
+        using (frame = manager.CaptureSnapshot())
         {
             fixture.Runtime.Set(new(2, false, 1));
             Assert.False(usable);
@@ -362,7 +362,7 @@ public sealed class ResourceConcurrencyTests
         {
             "lease" => () => owner.Acquire().Dispose(),
             "reference" => () => fixture.Manager.AcquireAsync(key).GetAwaiter().GetResult().Dispose(),
-            _ => () => fixture.Manager.BeginRead().Dispose(),
+            _ => () => fixture.Manager.CaptureSnapshot().Dispose(),
         };
         for (int i = 0; i < 10000; i++)
         {
@@ -394,7 +394,7 @@ public sealed class ResourceConcurrencyTests
         using ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("value"));
         ResourceHandle<TestValue> handle = owner.Handle;
         using ResourceLease<TestValue> lease = owner.Acquire();
-        using ResourceReadScope scope = fixture.Manager.BeginRead();
+        using ResourceSnapshot scope = fixture.Manager.CaptureSnapshot();
         fixture.Runtime.Set(new(2, false, 1));
         bool available = false;
         for (int pass = 0; pass < 2; pass++)
