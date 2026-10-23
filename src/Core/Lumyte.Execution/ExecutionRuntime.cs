@@ -29,6 +29,8 @@ public sealed partial class ExecutionRuntime
     private int _hostCursor;
     private int _maxCpu;
     private int _workers;
+
+    // Unfinished commands, active updates, and one entry per graph.
     private int _pending;
     private int _runs;
     private int _commands;
