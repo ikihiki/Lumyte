@@ -5,6 +5,7 @@ internal sealed class CpuStage(GraphicsTestState state) : IResourceSourceStage<C
     public ValueTask<CpuValue> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
     {
         state.CpuBuilds++;
+        state.CpuRuntime = context.Runtime;
         return ValueTask.FromResult(new CpuValue());
     }
 

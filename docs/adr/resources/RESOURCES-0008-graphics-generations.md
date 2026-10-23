@@ -14,30 +14,34 @@ Resourcesの論理ハンドルを維持したままGPU出力だけを再構築�
 
 ### 配置と責務
 
-`src/Graphics/Lumyte.Resources.Graphics` に接続パッケージを置く。Resources.DependencyInjectionとGraphics.Hostingへ依存し、特定のGraphics backendには依存しない。Resources本体はGraphics型を参照せず、共通の `IResourceRuntimeDependency` だけを扱う。
+`src/Graphics/Lumyte.Resources.Graphics` に接続パッケージを置く。Resources.DependencyInjectionとGraphics.Hostingへ依存し、特定のGraphics backendには依存しない。Resources本体はGraphics型を参照せず、共通の `IResourceRuntime` と `IResourceRuntimeDependency` を扱う。
 
-Graphics.Hostingが物理デバイスの初期化、loss検出、復旧、旧ownerの退役を所有する。ResourceManagerは使用したRuntimeの識別情報と世代を記録し、依存する出力の使用可否と一括公開を管理する。Stageとアプリはbackendの実行スレッド、submission、GPU完了待ち、安全なNative解放を担当する。接続パッケージはこれらを暗黙に実行しない。
+公開する `GraphicsResourceRuntime` がStageの実行環境となり、共有の既定Runtimeへのジョブ配送、安定したdevice service、現在世代の取得、旧epochの退役確認をまとめる。CPU Stageは既定Runtimeを使い、GPU Stageには出力型ごとにGraphics Runtimeを割り当てる。複数の名前付きdeviceを別Stageに割り当てることもできる。
+
+Graphics.Hostingが物理デバイスの初期化、loss検出、復旧、旧ownerの退役を所有する。ResourceManagerは選択済みRuntimeと使用した世代を記録し、依存する出力の使用可否と一括公開を管理する。Stageは選択された環境で個別のGPU生成、submission、GPU完了待ちを記述する。Graphics Runtimeのジョブ配送はbackend固有の同期制約を変更しない。
 
 ### 安定したserviceと構築ごとの世代取得
 
-Stageは安定した `IGraphicsDeviceService` をconstructor injectionで受け取り、各 `BuildAsync` 内で `UseGraphicsAsync` を呼ぶ。この呼び出しは一つの正確な `GraphicsDeviceLease` を取得し、取得時のVersionとservice instanceを構築contextへ記録する。
+Stageは各 `BuildAsync` 内で `context.Runtime` から選択済みの `GraphicsResourceRuntime` を取得し、`AcquireAsync(context, ...)` を呼ぶ。Runtimeは安定したserviceを保持し、毎回現在の正確な `GraphicsDeviceLease` を取得する。取得時のVersionとservice instanceを構築contextへ記録するため、deviceをStageへキャッシュしない。
 
-内部の `GraphicsResourceDependency` は次の対応を行う。
+Managerは内容世代に選択済みRuntimeを保存し、解放も同じRuntimeへ依頼する。Native解放に必要な元Runtime、実際のdeviceとepochは出力またはcleanupが保持する。新しい構築で使う環境と旧世代の解放環境を混同しない。
+
+`GraphicsResourceRuntime` は実行環境と同時に世代providerとなり、次の対応を行う。
 
 - Identityは登録時のservice instance。別DI scopeの同名serviceは別のproviderとして拒否する。
 - VersionとInvalidatedThroughVersionはserviceのStateをそのまま使用する。
 - IsAvailableはserviceがReadyのときだけtrueとする。Readyはデバイスが利用可能という意味で、GPUアセットの復元完了ではない。
 - Changedの購読はservice.StateChangedへ転送する。通知を再生成要求には変換しない。
 
-文字列の依存IDはManager内で一意とし、Stageが渡すIDと登録IDを一致させる。接続先が違う場合は生成を進めず、取得済みleaseを返して失敗する。Versionだけが一致しても別serviceの使用を認めない。
+文字列の依存IDはManager内で一意とする。Runtimeが自身のIDとserviceを使って取得・記録し、別のRuntimeが選択されたcontextへのAcquireを拒否する。接続先が違う場合は生成を進めず、取得済みleaseを返して失敗する。Versionだけが一致しても別serviceの使用を認めない。
 
 ### BuildとResidentの寿命
 
-`UseGraphicsAsync` の戻り値はcontextからの借用である。Stageは独自にDisposeせず、取得したデバイスと必要な実行contextを出力の解放まで保持する。
+`GraphicsResourceRuntime.AcquireAsync` の戻り値はcontextからの借用である。Stageは独自にDisposeせず、取得したデバイスと必要な実行contextを出力の解放まで保持する。
 
 既定のResident寿命ではGPU子資源を解放した後でdevice leaseを返す。出力を生成できなかった場合も、Stageは部分生成物をcleanupへ登録するか自ら解放し、leaseだけが先に返ることを防ぐ。ReleaseAsyncやcleanupの失敗時はManagerが未完了の責任とleaseを保持し、TrimAsyncで再試行する。
 
-GPU readbackで得た独立したCPU配列など、構築完了後にデバイスを必要としない出力はBuild寿命を指定できる。完了前の失効は公開を拒否するが、完成済みのCPU値は後のlossで失効させない。GPU実体を出力に含むStageがBuild寿命を指定することは契約違反である。
+Runtimeを選択しただけでは世代へのResident依存を追加しない。GPU readbackで得た独立したCPU配列など、構築完了後にデバイスを必要としない出力はBuild寿命を指定できる。完了前の失効は公開を拒否するが、完成済みのCPU値は後のlossで失効させない。GPU実体を出力に含むStageがBuild寿命を指定することは契約違反である。
 
 ### loss、再構築、終了
 
@@ -51,11 +55,22 @@ loss通知で旧Ready Versionが失効すると、Resident依存を持つResourc
 
 ## 公開APIと利用例
 
-比較元は `split/resources-monitoring` の `a153471`。接続パッケージの公開APIは以下の二つであり、providerの実装型は公開しない。
+Graphics RuntimeはDIなしでも生成できる公開型とし、Stageの実行環境と世代providerを兼ねる。
 
 ```diff
 +namespace Lumyte.Resources.Graphics
 +{
++    public sealed class GraphicsResourceRuntime : IResourceRuntime, IResourceRuntimeDependency
++    {
++        public GraphicsResourceRuntime(string id, IGraphicsDeviceService devices, IResourceRuntime jobs);
++        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken);
++        public ValueTask ReleaseAsync(IResourceStage stage, object resource);
++        public ValueTask<GraphicsDeviceLease> AcquireAsync(ResourceBuildContext context,
++            ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident,
++            CancellationToken cancellationToken = default);
++        public ValueTask WaitForRetirementAsync(ulong epoch, CancellationToken cancellationToken = default);
++        // Id、Identity、Snapshot、ChangedはIResourceRuntimeDependencyに従う。
++    }
 +    public static class ResourceGraphicsBuildExtensions
 +    {
 +        // 正確なepochを取得してcontextに所有を移す。戻り値のDisposeは呼ばない。
@@ -73,6 +88,8 @@ loss通知で旧Ready Versionが失効すると、Resident依存を持つResourc
 +        public static IServiceCollection AddResourceGraphics(
 +            this IServiceCollection services, string resourceManagerName,
 +            string deviceServiceName, string dependencyId);
++        public static GraphicsResourceRuntime GetResourceGraphicsRuntime(
++            this IServiceProvider provider, string resourceManagerName, string dependencyId);
 +    }
 +}
 ```
@@ -82,21 +99,24 @@ services.AddGraphicsDevice<AppDeviceFactory>("main");
 services.AddResources("scene", builder => builder
     .UseSource<AppSource>()
     .AddSourcePipeline<CpuMesh, CpuMeshStage>()
-    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>());
+    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>()
+    .UseStageRuntime<GpuMesh>(provider =>
+        provider.GetResourceGraphicsRuntime("scene", "graphics.main")));
 services.AddResourceGraphics("scene", "main", "graphics.main");
 
-// GpuMeshStageは[FromKeyedServices("main")]のserviceを受け取る。
-GraphicsDeviceLease lease = await context.UseGraphicsAsync(
-    devices, "graphics.main", cancellationToken: cancellationToken);
+// GpuMeshStageは登録で選ばれたRuntimeを使う。
+var runtime = (GraphicsResourceRuntime)context.Runtime;
+GraphicsDeviceLease lease = await runtime.AcquireAsync(
+    context, cancellationToken: cancellationToken);
 IGraphicDevice device = lease.Device;
 // このdeviceで生成・uploadし、完了を待ってから出力を返す。
 ```
 
-例のSource、CPU Stage、GPU Stage、factoryはアプリが実装する。DIを使わない構成では同じ `IResourceRuntimeDependency` 契約でserviceをManagerへ登録し、Stageへ同じinstanceを渡す。
+例のSource、CPU Stage、GPU Stage、factoryはアプリが実装する。DIを使わない構成では `new GraphicsResourceRuntime(id, devices, jobs)` を作り、Managerの `stageRuntimes` に `new ResourceStageRuntime(typeof(GpuMesh), graphics)` を渡す。選択したRuntimeの世代providerもManagerへ自動登録される。deviceの実世代とBuild／Resident寿命は各Acquireで記録する。
 
 ## 検討した代替案
 
-- Resourcesがデバイスを再作成する: backend選択やowner退役をGraphics.Hostingと二重に管理する。接続は世代依存の記録に限定する。
+- Resourcesがデバイスを再作成する: backend選択やowner退役をGraphics.Hostingと二重に管理する。実行環境はHostingの安定したserviceを利用し、物理デバイスの所有を二重化しない。
 - 生のデバイスをStageへ注入する: 復旧後の生成が古い実体に固定される。安定したserviceから構築ごとにleaseを取得する。
 - 最新デバイスへ操作を転送する: 旧子資源と新デバイスの混在を隠す。生成と解放は取得時のepochに固定する。
 - lossで全Resourcesを破棄する: デバイスに依存しないCPUデータまで失う。Resident依存の範囲で使用を拒否し、Buildだけの独立出力は維持する。
@@ -109,7 +129,7 @@ IGraphicDevice device = lease.Device;
 
 ## 検証方針
 
-実際のGraphics.Hostingとfake backendを使い、同一scopeの接続、別scopeの同名service拒否とlease返却、登録不足・重複IDの拒否を検証する。loss後のGPU値拒否、CPU値維持、構築中lossの公開拒否、復旧後の同一handleへの公開を確認する。
+実際のGraphics.Hostingとfake backendを使い、Stageごとの既定Runtime／複数Graphics Runtimeの選択、同一scopeの接続、別scopeの同名service拒否とlease返却、登録不足・重複IDの拒否を検証する。loss後のGPU値拒否、CPU値維持、構築中lossの公開拒否、復旧後の同一handleへの公開を確認する。
 
 退役確認と子資源解放をそれぞれ失敗させ、旧ownerが保持され、再試行後に子 → lease → ownerの順で解放されることを検証する。実backendのloss検出・Native退役安全性はGraphics.Hostingと各backendの検証責任であり、fakeでの成功を実機確認として扱わない。
 

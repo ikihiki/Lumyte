@@ -12,7 +12,7 @@ public static class ResourceGraphicsBuildExtensions
     /// <param name="lifetime">Whether the physical device is needed until build completion or resource release.</param>
     /// <param name="cancellationToken">Cancels before a graphics lease is acquired.</param>
     /// <returns>The borrowed lease retaining the exact device epoch; the caller must not dispose it.</returns>
-    /// <remarks>The stage releases native children before context cleanup returns the lease. Device retirement and thread dispatch remain the stage's responsibility.</remarks>
+    /// <remarks>The stage releases native children before context cleanup returns the lease. Prefer the selected GraphicsResourceRuntime's AcquireAsync method for stage execution.</remarks>
     public static async ValueTask<GraphicsDeviceLease> UseGraphicsAsync(this ResourceBuildContext context, IGraphicsDeviceService service, string dependencyId, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);

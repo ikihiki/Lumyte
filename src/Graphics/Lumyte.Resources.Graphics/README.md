@@ -1,29 +1,73 @@
 # Lumyte.Resources.Graphics
 
-Resourcesのruntime依存を、Graphics.Hostingの名前付きdevice serviceへ接続します。deviceはアプリが明示的に初期化・復旧します。
+`GraphicsResourceRuntime`はStageのジョブ実行、名前付きdevice service、世代取得、旧epochの退役確認をまとめた実行環境です。
+CPU Stageは共有の既定Runtimeを使い、GPU StageごとにGraphics Runtimeを選択します。
+物理deviceの初期化・復旧はGraphics.Hostingが所有し、ホストが明示的に進めます。
 
 ```csharp
 services.AddGraphicsDevice<AppDeviceFactory>("main");
 services.AddResources("scene", builder => builder
     .UseSource<AppResourceSource>()
     .AddSourcePipeline<CpuMesh, CpuMeshStage>()
-    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>());
+    .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>()
+    .UseStageRuntime<GpuMesh>(provider =>
+        provider.GetResourceGraphicsRuntime("scene", "graphics.main")));
 services.AddResourceGraphics("scene", "main", "graphics.main");
 ```
 
-GPU stageはconstructor injectionで `[FromKeyedServices("main")] IGraphicsDeviceService` を受け取り、構築中に次を呼びます。
+`AddResourceGraphics`はManager内のIDで一つのscoped Runtimeを登録します。
+`GetResourceGraphicsRuntime`は同じscopeの同じRuntimeを返し、複数Stageで共有できます。
+別deviceを使うStageには別のIDのRuntimeを割り当てます。既定RuntimeとExecutionRuntimeの登録は`AddResources`が行い、
+ホストがExecutionRuntimeのPrepare・Start・Pump・Stopを管理します。
+
+GPU Stageはconstructorにdeviceを保持せず、構築contextの選択済みRuntimeを使います。
 
 ```csharp
-GraphicsDeviceLease epoch = await context.UseGraphicsAsync(
-    devices, "graphics.main", cancellationToken: cancellationToken);
+var runtime = (GraphicsResourceRuntime)context.Runtime;
+GraphicsDeviceLease epoch = await runtime.AcquireAsync(
+    context, cancellationToken: cancellationToken);
 IGraphicDevice device = epoch.Device;
-// deviceで生成・uploadし、GPU完了後に完成した資源を返す。
+// このdeviceで生成・uploadし、GPU完了後に完成した資源を返す。
+// 解放で必要なruntime、epoch、実際のdeviceを出力やcleanupに保持する。
 ```
 
-返されるleaseはcontextが所有します。stageからDisposeしません。既定のResident依存では、stageのReleaseAsyncがNative子資源を解放した後にleaseが返されます。生成途中に例外が発生した場合、stageは部分生成物を片付けてから例外を返す必要があります。生成時に捕捉したdeviceとdispatcherを解放にも使います。
+RuntimeはStageの開始・通常のawait後の継続・出力解放を共有のジョブ実行へ配送します。
+Stageは個別のGPU生成とsubmissionを記述します。`AcquireAsync`は毎回現在の物理epochを取得し、
+Versionとservice identityを記録してleaseの所有をcontextへ移します。戻り値をStageからDisposeしません。
+GPU完了前に構築を完了させず、部分生成物もcleanupへ登録します。
 
-bridgeは同じDI scopeのservice instanceを識別します。同名でも別scopeのserviceをUseGraphicsAsyncへ渡すことはできません。deviceのloss通知により旧Ready Versionは失効し、公開直前にlossした構築結果も公開されません。CPU readbackなど、構築完了後にdeviceを必要としない出力はBuild寿命を指定できます。
+既定のResident寿命ではNative子資源の解放後にdevice leaseが返ります。
+CPU readbackなど完成後にdeviceを必要としない出力はBuild寿命を指定できます。
+Runtimeを選択しただけでResident依存になることはありません。
+低水準の`UseGraphicsAsync`も同じ世代検証を行い、登録と異なるscopeの同名serviceを拒否します。
 
-ロスト後はアプリがGPU使用を停止し、旧epochを保持して `devices.WaitForRetirementAsync(epoch.State.Epoch)` の完了を確認します。stageがNative子資源を解放できる状態になってからmanagerのTrimを実行し、続いて `devices.RetireAsync()` で旧ownerを解放します。stageのReleaseAsyncが失敗した場合、managerはleaseを保持して解放を再試行します。新deviceがReadyになった後、managerの `RebuildRuntimeAsync(["graphics.main"])` で新epochの生成物を構築します。
+ロスト後も出力やcleanupが保持した元のRuntimeとepochを使い、
+`runtime.WaitForRetirementAsync(epoch.State.Epoch)`でNative解放の安全性を確認します。
+解放時に新deviceや最新Runtimeを取得し直しません。Managerも生成に使ったRuntimeを保持し、同じRuntimeへ解放を依頼します。
+解放失敗時は所有を保持し、TrimまたはDisposeで再試行します。
+新deviceがReadyになった後、`RebuildRuntimeAsync(["graphics.main"])`で新epochの生成物を構築できます。
 
-bridgeは実行スレッドの配送、GPU submission、完了待ち、Native退役を暗黙に行いません。これらはbackendの制約を知るstageとアプリが担当します。
+DIなしでも同じRuntimeをStageの出力型へ割り当てます。
+
+```csharp
+var jobs = new ResourceRuntime();
+var graphics = new GraphicsResourceRuntime("graphics.main", devices, jobs);
+var execution = new ExecutionRuntime([jobs]);
+execution.PrepareOnCurrentHost(
+    OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
+await execution.StartAsync();
+await devices.InitializeAsync();
+
+await using (var manager = new ResourceManager(
+    "scene", source, [new CpuMeshStage(), new GpuMeshStage()], memory, jobs,
+    stageRuntimes: [new(typeof(GpuMesh), graphics)]))
+{
+    using ResourceReference<GpuMesh> owner = await manager.AcquireAsync(meshKey);
+}
+
+await execution.StopAsync();
+```
+
+Source・Stage・device service・memoryの寿命はホストが保証します。
+Managerの解放が成功してからExecutionを停止し、最後にdevice serviceのscopeを閉じます。
+Graphics Runtimeはbackend固有の同期制約を取り除くものではなく、StageはそのdeviceのGPU完了・Native操作の契約を守ります。

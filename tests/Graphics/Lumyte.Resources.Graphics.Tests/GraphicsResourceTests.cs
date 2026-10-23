@@ -29,6 +29,7 @@ public sealed class GraphicsResourceTests
         using ResourceReference<GpuValue> reference = await resources.AcquireAsync(_gpuKey);
         using ResourceLease<GpuValue> old = await resources.AcquireLeaseForTestAsync(_gpuKey);
         GpuValue oldValue = old.Value;
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), oldValue.Runtime);
         state.Devices[0].Lose();
         Assert.False(old.IsUsable);
         Assert.Throws<ResourceUnavailableException>(() => old.Value);
@@ -69,6 +70,33 @@ public sealed class GraphicsResourceTests
         Assert.True(value.IsUsable);
         Assert.Same(original, value.Value);
         Assert.Equal(1, await devices.RetireAsync());
+    }
+
+    /// <summary>Different stages select independent named device environments while CPU work uses the shared default.</summary>
+    /// <returns>Completion of the scenario.</returns>
+    [Fact]
+    public async Task StageBindingsSelectNamedGraphicsEnvironmentsAsync()
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider provider = CreateProvider(state, true);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        IGraphicsDeviceService main = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService readback = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("readback");
+        await main.InitializeAsync();
+        await readback.InitializeAsync();
+        ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+        using ResourceLease<GpuValue> gpu = await resources.AcquireLeaseForTestAsync(_gpuKey);
+        using ResourceLease<ReadbackValue> cpu = await resources.AcquireLeaseForTestAsync(_readbackKey);
+        Assert.Same(main, gpu.Value.Runtime.Identity);
+        Assert.Same(readback, cpu.Value.Runtime.Identity);
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), gpu.Value.Runtime);
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.readback"), cpu.Value.Runtime);
+        Assert.Same(provider.GetRequiredService<IResourceRuntime>(), state.CpuRuntime);
+
+        state.Devices[0].Lose();
+        Assert.False(gpu.IsUsable);
+        Assert.True(cpu.IsUsable);
     }
 
     /// <summary>A device lost while a stage runs prevents publication and preserves cleanup ownership.</summary>
@@ -169,18 +197,30 @@ public sealed class GraphicsResourceTests
         Assert.ThrowsAny<ArgumentException>(() => services.AddResourceGraphics("scene", "main", "graphics.main"));
     }
 
-    private static ServiceProvider CreateProvider(GraphicsTestState state)
+    private static ServiceProvider CreateProvider(GraphicsTestState state, bool separateReadback = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(state);
         services.AddMemoryManagement();
         services.AddGraphicsDevice<TestFactory>("main");
+        if (separateReadback)
+        {
+            services.AddGraphicsDevice<TestFactory>("readback");
+        }
+
         services.AddResources("scene", builder => builder
             .UseSource<TestSource>()
             .AddSourcePipeline<CpuValue, CpuStage>()
             .AddTransformPipeline<CpuValue, GpuValue, GpuStage>()
-            .AddSourcePipeline<ReadbackValue, ReadbackStage>());
+            .AddSourcePipeline<ReadbackValue, ReadbackStage>()
+            .UseStageRuntime<GpuValue>(provider => provider.GetResourceGraphicsRuntime("scene", "graphics.main"))
+            .UseStageRuntime<ReadbackValue>(provider => provider.GetResourceGraphicsRuntime("scene", separateReadback ? "graphics.readback" : "graphics.main")));
         services.AddResourceGraphics("scene", "main", "graphics.main");
+        if (separateReadback)
+        {
+            services.AddResourceGraphics("scene", "readback", "graphics.readback");
+        }
+
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 }

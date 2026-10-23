@@ -337,7 +337,8 @@ public sealed partial class ResourceManager
                 throw new InvalidOperationException($"Cleanup for {node} must complete before another build; call TrimAsync first.");
             }
 
-            ResourceGeneration candidate = new(node, checked(++_revision), _stages[node.TypeHandle]);
+            (IResourceStage stage, IResourceRuntime runtime) = _stages[node.TypeHandle];
+            ResourceGeneration candidate = new(node, checked(++_revision), stage, runtime);
             slot = new(candidate);
             _generations.Add(candidate);
             view.Builds.Add(node, slot);
@@ -356,7 +357,7 @@ public sealed partial class ResourceManager
         try
         {
             view.CancellationToken.ThrowIfCancellationRequested();
-            object value = await _runtime.BuildAsync(generation.Stage, context, view.CancellationToken).ConfigureAwait(false);
+            object value = await generation.Runtime.BuildAsync(generation.Stage, context, view.CancellationToken).ConfigureAwait(false);
             context.Close();
             if (!generation.Stage.OutputType.IsInstanceOfType(value))
             {
