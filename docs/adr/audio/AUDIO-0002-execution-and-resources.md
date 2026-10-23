@@ -28,7 +28,7 @@ Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御�
 
 `Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは出力型に対応する `IResourceRuntime` を選び、AudioDecodeStageには既定の `ResourceRuntime`、clipとvoiceには `AudioResourceRuntime` を使用する。AudioResourceRuntimeはStage実行、現在のdevice取得、所有スレッドへの生成要求、世代依存を扱う。Stageの構築と解放のCPU配送は共有の既定Runtimeへ委譲する。
 
-全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `context.Runtime` から選択済みのAudioResourceRuntimeを取得する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
+全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `IResourceTransform<TInput, TOutput, AudioResourceRuntime>` で環境型を宣言し、BuildAsyncの型付きRuntime引数を使う。Stage側の型変換は不要で、不適合な環境登録はManager構築時に拒否する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
 
 通常のawait後の継続もRuntimeがジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。Stageはこの継続先を保持し、ConfigureAwait(false)で汎用Runtimeの配送を外れない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
 
@@ -178,13 +178,13 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 +    {
 +        public AudioDecodeStage(); // Stageの配送はResourceManagerの既定Runtimeが担当する。
 +    }
-+    public sealed class AudioClipStage : IResourceTransform<AudioPcmData, IAudioClip>
++    public sealed class AudioClipStage : IResourceTransform<AudioPcmData, IAudioClip, AudioResourceRuntime>
 +    {
-+        public AudioClipStage(); // context.RuntimeからAudio環境を取得。入力はBuild依存。
++        public AudioClipStage(); // 型付きRuntime引数からAudio環境を取得。入力はBuild依存。
 +    }
-+    public sealed class AudioVoiceStage : IResourceTransform<IAudioClip, IAudioVoice>
++    public sealed class AudioVoiceStage : IResourceTransform<IAudioClip, IAudioVoice, AudioResourceRuntime>
 +    {
-+        public AudioVoiceStage(); // context.RuntimeからAudio環境を取得。入力はResident依存。
++        public AudioVoiceStage(); // 型付きRuntime引数からAudio環境を取得。入力はResident依存。
 +    }
 +}
 +namespace Lumyte.Resources.Audio.DependencyInjection
