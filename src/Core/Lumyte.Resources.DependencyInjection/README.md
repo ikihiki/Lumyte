@@ -64,7 +64,7 @@ services.AddResources("meshes", resources => resources
 
 既存サービスから選ぶ場合は`.UseStageRuntime<Mesh>(provider => provider.GetRequiredService<MeshRuntime>())`も使えます。
 device serviceと必要なIExecutionModuleも起動前に登録してください。
-Stageはcontext.Runtimeから選択された安定した環境を取得し、構築ごとに現在のdevice世代を借ります。
+Stageは`IResourceTransform<TInput, TOutput, TRuntime>`などで環境型を宣言すると、BuildAsyncの型付きRuntime引数で選択済み環境を受け取れます。キャストや追加のContextラッパーは不要です。宣言型に適合しない登録はManager構築時に拒否します。デバイス世代は構築ごとに取得します。
 解放は内容世代に保存したRuntimeと生成時のLease・ownerを使います。
 
 選択RuntimeがIResourceRuntimeDependencyを実装していれば、同じinstanceを世代providerとして自動収集します。
