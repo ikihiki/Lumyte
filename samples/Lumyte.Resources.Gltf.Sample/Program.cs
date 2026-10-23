@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
+using Lumyte.Execution;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Hosting;
 using Lumyte.Memory;
@@ -60,33 +61,43 @@ internal static class Program
         services.AddResources("gltf", ConfigurePipelines);
         services.AddResourceGraphics("gltf", "main", "graphics.main");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceManager validation = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("gltf.validation");
-
-        await ValidateCpuAsync(validation, directory);
-        await validation.TrimAsync();
-        await validation.DisposeAsync();
-        IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
-        Require(devices.State.Status == GraphicsDeviceServiceStatus.Uninitialized, "CPU scene loading initialized a graphics device.");
-        if (!args.Contains("--validate", StringComparer.Ordinal))
+        ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
+        execution.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, Environment.ProcessorCount, new ExecutionOptions());
+        await execution.StartAsync();
+        try
         {
-            await devices.InitializeAsync();
-            ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("gltf");
-            ResourceReloadService changes = resources.HotReload!;
-            string output = Path.GetFullPath(args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "gltf-render.png");
-            await RenderAndReloadAsync(resources, changes, devices, directory, output);
-            await resources.TrimAsync();
-            await resources.DisposeAsync();
-        }
+            await using AsyncServiceScope scope = provider.CreateAsyncScope();
+            ResourceManager validation = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("gltf.validation");
 
-        IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
-        foreach (string pool in new[] { "gltf.cpu", "gltf.gpu", "gltf.upload", "resources.source" })
+            await ValidateCpuAsync(validation, directory);
+            await validation.TrimAsync();
+            await validation.DisposeAsync();
+            IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+            Require(devices.State.Status == GraphicsDeviceServiceStatus.Uninitialized, "CPU scene loading initialized a graphics device.");
+            if (!args.Contains("--validate", StringComparer.Ordinal))
+            {
+                await devices.InitializeAsync();
+                ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("gltf");
+                ResourceReloadService changes = resources.HotReload!;
+                string output = Path.GetFullPath(args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "gltf-render.png");
+                await RenderAndReloadAsync(resources, changes, devices, directory, output);
+                await resources.TrimAsync();
+                await resources.DisposeAsync();
+            }
+
+            IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
+            foreach (string pool in new[] { "gltf.cpu", "gltf.gpu", "gltf.upload", "resources.source" })
+            {
+                ulong committed = memory.GetSnapshot(new(pool)).CommittedBytes;
+                Require(committed == 0, $"Pool {pool} retained {committed} bytes after release.");
+            }
+
+            Console.WriteLine("glTF checks passed; all resource memory charges returned.");
+        }
+        finally
         {
-            ulong committed = memory.GetSnapshot(new(pool)).CommittedBytes;
-            Require(committed == 0, $"Pool {pool} retained {committed} bytes after release.");
+            await execution.StopAsync();
         }
-
-        Console.WriteLine("glTF checks passed; all resource memory charges returned.");
     }
 
     private static void ConfigurePipelines(ResourceRegistrationBuilder pipelines)

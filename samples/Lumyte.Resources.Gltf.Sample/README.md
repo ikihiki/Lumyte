@@ -50,6 +50,10 @@ flowchart LR
 
 Source、Stage、デバイスFactoryはDIで登録します。サンプルの合成Sourceは、
 `shaders/` をDLL埋め込みへ、それ以外をFileSystemへ振り分けます。
+`AddResources` が登録する既定のResourceRuntimeとExecutionRuntimeを共有し、
+ホストが明示的にThreadPool実行を準備・開始してからロードします。Stageの開始と
+通常の`await`後の再開はCPUジョブとして実行し、I/O・子リソース・GPU完了を待つ間は
+CPUの同時実行枠を使いません。終了時はManagerとDI scopeを閉じてからExecutionRuntimeを停止します。
 複合型は独自の構造で具体的な子への参照を保持します。
 `CpuSceneNode.Mesh`、`CpuMesh.Material`、`CpuMaterial.Texture`が子への具体的な参照です。
 メッシュとマテリアルの入力アドレスは文書のルートに正規化し、文書を共有します。

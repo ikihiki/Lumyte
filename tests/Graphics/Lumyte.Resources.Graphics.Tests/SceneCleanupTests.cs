@@ -23,6 +23,7 @@ public sealed class SceneCleanupTests
     {
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -56,6 +57,7 @@ public sealed class SceneCleanupTests
     {
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -86,6 +88,7 @@ public sealed class SceneCleanupTests
     {
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -121,6 +124,7 @@ public sealed class SceneCleanupTests
     {
         var state = new CleanupState { FailBuild = true };
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
