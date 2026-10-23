@@ -8,7 +8,7 @@ Stageは`RequireAsync`で依存を追加し、`OpenSourceAsync`で観測した�
 Build依存は構築後、Resident依存は親の解放後に返します。
 Memory scopeはmanagerが所有し、出力・cleanup・snapshot・memory・依存の順に解放します。
 解放失敗は所有を保持して`TrimAsync`で再試行します。
-Source・Stage・実行Runtimeは借用します。利用権を返し、managerを閉じてから実行Runtimeを停止します。
+Source・Stage・Runtimeは借用します。利用権を返し、managerを閉じてからRuntimeを終了します。
 
 ## Pipelineと依存
 
@@ -89,9 +89,9 @@ readのキャンセルは待機だけを中断します。seekは旧先読みを
 
 ## 終了と同期
 
-外部reference・lease・resource snapshot・sessionや進行中の構築がある場合、managerの終了は状態を変えず拒否します。利用権を返し、managerの終了成功後にDI scopeを閉じてください。managerは借用したSource・Stage・実行Runtimeを解放しません。ExecutionRuntimeはmanagerの解放成功後に停止します。終了途中のcleanup失敗は`DisposeAsync`の再呼び出しで再試行します。
+外部reference・lease・resource snapshot・sessionや進行中の構築がある場合、managerの終了は状態を変えず拒否します。利用権を返し、managerの終了成功後にDI scopeを閉じてください。managerは借用したSource・Stage・各Runtimeを解放しません。ExecutionRuntimeはmanagerの解放成功後に停止します。終了途中のcleanup失敗は`DisposeAsync`の再呼び出しで再試行します。
 
-公開mapと所有数の更新は短い同期区間で行い、ステージ、I/O、解放callbackをその区間で実行しません。Memoryの取得・返却は既存のスレッド専用チャンクを使います。Stageの開始・継続・解放は既定RuntimeがCPUジョブへ配送します。同じworkerへの復帰は保証しないため、GPUやAudio固有の配送・完了待ちは各モジュールのAPIで行います。
+公開mapと所有数の更新は短い同期区間で行い、ステージ、I/O、解放callbackをその区間で実行しません。Memoryの取得・返却は既存のスレッド専用チャンクを使います。Stageに選択したRuntimeが共通ジョブ環境とowner配送を調整します。同じworkerへの復帰は保証しないため、GPUやAudio固有の配送・完了待ちは各モジュールのAPIで行います。
 
 具体型の子への参照を持つ複合リソース、二つの型へのprojection、handleとHotReloadを組み合わせた実行例は[sample](../../../samples/Lumyte.Resources.Sample/README.md)を参照してください。
 
@@ -101,6 +101,7 @@ readのキャンセルは待機だけを中断します。seekは旧先読みを
 Stage instanceを直接渡せるため、Pipelineラッパーは不要です。一つのStage instanceは一つの出力型を担当します。
 Source・Stage・Memory・IResourceRuntimeは借用であり、managerを閉じるまで呼出側が保持します。
 既定のResourceRuntimeをExecutionRuntimeのmodule集合へ登録し、起動してからロードします。
+出力型ごとの環境はstageRuntimesで選択し、指定のないStageは既定Runtimeを使います。
 
 ```csharp
 var resourceRuntime = new ResourceRuntime();
@@ -118,6 +119,17 @@ await using (var manager = new ResourceManager(
 }
 
 await execution.StopAsync();
+```
+
+特定の出力だけにdevice環境が必要なら、Manager構築時に対応を追加します。
+次のMeshRuntimeは、既定ジョブ環境とdevice serviceを組み合わせるアプリ定義の例です。
+deviceのmoduleもExecutionRuntimeへ起動前に登録してください。
+
+```csharp
+var meshRuntime = new MeshRuntime(resourceRuntime, deviceService);
+await using var manager = new ResourceManager(
+    "assets", source, stages, memory, resourceRuntime,
+    stageRuntimes: [new(typeof(Mesh), meshRuntime)]);
 ```
 
 型付きインターフェースの既定実装が主入力の取得と型付き呼び出しを行います。
@@ -142,17 +154,21 @@ HotReloadは新世代を別に公開するため、取得済みLeaseは取得時
 
 ## Runtimeと非同期ロード
 
-ResourceManagerは初回ロード・再構築・出力解放を`IResourceRuntime`へ渡します。
-既定の`ResourceRuntime`がStageの開始とawait継続をExecutionのジョブへ送り、Stageは実行基盤を参照しません。
-I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
-StageとCPU処理を含む補助メソッドは通常の`await`を使い、同期区間を有限に保ちます。
-`ConfigureAwait(false)`やTask.Runで逃がした処理はスケジューラーの保証対象外です。
-Host/Cooperativeでは同じ処理をPumpで進め、非同期待機中もホストのループを止めません。
+`IResourceRuntime`はStageが必要とする実行先・device・owner・世代の借用をまとめるリソース環境です。
+ResourceManagerは出力型の対応を固定し、選択したRuntimeを各内容世代に保存してBuildAsyncとReleaseAsyncへ使います。
+Stageは`ResourceBuildContext.Runtime`で選択された安定した環境を取得します。
+既定のResourceRuntimeは開始とawait継続をジョブへ配送し、モジュールRuntimeもこの共通ジョブ環境を利用できます。
 
-Audio・GraphicsのRuntime依存は実行Runtimeとは別に、provider identity・version・失効を記録して公開前に再検証します。
-Stageは構築ごとに現在のdevice世代を借り、生成・解放を各モジュールの所有スレッドへ配送します。
-既定の実行Runtimeはdeviceを保持しません。
-初回ロードと変更後の再構築は同じStageと実行経路を使います。
-監視と新規ロードを止め、リソース解放を完了してからExecutionRuntimeを停止してください。
+I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
+StageとCPU処理を含む補助メソッドは通常のawaitを使い、同期区間を有限に保ちます。
+ConfigureAwait(false)やTask.Runで逃がした処理はスケジューラーの保証対象外です。
+Host/CooperativeではPumpで処理を進め、非同期待機中もホストのループを止めません。
+RuntimeはCPU処理とowner処理を調整し、Stage全体への固定スレッド親和性は保証しません。
+
+RuntimeがIResourceRuntimeDependencyを実装すると、Managerはproviderを自動収集します。
+Stageは構築ごとに現在のdevice世代を借り、実際のidentity・versionを記録して公開前に検証します。
+生deviceをStageに固定せず、旧出力の解放には生成時の世代Lease・ownerを使います。
+初回ロードと変更後の再構築は同じStageと選択Runtimeを使います。
+監視と新規ロードを止め、リソース解放を完了してからExecutionRuntimeと各環境を終了してください。
 
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。

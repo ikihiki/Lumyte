@@ -20,8 +20,7 @@ public static class AudioResourceServiceCollectionExtensions
     {
         AddModule<AudioModule>(services);
         AddModule<AudioResourceRuntime>(services);
-        services.AddResources(name, builder => builder.UseSource<TSource>().AddAudioPipeline());
-        return services.AddResourceRuntimeDependency(name, "Audio", static provider => provider.GetRequiredService<AudioResourceRuntime>());
+        return services.AddResources(name, builder => builder.UseSource<TSource>().AddAudioPipeline());
     }
 
     /// <summary>Adds the standard WAVE to PCM to clip to voice pipeline to a manager configuration.</summary>
@@ -30,7 +29,9 @@ public static class AudioResourceServiceCollectionExtensions
     public static ResourceRegistrationBuilder AddAudioPipeline(this ResourceRegistrationBuilder builder)
         => builder.AddSourcePipeline<AudioPcmData, AudioDecodeStage>()
             .AddTransformPipeline<AudioPcmData, IAudioClip, AudioClipStage>()
-            .AddTransformPipeline<IAudioClip, IAudioVoice, AudioVoiceStage>();
+            .AddTransformPipeline<IAudioClip, IAudioVoice, AudioVoiceStage>()
+            .UseStageRuntime<IAudioClip, AudioResourceRuntime>()
+            .UseStageRuntime<IAudioVoice, AudioResourceRuntime>();
 
     private static void AddModule<TModule>(IServiceCollection services)
         where TModule : class, IExecutionModule

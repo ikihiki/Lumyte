@@ -1,6 +1,8 @@
 # Lumyte.Resources.Audio
 
-既定のResourceRuntimeがAudioのStageをCPUジョブへ配送し、AudioResourceRuntimeが生成と解放をAudioModuleの所有スレッドへ接続します。
+ResourceManagerは出力型ごとにRuntimeを選びます。AudioDecodeStageは既定のResourceRuntime、
+AudioClipStageとAudioVoiceStageはAudio環境を持つAudioResourceRuntimeを使用します。
+AudioResourceRuntimeもIResourceRuntimeを実装し、StageのCPUジョブ配送は共有の既定Runtimeへ委譲します。
 初回ロードとHotReloadのどちらも同じStageを使用します。
 
 - AudioDecodeStage: 既定RuntimeのCPUジョブでSourceの非同期I/Oを待ち、WAVEをデコードしてAudioPcmDataを返す。
@@ -15,6 +17,7 @@ voiceはclipをResident依存として保持し、PCMはclipへのコピー完�
 入力長が既知なら最大1 MiBを初期容量として確保し、読み取り中の配列拡張を減らします。
 これは事前確保の上限で、入力サイズの制限やMemory予算ではありません。全入力とデコード後PCMはメモリへ保持します。
 AudioResourceRuntimeはAudioModuleにDependsOnを宣言し、起動完了後に利用可能になります。
+引数なしのAudioClipStageとAudioVoiceStageはcontext.Runtimeから選択済みのAudioResourceRuntimeを取得します。
 RuntimeはAudioModule.Devicesの世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
 UseAudioAsyncは取得した正確な世代を依存として記録し、deviceのleaseをcontextへ渡します。
 StageのReleaseAsyncが子資源を解放した後にleaseを返し、解放失敗時は同じ世代を保持して再試行します。
@@ -22,24 +25,30 @@ StageのReleaseAsyncが子資源を解放した後にleaseを返し、解放失�
 DIは[Audio専用の登録API](../Lumyte.Resources.Audio.DependencyInjection/README.md)から行います。
 `services.AddAudioResources<TSource>("audio")`が本体のSource→PCM→Clip→VoiceとRuntimeを接続します。
 DIなしでは`AudioModule`、`AudioResourceRuntime`、汎用の`ResourceRuntime`を同じExecutionRuntimeへ渡します。
-ResourceManagerの実行先にはResourceRuntimeを、device世代の依存先にはAudioResourceRuntimeを渡します。
+ResourceManagerの既定RuntimeとAudioResourceRuntimeの委譲先には同じResourceRuntimeを渡し、
+clipとvoiceの出力型をstageRuntimesでAudioResourceRuntimeへ接続します。
+選択されたAudioResourceRuntimeはdevice世代の依存先にも自動登録されます。
 
 ```csharp
 var audio = new AudioModule();
-var audioResources = new AudioResourceRuntime(audio);
 var runtime = new ResourceRuntime();
+var audioResources = new AudioResourceRuntime(audio, runtime);
 var execution = new ExecutionRuntime([audio, audioResources, runtime]);
 var resources = new ResourceManager("audio", source,
-    [new AudioDecodeStage(), new AudioClipStage(audioResources), new AudioVoiceStage(audioResources)],
-    memory, runtime, [audioResources]);
+    [new AudioDecodeStage(), new AudioClipStage(), new AudioVoiceStage()],
+    memory, runtime, stageRuntimes:
+    [
+        new ResourceStageRuntime(typeof(IAudioClip), audioResources),
+        new ResourceStageRuntime(typeof(IAudioVoice), audioResources),
+    ]);
 ```
 
 復旧やスレッド制約の検証は[結合テスト](../../../tests/Audio/Lumyte.Resources.Audio.IntegrationTests/README.md)にあります。
 
 Host配置ならAudioコマンドはホストへ統合され、CPU処理もCooperativeでPumpします。
 Dedicated配置ならAudioの所有スレッドとCPUワーカーを使います。
-StageのBuildAsync・ReleaseAsyncと通常のawait後の継続は汎用Runtimeが配送し、I/O待ちの間はCPU実行枠を返します。
-Stageの通常のawaitはRuntimeが設定した実行先へ戻ります。
+StageのBuildAsync・ReleaseAsyncは選択済みRuntimeを通り、共有の汎用RuntimeがCPUジョブへ配送します。
+通常のawait後の継続も同じ配送先へ戻り、I/O待ちの間はCPU実行枠を返します。
 ConfigureAwait(false)はこの配送から外れるため、Stage内では使用しません。
 同期的な所有スレッド待機や、フレームごとのAudio更新配送は行いません。
 
@@ -61,7 +70,8 @@ await audio.Devices.RetireAsync(cancellationToken);
 
 Stageは再構築ごとに新しい世代を取得します。構築中にロストした結果は公開せず、
 旧clipから新deviceのvoiceを生成することも拒否します。
-旧生成物のCleanupは生成元deviceへ送り、旧世代のleaseが残る間はdeviceを破棄しません。
+ResourceManagerは生成時に選択したRuntimeを各リソース世代へ保持し、解放時に選び直しません。
+旧生成物のCleanupは元のbackend instanceから生成元deviceへ送り、旧世代のleaseが残る間はdeviceを破棄しません。
 復旧失敗は再試行できます。回復と停止が重なる場合も、factoryの実完了と候補の解放を待ちます。
 
 終了時はロード・監視を停止し、全Reference・Lease・Snapshotを返してResourceManagerを破棄します。
