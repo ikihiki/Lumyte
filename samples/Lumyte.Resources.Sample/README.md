@@ -68,6 +68,11 @@ the manager, then disposes its DI scope, stops execution and deletes the tempora
 demonstrates compound-document projection and hot reload, with no format-specific
 model importer, GPU upload or audio codec.
 
+A host that recovers from cleanup failures must retain its manager and DI scope,
+retry `ResourceManager.DisposeAsync` while execution remains available, and only
+dispose the scope and stop execution after that succeeds. DI scope disposal is
+one-shot, so it cannot serve as the retry boundary.
+
 リソースの取得は`Manager.AcquireAsync → ResourceReference`、値の取得は
 `Reference.Acquire → ResourceLease`の順に行います。描画用Leaseを保持している間も
 HotReloadは新世代を公開でき、既存Leaseは旧世代の値を保持します。
