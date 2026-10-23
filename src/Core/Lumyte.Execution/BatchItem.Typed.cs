@@ -19,7 +19,7 @@ internal sealed class BatchItem<TCommand, TResult>(WorkDefinition<TCommand, TRes
         }
     }
 
-    internal override bool Finish(Exception? error)
+    internal override WorkFinish Finish(Exception? error)
     {
         _command = default;
         _work = null;
