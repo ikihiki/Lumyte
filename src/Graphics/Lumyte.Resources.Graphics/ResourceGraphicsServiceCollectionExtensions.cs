@@ -15,7 +15,6 @@ public static class ResourceGraphicsServiceCollectionExtensions
     /// <returns>The same collection with the graphics bridge registered.</returns>
     public static IServiceCollection AddResourceGraphics(this IServiceCollection services, string resourceManagerName, string deviceServiceName, string dependencyId)
     {
-        ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceServiceName);
         if (!services.Any(x => x.IsKeyedService && x.ServiceType == typeof(IGraphicsDeviceService) && Equals(x.ServiceKey, deviceServiceName)))
         {

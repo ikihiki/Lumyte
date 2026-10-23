@@ -14,9 +14,6 @@ public sealed class EmbeddedResourceSource : IResourceSource
     /// <param name="options">The assembly and optional logical identifier aliases.</param>
     public EmbeddedResourceSource(EmbeddedResourceSourceOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(options.Assembly);
-        ArgumentNullException.ThrowIfNull(options.ResourceNames);
         _assembly = options.Assembly;
         _names = new(options.ResourceNames);
         foreach ((ResourceId id, string name) in _names)

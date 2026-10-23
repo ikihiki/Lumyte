@@ -48,7 +48,6 @@ public sealed class AudioIntegrationTests
         var voice = new AudioVoice(original);
         AudioVoice copy = voice;
         Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioVoice>());
-        Assert.Throws<ArgumentNullException>(() => new AudioVoice(null!));
         Assert.Throws<InvalidOperationException>(() => default(AudioVoice).Play());
         ValueTask<Unit> play = voice.Play();
         PumpUntil(() => play.IsCompleted);

@@ -20,7 +20,6 @@ internal sealed class FileResourceChangeSource : IResourceChangeSource
     /// <param name="options">The optional notification and native buffer limits.</param>
     public FileResourceChangeSource(FileResourceSourceOptions sourceOptions, FileResourceChangeSourceOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(sourceOptions);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceOptions.RootPath);
         _options = options ?? new();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(_options.NotificationCapacity);

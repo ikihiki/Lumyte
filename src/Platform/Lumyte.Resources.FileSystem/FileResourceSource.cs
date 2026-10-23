@@ -17,7 +17,6 @@ public sealed class FileResourceSource
     /// <param name="changeOptions">The optional notification and native buffer limits.</param>
     public FileResourceSource(FileResourceSourceOptions options, FileResourceChangeSourceOptions? changeOptions = null)
     {
-        ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.RootPath);
         _root = Path.GetFullPath(options.RootPath);
         RejectLinks(_root);
