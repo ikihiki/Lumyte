@@ -32,27 +32,27 @@ public sealed class ResourceReference<T> : IDisposable
     }
 
     /// <summary>Pins the current value and revision for an operation such as one rendering frame.</summary>
-    /// <param name="scope">An optional captured publication to resolve against.</param>
+    /// <param name="snapshot">An optional resource snapshot whose captured publication supplies the value.</param>
     /// <returns>An independently owned lease whose value does not switch on hot reload.</returns>
     /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
     /// <exception cref="InvalidOperationException">No usable published value is available.</exception>
-    public ResourceLease<T> Acquire(ResourceReadScope? scope = null)
-        => TryAcquire(out ResourceLease<T>? lease, scope)
+    public ResourceLease<T> Acquire(ResourceSnapshot? snapshot = null)
+        => TryAcquire(out ResourceLease<T>? lease, snapshot)
             ? lease!
             : throw new InvalidOperationException("The reference has no usable published value.");
 
     /// <summary>Attempts to pin a value without I/O or pipeline execution.</summary>
     /// <param name="lease">The retained value and revision, or null when unavailable.</param>
-    /// <param name="scope">An optional captured publication to resolve against.</param>
+    /// <param name="snapshot">An optional resource snapshot whose captured publication supplies the value.</param>
     /// <returns>Whether a value could be retained.</returns>
     /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
-    public bool TryAcquire(out ResourceLease<T>? lease, ResourceReadScope? scope = null)
+    public bool TryAcquire(out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null)
     {
         ResourceManager? manager = Volatile.Read(ref _manager);
         ObjectDisposedException.ThrowIf(manager is null, this);
-        if (scope is not null)
+        if (snapshot is not null)
         {
-            return scope.TryAcquire(_handle, out lease);
+            return snapshot.TryAcquire(_handle, out lease);
         }
 
         lease = manager.AcquireCurrentLease(_handle);
