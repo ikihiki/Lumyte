@@ -27,3 +27,19 @@ Browserではこの待機ループをコピーせず、ブラウザのフレー�
 Reference・Leaseを返し、ResourceManagerの終了をPumpしてからExecutionRuntimeを停止します。
 `--reload`でSourceの変更通知から同じロード経路を再実行し、voice差し替え・旧Lease保持・不正デコード時の旧公開保持を検証します。
 `--host`・`--di`・`--openal`と組み合わせられます。実ファイルの監視adapterは後続PRです。
+
+`--recover`はテストbackendの出力状態を変更し、一時停止で世代が変わらないこと、ロストによる旧Leaseの失効、復旧失敗後の再試行、`RebuildRuntimeAsync(["Audio"])`による新デバイスへの再構築を検証します。旧clipを新世代へ渡す操作は拒否し、旧Leaseの返却とnative子資源の解放が済むまで旧デバイスを保持します。子資源の解放失敗も注入し、再試行後にだけデバイスを破棄します。生成途中のロストは候補を公開せず解放し、復旧完了commandの容量不足では生成済みデバイスを保持して再試行します。
+
+`--recover-stop`は非同期factoryの完了を遅らせ、同時に呼んだ復旧とRuntime停止が競合しても、候補デバイスを所有スレッドで解放してから停止が完了することを検証します。
+
+`--recover-start-cancel --host`は最初のowner Pump前に起動をキャンセルし、factoryを呼ばずにAudioModuleを停止できることを検証します。
+
+```sh
+dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover
+dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover --host --di
+dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover-stop
+dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover-stop --host --di
+dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover-start-cancel --host --di
+```
+
+復旧検証は`--host`・`--di`と組み合わせられます。`--openal`・`--reload`とは別の実行にしてください。物理出力デバイスの取り外しは行いません。

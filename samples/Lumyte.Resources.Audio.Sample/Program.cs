@@ -16,7 +16,22 @@ internal static class Program
     {
         bool host = args.Contains("--host", StringComparer.Ordinal);
         bool di = args.Contains("--di", StringComparer.Ordinal);
-        var audio = new AudioModule(args.Contains("--openal", StringComparer.Ordinal) ? new OpenALDeviceFactory() : new TestFactory());
+        bool recover = args.Contains("--recover", StringComparer.Ordinal);
+        bool recoverStop = args.Contains("--recover-stop", StringComparer.Ordinal);
+        bool startCancel = args.Contains("--recover-start-cancel", StringComparer.Ordinal);
+        bool native = args.Contains("--openal", StringComparer.Ordinal);
+        if ((recover || recoverStop || startCancel) && (native || args.Contains("--reload", StringComparer.Ordinal)))
+        {
+            throw new ArgumentException("Recovery checks use injected device loss; run them separately from --openal and --reload.");
+        }
+
+        if (startCancel && !host)
+        {
+            throw new ArgumentException("--recover-start-cancel requires --host to cancel before the first owner pump.");
+        }
+
+        var factory = new TestFactory();
+        var audio = new AudioModule(native ? new OpenALDeviceFactory() : factory);
         var bridge = new AudioResourceRuntime(audio);
         var jobs = new ResourceJob<DecodeRequest, AudioPcmData, DecodeHandler>();
         var source = new TestSource();
@@ -52,11 +67,11 @@ internal static class Program
             manager = new ResourceManager("audio", source, [new DecodeStage(jobs), new AudioClipStage(bridge), new AudioVoiceStage(bridge)], new MemoryManager(), [bridge]);
         }
 
-        execution.PrepareOnCurrentHost(host ? OwnerPlacement.Host : OwnerPlacement.Dedicated, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, host ? 1 : 2, new ExecutionOptions());
-        void Wait(Task task)
+        execution.PrepareOnCurrentHost(host ? OwnerPlacement.Host : OwnerPlacement.Dedicated, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, host ? 1 : 2, recover ? new ExecutionOptions { MaxCommands = 16 } : new ExecutionOptions());
+        void PumpUntil(Func<bool> completed)
         {
             long start = Stopwatch.GetTimestamp();
-            while (!task.IsCompleted)
+            while (!completed())
             {
                 execution.PumpHostLifecycle(64, TimeSpan.FromMilliseconds(2));
                 execution.PumpJobs(64, TimeSpan.FromMilliseconds(2));
@@ -72,12 +87,22 @@ internal static class Program
 
                 Thread.Sleep(1);
             }
+        }
 
+        void Wait(Task task)
+        {
+            PumpUntil(() => task.IsCompleted);
             task.GetAwaiter().GetResult();
         }
 
         try
         {
+            if (startCancel)
+            {
+                RecoveryScenario.CancelBeforeOwnerStart(audio, execution, factory, Wait);
+                return;
+            }
+
             Wait(execution.StartAsync().AsTask());
             Task<ResourceReference<IAudioVoice>> load = manager.AcquireAsync(new ResourceKey<IAudioVoice>("tone")).AsTask();
             Wait(load);
@@ -125,6 +150,13 @@ internal static class Program
                 }
             }
 
+            if (recover)
+            {
+                RecoveryScenario.Run(audio, execution, manager, factory, Wait);
+                RecoveryScenario.LossDuringBuild(audio, execution, manager, factory, Wait);
+                RecoveryScenario.RetryCapacityFailure(audio, execution, factory, Wait, PumpUntil);
+            }
+
             using var canceled = new CancellationTokenSource();
             canceled.Cancel();
             try
@@ -146,6 +178,11 @@ internal static class Program
             }
 
             Wait(manager.DisposeAsync().AsTask());
+            if (recoverStop)
+            {
+                RecoveryScenario.StopDuringRecovery(audio, execution, factory, Wait);
+            }
+
             Wait(execution.StopAsync().AsTask());
             Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}, owner={audio.State.OwnerThreadId}, decode={DecodeHandler.LastThreadId}");
         }

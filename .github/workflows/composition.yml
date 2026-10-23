@@ -110,6 +110,7 @@ jobs:
           fi
           dotnet test Lumyte.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
           node --test tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs
+          node --test tests/Audio/browser-audio.test.mjs
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
             dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -c Release --no-build -- vulkan pipeline-benchmark | tee artifacts/test-results/vulkan-pipeline-benchmark.jsonl
           fi
@@ -216,6 +217,16 @@ jobs:
           dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --di
           dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --host
           dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --host --di
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover --di
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover --host
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover --host --di
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover-stop
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover-stop --di
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover-stop --host
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover-stop --host --di
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover-start-cancel --host
+          dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release --no-build -- --recover-start-cancel --host --di
           dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --di
           dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host

@@ -138,11 +138,12 @@ internal sealed class OpenALVoice : IAudioVoice
             return;
         }
 
-        Validate();
-        _device.Api.SourceStop(_handle);
-        _device.CheckError();
-        _device.Api.DeleteSource(_handle);
-        _device.CheckError();
+        if (_device.PrepareCleanup())
+        {
+            _device.Api.DeleteSource(_handle);
+            _device.CheckError();
+        }
+
         lock (this)
         {
             _disposed = true;
