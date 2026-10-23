@@ -4,11 +4,13 @@ using Lumyte.Execution;
 
 namespace Lumyte.Resources.Audio;
 
-/// <summary>Owns the resource-facing audio lifetime and dispatches creation to the audio owner.</summary>
+/// <summary>Runs audio resource stages and owns their audio environment, device lifetime and owner dispatch.</summary>
 /// <param name="audio">The same audio module collected by the execution runtime.</param>
-public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, IResourceRuntimeDependency
+/// <param name="defaultRuntime">The shared dispatcher used for stage execution and continuations.</param>
+public sealed class AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime) : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
 {
     private readonly AudioModule _audio = audio;
+    private readonly IResourceRuntime _defaultRuntime = defaultRuntime;
 
     /// <inheritdoc/>
     public event EventHandler? Changed
@@ -35,6 +37,13 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
             return new(state.Version, state.Status == AudioDeviceServiceStatus.Ready, state.InvalidatedThroughVersion);
         }
     }
+
+    /// <inheritdoc/>
+    public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
+        => _defaultRuntime.BuildAsync(stage, context, cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask ReleaseAsync(IResourceStage stage, object resource) => _defaultRuntime.ReleaseAsync(stage, resource);
 
     /// <summary>Creates a fully initialized clip on the audio owner.</summary>
     /// <param name="data">The PCM whose storage remains alive until completion.</param>

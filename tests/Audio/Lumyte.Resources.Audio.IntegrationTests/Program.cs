@@ -51,10 +51,12 @@ internal static class Program
         }
         else
         {
-            var bridge = new AudioResourceRuntime(audio);
             var runtime = new ResourceRuntime();
+            var bridge = new AudioResourceRuntime(audio, runtime);
             execution = new ExecutionRuntime([audio, bridge, runtime]);
-            manager = new ResourceManager("audio", source, [new AudioDecodeStage(), new AudioClipStage(bridge), new AudioVoiceStage(bridge)], new MemoryManager(), runtime, [bridge]);
+            manager = new ResourceManager(
+                "audio", source, [new AudioDecodeStage(), new AudioClipStage(), new AudioVoiceStage()], new MemoryManager(), runtime,
+                stageRuntimes: [new(typeof(IAudioClip), bridge), new(typeof(IAudioVoice), bridge)]);
         }
 
         execution.PrepareOnCurrentHost(host ? OwnerPlacement.Host : OwnerPlacement.Dedicated, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, host ? 1 : 2, recover ? new ExecutionOptions { MaxCommands = 16 } : new ExecutionOptions());

@@ -65,6 +65,24 @@ public sealed partial class ResourceManager
         generation.ResidentRuntimes = resident?.ToArray() ?? [];
     }
 
+    private void RegisterRuntimeProvider(IResourceRuntimeDependency provider)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(provider.Id);
+        if (_runtimes.TryGetValue(provider.Id, out ResourceRuntimeState? existing))
+        {
+            if (!ReferenceEquals(existing.Provider, provider))
+            {
+                throw new ArgumentException($"Runtime dependency '{provider.Id}' is registered with different provider instances.");
+            }
+
+            return;
+        }
+
+        ResourceRuntimeSnapshot snapshot = provider.Snapshot;
+        ValidateRuntimeSnapshot(default, snapshot);
+        _runtimes.Add(provider.Id, new(provider, provider.Identity, snapshot));
+    }
+
     private void RefreshRuntimes()
     {
         if (_runtimes.Count == 0)

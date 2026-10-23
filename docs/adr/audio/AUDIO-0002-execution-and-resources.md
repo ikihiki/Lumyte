@@ -26,7 +26,9 @@ Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御�
 
 ### Sourceから実体までの所有権
 
-`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは既定の `ResourceRuntime` を通じてStageの構築と解放をCPUジョブへ配送する。AudioDecodeStageは無引数で作成でき、Sourceの非同期I/Oを待ってWAVEを同期デコードする。ジョブへの登録と配送は汎用Runtimeが管理する。
+`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは出力型に対応する `IResourceRuntime` を選び、AudioDecodeStageには既定の `ResourceRuntime`、clipとvoiceには `AudioResourceRuntime` を使用する。AudioResourceRuntimeはStage実行、現在のdevice取得、所有スレッドへの生成要求、世代依存を扱う。Stageの構築と解放のCPU配送は共有の既定Runtimeへ委譲する。
+
+全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `context.Runtime` から選択済みのAudioResourceRuntimeを取得する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
 
 通常のawait後の継続もRuntimeがジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。Stageはこの継続先を保持し、ConfigureAwait(false)で汎用Runtimeの配送を外れない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
 
@@ -34,9 +36,9 @@ Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御�
 
 PCMはclipへのコピー完了までBuild依存として保持する。voiceはclipをResident依存として保持し、生成完了後に実際のbackend instanceを公開する。`AudioPcmData.Samples` は借用したReadOnlyMemoryであり、利用側が供給した配列もコピー完了まで変更しない。
 
-Stageは長寿命の `AudioResourceRuntime` を参照する。構築ごとに `UseAudioAsync` で正確なdevice leaseを取得し、service identityと取得時VersionをResourceManagerへ記録する。登録済みRuntimeとStageのserviceが異なる場合や、構築中に失効した候補は公開しない。voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
+選択された長寿命の `AudioResourceRuntime` が、構築ごとに `UseAudioAsync` で正確なdevice leaseを取得し、service identityと取得時VersionをResourceManagerへ記録する。同じRuntime実体を世代依存先にも自動登録し、実行環境と依存先を一致させる。構築中に失効した候補は公開せず、voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
 
-ResourceManagerは出力を解放した後にdevice leaseを返す。voice → clip → deviceの順を守り、native解放が失敗した場合は同じ出力とleaseを保持して `TrimAsync` で再試行する。旧資源の解放先を新deviceへ付け替えない。
+ResourceManagerは生成時に選択したRuntimeを各ResourceGenerationへ保持し、同じRuntimeからStageのReleaseAsyncを実行する。解放先を再選択せず、元のbackend instanceへのCleanupコマンドを送る。出力の解放後にdevice leaseを返し、voice → clip → deviceの順を守る。native解放が失敗した場合は同じ出力とleaseを保持して `TrimAsync` で再試行する。旧資源の解放先を新deviceへ付け替えない。
 
 ### 安定したserviceと交換可能なepoch
 
@@ -56,9 +58,9 @@ ownerの更新や生成時の確認でUnavailableを観測すると旧epochを�
 
 ### DI、起動と終了
 
-`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntimeをsingletonとして登録する。AddResourcesの既定登録が汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ渡す。名前付きResourceManagerの実行先にはResourceRuntime、device世代の依存先には同じAudioResourceRuntimeを接続する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
+`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntimeをsingletonとして登録する。AddResourcesの既定登録が汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ渡す。AudioResourceRuntimeは共有の既定IResourceRuntimeを受け取る。AddAudioPipelineは `UseStageRuntime<IAudioClip, AudioResourceRuntime>()` とvoice用の同じ指定で出力型を接続し、選択した実体を世代依存先にも自動登録する。PCMは既定Runtimeを使用する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
 
-DIなしでもAudioModule・AudioResourceRuntime・汎用ResourceRuntimeをExecutionRuntimeへ渡す。ResourceManagerのruntimeには汎用ResourceRuntime、runtimeDependenciesにはAudioResourceRuntimeを渡し、標準Stageを登録する。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
+DIなしでもAudioModule・AudioResourceRuntime・汎用ResourceRuntimeをExecutionRuntimeへ渡す。ResourceManagerの既定runtimeとAudioResourceRuntimeの委譲先には同じ汎用Runtimeを使用する。`stageRuntimes` へ `ResourceStageRuntime(typeof(IAudioClip), audioRuntime)` とvoice用の指定を渡し、無引数の標準Stageを登録する。世代依存先の重複指定は不要である。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
 
 BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawait中もホストの同期コンテキストとPumpを維持する。出力のresumeはuser gesture内で開始するbackend固有の操作として扱う。音声供給callbackからmanaged jobの完了を待たない。
 
@@ -144,9 +146,12 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 +}
 +namespace Lumyte.Resources.Audio
 +{
-+    public sealed class AudioResourceRuntime : IExecutionModule, IResourceRuntimeDependency
++    public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
 +    {
-+        public AudioResourceRuntime(AudioModule audio);
++        public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime);
++        // StageのCPU配送は共有のdefaultRuntimeへ委譲する。
++        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken);
++        public ValueTask ReleaseAsync(IResourceStage stage, object resource);
 +        public string Id { get; } // "Audio"
 +        public object Identity { get; } // audio.Devicesと同じ参照。
 +        public ResourceRuntimeSnapshot Snapshot { get; }
@@ -175,11 +180,11 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 +    }
 +    public sealed class AudioClipStage : IResourceTransform<AudioPcmData, IAudioClip>
 +    {
-+        public AudioClipStage(AudioResourceRuntime runtime); // 入力はBuild依存。
++        public AudioClipStage(); // context.RuntimeからAudio環境を取得。入力はBuild依存。
 +    }
 +    public sealed class AudioVoiceStage : IResourceTransform<IAudioClip, IAudioVoice>
 +    {
-+        public AudioVoiceStage(AudioResourceRuntime runtime); // 入力はResident依存。
++        public AudioVoiceStage(); // context.RuntimeからAudio環境を取得。入力はResident依存。
 +    }
 +}
 +namespace Lumyte.Resources.Audio.DependencyInjection
@@ -217,7 +222,7 @@ senderは参照一本で、送信時のクロージャや汎用ExecuteAsyncへ�
 
 ## 検証方針
 
-単体テストでWAVEの各encoding、不正chunk長・padding・alignment・非有限sample、複数managerのDI登録とmodule共有を確認する。結合テストはHost／Dedicated、DIあり／なし、fake backend／実OpenALで生成・制御・解放の実行スレッドを確認する。
+単体テストでWAVEの各encoding、不正chunk長・padding・alignment・非有限sample、I/O後のジョブ継続、複数managerのDI登録とmodule共有、出力型ごとのRuntime選択と世代依存先の実体一致を確認する。結合テストはHost／Dedicated、DIあり／なし、fake backend／実OpenALで生成・制御・解放の実行スレッドを確認する。
 
 ロスト注入により旧Leaseの失効、生成中ロスト、旧clipと新deviceの拒否、復旧共有、factory失敗、完了処理の容量不足、復旧中停止、起動前取消、解放失敗の再試行を検証する。HotReloadは新しい停止voiceの公開、旧値の保持、不正入力時の旧公開維持を確認する。物理デバイスの抜き差し、Browserのuser gestureとclosed／interrupted、負荷時の遅延分布はbackend環境で確認する。
 

@@ -20,6 +20,10 @@ public sealed class ResourceBuildContext
     /// <summary>Gets the requested element and variant.</summary>
     public ResourceAddress Address => _generation.Node.Address;
 
+    /// <summary>Gets the selected environment for this stage and output generation.</summary>
+    /// <remarks>Acquire current device epochs through this stable runtime; do not retain a device from an earlier build.</remarks>
+    public IResourceRuntime Runtime => _generation.Runtime;
+
     /// <summary>Gets the runtime identity of the exact output type being constructed.</summary>
     public RuntimeTypeHandle OutputTypeHandle => _generation.Node.TypeHandle;
 
