@@ -10,8 +10,8 @@ SourceとStageはscopedでDIが破棄し、managerは借用します。Pipeline�
 
 `AddResources`は既定の`ResourceRuntime`、`IResourceRuntime`と`ExecutionRuntime`をsingleton登録し、
 同じResourceRuntimeを`IExecutionModule`として接続します。既存の登録は上書きしません。
-複数の名前付きmanagerは同じ実行Runtimeを借り、独立したDI root間ではportを共有しません。
-Stageへのジョブ注入や実行Runtimeの手動登録は不要です。
+複数の名前付きmanagerは同じ既定ジョブ環境を借り、独立したDI root間ではportを共有しません。
+既定の環境を使うStageへのジョブ注入やRuntimeの手動登録は不要です。
 ResourceRuntimeのmodule登録はAddResourcesに任せ、同じinstanceを別途IExecutionModuleへ重複登録しないでください。
 
 次のSceneSourceは、Streamと`IResourceSource.Changes`を提供するアプリ側のSourceです。
@@ -50,7 +50,7 @@ await execution.StopAsync();
 
 DI解決だけではスレッドを起動しません。Prepare/Start/Pump/Stopはホストが管理します。
 BrowserではHost/Cooperativeに配置し、ロード・解放を待つ間もホストからPumpを続けます。
-例は解放が成功する経路です。容量不足やbackend解放失敗時は、manager・scope・実行Runtimeを保持してください。
+例は解放が成功する経路です。容量不足やbackend解放失敗時は、manager・scope・各Runtime・ExecutionRuntimeを保持してください。
 原因が解消したら同じmanagerのDisposeAsyncを再試行し、成功後にscopeを破棄してExecutionRuntimeを停止します。
 DI scope自体のDisposeAsyncを再試行しても、途中の解放が再開される保証はありません。
 
@@ -66,11 +66,31 @@ Managerの終了は監視と進行中の自動再構築をキャンセルしてj
 利用中のReference・Lease・Snapshotを返してから終了してください。
 HotReload専用のStart／StopAsyncは不要ですが、ExecutionRuntimeの起動・停止は上記の順序で行います。
 
-## device世代への依存
+## StageごとのRuntimeと世代
 
-AudioやGraphicsの世代adapterは、`UseRuntimeDependency<T>()`または
-`AddResourceRuntimeDependency<T>()`で名前付きmanagerに登録します。
-これは実行先を決める`IResourceRuntime`とは別の依存検証で、Stageは構築ごとに現在のdevice世代を借ります。
+Audio・GraphicsなどのRuntimeはIResourceRuntimeを実装し、共通ジョブ環境とdevice・owner・世代の借用をまとめます。
+UseStageRuntimeは登録済みサービスをManager構築時に一度解決し、出力型へ対応付けます。
+サービス自体の登録・寿命は呼出側が決め、未指定の出力は既定Runtimeを使います。
+次のMeshRuntimeはResourceRuntimeとdevice serviceをconstructorで受け取るアプリ定義の例です。
+
+```csharp
+services.AddSingleton<MeshRuntime>();
+services.AddResources("meshes", resources => resources
+    .UseSource<MySource>()
+    .AddSourcePipeline<Document, DocumentStage>()
+    .AddTransformPipeline<Document, Mesh, MeshStage>()
+    .UseStageRuntime<Mesh, MeshRuntime>());
+```
+
+既存サービスから選ぶ場合は`.UseStageRuntime<Mesh>(provider => provider.GetRequiredService<MeshRuntime>())`も使えます。
+device serviceと必要なIExecutionModuleも起動前に登録してください。
+Stageはcontext.Runtimeから選択された安定した環境を取得し、構築ごとに現在のdevice世代を借ります。
+解放は内容世代に保存したRuntimeと生成時のLease・ownerを使います。
+
+選択RuntimeがIResourceRuntimeDependencyを実装していれば、同じinstanceを世代providerとして自動収集します。
+同じprovider instanceは重複登録せず、同じIdを持つ別instanceは拒否します。
+実際に借りたVersionのTrackRuntimeDependencyによる記録はStage側で行います。
+追加のproviderはUseRuntimeDependencyまたはAddResourceRuntimeDependencyでも登録できます。
 
 [既定Runtimeの実行契約](../Lumyte.Resources.Execution/README.md)と
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。
