@@ -38,13 +38,10 @@ internal sealed class GraphState<TContext> : GraphState
 
     internal void WorkerFinished(int node, Exception? error, bool canceled)
     {
-        lock (Runtime.Sync)
+        Run.Record(error, canceled);
+        if (--_remaining[node] == 0)
         {
-            Run.Record(error, canceled);
-            if (--_remaining[node] == 0)
-            {
-                CompleteNode(node);
-            }
+            CompleteNode(node);
         }
     }
 

@@ -5,6 +5,8 @@ namespace Lumyte.Execution;
 /// <summary>Implements bounded execution scheduling and admission.</summary>
 public sealed partial class ExecutionRuntime
 {
+    private int _activeCpu;
+
     private int DrainGroups(List<GroupDefinition> groups, ref int cursor, int maxCount, TimeSpan maxElapsed, bool lifecycleOnly, long limit)
     {
         long started = Stopwatch.GetTimestamp();
@@ -80,7 +82,7 @@ public sealed partial class ExecutionRuntime
         return work.Gates.All(gate => gate.Open);
     }
 
-    private void Execute(QueuedWork pending, Exception? error)
+    private void Execute(QueuedWork pending, Exception? error, bool cpuWorker = false)
     {
         WorkDefinition? definition = pending.Definition;
         try
@@ -102,13 +104,21 @@ public sealed partial class ExecutionRuntime
             _executing = null;
         }
 
-        // Completion logic may enqueue a graph successor, but never invokes user code inline.
-        pending.Finish(error);
-        pending.Definition = null;
         lock (Sync)
         {
-            if (!pending.KeepAlive)
+            if (cpuWorker)
             {
+                _activeCpu--;
+            }
+
+            // Decide completion and publish reusable work atomically; continuations never run inline.
+            if (pending.Finish(error))
+            {
+                QueueReady(pending);
+            }
+            else
+            {
+                pending.Definition = null;
                 FinishPending();
             }
 
@@ -131,22 +141,25 @@ public sealed partial class ExecutionRuntime
             return;
         }
 
-        bool hasReady = HasGraphPropagation;
+        int wanted = _activeCpu;
         foreach (QueuedWork item in _cpu)
         {
+            if (wanted == _maxCpu)
+            {
+                break;
+            }
+
             if (CanClaim(item, out _))
             {
-                hasReady = true;
-                break;
+                wanted++;
             }
         }
 
-        if (!hasReady)
+        if (HasGraphPropagation && wanted == _activeCpu && wanted < _maxCpu)
         {
-            return;
+            wanted++;
         }
 
-        int wanted = Math.Min(_maxCpu, Math.Max(1, _cpu.Count));
         while (_workers < wanted)
         {
             _workers++;
@@ -176,6 +189,7 @@ public sealed partial class ExecutionRuntime
 
     private int DrainCpu(int maxCount, TimeSpan maxElapsed, bool executeHandlers)
     {
+        bool cpuWorker = executeHandlers && _cpuMode == CpuExecutionMode.ThreadPool;
         long started = Stopwatch.GetTimestamp();
         int count = 0;
         while (count < maxCount && Stopwatch.GetElapsedTime(started) < maxElapsed)
@@ -197,6 +211,11 @@ public sealed partial class ExecutionRuntime
                     if (CanClaim(candidate, out error) && (executeHandlers || error is not null))
                     {
                         pending = candidate;
+                        if (cpuWorker)
+                        {
+                            _activeCpu++;
+                        }
+
                         break;
                     }
 
@@ -209,7 +228,7 @@ public sealed partial class ExecutionRuntime
                 break;
             }
 
-            Execute(pending, error);
+            Execute(pending, error, cpuWorker);
             count++;
         }
 
