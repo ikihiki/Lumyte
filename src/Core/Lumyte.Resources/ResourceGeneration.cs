@@ -24,6 +24,8 @@ internal sealed class ResourceGeneration(ResourceNode node, ulong revision, IRes
 
     internal Dictionary<string, ResourceRuntimeUse> Runtimes { get; } = new(StringComparer.Ordinal);
 
+    internal (string Id, ulong Version)[] ResidentRuntimes { get; set; } = [];
+
     internal List<ResourceCleanup> Cleanups { get; } = [];
 
     internal IMemoryScope? BuildMemory { get; set; }
