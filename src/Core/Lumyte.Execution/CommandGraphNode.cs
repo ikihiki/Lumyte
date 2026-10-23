@@ -7,5 +7,5 @@ internal sealed class CommandGraphNode<TContext>(WorkDefinition<TContext, Unit> 
 
     internal override int WorkerCount(int length, int concurrency) => 1;
 
-    internal override QueuedWork[] Create(GraphState<TContext> state, int node, int length, int workers) => [new GraphCommand<TContext>(state, node, work)];
+    internal override void Create(GraphState<TContext> state, int node, int length, Span<QueuedWork> workers) => workers[0] = new GraphCommand<TContext>(state, node, work);
 }
