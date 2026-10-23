@@ -328,6 +328,34 @@ public sealed class ResourceManagerTests
         Assert.False(retry.Value.Released);
     }
 
+    /// <summary>A frame pins concrete values while references follow reload and can be returned independently.</summary>
+    /// <returns>Completion of frame acquisition, reload and independent ownership checks.</returns>
+    [Fact]
+    public async Task ReferenceAcquiresStableFrameLeasesAcrossReloadAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "old");
+        using ResourceReference<TestValue> reference = await fixture.Manager.AcquireAsync(Key("value"));
+        using ResourceReadScope frame = fixture.Manager.BeginRead();
+        using ResourceLease<TestValue> old = reference.Acquire();
+        fixture.Source.Set("asset", "new");
+        Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.ReloadForTestAsync([new("asset")])).Status);
+        using ResourceLease<TestValue> current = reference.Acquire();
+        using ResourceLease<TestValue> captured = reference.Acquire(frame);
+        Assert.Same(old.Value, captured.Value);
+        Assert.Equal(old.Revision, captured.Revision);
+        Assert.NotEqual(old.Revision, current.Revision);
+        Assert.Equal("old", old.Value.Text);
+        Assert.Equal("new", current.Value.Text);
+        reference.Dispose();
+        Assert.False(reference.IsAvailable);
+        Assert.Throws<ObjectDisposedException>(() => reference.Acquire());
+        Assert.Throws<ObjectDisposedException>(() => reference.TryAcquire(out _));
+        Assert.Equal("old", old.Value.Text);
+        Assert.Equal("new", current.Value.Text);
+        Assert.Equal(0, await fixture.Manager.TrimAsync());
+    }
+
     /// <summary>A handle resolves to an owning reference and its lease survives returning the last reference.</summary>
     /// <returns>Completion of handle acquisition and separate reference and lease ownership.</returns>
     [Fact]
@@ -408,6 +436,218 @@ public sealed class ResourceManagerTests
             Assert.True(fixture.Manager.TryAcquireLeaseForTest(replacement.Handle, out ResourceLease<TestValue>? current));
             current!.Dispose();
         }
+    }
+
+    /// <summary>Reload publishes all affected outputs together and captured read scopes keep the earlier map.</summary>
+    /// <returns>Completion of atomic reload and old-generation ownership checks.</returns>
+    [Fact]
+    public async Task ReloadPublishesAtomicallyAndKeepsOldLeasesAndReadScopesAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "old");
+        TaskCompletionSource candidateReady = NewSignal();
+        TaskCompletionSource publish = NewSignal();
+        fixture.Plan.Builds["root"] = async (context, token) =>
+        {
+            TestValue input = await context.RequireAsync(Key("leaf"), cancellationToken: token);
+            if (input.Text == "new")
+            {
+                candidateReady.SetResult();
+                await publish.Task.WaitAsync(token);
+            }
+
+            return new(input.Text, input);
+        };
+        using ResourceReference<TestValue> root = await fixture.Manager.AcquireAsync(Key("root"));
+        using ResourceReference<TestValue> leaf = await fixture.Manager.AcquireAsync(Key("leaf"));
+        using ResourceReadScope before = fixture.Manager.BeginRead();
+        using ResourceLease<TestValue> oldLease = await fixture.Manager.AcquireLeaseForTestAsync(Key("root"));
+        ResourceHandle<TestValue> handle = root.Handle;
+        ulong version = fixture.Manager.PublicationVersion;
+        fixture.Source.Set("asset", "new");
+        Task<ResourceReloadResult> reload = fixture.Manager.ReloadForTestAsync([new("asset")]).AsTask();
+        await candidateReady.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            AssertHandleText(fixture.Manager, root.Handle, "old");
+            AssertHandleText(fixture.Manager, leaf.Handle, "old");
+            Assert.Equal(version, fixture.Manager.PublicationVersion);
+        }
+        finally
+        {
+            publish.TrySetResult();
+        }
+
+        ResourceReloadResult result = await reload.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(ResourceReloadStatus.Published, result.Status);
+        Assert.Equal(version + 1, result.PublicationVersion);
+        Assert.Equal(handle, root.Handle);
+        AssertHandleText(fixture.Manager, root.Handle, "new");
+        AssertHandleText(fixture.Manager, leaf.Handle, "new");
+        Assert.Equal("old", oldLease.Value.Text);
+        Assert.True(before.TryAcquire(root.Handle, out ResourceLease<TestValue>? capturedRoot));
+        Assert.True(before.TryAcquire(leaf.Handle, out ResourceLease<TestValue>? capturedLeaf));
+        using (capturedRoot)
+        using (capturedLeaf)
+        {
+            Assert.Equal("old", capturedRoot!.Value.Text);
+            Assert.Equal("old", capturedLeaf!.Value.Text);
+        }
+
+        await fixture.Manager.TrimAsync();
+        Assert.False(oldLease.Value.Released);
+    }
+
+    /// <summary>A changed image rebuilds its parent while another scene and their shared geometry are reused.</summary>
+    /// <returns>Completion of selective reload and unchanged notification checks.</returns>
+    [Fact]
+    public async Task ReloadRebuildsOnlyChangedInputAndItsDependentsAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        var imageA = new ResourceKey<TestValue>("a.png", "image-a");
+        var imageB = new ResourceKey<TestValue>("b.png", "image-b");
+        var geometry = new ResourceKey<TestValue>("geometry.bin", "geometry");
+        fixture.Source.Set("a.png", "a-old");
+        fixture.Source.Set("b.png", "b");
+        fixture.Source.Set("geometry.bin", "geometry");
+        fixture.Plan.Builds["root-a"] = async (context, token) =>
+        {
+            await context.RequireAsync(geometry, cancellationToken: token);
+            TestValue image = await context.RequireAsync(imageA, cancellationToken: token);
+            return new(image.Text, image);
+        };
+        fixture.Plan.Builds["root-b"] = async (context, token) =>
+        {
+            await context.RequireAsync(geometry, cancellationToken: token);
+            TestValue image = await context.RequireAsync(imageB, cancellationToken: token);
+            return new(image.Text, image);
+        };
+        using ResourceReference<TestValue> ownerA = await fixture.Manager.AcquireAsync(Key("root-a"));
+        using ResourceReference<TestValue> ownerB = await fixture.Manager.AcquireAsync(Key("root-b"));
+        using ResourceLease<TestValue> previousA = await fixture.Manager.AcquireLeaseForTestAsync(Key("root-a"));
+        using ResourceLease<TestValue> previousB = await fixture.Manager.AcquireLeaseForTestAsync(Key("root-b"));
+        using ResourceLease<TestValue> previousGeometry = await fixture.Manager.AcquireLeaseForTestAsync(geometry);
+        Assert.Equal(3, fixture.Source.OpenCount);
+        fixture.Source.Set("a.png", "a-new");
+
+        ResourceReloadResult changed = await fixture.Manager.ReloadForTestAsync([imageA.Address.Id]);
+        Assert.Equal(ResourceReloadStatus.Published, changed.Status);
+        Assert.Equal(2, changed.UpdatedResources);
+        using ResourceLease<TestValue> currentA = await fixture.Manager.AcquireLeaseForTestAsync(Key("root-a"));
+        using ResourceLease<TestValue> currentB = await fixture.Manager.AcquireLeaseForTestAsync(Key("root-b"));
+        using ResourceLease<TestValue> currentGeometry = await fixture.Manager.AcquireLeaseForTestAsync(geometry);
+        Assert.Equal("a-new", currentA.Value.Text);
+        Assert.Equal("a-old", previousA.Value.Text);
+        Assert.Same(previousB.Value, currentB.Value);
+        Assert.Equal(previousB.Revision, currentB.Revision);
+        Assert.Same(previousGeometry.Value, currentGeometry.Value);
+        Assert.Equal(previousGeometry.Revision, currentGeometry.Revision);
+        Assert.Equal(2, fixture.Plan.BuildCounts["image-a"]);
+        Assert.Equal(2, fixture.Plan.BuildCounts["root-a"]);
+        Assert.Equal(1, fixture.Plan.BuildCounts["image-b"]);
+        Assert.Equal(1, fixture.Plan.BuildCounts["root-b"]);
+        Assert.Equal(1, fixture.Plan.BuildCounts["geometry"]);
+        Assert.Equal(4, fixture.Source.OpenCount);
+
+        ResourceReloadResult unchanged = await fixture.Manager.ReloadForTestAsync([imageA.Address.Id, imageA.Address.Id, new("unknown")]);
+        Assert.Equal(ResourceReloadStatus.Unchanged, unchanged.Status);
+        Assert.Equal(0, unchanged.UpdatedResources);
+        Assert.Equal(changed.PublicationVersion, unchanged.PublicationVersion);
+        Assert.Equal(4, fixture.Source.OpenCount);
+        Assert.Equal(2, fixture.Plan.BuildCounts["image-a"]);
+        Assert.Equal(2, fixture.Plan.BuildCounts["root-a"]);
+    }
+
+    /// <summary>Failure in an affected parent preserves the previously published graph and version.</summary>
+    /// <returns>Completion of the rejected reload.</returns>
+    [Fact]
+    public async Task FailedReloadPreservesPublishedGraphAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "old");
+        fixture.Plan.Builds["root"] = async (context, token) =>
+        {
+            TestValue input = await context.RequireAsync(Key("leaf"), cancellationToken: token);
+            if (input.Text == "broken")
+            {
+                throw new IOException("invalid source");
+            }
+
+            return new(input.Text, input);
+        };
+        using ResourceReference<TestValue> root = await fixture.Manager.AcquireAsync(Key("root"));
+        using ResourceReference<TestValue> leaf = await fixture.Manager.AcquireAsync(Key("leaf"));
+        ulong version = fixture.Manager.PublicationVersion;
+        fixture.Source.Set("asset", "broken");
+
+        await Assert.ThrowsAsync<IOException>(async () => await fixture.Manager.ReloadForTestAsync([new("asset")]));
+        Assert.Equal(version, fixture.Manager.PublicationVersion);
+        AssertHandleText(fixture.Manager, root.Handle, "old");
+        AssertHandleText(fixture.Manager, leaf.Handle, "old");
+    }
+
+    /// <summary>A source change while a candidate is built rejects publication and retains the old graph.</summary>
+    /// <returns>Completion of the conflicted reload.</returns>
+    [Fact]
+    public async Task ReloadRejectsSourceRevisionChangedDuringConstructionAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "old");
+        TaskCompletionSource candidateReady = NewSignal();
+        TaskCompletionSource finish = NewSignal();
+        fixture.Plan.Builds["root"] = async (context, token) =>
+        {
+            TestValue input = await context.RequireAsync(Key("leaf"), cancellationToken: token);
+            if (input.Text == "candidate")
+            {
+                candidateReady.SetResult();
+                await finish.Task.WaitAsync(token);
+            }
+
+            return new(input.Text, input);
+        };
+        using ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("root"));
+        ulong version = fixture.Manager.PublicationVersion;
+        fixture.Source.Set("asset", "candidate");
+        Task<ResourceReloadResult> reload = fixture.Manager.ReloadForTestAsync([new("asset")]).AsTask();
+        await candidateReady.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        fixture.Source.Set("asset", "superseding");
+        finish.SetResult();
+
+        ResourceReloadResult result = await reload.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(ResourceReloadStatus.Conflict, result.Status);
+        Assert.Equal(0, result.UpdatedResources);
+        Assert.Equal(version, fixture.Manager.PublicationVersion);
+        AssertHandleText(fixture.Manager, owner.Handle, "old");
+    }
+
+    /// <summary>Source provenance survives releasing a build input and still selects its parent for reload.</summary>
+    /// <param name="rescan">Whether to recheck all tracked sources instead of a specific identifier.</param>
+    /// <returns>Completion of reload after intermediate trimming.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReloadTracksTrimmedBuildDependencyAsync(bool rescan)
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "old");
+        fixture.Plan.Builds["root"] = async (context, token) =>
+        {
+            TestValue input = await context.RequireAsync(Key("leaf"), ResourceDependencyLifetime.Build, token);
+            return new(input.Text);
+        };
+        using ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("root"));
+        Assert.Equal(1, await fixture.Manager.TrimAsync());
+        Assert.Equal(1, fixture.Plan.BuildCounts["leaf"]);
+        fixture.Source.Set("asset", "new");
+
+        ResourceReloadResult result = rescan
+            ? await fixture.Manager.ReloadAllForTestAsync()
+            : await fixture.Manager.ReloadForTestAsync([new("asset")]);
+        Assert.Equal(ResourceReloadStatus.Published, result.Status);
+        AssertHandleText(fixture.Manager, owner.Handle, "new");
+        Assert.Equal(2, fixture.Plan.BuildCounts["root"]);
+        Assert.Equal(2, fixture.Plan.BuildCounts["leaf"]);
     }
 
     /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
@@ -552,6 +792,15 @@ public sealed class ResourceManagerTests
 
     private static int UnmanagedSize<T>()
         where T : unmanaged => Unsafe.SizeOf<T>();
+
+    private static void AssertHandleText(ResourceManager manager, ResourceHandle<TestValue> handle, string expected)
+    {
+        Assert.True(manager.TryAcquireLeaseForTest(handle, out ResourceLease<TestValue>? lease));
+        using (lease)
+        {
+            Assert.Equal(expected, lease!.Value.Text);
+        }
+    }
 
     private sealed class Fixture : IAsyncDisposable
     {

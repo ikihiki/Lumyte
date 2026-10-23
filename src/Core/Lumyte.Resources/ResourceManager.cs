@@ -10,6 +10,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
+    private readonly ResourceWatchTargets _watchTargets = new();
+    private readonly ResourceReloadService? _hotReload;
     private readonly Dictionary<RuntimeTypeHandle, IResourceStage> _stages;
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
@@ -25,6 +27,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private ulong _revision;
     private int _externalOwners;
     private int _operations;
+    private int _reloadOperations;
     private bool _closing;
     private bool _disposed;
 
@@ -33,7 +36,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="source">The borrowed input source.</param>
     /// <param name="stages">The borrowed source stages and transforms, with one producer per output type.</param>
     /// <param name="memory">The shared memory budget manager.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory)
+    /// <param name="reloadOptions">Batching and retry settings for automatic reload.</param>
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, ResourceReloadOptions? reloadOptions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(source);
@@ -45,8 +49,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle);
         ValidatePipelines();
         ManagerId = NextManagerId();
+        _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes
+            ? new ResourceReloadService(this, changes, reloadOptions) : null;
         _reclaimerRegistration = memory.RegisterReclaimer(this);
+        _hotReload?.Start();
     }
+
+    /// <summary>Gets the manager-owned automatic reload worker, or null when the source has no notifications or automatic reload is disabled.</summary>
+    public ResourceReloadService? HotReload => _hotReload;
 
     /// <summary>Gets the process-local identity, never reused by another manager.</summary>
     public ulong ManagerId { get; }
@@ -62,6 +72,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             }
         }
     }
+
+    internal IResourceWatchTargets WatchTargets => _watchTargets;
 
     /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
