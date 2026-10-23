@@ -34,7 +34,7 @@ DLLの埋め込みデータには`Lumyte.Resources.Embedded`の`EmbeddedResource
 - `ResourceLease<T>`は内容Revisionを固定し、返却はI/OやGPU待機を行いません。
 - `ResourceReference<T>`は論理キーを常駐させ、HotReload後は新しい公開世代を保持します。
 - referenceの`ResourceHandle<T>`は非所有のunmanagedな16 byteの値で、ECSへ格納できます。最後のreference返却で失効し、slot再利用時はGenerationが変わります。
-- `CaptureSnapshot`は一つの公開mapを保持します。フレーム内の複数handleをそのscopeで解決すると、新旧の組み合わせが変わりません。scope終了後も発行済みleaseは有効です。
+- `CaptureSnapshot`は一つの公開mapを保持します。フレーム内の複数handleをそのsnapshotで解決すると、新旧の組み合わせが変わりません。snapshot返却後も発行済みleaseは有効です。
 
 利用者は値を直接Disposeせず、利用終了までleaseを保持します。handle自体のコピーは所有数を増やしません。unmanagedジョブへ渡すデータはmanaged側でhandleを解決して用意し、ジョブやGPU使用の完了までleaseを保持してください。
 
@@ -114,7 +114,7 @@ DI登録も同じStageを直接渡し、必要なサービスをコンストラ�
 
 Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返します。
 Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
-複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`のscopeを`reference.Acquire(scope)`へ渡します。
+複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`を`reference.Acquire(snapshot)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
 HotReloadは新世代を別に公開するため、利用中のLeaseの値は切り替わりません。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。
