@@ -2,7 +2,7 @@ using Lumyte.Audio.Abstractions;
 
 namespace Lumyte.Resources.Audio;
 
-/// <summary>Completed interleaved PCM supplied by an application decode stage.</summary>
+/// <summary>Completed interleaved PCM supplied by an audio decode stage.</summary>
 /// <param name="format">The decoded PCM format.</param>
 /// <param name="samples">Immutable samples retained until the clip copy completes.</param>
 public sealed class AudioPcmData(AudioFormat format, ReadOnlyMemory<float> samples)
