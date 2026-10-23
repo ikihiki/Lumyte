@@ -1,6 +1,6 @@
-# Execution / Audio sample
+# Execution typed command sample
 
-引数なしのAudioModuleを登録し、所有スレッド上で初期化・voice生成・Play／Stop／Destroy・周期更新・解放を行うサンプル。AudioVoiceは元のAudioVoiceDataへの参照一本を持つreadonly structで、実際のOpenALを使わず、作成threadと寿命の制約を検証する。
+引数なしのDemoModuleを登録し、所有スレッド上で初期化・voice生成・Play／Stop／Destroy・周期更新・解放を行うサンプル。DemoVoiceは元のDemoVoiceDataへの参照一本を持つreadonly structで、実際のOpenALを使わず、作成threadと寿命の制約を検証する。
 
 ```sh
 dotnet run --project samples/Lumyte.Execution.Sample -c Release
@@ -9,16 +9,16 @@ dotnet run --project samples/Lumyte.Execution.Sample -c Release -- --host
 dotnet run --project samples/Lumyte.Execution.Sample -c Release -- --host --di
 ```
 
-既定ではAudio専用threadを使い、`--host` は同じ役割をHostへ統合してCooperativeで動かす。これはBrowserのmanaged実行方式を通常の.NET上で確認する経路であり、WasmやWebAudioを起動するサンプルではない。
+既定では専用threadを使い、`--host` は同じ役割をHostへ統合してCooperativeで動かす。これはBrowserのmanaged実行方式を通常の.NET上で確認する経路であり、WasmやWebAudioを起動するサンプルではない。
 
 DIの登録は次の2行。Runtimeはmodule一覧を受け取り、定義を収集する。
 
 ```csharp
-services.AddSingleton<IExecutionModule, AudioModule>();
+services.AddSingleton<IExecutionModule, DemoModule>();
 services.AddSingleton<ExecutionRuntime>();
 ```
 
-[Program.cs](Program.cs)は固定HostでPrepareし、Pumpを回しながらStartとStopを観測する。生成・制御は外側のasync workflowから送り、実体の生成完了を待つ。providerの破棄はStop成功後に行う。[AudioModule.cs](AudioModule.cs)は物理配置と10msの制御更新周期を宣言し、[AudioState.cs](AudioState.cs)と[AudioVoice.cs](AudioVoice.cs)のCoreメソッドからラッパー自身の送信APIが生成される。
+[Program.cs](Program.cs)は固定HostでPrepareし、Pumpを回しながらStartとStopを観測する。生成・制御は外側のasync workflowから送り、実体の生成完了を待つ。providerの破棄はStop成功後に行う。[DemoModule.cs](DemoModule.cs)は物理配置と10msの制御更新周期を宣言し、[DemoState.cs](DemoState.cs)と[DemoVoice.cs](DemoVoice.cs)のCoreメソッドからラッパー自身の送信APIが生成される。
 
 ## 初期ベンチマーク
 

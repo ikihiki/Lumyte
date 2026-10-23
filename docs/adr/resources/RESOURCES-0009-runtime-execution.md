@@ -1,70 +1,45 @@
 # ADR-RESOURCES-0009: 非同期ロードとRuntimeの実行先
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-23
-
-## 背景
-
-ハンドルと内容世代の次に、実行スレッドやデバイスに依存するリソースの構築を定める。
-Audioのclip・voiceの生成と解放は所有スレッドで実行し、デコードやI/Oとは配置を分ける必要がある。
-初回ロードだけでなくHotReloadでも同じ制約を満たす。
 
 ## 決定
 
-Runtimeをハンドル・世代管理の直後、HotReload・ストリーミング・ファイルSourceより前に導入する。
-実行基盤のPR #41を前提とし、Resources内で独自のThreadやTask.Runワーカーを作らない。
-Sourceの非同期I/Oを待ち、有限のCPU処理は型付きResourceJobからExecutionRuntimeへ送る。
-ResourceJobはIExecutionModuleとしてDIまたは明示的に登録する。
-ネイティブオブジェクトの作成は各Runtimeがモジュールの所有スレッドへ配送し、実体の完成を待つ。
+Runtimeはハンドル・世代管理の直後に導入し、HotReloadと個別デバイスの接続に先行させる。
+実行基盤のPR #41を前提とし、Resources内に独自のThreadやTask.Runワーカーを作らない。
+
+Sourceの非同期I/Oを待ち、有限なCPU処理は型付きResourceJobからExecutionRuntimeへ送る。
+Stageは非同期workflowとして依存を読み込み、CPU handler内ではawaitや別リソースのロードを行わない。
+Resourcesのロード依存グラフとExecutionのJobGraphは分離し、動的な依存探索と公開はResourceManagerが管理する。
+Native実体の生成・解放は個別モジュールが所有スレッドへ配送する。生成は実体完成を待つ。
 Stageの非同期継続そのものにスレッド親和性は仮定しない。
 
-AudioResourceRuntimeはAudioModuleの起動に依存し、clip・voiceを生成済みの型付きコマンドで作成する。
-AudioClipStageはPCMをBuild依存としてコピー完了まで保持する。
-AudioVoiceStageはclipをResident依存としてvoice解放まで保持する。
-実体の破棄も所有スレッドへ送り、Resourcesは生成物の別管理表を持たない。
-AudioModuleがdeviceを所有し、ResourcesはStageの出力と依存グラフを所有する。
+IResourceRuntimeDependencyは安定したprovider identity、version、可用性、失効watermarkを提供する。
+Managerへ明示的に登録し、構築ごとに実際に使ったRuntime世代を記録して公開前にも検証する。
+Stageは長寿命serviceを保持し、交換されるdeviceの世代を構築ごとに取得する。
+旧世代の解放は元の実体と実行先を使い、新しいdeviceへ付け替えない。
 
-IResourceRuntimeDependencyはversion・可用性・失効watermark・provider identityを提供する。
-構築時に使用versionを記録し、公開前にも検証する。
-Resident依存の失効は旧Leaseにも伝播し、Build依存で完成した独立した値は失効させない。
-ResidentのRuntime依存は世代の構築完了時に平坦化し、Leaseの読み取りでは一時メモリ確保や依存グラフの再探索を行わない。
-RebuildRuntimeAsyncは保持されたhandleへ新世代を公開する共通のtransactional再構築を使う。
-AudioModuleは固定のdevice serviceを持ち、所有スレッドでロストを検知して旧世代を失効させる。
-Stageは構築ごとに正確なdevice世代のleaseを取得・記録し、子資源の解放完了まで保持する。
-復旧は同じmoduleとendpointでdeviceを再生成し、RebuildRuntimeAsyncで新世代へ再構築する。
-旧clipと新deviceの混在を拒否し、構築中のロストは公開前検証でも拒否する。
-Suspendedは再開可能なので失効させない。Graphicsのdevice接続は後段の別PRで追加する。
+Resident依存の失効は旧Leaseにも伝播し、Build依存で完成した独立値は失効させない。
+ResidentのRuntime依存は世代の構築完了時に平坦化し、Leaseの読み取りで一時確保やグラフ再探索を行わない。
+RebuildRuntimeAsyncは保持されたhandleに新世代を公開するtransactional再構築を使う。
+失敗・競合時は旧公開を保持し、失効済み候補を公開しない。
 
-HotReloadは通知を集約する起動側であり、CPU・Audioの別実行経路を作らない。
-同じStageで候補を構築し、入力Revision・Runtime version・公開versionを検証して一括公開する。
-失敗・競合では旧公開を維持し、旧Leaseは旧clip・voiceを保持する。
-新voiceの再生状態の移行は利用側で行い、自動再生しない。
-
-Host配置とCooperative CPUでは同じ処理をホストへ統合する。
-一つのCPU handlerは有限のチャンクとし、ブラウザではホストをブロックせずPumpとawaitを組み合わせる。
-Audioのサンプル供給はdevice周期に従い、リソースロードのジョブ完了を待たせない。
+AudioとGraphicsの具体的なdevice service、Stage、デコード、DI登録、復旧は各専用PRで提供する。
+HotReloadは通知をまとめて同じ再構築基盤とStageを呼び出し、別の生成経路を作らない。
 
 ## 起動と終了
 
-DIありでもなしでも、Module実体を構築・収集 → PrepareOnCurrentHost → StartAsync → ロードの順とする。
-DIのResourceManagerとExecutionRuntimeには同じAudioResourceRuntime実体を渡す。
-終了時は監視とロードを停止し、Reference・Lease・ReadScopeを返し、ResourceManagerの解放を完了する。
-その間AudioのCleanupを受け付け、必要なHost Pumpを続ける。
-最後にExecutionRuntimeを停止し、Runtimeを失効させてからdeviceを解放する。
+DIありでもなしでもModule実体を構築・収集し、PrepareOnCurrentHost → StartAsync → ロードの順に進む。
+ResourceManagerへ登録するproviderとStageが使うserviceのidentityを一致させる。
+Host／Cooperative構成ではCPUジョブとowner処理をホストへ統合し、await中もホストループのPumpを維持する。
+終了時は監視とロードを停止し、Reference・Lease・ReadScopeを返してResourceManagerの解放を完了する。
+元ownerがCleanupを受け付ける間に解放し、最後にExecutionRuntimeを停止する。
 
-## 検討した代替案
+## 検証
 
-Stage全体をTask.Runで包むだけでは、native操作の所有スレッド制約を満たせない。
-生成直後にplaceholderを返す方式は、実行完了とResourceManagerの公開を分離してしまう。
-初回ロードとHotReloadで別の生成コードを持つ方式は、依存とスレッド制約の差異を生む。
-
-## 検証方針
-
-Runtime世代・失効・復旧と公開競合をCoreで検証する。
-CPUジョブとAudio生成・解放をDedicated/ThreadPool、Host/Cooperative、DIあり・なしで実行する。
-開始前・キャンセル・不正入力で未完成値を公開しないことを確認する。
-Audioのロスト・復旧・旧世代の保持、失敗時の再試行、復旧と停止の競合も同じ構成で検証する。
-HotReload PRでは同じ経路での差し替え、旧Lease保持、失敗時の旧公開保持と終了順を検証する。
+Runtime世代・失効・復旧、公開競合、Resident／Build伝播、解放再試行を共通テストで検証する。
+個別モジュールの専用PRは同じStageによる実体生成・制御とHost／Dedicatedの配置を検証する。
+HotReload PRは差し替え、旧Lease保持、失敗時の旧公開保持と終了順を検証する。
 
 ## 関連ADR
 

@@ -1,9 +1,9 @@
 namespace Lumyte.Execution.Sample;
 
 /// <summary>An owned voice used to verify thread affinity without a native audio dependency.</summary>
-public sealed class AudioVoiceData
+public sealed class DemoVoiceData
 {
-    internal AudioVoiceData(AudioBackend owner, int clip)
+    internal DemoVoiceData(DemoBackend owner, int clip)
     {
         Owner = owner;
         Clip = clip;
@@ -18,5 +18,5 @@ public sealed class AudioVoiceData
     /// <summary>Gets a value indicating whether destruction completed.</summary>
     public bool Destroyed { get; internal set; }
 
-    internal AudioBackend Owner { get; }
+    internal DemoBackend Owner { get; }
 }
