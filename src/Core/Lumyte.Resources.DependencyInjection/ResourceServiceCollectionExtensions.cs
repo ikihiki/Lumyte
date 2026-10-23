@@ -44,6 +44,7 @@ public static class ResourceServiceCollectionExtensions
             provider.GetRequiredService<IMemoryManager>(),
             provider.GetRequiredService<IResourceRuntime>(),
             provider.GetKeyedServices<RuntimeDependencyRegistration>(name).Select(registration => registration.Resolve(provider)),
+            builder.ResolveStageRuntimes(provider),
             builder.ReloadOptions));
         builder.Apply(services);
         return services;
