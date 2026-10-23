@@ -54,6 +54,9 @@ Source、Stage、デバイスFactoryはDIで登録します。サンプルの合
 ホストが明示的にThreadPool実行を準備・開始してからロードします。Stageの開始と
 通常の`await`後の再開はCPUジョブとして実行し、I/O・子リソース・GPU完了を待つ間は
 CPUの同時実行枠を使いません。終了時はManagerとDI scopeを閉じてからExecutionRuntimeを停止します。
+終了時のcleanup失敗から回復するホストは、ManagerとDI scopeを保持し、ExecutionRuntimeを
+動かしたまま`ResourceManager.DisposeAsync`を再試行します。成功後にscopeを破棄し、
+ExecutionRuntimeを停止します。DI scopeの破棄は一度きりなので、再試行の境界には使えません。
 複合型は独自の構造で具体的な子への参照を保持します。
 `CpuSceneNode.Mesh`、`CpuMesh.Material`、`CpuMaterial.Texture`が子への具体的な参照です。
 メッシュとマテリアルの入力アドレスは文書のルートに正規化し、文書を共有します。
