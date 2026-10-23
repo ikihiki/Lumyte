@@ -10,6 +10,8 @@ internal sealed class GraphicsTestState
 
     internal int CpuBuilds { get; set; }
 
+    internal IResourceRuntime? CpuRuntime { get; set; }
+
     internal int ReleaseFailures { get; set; }
 
     internal TaskCompletionSource? BuildStarted { get; set; }
