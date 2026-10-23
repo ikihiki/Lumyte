@@ -9,11 +9,13 @@ namespace Lumyte.Resources.Audio;
 public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, IResourceRuntimeDependency
 {
     private readonly AudioModule _audio = audio;
-    private readonly object _gate = new();
-    private ResourceRuntimeSnapshot _snapshot;
 
     /// <inheritdoc/>
-    public event EventHandler? Changed;
+    public event EventHandler? Changed
+    {
+        add => _audio.Devices.StateChanged += value;
+        remove => _audio.Devices.StateChanged -= value;
+    }
 
     /// <inheritdoc/>
     public string Name => "ResourceAudio";
@@ -22,14 +24,15 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     public string Id => "Audio";
 
     /// <inheritdoc/>
+    public object Identity => _audio.Devices;
+
+    /// <inheritdoc/>
     public ResourceRuntimeSnapshot Snapshot
     {
         get
         {
-            lock (_gate)
-            {
-                return _snapshot;
-            }
+            AudioDeviceSnapshot state = _audio.Devices.State;
+            return new(state.Version, state.Status == AudioDeviceServiceStatus.Ready, state.InvalidatedThroughVersion);
         }
     }
 
@@ -38,10 +41,10 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     /// <param name="context">The construction recording this runtime version.</param>
     /// <param name="cancellationToken">Cancels before command execution.</param>
     /// <returns>The actual backend clip, never a placeholder.</returns>
-    public ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
+    public async ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        Track(context);
-        return _audio.State.CreateClip(data.Format, data.Samples, cancellationToken);
+        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await _audio.State.CreateClipForLease(lease, data.Format, data.Samples, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Creates a fully initialized voice on the audio owner.</summary>
@@ -49,10 +52,10 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     /// <param name="context">The construction recording this runtime version.</param>
     /// <param name="cancellationToken">Cancels before command execution.</param>
     /// <returns>The actual stopped backend voice.</returns>
-    public ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default)
+    public async ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        Track(context);
-        return new AudioClip(clip).CreateVoice(AudioBus.Effects, cancellationToken);
+        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await _audio.State.CreateVoiceForLease(lease, clip, AudioBus.Effects, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -67,27 +70,9 @@ public sealed class AudioResourceRuntime(AudioModule audio) : IExecutionModule, 
     public ValueTask StartAsync(ModuleContext context, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        SetSnapshot(new(1, true, 0));
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public ValueTask StopAsync(ModuleContext context)
-    {
-        SetSnapshot(new(2, false, 1));
-        return ValueTask.CompletedTask;
-    }
-
-    private void Track(ResourceBuildContext context)
-        => context.TrackRuntimeDependency(Id, Snapshot.Version, providerIdentity: this);
-
-    private void SetSnapshot(ResourceRuntimeSnapshot snapshot)
-    {
-        lock (_gate)
-        {
-            _snapshot = snapshot;
-        }
-
-        Changed?.Invoke(this, EventArgs.Empty);
-    }
+    public ValueTask StopAsync(ModuleContext context) => ValueTask.CompletedTask;
 }
