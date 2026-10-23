@@ -1,19 +1,19 @@
 namespace Lumyte.Execution.Sample;
 
 /// <summary>A parameterless module with generated audio commands and owner-driven updates.</summary>
-public sealed class AudioModule : IExecutionModule
+public sealed class DemoModule : IExecutionModule
 {
-    private readonly AudioState _state = new(new AudioBackend());
-    private AudioState.InitializeWork _initialize;
-    private AudioState.CloseWork _close;
+    private readonly DemoState _state = new(new DemoBackend());
+    private DemoState.InitializeWork _initialize;
+    private DemoState.CloseWork _close;
     private OwnerKey _owner;
     private UpdateKey _update;
 
     /// <inheritdoc/>
-    public string Name => "Audio";
+    public string Name => "Demo";
 
     /// <summary>Gets the state used for thread and update diagnostics.</summary>
-    public AudioState State => _state;
+    public DemoState State => _state;
 
     /// <summary>Gets the host phase in host placement mode.</summary>
     public PhaseKey HostPhase { get; private set; }
@@ -24,12 +24,12 @@ public sealed class AudioModule : IExecutionModule
         _owner = builder.Owner("Device", OwnerRequirement.FixedThread);
         OrderGroupKey group = builder.OrderGroup("Control", _owner);
         WorkOptions Options(WorkAdmission admission) => new() { Target = WorkTarget.On(_owner), OrderGroup = group, Admission = admission };
-        _initialize = AudioState.DeclareInitialize(builder, Options(WorkAdmission.Startup));
-        _close = AudioState.DeclareClose(builder, Options(WorkAdmission.Cleanup));
-        AudioState.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
-        AudioVoice.DeclareDestroy(builder, Options(WorkAdmission.Cleanup));
-        AudioVoice.DeclarePlay(builder, Options(WorkAdmission.Normal));
-        AudioVoice.DeclareStop(builder, Options(WorkAdmission.Normal));
+        _initialize = DemoState.DeclareInitialize(builder, Options(WorkAdmission.Startup));
+        _close = DemoState.DeclareClose(builder, Options(WorkAdmission.Cleanup));
+        DemoState.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
+        DemoVoice.DeclareDestroy(builder, Options(WorkAdmission.Cleanup));
+        DemoVoice.DeclarePlay(builder, Options(WorkAdmission.Normal));
+        DemoVoice.DeclareStop(builder, Options(WorkAdmission.Normal));
         _update = _state.DeclareUpdateControl(builder, _owner).Key;
     }
 

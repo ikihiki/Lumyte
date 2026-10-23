@@ -10,20 +10,20 @@ internal static class Program
         bool host = args.Contains("--host", StringComparer.Ordinal);
         bool useDi = args.Contains("--di", StringComparer.Ordinal);
         ServiceProvider? provider = null;
-        AudioModule audio;
+        DemoModule audio;
         ExecutionRuntime runtime;
         if (useDi)
         {
             var services = new ServiceCollection();
-            services.AddSingleton<IExecutionModule, AudioModule>();
+            services.AddSingleton<IExecutionModule, DemoModule>();
             services.AddSingleton<ExecutionRuntime>();
             provider = services.BuildServiceProvider();
             runtime = provider.GetRequiredService<ExecutionRuntime>();
-            audio = provider.GetServices<IExecutionModule>().OfType<AudioModule>().Single();
+            audio = provider.GetServices<IExecutionModule>().OfType<DemoModule>().Single();
         }
         else
         {
-            audio = new AudioModule();
+            audio = new DemoModule();
             runtime = new ExecutionRuntime([audio]);
         }
 
@@ -60,8 +60,8 @@ internal static class Program
             Wait(runtime.StartAsync().AsTask());
             async Task UseVoiceAsync()
             {
-                AudioVoiceData original = await audio.State.CreateVoice(7);
-                var voice = new AudioVoice(original);
+                DemoVoiceData original = await audio.State.CreateVoice(7);
+                var voice = new DemoVoice(original);
                 await voice.Play();
                 await voice.Stop();
                 await voice.Destroy();
@@ -79,13 +79,13 @@ internal static class Program
                     throw new ArgumentException("The allocation benchmark requires --host.");
                 }
 
-                ValueTask<AudioVoiceData> creation = audio.State.CreateVoice(9);
-                Task<AudioVoiceData> created = creation.AsTask();
+                ValueTask<DemoVoiceData> creation = audio.State.CreateVoice(9);
+                Task<DemoVoiceData> created = creation.AsTask();
                 Wait(created);
                 ExecutionBenchmarks.Run(runtime, audio, created.GetAwaiter().GetResult());
             }
 
-            Console.WriteLine($"Host={Environment.CurrentManagedThreadId}, Audio={audio.State.ThreadId}, Updates={audio.State.UpdateCount}, DI={useDi}");
+            Console.WriteLine($"Host={Environment.CurrentManagedThreadId}, Owner={audio.State.ThreadId}, Updates={audio.State.UpdateCount}, DI={useDi}");
         }
         finally
         {

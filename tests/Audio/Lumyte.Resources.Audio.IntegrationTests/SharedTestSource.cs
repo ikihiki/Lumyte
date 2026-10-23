@@ -1,4 +1,4 @@
-namespace Lumyte.Resources.Audio.Sample;
+namespace Lumyte.Resources.Audio.IntegrationTests;
 
 internal sealed class SharedTestSource(TestSource source) : IResourceSource
 {

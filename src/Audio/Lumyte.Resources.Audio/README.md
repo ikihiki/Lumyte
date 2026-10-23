@@ -3,22 +3,25 @@
 ResourcesのRuntimeを既存のAudioModuleと接続します。
 初回ロードとHotReloadのどちらも同じStageを使用します。
 
-- アプリのデコードStage: 非同期I/O → ResourceJobによるCPU処理 → AudioPcmData。
+- AudioDecodeStage: Sourceの非同期I/O → AudioDecodeHandlerのCPUジョブ → AudioPcmData。
 - AudioClipStage: AudioResourceRuntimeで現在のdevice世代を取得 → 型付きAudioDeviceコマンド → 所有スレッドでclip生成。
 - AudioVoiceStage: 同じ手順で世代を取得し、clipの生成元との一致を確認してvoice生成。
 - 解放: voice → clipの順で、生成済みのCleanupコマンドを所有スレッドへ配送。
 
 生成完了まではawaitし、公開する値は実際のIAudioClip・IAudioVoiceです。
 voiceはclipをResident依存として保持し、PCMはclipへのコピー完了までBuild依存として保持します。
-デコード形式・メモリ予算・圧縮ストリームの方針はアプリのStageが定めます。
+標準のWaveAudioDecoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱います。
+圧縮形式・ストリーミング・巨大ファイルのチャンク分割は独自Stageで追加します。
 AudioResourceRuntimeはAudioModuleにDependsOnを宣言し、起動完了後に利用可能になります。
 RuntimeはAudioModule.Devicesの世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
 UseAudioAsyncは取得した正確な世代を依存として記録し、deviceのleaseをcontextへ渡します。
 StageのReleaseAsyncが子資源を解放した後にleaseを返し、解放失敗時は同じ世代を保持して再試行します。
 
-DIではAudioModule・AudioResourceRuntime・ResourceJobの実体をsingletonで登録し、同じ実体を
-IExecutionModuleへ登録します。ResourceManagerにも同じAudioResourceRuntimeを渡してください。
-登録から起動・ロード・停止までのコードは[サンプル](../../../samples/Lumyte.Resources.Audio.Sample/README.md)にあります。
+DIは[Audio専用の登録API](../Lumyte.Resources.Audio.DependencyInjection/README.md)から行います。
+`services.AddAudioResources<TSource>("audio")`が本体のSource→PCM→Clip→VoiceとRuntimeを接続します。
+DIなしでは`AudioModule`、`AudioResourceRuntime`、`ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>`を
+同じExecutionRuntimeへ渡し、`AudioDecodeStage`・`AudioClipStage`・`AudioVoiceStage`と同じRuntimeをResourceManagerへ渡します。
+復旧やスレッド制約の検証は[結合テスト](../../../tests/Audio/Lumyte.Resources.Audio.IntegrationTests/README.md)にあります。
 
 Host配置ならAudioコマンドはホストへ統合され、CPU処理もCooperativeでPumpします。
 Dedicated配置ならAudioの所有スレッドとCPUワーカーを使います。

@@ -1,9 +1,9 @@
 namespace Lumyte.Execution.Sample;
 
 /// <summary>Declares audio-like operations which all require their creation thread.</summary>
-public sealed class AudioBackend
+public sealed class DemoBackend
 {
-    private readonly HashSet<AudioVoiceData> _voices = [];
+    private readonly HashSet<DemoVoiceData> _voices = [];
     private int _threadId;
     private int _updates;
     private bool _initialized;
@@ -14,7 +14,7 @@ public sealed class AudioBackend
     /// <summary>Gets the directly driven update count.</summary>
     public int UpdateCount => Volatile.Read(ref _updates);
 
-    internal void PlayDirect(AudioVoiceData voice) => Play(voice);
+    internal void PlayDirect(DemoVoiceData voice) => Play(voice);
 
     internal void Initialize()
     {
@@ -22,27 +22,27 @@ public sealed class AudioBackend
         _initialized = true;
     }
 
-    internal AudioVoiceData CreateVoice(int clip)
+    internal DemoVoiceData CreateVoice(int clip)
     {
         VerifyOwner();
-        var voice = new AudioVoiceData(this, clip);
+        var voice = new DemoVoiceData(this, clip);
         _voices.Add(voice);
         return voice;
     }
 
-    internal void Play(AudioVoiceData voice)
+    internal void Play(DemoVoiceData voice)
     {
         VerifyVoice(voice);
         voice.Playing = true;
     }
 
-    internal void Stop(AudioVoiceData voice)
+    internal void Stop(DemoVoiceData voice)
     {
         VerifyVoice(voice);
         voice.Playing = false;
     }
 
-    internal void Destroy(AudioVoiceData voice)
+    internal void Destroy(DemoVoiceData voice)
     {
         VerifyVoice(voice);
         voice.Playing = false;
@@ -53,7 +53,7 @@ public sealed class AudioBackend
     internal void Close()
     {
         VerifyOwner();
-        foreach (AudioVoiceData voice in _voices)
+        foreach (DemoVoiceData voice in _voices)
         {
             voice.Destroyed = true;
             voice.Playing = false;
@@ -73,11 +73,11 @@ public sealed class AudioBackend
     {
         if (!_initialized || _threadId != Environment.CurrentManagedThreadId)
         {
-            throw new InvalidOperationException("Audio operations require the device creation thread.");
+            throw new InvalidOperationException("Demo operations require the device creation thread.");
         }
     }
 
-    private void VerifyVoice(AudioVoiceData voice)
+    private void VerifyVoice(DemoVoiceData voice)
     {
         VerifyOwner();
         if (voice.Owner != this || voice.Destroyed || !_voices.Contains(voice))
