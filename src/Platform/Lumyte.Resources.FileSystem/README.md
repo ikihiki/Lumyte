@@ -29,7 +29,9 @@ limits. Stream sessions must be reopened by their consumer after a fault.
 This is best-effort change detection, not an atomic immutable snapshot. Changes
 preserving all observed metadata can go undetected, including replacements with
 identical metadata. Timestamp-only edits can trigger unnecessary reloads.
-Writers are not blocked; no historical bytes are retained. An already decoded
+Readers allow read, write and delete sharing. Whether replacement of an open
+destination succeeds or is atomic depends on the OS and filesystem.
+No historical bytes are retained. An already decoded
 resource or GPU lease keeps its constructed data, but an old descriptor or
 streaming factory cannot guarantee continued reads from the old file.
 

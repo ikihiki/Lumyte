@@ -21,7 +21,7 @@ Sourceはconstructorで不変の構成を受け取る。DIではoptionsを登録
 
 `FileResourceSource` はroot内の元ファイルを直接開く。`OpenSnapshotAsync` が返すsnapshotは、観測した長さ・作成時刻・最終更新時刻を保持する入力descriptorである。Revisionはこの三値からなる不透明なtokenとし、呼び出し側は内容を解釈せず比較だけに使う。`GetRevisionAsync` はpayloadを読まずに同じメタデータを確認し、ファイルが存在しなければnullを返す。
 
-readerは `FileShare.ReadWrite | FileShare.Delete` で開き、writerやatomic replacementを妨げない。reader開始時と各readの前後に、開いたhandleと現在のpathのメタデータをdescriptorと比較する。変更・置換・削除を検出した場合は `IOException` 系の例外で失敗する。観測した範囲の途中で予期しない終端に達した場合も `EndOfStreamException` とする。
+readerは `FileShare.ReadWrite | FileShare.Delete` で開き、読み書き・削除・renameの共有を許可する。開かれた宛先への上書きなど、置換操作の可否と原子性はOSとファイルシステムに依存する。reader開始時と各readの前後に、開いたhandleと現在のpathのメタデータをdescriptorと比較する。変更・置換・削除を検出した場合は `IOException` 系の例外で失敗する。観測した範囲の途中で予期しない終端に達した場合も `EndOfStreamException` とする。
 
 失敗したreadはdestinationを変更している場合があるため、呼び出し側はその内容を使用してはならない。再試行する場合は新descriptorを取得し、構築または読み込み操作全体をやり直す。構築済みのCPU/GPU出力をLeaseで保持することと、元ファイルの旧内容を保持することは別の契約である。
 

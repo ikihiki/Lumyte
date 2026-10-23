@@ -21,7 +21,10 @@ public sealed class FileResourceSourceTests
         Assert.Equal(snapshot.Revision, await source.GetRevisionAsync(id));
         string replacement = Path.Combine(files.Root, "replacement.bin");
         await File.WriteAllTextAsync(replacement, "new source");
-        File.Move(replacement, files.AssetPath, true);
+
+        // Keep the old handle open without requiring the OS to overwrite an open destination.
+        File.Move(files.AssetPath, Path.Combine(files.Root, "previous.bin"));
+        File.Move(replacement, files.AssetPath);
         Assert.NotEqual(snapshot.Revision, await source.GetRevisionAsync(id));
         await Assert.ThrowsAnyAsync<IOException>(async () => await snapshot.OpenReadAsync());
         Assert.ThrowsAny<IOException>(() => reader.ReadByte());
