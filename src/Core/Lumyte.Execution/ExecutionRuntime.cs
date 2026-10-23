@@ -769,9 +769,13 @@ public sealed partial class ExecutionRuntime
                 }
 
                 thread.PhysicalThread?.Join();
-                thread.PhysicalThread = null;
-                thread.Wake?.Dispose();
-                thread.Wake = null;
+                lock (Sync)
+                {
+                    // Notifications use the same lock until shutdown is published.
+                    thread.PhysicalThread = null;
+                    thread.Wake?.Dispose();
+                    thread.Wake = null;
+                }
             }
 
             lock (Sync)

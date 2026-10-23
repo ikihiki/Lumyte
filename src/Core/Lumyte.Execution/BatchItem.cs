@@ -12,7 +12,7 @@ internal abstract class BatchItem(WorkDefinition definition) : QueuedWork(defini
 
     internal override bool IsCanceled => Run!.IsCancellationRequested;
 
-    internal override void Finish(Exception? error)
+    internal override bool Finish(Exception? error)
     {
         if (error is null)
         {
@@ -24,6 +24,7 @@ internal abstract class BatchItem(WorkDefinition definition) : QueuedWork(defini
         }
 
         Run!.ItemFinished(error, CanceledBeforeStart);
+        return false;
     }
 
     internal abstract void Clear();
