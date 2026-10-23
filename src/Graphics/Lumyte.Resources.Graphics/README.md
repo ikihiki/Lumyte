@@ -23,7 +23,7 @@ services.AddResourceGraphics("scene", "main", "graphics.main");
 GPU Stageはconstructorにdeviceを保持せず、構築contextの選択済みRuntimeを使います。
 
 ```csharp
-var runtime = (GraphicsResourceRuntime)context.Runtime;
+// BuildAsyncのGraphicsResourceRuntime runtime引数を使用する。
 GraphicsDeviceLease epoch = await runtime.AcquireAsync(
     context, cancellationToken: cancellationToken);
 IGraphicDevice device = epoch.Device;

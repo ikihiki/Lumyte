@@ -1,10 +1,9 @@
 namespace Lumyte.Resources.Graphics.Tests;
 
-internal sealed class ReadbackStage : IResourceSourceStage<ReadbackValue>
+internal sealed class ReadbackStage : IResourceSourceStage<ReadbackValue, GraphicsResourceRuntime>
 {
-    public async ValueTask<ReadbackValue> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+    public async ValueTask<ReadbackValue> BuildAsync(GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
     {
-        var runtime = (GraphicsResourceRuntime)context.Runtime;
         await runtime.AcquireAsync(context, ResourceDependencyLifetime.Build, cancellationToken);
         return new(runtime);
     }
