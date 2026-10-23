@@ -4,12 +4,12 @@ namespace Lumyte.Resources;
 /// <remarks>Use and disposal of the same scope must not overlap.</remarks>
 public sealed class ResourceReadScope : IDisposable
 {
-    private readonly IResourceReadView _view;
-    private Action? _release;
+    private readonly Dictionary<ResourceNode, ResourceGeneration> _map;
+    private ResourceManager? _manager;
 
-    internal ResourceReadScope(ulong publicationVersion, IResourceReadView view, Action release)
+    internal ResourceReadScope(ResourceManager manager, ulong publicationVersion, Dictionary<ResourceNode, ResourceGeneration> map)
     {
-        (PublicationVersion, _view, _release) = (publicationVersion, view, release);
+        (_manager, PublicationVersion, _map) = (manager, publicationVersion, map);
     }
 
     /// <summary>Gets the publication version captured when this scope was opened.</summary>
@@ -24,10 +24,11 @@ public sealed class ResourceReadScope : IDisposable
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
         where T : class
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _release) is null, this);
-        return _view.TryAcquire(handle, out lease);
+        ResourceManager? manager = Volatile.Read(ref _manager);
+        ObjectDisposedException.ThrowIf(manager is null, this);
+        return manager.TryAcquireFromView(handle, _map, out lease);
     }
 
     /// <summary>Returns the view's protection once without invalidating leases already issued from it.</summary>
-    public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    public void Dispose() => Interlocked.Exchange(ref _manager, null)?.ReturnReadView(_map);
 }

@@ -9,5 +9,5 @@ internal abstract class GraphNode<TContext>(ExecutionRuntime runtime)
 
     internal abstract int WorkerCount(int length, int concurrency);
 
-    internal abstract QueuedWork[] Create(GraphState<TContext> state, int node, int length, int workers);
+    internal abstract void Create(GraphState<TContext> state, int node, int length, Span<QueuedWork> workers);
 }

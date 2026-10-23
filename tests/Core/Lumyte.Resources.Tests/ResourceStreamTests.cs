@@ -13,6 +13,9 @@ public sealed class ResourceStreamTests
     private static readonly MemoryPoolId _cpu = new("cpu");
     private static readonly ResourceStreamOptions _options = new() { BlockSize = 4, MaxBufferedBlocks = 2 };
 
+    [ThreadStatic]
+    private static bool _readingAvailable;
+
     /// <summary>Each session has its own cursor and prefetching stops at the configured buffer bound.</summary>
     /// <returns>Completion of the independent-reader checks.</returns>
     [Fact]
@@ -174,6 +177,98 @@ public sealed class ResourceStreamTests
         Assert.Equal(0L, difference);
         Assert.Equal(calls, harness.Settings.ReadCalls);
         Assert.Equal(9UL, session.Position);
+    }
+
+    /// <summary>Releasing a full block wakes prefetching without calling the reader inline.</summary>
+    /// <returns>Completion of the producer notification checks.</returns>
+    [Fact]
+    public async Task ReleasingBlockWakesProducerWithoutInlineReaderAsync()
+    {
+        var settings = new StreamSettings
+        {
+            PauseAt = 4,
+            OnRead = () => Assert.False(_readingAvailable),
+        };
+        await using var harness = new StreamHarness(settings);
+        var options = new ResourceStreamOptions { BlockSize = 4, MaxBufferedBlocks = 1 };
+        await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
+        int[] destination = new int[4];
+        try
+        {
+            _readingAvailable = true;
+            Assert.Equal(4, session.ReadAvailable(destination));
+        }
+        finally
+        {
+            _readingAvailable = false;
+        }
+
+        await settings.Paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(2, settings.ReadCalls);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, destination);
+        settings.Continue.TrySetResult();
+        Assert.Equal(4, await session.ReadAsync(destination));
+        Assert.Equal(new[] { 4, 5, 6, 7 }, destination);
+    }
+
+    /// <summary>Notifying a waiting producer reuses its work item on the callback path.</summary>
+    /// <returns>Completion of the callback allocation checks.</returns>
+    [Fact]
+    public async Task ReleasingBlockDoesNotAllocateOnConsumerAsync()
+    {
+        await using var harness = new StreamHarness(new StreamSettings());
+        var options = new ResourceStreamOptions { BlockSize = 4, MaxBufferedBlocks = 1 };
+        await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
+        int[] destination = new int[4];
+        long difference = 0;
+        for (int iteration = -32; iteration < 64; iteration++)
+        {
+            await session.SeekAsync(0);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            int count = session.ReadAvailable(destination);
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            if (iteration >= 0)
+            {
+                difference += allocated;
+            }
+
+            Assert.Equal(4, count);
+        }
+
+        Assert.Equal(0L, difference);
+    }
+
+    /// <summary>A single-block ring repeatedly resumes its producer without losing notifications.</summary>
+    /// <returns>Completion of the single-block ordering checks.</returns>
+    [Fact]
+    public async Task SingleBlockWakeupsPreserveSequenceAsync()
+    {
+        await using var harness = new StreamHarness(new StreamSettings { Length = 1024 });
+        var options = new ResourceStreamOptions { BlockSize = 1, MaxBufferedBlocks = 1 };
+        await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        int[] destination = new int[1];
+        for (int expected = 0; expected < 1024; expected++)
+        {
+            Assert.Equal(1, await session.ReadAsync(destination, timeout.Token));
+            Assert.Equal(expected, destination[0]);
+        }
+
+        Assert.Equal(0, await session.ReadAsync(destination, timeout.Token));
+        Assert.True(session.EndOfStream);
+    }
+
+    /// <summary>Stopping a producer waiting for space does not require consumption to wake it.</summary>
+    /// <returns>Completion of the full-buffer shutdown checks.</returns>
+    [Fact]
+    public async Task FullBufferDisposalStopsWithoutConsumptionAsync()
+    {
+        await using var harness = new StreamHarness(new StreamSettings());
+        ResourceStreamSession<int> session = await harness.OpenAsync();
+        Assert.Equal(8, harness.Settings.ElementsRead);
+        await session.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(1, harness.Settings.ReadersDisposed);
+        Assert.Equal(0UL, harness.Memory.GetSnapshot(_cpu).CommittedBytes);
     }
 
     /// <summary>Seeking discards prefetched elements and resets the public position independently.</summary>
@@ -452,7 +547,13 @@ public sealed class ResourceStreamTests
 
         public TaskCompletionSource? DisposeGate { get; init; }
 
-        public void ReadStarted() => Interlocked.Increment(ref _readCalls);
+        public Action? OnRead { get; init; }
+
+        public void ReadStarted()
+        {
+            Interlocked.Increment(ref _readCalls);
+            OnRead?.Invoke();
+        }
 
         public void ElementsProduced(int count) => Interlocked.Add(ref _elementsRead, count);
 

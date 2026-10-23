@@ -481,6 +481,11 @@ public sealed partial class ResourceManager
 
     private void AddEdge(ResourceBuildView view, ResourceNode from, ResourceNode to)
     {
+        if (view.Edges[from].Contains(to))
+        {
+            return;
+        }
+
         HashSet<ResourceNode> visited = [];
         List<ResourceNode> path = [];
         if (FindPath(view, to, from, visited, path))
