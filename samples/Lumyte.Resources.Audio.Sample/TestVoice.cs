@@ -10,27 +10,31 @@ internal sealed class TestVoice(TestDevice device, TestClip clip) : IAudioVoice
 
     public bool Loop { get; set; }
 
+    internal TestDevice Device => device;
+
+    internal TestClip Clip => clip;
+
     public void Play()
     {
-        device.Verify();
+        device.VerifyAvailable();
         State = AudioPlaybackState.Playing;
     }
 
     public void Pause()
     {
-        device.Verify();
+        device.VerifyAvailable();
         State = AudioPlaybackState.Paused;
     }
 
     public void Stop()
     {
-        device.Verify();
+        device.VerifyAvailable();
         State = AudioPlaybackState.Stopped;
     }
 
     public void Dispose()
     {
-        device.Verify();
+        device.VerifyVoiceRelease();
         clip.Borrowers--;
         device.ReturnVoice();
     }
