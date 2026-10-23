@@ -82,7 +82,7 @@ chargeを返します。StbImageSharp内部の一時配列、JSON内部構造、
 解放後にリソース用poolの計上が0へ戻ることを確認します。
 
 CPU Stageは共有の既定Runtimeを使い、GpuTexture・GpuMesh・GpuSceneには登録時にGraphicsResourceRuntimeを割り当てます。
-GPU Stageは `context.Runtime` から選択済み環境を取得し、`AcquireAsync` で構築ごとの物理デバイス世代への依存を登録します。
+GPU生成Stageは `IResourceTransform<TInput, TOutput, GraphicsResourceRuntime>` を宣言して型付きRuntime引数で選択済み環境を受け取り、`AcquireAsync` で構築ごとの物理デバイス世代への依存を登録します。
 生成時にdeviceを捕捉し、解放時にLostならそのepochのretirementを待ちます。
 転送用のstaging・command・submissionはBuild cleanupが保持し、正常時は構築完了で解放します。
 退役確認や解放に失敗した場合も子資源とdevice leaseを保持し、ManagerのTrimAsyncで再試行できます。

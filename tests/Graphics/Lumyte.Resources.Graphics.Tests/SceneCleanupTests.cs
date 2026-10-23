@@ -164,11 +164,10 @@ public sealed class SceneCleanupTests
 
     private sealed record SceneOutput(TestDevice Device, GraphicsDeviceLease Lease, NativeChild First, NativeChild Second);
 
-    private sealed class SceneStage(CleanupState state) : IResourceSourceStage<SceneOutput>
+    private sealed class SceneStage(CleanupState state) : IResourceSourceStage<SceneOutput, GraphicsResourceRuntime>
     {
-        public async ValueTask<SceneOutput> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+        public async ValueTask<SceneOutput> BuildAsync(GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
         {
-            var runtime = (GraphicsResourceRuntime)context.Runtime;
             GraphicsDeviceLease lease = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
             var device = (TestDevice)lease.Device;
             var resident = NativeResources.Attach(context, runtime, lease);

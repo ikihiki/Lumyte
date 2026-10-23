@@ -5,15 +5,14 @@ using Lumyte.Resources.Graphics;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
-internal sealed class TextureUploadStage : IResourceTransform<CpuImage, GpuTexture>
+internal sealed class TextureUploadStage : IResourceTransform<CpuImage, GpuTexture, GraphicsResourceRuntime>
 {
     public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
 
     public ResourceAddress GetInput(ResourceAddress output) => output;
 
-    public async ValueTask<GpuTexture> BuildAsync(CpuImage input, ResourceBuildContext context, CancellationToken cancellationToken)
+    public async ValueTask<GpuTexture> BuildAsync(CpuImage input, GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
     {
-        var runtime = (GraphicsResourceRuntime)context.Runtime;
         GraphicsDeviceLease lease = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
         IGraphicDevice device = lease.Device;
         var native = NativeResources.Attach(context, runtime, lease);

@@ -5,18 +5,17 @@ using Lumyte.Resources.Graphics;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
-internal sealed class MeshUploadStage : IResourceTransform<CpuMesh, GpuMesh>
+internal sealed class MeshUploadStage : IResourceTransform<CpuMesh, GpuMesh, GraphicsResourceRuntime>
 {
     public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
 
     public ResourceAddress GetInput(ResourceAddress output) => output;
 
-    public async ValueTask<GpuMesh> BuildAsync(CpuMesh input, ResourceBuildContext context, CancellationToken cancellationToken)
+    public async ValueTask<GpuMesh> BuildAsync(CpuMesh input, GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
     {
         GpuTexture texture = await context.RequireAsync(new ResourceKey<GpuTexture>(input.Material.Texture.Id), cancellationToken: cancellationToken);
         ShaderArtifact vertexArtifact = await context.RequireAsync(new ResourceKey<ShaderArtifact>("shaders/vertex"), ResourceDependencyLifetime.Build, cancellationToken);
         ShaderArtifact fragmentArtifact = await context.RequireAsync(new ResourceKey<ShaderArtifact>("shaders/fragment"), ResourceDependencyLifetime.Build, cancellationToken);
-        var runtime = (GraphicsResourceRuntime)context.Runtime;
         GraphicsDeviceLease lease = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
         IGraphicDevice device = lease.Device;
         var native = NativeResources.Attach(context, runtime, lease);
