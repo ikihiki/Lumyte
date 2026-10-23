@@ -8,7 +8,7 @@ Stageは`RequireAsync`で依存を追加し、`OpenSourceAsync`で観測した�
 Build依存は構築後、Resident依存は親の解放後に返します。
 Memory scopeはmanagerが所有し、出力・cleanup・snapshot・memory・依存の順に解放します。
 解放失敗は所有を保持して`TrimAsync`で再試行します。
-SourceとStageはDI scopeから借用します。利用権を返してからmanagerを閉じます。
+Source・Stage・実行Runtimeは借用します。利用権を返し、managerを閉じてから実行Runtimeを停止します。
 
 設計判断は[ADR-RESOURCES-0001](../../../docs/adr/resources/RESOURCES-0001-typed-pipelines.md)を参照してください。
 
@@ -34,17 +34,31 @@ producer・reader・buffer/scope・factory leaseの順で終了し、失敗し�
 ## DIを使わない構築
 
 `IResourceSourceStage<T>`と`IResourceTransform<TInput, TOutput>`は共通の`IResourceStage`を実装します。
-Stage instanceを直接渡せるため、Pipelineラッパーは不要です。Source・Stage・Memoryは借用であり、
-managerを閉じるまで呼び出し側が保持します。一つのStage instanceは一つの出力型を担当します。
+Stage instanceを直接渡せるため、Pipelineラッパーは不要です。一つのStage instanceは一つの出力型を担当します。
+Source・Stage・Memory・IResourceRuntimeは借用であり、managerを閉じるまで呼出側が保持します。
+既定のResourceRuntimeをExecutionRuntimeのmodule集合へ登録し、起動してからロードします。
 
 ```csharp
-await using var manager = new ResourceManager(
-    "assets", source,
-    [new DocumentStage(), new MeshStage(), new UploadStage(deviceService)], memory);
+var resourceRuntime = new ResourceRuntime();
+var execution = new ExecutionRuntime([resourceRuntime]);
+execution.PrepareOnCurrentHost(
+    OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
+await execution.StartAsync();
+
+await using (var manager = new ResourceManager(
+    "assets", source, [new DocumentStage(), new MeshStage()], memory, resourceRuntime))
+{
+    using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
+    using ResourceLease<Mesh> lease = mesh.Acquire();
+    Consume(lease.Value);
+}
+
+await execution.StopAsync();
 ```
 
 型付きインターフェースの既定実装が主入力の取得と型付き呼び出しを行います。
 DI登録も同じStageを直接渡し、必要なサービスをコンストラクターへ注入します。
+[既定Runtime](../Lumyte.Resources.Execution/README.md)と[DI登録](../Lumyte.Resources.DependencyInjection/README.md)も参照してください。
 
 ## リロードの範囲
 
@@ -59,34 +73,41 @@ Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返しま�
 Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
 複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`で取得した`ResourceSnapshot`を`reference.Acquire(snapshot)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
-HotReloadは新世代を別に公開するため、利用中のLeaseの値は切り替わりません。
+HotReloadは新世代を別に公開するため、取得済みLeaseは取得時の値とRevisionを保持します。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。
 
 ## 自動変更監視
 
 ```csharp
 // sourceがStreamと、その取得元に対応するChangesを提供する。
+// resourceRuntimeは前述の手順で起動済みのExecutionRuntimeへ登録する。
 await using var manager = new ResourceManager(
-    "assets", source, stages, memory);
+    "assets", source, stages, memory, resourceRuntime);
 using ResourceReference<MyResource> reference = await manager.AcquireAsync(
     new ResourceKey<MyResource>("asset.bin"));
 // ファイル編集などの通知で、Managerが必要な依存と親だけを再構築する。
 using ResourceLease<MyResource> frame = reference.Acquire();
 ```
 
-`IResourceSource.Changes`が通知元を返すと、Managerがその監視を自動開始します。Streamを開く取得元と監視先の対応はSourceが保証します。Changesの既定値はnullで、不変なDLL埋め込みなどではworkerを開始しません。Managerは`IResourceWatchTargets`としてロード中・公開中の入力ID集合を監視側へ渡します。各集合は不変で、次回取得時に最新となります。`ResourceReloadService`は通知をまとめ、IDの重複を除いてHotReloadします。連続更新で待機し続けないよう集約時間に上限を設け、再構築中に届いた通知も次のバッチへ保持します。保留できるID数を超えた場合や`ResourceSourceChange.Rescan`を受信した場合は、追跡中の入力をすべて再確認します。
+`IResourceSource.Changes`が通知元を返すと、Managerがその監視を自動開始します。Streamを開く取得元と監視先の対応はSourceが保証します。Changesの既定値はnullで、不変なDLL埋め込みなどでは監視を開始しません。Managerは`IResourceWatchTargets`としてロード中・公開中の入力ID集合を監視側へ渡します。各集合は不変で、次回取得時に最新となります。`ResourceReloadService`は通知をまとめ、IDの重複を除いてHotReloadします。連続更新で待機し続けないよう集約時間に上限を設け、再構築中に届いた通知も次のバッチへ保持します。保留できるID数を超えた場合や`ResourceSourceChange.Rescan`を受信した場合は、追跡中の入力をすべて再確認します。
 
 `Conflict`と構築・入力読み取りの失敗は、設定された間隔・上限回数で再試行します。失敗時は旧公開値を維持し、再試行を使い切った後も新しい通知は受け付けます。`LastResult`・`LastError`と`Reloaded`・`ReloadFailed`で経過を確認でき、監視列挙自体の失敗は`Completion`へ伝わります。イベントはバックグラウンド処理上で実行されるため、UIなどへの配送は利用側で行います。
 
-DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終了時に監視と進行中の自動再構築をキャンセルしてjoinしてからリソースを解放します。利用側の`Start`／`StopAsync`は不要です。`manager.HotReload`から結果・失敗・`Completion`を観測できます。通知元はSourceに属し、Managerは購読の寿命を管理します。実ファイルSourceの監視対応は後続PRで追加します。`ConfigureHotReload(new() { Enabled = false })`で購読を無効にでき、DIを使わない場合はconstructorの`reloadOptions`へ設定します。複合SourceではStreamの振り分けと同じ規則で監視対象を振り分けてください。
+DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終了時に監視と進行中の自動再構築をキャンセルしてjoinしてからリソースを解放します。HotReload専用の`Start`／`StopAsync`は不要ですが、ExecutionRuntimeは先に起動し、Managerの解放後に停止します。`manager.HotReload`から結果・失敗・`Completion`を観測できます。通知元はSourceに属し、Managerは購読の寿命を管理します。`ConfigureHotReload(new() { Enabled = false })`で購読を無効にでき、DIを使わない場合はconstructorの`reloadOptions`へ設定します。複合SourceではStreamの振り分けと同じ規則で監視対象を振り分けてください。
 
 ## Runtimeと非同期ロード
 
-非同期I/O → Executionの型付きCPUジョブ → 各モジュールの所有スレッドで生成完了 → 公開の順で進めます。
-各モジュールのStageが実行先を選び、Runtimeの世代依存を記録します。
-Host/Cooperative配置では同じ処理をホストへ統合します。
-Runtimeのversion・失効・provider identityを記録し、公開前に再検証します。
-初回ロードとHotReloadは同じStageと実行経路を使用します。
-監視停止とリソース解放を完了してからExecutionRuntimeを停止してください。
+ResourceManagerは初回ロード・再構築・出力解放を`IResourceRuntime`へ渡します。
+既定の`ResourceRuntime`がStageの開始とawait継続をExecutionのジョブへ送り、Stageは実行基盤を参照しません。
+I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
+StageとCPU処理を含む補助メソッドは通常の`await`を使い、同期区間を有限に保ちます。
+`ConfigureAwait(false)`やTask.Runで逃がした処理はスケジューラーの保証対象外です。
+Host/Cooperativeでは同じ処理をPumpで進め、非同期待機中もホストのループを止めません。
+
+Audio・GraphicsのRuntime依存は実行Runtimeとは別に、provider identity・version・失効を記録して公開前に再検証します。
+Stageは構築ごとに現在のdevice世代を借り、生成・解放を各モジュールの所有スレッドへ配送します。
+既定の実行Runtimeはdeviceを保持しません。
+初回ロードと変更後の再構築は同じStageと実行経路を使います。
+監視と新規ロードを止め、リソース解放を完了してからExecutionRuntimeを停止してください。
 
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。

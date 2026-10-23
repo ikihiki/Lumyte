@@ -1,9 +1,9 @@
 # Lumyte.Resources.Audio
 
-ResourcesのRuntimeを既存のAudioModuleと接続します。
+既定のResourceRuntimeがAudioのStageをCPUジョブへ配送し、AudioResourceRuntimeが生成と解放をAudioModuleの所有スレッドへ接続します。
 初回ロードとHotReloadのどちらも同じStageを使用します。
 
-- AudioDecodeStage: Sourceの非同期I/O → AudioDecodeHandlerのCPUジョブ → AudioPcmData。
+- AudioDecodeStage: 既定RuntimeのCPUジョブでSourceの非同期I/Oを待ち、WAVEをデコードしてAudioPcmDataを返す。
 - AudioClipStage: AudioResourceRuntimeで現在のdevice世代を取得 → 型付きAudioDeviceコマンド → 所有スレッドでclip生成。
 - AudioVoiceStage: 同じ手順で世代を取得し、clipの生成元との一致を確認してvoice生成。
 - 解放: voice → clipの順で、生成済みのCleanupコマンドを所有スレッドへ配送。
@@ -21,12 +21,26 @@ StageのReleaseAsyncが子資源を解放した後にleaseを返し、解放失�
 
 DIは[Audio専用の登録API](../Lumyte.Resources.Audio.DependencyInjection/README.md)から行います。
 `services.AddAudioResources<TSource>("audio")`が本体のSource→PCM→Clip→VoiceとRuntimeを接続します。
-DIなしでは`AudioModule`、`AudioResourceRuntime`、`ResourceJob<AudioDecodeRequest, AudioPcmData, AudioDecodeHandler>`を
-同じExecutionRuntimeへ渡し、`AudioDecodeStage`・`AudioClipStage`・`AudioVoiceStage`と同じRuntimeをResourceManagerへ渡します。
+DIなしでは`AudioModule`、`AudioResourceRuntime`、汎用の`ResourceRuntime`を同じExecutionRuntimeへ渡します。
+ResourceManagerの実行先にはResourceRuntimeを、device世代の依存先にはAudioResourceRuntimeを渡します。
+
+```csharp
+var audio = new AudioModule();
+var audioResources = new AudioResourceRuntime(audio);
+var runtime = new ResourceRuntime();
+var execution = new ExecutionRuntime([audio, audioResources, runtime]);
+var resources = new ResourceManager("audio", source,
+    [new AudioDecodeStage(), new AudioClipStage(audioResources), new AudioVoiceStage(audioResources)],
+    memory, runtime, [audioResources]);
+```
+
 復旧やスレッド制約の検証は[結合テスト](../../../tests/Audio/Lumyte.Resources.Audio.IntegrationTests/README.md)にあります。
 
 Host配置ならAudioコマンドはホストへ統合され、CPU処理もCooperativeでPumpします。
 Dedicated配置ならAudioの所有スレッドとCPUワーカーを使います。
+StageのBuildAsync・ReleaseAsyncと通常のawait後の継続は汎用Runtimeが配送し、I/O待ちの間はCPU実行枠を返します。
+Stageの通常のawaitはRuntimeが設定した実行先へ戻ります。
+ConfigureAwait(false)はこの配送から外れるため、Stage内では使用しません。
 同期的な所有スレッド待機や、フレームごとのAudio更新配送は行いません。
 
 HotReloadは新しいclip・voiceを同じ所有スレッドで構築し、検証後に一括公開します。
