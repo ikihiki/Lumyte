@@ -24,7 +24,6 @@ public sealed partial class ExecutionRuntime
         where TContext : struct
     {
         VerifyOutsideHandler();
-        ArgumentNullException.ThrowIfNull(graph);
         token.ThrowIfCancellationRequested();
         if (graph.Nodes[0].Runtime != this)
         {

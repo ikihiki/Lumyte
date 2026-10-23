@@ -75,8 +75,6 @@ public sealed class ModuleBuilder
         where THandler : ICommandHandler<TCommand, TResult>
     {
         ClaimName(name);
-        ArgumentNullException.ThrowIfNull(handler);
-        ArgumentNullException.ThrowIfNull(options);
         if (!options.Target.IsValid || !Enum.IsDefined(options.Admission))
         {
             throw new ArgumentException("Invalid work options.", nameof(options));
@@ -111,7 +109,6 @@ public sealed class ModuleBuilder
         where THandler : IRangeWorkHandler<TContext>
     {
         ClaimName(name);
-        ArgumentNullException.ThrowIfNull(handler);
         var range = new TypedRangeDefinition<TContext, THandler>(_module, name, handler);
         _module.Runtime.RangeClearers.Add(range.Clear);
         return new RangeWorkKey<TContext>(range);
@@ -128,7 +125,6 @@ public sealed class ModuleBuilder
         where THandler : IUpdateHandler
     {
         ClaimName(name);
-        ArgumentNullException.ThrowIfNull(handler);
         var update = new TypedUpdateDefinition<THandler>(_module, name, Verify(owner.Definition), Gates(requiredGates), handler);
         _module.Runtime.Updates.Add(update);
         return new UpdateKey(update);
