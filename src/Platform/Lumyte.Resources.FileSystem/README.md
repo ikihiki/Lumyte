@@ -44,4 +44,4 @@ root directory tree. These portable checks are not atomic with opening and are
 not a security boundary against hostile directory replacement. `ResourceId`
 rejects absolute paths, parent traversal and alternate data stream names.
 
-[ADR-RESOURCES-0004](../../../docs/adr/resources/RESOURCES-0004-source-access.md)を参照してください。
+[ADR-RESOURCES-0006](../../../docs/adr/resources/RESOURCES-0006-source-access.md)を参照してください。
