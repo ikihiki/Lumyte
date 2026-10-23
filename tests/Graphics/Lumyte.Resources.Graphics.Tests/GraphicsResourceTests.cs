@@ -20,6 +20,7 @@ public sealed class GraphicsResourceTests
     {
         var state = new GraphicsTestState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -57,6 +58,7 @@ public sealed class GraphicsResourceTests
     {
         var state = new GraphicsTestState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -80,6 +82,7 @@ public sealed class GraphicsResourceTests
             BuildWait = new(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -108,6 +111,7 @@ public sealed class GraphicsResourceTests
     {
         var state = new GraphicsTestState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
@@ -134,6 +138,7 @@ public sealed class GraphicsResourceTests
     {
         var state = new GraphicsTestState();
         await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         await using AsyncServiceScope other = provider.CreateAsyncScope();
         IGraphicsDeviceService registered = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
