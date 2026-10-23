@@ -69,7 +69,7 @@ public sealed partial class ResourceManager
 
             if (_externalOwners != 0 || _operations != 0 || _loads.Count != 0)
             {
-                throw new InvalidOperationException("Return resource leases and complete all operations before disposing the manager.");
+                throw new InvalidOperationException("Return resource references, leases and resource snapshots, and complete all operations before disposing the manager.");
             }
 
             _closing = true;
@@ -336,6 +336,32 @@ public sealed partial class ResourceManager
     private void SetPublished(Dictionary<ResourceNode, ResourceGeneration> updated)
     {
         ulong version = checked(_publicationVersion + 1);
+        foreach (ResourceSlot slot in _slots)
+        {
+            if (slot.References == 0)
+            {
+                continue;
+            }
+
+            ResourceGeneration? replacement = updated.GetValueOrDefault(slot.Node);
+            if (ReferenceEquals(slot.Current, replacement))
+            {
+                continue;
+            }
+
+            if (slot.Current is { } previous)
+            {
+                previous.Pins -= slot.References;
+            }
+
+            if (replacement is not null)
+            {
+                replacement.Pins += slot.References;
+            }
+
+            slot.Current = replacement;
+        }
+
         _published = updated;
         _publicationVersion = version;
     }
@@ -343,7 +369,7 @@ public sealed partial class ResourceManager
     private void PruneMetadata()
     {
         HashSet<ResourceNode> reachable = [];
-        Stack<ResourceNode> pending = new(_published.Keys
+        Stack<ResourceNode> pending = new(_published.Keys.Concat(_slotByKey.Keys)
             .Concat(_loads.Keys).Concat(_generations.Select(static generation => generation.Node)));
         while (pending.TryPop(out ResourceNode node))
         {

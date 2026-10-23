@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Typed resource pipelines, shared dependency graphs and scoped ownership.</Description>
+    <Description>Resource pipelines, dependency tracking, generations and bounded streaming.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Lumyte.Memory/Lumyte.Memory.csproj" />

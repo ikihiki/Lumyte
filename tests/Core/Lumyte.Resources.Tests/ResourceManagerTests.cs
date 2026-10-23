@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
@@ -24,8 +25,8 @@ public sealed class ResourceManagerTests
             .AddTransformPipeline<CpuValue, TestValue, UploadStage>());
         fixture.Source.Set("asset", "encoded");
 
-        using ResourceLease<TestValue> first = await fixture.Manager.AcquireAsync(Key("gpu"));
-        using ResourceLease<TestValue> second = await fixture.Manager.AcquireAsync(Key("gpu"));
+        using ResourceLease<TestValue> first = await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu"));
+        using ResourceLease<TestValue> second = await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu"));
         Assert.Same(first.Value, second.Value);
         Assert.Equal("uploaded:decoded:encoded", first.Value.Text);
         Assert.Equal(1, fixture.Source.OpenCount);
@@ -48,8 +49,8 @@ public sealed class ResourceManagerTests
             new FakeSource(store),
             [new DocumentStage(plan), new CpuStage(plan), new UploadStage(plan)],
             memory);
-        using ResourceLease<TestValue> first = await manager.AcquireAsync(Key("value"));
-        using (ResourceLease<TestValue> second = await manager.AcquireAsync(Key("value")))
+        using ResourceLease<TestValue> first = await manager.AcquireLeaseForTestAsync(Key("value"));
+        using (ResourceLease<TestValue> second = await manager.AcquireLeaseForTestAsync(Key("value")))
         {
             Assert.Same(first.Value, second.Value);
             Assert.Equal("uploaded:decoded:initial", first.Value.Text);
@@ -82,7 +83,7 @@ public sealed class ResourceManagerTests
             return new("root", left);
         };
 
-        ResourceLease<TestValue> root = await fixture.Manager.AcquireAsync(Key("root"));
+        ResourceLease<TestValue> root = await fixture.Manager.AcquireLeaseForTestAsync(Key("root"));
         Assert.Equal(1, fixture.Plan.BuildCounts["leaf"]);
         Assert.Equal(0, await fixture.Manager.TrimAsync());
         root.Dispose();
@@ -101,9 +102,9 @@ public sealed class ResourceManagerTests
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Plan.Builds["leaf"] = (_, _) => ValueTask.FromResult(new TestValue("leaf"));
         fixture.Plan.Builds["root"] = (context, token) => context.RequireAsync(Key("leaf"), cancellationToken: token);
-        ResourceLease<TestValue> leaf = await fixture.Manager.AcquireAsync(Key("leaf"));
+        ResourceLease<TestValue> leaf = await fixture.Manager.AcquireLeaseForTestAsync(Key("leaf"));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.AcquireAsync(Key("root")));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("root")));
         Assert.False(leaf.Value.Released);
         Assert.Empty(fixture.Plan.Released);
         leaf.Dispose();
@@ -121,9 +122,9 @@ public sealed class ResourceManagerTests
             .AddTransformPipeline<DocumentValue, CpuValue, MeshProjection>()
             .AddTransformPipeline<DocumentValue, ImageValue, ImageProjection>());
         fixture.Source.Set("asset", "document bytes");
-        using ResourceLease<CpuValue> mesh = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>("asset", "mesh/0", "tangent"));
-        using ResourceLease<CpuValue> other = await fixture.Manager.AcquireAsync(new ResourceKey<CpuValue>("asset", "mesh/0", "position"));
-        using ResourceLease<ImageValue> image = await fixture.Manager.AcquireAsync(new ResourceKey<ImageValue>("asset", "image/1", "linear"));
+        using ResourceLease<CpuValue> mesh = await fixture.Manager.AcquireLeaseForTestAsync(new ResourceKey<CpuValue>("asset", "mesh/0", "tangent"));
+        using ResourceLease<CpuValue> other = await fixture.Manager.AcquireLeaseForTestAsync(new ResourceKey<CpuValue>("asset", "mesh/0", "position"));
+        using ResourceLease<ImageValue> image = await fixture.Manager.AcquireLeaseForTestAsync(new ResourceKey<ImageValue>("asset", "image/1", "linear"));
 
         Assert.Equal("mesh/0:tangent", mesh.Value.Text);
         Assert.Equal("mesh/0:position", other.Value.Text);
@@ -152,9 +153,9 @@ public sealed class ResourceManagerTests
             return new("value");
         };
         using CancellationTokenSource cancellation = new();
-        Task<ResourceLease<TestValue>> cancelled = fixture.Manager.AcquireAsync(Key("value"), cancellation.Token).AsTask();
+        Task<ResourceLease<TestValue>> cancelled = fixture.Manager.AcquireLeaseForTestAsync(Key("value"), cancellation.Token).AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Task<ResourceLease<TestValue>> surviving = fixture.Manager.AcquireAsync(Key("value")).AsTask();
+        Task<ResourceLease<TestValue>> surviving = fixture.Manager.AcquireLeaseForTestAsync(Key("value")).AsTask();
         try
         {
             cancellation.Cancel();
@@ -168,7 +169,7 @@ public sealed class ResourceManagerTests
         }
 
         using ResourceLease<TestValue> lease = await surviving.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceLease<TestValue> cached = await fixture.Manager.AcquireAsync(Key("value"));
+        using ResourceLease<TestValue> cached = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
         Assert.Same(lease.Value, cached.Value);
         Assert.Equal(1, fixture.Plan.BuildCounts["value"]);
     }
@@ -195,8 +196,8 @@ public sealed class ResourceManagerTests
 
         fixture.Plan.Builds["left"] = BuildAsync;
         fixture.Plan.Builds["right"] = BuildAsync;
-        Task<ResourceLease<TestValue>> left = fixture.Manager.AcquireAsync(Key("left")).AsTask();
-        Task<ResourceLease<TestValue>> right = fixture.Manager.AcquireAsync(Key("right")).AsTask();
+        Task<ResourceLease<TestValue>> left = fixture.Manager.AcquireLeaseForTestAsync(Key("left")).AsTask();
+        Task<ResourceLease<TestValue>> right = fixture.Manager.AcquireLeaseForTestAsync(Key("right")).AsTask();
         Exception? failure = await Record.ExceptionAsync(async () =>
             await Task.WhenAll(left, right).WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.NotNull(failure);
@@ -231,7 +232,7 @@ public sealed class ResourceManagerTests
             return ValueTask.CompletedTask;
         };
 
-        ResourceLease<TestValue> lease = await fixture.Manager.AcquireAsync(Key("root"));
+        ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("root"));
         lease.Dispose();
         await Assert.ThrowsAsync<AggregateException>(async () => await fixture.Manager.TrimAsync());
         Assert.Empty(fixture.Plan.Released);
@@ -256,7 +257,7 @@ public sealed class ResourceManagerTests
             Assert.Same(build, resident);
             return new("root", resident);
         };
-        ResourceLease<TestValue> root = await fixture.Manager.AcquireAsync(Key("root"));
+        ResourceLease<TestValue> root = await fixture.Manager.AcquireLeaseForTestAsync(Key("root"));
         Assert.Equal(0, await fixture.Manager.TrimAsync());
         Assert.Equal(1, fixture.Plan.BuildCounts["leaf"]);
         Assert.False(root.Value.Dependency!.Released);
@@ -297,11 +298,11 @@ public sealed class ResourceManagerTests
             return new("value");
         };
 
-        await Assert.ThrowsAsync<AggregateException>(async () => await fixture.Manager.AcquireAsync(Key("value")));
+        await Assert.ThrowsAsync<AggregateException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("value")));
         Assert.Equal(1, completedCleanupCalls);
         Assert.Equal(["value"], fixture.Plan.Released);
         Assert.True(fixture.Memory.GetSnapshot(_cpu).CommittedBytes > 0);
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.AcquireAsync(Key("value")));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("value")));
         Assert.Equal(1, fixture.Plan.BuildCounts["value"]);
 
         cleanupBlocked = false;
@@ -309,7 +310,7 @@ public sealed class ResourceManagerTests
         try
         {
             await retryStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.AcquireAsync(Key("value")));
+            await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("value")));
             Assert.Equal(1, fixture.Plan.BuildCounts["value"]);
             Assert.True(fixture.Memory.GetSnapshot(_cpu).CommittedBytes > 0);
         }
@@ -322,9 +323,112 @@ public sealed class ResourceManagerTests
         Assert.Equal(1, completedCleanupCalls);
         Assert.Equal(["value"], fixture.Plan.Released);
         Assert.Equal(0UL, fixture.Memory.GetSnapshot(_cpu).CommittedBytes);
-        using ResourceLease<TestValue> retry = await fixture.Manager.AcquireAsync(Key("value"));
+        using ResourceLease<TestValue> retry = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
         Assert.Equal(2, fixture.Plan.BuildCounts["value"]);
         Assert.False(retry.Value.Released);
+    }
+
+    /// <summary>A handle resolves to an owning reference and its lease survives returning the last reference.</summary>
+    /// <returns>Completion of handle acquisition and separate reference and lease ownership.</returns>
+    [Fact]
+    public async Task ManagerResolvesHandlesToOwningReferencesAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "value");
+        using ResourceReference<TestValue> first = await fixture.Manager.AcquireAsync(Key("value"));
+        ResourceHandle<TestValue> handle = first.Handle;
+        Assert.True(fixture.Manager.TryAcquire(handle, out ResourceReference<TestValue>? second));
+        using (second)
+        {
+            first.Dispose();
+            Assert.True(second!.IsAvailable);
+            Assert.Equal(handle, second.Handle);
+            using ResourceLease<TestValue> lease = second.Acquire();
+            second.Dispose();
+            Assert.False(fixture.Manager.TryAcquire(handle, out _));
+            Assert.Equal("value", lease.Value.Text);
+            Assert.Equal(0, await fixture.Manager.TrimAsync());
+        }
+
+        Assert.Equal(1, await fixture.Manager.TrimAsync());
+    }
+
+    /// <summary>A captured frame cannot resolve a resource loaded after that frame was opened.</summary>
+    /// <returns>Completion of failed captured acquisition without changing the current reference.</returns>
+    [Fact]
+    public async Task ReferenceRejectsValuesMissingFromCapturedFrameAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "value");
+        using ResourceSnapshot frame = fixture.Manager.CaptureSnapshot();
+        using ResourceReference<TestValue> reference = await fixture.Manager.AcquireAsync(Key("value"));
+        Assert.False(reference.TryAcquire(out ResourceLease<TestValue>? missing, frame));
+        Assert.Null(missing);
+        Assert.Throws<InvalidOperationException>(() => reference.Acquire(frame));
+        using ResourceLease<TestValue> current = reference.Acquire();
+        Assert.Equal("value", current.Value.Text);
+        frame.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => reference.Acquire(frame));
+    }
+
+    /// <summary>A handle is unmanaged and non-owning, and an expired generation cannot resolve after reuse.</summary>
+    /// <returns>Completion of the handle ownership checks.</returns>
+    [Fact]
+    public async Task HandlesAreUnmanagedAndRejectExpiredOrForeignOwnersAsync()
+    {
+        Assert.Equal(16, UnmanagedSize<ResourceHandle<TestValue>>());
+        Assert.False(RuntimeHelpers.IsReferenceOrContainsReferences<ResourceHandle<TestValue>>());
+        await using Fixture fixture = CreatePlannedFixture();
+        await using Fixture other = CreatePlannedFixture();
+        fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
+        using ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("value"));
+        ResourceHandle<TestValue> handle = owner.Handle;
+        ResourceHandle<TestValue> copy = handle;
+        ResourceHandle<CpuValue> wrongType = Unsafe.As<ResourceHandle<TestValue>, ResourceHandle<CpuValue>>(ref copy);
+        using ResourceSnapshot captured = fixture.Manager.CaptureSnapshot();
+        Assert.False(handle.IsDefault);
+        Assert.False(other.Manager.TryAcquireLeaseForTest(copy, out ResourceLease<TestValue>? foreign));
+        Assert.Null(foreign);
+        Assert.False(fixture.Manager.TryAcquireLeaseForTest(default(ResourceHandle<TestValue>), out ResourceLease<TestValue>? empty));
+        Assert.Null(empty);
+        Assert.False(fixture.Manager.TryAcquireLeaseForTest(wrongType, out ResourceLease<CpuValue>? mismatched));
+        Assert.Null(mismatched);
+        Assert.True(fixture.Manager.TryAcquireLeaseForTest(handle, out ResourceLease<TestValue>? lease));
+        using (lease)
+        {
+            owner.Dispose();
+            Assert.False(fixture.Manager.TryAcquireLeaseForTest(copy, out ResourceLease<TestValue>? expired));
+            Assert.Null(expired);
+            Assert.False(captured.TryAcquire(copy, out expired));
+            Assert.Null(expired);
+            Assert.Equal("value", lease!.Value.Text);
+            using ResourceReference<TestValue> replacement = await fixture.Manager.AcquireAsync(Key("value"));
+            Assert.NotEqual(handle, replacement.Handle);
+            Assert.False(fixture.Manager.TryAcquireLeaseForTest(handle, out expired));
+            Assert.True(fixture.Manager.TryAcquireLeaseForTest(replacement.Handle, out ResourceLease<TestValue>? current));
+            current!.Dispose();
+        }
+    }
+
+    /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
+    /// <returns>Completion of the shutdown retries.</returns>
+    [Fact]
+    public async Task ShutdownRejectsReferencesLeasesAndSnapshotsAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
+        ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("value"));
+        ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
+        ResourceSnapshot read = fixture.Manager.CaptureSnapshot();
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());
+        owner.Dispose();
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());
+        lease.Dispose();
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await fixture.Manager.DisposeAsync());
+        read.Dispose();
+        await fixture.Manager.DisposeAsync();
+        await fixture.Manager.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("value")));
     }
 
     /// <summary>The DI scope owns distinct source and stage instances and disposes each service once after its managers.</summary>
@@ -347,11 +451,11 @@ public sealed class ResourceManagerTests
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager first = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first");
         ResourceManager second = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("second");
-        Assert.NotSame(first, second);
+        Assert.NotEqual(first.ManagerId, second.ManagerId);
         Assert.Same(first, scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first"));
-        using (ResourceLease<TestValue> one = await first.AcquireAsync(Key("one")))
-        using (ResourceLease<CpuValue> two = await first.AcquireAsync(new ResourceKey<CpuValue>("asset", "one")))
-        using (ResourceLease<TestValue> other = await second.AcquireAsync(Key("one")))
+        using (ResourceLease<TestValue> one = await first.AcquireLeaseForTestAsync(Key("one")))
+        using (ResourceLease<CpuValue> two = await first.AcquireLeaseForTestAsync(new ResourceKey<CpuValue>("asset", "one")))
+        using (ResourceLease<TestValue> other = await second.AcquireLeaseForTestAsync(Key("one")))
         {
             Assert.NotEqual(one.Value.Text, two.Value.Text);
             Assert.NotEqual(one.Value.Text, other.Value.Text);
@@ -445,6 +549,9 @@ public sealed class ResourceManagerTests
     private static ResourceKey<TestValue> Key(string selector) => new("asset", selector);
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static int UnmanagedSize<T>()
+        where T : unmanaged => Unsafe.SizeOf<T>();
 
     private sealed class Fixture : IAsyncDisposable
     {

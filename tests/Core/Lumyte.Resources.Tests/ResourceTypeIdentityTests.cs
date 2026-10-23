@@ -25,15 +25,15 @@ public sealed class ResourceTypeIdentityTests
         var strings = new ResourceKey<List<string>>(_address);
         Assert.Equal(typeof(List<int>).Name, typeof(List<string>).Name);
         Assert.NotEqual(integers.TypeHandle, strings.TypeHandle);
-        using ResourceLease<List<int>> first = await manager.AcquireAsync(integers);
-        using ResourceLease<List<string>> second = await manager.AcquireAsync(strings);
+        using ResourceLease<List<int>> first = await manager.AcquireLeaseForTestAsync(integers);
+        using ResourceLease<List<string>> second = await manager.AcquireLeaseForTestAsync(strings);
         first.Value.Add(42);
         second.Value.Add("value");
-        using ResourceLease<List<int>> again = await manager.AcquireAsync(integers);
+        using ResourceLease<List<int>> again = await manager.AcquireLeaseForTestAsync(integers);
         Assert.Same(first.Value, again.Value);
         Assert.Equal([42], again.Value);
         Assert.Equal(["value"], second.Value);
-        await Assert.ThrowsAsync<NotSupportedException>(async () => await manager.AcquireAsync(new ResourceKey<string>(_address)));
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await manager.AcquireLeaseForTestAsync(new ResourceKey<string>(_address)));
     }
 
     /// <summary>The same assembly-qualified type name loaded in two contexts identifies two distinct outputs.</summary>
@@ -106,7 +106,7 @@ public sealed class ResourceTypeIdentityTests
     private static async Task<object> AcquireTypedAsync<T>(ResourceManager manager)
         where T : class
     {
-        using ResourceLease<T> lease = await manager.AcquireAsync(new ResourceKey<T>(_address));
+        using ResourceLease<T> lease = await manager.AcquireLeaseForTestAsync(new ResourceKey<T>(_address));
         return lease.Value;
     }
 
