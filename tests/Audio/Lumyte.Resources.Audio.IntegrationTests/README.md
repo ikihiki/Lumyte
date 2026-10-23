@@ -1,32 +1,30 @@
-# Resources Audio Runtime sample
+# Resources Audio integration tests
 
 非同期Source読み込み → 型付きCPUジョブ → 所有スレッドでclip・voice生成 → 公開・再生 → 依存順解放を実行します。
 初期化・生成の実体が完成するまで待機し、キャンセル済みジョブとデコード失敗の非公開も検証します。
 既定のテストbackendは全native操作のスレッドと、voice → clip → deviceの解放順を検証します。
 
 ```sh
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --di
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --host
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --host --di
-ALSOFT_DRIVERS=null dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --openal
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --di
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --host
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --host --di
+ALSOFT_DRIVERS=null dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --openal
 ```
 
 `--openal`は実OpenAL backend、`--host`はAudioとCPUを一つのホストへ統合します。
 各実行は新しいprocessで起動し、生成済みAudioのstatic endpointは一回だけ接続します。
 
-DIありでは、AudioModule・AudioResourceRuntime・ResourceJobをsingleton登録し、IExecutionModuleへ同じ実体を渡します。
-ExecutionRuntimeはDIが収集したModuleを受け取ります。
-AddResourcesでSource・Stageを登録し、AddResourceRuntimeDependencyで同じAudioResourceRuntimeを接続します。
-DIなしでは同じ実体をExecutionRuntimeとResourceManagerのconstructorへ渡します。
-実際の登録コードとホストのPumpは[Program.cs](Program.cs)を参照してください。
+DIありでは本体の`AddAudioResources<TestSource>`を使用します。DIなしでも本体のAudioDecodeStage、
+AudioDecodeHandler、AudioClipStage、AudioVoiceStageを使用し、同じRuntimeをmanagerへ渡します。
+TestSourceはWAVEファイルを供給し、fake backendだけをテスト用に置き換えます。
+登録とPumpは[Program.cs](Program.cs)を参照してください。
 
 ホストはPrepareOnCurrentHost → StartAsyncを進め、開始待ち・ロード待ち・終了待ちの間もPumpを続けます。
-このconsole sampleの同期WaitはPumpを含み、単純なTask.Waitではありません。
+このテスト実行器の同期WaitはPumpを含み、単純なTask.Waitではありません。
 Browserではこの待機ループをコピーせず、ブラウザのフレームループからPumpしながらawaitします。
 Reference・Leaseを返し、ResourceManagerの終了をPumpしてからExecutionRuntimeを停止します。
-`--reload`でSourceの変更通知から同じロード経路を再実行し、voice差し替え・旧Lease保持・不正デコード時の旧公開保持を検証します。
-`--host`・`--di`・`--openal`と組み合わせられます。実ファイルの監視adapterは後続PRです。
+Sourceの変更通知とHotReloadも本体の同じStageを使用します。
 
 `--recover`はテストbackendの出力状態を変更し、一時停止で世代が変わらないこと、ロストによる旧Leaseの失効、復旧失敗後の再試行、`RebuildRuntimeAsync(["Audio"])`による新デバイスへの再構築を検証します。旧clipを新世代へ渡す操作は拒否し、旧Leaseの返却とnative子資源の解放が済むまで旧デバイスを保持します。子資源の解放失敗も注入し、再試行後にだけデバイスを破棄します。生成途中のロストは候補を公開せず解放し、復旧完了commandの容量不足では生成済みデバイスを保持して再試行します。
 
@@ -35,11 +33,13 @@ Reference・Leaseを返し、ResourceManagerの終了をPumpしてからExecutio
 `--recover-start-cancel --host`は最初のowner Pump前に起動をキャンセルし、factoryを呼ばずにAudioModuleを停止できることを検証します。
 
 ```sh
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover --host --di
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover-stop
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover-stop --host --di
-dotnet run --project samples/Lumyte.Resources.Audio.Sample -c Release -- --recover-start-cancel --host --di
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --recover
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --recover --host --di
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --recover-stop
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --recover-stop --host --di
+dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -- --recover-start-cancel --host --di
 ```
 
 復旧検証は`--host`・`--di`と組み合わせられます。`--openal`・`--reload`とは別の実行にしてください。物理出力デバイスの取り外しは行いません。
+
+`--reload`は変更通知による差し替え、旧Lease保持、不正WAVE時の旧公開保持を検証します。
