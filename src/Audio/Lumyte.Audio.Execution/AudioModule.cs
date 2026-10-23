@@ -9,7 +9,8 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     private readonly AudioDevice _state = new(new AudioDeviceState(factory));
     private AudioDevice.BeginCreateWork _begin;
 
-    private AudioDevice.AttachWork _initialize;
+    private AudioDevice.CompleteCreateWork _initialize;
+    private AudioDevice.BeginCloseWork _beginClose;
     private AudioDevice.CloseWork _close;
     private OwnerKey _owner;
     private UpdateKey _update;
@@ -26,6 +27,9 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     /// <summary>Gets the generated command declarations and owner diagnostics.</summary>
     public AudioDevice State => _state;
 
+    /// <summary>Gets the stable service managing replaceable audio generations.</summary>
+    public IAudioDeviceService Devices => _state.Devices;
+
     /// <summary>Gets the host phase in host placement mode.</summary>
     public PhaseKey HostPhase { get; private set; }
 
@@ -36,7 +40,13 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         OrderGroupKey group = builder.OrderGroup("Control", _owner);
         WorkOptions Options(WorkAdmission admission) => new() { Target = WorkTarget.On(_owner), OrderGroup = group, Admission = admission };
         _begin = AudioDevice.DeclareBeginCreate(builder, Options(WorkAdmission.Startup));
-        _initialize = AudioDevice.DeclareAttach(builder, Options(WorkAdmission.Startup));
+        _initialize = AudioDevice.DeclareCompleteCreate(builder, Options(WorkAdmission.Cleanup));
+        _beginClose = AudioDevice.DeclareBeginClose(builder, Options(WorkAdmission.Cleanup));
+        AudioDevice.DeclareBeginRecovery(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareAcquireLease(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareRetire(builder, Options(WorkAdmission.Cleanup));
+        AudioDevice.DeclareCreateClipForLease(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareCreateVoiceForLease(builder, Options(WorkAdmission.Normal));
         _close = AudioDevice.DeclareClose(builder, Options(WorkAdmission.Cleanup));
         AudioDevice.DeclareCreateClip(builder, Options(WorkAdmission.Normal));
         AudioClip.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));
@@ -73,10 +83,44 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     public async ValueTask StartAsync(ModuleContext context, CancellationToken token)
     {
         Task<Lumyte.Audio.Abstractions.IAudioDevice> pending = await _begin.ExecuteAsync(context, _state, token).ConfigureAwait(false);
-        Lumyte.Audio.Abstractions.IAudioDevice device = await pending.ConfigureAwait(false);
-        await _initialize.ExecuteAsync(context, _state, device).ConfigureAwait(false);
+        try
+        {
+            await pending.ConfigureAwait(false);
+        }
+        catch
+        {
+            // The owner completes the state transition and reports the factory failure.
+        }
+
+        await _initialize.ExecuteAsync(context, _state).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public async ValueTask StopAsync(ModuleContext context) => await _close.ExecuteAsync(context, _state).ConfigureAwait(false);
+    public async ValueTask StopAsync(ModuleContext context)
+    {
+        await _beginClose.ExecuteAsync(context, _state).ConfigureAwait(false);
+        Task<Lumyte.Audio.Abstractions.IAudioDevice>? pending = _state.PendingCreation;
+        if (pending is not null)
+        {
+            try
+            {
+                await pending.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Failed creation owns no device; successful candidates are reclaimed by Close.
+            }
+        }
+
+        try
+        {
+            await _state.RecoveryCompletion.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Shutdown owns the pending factory result even if recovery admission was closed.
+        }
+
+        await _close.ExecuteAsync(context, _state).ConfigureAwait(false);
+    }
 }

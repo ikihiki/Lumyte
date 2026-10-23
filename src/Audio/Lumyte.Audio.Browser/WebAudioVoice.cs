@@ -119,7 +119,7 @@ internal sealed class WebAudioVoice : IAudioVoice
             return;
         }
 
-        Validate();
+        _device.Validate(false);
         WebAudioInterop.DestroyVoice(_handle);
         _handle.Dispose();
         lock (this)
