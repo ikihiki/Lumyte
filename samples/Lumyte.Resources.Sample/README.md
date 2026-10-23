@@ -28,12 +28,12 @@ it does not retain the document's borrowed JSON elements.
 
 Managed references keep the scene and its children resident. Their nonowning,
 unmanaged handles can be copied into ECS components; resolution happens through
-a managed read scope. The file source provides both stream reads and change notifications;
+a managed resource snapshot. The file source provides both stream reads and change notifications;
 the manager starts its reload worker automatically. It changes the JSON file and waits
 for automatic reload through its manager-owned watcher. Its existing mesh lease and
-original read scope retain the old values, including the children of the old
+original resource snapshot retain the old values, including the children of the old
 SceneResource; the same handles resolve the new
-values in a new read scope. Monitoring is stopped and joined before the resource
+values in a new resource snapshot. Monitoring is stopped and joined before the resource
 manager is closed.
 
 Expected output includes:
@@ -56,7 +56,7 @@ this sample's memory charges. The file source additionally uses bounded scratch
 memory. The file source reads inputs directly without storing historical copies;
 detected changes fail reads and the reload coordinator retries within its configured limits.
 
-The sample closes leases, read scopes and references before trimming and closing
+The sample closes leases, resource snapshots and references before trimming and closing
 the manager, then disposes its DI scope and deletes the temporary directory. It
 demonstrates compound-document projection and hot reload, with no format-specific
 model importer, GPU upload or audio codec.

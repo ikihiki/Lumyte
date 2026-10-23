@@ -172,7 +172,7 @@ Host上の実体生成もホストのPumpで進めるため、待機中に同期
 commandの入力bufferはhandlerの実完了まで保持する。取消が実行開始より先なら副作用なしで終え、
 開始後は結果または例外まで待ち、未回収のNative出力や入力の早期解放を生まない。
 Managerの共有ロード待機の取消と、単一CPUコマンドの実行取消を同じものと扱わない。
-終了時はロード受付を止め、Reference・Lease・ReadScopeを返し、ResourceManagerの解放を完了する。
+終了時はロード受付を止め、Reference・Lease・Snapshotを返し、ResourceManagerの解放を完了する。
 その間も元ownerのcleanup受付とHost Pumpを維持し、最後にExecutionRuntimeを停止する。
 Managerは借用したSource・Stage・Runtime providerの寿命を所有しない。
 

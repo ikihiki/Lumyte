@@ -34,7 +34,7 @@ DLLの埋め込みデータには`Lumyte.Resources.Embedded`の`EmbeddedResource
 - `ResourceLease<T>`は内容Revisionを固定し、返却はI/OやGPU待機を行いません。
 - `ResourceReference<T>`は論理キーを常駐させ、HotReload後は新しい公開世代を保持します。
 - referenceの`ResourceHandle<T>`は非所有のunmanagedな16 byteの値で、ECSへ格納できます。最後のreference返却で失効し、slot再利用時はGenerationが変わります。
-- `BeginRead`は一つの公開mapを保持します。フレーム内の複数handleをそのscopeで解決すると、新旧の組み合わせが変わりません。scope終了後も発行済みleaseは有効です。
+- `CaptureSnapshot`は一つの公開mapを保持します。フレーム内の複数handleをそのscopeで解決すると、新旧の組み合わせが変わりません。scope終了後も発行済みleaseは有効です。
 
 利用者は値を直接Disposeせず、利用終了までleaseを保持します。handle自体のコピーは所有数を増やしません。unmanagedジョブへ渡すデータはmanaged側でhandleを解決して用意し、ジョブやGPU使用の完了までleaseを保持してください。
 
@@ -48,7 +48,7 @@ Managerは変更通知を入力Revisionの再確認のきっかけとして使�
 
 通常の新規取得でもsourceの変更を検出した場合、旧親と新しい中間値だけが混在する公開を拒否します。通知元から変更したIDを通知し、HotReloadの完了後に取得を再試行してください。既存の公開値への取得は、Reloadが公開するまでその世代を使用します。通知されたIDのうち追跡中の入力だけを再確認し、未ロードの無関係なファイルは読み込みません。Rescan通知では追跡中のすべての入力Revisionを再確認します。`ReloadAsync`／`ReloadAllAsync`は内部のデバッグ用コマンドで、公開APIには含めません。
 
-既存lease・read scopeは構築済みの旧出力を保持し、stream sessionは旧factoryを保持します。外部入力の旧ファイルは保存しないため、直接読み込み中の変更では既存sessionも失敗し得ます。runtime依存の不可逆な失効は例外で、Resident依存する値とその親を利用不能にします。論理referenceとhandleは維持し、復旧後の`RebuildRuntimeAsync`で新世代へ接続します。Buildだけでruntimeを使った独立CPU値は利用を継続できます。Graphicsとの接続は`Lumyte.Resources.Graphics`を使用します。
+既存lease・resource snapshotは構築済みの旧出力を保持し、stream sessionは旧factoryを保持します。外部入力の旧ファイルは保存しないため、直接読み込み中の変更では既存sessionも失敗し得ます。runtime依存の不可逆な失効は例外で、Resident依存する値とその親を利用不能にします。論理referenceとhandleは維持し、復旧後の`RebuildRuntimeAsync`で新世代へ接続します。Buildだけでruntimeを使った独立CPU値は利用を継続できます。Graphicsとの接続は`Lumyte.Resources.Graphics`を使用します。
 
 ## 自動変更監視
 
@@ -80,7 +80,7 @@ readのキャンセルは待機だけを中断します。seekは旧先読みを
 
 ## 終了と同期
 
-外部reference・lease・read scope・sessionや進行中の構築がある場合、managerの終了は状態を変えず拒否します。利用権を返し、managerの終了成功後にDI scopeを閉じてください。managerは借用したSource・Stageを解放しません。終了途中のcleanup失敗は`DisposeAsync`の再呼び出しで再試行します。
+外部reference・lease・resource snapshot・sessionや進行中の構築がある場合、managerの終了は状態を変えず拒否します。利用権を返し、managerの終了成功後にDI scopeを閉じてください。managerは借用したSource・Stageを解放しません。終了途中のcleanup失敗は`DisposeAsync`の再呼び出しで再試行します。
 
 公開mapと所有数の更新は短い同期区間で行い、ステージ、I/O、解放callbackをその区間で実行しません。Memoryの取得・返却は既存のスレッド専用チャンクを使います。実行スレッドは保証しないため、GPUやAudio固有の配送・完了待ちはステージ側で行います。
 
@@ -114,7 +114,7 @@ DI登録も同じStageを直接渡し、必要なサービスをコンストラ�
 
 Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返します。
 Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
-複数リソースを一つの公開状態から取得する場合は`BeginRead()`のscopeを`reference.Acquire(scope)`へ渡します。
+複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`のscopeを`reference.Acquire(scope)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
 HotReloadは新世代を別に公開するため、利用中のLeaseの値は切り替わりません。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。
