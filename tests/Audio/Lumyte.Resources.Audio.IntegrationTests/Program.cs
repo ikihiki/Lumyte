@@ -55,7 +55,11 @@ internal static class Program
             var bridge = new AudioResourceRuntime(audio, runtime);
             execution = new ExecutionRuntime([audio, bridge, runtime]);
             manager = new ResourceManager(
-                "audio", source, [new AudioDecodeStage(), new AudioClipStage(), new AudioVoiceStage()], new MemoryManager(), runtime,
+                "audio",
+                source,
+                [new AudioDecodeStage(), new AudioClipStage(), new AudioVoiceStage()],
+                new MemoryManager(),
+                runtime,
                 stageRuntimes: [new(typeof(IAudioClip), bridge), new(typeof(IAudioVoice), bridge)]);
         }
 
