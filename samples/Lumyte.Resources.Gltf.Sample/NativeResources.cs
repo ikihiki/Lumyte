@@ -1,5 +1,6 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Hosting;
+using Lumyte.Resources.Graphics;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
@@ -7,7 +8,7 @@ internal sealed class NativeResources
 {
     private readonly List<IDisposable> _owned = [];
 
-    internal static NativeResources Attach(ResourceBuildContext context, IGraphicsDeviceService devices, GraphicsDeviceLease lease, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident)
+    internal static NativeResources Attach(ResourceBuildContext context, GraphicsResourceRuntime runtime, GraphicsDeviceLease lease, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident)
     {
         IGraphicDevice device = lease.Device;
         var native = new NativeResources();
@@ -16,7 +17,7 @@ internal sealed class NativeResources
             {
                 if (device.Status == GraphicsDeviceStatus.Lost)
                 {
-                    await devices.WaitForRetirementAsync(lease.State.Epoch);
+                    await runtime.WaitForRetirementAsync(lease.State.Epoch);
                 }
 
                 // Remove only successfully released entries, allowing the manager to retry cleanup.

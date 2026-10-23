@@ -146,7 +146,9 @@ public sealed class SceneCleanupTests
         services.AddSingleton(state.Graphics);
         services.AddMemoryManagement();
         services.AddGraphicsDevice<TestFactory>("main");
-        services.AddResources("scene", builder => builder.UseSource<TestSource>().AddSourcePipeline<SceneOutput, SceneStage>());
+        services.AddResources("scene", builder => builder.UseSource<TestSource>()
+            .AddSourcePipeline<SceneOutput, SceneStage>()
+            .UseStageRuntime<SceneOutput>(provider => provider.GetResourceGraphicsRuntime("scene", "graphics.main")));
         services.AddResourceGraphics("scene", "main", "graphics.main");
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
@@ -162,16 +164,17 @@ public sealed class SceneCleanupTests
 
     private sealed record SceneOutput(TestDevice Device, GraphicsDeviceLease Lease, NativeChild First, NativeChild Second);
 
-    private sealed class SceneStage(CleanupState state, [FromKeyedServices("main")] IGraphicsDeviceService devices) : IResourceSourceStage<SceneOutput>
+    private sealed class SceneStage(CleanupState state) : IResourceSourceStage<SceneOutput>
     {
         public async ValueTask<SceneOutput> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
-            GraphicsDeviceLease lease = await context.UseGraphicsAsync(devices, "graphics.main", cancellationToken: cancellationToken);
+            var runtime = (GraphicsResourceRuntime)context.Runtime;
+            GraphicsDeviceLease lease = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
             var device = (TestDevice)lease.Device;
-            var resident = NativeResources.Attach(context, devices, lease);
+            var resident = NativeResources.Attach(context, runtime, lease);
             NativeChild first = resident.Own(new NativeChild("first", device, state));
             NativeChild second = resident.Own(new NativeChild("second", device, state));
-            var temporary = NativeResources.Attach(context, devices, lease, ResourceDependencyLifetime.Build);
+            var temporary = NativeResources.Attach(context, runtime, lease, ResourceDependencyLifetime.Build);
             temporary.Own(new NativeChild("upload", device, state));
             if (state.FailBuild)
             {

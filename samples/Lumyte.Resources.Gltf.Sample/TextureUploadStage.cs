@@ -2,11 +2,10 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Hosting;
 using Lumyte.Memory;
 using Lumyte.Resources.Graphics;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
-internal sealed class TextureUploadStage([FromKeyedServices("main")] IGraphicsDeviceService devices) : IResourceTransform<CpuImage, GpuTexture>
+internal sealed class TextureUploadStage : IResourceTransform<CpuImage, GpuTexture>
 {
     public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
 
@@ -14,9 +13,10 @@ internal sealed class TextureUploadStage([FromKeyedServices("main")] IGraphicsDe
 
     public async ValueTask<GpuTexture> BuildAsync(CpuImage input, ResourceBuildContext context, CancellationToken cancellationToken)
     {
-        GraphicsDeviceLease lease = await context.UseGraphicsAsync(devices, "graphics.main", cancellationToken: cancellationToken);
+        var runtime = (GraphicsResourceRuntime)context.Runtime;
+        GraphicsDeviceLease lease = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
         IGraphicDevice device = lease.Device;
-        var native = NativeResources.Attach(context, devices, lease);
+        var native = NativeResources.Attach(context, runtime, lease);
         ulong bytes = checked((ulong)input.Width * (ulong)input.Height * 4);
         IMemoryScope memory = context.GetMemoryScope(ResourceDependencyLifetime.Resident);
         using IMemoryReservation reservation = await memory.ReserveAsync(new() { Pool = new("gltf.gpu"), Bytes = bytes, Purpose = MemoryPurpose.Resident }, cancellationToken);
@@ -34,7 +34,7 @@ internal sealed class TextureUploadStage([FromKeyedServices("main")] IGraphicsDe
             input.Pixels.Memory.Span.Slice(y * (int)row, (int)row).CopyTo(packed.Memory.Span.Slice(y * (int)pitch));
         }
 
-        var uploadResources = NativeResources.Attach(context, devices, lease, ResourceDependencyLifetime.Build);
+        var uploadResources = NativeResources.Attach(context, runtime, lease, ResourceDependencyLifetime.Build);
         IGraphicsBuffer<byte> upload = uploadResources.Own(device.CreateBuffer<byte>(new() { Count = (ulong)size, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
         await upload.MapAsync();
         upload.CopyFrom(packed.Memory.Span);

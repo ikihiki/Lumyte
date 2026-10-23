@@ -2,11 +2,10 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Hosting;
 using Lumyte.Memory;
 using Lumyte.Resources.Graphics;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Gltf.Sample;
 
-internal sealed class MeshUploadStage([FromKeyedServices("main")] IGraphicsDeviceService devices) : IResourceTransform<CpuMesh, GpuMesh>
+internal sealed class MeshUploadStage : IResourceTransform<CpuMesh, GpuMesh>
 {
     public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Build;
 
@@ -17,9 +16,10 @@ internal sealed class MeshUploadStage([FromKeyedServices("main")] IGraphicsDevic
         GpuTexture texture = await context.RequireAsync(new ResourceKey<GpuTexture>(input.Material.Texture.Id), cancellationToken: cancellationToken);
         ShaderArtifact vertexArtifact = await context.RequireAsync(new ResourceKey<ShaderArtifact>("shaders/vertex"), ResourceDependencyLifetime.Build, cancellationToken);
         ShaderArtifact fragmentArtifact = await context.RequireAsync(new ResourceKey<ShaderArtifact>("shaders/fragment"), ResourceDependencyLifetime.Build, cancellationToken);
-        GraphicsDeviceLease lease = await context.UseGraphicsAsync(devices, "graphics.main", cancellationToken: cancellationToken);
+        var runtime = (GraphicsResourceRuntime)context.Runtime;
+        GraphicsDeviceLease lease = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
         IGraphicDevice device = lease.Device;
-        var native = NativeResources.Attach(context, devices, lease);
+        var native = NativeResources.Attach(context, runtime, lease);
         IGraphicsShader vertex = native.Own(device.CreateShader(vertexArtifact));
         IGraphicsShader fragment = native.Own(device.CreateShader(fragmentArtifact));
         IGraphicsPipeline pipeline = native.Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
@@ -27,7 +27,7 @@ internal sealed class MeshUploadStage([FromKeyedServices("main")] IGraphicsDevic
         using IMemoryReservation reservation = await context.GetMemoryScope(ResourceDependencyLifetime.Resident).ReserveAsync(new() { Pool = new("gltf.gpu"), Bytes = checked(count * 64), Purpose = MemoryPurpose.Resident }, cancellationToken);
         IGraphicsShaderDataBuffer<GltfVertex> vertices = native.Own(device.CreateBuffer<GltfVertex>(vertexArtifact, count));
         _ = reservation.Commit(new(vertices.SizeInBytes, MemoryAccuracy.Exact));
-        var uploadResources = NativeResources.Attach(context, devices, lease, ResourceDependencyLifetime.Build);
+        var uploadResources = NativeResources.Attach(context, runtime, lease, ResourceDependencyLifetime.Build);
         IGraphicsShaderDataBuffer<GltfVertex> upload = uploadResources.Own(device.CreateBuffer<GltfVertex>(vertexArtifact, count, MemoryPreference.Upload));
         await upload.MapAsync();
         upload.CopyFrom(input.Vertices.Memory.Span);

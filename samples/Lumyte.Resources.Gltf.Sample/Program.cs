@@ -58,7 +58,13 @@ internal static class Program
         services.AddScoped<EmbeddedResourceSource>();
         services.AddGraphicsDevice<DeviceFactory>("main");
         services.AddResources("gltf.validation", pipelines => ConfigurePipelines(pipelines.ConfigureHotReload(new() { Enabled = false })));
-        services.AddResources("gltf", ConfigurePipelines);
+        services.AddResources("gltf", pipelines =>
+        {
+            ConfigurePipelines(pipelines);
+            pipelines.UseStageRuntime<GpuTexture>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
+                .UseStageRuntime<GpuMesh>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
+                .UseStageRuntime<GpuScene>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"));
+        });
         services.AddResourceGraphics("gltf", "main", "graphics.main");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
