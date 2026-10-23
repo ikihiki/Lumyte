@@ -34,7 +34,7 @@ Ownerの異型commandは同じgroupのFIFOで処理する。queue nodeはcommand
 
 `JobGraph<TContext>` は不変で、Unit結果の仕事と範囲を依存辺でつなぐ。Rangeの長さは受付前に一度評価し、同時数分以下のworkerがchunkをclaimする。owner待ちはCPU枠を使わない。将来の配送枠、node・edge・worker管理領域も受付時に予約し、依存伝播と取消は有界のstepで進める。
 
-仕事の完了・再投入・未完了数の更新はRuntimeの同じlock内で確定する。workerは継続の要否だけを返し、再投入後に共有状態を読み直さない。CPUの起動数は実行中の仕事と実行可能な待機仕事から決める。
+仕事の完了・再投入・未完了数の更新はRuntimeの同じlock内で確定する。workerは通常完了・graph内完了・再投入の区別を返し、再投入後に共有状態を読み直さない。Runtimeはgraph全体を未完了の1件として追跡し、内部workerの静止と依存伝播が終わった時点で取り除く。容量予約はgraph全体を対象とし、完了後もrun.Disposeまで保持する。CPUの起動数は実行中の仕事と実行可能な待機仕事から決める。
 
 ## 容量・取消・停止
 
