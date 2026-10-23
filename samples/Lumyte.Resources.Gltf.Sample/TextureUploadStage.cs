@@ -34,17 +34,18 @@ internal sealed class TextureUploadStage([FromKeyedServices("main")] IGraphicsDe
             input.Pixels.Memory.Span.Slice(y * (int)row, (int)row).CopyTo(packed.Memory.Span.Slice(y * (int)pitch));
         }
 
-        using IGraphicsBuffer<byte> upload = device.CreateBuffer<byte>(new() { Count = (ulong)size, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        var uploadResources = NativeResources.Attach(context, devices, lease, ResourceDependencyLifetime.Build);
+        IGraphicsBuffer<byte> upload = uploadResources.Own(device.CreateBuffer<byte>(new() { Count = (ulong)size, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
         await upload.MapAsync();
         upload.CopyFrom(packed.Memory.Span);
         upload.Unmap();
-        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        IGraphicsCommandBuffer commands = uploadResources.Own(device.CreateCommandBuffer(new()));
         commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, Before = default, AfterState = TextureState.CopyDestination, After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
         commands.CopyBufferToTexture(new() { Buffer = upload.Slice(0, upload.Count), BytesPerRow = pitch, RowsPerImage = (uint)input.Height }, new() { Texture = texture, Width = (uint)input.Width, Height = (uint)input.Height });
         commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopyDestination, AfterState = TextureState.Sampled, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
         commands.Finish();
-        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        IGraphicsSubmission submission = uploadResources.Own(device.Queue.Submit([commands]));
 
         // Do not cancel an in-flight GPU wait: staging cannot be freed before completion.
         await submission.WaitAsync();

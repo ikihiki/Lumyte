@@ -7,13 +7,14 @@ internal sealed class NativeResources
 {
     private readonly List<IDisposable> _owned = [];
 
-    internal static NativeResources Attach(ResourceBuildContext context, IGraphicsDeviceService devices, GraphicsDeviceLease lease)
+    internal static NativeResources Attach(ResourceBuildContext context, IGraphicsDeviceService devices, GraphicsDeviceLease lease, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident)
     {
+        IGraphicDevice device = lease.Device;
         var native = new NativeResources();
         context.RegisterCleanup(
             async () =>
             {
-                if (lease.Device.Status == GraphicsDeviceStatus.Lost)
+                if (device.Status == GraphicsDeviceStatus.Lost)
                 {
                     await devices.WaitForRetirementAsync(lease.State.Epoch);
                 }
@@ -25,7 +26,7 @@ internal sealed class NativeResources
                     native._owned.RemoveAt(native._owned.Count - 1);
                 }
             },
-            ResourceDependencyLifetime.Resident);
+            lifetime);
         return native;
     }
 

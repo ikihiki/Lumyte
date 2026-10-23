@@ -75,9 +75,14 @@ chargeを返します。StbImageSharp内部の一時配列、JSON内部構造、
 解放後にリソース用poolの計上が0へ戻ることを確認します。
 
 GPU Stageは `UseGraphicsAsync` で物理デバイス世代への依存を登録します。
-転送完了までstagingを保持し、解放時にデバイスがLostならretirementを待ちます。
-デバイス再作成・再描画の制御はアプリ側の責任です。このサンプルではデバイスロストを
-人為的には発生させません。
+生成時にdeviceを捕捉し、解放時にLostならそのepochのretirementを待ちます。
+転送用のstaging・command・submissionはBuild cleanupが保持し、正常時は構築完了で解放します。
+退役確認や解放に失敗した場合も子資源とdevice leaseを保持し、ManagerのTrimAsyncで再試行できます。
+このcleanupは同じソースを使ったテストで、loss・退役待ち・解放失敗・構築失敗を検証します。
+
+描画用の一時資源はSceneRenderer内のusingで管理しており、描画中lossに対する解放再試行は未対応です。
+デバイス再作成・シーン再構築・再描画の制御もアプリ側の責任です。このサンプルの実描画では
+デバイスロストを人為的には発生させません。
 
 ## Supported subset
 

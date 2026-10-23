@@ -39,6 +39,8 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     internal TaskCompletionSource? RetirementWait { get; set; }
 
+    internal TaskCompletionSource? RetirementStarted { get; set; }
+
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged => throw new NotSupportedException();
 
@@ -68,6 +70,7 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
+        RetirementStarted?.TrySetResult();
         if (RejectRetirement)
         {
             throw new InvalidOperationException("Native retirement is not proven.");

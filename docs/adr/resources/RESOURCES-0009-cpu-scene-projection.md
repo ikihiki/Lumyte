@@ -45,13 +45,13 @@ GpuSceneに対するCpuSceneと、GpuMeshに対するCpuMeshはBuild寿命とす
 
 ### GPUの所有とメモリ
 
-GPU Stageは構築ごとに `UseGraphicsAsync` で物理デバイス世代を取得する。生成したNative子資源はcontextのResident cleanupへ登録し、作成の逆順で解放する。成功した解放だけを所有リストから除き、例外時は未完了部分をManagerの再試行へ残す。
+GPU Stageは構築ごとに `UseGraphicsAsync` で物理デバイス世代を取得する。生成したNative子資源はcontextのResident cleanupへ登録し、作成の逆順で解放する。cleanup登録時に実際のdeviceを捕捉し、loss後にアクセスを拒否するlease.Deviceを再取得しない。成功した解放だけを所有リストから除き、例外時は未完了部分をManagerの再試行へ残す。
 
 CPUの文書バッファ、頂点、画像はMemory scopeで確保する。GPU頂点は取得できる実サイズ、textureは幅 × 高さ × 4の概算をreservationとchargeで計上する。Native子資源を解放した後にchargeを返す。画像decoder内部の一時配列、JSON内部構造、driver内部確保、描画先とreadbackの確保はこの計上に含めない。
 
-upload用staging、command、submissionはGPU完了まで保持する。submit後の待機をロード待機者のキャンセルで途中終了させず、完了してから一時資源を解放する。生成途中の例外では登録済みのNative資源とMemory scopeが候補のcleanupへ残る。
+upload用staging、command、submissionはcontextのBuild cleanupへ所有を移し、GPU完了まで保持する。submit後の待機をロード待機者のキャンセルで途中終了させず、通常は構築完了時に一時資源を解放する。lossによる待機失敗でも、旧epochの退役確認より先にDisposeしない。生成途中の例外や退役・解放の失敗では未完了のNative資源、device lease、Memory scopeが候補のcleanupへ残り、TrimAsyncで再試行できる。
 
-このサンプルは健康なデバイスでのロードと入力更新を実証する。デバイスlossの注入、退役失敗からの回復、再生成後の再描画は検証範囲に含めず、loss復旧済みの利用例としては扱わない。
+Stageのcleanupはfake deviceでlossと失敗を注入して検証する。描画用の一時資源はSceneRenderer内のusingで管理しており、描画中lossの解放再試行、デバイス再生成とシーン再構築後の再描画は未対応である。サンプル全体をloss復旧済みの利用例としては扱わない。
 
 ### 更新と公開
 
@@ -129,6 +129,8 @@ GPUなしでCPUシーンを取得でき、同じデータをGPU描画へ接続�
 Vulkanで512×512の画面外描画を行い、深度・textureを含む画像をGPU readbackする。外部PNGだけの変更が自動公開へ到達し、同じHandleから新画像を取得でき、旧Leaseで元画像を再現できることを検証する。Linux CIではLavapipeを使う。解放後は対象poolのCommittedBytesが0になることを確認する。
 
 GPUを使う検証にはVulkan driverが必要であり、CPU検証のみの成功をGPU描画の成功とは扱わない。デバイスloss回復と実運用向けglTF互換性は本サンプルの検証結果に含めない。
+
+StageのNativeResourcesを同じソースのままテストへ組み込み、通常時のBuild一時資源の回収、loss後の旧epochによる解放、退役待ちと失敗、子資源の部分解放後の再試行、生成失敗候補の保持を検証する。新deviceへの復旧後も旧leaseを返すまで旧ownerを退役させず、解放済みの子を二重解放しないことを確認する。
 
 ## 関連ADR
 
