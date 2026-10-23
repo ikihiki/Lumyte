@@ -10,7 +10,7 @@ namespace Lumyte.Resources.Audio.Tests;
 /// <summary>Checks source-length hints while the default runtime schedules the parameterless decode stage.</summary>
 public sealed class AudioDecodeStageTests
 {
-    /// <summary>Unknown and inaccurate lengths neither truncate input nor trigger unbounded preallocation.</summary>
+    /// <summary>Decode resumes on the scheduler after I/O, and source lengths only hint bounded preallocation.</summary>
     /// <returns>The completed decode and cleanup check.</returns>
     [Fact]
     public async Task LengthOnlyHintsBoundedInitialCapacityAsync()
@@ -118,11 +118,25 @@ public sealed class AudioDecodeStageTests
 
     private sealed class ObservedStream(ObservedSource source, byte[] bytes) : MemoryStream(bytes, writable: false)
     {
+        private SynchronizationContext? _workflowContext;
+        private int _thread;
+
         public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
         {
+            _workflowContext = SynchronizationContext.Current;
+            _thread = Environment.CurrentManagedThreadId;
             source.InitialCapacity = Assert.IsType<MemoryStream>(destination).Capacity;
             await Task.Yield();
             await base.CopyToAsync(destination, bufferSize, cancellationToken);
+        }
+
+        public override ValueTask DisposeAsync()
+        {
+            // AudioDecodeStage disposes the stream after decoding, so this observes its post-I/O continuation.
+            Assert.NotNull(_workflowContext);
+            Assert.Same(_workflowContext, SynchronizationContext.Current);
+            Assert.Equal(_thread, Environment.CurrentManagedThreadId);
+            return base.DisposeAsync();
         }
     }
 }
