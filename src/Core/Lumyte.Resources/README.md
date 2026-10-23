@@ -111,7 +111,7 @@ DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終�
 
 `IResourceRuntime`はStageが必要とする実行先・device・owner・世代の借用をまとめるリソース環境です。
 ResourceManagerは出力型の対応を固定し、選択したRuntimeを各内容世代に保存してBuildAsyncとReleaseAsyncへ使います。
-Stageは`ResourceBuildContext.Runtime`で選択された安定した環境を取得します。
+Stageは`IResourceSourceStage<T, TRuntime>`または`IResourceTransform<TInput, TOutput, TRuntime>`で環境型を宣言し、`BuildAsync`の型付きRuntime引数で受け取れます。Stage側のキャストは不要です。選択した環境と宣言型の不一致はManager構築時に検出します。共通の`ResourceBuildContext.Runtime`も維持します。
 既定のResourceRuntimeは開始とawait継続をジョブへ配送し、モジュールRuntimeもこの共通ジョブ環境を利用できます。
 
 I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
