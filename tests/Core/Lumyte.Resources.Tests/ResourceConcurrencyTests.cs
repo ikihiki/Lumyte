@@ -426,6 +426,7 @@ public sealed class ResourceConcurrencyTests
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly ServiceProvider _provider;
+        private readonly ResourceExecutionHost _execution;
         private readonly AsyncServiceScope _scope;
 
         internal Fixture()
@@ -450,6 +451,7 @@ public sealed class ResourceConcurrencyTests
                 builder.AddSourcePipeline<TestValue, TestStage>();
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+            _execution = new ResourceExecutionHost(_provider);
             _scope = _provider.CreateAsyncScope();
             beforeManager?.Invoke(Runtime);
             Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("test");
@@ -479,6 +481,7 @@ public sealed class ResourceConcurrencyTests
             }
 
             await _scope.DisposeAsync();
+            await _execution.DisposeAsync();
             await _provider.DisposeAsync();
         }
     }

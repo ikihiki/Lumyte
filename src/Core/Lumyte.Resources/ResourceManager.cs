@@ -10,6 +10,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
+    private readonly IResourceRuntime _runtime;
     private readonly ResourceWatchTargets _watchTargets = new();
     private readonly ResourceReloadService? _hotReload;
     private readonly Dictionary<RuntimeTypeHandle, IResourceStage> _stages;
@@ -39,14 +40,16 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="source">The borrowed input source.</param>
     /// <param name="stages">The borrowed source stages and transforms, with one producer per output type.</param>
     /// <param name="memory">The shared memory budget manager.</param>
+    /// <param name="runtime">The borrowed executor for stage construction and destruction.</param>
     /// <param name="runtimeDependencies">The borrowed runtime generation providers.</param>
     /// <param name="reloadOptions">Batching and retry settings for automatic reload.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, ResourceReloadOptions? reloadOptions = null)
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, ResourceReloadOptions? reloadOptions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _name = name;
         _source = source;
         _memory = memory;
+        _runtime = runtime;
         _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle);
         ValidatePipelines();
         ManagerId = NextManagerId();
@@ -60,11 +63,11 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
                 _runtimes.Add(provider.Id, new(provider, provider.Identity, snapshot));
             }
 
-            foreach (ResourceRuntimeState runtime in _runtimes.Values)
+            foreach (ResourceRuntimeState dependency in _runtimes.Values)
             {
-                runtime.Handler = (_, _) => ObserveRuntime(runtime);
-                runtime.Provider.Changed += runtime.Handler;
-                RefreshRuntime(runtime);
+                dependency.Handler = (_, _) => ObserveRuntime(dependency);
+                dependency.Provider.Changed += dependency.Handler;
+                RefreshRuntime(dependency);
             }
 
             _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes

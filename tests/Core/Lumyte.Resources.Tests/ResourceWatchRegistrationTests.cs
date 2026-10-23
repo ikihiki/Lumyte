@@ -22,11 +22,13 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new();
         await using Lumyte.Memory.MemoryManager memory = new();
         await using TrackedSource source = new(state);
+        await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new(
             "direct",
             source,
             [new ValueStage(state)],
             memory,
+            execution.Resources,
             reloadOptions: new() { DebounceDelay = TimeSpan.Zero, MaximumRetryCount = 0 });
         var changes = (BlockingChangeSource)source.Changes!;
         ResourceReloadService monitor = manager.HotReload!;
@@ -75,11 +77,13 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new();
         await using Lumyte.Memory.MemoryManager memory = new();
         await using TrackedSource source = new(state);
+        await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new(
             "build-input",
             source,
             [new ValueStage(state), new ParentStage()],
             memory,
+            execution.Resources,
             reloadOptions: new() { DebounceDelay = TimeSpan.Zero, MaximumRetryCount = 0 });
         var changes = (BlockingChangeSource)source.Changes!;
         await changes.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -116,7 +120,8 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new() { EnableChanges = false };
         await using Lumyte.Memory.MemoryManager memory = new();
         await using TrackedSource source = new(state);
-        await using ResourceManager manager = new("immutable", source, [new ValueStage(state)], memory);
+        await using ResourceExecutionHost execution = new();
+        await using ResourceManager manager = new("immutable", source, [new ValueStage(state)], memory, execution.Resources);
         Assert.Null(manager.HotReload);
         Assert.Empty(state.ChangeSources);
         using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
@@ -132,11 +137,13 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new();
         await using Lumyte.Memory.MemoryManager memory = new();
         await using TrackedSource source = new(state);
+        await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new(
             "disabled",
             source,
             [new ValueStage(state)],
             memory,
+            execution.Resources,
             reloadOptions: new() { Enabled = false });
         Assert.Null(manager.HotReload);
         using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
@@ -155,6 +162,7 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new();
         ServiceCollection services = CreateServices(state, "first", "second");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope firstScope = provider.CreateAsyncScope();
         await using AsyncServiceScope secondScope = provider.CreateAsyncScope();
         ResourceReloadService first = firstScope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first").HotReload!;
@@ -190,6 +198,7 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new();
         ServiceCollection services = CreateServices(state, "main");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceReloadService monitor = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main").HotReload!;
         ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main");
@@ -226,6 +235,7 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new() { WatchFailure = failure };
         ServiceCollection services = CreateServices(state, "main");
         await using ServiceProvider provider = services.BuildServiceProvider();
+        await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceReloadService monitor = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main").HotReload!;
         ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main");
@@ -271,6 +281,7 @@ public sealed class ResourceWatchRegistrationTests
         WatchState state = new();
         ServiceCollection services = CreateServices(state, "main");
         await using ServiceProvider provider = services.BuildServiceProvider();
+        await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main");
         TaskCompletionSource initial = new(TaskCreationOptions.RunContinuationsAsynchronously);

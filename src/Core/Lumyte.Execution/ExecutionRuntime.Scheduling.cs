@@ -53,7 +53,7 @@ public sealed partial class ExecutionRuntime
     private bool CanClaim(QueuedWork candidate, out Exception? error)
     {
         error = null;
-        if (candidate.IsCanceled || (_cancelPending && candidate.Definition?.Admission == WorkAdmission.Normal))
+        if (candidate.IsCanceled || (_cancelPending && candidate.CancelOnShutdown && candidate.Definition?.Admission == WorkAdmission.Normal))
         {
             candidate.CanceledBeforeStart = true;
             error = new OperationCanceledException(candidate.Token);
@@ -85,11 +85,14 @@ public sealed partial class ExecutionRuntime
     private void Execute(QueuedWork pending, Exception? error, bool cpuWorker = false)
     {
         WorkDefinition? definition = pending.Definition;
+        ExecutionRuntime? previousRuntime = _executing;
+        bool previousWorkflow = _workflowExecuting;
         try
         {
             if (error is null)
             {
                 _executing = this;
+                _workflowExecuting = pending.IsWorkflow;
                 var context = new WorkContext(this, definition?.Owner);
                 context.VerifyAccess();
                 pending.Perform(in context);
@@ -101,7 +104,8 @@ public sealed partial class ExecutionRuntime
         }
         finally
         {
-            _executing = null;
+            _executing = previousRuntime;
+            _workflowExecuting = previousWorkflow;
         }
 
         lock (Sync)
@@ -117,7 +121,7 @@ public sealed partial class ExecutionRuntime
             {
                 QueueReady(pending);
             }
-            else
+            else if (finish != WorkFinish.Suspended)
             {
                 pending.Definition = null;
                 if (finish == WorkFinish.Completed)
