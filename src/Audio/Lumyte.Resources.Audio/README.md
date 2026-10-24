@@ -47,7 +47,7 @@ var resources = new ResourceManager("audio", source,
 
 Host配置ならAudioコマンドはホストへ統合され、CPU処理もCooperativeでPumpします。
 Dedicated配置ならAudioの所有スレッドとCPUワーカーを使います。
-StageのBuildAsync・ReleaseAsyncは選択済みRuntimeを通り、共有の汎用RuntimeがCPUジョブへ配送します。
+同じAudioResourceRuntimeのClip／Voice構築は一つのジョブで進み、PCMデコードの既定Runtimeへ切り替わる箇所で別ジョブにします。native操作はAudio ownerへ送り、解放も元Runtimeから配送します。
 通常のawait後の継続も同じ配送先へ戻り、I/O待ちの間はCPU実行枠を返します。
 ConfigureAwait(false)はこの配送から外れるため、Stage内では使用しません。
 同期的な所有スレッド待機や、フレームごとのAudio更新配送は行いません。
