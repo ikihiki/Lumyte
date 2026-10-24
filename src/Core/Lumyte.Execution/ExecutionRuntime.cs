@@ -10,6 +10,9 @@ public sealed partial class ExecutionRuntime
     [ThreadStatic]
     private static ExecutionRuntime? _executing;
 
+    [ThreadStatic]
+    private static bool _workflowExecuting;
+
     private readonly List<ModuleDefinition> _modules = [];
     private readonly Dictionary<Type, ModuleDefinition> _moduleTypes = [];
     private readonly Queue<QueuedWork> _cpu = new();
@@ -375,9 +378,18 @@ public sealed partial class ExecutionRuntime
         }
     }
 
+    internal static void VerifyCanSubmit()
+    {
+        if (_executing is not null && !_workflowExecuting)
+        {
+            throw new InvalidOperationException("Handlers cannot submit work unless declared as asynchronous workflows.");
+        }
+    }
+
     internal CommandEnqueueStatus Enqueue<TCommand, TResult>(WorkDefinition<TCommand, TResult> work, in TCommand command, CancellationToken token, ModuleContext? context, out IValueTaskSource<TResult>? completion)
         where TCommand : struct
     {
+        VerifyWorkflowTarget();
         completion = null;
         lock (Sync)
         {
@@ -392,7 +404,8 @@ public sealed partial class ExecutionRuntime
                 throw new InvalidOperationException("Startup commands require lifecycle authority.");
             }
 
-            if ((context is null && _status != ExecutionStatus.Running)
+            bool workflowChild = _executing == this && _workflowExecuting;
+            if ((context is null && _status != ExecutionStatus.Running && !(_status == ExecutionStatus.Quiescing && workflowChild))
                 || (context is not null && _status is not (ExecutionStatus.Starting or ExecutionStatus.Stopping or ExecutionStatus.Quiescing or ExecutionStatus.Running)))
             {
                 return CommandEnqueueStatus.NotRunning;
@@ -412,7 +425,11 @@ public sealed partial class ExecutionRuntime
             PendingCommand<TCommand, TResult> pending;
             try
             {
-                pending = new PendingCommand<TCommand, TResult>(work, in command, token, cleanup) { Lifecycle = context is not null };
+                pending = new PendingCommand<TCommand, TResult>(work, in command, token, cleanup)
+                {
+                    Lifecycle = context is not null,
+                    ContinueOnShutdown = workflowChild,
+                };
                 EnqueueAccepted(pending);
             }
             catch
@@ -424,6 +441,14 @@ public sealed partial class ExecutionRuntime
             completion = pending;
             Notify(false);
             return CommandEnqueueStatus.Accepted;
+        }
+    }
+
+    internal void VerifyWorkflowTarget()
+    {
+        if (_executing is not null && _workflowExecuting && _executing != this)
+        {
+            throw new InvalidOperationException("A workflow can submit child work only to its own runtime.");
         }
     }
 
