@@ -37,6 +37,8 @@ internal sealed class OpenALClip : IAudioClip
 
     public long FrameCount { get; }
 
+    IAudioDevice IAudioClip.Device => Device;
+
     internal OpenALDevice Device { get; }
 
     internal uint Handle { get; }
@@ -50,14 +52,17 @@ internal sealed class OpenALClip : IAudioClip
             return;
         }
 
-        Validate();
         if (References != 0)
         {
             throw new InvalidOperationException("Clip is borrowed by a live voice.");
         }
 
-        Device.Api.DeleteBuffer(Handle);
-        Device.CheckError();
+        if (Device.PrepareCleanup())
+        {
+            Device.Api.DeleteBuffer(Handle);
+            Device.CheckError();
+        }
+
         _disposed = true;
         Device.Remove(this);
     }
