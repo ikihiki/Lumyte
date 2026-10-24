@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -8,13 +9,20 @@ public sealed class ResourceBuildContext
     private readonly ResourceManager _manager;
     private readonly ResourceBuildView _view;
     private readonly ResourceGeneration _generation;
+    private readonly ResourceBuildContext _pipeline;
+    private SynchronizationContext? _jobContext;
+    private Task? _pendingOperations;
+    private long _sliceStarted;
+    private bool _pipelineActive;
     private bool _closed;
 
-    internal ResourceBuildContext(ResourceManager manager, ResourceBuildView view, ResourceGeneration generation)
+    internal ResourceBuildContext(ResourceManager manager, ResourceBuildView view, ResourceGeneration generation, ResourceBuildContext? parent = null)
     {
         _manager = manager;
         _view = view;
         _generation = generation;
+        _pipeline = parent?._pipeline ?? this;
+        InlineDepth = parent is null ? 0 : parent.InlineDepth + 1;
     }
 
     /// <summary>Gets the requested element and variant.</summary>
@@ -27,6 +35,64 @@ public sealed class ResourceBuildContext
     /// <summary>Gets the runtime identity of the exact output type being constructed.</summary>
     public RuntimeTypeHandle OutputTypeHandle => _generation.Node.TypeHandle;
 
+    internal int InlineDepth { get; set; }
+
+    internal bool CanSharePipeline => Volatile.Read(ref _pipeline._pipelineActive)
+        && _pipeline._jobContext is not null && ReferenceEquals(SynchronizationContext.Current, _pipeline._jobContext);
+
+    internal bool ShouldYield => CanSharePipeline && Stopwatch.GetElapsedTime(_pipeline._sliceStarted) >= TimeSpan.FromMilliseconds(1);
+
+    internal Task PendingOperations => _pendingOperations ??= _manager.CompleteContextOperationsAsync(_generation);
+
+    /// <summary>Executes this stage and retains its pipeline until all registered operations finish.</summary>
+    /// <param name="stage">The borrowed stage supplied to the runtime.</param>
+    /// <param name="cancellationToken">The manager-owned build cancellation token.</param>
+    /// <returns>The actual completed stage output.</returns>
+    /// <remarks>
+    /// Called once by the selected runtime inside its job. Same-runtime dependencies reuse that job.
+    /// Pending-operation failures are subsequently reported by the manager, preserving the stage's original exception.
+    /// </remarks>
+    public async ValueTask<object> ExecutePipelineAsync(IResourceStage stage, CancellationToken cancellationToken)
+    {
+        EnsureOpen();
+        if (_pipelineActive)
+        {
+            throw new InvalidOperationException("A build context can execute its stage only once.");
+        }
+
+        _jobContext = SynchronizationContext.Current;
+        Volatile.Write(ref _pipelineActive, true);
+        if (ReferenceEquals(_pipeline, this))
+        {
+            RestartSlice();
+        }
+
+        try
+        {
+            return await stage.BuildAsync(this, cancellationToken);
+        }
+        finally
+        {
+            Close();
+            try
+            {
+                Task pending = PendingOperations;
+                try
+                {
+                    await pending;
+                }
+                catch when (pending.IsCompleted)
+                {
+                    // The manager observes these failures after dispatch; keep the original stage failure intact.
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref _pipelineActive, false);
+            }
+        }
+    }
+
     /// <summary>Requires a shared dependency and records its lifetime and provenance.</summary>
     /// <typeparam name="T">The exact registered output type.</typeparam>
     /// <param name="key">The required logical resource.</param>
@@ -37,7 +103,7 @@ public sealed class ResourceBuildContext
         where T : class
     {
         EnsureOpen();
-        return _manager.RequireAsync(_view, _generation, key, lifetime, cancellationToken);
+        return _manager.RequireAsync(_view, _generation, this, key, lifetime, cancellationToken);
     }
 
     /// <summary>Opens an observed input and records its source dependency.</summary>
@@ -81,6 +147,8 @@ public sealed class ResourceBuildContext
     }
 
     internal void Close() => _closed = true;
+
+    internal void RestartSlice() => _pipeline._sliceStarted = Stopwatch.GetTimestamp();
 
     private void EnsureOpen() => ObjectDisposedException.ThrowIf(_closed, this);
 }
