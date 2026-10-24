@@ -8,6 +8,8 @@ public sealed class ResourceRegistrationBuilder
     private readonly string _managerName;
     private readonly List<Action<IServiceCollection>> _registrations = [];
     private readonly HashSet<RuntimeTypeHandle> _pipelines = [];
+    private readonly HashSet<string> _runtimeDependencies = new(StringComparer.Ordinal);
+    private readonly Dictionary<Type, Func<IServiceProvider, IResourceRuntime>> _stageRuntimes = [];
     private Func<IServiceProvider, IResourceSource>? _source;
     private bool _completed;
 
@@ -70,6 +72,49 @@ public sealed class ResourceRegistrationBuilder
         return this;
     }
 
+    /// <summary>Selects an already registered environment for the stage producing the specified output.</summary>
+    /// <typeparam name="TOutput">The exact output type of a registered stage.</typeparam>
+    /// <typeparam name="TRuntime">The environment service borrowed by the manager.</typeparam>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseStageRuntime<TOutput, TRuntime>()
+        where TOutput : class
+        where TRuntime : class, IResourceRuntime
+        => UseStageRuntime<TOutput>(static provider => provider.GetRequiredService<TRuntime>());
+
+    /// <summary>Selects a named or otherwise configured environment once when the manager is constructed.</summary>
+    /// <typeparam name="TOutput">The exact output type of a registered stage.</typeparam>
+    /// <param name="resolve">Resolves the borrowed environment, whose lifetime must cover manager cleanup.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseStageRuntime<TOutput>(Func<IServiceProvider, IResourceRuntime> resolve)
+        where TOutput : class
+    {
+        EnsureConfiguring();
+        if (!_stageRuntimes.TryAdd(typeof(TOutput), resolve))
+        {
+            throw new ArgumentException($"A runtime is already selected for '{typeof(TOutput)}'.");
+        }
+
+        return this;
+    }
+
+    /// <summary>Registers a constructor-injected scoped runtime dependency.</summary>
+    /// <typeparam name="TDependency">The runtime provider implementation.</typeparam>
+    /// <param name="dependencyId">The unique manager-local runtime dependency name.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseRuntimeDependency<TDependency>(string dependencyId)
+        where TDependency : class, IResourceRuntimeDependency
+    {
+        EnsureConfiguring();
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
+        if (!_runtimeDependencies.Add(dependencyId))
+        {
+            throw new ArgumentException("The runtime dependency name is already registered.", nameof(dependencyId));
+        }
+
+        _registrations.Add(services => ResourceServiceCollectionExtensions.AddRuntimeDependency<TDependency>(services, _managerName, dependencyId));
+        return this;
+    }
+
     internal Func<IServiceProvider, IResourceSource> Complete()
     {
         EnsureConfiguring();
@@ -83,6 +128,14 @@ public sealed class ResourceRegistrationBuilder
             throw new InvalidOperationException("Register at least one resource pipeline.");
         }
 
+        foreach (Type output in _stageRuntimes.Keys)
+        {
+            if (!_pipelines.Contains(output.TypeHandle))
+            {
+                throw new ArgumentException($"No stage produces '{output}'.");
+            }
+        }
+
         _completed = true;
         return _source;
     }
@@ -92,6 +145,14 @@ public sealed class ResourceRegistrationBuilder
         foreach (Action<IServiceCollection> registration in _registrations)
         {
             registration(services);
+        }
+    }
+
+    internal IEnumerable<ResourceStageRuntime> ResolveStageRuntimes(IServiceProvider provider)
+    {
+        foreach ((Type output, Func<IServiceProvider, IResourceRuntime> resolve) in _stageRuntimes)
+        {
+            yield return new(output, resolve(provider));
         }
     }
 

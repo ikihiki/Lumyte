@@ -86,6 +86,7 @@ public sealed partial class ResourceManager
         try
         {
             _reclaimerRegistration.Dispose();
+            UnsubscribeRuntimes();
             await _maintenance.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -98,6 +99,7 @@ public sealed partial class ResourceManager
                     }
 
                     _metadata.Clear();
+                    _invalidated.Clear();
                     _disposed = true;
                 }
             }
@@ -196,7 +198,7 @@ public sealed partial class ResourceManager
         return released;
     }
 
-    private async ValueTask CleanupGenerationAsync(ResourceGeneration generation, bool buildOnly)
+    private async ValueTask CleanupGenerationAsync(ResourceGeneration generation, bool buildOnly, bool preserveContext = false)
     {
         if (!buildOnly)
         {
@@ -215,7 +217,7 @@ public sealed partial class ResourceManager
             {
                 if (generation.Value is { } output)
                 {
-                    await generation.Stage.ReleaseAsync(output).ConfigureAwait(false);
+                    await generation.Runtime.ReleaseAsync(generation.Stage, output).ConfigureAwait(preserveContext);
                 }
 
                 generation.CleanupPhase = ResourceGenerationCleanupPhase.Resources;
@@ -226,7 +228,7 @@ public sealed partial class ResourceManager
                 ResourceCleanup cleanup = generation.Cleanups[index];
                 if (!cleanup.Completed && (!buildOnly || cleanup.Lifetime == ResourceDependencyLifetime.Build))
                 {
-                    await cleanup.Callback().ConfigureAwait(false);
+                    await cleanup.Callback().ConfigureAwait(preserveContext);
                     cleanup.Completed = true;
                 }
             }
@@ -235,20 +237,20 @@ public sealed partial class ResourceManager
             {
                 if (source.Snapshot is { } snapshot && (!buildOnly || source.Lifetime == ResourceDependencyLifetime.Build))
                 {
-                    await snapshot.DisposeAsync().ConfigureAwait(false);
+                    await snapshot.DisposeAsync().ConfigureAwait(preserveContext);
                     source.Snapshot = null;
                 }
             }
 
             if (generation.BuildMemory is { } buildMemory)
             {
-                await buildMemory.DisposeAsync().ConfigureAwait(false);
+                await buildMemory.DisposeAsync().ConfigureAwait(preserveContext);
                 generation.BuildMemory = null;
             }
 
             if (!buildOnly && generation.ResidentMemory is { } residentMemory)
             {
-                await residentMemory.DisposeAsync().ConfigureAwait(false);
+                await residentMemory.DisposeAsync().ConfigureAwait(preserveContext);
                 generation.ResidentMemory = null;
             }
 
@@ -369,7 +371,7 @@ public sealed partial class ResourceManager
     private void PruneMetadata()
     {
         HashSet<ResourceNode> reachable = [];
-        Stack<ResourceNode> pending = new(_published.Keys.Concat(_slotByKey.Keys)
+        Stack<ResourceNode> pending = new(_published.Keys.Concat(_invalidated).Concat(_slotByKey.Keys)
             .Concat(_loads.Keys).Concat(_generations.Select(static generation => generation.Node)));
         while (pending.TryPop(out ResourceNode node))
         {
