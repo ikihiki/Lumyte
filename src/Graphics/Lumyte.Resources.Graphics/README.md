@@ -31,7 +31,7 @@ IGraphicDevice device = epoch.Device;
 // 解放で必要なruntime、epoch、実際のdeviceを出力やcleanupに保持する。
 ```
 
-RuntimeはStageの開始・通常のawait後の継続・出力解放を共有のジョブ実行へ配送します。
+同じGraphicsResourceRuntime instanceに対応する依存Stageは、一つのジョブで構築します。CPU側の別Runtimeへ切り替わる箇所では別ジョブにし、await後も各区間のジョブへ戻ります。出力の解放は元Runtimeから配送します。
 Stageは個別のGPU生成とsubmissionを記述します。`AcquireAsync`は毎回現在の物理epochを取得し、
 Versionとservice identityを記録してleaseの所有をcontextへ移します。戻り値をStageからDisposeしません。
 GPU完了前に構築を完了させず、部分生成物もcleanupへ登録します。
