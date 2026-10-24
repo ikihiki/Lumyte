@@ -8,11 +8,12 @@ namespace Lumyte.Resources;
 /// </remarks>
 public interface IResourceRuntime
 {
-    /// <summary>Dispatches a stage and returns its actual completed output.</summary>
+    /// <summary>Dispatches a pipeline segment and returns its actual completed output.</summary>
     /// <param name="stage">The borrowed stage to execute.</param>
     /// <param name="context">The manager-owned construction context.</param>
     /// <param name="cancellationToken">The shared build's cancellation token.</param>
     /// <returns>The owned output. Started work must finish before this operation completes.</returns>
+    /// <remarks>Invoke <see cref="ResourceBuildContext.ExecutePipelineAsync"/> inside the job to share it with same-runtime dependencies.</remarks>
     ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken);
 
     /// <summary>Dispatches destruction of an output, preserving failures for the manager to retry.</summary>

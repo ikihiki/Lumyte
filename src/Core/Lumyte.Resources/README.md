@@ -73,7 +73,8 @@ Lease取得はI/Oや構築を行いません。Reference返却後も、取得済
 `IResourceRuntime`はStageが必要とする実行先・device・owner・世代の借用をまとめるリソース環境です。
 ResourceManagerは出力型の対応を固定し、選択したRuntimeを各内容世代に保存してBuildAsyncとReleaseAsyncへ使います。
 Stageは`IResourceSourceStage<T, TRuntime>`または`IResourceTransform<TInput, TOutput, TRuntime>`で環境型を宣言し、`BuildAsync`の型付きRuntime引数で受け取れます。Stage側のキャストは不要です。選択した環境と宣言型の不一致はManager構築時に検出します。共通の`ResourceBuildContext.Runtime`も維持します。
-既定のResourceRuntimeは開始とawait継続をジョブへ配送し、モジュールRuntimeもこの共通ジョブ環境を利用できます。
+既定のResourceRuntimeはPipeline開始とawait継続をジョブへ配送し、同じRuntime instanceを使う依存Stageは同じジョブ内で実行します。Runtime切り替えと独立Acquireでは別ジョブにし、キャッシュ済み・構築中の依存は共有します。モジュールRuntimeもこの共通基盤を利用できます。
+ジョブ入口は`context.ExecutePipelineAsync(stage, token)`です。登録済み依存・Source操作の実完了までジョブを保持するため、親の取消で共有依存の継続先を失いません。依存・世代・解放は従来どおりStageごとに管理します。
 
 I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
 StageとCPU処理を含む補助メソッドは通常のawaitを使い、同期区間を有限に保ちます。

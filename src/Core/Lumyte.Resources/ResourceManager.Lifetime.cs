@@ -198,7 +198,7 @@ public sealed partial class ResourceManager
         return released;
     }
 
-    private async ValueTask CleanupGenerationAsync(ResourceGeneration generation, bool buildOnly)
+    private async ValueTask CleanupGenerationAsync(ResourceGeneration generation, bool buildOnly, bool preserveContext = false)
     {
         if (!buildOnly)
         {
@@ -217,7 +217,7 @@ public sealed partial class ResourceManager
             {
                 if (generation.Value is { } output)
                 {
-                    await generation.Runtime.ReleaseAsync(generation.Stage, output).ConfigureAwait(false);
+                    await generation.Runtime.ReleaseAsync(generation.Stage, output).ConfigureAwait(preserveContext);
                 }
 
                 generation.CleanupPhase = ResourceGenerationCleanupPhase.Resources;
@@ -228,7 +228,7 @@ public sealed partial class ResourceManager
                 ResourceCleanup cleanup = generation.Cleanups[index];
                 if (!cleanup.Completed && (!buildOnly || cleanup.Lifetime == ResourceDependencyLifetime.Build))
                 {
-                    await cleanup.Callback().ConfigureAwait(false);
+                    await cleanup.Callback().ConfigureAwait(preserveContext);
                     cleanup.Completed = true;
                 }
             }
@@ -237,20 +237,20 @@ public sealed partial class ResourceManager
             {
                 if (source.Snapshot is { } snapshot && (!buildOnly || source.Lifetime == ResourceDependencyLifetime.Build))
                 {
-                    await snapshot.DisposeAsync().ConfigureAwait(false);
+                    await snapshot.DisposeAsync().ConfigureAwait(preserveContext);
                     source.Snapshot = null;
                 }
             }
 
             if (generation.BuildMemory is { } buildMemory)
             {
-                await buildMemory.DisposeAsync().ConfigureAwait(false);
+                await buildMemory.DisposeAsync().ConfigureAwait(preserveContext);
                 generation.BuildMemory = null;
             }
 
             if (!buildOnly && generation.ResidentMemory is { } residentMemory)
             {
-                await residentMemory.DisposeAsync().ConfigureAwait(false);
+                await residentMemory.DisposeAsync().ConfigureAwait(preserveContext);
                 generation.ResidentMemory = null;
             }
 
