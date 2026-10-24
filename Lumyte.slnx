@@ -1,6 +1,9 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
+    <Project Path="samples/Lumyte.Resources.Gltf.Sample/Lumyte.Resources.Gltf.Sample.csproj" />
+    <Project Path="samples/Lumyte.Resources.Sample/Lumyte.Resources.Sample.csproj" />
     <Project Path="samples/Lumyte.Platform.Windows.Sample/Lumyte.Platform.Windows.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Sample/Lumyte.Audio.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Shared/Lumyte.Audio.Shared.csproj" />
@@ -15,12 +18,16 @@
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
+    <Project Path="src/Audio/Lumyte.Resources.Audio.DependencyInjection/Lumyte.Resources.Audio.DependencyInjection.csproj" />
+    <Project Path="src/Audio/Lumyte.Resources.Audio/Lumyte.Resources.Audio.csproj" />
+    <Project Path="src/Audio/Lumyte.Audio.Execution/Lumyte.Audio.Execution.csproj" />
     <Project Path="src/Audio/Lumyte.Audio.Abstractions/Lumyte.Audio.Abstractions.csproj" />
     <Project Path="src/Audio/Lumyte.Audio.OpenAL/Lumyte.Audio.OpenAL.csproj" />
     <Project Path="src/Audio/Lumyte.Audio.Browser/Lumyte.Audio.Browser.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Resources.FileSystem/Lumyte.Resources.FileSystem.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
     <Project Path="src/Platform/Lumyte.Windowing.Abstractions/Lumyte.Windowing.Abstractions.csproj" />
@@ -32,6 +39,8 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
+    <Project Path="src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
     <Project Path="src/Core/Lumyte.Resources/Lumyte.Resources.csproj" />
     <Project Path="src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
     <Project Path="src/Core/Lumyte.Execution/Lumyte.Execution.csproj" />
@@ -58,6 +67,7 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
@@ -74,6 +84,8 @@
     <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Audio/">
+    <Project Path="tests/Audio/Lumyte.Resources.Audio.Tests/Lumyte.Resources.Audio.Tests.csproj" />
+    <Project Path="tests/Audio/Lumyte.Resources.Audio.IntegrationTests/Lumyte.Resources.Audio.IntegrationTests.csproj" />
     <Project Path="tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Animation/">
@@ -102,6 +114,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Hosting.Tests/Lumyte.Graphics.Hosting.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj" />

@@ -298,7 +298,29 @@ payload／resultはGCが追跡する型付きstoreへ格納し、objectへのbox
 
 キャンセル可能なgate待ちCPU仕事とgraphにはtokenの通知を必要時だけ登録する。単発run自身が非poolのIValueTaskSourceを実装し、token=0のValueTaskを一度だけ観測する。GetResultはtoken・完了・単一consumerを検査した後、成功／取消／失敗のfinallyでslotを返す。別の完了wrapper・CommandBatch・Taskは作らない。batchの公開CommandRunも再利用せず、結果をDisposeまで保持する。未観測結果をGCで早期回収しない。
 
-結果と先行の書き込みはrelease/acquire相当で公開する。外部継続をhandler内でinline実行せず、OnCompletedのcontext指定を尊重する。await後のownerは保証しない。完了は同期handlerの終了を表し、音が聞こえる時刻、GPU fence、外部I/Oの終了とは区別する。
+結果と先行の書き込みはrelease/acquire相当で公開する。外部継続をhandler内でinline実行せず、OnCompletedのcontext指定を尊重する。await後のownerは保証しない。通常commandの完了は同期handlerの終了を表し、音が聞こえる時刻、GPU fence、外部I/Oの終了とは区別する。
+
+### 非同期workflowジョブ
+
+Resourcesなどの非同期処理には`IWorkflowHandler<TCommand, TResult>.ExecuteAsync`と
+`WorkflowPort<TCommand, TResult>`を用い、`ModuleBuilder.Workflow`でCPU仕事として宣言する。
+通常commandの有限同期handlerとは別の契約とし、workflowから同じRuntimeの個別CommandPort／WorkflowPortへ送ってawaitできる。
+batch・graphの組立て、投入、結果取得はworkflow外で行う。
+Pump、同期Wait、runtimeの起動・停止をworkflow内から行わない。
+
+開始と通常のawait後の継続を同じCPU schedulerへ配送する。
+実行中の同期区間だけがCPU枠を使い、未完了のI/Oや子ジョブを待つ間は返す。
+ThreadPoolでは並列度を制限し、Cooperativeでは`PumpJobs`が各同期区間を進める。
+同じ物理threadへ戻る保証はない。SynchronizationContextを捕捉しない
+`ConfigureAwait(false)`やTask.Runはこの制御の対象外となるため、workflowのCPU処理では通常のawaitを使う。
+
+workflow全体を実完了まで未完了として追跡し、予約容量は結果の一度だけの観測で返す。
+未開始なら取消を受け付け、開始後はCancelPendingでも継続を保持して実際の結果・例外を返す。
+Stopは結果の観測ではなく実完了を待つ。実行途中の同期区間は中断しない。
+workflow portはmodule instanceに属する入口も許し、固定構成の一つのruntimeへ一度だけ接続する。
+これにより独立したホスト間でstatic入口を共有せず、生成された制御commandの静的入口とは分けて構成できる。
+受付予算はinput・resultと固定の管理費を対象とし、workflow内部の非同期状態やfan-outで増える
+継続callback、参照先bufferの総量を制限するものではない。それらの寿命と規模は操作側が管理する。
 
 ### CPU graphとownerの駆動
 

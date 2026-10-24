@@ -10,16 +10,26 @@ export async function resume(device) {
     if (device.context.state !== "running") throw new Error("Audio output could not resume.");
 }
 export function destroyDevice(device) {
+    if (device.closed || device.context.state === "closed") {
+        device.closed = true;
+        return;
+    }
     // close() initiates shutdown synchronously; completion is owned by the context.
     const closing = device.context.close();
     device.closed = true;
     closing.catch(error => console.error("AudioContext shutdown failed", error));
 }
 export function createClip(device, rate, channels, memory) {
+    // The .NET span is borrowed only for this call; never retain memory or write into it.
+    const buffer = device.context.createBuffer(channels, memory.byteLength / 4 / channels, rate);
+    if (channels === 1) {
+        const channel = buffer.getChannelData(0);
+        memory.copyTo(new Uint8Array(channel.buffer, channel.byteOffset, channel.byteLength));
+        return buffer;
+    }
     const bytes = new Uint8Array(memory.byteLength);
     memory.copyTo(bytes);
     const samples = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
-    const buffer = device.context.createBuffer(channels, samples.length / channels, rate);
     for (let c = 0; c < channels; c++) {
         const channel = buffer.getChannelData(c);
         for (let i = 0; i < channel.length; i++) channel[i] = samples[i * channels + c];
@@ -35,7 +45,11 @@ export function createVoice(device, clip, initialGain) {
 function detach(voice) {
     if (voice.source) {
         voice.source.onended = null;
-        voice.source.stop();
+        try {
+            voice.source.stop();
+        } catch (error) {
+            if (outputState(voice.device) !== 2) throw error;
+        }
         voice.source.disconnect();
         voice.source = null;
     }
