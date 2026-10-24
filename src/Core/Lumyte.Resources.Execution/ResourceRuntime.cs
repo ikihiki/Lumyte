@@ -3,7 +3,7 @@ using Lumyte.Execution;
 
 namespace Lumyte.Resources.Execution;
 
-/// <summary>Dispatches resource stages and their await continuations through the host's CPU job scheduler.</summary>
+/// <summary>Dispatches runtime-contiguous pipelines and their await continuations through the host's CPU job scheduler.</summary>
 /// <remarks>Share one instance across managers on the same host and register it with the host's execution modules.</remarks>
 public sealed class ResourceRuntime : IResourceRuntime, IExecutionModule
 {
@@ -68,7 +68,7 @@ public sealed class ResourceRuntime : IResourceRuntime, IExecutionModule
     private readonly struct BuildHandler : IWorkflowHandler<BuildRequest, object>
     {
         public ValueTask<object> ExecuteAsync(BuildRequest command, CancellationToken cancellationToken)
-            => command.Stage.BuildAsync(command.Context, cancellationToken);
+            => command.Context.ExecutePipelineAsync(command.Stage, cancellationToken);
     }
 
     private readonly struct ReleaseHandler : IWorkflowHandler<ReleaseRequest, Unit>
