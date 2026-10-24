@@ -32,7 +32,7 @@ ResourceManager → 出力型に対応するIResourceRuntime
 
 ManagerはStage・依存グラフ・内容世代・公開mapを管理する。
 出力型ごとの`ResourceStageRuntime`を構築時に固定し、指定のないStageには既定Runtimeを使う。
-選択したRuntimeを各内容世代に保存し、初回ロード・再構築のBuildAsyncと、その出力のReleaseAsyncに使う。
+選択したRuntimeを各内容世代に保存する。初回ロード・再構築はRuntime区間の入口をBuildAsyncへ配送し、各出力のReleaseAsyncには保存したRuntimeを使う。
 Stageは`IResourceSourceStage<T, TRuntime>`または`IResourceTransform<TInput, TOutput, TRuntime>`で環境型を宣言する。
 選択済み環境をBuildAsyncのTRuntime引数へ渡すため、Stage内での型変換は不要である。
 Manager構築時にStageのRuntimeTypeと選択したinstanceの互換性を検証し、不一致は実行前に拒否する。
@@ -339,6 +339,10 @@ Managerは借用したSource・Stage・各Runtime・世代providerの寿命を�
 出力型とRuntimeの対応はManager構築時に固定し、ロードごとにDI解決やRuntime生成を行わない。
 開始・解放の送信は型付きstructと共有ジョブ環境のportを使い、送信ごとのラムダやTask.Runを追加しない。
 workflowは実行待ちと継続のための状態を保持する。非同期状態機械、継続callback、ロードグラフの確保は残り、無割り当てを保証しない。
+同じRuntimeの構築区間はStage数にかかわらず一つのworkflowとし、Stageごとのworkflow・完了通知の確保を避ける。
+Linux x64／.NET 10.0.12のRelease簡易測定では、微小な8段の構築配送は8回から1回となった。
+現在の同じ実装でStage別配送と区間共有を比較したロード・解放サイクルの割当中央値は約53.4KBから40.9KBとなった。
+解放は世代ごとの配送を維持する。計測は実I/O・native処理を含まず、3回の各1000サイクルの中央値で、実負荷の速度保証ではない。
 I/O待機はCPU枠を占有しない。未完了workflowは実完了まで追跡し、受付容量はRuntime区間ごとに予約し、返したValueTaskの結果を一度awaitして回収するまで保持する。
 停止待機は実完了までであり、完了結果の回収そのものは待たない。
 
