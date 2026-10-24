@@ -69,6 +69,9 @@ transformの依存取得とtyped BuildAsync呼出しは同じinterface dispatch�
 未構築の依存Stageが呼出元と同じRuntime instanceなら、そのジョブ内で続けて実行する。
 Runtimeが切り替わる境界と独立したAcquireは新しいジョブにする。`A → B → A`は3区間となり、前のAへ戻して実行しない。
 既にキャッシュ済み・構築中の依存は再実行せず、元の生成処理の結果を共有する。
+内部の構築・依存・Source完了は、状態更新と所有の記録を済ませ、Manager lockの外で通知する。
+完了通知ごとのThreadPool中継は追加せず、継続先はawait側の実行contextに従う。
+同じジョブ内では直接継続でき、別ジョブの待機者はそのジョブへ戻す。外部Acquireへの最終通知は非同期に分離する。
 ThreadPoolではworker、Cooperativeではホストの`PumpJobs`で同期区間を実行する。
 同じworkerへ戻る保証はなく、device操作は各モジュールのownerコマンドへ配送する。
 I/O、依存Stage、所有スレッドの処理を待つ間はCPU枠を解放するため、並列数1でも子の処理を進められる。
