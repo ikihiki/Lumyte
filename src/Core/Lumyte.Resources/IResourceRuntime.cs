@@ -9,7 +9,7 @@ namespace Lumyte.Resources;
 public interface IResourceRuntime
 {
     /// <summary>Dispatches a pipeline segment and returns its actual completed output.</summary>
-    /// <param name="stage">The borrowed stage to execute.</param>
+    /// <param name="stage">The borrowed entry stage for this runtime segment.</param>
     /// <param name="context">The manager-owned construction context.</param>
     /// <param name="cancellationToken">The shared build's cancellation token.</param>
     /// <returns>The owned output. Started work must finish before this operation completes.</returns>
