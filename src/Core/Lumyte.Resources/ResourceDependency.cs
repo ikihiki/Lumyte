@@ -6,5 +6,6 @@ internal sealed class ResourceDependency(ResourceDependencyLifetime lifetime)
 
     internal ResourceGeneration? Generation { get; set; }
 
-    internal TaskCompletionSource<ResourceGeneration> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    // Completed outside the manager gate so internal bookkeeping can continue without a ThreadPool relay.
+    internal TaskCompletionSource<ResourceGeneration> Completion { get; } = new();
 }
