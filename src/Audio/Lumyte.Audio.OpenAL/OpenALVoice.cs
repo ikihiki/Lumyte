@@ -39,8 +39,11 @@ internal sealed class OpenALVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _state;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _state;
+            }
         }
     }
 
@@ -48,15 +51,22 @@ internal sealed class OpenALVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _gain;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _gain;
+            }
         }
 
         set
         {
             Validate();
             AudioValidation.Gain(value);
-            _gain = value;
+            lock (this)
+            {
+                _gain = value;
+            }
+
             ApplyGain();
         }
     }
@@ -65,8 +75,11 @@ internal sealed class OpenALVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _loop;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _loop;
+            }
         }
 
         set
@@ -74,7 +87,10 @@ internal sealed class OpenALVoice : IAudioVoice
             Validate();
             _device.Api.SetSourceProperty(_handle, SourceBoolean.Looping, value);
             _device.CheckError();
-            _loop = value;
+            lock (this)
+            {
+                _loop = value;
+            }
         }
     }
 
@@ -122,12 +138,17 @@ internal sealed class OpenALVoice : IAudioVoice
             return;
         }
 
-        Validate();
-        _device.Api.SourceStop(_handle);
-        _device.CheckError();
-        _device.Api.DeleteSource(_handle);
-        _device.CheckError();
-        _disposed = true;
+        if (_device.PrepareCleanup())
+        {
+            _device.Api.DeleteSource(_handle);
+            _device.CheckError();
+        }
+
+        lock (this)
+        {
+            _disposed = true;
+        }
+
         _clip.References--;
         _device.Remove(this);
     }
@@ -135,7 +156,10 @@ internal sealed class OpenALVoice : IAudioVoice
     internal void Refresh()
     {
         Observe();
-        _state = _requested;
+        lock (this)
+        {
+            _state = _requested;
+        }
     }
 
     internal void ApplyGain()

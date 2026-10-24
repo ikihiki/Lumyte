@@ -23,7 +23,7 @@ public sealed class CommandPort<TCommand, TResult> : ICommandEndpoint
     /// <returns>The admission status.</returns>
     public CommandEnqueueStatus TryEnqueue(in TCommand command, CancellationToken token, out IValueTaskSource<TResult>? completion)
     {
-        ExecutionRuntime.VerifyOutsideHandler();
+        ExecutionRuntime.VerifyCanSubmit();
         WorkDefinition<TCommand, TResult>? work = Work;
         if (work is null)
         {
