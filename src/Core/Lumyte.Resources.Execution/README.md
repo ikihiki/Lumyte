@@ -1,7 +1,7 @@
 # Lumyte.Resources.Execution
 
 `ResourceRuntime`は`IResourceRuntime`と`IExecutionModule`を実装する既定のリソース環境です。
-Stageの構築・解放をExecutionのworkflowジョブへ配送し、複数Managerで共有します。
+同じRuntimeのPipeline区間を一つのworkflowジョブで構築し、複数Managerで実行基盤を共有します。出力の解放は元Runtimeから配送します。
 Audio・GraphicsなどのRuntimeもIResourceRuntimeを実装し、この共通ジョブ環境とdevice・owner・世代の管理を組み合わせます。
 初回ロードと再構築は同じ経路を使い、Stageへのジョブ注入は不要です。
 
@@ -34,7 +34,11 @@ DI解決だけでは起動せず、Prepare/Start/Pump/Stopはホストが実行�
 
 ## 非同期Stageの契約
 
-Stageの開始と通常の`await`の継続を、ThreadPoolではworker、Cooperativeではホストの`PumpJobs`へ配送します。
+Pipeline開始と通常の`await`の継続を、ThreadPoolではworker、Cooperativeではホストの`PumpJobs`へ配送します。
+同じRuntime instanceを使う依存Stageは、新しいworkflowを作らず同じジョブ内で実行します。
+Runtime切り替え・独立Acquireは別ジョブです。キャッシュ済み・構築中の依存は結果を共有します。
+`A → B → A`は3つの区間となり、同じ基盤を使う別のRuntime instanceも混ぜません。
+長い区間は依存境界で約1ms、深い区間は32段を目安に同じジョブ内でyieldします。同期Stage自体を途中中断する機能ではありません。
 I/O・依存ロード・所有スレッドの処理を待つ間はCPU枠を解放し、並列数1でも子のジョブを進められます。
 ThreadPoolでは同じworkerに戻る保証はありません。
 開始したStageは実際の完了まで追跡し、取消要求だけで入力や未回収の出力を捨てません。
@@ -64,12 +68,16 @@ Stageは選択Runtimeから構築ごとに現在のdevice世代を借り、実�
 Runtimeが`IResourceRuntimeDependency`を実装していればManagerが同じinstanceをproviderとして自動収集します。
 解放は内容世代に保存したRuntimeと生成時のLease・ownerを使い、現在のdeviceを取り直しません。
 
+独自Runtimeでも、ジョブ内で`context.ExecutePipelineAsync(stage, token)`を呼びます。
+この入口が、親Stageの待機が取消されても依存・Sourceの実処理が終わるまでジョブを保持します。
+Stageごとの依存・世代・公開・解放はManagerが管理し、構築ジョブの統合で論理リソースを統合しません。
+
 ## 容量と終了
 
 配送は型付きstructを使い、送信ごとのラムダやTask.Runを追加しません。
 非同期状態機械や継続の確保は残り、無割り当てを保証するものではありません。
 起動前・停止後の配送は拒否し、容量不足は`ExecutionQueueFullException`で通知します。
-受付容量は返したValueTaskの結果を一度awaitして回収するまで保持します。停止処理はworkflowの実完了を待ち、結果の回収は待ちません。
+受付容量はStage数ではなくRuntime区間ごとに確保し、返したValueTaskの結果を一度awaitして回収するまで保持します。停止処理はworkflowの実完了を待ち、結果の回収は待ちません。
 未開始の処理は取消で省略できますが、開始後はCancelPendingでも継続を維持し、協調取消と実完了を待ちます。
 
 BrowserではHost/Cooperativeで配置し、ロード・解放の待機中もイベントループからPumpを続けます。
