@@ -5,4 +5,5 @@ internal enum WorkFinish
     Completed,
     GraphWorkerCompleted,
     Requeue,
+    Suspended,
 }

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Platform.Windows.Sample/Lumyte.Platform.Windows.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Sample/Lumyte.Audio.Sample.csproj" />
@@ -15,12 +16,16 @@
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
+    <Project Path="src/Audio/Lumyte.Resources.Audio.DependencyInjection/Lumyte.Resources.Audio.DependencyInjection.csproj" />
+    <Project Path="src/Audio/Lumyte.Resources.Audio/Lumyte.Resources.Audio.csproj" />
+    <Project Path="src/Audio/Lumyte.Audio.Execution/Lumyte.Audio.Execution.csproj" />
     <Project Path="src/Audio/Lumyte.Audio.Abstractions/Lumyte.Audio.Abstractions.csproj" />
     <Project Path="src/Audio/Lumyte.Audio.OpenAL/Lumyte.Audio.OpenAL.csproj" />
     <Project Path="src/Audio/Lumyte.Audio.Browser/Lumyte.Audio.Browser.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Resources.FileSystem/Lumyte.Resources.FileSystem.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
     <Project Path="src/Platform/Lumyte.Windowing.Abstractions/Lumyte.Windowing.Abstractions.csproj" />
@@ -32,6 +37,8 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
+    <Project Path="src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
     <Project Path="src/Core/Lumyte.Resources/Lumyte.Resources.csproj" />
     <Project Path="src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
     <Project Path="src/Core/Lumyte.Execution/Lumyte.Execution.csproj" />
@@ -74,6 +81,8 @@
     <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Audio/">
+    <Project Path="tests/Audio/Lumyte.Resources.Audio.Tests/Lumyte.Resources.Audio.Tests.csproj" />
+    <Project Path="tests/Audio/Lumyte.Resources.Audio.IntegrationTests/Lumyte.Resources.Audio.IntegrationTests.csproj" />
     <Project Path="tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Animation/">
