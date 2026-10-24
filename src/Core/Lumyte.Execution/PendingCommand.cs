@@ -65,6 +65,7 @@ internal sealed class PendingCommand<TCommand, TResult> : QueuedWork, System.Thr
             throw new InvalidOperationException("Invalid or already observed command.");
         }
 
+        WorkflowContinuation.Prepare(_runtime!, ref continuation, ref state, ref flags);
         _source.OnCompleted(continuation, state, 0, flags);
     }
 

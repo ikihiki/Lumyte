@@ -13,7 +13,7 @@ public interface IResourceSourceStage<T> : IResourceStage
 
     /// <inheritdoc />
     async ValueTask<object> IResourceStage.BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
-        => await BuildAsync(context, cancellationToken).ConfigureAwait(false);
+        => await BuildAsync(context, cancellationToken);
 
     /// <inheritdoc />
     ValueTask IResourceStage.ReleaseAsync(object resource) => ReleaseAsync((T)resource);

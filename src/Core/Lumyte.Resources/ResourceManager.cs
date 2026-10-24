@@ -10,21 +10,27 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
-    private readonly Dictionary<RuntimeTypeHandle, IResourceStage> _stages;
+    private readonly ResourceWatchTargets _watchTargets = new();
+    private readonly ResourceReloadService? _hotReload;
+    private readonly Dictionary<RuntimeTypeHandle, (IResourceStage Stage, IResourceRuntime Runtime)> _stages;
+    private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
     private readonly Dictionary<ResourceNode, ResourceLoad> _loads = [];
     private readonly List<ResourceSlot> _slots = [];
     private readonly Dictionary<ResourceNode, uint> _slotByKey = [];
+    private readonly HashSet<ResourceNode> _invalidated = [];
     private readonly SemaphoreSlim _maintenance = new(1, 1);
     private readonly IDisposable _reclaimerRegistration;
     private Dictionary<ResourceNode, ResourceGeneration> _published = [];
     private ResourceBuildView? _normalView;
+    private Exception? _runtimeFailure;
     private Task? _disposeTask;
     private ulong _publicationVersion;
     private ulong _revision;
     private int _externalOwners;
     private int _operations;
+    private int _reloadOperations;
     private bool _closing;
     private bool _disposed;
 
@@ -33,17 +39,85 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="source">The borrowed input source.</param>
     /// <param name="stages">The borrowed source stages and transforms, with one producer per output type.</param>
     /// <param name="memory">The shared memory budget manager.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory)
+    /// <param name="runtime">The shared default environment for stages without an override.</param>
+    /// <param name="runtimeDependencies">The borrowed runtime generation providers.</param>
+    /// <param name="stageRuntimes">Optional stage environments, selected by their exact output type and fixed during construction.</param>
+    /// <param name="reloadOptions">Batching and retry settings for automatic reload.</param>
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, IEnumerable<ResourceStageRuntime>? stageRuntimes = null, ResourceReloadOptions? reloadOptions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _name = name;
         _source = source;
         _memory = memory;
-        _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle);
+        _stages = stages.Select(ValidateStage).ToDictionary(static stage => stage.OutputType.TypeHandle, stage => (stage, runtime));
+        HashSet<RuntimeTypeHandle>? configured = null;
+        foreach (ResourceStageRuntime binding in stageRuntimes ?? [])
+        {
+            if (binding.OutputType is null || binding.Runtime is null)
+            {
+                throw new ArgumentException("Supply an initialized stage runtime binding.", nameof(stageRuntimes));
+            }
+
+            RuntimeTypeHandle type = binding.OutputType.TypeHandle;
+            if (!_stages.TryGetValue(type, out (IResourceStage Stage, IResourceRuntime Runtime) selected))
+            {
+                throw new ArgumentException($"No stage produces '{binding.OutputType}'.", nameof(stageRuntimes));
+            }
+
+            if (!(configured ??= []).Add(type))
+            {
+                throw new ArgumentException($"A runtime is already selected for '{binding.OutputType}'.", nameof(stageRuntimes));
+            }
+
+            _stages[type] = (selected.Stage, binding.Runtime);
+        }
+
+        foreach ((IResourceStage stage, IResourceRuntime selectedRuntime) in _stages.Values)
+        {
+            if (!stage.RuntimeType.IsInstanceOfType(selectedRuntime))
+            {
+                throw new ArgumentException($"Stage '{stage.GetType()}' requires runtime '{stage.RuntimeType}', but '{selectedRuntime.GetType()}' was selected.", nameof(stageRuntimes));
+            }
+        }
+
         ValidatePipelines();
         ManagerId = NextManagerId();
-        _reclaimerRegistration = memory.RegisterReclaimer(this);
+        try
+        {
+            foreach (IResourceRuntimeDependency provider in runtimeDependencies ?? [])
+            {
+                RegisterRuntimeProvider(provider);
+            }
+
+            foreach ((IResourceStage _, IResourceRuntime selectedRuntime) in _stages.Values)
+            {
+                if (selectedRuntime is IResourceRuntimeDependency provider)
+                {
+                    RegisterRuntimeProvider(provider);
+                }
+            }
+
+            foreach (ResourceRuntimeState dependency in _runtimes.Values)
+            {
+                dependency.Handler = (_, _) => ObserveRuntime(dependency);
+                dependency.Provider.Changed += dependency.Handler;
+                RefreshRuntime(dependency);
+            }
+
+            _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes
+                ? new ResourceReloadService(this, changes, reloadOptions) : null;
+            _reclaimerRegistration = memory.RegisterReclaimer(this);
+            _hotReload?.Start();
+        }
+        catch
+        {
+            UnsubscribeRuntimes();
+            throw;
+        }
     }
+
+    /// <summary>Gets the manager-owned automatic reload worker, or null when the source has no notifications or automatic reload is disabled.</summary>
+    public ResourceReloadService? HotReload => _hotReload;
 
     /// <summary>Gets the process-local identity, never reused by another manager.</summary>
     public ulong ManagerId { get; }
@@ -60,6 +134,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
+    internal IResourceWatchTargets WatchTargets => _watchTargets;
+
     /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
     /// <param name="key">The requested resource.</param>
@@ -68,42 +144,67 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     public async ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
         where T : class
     {
-        using ResourceLease<T> lease = await AcquireLeaseAsync(key, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         ResourceNode node = GetNode(key);
+        RefreshRuntimes();
+        ResourceLoad load;
+        bool start = false;
         lock (_gate)
         {
             EnsureRunning();
-            if (!_slotByKey.TryGetValue(node, out uint index))
+            if (_published.TryGetValue(node, out ResourceGeneration? cached))
             {
-                index = checked((uint)_slots.Count);
-                for (int candidate = 0; candidate < _slots.Count; candidate++)
-                {
-                    ResourceSlot old = _slots[candidate];
-                    if (old.References == 0 && old.Generation < uint.MaxValue)
-                    {
-                        index = (uint)candidate;
-                        break;
-                    }
-                }
-
-                uint generation = index == _slots.Count ? 1 : checked(_slots[(int)index].Generation + 1);
-                ResourceSlot slot = new(node, generation);
-                if (index == _slots.Count)
-                {
-                    _slots.Add(slot);
-                }
-                else
-                {
-                    _slots[(int)index] = slot;
-                }
-
-                _slotByKey.Add(node, index);
+                ThrowIfUnavailable(cached);
+                return CreateReference<T>(node);
             }
 
-            ResourceSlot current = _slots[(int)index];
-            current.Current = _published.GetValueOrDefault(node);
-            ResourceHandle<T> handle = new(ManagerId, index, current.Generation);
-            return CreateReference(handle, current);
+            ThrowIfKnownUnavailable(node);
+            if (!_loads.TryGetValue(node, out load!))
+            {
+                ResourceBuildView view = _normalView is { } existing && existing.PublicationVersion == _publicationVersion
+                    ? existing
+                    : CreateView([], CancellationToken.None);
+                _normalView = view;
+                view.Roots++;
+                load = new(view);
+                _loads.Add(node, load);
+                _operations++;
+                start = true;
+            }
+
+            load.Waiters++;
+            _operations++;
+        }
+
+        if (start)
+        {
+            _ = RunLoadAsync(node, load);
+        }
+
+        try
+        {
+            ResourceGeneration generation = await load.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            RefreshRuntimes();
+            lock (_gate)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                EnsureRunning();
+                ThrowIfUnavailable(generation);
+                return CreateReference<T>(node);
+            }
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                load.Waiters--;
+                if (load.Generation is { } generation)
+                {
+                    generation.Pins--;
+                }
+
+                _operations--;
+            }
         }
     }
 
@@ -115,13 +216,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference)
         where T : class
     {
+        RefreshRuntimes();
         lock (_gate)
         {
             EnsureRunning();
             reference = null;
             if (!TryGetSlot(handle, out ResourceSlot? slot)
                 || !_published.TryGetValue(slot!.Node, out ResourceGeneration? generation)
-                || generation.State != ResourceGenerationState.Ready)
+                || generation.State != ResourceGenerationState.Ready || TryGetUnavailable(generation, out _))
             {
                 return false;
             }
@@ -145,7 +247,84 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             }
 
             _externalOwners++;
-            return new(_publicationVersion, new ReadView(this, map), () => ReturnReadView(map));
+            return new(this, _publicationVersion, map);
+        }
+    }
+
+    internal ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryAcquireFrom(handle, _published, out ResourceLease<T>? lease) ? lease : null;
+        }
+    }
+
+    internal bool IsHandleAvailable<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is { } current && !TryGetUnavailable(current, out _);
+        }
+    }
+
+    internal void ReturnReference<T>(ResourceHandle<T> handle)
+        where T : class
+    {
+        lock (_gate)
+        {
+            ResourceSlot slot = _slots[(int)handle.Slot];
+            slot.References--;
+            if (slot.Current is { } current)
+            {
+                current.Pins--;
+            }
+
+            if (slot.References == 0)
+            {
+                _slotByKey.Remove(slot.Node);
+                slot.Current = null;
+            }
+
+            _externalOwners--;
+        }
+    }
+
+    internal void ReturnLease(ResourceGeneration generation)
+    {
+        lock (_gate)
+        {
+            generation.Pins--;
+            _externalOwners--;
+        }
+    }
+
+    internal void ReturnReadView(Dictionary<ResourceNode, ResourceGeneration> map)
+    {
+        lock (_gate)
+        {
+            foreach (ResourceGeneration generation in map.Values)
+            {
+                generation.Pins--;
+            }
+
+            _externalOwners--;
+        }
+    }
+
+    internal bool TryAcquireFromView<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
+        where T : class
+    {
+        RefreshRuntimes();
+        lock (_gate)
+        {
+            EnsureRunning();
+            return TryAcquireFrom(handle, map, out lease);
         }
     }
 
@@ -191,7 +370,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
     private void ValidatePipelines()
     {
-        foreach (IResourceStage pipeline in _stages.Values)
+        foreach ((IResourceStage pipeline, IResourceRuntime _) in _stages.Values)
         {
             HashSet<RuntimeTypeHandle> visited = [];
             IResourceStage current = pipeline;
@@ -202,82 +381,59 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
                     throw new ArgumentException($"Static resource pipeline cycle includes '{current.OutputType}'.", nameof(pipeline));
                 }
 
-                if (!_stages.TryGetValue(input.TypeHandle, out IResourceStage? dependency))
+                if (!_stages.TryGetValue(input.TypeHandle, out (IResourceStage Stage, IResourceRuntime Runtime) dependency))
                 {
                     throw new ArgumentException($"Pipeline for '{current.OutputType}' has an unregistered input '{input}'.", nameof(pipeline));
                 }
 
-                current = dependency;
+                current = dependency.Stage;
             }
         }
     }
 
-    private void EnsureRunning() => ObjectDisposedException.ThrowIf(_closing || _disposed, this);
+    private void EnsureRunning()
+    {
+        ObjectDisposedException.ThrowIf(_closing || _disposed, this);
+        if (_runtimeFailure is { } failure)
+        {
+            throw new InvalidOperationException("A resource runtime provider violated its version contract.", failure);
+        }
+    }
 
-    /// <summary>Acquires a revision-fixed lease, sharing compatible in-flight builds.</summary>
-    /// <typeparam name="T">The registered output type.</typeparam>
-    /// <param name="key">The requested logical resource.</param>
-    /// <param name="cancellationToken">Cancels this wait without cancelling shared construction.</param>
-    /// <returns>A lease owned by the caller.</returns>
-    private async ValueTask<ResourceLease<T>> AcquireLeaseAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+    private ResourceReference<T> CreateReference<T>(ResourceNode node)
         where T : class
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ResourceNode node = GetNode(key);
-        ResourceLoad load;
-        bool start = false;
-        lock (_gate)
+        if (!_slotByKey.TryGetValue(node, out uint index))
         {
-            EnsureRunning();
-            if (_published.TryGetValue(node, out ResourceGeneration? cached))
+            index = checked((uint)_slots.Count);
+            for (int candidate = 0; candidate < _slots.Count; candidate++)
             {
-                return CreateLease<T>(cached);
-            }
-
-            if (!_loads.TryGetValue(node, out load!))
-            {
-                ResourceBuildView view = _normalView is { } existing && existing.PublicationVersion == _publicationVersion
-                    ? existing
-                    : CreateView([], CancellationToken.None);
-                _normalView = view;
-                view.Roots++;
-                load = new(view);
-                _loads.Add(node, load);
-                _operations++;
-                start = true;
-            }
-
-            load.Waiters++;
-            _operations++;
-        }
-
-        if (start)
-        {
-            _ = RunLoadAsync(node, load);
-        }
-
-        try
-        {
-            ResourceGeneration generation = await load.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            lock (_gate)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return CreateLease<T>(generation);
-            }
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                load.Waiters--;
-                if (load.Generation is { } generation)
+                ResourceSlot old = _slots[candidate];
+                if (old.References == 0 && old.Generation < uint.MaxValue)
                 {
-                    generation.Pins--;
+                    index = (uint)candidate;
+                    break;
                 }
-
-                _operations--;
             }
+
+            uint generation = index == _slots.Count ? 1 : checked(_slots[(int)index].Generation + 1);
+            ResourceSlot slot = new(node, generation);
+            if (index == _slots.Count)
+            {
+                _slots.Add(slot);
+            }
+            else
+            {
+                _slots[(int)index] = slot;
+            }
+
+            _slotByKey.Add(node, index);
         }
+
+        ResourceSlot current = _slots[(int)index];
+        current.Current = _published.GetValueOrDefault(node);
+        ResourceHandle<T> handle = new(ManagerId, index, current.Generation);
+        return CreateReference(handle, current);
     }
 
     private ResourceReference<T> CreateReference<T>(ResourceHandle<T> handle, ResourceSlot slot)
@@ -291,17 +447,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
         _externalOwners++;
         ResourceKey<T> key = new(slot.Node.Address);
-        return new(key, handle, () => IsHandleAvailable(handle), () => AcquireCurrentLease(handle), () => ReturnReference(handle));
-    }
-
-    private ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
-        where T : class
-    {
-        lock (_gate)
-        {
-            EnsureRunning();
-            return TryAcquireFrom(handle, _published, out ResourceLease<T>? lease) ? lease : null;
-        }
+        return new(this, key, handle);
     }
 
     private ResourceLease<T> CreateLease<T>(ResourceGeneration generation)
@@ -309,8 +455,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     {
         generation.Pins++;
         _externalOwners++;
-        ResourceKey<T> key = new(generation.Node.Address);
-        return new(key, generation.Revision, (T)generation.Value!, () => ReturnLease(generation));
+        return new(this, generation);
     }
 
     private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
@@ -319,7 +464,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         lease = null;
         if (!TryGetSlot(handle, out ResourceSlot? slot)
             || !map.TryGetValue(slot!.Node, out ResourceGeneration? generation)
-            || generation.State != ResourceGenerationState.Ready)
+            || generation.State != ResourceGenerationState.Ready || TryGetUnavailable(generation, out _))
         {
             return false;
         }
@@ -345,72 +490,5 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
         slot = candidate;
         return true;
-    }
-
-    private bool IsHandleAvailable<T>(ResourceHandle<T> handle)
-        where T : class
-    {
-        lock (_gate)
-        {
-            EnsureRunning();
-            return TryGetSlot(handle, out ResourceSlot? slot) && slot!.Current is not null;
-        }
-    }
-
-    private void ReturnReference<T>(ResourceHandle<T> handle)
-        where T : class
-    {
-        lock (_gate)
-        {
-            ResourceSlot slot = _slots[(int)handle.Slot];
-            slot.References--;
-            if (slot.Current is { } current)
-            {
-                current.Pins--;
-            }
-
-            if (slot.References == 0)
-            {
-                _slotByKey.Remove(slot.Node);
-                slot.Current = null;
-            }
-
-            _externalOwners--;
-        }
-    }
-
-    private void ReturnLease(ResourceGeneration generation)
-    {
-        lock (_gate)
-        {
-            generation.Pins--;
-            _externalOwners--;
-        }
-    }
-
-    private void ReturnReadView(Dictionary<ResourceNode, ResourceGeneration> map)
-    {
-        lock (_gate)
-        {
-            foreach (ResourceGeneration generation in map.Values)
-            {
-                generation.Pins--;
-            }
-
-            _externalOwners--;
-        }
-    }
-
-    private sealed class ReadView(ResourceManager manager, Dictionary<ResourceNode, ResourceGeneration> map) : IResourceReadView
-    {
-        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
-            where T : class
-        {
-            lock (manager._gate)
-            {
-                manager.EnsureRunning();
-                return manager.TryAcquireFrom(handle, map, out lease);
-            }
-        }
     }
 }
