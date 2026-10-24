@@ -5,7 +5,7 @@ namespace Lumyte.Resources;
 /// <summary>Builds typed resource graphs and records ownership before publication.</summary>
 public sealed partial class ResourceManager
 {
-    internal async ValueTask<T> RequireAsync<T>(ResourceBuildView view, ResourceGeneration owner, ResourceKey<T> key, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
+    internal async ValueTask<T> RequireAsync<T>(ResourceBuildView view, ResourceGeneration owner, ResourceBuildContext requester, ResourceKey<T> key, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
         where T : class
     {
         ValidateLifetime(lifetime);
@@ -30,10 +30,17 @@ public sealed partial class ResourceManager
 
         if (start)
         {
-            _ = ResolveDependencyAsync(view, node, dependency);
+            _ = ResolveDependencyAsync(view, node, dependency, requester);
         }
 
-        ResourceGeneration generation = await dependency.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ResourceGeneration generation = await dependency.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(requester.CanSharePipeline);
+        if (requester.ShouldYield)
+        {
+            await Task.Yield();
+            requester.RestartSlice();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         lock (_gate)
         {
             ThrowIfUnavailable(generation);
@@ -153,6 +160,20 @@ public sealed partial class ResourceManager
             }
 
             owner.Runtimes[dependencyId] = new(expectedVersion, lifetime);
+        }
+    }
+
+    internal Task CompleteContextOperationsAsync(ResourceGeneration generation)
+    {
+        lock (_gate)
+        {
+            if (generation.Dependencies.Count == 0 && generation.Sources.Count == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            return Task.WhenAll(generation.Dependencies.Values.Select(static dependency => (Task)dependency.Completion.Task)
+                .Concat(generation.Sources.Values.Select(static source => (Task)source.Completion.Task)));
         }
     }
 
@@ -316,7 +337,7 @@ public sealed partial class ResourceManager
         }
     }
 
-    private Task<ResourceGeneration> BuildNodeAsync(ResourceBuildView view, ResourceNode node)
+    private Task<ResourceGeneration> BuildNodeAsync(ResourceBuildView view, ResourceNode node, ResourceBuildContext? requester = null)
     {
         ResourceBuildSlot slot;
         lock (_gate)
@@ -345,19 +366,30 @@ public sealed partial class ResourceManager
             view.Edges[node] = [];
         }
 
-        _ = BuildSlotAsync(view, slot);
+        ResourceBuildContext? parent = requester is not null && requester.CanSharePipeline
+            && ReferenceEquals(requester.Runtime, slot.Generation.Runtime) ? requester : null;
+        _ = BuildSlotAsync(view, slot, parent);
         return slot.Completion.Task;
     }
 
-    private async Task BuildSlotAsync(ResourceBuildView view, ResourceBuildSlot slot)
+    private async Task BuildSlotAsync(ResourceBuildView view, ResourceBuildSlot slot, ResourceBuildContext? parent)
     {
         ResourceGeneration generation = slot.Generation;
-        ResourceBuildContext context = new(this, view, generation);
+        ResourceBuildContext context = new(this, view, generation, parent);
         Exception? failure = null;
         try
         {
             view.CancellationToken.ThrowIfCancellationRequested();
-            object value = await generation.Runtime.BuildAsync(generation.Stage, context, view.CancellationToken).ConfigureAwait(false);
+            if (parent is not null && context.InlineDepth >= 32)
+            {
+                await Task.Yield();
+                context.InlineDepth = 0;
+                context.RestartSlice();
+            }
+
+            object value = parent is null
+                ? await generation.Runtime.BuildAsync(generation.Stage, context, view.CancellationToken).ConfigureAwait(false)
+                : await context.ExecutePipelineAsync(generation.Stage, view.CancellationToken);
             context.Close();
             if (!generation.Stage.OutputType.IsInstanceOfType(value))
             {
@@ -374,8 +406,8 @@ public sealed partial class ResourceManager
                 generation.Value = value;
             }
 
-            await CompleteContextOperationsAsync(generation).ConfigureAwait(false);
-            await CleanupGenerationAsync(generation, true).ConfigureAwait(false);
+            await context.PendingOperations;
+            await CleanupGenerationAsync(generation, true, parent is not null);
             lock (_gate)
             {
                 CaptureResidentRuntimes(generation);
@@ -396,7 +428,7 @@ public sealed partial class ResourceManager
 
         try
         {
-            await CompleteContextOperationsAsync(generation).ConfigureAwait(false);
+            await context.PendingOperations;
         }
         catch (Exception error)
         {
@@ -408,7 +440,7 @@ public sealed partial class ResourceManager
 
         try
         {
-            await CleanupGenerationAsync(generation, false).ConfigureAwait(false);
+            await CleanupGenerationAsync(generation, false, parent is not null);
         }
         catch (Exception cleanupError)
         {
@@ -421,20 +453,11 @@ public sealed partial class ResourceManager
         }
     }
 
-    private Task CompleteContextOperationsAsync(ResourceGeneration generation)
-    {
-        lock (_gate)
-        {
-            return Task.WhenAll(generation.Dependencies.Values.Select(static dependency => (Task)dependency.Completion.Task)
-                .Concat(generation.Sources.Values.Select(static source => (Task)source.Completion.Task)));
-        }
-    }
-
-    private async Task ResolveDependencyAsync(ResourceBuildView view, ResourceNode node, ResourceDependency dependency)
+    private async Task ResolveDependencyAsync(ResourceBuildView view, ResourceNode node, ResourceDependency dependency, ResourceBuildContext requester)
     {
         try
         {
-            ResourceGeneration generation = await BuildNodeAsync(view, node).ConfigureAwait(false);
+            ResourceGeneration generation = await BuildNodeAsync(view, node, requester).ConfigureAwait(false);
             lock (_gate)
             {
                 generation.Pins++;
