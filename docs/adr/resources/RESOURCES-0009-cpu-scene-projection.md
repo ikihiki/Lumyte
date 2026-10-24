@@ -45,7 +45,7 @@ GpuSceneに対するCpuSceneと、GpuMeshに対するCpuMeshはBuild寿命とす
 
 ### GPUの所有とメモリ
 
-Mesh／TextureのGPU生成Stageは `IResourceTransform<TInput, TOutput, GraphicsResourceRuntime>` の型付きRuntime引数を使い、構築ごとに `AcquireAsync` で現在の物理デバイス世代を取得する。Stage自身はserviceや実行先を固定して保持しない。生成したNative子資源はcontextのResident cleanupへ登録し、作成の逆順で解放する。cleanup登録時に元のRuntime・epochと実際のdeviceを捕捉し、loss後にアクセスを拒否するlease.Deviceを再取得しない。成功した解放だけを所有リストから除き、例外時は未完了部分をManagerの再試行へ残す。
+Mesh／TextureのGPU生成Stageは `IResourceTransform<TInput, TOutput, GraphicsResourceRuntime>` の型付きRuntime引数を使い、構築ごとに `AcquireAsync` で現在の物理デバイス世代を取得する。Stage自身はserviceや実行先を固定して保持しない。同じGraphicsResourceRuntimeの依存構築は一つのジョブで進め、CPU側Runtimeとの境界でジョブを分ける。生成したNative子資源はcontextのResident cleanupへ登録し、作成の逆順で解放する。cleanup登録時に元のRuntime・epochと実際のdeviceを捕捉し、loss後にアクセスを拒否するlease.Deviceを再取得しない。成功した解放だけを所有リストから除き、例外時は未完了部分をManagerの再試行へ残す。
 
 CPUの文書バッファ、頂点、画像はMemory scopeで確保する。GPU頂点は取得できる実サイズ、textureは幅 × 高さ × 4の概算をreservationとchargeで計上する。Native子資源を解放した後にchargeを返す。画像decoder内部の一時配列、JSON内部構造、driver内部確保、描画先とreadbackの確保はこの計上に含めない。
 
