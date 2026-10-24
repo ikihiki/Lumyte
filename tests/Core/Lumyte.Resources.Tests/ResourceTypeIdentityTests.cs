@@ -16,11 +16,13 @@ public sealed class ResourceTypeIdentityTests
     public async Task ClosedGenericTypesAtTheSameAddressRemainDistinctAsync()
     {
         await using MemoryManager memory = new();
+        await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new(
             "types",
             new UnusedSource(),
             [new Pipeline(typeof(List<int>)), new Pipeline(typeof(List<string>))],
-            memory);
+            memory,
+            execution.Resources);
         var integers = new ResourceKey<List<int>>(_address);
         var strings = new ResourceKey<List<string>>(_address);
         Assert.Equal(typeof(List<int>).Name, typeof(List<string>).Name);
@@ -52,11 +54,13 @@ public sealed class ResourceTypeIdentityTests
             Assert.Equal(firstType.AssemblyQualifiedName, secondType.AssemblyQualifiedName);
             Assert.NotEqual(firstType.TypeHandle, secondType.TypeHandle);
             await using MemoryManager memory = new();
+            await using ResourceExecutionHost execution = new();
             await using ResourceManager manager = new(
                 "contexts",
                 new UnusedSource(),
                 [new Pipeline(firstType), new Pipeline(secondType)],
-                memory);
+                memory,
+                execution.Resources);
             object first = await AcquireFromTypeAsync(manager, firstType);
             object second = await AcquireFromTypeAsync(manager, secondType);
             Assert.Equal(firstType, first.GetType());
@@ -76,11 +80,13 @@ public sealed class ResourceTypeIdentityTests
     public async Task DuplicateOutputTypeRegistrationsAreRejectedAsync()
     {
         await using MemoryManager memory = new();
+        await using ResourceExecutionHost execution = new();
         Assert.Throws<ArgumentException>(() => new ResourceManager(
             "duplicate",
             new UnusedSource(),
             [new Pipeline(typeof(List<int>)), new Pipeline(typeof(List<int>))],
-            memory));
+            memory,
+            execution.Resources));
     }
 
     /// <summary>Static transform cycles are rejected using primary input types.</summary>
@@ -89,11 +95,13 @@ public sealed class ResourceTypeIdentityTests
     public async Task StaticInputTypeCycleIsRejectedAsync()
     {
         await using MemoryManager memory = new();
+        await using ResourceExecutionHost execution = new();
         ArgumentException error = Assert.Throws<ArgumentException>(() => new ResourceManager(
             "cycle",
             new UnusedSource(),
             [new Pipeline(typeof(List<int>), typeof(List<string>)), new Pipeline(typeof(List<string>), typeof(List<int>))],
-            memory));
+            memory,
+            execution.Resources));
         Assert.Contains("cycle", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
