@@ -42,7 +42,7 @@ public sealed class TypedStageRuntimeTests
         IEnvironment expected = provider.GetRequiredService<IEnvironment>();
         Assert.Same(expected, lease.Value.Runtime);
         Assert.Same(expected, lease.Value.Input.Runtime);
-        Assert.Equal(2, expected.Builds);
+        Assert.Equal(1, expected.Builds);
 
         lease.Dispose();
         reference.Dispose();

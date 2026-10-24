@@ -65,7 +65,10 @@ transformの依存取得とtyped BuildAsync呼出しは同じinterface dispatch�
 
 ### 非同期Stageの実行
 
-既定RuntimeはStageの開始をworkflowジョブへ送り、通常の`await`の継続もCPUキューへ戻す。
+既定RuntimeはPipelineの実行開始をworkflowジョブへ送り、通常の`await`の継続も同じジョブへ戻す。
+未構築の依存Stageが呼出元と同じRuntime instanceなら、そのジョブ内で続けて実行する。
+Runtimeが切り替わる境界と独立したAcquireは新しいジョブにする。`A → B → A`は3区間となり、前のAへ戻して実行しない。
+既にキャッシュ済み・構築中の依存は再実行せず、元の生成処理の結果を共有する。
 ThreadPoolではworker、Cooperativeではホストの`PumpJobs`で同期区間を実行する。
 同じworkerへ戻る保証はなく、device操作は各モジュールのownerコマンドへ配送する。
 I/O、依存Stage、所有スレッドの処理を待つ間はCPU枠を解放するため、並列数1でも子の処理を進められる。
@@ -77,7 +80,12 @@ workflow内から別ジョブや所有スレッドのコマンドを送れるが
 Sourceやdevice service内部の非同期実装は`ConfigureAwait(false)`を使える。呼び出したStage側の通常のawaitが実行先を復元する。
 同期区間を途中で中断する仕組みはないため、大きなCPU変換は有限の区間に分け、必要に応じてTask.Yieldをawaitして次の区間をキューへ戻す。
 
-workflowは未完了の非同期操作とその継続を追跡し、実際のStage完了まで入力と出力の所有を維持する。
+Runtimeのジョブは`context.ExecutePipelineAsync(stage, token)`を呼び、Stageの終了後も登録済み依存・Source操作の実完了を待つ。
+親の待機が取消されても、共有依存が完了する前に継続先のジョブを閉じない。失敗はManagerが従来どおり回収・報告する。
+ジョブと異なるSynchronizationContextからの要求は同一ジョブへinlineせず、Runtimeへ配送する。
+長い同期区間は依存Stageの境界で約1msを目安にyieldし、32段のネストでも同じジョブへ継続を戻してstackを解放する。
+同期Stage自体の途中中断や実時間保証は行わない。
+workflowは未完了の非同期操作とその継続を追跡し、Pipeline区間の実完了まで入力と出力の所有を維持する。
 未開始の処理は取消で実行を省略できる。開始後はCancelPendingでも継続を維持し、渡したtokenによる協調取消と実完了を待つ。
 公開はBuildAsyncの実完了と依存検証の後に行う。取消要求だけで実行中の出力を捨てない。
 共有ロードに対するAcquireの取消は呼出元の待機だけに適用し、Manager所有の構築取消とは分ける。
@@ -174,6 +182,8 @@ Runtimeの構築・解放、Stageとの対応付け、環境世代の検証を�
      {
 +        // この内容世代に選択した安定したRuntime。
 +        public IResourceRuntime Runtime { get; }
++        // Runtimeのジョブ入口。依存・Source操作の静止まで同じジョブを保持する。
++        public ValueTask<object> ExecutePipelineAsync(IResourceStage stage, CancellationToken cancellationToken);
 +        // 未登録IdはArgumentException。identity不一致・混在VersionはInvalidOperationException。
 +        // 利用不能・Version不一致・失効済みはResourceUnavailableException。
 +        public void TrackRuntimeDependency(string dependencyId, ulong expectedVersion,
@@ -329,7 +339,7 @@ Managerは借用したSource・Stage・各Runtime・世代providerの寿命を�
 出力型とRuntimeの対応はManager構築時に固定し、ロードごとにDI解決やRuntime生成を行わない。
 開始・解放の送信は型付きstructと共有ジョブ環境のportを使い、送信ごとのラムダやTask.Runを追加しない。
 workflowは実行待ちと継続のための状態を保持する。非同期状態機械、継続callback、ロードグラフの確保は残り、無割り当てを保証しない。
-I/O待機はCPU枠を占有しない。未完了workflowは実完了まで追跡し、受付容量は返したValueTaskの結果を一度awaitして回収するまで保持する。
+I/O待機はCPU枠を占有しない。未完了workflowは実完了まで追跡し、受付容量はRuntime区間ごとに予約し、返したValueTaskの結果を一度awaitして回収するまで保持する。
 停止待機は実完了までであり、完了結果の回収そのものは待たない。
 
 Leaseの検証では全登録providerのSnapshotを確認した後、平坦なRuntime依存を走査する。
@@ -366,7 +376,8 @@ Snapshotの巻き戻しと同Versionでの状態変更を確認する。
 並列数1でI/O待機と依存Stage・ownerコマンドが進むことを検証する。
 受付前の取消、容量不足、開始後の取消、例外、未完了中の終了で所有を失わないことを確認する。
 複数Managerの共有と独立DI rootのport分離、初回・再構築・解放の共通配送経路も対象とする。
-Stage別の選択、context.Runtime、DIの一度だけの解決、providerの同一instance重複除去、生成時Runtimeでの解放を確認する。
+Stage別の選択、型付きRuntime引数、DIの一度だけの解決、providerの同一instance重複除去、生成時Runtimeでの解放を確認する。
+同じRuntimeの97段を受付枠1つで実行し、I/O・yield後も同じジョブで継続すること、Runtime境界・独立ロード・共有依存の取消を検証する。
 個別実体の生成・解放スレッドはそのモジュールの結合テストで確認する。
 
 ## 関連ADR
