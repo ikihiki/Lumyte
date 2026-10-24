@@ -48,7 +48,7 @@ public sealed partial class ResourceManager
         }
     }
 
-    internal async ValueTask<ResourceSourceSnapshot> OpenSourceAsync(ResourceBuildView view, ResourceGeneration owner, ResourceId id, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
+    internal ValueTask<ResourceSourceSnapshot> OpenSourceAsync(ResourceBuildView view, ResourceGeneration owner, ResourceId id, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
     {
         ValidateLifetime(lifetime);
         ArgumentException.ThrowIfNullOrWhiteSpace(id.Value);
@@ -74,7 +74,7 @@ public sealed partial class ResourceManager
             _ = ResolveSourceAsync(view, source, id);
         }
 
-        return await source.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new(source.Completion.Task.WaitAsync(cancellationToken));
     }
 
     internal void RegisterCleanup(ResourceGeneration owner, Func<ValueTask> cleanup, ResourceDependencyLifetime lifetime)
@@ -325,14 +325,15 @@ public sealed partial class ResourceManager
             }
 
             _operations--;
-            if (failure is null)
-            {
-                load.Completion.TrySetResult(generation!);
-            }
-            else
-            {
-                load.Completion.TrySetException(failure);
-            }
+        }
+
+        if (failure is null)
+        {
+            load.Completion.TrySetResult(generation!);
+        }
+        else
+        {
+            load.Completion.TrySetException(failure);
         }
     }
 
@@ -411,9 +412,10 @@ public sealed partial class ResourceManager
             {
                 CaptureResidentRuntimes(generation);
                 generation.State = ResourceGenerationState.Ready;
-                slot.Completion.TrySetResult(generation);
             }
 
+            // Internal continuations may run inline; publish only after releasing the manager gate.
+            slot.Completion.TrySetResult(generation);
             return;
         }
         catch (Exception error)
@@ -446,23 +448,21 @@ public sealed partial class ResourceManager
             failure = new AggregateException(failure!, cleanupError);
         }
 
-        lock (_gate)
-        {
-            slot.Completion.TrySetException(failure!);
-        }
+        slot.Completion.TrySetException(failure!);
     }
 
     private async Task ResolveDependencyAsync(ResourceBuildView view, ResourceNode node, ResourceDependency dependency, ResourceBuildContext requester)
     {
         try
         {
-            ResourceGeneration generation = await BuildNodeAsync(view, node, requester).ConfigureAwait(false);
+            ResourceGeneration generation = await BuildNodeAsync(view, node, requester).ConfigureAwait(requester.CanSharePipeline);
             lock (_gate)
             {
                 generation.Pins++;
                 dependency.Generation = generation;
-                dependency.Completion.TrySetResult(generation);
             }
+
+            dependency.Completion.TrySetResult(generation);
         }
         catch (Exception error)
         {
@@ -493,8 +493,9 @@ public sealed partial class ResourceManager
                 }
 
                 view.SourceRevisions[id] = use.Revision;
-                use.Completion.TrySetResult(snapshot);
             }
+
+            use.Completion.TrySetResult(snapshot);
         }
         catch (Exception error)
         {
