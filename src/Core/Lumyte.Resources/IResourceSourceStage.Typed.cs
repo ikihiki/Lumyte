@@ -4,7 +4,7 @@ namespace Lumyte.Resources;
 /// <typeparam name="T">The completed output type.</typeparam>
 /// <typeparam name="TRuntime">The required environment contract.</typeparam>
 public interface IResourceSourceStage<T, TRuntime> : IResourceSourceStage<T>, IResourceStage<TRuntime>
-    where T : class
+    where T : notnull
     where TRuntime : class, IResourceRuntime
 {
     /// <inheritdoc/>

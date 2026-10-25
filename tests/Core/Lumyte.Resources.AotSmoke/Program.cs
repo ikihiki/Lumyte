@@ -18,7 +18,7 @@ internal static class Program
         services.AddSingleton(state);
         services.AddMemoryManagement<InjectedMemory>();
         services.AddSingleton<DeviceRuntime>();
-        services.AddResources("assets", builder => builder
+        services.AddResources(builder => builder
             .UseSource<InjectedSource>()
             .AddSourcePipeline<Input, DecodeStage>()
             .AddTransformPipeline<Input, Output, DeviceStage>()
@@ -33,7 +33,8 @@ internal static class Program
             AsyncServiceScope scope = provider.CreateAsyncScope();
             try
             {
-                ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("assets");
+                ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
+                Require(ReferenceEquals(manager, provider.GetRequiredService<ResourceManager>()), "Scopes must share one resource manager.");
                 Task<ResourceReference<Output>> acquisition = manager.AcquireAsync(new ResourceKey<Output>("value")).AsTask();
                 Wait(acquisition, execution);
                 using (ResourceReference<Output> reference = acquisition.GetAwaiter().GetResult())
@@ -204,7 +205,7 @@ internal static class Program
 
     private sealed record Input(int Number);
 
-    private sealed record Output(int Number, DeviceRuntime Runtime);
+    private readonly record struct Output(int Number, DeviceRuntime Runtime);
 
     private sealed class DecodeStage : IResourceSourceStage<Input>
     {
