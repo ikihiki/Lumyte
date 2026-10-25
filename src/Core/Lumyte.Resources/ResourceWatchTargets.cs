@@ -47,24 +47,25 @@ internal sealed class ResourceWatchTargets : IResourceWatchTargets
         }
     }
 
-    internal bool ReplaceMetadata(ResourceMetadata? previous, ResourceMetadata current)
+    internal void ReplaceMetadata(ResourceMetadata? previous, ResourceMetadata current, ResourceReloadService reload)
     {
         lock (_gate)
         {
-            bool added = false;
             foreach (ResourceId id in current.Sources.Keys)
             {
                 References references = _references.GetValueOrDefault(id);
-                added |= references.Metadata == 0;
                 Set(id, references with { Metadata = references.Metadata + 1 });
+                if (references.Metadata == 0)
+                {
+                    // The manager's publication lock keeps this recheck behind the complete publication.
+                    reload.RequestRecheck(id);
+                }
             }
 
             if (previous is not null)
             {
                 RemoveMetadataCore(previous);
             }
-
-            return added;
         }
     }
 

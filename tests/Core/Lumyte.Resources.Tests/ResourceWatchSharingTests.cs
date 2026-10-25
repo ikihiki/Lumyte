@@ -94,7 +94,7 @@ public sealed class ResourceWatchSharingTests
         using ResourceLease<Value> previous = reference.Acquire();
         IReadOnlySet<ResourceId> captured = targets.Resources;
         TaskCompletionSource published = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.HotReload!.Reloaded += (_, args) =>
+        manager.Reloaded += (_, args) =>
         {
             if (args.Result.Status == ResourceReloadStatus.Published)
             {

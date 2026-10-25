@@ -145,7 +145,7 @@ public sealed class EmbeddedResourceSourceTests
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using ResourceExecutionHost execution = new(provider);
         await using ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        Assert.Null(manager.HotReload);
+        Assert.False(manager.IsHotReloadEnabled);
         var key = new ResourceKey<TextValue>(_alias);
         using ResourceReference<TextValue> owner = await manager.AcquireAsync(key);
         using ResourceLease<TextValue> first = await manager.AcquireLeaseForTestAsync(key);
