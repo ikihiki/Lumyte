@@ -83,9 +83,8 @@ internal static class Program
             if (!validateOnly)
             {
                 await devices.InitializeAsync();
-                ResourceReloadService changes = resources.HotReload!;
                 string output = Path.GetFullPath(args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "gltf-render.png");
-                await RenderAndReloadAsync(resources, changes, devices, directory, output);
+                await RenderAndReloadAsync(resources, devices, directory, output);
                 await resources.TrimAsync();
             }
         }
@@ -263,7 +262,7 @@ internal static class Program
         await File.WriteAllTextAsync(path, original);
     }
 
-    private static async Task RenderAndReloadAsync(ResourceManager resources, ResourceReloadService changes, IGraphicsDeviceService devices, string directory, string output)
+    private static async Task RenderAndReloadAsync(ResourceManager resources, IGraphicsDeviceService devices, string directory, string output)
     {
         var key = new ResourceKey<GpuScene>("models/cubes.gltf", "scene/0");
         using ResourceReference<GpuScene> owner = await resources.AcquireAsync(key);
@@ -292,8 +291,8 @@ internal static class Program
             }
         }
 
-        changes.Reloaded += OnReloaded;
-        changes.ReloadFailed += OnReloadFailed;
+        resources.Reloaded += OnReloaded;
+        resources.ReloadFailed += OnReloadFailed;
         try
         {
             byte[] pixels = new byte[64 * 64 * 4];
@@ -324,8 +323,8 @@ internal static class Program
         }
         finally
         {
-            changes.Reloaded -= OnReloaded;
-            changes.ReloadFailed -= OnReloadFailed;
+            resources.Reloaded -= OnReloaded;
+            resources.ReloadFailed -= OnReloadFailed;
         }
     }
 
