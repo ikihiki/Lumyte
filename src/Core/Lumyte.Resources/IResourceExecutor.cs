@@ -1,6 +1,6 @@
 namespace Lumyte.Resources;
 
-/// <summary>Dispatches manager-owned construction and release procedures.</summary>
+/// <summary>Dispatches resource construction, release and streaming procedures.</summary>
 /// <remarks>
 /// Build and release use the same CPU scheduler; native owner operations are dispatched by the environment.
 /// The manager can release a failed output directly inside its construction job. ReleaseAsync is the
@@ -17,6 +17,18 @@ public interface IResourceExecutor
     /// <param name="cancellationToken">The manager-owned build cancellation token.</param>
     /// <returns>Completion of construction, dependency draining and cleanup.</returns>
     ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken);
+
+    /// <summary>Queues one session-owned reader operation on the selected CPU scheduler.</summary>
+    /// <param name="work">Call its ExecuteAsync exactly once inside the job and await actual completion.</param>
+    /// <param name="cancellationToken">Cancellation before entry and cooperative cancellation thereafter.</param>
+    /// <returns>Completion of the actual reader operation, including suspended continuations.</returns>
+    /// <remarks>
+    /// Do not run reader work inline on the submitting thread. Normal awaits must return to the scheduler.
+    /// Suspended work releases its CPU worker but may retain an admission slot until completion is observed.
+    /// Custom executors must implement streaming support explicitly.
+    /// </remarks>
+    ValueTask StreamAsync(IResourceStreamWork work, CancellationToken cancellationToken)
+        => throw new NotSupportedException("This resource executor does not support streaming operations.");
 
     /// <summary>Runs destruction using the environment retained when the output was constructed.</summary>
     /// <param name="stage">The original stage.</param>

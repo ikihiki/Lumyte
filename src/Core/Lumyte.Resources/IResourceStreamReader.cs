@@ -1,6 +1,8 @@
 namespace Lumyte.Resources;
 
 /// <summary>Reads one immutable resource revision with an independent cursor.</summary>
+/// <remarks>Reader operations run through the factory executor. Use normal awaits to keep continuations
+/// on its scheduler; native thread-affine work must use the appropriate owner commands.</remarks>
 /// <typeparam name="TElement">The unmanaged stream element.</typeparam>
 public interface IResourceStreamReader<TElement> : IAsyncDisposable
     where TElement : unmanaged

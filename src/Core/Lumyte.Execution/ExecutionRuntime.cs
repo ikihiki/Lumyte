@@ -16,6 +16,7 @@ public sealed partial class ExecutionRuntime
     private readonly List<ModuleDefinition> _modules = [];
     private readonly Dictionary<Type, ModuleDefinition> _moduleTypes = [];
     private readonly Queue<QueuedWork> _cpu = new();
+    private readonly CpuWorker _cpuWorker;
     private readonly List<GroupDefinition> _hostGroups = [];
     private readonly CancellationTokenSource _startupCancellation = new();
     private readonly TaskCompletionSource _startup = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -48,6 +49,7 @@ public sealed partial class ExecutionRuntime
     /// <param name="modules">The explicit module instances, commonly injected by DI.</param>
     public ExecutionRuntime(IEnumerable<IExecutionModule> modules)
     {
+        _cpuWorker = new(this);
         IExecutionModule[] snapshot = modules.ToArray();
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (IExecutionModule module in snapshot)
