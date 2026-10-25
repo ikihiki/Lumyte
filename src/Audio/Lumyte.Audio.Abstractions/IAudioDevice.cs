@@ -6,10 +6,6 @@ public interface IAudioDevice : IDisposable
     /// <summary>Gets current output availability.</summary>
     AudioOutputState OutputState { get; }
 
-    /// <summary>Irreversibly rejects further creation and control while preserving native cleanup.</summary>
-    /// <remarks>Runs on the owner thread. This idempotent operation only latches managed state, performs no native calls, and must not throw on a live device.</remarks>
-    void Invalidate();
-
     /// <summary>Refreshes voice state snapshots on the owning thread.</summary>
     void Update();
 
