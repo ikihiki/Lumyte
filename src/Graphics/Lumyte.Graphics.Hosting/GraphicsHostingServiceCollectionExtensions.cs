@@ -28,8 +28,11 @@ public static class GraphicsHostingServiceCollectionExtensions
         }
 
         services.Add(new ServiceDescriptor(typeof(TFactory), name, typeof(TFactory), lifetime));
-        services.Add(new ServiceDescriptor(typeof(IGraphicsDeviceService), name,
-            (provider, _) => new GraphicsDeviceService(name, provider.GetRequiredKeyedService<TFactory>(name)), lifetime));
+        services.Add(new ServiceDescriptor(
+            typeof(IGraphicsDeviceService),
+            name,
+            (provider, _) => new GraphicsDeviceService(name, provider.GetRequiredKeyedService<TFactory>(name)),
+            lifetime));
         return services;
     }
 }
