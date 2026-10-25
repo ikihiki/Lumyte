@@ -59,8 +59,29 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <returns>The actual backend clip, never a placeholder.</returns>
     public async ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken);
-        return await _audio.State.CreateClipForLease(lease, data.Format, data.Samples, cancellationToken);
+        (AudioDeviceLease lease, IAudioClip clip) = await _audio.State.CreateClipWithLease(data.Format, data.Samples, cancellationToken);
+        var pending = new PendingCreation(lease, clip);
+        try
+        {
+            context.RegisterCleanup(pending.DisposeAsync, ResourceDependencyLifetime.Resident);
+        }
+        catch (Exception registrationError)
+        {
+            try
+            {
+                await pending.DisposeAsync();
+            }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException(registrationError, cleanupError);
+            }
+
+            throw;
+        }
+
+        context.TrackRuntimeDependency(Id, lease.State.Version, ResourceDependencyLifetime.Resident, _audio.Devices);
+        pending.Transfer();
+        return clip;
     }
 
     /// <summary>Creates a fully initialized voice on the audio owner.</summary>
@@ -70,8 +91,29 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <returns>The actual stopped backend voice.</returns>
     public async ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken);
-        return await _audio.State.CreateVoiceForLease(lease, clip, AudioBus.Effects, cancellationToken);
+        (AudioDeviceLease lease, IAudioVoice voice) = await _audio.State.CreateVoiceWithLease(clip, AudioBus.Effects, cancellationToken);
+        var pending = new PendingCreation(lease, voice);
+        try
+        {
+            context.RegisterCleanup(pending.DisposeAsync, ResourceDependencyLifetime.Resident);
+        }
+        catch (Exception registrationError)
+        {
+            try
+            {
+                await pending.DisposeAsync();
+            }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException(registrationError, cleanupError);
+            }
+
+            throw;
+        }
+
+        context.TrackRuntimeDependency(Id, lease.State.Version, ResourceDependencyLifetime.Resident, _audio.Devices);
+        pending.Transfer();
+        return voice;
     }
 
     /// <summary>Destroys a clip through its original backend instance on the audio owner.</summary>
@@ -101,4 +143,26 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
 
     /// <inheritdoc/>
     public ValueTask StopAsync(ModuleContext context) => ValueTask.CompletedTask;
+
+    private sealed class PendingCreation(AudioDeviceLease lease, IDisposable resource)
+    {
+        private IDisposable? _resource = resource;
+
+        internal void Transfer() => _resource = null;
+
+        internal async ValueTask DisposeAsync()
+        {
+            if (_resource is IAudioClip clip)
+            {
+                await new AudioClip(clip).DestroyClip();
+            }
+            else if (_resource is IAudioVoice voice)
+            {
+                await new AudioVoice(voice).Destroy();
+            }
+
+            _resource = null;
+            lease.Dispose();
+        }
+    }
 }

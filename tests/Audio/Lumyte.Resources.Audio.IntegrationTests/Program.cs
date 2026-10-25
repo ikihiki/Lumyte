@@ -37,6 +37,8 @@ internal static class Program
         AsyncServiceScope? scope = null;
         ExecutionRuntime execution;
         ResourceManager manager;
+        ResourceRuntime runtime;
+        AudioResourceRuntime bridge;
         if (di)
         {
             var services = new ServiceCollection();
@@ -46,13 +48,15 @@ internal static class Program
             services.AddAudioResources<SharedTestSource>("audio");
             provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             execution = provider.GetRequiredService<ExecutionRuntime>();
+            runtime = provider.GetRequiredService<ResourceRuntime>();
+            bridge = provider.GetRequiredService<AudioResourceRuntime>();
             scope = provider.CreateAsyncScope();
             manager = scope.Value.ServiceProvider.GetRequiredKeyedService<ResourceManager>("audio");
         }
         else
         {
-            var runtime = new ResourceRuntime();
-            var bridge = new AudioResourceRuntime(audio, runtime);
+            runtime = new ResourceRuntime();
+            bridge = new AudioResourceRuntime(audio, runtime);
             execution = new ExecutionRuntime([audio, bridge, runtime]);
             manager = new ResourceManager(
                 "audio",
@@ -100,6 +104,11 @@ internal static class Program
             }
 
             Wait(execution.StartAsync().AsTask());
+            if (!native)
+            {
+                CreationScenario.Run(audio, runtime, bridge, factory, Wait);
+            }
+
             Task<ResourceReference<IAudioVoice>> load = manager.AcquireAsync(new ResourceKey<IAudioVoice>("tone")).AsTask();
             Wait(load);
             using (ResourceReference<IAudioVoice> reference = load.GetAwaiter().GetResult())

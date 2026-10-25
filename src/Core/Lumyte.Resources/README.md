@@ -8,6 +8,8 @@ Stageは`RequireAsync`で依存を追加し、`OpenSourceAsync`で観測した�
 Build依存は構築後、Resident依存は親の解放後に返します。
 Memory scopeはmanagerが所有し、出力・cleanup・snapshot・memory・依存の順に解放します。
 解放失敗は所有を保持して`TrimAsync`で再試行します。
+同期的な補助所有物は`context.RegisterCleanup(disposable, lifetime)`で登録でき、捕捉ラムダを必要としません。
+Build寿命の入力を完了通知や成功済みcleanupが保持し続けないよう、不要になった参照を切ります。
 Source・Stage・Runtimeは借用します。利用権を返し、managerを閉じてからRuntimeを終了します。
 
 ## Pipelineと依存

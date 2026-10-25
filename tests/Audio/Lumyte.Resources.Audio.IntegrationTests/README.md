@@ -3,6 +3,7 @@
 出力型で選んだRuntimeからCPUジョブへ配送 → 非同期Source読み込みとWAVEデコード → Audio環境の所有スレッドでclip・voice生成 → 公開・再生 → 依存順解放を実行します。
 初期化・生成の実体が完成するまで待機し、キャンセル済みロードとデコード失敗の非公開も検証します。
 既定のテストbackendは全native操作のスレッドと、voice → clip → deviceの解放順を検証します。
+lease取得と生成を合わせたcommandについて、native生成失敗時のlease返却、世代依存登録失敗後の候補解放、解放失敗時の旧lease保持とTrimによる再試行も検証します。
 
 ```sh
 dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release

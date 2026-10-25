@@ -22,7 +22,7 @@ Play／Stopの完了はbackend操作の終了を表し、音が聞こえる時�
 
 State／Gain／Loopのgetterは、backendがlockで保護する保存済みの値を呼び出し元で読む。Stateは直近の更新結果であり、即時観測には `AudioDevice.Refresh()` の完了を待つ。getterからnative更新や全voiceの走査を行わない。
 
-Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御コマンドを処理する。Host配置では同じ更新とコマンドをControl phaseのPumpで進める。音声サンプルの供給はbackend／デバイスの周期が担当し、この制御ループの周期を再生精度の保証としない。
+Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御コマンドを処理する。制御は一回の処理区間を64件・2 msまでとし、区間ごとに更新期限を確認する。残りの制御要求は次の10 ms周期を待たずに継続する。Host配置では同じ更新とコマンドをControl phaseのPumpで進める。音声サンプルの供給はbackend／デバイスの周期が担当し、この制御ループの周期を再生精度の保証としない。
 
 ### Sourceから実体までの所有権
 
@@ -31,13 +31,13 @@ Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御�
 全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `IResourceTransform<TInput, TOutput, AudioResourceRuntime>` で環境型を宣言し、BuildAsyncとReleaseAsyncの型付きRuntime引数を使う。Stage側の型変換は不要で、不適合な環境登録はManager構築時に拒否する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
 ClipとVoiceは同じAudioResourceRuntime instanceなので、依存構築を一つのジョブで進める。PCMデコードの既定Runtimeへ切り替わる箇所で別ジョブにし、native操作はAudio ownerコマンドへ配送する。
 
-通常のawait後の継続も実行器がジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。StageとAudioResourceRuntimeの生成処理はこの継続先を保持し、lease取得後の生成要求も同じworkflowから投入する。ConfigureAwait(false)で継続先を外れる中継は置かない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
+通常のawait後の継続も実行器がジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。StageとAudioResourceRuntimeの生成処理はこの継続先を保持し、lease取得とnative生成を一つのowner commandへまとめて投入する。ConfigureAwait(false)で継続先を外れる中継は置かない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
 
 標準decoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱う。chunk境界・padding・alignment・sample rate・byte rate・非有限sampleを検証し、不正データは `InvalidDataException`、未対応codecや形式は `NotSupportedException` で失敗する。圧縮形式やストリーミングは別のStageで表す。
 
 PCMはclipへのコピー完了までBuild依存として保持する。voiceはclipをResident依存として保持し、生成完了後に実際のbackend instanceを公開する。`AudioPcmData.Samples` は借用したReadOnlyMemoryであり、利用側が供給した配列もコピー完了まで変更しない。
 
-選択された長寿命の `AudioResourceRuntime` が、構築ごとに `UseAudioAsync` で正確なdevice leaseを取得し、service identityと取得時VersionをResourceManagerへ記録する。ManagerはRuntime.Dependenciesで提示された同じ実体を世代依存先へ登録し、実行環境と依存先を一致させる。構築中に失効した候補は公開せず、voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
+選択された長寿命の `AudioResourceRuntime` が、構築ごとに `CreateClipWithLease`／`CreateVoiceWithLease` で実体と正確なdevice leaseを一回の配送で取得し、service identityと取得時VersionをResourceManagerへ記録する。生成失敗時はowner上でleaseを返す。生成成功後は世代検証より先に候補とleaseの解放責任をcontextへ登録し、検証失敗時のnative解放に失敗しても両方を保持して再試行する。独自Stageの `UseAudioAsync` はdevice leaseだけを取得してcontextへ直接渡す。ManagerはRuntime.Dependenciesで提示された同じ実体を世代依存先へ登録し、実行環境と依存先を一致させる。構築中に失効した候補は公開せず、voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
 
 ResourceManagerは生成時に選択したRuntimeを各ResourceGenerationへ保持し、実行器を通してStageの型付きReleaseAsyncへ渡す。StageはRuntimeのDestroyVoiceAsync／DestroyClipAsyncで元backendを解放する。解放先を再選択せず、元のbackend instanceへのCleanupコマンドを送る。出力の解放後にdevice leaseを返し、voice → clip → deviceの順を守る。native解放が失敗した場合は同じ出力とleaseを保持して `TrimAsync` で再試行する。旧資源の解放先を新deviceへ付け替えない。
 
@@ -120,6 +120,8 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 +    {
 +        // PCMは完了まで保持。同じserviceの使用可能なleaseを指定する。
 +        public ValueTask<IAudioClip> CreateClipForLease(AudioDeviceLease lease, AudioFormat format, ReadOnlyMemory<float> samples, CancellationToken cancellationToken = default);
++        public ValueTask<(AudioDeviceLease Lease, IAudioClip Clip)> CreateClipWithLease(AudioFormat format, ReadOnlyMemory<float> samples, CancellationToken cancellationToken = default);
++        public ValueTask<(AudioDeviceLease Lease, IAudioVoice Voice)> CreateVoiceWithLease(IAudioClip clip, AudioBus bus, CancellationToken cancellationToken = default);
 +        // clipとleaseの生成元deviceが異なる場合はArgumentException。
 +        public ValueTask<IAudioVoice> CreateVoiceForLease(AudioDeviceLease lease, IAudioClip clip, AudioBus bus, CancellationToken cancellationToken = default);
 +        public ValueTask<Unit> Refresh(CancellationToken cancellationToken = default);
@@ -206,6 +208,8 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 senderは参照一本で、送信時のクロージャや汎用ExecuteAsyncへの中継を生成しない。静的portの登録は型ごとに一度であり、停止後に同じprocess内で再登録しない。復旧ではportとownerを維持してdeviceだけを交換する。実行基盤のrun・command管理の割り当ては残るため、送信全体のallocation-freeは保証しない。
 
 キュー容量は要求の滞留を制限するが、同期・OSスケジューリング・backend処理の待ち時間は残る。ECSの状態同期は生成されたbatch用メソッドでまとめられる。コマンドごとの遅延上限やhard realtimeは保証しない。
+
+OpenALのPCM16変換領域はArrayPoolから借り、実サンプル数だけをBufferDataへ渡して成功・失敗にかかわらず返す。長寿命のdecoded PCMとは寿命を分ける。
 
 標準デコードはファイル全体をMemoryStreamへ読み、PCM配列も保持する。入力の追加ToArrayコピーは避けるが、デコード中はencodedデータとPCM、clip生成中はPCMとbackendコピーが共存する。これらの配列は共通Memory予算へ自動計上しない。大容量や厳密な予算が必要な用途は、入力上限・チャンク化・メモリ計上を持つStageを使用する。
 
