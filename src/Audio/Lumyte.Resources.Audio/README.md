@@ -7,7 +7,7 @@ AudioResourceRuntimeはExecutorとDependenciesを提示し、Managerは環境の
 
 - AudioDecodeStage: 既定RuntimeのCPUジョブでSourceの非同期I/Oを待ち、WAVEをデコードしてAudioPcmDataを返す。
 - AudioClipStage: 型付きAudioDeviceコマンド一回で、現在のdevice世代のlease取得とclip生成を所有スレッド上で実行し、AudioClipを返す。
-- 解放: AudioResourceRuntime.DestroyClipAsyncが生成元backendへのCleanupを完了してからdeviceのleaseを返す。
+- 解放: AudioResourceRuntime.DestroyClipAsyncが生成元backendへのCleanupを完了した後、Managerが登録済みのdevice leaseを返す。
 
 AudioClipは元のIAudioClip参照一本を持つreadonly structです。Managerはclipの生成が完了してから公開します。
 AudioClipStageは`IResourceTransform<AudioPcmData, AudioClip, AudioResourceRuntime>`を実装し、BuildAsyncとReleaseAsyncの型付きRuntime引数で環境を受け取ります。
