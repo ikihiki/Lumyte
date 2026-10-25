@@ -43,5 +43,5 @@ internal sealed class MeshUploadStage : IResourceTransform<CpuMesh, GpuMesh, Gra
         return new(pipeline, table, table.WriteBuffer(0, vertices.SliceElements(0, count)), (uint)count, input.Material.Color, table.WriteTexture(0, texture.View), table.WriteSampler(0, sampler));
     }
 
-    public ValueTask ReleaseAsync(GpuMesh resource) => ValueTask.CompletedTask;
+    public ValueTask ReleaseAsync(GpuMesh resource, GraphicsResourceRuntime runtime) => ValueTask.CompletedTask;
 }

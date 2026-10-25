@@ -185,7 +185,7 @@ public sealed class SceneCleanupTests
             return new(device, lease, first, second);
         }
 
-        public ValueTask ReleaseAsync(SceneOutput resource) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(SceneOutput resource, GraphicsResourceRuntime runtime) => ValueTask.CompletedTask;
     }
 
     private sealed class NativeChild(string name, TestDevice device, CleanupState state) : IDisposable

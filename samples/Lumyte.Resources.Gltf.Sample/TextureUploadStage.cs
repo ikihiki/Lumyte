@@ -51,5 +51,5 @@ internal sealed class TextureUploadStage : IResourceTransform<CpuImage, GpuTextu
         return new(texture, view);
     }
 
-    public ValueTask ReleaseAsync(GpuTexture resource) => ValueTask.CompletedTask;
+    public ValueTask ReleaseAsync(GpuTexture resource, GraphicsResourceRuntime runtime) => ValueTask.CompletedTask;
 }
