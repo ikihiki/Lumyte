@@ -10,7 +10,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
-    private readonly ResourceWatchTargets _watchTargets = new();
+    private readonly ResourceWatchTargets? _watchTargets;
     private readonly ResourceReloadService? _hotReload;
     private readonly Dictionary<RuntimeTypeHandle, (IResourceStage Stage, IResourceRuntime Runtime)> _stages;
     private readonly Dictionary<IResourceRuntime, IResourceExecutor> _executors = new(ReferenceEqualityComparer.Instance);
@@ -29,7 +29,6 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private Dictionary<ResourceNode, ResourceGeneration> _published = [];
     private Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private bool _metadataShared;
-    private bool _watchRescanRequested;
     private ResourceBuildView? _normalView;
     private Exception? _runtimeFailure;
     private Task? _disposeTask;
@@ -115,8 +114,12 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
                 RefreshRuntime(dependency);
             }
 
-            _hotReload = reloadOptions?.Enabled != false && source.Changes is { } changes
-                ? new ResourceReloadService(this, changes, reloadOptions) : null;
+            if (reloadOptions?.Enabled != false && source.Changes is { } changes)
+            {
+                _watchTargets = new();
+                _hotReload = new(this, changes, reloadOptions);
+            }
+
             _reclaimerRegistration = memory.RegisterReclaimer(this);
             _hotReload?.Start();
         }
@@ -127,8 +130,60 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    /// <summary>Gets the manager-owned automatic reload worker, or null when the source has no notifications or automatic reload is disabled.</summary>
-    public ResourceReloadService? HotReload => _hotReload;
+    /// <summary>Occurs after each automatic reload attempt, including unchanged and conflicting results.</summary>
+    /// <remarks>Handlers execute outside manager locks; an exception stops automatic monitoring and faults HotReloadCompletion.</remarks>
+    public event EventHandler<ResourceReloadEventArgs>? Reloaded
+    {
+        add
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.Reloaded += value;
+            }
+        }
+
+        remove
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.Reloaded -= value;
+            }
+        }
+    }
+
+    /// <summary>Occurs when an automatic reload fails, with its retry decision.</summary>
+    /// <remarks>Handlers execute outside manager locks; an exception stops automatic monitoring and faults HotReloadCompletion.</remarks>
+    public event EventHandler<ResourceReloadFailureEventArgs>? ReloadFailed
+    {
+        add
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.ReloadFailed += value;
+            }
+        }
+
+        remove
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.ReloadFailed -= value;
+            }
+        }
+    }
+
+    /// <summary>Gets a value indicating whether automatic monitoring was enabled for this manager's source.</summary>
+    public bool IsHotReloadEnabled => _hotReload is not null;
+
+    /// <summary>Gets the automatic monitoring lifetime task, or a completed task when monitoring is disabled.</summary>
+    /// <remarks>The manager joins monitoring before releasing resources. Terminal errors remain observable here after disposal.</remarks>
+    public Task HotReloadCompletion => _hotReload?.Completion ?? Task.CompletedTask;
+
+    /// <summary>Gets the latest completed automatic reload result, or null before the first completed attempt.</summary>
+    public ResourceReloadResult? LastReloadResult => _hotReload?.LastResult;
+
+    /// <summary>Gets the latest automatic reload or terminal monitoring error, cleared by a completed reload attempt.</summary>
+    public Exception? LastReloadError => _hotReload?.LastError;
 
     /// <summary>Gets the process-local identity, never reused by another manager.</summary>
     public ulong ManagerId { get; }
@@ -145,7 +200,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    internal IResourceWatchTargets WatchTargets => _watchTargets;
+    internal IResourceWatchTargets WatchTargets => _watchTargets!;
 
     /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>

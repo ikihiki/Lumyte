@@ -104,7 +104,7 @@ public sealed partial class ResourceManager
                     }
 
                     _metadata.Clear();
-                    _watchTargets.Clear();
+                    _watchTargets?.Clear();
                     _metadataReferences.Clear();
                     _metadataPruneCandidates.Clear();
                     _invalidated.Clear();
@@ -384,11 +384,14 @@ public sealed partial class ResourceManager
             }
 
             view.Roots = -1;
-            foreach (ResourceBuildSlot slot in view.Builds.Values)
+            if (_watchTargets is { } targets)
             {
-                if (slot.Generation.Sources.Count != 0)
+                foreach (ResourceBuildSlot slot in view.Builds.Values)
                 {
-                    _watchTargets.CompleteBuild(slot.Generation.Sources.Keys);
+                    if (slot.Generation.Sources.Count != 0)
+                    {
+                        targets.CompleteBuild(slot.Generation.Sources.Keys);
+                    }
                 }
             }
 
@@ -467,7 +470,7 @@ public sealed partial class ResourceManager
 
         if (metadata.Sources.Count != 0 || previous?.Sources.Count > 0)
         {
-            _watchRescanRequested |= _watchTargets.ReplaceMetadata(previous, metadata);
+            _watchTargets?.ReplaceMetadata(previous, metadata, _hotReload!);
         }
 
         _metadata[node] = metadata;
@@ -483,7 +486,7 @@ public sealed partial class ResourceManager
         _metadata.Remove(node);
         if (metadata.Sources.Count != 0)
         {
-            _watchTargets.RemoveMetadata(metadata);
+            _watchTargets?.RemoveMetadata(metadata);
         }
 
         foreach (ResourceNode dependency in metadata.Dependencies)

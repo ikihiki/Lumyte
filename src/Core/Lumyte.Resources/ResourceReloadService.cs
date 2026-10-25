@@ -6,12 +6,11 @@ namespace Lumyte.Resources;
 /// <summary>Watches source hints and rebuilds resources in bounded, debounced batches.</summary>
 /// <remarks>
 /// ResourceManager owns its configured worker and stops it before releasing resources.
-/// Explicitly constructed workers borrow both manager and change source and must stop before either owner is disposed.
 /// Events execute synchronously on the background worker, outside synchronization locks. Handlers must
 /// not synchronously wait for shutdown; a handler exception faults <see cref="Completion"/>.
 /// Source enumeration failures also fault completion. Reload failures retain the old graph and allow later batches.
 /// </remarks>
-public sealed class ResourceReloadService : IAsyncDisposable
+internal sealed class ResourceReloadService : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly ResourceManager _manager;
@@ -21,7 +20,6 @@ public sealed class ResourceReloadService : IAsyncDisposable
     private readonly SemaphoreSlim _changed = new(0, 1);
     private readonly HashSet<ResourceId> _pending = [];
     private Task _completion = Task.CompletedTask;
-    private Task? _stopTask;
     private Task? _disposeTask;
     private ResourceReloadResult? _lastResult;
     private Exception? _lastError;
@@ -37,7 +35,7 @@ public sealed class ResourceReloadService : IAsyncDisposable
     /// <param name="manager">The resource graph to reload.</param>
     /// <param name="source">The change notification source.</param>
     /// <param name="options">Batching and retry limits, or null for defaults.</param>
-    public ResourceReloadService(ResourceManager manager, IResourceChangeSource source, ResourceReloadOptions? options = null)
+    internal ResourceReloadService(ResourceManager manager, IResourceChangeSource source, ResourceReloadOptions? options = null)
     {
         _manager = manager;
         _source = source;
@@ -69,9 +67,20 @@ public sealed class ResourceReloadService : IAsyncDisposable
     /// <summary>Gets the latest reload or terminal worker exception, cleared by a completed reload attempt.</summary>
     public Exception? LastError => Volatile.Read(ref _lastError);
 
+    /// <summary>Stops the worker and releases coordinator state without disposing borrowed services.</summary>
+    /// <returns>Completion of disposal, shared by concurrent callers; worker errors remain on <see cref="Completion"/> and <see cref="LastError"/>.</returns>
+    public ValueTask DisposeAsync()
+    {
+        lock (_gate)
+        {
+            _disposed = true;
+            _stopRequested = true;
+            return new(_disposeTask ??= Task.Run(DisposeCoreAsync));
+        }
+    }
+
     /// <summary>Starts background watching once; repeated calls while active have no effect.</summary>
-    /// <remarks>A stopped service cannot restart. Resolve a new service scope for a new lifetime.</remarks>
-    public void Start()
+    internal void Start()
     {
         lock (_gate)
         {
@@ -89,43 +98,37 @@ public sealed class ResourceReloadService : IAsyncDisposable
         }
     }
 
-    /// <summary>Cancels watching and in-flight reloads, then joins both workers.</summary>
-    /// <returns>Completion of shutdown; terminal worker errors remain observable.</returns>
-    public Task StopAsync()
+    internal void RequestRecheck(ResourceId id)
     {
         lock (_gate)
         {
-            _stopRequested = true;
-            return _stopTask ??= Task.Run(StopCoreAsync);
-        }
-    }
-
-    /// <summary>Stops the worker and releases coordinator state without disposing borrowed services.</summary>
-    /// <returns>Completion of disposal, shared by concurrent callers; worker errors remain on <see cref="Completion"/> and <see cref="LastError"/>.</returns>
-    public ValueTask DisposeAsync()
-    {
-        lock (_gate)
-        {
-            _disposed = true;
-            _stopRequested = true;
-            return new(_disposeTask ??= Task.Run(DisposeCoreAsync));
-        }
-    }
-
-    internal void RequestRescan()
-    {
-        lock (_gate)
-        {
-            if (_stopRequested || _disposed)
+            if (!_stopRequested && !_disposed)
             {
-                return;
+                QueueChange(new(id, null));
             }
+        }
+    }
 
-            _firstChange = _lastChange = Stopwatch.GetTimestamp();
+    private void QueueChange(ResourceSourceChange change)
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (!_rescan && _pending.Count == 0)
+        {
+            _firstChange = now;
+        }
+
+        _lastChange = now;
+        if (change.RequiresRescan || (!_rescan && !_pending.Contains(change.Id) && _pending.Count >= _options.MaximumPendingChanges))
+        {
             _rescan = true;
             _pending.Clear();
-            SignalChange();
         }
+        else if (!_rescan)
+        {
+            _pending.Add(change.Id);
+        }
+
+        SignalChange();
     }
 
     private async Task RunAsync()
@@ -193,24 +196,7 @@ public sealed class ResourceReloadService : IAsyncDisposable
                 token.ThrowIfCancellationRequested();
                 lock (_gate)
                 {
-                    long now = Stopwatch.GetTimestamp();
-                    if (!_rescan && _pending.Count == 0)
-                    {
-                        _firstChange = now;
-                    }
-
-                    _lastChange = now;
-                    if (change.RequiresRescan || (!_rescan && !_pending.Contains(change.Id) && _pending.Count >= _options.MaximumPendingChanges))
-                    {
-                        _rescan = true;
-                        _pending.Clear();
-                    }
-                    else if (!_rescan)
-                    {
-                        _pending.Add(change.Id);
-                    }
-
-                    SignalChange();
+                    QueueChange(change);
                 }
             }
         }
@@ -287,13 +273,13 @@ public sealed class ResourceReloadService : IAsyncDisposable
             if (failure is not null)
             {
                 Volatile.Write(ref _lastError, failure);
-                ReloadFailed?.Invoke(this, new(failure, attempt + 1, retry));
+                ReloadFailed?.Invoke(_manager, new(failure, attempt + 1, retry));
             }
             else
             {
                 Volatile.Write(ref _lastResult, result);
                 Volatile.Write(ref _lastError, null);
-                Reloaded?.Invoke(this, new(result!));
+                Reloaded?.Invoke(_manager, new(result!));
                 retry &= result!.Status == ResourceReloadStatus.Conflict;
             }
 
@@ -347,7 +333,7 @@ public sealed class ResourceReloadService : IAsyncDisposable
     {
         try
         {
-            await StopAsync().ConfigureAwait(false);
+            await StopCoreAsync().ConfigureAwait(false);
         }
         catch (Exception)
         {

@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Lumyte.Resources.Tests;
 
-/// <summary>Exercises scoped watcher ownership, shutdown ordering and notification filtering through public contracts.</summary>
+/// <summary>Exercises shared watcher ownership, shutdown ordering and notification filtering through public contracts.</summary>
 public sealed class ResourceWatchRegistrationTests
 {
     private static readonly ResourceId _known = new("asset");
@@ -31,7 +31,7 @@ public sealed class ResourceWatchRegistrationTests
             execution.Resources,
             reloadOptions: new() { DebounceDelay = TimeSpan.Zero, MaximumRetryCount = 0 });
         var changes = (BlockingChangeSource)source.Changes!;
-        ResourceReloadService monitor = manager.HotReload!;
+        ResourceManager monitor = manager;
         await changes.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         IReadOnlySet<ResourceId> initialTargets = changes.Targets!.Resources;
         Assert.Empty(initialTargets);
@@ -92,7 +92,7 @@ public sealed class ResourceWatchRegistrationTests
         Assert.Contains("release one", state.Events);
         Assert.Equal([_known], changes.Targets!.Resources);
         TaskCompletionSource published = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.HotReload!.Reloaded += (_, args) =>
+        manager.Reloaded += (_, args) =>
         {
             if (args.Result.Status == ResourceReloadStatus.Published)
             {
@@ -122,7 +122,7 @@ public sealed class ResourceWatchRegistrationTests
         await using TrackedSource source = new(state);
         await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new("immutable", source, [new ValueStage(state)], memory, execution.Resources);
-        Assert.Null(manager.HotReload);
+        Assert.False(manager.IsHotReloadEnabled);
         Assert.Empty(state.ChangeSources);
         using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
         using ResourceLease<Value> value = reference.Acquire();
@@ -145,7 +145,7 @@ public sealed class ResourceWatchRegistrationTests
             memory,
             execution.Resources,
             reloadOptions: new() { Enabled = false });
-        Assert.Null(manager.HotReload);
+        Assert.False(manager.IsHotReloadEnabled);
         using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
         reference.Dispose();
         await manager.DisposeAsync();
@@ -168,7 +168,7 @@ public sealed class ResourceWatchRegistrationTests
         await using ResourceManager manager = provider.GetRequiredService<ResourceManager>();
         Assert.Same(manager, firstScope.ServiceProvider.GetRequiredService<ResourceManager>());
         Assert.Same(manager, secondScope.ServiceProvider.GetRequiredService<ResourceManager>());
-        ResourceReloadService monitor = manager.HotReload!;
+        ResourceManager monitor = manager;
         BlockingChangeSource changes = Assert.Single(state.ChangeSources);
         await changes.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -177,7 +177,7 @@ public sealed class ResourceWatchRegistrationTests
         Assert.Equal(1, changes.WatchCount);
         Assert.Equal(0, changes.StopCount);
         Assert.Equal(0, changes.DisposeCount);
-        Assert.False(monitor.Completion.IsCompleted);
+        Assert.False(monitor.HotReloadCompletion.IsCompleted);
 
         using (ResourceReference<Value> reference = await manager.AcquireAsync(_key))
         using (ResourceLease<Value> lease = reference.Acquire())
@@ -186,7 +186,7 @@ public sealed class ResourceWatchRegistrationTests
         }
 
         await manager.DisposeAsync();
-        Assert.True(monitor.Completion.IsCompleted);
+        Assert.True(monitor.HotReloadCompletion.IsCompleted);
         Assert.Equal(1, changes.StopCount);
         Assert.Equal(0, state.SourceDisposals);
         await execution.DisposeAsync();
@@ -206,7 +206,7 @@ public sealed class ResourceWatchRegistrationTests
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceReloadService monitor = scope.ServiceProvider.GetRequiredService<ResourceManager>().HotReload!;
+        ResourceManager monitor = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         using (ResourceLease<Value> initial = await manager.AcquireLeaseForTestAsync(_key))
         {
@@ -225,7 +225,7 @@ public sealed class ResourceWatchRegistrationTests
         await execution.DisposeAsync();
         await provider.DisposeAsync();
 
-        Assert.True(monitor.Completion.IsCompleted);
+        Assert.True(monitor.HotReloadCompletion.IsCompleted);
         Assert.True(state.BuildCancelled.Task.IsCompletedSuccessfully);
         Assert.False(changes.DisposedBeforeStop);
         string[] events = state.Events.ToArray();
@@ -247,16 +247,16 @@ public sealed class ResourceWatchRegistrationTests
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceReloadService monitor = scope.ServiceProvider.GetRequiredService<ResourceManager>().HotReload!;
+        ResourceManager monitor = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         using (ResourceLease<Value> initial = await manager.AcquireLeaseForTestAsync(_key))
         {
             Assert.Equal("one", initial.Value.Revision);
         }
 
-        IOException observed = await Assert.ThrowsAsync<IOException>(async () => await monitor.Completion.WaitAsync(TimeSpan.FromSeconds(10)));
+        IOException observed = await Assert.ThrowsAsync<IOException>(async () => await monitor.HotReloadCompletion.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Same(failure, observed);
-        Assert.Same(failure, monitor.LastError);
+        Assert.Same(failure, monitor.LastReloadError);
         await manager.DisposeAsync();
         await scope.DisposeAsync();
         await execution.DisposeAsync();
@@ -298,7 +298,7 @@ public sealed class ResourceWatchRegistrationTests
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         TaskCompletionSource initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.HotReload!.Reloaded += (_, _) => initial.TrySetResult();
+        manager.Reloaded += (_, _) => initial.TrySetResult();
         using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
         await initial.Task.WaitAsync(TimeSpan.FromSeconds(10));
         state.RevisionReads.Clear();
