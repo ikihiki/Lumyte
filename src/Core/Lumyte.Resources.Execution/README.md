@@ -69,6 +69,15 @@ I/Oやキューで待った時間を含めず、再開ごとに計測を始め�
 深い同期呼び出しには別途32段でyieldし、stackを解放します。
 同期Stage自体を途中中断する機能はないため、大きなCPU変換はStage側で有限の区間に分けます。
 
+## ストリーミング
+
+`OpenStreamAsync`はfactoryの出力型に登録したExecutorへ、reader生成・先読み・Seek・解放を配送します。
+`ResourceRuntime.StreamAsync`は型付きworkflowを使い、データやbuffer空きの待機中はCPU枠を返します。
+producerは停止・終端まで一つの受付枠を保持するため、`MaxInFlightRuns`には同時sessionと通常の構築・解放を含めてください。
+独自Executorもstreamingを使う場合は`StreamAsync`を実装し、ジョブ内で渡された`IResourceStreamWork.ExecuteAsync`を一度実行します。
+Cooperativeではsessionの生成・Seek・解放を待つ間もPumpを続けます。
+詳細は[ストリーミングの契約](../../../docs/adr/resources/RESOURCES-0005-bounded-streaming.md)を参照してください。
+
 ## 容量と終了
 
 配送は型付きstructと既存Contextを使い、送信ごとのラムダや汎用sessionを追加しません。
@@ -79,7 +88,7 @@ I/Oやキューで待った時間を含めず、再開ごとに計測を始め�
 未開始の処理は取消で省略できますが、開始後はCancelPendingでも継続を維持し、協調取消と実完了を待ちます。
 
 BrowserではHost/Cooperativeで配置し、ロード・解放の待機中もイベントループからPumpを続けます。
-Reference・Lease・Snapshotを返し、Managerの構築と解放を完了してからExecutionRuntimeを停止してください。
+sessionを解放し、Reference・Lease・Snapshotを返して、Managerの構築と解放を完了してからExecutionRuntimeを停止してください。
 解放失敗時は所有を保持して再試行するため、Manager・DI provider・実行器・device環境を維持します。
 Managerは環境の利用を管理し、共有deviceやworkerの物理的な起動・停止はホストが管理します。
 
