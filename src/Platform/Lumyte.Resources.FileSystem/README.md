@@ -57,14 +57,13 @@ services.AddResources(resources => resources
 
 // All resource pipelines and child scopes use the same application manager.
 ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-ResourceReloadService reload = manager.HotReload!;
-reload.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
+manager.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 ```
 
 The coordinator debounces and deduplicates changes, retries transient reload
 failures and publication conflicts within configured limits, and keeps the old
-published resources on failure. Its `Reloaded`, `ReloadFailed`, `LastError` and
-`Completion` members expose the outcome. The manager starts watching automatically
+published resources on failure. The manager's `Reloaded`, `ReloadFailed`,
+`LastReloadError` and `HotReloadCompletion` members expose the outcome. The manager starts watching automatically
 and cancels and joins its worker before releasing resources during disposal.
 See [`Lumyte.Resources`](../../Core/Lumyte.Resources/README.md) for coordinator
 options and ownership. The [resource sample](../../../samples/Lumyte.Resources.Sample/README.md)
@@ -89,7 +88,7 @@ subscription; moving, deleting or replacing it requires restarting monitoring.
 Native buffer overflow or a full bounded notification queue
 coalesces pending hints into `ResourceSourceChange.Rescan`; changes are never
 silently discarded due to those limits. Other watcher errors fail enumeration
-and fault the coordinator's `Completion`. Watcher callbacks perform no hashing
+and fault the manager's `HotReloadCompletion`. Watcher callbacks perform no hashing
 or resource builds. Configure `FileResourceChangeSourceOptions` in DI to change
 the notification capacity (default 256) or native buffer size (default 8192 bytes,
 allowed range 4096–65536).

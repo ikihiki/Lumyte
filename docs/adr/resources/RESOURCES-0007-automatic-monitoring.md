@@ -41,7 +41,7 @@ watcherのcallbackではpathの識別、対象照合、通知queueの更新だ�
 
 イベントがない間、adapterの列挙はchannelの非同期待機へ入り、専用の実行threadや周期pollを作らない。debounce、再試行、Stageの実行先と一括公開は共通HotReloadとRuntimeの責務である。入力通知を受け取ることと、リソース生成のための所有スレッドを持つことを分離する。
 
-`InternalBufferOverflowException` 以外のwatcher errorは通知列挙を失敗させる。自動構成ではManagerの `HotReload.Completion` と `LastError` から終端エラーを観測できる。adapterは同じwatcherを無期限に再起動しない。構築失敗時の旧公開保持と有限再試行は共通HotReloadの契約に従う。
+`InternalBufferOverflowException` 以外のwatcher errorは通知列挙を失敗させる。自動構成ではManagerの `HotReloadCompletion` と `LastReloadError` から終端エラーを観測できる。adapterは同じwatcherを無期限に再起動しない。構築失敗時の旧公開保持と有限再試行は共通HotReloadの契約に従う。
 
 rootのdirectory自体は購読中に移動・置換しないことを要求する。その寿命が変わる場合は利用側が監視を含む新しい構成を作る。停止済みのManager所有HotReload serviceを再起動する契約は設けない。
 
