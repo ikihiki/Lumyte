@@ -16,7 +16,7 @@ voice.Play();
 
 OpenAL Soft の Native ライブラリはアプリ／ホストが用意します。Linux では `libopenal1`、Windows ではプロセスのアーキテクチャに合う `OpenAL32.dll` をランタイムの検索先へ配置してください。この NuGet パッケージは Native バイナリを同梱しません。
 
-nativeライブラリはBCLのNativeLibraryで読み込み、Silk.NETのdeps.json／runtimesディレクトリ独自探索を使用しません。標準のアプリ／システム検索先へ配置します。Linuxはlibopenal.so.1→libopenal.so、Windowsはopenal32.dll→soft_oal.dll、macOSはシステムOpenAL.framework→libopenal.dylibの順に探します。ALとALContextはそれぞれ取得したlibrary handleを所有し、初期化失敗時も返却します。
+nativeライブラリはBCLのNativeLibraryで読み込み、Silk.NETのdeps.json／runtimesディレクトリ独自探索を使用しません。標準のアプリ／システム検索先へ配置します。Linuxはlibopenal.so.1→libopenal.so、Windowsはopenal32.dll→soft_oal.dll、macOSはシステムOpenAL.framework→libopenal.dylibの順に探します。ALとALContextはそれぞれ取得したlibrary handleを所有し、初期化失敗時も返却します。Linux x64のNativeAOT公開とnull driverでの生成・再生・解放も検証しています。
 
 各 device とその子は、生成した所有スレッドから操作します。所有スレッド外からの制御は例外で拒否します。実行スレッドの選択、ジョブからの要求配送、非同期処理後の復帰は利用者が管理してください。
 
