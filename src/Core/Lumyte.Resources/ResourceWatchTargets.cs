@@ -5,8 +5,7 @@ namespace Lumyte.Resources;
 internal sealed class ResourceWatchTargets : IResourceWatchTargets
 {
     private readonly object _gate = new();
-    private HashSet<ResourceId> _tracked = [];
-    private HashSet<ResourceId> _pending = [];
+    private readonly Dictionary<ResourceId, References> _references = [];
     private FrozenSet<ResourceId>? _resources = FrozenSet<ResourceId>.Empty;
 
     public IReadOnlySet<ResourceId> Resources
@@ -20,7 +19,7 @@ internal sealed class ResourceWatchTargets : IResourceWatchTargets
 
             lock (_gate)
             {
-                resources = _resources ?? _tracked.ToFrozenSet();
+                resources = _resources ?? _references.Keys.ToFrozenSet();
                 Volatile.Write(ref _resources, resources);
                 return resources;
             }
@@ -31,26 +30,87 @@ internal sealed class ResourceWatchTargets : IResourceWatchTargets
     {
         lock (_gate)
         {
-            if (_tracked.Add(id))
-            {
-                Volatile.Write(ref _resources, null);
-            }
+            References references = _references.GetValueOrDefault(id);
+            Set(id, references with { Builds = references.Builds + 1 });
         }
     }
 
-    internal void Set(IEnumerable<ResourceId> resources)
+    internal void CompleteBuild(IEnumerable<ResourceId> sources)
     {
         lock (_gate)
         {
-            _pending.Clear();
-            _pending.UnionWith(resources);
-            if (!_tracked.SetEquals(_pending))
+            foreach (ResourceId id in sources)
             {
-                (_tracked, _pending) = (_pending, _tracked);
+                References references = _references[id];
+                Set(id, references with { Builds = references.Builds - 1 });
+            }
+        }
+    }
+
+    internal bool ReplaceMetadata(ResourceMetadata? previous, ResourceMetadata current)
+    {
+        lock (_gate)
+        {
+            bool added = false;
+            foreach (ResourceId id in current.Sources.Keys)
+            {
+                References references = _references.GetValueOrDefault(id);
+                added |= references.Metadata == 0;
+                Set(id, references with { Metadata = references.Metadata + 1 });
+            }
+
+            if (previous is not null)
+            {
+                RemoveMetadataCore(previous);
+            }
+
+            return added;
+        }
+    }
+
+    internal void RemoveMetadata(ResourceMetadata metadata)
+    {
+        lock (_gate)
+        {
+            RemoveMetadataCore(metadata);
+        }
+    }
+
+    internal void Clear()
+    {
+        lock (_gate)
+        {
+            _references.Clear();
+            Volatile.Write(ref _resources, FrozenSet<ResourceId>.Empty);
+        }
+    }
+
+    private void RemoveMetadataCore(ResourceMetadata metadata)
+    {
+        foreach (ResourceId id in metadata.Sources.Keys)
+        {
+            References references = _references[id];
+            Set(id, references with { Metadata = references.Metadata - 1 });
+        }
+    }
+
+    private void Set(ResourceId id, References references)
+    {
+        if (references is { Builds: 0, Metadata: 0 })
+        {
+            _references.Remove(id);
+            Volatile.Write(ref _resources, null);
+        }
+        else
+        {
+            if (!_references.ContainsKey(id))
+            {
                 Volatile.Write(ref _resources, null);
             }
 
-            _pending.Clear();
+            _references[id] = references;
         }
     }
+
+    private readonly record struct References(int Builds, int Metadata);
 }

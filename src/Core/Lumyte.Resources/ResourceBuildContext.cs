@@ -3,6 +3,10 @@ using Lumyte.Memory;
 namespace Lumyte.Resources;
 
 /// <summary>Provides tracked dependencies and owned cleanup for one pipeline construction.</summary>
+/// <remarks>
+/// Finish synchronous context calls before the stage returns. Registered asynchronous dependencies and sources
+/// are drained by the manager; unjoined work must not continue calling the context after the stage ends.
+/// </remarks>
 public sealed class ResourceBuildContext
 {
     private readonly ResourceManager _manager;
@@ -78,6 +82,15 @@ public sealed class ResourceBuildContext
     /// <param name="cleanup">An idempotent, retryable cleanup callback.</param>
     /// <param name="lifetime">The build or output lifetime of the auxiliary resource.</param>
     public void RegisterCleanup(Func<ValueTask> cleanup, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Build)
+    {
+        EnsureOpen();
+        _manager.RegisterCleanup(_generation, cleanup, lifetime);
+    }
+
+    /// <summary>Transfers ownership of a synchronous disposable without allocating a cleanup delegate.</summary>
+    /// <param name="cleanup">An idempotent, retryable disposable resource.</param>
+    /// <param name="lifetime">The build or output lifetime of the auxiliary resource.</param>
+    public void RegisterCleanup(IDisposable cleanup, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Build)
     {
         EnsureOpen();
         _manager.RegisterCleanup(_generation, cleanup, lifetime);

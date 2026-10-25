@@ -162,19 +162,21 @@ public sealed partial class ResourceManager
 
                 runtime.Snapshot = next;
                 Dictionary<ResourceNode, ResourceGeneration>? updated = null;
+                List<ResourceNode>? removed = null;
                 foreach ((ResourceNode node, ResourceGeneration generation) in _published)
                 {
                     if (TryGetUnavailable(generation, out _))
                     {
                         updated ??= new(_published);
                         updated.Remove(node);
+                        (removed ??= []).Add(node);
                         _invalidated.Add(node);
                     }
                 }
 
                 if (updated is not null)
                 {
-                    SetPublished(updated);
+                    SetPublished(updated, removed!);
                 }
 
                 return;

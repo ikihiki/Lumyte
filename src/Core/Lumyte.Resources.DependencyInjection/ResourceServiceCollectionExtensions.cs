@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Execution;
 using Lumyte.Memory;
 using Lumyte.Resources.Execution;
@@ -67,7 +68,7 @@ public static class ResourceServiceCollectionExtensions
         return services;
     }
 
-    internal static void AddRuntimeDependency<TDependency>(IServiceCollection services, string managerName, string dependencyId)
+    internal static void AddRuntimeDependency<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDependency>(IServiceCollection services, string managerName, string dependencyId)
         where TDependency : class, IResourceRuntimeDependency
     {
         ValidateRuntimeRegistration(services, managerName, dependencyId);

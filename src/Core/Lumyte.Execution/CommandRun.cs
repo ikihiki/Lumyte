@@ -33,7 +33,7 @@ public sealed class CommandRun : IDisposable
         _count = items.Length;
         _bytes = bytes;
         _token = token;
-        if (token.CanBeCanceled && items.Any(item => item.Definition!.Owner is null && item.Definition.Gates.Length > 0))
+        if (token.CanBeCanceled && items.Any(static item => item.Definition!.Gates.Length > 0 && (item.Definition.Owner is null || item.Definition.Owner.Thread is not null)))
         {
             _cancellation = token.UnsafeRegister(static state => ((ExecutionRuntime)state!).NotifyCancellation(), runtime);
         }

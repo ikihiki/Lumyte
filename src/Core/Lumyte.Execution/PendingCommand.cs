@@ -22,7 +22,7 @@ internal sealed class PendingCommand<TCommand, TResult> : QueuedWork, System.Thr
         _bytes = work.PayloadBytes;
         _cleanup = cleanup;
         _source.RunContinuationsAsynchronously = true;
-        if (work.Owner is null && work.Gates.Length > 0 && token.CanBeCanceled)
+        if (token.CanBeCanceled && work.Gates.Length > 0 && (work.Owner is null || work.Owner.Thread is not null))
         {
             _cancellation = token.UnsafeRegister(static state => ((ExecutionRuntime)state!).NotifyCancellation(), _runtime);
         }

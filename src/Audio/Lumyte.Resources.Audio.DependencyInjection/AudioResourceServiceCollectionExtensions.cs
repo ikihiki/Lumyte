@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Audio.Abstractions;
 using Lumyte.Audio.Execution;
 using Lumyte.Execution;
@@ -15,7 +16,7 @@ public static class AudioResourceServiceCollectionExtensions
     /// <param name="services">The collection, with memory management already registered.</param>
     /// <param name="name">The unique resource manager name.</param>
     /// <returns>The supplied collection.</returns>
-    public static IServiceCollection AddAudioResources<TSource>(this IServiceCollection services, string name)
+    public static IServiceCollection AddAudioResources<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TSource>(this IServiceCollection services, string name)
         where TSource : class, IResourceSource
     {
         AddModule<AudioModule>(services);
@@ -33,7 +34,7 @@ public static class AudioResourceServiceCollectionExtensions
             .UseStageRuntime<IAudioClip, AudioResourceRuntime>()
             .UseStageRuntime<IAudioVoice, AudioResourceRuntime>();
 
-    private static void AddModule<TModule>(IServiceCollection services)
+    private static void AddModule<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TModule>(IServiceCollection services)
         where TModule : class, IExecutionModule
     {
         services.TryAddSingleton<TModule>();

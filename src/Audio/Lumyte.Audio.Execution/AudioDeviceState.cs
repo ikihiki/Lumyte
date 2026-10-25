@@ -249,6 +249,40 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
         return device.CreateVoice(clip, bus);
     }
 
+    internal (AudioDeviceLease Lease, IAudioClip Clip) CreateClipWithLease(AudioFormat format, ReadOnlyMemory<float> samples)
+    {
+        AudioDeviceLease lease = AcquireLease();
+        try
+        {
+            return (lease, lease.Device.CreateClip(format, samples.Span));
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
+    internal (AudioDeviceLease Lease, IAudioVoice Voice) CreateVoiceWithLease(IAudioClip clip, AudioBus bus)
+    {
+        AudioDeviceLease lease = AcquireLease();
+        try
+        {
+            IAudioDevice device = lease.Device;
+            if (!ReferenceEquals(clip.Device, device))
+            {
+                throw new ArgumentException("The clip belongs to another audio generation.", nameof(clip));
+            }
+
+            return (lease, device.CreateVoice(clip, bus));
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
     internal void SetBusGain(AudioBus bus, float gain)
     {
         VerifyOwner();
