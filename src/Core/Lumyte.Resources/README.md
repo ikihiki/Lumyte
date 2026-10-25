@@ -100,22 +100,30 @@ DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終�
 
 ## Runtimeと非同期ロード
 
-`IResourceRuntime`はStageが必要とする実行先・device・owner・世代の借用をまとめるリソース環境です。
-ResourceManagerは出力型の対応を固定し、選択したRuntimeを各内容世代に保存してBuildAsyncとReleaseAsyncへ使います。
-Stageは`IResourceSourceStage<T, TRuntime>`または`IResourceTransform<TInput, TOutput, TRuntime>`で環境型を宣言し、`BuildAsync`の型付きRuntime引数で受け取れます。Stage側のキャストは不要です。選択した環境と宣言型の不一致はManager構築時に検出します。共通の`ResourceBuildContext.Runtime`も維持します。
-既定のResourceRuntimeはPipeline開始とawait継続をジョブへ配送し、同じRuntime instanceを使う依存Stageは同じジョブ内で実行します。Runtime切り替えと独立Acquireでは別ジョブにし、キャッシュ済み・構築中の依存は共有します。モジュールRuntimeもこの共通基盤を利用できます。
-ジョブ入口は`context.ExecutePipelineAsync(stage, token)`です。登録済み依存・Source操作の実完了までジョブを保持するため、親の取消で共有依存の継続先を失いません。依存・世代・解放は従来どおりStageごとに管理します。
+`IResourceRuntime`はStageが必要とする安定した環境で、実行器のExecutorと世代providerのDependenciesを提示します。
+ResourceManagerは出力型ごとの環境を選び、同じ環境の実行器と依存一覧を構築時に一度取得します。
+CPUだけの環境は空のDependenciesを使い、複合環境は複数providerを提示できます。
+既定のResourceRuntimeは環境と共通実行器を兼ね、モジュールRuntimeも同じExecutorを利用できます。
 
-I/O・依存ロード・所有スレッド待機の間はCPU枠を解放します。
-StageとCPU処理を含む補助メソッドは通常のawaitを使い、同期区間を有限に保ちます。
-ConfigureAwait(false)やTask.Runで逃がした処理はスケジューラーの保証対象外です。
-Host/CooperativeではPumpで処理を進め、非同期待機中もホストのループを止めません。
-RuntimeはCPU処理とowner処理を調整し、Stage全体への固定スレッド親和性は保証しません。
+`IResourceSourceStage<T, TRuntime>`と`IResourceTransform<TInput, TOutput, TRuntime>`はBuildとReleaseで型付きRuntimeを受け取ります。
+Stage側のキャストは不要で、環境と宣言型の不一致はManager構築時に検出します。
+RuntimeはStage用サービスを提供し、Source・メモリ・依存・cleanupの使用記録はResourceBuildContextを通してManagerが所有します。
+共有Runtimeに構築ごとの可変状態を保持しません。
 
-RuntimeがIResourceRuntimeDependencyを実装すると、Managerはproviderを自動収集します。
-Stageは構築ごとに現在のdevice世代を借り、実際のidentity・versionを記録して公開前に検証します。
-生deviceをStageに固定せず、旧出力の解放には生成時の世代Lease・ownerを使います。
-初回ロードと変更後の再構築は同じStageと選択Runtimeを使います。
-監視と新規ロードを止め、リソース解放を完了してからExecutionRuntimeと各環境を終了してください。
+Executorはジョブ内で`context.ExecuteAsync(token)`を呼び、ManagerがStage呼出しから出力の所有記録、依存の静止待ち、cleanupまでを実行します。
+同じRuntime instanceを使う依存Stageは同じジョブで同じManager手順を通ります。
+Runtime切り替えと独立Acquireは別ジョブにし、キャッシュ済み・構築中の依存は共有します。
+親の待機が取消されても共有依存の実完了を待ち、継続先を保持します。
+
+I/O・依存ロード・所有スレッド待機の間はCPU枠を返します。
+StageとCPU処理を含むhelper、待機後に次のownerコマンドを送る環境メソッドは通常のawaitを使います。
+ConfigureAwait(false)やTask.Runで移した処理はスケジューラーの保証対象外です。
+Host/CooperativeではPumpで進め、非同期待機中もホストのループを止めません。
+Stage全体への固定スレッド親和性は保証せず、native操作はRuntimeが提供するownerコマンドへ配送します。
+
+構築ごとに取得したdevice Leaseの実際のidentity・Versionを記録し、公開前に検証します。
+旧出力の解放には生成時のRuntimeと元の世代Lease・ownerを使い、現在のdeviceを取り直しません。
+初回ロードと再構築は同じStageとManagerの手順を使います。
+Reference・Lease・Snapshotを返し、Managerの構築と解放を完了してから、ホストが共有実行器とdevice環境を停止します。
 
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。

@@ -168,12 +168,14 @@ public sealed class ResourceCompletionTests
         }
     }
 
-    private sealed class InlineRuntime : IResourceRuntime
+    private sealed class InlineRuntime : IResourceRuntime, IResourceExecutor
     {
-        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
-            => context.ExecutePipelineAsync(stage, cancellationToken);
+        public IResourceExecutor Executor => this;
 
-        public ValueTask ReleaseAsync(IResourceStage stage, object resource) => stage.ReleaseAsync(resource);
+        public ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+            => context.ExecuteAsync(cancellationToken);
+
+        public ValueTask ReleaseAsync(IResourceStage stage, IResourceRuntime runtime, object resource) => stage.ReleaseAsync(resource, runtime);
     }
 
     private sealed class Value;
