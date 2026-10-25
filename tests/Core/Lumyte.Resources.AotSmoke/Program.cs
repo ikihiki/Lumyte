@@ -94,6 +94,8 @@ internal static class Program
         }
     }
 
+    private readonly record struct Output(int Number, DeviceRuntime Runtime);
+
     private sealed class CheckState
     {
         internal int SourceConstructions { get; set; }
@@ -204,8 +206,6 @@ internal static class Program
     }
 
     private sealed record Input(int Number);
-
-    private readonly record struct Output(int Number, DeviceRuntime Runtime);
 
     private sealed class DecodeStage : IResourceSourceStage<Input>
     {
