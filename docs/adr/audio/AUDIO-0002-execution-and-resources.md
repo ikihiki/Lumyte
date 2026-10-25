@@ -6,239 +6,124 @@
 
 ## 背景
 
-Audio backendの生成・再生制御・破棄には所有スレッドの制約がある。一方、Sourceの読み込み、デコード、ゲームやECSからの操作は別の実行先で進む。各呼び出し元がラムダやスレッドを管理すると、順序、入力の寿命、停止時の解放責任が分散する。
+Audio backendの生成・再生制御・破棄には所有スレッドの制約がある。一方、Sourceの読み込み、デコード、ゲームやECSからの操作は別の実行先で進む。呼び出し元ごとにラムダとスレッドを管理せず、同じ型付きコマンドを専用スレッドとBrowserのホスト上で実行したい。
 
-デバイスロストでは、注入済みのdevice参照を交換するだけでは旧clipと新deviceの混在を防げない。Resourcesの内容世代と物理deviceの世代を接続し、初回ロード、HotReload、復旧で同じStageと所有権を使用する必要がある。Browserでは同じ仕事をホストへ配置し、音声の供給をゲームループからの更新配送に依存させない。
+Resourcesが共有する音声データと、再生位置や状態を持つvoiceは寿命が異なる。デバイスロストやHotReloadでもclipとvoiceの所有権を保ち、旧clipを新deviceへ渡さずに再構築・解放する必要がある。
 
 ## 決定
 
-### 責務と実行先
+### 所有スレッドへの配送
 
-`Lumyte.Audio.Execution` はbackendのDevice／Clip／VoiceをCoreの型付きコマンドへ接続する。`AudioModule` がFixedThread ownerと一つのControl order groupを宣言し、生成・制御・解放を受付順に実行する。backendは所属・子資源・借用・破棄状態を管理し、実行層はclip／voiceの一覧やID表を追加しない。
+`Lumyte.Audio.Execution`はDevice／Clip／VoiceをCoreの型付きコマンドへ接続する。`AudioModule`がFixedThread ownerと一つのControl order groupを宣言し、生成・制御・解放を受付順に実行する。backendが所属・子資源・借用・破棄状態を管理し、実行層にclip／voiceの一覧やID表を追加しない。
 
-`AudioVoice` と `AudioClip` は元のbackend参照一本を持つreadonly structである。ラッパー自身に宣言したメソッドからsenderを生成し、`new AudioVoice(original).Play()` で静的portへ送信する。ラッパーはnative資源を所有せず、コピーしても寿命を延長しない。呼び出し側はコマンド完了まで元資源を保持する。
+`AudioClip`と`AudioVoice`は元のbackend参照一本を持つreadonly structである。自身に宣言したメソッドからsenderを生成し、静的portへ送信する。`AudioClip.CreateVoice(bus)`は生成済みの`AudioVoice`を直接返す。ラッパーはnative資源やResourcesのleaseを所有せず、コピーしても寿命を延長しない。
 
-Play／Stopの完了はbackend操作の終了を表し、音が聞こえる時刻や再生終了を表さない。取消が実行開始に先行した場合だけ副作用を抑止する。開始後は実際の結果を観測し、返されたValueTaskを一度awaitして結果slotを返す。容量不足は `ExecutionQueueFullException`、受付終了は `InvalidOperationException` として返し、呼び出し側が再試行または要求の集約を決める。await後の継続先にスレッド親和性はない。
+Play／Stopの完了はbackend操作の終了を表し、可聴時刻や再生終了は保証しない。取消が実行開始に先行した場合だけ副作用を抑止する。開始後は実際の結果を観測し、ValueTaskを一度awaitして結果slotを返す。容量不足は`ExecutionQueueFullException`、受付終了は`InvalidOperationException`で返す。await後の呼び出し側に所有スレッドへの親和性を要求しない。
 
-State／Gain／Loopのgetterは、backendがlockで保護する保存済みの値を呼び出し元で読む。Stateは直近の更新結果であり、即時観測には `AudioDevice.Refresh()` の完了を待つ。getterからnative更新や全voiceの走査を行わない。
+State／Gain／Loopはbackendがlockで保護する保存済みの値を呼び出し元で読む。Stateは直近の更新結果で、即時観測には`AudioDevice.Refresh()`を待つ。getterからnative更新や全voiceの走査は行わない。
 
-Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御コマンドを処理する。制御は一回の処理区間を64件・2 msまでとし、区間ごとに更新期限を確認する。残りの制御要求は次の10 ms周期を待たずに継続する。Host配置では同じ更新とコマンドをControl phaseのPumpで進める。音声サンプルの供給はbackend／デバイスの周期が担当し、この制御ループの周期を再生精度の保証としない。
+Dedicatedではownerが10 ms周期で直接更新し、周期間も制御コマンドを処理する。一回の処理区間を64件・2 msまでとし、区間ごとに更新期限を確認して残りの要求を継続する。次の10 ms周期を待つ件数制限ではない。HostではControl phaseのPumpで同じ仕事を進める。音声サンプルの供給はbackend／デバイスの周期が担当し、この制御ループを再生精度の保証としない。
 
-### Sourceから実体までの所有権
+### Resourcesはclipを共有し、利用側がvoiceを所有する
 
-`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは出力型に対応する `IResourceRuntime` を選び、AudioDecodeStageには既定の `ResourceRuntime`、clipとvoiceには `AudioResourceRuntime` を使用する。AudioResourceRuntimeは現在のdevice取得、所有スレッドへの生成・解放操作、世代依存を提供する安定した環境である。Executorには既定Runtimeと同じ実行器を指定し、DependenciesにはAudioの世代providerを提示する。Managerがこれらを登録時に収集・検証し、全Stage共通の構築・解放手順を実行器へ配送する。物理deviceの生成・復旧・破棄はAudioModuleが所有する。
+標準パイプラインはSource → `AudioPcmData` → `AudioClip`で完了する。AudioDecodeStageは既定のResourceRuntimeで非同期I/OとWAVEデコードを行い、AudioClipStageはAudioResourceRuntimeでclipを生成する。voice用Stageや共有voiceのキャッシュは設けない。同じclipから呼び出し側が独立したvoiceを必要な数だけ生成する。
 
-全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `IResourceTransform<TInput, TOutput, AudioResourceRuntime>` で環境型を宣言し、BuildAsyncとReleaseAsyncの型付きRuntime引数を使う。Stage側の型変換は不要で、不適合な環境登録はManager構築時に拒否する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
-ClipとVoiceは同じAudioResourceRuntime instanceなので、依存構築を一つのジョブで進める。PCMデコードの既定Runtimeへ切り替わる箇所で別ジョブにし、native操作はAudio ownerコマンドへ配送する。
+全Stageは無引数で作成できる。AudioClipStageは`IResourceTransform<AudioPcmData, AudioClip, AudioResourceRuntime>`を実装し、BuildAsyncとReleaseAsyncの型付き引数で環境を受け取る。Stageに別のRuntimeをconstructor注入せず、環境型の不一致はManager構築時に検出する。
 
-通常のawait後の継続も実行器がジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。StageとAudioResourceRuntimeの生成処理はこの継続先を保持し、lease取得とnative生成を一つのowner commandへまとめて投入する。ConfigureAwait(false)で継続先を外れる中継は置かない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
+AudioResourceRuntimeは安定した実行環境として、既定Runtimeと共有するExecutor、deviceの取得・所有スレッドへの生成と解放、device世代を表すDependenciesを提示する。Managerが環境の選択・利用期間・世代検証・失効・再構築を管理し、ホストとAudioModuleが物理deviceと共有実行器の起動・停止を担う。
 
-標準decoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱う。chunk境界・padding・alignment・sample rate・byte rate・非有限sampleを検証し、不正データは `InvalidDataException`、未対応codecや形式は `NotSupportedException` で失敗する。圧縮形式やストリーミングは別のStageで表す。
+デコードとclip構築は環境が異なるため別ジョブで進める。同一Runtime内の連続Stageは共通Runtimeの規則に従って同じジョブを使う。通常のawait後も実行器が継続をジョブへ戻し、I/Oや依存ロードの待機中はCPU枠を返す。native操作はAudio ownerへ配送する。同期デコードは自動分割しない。
 
-PCMはclipへのコピー完了までBuild依存として保持する。voiceはclipをResident依存として保持し、生成完了後に実際のbackend instanceを公開する。`AudioPcmData.Samples` は借用したReadOnlyMemoryであり、利用側が供給した配列もコピー完了まで変更しない。
+PCMはコピー完了までBuild依存として保持し、その間はSamplesを変更しない。標準decoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱い、不正chunk・alignment・sample rate・非有限sampleを拒否する。圧縮形式やストリーミングは独自Stageで扱う。
 
-選択された長寿命の `AudioResourceRuntime` が、構築ごとに `CreateClipWithLease`／`CreateVoiceWithLease` で実体と正確なdevice leaseを一回の配送で取得し、service identityと取得時VersionをResourceManagerへ記録する。生成失敗時はowner上でleaseを返す。生成成功後は世代検証より先に候補とleaseの解放責任をcontextへ登録し、検証失敗時のnative解放に失敗しても両方を保持して再試行する。独自Stageの `UseAudioAsync` はdevice leaseだけを取得してcontextへ直接渡す。ManagerはRuntime.Dependenciesで提示された同じ実体を世代依存先へ登録し、実行環境と依存先を一致させる。構築中に失効した候補は公開せず、voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
+AudioResourceRuntime.CreateClipAsyncは一回のowner commandで実体と正確なdevice leaseを取得する。生成失敗時はowner上でleaseを返す。成功後は世代検証の前に候補とleaseの解放責任をcontextへ登録し、取得時のservice identityとVersionを記録する。失効した候補は公開しない。候補のnative解放が失敗した場合も両方を保持し、Trimで再試行する。独自StageのUseAudioAsyncも取得した正確なdevice leaseをcontextへ直接渡す。
 
-ResourceManagerは生成時に選択したRuntimeを各ResourceGenerationへ保持し、実行器を通してStageの型付きReleaseAsyncへ渡す。StageはRuntimeのDestroyVoiceAsync／DestroyClipAsyncで元backendを解放する。解放先を再選択せず、元のbackend instanceへのCleanupコマンドを送る。出力の解放後にdevice leaseを返し、voice → clip → deviceの順を守る。native解放が失敗した場合は同じ出力とleaseを保持して `TrimAsync` で再試行する。旧資源の解放先を新deviceへ付け替えない。
+Managerは生成時のRuntimeを各リソース世代に保持し、ReleaseAsyncへ渡す。DestroyClipAsyncは元backendへのCleanupが完了してからdevice leaseを返し、解放失敗時は両方を保持する。解放先を新deviceへ付け替えない。
 
-### 安定したserviceと交換可能なepoch
+利用側は**clipから作った全voiceのDestroyが完了するまで`ResourceLease<AudioClip>`を保持する**。voiceに暗黙のleaseや追加の管理オブジェクトは持たせない。先にleaseを返してclip解放が試みられると、backendは借用中として拒否し、Managerはvoice解放後のTrimで再試行する。Manager所有のclipを利用側から直接DestroyClipしない。
 
-`AudioModule.Devices` はmoduleの存続中に変わらない入口である。Versionは状態遷移ごと、Epochは物理deviceの取得ごとに増える。`InvalidatedThroughVersion` は失ったReady Versionを不可逆に記録する。値の加算はcheckedで行い、周回させない。
+### device世代、復旧とHotReload
 
-初期化はUninitialized → Initializing → Ready、ロストはReady → Lost、復旧はLost／Failed → Recovering → Readyと進む。factory失敗はFailedとなる。Readyはdeviceを使用できる状態であり、Resourcesの再構築完了や実際の音声出力開始を意味しない。
+`AudioModule.Devices`はmoduleの存続中に変わらない入口である。Versionは状態遷移ごと、Epochは物理deviceの取得ごとに増える。InvalidatedThroughVersionは失ったReady Versionを不可逆に記録する。加算はcheckedとし、周回させない。
 
-ownerの更新や生成時の確認でUnavailableを観測すると旧epochを失効させる。OpenALは利用可能な場合にALC_EXT_disconnectを確認する。Browserのclosed contextはUnavailableとして扱い、Suspended／interruptedは再開可能な同一世代として保持する。既知の `AudioDeviceUnavailableException` を更新で観測した場合はserviceをLostにし、ExecutionRuntime全体は停止させない。予期しない更新例外は失効後に実行基盤の失敗方針へ渡す。
+初期化はUninitialized → Initializing → Ready、ロストと復旧はReady → Lost → Recovering → Readyと進み、factory失敗はFailedとなる。Readyはdeviceの使用可否であり、Resourcesの再構築完了や可聴出力開始を表さない。
 
-`AcquireAsync` はownerで現在の使用可能な世代を取得する。使用不能なら `AudioDeviceUnavailableException` で失敗し、暗黙に復旧を待たない。leaseは取得したinstanceを固定し、ロスト後はIsUsableがfalseとなりDeviceへのアクセスを拒否する。Disposeは利用権を一度返すだけで、native破棄を行わない。
+ownerの更新や生成時の確認でUnavailableを観測すると旧epochを失効させる。OpenALは利用可能な場合にALC_EXT_disconnectを確認する。Browserのclosed contextはUnavailable、Suspended／interruptedは再開可能な同一世代として扱う。既知のAudioDeviceUnavailableExceptionはserviceをLostにし、ExecutionRuntime全体は止めない。予期しない更新例外は失効後に実行基盤の失敗方針へ渡す。
 
-`RecoverAsync` の同時要求は生成operationを共有する。呼び出し側の取消はその待機だけを解除する。factoryは所有スレッドで開始され、完了したdeviceの所有権をserviceへ渡す。factory失敗時はfactoryが部分生成物を解放する。完了処理のコマンド受付が容量不足の場合は生成物を保持し、次のRecoverAsyncで完了処理を再試行する。
+AcquireAsyncはownerで使用可能な世代を取得し、使用不能ならAudioDeviceUnavailableExceptionで失敗する。leaseは取得したinstanceに固定され、ロスト後はIsUsableがfalseとなりDeviceへのアクセスを拒否する。Disposeは利用権だけを返し、native破棄は行わない。
 
-復旧後はアプリが `RebuildRuntimeAsync(["Audio"])` を実行する。新voiceは停止状態で公開し、再生位置の移行やクロスフェードは利用側が決める。HotReloadも同じStageを使用し、旧Leaseが返るまで旧voice／clipを保持する。ただし物理ロストで失効した値は、保持中でも再生には使えない。
+RecoverAsyncの同時要求は生成operationを共有し、呼び出し側の取消は待機だけを解除する。factoryはownerで開始され、完成したdeviceの所有権をserviceへ渡す。factoryは失敗時の部分生成物を解放する。完了commandの容量不足では生成物を保持し、次のRecoverAsyncで完了処理を再試行する。
 
-`RetireAsync` はleaseがなくなった旧deviceを元ownerで解放する。backendに子が残る場合や解放が失敗した場合は所有を保持する。OpenALの失ったcontextへ切り替えられない場合、子のnative解放はcontext破棄へ委ね、backendの管理情報を解消する。単なるロスト通知による強制解放は行わない。
+復旧後はアプリがRebuildRuntimeAsync(["Audio"])を実行し、新deviceのclipを公開する。HotReloadも同じStageで新clipを構築する。取得済みleaseは旧clipを保持し、それを借用するvoiceは旧clipを使い続ける。利用側は新clipからvoiceを明示的に作成し、再生位置の移行やクロスフェードを決める。ただし物理ロストで失効したclipは保持中でも再生には使えない。
+
+RetireAsyncはleaseがなくなった旧deviceを元ownerで解放する。子が残る場合や解放失敗時は所有を保持する。OpenALの失ったcontextへ切り替えられない場合は、子のnative解放をcontext破棄へ委ね、backend管理情報を解消する。ロスト通知だけで利用中資源を強制破棄しない。
 
 ### DI、起動と終了
 
-`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntimeをsingletonとして登録する。AddResourcesの既定登録が汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ渡す。AudioResourceRuntimeは共有の既定IResourceRuntimeからExecutorを一度取得する。IExecutionModuleとしてAudioModuleへの依存を宣言し、未登録のAudioModuleを構成収集時に検出する。AudioResourceRuntime自身はdeviceを起動・停止しない。AddAudioPipelineは `UseStageRuntime<IAudioClip, AudioResourceRuntime>()` とvoice用の同じ指定で出力型を接続し、環境のDependenciesから世代依存先を収集する。PCMは既定Runtimeを使用する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
+DIは無引数の`AddAudioResources()`でAudioModuleとAudioResourceRuntimeだけをsingleton登録し、`AddResources(r => r.UseSource<TSource>().AddAudioPipeline())`で一つの名前なしsingleton Managerを構成する。SourceとStageもその寿命で解決し、scopeやkeyでは選ばない。AddAudioPipelineはDecode／Clip Stageと`UseStageRuntime<AudioClip, AudioResourceRuntime>()`を登録する。PCMは既定Runtimeを使い、世代依存先は環境のDependenciesから収集する。メモリ管理は呼び出し側が登録する。
 
-DIなしでもAudioModule・AudioResourceRuntime・汎用ResourceRuntimeをExecutionRuntimeへ渡す。ResourceManagerの既定runtimeとAudioResourceRuntimeのExecutorには同じ汎用Runtimeの実行器を使用する。`stageRuntimes` へ `ResourceStageRuntime(typeof(IAudioClip), audioRuntime)` とvoice用の指定を渡し、無引数の標準Stageを登録する。世代依存先の重複指定は不要である。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
+共通AddResourcesがResourceRuntimeとExecutionRuntimeを登録し、三つのmoduleの同じ実体をIExecutionModuleへ接続する。AudioResourceRuntimeはAudioModuleへの依存を宣言するが、deviceを起動・停止しない。事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べ、無引数のAudioModuleはOpenALを使う。
 
-BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawait中もホストの同期コンテキストとPumpを維持する。出力のresumeはuser gesture内で開始するbackend固有の操作として扱う。音声供給callbackからmanaged jobの完了を待たない。
+DIなしでも同じ三つのmoduleをExecutionRuntimeへ渡す。Managerの既定RuntimeとAudioResourceRuntimeに同じ汎用Runtimeを指定し、stageRuntimesへ`ResourceStageRuntime(typeof(AudioClip), audioRuntime)`を渡す。ホストがPrepareOnCurrentHost → StartAsyncを進め、起動完了後にロードする。具体例は[Resources README](../../../src/Audio/Lumyte.Resources.Audio/README.md)と[DI README](../../../src/Audio/Lumyte.Resources.Audio.DependencyInjection/README.md)に記載する。
 
-終了時はロード・監視を止め、Reference／Lease／Snapshotを返してResourceManagerの解放を完了させる。その間もAudioのCleanup受付とHost Pumpを維持し、最後にExecutionRuntimeを停止する。AudioModuleはStoppingで新しい取得・復旧を閉じ、進行中factoryと復旧operationの実完了を待つ。未接続の生成物もownerで解放する。子やleaseが残る場合は停止を失敗させて所有を保持し、解放後に停止を再試行する。
+BrowserはHost／Cooperativeを選び、起動・ロード・終了のawait中も同期コンテキストとPumpを維持する。出力resumeはuser gesture内で始めるbackend固有操作であり、音声供給callbackからmanaged jobを待たない。
 
-## 公開APIと契約
+終了はロード・監視の停止 → 全voiceの解放 → Reference／Lease／Snapshotの返却 → Managerの解放 → ExecutionRuntimeの停止とする。AudioのCleanup受付とHost PumpはManagerの解放完了まで維持する。AudioModuleはStoppingで新規取得・復旧を閉じ、進行中factoryの実完了と未接続生成物の解放を待つ。子やleaseが残れば所有を保持して停止を失敗させ、解放後に再試行する。
 
-比較元は `main` の `b5702c0`。追加するAudio統合APIの主要メンバーと生成されたsenderを示す。Coreの実行契約は [CORE-0003](../core/CORE-0003-execution-and-jobs.md) に従う。
+## 主な公開API
 
-```diff
-+namespace Lumyte.Audio.Abstractions
-+{
-+    public sealed class AudioDeviceUnavailableException : InvalidOperationException
-+    {
-+        public AudioDeviceUnavailableException();
-+        public AudioDeviceUnavailableException(string message);
-+    }
-+}
-+namespace Lumyte.Audio.Execution
-+{
-+    public interface IAudioDeviceFactory
-+    {
-+        // ownerで開始。完了時には実体生成が完了し、所有権をserviceへ渡す。
-+        Task<IAudioDevice> CreateAsync();
-+    }
-+    public sealed class AudioModule : IExecutionModule
-+    {
-+        public AudioModule(); // OpenAL factoryを使用。
-+        public AudioModule(IAudioDeviceFactory factory);
-+        public AudioDevice State { get; }
-+        public IAudioDeviceService Devices { get; }
-+        public PhaseKey HostPhase { get; }
-+    }
-+    public readonly partial struct AudioVoice
-+    {
-+        public AudioVoice(IAudioVoice original);
-+        // backendの保存済み値。読み取りによるowner配送はない。
-+        public AudioPlaybackState State { get; }
-+        public float Gain { get; }
-+        public bool Loop { get; }
-+        // generated。完了はnative操作終了。ValueTaskは一度だけ観測する。
-+        public ValueTask<Unit> Play(CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> Pause(CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> Stop(CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> SetGain(float gain, CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> SetLoop(bool loop, CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> Destroy(CancellationToken cancellationToken = default);
-+    }
-+    public readonly partial struct AudioClip
-+    {
-+        public AudioClip(IAudioClip original);
-+        public ValueTask<IAudioVoice> CreateVoice(AudioBus bus, CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> DestroyClip(CancellationToken cancellationToken = default);
-+    }
-+    public readonly partial struct AudioDevice
-+    {
-+        // PCMは完了まで保持。同じserviceの使用可能なleaseを指定する。
-+        public ValueTask<IAudioClip> CreateClipForLease(AudioDeviceLease lease, AudioFormat format, ReadOnlyMemory<float> samples, CancellationToken cancellationToken = default);
-+        public ValueTask<(AudioDeviceLease Lease, IAudioClip Clip)> CreateClipWithLease(AudioFormat format, ReadOnlyMemory<float> samples, CancellationToken cancellationToken = default);
-+        public ValueTask<(AudioDeviceLease Lease, IAudioVoice Voice)> CreateVoiceWithLease(IAudioClip clip, AudioBus bus, CancellationToken cancellationToken = default);
-+        // clipとleaseの生成元deviceが異なる場合はArgumentException。
-+        public ValueTask<IAudioVoice> CreateVoiceForLease(AudioDeviceLease lease, IAudioClip clip, AudioBus bus, CancellationToken cancellationToken = default);
-+        public ValueTask<Unit> Refresh(CancellationToken cancellationToken = default);
-+    }
-+    public enum AudioDeviceServiceStatus { Uninitialized, Initializing, Ready, Lost, Recovering, Failed, Stopping, Stopped }
-+    public readonly record struct AudioDeviceSnapshot(ulong Version, ulong Epoch, AudioDeviceServiceStatus Status, ulong InvalidatedThroughVersion);
-+    public interface IAudioDeviceService
-+    {
-+        // 保存済み状態。購読者の失敗は他の通知を妨げない。
-+        AudioDeviceSnapshot State { get; }
-+        event EventHandler? StateChanged;
-+        ValueTask<AudioDeviceLease> AcquireAsync(CancellationToken cancellationToken = default);
-+        // 共有生成。取消はこの待機のみを解除する。
-+        ValueTask<AudioDeviceSnapshot> RecoverAsync(CancellationToken cancellationToken = default);
-+        ValueTask<int> RetireAsync(CancellationToken cancellationToken = default);
-+    }
-+    public sealed class AudioDeviceLease : IDisposable
-+    {
-+        public AudioDeviceSnapshot State { get; }
-+        public bool IsUsable { get; }
-+        // ロストはAudioDeviceUnavailableException、返却後はObjectDisposedException。
-+        public IAudioDevice Device { get; }
-+        public void Dispose(); // native子を先に解放してから利用権を返す。
-+    }
-+}
-+namespace Lumyte.Resources.Audio
-+{
-+    public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
-+    {
-+        public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime);
-+        // Managerが登録時に実行器と環境依存を収集する。
-+        public IResourceExecutor Executor { get; }
-+        public IReadOnlyList<IResourceRuntimeDependency> Dependencies { get; }
-+        public string Id { get; } // "Audio"
-+        public object Identity { get; } // audio.Devicesと同じ参照。
-+        public ResourceRuntimeSnapshot Snapshot { get; }
-+        public event EventHandler? Changed;
-+        public ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default);
-+        public ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default); // Effects bus。
-+        public ValueTask DestroyClipAsync(IAudioClip clip);
-+        public ValueTask DestroyVoiceAsync(IAudioVoice voice);
-+    }
-+    public static class ResourceAudioBuildExtensions
-+    {
-+        // leaseの所有権をcontextへ移す。戻り値をStage自身ではDisposeしない。
-+        public static ValueTask<AudioDeviceLease> UseAudioAsync(this ResourceBuildContext context, IAudioDeviceService service, string dependencyId = "Audio", ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default);
-+    }
-+    public sealed class AudioPcmData
-+    {
-+        public AudioPcmData(AudioFormat format, ReadOnlyMemory<float> samples);
-+        public AudioFormat Format { get; }
-+        public ReadOnlyMemory<float> Samples { get; }
-+    }
-+    public static class WaveAudioDecoder
-+    {
-+        public static AudioPcmData Decode(ReadOnlySpan<byte> bytes);
-+    }
-+    public sealed class AudioDecodeStage : IResourceSourceStage<AudioPcmData>
-+    {
-+        public AudioDecodeStage(); // Stageの配送はResourceManagerの既定Runtimeが担当する。
-+    }
-+    public sealed class AudioClipStage : IResourceTransform<AudioPcmData, IAudioClip, AudioResourceRuntime>
-+    {
-+        public AudioClipStage(); // 型付きRuntime引数からAudio環境を取得。入力はBuild依存。
-+    }
-+    public sealed class AudioVoiceStage : IResourceTransform<IAudioClip, IAudioVoice, AudioResourceRuntime>
-+    {
-+        public AudioVoiceStage(); // 型付きRuntime引数からAudio環境を取得。入力はResident依存。
-+    }
-+}
-+namespace Lumyte.Resources.Audio.DependencyInjection
-+{
-+    public static class AudioResourceServiceCollectionExtensions
-+    {
-+        // メモリ管理を登録済みのcollectionへ、名前付きmanagerと共有moduleを登録する。
-+        public static IServiceCollection AddAudioResources<TSource>(this IServiceCollection services, string name) where TSource : class, IResourceSource;
-+        public static ResourceRegistrationBuilder AddAudioPipeline(this ResourceRegistrationBuilder builder);
-+    }
-+}
+senderのメソッドは各ラッパーの宣言から生成する。省略した制御メソッドやdevice serviceの詳細は実装と[Audio実行層README](../../../src/Audio/Lumyte.Audio.Execution/README.md)を参照する。
+
+```csharp
+public readonly partial struct AudioClip
+{
+    public AudioClip(IAudioClip original);
+    public ValueTask<AudioVoice> CreateVoice(AudioBus bus, CancellationToken cancellationToken = default);
+    public ValueTask<Unit> DestroyClip(CancellationToken cancellationToken = default);
+}
+
+public readonly partial struct AudioVoice
+{
+    public AudioVoice(IAudioVoice original);
+    public ValueTask<Unit> Play(CancellationToken cancellationToken = default);
+    public ValueTask<Unit> Stop(CancellationToken cancellationToken = default);
+    public ValueTask<Unit> Destroy(CancellationToken cancellationToken = default);
+}
+
+public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
+{
+    public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime);
+    public ValueTask<AudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default);
+    public ValueTask DestroyClipAsync(AudioClip clip);
+}
 ```
 
 ## 性能と制約
 
-senderは参照一本で、送信時のクロージャや汎用ExecuteAsyncへの中継を生成しない。静的portの登録は型ごとに一度であり、停止後に同じprocess内で再登録しない。復旧ではportとownerを維持してdeviceだけを交換する。実行基盤のrun・command管理の割り当ては残るため、送信全体のallocation-freeは保証しない。
+senderは参照一本で、送信時のクロージャや汎用ExecuteAsyncへの中継を生成しない。静的portの登録は型ごとに一度で、復旧ではportとownerを維持してdeviceだけを交換する。run・command管理の割り当ては残るため、送信全体のallocation-freeは保証しない。ECSの状態同期は生成されたbatch用メソッドでまとめられるが、同期・OSスケジューリング・backend処理があるためhard realtimeは保証しない。
 
-DIの実装型をconstructor登録するジェネリック引数はPublicConstructorsを保持する。OpenALはBCLのNativeLibrary経由で読み込み、single-fileで使えないAssembly.LocationやCodeBaseによる独自探索に依存しない。Linux x64で警告を抑制しないNativeAOT公開とDIあり／なしの実行を検証する。
+DIのconstructor登録に使う型引数はPublicConstructorsを保持する。OpenALはBCLのNativeLibrary経由で標準のapp／system探索を使い、single-fileで使えないAssembly.LocationやCodeBaseに依存しない。Linux x64で警告を抑制しないNativeAOT公開とDIあり／なしの実行を検証する。
 
-キュー容量は要求の滞留を制限するが、同期・OSスケジューリング・backend処理の待ち時間は残る。ECSの状態同期は生成されたbatch用メソッドでまとめられる。コマンドごとの遅延上限やhard realtimeは保証しない。
-
-OpenALのPCM16変換領域はArrayPoolから借り、実サンプル数だけをBufferDataへ渡して成功・失敗にかかわらず返す。長寿命のdecoded PCMとは寿命を分ける。
-
-標準デコードはファイル全体をMemoryStreamへ読み、PCM配列も保持する。入力の追加ToArrayコピーは避けるが、デコード中はencodedデータとPCM、clip生成中はPCMとbackendコピーが共存する。これらの配列は共通Memory予算へ自動計上しない。大容量や厳密な予算が必要な用途は、入力上限・チャンク化・メモリ計上を持つStageを使用する。
+OpenALの一時PCM16変換領域はArrayPoolから借り、実サンプル数だけをBufferDataへ渡して必ず返す。長寿命のdecoded PCMはプールへ返さず、短期の変換領域と寿命を分ける。標準デコードは入力のToArrayコピーを避けるが、encodedデータとPCM、生成中のPCMとbackendコピーは共存する。これらの配列は共通Memory予算へ自動計上しない。大容量用途は入力上限・チャンク化・メモリ計上を持つStageを使う。
 
 ## 検討した代替案
 
-- 操作ごとにラムダを送る: 呼び出し元のcaptureと寿命管理が増えるため、メソッド宣言から型付きsenderを生成する。
+- 操作ごとにラムダを送る: captureと寿命管理が増えるため、メソッドから型付きsenderを生成する。
 - 実行層にvoice ID表を置く: backendの所有情報を二重管理するため、元instance参照を配送する。
-- 常に現在のdeviceへ転送するproxyを置く: 旧clipと新deviceの混在を隠すため、構築ごとに正確なepochを保持する。
-- 全更新をゲームループから送る: 送信側の遅延とキュー滞留が更新周期へ加わるため、owner自身が更新する。
-- ロストで資源を強制破棄する: 利用中の値と解放責任を失うため、失効と退役を分離する。
+- voiceを共有リソースとしてキャッシュする: 再生位置や状態まで共有してしまうため、Managerはclipを共有し、利用側がvoiceを所有する。
+- voiceごとに暗黙のclip leaseを追加する: ラッパーの保持量と所有権を増やすため、利用側が明示的にclip leaseを保持する。
+- 現在のdeviceへ転送するproxyやロスト時の強制破棄: 旧clipとの混在や利用中資源の所有権を隠すため、正確なepochを保持して失効と退役を分離する。
 
-## 結果と影響
+## 結果と検証
 
-同じStageとsenderでDedicatedとHostの配置を選べ、Resourcesから実体完成を待って安全に公開できる。device交換をStageの再生成から切り離し、旧世代の保持と解放再試行も表現できる。
+同じsenderとStageをDedicated／Hostで使い、実体完成を待って公開できる。共有clipと個別voiceの寿命を分離できる一方、利用側には全voiceの解放完了までleaseを保持する責任と、復旧後の再生方針が残る。静的portの制約から独立したAudioModuleを同じprocessで作り直す構成は扱わない。
 
-利用側には結果の観測、PCMの不変性、停止順、復旧後の再生状態移行の責任が残る。backendごとのスレッド制約とロスト検出も必要であり、静的portの制約から複数の独立AudioModuleを同じprocessで作り直す構成は扱わない。
+単体テストはWAVEの各形式と不正入力、I/O後のジョブ継続、一つのsingleton ManagerのDI登録、型付きRuntimeと世代依存先の一致を確認する。結合テストはHost／Dedicated、DIあり／なし、fake／OpenALで生成・制御・解放のスレッド、複数voiceの独立性、借用中clipの解放拒否と再試行を確認する。
 
-## 検証方針
-
-単体テストでWAVEの各encoding、不正chunk長・padding・alignment・非有限sample、I/O後のジョブ継続、複数managerのDI登録とmodule共有、出力型ごとのRuntime選択と世代依存先の実体一致を確認する。結合テストはHost／Dedicated、DIあり／なし、fake backend／実OpenALで生成・制御・解放の実行スレッドを確認する。
-
-ロスト注入により旧Leaseの失効、生成中ロスト、旧clipと新deviceの拒否、復旧共有、factory失敗、完了処理の容量不足、復旧中停止、起動前取消、解放失敗の再試行を検証する。HotReloadは新しい停止voiceの公開、旧値の保持、不正入力時の旧公開維持を確認する。物理デバイスの抜き差し、Browserのuser gestureとclosed／interrupted、負荷時の遅延分布はbackend環境で確認する。
+ロスト・復旧・HotReloadは旧lease保持、生成中失効、旧clipと新deviceの拒否、復旧共有、factory失敗、容量不足、停止との競合、起動取消、解放失敗の再試行、不正入力時の旧公開維持を検証する。物理抜き差し、Browserのuser gestureとclosed／interrupted、負荷時の遅延分布は実環境で確認する。
 
 ## 関連ADR
 
 - [Audio backendの契約](AUDIO-0001-audio-system.md)
 - [Core実行基盤](../core/CORE-0003-execution-and-jobs.md)
 - [共通Resources Runtime](../resources/RESOURCES-0003-runtime-execution.md)
-- [Audioの利用と復旧](../../../src/Audio/Lumyte.Resources.Audio/README.md)
-- [DI登録](../../../src/Audio/Lumyte.Resources.Audio.DependencyInjection/README.md)

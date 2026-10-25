@@ -6,8 +6,7 @@ AudioDeviceがデバイス生成・clip生成・bus gain・更新・終了を、
 
 ```csharp
 var clip = new AudioClip(await audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
-IAudioVoice original = await clip.CreateVoice(AudioBus.Effects);
-var voice = new AudioVoice(original);
+AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
 await voice.Play();
 await voice.Stop();
 await voice.Destroy();
@@ -22,7 +21,7 @@ Browserの接続例は[WebAudioサンプル](../../../samples/Lumyte.Audio.Execu
 
 NativeAOTはLinux x64でDIあり／なし、Host／Dedicatedを検証しています。OpenALはBCLのNativeLibraryで読み込み、Silk.NETの独自path resolverを使用しません。nativeライブラリの配置は[OpenAL backend](../Lumyte.Audio.OpenAL/README.md)を参照してください。
 
-AudioVoiceとAudioClipは参照一本のreadonly structです。元のIAudioVoice／IAudioClipから直接構築できます。clipのDeviceは生成元のbackend deviceへの不変参照で、voice生成もそのbackendへ配送します。
+AudioVoiceとAudioClipは参照一本のreadonly structです。元のIAudioVoice／IAudioClipから直接構築でき、AudioClip.CreateVoiceは生成済みのAudioVoiceを返します。同じclipから独立したvoiceを複数作れます。元clipのDeviceは生成元のbackend deviceへの不変参照で、voice生成もそのbackendへ配送します。ラッパーのコピーやvoice生成はResourcesのleaseを取得しません。Resourcesから借りたclipは、全voiceのDestroyが完了するまで`ResourceLease<AudioClip>`を保持してください。
 
 ## デバイス世代と復旧
 
@@ -36,12 +35,12 @@ lease.Dispose();
 
 // Lost／Failed時。新しいdeviceも同じ所有スレッドで生成する。
 AudioDeviceSnapshot ready = await audio.Devices.RecoverAsync();
-// 利用側／Resourcesが新世代のclip・voiceを再構築する。
+// Resourcesが新世代のclipを再構築し、利用側が必要なvoiceを作成する。
 int retired = await audio.Devices.RetireAsync();
 ```
 
-CreateClipWithLease／CreateVoiceWithLeaseは一回のowner commandで世代取得とnative生成を完了し、生成失敗時は取得したleaseを返します。成功時は利用側がnative子資源を解放してから返却します。
-leaseは取得時の正確な世代を保持し、新しいdeviceへ追随しません。`CreateVoiceForLease` はclipが同じdeviceから生成されていることを確認します。失効したclip・voiceの操作は失敗しますが、Cleanupは元のdeviceで引き続き実行できます。旧子資源の解放とlease返却後にRetireAsyncを呼びます。leaseなしで直接生成した子資源もbackendが保持している間はdevice破棄を拒否します。サービスはclip／voiceの一覧を追加しません。
+CreateClipWithLeaseは一回のowner commandで世代取得とnative生成を完了し、生成失敗時は取得したleaseを返します。成功時は利用側がnative子資源を解放してから返却します。
+leaseは取得時の正確な世代を保持し、新しいdeviceへ追随しません。AudioClip.CreateVoiceはclipの生成元deviceへ配送し、新しいdeviceへ付け替えません。失効したclip・voiceの操作は失敗しますが、Cleanupは元のdeviceで引き続き実行できます。旧子資源の解放とlease返却後にRetireAsyncを呼びます。leaseなしで直接生成した子資源もbackendが保持している間はdevice破棄を拒否します。サービスはclip／voiceの一覧を追加しません。
 
 RecoverAsyncは同時要求で一つの生成operationを共有します。呼び出し側の取消は待機だけを取り消します。生成完了のコマンド受付が容量不足で失敗した場合、次のRecoverAsyncが保持済みoperationの完了処理を再試行します。factory失敗やdevice解放失敗の後も再試行できます。終了は新しい取得と復旧を閉じ、進行中factoryの実完了を待ち、未接続の生成物も所有スレッドで解放します。未返却leaseや解放できない子資源がある場合は停止を失敗させ、所有権を保持します。
 
