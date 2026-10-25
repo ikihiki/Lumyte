@@ -1,5 +1,4 @@
 using Lumyte.Audio.Abstractions;
-using Lumyte.Audio.Execution;
 
 namespace Lumyte.Resources.Audio;
 
@@ -17,5 +16,5 @@ public sealed class AudioClipStage : IResourceTransform<AudioPcmData, IAudioClip
         => runtime.CreateClipAsync(input, context, cancellationToken);
 
     /// <inheritdoc/>
-    public async ValueTask ReleaseAsync(IAudioClip resource) => await new AudioClip(resource).DestroyClip();
+    public ValueTask ReleaseAsync(IAudioClip resource, AudioResourceRuntime runtime) => runtime.DestroyClipAsync(resource);
 }
