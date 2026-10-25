@@ -8,12 +8,11 @@ public sealed class GraphicsResourceRuntime : IResourceRuntime, IResourceRuntime
     private readonly IGraphicsDeviceService _devices;
 
     /// <summary>Initializes a new instance of the <see cref="GraphicsResourceRuntime"/> class.</summary>
-    /// <param name="id">The manager-local runtime dependency identifier.</param>
     /// <param name="devices">The borrowed stable device service owning physical epochs.</param>
     /// <param name="jobs">The shared default environment supplying the executor.</param>
-    public GraphicsResourceRuntime(string id, IGraphicsDeviceService devices, IResourceRuntime jobs)
+    public GraphicsResourceRuntime(IGraphicsDeviceService devices, IResourceRuntime jobs)
     {
-        Id = id;
+        Id = "Lumyte.Resources.Graphics:" + devices.State.Name;
         _devices = devices;
         Executor = jobs.Executor;
         Dependencies = [this];
@@ -60,7 +59,7 @@ public sealed class GraphicsResourceRuntime : IResourceRuntime, IResourceRuntime
             throw new InvalidOperationException("Use the graphics runtime selected for this stage.");
         }
 
-        return context.UseGraphicsAsync(_devices, Id, lifetime, cancellationToken);
+        return context.UseGraphicsAsync(_devices, lifetime, cancellationToken);
     }
 
     /// <summary>Waits for safe retirement of an original device epoch before its native children are released.</summary>

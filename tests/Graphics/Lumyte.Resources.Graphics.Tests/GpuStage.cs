@@ -12,7 +12,7 @@ internal sealed class GpuStage(GraphicsTestState state) : IResourceTransform<Cpu
     public async ValueTask<GpuValue> BuildAsync(CpuValue input, GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
     {
         GraphicsDeviceLease lease = state.OverrideService is { } other
-            ? await context.UseGraphicsAsync(other, runtime.Id, cancellationToken: cancellationToken)
+            ? await context.UseGraphicsAsync(other, cancellationToken: cancellationToken)
             : await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
         state.GpuRuntime = runtime;
         var value = new GpuValue(lease, lease.Device);

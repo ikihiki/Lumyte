@@ -22,20 +22,23 @@ public sealed class GraphicsResourceTests
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        GraphicsResourceRuntime runtime = provider.GetRequiredService<GraphicsResourceRuntime>();
+        string runtimeId = runtime.Id;
         await devices.InitializeAsync();
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<CpuValue> cpu = await resources.AcquireLeaseForTestAsync(_cpuKey);
         using ResourceReference<GpuValue> reference = await resources.AcquireAsync(_gpuKey);
         using ResourceLease<GpuValue> old = await resources.AcquireLeaseForTestAsync(_gpuKey);
         GpuValue oldValue = old.Value;
-        Assert.Same(provider.GetResourceGraphicsRuntime("graphics.main"), state.GpuRuntime);
+        Assert.Same(provider.GetRequiredService<GraphicsResourceRuntime>(), state.GpuRuntime);
         state.Devices[0].Lose();
         Assert.False(old.IsUsable);
         Assert.Throws<ResourceUnavailableException>(() => old.Value);
         Assert.False(resources.TryAcquireLeaseForTest(reference.Handle, out _));
         Assert.True(cpu.IsUsable);
         await devices.RecoverAsync();
-        ResourceReloadResult reload = await resources.RebuildRuntimeAsync(["graphics.main"]);
+        Assert.Equal(runtimeId, runtime.Id);
+        ResourceReloadResult reload = await resources.RebuildRuntimeAsync([runtime.Id]);
         Assert.Equal(ResourceReloadStatus.Published, reload.Status);
         using ResourceLease<GpuValue> current = await resources.AcquireLeaseForTestAsync(_gpuKey);
         Assert.Same(state.Devices[1], current.Value.Device);
@@ -47,7 +50,7 @@ public sealed class GraphicsResourceTests
         old.Dispose();
         await resources.TrimAsync();
         Assert.True(oldValue.Released);
-        Assert.Same(provider.GetResourceGraphicsRuntime("graphics.main"), state.GpuReleaseRuntime);
+        Assert.Same(provider.GetRequiredService<GraphicsResourceRuntime>(), state.GpuReleaseRuntime);
         Assert.Equal(1, await devices.RetireAsync());
         Assert.Equal(1, state.Devices[0].Disposals);
     }
@@ -88,8 +91,10 @@ public sealed class GraphicsResourceTests
         using ResourceLease<ReadbackValue> cpu = await resources.AcquireLeaseForTestAsync(_readbackKey);
         Assert.Same(main, state.GpuRuntime!.Identity);
         Assert.Same(readback, state.ReadbackRuntime!.Identity);
-        Assert.Same(provider.GetResourceGraphicsRuntime("graphics.main"), state.GpuRuntime);
-        Assert.Same(provider.GetResourceGraphicsRuntime("graphics.readback"), state.ReadbackRuntime);
+        Assert.Same(provider.GetRequiredService<GraphicsResourceRuntime>(), state.GpuRuntime);
+        Assert.Same(provider.GetResourceGraphicsRuntime("main"), state.GpuRuntime);
+        Assert.Same(provider.GetResourceGraphicsRuntime("readback"), state.ReadbackRuntime);
+        Assert.NotEqual(state.GpuRuntime.Id, state.ReadbackRuntime.Id);
         Assert.Same(provider.GetRequiredService<IResourceRuntime>(), state.CpuRuntime);
 
         state.Devices[0].Lose();
@@ -187,7 +192,8 @@ public sealed class GraphicsResourceTests
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
-        GraphicsResourceRuntime runtime = provider.GetResourceGraphicsRuntime("graphics.main");
+        GraphicsResourceRuntime runtime = provider.GetRequiredService<GraphicsResourceRuntime>();
+        Assert.Same(runtime, provider.GetResourceGraphicsRuntime("main"));
         IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         Assert.Empty(state.Devices);
         await devices.InitializeAsync();
@@ -196,18 +202,18 @@ public sealed class GraphicsResourceTests
         await using (AsyncServiceScope scope = provider.CreateAsyncScope())
         {
             Assert.Same(resources, scope.ServiceProvider.GetRequiredService<ResourceManager>());
-            Assert.Same(runtime, scope.ServiceProvider.GetResourceGraphicsRuntime("graphics.main"));
+            Assert.Same(runtime, scope.ServiceProvider.GetRequiredService<GraphicsResourceRuntime>());
             Assert.Same(devices, scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main"));
         }
 
         Assert.True(value.IsUsable);
         Assert.Equal(0, state.Devices[0].Disposals);
         await using AsyncServiceScope other = provider.CreateAsyncScope();
-        Assert.Same(runtime, other.ServiceProvider.GetResourceGraphicsRuntime("graphics.main"));
+        Assert.Same(runtime, other.ServiceProvider.GetRequiredService<GraphicsResourceRuntime>());
         Assert.Same(resources, other.ServiceProvider.GetRequiredService<ResourceManager>());
     }
 
-    /// <summary>Bridge registration requires a singleton device and manager and a unique runtime identifier.</summary>
+    /// <summary>Bridge registration requires a singleton device and manager and one runtime per device service.</summary>
     [Fact]
     public void InvalidBridgeRegistrationsAreRejected()
     {
@@ -215,15 +221,15 @@ public sealed class GraphicsResourceTests
         services.AddMemoryManagement();
         services.AddSingleton(new GraphicsTestState());
         services.AddResources(builder => builder.UseSource<TestSource>().AddSourcePipeline<CpuValue, CpuStage>());
-        Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("missing", "graphics.main"));
+        Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("missing"));
         services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Singleton);
         services.AddGraphicsDevice<TestFactory>("scoped");
-        Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("scoped", "graphics.scoped"));
+        Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("scoped"));
         var withoutManager = new ServiceCollection();
         withoutManager.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Singleton);
-        Assert.Throws<ArgumentException>(() => withoutManager.AddResourceGraphics("main", "graphics.main"));
-        services.AddResourceGraphics("main", "graphics.main");
-        Assert.ThrowsAny<ArgumentException>(() => services.AddResourceGraphics("main", "graphics.main"));
+        Assert.Throws<ArgumentException>(() => withoutManager.AddResourceGraphics("main"));
+        services.AddResourceGraphics("main");
+        Assert.ThrowsAny<ArgumentException>(() => services.AddResourceGraphics("main"));
     }
 
     private static ServiceProvider CreateProvider(GraphicsTestState state, bool separateReadback = false)
@@ -242,12 +248,14 @@ public sealed class GraphicsResourceTests
             .AddSourcePipeline<CpuValue, CpuStage>()
             .AddTransformPipeline<CpuValue, GpuValue, GpuStage>()
             .AddSourcePipeline<ReadbackValue, ReadbackStage>()
-            .UseStageRuntime<GpuValue>(provider => provider.GetResourceGraphicsRuntime("graphics.main"))
-            .UseStageRuntime<ReadbackValue>(provider => provider.GetResourceGraphicsRuntime(separateReadback ? "graphics.readback" : "graphics.main")));
-        services.AddResourceGraphics("main", "graphics.main");
+            .UseStageRuntime<GpuValue, GraphicsResourceRuntime>()
+            .UseStageRuntime<ReadbackValue>(provider => separateReadback
+                ? provider.GetResourceGraphicsRuntime("readback")
+                : provider.GetRequiredService<GraphicsResourceRuntime>()));
+        services.AddResourceGraphics("main");
         if (separateReadback)
         {
-            services.AddResourceGraphics("readback", "graphics.readback");
+            services.AddResourceGraphics("readback");
         }
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });

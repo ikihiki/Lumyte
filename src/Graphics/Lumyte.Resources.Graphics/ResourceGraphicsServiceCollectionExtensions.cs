@@ -1,20 +1,19 @@
 using Lumyte.Graphics.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Lumyte.Resources.Graphics;
 
-/// <summary>Registers named graphics execution environments for resource stages.</summary>
+/// <summary>Registers graphics execution environments selected by type or device name.</summary>
 public static class ResourceGraphicsServiceCollectionExtensions
 {
-    /// <summary>Registers a singleton graphics environment borrowing an application-wide device service.</summary>
+    /// <summary>Registers a singleton graphics environment; the first registration supplies the default environment.</summary>
     /// <param name="services">The service collection containing the resource and graphics registrations.</param>
     /// <param name="deviceServiceName">The name of the singleton graphics device service in this DI root.</param>
-    /// <param name="dependencyId">The unique runtime dependency identifier within the manager.</param>
     /// <returns>The same collection with the graphics bridge registered.</returns>
-    public static IServiceCollection AddResourceGraphics(this IServiceCollection services, string deviceServiceName, string dependencyId)
+    public static IServiceCollection AddResourceGraphics(this IServiceCollection services, string deviceServiceName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceServiceName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
         ServiceDescriptor? manager = services.LastOrDefault(x => !x.IsKeyedService && x.ServiceType == typeof(ResourceManager));
         if (manager?.Lifetime != ServiceLifetime.Singleton)
         {
@@ -32,22 +31,22 @@ public static class ResourceGraphicsServiceCollectionExtensions
             throw new ArgumentException("A resource graphics environment requires a singleton device service.", nameof(deviceServiceName));
         }
 
-        if (services.Any(x => x.IsKeyedService && x.ServiceType == typeof(GraphicsResourceRuntime) && Equals(x.ServiceKey, dependencyId)))
+        if (services.Any(x => x.IsKeyedService && x.ServiceType == typeof(GraphicsResourceRuntime) && Equals(x.ServiceKey, deviceServiceName)))
         {
-            throw new ArgumentException("A graphics environment is already registered with this manager-local identifier.", nameof(dependencyId));
+            throw new ArgumentException("A resource graphics environment is already registered for this device service.", nameof(deviceServiceName));
         }
 
-        services.AddKeyedSingleton<GraphicsResourceRuntime>(dependencyId, (provider, _) => new GraphicsResourceRuntime(
-            dependencyId,
+        services.AddKeyedSingleton<GraphicsResourceRuntime>(deviceServiceName, (provider, _) => new GraphicsResourceRuntime(
             provider.GetRequiredKeyedService<IGraphicsDeviceService>(deviceServiceName),
             provider.GetRequiredService<IResourceRuntime>()));
+        services.TryAddSingleton(provider => provider.GetRequiredKeyedService<GraphicsResourceRuntime>(deviceServiceName));
         return services;
     }
 
-    /// <summary>Resolves the manager-local graphics environment for a stage runtime binding.</summary>
+    /// <summary>Resolves the graphics environment borrowing the named device service.</summary>
     /// <param name="provider">A service provider from the same DI root as the resource manager.</param>
-    /// <param name="dependencyId">The registered graphics runtime identifier.</param>
+    /// <param name="deviceServiceName">The name of the registered graphics device service.</param>
     /// <returns>The singleton runtime shared by stages bound to this environment.</returns>
-    public static GraphicsResourceRuntime GetResourceGraphicsRuntime(this IServiceProvider provider, string dependencyId)
-        => provider.GetRequiredKeyedService<GraphicsResourceRuntime>(dependencyId);
+    public static GraphicsResourceRuntime GetResourceGraphicsRuntime(this IServiceProvider provider, string deviceServiceName)
+        => provider.GetRequiredKeyedService<GraphicsResourceRuntime>(deviceServiceName);
 }
