@@ -12,6 +12,12 @@ Memory scopeはmanagerが所有し、出力・cleanup・snapshot・memory・依�
 Build寿命の入力を完了通知や成功済みcleanupが保持し続けないよう、不要になった参照を切ります。
 Source・Stage・Runtimeは借用します。利用権を返し、managerを閉じてからRuntimeを終了します。
 
+出力と主入力は非nullの参照型・値型を扱えます。参照一本のreadonly structもその型のまま登録・取得できます。
+値型は構築時に一度boxして世代へ保持し、Lease.Valueや依存取得はunboxしたコピーを返すため、読み取りごとのboxはありません。
+コピーは参照先の所有権や利用期間を延ばしません。借用値を扱う間はLeaseまたはResident依存を保持します。
+解放の進行状態はコピーされるstructのfieldではなく元の所有オブジェクトで保持してください。
+参照型の同一instanceを別出力として返す検出は維持しますが、値型の内部参照の別名関係は検査しません。
+
 設計判断は[ADR-RESOURCES-0001](../../../docs/adr/resources/RESOURCES-0001-typed-pipelines.md)を参照してください。
 
 ## 世代とHotReload

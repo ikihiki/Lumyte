@@ -1,16 +1,26 @@
+using System.Runtime.CompilerServices;
 using Lumyte.Audio.Execution;
 using Lumyte.Execution;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.Audio.DependencyInjection;
+using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Lumyte.Resources.Audio.Tests;
 
-/// <summary>Verifies production registrations share one module set across named managers.</summary>
+/// <summary>Verifies production registrations share one manager and module set.</summary>
 public sealed class AudioRegistrationTests
 {
+    /// <summary>Senders do not add per-voice lease owners or identifiers.</summary>
+    [Fact]
+    public void AudioSendersContainOneReference()
+    {
+        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioClip>());
+        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioVoice>());
+    }
+
     /// <summary>The environment validates its required owner module before any endpoint connects.</summary>
     [Fact]
     public void MissingAudioModuleIsRejected()
@@ -20,15 +30,17 @@ public sealed class AudioRegistrationTests
         Assert.Throws<ArgumentException>(() => new ExecutionRuntime([runtime, audioEnvironment]));
     }
 
-    /// <summary>Both managers resolve the complete pipeline without duplicate execution modules.</summary>
+    /// <summary>Audio registration leaves manager construction to the common builder and does not duplicate modules.</summary>
     /// <returns>The registration and scope disposal check.</returns>
     [Fact]
-    public async Task NamedManagersShareTheAudioServiceAsync()
+    public async Task CommonManagerUsesTheAudioModulesAsync()
     {
         var services = new ServiceCollection();
         services.AddMemoryManagement();
-        services.AddAudioResources<RegistrationSource>("first");
-        services.AddAudioResources<RegistrationSource>("second");
+        services.AddAudioResources();
+        services.AddAudioResources();
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(ResourceManager));
+        services.AddResources(builder => builder.UseSource<RegistrationSource>().AddAudioPipeline());
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         IExecutionModule[] modules = provider.GetServices<IExecutionModule>().ToArray();
         Assert.Equal(3, modules.Length);
@@ -41,8 +53,8 @@ public sealed class AudioRegistrationTests
         Assert.Same(runtime.Executor, audioEnvironment.Executor);
         Assert.Same(audioEnvironment, Assert.Single(audioEnvironment.Dependencies));
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceManager first = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first");
-        ResourceManager second = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("second");
-        Assert.NotSame(first, second);
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        Assert.Same(manager, scope.ServiceProvider.GetRequiredService<ResourceManager>());
+        Assert.Same(manager, Assert.Single(provider.GetServices<ResourceManager>()));
     }
 }

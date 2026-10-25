@@ -166,31 +166,28 @@ effect.Pause();
 
 #### リソース lease を保持して再生する
 
-次の断片は上記revisionの PR #25 の `Lumyte.Resources` 提案 API と組み合わせる例。音声Stageは同じ `IAudioDevice` 上で clip を作成し、ReleaseAsyncで clip を解放する。Pipeline登録と、await前後で所有スレッドの制約を守るための処理は利用者が用意する。この断片はホストの同期contextでawait前後の所有スレッドを維持する構成を前提とする。
+[実行基盤との統合](AUDIO-0002-execution-and-resources.md)では、ResourceManagerがAudioClipを共有し、利用側が各再生のAudioVoiceを所有する。生成・制御・解放はラッパーから所有スレッドへ配送するため、利用側のawait継続をAudioの所有スレッドへ固定する必要はない。Host配置では待機中もPumpを続ける。
 
 ```csharp
 using Lumyte.Audio.Abstractions;
+using Lumyte.Audio.Execution;
 using Lumyte.Resources;
 
-// audio と resources は構成側から借用する。
-// await 後は audio の所有スレッドへ戻る。
-var key = new ResourceKey<IAudioClip>(
-    new ResourceAddress(new ResourceId("audio/effects/confirm")), "audio-clip");
-using (var lease = await resources.AcquireAsync(key, cancellationToken))
-{
-    using (var voice = audio.CreateVoice(lease.Value, AudioBus.Effects))
-    {
-        voice.Play();
-        // ゲームループを継続し、毎回 audio.Update() を呼ぶ。
-        // 完了・画面離脱・終了まで、このスコープと lease を保持する。
-    } // voice.Dispose() が出力参照を解除。
-} // その後に lease を返却。lease.Value を直接 Dispose しない。
+// 起動済みのresourcesを構成側から借用する。
+var key = new ResourceKey<AudioClip>("audio/effects/confirm");
+using var reference = await resources.AcquireAsync(key, cancellationToken);
+ResourceLease<AudioClip> lease = reference.Acquire();
+AudioVoice voice = await lease.Value.CreateVoice(AudioBus.Effects, cancellationToken);
+await voice.Play(cancellationToken);
+// ゲームループを継続し、完了・画面離脱・終了までvoiceとleaseを保持する。
+await voice.Destroy();
+lease.Dispose();
 
-// シーン終了など、未使用キャッシュを解放する時点で構成側が呼ぶ。
+// 未使用キャッシュの解放時点で構成側が呼ぶ。
 await resources.TrimAsync(cancellationToken);
 ```
 
-この断片のコメント部分はゲームループとの接続位置を示す。`Play` の直後にスコープを抜けると voice が破棄され、再生は終了する。音声用 manager は対応するデバイスごとに構成し、デバイス終了後に新たな取得を行わない。
+同じclipから複数voiceを作る場合も、全voiceのDestroy完了までleaseを保持する。voiceの解放に失敗した場合はleaseを返さず、解放を再試行する。Managerが所有するclipにDestroyClipを直接呼ばない。上の断片は成功時の順序を示しており、Play直後にDestroyまで進めると再生は終了する。
 
 #### Browser の出力再開とストリーミングの接続
 
