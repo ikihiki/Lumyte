@@ -16,17 +16,17 @@ Resourcesの論理ハンドルを維持したままGPU出力だけを再構築�
 
 `src/Graphics/Lumyte.Resources.Graphics` に接続パッケージを置く。Resources.DependencyInjectionとGraphics.Hostingへ依存し、特定のGraphics backendには依存しない。Resources本体はGraphics型を参照せず、共通の `IResourceRuntime` と `IResourceRuntimeDependency` を扱う。
 
-公開する `GraphicsResourceRuntime` がStageの実行環境となり、共有の既定Runtimeへのジョブ配送、安定したdevice service、現在世代の取得、旧epochの退役確認をまとめる。CPU Stageは既定Runtimeを使い、GPU Stageには出力型ごとにGraphics Runtimeを割り当てる。複数の名前付きdeviceを別Stageに割り当てることもできる。
+公開する `GraphicsResourceRuntime` がStageの実行環境となり、共有のExecutor、安定したdevice service、現在世代の取得、旧epochの退役確認をまとめる。CPU Stageは既定Runtimeを使い、GPU Stageには出力型ごとにGraphics Runtimeを割り当てる。複数の名前付きdeviceを別Stageに割り当てることもできる。
 
-Graphics.Hostingが物理デバイスの初期化、loss検出、復旧、旧ownerの退役を所有する。ResourceManagerは選択済みRuntimeと使用した世代を記録し、依存する出力の使用可否と一括公開を管理する。Stageは選択された環境で個別のGPU生成、submission、GPU完了待ちを記述する。Graphics Runtimeのジョブ配送はbackend固有の同期制約を変更しない。
+Graphics.Hostingが物理デバイスの初期化、loss検出、復旧、旧ownerの退役を所有する。ResourceManagerはRuntimeのExecutorとDependenciesを登録時に収集・検証し、選択済み環境と使用した世代を記録する。Stageの構築・解放の手順、依存する出力の使用可否と一括公開もManagerが管理する。Stageは選択された環境で個別のGPU生成、submission、GPU完了待ちを記述する。Executorによるジョブ配送はbackend固有の同期制約を変更しない。
 
 ### 安定したserviceと構築ごとの世代取得
 
 Stageは `IResourceSourceStage<T, GraphicsResourceRuntime>` または `IResourceTransform<TInput, TOutput, GraphicsResourceRuntime>` を宣言し、BuildAsyncの型付きruntime引数で選択済み環境を受け取り、`AcquireAsync(context, ...)` を呼ぶ。同じRuntime instanceの依存構築は一つのジョブで進み、別のRuntimeへの切り替えと独立ロードでジョブを分ける。Runtimeは安定したserviceを保持し、毎回現在の正確な `GraphicsDeviceLease` を取得する。取得時のVersionとservice instanceを構築contextへ記録するため、deviceをStageへキャッシュしない。
 
-Managerは内容世代に選択済みRuntimeを保存し、解放も同じRuntimeへ依頼する。Native解放に必要な元Runtime、実際のdeviceとepochは出力またはcleanupが保持する。新しい構築で使う環境と旧世代の解放環境を混同しない。
+Managerは内容世代に選択済みRuntimeを保存し、解放時もそのRuntimeを型付きReleaseAsyncへ渡す。解放だけのために出力へRuntimeを重ねて保存する必要はない。実際のdeviceとepochのLeaseは、出力またはcleanupが保持する。出力が完成する前の失敗も回収するcleanupは、必要な元RuntimeとLeaseを保持する。新しい構築で使う環境と旧世代の解放環境を混同しない。
 
-`GraphicsResourceRuntime` は実行環境と同時に世代providerとなり、次の対応を行う。
+`GraphicsResourceRuntime` は自身を固定のDependencies一覧へ含める。Managerは選択した環境から世代providerを一度収集するため、同じproviderを別にDI登録する必要はない。providerは次の対応を行う。
 
 - Identityは登録時のservice instance。別DI scopeの同名serviceは別のproviderとして拒否する。
 - VersionとInvalidatedThroughVersionはserviceのStateをそのまま使用する。
@@ -63,8 +63,8 @@ Graphics RuntimeはDIなしでも生成できる公開型とし、Stageの実行
 +    public sealed class GraphicsResourceRuntime : IResourceRuntime, IResourceRuntimeDependency
 +    {
 +        public GraphicsResourceRuntime(string id, IGraphicsDeviceService devices, IResourceRuntime jobs);
-+        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken);
-+        public ValueTask ReleaseAsync(IResourceStage stage, object resource);
++        public IResourceExecutor Executor { get; }
++        public IReadOnlyList<IResourceRuntimeDependency> Dependencies { get; }
 +        public ValueTask<GraphicsDeviceLease> AcquireAsync(ResourceBuildContext context,
 +            ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident,
 +            CancellationToken cancellationToken = default);
@@ -84,7 +84,7 @@ Graphics RuntimeはDIなしでも生成できる公開型とし、Stageの実行
 +    public static class ResourceGraphicsServiceCollectionExtensions
 +    {
 +        // 同じDI scopeの名前付きserviceを接続する。デバイスは初期化しない。
-+        // service未登録、Manager内の依存ID重複、無効な名前を拒否する。
++        // Manager・service未登録、同じ環境IDの重複、無効な名前を拒否する。
 +        public static IServiceCollection AddResourceGraphics(
 +            this IServiceCollection services, string resourceManagerName,
 +            string deviceServiceName, string dependencyId);
@@ -112,7 +112,7 @@ IGraphicDevice device = lease.Device;
 // このdeviceで生成・uploadし、完了を待ってから出力を返す。
 ```
 
-例のSource、CPU Stage、GPU Stage、factoryはアプリが実装する。DIを使わない構成では `new GraphicsResourceRuntime(id, devices, jobs)` を作り、Managerの `stageRuntimes` に `new ResourceStageRuntime(typeof(GpuMesh), graphics)` を渡す。選択したRuntimeの世代providerもManagerへ自動登録される。deviceの実世代とBuild／Resident寿命は各Acquireで記録する。
+例のSource、CPU Stage、GPU Stage、factoryはアプリが実装する。DIを使わない構成では `new GraphicsResourceRuntime(id, devices, jobs)` を作り、Managerの `stageRuntimes` に `new ResourceStageRuntime(typeof(GpuMesh), graphics)` を渡す。選択したRuntimeのDependenciesから世代providerもManagerへ自動登録される。deviceの実世代とBuild／Resident寿命は各Acquireで記録する。
 
 ## 検討した代替案
 
@@ -129,7 +129,7 @@ IGraphicDevice device = lease.Device;
 
 ## 検証方針
 
-実際のGraphics.Hostingとfake backendを使い、Stageごとの既定Runtime／複数Graphics Runtimeの選択、同一scopeの接続、別scopeの同名service拒否とlease返却、登録不足・重複IDの拒否を検証する。loss後のGPU値拒否、CPU値維持、構築中lossの公開拒否、復旧後の同一handleへの公開を確認する。
+実際のGraphics.Hostingとfake backendを使い、Stageごとの既定Runtime／複数Graphics Runtimeの選択、同一scopeの接続、別scopeの同名service拒否とlease返却、登録不足・重複IDの拒否を検証する。型付きReleaseAsyncに生成時と同じRuntimeが渡され、別途provider登録なしでlossを監視できることも確認する。loss後のGPU値拒否、CPU値維持、構築中lossの公開拒否、復旧後の同一handleへの公開を確認する。
 
 退役確認と子資源解放をそれぞれ失敗させ、旧ownerが保持され、再試行後に子 → lease → ownerの順で解放されることを検証する。実backendのloss検出・Native退役安全性はGraphics.Hostingと各backendの検証責任であり、fakeでの成功を実機確認として扱わない。
 

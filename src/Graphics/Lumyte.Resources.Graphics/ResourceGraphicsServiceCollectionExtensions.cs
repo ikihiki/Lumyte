@@ -1,5 +1,4 @@
 using Lumyte.Graphics.Hosting;
-using Lumyte.Resources.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Graphics;
@@ -7,7 +6,7 @@ namespace Lumyte.Resources.Graphics;
 /// <summary>Registers named graphics execution environments for resource stages.</summary>
 public static class ResourceGraphicsServiceCollectionExtensions
 {
-    /// <summary>Registers a scoped graphics runtime and its generation provider without initializing a device.</summary>
+    /// <summary>Registers a scoped graphics environment without initializing a device.</summary>
     /// <param name="services">The service collection containing the resource and graphics registrations.</param>
     /// <param name="resourceManagerName">The name of the resource manager.</param>
     /// <param name="deviceServiceName">The name of the graphics device service in the same DI scope.</param>
@@ -15,17 +14,25 @@ public static class ResourceGraphicsServiceCollectionExtensions
     /// <returns>The same collection with the graphics bridge registered.</returns>
     public static IServiceCollection AddResourceGraphics(this IServiceCollection services, string resourceManagerName, string deviceServiceName, string dependencyId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceManagerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceServiceName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
+        if (!services.Any(x => x.IsKeyedService && x.ServiceType == typeof(ResourceManager) && Equals(x.ServiceKey, resourceManagerName)))
+        {
+            throw new ArgumentException("Register the resource manager before its graphics environment.", nameof(resourceManagerName));
+        }
+
         if (!services.Any(x => x.IsKeyedService && x.ServiceType == typeof(IGraphicsDeviceService) && Equals(x.ServiceKey, deviceServiceName)))
         {
             throw new ArgumentException("Register the named graphics device service before its resource bridge.", nameof(deviceServiceName));
         }
 
         var key = new RuntimeKey(resourceManagerName, dependencyId);
-        services.AddResourceRuntimeDependency(
-            resourceManagerName,
-            dependencyId,
-            provider => provider.GetRequiredKeyedService<GraphicsResourceRuntime>(key));
+        if (services.Any(x => x.IsKeyedService && x.ServiceType == typeof(GraphicsResourceRuntime) && Equals(x.ServiceKey, key)))
+        {
+            throw new ArgumentException("A graphics environment is already registered with this manager-local identifier.", nameof(dependencyId));
+        }
+
         services.AddKeyedScoped<GraphicsResourceRuntime>(key, (provider, _) => new GraphicsResourceRuntime(
             dependencyId,
             provider.GetRequiredKeyedService<IGraphicsDeviceService>(deviceServiceName),

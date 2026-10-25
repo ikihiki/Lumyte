@@ -12,6 +12,12 @@ internal sealed class GraphicsTestState
 
     internal IResourceRuntime? CpuRuntime { get; set; }
 
+    internal GraphicsResourceRuntime? GpuRuntime { get; set; }
+
+    internal GraphicsResourceRuntime? GpuReleaseRuntime { get; set; }
+
+    internal GraphicsResourceRuntime? ReadbackRuntime { get; set; }
+
     internal int ReleaseFailures { get; set; }
 
     internal TaskCompletionSource? BuildStarted { get; set; }

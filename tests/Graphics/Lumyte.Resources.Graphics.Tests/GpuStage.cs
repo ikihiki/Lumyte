@@ -14,7 +14,8 @@ internal sealed class GpuStage(GraphicsTestState state) : IResourceTransform<Cpu
         GraphicsDeviceLease lease = state.OverrideService is { } other
             ? await context.UseGraphicsAsync(other, runtime.Id, cancellationToken: cancellationToken)
             : await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
-        var value = new GpuValue(runtime, lease, lease.Device);
+        state.GpuRuntime = runtime;
+        var value = new GpuValue(lease, lease.Device);
         state.Values.Add(value);
         state.BuildStarted?.TrySetResult();
         if (state.BuildWait is { } wait)
@@ -25,7 +26,7 @@ internal sealed class GpuStage(GraphicsTestState state) : IResourceTransform<Cpu
         return value;
     }
 
-    public async ValueTask ReleaseAsync(GpuValue resource)
+    public async ValueTask ReleaseAsync(GpuValue resource, GraphicsResourceRuntime runtime)
     {
         if (state.ReleaseFailures > 0)
         {
@@ -35,9 +36,10 @@ internal sealed class GpuStage(GraphicsTestState state) : IResourceTransform<Cpu
 
         if (resource.Device.Status == GraphicsDeviceStatus.Lost)
         {
-            await resource.Runtime.WaitForRetirementAsync(resource.Lease.State.Epoch);
+            await runtime.WaitForRetirementAsync(resource.Lease.State.Epoch);
         }
 
+        state.GpuReleaseRuntime = runtime;
         resource.Released = true;
     }
 }
