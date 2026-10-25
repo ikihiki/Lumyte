@@ -104,6 +104,9 @@ public sealed partial class ResourceManager
                     }
 
                     _metadata.Clear();
+                    _watchTargets.Clear();
+                    _metadataReferences.Clear();
+                    _metadataPruneCandidates.Clear();
                     _invalidated.Clear();
                     _disposed = true;
                 }
@@ -154,44 +157,83 @@ public sealed partial class ResourceManager
     private async ValueTask<int> ReleaseUnusedAsync(HashSet<ResourceGeneration>? candidates, CancellationToken cancellationToken)
     {
         HashSet<ResourceGeneration> attempted = [];
+        List<ResourceGeneration> wave = [];
+        List<ResourceNode> removed = [];
         List<Exception>? errors = null;
         int released = 0;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ResourceGeneration? candidate;
             lock (_gate)
             {
-                candidate = _generations.FirstOrDefault(generation => (generation.State is ResourceGenerationState.Ready or ResourceGenerationState.CleanupFailed)
-                    && generation.Pins == 0
-                    && !attempted.Contains(generation)
-                    && (candidates is null || (generation.State == ResourceGenerationState.Ready && candidates.Contains(generation) && !ReferenceEquals(_published.GetValueOrDefault(generation.Node), generation))));
-                if (candidate is null)
+                wave.Clear();
+                removed.Clear();
+                Dictionary<ResourceNode, ResourceGeneration>? updated = null;
+                foreach (ResourceGeneration generation in candidates ?? _generations)
                 {
-                    break;
+                    if (generation.State is not (ResourceGenerationState.Ready or ResourceGenerationState.CleanupFailed)
+                        || generation.Pins != 0 || attempted.Contains(generation)
+                        || (candidates is not null && (generation.State != ResourceGenerationState.Ready
+                            || ReferenceEquals(_published.GetValueOrDefault(generation.Node), generation))))
+                    {
+                        continue;
+                    }
+
+                    if (ReferenceEquals(_published.GetValueOrDefault(generation.Node), generation))
+                    {
+                        updated ??= new(_published);
+                        updated.Remove(generation.Node);
+                        removed.Add(generation.Node);
+                    }
+
+                    generation.State = generation.State == ResourceGenerationState.CleanupFailed
+                        ? ResourceGenerationState.RetryingCleanup
+                        : ResourceGenerationState.Releasing;
+                    attempted.Add(generation);
+                    wave.Add(generation);
                 }
 
-                if (ReferenceEquals(_published.GetValueOrDefault(candidate.Node), candidate))
+                if (updated is not null)
                 {
-                    Dictionary<ResourceNode, ResourceGeneration> updated = new(_published);
-                    updated.Remove(candidate.Node);
-                    SetPublished(updated);
+                    SetPublished(updated, removed);
                 }
-
-                candidate.State = candidate.State == ResourceGenerationState.CleanupFailed
-                    ? ResourceGenerationState.RetryingCleanup
-                    : ResourceGenerationState.Releasing;
-                attempted.Add(candidate);
             }
 
+            if (wave.Count == 0)
+            {
+                break;
+            }
+
+            int index = 0;
             try
             {
-                await CleanupGenerationAsync(candidate, false).ConfigureAwait(false);
-                released++;
+                for (; index < wave.Count; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        await CleanupGenerationAsync(wave[index], false).ConfigureAwait(false);
+                        released++;
+                    }
+                    catch (Exception error)
+                    {
+                        (errors ??= []).Add(error);
+                    }
+                }
             }
-            catch (Exception error)
+            finally
             {
-                (errors ??= []).Add(error);
+                // Cancellation must not strand reserved entries that have not started cleanup.
+                lock (_gate)
+                {
+                    for (; index < wave.Count; index++)
+                    {
+                        ResourceGeneration generation = wave[index];
+                        generation.State = generation.State == ResourceGenerationState.RetryingCleanup
+                            ? ResourceGenerationState.CleanupFailed
+                            : ResourceGenerationState.Ready;
+                    }
+                }
             }
         }
 
@@ -240,8 +282,8 @@ public sealed partial class ResourceManager
                 ResourceCleanup cleanup = generation.Cleanups[index];
                 if (!cleanup.Completed && (!buildOnly || cleanup.Lifetime == ResourceDependencyLifetime.Build))
                 {
-                    await cleanup.Callback().ConfigureAwait(preserveContext);
-                    cleanup.Completed = true;
+                    await cleanup.ExecuteAsync().ConfigureAwait(preserveContext);
+                    cleanup.Complete();
                 }
             }
 
@@ -283,6 +325,17 @@ public sealed partial class ResourceManager
                     generation.State = ResourceGenerationState.Released;
                     generation.Value = null;
                     _generations.Remove(generation);
+                    _failedGenerations.Remove(generation);
+                    int remaining = _generationCounts[generation.Node] - 1;
+                    if (remaining == 0)
+                    {
+                        _generationCounts.Remove(generation.Node);
+                        _metadataPruneCandidates.Add(generation.Node);
+                    }
+                    else
+                    {
+                        _generationCounts[generation.Node] = remaining;
+                    }
                 }
             }
         }
@@ -293,6 +346,7 @@ public sealed partial class ResourceManager
                 lock (_gate)
                 {
                     generation.State = ResourceGenerationState.CleanupFailed;
+                    _failedGenerations.Add(generation);
                 }
             }
 
@@ -302,9 +356,10 @@ public sealed partial class ResourceManager
 
     private ResourceBuildView CreateView(HashSet<ResourceNode> forced, CancellationToken cancellationToken)
     {
-        Dictionary<ResourceNode, ResourceGeneration> published = new(_published);
-        Dictionary<ResourceNode, ResourceMetadata> metadata = new(_metadata);
-        ResourceBuildView view = new(published, metadata, _publicationVersion, forced, cancellationToken);
+        // Published maps are immutable after publication. Metadata is copied only before its next mutation.
+        Dictionary<ResourceNode, ResourceGeneration> published = _published;
+        _metadataShared = true;
+        ResourceBuildView view = new(published, _metadata, _publicationVersion, forced, cancellationToken);
         foreach (ResourceGeneration generation in published.Values)
         {
             generation.Pins++;
@@ -329,6 +384,14 @@ public sealed partial class ResourceManager
             }
 
             view.Roots = -1;
+            foreach (ResourceBuildSlot slot in view.Builds.Values)
+            {
+                if (slot.Generation.Sources.Count != 0)
+                {
+                    _watchTargets.CompleteBuild(slot.Generation.Sources.Keys);
+                }
+            }
+
             candidates = view.Builds.Values.Select(static slot => slot.Generation).ToHashSet();
             foreach (ResourceGeneration generation in view.Published.Values)
             {
@@ -344,30 +407,21 @@ public sealed partial class ResourceManager
             candidates.RemoveWhere(static generation => generation.State is ResourceGenerationState.CleanupFailed or ResourceGenerationState.RetryingCleanup);
         }
 
-        try
-        {
-            await ReleaseUnusedAsync(candidates, CancellationToken.None).ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                RefreshWatchTargets();
-            }
-        }
+        await ReleaseUnusedAsync(candidates, CancellationToken.None).ConfigureAwait(false);
     }
 
-    private void SetPublished(Dictionary<ResourceNode, ResourceGeneration> updated)
+    private void SetPublished(Dictionary<ResourceNode, ResourceGeneration> updated, IEnumerable<ResourceNode> changed)
     {
         ulong version = checked(_publicationVersion + 1);
-        foreach (ResourceSlot slot in _slots)
+        foreach (ResourceNode node in changed)
         {
-            if (slot.References == 0)
+            if (!_slotByKey.TryGetValue(node, out uint index))
             {
                 continue;
             }
 
-            ResourceGeneration? replacement = updated.GetValueOrDefault(slot.Node);
+            ResourceSlot slot = _slots[(int)index];
+            ResourceGeneration? replacement = updated.GetValueOrDefault(node);
             if (ReferenceEquals(slot.Current, replacement))
             {
                 continue;
@@ -390,18 +444,120 @@ public sealed partial class ResourceManager
         _publicationVersion = version;
     }
 
-    private void RefreshWatchTargets()
+    private void EnsureWritableMetadata()
     {
-        _watchTargets.Set(_metadata.Values.SelectMany(static metadata => metadata.Sources.Keys)
-            .Concat(_generations.Where(static generation => generation.State == ResourceGenerationState.Building)
-                .SelectMany(static generation => generation.Sources.Keys)));
+        if (_metadataShared)
+        {
+            _metadata = new(_metadata);
+            _metadataShared = false;
+        }
     }
+
+    private void SetMetadata(ResourceNode node, ResourceMetadata metadata)
+    {
+        EnsureWritableMetadata();
+        if (_metadata.TryGetValue(node, out ResourceMetadata? previous))
+        {
+            foreach (ResourceNode dependency in previous.Dependencies)
+            {
+                RemoveMetadataReference(dependency);
+                _metadataPruneCandidates.Add(dependency);
+            }
+        }
+
+        if (metadata.Sources.Count != 0 || previous?.Sources.Count > 0)
+        {
+            _watchRescanRequested |= _watchTargets.ReplaceMetadata(previous, metadata);
+        }
+
+        _metadata[node] = metadata;
+        foreach (ResourceNode dependency in metadata.Dependencies)
+        {
+            _metadataReferences[dependency] = _metadataReferences.GetValueOrDefault(dependency) + 1;
+        }
+    }
+
+    private void RemoveMetadata(ResourceNode node, ResourceMetadata metadata)
+    {
+        EnsureWritableMetadata();
+        _metadata.Remove(node);
+        if (metadata.Sources.Count != 0)
+        {
+            _watchTargets.RemoveMetadata(metadata);
+        }
+
+        foreach (ResourceNode dependency in metadata.Dependencies)
+        {
+            RemoveMetadataReference(dependency);
+        }
+    }
+
+    private void RemoveMetadataReference(ResourceNode node)
+    {
+        int remaining = _metadataReferences[node] - 1;
+        if (remaining == 0)
+        {
+            _metadataReferences.Remove(node);
+        }
+        else
+        {
+            _metadataReferences[node] = remaining;
+        }
+    }
+
+    private bool IsMetadataRoot(ResourceNode node)
+        => _published.ContainsKey(node) || _invalidated.Contains(node) || _slotByKey.ContainsKey(node)
+            || _loads.ContainsKey(node) || _generationCounts.ContainsKey(node);
 
     private void PruneMetadata()
     {
+        if (_metadataPruneCandidates.Count == 0)
+        {
+            return;
+        }
+
+        Stack<ResourceNode> pending = new(_metadataPruneCandidates);
+        _metadataPruneCandidates.Clear();
+        List<ResourceNode>? retained = null;
+        while (pending.TryPop(out ResourceNode node))
+        {
+            if (IsMetadataRoot(node) || !_metadata.TryGetValue(node, out ResourceMetadata? metadata))
+            {
+                continue;
+            }
+
+            if (_metadataReferences.ContainsKey(node))
+            {
+                (retained ??= []).Add(node);
+                continue;
+            }
+
+            RemoveMetadata(node, metadata);
+            foreach (ResourceNode dependency in metadata.Dependencies)
+            {
+                pending.Push(dependency);
+            }
+        }
+
+        if (retained is not null)
+        {
+            foreach (ResourceNode node in retained)
+            {
+                if (_metadata.ContainsKey(node) && !IsMetadataRoot(node))
+                {
+                    // Preserve reachability semantics even if retained metadata contains an orphan cycle.
+                    PruneUnreachableMetadata();
+                    break;
+                }
+            }
+        }
+    }
+
+    private void PruneUnreachableMetadata()
+    {
         HashSet<ResourceNode> reachable = [];
         Stack<ResourceNode> pending = new(_published.Keys.Concat(_invalidated).Concat(_slotByKey.Keys)
-            .Concat(_loads.Keys).Concat(_generations.Select(static generation => generation.Node)));
+            .Concat(_loads.Keys).Concat(_generationCounts.Keys));
         while (pending.TryPop(out ResourceNode node))
         {
             if (!reachable.Add(node) || !_metadata.TryGetValue(node, out ResourceMetadata? metadata))
@@ -415,11 +571,21 @@ public sealed partial class ResourceManager
             }
         }
 
-        foreach (ResourceNode node in _metadata.Keys.Where(node => !reachable.Contains(node)).ToArray())
+        List<ResourceNode>? removed = null;
+        foreach (ResourceNode node in _metadata.Keys)
         {
-            _metadata.Remove(node);
+            if (!reachable.Contains(node))
+            {
+                (removed ??= []).Add(node);
+            }
         }
 
-        RefreshWatchTargets();
+        if (removed is not null)
+        {
+            foreach (ResourceNode node in removed)
+            {
+                RemoveMetadata(node, _metadata[node]);
+            }
+        }
     }
 }

@@ -1,10 +1,23 @@
 namespace Lumyte.Resources;
 
-internal sealed class ResourceCleanup(Func<ValueTask> callback, ResourceDependencyLifetime lifetime)
+internal sealed class ResourceCleanup(object cleanup, ResourceDependencyLifetime lifetime)
 {
-    internal Func<ValueTask> Callback { get; } = callback;
+    private object? _cleanup = cleanup;
 
     internal ResourceDependencyLifetime Lifetime { get; } = lifetime;
 
-    internal bool Completed { get; set; }
+    internal bool Completed => _cleanup is null;
+
+    internal ValueTask ExecuteAsync()
+    {
+        if (_cleanup is IDisposable disposable)
+        {
+            disposable.Dispose();
+            return ValueTask.CompletedTask;
+        }
+
+        return ((Func<ValueTask>)_cleanup!)();
+    }
+
+    internal void Complete() => _cleanup = null;
 }

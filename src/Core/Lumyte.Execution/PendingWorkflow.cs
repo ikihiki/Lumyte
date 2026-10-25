@@ -8,7 +8,6 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
 {
     private readonly long _bytes;
     private readonly WorkflowContext _context;
-    private readonly Action _onComplete;
     private Queue<(SendOrPostCallback Callback, object? State)>? _callbacks;
     private ManualResetValueTaskSourceCore<TResult> _source;
     private ExecutionRuntime? _runtime;
@@ -35,7 +34,6 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
         _command = command;
         _bytes = work.PayloadBytes;
         _context = new WorkflowContext(this);
-        _onComplete = OnOperationCompleted;
         _source.RunContinuationsAsynchronously = true;
     }
 
@@ -122,7 +120,7 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
                 if (!_operation.IsCompleted)
                 {
                     // Observe completion without capturing the workflow context a second time.
-                    _operation.ConfigureAwait(false).GetAwaiter().UnsafeOnCompleted(_onComplete);
+                    _operation.ConfigureAwait(false).GetAwaiter().UnsafeOnCompleted(OnOperationCompleted);
                 }
             }
             else

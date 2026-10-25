@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.DependencyInjection;
@@ -25,7 +26,7 @@ public sealed class ResourceRegistrationBuilder
     /// <typeparam name="TSource">The constructor-injected source implementation.</typeparam>
     /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder UseSource<TSource>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    public ResourceRegistrationBuilder UseSource<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TSource>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TSource : class, IResourceSource
     {
         EnsureConfiguring();
@@ -61,7 +62,7 @@ public sealed class ResourceRegistrationBuilder
     /// <typeparam name="TStage">The constructor-injected stage implementation.</typeparam>
     /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    public ResourceRegistrationBuilder AddSourcePipeline<TOutput, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TOutput : class
         where TStage : class, IResourceSourceStage<TOutput>
     {
@@ -78,7 +79,7 @@ public sealed class ResourceRegistrationBuilder
     /// <typeparam name="TStage">The constructor-injected transform implementation.</typeparam>
     /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TInput : class
         where TOutput : class
         where TStage : class, IResourceTransform<TInput, TOutput>
@@ -119,7 +120,7 @@ public sealed class ResourceRegistrationBuilder
     /// <typeparam name="TDependency">The runtime provider implementation.</typeparam>
     /// <param name="dependencyId">The unique manager-local runtime dependency name.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder UseRuntimeDependency<TDependency>(string dependencyId)
+    public ResourceRegistrationBuilder UseRuntimeDependency<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDependency>(string dependencyId)
         where TDependency : class, IResourceRuntimeDependency
     {
         EnsureConfiguring();

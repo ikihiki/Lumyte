@@ -83,6 +83,15 @@ public sealed class ResourceBuildContext
         _manager.RegisterCleanup(_generation, cleanup, lifetime);
     }
 
+    /// <summary>Transfers ownership of a synchronous disposable without allocating a cleanup delegate.</summary>
+    /// <param name="cleanup">An idempotent, retryable disposable resource.</param>
+    /// <param name="lifetime">The build or output lifetime of the auxiliary resource.</param>
+    public void RegisterCleanup(IDisposable cleanup, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Build)
+    {
+        EnsureOpen();
+        _manager.RegisterCleanup(_generation, cleanup, lifetime);
+    }
+
     /// <summary>Gets the borrowed memory scope for the requested construction lifetime.</summary>
     /// <param name="lifetime">The build or output lifetime.</param>
     /// <returns>A scope whose disposal belongs to the manager.</returns>
