@@ -317,6 +317,8 @@ ThreadPoolでは並列度を制限し、Cooperativeでは`PumpJobs`が各同期�
 `ConfigureAwait(false)`やTask.Runはこの制御の対象外となるため、workflowのCPU処理では通常のawaitを使う。
 
 workflow全体を実完了まで未完了として追跡し、予約容量は結果の一度だけの観測で返す。
+root処理が成功・失敗しても、既に受理した継続callbackを処理してから完了を通知する。rootの結果は一度だけ回収する。
+未awaitで切り離した処理が将来到着することまで待つ契約ではない。
 未開始なら取消を受け付け、開始後はCancelPendingでも継続を保持して実際の結果・例外を返す。
 Stopは結果の観測ではなく実完了を待つ。実行途中の同期区間は中断しない。
 workflow portはmodule instanceに属する入口も許し、固定構成の一つのruntimeへ一度だけ接続する。
