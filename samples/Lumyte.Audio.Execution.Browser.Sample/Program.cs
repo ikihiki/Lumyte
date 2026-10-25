@@ -34,12 +34,11 @@ internal static partial class Program
             }
 
             var clip = new AudioClip(await _audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
-            IAudioVoice original = await clip.CreateVoice(AudioBus.Effects);
-            var voice = new AudioVoice(original);
+            AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
             await voice.Play();
             await voice.Pause();
             await _audio.State.Refresh();
-            if (original.State != AudioPlaybackState.Paused)
+            if (voice.State != AudioPlaybackState.Paused)
             {
                 throw new InvalidOperationException("Browser voice is not paused.");
             }

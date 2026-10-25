@@ -1,28 +1,25 @@
 # Lumyte.Resources.DependencyInjection
 
-`AddResources(name, configure)`で名前付きscoped managerを登録します。
-`UseSource<T>()`、`AddSourcePipeline<T, TStage>()`、
-`AddTransformPipeline<TInput, TOutput, TStage>()`でconstructor injectionを設定します。
-manager内では各出力型につき一つのStageを登録します。
-SourceとStageはscopedでDIが破棄し、managerは借用します。Pipelineによるラップは行いません。
+`AddResources(configure)`でDI rootにつき一つのResourceManagerを登録します。
+Audio・GraphicsなどのPipelineを同じbuilderへ追加し、`GetRequiredService<ResourceManager>()`から取得します。
+Manager、Source、StageとDI生成の世代providerはsingletonです。子scopeからも同じManagerを使い、scopeの終了では資源を破棄しません。
+ManagerはSource・Stage・Runtimeを借用し、各サービスの所有者はDI rootまたは既存instanceを渡した呼出側です。
 
-## 登録と起動
+## 登録と利用
 
-`AddResources`は既定の`ResourceRuntime`、`IResourceRuntime`と`ExecutionRuntime`をsingleton登録し、
-同じResourceRuntimeを`IExecutionModule`として接続します。既存の登録は上書きしません。
-複数の名前付きmanagerは同じ既定ジョブ環境を借り、独立したDI root間ではportを共有しません。
-既定の環境を使うStageへのジョブ注入やRuntimeの手動登録は不要です。
-ResourceRuntimeのmodule登録はAddResourcesに任せ、同じinstanceを別途IExecutionModuleへ重複登録しないでください。
+`UseSource<T>()`、`AddSourcePipeline<T, TStage>()`、`AddTransformPipeline<TInput, TOutput, TStage>()`で
+constructor injectionを設定します。出力型ごとに一つのStageを登録します。
+次のStage・Source・出力型はアプリ側の実装です。
 
 次はFileResourceSourceで読み込みと変更監視を接続する例です。Stageと出力型はアプリ側の実装です。
 
 ```csharp
-services.AddSingleton<IMemoryManager>(memory);
+services.AddMemoryManagement();
 services.AddSingleton(new FileResourceSourceOptions
 {
     RootPath = Path.GetFullPath("assets"),
 });
-services.AddResources("assets", resources => resources
+services.AddResources(resources => resources
     .UseSource<FileResourceSource>()
     .ConfigureHotReload(new ResourceReloadOptions
     {
@@ -37,13 +34,9 @@ await using ServiceProvider provider = services.BuildServiceProvider(new Service
     ValidateScopes = true,
     ValidateOnBuild = true,
 });
-ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
-execution.PrepareOnCurrentHost(
-    OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
-await execution.StartAsync();
 
-AsyncServiceScope scope = provider.CreateAsyncScope();
-ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("assets");
+// ExecutionRuntimeと必要なdevice systemは利用前に起動しておく。
+ResourceManager manager = provider.GetRequiredService<ResourceManager>();
 manager.HotReload!.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 {
     using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
@@ -51,24 +44,29 @@ manager.HotReload!.ReloadFailed += (_, failure) => Console.Error.WriteLine(failu
     Consume(lease.Value);
 }
 
-await manager.DisposeAsync(); // 失敗時は同じmanagerで再試行し、成功してからscopeを閉じる。
-await scope.DisposeAsync();
-await execution.StopAsync();
+await manager.DisposeAsync(); // 失敗時は環境を維持して同じManagerで再試行する。
+// 解放成功後に各systemを停止し、最後にDI rootを破棄する。
 ```
 
-DI解決だけではスレッドを起動しません。Prepare/Start/Pump/Stopはホストが管理します。
-BrowserではHost/Cooperativeに配置し、ロード・解放を待つ間もホストからPumpを続けます。
-例は解放が成功する経路です。容量不足やbackend解放失敗時は、manager・scope・各Runtime・ExecutionRuntimeを保持してください。
-原因が解消したら同じmanagerのDisposeAsyncを再試行し、成功後にscopeを破棄してExecutionRuntimeを停止します。
-DI scope自体のDisposeAsyncを再試行しても、途中の解放が再開される保証はありません。
+`AddResources`は既定の`ResourceRuntime`、`IResourceRuntime`と`ExecutionRuntime`をsingleton登録し、
+同じResourceRuntimeを`IExecutionModule`として接続します。既存の登録は上書きしません。
+既定環境を使うStageへのジョブ注入やRuntimeの手動登録は不要です。
+ResourceRuntimeのmodule登録を別途重複させないでください。独立したDI root間ではManagerと既定Runtimeを共有しません。
+
+登録やDI解決はスレッド・deviceを起動しません。各systemの起動・停止と必要なPumpはアプリ側で行います。
+BrowserではHost/Cooperativeを選び、ロード・解放を待つ間もPumpを続けます。
+利用権を返し、Managerの解放が成功してから実行器・device system・DI rootを閉じます。
+cleanup失敗時はManagerと環境を保持してDisposeAsyncを再試行します。DI root自体の破棄を先に始めないでください。
 
 ## 登録の制約
 
 Pipelineは出力型のRuntimeTypeHandleで登録し、transformの入力も型本体から解決します。
-構成はcallback終了時に固定し、同名manager・runtime依存、出力型の重複、重複Sourceを拒否します。
 同じ型の異なる要素・変換条件はResourceAddressのSubresource・Variantで指定します。
-SourceとStageはscopedに限定し、DIが一度だけ破棄します。DIの生成処理で非同期初期化やI/Oを同期待機しません。
-IMemoryManagerは事前にAddMemoryManagementなどで登録するか、例のように既存instanceを渡してください。
+`AddResources`の重複呼び出し、Sourceや出力型の重複を拒否します。構成はcallback終了時に固定します。
+各moduleのPipelineは一つのcallbackへまとめ、入力元が複数なら一つの合成Sourceで振り分けます。
+Source・Stage・Runtimeが要求するサービスもManagerの利用期間全体を満たす寿命で登録します。
+`UseSource<T>`は事前登録済みのTを借用でき、未登録ならsingletonとして追加します。
+scopedなSourceやRuntimeをsingleton Managerへ渡す構成は`ValidateScopes`で拒否されます。
 
 ## 自動変更監視
 
@@ -85,37 +83,34 @@ HotReload専用のStart／StopAsyncは不要ですが、ExecutionRuntimeの起�
 
 ## StageごとのRuntimeと世代
 
-Audio・GraphicsなどのRuntimeはIResourceRuntimeを実装し、共通ジョブ環境とdevice・owner・世代の借用をまとめます。
-UseStageRuntimeは登録済みサービスをManager構築時に一度解決し、出力型へ対応付けます。
-サービス自体の登録・寿命は呼出側が決め、未指定の出力は既定Runtimeを使います。
-次のMeshRuntimeはResourceRuntimeとdevice serviceをconstructorで受け取るアプリ定義の例です。
+Audio・GraphicsなどのRuntimeは共通ジョブ環境とdevice・owner・世代の借用をまとめます。
+`UseStageRuntime`は登録済みサービスをManager構築時に一度解決し、出力型へ対応付けます。
+未指定の出力は既定Runtimeを使います。次のMeshRuntimeはアプリ定義の環境です。
 
 ```csharp
 services.AddSingleton<MeshRuntime>();
-services.AddResources("meshes", resources => resources
+services.AddResources(resources => resources
     .UseSource<MySource>()
     .AddSourcePipeline<Document, DocumentStage>()
     .AddTransformPipeline<Document, Mesh, MeshStage>()
     .UseStageRuntime<Mesh, MeshRuntime>());
 ```
 
-既存サービスから選ぶ場合は`.UseStageRuntime<Mesh>(provider => provider.GetRequiredService<MeshRuntime>())`も使えます。
-device serviceと必要なIExecutionModuleも起動前に登録してください。
-Stageは`IResourceTransform<TInput, TOutput, TRuntime>`などで環境型を宣言すると、BuildAsyncの型付きRuntime引数で選択済み環境を受け取れます。キャストや追加のContextラッパーは不要です。宣言型に適合しない登録はManager構築時に拒否します。デバイス世代は構築ごとに取得します。
-同じRuntime instanceへ対応付けた依存Stageは同じ構築ジョブで実行します。型が同じでもinstanceが異なれば別の実行区間です。
-解放は内容世代に保存したRuntimeと生成時のLease・ownerを使います。
+既存環境を選ぶ`.UseStageRuntime<Mesh>(provider => provider.GetRequiredService<MeshRuntime>())`も使用できます。
+Stageは`IResourceTransform<TInput, TOutput, TRuntime>`などを実装し、BuildとReleaseの型付き引数で環境を受け取ります。
+宣言型に適合しない登録はManager構築時に拒否します。各構築で現在のdevice世代を取得し、解放時は生成元のLease・ownerを使います。
+同じRuntime instanceを使う依存Stageは同じ構築ジョブを共有します。
 
-選択Runtimeの`Dependencies`に宣言されたinstanceを世代providerとして収集します。
-同じprovider instanceは重複登録せず、同じIdを持つ別instanceは拒否します。
-実際に借りたVersionのTrackRuntimeDependencyによる記録はStage側で行います。
-追加のproviderはUseRuntimeDependencyまたはAddResourceRuntimeDependencyでも登録できます。登録名とproviderのIdは一致する必要があります。
-
-[既定Runtimeの実行契約](../Lumyte.Resources.Execution/README.md)と
-[Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。
+選択Runtimeの`Dependencies`から世代providerを収集します。同じinstanceは重複除去し、同じIdの別instanceは拒否します。
+実際に借りたVersionは`TrackRuntimeDependency`で記録します。
+追加providerはbuilderの`UseRuntimeDependency<T>(id)`または`services.AddResourceRuntimeDependency<T>(id, factory)`でも登録できます。
+登録したIdとproviderのIdは一致させてください。
 
 ## Native AOT
 
 constructor injectionで生成するSource・Stage・providerの型引数には、公開constructorを保持する注釈を付けています。
-factoryで登録する型や登録済みサービスを選択する`UseStageRuntime`には、不要な保持指定を追加しません。
+factory登録や既存サービスを選択する`UseStageRuntime`には、不要な保持指定を追加しません。
 CIでは`Lumyte.Resources.AotSmoke`をNative AOT公開し、DIだけで構築する実装型と型付きRuntimeを
 ThreadPool／Hostの両方で実行して、生成・未完了await・解放まで検証します。
+
+[既定Runtime](../Lumyte.Resources.Execution/README.md)と[Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)も参照してください。

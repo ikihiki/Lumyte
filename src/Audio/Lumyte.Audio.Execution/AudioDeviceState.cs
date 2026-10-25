@@ -236,50 +236,29 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
         return lease.GetDevice(this).CreateClip(format, samples.Span);
     }
 
-    internal IAudioVoice CreateVoiceForLease(AudioDeviceLease lease, IAudioClip clip, AudioBus bus)
-    {
-        VerifyOwner();
-        PollAvailability();
-        IAudioDevice device = lease.GetDevice(this);
-        if (!ReferenceEquals(clip.Device, device))
-        {
-            throw new ArgumentException("The clip belongs to another audio generation.", nameof(clip));
-        }
-
-        return device.CreateVoice(clip, bus);
-    }
-
-    internal (AudioDeviceLease Lease, IAudioClip Clip) CreateClipWithLease(AudioFormat format, ReadOnlyMemory<float> samples)
+    internal (AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError) CreateClipWithLease(AudioFormat format, ReadOnlyMemory<float> samples)
     {
         AudioDeviceLease lease = AcquireLease();
+        IAudioClip clip;
         try
         {
-            return (lease, lease.Device.CreateClip(format, samples.Span));
+            clip = lease.Device.CreateClip(format, samples.Span);
         }
         catch
         {
             lease.Dispose();
             throw;
         }
-    }
 
-    internal (AudioDeviceLease Lease, IAudioVoice Voice) CreateVoiceWithLease(IAudioClip clip, AudioBus bus)
-    {
-        AudioDeviceLease lease = AcquireLease();
         try
         {
-            IAudioDevice device = lease.Device;
-            if (!ReferenceEquals(clip.Device, device))
-            {
-                throw new ArgumentException("The clip belongs to another audio generation.", nameof(clip));
-            }
-
-            return (lease, device.CreateVoice(clip, bus));
+            PollAvailability();
+            return (lease, clip, null);
         }
-        catch
+        catch (Exception error)
         {
-            lease.Dispose();
-            throw;
+            // Native creation succeeded. Transfer both owners so the caller can retain failed cleanup for retry.
+            return (lease, clip, error);
         }
     }
 

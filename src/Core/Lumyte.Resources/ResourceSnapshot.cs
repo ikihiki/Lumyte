@@ -22,7 +22,7 @@ public sealed class ResourceSnapshot : IDisposable
     /// <returns>Whether a usable revision was retained.</returns>
     /// <exception cref="ObjectDisposedException">This snapshot has been returned.</exception>
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease)
-        where T : class
+        where T : notnull
     {
         ResourceManager? manager = Volatile.Read(ref _manager);
         ObjectDisposedException.ThrowIf(manager is null, this);

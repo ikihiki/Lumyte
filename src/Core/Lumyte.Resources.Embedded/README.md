@@ -17,7 +17,7 @@ services.AddSingleton(new EmbeddedResourceSourceOptions
         [new("shaders/basic.spv")] = "App.Shaders.Basic.spv",
     },
 });
-services.AddResources("assets", pipelines => pipelines
+services.AddResources(pipelines => pipelines
     .UseSource<EmbeddedResourceSource>()
     .AddSourcePipeline<CpuShader, ShaderStage>());
 ```

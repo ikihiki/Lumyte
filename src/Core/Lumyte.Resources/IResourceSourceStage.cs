@@ -3,7 +3,7 @@ namespace Lumyte.Resources;
 /// <summary>Builds a typed output without a fixed primary input pipeline.</summary>
 /// <typeparam name="T">The completed output type.</typeparam>
 public interface IResourceSourceStage<T> : IResourceStage
-    where T : class
+    where T : notnull
 {
     /// <inheritdoc />
     Type IResourceStage.OutputType => typeof(T);

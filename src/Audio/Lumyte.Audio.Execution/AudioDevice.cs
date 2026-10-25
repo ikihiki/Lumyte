@@ -47,15 +47,8 @@ public readonly partial struct AudioDevice
     private IAudioClip CreateClipForLeaseCore(AudioDeviceLease lease, AudioFormat format, ReadOnlyMemory<float> samples) => _original.CreateClipForLease(lease, format, samples);
 
     [ExecutionCommand]
-    private IAudioVoice CreateVoiceForLeaseCore(AudioDeviceLease lease, IAudioClip clip, AudioBus bus) => _original.CreateVoiceForLease(lease, clip, bus);
-
-    [ExecutionCommand]
-    private (AudioDeviceLease Lease, IAudioClip Clip) CreateClipWithLeaseCore(AudioFormat format, ReadOnlyMemory<float> samples)
+    private (AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError) CreateClipWithLeaseCore(AudioFormat format, ReadOnlyMemory<float> samples)
         => _original.CreateClipWithLease(format, samples);
-
-    [ExecutionCommand]
-    private (AudioDeviceLease Lease, IAudioVoice Voice) CreateVoiceWithLeaseCore(IAudioClip clip, AudioBus bus)
-        => _original.CreateVoiceWithLease(clip, bus);
 
     [ExecutionCommand]
     private void SetBusGainCore(AudioBus bus, float gain) => _original.SetBusGain(bus, gain);

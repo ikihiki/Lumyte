@@ -8,70 +8,86 @@ internal static class RecoveryScenario
 {
     internal static void Run(AudioModule audio, ExecutionRuntime execution, ResourceManager manager, TestFactory factory, Action<Task> wait)
     {
-        Task<ResourceReference<IAudioVoice>> load = manager.AcquireAsync(new ResourceKey<IAudioVoice>("recovery")).AsTask();
+        Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("recovery")).AsTask();
         wait(load);
-        using ResourceReference<IAudioVoice> reference = load.GetAwaiter().GetResult();
-        using ResourceLease<IAudioVoice> old = reference.Acquire();
-        var oldVoice = (TestVoice)old.Value;
+        using ResourceReference<AudioClip> reference = load.GetAwaiter().GetResult();
+        using ResourceLease<AudioClip> old = reference.Acquire();
+        AudioClip oldClip = old.Value;
+        AudioVoice oldVoice = VoiceScenario.CreateVoice(oldClip, wait);
+        bool oldVoiceDestroyed = false;
         TestDevice oldDevice = factory.Current;
         AudioDeviceSnapshot initial = audio.Devices.State;
-
-        oldDevice.SetOutput(AudioOutputState.Suspended);
-        wait(audio.State.Refresh().AsTask());
-        Require(audio.Devices.State == initial && old.IsUsable, "Suspension invalidated the device generation.");
-        oldDevice.SetOutput(AudioOutputState.Running);
-        wait(audio.State.Refresh().AsTask());
-        Require(audio.Devices.State == initial, "Resuming output changed the device generation.");
-
-        oldDevice.SetOutput(AudioOutputState.Unavailable);
-        wait(audio.State.Refresh().AsTask());
-        AudioDeviceSnapshot lost = audio.Devices.State;
-        Require(lost.Status == AudioDeviceServiceStatus.Lost && lost.InvalidatedThroughVersion >= initial.Version, "Device loss did not invalidate the Ready version.");
-        Require(!old.IsUsable && execution.Status == ExecutionStatus.Running, "Loss did not remain local to the Audio device.");
-        Expect<ResourceUnavailableException>(() => _ = old.Value, "Resources returned an invalidated audio generation.");
-        Expect<AudioDeviceUnavailableException>(() => wait(new AudioVoice(oldVoice).Play().AsTask()), "An old voice accepted playback after device loss.");
-
-        factory.FailNextCreation();
-        Expect<InvalidOperationException>(() => wait(audio.Devices.RecoverAsync().AsTask()), "Injected recovery failure was ignored.");
-        Require(audio.Devices.State.Status == AudioDeviceServiceStatus.Failed && execution.Status == ExecutionStatus.Running, "Recovery failure stopped the execution runtime or was not recorded.");
-        wait(audio.Devices.RecoverAsync().AsTask());
-        AudioDeviceSnapshot recovered = audio.Devices.State;
-        Require(recovered.Status == AudioDeviceServiceStatus.Ready && recovered.Epoch > initial.Epoch && recovered.Version > lost.Version, "Recovery did not publish a new Ready generation.");
-        Require(!old.IsUsable, "Recovery made a lost generation usable again.");
-        Task<AudioDeviceLease> acquire = audio.Devices.AcquireAsync().AsTask();
-        wait(acquire);
-        using (AudioDeviceLease freshDevice = acquire.GetAwaiter().GetResult())
+        try
         {
-            Expect<ArgumentException>(() => wait(audio.State.CreateVoiceForLease(freshDevice, oldVoice.Clip, AudioBus.Effects).AsTask()), "An old clip was relabeled as belonging to the new device generation.");
+            oldDevice.SetOutput(AudioOutputState.Suspended);
+            wait(audio.State.Refresh().AsTask());
+            Require(audio.Devices.State == initial && old.IsUsable, "Suspension invalidated the device generation.");
+            oldDevice.SetOutput(AudioOutputState.Running);
+            wait(audio.State.Refresh().AsTask());
+            Require(audio.Devices.State == initial, "Resuming output changed the device generation.");
+
+            oldDevice.SetOutput(AudioOutputState.Unavailable);
+            wait(audio.State.Refresh().AsTask());
+            AudioDeviceSnapshot lost = audio.Devices.State;
+            Require(lost.Status == AudioDeviceServiceStatus.Lost && lost.InvalidatedThroughVersion >= initial.Version, "Device loss did not invalidate the Ready version.");
+            Require(!old.IsUsable && execution.Status == ExecutionStatus.Running, "Loss did not remain local to the Audio device.");
+            Expect<ResourceUnavailableException>(() => _ = old.Value, "Resources returned an invalidated audio generation.");
+            Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.Play().AsTask()), "An old voice accepted playback after device loss.");
+
+            factory.FailNextCreation();
+            Expect<InvalidOperationException>(() => wait(audio.Devices.RecoverAsync().AsTask()), "Injected recovery failure was ignored.");
+            Require(audio.Devices.State.Status == AudioDeviceServiceStatus.Failed && execution.Status == ExecutionStatus.Running, "Recovery failure stopped the execution runtime or was not recorded.");
+            wait(audio.Devices.RecoverAsync().AsTask());
+            AudioDeviceSnapshot recovered = audio.Devices.State;
+            Require(recovered.Status == AudioDeviceServiceStatus.Ready && recovered.Epoch > initial.Epoch && recovered.Version > lost.Version, "Recovery did not publish a new Ready generation.");
+            Require(!old.IsUsable, "Recovery made a lost generation usable again.");
+            Expect<AudioDeviceUnavailableException>(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()), "An old clip was relabeled as belonging to the new device generation.");
+
+            Task<ResourceReloadResult> rebuild = manager.RebuildRuntimeAsync(["Audio"]).AsTask();
+            wait(rebuild);
+            Require(rebuild.GetAwaiter().GetResult().Status == ResourceReloadStatus.Published, "Audio recovery did not publish rebuilt resources.");
+            using ResourceLease<AudioClip> current = reference.Acquire();
+            Require(!oldClip.Equals(current.Value), "Rebuilt clip reused the lost device's native child.");
+            AudioVoice currentVoice = VoiceScenario.CreateVoice(current.Value, wait);
+            try
+            {
+                Require(currentVoice.State == AudioPlaybackState.Stopped, "Recovery unexpectedly restarted playback.");
+                wait(currentVoice.Play().AsTask());
+                Require(currentVoice.State == AudioPlaybackState.Playing, "Rebuilt voice could not play on the new device.");
+
+                Task<int> retained = audio.Devices.RetireAsync().AsTask();
+                wait(retained);
+                Require(retained.GetAwaiter().GetResult() == 0 && !oldDevice.IsDisposed, "An old device was disposed while its clip lease remained held.");
+                oldDevice.FailNextVoiceRelease();
+                Expect<InvalidOperationException>(() => wait(oldVoice.Destroy().AsTask()), "Injected caller-owned voice cleanup failure was ignored.");
+                wait(oldVoice.Destroy().AsTask());
+                oldVoiceDestroyed = true;
+                old.Dispose();
+                oldDevice.FailNextClipRelease();
+                Expect<AggregateException>(() => wait(manager.TrimAsync().AsTask()), "Injected clip cleanup failure was ignored.");
+                Task<int> failedRelease = audio.Devices.RetireAsync().AsTask();
+                wait(failedRelease);
+                Require(failedRelease.GetAwaiter().GetResult() == 0 && !oldDevice.IsDisposed, "Failed native cleanup released the device generation lease.");
+                wait(manager.TrimAsync().AsTask());
+                Task<int> retired = audio.Devices.RetireAsync().AsTask();
+                wait(retired);
+                Require(retired.GetAwaiter().GetResult() == 1 && oldDevice.IsDisposed, "The old generation was not released after native children and leases.");
+                Require(current.IsUsable && !factory.Current.IsDisposed, "Retiring the old device affected the new generation.");
+            }
+            finally
+            {
+                wait(currentVoice.Destroy().AsTask());
+            }
+        }
+        finally
+        {
+            if (!oldVoiceDestroyed)
+            {
+                wait(oldVoice.Destroy().AsTask());
+            }
         }
 
-        Expect<ArgumentException>(() => wait(audio.State.CreateVoiceWithLease(oldVoice.Clip, AudioBus.Effects).AsTask()), "Combined voice creation accepted a clip from another generation.");
-
-        Task<ResourceReloadResult> rebuild = manager.RebuildRuntimeAsync(["Audio"]).AsTask();
-        wait(rebuild);
-        Require(rebuild.GetAwaiter().GetResult().Status == ResourceReloadStatus.Published, "Audio recovery did not publish rebuilt resources.");
-        using ResourceLease<IAudioVoice> current = reference.Acquire();
-        var currentVoice = (TestVoice)current.Value;
-        Require(!ReferenceEquals(oldVoice, currentVoice) && ReferenceEquals(currentVoice.Device, factory.Current), "Rebuilt voice did not use the new device.");
-        Require(currentVoice.State == AudioPlaybackState.Stopped, "Recovery unexpectedly restarted playback.");
-        wait(new AudioVoice(currentVoice).Play().AsTask());
-        Require(currentVoice.State == AudioPlaybackState.Playing, "Rebuilt voice could not play.");
-
-        Task<int> retained = audio.Devices.RetireAsync().AsTask();
-        wait(retained);
-        Require(retained.GetAwaiter().GetResult() == 0 && !oldDevice.IsDisposed, "An old device was disposed while its resource lease remained held.");
-        old.Dispose();
-        oldDevice.FailNextVoiceRelease();
-        Expect<AggregateException>(() => wait(manager.TrimAsync().AsTask()), "Injected native cleanup failure was ignored.");
-        Task<int> failedRelease = audio.Devices.RetireAsync().AsTask();
-        wait(failedRelease);
-        Require(failedRelease.GetAwaiter().GetResult() == 0 && !oldDevice.IsDisposed, "Failed native cleanup released the device generation lease.");
-        wait(manager.TrimAsync().AsTask());
-        Task<int> retired = audio.Devices.RetireAsync().AsTask();
-        wait(retired);
-        Require(retired.GetAwaiter().GetResult() == 1 && oldDevice.IsDisposed, "The old generation was not released after native children and leases.");
-        Require(current.IsUsable && !factory.Current.IsDisposed, "Retiring the old device affected the new generation.");
-        Console.WriteLine("Resource audio recovery passed: suspension, loss, failed recovery retry, generation rebuild, mismatched clip rejection, and cleanup retry.");
+        Console.WriteLine("Resource audio recovery passed: suspension, loss, recovery retry, clip rebuild, old clip rejection, and caller voice/manager clip cleanup retry.");
     }
 
     internal static void StopDuringRecovery(AudioModule audio, ExecutionRuntime execution, TestFactory factory, Action<Task> wait)
@@ -117,11 +133,11 @@ internal static class RecoveryScenario
         int created = device.CreatedClips;
         int returned = device.ReturnedClips;
         device.LoseDuringNextClip();
-        Task<ResourceReference<IAudioVoice>> build = manager.AcquireAsync(new ResourceKey<IAudioVoice>("loss-during-build")).AsTask();
+        Task<ResourceReference<AudioClip>> build = manager.AcquireAsync(new ResourceKey<AudioClip>("loss-during-build")).AsTask();
         try
         {
             wait(build);
-            using ResourceReference<IAudioVoice> unexpected = build.GetAwaiter().GetResult();
+            using ResourceReference<AudioClip> unexpected = build.GetAwaiter().GetResult();
             throw new InvalidOperationException("A candidate built across device loss was published.");
         }
         catch (AudioDeviceUnavailableException)

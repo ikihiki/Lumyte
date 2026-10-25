@@ -14,6 +14,8 @@ internal sealed class TestDevice : IAudioDevice
     private int _clipCreationFailures;
     private int _voiceCreationFailures;
     private int _loseDuringNextClip;
+    private int _failOutputAfterNextClip;
+    private int _outputFailures;
     private int _createdClips;
     private int _returnedClips;
 
@@ -22,6 +24,11 @@ internal sealed class TestDevice : IAudioDevice
         get
         {
             Verify();
+            if (Interlocked.Exchange(ref _outputFailures, 0) != 0)
+            {
+                throw new InvalidOperationException("Injected post-creation output query failure.");
+            }
+
             return (AudioOutputState)Volatile.Read(ref _output);
         }
     }
@@ -56,6 +63,11 @@ internal sealed class TestDevice : IAudioDevice
         if (Interlocked.Exchange(ref _loseDuringNextClip, 0) != 0)
         {
             SetOutput(AudioOutputState.Unavailable);
+        }
+
+        if (Interlocked.Exchange(ref _failOutputAfterNextClip, 0) != 0)
+        {
+            Volatile.Write(ref _outputFailures, 1);
         }
 
         return clip;
@@ -113,6 +125,8 @@ internal sealed class TestDevice : IAudioDevice
     }
 
     internal void SetOutput(AudioOutputState state) => Volatile.Write(ref _output, (int)state);
+
+    internal void FailOutputAfterNextClip() => Volatile.Write(ref _failOutputAfterNextClip, 1);
 
     internal void LoseDuringNextClip() => Volatile.Write(ref _loseDuringNextClip, 1);
 
