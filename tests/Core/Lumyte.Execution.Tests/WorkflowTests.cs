@@ -40,6 +40,40 @@ public sealed class WorkflowTests
         Assert.Same(outer, SynchronizationContext.Current);
     }
 
+    /// <summary>Each resumed synchronous dispatch gets a fresh budget, excluding time spent waiting for I/O.</summary>
+    [Fact]
+    public void DispatchBudgetExcludesSuspendedTime()
+    {
+        using var fixture = new WorkflowFixture();
+        var ready = new TaskCompletionSource();
+        var budget = TimeSpan.FromMilliseconds(50);
+        bool entered = false;
+        bool freshAfterResume = false;
+        bool expiredAfterWork = false;
+        Assert.False(ExecutionRuntime.ShouldYield(budget));
+        fixture.Module.Handler = async (value, _) =>
+        {
+            ExecutionRuntime.ShouldYield(budget);
+            entered = true;
+            await ready.Task;
+            freshAfterResume = !ExecutionRuntime.ShouldYield(budget);
+            Thread.Sleep(75);
+            expiredAfterWork = ExecutionRuntime.ShouldYield(budget);
+            return value;
+        };
+
+        ValueTask<int> result = fixture.Module.Port.Execute(12);
+        fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
+        Assert.True(entered);
+        Thread.Sleep(75);
+        Assert.False(ExecutionRuntime.ShouldYield(budget));
+        ready.SetResult();
+        Assert.Equal(12, fixture.Wait(result));
+        Assert.True(freshAfterResume);
+        Assert.True(expiredAfterWork);
+        Assert.False(ExecutionRuntime.ShouldYield(budget));
+    }
+
     /// <summary>A suspended operation leaves the only CPU worker available for independent work.</summary>
     [Fact]
     public void WaitingWorkflowDoesNotHoldCpuSlot()
