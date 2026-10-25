@@ -21,4 +21,18 @@ public interface IResourceSourceStage<T, TRuntime> : IResourceSourceStage<T>, IR
     /// <param name="cancellationToken">Cancels the manager-owned build.</param>
     /// <returns>The completed output, ready for use.</returns>
     ValueTask<T> BuildAsync(TRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken);
+
+    /// <inheritdoc/>
+    ValueTask IResourceStage.ReleaseAsync(object resource, IResourceRuntime runtime)
+        => ReleaseAsync((T)resource, (TRuntime)runtime);
+
+    /// <inheritdoc/>
+    ValueTask IResourceSourceStage<T>.ReleaseAsync(T resource)
+        => throw new InvalidOperationException("Release this stage through its selected runtime.");
+
+    /// <summary>Releases an output using its original selected environment.</summary>
+    /// <param name="resource">The owned output retaining its original device epoch.</param>
+    /// <param name="runtime">The environment selected when the output was built.</param>
+    /// <returns>The actual destruction completion.</returns>
+    ValueTask ReleaseAsync(T resource, TRuntime runtime);
 }

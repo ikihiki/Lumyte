@@ -403,22 +403,26 @@ public sealed class ResourceRuntimeTests
         }
     }
 
-    private sealed class RecordingRuntime(IResourceRuntime inner) : IResourceRuntime
+    private sealed class RecordingRuntime(IResourceRuntime inner) : IResourceRuntime, IResourceExecutor
     {
+        public IResourceExecutor Executor => this;
+
+        public bool ShouldYield => inner.Executor.ShouldYield;
+
         internal int Builds { get; private set; }
 
         internal int Releases { get; private set; }
 
-        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
+        public ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
             Builds++;
-            return inner.BuildAsync(stage, context, cancellationToken);
+            return inner.Executor.BuildAsync(context, cancellationToken);
         }
 
-        public ValueTask ReleaseAsync(IResourceStage stage, object resource)
+        public ValueTask ReleaseAsync(IResourceStage stage, IResourceRuntime runtime, object resource)
         {
             Releases++;
-            return inner.ReleaseAsync(stage, resource);
+            return inner.Executor.ReleaseAsync(stage, runtime, resource);
         }
     }
 

@@ -26,4 +26,11 @@ public interface IResourceStage
     /// <param name="resource">The previously constructed output.</param>
     /// <returns>The release completion.</returns>
     ValueTask ReleaseAsync(object resource);
+
+    /// <summary>Releases an output using the environment selected when it was built.</summary>
+    /// <param name="resource">The previously constructed output.</param>
+    /// <param name="runtime">The original stable environment, with the output's original device lease retained.</param>
+    /// <returns>The release completion.</returns>
+    /// <remarks>May run within the original build job during failure cleanup; dispatch native owner work through the environment.</remarks>
+    ValueTask ReleaseAsync(object resource, IResourceRuntime runtime) => ReleaseAsync(resource);
 }
