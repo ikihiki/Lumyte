@@ -90,6 +90,13 @@ public sealed class OpenALDevice : IAudioDevice
     internal AL Api => _al;
 
     /// <inheritdoc />
+    public void Invalidate()
+    {
+        ValidateAccess();
+        _unavailable = true;
+    }
+
+    /// <inheritdoc />
     public void Update()
     {
         Validate();

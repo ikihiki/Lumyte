@@ -55,6 +55,7 @@ Abstractions は Engine、Graphics、Settings、Resources、特定の DI コン�
 +        // clip は同じ device が生成した有効なもの。バックエンド実装の voice を返す。
 +        // 同時 voice 上限到達は InvalidOperationException。
 +        public IAudioVoice CreateVoice(IAudioClip clip, AudioBus bus = AudioBus.Effects);
++        public void Invalidate();
 +        // Master は全体、Music／Effects はその内側。gain は有限の [0, 1]、初期値 1。
 +        public void SetBusGain(AudioBus bus, float gain);
 +        // 生存中の clip／voice があれば状態を変えず InvalidOperationException。
@@ -93,7 +94,7 @@ Abstractions は Engine、Graphics、Settings、Resources、特定の DI コン�
 +}
 ```
 
-`CreateVoice` も Master 指定を拒否する。未定義 enum、不正な数値、別 device のリソースは受理前に拒否し、副作用を残さない。破棄済みリソースの制御は `ObjectDisposedException`、契約外の状態操作は `InvalidOperationException` とする。バックエンドはこれらのインターフェースを直接実装し、生成物の所属デバイスを検証する。同じバックエンド型でも別デバイスの clip を拒否する。具象型へのキャストを利用側へ要求しない。生成失敗は例外とし、部分生成物を解放する。OpenAL のエラーは InvalidOperationException、Browser の API エラーは JSException として通知する。
+`CreateVoice` も Master 指定を拒否する。未定義 enum、不正な数値、別 device のリソースは受理前に拒否し、副作用を残さない。破棄済みリソースの制御は `ObjectDisposedException`、契約外の状態操作は `InvalidOperationException` とする。Invalidateは所有スレッドで利用不能を不可逆に記録する冪等な操作で、native呼び出しや解放を行わない。生存中deviceでは例外を投げず、その後の生成・制御を拒否してCleanupを維持する。バックエンドはこれらのインターフェースを直接実装し、生成物の所属デバイスを検証する。同じバックエンド型でも別デバイスの clip を拒否する。具象型へのキャストを利用側へ要求しない。生成失敗は例外とし、部分生成物を解放する。OpenAL のエラーは InvalidOperationException、Browser の API エラーは JSException として通知する。
 
 ### バックエンド固有の生成 API
 
