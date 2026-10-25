@@ -29,6 +29,11 @@ public sealed class WebAudioDevice : IAudioDevice
         get
         {
             Validate(false);
+            if (_unavailable)
+            {
+                return AudioOutputState.Unavailable;
+            }
+
             var state = (AudioOutputState)WebAudioInterop.OutputState(_handle);
             _unavailable |= state == AudioOutputState.Unavailable;
             return _unavailable ? AudioOutputState.Unavailable : state;
@@ -51,6 +56,13 @@ public sealed class WebAudioDevice : IAudioDevice
         await JSHost.ImportAsync("Lumyte.Audio.Browser", url.AbsoluteUri, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return new(WebAudioInterop.CreateDevice(), maxVoices);
+    }
+
+    /// <inheritdoc />
+    public void Invalidate()
+    {
+        Validate(false);
+        _unavailable = true;
     }
 
     /// <inheritdoc />
@@ -152,7 +164,7 @@ public sealed class WebAudioDevice : IAudioDevice
 
         if (requireAvailable)
         {
-            _unavailable |= WebAudioInterop.OutputState(_handle) == (int)AudioOutputState.Unavailable;
+            _unavailable = _unavailable || WebAudioInterop.OutputState(_handle) == (int)AudioOutputState.Unavailable;
             if (_unavailable)
             {
                 throw new AudioDeviceUnavailableException();

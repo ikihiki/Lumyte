@@ -21,16 +21,20 @@ internal static class VoiceScenario
                 wait(first.SetGain(0.25f).AsTask());
                 wait(first.Play().AsTask());
                 wait(audio.State.Refresh().AsTask());
-                Require(first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
+                Require(
+                    first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
                     "Voices created from one cached clip did not have independent playback state.");
-                Require(first.Loop && !second.Loop && first.Gain == 0.25f && second.Gain == 1,
+                Require(
+                    first.Loop && !second.Loop && first.Gain == 0.25f && second.Gain == 1,
                     "Voices created from one cached clip shared control state.");
-                Require((audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) == host,
+                Require(
+                    (audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) == host,
                     "Audio execution ownership is incorrect.");
                 wait(second.Play().AsTask());
                 wait(second.Stop().AsTask());
                 wait(audio.State.Refresh().AsTask());
-                Require(first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
+                Require(
+                    first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
                     "Controlling one voice affected another voice from the same clip.");
 
                 if (reload)
@@ -50,6 +54,13 @@ internal static class VoiceScenario
 
         VerifyEarlyClipRelease(manager, wait);
         Console.WriteLine("Resource audio voices passed: one cached clip, independent caller-owned voices, and early clip release cleanup retry.");
+    }
+
+    internal static AudioVoice CreateVoice(AudioClip clip, Action<Task> wait)
+    {
+        Task<AudioVoice> create = clip.CreateVoice(AudioBus.Effects).AsTask();
+        wait(create);
+        return create.GetAwaiter().GetResult();
     }
 
     private static void Reload(ResourceManager manager, TestSource source, ResourceReference<AudioClip> reference, ResourceLease<AudioClip> old, AudioVoice oldVoice, Action<Task> wait)
@@ -77,7 +88,8 @@ internal static class VoiceScenario
             source.Set(float.NaN);
             wait(failed.Task);
             using ResourceLease<AudioClip> afterFailure = reference.Acquire();
-            Require(next.Value.Equals(afterFailure.Value) && old.IsUsable,
+            Require(
+                next.Value.Equals(afterFailure.Value) && old.IsUsable,
                 "Failed reload changed the publication or released an old lease.");
             Console.WriteLine("Resource audio HotReload passed: replaced clip, retained caller-owned voices and old lease, rejected invalid decode.");
         }
@@ -119,13 +131,6 @@ internal static class VoiceScenario
         }
 
         wait(manager.TrimAsync().AsTask());
-    }
-
-    internal static AudioVoice CreateVoice(AudioClip clip, Action<Task> wait)
-    {
-        Task<AudioVoice> create = clip.CreateVoice(AudioBus.Effects).AsTask();
-        wait(create);
-        return create.GetAwaiter().GetResult();
     }
 
     private static void Require(bool condition, string message)
