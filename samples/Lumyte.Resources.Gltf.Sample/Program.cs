@@ -64,11 +64,11 @@ internal static class Program
             pipelines.AddTransformPipeline<CpuImage, GpuTexture, TextureUploadStage>()
                 .AddTransformPipeline<CpuMesh, GpuMesh, MeshUploadStage>()
                 .AddTransformPipeline<CpuScene, GpuScene, SceneUploadStage>()
-                .UseStageRuntime<GpuTexture>(provider => provider.GetResourceGraphicsRuntime("graphics.main"))
-                .UseStageRuntime<GpuMesh>(provider => provider.GetResourceGraphicsRuntime("graphics.main"))
-                .UseStageRuntime<GpuScene>(provider => provider.GetResourceGraphicsRuntime("graphics.main"));
+                .UseStageRuntime<GpuTexture, GraphicsResourceRuntime>()
+                .UseStageRuntime<GpuMesh, GraphicsResourceRuntime>()
+                .UseStageRuntime<GpuScene, GraphicsResourceRuntime>();
         });
-        services.AddResourceGraphics("main", "graphics.main");
+        services.AddResourceGraphics("main");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
         execution.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, Environment.ProcessorCount, new ExecutionOptions());

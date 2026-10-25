@@ -148,8 +148,8 @@ public sealed class SceneCleanupTests
         services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Singleton);
         services.AddResources(builder => builder.UseSource<TestSource>()
             .AddSourcePipeline<SceneOutput, SceneStage>()
-            .UseStageRuntime<SceneOutput>(provider => provider.GetResourceGraphicsRuntime("graphics.main")));
-        services.AddResourceGraphics("main", "graphics.main");
+            .UseStageRuntime<SceneOutput, GraphicsResourceRuntime>());
+        services.AddResourceGraphics("main");
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 
