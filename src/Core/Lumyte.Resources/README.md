@@ -100,7 +100,6 @@ producer・reader・buffer/scope・factory leaseの順で終了します。取�
 
 [ADR-RESOURCES-0005](../../../docs/adr/resources/RESOURCES-0005-bounded-streaming.md)を参照してください。
 
-
 readの取消は待機だけを中断します。seek開始後の失敗・取消ではsessionがfaultになります。HotReload後も既存sessionは旧factoryを保持し、新しいsessionが新factoryを取得します。decoder固有の作業領域もsessionのmemory scopeへ計上してください。
 
 ## 終了と同期
