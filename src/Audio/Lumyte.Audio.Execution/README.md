@@ -28,10 +28,21 @@ AudioVoiceとAudioClipは参照一本のreadonly structです。元のIAudioVoic
 `audio.Devices` は同じAudioModule内で存続する `IAudioDeviceService` です。`State` と `StateChanged` は現在のVersion、物理Epoch、利用可否と失効済みVersionを公開します。所有スレッドの周期更新が出力状態を確認し、Unavailableになった世代を不可逆に失効させます。BrowserのSuspended／interruptedは同じ利用可能な世代として扱い、復旧や資源再生成を要求しません。
 
 ```csharp
-(AudioDeviceLease lease, IAudioClip original) = await audio.State.CreateClipWithLease(format, pcm);
-// originalを利用する間はleaseを保持する。
-await new AudioClip(original).DestroyClip();
-lease.Dispose();
+(AudioDeviceLease lease, IAudioClip original, Exception? validationError) =
+    await audio.State.CreateClipWithLease(format, pcm);
+try
+{
+    if (validationError is not null)
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(validationError);
+    if (!lease.IsUsable)
+        throw new AudioDeviceUnavailableException();
+    // originalを利用する間はleaseを保持する。
+}
+finally
+{
+    await new AudioClip(original).DestroyClip();
+    lease.Dispose(); // native解放に失敗した場合は返さず、両方を保持して再試行する。
+}
 
 // Lost／Failed時。新しいdeviceも同じ所有スレッドで生成する。
 AudioDeviceSnapshot ready = await audio.Devices.RecoverAsync();
@@ -39,7 +50,7 @@ AudioDeviceSnapshot ready = await audio.Devices.RecoverAsync();
 int retired = await audio.Devices.RetireAsync();
 ```
 
-CreateClipWithLeaseは一回のowner commandで世代取得とnative生成を完了し、生成失敗時は取得したleaseを返します。成功時は利用側がnative子資源を解放してから返却します。
+CreateClipWithLeaseは一回のowner commandで世代取得・native生成・生成後の使用可否確認を行います。生成失敗時は取得したleaseを返します。生成後の確認が例外を投げた場合は候補とleaseを失わないようValidationErrorへ保持して返すため、低水準APIの利用側は必ずこの値とIsUsableを確認し、候補を解放してからleaseを返します。通常のAudioResourceRuntime.CreateClipAsyncは解放責任を登録してから元の例外を再送出し、呼び出し側へAudioClipまたは例外だけを返します。
 leaseは取得時の正確な世代を保持し、新しいdeviceへ追随しません。AudioClip.CreateVoiceはclipの生成元deviceへ配送し、新しいdeviceへ付け替えません。失効したclip・voiceの操作は失敗しますが、Cleanupは元のdeviceで引き続き実行できます。旧子資源の解放とlease返却後にRetireAsyncを呼びます。leaseなしで直接生成した子資源もbackendが保持している間はdevice破棄を拒否します。サービスはclip／voiceの一覧を追加しません。
 
 RecoverAsyncは同時要求で一つの生成operationを共有します。呼び出し側の取消は待機だけを取り消します。生成完了のコマンド受付が容量不足で失敗した場合、次のRecoverAsyncが保持済みoperationの完了処理を再試行します。factory失敗やdevice解放失敗の後も再試行できます。終了は新しい取得と復旧を閉じ、進行中factoryの実完了を待ち、未接続の生成物も所有スレッドで解放します。未返却leaseや解放できない子資源がある場合は停止を失敗させ、所有権を保持します。

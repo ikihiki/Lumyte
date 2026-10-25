@@ -14,13 +14,19 @@ internal static class CreationScenario
         ReadOnlyMemory<float> samples = new float[48];
         device.FailNextClipCreation();
         ExpectCreationFailure(() => wait(audio.State.CreateClipWithLease(format, samples).AsTask()));
-        Task<(AudioDeviceLease Lease, IAudioClip Clip)> create = audio.State.CreateClipWithLease(format, samples).AsTask();
+        Task<(AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError)> create = audio.State.CreateClipWithLease(format, samples).AsTask();
         wait(create);
-        (AudioDeviceLease lease, IAudioClip clip) = create.GetAwaiter().GetResult();
+        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = create.GetAwaiter().GetResult();
         try
         {
+            if (validationError is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(validationError);
+            }
+
+            Require(lease.IsUsable, "A new clip unexpectedly belongs to an unavailable device.");
             device.FailNextVoiceCreation();
-            ExpectCreationFailure(() => wait(audio.State.CreateVoiceWithLease(clip, AudioBus.Effects).AsTask()));
+            ExpectCreationFailure(() => wait(new AudioClip(clip).CreateVoice(AudioBus.Effects).AsTask()));
         }
         finally
         {
@@ -37,9 +43,9 @@ internal static class CreationScenario
             device.FailNextClipRelease();
             try
             {
-                Task<ResourceReference<IAudioClip>> load = manager.AcquireAsync(new ResourceKey<IAudioClip>("untracked")).AsTask();
+                Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("untracked")).AsTask();
                 wait(load);
-                using ResourceReference<IAudioClip> unexpected = load.GetAwaiter().GetResult();
+                using ResourceReference<AudioClip> unexpected = load.GetAwaiter().GetResult();
                 throw new InvalidOperationException("A clip without its registered runtime dependency was published.");
             }
             catch (AggregateException error)
@@ -65,6 +71,54 @@ internal static class CreationScenario
             wait(retired);
             Require(device.ReturnedClips == returned + 1 && retired.GetAwaiter().GetResult() == 1 && device.IsDisposed, "Creation failure leaked a lease or cleanup retry did not release the original child exactly once.");
             Console.WriteLine("Resource audio creation passed: one owner request, failed creation returns leases, failed tracking retains native cleanup and its generation until retry.");
+        }
+        finally
+        {
+            wait(manager.DisposeAsync().AsTask());
+            wait(memory.DisposeAsync().AsTask());
+        }
+
+        ValidationFailure(audio, executor, runtime, factory, wait);
+    }
+
+    private static void ValidationFailure(AudioModule audio, ResourceRuntime executor, AudioResourceRuntime runtime, TestFactory factory, Action<Task> wait)
+    {
+        TestDevice device = factory.Current;
+        var memory = new MemoryManager();
+        var manager = new ResourceManager("failed-audio-validation", new UnusedSource(), [new UntrackedClipStage(runtime)], memory, executor);
+        try
+        {
+            int returned = device.ReturnedClips;
+            device.FailOutputAfterNextClip();
+            device.FailNextClipRelease();
+            try
+            {
+                Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("validation-failure")).AsTask();
+                wait(load);
+                using ResourceReference<AudioClip> unexpected = load.GetAwaiter().GetResult();
+                throw new InvalidOperationException("A clip whose device validation threw was published.");
+            }
+            catch (AggregateException error)
+            {
+                IReadOnlyCollection<Exception> errors = error.Flatten().InnerExceptions;
+                Require(errors.Any(exception => exception.Message == "Injected post-creation output query failure.")
+                    && errors.Any(exception => exception.Message == "Injected clip release failure."),
+                    "The original validation error or failed native cleanup was lost.");
+            }
+
+            Require(audio.Devices.State.Status == AudioDeviceServiceStatus.Lost && device.ReturnedClips == returned,
+                "Post-creation validation did not invalidate and retain the candidate.");
+            wait(audio.Devices.RecoverAsync().AsTask());
+            Task<int> retained = audio.Devices.RetireAsync().AsTask();
+            wait(retained);
+            Require(retained.GetAwaiter().GetResult() == 0 && !device.IsDisposed,
+                "The failed validation candidate lost its exact device lease before cleanup retry.");
+            wait(manager.TrimAsync().AsTask());
+            Task<int> retired = audio.Devices.RetireAsync().AsTask();
+            wait(retired);
+            Require(retired.GetAwaiter().GetResult() == 1 && device.IsDisposed && device.ReturnedClips == returned + 1,
+                "Retry did not release the failed validation candidate and its original device exactly once.");
+            Console.WriteLine("Resource audio validation passed: post-create query failure retains native child and exact generation through cleanup retry.");
         }
         finally
         {
@@ -104,11 +158,11 @@ internal static class CreationScenario
             => ValueTask.FromResult<string?>(null);
     }
 
-    private sealed class UntrackedClipStage(AudioResourceRuntime runtime) : IResourceSourceStage<IAudioClip>
+    private sealed class UntrackedClipStage(AudioResourceRuntime runtime) : IResourceSourceStage<AudioClip>
     {
-        public ValueTask<IAudioClip> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+        public ValueTask<AudioClip> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
             => runtime.CreateClipAsync(new(new(48000, 1), new float[48]), context, cancellationToken);
 
-        public ValueTask ReleaseAsync(IAudioClip clip) => runtime.DestroyClipAsync(clip);
+        public ValueTask ReleaseAsync(AudioClip clip) => runtime.DestroyClipAsync(clip);
     }
 }
