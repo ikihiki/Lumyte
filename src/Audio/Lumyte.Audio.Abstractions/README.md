@@ -11,5 +11,3 @@
 voice → clip → device の順で解放します。voice が残る clip と、子が残る device の Dispose は拒否します。リソースローダーが所有する clip は直接解放せず、voice 解放後に lease を返し、manager がキャッシュを解放するまで device を保持します。
 
 初期実装は常駐 mono／stereo clip の再生、一時停止、停止、ループと音量バスです。取得・デコード・先読み・継続供給はリソースシステムの責務とし、その接続 API は未実装です。`Failed` は後続の非同期供給失敗のための状態で、現在の同期失敗は例外で通知します。
-
-`IAudioDevice.Invalidate()`は所有スレッドで利用不能を不可逆に記録します。冪等なmanaged状態の変更だけを行い、生存中deviceでは例外を投げず、native呼び出しや解放は行いません。生成と制御は以後拒否し、既存voice／clip／deviceのCleanupは維持します。device serviceは状態確認の例外で世代を失効させた場合もこれを呼び、元instanceを持つラッパーまで失効を伝えます。

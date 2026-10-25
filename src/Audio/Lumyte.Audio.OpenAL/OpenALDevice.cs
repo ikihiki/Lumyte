@@ -16,10 +16,8 @@ public sealed class OpenALDevice : IAudioDevice
     private readonly ALContext _alc;
     private readonly unsafe Device* _device;
     private readonly unsafe Context* _context;
-    private readonly bool _supportsDisconnect;
 
     private bool _contextDestroyed;
-    private bool _unavailable;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="OpenALDevice"/> class. Opens an OpenAL device; OpenAL Soft must be installed on the host.</summary>
@@ -29,10 +27,10 @@ public sealed class OpenALDevice : IAudioDevice
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxVoices);
         _maxVoices = maxVoices;
-        _al = OpenALNativeContext.CreateApi();
+        _al = AL.GetApi();
         try
         {
-            _alc = OpenALNativeContext.CreateContextApi();
+            _alc = ALContext.GetApi();
         }
         catch
         {
@@ -54,7 +52,6 @@ public sealed class OpenALDevice : IAudioDevice
                 throw new InvalidOperationException("OpenAL could not create or activate its context.");
             }
 
-            _supportsDisconnect = _alc.IsExtensionPresent(_device, "ALC_EXT_disconnect");
             _al.DistanceModel(DistanceModel.None);
             CheckError();
         }
@@ -82,19 +79,26 @@ public sealed class OpenALDevice : IAudioDevice
     {
         get
         {
-            ValidateAccess();
-            return IsUnavailable() ? AudioOutputState.Unavailable : AudioOutputState.Running;
+            Validate();
+            unsafe
+            {
+                if (_alc.IsExtensionPresent(_device, "ALC_EXT_disconnect"))
+                {
+                    const int Connected = 0x313;
+                    int connected = 0;
+                    _alc.GetContextProperty(_device, (GetContextInteger)Connected, 1, &connected);
+                    if (connected == 0)
+                    {
+                        return AudioOutputState.Unavailable;
+                    }
+                }
+            }
+
+            return AudioOutputState.Running;
         }
     }
 
     internal AL Api => _al;
-
-    /// <inheritdoc />
-    public void Invalidate()
-    {
-        ValidateAccess();
-        _unavailable = true;
-    }
 
     /// <inheritdoc />
     public void Update()
@@ -111,6 +115,11 @@ public sealed class OpenALDevice : IAudioDevice
     {
         Validate();
         cancellationToken.ThrowIfCancellationRequested();
+        if (OutputState == AudioOutputState.Unavailable)
+        {
+            throw new NotSupportedException("A disconnected OpenAL device must be recreated after its children are released.");
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -203,11 +212,6 @@ public sealed class OpenALDevice : IAudioDevice
         AudioError error = _al.GetError();
         if (error != AudioError.NoError)
         {
-            if (IsUnavailable())
-            {
-                throw new AudioDeviceUnavailableException($"OpenAL device disconnected during an operation: {error}.");
-            }
-
             throw new InvalidOperationException($"OpenAL error: {error}.");
         }
     }
@@ -220,38 +224,6 @@ public sealed class OpenALDevice : IAudioDevice
 
     internal void Validate()
     {
-        ValidateAccess();
-        if (IsUnavailable())
-        {
-            throw new AudioDeviceUnavailableException();
-        }
-
-        unsafe
-        {
-            if (!_alc.MakeContextCurrent(_context))
-            {
-                _unavailable = true;
-                throw new AudioDeviceUnavailableException("OpenAL context activation failed.");
-            }
-        }
-    }
-
-    internal unsafe bool PrepareCleanup()
-    {
-        ValidateAccess();
-        if (!_alc.MakeContextCurrent(_context))
-        {
-            // The context still owns its native children and releases them when destroyed.
-            _unavailable = true;
-            return false;
-        }
-
-        _al.GetError();
-        return true;
-    }
-
-    private void ValidateAccess()
-    {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_contextDestroyed)
         {
@@ -262,18 +234,13 @@ public sealed class OpenALDevice : IAudioDevice
         {
             throw new InvalidOperationException("Audio control must run on the owning thread.");
         }
-    }
 
-    private unsafe bool IsUnavailable()
-    {
-        if (!_unavailable && _supportsDisconnect)
+        unsafe
         {
-            const int Connected = 0x313;
-            int connected = 0;
-            _alc.GetContextProperty(_device, (GetContextInteger)Connected, 1, &connected);
-            _unavailable = connected == 0;
+            if (!_alc.MakeContextCurrent(_context))
+            {
+                throw new InvalidOperationException("OpenAL context activation failed.");
+            }
         }
-
-        return _unavailable;
     }
 }
