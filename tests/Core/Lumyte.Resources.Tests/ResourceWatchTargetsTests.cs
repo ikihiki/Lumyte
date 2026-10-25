@@ -3,14 +3,14 @@ using Xunit;
 
 namespace Lumyte.Resources.Tests;
 
-/// <summary>Checks immutable watch snapshots and incremental tracking without repeated snapshot allocation.</summary>
+/// <summary>Checks immutable watch snapshots and incremental ownership without repeated snapshot allocation.</summary>
 public sealed class ResourceWatchTargetsTests
 {
-    /// <summary>Tracking and replacement preserve old snapshots and reuse unchanged snapshots.</summary>
+    /// <summary>Shared build references preserve snapshots until the last owner of an identifier leaves.</summary>
     [Fact]
-    public void SnapshotsRemainImmutableAndUnchangedSetsAreReused()
+    public void SharedBuildReferencesPreserveImmutableSnapshots()
     {
-        (IResourceWatchTargets targets, Action<ResourceId> track, Action<IEnumerable<ResourceId>> set) = CreateTargets();
+        (IResourceWatchTargets targets, Action<ResourceId> track, Action<IEnumerable<ResourceId>> completeBuild) = CreateTargets();
         ResourceId first = new("first");
         ResourceId second = new("second");
         ResourceId third = new("third");
@@ -24,23 +24,28 @@ public sealed class ResourceWatchTargetsTests
 
         track(first);
         Assert.Same(initial, targets.Resources);
-        set([second, first, second]);
+        completeBuild([first]);
         Assert.Same(initial, targets.Resources);
 
-        set([third]);
-        IReadOnlySet<ResourceId> replacement = targets.Resources;
-        Assert.True(replacement.SetEquals([third]));
+        track(third);
+        IReadOnlySet<ResourceId> expanded = targets.Resources;
+        Assert.True(expanded.SetEquals([first, second, third]));
+        completeBuild([first, second]);
+        IReadOnlySet<ResourceId> remaining = targets.Resources;
+        Assert.True(remaining.SetEquals([third]));
         Assert.True(initial.SetEquals([first, second]));
-        set([]);
+        Assert.True(expanded.SetEquals([first, second, third]));
+
+        completeBuild([third]);
         Assert.Empty(targets.Resources);
-        Assert.True(replacement.SetEquals([third]));
+        Assert.True(remaining.SetEquals([third]));
     }
 
     /// <summary>Adding already-sized tracking entries does not materialize a frozen snapshot per identifier.</summary>
     [Fact]
     public void TrackingBurstDoesNotAllocateSnapshotsBeforeTheyAreRead()
     {
-        (IResourceWatchTargets targets, Action<ResourceId> track, Action<IEnumerable<ResourceId>> set) = CreateTargets();
+        (IResourceWatchTargets targets, Action<ResourceId> track, Action<IEnumerable<ResourceId>> completeBuild) = CreateTargets();
         ResourceId[] ids = Enumerable.Range(0, 256).Select(index => new ResourceId($"input/{index}")).ToArray();
         for (int pass = 0; pass < 2; pass++)
         {
@@ -49,7 +54,7 @@ public sealed class ResourceWatchTargetsTests
                 track(id);
             }
 
-            set([]);
+            completeBuild(ids);
         }
 
         long before = GC.GetAllocatedBytesForCurrentThread();
@@ -63,38 +68,55 @@ public sealed class ResourceWatchTargetsTests
         Assert.True(targets.Resources.SetEquals(ids));
     }
 
-    /// <summary>Repeated publication of an unchanged set retains its immutable snapshot.</summary>
+    /// <summary>Balanced additional owners of existing identifiers reuse their snapshot with bounded bookkeeping allocation.</summary>
     [Fact]
-    public void RepeatedSetDoesNotRebuildFrozenSnapshots()
+    public void BalancedBuildReferencesDoNotRebuildFrozenSnapshots()
     {
-        (IResourceWatchTargets targets, Action<ResourceId> _, Action<IEnumerable<ResourceId>> set) = CreateTargets();
+        (IResourceWatchTargets targets, Action<ResourceId> track, Action<IEnumerable<ResourceId>> completeBuild) = CreateTargets();
         ResourceId[] ids = Enumerable.Range(0, 256).Select(index => new ResourceId($"input/{index}")).ToArray();
-        set(ids);
+        foreach (ResourceId id in ids)
+        {
+            track(id);
+        }
+
         IReadOnlySet<ResourceId> snapshot = targets.Resources;
         for (int index = 0; index < 10; index++)
         {
-            set(ids);
+            AddAndCompleteReferences();
         }
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < 100; index++)
         {
-            set(ids);
+            AddAndCompleteReferences();
         }
 
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.Same(snapshot, targets.Resources);
         Assert.InRange(allocated, 0, 6400);
+        completeBuild(ids);
+        Assert.Empty(targets.Resources);
+        Assert.True(snapshot.SetEquals(ids));
+
+        void AddAndCompleteReferences()
+        {
+            foreach (ResourceId id in ids)
+            {
+                track(id);
+            }
+
+            completeBuild(ids);
+        }
     }
 
-    private static (IResourceWatchTargets Targets, Action<ResourceId> Track, Action<IEnumerable<ResourceId>> Set) CreateTargets()
+    private static (IResourceWatchTargets Targets, Action<ResourceId> Track, Action<IEnumerable<ResourceId>> CompleteBuild) CreateTargets()
     {
         Type type = typeof(ResourceManager).Assembly.GetType("Lumyte.Resources.ResourceWatchTargets", throwOnError: true)!;
         object instance = Activator.CreateInstance(type, nonPublic: true)!;
         Action<ResourceId> track = type.GetMethod("Track", BindingFlags.Instance | BindingFlags.NonPublic)!
             .CreateDelegate<Action<ResourceId>>(instance);
-        Action<IEnumerable<ResourceId>> set = type.GetMethod("Set", BindingFlags.Instance | BindingFlags.NonPublic)!
+        Action<IEnumerable<ResourceId>> completeBuild = type.GetMethod("CompleteBuild", BindingFlags.Instance | BindingFlags.NonPublic)!
             .CreateDelegate<Action<IEnumerable<ResourceId>>>(instance);
-        return ((IResourceWatchTargets)instance, track, set);
+        return ((IResourceWatchTargets)instance, track, completeBuild);
     }
 }
