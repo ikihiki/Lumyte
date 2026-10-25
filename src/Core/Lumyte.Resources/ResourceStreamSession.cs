@@ -1,5 +1,4 @@
 using System.Runtime.ExceptionServices;
-using System.Threading.Tasks.Sources;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -7,19 +6,23 @@ namespace Lumyte.Resources;
 /// <summary>Owns an independent reader and a bounded single-producer, single-consumer buffer.</summary>
 /// <remarks>
 /// Reads and seeks require one consumer and must not overlap each other or disposal.
-/// Consuming a block wakes a waiting producer through a reusable queued notification.
-/// Reader work and producer continuations never run inline on the consumer's thread.
+/// Consuming a block schedules its waiting producer through the factory executor.
+/// Reader operations run in jobs; ReadAvailable never invokes the reader inline.
+/// Cooperative execution requires pumping jobs until session shutdown completes.
 /// </remarks>
 /// <typeparam name="TElement">The unmanaged stream element.</typeparam>
-public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
+public sealed class ResourceStreamSession<TElement> : IAsyncDisposable, IResourceStreamWork
     where TElement : unmanaged
 {
+    private readonly IResourceExecutor _executor;
     private readonly IMemoryScope _memory;
     private readonly IDisposable _lease;
     private readonly ResourceStreamOptions _options;
     private readonly Action _onDisposed;
     private readonly Block[] _blocks;
-    private readonly ProducerSignal _spaceAvailable = new();
+    private readonly ResourceStreamProducerSignal _spaceAvailable = new();
+    private readonly ResourceStreamSignal _dataAvailable = new();
+    private IResourceStream<TElement>? _factory;
     private IResourceStreamReader<TElement>? _reader;
     private CancellationTokenSource? _producerCancellation;
     private Task _producer = Task.CompletedTask;
@@ -33,14 +36,18 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
     private bool _initialized;
     private bool _memoryDisposed;
     private bool _leaseDisposed;
+    private bool _disposeReader;
+    private ulong? _seekOffset;
 
     internal ResourceStreamSession(
+        IResourceExecutor executor,
         IMemoryScope memory,
         IDisposable lease,
         ulong revision,
         ResourceStreamOptions options,
         Action onDisposed)
     {
+        _executor = executor;
         _memory = memory;
         _lease = lease;
         Revision = revision;
@@ -80,7 +87,15 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
                 return count;
             }
 
-            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+            ValueTask ready = _dataAvailable.WaitAsync(cancellationToken);
+
+            // Register before checking again so publication cannot lose a wakeup.
+            if (_blocks[_readIndex].Count != 0 || EndOfStream || Volatile.Read(ref _failure) is not null)
+            {
+                _dataAvailable.Signal();
+            }
+
+            await ready.ConfigureAwait(false);
         }
     }
 
@@ -135,20 +150,14 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         {
             await StopProducerAsync().ConfigureAwait(false);
             ThrowIfUnavailable();
-            await _reader!.SeekAsync(elementOffset, cancellationToken).ConfigureAwait(false);
-            foreach (Block block in _blocks)
+            _seekOffset = elementOffset;
+            _firstReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (StartProducer(cancellationToken))
             {
-                block.Count = 0;
+                await _firstReady.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            _readIndex = 0;
-            _writeIndex = 0;
-            _readOffset = 0;
-            Position = elementOffset;
-            _finished = false;
-            _firstReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            StartProducer();
-            await _firstReady.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             ThrowIfUnavailable();
         }
         catch (Exception exception)
@@ -181,6 +190,83 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         }
     }
 
+    /// <inheritdoc/>
+    async ValueTask IResourceStreamWork.ExecuteAsync(CancellationToken cancellationToken)
+    {
+        if (_disposeReader)
+        {
+            await _reader!.DisposeAsync();
+            _reader = null;
+            return;
+        }
+
+        if (_reader is null)
+        {
+            _reader = await _factory!.OpenReaderAsync(_options, _memory, cancellationToken);
+            _factory = null;
+            _initialized = true;
+        }
+        else if (_seekOffset is { } offset)
+        {
+            await _reader.SeekAsync(offset, cancellationToken);
+            foreach (Block buffered in _blocks)
+            {
+                buffered.Count = 0;
+            }
+
+            _readIndex = 0;
+            _writeIndex = 0;
+            _readOffset = 0;
+            Position = offset;
+            _finished = false;
+            _seekOffset = null;
+        }
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Block block = _blocks[_writeIndex];
+            if (block.Count != 0)
+            {
+                ValueTask available = _spaceAvailable.WaitAsync();
+
+                // Register before checking again so consuming the block cannot lose a wakeup.
+                if (block.Count == 0 || cancellationToken.IsCancellationRequested)
+                {
+                    _spaceAvailable.Signal();
+                }
+
+                await available;
+                continue;
+            }
+
+            if (_executor.ShouldYield)
+            {
+                await Task.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            int count = await _reader.ReadAsync(block.Buffer!.Memory[.._options.BlockSize], cancellationToken);
+            if ((uint)count > (uint)_options.BlockSize)
+            {
+                throw new InvalidOperationException("A resource stream reader returned an invalid element count.");
+            }
+
+            if (count == 0)
+            {
+                Volatile.Write(ref _finished, true);
+                _firstReady.TrySetResult();
+                _dataAvailable.Signal();
+                return;
+            }
+
+            block.Count = count;
+            _writeIndex = (_writeIndex + 1) % _blocks.Length;
+            _firstReady.TrySetResult();
+            _dataAvailable.Signal();
+        }
+    }
+
     internal async ValueTask InitializeAsync(IResourceStream<TElement> factory, CancellationToken cancellationToken)
     {
         foreach (Block block in _blocks)
@@ -192,11 +278,14 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
                 cancellationToken).ConfigureAwait(false);
         }
 
-        _reader = await factory.OpenReaderAsync(_options, _memory, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        _initialized = true;
-        StartProducer();
-        await _firstReady.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        _factory = factory;
+        using (StartProducer(cancellationToken))
+        {
+            await _firstReady.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         ThrowIfUnavailable();
     }
 
@@ -210,51 +299,23 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         }
     }
 
-    private void StartProducer()
+    private CancellationTokenRegistration StartProducer(CancellationToken cancellationToken)
     {
         _producerCancellation = new CancellationTokenSource();
+
+        // Cancel queued jobs immediately while opening/seeking, then detach before returning the session.
+        CancellationTokenRegistration registration = cancellationToken.UnsafeRegister(
+            static source => ((CancellationTokenSource)source!).Cancel(), _producerCancellation);
         _producer = ProduceAsync(_producerCancellation.Token);
+        return registration;
     }
 
     private async Task ProduceAsync(CancellationToken cancellationToken)
     {
         try
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                Block block = _blocks[_writeIndex];
-                if (block.Count != 0)
-                {
-                    ValueTask available = _spaceAvailable.WaitAsync();
-
-                    // Register before checking again so consuming the block cannot lose a wakeup.
-                    if (block.Count == 0 || cancellationToken.IsCancellationRequested)
-                    {
-                        _spaceAvailable.Signal();
-                    }
-
-                    await available.ConfigureAwait(false);
-                    continue;
-                }
-
-                int count = await _reader!.ReadAsync(block.Buffer!.Memory[.._options.BlockSize], cancellationToken).ConfigureAwait(false);
-                if ((uint)count > (uint)_options.BlockSize)
-                {
-                    throw new InvalidOperationException("A resource stream reader returned an invalid element count.");
-                }
-
-                if (count == 0)
-                {
-                    Volatile.Write(ref _finished, true);
-                    _firstReady.TrySetResult();
-                    return;
-                }
-
-                block.Count = count;
-                _writeIndex = (_writeIndex + 1) % _blocks.Length;
-                _firstReady.TrySetResult();
-            }
+            // Observe admission failures as well as reader failures, including before the job starts.
+            await _executor.StreamAsync(this, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -263,6 +324,7 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         {
             Volatile.Write(ref _failure, ExceptionDispatchInfo.Capture(exception));
             _firstReady.TrySetResult();
+            _dataAvailable.Signal();
         }
     }
 
@@ -289,8 +351,8 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
             await StopProducerAsync().ConfigureAwait(false);
             if (_reader is not null)
             {
-                await _reader.DisposeAsync().ConfigureAwait(false);
-                _reader = null;
+                _disposeReader = true;
+                await _executor.StreamAsync(this, CancellationToken.None).ConfigureAwait(false);
             }
 
             foreach (Block block in _blocks)
@@ -317,38 +379,6 @@ public sealed class ResourceStreamSession<TElement> : IAsyncDisposable
         catch (Exception exception)
         {
             attempt.TrySetException(exception);
-        }
-    }
-
-    // There is one producer wait at a time. Completion runs on the reusable work item,
-    // so releasing a block neither allocates a Task nor invokes the reader inline.
-    private sealed class ProducerSignal : IValueTaskSource, IThreadPoolWorkItem
-    {
-        private ManualResetValueTaskSourceCore<bool> _completion;
-        private int _waiting;
-
-        public void Execute() => _completion.SetResult(true);
-
-        public void GetResult(short token) => _completion.GetResult(token);
-
-        public ValueTaskSourceStatus GetStatus(short token) => _completion.GetStatus(token);
-
-        public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
-            => _completion.OnCompleted(continuation, state, token, flags);
-
-        internal ValueTask WaitAsync()
-        {
-            _completion.Reset();
-            Volatile.Write(ref _waiting, 1);
-            return new ValueTask(this, _completion.Version);
-        }
-
-        internal void Signal()
-        {
-            if (Interlocked.Exchange(ref _waiting, 0) != 0)
-            {
-                ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
-            }
         }
     }
 

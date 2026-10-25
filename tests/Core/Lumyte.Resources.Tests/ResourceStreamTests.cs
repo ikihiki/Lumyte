@@ -156,6 +156,34 @@ public sealed class ResourceStreamTests
         Assert.Equal(8, buffered[0]);
     }
 
+    /// <summary>Canceling an old read token cannot cancel the next notification wait.</summary>
+    /// <returns>Completion of repeated canceled waits followed by a successful read.</returns>
+    [Fact]
+    public async Task CanceledReadNotificationsCanBeReusedAsync()
+    {
+        var settings = new StreamSettings { PauseAt = 8 };
+        await using var harness = new StreamHarness(settings);
+        await using ResourceStreamSession<int> session = await harness.OpenAsync();
+        int[] destination = new int[8];
+        Assert.Equal(8, session.ReadAvailable(destination));
+        await settings.Paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        for (int index = 0; index < 128; index++)
+        {
+            using var cancellation = new CancellationTokenSource();
+            Task<int> pending = session.ReadAsync(destination, cancellation.Token).AsTask();
+            Assert.False(pending.IsCompleted);
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+            Assert.Equal(8UL, session.Position);
+        }
+
+        Task<int> next = session.ReadAsync(destination).AsTask();
+        Assert.False(next.IsCompleted);
+        settings.Continue.TrySetResult();
+        Assert.True(await next.WaitAsync(TimeSpan.FromSeconds(10)) > 0);
+        Assert.Equal(8, destination[0]);
+    }
+
     /// <summary>The callback path uses only preallocated storage and performs no reader calls.</summary>
     /// <returns>Completion of the callback checks.</returns>
     [Fact]
@@ -216,21 +244,34 @@ public sealed class ResourceStreamTests
     [Fact]
     public async Task ReleasingBlockDoesNotAllocateOnConsumerAsync()
     {
-        await using var harness = new StreamHarness(new StreamSettings());
+        await using var harness = new StreamHarness(new StreamSettings { Length = 4096 });
         var options = new ResourceStreamOptions { BlockSize = 4, MaxBufferedBlocks = 1 };
         await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         int[] destination = new int[4];
         long difference = 0;
+
+        // Warm up the same producer job and its continuation queue before measuring notifications.
         for (int iteration = -32; iteration < 64; iteration++)
         {
-            await session.SeekAsync(0);
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            int count = session.ReadAvailable(destination);
-            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-            if (iteration >= 0)
+            int count;
+            do
             {
-                difference += allocated;
+                timeout.Token.ThrowIfCancellationRequested();
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                count = session.ReadAvailable(destination);
+                long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                if (iteration >= 0)
+                {
+                    difference += allocated;
+                }
+
+                if (count == 0)
+                {
+                    await Task.Yield();
+                }
             }
+            while (count == 0);
 
             Assert.Equal(4, count);
         }
@@ -247,7 +288,6 @@ public sealed class ResourceStreamTests
         var options = new ResourceStreamOptions { BlockSize = 1, MaxBufferedBlocks = 1 };
         await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
 
-        // ReadAsync polls on underflow; 1,024 waits can exceed 10 seconds with Windows timer granularity.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         int[] destination = new int[1];
         for (int expected = 0; expected < 1024; expected++)
@@ -342,6 +382,9 @@ public sealed class ResourceStreamTests
         Assert.Equal(before, harness.Memory.GetSnapshot(_cpu).CommittedBytes);
         Assert.Throws<ObjectDisposedException>(() => session.ReadAvailable(new int[1]));
         await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Manager.DisposeAsync().AsTask());
+        await harness.Manager.TrimAsync();
+        Assert.Equal(before, harness.Memory.GetSnapshot(_cpu).CommittedBytes);
+        Assert.Equal(0, harness.Settings.ReadersDisposed);
         await session.DisposeAsync();
         Assert.Equal(0UL, harness.Memory.GetSnapshot(_cpu).CommittedBytes);
         Assert.Equal(1, harness.Settings.ReadersDisposed);

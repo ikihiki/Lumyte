@@ -89,13 +89,19 @@ DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終�
 
 ## ストリーミング
 
-長い音声などは不変の`IResourceStream<TElement>` factoryをPipeline出力にします。各sessionが独立したreader、cursor、固定個数の固定長bufferを所有し、先読みが満杯になるとproducerを停止します。readerの短いreadに対応し、非空readの0は終端として扱います。decoder固有の作業領域もsessionのmemory scopeへ計上してください。
+OpenStreamAsyncは不変factoryを保持し、独立したreaderとboundedな先読みbufferを作ります。
+factoryの保持は旧入力ファイルの保存を意味しません。直接読み込み中の変更検出でsessionがfaultになった場合は開き直します。
 
-`ReadAvailable`は待機・I/O・デコードを行わず、準備済みの要素だけを返します。blockの解放時には再利用するwork itemでproducerを通知し、readerの継続をconsumer上でinline実行しません。通知ごとのTaskやdelegateは生成しませんが、ThreadPool内部の初期化・queue拡張まで無割り当てとは保証しません。0はunderflowにもなるため`EndOfStream`と区別します。producerの満杯待機は通知方式、`ReadAsync`のunderflow待機は1 msの非同期pollです。デバイスcallbackでは`ReadAvailable`を使い、consumerは一つとしてreadとseekを並行させないでください。
+readerの生成・先読み・seek・解放はfactoryの登録済みExecutorへ配送します。既定の`ResourceRuntime`ではJobSystemのCPU同時実行数に従い、Cooperativeでは`PumpJobs`で進めます。初期化・seek・解放の待機中もPumpを続けてください。producerはI/Oやbuffer空きを待つ間はCPU枠を返しますが、実完了までworkflowの受付枠を一つ保持します。長寿命sessionも含めて`MaxInFlightRuns`を設定し、すべてのsessionを閉じてから実行器を停止します。
 
-readのキャンセルは待機だけを中断します。seekは旧先読みを終了してからreaderを移動し、失敗するとsessionはfaultになります。sessionの終了はproducer、reader、bufferとmemory scope、factory leaseの順です。終了失敗時は所有を保持して再試行できます。作成失敗の片付けが失敗した場合はmanagerの`TrimAsync`で再試行します。HotReload後も既存sessionは旧factoryを保持し、新規sessionは新factoryを使用します。直接読み込みの入力が変更された場合、既存readerはIOExceptionで失敗してsessionがfaultになるため、新しいsessionを開き直してください。準備済みbufferの存在は旧ファイル全体の読み込み継続を保証しません。
+`ReadAvailable`は待機・I/O・デコードを行わず、準備済みの要素だけを返します。blockを返すと再利用する通知でproducerをJobSystemへ戻し、readerをその呼び出しの中でinline実行しません。0はunderflowにもなるため`EndOfStream`と区別します。`ReadAsync`もデータ・終端・失敗の通知を待ち、timerでpollしません。デバイスcallbackでは`ReadAvailable`を使い、consumerは一つとしてread・seek・disposeを重ねないでください。
 
-コーデックやAudio backendへの再生接続は形式・機能側で実装します。このパッケージはデコード済み要素を受け渡す境界までを提供します。
+producer・reader・buffer/scope・factory leaseの順で終了します。取得済みsessionの解放に失敗した場合は、そのsessionの`DisposeAsync`を再度呼んでください。生成と後始末の両方が失敗し、利用者へ返せなかったsessionはManagerが保持し、`TrimAsync`で解放を再試行します。
+
+[ADR-RESOURCES-0005](../../../docs/adr/resources/RESOURCES-0005-bounded-streaming.md)を参照してください。
+
+
+readの取消は待機だけを中断します。seek開始後の失敗・取消ではsessionがfaultになります。HotReload後も既存sessionは旧factoryを保持し、新しいsessionが新factoryを取得します。decoder固有の作業領域もsessionのmemory scopeへ計上してください。
 
 ## 終了と同期
 
