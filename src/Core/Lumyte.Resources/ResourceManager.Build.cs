@@ -7,7 +7,7 @@ namespace Lumyte.Resources;
 public sealed partial class ResourceManager
 {
     internal async ValueTask<T> RequireAsync<T>(ResourceBuildView view, ResourceGeneration owner, ResourceBuildContext requester, ResourceKey<T> key, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
-        where T : class
+        where T : notnull
     {
         ValidateLifetime(lifetime);
         cancellationToken.ThrowIfCancellationRequested();

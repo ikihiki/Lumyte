@@ -154,54 +154,60 @@ public sealed class ResourceWatchRegistrationTests
         Assert.Equal(0, changes.DisposeCount);
     }
 
-    /// <summary>Each scoped stream source owns its notifications, and the manager stops watching before the source is disposed.</summary>
-    /// <returns>Completion of all independently owned monitors.</returns>
+    /// <summary>All scopes share one source subscription, and scope disposal leaves the manager running.</summary>
+    /// <returns>Completion of shared monitoring and ordered application shutdown.</returns>
     [Fact]
-    public async Task NamedScopesOwnDistinctChangeSourcesAndDisposeThemOnceAsync()
+    public async Task ScopesShareOneManagerAndSourceSubscriptionAsync()
     {
         WatchState state = new();
-        ServiceCollection services = CreateServices(state, "first", "second");
+        ServiceCollection services = CreateServices(state);
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope firstScope = provider.CreateAsyncScope();
         await using AsyncServiceScope secondScope = provider.CreateAsyncScope();
-        ResourceReloadService first = firstScope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first").HotReload!;
-        ResourceReloadService second = firstScope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("second").HotReload!;
-        ResourceReloadService otherScope = secondScope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first").HotReload!;
-        Assert.Same(first, firstScope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first").HotReload!);
-        Assert.NotSame(first, second);
-        Assert.NotSame(first, otherScope);
-        Assert.Equal(3, state.ChangeSources.Count);
+        await using ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        Assert.Same(manager, firstScope.ServiceProvider.GetRequiredService<ResourceManager>());
+        Assert.Same(manager, secondScope.ServiceProvider.GetRequiredService<ResourceManager>());
+        ResourceReloadService monitor = manager.HotReload!;
+        BlockingChangeSource changes = Assert.Single(state.ChangeSources);
+        await changes.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        await Task.WhenAll(state.ChangeSources.Select(source => source.Started.Task)).WaitAsync(TimeSpan.FromSeconds(10));
         await secondScope.DisposeAsync();
         await firstScope.DisposeAsync();
+        Assert.Equal(1, changes.WatchCount);
+        Assert.Equal(0, changes.StopCount);
+        Assert.Equal(0, changes.DisposeCount);
+        Assert.False(monitor.Completion.IsCompleted);
 
-        Assert.All(state.ChangeSources, source =>
+        using (ResourceReference<Value> reference = await manager.AcquireAsync(_key))
+        using (ResourceLease<Value> lease = reference.Acquire())
         {
-            Assert.Equal(1, source.WatchCount);
-            Assert.Equal(1, source.StopCount);
-            Assert.Equal(1, source.DisposeCount);
-            Assert.False(source.DisposedBeforeStop);
-        });
-        Assert.True(first.Completion.IsCompleted);
-        Assert.True(second.Completion.IsCompleted);
-        Assert.True(otherScope.Completion.IsCompleted);
-        Assert.Equal(3, state.SourceDisposals);
+            Assert.Equal("one", lease.Value.Revision);
+        }
+
+        await manager.DisposeAsync();
+        Assert.True(monitor.Completion.IsCompleted);
+        Assert.Equal(1, changes.StopCount);
+        Assert.Equal(0, state.SourceDisposals);
+        await execution.DisposeAsync();
+        await provider.DisposeAsync();
+        Assert.Equal(1, changes.DisposeCount);
+        Assert.Equal(1, state.SourceDisposals);
+        Assert.False(changes.DisposedBeforeStop);
     }
 
-    /// <summary>Scope disposal cancels and joins a running rebuild before the manager releases its published output.</summary>
+    /// <summary>Manager disposal cancels and joins a running rebuild before releasing its published output.</summary>
     /// <returns>Completion of cancellation, generation cleanup and DI service disposal.</returns>
     [Fact]
-    public async Task ScopeDisposalStopsReloadBeforeManagerShutdownAsync()
+    public async Task ManagerDisposalStopsReloadBeforeReleasingOutputsAsync()
     {
         WatchState state = new();
-        ServiceCollection services = CreateServices(state, "main");
+        ServiceCollection services = CreateServices(state);
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceReloadService monitor = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main").HotReload!;
-        ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main");
+        ResourceReloadService monitor = scope.ServiceProvider.GetRequiredService<ResourceManager>().HotReload!;
+        await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         using (ResourceLease<Value> initial = await manager.AcquireLeaseForTestAsync(_key))
         {
             Assert.Equal("one", initial.Value.Revision);
@@ -213,7 +219,11 @@ public sealed class ResourceWatchRegistrationTests
         state.Revision = "two";
         changes.Notify(new(_known, null));
         await state.BuildEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        await scope.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await manager.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await scope.DisposeAsync();
+        Assert.Equal(0, state.SourceDisposals);
+        await execution.DisposeAsync();
+        await provider.DisposeAsync();
 
         Assert.True(monitor.Completion.IsCompleted);
         Assert.True(state.BuildCancelled.Task.IsCompletedSuccessfully);
@@ -227,18 +237,18 @@ public sealed class ResourceWatchRegistrationTests
     }
 
     /// <summary>An observable watcher failure does not interrupt disposal of the manager and its borrowed services.</summary>
-    /// <returns>Completion of failed monitoring and successful scope cleanup.</returns>
+    /// <returns>Completion of failed monitoring and successful application cleanup.</returns>
     [Fact]
-    public async Task WatchFailureDoesNotPreventScopeCleanupAsync()
+    public async Task WatchFailureDoesNotPreventManagerCleanupAsync()
     {
         IOException failure = new("watch failed");
         WatchState state = new() { WatchFailure = failure };
-        ServiceCollection services = CreateServices(state, "main");
+        ServiceCollection services = CreateServices(state);
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceReloadService monitor = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main").HotReload!;
-        ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main");
+        ResourceReloadService monitor = scope.ServiceProvider.GetRequiredService<ResourceManager>().HotReload!;
+        await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         using (ResourceLease<Value> initial = await manager.AcquireLeaseForTestAsync(_key))
         {
             Assert.Equal("one", initial.Value.Revision);
@@ -247,7 +257,10 @@ public sealed class ResourceWatchRegistrationTests
         IOException observed = await Assert.ThrowsAsync<IOException>(async () => await monitor.Completion.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Same(failure, observed);
         Assert.Same(failure, monitor.LastError);
+        await manager.DisposeAsync();
         await scope.DisposeAsync();
+        await execution.DisposeAsync();
+        await provider.DisposeAsync();
 
         Assert.Contains("release one", state.Events);
         Assert.Equal(1, state.SourceDisposals);
@@ -261,7 +274,7 @@ public sealed class ResourceWatchRegistrationTests
     {
         ServiceCollection services = new();
         ResourceRegistrationBuilder? captured = null;
-        services.AddResources("main", builder =>
+        services.AddResources(builder =>
         {
             captured = builder;
             builder.UseSource<TrackedSource>()
@@ -279,11 +292,11 @@ public sealed class ResourceWatchRegistrationTests
     public async Task ReloadIgnoresUntrackedSourceHintsBeforeReadingRevisionsAsync()
     {
         WatchState state = new();
-        ServiceCollection services = CreateServices(state, "main");
+        ServiceCollection services = CreateServices(state);
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("main");
+        await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         TaskCompletionSource initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
         manager.HotReload!.Reloaded += (_, _) => initial.TrySetResult();
         using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
@@ -307,17 +320,14 @@ public sealed class ResourceWatchRegistrationTests
         Assert.Equal("two", current.Value.Revision);
     }
 
-    private static ServiceCollection CreateServices(WatchState state, params string[] names)
+    private static ServiceCollection CreateServices(WatchState state)
     {
         ServiceCollection services = new();
         services.AddSingleton(state);
         services.AddMemoryManagement();
-        foreach (string name in names)
-        {
-            services.AddResources(name, builder => builder.UseSource<TrackedSource>()
-                .AddSourcePipeline<Value, ValueStage>()
-                .ConfigureHotReload(new ResourceReloadOptions()));
-        }
+        services.AddResources(builder => builder.UseSource<TrackedSource>()
+            .AddSourcePipeline<Value, ValueStage>()
+            .ConfigureHotReload(new ResourceReloadOptions()));
 
         return services;
     }

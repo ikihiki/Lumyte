@@ -4,7 +4,7 @@ namespace Lumyte.Resources;
 /// <typeparam name="T">The resource output type.</typeparam>
 /// <remarks>Use and disposal of the same lease must not overlap.</remarks>
 public sealed class ResourceLease<T> : IDisposable
-    where T : class
+    where T : notnull
 {
     private readonly ResourceGeneration _generation;
     private ResourceManager? _manager;
@@ -24,6 +24,7 @@ public sealed class ResourceLease<T> : IDisposable
     public bool IsUsable => Volatile.Read(ref _manager) is { } manager && manager.IsUsable(_generation);
 
     /// <summary>Gets the retained value, rejecting returned leases and invalidated runtime dependencies.</summary>
+    /// <remarks>A value-type output is copied without transferring ownership of its referenced resources.</remarks>
     /// <exception cref="ObjectDisposedException">This lease has been returned.</exception>
     /// <exception cref="ResourceUnavailableException">A required runtime generation is unavailable.</exception>
     public T Value
