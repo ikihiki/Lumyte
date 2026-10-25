@@ -49,8 +49,9 @@ public sealed class OpenALRegressionTests
         using IAudioVoice voice = device.CreateVoice(clip);
         voice.Play();
 
-        // Inject the loss latch; the null output driver cannot simulate physical unplugging.
-        typeof(OpenALDevice).GetField("_unavailable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(device, true);
+        // Service-observed failure must latch into the original backend without native cleanup.
+        device.Invalidate();
+        device.Invalidate();
         Assert.Equal(AudioOutputState.Unavailable, device.OutputState);
         Assert.Throws<AudioDeviceUnavailableException>(voice.Play);
         Assert.Throws<AudioDeviceUnavailableException>(voice.Pause);
@@ -96,6 +97,7 @@ public sealed class OpenALRegressionTests
                 }
 
                 Assert.Throws<InvalidOperationException>(voice.Play);
+                Assert.Throws<InvalidOperationException>(device.Invalidate);
             }
             catch (Exception error)
             {
