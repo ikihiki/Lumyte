@@ -20,6 +20,8 @@ internal sealed class ResourceGeneration(ResourceNode node, ulong revision, IRes
 
     internal ResourceGenerationState State { get; set; } = ResourceGenerationState.Building;
 
+    internal bool RegistrationsClosed { get; set; }
+
     internal ResourceGenerationCleanupPhase CleanupPhase { get; set; } = ResourceGenerationCleanupPhase.Output;
 
     internal Dictionary<ResourceNode, ResourceDependency> Dependencies { get; } = [];

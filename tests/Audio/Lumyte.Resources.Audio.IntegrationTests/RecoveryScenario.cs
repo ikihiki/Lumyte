@@ -45,6 +45,8 @@ internal static class RecoveryScenario
             Expect<ArgumentException>(() => wait(audio.State.CreateVoiceForLease(freshDevice, oldVoice.Clip, AudioBus.Effects).AsTask()), "An old clip was relabeled as belonging to the new device generation.");
         }
 
+        Expect<ArgumentException>(() => wait(audio.State.CreateVoiceWithLease(oldVoice.Clip, AudioBus.Effects).AsTask()), "Combined voice creation accepted a clip from another generation.");
+
         Task<ResourceReloadResult> rebuild = manager.RebuildRuntimeAsync(["Audio"]).AsTask();
         wait(rebuild);
         Require(rebuild.GetAwaiter().GetResult().Status == ResourceReloadStatus.Published, "Audio recovery did not publish rebuilt resources.");

@@ -7,12 +7,18 @@ public sealed partial class ExecutionRuntime
 {
     private int _activeCpu;
 
-    private int DrainGroups(List<GroupDefinition> groups, ref int cursor, int maxCount, TimeSpan maxElapsed, bool lifecycleOnly, long limit)
+    private int DrainGroups(List<GroupDefinition> groups, ref int cursor, int maxCount, TimeSpan maxElapsed, bool lifecycleOnly, long limit, long deadline = long.MaxValue)
     {
         long started = Stopwatch.GetTimestamp();
         int count = 0;
-        while (count < maxCount && Stopwatch.GetElapsedTime(started) < maxElapsed)
+        while (count < maxCount)
         {
+            long now = Stopwatch.GetTimestamp();
+            if (now >= deadline || Stopwatch.GetElapsedTime(started, now) >= maxElapsed)
+            {
+                break;
+            }
+
             QueuedWork? pending = null;
             Exception? error = null;
             lock (Sync)
@@ -324,9 +330,6 @@ public sealed partial class ExecutionRuntime
         }
 
         ThreadLoopOptions options = definition.Options;
-        long window = Stopwatch.GetTimestamp();
-        int usedCount = 0;
-        TimeSpan usedTime = TimeSpan.Zero;
         try
         {
             while (true)
@@ -339,29 +342,68 @@ public sealed partial class ExecutionRuntime
                     }
                 }
 
-                long now = Stopwatch.GetTimestamp();
-                if (Stopwatch.GetElapsedTime(window, now) >= options.Period)
-                {
-                    long period = Math.Max(1, (long)(options.Period.TotalSeconds * Stopwatch.Frequency));
-                    window += Math.Max(1, (now - window) / period) * period;
-                    usedCount = 0;
-                    usedTime = TimeSpan.Zero;
-                }
-
                 foreach (UpdateDefinition update in definition.Updates)
                 {
                     RunUpdate(update, options);
                 }
 
-                if (usedCount < options.MaxControlWorkItems && usedTime < options.MaxControlTime)
+                long nextUpdate = long.MaxValue;
+                lock (Sync)
                 {
-                    long drainStarted = Stopwatch.GetTimestamp();
-                    usedCount += DrainGroups(definition.Groups, ref definition.Cursor, options.MaxControlWorkItems - usedCount, options.MaxControlTime - usedTime, false, ReadSequence());
-                    usedTime += Stopwatch.GetElapsedTime(drainStarted);
+                    if (_status == ExecutionStatus.Running)
+                    {
+                        foreach (UpdateDefinition update in definition.Updates)
+                        {
+                            if (update.Gates.All(static gate => gate.Open && gate.Failure is null))
+                            {
+                                nextUpdate = Math.Min(nextUpdate, update.Next);
+                            }
+                        }
+                    }
                 }
 
-                TimeSpan untilWindow = options.Period - Stopwatch.GetElapsedTime(window);
-                int milliseconds = (int)Math.Clamp(Math.Ceiling(untilWindow.TotalMilliseconds), 1, int.MaxValue);
+                // A bounded turn yields back to due updates, not to the next update period.
+                if (DrainGroups(definition.Groups, ref definition.Cursor, options.MaxControlWorkItems, options.MaxControlTime, false, ReadSequence(), nextUpdate) != 0)
+                {
+                    continue;
+                }
+
+                bool ready = false;
+                lock (Sync)
+                {
+                    if (definition.Exit)
+                    {
+                        return;
+                    }
+
+                    foreach (GroupDefinition group in definition.Groups)
+                    {
+                        if (group.Head is { } candidate && CanClaim(candidate, out _))
+                        {
+                            ready = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (ready)
+                {
+                    continue;
+                }
+
+                int milliseconds = Timeout.Infinite;
+                if (nextUpdate != long.MaxValue)
+                {
+                    TimeSpan remaining = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), nextUpdate);
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        continue;
+                    }
+
+                    milliseconds = (int)Math.Clamp(Math.Ceiling(remaining.TotalMilliseconds), 1, int.MaxValue);
+                }
+
+                // Queue admission, gate changes and shutdown all signal this event.
                 definition.Wake!.WaitOne(milliseconds);
             }
         }
