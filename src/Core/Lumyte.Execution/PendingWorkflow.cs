@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Tasks.Sources;
 
 namespace Lumyte.Execution;
@@ -15,6 +16,7 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
     private ValueTask<TResult> _operation;
     private TCommand _command;
     private TResult? _result;
+    private long _sliceStarted;
     private int _observed;
     private bool _started;
     private bool _queued = true;
@@ -101,6 +103,7 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
 
         SynchronizationContext? previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(_context);
+        _sliceStarted = Stopwatch.GetTimestamp();
         try
         {
             if (enter)
@@ -222,6 +225,8 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
     private sealed class WorkflowContext(PendingWorkflow<TCommand, TResult> workflow) : SynchronizationContext, IWorkflowContext
     {
         public ExecutionRuntime? Runtime => workflow._runtime;
+
+        public bool ShouldYield(TimeSpan budget) => Stopwatch.GetElapsedTime(workflow._sliceStarted) >= budget;
 
         public override SynchronizationContext CreateCopy() => this;
 

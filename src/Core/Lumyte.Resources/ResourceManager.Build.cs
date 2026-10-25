@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -34,13 +35,6 @@ public sealed partial class ResourceManager
         }
 
         ResourceGeneration generation = await dependency.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(requester.CanSharePipeline);
-        if (requester.ShouldYield)
-        {
-            await Task.Yield();
-            requester.RestartSlice();
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-
         lock (_gate)
         {
             ThrowIfUnavailable(generation);
@@ -173,6 +167,94 @@ public sealed partial class ResourceManager
 
             return Task.WhenAll(generation.Dependencies.Values.Select(static dependency => (Task)dependency.Completion.Task)
                 .Concat(generation.Sources.Values.Select(static source => (Task)source.Completion.Task)));
+        }
+    }
+
+    internal async ValueTask ExecuteStageAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+    {
+        context.BeginExecution();
+        ResourceGeneration generation = context.Generation;
+        Exception? failure = null;
+        try
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                object value = await generation.Stage.BuildAsync(context, cancellationToken);
+                if (!generation.Stage.OutputType.IsInstanceOfType(value))
+                {
+                    throw new InvalidOperationException($"Pipeline for '{generation.Stage.OutputType}' returned an invalid output.");
+                }
+
+                lock (_gate)
+                {
+                    generation.Value = value;
+                }
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+            finally
+            {
+                context.Close();
+            }
+
+            // Keep the job alive until all registered operations finish, including ignored or canceled waits.
+            try
+            {
+                await CompleteContextOperationsAsync(generation);
+            }
+            catch (Exception error)
+            {
+                failure = failure is null ? error : ReferenceEquals(failure, error) ? failure : new AggregateException(failure, error);
+            }
+
+            lock (_gate)
+            {
+                if (generation.Value is { } output && generation.Dependencies.Values.Any(dependency => ReferenceEquals(dependency.Generation?.Value, output)))
+                {
+                    // A dependency requested without awaiting it may only become known during draining.
+                    // Its generation owns this value; never destroy it as the parent's output.
+                    generation.Value = null;
+                    var aliasError = new InvalidOperationException("A stage cannot return a borrowed dependency as a separately owned output.");
+                    failure = failure is null ? aliasError : new AggregateException(failure, aliasError);
+                }
+            }
+
+            if (failure is null)
+            {
+                try
+                {
+                    await CleanupGenerationAsync(generation, true, true);
+                    lock (_gate)
+                    {
+                        CaptureResidentRuntimes(generation);
+                        generation.State = ResourceGenerationState.Ready;
+                    }
+
+                    return;
+                }
+                catch (Exception error)
+                {
+                    failure = error;
+                }
+            }
+
+            try
+            {
+                await CleanupGenerationAsync(generation, false, true);
+            }
+            catch (Exception cleanupError)
+            {
+                failure = new AggregateException(failure, cleanupError);
+            }
+
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+        finally
+        {
+            context.EndExecution();
         }
     }
 
@@ -359,7 +441,7 @@ public sealed partial class ResourceManager
             }
 
             (IResourceStage stage, IResourceRuntime runtime) = _stages[node.TypeHandle];
-            ResourceGeneration candidate = new(node, checked(++_revision), stage, runtime);
+            ResourceGeneration candidate = new(node, checked(++_revision), stage, runtime, _executors[runtime]);
             slot = new(candidate);
             _generations.Add(candidate);
             view.Builds.Add(node, slot);
@@ -376,79 +458,54 @@ public sealed partial class ResourceManager
     {
         ResourceGeneration generation = slot.Generation;
         ResourceBuildContext context = new(this, view, generation, parent);
-        Exception? failure = null;
         try
         {
             view.CancellationToken.ThrowIfCancellationRequested();
-            if (parent is not null && context.InlineDepth >= 32)
+            if (parent is null)
             {
-                await Task.Yield();
-                context.InlineDepth = 0;
-                context.RestartSlice();
+                await generation.Executor.BuildAsync(context, view.CancellationToken).ConfigureAwait(false);
             }
-
-            object value = parent is null
-                ? await generation.Runtime.BuildAsync(generation.Stage, context, view.CancellationToken).ConfigureAwait(false)
-                : await context.ExecutePipelineAsync(generation.Stage, view.CancellationToken);
-            context.Close();
-            if (!generation.Stage.OutputType.IsInstanceOfType(value))
+            else
             {
-                throw new InvalidOperationException($"Pipeline for '{generation.Stage.OutputType}' returned an invalid output.");
-            }
-
-            lock (_gate)
-            {
-                if (generation.Dependencies.Values.Any(dependency => ReferenceEquals(dependency.Generation?.Value, value)))
+                if (context.InlineDepth >= 32)
                 {
-                    throw new InvalidOperationException("A stage cannot return a borrowed dependency as a separately owned output.");
+                    await Task.Yield();
+                    context.InlineDepth = 0;
                 }
 
-                generation.Value = value;
+                await context.ExecuteAsync(view.CancellationToken);
+                if (parent.ShouldYield)
+                {
+                    // Keep the fairness suspension inside the tracked dependency build, even if its caller did not await it.
+                    await Task.Yield();
+                }
             }
 
-            await context.PendingOperations;
-            await CleanupGenerationAsync(generation, true, parent is not null);
-            lock (_gate)
+            if (!context.IsClosed)
             {
-                CaptureResidentRuntimes(generation);
-                generation.State = ResourceGenerationState.Ready;
+                throw new InvalidOperationException("The executor must run the context before completing construction.");
             }
 
-            // Internal continuations may run inline; publish only after releasing the manager gate.
             slot.Completion.TrySetResult(generation);
-            return;
         }
         catch (Exception error)
         {
-            failure = error;
-        }
-        finally
-        {
-            context.Close();
-        }
-
-        try
-        {
-            await context.PendingOperations;
-        }
-        catch (Exception error)
-        {
-            if (!ReferenceEquals(failure, error))
+            // Rejected or canceled admission never entered the stage procedure.
+            if (!context.IsClosed)
             {
-                failure = new AggregateException(failure!, error);
+                context.Close();
+                try
+                {
+                    await CleanupGenerationAsync(generation, false).ConfigureAwait(false);
+                }
+                catch (Exception cleanupError)
+                {
+                    error = new AggregateException(error, cleanupError);
+                }
             }
-        }
 
-        try
-        {
-            await CleanupGenerationAsync(generation, false, parent is not null);
+            slot.Completion.TrySetException(error);
         }
-        catch (Exception cleanupError)
-        {
-            failure = new AggregateException(failure!, cleanupError);
-        }
-
-        slot.Completion.TrySetException(failure!);
     }
 
     private async Task ResolveDependencyAsync(ResourceBuildView view, ResourceNode node, ResourceDependency dependency, ResourceBuildContext requester)

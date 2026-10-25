@@ -1,24 +1,16 @@
 namespace Lumyte.Resources;
 
-/// <summary>Manages the execution environment used to construct and destroy resources.</summary>
+/// <summary>Provides the stable environment required by resource stages.</summary>
 /// <remarks>
-/// An environment coordinates job dispatch, owner access and any device services needed by its stages.
-/// Device environments acquire current epochs for each build and can also implement <see cref="IResourceRuntimeDependency"/>.
-/// The manager borrows the stable environment, captures it for each output generation and finishes cleanup before it stops.
+/// The manager captures the executor and collects dependencies once during registration.
+/// Device services remain stable across physical epoch changes; acquire their current leases per build.
+/// The host owns shared services; the manager retains their uses until output cleanup completes.
 /// </remarks>
 public interface IResourceRuntime
 {
-    /// <summary>Dispatches a pipeline segment and returns its actual completed output.</summary>
-    /// <param name="stage">The borrowed entry stage for this runtime segment.</param>
-    /// <param name="context">The manager-owned construction context.</param>
-    /// <param name="cancellationToken">The shared build's cancellation token.</param>
-    /// <returns>The owned output. Started work must finish before this operation completes.</returns>
-    /// <remarks>Invoke <see cref="ResourceBuildContext.ExecutePipelineAsync"/> inside the job to share it with same-runtime dependencies.</remarks>
-    ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken);
+    /// <summary>Gets the shared executor used to construct and release outputs in this environment.</summary>
+    IResourceExecutor Executor { get; }
 
-    /// <summary>Dispatches destruction of an output, preserving failures for the manager to retry.</summary>
-    /// <param name="stage">The stage that created the output.</param>
-    /// <param name="resource">The output whose original owner and device epoch must be used.</param>
-    /// <returns>Completion of the actual destruction attempt.</returns>
-    ValueTask ReleaseAsync(IResourceStage stage, object resource);
+    /// <summary>Gets the environment dependencies observed by the manager, collected once during registration.</summary>
+    IReadOnlyList<IResourceRuntimeDependency> Dependencies => [];
 }

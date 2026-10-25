@@ -11,6 +11,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
     private readonly Dictionary<RuntimeTypeHandle, (IResourceStage Stage, IResourceRuntime Runtime)> _stages;
+    private readonly Dictionary<IResourceRuntime, IResourceExecutor> _executors = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
     private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
@@ -88,9 +89,13 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
             foreach ((IResourceStage _, IResourceRuntime selectedRuntime) in _stages.Values)
             {
-                if (selectedRuntime is IResourceRuntimeDependency provider)
+                if (!_executors.ContainsKey(selectedRuntime))
                 {
-                    RegisterRuntimeProvider(provider);
+                    _executors.Add(selectedRuntime, selectedRuntime.Executor);
+                    foreach (IResourceRuntimeDependency provider in selectedRuntime.Dependencies)
+                    {
+                        RegisterRuntimeProvider(provider);
+                    }
                 }
             }
 

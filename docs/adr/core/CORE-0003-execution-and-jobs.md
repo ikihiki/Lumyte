@@ -8,7 +8,7 @@
 
 Audioの生成・操作・解放など、同じ所有スレッドが必要な処理と、並列化できるCPU処理を共通の仕組みで扱う。Browserのようにmanaged threadを作れない環境でも、同じ仕事をHost上で実行できる必要がある。
 
-呼び出し側からラムダを配送する方式では、実行条件・順序・寿命の管理が分散する。モジュールが仕事を宣言し、利用側が型付きデータを送る設計を採る。coreの実行基盤とgeneratorを実装し、型付きコマンドの汎用サンプルで所有制約・DI・Host統合を検証する。Audio backendとResources／ECSの接続は各統合層の独立PRで行う。PR #28の削除予定のスレッド設計には依存しない。
+呼び出し側からラムダを配送する方式では、実行条件・順序・寿命の管理が分散する。モジュールが仕事を宣言し、利用側が型付きデータを送る設計を採る。coreの実行基盤とgeneratorが、所有制約・DI・Host統合を共通化する。Audio backendやResources／ECS固有の状態と資源所有は、それぞれの統合層が管理する。
 
 ## 決定
 
@@ -188,6 +188,7 @@ Configure用builderは自moduleのowner・updateだけを設定できる。Prepa
 +    public sealed class ExecutionRuntime
 +    {
 +        public ExecutionRuntime(IEnumerable<IExecutionModule> modules); // 定義を収集する唯一の公開constructor
++        public static bool ShouldYield(TimeSpan budget); // 現在のworkflow同期区間の経過を判定
 +        public void PrepareOnCurrentHost(OwnerPlacement placement, CpuExecutionMode cpuMode,
 +            int maxCpuConcurrency, ExecutionOptions options);
 +        public ExecutionStatus Status { get; }
@@ -310,6 +311,7 @@ Pump、同期Wait、runtimeの起動・停止をworkflow内から行わない。
 
 開始と通常のawait後の継続を同じCPU schedulerへ配送する。
 実行中の同期区間だけがCPU枠を使い、未完了のI/Oや子ジョブを待つ間は返す。
+`ExecutionRuntime.ShouldYield(budget)`は、現在実行中のworkflowの同期区間が指定した時間予算を超えたかを返すAPIである。handlerまたは継続を実行するたびに計測を始め、I/O・キュー待機の時間を含めない。budgetには正の時間を指定し、実行中workflowの外ではfalseを返す。呼出側が境界でyieldするために使い、同期処理を自動中断するものではない。
 ThreadPoolでは並列度を制限し、Cooperativeでは`PumpJobs`が各同期区間を進める。
 同じ物理threadへ戻る保証はない。SynchronizationContextを捕捉しない
 `ConfigureAwait(false)`やTask.Runはこの制御の対象外となるため、workflowのCPU処理では通常のawaitを使う。
@@ -474,7 +476,7 @@ Audioのbackend接続、デコード、デバイス世代と復旧は独立し�
 
 ## 検証と実装順序
 
-Host／Dedicated、周期駆動、Cooperative／ThreadPool graph、generatorを実装した。検証結果と再現手順は[実行サンプル](../../../samples/Lumyte.Execution.Sample/README.md)を参照し。Audio固有のbackend接続は独立したPRで検証する。Resources／ECS統合と詳細な性能分布は後続で確認する。受け入れ条件は次に集約する。
+Host／Dedicated、周期駆動、Cooperative／ThreadPool graph、generatorの再現手順は[実行サンプル](../../../samples/Lumyte.Execution.Sample/README.md)を参照する。AudioやResources固有の所有制約は各統合層のテストで検証する。実アセットでの遅延分布は実行環境ごとの測定を必要とする。受け入れ条件は次に集約する。
 
 - 生成後コンパイル、診断、決定的生成、AOT／実Browser。元参照1本、静的入口、本体展開、中継call・boxing・async state machine・StackTraceHiddenの不在を確認する。
 - DIなし／引数なしのDI登録からの収集・起動・停止、登録順に依存しない宣言と依存検証、Prepare／Pumpの固定Host制約、Prepare競合とrollback、権限、静的入口の再接続拒否、停止後の参照解放と未観測結果保持を確認する。
@@ -504,7 +506,7 @@ Host／Dedicated、周期駆動、Cooperative／ThreadPool graph、generatorを�
 
 ## 別途決定する事項
 
-Engineのphase／DI extension、platformのwake実装、Audio／ECS統合の最終公開型、Browser worker対応、複数周期の共有thread、priority／work stealing／跨run依存、generatorのgeneric・nested対応は後続で決める。
+Browser worker、複数周期の共有thread、priority、work stealing、跨run依存、generatorのgeneric・nested対応は、この実行契約には含めない。各モジュールの公開型やホストへの組込みは統合層の契約で定める。
 
 ## 関連資料
 
