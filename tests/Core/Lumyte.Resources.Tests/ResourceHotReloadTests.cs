@@ -8,7 +8,7 @@ using Xunit;
 namespace Lumyte.Resources.Tests;
 
 /// <summary>Exercises automatic reload batching and worker lifetime through public resource contracts.</summary>
-public sealed class ResourceReloadServiceTests
+public sealed class ResourceHotReloadTests
 {
     private static readonly ResourceId _asset = new("asset");
     private static readonly ResourceKey<Value> _key = new(_asset);
@@ -19,16 +19,14 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task DuplicateHintsAreDebouncedAsync()
     {
-        await using Fixture fixture = new();
-        using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, new()
+        await using Fixture fixture = new(new()
         {
             DebounceDelay = TimeSpan.FromMilliseconds(200),
         });
+        using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         int results = 0;
-        service.Reloaded += (_, _) => Interlocked.Increment(ref results);
-        service.Start();
-        service.Start();
+        fixture.Manager.Reloaded += (_, _) => Interlocked.Increment(ref results);
         await fixture.Changes.Started.Task.WaitAsync(_timeout);
         fixture.Source.Revision = "second";
         for (int i = 0; i < 20; i++)
@@ -37,7 +35,7 @@ public sealed class ResourceReloadServiceTests
         }
 
         fixture.Changes.Complete();
-        await service.Completion.WaitAsync(_timeout);
+        await fixture.Manager.HotReloadCompletion.WaitAsync(_timeout);
         Assert.Equal(1, results);
         Assert.Equal(2, fixture.Pipeline.Builds);
         Assert.Equal("first", original.Value.Text);
@@ -50,22 +48,21 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task ContinuousHintsReachMaximumBatchDelayAsync()
     {
-        await using Fixture fixture = new();
-        using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, new()
+        await using Fixture fixture = new(new()
         {
             DebounceDelay = TimeSpan.FromMilliseconds(100),
             MaximumBatchDelay = TimeSpan.FromMilliseconds(150),
         });
+        using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         TaskCompletionSource published = NewSignal();
-        service.Reloaded += (_, args) =>
+        fixture.Manager.Reloaded += (_, args) =>
         {
             if (args.Result.Status == ResourceReloadStatus.Published)
             {
                 published.TrySetResult();
             }
         };
-        service.Start();
         fixture.Source.Revision = "second";
         using CancellationTokenSource cancellation = new(_timeout);
         while (!published.Task.IsCompleted)
@@ -74,7 +71,7 @@ public sealed class ResourceReloadServiceTests
             await Task.Delay(TimeSpan.FromMilliseconds(10), cancellation.Token);
         }
 
-        Assert.False(service.Completion.IsCompleted);
+        Assert.False(fixture.Manager.HotReloadCompletion.IsCompleted);
         using ResourceLease<Value> current = await fixture.Manager.AcquireLeaseForTestAsync(_key);
         Assert.Equal("second", current.Value.Text);
     }
@@ -84,15 +81,17 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task SynchronousContinuousSourceDoesNotStarveReloadAsync()
     {
-        await using Fixture fixture = new();
+        await using Fixture fixture = new(
+            new()
+            {
+                DebounceDelay = TimeSpan.FromMilliseconds(20),
+                MaximumBatchDelay = TimeSpan.FromMilliseconds(30),
+            },
+            new SynchronousChanges());
         using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
-        await using ResourceReloadService service = new(fixture.Manager, new SynchronousChanges(), new()
-        {
-            DebounceDelay = TimeSpan.FromMilliseconds(20),
-            MaximumBatchDelay = TimeSpan.FromMilliseconds(30),
-        });
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         TaskCompletionSource published = NewSignal();
-        service.Reloaded += (_, args) =>
+        fixture.Manager.Reloaded += (_, args) =>
         {
             if (args.Result.Status == ResourceReloadStatus.Published)
             {
@@ -100,13 +99,13 @@ public sealed class ResourceReloadServiceTests
             }
         };
         fixture.Source.Revision = "second";
-        service.Start();
         await published.Task.WaitAsync(_timeout);
-        await service.StopAsync().WaitAsync(_timeout);
-        Assert.True(service.Completion.IsCompletedSuccessfully);
+        original.Dispose();
+        await fixture.Manager.DisposeAsync().AsTask().WaitAsync(_timeout);
+        Assert.True(fixture.Manager.HotReloadCompletion.IsCompletedSuccessfully);
     }
 
-    /// <summary>Initial publications can request rescans while source notifications continuously wake the same consumer.</summary>
+    /// <summary>Initial publications can request input checks while source notifications continuously wake the same consumer.</summary>
     /// <returns>Completion of concurrent publication, a subsequent reload and clean shutdown.</returns>
     [Fact]
     public async Task InitialPublicationAndSourceHintsShareOneNotificationSignalAsync()
@@ -120,7 +119,7 @@ public sealed class ResourceReloadServiceTests
             DebounceDelay = TimeSpan.FromMilliseconds(20),
             MaximumBatchDelay = TimeSpan.FromMilliseconds(30),
         });
-        ResourceReloadService service = manager.HotReload!;
+        ResourceManager service = manager;
         TaskCompletionSource published = NewSignal();
         service.Reloaded += (_, args) =>
         {
@@ -153,9 +152,10 @@ public sealed class ResourceReloadServiceTests
             Assert.Equal("second", current.Value.Text);
         }
 
-        await service.StopAsync().WaitAsync(timeout.Token);
-        Assert.True(service.Completion.IsCompletedSuccessfully);
-        Assert.Null(service.LastError);
+        original.Dispose();
+        await manager.DisposeAsync().AsTask().WaitAsync(timeout.Token);
+        Assert.True(service.HotReloadCompletion.IsCompletedSuccessfully);
+        Assert.Null(service.LastReloadError);
     }
 
     /// <summary>A hint arriving during a blocked build survives the current batch and its conflict.</summary>
@@ -163,8 +163,9 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task NotificationDuringReloadIsRetainedAsync()
     {
-        await using Fixture fixture = new();
+        await using Fixture fixture = new(ImmediateOptions());
         using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         TaskCompletionSource entered = NewSignal();
         TaskCompletionSource resume = NewSignal();
         fixture.Pipeline.AfterSnapshot = async (snapshot, token) =>
@@ -175,10 +176,9 @@ public sealed class ResourceReloadServiceTests
                 await resume.Task.WaitAsync(token);
             }
         };
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, ImmediateOptions());
         ConcurrentQueue<ResourceReloadStatus> statuses = [];
         TaskCompletionSource published = NewSignal();
-        service.Reloaded += (_, args) =>
+        fixture.Manager.Reloaded += (_, args) =>
         {
             statuses.Enqueue(args.Result.Status);
             if (args.Result.Status == ResourceReloadStatus.Published)
@@ -186,7 +186,6 @@ public sealed class ResourceReloadServiceTests
                 published.TrySetResult();
             }
         };
-        service.Start();
         fixture.Source.Revision = "second";
         await fixture.Changes.SendAsync(new(_asset, null));
         await entered.Task.WaitAsync(_timeout);
@@ -206,8 +205,9 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task FailedReloadRetriesAndKeepsPreviousGraphAsync()
     {
-        await using Fixture fixture = new();
+        await using Fixture fixture = new(ImmediateOptions() with { MaximumRetryCount = 1 });
         using ResourceReference<Value> reference = await fixture.Manager.AcquireAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         int attempts = 0;
         fixture.Pipeline.AfterSnapshot = (_, _) =>
         {
@@ -218,10 +218,9 @@ public sealed class ResourceReloadServiceTests
 
             return Task.CompletedTask;
         };
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, ImmediateOptions() with { MaximumRetryCount = 1 });
         TaskCompletionSource published = NewSignal();
         int failures = 0;
-        service.ReloadFailed += (_, args) =>
+        fixture.Manager.ReloadFailed += (_, args) =>
         {
             Assert.IsType<IOException>(args.Error);
             Assert.Equal(1, args.Attempt);
@@ -234,16 +233,15 @@ public sealed class ResourceReloadServiceTests
 
             failures++;
         };
-        service.Reloaded += (_, _) => published.TrySetResult();
-        service.Start();
+        fixture.Manager.Reloaded += (_, _) => published.TrySetResult();
         fixture.Source.Revision = "second";
         await fixture.Changes.SendAsync(new(_asset, null));
         await published.Task.WaitAsync(_timeout);
 
         Assert.Equal(1, failures);
         Assert.Equal(2, attempts);
-        Assert.Null(service.LastError);
-        Assert.Equal(ResourceReloadStatus.Published, service.LastResult!.Status);
+        Assert.Null(fixture.Manager.LastReloadError);
+        Assert.Equal(ResourceReloadStatus.Published, fixture.Manager.LastReloadResult!.Status);
     }
 
     /// <summary>Exhausting a batch's retries does not stop subsequent change notifications.</summary>
@@ -251,17 +249,17 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task ExhaustedRetryAllowsFutureNotificationAsync()
     {
-        await using Fixture fixture = new();
+        await using Fixture fixture = new(ImmediateOptions() with { MaximumRetryCount = 1 });
         using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         bool failing = true;
         fixture.Pipeline.AfterSnapshot = (_, _) => failing
             ? Task.FromException(new IOException("Temporarily unreadable"))
             : Task.CompletedTask;
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, ImmediateOptions() with { MaximumRetryCount = 1 });
         TaskCompletionSource exhausted = NewSignal();
         TaskCompletionSource published = NewSignal();
         int failures = 0;
-        service.ReloadFailed += (_, args) =>
+        fixture.Manager.ReloadFailed += (_, args) =>
         {
             failures++;
             if (!args.WillRetry)
@@ -269,19 +267,18 @@ public sealed class ResourceReloadServiceTests
                 exhausted.TrySetResult();
             }
         };
-        service.Reloaded += (_, _) => published.TrySetResult();
-        service.Start();
+        fixture.Manager.Reloaded += (_, _) => published.TrySetResult();
         fixture.Source.Revision = "second";
         await fixture.Changes.SendAsync(new(_asset, null));
         await exhausted.Task.WaitAsync(_timeout);
         Assert.Equal(2, failures);
-        Assert.IsType<IOException>(service.LastError);
-        Assert.False(service.Completion.IsCompleted);
+        Assert.IsType<IOException>(fixture.Manager.LastReloadError);
+        Assert.False(fixture.Manager.HotReloadCompletion.IsCompleted);
 
         failing = false;
         await fixture.Changes.SendAsync(new(_asset, null));
         await published.Task.WaitAsync(_timeout);
-        Assert.Equal(ResourceReloadStatus.Published, service.LastResult!.Status);
+        Assert.Equal(ResourceReloadStatus.Published, fixture.Manager.LastReloadResult!.Status);
     }
 
     /// <summary>A conflicting source revision is retried even without another notification.</summary>
@@ -289,8 +286,9 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task ConflictRetriesLatestRevisionAsync()
     {
-        await using Fixture fixture = new();
+        await using Fixture fixture = new(ImmediateOptions() with { MaximumRetryCount = 1 });
         using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         fixture.Pipeline.AfterSnapshot = (snapshot, _) =>
         {
             if (snapshot.Revision == "second")
@@ -300,10 +298,9 @@ public sealed class ResourceReloadServiceTests
 
             return Task.CompletedTask;
         };
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, ImmediateOptions() with { MaximumRetryCount = 1 });
         ConcurrentQueue<ResourceReloadStatus> statuses = [];
         TaskCompletionSource published = NewSignal();
-        service.Reloaded += (_, args) =>
+        fixture.Manager.Reloaded += (_, args) =>
         {
             statuses.Enqueue(args.Result.Status);
             if (args.Result.Status == ResourceReloadStatus.Published)
@@ -311,7 +308,6 @@ public sealed class ResourceReloadServiceTests
                 published.TrySetResult();
             }
         };
-        service.Start();
         fixture.Source.Revision = "second";
         await fixture.Changes.SendAsync(new(_asset, null));
         await published.Task.WaitAsync(_timeout);
@@ -328,15 +324,14 @@ public sealed class ResourceReloadServiceTests
     [InlineData(true)]
     public async Task RescanRevalidatesTrackedSourcesAsync(bool overflow)
     {
-        await using Fixture fixture = new();
-        using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
-        await using ResourceReloadService service = new(fixture.Manager, fixture.Changes, new()
+        await using Fixture fixture = new(new()
         {
             MaximumPendingChanges = 1,
         });
+        using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
         TaskCompletionSource published = NewSignal();
-        service.Reloaded += (_, _) => published.TrySetResult();
-        service.Start();
+        fixture.Manager.Reloaded += (_, _) => published.TrySetResult();
         fixture.Source.Revision = "second";
         if (overflow)
         {
@@ -349,27 +344,21 @@ public sealed class ResourceReloadServiceTests
         }
 
         await published.Task.WaitAsync(_timeout);
-        Assert.Equal(ResourceReloadStatus.Published, service.LastResult!.Status);
+        Assert.Equal(ResourceReloadStatus.Published, fixture.Manager.LastReloadResult!.Status);
         using ResourceLease<Value> current = await fixture.Manager.AcquireLeaseForTestAsync(_key);
         Assert.Equal("second", current.Value.Text);
     }
 
-    /// <summary>Watcher failures remain observable and disposal does not take ownership of the manager.</summary>
+    /// <summary>Watcher failures remain observable while ordinary resource loading remains available.</summary>
     /// <returns>Completion of the faulted service and continued manager use.</returns>
     [Fact]
     public async Task WatcherFailureFaultsCompletionAsync()
     {
-        await using Fixture fixture = new();
-        ResourceReloadService service = new(fixture.Manager, fixture.Changes);
-        service.Start();
+        await using Fixture fixture = new(ImmediateOptions());
         await fixture.Changes.Started.Task.WaitAsync(_timeout);
         fixture.Changes.Complete(new IOException("Watcher failed"));
-        await Assert.ThrowsAsync<IOException>(() => service.Completion.WaitAsync(_timeout));
-        Assert.IsType<IOException>(service.LastError);
-        await Assert.ThrowsAsync<IOException>(() => service.StopAsync());
-        await service.DisposeAsync();
-        await service.DisposeAsync();
-        Assert.Throws<ObjectDisposedException>(service.Start);
+        await Assert.ThrowsAsync<IOException>(() => fixture.Manager.HotReloadCompletion.WaitAsync(_timeout));
+        Assert.IsType<IOException>(fixture.Manager.LastReloadError);
         using ResourceLease<Value> lease = await fixture.Manager.AcquireLeaseForTestAsync(_key);
         Assert.Equal("first", lease.Value.Text);
     }
@@ -379,35 +368,148 @@ public sealed class ResourceReloadServiceTests
     [Fact]
     public async Task ObserverFailureStopsWatcherAsync()
     {
-        await using Fixture fixture = new();
+        await using Fixture fixture = new(ImmediateOptions());
         using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
-        ResourceReloadService service = new(fixture.Manager, fixture.Changes, ImmediateOptions());
-        service.Reloaded += (_, _) => throw new InvalidOperationException("Observer failed");
-        service.Start();
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
+        fixture.Manager.Reloaded += (_, _) => throw new InvalidOperationException("Observer failed");
         fixture.Source.Revision = "second";
         await fixture.Changes.SendAsync(new(_asset, null));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.Completion.WaitAsync(_timeout));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Manager.HotReloadCompletion.WaitAsync(_timeout));
         Assert.True(fixture.Changes.Stopped.Task.IsCompleted);
-        await service.DisposeAsync();
+        original.Dispose();
+        await fixture.Manager.DisposeAsync();
     }
 
     /// <summary>Throwing cancellation callbacks cannot bypass joining the watcher during disposal.</summary>
-    /// <returns>Completion of disposal and continued manager ownership.</returns>
+    /// <returns>Completion of manager disposal and observation of the cancellation failure.</returns>
     [Fact]
     public async Task CancellationCallbackFailureStillJoinsWorkersAsync()
     {
-        await using Fixture fixture = new();
-        fixture.Changes.ThrowOnCancellation = true;
-        ResourceReloadService service = new(fixture.Manager, fixture.Changes);
-        service.Start();
+        await using Fixture fixture = new(ImmediateOptions(), throwOnCancellation: true);
         await fixture.Changes.Started.Task.WaitAsync(_timeout);
-        Task first = service.DisposeAsync().AsTask();
-        Task second = service.DisposeAsync().AsTask();
+        Task first = fixture.Manager.DisposeAsync().AsTask();
+        Task second = fixture.Manager.DisposeAsync().AsTask();
         await Task.WhenAll(first, second).WaitAsync(_timeout);
         Assert.True(fixture.Changes.Stopped.Task.IsCompleted);
-        Assert.IsType<AggregateException>(service.LastError);
-        using ResourceLease<Value> lease = await fixture.Manager.AcquireLeaseForTestAsync(_key);
-        Assert.Equal("first", lease.Value.Text);
+        Assert.IsType<AggregateException>(fixture.Manager.LastReloadError);
+        Assert.True(fixture.Manager.HotReloadCompletion.IsCompleted);
+    }
+
+    /// <summary>Initial publication checks each new input without rescanning previously loaded inputs.</summary>
+    /// <returns>Completion of independent initial publications and their bounded revision checks.</returns>
+    [Fact]
+    public async Task InitialPublicationChecksOnlyNewInputsAsync()
+    {
+        await using Fixture fixture = new(ImmediateOptions());
+        var checks = Channel.CreateUnbounded<bool>();
+        fixture.Manager.Reloaded += (_, _) => checks.Writer.TryWrite(true);
+        List<ResourceReference<Value>> references = [];
+        try
+        {
+            for (int i = 0; i < 20; i++)
+            {
+                references.Add(await fixture.Manager.AcquireAsync(new ResourceKey<Value>($"input-{i}")));
+                await checks.Reader.ReadAsync().AsTask().WaitAsync(_timeout);
+            }
+
+            Assert.Equal(40, fixture.Source.RevisionReads.Count);
+            Assert.All(fixture.Source.RevisionReads.GroupBy(static id => id), reads => Assert.Equal(2, reads.Count()));
+        }
+        finally
+        {
+            foreach (ResourceReference<Value> reference in references)
+            {
+                reference.Dispose();
+            }
+        }
+    }
+
+    /// <summary>A change consumed before the first publication is rechecked after its input provenance becomes visible.</summary>
+    /// <returns>Completion of publication of the changed input without another external notification.</returns>
+    [Fact]
+    public async Task InitialPublicationRechecksAnAlreadyConsumedChangeAsync()
+    {
+        await using Fixture fixture = new(ImmediateOptions());
+        TaskCompletionSource entered = NewSignal();
+        TaskCompletionSource resume = NewSignal();
+        TaskCompletionSource published = NewSignal();
+        fixture.Source.AfterRevision = async (_, token) =>
+        {
+            fixture.Source.AfterRevision = null;
+            entered.TrySetResult();
+            await resume.Task.WaitAsync(token);
+        };
+        fixture.Manager.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                published.TrySetResult();
+            }
+        };
+        Task<ResourceReference<Value>> pending = fixture.Manager.AcquireAsync(_key).AsTask();
+        try
+        {
+            await entered.Task.WaitAsync(_timeout);
+            fixture.Source.Revision = "second";
+            await fixture.Changes.SendAsync(new(_asset, null));
+            await fixture.InitialCheck.Task.WaitAsync(_timeout);
+            Assert.Equal(ResourceReloadStatus.Unchanged, fixture.Manager.LastReloadResult!.Status);
+        }
+        finally
+        {
+            resume.TrySetResult();
+        }
+
+        using ResourceReference<Value> reference = await pending.WaitAsync(_timeout);
+        await published.Task.WaitAsync(_timeout);
+        using ResourceLease<Value> lease = reference.Acquire();
+        Assert.Equal("second", lease.Value.Text);
+    }
+
+    /// <summary>Newly published inputs cannot continually extend the deadline of a pending change batch.</summary>
+    /// <returns>Completion of a changed input's reload while new resources continue loading.</returns>
+    [Fact]
+    public async Task InitialPublicationsPreservePendingBatchDeadlineAsync()
+    {
+        await using Fixture fixture = new(new()
+        {
+            DebounceDelay = TimeSpan.FromMilliseconds(100),
+            MaximumBatchDelay = TimeSpan.FromMilliseconds(150),
+            MaximumPendingChanges = 4096,
+        });
+        using ResourceReference<Value> original = await fixture.Manager.AcquireAsync(_key);
+        await fixture.InitialCheck.Task.WaitAsync(_timeout);
+        TaskCompletionSource published = NewSignal();
+        fixture.Manager.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                published.TrySetResult();
+            }
+        };
+        fixture.Source.Revision = "second";
+        List<ResourceReference<Value>> references = [];
+        using CancellationTokenSource timeout = new(_timeout);
+        try
+        {
+            while (!published.Task.IsCompleted)
+            {
+                await fixture.Changes.SendAsync(new(_asset, null));
+                references.Add(await fixture.Manager.AcquireAsync(new ResourceKey<Value>($"input-{references.Count}"), timeout.Token));
+                await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
+            }
+
+            using ResourceLease<Value> current = original.Acquire();
+            Assert.Equal("second", current.Value.Text);
+            Assert.False(fixture.Manager.HotReloadCompletion.IsCompleted);
+        }
+        finally
+        {
+            foreach (ResourceReference<Value> reference in references)
+            {
+                reference.Dispose();
+            }
+        }
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -424,14 +526,19 @@ public sealed class ResourceReloadServiceTests
         private readonly MemoryManager _memory = new();
         private readonly ResourceExecutionHost _execution = new();
 
-        internal Fixture()
+        internal Fixture(ResourceReloadOptions? options = null, IResourceChangeSource? changes = null, bool throwOnCancellation = false)
         {
-            Manager = new("reload", Source, [Pipeline], _memory, _execution.Resources);
+            Changes.ThrowOnCancellation = throwOnCancellation;
+            Source = new() { Changes = changes ?? Changes };
+            Manager = new("reload", Source, [Pipeline], _memory, _execution.Resources, reloadOptions: options);
+            Manager.Reloaded += (_, _) => InitialCheck.TrySetResult();
         }
+
+        internal TaskCompletionSource InitialCheck { get; } = NewSignal();
 
         internal ResourceManager Manager { get; }
 
-        internal FakeSource Source { get; } = new();
+        internal FakeSource Source { get; }
 
         internal FakeChanges Changes { get; } = new();
 
@@ -476,6 +583,10 @@ public sealed class ResourceReloadServiceTests
 
         public IResourceChangeSource? Changes { get; init; }
 
+        internal ConcurrentQueue<ResourceId> RevisionReads { get; } = new();
+
+        internal Func<string, CancellationToken, Task>? AfterRevision { get; set; }
+
         internal string Revision
         {
             get => Volatile.Read(ref _revision);
@@ -488,10 +599,17 @@ public sealed class ResourceReloadServiceTests
             return ValueTask.FromResult<ResourceSourceSnapshot>(new Snapshot(id, Revision));
         }
 
-        public ValueTask<string?> GetRevisionAsync(ResourceId id, CancellationToken cancellationToken = default)
+        public async ValueTask<string?> GetRevisionAsync(ResourceId id, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult<string?>(Revision);
+            RevisionReads.Enqueue(id);
+            string revision = Revision;
+            if (AfterRevision is { } after)
+            {
+                await after(revision, cancellationToken);
+            }
+
+            return revision;
         }
     }
 
