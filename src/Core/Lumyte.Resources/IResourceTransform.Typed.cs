@@ -28,4 +28,18 @@ public interface IResourceTransform<TInput, TOutput, TRuntime> : IResourceTransf
     /// <param name="cancellationToken">Cancels the manager-owned build.</param>
     /// <returns>The separately owned output, ready for use.</returns>
     ValueTask<TOutput> BuildAsync(TInput input, TRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken);
+
+    /// <inheritdoc/>
+    ValueTask IResourceStage.ReleaseAsync(object resource, IResourceRuntime runtime)
+        => ReleaseAsync((TOutput)resource, (TRuntime)runtime);
+
+    /// <inheritdoc/>
+    ValueTask IResourceTransform<TInput, TOutput>.ReleaseAsync(TOutput resource)
+        => throw new InvalidOperationException("Release this stage through its selected runtime.");
+
+    /// <summary>Releases an output using its original selected environment.</summary>
+    /// <param name="resource">The owned output retaining its original device epoch.</param>
+    /// <param name="runtime">The environment selected when the output was built.</param>
+    /// <returns>The actual destruction completion.</returns>
+    ValueTask ReleaseAsync(TOutput resource, TRuntime runtime);
 }

@@ -3,40 +3,50 @@ using Lumyte.Graphics.Hosting;
 namespace Lumyte.Resources.Graphics;
 
 /// <summary>Manages job execution and the graphics device environment selected for resource stages.</summary>
-/// <param name="id">The manager-local runtime dependency identifier.</param>
-/// <param name="devices">The borrowed stable device service owning physical epochs.</param>
-/// <param name="jobs">The shared default runtime dispatching stage work.</param>
-public sealed class GraphicsResourceRuntime(string id, IGraphicsDeviceService devices, IResourceRuntime jobs) : IResourceRuntime, IResourceRuntimeDependency
+public sealed class GraphicsResourceRuntime : IResourceRuntime, IResourceRuntimeDependency
 {
-    /// <inheritdoc/>
-    public event EventHandler? Changed
+    private readonly IGraphicsDeviceService _devices;
+
+    /// <summary>Initializes a new instance of the <see cref="GraphicsResourceRuntime"/> class.</summary>
+    /// <param name="id">The manager-local runtime dependency identifier.</param>
+    /// <param name="devices">The borrowed stable device service owning physical epochs.</param>
+    /// <param name="jobs">The shared default environment supplying the executor.</param>
+    public GraphicsResourceRuntime(string id, IGraphicsDeviceService devices, IResourceRuntime jobs)
     {
-        add => devices.StateChanged += value;
-        remove => devices.StateChanged -= value;
+        Id = id;
+        _devices = devices;
+        Executor = jobs.Executor;
+        Dependencies = [this];
     }
 
     /// <inheritdoc/>
-    public string Id { get; } = id;
+    public event EventHandler? Changed
+    {
+        add => _devices.StateChanged += value;
+        remove => _devices.StateChanged -= value;
+    }
 
     /// <inheritdoc/>
-    public object Identity => devices;
+    public IResourceExecutor Executor { get; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<IResourceRuntimeDependency> Dependencies { get; }
+
+    /// <inheritdoc/>
+    public string Id { get; }
+
+    /// <inheritdoc/>
+    public object Identity => _devices;
 
     /// <inheritdoc/>
     public ResourceRuntimeSnapshot Snapshot
     {
         get
         {
-            GraphicsDeviceState state = devices.State;
+            GraphicsDeviceState state = _devices.State;
             return new(state.Version, state.Status == GraphicsDeviceServiceStatus.Ready, state.InvalidatedThroughVersion);
         }
     }
-
-    /// <inheritdoc/>
-    public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
-        => jobs.BuildAsync(stage, context, cancellationToken);
-
-    /// <inheritdoc/>
-    public ValueTask ReleaseAsync(IResourceStage stage, object resource) => jobs.ReleaseAsync(stage, resource);
 
     /// <summary>Acquires and records the current device epoch for this build.</summary>
     /// <param name="context">The build using this selected runtime.</param>
@@ -50,7 +60,7 @@ public sealed class GraphicsResourceRuntime(string id, IGraphicsDeviceService de
             throw new InvalidOperationException("Use the graphics runtime selected for this stage.");
         }
 
-        return context.UseGraphicsAsync(devices, Id, lifetime, cancellationToken);
+        return context.UseGraphicsAsync(_devices, Id, lifetime, cancellationToken);
     }
 
     /// <summary>Waits for safe retirement of an original device epoch before its native children are released.</summary>
@@ -58,5 +68,5 @@ public sealed class GraphicsResourceRuntime(string id, IGraphicsDeviceService de
     /// <param name="cancellationToken">Cancels the retirement wait.</param>
     /// <returns>The retirement confirmation.</returns>
     public ValueTask WaitForRetirementAsync(ulong epoch, CancellationToken cancellationToken = default)
-        => devices.WaitForRetirementAsync(epoch, cancellationToken);
+        => _devices.WaitForRetirementAsync(epoch, cancellationToken);
 }

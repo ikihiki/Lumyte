@@ -1,6 +1,7 @@
 # Lumyte.Resources.Graphics
 
-`GraphicsResourceRuntime`はStageのジョブ実行、名前付きdevice service、世代取得、旧epochの退役確認をまとめた実行環境です。
+`GraphicsResourceRuntime`は共有Executor、名前付きdevice service、世代取得、旧epochの退役確認をまとめた実行環境です。
+Managerが選択した環境のExecutorとDependenciesを一度収集し、Stageの構築・解放を管理します。
 CPU Stageは共有の既定Runtimeを使い、GPU StageごとにGraphics Runtimeを選択します。
 物理deviceの初期化・復旧はGraphics.Hostingが所有し、ホストが明示的に進めます。
 
@@ -17,6 +18,7 @@ services.AddResourceGraphics("scene", "main", "graphics.main");
 
 `AddResourceGraphics`はManager内のIDで一つのscoped Runtimeを登録します。
 `GetResourceGraphicsRuntime`は同じscopeの同じRuntimeを返し、複数Stageで共有できます。
+環境のDependenciesから世代providerも収集されるため、providerの追加登録は不要です。
 別deviceを使うStageには別のIDのRuntimeを割り当てます。既定RuntimeとExecutionRuntimeの登録は`AddResources`が行い、
 ホストがExecutionRuntimeのPrepare・Start・Pump・Stopを管理します。
 
@@ -28,10 +30,10 @@ GraphicsDeviceLease epoch = await runtime.AcquireAsync(
     context, cancellationToken: cancellationToken);
 IGraphicDevice device = epoch.Device;
 // このdeviceで生成・uploadし、GPU完了後に完成した資源を返す。
-// 解放で必要なruntime、epoch、実際のdeviceを出力やcleanupに保持する。
+// 元epochと実際のdeviceを保持する。解放時にもManagerが同じruntimeを渡す。
 ```
 
-同じGraphicsResourceRuntime instanceに対応する依存Stageは、一つのジョブで構築します。CPU側の別Runtimeへ切り替わる箇所では別ジョブにし、await後も各区間のジョブへ戻ります。出力の解放は元Runtimeから配送します。
+同じGraphicsResourceRuntime instanceに対応する依存Stageは、一つのジョブで構築します。CPU側の別Runtimeへ切り替わる箇所では別ジョブにし、await後も各区間のジョブへ戻ります。出力の解放は保存済みExecutorから配送し、型付きReleaseAsyncへ元Runtimeを渡します。
 Stageは個別のGPU生成とsubmissionを記述します。`AcquireAsync`は毎回現在の物理epochを取得し、
 Versionとservice identityを記録してleaseの所有をcontextへ移します。戻り値をStageからDisposeしません。
 GPU完了前に構築を完了させず、部分生成物もcleanupへ登録します。
@@ -41,9 +43,9 @@ CPU readbackなど完成後にdeviceを必要としない出力はBuild寿命を
 Runtimeを選択しただけでResident依存になることはありません。
 低水準の`UseGraphicsAsync`も同じ世代検証を行い、登録と異なるscopeの同名serviceを拒否します。
 
-ロスト後も出力やcleanupが保持した元のRuntimeとepochを使い、
+ロスト後もManagerが渡す元Runtimeと、保持していたepochを使い、
 `runtime.WaitForRetirementAsync(epoch.State.Epoch)`でNative解放の安全性を確認します。
-解放時に新deviceや最新Runtimeを取得し直しません。Managerも生成に使ったRuntimeを保持し、同じRuntimeへ解放を依頼します。
+解放時に新deviceや最新Runtimeを取得し直しません。部分生成物のcleanupは、出力が返る前の失敗に備えて元RuntimeとLeaseを保持します。
 解放失敗時は所有を保持し、TrimまたはDisposeで再試行します。
 新deviceがReadyになった後、`RebuildRuntimeAsync(["graphics.main"])`で新epochの生成物を構築できます。
 

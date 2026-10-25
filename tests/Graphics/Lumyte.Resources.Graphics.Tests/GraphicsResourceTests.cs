@@ -29,7 +29,7 @@ public sealed class GraphicsResourceTests
         using ResourceReference<GpuValue> reference = await resources.AcquireAsync(_gpuKey);
         using ResourceLease<GpuValue> old = await resources.AcquireLeaseForTestAsync(_gpuKey);
         GpuValue oldValue = old.Value;
-        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), oldValue.Runtime);
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), state.GpuRuntime);
         state.Devices[0].Lose();
         Assert.False(old.IsUsable);
         Assert.Throws<ResourceUnavailableException>(() => old.Value);
@@ -48,6 +48,7 @@ public sealed class GraphicsResourceTests
         old.Dispose();
         await resources.TrimAsync();
         Assert.True(oldValue.Released);
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), state.GpuReleaseRuntime);
         Assert.Equal(1, await devices.RetireAsync());
         Assert.Equal(1, state.Devices[0].Disposals);
     }
@@ -88,10 +89,10 @@ public sealed class GraphicsResourceTests
         ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
         using ResourceLease<GpuValue> gpu = await resources.AcquireLeaseForTestAsync(_gpuKey);
         using ResourceLease<ReadbackValue> cpu = await resources.AcquireLeaseForTestAsync(_readbackKey);
-        Assert.Same(main, gpu.Value.Runtime.Identity);
-        Assert.Same(readback, cpu.Value.Runtime.Identity);
-        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), gpu.Value.Runtime);
-        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.readback"), cpu.Value.Runtime);
+        Assert.Same(main, state.GpuRuntime!.Identity);
+        Assert.Same(readback, state.ReadbackRuntime!.Identity);
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.main"), state.GpuRuntime);
+        Assert.Same(scope.ServiceProvider.GetResourceGraphicsRuntime("scene", "graphics.readback"), state.ReadbackRuntime);
         Assert.Same(provider.GetRequiredService<IResourceRuntime>(), state.CpuRuntime);
 
         state.Devices[0].Lose();
@@ -193,6 +194,7 @@ public sealed class GraphicsResourceTests
         services.AddResources("scene", builder => builder.UseSource<TestSource>().AddSourcePipeline<CpuValue, CpuStage>());
         Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("scene", "missing", "graphics.main"));
         services.AddGraphicsDevice<TestFactory>("main");
+        Assert.Throws<ArgumentException>(() => services.AddResourceGraphics("missing", "main", "graphics.main"));
         services.AddResourceGraphics("scene", "main", "graphics.main");
         Assert.ThrowsAny<ArgumentException>(() => services.AddResourceGraphics("scene", "main", "graphics.main"));
     }

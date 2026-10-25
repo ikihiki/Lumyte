@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -11,8 +10,6 @@ public sealed class ResourceBuildContext
     private readonly ResourceGeneration _generation;
     private readonly ResourceBuildContext _pipeline;
     private SynchronizationContext? _jobContext;
-    private Task? _pendingOperations;
-    private long _sliceStarted;
     private bool _pipelineActive;
     private bool _closed;
 
@@ -40,58 +37,18 @@ public sealed class ResourceBuildContext
     internal bool CanSharePipeline => Volatile.Read(ref _pipeline._pipelineActive)
         && _pipeline._jobContext is not null && ReferenceEquals(SynchronizationContext.Current, _pipeline._jobContext);
 
-    internal bool ShouldYield => CanSharePipeline && Stopwatch.GetElapsedTime(_pipeline._sliceStarted) >= TimeSpan.FromMilliseconds(1);
+    internal bool ShouldYield => !_closed && CanSharePipeline && _generation.Executor.ShouldYield;
 
-    internal Task PendingOperations => _pendingOperations ??= _manager.CompleteContextOperationsAsync(_generation);
+    internal ResourceGeneration Generation => _generation;
 
-    /// <summary>Executes this stage and retains its pipeline until all registered operations finish.</summary>
-    /// <param name="stage">The borrowed stage supplied to the runtime.</param>
+    internal bool IsClosed => _closed;
+
+    /// <summary>Runs the manager-owned stage procedure inside the executor's job.</summary>
     /// <param name="cancellationToken">The manager-owned build cancellation token.</param>
-    /// <returns>The actual completed stage output.</returns>
-    /// <remarks>
-    /// Called once by the selected runtime inside its job. Same-runtime dependencies reuse that job.
-    /// Pending-operation failures are subsequently reported by the manager, preserving the stage's original exception.
-    /// </remarks>
-    public async ValueTask<object> ExecutePipelineAsync(IResourceStage stage, CancellationToken cancellationToken)
-    {
-        EnsureOpen();
-        if (_pipelineActive)
-        {
-            throw new InvalidOperationException("A build context can execute its stage only once.");
-        }
-
-        _jobContext = SynchronizationContext.Current;
-        Volatile.Write(ref _pipelineActive, true);
-        if (ReferenceEquals(_pipeline, this))
-        {
-            RestartSlice();
-        }
-
-        try
-        {
-            return await stage.BuildAsync(this, cancellationToken);
-        }
-        finally
-        {
-            Close();
-            try
-            {
-                Task pending = PendingOperations;
-                try
-                {
-                    await pending;
-                }
-                catch when (pending.IsCompleted)
-                {
-                    // The manager observes these failures after dispatch; keep the original stage failure intact.
-                }
-            }
-            finally
-            {
-                Volatile.Write(ref _pipelineActive, false);
-            }
-        }
-    }
+    /// <returns>Completion of the stage, its registered dependencies and cleanup.</returns>
+    /// <remarks>Executors call this once. The manager owns output recording, failure propagation and cleanup.</remarks>
+    public ValueTask ExecuteAsync(CancellationToken cancellationToken)
+        => _manager.ExecuteStageAsync(this, cancellationToken);
 
     /// <summary>Requires a shared dependency and records its lifetime and provenance.</summary>
     /// <typeparam name="T">The exact registered output type.</typeparam>
@@ -146,9 +103,21 @@ public sealed class ResourceBuildContext
         _manager.TrackRuntimeDependency(_generation, dependencyId, expectedVersion, lifetime, providerIdentity);
     }
 
-    internal void Close() => _closed = true;
+    internal void BeginExecution()
+    {
+        EnsureOpen();
+        if (_pipelineActive)
+        {
+            throw new InvalidOperationException("A build context can execute its stage only once.");
+        }
 
-    internal void RestartSlice() => _pipeline._sliceStarted = Stopwatch.GetTimestamp();
+        _jobContext = SynchronizationContext.Current;
+        Volatile.Write(ref _pipelineActive, true);
+    }
+
+    internal void EndExecution() => Volatile.Write(ref _pipelineActive, false);
+
+    internal void Close() => _closed = true;
 
     private void EnsureOpen() => ObjectDisposedException.ThrowIf(_closed, this);
 }
