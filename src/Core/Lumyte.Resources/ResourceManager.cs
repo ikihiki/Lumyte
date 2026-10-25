@@ -338,7 +338,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         try
         {
             memory = _memory.CreateScope($"{_name}/stream/{typeof(TResource)}/{lease.Revision}");
-            session = new(memory, lease, lease.Revision, options, () => ReturnSession(session!));
+            IResourceExecutor executor = _executors[_stages[typeof(TResource).TypeHandle].Runtime];
+            session = new(executor, memory, lease, lease.Revision, options, () => ReturnSession(session!));
             lock (_gate)
             {
                 _sessions.Add(session);

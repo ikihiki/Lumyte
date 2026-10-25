@@ -177,7 +177,7 @@ public sealed partial class ExecutionRuntime
         while (_workers < wanted)
         {
             _workers++;
-            ThreadPool.UnsafeQueueUserWorkItem(static runtime => runtime.RunWorker(), this, false);
+            ThreadPool.UnsafeQueueUserWorkItem(_cpuWorker, preferLocal: false);
         }
     }
 
@@ -411,5 +411,11 @@ public sealed partial class ExecutionRuntime
         {
             RecordFailure(error);
         }
+    }
+
+    // Worker reservations are synchronized by the runtime; this item holds no per-invocation state.
+    private sealed class CpuWorker(ExecutionRuntime runtime) : IThreadPoolWorkItem
+    {
+        public void Execute() => runtime.RunWorker();
     }
 }

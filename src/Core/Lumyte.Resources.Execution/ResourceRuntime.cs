@@ -9,6 +9,7 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
 {
     private readonly WorkflowPort<BuildRequest, Unit> _build = new();
     private readonly WorkflowPort<ReleaseRequest, Unit> _release = new();
+    private readonly WorkflowPort<StreamRequest, Unit> _stream = new();
 
     /// <inheritdoc/>
     public IResourceExecutor Executor => this;
@@ -55,10 +56,31 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
     }
 
     /// <inheritdoc/>
+    public async ValueTask StreamAsync(IResourceStreamWork work, CancellationToken cancellationToken)
+    {
+        var request = new StreamRequest(work);
+        CommandEnqueueStatus status = _stream.TryEnqueue(in request, cancellationToken, out IValueTaskSource<Unit>? completion);
+        if (status != CommandEnqueueStatus.Accepted)
+        {
+            if (status == CommandEnqueueStatus.Canceled)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            throw status == CommandEnqueueStatus.QueueFull
+                ? new ExecutionQueueFullException("Resource workflow capacity is exhausted.")
+                : new InvalidOperationException("Keep the resource execution runtime running while streaming resources.");
+        }
+
+        await new ValueTask<Unit>(completion!, 0).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public void Declare(ModuleBuilder builder)
     {
         builder.Workflow<BuildRequest, Unit, BuildHandler>("Build", default, _build);
         builder.Workflow<ReleaseRequest, Unit, ReleaseHandler>("Release", default, _release);
+        builder.Workflow<StreamRequest, Unit, StreamHandler>("Stream", default, _stream);
     }
 
     /// <inheritdoc/>
@@ -76,6 +98,8 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
 
     private readonly record struct ReleaseRequest(IResourceStage Stage, IResourceRuntime Runtime, object Resource);
 
+    private readonly record struct StreamRequest(IResourceStreamWork Work);
+
     private readonly struct BuildHandler : IWorkflowHandler<BuildRequest, Unit>
     {
         public async ValueTask<Unit> ExecuteAsync(BuildRequest command, CancellationToken cancellationToken)
@@ -90,6 +114,15 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
         public async ValueTask<Unit> ExecuteAsync(ReleaseRequest command, CancellationToken cancellationToken)
         {
             await command.Stage.ReleaseAsync(command.Resource, command.Runtime);
+            return default;
+        }
+    }
+
+    private readonly struct StreamHandler : IWorkflowHandler<StreamRequest, Unit>
+    {
+        public async ValueTask<Unit> ExecuteAsync(StreamRequest command, CancellationToken cancellationToken)
+        {
+            await command.Work.ExecuteAsync(cancellationToken);
             return default;
         }
     }

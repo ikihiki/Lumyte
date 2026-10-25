@@ -19,11 +19,21 @@
 
 sessionはfactoryの内容世代を保持するが、外部ファイルの旧内容を保存しない。直接読み込みを行うreaderが入力変更を検出すれば、旧sessionも失敗する。再開には新しいfactoryからsessionを開き直す。
 
+### JobSystemとの接続
+
+Managerはfactoryの出力型に対応する登録済みExecutorをsessionへ渡す。readerの生成・先読み・seek・解放は `IResourceExecutor.StreamAsync` に `IResourceStreamWork` を渡して配送する。実行器はジョブ内で `ExecuteAsync` を一度呼び、実完了まで観測する。既定の `ResourceRuntime` は型付きworkflowで実装し、独自Executorは明示的に対応する。未対応の既定実装は `NotSupportedException` を返す。
+
+producerは停止または終端まで一つのworkflowとして動き、I/O・buffer空き待ちの間はCPU枠を返す。通常のawaitでJobSystemへ戻り、CPU同時実行数の制限に従う。Cooperativeではホストの `PumpJobs` が進めるため、Open・Seek・Disposeを待つ間もPumpを続ける。reader内部の `ConfigureAwait(false)` や `Task.Run` で移した処理はこの保証の対象外とする。固定物理スレッドの保証ではなく、native操作の所有制約はreader側の配送で満たす。
+
+buffer待機中もworkflowの受付枠を一つ保持し、`MaxInFlightRuns` に数える。上限到達時の新規配送は `ExecutionQueueFullException` になるため、長寿命sessionと構築・解放の同時数を含めて設定する。停止時はproducerの実完了と結果の回収を待ち、その枠を返してから次の先読みやreader解放を配送する。全sessionとManagerの解放を終えてから実行器を停止する。
+
 ### 読み込みと容量
 
 固定長・固定個数のblockを単一producerと単一consumerで共有する。producerは空blockだけをreaderへ渡し、正の要素数を公開してから次へ進む。consumerは公開済み要素をコピーし、block全体の消費後に空へ戻す。readerの短いreadは許可し、0を終端とする。負数または渡した領域を超える要素数はreaderの契約違反としてsessionを失敗させる。
 
-`ReadAvailable` は準備済み要素をコピーし、I/O・デコード・待機を行わない。blockを空にすると、待機中のproducerへ再利用するwork itemで通知する。readerとproducerの継続をconsumer上でinline実行せず、通知ごとのTaskやdelegateも生成しない。戻り値0はunderflowにも終端にもなり得る。`EndOfStream` はproducerが終端へ到達し、準備済み要素を消費し終えたときだけtrueになる。`ReadAsync` は準備を待ち、空のdestinationまたは終端の場合だけ0を返す。
+`ReadAvailable` は準備済み要素をコピーし、I/O・デコード・待機を行わない。blockを空にすると、再利用する通知でproducerの継続をJobSystemへ戻す。readerを `ReadAvailable` の呼び出しの中でinline実行しない。Cooperativeでは後のPumpで同じ物理スレッド上を実行し得る。戻り値0はunderflowにも終端にもなり得る。`EndOfStream` はproducerが終端へ到達し、準備済み要素を消費し終えたときだけtrueになる。
+
+`ReadAsync` は再利用する通知でデータ・終端・失敗を待つ。通知登録後に状態を再確認し、登録直前の変化も取りこぼさない。空のdestinationまたは終端の場合だけ0を返し、underflow中のtimer pollは行わない。
 
 同じsessionのRead・Seek・Disposeを重ねて呼んではならない。異なるsessionは独立して利用できる。`DisposeAsync` 同士の並行呼び出しだけは同じ解放試行を共有する。consumerを常駐スレッドへ固定する契約は設けないが、呼び出しの直列化は利用側の責任とする。
 
@@ -39,7 +49,7 @@ seek開始後の失敗・取消はsessionをfault状態にし、producerを停�
 
 sessionはproducer、reader、buffer、memory scope、factory Leaseを所有する。readerへ渡すmemory scopeは借用であり、reader自身はscopeを破棄しない。codecが別の作業領域を必要とする場合も、このscopeへ計上する。
 
-終了はproducer停止 → reader解放 → buffer返却 → scope解放 → Lease返却の順とする。途中の解放が失敗した場合はそれ以降を保持し、次の `DisposeAsync` で未完了部分を再試行する。破棄開始後はRead・Seekを拒否する。利用側は全sessionを返してからManagerを終了する。
+終了はproducer停止 → reader解放 → buffer返却 → scope解放 → Lease返却の順とする。途中の解放が失敗した場合はそれ以降を保持し、同じsessionの `DisposeAsync` で未完了部分を再試行する。この解放はManagerの `TrimAsync` では再試行しない。破棄開始後はRead・Seekを拒否する。利用側は全sessionの解放を完了してからManagerを終了する。
 
 生成に失敗した場合も同じ順で後始末する。生成エラーと解放エラーが重なった場合は両方を `AggregateException` で返し、利用者に渡せなかったsessionの所有はManagerが保持する。`TrimAsync` がその解放を再試行する。
 
@@ -47,9 +57,9 @@ sessionはproducer、reader、buffer、memory scope、factory Leaseを所有す�
 
 要求するbuffer要素数は `BlockSize × MaxBufferedBlocks` に固定し、入力の長さに応じて増やさない。実際のメモリ計上はpoolの確保単位に従い、codec作業領域とsessionの管理オブジェクトは別に必要となる。buffer数・長さは正数とし、積のoverflowを生成前に拒否する。
 
-producerは満杯時に再利用する通知を待ち、timerを繰り返し生成しない。通知を登録してから空きと取消を再確認することで、登録直前の消費でも再開を失わない。Seek・Disposeも通知で待機を解除し、producer完了後に状態を変更する。通知はThreadPoolへqueueするため、専用threadやbusy spinは不要だが、runtime内部の初期化・queue拡張を含む厳密な無割り当てや復帰期限は保証しない。
+producerは満杯時に再利用する通知を待つ。登録後に空きと取消を再確認し、Seek・Disposeも通知で待機を解除する。consumerのunderflow待機と合わせて、待機時間に比例するtimer・Taskの生成を避ける。通知は選択したJobSystemへ直接戻し、専用threadやbusy spinを必要としない。scheduler内部の初期化・queue拡張を含む厳密な無割り当てや復帰期限は保証しない。
 
-`ReadAsync` のunderflow待機には `Task.Delay(1)` を使う。この便利APIはtimer・schedulerの負担と割り当てを伴い、1 msの復帰期限も保証しない。デバイスcallbackは待機しない `ReadAvailable` を使う。buffer量、underflow時の無音補填、供給周期は利用するcodec・デバイス側が決める。
+連続して同期完了するreaderがCPUを占有し続けないよう、producerはblock間でExecutorの `ShouldYield` を確認してジョブを譲る。既定実行器の目安は約1 msだが、一回のreader呼び出しは中断できない。重いdecoder自身も適切な単位で処理を区切る必要がある。デバイスcallbackは待機しない `ReadAvailable` を使い、buffer量、underflow時の無音補填、供給周期はcodec・デバイス側が決める。
 
 ## 公開APIと契約
 
@@ -58,6 +68,16 @@ producerは満杯時に再利用する通知を待ち、timerを繰り返し生�
 ```diff
 +namespace Lumyte.Resources
 +{
++    public interface IResourceStreamWork
++    {
++        // 実行器がジョブ内で一度呼び、通常のawaitで継続を戻す。
++        ValueTask ExecuteAsync(CancellationToken cancellationToken);
++    }
++    public interface IResourceExecutor
++    {
++        // 既存のBuild/Releaseに加える。未対応の実行器はNotSupportedException。
++        ValueTask StreamAsync(IResourceStreamWork work, CancellationToken cancellationToken);
++    }
 +    public interface IResourceStream<TElement> where TElement : unmanaged
 +    {
 +        // 独立cursorを返す。memoryは借用で、readerはscope自体を破棄しない。
@@ -84,7 +104,7 @@ producerは満杯時に再利用する通知を待ち、timerを繰り返し生�
 +        public ValueTask<ResourceStreamSession<TElement>> OpenStreamAsync<TResource, TElement>(ResourceKey<TResource> key, ResourceStreamOptions options, CancellationToken cancellationToken = default)
 +            where TResource : class, IResourceStream<TElement> where TElement : unmanaged;
 +    }
-+    public sealed class ResourceStreamSession<TElement> : IAsyncDisposable where TElement : unmanaged
++    public sealed class ResourceStreamSession<TElement> : IAsyncDisposable, IResourceStreamWork where TElement : unmanaged
 +    {
 +        public ulong Revision { get; }
 +        // 消費済み要素数。seek成功時に指定位置へ変わる。
@@ -108,7 +128,8 @@ producerは満杯時に再利用する通知を待ち、timerを繰り返し生�
 - 全量デコードして共有する: cursorは単純になるが、入力の長さに比例する常駐領域を必要とする。
 - readerを共有する: 同時利用者のseekと先読みが干渉し、所有と同期が複雑になる。
 - consumerから直接I/O・デコードする: bufferは減るが、定常処理へ入力待ちと割り当てが入り込む。
-- producerが満杯の間もpollする: consumerからの通知は省けるが、停止したconsumerを待つだけでtimerとTaskを生成し続ける。通知を再利用し、readerの継続をconsumerから切り離す方式を採用する。
+- 空きやデータをtimerでpollする: 通知は省けるが、何も進まない待機中もtimerとTaskを生成し、復帰にtimerの遅延が加わる。
+- producerをThreadPoolへ直接送る: 配送は単純だが、JobSystemのCPU同時実行数・Cooperative実行・譲り合いを共有できない。
 
 ## 結果と影響
 
@@ -116,6 +137,8 @@ producerは満杯時に再利用する通知を待ち、timerを繰り返し生�
 
 ## 検証方針
 
-`ResourceStreamTests` で独立cursor、短いread、空入力、終端、underflow、満杯時の先読み停止、長い入力での固定buffer量を確認する。準備済みの `ReadAvailable` とblock解放の通知経路をwarmup後に測定し、consumer側の割り当てがないことを確認する。readerをinline実行しないこと、単一blockの反復で通知を失わないこと、満杯のまま終了できることも検証する。
+`ResourceStreamTests` で独立cursor、短いread、空入力、終端、underflow、満杯時の先読み停止、長い入力での固定buffer量を確認する。準備済みの `ReadAvailable` とblock解放の通知経路をwarmup後に測定し、consumer側の割り当てがないことを確認する。データ待ちの取消後も通知を再利用できること、単一blockの反復で通知を失わないこと、満杯のまま終了できることも検証する。
 
-seekでは停止中producerの完了待ち、古い先読みの破棄、非対応時の継続、失敗後のfaultを確認する。生成・readの取消範囲、HotReload前後のsession世代、並行Dispose、reader解放失敗時のbuffer・Lease保持と再試行、生成失敗後のManagerによる後始末を検証する。timerの実際の復帰遅延やデバイスの供給期限は別途実環境で測定する。
+readerの生成・再開・seek・解放が選択したExecutor上で動くこと、CooperativeのPump停止中は進まないこと、待機がCPU枠を塞がないこと、受付容量不足と停止後の枠返却、同期readerがblock間でジョブを譲ることを確認する。
+
+seekでは停止中producerの完了待ち、古い先読みの破棄、非対応時の継続、失敗後のfaultを確認する。生成・readの取消範囲、HotReload前後のsession世代、並行Dispose、reader解放失敗時のbuffer・Lease保持と再試行、生成失敗後のManagerによる後始末を検証する。デバイスの供給期限は別途実環境で測定する。
