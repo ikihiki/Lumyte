@@ -24,7 +24,7 @@ public sealed class SceneCleanupTests
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<SceneOutput> lease = await resources.AcquireLeaseForTestAsync(_key);
@@ -58,7 +58,7 @@ public sealed class SceneCleanupTests
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<SceneOutput> lease = await resources.AcquireLeaseForTestAsync(_key);
@@ -89,7 +89,7 @@ public sealed class SceneCleanupTests
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<SceneOutput> lease = await resources.AcquireLeaseForTestAsync(_key);
@@ -125,7 +125,7 @@ public sealed class SceneCleanupTests
         var state = new CleanupState { FailBuild = true };
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         await Assert.ThrowsAsync<AggregateException>(() => resources.AcquireAsync(_key).AsTask());
@@ -145,11 +145,11 @@ public sealed class SceneCleanupTests
         services.AddSingleton(state);
         services.AddSingleton(state.Graphics);
         services.AddMemoryManagement();
-        services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Singleton);
+        services.AddGraphicsDevice<TestFactory>(ServiceLifetime.Singleton);
         services.AddResources(builder => builder.UseSource<TestSource>()
             .AddSourcePipeline<SceneOutput, SceneStage>()
             .UseStageRuntime<SceneOutput, GraphicsResourceRuntime>());
-        services.AddResourceGraphics("main");
+        services.AddResourceGraphics();
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 

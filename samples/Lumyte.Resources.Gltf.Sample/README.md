@@ -53,7 +53,8 @@ Source、Stage、デバイスFactoryはDIで登録します。サンプルの合
 `AddResources` を一度呼び、CPUとGPUの全Pipelineを一つのsingleton ResourceManagerへ登録します。
 `provider.GetRequiredService<ResourceManager>()` で同じManagerを取得し、CPU検証後も破棄せず、
 不要な世代をTrimしてからGPUシーンのロードに使います。SourceとStageもsingletonで、
-Graphics device serviceは `AddGraphicsDevice<DeviceFactory>("main", ServiceLifetime.Singleton)` で寿命を揃えます。
+Graphics device serviceは `AddGraphicsDevice<DeviceFactory>(ServiceLifetime.Singleton)` で寿命を揃えます。
+`AddResourceGraphics()`で同じdevice serviceを借用するGraphicsResourceRuntimeを登録し、名前を指定せず型で選択します。
 ホストが既定のResourceRuntimeとExecutionRuntimeをThreadPoolで準備・開始してからロードします。
 Stageの開始と通常の`await`後の再開はCPUジョブとして実行し、I/O・子リソース・GPU完了を待つ間は
 CPUの同時実行枠を使いません。終了時はManagerの破棄を完了し、ExecutionRuntimeを停止してからDI providerを閉じます。
@@ -119,5 +120,5 @@ HotReloadは新世代を公開でき、既存Leaseは旧世代の値を保持し
 
 The composite source routes reads and change monitoring together. File inputs
 provide native notifications, while DLL-embedded shaders have no change stream.
-The CPU debug validation manager disables automatic reload through
-`ResourceReloadOptions.Enabled`; the rendering manager monitors its source automatically.
+The single manager disables automatic reload through `ResourceReloadOptions.Enabled`
+in `--validate` mode; rendering mode monitors its source automatically.

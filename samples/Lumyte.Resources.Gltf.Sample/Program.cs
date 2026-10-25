@@ -57,7 +57,7 @@ internal static class Program
         });
         services.AddSingleton<FileResourceSource>();
         services.AddSingleton<EmbeddedResourceSource>();
-        services.AddGraphicsDevice<DeviceFactory>("main", ServiceLifetime.Singleton);
+        services.AddGraphicsDevice<DeviceFactory>(ServiceLifetime.Singleton);
         services.AddResources(pipelines =>
         {
             ConfigurePipelines(pipelines.ConfigureHotReload(new() { Enabled = !validateOnly }));
@@ -68,7 +68,7 @@ internal static class Program
                 .UseStageRuntime<GpuMesh, GraphicsResourceRuntime>()
                 .UseStageRuntime<GpuScene, GraphicsResourceRuntime>();
         });
-        services.AddResourceGraphics("main");
+        services.AddResourceGraphics();
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
         execution.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, Environment.ProcessorCount, new ExecutionOptions());
@@ -78,7 +78,7 @@ internal static class Program
         {
             await ValidateCpuAsync(resources, directory, validateOnly);
             await resources.TrimAsync();
-            IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+            IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
             Require(devices.State.Status == GraphicsDeviceServiceStatus.Uninitialized, "CPU scene loading initialized a graphics device.");
             if (!validateOnly)
             {
