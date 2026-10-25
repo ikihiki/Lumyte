@@ -11,17 +11,20 @@ services.AddResources(builder => builder
     .UseSource<AppResourceSource>()
     .AddSourcePipeline<CpuMesh, CpuMeshStage>()
     .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>()
-    .UseStageRuntime<GpuMesh>(provider =>
-        provider.GetResourceGraphicsRuntime("graphics.main")));
-services.AddResourceGraphics("main", "graphics.main");
+    .UseStageRuntime<GpuMesh, GraphicsResourceRuntime>());
+services.AddResourceGraphics("main");
 ```
 
 `AddResources`はDI rootに一つのunkeyed singleton Managerを登録します。
-`AddResourceGraphics`は依存IDでsingleton Runtimeを登録し、同じDI rootのsingleton device serviceを借用します。
+`AddResourceGraphics`は既存のdevice名だけでsingleton Runtimeを登録し、同じDI rootのsingleton device serviceを借用します。
 scoped deviceは登録時に拒否します。`AddGraphicsDevice`自体の既定はScopedなので、Resourcesとの接続ではSingletonを指定します。
-`GetResourceGraphicsRuntime`は子scopeから解決しても同じRuntimeを返し、複数Stageで共有できます。
+既定環境が未登録なら、最初に登録した環境を`GraphicsResourceRuntime`として型で解決します。追加登録で既定環境を置き換えません。
+子scopeからも同じRuntimeを返し、複数Stageで共有できます。
 環境のDependenciesから世代providerも収集されるため、providerの追加登録は不要です。
-別deviceを使うStageには別のIDのRuntimeを割り当てます。既定RuntimeとExecutionRuntimeの登録は`AddResources`が行い、
+別deviceを使う場合は`AddResourceGraphics("readback")`も登録し、対象Stageの
+`UseStageRuntime<T>(provider => provider.GetResourceGraphicsRuntime("readback"))`で既存のdevice名を選びます。
+世代追跡用のIDはRuntimeが生成します。アプリが別の名前を定義する必要はありません。
+既定のジョブ用ResourceRuntimeとExecutionRuntimeの登録は`AddResources`が行い、
 ホストがExecutionRuntimeのPrepare・Start・Pump・Stopを管理します。
 
 GPU Stageはconstructorにdeviceを保持せず、構築contextの選択済みRuntimeを使います。
@@ -43,19 +46,20 @@ GPU完了前に構築を完了させず、部分生成物もcleanupへ登録し�
 既定のResident寿命ではNative子資源の解放後にdevice leaseが返ります。
 CPU readbackなど完成後にdeviceを必要としない出力はBuild寿命を指定できます。
 Runtimeを選択しただけでResident依存になることはありません。
-低水準の`UseGraphicsAsync`も同じ世代検証を行い、登録と異なるDI rootの同名serviceを拒否します。
+低水準の`UseGraphicsAsync`も選択済みGraphics Runtimeから依存IDを取得し、登録と異なるDI rootの同名serviceを拒否します。
 
 ロスト後もManagerが渡す元Runtimeと、保持していたepochを使い、
 `runtime.WaitForRetirementAsync(epoch.State.Epoch)`でNative解放の安全性を確認します。
 解放時に新deviceや最新Runtimeを取得し直しません。部分生成物のcleanupは、出力が返る前の失敗に備えて元RuntimeとLeaseを保持します。
 解放失敗時は所有を保持し、TrimまたはDisposeで再試行します。
-新deviceがReadyになった後、`RebuildRuntimeAsync(["graphics.main"])`で新epochの生成物を構築できます。
+新deviceがReadyになった後、`manager.RebuildRuntimeAsync([runtime.Id])`で新epochの生成物を構築できます。
+`runtime`には対象Stageと同じ登録済み環境を使い、IDの文字列を組み立てたり保存したりしません。
 
 DIなしでも同じRuntimeをStageの出力型へ割り当てます。
 
 ```csharp
 var jobs = new ResourceRuntime();
-var graphics = new GraphicsResourceRuntime("graphics.main", devices, jobs);
+var graphics = new GraphicsResourceRuntime(devices, jobs);
 var execution = new ExecutionRuntime([jobs]);
 execution.PrepareOnCurrentHost(
     OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
