@@ -94,6 +94,8 @@ ExecutorのReleaseはジョブ外からの配送入口とし、native操作は�
 
 内部の構築・依存・Source完了は、状態更新と所有の記録を済ませてManager lockの外で通知する。
 同じジョブなら直接継続でき、別ジョブの待機者は元の実行先へ戻す。外部Acquireへの最終通知は非同期に分離する。
+登録の締切と完了待ちの対象決定を同じManager lockで行い、遅れて到着した登録を拒否する。
+Stageは同期的なContext呼び出しをreturnまでに終え、終了後もContextを使い続ける仕事を残さない。
 登録済み操作をすべて観測した後はManagerの完了Task参照を切り、結果に含まれる入力を保持し続けない。
 同期的な補助所有物は`RegisterCleanup(IDisposable, lifetime)`で直接登録できる。成功済みcleanupは対象への参照も切り、失敗した対象だけを再試行用に保持する。
 

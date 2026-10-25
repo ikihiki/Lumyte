@@ -17,6 +17,7 @@ public sealed partial class ResourceManager
         bool start = false;
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             AddEdge(view, owner.Node, node);
             if (!owner.Dependencies.TryGetValue(node, out dependency!))
             {
@@ -55,6 +56,7 @@ public sealed partial class ResourceManager
         bool start = false;
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             if (!owner.Sources.TryGetValue(id, out source!))
             {
                 source = new(lifetime);
@@ -82,6 +84,7 @@ public sealed partial class ResourceManager
         ValidateLifetime(lifetime);
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             owner.Cleanups.Add(new(cleanup, lifetime));
         }
     }
@@ -91,6 +94,7 @@ public sealed partial class ResourceManager
         ValidateLifetime(lifetime);
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             owner.Cleanups.Add(new(cleanup, lifetime));
         }
     }
@@ -100,6 +104,7 @@ public sealed partial class ResourceManager
         ValidateLifetime(lifetime);
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             IMemoryScope? existing = lifetime == ResourceDependencyLifetime.Build ? owner.BuildMemory : owner.ResidentMemory;
             if (existing is not null)
             {
@@ -143,6 +148,7 @@ public sealed partial class ResourceManager
         RefreshRuntime(runtime);
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             if (providerIdentity is not null && !ReferenceEquals(runtime.Identity, providerIdentity))
             {
                 throw new InvalidOperationException($"Runtime dependency '{dependencyId}' belongs to another service instance.");
@@ -175,6 +181,7 @@ public sealed partial class ResourceManager
     {
         lock (_gate)
         {
+            generation.RegistrationsClosed = true;
             Task? pending = null;
             bool multiple = false;
             foreach (ResourceDependency dependency in generation.Dependencies.Values)
@@ -300,6 +307,9 @@ public sealed partial class ResourceManager
             context.EndExecution();
         }
     }
+
+    private static void EnsureRegistrationOpen(ResourceGeneration owner)
+        => ObjectDisposedException.ThrowIf(owner.RegistrationsClosed, typeof(ResourceBuildContext));
 
     private static void ValidateLifetime(ResourceDependencyLifetime lifetime)
     {
