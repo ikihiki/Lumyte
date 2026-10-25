@@ -28,7 +28,7 @@ public sealed class TypedStageRuntimeTests
         ServiceCollection services = new();
         services.AddMemoryManagement();
         services.AddSingleton<IEnvironment>(static provider => new EnvironmentRuntime(provider.GetRequiredService<IResourceRuntime>()));
-        services.AddResources("typed", builder => builder.UseSource<UnusedSource>()
+        services.AddResources(builder => builder.UseSource<UnusedSource>()
             .AddSourcePipeline<Leaf, SourceStage>()
             .AddTransformPipeline<Leaf, Parent, TransformStage>()
             .UseStageRuntime<Leaf, IEnvironment>()
@@ -36,7 +36,7 @@ public sealed class TypedStageRuntimeTests
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("typed");
+        ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         using ResourceReference<Parent> reference = await manager.AcquireAsync(new ResourceKey<Parent>("asset"));
         using ResourceLease<Parent> lease = reference.Acquire();
         IEnvironment expected = provider.GetRequiredService<IEnvironment>();

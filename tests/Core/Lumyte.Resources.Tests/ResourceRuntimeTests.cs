@@ -299,17 +299,14 @@ public sealed class ResourceRuntimeTests
         Assert.Equal(2, host.Dispatcher.Releases);
     }
 
-    /// <summary>Named managers share one default runtime while independent providers own separate endpoints.</summary>
+    /// <summary>Scopes share one manager and default runtime while independent roots own separate endpoints.</summary>
     /// <returns>Completion of both providers and their resource managers.</returns>
     [Fact]
     public async Task DependencyInjectionSharesPerProviderAndIsolatesIndependentHostsAsync()
     {
         ServiceCollection services = new();
         services.AddMemoryManagement();
-        foreach (string name in new[] { "first", "second" })
-        {
-            services.AddResources(name, builder => builder.UseSource<UnusedSource>().AddSourcePipeline<Value, ConstantStage>());
-        }
+        services.AddResources(builder => builder.UseSource<UnusedSource>().AddSourcePipeline<Value, ConstantStage>());
 
         await using ServiceProvider first = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         await using ServiceProvider second = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
@@ -321,15 +318,21 @@ public sealed class ResourceRuntimeTests
         await using ResourceExecutionHost secondHost = new(second);
         await using AsyncServiceScope firstScope = first.CreateAsyncScope();
         await using AsyncServiceScope secondScope = second.CreateAsyncScope();
-        foreach (IServiceProvider provider in new[] { firstScope.ServiceProvider, secondScope.ServiceProvider })
+        ResourceManager firstManager = first.GetRequiredService<ResourceManager>();
+        ResourceManager secondManager = second.GetRequiredService<ResourceManager>();
+        Assert.Same(firstManager, firstScope.ServiceProvider.GetRequiredService<ResourceManager>());
+        Assert.Same(secondManager, secondScope.ServiceProvider.GetRequiredService<ResourceManager>());
+        Assert.NotSame(firstManager, secondManager);
+        Assert.NotEqual(firstManager.ManagerId, secondManager.ManagerId);
+        foreach (ResourceManager manager in new[] { firstManager, secondManager })
         {
-            foreach (string name in new[] { "first", "second" })
+            using (ResourceReference<Value> reference = await manager.AcquireAsync(Key("value")))
+            using (ResourceLease<Value> lease = reference.Acquire())
             {
-                ResourceManager manager = provider.GetRequiredKeyedService<ResourceManager>(name);
-                using ResourceReference<Value> reference = await manager.AcquireAsync(Key("value"));
-                using ResourceLease<Value> lease = reference.Acquire();
                 Assert.Equal("constant", lease.Value.Label);
             }
+
+            await manager.DisposeAsync();
         }
     }
 

@@ -141,7 +141,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="cancellationToken">Cancels the initial acquisition wait.</param>
     /// <returns>The managed owner of the handle.</returns>
     public async ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
-        where T : class
+        where T : notnull
     {
         cancellationToken.ThrowIfCancellationRequested();
         ResourceNode node = GetNode(key);
@@ -213,7 +213,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="reference">The owning reference, or null when resolution fails.</param>
     /// <returns>Whether a reference was acquired.</returns>
     public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference)
-        where T : class
+        where T : notnull
     {
         RefreshRuntimes();
         lock (_gate)
@@ -251,7 +251,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     internal ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
-        where T : class
+        where T : notnull
     {
         RefreshRuntimes();
         lock (_gate)
@@ -262,7 +262,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     internal bool IsHandleAvailable<T>(ResourceHandle<T> handle)
-        where T : class
+        where T : notnull
     {
         RefreshRuntimes();
         lock (_gate)
@@ -273,7 +273,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     internal void ReturnReference<T>(ResourceHandle<T> handle)
-        where T : class
+        where T : notnull
     {
         lock (_gate)
         {
@@ -322,7 +322,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     internal bool TryAcquireFromView<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
-        where T : class
+        where T : notnull
     {
         RefreshRuntimes();
         lock (_gate)
@@ -334,13 +334,16 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
     private static IResourceStage ValidateStage(IResourceStage stage)
     {
-        if (stage.OutputType.IsValueType || stage.OutputType.ContainsGenericParameters
-            || (stage.InputType is { } input && (input.IsValueType || input.ContainsGenericParameters)))
+        if (!IsResourceType(stage.OutputType) || (stage.InputType is { } input && !IsResourceType(input)))
         {
-            throw new ArgumentException("Stage input and output types must be closed reference types.", nameof(stage));
+            throw new ArgumentException("Stage input and output types must be closed, nonnullable types that can be stored as objects.", nameof(stage));
         }
 
         return stage;
+
+        static bool IsResourceType(Type type)
+            => type != typeof(void) && !type.ContainsGenericParameters && !type.IsByRefLike
+                && !type.IsByRef && !type.IsPointer && !type.IsFunctionPointer && Nullable.GetUnderlyingType(type) is null;
     }
 
     private static ulong NextManagerId()
@@ -357,7 +360,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     private ResourceNode GetNode<T>(ResourceKey<T> key)
-        where T : class
+        where T : notnull
     {
         if (key.Address.Id.Value is null || key.Address.Subresource is null || key.Address.Variant is null)
         {
@@ -405,7 +408,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     private ResourceReference<T> CreateReference<T>(ResourceNode node)
-        where T : class
+        where T : notnull
     {
         if (!_slotByKey.TryGetValue(node, out uint index))
         {
@@ -441,7 +444,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     private ResourceReference<T> CreateReference<T>(ResourceHandle<T> handle, ResourceSlot slot)
-        where T : class
+        where T : notnull
     {
         slot.References++;
         if (slot.Current is { } resident)
@@ -455,7 +458,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     private ResourceLease<T> CreateLease<T>(ResourceGeneration generation)
-        where T : class
+        where T : notnull
     {
         generation.Pins++;
         _externalOwners++;
@@ -463,7 +466,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
-        where T : class
+        where T : notnull
     {
         lease = null;
         if (!TryGetSlot(handle, out ResourceSlot? slot)
@@ -478,7 +481,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     }
 
     private bool TryGetSlot<T>(ResourceHandle<T> handle, out ResourceSlot? slot)
-        where T : class
+        where T : notnull
     {
         slot = null;
         if (handle.ManagerId != ManagerId || handle.Generation == 0 || handle.Slot >= _slots.Count)

@@ -500,7 +500,7 @@ public sealed class ResourceConcurrencyTests
             services.AddSingleton(Plan);
             services.AddSingleton(Runtime);
             services.AddMemoryManagement();
-            services.AddResources("test", builder =>
+            services.AddResources(builder =>
             {
                 builder.UseSource<TestSource>();
                 if (registerRuntime)
@@ -514,7 +514,7 @@ public sealed class ResourceConcurrencyTests
             _execution = new ResourceExecutionHost(_provider);
             _scope = _provider.CreateAsyncScope();
             beforeManager?.Invoke(Runtime);
-            Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("test");
+            Manager = _scope.ServiceProvider.GetRequiredService<ResourceManager>();
         }
 
         internal BuildPlan Plan { get; } = new();

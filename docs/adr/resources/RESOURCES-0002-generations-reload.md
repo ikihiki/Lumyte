@@ -66,17 +66,17 @@ Snapshotを長く保持すると参照した値だけでなくmap全体の世代
  {
      public sealed class ResourceManager
      {
--        public ValueTask<ResourceLease<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default) where T : class;
+-        public ValueTask<ResourceLease<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default) where T : notnull;
 +        // 初回ロードを待ち、論理所有を返す。取消はこの待機だけに適用する。
-+        public ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default) where T : class;
++        public ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default) where T : notnull;
 +        public ulong ManagerId { get; }
 +        public ulong PublicationVersion { get; }
 +        // ロードせず論理所有を増やす。無効なhandleはfalse。
-+        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference) where T : class;
++        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference) where T : notnull;
 +        // 現在の公開map内の全世代を保持する。返却は呼出側の責任。
 +        public ResourceSnapshot CaptureSnapshot();
      }
-+    public readonly struct ResourceHandle<T> : IEquatable<ResourceHandle<T>> where T : class
++    public readonly struct ResourceHandle<T> : IEquatable<ResourceHandle<T>> where T : notnull
 +    {
 +        public ulong ManagerId { get; }
 +        public uint Slot { get; }
@@ -85,7 +85,7 @@ Snapshotを長く保持すると参照した値だけでなくmap全体の世代
 +        public bool IsDefault { get; }
 +        public bool Equals(ResourceHandle<T> other);
 +    }
-+    public sealed class ResourceReference<T> : IDisposable where T : class
++    public sealed class ResourceReference<T> : IDisposable where T : notnull
 +    {
 +        public ResourceKey<T> Key { get; }
 +        public ResourceHandle<T> Handle { get; }
@@ -99,11 +99,11 @@ Snapshotを長く保持すると参照した値だけでなくmap全体の世代
 +    public sealed class ResourceSnapshot : IDisposable
 +    {
 +        public ulong PublicationVersion { get; }
-+        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease) where T : class;
++        public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceLease<T>? lease) where T : notnull;
 +        // mapの保持を返す。発行済みLeaseは独立して有効。
 +        public void Dispose();
 +    }
-     public sealed class ResourceLease<T> : IDisposable where T : class
+     public sealed class ResourceLease<T> : IDisposable where T : notnull
      {
          public ResourceKey<T> Key { get; }
          public ulong Revision { get; }
