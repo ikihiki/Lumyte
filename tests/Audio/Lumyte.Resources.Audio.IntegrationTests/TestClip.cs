@@ -14,7 +14,7 @@ internal sealed class TestClip(TestDevice device, AudioFormat format, long frame
 
     public void Dispose()
     {
-        device.Verify();
+        device.VerifyClipRelease();
         if (Borrowers != 0)
         {
             throw new InvalidOperationException("A live voice borrows this clip.");

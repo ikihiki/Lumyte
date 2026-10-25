@@ -9,5 +9,5 @@ internal sealed class ResourceSourceUse(ResourceDependencyLifetime lifetime)
     internal string Revision { get; set; } = string.Empty;
 
     // Completed outside the manager gate so internal bookkeeping can continue without a ThreadPool relay.
-    internal TaskCompletionSource<ResourceSourceSnapshot> Completion { get; } = new();
+    internal TaskCompletionSource<ResourceSourceSnapshot>? Completion { get; set; } = new();
 }
