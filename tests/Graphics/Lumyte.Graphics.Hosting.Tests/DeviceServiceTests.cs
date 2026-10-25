@@ -73,6 +73,31 @@ public sealed class DeviceServiceTests
         Assert.Equal(1, state.Devices[0].Disposals);
     }
 
+    /// <summary>Concurrent returns of one lease cannot release another lease's ownership.</summary>
+    /// <returns>Completion of the scenario.</returns>
+    [Fact]
+    public async Task ConcurrentDisposalReturnsAnEpochLeaseOnlyOnceAsync()
+    {
+        var state = new TestFactoryState();
+        await using ServiceProvider provider = CreateProvider(state);
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        await service.InitializeAsync();
+        GraphicsDeviceLease returned = await service.AcquireAsync();
+        using GraphicsDeviceLease retained = await service.AcquireAsync();
+        state.Devices[0].Lose();
+
+        Parallel.For(0, 64, _ => returned.Dispose());
+
+        Assert.False(returned.IsUsable);
+        Assert.Throws<ObjectDisposedException>(() => returned.Device);
+        Assert.Equal(0, await service.RetireAsync());
+        Assert.Equal(0, state.Devices[0].Disposals);
+        retained.Dispose();
+        Assert.Equal(1, await service.RetireAsync());
+        Assert.Equal(1, state.Devices[0].Disposals);
+    }
+
     /// <summary>Failed cleanup remains owned and is retried without losing its diagnosis.</summary>
     /// <returns>Completion of the scenario.</returns>
     [Fact]

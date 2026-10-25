@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Graphics.Hosting;
@@ -10,7 +11,7 @@ public static class GraphicsHostingServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="name">The unique context name.</param>
     /// <returns>The same collection with the context registration added.</returns>
-    public static IServiceCollection AddGraphicsDevice<TFactory>(this IServiceCollection services, string name)
+    public static IServiceCollection AddGraphicsDevice<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TFactory>(this IServiceCollection services, string name)
         where TFactory : class, IGraphicsDeviceFactory
     {
         ArgumentNullException.ThrowIfNull(services);
