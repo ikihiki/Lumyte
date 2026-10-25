@@ -19,6 +19,7 @@ DIサービスの寿命と構築したデータの寿命も異なるため、取
 manager内では正確な出力型のRuntimeTypeHandleにつき一つのStageを登録する。
 ResourceKeyは出力型とResourceAddress（Id・Subresource・Variant）で論理出力を指定する。
 型handleはプロセス内の識別だけに使い、型名の一致や継承関係で代替しない。
+入力・出力には非nullの参照型と値型を扱い、readonly structのラッパーもその型で登録する。
 異なるAssemblyLoadContextの同名型も別の型であり、型handleやキーを永続形式としない。
 VariantはStageが解釈する設定の識別子であり、別のStage登録を自動選択するものではない。
 
@@ -29,7 +30,7 @@ TransformはGetInputで主入力のアドレスを決定し、追加の入力を
 
 ### 構築から公開まで
 
-登録時に出力型の重複、開いたgeneric型・値型、未登録の主入力、静的な型依存循環を拒否する。
+登録時に出力型の重複、開いたgeneric型、nullable値型、ref structなどobjectへ保持できない型、未登録の主入力、静的な型依存循環を拒否する。
 未登録型の取得はNotSupportedExceptionとし、Stageを暗黙に生成しない。
 同じキーの進行中ロードは共有し、構築view内の依存辺を追加する時点で動的な循環を拒否する。
 互いに別の非同期処理から依存を追加しても、相互待機を始める前に循環を検出する。
@@ -57,6 +58,7 @@ BuildContextは一つの構築だけで有効で、構築終了後の追加操�
 出力やcleanupの失敗時には、後段の所有物と計上メモリを保持する。
 TrimAsyncまたは終了の再試行で未完了部分を再開し、成功済みcallbackを再実行しない。
 一つのcallback内の部分成功はcallback自身が記録する必要がある。
+値型の出力は世代へ一度boxして保持し、取得時は追加のboxを作らずコピーする。コピーは内部参照の所有を移さず、利用期間も延ばさない。Stageは解放の進行状態を元の所有オブジェクトへ保存し、値型のfield更新だけに頼らない。借用した内部参照を別の所有出力として解放することは禁止し、参照型の同一instance検出を値の等価比較へ置き換えない。
 
 内部の世代状態はBuilding → Ready → Releasing → Releasedを基本とし、構築失敗ではBuildingからReleasingへ進む。
 解放失敗はCleanupFailed、再試行中はRetryingCleanupとし、成功するとReleasedへ進む。
@@ -72,13 +74,13 @@ AcquireAsyncの呼出側キャンセルはその待機だけを止め、他の�
 Lease.Disposeは所有数の返却だけを行い、実体の破棄やI/Oを実行しない。
 実体の解放はTrimAsyncとDisposeAsyncで進める。
 
-DIでは名前付きscoped ResourceManagerへ同じscopeのSourceとStageを登録する。
-SourceとStageの登録lifetimeはScopedだけを受け付け、同名manager・同一出力型の重複登録と設定完了後の変更を拒否する。
+DI rootにつき一つのsingleton ResourceManagerへ全出力型のPipelineを登録する。SourceとStageもアプリ寿命で借用し、子scopeからも同じManagerを使う。
+Manager・同一出力型の重複登録と設定完了後の変更を拒否する。
 IMemoryManagerは呼出側が登録する。手動構築でも同じStage集合を渡し、呼出側が借用サービスの寿命を維持する。
 
 終了前に外部Leaseを返し、ロードと操作の完了を待つ。残存時のDisposeAsyncはInvalidOperationExceptionで拒否する。
 終了のcleanupに失敗した場合は所有を残してDisposeAsyncを再試行できるが、新規取得は再開しない。
-managerの終了が完了してからDI scopeまたは借用サービスを閉じる。
+managerの終了が完了してから各systemとDI rootまたは借用サービスを閉じる。
 
 ## APIと契約
 
@@ -97,7 +99,7 @@ managerの終了が完了してからDI scopeまたは借用サービスを閉�
 +        public string Subresource { get; }
 +        public string Variant { get; }
 +    }
-+    public readonly record struct ResourceKey<T> where T : class
++    public readonly record struct ResourceKey<T> where T : notnull
 +    {
 +        public ResourceKey(string id, string subresource = "", string variant = "");
 +        public ResourceKey(ResourceId id, string subresource = "", string variant = "");
@@ -105,7 +107,7 @@ managerの終了が完了してからDI scopeまたは借用サービスを閉�
 +        public ResourceAddress Address { get; }
 +        public RuntimeTypeHandle TypeHandle { get; }
 +    }
-+    public sealed class ResourceLease<T> : IDisposable where T : class
++    public sealed class ResourceLease<T> : IDisposable where T : notnull
 +    {
 +        public ResourceKey<T> Key { get; }
 +        public ulong Revision { get; }
@@ -137,12 +139,12 @@ managerの終了が完了してからDI scopeまたは借用サービスを閉�
 +        ValueTask<object> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken);
 +        ValueTask ReleaseAsync(object resource);
 +    }
-+    public interface IResourceSourceStage<T> : IResourceStage where T : class
++    public interface IResourceSourceStage<T> : IResourceStage where T : notnull
 +    {
 +        new ValueTask<T> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken);
 +        ValueTask ReleaseAsync(T resource);
 +    }
-+    public interface IResourceTransform<TInput, TOutput> : IResourceStage where TInput : class where TOutput : class
++    public interface IResourceTransform<TInput, TOutput> : IResourceStage where TInput : notnull where TOutput : notnull
 +    {
 +        ResourceDependencyLifetime InputLifetime { get; }
 +        ResourceAddress GetInput(ResourceAddress output);
@@ -155,7 +157,7 @@ managerの終了が完了してからDI scopeまたは借用サービスを閉�
 +        public ResourceAddress Address { get; }
 +        public RuntimeTypeHandle OutputTypeHandle { get; }
 +        // 戻り値は借用。managerが依存の利用権を管理する。
-+        public ValueTask<T> RequireAsync<T>(ResourceKey<T> key, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default) where T : class;
++        public ValueTask<T> RequireAsync<T>(ResourceKey<T> key, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default) where T : notnull;
 +        public ValueTask<ResourceSourceSnapshot> OpenSourceAsync(ResourceId id, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Build, CancellationToken cancellationToken = default);
 +        public IMemoryScope GetMemoryScope(ResourceDependencyLifetime lifetime);
 +        // 所有権を移す。callbackは再試行可能にし、完了した仕事を二重解放しない。
@@ -165,7 +167,7 @@ managerの終了が完了してからDI scopeまたは借用サービスを閉�
 +    {
 +        public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory);
 +        // 呼出側の取消は待機だけを止め、共有構築は完了まで所有する。
-+        public ValueTask<ResourceLease<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default) where T : class;
++        public ValueTask<ResourceLease<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default) where T : notnull;
 +        // 未使用世代と失敗したcleanupを処理し、完全解放した世代数を返す。
 +        public ValueTask<int> TrimAsync(CancellationToken cancellationToken = default);
 +        public ValueTask<ulong> ReclaimAsync(MemoryPoolId pool, ulong targetBytes, CancellationToken cancellationToken = default);
@@ -177,14 +179,14 @@ managerの終了が完了してからDI scopeまたは借用サービスを閉�
 +{
 +    public static class ResourceServiceCollectionExtensions
 +    {
-+        public static IServiceCollection AddResources(this IServiceCollection services, string name, Action<ResourceRegistrationBuilder> configure);
++        public static IServiceCollection AddResources(this IServiceCollection services, Action<ResourceRegistrationBuilder> configure);
 +    }
 +    public sealed class ResourceRegistrationBuilder
 +    {
-+        // 以下のlifetimeはScopedだけを受け付ける。登録確定後の変更は拒否する。
-+        public ResourceRegistrationBuilder UseSource<TSource>(ServiceLifetime lifetime = ServiceLifetime.Scoped) where TSource : class, IResourceSource;
-+        public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped) where TOutput : class where TStage : class, IResourceSourceStage<TOutput>;
-+        public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped) where TInput : class where TOutput : class where TStage : class, IResourceTransform<TInput, TOutput>;
++        // singleton SourceとStageを登録する。登録確定後の変更は拒否する。
++        public ResourceRegistrationBuilder UseSource<TSource>() where TSource : class, IResourceSource;
++        public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>() where TOutput : notnull where TStage : class, IResourceSourceStage<TOutput>;
++        public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>() where TInput : notnull where TOutput : notnull where TStage : class, IResourceTransform<TInput, TOutput>;
 +    }
 +}
 +namespace Lumyte.Memory
@@ -223,4 +225,4 @@ ReclaimAsyncは共有poolのReleasedBytes差分を報告するため、同時に
 - 同時Acquireの共有、待機キャンセルの分離、静的・動的循環の拒否、入力Revisionの競合を確認する。
 - 借用値の所有出力への転用を拒否し、BuildからResidentへの昇格を一つの依存として保持する。
 - 構築・出力解放・補助cleanupをそれぞれ失敗させ、メモリ計上と依存が維持され、成功済み処理を再実行しないことを確認する。
-- DIの名前とscopeの分離、登録確定後の変更拒否、借用サービスの破棄回数、異なるAssemblyLoadContextの型識別を検証する。
+- DI root間の分離と子scope間の同一性、登録確定後の変更拒否、借用サービスの破棄回数、異なるAssemblyLoadContextの型識別を検証する。

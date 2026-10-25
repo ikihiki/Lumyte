@@ -1,7 +1,7 @@
 # Lumyte.Resources.Execution
 
 Resourcesの既定環境と、Executionのworkflowジョブを使う実行器を提供します。
-`ResourceRuntime`は`IResourceRuntime`、`IResourceExecutor`、`IExecutionModule`を実装し、複数Managerで共有します。
+`ResourceRuntime`は`IResourceRuntime`、`IResourceExecutor`、`IExecutionModule`を実装し、すべてのStageで共有する既定環境です。
 
 ## 登録と起動
 
@@ -80,7 +80,7 @@ I/Oやキューで待った時間を含めず、再開ごとに計測を始め�
 
 BrowserではHost/Cooperativeで配置し、ロード・解放の待機中もイベントループからPumpを続けます。
 Reference・Lease・Snapshotを返し、Managerの構築と解放を完了してからExecutionRuntimeを停止してください。
-解放失敗時は所有を保持して再試行するため、Manager・DI scope・実行器・device環境を維持します。
+解放失敗時は所有を保持して再試行するため、Manager・DI provider・実行器・device環境を維持します。
 Managerは環境の利用を管理し、共有deviceやworkerの物理的な起動・停止はホストが管理します。
 
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。

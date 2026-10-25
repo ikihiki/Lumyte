@@ -5,8 +5,8 @@ namespace Lumyte.Resources;
 /// <typeparam name="TOutput">The completed output type.</typeparam>
 /// <typeparam name="TRuntime">The required environment contract.</typeparam>
 public interface IResourceTransform<TInput, TOutput, TRuntime> : IResourceTransform<TInput, TOutput>, IResourceStage<TRuntime>
-    where TInput : class
-    where TOutput : class
+    where TInput : notnull
+    where TOutput : notnull
     where TRuntime : class, IResourceRuntime
 {
     /// <inheritdoc/>

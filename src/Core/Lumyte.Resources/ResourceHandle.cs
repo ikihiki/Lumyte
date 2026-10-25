@@ -10,7 +10,7 @@ namespace Lumyte.Resources;
 /// </remarks>
 [StructLayout(LayoutKind.Sequential)]
 public readonly struct ResourceHandle<T> : IEquatable<ResourceHandle<T>>
-    where T : class
+    where T : notnull
 {
     internal ResourceHandle(ulong managerId, uint slot, uint generation)
     {

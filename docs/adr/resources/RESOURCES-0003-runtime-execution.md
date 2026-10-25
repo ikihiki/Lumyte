@@ -55,6 +55,8 @@ Managerは宣言型と選択したinstanceの互換性を構築時に検証す�
 BuildとReleaseの両方に型付きRuntimeを渡し、Stage側のキャストや解放用Runtime参照の重複を不要にする。
 共通層は`ResourceBuildContext.Runtime`も利用できる。
 
+Stageの出力・主入力は閉じた非null型とし、参照一本のreadonly structなどの値型も許可する。異型の世代mapはobject保持を続け、値型は構築時の一回だけboxし、取得時はコピーする。コピーは内部参照の所有権を移さず、利用期間も延長しない。Stageは借用値の内部参照を別の所有出力として解放せず、失敗後の解放再試行に必要な進行状態を元の所有オブジェクトへ保持する。参照型の同一instance検出を値の等価比較へ置き換えない。
+
 ```csharp
 public sealed class MeshStage : IResourceTransform<CpuMesh, Mesh, MeshRuntime>
 {
@@ -209,14 +211,14 @@ await execution.StopAsync();
 ```
 
 `AddResources`は既定ResourceRuntimeとExecutionRuntimeをsingleton登録し、既存の登録は上書きしない。
-複数の名前付きManagerは同じ既定環境・実行器を借りる。
+DI rootにつき一つのsingleton Managerへ全Pipelineを登録し、Source・Stage・世代providerもアプリ寿命で保持する。子scopeでも同じManagerを使う。
 ResourceRuntimeのmodule登録はAddResourcesに任せ、同じinstanceを重複登録しない。
 UseStageRuntimeは既存環境をManager構築時に解決する。環境のDependenciesとは独立した追加providerだけをUseRuntimeDependency等で登録する。
 
 ```csharp
 services.AddSingleton<IMemoryManager>(memory);
 services.AddSingleton<MeshRuntime>(); // 共通Runtimeとdevice serviceをconstructorで受け取る。
-services.AddResources("assets", resources => resources
+services.AddResources(resources => resources
     .UseSource<MySource>()
     .AddSourcePipeline<Document, DocumentStage>()
     .AddTransformPipeline<Document, Mesh, MeshStage>()
@@ -227,16 +229,14 @@ execution.PrepareOnCurrentHost(
     OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 2, new ExecutionOptions());
 await execution.StartAsync();
 
-AsyncServiceScope scope = provider.CreateAsyncScope();
-ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("assets");
+ResourceManager manager = provider.GetRequiredService<ResourceManager>();
 {
     using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
     using ResourceLease<Mesh> lease = mesh.Acquire();
     Consume(lease.Value);
 }
 
-await manager.DisposeAsync(); // 失敗時は同じManagerで再試行し、成功後にscopeを閉じる。
-await scope.DisposeAsync();
+await manager.DisposeAsync(); // 失敗時は環境を維持して同じManagerで再試行する。
 await execution.StopAsync();
 await provider.DisposeAsync();
 ```
@@ -244,7 +244,7 @@ await provider.DisposeAsync();
 DI解決だけでは起動せず、ホストがPrepare/Start/Pump/Stopを管理する。
 BrowserはHost/Cooperativeに配置し、ロード・解放をawaitしている間もフレームループからPumpJobsと必要なHost phaseを進める。
 Reference・Lease・Snapshotを返し、Managerの構築と解放を完了してから実行器・device環境を停止する。
-解放の容量不足やbackend失敗ではManager・scope・Runtime・ExecutionRuntimeを保持して再試行し、DI scopeのDisposeAsyncの再試行に依存しない。
+解放の容量不足やbackend失敗ではManager・Runtime・ExecutionRuntimeを保持して再試行し、成功前にDI rootの破棄を始めない。登録や解決では共有systemを起動せず、各systemの起動・停止はアプリが行う。
 Managerは借用したSource・Stage・Runtime・Executor・providerそのものを破棄せず、終了時に通知購読と取得済みの所有を返す。
 
 ## 性能と制約
@@ -266,7 +266,7 @@ Lease検証では登録providerの状態を確認し、平坦なResident依存�
 
 - Runtime自身へBuild/Releaseの配送を実装させる: 環境の責務と区間単位の配送が混ざるため、Executorを明示してManagerの共通手順を呼ぶ。
 - Stageごとに別ジョブへ配送する: 微小なStageの管理費が増えるため、同一環境の連続区間は同じジョブを使う。
-- Managerが共有deviceやworkerを破棄する: 複数Managerの利用と競合するため、Managerは利用の所有を、ホストは物理環境の寿命を管理する。
+- Managerが共有deviceやworkerを破棄する: Resources以外の利用と競合するため、Managerは利用の所有を、ホストは物理環境の寿命を管理する。
 - Stageへ生deviceを固定注入する: 復旧後の世代を取得できず、旧出力の解放先も曖昧になる。
 - Versionの変化をすべて失効とする: 有効な旧Leaseまで利用不能にするため、不可逆失効はwatermarkで区別する。
 
