@@ -85,46 +85,85 @@ internal static class CreationScenario
     {
         TestDevice device = factory.Current;
         var memory = new MemoryManager();
-        var manager = new ResourceManager("failed-audio-validation", new UnusedSource(), [new UntrackedClipStage(runtime)], memory, executor);
+        var manager = new ResourceManager("failed-audio-validation", new UnusedSource(), [new UntrackedClipStage(runtime)], memory, executor, runtimeDependencies: [runtime]);
         try
         {
+            Task<ResourceReference<AudioClip>> oldLoad = manager.AcquireAsync(new ResourceKey<AudioClip>("before-validation-failure")).AsTask();
+            wait(oldLoad);
+            using ResourceReference<AudioClip> oldReference = oldLoad.GetAwaiter().GetResult();
+            using ResourceLease<AudioClip> oldLease = oldReference.Acquire();
+            AudioClip oldClip = oldLease.Value;
+            AudioVoice oldVoice = VoiceScenario.CreateVoice(oldClip, wait);
             int returned = device.ReturnedClips;
-            device.FailOutputAfterNextClip();
-            device.FailNextClipRelease();
             try
             {
-                Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("validation-failure")).AsTask();
-                wait(load);
-                using ResourceReference<AudioClip> unexpected = load.GetAwaiter().GetResult();
-                throw new InvalidOperationException("A clip whose device validation threw was published.");
+                device.FailOutputAfterNextClip();
+                device.FailNextClipRelease();
+                try
+                {
+                    Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("validation-failure")).AsTask();
+                    wait(load);
+                    using ResourceReference<AudioClip> unexpected = load.GetAwaiter().GetResult();
+                    throw new InvalidOperationException("A clip whose device validation threw was published.");
+                }
+                catch (AggregateException error)
+                {
+                    IReadOnlyCollection<Exception> errors = error.Flatten().InnerExceptions;
+                    Require(
+                        errors.Any(exception => exception.Message == "Injected post-creation output query failure.")
+                        && errors.Any(exception => exception.Message == "Injected clip release failure."),
+                        "The original validation error or failed native cleanup was lost.");
+                }
+
+                Require(
+                    audio.Devices.State.Status == AudioDeviceServiceStatus.Lost && device.ReturnedClips == returned,
+                    "Post-creation validation did not invalidate and retain the candidate.");
+                Require(!oldLease.IsUsable, "A query failure left a published resource generation usable.");
+                ExpectUnavailable(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.Play().AsTask()));
+                wait(audio.Devices.RecoverAsync().AsTask());
+                ExpectUnavailable(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.Play().AsTask()));
+                Task<int> retained = audio.Devices.RetireAsync().AsTask();
+                wait(retained);
+                Require(
+                    retained.GetAwaiter().GetResult() == 0 && !device.IsDisposed,
+                    "The failed validation candidate lost its exact device lease before cleanup retry.");
             }
-            catch (AggregateException error)
+            finally
             {
-                IReadOnlyCollection<Exception> errors = error.Flatten().InnerExceptions;
-                Require(errors.Any(exception => exception.Message == "Injected post-creation output query failure.")
-                    && errors.Any(exception => exception.Message == "Injected clip release failure."),
-                    "The original validation error or failed native cleanup was lost.");
+                wait(oldVoice.Destroy().AsTask());
             }
 
-            Require(audio.Devices.State.Status == AudioDeviceServiceStatus.Lost && device.ReturnedClips == returned,
-                "Post-creation validation did not invalidate and retain the candidate.");
-            wait(audio.Devices.RecoverAsync().AsTask());
-            Task<int> retained = audio.Devices.RetireAsync().AsTask();
-            wait(retained);
-            Require(retained.GetAwaiter().GetResult() == 0 && !device.IsDisposed,
-                "The failed validation candidate lost its exact device lease before cleanup retry.");
+            oldLease.Dispose();
+            oldReference.Dispose();
             wait(manager.TrimAsync().AsTask());
             Task<int> retired = audio.Devices.RetireAsync().AsTask();
             wait(retired);
-            Require(retired.GetAwaiter().GetResult() == 1 && device.IsDisposed && device.ReturnedClips == returned + 1,
-                "Retry did not release the failed validation candidate and its original device exactly once.");
-            Console.WriteLine("Resource audio validation passed: post-create query failure retains native child and exact generation through cleanup retry.");
+            Require(
+                retired.GetAwaiter().GetResult() == 1 && device.IsDisposed && device.ReturnedClips == returned + 2,
+                "Retry did not release the failed validation candidate, prior clip and original device exactly once.");
+            Console.WriteLine("Resource audio validation passed: query failure invalidates old senders and retains native children plus exact generation through cleanup retry.");
         }
         finally
         {
             wait(manager.DisposeAsync().AsTask());
             wait(memory.DisposeAsync().AsTask());
         }
+    }
+
+    private static void ExpectUnavailable(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (AudioDeviceUnavailableException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("A sender from an invalidated service generation still accepted control.");
     }
 
     private static void ExpectCreationFailure(Action create)

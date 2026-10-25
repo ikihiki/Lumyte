@@ -1,12 +1,11 @@
 using System.Diagnostics;
-using Lumyte.Audio.Abstractions;
 using Lumyte.Audio.Execution;
 using Lumyte.Execution;
 using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.Audio.DependencyInjection;
-using Lumyte.Resources.Execution;
 using Lumyte.Resources.DependencyInjection;
+using Lumyte.Resources.Execution;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Audio.IntegrationTests;
