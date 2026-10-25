@@ -28,7 +28,7 @@ Managerは内容世代に選択済みRuntimeを保存し、解放時もそのRun
 
 `GraphicsResourceRuntime` は自身を固定のDependencies一覧へ含める。Managerは選択した環境から世代providerを一度収集するため、同じproviderを別にDI登録する必要はない。providerは次の対応を行う。
 
-- Identityは登録時のservice instance。別DI scopeの同名serviceは別のproviderとして拒否する。
+- Identityは登録時のservice instance。別DI rootの同名serviceは別のproviderとして拒否する。
 - VersionとInvalidatedThroughVersionはserviceのStateをそのまま使用する。
 - IsAvailableはserviceがReadyのときだけtrueとする。Readyはデバイスが利用可能という意味で、GPUアセットの復元完了ではない。
 - Changedの購読はservice.StateChangedへ転送する。通知を再生成要求には変換しない。
@@ -51,9 +51,14 @@ loss通知で旧Ready Versionが失効すると、Resident依存を持つResourc
 
 `RecoverAsync` で新デバイスがReadyになった後、`RebuildRuntimeAsync([dependencyId])` で既存の論理ハンドルへ新世代を一括公開する。新Capsへの適合、描画対象の復元完了、描画再開はアプリが判断する。構築失敗や公開競合は旧公開mapを置換せず、失効済みの旧値を復活させることもない。
 
-終了時もResourceManagerによるGPU子資源の解放を先に完了し、その後でGraphics serviceのscopeを閉じる。解放に使うownerやdispatcherを先に停止しない。
+終了時もResourceManagerによるGPU子資源の解放を先に完了し、その後でGraphics serviceを終了してDI rootを閉じる。解放に使うownerやdispatcherを先に停止しない。
 
 ## 公開APIと利用例
+
+ResourceManagerはDI rootに一つのunkeyed singletonとする。Graphics Runtimeも依存IDごとのsingletonとし、
+アプリ寿命のdevice serviceを借用する。名前は複数のdeviceと実行環境を区別するために残し、Managerの名前は登録・解決に使わない。
+`AddGraphicsDevice`は既存利用向けにScopedを既定とするため、Resourcesと接続する場合はSingletonを指定する。
+子scopeの終了ではManager・Runtime・deviceを終了しない。
 
 Graphics RuntimeはDIなしでも生成できる公開型とし、Stageの実行環境と世代providerを兼ねる。
 
@@ -83,26 +88,25 @@ Graphics RuntimeはDIなしでも生成できる公開型とし、Stageの実行
 +    }
 +    public static class ResourceGraphicsServiceCollectionExtensions
 +    {
-+        // 同じDI scopeの名前付きserviceを接続する。デバイスは初期化しない。
-+        // Manager・service未登録、同じ環境IDの重複、無効な名前を拒否する。
++        // 同じDI rootのsingletonな名前付きserviceを接続する。デバイスは初期化しない。
++        // Manager・service未登録、scoped service、同じ環境IDの重複、無効な名前を拒否する。
 +        public static IServiceCollection AddResourceGraphics(
-+            this IServiceCollection services, string resourceManagerName,
-+            string deviceServiceName, string dependencyId);
++            this IServiceCollection services, string deviceServiceName, string dependencyId);
 +        public static GraphicsResourceRuntime GetResourceGraphicsRuntime(
-+            this IServiceProvider provider, string resourceManagerName, string dependencyId);
++            this IServiceProvider provider, string dependencyId);
 +    }
 +}
 ```
 
 ```csharp
-services.AddGraphicsDevice<AppDeviceFactory>("main");
-services.AddResources("scene", builder => builder
+services.AddGraphicsDevice<AppDeviceFactory>("main", ServiceLifetime.Singleton);
+services.AddResources(builder => builder
     .UseSource<AppSource>()
     .AddSourcePipeline<CpuMesh, CpuMeshStage>()
     .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>()
     .UseStageRuntime<GpuMesh>(provider =>
-        provider.GetResourceGraphicsRuntime("scene", "graphics.main")));
-services.AddResourceGraphics("scene", "main", "graphics.main");
+        provider.GetResourceGraphicsRuntime("graphics.main")));
+services.AddResourceGraphics("main", "graphics.main");
 
 // GpuMeshStageは登録で選ばれたRuntimeを使う。
 // BuildAsyncのGraphicsResourceRuntime runtime引数を使用する。
@@ -129,7 +133,7 @@ IGraphicDevice device = lease.Device;
 
 ## 検証方針
 
-実際のGraphics.Hostingとfake backendを使い、Stageごとの既定Runtime／複数Graphics Runtimeの選択、同一scopeの接続、別scopeの同名service拒否とlease返却、登録不足・重複IDの拒否を検証する。型付きReleaseAsyncに生成時と同じRuntimeが渡され、別途provider登録なしでlossを監視できることも確認する。loss後のGPU値拒否、CPU値維持、構築中lossの公開拒否、復旧後の同一handleへの公開を確認する。
+実際のGraphics.Hostingとfake backendを使い、Stageごとの既定Runtime／複数Graphics Runtimeの選択、子scope間のsingleton共有、別DI rootの同名service拒否とlease返却、scoped device・登録不足・重複IDの拒否を検証する。型付きReleaseAsyncに生成時と同じRuntimeが渡され、別途provider登録なしでlossを監視できることも確認する。loss後のGPU値拒否、CPU値維持、構築中lossの公開拒否、復旧後の同一handleへの公開を確認する。
 
 退役確認と子資源解放をそれぞれ失敗させ、旧ownerが保持され、再試行後に子 → lease → ownerの順で解放されることを検証する。実backendのloss検出・Native退役安全性はGraphics.Hostingと各backendの検証責任であり、fakeでの成功を実機確認として扱わない。
 
