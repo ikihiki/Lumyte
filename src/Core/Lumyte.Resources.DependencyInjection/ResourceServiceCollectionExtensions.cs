@@ -43,7 +43,8 @@ public static class ResourceServiceCollectionExtensions
             provider.GetRequiredService<IMemoryManager>(),
             provider.GetRequiredService<IResourceRuntime>(),
             provider.GetServices<RuntimeDependencyRegistration>().Select(registration => registration.Resolve(provider)),
-            builder.ResolveStageRuntimes(provider)));
+            builder.ResolveStageRuntimes(provider),
+            builder.ReloadOptions));
         builder.Apply(services);
         return services;
     }

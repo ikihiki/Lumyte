@@ -61,6 +61,7 @@ public sealed partial class ResourceManager
             {
                 source = new(lifetime);
                 owner.Sources.Add(id, source);
+                _watchTargets?.Track(id);
                 start = true;
             }
             else if (lifetime == ResourceDependencyLifetime.Resident)
@@ -411,7 +412,7 @@ public sealed partial class ResourceManager
                         {
                             if (metadata.Sources.TryGetValue(source, out string? revision) && revision != use.Revision)
                             {
-                                throw new InvalidOperationException($"Source '{source.Value}' changed; return leases and trim the graph before loading the changed source.");
+                                throw new InvalidOperationException($"Source '{source.Value}' changed; signal a source change to publish its dependent graph together.");
                             }
                         }
                     }

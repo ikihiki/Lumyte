@@ -12,11 +12,14 @@ public sealed class ResourceRegistrationBuilder
     private readonly HashSet<string> _runtimeDependencies = new(StringComparer.Ordinal);
     private readonly Dictionary<Type, Func<IServiceProvider, IResourceRuntime>> _stageRuntimes = [];
     private Func<IServiceProvider, IResourceSource>? _source;
+    private ResourceReloadOptions? _reloadOptions;
     private bool _completed;
 
     internal ResourceRegistrationBuilder()
     {
     }
+
+    internal ResourceReloadOptions? ReloadOptions => _reloadOptions;
 
     /// <summary>Registers the one source borrowed by this manager.</summary>
     /// <typeparam name="TSource">The constructor-injected source implementation.</typeparam>
@@ -32,6 +35,21 @@ public sealed class ResourceRegistrationBuilder
 
         _registrations.Add(static services => services.TryAddSingleton<TSource>());
         _source = static provider => provider.GetRequiredService<TSource>();
+        return this;
+    }
+
+    /// <summary>Configures automatic reload of changes reported by the registered resource source.</summary>
+    /// <param name="options">Whether to subscribe, together with batching and retry settings.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder ConfigureHotReload(ResourceReloadOptions options)
+    {
+        EnsureConfiguring();
+        if (_reloadOptions is not null)
+        {
+            throw new InvalidOperationException("Automatic reload is already configured for this manager.");
+        }
+
+        _reloadOptions = options;
         return this;
     }
 

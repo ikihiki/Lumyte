@@ -67,7 +67,7 @@ public sealed partial class ResourceManager
                 return new(pending);
             }
 
-            if (_externalOwners != 0 || _operations != 0 || _loads.Count != 0)
+            if (_externalOwners != 0 || _operations != (_hotReload is null ? 0 : _reloadOperations) || _loads.Count != 0)
             {
                 throw new InvalidOperationException("Return resource references, leases and resource snapshots, and complete all operations before disposing the manager.");
             }
@@ -85,6 +85,11 @@ public sealed partial class ResourceManager
     {
         try
         {
+            if (_hotReload is not null)
+            {
+                await _hotReload.DisposeAsync().ConfigureAwait(false);
+            }
+
             _reclaimerRegistration.Dispose();
             UnsubscribeRuntimes();
             await _maintenance.WaitAsync().ConfigureAwait(false);
@@ -99,6 +104,7 @@ public sealed partial class ResourceManager
                     }
 
                     _metadata.Clear();
+                    _watchTargets?.Clear();
                     _metadataReferences.Clear();
                     _metadataPruneCandidates.Clear();
                     _invalidated.Clear();
@@ -378,6 +384,17 @@ public sealed partial class ResourceManager
             }
 
             view.Roots = -1;
+            if (_watchTargets is { } targets)
+            {
+                foreach (ResourceBuildSlot slot in view.Builds.Values)
+                {
+                    if (slot.Generation.Sources.Count != 0)
+                    {
+                        targets.CompleteBuild(slot.Generation.Sources.Keys);
+                    }
+                }
+            }
+
             candidates = view.Builds.Values.Select(static slot => slot.Generation).ToHashSet();
             foreach (ResourceGeneration generation in view.Published.Values)
             {
@@ -451,6 +468,11 @@ public sealed partial class ResourceManager
             }
         }
 
+        if (metadata.Sources.Count != 0 || previous?.Sources.Count > 0)
+        {
+            _watchTargets?.ReplaceMetadata(previous, metadata, _hotReload!);
+        }
+
         _metadata[node] = metadata;
         foreach (ResourceNode dependency in metadata.Dependencies)
         {
@@ -462,6 +484,11 @@ public sealed partial class ResourceManager
     {
         EnsureWritableMetadata();
         _metadata.Remove(node);
+        if (metadata.Sources.Count != 0)
+        {
+            _watchTargets?.RemoveMetadata(metadata);
+        }
+
         foreach (ResourceNode dependency in metadata.Dependencies)
         {
             RemoveMetadataReference(dependency);

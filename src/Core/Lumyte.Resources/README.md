@@ -20,10 +20,14 @@ Source・Stage・Runtimeは借用します。利用権を返し、managerを閉�
 
 設計判断は[ADR-RESOURCES-0001](../../../docs/adr/resources/RESOURCES-0001-typed-pipelines.md)を参照してください。
 
-## ハンドルと内容世代
+## 世代とHotReload
 
 ResourceReferenceは論理リソースを所有し、unmanagedなResourceHandleは非所有で参照します。
 ResourceLeaseは内容世代、ResourceSnapshotは公開mapを保持します。
+変更通知からSourceのRevisionを確認し、逆依存を再構築して検証した候補を一括公開します。
+ReloadAsync／ReloadAllAsyncは内部のデバッグ用コマンドに限定し、公開APIには含めません。
+失敗時は旧公開を保持し、競合はConflictを返します。
+
 [ADR-RESOURCES-0002](../../../docs/adr/resources/RESOURCES-0002-generations-reload.md)を参照してください。
 
 ## DIを使わない構築
@@ -67,14 +71,40 @@ await using var manager = new ResourceManager(
 DI登録も同じStageを直接渡し、必要なサービスをコンストラクターへ注入します。
 [既定Runtime](../Lumyte.Resources.Execution/README.md)と[DI登録](../Lumyte.Resources.DependencyInjection/README.md)も参照してください。
 
+## リロードの範囲
+
+入力ファイルのRevisionが変わった場合、その入力を直接使うリソースと、依存する親だけを再構築します。
+影響のない別の枝と公開済み依存先は再利用します。無変更通知・重複通知・未追跡入力では追加の構築を行いません。
+回収済みの依存先が構築に必要なら再取得します。同一ファイル内の変更部分の判定や、
+出力の同値判定による親への伝播停止は行いません。
+
 ## Referenceとフレーム用Lease
 
 Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返します。
 Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
 複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`で取得した`ResourceSnapshot`を`reference.Acquire(snapshot)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
-取得済みLeaseは、取得時の値とRevisionを保持します。
+HotReloadは新世代を別に公開するため、取得済みLeaseは取得時の値とRevisionを保持します。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。
+
+## 自動変更監視
+
+```csharp
+// sourceがStreamと、その取得元に対応するChangesを提供する。
+// resourceRuntimeは前述の手順で起動済みのExecutionRuntimeへ登録する。
+await using var manager = new ResourceManager(
+    "assets", source, stages, memory, resourceRuntime);
+using ResourceReference<MyResource> reference = await manager.AcquireAsync(
+    new ResourceKey<MyResource>("asset.bin"));
+// ファイル編集などの通知で、Managerが必要な依存と親だけを再構築する。
+using ResourceLease<MyResource> frame = reference.Acquire();
+```
+
+`IResourceSource.Changes`が通知元を返すと、Managerがその監視を自動開始します。Streamを開く取得元と監視先の対応はSourceが保証します。Changesの既定値はnullで、不変なDLL埋め込みなどでは監視を開始しません。Managerは`IResourceWatchTargets`としてロード中・公開中の入力ID集合を監視側へ渡します。各集合は不変で、次回取得時に最新となります。監視無効時はこの集合を管理しません。初回公開では新しく追加された入力だけを再確認し、既存入力の全走査を避けます。Manager内部の監視処理は通知をまとめ、IDの重複を除いてHotReloadします。連続更新で待機し続けないよう集約時間に上限を設け、再構築中に届いた通知も次のバッチへ保持します。保留できるID数を超えた場合や`ResourceSourceChange.Rescan`を受信した場合は、追跡中の入力をすべて再確認します。
+
+`Conflict`と構築・入力読み取りの失敗は、設定された間隔・上限回数で再試行します。失敗時は旧公開値を維持し、再試行を使い切った後も新しい通知は受け付けます。`LastReloadResult`・`LastReloadError`と`Reloaded`・`ReloadFailed`で経過を確認でき、監視列挙自体の失敗は`HotReloadCompletion`へ伝わります。イベントはバックグラウンド処理上で実行されるため、UIなどへの配送は利用側で行います。
+
+DIでは`UseSource<TSource>()`だけで監視も接続します。Managerは終了時に監視と進行中の自動再構築をキャンセルしてjoinしてからリソースを解放します。HotReload専用の`Start`／`StopAsync`は不要ですが、ExecutionRuntimeは先に起動し、Managerの解放後に停止します。Managerの`Reloaded`／`ReloadFailed`、`LastReloadResult`／`LastReloadError`、`HotReloadCompletion`から結果と障害を観測できます。監視サービスは内部実装で、生成・起動・停止をManagerが管理します。`IsHotReloadEnabled`は監視の構成有無を示します。通知元はSourceに属し、Managerは購読の寿命を管理します。`ConfigureHotReload(new() { Enabled = false })`で購読を無効にでき、DIを使わない場合はconstructorの`reloadOptions`へ設定します。複合SourceではStreamの振り分けと同じ規則で監視対象を振り分けてください。
 
 ## Runtimeと非同期ロード
 

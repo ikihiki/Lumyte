@@ -11,10 +11,17 @@ ManagerはSource・Stage・Runtimeを借用し、各サービスの所有者はD
 constructor injectionを設定します。出力型ごとに一つのStageを登録します。
 次のStage・Source・出力型はアプリ側の実装です。
 
+次のSceneSourceは、Streamと`IResourceSource.Changes`を提供するアプリ側のSourceです。
+
 ```csharp
 services.AddMemoryManagement();
 services.AddResources(resources => resources
-    .UseSource<MySource>()
+    .UseSource<SceneSource>()
+    .ConfigureHotReload(new ResourceReloadOptions
+    {
+        DebounceDelay = TimeSpan.FromMilliseconds(100),
+        MaximumBatchDelay = TimeSpan.FromSeconds(1),
+    })
     .AddSourcePipeline<Document, DocumentStage>()
     .AddTransformPipeline<Document, Mesh, MeshStage>());
 
@@ -26,6 +33,7 @@ await using ServiceProvider provider = services.BuildServiceProvider(new Service
 
 // ExecutionRuntimeと必要なdevice systemは利用前に起動しておく。
 ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+manager.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 {
     using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
     using ResourceLease<Mesh> lease = mesh.Acquire();
@@ -53,6 +61,18 @@ cleanup失敗時はManagerと環境を保持してDisposeAsyncを再試行しま
 Source・Stage・Runtimeが要求するサービスもManagerの利用期間全体を満たす寿命で登録します。
 `UseSource<T>`は事前登録済みのTを借用でき、未登録ならsingletonとして追加します。
 scopedなSourceやRuntimeをsingleton Managerへ渡す構成は`ValidateScopes`で拒否されます。
+
+## 自動変更監視
+
+Sourceが`IResourceSource.Changes`から通知元を提供すると、Managerが自動的に監視を開始します。
+`UseSource<TSource>()`だけで監視も接続し、通知元の別登録は不要です。
+通知元はSourceが所有し、Managerは購読を所有します。
+`ConfigureHotReload`は集約・再試行を設定し、`Enabled = false`で自動監視を無効にできます。
+`manager.HotReloadCompletion`で監視元の異常終了を確認できます。
+
+Managerの終了は監視と進行中の自動再構築をキャンセルしてjoinし、リソースを解放します。
+利用中のReference・Lease・Snapshotを返してから終了してください。
+HotReload専用のStart／StopAsyncは不要ですが、ExecutionRuntimeの起動・停止は上記の順序で行います。
 
 ## StageごとのRuntimeと世代
 

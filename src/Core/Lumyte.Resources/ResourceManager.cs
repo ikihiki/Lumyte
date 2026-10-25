@@ -10,6 +10,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly string _name;
     private readonly IResourceSource _source;
     private readonly IMemoryManager _memory;
+    private readonly ResourceWatchTargets? _watchTargets;
+    private readonly ResourceReloadService? _hotReload;
     private readonly Dictionary<RuntimeTypeHandle, (IResourceStage Stage, IResourceRuntime Runtime)> _stages;
     private readonly Dictionary<IResourceRuntime, IResourceExecutor> _executors = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
@@ -33,8 +35,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private ulong _publicationVersion;
     private ulong _revision;
     private int _externalOwners;
-    private int _reloadOperations;
     private int _operations;
+    private int _reloadOperations;
     private bool _closing;
     private bool _disposed;
 
@@ -46,7 +48,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="runtime">The shared default environment for stages without an override.</param>
     /// <param name="runtimeDependencies">The borrowed runtime generation providers.</param>
     /// <param name="stageRuntimes">Optional stage environments, selected by their exact output type and fixed during construction.</param>
-    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, IEnumerable<ResourceStageRuntime>? stageRuntimes = null)
+    /// <param name="reloadOptions">Batching and retry settings for automatic reload.</param>
+    public ResourceManager(string name, IResourceSource source, IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime, IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null, IEnumerable<ResourceStageRuntime>? stageRuntimes = null, ResourceReloadOptions? reloadOptions = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _name = name;
@@ -111,7 +114,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
                 RefreshRuntime(dependency);
             }
 
+            if (reloadOptions?.Enabled != false && source.Changes is { } changes)
+            {
+                _watchTargets = new();
+                _hotReload = new(this, changes, reloadOptions);
+            }
+
             _reclaimerRegistration = memory.RegisterReclaimer(this);
+            _hotReload?.Start();
         }
         catch
         {
@@ -119,6 +129,61 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             throw;
         }
     }
+
+    /// <summary>Occurs after each automatic reload attempt, including unchanged and conflicting results.</summary>
+    /// <remarks>Handlers execute outside manager locks; an exception stops automatic monitoring and faults HotReloadCompletion.</remarks>
+    public event EventHandler<ResourceReloadEventArgs>? Reloaded
+    {
+        add
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.Reloaded += value;
+            }
+        }
+
+        remove
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.Reloaded -= value;
+            }
+        }
+    }
+
+    /// <summary>Occurs when an automatic reload fails, with its retry decision.</summary>
+    /// <remarks>Handlers execute outside manager locks; an exception stops automatic monitoring and faults HotReloadCompletion.</remarks>
+    public event EventHandler<ResourceReloadFailureEventArgs>? ReloadFailed
+    {
+        add
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.ReloadFailed += value;
+            }
+        }
+
+        remove
+        {
+            if (_hotReload is { } reload)
+            {
+                reload.ReloadFailed -= value;
+            }
+        }
+    }
+
+    /// <summary>Gets a value indicating whether automatic monitoring was enabled for this manager's source.</summary>
+    public bool IsHotReloadEnabled => _hotReload is not null;
+
+    /// <summary>Gets the automatic monitoring lifetime task, or a completed task when monitoring is disabled.</summary>
+    /// <remarks>The manager joins monitoring before releasing resources. Terminal errors remain observable here after disposal.</remarks>
+    public Task HotReloadCompletion => _hotReload?.Completion ?? Task.CompletedTask;
+
+    /// <summary>Gets the latest completed automatic reload result, or null before the first completed attempt.</summary>
+    public ResourceReloadResult? LastReloadResult => _hotReload?.LastResult;
+
+    /// <summary>Gets the latest automatic reload or terminal monitoring error, cleared by a completed reload attempt.</summary>
+    public Exception? LastReloadError => _hotReload?.LastError;
 
     /// <summary>Gets the process-local identity, never reused by another manager.</summary>
     public ulong ManagerId { get; }
@@ -134,6 +199,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             }
         }
     }
+
+    internal IResourceWatchTargets WatchTargets => _watchTargets!;
 
     /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
