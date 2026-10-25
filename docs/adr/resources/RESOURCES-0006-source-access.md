@@ -15,7 +15,7 @@
 
 ファイルシステム固有の実装は `src/Platform/Lumyte.Resources.FileSystem/`、埋め込み実装は `src/Core/Lumyte.Resources.Embedded/` に配置する。どちらも `IResourceSource` を実装し、Stageは具象Sourceに依存せず `ResourceBuildContext.OpenSourceAsync` で入力を借りる。Sourceは入力を提供し、デコードと変換後のメモリ計上はStageが担当する。
 
-Sourceはconstructorで不変の構成を受け取る。DIではoptionsを登録し、名前付きResourcesの `UseSource<TSource>()` に接続する。DIを使わない場合も同じconstructorで作り、Managerへ渡す。Sourceは自らファイルを書き込んだりDLLをロードしたりしない。
+Sourceはconstructorで不変の構成を受け取る。DIではoptionsを登録し、アプリ共通のResourcesの `UseSource<TSource>()` に接続する。DIを使わない場合も同じconstructorで作り、Managerへ渡す。Sourceは自らファイルを書き込んだりDLLをロードしたりしない。
 
 ### FileSystemのRevisionと変更検出
 

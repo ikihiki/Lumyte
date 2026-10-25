@@ -15,7 +15,7 @@
 
 `FileResourceSource.Changes` が、読み込みと同じrootの変更通知を提供する。内部の `FileResourceChangeSource` が `FileSystemWatcher` のイベントを `IAsyncEnumerable<ResourceSourceChange>` へ変換する。取得元と監視元を別々に選ぶ公開クラスやDI登録APIは作らない。
 
-Sourceのconstructorでは設定だけを検証し、native watcherは列挙の開始時に作る。各enumerationが独立したwatcherと通知queueを所有し、キャンセルまたはenumeratorの破棄で解放する。Sourceを複数Managerで共有しても購読寿命は独立する。
+Sourceのconstructorでは設定だけを検証し、native watcherは列挙の開始時に作る。各enumerationが独立したwatcherと通知queueを所有し、キャンセルまたはenumeratorの破棄で解放する。アプリ共通の一つのManagerが購読を保持し、子scopeの終了では監視を停止しない。
 
 DIでは `UseSource<FileResourceSource>()` により読み込みと監視が接続される。DIを使わない場合も同じSourceをManagerへ渡す。Managerは自動HotReloadが有効で `Changes` が存在すると購読を開始し、Resourcesの解放前に停止する。監視を無効にした構成ではnative watcherを作らない。
 

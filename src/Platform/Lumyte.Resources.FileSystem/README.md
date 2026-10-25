@@ -51,13 +51,12 @@ stream reads. The manager subscribes automatically; the internal native watcher
 is not registered independently:
 
 ```csharp
-services.AddResources("assets", resources => resources
+services.AddResources(resources => resources
     .UseSource<FileResourceSource>()
     .AddSourcePipeline<MyResource, MyResourceStage>());
 
-// Resolve within the same async DI scope as the named resource manager.
-ResourceManager manager = scope.ServiceProvider
-    .GetRequiredKeyedService<ResourceManager>("assets");
+// All resource pipelines and child scopes use the same application manager.
+ResourceManager manager = provider.GetRequiredService<ResourceManager>();
 ResourceReloadService reload = manager.HotReload!;
 reload.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 ```
