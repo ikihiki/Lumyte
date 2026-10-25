@@ -16,6 +16,7 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
     private ValueTask<TResult> _operation;
     private TCommand _command;
     private TResult? _result;
+    private Exception? _failure;
     private long _sliceStarted;
     private int _observed;
     private bool _started;
@@ -129,10 +130,11 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
                 callback.Callback?.Invoke(callback.State);
             }
 
-            if (_operation.IsCompleted)
+            if (!_completed && _operation.IsCompleted)
             {
-                _result = _operation.GetAwaiter().GetResult();
+                // A faulting result source is also observed exactly once while accepted callbacks drain.
                 _completed = true;
+                _result = _operation.GetAwaiter().GetResult();
             }
         }
         finally
@@ -144,17 +146,25 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
     internal override WorkFinish Finish(Exception? error)
     {
         _running = false;
-        if (error is not null || _completed)
+        _failure ??= error;
+        if (_callbacks is { Count: > 0 })
+        {
+            // Completion must not discard continuations already accepted by this workflow.
+            _queued = true;
+            return WorkFinish.Requeue;
+        }
+
+        if (_failure is not null || _completed)
         {
             _terminal = true;
             _command = default;
             _work = null;
             _operation = default;
             _callbacks = null;
-            if (error is not null)
+            if (_failure is not null)
             {
-                _handlerCanceledException = error is OperationCanceledException && !CanceledBeforeStart;
-                _source.SetException(error);
+                _handlerCanceledException = _failure is OperationCanceledException && !CanceledBeforeStart;
+                _source.SetException(_failure);
             }
             else
             {
@@ -162,10 +172,11 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
             }
 
             _result = default;
+            _failure = null;
             return WorkFinish.Completed;
         }
 
-        if (_callbacks is { Count: > 0 } || _completionSignaled)
+        if (_completionSignaled)
         {
             _queued = true;
             return WorkFinish.Requeue;

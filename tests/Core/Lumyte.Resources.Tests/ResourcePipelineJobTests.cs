@@ -236,6 +236,73 @@ public sealed class ResourcePipelineJobTests
         Assert.Equal(1, host.Complete(ignored).Number);
     }
 
+    /// <summary>A cancellation continuation accepted before dependency completion is drained even when its caller returned.</summary>
+    /// <param name="failChild">Whether the dependency fails after the cancellation notification.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IgnoredCanceledDependencyCompletesBeforeItsWorkflowCloses(bool failChild)
+    {
+        using Host host = new(1);
+        using CancellationTokenSource canceled = new();
+        var ready = new TaskCompletionSource();
+        bool entered = false;
+        Task<Value>? ignored = null;
+        var stage = new Stage(async (context, _) =>
+        {
+            if (context.Address.Subresource == "child")
+            {
+                entered = true;
+                await ready.Task;
+                Exception? notificationFailure = null;
+                var notifier = new Thread(() =>
+                {
+                    try
+                    {
+                        canceled.Cancel();
+                    }
+                    catch (Exception error)
+                    {
+                        notificationFailure = error;
+                    }
+                });
+                notifier.Start();
+
+                // Post the cancellation continuation from another thread while this workflow dispatch is active.
+                Assert.True(notifier.Join(TimeSpan.FromSeconds(10)), "Cancellation notification did not finish.");
+                Assert.Null(notificationFailure);
+                if (failChild)
+                {
+                    throw new IOException("Child failed after the cancellation callback was queued.");
+                }
+
+                return new Value(1);
+            }
+
+            ignored = context.RequireAsync(Key("child"), cancellationToken: canceled.Token).AsTask();
+            return new Value(2);
+        });
+        ResourceManager manager = host.Create([stage]);
+        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        host.Until(() => entered);
+        ready.SetResult();
+        host.Until(() => loading.IsCompleted);
+        if (failChild)
+        {
+            Assert.Throws<IOException>(() => loading.GetAwaiter().GetResult());
+        }
+        else
+        {
+            using ResourceReference<Value> reference = host.Complete(loading);
+            using ResourceLease<Value> lease = reference.Acquire();
+            Assert.Equal(2, lease.Value.Number);
+        }
+
+        Assert.NotNull(ignored);
+        Assert.True(ignored.IsCompleted, "An accepted cancellation continuation must complete before its workflow closes.");
+        Assert.ThrowsAny<OperationCanceledException>(() => ignored.GetAwaiter().GetResult());
+    }
+
     /// <summary>An ignored pending dependency cannot become a second owner of the same output.</summary>
     [Fact]
     public void IgnoredDependencyAliasIsRejectedAfterItCompletes()
