@@ -47,3 +47,12 @@ dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Rele
 復旧検証は`--host`・`--di`と組み合わせられます。`--openal`・`--reload`とは別の実行にしてください。物理出力デバイスの取り外しは行いません。
 
 `--reload`は変更通知による差し替え、旧Lease保持、不正WAVE時の旧公開保持を検証します。
+
+NativeAOTでは通常の警告をエラー扱いする設定でpublishし、DI構築と生成・制御・解放を実行します。
+CIはfake backendのHost／Dedicated・DIあり／なしと、実OpenALのHost／Dedicated・DIありを確認します。
+
+```sh
+dotnet publish tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -r linux-x64 -p:PublishAot=true -o artifacts/resources-audio-aot
+artifacts/resources-audio-aot/Lumyte.Resources.Audio.IntegrationTests --host --di
+ALSOFT_DRIVERS=null artifacts/resources-audio-aot/Lumyte.Resources.Audio.IntegrationTests --openal --di
+```

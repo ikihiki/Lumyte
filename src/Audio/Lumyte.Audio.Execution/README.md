@@ -20,7 +20,7 @@ Browserの接続例は[WebAudioサンプル](../../../samples/Lumyte.Audio.Execu
 
 キューは生成された静的portです。同じプロセスで同じモジュールを再登録できません。AudioVoice.State／Gain／Loopはbackendのlockで保護されたcached値を呼び出し元スレッドで直接返し、配送しません。Stateは直近の周期更新のsnapshotです。即時観測が必要ならaudio.State.Refreshで全voiceを一度更新してから読みます。voiceごとの読み取りで全voiceを再更新しません。ECSからは生成されたAddPlayTo等でCommandBatchへ追加できます。
 
-実OpenALのNativeAOT公開は、現行Silk.NET loaderのIL3000／IL3002により未対応です。
+NativeAOTはLinux x64でDIあり／なし、Host／Dedicatedを検証しています。OpenALはBCLのNativeLibraryで読み込み、Silk.NETの独自path resolverを使用しません。nativeライブラリの配置は[OpenAL backend](../Lumyte.Audio.OpenAL/README.md)を参照してください。
 
 AudioVoiceとAudioClipは参照一本のreadonly structです。元のIAudioVoice／IAudioClipから直接構築できます。clipのDeviceは生成元のbackend deviceへの不変参照で、voice生成もそのbackendへ配送します。
 
