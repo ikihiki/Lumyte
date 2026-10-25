@@ -522,6 +522,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
 
         if (changed)
         {
+            entry.Device.Invalidate();
             Notify();
         }
     }
