@@ -1,5 +1,4 @@
 using Lumyte.Audio.Abstractions;
-using Lumyte.Audio.Execution;
 
 namespace Lumyte.Resources.Audio;
 
@@ -17,5 +16,5 @@ public sealed class AudioVoiceStage : IResourceTransform<IAudioClip, IAudioVoice
         => runtime.CreateVoiceAsync(input, context, cancellationToken);
 
     /// <inheritdoc/>
-    public async ValueTask ReleaseAsync(IAudioVoice resource) => await new AudioVoice(resource).Destroy();
+    public ValueTask ReleaseAsync(IAudioVoice resource, AudioResourceRuntime runtime) => runtime.DestroyVoiceAsync(resource);
 }

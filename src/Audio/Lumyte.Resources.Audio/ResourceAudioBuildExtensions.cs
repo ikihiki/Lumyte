@@ -15,7 +15,7 @@ public static class ResourceAudioBuildExtensions
     public static async ValueTask<AudioDeviceLease> UseAudioAsync(this ResourceBuildContext context, IAudioDeviceService service, string dependencyId = "Audio", ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
-        AudioDeviceLease lease = await service.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        AudioDeviceLease lease = await service.AcquireAsync(cancellationToken);
         try
         {
             context.TrackRuntimeDependency(dependencyId, lease.State.Version, lifetime, service);

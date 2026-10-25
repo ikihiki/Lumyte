@@ -4,13 +4,21 @@ using Lumyte.Execution;
 
 namespace Lumyte.Resources.Audio;
 
-/// <summary>Runs audio resource stages and owns their audio environment, device lifetime and owner dispatch.</summary>
-/// <param name="audio">The same audio module collected by the execution runtime.</param>
-/// <param name="defaultRuntime">The shared dispatcher used for stage execution and continuations.</param>
-public sealed class AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime) : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
+/// <summary>Provides the shared executor, tracked device environment and owner operations for audio stages.</summary>
+/// <remarks>The audio module owns physical device generations. This module declares its required startup dependency.</remarks>
+public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
 {
-    private readonly AudioModule _audio = audio;
-    private readonly IResourceRuntime _defaultRuntime = defaultRuntime;
+    private readonly AudioModule _audio;
+
+    /// <summary>Initializes a new instance of the <see cref="AudioResourceRuntime"/> class.</summary>
+    /// <param name="audio">The same audio module collected by the execution runtime.</param>
+    /// <param name="defaultRuntime">The shared environment supplying stage execution and continuations.</param>
+    public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime)
+    {
+        _audio = audio;
+        Executor = defaultRuntime.Executor;
+        Dependencies = [this];
+    }
 
     /// <inheritdoc/>
     public event EventHandler? Changed
@@ -18,6 +26,12 @@ public sealed class AudioResourceRuntime(AudioModule audio, IResourceRuntime def
         add => _audio.Devices.StateChanged += value;
         remove => _audio.Devices.StateChanged -= value;
     }
+
+    /// <inheritdoc/>
+    public IResourceExecutor Executor { get; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<IResourceRuntimeDependency> Dependencies { get; }
 
     /// <inheritdoc/>
     public string Name => "ResourceAudio";
@@ -38,13 +52,6 @@ public sealed class AudioResourceRuntime(AudioModule audio, IResourceRuntime def
         }
     }
 
-    /// <inheritdoc/>
-    public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
-        => _defaultRuntime.BuildAsync(stage, context, cancellationToken);
-
-    /// <inheritdoc/>
-    public ValueTask ReleaseAsync(IResourceStage stage, object resource) => _defaultRuntime.ReleaseAsync(stage, resource);
-
     /// <summary>Creates a fully initialized clip on the audio owner.</summary>
     /// <param name="data">The PCM whose storage remains alive until completion.</param>
     /// <param name="context">The construction recording this runtime version.</param>
@@ -52,8 +59,8 @@ public sealed class AudioResourceRuntime(AudioModule audio, IResourceRuntime def
     /// <returns>The actual backend clip, never a placeholder.</returns>
     public async ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return await _audio.State.CreateClipForLease(lease, data.Format, data.Samples, cancellationToken).ConfigureAwait(false);
+        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken);
+        return await _audio.State.CreateClipForLease(lease, data.Format, data.Samples, cancellationToken);
     }
 
     /// <summary>Creates a fully initialized voice on the audio owner.</summary>
@@ -63,9 +70,19 @@ public sealed class AudioResourceRuntime(AudioModule audio, IResourceRuntime def
     /// <returns>The actual stopped backend voice.</returns>
     public async ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return await _audio.State.CreateVoiceForLease(lease, clip, AudioBus.Effects, cancellationToken).ConfigureAwait(false);
+        AudioDeviceLease lease = await context.UseAudioAsync(_audio.Devices, Id, cancellationToken: cancellationToken);
+        return await _audio.State.CreateVoiceForLease(lease, clip, AudioBus.Effects, cancellationToken);
     }
+
+    /// <summary>Destroys a clip through its original backend instance on the audio owner.</summary>
+    /// <param name="clip">The original clip retained by the manager.</param>
+    /// <returns>The actual native cleanup completion.</returns>
+    public async ValueTask DestroyClipAsync(IAudioClip clip) => await new AudioClip(clip).DestroyClip();
+
+    /// <summary>Destroys a voice through its original backend instance on the audio owner.</summary>
+    /// <param name="voice">The original voice retained by the manager.</param>
+    /// <returns>The actual native cleanup completion.</returns>
+    public async ValueTask DestroyVoiceAsync(IAudioVoice voice) => await new AudioVoice(voice).Destroy();
 
     /// <inheritdoc/>
     public void Declare(ModuleBuilder builder) => builder.DependsOn<AudioModule>();

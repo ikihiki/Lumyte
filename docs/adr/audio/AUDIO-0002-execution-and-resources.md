@@ -26,20 +26,20 @@ Dedicated配置ではownerが10 ms周期で直接更新し、周期間も制御�
 
 ### Sourceから実体までの所有権
 
-`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは出力型に対応する `IResourceRuntime` を選び、AudioDecodeStageには既定の `ResourceRuntime`、clipとvoiceには `AudioResourceRuntime` を使用する。AudioResourceRuntimeはStage実行、現在のdevice取得、所有スレッドへの生成要求、世代依存を扱う。Stageの構築と解放のCPU配送は共有の既定Runtimeへ委譲する。
+`Lumyte.Resources.Audio` はSource → `AudioPcmData` → `IAudioClip` → `IAudioVoice` を標準Stageとして提供する。ResourceManagerは出力型に対応する `IResourceRuntime` を選び、AudioDecodeStageには既定の `ResourceRuntime`、clipとvoiceには `AudioResourceRuntime` を使用する。AudioResourceRuntimeは現在のdevice取得、所有スレッドへの生成・解放操作、世代依存を提供する安定した環境である。Executorには既定Runtimeと同じ実行器を指定し、DependenciesにはAudioの世代providerを提示する。Managerがこれらを登録時に収集・検証し、全Stage共通の構築・解放手順を実行器へ配送する。物理deviceの生成・復旧・破棄はAudioModuleが所有する。
 
-全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `IResourceTransform<TInput, TOutput, AudioResourceRuntime>` で環境型を宣言し、BuildAsyncの型付きRuntime引数を使う。Stage側の型変換は不要で、不適合な環境登録はManager構築時に拒否する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
+全Stageは無引数で作成できる。AudioDecodeStageはSourceの非同期I/Oを待ってWAVEを同期デコードする。AudioClipStageとAudioVoiceStageは `IResourceTransform<TInput, TOutput, AudioResourceRuntime>` で環境型を宣言し、BuildAsyncとReleaseAsyncの型付きRuntime引数を使う。Stage側の型変換は不要で、不適合な環境登録はManager構築時に拒否する。Stageへ別のRuntimeをconstructor注入する経路は持たない。
 ClipとVoiceは同じAudioResourceRuntime instanceなので、依存構築を一つのジョブで進める。PCMデコードの既定Runtimeへ切り替わる箇所で別ジョブにし、native操作はAudio ownerコマンドへ配送する。
 
-通常のawait後の継続もRuntimeがジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。Stageはこの継続先を保持し、ConfigureAwait(false)で汎用Runtimeの配送を外れない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
+通常のawait後の継続も実行器がジョブへ戻す。I/Oや依存ロードの待機中はCPU実行枠を占有せず、単一CPU枠やCooperativeでも後続の仕事を進められる。StageとAudioResourceRuntimeの生成処理はこの継続先を保持し、lease取得後の生成要求も同じworkflowから投入する。ConfigureAwait(false)で継続先を外れる中継は置かない。同期デコードの途中では自動分割されないため、大容量デコードは独自Stageでチャンク化する。
 
 標準decoderはRIFF WAVEのmono/stereo PCM8/16/24/32とfloat32を扱う。chunk境界・padding・alignment・sample rate・byte rate・非有限sampleを検証し、不正データは `InvalidDataException`、未対応codecや形式は `NotSupportedException` で失敗する。圧縮形式やストリーミングは別のStageで表す。
 
 PCMはclipへのコピー完了までBuild依存として保持する。voiceはclipをResident依存として保持し、生成完了後に実際のbackend instanceを公開する。`AudioPcmData.Samples` は借用したReadOnlyMemoryであり、利用側が供給した配列もコピー完了まで変更しない。
 
-選択された長寿命の `AudioResourceRuntime` が、構築ごとに `UseAudioAsync` で正確なdevice leaseを取得し、service identityと取得時VersionをResourceManagerへ記録する。同じRuntime実体を世代依存先にも自動登録し、実行環境と依存先を一致させる。構築中に失効した候補は公開せず、voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
+選択された長寿命の `AudioResourceRuntime` が、構築ごとに `UseAudioAsync` で正確なdevice leaseを取得し、service identityと取得時VersionをResourceManagerへ記録する。ManagerはRuntime.Dependenciesで提示された同じ実体を世代依存先へ登録し、実行環境と依存先を一致させる。構築中に失効した候補は公開せず、voice生成時にはclip.Deviceとlease.Deviceの参照一致も検査する。
 
-ResourceManagerは生成時に選択したRuntimeを各ResourceGenerationへ保持し、同じRuntimeからStageのReleaseAsyncを実行する。解放先を再選択せず、元のbackend instanceへのCleanupコマンドを送る。出力の解放後にdevice leaseを返し、voice → clip → deviceの順を守る。native解放が失敗した場合は同じ出力とleaseを保持して `TrimAsync` で再試行する。旧資源の解放先を新deviceへ付け替えない。
+ResourceManagerは生成時に選択したRuntimeを各ResourceGenerationへ保持し、実行器を通してStageの型付きReleaseAsyncへ渡す。StageはRuntimeのDestroyVoiceAsync／DestroyClipAsyncで元backendを解放する。解放先を再選択せず、元のbackend instanceへのCleanupコマンドを送る。出力の解放後にdevice leaseを返し、voice → clip → deviceの順を守る。native解放が失敗した場合は同じ出力とleaseを保持して `TrimAsync` で再試行する。旧資源の解放先を新deviceへ付け替えない。
 
 ### 安定したserviceと交換可能なepoch
 
@@ -59,9 +59,9 @@ ownerの更新や生成時の確認でUnavailableを観測すると旧epochを�
 
 ### DI、起動と終了
 
-`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntimeをsingletonとして登録する。AddResourcesの既定登録が汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ渡す。AudioResourceRuntimeは共有の既定IResourceRuntimeを受け取る。AddAudioPipelineは `UseStageRuntime<IAudioClip, AudioResourceRuntime>()` とvoice用の同じ指定で出力型を接続し、選択した実体を世代依存先にも自動登録する。PCMは既定Runtimeを使用する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
+`AddAudioResources<TSource>(name)` はAudioModule・AudioResourceRuntimeをsingletonとして登録する。AddResourcesの既定登録が汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ渡す。AudioResourceRuntimeは共有の既定IResourceRuntimeからExecutorを一度取得する。IExecutionModuleとしてAudioModuleへの依存を宣言し、未登録のAudioModuleを構成収集時に検出する。AudioResourceRuntime自身はdeviceを起動・停止しない。AddAudioPipelineは `UseStageRuntime<IAudioClip, AudioResourceRuntime>()` とvoice用の同じ指定で出力型を接続し、環境のDependenciesから世代依存先を収集する。PCMは既定Runtimeを使用する。SourceとStageはmanagerのscopeで解決する。複数managerでもmoduleを重複登録しない。メモリ管理は呼び出し側が登録し、事前登録したAudioModuleやIAudioDeviceFactoryでbackendを選べる。無引数のAudioModuleはOpenALを使用する。
 
-DIなしでもAudioModule・AudioResourceRuntime・汎用ResourceRuntimeをExecutionRuntimeへ渡す。ResourceManagerの既定runtimeとAudioResourceRuntimeの委譲先には同じ汎用Runtimeを使用する。`stageRuntimes` へ `ResourceStageRuntime(typeof(IAudioClip), audioRuntime)` とvoice用の指定を渡し、無引数の標準Stageを登録する。世代依存先の重複指定は不要である。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
+DIなしでもAudioModule・AudioResourceRuntime・汎用ResourceRuntimeをExecutionRuntimeへ渡す。ResourceManagerの既定runtimeとAudioResourceRuntimeのExecutorには同じ汎用Runtimeの実行器を使用する。`stageRuntimes` へ `ResourceStageRuntime(typeof(IAudioClip), audioRuntime)` とvoice用の指定を渡し、無引数の標準Stageを登録する。世代依存先の重複指定は不要である。ホストが `PrepareOnCurrentHost` → `StartAsync` を実行し、起動完了後にロードを開始する。constructorやDI解決中に非同期生成を同期ブロックしない。
 
 BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawait中もホストの同期コンテキストとPumpを維持する。出力のresumeはuser gesture内で開始するbackend固有の操作として扱う。音声供給callbackからmanaged jobの完了を待たない。
 
@@ -150,15 +150,17 @@ BrowserではHost／Cooperativeを選び、初期化・ロード・終了のawai
 +    public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
 +    {
 +        public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime);
-+        // StageのCPU配送は共有のdefaultRuntimeへ委譲する。
-+        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken);
-+        public ValueTask ReleaseAsync(IResourceStage stage, object resource);
++        // Managerが登録時に実行器と環境依存を収集する。
++        public IResourceExecutor Executor { get; }
++        public IReadOnlyList<IResourceRuntimeDependency> Dependencies { get; }
 +        public string Id { get; } // "Audio"
 +        public object Identity { get; } // audio.Devicesと同じ参照。
 +        public ResourceRuntimeSnapshot Snapshot { get; }
 +        public event EventHandler? Changed;
 +        public ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default);
 +        public ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default); // Effects bus。
++        public ValueTask DestroyClipAsync(IAudioClip clip);
++        public ValueTask DestroyVoiceAsync(IAudioVoice voice);
 +    }
 +    public static class ResourceAudioBuildExtensions
 +    {

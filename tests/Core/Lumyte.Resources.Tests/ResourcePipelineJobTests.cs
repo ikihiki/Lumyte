@@ -54,12 +54,15 @@ public sealed class ResourcePipelineJobTests
         Assert.Equal(1, host.Default.Builds);
     }
 
-    /// <summary>Each runtime transition starts a new job, even when a later stage returns to the first runtime.</summary>
-    [Fact]
-    public void RuntimeTransitionsCreateSeparatePipelineJobs()
+    /// <summary>Each runtime transition starts a new job, even when environments share their executor.</summary>
+    /// <param name="shareExecutor">Whether both environments use the exact same executor instance.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RuntimeTransitionsCreateSeparatePipelineJobs(bool shareExecutor)
     {
         using Host host = new(3);
-        var other = new RecordingRuntime(host.Dispatcher);
+        IResourceRuntime other = shareExecutor ? new Environment(host.Default) : new RecordingRuntime(host.Dispatcher);
         ResourceManager manager = host.Create(
             [new LeafStage(), new Transform<Leaf, Middle>(), new Transform<Middle, Root>()],
             [new(typeof(Node<Middle>), other)]);
@@ -71,8 +74,11 @@ public sealed class ResourcePipelineJobTests
         Assert.NotSame(root.Job, middle.Job);
         Assert.NotSame(middle.Job, leaf.Job);
         Assert.NotSame(root.Job, leaf.Job);
-        Assert.Equal(2, host.Default.Builds);
-        Assert.Equal(1, other.Builds);
+        Assert.Equal(shareExecutor ? 3 : 2, host.Default.Builds);
+        if (!shareExecutor)
+        {
+            Assert.Equal(1, Assert.IsType<RecordingRuntime>(other).Builds);
+        }
     }
 
     /// <summary>Requests explicitly made outside a workflow are dispatched instead of executing on an arbitrary thread.</summary>
@@ -156,6 +162,7 @@ public sealed class ResourcePipelineJobTests
         var output = new Value(42);
         int releases = 0;
         bool entered = false;
+        SynchronizationContext? rootJob = null;
         Task<Value>? ignored = null;
         var stage = new Stage(async (context, token) =>
         {
@@ -166,14 +173,17 @@ public sealed class ResourcePipelineJobTests
                 throw new IOException("Child build failed.");
             }
 
+            rootJob = SynchronizationContext.Current;
             ignored = context.RequireAsync(Key("child")).AsTask();
             return output;
         });
-        stage.Release = value =>
+        stage.Release = async value =>
         {
             Assert.Same(output, value);
+            Assert.Same(rootJob, SynchronizationContext.Current);
+            await Task.Yield();
+            Assert.Same(rootJob, SynchronizationContext.Current);
             releases++;
-            return ValueTask.CompletedTask;
         };
         ResourceManager manager = host.Create([stage]);
         Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
@@ -186,6 +196,155 @@ public sealed class ResourcePipelineJobTests
         Assert.NotNull(ignored);
         Assert.Throws<IOException>(() => ignored.GetAwaiter().GetResult());
         Assert.Equal(1, host.Default.Builds);
+    }
+
+    /// <summary>Fairness checkpoints must not strand the result of an ignored dependency after its build finishes.</summary>
+    /// <param name="asynchronous">Whether the child suspends before consuming its CPU slice.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IgnoredDependencyCompletesBeforeItsWorkflowCloses(bool asynchronous)
+    {
+        using Host host = new(1);
+        var ready = new TaskCompletionSource();
+        bool entered = false;
+        Task<Value>? ignored = null;
+        var stage = new Stage(async (context, _) =>
+        {
+            if (context.Address.Subresource == "child")
+            {
+                entered = true;
+                if (asynchronous)
+                {
+                    await ready.Task;
+                }
+
+                Thread.Sleep(5);
+                return new Value(1);
+            }
+
+            ignored = context.RequireAsync(Key("child")).AsTask();
+            return new Value(2);
+        });
+        ResourceManager manager = host.Create([stage]);
+        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        host.Until(() => entered);
+        ready.SetResult();
+        using ResourceReference<Value> reference = host.Complete(loading);
+        Assert.NotNull(ignored);
+        Assert.True(ignored.IsCompleted, "The completed parent must not discard an accepted dependency continuation.");
+        Assert.Equal(1, host.Complete(ignored).Number);
+    }
+
+    /// <summary>A cancellation continuation accepted before dependency completion is drained even when its caller returned.</summary>
+    /// <param name="failChild">Whether the dependency fails after the cancellation notification.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IgnoredCanceledDependencyCompletesBeforeItsWorkflowCloses(bool failChild)
+    {
+        using Host host = new(1);
+        using CancellationTokenSource canceled = new();
+        var ready = new TaskCompletionSource();
+        bool entered = false;
+        Task<Value>? ignored = null;
+        var stage = new Stage(async (context, _) =>
+        {
+            if (context.Address.Subresource == "child")
+            {
+                entered = true;
+                await ready.Task;
+                Exception? notificationFailure = null;
+                var notifier = new Thread(() =>
+                {
+                    try
+                    {
+                        canceled.Cancel();
+                    }
+                    catch (Exception error)
+                    {
+                        notificationFailure = error;
+                    }
+                });
+                notifier.Start();
+
+                // Post the cancellation continuation from another thread while this workflow dispatch is active.
+                Assert.True(notifier.Join(TimeSpan.FromSeconds(10)), "Cancellation notification did not finish.");
+                Assert.Null(notificationFailure);
+                if (failChild)
+                {
+                    throw new IOException("Child failed after the cancellation callback was queued.");
+                }
+
+                return new Value(1);
+            }
+
+            ignored = context.RequireAsync(Key("child"), cancellationToken: canceled.Token).AsTask();
+            return new Value(2);
+        });
+        ResourceManager manager = host.Create([stage]);
+        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        host.Until(() => entered);
+        ready.SetResult();
+        host.Until(() => loading.IsCompleted);
+        if (failChild)
+        {
+            Assert.Throws<IOException>(() => loading.GetAwaiter().GetResult());
+        }
+        else
+        {
+            using ResourceReference<Value> reference = host.Complete(loading);
+            using ResourceLease<Value> lease = reference.Acquire();
+            Assert.Equal(2, lease.Value.Number);
+        }
+
+        Assert.NotNull(ignored);
+        Assert.True(ignored.IsCompleted, "An accepted cancellation continuation must complete before its workflow closes.");
+        Assert.ThrowsAny<OperationCanceledException>(() => ignored.GetAwaiter().GetResult());
+    }
+
+    /// <summary>An ignored pending dependency cannot become a second owner of the same output.</summary>
+    [Fact]
+    public void IgnoredDependencyAliasIsRejectedAfterItCompletes()
+    {
+        using Host host = new(1);
+        var ready = new TaskCompletionSource();
+        var output = new Value(42);
+        bool entered = false;
+        int releases = 0;
+        Task<Value>? ignored = null;
+        var stage = new Stage(async (context, _) =>
+        {
+            if (context.Address.Subresource == "child")
+            {
+                entered = true;
+                await ready.Task;
+                return output;
+            }
+
+            ignored = context.RequireAsync(Key("child")).AsTask();
+            return output;
+        });
+        stage.Release = value =>
+        {
+            Assert.Same(output, value);
+            releases++;
+            return ValueTask.CompletedTask;
+        };
+        ResourceManager manager = host.Create([stage]);
+        Task<ResourceReference<Value>> parent = manager.AcquireAsync(Key("root")).AsTask();
+        host.Until(() => entered);
+        Task<ResourceReference<Value>> child = manager.AcquireAsync(Key("child")).AsTask();
+        ready.SetResult();
+        using ResourceReference<Value> childReference = host.Complete(child);
+        host.Until(() => parent.IsCompleted);
+        Assert.Throws<InvalidOperationException>(() => parent.GetAwaiter().GetResult());
+        Assert.NotNull(ignored);
+        Assert.Same(output, host.Complete(ignored));
+        Assert.Equal(0, releases);
+        childReference.Dispose();
+        Assert.Equal(1, host.Complete(manager.TrimAsync().AsTask()));
+        Assert.Equal(1, releases);
     }
 
     /// <summary>A long synchronous stage yields at the next dependency boundary without creating another job.</summary>
@@ -286,17 +445,26 @@ public sealed class ResourcePipelineJobTests
         }
     }
 
-    private sealed class RecordingRuntime(IResourceRuntime inner) : IResourceRuntime
+    private sealed class RecordingRuntime(IResourceRuntime inner) : IResourceRuntime, IResourceExecutor
     {
+        public IResourceExecutor Executor => this;
+
+        public bool ShouldYield => inner.Executor.ShouldYield;
+
         internal int Builds { get; private set; }
 
-        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
+        public ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
             Builds++;
-            return inner.BuildAsync(stage, context, cancellationToken);
+            return inner.Executor.BuildAsync(context, cancellationToken);
         }
 
-        public ValueTask ReleaseAsync(IResourceStage stage, object resource) => inner.ReleaseAsync(stage, resource);
+        public ValueTask ReleaseAsync(IResourceStage stage, IResourceRuntime runtime, object resource) => inner.Executor.ReleaseAsync(stage, runtime, resource);
+    }
+
+    private sealed class Environment(IResourceExecutor executor) : IResourceRuntime
+    {
+        public IResourceExecutor Executor => executor;
     }
 
     private sealed record Value(int Number);
