@@ -2,7 +2,7 @@ using Lumyte.Memory;
 
 namespace Lumyte.Resources;
 
-internal sealed class ResourceGeneration(ResourceNode node, ulong revision, IResourceStage stage, IResourceRuntime runtime)
+internal sealed class ResourceGeneration(ResourceNode node, ulong revision, IResourceStage stage, IResourceRuntime runtime, IResourceExecutor executor)
 {
     internal ResourceNode Node { get; } = node;
 
@@ -11,6 +11,8 @@ internal sealed class ResourceGeneration(ResourceNode node, ulong revision, IRes
     internal IResourceStage Stage { get; } = stage;
 
     internal IResourceRuntime Runtime { get; } = runtime;
+
+    internal IResourceExecutor Executor { get; } = executor;
 
     internal object? Value { get; set; }
 

@@ -86,22 +86,26 @@ public sealed class TypedStageRuntimeTests
         Assert.Same(execution.Resources, lease.Value.Runtime);
     }
 
-    private sealed class EnvironmentRuntime(IResourceRuntime inner) : IEnvironment
+    private sealed class EnvironmentRuntime(IResourceRuntime inner) : IEnvironment, IResourceExecutor
     {
         public int Builds { get; private set; }
 
         public int Releases { get; private set; }
 
-        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
+        public IResourceExecutor Executor => this;
+
+        public bool ShouldYield => inner.Executor.ShouldYield;
+
+        public ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
             Builds++;
-            return inner.BuildAsync(stage, context, cancellationToken);
+            return inner.Executor.BuildAsync(context, cancellationToken);
         }
 
-        public ValueTask ReleaseAsync(IResourceStage stage, object resource)
+        public ValueTask ReleaseAsync(IResourceStage stage, IResourceRuntime runtime, object resource)
         {
             Releases++;
-            return inner.ReleaseAsync(stage, resource);
+            return inner.Executor.ReleaseAsync(stage, runtime, resource);
         }
     }
 
@@ -124,7 +128,11 @@ public sealed class TypedStageRuntimeTests
             return new(runtime);
         }
 
-        public ValueTask ReleaseAsync(Leaf resource) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(Leaf resource, IEnvironment runtime)
+        {
+            Assert.Same(resource.Runtime, runtime);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class TransformStage : IResourceTransform<Leaf, Parent, IEnvironment>
@@ -141,7 +149,11 @@ public sealed class TypedStageRuntimeTests
             return new(runtime, input);
         }
 
-        public ValueTask ReleaseAsync(Parent resource) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(Parent resource, IEnvironment runtime)
+        {
+            Assert.Same(resource.Runtime, runtime);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class DefaultStage : IResourceSourceStage<DefaultValue, ResourceRuntime>
@@ -149,7 +161,11 @@ public sealed class TypedStageRuntimeTests
         public ValueTask<DefaultValue> BuildAsync(ResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
             => ValueTask.FromResult(new DefaultValue(runtime));
 
-        public ValueTask ReleaseAsync(DefaultValue resource) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(DefaultValue resource, ResourceRuntime runtime)
+        {
+            Assert.Same(resource.Runtime, runtime);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class UnusedSource : IResourceSource

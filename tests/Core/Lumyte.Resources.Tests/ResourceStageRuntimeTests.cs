@@ -233,7 +233,7 @@ public sealed class ResourceStageRuntimeTests
             .UseStageRuntime<LeafValue, ResourceRuntime>().UseStageRuntime<LeafValue, ResourceRuntime>()));
     }
 
-    private sealed class RecordingRuntime(IResourceRuntime inner, string id, object? identity = null) : IResourceRuntime, IResourceRuntimeDependency
+    private sealed class RecordingRuntime(IResourceRuntime inner, string id, object? identity = null) : IResourceRuntime, IResourceExecutor, IResourceRuntimeDependency
     {
         private EventHandler? _changed;
         private int _builds;
@@ -259,23 +259,29 @@ public sealed class ResourceStageRuntimeTests
 
         public ResourceRuntimeSnapshot Snapshot { get; private set; } = new(1, true, 0);
 
+        public IReadOnlyList<IResourceRuntimeDependency> Dependencies => [this];
+
+        public IResourceExecutor Executor => this;
+
+        public bool ShouldYield => inner.Executor.ShouldYield;
+
         internal int Builds => Volatile.Read(ref _builds);
 
         internal int Subscriptions { get; private set; }
 
         internal ConcurrentQueue<object> Released { get; } = new();
 
-        public ValueTask<object> BuildAsync(IResourceStage stage, ResourceBuildContext context, CancellationToken cancellationToken)
+        public ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
             Assert.Same(this, context.Runtime);
             Interlocked.Increment(ref _builds);
-            return inner.BuildAsync(stage, context, cancellationToken);
+            return inner.Executor.BuildAsync(context, cancellationToken);
         }
 
-        public ValueTask ReleaseAsync(IResourceStage stage, object resource)
+        public ValueTask ReleaseAsync(IResourceStage stage, IResourceRuntime runtime, object resource)
         {
             Released.Enqueue(resource);
-            return inner.ReleaseAsync(stage, resource);
+            return inner.Executor.ReleaseAsync(stage, runtime, resource);
         }
 
         internal void InvalidateAndAdvance()
