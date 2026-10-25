@@ -47,10 +47,10 @@ manager is closed.
 Expected output includes:
 
 ```text
-Document elements: mesh/0, material/0
-Projection builds during discovery: 0
+Scene: 3 vertices; material: copper
+Projection builds: 2
 Initial mesh: 3 vertices; shared document builds: 1
-Automatic reload: Published; publication 4; document builds: 2
+Automatic reload: Published; publication 2; document builds: 2
 Existing lease: 3 vertices; same handle after reload: 6 vertices
 Original view: copper; current view: silver
 Document buffer after release: 0 bytes
