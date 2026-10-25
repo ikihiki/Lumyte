@@ -1,11 +1,11 @@
 # Lumyte.Graphics.Hosting
 
-名前付きserviceがbackendの実deviceを所有し、デバイスロスト後の再生成を管理します。Resources・Memoryには依存しません。
+`IGraphicsDeviceService`がbackendの実deviceを所有し、デバイスロスト後の再生成を管理します。通常の1デバイス構成では名前を指定せず登録・取得します。Resources・Memoryには依存しません。
 
 ```csharp
-services.AddGraphicsDevice<AppDeviceFactory>("main");
+services.AddGraphicsDevice<AppDeviceFactory>();
 await using var scope = provider.CreateAsyncScope();
-var graphics = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+var graphics = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
 await graphics.InitializeAsync();
 using var lease = await graphics.AcquireAsync();
 IGraphicDevice device = lease.Device;
@@ -13,9 +13,14 @@ IGraphicDevice device = lease.Device;
 ```
 
 `AddGraphicsDevice`の既定寿命はScopedです。アプリ全体で共有する場合は
-`AddGraphicsDevice<AppDeviceFactory>("main", ServiceLifetime.Singleton)`を指定します。
+`AddGraphicsDevice<AppDeviceFactory>(ServiceLifetime.Singleton)`を指定します。
 factoryとserviceは同じ寿命で登録され、Transientは受け付けません。singletonは子scopeを閉じても終了しません。
 Resourcesのsingleton Managerへ接続するdeviceにはSingletonを使用します。
+
+複数deviceを使う場合は`AddGraphicsDevice<OtherFactory>("readback", ServiceLifetime.Singleton)`を追加し、
+`GetRequiredKeyedService<IGraphicsDeviceService>("readback")`で選びます。名前なしと名前付きの登録は独立し、登録順で切り替わりません。
+名前付きdeviceだけを登録しても名前なしのserviceは作りません。既定のserviceは一つだけ登録でき、重複は構成エラーです。
+`State.Name`は名前なしで空文字列、名前付きでは指定した非空の名前になります。
 
 AppDeviceFactoryはIGraphicsDeviceFactoryを実装し、backend固有設定・dispatcherをconstructor injectionで受け取ります。CreateAsyncは生成したbackend instanceをIGraphicsDeviceOwnerで包み、serviceへ所有権を渡します。ownerのDeviceはbackendそのもので、別deviceへforwardしません。factoryは部分生成失敗のcleanupを担当し、serviceは成功後のownerを所有します。Native同期生成の必要なbackendでも、DI constructorやservice取得では生成しません。
 
