@@ -8,8 +8,8 @@ Managerは環境を登録・検証し、共有Executorで全Stage共通の構築
 初回ロードとHotReloadのどちらも同じStageを使用します。
 
 - AudioDecodeStage: 既定RuntimeのCPUジョブでSourceの非同期I/Oを待ち、WAVEをデコードしてAudioPcmDataを返す。
-- AudioClipStage: AudioResourceRuntimeで現在のdevice世代を取得 → 型付きAudioDeviceコマンド → 所有スレッドでclip生成。
-- AudioVoiceStage: 同じ手順で世代を取得し、clipの生成元との一致を確認してvoice生成。
+- AudioClipStage: 型付きAudioDeviceコマンド一回で現在のdevice世代のlease取得とclip生成を所有スレッド上で実行。
+- AudioVoiceStage: コマンド一回で世代のleaseを取得し、clipの生成元との一致を確認してvoice生成。
 - 解放: voice → clipの順で、生成済みのCleanupコマンドを所有スレッドへ配送。
 
 生成完了まではawaitし、公開する値は実際のIAudioClip・IAudioVoiceです。
@@ -21,7 +21,8 @@ voiceはclipをResident依存として保持し、PCMはclipへのコピー完�
 AudioResourceRuntimeはAudioModuleにDependsOnを宣言し、起動完了後に利用可能になります。
 引数なしのAudioClipStageとAudioVoiceStageは`IResourceTransform<TInput, TOutput, AudioResourceRuntime>`を実装し、BuildAsyncとReleaseAsyncの型付きRuntime引数で選択済み環境を受け取ります。Stage側のキャストは不要で、環境型の不一致はManager構築時に検出します。
 RuntimeはAudioModule.Devicesの世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
-UseAudioAsyncは取得した正確な世代を依存として記録し、deviceのleaseをcontextへ渡します。
+標準Stageは生成結果と正確なleaseを受け取り、世代検証前に候補の解放責任をcontextへ渡します。検証失敗時はnative候補を解放してからleaseを返し、native解放に失敗した場合は両方を保持してTrimで再試行します。
+独自Stage向けのUseAudioAsyncは取得した正確な世代を依存として記録し、deviceのleaseをcontextへ直接渡します。
 StageのReleaseAsyncはRuntimeのDestroyVoiceAsync／DestroyClipAsyncから元backendを解放します。その後にleaseを返し、解放失敗時は同じ世代を保持して再試行します。
 
 DIは[Audio専用の登録API](../Lumyte.Resources.Audio.DependencyInjection/README.md)から行います。
@@ -51,7 +52,7 @@ Host配置ならAudioコマンドはホストへ統合され、CPU処理もCoope
 Dedicated配置ならAudioの所有スレッドとCPUワーカーを使います。
 同じAudioResourceRuntimeのClip／Voice構築は一つのジョブで進み、PCMデコードの既定Runtimeへ切り替わる箇所で別ジョブにします。native操作はAudio ownerへ送り、解放も元Runtimeから配送します。
 通常のawait後の継続も同じ配送先へ戻り、I/O待ちの間はCPU実行枠を返します。
-StageとRuntimeの生成処理は通常のawaitを使い、lease取得後の生成要求も同じworkflowから投入します。
+StageとRuntimeの生成処理は通常のawaitを使い、lease取得とnative生成を合わせた要求を同じworkflowから投入します。
 同期的な所有スレッド待機や、フレームごとのAudio更新配送は行いません。
 
 HotReloadは新しいclip・voiceを同じ所有スレッドで構築し、検証後に一括公開します。

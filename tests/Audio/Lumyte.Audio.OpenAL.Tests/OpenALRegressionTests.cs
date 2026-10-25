@@ -1,4 +1,6 @@
+using System.Reflection;
 using Lumyte.Audio.Abstractions;
+using Silk.NET.OpenAL;
 using Xunit;
 
 namespace Lumyte.Audio.OpenAL.Tests;
@@ -6,6 +8,23 @@ namespace Lumyte.Audio.OpenAL.Tests;
 /// <summary>Exercises allocation recovery against OpenAL Soft.</summary>
 public sealed class OpenALRegressionTests
 {
+    /// <summary>Rented conversion storage uploads only the requested PCM sample range.</summary>
+    [OpenALFact]
+    public void PooledClipConversionPreservesExactNativeBufferSize()
+    {
+        using var device = new OpenALDevice();
+        using var api = AL.GetApi();
+        foreach (int samples in new[] { 32770, 1002 })
+        {
+            using IAudioClip clip = device.CreateClip(new(48000, 2), new float[samples]);
+            uint handle = (uint)clip.GetType().GetProperty("Handle", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(clip)!;
+            api.GetBufferProperty(handle, GetBufferInteger.Size, out int bytes);
+            Assert.Equal(AudioError.NoError, api.GetError());
+            Assert.Equal(samples * sizeof(short), bytes);
+            Assert.Equal(samples / 2, clip.FrameCount);
+        }
+    }
+
     /// <summary>Lost generations reject controls but their native children can still be released.</summary>
     [OpenALFact]
     public void LostDeviceRejectsControlsAndRetainsCleanup()

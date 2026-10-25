@@ -22,7 +22,7 @@ OpenAL Soft の Native ライブラリはアプリ／ホストが用意します
 
 初期化失敗時は部分生成物を解放します。`maxVoices` はバックエンドの管理上限であり、OpenAL の source 上限より大きい場合もあります。Native の割り当て失敗は例外で通知し、既存 voice の制御・解放と、解放後の新規割り当てを継続できます。
 
-float PCM は [-1, 1] に clamp して PCM16 に変換します。mono／stereo のデバイス形式への変換とミックスは OpenAL に任せます。3D 減衰は使わず、voice gain に Master と所属バスの gain を乗算します。量子化と平滑化は Browser と一致しません。
+float PCM は [-1, 1] に clamp して PCM16 に変換します。変換用のshort配列はArrayPoolから借り、実サンプル数だけをnativeへコピーして返します。mono／stereo のデバイス形式への変換とミックスは OpenAL に任せます。3D 減衰は使わず、voice gain に Master と所属バスの gain を乗算します。量子化と平滑化は Browser と一致しません。
 
 `ALC_EXT_disconnect` がある環境では切断を `Unavailable` として返します。検出した切断は不可逆で、生成・再生制御・Update・Resumeは `AudioDeviceUnavailableException` になります。旧voice・clipのDisposeは引き続き許可し、最後に旧deviceを解放します。旧contextをcurrentにできない場合、子のNative回収はcontext破棄に委ねます。拡張がない環境では切断検出を保証しません。解放失敗後にcontextが終了済みならDisposeの再試行だけを許します。
 

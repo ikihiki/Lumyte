@@ -10,6 +10,9 @@ internal sealed class TestDevice : IAudioDevice
     private int _output = (int)AudioOutputState.Running;
     private bool _disposed;
     private int _voiceReleaseFailures;
+    private int _clipReleaseFailures;
+    private int _clipCreationFailures;
+    private int _voiceCreationFailures;
     private int _loseDuringNextClip;
     private int _createdClips;
     private int _returnedClips;
@@ -42,6 +45,11 @@ internal sealed class TestDevice : IAudioDevice
     public IAudioClip CreateClip(AudioFormat format, ReadOnlySpan<float> samples)
     {
         VerifyAvailable();
+        if (Interlocked.Exchange(ref _clipCreationFailures, 0) != 0)
+        {
+            throw new InvalidOperationException("Injected clip creation failure.");
+        }
+
         _clips++;
         Interlocked.Increment(ref _createdClips);
         var clip = new TestClip(this, format, samples.Length / format.Channels);
@@ -56,6 +64,11 @@ internal sealed class TestDevice : IAudioDevice
     public IAudioVoice CreateVoice(IAudioClip clip, AudioBus bus = AudioBus.Effects)
     {
         VerifyAvailable();
+        if (Interlocked.Exchange(ref _voiceCreationFailures, 0) != 0)
+        {
+            throw new InvalidOperationException("Injected voice creation failure.");
+        }
+
         var original = (TestClip)clip;
         if (!ReferenceEquals(original.Device, this))
         {
@@ -104,6 +117,22 @@ internal sealed class TestDevice : IAudioDevice
     internal void LoseDuringNextClip() => Volatile.Write(ref _loseDuringNextClip, 1);
 
     internal void FailNextVoiceRelease() => Interlocked.Increment(ref _voiceReleaseFailures);
+
+    internal void FailNextClipRelease() => Interlocked.Increment(ref _clipReleaseFailures);
+
+    internal void FailNextClipCreation() => Volatile.Write(ref _clipCreationFailures, 1);
+
+    internal void FailNextVoiceCreation() => Volatile.Write(ref _voiceCreationFailures, 1);
+
+    internal void VerifyClipRelease()
+    {
+        Verify();
+        if (Volatile.Read(ref _clipReleaseFailures) > 0)
+        {
+            Interlocked.Decrement(ref _clipReleaseFailures);
+            throw new InvalidOperationException("Injected clip release failure.");
+        }
+    }
 
     internal void VerifyVoiceRelease()
     {
