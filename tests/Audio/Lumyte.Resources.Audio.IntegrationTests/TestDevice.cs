@@ -39,6 +39,12 @@ internal sealed class TestDevice : IAudioDevice
 
     internal int ReturnedClips => Volatile.Read(ref _returnedClips);
 
+    public void Invalidate()
+    {
+        Verify();
+        SetOutput(AudioOutputState.Unavailable);
+    }
+
     public void Update() => VerifyAvailable();
 
     public ValueTask ResumeOutputAsync(CancellationToken cancellationToken = default)
