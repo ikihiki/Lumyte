@@ -8,6 +8,21 @@ namespace Lumyte.Audio.OpenAL.Tests;
 /// <summary>Exercises allocation recovery against OpenAL Soft.</summary>
 public sealed class OpenALRegressionTests
 {
+    /// <summary>A failed device initialization does not prevent later native API loads.</summary>
+    [OpenALFact]
+    public void DeviceInitializationFailureAllowsLaterLoads()
+    {
+        Assert.Throws<InvalidOperationException>(() => new OpenALDevice("Lumyte missing output device"));
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            using var device = new OpenALDevice();
+            using IAudioClip clip = device.CreateClip(new(48000, 1), new float[48]);
+            using IAudioVoice voice = device.CreateVoice(clip);
+            voice.Play();
+            voice.Stop();
+        }
+    }
+
     /// <summary>Rented conversion storage uploads only the requested PCM sample range.</summary>
     [OpenALFact]
     public void PooledClipConversionPreservesExactNativeBufferSize()
