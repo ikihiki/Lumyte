@@ -3,6 +3,10 @@ using Lumyte.Memory;
 namespace Lumyte.Resources;
 
 /// <summary>Provides tracked dependencies and owned cleanup for one pipeline construction.</summary>
+/// <remarks>
+/// Finish synchronous context calls before the stage returns. Registered asynchronous dependencies and sources
+/// are drained by the manager; unjoined work must not continue calling the context after the stage ends.
+/// </remarks>
 public sealed class ResourceBuildContext
 {
     private readonly ResourceManager _manager;
