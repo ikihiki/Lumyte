@@ -66,7 +66,7 @@ internal static class VoiceScenario
     private static void Reload(ResourceManager manager, TestSource source, ResourceReference<AudioClip> reference, ResourceLease<AudioClip> old, AudioVoice oldVoice, Action<Task> wait)
     {
         var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.HotReload!.Reloaded += (_, result) =>
+        manager.Reloaded += (_, result) =>
         {
             if (result.Result.Status == ResourceReloadStatus.Published)
             {
@@ -84,7 +84,7 @@ internal static class VoiceScenario
             wait(oldVoice.Stop().AsTask());
             wait(nextVoice.Play().AsTask());
             var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            manager.HotReload.ReloadFailed += (_, _) => failed.TrySetResult();
+            manager.ReloadFailed += (_, _) => failed.TrySetResult();
             source.Set(float.NaN);
             wait(failed.Task);
             using ResourceLease<AudioClip> afterFailure = reference.Acquire();

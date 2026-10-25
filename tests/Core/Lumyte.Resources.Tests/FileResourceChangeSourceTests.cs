@@ -21,7 +21,7 @@ public sealed class FileResourceChangeSourceTests
         using ResourceReference<TextValue> reference = await manager.AcquireAsync(new ResourceKey<TextValue>("asset.txt"));
         using ResourceLease<TextValue> original = reference.Acquire();
         TaskCompletionSource published = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.HotReload!.Reloaded += (_, args) =>
+        manager.Reloaded += (_, args) =>
         {
             if (args.Result.Status == ResourceReloadStatus.Published)
             {
