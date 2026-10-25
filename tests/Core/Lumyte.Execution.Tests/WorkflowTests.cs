@@ -231,6 +231,77 @@ public sealed class WorkflowTests
         Assert.Equal(1, operation.Observations);
     }
 
+    /// <summary>Root completion drains accepted continuations and preserves the first failure without rereading its result.</summary>
+    /// <param name="rootFault">Whether the root result source fails.</param>
+    /// <param name="callbackFault">Whether a trailing callback fails.</param>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RootCompletionDrainsAcceptedCallbacks(bool rootFault, bool callbackFault)
+    {
+        using var fixture = new WorkflowFixture();
+        var operation = new SingleResultSource();
+        var rootError = new InvalidOperationException("Root failure.");
+        var callbackError = new IOException("Callback failure.");
+        SynchronizationContext? workflowContext = null;
+        int callbacks = 0;
+        fixture.Module.Handler = (_, _) =>
+        {
+            workflowContext = SynchronizationContext.Current;
+            return new ValueTask<int>(operation, 0);
+        };
+
+        ValueTask<int> result = fixture.Module.Port.Execute(0);
+        fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
+        Assert.NotNull(workflowContext);
+        workflowContext.Post(
+            _ =>
+            {
+                callbacks++;
+                workflowContext.Post(
+                    _ =>
+                    {
+                        callbacks++;
+                        if (callbackFault)
+                        {
+                            throw callbackError;
+                        }
+                    },
+                    null);
+            },
+            null);
+        if (rootFault)
+        {
+            operation.Fail(rootError);
+        }
+        else
+        {
+            operation.Complete(17);
+        }
+
+        fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
+        Assert.Equal(1, callbacks);
+        Assert.Equal(1, operation.Observations);
+        Assert.False(result.IsCompleted);
+        fixture.Until(() => result.IsCompleted);
+        Assert.Equal(2, callbacks);
+        Assert.Equal(1, operation.Observations);
+        if (rootFault)
+        {
+            Assert.Same(rootError, Assert.Throws<InvalidOperationException>(() => CompletedResult.Read(result)));
+        }
+        else if (callbackFault)
+        {
+            Assert.Same(callbackError, Assert.Throws<IOException>(() => CompletedResult.Read(result)));
+        }
+        else
+        {
+            Assert.Equal(17, CompletedResult.Read(result));
+        }
+    }
+
     /// <summary>Workflow authority does not permit pumps or lifecycle changes or escape to ordinary handlers.</summary>
     [Fact]
     public void WorkflowSubmissionAuthorityDoesNotEscape()
@@ -340,5 +411,7 @@ public sealed class WorkflowTests
         public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags) => _source.OnCompleted(continuation, state, token, flags);
 
         internal void Complete(int result) => _source.SetResult(result);
+
+        internal void Fail(Exception error) => _source.SetException(error);
     }
 }
