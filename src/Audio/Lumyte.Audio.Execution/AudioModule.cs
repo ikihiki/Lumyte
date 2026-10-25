@@ -47,6 +47,8 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         AudioDevice.DeclareRetire(builder, Options(WorkAdmission.Cleanup));
         AudioDevice.DeclareCreateClipForLease(builder, Options(WorkAdmission.Normal));
         AudioDevice.DeclareCreateVoiceForLease(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareCreateClipWithLease(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareCreateVoiceWithLease(builder, Options(WorkAdmission.Normal));
         _close = AudioDevice.DeclareClose(builder, Options(WorkAdmission.Cleanup));
         AudioDevice.DeclareCreateClip(builder, Options(WorkAdmission.Normal));
         AudioClip.DeclareCreateVoice(builder, Options(WorkAdmission.Normal));

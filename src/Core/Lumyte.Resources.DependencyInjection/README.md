@@ -105,10 +105,17 @@ Stageは`IResourceTransform<TInput, TOutput, TRuntime>`などで環境型を宣�
 同じRuntime instanceへ対応付けた依存Stageは同じ構築ジョブで実行します。型が同じでもinstanceが異なれば別の実行区間です。
 解放は内容世代に保存したRuntimeと生成時のLease・ownerを使います。
 
-選択RuntimeがIResourceRuntimeDependencyを実装していれば、同じinstanceを世代providerとして自動収集します。
+選択Runtimeの`Dependencies`に宣言されたinstanceを世代providerとして収集します。
 同じprovider instanceは重複登録せず、同じIdを持つ別instanceは拒否します。
 実際に借りたVersionのTrackRuntimeDependencyによる記録はStage側で行います。
 追加のproviderはUseRuntimeDependencyまたはAddResourceRuntimeDependencyでも登録できます。登録名とproviderのIdは一致する必要があります。
 
 [既定Runtimeの実行契約](../Lumyte.Resources.Execution/README.md)と
 [Runtime設計](../../../docs/adr/resources/RESOURCES-0003-runtime-execution.md)を参照してください。
+
+## Native AOT
+
+constructor injectionで生成するSource・Stage・providerの型引数には、公開constructorを保持する注釈を付けています。
+factoryで登録する型や登録済みサービスを選択する`UseStageRuntime`には、不要な保持指定を追加しません。
+CIでは`Lumyte.Resources.AotSmoke`をNative AOT公開し、DIだけで構築する実装型と型付きRuntimeを
+ThreadPool／Hostの両方で実行して、生成・未完了await・解放まで検証します。

@@ -15,7 +15,10 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly Dictionary<RuntimeTypeHandle, (IResourceStage Stage, IResourceRuntime Runtime)> _stages;
     private readonly Dictionary<IResourceRuntime, IResourceExecutor> _executors = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, ResourceRuntimeState> _runtimes = new(StringComparer.Ordinal);
-    private readonly Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
+    private readonly Dictionary<ResourceNode, int> _metadataReferences = [];
+    private readonly HashSet<ResourceNode> _metadataPruneCandidates = [];
+    private readonly Dictionary<ResourceNode, int> _generationCounts = [];
+    private readonly HashSet<ResourceGeneration> _failedGenerations = [];
     private readonly HashSet<ResourceGeneration> _generations = [];
     private readonly Dictionary<ResourceNode, ResourceLoad> _loads = [];
     private readonly List<ResourceSlot> _slots = [];
@@ -26,6 +29,9 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly SemaphoreSlim _maintenance = new(1, 1);
     private readonly IDisposable _reclaimerRegistration;
     private Dictionary<ResourceNode, ResourceGeneration> _published = [];
+    private Dictionary<ResourceNode, ResourceMetadata> _metadata = [];
+    private bool _metadataShared;
+    private bool _watchRescanRequested;
     private ResourceBuildView? _normalView;
     private Exception? _runtimeFailure;
     private Task? _disposeTask;
@@ -358,6 +364,11 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             if (slot.References == 0)
             {
                 _slotByKey.Remove(slot.Node);
+                if (slot.Current is null)
+                {
+                    _metadataPruneCandidates.Add(slot.Node);
+                }
+
                 slot.Current = null;
             }
 

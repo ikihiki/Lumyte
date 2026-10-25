@@ -29,10 +29,10 @@ public sealed class OpenALDevice : IAudioDevice
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxVoices);
         _maxVoices = maxVoices;
-        _al = AL.GetApi();
+        _al = OpenALNativeContext.CreateApi();
         try
         {
-            _alc = ALContext.GetApi();
+            _alc = OpenALNativeContext.CreateContextApi();
         }
         catch
         {

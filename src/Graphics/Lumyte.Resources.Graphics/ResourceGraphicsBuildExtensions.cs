@@ -20,13 +20,7 @@ public static class ResourceGraphicsBuildExtensions
         try
         {
             context.TrackRuntimeDependency(dependencyId, lease.State.Version, lifetime, service);
-            context.RegisterCleanup(
-                () =>
-                {
-                    lease.Dispose();
-                    return ValueTask.CompletedTask;
-                },
-                lifetime);
+            context.RegisterCleanup(lease, lifetime);
             return lease;
         }
         catch
