@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using Lumyte.Audio.Abstractions;
 using Lumyte.Audio.Execution;
 using Lumyte.Execution;
 using Lumyte.Resources.DependencyInjection;
@@ -8,31 +7,26 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Lumyte.Resources.Audio.DependencyInjection;
 
-/// <summary>Connects named audio resource managers to the shared audio owner and CPU executor.</summary>
+/// <summary>Registers the audio environment and its clip pipeline for the application resource manager.</summary>
 public static class AudioResourceServiceCollectionExtensions
 {
-    /// <summary>Registers WAVE decoding, clip/voice pipelines and the same audio runtime provider for a named manager.</summary>
-    /// <typeparam name="TSource">The scoped source supplying WAVE files.</typeparam>
-    /// <param name="services">The collection, with memory management already registered.</param>
-    /// <param name="name">The unique resource manager name.</param>
+    /// <summary>Registers the shared audio owner and resource environment modules.</summary>
+    /// <param name="services">The collection configured separately with the common resource manager.</param>
     /// <returns>The supplied collection.</returns>
-    public static IServiceCollection AddAudioResources<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TSource>(this IServiceCollection services, string name)
-        where TSource : class, IResourceSource
+    public static IServiceCollection AddAudioResources(this IServiceCollection services)
     {
         AddModule<AudioModule>(services);
         AddModule<AudioResourceRuntime>(services);
-        return services.AddResources(name, builder => builder.UseSource<TSource>().AddAudioPipeline());
+        return services;
     }
 
-    /// <summary>Adds the standard WAVE to PCM to clip to voice pipeline to a manager configuration.</summary>
+    /// <summary>Adds the standard WAVE to PCM to audio clip pipeline to the manager configuration.</summary>
     /// <param name="builder">The configuring resource registration.</param>
     /// <returns>The supplied builder.</returns>
     public static ResourceRegistrationBuilder AddAudioPipeline(this ResourceRegistrationBuilder builder)
         => builder.AddSourcePipeline<AudioPcmData, AudioDecodeStage>()
-            .AddTransformPipeline<AudioPcmData, IAudioClip, AudioClipStage>()
-            .AddTransformPipeline<IAudioClip, IAudioVoice, AudioVoiceStage>()
-            .UseStageRuntime<IAudioClip, AudioResourceRuntime>()
-            .UseStageRuntime<IAudioVoice, AudioResourceRuntime>();
+            .AddTransformPipeline<AudioPcmData, AudioClip, AudioClipStage>()
+            .UseStageRuntime<AudioClip, AudioResourceRuntime>();
 
     private static void AddModule<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TModule>(IServiceCollection services)
         where TModule : class, IExecutionModule

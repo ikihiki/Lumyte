@@ -74,8 +74,7 @@ internal static class Program
                 }
 
                 var clip = new AudioClip(await audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
-                IAudioVoice original = await clip.CreateVoice(AudioBus.Effects);
-                var voice = new AudioVoice(original);
+                AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
                 try
                 {
                     await clip.DestroyClip();
@@ -88,7 +87,7 @@ internal static class Program
                 await voice.Play();
                 await voice.Pause();
                 await audio.State.Refresh();
-                if (original.State != AudioPlaybackState.Paused)
+                if (voice.State != AudioPlaybackState.Paused)
                 {
                     throw new InvalidOperationException("Real backend is not paused.");
                 }
@@ -97,7 +96,7 @@ internal static class Program
                 await voice.SetLoop(true);
                 await voice.Play();
                 await audio.State.Refresh();
-                if (original.State != AudioPlaybackState.Playing)
+                if (voice.State != AudioPlaybackState.Playing)
                 {
                     throw new InvalidOperationException("Real backend is not playing.");
                 }
@@ -121,7 +120,7 @@ internal static class Program
 
                 await voice.Stop();
                 await audio.State.Refresh();
-                if (original.State != AudioPlaybackState.Stopped)
+                if (voice.State != AudioPlaybackState.Stopped)
                 {
                     throw new InvalidOperationException("Real backend is not stopped.");
                 }

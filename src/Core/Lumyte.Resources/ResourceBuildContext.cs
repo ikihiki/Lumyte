@@ -61,7 +61,7 @@ public sealed class ResourceBuildContext
     /// <param name="cancellationToken">Cancels this dependency wait.</param>
     /// <returns>The borrowed dependency value.</returns>
     public ValueTask<T> RequireAsync<T>(ResourceKey<T> key, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default)
-        where T : class
+        where T : notnull
     {
         EnsureOpen();
         return _manager.RequireAsync(_view, _generation, this, key, lifetime, cancellationToken);

@@ -39,7 +39,7 @@ internal static class Program
         });
         services.AddSingleton<SampleCounters>();
         services.AddSingleton(new SampleSettings(new("sample.document")));
-        services.AddResources("scene", resources => resources
+        services.AddResources(resources => resources
             .UseSource<FileResourceSource>()
             .AddSourcePipeline<SceneDocument, SceneDocumentStage>()
             .AddTransformPipeline<SceneDocument, MeshInfo, MeshStage>()
@@ -52,8 +52,7 @@ internal static class Program
         await execution.StartAsync().ConfigureAwait(false);
         try
         {
-            await using AsyncServiceScope world = provider.CreateAsyncScope();
-            ResourceManager resources = world.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+            await using ResourceManager resources = provider.GetRequiredService<ResourceManager>();
             ResourceReloadService changes = resources.HotReload!;
             SampleCounters counters = provider.GetRequiredService<SampleCounters>();
             using (ResourceReference<SceneResource> sceneReference = await resources.AcquireAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))

@@ -6,6 +6,7 @@ using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.Audio.DependencyInjection;
 using Lumyte.Resources.Execution;
+using Lumyte.Resources.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Audio.IntegrationTests;
@@ -34,7 +35,6 @@ internal static class Program
         var audio = new AudioModule(native ? new OpenALDeviceFactory() : factory);
         var source = new TestSource();
         ServiceProvider? provider = null;
-        AsyncServiceScope? scope = null;
         ExecutionRuntime execution;
         ResourceManager manager;
         ResourceRuntime runtime;
@@ -45,13 +45,13 @@ internal static class Program
             services.AddSingleton(audio);
             services.AddSingleton(source);
             services.AddMemoryManagement();
-            services.AddAudioResources<SharedTestSource>("audio");
+            services.AddAudioResources();
+            services.AddResources(builder => builder.UseSource<SharedTestSource>().AddAudioPipeline());
             provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             execution = provider.GetRequiredService<ExecutionRuntime>();
             runtime = provider.GetRequiredService<ResourceRuntime>();
             bridge = provider.GetRequiredService<AudioResourceRuntime>();
-            scope = provider.CreateAsyncScope();
-            manager = scope.Value.ServiceProvider.GetRequiredKeyedService<ResourceManager>("audio");
+            manager = provider.GetRequiredService<ResourceManager>();
         }
         else
         {
@@ -61,10 +61,10 @@ internal static class Program
             manager = new ResourceManager(
                 "audio",
                 source,
-                [new AudioDecodeStage(), new AudioClipStage(), new AudioVoiceStage()],
+                [new AudioDecodeStage(), new AudioClipStage()],
                 new MemoryManager(),
                 runtime,
-                stageRuntimes: [new(typeof(IAudioClip), bridge), new(typeof(IAudioVoice), bridge)]);
+                stageRuntimes: [new(typeof(AudioClip), bridge)]);
         }
 
         execution.PrepareOnCurrentHost(host ? OwnerPlacement.Host : OwnerPlacement.Dedicated, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, host ? 1 : 2, recover ? new ExecutionOptions { MaxCommands = 16 } : new ExecutionOptions());
@@ -109,51 +109,7 @@ internal static class Program
                 CreationScenario.Run(audio, runtime, bridge, factory, Wait);
             }
 
-            Task<ResourceReference<IAudioVoice>> load = manager.AcquireAsync(new ResourceKey<IAudioVoice>("tone")).AsTask();
-            Wait(load);
-            using (ResourceReference<IAudioVoice> reference = load.GetAwaiter().GetResult())
-            using (ResourceLease<IAudioVoice> lease = reference.Acquire())
-            {
-                Wait(new AudioVoice(lease.Value).Play().AsTask());
-                Wait(audio.State.Refresh().AsTask());
-                if (lease.Value.State != AudioPlaybackState.Playing || (audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) != host)
-                {
-                    throw new InvalidOperationException("Audio execution ownership or playback is incorrect.");
-                }
-
-                if (args.Contains("--reload", StringComparer.Ordinal))
-                {
-                    var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    manager.HotReload!.Reloaded += (_, result) =>
-                    {
-                        if (result.Result.Status == ResourceReloadStatus.Published)
-                        {
-                            published.TrySetResult();
-                        }
-                    };
-                    source.Set(0.5f);
-                    Wait(published.Task);
-                    using ResourceLease<IAudioVoice> next = reference.Acquire();
-                    if (next.Revision == lease.Revision || ReferenceEquals(next.Value, lease.Value) || next.Value.State != AudioPlaybackState.Stopped)
-                    {
-                        throw new InvalidOperationException("Reload did not publish a new stopped voice.");
-                    }
-
-                    Wait(new AudioVoice(lease.Value).Stop().AsTask());
-                    Wait(new AudioVoice(next.Value).Play().AsTask());
-                    var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    manager.HotReload.ReloadFailed += (_, _) => failed.TrySetResult();
-                    source.Set(float.NaN);
-                    Wait(failed.Task);
-                    using ResourceLease<IAudioVoice> afterFailure = reference.Acquire();
-                    if (!ReferenceEquals(next.Value, afterFailure.Value) || !lease.IsUsable)
-                    {
-                        throw new InvalidOperationException("Failed reload changed the publication or released an old lease.");
-                    }
-
-                    Console.WriteLine("Resource audio HotReload passed: replaced voice, retained old lease, rejected invalid decode.");
-                }
-            }
+            VoiceScenario.Run(audio, manager, source, host, args.Contains("--reload", StringComparer.Ordinal), Wait);
 
             if (recover)
             {
@@ -175,7 +131,7 @@ internal static class Program
 
             try
             {
-                Wait(manager.AcquireAsync(new ResourceKey<IAudioVoice>("invalid")).AsTask());
+                Wait(manager.AcquireAsync(new ResourceKey<AudioClip>("invalid")).AsTask());
                 throw new InvalidOperationException("Invalid input was published.");
             }
             catch (InvalidDataException)
@@ -196,11 +152,6 @@ internal static class Program
             // Resource cleanup must be pumped while Audio still accepts cleanup commands.
             Wait(manager.DisposeAsync().AsTask());
             Wait(execution.StopAsync().AsTask());
-            if (scope is { } ownedScope)
-            {
-                Wait(ownedScope.DisposeAsync().AsTask());
-            }
-
             if (provider is not null)
             {
                 Wait(provider.DisposeAsync().AsTask());

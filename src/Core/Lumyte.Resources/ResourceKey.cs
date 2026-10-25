@@ -3,7 +3,7 @@ namespace Lumyte.Resources;
 /// <summary>Identifies a resource by address and its exact output type.</summary>
 /// <typeparam name="T">The pipeline's exact output type.</typeparam>
 public readonly record struct ResourceKey<T>
-    where T : class
+    where T : notnull
 {
     /// <summary>Initializes a new instance of the <see cref="ResourceKey{T}"/> struct from a source-relative path.</summary>
     /// <param name="id">The source-relative logical path.</param>

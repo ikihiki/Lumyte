@@ -4,6 +4,7 @@ using Lumyte.Execution;
 namespace Lumyte.Audio.Execution;
 
 /// <summary>A one-reference sender wrapping an actual backend voice.</summary>
+/// <remarks>The caller owns voice destruction and keeps its source clip alive until destruction completes.</remarks>
 /// <param name="original">The fully created original instance.</param>
 public readonly partial struct AudioVoice(IAudioVoice original)
 {

@@ -463,7 +463,6 @@ public sealed class ResourceStreamTests
     {
         private readonly ServiceProvider _provider;
         private readonly ResourceExecutionHost _execution;
-        private readonly AsyncServiceScope _scope;
 
         public StreamHarness(StreamSettings settings)
         {
@@ -471,12 +470,11 @@ public sealed class ResourceStreamTests
             var services = new ServiceCollection();
             services.AddSingleton(settings);
             services.AddMemoryManagement(options => options.ChunkSizeBytes = 32);
-            services.AddResources("streaming", builder => builder.UseSource<TestSource>().AddSourcePipeline<TestFactory, TestStage>());
+            services.AddResources(builder => builder.UseSource<TestSource>().AddSourcePipeline<TestFactory, TestStage>());
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
             _execution = new(_provider);
-            _scope = _provider.CreateAsyncScope();
-            Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("streaming");
-            Memory = _scope.ServiceProvider.GetRequiredService<IMemoryManager>();
+            Manager = _provider.GetRequiredService<ResourceManager>();
+            Memory = _provider.GetRequiredService<IMemoryManager>();
         }
 
         public StreamSettings Settings { get; }
@@ -490,7 +488,7 @@ public sealed class ResourceStreamTests
 
         public async ValueTask DisposeAsync()
         {
-            await _scope.DisposeAsync();
+            await Manager.DisposeAsync();
             await _execution.DisposeAsync();
             await _provider.DisposeAsync();
         }

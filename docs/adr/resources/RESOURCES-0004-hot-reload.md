@@ -11,6 +11,8 @@
 
 ## 決定
 
+DI rootごとに一つのResourceManagerが、全Pipelineで共有するSourceの変更通知を購読する。子scopeからの取得でもManagerと購読を共有し、scopeの終了では監視を停止しない。Managerの終了で購読を停止し、Source自体はDI rootまたは登録したシステムが解放する。
+
 ### Source、通知、再構築の責務
 
 `IResourceSource.Changes` から、そのSourceと同じアドレス体系・取得元の変更通知を借りる。Sourceは通知providerを所有し、各列挙が独立した購読を所有する。`ResourceManager` は自身の購読と `ResourceReloadService` を所有する。

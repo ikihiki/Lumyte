@@ -4,8 +4,8 @@ namespace Lumyte.Resources;
 /// <typeparam name="TInput">The primary input type.</typeparam>
 /// <typeparam name="TOutput">The completed output type.</typeparam>
 public interface IResourceTransform<TInput, TOutput> : IResourceStage
-    where TInput : class
-    where TOutput : class
+    where TInput : notnull
+    where TOutput : notnull
 {
     /// <inheritdoc />
     Type IResourceStage.OutputType => typeof(TOutput);

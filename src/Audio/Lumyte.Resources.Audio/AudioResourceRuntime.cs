@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Lumyte.Audio.Abstractions;
 using Lumyte.Audio.Execution;
 using Lumyte.Execution;
@@ -56,10 +57,10 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <param name="data">The PCM whose storage remains alive until completion.</param>
     /// <param name="context">The construction recording this runtime version.</param>
     /// <param name="cancellationToken">Cancels before command execution.</param>
-    /// <returns>The actual backend clip, never a placeholder.</returns>
-    public async ValueTask<IAudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
+    /// <returns>A sender wrapping the fully created backend clip, never a placeholder.</returns>
+    public async ValueTask<AudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        (AudioDeviceLease lease, IAudioClip clip) = await _audio.State.CreateClipWithLease(data.Format, data.Samples, cancellationToken);
+        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = await _audio.State.CreateClipWithLease(data.Format, data.Samples, cancellationToken);
         var pending = new PendingCreation(lease, clip);
         try
         {
@@ -79,52 +80,20 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
             throw;
         }
 
-        context.TrackRuntimeDependency(Id, lease.State.Version, ResourceDependencyLifetime.Resident, _audio.Devices);
-        pending.Transfer();
-        return clip;
-    }
-
-    /// <summary>Creates a fully initialized voice on the audio owner.</summary>
-    /// <param name="clip">The retained backend clip.</param>
-    /// <param name="context">The construction recording this runtime version.</param>
-    /// <param name="cancellationToken">Cancels before command execution.</param>
-    /// <returns>The actual stopped backend voice.</returns>
-    public async ValueTask<IAudioVoice> CreateVoiceAsync(IAudioClip clip, ResourceBuildContext context, CancellationToken cancellationToken = default)
-    {
-        (AudioDeviceLease lease, IAudioVoice voice) = await _audio.State.CreateVoiceWithLease(clip, AudioBus.Effects, cancellationToken);
-        var pending = new PendingCreation(lease, voice);
-        try
+        if (validationError is not null)
         {
-            context.RegisterCleanup(pending.DisposeAsync, ResourceDependencyLifetime.Resident);
-        }
-        catch (Exception registrationError)
-        {
-            try
-            {
-                await pending.DisposeAsync();
-            }
-            catch (Exception cleanupError)
-            {
-                throw new AggregateException(registrationError, cleanupError);
-            }
-
-            throw;
+            ExceptionDispatchInfo.Throw(validationError);
         }
 
         context.TrackRuntimeDependency(Id, lease.State.Version, ResourceDependencyLifetime.Resident, _audio.Devices);
         pending.Transfer();
-        return voice;
+        return new(clip);
     }
 
     /// <summary>Destroys a clip through its original backend instance on the audio owner.</summary>
     /// <param name="clip">The original clip retained by the manager.</param>
     /// <returns>The actual native cleanup completion.</returns>
-    public async ValueTask DestroyClipAsync(IAudioClip clip) => await new AudioClip(clip).DestroyClip();
-
-    /// <summary>Destroys a voice through its original backend instance on the audio owner.</summary>
-    /// <param name="voice">The original voice retained by the manager.</param>
-    /// <returns>The actual native cleanup completion.</returns>
-    public async ValueTask DestroyVoiceAsync(IAudioVoice voice) => await new AudioVoice(voice).Destroy();
+    public async ValueTask DestroyClipAsync(AudioClip clip) => await clip.DestroyClip();
 
     /// <inheritdoc/>
     public void Declare(ModuleBuilder builder) => builder.DependsOn<AudioModule>();
@@ -144,9 +113,9 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <inheritdoc/>
     public ValueTask StopAsync(ModuleContext context) => ValueTask.CompletedTask;
 
-    private sealed class PendingCreation(AudioDeviceLease lease, IDisposable resource)
+    private sealed class PendingCreation(AudioDeviceLease lease, IAudioClip resource)
     {
-        private IDisposable? _resource = resource;
+        private IAudioClip? _resource = resource;
 
         internal void Transfer() => _resource = null;
 
@@ -155,10 +124,6 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
             if (_resource is IAudioClip clip)
             {
                 await new AudioClip(clip).DestroyClip();
-            }
-            else if (_resource is IAudioVoice voice)
-            {
-                await new AudioVoice(voice).Destroy();
             }
 
             _resource = null;
