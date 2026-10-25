@@ -1,54 +1,51 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Lumyte.Resources.DependencyInjection;
 
-/// <summary>Registers immutable pipeline metadata and constructor-injected scoped implementations.</summary>
+/// <summary>Registers immutable pipeline metadata and constructor-injected application-lifetime implementations.</summary>
 public sealed class ResourceRegistrationBuilder
 {
-    private readonly string _managerName;
     private readonly List<Action<IServiceCollection>> _registrations = [];
     private readonly HashSet<RuntimeTypeHandle> _pipelines = [];
+    private readonly HashSet<string> _runtimeDependencies = new(StringComparer.Ordinal);
+    private readonly Dictionary<Type, Func<IServiceProvider, IResourceRuntime>> _stageRuntimes = [];
     private Func<IServiceProvider, IResourceSource>? _source;
     private bool _completed;
 
-    internal ResourceRegistrationBuilder(string managerName)
+    internal ResourceRegistrationBuilder()
     {
-        _managerName = managerName;
     }
 
     /// <summary>Registers the one source borrowed by this manager.</summary>
     /// <typeparam name="TSource">The constructor-injected source implementation.</typeparam>
-    /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder UseSource<TSource>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    public ResourceRegistrationBuilder UseSource<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TSource>()
         where TSource : class, IResourceSource
     {
         EnsureConfiguring();
-        ValidateLifetime(lifetime);
         if (_source is not null)
         {
             throw new InvalidOperationException("A resource source is already registered for this manager.");
         }
 
-        var key = new RegistrationKey(_managerName, "source", string.Empty);
-        _registrations.Add(services => services.AddKeyedScoped<TSource>(key));
-        _source = provider => provider.GetRequiredKeyedService<TSource>(key);
+        _registrations.Add(static services => services.TryAddSingleton<TSource>());
+        _source = static provider => provider.GetRequiredService<TSource>();
         return this;
     }
 
     /// <summary>Registers a typed starting stage without a fixed primary input.</summary>
     /// <typeparam name="TOutput">The exact completed output type.</typeparam>
     /// <typeparam name="TStage">The constructor-injected stage implementation.</typeparam>
-    /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder AddSourcePipeline<TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TOutput : class
+    public ResourceRegistrationBuilder AddSourcePipeline<TOutput, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStage>()
+        where TOutput : notnull
         where TStage : class, IResourceSourceStage<TOutput>
     {
         EnsureConfiguring();
-        ValidateLifetime(lifetime);
         AddPipelineType<TOutput>();
-        _registrations.Add(services => services.AddKeyedScoped<IResourceStage, TStage>(_managerName));
+        _registrations.Add(static services => services.AddSingleton<IResourceStage, TStage>());
         return this;
     }
 
@@ -56,17 +53,58 @@ public sealed class ResourceRegistrationBuilder
     /// <typeparam name="TInput">The exact primary input type.</typeparam>
     /// <typeparam name="TOutput">The exact completed output type.</typeparam>
     /// <typeparam name="TStage">The constructor-injected transform implementation.</typeparam>
-    /// <param name="lifetime">The implementation lifetime; only scoped ownership is supported.</param>
     /// <returns>This builder.</returns>
-    public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, TStage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TInput : class
-        where TOutput : class
+    public ResourceRegistrationBuilder AddTransformPipeline<TInput, TOutput, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStage>()
+        where TInput : notnull
+        where TOutput : notnull
         where TStage : class, IResourceTransform<TInput, TOutput>
     {
         EnsureConfiguring();
-        ValidateLifetime(lifetime);
         AddPipelineType<TOutput>();
-        _registrations.Add(services => services.AddKeyedScoped<IResourceStage, TStage>(_managerName));
+        _registrations.Add(static services => services.AddSingleton<IResourceStage, TStage>());
+        return this;
+    }
+
+    /// <summary>Selects an already registered environment for the stage producing the specified output.</summary>
+    /// <typeparam name="TOutput">The exact output type of a registered stage.</typeparam>
+    /// <typeparam name="TRuntime">The environment service borrowed by the manager.</typeparam>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseStageRuntime<TOutput, TRuntime>()
+        where TOutput : notnull
+        where TRuntime : class, IResourceRuntime
+        => UseStageRuntime<TOutput>(static provider => provider.GetRequiredService<TRuntime>());
+
+    /// <summary>Selects a named or otherwise configured environment once when the manager is constructed.</summary>
+    /// <typeparam name="TOutput">The exact output type of a registered stage.</typeparam>
+    /// <param name="resolve">Resolves the borrowed environment, whose lifetime must cover manager cleanup.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseStageRuntime<TOutput>(Func<IServiceProvider, IResourceRuntime> resolve)
+        where TOutput : notnull
+    {
+        EnsureConfiguring();
+        if (!_stageRuntimes.TryAdd(typeof(TOutput), resolve))
+        {
+            throw new ArgumentException($"A runtime is already selected for '{typeof(TOutput)}'.");
+        }
+
+        return this;
+    }
+
+    /// <summary>Registers a constructor-injected singleton runtime dependency.</summary>
+    /// <typeparam name="TDependency">The runtime provider implementation.</typeparam>
+    /// <param name="dependencyId">The unique manager-local runtime dependency name.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder UseRuntimeDependency<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDependency>(string dependencyId)
+        where TDependency : class, IResourceRuntimeDependency
+    {
+        EnsureConfiguring();
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
+        if (!_runtimeDependencies.Add(dependencyId))
+        {
+            throw new ArgumentException("The runtime dependency name is already registered.", nameof(dependencyId));
+        }
+
+        _registrations.Add(services => ResourceServiceCollectionExtensions.AddRuntimeDependency<TDependency>(services, dependencyId));
         return this;
     }
 
@@ -83,6 +121,14 @@ public sealed class ResourceRegistrationBuilder
             throw new InvalidOperationException("Register at least one resource pipeline.");
         }
 
+        foreach (Type output in _stageRuntimes.Keys)
+        {
+            if (!_pipelines.Contains(output.TypeHandle))
+            {
+                throw new ArgumentException($"No stage produces '{output}'.");
+            }
+        }
+
         _completed = true;
         return _source;
     }
@@ -95,11 +141,11 @@ public sealed class ResourceRegistrationBuilder
         }
     }
 
-    private static void ValidateLifetime(ServiceLifetime lifetime)
+    internal IEnumerable<ResourceStageRuntime> ResolveStageRuntimes(IServiceProvider provider)
     {
-        if (lifetime != ServiceLifetime.Scoped)
+        foreach ((Type output, Func<IServiceProvider, IResourceRuntime> resolve) in _stageRuntimes)
         {
-            throw new NotSupportedException("Resource sources and stages require scoped registration. Singleton and transient registrations cannot guarantee the manager's borrowed-service lifetime.");
+            yield return new(output, resolve(provider));
         }
     }
 
@@ -118,6 +164,4 @@ public sealed class ResourceRegistrationBuilder
             throw new ArgumentException($"A pipeline for '{typeof(TOutput)}' is already registered.");
         }
     }
-
-    private sealed record RegistrationKey(string ManagerName, string Kind, string Id);
 }

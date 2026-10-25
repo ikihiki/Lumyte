@@ -4,8 +4,8 @@ namespace Lumyte.Resources;
 /// <typeparam name="TInput">The primary input type.</typeparam>
 /// <typeparam name="TOutput">The completed output type.</typeparam>
 public interface IResourceTransform<TInput, TOutput> : IResourceStage
-    where TInput : class
-    where TOutput : class
+    where TInput : notnull
+    where TOutput : notnull
 {
     /// <inheritdoc />
     Type IResourceStage.OutputType => typeof(TOutput);
@@ -20,8 +20,8 @@ public interface IResourceTransform<TInput, TOutput> : IResourceStage
     async ValueTask<object> IResourceStage.BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
     {
         var key = new ResourceKey<TInput>(GetInput(context.Address));
-        TInput input = await context.RequireAsync(key, InputLifetime, cancellationToken).ConfigureAwait(false);
-        return await BuildAsync(input, context, cancellationToken).ConfigureAwait(false);
+        TInput input = await context.RequireAsync(key, InputLifetime, cancellationToken);
+        return await BuildAsync(input, context, cancellationToken);
     }
 
     /// <inheritdoc />

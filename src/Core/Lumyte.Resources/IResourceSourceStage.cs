@@ -3,7 +3,7 @@ namespace Lumyte.Resources;
 /// <summary>Builds a typed output without a fixed primary input pipeline.</summary>
 /// <typeparam name="T">The completed output type.</typeparam>
 public interface IResourceSourceStage<T> : IResourceStage
-    where T : class
+    where T : notnull
 {
     /// <inheritdoc />
     Type IResourceStage.OutputType => typeof(T);
@@ -13,7 +13,7 @@ public interface IResourceSourceStage<T> : IResourceStage
 
     /// <inheritdoc />
     async ValueTask<object> IResourceStage.BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
-        => await BuildAsync(context, cancellationToken).ConfigureAwait(false);
+        => await BuildAsync(context, cancellationToken);
 
     /// <inheritdoc />
     ValueTask IResourceStage.ReleaseAsync(object resource) => ReleaseAsync((T)resource);

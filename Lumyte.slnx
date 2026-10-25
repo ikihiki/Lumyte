@@ -32,6 +32,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
     <Project Path="src/Core/Lumyte.Resources/Lumyte.Resources.csproj" />
     <Project Path="src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
     <Project Path="src/Core/Lumyte.Execution/Lumyte.Execution.csproj" />
@@ -80,6 +81,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Resources.AotSmoke/Lumyte.Resources.AotSmoke.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Execution.Tests/Lumyte.Execution.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj" />

@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -5,16 +6,18 @@ namespace Lumyte.Resources;
 /// <summary>Builds typed resource graphs and records ownership before publication.</summary>
 public sealed partial class ResourceManager
 {
-    internal async ValueTask<T> RequireAsync<T>(ResourceBuildView view, ResourceGeneration owner, ResourceKey<T> key, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
-        where T : class
+    internal async ValueTask<T> RequireAsync<T>(ResourceBuildView view, ResourceGeneration owner, ResourceBuildContext requester, ResourceKey<T> key, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
+        where T : notnull
     {
         ValidateLifetime(lifetime);
         cancellationToken.ThrowIfCancellationRequested();
         ResourceNode node = GetNode(key);
         ResourceDependency dependency;
+        Task<ResourceGeneration> completion;
         bool start = false;
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             AddEdge(view, owner.Node, node);
             if (!owner.Dependencies.TryGetValue(node, out dependency!))
             {
@@ -26,29 +29,34 @@ public sealed partial class ResourceManager
             {
                 dependency.Lifetime = lifetime;
             }
+
+            completion = dependency.Completion!.Task;
         }
 
         if (start)
         {
-            _ = ResolveDependencyAsync(view, node, dependency);
+            _ = ResolveDependencyAsync(view, node, dependency, requester);
         }
 
-        ResourceGeneration generation = await dependency.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ResourceGeneration generation = await completion.WaitAsync(cancellationToken).ConfigureAwait(requester.CanSharePipeline);
         lock (_gate)
         {
+            ThrowIfUnavailable(generation);
             return (T)generation.Value!;
         }
     }
 
-    internal async ValueTask<ResourceSourceSnapshot> OpenSourceAsync(ResourceBuildView view, ResourceGeneration owner, ResourceId id, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
+    internal ValueTask<ResourceSourceSnapshot> OpenSourceAsync(ResourceBuildView view, ResourceGeneration owner, ResourceId id, ResourceDependencyLifetime lifetime, CancellationToken cancellationToken)
     {
         ValidateLifetime(lifetime);
         ArgumentException.ThrowIfNullOrWhiteSpace(id.Value);
         cancellationToken.ThrowIfCancellationRequested();
         ResourceSourceUse source;
+        Task<ResourceSourceSnapshot> completion;
         bool start = false;
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             if (!owner.Sources.TryGetValue(id, out source!))
             {
                 source = new(lifetime);
@@ -59,6 +67,8 @@ public sealed partial class ResourceManager
             {
                 source.Lifetime = lifetime;
             }
+
+            completion = source.Completion!.Task;
         }
 
         if (start)
@@ -66,7 +76,7 @@ public sealed partial class ResourceManager
             _ = ResolveSourceAsync(view, source, id);
         }
 
-        return await source.Completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new(completion.WaitAsync(cancellationToken));
     }
 
     internal void RegisterCleanup(ResourceGeneration owner, Func<ValueTask> cleanup, ResourceDependencyLifetime lifetime)
@@ -74,6 +84,17 @@ public sealed partial class ResourceManager
         ValidateLifetime(lifetime);
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
+            owner.Cleanups.Add(new(cleanup, lifetime));
+        }
+    }
+
+    internal void RegisterCleanup(ResourceGeneration owner, IDisposable cleanup, ResourceDependencyLifetime lifetime)
+    {
+        ValidateLifetime(lifetime);
+        lock (_gate)
+        {
+            EnsureRegistrationOpen(owner);
             owner.Cleanups.Add(new(cleanup, lifetime));
         }
     }
@@ -83,6 +104,7 @@ public sealed partial class ResourceManager
         ValidateLifetime(lifetime);
         lock (_gate)
         {
+            EnsureRegistrationOpen(owner);
             IMemoryScope? existing = lifetime == ResourceDependencyLifetime.Build ? owner.BuildMemory : owner.ResidentMemory;
             if (existing is not null)
             {
@@ -109,10 +131,185 @@ public sealed partial class ResourceManager
             }
 
             // A concurrently requested redundant scope is retained as owned cleanup.
-            owner.Cleanups.Add(new(created.DisposeAsync, lifetime));
+            owner.Cleanups.Add(new((Func<ValueTask>)created.DisposeAsync, lifetime));
             return lifetime == ResourceDependencyLifetime.Build ? owner.BuildMemory! : owner.ResidentMemory!;
         }
     }
+
+    internal void TrackRuntimeDependency(ResourceGeneration owner, string dependencyId, ulong expectedVersion, ResourceDependencyLifetime lifetime, object? providerIdentity)
+    {
+        ValidateLifetime(lifetime);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
+        if (!_runtimes.TryGetValue(dependencyId, out ResourceRuntimeState? runtime))
+        {
+            throw new ArgumentException($"Runtime dependency '{dependencyId}' is not registered.", nameof(dependencyId));
+        }
+
+        RefreshRuntime(runtime);
+        lock (_gate)
+        {
+            EnsureRegistrationOpen(owner);
+            if (providerIdentity is not null && !ReferenceEquals(runtime.Identity, providerIdentity))
+            {
+                throw new InvalidOperationException($"Runtime dependency '{dependencyId}' belongs to another service instance.");
+            }
+
+            ResourceRuntimeSnapshot snapshot = runtime.Snapshot;
+            if (!snapshot.IsAvailable || expectedVersion == 0 || snapshot.Version != expectedVersion || expectedVersion <= snapshot.InvalidatedThroughVersion)
+            {
+                throw new ResourceUnavailableException(dependencyId, expectedVersion);
+            }
+
+            if (owner.Runtimes.TryGetValue(dependencyId, out ResourceRuntimeUse previous))
+            {
+                if (previous.Version != expectedVersion)
+                {
+                    throw new InvalidOperationException($"A build cannot combine versions of runtime '{dependencyId}'.");
+                }
+
+                if (previous.Lifetime == ResourceDependencyLifetime.Resident)
+                {
+                    lifetime = previous.Lifetime;
+                }
+            }
+
+            owner.Runtimes[dependencyId] = new(expectedVersion, lifetime);
+        }
+    }
+
+    internal Task CompleteContextOperationsAsync(ResourceGeneration generation)
+    {
+        lock (_gate)
+        {
+            generation.RegistrationsClosed = true;
+            Task? pending = null;
+            bool multiple = false;
+            foreach (ResourceDependency dependency in generation.Dependencies.Values)
+            {
+                Task task = dependency.Completion!.Task;
+                if (!task.IsCompletedSuccessfully)
+                {
+                    multiple |= pending is not null;
+                    pending = task;
+                }
+            }
+
+            foreach (ResourceSourceUse source in generation.Sources.Values)
+            {
+                Task task = source.Completion!.Task;
+                if (!task.IsCompletedSuccessfully)
+                {
+                    multiple |= pending is not null;
+                    pending = task;
+                }
+            }
+
+            return multiple
+                ? Task.WhenAll(generation.Dependencies.Values.Select(static dependency => (Task)dependency.Completion!.Task)
+                    .Concat(generation.Sources.Values.Select(static source => (Task)source.Completion!.Task)))
+                : pending ?? Task.CompletedTask;
+        }
+    }
+
+    internal async ValueTask ExecuteStageAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+    {
+        context.BeginExecution();
+        ResourceGeneration generation = context.Generation;
+        Exception? failure = null;
+        try
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                object value = await generation.Stage.BuildAsync(context, cancellationToken);
+                if (!generation.Stage.OutputType.IsInstanceOfType(value))
+                {
+                    throw new InvalidOperationException($"Pipeline for '{generation.Stage.OutputType}' returned an invalid output.");
+                }
+
+                lock (_gate)
+                {
+                    generation.Value = value;
+                }
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+            finally
+            {
+                context.Close();
+            }
+
+            // Keep the job alive until all registered operations finish, including ignored or canceled waits.
+            try
+            {
+                await CompleteContextOperationsAsync(generation);
+            }
+            catch (Exception error)
+            {
+                failure = failure is null ? error : ReferenceEquals(failure, error) ? failure : new AggregateException(failure, error);
+            }
+
+            lock (_gate)
+            {
+                // Callers already hold their task; the completed construction no longer needs its result references.
+                foreach (ResourceDependency dependency in generation.Dependencies.Values)
+                {
+                    dependency.Completion = null;
+                    if (generation.Value is { } output && ReferenceEquals(dependency.Generation?.Value, output))
+                    {
+                        // An ignored dependency may only become known while draining. Its generation owns the value.
+                        generation.Value = null;
+                        var aliasError = new InvalidOperationException("A stage cannot return a borrowed dependency as a separately owned output.");
+                        failure = failure is null ? aliasError : new AggregateException(failure, aliasError);
+                    }
+                }
+
+                foreach (ResourceSourceUse source in generation.Sources.Values)
+                {
+                    source.Completion = null;
+                }
+            }
+
+            if (failure is null)
+            {
+                try
+                {
+                    await CleanupGenerationAsync(generation, true, true);
+                    lock (_gate)
+                    {
+                        CaptureResidentRuntimes(generation);
+                        generation.State = ResourceGenerationState.Ready;
+                    }
+
+                    return;
+                }
+                catch (Exception error)
+                {
+                    failure = error;
+                }
+            }
+
+            try
+            {
+                await CleanupGenerationAsync(generation, false, true);
+            }
+            catch (Exception cleanupError)
+            {
+                failure = new AggregateException(failure, cleanupError);
+            }
+
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+        finally
+        {
+            context.EndExecution();
+        }
+    }
+
+    private static void EnsureRegistrationOpen(ResourceGeneration owner)
+        => ObjectDisposedException.ThrowIf(owner.RegistrationsClosed, typeof(ResourceBuildContext));
 
     private static void ValidateLifetime(ResourceDependencyLifetime lifetime)
     {
@@ -191,9 +388,11 @@ public sealed partial class ResourceManager
                 throw new InvalidOperationException($"Input revisions changed while constructing {node}; reload and retry the request.");
             }
 
+            RefreshUsedRuntimes(load.View, used);
             lock (_gate)
             {
                 EnsureRunning();
+                ValidateRuntimeVersions(load.View, used);
                 if (!CanMerge(load.View, used))
                 {
                     throw new InvalidOperationException($"Publication changed while constructing {node}; retry the request.");
@@ -208,9 +407,12 @@ public sealed partial class ResourceManager
 
                     foreach ((ResourceId source, ResourceSourceUse use) in built.Generation.Sources)
                     {
-                        if (_metadata.Values.Any(metadata => metadata.Sources.TryGetValue(source, out string? revision) && revision != use.Revision))
+                        foreach (ResourceMetadata metadata in _metadata.Values)
                         {
-                            throw new InvalidOperationException($"Source '{source.Value}' changed; return leases and trim the graph before loading the changed source.");
+                            if (metadata.Sources.TryGetValue(source, out string? revision) && revision != use.Revision)
+                            {
+                                throw new InvalidOperationException($"Source '{source.Value}' changed; return leases and trim the graph before loading the changed source.");
+                            }
                         }
                     }
                 }
@@ -219,6 +421,7 @@ public sealed partial class ResourceManager
                 load.Generation = generation;
                 generation.Pins += load.Waiters;
                 _loads.Remove(node);
+                _metadataPruneCandidates.Add(node);
             }
         }
         catch (Exception error)
@@ -258,151 +461,138 @@ public sealed partial class ResourceManager
             if (ReferenceEquals(_loads.GetValueOrDefault(node), load))
             {
                 _loads.Remove(node);
+                _metadataPruneCandidates.Add(node);
             }
 
             _operations--;
-            if (failure is null)
-            {
-                load.Completion.TrySetResult(generation!);
-            }
-            else
-            {
-                load.Completion.TrySetException(failure);
-            }
+        }
+
+        if (failure is null)
+        {
+            load.Completion.TrySetResult(generation!);
+        }
+        else
+        {
+            load.Completion.TrySetException(failure);
         }
     }
 
-    private Task<ResourceGeneration> BuildNodeAsync(ResourceBuildView view, ResourceNode node)
+    private ValueTask<ResourceGeneration> BuildNodeAsync(ResourceBuildView view, ResourceNode node, ResourceBuildContext? requester = null)
     {
         ResourceBuildSlot slot;
         lock (_gate)
         {
             if (!view.Forced.Contains(node) && view.Published.TryGetValue(node, out ResourceGeneration? cached))
             {
-                return Task.FromResult(cached);
+                ThrowIfUnavailable(cached);
+                return ValueTask.FromResult(cached);
             }
 
             if (view.Builds.TryGetValue(node, out slot!))
             {
-                return slot.Completion.Task;
+                return new(slot.Completion.Task);
             }
 
-            if (_generations.Any(generation => generation.Node == node && generation.State is ResourceGenerationState.CleanupFailed or ResourceGenerationState.RetryingCleanup))
+            foreach (ResourceGeneration failed in _failedGenerations)
             {
-                throw new InvalidOperationException($"Cleanup for {node} must complete before another build; call TrimAsync first.");
+                if (failed.Node == node)
+                {
+                    throw new InvalidOperationException($"Cleanup for {node} must complete before another build; call TrimAsync first.");
+                }
             }
 
-            ResourceGeneration candidate = new(node, checked(++_revision), _stages[node.TypeHandle]);
+            (IResourceStage stage, IResourceRuntime runtime) = _stages[node.TypeHandle];
+            ResourceGeneration candidate = new(node, checked(++_revision), stage, runtime, _executors[runtime]);
             slot = new(candidate);
             _generations.Add(candidate);
+            _generationCounts[node] = _generationCounts.GetValueOrDefault(node) + 1;
             view.Builds.Add(node, slot);
             view.Edges[node] = [];
         }
 
-        _ = BuildSlotAsync(view, slot);
-        return slot.Completion.Task;
+        ResourceBuildContext? parent = requester is not null && requester.CanSharePipeline
+            && ReferenceEquals(requester.Runtime, slot.Generation.Runtime) ? requester : null;
+        _ = BuildSlotAsync(view, slot, parent);
+        return new(slot.Completion.Task);
     }
 
-    private async Task BuildSlotAsync(ResourceBuildView view, ResourceBuildSlot slot)
+    private async Task BuildSlotAsync(ResourceBuildView view, ResourceBuildSlot slot, ResourceBuildContext? parent)
     {
         ResourceGeneration generation = slot.Generation;
-        ResourceBuildContext context = new(this, view, generation);
-        Exception? failure = null;
+        ResourceBuildContext context = new(this, view, generation, parent);
         try
         {
             view.CancellationToken.ThrowIfCancellationRequested();
-            object value = await generation.Stage.BuildAsync(context, view.CancellationToken).ConfigureAwait(false);
-            context.Close();
-            if (!generation.Stage.OutputType.IsInstanceOfType(value))
+            if (parent is null)
             {
-                throw new InvalidOperationException($"Pipeline for '{generation.Stage.OutputType}' returned an invalid output.");
+                await generation.Executor.BuildAsync(context, view.CancellationToken).ConfigureAwait(false);
             }
-
-            lock (_gate)
+            else
             {
-                if (generation.Dependencies.Values.Any(dependency => ReferenceEquals(dependency.Generation?.Value, value)))
+                if (context.InlineDepth >= 32)
                 {
-                    throw new InvalidOperationException("A stage cannot return a borrowed dependency as a separately owned output.");
+                    await Task.Yield();
+                    context.InlineDepth = 0;
                 }
 
-                generation.Value = value;
+                await context.ExecuteAsync(view.CancellationToken);
+                if (parent.ShouldYield)
+                {
+                    // Keep the fairness suspension inside the tracked dependency build, even if its caller did not await it.
+                    await Task.Yield();
+                }
             }
 
-            await CompleteContextOperationsAsync(generation).ConfigureAwait(false);
-            await CleanupGenerationAsync(generation, true).ConfigureAwait(false);
-            lock (_gate)
+            if (!context.IsClosed)
             {
-                generation.State = ResourceGenerationState.Ready;
-                slot.Completion.TrySetResult(generation);
+                throw new InvalidOperationException("The executor must run the context before completing construction.");
             }
 
-            return;
+            slot.Completion.TrySetResult(generation);
         }
         catch (Exception error)
         {
-            failure = error;
-        }
-        finally
-        {
-            context.Close();
-        }
-
-        try
-        {
-            await CompleteContextOperationsAsync(generation).ConfigureAwait(false);
-        }
-        catch (Exception error)
-        {
-            if (!ReferenceEquals(failure, error))
+            // Rejected or canceled admission never entered the stage procedure.
+            if (!context.IsClosed)
             {
-                failure = new AggregateException(failure!, error);
+                context.Close();
+                try
+                {
+                    await CleanupGenerationAsync(generation, false).ConfigureAwait(false);
+                }
+                catch (Exception cleanupError)
+                {
+                    error = new AggregateException(error, cleanupError);
+                }
             }
-        }
 
-        try
-        {
-            await CleanupGenerationAsync(generation, false).ConfigureAwait(false);
-        }
-        catch (Exception cleanupError)
-        {
-            failure = new AggregateException(failure!, cleanupError);
-        }
-
-        lock (_gate)
-        {
-            slot.Completion.TrySetException(failure!);
+            slot.Completion.TrySetException(error);
         }
     }
 
-    private Task CompleteContextOperationsAsync(ResourceGeneration generation)
+    private async Task ResolveDependencyAsync(ResourceBuildView view, ResourceNode node, ResourceDependency dependency, ResourceBuildContext requester)
     {
-        lock (_gate)
-        {
-            return Task.WhenAll(generation.Dependencies.Values.Select(static dependency => (Task)dependency.Completion.Task)
-                .Concat(generation.Sources.Values.Select(static source => (Task)source.Completion.Task)));
-        }
-    }
-
-    private async Task ResolveDependencyAsync(ResourceBuildView view, ResourceNode node, ResourceDependency dependency)
-    {
+        TaskCompletionSource<ResourceGeneration> completion = dependency.Completion!;
         try
         {
-            ResourceGeneration generation = await BuildNodeAsync(view, node).ConfigureAwait(false);
+            ResourceGeneration generation = await BuildNodeAsync(view, node, requester).ConfigureAwait(requester.CanSharePipeline);
             lock (_gate)
             {
                 generation.Pins++;
                 dependency.Generation = generation;
-                dependency.Completion.TrySetResult(generation);
             }
+
+            completion.TrySetResult(generation);
         }
         catch (Exception error)
         {
-            dependency.Completion.TrySetException(error);
+            completion.TrySetException(error);
         }
     }
 
     private async Task ResolveSourceAsync(ResourceBuildView view, ResourceSourceUse use, ResourceId id)
     {
+        TaskCompletionSource<ResourceSourceSnapshot> completion = use.Completion!;
         try
         {
             ResourceSourceSnapshot snapshot = await _source.OpenSnapshotAsync(id, view.CancellationToken).ConfigureAwait(false);
@@ -424,17 +614,23 @@ public sealed partial class ResourceManager
                 }
 
                 view.SourceRevisions[id] = use.Revision;
-                use.Completion.TrySetResult(snapshot);
             }
+
+            completion.TrySetResult(snapshot);
         }
         catch (Exception error)
         {
-            use.Completion.TrySetException(error);
+            completion.TrySetException(error);
         }
     }
 
     private void AddEdge(ResourceBuildView view, ResourceNode from, ResourceNode to)
     {
+        if (view.Edges[from].Contains(to))
+        {
+            return;
+        }
+
         HashSet<ResourceNode> visited = [];
         List<ResourceNode> path = [];
         if (FindPath(view, to, from, visited, path))
@@ -478,6 +674,47 @@ public sealed partial class ResourceManager
         return true;
     }
 
+    private void RefreshUsedRuntimes(ResourceBuildView view, HashSet<ResourceNode> used)
+    {
+        string[] dependencies;
+        lock (_gate)
+        {
+            dependencies = used.SelectMany(node => view.Builds.TryGetValue(node, out ResourceBuildSlot? built)
+                ? built.Generation.Runtimes.Keys
+                : view.Metadata.TryGetValue(node, out ResourceMetadata? metadata) ? metadata.Runtimes.Keys : []).Distinct(StringComparer.Ordinal).ToArray();
+        }
+
+        foreach (string dependency in dependencies)
+        {
+            RefreshRuntime(_runtimes[dependency]);
+        }
+    }
+
+    private void ValidateRuntimeVersions(ResourceBuildView view, HashSet<ResourceNode> used)
+    {
+        foreach (ResourceNode node in used)
+        {
+            if (!view.Builds.TryGetValue(node, out ResourceBuildSlot? built))
+            {
+                if (view.Published.TryGetValue(node, out ResourceGeneration? existing))
+                {
+                    ThrowIfUnavailable(existing);
+                }
+
+                continue;
+            }
+
+            foreach ((string id, ResourceRuntimeUse usage) in built.Generation.Runtimes)
+            {
+                ResourceRuntimeSnapshot current = _runtimes[id].Snapshot;
+                if (!current.IsAvailable || current.Version != usage.Version || usage.Version <= current.InvalidatedThroughVersion)
+                {
+                    throw new ResourceUnavailableException(id, usage.Version);
+                }
+            }
+        }
+    }
+
     private bool CanMerge(ResourceBuildView view, HashSet<ResourceNode> used)
     {
         foreach (ResourceNode node in used)
@@ -496,8 +733,7 @@ public sealed partial class ResourceManager
 
     private void PublishCandidates(ResourceBuildView view, HashSet<ResourceNode> used)
     {
-        Dictionary<ResourceNode, ResourceGeneration> map = new(_published);
-        bool changed = false;
+        Dictionary<ResourceNode, ResourceGeneration>? map = null;
         foreach (ResourceNode node in used)
         {
             if (!view.Builds.TryGetValue(node, out ResourceBuildSlot? candidate))
@@ -511,16 +747,23 @@ public sealed partial class ResourceManager
                 throw new InvalidOperationException($"An incomplete candidate for {node} cannot be published.");
             }
 
-            changed |= !ReferenceEquals(map.GetValueOrDefault(node), generation);
+            if (ReferenceEquals(_published.GetValueOrDefault(node), generation))
+            {
+                continue;
+            }
+
+            map ??= new(_published);
             map[node] = generation;
-            _metadata[node] = new(
+            SetMetadata(node, new(
                 generation.Dependencies.Keys.ToArray(),
-                generation.Sources.ToDictionary(static pair => pair.Key, static pair => pair.Value.Revision));
+                generation.Sources.ToDictionary(static pair => pair.Key, static pair => pair.Value.Revision),
+                new Dictionary<string, ResourceRuntimeUse>(generation.Runtimes, StringComparer.Ordinal)));
+            _invalidated.Remove(node);
         }
 
-        if (changed)
+        if (map is not null)
         {
-            SetPublished(map);
+            SetPublished(map, used);
         }
     }
 }

@@ -41,6 +41,7 @@ public sealed class ResourceManagerTests
     public async Task ManualConstructionAcceptsTypedStagesDirectlyAsync()
     {
         await using MemoryManager memory = new();
+        await using ResourceExecutionHost execution = new();
         BuildPlan plan = new();
         SourceStore store = new();
         store.Set("asset", "initial");
@@ -48,7 +49,8 @@ public sealed class ResourceManagerTests
             "manual",
             new FakeSource(store),
             [new DocumentStage(plan), new CpuStage(plan), new UploadStage(plan)],
-            memory);
+            memory,
+            execution.Resources);
         using ResourceLease<TestValue> first = await manager.AcquireLeaseForTestAsync(Key("value"));
         using (ResourceLease<TestValue> second = await manager.AcquireLeaseForTestAsync(Key("value")))
         {
@@ -410,6 +412,52 @@ public sealed class ResourceManagerTests
         }
     }
 
+    /// <summary>Runtime invalidation propagates through resident edges while independent build results remain usable.</summary>
+    /// <returns>Completion of runtime loss and recovery.</returns>
+    [Fact]
+    public async Task RuntimeLossInvalidatesResidentsAndRebuildsExistingHandleAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Plan.Builds["gpu"] = (context, _) =>
+        {
+            context.TrackRuntimeDependency("device", fixture.Runtime.Snapshot.Version);
+            return ValueTask.FromResult(new TestValue($"gpu:{fixture.Runtime.Snapshot.Version}"));
+        };
+        fixture.Plan.Builds["scene"] = async (context, token) =>
+            new("scene", await context.RequireAsync(Key("gpu"), cancellationToken: token));
+        fixture.Plan.Builds["cpu"] = (context, _) =>
+        {
+            context.TrackRuntimeDependency("device", fixture.Runtime.Snapshot.Version, ResourceDependencyLifetime.Build);
+            return ValueTask.FromResult(new TestValue("cpu"));
+        };
+        using ResourceReference<TestValue> gpu = await fixture.Manager.AcquireAsync(Key("gpu"));
+        using ResourceReference<TestValue> scene = await fixture.Manager.AcquireAsync(Key("scene"));
+        using ResourceReference<TestValue> cpu = await fixture.Manager.AcquireAsync(Key("cpu"));
+        using ResourceLease<TestValue> oldGpu = await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu"));
+        using ResourceSnapshot oldFrame = fixture.Manager.CaptureSnapshot();
+        ResourceHandle<TestValue> handle = gpu.Handle;
+        fixture.Runtime.Set(new(2, false, 1));
+
+        Assert.False(gpu.IsAvailable);
+        Assert.False(scene.IsAvailable);
+        Assert.False(oldGpu.IsUsable);
+        Assert.Throws<ResourceUnavailableException>(() => oldGpu.Value);
+        Assert.False(fixture.Manager.TryAcquireLeaseForTest(handle, out ResourceLease<TestValue>? invalid));
+        Assert.Null(invalid);
+        Assert.False(oldFrame.TryAcquire(handle, out invalid));
+        AssertHandleText(fixture.Manager, cpu.Handle, "cpu");
+        await Assert.ThrowsAsync<ResourceUnavailableException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("gpu")));
+
+        fixture.Runtime.Set(new(3, true, 1));
+        ResourceReloadResult rebuilt = await fixture.Manager.RebuildRuntimeAsync(["device"]);
+        Assert.Equal(ResourceReloadStatus.Published, rebuilt.Status);
+        Assert.Equal(handle, gpu.Handle);
+        Assert.True(scene.IsAvailable);
+        AssertHandleText(fixture.Manager, handle, "gpu:3");
+        Assert.False(oldGpu.IsUsable);
+        Assert.False(oldFrame.TryAcquire(handle, out invalid));
+    }
+
     /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
     /// <returns>Completion of the shutdown retries.</returns>
     [Fact]
@@ -431,45 +479,85 @@ public sealed class ResourceManagerTests
         await Assert.ThrowsAsync<ObjectDisposedException>(async () => await fixture.Manager.AcquireLeaseForTestAsync(Key("value")));
     }
 
-    /// <summary>The DI scope owns distinct source and stage instances and disposes each service once after its managers.</summary>
-    /// <returns>Completion of both managers and their DI scope.</returns>
+    /// <summary>All scopes share one manager, its source and pipelines until the application root is disposed.</summary>
+    /// <returns>Completion of the shared manager and its application services.</returns>
     [Fact]
-    public async Task DependencyInjectionSeparatesManagersAndPipelinesAndOwnsServicesAsync()
+    public async Task DependencyInjectionSharesManagerAcrossScopesAndOwnsServicesOnceAsync()
     {
         ServiceCollection services = new();
         ServiceCounts counts = new();
         services.AddSingleton(counts);
         services.AddMemoryManagement();
-        foreach (string name in new[] { "first", "second" })
-        {
-            services.AddResources(name, builder => builder.UseSource<CountingSource>()
-                .AddSourcePipeline<TestValue, CountingStage<TestValue>>()
-                .AddSourcePipeline<CpuValue, CountingStage<CpuValue>>());
-        }
+        services.AddResources(builder => builder.UseSource<CountingSource>()
+            .AddSourcePipeline<TestValue, CountingStage<TestValue>>()
+            .AddSourcePipeline<CpuValue, CountingStage<CpuValue>>());
 
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceManager first = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first");
-        ResourceManager second = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("second");
-        Assert.NotEqual(first.ManagerId, second.ManagerId);
-        Assert.Same(first, scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("first"));
-        using (ResourceLease<TestValue> one = await first.AcquireLeaseForTestAsync(Key("one")))
-        using (ResourceLease<CpuValue> two = await first.AcquireLeaseForTestAsync(new ResourceKey<CpuValue>("asset", "one")))
-        using (ResourceLease<TestValue> other = await second.AcquireLeaseForTestAsync(Key("one")))
+        await using ResourceExecutionHost execution = new(provider);
+        await using AsyncServiceScope firstScope = provider.CreateAsyncScope();
+        await using AsyncServiceScope secondScope = provider.CreateAsyncScope();
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        Assert.Same(manager, firstScope.ServiceProvider.GetRequiredService<ResourceManager>());
+        Assert.Same(manager, secondScope.ServiceProvider.GetRequiredService<ResourceManager>());
+        using (ResourceLease<TestValue> one = await manager.AcquireLeaseForTestAsync(Key("one")))
+        using (ResourceLease<CpuValue> two = await manager.AcquireLeaseForTestAsync(new ResourceKey<CpuValue>("asset", "one")))
+        using (ResourceLease<TestValue> shared = await secondScope.ServiceProvider.GetRequiredService<ResourceManager>().AcquireLeaseForTestAsync(Key("one")))
         {
             Assert.NotEqual(one.Value.Text, two.Value.Text);
-            Assert.NotEqual(one.Value.Text, other.Value.Text);
+            Assert.Same(one.Value, shared.Value);
         }
 
-        await first.DisposeAsync();
-        await second.DisposeAsync();
+        await firstScope.DisposeAsync();
+        await secondScope.DisposeAsync();
         Assert.Equal(0, counts.SourceDisposals);
         Assert.Equal(0, counts.StageDisposals);
-        Assert.Equal(2, counts.SourceInstances);
-        Assert.Equal(4, counts.StageInstances);
-        await scope.DisposeAsync();
-        Assert.Equal(2, counts.SourceDisposals);
-        Assert.Equal(4, counts.StageDisposals);
+        using (ResourceLease<TestValue> retained = await manager.AcquireLeaseForTestAsync(Key("one")))
+        {
+            Assert.False(retained.Value.Released);
+        }
+
+        await manager.DisposeAsync();
+        Assert.Equal(0, counts.SourceDisposals);
+        Assert.Equal(0, counts.StageDisposals);
+        Assert.Equal(1, counts.SourceInstances);
+        Assert.Equal(2, counts.StageInstances);
+        await execution.DisposeAsync();
+        await provider.DisposeAsync();
+        Assert.Equal(1, counts.SourceDisposals);
+        Assert.Equal(2, counts.StageDisposals);
+    }
+
+    /// <summary>Failed manager cleanup retains singleton services until a successful retry and root disposal.</summary>
+    /// <returns>Completion of cleanup retry and application shutdown.</returns>
+    [Fact]
+    public async Task DependencyInjectionRetainsServicesUntilCleanupRetryCompletesAsync()
+    {
+        ServiceCollection services = new();
+        ServiceCounts counts = new() { FailReleaseOnce = true };
+        services.AddSingleton(counts);
+        services.AddMemoryManagement();
+        services.AddResources(builder => builder.UseSource<CountingSource>()
+            .AddSourcePipeline<TestValue, CountingStage<TestValue>>());
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using ResourceExecutionHost execution = new(provider);
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using (ResourceLease<TestValue> lease = await manager.AcquireLeaseForTestAsync(Key("retry")))
+        {
+            Assert.NotNull(lease.Value);
+        }
+
+        await Assert.ThrowsAsync<AggregateException>(async () => await manager.DisposeAsync());
+        Assert.Same(manager, provider.GetRequiredService<ResourceManager>());
+        Assert.Equal(0, counts.SourceDisposals);
+        Assert.Equal(0, counts.StageDisposals);
+        Assert.Equal(1, counts.ReleaseAttempts);
+        await manager.DisposeAsync();
+        Assert.Equal(2, counts.ReleaseAttempts);
+        Assert.Equal(0, counts.StageDisposals);
+        await execution.DisposeAsync();
+        await provider.DisposeAsync();
+        Assert.Equal(1, counts.SourceDisposals);
+        Assert.Equal(1, counts.StageDisposals);
     }
 
     /// <summary>Duplicate registrations and mutation after configuration fail before manager use.</summary>
@@ -478,19 +566,30 @@ public sealed class ResourceManagerTests
     {
         ServiceCollection services = new();
         ResourceRegistrationBuilder? captured = null;
-        services.AddResources("main", builder =>
+        services.AddResources(builder =>
         {
             captured = builder;
             builder.UseSource<CountingSource>().AddSourcePipeline<TestValue, CountingStage<TestValue>>();
             Assert.Throws<InvalidOperationException>(() => builder.UseSource<CountingSource>());
             Assert.Throws<ArgumentException>(() => builder.AddSourcePipeline<TestValue, CountingStage<TestValue>>());
         });
-        Assert.Throws<ArgumentException>(() => services.AddResources("main", _ => { }));
+        Assert.Throws<ArgumentException>(() => services.AddResources(_ => { }));
         Assert.Throws<InvalidOperationException>(() => captured!.AddSourcePipeline<TestValue, CountingStage<TestValue>>());
-        Assert.Throws<NotSupportedException>(() => new ServiceCollection().AddResources("singleton", builder =>
-            builder.UseSource<CountingSource>(ServiceLifetime.Singleton)));
-        Assert.Throws<NotSupportedException>(() => new ServiceCollection().AddResources("transient", builder =>
-            builder.UseSource<CountingSource>().AddSourcePipeline<TestValue, CountingStage<TestValue>>(ServiceLifetime.Transient)));
+    }
+
+    /// <summary>A pre-existing scoped source cannot be captured by the singleton manager.</summary>
+    /// <returns>Completion of the rejected provider configuration.</returns>
+    [Fact]
+    public async Task DependencyInjectionRejectsScopedSourceAsync()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton(new ServiceCounts());
+        services.AddMemoryManagement();
+        services.AddScoped<CountingSource>();
+        services.AddResources(builder => builder.UseSource<CountingSource>()
+            .AddSourcePipeline<TestValue, CountingStage<TestValue>>());
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<ResourceManager>());
     }
 
     /// <summary>Manager resolution requires the exact static input type; an unrelated output type cannot satisfy it.</summary>
@@ -505,7 +604,7 @@ public sealed class ResourceManagerTests
         services.AddSingleton(new BuildPlan());
         services.AddSingleton(new SourceStore());
         services.AddMemoryManagement();
-        services.AddResources("invalid", builder =>
+        services.AddResources(builder =>
         {
             builder.UseSource<FakeSource>().AddTransformPipeline<DocumentValue, CpuValue, CpuStage>();
             if (!missing)
@@ -515,7 +614,24 @@ public sealed class ResourceManagerTests
         });
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        Assert.ThrowsAny<ArgumentException>(() => scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("invalid"));
+        Assert.ThrowsAny<ArgumentException>(() => scope.ServiceProvider.GetRequiredService<ResourceManager>());
+    }
+
+    /// <summary>Runtime provider IDs must match the manager registration.</summary>
+    /// <returns>Completion of service provider disposal.</returns>
+    [Fact]
+    public async Task DependencyInjectionRejectsMismatchedRuntimeIdentifierAsync()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton(new BuildPlan());
+        services.AddSingleton(new SourceStore());
+        services.AddSingleton(new RuntimeState());
+        services.AddMemoryManagement();
+        services.AddResources(builder => builder.UseSource<FakeSource>()
+            .AddSourcePipeline<TestValue, PlannedStage>().UseRuntimeDependency<FakeRuntime>("other"));
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        Assert.Throws<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<ResourceManager>());
     }
 
     /// <summary>Logical source identifiers cannot escape their source or embed platform-specific addressing.</summary>
@@ -553,9 +669,19 @@ public sealed class ResourceManagerTests
     private static int UnmanagedSize<T>()
         where T : unmanaged => Unsafe.SizeOf<T>();
 
+    private static void AssertHandleText(ResourceManager manager, ResourceHandle<TestValue> handle, string expected)
+    {
+        Assert.True(manager.TryAcquireLeaseForTest(handle, out ResourceLease<TestValue>? lease));
+        using (lease)
+        {
+            Assert.Equal(expected, lease!.Value.Text);
+        }
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly ServiceProvider _provider;
+        private readonly ResourceExecutionHost _execution;
         private readonly AsyncServiceScope _scope;
 
         internal Fixture(Action<ResourceRegistrationBuilder> configure)
@@ -563,25 +689,29 @@ public sealed class ResourceManagerTests
             ServiceCollection services = new();
             services.AddSingleton(Plan);
             services.AddSingleton(Source);
+            services.AddSingleton(Runtime);
             services.AddMemoryManagement(options =>
             {
                 options.ChunkSizeBytes = 64;
                 options.SetBudget(_cpu, 4096, 8192);
             });
-            services.AddResources("test", builder =>
+            services.AddResources(builder =>
             {
-                builder.UseSource<FakeSource>();
+                builder.UseSource<FakeSource>().UseRuntimeDependency<FakeRuntime>("device");
                 configure(builder);
             });
             _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+            _execution = new ResourceExecutionHost(_provider);
             _scope = _provider.CreateAsyncScope();
             Memory = _scope.ServiceProvider.GetRequiredService<IMemoryManager>();
-            Manager = _scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("test");
+            Manager = _scope.ServiceProvider.GetRequiredService<ResourceManager>();
         }
 
         internal BuildPlan Plan { get; } = new();
 
         internal SourceStore Source { get; } = new();
+
+        internal RuntimeState Runtime { get; } = new();
 
         internal IMemoryManager Memory { get; }
 
@@ -591,6 +721,7 @@ public sealed class ResourceManagerTests
         {
             await Manager.DisposeAsync();
             await _scope.DisposeAsync();
+            await _execution.DisposeAsync();
             await _provider.DisposeAsync();
         }
     }
@@ -803,6 +934,32 @@ public sealed class ResourceManagerTests
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class RuntimeState
+    {
+        public event EventHandler? Changed;
+
+        internal ResourceRuntimeSnapshot Snapshot { get; private set; } = new(1, true, 0);
+
+        internal void Set(ResourceRuntimeSnapshot snapshot)
+        {
+            Snapshot = snapshot;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private sealed class FakeRuntime(RuntimeState state) : IResourceRuntimeDependency
+    {
+        public event EventHandler? Changed
+        {
+            add => state.Changed += value;
+            remove => state.Changed -= value;
+        }
+
+        public string Id => "device";
+
+        public ResourceRuntimeSnapshot Snapshot => state.Snapshot;
+    }
+
     private sealed class ServiceCounts
     {
         internal int SourceInstances { get; set; }
@@ -812,6 +969,10 @@ public sealed class ResourceManagerTests
         internal int SourceDisposals { get; set; }
 
         internal int StageDisposals { get; set; }
+
+        internal bool FailReleaseOnce { get; set; }
+
+        internal int ReleaseAttempts { get; set; }
     }
 
     private sealed class CountingSource : IResourceSource, IDisposable
@@ -844,7 +1005,17 @@ public sealed class ResourceManagerTests
             return ValueTask.FromResult((T)value);
         }
 
-        public ValueTask ReleaseAsync(T resource) => ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(T resource)
+        {
+            counts.ReleaseAttempts++;
+            if (counts.FailReleaseOnce)
+            {
+                counts.FailReleaseOnce = false;
+                throw new InvalidOperationException("Retry output cleanup.");
+            }
+
+            return ValueTask.CompletedTask;
+        }
 
         public void Dispose() => counts.StageDisposals++;
     }
