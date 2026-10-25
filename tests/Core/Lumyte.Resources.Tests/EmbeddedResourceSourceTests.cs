@@ -133,7 +133,7 @@ public sealed class EmbeddedResourceSourceTests
         }));
     }
 
-    /// <summary>A scoped pipeline reads the embedded source using the ordinary resource build context.</summary>
+    /// <summary>The shared manager reads the embedded source using the ordinary resource build context.</summary>
     /// <returns>Completion of DI acquisition, reference resolution and unchanged reload.</returns>
     [Fact]
     public async Task PipelineUsesEmbeddedSourceThroughDependencyInjectionAsync()
@@ -141,11 +141,10 @@ public sealed class EmbeddedResourceSourceTests
         ServiceCollection services = new();
         services.AddMemoryManagement();
         services.AddSingleton(Options());
-        services.AddResources("dll", pipelines => pipelines.UseSource<EmbeddedResourceSource>().AddSourcePipeline<TextValue, TextStage>());
+        services.AddResources(pipelines => pipelines.UseSource<EmbeddedResourceSource>().AddSourcePipeline<TextValue, TextStage>());
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await using ResourceExecutionHost execution = new(provider);
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("dll");
+        await using ResourceManager manager = provider.GetRequiredService<ResourceManager>();
         Assert.Null(manager.HotReload);
         var key = new ResourceKey<TextValue>(_alias);
         using ResourceReference<TextValue> owner = await manager.AcquireAsync(key);

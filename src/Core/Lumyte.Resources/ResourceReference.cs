@@ -4,7 +4,7 @@ namespace Lumyte.Resources;
 /// <typeparam name="T">The resource output type.</typeparam>
 /// <remarks>Use and disposal of the same reference must not overlap.</remarks>
 public sealed class ResourceReference<T> : IDisposable
-    where T : class
+    where T : notnull
 {
     private readonly ResourceHandle<T> _handle;
     private ResourceManager? _manager;

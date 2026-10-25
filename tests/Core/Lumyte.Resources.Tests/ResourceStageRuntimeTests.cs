@@ -161,15 +161,15 @@ public sealed class ResourceStageRuntimeTests
             stageRuntimes: bindings));
     }
 
-    /// <summary>Named managers resolve typed and factory selections once without replacing the shared default.</summary>
-    /// <returns>Completion of all manager scopes and their execution host.</returns>
+    /// <summary>One manager resolves typed and factory environments once and preserves its shared default.</summary>
+    /// <returns>Completion of the shared manager and its execution host.</returns>
     [Fact]
-    public async Task DependencyInjectionSelectsPerManagerWithoutReplacingTheDefaultAsync()
+    public async Task DependencyInjectionSelectsPerStageWithoutReplacingTheDefaultAsync()
     {
         ServiceCollection services = new();
         services.AddMemoryManagement();
         List<RecordingRuntime> typedInstances = [];
-        services.AddTransient(provider =>
+        services.AddSingleton(provider =>
         {
             var runtime = new RecordingRuntime(provider.GetRequiredService<ResourceRuntime>(), "typed");
             typedInstances.Add(runtime);
@@ -177,58 +177,70 @@ public sealed class ResourceStageRuntimeTests
         });
         services.AddKeyedSingleton<RecordingRuntime>("factory", (provider, _) => new RecordingRuntime(provider.GetRequiredService<ResourceRuntime>(), "factory"));
         int factoryCalls = 0;
-        services.AddResources("typed", builder => builder.UseSource<UnusedSource>()
-            .AddSourcePipeline<LeafValue, LeafStage>().UseStageRuntime<LeafValue, RecordingRuntime>());
-        services.AddResources("factory", builder => builder.UseSource<UnusedSource>()
-            .AddSourcePipeline<LeafValue, LeafStage>().UseStageRuntime<LeafValue>(provider =>
+        services.AddResources(builder => builder.UseSource<UnusedSource>()
+            .AddSourcePipeline<LeafValue, LeafStage>()
+            .AddSourcePipeline<ParentValue, ParentStage>()
+            .AddSourcePipeline<DefaultValue, DefaultStage>()
+            .UseStageRuntime<LeafValue, RecordingRuntime>()
+            .UseStageRuntime<ParentValue>(provider =>
             {
                 factoryCalls++;
                 return provider.GetRequiredKeyedService<RecordingRuntime>("factory");
             }));
-        services.AddResources("default", builder => builder.UseSource<UnusedSource>().AddSourcePipeline<LeafValue, LeafStage>());
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         Assert.Empty(typedInstances);
         Assert.Equal(0, factoryCalls);
         RecordingRuntime factory = provider.GetRequiredKeyedService<RecordingRuntime>("factory");
-        foreach (string name in new[] { "typed", "factory", "default" })
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        RecordingRuntime typed = Assert.Single(typedInstances);
+        Assert.Same(manager, scope.ServiceProvider.GetRequiredService<ResourceManager>());
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            ResourceManager manager = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>(name);
-            IResourceRuntime expected = name switch
+            using (ResourceReference<ParentValue> reference = await manager.AcquireAsync(new ResourceKey<ParentValue>("asset")))
+            using (ResourceLease<ParentValue> lease = reference.Acquire())
+            using (ResourceReference<DefaultValue> defaultReference = await manager.AcquireAsync(new ResourceKey<DefaultValue>("asset")))
+            using (ResourceLease<DefaultValue> defaultLease = defaultReference.Acquire())
             {
-                "typed" => Assert.Single(typedInstances),
-                "factory" => factory,
-                _ => execution.Resources,
-            };
-            Assert.Same(manager, scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>(name));
-            for (int attempt = 0; attempt < 2; attempt++)
-            {
-                using (ResourceReference<LeafValue> reference = await manager.AcquireAsync(new ResourceKey<LeafValue>("asset")))
-                using (ResourceLease<LeafValue> lease = reference.Acquire())
-                {
-                    Assert.Same(expected, lease.Value.Runtime);
-                }
-
-                Assert.Equal(1, await manager.TrimAsync());
+                Assert.Same(factory, lease.Value.Runtime);
+                Assert.Same(typed, lease.Value.Child.Runtime);
+                Assert.Same(execution.Resources, defaultLease.Value.Runtime);
             }
+
+            Assert.Equal(3, await manager.TrimAsync());
         }
 
         Assert.Equal(1, factoryCalls);
-        Assert.Equal(2, Assert.Single(typedInstances).Builds);
+        Assert.Equal(2, typed.Builds);
         Assert.Equal(2, factory.Builds);
         Assert.Equal(2, factory.Released.Count);
         Assert.Same(execution.Resources, provider.GetRequiredService<IResourceRuntime>());
+        await manager.DisposeAsync();
+    }
+
+    /// <summary>A singleton manager rejects a selected scoped environment when DI scope validation is enabled.</summary>
+    /// <returns>Completion of the rejected provider configuration.</returns>
+    [Fact]
+    public async Task DependencyInjectionRejectsScopedEnvironmentAsync()
+    {
+        ServiceCollection services = new();
+        services.AddMemoryManagement();
+        services.AddScoped(provider => new RecordingRuntime(provider.GetRequiredService<ResourceRuntime>(), "scoped"));
+        services.AddResources(builder => builder.UseSource<UnusedSource>()
+            .AddSourcePipeline<LeafValue, LeafStage>().UseStageRuntime<LeafValue, RecordingRuntime>());
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<ResourceManager>());
     }
 
     /// <summary>The registration builder rejects unknown and duplicate stage runtime selections.</summary>
     [Fact]
     public void DependencyInjectionRejectsUnknownAndDuplicateSelections()
     {
-        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddResources("unknown", builder => builder
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddResources(builder => builder
             .UseSource<UnusedSource>().AddSourcePipeline<LeafValue, LeafStage>()
             .UseStageRuntime<ParentValue, ResourceRuntime>()));
-        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddResources("duplicate", builder => builder
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddResources(builder => builder
             .UseSource<UnusedSource>().AddSourcePipeline<LeafValue, LeafStage>()
             .UseStageRuntime<LeafValue, ResourceRuntime>().UseStageRuntime<LeafValue, ResourceRuntime>()));
     }
@@ -310,6 +322,16 @@ public sealed class ResourceStageRuntimeTests
         }
 
         public ValueTask ReleaseAsync(LeafValue resource) => ValueTask.CompletedTask;
+    }
+
+    private sealed record DefaultValue(IResourceRuntime Runtime);
+
+    private sealed class DefaultStage : IResourceSourceStage<DefaultValue>
+    {
+        public ValueTask<DefaultValue> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+            => ValueTask.FromResult(new DefaultValue(context.Runtime));
+
+        public ValueTask ReleaseAsync(DefaultValue resource) => ValueTask.CompletedTask;
     }
 
     private sealed class ParentStage : IResourceSourceStage<ParentValue>

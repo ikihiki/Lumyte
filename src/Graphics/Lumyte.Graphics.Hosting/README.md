@@ -1,6 +1,6 @@
 # Lumyte.Graphics.Hosting
 
-名前付きDI scopeで、backendの実deviceを所有し、デバイスロスト後の再生成を管理します。Resources・Memoryには依存しません。
+名前付きserviceがbackendの実deviceを所有し、デバイスロスト後の再生成を管理します。Resources・Memoryには依存しません。
 
 ```csharp
 services.AddGraphicsDevice<AppDeviceFactory>("main");
@@ -12,6 +12,11 @@ IGraphicDevice device = lease.Device;
 // 生成・記録・GPU完了まで同じepochのleaseを保持する。
 ```
 
+`AddGraphicsDevice`の既定寿命はScopedです。アプリ全体で共有する場合は
+`AddGraphicsDevice<AppDeviceFactory>("main", ServiceLifetime.Singleton)`を指定します。
+factoryとserviceは同じ寿命で登録され、Transientは受け付けません。singletonは子scopeを閉じても終了しません。
+Resourcesのsingleton Managerへ接続するdeviceにはSingletonを使用します。
+
 AppDeviceFactoryはIGraphicsDeviceFactoryを実装し、backend固有設定・dispatcherをconstructor injectionで受け取ります。CreateAsyncは生成したbackend instanceをIGraphicsDeviceOwnerで包み、serviceへ所有権を渡します。ownerのDeviceはbackendそのもので、別deviceへforwardしません。factoryは部分生成失敗のcleanupを担当し、serviceは成功後のownerを所有します。Native同期生成の必要なbackendでも、DI constructorやservice取得では生成しません。
 
 InitializeAsync／RecoverAsyncは同時要求を集約します。callerのキャンセルはその待機だけを解除します。AcquireAsyncはReadyでないとGraphicsDeviceUnavailableExceptionとなり、復旧待ちを隠しません。StateChanged handlerはmetadataの通知に限定します。handlerの例外はTraceへ報告し、他の通知を継続します。
@@ -20,6 +25,6 @@ DeviceLost後は旧lease.IsUsableがfalseとなり、Device getterがGraphicsDev
 
 復旧の順序は、描画・mappedアクセス・GPU job停止、退役確認、旧子資源の解放、旧leaseの返却、RetireAsync、RecoverAsync、新Capsの確認・GPU資源の再構築、描画再開です。RecoverAsyncのReadyはアセット復元完了を意味しません。予算に余力があれば旧ownerを保持したまま新deviceを生成できます。
 
-RetireAsyncは利用中のownerを保持し、失敗したcleanupも再試行できるよう所有します。DisposeAsyncは進行中の生成・生存leaseがあると終了前に拒否します。終了開始後のcleanup失敗は新規操作を拒否したままDisposeAsyncで再試行します。利用側はservice終了後にDI scopeを閉じます。生成物・leaseの利用とDisposeは競合させません。
+RetireAsyncは利用中のownerを保持し、失敗したcleanupも再試行できるよう所有します。DisposeAsyncは進行中の生成・生存leaseがあると終了前に拒否します。終了開始後のcleanup失敗は新規操作を拒否したままDisposeAsyncで再試行します。利用側はservice終了後に所有するDI scopeまたはDI rootを閉じます。生成物・leaseの利用とDisposeは競合させません。
 
 backend固有のNative操作の並列実行・実行スレッド制約はserviceで変更しません。factoryと生成物cleanupのdispatcherはアプリが保持します。

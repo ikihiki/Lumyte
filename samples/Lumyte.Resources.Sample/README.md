@@ -16,8 +16,9 @@ scene.json -> SceneDocument -> MeshInfo     (mesh/0, geometry:v1)
 MeshInfo + MaterialInfo     -> SceneResource (typed child references)
 ```
 
-`AddResources` registers the default resource runtime and `ExecutionRuntime`.
-The host prepares and starts execution before opening resource scopes, with
+`AddResources` registers one singleton resource manager shared by all output types,
+the default resource runtime and `ExecutionRuntime`. Child scopes use the same manager.
+The host prepares and starts execution before resolving the one shared manager, with
 `CpuExecutionMode.ThreadPool` and an explicit concurrency limit. Stage builds,
 releases and their continuations run as CPU jobs; stages use ordinary `await` to
 return to that scheduler after source reads or child-resource loads. Waiting for
@@ -64,13 +65,13 @@ memory. The file source reads inputs directly without storing historical copies;
 detected changes fail reads and the reload coordinator retries within its configured limits.
 
 The sample closes leases, resource snapshots and references before trimming and closing
-the manager, then disposes its DI scope, stops execution and deletes the temporary directory. It
+the manager, then stops execution, disposes the DI provider and deletes the temporary directory. It
 demonstrates compound-document projection and hot reload, with no format-specific
 model importer, GPU upload or audio codec.
 
-A host that recovers from cleanup failures must retain its manager and DI scope,
+A host that recovers from cleanup failures must retain its manager and DI provider,
 retry `ResourceManager.DisposeAsync` while execution remains available, and only
-dispose the scope and stop execution after that succeeds. DI scope disposal is
+stop execution and dispose the provider after that succeeds. DI provider disposal is
 one-shot, so it cannot serve as the retry boundary.
 
 リソースの取得は`Manager.AcquireAsync → ResourceReference`、値の取得は

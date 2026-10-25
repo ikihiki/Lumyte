@@ -1,22 +1,23 @@
 # Lumyte.Resources.Audio.DependencyInjection
 
-Audioの実装とResourcesの標準パイプラインをDIへ登録します。
+Audioの実行moduleと、ResourcesのWAVE → PCM → ClipパイプラインをDIへ登録します。
 Sourceには初期ロードで利用できるIResourceSourceを指定します。ファイル監視やHotReloadは別の機能です。
 
 ```csharp
 services.AddMemoryManagement();
-services.AddAudioResources<MyAudioSource>("audio");
+services.AddAudioResources();
+services.AddResources(r => r.UseSource<MyAudioSource>().AddAudioPipeline());
 ```
 
-AudioModuleとAudioResourceRuntimeをsingletonとして登録します。AddResourcesの既定登録が
-汎用ResourceRuntimeとExecutionRuntimeを追加し、三つのmoduleの同じ実体をIExecutionModuleへ接続します。
-名前付きResourceManagerの既定RuntimeはResourceRuntimeです。AddAudioPipelineは
-`UseStageRuntime<IAudioClip, AudioResourceRuntime>()`と`UseStageRuntime<IAudioVoice, AudioResourceRuntime>()`で
-clipとvoiceの出力型へ同じAudioResourceRuntimeを割り当てます。AudioDecodeStageは既定Runtimeを使用します。
-AudioResourceRuntimeは既定RuntimeのExecutorを共有し、deviceの取得・所有スレッドへの生成と解放・世代依存を提供します。
-ManagerはAudioResourceRuntime.Dependenciesから同じ世代providerを収集するため、世代依存先を別途登録する必要はありません。
-複数のmanager名を登録してもmoduleを重複登録しません。
-MyAudioSourceとStageはResourceManagerと同じscopeで解決します。
+無引数のAddAudioResourcesはAudioModuleとAudioResourceRuntimeだけをsingleton登録します。
+共通のAddResourcesが汎用ResourceRuntime、ExecutionRuntimeと、一つの名前なしsingleton ResourceManagerを登録します。
+同じmodule実体をIExecutionModuleへ接続し、SourceとStageもsingleton Managerの寿命で解決します。scopeや名前でManagerを選び分けません。
+
+AddAudioPipelineはAudioDecodeStageとAudioClipStageを登録し、
+`UseStageRuntime<AudioClip, AudioResourceRuntime>()`でclipの出力型へAudio環境を割り当てます。
+AudioDecodeStageは既定Runtimeを使用します。
+AudioResourceRuntimeはそのExecutorを共有し、deviceの取得・所有スレッドへの生成と解放・世代依存を提供します。
+ManagerがDependenciesから同じ世代providerを収集するため、依存先を別途登録する必要はありません。
 事前に登録したAudioModuleやIAudioDeviceFactoryを使う構成にも対応します。
 
 ホストがExecutionRuntimeを取得し、PrepareOnCurrentHost → StartAsyncを実行します。
@@ -28,15 +29,20 @@ var execution = provider.GetRequiredService<ExecutionRuntime>();
 execution.PrepareOnCurrentHost(placement, cpuMode, concurrency, new ExecutionOptions());
 await execution.StartAsync();
 
-var resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("audio");
-using var reference = await resources.AcquireAsync(new ResourceKey<IAudioVoice>("sounds/theme.wav"));
-using var lease = reference.Acquire();
-await new AudioVoice(lease.Value).Play();
+var resources = provider.GetRequiredService<ResourceManager>();
+using var reference = await resources.AcquireAsync(new ResourceKey<AudioClip>("sounds/theme.wav"));
+ResourceLease<AudioClip> lease = reference.Acquire();
+AudioVoice voice = await lease.Value.CreateVoice(AudioBus.Effects);
+await voice.Play();
+// 再生中もleaseを保持する。終了時はvoiceの解放完了を先に待つ。
+await voice.Destroy();
+lease.Dispose();
 ```
 
-終了時はReference／Leaseを返し、ResourceManagerの破棄を完了させてからExecutionRuntimeを停止します。
-デバイス復旧、旧世代の保持、Stageの差し替えは[Audio本体の契約](../Lumyte.Resources.Audio/README.md)を参照してください。
+voiceは再生ごとに利用側が作成し、Managerには登録しません。同じclipから複数のvoiceを作れます。
+ラッパーのコピーやvoice生成はleaseを取得しないため、全voiceのDestroyが完了するまでclipのleaseを保持します。
+上の例は成功時の順序です。解放失敗時はvoiceとleaseを保持し、再試行後に返却してください。
 
+終了時は全voiceの解放後にReference／Leaseを返し、ResourceManagerの破棄を完了させてからExecutionRuntimeを停止します。
+デバイス復旧、旧世代の保持、Stageの差し替えは[Audio本体の契約](../Lumyte.Resources.Audio/README.md)を参照してください。
 独自のデコードStageを使う場合はAddResourcesでパイプラインを明示的に構成できます。
-AddAudioPipelineはWAVE→PCM→Clip→Voiceの標準Stageと、clip／voice用Runtimeの割り当てを登録します。
-単独で使用する場合は、同じAudioModuleとAudioResourceRuntimeを実行moduleとして登録済みにします。

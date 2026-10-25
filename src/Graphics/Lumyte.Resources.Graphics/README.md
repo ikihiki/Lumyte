@@ -6,18 +6,20 @@ CPU Stageは共有の既定Runtimeを使い、GPU StageごとにGraphics Runtime
 物理deviceの初期化・復旧はGraphics.Hostingが所有し、ホストが明示的に進めます。
 
 ```csharp
-services.AddGraphicsDevice<AppDeviceFactory>("main");
-services.AddResources("scene", builder => builder
+services.AddGraphicsDevice<AppDeviceFactory>("main", ServiceLifetime.Singleton);
+services.AddResources(builder => builder
     .UseSource<AppResourceSource>()
     .AddSourcePipeline<CpuMesh, CpuMeshStage>()
     .AddTransformPipeline<CpuMesh, GpuMesh, GpuMeshStage>()
     .UseStageRuntime<GpuMesh>(provider =>
-        provider.GetResourceGraphicsRuntime("scene", "graphics.main")));
-services.AddResourceGraphics("scene", "main", "graphics.main");
+        provider.GetResourceGraphicsRuntime("graphics.main")));
+services.AddResourceGraphics("main", "graphics.main");
 ```
 
-`AddResourceGraphics`はManager内のIDで一つのscoped Runtimeを登録します。
-`GetResourceGraphicsRuntime`は同じscopeの同じRuntimeを返し、複数Stageで共有できます。
+`AddResources`はDI rootに一つのunkeyed singleton Managerを登録します。
+`AddResourceGraphics`は依存IDでsingleton Runtimeを登録し、同じDI rootのsingleton device serviceを借用します。
+scoped deviceは登録時に拒否します。`AddGraphicsDevice`自体の既定はScopedなので、Resourcesとの接続ではSingletonを指定します。
+`GetResourceGraphicsRuntime`は子scopeから解決しても同じRuntimeを返し、複数Stageで共有できます。
 環境のDependenciesから世代providerも収集されるため、providerの追加登録は不要です。
 別deviceを使うStageには別のIDのRuntimeを割り当てます。既定RuntimeとExecutionRuntimeの登録は`AddResources`が行い、
 ホストがExecutionRuntimeのPrepare・Start・Pump・Stopを管理します。
@@ -41,7 +43,7 @@ GPU完了前に構築を完了させず、部分生成物もcleanupへ登録し�
 既定のResident寿命ではNative子資源の解放後にdevice leaseが返ります。
 CPU readbackなど完成後にdeviceを必要としない出力はBuild寿命を指定できます。
 Runtimeを選択しただけでResident依存になることはありません。
-低水準の`UseGraphicsAsync`も同じ世代検証を行い、登録と異なるscopeの同名serviceを拒否します。
+低水準の`UseGraphicsAsync`も同じ世代検証を行い、登録と異なるDI rootの同名serviceを拒否します。
 
 ロスト後もManagerが渡す元Runtimeと、保持していたepochを使い、
 `runtime.WaitForRetirementAsync(epoch.State.Epoch)`でNative解放の安全性を確認します。
@@ -71,5 +73,5 @@ await execution.StopAsync();
 ```
 
 Source・Stage・device service・memoryの寿命はホストが保証します。
-Managerの解放が成功してからExecutionを停止し、最後にdevice serviceのscopeを閉じます。
+Managerの解放が成功してからExecutionを停止し、最後にdevice serviceを終了してDI rootを閉じます。
 Graphics Runtimeはbackend固有の同期制約を取り除くものではなく、StageはそのdeviceのGPU完了・Native操作の契約を守ります。

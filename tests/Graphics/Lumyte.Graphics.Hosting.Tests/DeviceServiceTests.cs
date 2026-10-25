@@ -200,6 +200,39 @@ public sealed class DeviceServiceTests
         Assert.NotSame(one.Device, three.Device);
     }
 
+    /// <summary>Application-wide device registration survives child scope disposal.</summary>
+    /// <returns>Completion of the scenario.</returns>
+    [Fact]
+    public async Task SingletonRegistrationSharesTheDeviceAcrossScopesAsync()
+    {
+        var state = new TestFactoryState();
+        var services = new ServiceCollection();
+        services.AddSingleton(state);
+        services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Singleton);
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        IGraphicsDeviceService device = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        await device.InitializeAsync();
+
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            Assert.Same(device, scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main"));
+        }
+
+        Assert.Equal(GraphicsDeviceServiceStatus.Ready, device.State.Status);
+        Assert.Equal(0, state.Devices[0].Disposals);
+        using GraphicsDeviceLease lease = await device.AcquireAsync();
+        Assert.Same(state.Devices[0], lease.Device);
+    }
+
+    /// <summary>Transient device ownership is rejected before adding any registrations.</summary>
+    [Fact]
+    public void TransientRegistrationIsRejected()
+    {
+        var services = new ServiceCollection();
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Transient));
+        Assert.Empty(services);
+    }
+
     /// <summary>Confirming retirement pins the owner even if another caller tries to reclaim it.</summary>
     /// <returns>Completion of the scenario.</returns>
     [Fact]

@@ -7,26 +7,24 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Lumyte.Resources.DependencyInjection;
 
-/// <summary>Registers named resource managers and their scoped source, stage and runtime services.</summary>
+/// <summary>Registers one shared resource manager and its application-lifetime source, stages and environments.</summary>
 public static class ResourceServiceCollectionExtensions
 {
     private static readonly Func<IServiceProvider, object> _runtimeModuleFactory =
         static provider => provider.GetRequiredService<ResourceRuntime>();
 
-    /// <summary>Registers a named keyed scoped manager with immutable pipeline configuration.</summary>
-    /// <param name="services">The target service collection, including an <see cref="IMemoryManager"/> registration.</param>
-    /// <param name="name">The unique manager name.</param>
-    /// <param name="configure">The callback registering source and pipeline types.</param>
+    /// <summary>Registers one singleton manager with immutable pipeline configuration.</summary>
+    /// <param name="services">The target collection, including an <see cref="IMemoryManager"/> registration.</param>
+    /// <param name="configure">The callback registering the shared source and all resource pipelines.</param>
     /// <returns>The supplied service collection.</returns>
-    public static IServiceCollection AddResources(this IServiceCollection services, string name, Action<ResourceRegistrationBuilder> configure)
+    public static IServiceCollection AddResources(this IServiceCollection services, Action<ResourceRegistrationBuilder> configure)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        if (HasManager(services, name))
+        if (services.Any(static descriptor => descriptor.ServiceType == typeof(ResourceManager)))
         {
-            throw new ArgumentException("The resource manager name is already registered.", nameof(name));
+            throw new ArgumentException("Resource management is already registered.", nameof(services));
         }
 
-        var builder = new ResourceRegistrationBuilder(name);
+        var builder = new ResourceRegistrationBuilder();
         configure(builder);
         Func<IServiceProvider, IResourceSource> source = builder.Complete();
         services.TryAddSingleton<ResourceRuntime>();
@@ -38,75 +36,65 @@ public static class ResourceServiceCollectionExtensions
         }
 
         services.TryAddSingleton<ExecutionRuntime>();
-        services.AddKeyedScoped<ResourceManager>(name, (provider, _) => new ResourceManager(
-            name,
+        services.AddSingleton(provider => new ResourceManager(
+            "resources",
             source(provider),
-            provider.GetKeyedServices<IResourceStage>(name),
+            provider.GetServices<IResourceStage>(),
             provider.GetRequiredService<IMemoryManager>(),
             provider.GetRequiredService<IResourceRuntime>(),
-            provider.GetKeyedServices<RuntimeDependencyRegistration>(name).Select(registration => registration.Resolve(provider)),
+            provider.GetServices<RuntimeDependencyRegistration>().Select(registration => registration.Resolve(provider)),
             builder.ResolveStageRuntimes(provider),
             builder.ReloadOptions));
         builder.Apply(services);
         return services;
     }
 
-    /// <summary>Adds a scoped runtime adapter to an already registered named resource manager.</summary>
+    /// <summary>Adds a singleton runtime dependency to the registered resource manager.</summary>
     /// <typeparam name="TDependency">The runtime adapter implementation.</typeparam>
-    /// <param name="services">The target service collection.</param>
-    /// <param name="managerName">The registered resource manager name.</param>
-    /// <param name="dependencyId">The unique manager-local runtime dependency name.</param>
-    /// <param name="factory">The DI factory creating the owned scoped adapter.</param>
+    /// <param name="services">The registered resource services.</param>
+    /// <param name="dependencyId">The unique runtime dependency identifier.</param>
+    /// <param name="factory">The DI factory creating the application-lifetime adapter.</param>
     /// <returns>The supplied service collection.</returns>
-    public static IServiceCollection AddResourceRuntimeDependency<TDependency>(this IServiceCollection services, string managerName, string dependencyId, Func<IServiceProvider, TDependency> factory)
+    public static IServiceCollection AddResourceRuntimeDependency<TDependency>(this IServiceCollection services, string dependencyId, Func<IServiceProvider, TDependency> factory)
         where TDependency : class, IResourceRuntimeDependency
     {
-        ValidateRuntimeRegistration(services, managerName, dependencyId);
-        var key = new RuntimeServiceKey(managerName, dependencyId);
-        services.AddKeyedScoped<TDependency>(key, (provider, _) => factory(provider));
-        RegisterRuntimeResolver<TDependency>(services, managerName, dependencyId, key);
+        ValidateRuntimeRegistration(services, dependencyId);
+        services.AddKeyedSingleton<TDependency>(dependencyId, (provider, _) => factory(provider));
+        RegisterRuntimeResolver<TDependency>(services, dependencyId);
         return services;
     }
 
-    internal static void AddRuntimeDependency<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDependency>(IServiceCollection services, string managerName, string dependencyId)
+    internal static void AddRuntimeDependency<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDependency>(IServiceCollection services, string dependencyId)
         where TDependency : class, IResourceRuntimeDependency
     {
-        ValidateRuntimeRegistration(services, managerName, dependencyId);
-        var key = new RuntimeServiceKey(managerName, dependencyId);
-        services.AddKeyedScoped<TDependency>(key);
-        RegisterRuntimeResolver<TDependency>(services, managerName, dependencyId, key);
+        ValidateRuntimeRegistration(services, dependencyId);
+        services.AddKeyedSingleton<TDependency>(dependencyId);
+        RegisterRuntimeResolver<TDependency>(services, dependencyId);
     }
 
-    private static bool HasManager(IServiceCollection services, string name)
-        => services.Any(descriptor => descriptor.IsKeyedService && descriptor.ServiceType == typeof(ResourceManager) && Equals(descriptor.ServiceKey, name));
-
-    private static void ValidateRuntimeRegistration(IServiceCollection services, string managerName, string dependencyId)
+    private static void ValidateRuntimeRegistration(IServiceCollection services, string dependencyId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(managerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(dependencyId);
-        if (!HasManager(services, managerName))
+        if (!services.Any(static descriptor => !descriptor.IsKeyedService && descriptor.ServiceType == typeof(ResourceManager)))
         {
-            throw new ArgumentException("Register the resource manager before adding runtime dependencies.", nameof(managerName));
+            throw new ArgumentException("Register resource management before adding runtime dependencies.", nameof(services));
         }
 
-        if (services.Any(descriptor => descriptor.IsKeyedService
+        if (services.Any(descriptor => !descriptor.IsKeyedService
             && descriptor.ServiceType == typeof(RuntimeDependencyRegistration)
-            && Equals(descriptor.ServiceKey, managerName)
-            && descriptor.KeyedImplementationInstance is RuntimeDependencyRegistration registration
+            && descriptor.ImplementationInstance is RuntimeDependencyRegistration registration
             && registration.Id == dependencyId))
         {
-            throw new ArgumentException("The runtime dependency name is already registered for this resource manager.", nameof(dependencyId));
+            throw new ArgumentException("The runtime dependency identifier is already registered.", nameof(dependencyId));
         }
     }
 
-    private static void RegisterRuntimeResolver<TDependency>(IServiceCollection services, string managerName, string dependencyId, RuntimeServiceKey key)
+    private static void RegisterRuntimeResolver<TDependency>(IServiceCollection services, string dependencyId)
         where TDependency : class, IResourceRuntimeDependency
     {
-        var registration = new RuntimeDependencyRegistration(dependencyId, provider => provider.GetRequiredKeyedService<TDependency>(key));
-        services.AddKeyedSingleton(managerName, registration);
+        var registration = new RuntimeDependencyRegistration(dependencyId, provider => provider.GetRequiredKeyedService<TDependency>(dependencyId));
+        services.AddSingleton(registration);
     }
-
-    private sealed record RuntimeServiceKey(string ManagerName, string Id);
 
     private sealed class RuntimeDependencyRegistration(string id, Func<IServiceProvider, IResourceRuntimeDependency> resolve)
     {
