@@ -53,7 +53,6 @@ internal static class Program
         try
         {
             await using ResourceManager resources = provider.GetRequiredService<ResourceManager>();
-            ResourceReloadService changes = resources.HotReload!;
             SampleCounters counters = provider.GetRequiredService<SampleCounters>();
             using (ResourceReference<SceneResource> sceneReference = await resources.AcquireAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))
             using (ResourceLease<SceneResource> scene = sceneReference.Acquire())
@@ -62,7 +61,7 @@ internal static class Program
                 Console.WriteLine($"Projection builds: {counters.ProjectionBuilds}");
             }
 
-            await DemonstrateReloadAsync(resources, changes, "scene.json", path, counters).ConfigureAwait(false);
+            await DemonstrateReloadAsync(resources, "scene.json", path, counters).ConfigureAwait(false);
             await resources.TrimAsync().ConfigureAwait(false);
             await resources.DisposeAsync().ConfigureAwait(false);
             IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
@@ -74,7 +73,7 @@ internal static class Program
         }
     }
 
-    private static async Task DemonstrateReloadAsync(ResourceManager resources, ResourceReloadService changes, string sourceId, string path, SampleCounters counters)
+    private static async Task DemonstrateReloadAsync(ResourceManager resources, string sourceId, string path, SampleCounters counters)
     {
         var meshKey = new ResourceKey<MeshInfo>(sourceId, "mesh/0", "geometry:v1");
         var materialKey = new ResourceKey<MaterialInfo>(sourceId, "material/0", "preview:v1");
@@ -91,7 +90,7 @@ internal static class Program
         const string UpdatedScene = """
             { "meshes": [ { "vertexCount": 6 } ], "materials": [ { "name": "silver" } ] }
             """;
-        ResourceReloadResult reload = await RewriteAndWaitAsync(changes, path, UpdatedScene).ConfigureAwait(false);
+        ResourceReloadResult reload = await RewriteAndWaitAsync(resources, path, UpdatedScene).ConfigureAwait(false);
 
         using ResourceSnapshot currentSnapshot = resources.CaptureSnapshot();
         using ResourceLease<MeshInfo> newMesh = AcquireFrom(currentSnapshot, meshHandle);
@@ -109,7 +108,7 @@ internal static class Program
         Console.WriteLine($"Original view: {oldMaterial.Value.Name}; current view: {newMaterial.Value.Name}");
     }
 
-    private static async Task<ResourceReloadResult> RewriteAndWaitAsync(ResourceReloadService changes, string path, string contents)
+    private static async Task<ResourceReloadResult> RewriteAndWaitAsync(ResourceManager resources, string path, string contents)
     {
         TaskCompletionSource<ResourceReloadResult> published = new(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnReloaded(object? sender, ResourceReloadEventArgs args)
@@ -120,24 +119,24 @@ internal static class Program
             }
         }
 
-        changes.Reloaded += OnReloaded;
+        resources.Reloaded += OnReloaded;
         try
         {
             await File.WriteAllTextAsync(path, contents).ConfigureAwait(false);
-            return await WaitForReloadAsync(changes, published.Task).ConfigureAwait(false);
+            return await WaitForReloadAsync(resources, published.Task).ConfigureAwait(false);
         }
         finally
         {
-            changes.Reloaded -= OnReloaded;
+            resources.Reloaded -= OnReloaded;
         }
     }
 
-    private static async Task<ResourceReloadResult> WaitForReloadAsync(ResourceReloadService changes, Task<ResourceReloadResult> expected)
+    private static async Task<ResourceReloadResult> WaitForReloadAsync(ResourceManager resources, Task<ResourceReloadResult> expected)
     {
-        Task completed = await Task.WhenAny(expected, changes.Completion).WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
-        if (completed == changes.Completion)
+        Task completed = await Task.WhenAny(expected, resources.HotReloadCompletion).WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+        if (completed == resources.HotReloadCompletion)
         {
-            await changes.Completion.ConfigureAwait(false);
+            await resources.HotReloadCompletion.ConfigureAwait(false);
             throw new InvalidOperationException("File monitoring ended before completing the expected reload.");
         }
 

@@ -17,21 +17,21 @@ DI rootごとに一つのResourceManagerが、全Pipelineで共有するSource�
 
 `IResourceSource.Changes` から、そのSourceと同じアドレス体系・取得元の変更通知を借りる。Sourceは通知providerを所有し、各列挙が独立した購読を所有する。`ResourceManager` は自身の購読と `ResourceReloadService` を所有する。
 
-ResourceReloadServiceは通知の重複排除、待機時間、保留数、再試行だけを調整する。ResourceManagerが入力Revisionを比較し、変更された入力の出力と依存する親を再構築する。ファイル監視APIやbackend固有の生成・制御を共通サービスに持ち込まない。
+内部のResourceReloadServiceは通知の重複排除、待機時間、保留数、再試行だけを調整する。ResourceManagerが入力Revisionを比較し、変更された入力の出力と依存する親を再構築する。ファイル監視APIやbackend固有の生成・制御を共通サービスに持ち込まない。
 
 `ResourceSourceChange.Revision` はhintである。値を信頼してキャッシュを書き換えず、Sourceの `GetRevisionAsync` で現在のRevisionを確認する。未追跡の入力は問い合わせ自体を省き、未ロードのリソースを探索・自動ロードしない。
 
 ### 監視対象と通知の集約
 
-Managerはロード中・公開中の入力集合を `IResourceWatchTargets.Resources` の不変snapshotとして提供する。構築後にBuild依存を回収しても、親の再構築に必要な入力来歴を保持する。最後の親も回収した時点で対象から除く。初回公開時には再走査を要求し、構築中に届いた変更の取りこぼしを補う。
+Managerはロード中・公開中の入力集合を `IResourceWatchTargets.Resources` の不変snapshotとして提供する。構築後にBuild依存を回収しても、親の再構築に必要な入力来歴を保持する。最後の親も回収した時点で対象から除く。初回公開時には新しく来歴へ追加された入力IDだけを同じ通知キューへ追加し、構築中に届いた変更の取りこぼしを補う。入力全体の再走査はSourceのRescan通知または保留数上限超過で行う。
 
-入力ごとに構築中と来歴の保持数を更新し、監視集合を全リソースから毎回作り直さない。入力の追加・削除で集合が変わった場合だけ、次の取得時に不変snapshotを作る。既に取得されたsnapshotは変更しない。
+入力ごとに構築中と来歴の保持数を更新し、監視集合を全リソースから毎回作り直さない。入力の追加・削除で集合が変わった場合だけ、次の取得時に不変snapshotを作る。既に取得されたsnapshotは変更しない。監視無効またはChangesがnullの場合は監視対象の集合・参照数も作成・更新しない。
 
-通知は入力IDで重複排除する。最後の通知からDebounceDelayが経過するか、最初の通知からMaximumBatchDelayが経過すると一つのbatchを開始する。後者により連続編集でも集約待ちが無期限に延びない。ただし、既に実行中の構築や再試行がある場合に実行開始の上限時間を保証するものではない。
+通知は入力IDで重複排除する。最後の通知からDebounceDelayが経過するか、最初の通知からMaximumBatchDelayが経過すると一つのbatchを開始する。最初の通知時刻は、初回公開に伴う追加確認やRescanへの切り替えでも維持する。これにより連続編集・連続ロードでも集約待ちが無期限に延びない。ただし、既に実行中の構築や再試行がある場合に実行開始の上限時間を保証するものではない。
 
 異なる保留IDがMaximumPendingChangesを超える場合やSourceがRescanを通知した場合は、ID集合を捨て、追跡中入力全体の再走査へ切り替える。無制限の通知履歴を保持しない。構築中・再試行待機中も追加通知を受け、次のbatchへ残す。
 
-通知の受信とbatch消費は非同期処理として進め、待機中に専用スレッドを占有しない。実装はThreadPoolへ開始を委譲し、空のキューをpollし続けるループを持たない。Stageの継続が実行されるスレッドは固定せず、CPU処理と所有スレッド処理はStageが既存の実行先へ配送する。
+通知の受信とbatch消費は非同期処理として進め、待機中に専用スレッドを占有しない。実装はThreadPoolへ開始を委譲し、空のキューをpollし続けるループを持たない。Managerは選択したRuntimeのExecutorでStageを実行し、同じRuntimeのPipeline区間を一つのジョブで構築する。デバイス操作に所有スレッドが必要な場合は、型付きRuntimeのAPIがその実行先へ配送する。
 
 ### 候補の構築と公開
 
@@ -49,15 +49,15 @@ Managerはロード中・公開中の入力集合を `IResourceWatchTargets.Reso
 
 Conflictまたは構築例外のとき、初回に加えてMaximumRetryCount回までRetryDelayを挟んで再試行する。再試行では最新のRevisionを調べ直す。上限到達でそのbatchを終えても、次の通知は処理できる。
 
-`Reloaded` はPublished・Unchanged・Conflictの各結果を通知する。`ReloadFailed` は構築例外と試行回数・再試行予定を通知する。通知は同期ロックの外側でサービスの非同期処理から呼ぶ。handlerは終了を同期的に待ってはならない。handlerの例外とSource列挙の失敗はCompletionを失敗させ、自動監視を停止する。構築例外の有限再試行と、購読自体の障害は区別する。
+`Reloaded` はPublished・Unchanged・Conflictの各結果を通知する。`ReloadFailed` は構築例外と試行回数・再試行予定を通知する。通知は同期ロックの外側でサービスの非同期処理から呼ぶ。handlerは終了を同期的に待ってはならない。handlerの例外とSource列挙の失敗はHotReloadCompletionを失敗させ、自動監視を停止する。構築例外の有限再試行と、購読自体の障害は区別する。
 
-Manager生成時にChangesがありEnabled=trueなら一度開始する。Changesがnull、またはEnabled=falseならサービスを作らず、監視タスクも起動しない。手動構築するResourceReloadServiceはManagerとproviderを借用し、両者の解放前に呼び出し側が停止する。
+Manager生成時にChangesがありEnabled=trueなら一度開始する。Changesがnull、またはEnabled=falseならサービス・監視対象集合を作らず、監視タスクも起動しない。サービスの型、生成、起動、停止は内部実装とし、Managerだけが所有する。利用側はManagerのReloaded／ReloadFailed、LastReloadResult／LastReloadError、HotReloadCompletionで観測する。イベントのsenderはManagerとする。IsHotReloadEnabledは監視が構成されているかを示し、終了や障害の状態はHotReloadCompletionで確認する。無効時のHotReloadCompletionは完了済みTask、最後の結果と例外はnullとなる。
 
-StopAsyncは通知の列挙と実行中の再構築をキャンセルして両方の終了を待ち、終端例外を伝える。DisposeAsyncも終了を待つが、その終端例外でDIの後始末を止めず、CompletionとLastErrorへ残す。停止済みserviceは再開しない。Manager終了時は自動処理を停止・joinしてから出力を解放し、Source・Stageなど借用先の寿命を越えない。
+Manager終了時は通知の列挙と実行中の再構築をキャンセルして両方の終了を待ち、その後で出力を解放する。監視の終端例外で後始末を止めず、HotReloadCompletionとLastReloadErrorへ残す。監視の寿命はManagerと一致し、利用側が個別に停止・再開するAPIは公開しない。Source・Stageなど借用先はManagerの解放完了まで利用可能に保つ。
 
 ## 公開APIと契約
 
-比較元は `split/resources-runtime` の `2e2acb5`。既存の構築・公開APIを使い、通知と自動運転の境界を追加する。
+既存の構築・公開APIへ通知の設定と観測を追加する。
 
 ```diff
  namespace Lumyte.Resources
@@ -94,34 +94,23 @@ StopAsyncは通知の列挙と実行中の再構築をキャンセルして両�
 +        public int MaximumRetryCount { get; init; } = 3;
 +        public TimeSpan RetryDelay { get; init; } = TimeSpan.FromMilliseconds(100);
 +        // delayは0～1日。MaximumBatchDelayは正かつDebounceDelay以上。
-+        // 保留数は正、再試行数は非負。違反は構築時に引数例外。
++        // 保留数は正、再試行数は非負。監視有効時の違反は構築時に引数例外。
 +    }
      public sealed partial class ResourceManager
      {
--        public ResourceManager(string name, IResourceSource source,
--            IEnumerable<IResourceStage> stages, IMemoryManager memory,
--            IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null);
 +        // ChangesがありEnabledなら自動開始。nullは既定optionsを使用する。
 +        public ResourceManager(string name, IResourceSource source,
-+            IEnumerable<IResourceStage> stages, IMemoryManager memory,
++            IEnumerable<IResourceStage> stages, IMemoryManager memory, IResourceRuntime runtime,
 +            IEnumerable<IResourceRuntimeDependency>? runtimeDependencies = null,
++            IEnumerable<ResourceStageRuntime>? stageRuntimes = null,
 +            ResourceReloadOptions? reloadOptions = null);
-+        public ResourceReloadService? HotReload { get; }
-     }
-+    public sealed class ResourceReloadService : IAsyncDisposable
-+    {
-+        public ResourceReloadService(ResourceManager manager, IResourceChangeSource source,
-+            ResourceReloadOptions? options = null);
++        public bool IsHotReloadEnabled { get; }
 +        public event EventHandler<ResourceReloadEventArgs>? Reloaded;
 +        public event EventHandler<ResourceReloadFailureEventArgs>? ReloadFailed;
-+        public Task Completion { get; }
-+        public ResourceReloadResult? LastResult { get; }
-+        public Exception? LastError { get; }
-+        // 稼働中の再呼び出しは無操作。停止後の再開は拒否する。
-+        public void Start();
-+        public Task StopAsync();
-+        public ValueTask DisposeAsync();
-+    }
++        public Task HotReloadCompletion { get; }
++        public ResourceReloadResult? LastReloadResult { get; }
++        public Exception? LastReloadError { get; }
+     }
 +    public sealed class ResourceReloadEventArgs : EventArgs
 +    {
 +        public ResourceReloadEventArgs(ResourceReloadResult result);
@@ -164,9 +153,9 @@ StopAsyncは通知の列挙と実行中の再構築をキャンセルして両�
 
 ## 検証方針
 
-偽の通知Sourceと制御可能なStageで、重複通知、連続通知の最大待機、保留数超過の再走査、構築中の追加通知、初回公開との競合を検証する。Build入力回収後の来歴保持、未追跡入力の無視、親解放後の監視対象除去を確認する。
+偽の通知Sourceと制御可能なStageで、重複通知、連続通知の最大待機、保留数超過の再走査、構築中の追加通知、初回公開との競合を検証する。新規ロードが続いても最初の待機期限を維持し、通知欠落がない通常の逐次ロードではRevision照会が入力数に比例することを確認する。Build入力回収後の来歴保持、未追跡入力の無視、親解放後の監視対象除去を確認する。
 
-旧Lease・Snapshotの保持、複数出力の一括公開、入力・Runtime・公開versionの競合、失敗と再試行上限、新通知による回復を確認する。Sourceやhandlerの例外、取消callbackの例外があっても両方の非同期処理をjoinし、SourceやStageの破棄より先に停止することを検証する。
+旧Lease・Snapshotの保持、複数出力の一括公開、入力・Runtime・公開versionの競合、失敗と再試行上限、新通知による回復を確認する。Sourceやhandlerの例外、取消callbackの例外があっても両方の非同期処理をjoinし、SourceやStageの破棄より先に停止することを検証する。通常利用と競合試験をすべてManager所有の経路で行い、手動サービス生成を別経路として残さない。
 
 ## 関連ADR
 

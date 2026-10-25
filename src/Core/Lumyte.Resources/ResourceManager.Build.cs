@@ -61,7 +61,7 @@ public sealed partial class ResourceManager
             {
                 source = new(lifetime);
                 owner.Sources.Add(id, source);
-                _watchTargets.Track(id);
+                _watchTargets?.Track(id);
                 start = true;
             }
             else if (lifetime == ResourceDependencyLifetime.Resident)
@@ -765,14 +765,6 @@ public sealed partial class ResourceManager
         if (map is not null)
         {
             SetPublished(map, used);
-        }
-
-        if (_watchRescanRequested)
-        {
-            _watchRescanRequested = false;
-
-            // A change hint can arrive before an initial build has published its provenance.
-            _hotReload?.RequestRescan();
         }
     }
 }
