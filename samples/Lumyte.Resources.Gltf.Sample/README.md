@@ -50,13 +50,15 @@ flowchart LR
 
 Source、Stage、デバイスFactoryはDIで登録します。サンプルの合成Sourceは、
 `shaders/` をDLL埋め込みへ、それ以外をFileSystemへ振り分けます。
-`AddResources` が登録する既定のResourceRuntimeとExecutionRuntimeを共有し、
-ホストが明示的にThreadPool実行を準備・開始してからロードします。Stageの開始と
-通常の`await`後の再開はCPUジョブとして実行し、I/O・子リソース・GPU完了を待つ間は
-CPUの同時実行枠を使いません。終了時はManagerとDI scopeを閉じてからExecutionRuntimeを停止します。
-終了時のcleanup失敗から回復するホストは、ManagerとDI scopeを保持し、ExecutionRuntimeを
-動かしたまま`ResourceManager.DisposeAsync`を再試行します。成功後にscopeを破棄し、
-ExecutionRuntimeを停止します。DI scopeの破棄は一度きりなので、再試行の境界には使えません。
+`AddResources` を一度呼び、CPUとGPUの全Pipelineを一つのsingleton ResourceManagerへ登録します。
+`provider.GetRequiredService<ResourceManager>()` で同じManagerを取得し、CPU検証後も破棄せず、
+不要な世代をTrimしてからGPUシーンのロードに使います。SourceとStageもsingletonで、
+Graphics device serviceは `AddGraphicsDevice<DeviceFactory>("main", ServiceLifetime.Singleton)` で寿命を揃えます。
+ホストが既定のResourceRuntimeとExecutionRuntimeをThreadPoolで準備・開始してからロードします。
+Stageの開始と通常の`await`後の再開はCPUジョブとして実行し、I/O・子リソース・GPU完了を待つ間は
+CPUの同時実行枠を使いません。終了時はManagerの破棄を完了し、ExecutionRuntimeを停止してからDI providerを閉じます。
+終了時のcleanup失敗から回復するホストは、ManagerとDI providerを保持し、ExecutionRuntimeを
+動かしたまま同じ`ResourceManager.DisposeAsync`を再試行します。DI providerの破棄を再試行の境界には使いません。
 複合型は独自の構造で具体的な子への参照を保持します。
 `CpuSceneNode.Mesh`、`CpuMesh.Material`、`CpuMaterial.Texture`が子への具体的な参照です。
 メッシュとマテリアルの入力アドレスは文書のルートに正規化し、文書を共有します。
@@ -72,8 +74,10 @@ GPUへ転送します。GPUシーンにおけるCPUシーンの入力寿命はBu
 二つのノードは同じGPUメッシュとテクスチャを共有し、別々の変換行列で描画します。
 PNG変更時にはCPU画像・マテリアル・メッシュ・シーンも新世代となり、その後GPU出力を構築します。
 
-`--validate` はGPU未初期化のままCPUシーンを取得し、階層・行列の合成・共有・trim後の寿命、
-循環ノードや画像欠落時の旧世代保持を確認します。
+`--validate` は自動監視を無効にし、GPU未初期化のままCPUシーンを取得します。階層・行列の合成・共有・trim後の寿命、
+循環ノードや画像欠落時の旧世代保持を、明示的な再構築で確認します。
+通常の描画実行では読み取りだけのCPU検証を行い、その後同じManagerでGPU描画と自動HotReloadを検証します。
+不正ファイルを一時的に作る検証と自動監視を並行させません。
 
 CPUの頂点・画像・文書バッファはMemory scopeから取得します。
 GPU頂点の実サイズとテクスチャの概算サイズを予約・計上し、native childを解放した後に

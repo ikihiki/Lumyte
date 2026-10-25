@@ -24,10 +24,9 @@ public sealed class SceneCleanupTests
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
-        ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+        ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<SceneOutput> lease = await resources.AcquireLeaseForTestAsync(_key);
         SceneOutput output = lease.Value;
         Assert.Equal(["upload"], state.Released);
@@ -45,6 +44,7 @@ public sealed class SceneCleanupTests
         Assert.Equal(loseDevice ? 1 : 0, output.Device.Confirmations);
         Assert.Equal(loseDevice ? 1 : 0, await devices.RetireAsync());
         Assert.Equal(0, state.Graphics.Devices[^1].Disposals);
+        await resources.DisposeAsync();
     }
 
     /// <summary>Cleanup failures retain the epoch and retry only unfinished children.</summary>
@@ -58,10 +58,9 @@ public sealed class SceneCleanupTests
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
-        ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+        ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<SceneOutput> lease = await resources.AcquireLeaseForTestAsync(_key);
         SceneOutput output = lease.Value;
         output.Device.Lose();
@@ -79,6 +78,7 @@ public sealed class SceneCleanupTests
         Assert.Equal(["upload", "second", "first"], state.Released);
         Assert.Equal(1, output.Second.Attempts);
         Assert.Equal(1, await devices.RetireAsync());
+        await resources.DisposeAsync();
     }
 
     /// <summary>Pending retirement prevents both native disposal and returning the old epoch lease.</summary>
@@ -89,10 +89,9 @@ public sealed class SceneCleanupTests
         var state = new CleanupState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
-        ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+        ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<SceneOutput> lease = await resources.AcquireLeaseForTestAsync(_key);
         SceneOutput output = lease.Value;
         output.Device.RetirementStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -115,6 +114,7 @@ public sealed class SceneCleanupTests
 
         Assert.Equal(["upload", "second", "first"], state.Released);
         Assert.Equal(1, await devices.RetireAsync());
+        await resources.DisposeAsync();
     }
 
     /// <summary>A lost, failed build keeps temporary and resident resources until retirement can be confirmed.</summary>
@@ -125,10 +125,9 @@ public sealed class SceneCleanupTests
         var state = new CleanupState { FailBuild = true };
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
-        await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
         await devices.InitializeAsync();
-        ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("scene");
+        ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         await Assert.ThrowsAsync<AggregateException>(() => resources.AcquireAsync(_key).AsTask());
         TestDevice device = Assert.Single(state.Graphics.Devices);
         Assert.Empty(state.Released);
@@ -137,6 +136,7 @@ public sealed class SceneCleanupTests
         await resources.TrimAsync();
         Assert.Equal(["upload", "second", "first"], state.Released);
         Assert.Equal(1, await devices.RetireAsync());
+        await resources.DisposeAsync();
     }
 
     private static ServiceProvider CreateProvider(CleanupState state)
@@ -145,11 +145,11 @@ public sealed class SceneCleanupTests
         services.AddSingleton(state);
         services.AddSingleton(state.Graphics);
         services.AddMemoryManagement();
-        services.AddGraphicsDevice<TestFactory>("main");
-        services.AddResources("scene", builder => builder.UseSource<TestSource>()
+        services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Singleton);
+        services.AddResources(builder => builder.UseSource<TestSource>()
             .AddSourcePipeline<SceneOutput, SceneStage>()
-            .UseStageRuntime<SceneOutput>(provider => provider.GetResourceGraphicsRuntime("scene", "graphics.main")));
-        services.AddResourceGraphics("scene", "main", "graphics.main");
+            .UseStageRuntime<SceneOutput>(provider => provider.GetResourceGraphicsRuntime("graphics.main")));
+        services.AddResourceGraphics("main", "graphics.main");
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 

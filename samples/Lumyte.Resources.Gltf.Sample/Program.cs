@@ -42,6 +42,7 @@ internal static class Program
 
     private static async Task RunAsync(string directory, string[] args)
     {
+        bool validateOnly = args.Contains("--validate", StringComparer.Ordinal);
         var services = new ServiceCollection();
         services.AddMemoryManagement();
         services.AddSingleton(new FileResourceSourceOptions { RootPath = directory });
@@ -54,59 +55,54 @@ internal static class Program
                 [new("shaders/fragment")] = "Lumyte.Gltf.fragment.lshader",
             },
         });
-        services.AddScoped<FileResourceSource>();
-        services.AddScoped<EmbeddedResourceSource>();
-        services.AddGraphicsDevice<DeviceFactory>("main");
-        services.AddResources("gltf.validation", pipelines => ConfigurePipelines(pipelines.ConfigureHotReload(new() { Enabled = false })));
-        services.AddResources("gltf", pipelines =>
+        services.AddSingleton<FileResourceSource>();
+        services.AddSingleton<EmbeddedResourceSource>();
+        services.AddGraphicsDevice<DeviceFactory>("main", ServiceLifetime.Singleton);
+        services.AddResources(pipelines =>
         {
-            ConfigurePipelines(pipelines);
+            ConfigurePipelines(pipelines.ConfigureHotReload(new() { Enabled = !validateOnly }));
             pipelines.AddTransformPipeline<CpuImage, GpuTexture, TextureUploadStage>()
                 .AddTransformPipeline<CpuMesh, GpuMesh, MeshUploadStage>()
                 .AddTransformPipeline<CpuScene, GpuScene, SceneUploadStage>()
-                .UseStageRuntime<GpuTexture>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
-                .UseStageRuntime<GpuMesh>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"))
-                .UseStageRuntime<GpuScene>(provider => provider.GetResourceGraphicsRuntime("gltf", "graphics.main"));
+                .UseStageRuntime<GpuTexture>(provider => provider.GetResourceGraphicsRuntime("graphics.main"))
+                .UseStageRuntime<GpuMesh>(provider => provider.GetResourceGraphicsRuntime("graphics.main"))
+                .UseStageRuntime<GpuScene>(provider => provider.GetResourceGraphicsRuntime("graphics.main"));
         });
-        services.AddResourceGraphics("gltf", "main", "graphics.main");
+        services.AddResourceGraphics("main", "graphics.main");
         await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         ExecutionRuntime execution = provider.GetRequiredService<ExecutionRuntime>();
         execution.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, Environment.ProcessorCount, new ExecutionOptions());
         await execution.StartAsync();
+        ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         try
         {
-            await using AsyncServiceScope scope = provider.CreateAsyncScope();
-            ResourceManager validation = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("gltf.validation");
-
-            await ValidateCpuAsync(validation, directory);
-            await validation.TrimAsync();
-            await validation.DisposeAsync();
-            IGraphicsDeviceService devices = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+            await ValidateCpuAsync(resources, directory, validateOnly);
+            await resources.TrimAsync();
+            IGraphicsDeviceService devices = provider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
             Require(devices.State.Status == GraphicsDeviceServiceStatus.Uninitialized, "CPU scene loading initialized a graphics device.");
-            if (!args.Contains("--validate", StringComparer.Ordinal))
+            if (!validateOnly)
             {
                 await devices.InitializeAsync();
-                ResourceManager resources = scope.ServiceProvider.GetRequiredKeyedService<ResourceManager>("gltf");
                 ResourceReloadService changes = resources.HotReload!;
                 string output = Path.GetFullPath(args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal)) ?? "gltf-render.png");
                 await RenderAndReloadAsync(resources, changes, devices, directory, output);
                 await resources.TrimAsync();
-                await resources.DisposeAsync();
             }
-
-            IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
-            foreach (string pool in new[] { "gltf.cpu", "gltf.gpu", "gltf.upload", "resources.source" })
-            {
-                ulong committed = memory.GetSnapshot(new(pool)).CommittedBytes;
-                Require(committed == 0, $"Pool {pool} retained {committed} bytes after release.");
-            }
-
-            Console.WriteLine("glTF checks passed; all resource memory charges returned.");
         }
         finally
         {
+            await resources.DisposeAsync();
             await execution.StopAsync();
         }
+
+        IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
+        foreach (string pool in new[] { "gltf.cpu", "gltf.gpu", "gltf.upload", "resources.source" })
+        {
+            ulong committed = memory.GetSnapshot(new(pool)).CommittedBytes;
+            Require(committed == 0, $"Pool {pool} retained {committed} bytes after release.");
+        }
+
+        Console.WriteLine("glTF checks passed; all resource memory charges returned.");
     }
 
     private static void ConfigurePipelines(ResourceRegistrationBuilder pipelines)
@@ -122,7 +118,7 @@ internal static class Program
             .AddTransformPipeline<GltfDocument, CpuScene, SceneStage>();
     }
 
-    private static async Task ValidateCpuAsync(ResourceManager resources, string directory)
+    private static async Task ValidateCpuAsync(ResourceManager resources, string directory, bool validateFailures)
     {
         var sceneKey = new ResourceKey<CpuScene>("models/cubes.gltf", "scene/0");
         using ResourceReference<CpuScene> sceneReference = await resources.AcquireAsync(sceneKey);
@@ -140,6 +136,12 @@ internal static class Program
         using ResourceLease<CpuImage> image = imageReference.Acquire();
         Require(ReferenceEquals(mesh.Value.Material.Texture, image.Value), "The material did not retain the shared CPU image.");
         Require(image.Value.Width == 64 && image.Value.Height == 64, "External PNG did not decode.");
+
+        if (!validateFailures)
+        {
+            Console.WriteLine("CPU scene: transforms, shared meshes/materials and decoded PNGs assembled without a GPU.");
+            return;
+        }
 
         // Invalid external data must fail a transaction without replacing the existing generation.
         string path = Path.Combine(directory, "models", "cubes.bin");

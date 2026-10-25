@@ -14,7 +14,7 @@ GPU未初期化でもシーン全体を取得できるCPU表現を定め、そ�
 
 ### 適用範囲とデータモデル
 
-`samples/Lumyte.Resources.Gltf.Sample` 内の設計とし、汎用モデルライブラリの公開APIは追加しない。Source、Stage、Graphics factoryをDIで構成し、同じResourceManager内でCPUとGPUの出力を解決する。CPU Stageは一つの既定Runtime、GpuTexture・GpuMesh・GpuSceneのStageは同じGraphicsResourceRuntimeを使うよう、出力型ごとに登録する。Managerは選択した環境のExecutorとDependenciesを一度収集し、共通の構築・解放手順を実行する。
+`samples/Lumyte.Resources.Gltf.Sample` 内の設計とし、汎用モデルライブラリの公開APIは追加しない。Source、Stage、Graphics factoryをDIで構成し、DI rootに一つだけ登録するsingleton ResourceManagerでCPUとGPUの出力を解決する。Source・StageとGraphics device serviceも同じアプリ寿命に揃える。CPU Stageは一つの既定Runtime、GpuTexture・GpuMesh・GpuSceneのStageは同じGraphicsResourceRuntimeを使うよう、出力型ごとに登録する。Managerは選択した環境のExecutorとDependenciesを一度収集し、共通の構築・解放手順を実行する。
 
 CPUシーンはノード階層、local/world行列、共有CPUメッシュを持つ。メッシュはマテリアルを、マテリアルはデコード済み画像を具体型の参照として保持する。ノードやマテリアルへ子のキーを重複保持せず、GPU変換が必要とするアドレスは参照先のメッシュ・画像に持たせる。
 
@@ -124,7 +124,9 @@ GPUなしでCPUシーンを取得でき、同じデータをGPU描画へ接続�
 
 ## 検証方針
 
-`--validate` でGraphics deviceを初期化せず、外部BIN・PNGの解決、階層と行列合成、メッシュ・画像共有、Trim後の参照継続を確認する。循環ノード、画像欠落、範囲外データの更新が旧世代を壊さないことを確認する。
+`--validate` は自動監視を無効にし、Graphics deviceを初期化せず、外部BIN・PNGの解決、階層と行列合成、メッシュ・画像共有、Trim後の参照継続を確認する。循環ノード、画像欠落、範囲外データを一時的に作り、明示的な再構築の失敗が旧世代を壊さないことを確認する。
+
+通常の描画実行は同じManagerで読み取りだけのCPU検証を行い、利用権の返却とTrim後にGPU表現を取得する。自動HotReloadはこの経路で有効にし、不正データを作る検証とは並行させない。終了時はManagerの解放を完了してからExecutionRuntimeを停止し、DI providerを破棄する。
 
 Vulkanで512×512の画面外描画を行い、深度・textureを含む画像をGPU readbackする。外部PNGだけの変更が自動公開へ到達し、同じHandleから新画像を取得でき、旧Leaseで元画像を再現できることを検証する。Linux CIではLavapipeを使う。解放後は対象poolのCommittedBytesが0になることを確認する。
 
