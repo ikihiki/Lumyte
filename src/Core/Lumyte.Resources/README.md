@@ -8,6 +8,8 @@ Stageは`RequireAsync`で依存を追加し、`OpenSourceAsync`で観測した�
 Build依存は構築後、Resident依存は親の解放後に返します。
 Memory scopeはmanagerが所有し、出力・cleanup・snapshot・memory・依存の順に解放します。
 解放失敗は所有を保持して`TrimAsync`で再試行します。
+同期的な補助所有物は`context.RegisterCleanup(disposable, lifetime)`で登録でき、捕捉ラムダを必要としません。
+依存・Sourceの完了通知と成功済みcleanupの参照は構築後に切り、入力を出力の寿命まで保持しません。
 Source・Stage・Runtimeは借用します。利用権を返し、managerを閉じてからRuntimeを終了します。
 
 設計判断は[ADR-RESOURCES-0001](../../../docs/adr/resources/RESOURCES-0001-typed-pipelines.md)を参照してください。

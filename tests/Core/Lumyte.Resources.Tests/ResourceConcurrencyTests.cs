@@ -133,6 +133,105 @@ public sealed class ResourceConcurrencyTests
         Assert.Equal("version:1", old.Value.Label);
     }
 
+    /// <summary>Replacing a dependency edge drops obsolete provenance while old output leases remain usable.</summary>
+    /// <returns>Completion of rebuilding and loading the retired input at a newer revision.</returns>
+    [Fact]
+    public async Task ReplacingMetadataEdgePreservesOldLeaseAndPrunesRetiredInputAsync()
+    {
+        await using Fixture fixture = new();
+        fixture.Plan.Builds["parent"] = async (context, token) =>
+        {
+            ulong version = fixture.Runtime.Snapshot.Version;
+            context.TrackRuntimeDependency("runtime", version);
+            await context.RequireAsync(Key(version == 1 ? "left" : "right"), ResourceDependencyLifetime.Build, token);
+            return new($"parent:{version}");
+        };
+        fixture.Plan.Builds["left"] = async (context, token) =>
+        {
+            ResourceSourceSnapshot input = await context.OpenSourceAsync(new ResourceId("old-input"), cancellationToken: token);
+            return new(input.Revision);
+        };
+        fixture.Plan.Builds["right"] = (_, _) => ValueTask.FromResult(new TestValue("right"));
+        using ResourceReference<TestValue> parent = await fixture.Manager.AcquireAsync(Key("parent"));
+        using ResourceLease<TestValue> old = parent.Acquire();
+        Assert.Equal(1, await fixture.Manager.TrimAsync());
+
+        fixture.Runtime.Set(new(2, true, 0));
+        Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.RebuildRuntimeAsync(["runtime"])).Status);
+        Assert.Equal(1, await fixture.Manager.TrimAsync());
+        fixture.Plan.SourceRevision = 2;
+        using ResourceLease<TestValue> replacedInput = await fixture.Manager.AcquireLeaseForTestAsync(Key("left"));
+        Assert.Equal("2", replacedInput.Value.Label);
+        Assert.Equal("parent:1", old.Value.Label);
+        using ResourceLease<TestValue> current = parent.Acquire();
+        Assert.Equal("parent:2", current.Value.Label);
+    }
+
+    /// <summary>A failed load that temporarily roots old provenance schedules pruning again when it finally leaves.</summary>
+    /// <returns>Completion of overlapping failed construction, reclamation and a later revision load.</returns>
+    [Fact]
+    public async Task FailedLoadRemovalRetriesMetadataPruningAfterConcurrentTrimAsync()
+    {
+        await using Fixture fixture = new();
+        bool failInput = false;
+        TaskCompletionSource cleanupStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource finishCleanup = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Plan.Builds["parent"] = async (context, token) =>
+        {
+            ulong version = fixture.Runtime.Snapshot.Version;
+            context.TrackRuntimeDependency("runtime", version);
+            if (version == 1)
+            {
+                await context.RequireAsync(Key("input"), ResourceDependencyLifetime.Build, token);
+            }
+
+            return new("parent");
+        };
+        fixture.Plan.Builds["input"] = async (context, token) =>
+        {
+            if (failInput)
+            {
+                await context.RequireAsync(Key("temporary"), ResourceDependencyLifetime.Build, token);
+                throw new IOException("Input construction failed.");
+            }
+
+            ResourceSourceSnapshot input = await context.OpenSourceAsync(new ResourceId("input-data"), cancellationToken: token);
+            return new(input.Revision);
+        };
+        fixture.Plan.Builds["temporary"] = (_, _) => ValueTask.FromResult(new TestValue("temporary"));
+        fixture.Plan.Release = async value =>
+        {
+            if (value.Label == "temporary")
+            {
+                cleanupStarted.TrySetResult();
+                await finishCleanup.Task;
+            }
+        };
+        using ResourceReference<TestValue> parent = await fixture.Manager.AcquireAsync(Key("parent"));
+        Assert.Equal(1, await fixture.Manager.TrimAsync());
+        fixture.Runtime.Set(new(2, true, 0));
+        Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.RebuildRuntimeAsync(["runtime"])).Status);
+
+        failInput = true;
+        Task<ResourceReference<TestValue>> failed = fixture.Manager.AcquireAsync(Key("input")).AsTask();
+        try
+        {
+            await cleanupStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await fixture.Manager.TrimAsync();
+        }
+        finally
+        {
+            finishCleanup.TrySetResult();
+        }
+
+        await Assert.ThrowsAsync<IOException>(async () => await failed);
+        await fixture.Manager.TrimAsync();
+        failInput = false;
+        fixture.Plan.SourceRevision = 2;
+        using ResourceLease<TestValue> replacement = await fixture.Manager.AcquireLeaseForTestAsync(Key("input"));
+        Assert.Equal("2", replacement.Value.Label);
+    }
+
     /// <summary>Warm value and usability reads do not allocate regardless of runtime participation.</summary>
     /// <param name="registered">Whether a runtime provider is registered.</param>
     /// <param name="tracked">Whether the resource depends on the runtime.</param>
