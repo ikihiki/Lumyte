@@ -131,7 +131,7 @@ public sealed partial class ResourceManager
             }
             else
             {
-                await Task.WhenAll(roots.Select(node => BuildNodeAsync(view, node))).ConfigureAwait(false);
+                await Task.WhenAll(roots.Select(node => BuildNodeAsync(view, node).AsTask())).ConfigureAwait(false);
                 HashSet<ResourceNode> used;
                 lock (_gate)
                 {

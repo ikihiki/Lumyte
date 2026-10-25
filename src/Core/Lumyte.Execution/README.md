@@ -28,7 +28,7 @@ Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示�
 
 単発はtyped payloadと結果を保持する一つの非pool `IValueTaskSource<TResult>` を使い、Task／batch／完了wrapperを作らない。生成senderは受付とValueTask構築を本体に展開し、coreのExecuteAsyncを中継しない。ValueTaskは一度だけ観測する。AsTaskへ変換した場合はそのTaskを観測する。
 
-Ownerの異型commandは同じgroupのFIFOで処理する。queue nodeはcommand自身が持ち、groupごとの拡張配列を残さない。CPU仕事は順序を指定せず、ThreadPoolの同時数を制限する。専用threadは到着通知と更新周期で起床し、外部から更新commandを繰り返し送る必要はない。
+Ownerの異型commandは同じgroupのFIFOで処理する。queue nodeはcommand自身が持ち、groupごとの拡張配列を残さない。CPU仕事は順序を指定せず、ThreadPoolの同時数を制限する。専用threadは到着通知と更新周期で起床し、外部から更新commandを繰り返し送る必要はない。制御仕事の件数・時間予算は1回のdrain turnに適用し、次の実行可能な更新期限でも区切る。仕事が残ればdue updateを再確認して次のturnを続け、更新周期が来るまで制御仕事を止めない。実行可能な仕事がなければ次の更新期限または通知まで待つ。
 
 `CommandBatch` は同じowner/group、またはCPUだけの仕事を全件受理する。未受理ならstagingを維持し、完了後は `run.Dispose()` → `batch.Reset()` の順に再利用する。成功済みの個別結果は、他commandが失敗しても取得できる。
 
@@ -48,7 +48,7 @@ workflow開始前の取消はhandlerを呼ばない。開始後はtokenをhandle
 
 通常枠と停止時cleanup枠は独立する。MaxInFlightRuns、MaxCommands、MaxGraphNodes、MaxPayloadBytesは完了後の未回収分にも適用する。typed input／resultと保守的なcommand管理費を課金し、参照先buffer・native資源は統合層が管理する。MaxGraphNodesにはnode・edge・range workerを含める。stagingと不変graphは利用側の所有物である。
 
-取消がhandler開始より先なら副作用を抑止し、開始後なら実際の結果を返す。handler自身のOperationCanceledExceptionはfaultとして扱う。キャンセル可能なgate待ちCPU仕事とgraphには、必要時だけtokenの通知登録を使う。通常の取消なし送信には登録しない。元の例外を層ごとに包み直さず、StackTraceHiddenも使用しない。
+取消がhandler開始より先なら副作用を抑止し、開始後なら実際の結果を返す。handler自身のOperationCanceledExceptionはfaultとして扱う。キャンセル可能なgate待ちCPU仕事・専用owner仕事とgraphには、必要時だけtokenの通知登録を使う。通常の取消なし送信には登録しない。元の例外を層ごとに包み直さず、StackTraceHiddenも使用しない。
 
 通常の `ICommandHandler` 内の投入、Pump、Runtime停止は拒否する。同期handlerは有限時間で返し、I/Oや非同期操作の実完了待ちはworkflowで行う。更新・時間予算はOSの実時間保証ではなく、既に始めた同期処理は中断しない。
 
