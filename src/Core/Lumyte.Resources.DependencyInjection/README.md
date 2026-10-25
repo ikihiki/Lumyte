@@ -33,7 +33,7 @@ await using ServiceProvider provider = services.BuildServiceProvider(new Service
 
 // ExecutionRuntimeと必要なdevice systemは利用前に起動しておく。
 ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-manager.HotReload!.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
+manager.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 {
     using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
     using ResourceLease<Mesh> lease = mesh.Acquire();
@@ -68,7 +68,7 @@ Sourceが`IResourceSource.Changes`から通知元を提供すると、Managerが
 `UseSource<TSource>()`だけで監視も接続し、通知元の別登録は不要です。
 通知元はSourceが所有し、Managerは購読を所有します。
 `ConfigureHotReload`は集約・再試行を設定し、`Enabled = false`で自動監視を無効にできます。
-`manager.HotReload.Completion`で監視元の異常終了を確認できます。
+`manager.HotReloadCompletion`で監視元の異常終了を確認できます。
 
 Managerの終了は監視と進行中の自動再構築をキャンセルしてjoinし、リソースを解放します。
 利用中のReference・Lease・Snapshotを返してから終了してください。
