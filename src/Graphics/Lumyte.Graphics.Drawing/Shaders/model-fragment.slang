@@ -102,11 +102,15 @@ float4 main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
         // Rebuild the tangent frame when the normal texture changes its UV axes.
         if (any(arguments.Material.NormalUv.Scale != float2(1)) || arguments.Material.NormalUv.Rotation != 0)
         {
-            float determinant = normalDx.x * normalDy.y - normalDx.y * normalDy.x;
+            // Normalize the Jacobian before testing degeneracy so viewport size and uniform UV scale cancel.
+            float gradientScale = max(max(abs(normalDx.x), abs(normalDx.y)), max(abs(normalDy.x), abs(normalDy.y)));
+            float2 uvDx = normalDx / max(gradientScale, 1e-30);
+            float2 uvDy = normalDy / max(gradientScale, 1e-30);
+            float determinant = uvDx.x * uvDy.y - uvDy.x * uvDx.y;
             if (abs(determinant) > 1e-8)
             {
-                float3 uvTangent = (positionDx * normalDy.y - positionDy * normalDx.y) / determinant;
-                float3 uvBitangent = (positionDy * normalDx.x - positionDx * normalDy.x) / determinant;
+                float3 uvTangent = (positionDx * uvDy.y - positionDy * uvDx.y) / determinant;
+                float3 uvBitangent = (positionDy * uvDx.x - positionDx * uvDy.x) / determinant;
                 t = SafeNormalize(uvTangent - n * dot(n, uvTangent));
                 b = cross(n, t) * (dot(cross(n, t), uvBitangent) < 0 ? -1 : 1);
             }
@@ -126,8 +130,10 @@ float4 main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
         float nh = saturate(dot(n, h));
         float vh = saturate(dot(v, h));
         float a2 = pow(roughness, 4);
-        float denominator = nh * nh * (a2 - 1) + 1;
-        float distribution = a2 / max(3.14159265 * denominator * denominator, 1e-6);
+        // This form avoids subtracting nearly equal numbers at the specular peak.
+        // Minimum roughness keeps a2 positive, so the denominator cannot be zero.
+        float denominator = (1 - nh * nh) + nh * nh * a2;
+        float distribution = a2 / (3.14159265 * denominator * denominator);
         float visibility = 0.5 / max(nl * sqrt(nv * nv * (1 - a2) + a2) +
             nv * sqrt(nl * nl * (1 - a2) + a2), 1e-5);
         float3 f0 = lerp(float3(0.04), base.rgb, metallic);

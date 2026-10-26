@@ -93,8 +93,8 @@ Graph／Plan の所有権と premultiplied alpha の規約に従います。WGSL
 汎用 `GraphicsResource<ModelMesh>` を構築し、upload 完了後の公開、HotReload、device epoch の復旧へ接続します。
 Drawing 本体は Resources／DI に依存しません。
 
-通常のテスト実行では GPU テスト 8 件を skip します。Vulkan GPU または software driver を
-設定した環境では、以下で 19 件（CPU 11 件、GPU 8 件）を実行できます。
+通常のテスト実行では GPU テスト 10 件を skip します。Vulkan GPU または software driver を
+設定した環境では、以下で 21 件（CPU 11 件、GPU 10 件）を実行できます。
 
 ```sh
 LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests

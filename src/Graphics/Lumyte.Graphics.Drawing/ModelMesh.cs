@@ -7,8 +7,8 @@ namespace Lumyte.Graphics.Drawing;
 /// <summary>Owns fixed-layout model storage and staging without per-vertex shader snapshots.</summary>
 public sealed class ModelMesh : IDisposable
 {
-    private readonly IGraphicsBuffer<ModelVertex> _vertexUpload;
     private readonly IIndexStorage _indices;
+    private IGraphicsBuffer<ModelVertex>? _vertexUpload;
     private int _disposeStage;
 
     private ModelMesh(IGraphicsBuffer<ModelVertex> vertices, IGraphicsBuffer<ModelVertex> vertexUpload, IIndexStorage indices)
@@ -30,6 +30,9 @@ public sealed class ModelMesh : IDisposable
         /// <summary>Records the padded storage upload.</summary>
         /// <param name="commands">The command recorder.</param>
         void RecordUpload(IGraphicsCommandBuffer commands);
+
+        /// <summary>Releases staging after actual upload completion.</summary>
+        void ReleaseUpload();
 
         /// <summary>Binds the logical range for indexed drawing.</summary>
         /// <param name="render">The active render encoder.</param>
@@ -94,12 +97,22 @@ public sealed class ModelMesh : IDisposable
     public void RecordInitialUpload(IGraphicsCommandBuffer commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        BufferSlice<ModelVertex> source = _vertexUpload.Slice(0, _vertexUpload.Count);
+        IGraphicsBuffer<ModelVertex> upload = _vertexUpload ?? throw new InvalidOperationException("Initial upload staging has been released.");
+        BufferSlice<ModelVertex> source = upload.Slice(0, upload.Count);
         BufferSlice<ModelVertex> destination = Vertices.Slice(0, Vertices.Count);
         commands.Barrier(new BufferBarrierDesc<ModelVertex> { Buffer = source, Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.CopyBuffer(source, destination);
         commands.Barrier(new BufferBarrierDesc<ModelVertex> { Buffer = destination, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.VertexShader, ResourceAccess.ShaderRead) });
         _indices.RecordUpload(commands);
+    }
+
+    /// <summary>Releases initial-upload staging while retaining the drawable mesh.</summary>
+    /// <remarks>Call only after the upload submission has actually completed or its device epoch has retired. This method does not wait. Failed disposal remains owned for retry.</remarks>
+    public void ReleaseUploadResources()
+    {
+        _indices.ReleaseUpload();
+        _vertexUpload?.Dispose();
+        _vertexUpload = null;
     }
 
     /// <summary>Imports initialized mesh buffers once into a graph without taking ownership.</summary>
@@ -140,7 +153,8 @@ public sealed class ModelMesh : IDisposable
 
         if (_disposeStage == 2)
         {
-            _vertexUpload.Dispose();
+            _vertexUpload?.Dispose();
+            _vertexUpload = null;
             _disposeStage = 3;
         }
     }
@@ -241,13 +255,17 @@ public sealed class ModelMesh : IDisposable
     private sealed class IndexStorage<T>(IGraphicsBuffer<T> storage, IGraphicsBuffer<T> upload, uint count, IndexFormat format, Action<IRenderEncoder, IGraphicsBuffer<T>, uint> bind) : IIndexStorage
         where T : unmanaged
     {
+        private IGraphicsBuffer<T>? _upload = upload;
+        private bool _storageDisposed;
+
         public uint Count => count;
 
         public IndexFormat Format => format;
 
         public void RecordUpload(IGraphicsCommandBuffer commands)
         {
-            BufferSlice<T> source = upload.Slice(0, upload.Count);
+            IGraphicsBuffer<T> staging = _upload ?? throw new InvalidOperationException("Initial upload staging has been released.");
+            BufferSlice<T> source = staging.Slice(0, staging.Count);
             BufferSlice<T> destination = storage.Slice(0, storage.Count);
             commands.Barrier(new BufferBarrierDesc<T> { Buffer = source, Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyBuffer(source, destination);
@@ -262,10 +280,21 @@ public sealed class ModelMesh : IDisposable
             return pass => pass.UseBuffer(buffer, new(PipelineStage.IndexInput, ResourceAccess.IndexRead));
         }
 
+        public void ReleaseUpload()
+        {
+            _upload?.Dispose();
+            _upload = null;
+        }
+
         public void Dispose()
         {
-            storage.Dispose();
-            upload.Dispose();
+            if (!_storageDisposed)
+            {
+                storage.Dispose();
+                _storageDisposed = true;
+            }
+
+            ReleaseUpload();
         }
     }
 }

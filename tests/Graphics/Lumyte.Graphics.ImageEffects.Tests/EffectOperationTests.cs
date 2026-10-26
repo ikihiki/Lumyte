@@ -212,6 +212,33 @@ public sealed class EffectOperationTests
         Assert.Throws<ArgumentException>(() => graph.AppendPostProcess(source, toneMap: true));
     }
 
+    /// <summary>Checks semantic views support delegated appends and share success/failure cleanup with the root.</summary>
+    /// <param name="fail">Whether the downstream effect fails after retaining a resource.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SemanticConversionSharesOwnershipWithDownstreamEffects(bool fail)
+    {
+        var resource = new TrackedResource();
+        using var graph = new Graph(Device());
+        EffectImage source = Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear };
+        var effect = ImageEffectGraph.Create(new DelegatingEffect(resource, fail), ImageEffectGraph.Create(new DisplayConversion(), ImageEffectGraph.Source()));
+        if (fail)
+        {
+            Assert.Throws<InvalidOperationException>(() => graph.AppendEffects(effect, source));
+            Assert.Throws<ObjectDisposedException>(() => graph.Compile());
+        }
+        else
+        {
+            Assert.Equal(EffectColorSemantic.DisplayLinear, graph.AppendEffects(effect, source).ColorSemantic);
+        }
+
+        Assert.Equal(0, resource.Disposals);
+        graph.Dispose();
+        graph.Dispose();
+        Assert.Equal(1, resource.Disposals);
+    }
+
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
     private static EffectImage Source(Graph graph) => new(graph.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);
@@ -265,6 +292,30 @@ public sealed class EffectOperationTests
             }
 
             return inputs[0] with { Bounds = inputs[0].Bounds.Offset(X, Y) };
+        }
+    }
+
+    private sealed record DisplayConversion() : Translation(0, 0)
+    {
+        public override EffectColorSemantic GetOutputColorSemantic(EffectColorSemantic input) => EffectColorSemantic.DisplayLinear;
+
+        public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
+            => inputs[0] with { ColorSemantic = EffectColorSemantic.DisplayLinear };
+    }
+
+    private sealed record DelegatingEffect(TrackedResource Owned, bool Fail) : Translation(0, 0)
+    {
+        public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
+        {
+            Assert.Equal(inputs[0].ColorSemantic, context.ColorSemantic);
+            context.Own(Owned);
+            EffectImage result = plan.AppendEffectWithContext(new Translation(0, 0), context, inputs.ToArray());
+            if (Fail)
+            {
+                throw new InvalidOperationException("Injected downstream failure.");
+            }
+
+            return result;
         }
     }
 

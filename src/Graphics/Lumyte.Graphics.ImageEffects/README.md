@@ -89,3 +89,7 @@ false なら入力 semantic を保持します。各効果は `GetOutputColorSem
 合成の各入力は同じ semantic が必要です。単一 effect、DAG、subgraph で同じ規則を使います。
 Resources で共有する場合も既存の `AddImageEffects(manager)` を使用します。
 カスタム effect fragment は追加された operation 6 の処理にも対応してください。
+
+DAG 内の各ノードには、その入力 semantic に合う EffectPreparationContext のビューを渡します。
+tone mapping 後の独自効果でも AppendEffectWithContext への委譲が可能です。
+ビューは固定資源の所有者と失敗状態を共有し、Graph／Plan がまとめて一度だけ解放します。

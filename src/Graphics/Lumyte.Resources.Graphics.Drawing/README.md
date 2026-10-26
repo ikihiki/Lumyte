@@ -39,7 +39,7 @@ GPU 定義はこの CPU 値を Build 依存で保持し、staging に一括コ�
 
 専用の事前登録メソッドは不要です。`AddGraphicsResource`／`AddGraphicsResourcePipeline<ModelMesh>` は
 最新の汎用 API をそのまま使います。GPU 生成・map・upload は選択済み GraphicsResourceRuntime の仕事として実行します。
-公開前に submission の実完了を待ち、部分生成物は次の失敗し得る操作より前に context の cleanup へ移します。
+公開前に submission の実完了を待ち、初期 staging を解放します。部分生成物は次の失敗し得る操作より前に context の cleanup へ移します。
 submit 後のキャンセルでも完了または元 epoch の退役まで所有を維持し、cleanup 失敗は同じ所有者から再試行できます。
 
 ## シェーダー、HotReload、復旧

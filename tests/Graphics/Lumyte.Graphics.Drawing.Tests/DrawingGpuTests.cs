@@ -47,6 +47,29 @@ public sealed class DrawingGpuTests
     [DrawingGpuFact]
     public async Task VignetteRendersAsync() => await RenderAsync(lit: false, expected: 190, vignette: 1);
 
+    /// <summary>Checks smooth dielectric highlights against the analytic GGX peak under direct lighting.</summary>
+    /// <returns>The asynchronous rendering checks.</returns>
+    [DrawingGpuFact]
+    public async Task SmoothMaterialsRetainGgxHighlightsAsync()
+    {
+        foreach (float roughness in new[] { 0.045f, 0.1f, 0.2f })
+        {
+            float expected = (0.96f / MathF.PI) + (0.01f / (MathF.PI * MathF.Pow(roughness, 4)));
+            await RenderAsync(lit: true, expected: (int)MathF.Round(expected * 510), litRoughness: roughness);
+        }
+    }
+
+    /// <summary>Checks rotating a constant normal map remains stable across uniform UV scales.</summary>
+    /// <returns>The asynchronous rendering checks.</returns>
+    [DrawingGpuFact]
+    public async Task NormalUvRotationIsIndependentOfDerivativeMagnitudeAsync()
+    {
+        foreach (float scale in new[] { 0.004f, 0.002f, 0.001f })
+        {
+            await RenderAsync(lit: true, expected: 0, normalUvScale: scale);
+        }
+    }
+
     private static void Transition(IGraphicsCommandBuffer commands, IGraphicsTexture texture, TextureState beforeState, TextureState afterState, BarrierScope before, BarrierScope after) => commands.Barrier(new TextureBarrierDesc
     {
         Texture = texture,
@@ -67,7 +90,7 @@ public sealed class DrawingGpuTests
         render.SetStencilReference(0);
     }
 
-    private static async Task RenderAsync(bool lit, int expected, bool transformed = false, bool strongEmission = false, bool transparent = false, bool toneMap = false, float vignette = 0)
+    private static async Task RenderAsync(bool lit, int expected, bool transformed = false, bool strongEmission = false, bool transparent = false, bool toneMap = false, float vignette = 0, float? litRoughness = null, float? normalUvScale = null)
     {
         using var device = VulkanDevice.Create();
         ShaderArtifact vertexArtifact = DrawingShaders.LoadModelVertex();
@@ -84,6 +107,21 @@ public sealed class DrawingGpuTests
         creationCleanup?.Dispose();
         Assert.Equal(lit ? IndexFormat.Uint16 : IndexFormat.Uint32, mesh.IndexFormat);
         Assert.Equal(3u, mesh.IndexCount);
+        using (IGraphicsCommandBuffer initial = device.CreateCommandBuffer(new()))
+        {
+            mesh.RecordInitialUpload(initial);
+            initial.Finish();
+            using IGraphicsSubmission uploaded = device.Queue.Submit([initial]);
+            await uploaded.WaitAsync();
+        }
+
+        mesh.ReleaseUploadResources();
+        mesh.ReleaseUploadResources();
+        using (IGraphicsCommandBuffer unused = device.CreateCommandBuffer(new()))
+        {
+            Assert.Throws<InvalidOperationException>(() => mesh.RecordInitialUpload(unused));
+        }
+
         using IGraphicsShader vertex = device.CreateShader(vertexArtifact);
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders.LoadModelFragment());
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
@@ -99,6 +137,11 @@ public sealed class DrawingGpuTests
         upload.CopyFrom(transformed
             ? new byte[] { 255, 0, 0, 255, 0, 0, 255, 255, 128, 128, 255, 255 }
             : new byte[] { 255, 255, 255, 255, 255, 255, 255, 255, 128, 128, 255, 255 });
+        if (normalUvScale.HasValue)
+        {
+            upload.Slice(8, 4).CopyFrom(new byte[] { 255, 128, 255, 255 });
+        }
+
         upload.Unmap();
         TextureCopyLayout copyLayout = device.GetTextureCopyLayout(TextureFormat.Rgba16Float);
         uint pitch = ((64 + copyLayout.BytesPerRowAlignment - 1) / copyLayout.BytesPerRowAlignment) * copyLayout.BytesPerRowAlignment;
@@ -125,6 +168,19 @@ public sealed class DrawingGpuTests
             material = material with { BaseColor = material.BaseColor with { W = 0.5f }, AlphaMode = 2 };
         }
 
+        if (litRoughness.HasValue || normalUvScale.HasValue)
+        {
+            material = material with
+            {
+                BaseColor = Vector4.One,
+                Emissive = Vector3.Zero,
+                Metallic = 0,
+                Roughness = litRoughness ?? 0.5f,
+                NormalScale = normalUvScale.HasValue ? 1 : 0,
+                NormalUv = normalUvScale is { } scale ? new(Vector2.Zero, new(scale), MathF.PI) : ModelTextureTransform.Identity,
+            };
+        }
+
         ModelDrawArguments arguments = ModelDrawing.CreateArguments(vertexRef, material, whiteRef, normalRef) with
         {
             CameraPosition = new(0, 0, 10),
@@ -133,12 +189,22 @@ public sealed class DrawingGpuTests
             FogColor = new(0.1f, 0.2f, 0.3f),
             FogDensity = lit && !strongEmission ? 1 : 0,
         };
+        if (litRoughness.HasValue || normalUvScale.HasValue)
+        {
+            arguments = arguments with
+            {
+                CameraPosition = new(0, 0, 10000),
+                LightColor = Vector3.One,
+                LightDirection = normalUvScale.HasValue ? Vector3.Normalize(new Vector3(1, 0, 1)) : Vector3.UnitZ,
+                FogDensity = 0,
+            };
+        }
+
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
         var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
         var sampleRead = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
         var colorWrite = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-        mesh.RecordInitialUpload(commands);
         commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, 12), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
         Transition(commands, white, TextureState.Undefined, TextureState.CopyDestination, new(PipelineStage.None, ResourceAccess.None), copyWrite);
         Transition(commands, normal, TextureState.Undefined, TextureState.CopyDestination, new(PipelineStage.None, ResourceAccess.None), copyWrite);
@@ -174,7 +240,7 @@ public sealed class DrawingGpuTests
         meshResources.Use(modelPass);
         var source = new EffectImage(sceneHandle, new(0, 0, 8, 8), EffectColorSemantic.SceneLinear);
         EffectImage graded = toneMap
-            ? graph.AppendEffects(ImageEffectGraph.Create(new OpacityEffect(1), ImageEffectGraph.Create(new PostProcessEffect(1, 0, vignette, toneMap: true), ImageEffectGraph.Source())), source)
+            ? graph.AppendEffects(ImageEffectGraph.Create(new DelegatingOpacity(), ImageEffectGraph.Create(new PostProcessEffect(1, 0, vignette, toneMap: true), ImageEffectGraph.Source())), source)
             : graph.AppendPostProcess(source, exposure: 1, saturation: 0, vignette: vignette);
         Assert.Equal(toneMap ? EffectColorSemantic.DisplayLinear : EffectColorSemantic.SceneLinear, graded.ColorSemantic);
         RenderGraphBuffer<byte> readbackHandle = graph.ImportBuffer(readback, default);
@@ -204,11 +270,24 @@ public sealed class DrawingGpuTests
                 float expectedPixel = expected * (1 - (vignette * weight * weight * (3 - (2 * weight))));
                 for (int channel = 0; channel < 3; channel++)
                 {
-                    Assert.InRange((float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(bytes, offset + (channel * 2))) * 255, expectedPixel - 2, expectedPixel + 2);
+                    float tolerance = litRoughness.HasValue ? expectedPixel * 0.003f : 2;
+                    Assert.InRange((float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(bytes, offset + (channel * 2))) * 255, expectedPixel - tolerance, expectedPixel + tolerance);
                 }
 
                 Assert.Equal(transparent ? (Half)0.5f : (Half)1, BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(bytes, offset + 6)));
             }
         }
+    }
+
+    private sealed record DelegatingOpacity : ImageEffectDefinition
+    {
+        public override int InputCount => 1;
+
+        public override EffectPixelRect GetOutputBounds(ReadOnlySpan<EffectPixelRect> inputs) => inputs[0];
+
+        public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => output;
+
+        public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
+            => plan.AppendEffectWithContext(new OpacityEffect(1), context, inputs.ToArray());
     }
 }

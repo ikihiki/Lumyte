@@ -45,6 +45,9 @@ mesh.RecordInitialUpload(commands);
 4-byte 境界まで padding し、draw には元の個数を使用します。
 `RecordInitialUpload` はコピーと host→copy→vertex/index の依存を記録し、submit／wait は行いません。
 初回描画前に一度呼びます。CPU 配列は `CreateAsync` 完了後に保持する必要はありません。
+upload submission の実完了後に `mesh.ReleaseUploadResources()` を呼ぶと、頂点・index の staging だけを解放できます。
+このメソッドは待機を行わず、繰り返し呼べます。以後の `RecordInitialUpload` は拒否しますが、描画と import は引き続き可能です。
+Resources 経由では公開前に staging を解放するため、常駐 mesh は転送用の複製を保持しません。
 
 ## glTF と接続する byte 配置
 

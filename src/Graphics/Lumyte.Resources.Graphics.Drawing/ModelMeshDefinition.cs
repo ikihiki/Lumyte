@@ -59,6 +59,7 @@ public sealed class ModelMeshDefinition : GraphicsResourceDefinition<ModelMesh>
         await upload.Submission.WaitAsync();
         cancellationToken.ThrowIfCancellationRequested();
         upload.ReleaseCommands();
+        upload.Mesh.ReleaseUploadResources();
         ModelMesh mesh = upload.Mesh;
         upload.Mesh = null;
         return mesh;

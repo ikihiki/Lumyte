@@ -52,6 +52,11 @@ public sealed class ModelResourceGpuTests
             GraphicsResource<ModelMesh> original = graph.ImportResources(manager).Acquire(reference);
             Assert.Equal(3u, original.Value.IndexCount);
             Assert.Equal(IndexFormat.Uint16, original.Value.IndexFormat);
+            using (IGraphicsCommandBuffer unused = device.Device.CreateCommandBuffer(new()))
+            {
+                Assert.Throws<InvalidOperationException>(() => original.Value.RecordInitialUpload(unused));
+            }
+
             Assert.Same(device.Device, original.Device);
             using CompiledRenderGraph plan = graph.Compile();
             GraphicsResourceRuntime runtime = provider.GetRequiredService<GraphicsResourceRuntime>();

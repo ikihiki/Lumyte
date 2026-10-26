@@ -155,7 +155,7 @@ public static class ImageEffectRenderGraphExtensions
                 throw new InvalidOperationException("Effect inputs must use the same color semantic.");
             }
 
-            EffectImage result = operation.Definition.AppendPasses(context, plan, images);
+            EffectImage result = operation.Definition.AppendPasses(context.WithColorSemantic(semantic), plan, images);
             if (result.Bounds != expected || result.ColorSemantic != operation.Definition.GetOutputColorSemantic(semantic))
             {
                 throw new InvalidOperationException("An effect must match its declared output bounds and color semantic.");
