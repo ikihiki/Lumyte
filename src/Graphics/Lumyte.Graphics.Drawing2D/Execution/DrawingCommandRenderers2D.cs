@@ -11,7 +11,10 @@ public sealed class DrawingCommandRenderers2D
     /// <param name="fillPath">The FillPath renderer, borrowed by this table.</param>
     /// <param name="strokePath">The StrokePath renderer, borrowed by this table.</param>
     /// <param name="drawImage">The DrawImage renderer, borrowed by this table.</param>
+    /// <param name="drawCoverageMask">The DrawCoverageMask renderer, borrowed by this table.</param>
+    /// <param name="drawDistanceField">The DrawDistanceField renderer, borrowed by this table.</param>
     /// <param name="drawMesh">The DrawMesh renderer, borrowed by this table.</param>
+    /// <param name="drawPaintGraph">The DrawPaintGraph renderer, borrowed by this table.</param>
     public DrawingCommandRenderers2D(
         IFillRectRenderer2D fillRect,
         IFillRoundedRectRenderer2D fillRoundedRect,
@@ -20,7 +23,10 @@ public sealed class DrawingCommandRenderers2D
         IFillPathRenderer2D fillPath,
         IStrokePathRenderer2D strokePath,
         IDrawImageRenderer2D drawImage,
-        IDrawMeshRenderer2D drawMesh)
+        IDrawCoverageMaskRenderer2D drawCoverageMask,
+        IDrawDistanceFieldRenderer2D drawDistanceField,
+        IDrawMeshRenderer2D drawMesh,
+        IDrawPaintGraphRenderer2D drawPaintGraph)
     {
         ArgumentNullException.ThrowIfNull(fillRect);
         FillRect = fillRect;
@@ -36,8 +42,14 @@ public sealed class DrawingCommandRenderers2D
         StrokePath = strokePath;
         ArgumentNullException.ThrowIfNull(drawImage);
         DrawImage = drawImage;
+        ArgumentNullException.ThrowIfNull(drawCoverageMask);
+        DrawCoverageMask = drawCoverageMask;
+        ArgumentNullException.ThrowIfNull(drawDistanceField);
+        DrawDistanceField = drawDistanceField;
         ArgumentNullException.ThrowIfNull(drawMesh);
         DrawMesh = drawMesh;
+        ArgumentNullException.ThrowIfNull(drawPaintGraph);
+        DrawPaintGraph = drawPaintGraph;
     }
 
     /// <summary>Gets the configured FillRect renderer.</summary>
@@ -61,10 +73,19 @@ public sealed class DrawingCommandRenderers2D
     /// <summary>Gets the configured DrawImage renderer.</summary>
     public IDrawImageRenderer2D DrawImage { get; }
 
+    /// <summary>Gets the configured DrawCoverageMask renderer.</summary>
+    public IDrawCoverageMaskRenderer2D DrawCoverageMask { get; }
+
+    /// <summary>Gets the configured DrawDistanceField renderer.</summary>
+    public IDrawDistanceFieldRenderer2D DrawDistanceField { get; }
+
     /// <summary>Gets the configured DrawMesh renderer.</summary>
     public IDrawMeshRenderer2D DrawMesh { get; }
 
-    /// <summary>Creates a new table and 8 stateless defaults without DI or GPU allocations.</summary>
+    /// <summary>Gets the configured DrawPaintGraph renderer.</summary>
+    public IDrawPaintGraphRenderer2D DrawPaintGraph { get; }
+
+    /// <summary>Creates a new table and 11 stateless defaults without DI or GPU allocations.</summary>
     /// <returns>The new rendering strategy table.</returns>
     public static DrawingCommandRenderers2D CreateDefault() => new(
         new DefaultFillRectRenderer2D(),
@@ -74,5 +95,8 @@ public sealed class DrawingCommandRenderers2D
         new DefaultFillPathRenderer2D(),
         new DefaultStrokePathRenderer2D(),
         new DefaultDrawImageRenderer2D(),
-        new DefaultDrawMeshRenderer2D());
+        new DefaultDrawCoverageMaskRenderer2D(),
+        new DefaultDrawDistanceFieldRenderer2D(),
+        new DefaultDrawMeshRenderer2D(),
+        new DefaultDrawPaintGraphRenderer2D());
 }

@@ -42,6 +42,25 @@ public sealed class ModelTests
         Assert.Throws<ArgumentException>(() => PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.One, [new(1, default), new(0, default)]));
     }
 
+    /// <summary>Shared DAG nodes preserve sharing but cannot expand exponentially without a bounded failure.</summary>
+    [Fact]
+    public void PaintDagPreservesSharingAndBoundsExpandedCost()
+    {
+        var child = PaintGraph2D.Solid(new Color2D(1, 1, 1, 1));
+        PaintGraph2D[] input = [child, child];
+        LayersPaintNode2D layers = Assert.IsType<LayersPaintNode2D>(PaintGraph2D.Layers(input).Root);
+        input[0] = PaintGraph2D.Solid(default);
+        Assert.Same(child.Root, layers.Children[0]);
+        Assert.Same(layers.Children[0], layers.Children[1]);
+        for (int i = 0; i < 15; i++)
+        {
+            child = PaintGraph2D.Composite(child, child, CompositeMode2D.SrcOver);
+        }
+
+        Assert.Throws<ArgumentException>(() => PaintGraph2D.Composite(child, child, CompositeMode2D.SrcOver));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.Opacity(float.NaN, child));
+    }
+
     /// <summary>Invalid drawing inputs leave state and command order intact.</summary>
     [Fact]
     public void CanvasValidationIsTransactionalAndRecordingsAreIndependent()
@@ -131,6 +150,9 @@ public sealed class ModelTests
         using var compare = new ModelSampler(new SamplerDesc { Compare = CompareFunction.Less });
         Assert.Throws<ArgumentException>(() => new Image2D(view, compare));
         using var sampler = new ModelSampler(new SamplerDesc());
+        Assert.Throws<NotSupportedException>(() => new CoverageImage2D(view, sampler));
+        Assert.Throws<NotSupportedException>(() => new DistanceField2D(view, sampler, DistanceFieldEncoding2D.Sdf, 4));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DistanceField2D(view, sampler, DistanceFieldEncoding2D.Msdf, 0));
     }
 
     private sealed class ModelTexture : IGraphicsTexture

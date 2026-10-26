@@ -39,16 +39,19 @@ public sealed class ExtensionDispatchTests
         canvas.FillPath(path, paint);
         canvas.StrokePath(path, paint, style);
         canvas.DrawImage(new Image2D(imageView, sampler), rect, rect);
+        canvas.DrawCoverageMask(new CoverageImage2D(coverageView, sampler), rect, rect, paint);
+        canvas.DrawDistanceField(new DistanceField2D(coverageView, sampler, DistanceFieldEncoding2D.Sdf, 4), rect, rect, paint);
         canvas.DrawMesh(mesh, paint);
+        canvas.DrawPaintGraph(paint);
         canvas.FillRect(rect with { X = 2 }, color);
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new RenderTarget2D { View = targetView });
         Type[] expected =
         [
-            typeof(FillRectCommand2D), typeof(FillRectCommand2D), typeof(FillRoundedRectCommand2D), typeof(FillCircleCommand2D), typeof(DrawLineCommand2D), typeof(FillPathCommand2D), typeof(StrokePathCommand2D), typeof(DrawImageCommand2D), typeof(DrawMeshCommand2D), typeof(FillRectCommand2D),
+            typeof(FillRectCommand2D), typeof(FillRectCommand2D), typeof(FillRoundedRectCommand2D), typeof(FillCircleCommand2D), typeof(DrawLineCommand2D), typeof(FillPathCommand2D), typeof(StrokePathCommand2D), typeof(DrawImageCommand2D), typeof(DrawCoverageMaskCommand2D), typeof(DrawDistanceFieldCommand2D), typeof(DrawMeshCommand2D), typeof(DrawPaintGraphCommand2D), typeof(FillRectCommand2D),
         ];
         Assert.Equal(expected, strategies.Commands.Select(command => command.GetType()));
-        Assert.Equal(9, strategies.Batches.Count);
+        Assert.Equal(12, strategies.Batches.Count);
         Assert.All(strategies.Batches, batch => Assert.Equal(0, batch.DisposeCount));
         using var commands = new DispatchCommands();
         prepared.Record(commands);

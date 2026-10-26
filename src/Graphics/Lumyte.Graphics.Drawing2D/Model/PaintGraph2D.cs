@@ -172,6 +172,44 @@ public sealed class PaintGraph2D
         return Unary(new TransformPaintNode2D(transform, child.Root), child);
     }
 
+    /// <summary>Composites copied child references in order using source-over; an empty list is transparent.</summary>
+    /// <param name="children">The immutable child graphs in painter order.</param>
+    /// <returns>The immutable paint graph.</returns>
+    public static PaintGraph2D Layers(ReadOnlySpan<PaintGraph2D> children)
+    {
+        var nodes = new PaintNode2D[children.Length];
+        int depth = 1;
+        int expanded = 1;
+        for (int i = 0; i < children.Length; i++)
+        {
+            PaintGraph2D child = children[i];
+            ArgumentNullException.ThrowIfNull(child, nameof(children));
+            depth = Math.Max(depth, child._depth + 1);
+            expanded = checked(expanded + child._expandedNodes);
+            if (expanded > MaximumExpandedNodes)
+            {
+                throw new ArgumentException("The paint graph exceeds the expanded evaluation budget.", nameof(children));
+            }
+
+            nodes[i] = child.Root;
+        }
+
+        return new PaintGraph2D(new LayersPaintNode2D(Array.AsReadOnly(nodes)), depth, expanded);
+    }
+
+    /// <summary>Composites two independently evaluated transparent surfaces.</summary>
+    /// <param name="source">The source child graph.</param>
+    /// <param name="backdrop">The isolated backdrop graph, independent of Canvas contents.</param>
+    /// <param name="mode">The COLRv1 compositing or blending mode.</param>
+    /// <returns>The immutable paint graph.</returns>
+    public static PaintGraph2D Composite(PaintGraph2D source, PaintGraph2D backdrop, CompositeMode2D mode)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(backdrop);
+        ModelValidation2D.EnumValue(mode, nameof(mode));
+        return new PaintGraph2D(new CompositePaintNode2D(source.Root, backdrop.Root, mode), Math.Max(source._depth, backdrop._depth) + 1, source._expandedNodes + backdrop._expandedNodes + 1);
+    }
+
     private static PaintGraph2D Unary(PaintNode2D root, PaintGraph2D child) => new(root, child._depth + 1, child._expandedNodes + 1);
 
     private static IReadOnlyList<ColorStop2D> SnapshotStops(ReadOnlySpan<ColorStop2D> stops)

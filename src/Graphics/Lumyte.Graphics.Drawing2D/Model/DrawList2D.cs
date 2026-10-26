@@ -11,7 +11,10 @@ public sealed class DrawList2D
     private readonly FillPathCommand2D[] _fillPath;
     private readonly StrokePathCommand2D[] _strokePath;
     private readonly DrawImageCommand2D[] _drawImage;
+    private readonly DrawCoverageMaskCommand2D[] _drawCoverageMask;
+    private readonly DrawDistanceFieldCommand2D[] _drawDistanceField;
     private readonly DrawMeshCommand2D[] _drawMesh;
+    private readonly DrawPaintGraphCommand2D[] _drawPaintGraph;
 
     internal DrawList2D(IEnumerable<DrawingCommand2D> commands)
     {
@@ -25,7 +28,10 @@ public sealed class DrawList2D
         var fillPath = new List<FillPathCommand2D>();
         var strokePath = new List<StrokePathCommand2D>();
         var drawImage = new List<DrawImageCommand2D>();
+        var drawCoverageMask = new List<DrawCoverageMaskCommand2D>();
+        var drawDistanceField = new List<DrawDistanceFieldCommand2D>();
         var drawMesh = new List<DrawMeshCommand2D>();
+        var drawPaintGraph = new List<DrawPaintGraphCommand2D>();
         for (int i = 0; i < ordered.Length; i++)
         {
             switch (ordered[i])
@@ -58,9 +64,21 @@ public sealed class DrawList2D
                     _typeOffsets[i] = drawImage.Count;
                     drawImage.Add(command);
                     break;
+                case DrawCoverageMaskCommand2D command:
+                    _typeOffsets[i] = drawCoverageMask.Count;
+                    drawCoverageMask.Add(command);
+                    break;
+                case DrawDistanceFieldCommand2D command:
+                    _typeOffsets[i] = drawDistanceField.Count;
+                    drawDistanceField.Add(command);
+                    break;
                 case DrawMeshCommand2D command:
                     _typeOffsets[i] = drawMesh.Count;
                     drawMesh.Add(command);
+                    break;
+                case DrawPaintGraphCommand2D command:
+                    _typeOffsets[i] = drawPaintGraph.Count;
+                    drawPaintGraph.Add(command);
                     break;
             }
         }
@@ -72,7 +90,10 @@ public sealed class DrawList2D
         _fillPath = fillPath.ToArray();
         _strokePath = strokePath.ToArray();
         _drawImage = drawImage.ToArray();
+        _drawCoverageMask = drawCoverageMask.ToArray();
+        _drawDistanceField = drawDistanceField.ToArray();
         _drawMesh = drawMesh.ToArray();
+        _drawPaintGraph = drawPaintGraph.ToArray();
     }
 
     internal IReadOnlyList<DrawingCommand2D> Commands { get; }
@@ -132,9 +153,24 @@ public sealed class DrawList2D
             return ((TCommand[])(object)_drawImage).AsMemory(_typeOffsets[orderStart], count);
         }
 
+        if (typeof(TCommand) == typeof(DrawCoverageMaskCommand2D))
+        {
+            return ((TCommand[])(object)_drawCoverageMask).AsMemory(_typeOffsets[orderStart], count);
+        }
+
+        if (typeof(TCommand) == typeof(DrawDistanceFieldCommand2D))
+        {
+            return ((TCommand[])(object)_drawDistanceField).AsMemory(_typeOffsets[orderStart], count);
+        }
+
         if (typeof(TCommand) == typeof(DrawMeshCommand2D))
         {
             return ((TCommand[])(object)_drawMesh).AsMemory(_typeOffsets[orderStart], count);
+        }
+
+        if (typeof(TCommand) == typeof(DrawPaintGraphCommand2D))
+        {
+            return ((TCommand[])(object)_drawPaintGraph).AsMemory(_typeOffsets[orderStart], count);
         }
 
         throw new ArgumentException("The requested type is not a drawing command renderer input.");
