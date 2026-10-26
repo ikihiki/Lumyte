@@ -7,13 +7,15 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 public sealed class RenderGraphExtensionTests
 {
     /// <summary>Different extensions share cached dependencies within a graph and isolate frame-local state.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public void ExtensionsShareDependenciesAndSeparateFrameState()
+    public async Task ExtensionsShareDependenciesAndSeparateFrameStateAsync()
     {
         int created = 0;
-        using RenderGraphExtensions extensions = new RenderGraphExtensions()
+        using RenderGraphExtensionsBuilder builder = new RenderGraphExtensionsBuilder()
             .Add(_ => new SharedState(++created))
             .Add(graph => new DrawingState(graph.GetExtension<SharedState>()));
+        using RenderGraphExtensions extensions = await builder.BuildAsync();
         using var first = new RenderGraph(extensions: extensions);
         using var second = new RenderGraph(extensions: extensions);
         DrawingState drawing = first.GetExtension<DrawingState>();
@@ -21,20 +23,22 @@ public sealed class RenderGraphExtensionTests
         Assert.Same(drawing, first.GetExtension<DrawingState>());
         Assert.NotSame(drawing.Shared, second.GetExtension<SharedState>());
         Assert.Equal(2, created);
-        Assert.Throws<InvalidOperationException>(() => extensions.Add(_ => new object()));
+        Assert.Throws<InvalidOperationException>(() => builder.Add(_ => new object()));
         Assert.Throws<InvalidOperationException>(() => first.GetExtension<UnregisteredState>());
         Assert.True(first.IsBuilding);
     }
 
     /// <summary>Defaults are cached, while an explicit factory takes priority without invoking the fallback.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public void ExplicitFactoriesOverrideModuleDefaults()
+    public async Task ExplicitFactoriesOverrideModuleDefaultsAsync()
     {
         using var defaults = new RenderGraph();
         SharedState first = defaults.GetOrAddExtension(_ => new SharedState(1));
         Assert.Same(first, defaults.GetOrAddExtension<SharedState>(_ => throw new InvalidOperationException()));
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().Add(_ => new SharedState(2));
-        Assert.Throws<ArgumentException>(() => extensions.Add(_ => new SharedState(3)));
+        using RenderGraphExtensionsBuilder builder = new RenderGraphExtensionsBuilder().Add(_ => new SharedState(2));
+        Assert.Throws<ArgumentException>(() => builder.Add(_ => new SharedState(3)));
+        using RenderGraphExtensions extensions = await builder.BuildAsync();
         using var configured = new RenderGraph(extensions: extensions);
         Assert.Equal(2, configured.GetOrAddExtension<SharedState>(_ => throw new InvalidOperationException()).Number);
     }
@@ -53,18 +57,19 @@ public sealed class RenderGraphExtensionTests
 
     /// <summary>Failed or cyclic factories close preparation but retain every registered cleanup owner.</summary>
     /// <param name="cycle">Whether the factory fails through a recursive dependency.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void FailedFactoryPreservesCleanupAndRejectsFurtherPreparation(bool cycle)
+    public async Task FailedFactoryPreservesCleanupAndRejectsFurtherPreparationAsync(bool cycle)
     {
         var releases = new List<string>();
         var lifetime = new Lifetime("partial", releases);
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().Add<SharedState>(graph =>
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder().Add<SharedState>(graph =>
         {
             graph.Retain(lifetime);
             return cycle ? graph.GetExtension<SharedState>() : throw new InvalidOperationException("Preparation failed.");
-        });
+        }).BuildAsync();
         using var graph = new RenderGraph(extensions: extensions);
         Assert.Throws<InvalidOperationException>(() => graph.GetExtension<SharedState>());
         Assert.False(graph.IsBuilding);
@@ -76,14 +81,15 @@ public sealed class RenderGraphExtensionTests
     }
 
     /// <summary>A factory cannot hide a dependency cycle by catching its exception.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public void CaughtCycleStillRejectsPublication()
+    public async Task CaughtCycleStillRejectsPublicationAsync()
     {
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().Add<SharedState>(graph =>
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder().Add<SharedState>(graph =>
         {
             Assert.Throws<InvalidOperationException>(() => graph.GetExtension<SharedState>());
             return new(1);
-        });
+        }).BuildAsync();
         using var graph = new RenderGraph(extensions: extensions);
         Assert.Throws<InvalidOperationException>(() => graph.GetExtension<SharedState>());
         Assert.False(graph.IsBuilding);
@@ -179,17 +185,19 @@ public sealed class RenderGraphExtensionTests
     }
 
     /// <summary>Configuration disposes only explicit owners, once, and resumes after a failed release.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
     [Fact]
-    public void SharedConfigurationOwnsOnlyExplicitRegistrationOwners()
+    public async Task SharedConfigurationOwnsOnlyExplicitRegistrationOwnersAsync()
     {
         var releases = new List<string>();
         var first = new Lifetime("first", releases);
         var second = new Lifetime("second", releases, failOnce: true);
         var borrowed = new DisposableState();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions()
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
             .Add(_ => borrowed, first)
             .Add(_ => new SharedState(1), second)
-            .Add(_ => new DrawingState(new(2)), first);
+            .Add(_ => new DrawingState(new(2)), first)
+            .BuildAsync();
         using (var graph = new RenderGraph(extensions: extensions))
         {
             Assert.Same(borrowed, graph.GetExtension<DisposableState>());

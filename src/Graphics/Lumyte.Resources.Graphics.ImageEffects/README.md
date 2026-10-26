@@ -12,9 +12,11 @@ services.AddResources(resources => resources
     .AddImageEffects());
 services.AddResourceGraphics();
 
-// deviceとExecutionを起動した後、一度ロードして拡張を登録する。
-using var extensions = new RenderGraphExtensions().AddResources(manager);
-await extensions.AddImageEffectsAsync(manager);
+// deviceとExecutionを起動した後、構成を登録し、一度だけ準備する。
+using var extensions = await new RenderGraphExtensionsBuilder()
+    .AddResources(manager)
+    .AddImageEffects(manager)
+    .BuildAsync(cancellationToken);
 ```
 
 既定のシェーダはImageEffects DLLの埋め込みartifactです。アプリのSourceに専用のファイルや名前を登録する必要はありません。CPU artifactはライブラリ共有cacheを再利用し、GPU moduleの組はManagerとdevice epochごとに共有します。
@@ -31,9 +33,9 @@ plan.Record(commands);
 
 単一effectは`graph.AppendOpacity(source, 0.5f)`や`graph.AppendEffect(new OpacityEffect(0.5f), source)`でも追加できます。返るのは画像だけで、シェーダや個別の所有者を渡す必要はありません。compile前の放棄はGraphが、compile後はplanが、Effectの固定資源を解放してからシェーダのLeaseを返します。解放失敗時は失敗した資源と依存先を保持し、同じ所有者のDisposeで再試行します。append失敗後はそのgraphを破棄してください。
 
-拡張構成は最初のGraph作成時に固定され、複数フレームで再利用できます。ImageEffectsGraphContextはGraphごとに一つ作り、そのGraphのシェーダ世代を最初の利用時に選びます。2DのImageEffectSubgraphからの呼び出しも同じ状態を共有します。他の拡張は`extensions.Add<OtherContext>(factory)`で同時に登録でき、各importsはGraphを借用するビューです。Compileと所有権の移譲はGraph全体で一度だけ行います。
+BuildAsyncが返す拡張構成は変更できず、複数フレームで再利用できます。ImageEffectsGraphContextはGraphごとに一つ作り、そのGraphのシェーダ世代を最初の利用時に選びます。2DのImageEffectSubgraphからの呼び出しも同じ状態を共有します。他の拡張は同じbuilderの`Add<OtherContext>(factory)`で登録でき、各importsはGraphを借用するビューです。Compileと所有権の移譲はGraph全体で一度だけ行います。
 
-`AddImageEffectsAsync`は設定が所有するReferenceを準備します。Graphが取得したLeaseは設定のDispose後もplanの解放まで保持されます。拡張設定にManagerやdeviceそのものの起動停止は含めません。Resourcesを使わないGraphでも、同じ`graph.AppendEffects`が既定の埋め込み版で動きます。
+`AddImageEffects(manager)`は準備の定義だけを登録し、ロードを開始しません。`BuildAsync`が登録順に非同期準備を実行し、完成した構成がReferenceを所有します。Graphが取得したLeaseは設定のDispose後もplanの解放まで保持されます。拡張設定にManagerやdeviceそのものの起動停止は含めません。Resourcesを使わないGraphでも、同じ`graph.AppendEffects`が既定の埋め込み版で動きます。
 
 GPUのsubmit・完了確認と入力画像のstate/scopeは利用側が指定します。待機のキャンセルはGPU完了ではありません。未完了のplanは所有を保持し、実際の完了後に解放を再試行します。device loss時は旧epochのretirementを確認してからplanの子資源を解放し、その後Managerを再構築します。
 

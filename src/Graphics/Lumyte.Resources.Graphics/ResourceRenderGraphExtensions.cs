@@ -7,10 +7,10 @@ namespace Lumyte.Resources.Graphics;
 public static class ResourceRenderGraphExtensions
 {
     /// <summary>Registers one shared resource manager for each graph's borrowed import context.</summary>
-    /// <param name="extensions">The reusable graph extension configuration.</param>
+    /// <param name="extensions">The graph extension builder.</param>
     /// <param name="manager">The borrowed manager whose lifetime covers all graph operations.</param>
-    /// <returns>The same extension configuration.</returns>
-    public static RenderGraphExtensions AddResources(this RenderGraphExtensions extensions, ResourceManager manager)
+    /// <returns>The same builder.</returns>
+    public static RenderGraphExtensionsBuilder AddResources(this RenderGraphExtensionsBuilder extensions, ResourceManager manager)
         => extensions.Add(graph => new ResourceRenderGraphImports(graph, manager));
 
     /// <summary>Gets the resource import context registered for this graph.</summary>

@@ -124,12 +124,13 @@ public sealed class ImageEffectTests
     }
 
     /// <summary>Direct and callback appends share one configured state without a manager dependency.</summary>
+    /// <returns>Completion of extension construction and shared preparation checks.</returns>
     [Fact]
-    public void SuppliedShaderArtifactsReachSharedDirectAndSubgraphPreparation()
+    public async Task SuppliedShaderArtifactsReachSharedDirectAndSubgraphPreparationAsync()
     {
         var artifact = ShaderArtifact.PackTarget(ShaderTarget.Wgsl, ShaderStage.Vertex, "main", "test", [1], "{}");
         var shaders = new ImageEffectShaders(artifact, artifact);
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddImageEffects(shaders);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder().AddImageEffects(shaders).BuildAsync();
         using var plan = new RenderGraphBuilder(Device(), extensions: extensions);
         var effect = new ShaderInspectionEffect(shaders);
         EffectImage source = Source(plan);
@@ -145,10 +146,11 @@ public sealed class ImageEffectTests
 
     /// <summary>Borrowed modules are reused and remain owned by their caller even if pipeline creation fails.</summary>
     /// <param name="borrowModules">Whether existing modules or CPU artifacts are supplied.</param>
+    /// <returns>Completion of extension construction and shader ownership checks.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ShaderModuleOwnershipIsPreservedOnPreparationFailure(bool borrowModules)
+    public async Task ShaderModuleOwnershipIsPreservedOnPreparationFailureAsync(bool borrowModules)
     {
         var artifact = ShaderArtifact.PackTarget(ShaderTarget.Wgsl, ShaderStage.Vertex, "main", "test", [1], "{}");
         var vertex = new BorrowedShader(artifact);
@@ -156,7 +158,7 @@ public sealed class ImageEffectTests
         ImageEffectShaders shaders = borrowModules ? new ImageEffectShaders(vertex, fragment) : new ImageEffectShaders(artifact, artifact);
         IGraphicDevice device = DispatchProxy.Create<IGraphicDevice, ShaderDeviceProxy>();
         var proxy = (ShaderDeviceProxy)(object)device;
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddImageEffects(shaders);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder().AddImageEffects(shaders).BuildAsync();
         using var plan = new RenderGraphBuilder(device, extensions: extensions);
         Assert.Throws<PipelineReachedException>(() => plan.AppendEffect(new OpacityEffect(0.5f), Source(plan)));
         Assert.All(proxy.Created, shader => Assert.False(((BorrowedShader)shader).Disposed));
