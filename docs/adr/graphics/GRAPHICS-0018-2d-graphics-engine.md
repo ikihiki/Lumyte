@@ -143,7 +143,7 @@ DrawBackdropEffectは直前までの現在レイヤーをsnapshotし、結果を
 
 Resources.Graphics.Drawing2Dの`AddGraphics2D()`で生成用リソースを登録する。
 利用者は`manager.AcquireRenderer2DAsync()`でReferenceを取得し、`reference.CreateRenderer(commandRenderers)`でRenderer2Dを生成する。
-program ID・handleの対応表・providerの構築はadapter内部に閉じ込める。Referenceは最新の公開世代を追い、生成済みレンダラーは正確な一世代を保持する。
+shader・pipeline・samplerは汎用リソース定義で準備する。Referenceは最新の公開世代を追い、生成済みレンダラーは正確な一世代を保持する。
 複数資源を同じpublicationへ揃える場合だけCreateRendererにResourceSnapshotを渡す。
 
 共有GPU資源はResourceKeyごとの`GraphicsResourceDefinition<T>`で定義する。
@@ -159,9 +159,9 @@ Effectsも`UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`で�
 親graphのEffects登録は`AddImageEffects(manager)`に集約し、appendの引数にshaderやproviderを渡さない。
 
 生成時にはI/O・GPU生成を行わず、取得時にResourceManagerが準備する。レンダラーと準備済みbatchは所有を分け、
-レンダラーやReferenceを返した後もbatchのprogram leaseをGPU使用とcommand/compiled plan解放後まで保持する。
-同じ世代のpipelineとartifactを使い、記録直前にもruntime有効性を検査する。
-低水準のIGraphicsProgramProvider constructorはResourcesなしでの手動構成に残す。外部providerの失効時に埋め込みへfallbackしない。
+一つのResourceLeaseをレンダラーのresourceOwnerへ移譲し、batchは内部の寿命tokenだけを保持する。レンダラーやReferenceを返した後も、GPU使用とcommand/compiled plan解放後まで同じ所有者を保持する。
+fragment artifactはpipeline.Desc.FragmentShader.Artifactから取得し、別の組として保持しない。記録直前にも元のResourceLeaseを通してruntime有効性を検査する。
+ResourceManagerなしではDrawingResources2Dにpipelineと任意のsamplerをまとめて渡す。資源は利用側がGPU完了まで保持するか、resourceOwnerへ移譲する。resources省略時だけ埋め込みartifactから遅延生成し、一つのrenderer内で共有する。外部資源の失効時に埋め込みへfallbackしない。
 
 復旧はアプリのcoordinatorが使用停止・退役確認・旧prepared owner解放・device復旧・`RebuildRuntimeAsync`を順に行う。
 CPU artifactは再利用し、同じReferenceから新しいdevice世代のレンダラーを生成し直す。
@@ -455,14 +455,21 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +        public AttachmentLoadOp LoadOp { get; init; } = AttachmentLoadOp.Load;
 +        public Color2D ClearColor { get; init; }
 +    }
-+    public static class DrawingPrograms2D
++    public sealed class DrawingResources2D
 +    {
-+        public const string ProgramId = "Lumyte.Drawing2D.paint-coverage.v1";
-+        public static IGraphicsProgramProvider DefaultProvider { get; }
++        public DrawingResources2D(IGraphicDevice device, IGraphicsPipeline pipeline, IGraphicsSampler? sampler = null);
++        public IGraphicDevice Device { get; }
++        public IGraphicsPipeline Pipeline { get; }
++        public IGraphicsSampler? Sampler { get; }
++    }
++    public static class DrawingShaders2D
++    {
++        public static ShaderArtifact Vertex { get; }
++        public static ShaderArtifact Fragment { get; }
 +    }
 +    public sealed class Renderer2D : IDisposable
 +    {
-+        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IGraphicsProgramProvider? programs = null, bool ownsPrograms = false);
++        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null);
 +        // graphを作らず、固定資源と直接記録するbatchを準備する。
 +        public ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list,
 +            RenderTarget2D target, CancellationToken cancellationToken = default);
@@ -524,7 +531,9 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    {
 +        public IGraphicDevice Device { get; }
 +        public DrawingTargetInfo2D Target { get; }
-+        public IGraphicsProgramProvider Programs { get; }
++        public DrawingResources2D Resources { get; }
++        public IDisposable RetainResources();
++        public void ValidateResources();
 +    }
 +    // 以下の全PrepareAsyncに共通する契約:
 +    // 同型・同一clip/合成境界の連続命令。並べ替え不可。snapshotは準備結果の寿命まで有効。
@@ -743,7 +752,7 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    public sealed class RenderGraphRenderer2D : IDisposable
 +    {
 +        public RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list,
-+            RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null, bool ownsPrograms = false);
++            RenderTargetBinding2D target, DrawingGraphBindings2D bindings, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null);
 +        public void Dispose();
 +    }
 +    public static class Drawing2DRenderGraphExtensions
@@ -830,7 +839,7 @@ DrawBackdropEffectはその位置より前の現在レイヤーの描画先だ�
 
 #### 準備・RenderGraph・解放
 
-準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。画像エフェクトの固定資源は親graphが保持し、Compile成功時にcompiled planへ移譲する。programのResourceLeaseは2Dの準備ownerが保持し、compiled planとGPU使用終了後に返却する。エフェクト内部の資源管理は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) に従う。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
+準備ownerはcallbackのCPU snapshot・固定GPU資源を、compiled planは一時allocationと生成viewを、アプリはimport資源を所有する。画像エフェクトの固定資源は親graphが保持し、Compile成功時にcompiled planへ移譲する。生成時のResourceLeaseをrendererと準備ownerで内部共有し、compiled planとGPU使用終了後に最後のtokenが返却する。エフェクト内部の資源管理は [GRAPHICS-0017](GRAPHICS-0017-image-effects.md) に従う。callbackは宣言済み資源だけを使い、内部Submit/Waitや記録中の追加依存・一時資源生成を行わない。
 
 外部textureはparent allocationごとに一度だけimportし、DrawingGraphBindings2Dへ同じhandleを登録する。準備時にbindingを確定し、後の表変更で追加済みcallbackの入力を変えない。target Descriptionは実際の宣言と一致させる。graph adapterは全外部共有アクセスを宣言し、同じ資源のstage/accessを合併する。通常batchの私有資源はbatchが所有して内部barrierを記録する。初期graphはallocation全体で同期し、同一allocationのsampleとattachmentを同時使用しない。外部共有bufferとshader-dataはbindingsで既存typed handleへ対応付ける。graph compositorの一時資源はRenderGraphへ宣言する。
 
@@ -970,3 +979,21 @@ PreparedDrawingPasses2D passes = await parent.Append2D(layered);
 
 Graph版の生成拡張はResources.Graphics.Drawing2D.RenderGraphへ分離する。
 シェーダ設定やresource取得を描画命令に持ち込まず、HotReload後の次の生成時に新しい世代を選択する。
+
+#### Resourcesなしで外部pipelineを渡す
+
+```csharp
+using var vertex = device.CreateShader(vertexArtifact);
+using var fragment = device.CreateShader(fragmentArtifact);
+using var pipeline = device.CreateGraphicsPipeline(new()
+{
+    VertexShader = vertex,
+    FragmentShader = fragment,
+});
+var resources = new DrawingResources2D(device, pipeline);
+using var renderer = new Renderer2D(device, commandRenderers, resources);
+using var prepared = await renderer.PrepareAsync(list, target);
+// Record/SubmitとGPU完了を確認してから、prepared・renderer・pipeline・shaderを解放する。
+```
+
+DrawingResources2Dは所有権を持たない不変の参照群である。resourceOwnerを指定した場合だけrendererが所有を引き取り、内部tokenが全て返った後にDisposeする。validateResourcesは元ResourceLease.Value等の失効検査へ接続する。GraphicsProgram系のprovider、public lease、ABI識別子による取得は設けない。
