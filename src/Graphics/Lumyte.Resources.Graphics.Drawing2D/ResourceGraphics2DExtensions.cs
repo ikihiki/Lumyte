@@ -26,8 +26,13 @@ public static class ResourceGraphics2DExtensions
         ResourceLease<Renderer2DResource> lease = reference.Acquire(snapshot);
         try
         {
-            var programs = new RetainedGraphicsProgramProvider<Renderer2DResource>(lease, static resource => resource.Program, DrawingPrograms2D.ProgramId);
-            return new Renderer2D(lease.Value.Device, renderers ?? DrawingCommandRenderers2D.CreateDefault(), programs, ownsPrograms: true);
+            Renderer2DResource resource = lease.Value;
+            return new Renderer2D(
+                resource.Device,
+                renderers ?? DrawingCommandRenderers2D.CreateDefault(),
+                resource.Resources,
+                resourceOwner: lease,
+                validateResources: () => _ = lease.Value);
         }
         catch
         {
