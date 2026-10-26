@@ -42,7 +42,7 @@ batch私有資源はbatchが所有・同期し、外部資源の入口・出口�
 
 塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換を扱います。
 文字向け描画形式は後続PRで追加します。
-設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) を参照してください。
+設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) と[線・パスの設計](../../../docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)を参照してください。
 
 ## 外部の描画資源
 
