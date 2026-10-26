@@ -1,5 +1,6 @@
 using System.Reflection;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.RenderGraph;
 using Xunit;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -157,6 +158,65 @@ public sealed class ImageEffectTests
         Assert.All(proxy.Created, shader => Assert.True(((BorrowedShader)shader).Disposed));
     }
 
+    /// <summary>Failed cleanup retains dependent ownership and retries only the resources still awaiting release.</summary>
+    [Fact]
+    public void RetainedEffectRetriesFailedCleanupBeforeReleasingShaderOwnership()
+    {
+        var events = new List<string>();
+        var shader = new ReleaseResource("shader", events);
+        var effect = new ResourceOwningEffect([
+            new ReleaseResource("dependency", events),
+            new ReleaseResource("failing", events, failOnce: true),
+            new ReleaseResource("released", events),
+        ]);
+        var graph = new RenderGraphBuilder(Device());
+        PreparedImageEffect prepared = graph.AppendEffect(effect, Source(graph));
+        using CompiledRenderGraph compiled = graph.Compile();
+        compiled.Retain(shader);
+        compiled.Retain(prepared);
+
+        Assert.Throws<AggregateException>(() => compiled.Dispose());
+        Assert.Equal(["released", "failing"], events);
+        Assert.Throws<ObjectDisposedException>(() => ((IRenderGraphLifetime)prepared).Validate());
+        using var rejected = new TrackedResource();
+        Assert.Throws<ObjectDisposedException>(() => effect.Context!.Own(rejected));
+
+        compiled.Dispose();
+        Assert.Equal(["released", "failing", "failing", "dependency", "shader"], events);
+        compiled.Dispose();
+        Assert.Equal(5, events.Count);
+    }
+
+    /// <summary>A preowned context rejects a foreign device or color semantic before preparing any effect.</summary>
+    /// <param name="wrongDevice">Whether to mismatch the device instead of the color semantic.</param>
+    /// <param name="graphEntry">Whether to append the effect through its graph entry point.</param>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void SuppliedContextRejectsIncompatibleEnvironment(bool wrongDevice, bool graphEntry)
+    {
+        IGraphicDevice device = Device();
+        var graph = new RenderGraphBuilder(device);
+        using var context = new EffectPreparationContext(
+            wrongDevice ? Device() : device,
+            wrongDevice ? EffectColorSemantic.DisplayLinear : EffectColorSemantic.SceneLinear);
+        var effect = new CountingEffect();
+        EffectImage source = Source(graph);
+        if (graphEntry)
+        {
+            Assert.Throws<ArgumentException>(() => graph.AppendEffectsWithContext(
+                ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source, context));
+        }
+        else
+        {
+            Assert.Throws<ArgumentException>(() => graph.AppendEffectWithContext(effect, context, source));
+        }
+
+        Assert.Equal(0, effect.Count);
+    }
+
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, UnusedDeviceProxy>();
 
     private static EffectImage Source(RenderGraphBuilder plan) => new(plan.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);
@@ -252,6 +312,41 @@ public sealed class ImageEffectTests
         {
             context.Own(Resource);
             throw new InvalidOperationException("Injected effect failure.");
+        }
+    }
+
+    private sealed record ResourceOwningEffect(IDisposable[] Resources) : IdentityEffect
+    {
+        internal EffectPreparationContext? Context { get; private set; }
+
+        public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)
+        {
+            Context = context;
+            foreach (IDisposable resource in Resources)
+            {
+                context.Own(resource);
+            }
+
+            return inputs[0];
+        }
+    }
+
+    private sealed class ReleaseResource(string name, List<string> events, bool failOnce = false) : IRenderGraphLifetime
+    {
+        private bool _fail = failOnce;
+
+        public void Validate()
+        {
+        }
+
+        public void Dispose()
+        {
+            events.Add(name);
+            if (_fail)
+            {
+                _fail = false;
+                throw new InvalidOperationException("Injected release failure.");
+            }
         }
     }
 

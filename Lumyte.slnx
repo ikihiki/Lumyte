@@ -68,6 +68,7 @@
   </Folder>
   <Folder Name="/src/Graphics/">
     <Project Path="src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics.ImageEffects/Lumyte.Resources.Graphics.ImageEffects.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
