@@ -11,6 +11,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
     private readonly GraphPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
     private readonly List<PreparedCommand> _commands = [];
+    private readonly GraphicsProgramLease _program;
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
     private readonly IGraphicsTexture _fallback;
@@ -26,7 +27,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         {
             GraphicsProgramLease program = context.Programs.Acquire(context.Device, DrawingPrograms2D.ProgramId);
             ArgumentNullException.ThrowIfNull(program);
-            Own(program);
+            _program = Own(program);
             cancellationToken.ThrowIfCancellationRequested();
             GraphicsProgramResources resources = program.Resources;
             if (!ReferenceEquals(resources.Device, context.Device))
@@ -51,12 +52,14 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
     public void AppendPasses(RenderGraphBuilder graph, RenderTargetBinding2D target)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = _program.Resources;
         if (_appended || !ReferenceEquals(graph, _context.Graph) || target != _context.Target)
         {
             throw new InvalidOperationException("A prepared batch can only be appended once to its original graph and target.");
         }
 
         _appended = true;
+        graph.Retain(new ProgramValidation(_program));
         RenderGraphTexture fallback = graph.ImportTexture(_fallback, TextureState.Undefined, default, "unused 2D texture binding");
         graph.AddPass("Initialize unused 2D texture binding", context =>
         {
@@ -238,4 +241,13 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
     }
 
     private sealed record PreparedCommand(DrawingProgram2D Program, IArgumentTable Table, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGpuRef<DrawingInstruction> InstructionRef, IGpuRef<IGraphicsSampler> Sampler, IGpuRef<IGraphicsTextureView> Fallback, uint Root, GraphImageSource2D? Source, GraphImageSource2D? Original, float Opacity, bool Replace, ScissorRect Scissor);
+
+    private sealed class ProgramValidation(GraphicsProgramLease program) : IRenderGraphLifetime
+    {
+        public void Validate() => _ = program.Resources;
+
+        public void Dispose()
+        {
+        }
+    }
 }

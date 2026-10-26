@@ -11,7 +11,7 @@ namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 /// <param name="target">The graph-local destination.</param>
 /// <param name="bindings">The external resource bindings.</param>
 /// <param name="renderers">The borrowed fixed command renderer table.</param>
-/// <param name="programs">The optional borrowed provider for drawing and effect programs.</param>
+/// <param name="programs">The optional borrowed provider for drawing programs.</param>
 public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null) : IDisposable
 {
     private static readonly BarrierScope _attachmentScope = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
@@ -311,14 +311,14 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         }
     }
 
-    private static EffectImage ApplyEffects(RenderGraphBuilder graph, EffectImage source, Func<ImageEffectSubgraph, EffectImage>? callback, PreparedDrawingPasses2D owner, IGraphicsProgramProvider? programs)
+    private static EffectImage ApplyEffects(RenderGraphBuilder graph, EffectImage source, Func<ImageEffectSubgraph, EffectImage>? callback, PreparedDrawingPasses2D owner)
     {
         if (callback is null)
         {
             return source;
         }
 
-        var scope = new ImageEffectSubgraph(graph, source, programs);
+        var scope = new ImageEffectSubgraph(graph, source);
         owner.Own(scope);
         EffectImage output = callback(scope);
         if (output.Texture is null || output.Bounds.IsEmpty || output.ColorSemantic != source.ColorSemantic)
@@ -392,12 +392,10 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         RenderTargetBinding2D target = CreateIntermediate(graph, bounds, parent.Target.PixelScale, "drawing2d.layer");
         AppendClear(graph, target);
         await AppendCommandsAsync(graph, list, begin, end, target with { LoadOp = AttachmentLoadOp.Load }, parent.Bindings, owner, cancellationToken).ConfigureAwait(false);
-        EffectImage output = ApplyEffects(graph, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear), layer.Options.Effects, owner, _programs);
+        EffectImage output = ApplyEffects(graph, new EffectImage(target.Texture, bounds, EffectColorSemantic.DisplayLinear), layer.Options.Effects, owner);
         if (layer.Options.Opacity != 1)
         {
-            PreparedImageEffect faded = graph.AppendOpacity(output, layer.Options.Opacity);
-            owner.Own(faded);
-            output = faded.Output;
+            output = graph.AppendOpacity(output, layer.Options.Opacity);
         }
 
         IPreparedGraphCommandBatch2D composite = await DrawingGraphCompositor.PrepareAsync(parent, ImageSource(output), WithClip(layer.State, layer.Options.OutputClip), ct: cancellationToken).ConfigureAwait(false);
@@ -429,7 +427,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         IPreparedGraphCommandBatch2D snapshot = await DrawingGraphCompositor.PrepareAsync(captureContext, targetSource, emptyState, replace: true, ct: cancellationToken).ConfigureAwait(false);
         owner.Own(snapshot);
         snapshot.AppendPasses(context.Graph, captureContext.Target);
-        EffectImage effected = ApplyEffects(context.Graph, new EffectImage(capture.Texture, captureBounds, EffectColorSemantic.DisplayLinear), command.Options.Effects, owner, _programs);
+        EffectImage effected = ApplyEffects(context.Graph, new EffectImage(capture.Texture, captureBounds, EffectColorSemantic.DisplayLinear), command.Options.Effects, owner);
         var original = new GraphImageSource2D(capture.Texture, capture.Description, captureBounds);
         IPreparedGraphCommandBatch2D replacement = await DrawingGraphCompositor.PrepareAsync(context, ImageSource(effected), WithClip(command.State, output), original: original, replace: true, ct: cancellationToken).ConfigureAwait(false);
         owner.Own(replacement);

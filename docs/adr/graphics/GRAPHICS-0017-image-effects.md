@@ -2,7 +2,7 @@
 
 - 状態: 採用
 - 日付: 2026-10-11
-- 更新: 2026-10-12
+- 更新: 2026-10-26
 
 ## 背景
 
@@ -24,7 +24,7 @@ blur、色変換、透明度、画像合成を2Dレイヤーと3Dの描画結果
 
 2D側はレイヤーの画像化、clip・group opacityの適用位置、描画順、背景snapshotを管理する。3D側はカメラ、画像を取り出す時点、露出・トーンマッピングとの前後関係を管理し、条件を満たすcolor画像を同じRenderGraphへ渡す。深度・法線・motion vector・frame履歴を必要とする演算と、その入力を用意する3D側の接続は今回の共通APIに含めない。
 
-paint DAGは図形内部の塗り、ImageEffectGraphは画像化後の処理、RenderGraphはGPUパスと資源依存を表す。各graphの意味を混在させず、独自のGPUパス実行器を追加しない。RenderGraphの接続契約はmain `81bba9e` に統合された [GRAPHICS-0015](./GRAPHICS-0015-render-graph.md) に従う。
+paint DAGは図形内部の塗り、ImageEffectGraphは画像化後の処理、RenderGraphはGPUパスと資源依存を表す。各graphの意味を混在させず、独自のGPUパス実行器を追加しない。RenderGraphの接続契約は[GRAPHICS-0015](./GRAPHICS-0015-render-graph.md)に従う。
 
 ### 2. 定義とRenderGraphへの変換
 
@@ -37,7 +37,7 @@ ImageEffectGraphはGPU資源を生成・所有しない不変DAGとし、Source�
 ```text
 ImageEffectGraph + EffectImage
   → RenderGraph.AppendEffects（入力束縛・子の展開・演算別配送）
-  → RenderGraphのpass群 + PreparedImageEffect.Output
+  → RenderGraphのpass群 + EffectImage
   → 呼び出し側の後続pass → Compile・Record・Submit
 ```
 
@@ -45,9 +45,11 @@ AppendEffectsはすべてのSource葉を一つの入力画像へ束縛し、子�
 
 各エフェクトは入力画像から出力画像とその範囲を求め、一時texture・pass・全資源アクセスをRenderGraphへ追加する。提供する初期実装はColorMatrix・Opacity・Compositeを各一つのfragment pass、GaussianBlurをsigmaが0でない軸ごとのfragment passへ展開する。Sourceは入力をそのまま返す。影・glowは基本演算の組み立てで表す。
 
-PreparedImageEffect.Outputは同じRenderGraph内で後続処理へ渡す論理handleである。物理画像へ変換して再importしない。出力を最終成果物にする側がMarkOutput/Exportを宣言し、依存解析、barrier、不要passの除去、一時allocationの確保・解放をRenderGraphへ任せる。拡張メソッドはRenderGraphへパスを宣言するだけで、Compile・Record・Submit・Wait・Presentは呼び出し側が行う。
+返すEffectImageは同じRenderGraph内で後続処理へ渡す論理handleである。物理画像へ変換して再importしない。出力を最終成果物にする側がMarkOutput/Exportを宣言し、依存解析、barrier、不要passの除去、一時allocationの確保・解放をRenderGraphへ任せる。拡張メソッドはRenderGraphへパスを宣言するだけで、Compile・Record・Submit・Wait・Presentは呼び出し側が行う。
 
-ImageEffectSubgraphはEffectsコールバックへ渡す親RenderGraphの部分ビューとする。独立したgraphやcompiled planを生成せず、Sourceに適用対象の画像を渡す。AppendGaussianBlurなどはEffectImageを返し、内部のPreparedImageEffectを部分ビューが所有する。複数効果の途中結果も同じparent graphのhandleであり、2D側が部分ビューを準備ownerへ移してGPU完了まで保持する。独自passはGraphへ宣言でき、独自の準備ownerはOwnへ移す。
+ImageEffectSubgraphはEffectsコールバックへ渡す親RenderGraphの借用ビューとする。独立したgraphやcompiled planを生成せず、Sourceに適用対象の画像を渡す。AppendGaussianBlurなどはEffectImageを返し、親graphと同じImageEffectsGraphContextと寿命管理を使う。ビューのDisposeは後続の呼び出しを閉じるだけで、固定GPU資源を解放しない。2D内部からのAppendと直接のgraph.AppendEffectsは同じshader状態を利用できる。
+
+ImageEffectsGraphContextは本パッケージに置き、Graphと借用ImageEffectShadersを保持する。標準の拡張メソッドはGraph.GetOrAddExtensionでこの型の状態を取得する。未登録なら既定の埋め込み版を使い、RenderGraphExtensionsBuilder.AddImageEffects(shaders)をBuildAsyncで構成にすれば指定済みのshaderを使う。ResourceManagerとの接続パッケージも同じContextを登録するため、AppendにshaderやManagerを渡さない。Contextはgraphごとに一つで、2Dなど他の拡張からも共有する。Manager経由の非同期ロードはbuilderのAddImageEffects(manager)で定義し、BuildAsyncで完了させ、Appendで再ロードやDI解決を行わない。単独利用の埋め込みartifactは初回使用時に共有cacheへロードする。
 
 ### 3. 画像・領域・色
 
@@ -63,7 +65,7 @@ GetRequiredSourceBoundsは要求する出力からblurの余白やCompositeの�
 
 エフェクトレンダラーのinterface、差し替え引数、アダプター、登録表、DI設定は設けない。提供する効果型はsealedとし、実装を変更したい場合は新しい効果型を追加する。利用者の効果も同じ基底型を継承し、独自のAppend拡張メソッドをライブラリとして提供できる。RenderGraph本体の変更は不要である。
 
-AppendColorMatrix・AppendGaussianBlur・AppendOpacity・AppendCompositeは入力画像と数値・行列などのパラメーターを受け取り、graph.AppendEffectへ渡すパス追加専用の拡張メソッドとする。戻り値はPreparedImageEffectで、出力と固定資源の所有者を保持する。複数回のAppendはowner.Outputを次の入力にし、すべてのownerをGPU使用終了まで保持する。利用者は効果オブジェクトをnewせずに呼び出す。内部で検証用の不変定義を作り、固定実装へ渡すが、効果やDAGを返す組み立てAPIにはしない。単純な設定は直接引数とし、複雑な設定が必要になった場合だけ設定オブジェクトを使う。
+AppendColorMatrix・AppendGaussianBlur・AppendOpacity・AppendCompositeは入力画像と数値・行列などのパラメーターを受け取り、graph.AppendEffectへ渡すパス追加専用の拡張メソッドとする。戻り値はEffectImageで、そのまま次の入力にできる。固定資源の所有者を利用側へ返さず、準備前にGraphへ登録する。利用者は効果オブジェクトをnewせずに呼び出す。内部で検証用の不変定義を作り、固定実装へ渡すが、効果やDAGを返す組み立てAPIにはしない。単純な設定は直接引数とし、複雑な設定が必要になった場合だけ設定オブジェクトを使う。
 
 DAGの構築はImageEffectGraph.Create(effect, inputs)で明示する。入力数は0以上で子graphの数と一致させ、子列をコピーする。Source葉は一つの画像へ束縛する。DAG経路の0入力生成はSourceの色semanticを保持し、直接AppendEffectする0入力生成はDisplayLinearを使う。必要領域が空の子は逆向きの領域計算を省略する。
 
@@ -79,31 +81,24 @@ MarkOutputは必要出力の保持、Exportはさらにfinal state/scopeの指�
 | --- | --- |
 | importしたtexture・view等 | 呼び出し側。viewだけでなく親textureもGPU使用終了まで保持 |
 | 一時allocationとcontext生成view | CompiledRenderGraph |
-| callbackのCPU snapshot、pipeline、argument table、sampler等の固定資源 | PreparedImageEffect。エフェクトはEffectPreparationContext.Ownへ所有権を移す |
+| callbackのCPU snapshot、pipeline、argument table、sampler等の固定資源 | 準備開始前からRenderGraph、Compile成功後はCompiledRenderGraph。エフェクトはEffectPreparationContext.Ownへ所有権を移す |
+| 借用shaderのLease | 接続する拡張が固定資源より先にgraph.Retainへ登録し、逆順で最後に返す |
 
-準備ownerのcallback集合は、一つのcompiled planの一回のRecordにだけ使い、記録失敗も消費済みとする。再実行はAppendから新しく準備し、先行GPUが使うtable等を上書きしない。owner解放後のgraphをCompile/Recordしない。
+準備Contextのcallback集合は、一つのcompiled planの一回のRecordにだけ使い、記録失敗も消費済みとする。Effectsを使ったgraphは成功したCompileで構築を閉じ、再Compileやpassの変更を拒否する。次のframeは新しいgraphへAppendし、先行GPUが使うtable等を上書きしない。再利用する拡張構成と各graphの準備状態は寿命を分ける。
 
-正常系は「準備・Compile → Record → Finish → Submit → 明示完了確認 → command → plan → 準備owner → submissionの解放」とする。出力を後続submissionでも使う場合は、その完了まで元planと関連資源を保持する。
+正常系は「準備・Compile → Record → Finish → Submit → 明示完了確認 → command → plan → submissionの解放」とする。Compileで全拡張の所有権をplanへ一括移譲し、planがview、一時allocation、登録の逆順の固定資源とLeaseを解放する。移譲後のgraph.Disposeはplanの資源を返さない。出力を後続submissionでも使う場合は、その完了まで元planと関連資源を保持する。
 
 | 失敗位置 | 処理 |
 | --- | --- |
-| Appendの失敗 | 内部の新規準備資源をcleanupし、変更途中のgraph全体を捨てて再構築。既存の成功ownerは呼び出し側が解放 |
-| Compileの失敗 | GPU記録前なので準備ownerを解放できる |
-| Recordの失敗・未送信の記録を破棄 | commandを先に破棄してからplan・準備ownerを解放。再記録しない |
+| Appendの失敗 | 失敗したContextは継続利用を拒否し、部分生成資源をgraphに残す。graph全体をDisposeして再構築 |
+| Compileの失敗 | 所有権はgraphに残る。GPU記録前なのでgraph.Disposeで解放できる |
+| Recordの失敗・未送信の記録を破棄 | commandを先に破棄してからplanを解放。再記録しない |
 | Submit後の待機キャンセル・Failed | GPU使用終了とはみなさず、明示完了またはbackendの終了保証に従う |
+| 固定資源の解放失敗 | 失敗した資源と依存先を保持し、同じgraphまたはplanのDisposeで再試行。成功済みの解放を繰り返さない |
 
 [GRAPHICS-0014](./GRAPHICS-0014-caller-managed-resource-validation.md) に従い、DisposeはGPU完了照会・waitを行わず、寿命違反の検出を保証しない。同一device、mapping排他、宣言と実アクセスの一致、外部資源の生存は呼び出し側の事前条件である。数値・範囲・未知enum、自身の局所状態、展開上限は検査し、nativeの失敗も伝達する。
 
 数値・範囲違反はArgumentException/ArgumentOutOfRangeException、局所的な呼び出し順違反はInvalidOperationException、破棄後操作はObjectDisposedException、非対応形式・機能はNotSupportedExceptionとする。初期実行は一つの一般queueとcommand bufferを使い、共有graphへの同時操作は保証しない。
-
-### 6. 外部プログラムの取得
-
-各組み込み演算もEffectPreparationContext.Programsから `ImageEffectPrograms.ProgramId` のprogram leaseを取得する。
-AppendGaussianBlur等の末尾のprograms引数、またはImageEffectSubgraphのconstructorでproviderを指定する。
-未指定時は埋め込みproviderを使う。providerの差し替えは同じABIの資源取得元・所有期間を変え、効果の実装選択やDI登録には使わない。
-新しい演算は従来どおり新しいeffectとして定義する。独自effectもcontext.Programsから自身のABI識別子のprogramを取得できる。
-取得したleaseはcontextの固定資源として保持する。復旧時には旧ownerを解放し、新deviceでAppendから再構築する。
-取得契約と復旧境界は [GRAPHICS-0006](./GRAPHICS-0006-shader-compilation-and-modules.md) に従う。
 
 ## 検討した代替案
 
@@ -121,7 +116,7 @@ AppendGaussianBlur等の末尾のprograms引数、またはImageEffectSubgraph�
 
 2Dレイヤーと3D画像に同じ画像演算を適用し、色・alpha・領域の契約とGPU処理を共有できる。適用側の描画順やカメラの責務を維持しながら、すべての演算を同じ自己完結した効果の契約で追加できる。実行方式を変える場合は別の効果型を定義する。
 
-初期実装はpass融合やframe間cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。準備ownerとcompiled planの寿命、全アクセスの宣言、追加失敗時のgraph再構築を呼び出し側が管理する。演算を利用者のライブラリとして追加でき、RenderGraph本体や固定登録表の変更は不要である。定義の不変性、正しい必要入力範囲、全資源アクセスの宣言は独自実装側の責務となる。RenderGraph.Deviceを拡張用に公開し、Graphicsのプログラム取得契約を利用し、RenderGraphのwhole-allocation同期と単一queueの制約に従う。
+初期実装はpass融合やframe間の固定pipeline cacheを行わないため、基本演算を増やすほどpass数・中間面・準備資源が増える。graph内の拡張状態と借用shaderを共有し、各Appendは準備ContextをGraphへ移す。呼び出し側はcompiled planのGPU使用期間、全アクセスの宣言、追加失敗時のgraph再構築を管理する。演算を利用者のライブラリとして追加でき、RenderGraph本体や固定登録表の変更は不要である。定義の不変性、正しい必要入力範囲、全資源アクセスの宣言は独自実装側の責務となる。RenderGraphのwhole-allocation同期と単一queueの制約に従う。
 
 ## 検証方針
 
@@ -130,9 +125,11 @@ AppendGaussianBlur等の末尾のprograms引数、またはImageEffectSubgraph�
 | RenderGraphへの展開 | Sourceの単一入力束縛、すべての演算nodeの一回展開、別Appendの分離、深さとnode数の上限 |
 | 独自効果 | 入力数とsnapshot、0入力生成、複数入力の必要範囲の合併、空の必要範囲、出力範囲・色の検証、複数pass、失敗時の固定資源解放、直接生成と2D適用 |
 | 演算・領域 | kernelと範囲、HDR/alpha、SceneLinearの保持、整数offset、透明な隙間、必要入力範囲とsamplingの一致 |
-| パス追加と構築 | 提供4種類のAppend拡張メソッド、null receiver、直接AppendとDAGの出力検証、独立した効果生成、差し替えAPIの廃止 |
+| パス追加と構築 | 提供4種類のAppend拡張メソッド、null receiver、直接AppendとDAGの出力検証、独立した効果生成、既定shaderと明示登録の共通経路 |
 | RenderGraph | 全資源宣言、重複import防止、culling・export、後続passへの出力接続 |
 | 失敗・寿命 | Append/Compile/Recordの失敗、待機キャンセル、一回実行、GPU使用終了後の解放、複数frameでの非上書き |
+| 複数拡張 | 直接Appendと2Dの部分ビューで同じContext・shaderを共有し、部分ビュー終了でGPU資源を返さない |
+| 準備と解放の失敗 | 準備途中の資源保持、解放失敗の再試行、shader Leaseより先に固定資源を解放 |
 
 準備時間、GPU時間、pass数、中間面・固定資源の割り当て量を測定する。画像比較は色空間・誤差許容値を固定し、backend共通のfixtureを使用する。2Dへの適用順と背景置換は2D側で検証する。
 
@@ -145,7 +142,7 @@ AppendGaussianBlur等の末尾のprograms引数、またはImageEffectSubgraph�
 
 ## API・詳細契約・利用例
 
-比較元はmain `81bba9e`。RenderGraphには拡張メソッドが同じdeviceを使えるよう、借用deviceの読み取りプロパティ `public IGraphicDevice? Device { get; }` を追加する。以下の差分は追加する公開メンバーの宣言である。Graphics型は `Lumyte.Graphics.Abstractions`、RenderGraph型は `Lumyte.Graphics.RenderGraph`を使用する。`RenderGraphBuilder` は `using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;` のaliasであり、新規型ではない。
+拡張はRenderGraph.Deviceと型付き拡張状態、共通の所有権管理を利用する。以下は公開メンバーの宣言である。Graphics型は`Lumyte.Graphics.Abstractions`、RenderGraph型は`Lumyte.Graphics.RenderGraph`を使用する。`RenderGraphBuilder`は`using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;`のaliasであり、新規型ではない。
 
 ### 公開API
 
@@ -194,32 +191,50 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +    }
 +    public static class ImageEffectRenderGraphExtensions
 +    {
-+        public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan,
++        public static RenderGraphExtensionsBuilder AddImageEffects(this RenderGraphExtensionsBuilder builder,
++            ImageEffectShaders? shaders = null);
++        public static EffectImage AppendEffect(this RenderGraphBuilder plan,
 +            ImageEffectDefinition effect, params EffectImage[] inputs);
-+        public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan,
-+            ImageEffectDefinition effect, EffectImage[] inputs, IGraphicsProgramProvider? programs);
-+        public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan,
-+            ImageEffectGraph graph, EffectImage source, IGraphicsProgramProvider? programs = null);
++        public static EffectImage AppendEffects(this RenderGraphBuilder plan,
++            ImageEffectGraph graph, EffectImage source);
 +        // 入力画像とパラメーターからパスを追加する。効果やDAGを返さない。
-+        public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix, IGraphicsProgramProvider? programs = null);
-+        public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY, IGraphicsProgramProvider? programs = null);
-+        public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity, IGraphicsProgramProvider? programs = null);
-+        public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop,
-+            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IGraphicsProgramProvider? programs = null);
++        public static EffectImage AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix);
++        public static EffectImage AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY);
++        public static EffectImage AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity);
++        public static EffectImage AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop,
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
++        // 低水準の入口。呼び出す前にcontextの所有権をgraph等へ確立する。
++        public static EffectImage AppendEffectsWithContext(this RenderGraphBuilder plan,
++            ImageEffectGraph graph, EffectImage source, EffectPreparationContext context);
++        public static EffectImage AppendEffectWithContext(this RenderGraphBuilder plan,
++            ImageEffectDefinition effect, EffectPreparationContext context, params EffectImage[] inputs);
++    }
++    public sealed class ImageEffectsGraphContext
++    {
++        public ImageEffectsGraphContext(RenderGraphBuilder graph, ImageEffectShaders? shaders = null);
++        public EffectImage AppendEffects(ImageEffectGraph effects, EffectImage source);
++        public EffectImage AppendEffect(ImageEffectDefinition effect, params EffectImage[] inputs);
++    }
++    public sealed class ImageEffectShaders
++    {
++        public ImageEffectShaders(ShaderArtifact fullscreen, ShaderArtifact effects);
++        public ImageEffectShaders(IGraphicsShader fullscreen, IGraphicsShader effects);
++        public static ImageEffectShaders Embedded { get; }
++        public ShaderArtifact Fullscreen { get; }
++        public ShaderArtifact Effects { get; }
 +    }
 +    public sealed class ImageEffectSubgraph : IDisposable
 +    {
-+        public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source, IGraphicsProgramProvider? programs = null);
++        public ImageEffectSubgraph(RenderGraphBuilder graph, EffectImage source);
 +        public RenderGraphBuilder Graph { get; }
 +        public EffectImage Source { get; }
-+        public IGraphicsProgramProvider Programs { get; }
 +        public EffectImage AppendGaussianBlur(EffectImage input, float sigmaX, float sigmaY);
 +        public EffectImage AppendOpacity(EffectImage input, float opacity);
 +        public EffectImage AppendColorMatrix(EffectImage input, ColorMatrix4x5 matrix);
 +        public EffectImage AppendComposite(EffectImage source, EffectImage backdrop,
-+            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0, IGraphicsProgramProvider? programs = null);
++            EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0);
 +        public EffectImage AppendEffect(ImageEffectDefinition effect, params EffectImage[] inputs);
-+        public EffectImage Own(PreparedImageEffect effect);
++        // 部分ビューを閉じるだけで、固定GPU資源を解放しない。
 +        public void Dispose();
 +    }
 +    // すべての効果が継承する不変の定義。領域計算はGPU資源を確保しない。
@@ -285,18 +300,16 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +        public IReadOnlyList<ImageEffectNode> Inputs { get; }
 +    }
 +    public sealed record SourceEffectNode : ImageEffectNode;
-+    public sealed class EffectPreparationContext
++    public sealed class EffectPreparationContext : IRenderGraphLifetime
 +    {
++        public EffectPreparationContext(IGraphicDevice device, EffectColorSemantic colorSemantic,
++            ImageEffectShaders? shaders = null);
 +        public IGraphicDevice Device { get; }
 +        public EffectColorSemantic ColorSemantic { get; }
-+        public IGraphicsProgramProvider Programs { get; }
-+        // 固定資源を準備ownerへ移す。一時textureはRenderGraphへ宣言する。
++        public ImageEffectShaders? Shaders { get; }
++        // 固定資源をContextへ移す。一時textureはRenderGraphへ宣言する。
 +        public void Own(IDisposable resource);
-+    }
-+    public sealed class PreparedImageEffect : IDisposable
-+    {
-+        public EffectImage Output { get; }
-+        // graph callbackの固定資源を所有。関連GPU処理とplanの解放後に呼ぶ。
++        // 標準AppendではGraphが所有する。移譲後は利用側からDisposeしない。
 +        public void Dispose();
 +    }
 +}
@@ -328,10 +341,9 @@ DropShadowはalphaの着色→blur→移動→元画像の背後へ合成で表�
 using Lumyte.Graphics.ImageEffects;
 
 var blurred = graph.AppendGaussianBlur(source, 4, 4);
-var faded = graph.AppendOpacity(blurred.Output, 0.5f);
-EffectImage output = faded.Output;
+EffectImage output = graph.AppendOpacity(blurred, 0.5f);
 // outputを同じgraphの後続passへ接続し、Compile・Record・Submitする。
-// GPU使用終了後、commandとcompiled planを解放してから両ownerをDisposeする。
+// GPU使用終了後、commandとcompiled planを解放する。
 ```
 
 #### 独自エフェクトとパス追加拡張メソッド
@@ -356,13 +368,13 @@ public sealed record TranslateEffect(int X, int Y) : ImageEffectDefinition
 
 public static class TranslateEffectRenderGraphExtensions
 {
-    public static PreparedImageEffect AppendTranslate(this RenderGraphBuilder graph, EffectImage input, int x, int y)
+    public static EffectImage AppendTranslate(this RenderGraphBuilder graph, EffectImage input, int x, int y)
         => graph.AppendEffect(new TranslateEffect(x, y), input);
 }
 ```
 
 ```csharp
 var moved = graph.AppendTranslate(source, 8, 4);
-var blurred = graph.AppendGaussianBlur(moved.Output, 3, 3);
-// movedとblurredをGPU使用終了後まで保持する。
+var blurred = graph.AppendGaussianBlur(moved, 3, 3);
+// 出力handleは同じgraphへ接続し、compiled planをGPU使用終了後まで保持する。
 ```

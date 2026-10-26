@@ -118,6 +118,7 @@ internal sealed class MemoryPoolState(MemoryPoolId id, MemoryBudget budget)
     private MemorySnapshot Snapshot(Ledger ledger) => new()
     {
         CommittedBytes = ledger.CommittedBytes,
+        ReleasedBytes = ledger.ReleasedBytes,
         ReservedBytes = ledger.ReservedBytes,
         EstimatedBytes = ledger.EstimatedBytes,
         SoftLimitBytes = budget.SoftLimitBytes,

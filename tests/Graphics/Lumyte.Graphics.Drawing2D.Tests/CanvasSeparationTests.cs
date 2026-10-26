@@ -55,6 +55,8 @@ public sealed class CanvasSeparationTests
         using var renderer = new RenderGraphRenderer2D(strategies.CreateTable(), list, target, new DrawingGraphBindings2D(parent));
         await Assert.ThrowsAsync<InvalidOperationException>(() => parent.Append2D(renderer).AsTask());
         Assert.Equal(1, calls);
+        Assert.Equal(0, resource.Disposals);
+        parent.Dispose();
         Assert.Equal(1, resource.Disposals);
         Assert.Equal(1, Assert.Single(strategies.Batches).DisposeCount);
     }

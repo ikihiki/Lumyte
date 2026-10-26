@@ -486,7 +486,7 @@ public sealed class Drawing2DTests
     {
         Vector4[] blur = await RenderAsync(device, 12, 6, canvas =>
         {
-            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = graph => RequirePrograms(graph).AppendGaussianBlur(graph.Source, 1, 0) });
+            canvas.BeginLayer(new() { ContentBounds = new(4, 1, 4, 4), Effects = graph => graph.AppendGaussianBlur(graph.Source, 1, 0) });
             canvas.FillRect(new(4, 1, 4, 4), _white);
             canvas.EndLayer();
         });
@@ -547,7 +547,7 @@ public sealed class Drawing2DTests
         Vector4[] blur = await RenderAsync(device, 5, 1, canvas =>
         {
             canvas.FillRect(new(0, 0, 1, 1), _white);
-            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = graph => RequirePrograms(graph).AppendGaussianBlur(graph.Source, 1, 0) });
+            canvas.DrawBackdropEffect(new() { OutputBounds = new(1, 0, 3, 1), Effects = graph => graph.AppendGaussianBlur(graph.Source, 1, 0) });
         });
         AssertPixel(blur, 5, 0, 0, Vector4.One);
         AssertPixel(blur, 5, 1, 0, new(0.24203623f), 0.003f);
@@ -716,18 +716,10 @@ public sealed class Drawing2DTests
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Pixel ({x}, {y}): expected {expected}, actual {actual}, tolerance {tolerance}.");
     }
 
-    private static ImageEffectSubgraph RequirePrograms(ImageEffectSubgraph scope)
-    {
-        Assert.IsType<ExternalDrawingPrograms>(scope.Programs);
-        return scope;
-    }
-
     private sealed class ExternalDrawingPrograms : IGraphicsProgramProvider
     {
         private readonly ShaderArtifact _vertex = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader").GetBinary());
         private readonly ShaderArtifact _fragment = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader").GetBinary());
-        private readonly ShaderArtifact _effectVertex = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.fullscreen.lshader").GetBinary());
-        private readonly ShaderArtifact _effectFragment = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.effects.lshader").GetBinary());
 
         internal int Acquired { get; private set; }
 
@@ -738,7 +730,6 @@ public sealed class Drawing2DTests
             GraphicsProgramLease native = programId switch
             {
                 DrawingPrograms2D.ProgramId => GraphicsProgramLease.Create(device, _vertex, _fragment),
-                ImageEffectPrograms.ProgramId => GraphicsProgramLease.Create(device, _effectVertex, _effectFragment),
                 _ => throw new NotSupportedException("Unknown drawing program ABI."),
             };
             Acquired++;
