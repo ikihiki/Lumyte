@@ -31,14 +31,10 @@ internal static class EffectGpuPass
         };
         RenderGraphTexture output = graph.CreateTexture(descriptor, "image-effect-output");
         IGraphicDevice device = owner.Device;
-        GraphicsProgramLease program = owner.Add(owner.Programs.Acquire(device, ImageEffectPrograms.ProgramId));
-        GraphicsProgramResources resources = program.Resources;
-        if (!ReferenceEquals(resources.Device, device))
-        {
-            throw new ArgumentException("The program belongs to a different physical device.");
-        }
-
-        IGraphicsPipeline pipeline = resources.Pipeline;
+        ImageEffectShaders shaders = owner.Shaders ?? ImageEffectShaders.Embedded;
+        IGraphicsShader vertex = shaders.FullscreenShader ?? owner.Add(device.CreateShader(shaders.Fullscreen));
+        IGraphicsShader fragment = shaders.EffectsShader ?? owner.Add(device.CreateShader(shaders.Effects));
+        IGraphicsPipeline pipeline = owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
         IGraphicsSampler sampler = owner.Add(device.CreateSampler(new()
         {
             MinFilter = FilterMode.Nearest,
