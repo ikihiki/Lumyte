@@ -45,7 +45,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
 - [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)
 - [RenderGraph の利用方法](src/Graphics/Lumyte.Graphics.RenderGraph/README.md)／[設計](docs/adr/graphics/GRAPHICS-0015-render-graph.md)／[診断連携](src/Diagnostics/Lumyte.Diagnostics.RenderGraph/README.md)
-- [2D描画の利用方法](src/Graphics/Lumyte.Graphics.Drawing2D/README.md)
+- [2D描画の利用方法](src/Graphics/Lumyte.Graphics.Drawing2D/README.md)／[Resourcesからの生成](src/Graphics/Lumyte.Resources.Graphics.Drawing2D/README.md)／[RenderGraph連携](src/Graphics/Lumyte.Resources.Graphics.Drawing2D.RenderGraph/README.md)
 - [Wgpu](src/Graphics/Lumyte.Graphics.Wgpu/README.md)／[Browser](src/Graphics/Lumyte.Graphics.Browser/README.md)／[Vulkan](src/Graphics/Lumyte.Graphics.Vulkan/README.md)
 - [DeviceCaps サンプル](samples/Lumyte.Graphics.DeviceCaps.Sample/README.md)／[Browser サンプル](samples/Lumyte.Graphics.Browser.Sample/README.md)
 - [Composition の設計](docs/adr/composition/COMPOSITION-0001-declarative-composition.md)

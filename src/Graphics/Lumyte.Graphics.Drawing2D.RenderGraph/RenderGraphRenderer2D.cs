@@ -11,8 +11,9 @@ namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 /// <param name="target">The graph-local destination.</param>
 /// <param name="bindings">The external resource bindings.</param>
 /// <param name="renderers">The borrowed fixed command renderer table.</param>
-/// <param name="programs">The optional borrowed provider for drawing programs.</param>
-public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null) : IDisposable
+/// <param name="programs">The optional provider for drawing programs.</param>
+/// <param name="ownsPrograms">Whether disposal returns an IDisposable provider's renderer ownership.</param>
+public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null, bool ownsPrograms = false) : IDisposable
 {
     private static readonly BarrierScope _attachmentScope = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
     private static readonly BarrierScope _imageScope = new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
@@ -21,11 +22,23 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     private readonly RenderTargetBinding2D _target = target ?? throw new ArgumentNullException(nameof(target));
     private readonly DrawingGraphBindings2D _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
     private readonly IGraphicsProgramProvider? _programs = programs;
+    private readonly IDisposable? _ownedPrograms = ownsPrograms
+        ? programs as IDisposable ?? throw new ArgumentException("An owned provider must implement IDisposable.", nameof(programs)) : null;
+
     private bool _disposed;
     private int _preparing;
 
     /// <summary>Releases this host without disposing borrowed strategies or waiting for GPU work.</summary>
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _ownedPrograms?.Dispose();
+    }
 
     /// <summary>Appends drawing passes to a shared graph and returns their fixed resource owner.</summary>
     /// <remarks>On failure the caller discards the graph. Keep the returned owner through GPU completion and graph disposal.</remarks>

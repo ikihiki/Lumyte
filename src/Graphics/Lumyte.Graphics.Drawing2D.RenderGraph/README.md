@@ -78,13 +78,26 @@ Append失敗時は親graphを捨てて再構築します。GPU完了後にcomman
 設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)、
 共通の部分グラフは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。
 
-## 外部プログラムprovider
+## Resourcesからの生成
 
-RenderGraphRenderer2Dのconstructorの末尾にIGraphicsProgramProviderを渡すと、
-通常命令とレイヤー合成が同じ取得元を使用します。
-providerはDrawingPrograms2D.ProgramIdを解決します。効果は親graphのAddImageEffects(manager)でResources連携を設定します。
-省略時は各packageの埋め込みproviderを選択します。外部providerの失敗はそのまま伝達します。
-一回のAppend2D全体で公開世代を固定し、取得したleaseはPreparedDrawingPasses2DがGPU使用終了まで保持します。
-ロスト後は旧compiled planと準備ownerを解放し、新deviceと復元済みGPU資源で親graphとAppend2Dを作り直します。
+`Lumyte.Resources.Graphics.Drawing2D.RenderGraph`を参照すると、純粋な2Dと同じ生成用リソースを使えます。
 
-ResourcesのSnapshotをprogram providerとgraph.ImportResources().UseSnapshot(snapshot)で共有すると、入力画像とプログラムを同じ公開世代に揃えられます。program leaseはcompiled planの記録前にも失効を検査します。
+```csharp
+using var resource = await manager.AcquireRenderer2DAsync();
+using var renderer = resource.CreateRenderGraphRenderer(
+    commandRenderers, layeredList, target, bindings);
+using var prepared = await parent.Append2D(renderer);
+```
+
+起動時の`UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`で描画用のシェーダを設定します。
+Effectも同じAPIの`UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`で指定します。
+親graphには`AddImageEffects(manager)`で接続します。省略時はそれぞれ埋め込み版を使います。
+
+生成したレンダラーは一世代を固定し、preparedはGPU使用終了まで独立して保持します。
+HotReloadやdevice復旧後は、同じReferenceからレンダラーを生成し直します。
+入力画像とEffectsもpublicationを揃える場合だけ、生成のsnapshot引数と
+`parent.ImportResources().UseSnapshot(snapshot)`へ同じSnapshotを渡します。
+compiled planの記録前にもprogramの失効を検査します。
+
+手動構成用にconstructorのIGraphicsProgramProvider引数を残しています。
+外部providerの失敗時に埋め込みへfallbackしません。
