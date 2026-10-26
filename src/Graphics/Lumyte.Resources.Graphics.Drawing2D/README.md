@@ -44,6 +44,17 @@ device復旧と`manager.RebuildRuntimeAsync([graphicsRuntime.Id])`の後に、�
 CPU artifactを再利用し、新しいdevice上でGPU資源を作り直します。ロストした世代は描画時にも拒否します。
 Manager・Graphics Runtimeはrendererとpreparedの返却およびnative cleanupが終わるまで生存させます。
 
-DIなしでは`Renderer2DArtifactStage(package)`と`Renderer2DResourceStage`をManagerへ登録し、
-`ResourceStageRuntime(typeof(Renderer2DResource), graphicsRuntime)`を指定します。package省略時は埋め込み版です。
-カスタム設定は`GraphicsShaderPackage<Renderer2DResource>(vertex, fragment)`です。命令表はCreateDefaultで構築できます。
+## キー付き定義
+
+DrawingGraphicsResources2DのVertexShader、FragmentShader、Pipeline、Samplerが公開キーです。
+`AddGraphicsResource(key, definition)`でアプリの定義を登録すると、既定値より優先します。
+例えばPipelineへGraphicsPipelineDefinitionを指定すれば、shader入力とOptimization/Label等を変更できます。
+同じ型の別キーも独立して登録でき、shader moduleを他のpipelineと共有できます。
+triangle・fragment・single-sampleの前提と矛盾する定義は生成用資源の取得時に拒否します。
+
+共有module/pipeline/samplerはResourceManagerが保持し、2Dの準備batchは借用します。
+フレームごとのargument table、データ、初期化を行うfallback画像は準備batchが所有します。
+
+DIなしではshader・pipeline・samplerのGraphicsResourceRegistration<T>とGraphicsResourceStage<T>、
+Renderer2DResourceStageをManagerへ登録し、各出力型へGraphicsResourceRuntimeを割り当てます。
+Resourcesなしの通常描画は従来どおりRenderer2DとCreateDefaultだけで使えます。
