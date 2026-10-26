@@ -29,12 +29,15 @@ internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
         VertexData = PipelineValidation.Shader(vertex, owner.Caps.ShaderTarget, ShaderStage.Vertex, owner.Caps);
         FragmentData = _fragment == null ? null : PipelineValidation.Shader(_fragment, owner.Caps.ShaderTarget, ShaderStage.Fragment, owner.Caps);
         PipelineValidation.Program(desc, VertexData, FragmentData);
+        RequiresArguments = ShaderDataLayout.HasRoot(VertexData) || (FragmentData != null && ShaderDataLayout.HasRoot(FragmentData));
         Initialize();
     }
 
     public GraphicsPipelineDesc Desc { get; }
 
     internal BrowserDevice Owner => _owner;
+
+    internal bool RequiresArguments { get; }
 
     internal ShaderTargetData VertexData { get; }
 

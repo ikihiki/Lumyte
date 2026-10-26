@@ -86,13 +86,13 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             throw new InvalidOperationException("Select a compute program before dispatch.");
         }
 
-        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        if (_pipeline.RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
         ShaderBindingSnapshot? bindingSnapshot = null;
-        if (_arguments != null)
+        if (_pipeline.RequiresArguments && _arguments != null)
         {
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingSnapshot = snapshot;

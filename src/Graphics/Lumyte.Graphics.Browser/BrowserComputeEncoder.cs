@@ -86,13 +86,13 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
             throw new InvalidOperationException("Select a compute program before dispatch.");
         }
 
-        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        if (_pipeline.RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
         ShaderBindingData? bindingData = null;
-        if (_arguments != null)
+        if (_pipeline.RequiresArguments && _arguments != null)
         {
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);

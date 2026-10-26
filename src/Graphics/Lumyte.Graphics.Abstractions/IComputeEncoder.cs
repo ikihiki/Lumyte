@@ -3,7 +3,8 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Provides a non-owning recording scope.</summary>
 public interface IComputeEncoder
 {
-    /// <summary>Selects the device's logical registration table for subsequent execution.</summary>
+    /// <summary>Checks a logical registration table for compatibility with this pass.</summary>
+    /// <remarks>Retained for compatibility; this does not change binding state. Arguments resolve their own registrations. The caller supplies live references from one same-device table per dispatch.</remarks>
     /// <param name="table">The live table from this device.</param>
     void SetArgumentTable(IArgumentTable table);
 

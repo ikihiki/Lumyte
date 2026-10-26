@@ -44,6 +44,29 @@ upload.Unmap();
 
 設計判断は [GRAPHICS-0002](../../../docs/adr/graphics/GRAPHICS-0002-typed-buffers.md) を参照してください。
 
+単位を名前で明示する場合は`SliceElements(elementOffset, elementCount)`、
+`CopyBytesFrom(source, byteOffset, byteLength)`、`CopyBytesTo(destination, byteOffset, byteLength)`、
+`ValidateByteRange(byteOffset, byteLength)`を使えます。既存メソッドと同じmapping・範囲条件を持ちます。
+shader ABIを使うbufferは`device.CreateShaderDataBuffer<T>(artifact, count, memory)`で生成でき、
+`Slice`と`SliceElements`はいずれも論理要素単位です。
+shader data bufferの`MapAsync(cancellationToken)`もraw bufferと同様、native mappingの完了後に
+キャンセルを確認し、成功したmappingをUnmapしてからキャンセルを返します。
+
+## 明示的な描画初期化
+
+passのdynamic stateは次の呼び出しでまとめて設定できます。
+
+```csharp
+encoder.SetRenderState(GraphicsRenderStateDesc.ForColorTargets(1));
+encoder.SetDynamicState(new Viewport(0, 0, width, height, 0, 1), new ScissorRect(0, 0, width, height));
+```
+
+SetDynamicStateはviewport、scissor、blend constant、stencil referenceをその順で設定します。
+blend constantとstencil referenceの既定は0で、引数による変更と後続の個別setterも使えます。
+GPU同期やdrawを発行せず、passを開始しません。後のsetterが失敗しても以前の設定は戻しません。
+ForColorTargets(0)はdepth-only pass用です。実attachmentとの互換性検証はbackendが行います。
+設計は[GRAPHICS-0023](../../../docs/adr/graphics/GRAPHICS-0023-explicit-api-convenience.md)を参照してください。
+
 ## TextureとView
 
 ```csharp
@@ -109,6 +132,10 @@ IGpuRef<uint> value = values.GetElement(2);
 ```
 
 slotは利用者が管理する論理位置です。種類ごとに独立し、同時shader binding数ではありません。IGpuRefのCountは論理要素数で、bufferのGetElementは登録範囲から単一要素を選びます。GPU addressやbinding番号への変換は公開しません。
+
+encoderのSetArgumentTableは互換性のために残すtableの検査で、binding状態を切り替えません。
+bindingは引数に含まれるIGpuRefの登録情報から生成します。一回のdraw／dispatchで使う参照が
+同じdeviceの同じtableに属し、有効であることは利用者が保証します。
 
 slotの置換・Release・table Dispose後の古い参照と派生要素は使用できません。その有効期間を利用者が管理し、登録世代やresourceの生存を走査して検証しません。登録・参照を使い終わってからbuffer／view／samplerを解放してください。tableを解放しても登録resource自体はDisposeしません。
 

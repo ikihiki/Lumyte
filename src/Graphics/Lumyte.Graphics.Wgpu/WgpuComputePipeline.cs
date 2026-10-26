@@ -19,12 +19,15 @@ internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipel
         _compute = shader;
         _ = shader.Native;
         Data = PipelineValidation.Shader(shader, owner.Caps.ShaderTarget, ShaderStage.Compute, owner.Caps);
+        RequiresArguments = ShaderDataLayout.HasRoot(Data);
         Initialize();
     }
 
     public ComputePipelineDesc Desc { get; }
 
     internal WgpuDevice Owner => _owner;
+
+    internal bool RequiresArguments { get; }
 
     internal ShaderTargetData Data { get; }
 

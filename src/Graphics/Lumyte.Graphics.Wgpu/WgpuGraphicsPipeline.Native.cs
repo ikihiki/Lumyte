@@ -11,6 +11,11 @@ internal sealed unsafe partial class WgpuGraphicsPipeline
     internal WGPURenderPipelineImpl* Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingData? arguments = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
+        if (Desc.AlphaToCoverageEnable)
+        {
+            throw new NotSupportedException("Alpha-to-coverage requires multisampled attachments; this pass has one sample.");
+        }
+
         string key = state.Key + ":" + depthFormat + ":" + string.Join(',', formats) + ":" + arguments?.Key;
         if (_variants.TryGetValue(key, out nint cached))
         {

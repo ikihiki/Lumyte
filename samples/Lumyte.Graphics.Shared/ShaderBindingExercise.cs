@@ -42,6 +42,8 @@ public static class ShaderBindingExercise
         ShaderArtifact artifact = sourceArtifact ?? Artifact("binding-compute");
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsShader emptyShader = device.CreateShader(Artifact("empty-compute"));
+        using IGraphicsComputePipeline emptyPipeline = device.CreateComputePipeline(new() { ComputeShader = emptyShader });
         using IGraphicsShaderDataBuffer<BindingNode> nodes = device.CreateBuffer<BindingNode>(artifact, 2);
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
@@ -64,6 +66,8 @@ public static class ShaderBindingExercise
         compute.SetArgumentTable(table);
         var first = new BindingComputeArguments(Matrix4x4.CreateScale(3), 20, node.GetElement(0), results.GetElement(3));
         compute.SetArguments(in first);
+        compute.Dispatch(1);
+        compute.SetPipeline(emptyPipeline);
         compute.Dispatch(1);
         compute.End();
         commands.Barrier(new ShaderDataBufferBarrierDesc<BindingNode> { Buffer = nodes.SliceElements(0, 1), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
@@ -196,6 +200,8 @@ public static class ShaderBindingExercise
         using IGraphicsShader vertex = device.CreateShader(Artifact("fullscreen-vertex"));
         using IGraphicsShader fragment = device.CreateShader(Artifact("binding-camera"));
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
+        using IGraphicsShader emptyFragment = device.CreateShader(Artifact("color-fragment"));
+        using IGraphicsPipeline emptyPipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = emptyFragment });
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
         uint pitch = Math.Max(4, device.GetTextureCopyLayout(target.Format).BytesPerRowAlignment);
@@ -212,6 +218,10 @@ public static class ShaderBindingExercise
         render.SetScissor(new(0, 0, 1, 1));
         render.SetBlendConstant(new(0, 0, 0, 0));
         render.SetStencilReference(0);
+        render.Draw(3);
+        render.SetPipeline(emptyPipeline);
+        render.Draw(3);
+        render.SetPipeline(pipeline);
         render.Draw(3);
         render.End();
         commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = write, After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });

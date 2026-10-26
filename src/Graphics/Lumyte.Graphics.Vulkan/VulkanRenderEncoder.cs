@@ -63,7 +63,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     public void SetRenderState(GraphicsRenderStateDesc state)
     {
         owner.ValidatePass(this);
-        RenderStateSnapshot snapshot = PipelineValidation.State(state);
+        RenderStateSnapshot snapshot = PipelineValidation.State(state, owner.Owner.Caps);
         _state = snapshot;
     }
 
@@ -187,13 +187,13 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
         }
 
-        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        if (_pipeline.RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
         ShaderBindingSnapshot? bindingSnapshot = null;
-        if (_arguments != null)
+        if (_pipeline.RequiresArguments && _arguments != null)
         {
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
             bindingSnapshot = snapshot;
