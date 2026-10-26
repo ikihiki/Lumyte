@@ -49,7 +49,7 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
 
             Entry entry = _current;
             entry.Leases = checked(entry.Leases + 1);
-            return ValueTask.FromResult(new GraphicsDeviceLease(entry.Device, _state, () => Release(entry)));
+            return ValueTask.FromResult(new GraphicsDeviceLease(this, entry, _state));
         }
     }
 
@@ -123,6 +123,14 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         finally
         {
             _cleanup.Release();
+        }
+    }
+
+    internal void Release(Entry entry)
+    {
+        lock (_gate)
+        {
+            entry.Leases--;
         }
     }
 
@@ -314,14 +322,6 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         return released;
     }
 
-    private void Release(Entry entry)
-    {
-        lock (_gate)
-        {
-            entry.Leases--;
-        }
-    }
-
     private void ChangeState(GraphicsDeviceServiceStatus status) => _state = _state with { Status = status, Version = checked(_state.Version + 1) };
 
     private void ValidateOpen() => ObjectDisposedException.ThrowIf(_closing || _state.Status == GraphicsDeviceServiceStatus.Disposed, this);
@@ -341,7 +341,7 @@ internal sealed class GraphicsDeviceService : IGraphicsDeviceService
         }
     }
 
-    private sealed class Entry(IGraphicsDeviceOwner owner, IGraphicDevice device, ulong epoch)
+    internal sealed class Entry(IGraphicsDeviceOwner owner, IGraphicDevice device, ulong epoch)
     {
         internal IGraphicsDeviceOwner Owner { get; } = owner;
 

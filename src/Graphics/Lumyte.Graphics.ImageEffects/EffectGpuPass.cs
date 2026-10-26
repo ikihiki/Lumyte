@@ -31,8 +31,9 @@ internal static class EffectGpuPass
         };
         RenderGraphTexture output = graph.CreateTexture(descriptor, "image-effect-output");
         IGraphicDevice device = owner.Device;
-        IGraphicsShader vertex = owner.Add(device.CreateShader(Artifact("fullscreen")));
-        IGraphicsShader fragment = owner.Add(device.CreateShader(Artifact("effects")));
+        ImageEffectShaders shaders = owner.Shaders ?? ImageEffectShaders.Embedded;
+        IGraphicsShader vertex = shaders.FullscreenShader ?? owner.Add(device.CreateShader(shaders.Fullscreen));
+        IGraphicsShader fragment = shaders.EffectsShader ?? owner.Add(device.CreateShader(shaders.Effects));
         IGraphicsPipeline pipeline = owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
         IGraphicsSampler sampler = owner.Add(device.CreateSampler(new()
         {
@@ -82,8 +83,6 @@ internal static class EffectGpuPass
         pass.UseTexture(output, TextureState.ColorAttachment, _write);
         return new(output, outputBounds, input.ColorSemantic);
     }
-
-    private static ShaderArtifact Artifact(string name) => ShaderArtifact.LoadEmbedded(typeof(EffectGpuPass).Assembly, "Lumyte.ImageEffects." + name + ".lshader");
 
     // Subtract integer origins before conversion so neighboring pixels remain distinct beyond 2^24.
     private static Vector4 RelativeBounds(EffectPixelRect bounds, EffectPixelRect origin) => new((long)bounds.X - origin.X, (long)bounds.Y - origin.Y, bounds.Width, bounds.Height);
