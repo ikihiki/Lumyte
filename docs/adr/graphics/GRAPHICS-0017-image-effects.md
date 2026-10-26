@@ -380,3 +380,17 @@ var moved = graph.AppendTranslate(source, 8, 4);
 var blurred = graph.AppendGaussianBlur(moved, 3, 3);
 // 出力handleは同じgraphへ接続し、compiled planをGPU使用終了後まで保持する。
 ```
+
+## HDR post processing の接続
+
+静的モデルなどの SceneLinear HDR 出力も同じ ImageEffects に渡す。
+PostProcessEffect と AppendPostProcess は露出・彩度・ビネットを一つの fragment pass で適用し、
+optional な Reinhard mapping を提供する。RGB を unpremultiply して処理し、alpha を保持して再び premultiply する。
+alpha zero の RGB は zero とし、縦横比は EffectImage の範囲から求める。
+
+ImageEffectDefinition.GetOutputColorSemantic の既定は入力 semantic を保持する。
+ToneMap が有効な PostProcessEffect だけは SceneLinear を要求して DisplayLinear を返す。
+AppendEffect と DAG の各演算は宣言した semantic を検証し、合成入力の semantic が混在する場合は拒否する。
+この明示変換を除き、既存の効果は従来どおり入力の解釈を保持する。
+Drawing 専用の postprocess shader／実行器は追加しない。ResourceManager 経由でも、
+既存の ImageEffectGraphicsResources と親 RenderGraph の所有権・世代取得をそのまま利用する。
