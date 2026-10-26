@@ -12,6 +12,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [DI で通信方式を選択するゲームエンジン診断システム](docs/adr/diagnostics/DIAGNOSTICS-0001-diagnostics-transport.md)
 - [設定の診断公開](src/Diagnostics/Lumyte.Diagnostics.Settings/README.md)／[設定診断の設計](docs/adr/settings/SETTINGS-0002-diagnostic-operations.md)
 - [アニメーションの診断公開](src/Diagnostics/Lumyte.Diagnostics.Animation/README.md)／[アニメーション診断の設計](docs/adr/diagnostics/DIAGNOSTICS-0003-animation-operations.md)
+- [Windowの診断公開](src/Diagnostics/Lumyte.Diagnostics.Windowing/README.md)／[Window診断の設計](docs/adr/diagnostics/DIAGNOSTICS-0005-window-inspection.md)
 - [診断基盤の API と利用方法](src/Diagnostics/Lumyte.Diagnostics/README.md)
 - [診断 Input サンプル](samples/Lumyte.Diagnostics.Sample/README.md)
 - [OpenAL オーディオ](src/Audio/Lumyte.Audio.OpenAL/README.md)／[Web Audio](src/Audio/Lumyte.Audio.Browser/README.md)／[共通 API](src/Audio/Lumyte.Audio.Abstractions/README.md)
