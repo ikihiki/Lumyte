@@ -33,6 +33,18 @@ public sealed class ModuleContext
         return _module.Runtime.Enqueue(work, in command, token, this, out completion);
     }
 
+    /// <summary>Attempts lifecycle command admission with optional cancellation.</summary>
+    /// <typeparam name="TCommand">The command payload type.</typeparam>
+    /// <typeparam name="TResult">The handler return type.</typeparam>
+    /// <param name="key">The work.</param>
+    /// <param name="command">The input.</param>
+    /// <param name="completion">The single-use result source, only on acceptance.</param>
+    /// <param name="cancellationToken">Cancellation before execution.</param>
+    /// <returns>The admission status.</returns>
+    public CommandEnqueueStatus Enqueue<TCommand, TResult>(WorkKey<TCommand, TResult> key, in TCommand command, out IValueTaskSource<TResult>? completion, CancellationToken cancellationToken = default)
+        where TCommand : struct
+        => TryEnqueue(key, in command, cancellationToken, out completion);
+
     /// <summary>Submits lifecycle work and observes its actual execution result.</summary>
     /// <typeparam name="TCommand">The command payload type.</typeparam>
     /// <typeparam name="TResult">The handler return type.</typeparam>

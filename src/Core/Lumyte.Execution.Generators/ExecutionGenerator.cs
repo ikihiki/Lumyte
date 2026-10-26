@@ -257,7 +257,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         {
             if (model.Kind == "ExecutionCommandAttribute")
             {
-                EmitCommand(text, type, model);
+                EmitCommand(text, type, model, !model.Name.EndsWith("Async", StringComparison.Ordinal) && model.Name + "Async" != type.Name && !reserved.Contains(model.Name + "Async") && type.GetMembers(model.Name + "Async").Length == 0);
             }
             else
             {
@@ -269,7 +269,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         output.AddSource(type.ToDisplayString().Replace('.', '_') + ".Execution.g.cs", SourceText.From(DocumentGeneratedMembers(text.ToString()), Encoding.UTF8));
     }
 
-    private static void EmitCommand(StringBuilder text, INamedTypeSymbol type, MethodModel model)
+    private static void EmitCommand(StringBuilder text, INamedTypeSymbol type, MethodModel model, bool asyncAlias)
     {
         string command = model.Command;
         string result = model.Result;
@@ -330,6 +330,11 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         EmitSend(text, model, "ExecuteAsync", model.Payload, "context.TryEnqueue(Key, in __command, cancellationToken, out var __completion)", Execution + "ModuleContext context, " + Type(type) + " receiver");
         text.AppendLine("}");
         EmitSend(text, model, Escape(model.Name), model.Payload, queue + ".TryEnqueue(in __command, cancellationToken, out var __completion)", null);
+        if (asyncAlias)
+        {
+            EmitSend(text, model, Escape(model.Name + "Async"), model.Payload, queue + ".TryEnqueue(in __command, cancellationToken, out var __completion)", null);
+        }
+
         EmitBatch(text, model, "Add" + model.Name + "To", model.Payload);
     }
 

@@ -32,6 +32,14 @@ public sealed class WorkflowPort<TCommand, TResult> : ICommandEndpoint
         return work.Module.Runtime.EnqueueWorkflow(work, in command, token, out completion);
     }
 
+    /// <summary>Attempts workflow admission with a detailed result and optional cancellation.</summary>
+    /// <param name="command">The typed input.</param>
+    /// <param name="completion">The single-use result source, only on acceptance.</param>
+    /// <param name="cancellationToken">Cancellation before entry.</param>
+    /// <returns>The admission status.</returns>
+    public CommandEnqueueStatus Enqueue(in TCommand command, out IValueTaskSource<TResult>? completion, CancellationToken cancellationToken = default)
+        => TryEnqueue(in command, cancellationToken, out completion);
+
     /// <summary>Submits an operation and returns its actual completion.</summary>
     /// <param name="command">The typed input.</param>
     /// <param name="token">Cancellation before entry and cooperative cancellation thereafter.</param>
@@ -48,6 +56,13 @@ public sealed class WorkflowPort<TCommand, TResult> : ICommandEndpoint
             _ => throw new InvalidOperationException("Unknown enqueue status."),
         };
     }
+
+    /// <summary>Submits a workflow and returns its actual completion.</summary>
+    /// <param name="command">The typed input.</param>
+    /// <param name="cancellationToken">Cancellation before entry and cooperative cancellation thereafter.</param>
+    /// <returns>A result which must be observed once, including after cancellation.</returns>
+    public ValueTask<TResult> ExecuteAsync(TCommand command, CancellationToken cancellationToken = default)
+        => Execute(command, cancellationToken);
 
     /// <inheritdoc/>
     void ICommandEndpoint.Connect(WorkDefinition work)

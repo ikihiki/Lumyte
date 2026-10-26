@@ -1,7 +1,8 @@
 # ADR-CORE-0003: 宣言した仕事と型付きコマンドによる実行基盤
 
-- 状態: 採用
+- 状態: 置換済み
 - 日付: 2026-10-11
+- 変更日: 2026-10-26。公開送信名と受付APIを[ADR-CORE-0004](CORE-0004-consistent-execution-entry-points.md)で更新する。既存APIとその他の実行契約は維持する。
 - 関連カテゴリ: engine、platform、input、graphics、audio、resources、ecs、animation、diagnostics
 
 ## 背景

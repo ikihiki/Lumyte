@@ -131,6 +131,53 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("await ", generated, StringComparison.Ordinal);
     }
 
+    /// <summary>Async sender aliases retain existing sender and helper names and compile at call sites.</summary>
+    [Fact]
+    public void AsyncAliasesPreserveExistingGeneratedApi()
+    {
+        const string Source = """
+            using Lumyte.Execution;
+            public readonly partial struct Voice(object original)
+            {
+                private readonly object _original = original;
+                [ExecutionCommand] private int PlayCore(int gain) => gain;
+                [ExecutionCommand(Name = "StopAsync")] private void StopCore() { }
+            }
+            public static class Caller
+            {
+                public static async System.Threading.Tasks.Task Use(Voice voice, ModuleBuilder builder, WorkOptions options, ModuleContext context, CommandBatch batch)
+                {
+                    Voice.PlayWork work = Voice.DeclarePlay(builder, options);
+                    await voice.Play(1);
+                    await voice.PlayAsync(1, cancellationToken: default);
+                    await work.ExecuteAsync(context, voice, 1);
+                    voice.AddPlayTo(batch, 1);
+                    await voice.StopAsync();
+                }
+            }
+            """;
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(Source);
+        Assert.Empty(result.Run.Diagnostics);
+        Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        string generated = Assert.Single(result.Run.GeneratedTrees).ToString();
+        Assert.Contains("@PlayAsync(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("StopAsyncAsync", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(".ExecuteAsync(", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>Optional aliases never make formerly valid user declarations or generated names collide.</summary>
+    /// <param name="collision">A preexisting member occupying the alias name.</param>
+    [Theory]
+    [InlineData("public void PlayAsync() { }")]
+    [InlineData("[ExecutionCommand(Name = \"PlayAsync\")] private void OtherCore() { }")]
+    public void AsyncAliasesDoNotReplaceExistingMembers(string collision)
+    {
+        string source = "using Lumyte.Execution; public readonly partial struct Voice(object original) { private readonly object _original = original; [ExecutionCommand] private void PlayCore() { } " + collision + " }";
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(source);
+        Assert.Empty(result.Run.Diagnostics);
+        Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
     private static (GeneratorDriverRunResult Run, Compilation Output) Run(string source, string path = "/state.cs")
     {
         string[] paths = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);

@@ -34,6 +34,14 @@ public sealed class CommandPort<TCommand, TResult> : ICommandEndpoint
         return work.Module.Runtime.Enqueue(work, in command, token, null, out completion);
     }
 
+    /// <summary>Attempts command admission with a detailed result and optional cancellation.</summary>
+    /// <param name="command">The typed input.</param>
+    /// <param name="completion">The single-use result source, only on acceptance.</param>
+    /// <param name="cancellationToken">Cancellation before entry.</param>
+    /// <returns>The admission status.</returns>
+    public CommandEnqueueStatus Enqueue(in TCommand command, out IValueTaskSource<TResult>? completion, CancellationToken cancellationToken = default)
+        => TryEnqueue(in command, cancellationToken, out completion);
+
     /// <summary>Submits one command and returns its actual execution result.</summary>
     /// <param name="command">The typed input.</param>
     /// <param name="token">Cancellation before handler start.</param>

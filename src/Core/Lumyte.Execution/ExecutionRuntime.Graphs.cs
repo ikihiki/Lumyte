@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Lumyte.Execution;
@@ -20,11 +21,32 @@ public sealed partial class ExecutionRuntime
     /// <param name="run">The accepted run, or null on shortage.</param>
     /// <param name="token">Cancellation before node or chunk start.</param>
     /// <returns>False only on retained capacity shortage.</returns>
-    public bool TrySchedule<TContext>(JobGraph<TContext> graph, in TContext context, out JobRun? run, CancellationToken token = default)
+    public bool TrySchedule<TContext>(JobGraph<TContext> graph, in TContext context, [NotNullWhen(true)] out JobRun? run, CancellationToken token = default)
+        where TContext : struct
+        => ScheduleCore(graph, in context, out run, token, detailed: false) == CommandEnqueueStatus.Accepted && run is not null;
+
+    /// <summary>Atomically admits a graph, reporting stopped, canceled and full admission as statuses.</summary>
+    /// <typeparam name="TContext">The shared graph input type.</typeparam>
+    /// <param name="graph">The immutable local graph.</param>
+    /// <param name="context">The shared input.</param>
+    /// <param name="run">The accepted run, or null on rejection.</param>
+    /// <param name="cancellationToken">Cancellation before node or chunk start.</param>
+    /// <returns>The admission status.</returns>
+    public CommandEnqueueStatus Schedule<TContext>(JobGraph<TContext> graph, in TContext context, out JobRun? run, CancellationToken cancellationToken = default)
+        where TContext : struct
+        => ScheduleCore(graph, in context, out run, cancellationToken, detailed: true);
+
+    private CommandEnqueueStatus ScheduleCore<TContext>(JobGraph<TContext> graph, in TContext context, out JobRun? run, CancellationToken token, bool detailed)
         where TContext : struct
     {
         VerifyOutsideHandler();
-        token.ThrowIfCancellationRequested();
+        run = null;
+        ArgumentNullException.ThrowIfNull(graph);
+        if (!detailed)
+        {
+            token.ThrowIfCancellationRequested();
+        }
+
         if (graph.Nodes[0].Runtime != this)
         {
             throw new ArgumentException("Graph belongs to another runtime.", nameof(graph));
@@ -32,7 +54,11 @@ public sealed partial class ExecutionRuntime
 
         lock (Sync)
         {
-            RequireRunning();
+            CommandEnqueueStatus admission = GetNormalAdmissionStatus(token, detailed);
+            if (admission != CommandEnqueueStatus.Accepted)
+            {
+                return admission;
+            }
         }
 
         int[] lengths = ArrayPool<int>.Shared.Rent(graph.NodeCount);
@@ -54,11 +80,16 @@ public sealed partial class ExecutionRuntime
             long bytes = checked(Unsafe.SizeOf<TContext>() + 256L + (graph.NodeCount * 128L) + (graph.EdgeCount * 8L) + (commands * 128L));
             lock (Sync)
             {
-                RequireRunning();
+                CommandEnqueueStatus admission = GetNormalAdmissionStatus(token, detailed);
+                if (admission != CommandEnqueueStatus.Accepted)
+                {
+                    return admission;
+                }
+
                 if (!Reserve(1, commands, bytes, false, units))
                 {
                     run = null;
-                    return false;
+                    return CommandEnqueueStatus.QueueFull;
                 }
 
                 GraphState<TContext> state;
@@ -81,7 +112,7 @@ public sealed partial class ExecutionRuntime
                 }
 
                 Notify();
-                return true;
+                return CommandEnqueueStatus.Accepted;
             }
         }
         finally
