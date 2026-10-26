@@ -42,7 +42,11 @@ batch私有資源はbatchが所有・同期し、外部資源の入口・出口�
 
 塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換、隔離合成、COLRv1の28合成modeを扱います。
 文字組みは外部ライブラリが担当し、パス・mesh・coverage・SDF/MSDF/MTSDF・画像で描画を依頼できます。
-設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) を参照してください。
+設計・APIは以下を参照してください。
+
+- [基本描画・paint・資源管理](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)
+- [線・パス](../../../docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)
+- [画像・mesh](../../../docs/adr/graphics/GRAPHICS-0020-2d-images-and-meshes.md)
 
 ## 外部の描画資源
 
