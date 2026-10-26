@@ -21,6 +21,18 @@ WorldManager が World を生成・保持する。WorldStack は非所有参照�
 
 Scene は実行時インスタンスで、一つの World に所属する。追加・削除は非実行状態のワールドに限る。アセットのロードや非同期初期化は後続設計とする。
 
+### 更新と描画のフェーズ
+
+`FixedUpdate(step)` は一回の固定ステップを実行する。正の step を要求し、ゲームループが一描画フレーム中に0回から複数回呼ぶ。蓄積時間、追いつき回数の上限、入力の固定ステップへの割当はゲームループが管理する。停止中のワールドの時間は蓄積せず、再開時に停止時間を補填しない。
+
+`WorldStack.Update(elapsed)` は対象の全ワールド・全シーンの `Update` を終えてから、同じ順序で全対象の `LateUpdate` を実行する。シーンごとに両方を連続実行しない。`BlocksUpdateBelow` は固定更新・通常更新・更新後処理のすべてを遮断する。各フェーズの例外は呼び出し側へ伝播し、残りの処理を中止するが再入ガードは必ず解除する。
+
+`Draw(DrawContext)` は有効なシーンへ描画登録用コンテキストを渡す。`DrawContext` は描画バックエンドに依存しない抽象クラスで、利用側が継承してRenderGraph等への参照を保持する。GPU送信、実行、Present、コンテキストと参照先の寿命は呼び出し側の責務。シーンは同一描画呼び出し中だけコンテキストを借り、保持・破棄しない。
+
+コンテキストは非負の実フレーム時間と、有限かつ0以上1以下の補間係数を持つ。補間しない場合は1を指定する。係数は描画フレームの情報であり、停止中のワールドを進める意味はない。停止中の補間対象は利用側が最後に表示した状態に固定する。Update、LateUpdate、Drawに経過時間を使って物理状態を二重更新しない。
+
+推奨順序は BeginFrame → HandleInput → FixedUpdate（0回以上）→ Update（内部でLateUpdate）→ Draw → 描画システムによる実行・Present。スタック変更は各固定ステップの間には適用しない。
+
 ## 公開 API
 
 比較元は main（2b40860）。対象 API は存在せず、以下は追加。
@@ -31,12 +43,21 @@ Scene は実行時インスタンスで、一つの World に所属する。追�
 +public readonly record struct WorldExecutionState(bool UpdateEnabled, bool DrawEnabled, bool InputEnabled);
 +// default は下位処理を遮断しない。
 +public readonly record struct WorldLayerPolicy(bool BlocksUpdateBelow, bool BlocksDrawBelow, bool BlocksInputBelow);
++// 利用側が継承し、描画登録先を追加する。負の時間・非有限または範囲外の係数は拒否。
++public abstract class DrawContext
++{
++    protected DrawContext(TimeSpan elapsed, double interpolationAlpha = 1);
++    public TimeSpan Elapsed { get; }
++    public double InterpolationAlpha { get; }
++}
 +public abstract class Scene
 +{
 +    public World? World { get; }
 +    public virtual void OnExecutionStateChanged(WorldExecutionState previous, WorldExecutionState current);
++    public virtual void FixedUpdate(TimeSpan step);
 +    public virtual void Update(TimeSpan elapsed);
-+    public virtual void Draw();
++    public virtual void LateUpdate(TimeSpan elapsed);
++    public virtual void Draw(DrawContext context);
 +    public virtual bool HandleInput();
 +}
 +public sealed class World
@@ -66,8 +87,10 @@ Scene は実行時インスタンスで、一つの World に所属する。追�
 +    // 空のスタックへの Pop は無害。Replace は空なら Push。
 +    public void Pop();
 +    public void Replace(World world, WorldLayerPolicy policy = default);
++    public void FixedUpdate(TimeSpan step);
++    // 全対象のUpdateの後に全対象のLateUpdateを実行する。
 +    public void Update(TimeSpan elapsed);
-+    public void Draw();
++    public void Draw(DrawContext context);
 +    public void HandleInput();
 +}
 ```
@@ -85,4 +108,11 @@ Scene は実行時インスタンスで、一つの World に所属する。追�
 
 ## 検証方針
 
-予約の遅延、三種の遮断と処理順、再配置、途中状態の通知抑制、通知中の予約、参照除去後の破棄、無効バッチと通知例外を単体テストする。
+予約の遅延、三種の遮断と処理順、再配置、途中状態の通知抑制、通知中の予約、参照除去後の破棄、無効バッチと通知例外を単体テストする。固定更新の複数実行、全シーン更新後のLateUpdate、ポーズ中の全更新停止、描画コンテキストの伝達、例外後の再実行も検証する。
+
+## 参考資料
+
+- [MonoGameの固定／可変ステップ](https://docs.monogame.net/articles/getting_to_know/whatis/game_loop/)
+- [Unity LateUpdate](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/MonoBehaviour.LateUpdate.html)
+- [Godotの通常更新と物理更新](https://docs.godotengine.org/en/stable/tutorials/scripting/idle_and_physics_processing.html)
+- [Bevyのメインスケジュールと描画の分離](https://docs.rs/bevy_app/latest/bevy_app/struct.Main.html)

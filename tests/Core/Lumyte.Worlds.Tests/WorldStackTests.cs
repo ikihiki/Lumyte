@@ -26,7 +26,7 @@ public sealed class WorldStackTests
         Assert.Equal(new WorldExecutionState(false, true, false), game.ExecutionState);
         manager.Stack.HandleInput();
         manager.Stack.Update(TimeSpan.FromMilliseconds(16));
-        manager.Stack.Draw();
+        manager.Stack.Draw(new TestDrawContext());
         Assert.Equal(new[] { "pause:input", "pause:update", "game:draw", "pause:draw" }, calls);
         manager.Stack.Pop();
         manager.BeginFrame();
@@ -218,6 +218,8 @@ public sealed class WorldStackTests
         Assert.Empty(manager.Stack.Worlds);
     }
 
+    private sealed class TestDrawContext() : DrawContext(TimeSpan.Zero);
+
     private sealed class Probe(string name, List<string> calls) : Scene
     {
         public List<WorldExecutionState> Changes { get; } = [];
@@ -234,7 +236,7 @@ public sealed class WorldStackTests
 
         public override void Update(TimeSpan elapsed) => calls.Add(name + ":update");
 
-        public override void Draw() => calls.Add(name + ":draw");
+        public override void Draw(DrawContext context) => calls.Add(name + ":draw");
 
         public override bool HandleInput()
         {

@@ -14,6 +14,13 @@ public sealed class WorldStack
         Worlds = _worlds.AsReadOnly();
     }
 
+    private enum UpdatePhase
+    {
+        Fixed,
+        Normal,
+        Late,
+    }
+
     /// <summary>Gets worlds in bottom-to-top order.</summary>
     public IReadOnlyList<World> Worlds { get; }
 
@@ -44,25 +51,16 @@ public sealed class WorldStack
         });
     }
 
-    /// <summary>Updates enabled worlds from bottom to top without accumulating paused time.</summary>
-    /// <param name="elapsed">The frame duration.</param>
-    public void Update(TimeSpan elapsed)
+    /// <summary>Runs one fixed step for enabled worlds, from bottom to top.</summary>
+    /// <param name="step">The positive fixed duration. The caller schedules zero or more steps per frame.</param>
+    public void FixedUpdate(TimeSpan step)
     {
         EnsureDispatchable();
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(step, TimeSpan.Zero);
         IsDispatching = true;
         try
         {
-            ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
-            foreach (Layer layer in _layers)
-            {
-                if (layer.World.ExecutionState.UpdateEnabled)
-                {
-                    foreach (Scene scene in layer.World.Scenes)
-                    {
-                        scene.Update(elapsed);
-                    }
-                }
-            }
+            DispatchUpdate(step, UpdatePhase.Fixed);
         }
         finally
         {
@@ -70,10 +68,30 @@ public sealed class WorldStack
         }
     }
 
-    /// <summary>Draws enabled worlds from bottom to top.</summary>
-    public void Draw()
+    /// <summary>Updates all enabled scenes, then runs all late updates in the same order.</summary>
+    /// <param name="elapsed">The nonnegative frame duration.</param>
+    public void Update(TimeSpan elapsed)
     {
         EnsureDispatchable();
+        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        IsDispatching = true;
+        try
+        {
+            DispatchUpdate(elapsed, UpdatePhase.Normal);
+            DispatchUpdate(elapsed, UpdatePhase.Late);
+        }
+        finally
+        {
+            IsDispatching = false;
+        }
+    }
+
+    /// <summary>Registers rendering for enabled worlds from bottom to top.</summary>
+    /// <param name="context">The borrowed rendering context. Submission and presentation belong to the caller.</param>
+    public void Draw(DrawContext context)
+    {
+        EnsureDispatchable();
+        ArgumentNullException.ThrowIfNull(context);
         IsDispatching = true;
         try
         {
@@ -83,7 +101,7 @@ public sealed class WorldStack
                 {
                     foreach (Scene scene in layer.World.Scenes)
                     {
-                        scene.Draw();
+                        scene.Draw(context);
                     }
                 }
             }
@@ -169,6 +187,33 @@ public sealed class WorldStack
         if (layers.Count > 0)
         {
             layers.RemoveAt(layers.Count - 1);
+        }
+    }
+
+    private void DispatchUpdate(TimeSpan elapsed, UpdatePhase phase)
+    {
+        foreach (Layer layer in _layers)
+        {
+            if (!layer.World.ExecutionState.UpdateEnabled)
+            {
+                continue;
+            }
+
+            foreach (Scene scene in layer.World.Scenes)
+            {
+                switch (phase)
+                {
+                    case UpdatePhase.Fixed:
+                        scene.FixedUpdate(elapsed);
+                        break;
+                    case UpdatePhase.Normal:
+                        scene.Update(elapsed);
+                        break;
+                    case UpdatePhase.Late:
+                        scene.LateUpdate(elapsed);
+                        break;
+                }
+            }
         }
     }
 
