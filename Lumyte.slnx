@@ -68,6 +68,9 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D/Lumyte.Resources.Graphics.Drawing2D.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D.DependencyInjection/Lumyte.Graphics.Drawing2D.DependencyInjection.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.ImageEffects/Lumyte.Resources.Graphics.ImageEffects.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
@@ -119,6 +122,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/Lumyte.Graphics.Drawing2D.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Resources.Graphics.AotSmoke/Lumyte.Resources.Graphics.AotSmoke.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj" />

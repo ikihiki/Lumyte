@@ -10,6 +10,8 @@ blur、色変換、透明度、画像合成を2Dレイヤーと3Dの描画結果
 
 画像演算とGPUパス生成を共通ライブラリに分離し、適用する画像と時点は各描画システムが管理する。本ADRは共通エフェクトを定め、2Dレイヤー・背景取得・clipの適用順は2D側が管理する。公開APIと詳細契約・利用例は末尾にまとめる。
 
+シェーダ入力はResources.Graphicsの共通登録`services.UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`で選択する。2Dも同じ登録APIを使い、型がshader ABIを区別する。同じ型の設定はDIのあと勝ちとし、登録を省略すれば埋め込み版を使う。Effect専用のshader package設定型は設けない。汎用の`GraphicsResourceDefinition<T>`を公開キー単位で登録でき、shader以外にpipelineのcompile設定やsamplerも指定できる。管理境界は[RESOURCES-0008](../resources/RESOURCES-0008-graphics-generations.md)に従う。実行時のappend APIにはprogram IDやproviderを渡さず、親graphの`AddImageEffects(manager)`が資源世代を保持する。
+
 ## 決定
 
 ### 1. 共通処理と描画システムの境界
