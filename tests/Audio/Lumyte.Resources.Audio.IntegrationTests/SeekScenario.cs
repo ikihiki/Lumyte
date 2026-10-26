@@ -1,6 +1,3 @@
-using Lumyte.Audio.Abstractions;
-using Lumyte.Audio.Execution;
-
 namespace Lumyte.Resources.Audio.IntegrationTests;
 
 internal static class SeekScenario

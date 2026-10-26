@@ -1,9 +1,6 @@
 using System.Numerics;
 using System.Runtime.Versioning;
-using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Linux;
-using Lumyte.Windowing.Abstractions;
-using Xunit;
 
 namespace Lumyte.Platform.Tests;
 

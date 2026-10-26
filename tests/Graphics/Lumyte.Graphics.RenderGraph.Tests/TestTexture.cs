@@ -1,5 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class TestTexture : IGraphicsTexture

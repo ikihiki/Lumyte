@@ -1,7 +1,4 @@
 using System.Reflection;
-using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.RenderGraph;
-using Xunit;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.ImageEffects.Tests;

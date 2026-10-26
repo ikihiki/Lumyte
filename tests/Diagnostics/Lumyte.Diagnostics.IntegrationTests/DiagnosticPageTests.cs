@@ -1,9 +1,5 @@
 using Lumyte.Diagnostics.Server;
 using Lumyte.Diagnostics.Server.Components;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Components;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

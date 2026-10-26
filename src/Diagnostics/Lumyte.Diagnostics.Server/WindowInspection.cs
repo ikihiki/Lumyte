@@ -1,5 +1,3 @@
-using Lumyte.Diagnostics.Transport;
-
 #pragma warning disable SA1116, SA1117, SA1118, SA1204 // Keep operation flows and schema construction together.
 
 namespace Lumyte.Diagnostics.Server;

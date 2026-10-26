@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-
 namespace Lumyte.Diagnostics;
 
 /// <summary>Bounded diagnostic collection configuration.</summary>

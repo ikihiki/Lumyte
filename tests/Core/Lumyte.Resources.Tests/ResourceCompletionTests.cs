@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
-using Lumyte.Memory;
-using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

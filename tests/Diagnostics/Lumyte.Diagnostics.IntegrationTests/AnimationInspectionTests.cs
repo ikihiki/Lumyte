@@ -1,6 +1,4 @@
 using Lumyte.Diagnostics.Server;
-using Lumyte.Diagnostics.Transport;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

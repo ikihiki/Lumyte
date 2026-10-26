@@ -1,6 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-using Xunit;
-
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Checks partial updates and synchronization across independently compiled graphs.</summary>

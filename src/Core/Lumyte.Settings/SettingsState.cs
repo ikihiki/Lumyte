@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
-using Microsoft.Extensions.Options;
 
 namespace Lumyte.Settings;
 

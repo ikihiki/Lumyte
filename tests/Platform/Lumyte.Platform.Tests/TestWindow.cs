@@ -1,5 +1,4 @@
 using System.Numerics;
-using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Tests;
 

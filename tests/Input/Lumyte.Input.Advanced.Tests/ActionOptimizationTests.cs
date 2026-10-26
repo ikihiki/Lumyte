@@ -1,7 +1,4 @@
 using System.Numerics;
-using Lumyte.Input.Abstractions;
-using Lumyte.Input.Actions;
-using Xunit;
 
 namespace Lumyte.Input.Advanced.Tests;
 

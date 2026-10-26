@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using Xunit;
 
 namespace Lumyte.Resources.Audio.Tests;
 

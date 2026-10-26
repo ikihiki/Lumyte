@@ -1,7 +1,3 @@
-using Lumyte.Input.Abstractions;
-using Lumyte.Platform.Abstractions;
-using Lumyte.Windowing.Abstractions;
-
 namespace Lumyte.Platform.Tests;
 
 internal sealed class TestPlatform : IPlatform

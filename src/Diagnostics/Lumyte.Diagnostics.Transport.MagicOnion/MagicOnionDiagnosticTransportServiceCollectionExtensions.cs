@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 /// <summary>Registers the desktop StreamingHub implementation.</summary>

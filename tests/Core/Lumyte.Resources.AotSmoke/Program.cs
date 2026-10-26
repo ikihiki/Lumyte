@@ -1,13 +1,9 @@
 using System.Diagnostics;
 using System.Text;
-using Lumyte.Execution;
-using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Embedded;
-using Lumyte.Resources.Execution;
 using Lumyte.Resources.FileSystem;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.AotSmoke;
 

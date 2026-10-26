@@ -1,6 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-
 namespace Lumyte.Diagnostics.Animation;
 
 /// <summary>Registers opt-in animation diagnostics at an existing execution point.</summary>

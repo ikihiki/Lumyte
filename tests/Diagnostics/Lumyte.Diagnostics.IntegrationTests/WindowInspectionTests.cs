@@ -1,6 +1,4 @@
 using Lumyte.Diagnostics.Server;
-using Lumyte.Diagnostics.Transport;
-using Xunit;
 
 #pragma warning disable SA1117, SA1118 // Keep protocol fixtures aligned with their wire shapes.
 

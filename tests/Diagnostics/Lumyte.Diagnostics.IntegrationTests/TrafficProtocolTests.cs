@@ -1,11 +1,6 @@
 using System.Buffers;
 using System.Text.Json;
 using Lumyte.Diagnostics.Server;
-using Lumyte.Diagnostics.Transport;
-using Lumyte.Diagnostics.Transport.MagicOnion;
-using MessagePack;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

@@ -42,7 +42,7 @@ public sealed partial class InputInspectionSession
                 if (!ReferenceEquals(typed, item) || effective != null)
                 {
                     effective ??= CopyPrefix(data, item);
-                    effective.Add(typed);
+                    effective.Add((InputData)typed);
                 }
 
                 continue;
@@ -149,7 +149,7 @@ public sealed partial class InputInspectionSession
         if (typedDesired != dataState.Effective && dataState.Template != null)
         {
             effective ??= data.ToList();
-            effective.Add(CreateSyntheticTypedData(entry, dataState.Template, typedDesired));
+            effective.Add(CreateSyntheticTypedData(entry, (InputData)dataState.Template, typedDesired));
             dataState.Effective = typedDesired;
         }
 

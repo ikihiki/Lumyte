@@ -2,7 +2,6 @@ using Lumyte.Diagnostics;
 using Lumyte.Diagnostics.Settings;
 using Lumyte.Input.Actions;
 using Lumyte.Input.Settings;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Input.Diagnostics;
 

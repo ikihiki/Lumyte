@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using System.Numerics;
-using Lumyte.Input.Abstractions;
 
 namespace Lumyte.Input.Actions;
 

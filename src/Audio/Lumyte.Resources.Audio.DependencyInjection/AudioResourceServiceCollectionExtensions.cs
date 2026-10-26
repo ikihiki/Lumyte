@@ -1,9 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Lumyte.Audio.Execution;
-using Lumyte.Execution;
 using Lumyte.Resources.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Lumyte.Resources.Audio.DependencyInjection;
 

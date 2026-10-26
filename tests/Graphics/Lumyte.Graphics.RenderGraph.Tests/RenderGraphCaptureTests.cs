@@ -1,6 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-using Xunit;
-
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Checks optional capture does not change execution or retain mutable builder descriptions.</summary>

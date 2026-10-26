@@ -1,7 +1,4 @@
 using System.Numerics;
-using Lumyte.Core.Time;
-using Xunit;
-using static Lumyte.Animation.ComposeAnimation;
 
 namespace Lumyte.Animation.Tests;
 

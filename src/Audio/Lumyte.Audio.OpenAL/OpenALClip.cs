@@ -1,6 +1,5 @@
 using System.Buffers;
 using Lumyte.Audio.Abstractions;
-using Silk.NET.OpenAL;
 
 namespace Lumyte.Audio.OpenAL;
 

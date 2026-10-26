@@ -1,5 +1,3 @@
-using Xunit;
-
 namespace Lumyte.Graphics.Hosting.Tests;
 
 [AttributeUsage(AttributeTargets.Method)]

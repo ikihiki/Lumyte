@@ -1,7 +1,3 @@
-using Lumyte.Execution;
-using Lumyte.Resources.Execution;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Lumyte.Resources.Tests;
 
 internal sealed class ResourceExecutionHost : IAsyncDisposable

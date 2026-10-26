@@ -1,5 +1,3 @@
-using Lumyte.Audio.Abstractions;
-
 namespace Lumyte.Resources.Audio.IntegrationTests;
 
 internal sealed class TestVoice(TestDevice device, TestClip clip) : IAudioVoice

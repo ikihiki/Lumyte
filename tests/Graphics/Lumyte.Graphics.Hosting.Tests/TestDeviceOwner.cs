@@ -1,5 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-
 namespace Lumyte.Graphics.Hosting.Tests;
 
 internal sealed class TestDeviceOwner(TestDevice device) : IGraphicsDeviceOwner
