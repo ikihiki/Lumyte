@@ -1,10 +1,5 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
-using Xunit;
 
 namespace Lumyte.Settings.Tests;
 

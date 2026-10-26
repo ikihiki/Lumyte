@@ -1,7 +1,4 @@
 using System.Runtime.CompilerServices;
-using Lumyte.Memory;
-using Lumyte.Resources.Execution;
-using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

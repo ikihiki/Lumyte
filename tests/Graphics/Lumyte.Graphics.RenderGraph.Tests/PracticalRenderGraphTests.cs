@@ -1,6 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-using Xunit;
-
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Checks culling, temporary lifetime, exports and shader data integration.</summary>

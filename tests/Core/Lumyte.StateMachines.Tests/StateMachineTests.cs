@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using Xunit;
-using static Lumyte.StateMachines.ComposeStateMachines;
 
 namespace Lumyte.StateMachines.Tests;
 

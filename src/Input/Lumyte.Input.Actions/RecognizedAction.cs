@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Actions;
 /// <summary>Defines recognized action.</summary>
 /// <param name = "RecognitionId">The RecognitionId value.</param>

@@ -1,6 +1,3 @@
-using MessagePack;
-using MessagePack.Formatters;
-
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 /// <summary>Writes publications directly and decodes the compatible version-one wire schema.</summary>

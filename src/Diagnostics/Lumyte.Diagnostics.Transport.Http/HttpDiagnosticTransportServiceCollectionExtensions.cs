@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Lumyte.Diagnostics.Transport.Http;
 
 /// <summary>Registers the browser-compatible HTTP implementation.</summary>

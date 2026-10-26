@@ -1,9 +1,6 @@
 using System.Runtime.ExceptionServices;
 using System.Runtime.Versioning;
-using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Windows;
-using Lumyte.Windowing.Abstractions;
-using Xunit;
 
 namespace Lumyte.Platform.Tests;
 

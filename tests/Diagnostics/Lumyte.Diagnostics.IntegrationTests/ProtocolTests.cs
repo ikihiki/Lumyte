@@ -2,14 +2,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Lumyte.Diagnostics.Server;
-using Lumyte.Diagnostics.Transport;
-using Lumyte.Diagnostics.Transport.Http;
-using Lumyte.Diagnostics.Transport.MagicOnion;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

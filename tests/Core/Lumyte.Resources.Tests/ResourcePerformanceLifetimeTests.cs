@@ -1,7 +1,5 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using Lumyte.Memory;
-using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

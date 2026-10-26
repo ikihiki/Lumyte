@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Processing;
 
 /// <summary>Transforms a device batch before InputSystem records it.</summary>

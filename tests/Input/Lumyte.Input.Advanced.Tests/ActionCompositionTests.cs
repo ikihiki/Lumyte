@@ -1,9 +1,5 @@
 using System.Numerics;
-using Lumyte.Input.Abstractions;
-using Lumyte.Input.Actions;
 using Lumyte.Input.Settings;
-using Xunit;
-using static Lumyte.Input.Actions.Compose;
 
 namespace Lumyte.Input.Advanced.Tests;
 

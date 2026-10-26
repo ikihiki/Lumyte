@@ -1,7 +1,3 @@
-using Lumyte.Core.Time;
-using Xunit;
-using static Lumyte.Animation.ComposeAnimation;
-
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Verifies instantaneous sources, timelines and playback boundaries.</summary>

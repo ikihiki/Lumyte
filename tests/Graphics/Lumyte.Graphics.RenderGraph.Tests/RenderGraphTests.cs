@@ -1,6 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-using Xunit;
-
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Verifies graph compilation and synchronization without a GPU or native bindings.</summary>

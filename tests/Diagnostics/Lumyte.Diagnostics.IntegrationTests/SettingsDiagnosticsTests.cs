@@ -4,14 +4,6 @@ using System.Text.Json;
 using Lumyte.Diagnostics.Sample;
 using Lumyte.Diagnostics.Server;
 using Lumyte.Diagnostics.Settings;
-using Lumyte.Diagnostics.Transport;
-using Lumyte.Settings;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

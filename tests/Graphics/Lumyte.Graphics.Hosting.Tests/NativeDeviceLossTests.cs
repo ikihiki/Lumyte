@@ -1,9 +1,6 @@
 using System.Runtime.CompilerServices;
-using Ahjo.Wgpu.Native;
-using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
-using Xunit;
 using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Hosting.Tests;

@@ -1,7 +1,6 @@
 using System.Numerics;
 using System.Runtime.Versioning;
 using System.Text;
-using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Linux;
 

@@ -1,4 +1,3 @@
-using Lumyte.Diagnostics.Transport;
 using Microsoft.AspNetCore.Components;
 
 namespace Lumyte.Diagnostics.Server;

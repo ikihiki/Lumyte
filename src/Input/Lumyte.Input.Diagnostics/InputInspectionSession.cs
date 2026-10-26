@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
-using Lumyte.Input.Abstractions;
 using Lumyte.Input.Actions;
 
 namespace Lumyte.Input.Diagnostics;
@@ -31,7 +30,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
     {
         Check();
         ArgumentNullException.ThrowIfNull(system);
-        if (_inputs.Count >= 16 || !_inputs.TryAdd(system, new(Guid.NewGuid())))
+        if (_inputs.Count >= 16 || !_inputs.TryAdd(system, new(Guid.NewGuid()) { System = system }))
         {
             throw new InvalidOperationException("Input inspection system capacity reached or the system is already registered.");
         }
@@ -76,6 +75,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         }
 
         view.Devices.Add(device, new(descriptor));
+        RegisterDeviceTargets(system, device, descriptor.Kind);
         _revision++;
     }
 
@@ -99,6 +99,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
             throw new InvalidOperationException("Unknown inspected device.");
         }
 
+        InvalidateDeviceTargets(system, device, "device-disconnected");
         _revision++;
     }
 
@@ -106,6 +107,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
     public void SystemDisposed(InputSystem system)
     {
         Check();
+        InvalidateDeviceTargets(system, null, "system-disposed");
         if (_inputs.Remove(system))
         {
             _revision++;
@@ -187,7 +189,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
             writer.WriteStartArray("inputSystems");
             foreach (InputView input in _inputs.Values)
             {
-                WriteInput(writer, input);
+                WriteInput(writer, input, _deviceTargetLookup, _deviceDataTargetLookup);
             }
 
             writer.WriteEndArray();
@@ -217,14 +219,20 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         _actions.Clear();
         _targets.Clear();
         _targetLookup.Clear();
+        _deviceTargetLookup.Clear();
+        _deviceDataTargetLookup.Clear();
+        _deviceControlStates.Clear();
+        _deviceDataStates.Clear();
         _leases.Clear();
         _reservations.Clear();
         _playbacks.Clear();
         _live.Clear();
+        _activeDeviceTargets.Clear();
+        _dirtyDeviceTargets.Clear();
         _disposed = true;
     }
 
-    private static void WriteInput(Utf8JsonWriter writer, InputView input)
+    private static void WriteInput(Utf8JsonWriter writer, InputView input, Dictionary<(InputSystem System, InputDeviceId Device, InputControl Control), InputOverrideTarget> targets, Dictionary<(InputSystem System, InputDeviceId Device, DeviceTargetKind Kind, ulong Pointer), InputOverrideTarget> dataTargets)
     {
         writer.WriteStartObject();
         writer.WriteString("id", input.Id);
@@ -246,6 +254,25 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
             writer.WriteNumber("sequence", device.LatestSequence);
             writer.WriteBoolean("connected", device.State?.IsConnected ?? false);
             writer.WriteBoolean("focused", device.State?.IsFocused ?? false);
+            writer.WriteStartObject("targets");
+            foreach (((InputSystem targetSystem, InputDeviceId targetDevice, InputControl control), InputOverrideTarget target) in targets)
+            {
+                if (input.System != null && ReferenceEquals(targetSystem, input.System) && targetDevice == id)
+                {
+                    writer.WriteString(ControlName(control), target.Id);
+                }
+            }
+
+            foreach (((InputSystem targetSystem, InputDeviceId targetDevice, DeviceTargetKind kind, ulong pointer), InputOverrideTarget target) in dataTargets)
+            {
+                if (input.System != null && ReferenceEquals(targetSystem, input.System) && targetDevice == id)
+                {
+                    string name = pointer == 0 || kind is DeviceTargetKind.MousePosition or DeviceTargetKind.MouseWheel ? kind.ToString() : $"{kind}.{pointer}";
+                    writer.WriteString(name, target.Id);
+                }
+            }
+
+            writer.WriteEndObject();
             writer.WriteStartObject("state");
             if (device.State != null)
             {
@@ -505,6 +532,8 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
     {
         public Guid Id { get; } = id;
 
+        public InputSystem? System { get; set; }
+
         public List<string> Sources { get; } = [];
 
         public Dictionary<InputDeviceId, DeviceView> Devices { get; } = [];
@@ -517,6 +546,8 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         public InputDeviceState? State { get; set; }
 
         public ulong LatestSequence { get; set; }
+
+        public bool Focused { get; set; }
     }
 
     private sealed class ActionView(Guid id, ActionProfile profile)

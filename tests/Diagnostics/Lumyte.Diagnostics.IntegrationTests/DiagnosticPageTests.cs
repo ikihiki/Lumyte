@@ -1,9 +1,5 @@
 using Lumyte.Diagnostics.Server;
 using Lumyte.Diagnostics.Server.Components;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Components;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 
@@ -54,6 +50,7 @@ public sealed class DiagnosticPageTests
         Assert.Contains(registry.Pages, page => page.Id == "animation" && page.Component == typeof(Lumyte.Diagnostics.Server.Components.AnimationPage) && page.RequiredSubsystem == "animation");
         Assert.Contains(registry.Pages, page => page.Id == "resources");
         Assert.Contains(registry.Pages, page => page.Id == "input" && page.Component == typeof(InputPage) && page.RequiredSubsystem == "input");
+        Assert.Contains(registry.Pages, page => page.Id == "window" && page.Component == typeof(WindowPage) && page.RequiredSubsystem == "window");
     }
 
     private sealed class TestPage : ComponentBase;

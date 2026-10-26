@@ -1,0 +1,186 @@
+namespace Lumyte.Resources.Audio.IntegrationTests;
+
+internal sealed class TestDevice : IAudioDevice
+{
+    private readonly int _owner = Environment.CurrentManagedThreadId;
+    private readonly List<TestVoice> _activeVoices = [];
+    private int _clips;
+    private int _voices;
+    private int _output = (int)AudioOutputState.Running;
+    private bool _disposed;
+    private int _voiceReleaseFailures;
+    private int _clipReleaseFailures;
+    private int _clipCreationFailures;
+    private int _voiceCreationFailures;
+    private int _loseDuringNextClip;
+    private int _failOutputAfterNextClip;
+    private int _outputFailures;
+    private int _createdClips;
+    private int _returnedClips;
+
+    public AudioOutputState OutputState
+    {
+        get
+        {
+            Verify();
+            if (Interlocked.Exchange(ref _outputFailures, 0) != 0)
+            {
+                throw new InvalidOperationException("Injected post-creation output query failure.");
+            }
+
+            return (AudioOutputState)Volatile.Read(ref _output);
+        }
+    }
+
+    internal bool IsDisposed => _disposed;
+
+    internal int CreatedClips => Volatile.Read(ref _createdClips);
+
+    internal int ReturnedClips => Volatile.Read(ref _returnedClips);
+
+    public void Invalidate()
+    {
+        Verify();
+        SetOutput(AudioOutputState.Unavailable);
+    }
+
+    public void Update()
+    {
+        VerifyAvailable();
+        foreach (TestVoice voice in _activeVoices)
+        {
+            voice.Refresh();
+        }
+    }
+
+    public ValueTask ResumeOutputAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyAvailable();
+        SetOutput(AudioOutputState.Running);
+        return ValueTask.CompletedTask;
+    }
+
+    public IAudioClip CreateClip(AudioFormat format, ReadOnlySpan<float> samples)
+    {
+        VerifyAvailable();
+        if (Interlocked.Exchange(ref _clipCreationFailures, 0) != 0)
+        {
+            throw new InvalidOperationException("Injected clip creation failure.");
+        }
+
+        _clips++;
+        Interlocked.Increment(ref _createdClips);
+        var clip = new TestClip(this, format, samples.Length / format.Channels);
+        if (Interlocked.Exchange(ref _loseDuringNextClip, 0) != 0)
+        {
+            SetOutput(AudioOutputState.Unavailable);
+        }
+
+        if (Interlocked.Exchange(ref _failOutputAfterNextClip, 0) != 0)
+        {
+            Volatile.Write(ref _outputFailures, 1);
+        }
+
+        return clip;
+    }
+
+    public IAudioVoice CreateVoice(IAudioClip clip, AudioBus bus = AudioBus.Effects)
+    {
+        VerifyAvailable();
+        if (Interlocked.Exchange(ref _voiceCreationFailures, 0) != 0)
+        {
+            throw new InvalidOperationException("Injected voice creation failure.");
+        }
+
+        var original = (TestClip)clip;
+        if (!ReferenceEquals(original.Device, this))
+        {
+            throw new InvalidOperationException("Clip belongs to another device generation.");
+        }
+
+        original.Borrowers++;
+        _voices++;
+        var voice = new TestVoice(this, original);
+        _activeVoices.Add(voice);
+        return voice;
+    }
+
+    public void SetBusGain(AudioBus bus, float gain) => VerifyAvailable();
+
+    public void Dispose()
+    {
+        Verify();
+        if (_clips != 0 || _voices != 0)
+        {
+            throw new InvalidOperationException("Resources must release voices and clips before the audio device.");
+        }
+
+        _disposed = true;
+    }
+
+    internal void Verify()
+    {
+        if (_owner != Environment.CurrentManagedThreadId)
+        {
+            throw new InvalidOperationException("Backend operation ran outside its owner.");
+        }
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    internal void VerifyAvailable()
+    {
+        Verify();
+        if ((AudioOutputState)Volatile.Read(ref _output) == AudioOutputState.Unavailable)
+        {
+            throw new AudioDeviceUnavailableException();
+        }
+    }
+
+    internal void SetOutput(AudioOutputState state) => Volatile.Write(ref _output, (int)state);
+
+    internal void FailOutputAfterNextClip() => Volatile.Write(ref _failOutputAfterNextClip, 1);
+
+    internal void LoseDuringNextClip() => Volatile.Write(ref _loseDuringNextClip, 1);
+
+    internal void FailNextVoiceRelease() => Interlocked.Increment(ref _voiceReleaseFailures);
+
+    internal void FailNextClipRelease() => Interlocked.Increment(ref _clipReleaseFailures);
+
+    internal void FailNextClipCreation() => Volatile.Write(ref _clipCreationFailures, 1);
+
+    internal void FailNextVoiceCreation() => Volatile.Write(ref _voiceCreationFailures, 1);
+
+    internal void VerifyClipRelease()
+    {
+        Verify();
+        if (Volatile.Read(ref _clipReleaseFailures) > 0)
+        {
+            Interlocked.Decrement(ref _clipReleaseFailures);
+            throw new InvalidOperationException("Injected clip release failure.");
+        }
+    }
+
+    internal void VerifyVoiceRelease()
+    {
+        Verify();
+        if (Volatile.Read(ref _voiceReleaseFailures) > 0)
+        {
+            Interlocked.Decrement(ref _voiceReleaseFailures);
+            throw new InvalidOperationException("Injected voice release failure.");
+        }
+    }
+
+    internal void ReturnClip()
+    {
+        _clips--;
+        Interlocked.Increment(ref _returnedClips);
+    }
+
+    internal void ReturnVoice(TestVoice voice)
+    {
+        _voices--;
+        _activeVoices.Remove(voice);
+    }
+}

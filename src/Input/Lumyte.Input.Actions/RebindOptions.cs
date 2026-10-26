@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Actions;
 /// <summary>Defines rebind options.</summary>
 /// <param name = "Timeout">The Timeout value.</param>

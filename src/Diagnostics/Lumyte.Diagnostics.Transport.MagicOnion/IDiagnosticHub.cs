@@ -1,5 +1,3 @@
-using MagicOnion;
-
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 /// <summary>A native MessagePack StreamingHub contract.</summary>

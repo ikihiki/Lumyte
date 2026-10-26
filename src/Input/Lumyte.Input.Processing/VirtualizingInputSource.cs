@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Processing;
 
 /// <summary>Acquires each physical batch once and prepares physical and virtual devices in the same update.</summary>

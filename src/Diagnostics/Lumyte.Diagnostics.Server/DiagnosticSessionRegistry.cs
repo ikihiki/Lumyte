@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
-using Lumyte.Diagnostics.Transport;
 
 namespace Lumyte.Diagnostics.Server;
 
@@ -257,7 +256,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
             }
         }
 
-        var remaining = TimeSpan.FromMilliseconds(Math.Max(0, entry.Command.ExpiresUnixMilliseconds - clock.GetUtcNow().ToUnixTimeMilliseconds()));
+        TimeSpan remaining = TimeSpan.FromMilliseconds(Math.Max(0, entry.Command.ExpiresUnixMilliseconds - clock.GetUtcNow().ToUnixTimeMilliseconds()));
         try
         {
             return CopyResult(await entry.Completion.Task.WaitAsync(remaining, clock, cancellationToken).ConfigureAwait(false));

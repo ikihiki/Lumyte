@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Processing;
 
 /// <summary>Produces logical controller input from one physical device batch.</summary>

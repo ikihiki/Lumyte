@@ -1,9 +1,5 @@
 using System.Buffers;
 using System.Text.Json;
-using Lumyte.Diagnostics.Transport;
-using Lumyte.Diagnostics.Transport.MagicOnion;
-using MessagePack;
-using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

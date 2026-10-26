@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Runtime.InteropServices.JavaScript;
-using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Browser;
 

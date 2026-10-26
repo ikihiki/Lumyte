@@ -1,7 +1,3 @@
-using Lumyte.Core.Time;
-using Lumyte.StateMachines;
-using Xunit;
-
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Checks the common event time base when entering an instantaneous animation state.</summary>

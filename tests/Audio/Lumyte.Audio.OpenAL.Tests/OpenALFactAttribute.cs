@@ -1,5 +1,3 @@
-using Xunit;
-
 namespace Lumyte.Audio.OpenAL.Tests;
 
 /// <summary>Runs native audio regressions only when OpenAL Soft is explicitly enabled.</summary>

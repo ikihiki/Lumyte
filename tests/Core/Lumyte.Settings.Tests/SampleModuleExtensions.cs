@@ -1,7 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
-
 namespace Lumyte.Settings.Tests;
 
 internal static class SampleModuleExtensions

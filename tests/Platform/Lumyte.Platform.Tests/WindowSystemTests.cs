@@ -1,8 +1,5 @@
 using System.Numerics;
-using Lumyte.Platform.Abstractions;
 using Lumyte.Windowing;
-using Lumyte.Windowing.Abstractions;
-using Xunit;
 
 namespace Lumyte.Platform.Tests;
 

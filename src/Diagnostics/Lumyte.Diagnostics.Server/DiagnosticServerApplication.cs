@@ -2,13 +2,11 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Lumyte.Diagnostics.Server.Components;
-using Lumyte.Diagnostics.Transport;
 using Lumyte.Diagnostics.Transport.MagicOnion;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.FluentUI.AspNetCore.Components;
 
 namespace Lumyte.Diagnostics.Server;
 
@@ -144,8 +142,9 @@ public static class DiagnosticServerApplication
             new("ui", "UI", "Engine", 1, "ui"),
             new("animation", "Animation", "Engine", 2, "animation", typeof(Components.AnimationPage)),
             new("input", "Input", "Engine", 3, "input", typeof(InputPage)),
+            new("window", "Window", "Engine", 4, "window", typeof(WindowPage)),
             new("settings", "Settings", "Engine", 5),
-            new("rendering", "Rendering", "Engine", 4, "graphics.render-graph", typeof(Components.RenderGraphPage)),
+            new("rendering", "Rendering", "Engine", 6, "graphics.render-graph", typeof(Components.RenderGraphPage)),
             new("metrics", "Metrics", "Telemetry", 0),
             new("logs", "Logs", "Telemetry", 1),
             new("traces", "Traces", "Telemetry", 2),

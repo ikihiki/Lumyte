@@ -1,5 +1,5 @@
+using System.Buffers;
 using Lumyte.Audio.Abstractions;
-using Silk.NET.OpenAL;
 
 namespace Lumyte.Audio.OpenAL;
 
@@ -16,14 +16,28 @@ internal sealed class OpenALClip : IAudioClip
         device.CheckError();
         try
         {
-            short[] pcm = new short[samples.Length];
-            for (int i = 0; i < pcm.Length; i++)
+            short[] pcm = ArrayPool<short>.Shared.Rent(samples.Length);
+            try
             {
-                pcm[i] = (short)MathF.Round(Math.Clamp(samples[i], -1, 1) * 32767);
-            }
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    pcm[i] = (short)MathF.Round(Math.Clamp(samples[i], -1, 1) * 32767);
+                }
 
-            device.Api.BufferData(Handle, format.Channels == 1 ? BufferFormat.Mono16 : BufferFormat.Stereo16, pcm, format.SampleRate);
-            device.CheckError();
+                unsafe
+                {
+                    fixed (short* data = pcm)
+                    {
+                        device.Api.BufferData(Handle, format.Channels == 1 ? BufferFormat.Mono16 : BufferFormat.Stereo16, data, checked(samples.Length * sizeof(short)), format.SampleRate);
+                    }
+                }
+
+                device.CheckError();
+            }
+            finally
+            {
+                ArrayPool<short>.Shared.Return(pcm);
+            }
         }
         catch
         {
@@ -36,6 +50,8 @@ internal sealed class OpenALClip : IAudioClip
     public AudioFormat Format { get; }
 
     public long FrameCount { get; }
+
+    IAudioDevice IAudioClip.Device => Device;
 
     internal OpenALDevice Device { get; }
 
@@ -50,14 +66,17 @@ internal sealed class OpenALClip : IAudioClip
             return;
         }
 
-        Validate();
         if (References != 0)
         {
             throw new InvalidOperationException("Clip is borrowed by a live voice.");
         }
 
-        Device.Api.DeleteBuffer(Handle);
-        Device.CheckError();
+        if (Device.PrepareCleanup())
+        {
+            Device.Api.DeleteBuffer(Handle);
+            Device.CheckError();
+        }
+
         _disposed = true;
         Device.Remove(this);
     }

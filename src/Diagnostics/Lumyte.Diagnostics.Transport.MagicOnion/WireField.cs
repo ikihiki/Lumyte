@@ -1,5 +1,3 @@
-using MessagePack;
-
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 /// <summary>Version-one numeric-key wire schema for WireField.</summary>

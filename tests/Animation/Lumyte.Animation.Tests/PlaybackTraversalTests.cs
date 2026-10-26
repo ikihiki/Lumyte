@@ -1,6 +1,3 @@
-using Lumyte.Core.Time;
-using Xunit;
-
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Verifies paused traversal and contribution priority across repetition boundaries.</summary>

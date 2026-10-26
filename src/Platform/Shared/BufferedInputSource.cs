@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Platform.Internal;
 
 internal sealed class BufferedInputSource(Action check, Action<BufferedInputSource> release, Func<bool> isFocused, string platformName) : IInputSource

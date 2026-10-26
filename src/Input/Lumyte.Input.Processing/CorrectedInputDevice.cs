@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Processing;
 
 /// <summary>Applies an ordered correction pipeline before input recording.</summary>

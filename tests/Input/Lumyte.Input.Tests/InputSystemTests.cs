@@ -1,6 +1,4 @@
 using System.Numerics;
-using Lumyte.Input.Abstractions;
-using Xunit;
 
 namespace Lumyte.Input.Tests;
 
@@ -490,7 +488,7 @@ public sealed class InputSystemTests
             }
         }
 
-        public void Update() => Tick?.Invoke(Registry!);
+        public void Update() => Tick?.Invoke((IInputDeviceRegistry)Registry!);
 
         public void Shutdown() => Shutdowns++;
 

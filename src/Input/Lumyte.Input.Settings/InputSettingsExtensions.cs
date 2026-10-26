@@ -1,5 +1,4 @@
 using Lumyte.Settings;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Input.Settings;
 

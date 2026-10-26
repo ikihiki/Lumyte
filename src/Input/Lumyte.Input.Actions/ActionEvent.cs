@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Actions;
 /// <summary>Defines action event.</summary>
 /// <param name = "ActionId">The ActionId value.</param>

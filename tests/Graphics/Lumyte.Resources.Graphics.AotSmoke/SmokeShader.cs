@@ -1,5 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-
 namespace Lumyte.Resources.Graphics.AotSmoke;
 
 internal sealed class SmokeShader(ShaderArtifact artifact) : IGraphicsShader

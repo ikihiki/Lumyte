@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Actions;
 
 /// <summary>Retains completed operations for bounded, single-consumption lookup.</summary>

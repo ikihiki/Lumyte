@@ -3,8 +3,6 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

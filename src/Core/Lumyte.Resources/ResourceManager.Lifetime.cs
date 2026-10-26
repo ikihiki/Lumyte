@@ -504,6 +504,7 @@ public sealed partial class ResourceManager
     {
         EnsureWritableMetadata();
         _metadata.Remove(node);
+        _invalidated.Remove(node);
         if (metadata.Sources.Count != 0)
         {
             _watchTargets?.RemoveMetadata(metadata);
@@ -529,7 +530,7 @@ public sealed partial class ResourceManager
     }
 
     private bool IsMetadataRoot(ResourceNode node)
-        => _published.ContainsKey(node) || _invalidated.Contains(node) || _slotByKey.ContainsKey(node)
+        => _published.ContainsKey(node) || _slotByKey.ContainsKey(node)
             || _loads.ContainsKey(node) || _generationCounts.ContainsKey(node);
 
     private void PruneMetadata()
@@ -579,7 +580,7 @@ public sealed partial class ResourceManager
     private void PruneUnreachableMetadata()
     {
         HashSet<ResourceNode> reachable = [];
-        Stack<ResourceNode> pending = new(_published.Keys.Concat(_invalidated).Concat(_slotByKey.Keys)
+        Stack<ResourceNode> pending = new(_published.Keys.Concat(_slotByKey.Keys)
             .Concat(_loads.Keys).Concat(_generationCounts.Keys));
         while (pending.TryPop(out ResourceNode node))
         {

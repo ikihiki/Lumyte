@@ -1,7 +1,3 @@
-using Lumyte.Graphics.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
-
 namespace Lumyte.Graphics.Hosting.Tests;
 
 /// <summary>Tests DI ownership, generation recovery, cancellation and failed cleanup.</summary>

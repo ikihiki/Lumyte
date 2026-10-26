@@ -1,5 +1,3 @@
-using MessagePack;
-
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 internal static class DiagnosticMessageReader

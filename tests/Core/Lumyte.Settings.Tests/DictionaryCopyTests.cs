@@ -1,6 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Xunit;
-
 namespace Lumyte.Settings.Tests;
 
 /// <summary>Checks that automatic copying retains dictionary lookup semantics.</summary>

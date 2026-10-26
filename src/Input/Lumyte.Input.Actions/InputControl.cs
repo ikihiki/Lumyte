@@ -1,5 +1,3 @@
-using Lumyte.Input.Abstractions;
-
 namespace Lumyte.Input.Actions;
 /// <summary>Defines struct.</summary>
 /// <param name = "Kind">The Kind value.</param>
