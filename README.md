@@ -28,7 +28,12 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
 - [2D・3D共通画像エフェクトの設計](docs/adr/graphics/GRAPHICS-0017-image-effects.md)／[利用方法](src/Graphics/Lumyte.Graphics.ImageEffects/README.md)
-- [2D描画とRenderGraph接続の設計](docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)
+- 2D描画の設計
+  - [基本図形・paint・描画資源](docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)
+  - [線・パス](docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)
+  - [画像・mesh](docs/adr/graphics/GRAPHICS-0020-2d-images-and-meshes.md)
+  - [文字向け形式・COLRv1](docs/adr/graphics/GRAPHICS-0021-2d-glyph-representations.md)
+  - [RenderGraphレイヤー・Effects接続](docs/adr/graphics/GRAPHICS-0022-2d-render-graph-layers.md)
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)
 - [Indexed drawとIndirect実行](docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)
 - [カラーテクスチャ形式の拡充](docs/adr/graphics/GRAPHICS-0012-color-texture-formats.md)

@@ -75,7 +75,7 @@ canvas.DrawBackdropEffect(new BackdropEffectOptions2D
 効果の出力は最後にclipされ、元背景との置換はeffect*c + original*(1-c)です。
 Append失敗時は親graphを捨てて再構築します。GPU完了後にcommand、compiled plan、準備ownerの順で解放します。
 
-設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)、
+設計・APIは [GRAPHICS-0022](../../../docs/adr/graphics/GRAPHICS-0022-2d-render-graph-layers.md)、
 共通の部分グラフは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。
 
 ## Resourcesからの生成
