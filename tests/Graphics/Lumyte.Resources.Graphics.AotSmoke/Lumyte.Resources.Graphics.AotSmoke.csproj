@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../../../src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics.ImageEffects/Lumyte.Resources.Graphics.ImageEffects.csproj" />
   </ItemGroup>
 </Project>

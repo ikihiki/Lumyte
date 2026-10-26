@@ -10,6 +10,7 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics.ImageEffects/Lumyte.Resources.Graphics.ImageEffects.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
   </ItemGroup>

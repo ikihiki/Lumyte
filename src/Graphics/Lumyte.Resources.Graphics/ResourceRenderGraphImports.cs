@@ -12,11 +12,32 @@ public sealed class ResourceRenderGraphImports : IDisposable
     private readonly ResourceManager _manager;
     private readonly List<IRenderGraphLifetime> _leases = [];
     private bool _closed;
+    private bool _transferred;
 
     internal ResourceRenderGraphImports(RenderGraphBuilder graph, ResourceManager manager)
     {
         _graph = graph;
         _manager = manager;
+    }
+
+    /// <summary>Gets the borrowed graph while this import scope is open for preparation.</summary>
+    public RenderGraphBuilder Graph
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_closed, this);
+            return _graph;
+        }
+    }
+
+    /// <summary>Transfers a pass owner's lifetime to this scope and subsequently its compiled plan.</summary>
+    /// <param name="lifetime">The owner, retained on preparation failure until scope disposal succeeds.</param>
+    /// <remarks>After success, only this scope or its compiled plan should dispose the owner.</remarks>
+    public void Retain(IRenderGraphLifetime lifetime)
+    {
+        ObjectDisposedException.ThrowIf(_closed, this);
+        lifetime.Validate();
+        _leases.Add(lifetime);
     }
 
     /// <summary>Acquires a shader artifact or other pass input and retains its exact generation.</summary>
@@ -86,12 +107,12 @@ public sealed class ResourceRenderGraphImports : IDisposable
         CompiledRenderGraph plan = _graph.Compile(frameId, capture);
         try
         {
-            while (_leases.Count != 0)
+            if (_leases.Count != 0)
             {
-                plan.Retain(_leases[^1]);
-                _leases.RemoveAt(_leases.Count - 1);
+                plan.Retain(new LifetimeGroup(_leases));
             }
 
+            _transferred = true;
             _closed = true;
             return plan;
         }
@@ -105,13 +126,20 @@ public sealed class ResourceRenderGraphImports : IDisposable
     /// <summary>Returns ownership for an abandoned import scope; transferred ownership belongs to the plan.</summary>
     public void Dispose()
     {
-        while (_leases.Count != 0)
-        {
-            _leases[^1].Dispose();
-            _leases.RemoveAt(_leases.Count - 1);
-        }
-
         _closed = true;
+        if (!_transferred)
+        {
+            Release(_leases);
+        }
+    }
+
+    private static void Release(List<IRenderGraphLifetime> lifetimes)
+    {
+        while (lifetimes.Count != 0)
+        {
+            lifetimes[^1].Dispose();
+            lifetimes.RemoveAt(lifetimes.Count - 1);
+        }
     }
 
     private T Retain<T>(ResourceLease<T> lease)
@@ -142,5 +170,18 @@ public sealed class ResourceRenderGraphImports : IDisposable
         public void Validate() => _ = lease.Value;
 
         public void Dispose() => lease.Dispose();
+    }
+
+    private sealed class LifetimeGroup(List<IRenderGraphLifetime> lifetimes) : IRenderGraphLifetime
+    {
+        public void Validate()
+        {
+            foreach (IRenderGraphLifetime lifetime in lifetimes)
+            {
+                lifetime.Validate();
+            }
+        }
+
+        public void Dispose() => Release(lifetimes);
     }
 }

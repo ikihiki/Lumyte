@@ -154,6 +154,7 @@ IGraphicDevice device = lease.Device;
 | ResourceRenderGraphImports | ManagerからのLease取得とcompiled planへの所有移譲 |
 | RenderGraph | 汎用IRenderGraphLifetimeの記録前検証とGPU完了後の解放。Managerを参照しない |
 | ImageEffects | 借用artifactからの固定GPU資源生成。Resources参照を持たない |
+| Resources.Graphics.ImageEffects | 既定／注入されたシェーダ一式の世代と、Effect追加時の自動的な所有移譲 |
 
 Sourceはコンパイル済み`.lshader`を提供する。Slangコンパイルは既存のcompiler/buildに任せ、文字列だけを入力にしてinclude依存を失うコンパイルStageは追加しない。CPU artifactはdevice世代から独立させ、GPU shaderはResident依存としてそのartifactを保持する。直接ロードとManager経由でbinaryとGPU APIを共通化する。
 
@@ -163,6 +164,12 @@ RenderGraphのimportは従来どおり借用できる。Resource連携時だけ`
 
 planは外部所有権を`IRenderGraphLifetime`として受け取り、記録前に失効を検証する。解放順はview、一時allocation、登録の逆順の外部所有権とする。GPU完了前のDisposeは拒否する。HotReload中の旧shaderとartifactをplanの寿命まで保ち、新しいplan／pipelineが新世代を取得する。記録途中のpipelineやshaderを差し替えない。
 
-ImageEffectsは`ImageEffectShaders`を借用する入口を持ち、省略時は既定の埋め込み版を使用する。prepared effectも汎用の寿命契約を実装し、planへRetainできる。artifactのLeaseを保持した後にprepared effectを登録し、固定GPU資源を先に解放する。
+ImageEffectsは`ImageEffectShaders`を借用する入口を持ち、省略時は既定の埋め込み版を使用する。Managerとの通常の連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。`AddImageEffects()`と引数なしの`AcquireImageEffectShadersAsync()`が既定パッケージを選び、描画側に名前やキーを要求しない。カスタム時だけ`ImageEffectShaderPackage`で二つのartifactキーをDIへ注入する。DIなしでは同じ設定をCPU Stageへ渡す。
+
+二つのartifactをResident依存にするCPUの組と、その組をResident依存に持つGPUの組を構築する。既定CPU artifactはライブラリ共有cacheを再利用し、カスタムartifactは通常のSource・メモリ計上・HotReloadに参加する。GPUの組は正確なdevice epochに属し、部分生成の失敗に備えて生成前にcleanupを登録する。復旧時にはCPUの組を再利用する。
+
+`imports.AppendEffects(reference, effectGraph, source)`は一つの世代Leaseとprepared effectをまとめて保持し、画像だけを返す。通常は毎フレームのI/Oや全リソースSnapshotを要しない。他の入力も同一publicationに揃える場合だけフレーム共通のSnapshotを渡す。compiled planへの移譲はimport scope全体で行い、固定GPU資源の解放成功後にshaderのLeaseを返す。部分解放に失敗した場合は未解放の資源と依存先を保持し、同じ所有者から再試行する。
+
+手動の`Retain(prepared)`も可能だが、移譲後は別のusingでpreparedをDisposeしない。待機キャンセルをGPU完了とは扱わず、planは所有を保持する。loss時の旧epoch退役確認とGPU送信・完了管理はアプリが担当する。既定選択、カスタム入力更新、旧世代の描画中保持、解放の再試行、部分生成失敗とNativeAOTを検証する。
 
 `ImageEffectShaders`はCPU artifactまたは既存のGPU shaderを受け取る。既存moduleを渡した場合はeffect側で生成・解放せず、管理側の世代Leaseで寿命を保つ。artifactだけを渡す場合はeffectが作ったmoduleを自分で解放する。
