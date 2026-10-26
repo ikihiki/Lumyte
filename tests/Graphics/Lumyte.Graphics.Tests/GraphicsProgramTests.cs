@@ -89,5 +89,4 @@ public sealed class GraphicsProgramTests
         Assert.Throws<NotSupportedException>(() => _programs.Acquire(device, "unknown"));
         Assert.Empty(device.Released);
     }
-
 }
