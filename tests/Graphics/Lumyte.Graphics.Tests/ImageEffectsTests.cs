@@ -145,8 +145,7 @@ public sealed class ImageEffectsTests
 
     private static async Task<(EffectPixelRect Bounds, Vector4[] Pixels)> RenderAsync(IGraphicDevice device, ImageEffectGraph effect, EffectPixelRect sourceBounds, Vector4 sourceColor)
     {
-        var programs = new RetainedProgramProvider();
-        var graph = new Graph(device, "standalone-image-effect-readback");
+        using var graph = new Graph(device, "standalone-image-effect-readback");
         RenderGraphTexture source = graph.CreateTexture(
             new()
             {
@@ -165,18 +164,18 @@ public sealed class ImageEffectsTests
             clear.End();
         }).UseTexture(source, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
         var sourceImage = new EffectImage(source, sourceBounds, EffectColorSemantic.SceneLinear);
-        PreparedImageEffect prepared = effect.Root is EffectOperationNode operation && operation.Inputs.All(input => input is SourceEffectNode)
+        EffectImage output = effect.Root is EffectOperationNode operation && operation.Inputs.All(input => input is SourceEffectNode)
             ? operation.Definition switch
             {
-                GaussianBlurEffect blur => graph.AppendGaussianBlur(sourceImage, blur.SigmaX, blur.SigmaY, programs),
-                ColorMatrixEffect matrix => graph.AppendColorMatrix(sourceImage, matrix.Matrix, programs),
-                OpacityEffect opacity => graph.AppendOpacity(sourceImage, opacity.Opacity, programs),
-                CompositeEffect composite => graph.AppendComposite(sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY, programs),
-                _ => graph.AppendEffects(effect, sourceImage, programs),
+                GaussianBlurEffect blur => graph.AppendGaussianBlur(sourceImage, blur.SigmaX, blur.SigmaY),
+                ColorMatrixEffect matrix => graph.AppendColorMatrix(sourceImage, matrix.Matrix),
+                OpacityEffect opacity => graph.AppendOpacity(sourceImage, opacity.Opacity),
+                CompositeEffect composite => graph.AppendComposite(sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY),
+                _ => graph.AppendEffects(effect, sourceImage),
             }
-            : graph.AppendEffects(effect, sourceImage, programs);
-        Assert.Equal(EffectColorSemantic.SceneLinear, prepared.Output.ColorSemantic);
-        EffectPixelRect bounds = prepared.Output.Bounds;
+            : graph.AppendEffects(effect, sourceImage);
+        Assert.Equal(EffectColorSemantic.SceneLinear, output.ColorSemantic);
+        EffectPixelRect bounds = output.Bounds;
         uint width = checked((uint)bounds.Width);
         uint height = checked((uint)bounds.Height);
         TextureCopyLayout layout = device.GetTextureCopyLayout(TextureFormat.Rgba16Float);
@@ -185,9 +184,9 @@ public sealed class ImageEffectsTests
         uint byteCount = checked(pitch * height);
         RenderGraphBuffer<byte> readback = graph.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
-            new() { Texture = context.GetTexture(prepared.Output.Texture), Width = width, Height = height },
+            new() { Texture = context.GetTexture(output.Texture), Width = width, Height = height },
             new() { Buffer = context.GetBuffer(readback).Slice(0, byteCount), BytesPerRow = pitch, RowsPerImage = height }))
-            .UseTexture(prepared.Output.Texture, TextureState.CopySource, new(PipelineStage.Copy, ResourceAccess.CopyRead))
+            .UseTexture(output.Texture, TextureState.CopySource, new(PipelineStage.Copy, ResourceAccess.CopyRead))
             .UseBuffer(readback, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
         graph.ExportBuffer(readback, new(PipelineStage.Host, ResourceAccess.HostRead));
         CompiledRenderGraph? plan = null;
@@ -222,10 +221,6 @@ public sealed class ImageEffectsTests
         {
             commands?.Dispose();
             plan?.Dispose();
-            Assert.True(programs.Acquired > 0);
-            Assert.Equal(0, programs.Returned);
-            prepared.Dispose();
-            Assert.Equal(programs.Acquired, programs.Returned);
             submission?.Dispose();
         }
     }
@@ -236,28 +231,6 @@ public sealed class ImageEffectsTests
     {
         var difference = Vector4.Abs(actual - expected);
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Expected {expected}; got {actual}.");
-    }
-
-    private sealed class RetainedProgramProvider : IGraphicsProgramProvider
-    {
-        private readonly ShaderArtifact _vertex = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.fullscreen.lshader").GetBinary());
-        private readonly ShaderArtifact _fragment = new(ShaderArtifact.LoadEmbedded(typeof(ImageEffectPrograms).Assembly, "Lumyte.ImageEffects.effects.lshader").GetBinary());
-
-        internal int Acquired { get; private set; }
-
-        internal int Returned { get; private set; }
-
-        public GraphicsProgramLease Acquire(IGraphicDevice device, string programId)
-        {
-            Assert.Equal(ImageEffectPrograms.ProgramId, programId);
-            var native = GraphicsProgramLease.Create(device, _vertex, _fragment);
-            Acquired++;
-            return new(native.Resources, () =>
-            {
-                Returned++;
-                native.Dispose();
-            });
-        }
     }
 
     private sealed record TranslatedFade(int X, int Y, float Opacity) : ImageEffectDefinition

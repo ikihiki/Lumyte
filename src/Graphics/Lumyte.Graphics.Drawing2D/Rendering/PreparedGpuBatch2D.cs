@@ -9,6 +9,7 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
     private readonly RenderPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
     private readonly List<PreparedCommand> _commands = [];
+    private readonly GraphicsProgramLease _program;
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
     private readonly IGraphicsTexture _fallback;
@@ -24,7 +25,7 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         {
             GraphicsProgramLease program = context.Programs.Acquire(context.Device, DrawingPrograms2D.ProgramId);
             ArgumentNullException.ThrowIfNull(program);
-            Own(program);
+            _program = Own(program);
             cancellationToken.ThrowIfCancellationRequested();
             GraphicsProgramResources resources = program.Resources;
             if (!ReferenceEquals(resources.Device, context.Device))
@@ -62,6 +63,7 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(target);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = _program.Resources;
         if (_recorded)
         {
             throw new InvalidOperationException("A prepared command batch can be recorded only once.");

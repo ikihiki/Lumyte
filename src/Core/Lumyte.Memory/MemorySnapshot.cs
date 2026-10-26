@@ -6,6 +6,9 @@ public sealed record MemorySnapshot
     /// <summary>Gets total committed bytes, including estimates and the full capacity of each live CPU chunk once.</summary>
     public required ulong CommittedBytes { get; init; }
 
+    /// <summary>Gets cumulative released committed bytes; the counter wraps modulo 2^64 and includes full CPU chunks only when their last buffer returns.</summary>
+    public ulong ReleasedBytes { get; init; }
+
     /// <summary>Gets the total uncommitted reserved bytes.</summary>
     public required ulong ReservedBytes { get; init; }
 
