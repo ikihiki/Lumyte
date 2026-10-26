@@ -3,7 +3,8 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Retains one exact program revision until its GPU users have finished.</summary>
 /// <param name="resources">The borrowed program bundle retained by the callback.</param>
 /// <param name="release">Returns the provider's lease once; must not wait for GPU use.</param>
-public sealed class GraphicsProgramLease(GraphicsProgramResources resources, Action release) : IDisposable
+/// <param name="validate">Optional runtime validation before returning the resources.</param>
+public sealed class GraphicsProgramLease(GraphicsProgramResources resources, Action release, Action? validate = null) : IDisposable
 {
     private readonly GraphicsProgramResources _resources = resources ?? throw new ArgumentNullException(nameof(resources));
     private Action? _release = release ?? throw new ArgumentNullException(nameof(release));
@@ -14,6 +15,7 @@ public sealed class GraphicsProgramLease(GraphicsProgramResources resources, Act
         get
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _release) is null, this);
+            validate?.Invoke();
             return _resources;
         }
     }

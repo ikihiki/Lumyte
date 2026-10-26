@@ -119,7 +119,7 @@ jobs:
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore',
+          Invoke-LumyteCommand dotnet @('test', 'Lumyte.slnx', '-c', 'Release', '--no-build', '--no-restore', '-m:1',
             '--logger', 'trx', '--results-directory', 'artifacts/test-results')
 
       - name: Run X11 and browser Windowing tests
@@ -206,7 +206,12 @@ jobs:
         shell: bash
         run: |
           source tools/setup/activate.sh
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --di
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host
+          dotnet run --project samples/Lumyte.Execution.Sample -c Release --no-build -- --host --di
           dotnet run --project samples/Lumyte.Composition.Sample -c Release --no-build
+          dotnet run --project samples/Lumyte.Resources.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Diagnostics.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.Animation.Sample -c Release --no-build
           dotnet run --project samples/Lumyte.StateMachines.Sample -c Release --no-build
@@ -219,6 +224,24 @@ jobs:
           dotnet pack src/Core/Lumyte.Settings -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Mathematics -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Core -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Resources -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Resources.Execution -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Resources.Embedded -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Resources.DependencyInjection -c Release --no-build -o artifacts/nuget
+          dotnet publish samples/Lumyte.Execution.Sample -c Release -p:PublishAot=true -o artifacts/execution-aot
+          artifacts/execution-aot/Lumyte.Execution.Sample
+          artifacts/execution-aot/Lumyte.Execution.Sample --di
+          artifacts/execution-aot/Lumyte.Execution.Sample --host
+          artifacts/execution-aot/Lumyte.Execution.Sample --host --di
+          dotnet publish tests/Core/Lumyte.Resources.AotSmoke -c Release -p:PublishAot=true -o artifacts/resources-aot
+          artifacts/resources-aot/Lumyte.Resources.AotSmoke
+          artifacts/resources-aot/Lumyte.Resources.AotSmoke --host
+          dotnet publish tests/Graphics/Lumyte.Resources.Graphics.AotSmoke -c Release -p:PublishAot=true -p:ILLinkTreatWarningsAsErrors=true -p:IlcTreatWarningsAsErrors=true -o artifacts/resource-graphics-aot
+          artifacts/resource-graphics-aot/Lumyte.Resources.Graphics.AotSmoke
+          artifacts/resource-graphics-aot/Lumyte.Resources.Graphics.AotSmoke --host
+          dotnet pack src/Core/Lumyte.Execution -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Core/Lumyte.Execution.Generators -c Release --no-build -o artifacts/nuget
+          dotnet pack src/Graphics/Lumyte.Resources.Graphics -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Composition.Generators -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.StateMachines -c Release --no-build -o artifacts/nuget
