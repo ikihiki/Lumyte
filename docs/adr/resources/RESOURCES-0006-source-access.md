@@ -49,6 +49,20 @@ streamの `Length` と `Position` は要求範囲に相対的であり、Seekも
 
 snapshotの破棄は新readerの生成を拒否するだけで、開いたreaderを破棄しない。取得したstreamの解放はStageまたは呼び出し側の責任であり、snapshotはManagerの依存寿命に従って解放する。非同期メソッドのtokenは当該操作を取り消す。descriptor取得・Revision確認のメタデータ操作は同期的に完了するため、非同期APIであることを別threadへの配送や処理途中の割り込み保証と解釈しない。
 
+### Resource Systemとの対応
+
+| 機能 | 接続と寿命 |
+| --- | --- |
+| 型付きPipeline・Runtime | Sourceは入力だけを提供し、Stageが選択されたRuntime上でデコード・変換する。device世代はRuntimeとManagerで管理する |
+| 内容世代・Lease | デコード済み出力はManagerが保持する。FileSystemのdescriptorは旧ファイルの保存を保証しない |
+| 依存・再構築 | StageはContextから入力を取得し、Revisionを依存として記録する。共有入力の変更は逆依存の再構築へ伝わる |
+| 範囲・独立cursor | snapshotから必要範囲を複数回開ける。各readerの位置と解放は独立する |
+| bounded streaming | factoryが後からreaderを開く場合、snapshotをResident依存として保持する。sessionはfactory世代をLeaseで保持し、reader操作はJobSystemで実行する |
+| HotReload | Revision確認と変更通知は別契約。FileSystemの自動監視には監視providerの接続が必要。Embeddedは不変入力のため通知を提供しない |
+| メモリ予算・取消 | 読み込み先・decoder領域はContextまたはsessionのmemory scopeへ計上する。tokenは個々の読み込み操作へ渡す |
+
+streaming factoryのStageでは、`context.OpenSourceAsync(id, ResourceDependencyLifetime.Resident, token)`でdescriptorを取得する。Build依存のままfactoryへ格納すると、構築完了時にdescriptorが破棄されて後からreaderを作れない。readerは自身のstreamを解放し、descriptor自体の解放はManagerに任せる。
+
 ## 公開APIと契約
 
 比較元は `5660924`。Source実装の追加APIを示す。snapshotとstreamの共通契約は [RESOURCES-0001](RESOURCES-0001-typed-pipelines.md) を用いる。
@@ -108,3 +122,5 @@ Embeddedは読み込み中の内容を固定できるが、Sourceやreaderの参
 `FileResourceSourceTests` で実ファイルの置換・削除・同サイズ上書き・切り詰めによるreader失敗、範囲境界、独立cursor、取消、空入力、descriptor破棄後の既存reader、root逸脱とlink拒否を確認する。大きな入力の末尾範囲を読み、全量コピーやscratchファイルを作らないことも確認する。メタデータを維持する変更の完全検出は受け入れ条件に含めない。
 
 `EmbeddedResourceSourceTests` で実DLLのalias、固定Revision、欠落・空resource、範囲・書き込み拒否、constructor後のalias辞書変更の非伝播、DI接続を確認する。collectible Assemblyを使い、snapshotを返した後もreaderが入力を保持し、利用を終えた後に回収可能になることを検証する。
+
+`ResourceSourceStreamingTests`で両Sourceを実際のManager・JobSystemへ接続し、独立session、Seek、使用中のTrim、Resident依存と全buffer返却を確認する。NativeAOT smokeでも両SourceのRevision、範囲とdescriptor破棄後のreader寿命を検証する。
