@@ -1,20 +1,22 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.ImageEffects;
 using Xunit;
-using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.Tests;
 
 /// <summary>Checks external program ownership independently of native GPU creation.</summary>
 public sealed class GraphicsProgramTests
 {
+    private const string ProgramId = "test.graphics-program.v1";
+    private static readonly IGraphicsProgramProvider _programs = new EmbeddedGraphicsProgramProvider(typeof(ImageEffectShaders).Assembly, ProgramId, "Lumyte.ImageEffects.fullscreen.lshader", "Lumyte.ImageEffects.effects.lshader");
+
     /// <summary>Checks an old revision stays retained while a new revision is acquired.</summary>
     [Fact]
     public void IndependentLeasesRetainTheirExactRevisions()
     {
         var device = new ProgramTestDevice();
-        using GraphicsProgramLease owner = ImageEffectPrograms.DefaultProvider.Acquire(device, ImageEffectPrograms.ProgramId);
-        using GraphicsProgramLease next = ImageEffectPrograms.DefaultProvider.Acquire(device, ImageEffectPrograms.ProgramId);
+        using GraphicsProgramLease owner = _programs.Acquire(device, ProgramId);
+        using GraphicsProgramLease next = _programs.Acquire(device, ProgramId);
         int retained = 2;
         var old = new GraphicsProgramLease(owner.Resources, () => retained--);
         var current = new GraphicsProgramLease(next.Resources, () => retained--);
@@ -34,7 +36,7 @@ public sealed class GraphicsProgramTests
     public void NativeProgramLeaseReleasesPipelineBeforeShaders()
     {
         var device = new ProgramTestDevice();
-        GraphicsProgramLease lease = ImageEffectPrograms.DefaultProvider.Acquire(device, ImageEffectPrograms.ProgramId);
+        GraphicsProgramLease lease = _programs.Acquire(device, ProgramId);
         Assert.Empty(device.Released);
         lease.Dispose();
         lease.Dispose();
@@ -50,7 +52,7 @@ public sealed class GraphicsProgramTests
     public void PartialCreationFailureReturnsNativeChildren(int failure)
     {
         var device = new ProgramTestDevice { FailOnCreation = failure };
-        Assert.Throws<InvalidOperationException>(() => ImageEffectPrograms.DefaultProvider.Acquire(device, ImageEffectPrograms.ProgramId));
+        Assert.Throws<InvalidOperationException>(() => _programs.Acquire(device, ProgramId));
         Assert.Equal(failure - 1, device.Released.Count);
         if (failure == 3)
         {
@@ -58,16 +60,25 @@ public sealed class GraphicsProgramTests
         }
     }
 
-    /// <summary>Checks a foreign physical generation is rejected and its lease is returned on append failure.</summary>
+    /// <summary>Checks an external owner can reject a resource after runtime invalidation.</summary>
     [Fact]
-    public void EffectRejectsForeignDeviceAndReturnsProgramLease()
+    public void LeaseValidatesRuntimeBeforeReturningResources()
     {
-        using GraphicsProgramLease native = ImageEffectPrograms.DefaultProvider.Acquire(new ProgramTestDevice(), ImageEffectPrograms.ProgramId);
-        var programs = new BorrowedProvider(native.Resources);
-        var graph = new Graph(new ProgramTestDevice());
-        var image = new EffectImage(graph.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 1, 1), EffectColorSemantic.DisplayLinear);
-        Assert.Throws<ArgumentException>(() => graph.AppendOpacity(image, 0.5f, programs));
-        Assert.Equal(1, programs.Returned);
+        using GraphicsProgramLease native = _programs.Acquire(new ProgramTestDevice(), ProgramId);
+        bool invalid = false;
+        int returned = 0;
+        using var lease = new GraphicsProgramLease(native.Resources, () => returned++, () =>
+        {
+            if (invalid)
+            {
+                throw new InvalidOperationException("The physical generation was lost.");
+            }
+        });
+        Assert.Same(native.Resources, lease.Resources);
+        invalid = true;
+        Assert.Throws<InvalidOperationException>(() => lease.Resources);
+        lease.Dispose();
+        Assert.Equal(1, returned);
     }
 
     /// <summary>Checks program identifiers cannot silently select another embedded ABI.</summary>
@@ -75,15 +86,8 @@ public sealed class GraphicsProgramTests
     public void UnknownProgramDoesNotFallBackToEmbeddedShaders()
     {
         var device = new ProgramTestDevice();
-        Assert.Throws<NotSupportedException>(() => ImageEffectPrograms.DefaultProvider.Acquire(device, "unknown"));
+        Assert.Throws<NotSupportedException>(() => _programs.Acquire(device, "unknown"));
         Assert.Empty(device.Released);
     }
 
-    private sealed class BorrowedProvider(GraphicsProgramResources resources) : IGraphicsProgramProvider
-    {
-        internal int Returned { get; private set; }
-
-        public GraphicsProgramLease Acquire(IGraphicDevice device, string programId)
-            => new(resources, () => Returned++);
-    }
 }

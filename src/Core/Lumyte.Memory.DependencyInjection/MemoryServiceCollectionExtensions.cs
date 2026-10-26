@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Memory.DependencyInjection;
@@ -26,7 +27,7 @@ public static class MemoryServiceCollectionExtensions
     /// <typeparam name="TManager">The manager implementation.</typeparam>
     /// <param name="services">The target service collection.</param>
     /// <returns>The supplied service collection.</returns>
-    public static IServiceCollection AddMemoryManagement<TManager>(this IServiceCollection services)
+    public static IServiceCollection AddMemoryManagement<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TManager>(this IServiceCollection services)
         where TManager : class, IMemoryManager
     {
         ArgumentNullException.ThrowIfNull(services);

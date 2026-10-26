@@ -2,6 +2,7 @@
 
 - 状態: 採用
 - 日付: 2026-10-11
+- 更新: 2026-10-26
 
 ## 背景
 
@@ -25,11 +26,25 @@ pass はアクセスごとに state と BarrierScope を宣言し、Access flags
 
 ### 実用版の所有権とculling
 
-`CreateTexture`／`CreateBuffer<T>` は descriptor と非所有 handle を登録する。GPU allocation は live pass の Record 時に同じ device で遅延生成し、compiled plan が所有する。view は context の CreateTextureView で生成して plan が保持できる。plan の Dispose は記録先 command の Completed／Faulted／Disposed 状態を要求し、GPU work を待たずに view、allocation の順で解放する。記録失敗時も command を破棄してから plan を解放する。
+`CreateTexture`／`CreateBuffer<T>`はdescriptorと非所有handleを登録する。GPU allocationはlive passのRecord時に同じdeviceで遅延生成し、compiled planが所有する。viewはcontextのCreateTextureViewで生成してplanが保持できる。planのDisposeは記録先commandのCompleted／Faulted／Disposed状態を要求し、GPU workを待たずにview、allocation、外部所有権の順で解放する。記録失敗時もcommandを破棄してからplanを解放する。
 
 MarkOutput は最後の producer を保持する。ExportTexture／ExportBuffer／ExportShaderDataBuffer は出力を保持し、グラフ末尾に指定の final state／scope へ barrier を記録する。Present は借用した surface frame texture の export で指定し、実際の surface 対応は backend が検証する。Acquire／Submit／Present の semaphore と frame 操作は利用者が管理する。
 
 外部所有 resource への write と KeepAlive が指定された pass は副作用を持つ root として保持する。root から read と通常 write の直前 producer、および明示的な DependsOn を遡り、不要な pass を削除する。write-only でも部分書き込みの可能性があるため、既定では前の値を保持する。UseTexture／UseBuffer／UseShaderDataBuffer の `discard: true` は全 allocation（texture は全 mip／layer）の上書きを保証する宣言で、write-only の場合だけ認める。この宣言がある場合のみ前の producer を値の依存から除く。WAR／WAW の実行順と barrier は引き続き必要である。出力のない一時 resource の pass と allocation は生成しない。未初期化一時 buffer の read／read-write も拒否する。
+
+### 複数拡張の状態と共通の所有権
+
+Resources、ImageEffects、2Dなどの各ライブラリは同じRenderGraphへ拡張を接続する。coreは拡張状態の型とfactory、および`IRenderGraphLifetime`だけを扱い、ResourceManagerや描画モジュールの具象型へ依存しない。各拡張のimportsや部分ビューは借用の入口とし、独自のCompileや最終所有者を持たせない。
+
+`RenderGraphExtensionsBuilder.Add<T>(factory, owner)`でfactoryを明示登録し、`BuildAsync(cancellationToken)`で準備済みのRenderGraphExtensionsを作る。同じ型の重複登録を拒否し、完成した構成は変更せずフレーム間で共有する。登録はロードを開始せず、BuildAsyncが非同期準備を登録順に実行する。`GetExtension<T>()`は登録済みfactoryの結果をgraphごとに一度だけ作り、`GetOrAddExtension<T>(fallback)`は未登録の場合だけ既定factoryを使う。循環した生成とfactory失敗後のgraph継続利用を拒否する。非同期ロードはBuildAsync、DI解決は初期化時に済ませる。ReflectionやActivatorによる生成、毎Appendのfactory生成、拡張登録順によるGPU実行順の変更は行わない。
+
+builderの`AddAsync<T>`は、非同期準備からgraph用factoryと任意のownerを返す。同期Addのownerは登録成功時にbuilderへ移り、非同期準備のownerは準備成功時に記録する。BuildAsyncは開始後一度だけ実行でき、進行中や完了後の登録・再Buildを拒否する。開始前にキャンセル済みならbuilderを消費しない。成功時は全ownerを構成へ移譲し、失敗・キャンセル時は所有権を受け取った逆順に解放する。解放自体が失敗した場合は元の失敗と解放失敗をAggregateExceptionで返し、失敗したownerと依存先をbuilderに残す。独自のownerで解放失敗を扱う場合はbuilderを保持し、そのDisposeで再試行する。builderの変更・Disposeは直列化し、Build中にDisposeしない。
+
+生成した拡張状態そのものは借用として保持し、IDisposableを自動的に解放しない。固定GPU資源やLeaseは準備前に`graph.Retain`へ渡す。Compileは検証と診断処理が成功してから全所有権を一括してplanへ移す。失敗した場合はgraphに所有を残し、Compile前の放棄はgraph.Disposeが解放する。移譲後のgraph.Disposeはplanの資源を解放しない。設定に渡した任意のownerは構成のDisposeが解放し、graph／planのLeaseとは寿命を分ける。
+
+planは記録前に所有権の有効性を検証し、GPU使用終了後にview、一時allocation、登録の逆順の外部所有権を解放する。依存先を先に登録することで利用側を先に解放する。解放失敗で停止し、未解放部分と依存先を保持して同じ所有者のDisposeから再試行する。待機キャンセルは完了とはみなさず、device loss時の退役確認はアプリが行う。
+
+拡張構成、生成済み拡張状態、保持した所有権のいずれかを持つgraphは、成功したCompileで構築を閉じる。以後の追加、既存passの宣言変更、再Compileを拒否する。従来の借用だけのgraphは複数回Compileでき、宣言とcallbackのsnapshotを各planへ作る。再利用する拡張構成と、一回限りのフレーム状態を区別する。
 
 ### 診断システムへの接続
 
@@ -43,20 +58,27 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 
 ### 公開API
 
-比較元は origin/main（`cc766f2`）。既存 backend API の変更はなく、以下の公開 API を追加する。handle は graph-local で非所有、利用者による生成／継承はできない。
+既存backend APIを維持し、以下の公開APIを提供する。handleはgraph-localで非所有、利用者による生成／継承はできない。
 
 ```diff
 +namespace Lumyte.Graphics.RenderGraph;
 +
-+public sealed class RenderGraph
++public sealed class RenderGraph : IDisposable
 +{
 +    // 一時 allocation を使う場合は device が必要。observer は省略可能。
-+    public RenderGraph(IGraphicDevice? device = null, string name = "render-graph", IRenderGraphObserver? observer = null);
++    public RenderGraph(IGraphicDevice? device = null, string name = "render-graph",
++        IRenderGraphObserver? observer = null, RenderGraphExtensions? extensions = null);
 +    // name は空でない 256 文字以下。Id は builder の生存中不変。
 +    // 拡張メソッドも同じdeviceを借用する。import専用graphではnull。
 +    public IGraphicDevice? Device { get; }
 +    public string Name { get; }
 +    public Guid Id { get; }
++    public bool IsBuilding { get; }
++    public T GetExtension<T>() where T : class;
++    public T GetOrAddExtension<T>(Func<RenderGraph, T> fallback) where T : class;
++    // 準備前に登録。成功したCompileでplanへ移し、放棄時はgraphが返す。
++    public void Retain(IRenderGraphLifetime lifetime);
++    public void Dispose();
 +    // 外部所有 allocation を借用し、実際の初期 state／scope を指定する。
 +    public RenderGraphTexture ImportTexture(IGraphicsTexture texture, TextureState initialState, BarrierScope initialScope, string? name = null);
 +    public RenderGraphBuffer<T> ImportBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope initialScope, string? name = null) where T : unmanaged;
@@ -75,6 +97,30 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // frameId は非負、0 は未指定。capture 未指定なら observer の単発要求だけが snapshot を有効化する。
 +    // 循環・live resource の未初期化 read は InvalidOperationException。GPU work は行わない。
 +    public CompiledRenderGraph Compile(long frameId = 0, RenderGraphCaptureOptions? capture = null);
++}
++public sealed class RenderGraphExtensionsBuilder : IDisposable
++{
++    // 登録だけを行う。ownerを渡した場合は登録成功時にbuilderへ所有権を移す。
++    public RenderGraphExtensionsBuilder Add<T>(Func<RenderGraph, T> factory,
++        IDisposable? owner = null) where T : class;
++    public RenderGraphExtensionsBuilder AddAsync<T>(
++        Func<CancellationToken, ValueTask<RenderGraphExtensionFactory<T>>> prepare) where T : class;
++    // 一度だけ準備する。成功時にownerを戻り値へ移し、失敗時は取得した逆順に解放する。
++    public ValueTask<RenderGraphExtensions> BuildAsync(CancellationToken cancellationToken = default);
++    public void Dispose();
++}
++public readonly record struct RenderGraphExtensionFactory<T>(
++    Func<RenderGraph, T> Factory, IDisposable? Owner = null) where T : class;
++public sealed class RenderGraphExtensions : IDisposable
++{
++    // 準備済みの構成。公開のconstructorや変更APIは持たない。
++    // factoryは各graph内で初回取得時に一度だけ実行する。
++    public void Dispose();
++}
++public interface IRenderGraphLifetime : IDisposable
++{
++    // Retain、Compileの移譲、Record前に失効を検証する。
++    void Validate();
 +}
 +public abstract class RenderGraphResource
 +{
@@ -127,7 +173,9 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer) where T : struct, IShaderData;
 +    // 同一 device、Recording、active encoder なしが前提。失敗時も一回分を消費する。
 +    public void Record(IGraphicsCommandBuffer commands);
-+    // 記録先が Completed／Faulted／Disposed になるまで拒否。GPU を待たず view→allocation の順で解放。
++    // 構築済みplanへ所有権を追加する低水準の入口。Record前だけ使用する。
++    public void Retain(IRenderGraphLifetime lifetime);
++    // 記録先が Completed／Faulted／Disposed になるまで拒否。view→allocation→外部所有権の順で解放。
 +    public void Dispose();
 +}
 +// GraphId は builder、RunId は Compile ごと、FrameId は利用者指定（0 は未指定）。
