@@ -1,21 +1,30 @@
+using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Hosting;
+
 namespace Lumyte.Resources.Graphics.Drawing2D;
 
-/// <summary>Builds shared renderer resources through the selected graphics device epoch.</summary>
-public sealed class Renderer2DResourceStage : IResourceTransform<Renderer2DArtifacts, Renderer2DResource, GraphicsResourceRuntime>
+/// <summary>Composes renderer factory resources from generic keyed Graphics definitions.</summary>
+public sealed class Renderer2DResourceStage : IResourceSourceStage<Renderer2DResource, GraphicsResourceRuntime>
 {
-    private readonly GraphicsProgramStage _programs = new();
+    /// <inheritdoc/>
+    public async ValueTask<Renderer2DResource> BuildAsync(GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
+    {
+        GraphicsDeviceLease epoch = await runtime.AcquireAsync(context, cancellationToken: cancellationToken);
+        GraphicsResource<IGraphicsPipeline> pipeline = await context.RequireAsync(DrawingGraphicsResources2D.Pipeline, cancellationToken: cancellationToken);
+        GraphicsResource<IGraphicsSampler> sampler = await context.RequireAsync(DrawingGraphicsResources2D.Sampler, cancellationToken: cancellationToken);
+        if (!ReferenceEquals(epoch.Device, pipeline.Device) || !ReferenceEquals(epoch.Device, sampler.Device))
+        {
+            throw new InvalidOperationException("2D and its shared resources must use the selected physical device.");
+        }
+
+        if (pipeline.Value.Desc.TopologyClass != PrimitiveTopologyClass.Triangle || pipeline.Value.Desc.AlphaToCoverageEnable)
+        {
+            throw new InvalidOperationException("2D drawing requires a triangle pipeline without alpha-to-coverage.");
+        }
+
+        return new(GraphicsProgramResource.FromPipeline(pipeline, sampler));
+    }
 
     /// <inheritdoc/>
-    public ResourceDependencyLifetime InputLifetime => ResourceDependencyLifetime.Resident;
-
-    /// <inheritdoc/>
-    public ResourceAddress GetInput(ResourceAddress output) => output;
-
-    /// <inheritdoc/>
-    public async ValueTask<Renderer2DResource> BuildAsync(Renderer2DArtifacts input, GraphicsResourceRuntime runtime, ResourceBuildContext context, CancellationToken cancellationToken)
-        => new(await _programs.BuildAsync(input.Program, runtime, context, cancellationToken));
-
-    /// <inheritdoc/>
-    public ValueTask ReleaseAsync(Renderer2DResource resource, GraphicsResourceRuntime runtime)
-        => _programs.ReleaseAsync(resource.Program, runtime);
+    public ValueTask ReleaseAsync(Renderer2DResource resource, GraphicsResourceRuntime runtime) => ValueTask.CompletedTask;
 }

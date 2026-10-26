@@ -126,6 +126,32 @@ public sealed class ResourceRegistrationBuilder
         return this;
     }
 
+    /// <summary>Adds package-owned service registrations applied before the provider is built.</summary>
+    /// <param name="configure">Registers immutable definitions and constructor dependencies.</param>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder ConfigureServices(Action<IServiceCollection> configure)
+    {
+        EnsureConfiguring();
+        ArgumentNullException.ThrowIfNull(configure);
+        _registrations.Add(configure);
+        return this;
+    }
+
+    /// <summary>Adds a package's default source stage and runtime only when its output has no pipeline.</summary>
+    /// <typeparam name="TOutput">The completed output type.</typeparam>
+    /// <typeparam name="TStage">The constructor-injected default stage.</typeparam>
+    /// <typeparam name="TRuntime">The selected default runtime.</typeparam>
+    /// <returns>This builder.</returns>
+    public ResourceRegistrationBuilder TryAddSourcePipeline<TOutput, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStage, TRuntime>()
+        where TOutput : notnull
+        where TStage : class, IResourceSourceStage<TOutput, TRuntime>
+        where TRuntime : class, IResourceRuntime
+    {
+        EnsureConfiguring();
+        return _pipelines.Contains(typeof(TOutput).TypeHandle)
+            ? this : AddSourcePipeline<TOutput, TStage>().UseStageRuntime<TOutput, TRuntime>();
+    }
+
     internal Func<IServiceProvider, IResourceSource> Complete()
     {
         EnsureConfiguring();

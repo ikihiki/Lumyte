@@ -31,7 +31,7 @@ internal sealed class SmokeDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public IGraphicsTexture CreateTexture(TextureDesc desc) => throw new NotSupportedException();
 
-    public IGraphicsSampler CreateSampler(SamplerDesc desc) => throw new NotSupportedException();
+    public IGraphicsSampler CreateSampler(SamplerDesc desc) => new SmokeSampler(desc);
 
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw new NotSupportedException();
 
@@ -48,7 +48,7 @@ internal sealed class SmokeDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw new NotSupportedException();
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new SmokePipeline(desc);
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 

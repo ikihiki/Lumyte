@@ -88,6 +88,42 @@ public sealed class RendererResourceTests
         Assert.Single(state.Devices[1].Programs);
     }
 
+    /// <summary>Checks explicit pipeline definitions override library defaults in either registration order.</summary>
+    /// <param name="afterDefaults">Whether the application registers after library defaults.</param>
+    /// <returns>The asynchronous check.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PipelineDefinitionOverridesDefaultsAndSharesSamplerAsync(bool afterDefaults)
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider services = CreateServices(
+            state,
+            new ProgramResourceTests.MutableSource(),
+            custom: false,
+            configure: collection => collection.AddGraphicsResource(DrawingGraphicsResources2D.Pipeline, new GraphicsPipelineDefinition
+            {
+                VertexShader = DrawingGraphicsResources2D.VertexShader,
+                FragmentShader = DrawingGraphicsResources2D.FragmentShader,
+                Optimization = PipelineOptimizationMode.FullSpecialization,
+                Label = "configured-2d",
+            }),
+            afterDefaults: afterDefaults);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
+        await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = services.GetRequiredService<ResourceManager>();
+        using ResourceReference<Renderer2DResource> reference = await manager.AcquireRenderer2DAsync();
+        using ResourceLease<Renderer2DResource> lease = reference.Acquire();
+        GraphicsProgramResources resources = lease.Value.Program.Resources;
+        Assert.Equal("configured-2d", resources.Pipeline.Desc.Label);
+        Assert.Equal(PipelineOptimizationMode.FullSpecialization, resources.Pipeline.Desc.Optimization);
+        using ResourceReference<GraphicsResource<IGraphicsSampler>> sampler = await manager.AcquireAsync(DrawingGraphicsResources2D.Sampler);
+        using ResourceLease<GraphicsResource<IGraphicsSampler>> samplerLease = sampler.Acquire();
+        Assert.Same(samplerLease.Value.Value, resources.DefaultSampler);
+        using Renderer2D renderer = reference.CreateRenderer();
+        Assert.Single(state.Devices[0].Programs);
+    }
+
     /// <summary>Checks graph rendering uses the same resource factory and failed construction does not retain a lease.</summary>
     /// <returns>The asynchronous check.</returns>
     [Fact]
@@ -119,7 +155,7 @@ public sealed class RendererResourceTests
         Assert.True(pipeline.Disposed);
     }
 
-    private static ServiceProvider CreateServices(GraphicsTestState state, ProgramResourceTests.MutableSource source, bool custom)
+    private static ServiceProvider CreateServices(GraphicsTestState state, ProgramResourceTests.MutableSource source, bool custom, Action<IServiceCollection>? configure = null, bool afterDefaults = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(state);
@@ -131,10 +167,20 @@ public sealed class RendererResourceTests
             services.UseGraphicsShaders<Renderer2DResource>(new("vertex"), new("fragment"));
         }
 
+        if (!afterDefaults)
+        {
+            configure?.Invoke(services);
+        }
+
         services.AddResources(builder => builder.UseSource<ProgramResourceTests.MutableSource>()
             .AddShaderPipeline().AddGraphics2D()
             .ConfigureHotReload(new() { DebounceDelay = TimeSpan.Zero, MaximumBatchDelay = TimeSpan.FromMilliseconds(10) }));
         services.AddResourceGraphics();
+        if (afterDefaults)
+        {
+            configure?.Invoke(services);
+        }
+
         return services.BuildServiceProvider();
     }
 }
