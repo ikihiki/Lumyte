@@ -18,8 +18,8 @@ public sealed class ImportLifetimeTests
         await using ServiceProvider first = CreateProvider();
         await using ServiceProvider second = CreateProvider();
         ResourceManager manager = first.GetRequiredService<ResourceManager>();
-        using var extensions = new RenderGraphExtensions();
-        extensions.AddResources(manager).Add(graph => new Consumer(graph.ImportResources()));
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).Add(graph => new Consumer(graph.ImportResources())).BuildAsync();
         using var graph = new RenderGraphBuilder(extensions: extensions);
         ResourceRenderGraphImports imports = graph.ImportResources();
 

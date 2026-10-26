@@ -36,7 +36,9 @@ MarkOutput は最後の producer を保持する。ExportTexture／ExportBuffer�
 
 Resources、ImageEffects、2Dなどの各ライブラリは同じRenderGraphへ拡張を接続する。coreは拡張状態の型とfactory、および`IRenderGraphLifetime`だけを扱い、ResourceManagerや描画モジュールの具象型へ依存しない。各拡張のimportsや部分ビューは借用の入口とし、独自のCompileや最終所有者を持たせない。
 
-`RenderGraphExtensions.Add<T>(factory, owner)`でfactoryを明示登録し、フレーム間で構成を共有する。設定は最初のgraph作成時に固定し、同じ型の重複登録を拒否する。`GetExtension<T>()`は登録済みfactoryの結果をgraphごとに一度だけ作り、`GetOrAddExtension<T>(fallback)`は未登録の場合だけ既定factoryを使う。循環した生成とfactory失敗後のgraph継続利用を拒否する。非同期ロードやDI解決は初期化時に済ませる。ReflectionやActivatorによる生成、毎Appendのfactory生成、拡張登録順によるGPU実行順の変更は行わない。
+`RenderGraphExtensionsBuilder.Add<T>(factory, owner)`でfactoryを明示登録し、`BuildAsync(cancellationToken)`で準備済みのRenderGraphExtensionsを作る。同じ型の重複登録を拒否し、完成した構成は変更せずフレーム間で共有する。登録はロードを開始せず、BuildAsyncが非同期準備を登録順に実行する。`GetExtension<T>()`は登録済みfactoryの結果をgraphごとに一度だけ作り、`GetOrAddExtension<T>(fallback)`は未登録の場合だけ既定factoryを使う。循環した生成とfactory失敗後のgraph継続利用を拒否する。非同期ロードはBuildAsync、DI解決は初期化時に済ませる。ReflectionやActivatorによる生成、毎Appendのfactory生成、拡張登録順によるGPU実行順の変更は行わない。
+
+builderの`AddAsync<T>`は、非同期準備からgraph用factoryと任意のownerを返す。同期Addのownerは登録成功時にbuilderへ移り、非同期準備のownerは準備成功時に記録する。BuildAsyncは開始後一度だけ実行でき、進行中や完了後の登録・再Buildを拒否する。開始前にキャンセル済みならbuilderを消費しない。成功時は全ownerを構成へ移譲し、失敗・キャンセル時は所有権を受け取った逆順に解放する。解放自体が失敗した場合は元の失敗と解放失敗をAggregateExceptionで返し、失敗したownerと依存先をbuilderに残す。独自のownerで解放失敗を扱う場合はbuilderを保持し、そのDisposeで再試行する。builderの変更・Disposeは直列化し、Build中にDisposeしない。
 
 生成した拡張状態そのものは借用として保持し、IDisposableを自動的に解放しない。固定GPU資源やLeaseは準備前に`graph.Retain`へ渡す。Compileは検証と診断処理が成功してから全所有権を一括してplanへ移す。失敗した場合はgraphに所有を残し、Compile前の放棄はgraph.Disposeが解放する。移譲後のgraph.Disposeはplanの資源を解放しない。設定に渡した任意のownerは構成のDisposeが解放し、graph／planのLeaseとは寿命を分ける。
 
@@ -96,10 +98,23 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // 循環・live resource の未初期化 read は InvalidOperationException。GPU work は行わない。
 +    public CompiledRenderGraph Compile(long frameId = 0, RenderGraphCaptureOptions? capture = null);
 +}
++public sealed class RenderGraphExtensionsBuilder : IDisposable
++{
++    // 登録だけを行う。ownerを渡した場合は登録成功時にbuilderへ所有権を移す。
++    public RenderGraphExtensionsBuilder Add<T>(Func<RenderGraph, T> factory,
++        IDisposable? owner = null) where T : class;
++    public RenderGraphExtensionsBuilder AddAsync<T>(
++        Func<CancellationToken, ValueTask<RenderGraphExtensionFactory<T>>> prepare) where T : class;
++    // 一度だけ準備する。成功時にownerを戻り値へ移し、失敗時は取得した逆順に解放する。
++    public ValueTask<RenderGraphExtensions> BuildAsync(CancellationToken cancellationToken = default);
++    public void Dispose();
++}
++public readonly record struct RenderGraphExtensionFactory<T>(
++    Func<RenderGraph, T> Factory, IDisposable? Owner = null) where T : class;
 +public sealed class RenderGraphExtensions : IDisposable
 +{
-+    // factoryは各graph内で初回取得時に一度だけ実行する。ownerだけを構成が所有する。
-+    public RenderGraphExtensions Add<T>(Func<RenderGraph, T> factory, IDisposable? owner = null) where T : class;
++    // 準備済みの構成。公開のconstructorや変更APIは持たない。
++    // factoryは各graph内で初回取得時に一度だけ実行する。
 +    public void Dispose();
 +}
 +public interface IRenderGraphLifetime : IDisposable

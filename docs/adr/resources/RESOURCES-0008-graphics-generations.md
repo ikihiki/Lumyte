@@ -160,15 +160,15 @@ Sourceはコンパイル済み`.lshader`を提供する。Slangコンパイル�
 
 `AddShaderPipeline()`はCPU artifactとGPU shaderのStage、およびGPU側の型付きRuntime選択を登録する。既存の`UseGraphicsAsync`は低水準の互換入口とし、新しいStageは型付きRuntimeの`AcquireAsync`を使う。deviceやworkerの起動停止、公開世代や再構築をshader loaderへ重複実装しない。
 
-RenderGraphのimportは従来どおり借用できる。Resource連携は`RenderGraphExtensions.AddResources(manager)`で登録し、`graph.ImportResources()`から`ImportTextureAsync`、`ImportBufferAsync<T>`、`ImportShaderDataBufferAsync<T>`または`AcquireAsync<T>`を使う。importsはGraphの型付き拡張状態であり、同じGraph内の各モジュールから共有する。CompileやDisposeを独自に持たず、Graphへ所有を集約する。設定なしの`graph.ImportResources(manager)`も同じ状態を関連付ける。
+RenderGraphのimportは従来どおり借用できる。Resource連携は`RenderGraphExtensionsBuilder.AddResources(manager)`で登録してBuildAsyncで構成を確定し、`graph.ImportResources()`から`ImportTextureAsync`、`ImportBufferAsync<T>`、`ImportShaderDataBufferAsync<T>`または`AcquireAsync<T>`を使う。importsはGraphの型付き拡張状態であり、同じGraph内の各モジュールから共有する。CompileやDisposeを独自に持たず、Graphへ所有を集約する。設定なしの`graph.ImportResources(manager)`も同じ状態を関連付ける。
 
-`graph.Compile()`は全拡張の所有をplanへ一括で移す。移譲前の失敗ではGraphに所有を残す。拡張や所有権を使うGraphはCompile成功後の変更・再Compileを拒否し、借用だけの既存Graphは再Compileを維持する。拡張構成は最初のGraphに関連付けた時点で固定し、フレーム間で再利用する。型付きfactoryの明示登録・状態取得はReflectionやDI解決を行わない。
+`graph.Compile()`は全拡張の所有をplanへ一括で移す。移譲前の失敗ではGraphに所有を残す。拡張や所有権を使うGraphはCompile成功後の変更・再Compileを拒否し、借用だけの既存Graphは再Compileを維持する。BuildAsyncが返す拡張構成は変更せず、フレーム間で再利用する。型付きfactoryの明示登録・状態取得はReflectionやDI解決を行わない。
 
 複数入力を同じpublicationに揃える場合は、Referenceを事前ロードし、最初の取得前に`graph.ImportResources().UseSnapshot(snapshot)`でフレーム共通の借用viewを指定する。`Acquire(reference)`とEffectsもこのviewから取得する。SnapshotはGraph構築終了まで呼び出し側が保持し、各Leaseはその後も有効となる。個々のAcquireAsyncは暗黙に全リソースのSnapshotを取得しない。
 
 planは外部所有権を`IRenderGraphLifetime`として受け取り、記録前に失効を検証する。解放順はview、一時allocation、登録の逆順の外部所有権とする。GPU完了前のDisposeは拒否する。HotReload中の旧shaderとartifactをplanの寿命まで保ち、新しいplan／pipelineが新世代を取得する。記録途中のpipelineやshaderを差し替えない。
 
-ImageEffectsは`ImageEffectsGraphContext`をGraphごとに共有し、`graph.AppendEffects(effectGraph, source)`から利用する。シェーダやimportsを呼び出しごとに渡さず、戻り値はEffectImageに統一する。単独利用時は既定の埋め込み版を使用する。Managerとの連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。Resource Pipelineの`AddImageEffects()`を登録し、初期化時の`extensions.AddImageEffectsAsync(manager)`で既定パッケージを事前ロードする。取得したReferenceは拡張設定が所有する。カスタム時だけ`ImageEffectShaderPackage`で二つのartifactキーをDIへ注入する。DIなしでは同じ設定をCPU Stageへ渡す。
+ImageEffectsは`ImageEffectsGraphContext`をGraphごとに共有し、`graph.AppendEffects(effectGraph, source)`から利用する。シェーダやimportsを呼び出しごとに渡さず、戻り値はEffectImageに統一する。単独利用時は既定の埋め込み版を使用する。Managerとの連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。Resource Pipelineの`AddImageEffects()`を登録し、`builder.AddImageEffects(manager)`で準備を定義し、初期化時の`builder.BuildAsync(cancellationToken)`で既定パッケージを事前ロードする。登録時にロードは行わず、取得したReferenceは完成した拡張構成が所有する。カスタム時だけ`ImageEffectShaderPackage`で二つのartifactキーをDIへ注入する。DIなしでは同じ設定をCPU Stageへ渡す。
 
 二つのartifactをResident依存にするCPUの組と、その組をResident依存に持つGPUの組を構築する。既定CPU artifactはライブラリ共有cacheを再利用し、カスタムartifactは通常のSource・メモリ計上・HotReloadに参加する。GPUの組は正確なdevice epochに属し、部分生成の失敗に備えて生成前にcleanupを登録する。復旧時にはCPUの組を再利用する。
 

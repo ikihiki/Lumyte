@@ -16,24 +16,18 @@ public static class ResourceImageEffectExtensions
     public static ValueTask<ResourceReference<ImageEffectShaderResource>> AcquireImageEffectShadersAsync(this ResourceManager manager, CancellationToken cancellationToken = default)
         => manager.AcquireAsync(_shaderKey, cancellationToken);
 
-    /// <summary>Loads the configured shaders once and registers their graph-local image-effects context.</summary>
-    /// <param name="extensions">The configuration with AddResources registered for the same manager.</param>
+    /// <summary>Registers managed image effects, deferring shader loading until BuildAsync.</summary>
+    /// <param name="extensions">The builder with AddResources registered for the same manager.</param>
     /// <param name="manager">The manager owning the default or injected shader package.</param>
-    /// <param name="cancellationToken">Cancels preload without leaving a registered owner.</param>
-    /// <returns>The supplied configuration, owning the reference until configuration disposal.</returns>
-    /// <remarks>Finish registration before creating graphs. No resource loading occurs in AppendEffects.</remarks>
-    public static async ValueTask<RenderGraphExtensions> AddImageEffectsAsync(this RenderGraphExtensions extensions, ResourceManager manager, CancellationToken cancellationToken = default)
+    /// <returns>The same builder.</returns>
+    /// <remarks>BuildAsync preloads the shaders and transfers the reference to the built configuration. AppendEffects performs no resource loading.</remarks>
+    public static RenderGraphExtensionsBuilder AddImageEffects(this RenderGraphExtensionsBuilder extensions, ResourceManager manager)
+        => extensions.AddAsync<ImageEffectsGraphContext>(cancellationToken => PrepareShadersAsync(manager, cancellationToken));
+
+    private static async ValueTask<RenderGraphExtensionFactory<ImageEffectsGraphContext>> PrepareShadersAsync(ResourceManager manager, CancellationToken cancellationToken)
     {
         ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return extensions.Add<ImageEffectsGraphContext>(graph => CreateContext(graph, reference), reference);
-        }
-        catch
-        {
-            reference.Dispose();
-            throw;
-        }
+        return new(graph => CreateContext(graph, reference), reference);
     }
 
     private static ImageEffectsGraphContext CreateContext(RenderGraphBuilder graph, ResourceReference<ImageEffectShaderResource> reference)

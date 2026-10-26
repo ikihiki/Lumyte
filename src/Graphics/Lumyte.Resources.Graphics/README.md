@@ -105,10 +105,12 @@ CPU artifactだけ必要なら`AddSourcePipeline<ShaderArtifact, ShaderArtifactS
 
 ## RenderGraphへのimport
 
-RenderGraph本体はResourcesへ参照を追加しません。`RenderGraphExtensions.AddResources(manager)`で登録し、Graph内の共通の`ImportResources()`からtexture、typed buffer、shader-data-bufferを取得できます。アプリ固有の出力wrapperやシェーダは`AcquireAsync<T>`で保持し、既存のgraph/device APIへ渡します。
+RenderGraph本体はResourcesへ参照を追加しません。`RenderGraphExtensionsBuilder.AddResources(manager)`で登録してBuildAsyncで構成を確定し、Graph内の共通の`ImportResources()`からtexture、typed buffer、shader-data-bufferを取得できます。アプリ固有の出力wrapperやシェーダは`AcquireAsync<T>`で保持し、既存のgraph/device APIへ渡します。
 
 ```csharp
-using var extensions = new RenderGraphExtensions().AddResources(manager);
+using var extensions = await new RenderGraphExtensionsBuilder()
+    .AddResources(manager)
+    .BuildAsync();
 using var graph = new RenderGraph(device, extensions: extensions);
 var imports = graph.ImportResources();
 RenderGraphTexture texture = await imports.ImportTextureAsync(
@@ -142,9 +144,11 @@ graph.ImportResources().UseSnapshot(snapshot);
 ImageEffectsとの通常の接続には、任意のパッケージ[Lumyte.Resources.Graphics.ImageEffects](../Lumyte.Resources.Graphics.ImageEffects/README.md)を使用します。`AddImageEffects()`で既定の埋め込みシェーダ一式を登録し、パッケージ名やキーの指定なしで取得できます。
 
 ```csharp
-// 初期化時に一度ロードし、他の拡張と同じ構成へ登録する。
-using var extensions = new RenderGraphExtensions().AddResources(manager);
-await extensions.AddImageEffectsAsync(manager);
+// 初期化時に構成を登録し、BuildAsyncで一度ロードする。
+using var extensions = await new RenderGraphExtensionsBuilder()
+    .AddResources(manager)
+    .AddImageEffects(manager)
+    .BuildAsync(cancellationToken);
 
 // フレームごと。
 using var graph = new RenderGraph(device, extensions: extensions);

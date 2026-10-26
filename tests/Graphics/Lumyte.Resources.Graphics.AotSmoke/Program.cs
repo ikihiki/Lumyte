@@ -32,7 +32,9 @@ internal static class Program
         execution.PrepareOnCurrentHost(OwnerPlacement.Host, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, 1, new());
         Wait(execution.StartAsync().AsTask(), execution);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        Task<RenderGraphExtensions> building = new RenderGraphExtensionsBuilder().AddResources(manager).BuildAsync().AsTask();
+        Wait(building, execution);
+        using RenderGraphExtensions extensions = building.Result;
         using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(extensions: extensions);
         ResourceRenderGraphImports imports = graph.ImportResources();
         Task<ShaderArtifact> loading = imports.AcquireAsync(new ResourceKey<ShaderArtifact>("shader")).AsTask();
@@ -78,9 +80,12 @@ internal static class Program
         IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         Wait(devices.InitializeAsync().AsTask(), execution);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager)
+        using RenderGraphExtensionsBuilder builder = new RenderGraphExtensionsBuilder().AddResources(manager).AddImageEffects(manager)
             .Add<LayerImports>(static graph => new(graph));
-        Wait(extensions.AddImageEffectsAsync(manager).AsTask(), execution);
+        Require(source.Opens == 0 && device.Shaders.Count == 0);
+        Task<RenderGraphExtensions> building = builder.BuildAsync().AsTask();
+        Wait(building, execution);
+        using RenderGraphExtensions extensions = building.Result;
         Task<ResourceReference<ImageEffectShaderResource>> loading = manager.AcquireImageEffectShadersAsync().AsTask();
         Wait(loading, execution);
         using ResourceReference<ImageEffectShaderResource> reference = loading.Result;

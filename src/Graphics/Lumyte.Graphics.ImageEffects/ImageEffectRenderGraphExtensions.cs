@@ -56,10 +56,10 @@ public static class ImageEffectRenderGraphExtensions
     }
 
     /// <summary>Registers image-effect state using supplied shaders or embedded defaults.</summary>
-    /// <param name="extensions">The reusable graph extension configuration.</param>
+    /// <param name="extensions">The graph extension builder.</param>
     /// <param name="shaders">Optional borrowed shader artifacts or modules.</param>
-    /// <returns>The same configuration.</returns>
-    public static RenderGraphExtensions AddImageEffects(this RenderGraphExtensions extensions, ImageEffectShaders? shaders = null)
+    /// <returns>The same builder.</returns>
+    public static RenderGraphExtensionsBuilder AddImageEffects(this RenderGraphExtensionsBuilder extensions, ImageEffectShaders? shaders = null)
         => extensions.Add(graph => new ImageEffectsGraphContext(graph, shaders));
 
     /// <summary>Appends the effect graph using the graph's shared image-effects extension.</summary>
