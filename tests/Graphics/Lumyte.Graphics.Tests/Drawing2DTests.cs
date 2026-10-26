@@ -136,13 +136,13 @@ public sealed class Drawing2DTests
         DrawList2D list = canvas.End();
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
-        var programs = new ExternalDrawingPrograms();
-        using Renderer2D renderer = managedRenderer ?? new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
+        using ExternalDrawingResources? resources = managedRenderer is null ? new(device) : null;
+        using Renderer2D renderer = managedRenderer ?? new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources!.Resources, resourceOwner: resources);
         PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 0.25f) });
+        // Prepared work retains the original owner after the renderer is returned.
+        renderer.Dispose();
         if (managedRenderer is not null)
         {
-            // Only the prepared batches now protect shared pipeline/modules/sampler during the native draw.
-            renderer.Dispose();
             await manager!.TrimAsync();
         }
 
@@ -184,12 +184,14 @@ public sealed class Drawing2DTests
             commands.Dispose();
             if (managedRenderer is null)
             {
-                Assert.True(programs.Acquired > 0);
-                Assert.Equal(0, programs.Returned);
+                Assert.Equal(0, resources!.Disposals);
             }
 
             prepared.Dispose();
-            Assert.Equal(programs.Acquired, programs.Returned);
+            if (managedRenderer is null)
+            {
+                Assert.Equal(1, resources!.Disposals);
+            }
             submission?.Dispose();
         }
     }
@@ -594,7 +596,7 @@ public sealed class Drawing2DTests
 
     private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)
     {
-        var programs = new ExternalDrawingPrograms();
+        using var resources = new ExternalDrawingResources(device);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         draw(canvas);
@@ -614,7 +616,7 @@ public sealed class Drawing2DTests
             Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled | TextureUsage.CopySource,
         };
         RenderGraphTexture target = graph.CreateTexture(description, "canvas");
-        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, programs);
+        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources.Resources, resourceOwner: resources);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
         uint rowBytes = checked((uint)width * layout.BytesPerTexel);
@@ -658,10 +660,9 @@ public sealed class Drawing2DTests
         {
             commands?.Dispose();
             plan?.Dispose();
-            Assert.True(programs.Acquired > 0);
-            Assert.Equal(0, programs.Returned);
+            Assert.Equal(0, resources.Disposals);
             drawing.Dispose();
-            Assert.Equal(programs.Acquired, programs.Returned);
+            Assert.Equal(1, resources.Disposals);
             submission?.Dispose();
         }
     }
@@ -726,31 +727,6 @@ public sealed class Drawing2DTests
         Vector4 actual = pixels[(y * width) + x];
         var difference = Vector4.Abs(actual - expected);
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Pixel ({x}, {y}): expected {expected}, actual {actual}, tolerance {tolerance}.");
-    }
-
-    private sealed class ExternalDrawingPrograms : IGraphicsProgramProvider
-    {
-        private readonly ShaderArtifact _vertex = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader").GetBinary());
-        private readonly ShaderArtifact _fragment = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader").GetBinary());
-
-        internal int Acquired { get; private set; }
-
-        internal int Returned { get; private set; }
-
-        public GraphicsProgramLease Acquire(IGraphicDevice device, string programId)
-        {
-            GraphicsProgramLease native = programId switch
-            {
-                DrawingPrograms2D.ProgramId => GraphicsProgramLease.Create(device, _vertex, _fragment),
-                _ => throw new NotSupportedException("Unknown drawing program ABI."),
-            };
-            Acquired++;
-            return new(native.Resources, () =>
-            {
-                Returned++;
-                native.Dispose();
-            });
-        }
     }
 
     private sealed record TranslateLayerEffect(int X, int Y) : ImageEffectDefinition
