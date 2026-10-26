@@ -223,7 +223,7 @@ attachment format/sample countはpassから指定し、定義へ重複させま�
 DI定義はManagerのStage構築時に型別・キー別の辞書へ固定します。描画時にDIを参照せず、Acquire時にも定義を変更しません。
 `TryAddGraphicsResource`でライブラリ既定値を登録し、アプリ定義は登録順序にかかわらず優先できます。
 Runtimeは出力型ごとに選び、GPU依存が別physical deviceなら失敗します。出力型ごとの名前付きRuntime選択も従来どおり使えます。
-DIなしでは`new `GraphicsResourceStage<T>`(registrations)`と`ResourceStageRuntime(typeof(GraphicsResource<T>), runtime)`をManagerに登録します。
+DIなしでは`new GraphicsResourceStage<T>(registrations)`と`ResourceStageRuntime(typeof(GraphicsResource<T>), runtime)`をManagerに登録します。
 各registrationは公開の`GraphicsResourceRegistration<T>(key, definition)`です。
 
 ## 2D・Effectsの既定定義
