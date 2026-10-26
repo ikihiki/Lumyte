@@ -5,16 +5,14 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <summary>Prepares pure drawing batches for direct command-buffer recording without RenderGraph.</summary>
 /// <param name="device">The borrowed rendering device.</param>
 /// <param name="renderers">The borrowed fixed command renderer table.</param>
-/// <param name="programs">The optional provider, frozen for each preparation.</param>
-/// <param name="ownsPrograms">Whether disposal returns an IDisposable provider's renderer ownership.</param>
-public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IGraphicsProgramProvider? programs = null, bool ownsPrograms = false) : IDisposable
+/// <param name="resources">Optional borrowed drawing resources; omission uses lazy embedded defaults.</param>
+/// <param name="resourceOwner">An optional owner transferred on successful construction and returned after renderer and prepared work finish.</param>
+/// <param name="validateResources">An optional runtime validation invoked before preparation and recording.</param>
+public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null) : IDisposable
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-    private readonly IGraphicsProgramProvider _programs = programs ?? DrawingPrograms2D.DefaultProvider;
-    private readonly IDisposable? _ownedPrograms = ownsPrograms
-        ? programs as IDisposable ?? throw new ArgumentException("An owned provider must implement IDisposable.", nameof(programs)) : null;
-
+    private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources);
     private bool _disposed;
     private int _preparing;
 
@@ -41,7 +39,7 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
         var batches = new List<IPreparedCommandBatch2D>();
         try
         {
-            var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _programs);
+            var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources);
             int index = 0;
             while (index < list.Commands.Count)
             {
@@ -78,16 +76,11 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
         }
     }
 
-    /// <summary>Disposes this host and an owned program provider without waiting for GPU work.</summary>
+    /// <summary>Returns this renderer's resource ownership without waiting for GPU work.</summary>
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
         _disposed = true;
-        _ownedPrograms?.Dispose();
+        _resources.Dispose();
     }
 
     private static TextureDesc Describe(IGraphicsTexture texture) => new()

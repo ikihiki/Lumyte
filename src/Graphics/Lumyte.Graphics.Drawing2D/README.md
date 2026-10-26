@@ -44,21 +44,28 @@ batch私有資源はbatchが所有・同期し、外部資源の入口・出口�
 文字向け描画形式は後続PRで追加します。
 設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) を参照してください。
 
-## 外部プログラムの取得
+## 外部の描画資源
+
+ResourceManagerなしでは、生成済みのpipelineと任意のsamplerをまとめて渡します。
 
 ```csharp
-using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
+using var vertex = device.CreateShader(vertexArtifact);
+using var fragment = device.CreateShader(fragmentArtifact);
+using var pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
+var resources = new DrawingResources2D(device, pipeline);
+using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources);
+using var prepared = await renderer.PrepareAsync(drawList, target);
+// Record/SubmitとGPU完了の後に、上記所有者を逆順に解放する。
 ```
 
-programsは事前に準備した資源を返す `IGraphicsProgramProvider` です。
-ABI識別子は `DrawingPrograms2D.ProgramId` で、argument・instruction配置と演算の意味を含みます。
-program leaseはprepared batchが保持し、GPU使用とcommandの解放後にPreparedDraw2Dとともに返却します。
-providerを省略すると `DrawingPrograms2D.DefaultProvider` が埋め込みartifactから生成します。外部providerで内部fallbackは行いません。
-Resources adapterはResourceSnapshotを一回のPrepareAsync全体で固定し、同じ内容世代を返します。
-デバイスロスト後は旧batchを解放し、新device・復元済みprogramで準備し直します。
+DrawingResources2DはDevice/Pipeline/Samplerの借用参照で、fragment artifactはpipelineのshaderから取得します。
+resourcesを省略するとDrawingShaders2Dの埋め込みartifactから必要時に生成し、renderer内で共有します。
+既定artifactはDrawingShaders2D.Vertex/Fragmentからも参照できます。
 
-Resources連携は`Lumyte.Resources.Graphics.Drawing2D`を使います。
-`AddGraphics2D()`で登録し、`using var resource = await manager.AcquireRenderer2DAsync();`
-から`resource.CreateRenderer(commandRenderers)`で生成します。
-シェーダーは`UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`で起動時に設定し、省略時は埋め込み版を使います。
-Effectも同じ登録APIです。作成済みレンダラーは世代を固定し、HotReload後は同じReferenceから新しく生成します。
+外部資源の所有者をrendererへ移譲する場合はresourceOwnerへIDisposableを渡します。
+rendererとpreparedは内部でその所有者を共有し、最後の使用が返った時に一度だけ解放します。
+validateResourcesにはResourceLease.Value等の有効性検査を接続できます。検査失敗時に埋め込みへ切り替えません。
+
+Resources連携はLumyte.Resources.Graphics.Drawing2Dを使います。
+AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成します。
+元のResourceLeaseを所有者として一つだけ保持し、描画用のproviderや別のpipeline leaseは作りません。
