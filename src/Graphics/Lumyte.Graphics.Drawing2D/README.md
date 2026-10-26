@@ -47,6 +47,7 @@ batch私有資源はbatchが所有・同期し、外部資源の入口・出口�
 - [基本描画・paint・資源管理](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)
 - [線・パス](../../../docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)
 - [画像・mesh](../../../docs/adr/graphics/GRAPHICS-0020-2d-images-and-meshes.md)
+- [文字向け形式・COLRv1](../../../docs/adr/graphics/GRAPHICS-0021-2d-glyph-representations.md)
 
 ## 外部の描画資源
 
