@@ -34,10 +34,12 @@ Lumyte/
 │       └── platform/
 ├── src/
 │   ├── Core/
-│   │   └── Lumyte.Core/
+│   │   ├── Lumyte.Core/
+│   │   └── Lumyte.Mathematics/
 │   ├── Diagnostics/
 │   │   ├── Lumyte.Diagnostics/
 │   │   ├── Lumyte.Diagnostics.Generators/
+│   │   ├── Lumyte.Diagnostics.RenderGraph/
 │   │   ├── Lumyte.Diagnostics.Transport/
 │   │   ├── Lumyte.Diagnostics.Transport.Http/
 │   │   ├── Lumyte.Diagnostics.Transport.MagicOnion/
@@ -46,6 +48,8 @@ Lumyte/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
 │   │   ├── Lumyte.Graphics.Abstractions/
+│   │   ├── Lumyte.Graphics.ImageEffects/
+│   │   ├── Lumyte.Graphics.RenderGraph/
 │   │   ├── Lumyte.Graphics/
 │   │   ├── Lumyte.Graphics.DirectX/
 │   │   ├── Lumyte.Graphics.DirectX.Native/
@@ -53,12 +57,15 @@ Lumyte/
 │   │   ├── Lumyte.Graphics.Vulkan.Native/
 │   │   └── Lumyte.Graphics.WebGPU/
 │   ├── Input/
+│   │   ├── Lumyte.Input.Abstractions/
 │   │   ├── Lumyte.Input/
 │   │   ├── Lumyte.Input.Processing/
 │   │   ├── Lumyte.Input.Actions/
 │   │   └── Lumyte.Input.Settings/
 │   └── Platform/
-│       ├── Lumyte.Platform/
+│       ├── Lumyte.Platform.Abstractions/
+│       ├── Lumyte.Windowing.Abstractions/
+│       ├── Lumyte.Windowing/
 │       ├── Lumyte.Platform.Windows/
 │       ├── Lumyte.Platform.Linux/
 │       └── Lumyte.Platform.Browser/
@@ -87,10 +94,10 @@ Lumyte/
 | `docs/adr/` | リポジトリ全体の運用・構成の ADR。直下でプレフィックスなしの連番を採番する |
 | `docs/adr/<category>/` | カテゴリごとの設計判断、採用理由、影響の記録。カテゴリ内で独立して採番する |
 | `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
-| `src/Core/` | 基本型と基盤機能 |
+| `src/Core/` | 基本型と基盤機能。Lumyte.Mathematicsは時計やアニメーションに依存しない数値計算 |
 | `src/Diagnostics/` | 診断の実行・収集基盤、コード生成、共通通信、DI で選ぶ通信アダプター、診断サーバー |
 | `src/Engine/` | エンジン機能の統合 |
-| `src/Graphics/` | 描画の共通契約と描画 API ごとの実装 |
+| `src/Graphics/` | 描画の共通契約、レンダーグラフと描画 API ごとの実装 |
 | `src/Input/` | 入力ソース・デバイスの抽象契約、入力履歴・状態管理、補正・認識・アクション・設定連携 |
 | `src/Platform/` | ウィンドウや OS・ハードウェアに近い入力取得、接続監視と環境ごとの実装 |
 | `tests/` | C# の単体テスト・統合テスト。必要に応じてカテゴリとプロジェクト単位で整理する |
@@ -106,6 +113,12 @@ Lumyte/
 カテゴリは配置を整理するためのものであり、フォルダ階層だけで名前空間や依存関係を決めない。新しい機能カテゴリも同じ一段の分類ルールで追加する。
 
 描画バックエンドが実装する共通インターフェースと関連型は `Lumyte.Graphics.Abstractions` に配置する。デバイスの共通契約と依存境界は [グラフィックデバイスの設計](graphics/GRAPHICS-0001-graphics-device.md) に従う。バックエンド固有の API と使い方は各バックエンドプロジェクトの README に記載する。
+
+`Lumyte.Graphics.RenderGraph` は共通 command API 上で pass の依存関係、culling、barrier と一時 resource の寿命を管理する。`Lumyte.Graphics.Abstractions` のみに依存し、backend ごとの実装は参照しない。設計は [GRAPHICS-0015](graphics/GRAPHICS-0015-render-graph.md)、検証は `tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/` に配置する。
+
+`Lumyte.Graphics.ImageEffects` は2D・3Dから使える画像エフェクトのgraphとRenderGraphへのパス展開を提供する。エフェクト自身が固定のパス実装を持ち、RenderGraphのAppend拡張メソッドへパラメーターを直接渡して適用する。DAGは別途Createで構築する。設計とAPIは [GRAPHICS-0017](graphics/GRAPHICS-0017-image-effects.md)、CPU検証は `tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/`、GPU検証は既存の `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
+
+`Lumyte.Diagnostics.RenderGraph` は Graphics.RenderGraph の observer と既存 Diagnostics を接続する。game scope の最新 snapshot を既存 execution point で公開し、標準 telemetry を収集する。Graphics.RenderGraph 自体は Diagnostics に依存しない。
 
 ### ADR のカテゴリ配置
 

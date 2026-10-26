@@ -9,7 +9,6 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
 
     public IGraphicsSubmission Submit(QueueSubmitDesc desc)
     {
-        owner.ValidateAlive();
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
@@ -44,6 +43,6 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
             command.MarkSubmitted();
         }
 
-        return new BrowserSubmission(commands, handle);
+        return new BrowserSubmission(owner, commands, handle);
     }
 }

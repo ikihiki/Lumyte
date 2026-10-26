@@ -89,8 +89,13 @@ internal sealed unsafe class VulkanShaderBacking : IDisposable
         }
     }
 
-    private static void Check(Result result)
+    private void Check(Result result)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan shader backing operation failed: {result}.");

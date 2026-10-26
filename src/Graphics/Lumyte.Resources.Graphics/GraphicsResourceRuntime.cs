@@ -1,0 +1,71 @@
+using Lumyte.Graphics.Hosting;
+
+namespace Lumyte.Resources.Graphics;
+
+/// <summary>Manages job execution and the graphics device environment selected for resource stages.</summary>
+public sealed class GraphicsResourceRuntime : IResourceRuntime, IResourceRuntimeDependency
+{
+    private readonly IGraphicsDeviceService _devices;
+
+    /// <summary>Initializes a new instance of the <see cref="GraphicsResourceRuntime"/> class.</summary>
+    /// <param name="devices">The borrowed stable device service owning physical epochs.</param>
+    /// <param name="jobs">The shared default environment supplying the executor.</param>
+    public GraphicsResourceRuntime(IGraphicsDeviceService devices, IResourceRuntime jobs)
+    {
+        Id = "Lumyte.Resources.Graphics:" + devices.State.Name;
+        _devices = devices;
+        Executor = jobs.Executor;
+        Dependencies = [this];
+    }
+
+    /// <inheritdoc/>
+    public event EventHandler? Changed
+    {
+        add => _devices.StateChanged += value;
+        remove => _devices.StateChanged -= value;
+    }
+
+    /// <inheritdoc/>
+    public IResourceExecutor Executor { get; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<IResourceRuntimeDependency> Dependencies { get; }
+
+    /// <inheritdoc/>
+    public string Id { get; }
+
+    /// <inheritdoc/>
+    public object Identity => _devices;
+
+    /// <inheritdoc/>
+    public ResourceRuntimeSnapshot Snapshot
+    {
+        get
+        {
+            GraphicsDeviceState state = _devices.State;
+            return new(state.Version, state.Status == GraphicsDeviceServiceStatus.Ready, state.InvalidatedThroughVersion);
+        }
+    }
+
+    /// <summary>Acquires and records the current device epoch for this build.</summary>
+    /// <param name="context">The build using this selected runtime.</param>
+    /// <param name="lifetime">Whether the device is retained for construction or for the completed output.</param>
+    /// <param name="cancellationToken">Cancels before acquisition.</param>
+    /// <returns>A borrowed lease returned by the manager after the corresponding cleanup.</returns>
+    public ValueTask<GraphicsDeviceLease> AcquireAsync(ResourceBuildContext context, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default)
+    {
+        if (!ReferenceEquals(context.Runtime, this))
+        {
+            throw new InvalidOperationException("Use the graphics runtime selected for this stage.");
+        }
+
+        return context.UseGraphicsAsync(_devices, lifetime, cancellationToken);
+    }
+
+    /// <summary>Waits for safe retirement of an original device epoch before its native children are released.</summary>
+    /// <param name="epoch">The epoch retained when the resource was created.</param>
+    /// <param name="cancellationToken">Cancels the retirement wait.</param>
+    /// <returns>The retirement confirmation.</returns>
+    public ValueTask WaitForRetirementAsync(ulong epoch, CancellationToken cancellationToken = default)
+        => _devices.WaitForRetirementAsync(epoch, cancellationToken);
+}

@@ -165,8 +165,13 @@ internal sealed unsafe partial class VulkanCommandBuffer
 
     private static Extent3D Extent(TextureCopyRegion region) => new(region.Width, region.Height, 1);
 
-    private static void Check(Result result, string operation)
+    private void Check(Result result, string operation)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");
@@ -286,7 +291,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
                 ImageLayout = ImageLayout.ColorAttachmentOptimal,
                 LoadOp = a.LoadOp == Abstractions.AttachmentLoadOp.Clear ? Silk.NET.Vulkan.AttachmentLoadOp.Clear : Silk.NET.Vulkan.AttachmentLoadOp.Load,
                 StoreOp = a.StoreOp == Abstractions.AttachmentStoreOp.Store ? Silk.NET.Vulkan.AttachmentStoreOp.Store : Silk.NET.Vulkan.AttachmentStoreOp.DontCare,
-                ClearValue = new() { Color = new ClearColorValue((float)Math.Clamp(a.ClearValue.Red, 0, 1), (float)Math.Clamp(a.ClearValue.Green, 0, 1), (float)Math.Clamp(a.ClearValue.Blue, 0, 1), (float)Math.Clamp(a.ClearValue.Alpha, 0, 1)) },
+                ClearValue = new() { Color = new ClearColorValue((float)a.ClearValue.Red, (float)a.ClearValue.Green, (float)a.ClearValue.Blue, (float)a.ClearValue.Alpha) },
             };
         }
 
@@ -324,6 +329,11 @@ internal sealed unsafe partial class VulkanCommandBuffer
     private void FinishNative()
     {
         Result result = _owner.Api.EndCommandBuffer(_command);
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             State = CommandBufferState.Faulted;

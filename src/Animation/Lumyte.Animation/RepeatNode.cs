@@ -15,31 +15,38 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
             return;
         }
 
-        long index = time >= Length ? count - 1 : time / child.Length;
+        long index = child.Length == 0 || time >= Length ? count - 1 : time / child.Length;
         long local = time >= Length ? child.Length : time % child.Length;
         long ordinal = backwards ? count - 1 - index : index;
         child.Sample(local, output, backwards, checked(priority + ((UInt128)ordinal * child.ValueCount)));
     }
 
-    internal override void Endpoints(long from, long to, AnimationOutput output, UInt128 priority)
+    internal override void Endpoints(Int128 from, Int128 to, AnimationOutput output, bool backwards, UInt128 priority)
     {
         if (!HasRelease)
         {
             return;
         }
 
-        long lower = Math.Max(0, Math.Min(from, to));
-        long upper = Math.Min(Length, Math.Max(from, to));
+        if (child.Length == 0)
+        {
+            long ordinal = backwards ? 0 : count - 1;
+            child.Endpoints(from, to, output, backwards, checked(priority + ((UInt128)ordinal * child.ValueCount)));
+            return;
+        }
+
+        var lower = Int128.Max(0, Int128.Min(from, to));
+        var upper = Int128.Min(Length, Int128.Max(from, to));
         if (lower > upper)
         {
             return;
         }
 
-        long first = Math.Max(0, (lower / child.Length) - 1);
-        long last = Math.Min(count - 1, upper / child.Length);
+        long first = Math.Max(0, ((long)lower / child.Length) - 1);
+        long last = Math.Min(count - 1, (long)upper / child.Length);
 
         // Earlier complete cycles produce identical release endpoints.
-        if (to >= from)
+        if (!backwards)
         {
             first = Math.Max(first, last - 1);
         }
@@ -50,10 +57,10 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
 
         for (long cursor = first; cursor <= last; cursor++)
         {
-            long index = to >= from ? cursor : last - (cursor - first);
+            long index = !backwards ? cursor : last - (cursor - first);
             long offset = checked(index * child.Length);
-            long ordinal = to >= from ? index : count - 1 - index;
-            child.Endpoints(from - offset, to - offset, output, checked(priority + ((UInt128)ordinal * child.ValueCount)));
+            long ordinal = backwards ? count - 1 - index : index;
+            child.Endpoints(from - offset, to - offset, output, backwards, checked(priority + ((UInt128)ordinal * child.ValueCount)));
         }
     }
 
@@ -66,6 +73,16 @@ internal sealed class RepeatNode(TimelineNode child, int count) : TimelineNode(c
 
         if (!query.Clamp(Length, out EventQuery bounded))
         {
+            return;
+        }
+
+        if (child.Length == 0)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                child.Events(bounded, collector);
+            }
+
             return;
         }
 

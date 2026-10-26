@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Owner-bound typed audio commands for OpenAL and host-integrated WebAudio.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Audio.Abstractions/Lumyte.Audio.Abstractions.csproj" />
+    <ProjectReference Include="../Lumyte.Audio.OpenAL/Lumyte.Audio.OpenAL.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Execution/Lumyte.Execution.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Execution.Generators/Lumyte.Execution.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishAot;PublishTrimmed;RuntimeIdentifier;SelfContained" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

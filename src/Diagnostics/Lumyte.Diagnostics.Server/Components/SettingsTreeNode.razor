@@ -1,0 +1,45 @@
+@if (Node.IsContainer)
+{
+    <FluentTreeItem Expanded="true" data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
+        <div class="settings-branch"><span class="settings-key">@Node.Name</span><FluentBadge Appearance="BadgeAppearance.Outline">@(Node.Kind == JsonValueKind.Array ? $"Array · {Node.Children.Count}" : $"Object · {Node.Children.Count}")</FluentBadge></div>
+        @foreach (SettingsTreeModel child in Node.Children)
+        {
+            <SettingsTreeNode @key="child.Path" Node="child" />
+        }
+    </FluentTreeItem>
+}
+else
+{
+    <FluentTreeItem Height="48" data-path="@Node.Path" data-kind="@Node.Kind.ToString().ToLowerInvariant()">
+        <div class="settings-leaf">
+            <label for="@InputId"><span class="settings-key">@Node.Name</span><FluentBadge Appearance="BadgeAppearance.Outline">@KindName</FluentBadge></label>
+            @if (Node.Kind is JsonValueKind.True or JsonValueKind.False)
+            {
+                <FluentSwitch Id="@InputId" data-setting-path="@Node.Path" @bind-Value="Node.BooleanValue">@(Node.BooleanValue ? "true" : "false")</FluentSwitch>
+            }
+            else if (Node.Kind == JsonValueKind.Null)
+            {
+                <FluentBadge Class="settings-null" Appearance="BadgeAppearance.Outline">null</FluentBadge>
+            }
+            else
+            {
+                <FluentTextInput Id="@InputId" data-setting-path="@Node.Path" @bind-Value="Node.Value" />
+            }
+        </div>
+    </FluentTreeItem>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public SettingsTreeModel Node { get; set; } = default!;
+
+    private string InputId => "setting-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Node.Path)))[..12].ToLowerInvariant();
+
+    private string KindName => Node.Kind switch
+    {
+        JsonValueKind.String => "String",
+        JsonValueKind.Number => "Number",
+        JsonValueKind.True or JsonValueKind.False => "Boolean",
+        _ => "Null",
+    };
+}
