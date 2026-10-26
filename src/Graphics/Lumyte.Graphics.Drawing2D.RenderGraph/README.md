@@ -99,5 +99,6 @@ HotReloadやdevice復旧後は、同じReferenceからレンダラーを生成�
 `parent.ImportResources().UseSnapshot(snapshot)`へ同じSnapshotを渡します。
 compiled planの記録前にもprogramの失効を検査します。
 
-手動構成用にconstructorのIGraphicsProgramProvider引数を残しています。
-外部providerの失敗時に埋め込みへfallbackしません。
+手動構成ではconstructorへDrawingResources2Dを渡します。GPU資源は利用側が保持するか、
+resourceOwnerへ所有者を渡してrendererとpreparedの内部共有に移譲します。
+fragment artifactはpipelineのshaderから取得し、別のprogram取得経路は持ちません。

@@ -11,7 +11,6 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
     private readonly GraphPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
     private readonly List<PreparedCommand> _commands = [];
-    private readonly GraphicsProgramLease _program;
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
     private readonly IGraphicsTexture _fallback;
@@ -25,19 +24,13 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         _context = context;
         try
         {
-            GraphicsProgramLease program = context.Programs.Acquire(context.Device, DrawingPrograms2D.ProgramId);
-            ArgumentNullException.ThrowIfNull(program);
-            _program = Own(program);
+            Own(context.ResourceState.Retain());
             cancellationToken.ThrowIfCancellationRequested();
-            GraphicsProgramResources resources = program.Resources;
-            if (!ReferenceEquals(resources.Device, context.Device))
-            {
-                throw new ArgumentException("The program belongs to a different physical device.");
-            }
-
-            _artifact = resources.FragmentArtifact;
+            DrawingResources2D resources = context.Resources;
+            _artifact = resources.Pipeline.Desc.FragmentShader?.Artifact
+                ?? throw new ArgumentException("Drawing requires a fragment shader.");
             _pipeline = resources.Pipeline;
-            _sampler = resources.DefaultSampler ?? Own(context.Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
+            _sampler = resources.Sampler ?? Own(context.Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
             _fallback = Own(context.Device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled }));
             _fallbackView = Own(_fallback.CreateView());
         }
@@ -52,14 +45,14 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
     public void AppendPasses(RenderGraphBuilder graph, RenderTargetBinding2D target)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = _program.Resources;
+        _context.ResourceState.Validate();
         if (_appended || !ReferenceEquals(graph, _context.Graph) || target != _context.Target)
         {
             throw new InvalidOperationException("A prepared batch can only be appended once to its original graph and target.");
         }
 
         _appended = true;
-        graph.Retain(new ProgramValidation(_program));
+        graph.Retain(new ResourceValidation(_context.ResourceState));
         RenderGraphTexture fallback = graph.ImportTexture(_fallback, TextureState.Undefined, default, "unused 2D texture binding");
         graph.AddPass("Initialize unused 2D texture binding", context =>
         {
@@ -75,15 +68,16 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (_disposed)
+        if (_disposed && _owned.Count == 0)
         {
             return;
         }
 
         _disposed = true;
-        for (int i = _owned.Count - 1; i >= 0; i--)
+        while (_owned.Count != 0)
         {
-            _owned[i].Dispose();
+            _owned[^1].Dispose();
+            _owned.RemoveAt(_owned.Count - 1);
         }
     }
 
@@ -242,9 +236,9 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
 
     private sealed record PreparedCommand(DrawingProgram2D Program, IArgumentTable Table, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGpuRef<DrawingInstruction> InstructionRef, IGpuRef<IGraphicsSampler> Sampler, IGpuRef<IGraphicsTextureView> Fallback, uint Root, GraphImageSource2D? Source, GraphImageSource2D? Original, float Opacity, bool Replace, ScissorRect Scissor);
 
-    private sealed class ProgramValidation(GraphicsProgramLease program) : IRenderGraphLifetime
+    private sealed class ResourceValidation(DrawingResourceState2D resources) : IRenderGraphLifetime
     {
-        public void Validate() => _ = program.Resources;
+        public void Validate() => resources.Validate();
 
         public void Dispose()
         {

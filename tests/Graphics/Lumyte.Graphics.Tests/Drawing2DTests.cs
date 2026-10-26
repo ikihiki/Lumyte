@@ -139,6 +139,7 @@ public sealed class Drawing2DTests
         using ExternalDrawingResources? resources = managedRenderer is null ? new(device) : null;
         using Renderer2D renderer = managedRenderer ?? new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources!.Resources, resourceOwner: resources);
         PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 0.25f) });
+
         // Prepared work retains the original owner after the renderer is returned.
         renderer.Dispose();
         if (managedRenderer is not null)
@@ -192,6 +193,7 @@ public sealed class Drawing2DTests
             {
                 Assert.Equal(1, resources!.Disposals);
             }
+
             submission?.Dispose();
         }
     }
@@ -618,6 +620,7 @@ public sealed class Drawing2DTests
         RenderGraphTexture target = graph.CreateTexture(description, "canvas");
         using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources.Resources, resourceOwner: resources);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
+        renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
         uint rowBytes = checked((uint)width * layout.BytesPerTexel);
         uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
