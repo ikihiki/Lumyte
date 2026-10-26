@@ -14,15 +14,4 @@ public sealed class GraphicsShaderPackage<TConsumer>(ResourceKey<ShaderArtifact>
     /// <summary>Gets the fragment artifact key.</summary>
     public ResourceKey<ShaderArtifact> Fragment { get; } = fragment;
 
-    /// <summary>Resolves a coherent artifact pair and retains both as resident dependencies.</summary>
-    /// <param name="context">The consumer's resource build context.</param>
-    /// <param name="cancellationToken">Cancels dependency preparation.</param>
-    /// <returns>The retained CPU artifacts.</returns>
-    public async ValueTask<GraphicsProgramArtifacts> ResolveAsync(ResourceBuildContext context, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ShaderArtifact vertex = await context.RequireAsync(Vertex, cancellationToken: cancellationToken);
-        ShaderArtifact fragment = await context.RequireAsync(Fragment, cancellationToken: cancellationToken);
-        return new(vertex, fragment);
-    }
 }
