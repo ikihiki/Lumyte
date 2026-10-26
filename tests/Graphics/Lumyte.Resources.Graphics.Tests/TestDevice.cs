@@ -39,8 +39,6 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     internal TaskCompletionSource? RetirementWait { get; set; }
 
-    internal TaskCompletionSource? RetirementStarted { get; set; }
-
     internal List<TestShader> Shaders { get; } = [];
 
     internal int CreateShaderFailOnCall { get; set; }
@@ -84,7 +82,6 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
-        RetirementStarted?.TrySetResult();
         if (RejectRetirement)
         {
             throw new InvalidOperationException("Native retirement is not proven.");

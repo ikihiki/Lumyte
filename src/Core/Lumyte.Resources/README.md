@@ -110,8 +110,6 @@ readの取消は待機だけを中断します。seek開始後の失敗・取消
 
 具体型の子への参照を持つ複合リソース、二つの型へのprojection、handleとHotReloadを組み合わせた実行例は[sample](../../../samples/Lumyte.Resources.Sample/README.md)を参照してください。
 
-外部glTF・BIN・PNGからCPU→GPU変換を経て深度テスト付きで3D描画する実行例は、[glTF sample](../../../samples/Lumyte.Resources.Gltf.Sample/README.md)を参照してください。画像ファイルだけの変更による自動HotReloadと、旧GPU世代を保持した再描画も検証します。
-
 ## DIを使わない構築
 
 `IResourceSourceStage<T>`と`IResourceTransform<TInput, TOutput>`は共通の`IResourceStage`を実装します。

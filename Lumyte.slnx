@@ -2,7 +2,6 @@
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
-    <Project Path="samples/Lumyte.Resources.Gltf.Sample/Lumyte.Resources.Gltf.Sample.csproj" />
     <Project Path="samples/Lumyte.Resources.Sample/Lumyte.Resources.Sample.csproj" />
     <Project Path="samples/Lumyte.Platform.Windows.Sample/Lumyte.Platform.Windows.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Sample/Lumyte.Audio.Sample.csproj" />
