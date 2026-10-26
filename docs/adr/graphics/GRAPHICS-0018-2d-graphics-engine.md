@@ -146,9 +146,15 @@ Resources.Graphics.Drawing2Dの`AddGraphics2D()`で生成用リソースを登�
 program ID・handleの対応表・providerの構築はadapter内部に閉じ込める。Referenceは最新の公開世代を追い、生成済みレンダラーは正確な一世代を保持する。
 複数資源を同じpublicationへ揃える場合だけCreateRendererにResourceSnapshotを渡す。
 
+共有GPU資源はResourceKeyごとのGraphicsResourceDefinition<T>で定義する。
+DrawingGraphicsResources2Dの公開キーがshader、pipeline、samplerの既定定義を表し、アプリは同じキーへ登録して上書きできる。
+同じ型の別キーも独立して取得できる。pipelineのcompile設定はGraphicsPipelineDefinition、描画状態は命令renderer側に置く。
+2D用資源はtriangle・fragment・single-sampleの前提を検査し、汎用pipelineはdepth-onlyや別topologyにも利用できる。
+管理範囲は[RESOURCES-0008](../resources/RESOURCES-0008-graphics-generations.md)に従う。
+
 シェーダの選択は`services.UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`で起動時に登録する。
 Effectsも`UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`で同じ仕組みを使う。
-型がABIと用途を区別し、同じ型への登録はDIのあと勝ちとする。省略時は各パッケージの埋め込みartifactを使う。
+これらは既定shader定義への入力指定を簡略化するAPIとする。同じ型への簡略設定はDIのあと勝ちで、明示した公開キーの定義を優先する。省略時は各パッケージの埋め込みartifactを使う。
 選択するのはシェーダの入力資源であり、Effectの実装差し替えには使わない。
 親graphのEffects登録は`AddImageEffects(manager)`に集約し、appendの引数にshaderやproviderを渡さない。
 
