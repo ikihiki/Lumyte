@@ -7,6 +7,9 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
+    <ProjectReference Include="../../../src/Platform/Lumyte.Resources.FileSystem/Lumyte.Resources.FileSystem.csproj" />
+    <EmbeddedResource Include="../Lumyte.Resources.Tests/EmbeddedAssets/payload.txt" LogicalName="source-probe" />
     <ProjectReference Include="../../../src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
   </ItemGroup>

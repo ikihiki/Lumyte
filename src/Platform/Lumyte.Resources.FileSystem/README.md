@@ -2,7 +2,7 @@
 
 `FileResourceSource` reads validated `ResourceId` values directly beneath a
 configured filesystem root. Register `FileResourceSourceOptions` in DI and use
-`AddResources(..., resources => resources.UseSource<FileResourceSource>()...)`.
+`AddResources(resources => resources.UseSource<FileResourceSource>()...)`.
 The source does not require `IMemoryManager`.
 
 ```csharp
