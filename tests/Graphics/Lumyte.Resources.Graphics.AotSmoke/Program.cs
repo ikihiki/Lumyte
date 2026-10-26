@@ -1,12 +1,5 @@
-using Lumyte.Execution;
-using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Hosting;
-using Lumyte.Graphics.ImageEffects;
-using Lumyte.Graphics.RenderGraph;
 using Lumyte.Memory.DependencyInjection;
-using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Graphics.ImageEffects;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Graphics.AotSmoke;
 
@@ -66,7 +59,7 @@ internal static class Program
         services.AddGraphicsDevice<SmokeFactory>(ServiceLifetime.Singleton);
         if (custom)
         {
-            services.AddSingleton(new ImageEffectShaderPackage(new("custom/fullscreen"), new("custom/effects")));
+            services.UseGraphicsShaders<ImageEffectShaderResource>(new("custom/fullscreen"), new("custom/effects"));
         }
 
         services.AddResources(builder => builder.UseSource<Source>()

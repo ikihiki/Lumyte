@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/Diagnostics/Lumyte.Diagnostics.Windowing/Lumyte.Diagnostics.Windowing.csproj" />
+    <Compile Include="../../Platform/Lumyte.Platform.Tests/TestPlatform.cs" Link="TestPlatform.cs" />
+    <Compile Include="../../Platform/Lumyte.Platform.Tests/TestWindow.cs" Link="TestWindow.cs" />
+  </ItemGroup>
+</Project>

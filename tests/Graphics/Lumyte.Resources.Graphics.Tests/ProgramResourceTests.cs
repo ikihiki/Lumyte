@@ -154,6 +154,54 @@ public sealed class ProgramResourceTests
         Assert.Empty(device.Programs);
     }
 
+    /// <summary>Checks a renderer provider and its batches independently retain the same exact generation.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task OwnedProviderKeepsBatchesAfterRendererAndReferenceDisposalAsync()
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider services = CreateServices(state, new MutableSource());
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
+        await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = services.GetRequiredService<ResourceManager>();
+        using ResourceReference<GraphicsProgramResource> reference = await manager.AcquireAsync(_key);
+        using var provider = new RetainedGraphicsProgramProvider<GraphicsProgramResource>(reference.Acquire(), static resource => resource, ProgramId);
+        TestDevice device = Assert.Single(state.Devices);
+        using GraphicsProgramLease batch = provider.Acquire(device, ProgramId);
+        using GraphicsProgramLease second = provider.Acquire(device, ProgramId);
+        TestProgramPipeline pipeline = Assert.IsType<TestProgramPipeline>(batch.Resources.Pipeline);
+        Assert.Throws<NotSupportedException>(() => provider.Acquire(device, "unknown"));
+        Assert.Throws<ArgumentException>(() => provider.Acquire(new TestDevice(), ProgramId));
+        reference.Dispose();
+        provider.Dispose();
+        provider.Dispose();
+        await manager.TrimAsync();
+        Assert.Same(pipeline, batch.Resources.Pipeline);
+        Assert.False(pipeline.Disposed);
+        Assert.Throws<ObjectDisposedException>(() => provider.Acquire(device, ProgramId));
+        batch.Dispose();
+        await manager.TrimAsync();
+        Assert.False(pipeline.Disposed);
+        device.Lose();
+        Assert.Throws<ResourceUnavailableException>(() => second.Resources);
+        second.Dispose();
+        await manager.TrimAsync();
+        Assert.True(pipeline.Disposed);
+    }
+
+    /// <summary>Checks typed shader inputs are isolated by consumer and use the last registration.</summary>
+    [Fact]
+    public void ShaderRegistrationIsTypedAndLastWins()
+    {
+        var services = new ServiceCollection();
+        services.UseGraphicsShaders<GraphicsProgramResource>(new("old-v"), new("old-f"));
+        services.UseGraphicsShaders<GraphicsProgramResource>(new("new-v"), new("new-f"));
+        services.UseGraphicsShaders<ImageEffects.ImageEffectShaderResource>(new("effect-v"), new("effect-f"));
+        using ServiceProvider provider = services.BuildServiceProvider();
+        Assert.Equal(new ResourceKey<ShaderArtifact>("new-v"), provider.GetRequiredService<GraphicsShaderPackage<GraphicsProgramResource>>().Vertex);
+        Assert.Equal(new ResourceKey<ShaderArtifact>("effect-f"), provider.GetRequiredService<GraphicsShaderPackage<ImageEffects.ImageEffectShaderResource>>().Fragment);
+    }
+
     private static ResourceGraphicsProgramProvider Provider(ResourceSnapshot snapshot, ResourceReference<GraphicsProgramResource> reference)
         => new(snapshot, new Dictionary<string, ResourceHandle<GraphicsProgramResource>> { [ProgramId] = reference.Handle });
 
@@ -164,10 +212,7 @@ public sealed class ProgramResourceTests
         services.AddSingleton(source);
         services.AddMemoryManagement();
         services.AddGraphicsDevice<TestFactory>(ServiceLifetime.Singleton);
-        services.AddSingleton(new GraphicsProgramPackages(new Dictionary<ResourceKey<GraphicsProgramResource>, GraphicsProgramPackage>
-        {
-            [_key] = new(new("vertex"), new("fragment")),
-        }));
+        services.UseGraphicsShaders<GraphicsProgramResource>(new("vertex"), new("fragment"));
         services.AddResources(builder => builder.UseSource<MutableSource>()
             .AddShaderPipeline().AddGraphicsPrograms()
             .ConfigureHotReload(new() { DebounceDelay = TimeSpan.Zero, MaximumBatchDelay = TimeSpan.FromMilliseconds(10) }));
@@ -175,7 +220,7 @@ public sealed class ProgramResourceTests
         return services.BuildServiceProvider();
     }
 
-    private sealed class MutableSource : IResourceSource, IResourceChangeSource
+    internal sealed class MutableSource : IResourceSource, IResourceChangeSource
     {
         private readonly Channel<ResourceSourceChange> _changes = Channel.CreateUnbounded<ResourceSourceChange>();
         private int _version = 1;
