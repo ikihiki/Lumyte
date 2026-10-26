@@ -25,7 +25,6 @@ public sealed class ModelAndEffectsTests
             LightDirection = Vector3.UnitZ,
             LightColor = Vector3.One,
         };
-        PostProcessArguments effects = default(PostProcessArguments) with { Exposure = 1, Saturation = 0.5f, AspectRatio = 2, Vignette = 0.25f, ToneMap = 1 };
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
             ModelVertex.ValidateShaderLayout(DrawingShaders.LoadModelVertex(), target);
@@ -50,10 +49,6 @@ public sealed class ModelAndEffectsTests
                 return new byte[16];
             }));
             Assert.Equal(11, references);
-            ShaderTargetData effectVertex = DrawingShaders.LoadPostProcessVertex().GetTarget(target);
-            ShaderTargetData effectFragment = DrawingShaders.LoadPostProcessFragment().GetTarget(target);
-            Assert.Same(effectFragment, ShaderDataLayout.RootTarget(effectVertex, effectFragment, "arguments"));
-            Assert.NotEmpty(ShaderDataLayout.Root(effectFragment, "arguments").Pack(IShaderArguments.Capture(in effects), (_, _) => new byte[16]));
         }
     }
 

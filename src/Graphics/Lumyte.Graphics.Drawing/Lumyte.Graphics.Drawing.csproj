@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
@@ -15,8 +16,6 @@
     <SlangShader Include="Shaders/texture-fragment.slang" ResourceName="Lumyte.Drawing.texture-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/model-vertex.slang" ResourceName="Lumyte.Drawing.model-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/model-fragment.slang" ResourceName="Lumyte.Drawing.model-fragment" Stage="fragment" />
-    <SlangShader Include="Shaders/postprocess-vertex.slang" ResourceName="Lumyte.Drawing.postprocess-vertex" Stage="vertex" />
-    <SlangShader Include="Shaders/postprocess-fragment.slang" ResourceName="Lumyte.Drawing.postprocess-fragment" Stage="fragment" />
   </ItemGroup>
   <Import Project="../../../tools/shaders/Slang.targets" />
 </Project>

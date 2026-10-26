@@ -66,6 +66,21 @@ float4 main(float4 position : SV_Position) : SV_Target0
         return input * arguments.Settings.w;
     }
 
+    if (operation == 6)
+    {
+        float3 color = max(input.a > 0 ? input.rgb / input.a : float3(0), 0) * exp2(arguments.Settings.y);
+        float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+        color = max(lerp(float3(luminance), color, arguments.Settings.z), 0);
+        float2 uv = (pixel - arguments.OutputBounds.xy) / arguments.OutputBounds.zw;
+        float2 distance = (uv - 0.5) * float2(arguments.OutputBounds.z / arguments.OutputBounds.w, 1);
+        color *= 1 - arguments.Settings.w * smoothstep(0.2, 0.7, length(distance));
+        if (arguments.Row0.x != 0)
+        {
+            color = color / (1 + color);
+        }
+        return float4(color * input.a, input.a);
+    }
+
     float4 backdrop = readImage(arguments.Backdrop, arguments.BackdropBounds, pixel);
     if (operation == 4)
     {

@@ -1,4 +1,6 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.RenderGraph;
+using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.Drawing;
 
@@ -7,6 +9,7 @@ public sealed class ModelMesh : IDisposable
 {
     private readonly IGraphicsBuffer<ModelVertex> _vertexUpload;
     private readonly IIndexStorage _indices;
+    private int _disposeStage;
 
     private ModelMesh(IGraphicsBuffer<ModelVertex> vertices, IGraphicsBuffer<ModelVertex> vertexUpload, IIndexStorage indices)
     {
@@ -31,6 +34,12 @@ public sealed class ModelMesh : IDisposable
         /// <summary>Binds the logical range for indexed drawing.</summary>
         /// <param name="render">The active render encoder.</param>
         void Bind(IRenderEncoder render);
+
+        /// <summary>Imports the index allocation and returns its read declaration.</summary>
+        /// <param name="graph">The parent graph.</param>
+        /// <param name="scope">The allocation's actual prior scope.</param>
+        /// <returns>The index-use declaration.</returns>
+        Action<RenderGraphPass> Import(Graph graph, BarrierScope scope);
     }
 
     /// <summary>Gets raw, ABI-verified vertex storage to register through Vertices.Slice.</summary>
@@ -65,18 +74,20 @@ public sealed class ModelMesh : IDisposable
     /// <param name="vertexBytes">Complete little-endian 64-byte vertices.</param>
     /// <param name="indexData">The in-range thirty-two-bit triangle indices.</param>
     /// <param name="vertexArtifact">The model shader artifact.</param>
+    /// <param name="retainCleanup">Optionally retains retryable partial-allocation cleanup before creation; dispose after failure. Empty on success.</param>
     /// <returns>The mesh after a bulk copy into staging, without GPU submission.</returns>
-    public static Task<ModelMesh> CreatePackedAsync(IGraphicDevice device, ReadOnlyMemory<byte> vertexBytes, ReadOnlyMemory<uint> indexData, ShaderArtifact vertexArtifact)
-        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint32, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); });
+    public static Task<ModelMesh> CreatePackedAsync(IGraphicDevice device, ReadOnlyMemory<byte> vertexBytes, ReadOnlyMemory<uint> indexData, ShaderArtifact vertexArtifact, Action<IDisposable>? retainCleanup = null)
+        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint32, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); }, retainCleanup);
 
     /// <summary>Uploads interleaved vertex bytes and preserves sixteen-bit triangle indices.</summary>
     /// <param name="device">The owning device.</param>
     /// <param name="vertexBytes">Complete little-endian 64-byte vertices.</param>
     /// <param name="indexData">The in-range sixteen-bit triangle indices.</param>
     /// <param name="vertexArtifact">The model shader artifact.</param>
+    /// <param name="retainCleanup">Optionally retains retryable partial-allocation cleanup before creation; dispose after failure. Empty on success.</param>
     /// <returns>The mesh with bulk-filled staging, without GPU submission.</returns>
-    public static Task<ModelMesh> CreatePackedAsync(IGraphicDevice device, ReadOnlyMemory<byte> vertexBytes, ReadOnlyMemory<ushort> indexData, ShaderArtifact vertexArtifact)
-        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint16, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); });
+    public static Task<ModelMesh> CreatePackedAsync(IGraphicDevice device, ReadOnlyMemory<byte> vertexBytes, ReadOnlyMemory<ushort> indexData, ShaderArtifact vertexArtifact, Action<IDisposable>? retainCleanup = null)
+        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint16, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); }, retainCleanup);
 
     /// <summary>Records initial raw staging copies and host/copy/vertex/index dependencies outside a pass.</summary>
     /// <param name="commands">The recording command buffer; call once before first drawing.</param>
@@ -91,6 +102,18 @@ public sealed class ModelMesh : IDisposable
         _indices.RecordUpload(commands);
     }
 
+    /// <summary>Imports initialized mesh buffers once into a graph without taking ownership.</summary>
+    /// <param name="graph">The parent graph.</param>
+    /// <param name="vertexScope">The actual prior vertex-buffer scope.</param>
+    /// <param name="indexScope">The actual prior index-buffer scope.</param>
+    /// <returns>The handles used to declare every model pass's buffer dependencies.</returns>
+    public ModelMeshGraphResources Import(Graph graph, BarrierScope vertexScope, BarrierScope indexScope)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        RenderGraphBuffer<ModelVertex> vertices = graph.ImportBuffer(Vertices, vertexScope, "model-vertices");
+        return new(vertices, _indices.Import(graph, indexScope));
+    }
+
     /// <summary>Records indexed drawing after the caller sets pipeline, arguments and render state.</summary>
     /// <param name="render">The active render encoder.</param>
     public void Draw(IRenderEncoder render)
@@ -103,9 +126,23 @@ public sealed class ModelMesh : IDisposable
     /// <summary>Releases storage and staging after registrations and all GPU use have ended.</summary>
     public void Dispose()
     {
-        _indices.Dispose();
-        Vertices.Dispose();
-        _vertexUpload.Dispose();
+        if (_disposeStage == 0)
+        {
+            _indices.Dispose();
+            _disposeStage = 1;
+        }
+
+        if (_disposeStage == 1)
+        {
+            Vertices.Dispose();
+            _disposeStage = 2;
+        }
+
+        if (_disposeStage == 2)
+        {
+            _vertexUpload.Dispose();
+            _disposeStage = 3;
+        }
     }
 
     private static async Task<ModelMesh> CreateCoreAsync<TIndex>(
@@ -115,8 +152,9 @@ public sealed class ModelMesh : IDisposable
         ReadOnlyMemory<TIndex> indexData,
         ShaderArtifact artifact,
         IndexFormat format,
-        Action<IRenderEncoder, IGraphicsBuffer<TIndex>, uint> bind)
-        where TIndex : unmanaged, System.Numerics.IBinaryInteger<TIndex>
+        Action<IRenderEncoder, IGraphicsBuffer<TIndex>, uint> bind,
+        Action<IDisposable>? retainCleanup = null)
+        where TIndex : unmanaged
     {
         ArgumentNullException.ThrowIfNull(device);
         ModelVertex.ValidateShaderLayout(artifact, device.Caps.ShaderTarget);
@@ -126,29 +164,19 @@ public sealed class ModelMesh : IDisposable
             throw new ArgumentException("A mesh requires nonempty vertices and triangle indices.", nameof(indexData));
         }
 
-        foreach (TIndex index in indexData.Span)
-        {
-            if (uint.CreateChecked(index) >= vertexCount)
-            {
-                throw new ArgumentException("A triangle index exceeds the vertex range.", nameof(indexData));
-            }
-        }
-
-        IGraphicsBuffer<ModelVertex>? vertices = null;
-        IGraphicsBuffer<ModelVertex>? vertexUpload = null;
-        IGraphicsBuffer<TIndex>? indices = null;
-        IGraphicsBuffer<TIndex>? indexUpload = null;
+        var cleanup = new CreationCleanup();
+        retainCleanup?.Invoke(cleanup);
         try
         {
-            vertices = device.CreateBuffer<ModelVertex>(new() { Count = (ulong)vertexCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
-            vertexUpload = device.CreateBuffer<ModelVertex>(new() { Count = (ulong)vertexCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+            IGraphicsBuffer<ModelVertex> vertices = cleanup.Add(device.CreateBuffer<ModelVertex>(new() { Count = (ulong)vertexCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
+            IGraphicsBuffer<ModelVertex> vertexUpload = cleanup.Add(device.CreateBuffer<ModelVertex>(new() { Count = (ulong)vertexCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
 
             // Pad the transfer allocation to four bytes for odd ushort counts; draw only the logical count.
             ulong indexCount = (ulong)indexData.Length;
             ulong storageCount = format == IndexFormat.Uint16 ? (indexCount + 1) & ~1UL : indexCount;
-            indices = device.CreateBuffer<TIndex>(new() { Count = storageCount, Usage = BufferUsage.Index | BufferUsage.CopyDestination });
-            indexUpload = device.CreateBuffer<TIndex>(new() { Count = storageCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
-            await vertexUpload.MapAsync().ConfigureAwait(false);
+            IGraphicsBuffer<TIndex> indices = cleanup.Add(device.CreateBuffer<TIndex>(new() { Count = storageCount, Usage = BufferUsage.Index | BufferUsage.CopyDestination }));
+            IGraphicsBuffer<TIndex> indexUpload = cleanup.Add(device.CreateBuffer<TIndex>(new() { Count = storageCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
+            await vertexUpload.MapAsync();
             try
             {
                 vertexUpload.CopyFrom(vertexBytes.IsEmpty ? vertexData.Span : ModelVertex.AsVertices(vertexBytes.Span));
@@ -158,7 +186,7 @@ public sealed class ModelMesh : IDisposable
                 vertexUpload.Unmap();
             }
 
-            await indexUpload.MapAsync().ConfigureAwait(false);
+            await indexUpload.MapAsync();
             try
             {
                 indexUpload.CopyFrom(indexData.Span);
@@ -172,15 +200,41 @@ public sealed class ModelMesh : IDisposable
                 indexUpload.Unmap();
             }
 
-            return new(vertices, vertexUpload, new IndexStorage<TIndex>(indices, indexUpload, checked((uint)indexCount), format, bind));
+            var mesh = new ModelMesh(vertices, vertexUpload, new IndexStorage<TIndex>(indices, indexUpload, checked((uint)indexCount), format, bind));
+            cleanup.Transfer();
+            return mesh;
         }
         catch
         {
-            indexUpload?.Dispose();
-            indices?.Dispose();
-            vertexUpload?.Dispose();
-            vertices?.Dispose();
+            if (retainCleanup is null)
+            {
+                cleanup.Dispose();
+            }
+
             throw;
+        }
+    }
+
+    private sealed class CreationCleanup : IDisposable
+    {
+        private readonly List<IDisposable> _resources = new(4);
+
+        public T Add<T>(T resource)
+            where T : IDisposable
+        {
+            _resources.Add(resource);
+            return resource;
+        }
+
+        public void Transfer() => _resources.Clear();
+
+        public void Dispose()
+        {
+            while (_resources.Count != 0)
+            {
+                _resources[^1].Dispose();
+                _resources.RemoveAt(_resources.Count - 1);
+            }
         }
     }
 
@@ -201,6 +255,12 @@ public sealed class ModelMesh : IDisposable
         }
 
         public void Bind(IRenderEncoder render) => bind(render, storage, Count);
+
+        public Action<RenderGraphPass> Import(Graph graph, BarrierScope scope)
+        {
+            RenderGraphBuffer<T> buffer = graph.ImportBuffer(storage, scope, "model-indices");
+            return pass => pass.UseBuffer(buffer, new(PipelineStage.IndexInput, ResourceAccess.IndexRead));
+        }
 
         public void Dispose()
         {

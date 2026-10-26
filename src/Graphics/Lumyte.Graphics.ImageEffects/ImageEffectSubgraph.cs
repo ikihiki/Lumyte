@@ -25,6 +25,19 @@ public sealed class ImageEffectSubgraph : IDisposable
     /// <summary>Gets this callback's layer or background input image.</summary>
     public EffectImage Source { get; }
 
+    /// <summary>Appends color grading and optional tone mapping through the parent graph.</summary>
+    /// <param name="input">The graph-local input.</param>
+    /// <param name="exposure">The exposure in stops.</param>
+    /// <param name="saturation">The nonnegative saturation multiplier.</param>
+    /// <param name="vignette">The vignette strength in [0, 1].</param>
+    /// <param name="toneMap">Whether to convert scene-linear input to display-linear output.</param>
+    /// <returns>The graph-local output.</returns>
+    public EffectImage AppendPostProcess(EffectImage input, float exposure = 0, float saturation = 1, float vignette = 0, bool toneMap = false)
+    {
+        EnsureAlive();
+        return Graph.AppendPostProcess(input, exposure, saturation, vignette, toneMap);
+    }
+
     /// <summary>Appends a blur and retains its fixed resources in the parent graph.</summary>
     /// <param name="input">The graph-local input.</param>
     /// <param name="sigmaX">The horizontal device-pixel sigma.</param>

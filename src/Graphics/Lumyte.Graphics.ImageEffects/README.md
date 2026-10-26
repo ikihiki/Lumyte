@@ -2,7 +2,7 @@
 
 2Dと3Dで共有するlinear premultiplied RGBA画像処理を、RenderGraphの拡張メソッドとして提供します。
 すべての効果はImageEffectDefinitionを継承し、パラメーター・領域計算・固定のAppendPassesを持ちます。
-提供するColorMatrix・GaussianBlur・Opacity・Compositeも同じ契約を使います。
+提供するColorMatrix・GaussianBlur・Opacity・Composite・PostProcessも同じ契約を使います。
 
 ```csharp
 EffectImage blurred = graph.AppendGaussianBlur(source, 3, 3);
@@ -77,3 +77,15 @@ BuildAsyncが返す構成は変更せずフレーム間で再利用し、factory
 低水準の`AppendEffectsWithContext`または`AppendEffectWithContext`を使う場合は、呼び出す前にEffectPreparationContextをgraph.Retainへ渡すか、明示的な所有者で保持します。構築途中で失敗してもcontextにcleanupが残るため、解放自体の失敗も再試行できます。失敗したcontextでの追加や記録は拒否します。
 
 `ImageEffectShaders`には`IGraphicsShader`を二つ渡すconstructorもあります。同じdevice上の既存moduleを借用し、各passでのmodule再生成を避けます。Effectの準備Contextは借用moduleをDisposeしません。直接所有する側、またはResourceManagerのLeaseが、GPU完了と固定GPU資源の解放まで保持します。
+
+## HDR の色調整と tone mapping
+
+`graph.AppendPostProcess(source, exposure: 1, saturation: 0.8f, vignette: 0.2f, toneMap: true)` は
+露出・彩度・ビネットを処理します。縦横比は画像の範囲から求め、alpha を保ったまま straight RGB を処理して
+premultiply し直します。alpha zero の RGB は zero です。DAG には `PostProcessEffect` を使用します。
+
+`toneMap: true` の Reinhard mapping は SceneLinear 入力を要求し、DisplayLinear 出力へ変換します。
+false なら入力 semantic を保持します。各効果は `GetOutputColorSemantic` で変換を宣言し、既定は入力を保持します。
+合成の各入力は同じ semantic が必要です。単一 effect、DAG、subgraph で同じ規則を使います。
+Resources で共有する場合も既存の `AddImageEffects(manager)` を使用します。
+カスタム effect fragment は追加された operation 6 の処理にも対応してください。

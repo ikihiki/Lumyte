@@ -5,44 +5,38 @@
 `ModelDrawArguments` でカメラ・方向ライト・ambient・フォグを指定します。
 `LightDirection` は表面からライトへ向かう world-space の方向です。
 `FogDensity = 0` でフォグを無効にし、正値でカメラからの距離に対する exponential fog を適用します。
-計算と出力は linear color、HDR 値を保持します。詳細は [静的モデル描画](Models.md) を参照してください。
+モデルの出力は scene-linear HDR です。透明材質の source RGB は straight alpha とし、
+`ModelDrawing.CreateRenderState` の blend が中間画像へ premultiplied RGB を書き込みます。
+透明背景は RGBA zero で clear してください。詳細は [静的モデル描画](Models.md) を参照してください。
 
-## 画面全体の色調整
+## RenderGraph と共有 ImageEffects
 
-`DrawingShaders.LoadPostProcessVertex()`／`LoadPostProcessFragment()` で作った pipeline は、
-`Draw(3)` の fullscreen triangle で scene texture に次の処理を行います。
-
-1. Exposure：stop 単位。`0` が元の明るさ、`1` が 2 倍、`-1` が半分。
-2. Saturation：`1` が元の彩度、`0` が grayscale。
-3. Vignette：`0` が無効、`1` が最大強度。AspectRatio で出力の縦横比を指定。
-4. ToneMap：`1` が Reinhard、`0` が無効。元の alpha を保持。
-
-値は有限とし、Saturation は非負、Vignette は `[0, 1]`、AspectRatio は正値を指定してください。
-HDR scene は `Rgba16Float` の sampled/render attachment に描画します。
-pass を終了してから texture を `ColorAttachment` → `Sampled` に明示遷移し、
-scene texture と通常の clamp-to-edge sampler を argument table に登録します。
+画面全体の処理には [Lumyte.Graphics.ImageEffects](../Lumyte.Graphics.ImageEffects/README.md) を使います。
+Drawing 専用の postprocess shader／argument 型は持ちません。
+単一 mip／layer の `Rgba16Float` scene を RenderGraph の `EffectImage` へ渡します。
 
 ```csharp
-var effects = new PostProcessArguments(
-    sceneTextureRef, samplerRef,
-    Exposure: 0.5f,
-    Saturation: 0.8f,
-    Vignette: 0.3f,
-    AspectRatio: (float)width / height,
-    ToneMap: 1);
-render.SetPipeline(effectPipeline);
-render.SetRenderState(new GraphicsRenderStateDesc
-{
-    ColorTargets = [new ColorBlendStateDesc()],
-});
-render.SetArguments(in effects);
-render.Draw(3);
+using Lumyte.Graphics.ImageEffects;
+
+var scene = new EffectImage(sceneHandle, new(0, 0, width, height), EffectColorSemantic.SceneLinear);
+EffectImage output = graph.AppendPostProcess(scene,
+    exposure: 0.5f, saturation: 0.8f, vignette: 0.3f, toneMap: true);
+graph.MarkOutput(output.Texture);
+using var plan = graph.Compile();
+plan.Record(commands);
+// commands.Finish、Submit、実際の GPU 完了後に plan を Dispose。
 ```
 
-output 用の別 texture／swapchain frame を render attachment にします。
-sampled texture と同じ image subresource へ同時に書き込まないでください。
-複数 effect pass は ping-pong の texture と state transition を利用側で組み合わせます。
-viewport／scissor／blend constant／stencil reference と submit／wait は明示してください。
+`sceneHandle` は同じ graph へ import、または graph 内で生成・描画した texture です。
+`width`／`height` は pixel 単位の int。露出は stop、彩度は非負、ビネットは `[0, 1]` です。
+縦横比は画像の範囲から求めます。処理中は RGB を unpremultiply し、結果を alpha で再び乗算します。
+alpha は保持し、alpha zero の RGB は zero にします。
 
-output attachment が sRGB format なら linear → sRGB は attachment の変換に任せます。
-shader 内で gamma を重ねて適用しません。linear format を選ぶ場合は次の表示経路で色空間を扱います。
+`toneMap: true` は SceneLinear 入力を Reinhard mapping し、DisplayLinear 出力へ明示変換します。
+DisplayLinear の入力への重複 tone mapping は拒否します。false なら semantic を保持します。
+再利用する DAG には `PostProcessEffect` を使えます。他の効果との合成・barrier・中間画像・
+固定 GPU 資源の寿命は既存の ImageEffects／RenderGraph に委ねます。
+
+標準の埋め込み shader でも、`AddImageEffects(manager)` で取得した共有 GPU 資源でも同じ Append を使います。
+共有 shader をカスタマイズする場合は、更新された effect shader の operation 6 にも対応してください。
+output を sRGB attachment へ描画する場合は、その変換を attachment に任せ、gamma を重ねて適用しません。

@@ -194,6 +194,24 @@ public sealed class EffectOperationTests
         Assert.Throws<ObjectDisposedException>(() => scope.AppendOpacity(source, 1));
     }
 
+    /// <summary>Checks finite grading parameters and the declared scene-to-display conversion.</summary>
+    [Fact]
+    public void PostProcessParametersAndSemanticAreExplicit()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(float.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(128));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(saturation: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(vignette: 1.1f));
+        var grading = new PostProcessEffect();
+        var toneMapping = new PostProcessEffect(toneMap: true);
+        Assert.Equal(EffectColorSemantic.SceneLinear, grading.GetOutputColorSemantic(EffectColorSemantic.SceneLinear));
+        Assert.Equal(EffectColorSemantic.DisplayLinear, toneMapping.GetOutputColorSemantic(EffectColorSemantic.SceneLinear));
+        Assert.Equal(new EffectPixelRect(-2, 3, 8, 9), grading.GetOutputBounds([new(-2, 3, 8, 9)]));
+        using var graph = new Graph(Device());
+        EffectImage source = Source(graph);
+        Assert.Throws<ArgumentException>(() => graph.AppendPostProcess(source, toneMap: true));
+    }
+
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
     private static EffectImage Source(Graph graph) => new(graph.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);

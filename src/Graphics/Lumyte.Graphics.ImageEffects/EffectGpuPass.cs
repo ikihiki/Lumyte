@@ -10,7 +10,7 @@ internal static class EffectGpuPass
     private static readonly BarrierScope _sample = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
     private static readonly BarrierScope _write = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
 
-    internal static EffectImage Append(EffectPreparationContext owner, RenderGraphBuilder graph, EffectImage input, EffectImage backdrop, EffectPixelRect outputBounds, Vector4 settings, ColorMatrix4x5? matrix = null, int offsetX = 0, int offsetY = 0)
+    internal static EffectImage Append(EffectPreparationContext owner, RenderGraphBuilder graph, EffectImage input, EffectImage backdrop, EffectPixelRect outputBounds, Vector4 settings, ColorMatrix4x5? matrix = null, int offsetX = 0, int offsetY = 0, Vector4 extra = default, EffectColorSemantic? outputSemantic = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(graph);
@@ -59,7 +59,7 @@ internal static class EffectGpuPass
             ValidateAllocation(context.GetTexture(backdrop.Texture), backdrop.Bounds);
             IGpuRef<IGraphicsTextureView> inputReference = table.WriteTexture(0, context.CreateTextureView(input.Texture));
             IGpuRef<IGraphicsTextureView> backdropReference = table.WriteTexture(1, context.CreateTextureView(backdrop.Texture));
-            var arguments = new EffectArguments(inputReference, backdropReference, samplerReference, RelativeBounds(input.Bounds.Offset(offsetX, offsetY), outputBounds), RelativeBounds(backdrop.Bounds, outputBounds), new(0, 0, outputBounds.Width, outputBounds.Height), settings, Row(matrix, 0), Row(matrix, 1), Row(matrix, 2), Row(matrix, 3), Constants(matrix));
+            var arguments = new EffectArguments(inputReference, backdropReference, samplerReference, RelativeBounds(input.Bounds.Offset(offsetX, offsetY), outputBounds), RelativeBounds(backdrop.Bounds, outputBounds), new(0, 0, outputBounds.Width, outputBounds.Height), settings, matrix is null ? extra : Row(matrix, 0), Row(matrix, 1), Row(matrix, 2), Row(matrix, 3), Constants(matrix));
             IRenderEncoder render = context.Commands.BeginRenderPass(new()
             {
                 ColorAttachments = [new() { View = context.CreateTextureView(output), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }],
@@ -81,7 +81,7 @@ internal static class EffectGpuPass
         }
 
         pass.UseTexture(output, TextureState.ColorAttachment, _write);
-        return new(output, outputBounds, input.ColorSemantic);
+        return new(output, outputBounds, outputSemantic ?? input.ColorSemantic);
     }
 
     // Subtract integer origins before conversion so neighboring pixels remain distinct beyond 2^24.

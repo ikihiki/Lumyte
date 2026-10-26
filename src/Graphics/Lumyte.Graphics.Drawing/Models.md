@@ -53,7 +53,7 @@ mesh.RecordInitialUpload(commands);
 interleaved bytes から頂点配列を追加確保せず staging にコピーできます。CPU→GPU 転送自体は必要です。
 
 | 属性 | 型 | byte offset |
-|---|---|---:|
+| --- | --- | ---: |
 | Position | float3 | 0 |
 | Normal | float3 | 12 |
 | Tangent | float4 | 24 |
@@ -71,6 +71,7 @@ mesh 作成時に `ValidateShaderLayout` を実行します。shader だけを H
 `ModelVertex` は座標・法線・接線・UV・頂点色を持ちます。法線と tangent.xyz は unit vector、
 tangent.w は bitangent の符号（±1）、UV は画像の左上が `(0, 0)` です。
 法線・接線の生成や頂点／インデックスの最適化は、この配列を用意する側で行います。
+インデックスが登録頂点範囲内であることも利用側の契約で、毎回の全要素検証は行いません。
 
 `ModelMaterial` は metallic-roughness、base color、emissive、normal scale、AO、alpha の数値を持ちます。
 base color／emissive texture は sRGB、normal／metallic-roughness／AO は linear format にします。
@@ -111,6 +112,7 @@ arguments = arguments with
     BaseColorSampler = baseColorTexture.Sampler,
 };
 render.SetPipeline(pipeline);
+render.SetArgumentTable(table);
 render.SetRenderState(ModelDrawing.CreateRenderState(material, doubleSided: false, mirrored: world.GetDeterminant() < 0));
 render.SetArguments(in arguments);
 mesh.Draw(render);
@@ -131,13 +133,40 @@ instance ごとのモデル型を保持する必要はありません。同じ `
 draw ごとに `World`／`NormalTransform` などの `ModelDrawArguments` を変更します。
 親子の world transform 計算や描画順序は利用側で管理します。
 
-HotReload は、新しい配列から別の `ModelMesh` を作り、upload の GPU 完了を確認してから
-描画側の mesh と argument table の参照を切り替える構成にします。
-古い mesh を使う submission が完了するまで、古い登録・mesh・texture を生存させてください。
-完了後に登録を解放し、resource を Dispose します。HotReload の監視・変換・切り替え機構自体は
-このライブラリには含みません。
+共有 GPU mesh の再構築には、任意の [Lumyte.Resources.Graphics.Drawing](../Lumyte.Resources.Graphics.Drawing/README.md)
+の `ModelMeshDefinition` を使用できます。変換済み CPU データを Build 依存とし、GPU 完了後の mesh を
+汎用 `GraphicsResource<ModelMesh>` として公開します。インポーターは含みません。
 
+ResourceReference は論理 mesh を保持し、graph.ImportResources(manager).Acquire(reference) が
+フレームで使う世代を固定します。HotReload の新世代を次の graph で取得し、旧 graph／plan は GPU 完了まで
+旧世代を保持します。device loss 後は旧 epoch の退役を確認し、device を復旧してから
+`manager.RebuildRuntimeAsync([graphicsRuntime.Id])` で GPU 出力を再構築します。
+
+Resources を使わない場合は、利用側で新 mesh の upload 完了、参照切替、旧 submission 完了、旧資源解放を管理します。
 `ModelMesh.Dispose` は GPU 完了待機や登録解放を行いません。
+
+## RenderGraph への接続
+
+初期 upload が完了した mesh を graph ごとに一度 import します。前の command／graph の実際の scope を渡してください。
+
+```csharp
+ModelMeshGraphResources meshResources = mesh.Import(graph,
+    new(PipelineStage.VertexShader, ResourceAccess.ShaderRead),
+    new(PipelineStage.IndexInput, ResourceAccess.IndexRead));
+RenderGraphPass pass = graph.AddPass("model", context =>
+{
+    // attachment views は context.CreateTextureView(handle) で作成する。
+    // render pass を開始し、pipeline／table／state／arguments を設定して mesh.Draw(render)。
+    // render.End() して返す。
+});
+meshResources.Use(pass);
+// 材質が参照する全 texture の UseTexture と、color/depth attachment の UseTexture も宣言する。
+```
+
+`Use` は raw 頂点と元の幅の index buffer の read を宣言します。
+texture、attachment、他の draw 入力は利用側が宣言します。Graph が依存順と barrier を作り、
+一時 HDR scene から共有 ImageEffects へ接続できます。import は mesh の所有権を移しません。
+Resources を使う場合は graph が取得した Lease が、GPU 完了後の plan 解放まで mesh を保持します。
 
 ## glTF 機能との対応範囲
 

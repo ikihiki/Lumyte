@@ -47,7 +47,7 @@ upload.Unmap();
 upload から storage へ明示転送します。argument table に
 `storage.SliceElements(0, storage.Count)` を登録すると `IGpuRef<DrawingVertex>` を取得できます。
 記録中の render encoder に `SetPipeline(pipeline)`、描画状態・viewport・scissor・blend constant・stencil reference を設定し、
-`SetArguments(new ColorDrawArguments(vertexRef, Matrix4x4.Identity, Vector4.One))` と
+`SetArgumentTable(table)`、`SetArguments(new ColorDrawArguments(vertexRef, Matrix4x4.Identity, Vector4.One))` と
 `Draw((uint)vertices.Length)` で描画します。上のコードは resource 準備の例であり、
 転送・pass 記録・submit・完了待機までを利用側で行ってください。
 
@@ -81,19 +81,26 @@ dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
 
 [静的モデル描画](Models.md) は共通の頂点・インデックス配列からの mesh upload、indexed drawing、
 metallic-roughness の材質、normal map、方向ライト、ambient、AO、発光、透明・両面描画を提供します。
+`mesh.Import(graph, ...)` と `ModelMeshGraphResources.Use(pass)` で現在の RenderGraph へ依存を宣言できます。
 `ModelVertex` は shader と共通の固定 64-byte ABI で一括転送し、packed bytes と16／32bit index に対応します。
 材質・draw arguments は既存の shader serializer を使用し、texture ごとの UV 変換と発光強度も指定できます。
 
 [エフェクト](Effects.md) はモデルの距離フォグと、fullscreen pass の露出・彩度・ビネット・
-Reinhard tone mapping を提供します。どちらも WGSL／SPIR-V の offline artifact を使用します。
+Reinhard tone mapping を提供します。画面処理は共有 ImageEffects の `graph.AppendPostProcess` に統合し、
+Graph／Plan の所有権と premultiplied alpha の規約に従います。WGSL／SPIR-V の offline artifact を使用します。
 
-通常のテスト実行では GPU テスト 4 件を skip します。Vulkan GPU または software driver を
-設定した環境では、以下で 14 件（CPU 10 件、GPU pixel readback 4 件）を実行できます。
+任意の [Resources 連携](../Lumyte.Resources.Graphics.Drawing/README.md) は `ModelMeshData` から
+汎用 `GraphicsResource<ModelMesh>` を構築し、upload 完了後の公開、HotReload、device epoch の復旧へ接続します。
+Drawing 本体は Resources／DI に依存しません。
+
+通常のテスト実行では GPU テスト 8 件を skip します。Vulkan GPU または software driver を
+設定した環境では、以下で 19 件（CPU 11 件、GPU 8 件）を実行できます。
 
 ```sh
 LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.Tests
 ```
 
 GPU テストは upload から indexed model draw、HDR scene、フォグ、fullscreen effect、
-readback までの結果を確認します。CPU テストは形状、material／render state、normal transform、
+readback までの結果を確認します。透過 alpha、DAG の tone mapping、ビネット、
+Resources による世代保持と managed device loss を模擬した復旧も検証します。CPU テストは形状、material／render state、normal transform、
 生成 codec の compiled ABI を確認します。ファイル形式のインポーターは含みません。

@@ -5,6 +5,8 @@ namespace Lumyte.Graphics.Drawing;
 /// <summary>Loads portable offline drawing shaders without a runtime compiler or GPU.</summary>
 public static class DrawingShaders
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<ShaderArtifact>> _artifacts = new(StringComparer.Ordinal);
+
     /// <summary>Loads the vertex-color vertex shader.</summary>
     /// <returns>The WGSL and SPIR-V artifact.</returns>
     public static ShaderArtifact LoadColorVertex() => Load("color-vertex");
@@ -29,14 +31,6 @@ public static class DrawingShaders
     /// <returns>The WGSL and SPIR-V artifact.</returns>
     public static ShaderArtifact LoadModelFragment() => Load("model-fragment");
 
-    /// <summary>Loads the fullscreen effect vertex shader.</summary>
-    /// <returns>The WGSL and SPIR-V artifact.</returns>
-    public static ShaderArtifact LoadPostProcessVertex() => Load("postprocess-vertex");
-
-    /// <summary>Loads the fullscreen effect fragment shader.</summary>
-    /// <returns>The WGSL and SPIR-V artifact.</returns>
-    public static ShaderArtifact LoadPostProcessFragment() => Load("postprocess-fragment");
-
-    private static ShaderArtifact Load(string name) => ShaderArtifact.LoadEmbedded(
-        typeof(DrawingShaders).Assembly, $"Lumyte.Drawing.{name}.lshader");
+    private static ShaderArtifact Load(string name) => _artifacts.GetOrAdd(name, static key => new(() => ShaderArtifact.LoadEmbedded(
+        typeof(DrawingShaders).Assembly, $"Lumyte.Drawing.{key}.lshader"))).Value;
 }

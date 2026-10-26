@@ -11,6 +11,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics.Drawing/Lumyte.Resources.Graphics.Drawing.csproj" />
+    <ProjectReference Include="../../../src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing/Lumyte.Graphics.Drawing.csproj" />
   </ItemGroup>
 </Project>
