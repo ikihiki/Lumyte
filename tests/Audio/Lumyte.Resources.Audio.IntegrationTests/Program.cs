@@ -109,6 +109,7 @@ internal static class Program
             }
 
             VoiceScenario.Run(audio, manager, source, host, args.Contains("--reload", StringComparer.Ordinal), Wait);
+            SeekScenario.Run(audio, manager, Wait);
 
             if (recover)
             {

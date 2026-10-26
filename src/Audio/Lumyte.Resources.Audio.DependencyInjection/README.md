@@ -39,7 +39,7 @@ await voice.Destroy();
 lease.Dispose();
 ```
 
-voiceは再生ごとに利用側が作成し、Managerには登録しません。同じclipから複数のvoiceを作れます。
+voiceは再生ごとに利用側が作成し、Managerには登録しません。同じclipから複数のvoiceを作れ、それぞれ`await voice.Seek(framePosition)`で独立した位置へ移動できます。`FramePosition`は直近のAudio更新時の位置を配送なしで返します。
 ラッパーのコピーやvoice生成はleaseを取得しないため、全voiceのDestroyが完了するまでclipのleaseを保持します。
 上の例は成功時の順序です。解放失敗時はvoiceとleaseを保持し、再試行後に返却してください。
 

@@ -16,6 +16,8 @@ ALSOFT_DRIVERS=null dotnet run --project tests/Audio/Lumyte.Resources.Audio.Inte
 `--openal`は実OpenAL backend、`--host`はAudioとCPUを一つのホストへ統合します。
 各実行は新しいprocessで起動し、生成済みAudioのstatic endpointは一回だけ接続します。
 
+通常実行には`Seek(long framePosition)`の配送検証を含みます。複数voiceの位置独立性、停止・一時停止・再生中の移動、範囲外・末尾・ループ、Update後の位置snapshot、破棄済みvoiceの拒否を確認します。復旧検証では失効したdeviceへのSeekも拒否します。
+
 DIありでは`AddAudioResources()`と`AddResources(r => r.UseSource<TestSource>().AddAudioPipeline())`を使用し、名前なしsingletonのResourceManagerを解決します。
 DIなしでも本体のAudioDecodeStageとAudioClipStageだけを使用します。汎用ResourceRuntimeをmanagerの既定実行先とし、
 AudioClipのstageRuntimesにAudioResourceRuntimeを指定します。
@@ -51,7 +53,7 @@ dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Rele
 `--reload`はclipの変更通知による差し替え、旧Lease保持、不正WAVE時の旧公開保持を検証します。voiceはそれぞれが生成されたclipを使い、利用側が新clipから新しいvoiceを明示的に生成します。
 
 NativeAOTでは通常の警告をエラー扱いする設定でpublishし、DI構築と生成・制御・解放を実行します。
-CIはfake backendのHost／Dedicated・DIあり／なしと、実OpenALのHost／Dedicated・DIありを確認します。
+CIはfake backendと実OpenALそれぞれのHost／Dedicated・DIあり／なしを確認します。
 
 ```sh
 dotnet publish tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -r linux-x64 -p:PublishAot=true -o artifacts/resources-audio-aot

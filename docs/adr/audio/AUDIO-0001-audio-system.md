@@ -1,22 +1,22 @@
 # ADR-AUDIO-0001: バックエンドが共通インターフェースを直接実装するオーディオ機構
 
 - 状態: 採用
-- 更新日: 2026-10-12
+- 更新日: 2026-10-26
 - 日付: 2026-10-09
 
 ## 背景
 
 Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジンである。効果音の同時再生、長い BGM のストリーミング、音量カテゴリごとの調整をゲーム側から共通の契約で扱いたい。OS のデバイス API や Browser の再生許可を直接利用コードへ持ち込むと、再生状態、スレッド、リソース解放の扱いが環境ごとに分散する。
 
-比較元の main には Audio の実装がない。本 ADR は初期の共通契約と Silk.NET.OpenAL／Web Audio API バックエンドの実装方針を記録する。継続供給の API はリソース側の設計確定後に追加する。
+本ADRは常駐PCMの共通契約とSilk.NET.OpenAL／Web Audio APIバックエンドを記録する。Resourcesによる取得・デコードと所有スレッドへの配送は[AUDIO-0002](AUDIO-0002-execution-and-resources.md)が扱う。継続的なPCM供給は対象に含めない。
 
 ## 決定
 
 ### 対象範囲と依存関係
 
-再生制御の共通契約と、それを実装してデバイスへ出力するバックエンドを分離する。初期対象はモノラル／ステレオの PCM、効果音、ストリーミング BGM、再生・一時停止・停止、ループ、固定の Master／Music／Effects バスとする。3D 音響、録音、任意の DSP グラフ、ピッチ変更、サンプル精度の予約再生は後続設計とする。
+再生制御の共通契約と、それを実装してデバイスへ出力するバックエンドを分離する。対象は常駐モノラル／ステレオPCM、効果音、再生・一時停止・停止・Seek、ループ、固定のMaster／Music／Effectsバスとする。ストリーミングBGM、3D音響、録音、任意のDSPグラフ、ピッチ変更、サンプル精度の予約再生は含めない。
 
-[リポジトリのフォルダ構成](../0002-repository-layout.md) と [グラフィックデバイスの設計](../graphics/GRAPHICS-0001-graphics-device.md) に従い、共通契約のプロジェクト・パッケージ・名前空間を `Lumyte.Audio.Abstractions` とし、実装時に `src/Audio/Lumyte.Audio.Abstractions/` へ配置する。バックエンドは同じ Audio カテゴリへ置き、Abstractions を参照する。
+[リポジトリのフォルダ構成](../0002-repository-layout.md) と [グラフィックデバイスの設計](../graphics/GRAPHICS-0001-graphics-device.md) に従い、共通契約のプロジェクト・パッケージ・名前空間を `Lumyte.Audio.Abstractions` とし、`src/Audio/Lumyte.Audio.Abstractions/`へ配置する。バックエンドは同じ Audio カテゴリへ置き、Abstractions を参照する。
 
 バックエンドの具象デバイスが `IAudioDevice`、具象 clip が `IAudioClip`、具象 voice が `IAudioVoice` を直接実装する。デバイスの `CreateClip` と `CreateVoice` は、そのバックエンドの具象リソースを共通インターフェースとして返す。共通契約にはラッパーや内部 driver への転送層を置かず、ミックス・状態管理・出力はバックエンドが契約を満たす形で実装する。
 
@@ -24,11 +24,11 @@ Lumyte は Windows、Linux、Browser を対象とする C# のゲームエンジ
 
 Abstractions は Engine、Graphics、Settings、Resources、特定の DI コンテナーに依存しない。設定の読み込み・保存は構成側、音声データの取得・デコード・非同期供給・先読み・ストリーミング用バッファの管理はリソースシステムとその音声アダプターが担当する。オーディオ側は供給された PCM の消費、ミックス、再生制御、デバイス出力を担当する。共通 Audio と共通 Resources は互いに依存せず、両者の接続は統合アダプターに置く。
 
-リソース管理の既存案 ADR-RESOURCES-0001（[PR #25](https://github.com/ikihiki/Lumyte/pull/25)、確認revision `e7c219e2a223e3fcb60b4d279fefe5f1b142caa1`）は、型付きPipeline、lease、独立したストリームセッションを提案している。音声PCMの形式とリアルタイム消費への接続は別途必要であり、今回の実装だけでストリーミングに対応したとは扱わない。
+共通Resourcesの型付きPipelineとleaseは常駐clipの取得に使う。独立したストリームセッションと音声デバイスのリアルタイム消費との接続は別の契約を必要とする。
 
 ### 公開 API
 
-比較元は main `5bf75e46ec8320a889315a0707ca16ea29e54b34`。以下は新規追加の主要な宣言である。すべての制御 API は構築時の所有スレッドから呼び、処理済みの状態と通知を `Update` で反映する。
+以下は主要な宣言である。制御APIは構築時の所有スレッドから呼び、状態と位置のsnapshotをUpdateで反映する。voiceのState／FramePosition／Gain／Loopのgetterは保存済みの値を任意のスレッドから読める。
 
 ```diff
 +namespace Lumyte.Audio.Abstractions
@@ -65,6 +65,7 @@ Abstractions は Engine、Graphics、Settings、Resources、特定の DI コン�
 +
 +    public interface IAudioClip : IDisposable
 +    {
++        public IAudioDevice Device { get; }
 +        public AudioFormat Format { get; }
 +        // チャンネルごとのサンプル数ではなく、PCM フレーム数。
 +        public long FrameCount { get; }
@@ -76,17 +77,21 @@ Abstractions は Engine、Graphics、Settings、Resources、特定の DI コン�
 +    {
 +        // 初期状態 Stopped。Update が最後に取り込んだ状態。
 +        public AudioPlaybackState State { get; }
++        // Updateが最後に取り込んだPCMフレーム位置。初期値0。
++        public long FramePosition { get; }
 +        // 有限の [0, 1]、初期値 1。バスと Master の gain を乗算する。
 +        public float Gain { get; set; }
 +        // 初期値 false。clip の末尾から先頭へ戻って再生する。
 +        public bool Loop { get; set; }
-+        // Stopped／Completed は先頭から、Paused は停止位置から。Playing は冪等。
++        // Stopped／Pausedは設定した位置から、Completedは先頭から。Playingは冪等。
 +        // Failed は後続の非同期供給失敗用。初期実装の同期失敗は例外。
 +        public void Play();
 +        // Playing を Paused にする。その他の状態では何もしない。
 +        public void Pause();
 +        // 停止を要求し、Stopped は次回 Update で反映。次回 Play は先頭から。
 +        public void Stop();
++        // 0..clip.FrameCountのPCMフレーム位置。再生／一時停止／停止を保つ。
++        public void Seek(long framePosition);
 +        // 出力参照を終了し、clip の借用を解除。冪等。
 +        public void Dispose();
 +    }
@@ -217,9 +222,28 @@ clip の末尾、またはリソース側から通知された EOF までの PCM
 
 OpenAL は source の状態を Update で取得する。Browser は再生ごとに SourceNode を生成し、停止・一時停止時に終了ハンドラーを解除する。自然終了は現在の SourceNode に一致する場合だけ受理し、古い終了通知が新しい再生を Completed に戻さない。初期実装の同期 API 失敗は例外で通知し、Failed の非同期通知は継続供給の契約確定後に実装する。
 
+### Seekと位置の観測
+
+`Seek(long framePosition)`はclip内のPCMフレーム位置を指定する。チャンネル数を掛けたサンプル要素数や出力deviceのフレーム数ではない。範囲は`0..clip.FrameCount`で、範囲外は`ArgumentOutOfRangeException`とし、既存の位置・状態を変更しない。単位を整数フレームに統一し、秒数とfloat offsetの往復による丸めを避ける。秒へ変換する場合は`(double)voice.FramePosition / clip.Format.SampleRate`を使う。
+
+| 操作時の状態 | Seek後の動作 |
+| --- | --- |
+| Playing、位置が末尾より前 | 指定位置から再生を続ける |
+| Paused／Stopped、位置が末尾より前 | 指定位置を保持し、次のPlayで開始する |
+| Completed、位置が末尾より前 | Stoppedへ戻し、次のPlayで指定位置から開始する |
+| Loop=trueで末尾を指定 | 位置を0とし、再生・一時停止・停止を保つ |
+| Loop=false、Playingで末尾を指定 | 位置をFrameCountとしCompletedになる |
+| Loop=false、Paused／Stoppedで末尾を指定 | モードを保ち、次のPlayでCompletedになる |
+
+Stopは位置を0へ戻す。自然終了の位置はFrameCountで、CompletedからのPlayは先頭から再生する。SeekはGain／Loopを変更せず、別voiceやclipの位置にも影響しない。非ループの末尾でCompletedとなった後のPlayも先頭から再生する。
+
+FramePositionとStateは同じUpdateで取り込み、各getterはbackendのlock内で保存済みの値を読む。getter自身はnative／JS呼び出しや配送を行わない。複数getterの呼び出し間にUpdateが入る可能性はあり、一括した原子的snapshotを返すAPIではない。位置はbackendの観測位置であり、スピーカーの可聴位置や予約再生の締め切りを保証しない。
+
+OpenALはsample offsetを使用し、末尾そのものをnativeへ設定しない。Browserは再生中のSeekでSourceNodeを交換するため、その分のJS/native割り当てがある。旧ノードのonendedを解除し、既に保留中の通知も現在ノードとの一致で判定する。旧ノード停止後の再作成失敗はStoppedとして例外を返し、次のPlayで指定位置から再試行できる。Seekの入力精度と、音が切り替わる時刻の精度は別の契約とする。
+
 ### スレッド、PCM とストリーミング
 
-各デバイスとその子の制御・状態参照・解放を生成時の所有スレッドで行い、必要な同期と非同期処理後の復帰を保証する責任は利用者が持つ。所有スレッド外からの制御は例外で拒否する。スレッド構成、ジョブからの要求配送、実行キューの設計・実装は本PRの対象外とする。
+各デバイスとその子の制御・Update・解放は生成時の所有スレッドで行う。voiceの保存済みsnapshotとclipの不変metadataの参照は任意のスレッドで行える。backendを直接使う場合、必要な同期と非同期処理後の復帰は利用側が保証する。所有スレッド外からの制御は例外で拒否する。実行キューと自動配送は任意のLumyte.Audio.Executionが担当する。
 
 OpenALは各操作前に `alcMakeContextCurrent` でcontextを選択する。current contextはプロセスで共有されるため、複数デバイスを含む生成・制御・解放の呼び出し全体を利用者が直列化し、外部のOpenAL呼び出しとも競合させない。所有スレッドの一致検査だけでは、この排他は保証しない。
 
@@ -237,7 +261,7 @@ OpenALは各操作前に `alcMakeContextCurrent` でcontextを選択する。cur
 
 ストリーミングではリソース側が取得元、デコーダー、非同期処理、供給バッファとその終了処理を所有する。共有アセットの lease と、再生ごとの独立したカーソル・供給セッションを分ける。再生ごとのセッションを共有キャッシュへそのまま格納する契約は採用しない。具体的なセッション生成・保持 API はリソース側で定める。
 
-voice の Dispose は source を停止・解放して、PCM 参照を解除してから戻る。音声スレッドからは呼ばない。供給 PCM は消費終了までリソース側で有効に保ち、参照中にバッファを再利用しない。統合側はオーディオの参照を解除した後、リソース側の供給セッションを終了し、非同期処理の取消・終了を待ち、最後に lease を返す。lease 返却自体には待機や I/O を持ち込まない。
+voiceのDisposeは所有スレッドでsourceを停止・解放し、PCM参照を解除してから戻る。音声サンプルを消費するリアルタイムcallbackからは呼ばない。供給 PCM は消費終了までリソース側で有効に保ち、参照中にバッファを再利用しない。統合側はオーディオの参照を解除した後、リソース側の供給セッションを終了し、非同期処理の取消・終了を待ち、最後に lease を返す。lease 返却自体には待機や I/O を持ち込まない。
 
 終了時は voice の出力参照を解除してから、供給セッションと lease、resource manager と残りの clip を解放し、最後にデバイスを破棄する。音声StageのReleaseAsyncがデバイスを必要とする間は、デバイスを保持する。停止失敗時も残りの安全に実行できる終了処理を試み、参照解除が確認できない PCM を解放しない。Browser の AudioContext.close は非同期である。同期 Dispose は子の解放と close の開始までを保証し、閉鎖完了は保証しない。close の拒否は console.error へ通知する。
 
@@ -249,7 +273,7 @@ voice の Dispose は source を停止・解放して、PCM 参照を解除し�
 | Linux | 同じ PCM／voice 契約、x64／ARM64 | 音声サーバーとの接続、デバイス選択 |
 | Browser | ユーザー操作からの再開、タブ停止の状態反映 | Web Audio／AudioWorklet、Wasm と worker の共有方式 |
 
-対応表は対象環境の要求を示す。検証した環境はバックエンド README に記載する。Browser の自動再生制限を無音の成功として隠さず Suspended とする。出力の消失は Unavailable とし、自動的に別デバイスへ切り替えたり再生位置をリセットしたりしない。Browser の復旧は明示的な ResumeOutputAsync で試みる。OpenAL は ALC_EXT_disconnect がある場合に切断を検出し、切断後の再開を NotSupportedException として、子を解放した上でのデバイス再生成を必要とする。拡張がない場合の切断検出は保証しない。キャンセル時は呼び出しの待機を取り消し、復旧が先に成立した場合に出力停止へ巻き戻す保証はしない。
+対応表は対象環境の要求を示す。検証した環境はバックエンド README に記載する。Browser の自動再生制限を無音の成功として隠さず Suspended とする。出力の消失は Unavailable とし、自動的に別デバイスへ切り替えたり再生位置をリセットしたりしない。Browser の復旧は明示的な ResumeOutputAsync で試みる。OpenALはALC_EXT_disconnectがある場合に切断を検出する。失効後の再生制御とResumeOutputAsyncはAudioDeviceUnavailableExceptionとなり、再生には別deviceの生成が必要になる。拡張がない場合の切断検出は保証しない。キャンセル時は呼び出しの待機を取り消し、復旧が先に成立した場合に出力停止へ巻き戻す保証はしない。
 
 ## 検討した代替案
 
@@ -282,13 +306,13 @@ voice の Dispose は source を停止・解放して、PCM 参照を解除し�
 - ゲーム側は環境によらず再生と音量カテゴリを扱える。
 - PCM、デコード、出力の責務が分かれ、ファイル形式やバックエンドを追加できる。
 - voice 上限とリソース側の stream バッファ上限により保持メモリを制限する。一方、供給不足や生成拒否への対応が必要になる。
-- 非同期反映のため、制御呼び出し直後の State は要求と一致しない場合がある。
+- 非同期反映のため、制御呼び出し直後のState／FramePositionは要求と一致しない場合がある。
 - オーディオの参照解除とリソース側の非同期供給終了を分けて扱う。リアルタイム安全性と lease を返す順序の検証が必要になる。
 - 各バックエンドのミキサーと Browser 連携に実装コストがかかる。性能と実環境の可聴品質は別途測定する。
 
 ## 検証方針
 
-実装時は共通インターフェースを実装する偽のデバイス、有限 PCM、準備済み PCM の偽の供給境界を用い、再生・停止・一時停止・EOF・ループ・失敗の状態遷移、操作順序、上限超過、古い通知の失効を検証する。フレーム更新を遅延させても音声処理が独立して進むことを確認する。各バックエンドで同じ契約の検証を実行し、返り値がそのバックエンドの実装であること、別デバイスの clip を拒否すること、生存中の子があるデバイスの破棄を拒否することを確認する。
+実装時は共通インターフェースを実装する偽のデバイス、有限 PCM、準備済み PCM の偽の供給境界を用い、再生・停止・一時停止・Seek・EOF・ループ・失敗の状態遷移、操作順序、上限超過、古い通知の失効を検証する。フレーム更新を遅延させても音声処理が独立して進むことを確認する。各バックエンドで同じ契約の検証を実行し、返り値がそのバックエンドの実装であること、別デバイスの clip を拒否すること、生存中の子があるデバイスの破棄を拒否することを確認する。
 
 PCM のチャンネル境界、形式変換、gain の乗算、clamp、非有限値、短い読込、供給不足と EOF の区別を検証する。clip の参照中破棄、再生セッションのカーソル分離、参照解除後のリソース側の取消、出力中の voice／device 破棄、バックエンド停止失敗で use-after-free や供給セッションの残留が起きないことを確認する。継続供給に関わる項目は、その契約と実装の追加時に検証する。
 

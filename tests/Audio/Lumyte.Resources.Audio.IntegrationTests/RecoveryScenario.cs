@@ -33,6 +33,7 @@ internal static class RecoveryScenario
             Require(!old.IsUsable && execution.Status == ExecutionStatus.Running, "Loss did not remain local to the Audio device.");
             Expect<ResourceUnavailableException>(() => _ = old.Value, "Resources returned an invalidated audio generation.");
             Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.Play().AsTask()), "An old voice accepted playback after device loss.");
+            Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.Seek(0).AsTask()), "An old voice accepted a seek after device loss.");
 
             factory.FailNextCreation();
             Expect<InvalidOperationException>(() => wait(audio.Devices.RecoverAsync().AsTask()), "Injected recovery failure was ignored.");
@@ -53,6 +54,7 @@ internal static class RecoveryScenario
             {
                 Require(currentVoice.State == AudioPlaybackState.Stopped, "Recovery unexpectedly restarted playback.");
                 wait(currentVoice.Play().AsTask());
+                wait(audio.State.Refresh().AsTask());
                 Require(currentVoice.State == AudioPlaybackState.Playing, "Rebuilt voice could not play on the new device.");
 
                 Task<int> retained = audio.Devices.RetireAsync().AsTask();

@@ -80,7 +80,7 @@ native操作はAudio ownerへ送り、通常のawait後の継続は同じジョ�
 HotReloadは新しいclipを同じStageで構築し、検証後に公開します。
 取得済みLeaseは旧clipを保持するため、それを借用中のvoiceは引き続き旧clipを再生します。
 新しい音声を使う場合は、新clipのleaseから利用側がvoiceを明示的に生成します。
-再生状態・再生位置の移行やクロスフェードは自動で行いません。
+再生状態・再生位置の移行やクロスフェードは自動で行いません。利用側は旧voiceの`FramePosition`から新voiceへ`Seek`できます。同じsample rateなら`await nextVoice.Seek(Math.Min(oldVoice.FramePosition, nextClip.FrameCount))`で長さに収めます。sample rateが変わる場合は再生時間を介してフレーム位置を換算し、ループや終了位置の方針も選びます。FramePositionは直近の更新結果であり、移行中の再生進行を止めたり、二つのvoiceを同時に切り替えたりする保証はありません。
 
 AudioModuleの更新は所有スレッドで出力状態を確認し、Unavailableになった世代を失効させます。
 BrowserのSuspended／interruptedは再開可能なため世代を失効させません。

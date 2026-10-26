@@ -11,6 +11,7 @@ internal sealed class WebAudioVoice : IAudioVoice
     private readonly JSObject _handle;
     private AudioPlaybackState _state;
     private AudioPlaybackState _requested;
+    private long _framePosition;
     private float _gain = 1;
     private bool _loop;
     private bool _disposed;
@@ -57,6 +58,18 @@ internal sealed class WebAudioVoice : IAudioVoice
         }
     }
 
+    public long FramePosition
+    {
+        get
+        {
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _framePosition;
+            }
+        }
+    }
+
     public bool Loop
     {
         get
@@ -90,6 +103,7 @@ internal sealed class WebAudioVoice : IAudioVoice
 
         WebAudioInterop.Play(_handle);
         _requested = AudioPlaybackState.Playing;
+        Observe();
     }
 
     public void Pause()
@@ -110,6 +124,38 @@ internal sealed class WebAudioVoice : IAudioVoice
         Validate();
         WebAudioInterop.Stop(_handle);
         _requested = AudioPlaybackState.Stopped;
+    }
+
+    public void Seek(long framePosition)
+    {
+        Validate();
+        if (framePosition < 0 || framePosition > _clip.FrameCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(framePosition));
+        }
+
+        Observe();
+        try
+        {
+            WebAudioInterop.Seek(_handle, checked((int)framePosition));
+        }
+        catch (JSException)
+        {
+            // A replacement can fail after the old one-shot source has stopped.
+            if (_requested == AudioPlaybackState.Playing && !WebAudioInterop.Playing(_handle))
+            {
+                _requested = AudioPlaybackState.Stopped;
+            }
+
+            throw;
+        }
+
+        if (_requested == AudioPlaybackState.Completed && (framePosition < _clip.FrameCount || _loop))
+        {
+            _requested = AudioPlaybackState.Stopped;
+        }
+
+        Observe();
     }
 
     public void Dispose()
@@ -134,9 +180,11 @@ internal sealed class WebAudioVoice : IAudioVoice
     internal void Refresh()
     {
         Observe();
+        long framePosition = WebAudioInterop.FramePosition(_handle);
         lock (this)
         {
             _state = _requested;
+            _framePosition = framePosition;
         }
     }
 

@@ -2,6 +2,7 @@
 
 - 状態: 採用
 - 日付: 2026-10-23
+- 更新日: 2026-10-26
 - 関連カテゴリ: core、resources
 
 ## 背景
@@ -18,9 +19,9 @@ Resourcesが共有する音声データと、再生位置や状態を持つvoice
 
 `AudioClip`と`AudioVoice`は元のbackend参照一本を持つreadonly structである。自身に宣言したメソッドからsenderを生成し、静的portへ送信する。`AudioClip.CreateVoice(bus)`は生成済みの`AudioVoice`を直接返す。ラッパーはnative資源やResourcesのleaseを所有せず、コピーしても寿命を延長しない。
 
-Play／Stopの完了はbackend操作の終了を表し、可聴時刻や再生終了は保証しない。取消が実行開始に先行した場合だけ副作用を抑止する。開始後は実際の結果を観測し、ValueTaskを一度awaitして結果slotを返す。容量不足は`ExecutionQueueFullException`、受付終了は`InvalidOperationException`で返す。await後の呼び出し側に所有スレッドへの親和性を要求しない。
+Play／Stop／Seekの完了はbackend操作の終了を表し、可聴時刻や再生終了は保証しない。取消が実行開始に先行した場合だけ副作用を抑止する。開始後は実際の結果を観測し、ValueTaskを一度awaitして結果slotを返す。容量不足は`ExecutionQueueFullException`、受付終了は`InvalidOperationException`で返す。await後の呼び出し側に所有スレッドへの親和性を要求しない。
 
-State／Gain／Loopはbackendがlockで保護する保存済みの値を呼び出し元で読む。Stateは直近の更新結果で、即時観測には`AudioDevice.Refresh()`を待つ。getterからnative更新や全voiceの走査は行わない。
+State／FramePosition／Gain／Loopはbackendがlockで保護する保存済みの値を呼び出し元で読む。StateとFramePositionは直近の更新結果で、即時観測には`AudioDevice.Refresh()`を待つ。getterからnative更新や全voiceの走査は行わない。`Seek(long framePosition)`は`0..clip.FrameCount`のPCMフレーム位置を型付きコマンドとして配送し、[backendの状態・端点規則](AUDIO-0001-audio-system.md#seekと位置の観測)をそのまま適用する。停止・一時停止中のSeekは再生を開始しない。
 
 Dedicatedではownerが10 ms周期で直接更新し、周期間も制御コマンドを処理する。一回の処理区間を64件・2 msまでとし、区間ごとに更新期限を確認して残りの要求を継続する。次の10 ms周期を待つ件数制限ではない。HostではControl phaseのPumpで同じ仕事を進める。音声サンプルの供給はbackend／デバイスの周期が担当し、この制御ループを再生精度の保証としない。
 
@@ -54,7 +55,7 @@ AcquireAsyncはownerで使用可能な世代を取得し、使用不能ならAud
 
 RecoverAsyncの同時要求は生成operationを共有し、呼び出し側の取消は待機だけを解除する。factoryはownerで開始され、完成したdeviceの所有権をserviceへ渡す。factoryは失敗時の部分生成物を解放する。完了commandの容量不足では生成物を保持し、次のRecoverAsyncで完了処理を再試行する。
 
-復旧後はアプリがRebuildRuntimeAsync(["Audio"])を実行し、新deviceのclipを公開する。HotReloadも同じStageで新clipを構築する。取得済みleaseは旧clipを保持し、それを借用するvoiceは旧clipを使い続ける。利用側は新clipからvoiceを明示的に作成し、再生位置の移行やクロスフェードを決める。ただし物理ロストで失効したclipは保持中でも再生には使えない。
+復旧後はアプリがRebuildRuntimeAsync(["Audio"])を実行し、新deviceのclipを公開する。HotReloadも同じStageで新clipを構築する。取得済みleaseは旧clipを保持し、それを借用するvoiceは旧clipを使い続ける。利用側は新clipからvoiceを明示的に作成し、旧FramePositionを新clipの長さに収めてSeekし、再生状態の移行やクロスフェードを決める。sample rateが異なる場合は再生時間を介して位置を換算する。位置は更新時のsnapshotであり、自動的な移行や二つのvoiceの同時切替は保証しない。ただし物理ロストで失効したclipは保持中でも再生には使えない。
 
 RetireAsyncはleaseがなくなった旧deviceを元ownerで解放する。子が残る場合や解放失敗時は所有を保持する。OpenALの失ったcontextへ切り替えられない場合は、子のnative解放をcontext破棄へ委ね、backend管理情報を解消する。ロスト通知だけで利用中資源を強制破棄しない。
 
@@ -85,6 +86,8 @@ public readonly partial struct AudioClip
 public readonly partial struct AudioVoice
 {
     public AudioVoice(IAudioVoice original);
+    public long FramePosition { get; }
+    public ValueTask<Unit> Seek(long framePosition, CancellationToken cancellationToken = default);
     public ValueTask<Unit> Play(CancellationToken cancellationToken = default);
     public ValueTask<Unit> Stop(CancellationToken cancellationToken = default);
     public ValueTask<Unit> Destroy(CancellationToken cancellationToken = default);
@@ -118,7 +121,7 @@ OpenALの一時PCM16変換領域はArrayPoolから借り、実サンプル数だ
 
 同じsenderとStageをDedicated／Hostで使い、実体完成を待って公開できる。共有clipと個別voiceの寿命を分離できる一方、利用側には全voiceの解放完了までleaseを保持する責任と、復旧後の再生方針が残る。静的portの制約から独立したAudioModuleを同じprocessで作り直す構成は扱わない。
 
-単体テストはWAVEの各形式と不正入力、I/O後のジョブ継続、一つのsingleton ManagerのDI登録、型付きRuntimeと世代依存先の一致を確認する。結合テストはHost／Dedicated、DIあり／なし、fake／OpenALで生成・制御・解放のスレッド、複数voiceの独立性、借用中clipの解放拒否と再試行を確認する。
+単体テストはWAVEの各形式と不正入力、I/O後のジョブ継続、一つのsingleton ManagerのDI登録、型付きRuntimeと世代依存先の一致を確認する。結合テストはHost／Dedicated、DIあり／なし、fake／OpenALで生成・制御・解放のスレッド、複数voiceの独立性、Seekの配送・位置・状態、借用中clipの解放拒否と再試行を確認する。
 
 ロスト・復旧・HotReloadは旧lease保持、生成中失効、旧clipと新deviceの拒否、復旧共有、factory失敗、容量不足、停止との競合、起動取消、解放失敗の再試行、不正入力時の旧公開維持を検証する。物理抜き差し、Browserのuser gestureとclosed／interrupted、負荷時の遅延分布は実環境で確認する。
 

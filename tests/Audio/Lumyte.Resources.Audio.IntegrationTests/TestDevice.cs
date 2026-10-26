@@ -5,6 +5,7 @@ namespace Lumyte.Resources.Audio.IntegrationTests;
 internal sealed class TestDevice : IAudioDevice
 {
     private readonly int _owner = Environment.CurrentManagedThreadId;
+    private readonly List<TestVoice> _activeVoices = [];
     private int _clips;
     private int _voices;
     private int _output = (int)AudioOutputState.Running;
@@ -45,7 +46,14 @@ internal sealed class TestDevice : IAudioDevice
         SetOutput(AudioOutputState.Unavailable);
     }
 
-    public void Update() => VerifyAvailable();
+    public void Update()
+    {
+        VerifyAvailable();
+        foreach (TestVoice voice in _activeVoices)
+        {
+            voice.Refresh();
+        }
+    }
 
     public ValueTask ResumeOutputAsync(CancellationToken cancellationToken = default)
     {
@@ -95,7 +103,9 @@ internal sealed class TestDevice : IAudioDevice
 
         original.Borrowers++;
         _voices++;
-        return new TestVoice(this, original);
+        var voice = new TestVoice(this, original);
+        _activeVoices.Add(voice);
+        return voice;
     }
 
     public void SetBusGain(AudioBus bus, float gain) => VerifyAvailable();
@@ -170,5 +180,9 @@ internal sealed class TestDevice : IAudioDevice
         Interlocked.Increment(ref _returnedClips);
     }
 
-    internal void ReturnVoice() => _voices--;
+    internal void ReturnVoice(TestVoice voice)
+    {
+        _voices--;
+        _activeVoices.Remove(voice);
+    }
 }

@@ -56,6 +56,7 @@ public sealed class OpenALRegressionTests
         Assert.Throws<AudioDeviceUnavailableException>(voice.Play);
         Assert.Throws<AudioDeviceUnavailableException>(voice.Pause);
         Assert.Throws<AudioDeviceUnavailableException>(voice.Stop);
+        Assert.Throws<AudioDeviceUnavailableException>(() => voice.Seek(0));
         Assert.Throws<AudioDeviceUnavailableException>(() => voice.Gain = 0.5f);
         Assert.Throws<AudioDeviceUnavailableException>(() => voice.Loop = true);
         Assert.Throws<AudioDeviceUnavailableException>(() => device.CreateVoice(clip));
@@ -94,9 +95,11 @@ public sealed class OpenALRegressionTests
                     Assert.InRange(voice.Gain, 0, 1);
                     _ = voice.Loop;
                     Assert.True(Enum.IsDefined(voice.State));
+                    Assert.InRange(voice.FramePosition, 0, clip.FrameCount);
                 }
 
                 Assert.Throws<InvalidOperationException>(voice.Play);
+                Assert.Throws<InvalidOperationException>(() => voice.Seek(0));
                 Assert.Throws<InvalidOperationException>(device.Invalidate);
             }
             catch (Exception error)
@@ -122,6 +125,163 @@ public sealed class OpenALRegressionTests
         Assert.Null(failure);
         voice.Dispose();
         Assert.Throws<ObjectDisposedException>(() => voice.State);
+        Assert.Throws<ObjectDisposedException>(() => voice.FramePosition);
+        Assert.Throws<ObjectDisposedException>(() => voice.Seek(0));
+    }
+
+    /// <summary>Stopped and paused seeking selects exact sample frames without starting playback or publishing early.</summary>
+    [OpenALFact]
+    public void SeekPreservesStoppedAndPausedPlaybackAndPublishesOnUpdate()
+    {
+        using var device = new OpenALDevice();
+        using IAudioClip clip = device.CreateClip(new(48000, 2), new float[960000]);
+        using IAudioVoice voice = device.CreateVoice(clip);
+        voice.Seek(12345);
+        Assert.Equal(0, voice.FramePosition);
+        device.Update();
+        Assert.Equal(12345, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Stopped, voice.State);
+
+        voice.Play();
+        voice.Pause();
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+        Assert.InRange(voice.FramePosition, 12345, clip.FrameCount - 1);
+        long before = voice.FramePosition;
+        voice.Seek(23456);
+        Assert.Equal(before, voice.FramePosition);
+        device.Update();
+        Assert.Equal(23456, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+
+        using var api = AL.GetApi();
+        uint handle = (uint)voice.GetType().GetField("_handle", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(voice)!;
+        api.GetSourceProperty(handle, GetSourceInteger.SampleOffset, out int nativeFrame);
+        Assert.Equal(AudioError.NoError, api.GetError());
+        Assert.Equal(23456, nativeFrame);
+        voice.Play();
+        voice.Pause();
+        device.Update();
+        Assert.InRange(voice.FramePosition, 23456, clip.FrameCount - 1);
+
+        voice.Stop();
+        device.Update();
+        Assert.Equal(0, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Stopped, voice.State);
+    }
+
+    /// <summary>Live seeking preserves playback and invalid positions leave the selected state and frame untouched.</summary>
+    [OpenALFact]
+    public void SeekPreservesPlayingStateAndRejectsInvalidFrames()
+    {
+        using var device = new OpenALDevice();
+        using IAudioClip clip = device.CreateClip(new(48000, 1), new float[480000]);
+        using IAudioVoice voice = device.CreateVoice(clip);
+        voice.Gain = 0.25f;
+        voice.Play();
+        voice.Seek(48000);
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Playing, voice.State);
+        Assert.InRange(voice.FramePosition, 48000, clip.FrameCount - 1);
+        Assert.Equal(0.25f, voice.Gain);
+
+        voice.Pause();
+        voice.Seek(45678);
+        device.Update();
+        Assert.Throws<ArgumentOutOfRangeException>(() => voice.Seek(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => voice.Seek(clip.FrameCount + 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => voice.Seek(long.MaxValue));
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+        Assert.Equal(45678, voice.FramePosition);
+    }
+
+    /// <summary>The endpoint has deterministic logical state even though OpenAL cannot seek to its native buffer end.</summary>
+    [OpenALFact]
+    public void SeekEndpointAndCompletedPlaybackHaveConsistentRestartBehavior()
+    {
+        using var device = new OpenALDevice();
+        using IAudioClip clip = device.CreateClip(new(48000, 1), new float[480000]);
+        using IAudioVoice voice = device.CreateVoice(clip);
+        voice.Seek(clip.FrameCount);
+        device.Update();
+        Assert.Equal(clip.FrameCount, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Stopped, voice.State);
+        voice.Play();
+        device.Update();
+        Assert.Equal(clip.FrameCount, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Completed, voice.State);
+        voice.Play();
+        voice.Pause();
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+        Assert.InRange(voice.FramePosition, 0, clip.FrameCount - 1);
+
+        voice.Seek(clip.FrameCount);
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+        Assert.Equal(clip.FrameCount, voice.FramePosition);
+        voice.Seek(32123);
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+        Assert.Equal(32123, voice.FramePosition);
+        voice.Play();
+        voice.Seek(clip.FrameCount);
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Completed, voice.State);
+        Assert.Equal(clip.FrameCount, voice.FramePosition);
+        voice.Seek(43234);
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Stopped, voice.State);
+        Assert.Equal(43234, voice.FramePosition);
+        voice.Play();
+        voice.Pause();
+        device.Update();
+        Assert.InRange(voice.FramePosition, 43234, clip.FrameCount - 1);
+    }
+
+    /// <summary>A looping voice normalizes an explicit end position to the first frame without stopping.</summary>
+    [OpenALFact]
+    public void LoopingSeekWrapsTheEndpointWithoutChangingPlaybackState()
+    {
+        using var device = new OpenALDevice();
+        using IAudioClip clip = device.CreateClip(new(48000, 1), new float[480000]);
+        using IAudioVoice voice = device.CreateVoice(clip);
+        voice.Loop = true;
+        voice.Seek(clip.FrameCount);
+        device.Update();
+        Assert.Equal(0, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Stopped, voice.State);
+        voice.Play();
+        voice.Pause();
+        voice.Seek(clip.FrameCount);
+        device.Update();
+        Assert.Equal(0, voice.FramePosition);
+        Assert.Equal(AudioPlaybackState.Paused, voice.State);
+        voice.Play();
+        voice.Seek(clip.FrameCount);
+        device.Update();
+        Assert.Equal(AudioPlaybackState.Playing, voice.State);
+        Assert.InRange(voice.FramePosition, 0, clip.FrameCount - 1);
+    }
+
+    /// <summary>Native completion reports the full clip length instead of OpenAL's reset sample offset.</summary>
+    [OpenALFact]
+    public void NaturalCompletionPublishesTheClipFrameCount()
+    {
+        using var device = new OpenALDevice();
+        using IAudioClip clip = device.CreateClip(new(48000, 1), new float[48]);
+        using IAudioVoice voice = device.CreateVoice(clip);
+        voice.Play();
+        bool completed = SpinWait.SpinUntil(
+            () =>
+            {
+                device.Update();
+                return voice.State == AudioPlaybackState.Completed;
+            },
+            TimeSpan.FromSeconds(2));
+        Assert.True(completed);
+        Assert.Equal(clip.FrameCount, voice.FramePosition);
     }
 
     /// <summary>Checks that a failed native allocation does not poison existing resources.</summary>

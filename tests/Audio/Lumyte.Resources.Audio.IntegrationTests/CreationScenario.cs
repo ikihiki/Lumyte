@@ -121,9 +121,11 @@ internal static class CreationScenario
                 Require(!oldLease.IsUsable, "A query failure left a published resource generation usable.");
                 ExpectUnavailable(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()));
                 ExpectUnavailable(() => wait(oldVoice.Play().AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.Seek(0).AsTask()));
                 wait(audio.Devices.RecoverAsync().AsTask());
                 ExpectUnavailable(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()));
                 ExpectUnavailable(() => wait(oldVoice.Play().AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.Seek(0).AsTask()));
                 Task<int> retained = audio.Devices.RetireAsync().AsTask();
                 wait(retained);
                 Require(

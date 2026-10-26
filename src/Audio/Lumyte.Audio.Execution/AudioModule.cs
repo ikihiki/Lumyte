@@ -56,6 +56,7 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         AudioVoice.DeclareDestroy(builder, Options(WorkAdmission.Cleanup));
         AudioVoice.DeclarePause(builder, Options(WorkAdmission.Normal));
         AudioVoice.DeclarePlay(builder, Options(WorkAdmission.Normal));
+        AudioVoice.DeclareSeek(builder, Options(WorkAdmission.Normal));
         AudioVoice.DeclareSetGain(builder, Options(WorkAdmission.Normal));
         AudioVoice.DeclareSetLoop(builder, Options(WorkAdmission.Normal));
         AudioVoice.DeclareStop(builder, Options(WorkAdmission.Normal));

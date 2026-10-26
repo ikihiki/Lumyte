@@ -13,6 +13,9 @@ public readonly partial struct AudioVoice(IAudioVoice original)
     /// <summary>Gets the backend snapshot from any thread.</summary>
     public AudioPlaybackState State => _original.State;
 
+    /// <summary>Gets the PCM frame position captured by the latest backend Update from any thread.</summary>
+    public long FramePosition => _original.FramePosition;
+
     /// <summary>Gets the cached backend gain from any thread.</summary>
     public float Gain => _original.Gain;
 
@@ -27,6 +30,9 @@ public readonly partial struct AudioVoice(IAudioVoice original)
 
     [ExecutionCommand]
     private void StopCore() => _original.Stop();
+
+    [ExecutionCommand]
+    private void SeekCore(long framePosition) => _original.Seek(framePosition);
 
     [ExecutionCommand]
     private void SetGainCore(float gain) => _original.Gain = gain;
