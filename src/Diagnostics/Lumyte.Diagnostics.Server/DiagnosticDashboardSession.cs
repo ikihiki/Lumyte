@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Lumyte.Diagnostics.Transport;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
 namespace Lumyte.Diagnostics.Server;

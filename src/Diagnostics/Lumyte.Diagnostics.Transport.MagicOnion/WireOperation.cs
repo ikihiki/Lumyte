@@ -1,3 +1,5 @@
+using MessagePack;
+
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 /// <summary>Append-only numeric-key operation schema; version two adds traffic classification.</summary>

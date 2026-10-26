@@ -1,4 +1,8 @@
 using System.Diagnostics;
+using Lumyte.Execution;
+using Lumyte.Memory;
+using Lumyte.Resources.Execution;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

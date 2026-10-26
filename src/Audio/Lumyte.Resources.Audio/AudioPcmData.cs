@@ -1,3 +1,5 @@
+using Lumyte.Audio.Abstractions;
+
 namespace Lumyte.Resources.Audio;
 
 /// <summary>Completed interleaved PCM supplied by an audio decode stage.</summary>

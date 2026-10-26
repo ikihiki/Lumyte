@@ -1,6 +1,11 @@
 using System.Buffers;
 using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
+using Lumyte.Diagnostics.Transport;
+using Lumyte.Diagnostics.Transport.MagicOnion;
+using MessagePack;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

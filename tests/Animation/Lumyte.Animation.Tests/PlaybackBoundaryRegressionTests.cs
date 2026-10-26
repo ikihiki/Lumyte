@@ -1,3 +1,6 @@
+using Lumyte.Core.Time;
+using Xunit;
+
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Checks event clocks and traversal at fractional and maximum tick positions.</summary>

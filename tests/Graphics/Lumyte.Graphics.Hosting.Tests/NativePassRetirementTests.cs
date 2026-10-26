@@ -1,4 +1,6 @@
+using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Wgpu;
+using Xunit;
 
 namespace Lumyte.Graphics.Hosting.Tests;
 

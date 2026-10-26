@@ -1,4 +1,6 @@
 using System.Collections.Specialized;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Settings.Tests;
 

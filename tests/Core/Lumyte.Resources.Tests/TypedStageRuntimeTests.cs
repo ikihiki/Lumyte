@@ -1,5 +1,9 @@
+using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
+using Lumyte.Resources.Execution;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

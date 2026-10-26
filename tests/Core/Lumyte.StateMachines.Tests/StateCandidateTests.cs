@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Lumyte.StateMachines.Tests;
 
 /// <summary>Checks state-specific candidate selection and execution cache boundaries.</summary>

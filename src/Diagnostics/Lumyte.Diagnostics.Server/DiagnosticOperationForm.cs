@@ -1,4 +1,5 @@
 using System.Globalization;
+using Lumyte.Diagnostics.Transport;
 
 namespace Lumyte.Diagnostics.Server;
 

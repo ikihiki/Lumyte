@@ -1,3 +1,9 @@
+using Lumyte.Animation;
+using Lumyte.Core.Time;
+using Lumyte.StateMachines;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
 namespace Lumyte.Diagnostics.Animation.Tests;
 
 /// <summary>Checks the scoped animation registry and generated diagnostic operations.</summary>

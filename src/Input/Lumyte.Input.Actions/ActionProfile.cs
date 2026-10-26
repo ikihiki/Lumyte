@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Lumyte.Input.Abstractions;
 
 namespace Lumyte.Input.Actions;
 /// <summary>Contains immutable action, binding, context and recognition definitions.</summary>

@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using Lumyte.Memory.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Memory.Tests;
 

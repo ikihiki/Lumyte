@@ -1,3 +1,6 @@
+using Lumyte.Core.Time;
+using Xunit;
+
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Verifies tick rounding through the animation duration adapter.</summary>

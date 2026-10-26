@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Silk.NET.Core.Contexts;
+using Silk.NET.OpenAL;
 
 namespace Lumyte.Audio.OpenAL;
 

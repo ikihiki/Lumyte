@@ -1,3 +1,5 @@
+using Lumyte.Graphics.Abstractions;
+
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class TestTypedBuffer<T>(BufferDesc<T> desc, List<string> lifetime) : IGraphicsBuffer<T>

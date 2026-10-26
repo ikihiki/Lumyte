@@ -1,3 +1,5 @@
+using Lumyte.Input.Abstractions;
+
 namespace Lumyte.Platform.Internal;
 
 internal static class PhysicalKeys

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Lumyte.Diagnostics.Transport;
 
 namespace Lumyte.Diagnostics.Server;
 

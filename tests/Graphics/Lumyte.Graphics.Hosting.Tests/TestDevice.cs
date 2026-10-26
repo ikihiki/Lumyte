@@ -1,3 +1,4 @@
+using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.Hosting.Tests;

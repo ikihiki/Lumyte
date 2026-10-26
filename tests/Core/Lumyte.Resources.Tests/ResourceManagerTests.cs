@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

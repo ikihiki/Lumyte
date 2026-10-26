@@ -1,5 +1,9 @@
 using System.Numerics;
 using Lumyte.Platform.Tests;
+using Lumyte.Windowing;
+using Lumyte.Windowing.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Diagnostics.Windowing.Tests;
 

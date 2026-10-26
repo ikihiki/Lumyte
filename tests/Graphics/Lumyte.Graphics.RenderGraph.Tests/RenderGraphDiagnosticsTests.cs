@@ -1,4 +1,8 @@
+using Lumyte.Diagnostics;
 using Lumyte.Diagnostics.RenderGraph;
+using Lumyte.Graphics.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
@@ -440,7 +444,7 @@ public sealed class RenderGraphDiagnosticsTests
         var events = new List<DiagnosticEvent>();
         while (telemetry.TryRead(out DiagnosticEvent? item))
         {
-            events.Add((DiagnosticEvent)item!);
+            events.Add(item!);
         }
 
         return events;

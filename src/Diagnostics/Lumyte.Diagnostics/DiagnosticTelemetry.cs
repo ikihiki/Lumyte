@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 
 namespace Lumyte.Diagnostics;
 

@@ -1,4 +1,6 @@
 using System.Collections;
+using Lumyte.Core.Time;
+using Xunit;
 using static Lumyte.Animation.ComposeAnimation;
 
 namespace Lumyte.Animation.Tests;

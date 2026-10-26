@@ -1,3 +1,5 @@
+using Lumyte.Graphics.Abstractions;
+
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class TestTextureView(IGraphicsTexture texture, List<string>? lifetime) : IGraphicsTextureView

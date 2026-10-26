@@ -1,3 +1,5 @@
+using Lumyte.Diagnostics.Transport;
+
 namespace Lumyte.Diagnostics.Server;
 
 internal static class DiagnosticProtocol

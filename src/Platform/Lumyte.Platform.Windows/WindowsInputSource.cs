@@ -1,6 +1,8 @@
 using System.Numerics;
 using System.Runtime.Versioning;
+using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Internal;
+using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Windows;
 

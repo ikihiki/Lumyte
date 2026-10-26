@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Lumyte.Diagnostics.Server;
+using Xunit;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

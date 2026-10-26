@@ -1,5 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Grpc.Core;
+using Grpc.Net.Client;
+using MagicOnion.Client;
 
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 

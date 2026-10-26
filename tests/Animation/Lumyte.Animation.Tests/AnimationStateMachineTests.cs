@@ -1,3 +1,8 @@
+using Lumyte.Core.Time;
+using Lumyte.StateMachines;
+using Xunit;
+using static Lumyte.Animation.ComposeAnimation;
+
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Represents animation state machine tests.</summary>
