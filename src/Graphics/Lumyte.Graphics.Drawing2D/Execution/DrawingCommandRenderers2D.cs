@@ -10,13 +10,17 @@ public sealed class DrawingCommandRenderers2D
     /// <param name="drawLine">The DrawLine renderer, borrowed by this table.</param>
     /// <param name="fillPath">The FillPath renderer, borrowed by this table.</param>
     /// <param name="strokePath">The StrokePath renderer, borrowed by this table.</param>
+    /// <param name="drawImage">The DrawImage renderer, borrowed by this table.</param>
+    /// <param name="drawMesh">The DrawMesh renderer, borrowed by this table.</param>
     public DrawingCommandRenderers2D(
         IFillRectRenderer2D fillRect,
         IFillRoundedRectRenderer2D fillRoundedRect,
         IFillCircleRenderer2D fillCircle,
         IDrawLineRenderer2D drawLine,
         IFillPathRenderer2D fillPath,
-        IStrokePathRenderer2D strokePath)
+        IStrokePathRenderer2D strokePath,
+        IDrawImageRenderer2D drawImage,
+        IDrawMeshRenderer2D drawMesh)
     {
         ArgumentNullException.ThrowIfNull(fillRect);
         FillRect = fillRect;
@@ -30,6 +34,10 @@ public sealed class DrawingCommandRenderers2D
         FillPath = fillPath;
         ArgumentNullException.ThrowIfNull(strokePath);
         StrokePath = strokePath;
+        ArgumentNullException.ThrowIfNull(drawImage);
+        DrawImage = drawImage;
+        ArgumentNullException.ThrowIfNull(drawMesh);
+        DrawMesh = drawMesh;
     }
 
     /// <summary>Gets the configured FillRect renderer.</summary>
@@ -50,7 +58,13 @@ public sealed class DrawingCommandRenderers2D
     /// <summary>Gets the configured StrokePath renderer.</summary>
     public IStrokePathRenderer2D StrokePath { get; }
 
-    /// <summary>Creates a new table and 6 stateless defaults without DI or GPU allocations.</summary>
+    /// <summary>Gets the configured DrawImage renderer.</summary>
+    public IDrawImageRenderer2D DrawImage { get; }
+
+    /// <summary>Gets the configured DrawMesh renderer.</summary>
+    public IDrawMeshRenderer2D DrawMesh { get; }
+
+    /// <summary>Creates a new table and 8 stateless defaults without DI or GPU allocations.</summary>
     /// <returns>The new rendering strategy table.</returns>
     public static DrawingCommandRenderers2D CreateDefault() => new(
         new DefaultFillRectRenderer2D(),
@@ -58,5 +72,7 @@ public sealed class DrawingCommandRenderers2D
         new DefaultFillCircleRenderer2D(),
         new DefaultDrawLineRenderer2D(),
         new DefaultFillPathRenderer2D(),
-        new DefaultStrokePathRenderer2D());
+        new DefaultStrokePathRenderer2D(),
+        new DefaultDrawImageRenderer2D(),
+        new DefaultDrawMeshRenderer2D());
 }

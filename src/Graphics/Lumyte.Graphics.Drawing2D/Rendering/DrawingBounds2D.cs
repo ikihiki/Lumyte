@@ -21,6 +21,8 @@ internal static class DrawingBounds2D
                 DrawLineCommand2D c => Outset(Points([c.Start, c.End]), c.Style.Width * (c.Style.Cap == LineCap2D.Square ? 0.707107f : 0.5f)),
                 FillPathCommand2D c => PathBounds(c.Path),
                 StrokePathCommand2D c => Outset(PathBounds(c.Path), c.Style.Width * MathF.Max(c.Style.Cap == LineCap2D.Square ? 1.414214f : 1, c.Style.MiterLimit) * 0.5f),
+                DrawImageCommand2D c => c.Destination,
+                DrawMeshCommand2D c => Points(c.Mesh.Vertices.Select(v => v.Position)),
                 _ => null,
             };
             if (bounds is not null)

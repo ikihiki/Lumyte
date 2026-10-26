@@ -56,6 +56,24 @@ public sealed class Drawing2DTests
         await CheckGradientsAsync(device);
     }
 
+    /// <summary>Checks images, atlas sampling and external glyph representations on Vulkan.</summary>
+    /// <returns>The asynchronous GPU checks.</returns>
+    [GpuFact]
+    public async Task VulkanImagesAndGlyphRepresentationsAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await CheckImagesAsync(device);
+    }
+
+    /// <summary>Checks images, atlas sampling and external glyph representations on wgpu.</summary>
+    /// <returns>The asynchronous GPU checks.</returns>
+    [GpuFact]
+    public async Task WgpuImagesAndGlyphRepresentationsAsync()
+    {
+        using var device = WgpuDevice.Create();
+        await CheckImagesAsync(device);
+    }
+
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
     [GpuFact]
@@ -156,6 +174,7 @@ public sealed class Drawing2DTests
             canvas.FillCircle(new(5, 15), 3, _white);
             canvas.DrawLine(new(11, 15), new(18, 15), _white, new() { Width = 2 });
             canvas.StrokePath(stroke.Build(), _white, new() { Width = 2, Join = LineJoin2D.Round });
+            canvas.DrawMesh(new([new(new(33, 11), 0.5f), new(new(39, 11), 0.5f), new(new(33, 19), 0.5f)], [0, 1, 2]), PaintGraph2D.Solid(_white));
         });
         AssertPixel(pixels, 40, 2, 2, Vector4.One);
         AssertPixel(pixels, 40, 4, 4, Vector4.Zero);
@@ -172,6 +191,8 @@ public sealed class Drawing2DTests
         AssertPixel(pixels, 40, 10, 14, Vector4.Zero);
         AssertPixel(pixels, 40, 25, 12, Vector4.One);
         AssertPixel(pixels, 40, 28, 16, Vector4.One);
+        AssertPixel(pixels, 40, 34, 12, new(0.5f));
+        AssertPixel(pixels, 40, 38, 18, Vector4.Zero);
     }
 
     private static async Task CheckClipsAsync(IGraphicDevice device)
@@ -231,6 +252,87 @@ public sealed class Drawing2DTests
         AssertPixel(otherGradients, 12, 2, 0, new(0.5f, 0.5f, 0.5f, 1), 0.02f);
         AssertPixel(otherGradients, 12, 4, 2, new(0.5f, 0.5f, 0.5f, 1), 0.02f);
         AssertPixel(otherGradients, 12, 10, 0, new(0.5f, 0.5f, 0.5f, 1), 0.02f);
+    }
+
+    private static async Task CheckImagesAsync(IGraphicDevice device)
+    {
+        using IGraphicsTexture atlas = device.CreateTexture(new() { Width = 4, Height = 1, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
+        using IGraphicsTextureView view = atlas.CreateView();
+        using IGraphicsSampler sampler = device.CreateSampler(new() { AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge });
+        await UploadAsync(device, atlas, [0, 255, 0, 255, 255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 255]);
+        var repeating = new ImagePattern2D
+        {
+            View = view,
+            Source = new(1, 0, 2, 1),
+            PatternToLocal = Matrix3x2.CreateTranslation(0.5f, 0),
+            TileX = ImageTileMode2D.Repeat,
+            TileY = ImageTileMode2D.Clamp,
+            Filter = ImageFilter2D.Linear,
+        };
+        Vector4[] pixels = await RenderAsync(
+            device,
+            6,
+            3,
+            canvas =>
+        {
+            canvas.FillRect(new(0, 0, 6, 1), PaintGraph2D.ImagePattern(repeating));
+            canvas.FillRect(new(0, 1, 6, 1), PaintGraph2D.ImagePattern(repeating with { TileX = ImageTileMode2D.Decal }));
+            canvas.DrawImage(new(view, sampler), new(1, 0, 2, 1), new(0, 2, 4, 1));
+        },
+            [atlas]);
+        for (int x = 0; x < 6; x++)
+        {
+            AssertPixel(pixels, 6, x, 0, new(0.5f, 0, 0, 0.5f));
+        }
+
+        AssertPixel(pixels, 6, 4, 1, Vector4.Zero);
+        AssertPixel(pixels, 6, 1, 2, new(0.75f, 0, 0, 0.75f), 0.02f);
+        AssertPixel(pixels, 6, 2, 2, new(0.25f, 0, 0, 0.25f), 0.02f);
+
+        Vector4[] mirrored = await RenderAsync(
+            device,
+            6,
+            1,
+            canvas => canvas.FillRect(new(0, 0, 6, 1), PaintGraph2D.ImagePattern(repeating with
+            {
+                PatternToLocal = Matrix3x2.CreateTranslation(2, 0),
+                TileX = ImageTileMode2D.Mirror,
+                Filter = ImageFilter2D.Nearest,
+            })),
+            [atlas]);
+        AssertPixel(mirrored, 6, 0, 0, Vector4.Zero);
+        AssertPixel(mirrored, 6, 1, 0, new(1, 0, 0, 1));
+        AssertPixel(mirrored, 6, 2, 0, new(1, 0, 0, 1));
+        AssertPixel(mirrored, 6, 3, 0, Vector4.Zero);
+        AssertPixel(mirrored, 6, 4, 0, Vector4.Zero);
+        AssertPixel(mirrored, 6, 5, 0, new(1, 0, 0, 1));
+    }
+
+    private static async Task UploadAsync(IGraphicDevice device, IGraphicsTexture texture, byte[] texels)
+    {
+        TextureCopyLayout layout = device.GetTextureCopyLayout(texture.Format);
+        uint rowBytes = checked(texture.Width * layout.BytesPerTexel);
+        uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
+        byte[] bytes = new byte[checked(pitch * texture.Height)];
+        Assert.Equal(checked((int)(rowBytes * texture.Height)), texels.Length);
+        for (uint row = 0; row < texture.Height; row++)
+        {
+            texels.AsSpan(checked((int)(row * rowBytes)), checked((int)rowBytes)).CopyTo(bytes.AsSpan(checked((int)(row * pitch))));
+        }
+
+        using IGraphicsBuffer<byte> upload = device.CreateBuffer<byte>(new() { Count = (ulong)bytes.Length, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
+        await upload.MapAsync();
+        upload.CopyFrom(bytes);
+        upload.Unmap();
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = _copyRead });
+        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.CopyDestination, Before = default, After = _copyWrite });
+        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(0, upload.Count), BytesPerRow = pitch, RowsPerImage = texture.Height }, new() { Texture = texture, Width = texture.Width, Height = texture.Height });
+        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopyDestination, AfterState = TextureState.Sampled, Before = _copyWrite, After = _sampleRead });
+        commands.Finish();
+        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        await submission.WaitAsync();
+        commands.Dispose();
     }
 
     private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<Canvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)

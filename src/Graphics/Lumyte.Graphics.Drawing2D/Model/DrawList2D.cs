@@ -10,6 +10,8 @@ public sealed class DrawList2D
     private readonly DrawLineCommand2D[] _drawLine;
     private readonly FillPathCommand2D[] _fillPath;
     private readonly StrokePathCommand2D[] _strokePath;
+    private readonly DrawImageCommand2D[] _drawImage;
+    private readonly DrawMeshCommand2D[] _drawMesh;
 
     internal DrawList2D(IEnumerable<DrawingCommand2D> commands)
     {
@@ -22,6 +24,8 @@ public sealed class DrawList2D
         var drawLine = new List<DrawLineCommand2D>();
         var fillPath = new List<FillPathCommand2D>();
         var strokePath = new List<StrokePathCommand2D>();
+        var drawImage = new List<DrawImageCommand2D>();
+        var drawMesh = new List<DrawMeshCommand2D>();
         for (int i = 0; i < ordered.Length; i++)
         {
             switch (ordered[i])
@@ -50,6 +54,14 @@ public sealed class DrawList2D
                     _typeOffsets[i] = strokePath.Count;
                     strokePath.Add(command);
                     break;
+                case DrawImageCommand2D command:
+                    _typeOffsets[i] = drawImage.Count;
+                    drawImage.Add(command);
+                    break;
+                case DrawMeshCommand2D command:
+                    _typeOffsets[i] = drawMesh.Count;
+                    drawMesh.Add(command);
+                    break;
             }
         }
 
@@ -59,6 +71,8 @@ public sealed class DrawList2D
         _drawLine = drawLine.ToArray();
         _fillPath = fillPath.ToArray();
         _strokePath = strokePath.ToArray();
+        _drawImage = drawImage.ToArray();
+        _drawMesh = drawMesh.ToArray();
     }
 
     internal IReadOnlyList<DrawingCommand2D> Commands { get; }
@@ -111,6 +125,16 @@ public sealed class DrawList2D
         if (typeof(TCommand) == typeof(StrokePathCommand2D))
         {
             return ((TCommand[])(object)_strokePath).AsMemory(_typeOffsets[orderStart], count);
+        }
+
+        if (typeof(TCommand) == typeof(DrawImageCommand2D))
+        {
+            return ((TCommand[])(object)_drawImage).AsMemory(_typeOffsets[orderStart], count);
+        }
+
+        if (typeof(TCommand) == typeof(DrawMeshCommand2D))
+        {
+            return ((TCommand[])(object)_drawMesh).AsMemory(_typeOffsets[orderStart], count);
         }
 
         throw new ArgumentException("The requested type is not a drawing command renderer input.");

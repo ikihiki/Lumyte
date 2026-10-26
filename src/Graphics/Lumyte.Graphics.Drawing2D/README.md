@@ -2,7 +2,7 @@
 
 通常のCanvas2DとRenderer2DはRenderGraph・ImageEffectsへ依存しません。
 塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
-この段階で利用できる命令は FillRect, FillRoundedRect, FillCircle, DrawLine, FillPath, StrokePath です。
+この段階で利用できる命令は FillRect, FillRoundedRect, FillCircle, DrawLine, FillPath, StrokePath, DrawImage, DrawMesh です。
 レイヤーと画像エフェクトは後続PRで別パッケージのDrawing2D.RenderGraphに追加します。
 
 ```csharp
@@ -34,7 +34,7 @@ targetViewは同一deviceの単一mip/layerのRgba8SrgbまたはRgba16Float atta
 PrepareAsyncはgraphを作らず、固定資源とbatchを準備します。Recordは一回だけ使い、GPU完了後に
 command buffer、準備ownerの順に解放します。
 
-6描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
+8描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
 CreateDefault()はdeviceやDIを使わず既定構成を作ります。UseGraphics2Dによる登録と後勝ち上書きも可能です。
 外部batchはRecordでupload・compute・render等の複数コマンドを発行し、内部同期を記録できます。
 DeclareResourcesでは外部共有texture・bufferのアクセスを宣言し、graph側のadapterが依存へ変換します。
@@ -42,7 +42,7 @@ batch私有資源はbatchが所有・同期し、外部資源の入口・出口�
 
 塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換を扱います。
 文字向け描画形式は後続PRで追加します。
-設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) と[線・パスの設計](../../../docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)を参照してください。
+設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) と[線・パスの設計](../../../docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)と[画像・meshの設計](../../../docs/adr/graphics/GRAPHICS-0020-2d-images-and-meshes.md)を参照してください。
 
 ## 外部の描画資源
 
