@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Shared linear image effects compiled into RenderGraph passes.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <SlangShader Include="Shaders/fullscreen.slang" ResourceName="Lumyte.ImageEffects.fullscreen" Stage="vertex" />
+    <SlangShader Include="Shaders/effects.slang" ResourceName="Lumyte.ImageEffects.effects" Stage="fragment" />
+  </ItemGroup>
+  <Import Project="../../../tools/shaders/Slang.targets" />
+</Project>

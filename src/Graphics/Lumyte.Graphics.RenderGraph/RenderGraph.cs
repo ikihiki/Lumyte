@@ -5,24 +5,36 @@ namespace Lumyte.Graphics.RenderGraph;
 
 /// <summary>Builds a single-queue render graph with explicit outputs and plan-owned temporary resources.</summary>
 /// <remarks>The caller manages thread synchronization, imported resource lifetime and submission.</remarks>
-public sealed class RenderGraph
+public sealed class RenderGraph : IDisposable
 {
     private readonly HashSet<object> _allocations = new(ReferenceEqualityComparer.Instance);
     private readonly List<RenderGraphResource> _resources = [];
     private readonly List<RenderGraphPass> _passes = [];
     private readonly HashSet<RenderGraphResource> _outputs = [];
     private readonly Dictionary<RenderGraphResource, RenderGraphUse> _exports = [];
+    private readonly RenderGraphExtensions? _extensions;
+    private Dictionary<RuntimeTypeHandle, object?>? _extensionStates;
+    private List<IRenderGraphLifetime>? _lifetimes;
+    private int _creatingExtension;
+    private bool _closed;
+    private bool _faulted;
+    private bool _compiling;
+    private bool _transferred;
+    private bool _disposing;
 
     /// <summary>Initializes a new instance of the <see cref="RenderGraph"/> class.</summary>
     /// <param name="device">The same device used for recording; required for temporary allocations.</param>
     /// <param name="name">A diagnostic name of at most 256 characters.</param>
     /// <param name="observer">An optional diagnostic adapter.</param>
-    public RenderGraph(IGraphicDevice? device = null, string name = "render-graph", IRenderGraphObserver? observer = null)
+    /// <param name="extensions">Optional shared extension factories, frozen when this graph attaches.</param>
+    public RenderGraph(IGraphicDevice? device = null, string name = "render-graph", IRenderGraphObserver? observer = null, RenderGraphExtensions? extensions = null)
     {
         ValidateName(name);
         Device = device;
         Name = name;
         Observer = observer;
+        extensions?.Attach();
+        _extensions = extensions;
     }
 
     /// <summary>Gets the graph's diagnostic name.</summary>
@@ -31,9 +43,37 @@ public sealed class RenderGraph
     /// <summary>Gets the stable builder identity used in diagnostic runs.</summary>
     public Guid Id { get; } = Guid.NewGuid();
 
-    internal IGraphicDevice? Device { get; }
+    /// <summary>Gets the borrowed device used by graph extensions and temporary allocations, or null for import-only graphs.</summary>
+    public IGraphicDevice? Device { get; }
+
+    /// <summary>Gets a value indicating whether this graph accepts preparation, ownership and pass declarations.</summary>
+    public bool IsBuilding => !_closed && !_faulted && !_compiling;
 
     internal IRenderGraphObserver? Observer { get; }
+
+    /// <summary>Gets the cached state created by an explicitly registered extension factory.</summary>
+    /// <typeparam name="T">The exact registered state type.</typeparam>
+    /// <returns>The state shared by all uses of this extension in this graph.</returns>
+    public T GetExtension<T>()
+        where T : class => ResolveExtension<T>(null);
+
+    /// <summary>Gets cached state, using the supplied factory only when no factory is registered for its type.</summary>
+    /// <typeparam name="T">The exact state type.</typeparam>
+    /// <param name="fallback">The module's default factory; called at most once for this graph.</param>
+    /// <returns>The cached extension state.</returns>
+    public T GetOrAddExtension<T>(Func<RenderGraph, T> fallback)
+        where T : class => ResolveExtension<T>(fallback);
+
+    /// <summary>Transfers ownership before preparation and then atomically into a successful compiled plan.</summary>
+    /// <param name="lifetime">The owner validated before recording and released in reverse registration order.</param>
+    /// <remarks>After successful registration, only this graph or its compiled plan should dispose the owner.</remarks>
+    public void Retain(IRenderGraphLifetime lifetime)
+    {
+        EnsureBuilding();
+        lifetime.Validate();
+        EnsureBuilding();
+        (_lifetimes ??= []).Add(lifetime);
+    }
 
     /// <summary>Imports a whole texture without transferring ownership.</summary>
     /// <param name="texture">The allocation or borrowed surface image.</param>
@@ -122,6 +162,7 @@ public sealed class RenderGraph
     /// <returns>This graph.</returns>
     public RenderGraph MarkOutput(RenderGraphResource resource)
     {
+        EnsureBuilding();
         CheckResource(resource);
         _outputs.Add(resource);
         return this;
@@ -173,6 +214,7 @@ public sealed class RenderGraph
     /// <returns>The pass for declarations; use KeepAlive for other side effects.</returns>
     public RenderGraphPass AddPass(string name, Action<RenderGraphContext> record)
     {
+        EnsureBuilding();
         ValidateName(name);
         ArgumentNullException.ThrowIfNull(record);
         var pass = new RenderGraphPass(this, name, record);
@@ -186,6 +228,12 @@ public sealed class RenderGraph
     /// <returns>A disposable one-shot recording plan.</returns>
     public CompiledRenderGraph Compile(long frameId = 0, RenderGraphCaptureOptions? capture = null)
     {
+        EnsureBuilding();
+        if (_creatingExtension != 0)
+        {
+            throw new InvalidOperationException("Complete extension preparation before compiling.");
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegative(frameId);
         if (capture is not null)
         {
@@ -193,25 +241,87 @@ public sealed class RenderGraph
         }
 
         var run = new RenderGraphRun(Id, Guid.NewGuid(), Name, frameId);
-        IRenderGraphObserver? observer = Observer is { IsEnabled: true } ? Observer : null;
-        RenderGraphCaptureOptions? requested = observer?.RequestCapture(run);
-        if (requested is not null && (capture is null || requested.MaxBytes < capture.MaxBytes))
-        {
-            capture = requested;
-        }
-
-        using IDisposable? diagnostic = observer?.Begin(run, "compile");
-        long started = observer is null ? 0 : Stopwatch.GetTimestamp();
+        IRenderGraphObserver? observer = null;
+        CompiledRenderGraph? plan = null;
+        _compiling = true;
         try
         {
-            CompiledRenderGraph plan = CompileCore(run, capture);
-            observer?.Compiled(run, plan.Statistics, plan.Snapshot, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            observer = Observer is { IsEnabled: true } ? Observer : null;
+            RenderGraphCaptureOptions? requested = observer?.RequestCapture(run);
+            if (requested is not null && (capture is null || requested.MaxBytes < capture.MaxBytes))
+            {
+                capture = requested;
+            }
+
+            using (IDisposable? diagnostic = observer?.Begin(run, "compile"))
+            {
+                long started = observer is null ? 0 : Stopwatch.GetTimestamp();
+                plan = CompileCore(run, capture);
+                observer?.Compiled(run, plan.Statistics, plan.Snapshot, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            }
+
+            if (_lifetimes is { Count: > 0 } lifetimes)
+            {
+                plan.Retain(new LifetimeGroup(lifetimes));
+            }
+
+            if (_extensions is not null || _extensionStates is not null || _lifetimes is not null)
+            {
+                _transferred = true;
+                _closed = true;
+            }
+
             return plan;
         }
         catch (Exception exception)
         {
+            plan?.Dispose();
             observer?.Failed(run, "compile", exception);
             throw;
+        }
+        finally
+        {
+            _compiling = false;
+        }
+    }
+
+    /// <summary>Releases abandoned preparation, leaving successfully transferred ownership with its plan.</summary>
+    /// <remarks>Cleanup failure keeps the remaining owners for another Dispose call.</remarks>
+    public void Dispose()
+    {
+        if (_compiling || _creatingExtension != 0 || _disposing)
+        {
+            throw new InvalidOperationException("Graph disposal cannot overlap compilation, extension creation or cleanup.");
+        }
+
+        _closed = true;
+        if (_transferred)
+        {
+            return;
+        }
+
+        _disposing = true;
+        try
+        {
+            if (_lifetimes is { } lifetimes)
+            {
+                Release(lifetimes);
+            }
+
+            _extensionStates?.Clear();
+        }
+        finally
+        {
+            _disposing = false;
+        }
+    }
+
+    internal void EnsureBuilding()
+    {
+        ObjectDisposedException.ThrowIf(_closed, this);
+        if (_faulted || _compiling)
+        {
+            throw new InvalidOperationException("Graph preparation failed or compilation is already in progress.");
         }
     }
 
@@ -230,6 +340,58 @@ public sealed class RenderGraph
         if (name.Length > 256)
         {
             throw new ArgumentException("Diagnostic names are limited to 256 characters.", nameof(name));
+        }
+    }
+
+    private static void Release(List<IRenderGraphLifetime> lifetimes)
+    {
+        while (lifetimes.Count != 0)
+        {
+            lifetimes[^1].Dispose();
+            lifetimes.RemoveAt(lifetimes.Count - 1);
+        }
+    }
+
+    private T ResolveExtension<T>(Func<RenderGraph, T>? fallback)
+        where T : class
+    {
+        EnsureBuilding();
+        RuntimeTypeHandle type = typeof(T).TypeHandle;
+        if (_extensionStates is { } existing && existing.TryGetValue(type, out object? cached))
+        {
+            if (cached is null)
+            {
+                _faulted = true;
+                throw new InvalidOperationException("Extension factories contain a dependency cycle.");
+            }
+
+            return (T)cached;
+        }
+
+        Func<RenderGraph, object>? factory = _extensions?.Find(type) ?? fallback;
+        if (factory is null)
+        {
+            throw new InvalidOperationException($"No render graph extension is registered for '{typeof(T)}'.");
+        }
+
+        Dictionary<RuntimeTypeHandle, object?> states = _extensionStates ??= [];
+        states.Add(type, null);
+        _creatingExtension++;
+        try
+        {
+            object value = factory(this);
+            EnsureBuilding();
+            states[type] = value;
+            return (T)value;
+        }
+        catch
+        {
+            _faulted = true;
+            throw;
+        }
+        finally
+        {
+            _creatingExtension--;
         }
     }
 
@@ -350,6 +512,7 @@ public sealed class RenderGraph
 
     private void Export(RenderGraphResource resource, TextureState state, BarrierScope scope)
     {
+        EnsureBuilding();
         CheckResource(resource);
         RenderGraphValidation.Scope(scope, required: state != TextureState.Present);
         if (state == TextureState.Present && scope != default)
@@ -364,6 +527,7 @@ public sealed class RenderGraph
 
     private void Register(RenderGraphResource resource)
     {
+        EnsureBuilding();
         RenderGraphValidation.Scope(resource.InitialScope, required: false);
         resource.Validate(resource.InitialState, resource.InitialScope);
         if (resource.Allocation is object allocation && !_allocations.Add(allocation))
@@ -387,5 +551,18 @@ public sealed class RenderGraph
         {
             throw new InvalidOperationException("Pass a device to the graph before declaring temporary resources.");
         }
+    }
+
+    private sealed class LifetimeGroup(List<IRenderGraphLifetime> lifetimes) : IRenderGraphLifetime
+    {
+        public void Validate()
+        {
+            foreach (IRenderGraphLifetime lifetime in lifetimes)
+            {
+                lifetime.Validate();
+            }
+        }
+
+        public void Dispose() => Release(lifetimes);
     }
 }
