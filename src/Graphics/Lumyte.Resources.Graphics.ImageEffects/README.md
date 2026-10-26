@@ -12,24 +12,28 @@ services.AddResources(resources => resources
     .AddImageEffects());
 services.AddResourceGraphics();
 
-// deviceとExecutionを起動した後、一度取得して保持する。
-using var shaders = await manager.AcquireImageEffectShadersAsync();
+// deviceとExecutionを起動した後、一度ロードして拡張を登録する。
+using var extensions = new RenderGraphExtensions().AddResources(manager);
+await extensions.AddImageEffectsAsync(manager);
 ```
 
 既定のシェーダはImageEffects DLLの埋め込みartifactです。アプリのSourceに専用のファイルや名前を登録する必要はありません。CPU artifactはライブラリ共有cacheを再利用し、GPU moduleの組はManagerとdevice epochごとに共有します。
 
 ```csharp
-var graph = new RenderGraph(device);
-using var imports = graph.ImportResources(manager);
+using var graph = new RenderGraph(device, extensions: extensions);
 // sourceはこのgraphへimportしたEffectImage。
-EffectImage output = imports.AppendEffects(shaders, effectGraph, source);
+EffectImage output = graph.AppendEffects(effectGraph, source);
 graph.MarkOutput(output.Texture);
-using var plan = imports.Compile();
+using var plan = graph.Compile();
 plan.Record(commands);
 // submitしてGPU完了を確認する。その後planをDisposeする。
 ```
 
-単一effectは`imports.AppendEffect(shaders, new OpacityEffect(0.5f), source)`でも追加できます。返るのは画像だけで、PreparedImageEffectのDisposeやRetainは利用側に不要です。compile前の放棄はimportsが、compile後はplanが、Effectの固定資源を解放してからシェーダのLeaseを返します。解放失敗時は失敗した資源と依存先を保持し、同じ所有者のDisposeで再試行します。append失敗後はそのgraphを破棄してください。
+単一effectは`graph.AppendOpacity(source, 0.5f)`や`graph.AppendEffect(new OpacityEffect(0.5f), source)`でも追加できます。返るのは画像だけで、シェーダや個別の所有者を渡す必要はありません。compile前の放棄はGraphが、compile後はplanが、Effectの固定資源を解放してからシェーダのLeaseを返します。解放失敗時は失敗した資源と依存先を保持し、同じ所有者のDisposeで再試行します。append失敗後はそのgraphを破棄してください。
+
+拡張構成は最初のGraph作成時に固定され、複数フレームで再利用できます。ImageEffectsGraphContextはGraphごとに一つ作り、そのGraphのシェーダ世代を最初の利用時に選びます。2DのImageEffectSubgraphからの呼び出しも同じ状態を共有します。他の拡張は`extensions.Add<OtherContext>(factory)`で同時に登録でき、各importsはGraphを借用するビューです。Compileと所有権の移譲はGraph全体で一度だけ行います。
+
+`AddImageEffectsAsync`は設定が所有するReferenceを準備します。Graphが取得したLeaseは設定のDispose後もplanの解放まで保持されます。拡張設定にManagerやdeviceそのものの起動停止は含めません。Resourcesを使わないGraphでも、同じ`graph.AppendEffects`が既定の埋め込み版で動きます。
 
 GPUのsubmit・完了確認と入力画像のstate/scopeは利用側が指定します。待機のキャンセルはGPU完了ではありません。未完了のplanは所有を保持し、実際の完了後に解放を再試行します。device loss時は旧epochのretirementを確認してからplanの子資源を解放し、その後Managerを再構築します。
 
@@ -49,9 +53,9 @@ services.AddResources(resources => resources
 
 カスタム入力は既存ImageEffectsのvertex/fragment ABIに従うコンパイル済み`.lshader`です。既に`AddShaderPipeline()`などでartifactのPipelineを登録していれば、その登録を利用します。設定はDI rootごとに固定し、既定とカスタムを判別する文字列や特殊なパッケージ名を描画側へ渡しません。
 
-二つのartifactをResident依存に持つCPUの組と、そこから作るGPUの組を一つずつ公開します。SourceのHotReloadでは組を再構築し、次のappendから新しい世代を使います。実行中のplanは元の組を保持します。device復旧ではCPUの組を再利用し、新deviceへGPUの組を作ります。
+二つのartifactをResident依存に持つCPUの組と、そこから作るGPUの組を一つずつ公開します。SourceのHotReloadでは組を再構築し、次のGraphが初めてEffectsを使うときに新しい世代を取得します。同じGraph内の後続appendと実行中のplanは元の組を保持します。device復旧ではCPUの組を再利用し、新deviceへGPUの組を作ります。
 
-取得済みReferenceからappendする経路はI/Oや全リソースSnapshotの取得を行いません。他のtextureやmeshと同じpublicationへ揃える場合だけ、`imports.AppendEffects(shaders, effectGraph, source, frameSnapshot)`へフレーム共通のSnapshotを渡せます。固定pipeline・sampler・tableの生成は既存ImageEffectsの各passで行います。
+appendはI/Oや全リソースSnapshotの取得を行いません。他のtextureやmeshと同じpublicationへ揃える場合だけ、最初のimportやEffects利用より前に`graph.ImportResources().UseSnapshot(frameSnapshot)`を呼びます。Snapshotは呼び出し側がGraph構築終了まで保持し、各拡張が発行したLeaseはSnapshotを返した後も有効です。固定pipeline・sampler・tableの生成は既存ImageEffectsの各passで行います。
 
 ## DIを使わない場合
 

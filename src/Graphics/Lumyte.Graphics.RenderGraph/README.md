@@ -6,7 +6,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.RenderGraph;
 
-var graph = new RenderGraph(device, "frame");
+using var graph = new RenderGraph(device, "frame");
 RenderGraphTexture color = graph.CreateTexture(new TextureDesc
 {
     Width = 64,
@@ -64,13 +64,13 @@ resource hazard は追加順を保ち、RAW／WAR／WAW と texture state 変更
 
 ## 記録と所有権
 
-Compile は宣言と callback を snapshot します。builder の後続変更は既存 plan に影響しません。callback が capture する mutable 値は利用者が管理します。`PassNames` は実行順、`CulledPassNames` は除去された pass、`Statistics` は固定サイズの件数です。`Snapshot` は単発要求がある場合だけ生成される nullable な診断用情報で、native resource と callback を保持しません。
+Compile は宣言と callback を snapshot します。拡張構成・拡張状態・Retainした所有権があるgraphは、成功したCompileで構築を閉じます。その後の追加、pass宣言の変更、再Compileは拒否します。これらを持たない従来の借用だけのgraphは複数回Compileでき、builderの後続変更は既存planに影響しません。callbackがcaptureするmutable値は利用者が管理します。`PassNames`は実行順、`CulledPassNames`は除去されたpass、`Statistics`は固定サイズの件数です。`Snapshot`は単発要求がある場合だけ生成されるnullableな診断用情報で、native resourceとcallbackを保持しません。
 
 Record は一度だけで、callback 失敗時も消費されます。context の Get 系 API は当該 pass の宣言だけを解決し、callback 後は無効です。encoder を End してから返し、callback 内で Finish／Submit／Wait／resource 解放を行わないでください。実命令と宣言の一致、同一 device と owner thread は利用者の契約です。
 
-plan は一時 allocation と context が作成した view を所有します。GPU 完了後に view→allocation の順で Dispose します。Record が失敗した場合は command buffer を破棄してから plan を解放します。Dispose は GPU を待ちません。記録先が Completed／Faulted／Disposed になるまで拒否します。plan の Get 系 API が返す出力は借用で、Record 成功後から所有者の Dispose まで有効です。
+planは一時allocation、contextが作成したview、graphから移譲された外部所有権を保持します。GPU完了後にview→allocation→外部所有権の順でDisposeします。Recordが失敗した場合はcommand bufferを破棄してからplanを解放します。DisposeはGPUを待ちません。記録先がCompleted／Faulted／Disposedになるまで拒否します。待機キャンセルはGPU完了ではありません。device loss時はbackendの退役確認を済ませてから子資源を解放します。planのGet系APIが返す出力は借用で、Record成功後から所有者のDisposeまで有効です。
 
-外部 allocation／view／pipeline／Argument Table と command／submission の寿命は利用者が管理します。外部 command で一時出力を使う場合も、その GPU 完了まで元 plan を保持してください。
+Retainしていない外部allocation／view／pipeline／Argument Tableと、command／submissionの寿命は利用者が管理します。外部commandで一時出力を使う場合も、そのGPU完了まで元planを保持してください。
 
 ## 診断と検証
 
@@ -101,8 +101,26 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Tests -c 
 
 GPU／Browser は共通 `RenderGraphExercise` で部分 buffer upload→temporary→readback、texture clear→copy→readback と別々の array layer への clear の値を検証します。単一 queue と allocation 全体の追跡を扱い、pool／alias、subresource、複数 queue／Timeline semaphore、再実行可能な compile cache は後続で設計します。
 
-## 外部所有権の保持
+## 複数の拡張と所有権
 
-既存のimport APIは借用のまま使用できます。外部adapterが所有権をplanへ渡す場合は、`IRenderGraphLifetime`を実装し、記録前に`CompiledRenderGraph.Retain`へ渡します。`Validate`はRetain時とRecord前に呼ばれます。DisposeはGPU完了またはcommand buffer破棄後だけ許可し、view・一時allocationを解放してから、登録の逆順で外部所有権を返します。解放失敗は未完了部分を保持し、再試行できます。
+`RenderGraphExtensions`へ型ごとのfactoryを明示登録し、複数のgraphへ同じ構成を渡せます。構成は最初のgraph作成時に固定され、同じ型の重複登録を拒否します。非同期ロードやDIからの取得は構成前に済ませ、factoryは取得済みの環境からgraph固有の状態を作ります。
+
+```csharp
+using var extensions = new RenderGraphExtensions()
+    .Add(static graph => new AppImports(graph))
+    .Add(static graph => new LayerImports(graph, graph.GetExtension<AppImports>()));
+
+using var graph = new RenderGraph(device, extensions: extensions);
+AppImports imports = graph.GetExtension<AppImports>();
+LayerImports layers = graph.GetExtension<LayerImports>();
+// importsとlayersは同じgraphへpassを追加し、必要な所有権をgraph.Retainへ渡す。
+using var plan = graph.Compile();
+```
+
+`AppImports`と`LayerImports`は利用者の拡張型の例です。各factoryはgraph内で初回取得時に一度だけ呼ばれ、型付き状態を共有します。`GetOrAddExtension<T>(fallback)`は登録済みfactoryを優先し、未登録の場合だけモジュールの既定factoryを使います。循環するfactoryや生成失敗はそのgraphの継続利用を拒否します。明示的な型登録なのでReflectionやActivator、描画時のDI解決は不要です。拡張の登録順がGPUの実行順を決めることはなく、passの資源宣言と依存関係を使います。
+
+factoryが返す状態やimportsは借用ビューであり、型がIDisposableでも自動では解放しません。固定GPU資源やLeaseは`IRenderGraphLifetime`として、準備を始める前に`graph.Retain`へ登録します。`graph.Compile()`が全拡張の所有権を一括してplanへ移し、Compile前の放棄は`graph.Dispose()`が返します。移譲後のgraph.Disposeはplanの資源を解放しません。factoryが保持する長期所有権は`Add(factory, owner)`で構成へ渡せます。既に発行したgraphのLeaseと構成の所有者は別の寿命です。
+
+`Validate`はRetain時、Compileの移譲時、Record前に呼ばれます。所有権は登録の逆順で返し、依存先より利用側を後から登録します。解放が失敗したらそこで停止し、未解放部分と依存先を保持して同じ所有者のDisposeで再試行します。Compileの検証失敗ではgraph側に所有権が残ります。既存のraw import APIは借用のまま使え、構築済みplanへの低水準の`CompiledRenderGraph.Retain`も利用できます。
 
 ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の拡張が担当します。RenderGraph本体はその型やパッケージを参照しません。

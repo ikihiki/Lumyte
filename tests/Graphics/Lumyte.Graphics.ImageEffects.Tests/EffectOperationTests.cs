@@ -24,10 +24,10 @@ public sealed class EffectOperationTests
     [Fact]
     public void AppendGaussianBlurUsesParametersAndSource()
     {
-        var graph = new Graph(Device());
+        using var graph = new Graph(Device());
         EffectImage source = Source(graph);
-        using PreparedImageEffect owner = graph.AppendGaussianBlur(source, 0, 0);
-        Assert.Equal(source, owner.Output);
+        EffectImage owner = graph.AppendGaussianBlur(source, 0, 0);
+        Assert.Equal(source, owner);
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Empty(plan.PassNames);
     }
@@ -36,7 +36,7 @@ public sealed class EffectOperationTests
     [Fact]
     public void EffectPassesRequireRenderGraphDevice()
     {
-        var graph = new Graph();
+        using var graph = new Graph();
         Assert.Null(graph.Device);
         Assert.Throws<InvalidOperationException>(() => graph.AppendEffect(new Generator(new(0, 0, 2, 3))));
         using CompiledRenderGraph plan = graph.Compile();
@@ -79,18 +79,18 @@ public sealed class EffectOperationTests
     {
         var resource = new TrackedResource();
         var effect = new Translation(3, -4, resource, AddPasses: true);
-        var graph = new Graph(Device());
+        using var graph = new Graph(Device());
         EffectImage source = Source(graph);
-        PreparedImageEffect owner = graph.AppendEffect(effect, source);
-        Assert.Equal(source.Bounds.Offset(3, -4), owner.Output.Bounds);
+        EffectImage owner = graph.AppendEffect(effect, source);
+        Assert.Equal(source.Bounds.Offset(3, -4), owner.Bounds);
         using (CompiledRenderGraph plan = graph.Compile())
         {
             Assert.Equal(new[] { "effect.first", "effect.second" }, plan.PassNames);
             Assert.Equal(0, resource.Disposals);
         }
 
-        owner.Dispose();
-        owner.Dispose();
+        graph.Dispose();
+        graph.Dispose();
         Assert.Equal(1, resource.Disposals);
     }
 
@@ -106,11 +106,14 @@ public sealed class EffectOperationTests
     {
         var resource = new TrackedResource();
         var effect = new InvalidEffect(resource, wrongBounds);
-        var graph = new Graph(Device());
+        using var graph = new Graph(Device());
         EffectImage source = Source(graph);
         Assert.Throws<InvalidOperationException>(() => direct
             ? graph.AppendEffect(effect, source)
             : graph.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source));
+        Assert.Equal(0, resource.Disposals);
+        Assert.Throws<ObjectDisposedException>(() => graph.Compile());
+        graph.Dispose();
         Assert.Equal(1, resource.Disposals);
     }
 
@@ -118,7 +121,7 @@ public sealed class EffectOperationTests
     [Fact]
     public void DirectAppendValidatesInputsBeforeExecution()
     {
-        var graph = new Graph(Device());
+        using var graph = new Graph(Device());
         var effect = new Translation(0, 0);
         Assert.Throws<ArgumentNullException>(() => ((Graph)null!).AppendEffect(effect, Source(graph)));
         Assert.Throws<ArgumentNullException>(() => graph.AppendEffect(null!, Source(graph)));
@@ -134,13 +137,13 @@ public sealed class EffectOperationTests
     {
         var effect = new Generator(new(-5, 9, 2, 3));
         var snapshot = ImageEffectGraph.Create(effect);
-        var graph = new Graph(Device());
-        using PreparedImageEffect owner = graph.AppendEffects(snapshot, Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear });
-        Assert.Equal(effect.Bounds, owner.Output.Bounds);
-        Assert.Equal(EffectColorSemantic.SceneLinear, owner.Output.ColorSemantic);
+        using var graph = new Graph(Device());
+        EffectImage owner = graph.AppendEffects(snapshot, Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear });
+        Assert.Equal(effect.Bounds, owner.Bounds);
+        Assert.Equal(EffectColorSemantic.SceneLinear, owner.ColorSemantic);
         Assert.Equal(new EffectPixelRect(7, 8, 0, 0), snapshot.GetRequiredSourceBounds(new(7, 8, 1, 1)));
-        using PreparedImageEffect direct = graph.AppendEffect(effect);
-        Assert.Equal(effect.Bounds, direct.Output.Bounds);
+        EffectImage direct = graph.AppendEffect(effect);
+        Assert.Equal(effect.Bounds, direct.Bounds);
     }
 
     /// <summary>Checks depth and distinct-node budgets apply to user effects.</summary>
@@ -159,11 +162,11 @@ public sealed class EffectOperationTests
         Assert.Throws<NotSupportedException>(() => wide.GetRequiredSourceBounds(new(0, 0, 1, 1)));
     }
 
-    /// <summary>Checks effect subgraphs share the parent and own callback resources without a nested plan.</summary>
+    /// <summary>Checks callback views share the parent and cannot release fixed resources while the plan is submitted.</summary>
     [Fact]
-    public void SubgraphSharesParentAndOwnsEffectResources()
+    public void SubgraphSharesParentAndBorrowsEffectResources()
     {
-        var graph = new Graph(Device());
+        using var graph = new Graph(Device());
         EffectImage source = Source(graph);
         var resource = new TrackedResource();
         var scope = new ImageEffectSubgraph(graph, source);
@@ -172,13 +175,20 @@ public sealed class EffectOperationTests
         EffectImage translated = scope.AppendEffect(new Translation(2, 3, resource, AddPasses: true), scope.Source);
         EffectImage result = scope.AppendGaussianBlur(translated, 0, 0);
         Assert.Equal(source.Bounds.Offset(2, 3), result.Bounds);
+        using IGraphicsCommandBuffer commands = DispatchProxy.Create<IGraphicsCommandBuffer, CommandStateProxy>();
+        var commandState = (CommandStateProxy)(object)commands;
         using (CompiledRenderGraph plan = graph.Compile())
         {
             Assert.Equal(new[] { "effect.first", "effect.second" }, plan.PassNames);
             Assert.Equal(0, resource.Disposals);
+            plan.Record(commands);
+            commandState.State = CommandBufferState.Submitted;
+            scope.Dispose();
+            Assert.Equal(0, resource.Disposals);
+            Assert.Throws<InvalidOperationException>(() => plan.Dispose());
+            commandState.State = CommandBufferState.Completed;
         }
 
-        scope.Dispose();
         scope.Dispose();
         Assert.Equal(1, resource.Disposals);
         Assert.Throws<ObjectDisposedException>(() => scope.AppendOpacity(source, 1));
@@ -187,6 +197,29 @@ public sealed class EffectOperationTests
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
     private static EffectImage Source(Graph graph) => new(graph.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);
+
+    /// <summary>Tracks command ownership without performing native drawing.</summary>
+    public class CommandStateProxy : DispatchProxy
+    {
+        internal CommandBufferState State { get; set; } = CommandBufferState.Recording;
+
+        /// <inheritdoc/>
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == "get_State")
+            {
+                return State;
+            }
+
+            if (targetMethod?.Name == nameof(IDisposable.Dispose))
+            {
+                State = CommandBufferState.Disposed;
+                return null;
+            }
+
+            throw new NotSupportedException();
+        }
+    }
 
     private record Translation(int X, int Y, TrackedResource? Resource = null, bool AddPasses = false) : ImageEffectDefinition
     {

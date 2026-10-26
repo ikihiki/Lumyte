@@ -22,7 +22,7 @@ public sealed class EffectPreparationContext(IGraphicDevice device, EffectColorS
     /// <summary>Gets the optional borrowed artifacts; null uses embedded defaults on demand.</summary>
     public ImageEffectShaders? Shaders { get; } = shaders;
 
-    /// <summary>Transfers a fixed resource to the prepared effect owner.</summary>
+    /// <summary>Transfers a fixed resource to this preparation context.</summary>
     /// <param name="resource">The resource disposed after GPU use and graph-plan disposal.</param>
     public void Own(IDisposable resource)
     {

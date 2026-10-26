@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.ImageEffects;
 
 /// <summary>Supplies immutable shader artifacts, loaded directly or borrowed from resource leases.</summary>
-/// <remarks>Retain resource-backed artifacts through prepared-effect and GPU completion lifetimes.</remarks>
+/// <remarks>Retain resource-backed artifacts through graph preparation and GPU completion lifetimes.</remarks>
 public sealed class ImageEffectShaders(ShaderArtifact fullscreen, ShaderArtifact effects)
 {
     private static readonly Lazy<ImageEffectShaders> _embedded = new(static () => new(
