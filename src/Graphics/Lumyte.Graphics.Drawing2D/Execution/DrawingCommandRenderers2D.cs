@@ -85,7 +85,7 @@ public sealed class DrawingCommandRenderers2D
     /// <summary>Gets the configured DrawPaintGraph renderer.</summary>
     public IDrawPaintGraphRenderer2D DrawPaintGraph { get; }
 
-    /// <summary>Creates a new table and 11 stateless defaults without DI or GPU allocations.</summary>
+    /// <summary>Creates a new table and eleven stateless defaults without DI or GPU allocations.</summary>
     /// <returns>The new rendering strategy table.</returns>
     public static DrawingCommandRenderers2D CreateDefault() => new(
         new DefaultFillRectRenderer2D(),

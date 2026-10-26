@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -99,6 +100,34 @@ public sealed class ModelTests
         Assert.Equal(new Vector2(0.25f, 0.5f), clip.Path.Segments[0].P0);
     }
 
+    /// <summary>End failures preserve recording and layer boundaries cannot consume parent saves.</summary>
+    [Fact]
+    public void LayersDeferParentClipAndEnforceIndependentSaveScopes()
+    {
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        canvas.ClipRect(new Rect2D(0, 0, 10, 10));
+        canvas.Save();
+        canvas.BeginLayer(new LayerOptions2D { ContentBounds = new Rect2D(-5, -5, 20, 20), Opacity = 0.5f });
+        Assert.Throws<InvalidOperationException>(canvas.Restore);
+        canvas.Save();
+        Assert.Throws<InvalidOperationException>(canvas.EndLayer);
+        Assert.Throws<InvalidOperationException>(canvas.End);
+        canvas.Restore();
+        canvas.FillRect(new Rect2D(-5, -5, 20, 20), new Color2D(1, 0, 0, 1));
+        canvas.EndLayer();
+        canvas.Restore();
+        canvas.DrawBackdropEffect(new BackdropEffectOptions2D { OutputBounds = new Rect2D(0, 0, 10, 10), Effects = graph => graph.Source });
+        DrawList2D draws = canvas.End().Commands;
+        BeginLayerCommand2D begin = Assert.IsType<BeginLayerCommand2D>(draws.Commands[0]);
+        FillRectCommand2D fill = Assert.IsType<FillRectCommand2D>(draws.Commands[1]);
+        EndLayerCommand2D end = Assert.IsType<EndLayerCommand2D>(draws.Commands[2]);
+        Assert.Equal(Vector2.Zero, Assert.Single(begin.State.Clip.Elements).Path.Segments[0].P0);
+        Assert.Equal(new Vector2(-5), Assert.Single(fill.State.Clip.Elements).Path.Segments[0].P0);
+        Assert.Same(begin.State, end.State);
+        Assert.Equal(4, draws.Commands.Count);
+    }
+
     /// <summary>Typed command memory preserves painter order without copying across preparation calls.</summary>
     [Fact]
     public void DrawListRetainsTypedStorageAndRejectsMixedRuns()
@@ -132,6 +161,21 @@ public sealed class ModelTests
         Assert.Throws<ArgumentException>(() => new Mesh2D(vertices, [0, 1]));
         Assert.Throws<ArgumentOutOfRangeException>(() => new Mesh2D(vertices, [0, 1, 3]));
         Assert.Throws<ArgumentOutOfRangeException>(() => new Mesh2D([new(Vector2.Zero, 2)], [0, 0, 0]));
+    }
+
+    /// <summary>Cancel discards nested structures and permits a fresh independent recording.</summary>
+    [Fact]
+    public void CancelDiscardsAllNestedRecordingState()
+    {
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        canvas.Save();
+        canvas.BeginLayer(new LayerOptions2D { ContentBounds = new Rect2D(0, 0, 4, 4) });
+        canvas.Save();
+        canvas.Cancel();
+        canvas.Begin();
+        Assert.Empty(canvas.End().Commands.Commands);
+        Assert.Throws<InvalidOperationException>(canvas.Cancel);
     }
 
     /// <summary>Image patterns validate coordinates in the selected mip and reject singular or comparison sampling.</summary>

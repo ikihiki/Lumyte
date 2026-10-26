@@ -1,9 +1,11 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Hosting;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Graphics.Drawing2D;
+using Lumyte.Resources.Graphics.Drawing2D.RenderGraph;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -120,6 +122,37 @@ public sealed class RendererResourceTests
         Assert.Same(samplerLease.Value.Value, resources.Sampler);
         using Renderer2D renderer = reference.CreateRenderer();
         Assert.Single(state.Devices[0].Programs);
+    }
+
+    /// <summary>Checks graph rendering uses the same resource factory and failed construction does not retain a lease.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task LayeredFactoryUsesTheSameResourceAndReleasesConstructionFailuresAsync()
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider services = CreateServices(state, new MutableShaderSource(), custom: false);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
+        await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = services.GetRequiredService<ResourceManager>();
+        using ResourceReference<Renderer2DResource> reference = await manager.AcquireRenderer2DAsync();
+        TestDevice device = Assert.Single(state.Devices);
+        using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device);
+        var desc = new TextureDesc { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment };
+        var target = new RenderTargetBinding2D { Texture = graph.CreateTexture(desc), Description = desc };
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        RenderGraphDrawList2D list = canvas.End();
+        var bindings = new DrawingGraphBindings2D(graph);
+        Assert.Throws<ArgumentNullException>(() => reference.CreateRenderGraphRenderer(null!, list, target, bindings));
+        using RenderGraphRenderer2D renderer = reference.CreateRenderGraphRenderer(DrawingCommandRenderers2D.CreateDefault(), list, target, bindings);
+        reference.Dispose();
+        await manager.TrimAsync();
+        TestProgramPipeline pipeline = Assert.Single(device.Programs);
+        Assert.False(pipeline.Disposed);
+        renderer.Dispose();
+        renderer.Dispose();
+        await manager.TrimAsync();
+        Assert.True(pipeline.Disposed);
     }
 
     private static ServiceProvider CreateServices(GraphicsTestState state, MutableShaderSource source, bool custom, Action<IServiceCollection>? configure = null, bool afterDefaults = false)
