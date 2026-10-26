@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Opt-in transport-neutral diagnostics for animation playback and state machines.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Diagnostics.Animation.Tests" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <ProjectReference Include="../Lumyte.Diagnostics/Lumyte.Diagnostics.csproj" />
+    <ProjectReference Include="../../Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
+    <ProjectReference Include="../Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -107,14 +107,34 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
             {
                 lock (_gate)
                 {
-                    Entry? pending = session.Commands.Values.FirstOrDefault(entry => !entry.Completion.Task.IsCompleted);
+                    long now = clock.GetTimestamp();
+                    Entry? pending = session.Commands.Values.Where(entry => !entry.Completion.Task.IsCompleted
+                        && (session.Hello.ProtocolVersion == 1 || entry.LastDelivered is not long delivered || clock.GetElapsedTime(delivered, now) >= TimeSpan.FromMilliseconds(100)))
+                        .OrderBy(entry => entry.Operation.Traffic == DiagnosticOperationTraffic.Control ? 0 : 1).FirstOrDefault();
                     if (pending != null)
                     {
+                        pending.LastDelivered = now;
                         return [CopyCommand(pending.Command)];
                     }
                 }
 
-                await session.Signal.Reader.ReadAsync(timeout.Token).ConfigureAwait(false);
+                if (session.Hello.ProtocolVersion == 1)
+                {
+                    await session.Signal.Reader.ReadAsync(timeout.Token).ConfigureAwait(false);
+                }
+                else
+                {
+                    using var retry = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                    retry.CancelAfter(TimeSpan.FromMilliseconds(100));
+                    try
+                    {
+                        await session.Signal.Reader.ReadAsync(retry.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!timeout.IsCancellationRequested)
+                    {
+                        // Recheck commands whose previous HTTP delivery might have been lost.
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && session.Lifetime.IsCancellationRequested)
@@ -142,7 +162,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
         DiagnosticProtocol.Validate(invocation);
         invocation = invocation with { Arguments = CopyFields(invocation.Arguments, canonical: true) };
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(invocation, DiagnosticJson.Context.OperationInvocation);
-        if (bytes.Length > 64 * 1024)
+        if (bytes.Length > 4 * 1024 * 1024)
         {
             throw new ArgumentException("Invocation exceeds the byte budget.", nameof(invocation));
         }
@@ -164,9 +184,14 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                 return DiagnosticOperationResult.Reject("forbidden", "Operation is not permitted.");
             }
 
+            DiagnosticProtocol.ValidateArguments(invocation, operation);
+            if (operation.Traffic == DiagnosticOperationTraffic.Stream && invocation.TimeoutMilliseconds > 1000)
+            {
+                return DiagnosticOperationResult.Reject("invalid-timeout", "Stream operations require a deadline within one second.");
+            }
+
             foreach (Guid key in session.Commands.Where(pair => pair.Value.RetainUntil <= clock.GetTimestamp() && pair.Value.Completion.Task.IsCompleted).Select(pair => pair.Key).ToArray())
             {
-                session.CommandBytes -= session.Commands[key].Bytes;
                 session.Commands.Remove(key);
             }
 
@@ -181,8 +206,27 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
             }
             else
             {
-                if (session.Commands.Count >= 256 || session.CommandBytes + bytes.Length > 1024 * 1024
-                    || session.Commands.Values.Count(entry => !entry.Completion.Task.IsCompleted) >= 64)
+                (int retainedLimit, int pendingLimit, long byteLimit) = operation.Traffic switch
+                {
+                    DiagnosticOperationTraffic.Stream => (1024, 48, 2 * 1024 * 1024),
+                    DiagnosticOperationTraffic.Control => (256, 16, 1024 * 1024),
+                    _ => (256, 64, 8 * 1024 * 1024),
+                };
+                int retainedCount = 0;
+                int pendingCount = 0;
+                long retainedBytes = 0;
+                foreach (Entry item in session.Commands.Values)
+                {
+                    if (item.Operation.Traffic == operation.Traffic)
+                    {
+                        retainedCount++;
+                        retainedBytes += item.Bytes;
+                        pendingCount += item.Completion.Task.IsCompleted ? 0 : 1;
+                    }
+                }
+
+                if (retainedCount >= retainedLimit || retainedBytes + bytes.Length > byteLimit
+                    || pendingCount >= pendingLimit)
                 {
                     return DiagnosticOperationResult.Reject("busy", "Command capacity reached.");
                 }
@@ -190,11 +234,11 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                 long expires = clock.GetUtcNow().ToUnixTimeMilliseconds() + invocation.TimeoutMilliseconds;
                 entry = new(
                     new(invocation.RequestId, invocation.SubsystemId, invocation.OperationId, actor, invocation.ExpectedRevision, expires, invocation.Arguments),
+                    operation,
                     fingerprint,
-                    clock.GetTimestamp() + ((invocation.TimeoutMilliseconds + 30000L) * clock.TimestampFrequency / 1000),
+                    clock.GetTimestamp() + ((invocation.TimeoutMilliseconds + (operation.Traffic == DiagnosticOperationTraffic.Stream ? 0L : 30000L)) * clock.TimestampFrequency / 1000),
                     bytes.Length);
                 session.Commands.Add(invocation.RequestId, entry);
-                session.CommandBytes += bytes.Length;
                 delivery = session.Delivery;
                 session.Signal.Writer.TryWrite(0);
                 UiChanges.Notify();
@@ -279,6 +323,7 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
                     }
                     else
                     {
+                        DiagnosticProtocol.ValidateResult(message.Result!, entry.Operation);
                         entry.Completion.TrySetResult(message.Result!);
                     }
                 }
@@ -486,22 +531,24 @@ public sealed class DiagnosticSessionRegistry(DiagnosticServerOptions options, T
 
         public long TelemetryBytes { get; set; }
 
-        public long CommandBytes { get; set; }
-
         public bool TryBeginPolling() => Interlocked.CompareExchange(ref _polling, 1, 0) == 0;
 
         public void EndPolling() => Interlocked.Exchange(ref _polling, 0);
     }
 
-    private sealed class Entry(DiagnosticCommand command, string fingerprint, long retainUntil, long bytes)
+    private sealed class Entry(DiagnosticCommand command, OperationDescriptor operation, string fingerprint, long retainUntil, long bytes)
     {
         public DiagnosticCommand Command { get; } = command;
+
+        public OperationDescriptor Operation { get; } = operation;
 
         public string Fingerprint { get; } = fingerprint;
 
         public long RetainUntil { get; } = retainUntil;
 
         public long Bytes { get; } = bytes;
+
+        public long? LastDelivered { get; set; }
 
         public TaskCompletionSource<DiagnosticOperationResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

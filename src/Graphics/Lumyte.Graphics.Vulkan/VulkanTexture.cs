@@ -232,8 +232,13 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         throw new NotSupportedException("No device-local Vulkan image memory type is available.");
     }
 
-    private static void Check(Result result, string operation)
+    private void Check(Result result, string operation)
     {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _owner.ReportLoss("Vulkan operation failed: device lost.");
+        }
+
         if (result != Result.Success)
         {
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");

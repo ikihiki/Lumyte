@@ -54,9 +54,5 @@ internal sealed class BrowserSurface : IGraphicsSurface
 
     internal void Configure(SwapchainDesc desc) => BrowserInterop.ConfigureSurface(_native, checked((int)desc.Width), checked((int)desc.Height), (int)desc.Format, (int)desc.Usage, (int)desc.AlphaMode);
 
-    internal void ValidateAlive()
-    {
-        _owner.ValidateAlive();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-    }
+    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 }
