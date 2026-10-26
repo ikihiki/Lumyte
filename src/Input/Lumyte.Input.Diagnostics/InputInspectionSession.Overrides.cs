@@ -3,7 +3,7 @@ using Lumyte.Input.Actions;
 
 namespace Lumyte.Input.Diagnostics;
 
-#pragma warning disable SA1204 // Partial implementation groups helpers with the feature they support.
+#pragma warning disable SA1201, SA1202, SA1204 // Partial implementation groups helpers and nested target types with the feature they support.
 
 /// <summary>Implements bounded diagnostic input control for the inspection session.</summary>
 public sealed partial class InputInspectionSession
@@ -12,10 +12,16 @@ public sealed partial class InputInspectionSession
     private static readonly TimeSpan _liveTimeout = TimeSpan.FromSeconds(2);
     private readonly Dictionary<InputOverrideTarget, TargetEntry> _targets = [];
     private readonly Dictionary<(ActionSystem System, string Context, string Action), InputOverrideTarget> _targetLookup = [];
+    private readonly Dictionary<(InputSystem System, InputDeviceId Device, InputControl Control), InputOverrideTarget> _deviceTargetLookup = [];
+    private readonly Dictionary<(InputSystem System, InputDeviceId Device, DeviceTargetKind Kind, ulong Pointer), InputOverrideTarget> _deviceDataTargetLookup = [];
+    private readonly Dictionary<(InputSystem System, InputDeviceId Device, InputControl Control), DeviceControlState> _deviceControlStates = [];
+    private readonly Dictionary<InputOverrideTarget, DeviceDataState> _deviceDataStates = [];
     private readonly Dictionary<Guid, LeaseEntry> _leases = [];
     private readonly Dictionary<InputOverrideTarget, Guid> _reservations = [];
     private readonly Dictionary<Guid, PlaybackEntry> _playbacks = [];
     private readonly Dictionary<Guid, LiveEntry> _live = [];
+    private readonly HashSet<InputOverrideTarget> _activeDeviceTargets = [];
+    private readonly HashSet<InputOverrideTarget> _dirtyDeviceTargets = [];
     private long _frame = -1;
     private TimeSpan _logicalNow;
 
@@ -42,6 +48,53 @@ public sealed partial class InputInspectionSession
         }
 
         return target;
+    }
+
+    /// <summary>Gets the opaque target for a mapped control on a connected device.</summary>
+    /// <param name="system">The registered input system.</param>
+    /// <param name="device">The connected device.</param>
+    /// <param name="control">The device control.</param>
+    /// <returns>The connection-bound target.</returns>
+    public InputOverrideTarget GetDeviceTarget(InputSystem system, InputDeviceId device, InputControl control)
+    {
+        _ = Input(system);
+        return _deviceTargetLookup.TryGetValue((system, device, control), out InputOverrideTarget target)
+            ? target
+            : throw new ArgumentException("The control does not belong to the connected device.", nameof(control));
+    }
+
+    /// <summary>Gets the target for the mouse position or wheel delta.</summary>
+    /// <param name="system">The registered input system.</param>
+    /// <param name="device">The connected mouse.</param>
+    /// <param name="wheel">Whether to target wheel delta instead of position.</param>
+    /// <returns>The connection-bound target.</returns>
+    public InputOverrideTarget GetMouseTarget(InputSystem system, InputDeviceId device, bool wheel = false)
+        => GetDataTarget(system, device, wheel ? DeviceTargetKind.MouseWheel : DeviceTargetKind.MousePosition, 0);
+
+    /// <summary>Gets a position or pressure target for an observed touch contact.</summary>
+    /// <param name="system">The registered input system.</param>
+    /// <param name="device">The connected touch device.</param>
+    /// <param name="contact">The observed contact.</param>
+    /// <param name="pressure">Whether to target pressure instead of position.</param>
+    /// <returns>The contact-bound target.</returns>
+    public InputOverrideTarget GetTouchTarget(InputSystem system, InputDeviceId device, TouchContactId contact, bool pressure = false)
+        => GetDataTarget(system, device, pressure ? DeviceTargetKind.TouchPressure : DeviceTargetKind.TouchPosition, contact.Value);
+
+    /// <summary>Gets a position or pressure target for an observed pen pointer.</summary>
+    /// <param name="system">The registered input system.</param>
+    /// <param name="device">The connected pen device.</param>
+    /// <param name="pointer">The observed pointer.</param>
+    /// <param name="pressure">Whether to target pressure instead of position.</param>
+    /// <returns>The pointer-bound target.</returns>
+    public InputOverrideTarget GetPenTarget(InputSystem system, InputDeviceId device, PenPointerId pointer, bool pressure = false)
+        => GetDataTarget(system, device, pressure ? DeviceTargetKind.PenPressure : DeviceTargetKind.PenPosition, pointer.Value);
+
+    private InputOverrideTarget GetDataTarget(InputSystem system, InputDeviceId device, DeviceTargetKind kind, ulong pointer)
+    {
+        _ = Input(system);
+        return _deviceDataTargetLookup.TryGetValue((system, device, kind, pointer), out InputOverrideTarget target)
+            ? target
+            : throw new ArgumentException("The typed target has not been observed on this device.", nameof(device));
     }
 
     /// <summary>Advances deterministic Tape execution and expires abandoned live sessions.</summary>
@@ -120,7 +173,7 @@ public sealed partial class InputInspectionSession
                 return value;
             }
 
-            return Combine(value, lease.Spec);
+            return Combine(target, value, lease.Spec);
         }
 
         if (_playbacks.TryGetValue(reservation, out PlaybackEntry? playback) && playback.Values.TryGetValue(target, out Vector2 tapeValue))
@@ -163,6 +216,7 @@ public sealed partial class InputInspectionSession
         var lease = new LeaseEntry(Guid.NewGuid(), owner, target, spec, 1, _logicalNow + spec.Duration);
         _leases.Add(lease.Id, lease);
         _reservations.Add(target, lease.Id);
+        ActivateDeviceTarget(target);
         _revision++;
         return Success(lease);
     }
@@ -285,7 +339,7 @@ public sealed partial class InputInspectionSession
         var next = new Dictionary<InputOverrideTarget, Vector2>();
         foreach (InputLiveValue item in orderedValues)
         {
-            if (!live.Targets.Contains(item.Target) || !float.IsFinite(item.Value.X) || !float.IsFinite(item.Value.Y) || !next.TryAdd(item.Target, Vector2.Clamp(item.Value, -Vector2.One, Vector2.One)))
+            if (!live.Targets.Contains(item.Target) || !float.IsFinite(item.Value.X) || !float.IsFinite(item.Value.Y) || !next.TryAdd(item.Target, NormalizeTargetValue(item.Target, item.Value)))
             {
                 throw new ArgumentException("Invalid or duplicate live value.", nameof(orderedValues));
             }
@@ -319,7 +373,12 @@ public sealed partial class InputInspectionSession
         StopLive(OwnedLive(owner, sessionId), "stopped");
     }
 
-    private static Vector2 Combine(Vector2 value, InputOverrideSpec spec) => spec.Mode == InputOverrideMode.Replace ? spec.Value : Vector2.Clamp(value + spec.Value, -Vector2.One, Vector2.One);
+    private Vector2 Combine(InputOverrideTarget target, Vector2 value, InputOverrideSpec spec) => spec.Mode == InputOverrideMode.Replace ? spec.Value : NormalizeTargetValue(target, value + spec.Value);
+
+    private Vector2 NormalizeTargetValue(InputOverrideTarget target, Vector2 value)
+        => _targets.TryGetValue(target, out TargetEntry? entry) && entry.DeviceKind is DeviceTargetKind.MousePosition or DeviceTargetKind.MouseWheel or DeviceTargetKind.TouchPosition or DeviceTargetKind.PenPosition
+            ? value
+            : Vector2.Clamp(value, -Vector2.One, Vector2.One);
 
     private static bool ValidateSpec(InputOverrideSpec spec, out string? error)
     {
@@ -338,6 +397,7 @@ public sealed partial class InputInspectionSession
         long currentFrame = Math.Max(0, _frame);
         if (tape.Version != 1 || tape.Tracks.IsDefaultOrEmpty || tape.Commands.IsDefaultOrEmpty || tracks.Count != tape.Tracks.Length || startFrame < currentFrame || startFrame > currentFrame + 120 || repeatCount is < 1 or > 1000 || tape.Commands.Length > 10000
             || tracks.Distinct().Count() != tracks.Count || tracks.Any(target => !_targets.ContainsKey(target))
+            || tracks.Where(_targets.ContainsKey).Select((target, index) => _targets[target].Kind != tape.Tracks[index].Kind).Any(mismatch => mismatch)
             || tape.Commands.Any(command => !Enum.IsDefined(command.Kind) || command.Track < 0 || command.Track >= tracks.Count || command.Frames is < 0 or > 1000000 || !float.IsFinite(command.Value.X) || !float.IsFinite(command.Value.Y)))
         {
             throw new ArgumentException("Invalid Tape.", nameof(tape));
@@ -404,7 +464,7 @@ public sealed partial class InputInspectionSession
             {
                 InputTapeCommandKind.Press => Vector2.UnitX,
                 InputTapeCommandKind.Release => Vector2.Zero,
-                _ => Vector2.Clamp(command.Value, -Vector2.One, Vector2.One),
+                _ => NormalizeTargetValue(playback.Targets[command.Track], command.Value),
             };
             playback.Values[playback.Targets[command.Track]] = value;
         }
@@ -430,12 +490,13 @@ public sealed partial class InputInspectionSession
         foreach (InputOverrideTarget target in targets)
         {
             _reservations.Add(target, id);
+            ActivateDeviceTarget(target);
         }
     }
 
     private void InvalidateTargets(ActionSystem system, string reason)
     {
-        foreach (InputOverrideTarget target in _targets.Where(pair => ReferenceEquals(pair.Value.System, system)).Select(pair => pair.Key).ToArray())
+        foreach (InputOverrideTarget target in _targets.Where(pair => ReferenceEquals(pair.Value.ActionSystem, system)).Select(pair => pair.Key).ToArray())
         {
             if (_reservations.TryGetValue(target, out Guid reservation))
             {
@@ -473,7 +534,7 @@ public sealed partial class InputInspectionSession
             {
                 var target = new InputOverrideTarget(Guid.NewGuid());
                 _targetLookup.Add((system, context.Id, action.Id), target);
-                _targets.Add(target, new(system, context.Id, action.Id));
+                _targets.Add(target, TargetEntry.ForAction(system, context.Id, action.Id, action.Kind));
             }
         }
     }
@@ -481,6 +542,7 @@ public sealed partial class InputInspectionSession
     private void ReleaseLease(LeaseEntry lease, string reason)
     {
         _reservations.Remove(lease.Target);
+        DeactivateDeviceTarget(lease.Target);
         _leases.Remove(lease.Id);
         _revision++;
     }
@@ -498,6 +560,7 @@ public sealed partial class InputInspectionSession
         foreach (InputOverrideTarget target in playback.Targets)
         {
             _reservations.Remove(target);
+            DeactivateDeviceTarget(target);
         }
 
         playback.Values.Clear();
@@ -509,6 +572,7 @@ public sealed partial class InputInspectionSession
         foreach (InputOverrideTarget target in live.Targets)
         {
             _reservations.Remove(target);
+            DeactivateDeviceTarget(target);
         }
 
         _live.Remove(live.Id);
@@ -535,7 +599,59 @@ public sealed partial class InputInspectionSession
         }
     }
 
-    private sealed record TargetEntry(ActionSystem System, string ContextId, string ActionId);
+    private void ActivateDeviceTarget(InputOverrideTarget target)
+    {
+        if (_targets.TryGetValue(target, out TargetEntry? entry) && entry.InputSystem != null)
+        {
+            _dirtyDeviceTargets.Remove(target);
+            _activeDeviceTargets.Add(target);
+        }
+    }
+
+    private void DeactivateDeviceTarget(InputOverrideTarget target)
+    {
+        if (_activeDeviceTargets.Remove(target))
+        {
+            _dirtyDeviceTargets.Add(target);
+        }
+    }
+
+    private sealed record TargetEntry(ActionSystem? ActionSystem, InputSystem? InputSystem, InputDeviceId Device, InputControl Control, DeviceTargetKind DeviceKind, ulong Pointer, string? ContextId, string? ActionId, ActionValueKind Kind)
+    {
+        public static TargetEntry ForAction(ActionSystem system, string contextId, string actionId, ActionValueKind kind) => new(system, null, default, default, DeviceTargetKind.None, 0, contextId, actionId, kind);
+
+        public static TargetEntry ForDevice(InputSystem system, InputDeviceId device, InputControl control, ActionValueKind kind) => new(null, system, device, control, DeviceTargetKind.Control, 0, null, null, kind);
+
+        public static TargetEntry ForDeviceData(InputSystem system, InputDeviceId device, DeviceTargetKind deviceKind, ulong pointer, ActionValueKind kind) => new(null, system, device, default, deviceKind, pointer, null, null, kind);
+    }
+
+    private enum DeviceTargetKind
+    {
+        None,
+        Control,
+        MousePosition,
+        MouseWheel,
+        TouchPosition,
+        TouchPressure,
+        PenPosition,
+        PenPressure,
+    }
+
+    private sealed class DeviceControlState
+    {
+        public Vector2 Physical { get; set; }
+
+        public Vector2 Effective { get; set; }
+    }
+
+    private sealed class DeviceDataState
+    {
+        public Vector2 Physical { get; set; }
+
+        public Vector2 Effective { get; set; }
+
+        public InputData? Template { get; set; }
+    }
 
     private sealed class LeaseEntry(Guid id, InputOverrideOwner owner, InputOverrideTarget target, InputOverrideSpec spec, long revision, TimeSpan expiresAt)
     {
@@ -597,4 +713,4 @@ public sealed partial class InputInspectionSession
     }
 }
 
-#pragma warning restore SA1204
+#pragma warning restore SA1201, SA1202, SA1204

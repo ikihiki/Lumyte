@@ -24,6 +24,11 @@ public partial class InputPage
             .SelectMany(item => item.Operations.Where(operation => operation.Id != "get-snapshot")
                 .Select(operation => (item.Subsystem, operation)));
 
+    private IEnumerable<(SubsystemDescriptor Subsystem, OperationDescriptor Operation)> MappingOperations
+        => (Context.Resource?.Catalog ?? []).Where(item => item.Subsystem.Id == "settings.input-actions")
+            .SelectMany(item => item.Operations.Where(operation => operation.Id is "read-tree" or "save-tree" or "save-result")
+                .Select(operation => (item.Subsystem, operation)));
+
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
@@ -125,9 +130,10 @@ public partial class InputPage
         PointModel? position = state.TryGetProperty("position", out JsonElement point) ? Point(point) : null;
         Dictionary<string, PointModel> sticks = state.TryGetProperty("sticks", out JsonElement stickObject) ? stickObject.EnumerateObject().ToDictionary(item => item.Name, item => Point(item.Value), StringComparer.Ordinal) : [];
         Dictionary<string, double> triggers = state.TryGetProperty("triggers", out JsonElement triggerObject) ? triggerObject.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.GetDouble(), StringComparer.Ordinal) : [];
+        Dictionary<string, Guid> targets = device.TryGetProperty("targets", out JsonElement targetObject) ? targetObject.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.GetGuid(), StringComparer.Ordinal) : [];
         JsonElement pointers = state.TryGetProperty("contacts", out JsonElement contacts) ? contacts : state.TryGetProperty("pointers", out JsonElement pens) ? pens : default;
         PointerModel[] pointerModels = pointers.ValueKind == JsonValueKind.Array ? pointers.EnumerateArray().Select(item => new PointerModel(item.GetProperty("id").GetString()!, item.GetProperty("phase").GetString()!, Point(item.GetProperty("position")), item.GetProperty("pressure").ValueKind == JsonValueKind.Null ? null : item.GetProperty("pressure").GetDouble())).ToArray() : [];
-        return new(device.GetProperty("id").GetUInt64(), kind, device.GetProperty("name").GetString()!, device.GetProperty("identity").GetString()!, device.GetProperty("sequence").GetUInt64(), device.GetProperty("connected").GetBoolean(), device.GetProperty("focused").GetBoolean(), pressed, position, sticks, triggers, pointerModels);
+        return new(device.GetProperty("id").GetUInt64(), kind, device.GetProperty("name").GetString()!, device.GetProperty("identity").GetString()!, device.GetProperty("sequence").GetUInt64(), device.GetProperty("connected").GetBoolean(), device.GetProperty("focused").GetBoolean(), pressed, position, sticks, triggers, pointerModels, targets);
     }
 
     private static ContextModel ParseContext(JsonElement context) => new(
@@ -170,7 +176,7 @@ public partial class InputPage
 
     private sealed record InputSystemModel(Guid Id, string[] Sources, DeviceModel[] Devices);
 
-    private sealed record DeviceModel(ulong Id, string Kind, string Name, string Identity, ulong Sequence, bool Connected, bool Focused, string[] Pressed, PointModel? Position, Dictionary<string, PointModel> Sticks, Dictionary<string, double> Triggers, PointerModel[] Pointers);
+    private sealed record DeviceModel(ulong Id, string Kind, string Name, string Identity, ulong Sequence, bool Connected, bool Focused, string[] Pressed, PointModel? Position, Dictionary<string, PointModel> Sticks, Dictionary<string, double> Triggers, PointerModel[] Pointers, Dictionary<string, Guid> Targets);
 
     private sealed record PointerModel(string Id, string Phase, PointModel Position, double? Pressure);
 

@@ -148,9 +148,12 @@ public sealed class ResourceImageEffectTests
     }
 
     /// <summary>One package publication replaces both custom shader inputs while snapshots retain the old pair.</summary>
+    /// <param name="changeDuringValidation">Whether another edit invalidates the first replacement after its GPU modules were created.</param>
     /// <returns>Completion of automatic reload and old-frame publication checks.</returns>
-    [Fact]
-    public async Task CustomShaderInputsReloadAsOnePackageAndPreserveCapturedFramesAsync()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CustomShaderInputsReloadAsOnePackageAndPreserveCapturedFramesAsync(bool changeDuringValidation)
     {
         var state = new GraphicsTestState();
         var source = new MutableShaderSource();
@@ -164,6 +167,21 @@ public sealed class ResourceImageEffectTests
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
         using ResourceLease<ImageEffectShaderResource> old = reference.Acquire(snapshot);
         AssertRevision(old.Value.Shaders, 1);
+        TestDevice device = Assert.Single(state.Devices);
+        TestShader[] oldModules = LiveModules(device, old.Value.Shaders);
+        Assert.Equal(2, device.Shaders.Count);
+        if (changeDuringValidation)
+        {
+            source.BeforeRevisionCheck = () =>
+            {
+                if (device.Shaders.Count > oldModules.Length)
+                {
+                    source.BeforeRevisionCheck = null;
+                    source.Change(3);
+                }
+            };
+        }
+
         var reloaded = new TaskCompletionSource<ResourceReloadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         manager.Reloaded += (_, args) =>
         {
@@ -177,10 +195,20 @@ public sealed class ResourceImageEffectTests
 
         using ResourceLease<ImageEffectShaderResource> current = reference.Acquire();
         Assert.NotSame(old.Value, current.Value);
-        AssertRevision(current.Value.Shaders, 2);
+        AssertRevision(current.Value.Shaders, changeDuringValidation ? (byte)3 : (byte)2);
         AssertRevision(old.Value.Shaders, 1);
-        TestDevice device = Assert.Single(state.Devices);
-        Assert.Equal(4, device.Shaders.Count);
+        TestShader[] currentModules = LiveModules(device, current.Value.Shaders);
+        TestShader[] retained = [.. oldModules, .. currentModules];
+        Assert.Equal(4, retained.Distinct().Count());
+        Assert.Equal(4, device.Shaders.Count(shader => !shader.Disposed));
+        TestShader[] discarded = device.Shaders.Except(retained).ToArray();
+        if (changeDuringValidation)
+        {
+            Assert.NotEmpty(discarded);
+        }
+
+        // Source rechecks may legitimately create and reject an unpublished candidate before retrying.
+        Assert.All(discarded, shader => Assert.Equal(1, shader.DisposeCount));
         using var oldGraph = new RenderGraphBuilder(device, extensions: extensions);
         oldGraph.ImportResources().UseSnapshot(snapshot);
         var oldInspected = new List<ImageEffectShaders>();
@@ -196,12 +224,14 @@ public sealed class ResourceImageEffectTests
         snapshot.Dispose();
         old.Dispose();
         await manager.TrimAsync();
-        Assert.All(device.Shaders, shader => Assert.False(shader.Disposed));
+        Assert.All(retained, shader => Assert.False(shader.Disposed));
+        Assert.All(discarded, shader => Assert.Equal(1, shader.DisposeCount));
 
         oldPlan.Dispose();
         await manager.TrimAsync();
-        Assert.All(device.Shaders.Take(2), shader => Assert.Equal(1, shader.DisposeCount));
-        Assert.All(device.Shaders.Skip(2), shader => Assert.False(shader.Disposed));
+        Assert.All(oldModules, shader => Assert.Equal(1, shader.DisposeCount));
+        Assert.All(currentModules, shader => Assert.False(shader.Disposed));
+        Assert.All(discarded, shader => Assert.Equal(1, shader.DisposeCount));
     }
 
     /// <summary>Device recovery replaces native modules while preserving the CPU shader pair.</summary>
@@ -454,6 +484,12 @@ public sealed class ResourceImageEffectTests
         Assert.Equal(revision, Assert.Single(shaders.Effects.GetTarget(ShaderTarget.Wgsl).Code));
     }
 
+    private static TestShader[] LiveModules(TestDevice device, ImageEffectShaders shaders)
+        => [
+            Assert.Single(device.Shaders, shader => !shader.Disposed && ReferenceEquals(shader.Artifact, shaders.Fullscreen)),
+            Assert.Single(device.Shaders, shader => !shader.Disposed && ReferenceEquals(shader.Artifact, shaders.Effects)),
+        ];
+
     private sealed class LayerImports(RenderGraphBuilder graph)
     {
         internal ImageEffectsGraphContext Effects { get; } = graph.GetExtension<ImageEffectsGraphContext>();
@@ -533,11 +569,16 @@ public sealed class ResourceImageEffectTests
 
         public IResourceChangeSource Changes => this;
 
+        internal Action? BeforeRevisionCheck { get; set; }
+
         public ValueTask<ResourceSourceSnapshot> OpenSnapshotAsync(ResourceId id, CancellationToken cancellationToken = default)
             => new(new ShaderSnapshot(id, Volatile.Read(ref _revision)));
 
         public ValueTask<string?> GetRevisionAsync(ResourceId id, CancellationToken cancellationToken = default)
-            => new(Volatile.Read(ref _revision).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        {
+            BeforeRevisionCheck?.Invoke();
+            return new(Volatile.Read(ref _revision).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
 
         public IAsyncEnumerable<ResourceSourceChange> WatchAsync(CancellationToken cancellationToken = default)
             => _changes.Reader.ReadAllAsync(cancellationToken);

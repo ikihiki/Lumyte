@@ -10,16 +10,26 @@ export async function resume(device) {
     if (device.context.state !== "running") throw new Error("Audio output could not resume.");
 }
 export function destroyDevice(device) {
+    if (device.closed || device.context.state === "closed") {
+        device.closed = true;
+        return;
+    }
     // close() initiates shutdown synchronously; completion is owned by the context.
     const closing = device.context.close();
     device.closed = true;
     closing.catch(error => console.error("AudioContext shutdown failed", error));
 }
 export function createClip(device, rate, channels, memory) {
+    // The .NET span is borrowed only for this call; never retain memory or write into it.
+    const buffer = device.context.createBuffer(channels, memory.byteLength / 4 / channels, rate);
+    if (channels === 1) {
+        const channel = buffer.getChannelData(0);
+        memory.copyTo(new Uint8Array(channel.buffer, channel.byteOffset, channel.byteLength));
+        return buffer;
+    }
     const bytes = new Uint8Array(memory.byteLength);
     memory.copyTo(bytes);
     const samples = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
-    const buffer = device.context.createBuffer(channels, samples.length / channels, rate);
     for (let c = 0; c < channels; c++) {
         const channel = buffer.getChannelData(c);
         for (let i = 0; i < channel.length; i++) channel[i] = samples[i * channels + c];
@@ -34,8 +44,16 @@ export function createVoice(device, clip, initialGain) {
 }
 function detach(voice) {
     if (voice.source) {
+        const onended = voice.source.onended;
         voice.source.onended = null;
-        voice.source.stop();
+        try {
+            voice.source.stop();
+        } catch (error) {
+            if (outputState(voice.device) !== 2) {
+                voice.source.onended = onended;
+                throw error;
+            }
+        }
         voice.source.disconnect();
         voice.source = null;
     }
@@ -43,6 +61,11 @@ function detach(voice) {
 export function play(voice) {
     if (voice.source) return;
     if (voice.ended) voice.offset = 0;
+    if (voice.loop && voice.offset === voice.clip.length) voice.offset = 0;
+    if (voice.offset === voice.clip.length) {
+        voice.ended = true;
+        return;
+    }
     const source = voice.device.context.createBufferSource();
     source.buffer = voice.clip;
     source.loop = voice.loop;
@@ -51,10 +74,16 @@ export function play(voice) {
         if (voice.source !== source) return;
         source.disconnect();
         voice.source = null;
-        voice.offset = 0;
+        voice.offset = voice.clip.length;
         voice.ended = true;
     };
-    source.start(0, voice.offset);
+    try {
+        source.start(0, voice.offset / voice.clip.sampleRate);
+    } catch (error) {
+        source.onended = null;
+        source.disconnect();
+        throw error;
+    }
     voice.source = source;
     voice.start = voice.device.context.currentTime;
     voice.ended = false;
@@ -66,9 +95,25 @@ export function pause(voice) {
 }
 function capturePosition(voice) {
     const time = voice.device.context.currentTime;
-    const position = voice.offset + time - voice.start;
-    voice.offset = voice.loop ? position % voice.clip.duration : Math.min(position, voice.clip.duration);
+    voice.offset = positionAt(voice, time);
     voice.start = time;
+}
+function positionAt(voice, time) {
+    const position = voice.offset + (time - voice.start) * voice.clip.sampleRate;
+    return voice.loop ? position % voice.clip.length : Math.min(position, voice.clip.length);
+}
+export function framePosition(voice) {
+    return Math.floor(voice.source ? positionAt(voice, voice.device.context.currentTime) : voice.offset);
+}
+export function seek(voice, framePosition) {
+    if (!Number.isSafeInteger(framePosition) || framePosition < 0 || framePosition > voice.clip.length) {
+        throw new RangeError("The frame position must be within the clip.");
+    }
+    const playing = voice.source !== null;
+    detach(voice);
+    voice.offset = voice.loop && framePosition === voice.clip.length ? 0 : framePosition;
+    voice.ended = voice.ended && voice.offset === voice.clip.length;
+    if (playing) play(voice);
 }
 export function stop(voice) {
     detach(voice);
@@ -76,6 +121,7 @@ export function stop(voice) {
     voice.ended = false;
 }
 export function completed(voice) { return voice.ended; }
+export function playing(voice) { return voice.source !== null; }
 export function setGain(voice, gain) {
     const param = voice.gain.gain;
     const time = voice.device.context.currentTime;
