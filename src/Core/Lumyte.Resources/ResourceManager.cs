@@ -24,6 +24,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     private readonly List<ResourceSlot> _slots = [];
     private readonly Dictionary<ResourceNode, uint> _slotByKey = [];
     private readonly HashSet<ResourceNode> _invalidated = [];
+    private readonly HashSet<IAsyncDisposable> _sessions = [];
+    private readonly HashSet<IAsyncDisposable> _failedSessions = [];
     private readonly SemaphoreSlim _maintenance = new(1, 1);
     private readonly IDisposable _reclaimerRegistration;
     private Dictionary<ResourceNode, ResourceGeneration> _published = [];
@@ -317,6 +319,70 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
+    /// <summary>Opens an independent bounded streaming cursor pinned to one factory revision.</summary>
+    /// <typeparam name="TResource">The registered immutable stream factory type.</typeparam>
+    /// <typeparam name="TElement">The unmanaged decoded element type.</typeparam>
+    /// <param name="key">The stream factory key.</param>
+    /// <param name="options">The bounded buffering configuration.</param>
+    /// <param name="cancellationToken">Cancels creation only.</param>
+    /// <returns>An initialized session with an independently owned cursor.</returns>
+    public async ValueTask<ResourceStreamSession<TElement>> OpenStreamAsync<TResource, TElement>(ResourceKey<TResource> key, ResourceStreamOptions options, CancellationToken cancellationToken = default)
+        where TResource : class, IResourceStream<TElement>
+        where TElement : unmanaged
+    {
+        options.Validate<TElement>();
+        using ResourceReference<TResource> reference = await AcquireAsync(key, cancellationToken).ConfigureAwait(false);
+        ResourceLease<TResource> lease = reference.Acquire();
+        IMemoryScope? memory = null;
+        ResourceStreamSession<TElement>? session = null;
+        try
+        {
+            memory = _memory.CreateScope($"{_name}/stream/{typeof(TResource)}/{lease.Revision}");
+            IResourceExecutor executor = _executors[_stages[typeof(TResource).TypeHandle].Runtime];
+            session = new(executor, memory, lease, lease.Revision, options, () => ReturnSession(session!));
+            lock (_gate)
+            {
+                _sessions.Add(session);
+            }
+
+            await session.InitializeAsync(lease.Value, cancellationToken).ConfigureAwait(false);
+            return session;
+        }
+        catch (Exception error)
+        {
+            try
+            {
+                if (session is not null)
+                {
+                    await session.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    if (memory is not null)
+                    {
+                        await memory.DisposeAsync().ConfigureAwait(false);
+                    }
+
+                    lease.Dispose();
+                }
+            }
+            catch (Exception cleanupError)
+            {
+                if (session is not null)
+                {
+                    lock (_gate)
+                    {
+                        _failedSessions.Add(session);
+                    }
+                }
+
+                throw new AggregateException(error, cleanupError);
+            }
+
+            throw;
+        }
+    }
+
     internal ResourceLease<T>? AcquireCurrentLease<T>(ResourceHandle<T> handle)
         where T : notnull
     {
@@ -564,5 +630,14 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
         slot = candidate;
         return true;
+    }
+
+    private void ReturnSession(IAsyncDisposable session)
+    {
+        lock (_gate)
+        {
+            _sessions.Remove(session);
+            _failedSessions.Remove(session);
+        }
     }
 }

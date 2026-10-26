@@ -30,6 +30,19 @@ ReloadAsync／ReloadAllAsyncは内部のデバッグ用コマンドに限定し�
 
 [ADR-RESOURCES-0002](../../../docs/adr/resources/RESOURCES-0002-generations-reload.md)を参照してください。
 
+## ストリーミング
+
+OpenStreamAsyncは不変factoryを保持し、独立したreaderとboundedな先読みbufferを作ります。
+factoryの保持は旧入力ファイルの保存を意味しません。直接読み込み中の変更検出でsessionがfaultになった場合は開き直します。
+
+readerの生成・先読み・seek・解放はfactoryの登録済みExecutorへ配送します。既定の`ResourceRuntime`ではJobSystemのCPU同時実行数に従い、Cooperativeでは`PumpJobs`で進めます。初期化・seek・解放の待機中もPumpを続けてください。producerはI/Oやbuffer空きを待つ間はCPU枠を返しますが、実完了までworkflowの受付枠を一つ保持します。長寿命sessionも含めて`MaxInFlightRuns`を設定し、すべてのsessionを閉じてから実行器を停止します。
+
+`ReadAvailable`は待機・I/O・デコードを行わず、準備済みの要素だけを返します。blockを返すと再利用する通知でproducerをJobSystemへ戻し、readerをその呼び出しの中でinline実行しません。0はunderflowにもなるため`EndOfStream`と区別します。`ReadAsync`もデータ・終端・失敗の通知を待ち、timerでpollしません。デバイスcallbackでは`ReadAvailable`を使い、consumerは一つとしてread・seek・disposeを重ねないでください。
+
+producer・reader・buffer/scope・factory leaseの順で終了します。取得済みsessionの解放に失敗した場合は、そのsessionの`DisposeAsync`を再度呼んでください。生成と後始末の両方が失敗し、利用者へ返せなかったsessionはManagerが保持し、`TrimAsync`で解放を再試行します。
+
+[ADR-RESOURCES-0005](../../../docs/adr/resources/RESOURCES-0005-bounded-streaming.md)を参照してください。
+
 ## DIを使わない構築
 
 `IResourceSourceStage<T>`と`IResourceTransform<TInput, TOutput>`は共通の`IResourceStage`を実装します。
