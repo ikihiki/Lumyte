@@ -13,5 +13,4 @@ public sealed class GraphicsShaderPackage<TConsumer>(ResourceKey<ShaderArtifact>
 
     /// <summary>Gets the fragment artifact key.</summary>
     public ResourceKey<ShaderArtifact> Fragment { get; } = fragment;
-
 }
