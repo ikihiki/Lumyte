@@ -1,5 +1,12 @@
+using Lumyte.Execution;
+using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Hosting;
+using Lumyte.Graphics.ImageEffects;
+using Lumyte.Graphics.RenderGraph;
 using Lumyte.Memory.DependencyInjection;
+using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Graphics.ImageEffects;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.Graphics.AotSmoke;
 
