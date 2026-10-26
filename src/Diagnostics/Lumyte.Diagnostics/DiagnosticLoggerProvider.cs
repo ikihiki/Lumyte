@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Lumyte.Diagnostics;
 
 internal sealed class DiagnosticLoggerProvider(TelemetryRouter router) : ILoggerProvider, ISupportExternalScope

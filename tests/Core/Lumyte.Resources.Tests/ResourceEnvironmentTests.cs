@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using Lumyte.Memory;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

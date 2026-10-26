@@ -1,6 +1,12 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Lumyte.Diagnostics.Sample;
+using Lumyte.Diagnostics.Transport;
+using Lumyte.Diagnostics.Transport.Http;
+using Lumyte.Diagnostics.Transport.MagicOnion;
+using Lumyte.Settings;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Lumyte.Diagnostics.IntegrationTests;
 

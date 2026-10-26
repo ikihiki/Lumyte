@@ -1,5 +1,6 @@
 using System.Text;
 using Lumyte.Resources.FileSystem;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

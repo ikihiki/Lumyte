@@ -1,3 +1,5 @@
+using Lumyte.Diagnostics.Transport;
+
 namespace Lumyte.Diagnostics.Server;
 
 /// <summary>Detached dashboard queries and cancellable, coalesced change notifications.</summary>

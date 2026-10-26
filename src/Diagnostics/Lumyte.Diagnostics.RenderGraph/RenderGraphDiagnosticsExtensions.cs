@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Lumyte.Diagnostics.RenderGraph;
 
 /// <summary>Connects graph inspection to an existing game execution point.</summary>

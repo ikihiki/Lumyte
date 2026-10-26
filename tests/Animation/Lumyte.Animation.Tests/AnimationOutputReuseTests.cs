@@ -1,3 +1,7 @@
+using Lumyte.Core.Time;
+using Lumyte.StateMachines;
+using Xunit;
+
 namespace Lumyte.Animation.Tests;
 
 /// <summary>Checks contribution lifetimes when outputs reuse slots across states and evaluations.</summary>

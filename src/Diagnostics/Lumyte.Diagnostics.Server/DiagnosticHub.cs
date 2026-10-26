@@ -1,4 +1,7 @@
+using Grpc.Core;
 using Lumyte.Diagnostics.Transport.MagicOnion;
+using MagicOnion;
+using MagicOnion.Server.Hubs;
 
 namespace Lumyte.Diagnostics.Server;
 

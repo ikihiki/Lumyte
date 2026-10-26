@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Lumyte.Diagnostics.Transport;
 
 namespace Lumyte.Diagnostics.Server;
 

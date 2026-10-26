@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Windows;
 

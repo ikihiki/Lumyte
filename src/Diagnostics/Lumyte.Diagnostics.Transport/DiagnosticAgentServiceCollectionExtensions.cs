@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Lumyte.Diagnostics.Transport;
 
 /// <summary>Registers the protocol-independent game agent.</summary>

@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Verifies external ownership without referencing a resource manager.</summary>

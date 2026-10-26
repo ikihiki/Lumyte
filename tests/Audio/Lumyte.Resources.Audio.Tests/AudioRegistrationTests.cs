@@ -1,6 +1,12 @@
 using System.Runtime.CompilerServices;
+using Lumyte.Audio.Execution;
+using Lumyte.Execution;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.Audio.DependencyInjection;
+using Lumyte.Resources.DependencyInjection;
+using Lumyte.Resources.Execution;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Resources.Audio.Tests;
 

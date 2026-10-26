@@ -1,5 +1,7 @@
 using System.Reflection;
 using System.Runtime.Loader;
+using Lumyte.Memory;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

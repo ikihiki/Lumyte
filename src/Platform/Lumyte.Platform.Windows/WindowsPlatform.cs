@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Abstractions;
+using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Windows;
 

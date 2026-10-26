@@ -1,4 +1,7 @@
 using System.Reflection;
+using Lumyte.Audio.Abstractions;
+using Silk.NET.OpenAL;
+using Xunit;
 
 namespace Lumyte.Audio.OpenAL.Tests;
 

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Lumyte.Graphics.RenderGraph;
+using Microsoft.Extensions.Logging;
 
 namespace Lumyte.Diagnostics.RenderGraph;
 

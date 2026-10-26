@@ -1,4 +1,5 @@
 using Lumyte.Animation;
+using Lumyte.StateMachines;
 
 namespace Lumyte.Diagnostics.Animation;
 

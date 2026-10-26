@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 namespace Lumyte.Diagnostics.Windowing;
 
 /// <summary>Registers opt-in WindowSystem diagnostics at an existing execution point.</summary>

@@ -1,3 +1,7 @@
+using MagicOnion.Serialization.MessagePack;
+using MessagePack;
+using MessagePack.Resolvers;
+
 namespace Lumyte.Diagnostics.Transport.MagicOnion;
 
 /// <summary>Shared generated serializer settings for hub server and clients.</summary>

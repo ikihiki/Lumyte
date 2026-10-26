@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Lumyte.Diagnostics.Transport;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Routing;

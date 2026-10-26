@@ -5,6 +5,8 @@ using System.Text;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Embedded;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Resources.Tests;
 

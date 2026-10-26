@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Verifies deferred preparation and ownership when extension configurations are built.</summary>

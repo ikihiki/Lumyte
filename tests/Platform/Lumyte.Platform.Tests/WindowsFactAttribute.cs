@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Lumyte.Platform.Tests;
 
 /// <summary>Runs native tests only on supported Windows hosts.</summary>

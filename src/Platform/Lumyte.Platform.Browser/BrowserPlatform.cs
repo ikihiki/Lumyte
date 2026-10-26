@@ -2,8 +2,10 @@ using System.Numerics;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using System.Text.Json;
+using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Internal;
+using Lumyte.Windowing.Abstractions;
 
 [assembly: SupportedOSPlatform("browser")]
 

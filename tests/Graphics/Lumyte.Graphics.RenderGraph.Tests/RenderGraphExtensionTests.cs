@@ -1,3 +1,6 @@
+using Lumyte.Graphics.Abstractions;
+using Xunit;
+
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Verifies typed extension composition and frame ownership without a resource manager.</summary>

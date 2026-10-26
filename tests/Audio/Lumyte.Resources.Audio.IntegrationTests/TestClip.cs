@@ -1,3 +1,5 @@
+using Lumyte.Audio.Abstractions;
+
 namespace Lumyte.Resources.Audio.IntegrationTests;
 
 internal sealed class TestClip(TestDevice device, AudioFormat format, long frames) : IAudioClip

@@ -2,11 +2,13 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Lumyte.Diagnostics.Server.Components;
+using Lumyte.Diagnostics.Transport;
 using Lumyte.Diagnostics.Transport.MagicOnion;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.FluentUI.AspNetCore.Components;
 
 namespace Lumyte.Diagnostics.Server;
 

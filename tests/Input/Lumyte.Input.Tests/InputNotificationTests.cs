@@ -1,3 +1,6 @@
+using Lumyte.Input.Abstractions;
+using Xunit;
+
 namespace Lumyte.Input.Tests;
 
 /// <summary>Verifies per-record subscription snapshots and notification error isolation.</summary>

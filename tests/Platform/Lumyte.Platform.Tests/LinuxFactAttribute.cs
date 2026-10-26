@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Lumyte.Platform.Tests;
 
 /// <summary>Runs X11 native tests when a Linux display is available.</summary>

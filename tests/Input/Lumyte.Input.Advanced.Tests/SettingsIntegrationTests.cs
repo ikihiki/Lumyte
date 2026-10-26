@@ -1,5 +1,12 @@
 using System.Collections.Concurrent;
+using Lumyte.Input.Abstractions;
+using Lumyte.Input.Actions;
+using Lumyte.Input.Processing;
 using Lumyte.Input.Settings;
+using Lumyte.Settings;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Lumyte.Input.Advanced.Tests;
 
