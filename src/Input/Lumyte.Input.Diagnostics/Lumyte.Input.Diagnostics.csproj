@@ -8,7 +8,9 @@
   <ItemGroup>
     <ProjectReference Include="../Lumyte.Input/Lumyte.Input.csproj" />
     <ProjectReference Include="../Lumyte.Input.Actions/Lumyte.Input.Actions.csproj" />
+    <ProjectReference Include="../Lumyte.Input.Settings/Lumyte.Input.Settings.csproj" />
     <ProjectReference Include="../../Diagnostics/Lumyte.Diagnostics/Lumyte.Diagnostics.csproj" />
+    <ProjectReference Include="../../Diagnostics/Lumyte.Diagnostics.Settings/Lumyte.Diagnostics.Settings.csproj" />
     <ProjectReference Include="../../Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
