@@ -105,43 +105,56 @@ CPU artifactだけ必要なら`AddSourcePipeline<ShaderArtifact, ShaderArtifactS
 
 ## RenderGraphへのimport
 
-RenderGraph本体はResourcesへ参照を追加しません。このbridgeの`ImportResources`からtexture、typed buffer、shader-data-bufferを取得できます。アプリ固有の出力wrapperやシェーダは`AcquireAsync<T>`で保持し、既存のgraph/device APIへ渡します。
+RenderGraph本体はResourcesへ参照を追加しません。`RenderGraphExtensions.AddResources(manager)`で登録し、Graph内の共通の`ImportResources()`からtexture、typed buffer、shader-data-bufferを取得できます。アプリ固有の出力wrapperやシェーダは`AcquireAsync<T>`で保持し、既存のgraph/device APIへ渡します。
 
 ```csharp
-var graph = new RenderGraph(device);
-using var imports = graph.ImportResources(manager);
+using var extensions = new RenderGraphExtensions().AddResources(manager);
+using var graph = new RenderGraph(device, extensions: extensions);
+var imports = graph.ImportResources();
 RenderGraphTexture texture = await imports.ImportTextureAsync(
     new ResourceKey<IGraphicsTexture>("textures/albedo"),
     TextureState.Sampled, precedingScope);
 // passを追加し、読み書きとoutputを宣言する。
-using CompiledRenderGraph plan = imports.Compile();
+using CompiledRenderGraph plan = graph.Compile();
 plan.Record(commands);
 // commandsをsubmitし、GPU完了を待つ。その後planをDisposeする。
 ```
 
 import時のstate/scopeは実際の直前状態を指定し、別deviceのallocationを混在させないでください。キーの出力型はPipeline登録と一致させます。wrapper出力なら`AcquireAsync`で取得してから、そのtexture/bufferをgraphへimportします。
 
-compile前の放棄はimportsのDisposeでLeaseを返します。`imports.Compile()`が成功すると所有はplanへ移り、importsをDisposeしても描画中の世代は残ります。`graph.Compile()`を直接呼ぶとこの移譲は行われません。planは記録前にLeaseの失効を検証し、GPU完了またはcommand buffer破棄後に、view・一時allocation・外部所有権の順で解放します。旧世代はHotReload中も保持し、次のgraphが新しい公開値を取得します。
+importsは借用ビューで、DisposeやCompileを持ちません。compile前の放棄はGraphのDisposeでLeaseを返し、`graph.Compile()`の成功時に全拡張の所有をplanへ一括で移します。GraphをDisposeしても移譲済みの世代は解放されません。planは記録前にLeaseの失効を検証し、GPU完了またはcommand buffer破棄後に、view・一時allocation・逆登録順の外部所有権を解放します。旧世代はHotReload中も保持します。
 
-複数入力の公開世代を揃える場合は、先にReferenceを取得してから`manager.CaptureSnapshot()`を一度呼び、`imports.Acquire(snapshot, reference.Handle)`で解決します。この経路はI/Oを行わず、発行済みLeaseはsnapshotを返した後も有効です。別々の`AcquireAsync`呼び出しは同一publicationを保証しません。
+同じGraphで別の拡張からImportResourcesを取得しても同じinstanceを返します。設定なしの`graph.ImportResources(manager)`でもGraphに一度だけ関連付け、異なるManagerの混在を拒否します。ResourceManager自体は借用し、Graphや設定からDisposeしません。拡張を利用したGraphはCompile成功後の変更・再Compileを拒否します。
+
+複数入力の公開世代を揃える場合は、先にReferenceを取得し、最初の取得前に借用viewを選びます。
+
+```csharp
+using ResourceSnapshot snapshot = manager.CaptureSnapshot();
+graph.ImportResources().UseSnapshot(snapshot);
+// imports.Acquire(reference)やEffectsを使ってGraphを構築する。
+// Compile後はSnapshotを返してよく、発行済みLeaseはPlanの解放まで保持される。
+```
+
+`imports.Acquire(reference)`やEffectsなどの拡張も同じviewを使います。明示的な`imports.Acquire(snapshot, reference.Handle)`も利用でき、発行済みLeaseはsnapshotを返した後も有効です。個々のAcquireAsyncは暗黙にSnapshotを取得しません。
 
 ## ImageEffectsとの接続
 
 ImageEffectsとの通常の接続には、任意のパッケージ[Lumyte.Resources.Graphics.ImageEffects](../Lumyte.Resources.Graphics.ImageEffects/README.md)を使用します。`AddImageEffects()`で既定の埋め込みシェーダ一式を登録し、パッケージ名やキーの指定なしで取得できます。
 
 ```csharp
-// 初期化時に一度取得して保持する。
-using var shaders = await manager.AcquireImageEffectShadersAsync();
+// 初期化時に一度ロードし、他の拡張と同じ構成へ登録する。
+using var extensions = new RenderGraphExtensions().AddResources(manager);
+await extensions.AddImageEffectsAsync(manager);
 
 // フレームごと。
-using var imports = graph.ImportResources(manager);
-EffectImage output = imports.AppendEffects(shaders, effectGraph, source);
+using var graph = new RenderGraph(device, extensions: extensions);
+EffectImage output = graph.AppendEffects(effectGraph, source);
 graph.MarkOutput(output.Texture);
-using CompiledRenderGraph plan = imports.Compile();
+using CompiledRenderGraph plan = graph.Compile();
 plan.Record(commands);
 // GPU完了後にplanをDispose。effectのGPU資源、shaderのLeaseの順に返す。
 ```
 
 カスタムの場合だけ`ImageEffectShaderPackage`をDIへ登録し、二つのartifactキーを指定します。組を一つの世代として取得するため、通常のappendでSnapshotは不要です。HotReload後に既存のpipelineをその場で差し替えず、次のplanで新しいシェーダ一式を利用します。
 
-低水準のartifact／GPU module取得と`ImageEffectShaders`への受け渡しも利用できます。その場合は取得元の寿命を固定GPU資源より長く保持し、所有をplanへ移したPreparedImageEffectを別のusingでDisposeしないでください。
+低水準のartifact／GPU module取得と`ImageEffectShaders`への受け渡しも利用できます。その場合は取得元の寿命をGraphへ保持させてから固定GPU資源を準備します。直接Graphに追加するEffectsと2Dの部分ビューは同じImageEffectsGraphContextを使用します。

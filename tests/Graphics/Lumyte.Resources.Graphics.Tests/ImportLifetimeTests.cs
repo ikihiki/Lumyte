@@ -7,60 +7,122 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Resources.Graphics.Tests;
 
-/// <summary>Verifies atomic ownership transfer and dependency-safe cleanup for imported graph resources.</summary>
+/// <summary>Verifies shared resource extensions and parent-graph ownership.</summary>
 public sealed class ImportLifetimeTests
 {
-    /// <summary>Scope and plan cleanup preserve failed ownership while releasing successful children only once.</summary>
-    /// <param name="compile">Whether ownership first moves to a compiled graph.</param>
-    /// <returns>Completion of manager disposal.</returns>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CleanupRetriesInReverseRegistrationOrderAsync(bool compile)
-    {
-        await using ServiceProvider provider = CreateProvider();
-        var events = new List<string>();
-        using ResourceRenderGraphImports imports = new RenderGraphBuilder().ImportResources(provider.GetRequiredService<ResourceManager>());
-        imports.Retain(new Lifetime("dependency", events));
-        imports.Retain(new Lifetime("failing", events, failOnce: true));
-        imports.Retain(new Lifetime("released", events));
-        using IDisposable owner = compile ? imports.Compile() : imports;
-        if (compile)
-        {
-            imports.Dispose();
-            Assert.Empty(events);
-        }
-
-        Assert.Throws<InvalidOperationException>(() => owner.Dispose());
-        Assert.Equal(["released", "failing"], events);
-        Assert.Throws<ObjectDisposedException>(() => imports.Retain(new Lifetime("rejected", events)));
-        Assert.Throws<ObjectDisposedException>(() => imports.Graph);
-        Assert.Throws<ObjectDisposedException>(() => imports.Compile());
-
-        owner.Dispose();
-        Assert.Equal(["released", "failing", "failing", "dependency"], events);
-        owner.Dispose();
-        Assert.Equal(4, events.Count);
-    }
-
-    /// <summary>Failed compilation validation leaves every owner in the import scope without releasing any prefix.</summary>
+    /// <summary>Independent extensions share one borrowed import context, whose manager is fixed for the graph.</summary>
     /// <returns>Completion of manager disposal.</returns>
     [Fact]
-    public async Task FailedValidationDoesNotPartiallyTransferOwnershipAsync()
+    public async Task ExtensionsShareTheConfiguredManagerAsync()
+    {
+        await using ServiceProvider first = CreateProvider();
+        await using ServiceProvider second = CreateProvider();
+        ResourceManager manager = first.GetRequiredService<ResourceManager>();
+        using var extensions = new RenderGraphExtensions();
+        extensions.AddResources(manager).Add(graph => new Consumer(graph.ImportResources()));
+        using var graph = new RenderGraphBuilder(extensions: extensions);
+        ResourceRenderGraphImports imports = graph.ImportResources();
+
+        Assert.Same(imports, graph.ImportResources(manager));
+        Assert.Same(imports, graph.GetExtension<Consumer>().Imports);
+        Assert.Same(graph, imports.Graph);
+        Assert.Throws<ArgumentException>(() => graph.ImportResources(second.GetRequiredService<ResourceManager>()));
+
+        using CompiledRenderGraph plan = graph.Compile();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => imports.AcquireAsync(new ResourceKey<CpuValue>("closed")).AsTask());
+    }
+
+    /// <summary>Explicit attachment is cached and rejects manager changes without an extension configuration.</summary>
+    /// <returns>Completion of manager disposal.</returns>
+    [Fact]
+    public async Task ExplicitManagerAttachmentIsSharedAsync()
+    {
+        await using ServiceProvider first = CreateProvider();
+        await using ServiceProvider second = CreateProvider();
+        ResourceManager manager = first.GetRequiredService<ResourceManager>();
+        using var graph = new RenderGraphBuilder();
+        ResourceRenderGraphImports imports = graph.ImportResources(manager);
+
+        Assert.Same(imports, graph.ImportResources());
+        Assert.Same(imports, graph.ImportResources(manager));
+        Assert.Throws<ArgumentException>(() => graph.ImportResources(second.GetRequiredService<ResourceManager>()));
+        graph.Dispose();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => imports.AcquireAsync(new ResourceKey<CpuValue>("closed")).AsTask());
+    }
+
+    /// <summary>Preloaded acquisitions use one selected publication and retain their leases independently of its snapshot.</summary>
+    /// <returns>Completion of graph and manager ownership checks.</returns>
+    [Fact]
+    public async Task FrameSnapshotIsSelectedBeforeAcquisitionAndLeasesOutliveItAsync()
     {
         await using ServiceProvider provider = CreateProvider();
-        var events = new List<string>();
-        using ResourceRenderGraphImports imports = new RenderGraphBuilder().ImportResources(provider.GetRequiredService<ResourceManager>());
-        var invalidated = new Lifetime("invalidated", events);
-        imports.Retain(invalidated);
-        imports.Retain(new Lifetime("dependent", events));
-        invalidated.Valid = false;
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using ResourceReference<CpuValue> first = await manager.AcquireAsync(new ResourceKey<CpuValue>("first"));
+        using ResourceSnapshot snapshot = manager.CaptureSnapshot();
+        using ResourceReference<CpuValue> later = await manager.AcquireAsync(new ResourceKey<CpuValue>("later"));
+        using ResourceSnapshot newer = manager.CaptureSnapshot();
+        using var graph = new RenderGraphBuilder();
+        ResourceRenderGraphImports imports = graph.ImportResources(manager).UseSnapshot(snapshot);
+        CpuValue value = imports.Acquire(first);
 
-        Assert.Throws<InvalidOperationException>(() => imports.Compile());
-        Assert.Empty(events);
+        using (ResourceLease<CpuValue> expected = first.Acquire(snapshot))
+        {
+            Assert.Same(expected.Value, value);
+        }
 
-        imports.Dispose();
-        Assert.Equal(["dependent", "invalidated"], events);
+        Assert.Throws<InvalidOperationException>(() => imports.Acquire(later));
+        Assert.Throws<InvalidOperationException>(() => imports.UseSnapshot(newer));
+        Assert.Throws<ArgumentException>(() => imports.Acquire(newer, first.Handle));
+        using CompiledRenderGraph plan = graph.Compile();
+        graph.Dispose();
+        snapshot.Dispose();
+        newer.Dispose();
+        first.Dispose();
+        later.Dispose();
+
+        Assert.Equal(1, await manager.TrimAsync());
+        plan.Dispose();
+        Assert.Equal(1, await manager.TrimAsync());
+    }
+
+    /// <summary>A borrowed import context does not accept a reference from another manager.</summary>
+    /// <returns>Completion of reference and manager cleanup.</returns>
+    [Fact]
+    public async Task PreloadedReferencesMustBelongToTheBoundManagerAsync()
+    {
+        await using ServiceProvider first = CreateProvider();
+        await using ServiceProvider second = CreateProvider();
+        await using ResourceExecutionHost secondExecution = await ResourceExecutionHost.StartAsync(second);
+        using ResourceReference<CpuValue> reference = await second.GetRequiredService<ResourceManager>().AcquireAsync(new ResourceKey<CpuValue>("foreign"));
+        using var graph = new RenderGraphBuilder();
+        ResourceRenderGraphImports imports = graph.ImportResources(first.GetRequiredService<ResourceManager>());
+
+        Assert.Throws<ArgumentException>(() => imports.Acquire(reference));
+    }
+
+    /// <summary>An acquisition finishing after graph abandonment returns its reference without leaking a lease.</summary>
+    /// <returns>Completion of the pending load and resource reclamation.</returns>
+    [Fact]
+    public async Task PendingAcquisitionReturnsOwnershipWhenGraphClosesAsync()
+    {
+        var pending = new PendingBuild();
+        var services = new ServiceCollection();
+        services.AddSingleton(pending);
+        services.AddMemoryManagement();
+        services.AddResources(builder => builder.UseSource<TestSource>().AddSourcePipeline<CpuValue, PendingStage>());
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using var graph = new RenderGraphBuilder();
+        Task<CpuValue> acquisition = graph.ImportResources(manager).AcquireAsync(new ResourceKey<CpuValue>("pending")).AsTask();
+        await pending.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        graph.Dispose();
+        pending.Continue.SetResult();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => acquisition);
+        Assert.Equal(1, await manager.TrimAsync());
+        Assert.Equal(1, pending.Released);
     }
 
     private static ServiceProvider CreateProvider()
@@ -72,28 +134,30 @@ public sealed class ImportLifetimeTests
         return services.BuildServiceProvider();
     }
 
-    private sealed class Lifetime(string name, List<string> events, bool failOnce = false) : IRenderGraphLifetime
+    private sealed record Consumer(ResourceRenderGraphImports Imports);
+
+    private sealed class PendingBuild
     {
-        private bool _fail = failOnce;
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal bool Valid { get; set; } = true;
+        internal TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public void Validate()
+        internal int Released { get; set; }
+    }
+
+    private sealed class PendingStage(PendingBuild pending) : IResourceSourceStage<CpuValue>
+    {
+        public async ValueTask<CpuValue> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
         {
-            if (!Valid)
-            {
-                throw new InvalidOperationException("Ownership expired before compilation.");
-            }
+            pending.Started.SetResult();
+            await pending.Continue.Task.WaitAsync(cancellationToken);
+            return new();
         }
 
-        public void Dispose()
+        public ValueTask ReleaseAsync(CpuValue resource)
         {
-            events.Add(name);
-            if (_fail)
-            {
-                _fail = false;
-                throw new InvalidOperationException("Injected cleanup failure.");
-            }
+            pending.Released++;
+            return ValueTask.CompletedTask;
         }
     }
 }

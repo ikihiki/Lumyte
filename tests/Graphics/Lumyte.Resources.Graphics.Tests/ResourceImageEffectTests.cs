@@ -25,24 +25,24 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        await extensions.AddImageEffectsAsync(manager);
         TestDevice device = Assert.Single(state.Devices);
         Assert.Equal(2, device.Shaders.Count);
-        var graph = new RenderGraphBuilder(device);
-        using ResourceRenderGraphImports imports = graph.ImportResources(manager);
+        using var graph = new RenderGraphBuilder(device, extensions: extensions);
         EffectImage source = Source(graph);
         var first = new FixedResource();
         var second = new FixedResource();
         var inspected = new List<ImageEffectShaders>();
-        EffectImage intermediate = imports.AppendEffect(reference, new OwningEffect(first, inspected), source);
-        EffectImage output = imports.AppendEffects(reference, ImageEffectGraph.Create(new OwningEffect(second, inspected), ImageEffectGraph.Source()), intermediate);
+        EffectImage intermediate = graph.AppendEffect(new OwningEffect(first, inspected), source);
+        EffectImage output = graph.AppendEffects(ImageEffectGraph.Create(new OwningEffect(second, inspected), ImageEffectGraph.Source()), intermediate);
         Assert.Equal(source, output);
         Assert.Equal(2, device.Shaders.Count);
         Assert.Same(inspected[0], inspected[1]);
         Assert.Equal(0, provider.GetRequiredService<UnusedSource>().OpenCount);
-        using CompiledRenderGraph plan = imports.Compile();
-        imports.Dispose();
-        reference.Dispose();
+        using CompiledRenderGraph plan = graph.Compile();
+        graph.Dispose();
+        extensions.Dispose();
         using var commands = new TestGraphCommands();
         plan.Record(commands);
         commands.Finish();
@@ -63,6 +63,89 @@ public sealed class ResourceImageEffectTests
         Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
     }
 
+    /// <summary>Nested layer callbacks and direct effects resolve the same resource and effects extensions.</summary>
+    /// <returns>Completion of shared state and parent-plan ownership checks.</returns>
+    [Fact]
+    public async Task LayerAndEffectsExtensionsShareStateAndPlanOwnershipAsync()
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        await extensions.AddImageEffectsAsync(manager);
+        int layerCreations = 0;
+        extensions.Add(graph =>
+        {
+            layerCreations++;
+            return new LayerImports(graph);
+        });
+        TestDevice device = Assert.Single(state.Devices);
+        using var graph = new RenderGraphBuilder(device, extensions: extensions);
+        EffectImage source = Source(graph);
+        LayerImports layer = graph.GetExtension<LayerImports>();
+        Assert.Same(layer, graph.GetExtension<LayerImports>());
+        Assert.Same(layer.Effects, graph.GetExtension<ImageEffectsGraphContext>());
+        Assert.Same(layer.Resources, graph.ImportResources());
+        var nested = new FixedResource();
+        var direct = new FixedResource();
+        var inspected = new List<ImageEffectShaders>();
+        EffectImage image = layer.Append(nested, inspected, source);
+        _ = graph.AppendEffects(ImageEffectGraph.Create(new OwningEffect(direct, inspected), ImageEffectGraph.Source()), image);
+        Assert.Equal(1, layerCreations);
+        Assert.Same(inspected[0], inspected[1]);
+        Assert.Equal(2, device.Shaders.Count);
+        Assert.Equal(0, nested.DisposeCount);
+        using CompiledRenderGraph plan = graph.Compile();
+        graph.Dispose();
+        extensions.Dispose();
+        Assert.Equal(0, await manager.TrimAsync());
+        Assert.Equal(0, nested.DisposeCount);
+        Assert.Equal(0, direct.DisposeCount);
+
+        plan.Dispose();
+        Assert.Equal(1, nested.DisposeCount);
+        Assert.Equal(1, direct.DisposeCount);
+        await manager.TrimAsync();
+        Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
+    }
+
+    /// <summary>A managed effects registration never silently falls back when resources or the device mismatch.</summary>
+    /// <param name="missingResources">Whether to omit the resource extension instead of supplying a foreign device.</param>
+    /// <returns>Completion of configuration rejection and retained lease cleanup.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InvalidManagedEffectsEnvironmentRejectsBeforePreparingPassesAsync(bool missingResources)
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using var extensions = new RenderGraphExtensions();
+        if (!missingResources)
+        {
+            extensions.AddResources(manager);
+        }
+
+        await extensions.AddImageEffectsAsync(manager);
+        TestDevice device = Assert.Single(state.Devices);
+        await using var foreign = new TestDevice();
+        using var graph = new RenderGraphBuilder(missingResources ? device : foreign, extensions: extensions);
+        var resource = new FixedResource();
+        var inspected = new List<ImageEffectShaders>();
+        Assert.Throws<InvalidOperationException>(() => graph.AppendEffect(new OwningEffect(resource, inspected), Source(graph)));
+        Assert.Empty(inspected);
+        Assert.Equal(0, resource.DisposeCount);
+        Assert.False(graph.IsBuilding);
+        graph.Dispose();
+        extensions.Dispose();
+        await manager.TrimAsync();
+        Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
+    }
+
     /// <summary>One package publication replaces both custom shader inputs while snapshots retain the old pair.</summary>
     /// <returns>Completion of automatic reload and old-frame publication checks.</returns>
     [Fact]
@@ -74,6 +157,8 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        await extensions.AddImageEffectsAsync(manager);
         using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
         using ResourceLease<ImageEffectShaderResource> old = reference.Acquire(snapshot);
@@ -95,12 +180,18 @@ public sealed class ResourceImageEffectTests
         AssertRevision(old.Value.Shaders, 1);
         TestDevice device = Assert.Single(state.Devices);
         Assert.Equal(4, device.Shaders.Count);
-        var oldGraph = new RenderGraphBuilder(device);
-        using ResourceRenderGraphImports oldImports = oldGraph.ImportResources(manager);
+        using var oldGraph = new RenderGraphBuilder(device, extensions: extensions);
+        oldGraph.ImportResources().UseSnapshot(snapshot);
         var oldInspected = new List<ImageEffectShaders>();
-        _ = oldImports.AppendEffects(reference, ImageEffectGraph.Create(new OwningEffect(new(), oldInspected), ImageEffectGraph.Source()), Source(oldGraph), snapshot);
-        using CompiledRenderGraph oldPlan = oldImports.Compile();
+        _ = oldGraph.AppendEffects(ImageEffectGraph.Create(new OwningEffect(new(), oldInspected), ImageEffectGraph.Source()), Source(oldGraph));
+        using CompiledRenderGraph oldPlan = oldGraph.Compile();
         Assert.Same(old.Value.Shaders, Assert.Single(oldInspected));
+
+        using var newGraph = new RenderGraphBuilder(device, extensions: extensions);
+        var newInspected = new List<ImageEffectShaders>();
+        _ = newGraph.AppendEffect(new OwningEffect(new(), newInspected), Source(newGraph));
+        using CompiledRenderGraph newPlan = newGraph.Compile();
+        Assert.Same(current.Value.Shaders, Assert.Single(newInspected));
         snapshot.Dispose();
         old.Dispose();
         await manager.TrimAsync();
@@ -123,12 +214,17 @@ public sealed class ResourceImageEffectTests
         IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        await extensions.AddImageEffectsAsync(manager);
         using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
         using ResourceLease<ImageEffectShaderResource> old = reference.Acquire();
         ImageEffectShaderResource previous = old.Value;
+        using var oldGraph = new RenderGraphBuilder(previous.Device, extensions: extensions);
+        _ = oldGraph.AppendEffect(new OwningEffect(new(), []), Source(oldGraph));
         state.Devices[0].Lose();
         Assert.False(old.IsUsable);
         Assert.False(reference.IsAvailable);
+        Assert.Throws<ResourceUnavailableException>(() => oldGraph.Compile());
         await devices.RecoverAsync();
         ResourceReloadResult result = await manager.RebuildRuntimeAsync([provider.GetRequiredService<GraphicsResourceRuntime>().Id]);
         Assert.Equal(ResourceReloadStatus.Published, result.Status);
@@ -137,8 +233,14 @@ public sealed class ResourceImageEffectTests
         Assert.Same(previous.Shaders.Effects, current.Value.Shaders.Effects);
         Assert.NotSame(previous.Device, current.Value.Device);
         Assert.True(current.Value.Epoch > previous.Epoch);
+        using var newGraph = new RenderGraphBuilder(current.Value.Device, extensions: extensions);
+        var inspected = new List<ImageEffectShaders>();
+        _ = newGraph.AppendEffect(new OwningEffect(new(), inspected), Source(newGraph));
+        using CompiledRenderGraph plan = newGraph.Compile();
+        Assert.Same(current.Value.Shaders, Assert.Single(inspected));
         Assert.All(state.Devices, device => Assert.Equal(2, device.Shaders.Count));
         Assert.All(state.Devices[0].Shaders, shader => Assert.False(shader.Disposed));
+        oldGraph.Dispose();
         old.Dispose();
         await manager.TrimAsync();
         Assert.All(state.Devices[0].Shaders, shader => Assert.Equal(1, shader.DisposeCount));
@@ -156,14 +258,14 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        await extensions.AddImageEffectsAsync(manager);
         TestDevice device = Assert.Single(state.Devices);
-        var graph = new RenderGraphBuilder(device);
-        using ResourceRenderGraphImports imports = graph.ImportResources(manager);
+        using var graph = new RenderGraphBuilder(device, extensions: extensions);
         var resource = new FixedResource(failOnce: true);
-        _ = imports.AppendEffect(reference, new OwningEffect(resource, []), Source(graph));
-        using CompiledRenderGraph plan = imports.Compile();
-        reference.Dispose();
+        _ = graph.AppendEffect(new OwningEffect(resource, []), Source(graph));
+        using CompiledRenderGraph plan = graph.Compile();
+        extensions.Dispose();
 
         Assert.Throws<AggregateException>(() => plan.Dispose());
         Assert.Equal(0, await manager.TrimAsync());
@@ -175,23 +277,23 @@ public sealed class ResourceImageEffectTests
         Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
     }
 
-    /// <summary>Failed preparation preserves cleanup ownership and rejects compilation until the scope is discarded.</summary>
+    /// <summary>Failed preparation preserves cleanup ownership and rejects compilation until the graph is discarded.</summary>
     /// <param name="useGraph">Whether to append a composed effect graph instead of one effect.</param>
     /// <returns>Completion of preparation failure and subsequent cleanup retry checks.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task FailedPreparationRetainsCleanupUntilScopeDisposalSucceedsAsync(bool useGraph)
+    public async Task FailedPreparationRetainsCleanupUntilGraphDisposalSucceedsAsync(bool useGraph)
     {
         var state = new GraphicsTestState();
         await using ServiceProvider provider = CreateProvider(state);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        await extensions.AddImageEffectsAsync(manager);
         TestDevice device = Assert.Single(state.Devices);
-        var graph = new RenderGraphBuilder(device);
-        using ResourceRenderGraphImports imports = graph.ImportResources(manager);
+        using var graph = new RenderGraphBuilder(device, extensions: extensions);
         EffectImage source = Source(graph);
         var resource = new FixedResource(failOnce: true);
         var failure = new InvalidOperationException("Injected effect preparation failure.");
@@ -200,24 +302,24 @@ public sealed class ResourceImageEffectTests
         {
             if (useGraph)
             {
-                _ = imports.AppendEffects(reference, ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source);
+                _ = graph.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source);
             }
             else
             {
-                _ = imports.AppendEffect(reference, effect, source);
+                _ = graph.AppendEffect(effect, source);
             }
         });
         Assert.Same(failure, observed);
-        reference.Dispose();
+        extensions.Dispose();
         Assert.Equal(0, resource.DisposeCount);
         Assert.Equal(0, await manager.TrimAsync());
-        Assert.Throws<ObjectDisposedException>(() => imports.Compile());
-        Assert.Throws<AggregateException>(() => imports.Dispose());
+        Assert.Throws<ObjectDisposedException>(() => graph.Compile());
+        Assert.Throws<AggregateException>(() => graph.Dispose());
         Assert.Equal(1, resource.DisposeCount);
         Assert.Equal(0, await manager.TrimAsync());
         Assert.All(device.Shaders, shader => Assert.False(shader.Disposed));
 
-        imports.Dispose();
+        graph.Dispose();
         Assert.Equal(2, resource.DisposeCount);
         await manager.TrimAsync();
         Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
@@ -233,15 +335,17 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
         TestDevice device = Assert.Single(state.Devices);
         device.CreateShaderFailOnCall = 2;
-        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.AcquireImageEffectShadersAsync().AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => extensions.AddImageEffectsAsync(manager).AsTask());
         await manager.TrimAsync();
         Assert.Equal(1, Assert.Single(device.Shaders).DisposeCount);
         device.CreateShaderFailOnCall = 0;
-        using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
+        await extensions.AddImageEffectsAsync(manager);
         Assert.Equal(3, device.Shaders.Count);
-        reference.Dispose();
+        await Assert.ThrowsAsync<ArgumentException>(() => extensions.AddImageEffectsAsync(manager).AsTask());
+        extensions.Dispose();
         await manager.TrimAsync();
         Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
     }
@@ -279,6 +383,19 @@ public sealed class ResourceImageEffectTests
     {
         Assert.Equal(revision, Assert.Single(shaders.Fullscreen.GetTarget(ShaderTarget.Wgsl).Code));
         Assert.Equal(revision, Assert.Single(shaders.Effects.GetTarget(ShaderTarget.Wgsl).Code));
+    }
+
+    private sealed class LayerImports(RenderGraphBuilder graph)
+    {
+        internal ImageEffectsGraphContext Effects { get; } = graph.GetExtension<ImageEffectsGraphContext>();
+
+        internal ResourceRenderGraphImports Resources { get; } = graph.ImportResources();
+
+        internal EffectImage Append(FixedResource resource, List<ImageEffectShaders> inspected, EffectImage source)
+        {
+            using var layer = new ImageEffectSubgraph(graph, source);
+            return layer.AppendEffect(new OwningEffect(resource, inspected), layer.Source);
+        }
     }
 
     private sealed record OwningEffect(FixedResource Resource, List<ImageEffectShaders> Inspected) : ImageEffectDefinition

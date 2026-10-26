@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.RenderGraph;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.ImageEffects;
@@ -10,8 +11,8 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="input">The graph-local input image.</param>
     /// <param name="matrix">The immutable color matrix.</param>
-    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix)
+    /// <returns>The graph-local output; fixed resources belong to the graph and its compiled plan.</returns>
+    public static EffectImage AppendColorMatrix(this RenderGraphBuilder plan, EffectImage input, ColorMatrix4x5 matrix)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return plan.AppendEffect(new ColorMatrixEffect(matrix), input);
@@ -22,8 +23,8 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="input">The graph-local input image.</param>
     /// <param name="sigmaX">The finite nonnegative horizontal device-pixel sigma.</param>
     /// <param name="sigmaY">The finite nonnegative vertical device-pixel sigma.</param>
-    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY)
+    /// <returns>The graph-local output; fixed resources belong to the graph and its compiled plan.</returns>
+    public static EffectImage AppendGaussianBlur(this RenderGraphBuilder plan, EffectImage input, float sigmaX, float sigmaY)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return plan.AppendEffect(new GaussianBlurEffect(sigmaX, sigmaY), input);
@@ -33,8 +34,8 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="input">The graph-local input image.</param>
     /// <param name="opacity">The finite multiplier in [0, 1].</param>
-    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity)
+    /// <returns>The graph-local output; fixed resources belong to the graph and its compiled plan.</returns>
+    public static EffectImage AppendOpacity(this RenderGraphBuilder plan, EffectImage input, float opacity)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return plan.AppendEffect(new OpacityEffect(opacity), input);
@@ -47,40 +48,28 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="mode">The composition mode.</param>
     /// <param name="sourceOffsetX">The integer horizontal source translation.</param>
     /// <param name="sourceOffsetY">The integer vertical source translation.</param>
-    /// <returns>The output and fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0)
+    /// <returns>The graph-local output; fixed resources belong to the graph and its compiled plan.</returns>
+    public static EffectImage AppendComposite(this RenderGraphBuilder plan, EffectImage source, EffectImage backdrop, EffectCompositeMode mode, int sourceOffsetX = 0, int sourceOffsetY = 0)
     {
         ArgumentNullException.ThrowIfNull(plan);
         return plan.AppendEffect(new CompositeEffect(mode, sourceOffsetX, sourceOffsetY), source, backdrop);
     }
 
-    /// <summary>Appends the graph once; failure releases new resources and requires discarding the render graph.</summary>
-    /// <param name="plan">The caller-owned render graph.</param>
-    /// <param name="graph">The immutable effect graph.</param>
-    /// <param name="source">The source image, already bound to the same render graph.</param>
-    /// <returns>The owner of the result's fixed resources.</returns>
-    public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source)
-        => plan.AppendEffects(graph, source, null);
+    /// <summary>Registers image-effect state using supplied shaders or embedded defaults.</summary>
+    /// <param name="extensions">The reusable graph extension configuration.</param>
+    /// <param name="shaders">Optional borrowed shader artifacts or modules.</param>
+    /// <returns>The same configuration.</returns>
+    public static RenderGraphExtensions AddImageEffects(this RenderGraphExtensions extensions, ImageEffectShaders? shaders = null)
+        => extensions.Add(graph => new ImageEffectsGraphContext(graph, shaders));
 
-    /// <summary>Appends the effect graph using caller-supplied shader artifacts.</summary>
+    /// <summary>Appends the effect graph using the graph's shared image-effects extension.</summary>
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="graph">The immutable effect graph.</param>
-    /// <param name="source">The graph-local input image.</param>
-    /// <param name="shaders">Optional borrowed artifacts; null selects embedded defaults.</param>
-    /// <returns>The owner of fixed GPU resources.</returns>
-    public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source, ImageEffectShaders? shaders)
-    {
-        var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic, shaders);
-        try
-        {
-            return new(plan.AppendEffectsWithContext(graph, source, context), context);
-        }
-        catch
-        {
-            context.Dispose();
-            throw;
-        }
-    }
+    /// <param name="source">The source image bound to the same render graph.</param>
+    /// <returns>The graph-local output; the graph owns preparation and cleanup.</returns>
+    /// <remarks>Discard and dispose the graph if preparation fails.</remarks>
+    public static EffectImage AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source)
+        => GetContext(plan).AppendEffects(graph, source);
 
     /// <summary>Appends an effect graph into a context whose ownership was established before preparation.</summary>
     /// <param name="plan">The graph receiving passes.</param>
@@ -164,35 +153,13 @@ public static class ImageEffectRenderGraphExtensions
         }
     }
 
-    /// <summary>Appends one existing effect directly, without constructing an effect graph.</summary>
+    /// <summary>Appends one existing effect through the graph's shared image-effects extension.</summary>
     /// <param name="plan">The caller-owned render graph; discard it if append fails.</param>
-    /// <param name="effect">The existing immutable effect with its fixed implementation.</param>
+    /// <param name="effect">The immutable effect with its fixed implementation.</param>
     /// <param name="inputs">Ordered graph-local input images.</param>
-    /// <returns>The output and its fixed-resource owner, disposed after GPU completion.</returns>
-    public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
-        => plan.AppendEffectWithShaders(effect, null, inputs);
-
-    /// <summary>Appends an effect using caller-supplied shader artifacts.</summary>
-    /// <param name="plan">The graph receiving passes.</param>
-    /// <param name="effect">The effect definition.</param>
-    /// <param name="shaders">Borrowed artifacts retained through GPU completion.</param>
-    /// <param name="inputs">The ordered input images.</param>
-    /// <returns>The prepared effect owner.</returns>
-    public static PreparedImageEffect AppendEffectWithShaders(this RenderGraphBuilder plan, ImageEffectDefinition effect, ImageEffectShaders? shaders, params EffectImage[] inputs)
-    {
-        ArgumentNullException.ThrowIfNull(inputs);
-        EffectColorSemantic semantic = inputs.Length == 0 ? EffectColorSemantic.DisplayLinear : inputs[0].ColorSemantic;
-        var context = new EffectPreparationContext(RequireDevice(plan), semantic, shaders);
-        try
-        {
-            return new(plan.AppendEffectWithContext(effect, context, inputs), context);
-        }
-        catch
-        {
-            context.Dispose();
-            throw;
-        }
-    }
+    /// <returns>The graph-local output, with fixed resources owned by the graph and its plan.</returns>
+    public static EffectImage AppendEffect(this RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
+        => GetContext(plan).AppendEffect(effect, inputs);
 
     /// <summary>Appends one effect into an already owned preparation context.</summary>
     /// <param name="plan">The graph receiving passes.</param>
@@ -262,6 +229,12 @@ public static class ImageEffectRenderGraphExtensions
         }
     }
 
+    private static ImageEffectsGraphContext GetContext(RenderGraphBuilder plan)
+    {
+        _ = RequireDevice(plan);
+        return plan.GetOrAddExtension(static graph => new ImageEffectsGraphContext(graph));
+    }
+
     private static IGraphicDevice RequireDevice(RenderGraphBuilder plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -270,8 +243,14 @@ public static class ImageEffectRenderGraphExtensions
 
     private static void ValidateContext(RenderGraphBuilder plan, EffectPreparationContext context, EffectColorSemantic semantic)
     {
+        _ = RequireDevice(plan);
+        if (!plan.IsBuilding)
+        {
+            throw new InvalidOperationException("The render graph no longer accepts effect preparation.");
+        }
+
         context.EnsureAlive();
-        if (!ReferenceEquals(context.Device, RequireDevice(plan)) || context.ColorSemantic != semantic)
+        if (!ReferenceEquals(context.Device, plan.Device) || context.ColorSemantic != semantic)
         {
             throw new ArgumentException("The preparation context must use the graph's device and the inputs' color semantic.", nameof(context));
         }
