@@ -139,19 +139,27 @@ DrawBackdropEffectは直前までの現在レイヤーをsnapshotし、結果を
 
 初期実行は一つの一般queueとcommand bufferを使い、内部Submit・Wait・Presentは行わない。Surfaceの取得・semaphore・提示解放、複数command間の転送metadata公開はアプリ側の既存Graphics契約に従う。Canvas・renderer・共有graphへの同時操作は保証しない。
 
-### 外部プログラムとdevice世代
+### シェーダ設定・生成用リソースとdevice世代
 
-Renderer2DとRenderGraphRenderer2Dはconstructorで任意のIGraphicsProgramProviderを借用する。Resources.GraphicsのResourceGraphicsProgramProviderへ事前取得したhandleとフレームのResourceSnapshotを渡すことで、読み込みを描画経路に入れず接続できる。
-通常描画とレイヤー合成はDrawingPrograms2D.ProgramIdで取得する。画像エフェクトは親graphのImageEffects拡張から取得し、Resources.Graphics.ImageEffectsのAddImageEffectsで管理する。
-各命令rendererにはRenderPreparationContext2D.Programsを渡す。記録直前にもleaseのruntime有効性を検査し、ロストしたGPU世代の利用を拒否する。DIでのprogram登録や効果実装の差し替えは追加しない。
-providerを省略した通常描画だけがパッケージの埋め込みproviderを使用する。外部providerでは資源の未準備・失効を呼び出し側へ返す。
-program leaseはprepared batchに保持し、GPU使用とcommand/compiled planの解放後に返却する。
-内容の公開世代は一回の準備全体で固定し、pipelineとfragment artifactを同じ世代から取得する。
+Resources.Graphics.Drawing2Dの`AddGraphics2D()`で生成用リソースを登録する。
+利用者は`manager.AcquireRenderer2DAsync()`でReferenceを取得し、`reference.CreateRenderer(commandRenderers)`でRenderer2Dを生成する。
+program ID・handleの対応表・providerの構築はadapter内部に閉じ込める。Referenceは最新の公開世代を追い、生成済みレンダラーは正確な一世代を保持する。
+複数資源を同じpublicationへ揃える場合だけCreateRendererにResourceSnapshotを渡す。
 
-復旧はアプリのcoordinatorが使用停止・退役確認・旧prepared owner解放・device復旧・GPU資源再構築を順に行う。
-新deviceと復元済みprogramを取得して、Renderer2Dまたは親graphのAppend2Dから準備し直す。
-旧DrawListにGPU viewが入っている場合はそのviewも再解決して記録を作り直す。
-取得契約は [GRAPHICS-0006](./GRAPHICS-0006-shader-compilation-and-modules.md) に従い、2D本体はResources・Hostingに依存しない。
+シェーダの選択は`services.UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`で起動時に登録する。
+Effectsも`UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`で同じ仕組みを使う。
+型がABIと用途を区別し、同じ型への登録はDIのあと勝ちとする。省略時は各パッケージの埋め込みartifactを使う。
+選択するのはシェーダの入力資源であり、Effectの実装差し替えには使わない。
+親graphのEffects登録は`AddImageEffects(manager)`に集約し、appendの引数にshaderやproviderを渡さない。
+
+生成時にはI/O・GPU生成を行わず、取得時にResourceManagerが準備する。レンダラーと準備済みbatchは所有を分け、
+レンダラーやReferenceを返した後もbatchのprogram leaseをGPU使用とcommand/compiled plan解放後まで保持する。
+同じ世代のpipelineとartifactを使い、記録直前にもruntime有効性を検査する。
+低水準のIGraphicsProgramProvider constructorはResourcesなしでの手動構成に残す。外部providerの失効時に埋め込みへfallbackしない。
+
+復旧はアプリのcoordinatorが使用停止・退役確認・旧prepared owner解放・device復旧・`RebuildRuntimeAsync`を順に行う。
+CPU artifactは再利用し、同じReferenceから新しいdevice世代のレンダラーを生成し直す。
+旧DrawListのGPU viewも再解決する。2D本体はResources・Hosting・RenderGraphに依存しない。
 
 ## 検討した代替案
 
@@ -448,7 +456,7 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    }
 +    public sealed class Renderer2D : IDisposable
 +    {
-+        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IGraphicsProgramProvider? programs = null);
++        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, IGraphicsProgramProvider? programs = null, bool ownsPrograms = false);
 +        // graphを作らず、固定資源と直接記録するbatchを準備する。
 +        public ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list,
 +            RenderTarget2D target, CancellationToken cancellationToken = default);
@@ -729,7 +737,7 @@ RenderGraph型は先行ブランチが基づくmain `81bba9e` の公開APIを使
 +    public sealed class RenderGraphRenderer2D : IDisposable
 +    {
 +        public RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list,
-+            RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null);
++            RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IGraphicsProgramProvider? programs = null, bool ownsPrograms = false);
 +        public void Dispose();
 +    }
 +    public static class Drawing2DRenderGraphExtensions
@@ -929,20 +937,30 @@ canvas.DrawBackdropEffect(new BackdropEffectOptions2D
 
 通常描画とgraph描画のどちらにも、DIで解決したDrawingCommandRenderers2DまたはCreateDefault()を渡す。UseGraphics2Dが登録するのは11描画実装と命令登録表だけであり、レイヤーやEffectsはDIへ登録しない。
 
-#### 外部プログラムprovider
+#### Resourcesからの生成と共通シェーダ設定
 
 ```csharp
-// programsは必要なABI識別子を解決するIGraphicsProgramProvider。
-// Resources adapterはResourceSnapshotを準備全体で固定して作る。
-using var direct = new Renderer2D(device, commandRenderers, programs);
-using PreparedDraw2D prepared = await direct.PrepareAsync(list, target);
+// 設定を省略すると両ライブラリの埋め込みシェーダを使う。
+services.UseGraphicsShaders<Renderer2DResource>(new("shaders/2d-v"), new("shaders/2d-f"));
+services.UseGraphicsShaders<ImageEffectShaderResource>(new("shaders/effect-v"), new("shaders/effect-f"));
+services.AddResources(resources => resources.UseSource<AppSource>()
+    .AddShaderPipeline().AddGraphics2D().AddImageEffects());
+services.AddResourceGraphics();
 
-using var layered = new RenderGraphRenderer2D(
-    commandRenderers, layeredList, graphTarget, bindings, programs);
+// device・Executionの起動後、初期化時に取得する。
+using var rendererResource = await manager.AcquireRenderer2DAsync();
+using var direct = rendererResource.CreateRenderer(commandRenderers);
+using PreparedDraw2D prepared = await direct.PrepareAsync(list, target);
+// GPU使用・commandの解放後にpreparedを解放する。
+
+using var extensions = await new RenderGraphExtensionsBuilder()
+    .AddResources(manager).AddImageEffects(manager).BuildAsync();
+using var parent = new RenderGraph(device, extensions: extensions);
+using var layered = rendererResource.CreateRenderGraphRenderer(
+    commandRenderers, layeredList, graphTarget, bindings);
 PreparedDrawingPasses2D passes = await parent.Append2D(layered);
-// GPU使用・commandとcompiled planの解放後にprepared/passesを解放する。
+// GPU使用・commandとcompiled planの解放後にpassesを解放する。
 ```
 
-programsはDrawingPrograms2D.ProgramIdを解決する。画像エフェクトは同じ親graphにAddImageEffectsで登録する。
-新しいeffectが別shader ABIを使う場合はその識別子も解決する。
-取得時にI/Oや復旧待機を隠さず、事前に準備した資源のleaseを返す。
+Graph版の生成拡張はResources.Graphics.Drawing2D.RenderGraphへ分離する。
+シェーダ設定やresource取得を描画命令に持ち込まず、HotReload後の次の生成時に新しい世代を選択する。

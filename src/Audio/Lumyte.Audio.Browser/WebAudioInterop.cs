@@ -32,8 +32,17 @@ internal static partial class WebAudioInterop
     [JSImport("stop", "Lumyte.Audio.Browser")]
     internal static partial void Stop(JSObject voice);
 
+    [JSImport("seek", "Lumyte.Audio.Browser")]
+    internal static partial void Seek(JSObject voice, int framePosition);
+
+    [JSImport("framePosition", "Lumyte.Audio.Browser")]
+    internal static partial int FramePosition(JSObject voice);
+
     [JSImport("completed", "Lumyte.Audio.Browser")]
     internal static partial bool Completed(JSObject voice);
+
+    [JSImport("playing", "Lumyte.Audio.Browser")]
+    internal static partial bool Playing(JSObject voice);
 
     [JSImport("setGain", "Lumyte.Audio.Browser")]
     internal static partial void SetGain(JSObject voice, float gain);

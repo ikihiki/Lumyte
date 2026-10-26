@@ -1,0 +1,74 @@
+@implements IAsyncDisposable
+
+<section id="window-diagnostics" data-supported="@(_supported ? "true" : "false")">
+    @if (!_supported)
+    {
+        <FluentCard Class="card"><h2>Window</h2><p role="status">このゲームのWindow診断スキーマには対応していません。schema version 1の全操作が必要です。</p></FluentCard>
+    }
+    else if (_model is not null)
+    {
+        <div class="animation-heading"><div><h2>Window</h2><p class="hint">明示登録されたWindowSystemのNative WindowとHosted領域を観測・操作します。</p></div><FluentButton Id="window-refresh" Disabled="@Busy" OnClick="RefreshAsync">一覧を更新</FluentButton></div>
+        <p id="window-error" class="error" role="alert">@Error</p>
+        <p id="window-notice" role="status">@_model.Notice</p>
+        @if (!Session.Connected)
+        {
+            <p class="error" role="status">ブラウザーの接続が切れています。操作は自動で再送しません。</p>
+        }
+        <div class="window-layout">
+            <FluentCard Class="card animation-targets">
+                <h2>WindowSystem <span>@_model.Systems.Count</span></h2>
+                <div class="animation-target-list" role="list" aria-label="WindowSystem診断対象">
+                    @foreach (string system in _model.Systems)
+                    {
+                        <button type="button" role="listitem" data-window-system="@system" aria-current="@(_model.SelectedSystem == system ? "true" : null)" disabled="@Busy" @onclick="() => SelectSystemAsync(system)">@system</button>
+                    }
+                </div>
+            </FluentCard>
+            <FluentCard Class="card animation-targets">
+                <h2>Window <span>@_model.Windows.Count</span></h2>
+                @if (_model.SelectedSystem is null)
+                {
+                    <p role="status">WindowSystemを選択してください。</p>
+                }
+                else if (_model.Windows.Count == 0)
+                {
+                    <p role="status">管理されているWindowはありません。</p>
+                }
+                else
+                {
+                    <div class="animation-target-list" role="list" aria-label="Window診断対象">
+                        @foreach (string window in _model.Windows)
+                        {
+                            <button type="button" role="listitem" data-window-target="@window" aria-current="@(_model.Selected?.Window == window ? "true" : null)" disabled="@Busy" @onclick="() => SelectWindowAsync(window)">@window</button>
+                        }
+                    </div>
+                }
+            </FluentCard>
+            @if (_model.Selected is { } selected)
+            {
+                <FluentCard Class="card window-details">
+                    <div class="animation-heading"><div><p class="eyebrow">@selected.Kind · @selected.Role</p><h2 id="window-selected">@selected.Window</h2></div><span class="animation-status">@selected.Lifetime</span></div>
+                    <dl class="window-facts">
+                        <div><dt>親</dt><dd>@(selected.Parent.Length == 0 ? "—" : selected.Parent)</dd></div>
+                        <div><dt>提示root</dt><dd>@selected.PresentationRoot</dd></div>
+                        <div><dt>所有権</dt><dd>@selected.Ownership</dd></div>
+                        <div><dt>可視性</dt><dd>@(selected.IsVisible ? "Visible" : "Hidden") / @(selected.IsEffectivelyVisible ? "Effective" : "Suppressed")</dd></div>
+                        <div><dt>Bounds</dt><dd>@Format(selected.X), @Format(selected.Y), @Format(selected.Width) × @Format(selected.Height)</dd></div>
+                        <div><dt>Client</dt><dd>@Format(selected.ClientWidth) × @Format(selected.ClientHeight)</dd></div>
+                        <div><dt>Pixel</dt><dd>@selected.PixelWidth × @selected.PixelHeight</dd></div>
+                        <div><dt>Scale</dt><dd>@Format(selected.ScaleX) × @Format(selected.ScaleY)</dd></div>
+                        <div><dt>Native Window</dt><dd class="window-native">@(selected.NativeWindow.Length == 0 ? "—" : selected.NativeWindow)</dd></div>
+                    </dl>
+                    <div class="animation-transport" aria-label="Window操作">
+                        <button class="primary" type="button" disabled="@Busy" @onclick="ShowAsync">Show</button>
+                        <button type="button" disabled="@Busy" @onclick="HideAsync">Hide</button>
+                        <button type="button" disabled="@Busy" @onclick="ActivateAsync">Activate</button>
+                        <button type="button" disabled="@Busy" @onclick="BringToFrontAsync">Bring to front</button>
+                        <button type="button" disabled="@Busy" @onclick="ReadSelectedAsync">状態を更新</button>
+                        <button class="danger" type="button" disabled="@Busy" @onclick="CloseAsync">Close</button>
+                    </div>
+                </FluentCard>
+            }
+        </div>
+    }
+</section>
