@@ -55,6 +55,6 @@ triangle・fragment・single-sampleの前提と矛盾する定義は生成用資
 共有module/pipeline/samplerはResourceManagerが保持し、2Dの準備batchは借用します。
 フレームごとのargument table、データ、初期化を行うfallback画像は準備batchが所有します。
 
-DIなしではshader・pipeline・samplerのGraphicsResourceRegistration<T>とGraphicsResourceStage<T>、
+DIなしではshader・pipeline・samplerの`GraphicsResourceRegistration<T>`と`GraphicsResourceStage<T>`、
 Renderer2DResourceStageをManagerへ登録し、各出力型へGraphicsResourceRuntimeを割り当てます。
 Resourcesなしの通常描画は従来どおりRenderer2DとCreateDefaultだけで使えます。
