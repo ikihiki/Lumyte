@@ -56,8 +56,8 @@ providerを省略すると `DrawingPrograms2D.DefaultProvider` が埋め込みar
 Resources adapterはResourceSnapshotを一回のPrepareAsync全体で固定し、同じ内容世代を返します。
 デバイスロスト後は旧batchを解放し、新device・復元済みprogramで準備し直します。
 
-Resources連携では初期化時にGraphicsProgramResourceのReferenceを取得し、フレームのResourceSnapshotとhandleを
-ResourceGraphicsProgramProviderへ渡します。取得したResourceLeaseはprepared batchのprogram leaseが保持します。
-記録直前にruntimeの失効を検査します。ロスト後の再構築はGraphicsResourceRuntimeとResourceManagerが担当し、
-新deviceと新しいSnapshotでPrepareAsyncをやり直します。設定・利用例は
-[Resources.Graphics](../Lumyte.Resources.Graphics/README.md#外部プログラムproviderとの接続) を参照してください。
+Resources連携は`Lumyte.Resources.Graphics.Drawing2D`を使います。
+`AddGraphics2D()`で登録し、`using var resource = await manager.AcquireRenderer2DAsync();`
+から`resource.CreateRenderer(commandRenderers)`で生成します。
+シェーダーは`UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`で起動時に設定し、省略時は埋め込み版を使います。
+Effectも同じ登録APIです。作成済みレンダラーは世代を固定し、HotReload後は同じReferenceから新しく生成します。

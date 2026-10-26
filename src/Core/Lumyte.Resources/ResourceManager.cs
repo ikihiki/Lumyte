@@ -216,6 +216,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         ResourceNode node = GetNode(key);
         RefreshRuntimes();
         ResourceLoad load;
+        ResourceReference<T> reference;
         bool start = false;
         lock (_gate)
         {
@@ -242,6 +243,10 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
             load.Waiters++;
             _operations++;
+
+            // Own the logical slot while waiting so publication changes transfer residency
+            // to the replacement generation before this caller resumes.
+            reference = CreateReference<T>(node);
         }
 
         if (start)
@@ -258,8 +263,13 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
                 cancellationToken.ThrowIfCancellationRequested();
                 EnsureRunning();
                 ThrowIfUnavailable(generation);
-                return CreateReference<T>(node);
+                return reference;
             }
+        }
+        catch
+        {
+            reference.Dispose();
+            throw;
         }
         finally
         {

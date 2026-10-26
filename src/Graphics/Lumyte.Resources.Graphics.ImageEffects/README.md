@@ -44,9 +44,9 @@ GPUのsubmit・完了確認と入力画像のstate/scopeは利用側が指定し
 アプリのSourceで読む二つのartifactキーを、登録時に一度指定します。ResourceManagerへのシェーダ一式の取得や描画コードは既定の場合と同じです。
 
 ```csharp
-services.AddSingleton(new ImageEffectShaderPackage(
+services.UseGraphicsShaders<ImageEffectShaderResource>(
     new ResourceKey<ShaderArtifact>("shaders/fullscreen.lshader"),
-    new ResourceKey<ShaderArtifact>("shaders/custom-effects.lshader")));
+    new ResourceKey<ShaderArtifact>("shaders/custom-effects.lshader"));
 services.AddResources(resources => resources
     .UseSource<AppSource>()
     .AddSourcePipeline<ShaderArtifact, ShaderArtifactStage>()
@@ -61,4 +61,6 @@ appendはI/Oや全リソースSnapshotの取得を行いません。他のtextur
 
 ## DIを使わない場合
 
-Managerのstagesに`new ImageEffectArtifactStage()`と`new ImageEffectShaderStage()`を加え、`stageRuntimes`に`new ResourceStageRuntime(typeof(ImageEffectShaderResource), graphicsRuntime)`を指定します。カスタム時は`new ImageEffectArtifactStage(package)`へ同じ設定を渡し、artifactを作るStageも登録します。Source、memory、deviceとExecutionの起動・終了はアプリが管理します。
+Managerのstagesに`new ImageEffectArtifactStage()`と`new ImageEffectShaderStage()`を加え、`stageRuntimes`に`new ResourceStageRuntime(typeof(ImageEffectShaderResource), graphicsRuntime)`を指定します。カスタム時は`new ImageEffectArtifactStage(package)`へ`new GraphicsShaderPackage<ImageEffectShaderResource>(vertex, fragment)`を渡し、artifactを作るStageも登録します。Source、memory、deviceとExecutionの起動・終了はアプリが管理します。
+
+2Dも同じ`UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`で入力を登録します。設定の型がABIを区別し、同じ型への登録はDIのあと勝ちで上書きできます。Effectの追加APIや描画時の引数にシェーダ指定は持ち込みません。

@@ -11,6 +11,7 @@ internal sealed class WebAudioVoice : IAudioVoice
     private readonly JSObject _handle;
     private AudioPlaybackState _state;
     private AudioPlaybackState _requested;
+    private long _framePosition;
     private float _gain = 1;
     private bool _loop;
     private bool _disposed;
@@ -25,8 +26,11 @@ internal sealed class WebAudioVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _state;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _state;
+            }
         }
     }
 
@@ -34,16 +38,35 @@ internal sealed class WebAudioVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _gain;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _gain;
+            }
         }
 
         set
         {
             Validate();
             AudioValidation.Gain(value);
-            _gain = value;
+            lock (this)
+            {
+                _gain = value;
+            }
+
             ApplyGain();
+        }
+    }
+
+    public long FramePosition
+    {
+        get
+        {
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _framePosition;
+            }
         }
     }
 
@@ -51,15 +74,21 @@ internal sealed class WebAudioVoice : IAudioVoice
     {
         get
         {
-            Validate();
-            return _loop;
+            lock (this)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _loop;
+            }
         }
 
         set
         {
             Validate();
             WebAudioInterop.SetLoop(_handle, value);
-            _loop = value;
+            lock (this)
+            {
+                _loop = value;
+            }
         }
     }
 
@@ -74,6 +103,7 @@ internal sealed class WebAudioVoice : IAudioVoice
 
         WebAudioInterop.Play(_handle);
         _requested = AudioPlaybackState.Playing;
+        Observe();
     }
 
     public void Pause()
@@ -96,6 +126,38 @@ internal sealed class WebAudioVoice : IAudioVoice
         _requested = AudioPlaybackState.Stopped;
     }
 
+    public void Seek(long framePosition)
+    {
+        Validate();
+        if (framePosition < 0 || framePosition > _clip.FrameCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(framePosition));
+        }
+
+        Observe();
+        try
+        {
+            WebAudioInterop.Seek(_handle, checked((int)framePosition));
+        }
+        catch (JSException)
+        {
+            // A replacement can fail after the old one-shot source has stopped.
+            if (_requested == AudioPlaybackState.Playing && !WebAudioInterop.Playing(_handle))
+            {
+                _requested = AudioPlaybackState.Stopped;
+            }
+
+            throw;
+        }
+
+        if (_requested == AudioPlaybackState.Completed && (framePosition < _clip.FrameCount || _loop))
+        {
+            _requested = AudioPlaybackState.Stopped;
+        }
+
+        Observe();
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -103,10 +165,14 @@ internal sealed class WebAudioVoice : IAudioVoice
             return;
         }
 
-        Validate();
+        _device.Validate(false);
         WebAudioInterop.DestroyVoice(_handle);
         _handle.Dispose();
-        _disposed = true;
+        lock (this)
+        {
+            _disposed = true;
+        }
+
         _clip.References--;
         _device.Remove(this);
     }
@@ -114,7 +180,12 @@ internal sealed class WebAudioVoice : IAudioVoice
     internal void Refresh()
     {
         Observe();
-        _state = _requested;
+        long framePosition = WebAudioInterop.FramePosition(_handle);
+        lock (this)
+        {
+            _state = _requested;
+            _framePosition = framePosition;
+        }
     }
 
     internal void ApplyGain()

@@ -272,6 +272,8 @@ ActionState effective = actions.GetState(game, jump);
 +        void SourceShutdown(InputSystem system, IInputSource source);
 +        void Registered(InputSystem system, InputDeviceId device,
 +            InputDeviceDescriptor descriptor);
++        IReadOnlyList<InputData> Process(InputSystem system, InputDeviceId device,
++            IReadOnlyList<InputData> data, TimeSpan now);
 +        void DeviceUpdated(InputSystem system, InputDeviceId device,
 +            InputDeviceState state, ulong latestSequence);
 +        void Unregistered(InputSystem system, InputDeviceId device);
@@ -314,6 +316,8 @@ ActionState effective = actions.GetState(game, jump);
 +        public void SourceShutdown(InputSystem system, IInputSource source);
 +        public void Registered(InputSystem system, InputDeviceId device,
 +            InputDeviceDescriptor descriptor);
++        public IReadOnlyList<InputData> Process(InputSystem system, InputDeviceId device,
++            IReadOnlyList<InputData> data, TimeSpan now);
 +        public void DeviceUpdated(InputSystem system, InputDeviceId device,
 +            InputDeviceState state, ulong latestSequence);
 +        public void Unregistered(InputSystem system, InputDeviceId device);
@@ -339,13 +343,21 @@ ActionState effective = actions.GetState(game, jump);
 +}
 ```
 
-以下のうちAction段階のオーバーライド・Tape・ライブ入力APIを実装した。Action補正後、ActionValueKindの正規化と認識より前に値を適用する。TargetはActionProfile世代に結び付き、同一Targetの直接Override・Tape・Liveは排他的に確保する。直接Overrideは論理入力時間、Tapeは`BeginFrame`で通知されるframe番号、Liveは単調増加するbatch sequenceで進行する。profile変更、ActionSystem破棄、診断session切断で確実に解除する。
+以下のAction段階とDevice段階のオーバーライド・Tape・ライブ入力APIを実装した。Actionは補正後、ActionValueKindの正規化と認識より前に値を適用する。DeviceはDrainEvents後、状態・履歴・Recorded通知より前に値を適用するため、ポーリング、履歴、イベント、Action mappingが同じ有効値を見る。Device Targetは接続世代、Action TargetはActionProfile世代に結び付き、同一Targetの直接Override・Tape・Liveは排他的に確保する。直接Overrideは論理入力時間、Tapeは`BeginFrame`で通知されるframe番号、Liveは単調増加するbatch sequenceで進行する。Device切断、profile変更、System破棄、診断session切断で確実に解除する。
 
-Device入力の差し替え、補正前の観測ページ、`InputInspectionInput`による予約入力は引き続き提案であり、この実装では公開しない。Actionマッピング編集は設定保存・Revision確定を含む別PRとする。
+Device段階は既存`InputControl`で表現できるKey、MouseButton、ControllerButton、ControllerStick、ControllerTriggerに加え、MouseMove、MouseWheel、観測中のTouch/Penの位置・筆圧を対象とする。Pointer終了・Focus喪失・Device切断で動的Targetを失効させる。Actionマッピング編集は既存設定診断の`settings.input-actions`をActions画面へ統合し、`read-tree`、`save-tree`、`save-result`による検証・Revision競合・永続化を再利用する。補正前後を分けた観測ストリームと`InputInspectionInput`による未来予約だけは引き続き提案である。
 
 今回実装した公開API差分は次のとおりである。
 
 ```diff
+ namespace Lumyte.Input
+ {
+     public interface IInputInspection
+     {
++        IReadOnlyList<InputData> Process(InputSystem system, InputDeviceId device,
++            IReadOnlyList<InputData> data, TimeSpan now);
+     }
+ }
  namespace Lumyte.Input.Actions
  {
      public interface IActionInspection
@@ -404,15 +416,28 @@ Device入力の差し替え、補正前の観測ページ、`InputInspectionInpu
 +    public sealed partial class InputInspectionSession : IInputOverrideService,
 +        IInputTapeService, IInputLiveService
 +    {
++        public InputOverrideTarget GetDeviceTarget(InputSystem system,
++            InputDeviceId device, InputControl control);
++        public InputOverrideTarget GetMouseTarget(InputSystem system,
++            InputDeviceId device, bool wheel = false);
++        public InputOverrideTarget GetTouchTarget(InputSystem system,
++            InputDeviceId device, TouchContactId contact, bool pressure = false);
++        public InputOverrideTarget GetPenTarget(InputSystem system,
++            InputDeviceId device, PenPointerId pointer, bool pressure = false);
 +        public InputOverrideTarget GetActionTarget(ActionSystem system,
 +            string contextId, string actionId);
 +        public void BeginFrame(long frame);
 +        public void NotifySessionClosed(Guid sessionId);
 +    }
++    public static class InputInspectionServiceCollectionExtensions
++    {
++        public static IServiceCollection AddInputActionSettingsDiagnostics<TPoint>(
++            this IServiceCollection services) where TPoint : class;
++    }
 +}
 ```
 
-以下のdiffはDevice段階や観測ページまで含む当初の全体設計案であり、今回未実装のAPIを含む。
+以下のdiffは観測ストリーム、未来予約などを含む当初の全体設計案であり、今回未実装のAPIを含む。
 
 ```diff
 +namespace Lumyte.Input.Inspection
