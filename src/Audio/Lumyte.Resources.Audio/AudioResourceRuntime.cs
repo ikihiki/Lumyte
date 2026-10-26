@@ -53,6 +53,21 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
         }
     }
 
+    /// <summary>Acquires and records the current device generation for this build.</summary>
+    /// <param name="context">The build using this selected runtime.</param>
+    /// <param name="lifetime">Whether the device is retained for construction or for the completed output.</param>
+    /// <param name="cancellationToken">Cancels before acquisition executes.</param>
+    /// <returns>A borrowed lease returned by the manager after the corresponding native cleanup.</returns>
+    public ValueTask<AudioDeviceLease> AcquireAsync(ResourceBuildContext context, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default)
+    {
+        if (!ReferenceEquals(context.Runtime, this))
+        {
+            throw new InvalidOperationException("Use the audio runtime selected for this stage.");
+        }
+
+        return context.UseAudioAsync(_audio.Devices, Id, lifetime, cancellationToken);
+    }
+
     /// <summary>Creates a fully initialized clip on the audio owner.</summary>
     /// <param name="data">The PCM whose storage remains alive until completion.</param>
     /// <param name="context">The construction recording this runtime version.</param>
@@ -60,7 +75,7 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <returns>A sender wrapping the fully created backend clip, never a placeholder.</returns>
     public async ValueTask<AudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = await _audio.State.CreateClipWithLease(data.Format, data.Samples, cancellationToken);
+        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = await _audio.Commands.CreateClipWithLease(data.Format, data.Samples, cancellationToken);
         var pending = new PendingCreation(lease, clip);
         try
         {

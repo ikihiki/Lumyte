@@ -106,6 +106,7 @@ internal static class Program
             if (!native)
             {
                 CreationScenario.Run(audio, runtime, bridge, factory, Wait);
+                ApiScenario.Run(audio, runtime, bridge, factory, Wait);
             }
 
             VoiceScenario.Run(audio, manager, source, host, args.Contains("--reload", StringComparer.Ordinal), Wait);
@@ -145,7 +146,7 @@ internal static class Program
             }
 
             Wait(execution.StopAsync().AsTask());
-            Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}, owner={audio.State.OwnerThreadId}");
+            Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}, owner={audio.Commands.OwnerThreadId}");
         }
         finally
         {

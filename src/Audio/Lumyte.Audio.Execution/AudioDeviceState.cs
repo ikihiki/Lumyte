@@ -84,6 +84,23 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     public ValueTask<int> RetireAsync(CancellationToken cancellationToken = default)
         => new AudioDevice(this).Retire(cancellationToken);
 
+    internal AudioDeviceSnapshot? BeginRecoveryIfNeeded()
+    {
+        VerifyOwner();
+        PollAvailability();
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_closing, this);
+            if (_state.Status == AudioDeviceServiceStatus.Ready)
+            {
+                return _state;
+            }
+        }
+
+        BeginCreate(true);
+        return null;
+    }
+
     internal Task<IAudioDevice> BeginCreate(bool recovery)
     {
         VerifyOwner(recovery);
@@ -436,7 +453,13 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
         try
         {
             var sender = new AudioDevice(this);
-            await sender.BeginRecovery().ConfigureAwait(false);
+            AudioDeviceSnapshot? current = await sender.BeginRecoveryIfNeeded().ConfigureAwait(false);
+            if (current is { } available)
+            {
+                completion.SetResult(available);
+                return;
+            }
+
             Task<IAudioDevice> pending = PendingCreation ?? throw new InvalidOperationException("Audio creation is not pending.");
             try
             {

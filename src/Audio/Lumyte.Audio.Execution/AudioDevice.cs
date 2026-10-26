@@ -29,6 +29,9 @@ public readonly partial struct AudioDevice
     private void BeginRecoveryCore() => _original.BeginCreate(true);
 
     [ExecutionCommand]
+    private AudioDeviceSnapshot? BeginRecoveryIfNeededCore() => _original.BeginRecoveryIfNeeded();
+
+    [ExecutionCommand]
     private AudioDeviceSnapshot CompleteCreateCore() => _original.CompleteCreate();
 
     [ExecutionCommand]

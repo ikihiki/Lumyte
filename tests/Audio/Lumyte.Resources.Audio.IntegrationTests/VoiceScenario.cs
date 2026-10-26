@@ -20,7 +20,7 @@ internal static class VoiceScenario
                 wait(first.SetLoop(true).AsTask());
                 wait(first.SetGain(0.25f).AsTask());
                 wait(first.Play().AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(audio.Commands.Refresh().AsTask());
                 Require(
                     first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
                     "Voices created from one cached clip did not have independent playback state.");
@@ -28,11 +28,11 @@ internal static class VoiceScenario
                     first.Loop && !second.Loop && first.Gain == 0.25f && second.Gain == 1,
                     "Voices created from one cached clip shared control state.");
                 Require(
-                    (audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) == host,
+                    (audio.Commands.OwnerThreadId == Environment.CurrentManagedThreadId) == host,
                     "Audio execution ownership is incorrect.");
                 wait(second.Play().AsTask());
                 wait(second.Stop().AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(audio.Commands.Refresh().AsTask());
                 Require(
                     first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
                     "Controlling one voice affected another voice from the same clip.");

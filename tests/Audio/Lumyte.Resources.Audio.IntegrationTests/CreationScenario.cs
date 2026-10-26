@@ -13,8 +13,8 @@ internal static class CreationScenario
         var format = new AudioFormat(48000, 1);
         ReadOnlyMemory<float> samples = new float[48];
         device.FailNextClipCreation();
-        ExpectCreationFailure(() => wait(audio.State.CreateClipWithLease(format, samples).AsTask()));
-        Task<(AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError)> create = audio.State.CreateClipWithLease(format, samples).AsTask();
+        ExpectCreationFailure(() => wait(audio.Commands.CreateClipWithLease(format, samples).AsTask()));
+        Task<(AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError)> create = audio.Commands.CreateClipWithLease(format, samples).AsTask();
         wait(create);
         (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = create.GetAwaiter().GetResult();
         try
@@ -60,7 +60,7 @@ internal static class CreationScenario
 
             Require(device.CreatedClips == created + 1 && device.ReturnedClips == returned, "Failed native cleanup lost the unpublished clip.");
             device.SetOutput(AudioOutputState.Unavailable);
-            wait(audio.State.Refresh().AsTask());
+            wait(audio.Commands.Refresh().AsTask());
             wait(audio.Devices.RecoverAsync().AsTask());
             Task<int> retained = audio.Devices.RetireAsync().AsTask();
             wait(retained);

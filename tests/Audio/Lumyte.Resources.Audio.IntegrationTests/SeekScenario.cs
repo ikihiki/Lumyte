@@ -34,7 +34,7 @@ internal static class SeekScenario
 
                 wait(first.Play().AsTask());
                 wait(first.Seek(half).AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(audio.Commands.Refresh().AsTask());
                 Require(first.State == AudioPlaybackState.Playing, "Seeking stopped a playing voice.");
                 wait(first.Pause().AsTask());
                 wait(first.Seek(quarter).AsTask());
@@ -67,7 +67,7 @@ internal static class SeekScenario
 
                 wait(first.SetLoop(true).AsTask());
                 wait(first.Play().AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(audio.Commands.Refresh().AsTask());
                 Require(first.State == AudioPlaybackState.Playing && first.FramePosition < clip.FrameCount, "Completed playback did not restart from the beginning.");
                 wait(first.SetLoop(false).AsTask());
                 wait(first.Seek(clip.FrameCount).AsTask());
@@ -91,7 +91,7 @@ internal static class SeekScenario
 
     private static void At(AudioModule audio, AudioVoice voice, AudioPlaybackState state, long position, Action<Task> wait)
     {
-        wait(audio.State.Refresh().AsTask());
+        wait(audio.Commands.Refresh().AsTask());
         Require(voice.State == state && voice.FramePosition == position, $"Expected {state} at frame {position}; observed {voice.State} at frame {voice.FramePosition}.");
     }
 

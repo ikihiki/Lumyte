@@ -33,10 +33,10 @@ internal static partial class Program
                 pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
             }
 
-            var clip = new AudioClip(await _audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
+            var clip = new AudioClip(await _audio.Commands.CreateClip(new AudioFormat(48000, 1), pcm));
             AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
             await voice.Seek(1200);
-            await _audio.State.Refresh();
+            await _audio.Commands.Refresh();
             if (voice.State != AudioPlaybackState.Stopped || voice.FramePosition != 1200)
             {
                 throw new InvalidOperationException("Seeking the stopped Browser voice changed playback or lost its frame position.");
@@ -45,7 +45,7 @@ internal static partial class Program
             await voice.Play();
             await voice.Pause();
             await voice.Seek(2400);
-            await _audio.State.Refresh();
+            await _audio.Commands.Refresh();
             if (voice.State != AudioPlaybackState.Paused || voice.FramePosition != 2400)
             {
                 throw new InvalidOperationException("Seeking the paused Browser voice changed playback or lost its frame position.");
@@ -53,7 +53,7 @@ internal static partial class Program
 
             await voice.SetLoop(true);
             await voice.Seek(pcm.Length);
-            await _audio.State.Refresh();
+            await _audio.Commands.Refresh();
             if (voice.State != AudioPlaybackState.Paused || voice.FramePosition != 0)
             {
                 throw new InvalidOperationException("Seeking the looping Browser voice to its end did not wrap to frame zero.");
@@ -61,7 +61,7 @@ internal static partial class Program
 
             await voice.Play();
             await voice.Stop();
-            await _audio.State.Refresh();
+            await _audio.Commands.Refresh();
             if (voice.State != AudioPlaybackState.Stopped || voice.FramePosition != 0)
             {
                 throw new InvalidOperationException("Stopping the Browser voice did not reset its frame position.");

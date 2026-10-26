@@ -25,7 +25,10 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     public string Name => "Audio";
 
     /// <summary>Gets the generated command declarations and owner diagnostics.</summary>
-    public AudioDevice State => _state;
+    public AudioDevice Commands => _state;
+
+    /// <summary>Gets the command sender retained for compatibility. Use <see cref="Commands"/> for operations and <see cref="Devices"/> for service state.</summary>
+    public AudioDevice State => Commands;
 
     /// <summary>Gets the stable service managing replaceable audio generations.</summary>
     public IAudioDeviceService Devices => _state.Devices;
@@ -43,6 +46,7 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
         _initialize = AudioDevice.DeclareCompleteCreate(builder, Options(WorkAdmission.Cleanup));
         _beginClose = AudioDevice.DeclareBeginClose(builder, Options(WorkAdmission.Cleanup));
         AudioDevice.DeclareBeginRecovery(builder, Options(WorkAdmission.Normal));
+        AudioDevice.DeclareBeginRecoveryIfNeeded(builder, Options(WorkAdmission.Normal));
         AudioDevice.DeclareAcquireLease(builder, Options(WorkAdmission.Normal));
         AudioDevice.DeclareRetire(builder, Options(WorkAdmission.Cleanup));
         AudioDevice.DeclareCreateClipForLease(builder, Options(WorkAdmission.Normal));

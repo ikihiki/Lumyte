@@ -60,7 +60,7 @@ internal static class Program
         try
         {
             Wait(runtime.StartAsync().AsTask());
-            if ((audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) != host)
+            if ((audio.Commands.OwnerThreadId == Environment.CurrentManagedThreadId) != host)
             {
                 throw new InvalidOperationException("The audio owner placement is incorrect.");
             }
@@ -73,7 +73,7 @@ internal static class Program
                     pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
                 }
 
-                var clip = new AudioClip(await audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
+                var clip = new AudioClip(await audio.Commands.CreateClip(new AudioFormat(48000, 1), pcm));
                 AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
                 try
                 {
@@ -86,7 +86,7 @@ internal static class Program
 
                 await voice.Play();
                 await voice.Pause();
-                await audio.State.Refresh();
+                await audio.Commands.Refresh();
                 if (voice.State != AudioPlaybackState.Paused)
                 {
                     throw new InvalidOperationException("Real backend is not paused.");
@@ -95,7 +95,7 @@ internal static class Program
                 await voice.SetGain(0.5f);
                 await voice.SetLoop(true);
                 await voice.Play();
-                await audio.State.Refresh();
+                await audio.Commands.Refresh();
                 if (voice.State != AudioPlaybackState.Playing)
                 {
                     throw new InvalidOperationException("Real backend is not playing.");
@@ -119,7 +119,7 @@ internal static class Program
                 }
 
                 await voice.Stop();
-                await audio.State.Refresh();
+                await audio.Commands.Refresh();
                 if (voice.State != AudioPlaybackState.Stopped)
                 {
                     throw new InvalidOperationException("Real backend is not stopped.");
