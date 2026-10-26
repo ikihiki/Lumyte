@@ -162,3 +162,60 @@ plan.Record(commands);
 カスタムの場合だけ`ImageEffectShaderPackage`をDIへ登録し、二つのartifactキーを指定します。組を一つの世代として取得するため、通常のappendでSnapshotは不要です。HotReload後に既存のpipelineをその場で差し替えず、次のplanで新しいシェーダ一式を利用します。
 
 低水準のartifact／GPU module取得と`ImageEffectShaders`への受け渡しも利用できます。その場合は取得元の寿命をGraphへ保持させてから固定GPU資源を準備します。直接Graphに追加するEffectsと2Dの部分ビューは同じImageEffectsGraphContextを使用します。
+
+## 外部プログラムproviderとの接続
+
+`AddGraphicsPrograms()`は、CPU artifactの組と、その組から生成するdevice世代付きpipelineを登録します。
+GPU出力は同じ論理キーとdevice epochごとに共有されます。入力のartifact pipelineは別に登録します。
+
+```csharp
+var programKey = new ResourceKey<GraphicsProgramResource>("programs/drawing2d");
+services.AddSingleton(new GraphicsProgramPackages(
+    new Dictionary<ResourceKey<GraphicsProgramResource>, GraphicsProgramPackage>
+    {
+        [programKey] = new(
+            new ResourceKey<ShaderArtifact>("shaders/drawing-vertex.lshader"),
+            new ResourceKey<ShaderArtifact>("shaders/drawing-fragment.lshader")),
+    }));
+services.AddResources(resources => resources.UseSource<AppSource>()
+    .AddShaderPipeline().AddGraphicsPrograms());
+services.AddResourceGraphics();
+```
+
+device serviceとExecutionの起動後に、アプリの初期化・非同期ロード経路でReferenceを取得します。
+shaderファイルは、利用する描画ライブラリが要求するABIでコンパイルした`.lshader`です。
+FileSystem・DLL埋め込みSourceのどちらでも同じ入力キーを使用できます。
+
+```csharp
+using ResourceReference<GraphicsProgramResource> reference =
+    await manager.AcquireAsync(programKey);
+
+// フレームごとの準備。SnapshotはPrepareAsync完了まで借用する。
+using ResourceSnapshot snapshot = manager.CaptureSnapshot();
+var programs = new ResourceGraphicsProgramProvider(snapshot,
+    new Dictionary<string, ResourceHandle<GraphicsProgramResource>>
+    {
+        [DrawingPrograms2D.ProgramId] = reference.Handle,
+    });
+using var renderer = new Renderer2D(device, commandRenderers, programs);
+using PreparedDraw2D prepared = await renderer.PrepareAsync(drawList, target);
+snapshot.Dispose();
+// Record/Submit/GPU完了とcommand解放の後にpreparedを解放する。
+```
+
+上の描画例はDrawing2Dを参照するアプリで使用します。Resources.Graphics自体はDrawing2Dへ依存しません。
+Snapshotとhandleの対応表を準備単位で固定し、AcquireはI/O・build・復旧待機を行いません。
+取得したprogram leaseはResourceLeaseを保持し、Snapshot返却後も同じpipelineとartifactを使用します。
+返却はResourceLeaseを返すだけです。Native子資源の破棄は、後のManagerのTrim/Disposeが元のGraphics Runtimeから実行します。
+unknown ABI、未ロード・失効したhandle、異なるphysical deviceは拒否し、埋め込みへfallbackしません。
+
+入力のHotReloadはCPU pairとGPU programの逆依存を再構築し、一括公開します。構築に失敗すると旧公開世代を維持します。
+新しいSnapshotは更新後を、既存のSnapshotと発行済みleaseは元の世代を保持します。
+ロストしたruntimeのleaseは使用時に拒否されます。ホストは使用停止・退役確認・旧prepared owner解放を行い、
+device復旧後に`manager.RebuildRuntimeAsync([graphicsRuntime.Id])`を呼びます。
+CPU artifactは再利用し、同じReference/Handleから新deviceのprogramを取得できます。
+旧pipelineの解放に失敗した場合はshaderとepochの所有を保ち、Trim/Disposeで再試行します。
+
+DIを使わない場合は`GraphicsProgramArtifactStage(packages)`と`GraphicsProgramStage`をManagerのstagesへ渡し、
+`ResourceStageRuntime(typeof(GraphicsProgramResource), graphicsRuntime)`を指定します。
+画像エフェクトの接続には既存の`AddImageEffects(manager)`を使い、2D用providerとは別に親graphへ登録します。

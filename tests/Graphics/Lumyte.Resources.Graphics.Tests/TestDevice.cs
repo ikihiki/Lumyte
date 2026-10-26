@@ -43,6 +43,8 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     internal int CreateShaderFailOnCall { get; set; }
 
+    internal List<TestProgramPipeline> Programs { get; } = [];
+
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged => throw new NotSupportedException();
 
@@ -73,7 +75,12 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw new NotSupportedException();
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        var program = new TestProgramPipeline(desc);
+        Programs.Add(program);
+        return program;
+    }
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
