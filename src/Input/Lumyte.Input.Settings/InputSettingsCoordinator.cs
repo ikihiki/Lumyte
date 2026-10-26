@@ -26,7 +26,12 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
     private long _processingRevision = -1;
     private long _actionRevision = -1;
 
+    /// <summary>Reads committed revisions and queues changes before the next InputSystem.Update and ActionSystem.Advance.</summary>
+    /// <remarks>Call on the input owning thread. This method does not advance either system.</remarks>
+    public void QueueCommittedSettings() => ApplyCommittedSettings();
+
     /// <summary>Schedules changed committed settings on the input owning thread.</summary>
+    /// <remarks>Equivalent to QueueCommittedSettings; changes are observed after the subsequent input and action updates.</remarks>
     public void ApplyCommittedSettings()
     {
         if (Environment.CurrentManagedThreadId != _thread)

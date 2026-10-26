@@ -53,6 +53,9 @@ test("canvas attachment retains its existing WebGPU context and prevents duplica
     assert.throws(() => api.attach(canvas, "duplicate", 1, 1, false));
     api.show(handle, true);
     assert.equal(api.snapshot(handle)[5], 1);
+    assert.equal(document.activeElement, canvas);
+    assert.equal(api.snapshot(handle)[6], 1);
+    assert.deepEqual(JSON.parse(api.drainInput(handle)), [{ type: 4, down: true }]);
     assert.equal(api.activate(handle), true);
     api.resize(handle, 100, 50);
     assert.deepEqual(api.snapshot(handle).slice(0, 4), [100, 50, 200, 100]);

@@ -34,7 +34,12 @@ public sealed class CorrectingInputSource(IInputSource inner, Func<InputDeviceDe
     {
     }
 
-    /// <summary>Prepares and schedules per-device pipelines for the next update.</summary>
+    /// <summary>Queues replacement pipelines at the next device acquisition boundary after retained batches complete.</summary>
+    /// <param name="factory">Creates the replacement processors; preparation completes before queuing.</param>
+    /// <remarks>The new factory also applies to subsequently registered devices.</remarks>
+    public void QueueProcessorFactory(Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory) => SetProcessorFactory(factory);
+
+    /// <summary>Prepares and schedules per-device pipelines at the next acquisition boundary after retained batches complete.</summary>
     /// <param name = "factory">The factory value.</param>
     public void SetProcessorFactory(Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory)
     {

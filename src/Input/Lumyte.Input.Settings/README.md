@@ -9,8 +9,9 @@ independent revisions, validated writable DTOs and source-generated JSON metadat
 Enum tokens are persisted by name. Runtime device IDs, held controls, active
 contexts, recognizer state and buffered operations are excluded.
 
-`InputSettingsCoordinator.ApplyCommittedSettings` polls revisions on the input
+`InputSettingsCoordinator.QueueCommittedSettings` polls revisions on the input
 thread and queues replacements before InputSystem.Update/ActionSystem.Advance.
+`ApplyCommittedSettings` remains an equivalent name; neither method advances the systems.
 `SaveRebindAsync` persists a frozen candidate without calling Confirm. Only a
 successful committed revision is applied on the next tick. Failure leaves the
 live profile unchanged. Preserve and display SettingsSaveResult diagnostics.

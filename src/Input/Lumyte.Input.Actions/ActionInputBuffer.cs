@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Input.Abstractions;
 
 namespace Lumyte.Input.Actions;
@@ -52,7 +53,7 @@ public sealed class ActionInputBuffer
     /// <param name = "now">The now value.</param>
     /// <param name = "action">The action value.</param>
     /// <returns>The result of the operation.</returns>
-    public bool TryConsume(string recognitionId, TimeSpan now, out RecognizedAction? action)
+    public bool TryConsume(string recognitionId, TimeSpan now, [NotNullWhen(true)] out RecognizedAction? action)
     {
         Prune(now);
         int index = 0;
@@ -77,7 +78,7 @@ public sealed class ActionInputBuffer
     /// <param name="now">The monotonic consumption time.</param>
     /// <param name="action">The consumed operation, or null when absent.</param>
     /// <returns>Whether a matching operation was consumed.</returns>
-    public bool TryConsume(string contextId, string recognitionId, TimeSpan now, out RecognizedAction? action)
+    public bool TryConsume(string contextId, string recognitionId, TimeSpan now, [NotNullWhen(true)] out RecognizedAction? action)
     {
         Prune(now);
         int index = 0;
@@ -101,7 +102,7 @@ public sealed class ActionInputBuffer
     /// <param name="now">The monotonic consumption time.</param>
     /// <param name="action">The consumed operation, or null when absent.</param>
     /// <returns>Whether an operation was consumed.</returns>
-    public bool TryConsume(Compose.Definitions.Recognition recognition, TimeSpan now, out RecognizedAction? action)
+    public bool TryConsume(Compose.Definitions.Recognition recognition, TimeSpan now, [NotNullWhen(true)] out RecognizedAction? action)
     {
         ArgumentNullException.ThrowIfNull(recognition);
         return TryConsume(recognition.Identifier, now, out action);
@@ -113,7 +114,7 @@ public sealed class ActionInputBuffer
     /// <param name="now">The monotonic consumption time.</param>
     /// <param name="action">The consumed operation, or null when absent.</param>
     /// <returns>Whether a context-scoped operation was consumed.</returns>
-    public bool TryConsume(Compose.Definitions.Context context, Compose.Definitions.Recognition recognition, TimeSpan now, out RecognizedAction? action)
+    public bool TryConsume(Compose.Definitions.Context context, Compose.Definitions.Recognition recognition, TimeSpan now, [NotNullWhen(true)] out RecognizedAction? action)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(recognition);

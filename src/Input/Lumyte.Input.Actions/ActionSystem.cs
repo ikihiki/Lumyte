@@ -81,6 +81,56 @@ public sealed class ActionSystem : IDisposable
     /// <summary>Gets buffer.</summary>
     public ActionInputBuffer Buffer { get; private set; }
 
+    /// <summary>Queues a fresh operation buffer for the next Advance; Buffer remains unchanged until then.</summary>
+    /// <param name="options">The replacement buffer policy, validated before queuing.</param>
+    public void QueueBufferOptions(InputBufferOptions options) => SetBufferOptions(options);
+
+    /// <summary>Queues a validated profile for the next Advance; ExportProfile returns the current profile until then.</summary>
+    /// <param name="profile">The replacement immutable profile.</param>
+    public void QueueProfile(ActionProfile profile) => ApplyProfile(profile);
+
+    /// <summary>Queues action processors for the next Advance, retaining the current pipeline until then.</summary>
+    /// <param name="contextId">The context identifier.</param>
+    /// <param name="actionId">The action identifier.</param>
+    /// <param name="processors">The replacement ordered pipeline.</param>
+    public void QueueValueProcessors(string contextId, string actionId, IEnumerable<IActionValueProcessor> processors) => SetValueProcessors(contextId, actionId, processors);
+
+    /// <summary>Queues operation recognizers for the next Advance.</summary>
+    /// <param name="contextId">The context identifier.</param>
+    /// <param name="recognizers">The replacement recognizers.</param>
+    public void QueueRecognizers(string contextId, IEnumerable<IActionRecognizer> recognizers) => SetRecognizers(contextId, recognizers);
+
+    /// <summary>Queues this player's device selection for the next Advance.</summary>
+    /// <param name="devices">The selected device identifiers, copied before queuing.</param>
+    public void QueueDevices(IEnumerable<InputDeviceId> devices) => SetDevices(devices);
+
+    /// <summary>Queues context activation for the next Advance.</summary>
+    /// <param name="contextId">The context identifier.</param>
+    public void QueueContextActivation(string contextId) => ActivateContext(contextId);
+
+    /// <summary>Queues context deactivation and cancellation for the next Advance.</summary>
+    /// <param name="contextId">The context identifier.</param>
+    public void QueueContextDeactivation(string contextId) => DeactivateContext(contextId);
+
+    /// <summary>Queues action processors from composed definitions for the next Advance.</summary>
+    /// <param name="context">The context definition.</param>
+    /// <param name="action">The action definition.</param>
+    /// <param name="processors">The replacement ordered pipeline.</param>
+    public void QueueValueProcessors(Compose.Definitions.Context context, Compose.Definitions.Action action, IEnumerable<IActionValueProcessor> processors) => SetValueProcessors(context, action, processors);
+
+    /// <summary>Queues recognizers from a composed context for the next Advance.</summary>
+    /// <param name="context">The context definition.</param>
+    /// <param name="recognizers">The replacement recognizers.</param>
+    public void QueueRecognizers(Compose.Definitions.Context context, IEnumerable<IActionRecognizer> recognizers) => SetRecognizers(context, recognizers);
+
+    /// <summary>Queues activation of a composed context for the next Advance.</summary>
+    /// <param name="context">The context definition.</param>
+    public void QueueContextActivation(Compose.Definitions.Context context) => ActivateContext(context);
+
+    /// <summary>Queues deactivation of a composed context for the next Advance.</summary>
+    /// <param name="context">The context definition.</param>
+    public void QueueContextDeactivation(Compose.Definitions.Context context) => DeactivateContext(context);
+
     /// <summary>Queues a fresh operation buffer for the next advance.</summary>
     /// <param name = "options">The options value.</param>
     public void SetBufferOptions(InputBufferOptions options)
