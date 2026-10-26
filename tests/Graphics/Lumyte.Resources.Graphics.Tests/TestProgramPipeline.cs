@@ -20,7 +20,11 @@ internal sealed class TestProgramPipeline(GraphicsPipelineDesc desc) : IGraphics
         }
 
         Assert.False(Assert.IsType<TestShader>(Desc.VertexShader).Disposed);
-        Assert.False(Assert.IsType<TestShader>(Desc.FragmentShader).Disposed);
+        if (Desc.FragmentShader is { } fragment)
+        {
+            Assert.False(Assert.IsType<TestShader>(fragment).Disposed);
+        }
+
         Disposed = true;
     }
 }

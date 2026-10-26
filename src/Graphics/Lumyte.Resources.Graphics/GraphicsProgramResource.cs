@@ -27,6 +27,27 @@ public sealed class GraphicsProgramResource
     /// <summary>Gets the borrowed program retained by the resource lease.</summary>
     public GraphicsProgramResources Resources => _resources ?? throw new InvalidOperationException("The program is not available.");
 
+    /// <summary>Creates a borrowed drawing-program view; the caller retains the pipeline's resource dependency.</summary>
+    /// <param name="pipeline">The shared pipeline resource with a fragment shader.</param>
+    /// <param name="sampler">The optional shared sampler, retained by the same caller.</param>
+    /// <returns>A nonowning adapter for drawing program leases.</returns>
+    public static GraphicsProgramResource FromPipeline(GraphicsResource<IGraphicsPipeline> pipeline, GraphicsResource<IGraphicsSampler>? sampler = null)
+    {
+        ArgumentNullException.ThrowIfNull(pipeline);
+        if (sampler is not null && !ReferenceEquals(pipeline.Device, sampler.Device))
+        {
+            throw new ArgumentException("The shared sampler belongs to a different device.", nameof(sampler));
+        }
+
+        IGraphicsPipeline native = pipeline.Value;
+        ShaderArtifact fragment = native.Desc.FragmentShader?.Artifact
+            ?? throw new ArgumentException("A drawing program requires a fragment shader.", nameof(pipeline));
+        return new(pipeline.Runtime, pipeline.Device, pipeline.Epoch)
+        {
+            _resources = new(pipeline.Device, native, fragment, sampler?.Value),
+        };
+    }
+
     internal void Create(GraphicsProgramArtifacts artifacts, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

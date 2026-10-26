@@ -20,6 +20,16 @@ public sealed class ImageEffectShaders(ShaderArtifact fullscreen, ShaderArtifact
         EffectsShader = effects;
     }
 
+    /// <summary>Initializes a new instance of the <see cref="ImageEffectShaders"/> class borrowing shared resources.</summary>
+    /// <param name="pipeline">The pipeline implementing the image-effects ABI.</param>
+    /// <param name="sampler">The borrowed nearest-clamp sampler.</param>
+    public ImageEffectShaders(IGraphicsPipeline pipeline, IGraphicsSampler sampler)
+        : this(pipeline.Desc.VertexShader, pipeline.Desc.FragmentShader ?? throw new ArgumentException("Image effects require a fragment shader.", nameof(pipeline)))
+    {
+        Pipeline = pipeline;
+        Sampler = sampler;
+    }
+
     /// <summary>Gets the directly embedded defaults without requiring a resource manager.</summary>
     public static ImageEffectShaders Embedded => _embedded.Value;
 
@@ -28,6 +38,10 @@ public sealed class ImageEffectShaders(ShaderArtifact fullscreen, ShaderArtifact
 
     /// <summary>Gets the effect fragment artifact.</summary>
     public ShaderArtifact Effects { get; } = effects;
+
+    internal IGraphicsPipeline? Pipeline { get; }
+
+    internal IGraphicsSampler? Sampler { get; }
 
     internal IGraphicsShader? FullscreenShader { get; }
 
