@@ -29,6 +29,8 @@ handleのコピーでは所有数を増やさない。ECSにhandleだけを格�
 ### 取得と公開状態のスナップショット
 
 Manager.AcquireAsyncはキーをロードしてReferenceを返す。
+ロード待機中から論理slotを保持し、完了前にHotReloadされた場合も新しい公開世代の常駐を維持する。
+取得の取消・失敗ではその待機者の論理所有を返し、他の待機者と共有構築の寿命を維持する。
 Manager.TryAcquire(handle, out reference)は有効なslotから追加のReferenceを取得する。
 それぞれのReferenceは独立した論理所有者であり、一つの返却で他のReferenceを失効させない。
 

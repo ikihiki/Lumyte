@@ -21,7 +21,7 @@ public enum InputOverrideMode
 /// <param name="ActorId">The authenticated actor.</param>
 public readonly record struct InputOverrideOwner(Guid SessionId, string ActorId);
 
-/// <summary>Opaque handle bound to one action-profile generation.</summary>
+/// <summary>Opaque handle bound to one action-profile generation or device connection.</summary>
 /// <param name="Id">The opaque identifier.</param>
 public readonly record struct InputOverrideTarget(Guid Id);
 
