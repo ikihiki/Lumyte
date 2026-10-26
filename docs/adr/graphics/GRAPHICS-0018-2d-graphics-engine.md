@@ -146,7 +146,7 @@ Resources.Graphics.Drawing2Dの`AddGraphics2D()`で生成用リソースを登�
 program ID・handleの対応表・providerの構築はadapter内部に閉じ込める。Referenceは最新の公開世代を追い、生成済みレンダラーは正確な一世代を保持する。
 複数資源を同じpublicationへ揃える場合だけCreateRendererにResourceSnapshotを渡す。
 
-共有GPU資源はResourceKeyごとのGraphicsResourceDefinition<T>で定義する。
+共有GPU資源はResourceKeyごとの`GraphicsResourceDefinition<T>`で定義する。
 DrawingGraphicsResources2Dの公開キーがshader、pipeline、samplerの既定定義を表し、アプリは同じキーへ登録して上書きできる。
 同じ型の別キーも独立して取得できる。pipelineのcompile設定はGraphicsPipelineDefinition、描画状態は命令renderer側に置く。
 2D用資源はtriangle・fragment・single-sampleの前提を検査し、汎用pipelineはdepth-onlyや別topologyにも利用できる。
