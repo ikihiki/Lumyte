@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.JavaScript;
 using Lumyte.Audio.Abstractions;
 
@@ -12,12 +13,18 @@ internal sealed class WebAudioClip : IAudioClip
         Device = device;
         Format = format;
         FrameCount = samples.Length / format.Channels;
-        Handle = WebAudioInterop.CreateClip(device.Handle, format.SampleRate, format.Channels, System.Runtime.InteropServices.MemoryMarshal.AsBytes(samples).ToArray());
+
+        // The synchronous import only reads the borrowed bytes and copies them into its AudioBuffer.
+        // MemoryView requires a writable Span even though this operation does not modify the input.
+        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(samples);
+        Handle = WebAudioInterop.CreateClip(device.Handle, format.SampleRate, format.Channels, MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(bytes), bytes.Length));
     }
 
     public AudioFormat Format { get; }
 
     public long FrameCount { get; }
+
+    IAudioDevice IAudioClip.Device => Device;
 
     internal WebAudioDevice Device { get; }
 
@@ -32,7 +39,7 @@ internal sealed class WebAudioClip : IAudioClip
             return;
         }
 
-        Validate();
+        Device.Validate(false);
         if (References != 0)
         {
             throw new InvalidOperationException("Clip is borrowed by a live voice.");

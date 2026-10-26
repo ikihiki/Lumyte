@@ -68,6 +68,60 @@ try:
             const mutedAtCreation = await renderMuted(0, false);
             const mutedBeforePlay = await renderMuted(1, true);
 
+            // Verify actual PCM after seeking, including clips with a different sample rate.
+            async function renderSeek(mode, sampleRate) {
+                const context = new OfflineAudioContext(1, 8192, 48000);
+                const clip = context.createBuffer(1, 20000, sampleRate);
+                const samples = clip.getChannelData(0);
+                for (let i = 0; i < samples.length; i++) samples[i] = (i + 1) / 24000;
+                const voice = audio.createVoice({ context, closed: false }, clip, 1);
+                const targetFrame = 6000;
+                let resumeFrame = 0;
+                let rendering;
+                if (mode === 'stopped') {
+                    audio.seek(voice, targetFrame);
+                    if (voice.source || audio.framePosition(voice) !== targetFrame)
+                        throw new Error('Seeking a stopped voice started playback or lost its position');
+                    audio.play(voice);
+                    rendering = context.startRendering();
+                } else {
+                    audio.play(voice);
+                    const suspended = context.suspend(1024 / 48000);
+                    rendering = context.startRendering();
+                    await suspended;
+                    resumeFrame = Math.round(context.currentTime * 48000);
+                    const oldHandler = voice.source.onended;
+                    if (mode === 'paused') audio.pause(voice);
+                    audio.seek(voice, targetFrame);
+                    if (audio.framePosition(voice) !== targetFrame)
+                        throw new Error(`Seek position is not measured in clip frames: ${mode}, ${sampleRate}`);
+                    if (mode === 'paused') {
+                        if (voice.source) throw new Error('Seeking a paused voice resumed playback');
+                        audio.play(voice);
+                    }
+                    oldHandler();
+                    if (audio.completed(voice)) throw new Error('Pre-seek completion changed new playback');
+                    await context.resume();
+                }
+
+                const output = (await rendering).getChannelData(0);
+                for (const delta of [256, 512, 2048]) {
+                    const expected = samples[targetFrame + delta * sampleRate / 48000];
+                    const actual = output[resumeFrame + delta];
+                    if (Math.abs(actual - expected) > 0.00001)
+                        throw new Error(`Seek rendered wrong PCM (${mode}, ${sampleRate} Hz, ${delta}): ${actual}, expected ${expected}`);
+                }
+                const expectedPosition = targetFrame + (output.length - resumeFrame) * sampleRate / 48000;
+                if (Math.abs(audio.framePosition(voice) - expectedPosition) > 1)
+                    throw new Error(`Seek cursor advanced at the wrong sample rate: ${mode}, ${sampleRate}`);
+                audio.destroyVoice(voice);
+                return { mode, sampleRate, targetFrame, resumeFrame };
+            }
+            const seeks = [];
+            for (const rate of [48000, 24000]) {
+                for (const mode of ['stopped', 'paused', 'playing']) seeks.push(await renderSeek(mode, rate));
+            }
+
             // Disabling looping after multiple iterations must retain the current clip position.
             const loopContext = new OfflineAudioContext(1, 48000, 48000);
             const loopClip = loopContext.createBuffer(1, 4800, 48000);
@@ -109,7 +163,7 @@ try:
             if (audio.completed(active)) throw new Error('Stale completion changed new playback');
             audio.destroyVoice(active);
             await live.context.close();
-            return { left, right, mutedAtCreation, mutedBeforePlay, loopResumeFrame: clipFrame, staleCompletionRejected: true };
+            return { left, right, mutedAtCreation, mutedBeforePlay, seeks, loopResumeFrame: clipFrame, staleCompletionRejected: true };
         }''')
         assert not errors, errors
         print(json.dumps(rendering))

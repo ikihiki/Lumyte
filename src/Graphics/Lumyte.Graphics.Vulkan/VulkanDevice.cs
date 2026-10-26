@@ -15,10 +15,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly PhysicalDevice _physicalDevice;
     private readonly Queue _nativeQueue;
     private readonly VulkanPresentation? _presentation;
+    private readonly GraphicsDeviceLifetime _lifetime;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
     {
+        _lifetime = new(this);
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
         _presentation = presentation;
@@ -28,6 +30,19 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         api.GetDeviceQueue(device, queueFamily, 0, out _nativeQueue);
         Queue = new VulkanQueue(this);
     }
+
+    /// <inheritdoc />
+    public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
+    {
+        add => _lifetime.DeviceLost += value;
+        remove => _lifetime.DeviceLost -= value;
+    }
+
+    /// <inheritdoc />
+    public GraphicsDeviceStatus Status => _lifetime.Status;
+
+    /// <inheritdoc />
+    public GraphicsDeviceLoss? Loss => _lifetime.Loss;
 
     /// <inheritdoc />
     public IGraphicsQueue Queue { get; }
@@ -81,7 +96,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surfaces; failure releases only surfaces created by this call.</returns>
     public IReadOnlyList<IGraphicsSurface> CreateSurfaces(IReadOnlyList<Func<Instance, SurfaceKHR>> factories)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(factories);
         Func<Instance, SurfaceKHR>[] snapshot = factories.ToArray();
         if (snapshot.Length == 0)
@@ -131,7 +146,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <returns>The owned surface if the device's general queue supports it.</returns>
     public IGraphicsSurface CreateSurface(Func<Instance, SurfaceKHR> createSurface)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(createSurface);
         _ = Presentation;
         SurfaceKHR native = createSurface(_instance);
@@ -154,7 +169,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanGraphicsPipeline(this, desc);
         return program;
@@ -163,7 +178,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanComputePipeline(this, desc);
         return program;
@@ -172,7 +187,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new VulkanSemaphore(this);
         return semaphore;
     }
@@ -180,7 +195,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new VulkanCommandBuffer(this);
         return commands;
@@ -189,7 +204,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!Enum.IsDefined(format) || format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8)
         {
             throw new NotSupportedException("Unknown color texture format.");
@@ -244,7 +259,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData
     {
-        ValidateAlive();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new VulkanShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -304,9 +319,47 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _api.DestroyInstance(_instance, null);
         _api.Dispose();
         _disposed = true;
+        _lifetime.Dispose();
     }
 
-    internal void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
+    /// <inheritdoc />
+    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Result result = _api.DeviceWaitIdle(_device);
+
+        // Vulkan permits child destruction after device loss; an explicit idle call
+        // completes host synchronization and may itself report ERROR_DEVICE_LOST.
+        if (result != Result.Success && result != Result.ErrorDeviceLost)
+        {
+            throw new InvalidOperationException($"Vulkan retirement confirmation failed: {result}.");
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    internal void ReportLoss(string message) => _lifetime.ReportLoss("VK_ERROR_DEVICE_LOST", message);
+
+    internal SurfaceStatus PresentationStatus(Result result)
+    {
+        if (result == Result.ErrorDeviceLost)
+        {
+            ReportLoss("Vulkan presentation failed: device lost.");
+        }
+
+        return VulkanPresentation.Status(result);
+    }
+
+    internal void CheckResult(Result result, string operation)
+    {
+        if (result == Result.ErrorDeviceLost)
+        {
+            ReportLoss($"Vulkan {operation} failed: device lost.");
+            throw new GraphicsDeviceLostException(Loss!);
+        }
+
+        VulkanPresentation.Check(result, operation);
+    }
 
     private static VulkanDevice CreateCore(VulkanDeviceDesc desc)
     {

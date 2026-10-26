@@ -1,3 +1,5 @@
+using Lumyte.Input.Abstractions;
+
 namespace Lumyte.Input.Processing;
 
 /// <summary>Decorates a borrowed source and transfers corrected devices to InputSystem.</summary>

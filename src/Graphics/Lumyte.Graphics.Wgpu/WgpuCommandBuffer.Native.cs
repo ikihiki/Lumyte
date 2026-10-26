@@ -14,7 +14,7 @@ internal sealed unsafe partial class WgpuCommandBuffer
     {
         ValidateEnd(pass);
         WGPU.wgpuRenderPassEncoderEnd(handle);
-        WGPU.wgpuRenderPassEncoderRelease(handle);
+        pass.ReleaseNative();
         _active = null;
     }
 
@@ -22,7 +22,7 @@ internal sealed unsafe partial class WgpuCommandBuffer
     {
         ValidateEnd(pass);
         WGPU.wgpuComputePassEncoderEnd(handle);
-        WGPU.wgpuComputePassEncoderRelease(handle);
+        pass.ReleaseNative();
         _active = null;
     }
 
@@ -160,6 +160,22 @@ internal sealed unsafe partial class WgpuCommandBuffer
 
         WGPU.wgpuCommandEncoderRelease(_encoder);
         _encoder = null;
+    }
+
+    private void DiscardActivePassNative()
+    {
+        // Retirement permits releasing an unfinished pass without recording End on a lost device.
+        switch (_active)
+        {
+            case WgpuRenderEncoder render:
+                render.ReleaseNative();
+                break;
+            case WgpuComputeEncoder compute:
+                compute.ReleaseNative();
+                break;
+        }
+
+        _active = null;
     }
 
     private void DisposeNative()

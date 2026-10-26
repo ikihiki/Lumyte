@@ -48,6 +48,7 @@ Lumyte/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
 │   │   ├── Lumyte.Graphics.Abstractions/
+│   │   ├── Lumyte.Graphics.ImageEffects/
 │   │   ├── Lumyte.Graphics.RenderGraph/
 │   │   ├── Lumyte.Graphics/
 │   │   ├── Lumyte.Graphics.DirectX/
@@ -56,12 +57,15 @@ Lumyte/
 │   │   ├── Lumyte.Graphics.Vulkan.Native/
 │   │   └── Lumyte.Graphics.WebGPU/
 │   ├── Input/
+│   │   ├── Lumyte.Input.Abstractions/
 │   │   ├── Lumyte.Input/
 │   │   ├── Lumyte.Input.Processing/
 │   │   ├── Lumyte.Input.Actions/
 │   │   └── Lumyte.Input.Settings/
 │   └── Platform/
-│       ├── Lumyte.Platform/
+│       ├── Lumyte.Platform.Abstractions/
+│       ├── Lumyte.Windowing.Abstractions/
+│       ├── Lumyte.Windowing/
 │       ├── Lumyte.Platform.Windows/
 │       ├── Lumyte.Platform.Linux/
 │       └── Lumyte.Platform.Browser/
@@ -111,6 +115,8 @@ Lumyte/
 描画バックエンドが実装する共通インターフェースと関連型は `Lumyte.Graphics.Abstractions` に配置する。デバイスの共通契約と依存境界は [グラフィックデバイスの設計](graphics/GRAPHICS-0001-graphics-device.md) に従う。バックエンド固有の API と使い方は各バックエンドプロジェクトの README に記載する。
 
 `Lumyte.Graphics.RenderGraph` は共通 command API 上で pass の依存関係、culling、barrier と一時 resource の寿命を管理する。`Lumyte.Graphics.Abstractions` のみに依存し、backend ごとの実装は参照しない。設計は [GRAPHICS-0015](graphics/GRAPHICS-0015-render-graph.md)、検証は `tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/` に配置する。
+
+`Lumyte.Graphics.ImageEffects` は2D・3Dから使える画像エフェクトのgraphとRenderGraphへのパス展開を提供する。エフェクト自身が固定のパス実装を持ち、RenderGraphのAppend拡張メソッドへパラメーターを直接渡して適用する。DAGは別途Createで構築する。設計とAPIは [GRAPHICS-0017](graphics/GRAPHICS-0017-image-effects.md)、CPU検証は `tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/`、GPU検証は既存の `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
 
 `Lumyte.Diagnostics.RenderGraph` は Graphics.RenderGraph の observer と既存 Diagnostics を接続する。game scope の最新 snapshot を既存 execution point で公開し、標準 telemetry を収集する。Graphics.RenderGraph 自体は Diagnostics に依存しない。
 
