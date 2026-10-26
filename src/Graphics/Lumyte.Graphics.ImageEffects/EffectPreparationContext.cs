@@ -5,18 +5,25 @@ namespace Lumyte.Graphics.ImageEffects;
 
 /// <summary>Provides the borrowed device and ownership for fixed pass resources.</summary>
 /// <param name="device">The borrowed device shared with the render graph.</param>
-/// <param name="colorSemantic">The semantic preserved by appended effects.</param>
+/// <param name="colorSemantic">The common input semantic of appended effects.</param>
 /// <param name="shaders">Optional borrowed shader artifacts or modules.</param>
 public sealed class EffectPreparationContext(IGraphicDevice device, EffectColorSemantic colorSemantic, ImageEffectShaders? shaders = null) : IRenderGraphLifetime
 {
     private readonly List<IDisposable> _resources = [];
+    private readonly EffectPreparationContext? _owner;
     private bool _closing;
     private bool _disposed;
+
+    private EffectPreparationContext(EffectPreparationContext owner, EffectColorSemantic semantic)
+        : this(owner.Device, semantic, owner.Shaders)
+    {
+        _owner = owner._owner ?? owner;
+    }
 
     /// <summary>Gets the caller-owned device.</summary>
     public IGraphicDevice Device { get; } = device;
 
-    /// <summary>Gets the color semantic that all outputs of this preparation must preserve.</summary>
+    /// <summary>Gets the common input color semantic for this preparation view.</summary>
     public EffectColorSemantic ColorSemantic { get; } = colorSemantic;
 
     /// <summary>Gets the optional borrowed artifacts; null uses embedded defaults on demand.</summary>
@@ -28,7 +35,7 @@ public sealed class EffectPreparationContext(IGraphicDevice device, EffectColorS
     {
         ArgumentNullException.ThrowIfNull(resource);
         EnsureAlive();
-        _resources.Add(resource);
+        (_owner ?? this)._resources.Add(resource);
     }
 
     /// <summary>Releases fixed resources after graph temporary resources and GPU work have completed.</summary>
@@ -45,8 +52,20 @@ public sealed class EffectPreparationContext(IGraphicDevice device, EffectColorS
         return resource;
     }
 
+    internal EffectPreparationContext WithColorSemantic(EffectColorSemantic semantic)
+    {
+        EnsureAlive();
+        return ColorSemantic == semantic ? this : new(this, semantic);
+    }
+
     internal void Release()
     {
+        if (_owner is not null)
+        {
+            _owner.Release();
+            return;
+        }
+
         if (_disposed)
         {
             return;
@@ -70,7 +89,7 @@ public sealed class EffectPreparationContext(IGraphicDevice device, EffectColorS
         _disposed = true;
     }
 
-    internal void EnsureAlive() => ObjectDisposedException.ThrowIf(_closing, this);
+    internal void EnsureAlive() => ObjectDisposedException.ThrowIf((_owner ?? this)._closing, this);
 
-    internal void Close() => _closing = true;
+    internal void Close() => (_owner ?? this)._closing = true;
 }

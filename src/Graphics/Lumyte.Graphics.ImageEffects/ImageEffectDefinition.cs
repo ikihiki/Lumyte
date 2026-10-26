@@ -20,6 +20,11 @@ public abstract record ImageEffectDefinition
     /// <returns>The required child region, or an empty rectangle when that child is not needed.</returns>
     public abstract EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output);
 
+    /// <summary>Declares whether this operation explicitly converts the image interpretation.</summary>
+    /// <param name="input">The common input semantic, or DisplayLinear for a generator.</param>
+    /// <returns>The output semantic; the default preserves the input.</returns>
+    public virtual EffectColorSemantic GetOutputColorSemantic(EffectColorSemantic input) => input;
+
     /// <summary>Appends this effect's fixed implementation to the caller-owned graph.</summary>
     /// <param name="context">The borrowed device, color semantic and fixed-resource owner.</param>
     /// <param name="plan">The caller-owned render graph.</param>
