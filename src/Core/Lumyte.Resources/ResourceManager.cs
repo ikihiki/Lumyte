@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Memory;
 
 namespace Lumyte.Resources;
@@ -204,6 +205,15 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
     internal IResourceWatchTargets WatchTargets => _watchTargets!;
 
+    /// <summary>Creates logical residency that follows later publications.</summary>
+    /// <typeparam name="T">The registered output type.</typeparam>
+    /// <param name="key">The requested resource.</param>
+    /// <param name="cancellationToken">Cancels the initial acquisition wait.</param>
+    /// <returns>The independently owned logical reference.</returns>
+    public ValueTask<ResourceReference<T>> AcquireReferenceAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+        where T : notnull
+        => AcquireAsync(key, cancellationToken);
+
     /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
     /// <param name="key">The requested resource.</param>
@@ -291,7 +301,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="handle">The logical handle to resolve.</param>
     /// <param name="reference">The owning reference, or null when resolution fails.</param>
     /// <returns>Whether a reference was acquired.</returns>
-    public bool TryAcquire<T>(ResourceHandle<T> handle, out ResourceReference<T>? reference)
+    public bool TryAcquire<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
         where T : notnull
     {
         RefreshRuntimes();
@@ -310,6 +320,15 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             return true;
         }
     }
+
+    /// <summary>Acquires an owning reference from a live handle without I/O or pipeline work.</summary>
+    /// <typeparam name="T">The resource output type.</typeparam>
+    /// <param name="handle">The logical handle to resolve.</param>
+    /// <param name="reference">The owning reference, or null when resolution fails.</param>
+    /// <returns>Whether a reference was acquired.</returns>
+    public bool TryAcquireReference<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
+        where T : notnull
+        => TryAcquire(handle, out reference);
 
     /// <summary>Captures the published resource generations so multiple acquisitions share one publication.</summary>
     /// <returns>A snapshot retaining all published generations until disposed; no loading or value copying occurs.</returns>
@@ -464,7 +483,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         }
     }
 
-    internal bool TryAcquireFromView<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
+    internal bool TryAcquireFromView<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, [NotNullWhen(true)] out ResourceLease<T>? lease)
         where T : notnull
     {
         RefreshRuntimes();
@@ -608,7 +627,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         return new(this, generation);
     }
 
-    private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, out ResourceLease<T>? lease)
+    private bool TryAcquireFrom<T>(ResourceHandle<T> handle, Dictionary<ResourceNode, ResourceGeneration> map, [NotNullWhen(true)] out ResourceLease<T>? lease)
         where T : notnull
     {
         lease = null;

@@ -358,6 +358,57 @@ public sealed class ResourceManagerTests
         Assert.Equal(0, await fixture.Manager.TrimAsync());
     }
 
+    /// <summary>Explicit ownership names share generations and lifetime rules with the original acquisition methods.</summary>
+    /// <returns>Completion of mixed acquisition, reload and independent ownership checks.</returns>
+    [Fact]
+    public async Task NamedAcquisitionPreservesReferenceAndLeaseOwnershipAsync()
+    {
+        await using Fixture fixture = CreatePlannedFixture();
+        fixture.Source.Set("asset", "old");
+        using ResourceReference<TestValue> reference = await fixture.Manager.AcquireReferenceAsync(Key("value"));
+        ResourceHandle<TestValue> handle = reference.Handle;
+        using ResourceSnapshot snapshot = fixture.Manager.CaptureSnapshot();
+        using ResourceLease<TestValue> old = snapshot.AcquireLease(handle);
+        Assert.True(fixture.Manager.TryAcquireReference(handle, out ResourceReference<TestValue>? another));
+        using (another)
+        {
+            fixture.Source.Set("asset", "new");
+            Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.ReloadForTestAsync([new("asset")])).Status);
+            using ResourceLease<TestValue> current = another.AcquireLease();
+            using ResourceLease<TestValue> captured = reference.AcquireLease(snapshot);
+            using ResourceLease<TestValue> original = reference.Acquire();
+            Assert.Same(old.Value, captured.Value);
+            Assert.Same(current.Value, original.Value);
+            Assert.NotEqual(old.Revision, current.Revision);
+            Assert.True(reference.TryAcquireLease(out ResourceLease<TestValue>? pinned, snapshot));
+            using (pinned)
+            {
+                Assert.Same(old.Value, pinned.Value);
+            }
+
+            Assert.True(snapshot.TryAcquireLease(handle, out ResourceLease<TestValue>? fromSnapshot));
+            using (fromSnapshot)
+            {
+                Assert.Same(old.Value, fromSnapshot.Value);
+            }
+
+            reference.Dispose();
+            another.Dispose();
+            Assert.False(fixture.Manager.TryAcquireReference(handle, out ResourceReference<TestValue>? missingReference));
+            Assert.Null(missingReference);
+            Assert.False(snapshot.TryAcquireLease(handle, out ResourceLease<TestValue>? missingLease));
+            Assert.Null(missingLease);
+            Assert.Throws<InvalidOperationException>(() => snapshot.AcquireLease(handle));
+            Assert.Throws<ObjectDisposedException>(() => reference.AcquireLease());
+            Assert.Throws<ObjectDisposedException>(() => reference.TryAcquireLease(out _));
+            snapshot.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => snapshot.AcquireLease(handle));
+            Assert.Throws<ObjectDisposedException>(() => snapshot.TryAcquireLease(handle, out _));
+            Assert.Equal("old", old.Value.Text);
+            Assert.Equal("new", current.Value.Text);
+        }
+    }
+
     /// <summary>A handle resolves to an owning reference and its lease survives returning the last reference.</summary>
     /// <returns>Completion of handle acquisition and separate reference and lease ownership.</returns>
     [Fact]

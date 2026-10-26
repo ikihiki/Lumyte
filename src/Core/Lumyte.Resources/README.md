@@ -1,8 +1,12 @@
 # Lumyte.Resources
 
 出力型を識別子とするPipelineで、共有読み込みと依存を管理します。Graphics・Audio・Platformの実装には依存しません。
-`AcquireAsync<T>(ResourceKey<T>)`は論理リソースを保持するReferenceを返します。
-描画開始など値を固定したい時点でReference.Acquire()から値とRevision付きのLeaseを取得します。
+`AcquireReferenceAsync<T>(ResourceKey<T>)`は論理リソースを保持するReferenceを返します。
+描画開始など値を固定したい時点でReference.AcquireLease()から値とRevision付きのLeaseを取得します。
+既存の`AcquireAsync`・`Acquire`・`TryAcquire`も同じ契約で利用できます。
+`ResourceSnapshot.AcquireLease(handle)`・`TryAcquireLease(handle, out lease)`は捕捉した公開状態からLeaseを取得します。
+Try取得は成功時の出力が非nullと注釈されているため、成功分岐でnull抑制は不要です。
+名前と所有権の対応は[ADR-RESOURCES-0009](../../../docs/adr/resources/RESOURCES-0009-resource-acquisition-names.md)を参照してください。
 Stageは`RequireAsync`で依存を追加し、`OpenSourceAsync`で観測した入力のdescriptorを借用します。
 読み込みの整合性と変更検出の限界はSourceが定め、旧ファイルの保存は要求しません。
 Build依存は構築後、Resident依存は親の解放後に返します。
@@ -33,8 +37,8 @@ pipelines
     .AddTransformPipeline<CpuMesh, GpuMesh, UploadStage>();
 
 var key = new ResourceKey<CpuMesh>("scene.json", "mesh/0");
-using ResourceReference<CpuMesh> reference = await resources.AcquireAsync(key);
-using ResourceLease<CpuMesh> mesh = reference.Acquire();
+using ResourceReference<CpuMesh> reference = await resources.AcquireReferenceAsync(key);
+using ResourceLease<CpuMesh> mesh = reference.AcquireLease();
 ```
 
 通常はパス文字列から直接キーを作成します。SubresourceとVariantは省略でき、`new ResourceKey<SceneDocument>("scene.json")`や`new ResourceKey<CpuMesh>("scene.json", "mesh/0", variant: "geometry:v1")`と記述できます。既存の`ResourceId`または`ResourceAddress`を渡すこともできます。
@@ -75,10 +79,10 @@ Managerは変更通知を入力Revisionの再確認のきっかけとして使�
 // resourceRuntimeは「DIを使わない構築」の手順で起動済みのExecutionRuntimeへ登録する。
 await using var manager = new ResourceManager(
     "assets", source, stages, memory, resourceRuntime);
-using ResourceReference<MyResource> reference = await manager.AcquireAsync(
+using ResourceReference<MyResource> reference = await manager.AcquireReferenceAsync(
     new ResourceKey<MyResource>("asset.bin"));
 // ファイル編集などの通知で、Managerが必要な依存と親だけを再構築する。
-using ResourceLease<MyResource> frame = reference.Acquire();
+using ResourceLease<MyResource> frame = reference.AcquireLease();
 ```
 
 `IResourceSource.Changes`が通知元を返すと、Managerがその監視を自動開始します。Streamを開く取得元と監視先の対応はSourceが保証します。Changesの既定値はnullで、不変なDLL埋め込みなどでは監視を開始しません。Managerは`IResourceWatchTargets`としてロード中・公開中の入力ID集合を監視側へ渡します。各集合は不変で、次回取得時に最新となります。監視無効時はこの集合を管理しません。初回公開では新しく追加された入力だけを再確認し、既存入力の全走査を避けます。Manager内部の監視処理は通知をまとめ、IDの重複を除いてHotReloadします。連続更新で待機し続けないよう集約時間に上限を設け、再構築中に届いた通知も次のバッチへ保持します。保留できるID数を超えた場合や`ResourceSourceChange.Rescan`を受信した場合は、追跡中の入力をすべて再確認します。
@@ -128,8 +132,8 @@ await execution.StartAsync();
 await using (var manager = new ResourceManager(
     "assets", source, [new DocumentStage(), new MeshStage()], memory, resourceRuntime))
 {
-    using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
-    using ResourceLease<Mesh> lease = mesh.Acquire();
+    using ResourceReference<Mesh> mesh = await manager.AcquireReferenceAsync(meshKey);
+    using ResourceLease<Mesh> lease = mesh.AcquireLease();
     Consume(lease.Value);
 }
 
@@ -160,9 +164,9 @@ DI登録も同じStageを直接渡し、必要なサービスをコンストラ�
 
 ## Referenceとフレーム用Lease
 
-Managerの`AcquireAsync`とhandleからの`TryAcquire`はReferenceを返します。
-Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.Acquire()`で具体的な値とRevisionを固定します。
-複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`で取得した`ResourceSnapshot`を`reference.Acquire(snapshot)`へ渡します。
+Managerの`AcquireReferenceAsync`とhandleからの`TryAcquireReference`はReferenceを返します。
+Referenceを利用期間中保持し、描画・ジョブの開始時に`reference.AcquireLease()`で具体的な値とRevisionを固定します。
+複数リソースを一つの公開状態から取得する場合は`CaptureSnapshot()`で取得した`ResourceSnapshot`を`reference.AcquireLease(snapshot)`へ渡します。
 Lease取得はI/Oや構築を行いません。Reference返却後も、取得済みLeaseの値は利用できます。
 HotReloadは新世代を別に公開するため、取得済みLeaseは取得時の値とRevisionを保持します。
 公開済みの値そのものを直接変更しないでください。Leaseは書き換え処理を待たせるmutexではありません。
