@@ -119,6 +119,44 @@ public sealed class ImageEffectTests
         Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(new OpacityEffect(1), graph));
     }
 
+    /// <summary>Externally loaded shaders are supplied to both effect entry points without a manager dependency.</summary>
+    [Fact]
+    public void SuppliedShaderArtifactsReachEffectPreparation()
+    {
+        var artifact = ShaderArtifact.PackTarget(ShaderTarget.Wgsl, ShaderStage.Vertex, "main", "test", [1], "{}");
+        var shaders = new ImageEffectShaders(artifact, artifact);
+        var plan = new RenderGraphBuilder(Device());
+        var effect = new ShaderInspectionEffect(shaders);
+        using PreparedImageEffect direct = plan.AppendEffectWithShaders(effect, shaders, Source(plan));
+        using PreparedImageEffect graph = plan.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), Source(plan), shaders);
+        using Lumyte.Graphics.RenderGraph.CompiledRenderGraph compiled = plan.Compile();
+        compiled.Retain(direct);
+        compiled.Retain(graph);
+        compiled.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => ((Lumyte.Graphics.RenderGraph.IRenderGraphLifetime)direct).Validate());
+    }
+
+    /// <summary>Borrowed modules are reused and remain owned by their caller even if pipeline creation fails.</summary>
+    /// <param name="borrowModules">Whether existing modules or CPU artifacts are supplied.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ShaderModuleOwnershipIsPreservedOnPreparationFailure(bool borrowModules)
+    {
+        var artifact = ShaderArtifact.PackTarget(ShaderTarget.Wgsl, ShaderStage.Vertex, "main", "test", [1], "{}");
+        var vertex = new BorrowedShader(artifact);
+        var fragment = new BorrowedShader(artifact);
+        ImageEffectShaders shaders = borrowModules ? new ImageEffectShaders(vertex, fragment) : new ImageEffectShaders(artifact, artifact);
+        IGraphicDevice device = DispatchProxy.Create<IGraphicDevice, ShaderDeviceProxy>();
+        var proxy = (ShaderDeviceProxy)(object)device;
+        var plan = new RenderGraphBuilder(device);
+        Assert.Throws<PipelineReachedException>(() => plan.AppendEffectWithShaders(new OpacityEffect(0.5f), shaders, Source(plan)));
+        Assert.False(vertex.Disposed);
+        Assert.False(fragment.Disposed);
+        Assert.Equal(borrowModules ? 0 : 2, proxy.Created.Count);
+        Assert.All(proxy.Created, shader => Assert.True(((BorrowedShader)shader).Disposed));
+    }
+
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, UnusedDeviceProxy>();
 
     private static EffectImage Source(RenderGraphBuilder plan) => new(plan.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);
@@ -128,6 +166,41 @@ public sealed class ImageEffectTests
     {
         /// <inheritdoc/>
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => throw new InvalidOperationException("CPU-only test called the graphics device.");
+    }
+
+    /// <summary>Fails after module selection, allowing ownership to be checked without a GPU.</summary>
+    public class ShaderDeviceProxy : DispatchProxy
+    {
+        internal List<IGraphicsShader> Created { get; } = [];
+
+        /// <inheritdoc/>
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == nameof(IGraphicDevice.CreateShader))
+            {
+                var shader = new BorrowedShader((ShaderArtifact)args![0]!);
+                Created.Add(shader);
+                return shader;
+            }
+
+            if (targetMethod?.Name == nameof(IGraphicDevice.CreateGraphicsPipeline))
+            {
+                throw new PipelineReachedException();
+            }
+
+            throw new InvalidOperationException("Unexpected device call.");
+        }
+    }
+
+    private sealed class PipelineReachedException : Exception;
+
+    private sealed class BorrowedShader(ShaderArtifact artifact) : IGraphicsShader
+    {
+        public ShaderArtifact Artifact => artifact;
+
+        internal bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
     }
 
     private abstract record IdentityEffect : ImageEffectDefinition
@@ -140,6 +213,15 @@ public sealed class ImageEffectTests
 
         /// <inheritdoc/>
         public override EffectPixelRect GetRequiredInputBounds(int inputIndex, EffectPixelRect output) => output;
+    }
+
+    private sealed record ShaderInspectionEffect(ImageEffectShaders Expected) : IdentityEffect
+    {
+        public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)
+        {
+            Assert.Same(Expected, context.Shaders);
+            return inputs[0];
+        }
     }
 
     private sealed record CountingEffect : IdentityEffect

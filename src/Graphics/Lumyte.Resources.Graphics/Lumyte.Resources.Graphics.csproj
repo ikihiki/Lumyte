@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
