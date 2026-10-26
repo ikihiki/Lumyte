@@ -50,9 +50,10 @@ scope.AppendGaussianBlur(scope.Source, 3, 3)を呼ぶとEffectImageを返し、�
 ResourceManagerは不要です。複数拡張を明示的に構成するときは、初期化時に次のように登録できます。
 
 ```csharp
-using var extensions = new RenderGraphExtensions()
+using var extensions = await new RenderGraphExtensionsBuilder()
     .AddImageEffects()
-    .Add(static graph => new AppLayerImports(graph));
+    .Add(static graph => new AppLayerImports(graph))
+    .BuildAsync();
 
 using var graph = new RenderGraph(device, extensions: extensions);
 EffectImage output = graph.AppendEffects(effectGraph, source);
@@ -62,12 +63,12 @@ using var plan = graph.Compile();
 ```
 
 `AppLayerImports`は利用者が作る拡張型の例です。シェーダをAppendへ渡す必要はなく、
-factoryの生成結果をGraphごとに共有します。各Appendの準備ContextはGraphへ登録し、
+BuildAsyncが返す構成は変更せずフレーム間で再利用し、factoryの生成結果はGraphごとに共有します。各Appendの準備ContextはGraphへ登録し、
 すべての拡張の所有権をCompile時に同じPlanへ移します。
 
 ## 外部からロードしたシェーダ
 
-`extensions.AddImageEffects(shaders)`へ、取得済みの`ImageEffectShaders`を渡せます。二つのartifactはfullscreen vertexとeffect fragmentの既存shader ABIを満たす必要があります。省略した既定構成はDLL埋め込み版を使い、共通artifactは初回だけロードします。
+`builder.AddImageEffects(shaders)`へ、取得済みの`ImageEffectShaders`を渡せます。二つのartifactはfullscreen vertexとeffect fragmentの既存shader ABIを満たす必要があります。省略した既定構成はDLL埋め込み版を使い、共通artifactは初回だけロードします。
 
 直接ロードでもResourceManagerからの取得でも同じ型を使います。ResourceManagerとの接続には、任意の[Lumyte.Resources.Graphics.ImageEffects](../Lumyte.Resources.Graphics.ImageEffects/README.md)が既定シェーダの取得とEffectの所有をまとめます。本パッケージ単独の利用にResourcesは不要です。
 

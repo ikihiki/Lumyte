@@ -25,9 +25,11 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensionsBuilder builder = new RenderGraphExtensionsBuilder().AddResources(manager).AddImageEffects(manager);
         TestDevice device = Assert.Single(state.Devices);
+        Assert.Empty(device.Shaders);
+        Assert.Equal(0, provider.GetRequiredService<UnusedSource>().OpenCount);
+        using RenderGraphExtensions extensions = await builder.BuildAsync();
         Assert.Equal(2, device.Shaders.Count);
         using var graph = new RenderGraphBuilder(device, extensions: extensions);
         EffectImage source = Source(graph);
@@ -73,14 +75,13 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
-        await extensions.AddImageEffectsAsync(manager);
         int layerCreations = 0;
-        extensions.Add(graph =>
-        {
-            layerCreations++;
-            return new LayerImports(graph);
-        });
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).AddImageEffects(manager).Add(graph =>
+            {
+                layerCreations++;
+                return new LayerImports(graph);
+            }).BuildAsync();
         TestDevice device = Assert.Single(state.Devices);
         using var graph = new RenderGraphBuilder(device, extensions: extensions);
         EffectImage source = Source(graph);
@@ -124,13 +125,13 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using var extensions = new RenderGraphExtensions();
+        using var builder = new RenderGraphExtensionsBuilder();
         if (!missingResources)
         {
-            extensions.AddResources(manager);
+            builder.AddResources(manager);
         }
 
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensions extensions = await builder.AddImageEffects(manager).BuildAsync();
         TestDevice device = Assert.Single(state.Devices);
         await using var foreign = new TestDevice();
         using var graph = new RenderGraphBuilder(missingResources ? device : foreign, extensions: extensions);
@@ -157,8 +158,8 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).AddImageEffects(manager).BuildAsync();
         using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
         using ResourceLease<ImageEffectShaderResource> old = reference.Acquire(snapshot);
@@ -214,8 +215,8 @@ public sealed class ResourceImageEffectTests
         IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).AddImageEffects(manager).BuildAsync();
         using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
         using ResourceLease<ImageEffectShaderResource> old = reference.Acquire();
         ImageEffectShaderResource previous = old.Value;
@@ -258,8 +259,8 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).AddImageEffects(manager).BuildAsync();
         TestDevice device = Assert.Single(state.Devices);
         using var graph = new RenderGraphBuilder(device, extensions: extensions);
         var resource = new FixedResource(failOnce: true);
@@ -290,8 +291,8 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).AddImageEffects(manager).BuildAsync();
         TestDevice device = Assert.Single(state.Devices);
         using var graph = new RenderGraphBuilder(device, extensions: extensions);
         EffectImage source = Source(graph);
@@ -335,17 +336,85 @@ public sealed class ResourceImageEffectTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        using RenderGraphExtensionsBuilder failedBuilder = new RenderGraphExtensionsBuilder().AddResources(manager).AddImageEffects(manager);
         TestDevice device = Assert.Single(state.Devices);
         device.CreateShaderFailOnCall = 2;
-        await Assert.ThrowsAsync<InvalidOperationException>(() => extensions.AddImageEffectsAsync(manager).AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => failedBuilder.BuildAsync().AsTask());
         await manager.TrimAsync();
         Assert.Equal(1, Assert.Single(device.Shaders).DisposeCount);
         device.CreateShaderFailOnCall = 0;
-        await extensions.AddImageEffectsAsync(manager);
+        using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
+            .AddResources(manager).AddImageEffects(manager).BuildAsync();
         Assert.Equal(3, device.Shaders.Count);
-        await Assert.ThrowsAsync<ArgumentException>(() => extensions.AddImageEffectsAsync(manager).AsTask());
         extensions.Dispose();
+        await manager.TrimAsync();
+        Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
+    }
+
+    /// <summary>Duplicate registration and an already cancelled build do not load shader resources.</summary>
+    /// <returns>Completion of deferred registration and subsequent successful build checks.</returns>
+    [Fact]
+    public async Task RegistrationAndCancelledBuildDoNotPreloadShadersAsync()
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using RenderGraphExtensionsBuilder builder = new RenderGraphExtensionsBuilder().AddResources(manager).AddImageEffects(manager);
+        TestDevice device = Assert.Single(state.Devices);
+
+        Assert.Throws<ArgumentException>(() => builder.AddImageEffects(manager));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => builder.BuildAsync(new(canceled: true)).AsTask());
+        Assert.Empty(device.Shaders);
+        Assert.Equal(0, provider.GetRequiredService<UnusedSource>().OpenCount);
+
+        using RenderGraphExtensions extensions = await builder.BuildAsync();
+        Assert.Equal(2, device.Shaders.Count);
+        extensions.Dispose();
+        await manager.TrimAsync();
+        Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
+    }
+
+    /// <summary>A later extension failure or cancellation releases the successfully preloaded shader reference.</summary>
+    /// <param name="cancel">Whether the later extension cancels instead of failing.</param>
+    /// <returns>Completion of shader ownership rollback checks.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedBuildReleasesPreloadedShadersAsync(bool cancel)
+    {
+        var state = new GraphicsTestState();
+        await using ServiceProvider provider = CreateProvider(state);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        await provider.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using var cancellation = new CancellationTokenSource();
+        var failure = new InvalidOperationException("Injected extension preparation failure.");
+        using RenderGraphExtensionsBuilder builder = new RenderGraphExtensionsBuilder().AddResources(manager).AddImageEffects(manager)
+            .AddAsync<LayerImports>(token =>
+            {
+                Assert.Equal(2, Assert.Single(state.Devices).Shaders.Count);
+                if (cancel)
+                {
+                    cancellation.Cancel();
+                    token.ThrowIfCancellationRequested();
+                }
+
+                return ValueTask.FromException<RenderGraphExtensionFactory<LayerImports>>(failure);
+            });
+
+        if (cancel)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => builder.BuildAsync(cancellation.Token).AsTask());
+        }
+        else
+        {
+            Assert.Same(failure, await Assert.ThrowsAsync<InvalidOperationException>(() => builder.BuildAsync().AsTask()));
+        }
+
+        TestDevice device = Assert.Single(state.Devices);
+        Assert.Equal(2, device.Shaders.Count);
         await manager.TrimAsync();
         Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
     }

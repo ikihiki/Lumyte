@@ -49,7 +49,7 @@ AppendEffectsはすべてのSource葉を一つの入力画像へ束縛し、子�
 
 ImageEffectSubgraphはEffectsコールバックへ渡す親RenderGraphの借用ビューとする。独立したgraphやcompiled planを生成せず、Sourceに適用対象の画像を渡す。AppendGaussianBlurなどはEffectImageを返し、親graphと同じImageEffectsGraphContextと寿命管理を使う。ビューのDisposeは後続の呼び出しを閉じるだけで、固定GPU資源を解放しない。2D内部からのAppendと直接のgraph.AppendEffectsは同じshader状態を利用できる。
 
-ImageEffectsGraphContextは本パッケージに置き、Graphと借用ImageEffectShadersを保持する。標準の拡張メソッドはGraph.GetOrAddExtensionでこの型の状態を取得する。未登録なら既定の埋め込み版を使い、RenderGraphExtensions.AddImageEffects(shaders)なら指定済みのshaderを使う。ResourceManagerとの接続パッケージも同じContextを登録するため、AppendにshaderやManagerを渡さない。Contextはgraphごとに一つで、2Dなど他の拡張からも共有する。Manager経由の非同期ロードは拡張構成の初期化で完了させ、Appendで再ロードやDI解決を行わない。単独利用の埋め込みartifactは初回使用時に共有cacheへロードする。
+ImageEffectsGraphContextは本パッケージに置き、Graphと借用ImageEffectShadersを保持する。標準の拡張メソッドはGraph.GetOrAddExtensionでこの型の状態を取得する。未登録なら既定の埋め込み版を使い、RenderGraphExtensionsBuilder.AddImageEffects(shaders)をBuildAsyncで構成にすれば指定済みのshaderを使う。ResourceManagerとの接続パッケージも同じContextを登録するため、AppendにshaderやManagerを渡さない。Contextはgraphごとに一つで、2Dなど他の拡張からも共有する。Manager経由の非同期ロードはbuilderのAddImageEffects(manager)で定義し、BuildAsyncで完了させ、Appendで再ロードやDI解決を行わない。単独利用の埋め込みartifactは初回使用時に共有cacheへロードする。
 
 ### 3. 画像・領域・色
 
@@ -191,7 +191,7 @@ ImageEffectGraphはSource葉とEffectOperationNodeの不変DAGとする。すべ
 +    }
 +    public static class ImageEffectRenderGraphExtensions
 +    {
-+        public static RenderGraphExtensions AddImageEffects(this RenderGraphExtensions extensions,
++        public static RenderGraphExtensionsBuilder AddImageEffects(this RenderGraphExtensionsBuilder builder,
 +            ImageEffectShaders? shaders = null);
 +        public static EffectImage AppendEffect(this RenderGraphBuilder plan,
 +            ImageEffectDefinition effect, params EffectImage[] inputs);

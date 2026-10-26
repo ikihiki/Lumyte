@@ -103,12 +103,13 @@ GPU／Browser は共通 `RenderGraphExercise` で部分 buffer upload→temporar
 
 ## 複数の拡張と所有権
 
-`RenderGraphExtensions`へ型ごとのfactoryを明示登録し、複数のgraphへ同じ構成を渡せます。構成は最初のgraph作成時に固定され、同じ型の重複登録を拒否します。非同期ロードやDIからの取得は構成前に済ませ、factoryは取得済みの環境からgraph固有の状態を作ります。
+`RenderGraphExtensionsBuilder`へ型ごとのfactoryを明示登録し、`BuildAsync`で準備済みの`RenderGraphExtensions`を作ります。同じ型の重複登録を拒否し、完成した構成は変更せず複数のgraphへ渡せます。登録時にはロードせず、非同期の準備はBuildAsyncが登録順に実行します。graph用のfactoryは準備済みの環境からgraph固有の状態を作ります。
 
 ```csharp
-using var extensions = new RenderGraphExtensions()
+using var extensions = await new RenderGraphExtensionsBuilder()
     .Add(static graph => new AppImports(graph))
-    .Add(static graph => new LayerImports(graph, graph.GetExtension<AppImports>()));
+    .Add(static graph => new LayerImports(graph, graph.GetExtension<AppImports>()))
+    .BuildAsync();
 
 using var graph = new RenderGraph(device, extensions: extensions);
 AppImports imports = graph.GetExtension<AppImports>();
@@ -117,9 +118,11 @@ LayerImports layers = graph.GetExtension<LayerImports>();
 using var plan = graph.Compile();
 ```
 
+非同期の準備は`AddAsync<T>(prepare)`へ登録します。prepareは`ValueTask<RenderGraphExtensionFactory<T>>`としてgraph用factoryと任意のownerを返します。BuildAsyncは開始後一度だけ実行でき、成功後は戻り値の構成を再利用します。既にキャンセル済みの場合は開始せず、builderを変更・利用できます。失敗・キャンセル時は所有権を受け取った逆順にownerを解放し、解放にも失敗した場合は両方の例外を通知します。その場合はbuilderが未解放のownerと依存先を保持するため、独自のownerを使う側はbuilderを保持してDisposeを再試行してください。Build中の登録・再Build・Disposeは拒否します。
+
 `AppImports`と`LayerImports`は利用者の拡張型の例です。各factoryはgraph内で初回取得時に一度だけ呼ばれ、型付き状態を共有します。`GetOrAddExtension<T>(fallback)`は登録済みfactoryを優先し、未登録の場合だけモジュールの既定factoryを使います。循環するfactoryや生成失敗はそのgraphの継続利用を拒否します。明示的な型登録なのでReflectionやActivator、描画時のDI解決は不要です。拡張の登録順がGPUの実行順を決めることはなく、passの資源宣言と依存関係を使います。
 
-factoryが返す状態やimportsは借用ビューであり、型がIDisposableでも自動では解放しません。固定GPU資源やLeaseは`IRenderGraphLifetime`として、準備を始める前に`graph.Retain`へ登録します。`graph.Compile()`が全拡張の所有権を一括してplanへ移し、Compile前の放棄は`graph.Dispose()`が返します。移譲後のgraph.Disposeはplanの資源を解放しません。factoryが保持する長期所有権は`Add(factory, owner)`で構成へ渡せます。既に発行したgraphのLeaseと構成の所有者は別の寿命です。
+factoryが返す状態やimportsは借用ビューであり、型がIDisposableでも自動では解放しません。固定GPU資源やLeaseは`IRenderGraphLifetime`として、準備を始める前に`graph.Retain`へ登録します。`graph.Compile()`が全拡張の所有権を一括してplanへ移し、Compile前の放棄は`graph.Dispose()`が返します。移譲後のgraph.Disposeはplanの資源を解放しません。factoryが保持する長期所有権は`Add(factory, owner)`の登録成功時にbuilderへ渡し、BuildAsyncの成功時に構成へ移します。既に発行したgraphのLeaseと構成の所有者は別の寿命です。
 
 `Validate`はRetain時、Compileの移譲時、Record前に呼ばれます。所有権は登録の逆順で返し、依存先より利用側を後から登録します。解放が失敗したらそこで停止し、未解放部分と依存先を保持して同じ所有者のDisposeで再試行します。Compileの検証失敗ではgraph側に所有権が残ります。既存のraw import APIは借用のまま使え、構築済みplanへの低水準の`CompiledRenderGraph.Retain`も利用できます。
 
