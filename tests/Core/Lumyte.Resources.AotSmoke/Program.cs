@@ -1,9 +1,12 @@
 using System.Diagnostics;
+using System.Text;
 using Lumyte.Execution;
 using Lumyte.Memory;
 using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
+using Lumyte.Resources.Embedded;
 using Lumyte.Resources.Execution;
+using Lumyte.Resources.FileSystem;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.Resources.AotSmoke;
@@ -12,6 +15,7 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
+        CheckSources();
         bool host = args.Contains("--host", StringComparer.Ordinal);
         var state = new CheckState();
         var services = new ServiceCollection();
@@ -74,6 +78,38 @@ internal static class Program
             state.StreamOpened == 1 && state.StreamSeeks == 1 && state.StreamDisposed == 1 && state.StreamReleases == 1,
             "The streaming reader and factory lifetimes did not finish.");
         Console.WriteLine($"Native AOT resources passed: host={host}, value=42, streaming=16, released=3.");
+    }
+
+    private static void CheckSources()
+    {
+        var embedded = new EmbeddedResourceSource(new() { Assembly = typeof(Program).Assembly });
+        CheckSourceRange(embedded, new("source-probe"));
+        var second = new EmbeddedResourceSource(new() { Assembly = typeof(Program).Assembly });
+        Require(
+            embedded.GetRevisionAsync(new("source-probe")).GetAwaiter().GetResult() == second.GetRevisionAsync(new("source-probe")).GetAwaiter().GetResult(),
+            "An immutable assembly must have a stable source revision.");
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "input"), "0123456789");
+            CheckSourceRange(new FileResourceSource(new() { RootPath = root }), new("input"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void CheckSourceRange(IResourceSource source, ResourceId id)
+    {
+        ResourceSourceSnapshot snapshot = source.OpenSnapshotAsync(id).GetAwaiter().GetResult();
+        using Stream reader = snapshot.OpenReadAsync(2, 3).GetAwaiter().GetResult();
+        Require(snapshot.Revision == source.GetRevisionAsync(id).GetAwaiter().GetResult(), "Source revision changed unexpectedly.");
+        snapshot.DisposeAsync().GetAwaiter().GetResult();
+        Span<byte> bytes = stackalloc byte[3];
+        reader.ReadExactly(bytes);
+        Require(Encoding.UTF8.GetString(bytes) == "234" && reader.ReadByte() == -1, "Source range or reader ownership is invalid.");
     }
 
     private static void CheckStreaming(ResourceManager manager, ExecutionRuntime execution, CheckState state)
