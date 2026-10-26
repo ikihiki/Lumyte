@@ -168,7 +168,7 @@ RenderGraphのimportは従来どおり借用できる。Resource連携は`Render
 
 planは外部所有権を`IRenderGraphLifetime`として受け取り、記録前に失効を検証する。解放順はview、一時allocation、登録の逆順の外部所有権とする。GPU完了前のDisposeは拒否する。HotReload中の旧shaderとartifactをplanの寿命まで保ち、新しいplan／pipelineが新世代を取得する。記録途中のpipelineやshaderを差し替えない。
 
-ImageEffectsは`ImageEffectsGraphContext`をGraphごとに共有し、`graph.AppendEffects(effectGraph, source)`から利用する。シェーダやimportsを呼び出しごとに渡さず、戻り値はEffectImageに統一する。単独利用時は既定の埋め込み版を使用する。Managerとの連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。Resource Pipelineの`AddImageEffects()`を登録し、`builder.AddImageEffects(manager)`で準備を定義し、初期化時の`builder.BuildAsync(cancellationToken)`で既定パッケージを事前ロードする。登録時にロードは行わず、取得したReferenceは完成した拡張構成が所有する。カスタム時だけ`ImageEffectShaderPackage`で二つのartifactキーをDIへ注入する。DIなしでは同じ設定をCPU Stageへ渡す。
+ImageEffectsは`ImageEffectsGraphContext`をGraphごとに共有し、`graph.AppendEffects(effectGraph, source)`から利用する。シェーダやimportsを呼び出しごとに渡さず、戻り値はEffectImageに統一する。単独利用時は既定の埋め込み版を使用する。Managerとの連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。Resource Pipelineの`AddImageEffects()`を登録し、`builder.AddImageEffects(manager)`で準備を定義し、初期化時の`builder.BuildAsync(cancellationToken)`で既定パッケージを事前ロードする。登録時にロードは行わず、取得したReferenceは完成した拡張構成が所有する。カスタム時だけ共通の`UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`で二つのartifactキーをDIへ登録する。DIなしでは同じ設定をCPU Stageへ渡す。
 
 二つのartifactをResident依存にするCPUの組と、その組をResident依存に持つGPUの組を構築する。既定CPU artifactはライブラリ共有cacheを再利用し、カスタムartifactは通常のSource・メモリ計上・HotReloadに参加する。GPUの組は正確なdevice epochに属し、部分生成の失敗に備えて生成前にcleanupを登録する。復旧時にはCPUの組を再利用する。
 
@@ -177,3 +177,5 @@ Graphが最初にEffectsを使う際に一つの世代Leaseを取得し、後続
 待機キャンセルをGPU完了とは扱わず、planは所有を保持する。loss時の旧epoch退役確認とGPU送信・完了管理はアプリが担当する。既定選択、カスタム入力更新、複数拡張・2D部分ビューの共存、旧世代の描画中保持、解放の再試行、部分生成失敗とNativeAOTを検証する。
 
 `ImageEffectShaders`はCPU artifactまたは既存のGPU shaderを受け取る。既存moduleを渡した場合はeffect側で生成・解放せず、管理側の世代Leaseで寿命を保つ。artifactだけを渡す場合はeffectが作ったmoduleを自分で解放する。
+
+2Dも同じ登録APIの`UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`を使う。同じ型への設定はDIのあと勝ちとする。生成用リソースのReferenceは`AcquireRenderer2DAsync()`で取得し、`CreateRenderer()`で一世代に固定したレンダラーを作る。利用側でprogram ID・handle対応表・providerを構成する必要はない。生成済みレンダラーと準備済みbatchは独立して旧世代を保持し、HotReloadとdevice復旧後は同じReferenceから生成し直す。

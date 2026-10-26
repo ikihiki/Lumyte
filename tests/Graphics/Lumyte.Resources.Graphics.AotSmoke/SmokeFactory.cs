@@ -1,3 +1,5 @@
+using Lumyte.Graphics.Hosting;
+
 namespace Lumyte.Resources.Graphics.AotSmoke;
 
 internal sealed class SmokeFactory(SmokeDevice device) : IGraphicsDeviceFactory
