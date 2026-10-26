@@ -167,6 +167,39 @@ ResourceManagerなしではDrawingResources2Dにpipelineと任意のsamplerを�
 CPU artifactは再利用し、同じReferenceから新しいdevice世代のレンダラーを生成し直す。
 旧DrawListのGPU viewも再解決する。2D本体はResources・Hosting・RenderGraphに依存しない。
 
+#### 汎用pipeline・sampler定義とDrawingResources2Dの接続
+
+DrawingResources2Dは、汎用定義から生成済みのdevice・pipeline・samplerを借用する不変の参照群とする。定義、ResourceKey、ResourceManagerへの参照は持たず、生成・キャッシュ・破棄も行わない。汎用定義と2Dの接続はResources.Graphics.Drawing2Dに集約する。
+
+```text
+DIの汎用定義
+  GraphicsPipelineDefinition → shaderの依存キー
+  GraphicsSamplerDefinition → sampler設定
+          ↓ ResourceManagerが取得時に生成
+  GraphicsResource<IGraphicsPipeline>
+  GraphicsResource<IGraphicsSampler>
+          ↓ Renderer2DResourceStageがRequireAsyncで依存取得
+  DrawingResources2D(device, pipeline.Value, sampler.Value)
+          ↓ Renderer2DResourceとして公開
+  reference.CreateRenderer() → Renderer2D
+```
+
+AddGraphics2DはDrawingGraphicsResources2D.PipelineとSamplerへ既定の汎用定義を登録する。Renderer2DResourceStageはこの二つの公開キーを取得し、同一の物理device、triangle topology、alpha-to-coverage無効、fragment shaderありを検査してDrawingResources2Dを組み立てる。pipelineのshaderは汎用定義の依存として取得し、fragment artifactはpipelineのdescriptorから参照する。2D専用のshader・pipeline生成経路を追加しない。
+
+| 層 | 責務と所有権 |
+| --- | --- |
+| 汎用リソース定義 | shader依存キーとpipeline・samplerの生成設定を宣言する |
+| ResourceManager | native資源とResident依存を生成・共有し、世代と解放を管理する |
+| Renderer2DResourceStage | 汎用資源を依存取得し、2Dの前提を検査して参照群へまとめる |
+| DrawingResources2D | 生成済みnative資源への参照を保持する。所有権は持たない |
+| Renderer2Dと準備済み描画 | 一つの所有者を内部tokenで共有し、使用中の資源を保持する |
+
+CreateRendererは`ResourceLease<Renderer2DResource>`を一つ取得し、構築成功時にrendererのresourceOwnerへ渡す。このleaseが生成用資源とそのpipeline・sampler・shader依存を保持する。準備済みbatchごとのManager leaseや、pipelineを再取得する専用leaseは作らない。rendererの破棄後も既存batchが保持を続け、GPU完了後に最後のbatchを破棄すると所有者を返却する。失効検査は元lease.Valueへ接続し、device復旧やHotReload時に既存rendererの参照を新世代へ差し替えない。
+
+アプリは公開キーにGraphicsPipelineDefinitionやGraphicsSamplerDefinitionを登録して設定を変更する。定義はStage構築時に固定するため、設定はResourceManagerの構築前に済ませる。独自shaderを使う場合も2Dのpaint・coverage ABIを維持し、samplerも2Dのsampling契約を満たす必要がある。汎用定義の上書きは、この契約を任意に変更する仕組みとはしない。
+
+ResourceManagerを使わない場合も同じDrawingResources2Dを利用する。利用側が生成したnative資源を直接渡し、GPU完了まで保持するか、まとめた所有者をresourceOwnerへ渡す。純粋な2D描画からResourcesへの依存を導入しない。
+
 ## 検討した代替案
 
 | 代替案 | 採用しない理由 |
@@ -176,6 +209,7 @@ CPU artifactは再利用し、同じReferenceから新しいdevice世代のレ�
 | 単色専用命令とpaint種別ごとのDI登録 | 図形とpaintの組み合わせでAPI・登録が増える |
 | graph経路で外部共有資源を宣言しない | 前後の描画やエフェクトとの依存を解析できない |
 | 独自のGPU backend・パス実行器 | 既存Graphics・RenderGraphの契約と重複する |
+| 2D専用provider・pipeline leaseで汎用資源を再管理する | 汎用定義の生成・世代・所有権管理と重複するため、借用参照群と一つのResourceLeaseで接続する |
 | texture順の全体ソート・描画ごとのSubmit | 半透明の順序とアプリ側のGPU実行管理を崩す |
 | 文字を単色atlasや平坦なpath列に限定 | 外部の形式選択とCOLRv1の隔離合成を保持できない |
 
@@ -979,6 +1013,38 @@ PreparedDrawingPasses2D passes = await parent.Append2D(layered);
 
 Graph版の生成拡張はResources.Graphics.Drawing2D.RenderGraphへ分離する。
 シェーダ設定やresource取得を描画命令に持ち込まず、HotReload後の次の生成時に新しい世代を選択する。
+
+#### 汎用pipeline・sampler定義を上書きする
+
+ResourceManagerの構築前に、2Dの公開キーへ定義を登録する。AddGraphics2Dの既定登録はTryAddのためアプリの定義を優先し、同じキーへの明示登録同士はあと勝ちとする。
+
+```csharp
+services.AddGraphicsResource<IGraphicsPipeline>(
+    DrawingGraphicsResources2D.Pipeline,
+    new GraphicsPipelineDefinition
+    {
+        VertexShader = DrawingGraphicsResources2D.VertexShader,
+        FragmentShader = DrawingGraphicsResources2D.FragmentShader,
+        Label = "app-drawing-2d",
+        Optimization = PipelineOptimizationMode.PreferReuse,
+    });
+services.AddGraphicsResource<IGraphicsSampler>(
+    DrawingGraphicsResources2D.Sampler,
+    new GraphicsSamplerDefinition(new SamplerDesc
+    {
+        MinFilter = FilterMode.Nearest,
+        MagFilter = FilterMode.Nearest,
+        MipmapFilter = FilterMode.Nearest,
+        AddressU = AddressMode.ClampToEdge,
+        AddressV = AddressMode.ClampToEdge,
+        LodMaxClamp = 0,
+    }));
+
+// AddResources(...AddGraphics2D())等の登録後にManagerを構築・起動する。
+using var reference = await manager.AcquireRenderer2DAsync();
+using var renderer = reference.CreateRenderer(commandRenderers);
+// DrawingResources2Dは接続Stageが組み立てるため、利用側で生成しない。
+```
 
 #### Resourcesなしで外部pipelineを渡す
 
