@@ -270,6 +270,9 @@ jobs:
           dotnet publish tests/Core/Lumyte.Resources.AotSmoke -c Release -p:PublishAot=true -o artifacts/resources-aot
           artifacts/resources-aot/Lumyte.Resources.AotSmoke
           artifacts/resources-aot/Lumyte.Resources.AotSmoke --host
+          dotnet publish tests/Graphics/Lumyte.Resources.Graphics.AotSmoke -c Release -p:PublishAot=true -p:ILLinkTreatWarningsAsErrors=true -p:IlcTreatWarningsAsErrors=true -o artifacts/resource-graphics-aot
+          artifacts/resource-graphics-aot/Lumyte.Resources.Graphics.AotSmoke
+          artifacts/resource-graphics-aot/Lumyte.Resources.Graphics.AotSmoke --host
           dotnet publish tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release -p:PublishAot=true -o artifacts/resources-audio-aot
           artifacts/resources-audio-aot/Lumyte.Resources.Audio.IntegrationTests
           artifacts/resources-audio-aot/Lumyte.Resources.Audio.IntegrationTests --di

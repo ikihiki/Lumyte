@@ -60,11 +60,20 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="source">The source image, already bound to the same render graph.</param>
     /// <returns>The owner of the result's fixed resources.</returns>
     public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source)
+        => plan.AppendEffects(graph, source, null);
+
+    /// <summary>Appends the effect graph using caller-supplied shader artifacts.</summary>
+    /// <param name="plan">The caller-owned render graph.</param>
+    /// <param name="graph">The immutable effect graph.</param>
+    /// <param name="source">The graph-local input image.</param>
+    /// <param name="shaders">Optional borrowed artifacts; null selects embedded defaults.</param>
+    /// <returns>The owner of fixed GPU resources.</returns>
+    public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source, ImageEffectShaders? shaders)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(graph);
         ValidateImage(source);
-        var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic);
+        var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic, shaders);
         var results = new Dictionary<ImageEffectNode, EffectImage>(ReferenceEqualityComparer.Instance);
         try
         {
@@ -141,6 +150,15 @@ public static class ImageEffectRenderGraphExtensions
     /// <param name="inputs">Ordered graph-local input images.</param>
     /// <returns>The output and its fixed-resource owner, disposed after GPU completion.</returns>
     public static PreparedImageEffect AppendEffect(this RenderGraphBuilder plan, ImageEffectDefinition effect, params EffectImage[] inputs)
+        => plan.AppendEffectWithShaders(effect, null, inputs);
+
+    /// <summary>Appends an effect using caller-supplied shader artifacts.</summary>
+    /// <param name="plan">The graph receiving passes.</param>
+    /// <param name="effect">The effect definition.</param>
+    /// <param name="shaders">Borrowed artifacts retained through GPU completion.</param>
+    /// <param name="inputs">The ordered input images.</param>
+    /// <returns>The prepared effect owner.</returns>
+    public static PreparedImageEffect AppendEffectWithShaders(this RenderGraphBuilder plan, ImageEffectDefinition effect, ImageEffectShaders? shaders, params EffectImage[] inputs)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(effect);
@@ -169,7 +187,7 @@ public static class ImageEffectRenderGraphExtensions
             throw new InvalidOperationException("An effect must declare positive output dimensions.");
         }
 
-        var context = new EffectPreparationContext(RequireDevice(plan), semantic);
+        var context = new EffectPreparationContext(RequireDevice(plan), semantic, shaders);
         try
         {
             EffectImage output = effect.AppendPasses(context, plan, inputs);

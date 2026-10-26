@@ -116,6 +116,7 @@
   </Folder>
   <Folder Name="/tests/Graphics/">
     <Project Path="tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Resources.Graphics.AotSmoke/Lumyte.Resources.Graphics.AotSmoke.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Hosting.Tests/Lumyte.Graphics.Hosting.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj" />

@@ -143,3 +143,26 @@ IGraphicDevice device = lease.Device;
 - [Runtimeと実行先](RESOURCES-0003-runtime-execution.md)
 - [HotReload](RESOURCES-0004-hot-reload.md)
 - [デバイス世代とloss復旧](../graphics/GRAPHICS-0016-device-di-and-loss-recovery.md)
+
+## シェーダとRenderGraphの責務
+
+| 層 | 管理するもの |
+| --- | --- |
+| Graphics Abstractions | 共通のShaderArtifact binaryとStreamからの直接ロード。Resources参照を持たない |
+| ShaderArtifactStage | SourceのRevision、CPU binaryの予算、Build作業領域 |
+| GraphicsShaderStage | 選択済みGraphicsResourceRuntime、元deviceとepoch、retirement後のshader解放 |
+| ResourceRenderGraphImports | ManagerからのLease取得とcompiled planへの所有移譲 |
+| RenderGraph | 汎用IRenderGraphLifetimeの記録前検証とGPU完了後の解放。Managerを参照しない |
+| ImageEffects | 借用artifactからの固定GPU資源生成。Resources参照を持たない |
+
+Sourceはコンパイル済み`.lshader`を提供する。Slangコンパイルは既存のcompiler/buildに任せ、文字列だけを入力にしてinclude依存を失うコンパイルStageは追加しない。CPU artifactはdevice世代から独立させ、GPU shaderはResident依存としてそのartifactを保持する。直接ロードとManager経由でbinaryとGPU APIを共通化する。
+
+`AddShaderPipeline()`はCPU artifactとGPU shaderのStage、およびGPU側の型付きRuntime選択を登録する。既存の`UseGraphicsAsync`は低水準の互換入口とし、新しいStageは型付きRuntimeの`AcquireAsync`を使う。deviceやworkerの起動停止、公開世代や再構築をshader loaderへ重複実装しない。
+
+RenderGraphのimportは従来どおり借用できる。Resource連携時だけ`graph.ImportResources(manager)`でscopeを作り、`ImportTextureAsync`、`ImportBufferAsync<T>`、`ImportShaderDataBufferAsync<T>`または`AcquireAsync<T>`を使う。`imports.Compile()`はLeaseをplanへ移す。複数入力を同じpublicationに揃える場合は、事前ロードしたHandleを`Acquire(snapshot, handle)`で解決する。個々のAcquireAsyncはpublicationの一括取得ではない。
+
+planは外部所有権を`IRenderGraphLifetime`として受け取り、記録前に失効を検証する。解放順はview、一時allocation、登録の逆順の外部所有権とする。GPU完了前のDisposeは拒否する。HotReload中の旧shaderとartifactをplanの寿命まで保ち、新しいplan／pipelineが新世代を取得する。記録途中のpipelineやshaderを差し替えない。
+
+ImageEffectsは`ImageEffectShaders`を借用する入口を持ち、省略時は既定の埋め込み版を使用する。prepared effectも汎用の寿命契約を実装し、planへRetainできる。artifactのLeaseを保持した後にprepared effectを登録し、固定GPU資源を先に解放する。
+
+`ImageEffectShaders`はCPU artifactまたは既存のGPU shaderを受け取る。既存moduleを渡した場合はeffect側で生成・解放せず、管理側の世代Leaseで寿命を保つ。artifactだけを渡す場合はeffectが作ったmoduleを自分で解放する。

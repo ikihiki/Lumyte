@@ -8,10 +8,11 @@ public sealed class EffectPreparationContext
     private readonly List<IDisposable> _resources = [];
     private bool _disposed;
 
-    internal EffectPreparationContext(IGraphicDevice device, EffectColorSemantic colorSemantic)
+    internal EffectPreparationContext(IGraphicDevice device, EffectColorSemantic colorSemantic, ImageEffectShaders? shaders = null)
     {
         Device = device;
         ColorSemantic = colorSemantic;
+        Shaders = shaders;
     }
 
     /// <summary>Gets the caller-owned device.</summary>
@@ -19,6 +20,9 @@ public sealed class EffectPreparationContext
 
     /// <summary>Gets the color semantic that all outputs of this preparation must preserve.</summary>
     public EffectColorSemantic ColorSemantic { get; }
+
+    /// <summary>Gets the optional borrowed artifacts; null uses embedded defaults on demand.</summary>
+    public ImageEffectShaders? Shaders { get; }
 
     /// <summary>Transfers a fixed resource to the prepared effect owner.</summary>
     /// <param name="resource">The resource disposed after GPU use and graph-plan disposal.</param>

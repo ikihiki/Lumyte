@@ -100,3 +100,9 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Tests -c 
 ```
 
 GPU／Browser は共通 `RenderGraphExercise` で部分 buffer upload→temporary→readback、texture clear→copy→readback と別々の array layer への clear の値を検証します。単一 queue と allocation 全体の追跡を扱い、pool／alias、subresource、複数 queue／Timeline semaphore、再実行可能な compile cache は後続で設計します。
+
+## 外部所有権の保持
+
+既存のimport APIは借用のまま使用できます。外部adapterが所有権をplanへ渡す場合は、`IRenderGraphLifetime`を実装し、記録前に`CompiledRenderGraph.Retain`へ渡します。`Validate`はRetain時とRecord前に呼ばれます。DisposeはGPU完了またはcommand buffer破棄後だけ許可し、view・一時allocationを解放してから、登録の逆順で外部所有権を返します。解放失敗は未完了部分を保持し、再試行できます。
+
+ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の拡張が担当します。RenderGraph本体はその型やパッケージを参照しません。
