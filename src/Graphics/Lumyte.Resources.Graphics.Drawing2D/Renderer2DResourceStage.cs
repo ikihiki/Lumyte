@@ -22,7 +22,12 @@ public sealed class Renderer2DResourceStage : IResourceSourceStage<Renderer2DRes
             throw new InvalidOperationException("2D drawing requires a triangle pipeline without alpha-to-coverage.");
         }
 
-        return new(GraphicsProgramResource.FromPipeline(pipeline, sampler));
+        if (pipeline.Value.Desc.FragmentShader is null)
+        {
+            throw new InvalidOperationException("2D drawing requires a fragment shader.");
+        }
+
+        return new(new(epoch.Device, pipeline.Value, sampler.Value));
     }
 
     /// <inheritdoc/>

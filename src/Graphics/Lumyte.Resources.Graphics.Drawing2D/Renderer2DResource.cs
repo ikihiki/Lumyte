@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D;
 
 namespace Lumyte.Resources.Graphics.Drawing2D;
 
@@ -6,14 +7,14 @@ namespace Lumyte.Resources.Graphics.Drawing2D;
 /// <remarks>Use the CreateRenderer extension on the owning ResourceReference to retain an exact generation.</remarks>
 public sealed class Renderer2DResource
 {
-    internal Renderer2DResource(GraphicsProgramResource program)
+    internal Renderer2DResource(DrawingResources2D resources)
     {
-        Program = program;
+        Resources = resources;
     }
 
     /// <summary>Gets the physical device for this renderer generation.</summary>
-    public IGraphicDevice Device => Program.Device;
+    public IGraphicDevice Device => Resources.Device;
 
-    /// <summary>Gets the borrowed program; retain its resource lease while using it.</summary>
-    public GraphicsProgramResource Program { get; }
+    /// <summary>Gets the borrowed drawing resources; retain the resource lease while using them.</summary>
+    public DrawingResources2D Resources { get; }
 }

@@ -18,7 +18,7 @@ public sealed class RendererResourceTests
     public async Task DefaultFactoriesShareResourcesAndOwnTheirLifetimesAsync()
     {
         var state = new GraphicsTestState();
-        var source = new ProgramResourceTests.MutableSource();
+        var source = new MutableShaderSource();
         await using ServiceProvider services = CreateServices(state, source, custom: false);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
         await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
@@ -46,7 +46,7 @@ public sealed class RendererResourceTests
     public async Task ReloadAndRecoveryReuseTheFactoryReferenceAsync()
     {
         var state = new GraphicsTestState();
-        var source = new ProgramResourceTests.MutableSource();
+        var source = new MutableShaderSource();
         await using ServiceProvider services = CreateServices(state, source, custom: true);
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
         IGraphicsDeviceService devices = services.GetRequiredService<IGraphicsDeviceService>();
@@ -97,7 +97,7 @@ public sealed class RendererResourceTests
         var state = new GraphicsTestState();
         await using ServiceProvider services = CreateServices(
             state,
-            new ProgramResourceTests.MutableSource(),
+            new MutableShaderSource(),
             custom: false,
             configure: collection => collection.AddGraphicsResource(DrawingGraphicsResources2D.Pipeline, new GraphicsPipelineDefinition
             {
@@ -112,17 +112,17 @@ public sealed class RendererResourceTests
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
         using ResourceReference<Renderer2DResource> reference = await manager.AcquireRenderer2DAsync();
         using ResourceLease<Renderer2DResource> lease = reference.Acquire();
-        GraphicsProgramResources resources = lease.Value.Program.Resources;
+        DrawingResources2D resources = lease.Value.Resources;
         Assert.Equal("configured-2d", resources.Pipeline.Desc.Label);
         Assert.Equal(PipelineOptimizationMode.FullSpecialization, resources.Pipeline.Desc.Optimization);
         using ResourceReference<GraphicsResource<IGraphicsSampler>> sampler = await manager.AcquireAsync(DrawingGraphicsResources2D.Sampler);
         using ResourceLease<GraphicsResource<IGraphicsSampler>> samplerLease = sampler.Acquire();
-        Assert.Same(samplerLease.Value.Value, resources.DefaultSampler);
+        Assert.Same(samplerLease.Value.Value, resources.Sampler);
         using Renderer2D renderer = reference.CreateRenderer();
         Assert.Single(state.Devices[0].Programs);
     }
 
-    private static ServiceProvider CreateServices(GraphicsTestState state, ProgramResourceTests.MutableSource source, bool custom, Action<IServiceCollection>? configure = null, bool afterDefaults = false)
+    private static ServiceProvider CreateServices(GraphicsTestState state, MutableShaderSource source, bool custom, Action<IServiceCollection>? configure = null, bool afterDefaults = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(state);
@@ -139,7 +139,7 @@ public sealed class RendererResourceTests
             configure?.Invoke(services);
         }
 
-        services.AddResources(builder => builder.UseSource<ProgramResourceTests.MutableSource>()
+        services.AddResources(builder => builder.UseSource<MutableShaderSource>()
             .AddShaderPipeline().AddGraphics2D()
             .ConfigureHotReload(new() { DebounceDelay = TimeSpan.Zero, MaximumBatchDelay = TimeSpan.FromMilliseconds(10) }));
         services.AddResourceGraphics();

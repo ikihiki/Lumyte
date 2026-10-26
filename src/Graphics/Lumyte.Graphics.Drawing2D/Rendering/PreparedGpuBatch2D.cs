@@ -9,7 +9,6 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
     private readonly RenderPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
     private readonly List<PreparedCommand> _commands = [];
-    private readonly GraphicsProgramLease _program;
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
     private readonly IGraphicsTexture _fallback;
@@ -23,19 +22,13 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         _context = context;
         try
         {
-            GraphicsProgramLease program = context.Programs.Acquire(context.Device, DrawingPrograms2D.ProgramId);
-            ArgumentNullException.ThrowIfNull(program);
-            _program = Own(program);
+            Own(context.RetainResources());
             cancellationToken.ThrowIfCancellationRequested();
-            GraphicsProgramResources resources = program.Resources;
-            if (!ReferenceEquals(resources.Device, context.Device))
-            {
-                throw new ArgumentException("The program belongs to a different physical device.");
-            }
-
-            _artifact = resources.FragmentArtifact;
+            DrawingResources2D resources = context.Resources;
+            _artifact = resources.Pipeline.Desc.FragmentShader?.Artifact
+                ?? throw new ArgumentException("Drawing requires a fragment shader.");
             _pipeline = resources.Pipeline;
-            _sampler = resources.DefaultSampler ?? Own(context.Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
+            _sampler = resources.Sampler ?? Own(context.Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
             _fallback = Own(context.Device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled }));
             _fallbackView = Own(_fallback.CreateView());
         }
@@ -63,7 +56,7 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(target);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = _program.Resources;
+        _context.ValidateResources();
         if (_recorded)
         {
             throw new InvalidOperationException("A prepared command batch can be recorded only once.");
@@ -89,15 +82,16 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (_disposed)
+        if (_disposed && _owned.Count == 0)
         {
             return;
         }
 
         _disposed = true;
-        for (int i = _owned.Count - 1; i >= 0; i--)
+        while (_owned.Count != 0)
         {
-            _owned[i].Dispose();
+            _owned[^1].Dispose();
+            _owned.RemoveAt(_owned.Count - 1);
         }
     }
 
