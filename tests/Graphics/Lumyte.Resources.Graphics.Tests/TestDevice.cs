@@ -43,15 +43,17 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     internal int CreateShaderFailOnCall { get; set; }
 
+    internal List<TestProgramPipeline> Programs { get; } = [];
+
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged => throw new NotSupportedException();
 
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
         where T : unmanaged => throw new NotSupportedException();
 
-    public IGraphicsTexture CreateTexture(TextureDesc desc) => throw new NotSupportedException();
+    public IGraphicsTexture CreateTexture(TextureDesc desc) => new TestTexture(desc);
 
-    public IGraphicsSampler CreateSampler(SamplerDesc desc) => throw new NotSupportedException();
+    public IGraphicsSampler CreateSampler(SamplerDesc desc) => new TestSampler(desc);
 
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw new NotSupportedException();
 
@@ -73,9 +75,14 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw new NotSupportedException();
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        var program = new TestProgramPipeline(desc);
+        Programs.Add(program);
+        return program;
+    }
 
-    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => new TestComputePipeline(desc);
 
     public IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData => throw new NotSupportedException();

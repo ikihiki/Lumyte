@@ -462,7 +462,7 @@ public sealed class ResourceImageEffectTests
         else
         {
             services.AddSingleton(source);
-            services.AddSingleton(new ImageEffectShaderPackage(new("fullscreen"), new("effects")));
+            services.UseGraphicsShaders<ImageEffectShaderResource>(new("fullscreen"), new("effects"));
             services.AddResources(builder => builder.UseSource<MutableShaderSource>()
                 .AddSourcePipeline<ShaderArtifact, ShaderArtifactStage>()
                 .AddImageEffects()

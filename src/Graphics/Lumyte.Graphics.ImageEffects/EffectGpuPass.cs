@@ -34,8 +34,8 @@ internal static class EffectGpuPass
         ImageEffectShaders shaders = owner.Shaders ?? ImageEffectShaders.Embedded;
         IGraphicsShader vertex = shaders.FullscreenShader ?? owner.Add(device.CreateShader(shaders.Fullscreen));
         IGraphicsShader fragment = shaders.EffectsShader ?? owner.Add(device.CreateShader(shaders.Effects));
-        IGraphicsPipeline pipeline = owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
-        IGraphicsSampler sampler = owner.Add(device.CreateSampler(new()
+        IGraphicsPipeline pipeline = shaders.Pipeline ?? owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
+        IGraphicsSampler sampler = shaders.Sampler ?? owner.Add(device.CreateSampler(new()
         {
             MinFilter = FilterMode.Nearest,
             MagFilter = FilterMode.Nearest,
