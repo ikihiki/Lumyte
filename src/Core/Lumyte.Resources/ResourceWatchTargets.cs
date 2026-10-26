@@ -12,9 +12,16 @@ internal sealed class ResourceWatchTargets : IResourceWatchTargets
     {
         get
         {
+            if (Volatile.Read(ref _resources) is { } resources)
+            {
+                return resources;
+            }
+
             lock (_gate)
             {
-                return _resources ??= _references.Keys.ToFrozenSet();
+                resources = _resources ?? _references.Keys.ToFrozenSet();
+                Volatile.Write(ref _resources, resources);
+                return resources;
             }
         }
     }
@@ -75,7 +82,7 @@ internal sealed class ResourceWatchTargets : IResourceWatchTargets
         lock (_gate)
         {
             _references.Clear();
-            _resources = FrozenSet<ResourceId>.Empty;
+            Volatile.Write(ref _resources, FrozenSet<ResourceId>.Empty);
         }
     }
 
@@ -93,13 +100,13 @@ internal sealed class ResourceWatchTargets : IResourceWatchTargets
         if (references is { Builds: 0, Metadata: 0 })
         {
             _references.Remove(id);
-            _resources = null;
+            Volatile.Write(ref _resources, null);
         }
         else
         {
             if (!_references.ContainsKey(id))
             {
-                _resources = null;
+                Volatile.Write(ref _resources, null);
             }
 
             _references[id] = references;
