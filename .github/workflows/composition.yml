@@ -236,6 +236,9 @@ jobs:
           dotnet publish tests/Core/Lumyte.Resources.AotSmoke -c Release -p:PublishAot=true -o artifacts/resources-aot
           artifacts/resources-aot/Lumyte.Resources.AotSmoke
           artifacts/resources-aot/Lumyte.Resources.AotSmoke --host
+          dotnet publish tests/Graphics/Lumyte.Resources.Graphics.AotSmoke -c Release -p:PublishAot=true -p:ILLinkTreatWarningsAsErrors=true -p:IlcTreatWarningsAsErrors=true -o artifacts/resource-graphics-aot
+          artifacts/resource-graphics-aot/Lumyte.Resources.Graphics.AotSmoke
+          artifacts/resource-graphics-aot/Lumyte.Resources.Graphics.AotSmoke --host
           dotnet pack src/Core/Lumyte.Execution -c Release --no-build -o artifacts/nuget
           dotnet pack src/Core/Lumyte.Execution.Generators -c Release --no-build -o artifacts/nuget
           dotnet pack src/Graphics/Lumyte.Resources.Graphics -c Release --no-build -o artifacts/nuget

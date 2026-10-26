@@ -1,7 +1,9 @@
+using Lumyte.Graphics.RenderGraph;
+
 namespace Lumyte.Graphics.ImageEffects;
 
 /// <summary>Owns fixed resources captured by appended effect passes.</summary>
-public sealed class PreparedImageEffect : IDisposable
+public sealed class PreparedImageEffect : IRenderGraphLifetime
 {
     private readonly EffectPreparationContext _context;
 
@@ -14,6 +16,9 @@ public sealed class PreparedImageEffect : IDisposable
     /// <summary>Gets the graph-local result.</summary>
     public EffectImage Output { get; }
 
-    /// <summary>Releases fixed resources after GPU completion and graph-plan disposal.</summary>
+    /// <inheritdoc/>
+    void IRenderGraphLifetime.Validate() => _context.EnsureAlive();
+
+    /// <summary>Releases fixed resources after GPU completion and graph temporary-resource disposal.</summary>
     public void Dispose() => _context.Release();
 }

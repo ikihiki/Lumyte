@@ -78,6 +78,9 @@ public sealed class ShaderArtifact
         }
     }
 
+    /// <summary>Gets the retained binary size for memory accounting.</summary>
+    public int BinaryLength => _binary.Length;
+
     /// <summary>Loads the complete shader binary from a DLL resource.</summary>
     /// <param name="assembly">The DLL containing the binary.</param>
     /// <param name="resourceName">The exact resource name.</param>
@@ -87,9 +90,29 @@ public sealed class ShaderArtifact
         ArgumentNullException.ThrowIfNull(assembly);
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceName);
         using Stream resource = assembly.GetManifestResourceStream(resourceName) ?? throw new InvalidOperationException("Embedded shader binary was not found.");
+        return Load(resource);
+    }
+
+    /// <summary>Loads a compiled artifact from the current position, leaving the input open.</summary>
+    /// <param name="input">The borrowed binary stream.</param>
+    /// <returns>The validated artifact owning its binary.</returns>
+    public static ShaderArtifact Load(Stream input)
+    {
         using var bytes = new MemoryStream();
-        resource.CopyTo(bytes);
-        return new(bytes.ToArray());
+        input.CopyTo(bytes);
+        return new(bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length)));
+    }
+
+    /// <summary>Loads a compiled artifact asynchronously, leaving the input open.</summary>
+    /// <param name="input">The borrowed binary stream.</param>
+    /// <param name="cancellationToken">Cancels reading.</param>
+    /// <returns>The validated artifact owning its binary.</returns>
+    public static async ValueTask<ShaderArtifact> LoadAsync(Stream input, CancellationToken cancellationToken = default)
+    {
+        using var bytes = new MemoryStream();
+        await input.CopyToAsync(bytes, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length)));
     }
 
     /// <summary>Packs one online target into the same binary format used offline.</summary>

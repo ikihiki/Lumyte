@@ -40,3 +40,11 @@ ImageEffectGraph.GetRequiredSourceBounds(output)は遅延設定のCPU上の領�
 ImageEffectSubgraphは親graphとSource画像を持つ部分ビューです。レイヤー等のコールバックで
 scope.AppendGaussianBlur(scope.Source, 3, 3)を呼ぶとEffectImageを返し、固定資源のownerはscopeが保持します。
 独立したgraphやplanは生成せず、すべての処理を親graphへ追加します。
+
+## 外部からロードしたシェーダ
+
+`AppendEffects(graph, source, shaders)`または`AppendEffectWithShaders(effect, shaders, inputs)`へ、`ImageEffectShaders`を渡せます。二つのartifactはfullscreen vertexとeffect fragmentの既存shader ABIを満たす必要があります。省略した既存APIはDLL埋め込み版を使い、共通artifactは初回だけロードします。
+
+直接ロードでもResourceManagerからの取得でも同じ型を使います。ResourceManagerを利用する場合はartifactのLeaseをGPU処理とprepared effectの解放まで保持してください。`compiled.Retain(prepared)`を使うと、GPU完了を確認するplanが固定GPU資源も解放します。artifactのLeaseをplanへ渡した後にprepared effectをRetainすれば、固定GPU資源を先に解放できます。
+
+`ImageEffectShaders`には`IGraphicsShader`を二つ渡すconstructorもあります。同じdevice上の既存moduleを借用し、各passでのmodule再生成を避けます。prepared effectは借用moduleをDisposeしません。直接所有する側、またはResourceManagerのLeaseが、GPU完了とprepared effect解放まで保持します。

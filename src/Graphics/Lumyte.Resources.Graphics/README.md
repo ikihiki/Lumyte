@@ -80,3 +80,66 @@ await execution.StopAsync();
 Source・Stage・device service・memoryの寿命はホストが保証します。
 Managerの解放が成功してからExecutionを停止し、最後にdevice serviceを終了してDI rootを閉じます。
 Graphics Runtimeはbackend固有の同期制約を取り除くものではなく、StageはそのdeviceのGPU完了・Native操作の契約を守ります。
+
+## シェーダのロード
+
+共通形式はコンパイル済みの`.lshader`です。ResourceManagerを使わない場合も、同じartifactを直接ロードして既存のdevice APIへ渡せます。Slangのコンパイルは既存のoffline buildまたは`IShaderCompiler`が担当します。
+
+```csharp
+await using Stream input = File.OpenRead("fullscreen.lshader");
+ShaderArtifact artifact = await ShaderArtifact.LoadAsync(input);
+using IGraphicsShader shader = device.CreateShader(artifact);
+```
+
+Managerを使う場合は、CPU artifactとGPU shaderの依存を登録します。
+
+```csharp
+services.AddGraphicsDevice<AppDeviceFactory>(ServiceLifetime.Singleton);
+services.AddResources(resources => resources.UseSource<AppSource>().AddShaderPipeline());
+services.AddResourceGraphics();
+```
+
+`ShaderArtifactStage`は入力Revisionを記録し、binaryをCPU予算へ計上します。長さが分かる入力は確保前に予約し、作業bufferもBuild scopeへ計上します。長さが分からない入力は読み込み後に実サイズを予約します。`GraphicsShaderStage`は型付きRuntimeからその構築のdeviceを取得し、GPU shaderと元のepochを保持します。deviceロスト後の解放は元のepochのretirementを待ちます。CPU artifactはdevice世代に依存せず、復旧時に再利用します。
+
+CPU artifactだけ必要なら`AddSourcePipeline<ShaderArtifact, ShaderArtifactStage>()`を登録できます。ImageEffectsやshader-data-buffer生成にも同じartifactを渡せます。ResourceManagerが所有するGPU shaderを利用側でDisposeしないでください。
+
+## RenderGraphへのimport
+
+RenderGraph本体はResourcesへ参照を追加しません。このbridgeの`ImportResources`からtexture、typed buffer、shader-data-bufferを取得できます。アプリ固有の出力wrapperやシェーダは`AcquireAsync<T>`で保持し、既存のgraph/device APIへ渡します。
+
+```csharp
+var graph = new RenderGraph(device);
+using var imports = graph.ImportResources(manager);
+RenderGraphTexture texture = await imports.ImportTextureAsync(
+    new ResourceKey<IGraphicsTexture>("textures/albedo"),
+    TextureState.Sampled, precedingScope);
+// passを追加し、読み書きとoutputを宣言する。
+using CompiledRenderGraph plan = imports.Compile();
+plan.Record(commands);
+// commandsをsubmitし、GPU完了を待つ。その後planをDisposeする。
+```
+
+import時のstate/scopeは実際の直前状態を指定し、別deviceのallocationを混在させないでください。キーの出力型はPipeline登録と一致させます。wrapper出力なら`AcquireAsync`で取得してから、そのtexture/bufferをgraphへimportします。
+
+compile前の放棄はimportsのDisposeでLeaseを返します。`imports.Compile()`が成功すると所有はplanへ移り、importsをDisposeしても描画中の世代は残ります。`graph.Compile()`を直接呼ぶとこの移譲は行われません。planは記録前にLeaseの失効を検証し、GPU完了またはcommand buffer破棄後に、view・一時allocation・外部所有権の順で解放します。旧世代はHotReload中も保持し、次のgraphが新しい公開値を取得します。
+
+複数入力の公開世代を揃える場合は、先にReferenceを取得してから`manager.CaptureSnapshot()`を一度呼び、`imports.Acquire(snapshot, reference.Handle)`で解決します。この経路はI/Oを行わず、発行済みLeaseはsnapshotを返した後も有効です。別々の`AcquireAsync`呼び出しは同一publicationを保証しません。
+
+## ImageEffectsとの接続
+
+ImageEffectsもResourcesへ依存しません。既定の埋め込みartifactを使う既存APIに加え、取得済みartifactを`ImageEffectShaders`として渡せます。
+
+```csharp
+using var imports = graph.ImportResources(manager);
+ShaderArtifact vertex = await imports.AcquireAsync(new ResourceKey<ShaderArtifact>("effects/fullscreen"));
+ShaderArtifact fragment = await imports.AcquireAsync(new ResourceKey<ShaderArtifact>("effects/fragment"));
+using PreparedImageEffect prepared = graph.AppendEffects(effectGraph, source, new ImageEffectShaders(vertex, fragment));
+using CompiledRenderGraph plan = imports.Compile();
+plan.Retain(prepared);
+plan.Record(commands);
+// GPU完了後にplanをDispose。effectのGPU資源、artifactのLeaseの順に返す。
+```
+
+単一effectには`AppendEffectWithShaders`を使います。既定artifactは一度だけロードします。HotReload後に既存のpipelineをその場で差し替えず、新しいartifactから次のprepared effect／pipelineを作り、使用中のplanは元の資源を完了まで保持します。
+
+GPU shaderも共有する場合は、`AcquireAsync<GraphicsShaderResource>`で二つのshaderを取得し、`new ImageEffectShaders(vertex.Shader, fragment.Shader)`を渡します。この場合、effectはshader moduleを生成・解放せずに借用します。Leaseは同じimport scopeからplanへ移すため、既存moduleを各passで再利用できます。

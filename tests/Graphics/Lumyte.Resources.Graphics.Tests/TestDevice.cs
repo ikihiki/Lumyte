@@ -51,7 +51,7 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw new NotSupportedException();
 
-    public IGraphicsShader CreateShader(ShaderArtifact artifact) => throw new NotSupportedException();
+    public IGraphicsShader CreateShader(ShaderArtifact artifact) => new TestShader(artifact);
 
     public IGraphicsSemaphore CreateSemaphore() => throw new NotSupportedException();
 
