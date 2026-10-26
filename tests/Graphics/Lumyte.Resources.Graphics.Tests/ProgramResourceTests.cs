@@ -220,7 +220,7 @@ public sealed class ProgramResourceTests
         return services.BuildServiceProvider();
     }
 
-    private sealed class MutableSource : IResourceSource, IResourceChangeSource
+    internal sealed class MutableSource : IResourceSource, IResourceChangeSource
     {
         private readonly Channel<ResourceSourceChange> _changes = Channel.CreateUnbounded<ResourceSourceChange>();
         private int _version = 1;

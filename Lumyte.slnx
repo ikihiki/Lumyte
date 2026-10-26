@@ -67,6 +67,7 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D/Lumyte.Resources.Graphics.Drawing2D.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D.DependencyInjection/Lumyte.Graphics.Drawing2D.DependencyInjection.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
