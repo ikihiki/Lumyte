@@ -141,10 +141,10 @@ DrawBackdropEffectは直前までの現在レイヤーをsnapshotし、結果を
 
 ### 外部プログラムとdevice世代
 
-Renderer2DとRenderGraphRenderer2Dはconstructorで任意のIGraphicsProgramProviderを借用する。
-通常描画とレイヤー合成はDrawingPrograms2D.ProgramId、画像エフェクトはImageEffectPrograms.ProgramIdで取得する。
-各命令rendererにはRenderPreparationContext2D.Programsを渡す。DIでのprogram登録や効果実装の差し替えは追加しない。
-providerを省略した経路だけがパッケージの埋め込みproviderを使用する。外部providerでは資源の未準備・失効を呼び出し側へ返す。
+Renderer2DとRenderGraphRenderer2Dはconstructorで任意のIGraphicsProgramProviderを借用する。Resources.GraphicsのResourceGraphicsProgramProviderへ事前取得したhandleとフレームのResourceSnapshotを渡すことで、読み込みを描画経路に入れず接続できる。
+通常描画とレイヤー合成はDrawingPrograms2D.ProgramIdで取得する。画像エフェクトは親graphのImageEffects拡張から取得し、Resources.Graphics.ImageEffectsのAddImageEffectsで管理する。
+各命令rendererにはRenderPreparationContext2D.Programsを渡す。記録直前にもleaseのruntime有効性を検査し、ロストしたGPU世代の利用を拒否する。DIでのprogram登録や効果実装の差し替えは追加しない。
+providerを省略した通常描画だけがパッケージの埋め込みproviderを使用する。外部providerでは資源の未準備・失効を呼び出し側へ返す。
 program leaseはprepared batchに保持し、GPU使用とcommand/compiled planの解放後に返却する。
 内容の公開世代は一回の準備全体で固定し、pipelineとfragment artifactを同じ世代から取得する。
 
@@ -933,7 +933,7 @@ canvas.DrawBackdropEffect(new BackdropEffectOptions2D
 
 ```csharp
 // programsは必要なABI識別子を解決するIGraphicsProgramProvider。
-// Resources adapterはread scopeを準備全体で固定して作る。
+// Resources adapterはResourceSnapshotを準備全体で固定して作る。
 using var direct = new Renderer2D(device, commandRenderers, programs);
 using PreparedDraw2D prepared = await direct.PrepareAsync(list, target);
 
@@ -943,6 +943,6 @@ PreparedDrawingPasses2D passes = await parent.Append2D(layered);
 // GPU使用・commandとcompiled planの解放後にprepared/passesを解放する。
 ```
 
-programsはDrawingPrograms2D.ProgramId、および効果を使う場合はImageEffectPrograms.ProgramIdを解決する。
+programsはDrawingPrograms2D.ProgramIdを解決する。画像エフェクトは同じ親graphにAddImageEffectsで登録する。
 新しいeffectが別shader ABIを使う場合はその識別子も解決する。
 取得時にI/Oや復旧待機を隠さず、事前に準備した資源のleaseを返す。

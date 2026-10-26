@@ -15,7 +15,7 @@ public sealed class DeviceServiceTests
         var state = new TestFactoryState { CreationWait = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         await using ServiceProvider provider = CreateProvider(state);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
         using var cancelled = new CancellationTokenSource();
         Task first = service.InitializeAsync(cancelled.Token).AsTask();
         Task second = service.InitializeAsync().AsTask();
@@ -38,7 +38,7 @@ public sealed class DeviceServiceTests
         var state = new TestFactoryState();
         await using ServiceProvider provider = CreateProvider(state);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
         await service.InitializeAsync();
         GraphicsDeviceLease old = await service.AcquireAsync();
         ulong readyVersion = old.State.Version;
@@ -73,6 +73,31 @@ public sealed class DeviceServiceTests
         Assert.Equal(1, state.Devices[0].Disposals);
     }
 
+    /// <summary>Concurrent returns of one lease cannot release another lease's ownership.</summary>
+    /// <returns>Completion of the scenario.</returns>
+    [Fact]
+    public async Task ConcurrentDisposalReturnsAnEpochLeaseOnlyOnceAsync()
+    {
+        var state = new TestFactoryState();
+        await using ServiceProvider provider = CreateProvider(state);
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
+        await service.InitializeAsync();
+        GraphicsDeviceLease returned = await service.AcquireAsync();
+        using GraphicsDeviceLease retained = await service.AcquireAsync();
+        state.Devices[0].Lose();
+
+        Parallel.For(0, 64, _ => returned.Dispose());
+
+        Assert.False(returned.IsUsable);
+        Assert.Throws<ObjectDisposedException>(() => returned.Device);
+        Assert.Equal(0, await service.RetireAsync());
+        Assert.Equal(0, state.Devices[0].Disposals);
+        retained.Dispose();
+        Assert.Equal(1, await service.RetireAsync());
+        Assert.Equal(1, state.Devices[0].Disposals);
+    }
+
     /// <summary>Failed cleanup remains owned and is retried without losing its diagnosis.</summary>
     /// <returns>Completion of the scenario.</returns>
     [Fact]
@@ -81,7 +106,7 @@ public sealed class DeviceServiceTests
         var state = new TestFactoryState();
         await using ServiceProvider provider = CreateProvider(state);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
         await service.InitializeAsync();
         state.Devices[0].Lose();
         state.Devices[0].RejectRetirement = true;
@@ -107,7 +132,7 @@ public sealed class DeviceServiceTests
         var state = new TestFactoryState { WrapDeviceOwner = true };
         await using ServiceProvider provider = CreateProvider(state);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
         await service.InitializeAsync();
         using (GraphicsDeviceLease lease = await service.AcquireAsync())
         {
@@ -137,7 +162,7 @@ public sealed class DeviceServiceTests
         var state = new TestFactoryState { Failures = 1 };
         await using ServiceProvider provider = CreateProvider(state);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.InitializeAsync().AsTask());
         Assert.Equal(GraphicsDeviceServiceStatus.Failed, service.State.Status);
         state.ReturnLost = true;
@@ -175,6 +200,74 @@ public sealed class DeviceServiceTests
         Assert.NotSame(one.Device, three.Device);
     }
 
+    /// <summary>The default context remains distinct from a device named default and from other scopes.</summary>
+    /// <returns>Completion of the scenario.</returns>
+    [Fact]
+    public async Task DefaultAndNamedContextsHaveIndependentOwnershipAsync()
+    {
+        var state = new TestFactoryState();
+        var services = new ServiceCollection();
+        services.AddSingleton(state);
+        services.AddGraphicsDevice<TestFactory>("default");
+        services.AddGraphicsDevice<TestFactory>();
+        Assert.Throws<ArgumentException>(() => services.AddGraphicsDevice<TestFactory>());
+        Assert.Throws<ArgumentException>(() => services.AddGraphicsDevice<TestFactory>(string.Empty));
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        await using AsyncServiceScope first = provider.CreateAsyncScope();
+        await using AsyncServiceScope second = provider.CreateAsyncScope();
+        IGraphicsDeviceService unnamed = first.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
+        IGraphicsDeviceService named = first.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("default");
+        IGraphicsDeviceService other = second.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
+        Assert.Empty(unnamed.State.Name);
+        Assert.Equal("default", named.State.Name);
+        Assert.NotSame(unnamed, named);
+        Assert.NotSame(unnamed, other);
+        await unnamed.InitializeAsync();
+        await named.InitializeAsync();
+        await other.InitializeAsync();
+        await first.DisposeAsync();
+        Assert.Equal(GraphicsDeviceServiceStatus.Disposed, unnamed.State.Status);
+        Assert.Equal(GraphicsDeviceServiceStatus.Disposed, named.State.Status);
+        Assert.Equal(GraphicsDeviceServiceStatus.Ready, other.State.Status);
+        Assert.Equal(1, state.Devices[0].Disposals);
+        Assert.Equal(1, state.Devices[1].Disposals);
+        Assert.Equal(0, state.Devices[2].Disposals);
+    }
+
+    /// <summary>Application-wide device registration survives child scope disposal.</summary>
+    /// <returns>Completion of the scenario.</returns>
+    [Fact]
+    public async Task SingletonRegistrationSharesTheDeviceAcrossScopesAsync()
+    {
+        var state = new TestFactoryState();
+        var services = new ServiceCollection();
+        services.AddSingleton(state);
+        services.AddGraphicsDevice<TestFactory>(ServiceLifetime.Singleton);
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        IGraphicsDeviceService device = provider.GetRequiredService<IGraphicsDeviceService>();
+        await device.InitializeAsync();
+
+        await using (AsyncServiceScope scope = provider.CreateAsyncScope())
+        {
+            Assert.Same(device, scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>());
+        }
+
+        Assert.Equal(GraphicsDeviceServiceStatus.Ready, device.State.Status);
+        Assert.Equal(0, state.Devices[0].Disposals);
+        using GraphicsDeviceLease lease = await device.AcquireAsync();
+        Assert.Same(state.Devices[0], lease.Device);
+    }
+
+    /// <summary>Transient device ownership is rejected before adding any registrations.</summary>
+    [Fact]
+    public void TransientRegistrationIsRejected()
+    {
+        var services = new ServiceCollection();
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddGraphicsDevice<TestFactory>("main", ServiceLifetime.Transient));
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddGraphicsDevice<TestFactory>(ServiceLifetime.Transient));
+        Assert.Empty(services);
+    }
+
     /// <summary>Confirming retirement pins the owner even if another caller tries to reclaim it.</summary>
     /// <returns>Completion of the scenario.</returns>
     [Fact]
@@ -183,7 +276,7 @@ public sealed class DeviceServiceTests
         var state = new TestFactoryState();
         await using ServiceProvider provider = CreateProvider(state);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
-        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredKeyedService<IGraphicsDeviceService>("main");
+        IGraphicsDeviceService service = scope.ServiceProvider.GetRequiredService<IGraphicsDeviceService>();
         await service.InitializeAsync();
         using GraphicsDeviceLease lease = await service.AcquireAsync();
         state.Devices[0].RetirementWait = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -200,7 +293,7 @@ public sealed class DeviceServiceTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(state);
-        services.AddGraphicsDevice<TestFactory>("main");
+        services.AddGraphicsDevice<TestFactory>();
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 }

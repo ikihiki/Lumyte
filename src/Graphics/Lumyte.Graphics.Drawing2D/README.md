@@ -54,5 +54,11 @@ programsは事前に準備した資源を返す `IGraphicsProgramProvider` で�
 ABI識別子は `DrawingPrograms2D.ProgramId` で、argument・instruction配置と演算の意味を含みます。
 program leaseはprepared batchが保持し、GPU使用とcommandの解放後にPreparedDraw2Dとともに返却します。
 providerを省略すると `DrawingPrograms2D.DefaultProvider` が埋め込みartifactから生成します。外部providerで内部fallbackは行いません。
-Resources adapterはread scopeを一回のPrepareAsync全体で固定し、同じ内容世代を返します。
+Resources adapterはResourceSnapshotを一回のPrepareAsync全体で固定し、同じ内容世代を返します。
 デバイスロスト後は旧batchを解放し、新device・復元済みprogramで準備し直します。
+
+Resources連携では初期化時にGraphicsProgramResourceのReferenceを取得し、フレームのResourceSnapshotとhandleを
+ResourceGraphicsProgramProviderへ渡します。取得したResourceLeaseはprepared batchのprogram leaseが保持します。
+記録直前にruntimeの失効を検査します。ロスト後の再構築はGraphicsResourceRuntimeとResourceManagerが担当し、
+新deviceと新しいSnapshotでPrepareAsyncをやり直します。設定・利用例は
+[Resources.Graphics](../Lumyte.Resources.Graphics/README.md#外部プログラムproviderとの接続) を参照してください。

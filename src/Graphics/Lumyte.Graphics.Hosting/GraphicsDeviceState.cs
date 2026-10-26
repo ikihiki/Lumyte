@@ -1,9 +1,9 @@
 namespace Lumyte.Graphics.Hosting;
 
-/// <summary>Captures a named device generation and its irreversible invalidation watermark.</summary>
+/// <summary>Captures a device generation and its irreversible invalidation watermark.</summary>
 public sealed record GraphicsDeviceState
 {
-    /// <summary>Gets the DI registration name.</summary>
+    /// <summary>Gets the DI registration name, or an empty string for the default device.</summary>
     public required string Name { get; init; }
 
     /// <summary>Gets the monotonic state version.</summary>
