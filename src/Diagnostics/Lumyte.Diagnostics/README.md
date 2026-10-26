@@ -70,3 +70,7 @@ Singleton の `ILoggerProvider` は Scoped サービスを捕捉せず、instanc
 [実行可能な Input サンプル](../../../samples/Lumyte.Diagnostics.Sample/README.md) を参照する。
 
 このパッケージはゲーム側の実行・収集の基盤である。[診断サーバー](../Lumyte.Diagnostics.Server/README.md) と [共通通信エージェント](../Lumyte.Diagnostics.Transport/README.md) を追加し、MagicOnion / HTTP の実接続を検証した。[検証結果](../../../docs/diagnostics/communication-verification.md) を参照する。登録世代、実エンジンのグラフ走査、描画キャプチャー、大容量転送は後続実装範囲。
+
+操作結果は既存の `Status` 文字列に加え、`GetStatus()` で `DiagnosticOperationStatus` として参照できます。未認識の文字列は `Unknown` になり、元の値は `Status` に残ります。通信形式は変更しません。
+
+テレメトリーの利用者フィールドは32件まで、例外情報を含むログの総フィールド数は37件までです。収集側とHTTP／MagicOnion受信側は `DiagnosticTelemetryLimits` の同じ上限を使用します。37件のログを扱う場合は受信側にもこの修正が必要です。
