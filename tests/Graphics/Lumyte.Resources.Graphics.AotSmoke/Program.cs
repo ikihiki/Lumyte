@@ -66,7 +66,7 @@ internal static class Program
         services.AddGraphicsDevice<SmokeFactory>(ServiceLifetime.Singleton);
         if (custom)
         {
-            services.AddSingleton(new ImageEffectShaderPackage(new("custom/fullscreen"), new("custom/effects")));
+            services.UseGraphicsShaders<ImageEffectShaderResource>(new("custom/fullscreen"), new("custom/effects"));
         }
 
         services.AddResources(builder => builder.UseSource<Source>()

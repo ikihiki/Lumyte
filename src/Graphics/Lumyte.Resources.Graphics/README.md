@@ -159,6 +159,105 @@ plan.Record(commands);
 // GPU完了後にplanをDispose。effectのGPU資源、shaderのLeaseの順に返す。
 ```
 
-カスタムの場合だけ`ImageEffectShaderPackage`をDIへ登録し、二つのartifactキーを指定します。組を一つの世代として取得するため、通常のappendでSnapshotは不要です。HotReload後に既存のpipelineをその場で差し替えず、次のplanで新しいシェーダ一式を利用します。
+カスタムの場合だけ`UseGraphicsShaders<ImageEffectShaderResource>`でDIへ登録し、二つのartifactキーを指定します。組を一つの世代として取得するため、通常のappendでSnapshotは不要です。HotReload後に既存のpipelineをその場で差し替えず、次のplanで新しいシェーダ一式を利用します。
 
 低水準のartifact／GPU module取得と`ImageEffectShaders`への受け渡しも利用できます。その場合は取得元の寿命をGraphへ保持させてから固定GPU資源を準備します。直接Graphに追加するEffectsと2Dの部分ビューは同じImageEffectsGraphContextを使用します。
+
+## キー付きGraphicsリソース定義
+
+ResourceManagerは、定義から生成・共有・再構築するGPUリソースを管理します。
+型ごとのshader設定だけでなく、`ResourceKey<GraphicsResource<T>>`ごとに異なる定義を登録できます。
+同じ型のpipelineを用途別に複数持てます。同じ型・キーへの登録はDIのあと勝ちです。
+
+```csharp
+var vertex = new ResourceKey<GraphicsResource<IGraphicsShader>>("app/vertex");
+var fragment = new ResourceKey<GraphicsResource<IGraphicsShader>>("app/fragment");
+var pipeline = new ResourceKey<GraphicsResource<IGraphicsPipeline>>("app/pipeline");
+services.AddGraphicsResource(vertex, new GraphicsShaderDefinition(new ResourceKey<ShaderArtifact>("shaders/vertex.lshader")));
+services.AddGraphicsResource(fragment, new GraphicsShaderDefinition(new ResourceKey<ShaderArtifact>("shaders/fragment.lshader")));
+services.AddGraphicsResource(pipeline, new GraphicsPipelineDefinition
+{
+    VertexShader = vertex,
+    FragmentShader = fragment,
+    TopologyClass = PrimitiveTopologyClass.Triangle,
+    AlphaToCoverageEnable = false,
+    Optimization = PipelineOptimizationMode.FullSpecialization,
+    Label = "app-pipeline",
+});
+services.AddResources(resources => resources.UseSource<AppSource>()
+    .AddShaderPipeline().AddGraphicsResources());
+services.AddResourceGraphics();
+
+// device・Execution起動後。生成やロードは取得時に行う。
+using var reference = await manager.AcquireAsync(pipeline);
+using var lease = reference.Acquire();
+encoder.SetPipeline(lease.Value.Value);
+// GPU使用・command解放の後にleaseを返す。
+```
+
+定義のキーとshader入力のキーは別です。二つのpipelineが同じshaderキーを参照すると、GPU moduleも共有します。
+shaderはpipelineのResident依存です。pipelineの解放が成功するまでmoduleと元device epochを保持します。
+Depth-only用途ではFragmentShaderを省略できます。Blend・Cull・Depth/Stencil・SampleMaskは描画時、
+attachment format/sample countはpassから指定し、定義へ重複させません。
+
+`AddGraphicsResources()`はshader、graphics/compute pipeline、sampler、texture、texture viewのStageを追加します。
+繰り返しや2D/Effectsからの共用登録でも既存Stageを置き換えません。
+`GraphicsBufferDefinition<T>`には`AddGraphicsResourcePipeline<IGraphicsBuffer<T>>()`を追加します。
+独自meshや複合GPUアセットも`GraphicsResourceDefinition<T>`と同じgeneric Stageで定義できます。
+`GraphicsComputePipelineDefinition`はcompute shaderへの、`GraphicsTextureViewDefinition`はtextureへのResident依存を登録します。
+
+`GraphicsTextureDefinition`と`GraphicsBufferDefinition<T>`は割り当てだけを復元します。
+画像・mesh等の内容を復元する場合は、独自定義でCPU資源をRequireAsyncし、初期化・upload完了を待ってから返します。
+更新可能な内容を割り当て定義だけで保存・復元できるとはみなしません。
+途中生成物は次の失敗し得る操作より前にcontextのcleanupへ登録します。
+
+| 管理対象 | 所有者 |
+| --- | --- |
+| 共有shader、pipeline、sampler、texture、buffer、view、mesh | ResourceManager。依存・再構築手順が定義されたもの |
+| Renderer生成用の共有資源 | ResourceManager。汎用キーの依存を束ねる |
+| Renderer実体、フレームごとの更新buffer・binding | 描画側 |
+| 一時画像、Effects中間出力 | RenderGraph |
+| Swapchain画像、command、描画submission・完了判断 | Graphicsシステム・利用側 |
+| state/attachmentに応じたnative pipeline cache | backend |
+
+DI定義はManagerのStage構築時に型別・キー別の辞書へ固定します。描画時にDIを参照せず、Acquire時にも定義を変更しません。
+`TryAddGraphicsResource`でライブラリ既定値を登録し、アプリ定義は登録順序にかかわらず優先できます。
+Runtimeは出力型ごとに選び、GPU依存が別physical deviceなら失敗します。出力型ごとの名前付きRuntime選択も従来どおり使えます。
+DIなしでは`new GraphicsResourceStage<T>(registrations)`と`ResourceStageRuntime(typeof(GraphicsResource<T>), runtime)`をManagerに登録します。
+各registrationは公開の`GraphicsResourceRegistration<T>(key, definition)`です。
+
+## 2D・Effectsの既定定義
+
+2Dは`AddGraphics2D()`、Effectsは`AddImageEffects()`が汎用の定義とStageを登録します。
+`DrawingGraphicsResources2D`と`ImageEffectGraphicsResources`がshader/pipeline等の公開キーを提供します。
+2Dの取得・生成は`AcquireRenderer2DAsync()`→`CreateRenderer()`、Effectsは親graphの`AddImageEffects(manager)`で接続します。
+描画時にshaderやproviderを組み立てません。
+
+```csharp
+services.AddGraphicsResource(ImageEffectGraphicsResources.Pipeline, new GraphicsPipelineDefinition
+{
+    VertexShader = ImageEffectGraphicsResources.VertexShader,
+    FragmentShader = ImageEffectGraphicsResources.FragmentShader,
+    Optimization = PipelineOptimizationMode.FullSpecialization,
+});
+```
+
+`UseGraphicsShaders<Renderer2DResource>(vertex, fragment)`と
+`UseGraphicsShaders<ImageEffectShaderResource>(vertex, fragment)`は入力だけを変える簡略APIとして残します。
+明示的に登録した同じ公開キーの定義を優先します。未設定時はDLL埋め込みartifactを使い、アプリのSourceを読みません。
+2D/Effectsが要求するtriangle・fragment・single-sample互換性に反する定義は、生成用資源の取得時に拒否します。
+
+## 公開世代・復旧と寿命
+
+生成したrendererやgraph/planは正確な一世代の依存を保持します。HotReload後は同じReferenceから次のrendererを生成し、
+Effectsは次のGraphで新しい公開世代を取得します。既存のrenderer・prepared draw・planはその場で差し替えません。
+複数入力を同じpublicationへ揃える場合だけResourceSnapshotを共有します。
+
+GPU使用終了の判断は利用側の責務です。ResourceManagerはlease返却後の解放を行い、描画のsubmitや完了判断を代行しません。
+Build中の初期化uploadについては定義が完了まで所有し、未完了のGPU資源を公開しません。
+loss時は旧rendererの使用を停止し、GPU退役を確認して旧prepared ownerを返します。
+device復旧後に`manager.RebuildRuntimeAsync([graphicsRuntime.Id])`を呼び、同じReferenceから生成し直します。
+CPU入力を再利用し、GPU出力だけを新しいepochで構築します。解放失敗時は依存先を保持し、Trim/Disposeで再試行します。
+
+低水準の`GraphicsProgramResource`とproviderは手動構成用に残します。
+`GraphicsProgramResource.FromPipeline`は共有pipelineから描画用の借用viewを作り、pipelineの所有権は依存元のleaseが保持します。
