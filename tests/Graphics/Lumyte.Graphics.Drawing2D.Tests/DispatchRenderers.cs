@@ -5,7 +5,10 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 internal sealed class DispatchRenderers :
     IFillRectRenderer2D,
     IFillRoundedRectRenderer2D,
-    IFillCircleRenderer2D
+    IFillCircleRenderer2D,
+    IDrawLineRenderer2D,
+    IFillPathRenderer2D,
+    IStrokePathRenderer2D
 {
     internal List<DrawingCommand2D> Commands { get; } = [];
 
@@ -25,8 +28,14 @@ internal sealed class DispatchRenderers :
 
     ValueTask<IPreparedCommandBatch2D> IFillCircleRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillCircleCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
 
-    internal DrawingCommandRenderers2D CreateTable() =>
-        new(this, this, this);
+    ValueTask<IPreparedCommandBatch2D> IDrawLineRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawLineCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
+
+    ValueTask<IPreparedCommandBatch2D> IFillPathRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillPathCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
+
+    ValueTask<IPreparedCommandBatch2D> IStrokePathRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<StrokePathCommand2D> commands, CancellationToken cancellationToken) => Prepare(context, commands);
+
+    internal DrawingCommandRenderers2D CreateTable(IFillPathRenderer2D? fillPath = null) =>
+        new(this, this, this, this, fillPath ?? this, this);
 
     private ValueTask<IPreparedCommandBatch2D> Prepare<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands)
         where T : DrawingCommand2D
