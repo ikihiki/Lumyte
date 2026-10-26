@@ -28,3 +28,5 @@ HotReload後やdevice復旧後は同じReferenceからレンダラーを生成�
 複数入力とEffectsを同じpublicationに揃える場合だけ、生成のsnapshot引数と
 `parent.ImportResources().UseSnapshot(frameSnapshot)`へ同じSnapshotを渡します。
 Snapshotはgraph構築まで保持します。親graphとレンダラー資源は同じphysical deviceを使ってください。
+
+共有GPU資源の管理は汎用の`GraphicsResourceDefinition<T>`に従います。DrawingGraphicsResources2DとImageEffectGraphicsResourcesの公開キーに定義を登録すると、pipeline生成設定やsamplerも変更できます。module・pipeline・samplerはManager、フレームごとのbindingと一時画像は描画側/graphが所有します。

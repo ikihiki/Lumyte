@@ -7,6 +7,7 @@ using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Resources;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -126,7 +127,7 @@ public sealed class Drawing2DTests
         await CheckStandaloneAsync(device);
     }
 
-    private static async Task CheckStandaloneAsync(IGraphicDevice device)
+    internal static async Task CheckStandaloneAsync(IGraphicDevice device, Renderer2D? managedRenderer = null, ResourceManager? manager = null)
     {
         var canvas = new Canvas2D();
         canvas.Begin();
@@ -136,8 +137,15 @@ public sealed class Drawing2DTests
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
         var programs = new ExternalDrawingPrograms();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
+        using Renderer2D renderer = managedRenderer ?? new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
         PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 0.25f) });
+        if (managedRenderer is not null)
+        {
+            // Only the prepared batches now protect shared pipeline/modules/sampler during the native draw.
+            renderer.Dispose();
+            await manager!.TrimAsync();
+        }
+
         uint pitch = Math.Max(16, device.GetTextureCopyLayout(TextureFormat.Rgba8Srgb).BytesPerRowAlignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 2, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
@@ -174,8 +182,12 @@ public sealed class Drawing2DTests
         finally
         {
             commands.Dispose();
-            Assert.True(programs.Acquired > 0);
-            Assert.Equal(0, programs.Returned);
+            if (managedRenderer is null)
+            {
+                Assert.True(programs.Acquired > 0);
+                Assert.Equal(0, programs.Returned);
+            }
+
             prepared.Dispose();
             Assert.Equal(programs.Acquired, programs.Returned);
             submission?.Dispose();

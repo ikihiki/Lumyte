@@ -41,6 +41,88 @@ public sealed class ImageEffectsTests
         await CheckDirectEffectsAsync(device);
     }
 
+    internal static async Task<(EffectPixelRect Bounds, Vector4[] Pixels)> RenderAsync(IGraphicDevice device, ImageEffectGraph effect, EffectPixelRect sourceBounds, Vector4 sourceColor, RenderGraphExtensions? extensions = null)
+    {
+        using var graph = new Graph(device, "standalone-image-effect-readback", extensions: extensions);
+        RenderGraphTexture source = graph.CreateTexture(
+            new()
+            {
+                Width = checked((uint)sourceBounds.Width),
+                Height = checked((uint)sourceBounds.Height),
+                Format = TextureFormat.Rgba16Float,
+                Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled,
+            },
+            "source");
+        graph.AddPass("clear-source", context =>
+        {
+            IRenderEncoder clear = context.Commands.BeginRenderPass(new()
+            {
+                ColorAttachments = [new() { View = context.CreateTextureView(source), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(sourceColor.X, sourceColor.Y, sourceColor.Z, sourceColor.W) }],
+            });
+            clear.End();
+        }).UseTexture(source, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
+        var sourceImage = new EffectImage(source, sourceBounds, EffectColorSemantic.SceneLinear);
+        EffectImage output = effect.Root is EffectOperationNode operation && operation.Inputs.All(input => input is SourceEffectNode)
+            ? operation.Definition switch
+            {
+                GaussianBlurEffect blur => graph.AppendGaussianBlur(sourceImage, blur.SigmaX, blur.SigmaY),
+                ColorMatrixEffect matrix => graph.AppendColorMatrix(sourceImage, matrix.Matrix),
+                OpacityEffect opacity => graph.AppendOpacity(sourceImage, opacity.Opacity),
+                CompositeEffect composite => graph.AppendComposite(sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY),
+                _ => graph.AppendEffects(effect, sourceImage),
+            }
+            : graph.AppendEffects(effect, sourceImage);
+        Assert.Equal(EffectColorSemantic.SceneLinear, output.ColorSemantic);
+        EffectPixelRect bounds = output.Bounds;
+        uint width = checked((uint)bounds.Width);
+        uint height = checked((uint)bounds.Height);
+        TextureCopyLayout layout = device.GetTextureCopyLayout(TextureFormat.Rgba16Float);
+        uint rowBytes = checked(width * layout.BytesPerTexel);
+        uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
+        uint byteCount = checked(pitch * height);
+        RenderGraphBuffer<byte> readback = graph.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
+        graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
+            new() { Texture = context.GetTexture(output.Texture), Width = width, Height = height },
+            new() { Buffer = context.GetBuffer(readback).Slice(0, byteCount), BytesPerRow = pitch, RowsPerImage = height }))
+            .UseTexture(output.Texture, TextureState.CopySource, new(PipelineStage.Copy, ResourceAccess.CopyRead))
+            .UseBuffer(readback, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
+        graph.ExportBuffer(readback, new(PipelineStage.Host, ResourceAccess.HostRead));
+        CompiledRenderGraph? plan = null;
+        IGraphicsCommandBuffer? commands = null;
+        IGraphicsSubmission? submission = null;
+        try
+        {
+            plan = graph.Compile();
+            commands = device.CreateCommandBuffer(new());
+            plan.Record(commands);
+            commands.Finish();
+            submission = device.Queue.Submit([commands]);
+            await submission.WaitAsync();
+            IGraphicsBuffer<byte> buffer = plan.GetBuffer(readback);
+            await buffer.MapAsync();
+            byte[] bytes = new byte[byteCount];
+            buffer.CopyTo(bytes);
+            buffer.Unmap();
+            var pixels = new Vector4[checked(bounds.Width * bounds.Height)];
+            for (int y = 0; y < bounds.Height; y++)
+            {
+                for (int x = 0; x < bounds.Width; x++)
+                {
+                    int offset = checked((int)((y * pitch) + (x * 8)));
+                    pixels[(y * bounds.Width) + x] = new(ReadHalf(bytes, offset), ReadHalf(bytes, offset + 2), ReadHalf(bytes, offset + 4), ReadHalf(bytes, offset + 6));
+                }
+            }
+
+            return (bounds, pixels);
+        }
+        finally
+        {
+            commands?.Dispose();
+            plan?.Dispose();
+            submission?.Dispose();
+        }
+    }
+
     private static async Task CheckDirectEffectsAsync(IGraphicDevice device)
     {
         var source = ImageEffectGraph.Source();
@@ -141,88 +223,6 @@ public sealed class ImageEffectsTests
         (bounds, pixels) = await RenderAsync(device, generatedAndFaded, new(0, 0, 1, 1), Vector4.One);
         Assert.Equal(generator.Bounds, bounds);
         Assert.All(pixels, pixel => AssertPixel(pixel, generator.Color * 0.5f));
-    }
-
-    private static async Task<(EffectPixelRect Bounds, Vector4[] Pixels)> RenderAsync(IGraphicDevice device, ImageEffectGraph effect, EffectPixelRect sourceBounds, Vector4 sourceColor)
-    {
-        using var graph = new Graph(device, "standalone-image-effect-readback");
-        RenderGraphTexture source = graph.CreateTexture(
-            new()
-            {
-                Width = checked((uint)sourceBounds.Width),
-                Height = checked((uint)sourceBounds.Height),
-                Format = TextureFormat.Rgba16Float,
-                Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled,
-            },
-            "source");
-        graph.AddPass("clear-source", context =>
-        {
-            IRenderEncoder clear = context.Commands.BeginRenderPass(new()
-            {
-                ColorAttachments = [new() { View = context.CreateTextureView(source), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(sourceColor.X, sourceColor.Y, sourceColor.Z, sourceColor.W) }],
-            });
-            clear.End();
-        }).UseTexture(source, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
-        var sourceImage = new EffectImage(source, sourceBounds, EffectColorSemantic.SceneLinear);
-        EffectImage output = effect.Root is EffectOperationNode operation && operation.Inputs.All(input => input is SourceEffectNode)
-            ? operation.Definition switch
-            {
-                GaussianBlurEffect blur => graph.AppendGaussianBlur(sourceImage, blur.SigmaX, blur.SigmaY),
-                ColorMatrixEffect matrix => graph.AppendColorMatrix(sourceImage, matrix.Matrix),
-                OpacityEffect opacity => graph.AppendOpacity(sourceImage, opacity.Opacity),
-                CompositeEffect composite => graph.AppendComposite(sourceImage, sourceImage, composite.Mode, composite.SourceOffsetX, composite.SourceOffsetY),
-                _ => graph.AppendEffects(effect, sourceImage),
-            }
-            : graph.AppendEffects(effect, sourceImage);
-        Assert.Equal(EffectColorSemantic.SceneLinear, output.ColorSemantic);
-        EffectPixelRect bounds = output.Bounds;
-        uint width = checked((uint)bounds.Width);
-        uint height = checked((uint)bounds.Height);
-        TextureCopyLayout layout = device.GetTextureCopyLayout(TextureFormat.Rgba16Float);
-        uint rowBytes = checked(width * layout.BytesPerTexel);
-        uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
-        uint byteCount = checked(pitch * height);
-        RenderGraphBuffer<byte> readback = graph.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
-        graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
-            new() { Texture = context.GetTexture(output.Texture), Width = width, Height = height },
-            new() { Buffer = context.GetBuffer(readback).Slice(0, byteCount), BytesPerRow = pitch, RowsPerImage = height }))
-            .UseTexture(output.Texture, TextureState.CopySource, new(PipelineStage.Copy, ResourceAccess.CopyRead))
-            .UseBuffer(readback, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
-        graph.ExportBuffer(readback, new(PipelineStage.Host, ResourceAccess.HostRead));
-        CompiledRenderGraph? plan = null;
-        IGraphicsCommandBuffer? commands = null;
-        IGraphicsSubmission? submission = null;
-        try
-        {
-            plan = graph.Compile();
-            commands = device.CreateCommandBuffer(new());
-            plan.Record(commands);
-            commands.Finish();
-            submission = device.Queue.Submit([commands]);
-            await submission.WaitAsync();
-            IGraphicsBuffer<byte> buffer = plan.GetBuffer(readback);
-            await buffer.MapAsync();
-            byte[] bytes = new byte[byteCount];
-            buffer.CopyTo(bytes);
-            buffer.Unmap();
-            var pixels = new Vector4[checked(bounds.Width * bounds.Height)];
-            for (int y = 0; y < bounds.Height; y++)
-            {
-                for (int x = 0; x < bounds.Width; x++)
-                {
-                    int offset = checked((int)((y * pitch) + (x * 8)));
-                    pixels[(y * bounds.Width) + x] = new(ReadHalf(bytes, offset), ReadHalf(bytes, offset + 2), ReadHalf(bytes, offset + 4), ReadHalf(bytes, offset + 6));
-                }
-            }
-
-            return (bounds, pixels);
-        }
-        finally
-        {
-            commands?.Dispose();
-            plan?.Dispose();
-            submission?.Dispose();
-        }
     }
 
     private static float ReadHalf(byte[] bytes, int offset) => (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset, 2)));
