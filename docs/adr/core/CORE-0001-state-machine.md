@@ -3,6 +3,8 @@
 - 状態: 採用
 - 日付: 2026-10-09
 
+保持 Context を使う `FireAny`／`CanFireAny` の追加オーバーロードは [ADR-ANIMATION-0006](../animation/ANIMATION-0006-api-result-contracts.md) で補足する。
+
 ## 背景
 
 UI の画面選択、接続処理、ゲーム進行では、状態、入力、遷移条件、入場・退出処理を共通の規則で管理する必要がある。

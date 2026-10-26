@@ -5,6 +5,8 @@
 
 0 Duration に関する判断は [ADR-ANIMATION-0005](ANIMATION-0005-zero-duration.md) により置き換えられた。
 
+`TryGet` の nullable 注釈と `Update` の戻り値の説明は [ADR-ANIMATION-0006](ANIMATION-0006-api-result-contracts.md) で補足する。
+
 ## 背景
 
 Lumyte のアニメーションシステムは、ボーン制御から UI の位置・サイズ・色・透明度まで、時間によって値が変わる事象と、その変化の実行タイミングを扱う。値を対象へ適用する責務は消費側にある。ボーン関連のデータ構造とボーンへの適用も別の消費側プロジェクトが管理する。

@@ -172,7 +172,7 @@ public sealed class AnimationPlayback
     /// <summary>Reads the clock once and appends computed values and crossed events without invoking target callbacks.</summary>
     /// <param name="output">The output.</param>
     /// <param name="events">The events.</param>
-    /// <returns>The operation result.</returns>
+    /// <returns>True only when this call completes playback in <see cref="AnimationWrapMode.Once"/> mode; otherwise, false. Values and events may be appended even when false is returned.</returns>
     public bool Update(AnimationOutput output, ICollection<AnimationEventOccurrence> events)
     {
         ArgumentNullException.ThrowIfNull(output);
