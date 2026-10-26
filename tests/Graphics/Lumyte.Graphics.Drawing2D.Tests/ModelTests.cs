@@ -42,6 +42,25 @@ public sealed class ModelTests
         Assert.Throws<ArgumentException>(() => PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.One, [new(1, default), new(0, default)]));
     }
 
+    /// <summary>Shared DAG nodes preserve sharing but cannot expand exponentially without a bounded failure.</summary>
+    [Fact]
+    public void PaintDagPreservesSharingAndBoundsExpandedCost()
+    {
+        var child = PaintGraph2D.Solid(new Color2D(1, 1, 1, 1));
+        PaintGraph2D[] input = [child, child];
+        LayersPaintNode2D layers = Assert.IsType<LayersPaintNode2D>(PaintGraph2D.Layers(input).Root);
+        input[0] = PaintGraph2D.Solid(default);
+        Assert.Same(child.Root, layers.Children[0]);
+        Assert.Same(layers.Children[0], layers.Children[1]);
+        for (int i = 0; i < 15; i++)
+        {
+            child = PaintGraph2D.Composite(child, child, CompositeMode2D.SrcOver);
+        }
+
+        Assert.Throws<ArgumentException>(() => PaintGraph2D.Composite(child, child, CompositeMode2D.SrcOver));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.Opacity(float.NaN, child));
+    }
+
     /// <summary>Invalid drawing inputs leave state and command order intact.</summary>
     [Fact]
     public void CanvasValidationIsTransactionalAndRecordingsAreIndependent()
@@ -99,6 +118,22 @@ public sealed class ModelTests
         Assert.Throws<ArgumentException>(() => draws.GetCommands<FillRectCommand2D>(0, 4));
     }
 
+    /// <summary>Mesh validation rejects invalid topology and copies mutable input arrays.</summary>
+    [Fact]
+    public void MeshCopiesInputAndRejectsInvalidIndices()
+    {
+        MeshVertex2D[] vertices = [new(Vector2.Zero, 1), new(Vector2.UnitX, 0.5f), new(Vector2.UnitY, 0)];
+        uint[] indices = [0, 1, 2];
+        var mesh = new Mesh2D(vertices, indices);
+        vertices[0] = default;
+        indices[0] = 2;
+        Assert.Equal(1, mesh.Vertices[0].Coverage);
+        Assert.Equal(0u, mesh.Indices[0]);
+        Assert.Throws<ArgumentException>(() => new Mesh2D(vertices, [0, 1]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Mesh2D(vertices, [0, 1, 3]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Mesh2D([new(Vector2.Zero, 2)], [0, 0, 0]));
+    }
+
     /// <summary>Image patterns validate coordinates in the selected mip and reject singular or comparison sampling.</summary>
     [Fact]
     public void ImageDescriptorsRejectInvalidSourceAndSamplingContracts()
@@ -113,7 +148,11 @@ public sealed class ModelTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.ImagePattern(pattern with { Source = new Rect2D(0.5f, 0, 1, 1) }));
         Assert.Throws<ArgumentException>(() => PaintGraph2D.ImagePattern(pattern with { PatternToLocal = default }));
         using var compare = new ModelSampler(new SamplerDesc { Compare = CompareFunction.Less });
+        Assert.Throws<ArgumentException>(() => new Image2D(view, compare));
         using var sampler = new ModelSampler(new SamplerDesc());
+        Assert.Throws<NotSupportedException>(() => new CoverageImage2D(view, sampler));
+        Assert.Throws<NotSupportedException>(() => new DistanceField2D(view, sampler, DistanceFieldEncoding2D.Sdf, 4));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DistanceField2D(view, sampler, DistanceFieldEncoding2D.Msdf, 0));
     }
 
     private sealed class ModelTexture : IGraphicsTexture
