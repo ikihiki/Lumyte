@@ -15,6 +15,7 @@ public sealed class CompiledRenderGraph : IDisposable
     private readonly List<IGraphicsTextureView> _views = [];
     private readonly List<CompiledPass> _passes = [];
     private readonly List<PlannedBarrier> _exports = [];
+    private List<IRenderGraphLifetime>? _lifetimes;
     private IGraphicsCommandBuffer? _commands;
     private bool _recorded;
     private bool _successful;
@@ -150,6 +151,20 @@ public sealed class CompiledRenderGraph : IDisposable
     public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer)
         where T : struct, IShaderData => (IGraphicsShaderDataBuffer<T>)GetOutput(buffer);
 
+    /// <summary>Transfers external ownership to this unused plan until safe disposal.</summary>
+    /// <param name="lifetime">The ownership validated before recording and released after plan allocations.</param>
+    public void Retain(IRenderGraphLifetime lifetime)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_recorded)
+        {
+            throw new InvalidOperationException("Retain external ownership before recording.");
+        }
+
+        lifetime.Validate();
+        (_lifetimes ??= []).Add(lifetime);
+    }
+
     /// <summary>Allocates live temporary resources and records barriers and callbacks once.</summary>
     /// <param name="commands">A same-device recording command buffer outside any active encoder.</param>
     /// <remarks>Does not finish, submit or wait. On failure discard commands before disposing this plan.</remarks>
@@ -160,6 +175,14 @@ public sealed class CompiledRenderGraph : IDisposable
         if (_recorded || commands.State != CommandBufferState.Recording)
         {
             throw new InvalidOperationException("Plan must be unused and command buffer must be recording.");
+        }
+
+        if (_lifetimes is { } lifetimes)
+        {
+            foreach (IRenderGraphLifetime lifetime in lifetimes)
+            {
+                lifetime.Validate();
+            }
         }
 
         _recorded = true;
@@ -227,6 +250,15 @@ public sealed class CompiledRenderGraph : IDisposable
         {
             _owned[^1].Dispose();
             _owned.RemoveAt(_owned.Count - 1);
+        }
+
+        if (_lifetimes is { } lifetimes)
+        {
+            while (lifetimes.Count != 0)
+            {
+                lifetimes[^1].Dispose();
+                lifetimes.RemoveAt(lifetimes.Count - 1);
+            }
         }
 
         _allocations.Clear();

@@ -23,13 +23,13 @@ DI登録・async初期化・世代の所有を `src/Graphics/Lumyte.Graphics.Hos
 
 backendまたはアプリがIGraphicsDeviceFactoryをDI登録する。factoryのconstructorでbackend固有のoptions、adapter選択、表示先、必要なdispatcherを受け取る。共通DeviceDesc、backend列挙、自動backend選択をAbstractionsへ追加しない。factoryは固有生成APIを使い、具体的な所有者をIGraphicsDeviceOwnerとして返す。ownerは寿命だけを包み、Deviceは実際のbackend instanceである。
 
-DIへ登録する安定した入口は名前付きのscopedなIGraphicsDeviceServiceとする。GPUステージやrendererはそのserviceをconstructor injectionで受け取り、使用する世代のGraphicsDeviceLeaseを取得する。生のIGraphicDeviceを更新可能なsingleton aliasとして登録しない。factoryとserviceの依存は同じDI scopeに置き、device世代のownerはserviceが明示的に所有する。
+DIへ登録する安定した入口はIGraphicsDeviceServiceとする。通常の1デバイス構成では名前なしで登録し、型で解決する。既定の寿命はScopedとし、アプリ全体で共有する場合はSingletonを指定できる。GPUステージやrendererはそのserviceをconstructor injectionで受け取り、使用する世代のGraphicsDeviceLeaseを取得する。生のIGraphicDeviceを更新可能なsingleton aliasとして登録しない。factoryとserviceは同じ寿命で登録し、その寿命以上の依存を使用する。device世代のownerはserviceが明示的に所有する。
 
-InitializeAsyncはDI解決後にEngineがawaitする。DI factoryやconstructorでasync生成を同期化しない。GPUを使用しないworldにはserviceを登録しなくてよい。複数contextはkeyed DIで分離し、ResourceManagerのruntime dependencyと同じ名前へ接続する。
+InitializeAsyncはDI解決後にEngineがawaitする。DI factoryやconstructorでasync生成を同期化しない。GPUを使用しないworldにはserviceを登録しなくてよい。複数contextを明示的に選ぶ場合だけkeyed DIで名前を付ける。名前なしと名前付きのservice・factoryは独立して所有し、登録順や暗黙のaliasで既定deviceを変更しない。Resourcesとの接続は名前なしのserviceを既定とし、名前付きdeviceも同じ登録名で選択できる。
 
 ### serviceとepoch
 
-serviceは不変のState snapshotを公開する。Versionは初期化・lost・復旧などの状態遷移ごとに増え、Epochはdevice instanceごとに増える。Readyは新しいdeviceが使用可能という意味であり、GPUアセットの復元完了を表さない。
+serviceは不変のState snapshotを公開する。Nameは名前なしの登録で空文字列、名前付きでは指定した非空の名前とし、全世代で維持する。Versionは初期化・lost・復旧などの状態遷移ごとに増え、Epochはdevice instanceごとに増える。Readyは新しいdeviceが使用可能という意味であり、GPUアセットの復元完了を表さない。
 
 AcquireAsyncはReadyのdeviceとStateを同じ同期境界で捕捉する。初期化中・Lost・Recovering・FailedではGraphicsDeviceUnavailableExceptionを返し、暗黙の再生成や無期限待機を行わない。取得済みleaseは同じinstanceを保持し、service.Currentへ読み替えない。Releaseでも必ず生成に使った旧deviceと実行contextを使う。
 
@@ -82,6 +82,7 @@ Vulkanなどのfatal結果と、WebGPU系のloss通知を同じ共通状態へ�
 +    public enum GraphicsDeviceServiceStatus { Uninitialized, Initializing, Ready, Lost, Recovering, Failed, Disposed }
 +    public sealed record GraphicsDeviceState
 +    {
++        // 名前なしの登録では空文字列。
 +        public required string Name { get; init; }
 +        public required ulong Version { get; init; }
 +        public required ulong Epoch { get; init; }
@@ -127,8 +128,13 @@ Vulkanなどのfatal結果と、WebGPU系のloss通知を同じ共通状態へ�
 +    }
 +    public static class GraphicsHostingServiceCollectionExtensions
 +    {
-+        // named/keyed scoped serviceとfactoryを登録。重複名は構成エラー。
-+        public static IServiceCollection AddGraphicsDevice<TFactory>(this IServiceCollection services, string name)
++        // 名前なしのserviceとfactoryを同じ寿命で登録。重複する既定deviceは構成エラー。
++        public static IServiceCollection AddGraphicsDevice<TFactory>(this IServiceCollection services,
++            ServiceLifetime lifetime = ServiceLifetime.Scoped)
++            where TFactory : class, IGraphicsDeviceFactory;
++        // 複数context向け。named/keyed serviceとfactoryを登録。空の名前と重複名は構成エラー。
++        public static IServiceCollection AddGraphicsDevice<TFactory>(this IServiceCollection services, string name,
++            ServiceLifetime lifetime = ServiceLifetime.Scoped)
 +            where TFactory : class, IGraphicsDeviceFactory;
 +    }
 +}
@@ -148,7 +154,7 @@ RecoverAsyncは新deviceをReadyにするまでを担当する。アセットの
 
 ### 今回の実装とbackendの確認境界
 
-Lumyte.Graphics.Hostingは名前付きkeyed scoped DI登録、constructor injectionによるfactory、共有生成、待機単位のキャンセル、epoch lease、失効watermark、明示的な退役・cleanup再試行を実装する。factory固有のNative生成と配送はIGraphicsDeviceFactoryの実装側が担当する。DI constructorでasync生成を同期ブロックしない。
+Lumyte.Graphics.Hostingは名前なし／名前付きのDI登録（既定Scoped、任意Singleton）、constructor injectionによるfactory、共有生成、待機単位のキャンセル、epoch lease、失効watermark、明示的な退役・cleanup再試行を実装する。factory固有のNative生成と配送はIGraphicsDeviceFactoryの実装側が担当する。DI constructorでasync生成を同期ブロックしない。
 
 Vulkanはnative ResultとpresentationのDeviceLostを観測し、未完了submissionをFailedへ移す。明示的なDeviceWaitIdleがSuccessまたはErrorDeviceLostを返した後、Vulkanのlost deviceに対する破棄規則に従って退役を確認する。これはNative利用の終了確認であり、失敗した提出を成功へ変換しない。
 
@@ -167,14 +173,14 @@ Wgpuのmap／queue callbackが参照するNative status slotは、callback完了
 
 ## 結果と影響
 
-- SourceやStageと同じDI scopeでdeviceを構成し、ステージを再生成せず新epochを取得できる。
+- 利用側に合わせたscopeまたはアプリ寿命でdeviceを構成し、ステージを再生成せず新epochを取得できる。singletonのResourceManagerへ接続する場合はSingletonを選択する。
 - 各backendにloss検出、async失敗終了、安全な破棄の契約を実装する必要がある。
 - GPUへの依存だけを失効・再構築できるが、rendererの停止、旧利用権返却、再開はEngineの責任になる。
 - lostした旧値は使用できず、解放や復旧が失敗した責任と計上は保持する。
 
 ## 検証方針
 
-fake factoryでasync DI初期化、名前の分離、同時Recover、生成失敗・キャンセル、epochとVersionの非再利用を確認する。構築中・submit中・map中のlost、Pending待機の終了、退役確認失敗、旧子のcleanupとcharge保持、CPU継続、新Capsの不一致、復旧中の再lost、新GPUグラフ公開前の描画再開拒否を検証する。backend別のNative lossと破棄安全性は統合テストで確認する。
+fake factoryでasync DI初期化、名前なし／名前付きdeviceの独立した所有、scopeとsingletonの寿命、登録順によらない選択、同時Recover、生成失敗・キャンセル、epochとVersionの非再利用を確認する。重複する既定device・名前、空の名前、Transientを拒否する。構築中・submit中・map中のlost、Pending待機の終了、退役確認失敗、旧子のcleanupとcharge保持、CPU継続、新Capsの不一致、復旧中の再lost、新GPUグラフ公開前の描画再開拒否を検証する。backend別のNative lossと破棄安全性は統合テストで確認する。
 
 ## 別途決定する事項
 

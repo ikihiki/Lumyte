@@ -77,6 +77,7 @@ public sealed class RenderGraphPass
     /// <returns>This pass.</returns>
     public RenderGraphPass KeepAlive()
     {
+        Owner.EnsureBuilding();
         HasSideEffects = true;
         return this;
     }
@@ -86,6 +87,7 @@ public sealed class RenderGraphPass
     /// <returns>This pass for further declarations.</returns>
     public RenderGraphPass DependsOn(RenderGraphPass pass)
     {
+        Owner.EnsureBuilding();
         ArgumentNullException.ThrowIfNull(pass);
         if (pass.Owner != Owner || pass == this)
         {
@@ -98,6 +100,7 @@ public sealed class RenderGraphPass
 
     private void AddUse(RenderGraphResource resource, TextureState state, BarrierScope scope, bool discard)
     {
+        Owner.EnsureBuilding();
         ArgumentNullException.ThrowIfNull(resource);
         if (resource.Owner != Owner)
         {

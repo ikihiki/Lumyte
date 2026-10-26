@@ -5,8 +5,8 @@
 提供するColorMatrix・GaussianBlur・Opacity・Compositeも同じ契約を使います。
 
 ```csharp
-var blurred = graph.AppendGaussianBlur(source, 3, 3);
-var faded = graph.AppendOpacity(blurred.Output, 0.5f);
+EffectImage blurred = graph.AppendGaussianBlur(source, 3, 3);
+EffectImage faded = graph.AppendOpacity(blurred, 0.5f);
 ```
 
 RenderGraphのAppend拡張メソッドは入力画像と数値・行列などのパラメーターを受け取り、パスだけを追加します。
@@ -19,7 +19,7 @@ graph.AppendEffect(effect, inputs)を呼べます。
 ```csharp
 var blur = new GaussianBlurEffect(3, 3);
 var effect = ImageEffectGraph.Create(blur, ImageEffectGraph.Source());
-var owner = graph.AppendEffects(effect, source);
+EffectImage output = graph.AppendEffects(effect, source);
 ```
 
 入力は単一mip/layerのRgba16Floatで、原点と範囲をEffectImage.Boundsに保持します。
@@ -28,8 +28,10 @@ DAG経路ではSourceのsemanticを、直接AppendEffectの0入力生成ではDi
 
 効果は複数のrender／compute／copy passを追加できます。spanをcallbackに保存せず、
 必要な値をコピーし、固定GPU資源はcontext.Ownへ移してください。
-呼び出し側がCompile・Record・Submitと完了待機を行い、commandとcompiled planの解放後に
-すべてのPreparedImageEffectをDisposeします。Append失敗後はRenderGraph全体を破棄してください。
+標準のAppendは画像だけを返し、準備開始前からRenderGraphが固定資源を所有します。
+呼び出し側はgraph.Compile・Record・Submitと完了待機を行い、GPU完了後にcompiled planを解放します。
+Compile前の放棄やAppend失敗ではgraphをDisposeし、解放に失敗した場合は同じ所有者から再試行します。
+成功したCompileでgraphの構築は閉じるため、次のフレームは新しいgraphへ追加します。
 
 設計と公開APIは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。
 
@@ -38,19 +40,40 @@ DAG経路ではSourceのsemanticを、直接AppendEffectの0入力生成ではDi
 ImageEffectGraph.GetRequiredSourceBounds(output)は遅延設定のCPU上の領域照会として使えます。
 
 ImageEffectSubgraphは親graphとSource画像を持つ部分ビューです。レイヤー等のコールバックで
-scope.AppendGaussianBlur(scope.Source, 3, 3)を呼ぶとEffectImageを返し、固定資源のownerはscopeが保持します。
-独立したgraphやplanは生成せず、すべての処理を親graphへ追加します。
+scope.AppendGaussianBlur(scope.Source, 3, 3)を呼ぶとEffectImageを返し、親graphの拡張状態と所有権を共有します。
+独立したgraphやplanは生成せず、すべての処理を親graphへ追加します。scope.Disposeはビューを閉じるだけで、固定GPU資源を解放しません。
 
-## 外部からのプログラム取得
+## Graphの拡張としての利用
+
+`graph.AppendEffects(effectGraph, source)`はgraph内で一つの`ImageEffectsGraphContext`を取得してパスを追加します。
+2Dのコールバックや他の拡張からも同じメソッドを呼べます。拡張未登録でも既定の埋め込みシェーダで動き、
+ResourceManagerは不要です。複数拡張を明示的に構成するときは、初期化時に次のように登録できます。
 
 ```csharp
-// programsは事前ロードした資源を返すIGraphicsProgramProvider。
-using PreparedImageEffect effect = graph.AppendGaussianBlur(source, 3, 3, programs);
-// Record、Submit、GPU完了、commandとcompiled planの解放後にeffectを解放する。
+using var extensions = await new RenderGraphExtensionsBuilder()
+    .AddImageEffects()
+    .Add(static graph => new AppLayerImports(graph))
+    .BuildAsync();
+
+using var graph = new RenderGraph(device, extensions: extensions);
+EffectImage output = graph.AppendEffects(effectGraph, source);
+graph.MarkOutput(output.Texture);
+using var plan = graph.Compile();
+// Record・Submitし、GPU完了後にplanをDisposeする。
 ```
 
-ImageEffectSubgraphにもconstructorのprograms引数で同じproviderを渡せます。
-組み込み効果のABI識別子は `ImageEffectPrograms.ProgramId` です。providerは同じ演算・引数配置を実装するprogramを返します。
-外部providerを渡した場合に埋め込みへfallbackしません。新しい効果は新しいeffectとして追加します。
-providerは準備中の内容世代を固定し、返すleaseはexact deviceとshader・pipelineをGPU使用終了まで保持します。
-デバイスロストの際は旧prepared effectを解放し、資源復元後の新deviceでAppendをやり直します。
+`AppLayerImports`は利用者が作る拡張型の例です。シェーダをAppendへ渡す必要はなく、
+BuildAsyncが返す構成は変更せずフレーム間で再利用し、factoryの生成結果はGraphごとに共有します。各Appendの準備ContextはGraphへ登録し、
+すべての拡張の所有権をCompile時に同じPlanへ移します。
+
+## 外部からロードしたシェーダ
+
+`builder.AddImageEffects(shaders)`へ、取得済みの`ImageEffectShaders`を渡せます。二つのartifactはfullscreen vertexとeffect fragmentの既存shader ABIを満たす必要があります。省略した既定構成はDLL埋め込み版を使い、共通artifactは初回だけロードします。
+
+直接ロードでもResourceManagerからの取得でも同じ型を使います。ResourceManagerとの接続には、任意の[Lumyte.Resources.Graphics.ImageEffects](../Lumyte.Resources.Graphics.ImageEffects/README.md)が既定シェーダの取得とEffectの所有をまとめます。本パッケージ単独の利用にResourcesは不要です。
+
+直接渡したシェーダは借用です。外部のLeaseやmodule所有者を固定GPU資源より長く保持してください。独自の連携factoryでは、Leaseの寿命を先にgraph.Retainへ登録してからImageEffectsGraphContextを返すと、逆順解放で固定GPU資源を先に返せます。ResourceManagerとの接続パッケージはこの順序を引き受けます。
+
+低水準の`AppendEffectsWithContext`または`AppendEffectWithContext`を使う場合は、呼び出す前にEffectPreparationContextをgraph.Retainへ渡すか、明示的な所有者で保持します。構築途中で失敗してもcontextにcleanupが残るため、解放自体の失敗も再試行できます。失敗したcontextでの追加や記録は拒否します。
+
+`ImageEffectShaders`には`IGraphicsShader`を二つ渡すconstructorもあります。同じdevice上の既存moduleを借用し、各passでのmodule再生成を避けます。Effectの準備Contextは借用moduleをDisposeしません。直接所有する側、またはResourceManagerのLeaseが、GPU完了と固定GPU資源の解放まで保持します。
