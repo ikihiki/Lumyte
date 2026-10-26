@@ -23,6 +23,10 @@ internal sealed class DispatchDevice : IGraphicDevice
 
     public IGraphicsQueue Queue => throw new InvalidOperationException("Drawing preparation must not access the queue.");
 
+    internal Func<ShaderArtifact, IGraphicsShader>? ShaderFactory { get; init; }
+
+    internal Func<GraphicsPipelineDesc, IGraphicsPipeline>? PipelineFactory { get; init; }
+
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Drawing preparation must not wait for device retirement.");
 
     public BufferLayout<T> GetBufferLayout<T>()
@@ -37,7 +41,7 @@ internal sealed class DispatchDevice : IGraphicDevice
 
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw new NotSupportedException();
 
-    public IGraphicsShader CreateShader(ShaderArtifact artifact) => throw new NotSupportedException();
+    public IGraphicsShader CreateShader(ShaderArtifact artifact) => ShaderFactory?.Invoke(artifact) ?? throw new NotSupportedException();
 
     public IGraphicsSemaphore CreateSemaphore() => throw new NotSupportedException();
 
@@ -45,7 +49,7 @@ internal sealed class DispatchDevice : IGraphicDevice
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw new NotSupportedException();
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => PipelineFactory?.Invoke(desc) ?? throw new NotSupportedException();
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 

@@ -22,9 +22,9 @@ public static class DrawingGraphicsResources2D
     internal static void RegisterDefaults(IServiceCollection services)
     {
         services.TryAddGraphicsResource<IGraphicsShader>(VertexShader, provider => provider.GetService<GraphicsShaderPackage<Renderer2DResource>>() is { } package
-            ? new GraphicsShaderDefinition(package.Vertex) : new GraphicsShaderDefinition(static () => ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader")));
+            ? new GraphicsShaderDefinition(package.Vertex) : new GraphicsShaderDefinition(static () => DrawingShaders2D.Vertex));
         services.TryAddGraphicsResource<IGraphicsShader>(FragmentShader, provider => provider.GetService<GraphicsShaderPackage<Renderer2DResource>>() is { } package
-            ? new GraphicsShaderDefinition(package.Fragment) : new GraphicsShaderDefinition(static () => ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader")));
+            ? new GraphicsShaderDefinition(package.Fragment) : new GraphicsShaderDefinition(static () => DrawingShaders2D.Fragment));
         services.TryAddGraphicsResource<IGraphicsPipeline>(Pipeline, static _ => new GraphicsPipelineDefinition { VertexShader = VertexShader, FragmentShader = FragmentShader, Label = "drawing-2d" });
         services.TryAddGraphicsResource<IGraphicsSampler>(Sampler, static _ => new GraphicsSamplerDefinition(new()
         {

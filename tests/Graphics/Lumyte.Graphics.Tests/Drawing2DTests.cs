@@ -107,9 +107,10 @@ public sealed class Drawing2DTests
         DrawList2D list = canvas.End();
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
-        var programs = new ExternalDrawingPrograms();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
+        using var resources = new ExternalDrawingResources(device);
+        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources.Resources, resourceOwner: resources);
         PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 0.25f) });
+        renderer.Dispose();
         uint pitch = Math.Max(16, device.GetTextureCopyLayout(TextureFormat.Rgba8Srgb).BytesPerRowAlignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 2, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
@@ -146,10 +147,9 @@ public sealed class Drawing2DTests
         finally
         {
             commands.Dispose();
-            Assert.True(programs.Acquired > 0);
-            Assert.Equal(0, programs.Returned);
+            Assert.Equal(0, resources.Disposals);
             prepared.Dispose();
-            Assert.Equal(programs.Acquired, programs.Returned);
+            Assert.Equal(1, resources.Disposals);
             submission?.Dispose();
         }
     }
@@ -454,9 +454,10 @@ public sealed class Drawing2DTests
         draw(canvas);
         using IGraphicsTexture target = device.CreateTexture(new() { Width = (uint)width, Height = (uint)height, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
-        var programs = new ExternalDrawingPrograms();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), programs);
+        using var resources = new ExternalDrawingResources(device);
+        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources.Resources, resourceOwner: resources);
         using PreparedDraw2D drawing = await renderer.PrepareAsync(canvas.End(), new() { View = view, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale });
+        renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(target.Format);
         uint rowBytes = checked((uint)width * layout.BytesPerTexel);
         uint pitch = checked(((rowBytes + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
@@ -487,10 +488,9 @@ public sealed class Drawing2DTests
         }
 
         commands.Dispose();
-        Assert.True(programs.Acquired > 0);
-        Assert.Equal(0, programs.Returned);
+        Assert.Equal(0, resources.Disposals);
         drawing.Dispose();
-        Assert.Equal(programs.Acquired, programs.Returned);
+        Assert.Equal(1, resources.Disposals);
         return pixels;
     }
 
@@ -527,27 +527,5 @@ public sealed class Drawing2DTests
         Vector4 actual = pixels[(y * width) + x];
         var difference = Vector4.Abs(actual - expected);
         Assert.True(difference.X <= tolerance && difference.Y <= tolerance && difference.Z <= tolerance && difference.W <= tolerance, $"Pixel ({x}, {y}): expected {expected}, actual {actual}, tolerance {tolerance}.");
-    }
-
-    private sealed class ExternalDrawingPrograms : IGraphicsProgramProvider
-    {
-        private readonly ShaderArtifact _vertex = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-vertex.lshader").GetBinary());
-        private readonly ShaderArtifact _fragment = new(ShaderArtifact.LoadEmbedded(typeof(DrawingPrograms2D).Assembly, "Lumyte.Drawing2D.drawing-fragment.lshader").GetBinary());
-
-        internal int Acquired { get; private set; }
-
-        internal int Returned { get; private set; }
-
-        public GraphicsProgramLease Acquire(IGraphicDevice device, string programId)
-        {
-            Assert.Equal(DrawingPrograms2D.ProgramId, programId);
-            var native = GraphicsProgramLease.Create(device, _vertex, _fragment);
-            Acquired++;
-            return new(native.Resources, () =>
-            {
-                Returned++;
-                native.Dispose();
-            });
-        }
     }
 }

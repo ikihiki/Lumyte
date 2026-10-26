@@ -58,3 +58,7 @@ triangle・fragment・single-sampleの前提と矛盾する定義は生成用資
 DIなしではshader・pipeline・samplerの`GraphicsResourceRegistration<T>`と`GraphicsResourceStage<T>`、
 Renderer2DResourceStageをManagerへ登録し、各出力型へGraphicsResourceRuntimeを割り当てます。
 Resourcesなしの通常描画は従来どおりRenderer2DとCreateDefaultだけで使えます。
+
+生成用リソースのResourcesプロパティはDrawingResources2D（Device/Pipeline/Sampler）です。
+CreateRendererは取得した一つのResourceLeaseをresourceOwnerへ移譲し、失効検査は同じlease.Valueへ接続します。
+rendererとprepared間では内部tokenのみを共有し、独立したprogram取得やpipeline leaseは追加しません。

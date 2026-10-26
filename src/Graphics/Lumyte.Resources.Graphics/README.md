@@ -258,6 +258,3 @@ Build中の初期化uploadについては定義が完了まで所有し、未完
 loss時は旧rendererの使用を停止し、GPU退役を確認して旧prepared ownerを返します。
 device復旧後に`manager.RebuildRuntimeAsync([graphicsRuntime.Id])`を呼び、同じReferenceから生成し直します。
 CPU入力を再利用し、GPU出力だけを新しいepochで構築します。解放失敗時は依存先を保持し、Trim/Disposeで再試行します。
-
-低水準の`GraphicsProgramResource`とproviderは手動構成用に残します。
-`GraphicsProgramResource.FromPipeline`は共有pipelineから描画用の借用viewを作り、pipelineの所有権は依存元のleaseが保持します。
