@@ -15,10 +15,11 @@ internal static class Program
     private static void Main(string[] args)
     {
         bool host = args.Contains("--host", StringComparer.Ordinal);
+        VerifyDirectImageEffects();
         VerifyShaderLoading(host);
         VerifyImageEffects(host, false);
         VerifyImageEffects(host, true);
-        Console.WriteLine("Native AOT shader loading, default/custom image effects and graph retention passed.");
+        Console.WriteLine("Native AOT graph extensions, direct/managed image effects and graph retention passed.");
     }
 
     private static void VerifyShaderLoading(bool host)
@@ -31,13 +32,14 @@ internal static class Program
         execution.PrepareOnCurrentHost(OwnerPlacement.Host, host ? CpuExecutionMode.Cooperative : CpuExecutionMode.ThreadPool, 1, new());
         Wait(execution.StartAsync().AsTask(), execution);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        var graph = new Lumyte.Graphics.RenderGraph.RenderGraph();
-        using ResourceRenderGraphImports imports = graph.ImportResources(manager);
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager);
+        using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(extensions: extensions);
+        ResourceRenderGraphImports imports = graph.ImportResources();
         Task<ShaderArtifact> loading = imports.AcquireAsync(new ResourceKey<ShaderArtifact>("shader")).AsTask();
         Wait(loading, execution);
         Require(loading.Result.GetTarget(ShaderTarget.Wgsl).Code.Length == 1);
-        using CompiledRenderGraph plan = imports.Compile();
-        imports.Dispose();
+        using CompiledRenderGraph plan = graph.Compile();
+        graph.Dispose();
         Task<int> trimming = manager.TrimAsync().AsTask();
         Wait(trimming, execution);
         Require(trimming.Result == 0);
@@ -45,6 +47,7 @@ internal static class Program
         trimming = manager.TrimAsync().AsTask();
         Wait(trimming, execution);
         Require(trimming.Result == 1);
+        extensions.Dispose();
         Wait(manager.DisposeAsync().AsTask(), execution);
         Wait(execution.StopAsync().AsTask(), execution);
         provider.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -75,6 +78,9 @@ internal static class Program
         IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
         Wait(devices.InitializeAsync().AsTask(), execution);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddResources(manager)
+            .Add<LayerImports>(static graph => new(graph));
+        Wait(extensions.AddImageEffectsAsync(manager).AsTask(), execution);
         Task<ResourceReference<ImageEffectShaderResource>> loading = manager.AcquireImageEffectShadersAsync().AsTask();
         Wait(loading, execution);
         using ResourceReference<ImageEffectShaderResource> reference = loading.Result;
@@ -88,7 +94,60 @@ internal static class Program
 
         Require(source.Opens == (custom ? 2 : 0));
         Require(device.Shaders.Count == 2);
-        var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device);
+        using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device, extensions: extensions);
+        EffectImage image = CreateImage(graph);
+        var owned = new OwnedResource();
+        var nested = new OwnedResource();
+        LayerImports layer = graph.GetExtension<LayerImports>();
+        Require(ReferenceEquals(layer, graph.GetExtension<LayerImports>()));
+        Require(ReferenceEquals(layer.Effects, graph.GetExtension<ImageEffectsGraphContext>()));
+        Require(layer.Append(image, nested) == image);
+        Require(graph.AppendEffect(new OwningEffect(owned), image) == image);
+        Require(ReferenceEquals(owned.Shaders, nested.Shaders));
+        Require(owned.Shaders is not null && device.Shaders.Count == 2);
+        Require(source.Opens == (custom ? 2 : 0));
+        using CompiledRenderGraph plan = graph.Compile();
+        graph.Dispose();
+        extensions.Dispose();
+        reference.Dispose();
+        Task<int> trimming = manager.TrimAsync().AsTask();
+        Wait(trimming, execution);
+        Require(trimming.Result == 0 && !owned.Disposed && !nested.Disposed && device.Shaders.TrueForAll(shader => !shader.Disposed));
+        plan.Dispose();
+        Require(owned.Disposed && nested.Disposed);
+        Wait(manager.TrimAsync().AsTask(), execution);
+        Require(device.Shaders.TrueForAll(shader => shader.Disposed));
+        Wait(manager.DisposeAsync().AsTask(), execution);
+        Wait(execution.StopAsync().AsTask(), execution);
+        provider.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    private static void VerifyDirectImageEffects()
+    {
+        var device = new SmokeDevice();
+        using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device);
+        EffectImage image = CreateImage(graph);
+        var owned = new OwnedResource();
+        var nested = new OwnedResource();
+        Require(graph.AppendEffect(new OwningEffect(owned), image) == image);
+        ImageEffectsGraphContext effects = graph.GetExtension<ImageEffectsGraphContext>();
+        using (var subgraph = new ImageEffectSubgraph(graph, image))
+        {
+            Require(subgraph.AppendEffect(new OwningEffect(nested), image) == image);
+            Require(ReferenceEquals(effects, graph.GetExtension<ImageEffectsGraphContext>()));
+        }
+
+        Require(!owned.Disposed && !nested.Disposed);
+        using CompiledRenderGraph plan = graph.Compile();
+        graph.Dispose();
+        Require(!owned.Disposed && !nested.Disposed);
+        plan.Dispose();
+        Require(owned.Disposed && nested.Disposed);
+        device.DisposeAsync().GetAwaiter().GetResult();
+    }
+
+    private static EffectImage CreateImage(Lumyte.Graphics.RenderGraph.RenderGraph graph)
+    {
         RenderGraphTexture texture = graph.CreateTexture(new TextureDesc
         {
             Width = 1,
@@ -96,23 +155,7 @@ internal static class Program
             Format = TextureFormat.Rgba16Float,
             Usage = TextureUsage.Sampled,
         });
-        var image = new EffectImage(texture, new(0, 0, 1, 1), EffectColorSemantic.DisplayLinear);
-        var owned = new OwnedResource();
-        using ResourceRenderGraphImports imports = graph.ImportResources(manager);
-        Require(imports.AppendEffect(reference, new OwningEffect(owned), image) == image);
-        using CompiledRenderGraph plan = imports.Compile();
-        imports.Dispose();
-        reference.Dispose();
-        Task<int> trimming = manager.TrimAsync().AsTask();
-        Wait(trimming, execution);
-        Require(trimming.Result == 0 && !owned.Disposed && device.Shaders.TrueForAll(shader => !shader.Disposed));
-        plan.Dispose();
-        Require(owned.Disposed);
-        Wait(manager.TrimAsync().AsTask(), execution);
-        Require(device.Shaders.TrueForAll(shader => shader.Disposed));
-        Wait(manager.DisposeAsync().AsTask(), execution);
-        Wait(execution.StopAsync().AsTask(), execution);
-        provider.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        return new(texture, new(0, 0, 1, 1), EffectColorSemantic.DisplayLinear);
     }
 
     private static void Wait(Task task, ExecutionRuntime execution)
@@ -182,7 +225,25 @@ internal static class Program
     {
         internal bool Disposed { get; private set; }
 
+        internal ImageEffectShaders? Shaders { get; set; }
+
         public void Dispose() => Disposed = true;
+    }
+
+    private sealed class LayerImports
+    {
+        private readonly Lumyte.Graphics.RenderGraph.RenderGraph _graph;
+
+        internal LayerImports(Lumyte.Graphics.RenderGraph.RenderGraph graph)
+        {
+            _graph = graph;
+            Effects = graph.GetExtension<ImageEffectsGraphContext>();
+        }
+
+        internal ImageEffectsGraphContext Effects { get; }
+
+        internal EffectImage Append(EffectImage source, OwnedResource resource)
+            => _graph.AppendEffect(new OwningEffect(resource), source);
     }
 
     private sealed record OwningEffect(OwnedResource Resource) : ImageEffectDefinition
@@ -195,6 +256,7 @@ internal static class Program
 
         public override EffectImage AppendPasses(EffectPreparationContext context, Lumyte.Graphics.RenderGraph.RenderGraph graph, ReadOnlySpan<EffectImage> inputs)
         {
+            Resource.Shaders = context.Shaders;
             context.Own(Resource);
             return inputs[0];
         }

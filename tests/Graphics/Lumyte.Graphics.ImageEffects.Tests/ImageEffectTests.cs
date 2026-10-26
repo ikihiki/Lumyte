@@ -78,12 +78,12 @@ public sealed class ImageEffectTests
         var composite = new ForwardEffect();
         var shared = ImageEffectGraph.Create(opacity, ImageEffectGraph.Source());
         var graph = ImageEffectGraph.Create(composite, shared, shared);
-        var plan = new RenderGraphBuilder(Device());
+        using var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
-        using PreparedImageEffect first = plan.AppendEffects(graph, source);
+        EffectImage first = plan.AppendEffects(graph, source);
         Assert.Equal(1, opacity.Count);
-        Assert.Equal(source, first.Output);
-        using PreparedImageEffect second = plan.AppendEffects(graph, source);
+        Assert.Equal(source, first);
+        EffectImage second = plan.AppendEffects(graph, source);
         Assert.Equal(2, opacity.Count);
     }
 
@@ -92,8 +92,11 @@ public sealed class ImageEffectTests
     public void AppendFailureReleasesOwnedResources()
     {
         var resource = new TrackedResource();
-        var plan = new RenderGraphBuilder(Device());
+        using var plan = new RenderGraphBuilder(Device());
         Assert.Throws<InvalidOperationException>(() => plan.AppendEffects(ImageEffectGraph.Create(new FailingEffect(resource), ImageEffectGraph.Source()), Source(plan)));
+        Assert.Equal(0, resource.DisposeCount);
+        Assert.Throws<ObjectDisposedException>(() => plan.Compile());
+        plan.Dispose();
         Assert.Equal(1, resource.DisposeCount);
     }
 
@@ -101,10 +104,10 @@ public sealed class ImageEffectTests
     [Fact]
     public void ZeroSigmaBlurPreservesSourceWithoutDeviceCalls()
     {
-        var plan = new RenderGraphBuilder(Device());
+        using var plan = new RenderGraphBuilder(Device());
         EffectImage source = Source(plan);
-        using PreparedImageEffect prepared = plan.AppendEffects(ImageEffectGraph.Create(new GaussianBlurEffect(0, 0), ImageEffectGraph.Source()), source);
-        Assert.Equal(source, prepared.Output);
+        EffectImage prepared = plan.AppendEffects(ImageEffectGraph.Create(new GaussianBlurEffect(0, 0), ImageEffectGraph.Source()), source);
+        Assert.Equal(source, prepared);
     }
 
     /// <summary>Checks factory depth limits reject adversarial graphs before traversal.</summary>
@@ -120,21 +123,24 @@ public sealed class ImageEffectTests
         Assert.Throws<ArgumentException>(() => ImageEffectGraph.Create(new OpacityEffect(1), graph));
     }
 
-    /// <summary>Externally loaded shaders are supplied to both effect entry points without a manager dependency.</summary>
+    /// <summary>Direct and callback appends share one configured state without a manager dependency.</summary>
     [Fact]
-    public void SuppliedShaderArtifactsReachEffectPreparation()
+    public void SuppliedShaderArtifactsReachSharedDirectAndSubgraphPreparation()
     {
         var artifact = ShaderArtifact.PackTarget(ShaderTarget.Wgsl, ShaderStage.Vertex, "main", "test", [1], "{}");
         var shaders = new ImageEffectShaders(artifact, artifact);
-        var plan = new RenderGraphBuilder(Device());
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddImageEffects(shaders);
+        using var plan = new RenderGraphBuilder(Device(), extensions: extensions);
         var effect = new ShaderInspectionEffect(shaders);
-        using PreparedImageEffect direct = plan.AppendEffectWithShaders(effect, shaders, Source(plan));
-        using PreparedImageEffect graph = plan.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), Source(plan), shaders);
-        using Lumyte.Graphics.RenderGraph.CompiledRenderGraph compiled = plan.Compile();
-        compiled.Retain(direct);
-        compiled.Retain(graph);
-        compiled.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => ((Lumyte.Graphics.RenderGraph.IRenderGraphLifetime)direct).Validate());
+        EffectImage source = Source(plan);
+        Assert.Equal(source, plan.AppendEffect(effect, source));
+        ImageEffectsGraphContext shared = plan.GetExtension<ImageEffectsGraphContext>();
+        using var callback = new ImageEffectSubgraph(plan, source);
+        Assert.Equal(source, callback.AppendEffect(effect, source));
+        Assert.Equal(source, plan.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source));
+        Assert.Same(shared, plan.GetExtension<ImageEffectsGraphContext>());
+        callback.Dispose();
+        using CompiledRenderGraph compiled = plan.Compile();
     }
 
     /// <summary>Borrowed modules are reused and remain owned by their caller even if pipeline creation fails.</summary>
@@ -150,8 +156,11 @@ public sealed class ImageEffectTests
         ImageEffectShaders shaders = borrowModules ? new ImageEffectShaders(vertex, fragment) : new ImageEffectShaders(artifact, artifact);
         IGraphicDevice device = DispatchProxy.Create<IGraphicDevice, ShaderDeviceProxy>();
         var proxy = (ShaderDeviceProxy)(object)device;
-        var plan = new RenderGraphBuilder(device);
-        Assert.Throws<PipelineReachedException>(() => plan.AppendEffectWithShaders(new OpacityEffect(0.5f), shaders, Source(plan)));
+        using RenderGraphExtensions extensions = new RenderGraphExtensions().AddImageEffects(shaders);
+        using var plan = new RenderGraphBuilder(device, extensions: extensions);
+        Assert.Throws<PipelineReachedException>(() => plan.AppendEffect(new OpacityEffect(0.5f), Source(plan)));
+        Assert.All(proxy.Created, shader => Assert.False(((BorrowedShader)shader).Disposed));
+        plan.Dispose();
         Assert.False(vertex.Disposed);
         Assert.False(fragment.Disposed);
         Assert.Equal(borrowModules ? 0 : 2, proxy.Created.Count);
@@ -169,15 +178,14 @@ public sealed class ImageEffectTests
             new ReleaseResource("failing", events, failOnce: true),
             new ReleaseResource("released", events),
         ]);
-        var graph = new RenderGraphBuilder(Device());
-        PreparedImageEffect prepared = graph.AppendEffect(effect, Source(graph));
+        using var graph = new RenderGraphBuilder(Device());
+        graph.Retain(shader);
+        _ = graph.AppendEffect(effect, Source(graph));
         using CompiledRenderGraph compiled = graph.Compile();
-        compiled.Retain(shader);
-        compiled.Retain(prepared);
 
         Assert.Throws<AggregateException>(() => compiled.Dispose());
         Assert.Equal(["released", "failing"], events);
-        Assert.Throws<ObjectDisposedException>(() => ((IRenderGraphLifetime)prepared).Validate());
+        Assert.Throws<ObjectDisposedException>(() => ((IRenderGraphLifetime)effect.Context!).Validate());
         using var rejected = new TrackedResource();
         Assert.Throws<ObjectDisposedException>(() => effect.Context!.Own(rejected));
 
@@ -185,6 +193,29 @@ public sealed class ImageEffectTests
         Assert.Equal(["released", "failing", "failing", "dependency", "shader"], events);
         compiled.Dispose();
         Assert.Equal(5, events.Count);
+    }
+
+    /// <summary>Failed preparation leaves retryable cleanup and its shader dependency with the graph.</summary>
+    /// <param name="direct">Whether to use the direct effect entry point.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedPreparationKeepsCleanupUntilGraphDisposalSucceeds(bool direct)
+    {
+        var events = new List<string>();
+        var effect = new FailingEffect(new ReleaseResource("effect", events, failOnce: true));
+        using var graph = new RenderGraphBuilder(Device());
+        graph.Retain(new ReleaseResource("shader", events));
+        EffectImage source = Source(graph);
+        Assert.Throws<InvalidOperationException>(() => direct
+            ? graph.AppendEffect(effect, source)
+            : graph.AppendEffects(ImageEffectGraph.Create(effect, ImageEffectGraph.Source()), source));
+        Assert.Empty(events);
+        Assert.Throws<ObjectDisposedException>(() => graph.Compile());
+        Assert.Throws<AggregateException>(() => graph.Dispose());
+        Assert.Equal(["effect"], events);
+        graph.Dispose();
+        Assert.Equal(["effect", "effect", "shader"], events);
     }
 
     /// <summary>A preowned context rejects a foreign device or color semantic before preparing any effect.</summary>
@@ -198,7 +229,7 @@ public sealed class ImageEffectTests
     public void SuppliedContextRejectsIncompatibleEnvironment(bool wrongDevice, bool graphEntry)
     {
         IGraphicDevice device = Device();
-        var graph = new RenderGraphBuilder(device);
+        using var graph = new RenderGraphBuilder(device);
         using var context = new EffectPreparationContext(
             wrongDevice ? Device() : device,
             wrongDevice ? EffectColorSemantic.DisplayLinear : EffectColorSemantic.SceneLinear);
@@ -305,7 +336,7 @@ public sealed class ImageEffectTests
         public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs) => inputs[0];
     }
 
-    private sealed record FailingEffect(TrackedResource Resource) : IdentityEffect
+    private sealed record FailingEffect(IDisposable Resource) : IdentityEffect
     {
         /// <inheritdoc/>
         public override EffectImage AppendPasses(EffectPreparationContext context, RenderGraphBuilder plan, ReadOnlySpan<EffectImage> inputs)

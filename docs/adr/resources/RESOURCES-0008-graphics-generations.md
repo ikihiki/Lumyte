@@ -151,8 +151,8 @@ IGraphicDevice device = lease.Device;
 | Graphics Abstractions | 共通のShaderArtifact binaryとStreamからの直接ロード。Resources参照を持たない |
 | ShaderArtifactStage | SourceのRevision、CPU binaryの予算、Build作業領域 |
 | GraphicsShaderStage | 選択済みGraphicsResourceRuntime、元deviceとepoch、retirement後のshader解放 |
-| ResourceRenderGraphImports | ManagerからのLease取得とcompiled planへの所有移譲 |
-| RenderGraph | 汎用IRenderGraphLifetimeの記録前検証とGPU完了後の解放。Managerを参照しない |
+| ResourceRenderGraphImports | Graphごとに共有する借用ビュー。ManagerからのLease取得とGraphへの保持 |
+| RenderGraph | 型付き拡張状態と共通の所有権。汎用IRenderGraphLifetimeの記録前検証とGPU完了後の解放。Managerを参照しない |
 | ImageEffects | 借用artifactからの固定GPU資源生成。Resources参照を持たない |
 | Resources.Graphics.ImageEffects | 既定／注入されたシェーダ一式の世代と、Effect追加時の自動的な所有移譲 |
 
@@ -160,16 +160,20 @@ Sourceはコンパイル済み`.lshader`を提供する。Slangコンパイル�
 
 `AddShaderPipeline()`はCPU artifactとGPU shaderのStage、およびGPU側の型付きRuntime選択を登録する。既存の`UseGraphicsAsync`は低水準の互換入口とし、新しいStageは型付きRuntimeの`AcquireAsync`を使う。deviceやworkerの起動停止、公開世代や再構築をshader loaderへ重複実装しない。
 
-RenderGraphのimportは従来どおり借用できる。Resource連携時だけ`graph.ImportResources(manager)`でscopeを作り、`ImportTextureAsync`、`ImportBufferAsync<T>`、`ImportShaderDataBufferAsync<T>`または`AcquireAsync<T>`を使う。`imports.Compile()`はLeaseをplanへ移す。複数入力を同じpublicationに揃える場合は、事前ロードしたHandleを`Acquire(snapshot, handle)`で解決する。個々のAcquireAsyncはpublicationの一括取得ではない。
+RenderGraphのimportは従来どおり借用できる。Resource連携は`RenderGraphExtensions.AddResources(manager)`で登録し、`graph.ImportResources()`から`ImportTextureAsync`、`ImportBufferAsync<T>`、`ImportShaderDataBufferAsync<T>`または`AcquireAsync<T>`を使う。importsはGraphの型付き拡張状態であり、同じGraph内の各モジュールから共有する。CompileやDisposeを独自に持たず、Graphへ所有を集約する。設定なしの`graph.ImportResources(manager)`も同じ状態を関連付ける。
+
+`graph.Compile()`は全拡張の所有をplanへ一括で移す。移譲前の失敗ではGraphに所有を残す。拡張や所有権を使うGraphはCompile成功後の変更・再Compileを拒否し、借用だけの既存Graphは再Compileを維持する。拡張構成は最初のGraphに関連付けた時点で固定し、フレーム間で再利用する。型付きfactoryの明示登録・状態取得はReflectionやDI解決を行わない。
+
+複数入力を同じpublicationに揃える場合は、Referenceを事前ロードし、最初の取得前に`graph.ImportResources().UseSnapshot(snapshot)`でフレーム共通の借用viewを指定する。`Acquire(reference)`とEffectsもこのviewから取得する。SnapshotはGraph構築終了まで呼び出し側が保持し、各Leaseはその後も有効となる。個々のAcquireAsyncは暗黙に全リソースのSnapshotを取得しない。
 
 planは外部所有権を`IRenderGraphLifetime`として受け取り、記録前に失効を検証する。解放順はview、一時allocation、登録の逆順の外部所有権とする。GPU完了前のDisposeは拒否する。HotReload中の旧shaderとartifactをplanの寿命まで保ち、新しいplan／pipelineが新世代を取得する。記録途中のpipelineやshaderを差し替えない。
 
-ImageEffectsは`ImageEffectShaders`を借用する入口を持ち、省略時は既定の埋め込み版を使用する。Managerとの通常の連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。`AddImageEffects()`と引数なしの`AcquireImageEffectShadersAsync()`が既定パッケージを選び、描画側に名前やキーを要求しない。カスタム時だけ`ImageEffectShaderPackage`で二つのartifactキーをDIへ注入する。DIなしでは同じ設定をCPU Stageへ渡す。
+ImageEffectsは`ImageEffectsGraphContext`をGraphごとに共有し、`graph.AppendEffects(effectGraph, source)`から利用する。シェーダやimportsを呼び出しごとに渡さず、戻り値はEffectImageに統一する。単独利用時は既定の埋め込み版を使用する。Managerとの連携は任意の`Lumyte.Resources.Graphics.ImageEffects`に置く。Resource Pipelineの`AddImageEffects()`を登録し、初期化時の`extensions.AddImageEffectsAsync(manager)`で既定パッケージを事前ロードする。取得したReferenceは拡張設定が所有する。カスタム時だけ`ImageEffectShaderPackage`で二つのartifactキーをDIへ注入する。DIなしでは同じ設定をCPU Stageへ渡す。
 
 二つのartifactをResident依存にするCPUの組と、その組をResident依存に持つGPUの組を構築する。既定CPU artifactはライブラリ共有cacheを再利用し、カスタムartifactは通常のSource・メモリ計上・HotReloadに参加する。GPUの組は正確なdevice epochに属し、部分生成の失敗に備えて生成前にcleanupを登録する。復旧時にはCPUの組を再利用する。
 
-`imports.AppendEffects(reference, effectGraph, source)`は一つの世代Leaseとprepared effectをまとめて保持し、画像だけを返す。通常は毎フレームのI/Oや全リソースSnapshotを要しない。他の入力も同一publicationに揃える場合だけフレーム共通のSnapshotを渡す。compiled planへの移譲はimport scope全体で行い、固定GPU資源の解放成功後にshaderのLeaseを返す。部分解放に失敗した場合は未解放の資源と依存先を保持し、同じ所有者から再試行する。
+Graphが最初にEffectsを使う際に一つの世代Leaseを取得し、後続のappendと2DのImageEffectSubgraphでも共有する。HotReload後の世代を取得するのは次のGraphであり、構築途中のGraphでshaderを差し替えない。Effectsは各準備Contextを処理開始前にGraphへ保持させる。固定GPU資源の解放成功後にshaderのLeaseを返し、部分解放に失敗した場合は未解放の資源と依存先を保持して再試行する。
 
-手動の`Retain(prepared)`も可能だが、移譲後は別のusingでpreparedをDisposeしない。待機キャンセルをGPU完了とは扱わず、planは所有を保持する。loss時の旧epoch退役確認とGPU送信・完了管理はアプリが担当する。既定選択、カスタム入力更新、旧世代の描画中保持、解放の再試行、部分生成失敗とNativeAOTを検証する。
+待機キャンセルをGPU完了とは扱わず、planは所有を保持する。loss時の旧epoch退役確認とGPU送信・完了管理はアプリが担当する。既定選択、カスタム入力更新、複数拡張・2D部分ビューの共存、旧世代の描画中保持、解放の再試行、部分生成失敗とNativeAOTを検証する。
 
 `ImageEffectShaders`はCPU artifactまたは既存のGPU shaderを受け取る。既存moduleを渡した場合はeffect側で生成・解放せず、管理側の世代Leaseで寿命を保つ。artifactだけを渡す場合はeffectが作ったmoduleを自分で解放する。

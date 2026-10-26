@@ -1,83 +1,49 @@
 using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
+using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Resources.Graphics.ImageEffects;
 
-/// <summary>Loads the configured shader package and appends effects with graph-owned lifetimes.</summary>
+/// <summary>Preloads managed shaders and supplies them to the ordinary graph image-effects extension.</summary>
 public static class ResourceImageEffectExtensions
 {
     private static readonly ResourceKey<ImageEffectShaderResource> _shaderKey = new("Lumyte/ImageEffects");
 
-    /// <summary>Loads the default or injected shader package once and follows its published generations.</summary>
-    /// <param name="manager">The manager configured with AddImageEffects.</param>
+    /// <summary>Loads the default or injected shader package and follows its published generations.</summary>
+    /// <param name="manager">The manager configured with the image-effects resource pipeline.</param>
     /// <param name="cancellationToken">Cancels this acquisition.</param>
-    /// <returns>A reusable reference; each appended effect pins its own exact generation.</returns>
+    /// <returns>A reusable reference to the shader package.</returns>
     public static ValueTask<ResourceReference<ImageEffectShaderResource>> AcquireImageEffectShadersAsync(this ResourceManager manager, CancellationToken cancellationToken = default)
         => manager.AcquireAsync(_shaderKey, cancellationToken);
 
-    /// <summary>Appends an effect graph, transferring its fixed resources and shader lease to the imports.</summary>
-    /// <param name="imports">The open scope whose Compile method owns all appended effects.</param>
-    /// <param name="shaders">The preloaded default or injected package.</param>
-    /// <param name="effects">The immutable effect graph.</param>
-    /// <param name="source">The graph-local source image.</param>
-    /// <param name="snapshot">An optional shared publication view for the whole frame.</param>
-    /// <returns>The graph-local result; the scope owns preparation and cleanup.</returns>
-    /// <remarks>Discard the graph if preparation fails. Submit and GPU completion remain explicit.</remarks>
-    public static EffectImage AppendEffects(this ResourceRenderGraphImports imports, ResourceReference<ImageEffectShaderResource> shaders, ImageEffectGraph effects, EffectImage source, ResourceSnapshot? snapshot = null)
+    /// <summary>Loads the configured shaders once and registers their graph-local image-effects context.</summary>
+    /// <param name="extensions">The configuration with AddResources registered for the same manager.</param>
+    /// <param name="manager">The manager owning the default or injected shader package.</param>
+    /// <param name="cancellationToken">Cancels preload without leaving a registered owner.</param>
+    /// <returns>The supplied configuration, owning the reference until configuration disposal.</returns>
+    /// <remarks>Finish registration before creating graphs. No resource loading occurs in AppendEffects.</remarks>
+    public static async ValueTask<RenderGraphExtensions> AddImageEffectsAsync(this RenderGraphExtensions extensions, ResourceManager manager, CancellationToken cancellationToken = default)
     {
-        EffectLifetime lifetime = Retain(imports, shaders, source.ColorSemantic, snapshot);
-        return imports.Graph.AppendEffectsWithContext(effects, source, lifetime.Context);
-    }
-
-    /// <summary>Appends one effect with the same automatic resource ownership as an effect graph.</summary>
-    /// <param name="imports">The open import scope.</param>
-    /// <param name="shaders">The preloaded default or injected package.</param>
-    /// <param name="effect">The immutable effect definition.</param>
-    /// <param name="inputs">The graph-local inputs.</param>
-    /// <returns>The graph-local result, owned through the compiled plan.</returns>
-    public static EffectImage AppendEffect(this ResourceRenderGraphImports imports, ResourceReference<ImageEffectShaderResource> shaders, ImageEffectDefinition effect, params EffectImage[] inputs)
-    {
-        EffectColorSemantic semantic = inputs.Length == 0 ? EffectColorSemantic.DisplayLinear : inputs[0].ColorSemantic;
-        EffectLifetime lifetime = Retain(imports, shaders, semantic, null);
-        return imports.Graph.AppendEffectWithContext(effect, lifetime.Context, inputs);
-    }
-
-    private static EffectLifetime Retain(ResourceRenderGraphImports imports, ResourceReference<ImageEffectShaderResource> shaders, EffectColorSemantic semantic, ResourceSnapshot? snapshot)
-    {
-        ResourceLease<ImageEffectShaderResource> lease = shaders.Acquire(snapshot);
+        ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ImageEffectShaderResource resource = lease.Value;
-            if (!ReferenceEquals(imports.Graph.Device, resource.Device))
-            {
-                throw new InvalidOperationException("The image effects and graph must use the same physical device.");
-            }
-
-            var lifetime = new EffectLifetime(lease, new(resource.Device, semantic, resource.Shaders));
-            imports.Retain(lifetime);
-            return lifetime;
+            return extensions.Add<ImageEffectsGraphContext>(graph => CreateContext(graph, reference), reference);
         }
         catch
         {
-            lease.Dispose();
+            reference.Dispose();
             throw;
         }
     }
 
-    private sealed class EffectLifetime(ResourceLease<ImageEffectShaderResource> lease, EffectPreparationContext context) : IRenderGraphLifetime
+    private static ImageEffectsGraphContext CreateContext(RenderGraphBuilder graph, ResourceReference<ImageEffectShaderResource> reference)
     {
-        internal EffectPreparationContext Context { get; } = context;
-
-        public void Validate()
+        ImageEffectShaderResource resource = graph.ImportResources().Acquire(reference);
+        if (!ReferenceEquals(graph.Device, resource.Device))
         {
-            _ = lease.Value;
-            ((IRenderGraphLifetime)Context).Validate();
+            throw new InvalidOperationException("The image effects and graph must use the same physical device.");
         }
 
-        public void Dispose()
-        {
-            Context.Dispose();
-            lease.Dispose();
-        }
+        return new(graph, resource.Shaders);
     }
 }
