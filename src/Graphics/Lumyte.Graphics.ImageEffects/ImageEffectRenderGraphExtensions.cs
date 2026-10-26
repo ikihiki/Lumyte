@@ -70,18 +70,38 @@ public static class ImageEffectRenderGraphExtensions
     /// <returns>The owner of fixed GPU resources.</returns>
     public static PreparedImageEffect AppendEffects(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source, ImageEffectShaders? shaders)
     {
-        ArgumentNullException.ThrowIfNull(plan);
-        ArgumentNullException.ThrowIfNull(graph);
-        ValidateImage(source);
         var context = new EffectPreparationContext(RequireDevice(plan), source.ColorSemantic, shaders);
-        var results = new Dictionary<ImageEffectNode, EffectImage>(ReferenceEqualityComparer.Instance);
         try
         {
-            return new(Visit(graph.Root), context);
+            return new(plan.AppendEffectsWithContext(graph, source, context), context);
         }
         catch
         {
-            context.Release();
+            context.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Appends an effect graph into a context whose ownership was established before preparation.</summary>
+    /// <param name="plan">The graph receiving passes.</param>
+    /// <param name="graph">The immutable effect graph.</param>
+    /// <param name="source">The graph-local input image.</param>
+    /// <param name="context">The caller-owned context, using the same device and color semantic.</param>
+    /// <returns>The graph-local result; the context owns its fixed resources even if preparation fails.</returns>
+    /// <remarks>Discard the graph after failure and dispose the context, retrying cleanup if necessary.</remarks>
+    public static EffectImage AppendEffectsWithContext(this RenderGraphBuilder plan, ImageEffectGraph graph, EffectImage source, EffectPreparationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ValidateImage(source);
+        ValidateContext(plan, context, source.ColorSemantic);
+        var results = new Dictionary<ImageEffectNode, EffectImage>(ReferenceEqualityComparer.Instance);
+        try
+        {
+            return Visit(graph.Root);
+        }
+        catch
+        {
+            context.Close();
             throw;
         }
 
@@ -160,7 +180,29 @@ public static class ImageEffectRenderGraphExtensions
     /// <returns>The prepared effect owner.</returns>
     public static PreparedImageEffect AppendEffectWithShaders(this RenderGraphBuilder plan, ImageEffectDefinition effect, ImageEffectShaders? shaders, params EffectImage[] inputs)
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(inputs);
+        EffectColorSemantic semantic = inputs.Length == 0 ? EffectColorSemantic.DisplayLinear : inputs[0].ColorSemantic;
+        var context = new EffectPreparationContext(RequireDevice(plan), semantic, shaders);
+        try
+        {
+            return new(plan.AppendEffectWithContext(effect, context, inputs), context);
+        }
+        catch
+        {
+            context.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Appends one effect into an already owned preparation context.</summary>
+    /// <param name="plan">The graph receiving passes.</param>
+    /// <param name="effect">The immutable effect definition.</param>
+    /// <param name="context">The caller-owned context with matching device and color semantic.</param>
+    /// <param name="inputs">The ordered graph-local inputs.</param>
+    /// <returns>The graph-local result, with fixed resources owned by the context.</returns>
+    /// <remarks>Failure leaves cleanup with the caller; discard the graph and dispose the context.</remarks>
+    public static EffectImage AppendEffectWithContext(this RenderGraphBuilder plan, ImageEffectDefinition effect, EffectPreparationContext context, params EffectImage[] inputs)
+    {
         ArgumentNullException.ThrowIfNull(effect);
         ArgumentNullException.ThrowIfNull(inputs);
         if (effect.InputCount < 0 || effect.InputCount != inputs.Length)
@@ -169,6 +211,7 @@ public static class ImageEffectRenderGraphExtensions
         }
 
         EffectColorSemantic semantic = inputs.Length == 0 ? EffectColorSemantic.DisplayLinear : inputs[0].ColorSemantic;
+        ValidateContext(plan, context, semantic);
         var bounds = new EffectPixelRect[inputs.Length];
         for (int i = 0; i < inputs.Length; i++)
         {
@@ -187,7 +230,6 @@ public static class ImageEffectRenderGraphExtensions
             throw new InvalidOperationException("An effect must declare positive output dimensions.");
         }
 
-        var context = new EffectPreparationContext(RequireDevice(plan), semantic, shaders);
         try
         {
             EffectImage output = effect.AppendPasses(context, plan, inputs);
@@ -197,11 +239,11 @@ public static class ImageEffectRenderGraphExtensions
                 throw new InvalidOperationException("An effect must preserve its declared bounds and color semantic.");
             }
 
-            return new(output, context);
+            return output;
         }
         catch
         {
-            context.Release();
+            context.Close();
             throw;
         }
     }
@@ -221,5 +263,17 @@ public static class ImageEffectRenderGraphExtensions
     }
 
     private static IGraphicDevice RequireDevice(RenderGraphBuilder plan)
-        => plan.Device ?? throw new InvalidOperationException("Image-effect passes require a RenderGraph with a graphics device.");
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.Device ?? throw new InvalidOperationException("Image-effect passes require a RenderGraph with a graphics device.");
+    }
+
+    private static void ValidateContext(RenderGraphBuilder plan, EffectPreparationContext context, EffectColorSemantic semantic)
+    {
+        context.EnsureAlive();
+        if (!ReferenceEquals(context.Device, RequireDevice(plan)) || context.ColorSemantic != semantic)
+        {
+            throw new ArgumentException("The preparation context must use the graph's device and the inputs' color semantic.", nameof(context));
+        }
+    }
 }

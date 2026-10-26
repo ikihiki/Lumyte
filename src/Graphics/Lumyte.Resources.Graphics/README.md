@@ -127,19 +127,21 @@ compile前の放棄はimportsのDisposeでLeaseを返します。`imports.Compil
 
 ## ImageEffectsとの接続
 
-ImageEffectsもResourcesへ依存しません。既定の埋め込みartifactを使う既存APIに加え、取得済みartifactを`ImageEffectShaders`として渡せます。
+ImageEffectsとの通常の接続には、任意のパッケージ[Lumyte.Resources.Graphics.ImageEffects](../Lumyte.Resources.Graphics.ImageEffects/README.md)を使用します。`AddImageEffects()`で既定の埋め込みシェーダ一式を登録し、パッケージ名やキーの指定なしで取得できます。
 
 ```csharp
+// 初期化時に一度取得して保持する。
+using var shaders = await manager.AcquireImageEffectShadersAsync();
+
+// フレームごと。
 using var imports = graph.ImportResources(manager);
-ShaderArtifact vertex = await imports.AcquireAsync(new ResourceKey<ShaderArtifact>("effects/fullscreen"));
-ShaderArtifact fragment = await imports.AcquireAsync(new ResourceKey<ShaderArtifact>("effects/fragment"));
-using PreparedImageEffect prepared = graph.AppendEffects(effectGraph, source, new ImageEffectShaders(vertex, fragment));
+EffectImage output = imports.AppendEffects(shaders, effectGraph, source);
+graph.MarkOutput(output.Texture);
 using CompiledRenderGraph plan = imports.Compile();
-plan.Retain(prepared);
 plan.Record(commands);
-// GPU完了後にplanをDispose。effectのGPU資源、artifactのLeaseの順に返す。
+// GPU完了後にplanをDispose。effectのGPU資源、shaderのLeaseの順に返す。
 ```
 
-単一effectには`AppendEffectWithShaders`を使います。既定artifactは一度だけロードします。HotReload後に既存のpipelineをその場で差し替えず、新しいartifactから次のprepared effect／pipelineを作り、使用中のplanは元の資源を完了まで保持します。
+カスタムの場合だけ`ImageEffectShaderPackage`をDIへ登録し、二つのartifactキーを指定します。組を一つの世代として取得するため、通常のappendでSnapshotは不要です。HotReload後に既存のpipelineをその場で差し替えず、次のplanで新しいシェーダ一式を利用します。
 
-GPU shaderも共有する場合は、`AcquireAsync<GraphicsShaderResource>`で二つのshaderを取得し、`new ImageEffectShaders(vertex.Shader, fragment.Shader)`を渡します。この場合、effectはshader moduleを生成・解放せずに借用します。Leaseは同じimport scopeからplanへ移すため、既存moduleを各passで再利用できます。
+低水準のartifact／GPU module取得と`ImageEffectShaders`への受け渡しも利用できます。その場合は取得元の寿命を固定GPU資源より長く保持し、所有をplanへ移したPreparedImageEffectを別のusingでDisposeしないでください。

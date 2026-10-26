@@ -137,19 +137,57 @@ public sealed class ShaderResourceTests
         Assert.True(value.Disposed);
     }
 
+    /// <summary>A loaded shader commits its resident bytes and reports them when reclaimed.</summary>
+    /// <param name="lengthKnown">Whether the source exposes its byte length before reading.</param>
+    /// <returns>Completion of successful allocation and reclamation accounting.</returns>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ShaderMemoryIsCommittedAndReclaimedAsync(bool lengthKnown)
+    {
+        byte[] binary = Artifact().GetBinary();
+        var services = new ServiceCollection();
+        services.AddMemoryManagement();
+        services.AddSingleton(new MemorySource(binary, lengthKnown));
+        services.AddResources(builder => builder.UseSource<MemorySource>().AddSourcePipeline<ShaderArtifact, ShaderArtifactStage>());
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
+        ResourceManager manager = provider.GetRequiredService<ResourceManager>();
+        IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
+        using (ResourceReference<ShaderArtifact> reference = await manager.AcquireAsync(new ResourceKey<ShaderArtifact>("shader")))
+        using (ResourceLease<ShaderArtifact> lease = reference.Acquire())
+        {
+            Assert.Equal(binary.Length, lease.Value.BinaryLength);
+            MemorySnapshot loaded = memory.GetSnapshot(new("cpu"));
+            Assert.Equal((ulong)binary.Length, loaded.CommittedBytes);
+            Assert.Equal(0UL, loaded.ReservedBytes);
+        }
+
+        Assert.Equal((ulong)binary.Length, await memory.ReclaimAsync(new("cpu"), (ulong)binary.Length));
+        MemorySnapshot reclaimed = memory.GetSnapshot(new("cpu"));
+        Assert.Equal(0UL, reclaimed.CommittedBytes);
+        Assert.Equal(0UL, reclaimed.ReservedBytes);
+    }
+
     /// <summary>A malformed binary returns both build buffers and the reserved resident budget.</summary>
+    /// <param name="lengthKnown">Whether the source exposes its byte length before reading.</param>
     /// <returns>Completion of failed shader creation cleanup.</returns>
-    [Fact]
-    public async Task InvalidShaderReturnsAllMemoryReservationsAsync()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InvalidShaderReturnsAllMemoryReservationsAsync(bool lengthKnown)
     {
         var services = new ServiceCollection();
         services.AddMemoryManagement();
-        services.AddResources(builder => builder.UseSource<InvalidSource>().AddSourcePipeline<ShaderArtifact, ShaderArtifactStage>());
+        services.AddSingleton(new MemorySource([1, 2, 3], lengthKnown));
+        services.AddResources(builder => builder.UseSource<MemorySource>().AddSourcePipeline<ShaderArtifact, ShaderArtifactStage>());
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
         await Assert.ThrowsAsync<ArgumentException>(() => manager.AcquireAsync(new ResourceKey<ShaderArtifact>("broken")).AsTask());
-        Assert.Equal(0UL, provider.GetRequiredService<IMemoryManager>().GetSnapshot(new("cpu")).CommittedBytes);
+        MemorySnapshot released = provider.GetRequiredService<IMemoryManager>().GetSnapshot(new("cpu"));
+        Assert.Equal(0UL, released.CommittedBytes);
+        Assert.Equal(0UL, released.ReservedBytes);
     }
 
     private static ShaderArtifact Artifact() => ShaderArtifact.PackTarget(
@@ -189,9 +227,9 @@ public sealed class ShaderResourceTests
         public void Dispose() => Disposed = true;
     }
 
-    private sealed class InvalidSource : IResourceSource
+    private sealed class MemorySource(byte[] binary, bool lengthKnown) : IResourceSource
     {
-        public ValueTask<ResourceSourceSnapshot> OpenSnapshotAsync(ResourceId id, CancellationToken cancellationToken = default) => new(new Snapshot(id, [1, 2, 3]));
+        public ValueTask<ResourceSourceSnapshot> OpenSnapshotAsync(ResourceId id, CancellationToken cancellationToken = default) => new(new Snapshot(id, binary, lengthKnown));
 
         public ValueTask<string?> GetRevisionAsync(ResourceId id, CancellationToken cancellationToken = default) => new("1");
     }
@@ -203,13 +241,13 @@ public sealed class ShaderResourceTests
         public ValueTask<string?> GetRevisionAsync(ResourceId id, CancellationToken cancellationToken = default) => new("1");
     }
 
-    private sealed class Snapshot(ResourceId id, byte[] binary) : ResourceSourceSnapshot
+    private sealed class Snapshot(ResourceId id, byte[] binary, bool lengthKnown = true) : ResourceSourceSnapshot
     {
         public override ResourceId Id => id;
 
         public override string Revision => "1";
 
-        public override long? Length => binary.Length;
+        public override long? Length => lengthKnown ? binary.Length : null;
 
         public override bool CanReadRange => false;
 

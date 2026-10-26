@@ -41,6 +41,10 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     internal TaskCompletionSource? RetirementStarted { get; set; }
 
+    internal List<TestShader> Shaders { get; } = [];
+
+    internal int CreateShaderFailOnCall { get; set; }
+
     public BufferLayout<T> GetBufferLayout<T>()
         where T : unmanaged => throw new NotSupportedException();
 
@@ -53,7 +57,17 @@ internal sealed class TestDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw new NotSupportedException();
 
-    public IGraphicsShader CreateShader(ShaderArtifact artifact) => new TestShader(artifact);
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        if (CreateShaderFailOnCall == Shaders.Count + 1)
+        {
+            throw new InvalidOperationException("Injected shader creation failure.");
+        }
+
+        var shader = new TestShader(artifact);
+        Shaders.Add(shader);
+        return shader;
+    }
 
     public IGraphicsSemaphore CreateSemaphore() => throw new NotSupportedException();
 

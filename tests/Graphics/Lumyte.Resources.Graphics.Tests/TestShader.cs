@@ -8,5 +8,11 @@ internal sealed class TestShader(ShaderArtifact artifact) : IGraphicsShader
 
     internal bool Disposed { get; private set; }
 
-    public void Dispose() => Disposed = true;
+    internal int DisposeCount { get; private set; }
+
+    public void Dispose()
+    {
+        DisposeCount++;
+        Disposed = true;
+    }
 }
