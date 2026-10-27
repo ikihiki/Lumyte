@@ -4,7 +4,7 @@ AudioDeviceがデバイス生成・clip生成・bus gain・更新・終了を、
 
 `new AudioModule()` またはDIの `AddSingleton<IExecutionModule, AudioModule>()` で登録し、ExecutionRuntimeを起動します。デバイスは起動時に所有スレッド上で生成されます。
 
-操作は`audio.Commands`、サービス状態は`audio.Devices.State`から取得します。従来の`audio.State`はCommandsと同じsenderを返す互換入口です。[API入口の設計](../../../docs/adr/audio/AUDIO-0003-consistent-api-entry-points.md)も参照してください。
+操作は`audio.Commands`、サービス状態は`audio.Devices.State`から取得します。[API入口の設計](../../../docs/adr/audio/AUDIO-0003-consistent-api-entry-points.md)も参照してください。
 
 ```csharp
 var clip = new AudioClip(await audio.Commands.CreateClip(new AudioFormat(48000, 1), pcm));

@@ -10,7 +10,7 @@ AudioModule.Stateは操作用senderを返す一方、Devices.Stateは状態のsn
 
 ## 決定
 
-操作はCommands、状態はDevices.Stateから取得する。既存Stateは同じsenderを返す互換入口として残す。AudioClipのbus省略はbackendと同じEffectsにする。
+操作はCommands、状態はDevices.Stateから取得する。旧Stateプロパティは削除し、Commandsに統一する。AudioClipのbus省略はbackendと同じEffectsにする。
 
 RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や状態変更をせず、そのsnapshotを返す。同時要求は従来どおり一つのoperationを共有する。Lost／Failedなら復旧し、生成途中の取消は呼び出し側の待機だけを取り消す。取消済み要求はReadyでも取消を返す。ownerでの確認後に起きたロストまでsnapshotの利用可能性を保証しない。
 
@@ -29,8 +29,7 @@ RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や�
      {
 +        // 操作用sender。Devices.Stateのsnapshotとは区別する。
 +        public AudioDevice Commands { get; }
-         // 既存コードとの互換性のためCommandsと同じsenderを返す。
-         public AudioDevice State { get; }
+-        public AudioDevice State { get; }
      }
 +    public static class AudioClipExtensions
 +    {
@@ -59,7 +58,7 @@ RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や�
 
 ## 検討した代替案
 
-- Stateを削除して改名する: 呼び出し側を一斉に修正する必要があるため、互換入口を残す。
+- Stateを互換入口として残す: 同じsenderに複数の名前が生じるため採用しない。利用側をCommandsへ移行する。
 - Ready判定を呼び出し側で行う: 判定とownerでの実行の間に状態が変わるため、service側で判定する。
 - 全device serviceに同じ初期化・破棄APIを追加する: GraphicsのscopeとAudioのExecutionModuleでは所有者が異なる。共通の役割だけを揃える。
 

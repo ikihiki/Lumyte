@@ -9,7 +9,6 @@ internal static class ApiScenario
 {
     internal static void Run(AudioModule audio, ResourceRuntime executor, AudioResourceRuntime runtime, TestFactory factory, Action<Task> wait)
     {
-        Require(audio.Commands.Equals(audio.State), "The compatibility sender no longer targets the same device state.");
         ReadyRecovery(audio, factory, wait);
         AcquireGeneration(audio, executor, runtime, factory, wait);
         DefaultVoiceBus(audio, factory, wait);

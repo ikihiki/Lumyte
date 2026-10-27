@@ -27,9 +27,6 @@ public sealed class AudioModule(IAudioDeviceFactory factory) : IExecutionModule
     /// <summary>Gets the generated command declarations and owner diagnostics.</summary>
     public AudioDevice Commands => _state;
 
-    /// <summary>Gets the command sender retained for compatibility. Use <see cref="Commands"/> for operations and <see cref="Devices"/> for service state.</summary>
-    public AudioDevice State => Commands;
-
     /// <summary>Gets the stable service managing replaceable audio generations.</summary>
     public IAudioDeviceService Devices => _state.Devices;
 
