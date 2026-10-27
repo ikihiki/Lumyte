@@ -249,7 +249,10 @@ jobs:
           path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
 
       - name: Restore package metadata
-        run: dotnet run --project build -c Release -- --target Restore --project src/Graphics/Lumyte.Graphics.Text.Parley
+        run: |
+          # NuGet.config registers the local feed; it must exist before dotnet run restores the runner.
+          mkdir -p artifacts/nuget
+          dotnet run --project build -c Release -- --target Restore --project src/Graphics/Lumyte.Graphics.Text.Parley
 
       - name: Package validated runtime assets
         run: dotnet run --project build -c Release -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
