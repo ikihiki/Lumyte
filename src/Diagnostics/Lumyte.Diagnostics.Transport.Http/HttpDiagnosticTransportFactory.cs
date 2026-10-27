@@ -102,7 +102,7 @@ internal sealed class HttpDiagnosticTransportFactory(Uri address, string token) 
                     EnsureSuccess(response);
                     commands = await ReadAsync(response, DiagnosticJson.Context.DiagnosticCommandArray, cancellationToken).ConfigureAwait(false);
                 }
-                catch (HttpRequestException exception)
+                catch (Exception exception) when (exception is HttpRequestException or JsonException)
                 {
                     throw new DiagnosticTransportException("HTTP command reception failed.", exception);
                 }
@@ -122,7 +122,7 @@ internal sealed class HttpDiagnosticTransportFactory(Uri address, string token) 
                 EnsureSuccess(response);
                 return await ReadAsync(response, DiagnosticJson.Context.PublishReceipt, cancellationToken).ConfigureAwait(false);
             }
-            catch (HttpRequestException exception)
+            catch (Exception exception) when (exception is HttpRequestException or JsonException)
             {
                 throw new DiagnosticTransportException("HTTP publication failed.", exception);
             }

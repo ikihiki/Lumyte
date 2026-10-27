@@ -94,7 +94,7 @@ internal static class DiagnosticMessageReader
             string? spanId = count > 5 ? reader.ReadString() : null;
             string? parentSpanId = count > 6 ? reader.ReadString() : null;
             long durationTicks = count > 7 ? reader.ReadInt64() : 0;
-            Dictionary<string, DiagnosticValue> fields = count > 8 ? ReadFields(ref reader, options, 36) : new(StringComparer.Ordinal);
+            Dictionary<string, DiagnosticValue> fields = count > 8 ? ReadFields(ref reader, options, DiagnosticTelemetryLimits.MaximumEventFields) : new(StringComparer.Ordinal);
             SkipRemaining(ref reader, count - 9, options);
             return new(kind, timestamp, name, value, traceId, spanId, parentSpanId, durationTicks, fields);
         }
