@@ -6,11 +6,12 @@ namespace Lumyte.Resources;
 // value-task source allocate a callback tuple for every synchronization-context post.
 internal sealed class ResourceStreamProducerSignal : IValueTaskSource
 {
+    private readonly object _gate = new();
     private ManualResetValueTaskSourceCore<bool> _completion;
     private SynchronizationContext? _context;
     private Action<object?>? _continuation;
     private object? _state;
-    private int _waiting;
+    private bool _waiting;
 
     public void GetResult(short token) => _completion.GetResult(token);
 
@@ -46,17 +47,26 @@ internal sealed class ResourceStreamProducerSignal : IValueTaskSource
 
     internal ValueTask WaitAsync()
     {
-        _completion.Reset();
-        _completion.RunContinuationsAsynchronously = true;
-        Volatile.Write(ref _waiting, 1);
-        return new ValueTask(this, _completion.Version);
+        lock (_gate)
+        {
+            // A completed wait may be observed before SetResult returns on another
+            // thread. Finish publishing that completion before resetting the source.
+            _completion.Reset();
+            _completion.RunContinuationsAsynchronously = true;
+            _waiting = true;
+            return new ValueTask(this, _completion.Version);
+        }
     }
 
     internal void Signal()
     {
-        if (Interlocked.Exchange(ref _waiting, 0) != 0)
+        lock (_gate)
         {
-            _completion.SetResult(true);
+            if (_waiting)
+            {
+                _waiting = false;
+                _completion.SetResult(true);
+            }
         }
     }
 
