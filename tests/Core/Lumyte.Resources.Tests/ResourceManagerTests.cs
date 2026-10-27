@@ -361,32 +361,32 @@ public sealed class ResourceManagerTests
     /// <summary>Explicit ownership names share generations and lifetime rules with the original acquisition methods.</summary>
     /// <returns>Completion of mixed acquisition, reload and independent ownership checks.</returns>
     [Fact]
-    public async Task NamedAcquisitionPreservesReferenceAndLeaseOwnershipAsync()
+    public async Task RetainAndPinPreserveReferenceAndLeaseOwnershipAsync()
     {
         await using Fixture fixture = CreatePlannedFixture();
         fixture.Source.Set("asset", "old");
-        using ResourceReference<TestValue> reference = await fixture.Manager.AcquireReferenceAsync(Key("value"));
+        using ResourceReference<TestValue> reference = await fixture.Manager.RetainAsync(Key("value"));
         ResourceHandle<TestValue> handle = reference.Handle;
         using ResourceSnapshot snapshot = fixture.Manager.CaptureSnapshot();
-        using ResourceLease<TestValue> old = snapshot.AcquireLease(handle);
-        Assert.True(fixture.Manager.TryAcquireReference(handle, out ResourceReference<TestValue>? another));
+        using ResourceLease<TestValue> old = snapshot.Pin(handle);
+        Assert.True(fixture.Manager.TryRetain(handle, out ResourceReference<TestValue>? another));
         using (another)
         {
             fixture.Source.Set("asset", "new");
             Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.ReloadForTestAsync([new("asset")])).Status);
-            using ResourceLease<TestValue> current = another.AcquireLease();
-            using ResourceLease<TestValue> captured = reference.AcquireLease(snapshot);
+            using ResourceLease<TestValue> current = another.Pin();
+            using ResourceLease<TestValue> captured = reference.Pin(snapshot);
             using ResourceLease<TestValue> original = reference.Acquire();
             Assert.Same(old.Value, captured.Value);
             Assert.Same(current.Value, original.Value);
             Assert.NotEqual(old.Revision, current.Revision);
-            Assert.True(reference.TryAcquireLease(out ResourceLease<TestValue>? pinned, snapshot));
+            Assert.True(reference.TryPin(out ResourceLease<TestValue>? pinned, snapshot));
             using (pinned)
             {
                 Assert.Same(old.Value, pinned.Value);
             }
 
-            Assert.True(snapshot.TryAcquireLease(handle, out ResourceLease<TestValue>? fromSnapshot));
+            Assert.True(snapshot.TryPin(handle, out ResourceLease<TestValue>? fromSnapshot));
             using (fromSnapshot)
             {
                 Assert.Same(old.Value, fromSnapshot.Value);
@@ -394,16 +394,16 @@ public sealed class ResourceManagerTests
 
             reference.Dispose();
             another.Dispose();
-            Assert.False(fixture.Manager.TryAcquireReference(handle, out ResourceReference<TestValue>? missingReference));
+            Assert.False(fixture.Manager.TryRetain(handle, out ResourceReference<TestValue>? missingReference));
             Assert.Null(missingReference);
-            Assert.False(snapshot.TryAcquireLease(handle, out ResourceLease<TestValue>? missingLease));
+            Assert.False(snapshot.TryPin(handle, out ResourceLease<TestValue>? missingLease));
             Assert.Null(missingLease);
-            Assert.Throws<InvalidOperationException>(() => snapshot.AcquireLease(handle));
-            Assert.Throws<ObjectDisposedException>(() => reference.AcquireLease());
-            Assert.Throws<ObjectDisposedException>(() => reference.TryAcquireLease(out _));
+            Assert.Throws<InvalidOperationException>(() => snapshot.Pin(handle));
+            Assert.Throws<ObjectDisposedException>(() => reference.Pin());
+            Assert.Throws<ObjectDisposedException>(() => reference.TryPin(out _));
             snapshot.Dispose();
-            Assert.Throws<ObjectDisposedException>(() => snapshot.AcquireLease(handle));
-            Assert.Throws<ObjectDisposedException>(() => snapshot.TryAcquireLease(handle, out _));
+            Assert.Throws<ObjectDisposedException>(() => snapshot.Pin(handle));
+            Assert.Throws<ObjectDisposedException>(() => snapshot.TryPin(handle, out _));
             Assert.Equal("old", old.Value.Text);
             Assert.Equal("new", current.Value.Text);
         }

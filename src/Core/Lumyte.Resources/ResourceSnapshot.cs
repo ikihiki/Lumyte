@@ -37,7 +37,8 @@ public sealed class ResourceSnapshot : IDisposable
     /// <returns>An independently owned lease of the captured revision.</returns>
     /// <exception cref="ObjectDisposedException">This snapshot has been returned.</exception>
     /// <exception cref="InvalidOperationException">The handle has no usable value in the captured publication.</exception>
-    public ResourceLease<T> AcquireLease<T>(ResourceHandle<T> handle)
+    /// <remarks>Fixes the resource generation, not a GC address. This does not copy the value or prevent runtime invalidation.</remarks>
+    public ResourceLease<T> Pin<T>(ResourceHandle<T> handle)
         where T : notnull
         => TryAcquire(handle, out ResourceLease<T>? lease)
             ? lease
@@ -49,7 +50,8 @@ public sealed class ResourceSnapshot : IDisposable
     /// <param name="lease">The retained revision, or null if the handle or runtime is unavailable.</param>
     /// <returns>Whether a usable revision was retained.</returns>
     /// <exception cref="ObjectDisposedException">This snapshot has been returned.</exception>
-    public bool TryAcquireLease<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceLease<T>? lease)
+    /// <remarks>Fixes the resource generation, not a GC address. This does not copy the value or prevent runtime invalidation.</remarks>
+    public bool TryPin<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceLease<T>? lease)
         where T : notnull
         => TryAcquire(handle, out lease);
 

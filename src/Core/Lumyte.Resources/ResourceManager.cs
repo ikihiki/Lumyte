@@ -206,11 +206,12 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     internal IResourceWatchTargets WatchTargets => _watchTargets!;
 
     /// <summary>Creates logical residency that follows later publications.</summary>
+    /// <remarks>Loads and builds the resource if necessary; the reference follows hot reload rather than fixing a generation.</remarks>
     /// <typeparam name="T">The registered output type.</typeparam>
     /// <param name="key">The requested resource.</param>
     /// <param name="cancellationToken">Cancels the initial acquisition wait.</param>
     /// <returns>The independently owned logical reference.</returns>
-    public ValueTask<ResourceReference<T>> AcquireReferenceAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+    public ValueTask<ResourceReference<T>> RetainAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
         where T : notnull
         => AcquireAsync(key, cancellationToken);
 
@@ -326,7 +327,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="handle">The logical handle to resolve.</param>
     /// <param name="reference">The owning reference, or null when resolution fails.</param>
     /// <returns>Whether a reference was acquired.</returns>
-    public bool TryAcquireReference<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
+    public bool TryRetain<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
         where T : notnull
         => TryAcquire(handle, out reference);
 
