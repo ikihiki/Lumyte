@@ -18,6 +18,8 @@
 
 [COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md)の生成ファクトリ、with、子インデクサー、名前付きスロットを使う。UIは保持型Widgetツリーと値を所有し、毎frameの再生成・自動reconciliationは行わない。CompositionへUI保存領域や寿命管理を追加しない。
 
+イベントコールバックは`Button(onClick: () => Save())`のように生成ファクトリの名前付きパラメーターで渡す。UI側はnullableなdelegateプロパティとして保持し、省略・nullはハンドラーなし、代入は置換とする。public eventとComposeActionによる追加購読はUIのイベント設定APIとして提供しない。直接delegate型を生成するためのComposition契約の追加は実装PR 4の担当範囲とする。
+
 ```text
 Compositionの生成ファクトリ → UIツリー → 制約駆動layout・入力・描画記録
 アプリのWindow/Input統合 ────────────→ UiSurface
@@ -35,7 +37,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 1 | UI-0002 | ツリー、所有権、Composition、surfaceの寿命 | UI-0001 |
 | 2 | UI-0003 | 一方向layout、min/max制約、寸法、Stack、無効化 | PR 1 |
 | 3 | UI-0004 | 矩形、描画記録、clip、直接描画サンプル | PR 2 |
-| 4 | UI-0005 | hit test、capture、ButtonのClick | PR 3 |
+| 4 | UI-0005・COMPOSITION-0002 | hit test、capture、callbackパラメーターと生成対応 | PR 3 |
 | 5 | UI-0006 | focus、Tab、キー押下、入力競合 | PR 4 |
 | 6 | UI-0007 | Window/Input接続、Hosted、DPI、環境検証 | PR 3・5 |
 | 7 | UI-0008 | 親RenderGraph、Resources、device世代の接続 | PR 3・6 |
