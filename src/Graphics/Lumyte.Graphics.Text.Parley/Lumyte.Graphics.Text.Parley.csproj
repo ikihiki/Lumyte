@@ -3,15 +3,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
     <DefineConstants Condition="'$(RuntimeIdentifier)' == 'browser-wasm' or '$(LumyteParleyBrowser)' == 'true'">$(DefineConstants);BROWSER</DefineConstants>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Parley paragraph layout and Skrifa vector glyphs for native and WebAssembly 2D rendering.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" GlobalPropertiesToRemove="LumyteParleyBrowser" />
+    <ProjectReference Include="../Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" GlobalPropertiesToRemove="LumyteParleyBrowser;LumyteBuildParleyNative;LumyteBuildParleyWasm" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <None Include="../../../native/lumyte_text_parley/THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
-  <Import Project="../../../tools/text-parley/ParleyNative.targets" Condition="Exists('../../../tools/text-parley/ParleyNative.targets')" />
+  <Import Project="../../../build/Targets/ParleyNative.targets" Condition="Exists('../../../build/Targets/ParleyNative.targets')" />
+  <Import Project="../../../build/Targets/ParleyPackage.targets" />
 </Project>

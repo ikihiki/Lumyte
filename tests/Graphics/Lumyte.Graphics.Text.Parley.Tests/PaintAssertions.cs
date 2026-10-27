@@ -1,10 +1,69 @@
 using System.Numerics;
+using System.Text;
 using Lumyte.Graphics.Drawing2D;
 
 namespace Lumyte.Graphics.Text.Parley.Tests;
 
 internal static class PaintAssertions
 {
+    public static string Fingerprint(PaintNode2D root)
+    {
+        var result = new StringBuilder();
+        foreach (PaintNode2D node in Nodes(root))
+        {
+            result.Append(node.GetType().Name).Append(':');
+            switch (node)
+            {
+                case ClipPaintNode2D clip:
+                    result.Append(clip.Rule);
+                    foreach (PathSegment2D segment in clip.Path.Segments)
+                    {
+                        result.Append(segment);
+                    }
+
+                    break;
+                case TransformPaintNode2D transform:
+                    result.Append(transform.Transform);
+                    break;
+                case SolidPaintNode2D solid:
+                    result.Append(solid.Color);
+                    break;
+                case OpacityPaintNode2D opacity:
+                    result.Append(opacity.Opacity);
+                    break;
+                case CompositePaintNode2D composite:
+                    result.Append(composite.Mode);
+                    break;
+                case LinearPaintNode2D linear:
+                    result.Append(linear.P0).Append(linear.P1).Append(linear.P2).Append(linear.Extend);
+                    AppendStops(linear.Stops);
+                    break;
+                case RadialPaintNode2D radial:
+                    result.Append(radial.C0).Append(radial.R0).Append(radial.C1).Append(radial.R1).Append(radial.Extend);
+                    AppendStops(radial.Stops);
+                    break;
+                case SweepPaintNode2D sweep:
+                    result.Append(sweep.Center).Append(sweep.StartAngle).Append(sweep.EndAngle).Append(sweep.Extend);
+                    AppendStops(sweep.Stops);
+                    break;
+                default:
+                    throw new InvalidOperationException("The conformance fixtures must contain analytic vector paint nodes.");
+            }
+
+            result.Append(';');
+        }
+
+        return result.ToString();
+
+        void AppendStops(IReadOnlyList<ColorStop2D> stops)
+        {
+            foreach (ColorStop2D stop in stops)
+            {
+                result.Append(stop.Offset).Append(stop.Color).Append(';');
+            }
+        }
+    }
+
     public static IEnumerable<PaintNode2D> Nodes(PaintNode2D root)
     {
         var pending = new Stack<PaintNode2D>();

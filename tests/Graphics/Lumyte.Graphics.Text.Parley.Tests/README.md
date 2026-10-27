@@ -22,9 +22,13 @@ The COLR cases require analytic vector output for all 32 paint formats and all
 the recorded graph at an interior and exterior point to detect missing contours,
 incorrect foreground transforms and duplicated alpha multiplication.
 
-Most fonts are linked from [the shared text test fixtures](../Lumyte.Graphics.Text.Tests/README.md),
-including their license files. Their COLR provenance is recorded in
-[ColrVectorFixtures.md](../Lumyte.Graphics.Text.Tests/ColrVectorFixtures.md).
+The bundled fonts and their licenses are owned by this test project. Their
+provenance is recorded in [Fonts/README.md](Fonts/README.md),
+[ColorFontFixtures.md](Fonts/ColorFontFixtures.md) and
+[ColrVectorFixtures.md](Fonts/ColrVectorFixtures.md).
+The conformance regressions also compare every default variable paint with its
+static counterpart, check active default variation regions and mapped sentinels,
+component metrics, ClipList bounds, cyclic references and invalid paint formats.
 
 `Fonts/ParleyVariablePaint.ttf` is a 2,220-byte derivative of
 `ColrVectorDefaultVariation.ttf` under the same Apache-2.0 license. Its family is

@@ -8,7 +8,7 @@
 
 既存の2Dシステムに、複数フォント、複雑な文字体系、双方向の文章、折り返し、装飾を扱う文字描画を追加する。ブラウザーのWASMでも同じ文字組みを使い、既存の変換・clip・paint・GPU資源の寿命契約へ接続する。拡大表示で角を保つMSDF/MTSDFと、COLR v1のpaintを扱うカラーフォントも必要となる。
 
-[GRAPHICS-0018](GRAPHICS-0018-2d-graphics-engine.md)で分離した文字組みを独立パッケージへ置く。[GRAPHICS-0019](GRAPHICS-0019-2d-paths-and-strokes.md)のFillPathと、[GRAPHICS-0021](GRAPHICS-0021-2d-glyph-representations.md)の文字向け汎用描画・COLR合成を接続先にする。ライブラリの旧版へ長期間留まる構成と、外部のフォント・レイアウト型が利用側APIへ広がる構成は、文字組みの修正やエンジン交換を難しくする。Parleyを試験導入し、既存の描画を維持したまま保守可能な構成を評価する。
+[GRAPHICS-0018](GRAPHICS-0018-2d-graphics-engine.md)で分離した文字組みを独立パッケージへ置く。[GRAPHICS-0019](GRAPHICS-0019-2d-paths-and-strokes.md)のFillPathと、[GRAPHICS-0021](GRAPHICS-0021-2d-glyph-representations.md)の文字向け汎用描画・COLR合成を接続先にする。ライブラリの旧版へ長期間留まる構成と、外部のフォント・レイアウト型が利用側APIへ広がる構成は、文字組みの修正やエンジン交換を難しくする。Parleyを正式な文字組み実装として採用し、既存の描画へ接続する。
 
 Rustと.NET WASMを接続するビルドでも、常設のPythonや特定のshellを前提にせず、.NET SDKを入口にする。toolchainの解決・準備とnative / WASMの段階を管理し、C#プロジェクトのbuildやpublishから同じ処理を呼べるようにする。
 
@@ -16,7 +16,7 @@ Rustと.NET WASMを接続するビルドでも、常設のPythonや特定のshel
 
 ### 適用範囲と依存方向
 
-`Lumyte.Graphics.Text`を文字組みエンジンから独立した描画用snapshotと距離場のパッケージにする。新しい`Lumyte.Graphics.Text.Parley`でParleyとSkrifaを使い、RustのC ABIをcsbindgenで生成したC# bindingから呼び出す。これを今回の試作対象とする。全プラットフォームでの製品採用や性能比較の完了を意味しない。
+`Lumyte.Graphics.Text`を文字組みエンジンから独立した描画用snapshotと距離場のパッケージにする。新しい`Lumyte.Graphics.Text.Parley`でParleyとSkrifaを使い、RustのC ABIをcsbindgenで生成したC# bindingから呼び出す。共通TextとParleyを正式な文字描画経路とし、他の文字組み実装を常設しない。対応環境・公開機能と、性能比較の検証範囲は区別する。
 
 ```text
 アプリが取得したフォントのStream
@@ -35,9 +35,7 @@ Renderer2D → Graphics.Abstractions → Vulkan / wgpu / Browser
 
 Parleyは段落の配置・改行を担当し、Fontiqueは登録フォントの選択・fallback、HarfRustはshaping、ICU4XはUnicode解析、Skrifaはメトリクス・輪郭・COLR paintを担当する。C#側は受け取った輪郭を`Path2D`へ、カラーpaintを`PaintGraph2D`へ変換する。文字をbitmap化して独自2Dを置き換える構成にはしない。
 
-比較用の旧実装は`Lumyte.Graphics.Text.SixLabors`へ分離する。SixLabors.Fonts 2.1.3とSkiaSharp 3.119.4への依存はこの任意パッケージだけに置き、Parleyや共通Textからは参照しない。従来のfactoryは`SixLaborsTextLayout2D.Create`へ移し、共通`TextLayout2D`から外部の`TextOptions`を取り除く。`TextRun2D`と`ColorFont2D`等もこの比較用アダプターに属する。
-
-比較用の`ColorFont2D.RenderGlyph`は、COLR v1を解釈する同梱SkiaのFreeType backendを使うLinux / Browserに限定する。他の環境では`PlatformNotSupportedException`を送出し、単色glyphへの暗黙の代替を防ぐ。独自にCOLR paintを読む`RenderPaintGlyph`、通常のvector描画とParleyにはこの制限を適用しない。
+SixLabors.FontsとSkiaSharpを使う比較実装は削除する。フォントの選択・shaping・輪郭・COLR paintをParleyとSkrifaへ統一し、必要なfont fixtureとCOLR／距離場の回帰検証は共通Text・Parley・Browser検証へ引き継ぐ。
 
 フォント取得、OSのフォント列挙、ResourceManager、DI、ファイルアクセスを必須経路にしない。Browserではアプリが配布フォントを非同期に取得し、同期のCPUレイアウト作成へ明示して供給する。OSのフォント一覧や暗黙のfallbackに依存しない。
 
@@ -57,15 +55,15 @@ nativeでは`cdylib`をロードする。Browserでは.NETのEmscripten toolchai
 
 ### .NETを入口にするビルド
 
-Parleyのビルドを通常の.NET console projectへ置き、FalloutのtargetからRust toolchainの準備、Cargo、生成binding、成果物とnoticeのコピーを実行する。target graphと実行に必要な`Fallout.Build`を参照し、解決したNuGet依存をlock fileへ記録する。globalなFallout CLIは前提にしない。
+リポジトリ全体のビルド入口は[ADR-0004](../0004-build-orchestration.md)に従い、公式構成の`build/_build.csproj`へ統一する。Parleyはそのleaf targetとしてRust toolchainの準備、Cargo、生成binding、成果物とnoticeのコピーを実行する。target graphと実行に必要な`Fallout.Build`を参照し、解決したNuGet依存をlock fileへ記録する。globalなFallout CLIは前提にしない。
 
 MSBuildのnative / Browser targetsと手動実行は同じrunnerを呼ぶ。外部プロセスへは引数を配列として渡し、継承した環境にtoolchain固有の設定だけを追加する。C#とRustのABI、WASMの互換feature、標準ライブラリの再構築、静的module名はこの入口でも維持する。
 
 利用できるRust toolchainがない場合は、リポジトリのビルド用領域へRustupと対象toolchainを準備する。Rustupのbootstrapは公式配布元のURLとSHA-256を固定して照合する。設定済みのRust環境も利用し、globalなPATHやshell profileを書き換えない。nativeのリンクに必要なOS側のcompiler / linkerと、.NETのwasm-tools workloadは前提条件として区別する。
 
-Emscripten自体は内部でPythonを使う。明示指定、SDK同梱runtime、専用cacheの順で解決し、PATH上のPythonに依存しない。専用runtimeはURLとSHA-256を固定して.NETで取得・照合・展開し、同じinterpreterを.NET側とRust側のEmscriptenへ渡す。このPython解決は共通targetsへ置き、比較用SixLabors Browserサンプルの.NET側Emscriptenでも使用する。PythonのruntimeやFalloutを描画アプリのruntime依存へ追加しない。
+Emscripten自体は内部でPythonを使う。明示指定、SDK同梱runtime、専用cacheの順で解決し、PATH上のPythonに依存しない。専用runtimeはURLとSHA-256を固定して.NETで取得・照合・展開し、同じinterpreterを.NET側とRust側のEmscriptenへ渡す。このPython解決は共通targetsへ置き、.NET側とRust側のEmscriptenで共有する。PythonのruntimeやFalloutを描画アプリのruntime依存へ追加しない。
 
-初回のNuGet復元とtool取得にはネットワーク接続が必要となる。cache、上書き引数、対応OSと具体的な起動手順は[Parleyのビルド手順](../../../tools/text-parley/README.md)で管理する。この判断の対象はParleyのビルド入口とし、既存の共通開発環境セットアップ全体の置換は含めない。
+初回のNuGet復元とtool取得にはネットワーク接続が必要となる。cache、上書き引数、対応OSと具体的な起動手順は[共通のビルド手順](../../../build/README.md)で管理する。OS依存の導入とmiseによる開発ツール選択は既存の開発環境方針を維持し、ビルドと検証の実行は共通runnerへ集約する。
 
 ### 不変なレイアウトと描画
 
@@ -75,7 +73,7 @@ Emscripten自体は内部でPythonを使う。明示指定、SDK同梱runtime、
 
 font・size・weight・italic・Underline/Strikethrough/Overlineをlayoutまたはrunから指定し、Localeは言語別のglyph選択と文字解析へ渡す。
 
-スタイルの範囲はUTF-16のStartを含みEndを含まない範囲にする。surrogate pairを途中で分ける境界は拒否する。書記素や合字の途中でstyleを分割する指定は上流のcluster処理に従い、指定したコード単位ごとのpaint・装飾の分割は保証しない。旧SixLaborsアダプターの書記素indexとは異なるため、移行時に範囲をそのまま流用しない。paintの座標は段落全体の論理座標を使う。engineの操作は内部で直列化し、呼び出し中は設定listや入力bufferを変更しないことを要求する。
+スタイルの範囲はUTF-16のStartを含みEndを含まない範囲にする。surrogate pairを途中で分ける境界は拒否する。書記素や合字の途中でstyleを分割する指定は上流のcluster処理に従い、指定したコード単位ごとのpaint・装飾の分割は保証しない。範囲指定は書記素indexではなくUTF-16のindexとして扱う。paintの座標は段落全体の論理座標を使う。engineの操作は内部で直列化し、呼び出し中は設定listや入力bufferを変更しないことを要求する。
 
 `canvas.DrawText(layout, origin)`はSave/Translate/Restoreで配置し、呼び出し前後の変換とclipを維持する。レイアウト全体を同じ変換で動かし、gradient等のpaintをglyphごとに伸縮しない。snapshotはGPU資源を作らず、画像paintに含むtexture等の寿命は通常のDrawing2Dと同じく利用側が管理する。
 
@@ -85,7 +83,7 @@ SkrifaのCOLR paint traversalからsolid、linear/radial/sweep gradient、transf
 
 palette index 0xFFFFはlayout/runのforeground paintを使う。単色に加えてgradient等の`PaintGraph2D`も使え、font側のalphaとforeground側のalphaをgraph上で掛け合わせる。glyph内部のpaintはpath・clip・groupの順序を保ち、最終的には有限の描画boundsへ配置する。任意のvariation軸はOpenType tagとdesign座標の組で指定し、フォントの既定値だけに限定しない。
 
-SVG glyphやbitmap emojiを含む全カラーフォント形式の対応、Pango markupの互換性、縦組みの組版保証は今回の試作範囲に含めない。上流ライブラリの機能と、このアダプターで公開・検証した機能を区別する。公開した機能や制限の具体的な一覧は[Parley README](../../../src/Graphics/Lumyte.Graphics.Text.Parley/README.md)で管理する。
+SVG glyphやbitmap emojiを含む全カラーフォント形式の対応、Pango markupの互換性、縦組みの組版保証は公開APIの対応範囲に含めない。上流ライブラリの機能と、このアダプターで公開・検証した機能を区別する。公開した機能や制限の具体的な一覧は[Parley README](../../../src/Graphics/Lumyte.Graphics.Text.Parley/README.md)で管理する。
 
 ### FillPathの接続
 
@@ -136,8 +134,6 @@ paint modelのdepth 128・expanded node 65536と、標準rendererのpaint depth 
 
 Parley・Fontique・Fontationsは主にMITまたはApache-2.0、HarfRustとcsbindgenはMIT、ICU4XはUnicode License系の条件に従う。`Cargo.lock`のregistry依存は[第三者ライセンス表示](../../../native/lumyte_text_parley/THIRD-PARTY-NOTICES.md)へ収録する。使用したRust toolchainの`COPYRIGHT-library.html`をbuild時に`RUST-STANDARD-LIBRARY-NOTICES.html`へコピーし、nativeとBrowserの出力・publishに同梱する。platform runtimeを別途配布する場合も、その表示を保持する。生成器のライセンスだけでruntime依存を説明しない。
 
-比較用SixLaborsアダプターにはSplit Licenseの条件が残る。2.1.3の保持で利用条件がなくなるわけではなく、現行の公式security policyでは旧majorはセキュリティ修正の対象外である。新規構成の採用基準に旧版固定を置かない。現行版を選ぶ場合は、条件に応じたassembly-scoped community key等の運用とAPI移行を別途評価する。
-
 | 環境 | 文字組み・輪郭取得 | 描画・配布 |
 | --- | --- | --- |
 | native | 同じRust shimのcdylibとcsbindgen binding | 対象OS/architectureのnative成果物と既存Graphics backend |
@@ -146,7 +142,9 @@ Parley・Fontique・Fontationsは主にMITまたはApache-2.0、HarfRustとcsbin
 この表は構成を示すもので、全OS・全architectureの実行試験済み一覧ではない。publish・実行した環境と未検証の環境は、各READMEと検証結果で区別する。
 現在のnative targetはhostのOS・architectureを対象にし、別RIDへのcross compileは未整備とする。
 
-今回はソースツリーから参照する試作として提供する。各RIDのnative資産を収録する配布NuGetは未整備のため、Parleyと比較用SixLaborsのアダプターは`IsPackable=false`にする。配布対象のRID、成果物の取得方法、native資産の梱包は製品採用時に決定する。
+共通TextとParleyを正式な配布対象にする。Parleyのnative用NuGetにはLinux / Windowsのx64 / arm64の4 RID分を`runtimes/<rid>/native`へ収録し、使用したtoolchainのnoticeと依存crateの表示を含める。pack時には全4 RIDの資産・noticeを要求し、不足したpackageを作らない。CIは全4環境の検証成功を条件に成果物を集約し、Browser publish前に保存したdesktop用managed出力からpackageを作る。異なるRIDのnative libraryを流用しない。
+
+Browserはソースprojectから.NETのABIに合わせたstaticlibとMSBuild統合で接続する。native用NuGetからのBrowser静的リンクは提供せず、異なるP/Invoke module名のmanaged出力を混在させない。具体的なpack・publishの手順は[Parley README](../../../src/Graphics/Lumyte.Graphics.Text.Parley/README.md)で管理する。
 
 ### 公開API
 
@@ -286,16 +284,14 @@ Parley・Fontique・Fontationsは主にMITまたはApache-2.0、HarfRustとcsbin
 +}
 ```
 
-SixLabors比較用のAPI・既定variation限定のCOLR reader・明示的なbitmap oracleは、[任意アダプターのREADME](../../../src/Graphics/Lumyte.Graphics.Text.SixLabors/README.md)を参照する。共通TextやParleyの依存には含めない。
-
 ## 検討した代替案
 
 | 候補 | 特徴 | 今回の判断 |
 | --- | --- | --- |
-| HarfBuzz draw/paint + ICU等 | 成熟したshaping、輪郭・COLR paint、公式WASM実績。FreeTypeを必須にしない構成も可能 | fallback・幅に応じた改行・行配置等の統合作業が大きいため、まず段落層を含むParleyを試す |
+| HarfBuzz draw/paint + ICU等 | 成熟したshaping、輪郭・COLR paint、公式WASM実績。FreeTypeを必須にしない構成も可能 | fallback・幅に応じた改行・行配置等の統合作業が大きいため、段落層を含むParleyを採用する |
 | Pangoそのもの | 多言語の段落レイアウトを直接使える | GLib等の依存のWASM buildとstatic配布、独自2Dへの接続が必要 |
 | COSMIC Text | Rustの複数行レイアウト・fallback・編集機能 | 同系統の比較対象。今回はParleyの段落出力とSkrifaのpaint経路を先に評価する |
-| SixLabors.Fonts現行版 | managedで文字組み・新しいglyph ID描画APIを使える。条件に合う公開プロジェクトには同梱可能なcommunity keyがある | 更新可能な代替案として残す。旧版固定の比較アダプターと、Parleyの依存は分離する |
+| SixLabors.Fonts現行版 | managedで文字組み・新しいglyph ID描画APIを使える。条件に合う公開プロジェクトには同梱可能なcommunity keyがある | 旧版固定を避けられる選択肢だが、文字組み・輪郭・COLR paintを同じRust stackへ統一する方針を選ぶ |
 | RichTextKit + SkiaSharp / HarfBuzzSharp | .NETで段落と公開glyph runを使える | native資産とWASM品質の検証が必要で、Skia描画との責務重複もある |
 | LayoutFarm/Typography | managedでフォント解析・輪郭を取り出せる | upstreamのglyph layoutの安定性と必要scriptの品質を確認する作業が残る |
 | 手書きのC# DllImport | 少数の関数なら実装できる | ABI宣言の二重管理を避け、Rustの宣言からcsbindgenで生成する |
@@ -309,7 +305,7 @@ SixLabors比較用のAPI・既定variation限定のCOLR reader・明示的なbit
 | --- | --- | --- |
 | Python script | ファイル操作と外部プロセスを短く記述できる | 常設のinterpreterを要求せず、.NETから起動するFallout runnerへ移す |
 | MSBuild XMLへ全処理を記述 | C#プロジェクトのbuildと同じ入口を使える | tool取得・環境設定・失敗処理をC#で共有し、targetsは呼び出しとSDK値の受け渡しを担当する |
-| 独自の.NET console runner | .NETだけを入口にできる | targetの依存関係とパラメーター処理にはFalloutを使い、Parley固有の処理へ集中する |
+| 独自の.NET console runner | .NETだけを入口にできる | targetの依存関係とパラメーター処理にはFalloutを使い、リポジトリ全体の工程を共通化する |
 
 ## 結果と影響
 
@@ -327,17 +323,15 @@ Fontiqueのsynthesis提案に含まれる疑似太字・疑似斜体は適用せ
 
 Drawing2Dの全compositeとgradient境界条件のCPU・GPU検証を維持する。MSDF/MTSDFは通常輪郭の穴・角・拡縮を確認する。WASMはpublish成功だけでなく、実際のブラウザー上でParleyの文字組み・輪郭・カラーpaintを既存2Dへ接続して描く。未実施の結果を検証済みとして記録しない。
 
-### 試作で確認した結果
+### 確認した結果
 
-2026-10-27にLinux x64で、ParleyアダプターのC# 90ケース、Rust shimの13テストと警告をエラーにしたclippyが成功した。比較用SixLaborsアダプターへの分離後も既存91ケースが成功した。C#プロジェクトからのCargo実行、csbindgenの再生成、native成果物とライセンス表示のコピーも確認した。
+2026-10-27にLinux x64で、ParleyアダプターのC# 90ケース、Rust shimの13テストと警告をエラーにしたclippyが成功した。C#プロジェクトからのCargo実行、csbindgenの再生成、native成果物とライセンス表示のコピーも確認した。
 
 .NET Browser WASMでは、同じEmscriptenに合わせたRust標準ライブラリとstaticlibをリンクしてpublishし、headless ChromiumのWebGPUで文字を描画した。合字・日本語fallback・bidi cluster・折り返し、MSDF/MTSDFの4倍拡大時の穴、COLR v1のgradientとmultiply、半透明・gradientのcurrentColorをGPU読み戻しで確認した。engine解放後にもsnapshotを描画でき、SixLabors・Skia runtimeへの依存はない。
 
 ビルド入口をFalloutへ移した後も、Linux x64でMSBuildからNative targetを実行してCargo・csbindgen・成果物とnoticeのコピーを確認し、C#統合テスト90ケースが成功した。TestRust target経由の13テストと、ビルド入口の.NETプロセス統合テスト9件も成功した。専用Pythonは固定archiveの取得・SHA-256照合と起動を確認した。
 
-さらにPATHからPythonとglobalなCargoを外してParley Browserサンプルをpublishし、専用Pythonを.NET側・Rust側のEmscriptenへ渡したビルドが成功した。その成果物もheadless Chromium / WebGPUで描画・GPU読み戻しの検証に成功した。ビルド入口に関する検証範囲は[ビルド手順](../../../tools/text-parley/README.md#確認した範囲)へ記録する。
-
-比較用SixLabors Browserサンプルも、同じPythonのないPATHでEmscriptenのcompile・link・wasm-optを含むpublishが成功した。
+さらにPATHからPythonとglobalなCargoを外してParley Browserサンプルをpublishし、専用Pythonを.NET側・Rust側のEmscriptenへ渡したビルドが成功した。その成果物もheadless Chromium / WebGPUで描画・GPU読み戻しの検証に成功した。ビルド入口に関する検証範囲は[ビルド手順](../../../build/README.md)へ記録する。
 
 2026-10-27のCIでは、Linux / Windowsのx64 / arm64でnativeビルドとParleyの90ケースが成功した。macOSでの実行、配布サイズ・性能の比較は未検証とする。
 
@@ -353,5 +347,3 @@ Drawing2Dの全compositeとgradient境界条件のCPU・GPU検証を維持する
 - [OpenType COLR specification](https://learn.microsoft.com/en-us/typography/opentype/spec/colr)
 - [OpenType CPAL specification](https://learn.microsoft.com/en-us/typography/opentype/spec/cpal)
 - [SeasonMSDF](https://github.com/season-studio/SeasonMSDF)
-- [SixLaborsのsecurity policy](https://github.com/SixLabors/Fonts/blob/main/SECURITY.md)
-- [SixLaborsの現行ライセンス運用](https://docs.sixlabors.com/articles/fonts/index.html)

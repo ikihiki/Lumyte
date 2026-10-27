@@ -335,6 +335,7 @@ pub fn create(
     if !output.width.is_finite() || !output.height.is_finite() {
         return Err("The resulting paragraph dimensions are not finite.".into());
     }
+    let mut checked_color_fonts = BTreeSet::new();
     for line in layout.lines() {
         let mut run_clusters = HashMap::<usize, (usize, Vec<(u32, u32, u32)>)>::new();
         for item in line.items() {
@@ -353,11 +354,20 @@ pub fn create(
                 as u32;
             let font_ref = FontRef::from_index(font.data.as_ref(), font.index)
                 .map_err(|_| "The resolved font face is invalid.")?;
-            let normalized_coords: Vec<_> = run
+            if checked_color_fonts.insert(font_id) {
+                paint::validate_color_metadata(&font_ref)?;
+            }
+            let mut normalized_coords: Vec<_> = run
                 .normalized_coords()
                 .iter()
                 .map(|coord| NormalizedCoord::from_bits(coord.to_bits()))
                 .collect();
+            // Parley omits default coordinates, while Skrifa treats an empty
+            // location as "do not evaluate COLR variations". Peak-zero axes do
+            // not participate in a variation region, so such a constant region
+            // must still contribute its deltas at the default font instance.
+            normalized_coords.resize(font_ref.axes().len(), NormalizedCoord::ZERO);
+            let color_coords = paint::color_location(&font_ref, &normalized_coords);
             let upem = font_ref
                 .metrics(
                     skrifa::instance::Size::unscaled(),
@@ -427,6 +437,7 @@ pub fn create(
                         &font_ref,
                         glyph.id,
                         &normalized_coords,
+                        &color_coords,
                         options.palette_index,
                         &mut output,
                     )?
@@ -494,6 +505,12 @@ mod tests {
     use super::*;
 
     fn engine() -> LpEngine {
+        engine_with_font(include_bytes!(
+            "../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf"
+        ))
+    }
+
+    fn engine_with_font(data: &[u8]) -> LpEngine {
         let mut engine = LpEngine {
             font_context: FontContext {
                 collection: parley::fontique::Collection::new(
@@ -507,14 +524,7 @@ mod tests {
             layout_context: LayoutContext::new(),
             fonts: Vec::new(),
         };
-        add_font(
-            &mut engine,
-            include_bytes!(
-                "../../../tests/Graphics/Lumyte.Graphics.Text.Tests/Fonts/DejaVuSans.ttf"
-            ),
-            &mut 0,
-        )
-        .unwrap();
+        add_font(&mut engine, data, &mut 0).unwrap();
         engine
     }
 
@@ -549,6 +559,18 @@ mod tests {
             (1, 4)
         );
         assert!(result.glyphs.iter().any(|glyph| glyph.path_count > 0));
+    }
+
+    #[test]
+    fn default_color_variation_regions_are_not_skipped() {
+        let mut engine = engine_with_font(include_bytes!(
+            "../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/ColrVectorDefaultVariation.ttf"
+        ));
+        let result = create(&mut engine, "\u{e00f}", &options(), &[]).unwrap();
+        assert!(result
+            .paints
+            .iter()
+            .any(|event| event.kind == 0 && event.p4 == -70.0 && event.p5 == 240.0));
     }
 
     #[test]

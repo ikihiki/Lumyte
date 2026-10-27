@@ -12,7 +12,7 @@ namespace Lumyte.Graphics.Text.Parley.Browser.Sample;
 internal static partial class Program
 {
     private const uint Width = 900;
-    private const uint Height = 1000;
+    private const uint Height = 1700;
     private static string _report = string.Empty;
     private static string _pixels = string.Empty;
 
@@ -73,15 +73,20 @@ internal static partial class Program
         engine.Dispose();
         byte[] pixels = await RenderAsync(device, drawing, msdf, mtsdf);
         int inkPixels = 0;
+        int textInkPixels = 0;
         for (int index = 0; index < pixels.Length; index += 4)
         {
             if (pixels[index] < 160 && pixels[index + 1] < 160 && pixels[index + 2] < 160)
             {
                 inkPixels++;
+                if (index < Width * 1000 * 4)
+                {
+                    textInkPixels++;
+                }
             }
         }
 
-        if (inkPixels < 2000)
+        if (textInkPixels < 2000)
         {
             throw new InvalidOperationException("GPU readback contained too little text ink.");
         }
@@ -96,8 +101,9 @@ internal static partial class Program
 
         CheckForeground(pixels, translucent.Drawings.OfType<TextPaintGeometry2D>().Single().Bounds, new Vector2(24, 780), foreground, foreground, 80);
         CheckForeground(pixels, gradient.Drawings.OfType<TextPaintGeometry2D>().Single().Bounds, new Vector2(230, 780), foreground, foregroundEnd, 80);
+        CheckBackendPaintPixels(pixels);
         _pixels = Convert.ToBase64String(pixels);
-        _report = $"Parley WASM text rendering passed: {inkPixels} ink pixels. csbindgen C ABI, ligatures, Japanese fallback, bidi clusters and wrapping. MSDF/MTSDF x4 counters, COLRv1 vector gradients and multiply, translucent and gradient currentColor. Layouts survive engine disposal. No SixLabors or Skia runtime.";
+        _report = $"Parley WASM text rendering passed: {inkPixels} ink pixels ({textInkPixels} in the text panel). csbindgen C ABI, ligatures, Japanese fallback, bidi clusters and wrapping. MSDF/MTSDF x4 counters, COLRv1 vector gradients and multiply, translucent and gradient currentColor. Backend checks: all 28 composite modes, isolated backdrops, clip masks and gradient edge cases. Layouts survive engine disposal.";
         Console.WriteLine(_report);
     }
 
@@ -179,6 +185,7 @@ internal static partial class Program
         canvas.DrawText(engine.CreateLayout("currentColor: alpha 0.5 / gradient", options with { FontSize = 22 }, ink), new Vector2(24, 730));
         canvas.DrawText(translucent, new Vector2(24, 780));
         canvas.DrawText(gradient, new Vector2(230, 780));
+        BuildBackendPaintChecks(canvas, engine, options);
         return canvas.End();
     }
 

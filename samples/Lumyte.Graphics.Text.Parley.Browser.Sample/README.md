@@ -2,16 +2,15 @@
 
 Parleyの段落レイアウトとSkrifaの輪郭・COLR paintを、csbindgenで生成したC ABI経由で読みます。
 描画は既存のDrawing2D / Browser WebGPUを使います。
-このsampleはSixLabors.FontsとSkiaSharpを参照しません。
+文字描画の標準経路を、同梱フォントとGPU読み戻しで検証します。
 
 リポジトリルートから実行します。
 
 ```sh
-dotnet workload install wasm-tools --version 10.0.401
-dotnet publish samples/Lumyte.Graphics.Text.Parley.Browser.Sample -c Release
+dotnet run --project build -c Release -- --target Publish --project samples/Lumyte.Graphics.Text.Parley.Browser.Sample --configuration Release
 ```
 
-buildは.NETの[Fallout runner](../../tools/text-parley/README.md)を使い、
+buildは.NETの[Fallout runner](../../build/README.md)を使い、
 必要なRust toolchainと、Emscripten内部で使うPythonをビルド用の領域へ準備します。
 Falloutのglobal toolや、PATH上のPythonは前提にしません。
 Rustのhost用build処理にはOSのnative linkerが必要です。
@@ -20,7 +19,7 @@ Rustのhost用build処理にはOSのnative linkerが必要です。
 自動検証を実行する場合はNode.jsとChromiumを用意し、次のコマンドを使います。
 
 ```sh
-node samples/Lumyte.Graphics.Text.Parley.Browser.Sample/verify-browser.mjs
+dotnet run --project build -c Release -- --target TestWasm
 ```
 
 Chromiumの別の実行ファイルは`CHROME`環境変数で指定できます。
@@ -40,7 +39,7 @@ ParleyのProjectReferenceは`LumyteParleyBrowser=true`を渡します。
 これにより生成されたP/Invokeが静的module名`liblumyte_text_parley`を参照します。
 この.NET runtimeでは`__Internal`が動的ロードの特別扱いとなるため、archiveに対応する名前を指定します。
 `ParleyBrowser.targets`がarchiveを`NativeFileReference`として.NET runtimeへ静的リンクします。
-ビルド前処理は[FalloutのWasm target](../../tools/text-parley/README.md)から再実行できます。
+ビルド前処理は[FalloutのParleyWasm target](../../build/README.md)から再実行できます。
 `PrepareWasmTools`がPythonを解決し、同じinterpreterをRust側と.NET側のEmscriptenへ渡します。
 
 ## 検証する内容
@@ -51,16 +50,21 @@ ParleyのProjectReferenceは`LumyteParleyBrowser=true`を渡します。
 - 直接描画とMSDF / MTSDF 4倍拡大のOの穴を、GPU読み戻しで確認。
 - COLR v1のグラデーション・multiply合成を、ベクターpaint graphから描画。
 - 半透明とグラデーションの`currentColor`を、期待する線形色合成値と比較。
+- 28種類すべてのcompositeを、独立したsource / backdropとclip maskの内外で参照値と比較。
+- 退化gradient、空・重複・単一stop、Repeat / Reflectのゼロspan、符号付きradial半径等の境界条件。
 - engineを破棄した後も、作成済みlayoutを描画できること。
 
-フォントは既存sampleとテストのfixtureを参照します。
+フォントはこのsampleの`Fonts`とParleyテストのfixtureを参照します。
 DejaVu、Noto Sans JP、Noto Sans Khmer、カラーフォントfixtureのライセンスを`wwwroot`へ同梱します。
 Rustの標準ライブラリ、Parley依存、SeasonMSDFのnoticeも`wwwroot`へ同梱します。
 日本語フォントはサンプル用の文字だけを含むsubsetです。
 
-2026-10-27にLinux x64で、PATHからPythonとglobalなCargoを外した状態でpublishが成功しました。
-.NET側とRust側のEmscriptenには専用cacheのPythonを渡しています。
-この成果物のheadless Chromium / WebGPU検証も成功し、23,606個のink pixelを読み戻しました。
-他OS・architectureでの実行確認は未実施です。
+2026-10-27にLinux x64で、リポジトリ全体のFallout `Publish` targetからのpublishと、
+headless Chromium / WebGPU検証が成功しました。
+SDK / workload setは10.0.401、WASM runtimeは10.0.12です。
+.NET側とRust側のEmscriptenには、専用cacheのPythonを渡しています。
+900×1700のGPU読み戻しで49,544個のink pixelを確認し、上段の文字panelは23,606個でした。
+下段のbackend panelでは全28合成演算・clip・gradient境界条件を参照値と比較しています。
+BrowserのGPU実行確認はLinux x64です。
 
 公開APIと制約は[Parleyパッケージ](../../src/Graphics/Lumyte.Graphics.Text.Parley/README.md)を参照してください。

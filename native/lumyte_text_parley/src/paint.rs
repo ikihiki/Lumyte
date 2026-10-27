@@ -13,6 +13,7 @@ use skrifa::{
     },
     GlyphId, MetadataProvider,
 };
+use std::borrow::Cow;
 
 const MAX_PAINT_VISITS: usize = 4096;
 const MAX_STOPS: usize = 4096;
@@ -20,20 +21,48 @@ const MAX_GLYPH_SEGMENTS: usize = 65_536;
 const MAX_SNAPSHOT_SEGMENTS: usize = 2_000_000;
 const MAX_SNAPSHOT_EVENTS: usize = 262_144;
 
+pub fn color_location<'a>(
+    font: &FontRef<'_>,
+    coords: &'a [NormalizedCoord],
+) -> Cow<'a, [NormalizedCoord]> {
+    let has_variations = font
+        .colr()
+        .ok()
+        .is_some_and(|colr| colr.item_variation_store().is_some());
+    if has_variations && coords.iter().all(|coord| *coord == NormalizedCoord::ZERO) {
+        let mut color_coords = coords.to_vec();
+        color_coords.resize(font.axes().len(), NormalizedCoord::ZERO);
+        // LocationRef explicitly ignores coordinates beyond the font's axes.
+        // An unused nonzero coordinate prevents Skrifa's effective_coords()
+        // optimization from suppressing valid constant-region COLR deltas.
+        // Metadata validation ensures the variation store cannot use this axis.
+        color_coords.push(NormalizedCoord::from_bits(1));
+        Cow::Owned(color_coords)
+    } else {
+        Cow::Borrowed(coords)
+    }
+}
+
 /// Returns the ordinary path range, paint range and whether this is a color glyph.
 pub fn emit_glyph(
     font: &FontRef<'_>,
     glyph_id: u32,
     normalized_coords: &[NormalizedCoord],
+    color_coords: &[NormalizedCoord],
     palette_index: u32,
     output: &mut LpLayout,
 ) -> Result<(u32, u32, u32, u32, bool), String> {
     let path_start = u32::try_from(output.paths.len()).map_err(|_| "Path buffer overflow.")?;
     let paint_start = u32::try_from(output.paints.len()).map_err(|_| "Paint buffer overflow.")?;
     let glyph = GlyphId::new(glyph_id);
+    if font.table_data(Tag::new(b"COLR")).is_some() {
+        // Skrifa deliberately treats an unrecognized paint as an absent color
+        // glyph. Validate before its lookup so invalid COLR cannot become an
+        // apparently successful monochrome fallback.
+        validate_colr_work(font, glyph_id)?;
+    }
     let colors = font.color_glyphs();
     if let Some(color_glyph) = colors.get(glyph) {
-        validate_colr_work(font, glyph_id)?;
         let palette_id =
             u16::try_from(palette_index).map_err(|_| "Palette index is out of range.")?;
         let palettes = font.color_palettes();
@@ -61,7 +90,7 @@ pub fn emit_glyph(
             event_count: 0,
         };
         color_glyph
-            .paint(LocationRef::new(normalized_coords), &mut painter)
+            .paint(LocationRef::new(color_coords), &mut painter)
             .map_err(|e| format!("Invalid COLR paint: {e}"))?;
         if let Some(error) = painter.error {
             return Err(error);
@@ -445,14 +474,102 @@ impl ColorPainter for Painter<'_, '_> {
 // Skrifa's callback interface cannot return an error at every paint operation.
 // Bound the expanded COLR traversal *before* entering it: depth alone does not
 // prevent repeated shared layer references from causing exponential work.
+pub fn validate_color_metadata(font: &FontRef<'_>) -> Result<(), String> {
+    let Some(data) = font.table_data(Tag::new(b"COLR")) else {
+        return Ok(());
+    };
+    let data = data.as_bytes();
+    let version = be16(data, 0)?;
+    if version > 1 {
+        return Err("Unsupported COLR table version.".into());
+    }
+    let base_count = be16(data, 2)? as usize;
+    let base = be32(data, 4)? as usize;
+    let layers = be32(data, 8)? as usize;
+    let layer_count = be16(data, 12)? as usize;
+    array_bytes(data, base, base_count, 6)?;
+    array_bytes(data, layers, layer_count, 4)?;
+    if version == 0 {
+        return Ok(());
+    }
+    data.get(..34).ok_or("Truncated COLR v1 header.")?;
+    let base = be32(data, 14)? as usize;
+    if base != 0 {
+        let records = base_records(data, base)?;
+        let mut previous = None;
+        for record in records.as_chunks::<6>().0 {
+            let glyph = u16::from_be_bytes([record[0], record[1]]);
+            if previous.is_some_and(|previous| previous >= glyph) {
+                return Err("COLR base glyph records must be strictly sorted.".into());
+            }
+            previous = Some(glyph);
+            let offset = u32::from_be_bytes([record[2], record[3], record[4], record[5]]) as usize;
+            let paint = base
+                .checked_add(offset)
+                .ok_or("Invalid COLR paint offset.")?;
+            if offset == 0 || paint >= data.len() {
+                return Err("Invalid COLR paint offset.".into());
+            }
+        }
+    }
+    // Resolve optional top-level offsets here, once per font in the layout.
+    // Detailed paint and variation data is evaluated only for requested glyphs.
+    for field in [18, 22, 26, 30] {
+        let offset = be32(data, field)? as usize;
+        if offset != 0 && offset >= data.len() {
+            return Err("Invalid COLR metadata offset.".into());
+        }
+    }
+    let colr = font.colr().map_err(|_| "Invalid COLR header.")?;
+    if let Some(store) = colr.item_variation_store() {
+        let store = store.map_err(|_| "Invalid COLR variation store.")?;
+        let regions = store
+            .variation_region_list()
+            .map_err(|_| "Invalid COLR variation regions.")?;
+        if usize::from(regions.axis_count()) != font.axes().len() {
+            return Err("COLR variation axes do not match the font axes.".into());
+        }
+    }
+    Ok(())
+}
+
+fn array_bytes(data: &[u8], offset: usize, count: usize, width: usize) -> Result<&[u8], String> {
+    if count == 0 && offset == 0 {
+        return Ok(&[]);
+    }
+    if offset == 0 {
+        return Err("COLR contains a null record offset.".into());
+    }
+    let end = count
+        .checked_mul(width)
+        .and_then(|length| offset.checked_add(length))
+        .ok_or("Invalid COLR record range.")?;
+    data.get(offset..end)
+        .ok_or("Truncated COLR record array.".into())
+}
+
+fn base_records(data: &[u8], base: usize) -> Result<&[u8], String> {
+    let count = be32(data, base)? as usize;
+    if count > 65_536 {
+        return Err("COLR base glyph list is too large.".into());
+    }
+    let records = base.checked_add(4).ok_or("Invalid COLR offset.")?;
+    array_bytes(data, records, count, 6)
+}
+
 fn validate_colr_work(font: &FontRef<'_>, glyph: u32) -> Result<(), String> {
     let data = font
         .table_data(Tag::new(b"COLR"))
         .ok_or("Missing COLR table.")?;
     let data = data.as_bytes();
-    if be16(data, 0)? == 0 {
+    let version = be16(data, 0)?;
+    if version == 0 {
         return Ok(());
     }
+    if version != 1 {
+        return Err("Unsupported COLR table version.".into());
+    }
+    data.get(..34).ok_or("Truncated COLR v1 header.")?;
     let base = be32(data, 14)? as usize;
     if base == 0 {
         return Ok(());
@@ -466,14 +583,20 @@ fn validate_colr_work(font: &FontRef<'_>, glyph: u32) -> Result<(), String> {
     validate_paint(data, base, layers, root, &mut budget, &mut stack)
 }
 fn base_paint(data: &[u8], base: usize, glyph: u32) -> Result<Option<usize>, String> {
-    let count = be32(data, base)? as usize;
-    if count > 65_536 {
-        return Err("COLR base glyph list is too large.".into());
-    }
-    for i in 0..count {
-        let p = base.checked_add(4 + i * 6).ok_or("Invalid COLR offset.")?;
-        if u32::from(be16(data, p)?) == glyph {
+    let records = base_records(data, base)?;
+    let mut low = 0;
+    let mut high = records.len() / 6;
+    while low < high {
+        let middle = low + (high - low) / 2;
+        let id = u32::from(be16(records, middle * 6)?);
+        if id == glyph {
+            let p = base + 4 + middle * 6;
             return Ok(Some(rel(data, base, p + 2, 4)?));
+        }
+        if id < glyph {
+            low = middle + 1;
+        } else {
+            high = middle;
         }
     }
     Ok(None)
@@ -674,7 +797,7 @@ mod tests {
     #[test]
     fn true_type_color_base_retains_its_outline() {
         let data = include_bytes!(
-            "../../../tests/Graphics/Lumyte.Graphics.Text.Tests/Fonts/ColorFontTest.ttf"
+            "../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/ColorFontTest.ttf"
         );
         let font = FontRef::new(data).unwrap();
         let mut paths = Vec::new();
@@ -685,16 +808,62 @@ mod tests {
     #[test]
     fn all_fixture_formats_emit_finite_events() {
         let data = include_bytes!(
-            "../../../tests/Graphics/Lumyte.Graphics.Text.Tests/Fonts/ColrVectorFormats.ttf"
+            "../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/ColrVectorFormats.ttf"
         );
         let font = FontRef::new(data).unwrap();
         for codepoint in 0xe001u32..=0xe020u32 {
             let glyph = font.charmap().map(codepoint).unwrap().to_u32();
             let mut output = snapshot();
-            let (_, _, _, count, color) = emit_glyph(&font, glyph, &[], 0, &mut output).unwrap();
+            let location = color_location(&font, &[]);
+            let (_, _, _, count, color) =
+                emit_glyph(&font, glyph, &[], &location, 0, &mut output).unwrap();
             assert!(color, "U+{codepoint:X}");
             assert!(count > 0, "U+{codepoint:X}");
         }
+    }
+    #[test]
+    fn invalid_color_roots_cannot_fall_back_to_monochrome() {
+        let mut data = include_bytes!(
+            "../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/ColrVectorFormats.ttf"
+        )
+        .to_vec();
+        let colr = font_table_offset(&data, b"COLR");
+        let base = colr + be32(&data, colr + 14).unwrap() as usize;
+        let paint = base + be32(&data, base + 6).unwrap() as usize;
+        data[paint] = 255;
+        let font = FontRef::new(&data).unwrap();
+        validate_color_metadata(&font).unwrap();
+        let location = color_location(&font, &[]);
+        let error = emit_glyph(&font, 2, &[], &location, 0, &mut snapshot()).unwrap_err();
+        assert!(error.contains("Unknown COLR paint format"));
+    }
+    #[test]
+    fn truncated_color_headers_are_rejected_before_glyph_lookup() {
+        let mut data = include_bytes!(
+            "../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/ColorFontTest.ttf"
+        )
+        .to_vec();
+        let count = be16(&data, 4).unwrap() as usize;
+        for i in 0..count {
+            let record = 12 + i * 16;
+            if &data[record..record + 4] == b"COLR" {
+                data[record + 12..record + 16].copy_from_slice(&20u32.to_be_bytes());
+                break;
+            }
+        }
+        let font = FontRef::new(&data).unwrap();
+        assert!(validate_color_metadata(&font).is_err());
+        assert!(emit_glyph(&font, 154, &[], &[], 0, &mut snapshot()).is_err());
+    }
+
+    fn font_table_offset(data: &[u8], tag: &[u8; 4]) -> usize {
+        let count = be16(data, 4).unwrap() as usize;
+        (0..count)
+            .find_map(|i| {
+                let record = 12 + i * 16;
+                (&data[record..record + 4] == tag).then(|| be32(data, record + 8).unwrap() as usize)
+            })
+            .unwrap()
     }
     #[test]
     fn expanded_shared_layers_are_bounded() {

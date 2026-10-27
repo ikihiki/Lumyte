@@ -1,8 +1,8 @@
 # Lumyte.Graphics.Text.Parley
 
-Parleyで段落を組み、Skrifaから輪郭とCOLR paintを取り出して、Lumyteの既存2D描画へ渡す試作アダプターです。
+Parleyで段落を組み、Skrifaから輪郭とCOLR paintを取り出して、Lumyteの既存2D描画へ渡す文字組み実装です。
 C#とRustのC ABIは[csbindgen](https://github.com/Cysharp/csbindgen)で生成します。
-この構成はSixLabors.FontsとSkiaSharpへ依存しません。
+フォントの読込・文字組み・輪郭・カラーpaintを同じRust stackで処理します。
 
 ## 使い方
 
@@ -76,7 +76,6 @@ Start/Endは**UTF-16のindex**で、Startを含みEndを含まない範囲です
 surrogate pairの途中を境界にすることはできません。
 書記素や合字の途中でstyleを分割する指定は、上流のcluster処理に従います。
 指定したUTF-16のコード単位ごとにpaintや装飾を分割することは保証しません。
-SixLabors比較用アダプターの書記素indexとは異なるため、その範囲を直接流用しないでください。
 Paintは段落全体の論理座標を使い、nullならlayoutの既定paintを継承します。
 `CreateLayout`のpaint省略時は黒です。
 FontWeightは1～1000、Italicはboolの上書きです。
@@ -140,7 +139,7 @@ Glyphsはvisual painter orderで、元文字列の範囲はlogicalなclusterを�
 壊れたfont等のnative入力エラーはInvalidDataExceptionで伝えます。
 Dispose後のengine操作はObjectDisposedExceptionになり、Dispose自体は繰り返せます。
 
-試作の入力・出力には次の上限があります。共通のMSDF生成器とDrawing2Dのbudgetは別途適用されます。
+入力・出力には次の上限があります。共通のMSDF生成器とDrawing2Dのbudgetは別途適用されます。
 
 | 対象 | 上限 |
 | --- | --- |
@@ -154,45 +153,64 @@ Dispose後のengine操作はObjectDisposedExceptionになり、Dispose自体は�
 ## C ABIとビルド
 
 Rust側は[native/lumyte_text_parley](../../../native/lumyte_text_parley)、
-ビルド用targetsと.NETのFallout runnerは[tools/text-parley](../../../tools/text-parley/README.md)にあります。
+共通のFallout runnerは[build/_build.csproj](../../../build/_build.csproj)、
+MSBuildとの接続は[build/Targets](../../../build/Targets)にあります。
 依存グラフはCargo.lockへ記録し、`--locked`でビルドします。
 
 ビルドの入口はリポジトリの`global.json`に対応する.NET SDKです。
-[Fallout](https://github.com/Fallout-build/Fallout)を通常のC# console projectから使うため、
-Falloutのglobal toolやPythonの事前インストールは不要で、ビルド入口にshell scriptを使いません。
-Rustのコンパイルにはhost用のnative linkerも必要です。WindowsではMSVC/Windows SDK、
-LinuxではC linkerと開発用ライブラリ、macOSではCommand Line Tools等を用意してください。
-
-リポジトリルートで次のコマンドを実行すると、`ParleyNative.targets`がFalloutのNative targetを呼び、
-Rust成果物とライセンス表示を出力先へコピーします。
+Falloutのglobal toolや、PATH上のPythonは必要ありません。
+通常のビルド・テスト・publish・packは[共通ビルド手順](../../../build/README.md)に従います。
 
 ```sh
-dotnet build src/Graphics/Lumyte.Graphics.Text.Parley
+dotnet run --project build -c Release -- --target Compile
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Text.Parley.Tests
 ```
 
-Rust toolchainはnative用の1.99.1を使います。利用できるtoolchainがなければ、
-runnerが`artifacts/text-parley/tools`以下へビルド用のRustupとtoolchainを準備します。
+Parleyだけのnative成果物やtoolchain準備も同じ入口から実行できます。
+
+```sh
+dotnet run --project build -c Release -- --target SetupParleyNative
+dotnet run --project build -c Release -- --target ParleyNative
+```
+
+C#プロジェクトを直接`dotnet build`した場合も、`ParleyNative.targets`が共通runnerのleaf targetを呼びます。
+Rust成果物とライセンス表示を出力先へコピーし、solution全体のbuildへ再入しません。
+
+Rustのコンパイルにはhost用のnative linkerが必要です。WindowsではMSVC/Windows SDK、
+LinuxではC linkerと開発用ライブラリ、macOSではCommand Line Tools等を用意してください。
+native用toolchainは1.99.1を使い、利用できるものがなければrunnerが
+`artifacts/build/tools`以下へRustupとtoolchainを準備します。
 既存の設定・cacheも利用でき、globalなPATHやshell profileを書き換えません。
 初回のNuGet復元やtoolchain取得にはネットワーク接続が必要です。
-
-native成果物だけを作る場合や、toolchainを先に準備する場合もdotnetから実行できます。
-
-```sh
-dotnet run --project tools/text-parley/Lumyte.Text.Parley.Build -- --target SetupNative --root .
-dotnet run --project tools/text-parley/Lumyte.Text.Parley.Build -- --target Native --root .
-```
 
 現在のnative targetはhostのOS・architecture向けにbuildします。
 別RIDへのpublishに合わせたcross compileは未整備です。
 実行先と同じOS・architectureの環境でnative成果物を用意してください。
+native libraryと対応する依存ライブラリの表示を配布に含め、対象RIDを一致させます。
 
 既定のnative成果物は`artifacts/text-parley/native`です。
 既に用意したライブラリを使う場合は、`LumyteBuildParleyNative=false`と
 `LumyteParleyNativePath`を指定できます。
 付属するRust標準ライブラリの表示は`LumyteParleyRustNoticesPath`で指定します。
-これらはソースツリーでの試作用targetsであり、
-各RIDの成果物を含む完成した配布NuGetを意味しません。
-Parleyと比較用SixLaborsのアダプタープロジェクトは、配布を整えるまでIsPackable=falseです。
+
+### Native用NuGet
+
+配布するNuGetは`linux-x64`・`linux-arm64`・`win-x64`・`win-arm64`のnative資産を含みます。
+各環境のbuildが、対象RIDのライブラリとそのtoolchainの`RUST-STANDARD-LIBRARY-NOTICES.html`を
+`artifacts/text-parley/package/runtimes/<rid>/native`へstageします。
+`Pack`は全4 RIDのライブラリ・noticeを要求し、不足したpackageを生成しません。
+依存crateの表示はNuGetの`licenses/THIRD-PARTY-NOTICES.md`にも含めます。
+
+CIでは全4環境の検証後にnative artifactを集め、Browserのpublish前に保存したdesktop用managed出力からpackageを作ります。
+`parley-nuget` artifactが配布用の成果物です。
+ローカルでpackする場合も、検証済みの4 RID分を上記領域へ集めてから共通runnerの`Pack`を実行してください。
+他のライブラリだけをpackする場合は`--skip-parley-package`を使えます。
+
+このNuGetはnative用で、Browserの静的リンク用packageではありません。
+Browserではソースprojectを参照し、下記の`ParleyBrowser.targets`と共通runnerの`Publish`／`TestWasm`を使用します。
+native用managed出力とBrowser用のP/Invoke module名を混在させないでください。
+
+### C ABIとBrowserへの接続
 
 `build.rs`がRustの`extern "C"`と`repr(C)`から
 `Interop/NativeMethods.g.cs`を生成します。生成ファイルを手作業で変更しません。
@@ -206,12 +224,12 @@ statusとUTF-8のエラーをC#の例外へ変換し、RustのunwindをC ABIへ�
 WASMは`panic=abort`でbuildするため、予期しないnative panicからの回復は保証しません。
 
 Browser WASMでは、.NETのEmscriptenとABIを合わせたRust staticlibを`dotnet.wasm`へリンクします。
-検証用のRustはnightly-2026-10-20とrust-srcです。
+WASM用のRustはnightly-2026-10-20とrust-srcです。
 runnerが必要なtoolchainを準備し、同じEmscriptenで標準ライブラリも再ビルドします。
 .NETのwasm-tools workloadは別途用意します。
 
 Emscripten自身は内部でPythonを使います。runnerはSDK同梱のPythonを優先し、
-同梱されていない環境ではSHA-256を照合した専用のPythonを`artifacts/text-parley/tools`以下へ準備します。
+同梱されていない環境ではSHA-256を照合した専用のPythonを`artifacts/build/tools`以下へ準備します。
 PATH上のPythonには依存しません。ビルド前に解決したinterpreterを.NET側のEmscriptenにも渡します。
 
 Browserアプリは`ParleyBrowser.targets`をimportし、ParleyへのProjectReferenceで
@@ -219,11 +237,12 @@ Browserアプリは`ParleyBrowser.targets`をimportし、ParleyへのProjectRefe
 この指定でnative cdylibのbuildを止め、生成bindingのmodule名を`liblumyte_text_parley`へ切り替えます。
 Browserではこの名前を使い、.NETの静的P/Invoke tableからリンク済みのライブラリを解決します。
 `wasm32-unknown-unknown`のコンパイル成功と、この.NET Browser接続の成功を区別してください。
+wasm-toolsは固定SDKと同じworkload-setから導入し、暗黙に最新のworkloadを選びません。
 具体的なpublish・起動手順は[Parley Browserサンプル](../../../samples/Lumyte.Graphics.Text.Parley.Browser.Sample/README.md)を参照してください。
 
 ## 対応範囲と配布条件
 
-この試作は、Parleyのすべてのレイアウト・編集APIを公開するものではありません。
+Parleyのすべてのレイアウト・編集APIを公開するものではありません。
 Pango markup、hit test・caret・selection、縦組みの組版保証、SVG glyphやbitmap emojiの描画は今回の範囲外です。
 必要なglyphとtableを持つフォントをアプリが供給します。
 Parley上流には、改行位置に応じた合字・筆記体の再shapingなど未完了の組版処理もあります。
@@ -233,14 +252,13 @@ Parley上流には、改行位置に応じた合字・筆記体の再shapingな�
 C#からnativeを通す回帰テストと、Rust shimのテストは次のように実行できます。
 
 ```sh
-dotnet test tests/Graphics/Lumyte.Graphics.Text.Parley.Tests -c Release
-dotnet run --project tools/text-parley/Lumyte.Text.Parley.Build -- --target TestRust --root .
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Text.Parley.Tests
+dotnet run --project build -c Release -- --target TestRust
 ```
 
-toolchainやビルドtargetの引数は[ビルド手順](../../../tools/text-parley/README.md)を参照してください。
+toolchainやビルドtargetの引数は[ビルド手順](../../../build/README.md)を参照してください。
 
 2026-10-27にLinux x64でC#の90ケース、Rustの13テストと警告をエラーにしたclippyが成功しました。
-分離後のSixLabors比較用テスト91ケースも成功しています。
 [Browserサンプル](../../../samples/Lumyte.Graphics.Text.Parley.Browser.Sample/README.md)は
 .NET Browser WASMのpublish・静的リンク後、headless ChromiumのWebGPUで実行しました。
 合字、日本語fallback、bidi cluster、折り返し、MSDF/MTSDFの4倍拡大時の穴、
@@ -250,7 +268,7 @@ engine解放後のsnapshot描画も確認しました。
 Falloutへの移行後も、MSBuild経由のnative buildとC#統合テスト90件が成功しました。
 BrowserはPATHからPythonとglobalなCargoを外してpublishし、
 その成果物のChromium / WebGPU描画も確認しています。
-ビルド入口のプロセス統合テスト等は[ビルド手順の確認範囲](../../../tools/text-parley/README.md#確認した範囲)を参照してください。
+ビルド入口のプロセス統合テスト等は[ビルド手順](../../../build/README.md)を参照してください。
 
 2026-10-27のCIでは、LinuxとWindowsのx64 / arm64でnativeビルドとParleyの90ケースが成功しました。
 macOSでの実行、配布サイズと性能の比較は未検証です。

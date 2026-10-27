@@ -103,7 +103,7 @@ try {
     }
     await command("Runtime.enable");
     if (process.env.LUMYTE_SCREENSHOT) {
-        await command("Emulation.setDeviceMetricsOverride", { width: 1100, height: 1000, deviceScaleFactor: 1, mobile: false });
+        await command("Emulation.setDeviceMetricsOverride", { width: 1100, height: 1800, deviceScaleFactor: 1, mobile: false });
     }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     const deadline = Date.now() + 180000;
@@ -123,7 +123,7 @@ try {
     assert.match(result.report, /csbindgen C ABI, ligatures, Japanese fallback, bidi clusters and wrapping/);
     assert.match(result.report, /translucent and gradient currentColor/);
     assert.match(result.report, /Layouts survive engine disposal/);
-    assert.match(result.report, /No SixLabors or Skia runtime/);
+    assert.match(result.report, /Backend checks: all 28 composite modes, isolated backdrops, clip masks and gradient edge cases/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");
     if (process.env.LUMYTE_SCREENSHOT) {
         const metrics = await command("Page.getLayoutMetrics");

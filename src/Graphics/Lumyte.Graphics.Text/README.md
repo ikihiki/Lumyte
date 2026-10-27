@@ -2,11 +2,10 @@
 
 文字組みエンジンから受け取ったベクター文字を、既存の2D描画へ接続する共通パッケージです。
 不変な`TextLayout2D`、輪郭・カラーpaintの描画、MSDF/MTSDF生成とatlasの所有権を提供します。
-このパッケージはSixLabors.FontsやSkiaSharpへ依存しません。
+外部のフォント読込・文字組みAPIを公開境界へ出しません。
 
-文字組みには[Parleyアダプター](../Lumyte.Graphics.Text.Parley/README.md)を使えます。
-従来の比較用構成は[SixLaborsアダプター](../Lumyte.Graphics.Text.SixLabors/README.md)へ分離しています。
-フォントの読込・シェーピング・双方向処理・折り返しの対応範囲は、選んだアダプターに従います。
+文字組みには[Parley実装](../Lumyte.Graphics.Text.Parley/README.md)を使います。
+フォントの読込・シェーピング・双方向処理・折り返しの対応範囲は、その公開APIで確認できます。
 
 ## レイアウトと描画
 
@@ -126,4 +125,4 @@ MSDF/MTSDF生成の依存はMITライセンスのSeasonMSDF 0.2.0です。
 Drawing2Dのpaint model・shaderの深さ、命令数、geometry budgetは文字にも適用されます。
 COLR v1向けの全28合成とgradientの境界条件は[Drawing2D](../Lumyte.Graphics.Drawing2D/README.md)を参照してください。
 
-設計・比較・制約は[GRAPHICS-0024](../../../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。
+設計・対応範囲は[GRAPHICS-0024](../../../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。
