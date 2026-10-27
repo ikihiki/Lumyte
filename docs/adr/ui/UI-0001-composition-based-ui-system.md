@@ -19,7 +19,7 @@
 [COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md)の生成ファクトリ、with、子インデクサー、名前付きスロットを使う。UIは保持型Widgetツリーと値を所有し、毎frameの再生成・自動reconciliationは行わない。CompositionへUI保存領域や寿命管理を追加しない。
 
 ```text
-Compositionの生成ファクトリ → UIツリー → 計測・配置・入力・描画記録
+Compositionの生成ファクトリ → UIツリー → 制約駆動layout・入力・描画記録
 アプリのWindow/Input統合 ────────────→ UiSurface
 UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 ```
@@ -33,7 +33,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 実装PR | 対応ADR | 追加する機能 | 実装の前提 |
 | --- | --- | --- | --- |
 | 1 | UI-0002 | ツリー、所有権、Composition、surfaceの寿命 | UI-0001 |
-| 2 | UI-0003 | 計測・配置、寸法、Stack、無効化 | PR 1 |
+| 2 | UI-0003 | 一方向layout、min/max制約、寸法、Stack、無効化 | PR 1 |
 | 3 | UI-0004 | 矩形、描画記録、clip、直接描画サンプル | PR 2 |
 | 4 | UI-0005 | hit test、capture、ButtonのClick | PR 3 |
 | 5 | UI-0006 | focus、Tab、キー押下、入力競合 | PR 4 |
@@ -45,6 +45,8 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 ### 共通の契約
 
 ツリーは参照同一性で状態を保持し、単一親・単一surface・非循環とする。接続中のツリーはsurface作成スレッドで扱う。layout・描画中の変更と再入を拒否し、Click中の通常の変更は許可する。GPU資源とWindowはUIが所有しない。
+
+レイアウトはFlutter型の「制約を子へ渡す→子が制約内のサイズを返す→親が位置を決める」方式とする。親はlayout済みの子を別サイズへ変えない。公開値は確定SizeとBoundsであり、希望サイズと最終配置を別々に公開しない。通常の子layoutを一度で完結させ、intrinsic計測や兄弟を揃える再計測は初期対象外とする。具体的なtight/loose/unbounded制約と各部品の規則はUI-0003で定義する。
 
 UI座標は論理pixelである。viewportは論理サイズだけを受け取り、DPI変換はホストがCanvasへ一度だけ適用し、Drawing2DのPixelScaleは1とする。以前の案の`SetViewport(size, scale)`は、未使用のscaleをUIへ保存しない`SetViewport(logicalSize)`へ具体化する。非一様scale、Hostedの原点・clipの合成はUI-0007で定義する。
 
