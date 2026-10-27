@@ -1,0 +1,28 @@
+<Project>
+  <Import Project="ParleyBuild.targets" />
+  <PropertyGroup>
+    <LumyteParleyPythonPathFile Condition="'$(LumyteParleyPythonPathFile)' == ''">$(_LumyteParleyRepositoryRoot)artifacts/text-parley/tools/python/$(MSBuildProjectName)-path.txt</LumyteParleyPythonPathFile>
+  </PropertyGroup>
+  <!-- Emscripten itself uses Python. Supply a private interpreter to its SDK
+       tasks without requiring a Python executable on the user's PATH. -->
+  <Target Name="PrepareLumyteEmscriptenPython" AfterTargets="_SetupEmscripten" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="'$(DesignTimeBuild)' != 'true' and '$(_IsToolchainMissing)' != 'true'">
+    <PropertyGroup>
+      <LumyteParleyPythonPath Condition="'$(LumyteParleyPythonPath)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(EmscriptenPythonToolsPath)python.exe')">$(EmscriptenPythonToolsPath)python.exe</LumyteParleyPythonPath>
+    </PropertyGroup>
+    <Exec Command="$(_LumyteParleyBuildCommand) --target PrepareWasmTools --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --emsdk &quot;$([MSBuild]::EnsureTrailingSlash('$(EmscriptenSdkToolsPath)')).&quot; --python-path-file &quot;$(LumyteParleyPythonPathFile)&quot; --python &quot;$(LumyteParleyPythonPath)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+    <ReadLinesFromFile File="$(LumyteParleyPythonPathFile)">
+      <Output TaskParameter="Lines" PropertyName="LumyteParleyPythonPath" />
+    </ReadLinesFromFile>
+    <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+      <EmscriptenPythonToolsPath>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetDirectoryName('$(LumyteParleyPythonPath)'))))</EmscriptenPythonToolsPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <EmscriptenEnvVars Include="PYTHON=$(LumyteParleyPythonPath)" />
+      <EmscriptenEnvVars Include="PYTHON3=$(LumyteParleyPythonPath)" />
+      <EmscriptenEnvVars Include="EMSDK_PYTHON=$(LumyteParleyPythonPath)" />
+      <EmscriptenEnvVars Include="PYTHONHOME=" />
+      <EmscriptenEnvVars Include="PYTHONPATH=" />
+      <EmscriptenEnvVars Include="PYTHONNOUSERSITE=1" />
+    </ItemGroup>
+  </Target>
+</Project>

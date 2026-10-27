@@ -37,15 +37,14 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: Collect successful galleries
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+
+      - name: Collect and assemble successful galleries
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          python3 tools/diagnostics/collect-gallery-artifacts.py
-          --repository "$GITHUB_REPOSITORY" --output incoming
-
-      - name: Assemble preview index and galleries
-        run: node tools/diagnostics/assemble-gallery-site.mjs incoming/catalog.json artifacts/diagnostics-site
+        run: dotnet run --project build -c Release -- --target DiagnosticPreviews
 
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
