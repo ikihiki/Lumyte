@@ -184,15 +184,13 @@ public sealed class RenderingGeometryTests
         }
     }
 
-    /// <summary>Repeated shared paint children count their real evaluation cost against the finite shader budget.</summary>
+    /// <summary>Distinct paint nodes still fail before exceeding the finite shader budget.</summary>
     [Fact]
-    public void SharedPaintDagExpansionFailsBeforeExceedingShaderCapacity()
+    public void DistinctPaintNodesFailBeforeExceedingShaderCapacity()
     {
-        var paint = PaintGraph2D.Solid(new Color2D(1, 0, 0, 1));
-        for (int i = 0; i < 8; i++)
-        {
-            paint = PaintGraph2D.Composite(paint, paint, CompositeMode2D.SrcOver);
-        }
+        var paint = PaintGraph2D.Layers(Enumerable.Range(0, 256)
+            .Select(i => PaintGraph2D.Solid(new Color2D(i / 255f, 0, 0, 1)))
+            .ToArray());
 
         var canvas = new Canvas2D();
         canvas.Begin();

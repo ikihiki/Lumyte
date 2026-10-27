@@ -1,0 +1,17 @@
+<Project>
+  <ItemGroup>
+    <_ParleyPackageRid Include="linux-x64;linux-arm64;win-x64;win-arm64" />
+    <_ParleyPackageBinary Include="$(LumyteParleyPackageRoot)/runtimes/linux-x64/native/liblumyte_text_parley.so" />
+    <_ParleyPackageBinary Include="$(LumyteParleyPackageRoot)/runtimes/linux-arm64/native/liblumyte_text_parley.so" />
+    <_ParleyPackageBinary Include="$(LumyteParleyPackageRoot)/runtimes/win-x64/native/lumyte_text_parley.dll" />
+    <_ParleyPackageBinary Include="$(LumyteParleyPackageRoot)/runtimes/win-arm64/native/lumyte_text_parley.dll" />
+    <None Include="$(LumyteParleyPackageRoot)/runtimes/**/*" Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" Visible="false" />
+    <None Include="../../../native/lumyte_text_parley/THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="licenses/THIRD-PARTY-NOTICES.md" Visible="false" />
+  </ItemGroup>
+  <!-- A release package is assembled from tested native outputs, never by
+       relabeling the current host's binary as another runtime. -->
+  <Target Name="ValidateLumyteParleyPackage" BeforeTargets="GenerateNuspec">
+    <Error Condition="!Exists('%(_ParleyPackageBinary.Identity)')" Text="Missing tested Parley native asset: %(_ParleyPackageBinary.Identity). Collect the four CI runtime artifacts before packing Parley, or select --skip-parley-package when packing other libraries." />
+    <Error Condition="!Exists('$(LumyteParleyPackageRoot)/runtimes/%(_ParleyPackageRid.Identity)/native/RUST-STANDARD-LIBRARY-NOTICES.html')" Text="Missing Rust standard-library notices for %(_ParleyPackageRid.Identity)." />
+  </Target>
+</Project>

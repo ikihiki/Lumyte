@@ -88,21 +88,19 @@ windows-arm64 = { url = "https://github.com/cpp-linter/clang-tools-static-binari
 
 [tasks.check-native-format]
 description = "Check C/C++ formatting without changing files"
-run = "bash tools/style/format-native.sh"
-run_windows = "powershell.exe -NoProfile -File tools/style/format-native.ps1"
+run = "dotnet run --project build -c Release -- --target CheckNativeFormat"
 
 [tasks.check-markdown]
 description = "Lint repository Markdown without changing files"
-run = "markdownlint-cli2"
+run = "dotnet run --project build -c Release -- --target CheckMarkdown"
 
 [tasks.format-markdown]
 description = "Fix automatically correctable Markdown lint violations"
-run = "markdownlint-cli2 --fix"
+run = "dotnet run --project build -c Release -- --target FormatMarkdown"
 
 [tasks.format-native]
 description = "Format C/C++ sources using the repository style"
-run = "bash tools/style/format-native.sh --fix"
-run_windows = "powershell.exe -NoProfile -File tools/style/format-native.ps1 -Fix"
+run = "dotnet run --project build -c Release -- --target FormatNative"
 
 [tasks.setup]
 description = "Install the shared Linux or Windows development environment"
@@ -116,17 +114,44 @@ run_windows = "powershell.exe -NoProfile -File tools/setup/setup-native.ps1"
 
 [tasks.verify]
 description = "Verify Slang compilation, native NuGet/PInvoke, vcpkg and lavapipe execution"
-run = "bash tools/setup/verify.sh"
-run_windows = "powershell.exe -NoProfile -File tools/setup/verify.ps1"
+run = "dotnet run --project build -c Release -- --target VerifyEnvironment"
 
 [tasks.setup-wasm]
 description = "Install wasm-tools from the pinned .NET workload set"
-run = "dotnet workload install wasm-tools --version {{ vars.dotnet_workload_version }}"
+run = "dotnet run --project build -c Release -- --target SetupWasm"
+
+[tasks.setup-text-parley]
+description = "Prepare the Parley native toolchain through dotnet and Fallout"
+run = "dotnet run --project build -c Release -- --target SetupParleyNative"
+
+[tasks.setup-text-parley-wasm]
+description = "Install Rust sources for the .NET-compatible Parley WebAssembly build"
+run = "dotnet run --project build -c Release -- --target SetupParleyWasm"
+
+[tasks.test-text-parley]
+description = "Build and test the Parley and csbindgen text backend"
+run = "dotnet run --project build -c Release -- --target TestText"
 
 [tasks.test-wasm]
 description = "Publish and verify the .NET browser sample with real WebGPU"
-depends = ["setup-wasm"]
-run = [
-  "dotnet publish samples/Lumyte.Graphics.Browser.Sample -c Release",
-  "node tools/graphics/verify-browser.mjs",
-]
+run = "dotnet run --project build -c Release -- --target TestWasm"
+
+[tasks.build]
+description = "Compile the solution through the repository Fallout graph"
+run = "dotnet run --project build -c Release -- --target Compile"
+
+[tasks.test]
+description = "Compile and test the solution through Fallout"
+run = "dotnet run --project build -c Release -- --target Test"
+
+[tasks.pack]
+description = "Build and package all packable source projects"
+run = "dotnet run --project build -c Release -- --target Pack"
+
+[tasks.publish]
+description = "Publish the Parley browser sample through Fallout"
+run = "dotnet run --project build -c Release -- --target Publish"
+
+[tasks.check-format]
+description = "Verify C# formatting through Fallout"
+run = "dotnet run --project build -c Release -- --target CheckFormat"
