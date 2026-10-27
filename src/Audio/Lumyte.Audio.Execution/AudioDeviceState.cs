@@ -84,7 +84,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     public ValueTask<int> RetireAsync(CancellationToken cancellationToken = default)
         => new AudioDevice(this).RetireAsync(cancellationToken);
 
-    internal AudioDeviceSnapshot? BeginRecoveryIfNeeded()
+    internal AudioDeviceSnapshot? BeginRecovery()
     {
         VerifyOwner();
         PollAvailability();
@@ -453,7 +453,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
         try
         {
             var sender = new AudioDevice(this);
-            AudioDeviceSnapshot? current = await sender.BeginRecoveryIfNeededAsync().ConfigureAwait(false);
+            AudioDeviceSnapshot? current = await sender.BeginRecoveryAsync().ConfigureAwait(false);
             if (current is { } available)
             {
                 completion.SetResult(available);

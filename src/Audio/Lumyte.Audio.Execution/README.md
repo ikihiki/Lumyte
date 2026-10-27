@@ -7,13 +7,13 @@ AudioDeviceがデバイス生成・clip生成・bus gain・更新・終了を、
 操作は`audio.Commands`、サービス状態は`audio.Devices.State`から取得します。[API入口の設計](../../../docs/adr/audio/AUDIO-0003-consistent-api-entry-points.md)も参照してください。
 
 ```csharp
-var clip = new AudioClip(await audio.Commands.CreateClip(new AudioFormat(48000, 1), pcm));
-AudioVoice voice = await clip.CreateVoiceAsync(); // bus省略時はbackendと同じEffects。既存のCreateVoice()も利用可能。
-await voice.Seek(clip.FrameCount / 2); // PCMフレーム単位。停止中なので再生は始まらない。
-await voice.Play();
-await voice.Stop();
-await voice.Destroy();
-await clip.DestroyClip();
+var clip = new AudioClip(await audio.Commands.CreateClipAsync(new AudioFormat(48000, 1), pcm));
+AudioVoice voice = await clip.CreateVoiceAsync(); // bus省略時はbackendと同じEffects。
+await voice.SeekAsync(clip.FrameCount / 2); // PCMフレーム単位。停止中なので再生は始まらない。
+await voice.PlayAsync();
+await voice.StopAsync();
+await voice.DestroyAsync();
+await clip.DestroyClipAsync();
 ```
 
 PCMは生成完了まで変更しないでください。返された参照は生成済み実体を保持します。voiceはclipより先に解放します。実行層は生成したclip・voiceの一覧を保持せず、自動解放しません。利用者／Resourcesがvoice→clipの順で解放を完了してからruntimeを停止し、最後にdeviceを解放します。子が残っている場合はbackendがdevice解放を拒否します。
@@ -22,7 +22,7 @@ Browserの接続例は[WebAudioサンプル](../../../samples/Lumyte.Audio.Execu
 
 キューは生成された静的portです。同じプロセスで同じモジュールを再登録できません。AudioVoice.State／FramePosition／Gain／Loopはbackendのlockで保護されたcached値を呼び出し元スレッドで直接返し、配送しません。StateとFramePositionは直近の周期更新のsnapshotです。即時観測が必要ならaudio.Commands.Refreshで全voiceを一度更新してから読みます。voiceごとの読み取りで全voiceを再更新しません。ECSからは生成されたAddPlayTo／AddSeekTo等でCommandBatchへ追加できます。
 
-`Seek(framePosition)`は`0..clip.FrameCount`を受け付け、所有スレッドで実際に位置を変更してから完了します。再生中のSeekは再生を続け、一時停止・停止中はそのモードを保ちます。範囲外は状態を変えずに拒否します。停止は位置を0へ戻し、自然終了はFrameCountです。ループ中の末尾指定は0へ戻ります。詳細な端点の遷移は[backend契約](../../../docs/adr/audio/AUDIO-0001-audio-system.md#seekと位置の観測)を参照してください。Seekの完了は可聴時刻やスナップショット更新を保証しません。直後の値が必要なら`await audio.Commands.Refresh()`を待って読みます。
+`Seek(framePosition)`は`0..clip.FrameCount`を受け付け、所有スレッドで実際に位置を変更してから完了します。再生中のSeekは再生を続け、一時停止・停止中はそのモードを保ちます。範囲外は状態を変えずに拒否します。停止は位置を0へ戻し、自然終了はFrameCountです。ループ中の末尾指定は0へ戻ります。詳細な端点の遷移は[backend契約](../../../docs/adr/audio/AUDIO-0001-audio-system.md#seekと位置の観測)を参照してください。Seekの完了は可聴時刻やスナップショット更新を保証しません。直後の値が必要なら`await audio.Commands.RefreshAsync()`を待って読みます。
 
 NativeAOTはLinux x64でDIあり／なし、Host／Dedicatedを検証しています。OpenALはBCLのNativeLibraryで読み込み、Silk.NETの独自path resolverを使用しません。nativeライブラリの配置は[OpenAL backend](../Lumyte.Audio.OpenAL/README.md)を参照してください。
 
@@ -34,7 +34,7 @@ AudioVoiceとAudioClipは参照一本のreadonly structです。元のIAudioVoic
 
 ```csharp
 (AudioDeviceLease lease, IAudioClip original, Exception? validationError) =
-    await audio.Commands.CreateClipWithLease(format, pcm);
+    await audio.Commands.CreateClipWithLeaseAsync(format, pcm);
 try
 {
     if (validationError is not null)
@@ -45,7 +45,7 @@ try
 }
 finally
 {
-    await new AudioClip(original).DestroyClip();
+    await new AudioClip(original).DestroyClipAsync();
     lease.Dispose(); // native解放に失敗した場合は返さず、両方を保持して再試行する。
 }
 

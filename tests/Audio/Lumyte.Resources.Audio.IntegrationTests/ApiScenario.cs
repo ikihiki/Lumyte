@@ -69,10 +69,10 @@ internal static class ApiScenario
         var manager = new ResourceManager("audio-api-generation", new UnusedSource(), [stage], memory, executor, stageRuntimes: [new(typeof(AudioDeviceSnapshot), runtime)]);
         try
         {
-            Task<ResourceReference<AudioDeviceSnapshot>> load = manager.AcquireAsync(new ResourceKey<AudioDeviceSnapshot>("generation")).AsTask();
+            Task<ResourceReference<AudioDeviceSnapshot>> load = manager.RetainAsync(new ResourceKey<AudioDeviceSnapshot>("generation")).AsTask();
             wait(load);
             ResourceReference<AudioDeviceSnapshot> reference = load.Result;
-            ResourceLease<AudioDeviceSnapshot> resource = reference.Acquire();
+            ResourceLease<AudioDeviceSnapshot> resource = reference.Pin();
             TestDevice old = factory.Current;
             AudioDeviceLease acquired = stage.Lease ?? throw new InvalidOperationException("The stage did not acquire a generation.");
             Require(acquired.IsUsable && resource.Value == acquired.State, "The selected runtime did not acquire the current generation.");
@@ -101,7 +101,7 @@ internal static class ApiScenario
         {
             try
             {
-                wait(invalidManager.AcquireAsync(new ResourceKey<AudioDeviceSnapshot>("wrong-runtime")).AsTask());
+                wait(invalidManager.RetainAsync(new ResourceKey<AudioDeviceSnapshot>("wrong-runtime")).AsTask());
                 throw new InvalidOperationException("A different runtime accepted the stage context.");
             }
             catch (InvalidOperationException error) when (error.Message == "Use the audio runtime selected for this stage.")
@@ -125,14 +125,9 @@ internal static class ApiScenario
             Task<AudioVoice> voice = clip.CreateVoiceAsync().AsTask();
             wait(voice);
             Require(factory.Current.LastVoiceBus == AudioBus.Effects, "An omitted bus did not select Effects.");
-            wait(voice.Result.Destroy().AsTask());
-            Task<AudioVoice> asynchronous = clip.CreateVoiceAsync().AsTask();
-            wait(asynchronous);
-            Require(factory.Current.LastVoiceBus == AudioBus.Effects, "The Async alias did not preserve the default Effects bus.");
-            wait(asynchronous.Result.Destroy().AsTask());
+            wait(voice.Result.DestroyAsync().AsTask());
             using var canceled = new CancellationTokenSource();
             canceled.Cancel();
-            ExpectCanceled(() => wait(clip.CreateVoiceAsync(canceled.Token).AsTask()));
             ExpectCanceled(() => wait(clip.CreateVoiceAsync(canceled.Token).AsTask()));
         }
         finally

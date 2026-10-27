@@ -18,6 +18,8 @@ RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や�
 
 このADRは置換元のAPI入口とReady時の復旧契約を変更する。配送、clip／voiceの所有権、起動・停止、世代失効とcleanupの判断は置換元を引き継ぐ。
 
+復旧開始のcommandもBeginRecoveryAsyncへ一本化し、Readyなら現在snapshot、それ以外は復旧を開始してnullを返す。旧void版と互換用のBeginRecoveryIfNeededは残さない。
+
 ### 公開API
 
 比較元はmainの`16d856a`。以下は変更対象の抜粋。
