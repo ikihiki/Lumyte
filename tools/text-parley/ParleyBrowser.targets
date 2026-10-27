@@ -1,0 +1,27 @@
+<Project>
+  <Import Project="EmscriptenPython.targets" />
+  <PropertyGroup>
+    <LumyteParleyWasmOutput Condition="'$(LumyteParleyWasmOutput)' == ''">$(_LumyteParleyRepositoryRoot)artifacts/text-parley/wasm</LumyteParleyWasmOutput>
+    <LumyteParleyWasmToolchain Condition="'$(LumyteParleyWasmToolchain)' == ''">nightly-2026-10-20</LumyteParleyWasmToolchain>
+    <LumyteParleyWasmPath Condition="'$(LumyteParleyWasmPath)' == ''">$(LumyteParleyWasmOutput)/liblumyte_text_parley.a</LumyteParleyWasmPath>
+    <LumyteBuildParleyWasm Condition="'$(LumyteBuildParleyWasm)' == ''">true</LumyteBuildParleyWasm>
+    <WasmBuildNative>true</WasmBuildNative>
+  </PropertyGroup>
+  <ItemGroup>
+    <NativeFileReference Include="$(LumyteParleyWasmPath)" />
+    <Content Include="$(LumyteParleyWasmOutput)/RUST-STANDARD-LIBRARY-NOTICES.html" Link="wwwroot/RUST-STANDARD-LIBRARY-NOTICES.html" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <Content Include="$(_LumyteParleyRepositoryRoot)native/lumyte_text_parley/THIRD-PARTY-NOTICES.md" Link="wwwroot/THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <Content Include="$(_LumyteParleyRepositoryRoot)src/Graphics/Lumyte.Graphics.Text/DistanceFields/THIRD-PARTY-NOTICES.md" Link="wwwroot/DISTANCE-FIELD-THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <!-- Keep .NET's post-link validator aligned with Rust's supported Wasm
+         features; emcc already enables these for the initial link/optimization. -->
+    <WasmOptConfigurationFlags Include="--enable-multivalue" />
+    <WasmOptConfigurationFlags Include="--enable-mutable-globals" />
+    <WasmOptConfigurationFlags Include="--enable-nontrapping-float-to-int" />
+    <WasmOptConfigurationFlags Include="--enable-reference-types" />
+    <WasmOptConfigurationFlags Include="--enable-sign-ext" />
+  </ItemGroup>
+  <Target Name="BuildLumyteParleyWasm" BeforeTargets="PrepareForBuild" DependsOnTargets="_SetupEmscripten" Condition="'$(LumyteBuildParleyWasm)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(_IsToolchainMissing)' == 'true'" Text="$(_ToolchainMissingErrorMessage)" />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Wasm --root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteParleyWasmOutput)')).&quot; --toolchain &quot;$(LumyteParleyWasmToolchain)&quot; --emsdk &quot;$([MSBuild]::EnsureTrailingSlash('$(EmscriptenSdkToolsPath)')).&quot; --cache &quot;$([MSBuild]::EnsureTrailingSlash('$(EmscriptenCacheSdkCacheDir)')).&quot; --node &quot;$(EmscriptenNodeToolsPath)bin/node$(_ExeExt)&quot; --python &quot;$(LumyteParleyPythonPath)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+  </Target>
+</Project>

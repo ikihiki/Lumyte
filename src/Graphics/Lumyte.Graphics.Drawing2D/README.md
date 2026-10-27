@@ -2,7 +2,7 @@
 
 通常のCanvas2DとRenderer2DはRenderGraph・ImageEffectsへ依存しません。
 塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
-この段階で利用できる命令は FillRect, FillRoundedRect, FillCircle です。
+利用できる命令は FillRect, FillRoundedRect, FillCircle, FillPath です。
 レイヤーと画像エフェクトは後続PRで別パッケージのDrawing2D.RenderGraphに追加します。
 
 ```csharp
@@ -34,15 +34,39 @@ targetViewは同一deviceの単一mip/layerのRgba8SrgbまたはRgba16Float atta
 PrepareAsyncはgraphを作らず、固定資源とbatchを準備します。Recordは一回だけ使い、GPU完了後に
 command buffer、準備ownerの順に解放します。
 
-3描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
+4描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
 CreateDefault()はdeviceやDIを使わず既定構成を作ります。UseGraphics2Dによる登録と後勝ち上書きも可能です。
 外部batchはRecordでupload・compute・render等の複数コマンドを発行し、内部同期を記録できます。
 DeclareResourcesでは外部共有texture・bufferのアクセスを宣言し、graph側のadapterが依存へ変換します。
 batch私有資源はbatchが所有・同期し、外部資源の入口・出口のstateと可視性を維持します。
 
-塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換を扱います。
-文字向け描画形式は後続PRで追加します。
-設計・APIは [GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md) を参照してください。
+塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換、compositeを扱います。
+`PaintGraph2D.Composite(source, backdrop, mode)`はCOLR v1の全28種類の演算を提供します。
+sourceとbackdropを同じsubpixel位置で評価して合成し、描画先attachmentの内容は読みません。
+色stopの補間とblendはlinear-lightのpremultiplied RGBAです。
+
+COLRの退化したgradientも表現できます。空のstop列は透明、1 stopは一定色です。
+3点linearの投影が退化する場合と、同一の2円radialは透明になります。
+2円radialの半径は符号付きfinite値を保持し、描画点では補間半径が正の解だけを使います。
+簡略形の単一中心radialのradiusは引き続き正数を要求します。
+Repeat/Reflectで2 stop以上のoffset spanが0なら透明です。
+開始角と終了角が同じsweepは、Padではその角の前後で端色を切り替え、Repeat/Reflectでは透明になります。
+`PaintGraph2D.DistanceField`はMSDF/MTSDFで任意のpaintをmaskします。
+sourceはsRGBでないRgba8UnormまたはRgba16Floatのatlasとし、0.5を輪郭、値の増加側を内側とします。
+DistanceRangeはsource texelで表す距離の総幅です。MSDFはRGB median、MTSDFは拡大時にRGB median、
+縮小時にalphaのtrue distanceも使います。sourceのalphaは通常の透明度ではありません。
+画像patternのsamplingはraw channel・linear filter・透明な領域外へ正規化されます。
+atlasをSampledへ可視化し、GPU完了まで保持する契約は通常の画像patternと同じです。
+FillPathはNonZero/EvenOddの複合輪郭を塗り、開いたcontourは塗り時に閉じます。
+文字描画には別パッケージの[Lumyte.Graphics.Text](../Lumyte.Graphics.Text/README.md)を使います。
+TextLayout2Dをcanvas.DrawTextで記録すると、文字輪郭と装飾をFillPathへ展開し、
+同じpaint・変換・clipを適用できます。COLR v1のTextPaintGeometry2Dは、そのpaint graphとboundsを
+FillRectへ展開して2Dバックエンドで直接評価します。カラーglyph用のbitmapやtexture uploadは不要です。
+MSDF/MTSDFを選ぶ場合はTextパッケージのDistanceFieldText2Dで通常輪郭のatlasを準備し、
+uploadを記録してからDrawで矩形へ展開します。混在するCOLR paintはvector graphを維持します。
+基本Drawing2Dへフォントライブラリの依存は加わりません。
+基本描画の設計は[GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)、
+COLRのcomposite・gradientと文字描画の追加APIは[GRAPHICS-0019](../../../docs/adr/graphics/GRAPHICS-0019-text-rendering.md)を参照してください。
 
 ## 外部の描画資源
 

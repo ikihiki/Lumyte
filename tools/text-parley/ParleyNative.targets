@@ -1,0 +1,19 @@
+<Project>
+  <Import Project="ParleyBuild.targets" />
+  <PropertyGroup>
+    <LumyteBuildParleyNative Condition="'$(LumyteBuildParleyNative)' == ''">true</LumyteBuildParleyNative>
+    <LumyteParleyNativeToolchain Condition="'$(LumyteParleyNativeToolchain)' == ''">1.99.1</LumyteParleyNativeToolchain>
+    <LumyteParleyNativeOutput Condition="'$(LumyteParleyNativeOutput)' == ''">$(_LumyteParleyRepositoryRoot)artifacts/text-parley/native</LumyteParleyNativeOutput>
+    <LumyteParleyNativePath Condition="'$(LumyteParleyNativePath)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">$(LumyteParleyNativeOutput)/lumyte_text_parley.dll</LumyteParleyNativePath>
+    <LumyteParleyNativePath Condition="'$(LumyteParleyNativePath)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">$(LumyteParleyNativeOutput)/liblumyte_text_parley.dylib</LumyteParleyNativePath>
+    <LumyteParleyNativePath Condition="'$(LumyteParleyNativePath)' == ''">$(LumyteParleyNativeOutput)/liblumyte_text_parley.so</LumyteParleyNativePath>
+    <LumyteParleyRustNoticesPath Condition="'$(LumyteParleyRustNoticesPath)' == ''">$(LumyteParleyNativeOutput)/RUST-STANDARD-LIBRARY-NOTICES.html</LumyteParleyRustNoticesPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != 'browser-wasm' and '$(LumyteParleyBrowser)' != 'true'">
+    <None Include="$(LumyteParleyNativePath)" Link="$([System.IO.Path]::GetFileName('$(LumyteParleyNativePath)'))" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(LumyteParleyRustNoticesPath)" Link="RUST-STANDARD-LIBRARY-NOTICES.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="BuildLumyteParleyNative" BeforeTargets="BeforeBuild" Condition="'$(LumyteBuildParleyNative)' == 'true' and '$(RuntimeIdentifier)' != 'browser-wasm' and '$(LumyteParleyBrowser)' != 'true' and '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Native --root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteParleyNativeOutput)')).&quot; --toolchain &quot;$(LumyteParleyNativeToolchain)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+  </Target>
+</Project>

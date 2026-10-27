@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Fallout.Build" Version="10.4.0" PrivateAssets="all" />
+    <!-- Keep patched cryptography packages while Fallout's transitive baseline is older. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" PrivateAssets="all" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.14" PrivateAssets="all" />
+    <EmbeddedResource Include="PythonRuntimes.json" LogicalName="Lumyte.Text.Parley.Build.PythonRuntimes.json" />
+    <EmbeddedResource Include="RustBootstrap.json" LogicalName="Lumyte.Text.Parley.Build.RustBootstrap.json" />
+  </ItemGroup>
+</Project>

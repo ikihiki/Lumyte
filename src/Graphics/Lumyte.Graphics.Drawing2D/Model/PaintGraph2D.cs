@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -71,9 +72,9 @@ public sealed class PaintGraph2D
 
     /// <summary>Creates a full two-circle COLRv1 radial gradient.</summary>
     /// <param name="c0">The finite first center.</param>
-    /// <param name="r0">The finite nonnegative first radius.</param>
+    /// <param name="r0">The finite signed first radius.</param>
     /// <param name="c1">The finite second center.</param>
-    /// <param name="r1">The finite nonnegative second radius.</param>
+    /// <param name="r1">The finite signed second radius.</param>
     /// <param name="stops">Nondecreasing finite color stops, copied in order.</param>
     /// <param name="extend">The extension rule.</param>
     /// <returns>The immutable paint graph.</returns>
@@ -81,8 +82,8 @@ public sealed class PaintGraph2D
     {
         ModelValidation2D.Vector(c0, nameof(c0));
         ModelValidation2D.Vector(c1, nameof(c1));
-        ModelValidation2D.Nonnegative(r0, nameof(r0));
-        ModelValidation2D.Nonnegative(r1, nameof(r1));
+        ModelValidation2D.Finite(r0, nameof(r0));
+        ModelValidation2D.Finite(r1, nameof(r1));
         ModelValidation2D.EnumValue(extend, nameof(extend));
         return new PaintGraph2D(new RadialPaintNode2D(c0, r0, c1, r1, SnapshotStops(stops), extend));
     }
@@ -137,6 +138,34 @@ public sealed class PaintGraph2D
         return new PaintGraph2D(new ImagePaintNode2D(pattern with { }));
     }
 
+    /// <summary>Masks paint with an MSDF or MTSDF atlas region, retaining sharp corners under magnification.</summary>
+    /// <param name="pattern">The borrowed linear RGBA atlas, integer source region and source-relative transform. Sampling is normalized to raw, linear-filtered channels with transparent extension.</param>
+    /// <param name="distanceRange">The positive finite total encoded range in source texels; 0.5 is the contour and values above 0.5 are inside.</param>
+    /// <param name="paint">The immutable paint in the same logical coordinates as the field.</param>
+    /// <param name="mode">RGB median for MSDF, with alpha true-distance minification fallback for MTSDF.</param>
+    /// <returns>The immutable masked paint graph, borrowing the atlas until GPU completion.</returns>
+    public static PaintGraph2D DistanceField(ImagePattern2D pattern, float distanceRange, PaintGraph2D paint, DistanceFieldMode2D mode = DistanceFieldMode2D.Msdf)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        ArgumentNullException.ThrowIfNull(paint);
+        ArgumentNullException.ThrowIfNull(pattern.View);
+        ModelValidation2D.Positive(distanceRange, nameof(distanceRange));
+        ModelValidation2D.EnumValue(mode, nameof(mode));
+        if (pattern.View.Info.Format is not TextureFormat.Rgba8Unorm and not TextureFormat.Rgba16Float)
+        {
+            throw new ArgumentException("Distance fields require linear Rgba8Unorm or Rgba16Float storage, without sRGB decoding.", nameof(pattern));
+        }
+
+        var normalized = (ImagePaintNode2D)ImagePattern(pattern with
+        {
+            Alpha = AlphaRepresentation2D.Premultiplied,
+            TileX = ImageTileMode2D.Decal,
+            TileY = ImageTileMode2D.Decal,
+            Filter = ImageFilter2D.Linear,
+        }).Root;
+        return Unary(new DistanceFieldPaintNode2D(normalized.Pattern, distanceRange, mode, paint.Root), paint);
+    }
+
     /// <summary>Multiplies the completed child graph's premultiplied RGBA once.</summary>
     /// <param name="opacity">The finite multiplier between zero and one.</param>
     /// <param name="child">The immutable child graph.</param>
@@ -146,6 +175,22 @@ public sealed class PaintGraph2D
         ModelValidation2D.Unit(opacity, nameof(opacity));
         ArgumentNullException.ThrowIfNull(child);
         return Unary(new OpacityPaintNode2D(opacity, child.Root), child);
+    }
+
+    /// <summary>Composites isolated source and backdrop subgraphs in linear-light premultiplied RGBA.</summary>
+    /// <param name="source">The immutable source paint.</param>
+    /// <param name="backdrop">The immutable backdrop paint; it does not sample the render target.</param>
+    /// <param name="mode">The COLR compositing operator.</param>
+    /// <returns>An immutable paint graph which preserves operand order and graph isolation.</returns>
+    public static PaintGraph2D Composite(PaintGraph2D source, PaintGraph2D backdrop, CompositeMode2D mode = CompositeMode2D.SourceOver)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(backdrop);
+        ModelValidation2D.EnumValue(mode, nameof(mode));
+        return new PaintGraph2D(
+            new CompositePaintNode2D(source.Root, backdrop.Root, mode),
+            Math.Max(source._depth, backdrop._depth) + 1,
+            source._expandedNodes + backdrop._expandedNodes + 1);
     }
 
     /// <summary>Clips paint to an immutable path in the same local coordinate space.</summary>
@@ -176,11 +221,6 @@ public sealed class PaintGraph2D
 
     private static IReadOnlyList<ColorStop2D> SnapshotStops(ReadOnlySpan<ColorStop2D> stops)
     {
-        if (stops.IsEmpty)
-        {
-            throw new ArgumentException("A gradient requires at least one color stop.", nameof(stops));
-        }
-
         float previous = float.NegativeInfinity;
         foreach (ColorStop2D stop in stops)
         {

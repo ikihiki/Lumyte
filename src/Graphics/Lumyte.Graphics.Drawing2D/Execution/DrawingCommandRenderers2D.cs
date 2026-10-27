@@ -7,10 +7,12 @@ public sealed class DrawingCommandRenderers2D
     /// <param name="fillRect">The FillRect renderer, borrowed by this table.</param>
     /// <param name="fillRoundedRect">The FillRoundedRect renderer, borrowed by this table.</param>
     /// <param name="fillCircle">The FillCircle renderer, borrowed by this table.</param>
+    /// <param name="fillPath">The path fill renderer, or null to use the stateless default.</param>
     public DrawingCommandRenderers2D(
         IFillRectRenderer2D fillRect,
         IFillRoundedRectRenderer2D fillRoundedRect,
-        IFillCircleRenderer2D fillCircle)
+        IFillCircleRenderer2D fillCircle,
+        IFillPathRenderer2D? fillPath = null)
     {
         ArgumentNullException.ThrowIfNull(fillRect);
         FillRect = fillRect;
@@ -18,6 +20,7 @@ public sealed class DrawingCommandRenderers2D
         FillRoundedRect = fillRoundedRect;
         ArgumentNullException.ThrowIfNull(fillCircle);
         FillCircle = fillCircle;
+        FillPath = fillPath ?? new DefaultFillPathRenderer2D();
     }
 
     /// <summary>Gets the configured FillRect renderer.</summary>
@@ -29,7 +32,10 @@ public sealed class DrawingCommandRenderers2D
     /// <summary>Gets the configured FillCircle renderer.</summary>
     public IFillCircleRenderer2D FillCircle { get; }
 
-    /// <summary>Creates a new table and 3 stateless defaults without DI or GPU allocations.</summary>
+    /// <summary>Gets the configured path fill renderer.</summary>
+    public IFillPathRenderer2D FillPath { get; }
+
+    /// <summary>Creates a new table and stateless defaults without DI or GPU allocations.</summary>
     /// <returns>The new rendering strategy table.</returns>
     public static DrawingCommandRenderers2D CreateDefault() => new(
         new DefaultFillRectRenderer2D(),

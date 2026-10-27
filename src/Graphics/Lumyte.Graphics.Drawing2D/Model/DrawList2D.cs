@@ -7,6 +7,7 @@ public sealed class DrawList2D
     private readonly FillRectCommand2D[] _fillRect;
     private readonly FillRoundedRectCommand2D[] _fillRoundedRect;
     private readonly FillCircleCommand2D[] _fillCircle;
+    private readonly FillPathCommand2D[] _fillPath;
 
     internal DrawList2D(IEnumerable<DrawingCommand2D> commands)
     {
@@ -16,6 +17,7 @@ public sealed class DrawList2D
         var fillRect = new List<FillRectCommand2D>();
         var fillRoundedRect = new List<FillRoundedRectCommand2D>();
         var fillCircle = new List<FillCircleCommand2D>();
+        var fillPath = new List<FillPathCommand2D>();
         for (int i = 0; i < ordered.Length; i++)
         {
             switch (ordered[i])
@@ -32,12 +34,17 @@ public sealed class DrawList2D
                     _typeOffsets[i] = fillCircle.Count;
                     fillCircle.Add(command);
                     break;
+                case FillPathCommand2D command:
+                    _typeOffsets[i] = fillPath.Count;
+                    fillPath.Add(command);
+                    break;
             }
         }
 
         _fillRect = fillRect.ToArray();
         _fillRoundedRect = fillRoundedRect.ToArray();
         _fillCircle = fillCircle.ToArray();
+        _fillPath = fillPath.ToArray();
     }
 
     internal IReadOnlyList<DrawingCommand2D> Commands { get; }
@@ -75,6 +82,11 @@ public sealed class DrawList2D
         if (typeof(TCommand) == typeof(FillCircleCommand2D))
         {
             return ((TCommand[])(object)_fillCircle).AsMemory(_typeOffsets[orderStart], count);
+        }
+
+        if (typeof(TCommand) == typeof(FillPathCommand2D))
+        {
+            return ((TCommand[])(object)_fillPath).AsMemory(_typeOffsets[orderStart], count);
         }
 
         throw new ArgumentException("The requested type is not a drawing command renderer input.");

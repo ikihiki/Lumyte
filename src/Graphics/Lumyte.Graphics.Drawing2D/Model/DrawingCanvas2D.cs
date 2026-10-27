@@ -163,6 +163,25 @@ public abstract class DrawingCanvas2D
         _commands.Add(new FillCircleCommand2D(center, radius, paint, _state));
     }
 
+    /// <summary>Records a path fill using a solid color; open contours are implicitly closed.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="rule">The contour fill rule.</param>
+    public void FillPath(Path2D path, Color2D color, FillRule2D rule = FillRule2D.NonZero) => FillPath(path, PaintGraph2D.Solid(color), rule);
+
+    /// <summary>Records a path fill using an immutable paint graph; open contours are implicitly closed.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    /// <param name="rule">The contour fill rule.</param>
+    public void FillPath(Path2D path, PaintGraph2D paint, FillRule2D rule = FillRule2D.NonZero)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(paint);
+        ModelValidation2D.EnumValue(rule, nameof(rule));
+        _commands.Add(new FillPathCommand2D(path, paint, rule, _state));
+    }
+
     /// <summary>Discards all commands and state from the active recording.</summary>
     public void Cancel()
     {

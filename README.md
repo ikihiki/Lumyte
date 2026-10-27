@@ -27,6 +27,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [文字描画・MSDF/MTSDF](src/Graphics/Lumyte.Graphics.Text/README.md)／[Parleyによる文字組み](src/Graphics/Lumyte.Graphics.Text.Parley/README.md)／[文字描画の設計](docs/adr/graphics/GRAPHICS-0019-text-rendering.md)
 - [2D・3D共通画像エフェクトの設計](docs/adr/graphics/GRAPHICS-0017-image-effects.md)／[利用方法](src/Graphics/Lumyte.Graphics.ImageEffects/README.md)
 - [Depth／Stencil attachment](docs/adr/graphics/GRAPHICS-0010-depth-stencil-attachments.md)
 - [Indexed drawとIndirect実行](docs/adr/graphics/GRAPHICS-0011-indexed-and-indirect-commands.md)

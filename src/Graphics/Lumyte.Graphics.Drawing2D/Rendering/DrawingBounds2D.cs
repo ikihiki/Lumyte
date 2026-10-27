@@ -18,6 +18,7 @@ internal static class DrawingBounds2D
                 FillRectCommand2D c => c.Rect,
                 FillRoundedRectCommand2D c => c.Rect,
                 FillCircleCommand2D c => new(c.Center.X - c.Radius, c.Center.Y - c.Radius, c.Radius * 2, c.Radius * 2),
+                FillPathCommand2D c => PathBounds(c.Path),
                 _ => null,
             };
             if (bounds is not null)

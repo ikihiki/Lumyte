@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lumyte WebAssembly text</title>
+    <style>
+        body { margin: 24px; font-family: sans-serif; color: #25324a; background: #e4eaf2; }
+        canvas { display: block; max-width: 100%; height: auto; border-radius: 12px; }
+        pre { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>WebAssembly / WebGPU 文字描画</h1>
+    <canvas id="drawing" width="900" height="1280" aria-label="多言語と装飾、距離場、ベクターカラーフォントと合成の描画例"></canvas>
+    <pre id="report">同梱フォントを読み込み、GPUで描画しています。</pre>
+    <script type="module" src="main.js"></script>
+</body>
+</html>

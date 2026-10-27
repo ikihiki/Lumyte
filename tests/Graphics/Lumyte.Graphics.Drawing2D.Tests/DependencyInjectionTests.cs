@@ -13,7 +13,7 @@ public sealed class DependencyInjectionTests
     {
         var services = new ServiceCollection();
         Assert.Same(services, services.UseGraphics2D());
-        Assert.Equal(4, services.Count);
+        Assert.Equal(5, services.Count);
         Assert.All(services, descriptor => Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime));
 
         using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -27,6 +27,8 @@ public sealed class DependencyInjectionTests
         Assert.IsType<DefaultFillRectRenderer2D>(renderers.FillRect);
         Assert.IsType<DefaultFillRoundedRectRenderer2D>(renderers.FillRoundedRect);
         Assert.IsType<DefaultFillCircleRenderer2D>(renderers.FillCircle);
+        Assert.IsType<DefaultFillPathRenderer2D>(renderers.FillPath);
+        Assert.Same(scope.ServiceProvider.GetRequiredService<IFillPathRenderer2D>(), renderers.FillPath);
         Assert.Same(scope.ServiceProvider.GetRequiredService<IFillRectRenderer2D>(), renderers.FillRect);
     }
 
@@ -106,6 +108,7 @@ public sealed class DependencyInjectionTests
         Assert.NotSame(firstCommands.FillRect, secondCommands.FillRect);
         Assert.NotSame(firstCommands.FillRoundedRect, secondCommands.FillRoundedRect);
         Assert.NotSame(firstCommands.FillCircle, secondCommands.FillCircle);
+        Assert.NotSame(firstCommands.FillPath, secondCommands.FillPath);
     }
 
     /// <summary>Checks null collections fail before any registration work begins.</summary>

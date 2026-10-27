@@ -123,10 +123,26 @@ run_windows = "powershell.exe -NoProfile -File tools/setup/verify.ps1"
 description = "Install wasm-tools from the pinned .NET workload set"
 run = "dotnet workload install wasm-tools --version {{ vars.dotnet_workload_version }}"
 
+[tasks.setup-text-parley]
+description = "Prepare the Parley native toolchain through dotnet and Fallout"
+run = "dotnet run --project tools/text-parley/Lumyte.Text.Parley.Build -- --target SetupNative --root ."
+
+[tasks.setup-text-parley-wasm]
+description = "Install Rust sources for the .NET-compatible Parley WebAssembly build"
+run = "dotnet run --project tools/text-parley/Lumyte.Text.Parley.Build -- --target SetupWasm --root ."
+
+[tasks.test-text-parley]
+description = "Build and test the Parley and csbindgen text backend"
+run = "dotnet test tests/Graphics/Lumyte.Graphics.Text.Parley.Tests -c Release"
+
 [tasks.test-wasm]
 description = "Publish and verify the .NET browser sample with real WebGPU"
 depends = ["setup-wasm"]
 run = [
   "dotnet publish samples/Lumyte.Graphics.Browser.Sample -c Release",
   "node tools/graphics/verify-browser.mjs",
+  "dotnet publish samples/Lumyte.Graphics.Text.Browser.Sample -c Release",
+  "node samples/Lumyte.Graphics.Text.Browser.Sample/verify-browser.mjs",
+  "dotnet publish samples/Lumyte.Graphics.Text.Parley.Browser.Sample -c Release",
+  "node samples/Lumyte.Graphics.Text.Parley.Browser.Sample/verify-browser.mjs",
 ]

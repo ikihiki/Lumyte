@@ -31,15 +31,17 @@ public sealed class ExtensionDispatchTests
         canvas.FillRect(rect with { X = 1 }, paint);
         canvas.FillRoundedRect(rect, 2, paint);
         canvas.FillCircle(new Vector2(4), 4, paint);
+        canvas.FillPath(path, color);
+        canvas.FillPath(path, paint, FillRule2D.EvenOdd);
         canvas.FillRect(rect with { X = 2 }, color);
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new RenderTarget2D { View = targetView });
         Type[] expected =
         [
-            typeof(FillRectCommand2D), typeof(FillRectCommand2D), typeof(FillRoundedRectCommand2D), typeof(FillCircleCommand2D), typeof(FillRectCommand2D),
+            typeof(FillRectCommand2D), typeof(FillRectCommand2D), typeof(FillRoundedRectCommand2D), typeof(FillCircleCommand2D), typeof(FillPathCommand2D), typeof(FillPathCommand2D), typeof(FillRectCommand2D),
         ];
         Assert.Equal(expected, strategies.Commands.Select(command => command.GetType()));
-        Assert.Equal(4, strategies.Batches.Count);
+        Assert.Equal(5, strategies.Batches.Count);
         Assert.All(strategies.Batches, batch => Assert.Equal(0, batch.DisposeCount));
         using var commands = new DispatchCommands();
         prepared.Record(commands);

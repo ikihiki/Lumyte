@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.4" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Text.SixLabors/Lumyte.Graphics.Text.SixLabors.csproj" />
+    <EmbeddedResource Include="Fonts/DejaVuSans.ttf" LogicalName="Lumyte.Text.Sample.DejaVuSans.ttf" />
+    <EmbeddedResource Include="Fonts/NotoSansJP.subset.ttf" LogicalName="Lumyte.Text.Sample.NotoSansJP.ttf" />
+    <EmbeddedResource Include="Fonts/ColorFontTest.ttf" LogicalName="Lumyte.Text.Sample.ColorFontTest.ttf" />
+    <Content Include="Fonts/LICENSE.txt" Link="wwwroot/fonts-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Fonts/NotoSansJP-OFL.txt" Link="wwwroot/NotoSansJP-OFL.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Fonts/ColorFontTest-LICENSE.txt" Link="wwwroot/ColorFontTest-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../src/Graphics/Lumyte.Graphics.Browser/wwwroot/lumyte-graphics.js" Link="wwwroot/lumyte-graphics.js" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Import Project="../../tools/text-parley/EmscriptenPython.targets" />
+</Project>
