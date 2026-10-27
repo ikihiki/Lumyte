@@ -60,11 +60,8 @@ internal sealed class ResourceStreamSignal : IValueTaskSource
 
     internal void Signal()
     {
-        if (!Volatile.Read(ref _waiting))
-        {
-            return;
-        }
-
+        // Always synchronize with registration. An unlocked early return can observe
+        // the old waiting flag while the consumer still observes the old block count.
         lock (_gate)
         {
             if (_waiting)

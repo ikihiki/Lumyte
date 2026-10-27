@@ -8,6 +8,8 @@ dotnet run --project samples/Lumyte.Animation.StateMachine.Sample
 
 この例ではマーカーが 0.8 秒で発生し、1 秒の Update で完了遷移を観測する。`events[0].OccurredAt` と `transitions[0].ObservedAt` の差を取得でき、配送側で内部の時計基準を推定する必要はない。
 
+`bool transitioned = machine.Update(...)` の戻り値は、今回自己遷移を含む遷移を実行したかを表す。false でも現在状態の値やマーカーは出力されるため、適用処理をこの bool だけで省略しない。単独の `AnimationPlayback.Update` の bool は今回の Once 再生の完了を表す。
+
 通常の Builder も開始済みの実行者を直接返す。
 
 ```csharp

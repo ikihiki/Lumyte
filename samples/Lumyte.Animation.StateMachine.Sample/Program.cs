@@ -29,8 +29,8 @@ output.Clear();
 events.Clear();
 transitions.Clear();
 clock.Advance(Duration.FromSeconds(1));
-bool changed = machine.Update(new MotionInput(Enabled: true), output, events, transitions);
-if (!changed || machine.CurrentState != Motion.Idle || events.Count != 1 || transitions.Count != 1 || !output.TryGet(amount, out float value))
+bool transitioned = machine.Update(new MotionInput(Enabled: true), output, events, transitions);
+if (!transitioned || machine.CurrentState != Motion.Idle || events.Count != 1 || transitions.Count != 1 || !output.TryGet(amount, out float value))
 {
     throw new InvalidOperationException("The finite action must complete and return to idle.");
 }

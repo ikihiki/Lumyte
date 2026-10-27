@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 namespace Lumyte.Animation;
@@ -34,9 +35,9 @@ public sealed class AnimationOutput
     /// <summary>Retrieves a computed channel value; returns false when no contribution exists.</summary>
     /// <typeparam name="T">The value type.</typeparam>
     /// <param name="channel">The channel.</param>
-    /// <param name="value">The value.</param>
-    /// <returns>The operation result.</returns>
-    public bool TryGet<T>(AnimationChannel<T> channel, out T value)
+    /// <param name="value">The channel value when present; otherwise, the default value of <typeparamref name="T"/>.</param>
+    /// <returns>True when a contribution exists, including a null value when allowed by <typeparamref name="T"/>; otherwise, false.</returns>
+    public bool TryGet<T>(AnimationChannel<T> channel, [MaybeNullWhen(false)] out T value)
     {
         ArgumentNullException.ThrowIfNull(channel);
         if (_slots.TryGetValue(channel, out ISlot? entry) && entry is Slot<T> { HasValue: true } slot)
@@ -45,7 +46,7 @@ public sealed class AnimationOutput
             return true;
         }
 
-        value = default!;
+        value = default;
         return false;
     }
 

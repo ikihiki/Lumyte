@@ -21,14 +21,19 @@ playback.Play();
 clock.Advance(Duration.FromSeconds(0.5));
 output.Clear();
 events.Clear();
-playback.Update(output, events);
-output.TryGet(channel, out var value); // 0.5。
+bool completed = playback.Update(output, events); // 今回完了した場合だけ true。この例では false。
+if (output.TryGet(channel, out var value))
+{
+    Console.WriteLine(value); // 0.5。completed が false でも値を取得できます。
+}
 // value の適用と events の配送は消費側で行います。
 ```
 
 実環境の時計には SystemMonotonicClock、シミュレーションやテストには ManualClock を使えます。Pause／Resume／Seek／速度変更は位置を時計上の基準に固定し、適用やイベント配送を呼び出しません。
 
 Output とイベントの格納先は再利用し、更新前に消費側がクリアします。同じ Output へ複数の再生結果を集める場合は後の更新を優先します。各時計・再生者・出力は同時更新しないでください。
+
+`AnimationPlayback.Update` の戻り値は「今回 Once 再生が完了したか」、`AnimationStateMachine.Update` は「今回遷移したか」を表します。自己遷移も true です。成功・失敗や出力の有無を表す値ではなく、false の更新でも値・イベントを取得できます。`TryGet` は寄与がなければ false と `default(T)` を返すため、戻り値を確認して値を使用してください。null を許すチャンネルでは成功時にも null を取得できます。[結果と Context の契約](../../../docs/adr/animation/ANIMATION-0006-api-result-contracts.md)も参照してください。
 
 - [設計 ADR](../../../docs/adr/animation/ANIMATION-0001-animation-system.md)
 - [実行可能なサンプル](../../../samples/Lumyte.Animation.Sample/README.md)

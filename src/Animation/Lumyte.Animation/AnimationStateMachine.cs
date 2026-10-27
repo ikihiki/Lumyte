@@ -231,7 +231,7 @@ public sealed class AnimationStateMachine<TState, TContext>
     /// <param name="output">The output.</param>
     /// <param name="events">The events.</param>
     /// <param name="transitions">The transitions.</param>
-    /// <returns>The operation result.</returns>
+    /// <returns>True only when this call takes a transition, including a self-transition; otherwise, false. Values and events may be appended even when false is returned.</returns>
     public bool Update(TContext context, AnimationOutput output, ICollection<AnimationStateEvent<TState>> events, ICollection<AnimationStateTransition<TState>> transitions)
     {
         EnsureIdle();
