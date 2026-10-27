@@ -26,15 +26,15 @@ public sealed class ResourceEnvironmentTests
         Assert.Equal(1, second.Subscriptions);
         environment.Declared.Clear();
 
-        using ResourceReference<Value> reference = await manager.AcquireAsync(new ResourceKey<Value>("asset"));
-        using ResourceLease<Value> oldLease = reference.Acquire();
+        using ResourceReference<Value> reference = await manager.RetainAsync(new ResourceKey<Value>("asset"));
+        using ResourceLease<Value> oldLease = reference.Pin();
         Value old = oldLease.Value;
         Provider changed = invalidateFirst ? first : second;
         changed.InvalidateAndAdvance();
         Assert.False(oldLease.IsUsable);
         Assert.False(reference.IsAvailable);
         Assert.Equal(ResourceReloadStatus.Published, (await manager.RebuildRuntimeAsync([changed.Id])).Status);
-        using ResourceLease<Value> currentLease = reference.Acquire();
+        using ResourceLease<Value> currentLease = reference.Pin();
         Value current = currentLease.Value;
         Assert.NotSame(old, current);
         Assert.Equal(invalidateFirst ? 2UL : 1UL, current.FirstVersion);
@@ -64,8 +64,8 @@ public sealed class ResourceEnvironmentTests
         await using ResourceManager manager = new("frozen-executor", new UnusedSource(), [stage], memory, environment);
         environment.Executor = new RejectedExecutor();
 
-        using ResourceReference<Value> reference = await manager.AcquireAsync(new ResourceKey<Value>("asset"));
-        using ResourceLease<Value> lease = reference.Acquire();
+        using ResourceReference<Value> reference = await manager.RetainAsync(new ResourceKey<Value>("asset"));
+        using ResourceLease<Value> lease = reference.Pin();
         Value value = lease.Value;
         lease.Dispose();
         reference.Dispose();

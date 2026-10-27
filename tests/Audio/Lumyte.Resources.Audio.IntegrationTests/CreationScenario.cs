@@ -43,7 +43,7 @@ internal static class CreationScenario
             device.FailNextClipRelease();
             try
             {
-                Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("untracked")).AsTask();
+                Task<ResourceReference<AudioClip>> load = manager.RetainAsync(new ResourceKey<AudioClip>("untracked")).AsTask();
                 wait(load);
                 using ResourceReference<AudioClip> unexpected = load.GetAwaiter().GetResult();
                 throw new InvalidOperationException("A clip without its registered runtime dependency was published.");
@@ -88,10 +88,10 @@ internal static class CreationScenario
         var manager = new ResourceManager("failed-audio-validation", new UnusedSource(), [new UntrackedClipStage(runtime)], memory, executor, runtimeDependencies: [runtime]);
         try
         {
-            Task<ResourceReference<AudioClip>> oldLoad = manager.AcquireAsync(new ResourceKey<AudioClip>("before-validation-failure")).AsTask();
+            Task<ResourceReference<AudioClip>> oldLoad = manager.RetainAsync(new ResourceKey<AudioClip>("before-validation-failure")).AsTask();
             wait(oldLoad);
             using ResourceReference<AudioClip> oldReference = oldLoad.GetAwaiter().GetResult();
-            using ResourceLease<AudioClip> oldLease = oldReference.Acquire();
+            using ResourceLease<AudioClip> oldLease = oldReference.Pin();
             AudioClip oldClip = oldLease.Value;
             AudioVoice oldVoice = VoiceScenario.CreateVoice(oldClip, wait);
             int returned = device.ReturnedClips;
@@ -101,7 +101,7 @@ internal static class CreationScenario
                 device.FailNextClipRelease();
                 try
                 {
-                    Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("validation-failure")).AsTask();
+                    Task<ResourceReference<AudioClip>> load = manager.RetainAsync(new ResourceKey<AudioClip>("validation-failure")).AsTask();
                     wait(load);
                     using ResourceReference<AudioClip> unexpected = load.GetAwaiter().GetResult();
                     throw new InvalidOperationException("A clip whose device validation threw was published.");

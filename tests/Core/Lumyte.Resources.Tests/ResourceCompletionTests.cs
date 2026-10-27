@@ -51,7 +51,7 @@ public sealed class ResourceCompletionTests
         var manager = new ResourceManager("completion", new Source(), [stage], memory, new InlineRuntime());
         managerGate = Gate(manager);
         Task<ResourceReference<Value>>? loading = null;
-        context.Run(() => loading = manager.AcquireAsync(new ResourceKey<Value>("asset", "root")).AsTask());
+        context.Run(() => loading = manager.RetainAsync(new ResourceKey<Value>("asset", "root")).AsTask());
         Assert.False(loading!.IsCompleted);
         CompleteWithoutContext(() => ready.SetResult());
         context.Until(() => loading.IsCompleted);
@@ -89,7 +89,7 @@ public sealed class ResourceCompletionTests
         var manager = new ResourceManager("completion", source, [stage], memory, new InlineRuntime());
         managerGate = Gate(manager);
         Task<ResourceReference<Value>>? loading = null;
-        context.Run(() => loading = manager.AcquireAsync(new ResourceKey<Value>("asset")).AsTask());
+        context.Run(() => loading = manager.RetainAsync(new ResourceKey<Value>("asset")).AsTask());
         Assert.False(loading!.IsCompleted);
         CompleteWithoutContext(() => source.Ready.SetResult(new Snapshot()));
         context.Until(() => loading.IsCompleted);

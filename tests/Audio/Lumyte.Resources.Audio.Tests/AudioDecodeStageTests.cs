@@ -29,10 +29,10 @@ public sealed class AudioDecodeStageTests
             for (int i = 0; i < lengths.Length; i++)
             {
                 source.Length = lengths[i];
-                Task<ResourceReference<AudioPcmData>> load = manager.AcquireAsync(new ResourceKey<AudioPcmData>($"wave/{i}")).AsTask();
+                Task<ResourceReference<AudioPcmData>> load = manager.RetainAsync(new ResourceKey<AudioPcmData>($"wave/{i}")).AsTask();
                 Wait(execution, load);
                 using ResourceReference<AudioPcmData> reference = await load;
-                using ResourceLease<AudioPcmData> lease = reference.Acquire();
+                using ResourceLease<AudioPcmData> lease = reference.Pin();
                 Assert.Equal(new float[] { -1, 0, 0.5f, 0 }, lease.Value.Samples.ToArray());
                 Assert.InRange(source.InitialCapacity, 0, 1024 * 1024);
                 if (lengths[i] == wave.Length)

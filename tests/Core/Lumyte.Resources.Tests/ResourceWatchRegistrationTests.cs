@@ -45,7 +45,7 @@ public sealed class ResourceWatchRegistrationTests
                 published.TrySetResult();
             }
         };
-        using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await manager.RetainAsync(_key);
         await firstCheck.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal([_known], changes.Targets.Resources);
         Assert.Empty(initialTargets);
@@ -54,7 +54,7 @@ public sealed class ResourceWatchRegistrationTests
         state.Revision = "two";
         changes.Notify(new(_known, null));
         await published.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using (ResourceLease<Value> value = reference.Acquire())
+        using (ResourceLease<Value> value = reference.Pin())
         {
             Assert.Equal("two", value.Value.Revision);
         }
@@ -87,7 +87,7 @@ public sealed class ResourceWatchRegistrationTests
             reloadOptions: new() { DebounceDelay = TimeSpan.Zero, MaximumRetryCount = 0 });
         var changes = (BlockingChangeSource)source.Changes!;
         await changes.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Parent> parent = await manager.AcquireAsync(new ResourceKey<Parent>("parent"));
+        using ResourceReference<Parent> parent = await manager.RetainAsync(new ResourceKey<Parent>("parent"));
         await manager.TrimAsync();
         Assert.Contains("release one", state.Events);
         Assert.Equal([_known], changes.Targets!.Resources);
@@ -102,7 +102,7 @@ public sealed class ResourceWatchRegistrationTests
         state.Revision = "two";
         changes.Notify(new(_known, null));
         await published.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using (ResourceLease<Parent> current = parent.Acquire())
+        using (ResourceLease<Parent> current = parent.Pin())
         {
             Assert.Equal("two", current.Value.Revision);
         }
@@ -124,8 +124,8 @@ public sealed class ResourceWatchRegistrationTests
         await using ResourceManager manager = new("immutable", source, [new ValueStage(state)], memory, execution.Resources);
         Assert.False(manager.IsHotReloadEnabled);
         Assert.Empty(state.ChangeSources);
-        using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
-        using ResourceLease<Value> value = reference.Acquire();
+        using ResourceReference<Value> reference = await manager.RetainAsync(_key);
+        using ResourceLease<Value> value = reference.Pin();
         Assert.Equal("one", value.Value.Revision);
     }
 
@@ -146,7 +146,7 @@ public sealed class ResourceWatchRegistrationTests
             execution.Resources,
             reloadOptions: new() { Enabled = false });
         Assert.False(manager.IsHotReloadEnabled);
-        using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await manager.RetainAsync(_key);
         reference.Dispose();
         await manager.DisposeAsync();
         BlockingChangeSource changes = Assert.Single(state.ChangeSources);
@@ -179,8 +179,8 @@ public sealed class ResourceWatchRegistrationTests
         Assert.Equal(0, changes.DisposeCount);
         Assert.False(monitor.HotReloadCompletion.IsCompleted);
 
-        using (ResourceReference<Value> reference = await manager.AcquireAsync(_key))
-        using (ResourceLease<Value> lease = reference.Acquire())
+        using (ResourceReference<Value> reference = await manager.RetainAsync(_key))
+        using (ResourceLease<Value> lease = reference.Pin())
         {
             Assert.Equal("one", lease.Value.Revision);
         }
@@ -299,7 +299,7 @@ public sealed class ResourceWatchRegistrationTests
         await using ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
         TaskCompletionSource initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
         manager.Reloaded += (_, _) => initial.TrySetResult();
-        using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await manager.RetainAsync(_key);
         await initial.Task.WaitAsync(TimeSpan.FromSeconds(10));
         state.RevisionReads.Clear();
 

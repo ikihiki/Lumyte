@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Options;
 
 namespace Lumyte.Settings;
 
@@ -127,6 +128,11 @@ internal sealed class SettingsDocument : ISettingsDocument, IDisposable
         try
         {
             defaults = _registrations.Select(registration => registration.Resolve(_services)).Select(slot => (Slot: slot, Prepared: slot.PrepareDefaults())).ToArray();
+        }
+        catch (OptionsValidationException error)
+        {
+            operation.RecordException(error);
+            return new(SettingsSaveStatus.ValidationFailed, [.. error.Failures]);
         }
         catch (Exception error) when (error is JsonException or ArgumentException or NotSupportedException)
         {

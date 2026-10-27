@@ -18,8 +18,8 @@ public sealed class FileResourceChangeSourceTests
         await using Lumyte.Memory.MemoryManager memory = new();
         await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new("files", source, [new TextStage()], memory, execution.Resources);
-        using ResourceReference<TextValue> reference = await manager.AcquireAsync(new ResourceKey<TextValue>("asset.txt"));
-        using ResourceLease<TextValue> original = reference.Acquire();
+        using ResourceReference<TextValue> reference = await manager.RetainAsync(new ResourceKey<TextValue>("asset.txt"));
+        using ResourceLease<TextValue> original = reference.Pin();
         TaskCompletionSource published = new(TaskCreationOptions.RunContinuationsAsynchronously);
         manager.Reloaded += (_, args) =>
         {
@@ -30,7 +30,7 @@ public sealed class FileResourceChangeSourceTests
         };
         await File.WriteAllTextAsync(path, "after");
         await published.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceLease<TextValue> current = reference.Acquire();
+        using ResourceLease<TextValue> current = reference.Pin();
         Assert.Equal("after", current.Value.Text);
         Assert.Equal("before", original.Value.Text);
         Assert.DoesNotContain(typeof(ResourceManager).GetConstructors().SelectMany(constructor => constructor.GetParameters()), parameter => parameter.Name == "changeSource");

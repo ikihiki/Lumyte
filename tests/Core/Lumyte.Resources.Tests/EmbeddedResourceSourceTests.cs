@@ -147,7 +147,7 @@ public sealed class EmbeddedResourceSourceTests
         await using ResourceManager manager = provider.GetRequiredService<ResourceManager>();
         Assert.False(manager.IsHotReloadEnabled);
         var key = new ResourceKey<TextValue>(_alias);
-        using ResourceReference<TextValue> owner = await manager.AcquireAsync(key);
+        using ResourceReference<TextValue> owner = await manager.RetainAsync(key);
         using ResourceLease<TextValue> first = await manager.AcquireLeaseForTestAsync(key);
         Assert.Equal("0123456789", first.Value.Text.TrimEnd('\r', '\n'));
         Assert.Equal(ResourceReloadStatus.Unchanged, (await manager.ReloadAllForTestAsync()).Status);

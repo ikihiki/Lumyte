@@ -60,6 +60,7 @@ var result = await settings.SaveAsync(edit, cancellationToken);
 取得する値は常に内部状態から独立したコピーです。リセットと PostConfigure 後にも参照を分離し、構成コールバックが渡したリストを後から変更しても確定値は変化しません。`IOptions<T>` の初期値は保存済み設定を含みますが、標準のキャッシュ契約により保存後は更新されません。実行中の確定値は `IEditableOptions<T>` を使用します。
 
 セクションの破損はそのモジュールの `ResetAsync(revision)` で復元できます。文書全体の破損では個別保存・個別リセットを拒否します。明示的な `ISettingsDocument.ResetAsync()` は登録済みの既定値で文書を再作成し、未登録セクションも削除します。UI はこの影響を説明してください。読み込み失敗時に自動で元ファイルを上書きしません。
+初期化後に検証条件が変わり既定値が不正になった場合、個別・文書全体のリセットはともに `ValidationFailed` と検証エラーを返し、保存内容・現在値・Revisionを保持します。
 
 Browser など非同期ストアは `ISettingsStore` を実装し、構成登録前に読み込みます。
 

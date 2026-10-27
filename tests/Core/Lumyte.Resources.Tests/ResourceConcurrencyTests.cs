@@ -133,8 +133,8 @@ public sealed class ResourceConcurrencyTests
 
             return new($"second:{source.Revision}");
         };
-        using ResourceReference<TestValue> first = await fixture.Manager.AcquireAsync(Key("first"));
-        using ResourceReference<TestValue> second = await fixture.Manager.AcquireAsync(Key("second"));
+        using ResourceReference<TestValue> first = await fixture.Manager.RetainAsync(Key("first"));
+        using ResourceReference<TestValue> second = await fixture.Manager.RetainAsync(Key("second"));
         fixture.Plan.SourceRevision = 2;
 
         ResourceReloadResult result = await fixture.Manager.ReloadForTestAsync([new("asset")]);
@@ -191,8 +191,8 @@ public sealed class ResourceConcurrencyTests
             return new(input.Revision);
         };
         fixture.Plan.Builds["right"] = (_, _) => ValueTask.FromResult(new TestValue("right"));
-        using ResourceReference<TestValue> parent = await fixture.Manager.AcquireAsync(Key("parent"));
-        using ResourceLease<TestValue> old = parent.Acquire();
+        using ResourceReference<TestValue> parent = await fixture.Manager.RetainAsync(Key("parent"));
+        using ResourceLease<TestValue> old = parent.Pin();
         Assert.Equal(1, await fixture.Manager.TrimAsync());
 
         fixture.Runtime.Set(new(2, true, 0));
@@ -202,7 +202,7 @@ public sealed class ResourceConcurrencyTests
         using ResourceLease<TestValue> replacedInput = await fixture.Manager.AcquireLeaseForTestAsync(Key("left"));
         Assert.Equal("2", replacedInput.Value.Label);
         Assert.Equal("parent:1", old.Value.Label);
-        using ResourceLease<TestValue> current = parent.Acquire();
+        using ResourceLease<TestValue> current = parent.Pin();
         Assert.Equal("parent:2", current.Value.Label);
     }
 
@@ -246,13 +246,13 @@ public sealed class ResourceConcurrencyTests
                 await finishCleanup.Task;
             }
         };
-        using ResourceReference<TestValue> parent = await fixture.Manager.AcquireAsync(Key("parent"));
+        using ResourceReference<TestValue> parent = await fixture.Manager.RetainAsync(Key("parent"));
         Assert.Equal(1, await fixture.Manager.TrimAsync());
         fixture.Runtime.Set(new(2, true, 0));
         Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.RebuildRuntimeAsync(["runtime"])).Status);
 
         failInput = true;
-        Task<ResourceReference<TestValue>> failed = fixture.Manager.AcquireAsync(Key("input")).AsTask();
+        Task<ResourceReference<TestValue>> failed = fixture.Manager.RetainAsync(Key("input")).AsTask();
         try
         {
             await cleanupStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -396,7 +396,7 @@ public sealed class ResourceConcurrencyTests
                         usable = manager!.TryAcquireLeaseForTest(owner!.Handle, out current);
                         break;
                     case "frame":
-                        usable = frame!.TryAcquire(owner!.Handle, out current);
+                        usable = frame!.TryPin(owner!.Handle, out current);
                         break;
                 }
 
@@ -408,7 +408,7 @@ public sealed class ResourceConcurrencyTests
             return ValueTask.FromResult(new TestValue("value"));
         };
         manager = fixture.Manager;
-        using (owner = await manager.AcquireAsync(Key("value")))
+        using (owner = await manager.RetainAsync(Key("value")))
         using (old = await manager.AcquireLeaseForTestAsync(Key("value")))
         using (frame = manager.CaptureSnapshot())
         {
@@ -456,11 +456,11 @@ public sealed class ResourceConcurrencyTests
         await using Fixture fixture = new(null, false);
         fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
         ResourceKey<TestValue> key = Key("value");
-        using ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(key);
+        using ResourceReference<TestValue> owner = await fixture.Manager.RetainAsync(key);
         Action acquire = operation switch
         {
-            "lease" => () => owner.Acquire().Dispose(),
-            "reference" => () => fixture.Manager.AcquireAsync(key).GetAwaiter().GetResult().Dispose(),
+            "lease" => () => owner.Pin().Dispose(),
+            "reference" => () => fixture.Manager.RetainAsync(key).GetAwaiter().GetResult().Dispose(),
             _ => () => fixture.Manager.CaptureSnapshot().Dispose(),
         };
         for (int i = 0; i < 10000; i++)
@@ -490,9 +490,9 @@ public sealed class ResourceConcurrencyTests
             context.TrackRuntimeDependency("runtime", fixture.Runtime.Snapshot.Version);
             return ValueTask.FromResult(new TestValue("value"));
         };
-        using ResourceReference<TestValue> owner = await fixture.Manager.AcquireAsync(Key("value"));
+        using ResourceReference<TestValue> owner = await fixture.Manager.RetainAsync(Key("value"));
         ResourceHandle<TestValue> handle = owner.Handle;
-        using ResourceLease<TestValue> lease = owner.Acquire();
+        using ResourceLease<TestValue> lease = owner.Pin();
         using ResourceSnapshot scope = fixture.Manager.CaptureSnapshot();
         fixture.Runtime.Set(new(2, false, 1));
         bool available = false;
@@ -502,7 +502,7 @@ public sealed class ResourceConcurrencyTests
             for (int i = 0; i < 10000; i++)
             {
                 available |= lease.IsUsable | owner.IsAvailable;
-                available |= scope.TryAcquire(handle, out ResourceLease<TestValue>? current);
+                available |= scope.TryPin(handle, out ResourceLease<TestValue>? current);
                 current?.Dispose();
             }
 

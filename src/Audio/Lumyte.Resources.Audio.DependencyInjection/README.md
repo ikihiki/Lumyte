@@ -30,8 +30,8 @@ execution.PrepareOnCurrentHost(placement, cpuMode, concurrency, new ExecutionOpt
 await execution.StartAsync();
 
 var resources = provider.GetRequiredService<ResourceManager>();
-using var reference = await resources.AcquireAsync(new ResourceKey<AudioClip>("sounds/theme.wav"));
-ResourceLease<AudioClip> lease = reference.Acquire();
+using var reference = await resources.RetainAsync(new ResourceKey<AudioClip>("sounds/theme.wav"));
+ResourceLease<AudioClip> lease = reference.Pin();
 AudioVoice voice = await lease.Value.CreateVoice(AudioBus.Effects);
 await voice.Play();
 // 再生中もleaseを保持する。終了時はvoiceの解放完了を先に待つ。
