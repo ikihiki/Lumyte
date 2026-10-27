@@ -108,6 +108,38 @@ public sealed class SettingsTests
         Assert.Equal(0, store.Writes);
     }
 
+    /// <summary>Both reset APIs report changed validation requirements without writing or replacing current values.</summary>
+    /// <returns>The asynchronous test operation.</returns>
+    [Fact]
+    public async Task DocumentResetReportsValidationFailuresWithoutMutationAsync()
+    {
+        bool allowed = true;
+        var store = new MemoryStore();
+        using ServiceProvider provider = await CreateProviderAsync(store, services => services.AddOptions<SampleSettings>()
+            .Validate(_ => allowed, "Defaults are unavailable.")
+            .Validate(_ => allowed, "Retry after configuration changes."));
+        IEditableOptions<SampleSettings> settings = provider.GetRequiredService<IEditableOptions<SampleSettings>>();
+        SettingsEdit<SampleSettings> edit = settings.BeginEdit();
+        edit.Value.PrimaryRange.Minimum = 0.25f;
+        Assert.Equal(SettingsSaveStatus.Saved, (await settings.SaveAsync(edit)).Status);
+        byte[] saved = store.Data!.ToArray();
+        allowed = false;
+
+        SettingsSaveResult<SampleSettings> sectionResult = await settings.ResetAsync(settings.Revision);
+        SettingsDocumentSaveResult documentResult = await provider.GetRequiredService<ISettingsDocument>().ResetAsync();
+
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, sectionResult.Status);
+        Assert.Equal(SettingsSaveStatus.ValidationFailed, documentResult.Status);
+        Assert.Equal<string>(sectionResult.Errors, documentResult.Errors);
+        Assert.Equal<string>(["Defaults are unavailable.", "Retry after configuration changes."], documentResult.Errors);
+        Assert.Equal(1, store.Writes);
+        Assert.Equal(saved, store.Data);
+        Assert.Equal(1, settings.Revision);
+        Assert.Equal(0.25f, settings.Current.Value.PrimaryRange.Minimum);
+        allowed = true;
+        Assert.Equal(SettingsSaveStatus.Saved, (await provider.GetRequiredService<ISettingsDocument>().ResetAsync()).Status);
+    }
+
     /// <summary>Only stale edits in the same module conflict; other modules and unknown sections survive.</summary>
     /// <returns>The asynchronous test operation.</returns>
     [Fact]

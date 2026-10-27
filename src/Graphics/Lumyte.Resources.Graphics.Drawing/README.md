@@ -22,9 +22,9 @@ services.AddResources(builder => builder.UseSource<AppSource>()
 services.AddResourceGraphics();
 
 // device と Execution の起動後。取得時に upload が完了する。
-using ResourceReference<GraphicsResource<ModelMesh>> reference = await manager.AcquireAsync(gpuKey);
+using ResourceReference<GraphicsResource<ModelMesh>> reference = await manager.RetainAsync(gpuKey);
 using var graph = new RenderGraph(device);
-ModelMesh mesh = graph.ImportResources(manager).Acquire(reference).Value;
+ModelMesh mesh = graph.ImportResources(manager).Pin(reference).Value;
 ModelMeshGraphResources buffers = mesh.Import(graph,
     new(PipelineStage.VertexShader, ResourceAccess.ShaderRead),
     new(PipelineStage.IndexInput, ResourceAccess.IndexRead));

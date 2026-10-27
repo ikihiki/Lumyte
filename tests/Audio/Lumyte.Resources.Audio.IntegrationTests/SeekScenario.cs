@@ -7,10 +7,10 @@ internal static class SeekScenario
 {
     internal static void Run(AudioModule audio, ResourceManager manager, Action<Task> wait)
     {
-        Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("seek")).AsTask();
+        Task<ResourceReference<AudioClip>> load = manager.RetainAsync(new ResourceKey<AudioClip>("seek")).AsTask();
         wait(load);
         using ResourceReference<AudioClip> reference = load.GetAwaiter().GetResult();
-        using ResourceLease<AudioClip> lease = reference.Acquire();
+        using ResourceLease<AudioClip> lease = reference.Pin();
         AudioClip clip = lease.Value;
         long quarter = clip.FrameCount / 4;
         long half = clip.FrameCount / 2;

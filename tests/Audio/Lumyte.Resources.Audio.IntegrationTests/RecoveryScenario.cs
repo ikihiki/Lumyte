@@ -8,10 +8,10 @@ internal static class RecoveryScenario
 {
     internal static void Run(AudioModule audio, ExecutionRuntime execution, ResourceManager manager, TestFactory factory, Action<Task> wait)
     {
-        Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("recovery")).AsTask();
+        Task<ResourceReference<AudioClip>> load = manager.RetainAsync(new ResourceKey<AudioClip>("recovery")).AsTask();
         wait(load);
         using ResourceReference<AudioClip> reference = load.GetAwaiter().GetResult();
-        using ResourceLease<AudioClip> old = reference.Acquire();
+        using ResourceLease<AudioClip> old = reference.Pin();
         AudioClip oldClip = old.Value;
         AudioVoice oldVoice = VoiceScenario.CreateVoice(oldClip, wait);
         bool oldVoiceDestroyed = false;
@@ -47,7 +47,7 @@ internal static class RecoveryScenario
             Task<ResourceReloadResult> rebuild = manager.RebuildRuntimeAsync(["Audio"]).AsTask();
             wait(rebuild);
             Require(rebuild.GetAwaiter().GetResult().Status == ResourceReloadStatus.Published, "Audio recovery did not publish rebuilt resources.");
-            using ResourceLease<AudioClip> current = reference.Acquire();
+            using ResourceLease<AudioClip> current = reference.Pin();
             Require(!oldClip.Equals(current.Value), "Rebuilt clip reused the lost device's native child.");
             AudioVoice currentVoice = VoiceScenario.CreateVoice(current.Value, wait);
             try
@@ -135,7 +135,7 @@ internal static class RecoveryScenario
         int created = device.CreatedClips;
         int returned = device.ReturnedClips;
         device.LoseDuringNextClip();
-        Task<ResourceReference<AudioClip>> build = manager.AcquireAsync(new ResourceKey<AudioClip>("loss-during-build")).AsTask();
+        Task<ResourceReference<AudioClip>> build = manager.RetainAsync(new ResourceKey<AudioClip>("loss-during-build")).AsTask();
         try
         {
             wait(build);
