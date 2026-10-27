@@ -148,12 +148,12 @@ public sealed class ProcessingFailureTests
         device.Enqueue(new TouchData(new TouchContactId(1), TouchPhase.Began, Vector2.Zero, null));
         input.Update();
         var failing = new ProbeProcessor { FailProcessOnce = true };
-        source.SetProcessorFactory(_ => [failing]);
+        source.QueueProcessorFactory(_ => [failing]);
         device.Enqueue(new TouchData(new TouchContactId(1), TouchPhase.Ended, Vector2.Zero, null));
         device.Enqueue(new TouchData(new TouchContactId(2), TouchPhase.Began, Vector2.One, null));
         Assert.Throws<AggregateException>(input.Update);
         var replacement = new ProbeProcessor();
-        source.SetProcessorFactory(_ => [replacement]);
+        source.QueueProcessorFactory(_ => [replacement]);
 
         input.Update();
 
@@ -176,7 +176,7 @@ public sealed class ProcessingFailureTests
         using var input = new InputSystem([source]);
         input.Update();
         old.FailResetOnce = true;
-        source.SetProcessorFactory(_ => []);
+        source.QueueProcessorFactory(_ => []);
         device.Enqueue(new TouchData(new TouchContactId(1), TouchPhase.Began, Vector2.Zero, null));
 
         Assert.Throws<AggregateException>(input.Update);

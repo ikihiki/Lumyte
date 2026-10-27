@@ -20,7 +20,7 @@ public sealed class ProcessingOptimizationTests
         device.Enqueue(new ControllerStickData(ControllerStick.Left, new Vector2(-0.4f, 0.7f)));
         IReadOnlyList<InputData> second = corrected.DrainEvents();
         InputData[] secondSnapshot = second.ToArray();
-        corrected.SetProcessors([new AnalogCorrection(new Vector2(0.1f, 0.1f))]);
+        corrected.QueueProcessors([new AnalogCorrection(new Vector2(0.1f, 0.1f))]);
         device.Enqueue(new ControllerStickData(ControllerStick.Left, Vector2.One));
 
         IReadOnlyList<InputData> changed = corrected.DrainEvents();
@@ -113,7 +113,7 @@ public sealed class ProcessingOptimizationTests
         InputData[] snapshot = recovered.ToArray();
         device.Enqueue(new ControllerStickData(ControllerStick.Left, Vector2.Zero));
         corrected.DrainEvents();
-        corrected.SetProcessors([]);
+        corrected.QueueProcessors([]);
         corrected.DrainEvents();
 
         Assert.Equal(snapshot, recovered);
