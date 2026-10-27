@@ -93,8 +93,8 @@ public sealed class SettingsIntegrationTests
                 var actions = new ActionSystem(InputSettingsConverter.BuildProfile(options.Current.Value));
                 var source = new CorrectingInputSource(new EmptySource(), _ => [], () => TimeSpan.Zero);
                 var coordinator = new InputSettingsCoordinator(provider.GetRequiredService<IEditableOptions<InputProcessingSettings>>(), options, source, actions);
-                coordinator.ApplyCommittedSettings();
-                actions.ActivateContext("game");
+                coordinator.QueueCommittedSettings();
+                actions.QueueContextActivation("game");
                 actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
                 RebindSession session = actions.BeginRebind("jump-key", new RebindOptions(TimeSpan.FromSeconds(1)));
                 actions.Advance(new[] { new InputRecord(new InputDeviceId(1), 1, TimeSpan.Zero, new KeyData(Key.J, true, false)) }, TimeSpan.Zero);
@@ -130,8 +130,8 @@ public sealed class SettingsIntegrationTests
                 var actions = new ActionSystem(InputSettingsConverter.BuildProfile(options.Current.Value));
                 var source = new CorrectingInputSource(new EmptySource(), _ => [], () => TimeSpan.Zero);
                 var coordinator = new InputSettingsCoordinator(provider.GetRequiredService<IEditableOptions<InputProcessingSettings>>(), options, source, actions);
-                coordinator.ApplyCommittedSettings();
-                actions.ActivateContext("game");
+                coordinator.QueueCommittedSettings();
+                actions.QueueContextActivation("game");
                 actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
                 RebindSession stale = actions.BeginRebind("jump-key", new RebindOptions(TimeSpan.FromSeconds(1)));
                 actions.Advance(new[] { new InputRecord(new InputDeviceId(1), 1, TimeSpan.Zero, new KeyData(Key.J, true, false)) }, TimeSpan.Zero);
@@ -142,7 +142,7 @@ public sealed class SettingsIntegrationTests
                 Assert.Equal(SettingsSaveStatus.Saved, (await options.SaveAsync(edit)).Status);
                 long revision = options.Revision;
                 string savedDocument = File.ReadAllText(path);
-                coordinator.ApplyCommittedSettings();
+                coordinator.QueueCommittedSettings();
                 Assert.Equal(1, actions.ExportProfile().Actions[0].Sensitivity);
                 if (applyBeforeSave)
                 {
@@ -211,7 +211,7 @@ public sealed class SettingsIntegrationTests
             Assert.Equal("common", current.Contexts[1].ParentId);
             ActionProfile profile = InputSettingsConverter.BuildProfile(current);
             var system = new ActionSystem(profile);
-            system.ActivateContext("game");
+            system.QueueContextActivation("game");
             system.Advance(new InputRecord[] { new(new InputDeviceId(1), 1, TimeSpan.Zero, new KeyData(Key.Space, true, false)) }, TimeSpan.Zero);
             Assert.Equal(1, system.GetState("jump").Value.X);
         }
@@ -233,15 +233,15 @@ public sealed class SettingsIntegrationTests
             var actions = new ActionSystem(InputSettingsConverter.BuildProfile(options.Current.Value));
             var correction = new CorrectingInputSource(new EmptySource(), _ => [], () => TimeSpan.Zero);
             var coordinator = new InputSettingsCoordinator(provider.GetRequiredService<IEditableOptions<InputProcessingSettings>>(), options, correction, actions);
-            coordinator.ApplyCommittedSettings();
-            actions.ActivateContext("game");
+            coordinator.QueueCommittedSettings();
+            actions.QueueContextActivation("game");
             actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
             RebindSession session = actions.BeginRebind("jump-key", new RebindOptions(TimeSpan.FromSeconds(5)));
             actions.Advance(new[] { new InputRecord(new InputDeviceId(1), 1, TimeSpan.Zero, new KeyData(Key.J, true, false)) }, TimeSpan.Zero);
             SettingsSaveResult<InputActionSettings> result = await coordinator.SaveRebindAsync(session, RebindConflictPolicy.Reject);
             Assert.Equal(SettingsSaveStatus.Saved, result.Status);
             Assert.Equal(InputControl.ForKey(Key.Space), actions.ExportProfile().Bindings[0].Control);
-            coordinator.ApplyCommittedSettings();
+            coordinator.QueueCommittedSettings();
             Assert.Equal(InputControl.ForKey(Key.Space), actions.ExportProfile().Bindings[0].Control);
             actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
             Assert.Equal(InputControl.ForKey(Key.J), actions.ExportProfile().Bindings[0].Control);

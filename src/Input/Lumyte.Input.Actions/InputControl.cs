@@ -11,11 +11,6 @@ public readonly record struct InputControl(InputControlKind Kind, int Index)
     /// <returns>The result of the operation.</returns>
     public static InputControl ForKey(Key key) => new(InputControlKind.Key, (int)key);
 
-    /// <summary>Identifies a controller button.</summary>
-    /// <param name = "button">The button value.</param>
-    /// <returns>The result of the operation.</returns>
-    public static InputControl ForButton(ControllerButton button) => ForControllerButton(button);
-
     /// <summary>Identifies a mouse button.</summary>
     /// <param name="button">The mouse button.</param>
     /// <returns>The corresponding mouse control.</returns>

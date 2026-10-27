@@ -11,7 +11,7 @@ contexts, recognizer state and buffered operations are excluded.
 
 `InputSettingsCoordinator.QueueCommittedSettings` polls revisions on the input
 thread and queues replacements before InputSystem.Update/ActionSystem.Advance.
-`ApplyCommittedSettings` remains an equivalent name; neither method advances the systems.
+`QueueCommittedSettings` remains an equivalent name; neither method advances the systems.
 `SaveRebindAsync` persists a frozen candidate without calling Confirm. Only a
 successful committed revision is applied on the next tick. Failure leaves the
 live profile unchanged. Preserve and display SettingsSaveResult diagnostics.

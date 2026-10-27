@@ -26,9 +26,9 @@ public sealed class ContextTreeTests
         Assert.Equal(middle.Identifier, leaf.Build().ParentId);
         Assert.Equal("@context/0/0/0", leaf.Identifier);
         var system = new ActionSystem(profile);
-        system.SetValueProcessors(leaf, jump, []);
-        system.SetRecognizers(leaf, []);
-        system.ActivateContext(leaf);
+        system.QueueValueProcessors(leaf, jump, []);
+        system.QueueRecognizers(leaf, []);
+        system.QueueContextActivation(leaf);
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.Equal(1, system.GetState(leaf, jump).Value.X);
         Assert.Equal(1, system.GetState(jump).Value.X);
@@ -38,7 +38,7 @@ public sealed class ContextTreeTests
         system.Advance(new InputRecord[] { Record(2, Key.J, true) }, TimeSpan.Zero);
         Assert.Equal(InputControl.ForKey(Key.J), session.Candidate);
         session.Cancel();
-        system.DeactivateContext(leaf);
+        system.QueueContextDeactivation(leaf);
         system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
         Assert.Equal(Vector2.Zero, system.GetState(leaf, jump).Value);
     }
@@ -55,7 +55,7 @@ public sealed class ContextTreeTests
         Assert.Equal(first.Contexts.Select(context => context.Id), second.Contexts.Select(context => context.Id));
         ActionProfile restored = InputSettingsConverter.BuildProfile(InputSettingsConverter.ToSettings(first));
         var system = new ActionSystem(restored);
-        system.ActivateContext(child);
+        system.QueueContextActivation(child);
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.Equal(1, system.GetState(child, jump).Value.X);
         Assert.Equal(root.Identifier, restored.Contexts[1].ParentId);
@@ -90,7 +90,7 @@ public sealed class ContextTreeTests
         Assert.Equal(parent.Identifier, profile.Contexts[1].ParentId);
         Assert.Equal(child.Identifier, profile.Bindings[0].ContextId);
         var system = new ActionSystem(profile);
-        system.ActivateContext(child);
+        system.QueueContextActivation(child);
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.True(system.Buffer.TryConsume(recognition, TimeSpan.Zero, out _));
     }
@@ -133,7 +133,7 @@ public sealed class ContextTreeTests
         var system = new ActionSystem(Profile()[root].Build());
         jump.Id = "renamed";
         child.Id = "other";
-        system.ActivateContext(child);
+        system.QueueContextActivation(child);
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.Equal(1, system.GetState(child, jump).Value.X);
         Assert.Equal("jump", jump.Identifier);

@@ -34,19 +34,14 @@ public sealed class CorrectingInputSource(IInputSource inner, Func<InputDeviceDe
     {
     }
 
-    /// <summary>Queues replacement pipelines at the next device acquisition boundary after retained batches complete.</summary>
-    /// <param name="factory">Creates the replacement processors; preparation completes before queuing.</param>
-    /// <remarks>The new factory also applies to subsequently registered devices.</remarks>
-    public void QueueProcessorFactory(Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory) => SetProcessorFactory(factory);
-
     /// <summary>Prepares and schedules per-device pipelines at the next acquisition boundary after retained batches complete.</summary>
     /// <param name = "factory">The factory value.</param>
-    public void SetProcessorFactory(Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory)
+    public void QueueProcessorFactory(Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory)
     {
         (CorrectedInputDevice Device, IDeviceDataProcessor[] Processors)[] prepared = _devices.Values.Select(device => (Device: device, Processors: factory(device.Descriptor).ToArray())).ToArray();
         foreach ((CorrectedInputDevice Device, IDeviceDataProcessor[] Processors) item in prepared)
         {
-            item.Device.SetProcessors(item.Processors);
+            item.Device.QueueProcessors(item.Processors);
         }
 
         _factory = factory;

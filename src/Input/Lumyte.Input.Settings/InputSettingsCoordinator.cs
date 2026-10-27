@@ -26,13 +26,9 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
     private long _processingRevision = -1;
     private long _actionRevision = -1;
 
-    /// <summary>Reads committed revisions and queues changes before the next InputSystem.Update and ActionSystem.Advance.</summary>
-    /// <remarks>Call on the input owning thread. This method does not advance either system.</remarks>
-    public void QueueCommittedSettings() => ApplyCommittedSettings();
-
     /// <summary>Schedules changed committed settings on the input owning thread.</summary>
     /// <remarks>Equivalent to QueueCommittedSettings; changes are observed after the subsequent input and action updates.</remarks>
-    public void ApplyCommittedSettings()
+    public void QueueCommittedSettings()
     {
         if (Environment.CurrentManagedThreadId != _thread)
         {
@@ -42,10 +38,10 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
         if (_processingRevision != _processing.Revision)
         {
             SettingsSnapshot<InputProcessingSettings> snapshot = _processing.Current;
-            _source.SetProcessorFactory(InputSettingsConverter.BuildCorrections(snapshot.Value, _selectProfile));
+            _source.QueueProcessorFactory(InputSettingsConverter.BuildCorrections(snapshot.Value, _selectProfile));
             float radius = snapshot.Value.TouchRadius;
             float swipe = snapshot.Value.SwipeDistance;
-            _virtualSource?.SetGeneratorFactory(descriptor => descriptor.Kind == InputDeviceKind.Touch ? new TouchControllerGenerator(radius, swipe) : null);
+            _virtualSource?.QueueGeneratorFactory(descriptor => descriptor.Kind == InputDeviceKind.Touch ? new TouchControllerGenerator(radius, swipe) : null);
             _processingRevision = snapshot.Revision;
         }
 
@@ -53,8 +49,8 @@ public sealed class InputSettingsCoordinator(IEditableOptions<InputProcessingSet
         {
             SettingsSnapshot<InputActionSettings> snapshot = _actions.Current;
             ActionProfile profile = InputSettingsConverter.BuildProfile(snapshot.Value);
-            _system.ApplyProfile(profile);
-            _system.SetBufferOptions(new InputBufferOptions(TimeSpan.FromSeconds(snapshot.Value.BufferLifetimeSeconds), snapshot.Value.BufferMaxEntries));
+            _system.QueueProfile(profile);
+            _system.QueueBufferOptions(new InputBufferOptions(TimeSpan.FromSeconds(snapshot.Value.BufferLifetimeSeconds), snapshot.Value.BufferMaxEntries));
             _actionProfile = profile;
             _actionRevision = snapshot.Revision;
         }

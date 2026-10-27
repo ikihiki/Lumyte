@@ -66,8 +66,8 @@ internal static class Program
         var records = new List<InputRecord>();
         input.Recorded += records.Add;
         actions.Recognized += operation => Console.WriteLine($"recognized: {operation.RecognitionId}");
-        coordinator.ApplyCommittedSettings();
-        actions.ActivateContext(game);
+        coordinator.QueueCommittedSettings();
+        actions.QueueContextActivation(game);
         Tick();
         RebindSession capture = actions.BeginRebind(gameBinding, new RebindOptions(TimeSpan.FromSeconds(5)));
         backend.Send(new KeyData(Key.J, true, false));
@@ -80,7 +80,7 @@ internal static class Program
         // Blocking is confined to this console demo; a UI awaits saving and applies on its input thread.
         SettingsSaveResult<InputActionSettings> saved = coordinator.SaveRebindAsync(capture, RebindConflictPolicy.Allow).GetAwaiter().GetResult();
         Console.WriteLine($"save: {saved.Status}, file: {path}");
-        coordinator.ApplyCommittedSettings();
+        coordinator.QueueCommittedSettings();
         Tick();
         backend.Send(new KeyData(Key.J, false, false));
         Tick();

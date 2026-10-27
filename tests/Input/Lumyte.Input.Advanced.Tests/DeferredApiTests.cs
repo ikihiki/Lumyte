@@ -4,31 +4,20 @@ using Xunit;
 
 namespace Lumyte.Input.Advanced.Tests;
 
-/// <summary>Verifies explicit and compatibility names preserve the action update boundary.</summary>
+/// <summary>Verifies queued changes preserve the action update boundary.</summary>
 public sealed class DeferredApiTests
 {
     /// <summary>Checks queued settings remain invisible until the next action update.</summary>
-    /// <param name="explicitQueue">Whether to use the explicit Queue API.</param>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ProfileAndBufferChangesCommitOnAdvance(bool explicitQueue)
+    [Fact]
+    public void ProfileAndBufferChangesCommitOnAdvance()
     {
         var original = new ActionProfile([], [], [], []);
         ActionProfile replacement = original with { Actions = [new ActionDefinition("jump", ActionValueKind.Button)] };
         using var actions = new ActionSystem(original);
         ActionInputBuffer oldBuffer = actions.Buffer;
         var options = new InputBufferOptions(TimeSpan.FromSeconds(1), 2);
-        if (explicitQueue)
-        {
-            actions.QueueProfile(replacement);
-            actions.QueueBufferOptions(options);
-        }
-        else
-        {
-            actions.ApplyProfile(replacement);
-            actions.SetBufferOptions(options);
-        }
+        actions.QueueProfile(replacement);
+        actions.QueueBufferOptions(options);
 
         Assert.Same(original, actions.ExportProfile());
         Assert.Same(oldBuffer, actions.Buffer);

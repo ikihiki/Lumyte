@@ -26,13 +26,9 @@ public sealed class CorrectedInputDevice(IInputDevice inner, IEnumerable<IDevice
     /// <summary>Gets descriptor.</summary>
     public InputDeviceDescriptor Descriptor => _inner.Descriptor;
 
-    /// <summary>Queues a replacement pipeline at the next acquisition boundary after any retained batch completes.</summary>
-    /// <param name="processors">The replacement processors, copied before queuing.</param>
-    public void QueueProcessors(IEnumerable<IDeviceDataProcessor> processors) => SetProcessors(processors);
-
     /// <summary>Schedules a replacement pipeline after any retained batch completes.</summary>
     /// <param name = "processors">The processors value.</param>
-    public void SetProcessors(IEnumerable<IDeviceDataProcessor> processors) => _pending = processors.ToArray();
+    public void QueueProcessors(IEnumerable<IDeviceDataProcessor> processors) => _pending = processors.ToArray();
 
     /// <summary>Returns and removes the prepared input batch.</summary>
     /// <returns>The result of the operation.</returns>
