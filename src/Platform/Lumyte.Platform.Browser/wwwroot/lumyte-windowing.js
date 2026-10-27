@@ -93,6 +93,7 @@ export function drain(handle) {
 export function show(handle, visible) {
     handle.visible = visible;
     handle.canvas.style.display = visible ? "block" : "none";
+    if (visible && !handle.preserveFocus) activate(handle);
     handle.capture();
 }
 

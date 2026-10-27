@@ -106,7 +106,7 @@ internal static class Program
                     voice.AddSetGainTo(batch, 0.25f);
                     voice.AddPlayTo(batch);
                     voice.AddStopTo(batch);
-                    if (!runtime.TrySubmit(batch, out CommandRun? run) || run is null)
+                    if (runtime.Submit(batch, out CommandRun? run) != CommandEnqueueStatus.Accepted || run is null)
                     {
                         throw new InvalidOperationException("Audio batch was rejected.");
                     }

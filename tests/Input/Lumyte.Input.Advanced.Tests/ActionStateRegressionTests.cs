@@ -13,11 +13,11 @@ public sealed class ActionStateRegressionTests
     public void ReselectionUsesChangesObservedWhileDeviceWasDeselected()
     {
         ActionSystem actions = CreateMovement();
-        actions.SetDevices(new[] { new InputDeviceId(1) });
+        actions.QueueDevices(new[] { new InputDeviceId(1) });
         actions.Advance(new[] { Stick(1, 0, Vector2.UnitX), KeyRecord(2, 0, Key.Space, true) }, At(0));
-        actions.SetDevices(new[] { new InputDeviceId(2) });
+        actions.QueueDevices(new[] { new InputDeviceId(2) });
         actions.Advance(new[] { Stick(3, 1, Vector2.Zero), KeyRecord(4, 1, Key.Space, false) }, At(1));
-        actions.SetDevices(new[] { new InputDeviceId(1) });
+        actions.QueueDevices(new[] { new InputDeviceId(1) });
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(2));
         Assert.Equal(Vector2.Zero, actions.GetState("move").Value);
         Assert.Equal(Vector2.Zero, actions.GetState("jump").Value);
@@ -31,12 +31,12 @@ public sealed class ActionStateRegressionTests
     public void SelectionUsesCurrentAxesAndSuppressesButtonsPressedWhileDeselected()
     {
         ActionSystem actions = CreateMovement();
-        actions.SetDevices(new[] { new InputDeviceId(2) });
+        actions.QueueDevices(new[] { new InputDeviceId(2) });
         actions.Advance(new[] { Stick(1, 0, Vector2.UnitX), KeyRecord(2, 0, Key.Space, true) }, At(0));
         Assert.Equal(Vector2.Zero, actions.GetState("move").Value);
         Assert.Equal(Vector2.Zero, actions.GetState("jump").Value);
 
-        actions.SetDevices(new[] { new InputDeviceId(1) });
+        actions.QueueDevices(new[] { new InputDeviceId(1) });
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(1));
         Assert.Equal(Vector2.UnitX, actions.GetState("move").Value);
         Assert.Equal(Vector2.Zero, actions.GetState("jump").Value);
@@ -49,11 +49,11 @@ public sealed class ActionStateRegressionTests
     public void DisconnectedDeselectedDeviceCannotRestoreCachedInput()
     {
         ActionSystem actions = CreateMovement();
-        actions.SetDevices(new[] { new InputDeviceId(1) });
+        actions.QueueDevices(new[] { new InputDeviceId(1) });
         actions.Advance(new[] { Stick(1, 0, Vector2.UnitX) }, At(0));
-        actions.SetDevices(new[] { new InputDeviceId(2) });
+        actions.QueueDevices(new[] { new InputDeviceId(2) });
         actions.Advance(new[] { Disconnect(2, 1, 1) }, At(1));
-        actions.SetDevices(new[] { new InputDeviceId(1) });
+        actions.QueueDevices(new[] { new InputDeviceId(1) });
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(2));
         Assert.Equal(Vector2.Zero, actions.GetState("move").Value);
     }
@@ -83,7 +83,7 @@ public sealed class ActionStateRegressionTests
             [new ActionBinding("a", "a", "game", InputControl.ForKey(Key.A), Vector2.UnitX), new ActionBinding("b", "b", "game", InputControl.ForKey(Key.B), Vector2.UnitX)],
             [new InputContext("game")],
             [new RecognitionDefinition("hold-a", "game", RecognitionKind.Hold, ["a"], At(50)), new RecognitionDefinition("hold-b", "game", RecognitionKind.Hold, ["b"], At(50))]));
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { KeyRecord(1, 0, Key.A, true), KeyRecord(2, 0, Key.B, true, 2) }, At(0));
         actions.Advance(new[] { Disconnect(3, 10, 1) }, At(10));
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(60));
@@ -102,8 +102,8 @@ public sealed class ActionStateRegressionTests
         ActionSystem actions = CreateTrigger(0.4f);
         var processor = new CountingProcessor();
         var recognizer = new DelayedRecognizer();
-        actions.SetValueProcessors("game", "fire", new[] { processor });
-        actions.SetRecognizers("game", new[] { recognizer });
+        actions.QueueValueProcessors("game", "fire", new[] { processor });
+        actions.QueueRecognizers("game", new[] { recognizer });
         actions.Advance(new[] { Trigger(1, 0, 0.6f), Trigger(2, 1, 0.45f) }, At(1));
         int resetCount = processor.ResetCount;
         actions.Advance(new[] { Disconnect(3, 10, 2) }, At(10));
@@ -121,8 +121,8 @@ public sealed class ActionStateRegressionTests
         ActionSystem actions = CreateTrigger(0.4f);
         var processor = new CountingProcessor();
         var recognizer = new DelayedRecognizer();
-        actions.SetValueProcessors("game", "fire", new[] { processor });
-        actions.SetRecognizers("game", new[] { recognizer });
+        actions.QueueValueProcessors("game", "fire", new[] { processor });
+        actions.QueueRecognizers("game", new[] { recognizer });
         actions.Advance(new[] { Trigger(1, 0, 0.6f) }, At(0));
         int resetCount = processor.ResetCount;
         actions.Advance(new[] { Disconnect(2, 10, 1) }, At(10));
@@ -155,7 +155,7 @@ public sealed class ActionStateRegressionTests
             [new ActionBinding("move", "move", "game", new InputControl(InputControlKind.ControllerStick, (int)ControllerStick.Left), Vector2.One), new ActionBinding("jump", "jump", "game", InputControl.ForKey(Key.Space), Vector2.UnitX)],
             [new InputContext("game")],
             []));
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         return actions;
     }
 
@@ -166,7 +166,7 @@ public sealed class ActionStateRegressionTests
             [new ActionBinding("trigger", "fire", "game", new InputControl(InputControlKind.ControllerTrigger, (int)ControllerTrigger.Right), Vector2.UnitX, ReleaseThreshold: releaseThreshold)],
             [new InputContext("game")],
             []));
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         return actions;
     }
 

@@ -11,6 +11,18 @@ namespace Lumyte.Platform.Tests;
 [SupportedOSPlatform("windows10.0.17763")]
 public sealed class WindowsNativeTests
 {
+    /// <summary>Checks popup creation rejects missing owners and activating policies before allocation.</summary>
+    [WindowsFact]
+    public void PopupRequiresOwnerAndPreservedFocus() => RunSta(() =>
+    {
+        using var platform = new WindowsPlatform();
+        using IWindow owner = platform.CreateWindow(new WindowDescriptor());
+        Assert.Throws<ArgumentException>(() => platform.CreateWindow(new WindowDescriptor { Kind = WindowKind.Popup, Activation = WindowActivation.PreserveFocus }));
+        Assert.Throws<ArgumentException>(() => platform.CreateWindow(new WindowDescriptor { Kind = WindowKind.Popup, Owner = owner }));
+        using IWindow popup = platform.CreateWindow(new WindowDescriptor { Kind = WindowKind.Popup, Owner = owner, Activation = WindowActivation.PreserveFocus });
+        Assert.Equal(owner.Id, popup.State.Owner);
+    });
+
     /// <summary>Checks HWND ownership and deferred native closure.</summary>
     [WindowsFact]
     public void NativeWindowRetainsHandleUntilSurfaceOwnerReleasesIt() => RunSta(() =>

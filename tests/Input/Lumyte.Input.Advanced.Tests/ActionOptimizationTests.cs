@@ -16,7 +16,7 @@ public sealed class ActionOptimizationTests
     public void WarmIdleAdvancesDoNotAllocate(bool held)
     {
         var actions = new ActionSystem(StickProfile());
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { Stick(1, 0, 1, held ? Vector2.UnitX : Vector2.Zero) }, At(0));
         for (int i = 0; i < 1000; i++)
         {
@@ -39,7 +39,7 @@ public sealed class ActionOptimizationTests
     public void WarmPollingDoesNotAllocate()
     {
         var actions = new ActionSystem(StickProfile());
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { Stick(1, 0, 1, Vector2.UnitX) }, At(0));
         var inactive = new ActionSystem(StickProfile());
         for (int i = 0; i < 1000; i++)
@@ -117,7 +117,7 @@ public sealed class ActionOptimizationTests
             []));
         var events = new List<ActionEvent>();
         actions.Changed += events.Add;
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputData down = analog ? new ControllerStickData(ControllerStick.Left, Vector2.UnitX) : new KeyData(Key.A, true, false);
         InputData up = analog ? new ControllerStickData(ControllerStick.Left, Vector2.Zero) : new KeyData(Key.A, false, false);
         actions.Advance(new[] { Record(1, 0, 1, down) }, At(0));
@@ -140,7 +140,7 @@ public sealed class ActionOptimizationTests
     public void DeviceTieOrderSurvivesRemovalAndNewControlInsertion()
     {
         var actions = new ActionSystem(StickProfile());
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { KeyRecord(1, 0, Key.Space, true), Stick(2, 0, 2, Vector2.UnitX), Stick(3, 0, 3, Vector2.UnitY) }, At(0));
         Assert.Equal(Vector2.UnitX, actions.GetState("move").Value);
         actions.Advance(new[] { Record(4, 1, 1, new DeviceDisconnectedData()), Stick(5, 1, 4, -Vector2.UnitX) }, At(1));
@@ -157,7 +157,7 @@ public sealed class ActionOptimizationTests
             [new InputContext("game")],
             []);
         var actions = new ActionSystem(profile);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { KeyRecord(1, 0, Key.A, true), KeyRecord(2, 0, Key.B, true) }, At(0));
         Assert.Equal(-Vector2.UnitX, actions.GetState("move").Value);
 
@@ -165,7 +165,7 @@ public sealed class ActionOptimizationTests
         {
             Bindings = [new ActionBinding("z-left", "move", "game", InputControl.ForKey(Key.B), -Vector2.UnitX), new ActionBinding("a-right", "move", "game", InputControl.ForKey(Key.A), Vector2.UnitX)],
         };
-        actions.ApplyProfile(replacement);
+        actions.QueueProfile(replacement);
         Assert.Same(profile, actions.ExportProfile());
         actions.Advance(new[] { KeyRecord(3, 1, Key.A, false), KeyRecord(4, 1, Key.B, false), KeyRecord(5, 2, Key.B, true), KeyRecord(6, 2, Key.A, true) }, At(2));
         Assert.Same(replacement, actions.ExportProfile());
@@ -182,19 +182,19 @@ public sealed class ActionOptimizationTests
             [new InputContext("low", Exclusive: true), new InputContext("high", Exclusive: true)],
             []);
         var actions = new ActionSystem(profile);
-        actions.ActivateContext("low");
-        actions.ActivateContext("high");
+        actions.QueueContextActivation("low");
+        actions.QueueContextActivation("high");
         actions.Advance(new[] { KeyRecord(1, 0, Key.A, true) }, At(0));
         Assert.Equal(Vector2.Zero, actions.GetState("low").Value);
         Assert.Equal(Vector2.UnitX, actions.GetState("high").Value);
-        actions.DeactivateContext("high");
+        actions.QueueContextDeactivation("high");
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(1));
         Assert.Equal(Vector2.UnitX, actions.GetState("low").Value);
 
-        actions.ActivateContext("high");
+        actions.QueueContextActivation("high");
         actions.Advance(new[] { KeyRecord(2, 2, Key.A, false), KeyRecord(3, 3, Key.A, true) }, At(3));
         Assert.Equal(Vector2.UnitX, actions.GetState("high").Value);
-        actions.ApplyProfile(profile with { Contexts = [new InputContext("low", 10, true), new InputContext("high", Exclusive: true)] });
+        actions.QueueProfile(profile with { Contexts = [new InputContext("low", 10, true), new InputContext("high", Exclusive: true)] });
         actions.Advance(new[] { KeyRecord(4, 4, Key.A, false), KeyRecord(5, 5, Key.A, true) }, At(5));
         Assert.Equal(Vector2.UnitX, actions.GetState("low").Value);
         Assert.Equal(Vector2.Zero, actions.GetState("high").Value);
@@ -209,8 +209,8 @@ public sealed class ActionOptimizationTests
             [new ActionBinding("a", "move", "low", InputControl.ForKey(Key.A), Vector2.UnitX), new ActionBinding("b", "move", "high", InputControl.ForKey(Key.B), Vector2.UnitY)],
             [new InputContext("low"), new InputContext("high", 10)],
             []));
-        actions.ActivateContext("low");
-        actions.ActivateContext("high");
+        actions.QueueContextActivation("low");
+        actions.QueueContextActivation("high");
         actions.Advance(new[] { KeyRecord(1, 0, Key.A, true), KeyRecord(2, 0, Key.B, true) }, At(0));
         Assert.Equal(Vector2.UnitY, actions.GetState("move").Value);
     }
@@ -227,8 +227,8 @@ public sealed class ActionOptimizationTests
         var processor = new ObservingProcessor();
         var events = new List<ActionEvent>();
         actions.Changed += events.Add;
-        actions.ActivateContext("game");
-        actions.SetValueProcessors("game", "move", new[] { processor });
+        actions.QueueContextActivation("game");
+        actions.QueueValueProcessors("game", "move", new[] { processor });
         actions.Advance(new[] { KeyRecord(1, 10, Key.A, true), KeyRecord(2, 20, Key.A, false) }, At(30));
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(40));
         Assert.Equal(new[] { At(10), At(20), At(30), At(40) }, processor.Times);
@@ -261,7 +261,7 @@ public sealed class ActionOptimizationTests
         };
         actions.Changed += second;
         actions.Recognized += _ => calls.Add("recognized");
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputRecord[] records = [KeyRecord(1, 0, Key.A, true), KeyRecord(2, 0, Key.A, false)];
         AggregateException error = Assert.Throws<AggregateException>(() => actions.Advance(records, At(0)));
         Assert.Equal(3, error.InnerExceptions.Count);

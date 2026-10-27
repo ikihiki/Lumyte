@@ -16,5 +16,10 @@ Use `InputTimeSource` to bind callbacks to InputSystem time after construction.
 Replace processors or generators on the owning thread; changes take effect at
 the next input boundary and cancel in-flight operations.
 
+Use `QueueProcessorFactory`, `QueueProcessors`, and `QueueGeneratorFactory` to
+make deferred replacement explicit. The existing `Set*` names remain equivalent.
+Corrected devices finish retained retry batches before changing pipelines;
+virtual generators change during the next source `Update`.
+
 See [the ADR](../../../docs/adr/input/INPUT-0002-processing-and-recognition.md)
 and [the runnable sample](../../../samples/Lumyte.Input.Advanced.Sample/README.md).

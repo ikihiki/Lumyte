@@ -21,8 +21,8 @@ public sealed class ActionCompositionTests
             Profile.Recognitions()[Recognition(id: "jump-press", contextId: "game", kind: RecognitionKind.Press, actions: ["jump"], window: TimeSpan.FromSeconds(1))]].Build();
         var system = new ActionSystem(profile);
         var device = new InputDeviceId(1);
-        system.SetDevices([device]);
-        system.ActivateContext("game");
+        system.QueueDevices([device]);
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { new(device, 1, TimeSpan.Zero, new KeyData(Key.Space, true, false)) }, TimeSpan.Zero);
         Assert.Equal(Vector2.One, profile.Bindings[0].Scale);
         Assert.Equal(1, system.GetState("jump").Value.X);
