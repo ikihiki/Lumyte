@@ -1,6 +1,6 @@
 namespace Lumyte.Execution;
 
-/// <summary>Result of an atomic command admission attempt.</summary>
+/// <summary>Result of an atomic command, workflow, batch or graph admission attempt.</summary>
 public enum CommandEnqueueStatus
 {
     /// <summary>Accepted.</summary>

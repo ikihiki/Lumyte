@@ -22,8 +22,8 @@ public sealed class ResourceWatchSharingTests
         await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = CreateManager(source, stage, memory, execution);
         IResourceWatchTargets targets = await source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Value> first = await manager.AcquireAsync(new ResourceKey<Value>("first"));
-        using ResourceReference<Value> second = await manager.AcquireAsync(new ResourceKey<Value>("second"));
+        using ResourceReference<Value> first = await manager.RetainAsync(new ResourceKey<Value>("first"));
+        using ResourceReference<Value> second = await manager.RetainAsync(new ResourceKey<Value>("second"));
         IReadOnlySet<ResourceId> captured = targets.Resources;
         Assert.Equal([_input], captured);
         first.Dispose();
@@ -60,11 +60,11 @@ public sealed class ResourceWatchSharingTests
         await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = CreateManager(source, stage, memory, execution);
         IResourceWatchTargets targets = await source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Task<ResourceReference<Value>> pending = manager.AcquireAsync(new ResourceKey<Value>("pending")).AsTask();
+        Task<ResourceReference<Value>> pending = manager.RetainAsync(new ResourceKey<Value>("pending")).AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
-            await Assert.ThrowsAsync<IOException>(() => manager.AcquireAsync(new ResourceKey<Value>("failed")).AsTask());
+            await Assert.ThrowsAsync<IOException>(() => manager.RetainAsync(new ResourceKey<Value>("failed")).AsTask());
             Assert.Equal([_input], targets.Resources);
         }
         finally
@@ -90,8 +90,8 @@ public sealed class ResourceWatchSharingTests
         await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = CreateManager(source, stage, memory, execution);
         IResourceWatchTargets targets = await source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Value> reference = await manager.AcquireAsync(new ResourceKey<Value>("value"));
-        using ResourceLease<Value> previous = reference.Acquire();
+        using ResourceReference<Value> reference = await manager.RetainAsync(new ResourceKey<Value>("value"));
+        using ResourceLease<Value> previous = reference.Pin();
         IReadOnlySet<ResourceId> captured = targets.Resources;
         TaskCompletionSource published = new(TaskCreationOptions.RunContinuationsAsynchronously);
         manager.Reloaded += (_, args) =>
@@ -108,7 +108,7 @@ public sealed class ResourceWatchSharingTests
         Assert.Equal([_replacement], targets.Resources);
         Assert.Equal([_input], captured);
         Assert.Equal(_input, previous.Value.Input);
-        using (ResourceLease<Value> current = reference.Acquire())
+        using (ResourceLease<Value> current = reference.Pin())
         {
             Assert.Equal(_replacement, current.Value.Input);
         }

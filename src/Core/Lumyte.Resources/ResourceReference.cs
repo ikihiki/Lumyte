@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Lumyte.Resources;
 
 /// <summary>Owns a logical resource slot whose published content may change during hot reload.</summary>
@@ -36,9 +38,9 @@ public sealed class ResourceReference<T> : IDisposable
     /// <returns>An independently owned lease whose value does not switch on hot reload.</returns>
     /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
     /// <exception cref="InvalidOperationException">No usable published value is available.</exception>
-    public ResourceLease<T> Acquire(ResourceSnapshot? snapshot = null)
-        => TryAcquire(out ResourceLease<T>? lease, snapshot)
-            ? lease!
+    public ResourceLease<T> Pin(ResourceSnapshot? snapshot = null)
+        => TryPin(out ResourceLease<T>? lease, snapshot)
+            ? lease
             : throw new InvalidOperationException("The reference has no usable published value.");
 
     /// <summary>Attempts to pin a value without I/O or pipeline execution.</summary>
@@ -46,13 +48,13 @@ public sealed class ResourceReference<T> : IDisposable
     /// <param name="snapshot">An optional resource snapshot whose captured publication supplies the value.</param>
     /// <returns>Whether a value could be retained.</returns>
     /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
-    public bool TryAcquire(out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null)
+    public bool TryPin([NotNullWhen(true)] out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null)
     {
         ResourceManager? manager = Volatile.Read(ref _manager);
         ObjectDisposedException.ThrowIf(manager is null, this);
         if (snapshot is not null)
         {
-            return snapshot.TryAcquire(_handle, out lease);
+            return snapshot.TryPin(_handle, out lease);
         }
 
         lease = manager.AcquireCurrentLease(_handle);

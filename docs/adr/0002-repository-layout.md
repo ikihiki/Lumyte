@@ -24,6 +24,10 @@ C# 側は C++ のネイティブライブラリをローカル NuGet パッケ�
 ```text
 Lumyte/
 ├── .devcontainer/                  # 共通セットアップを使う開発コンテナ
+├── .fallout/                       # ビルドroot・共通パラメーター
+├── build/                          # Falloutの共通ビルド・検証工程
+│   ├── _build.csproj
+│   └── Targets/                    # MSBuildとの接続
 ├── docs/
 │   └── adr/
 │       ├── diagnostics/            # 診断基盤
@@ -97,6 +101,9 @@ Lumyte/
 | `docs/adr/` | リポジトリ全体の運用・構成の ADR。直下でプレフィックスなしの連番を採番する |
 | `docs/adr/<category>/` | カテゴリごとの設計判断、採用理由、影響の記録。カテゴリ内で独立して採番する |
 | `.devcontainer/` | 共通セットアップを呼び出す開発コンテナ設定 |
+| `.fallout/` | Falloutのroot markerとパラメーター、生成schema |
+| `build/` | 全体のビルド・テスト・publish・pack・検証を実行するFallout project |
+| `build/Targets/` | 共通runnerと各C#プロジェクトのMSBuild hookを接続するtargets |
 | `src/Core/` | 基本型と基盤機能。Lumyte.Mathematicsは時計やアニメーションに依存しない数値計算 |
 | `src/Diagnostics/` | 診断の実行・収集基盤、コード生成、共通通信、DI で選ぶ通信アダプター、診断サーバー |
 | `src/Engine/` | エンジン機能の統合 |
@@ -105,13 +112,15 @@ Lumyte/
 | `src/Platform/` | ウィンドウや OS・ハードウェアに近い入力取得、接続監視と環境ごとの実装 |
 | `tests/` | C# の単体テスト・統合テスト。必要に応じてカテゴリとプロジェクト単位で整理する |
 | `samples/` | 利用例と最小起動・描画サンプル |
-| `tools/` | ビルドやパッケージ生成の補助ツール |
+| `tools/` | 共通runnerから利用する補助ツールや検証用worker |
 | `tools/setup/` | 開発環境の共通セットアップ、有効化、検証 |
 | `packaging/nuget/` | 必要な共通パッケージ定義や MSBuild 統合ファイル |
 | `artifacts/` | ビルド生成物。導入時に Git 管理対象外とする |
 | `artifacts/nuget/` | 生成したパッケージを配置するローカル NuGet フィード |
 
 `tests/Input/` には抽象入力システムのテストを配置する。Platform の入力バックエンドは Input の契約を実装し、Input は Platform 実装へ依存しない。
+
+`build/`と`.fallout/`はFalloutの公式構成に従う。工程の責務、増分ビルドを担当するworkerとの境界、生成物の扱いは[ADR-0004](0004-build-orchestration.md)に従う。
 
 カテゴリは配置を整理するためのものであり、フォルダ階層だけで名前空間や依存関係を決めない。新しい機能カテゴリも同じ一段の分類ルールで追加する。
 

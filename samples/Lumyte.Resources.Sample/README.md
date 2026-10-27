@@ -74,6 +74,6 @@ retry `ResourceManager.DisposeAsync` while execution remains available, and only
 stop execution and dispose the provider after that succeeds. DI provider disposal is
 one-shot, so it cannot serve as the retry boundary.
 
-リソースの取得は`Manager.AcquireAsync → ResourceReference`、値の取得は
+リソースの取得は`Manager.RetainAsync → ResourceReference`、値の取得は
 `Reference.Acquire → ResourceLease`の順に行います。描画用Leaseを保持している間も
 HotReloadは新世代を公開でき、既存Leaseは旧世代の値を保持します。

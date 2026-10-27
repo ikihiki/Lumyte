@@ -1,5 +1,18 @@
 # Lumyte.Input.Actions
 
+設定変更には `QueueProfile`、`QueueBufferOptions`、`QueueValueProcessors`、
+`QueueRecognizers`、`QueueDevices`、`QueueContextActivation`、`QueueContextDeactivation`
+を使用できます。検証と予約は呼び出し中に行い、反映は次の `Advance` です。
+直後の `ExportProfile`、`Buffer`、`GetState` は最後に確定した状態を返します。
+従来の `QueueProfile`、`Set*`、`QueueContextActivation`、`QueueContextDeactivation` も同じ予約処理を継続提供します。
+
+`InputControl.ForKey`、`ForMouseButton`、`ForControllerButton`、`ForControllerStick`、
+`ForControllerTrigger` は enum から型付きコントロールを構築します。
+`ForControllerButton` は `ForControllerButton` と同じ結果を返す従来名です。
+`ActionInputBuffer.TryConsume` が `true` のとき、返された認識結果は非 null です。
+
+追加 API の契約は [INPUT-0006](../../../docs/adr/input/INPUT-0006-api-usability-conventions.md) を参照してください。
+
 Per-player action mapping, contexts, operation recognition and input buffering.
 
 Create an immutable `ActionProfile`, activate contexts and pass new ordered
@@ -40,7 +53,7 @@ ActionProfile profile = Profile()[Profile.Contexts()[
 ```
 
 `Build()` validates and snapshots mutable construction nodes. Later edits require
-another `Build()` and `ApplyProfile()`. Save the resulting profile through
+another `Build()` and `QueueProfile()`. Save the resulting profile through
 `InputSettingsConverter.ToSettings`; register it as defaults so persisted user
 bindings take precedence. Consumers do not need to install the generator.
 

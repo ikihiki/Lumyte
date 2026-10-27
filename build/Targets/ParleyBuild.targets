@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <_LumyteParleyRepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..'))</_LumyteParleyRepositoryRoot>
+    <LumyteParleyBuildProject Condition="'$(LumyteParleyBuildProject)' == ''">$(MSBuildThisFileDirectory)../_build.csproj</LumyteParleyBuildProject>
+    <LumyteParleyBuildArtifacts Condition="'$(LumyteParleyBuildArtifacts)' == ''">$(_LumyteParleyRepositoryRoot)artifacts/build/$(MSBuildProjectName)</LumyteParleyBuildArtifacts>
+    <_LumyteParleyInvocationRoot>$(_LumyteParleyRepositoryRoot)artifacts/build/invocations/$([System.Guid]::NewGuid().ToString('N'))/</_LumyteParleyInvocationRoot>
+    <LumyteParleyDotNetHost Condition="'$(LumyteParleyDotNetHost)' == '' and '$(DotNetHostPath)' != ''">$(DotNetHostPath)</LumyteParleyDotNetHost>
+    <LumyteParleyDotNetHost Condition="'$(LumyteParleyDotNetHost)' == '' and '$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</LumyteParleyDotNetHost>
+    <LumyteParleyDotNetHost Condition="'$(LumyteParleyDotNetHost)' == ''">dotnet</LumyteParleyDotNetHost>
+    <!-- A final dot keeps directory arguments safe when quoted on Windows,
+         including drive roots and user-supplied paths ending in a backslash. -->
+    <_LumyteParleyBuildCommand>&quot;$(LumyteParleyDotNetHost)&quot; run --project &quot;$(LumyteParleyBuildProject)&quot; --artifacts-path &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteParleyBuildArtifacts)')).&quot; --configuration Release --no-launch-profile -- --no-logo --verbosity minimal</_LumyteParleyBuildCommand>
+    <_LumyteParleyBuildCommand Condition="'$(LUMYTE_BUILD_ASSEMBLY)' != '' and Exists('$(LUMYTE_BUILD_ASSEMBLY)')">&quot;$(LumyteParleyDotNetHost)&quot; &quot;$(LUMYTE_BUILD_ASSEMBLY)&quot; --no-logo --verbosity minimal</_LumyteParleyBuildCommand>
+  </PropertyGroup>
+  <Target Name="_PrepareLumyteBuildInvocation">
+    <MakeDir Directories="$(_LumyteParleyInvocationRoot).fallout" />
+  </Target>
+</Project>

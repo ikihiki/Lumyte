@@ -19,11 +19,11 @@ AudioVoice.PlayWork play = AudioVoice.DeclarePlay(builder, options);
 
 // originalは生成済みのbackendインスタンス。
 var voice = new AudioVoice(original);
-await voice.Play();
+await voice.PlayAsync();
 voice.AddPlayTo(batch);
 ```
 
-`PlayCore`から`PlayCommand`、statelessなreadonly struct handler、静的な`DeclarePlay`、`PlayWork`、直接送信する`Play`と`AddPlayTo`を生成します。`Core`の接尾辞を外した名前が公開名です。別の公開名が必要なら`Name`を指定します。別のsender型、For、Port、Sender／UseReceiver／ExecutionTargetは提供しません。
+`PlayCore`から`PlayCommand`、statelessなreadonly struct handler、静的な`DeclarePlay`、`PlayWork`、直接送信する`Play`・`PlayAsync`と`AddPlayTo`を生成します。`Core`の接尾辞を外した名前が公開名です。別の公開名が必要なら`Name`を指定します。別のsender型、For、Port、Sender／UseReceiver／ExecutionTargetは提供しません。
 
 ラッパーは元インスタンスを保持する明示的なreadonly参照fieldを一つだけ宣言します。value field、nullable参照、追加instance field、非readonly struct、classによるコマンド宣言はエラーです。defaultラッパーの送信は拒否します。元インスタンスの寿命や所属の確認はbackendへ任せます。
 
@@ -43,3 +43,5 @@ analyzerとして参照します。
 <ProjectReference Include="../Lumyte.Execution.Generators/Lumyte.Execution.Generators.csproj"
                   OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 ```
+
+Async名は追加の送信入口であり、旧名と同じ受付コードを本体に展開します。Work・Declare・AddToの派生名は変わりません。公開名がすでにAsyncで終わる場合は追加せず、既存の利用者メンバーまたは別の生成メンバーと衝突する場合は追加aliasだけを省略します。

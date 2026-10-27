@@ -18,7 +18,7 @@ public sealed class GraphTests
         JobGraph<GraphInput> graph = Build(module);
         var data = new GraphData(31);
         var input = new GraphInput(data);
-        Assert.True(runtime.TrySchedule(graph, in input, out JobRun? run));
+        Assert.True(runtime.Schedule(graph, in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
         Assert.Equal(1, runtime.PumpJobs(1, TimeSpan.FromSeconds(1)));
         Assert.False(run!.IsCompleted);
         PumpUntil(runtime, module, () => run.IsCompleted);
@@ -42,7 +42,7 @@ public sealed class GraphTests
         module.Gate!.Open();
         var data = new GraphData(512) { SlowRange = true };
         var input = new GraphInput(data);
-        Assert.True(runtime.TrySchedule(Build(module), in input, out JobRun? run));
+        Assert.True(runtime.Schedule(Build(module), in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
         PumpUntil(runtime, module, () => run!.IsCompleted);
         run!.ThrowIfFailed();
         Assert.Equal(Enumerable.Range(1, 512), data.Values);
@@ -61,7 +61,7 @@ public sealed class GraphTests
         runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 1, new ExecutionOptions());
         CompletedResult.Read(runtime.StartAsync());
         var input = new GraphInput(new GraphData(10));
-        Assert.True(runtime.TrySchedule(Build(module), in input, out JobRun? run));
+        Assert.True(runtime.Schedule(Build(module), in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
         ValueTask<Unit> independent = runtime.Bind(module.Prepare).ExecuteAsync(input);
         PumpUntil(runtime, module, () => independent.IsCompleted);
         CompletedResult.Read(independent);
@@ -84,7 +84,7 @@ public sealed class GraphTests
         module.Gate!.Open();
         var data = new GraphData(20) { FailPrepare = true };
         var input = new GraphInput(data);
-        Assert.True(runtime.TrySchedule(Build(module), in input, out JobRun? run));
+        Assert.True(runtime.Schedule(Build(module), in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
         PumpUntil(runtime, module, () => run!.IsCompleted);
         Assert.Throws<InvalidOperationException>(() => run!.ThrowIfFailed());
         Assert.Empty(data.Events);
@@ -102,7 +102,7 @@ public sealed class GraphTests
         CompletedResult.Read(runtime.StartAsync());
         var data = new GraphData(20);
         var input = new GraphInput(data);
-        Assert.True(runtime.TrySchedule(Build(module), in input, out JobRun? run));
+        Assert.True(runtime.Schedule(Build(module), in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
         run!.RequestCancel();
         PumpUntil(runtime, module, () => run.IsCompleted);
         Assert.Throws<OperationCanceledException>(() => run.ThrowIfFailed());
@@ -125,7 +125,7 @@ public sealed class GraphTests
         {
             var data = new GraphData(length);
             var input = new GraphInput(data);
-            Assert.True(runtime.TrySchedule(graph, in input, out JobRun? run));
+            Assert.True(runtime.Schedule(graph, in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
             PumpUntil(runtime, module, () => run!.IsCompleted);
             run!.ThrowIfFailed();
             Assert.Equal(length * (length + 1) / 2, data.Total);
@@ -168,7 +168,7 @@ public sealed class GraphTests
         {
             var data = new GraphData(length);
             var input = new GraphInput(data);
-            Assert.True(runtime.TrySchedule(graph, in input, out JobRun? run));
+            Assert.True(runtime.Schedule(graph, in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
             PumpUntil(runtime, module, () => run!.IsCompleted);
             run!.ThrowIfFailed();
             Assert.Equal(length * (length + 1) / 2, data.Total);

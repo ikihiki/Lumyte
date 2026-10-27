@@ -59,12 +59,20 @@ public sealed class RendererResourceTests
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
         using Renderer2D original = reference.CreateRenderer(snapshot: snapshot);
         var reloaded = new TaskCompletionSource<ResourceReloadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.Reloaded += (_, args) => reloaded.TrySetResult(args.Result);
+        manager.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                reloaded.TrySetResult(args.Result);
+            }
+        };
         manager.ReloadFailed += (_, args) => reloaded.TrySetException(args.Error);
         source.Change();
         Assert.Equal(ResourceReloadStatus.Published, (await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(10))).Status);
         TestDevice device = state.Devices[0];
-        Assert.Equal(2, device.Programs.Count);
+
+        // Initial source rechecks may build and discard candidates before the complete publication.
+        Assert.Equal(2, device.Programs.Count(program => !program.Disposed));
         int reads = source.Reads;
         using Renderer2D next = reference.CreateRenderer();
         using Renderer2D previousPublication = reference.CreateRenderer(snapshot: snapshot);
@@ -113,12 +121,12 @@ public sealed class RendererResourceTests
         await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
         using ResourceReference<Renderer2DResource> reference = await manager.AcquireRenderer2DAsync();
-        using ResourceLease<Renderer2DResource> lease = reference.Acquire();
+        using ResourceLease<Renderer2DResource> lease = reference.Pin();
         DrawingResources2D resources = lease.Value.Resources;
         Assert.Equal("configured-2d", resources.Pipeline.Desc.Label);
         Assert.Equal(PipelineOptimizationMode.FullSpecialization, resources.Pipeline.Desc.Optimization);
-        using ResourceReference<GraphicsResource<IGraphicsSampler>> sampler = await manager.AcquireAsync(DrawingGraphicsResources2D.Sampler);
-        using ResourceLease<GraphicsResource<IGraphicsSampler>> samplerLease = sampler.Acquire();
+        using ResourceReference<GraphicsResource<IGraphicsSampler>> sampler = await manager.RetainAsync(DrawingGraphicsResources2D.Sampler);
+        using ResourceLease<GraphicsResource<IGraphicsSampler>> samplerLease = sampler.Pin();
         Assert.Same(samplerLease.Value.Value, resources.Sampler);
         using Renderer2D renderer = reference.CreateRenderer();
         Assert.Single(state.Devices[0].Programs);

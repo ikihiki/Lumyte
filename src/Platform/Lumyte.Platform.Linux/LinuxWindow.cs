@@ -253,7 +253,12 @@ public sealed class LinuxWindow : IWindow
             throw new ArgumentException("Invalid window descriptor.", nameof(descriptor));
         }
 
-        if (descriptor.Kind == WindowKind.Popup ? descriptor.Activation != WindowActivation.PreserveFocus : descriptor.Activation == WindowActivation.PreserveFocus)
+        if (descriptor.Kind == WindowKind.Popup && (descriptor.Owner is null || descriptor.Activation != WindowActivation.PreserveFocus))
+        {
+            throw new ArgumentException("A popup requires an owner and PreserveFocus activation.", nameof(descriptor));
+        }
+
+        if (descriptor.Kind != WindowKind.Popup && descriptor.Activation == WindowActivation.PreserveFocus)
         {
             throw new NotSupportedException("Nonactivating X11 windows must be explicit override-redirect popups.");
         }

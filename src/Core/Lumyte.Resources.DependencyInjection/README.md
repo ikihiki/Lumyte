@@ -39,8 +39,8 @@ await using ServiceProvider provider = services.BuildServiceProvider(new Service
 ResourceManager manager = provider.GetRequiredService<ResourceManager>();
 manager.ReloadFailed += (_, failure) => Console.Error.WriteLine(failure.Error);
 {
-    using ResourceReference<Mesh> mesh = await manager.AcquireAsync(meshKey);
-    using ResourceLease<Mesh> lease = mesh.Acquire();
+    using ResourceReference<Mesh> mesh = await manager.RetainAsync(meshKey);
+    using ResourceLease<Mesh> lease = mesh.Pin();
     Consume(lease.Value);
 }
 

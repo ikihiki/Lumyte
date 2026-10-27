@@ -20,7 +20,7 @@ public sealed class ResourceInvalidationLifetimeTests
     {
         await using Fixture fixture = new();
         IResourceWatchTargets targets = await fixture.Source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Value> reference = await fixture.Manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await fixture.Manager.RetainAsync(_key);
         ResourceHandle<Value> handle = reference.Handle;
         if (returnBeforeLoss)
         {
@@ -35,7 +35,7 @@ public sealed class ResourceInvalidationLifetimeTests
         ResourceReloadResult result = await fixture.Manager.RebuildRuntimeAsync([fixture.Dependency.Id]);
         Assert.Equal(ResourceReloadStatus.Unchanged, result.Status);
         Assert.Equal(1, fixture.Stage.Builds);
-        Assert.False(fixture.Manager.TryAcquire(handle, out ResourceReference<Value>? unavailable));
+        Assert.False(fixture.Manager.TryRetain(handle, out ResourceReference<Value>? unavailable));
         Assert.Null(unavailable);
     }
 
@@ -46,7 +46,7 @@ public sealed class ResourceInvalidationLifetimeTests
     {
         await using Fixture fixture = new();
         IResourceWatchTargets targets = await fixture.Source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Value> reference = await fixture.Manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await fixture.Manager.RetainAsync(_key);
         ResourceHandle<Value> handle = reference.Handle;
         fixture.Dependency.Set(new(2, false, 1));
         Assert.Equal(1, await fixture.Manager.TrimAsync());
@@ -55,7 +55,7 @@ public sealed class ResourceInvalidationLifetimeTests
         fixture.Dependency.Set(new(3, true, 1));
         Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.RebuildRuntimeAsync([fixture.Dependency.Id])).Status);
         Assert.Equal(handle, reference.Handle);
-        using (ResourceLease<Value> current = reference.Acquire())
+        using (ResourceLease<Value> current = reference.Pin())
         {
             Assert.Equal(3UL, current.Value.Version);
         }
@@ -76,7 +76,7 @@ public sealed class ResourceInvalidationLifetimeTests
     {
         await using Fixture fixture = new(lifetime);
         IResourceWatchTargets targets = await fixture.Source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Parent> parent = await fixture.Manager.AcquireAsync(new ResourceKey<Parent>("parent"));
+        using ResourceReference<Parent> parent = await fixture.Manager.RetainAsync(new ResourceKey<Parent>("parent"));
         await fixture.Manager.TrimAsync();
         fixture.Dependency.Set(new(2, false, 1));
         await fixture.Manager.TrimAsync();
@@ -84,7 +84,7 @@ public sealed class ResourceInvalidationLifetimeTests
         Assert.Equal([_input], targets.Resources);
         fixture.Dependency.Set(new(3, true, 1));
         Assert.Equal(ResourceReloadStatus.Published, (await fixture.Manager.RebuildRuntimeAsync([fixture.Dependency.Id])).Status);
-        using (ResourceLease<Parent> current = parent.Acquire())
+        using (ResourceLease<Parent> current = parent.Pin())
         {
             Assert.Equal(3UL, current.Value.InputVersion);
         }
@@ -102,7 +102,7 @@ public sealed class ResourceInvalidationLifetimeTests
     {
         await using Fixture fixture = new();
         IResourceWatchTargets targets = await fixture.Source.Events.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using ResourceReference<Value> reference = await fixture.Manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await fixture.Manager.RetainAsync(_key);
         fixture.Stage.FailNextRelease = true;
         reference.Dispose();
         fixture.Dependency.Set(new(2, false, 1));

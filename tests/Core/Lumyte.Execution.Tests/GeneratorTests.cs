@@ -35,8 +35,8 @@ public sealed class GeneratorTests
         Assert.DoesNotContain("struct Voice", generated, StringComparison.Ordinal);
         Assert.Contains("public global::System.Threading.Tasks.ValueTask", generated, StringComparison.Ordinal);
         Assert.Contains("static readonly global::Lumyte.Execution.CommandPort", generated, StringComparison.Ordinal);
-        Assert.Contains(".TryEnqueue(in __command", generated, StringComparison.Ordinal);
-        Assert.Contains("context.TryEnqueue(Key", generated, StringComparison.Ordinal);
+        Assert.Contains(".Enqueue(in __command", generated, StringComparison.Ordinal);
+        Assert.Contains("context.Enqueue(Key", generated, StringComparison.Ordinal);
         Assert.DoesNotContain(".ExecuteAsync(", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("StackTraceHidden", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("async ", generated, StringComparison.Ordinal);
@@ -77,7 +77,7 @@ public sealed class GeneratorTests
     [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private System.Threading.Tasks.Task GoCore() => System.Threading.Tasks.Task.CompletedTask; }", "LMEXEC006")]
     [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand(Input = ExecutionInputKind.ExistingCommand)] private void GoCore(in int? x) {} }", "LMEXEC005")]
     [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; private sealed class __LumyteExecutionCollision {} [ExecutionCommand] private void GoCore() {} }", "LMEXEC001")]
-    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void Go() {} }", "LMEXEC001")]
+    [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoAsync() {} }", "LMEXEC001")]
     [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; private readonly object _other = original; [ExecutionCommand] private void GoCore() {} }", "LMEXEC007")]
     [InlineData("public partial class State { [ExecutionRange(\"Length\")] private void Go(in int x, int a, int b) {} private int Length(in int x) => x; private int Length(int x) => x; }", "LMEXEC005")]
     [InlineData("public readonly partial struct State(object original) { private readonly object _original = original; [ExecutionCommand] private void GoCore() { System.GC.KeepAlive(original); } }", "LMEXEC007")]
@@ -129,6 +129,54 @@ public sealed class GeneratorTests
         Assert.Contains("WorkAdmission.Startup", generated, StringComparison.Ordinal);
         Assert.Contains("ValueTask<global::System.Threading.Tasks.Task>", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("await ", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>Async senders retain work helper names and compile at call sites.</summary>
+    [Fact]
+    public void AsyncSendersExposeOnlyCanonicalNames()
+    {
+        const string Source = """
+            using Lumyte.Execution;
+            public readonly partial struct Voice(object original)
+            {
+                private readonly object _original = original;
+                [ExecutionCommand] private int PlayCore(int gain) => gain;
+                [ExecutionCommand(Name = "StopAsync")] private void StopCore() { }
+            }
+            public static class Caller
+            {
+                public static async System.Threading.Tasks.Task Use(Voice voice, ModuleBuilder builder, WorkOptions options, ModuleContext context, CommandBatch batch)
+                {
+                    Voice.PlayWork work = Voice.DeclarePlay(builder, options);
+                    await voice.PlayAsync(1);
+                    await voice.PlayAsync(1, cancellationToken: default);
+                    await work.ExecuteAsync(context, voice, 1);
+                    voice.AddPlayTo(batch, 1);
+                    await voice.StopAsync();
+                }
+            }
+            """;
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(Source);
+        Assert.Empty(result.Run.Diagnostics);
+        Assert.DoesNotContain(result.Output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        string generated = Assert.Single(result.Run.GeneratedTrees).ToString();
+        Assert.Contains("@PlayAsync(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("@Play(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("StopAsyncAsync", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(".ExecuteAsync(", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>Canonical sender names reject collisions with user or generated members.</summary>
+    /// <param name="collision">A preexisting member occupying the alias name.</param>
+    [Theory]
+    [InlineData("public void PlayAsync() { }")]
+    [InlineData("[ExecutionCommand(Name = \"PlayAsync\")] private void OtherCore() { }")]
+    public void AsyncSenderCollisionsAreReported(string collision)
+    {
+        string source = "using Lumyte.Execution; public readonly partial struct Voice(object original) { private readonly object _original = original; [ExecutionCommand] private void PlayCore() { } " + collision + " }";
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(source);
+        Assert.Contains(result.Run.Diagnostics, diagnostic => diagnostic.Id == "LMEXEC001");
+        Assert.Empty(result.Run.GeneratedTrees);
     }
 
     private static (GeneratorDriverRunResult Run, Compilation Output) Run(string source, string path = "/state.cs")

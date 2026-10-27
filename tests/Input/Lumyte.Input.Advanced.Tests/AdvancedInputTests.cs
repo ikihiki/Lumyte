@@ -100,7 +100,7 @@ public sealed class AdvancedInputTests
         using var input = new InputSystem(new[] { source });
         device.Enqueue(new TouchData(new TouchContactId(1), TouchPhase.Began, Vector2.Zero, null));
         input.Update();
-        source.SetProcessorFactory(_ => new[] { new AnalogCorrection(Vector2.Zero) });
+        source.QueueProcessorFactory(_ => new[] { new AnalogCorrection(Vector2.Zero) });
         device.Enqueue(new TouchData(new TouchContactId(1), TouchPhase.Moved, Vector2.One, null));
         input.Update();
         Assert.Empty(input.GetState(backend.Id).TouchContacts);
@@ -145,7 +145,7 @@ public sealed class AdvancedInputTests
             Recognitions = [new RecognitionDefinition("hold", "game", RecognitionKind.Hold, ["jump"], At(50))],
         };
         var actions = new ActionSystem(profile);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { Record(1, 0, true) }, At(0));
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(60));
         Assert.True(actions.Buffer.TryConsume("hold", At(60), out RecognizedAction? held));
@@ -159,7 +159,7 @@ public sealed class AdvancedInputTests
     public void DoubleTapRecognizesSeparatePresses()
     {
         var actions = new ActionSystem(Profile() with { Recognitions = [new RecognitionDefinition("double", "game", RecognitionKind.MultiTap, ["jump"], At(100))] });
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { Record(1, 0, true), Record(2, 10, false), Record(3, 20, true) }, At(20));
         Assert.True(actions.Buffer.TryConsume("double", At(20), out _));
     }
@@ -184,9 +184,9 @@ public sealed class AdvancedInputTests
             Bindings = [new ActionBinding("jump-key", "jump", "game", InputControl.ForKey(Key.Space), Vector2.UnitX), new ActionBinding("menu-key", "jump", "menu", InputControl.ForKey(Key.Space), Vector2.UnitX)],
         };
         var actions = new ActionSystem(profile);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { Record(1, 0, true) }, At(0));
-        actions.ActivateContext("menu");
+        actions.QueueContextActivation("menu");
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(1));
         Assert.Equal(Vector2.Zero, actions.GetState("jump").Value);
         actions.Advance(new[] { Record(2, 2, false), Record(3, 3, true) }, At(3));
@@ -262,7 +262,7 @@ public sealed class AdvancedInputTests
     private static ActionSystem Create()
     {
         var actions = new ActionSystem(Profile());
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         return actions;
     }
 

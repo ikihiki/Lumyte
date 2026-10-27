@@ -3,3 +3,5 @@
 **/obj/
 **/vcpkg_installed/
 **/__pycache__/
+/native/lumyte_text_parley/target/
+/.fallout/temp/

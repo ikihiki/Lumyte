@@ -174,7 +174,7 @@ public sealed partial class InputInspectionSession
         {
             KeyData key => (InputControl.ForKey(key.Key), new Vector2(key.IsDown ? 1 : 0, 0)),
             MouseButtonData mouse => (new InputControl(InputControlKind.MouseButton, (int)mouse.Button), new Vector2(mouse.IsDown ? 1 : 0, 0)),
-            ControllerButtonData button => (InputControl.ForButton(button.Button), new Vector2(button.IsDown ? 1 : 0, 0)),
+            ControllerButtonData button => (InputControl.ForControllerButton(button.Button), new Vector2(button.IsDown ? 1 : 0, 0)),
             ControllerStickData stick => (new(InputControlKind.ControllerStick, (int)stick.Stick), stick.Value),
             ControllerTriggerData trigger => (new InputControl(InputControlKind.ControllerTrigger, (int)trigger.Trigger), new Vector2(trigger.Value, 0)),
             _ => (default, default(Vector2)),
@@ -230,7 +230,7 @@ public sealed partial class InputInspectionSession
         {
             InputDeviceKind.Keyboard => Enum.GetValues<Key>().Where(key => key != Key.Unknown).Select(key => (InputControl.ForKey(key), ActionValueKind.Button)),
             InputDeviceKind.Mouse => Enum.GetValues<MouseButton>().Select(button => (new InputControl(InputControlKind.MouseButton, (int)button), ActionValueKind.Button)),
-            InputDeviceKind.Controller => Enum.GetValues<ControllerButton>().Select(button => (InputControl.ForButton(button), ActionValueKind.Button))
+            InputDeviceKind.Controller => Enum.GetValues<ControllerButton>().Select(button => (InputControl.ForControllerButton(button), ActionValueKind.Button))
                 .Concat(Enum.GetValues<ControllerStick>().Select(stick => (new InputControl(InputControlKind.ControllerStick, (int)stick), ActionValueKind.Axis2D)))
                 .Concat(Enum.GetValues<ControllerTrigger>().Select(trigger => (new InputControl(InputControlKind.ControllerTrigger, (int)trigger), ActionValueKind.Axis1D))),
             _ => [],

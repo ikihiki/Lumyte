@@ -24,7 +24,7 @@ Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示�
 
 ## 型付き送信と所有権
 
-[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[型付きコマンドサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のDemoVoice自体が元インスタンス参照一本のreadonly structで、`new DemoVoice(original)`から作り、`voice.Play()` が固定のstatic endpointへ送信する。
+[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[型付きコマンドサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のDemoVoice自体が元インスタンス参照一本のreadonly structで、`new DemoVoice(original)`から作り、`voice.PlayAsync()` が固定のstatic endpointへ送信する。
 
 単発はtyped payloadと結果を保持する一つの非pool `IValueTaskSource<TResult>` を使い、Task／batch／完了wrapperを作らない。生成senderは受付とValueTask構築を本体に展開し、coreのExecuteAsyncを中継しない。ValueTaskは一度だけ観測する。AsTaskへ変換した場合はそのTaskを観測する。
 
@@ -38,7 +38,7 @@ Ownerの異型commandは同じgroupのFIFOで処理する。queue nodeはcommand
 
 ## 容量・取消・停止
 
-`IWorkflowHandler<TCommand, TResult>` はI/Oや子のcommandをawaitする操作を表す。moduleで `builder.Workflow<TCommand, TResult, Handler>("Build", handler, port)` と宣言し、`WorkflowPort<TCommand, TResult>.Execute(command, token)` で投入する。handlerの同期入口と通常のawait後の継続は同じCPU schedulerへ配送し、I/O・owner・子workflowの待機中にはCPU同時実行枠を使わない。Cooperativeでは入口も継続も `PumpJobs` が必要になる。
+`IWorkflowHandler<TCommand, TResult>` はI/Oや子のcommandをawaitする操作を表す。moduleで `builder.Workflow<TCommand, TResult, Handler>("Build", handler, port)` と宣言し、`WorkflowPort<TCommand, TResult>.ExecuteAsync(command, cancellationToken)` で投入する。handlerの同期入口と通常のawait後の継続は同じCPU schedulerへ配送し、I/O・owner・子workflowの待機中にはCPU同時実行枠を使わない。Cooperativeでは入口も継続も `PumpJobs` が必要になる。
 
 workflowは一つのqueue itemと専用SynchronizationContextを再利用し、継続ごとにcommandを作らない。通常のawaitはこのcontextへ戻るため、子commandや子workflowもCPU同時数1でawaitできる。handler内の投入は同じRuntimeの個別CommandPort／WorkflowPortを対象とし、別Runtimeへの投入は拒否する。外側で受理済みの別RuntimeのValueTaskをawaitする場合だけ、継続bridgeが完了元のlockを離れてから待機側schedulerへ戻す。batch・graphの操作やrun待機はworkflowの外側で行う。`ConfigureAwait(false)`、async void、未awaitの子仕事はこの契約の対象外とする。特にCPU処理を持つhandlerとそのhelperでは通常のawaitを使う。同期wait、Pump、Runtimeの起動・停止はworkflow内でも行えない。workflowの通常容量は子の仕事とは別に必要であり、容量不足時は待たずにQueueFullを返す。
 
@@ -55,3 +55,9 @@ workflow開始前の取消はhandlerを呼ばない。開始後はtokenをhandle
 停止は受付・更新の閉鎖、開始済み仕事の静止、逆依存順のcleanup、thread終了の順。停止が非同期初期化と重なっても、起動中のcontextで実operationの終了処理を送り、その静止を待つ。Quiescing中のlifecycle Cleanupも予約枠を使う。Stop成功後にDI providerを破棄する。cleanup失敗ではownerとstateを保持し、同じRuntimeのStopを再試行する。静的endpointは停止後も再接続できず、過去のhandler・Runtime参照を外す。
 
 [設計ADR](../../../docs/adr/core/CORE-0003-execution-and-jobs.md)には、Audio／Resources／ECSとの責務分担と他ライブラリの調査を記載している。
+
+## 受付結果
+
+`CommandPort.Enqueue`、`WorkflowPort.Enqueue`、`ModuleContext.Enqueue`、Runtimeの`Submit`／`Schedule`は、`CommandEnqueueStatus`で受付結果を返します。引数は入力、out結果、任意の`cancellationToken`の順です。受付停止は`NotRunning`、受付中の事前取消は`Canceled`、容量不足は`QueueFull`、受付成功は`Accepted`です。拒否時のout結果はnullとなります。結果の観測とrunのDisposeは従来どおり必要です。
+
+生成senderは`PlayAsync`のようなAsync名だけを公開します。旧Try受付APIとworkflowのExecuteは削除し、利用側も新APIへ移行します。[APIの設計](../../../docs/adr/core/CORE-0004-consistent-execution-entry-points.md)を参照してください。

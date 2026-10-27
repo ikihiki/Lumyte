@@ -130,12 +130,12 @@ public sealed class ResourceHotReloadTests
         };
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
         await changes.Started.Task.WaitAsync(timeout.Token);
-        using ResourceReference<Value> original = await manager.AcquireAsync(_key, timeout.Token);
+        using ResourceReference<Value> original = await manager.RetainAsync(_key, timeout.Token);
         for (int i = 0; i < 4096; i++)
         {
-            using (ResourceReference<Value> reference = await manager.AcquireAsync(new ResourceKey<Value>($"asset-{i}"), timeout.Token))
+            using (ResourceReference<Value> reference = await manager.RetainAsync(new ResourceKey<Value>($"asset-{i}"), timeout.Token))
             {
-                using ResourceLease<Value> lease = reference.Acquire();
+                using ResourceLease<Value> lease = reference.Pin();
                 Assert.Equal("first", lease.Value.Text);
             }
 
@@ -147,7 +147,7 @@ public sealed class ResourceHotReloadTests
 
         source.Revision = "second";
         await published.Task.WaitAsync(timeout.Token);
-        using (ResourceLease<Value> current = original.Acquire())
+        using (ResourceLease<Value> current = original.Pin())
         {
             Assert.Equal("second", current.Value.Text);
         }
@@ -206,7 +206,7 @@ public sealed class ResourceHotReloadTests
     public async Task FailedReloadRetriesAndKeepsPreviousGraphAsync()
     {
         await using Fixture fixture = new(ImmediateOptions() with { MaximumRetryCount = 1 });
-        using ResourceReference<Value> reference = await fixture.Manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await fixture.Manager.RetainAsync(_key);
         await fixture.InitialCheck.Task.WaitAsync(_timeout);
         int attempts = 0;
         fixture.Pipeline.AfterSnapshot = (_, _) =>
@@ -408,7 +408,7 @@ public sealed class ResourceHotReloadTests
         {
             for (int i = 0; i < 20; i++)
             {
-                references.Add(await fixture.Manager.AcquireAsync(new ResourceKey<Value>($"input-{i}")));
+                references.Add(await fixture.Manager.RetainAsync(new ResourceKey<Value>($"input-{i}")));
                 await checks.Reader.ReadAsync().AsTask().WaitAsync(_timeout);
             }
 
@@ -446,7 +446,7 @@ public sealed class ResourceHotReloadTests
                 published.TrySetResult();
             }
         };
-        Task<ResourceReference<Value>> pending = fixture.Manager.AcquireAsync(_key).AsTask();
+        Task<ResourceReference<Value>> pending = fixture.Manager.RetainAsync(_key).AsTask();
         try
         {
             await entered.Task.WaitAsync(_timeout);
@@ -462,7 +462,7 @@ public sealed class ResourceHotReloadTests
 
         using ResourceReference<Value> reference = await pending.WaitAsync(_timeout);
         await published.Task.WaitAsync(_timeout);
-        using ResourceLease<Value> lease = reference.Acquire();
+        using ResourceLease<Value> lease = reference.Pin();
         Assert.Equal("second", lease.Value.Text);
     }
 
@@ -477,7 +477,7 @@ public sealed class ResourceHotReloadTests
             MaximumBatchDelay = TimeSpan.FromMilliseconds(150),
             MaximumPendingChanges = 4096,
         });
-        using ResourceReference<Value> original = await fixture.Manager.AcquireAsync(_key);
+        using ResourceReference<Value> original = await fixture.Manager.RetainAsync(_key);
         await fixture.InitialCheck.Task.WaitAsync(_timeout);
         TaskCompletionSource published = NewSignal();
         fixture.Manager.Reloaded += (_, args) =>
@@ -495,11 +495,11 @@ public sealed class ResourceHotReloadTests
             while (!published.Task.IsCompleted)
             {
                 await fixture.Changes.SendAsync(new(_asset, null));
-                references.Add(await fixture.Manager.AcquireAsync(new ResourceKey<Value>($"input-{references.Count}"), timeout.Token));
+                references.Add(await fixture.Manager.RetainAsync(new ResourceKey<Value>($"input-{references.Count}"), timeout.Token));
                 await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
             }
 
-            using ResourceLease<Value> current = original.Acquire();
+            using ResourceLease<Value> current = original.Pin();
             Assert.Equal("second", current.Value.Text);
             Assert.False(fixture.Manager.HotReloadCompletion.IsCompleted);
         }

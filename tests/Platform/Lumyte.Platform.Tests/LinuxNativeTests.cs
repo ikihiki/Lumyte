@@ -11,6 +11,18 @@ namespace Lumyte.Platform.Tests;
 [SupportedOSPlatform("linux")]
 public sealed class LinuxNativeTests
 {
+    /// <summary>Checks popup creation rejects missing owners and activating policies before allocation.</summary>
+    [LinuxFact]
+    public void PopupRequiresOwnerAndPreservedFocus()
+    {
+        using var platform = new LinuxPlatform();
+        using IWindow owner = platform.CreateWindow(new WindowDescriptor());
+        Assert.Throws<ArgumentException>(() => platform.CreateWindow(new WindowDescriptor { Kind = WindowKind.Popup, Activation = WindowActivation.PreserveFocus }));
+        Assert.Throws<ArgumentException>(() => platform.CreateWindow(new WindowDescriptor { Kind = WindowKind.Popup, Owner = owner }));
+        using IWindow popup = platform.CreateWindow(new WindowDescriptor { Kind = WindowKind.Popup, Owner = owner, Activation = WindowActivation.PreserveFocus });
+        Assert.Equal(owner.Id, popup.State.Owner);
+    }
+
     /// <summary>Checks observed dimensions and native retention across deferred closure.</summary>
     [LinuxFact]
     public void X11WindowShowsResizesAndClosesAfterRetentionRelease()
