@@ -8,6 +8,8 @@
 
 [UI-0003](UI-0003-layout-and-invalidation.md)で確定した配置を既存Drawing2Dへ描画する。UI内部にrendererやGPU資源管理を作らず、直接描画と後続の親RenderGraph接続で同じ記録処理を使いたい。
 
+描画が読むBoundsは、一方向layoutで確定したSizeと親のoffsetから作る。Recordは子をtargetやclipの残り領域へ縮小・再layoutしない。特にStackのoverflowは確定サイズを保ち、clipだけで表示領域を制限する。
+
 ## 決定
 
 ### 公開APIと実装範囲
@@ -48,7 +50,7 @@
 +}
 ```
 
-Fill変更はレイアウトを無効化しない。初期は毎Recordで命令を作るので、描画dirty、DrawList cache、InvalidateVisual APIは追加しない。Panel/Stack/ButtonのOnRecordは空で、Buttonの見た目は背景スロットで明示する。IsPressedに応じた見た目の自動変更はテーマの後続設計で扱う。
+Fill変更はレイアウトを無効化しない。RectangleのLayoutOverrideはUI-0003の規則どおりboundedな軸ではmax、unboundedな軸では0を選びConstrainする。Buttonの背景はButtonの確定サイズのtight制約でlayoutされる。初期は毎Recordで命令を作るので、描画dirty、DrawList cache、InvalidateVisual APIは追加しない。Panel/Stack/ButtonのOnRecordは空で、Buttonの見た目は背景スロットで明示する。IsPressedに応じた見た目の自動変更はテーマの後続設計で扱う。
 
 ### 記録手順と座標
 
@@ -84,5 +86,6 @@ UI専用の描画リストとrendererを作ると既存Canvasのclip・paint・G
 
 - `DrawingRecordingTests`: 累積位置、背景→自身→内容、半透明順序、0寸法、非表示、外側Canvas状態の保持を命令snapshotで確認する。
 - `ClipRecordingTests`: 親子clip、親外の子、viewport clip、ホストのscale・Translateとの合成を確認する。
+- Stackの高さ100に高さ80の子を二つ置き、二つ目のサイズ80を保ったまま、ClipToBoundsで描画領域だけが変わることを確認する。
 - `RecordingFailureTests`: callbackの例外、変更・再入の拒否、失敗後のCancelと次frame再試行を確認する。
 - 既存Graphics GPUテストへ小さな固定UIを追加し、Vulkan/wgpuで基準画素と照合する。座標・順序のCPUテストと役割を分ける。
