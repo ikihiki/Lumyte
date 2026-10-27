@@ -1,12 +1,33 @@
 # 開発環境
 
-Debian／Ubuntu 系 Linux（x64／arm64）で、mise を使って .NET SDK、GCC、CMake、Ninja、Slang、Vulkan、lavapipe、vcpkg を準備する。設計方針は [ADR-0003](adr/0003-development-environment.md) を参照する。
+Debian／Ubuntu 系 Linux（x64／arm64）で、mise を使って .NET SDK、GCC、CMake、Ninja、Slang、Vulkan、lavapipe、vcpkg を準備する。ツールの準備方針は[ADR-0003](adr/0003-development-environment.md)、ビルド工程は[ADR-0004](adr/0004-build-orchestration.md)を参照する。
 
 Windows x64／ARM64 では PowerShell から同じ mise 設定を使用し、MSVC、Windows SDK、vcpkg、lavapipe を準備する。
 
+## ビルドと検証の入口
+
+ソフトウェアのビルド・テスト・publish・pack・検証は、公式構成の`build/_build.csproj`に集約する。
+`.fallout/parameters.json`が共通パラメーターを保持し、CIとmiseも同じFallout targetを呼ぶ。
+入口に必要なのは`global.json`に対応する.NET SDKで、Falloutのglobal installやPATH上のPythonは不要である。
+compilerやSlang等の開発ツールは、以下の共通環境で準備する。
+
+```sh
+dotnet run --project build -c Release -- --target Compile
+dotnet run --project build -c Release -- --target Test
+dotnet run --project build -c Release -- --target Publish
+dotnet run --project build -c Release -- --target Pack
+```
+
+.NET、Cargo、Slang、CMakeは各工程のworkerとして使用する。
+通常のC#プロジェクトを直接ビルドした場合も、MSBuild hookが共通runnerのParley leaf targetを呼ぶ。
+システムPythonを必要とするworkerには、runnerが解決した専用interpreterを渡す。
+対象project、configuration、取得するtoolchain、cacheと各targetは[共通ビルド手順](../build/README.md)を参照する。
+
 ## Linux セットアップ
 
-リポジトリルートから実行する。
+事前に利用可能な.NET 10 SDKを用意し、リポジトリルートから実行する。
+初期設定のJSON読み取りは`build/Bootstrap/ReadMise.cs`を.NETで実行し、システムPythonを使用しない。
+その後、miseがリポジトリで固定したSDKと開発ツールを準備する。
 
 ```bash
 bash tools/setup/setup.sh
@@ -14,7 +35,7 @@ source tools/setup/activate.sh
 mise run verify
 ```
 
-セットアップは再実行できる。`mise.toml` に .NET SDK、CMake、Ninja、Slang のバージョン・取得元・チェックサムと vcpkg のコミットを定義し、`mise.lock` に従って導入する。GCC、pkg-config、lavapipe などの OS パッケージは APT で更新する。管理者権限または非対話 sudo がなければ、パッケージを `artifacts/dev-env/sysroot/` に展開する。非特権モードの前提は Bash、APT、ディストリビューションの公式鍵、dpkg-deb、curl、Git、GCC／G++ である。
+セットアップは再実行できる。`mise.toml` に .NET SDK、CMake、Ninja、Slang のバージョン・取得元・チェックサムと vcpkg のコミットを定義し、`mise.lock` に従って導入する。GCC、pkg-config、lavapipe などの OS パッケージは APT で更新する。管理者権限または非対話 sudo がなければ、パッケージを `artifacts/dev-env/sysroot/` に展開する。非特権モードの前提は.NET 10 SDK、Bash、APT、ディストリビューションの公式鍵、dpkg-deb、curl、Git、GCC／G++である。
 
 新しいシェルでは毎回 `source tools/setup/activate.sh` を実行する。保存済みファイルは再利用できるが、前のプロセスの環境変数は引き継がれるとは限らない。
 
@@ -97,25 +118,25 @@ mise run verify
 
 ## GitHub Actions
 
-`.github/workflows/composition.yml` は push、pull request、手動実行で Linux x64（`ubuntu-24.04`）、Linux aarch64（`ubuntu-24.04-arm`）、Windows x64（`windows-2022`）、Windows aarch64（`windows-11-arm`）を確認する。各ジョブは mise セットアップ、環境検証（`mise run verify`）、`Lumyte.slnx` の Release ビルド、ソリューションに登録された `tests/` 内のテストの順に実行する。先行ステップが失敗した場合は後続のビルド・テストを実行しない。他の構成の検証は継続する。テスト結果は構成ごとに TRX 形式の artifact として保存する。Linux x64 では追加でサンプル、パッケージ、書式も確認する。
+`.github/workflows/composition.yml` は push、pull request、手動実行で Linux x64（`ubuntu-24.04`）、Linux aarch64（`ubuntu-24.04-arm`）、Windows x64（`windows-2022`）、Windows aarch64（`windows-11-arm`）を確認する。各ジョブはmiseセットアップ後に、Falloutの環境検証、`Compile`、`Test`を実行する。ビルドとテストの工程はローカルと共通で、対象solutionは`Lumyte.slnx`、configurationはReleaseを使う。先行ステップが失敗した場合は後続のビルド・テストを実行しない。他の構成の検証は継続する。テスト結果は構成ごとに TRX 形式の artifact として保存する。Linux x64 では追加でサンプル、パッケージ、書式も確認する。
 
 GitHub の Windows runner は管理者権限で動くため、システム依存の導入後に一時的な通常ユーザーで smoke test を実行する。`tools/setup/ci-windows-smoke.ps1` がユーザーの作成、検証プロセスの待機、ユーザーの削除を担当する。このスクリプトは GitHub Actions 専用で、通常の開発環境では管理者権限のないシェルから `mise run verify` を使う。
 
 ## コードスタイル
 
-ルートの `.editorconfig` と `Directory.Build.props` が共通設定であり、新規 C# プロジェクトにも適用される。StyleCop.Analyzers は file-scoped namespace を扱える `1.2.0-beta.556` に固定し、公開 API の XML ドキュメントも検査する。
+ルートの`.editorconfig`と`Directory.Build.props`がエンジン・サンプル・テストの共通設定である。`build/`は公式のMSBuild stop filesで親の自動importを止め、runner自身に必要な設定を明示する。StyleCop.Analyzers は file-scoped namespace を扱える `1.2.0-beta.556` に固定し、公開 API の XML ドキュメントも検査する。
 
 プライマリコンストラクターを利用できる型では優先して使用する。`.editorconfig` の `csharp_style_prefer_primary_constructors = true:error` と `dotnet_diagnostic.IDE0290.severity = error` で、対応する .NET アナライザーの診断をビルド時にエラーにする。StyleCopではなくIDE0290で検査する。公開する生成APIのアクセス制限や初期化手順を変えてまで変換するものではない。
 
 開発環境を有効化して、対象プロジェクトの書式確認とビルドを実行する。
 
 ```bash
-dotnet format whitespace <project.csproj> --verify-no-changes --no-restore
-dotnet format style <project.csproj> --verify-no-changes --no-restore --severity warn
-dotnet build <project.csproj> -warnaserror
+dotnet run --project build -c Release -- --target CheckFormat
+dotnet run --project build -c Release -- --target Compile
 ```
 
-`--no-restore` の書式確認は復元済みのプロジェクトを対象とする。修正する場合は `--verify-no-changes` を外す。コンパイラー・アナライザー・NuGet の警告は共通設定でエラーになる。`-warnaserror` は MSBuild タスクの警告もエラーにするために指定する。`mise run verify` でも同じ設定を一時プロジェクトにコピーし、書式確認と警告のエラー化を実行する。C++ の検証用ターゲットにも CMake の `COMPILE_WARNING_AS_ERROR` を設定する。
+対象を絞る場合は、同じtargetへ`--project <project.csproj>`を渡す。
+`CheckFormat`は復元済みのsolutionへdotnet formatを適用し、変更せずに検査する。コンパイラー・アナライザー・NuGet の警告は共通設定でエラーになる。`-warnaserror` は MSBuild タスクの警告もエラーにするために指定する。`mise run verify` でも同じ設定を一時プロジェクトにコピーし、書式確認と警告のエラー化を実行する。C++ の検証用ターゲットにも CMake の `COMPILE_WARNING_AS_ERROR` を設定する。
 
 命名規則は `.editorconfig` の `dotnet_naming_style` と `dotnet_naming_rule` で定義する。`dotnet_diagnostic.IDE1006.severity = error` と共通の `EnforceCodeStyleInBuild` により、命名違反もビルド時にエラーになる。固定 SDK の .NET 10.0.401 で、private フィールドの `_` 不足と async メソッドの `Async` 不足がビルドと `dotnet format style` で検出されることを確認済み。
 
@@ -144,25 +165,19 @@ mise run format-markdown
 
 ## Native 依存とローカル NuGet
 
-`VCPKG_ROOT` は固定コミットの vcpkg を指す。Native プロジェクトを追加する際は manifest を作り、CMake に以下を指定する。
+`VCPKG_ROOT`は固定コミットのvcpkgを指す。Nativeプロジェクトを追加する際はmanifestとCMakeのtargetを定義し、共通runnerからconfigure／buildを呼ぶ。Native smokeは次の入口で実行する。
 
-```bash
-cmake -S <native-project> -B artifacts/build/<project> -G Ninja \
-  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+```sh
+dotnet run --project build -c Release -- --target NativeSmoke
 ```
 
-非特権モードでは、Vulkan を検索する際に以下も指定する。
-
-```bash
--DVulkan_INCLUDE_DIR="$LUMYTE_VULKAN_INCLUDE_DIR" \
--DVulkan_LIBRARY="$LUMYTE_VULKAN_LIBRARY"
-```
+runnerはCMakeへvcpkgのtoolchainと対象tripletを渡す。非特権モードでは`LUMYTE_VULKAN_INCLUDE_DIR`と`LUMYTE_VULKAN_LIBRARY`も使用する。
 
 ローカル NuGet フィードは `artifacts/nuget/`。ルートの `NuGet.config` に登録している。将来のエンジンパッケージの生成手順は、各プロジェクトの実装時に定義する。
 
 ## 検証内容
 
-`mise run verify` は Linux で `verify.sh`、Windows で `verify.ps1` を実行する。最初に C/C++ の書式と Markdown の lint を確認し、生成した検証用プロジェクトで次を確認する。
+`mise run verify`は共通runnerの環境検証へ接続する。OS固有の有効化とWindowsの非特権起動を行うwrapperからも同じ工程を呼ぶ。C/C++の書式とMarkdownのlintを確認し、`NativeSmoke`が生成した検証用プロジェクトで次を確認する。
 
 1. Slang で検証用 compute shader を SPIR-V にコンパイルし、生成物のサイズとマジックナンバーを確認する。
 2. vcpkg で zlib を取得・ビルドし、CMake／Ninja で C++ 共有ライブラリを作る。
@@ -201,7 +216,7 @@ Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version`、x64 用
 
 ## WebAssembly workload と CI
 
-.NET workload は独立したツールではなく、mise が管理する SDK にインストールする追加機能です。`mise.toml` の `vars.dotnet_workload_version` に workload-set のバージョン `10.0.401` を固定し、`mise run setup-wasm` から `dotnet workload install wasm-tools --version ...` を実行します。workload の pack・manifest は mise の SDK インストール先に保存され、NuGet の取得には既存の環境内キャッシュを使います。`mise.lock` は SDK の取得を管理し、workload のバージョンは mise の vars と .NET workload-set が管理します。
+.NET workload は独立したツールではなく、mise が管理する SDK にインストールする追加機能です。`mise.toml` の `vars.dotnet_workload_version` に workload-set のバージョン `10.0.401` を固定し、`mise run setup-wasm`がFalloutの`SetupWasm`を呼び、内部で`dotnet workload install wasm-tools --version ...`を実行します。workload の pack・manifest は mise の SDK インストール先に保存され、NuGet の取得には既存の環境内キャッシュを使います。`mise.lock` は SDK の取得を管理し、workload のバージョンは mise の vars と .NET workload-set が管理します。
 
 ```bash
 source tools/setup/activate.sh
@@ -209,7 +224,7 @@ mise run setup-wasm
 CHROME=/usr/bin/google-chrome mise run test-wasm
 ```
 
-`test-wasm` は `setup-wasm` に依存し、Browser サンプルの trimmed publish と実ブラウザー上の .NET／WebGPU 検証を順に実行します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
+`test-wasm`はFalloutの`TestWasm`を呼び、Browserサンプルのtrimmed publishと実ブラウザー上の.NET／WebGPU検証を順に実行します。Parleyの文字組み・COLR v1・MSDF/MTSDFと、全28composite・gradient境界条件も同じBrowser検証で確認します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
 
 既存 CI の Linux x64 ジョブで同じタスクを実行し、出力ログをテスト結果 artifact に保存します。ブラウザーは runner にある Google Chrome と SwiftShader を使用します。Linux arm64／Windows のジョブは通常のソリューションビルド・テストを実行し、Wasm workload は導入しません。Linux x64 の native GPU テストも、共通環境が準備した lavapipe を使用します。
 
