@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" AdditionalProperties="LumyteBuildParleyNative=false;LumyteParleyBrowser=true" />
+    <EmbeddedResource Include="Fonts/DejaVuSans.ttf" LogicalName="Lumyte.Parley.Sample.DejaVuSans.ttf" />
+    <EmbeddedResource Include="Fonts/NotoSansJP.subset.ttf" LogicalName="Lumyte.Parley.Sample.NotoSansJP.ttf" />
+    <EmbeddedResource Include="Fonts/ColorFontTest.ttf" LogicalName="Lumyte.Parley.Sample.ColorFontTest.ttf" />
+    <EmbeddedResource Include="../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/NotoSansKhmer-Regular.ttf" LogicalName="Lumyte.Parley.Sample.NotoSansKhmer.ttf" />
+    <Content Include="Fonts/LICENSE.txt" Link="wwwroot/fonts-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Fonts/NotoSansJP-OFL.txt" Link="wwwroot/NotoSansJP-OFL.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Fonts/ColorFontTest-LICENSE.txt" Link="wwwroot/ColorFontTest-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/NotoSansKhmer-LICENSE.txt" Link="wwwroot/NotoSansKhmer-LICENSE.txt" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../src/Graphics/Lumyte.Graphics.Browser/wwwroot/lumyte-graphics.js" Link="wwwroot/lumyte-graphics.js" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Import Project="../../build/Targets/ParleyBrowser.targets" />
+</Project>

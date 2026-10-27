@@ -26,7 +26,7 @@ float3 clipColor(float3 c)
     if(x > 1) c = l + ((c-l)*(1-l) / max(x-l, 1e-20));
     return c;
 }
-float3 setLum(float3 c, float l) { return clipColor(c + l-lum(c)); }
+float3 setLum(float3 c, float l) { return clipColor(c + (l-lum(c))); }
 float3 setSat(float3 c, float s)
 {
     float low = min(c.x,min(c.y,c.z)), high = max(c.x,max(c.y,c.z));
@@ -38,8 +38,8 @@ float blendChannel(float s, float b, uint mode)
     if(mode == 14) return b <= 0.5 ? 2*s*b : 1-2*(1-s)*(1-b);
     if(mode == 15) return min(s,b);
     if(mode == 16) return max(s,b);
-    if(mode == 17) return b == 0 ? 0 : s >= 1 ? 1 : min(1,b/(1-s));
-    if(mode == 18) return b >= 1 ? 1 : s == 0 ? 0 : 1-min(1,(1-b)/s);
+    if(mode == 17) return b <= 0 ? 0 : s >= 1 ? 1 : min(1,b/(1-s));
+    if(mode == 18) return b >= 1 ? 1 : s <= 0 ? 0 : 1-min(1,(1-b)/s);
     if(mode == 19) return s <= 0.5 ? 2*s*b : 1-2*(1-s)*(1-b);
     if(mode == 20)
     {
@@ -64,7 +64,7 @@ float4 composite(float4 s, float4 b, uint mode)
     if(mode == 9) return s*b.a+b*(1-s.a);
     if(mode == 10) return b*s.a+s*(1-b.a);
     if(mode == 11) return s*(1-b.a)+b*(1-s.a);
-    if(mode == 12) return min(s+b,1);
+    if(mode == 12) return saturate(s+b);
     float3 cs = s.a > 0 ? s.rgb/s.a : float3(0);
     float3 cb = b.a > 0 ? b.rgb/b.a : float3(0);
     float3 mixed;
@@ -78,9 +78,13 @@ float4 composite(float4 s, float4 b, uint mode)
 float4 colorLine(DrawingInstruction n, float t)
 {
     if(n.Count == 0) return 0;
+    if(n.Count == 1) return arguments.Data.Load(n.First+1);
     float start = arguments.Data.Load(n.First).x;
     float end = arguments.Data.Load(n.First+(n.Count-1)*2).x;
     float range = end-start;
+    // A zero-width repeated color line has no well-defined period. The pad case
+    // remains a hard transition from the first stop below to the last at/above it.
+    if(range==0 && n.Mode!=0) return 0;
     if(range > 0 && n.Mode != 0)
     {
         float u = (t-start)/range;
@@ -127,6 +131,26 @@ float4 imagePattern(DrawingInstruction n,float2 p)
     int2 corner=int2(floor(point));
     return lerp(lerp(imageTap(n,corner),imageTap(n,corner+int2(1,0)),fraction.x),
                 lerp(imageTap(n,corner+int2(0,1)),imageTap(n,corner+int2(1,1)),fraction.x),fraction.y);
+}
+float distanceFieldCoverage(DrawingInstruction n,float2 p)
+{
+    float4 distances=imagePattern(n,p);
+    float sd=max(min(distances.r,distances.g),min(max(distances.r,distances.g),distances.b));
+    // This is the affine equivalent of fwidth(sourceTexel), independent of divergent
+    // paint evaluation. Distances are numerical data, never decoded as sRGB or alpha-premultiplied.
+    float2 footprint=max(abs(float2(n.T0.x,n.T1.x))+abs(float2(n.T0.y,n.T1.y)),float2(1e-10));
+    if(n.D.y==1)
+    {
+        // Singular values distinguish real minification from rotation: a 1:1 rotated
+        // glyph must retain RGB sharp corners even though its fwidth exceeds one texel.
+        float a=dot(n.T0.xy,n.T0.xy),b=dot(n.T0.xy,n.T1.xy),c=dot(n.T1.xy,n.T1.xy);
+        float maximumScale=sqrt(max(0,0.5*(a+c+sqrt((a-c)*(a-c)+4*b*b))));
+        sd=lerp(sd,distances.a,saturate(maximumScale-1));
+    }
+    float screenRange=n.D.x*0.5*(1/footprint.x+1/footprint.y);
+    // evaluate is integrated over 4x4 correlated shape/clip samples. A quarter-pixel
+    // ramp here avoids applying a full-pixel reconstruction filter sixteen times.
+    return saturate((sd-0.5)*screenRange*4+0.5);
 }
 float pathCoverage(DrawingInstruction n,float2 p)
 {
@@ -183,35 +207,50 @@ float4 evaluate(float2 pixel)
         {
             float2 perpendicular=float2(n.B.y-n.A.y,n.A.x-n.B.x);
             float denominator=dot(n.A.zw-n.A.xy,perpendicular);
-            value=abs(denominator)>1e-20 ? colorLine(n,dot(p-n.A.xy,perpendicular)/denominator) : float4(0);
+            value=denominator!=0 ? colorLine(n,dot(p-n.A.xy,perpendicular)/denominator) : float4(0);
         }
         else if(n.Kind==7)
         {
             float2 delta=n.B.xy-n.A.xy, point=p-n.A.xy;
-            float dr=n.B.z-n.A.z;
-            float a=dot(delta,delta)-dr*dr,b=-2*(dot(point,delta)+n.A.z*dr),c=dot(point,point)-n.A.z*n.A.z;
-            float t=-1e30;
-            if(abs(a)<1e-12)
+            // Rescale the equation before squaring so tiny gradients retain their
+            // geometry and large finite design coordinates do not overflow.
+            float scale=max(max(max(abs(delta.x),abs(delta.y)),max(abs(point.x),abs(point.y))),max(abs(n.A.z),abs(n.B.z)));
+            scale=max(scale,1e-30);
+            delta/=scale; point/=scale;
+            float r0=n.A.z/scale, dr=(n.B.z/scale)-r0;
+            float a=dot(delta,delta)-dr*dr,b=-2*(dot(point,delta)+r0*dr),c=dot(point,point)-r0*r0;
+            float t=0;
+            bool found=false;
+            if(a==0)
             {
-                if(abs(b)>1e-12) { float root=-c/b; if(n.A.z+root*dr>=0) t=root; }
+                if(b!=0) { float root=-c/b; if(r0+root*dr>0) { t=root; found=true; } }
             }
             else
             {
                 float discriminant=b*b-4*a*c;
                 if(discriminant>=0)
                 {
-                    float root0=(-b-sqrt(discriminant))/(2*a),root1=(-b+sqrt(discriminant))/(2*a);
-                    if(n.A.z+root0*dr>=0) t=root0;
-                    if(n.A.z+root1*dr>=0) t=max(t,root1);
+                    // Use the stable quadratic form, then keep the largest root
+                    // whose interpolated radius is strictly positive (COLR rule).
+                    float q=-0.5*(b+(b>=0 ? sqrt(discriminant) : -sqrt(discriminant)));
+                    float root0=q/a,root1=q!=0 ? c/q : root0;
+                    if(r0+root0*dr>0) { t=root0; found=true; }
+                    if(r0+root1*dr>0 && (!found || root1>t)) { t=root1; found=true; }
                 }
             }
-            value=t>-1e29 ? colorLine(n,t) : float4(0);
+            value=found ? colorLine(n,t) : float4(0);
         }
         else if(n.Kind==8)
         {
             float angle=atan2(p.y-n.A.y,p.x-n.A.x);
             if(angle<0) angle+=6.28318530718;
-            value=n.A.w!=n.A.z ? colorLine(n,(angle-n.A.z)/(n.A.w-n.A.z)) : float4(0);
+            if(n.A.w!=n.A.z) value=colorLine(n,(angle-n.A.z)/(n.A.w-n.A.z));
+            else if(n.Mode==0 && n.Count>0)
+            {
+                // All stop angles coincide for a pad sweep with zero angular span.
+                // Rays below that angle use the first color and the rest the last.
+                value=arguments.Data.Load(n.First+(angle<n.A.z ? 1 : (n.Count-1)*2+1));
+            }
         }
         else if(n.Kind==9) value=imagePattern(n,p);
         else if(n.Kind==10) value=values[n.First]*n.A.x;
@@ -234,6 +273,7 @@ float4 evaluate(float2 pixel)
                 }
             }
         }
+        else if(n.Kind==15) value=values[n.First]*distanceFieldCoverage(n,p);
         values[i]=value;
     }
     return values[arguments.Root];

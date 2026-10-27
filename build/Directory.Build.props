@@ -1,0 +1,9 @@
+<Project>
+  <!-- Keep build infrastructure independent of application MSBuild imports. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestoreTreatWarningsAsErrors>true</RestoreTreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+</Project>
