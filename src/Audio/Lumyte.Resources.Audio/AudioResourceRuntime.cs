@@ -60,7 +60,7 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <returns>A sender wrapping the fully created backend clip, never a placeholder.</returns>
     public async ValueTask<AudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = await _audio.State.CreateClipWithLease(data.Format, data.Samples, cancellationToken);
+        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = await _audio.State.CreateClipWithLeaseAsync(data.Format, data.Samples, cancellationToken);
         var pending = new PendingCreation(lease, clip);
         try
         {
@@ -93,7 +93,7 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <summary>Destroys a clip through its original backend instance on the audio owner.</summary>
     /// <param name="clip">The original clip retained by the manager.</param>
     /// <returns>The actual native cleanup completion.</returns>
-    public async ValueTask DestroyClipAsync(AudioClip clip) => await clip.DestroyClip();
+    public async ValueTask DestroyClipAsync(AudioClip clip) => await clip.DestroyClipAsync();
 
     /// <inheritdoc/>
     public void Declare(ModuleBuilder builder) => builder.DependsOn<AudioModule>();
@@ -123,7 +123,7 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
         {
             if (_resource is IAudioClip clip)
             {
-                await new AudioClip(clip).DestroyClip();
+                await new AudioClip(clip).DestroyClipAsync();
             }
 
             _resource = null;

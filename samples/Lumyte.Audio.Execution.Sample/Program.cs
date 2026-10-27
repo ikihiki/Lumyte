@@ -73,29 +73,29 @@ internal static class Program
                     pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
                 }
 
-                var clip = new AudioClip(await audio.State.CreateClip(new AudioFormat(48000, 1), pcm));
-                AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
+                var clip = new AudioClip(await audio.State.CreateClipAsync(new AudioFormat(48000, 1), pcm));
+                AudioVoice voice = await clip.CreateVoiceAsync(AudioBus.Effects);
                 try
                 {
-                    await clip.DestroyClip();
+                    await clip.DestroyClipAsync();
                     throw new InvalidOperationException("Borrowed clip destruction succeeded.");
                 }
                 catch (InvalidOperationException error) when (error.Message != "Borrowed clip destruction succeeded.")
                 {
                 }
 
-                await voice.Play();
-                await voice.Pause();
-                await audio.State.Refresh();
+                await voice.PlayAsync();
+                await voice.PauseAsync();
+                await audio.State.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Paused)
                 {
                     throw new InvalidOperationException("Real backend is not paused.");
                 }
 
-                await voice.SetGain(0.5f);
-                await voice.SetLoop(true);
-                await voice.Play();
-                await audio.State.Refresh();
+                await voice.SetGainAsync(0.5f);
+                await voice.SetLoopAsync(true);
+                await voice.PlayAsync();
+                await audio.State.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Playing)
                 {
                     throw new InvalidOperationException("Real backend is not playing.");
@@ -106,7 +106,7 @@ internal static class Program
                     voice.AddSetGainTo(batch, 0.25f);
                     voice.AddPlayTo(batch);
                     voice.AddStopTo(batch);
-                    if (!runtime.TrySubmit(batch, out CommandRun? run) || run is null)
+                    if (runtime.Submit(batch, out CommandRun? run) != CommandEnqueueStatus.Accepted || run is null)
                     {
                         throw new InvalidOperationException("Audio batch was rejected.");
                     }
@@ -118,15 +118,15 @@ internal static class Program
                     }
                 }
 
-                await voice.Stop();
-                await audio.State.Refresh();
+                await voice.StopAsync();
+                await audio.State.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Stopped)
                 {
                     throw new InvalidOperationException("Real backend is not stopped.");
                 }
 
-                await voice.Destroy();
-                await clip.DestroyClip();
+                await voice.DestroyAsync();
+                await clip.DestroyClipAsync();
 
                 Console.WriteLine($"Real OpenAL controls passed; Host={host}, DI={useDi}");
             }

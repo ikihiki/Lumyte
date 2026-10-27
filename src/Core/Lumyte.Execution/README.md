@@ -24,7 +24,7 @@ Browserでは `OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1` を明示�
 
 ## 型付き送信と所有権
 
-[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[型付きコマンドサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のDemoVoice自体が元インスタンス参照一本のreadonly structで、`new DemoVoice(original)`から作り、`voice.Play()` が固定のstatic endpointへ送信する。
+[Generator](../Lumyte.Execution.Generators/README.md)がメソッドからcommand、handler、登録API、senderを生成する。[型付きコマンドサンプル](../../../samples/Lumyte.Execution.Sample/README.md)のDemoVoice自体が元インスタンス参照一本のreadonly structで、`new DemoVoice(original)`から作り、`voice.PlayAsync()` が固定のstatic endpointへ送信する。
 
 単発はtyped payloadと結果を保持する一つの非pool `IValueTaskSource<TResult>` を使い、Task／batch／完了wrapperを作らない。生成senderは受付とValueTask構築を本体に展開し、coreのExecuteAsyncを中継しない。ValueTaskは一度だけ観測する。AsTaskへ変換した場合はそのTaskを観測する。
 
@@ -56,8 +56,8 @@ workflow開始前の取消はhandlerを呼ばない。開始後はtokenをhandle
 
 [設計ADR](../../../docs/adr/core/CORE-0003-execution-and-jobs.md)には、Audio／Resources／ECSとの責務分担と他ライブラリの調査を記載している。
 
-## 受付結果と互換API
+## 受付結果
 
 `CommandPort.Enqueue`、`WorkflowPort.Enqueue`、`ModuleContext.Enqueue`、Runtimeの`Submit`／`Schedule`は、`CommandEnqueueStatus`で受付結果を返します。引数は入力、out結果、任意の`cancellationToken`の順です。受付停止は`NotRunning`、受付中の事前取消は`Canceled`、容量不足は`QueueFull`、受付成功は`Accepted`です。拒否時のout結果はnullとなります。結果の観測とrunのDisposeは従来どおり必要です。
 
-従来の`TryEnqueue`とworkflowの`Execute`も利用できます。`TrySubmit`／`TrySchedule`は従来どおり容量不足だけfalseを返し、事前取消と停止では例外を投げます。成功時のout結果は非nullと注釈されています。生成senderには`PlayAsync`のようなAsync名も追加され、既存の`Play`と同じ仕事を送ります。[APIの設計](../../../docs/adr/core/CORE-0004-consistent-execution-entry-points.md)を参照してください。
+生成senderは`PlayAsync`のようなAsync名だけを公開します。旧Try受付APIとworkflowのExecuteは削除し、利用側も新APIへ移行します。[APIの設計](../../../docs/adr/core/CORE-0004-consistent-execution-entry-points.md)を参照してください。

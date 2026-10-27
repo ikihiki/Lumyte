@@ -20,20 +20,20 @@ internal static class RecoveryScenario
         try
         {
             oldDevice.SetOutput(AudioOutputState.Suspended);
-            wait(audio.State.Refresh().AsTask());
+            wait(audio.State.RefreshAsync().AsTask());
             Require(audio.Devices.State == initial && old.IsUsable, "Suspension invalidated the device generation.");
             oldDevice.SetOutput(AudioOutputState.Running);
-            wait(audio.State.Refresh().AsTask());
+            wait(audio.State.RefreshAsync().AsTask());
             Require(audio.Devices.State == initial, "Resuming output changed the device generation.");
 
             oldDevice.SetOutput(AudioOutputState.Unavailable);
-            wait(audio.State.Refresh().AsTask());
+            wait(audio.State.RefreshAsync().AsTask());
             AudioDeviceSnapshot lost = audio.Devices.State;
             Require(lost.Status == AudioDeviceServiceStatus.Lost && lost.InvalidatedThroughVersion >= initial.Version, "Device loss did not invalidate the Ready version.");
             Require(!old.IsUsable && execution.Status == ExecutionStatus.Running, "Loss did not remain local to the Audio device.");
             Expect<ResourceUnavailableException>(() => _ = old.Value, "Resources returned an invalidated audio generation.");
-            Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.Play().AsTask()), "An old voice accepted playback after device loss.");
-            Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.Seek(0).AsTask()), "An old voice accepted a seek after device loss.");
+            Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.PlayAsync().AsTask()), "An old voice accepted playback after device loss.");
+            Expect<AudioDeviceUnavailableException>(() => wait(oldVoice.SeekAsync(0).AsTask()), "An old voice accepted a seek after device loss.");
 
             factory.FailNextCreation();
             Expect<InvalidOperationException>(() => wait(audio.Devices.RecoverAsync().AsTask()), "Injected recovery failure was ignored.");
@@ -42,7 +42,7 @@ internal static class RecoveryScenario
             AudioDeviceSnapshot recovered = audio.Devices.State;
             Require(recovered.Status == AudioDeviceServiceStatus.Ready && recovered.Epoch > initial.Epoch && recovered.Version > lost.Version, "Recovery did not publish a new Ready generation.");
             Require(!old.IsUsable, "Recovery made a lost generation usable again.");
-            Expect<AudioDeviceUnavailableException>(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()), "An old clip was relabeled as belonging to the new device generation.");
+            Expect<AudioDeviceUnavailableException>(() => wait(oldClip.CreateVoiceAsync(AudioBus.Effects).AsTask()), "An old clip was relabeled as belonging to the new device generation.");
 
             Task<ResourceReloadResult> rebuild = manager.RebuildRuntimeAsync(["Audio"]).AsTask();
             wait(rebuild);
@@ -53,16 +53,16 @@ internal static class RecoveryScenario
             try
             {
                 Require(currentVoice.State == AudioPlaybackState.Stopped, "Recovery unexpectedly restarted playback.");
-                wait(currentVoice.Play().AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(currentVoice.PlayAsync().AsTask());
+                wait(audio.State.RefreshAsync().AsTask());
                 Require(currentVoice.State == AudioPlaybackState.Playing, "Rebuilt voice could not play on the new device.");
 
                 Task<int> retained = audio.Devices.RetireAsync().AsTask();
                 wait(retained);
                 Require(retained.GetAwaiter().GetResult() == 0 && !oldDevice.IsDisposed, "An old device was disposed while its clip lease remained held.");
                 oldDevice.FailNextVoiceRelease();
-                Expect<InvalidOperationException>(() => wait(oldVoice.Destroy().AsTask()), "Injected caller-owned voice cleanup failure was ignored.");
-                wait(oldVoice.Destroy().AsTask());
+                Expect<InvalidOperationException>(() => wait(oldVoice.DestroyAsync().AsTask()), "Injected caller-owned voice cleanup failure was ignored.");
+                wait(oldVoice.DestroyAsync().AsTask());
                 oldVoiceDestroyed = true;
                 old.Dispose();
                 oldDevice.FailNextClipRelease();
@@ -78,14 +78,14 @@ internal static class RecoveryScenario
             }
             finally
             {
-                wait(currentVoice.Destroy().AsTask());
+                wait(currentVoice.DestroyAsync().AsTask());
             }
         }
         finally
         {
             if (!oldVoiceDestroyed)
             {
-                wait(oldVoice.Destroy().AsTask());
+                wait(oldVoice.DestroyAsync().AsTask());
             }
         }
 
@@ -95,7 +95,7 @@ internal static class RecoveryScenario
     internal static void StopDuringRecovery(AudioModule audio, ExecutionRuntime execution, TestFactory factory, Action<Task> wait)
     {
         factory.Current.SetOutput(AudioOutputState.Unavailable);
-        wait(audio.State.Refresh().AsTask());
+        wait(audio.State.RefreshAsync().AsTask());
         PendingDeviceCreation pending = factory.DelayNextCreation();
         Task<AudioDeviceSnapshot> recovery = audio.Devices.RecoverAsync().AsTask();
         Task<AudioDeviceSnapshot> shared = audio.Devices.RecoverAsync().AsTask();
@@ -161,7 +161,7 @@ internal static class RecoveryScenario
     internal static void RetryCapacityFailure(AudioModule audio, ExecutionRuntime execution, TestFactory factory, Action<Task> wait, Action<Func<bool>> pumpUntil)
     {
         factory.Current.SetOutput(AudioOutputState.Unavailable);
-        wait(audio.State.Refresh().AsTask());
+        wait(audio.State.RefreshAsync().AsTask());
         PendingDeviceCreation pending = factory.DelayNextCreation();
         Task<AudioDeviceSnapshot> recovery = audio.Devices.RecoverAsync().AsTask();
         wait(pending.Started.Task);
@@ -173,7 +173,7 @@ internal static class RecoveryScenario
         {
             while (accepted < retained.Length)
             {
-                ValueTask<Unit> command = audio.State.Refresh();
+                ValueTask<Unit> command = audio.State.RefreshAsync();
                 if (command.IsFaulted)
                 {
                     try

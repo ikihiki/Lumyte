@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Lumyte.Execution.Tests;
 
-/// <summary>Checks common admission outcomes while preserving legacy callers.</summary>
+/// <summary>Checks common admission outcomes without compatibility entry points.</summary>
 public sealed class AdmissionApiTests
 {
     /// <summary>Detailed command admission keeps the actual result and reports all rejection reasons.</summary>
@@ -25,7 +25,7 @@ public sealed class AdmissionApiTests
         Assert.Equal(CommandEnqueueStatus.QueueFull, fixture.Module.Port.Enqueue(in command, out source));
         Assert.Null(source);
         Assert.Equal(14, CompletedResult.Read(result));
-        Assert.Equal(14, fixture.Wait(fixture.Module.Port.ExecuteAsync(command, token: default)));
+        Assert.Equal(14, fixture.Wait(fixture.Module.Port.ExecuteAsync(command, cancellationToken: default)));
     }
 
     /// <summary>Rejected batches retain their staged commands; legacy cancellation and lifecycle errors remain exceptions.</summary>
@@ -39,12 +39,9 @@ public sealed class AdmissionApiTests
         canceled.Cancel();
         Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Runtime.Submit(batch, out CommandRun? run, canceled.Token));
         Assert.Null(run);
-        Assert.Throws<InvalidOperationException>(() => fixture.Runtime.TrySubmit(batch, out _));
-        Assert.Throws<OperationCanceledException>(() => fixture.Runtime.TrySubmit(batch, out _, token: canceled.Token));
         fixture.Start();
         Assert.Equal(CommandEnqueueStatus.Canceled, fixture.Runtime.Submit(batch, out run, cancellationToken: canceled.Token));
         Assert.Null(run);
-        Assert.Throws<OperationCanceledException>(() => fixture.Runtime.TrySubmit(batch, out _, token: canceled.Token));
         ValueTask<int> retained = fixture.Module.Port.ExecuteAsync(2);
         fixture.Until(() => retained.IsCompleted);
         Assert.Equal(CommandEnqueueStatus.QueueFull, fixture.Runtime.Submit(batch, out run));
@@ -56,12 +53,12 @@ public sealed class AdmissionApiTests
         run.Dispose();
         batch.Reset();
         batch.Add(fixture.Module.Port, 4);
-        if (fixture.Runtime.TrySubmit(batch, out CommandRun? legacy))
+        if (fixture.Runtime.Submit(batch, out CommandRun? legacy) == CommandEnqueueStatus.Accepted)
         {
             // Compiles without suppression because success promises a non-null run.
-            fixture.Until(() => legacy.IsCompleted);
-            legacy.ThrowIfFailed();
-            legacy.Dispose();
+            fixture.Until(() => legacy!.IsCompleted);
+            legacy!.ThrowIfFailed();
+            legacy!.Dispose();
         }
         else
         {
@@ -86,8 +83,6 @@ public sealed class AdmissionApiTests
         canceled.Cancel();
         Assert.Equal(CommandEnqueueStatus.NotRunning, runtime.Schedule(graph, in input, out JobRun? run, canceled.Token));
         Assert.Null(run);
-        Assert.Throws<InvalidOperationException>(() => runtime.TrySchedule(graph, in input, out _));
-        Assert.Throws<OperationCanceledException>(() => runtime.TrySchedule(graph, in input, out _, token: canceled.Token));
         CompletedResult.Read(runtime.StartAsync());
         Assert.Equal(CommandEnqueueStatus.Canceled, runtime.Schedule(graph, in input, out run, cancellationToken: canceled.Token));
         Assert.Null(run);
@@ -102,16 +97,16 @@ public sealed class AdmissionApiTests
         Assert.True(run!.IsCompleted);
         run.ThrowIfFailed();
         run.Dispose();
-        if (runtime.TrySchedule(graph, in input, out JobRun? legacy))
+        if (runtime.Schedule(graph, in input, out JobRun? legacy) == CommandEnqueueStatus.Accepted)
         {
-            for (int attempt = 0; attempt < 100 && !legacy.IsCompleted; attempt++)
+            for (int attempt = 0; attempt < 100 && !legacy!.IsCompleted; attempt++)
             {
                 runtime.PumpJobs(16, TimeSpan.FromSeconds(1));
             }
 
-            Assert.True(legacy.IsCompleted);
-            legacy.ThrowIfFailed();
-            legacy.Dispose();
+            Assert.True(legacy!.IsCompleted);
+            legacy!.ThrowIfFailed();
+            legacy!.Dispose();
         }
         else
         {
@@ -123,14 +118,14 @@ public sealed class AdmissionApiTests
         Assert.Null(run);
     }
 
-    /// <summary>Async and legacy workflow names share cancellation, scheduling and result ownership.</summary>
+    /// <summary>Async workflow entry points share cancellation, scheduling and result ownership.</summary>
     [Fact]
-    public void WorkflowAsyncAliasPreservesExecutionAndCancellation()
+    public void WorkflowAsyncPreservesExecutionAndCancellation()
     {
         using var fixture = new WorkflowFixture(options: new ExecutionOptions { MaxInFlightRuns = 1 });
         fixture.Module.Handler = (value, _) => ValueTask.FromResult(value * 3);
         Assert.Equal(15, fixture.Wait(fixture.Module.Port.ExecuteAsync(5, cancellationToken: default)));
-        Assert.Equal(18, fixture.Wait(fixture.Module.Port.Execute(6, token: default)));
+        Assert.Equal(18, fixture.Wait(fixture.Module.Port.ExecuteAsync(6, cancellationToken: default)));
         using var canceled = new CancellationTokenSource();
         canceled.Cancel();
         int command = 7;

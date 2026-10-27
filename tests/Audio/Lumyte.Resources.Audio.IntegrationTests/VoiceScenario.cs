@@ -17,10 +17,10 @@ internal static class VoiceScenario
             AudioVoice second = CreateVoice(lease.Value, wait);
             try
             {
-                wait(first.SetLoop(true).AsTask());
-                wait(first.SetGain(0.25f).AsTask());
-                wait(first.Play().AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(first.SetLoopAsync(true).AsTask());
+                wait(first.SetGainAsync(0.25f).AsTask());
+                wait(first.PlayAsync().AsTask());
+                wait(audio.State.RefreshAsync().AsTask());
                 Require(
                     first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
                     "Voices created from one cached clip did not have independent playback state.");
@@ -30,9 +30,9 @@ internal static class VoiceScenario
                 Require(
                     (audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) == host,
                     "Audio execution ownership is incorrect.");
-                wait(second.Play().AsTask());
-                wait(second.Stop().AsTask());
-                wait(audio.State.Refresh().AsTask());
+                wait(second.PlayAsync().AsTask());
+                wait(second.StopAsync().AsTask());
+                wait(audio.State.RefreshAsync().AsTask());
                 Require(
                     first.State == AudioPlaybackState.Playing && second.State == AudioPlaybackState.Stopped,
                     "Controlling one voice affected another voice from the same clip.");
@@ -44,12 +44,12 @@ internal static class VoiceScenario
             }
             finally
             {
-                wait(second.Destroy().AsTask());
+                wait(second.DestroyAsync().AsTask());
             }
         }
         finally
         {
-            wait(first.Destroy().AsTask());
+            wait(first.DestroyAsync().AsTask());
         }
 
         VerifyEarlyClipRelease(manager, wait);
@@ -58,7 +58,7 @@ internal static class VoiceScenario
 
     internal static AudioVoice CreateVoice(AudioClip clip, Action<Task> wait)
     {
-        Task<AudioVoice> create = clip.CreateVoice(AudioBus.Effects).AsTask();
+        Task<AudioVoice> create = clip.CreateVoiceAsync(AudioBus.Effects).AsTask();
         wait(create);
         return create.GetAwaiter().GetResult();
     }
@@ -81,8 +81,8 @@ internal static class VoiceScenario
         try
         {
             Require(nextVoice.State == AudioPlaybackState.Stopped, "Creating a voice unexpectedly restarted playback.");
-            wait(oldVoice.Stop().AsTask());
-            wait(nextVoice.Play().AsTask());
+            wait(oldVoice.StopAsync().AsTask());
+            wait(nextVoice.PlayAsync().AsTask());
             var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             manager.ReloadFailed += (_, _) => failed.TrySetResult();
             source.Set(float.NaN);
@@ -95,7 +95,7 @@ internal static class VoiceScenario
         }
         finally
         {
-            wait(nextVoice.Destroy().AsTask());
+            wait(nextVoice.DestroyAsync().AsTask());
             source.Set(0.25f);
         }
     }
@@ -121,11 +121,11 @@ internal static class VoiceScenario
             {
             }
 
-            wait(voice.Play().AsTask());
+            wait(voice.PlayAsync().AsTask());
         }
         finally
         {
-            wait(voice.Destroy().AsTask());
+            wait(voice.DestroyAsync().AsTask());
             lease.Dispose();
             reference.Dispose();
         }

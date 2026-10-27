@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Lumyte.Execution;
@@ -14,17 +13,6 @@ public sealed partial class ExecutionRuntime
 
     private bool HasGraphPropagation => _graphs.Any(graph => graph.HasPropagation);
 
-    /// <summary>Atomically reserves a graph, including all future owner delivery slots.</summary>
-    /// <typeparam name="TContext">The shared graph input type.</typeparam>
-    /// <param name="graph">The immutable local graph.</param>
-    /// <param name="context">The shared input.</param>
-    /// <param name="run">The accepted run, or null on shortage.</param>
-    /// <param name="token">Cancellation before node or chunk start.</param>
-    /// <returns>False only on retained capacity shortage.</returns>
-    public bool TrySchedule<TContext>(JobGraph<TContext> graph, in TContext context, [NotNullWhen(true)] out JobRun? run, CancellationToken token = default)
-        where TContext : struct
-        => ScheduleCore(graph, in context, out run, token, detailed: false) == CommandEnqueueStatus.Accepted && run is not null;
-
     /// <summary>Atomically admits a graph, reporting stopped, canceled and full admission as statuses.</summary>
     /// <typeparam name="TContext">The shared graph input type.</typeparam>
     /// <param name="graph">The immutable local graph.</param>
@@ -34,18 +22,14 @@ public sealed partial class ExecutionRuntime
     /// <returns>The admission status.</returns>
     public CommandEnqueueStatus Schedule<TContext>(JobGraph<TContext> graph, in TContext context, out JobRun? run, CancellationToken cancellationToken = default)
         where TContext : struct
-        => ScheduleCore(graph, in context, out run, cancellationToken, detailed: true);
+        => ScheduleCore(graph, in context, out run, cancellationToken);
 
-    private CommandEnqueueStatus ScheduleCore<TContext>(JobGraph<TContext> graph, in TContext context, out JobRun? run, CancellationToken token, bool detailed)
+    private CommandEnqueueStatus ScheduleCore<TContext>(JobGraph<TContext> graph, in TContext context, out JobRun? run, CancellationToken token)
         where TContext : struct
     {
         VerifyOutsideHandler();
         run = null;
         ArgumentNullException.ThrowIfNull(graph);
-        if (!detailed)
-        {
-            token.ThrowIfCancellationRequested();
-        }
 
         if (graph.Nodes[0].Runtime != this)
         {
@@ -54,7 +38,7 @@ public sealed partial class ExecutionRuntime
 
         lock (Sync)
         {
-            CommandEnqueueStatus admission = GetNormalAdmissionStatus(token, detailed);
+            CommandEnqueueStatus admission = GetNormalAdmissionStatus(token);
             if (admission != CommandEnqueueStatus.Accepted)
             {
                 return admission;
@@ -80,7 +64,7 @@ public sealed partial class ExecutionRuntime
             long bytes = checked(Unsafe.SizeOf<TContext>() + 256L + (graph.NodeCount * 128L) + (graph.EdgeCount * 8L) + (commands * 128L));
             lock (Sync)
             {
-                CommandEnqueueStatus admission = GetNormalAdmissionStatus(token, detailed);
+                CommandEnqueueStatus admission = GetNormalAdmissionStatus(token);
                 if (admission != CommandEnqueueStatus.Accepted)
                 {
                     return admission;
