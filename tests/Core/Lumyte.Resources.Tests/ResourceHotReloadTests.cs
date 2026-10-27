@@ -643,12 +643,20 @@ public sealed class ResourceHotReloadTests
         public async IAsyncEnumerable<ResourceSourceChange> WatchAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             using CancellationTokenRegistration registration = ThrowOnCancellation
-                ? cancellationToken.Register(() => throw new InvalidOperationException("Cancellation callback failed"))
+                ? cancellationToken.Register(() =>
+                {
+                    _changes.Writer.TryComplete();
+                    throw new InvalidOperationException("Cancellation callback failed");
+                })
                 : default;
             Started.TrySetResult();
             try
             {
-                await foreach (ResourceSourceChange change in _changes.Reader.ReadAllAsync(cancellationToken))
+                // The throwing callback completes the channel itself. A separate cancellation
+                // callback could resume this iterator and dispose the throwing registration
+                // before cancellation invokes it.
+                CancellationToken readToken = ThrowOnCancellation ? CancellationToken.None : cancellationToken;
+                await foreach (ResourceSourceChange change in _changes.Reader.ReadAllAsync(readToken))
                 {
                     yield return change;
                     _delivered.Writer.TryWrite(true);
