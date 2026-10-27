@@ -59,12 +59,20 @@ public sealed class RendererResourceTests
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
         using Renderer2D original = reference.CreateRenderer(snapshot: snapshot);
         var reloaded = new TaskCompletionSource<ResourceReloadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        manager.Reloaded += (_, args) => reloaded.TrySetResult(args.Result);
+        manager.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                reloaded.TrySetResult(args.Result);
+            }
+        };
         manager.ReloadFailed += (_, args) => reloaded.TrySetException(args.Error);
         source.Change();
         Assert.Equal(ResourceReloadStatus.Published, (await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(10))).Status);
         TestDevice device = state.Devices[0];
-        Assert.Equal(2, device.Programs.Count);
+
+        // Initial source rechecks may build and discard candidates before the complete publication.
+        Assert.Equal(2, device.Programs.Count(program => !program.Disposed));
         int reads = source.Reads;
         using Renderer2D next = reference.CreateRenderer();
         using Renderer2D previousPublication = reference.CreateRenderer(snapshot: snapshot);
