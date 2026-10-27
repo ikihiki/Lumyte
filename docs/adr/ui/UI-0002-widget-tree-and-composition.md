@@ -61,6 +61,8 @@
 
 生成されるファクトリ、子インデクサーと`Button.Background()`は手書きしない。このPRではlayout・Record・Dispatch・Clickを公開しない。
 
+構築、子列の置換、背景スロットの適用ではlayoutを実行しない。後続の一方向layoutはこの所有ツリーへ制約を渡し、親が子の確定サイズと位置を扱う。構築時に希望サイズの保存領域やMeasure/Arrange用の第二のツリーは追加しない。
+
 ```csharp
 using Lumyte.UI;
 using static Lumyte.UI.Compose;
