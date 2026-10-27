@@ -268,4 +268,4 @@ platform runtimeを別途配布する場合は、そのruntimeの表示も含め
 [HarfRust](https://github.com/harfbuzz/harfrust)、[ICU4X](https://github.com/unicode-org/icu4x)、
 [csbindgen](https://github.com/Cysharp/csbindgen)を参照してください。
 
-設計は[GRAPHICS-0019](../../../docs/adr/graphics/GRAPHICS-0019-text-rendering.md)を参照してください。
+設計は[GRAPHICS-0024](../../../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。

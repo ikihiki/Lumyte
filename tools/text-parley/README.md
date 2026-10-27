@@ -113,7 +113,7 @@ Rustの依存は`native/lumyte_text_parley/Cargo.lock`を使って`--locked`でb
 toolchainや依存の更新時にはlockと互換設定を見直し、native / WASMの回帰検証を行います。
 
 Rustで確保したメモリの所有権や文字描画の契約は、このビルド入口の変更では変わりません。
-設計は[GRAPHICS-0019](../../docs/adr/graphics/GRAPHICS-0019-text-rendering.md)を参照してください。
+設計は[GRAPHICS-0024](../../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。
 
 ## 確認した範囲
 

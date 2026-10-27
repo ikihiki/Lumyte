@@ -18,7 +18,13 @@ internal static class DrawingBounds2D
                 FillRectCommand2D c => c.Rect,
                 FillRoundedRectCommand2D c => c.Rect,
                 FillCircleCommand2D c => new(c.Center.X - c.Radius, c.Center.Y - c.Radius, c.Radius * 2, c.Radius * 2),
+                DrawLineCommand2D c => Outset(Points([c.Start, c.End]), c.Style.Width * (c.Style.Cap == LineCap2D.Square ? 0.707107f : 0.5f)),
                 FillPathCommand2D c => PathBounds(c.Path),
+                StrokePathCommand2D c => Outset(PathBounds(c.Path), c.Style.Width * MathF.Max(c.Style.Cap == LineCap2D.Square ? 1.414214f : 1, c.Style.MiterLimit) * 0.5f),
+                DrawImageCommand2D c => c.Destination,
+                DrawCoverageMaskCommand2D c => c.Destination,
+                DrawDistanceFieldCommand2D c => c.Destination,
+                DrawMeshCommand2D c => Points(c.Mesh.Vertices.Select(v => v.Position)),
                 _ => null,
             };
             if (bounds is not null)
@@ -95,4 +101,6 @@ internal static class DrawingBounds2D
 
         return float.IsPositiveInfinity(minimum.X) ? default : new(minimum.X, minimum.Y, maximum.X - minimum.X, maximum.Y - minimum.Y);
     }
+
+    private static Rect2D Outset(Rect2D rect, float amount) => new(rect.X - amount, rect.Y - amount, rect.Width + (amount * 2), rect.Height + (amount * 2));
 }

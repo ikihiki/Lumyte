@@ -182,7 +182,7 @@ public sealed class PaintGraph2D
     /// <param name="backdrop">The immutable backdrop paint; it does not sample the render target.</param>
     /// <param name="mode">The COLR compositing operator.</param>
     /// <returns>An immutable paint graph which preserves operand order and graph isolation.</returns>
-    public static PaintGraph2D Composite(PaintGraph2D source, PaintGraph2D backdrop, CompositeMode2D mode = CompositeMode2D.SourceOver)
+    public static PaintGraph2D Composite(PaintGraph2D source, PaintGraph2D backdrop, CompositeMode2D mode = CompositeMode2D.SrcOver)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(backdrop);
@@ -215,6 +215,31 @@ public sealed class PaintGraph2D
         ModelValidation2D.Matrix(transform, nameof(transform));
         ArgumentNullException.ThrowIfNull(child);
         return Unary(new TransformPaintNode2D(transform, child.Root), child);
+    }
+
+    /// <summary>Composites copied child references in order using source-over; an empty list is transparent.</summary>
+    /// <param name="children">The immutable child graphs in painter order.</param>
+    /// <returns>The immutable paint graph.</returns>
+    public static PaintGraph2D Layers(ReadOnlySpan<PaintGraph2D> children)
+    {
+        var nodes = new PaintNode2D[children.Length];
+        int depth = 1;
+        int expanded = 1;
+        for (int i = 0; i < children.Length; i++)
+        {
+            PaintGraph2D child = children[i];
+            ArgumentNullException.ThrowIfNull(child, nameof(children));
+            depth = Math.Max(depth, child._depth + 1);
+            expanded = checked(expanded + child._expandedNodes);
+            if (expanded > MaximumExpandedNodes)
+            {
+                throw new ArgumentException("The paint graph exceeds the expanded evaluation budget.", nameof(children));
+            }
+
+            nodes[i] = child.Root;
+        }
+
+        return new PaintGraph2D(new LayersPaintNode2D(Array.AsReadOnly(nodes)), depth, expanded);
     }
 
     private static PaintGraph2D Unary(PaintNode2D root, PaintGraph2D child) => new(root, child._depth + 1, child._expandedNodes + 1);

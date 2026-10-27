@@ -163,13 +163,35 @@ public abstract class DrawingCanvas2D
         _commands.Add(new FillCircleCommand2D(center, radius, paint, _state));
     }
 
-    /// <summary>Records a path fill using a solid color; open contours are implicitly closed.</summary>
+    /// <summary>Records DrawLine using a solid color.</summary>
+    /// <param name="start">The finite logical start.</param>
+    /// <param name="end">The finite logical end.</param>
+    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void DrawLine(Vector2 start, Vector2 end, Color2D color, StrokeStyle2D style) => DrawLine(start, end, PaintGraph2D.Solid(color), style);
+
+    /// <summary>Records DrawLine using an immutable paint graph.</summary>
+    /// <param name="start">The finite logical start.</param>
+    /// <param name="end">The finite logical end.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void DrawLine(Vector2 start, Vector2 end, PaintGraph2D paint, StrokeStyle2D style)
+    {
+        RequireRecording();
+        ModelValidation2D.Vector(start, nameof(start));
+        ModelValidation2D.Vector(end, nameof(end));
+        ModelValidation2D.Stroke(style, nameof(style));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawLineCommand2D(start, end, paint, style with { }, _state));
+    }
+
+    /// <summary>Records FillPath using a solid color.</summary>
     /// <param name="path">The immutable logical path.</param>
     /// <param name="color">The finite straight-alpha sRGB color.</param>
     /// <param name="rule">The contour fill rule.</param>
     public void FillPath(Path2D path, Color2D color, FillRule2D rule = FillRule2D.NonZero) => FillPath(path, PaintGraph2D.Solid(color), rule);
 
-    /// <summary>Records a path fill using an immutable paint graph; open contours are implicitly closed.</summary>
+    /// <summary>Records FillPath using an immutable paint graph.</summary>
     /// <param name="path">The immutable logical path.</param>
     /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
     /// <param name="rule">The contour fill rule.</param>
@@ -177,9 +199,91 @@ public abstract class DrawingCanvas2D
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(path);
-        ArgumentNullException.ThrowIfNull(paint);
         ModelValidation2D.EnumValue(rule, nameof(rule));
+        ArgumentNullException.ThrowIfNull(paint);
         _commands.Add(new FillPathCommand2D(path, paint, rule, _state));
+    }
+
+    /// <summary>Records StrokePath using a solid color.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void StrokePath(Path2D path, Color2D color, StrokeStyle2D style) => StrokePath(path, PaintGraph2D.Solid(color), style);
+
+    /// <summary>Records StrokePath using an immutable paint graph.</summary>
+    /// <param name="path">The immutable logical path.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    /// <param name="style">The positive stroke width and join/cap settings.</param>
+    public void StrokePath(Path2D path, PaintGraph2D paint, StrokeStyle2D style)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(path);
+        ModelValidation2D.Stroke(style, nameof(style));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new StrokePathCommand2D(path, paint, style with { }, _state));
+    }
+
+    /// <summary>Records DrawImage in the current transform and clip.</summary>
+    /// <param name="image">The borrowed immutable image descriptor.</param>
+    /// <param name="source">The source texel rectangle within the selected mip.</param>
+    /// <param name="destination">The finite logical output rectangle.</param>
+    public void DrawImage(Image2D image, Rect2D source, Rect2D destination)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(image);
+        ModelValidation2D.Source(source, image.View, nameof(source));
+        ModelValidation2D.Rectangle(destination, nameof(destination));
+        _commands.Add(new DrawImageCommand2D(image, source, destination, _state));
+    }
+
+    /// <summary>Records DrawCoverageMask in the current transform and clip.</summary>
+    /// <param name="mask">The borrowed immutable image descriptor.</param>
+    /// <param name="source">The source texel rectangle within the selected mip.</param>
+    /// <param name="destination">The finite logical output rectangle.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    public void DrawCoverageMask(CoverageImage2D mask, Rect2D source, Rect2D destination, PaintGraph2D paint)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(mask);
+        ModelValidation2D.Source(source, mask.View, nameof(source));
+        ModelValidation2D.Rectangle(destination, nameof(destination));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawCoverageMaskCommand2D(mask, source, destination, paint, _state));
+    }
+
+    /// <summary>Records DrawDistanceField in the current transform and clip.</summary>
+    /// <param name="field">The borrowed immutable image descriptor.</param>
+    /// <param name="source">The source texel rectangle within the selected mip.</param>
+    /// <param name="destination">The finite logical output rectangle.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    public void DrawDistanceField(DistanceField2D field, Rect2D source, Rect2D destination, PaintGraph2D paint)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(field);
+        ModelValidation2D.Source(source, field.View, nameof(source));
+        ModelValidation2D.Rectangle(destination, nameof(destination));
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawDistanceFieldCommand2D(field, source, destination, paint, _state));
+    }
+
+    /// <summary>Records a paint graph within the current clip and finite drawing target.</summary>
+    /// <param name="graph">The immutable paint DAG.</param>
+    public void DrawPaintGraph(PaintGraph2D graph)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(graph);
+        _commands.Add(new DrawPaintGraphCommand2D(graph, _state));
+    }
+
+    /// <summary>Records a triangle mesh using its caller-provided coverage.</summary>
+    /// <param name="mesh">The immutable triangle mesh with explicit coverage.</param>
+    /// <param name="paint">The immutable paint evaluated in logical coordinates.</param>
+    public void DrawMesh(Mesh2D mesh, PaintGraph2D paint)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(paint);
+        _commands.Add(new DrawMeshCommand2D(mesh, paint, _state));
     }
 
     /// <summary>Discards all commands and state from the active recording.</summary>

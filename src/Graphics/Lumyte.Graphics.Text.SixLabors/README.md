@@ -253,4 +253,4 @@ SixLabors.Fontsは**Six Labors Split License 1.0**です。
 条件を満たす公開プロジェクトでは、assembly名限定のcommunity keyを同梱できます。
 [現行版のキー運用](https://docs.sixlabors.com/articles/fonts/index.html)を参照してください。
 
-設計・比較・制約は[GRAPHICS-0019](../../../docs/adr/graphics/GRAPHICS-0019-text-rendering.md)を参照してください。
+設計・比較・制約は[GRAPHICS-0024](../../../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。

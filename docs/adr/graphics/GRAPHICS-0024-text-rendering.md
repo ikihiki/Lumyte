@@ -1,4 +1,4 @@
-# ADR-GRAPHICS-0019: WASMで共有する文字組み・カラーフォント・距離場描画
+# ADR-GRAPHICS-0024: WASMで共有する文字組み・カラーフォント・距離場描画
 
 - 状態: 採用
 - 日付: 2026-10-26
@@ -8,7 +8,7 @@
 
 既存の2Dシステムに、複数フォント、複雑な文字体系、双方向の文章、折り返し、装飾を扱う文字描画を追加する。ブラウザーのWASMでも同じ文字組みを使い、既存の変換・clip・paint・GPU資源の寿命契約へ接続する。拡大表示で角を保つMSDF/MTSDFと、COLR v1のpaintを扱うカラーフォントも必要となる。
 
-[GRAPHICS-0018](GRAPHICS-0018-2d-graphics-engine.md)で分離した文字組みを独立パッケージへ置く。ライブラリの旧版へ長期間留まる構成と、外部のフォント・レイアウト型が利用側APIへ広がる構成は、文字組みの修正やエンジン交換を難しくする。Parleyを試験導入し、既存の描画を維持したまま保守可能な構成を評価する。
+[GRAPHICS-0018](GRAPHICS-0018-2d-graphics-engine.md)で分離した文字組みを独立パッケージへ置く。[GRAPHICS-0019](GRAPHICS-0019-2d-paths-and-strokes.md)のFillPathと、[GRAPHICS-0021](GRAPHICS-0021-2d-glyph-representations.md)の文字向け汎用描画・COLR合成を接続先にする。ライブラリの旧版へ長期間留まる構成と、外部のフォント・レイアウト型が利用側APIへ広がる構成は、文字組みの修正やエンジン交換を難しくする。Parleyを試験導入し、既存の描画を維持したまま保守可能な構成を評価する。
 
 Rustと.NET WASMを接続するビルドでも、常設のPythonや特定のshellを前提にせず、.NET SDKを入口にする。toolchainの解決・準備とnative / WASMの段階を管理し、C#プロジェクトのbuildやpublishから同じ処理を呼べるようにする。
 
@@ -87,9 +87,9 @@ SVG glyphやbitmap emojiを含む全カラーフォント形式の対応、Pango
 
 ### FillPathの接続
 
-Drawing2DへFillPath、型付きrenderer、配送、既定実装、DI登録を追加する。既存の基本図形と同じpaint・clip評価を使い、NonZeroとEvenOddを扱う。開いたcontourは塗りの評価時に閉じる。
+文字輪郭は既存のFillPathへ接続し、型付きrenderer、配送、既定実装、DI登録を共用する。基本図形と同じpaint・clip評価を使い、NonZeroとEvenOddを扱う。開いたcontourは塗りの評価時に閉じる。
 
-`DrawingCommandRenderers2D`は4番目の任意引数で`IFillPathRenderer2D`を受け取る。省略時はstatelessな既定実装を使い、既存の3引数の呼び出しを維持する。`CreateDefault`と`UseGraphics2D`にも同じ配送先を追加する。通常の輪郭描画は文字専用のtextureやpipelineを必要としない。距離場を選んだ場合だけ別のatlasを用意する。
+`DrawingCommandRenderers2D`、`CreateDefault`と`UseGraphics2D`の11命令の配送先を維持する。通常の輪郭描画は文字専用のtextureやpipelineを必要としない。距離場を選んだ場合だけ別のatlasを用意する。
 
 ### MSDF/MTSDFの生成と描画
 
@@ -99,6 +99,8 @@ MSDFはRGBの異なるedge channelにpseudo-distanceを保持し、shaderではm
 
 Drawing2Dには`PaintGraph2D.DistanceField`を追加し、任意のchild paintを距離場のcoverageでmaskする。既存の矩形命令でglyphのplane boundsを描くため、専用のcommand rendererやDI登録を増やさない。Canvas clip・paint clipと同じsubpixel位置で評価する。pixel footprintは変換行列から求め、動的なpaint評価ループ内のderivativeに依存しない。
 
+これは[GRAPHICS-0021](GRAPHICS-0021-2d-glyph-representations.md#coverage-textureと距離場)のsampler付き`DrawDistanceField`を維持したまま追加するpaint nodeである。Textのatlasはこのnodeへ接続する。MTSDFのalphaによる縮小時の補助、samplerを必要としないraw channelの補間、任意のpaintとの合成をこの経路で扱う。
+
 sourceは`Rgba8Unorm`または`Rgba16Float`のsampled viewとし、sRGB形式を拒否する。`ImagePattern2D.Source`は正の整数texel矩形、`PatternToLocal`はsource-relative texelから論理座標への可逆変換とする。factoryはraw channel、linear filter、透明な領域外へ設定を正規化する。bilinear tapをshaderで評価するため、専用のGPU samplerは不要である。atlasは通常の画像patternと同じく、Record前にSampledへ可視化し、GPU完了まで所有者を保持する。
 
 CPU生成の結果は先頭行が上のRGBA8で、paddingを含む論理`PlaneBounds`を持つ。paddingは`ceil(DistanceRange / 2) + 1` texelとする。open contourは閉じ、空の輪郭は外側の値を持つ1×1画像にする。生成器の上限は入力4096 segment、出力4,194,304 pixel、設定した単辺寸法とし、上限超過はNotSupportedExceptionで拒否する。生成は同期処理で、独立した呼び出し間に変更可能な状態を共有しない。
@@ -107,11 +109,11 @@ CPU生成の結果は先頭行が上のRGBA8で、paddingを含む論理`PlaneBo
 
 ### COLRのための2D paint拡張
 
-`PaintGraph2D.Composite(source, backdrop, mode)`はCOLR v1の28種類のPorter-Duff・blend演算を扱う。sourceとbackdropはそのnodeの入力graphで、描画先attachmentの既存内容を暗黙に読むものではない。両者をshape・clipと同じsubpixel位置で評価し、glyph内部でisolatedに合成する。完成したglyphをtargetへ合成する通常のsource-overとは分離する。
+既存の`PaintGraph2D.Composite(source, backdrop, mode)`はCOLR v1の28種類のPorter-Duff・blend演算を扱う。sourceとbackdropはそのnodeの入力graphで、描画先attachmentの既存内容を暗黙に読むものではない。両者をshape・clipと同じsubpixel位置で評価し、glyph内部でisolatedに合成する。完成したglyphをtargetへ合成する通常のsource-overとは分離する。公開mode名は既存の`Src`・`Dest`・`SrcOver`・`HslHue`等を維持する。
 
 COLR/CPAL仕様では、sRGBの色値にinverse transferを適用し、linear-lightのpremultiplied RGBAでstopを補間し、compositeとblendを計算する。これは既存Drawing2Dの色契約と一致するため、COLR用のsRGB作業空間を追加しない。非separableなHue/Saturation/Color/Luminosityも同じlinear RGBを対象にする。
 
-gradientはCOLR tableの表現を保ち、退化した定義や空のColorLineを通常の入力として扱う。仕様上透明になる定義を、その場で例外に置き換えない。入力がNaNやInfinityなどmodel自体の有限性を破る場合の拒否は維持する。
+gradientはCOLR tableの表現を保ち、退化した定義や空のColorLineを通常の入力として扱う。[GRAPHICS-0018](GRAPHICS-0018-2d-graphics-engine.md)と[GRAPHICS-0021](GRAPHICS-0021-2d-glyph-representations.md)の初期実装で拒否していた定義を、次表の評価へ拡張する。仕様上透明になる定義を、その場で例外に置き換えない。入力がNaNやInfinityなどmodel自体の有限性を破る場合の拒否は維持する。
 
 | 入力 | 評価 |
 | --- | --- |
@@ -146,7 +148,7 @@ Parley・Fontique・Fontationsは主にMITまたはApache-2.0、HarfRustとcsbin
 
 ### 公開API
 
-比較元は本変更前の`9115746`。共通描画modelとParleyアダプターは、SixLabors・Skia・Rustの型を公開境界へ出さない。ベクトルと変換はSystem.Numericsの型を使う。主要なAPIを以下に示す。
+比較元は既存のパス・画像・文字向け汎用描画を含む`16d856a`。共通描画modelとParleyアダプターは、SixLabors・Skia・Rustの型を公開境界へ出さない。ベクトルと変換はSystem.Numericsの型を使う。主要な追加APIを以下に示す。既存のFillPath、Composite、DrawDistanceField等の宣言は先行ADRを参照する。
 
 ```diff
 +namespace Lumyte.Graphics.Text
@@ -268,73 +270,18 @@ Parley・Fontique・Fontationsは主にMITまたはApache-2.0、HarfRustとcsbin
 +}
 +namespace Lumyte.Graphics.Drawing2D
 +{
-+    public enum CompositeMode2D
-+    {
-+        Clear, Source, Destination, SourceOver, DestinationOver,
-+        SourceIn, DestinationIn, SourceOut, DestinationOut,
-+        SourceAtop, DestinationAtop, Xor, Plus, Screen, Overlay,
-+        Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight,
-+        Difference, Exclusion, Multiply, Hue, Saturation, Color, Luminosity
-+    }
-+    public sealed record CompositePaintNode2D(PaintNode2D Source,
-+        PaintNode2D Backdrop, CompositeMode2D Mode) : PaintNode2D;
 +    public enum DistanceFieldMode2D { Msdf, Mtsdf }
 +    public sealed record DistanceFieldPaintNode2D(ImagePattern2D Pattern,
 +        float DistanceRange, DistanceFieldMode2D Mode, PaintNode2D Child) : PaintNode2D;
 +    public sealed class PaintGraph2D
 +    {
-+        // source-first。入力はisolated graphで、target内容をbackdropとして読まない。
-+        public static PaintGraph2D Composite(PaintGraph2D source, PaintGraph2D backdrop,
-+            CompositeMode2D mode = CompositeMode2D.SourceOver);
-+        // COLR定義を保持する完全形。空stopや退化定義はshaderで透明等へ評価する。
-+        public static PaintGraph2D LinearGradient(Vector2 p0, Vector2 p1, Vector2 p2,
-+            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend);
-+        // 完全形の半径は符号付きfinite値。簡略形のradiusは正数のまま。
-+        public static PaintGraph2D RadialGradient(Vector2 c0, float r0, Vector2 c1, float r1,
-+            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend);
-+        // 角度spanが0のPadはhard edge、Repeat/Reflectは透明へ評価する。
-+        public static PaintGraph2D SweepGradient(Vector2 center, float startAngle, float endAngle,
-+            ReadOnlySpan<ColorStop2D> stops, ExtendMode2D extend);
 +        // 線形RGBAの距離場でchild paintをmaskする。rangeは正のfiniteなsource texel数。
 +        // raw channel、linear filter、透明な領域外へ正規化し、sRGB storageを拒否する。
 +        public static PaintGraph2D DistanceField(ImagePattern2D pattern,
 +            float distanceRange, PaintGraph2D paint,
 +            DistanceFieldMode2D mode = DistanceFieldMode2D.Msdf);
 +    }
-+    public abstract class DrawingCanvas2D
-+    {
-+        // 既存pathを不変な参照として記録。開いた輪郭は塗り時に閉じる。
-+        public void FillPath(Path2D path, Color2D color,
-+            FillRule2D rule = FillRule2D.NonZero);
-+        public void FillPath(Path2D path, PaintGraph2D paint,
-+            FillRule2D rule = FillRule2D.NonZero);
-+    }
-+    public sealed record FillPathCommand2D(Path2D Path, PaintGraph2D Paint,
-+        FillRule2D Rule, DrawingState2D State) : DrawingCommand2D(State);
-+    public interface IFillPathRenderer2D
-+    {
-+        ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
-+            ReadOnlyMemory<FillPathCommand2D> commands,
-+            CancellationToken cancellationToken = default);
-+    }
-+    public sealed class DefaultFillPathRenderer2D : IFillPathRenderer2D
-+    {
-+        public DefaultFillPathRenderer2D();
-+    }
 +}
- namespace Lumyte.Graphics.Drawing2D
- {
-     public sealed class DrawingCommandRenderers2D
-     {
--        public DrawingCommandRenderers2D(IFillRectRenderer2D fillRect,
--            IFillRoundedRectRenderer2D fillRoundedRect, IFillCircleRenderer2D fillCircle);
-+        // nullならstatelessな既定path rendererを生成する。
-+        public DrawingCommandRenderers2D(IFillRectRenderer2D fillRect,
-+            IFillRoundedRectRenderer2D fillRoundedRect, IFillCircleRenderer2D fillCircle,
-+            IFillPathRenderer2D? fillPath = null);
-+        public IFillPathRenderer2D FillPath { get; }
-     }
- }
 ```
 
 SixLabors比較用のAPI・既定variation限定のCOLR reader・明示的なbitmap oracleは、[任意アダプターのREADME](../../../src/Graphics/Lumyte.Graphics.Text.SixLabors/README.md)を参照する。共通TextやParleyの依存には含めない。

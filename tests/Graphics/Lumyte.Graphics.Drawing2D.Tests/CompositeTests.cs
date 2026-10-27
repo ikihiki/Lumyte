@@ -22,7 +22,7 @@ public sealed class CompositeTests
             Assert.Same(source.Root, node.Source);
             Assert.Same(backdrop.Root, node.Backdrop);
             DrawingProgram2D program = Compile(graph);
-            DrawingInstruction composite = Assert.Single(program.Instructions, instruction => instruction.Kind == 13);
+            DrawingInstruction composite = Assert.Single(program.Instructions, instruction => instruction.Kind == 12);
             Assert.Equal((uint)i, composite.Mode);
             Assert.Equal(new Vector4(0.5f, 0, 0, 0.5f), program.Instructions[(int)composite.First].A);
             Assert.Equal(new Vector4(0, 0, 0.25f, 0.25f), program.Instructions[(int)composite.Count].A);
@@ -40,13 +40,13 @@ public sealed class CompositeTests
         PaintGraph2D graph = solid;
         for (int i = 0; i < 8; i++)
         {
-            graph = PaintGraph2D.Composite(graph, graph, CompositeMode2D.SourceOver);
+            graph = PaintGraph2D.Composite(graph, graph, CompositeMode2D.SrcOver);
         }
 
         DrawingProgram2D program = Compile(graph);
         Assert.Equal(11, program.Instructions.Count);
         Assert.Single(program.Instructions, instruction => instruction.Kind == 0);
-        foreach (DrawingInstruction composite in program.Instructions.Where(instruction => instruction.Kind == 13))
+        foreach (DrawingInstruction composite in program.Instructions.Where(instruction => instruction.Kind == 12))
         {
             Assert.Equal(composite.First, composite.Count);
         }
@@ -77,10 +77,10 @@ public sealed class CompositeTests
         canvas.ClipRect(new Rect2D(1, 2, 8, 9));
         var source = PaintGraph2D.Solid(new Color2D(1, 0, 0, 0.5f));
         var backdrop = PaintGraph2D.Solid(new Color2D(0, 0, 1, 0.5f));
-        canvas.FillRect(new Rect2D(0, 0, 20, 20), PaintGraph2D.Composite(source, backdrop, CompositeMode2D.SourceIn));
+        canvas.FillRect(new Rect2D(0, 0, 20, 20), PaintGraph2D.Composite(source, backdrop, CompositeMode2D.SrcIn));
         DrawingProgram2D program = Program();
         uint root = program.Compile(Assert.Single(canvas.End().Commands));
-        Assert.Equal(13u, program.Instructions[3].Kind);
+        Assert.Equal(12u, program.Instructions[3].Kind);
         Assert.Equal(11u, program.Instructions[4].Kind);
         Assert.Equal(4u, program.Instructions[5].Kind);
         Assert.Equal(11u, program.Instructions[(int)root].Kind);

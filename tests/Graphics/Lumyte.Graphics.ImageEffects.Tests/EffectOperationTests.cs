@@ -194,6 +194,51 @@ public sealed class EffectOperationTests
         Assert.Throws<ObjectDisposedException>(() => scope.AppendOpacity(source, 1));
     }
 
+    /// <summary>Checks finite grading parameters and the declared scene-to-display conversion.</summary>
+    [Fact]
+    public void PostProcessParametersAndSemanticAreExplicit()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(float.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(128));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(saturation: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PostProcessEffect(vignette: 1.1f));
+        var grading = new PostProcessEffect();
+        var toneMapping = new PostProcessEffect(toneMap: true);
+        Assert.Equal(EffectColorSemantic.SceneLinear, grading.GetOutputColorSemantic(EffectColorSemantic.SceneLinear));
+        Assert.Equal(EffectColorSemantic.DisplayLinear, toneMapping.GetOutputColorSemantic(EffectColorSemantic.SceneLinear));
+        Assert.Equal(new EffectPixelRect(-2, 3, 8, 9), grading.GetOutputBounds([new(-2, 3, 8, 9)]));
+        using var graph = new Graph(Device());
+        EffectImage source = Source(graph);
+        Assert.Throws<ArgumentException>(() => graph.AppendPostProcess(source, toneMap: true));
+    }
+
+    /// <summary>Checks semantic views support delegated appends and share success/failure cleanup with the root.</summary>
+    /// <param name="fail">Whether the downstream effect fails after retaining a resource.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SemanticConversionSharesOwnershipWithDownstreamEffects(bool fail)
+    {
+        var resource = new TrackedResource();
+        using var graph = new Graph(Device());
+        EffectImage source = Source(graph) with { ColorSemantic = EffectColorSemantic.SceneLinear };
+        var effect = ImageEffectGraph.Create(new DelegatingEffect(resource, fail), ImageEffectGraph.Create(new DisplayConversion(), ImageEffectGraph.Source()));
+        if (fail)
+        {
+            Assert.Throws<InvalidOperationException>(() => graph.AppendEffects(effect, source));
+            Assert.Throws<ObjectDisposedException>(() => graph.Compile());
+        }
+        else
+        {
+            Assert.Equal(EffectColorSemantic.DisplayLinear, graph.AppendEffects(effect, source).ColorSemantic);
+        }
+
+        Assert.Equal(0, resource.Disposals);
+        graph.Dispose();
+        graph.Dispose();
+        Assert.Equal(1, resource.Disposals);
+    }
+
     private static IGraphicDevice Device() => DispatchProxy.Create<IGraphicDevice, ImageEffectTests.UnusedDeviceProxy>();
 
     private static EffectImage Source(Graph graph) => new(graph.CreateTexture(new() { Width = 4, Height = 4, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.Sampled | TextureUsage.RenderAttachment }), new(0, 0, 4, 4), EffectColorSemantic.DisplayLinear);
@@ -247,6 +292,30 @@ public sealed class EffectOperationTests
             }
 
             return inputs[0] with { Bounds = inputs[0].Bounds.Offset(X, Y) };
+        }
+    }
+
+    private sealed record DisplayConversion() : Translation(0, 0)
+    {
+        public override EffectColorSemantic GetOutputColorSemantic(EffectColorSemantic input) => EffectColorSemantic.DisplayLinear;
+
+        public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
+            => inputs[0] with { ColorSemantic = EffectColorSemantic.DisplayLinear };
+    }
+
+    private sealed record DelegatingEffect(TrackedResource Owned, bool Fail) : Translation(0, 0)
+    {
+        public override EffectImage AppendPasses(EffectPreparationContext context, Graph plan, ReadOnlySpan<EffectImage> inputs)
+        {
+            Assert.Equal(inputs[0].ColorSemantic, context.ColorSemantic);
+            context.Own(Owned);
+            EffectImage result = plan.AppendEffectWithContext(new Translation(0, 0), context, inputs.ToArray());
+            if (Fail)
+            {
+                throw new InvalidOperationException("Injected downstream failure.");
+            }
+
+            return result;
         }
     }
 

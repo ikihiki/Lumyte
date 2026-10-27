@@ -86,7 +86,7 @@ public sealed class DistanceFieldTests
 
         Assert.Same(view, Assert.Single(table.Views));
         Assert.Same(atlas, Assert.Single(program.Textures));
-        DrawingInstruction mask = Assert.Single(program.Instructions, instruction => instruction.Kind == 12);
+        DrawingInstruction mask = Assert.Single(program.Instructions, instruction => instruction.Kind == 15);
         DrawingInstruction gradient = Assert.Single(program.Instructions, instruction => instruction.Kind == 6);
         Assert.Equal(6, mask.D.X);
         Assert.Equal((float)DistanceFieldMode2D.Mtsdf, mask.D.Y);

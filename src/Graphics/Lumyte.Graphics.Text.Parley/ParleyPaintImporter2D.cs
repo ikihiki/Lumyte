@@ -90,9 +90,9 @@ internal sealed unsafe class ParleyPaintImporter2D(LpLayoutView view, Matrix3x2 
         Rect2D? bounds = mode switch
         {
             CompositeMode2D.Clear => default(Rect2D),
-            CompositeMode2D.Source or CompositeMode2D.SourceOut or CompositeMode2D.DestinationAtop => source.Bounds,
-            CompositeMode2D.Destination or CompositeMode2D.DestinationOut or CompositeMode2D.SourceAtop => backdrop.Bounds,
-            CompositeMode2D.SourceIn or CompositeMode2D.DestinationIn => ParleyLayoutImporter2D.Intersect(source.Bounds, backdrop.Bounds),
+            CompositeMode2D.Src or CompositeMode2D.SrcOut or CompositeMode2D.DestAtop => source.Bounds,
+            CompositeMode2D.Dest or CompositeMode2D.DestOut or CompositeMode2D.SrcAtop => backdrop.Bounds,
+            CompositeMode2D.SrcIn or CompositeMode2D.DestIn => ParleyLayoutImporter2D.Intersect(source.Bounds, backdrop.Bounds),
             _ => source.Bounds is Rect2D a && backdrop.Bounds is Rect2D b ? ParleyLayoutImporter2D.Union(a, b) : null,
         };
         return new PaintEntry(PaintGraph2D.Composite(source.Paint, backdrop.Paint, mode), bounds);
@@ -127,7 +127,7 @@ internal sealed unsafe class ParleyPaintImporter2D(LpLayoutView view, Matrix3x2 
         }
 
         var source = new PaintEntry(paint, bounds);
-        _current = _current is PaintEntry backdrop ? Composite(source, backdrop, CompositeMode2D.SourceOver) : source;
+        _current = _current is PaintEntry backdrop ? Composite(source, backdrop, CompositeMode2D.SrcOver) : source;
     }
 
     private PaintGraph2D Gradient(LpPaintEvent paint)
@@ -159,7 +159,7 @@ internal sealed unsafe class ParleyPaintImporter2D(LpLayoutView view, Matrix3x2 
         // Transform only the alpha weights. currentColor stays in paragraph coordinates,
         // including when a COLR ancestor transforms the glyph or its gradient.
         PaintGraph2D mask = Transform(CreateGradient(paint, weights));
-        var weightedForeground = PaintGraph2D.Composite(foreground, mask, CompositeMode2D.SourceIn);
+        var weightedForeground = PaintGraph2D.Composite(foreground, mask, CompositeMode2D.SrcIn);
         return PaintGraph2D.Composite(result, weightedForeground, CompositeMode2D.Plus);
     }
 

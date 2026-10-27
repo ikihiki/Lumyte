@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -42,6 +43,25 @@ public sealed class ModelTests
         Assert.Throws<ArgumentException>(() => PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.One, [new(1, default), new(0, default)]));
     }
 
+    /// <summary>Shared DAG nodes preserve sharing but cannot expand exponentially without a bounded failure.</summary>
+    [Fact]
+    public void PaintDagPreservesSharingAndBoundsExpandedCost()
+    {
+        var child = PaintGraph2D.Solid(new Color2D(1, 1, 1, 1));
+        PaintGraph2D[] input = [child, child];
+        LayersPaintNode2D layers = Assert.IsType<LayersPaintNode2D>(PaintGraph2D.Layers(input).Root);
+        input[0] = PaintGraph2D.Solid(default);
+        Assert.Same(child.Root, layers.Children[0]);
+        Assert.Same(layers.Children[0], layers.Children[1]);
+        for (int i = 0; i < 15; i++)
+        {
+            child = PaintGraph2D.Composite(child, child, CompositeMode2D.SrcOver);
+        }
+
+        Assert.Throws<ArgumentException>(() => PaintGraph2D.Composite(child, child, CompositeMode2D.SrcOver));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.Opacity(float.NaN, child));
+    }
+
     /// <summary>Invalid drawing inputs leave state and command order intact.</summary>
     [Fact]
     public void CanvasValidationIsTransactionalAndRecordingsAreIndependent()
@@ -80,6 +100,34 @@ public sealed class ModelTests
         Assert.Equal(new Vector2(0.25f, 0.5f), clip.Path.Segments[0].P0);
     }
 
+    /// <summary>End failures preserve recording and layer boundaries cannot consume parent saves.</summary>
+    [Fact]
+    public void LayersDeferParentClipAndEnforceIndependentSaveScopes()
+    {
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        canvas.ClipRect(new Rect2D(0, 0, 10, 10));
+        canvas.Save();
+        canvas.BeginLayer(new LayerOptions2D { ContentBounds = new Rect2D(-5, -5, 20, 20), Opacity = 0.5f });
+        Assert.Throws<InvalidOperationException>(canvas.Restore);
+        canvas.Save();
+        Assert.Throws<InvalidOperationException>(canvas.EndLayer);
+        Assert.Throws<InvalidOperationException>(canvas.End);
+        canvas.Restore();
+        canvas.FillRect(new Rect2D(-5, -5, 20, 20), new Color2D(1, 0, 0, 1));
+        canvas.EndLayer();
+        canvas.Restore();
+        canvas.DrawBackdropEffect(new BackdropEffectOptions2D { OutputBounds = new Rect2D(0, 0, 10, 10), Effects = graph => graph.Source });
+        DrawList2D draws = canvas.End().Commands;
+        BeginLayerCommand2D begin = Assert.IsType<BeginLayerCommand2D>(draws.Commands[0]);
+        FillRectCommand2D fill = Assert.IsType<FillRectCommand2D>(draws.Commands[1]);
+        EndLayerCommand2D end = Assert.IsType<EndLayerCommand2D>(draws.Commands[2]);
+        Assert.Equal(Vector2.Zero, Assert.Single(begin.State.Clip.Elements).Path.Segments[0].P0);
+        Assert.Equal(new Vector2(-5), Assert.Single(fill.State.Clip.Elements).Path.Segments[0].P0);
+        Assert.Same(begin.State, end.State);
+        Assert.Equal(4, draws.Commands.Count);
+    }
+
     /// <summary>Typed command memory preserves painter order without copying across preparation calls.</summary>
     [Fact]
     public void DrawListRetainsTypedStorageAndRejectsMixedRuns()
@@ -99,6 +147,37 @@ public sealed class ModelTests
         Assert.Throws<ArgumentException>(() => draws.GetCommands<FillRectCommand2D>(0, 4));
     }
 
+    /// <summary>Mesh validation rejects invalid topology and copies mutable input arrays.</summary>
+    [Fact]
+    public void MeshCopiesInputAndRejectsInvalidIndices()
+    {
+        MeshVertex2D[] vertices = [new(Vector2.Zero, 1), new(Vector2.UnitX, 0.5f), new(Vector2.UnitY, 0)];
+        uint[] indices = [0, 1, 2];
+        var mesh = new Mesh2D(vertices, indices);
+        vertices[0] = default;
+        indices[0] = 2;
+        Assert.Equal(1, mesh.Vertices[0].Coverage);
+        Assert.Equal(0u, mesh.Indices[0]);
+        Assert.Throws<ArgumentException>(() => new Mesh2D(vertices, [0, 1]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Mesh2D(vertices, [0, 1, 3]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Mesh2D([new(Vector2.Zero, 2)], [0, 0, 0]));
+    }
+
+    /// <summary>Cancel discards nested structures and permits a fresh independent recording.</summary>
+    [Fact]
+    public void CancelDiscardsAllNestedRecordingState()
+    {
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        canvas.Save();
+        canvas.BeginLayer(new LayerOptions2D { ContentBounds = new Rect2D(0, 0, 4, 4) });
+        canvas.Save();
+        canvas.Cancel();
+        canvas.Begin();
+        Assert.Empty(canvas.End().Commands.Commands);
+        Assert.Throws<InvalidOperationException>(canvas.Cancel);
+    }
+
     /// <summary>Image patterns validate coordinates in the selected mip and reject singular or comparison sampling.</summary>
     [Fact]
     public void ImageDescriptorsRejectInvalidSourceAndSamplingContracts()
@@ -113,7 +192,11 @@ public sealed class ModelTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.ImagePattern(pattern with { Source = new Rect2D(0.5f, 0, 1, 1) }));
         Assert.Throws<ArgumentException>(() => PaintGraph2D.ImagePattern(pattern with { PatternToLocal = default }));
         using var compare = new ModelSampler(new SamplerDesc { Compare = CompareFunction.Less });
+        Assert.Throws<ArgumentException>(() => new Image2D(view, compare));
         using var sampler = new ModelSampler(new SamplerDesc());
+        Assert.Throws<NotSupportedException>(() => new CoverageImage2D(view, sampler));
+        Assert.Throws<NotSupportedException>(() => new DistanceField2D(view, sampler, DistanceFieldEncoding2D.Sdf, 4));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DistanceField2D(view, sampler, DistanceFieldEncoding2D.Msdf, 0));
     }
 
     private sealed class ModelTexture : IGraphicsTexture

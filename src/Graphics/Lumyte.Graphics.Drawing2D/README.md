@@ -1,9 +1,8 @@
 # Lumyte.Graphics.Drawing2D
 
 通常のCanvas2DとRenderer2DはRenderGraph・ImageEffectsへ依存しません。
-塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
-利用できる命令は FillRect, FillRoundedRect, FillCircle, FillPath です。
-レイヤーと画像エフェクトは後続PRで別パッケージのDrawing2D.RenderGraphに追加します。
+図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
+レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
@@ -34,13 +33,13 @@ targetViewは同一deviceの単一mip/layerのRgba8SrgbまたはRgba16Float atta
 PrepareAsyncはgraphを作らず、固定資源とbatchを準備します。Recordは一回だけ使い、GPU完了後に
 command buffer、準備ownerの順に解放します。
 
-4描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
+11描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
 CreateDefault()はdeviceやDIを使わず既定構成を作ります。UseGraphics2Dによる登録と後勝ち上書きも可能です。
 外部batchはRecordでupload・compute・render等の複数コマンドを発行し、内部同期を記録できます。
 DeclareResourcesでは外部共有texture・bufferのアクセスを宣言し、graph側のadapterが依存へ変換します。
 batch私有資源はbatchが所有・同期し、外部資源の入口・出口のstateと可視性を維持します。
 
-塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換、compositeを扱います。
+塗りは単色、linear/radial/sweep gradient、画像pattern、path clip、変換、隔離合成を扱います。
 `PaintGraph2D.Composite(source, backdrop, mode)`はCOLR v1の全28種類の演算を提供します。
 sourceとbackdropを同じsubpixel位置で評価して合成し、描画先attachmentの内容は読みません。
 色stopの補間とblendはlinear-lightのpremultiplied RGBAです。
@@ -65,8 +64,17 @@ FillRectへ展開して2Dバックエンドで直接評価します。カラーg
 MSDF/MTSDFを選ぶ場合はTextパッケージのDistanceFieldText2Dで通常輪郭のatlasを準備し、
 uploadを記録してからDrawで矩形へ展開します。混在するCOLR paintはvector graphを維持します。
 基本Drawing2Dへフォントライブラリの依存は加わりません。
-基本描画の設計は[GRAPHICS-0018](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)、
-COLRのcomposite・gradientと文字描画の追加APIは[GRAPHICS-0019](../../../docs/adr/graphics/GRAPHICS-0019-text-rendering.md)を参照してください。
+
+文字組みは外部ライブラリが担当し、パス・mesh・coverage・SDF/MSDF/MTSDF・画像で描画を依頼できます。
+既存のsampler付き`DrawDistanceField`も引き続き利用できます。
+Textのatlasでは、任意のpaintと組み合わせられる`PaintGraph2D.DistanceField`を使います。
+設計・APIは以下を参照してください。
+
+- [基本描画・paint・資源管理](../../../docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)
+- [線・パス](../../../docs/adr/graphics/GRAPHICS-0019-2d-paths-and-strokes.md)
+- [画像・mesh](../../../docs/adr/graphics/GRAPHICS-0020-2d-images-and-meshes.md)
+- [文字向け形式・COLRv1](../../../docs/adr/graphics/GRAPHICS-0021-2d-glyph-representations.md)
+- [Parleyによる文字組み・COLR対応の拡張](../../../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)
 
 ## 外部の描画資源
 

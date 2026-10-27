@@ -48,8 +48,11 @@ Lumyte/
 │   │   └── Lumyte.Engine/
 │   ├── Graphics/
 │   │   ├── Lumyte.Graphics.Abstractions/
-│   │   ├── Lumyte.Graphics.ImageEffects/
 │   │   ├── Lumyte.Graphics.RenderGraph/
+│   │   ├── Lumyte.Graphics.Drawing2D/
+│   │   ├── Lumyte.Graphics.Drawing2D.RenderGraph/
+│   │   ├── Lumyte.Graphics.Drawing2D.DependencyInjection/
+│   │   ├── Lumyte.Graphics.ImageEffects/
 │   │   ├── Lumyte.Graphics/
 │   │   ├── Lumyte.Graphics.DirectX/
 │   │   ├── Lumyte.Graphics.DirectX.Native/
@@ -117,6 +120,8 @@ Lumyte/
 `Lumyte.Graphics.RenderGraph` は共通 command API 上で pass の依存関係、culling、barrier と一時 resource の寿命を管理する。`Lumyte.Graphics.Abstractions` のみに依存し、backend ごとの実装は参照しない。設計は [GRAPHICS-0015](graphics/GRAPHICS-0015-render-graph.md)、検証は `tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/` に配置する。
 
 `Lumyte.Graphics.ImageEffects` は2D・3Dから使える画像エフェクトのgraphとRenderGraphへのパス展開を提供する。エフェクト自身が固定のパス実装を持ち、RenderGraphのAppend拡張メソッドへパラメーターを直接渡して適用する。DAGは別途Createで構築する。設計とAPIは [GRAPHICS-0017](graphics/GRAPHICS-0017-image-effects.md)、CPU検証は `tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/`、GPU検証は既存の `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
+
+`Lumyte.Graphics.Drawing2D` は通常のCanvas記録とGraphicsへの直接描画を提供し、RenderGraph・ImageEffectsへ依存しない。`Lumyte.Graphics.Drawing2D.RenderGraph` はレイヤーCanvas・Effectsコールバックと親graph.Append2Dへの接続を提供する。基本設計とAPIは [GRAPHICS-0018](graphics/GRAPHICS-0018-2d-graphics-engine.md)、レイヤーとgraph接続は [GRAPHICS-0022](graphics/GRAPHICS-0022-2d-render-graph-layers.md)、CPU検証は `tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/`、GPU検証は `tests/Graphics/Lumyte.Graphics.Tests/` に配置する。
 
 `Lumyte.Diagnostics.RenderGraph` は Graphics.RenderGraph の observer と既存 Diagnostics を接続する。game scope の最新 snapshot を既存 execution point で公開し、標準 telemetry を収集する。Graphics.RenderGraph 自体は Diagnostics に依存しない。
 

@@ -1,89 +1,89 @@
 namespace Lumyte.Graphics.Drawing2D;
 
-/// <summary>Specifies the 28 OpenType COLR compositing operators, applied to isolated source and backdrop paints.</summary>
+/// <summary>Selects an isolated COLRv1 compositing or blending operation.</summary>
 public enum CompositeMode2D
 {
-    /// <summary>Clears both operands.</summary>
+    /// <summary>Uses Clear behavior.</summary>
     Clear,
 
-    /// <summary>Keeps the source.</summary>
-    Source,
+    /// <summary>Uses Src behavior.</summary>
+    Src,
 
-    /// <summary>Keeps the backdrop.</summary>
-    Destination,
+    /// <summary>Uses Dest behavior.</summary>
+    Dest,
 
-    /// <summary>Places the source over the backdrop.</summary>
-    SourceOver,
+    /// <summary>Uses SrcOver behavior.</summary>
+    SrcOver,
 
-    /// <summary>Places the backdrop over the source.</summary>
-    DestinationOver,
+    /// <summary>Uses DestOver behavior.</summary>
+    DestOver,
 
-    /// <summary>Keeps source inside the backdrop.</summary>
-    SourceIn,
+    /// <summary>Uses SrcIn behavior.</summary>
+    SrcIn,
 
-    /// <summary>Keeps backdrop inside the source.</summary>
-    DestinationIn,
+    /// <summary>Uses DestIn behavior.</summary>
+    DestIn,
 
-    /// <summary>Keeps source outside the backdrop.</summary>
-    SourceOut,
+    /// <summary>Uses SrcOut behavior.</summary>
+    SrcOut,
 
-    /// <summary>Keeps backdrop outside the source.</summary>
-    DestinationOut,
+    /// <summary>Uses DestOut behavior.</summary>
+    DestOut,
 
-    /// <summary>Places source atop the backdrop.</summary>
-    SourceAtop,
+    /// <summary>Uses SrcAtop behavior.</summary>
+    SrcAtop,
 
-    /// <summary>Places backdrop atop the source.</summary>
-    DestinationAtop,
+    /// <summary>Uses DestAtop behavior.</summary>
+    DestAtop,
 
-    /// <summary>Keeps each operand outside the other.</summary>
+    /// <summary>Uses Xor behavior.</summary>
     Xor,
 
-    /// <summary>Adds and clamps both premultiplied operands.</summary>
+    /// <summary>Uses Plus behavior.</summary>
     Plus,
 
-    /// <summary>Uses the screen blend function.</summary>
+    /// <summary>Uses Screen behavior.</summary>
     Screen,
 
-    /// <summary>Uses the overlay blend function.</summary>
+    /// <summary>Uses Overlay behavior.</summary>
     Overlay,
 
-    /// <summary>Uses the darker component from each operand.</summary>
+    /// <summary>Uses Darken behavior.</summary>
     Darken,
 
-    /// <summary>Uses the lighter component from each operand.</summary>
+    /// <summary>Uses Lighten behavior.</summary>
     Lighten,
 
-    /// <summary>Uses the color-dodge blend function.</summary>
+    /// <summary>Uses ColorDodge behavior.</summary>
     ColorDodge,
 
-    /// <summary>Uses the color-burn blend function.</summary>
+    /// <summary>Uses ColorBurn behavior.</summary>
     ColorBurn,
 
-    /// <summary>Uses the hard-light blend function.</summary>
+    /// <summary>Uses HardLight behavior.</summary>
     HardLight,
 
-    /// <summary>Uses the soft-light blend function.</summary>
+    /// <summary>Uses SoftLight behavior.</summary>
     SoftLight,
 
-    /// <summary>Uses the absolute component difference.</summary>
+    /// <summary>Uses Difference behavior.</summary>
     Difference,
 
-    /// <summary>Uses the exclusion blend function.</summary>
+    /// <summary>Uses Exclusion behavior.</summary>
     Exclusion,
 
-    /// <summary>Multiplies the operand components.</summary>
+    /// <summary>Uses Multiply behavior.</summary>
     Multiply,
 
-    /// <summary>Uses source hue with backdrop saturation and luminosity.</summary>
-    Hue,
+    /// <summary>Uses HslHue behavior.</summary>
+    HslHue,
 
-    /// <summary>Uses source saturation with backdrop hue and luminosity.</summary>
-    Saturation,
+    /// <summary>Uses HslSaturation behavior.</summary>
+    HslSaturation,
 
-    /// <summary>Uses source hue and saturation with backdrop luminosity.</summary>
-    Color,
+    /// <summary>Uses HslColor behavior.</summary>
+    HslColor,
 
-    /// <summary>Uses source luminosity with backdrop hue and saturation.</summary>
-    Luminosity,
+    /// <summary>Uses HslLuminosity behavior.</summary>
+    HslLuminosity,
 }

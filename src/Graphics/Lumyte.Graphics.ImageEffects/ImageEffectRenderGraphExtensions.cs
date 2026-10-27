@@ -7,6 +7,17 @@ namespace Lumyte.Graphics.ImageEffects;
 /// <summary>Adds image-effect passes to RenderGraph, which manages dependencies, barriers and temporary images.</summary>
 public static class ImageEffectRenderGraphExtensions
 {
+    /// <summary>Appends exposure, saturation, vignette and optional Reinhard tone mapping.</summary>
+    /// <param name="plan">The graph owning all fixed and temporary resources.</param>
+    /// <param name="input">The graph-local premultiplied HDR image.</param>
+    /// <param name="exposure">The exposure in stops.</param>
+    /// <param name="saturation">The nonnegative saturation multiplier.</param>
+    /// <param name="vignette">The vignette strength in [0, 1].</param>
+    /// <param name="toneMap">Whether to convert scene-linear values to display-linear values.</param>
+    /// <returns>The graph-local output.</returns>
+    public static EffectImage AppendPostProcess(this RenderGraphBuilder plan, EffectImage input, float exposure = 0, float saturation = 1, float vignette = 0, bool toneMap = false)
+        => plan.AppendEffect(new PostProcessEffect(exposure, saturation, vignette, toneMap), input);
+
     /// <summary>Appends ColorMatrix passes from parameters and returns the owned output.</summary>
     /// <param name="plan">The caller-owned render graph.</param>
     /// <param name="input">The graph-local input image.</param>
@@ -113,11 +124,6 @@ public static class ImageEffectRenderGraphExtensions
                 _ => throw new NotSupportedException("Unknown effect operation."),
             };
             ValidateImage(result);
-            if (result.ColorSemantic != source.ColorSemantic)
-            {
-                throw new InvalidOperationException("An effect cannot implicitly change the color semantic.");
-            }
-
             if (results.Count >= 4096)
             {
                 throw new NotSupportedException("An effect graph may contain at most 4096 distinct operations.");
@@ -143,10 +149,16 @@ public static class ImageEffectRenderGraphExtensions
                 throw new InvalidOperationException("An effect must declare positive output dimensions.");
             }
 
-            EffectImage result = operation.Definition.AppendPasses(context, plan, images);
-            if (result.Bounds != expected)
+            EffectColorSemantic semantic = images.Length == 0 ? source.ColorSemantic : images[0].ColorSemantic;
+            if (images.Any(image => image.ColorSemantic != semantic))
             {
-                throw new InvalidOperationException("An effect must preserve its definition's declared output bounds.");
+                throw new InvalidOperationException("Effect inputs must use the same color semantic.");
+            }
+
+            EffectImage result = operation.Definition.AppendPasses(context.WithColorSemantic(semantic), plan, images);
+            if (result.Bounds != expected || result.ColorSemantic != operation.Definition.GetOutputColorSemantic(semantic))
+            {
+                throw new InvalidOperationException("An effect must match its declared output bounds and color semantic.");
             }
 
             return result;
@@ -201,7 +213,7 @@ public static class ImageEffectRenderGraphExtensions
         {
             EffectImage output = effect.AppendPasses(context, plan, inputs);
             ValidateImage(output);
-            if (output.Bounds != expected || output.ColorSemantic != semantic)
+            if (output.Bounds != expected || output.ColorSemantic != effect.GetOutputColorSemantic(semantic))
             {
                 throw new InvalidOperationException("An effect must preserve its declared bounds and color semantic.");
             }

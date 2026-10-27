@@ -53,7 +53,7 @@ DrawingProgram2DはCPUの内部コンパイラで、子を先に評価するDraw
 
 paint深さ64、展開後命令256、データ262144個のVector4を上限とし、clip・shapeも命令上限へ含める。共有nodeも実際の展開分を数える。3点linearの投影分母0、同心同半径のradial、開始終了角が同じsweep、幅0のColorLineのRepeat/Reflectは標準実装でNotSupportedExceptionとする。未対応入力を別gradientへ近似せず、shaderへ渡す非finiteデータも準備時に拒否する。
 
-本節の初期制限のうち、退化gradient・空のColorLine・符号付きradial半径と共有nodeの展開規則は、[GRAPHICS-0019](GRAPHICS-0019-text-rendering.md#colrのための2d-paint拡張)でCOLR対応へ拡張する。退化gradientは仕様に従って透明や端色へ評価し、同一node参照かつ同じ変換のpaintはcompilerで共有する。COLRのisolatedなcompositeも同ADRの追加APIを使う。
+本節の初期制限のうち、退化gradient・空のColorLine・符号付きradial半径と共有nodeの展開規則は、[GRAPHICS-0024](GRAPHICS-0024-text-rendering.md#colrのための2d-paint拡張)でCOLR対応へ拡張する。退化gradientは仕様に従って透明や端色へ評価し、同一node参照かつ同じ変換のpaintはcompilerで共有する。isolatedなcompositeの公開契約は[GRAPHICS-0021](GRAPHICS-0021-2d-glyph-representations.md)に従う。
 
 ### 画像patternのsampling契約
 

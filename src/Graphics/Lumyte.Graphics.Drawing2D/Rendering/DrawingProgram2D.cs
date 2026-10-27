@@ -55,9 +55,60 @@ internal sealed class DrawingProgram2D
                 shape = Add(Node(3, transform) with { A = new(c.Center, c.Radius, 0) });
                 paint = Paint(c.Paint.Root, transform);
                 break;
+            case DrawLineCommand2D c:
+                var path = new PathBuilder2D();
+                path.MoveTo(c.Start);
+                path.LineTo(c.End);
+                shape = Stroke(path.Build(), c.Style, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
             case FillPathCommand2D c:
                 shape = Path(c.Path, c.Rule, transform);
                 paint = Paint(c.Paint.Root, transform);
+                break;
+            case StrokePathCommand2D c:
+                shape = Stroke(c.Path, c.Style, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case DrawImageCommand2D c:
+                if (c.Image.Sampler.Desc.MaxAnisotropy != 1)
+                {
+                    throw new NotSupportedException("The default image renderer does not support anisotropic sampling.");
+                }
+
+                if (c.Source.Width == 0 || c.Source.Height == 0 || c.Destination.Width == 0 || c.Destination.Height == 0)
+                {
+                    return Solid(default);
+                }
+
+                shape = Rect(c.Destination, transform);
+                Matrix3x2 imageTransform = Matrix3x2.CreateScale(c.Destination.Width / c.Source.Width, c.Destination.Height / c.Source.Height) * Matrix3x2.CreateTranslation(c.Destination.X, c.Destination.Y) * transform;
+                (uint imageWidth, uint imageHeight) = c.Image.View.Texture.GetMipSize(c.Image.View.Info.BaseMipLevel);
+                Matrix3x2 viewTransform = Matrix3x2.CreateTranslation(-c.Source.X, -c.Source.Y) * imageTransform;
+                paint = Image(c.Image.View, new(0, 0, imageWidth, imageHeight), c.Image.Alpha, TileMode(c.Image.Sampler.Desc.AddressU), TileMode(c.Image.Sampler.Desc.AddressV), ImageFilter(c.Image.Sampler.Desc, imageTransform), viewTransform);
+                break;
+            case DrawCoverageMaskCommand2D c:
+                shape = SampleMask(c.Mask.View, c.Mask.Sampler, c.Source, c.Destination, 13, 0, 0, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case DrawDistanceFieldCommand2D c:
+                shape = SampleMask(c.Field.View, c.Field.Sampler, c.Source, c.Destination, 14, (uint)c.Field.Encoding, c.Field.DistanceRange, transform);
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case DrawMeshCommand2D c:
+                uint first = (uint)Data.Count;
+                foreach (uint index in c.Mesh.Indices)
+                {
+                    MeshVertex2D vertex = c.Mesh.Vertices[(int)index];
+                    Data.Add(new(vertex.Position, vertex.Coverage, 0));
+                }
+
+                shape = Add(Node(5, transform) with { First = first, Count = (uint)c.Mesh.Indices.Count / 3, Mode = 1 });
+                paint = Paint(c.Paint.Root, transform);
+                break;
+            case DrawPaintGraphCommand2D c:
+                shape = Solid(Vector4.One);
+                paint = Paint(c.Graph.Root, transform);
                 break;
             default:
                 throw new ArgumentException("Unknown drawing command.", nameof(command));
@@ -105,6 +156,22 @@ internal sealed class DrawingProgram2D
         }
 
         return new(new(inverse.M11, inverse.M21, inverse.M31, 0), new(inverse.M12, inverse.M22, inverse.M32, 0), default, default, default, default, kind, 0, 0, 0, null!, null!);
+    }
+
+    private static ImageTileMode2D TileMode(AddressMode mode) => mode switch
+    {
+        AddressMode.ClampToEdge => ImageTileMode2D.Clamp,
+        AddressMode.Repeat => ImageTileMode2D.Repeat,
+        AddressMode.MirrorRepeat => ImageTileMode2D.Mirror,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
+    private static ImageFilter2D ImageFilter(SamplerDesc sampler, Matrix3x2 texelToPixel)
+    {
+        Matrix3x2.Invert(texelToPixel, out Matrix3x2 inverse);
+        float footprint = MathF.Max(new Vector2(inverse.M11, inverse.M12).Length(), new Vector2(inverse.M21, inverse.M22).Length());
+        FilterMode filter = footprint > 1 ? sampler.MinFilter : sampler.MagFilter;
+        return filter == FilterMode.Nearest ? ImageFilter2D.Nearest : ImageFilter2D.Linear;
     }
 
     private static bool Invertible(Matrix3x2 transform) => Matrix3x2.Invert(transform, out Matrix3x2 inverse) && float.IsFinite(inverse.M11) && float.IsFinite(inverse.M12) && float.IsFinite(inverse.M21) && float.IsFinite(inverse.M22) && float.IsFinite(inverse.M31) && float.IsFinite(inverse.M32);
@@ -167,7 +234,7 @@ internal sealed class DrawingProgram2D
                 uint child = Paint(node.Child, transform, depth + 1);
                 return Add(ImageInstruction(field.View, field.Source, field.Alpha, field.TileX, field.TileY, field.Filter, field.PatternToLocal * transform) with
                 {
-                    Kind = 12,
+                    Kind = 15,
                     First = child,
                     D = new(node.DistanceRange, (float)node.Mode, 0, 0),
                 });
@@ -177,10 +244,16 @@ internal sealed class DrawingProgram2D
                 return Multiply(Path(node.Path, node.Rule, transform), Paint(node.Child, transform, depth + 1));
             case TransformPaintNode2D node:
                 return Paint(node.Child, node.Transform * transform, depth + 1);
+            case LayersPaintNode2D node:
+                uint result = Solid(default);
+                foreach (PaintNode2D layer in node.Children)
+                {
+                    result = Composite(Paint(layer, transform, depth + 1), result, CompositeMode2D.SrcOver);
+                }
+
+                return result;
             case CompositePaintNode2D node:
-                uint source = Paint(node.Source, transform, depth + 1);
-                uint backdrop = Paint(node.Backdrop, transform, depth + 1);
-                return Add(Node(13, Matrix3x2.Identity) with { First = source, Count = backdrop, Mode = (uint)node.Mode });
+                return Composite(Paint(node.Source, transform, depth + 1), Paint(node.Backdrop, transform, depth + 1), node.Mode);
             default:
                 throw new ArgumentException("Unknown paint node.", nameof(paint));
         }
@@ -205,11 +278,20 @@ internal sealed class DrawingProgram2D
         return Add(Node(4, transform) with { First = first, Count = (uint)Data.Count - first, Mode = (uint)rule });
     }
 
+    private uint Stroke(Path2D path, StrokeStyle2D style, Matrix3x2 transform)
+    {
+        uint first = (uint)Data.Count;
+        Data.AddRange(PathFlattening2D.Stroke(PathFlattening2D.Flatten(path, transform), style, transform));
+        return Add(Node(5, transform) with { First = first, Count = ((uint)Data.Count - first) / 3 });
+    }
+
     private uint Rect(Rect2D rect, Matrix3x2 transform) => Add(Node(1, transform) with { A = Vector(rect) });
 
     private uint Solid(Vector4 color) => Add(Node(0, Matrix3x2.Identity) with { A = color });
 
     private uint Multiply(uint a, uint b) => Add(Node(11, Matrix3x2.Identity) with { First = a, Count = b });
+
+    private uint Composite(uint source, uint backdrop, CompositeMode2D mode) => Add(Node(12, Matrix3x2.Identity) with { First = source, Count = backdrop, Mode = (uint)mode });
 
     private uint Gradient(DrawingInstruction instruction, IReadOnlyList<ColorStop2D> stops)
     {
@@ -237,6 +319,31 @@ internal sealed class DrawingProgram2D
             Texture = Register(view),
             Sampler = _nearest,
         };
+    }
+
+    private uint SampleMask(IGraphicsTextureView view, IGraphicsSampler sampler, Rect2D source, Rect2D destination, uint kind, uint mode, float range, Matrix3x2 transform)
+    {
+        if (sampler.Desc.MaxAnisotropy != 1)
+        {
+            throw new NotSupportedException("The default mask renderer does not support anisotropic sampling.");
+        }
+
+        if (source.Width == 0 || source.Height == 0 || destination.Width == 0 || destination.Height == 0)
+        {
+            return Solid(default);
+        }
+
+        (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
+        uint samplerSlot = _textureSlot + 1;
+        return Add(Node(kind, transform) with
+        {
+            A = Vector(destination),
+            B = Vector(source),
+            C = new(width, height, range, 0),
+            Mode = mode,
+            Texture = Register(view),
+            Sampler = _table.WriteSampler(samplerSlot, sampler),
+        });
     }
 
     private IGpuRef<IGraphicsTextureView> Register(IGraphicsTextureView view)

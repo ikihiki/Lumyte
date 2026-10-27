@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Drawing2D;
 
-/// <summary>Prepares consecutive path fills using the configured rendering strategy.</summary>
+/// <summary>Prepares consecutive FillPath commands using the configured rendering strategy.</summary>
 public interface IFillPathRenderer2D
 {
     /// <summary>Prepares a batch without submitting or waiting for GPU work.</summary>

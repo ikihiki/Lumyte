@@ -38,6 +38,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Worlds/Lumyte.Worlds.csproj" />
     <Project Path="src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
     <Project Path="src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
     <Project Path="src/Core/Lumyte.Resources/Lumyte.Resources.csproj" />
@@ -70,8 +71,12 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text.SixLabors/Lumyte.Graphics.Text.SixLabors.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D.RenderGraph/Lumyte.Resources.Graphics.Drawing2D.RenderGraph.csproj" />
+    <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing/Lumyte.Resources.Graphics.Drawing.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Drawing/Lumyte.Graphics.Drawing.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D/Lumyte.Resources.Graphics.Drawing2D.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/Lumyte.Graphics.Drawing2D.RenderGraph.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D.DependencyInjection/Lumyte.Graphics.Drawing2D.DependencyInjection.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.ImageEffects/Lumyte.Resources.Graphics.ImageEffects.csproj" />
@@ -99,6 +104,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.AotSmoke/Lumyte.Resources.AotSmoke.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Execution.Tests/Lumyte.Execution.Tests.csproj" />
@@ -125,6 +131,7 @@
   <Folder Name="/tests/Graphics/">
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Lumyte.Graphics.Text.Parley.Tests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Graphics.Drawing.Tests/Lumyte.Graphics.Drawing.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/Lumyte.Graphics.Drawing2D.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Resources.Graphics.AotSmoke/Lumyte.Resources.Graphics.AotSmoke.csproj" />

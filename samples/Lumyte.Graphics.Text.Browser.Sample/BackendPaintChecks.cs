@@ -40,11 +40,11 @@ internal static partial class Program
         AddBlendBoundary(1, "Dodge white / color", new Color2D(1, 1, 1, 1), new Color2D(0.3f, 0.6f, 0.2f, 1), CompositeMode2D.ColorDodge);
         AddBlendBoundary(2, "Burn white / black", new Color2D(0, 0, 0, 1), new Color2D(1, 1, 1, 1), CompositeMode2D.ColorBurn);
         AddBlendBoundary(3, "Burn black / color", new Color2D(0, 0, 0, 1), new Color2D(0.3f, 0.6f, 0.2f, 1), CompositeMode2D.ColorBurn);
-        AddBlendBoundary(4, "Gray hue", new Color2D(0.5f, 0.5f, 0.5f, 1), new Color2D(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.Hue);
-        AddBlendBoundary(5, "Gray saturation", new Color2D(0.8f, 0.3f, 0.1f, 1), new Color2D(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.Saturation);
-        AddBlendBoundary(6, "Gray color", new Color2D(0.5f, 0.5f, 0.5f, 1), new Color2D(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.Color);
-        AddBlendBoundary(7, "Gray luminosity", new Color2D(0.5f, 0.5f, 0.5f, 1), new Color2D(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.Luminosity);
-        AddBlendBoundary(8, "Transparent color", new Color2D(0, 1, 0, 0), backdropColor, CompositeMode2D.Color);
+        AddBlendBoundary(4, "Gray hue", new Color2D(0.5f, 0.5f, 0.5f, 1), new Color2D(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.HslHue);
+        AddBlendBoundary(5, "Gray saturation", new Color2D(0.8f, 0.3f, 0.1f, 1), new Color2D(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.HslSaturation);
+        AddBlendBoundary(6, "Gray color", new Color2D(0.5f, 0.5f, 0.5f, 1), new Color2D(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.HslColor);
+        AddBlendBoundary(7, "Gray luminosity", new Color2D(0.5f, 0.5f, 0.5f, 1), new Color2D(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.HslLuminosity);
+        AddBlendBoundary(8, "Transparent color", new Color2D(0, 1, 0, 0), backdropColor, CompositeMode2D.HslColor);
         AddBlendBoundary(9, "Softlight black", new Color2D(1, 1, 1, 1), new Color2D(0, 0, 0, 1), CompositeMode2D.SoftLight);
         BuildGradientChecks(canvas, family);
 

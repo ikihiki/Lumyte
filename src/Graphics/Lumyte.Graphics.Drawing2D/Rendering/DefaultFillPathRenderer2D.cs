@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Drawing2D;
 
-/// <summary>Renders path fills with the standard GPU paint and coverage evaluator.</summary>
+/// <summary>Renders FillPath commands with the standard GPU paint and coverage evaluator.</summary>
 public sealed class DefaultFillPathRenderer2D : IFillPathRenderer2D
 {
     /// <summary>Initializes a new instance of the <see cref="DefaultFillPathRenderer2D"/> class.</summary>
