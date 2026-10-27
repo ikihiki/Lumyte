@@ -7,10 +7,10 @@ internal static class VoiceScenario
 {
     internal static void Run(AudioModule audio, ResourceManager manager, TestSource source, bool host, bool reload, Action<Task> wait)
     {
-        Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("tone")).AsTask();
+        Task<ResourceReference<AudioClip>> load = manager.RetainAsync(new ResourceKey<AudioClip>("tone")).AsTask();
         wait(load);
         using ResourceReference<AudioClip> reference = load.GetAwaiter().GetResult();
-        using ResourceLease<AudioClip> lease = reference.Acquire();
+        using ResourceLease<AudioClip> lease = reference.Pin();
         AudioVoice first = CreateVoice(lease.Value, wait);
         try
         {
@@ -75,7 +75,7 @@ internal static class VoiceScenario
         };
         source.Set(0.5f);
         wait(published.Task);
-        using ResourceLease<AudioClip> next = reference.Acquire();
+        using ResourceLease<AudioClip> next = reference.Pin();
         Require(next.Revision != old.Revision && !next.Value.Equals(old.Value), "Reload did not publish a new clip.");
         AudioVoice nextVoice = CreateVoice(next.Value, wait);
         try
@@ -87,7 +87,7 @@ internal static class VoiceScenario
             manager.ReloadFailed += (_, _) => failed.TrySetResult();
             source.Set(float.NaN);
             wait(failed.Task);
-            using ResourceLease<AudioClip> afterFailure = reference.Acquire();
+            using ResourceLease<AudioClip> afterFailure = reference.Pin();
             Require(
                 next.Value.Equals(afterFailure.Value) && old.IsUsable,
                 "Failed reload changed the publication or released an old lease.");
@@ -102,10 +102,10 @@ internal static class VoiceScenario
 
     private static void VerifyEarlyClipRelease(ResourceManager manager, Action<Task> wait)
     {
-        Task<ResourceReference<AudioClip>> load = manager.AcquireAsync(new ResourceKey<AudioClip>("early-release")).AsTask();
+        Task<ResourceReference<AudioClip>> load = manager.RetainAsync(new ResourceKey<AudioClip>("early-release")).AsTask();
         wait(load);
         ResourceReference<AudioClip> reference = load.GetAwaiter().GetResult();
-        ResourceLease<AudioClip> lease = reference.Acquire();
+        ResourceLease<AudioClip> lease = reference.Pin();
         AudioVoice voice = CreateVoice(lease.Value, wait);
         try
         {

@@ -38,8 +38,8 @@ public sealed class ResourceReference<T> : IDisposable
     /// <returns>An independently owned lease whose value does not switch on hot reload.</returns>
     /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
     /// <exception cref="InvalidOperationException">No usable published value is available.</exception>
-    public ResourceLease<T> Acquire(ResourceSnapshot? snapshot = null)
-        => TryAcquire(out ResourceLease<T>? lease, snapshot)
+    public ResourceLease<T> Pin(ResourceSnapshot? snapshot = null)
+        => TryPin(out ResourceLease<T>? lease, snapshot)
             ? lease
             : throw new InvalidOperationException("The reference has no usable published value.");
 
@@ -48,35 +48,18 @@ public sealed class ResourceReference<T> : IDisposable
     /// <param name="snapshot">An optional resource snapshot whose captured publication supplies the value.</param>
     /// <returns>Whether a value could be retained.</returns>
     /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
-    public bool TryAcquire([NotNullWhen(true)] out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null)
+    public bool TryPin([NotNullWhen(true)] out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null)
     {
         ResourceManager? manager = Volatile.Read(ref _manager);
         ObjectDisposedException.ThrowIf(manager is null, this);
         if (snapshot is not null)
         {
-            return snapshot.TryAcquire(_handle, out lease);
+            return snapshot.TryPin(_handle, out lease);
         }
 
         lease = manager.AcquireCurrentLease(_handle);
         return lease is not null;
     }
-
-    /// <summary>Pins the current value and revision for an operation such as one rendering frame.</summary>
-    /// <param name="snapshot">An optional resource snapshot whose captured publication supplies the value.</param>
-    /// <returns>An independently owned lease whose value does not switch on hot reload.</returns>
-    /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
-    /// <exception cref="InvalidOperationException">No usable published value is available.</exception>
-    /// <remarks>Fixes the resource generation, not a GC address. This does not copy the value or prevent runtime invalidation.</remarks>
-    public ResourceLease<T> Pin(ResourceSnapshot? snapshot = null) => Acquire(snapshot);
-
-    /// <summary>Attempts to pin a value without I/O or pipeline execution.</summary>
-    /// <param name="lease">The retained value and revision, or null when unavailable.</param>
-    /// <param name="snapshot">An optional resource snapshot whose captured publication supplies the value.</param>
-    /// <returns>Whether a value could be retained.</returns>
-    /// <exception cref="ObjectDisposedException">This reference has been returned.</exception>
-    /// <remarks>Fixes the resource generation, not a GC address. This does not copy the value or prevent runtime invalidation.</remarks>
-    public bool TryPin([NotNullWhen(true)] out ResourceLease<T>? lease, ResourceSnapshot? snapshot = null)
-        => TryAcquire(out lease, snapshot);
 
     /// <summary>Returns the logical ownership once without I/O, invalidating the slot after its final owner returns.</summary>
     public void Dispose() => Interlocked.Exchange(ref _manager, null)?.ReturnReference(_handle);

@@ -205,22 +205,12 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
 
     internal IResourceWatchTargets WatchTargets => _watchTargets!;
 
-    /// <summary>Creates logical residency that follows later publications.</summary>
-    /// <remarks>Loads and builds the resource if necessary; the reference follows hot reload rather than fixing a generation.</remarks>
-    /// <typeparam name="T">The registered output type.</typeparam>
-    /// <param name="key">The requested resource.</param>
-    /// <param name="cancellationToken">Cancels the initial acquisition wait.</param>
-    /// <returns>The independently owned logical reference.</returns>
-    public ValueTask<ResourceReference<T>> RetainAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
-        where T : notnull
-        => AcquireAsync(key, cancellationToken);
-
     /// <summary>Creates logical residency and a non-owning handle that follows later publications.</summary>
     /// <typeparam name="T">The registered output type.</typeparam>
     /// <param name="key">The requested resource.</param>
     /// <param name="cancellationToken">Cancels the initial acquisition wait.</param>
     /// <returns>The managed owner of the handle.</returns>
-    public async ValueTask<ResourceReference<T>> AcquireAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
+    public async ValueTask<ResourceReference<T>> RetainAsync<T>(ResourceKey<T> key, CancellationToken cancellationToken = default)
         where T : notnull
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -302,7 +292,7 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <param name="handle">The logical handle to resolve.</param>
     /// <param name="reference">The owning reference, or null when resolution fails.</param>
     /// <returns>Whether a reference was acquired.</returns>
-    public bool TryAcquire<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
+    public bool TryRetain<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
         where T : notnull
     {
         RefreshRuntimes();
@@ -321,15 +311,6 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
             return true;
         }
     }
-
-    /// <summary>Acquires an owning reference from a live handle without I/O or pipeline work.</summary>
-    /// <typeparam name="T">The resource output type.</typeparam>
-    /// <param name="handle">The logical handle to resolve.</param>
-    /// <param name="reference">The owning reference, or null when resolution fails.</param>
-    /// <returns>Whether a reference was acquired.</returns>
-    public bool TryRetain<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceReference<T>? reference)
-        where T : notnull
-        => TryAcquire(handle, out reference);
 
     /// <summary>Captures the published resource generations so multiple acquisitions share one publication.</summary>
     /// <returns>A snapshot retaining all published generations until disposed; no loading or value copying occurs.</returns>
@@ -361,8 +342,8 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
         where TElement : unmanaged
     {
         options.Validate<TElement>();
-        using ResourceReference<TResource> reference = await AcquireAsync(key, cancellationToken).ConfigureAwait(false);
-        ResourceLease<TResource> lease = reference.Acquire();
+        using ResourceReference<TResource> reference = await RetainAsync(key, cancellationToken).ConfigureAwait(false);
+        ResourceLease<TResource> lease = reference.Pin();
         IMemoryScope? memory = null;
         ResourceStreamSession<TElement>? session = null;
         try

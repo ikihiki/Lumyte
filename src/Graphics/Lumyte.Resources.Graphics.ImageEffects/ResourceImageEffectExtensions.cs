@@ -14,7 +14,7 @@ public static class ResourceImageEffectExtensions
     /// <param name="cancellationToken">Cancels this acquisition.</param>
     /// <returns>A reusable reference to the shader package.</returns>
     public static ValueTask<ResourceReference<ImageEffectShaderResource>> AcquireImageEffectShadersAsync(this ResourceManager manager, CancellationToken cancellationToken = default)
-        => manager.AcquireAsync(_shaderKey, cancellationToken);
+        => manager.RetainAsync(_shaderKey, cancellationToken);
 
     /// <summary>Registers managed image effects, deferring shader loading until BuildAsync.</summary>
     /// <param name="extensions">The builder with AddResources registered for the same manager.</param>

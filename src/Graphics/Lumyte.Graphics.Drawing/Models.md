@@ -140,7 +140,7 @@ draw ごとに `World`／`NormalTransform` などの `ModelDrawArguments` を変
 の `ModelMeshDefinition` を使用できます。変換済み CPU データを Build 依存とし、GPU 完了後の mesh を
 汎用 `GraphicsResource<ModelMesh>` として公開します。インポーターは含みません。
 
-ResourceReference は論理 mesh を保持し、graph.ImportResources(manager).Acquire(reference) が
+ResourceReference は論理 mesh を保持し、graph.ImportResources(manager).Pin(reference) が
 フレームで使う世代を固定します。HotReload の新世代を次の graph で取得し、旧 graph／plan は GPU 完了まで
 旧世代を保持します。device loss 後は旧 epoch の退役を確認し、device を復旧してから
 `manager.RebuildRuntimeAsync([graphicsRuntime.Id])` で GPU 出力を再構築します。

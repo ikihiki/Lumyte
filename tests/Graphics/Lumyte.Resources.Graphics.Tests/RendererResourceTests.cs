@@ -113,12 +113,12 @@ public sealed class RendererResourceTests
         await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
         using ResourceReference<Renderer2DResource> reference = await manager.AcquireRenderer2DAsync();
-        using ResourceLease<Renderer2DResource> lease = reference.Acquire();
+        using ResourceLease<Renderer2DResource> lease = reference.Pin();
         DrawingResources2D resources = lease.Value.Resources;
         Assert.Equal("configured-2d", resources.Pipeline.Desc.Label);
         Assert.Equal(PipelineOptimizationMode.FullSpecialization, resources.Pipeline.Desc.Optimization);
-        using ResourceReference<GraphicsResource<IGraphicsSampler>> sampler = await manager.AcquireAsync(DrawingGraphicsResources2D.Sampler);
-        using ResourceLease<GraphicsResource<IGraphicsSampler>> samplerLease = sampler.Acquire();
+        using ResourceReference<GraphicsResource<IGraphicsSampler>> sampler = await manager.RetainAsync(DrawingGraphicsResources2D.Sampler);
+        using ResourceLease<GraphicsResource<IGraphicsSampler>> samplerLease = sampler.Pin();
         Assert.Same(samplerLease.Value.Value, resources.Sampler);
         using Renderer2D renderer = reference.CreateRenderer();
         Assert.Single(state.Devices[0].Programs);

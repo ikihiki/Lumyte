@@ -23,7 +23,7 @@ public sealed class ResourceSnapshot : IDisposable
     /// <param name="lease">The retained revision, or <see langword="null"/> if the handle or runtime is unavailable.</param>
     /// <returns>Whether a usable revision was retained.</returns>
     /// <exception cref="ObjectDisposedException">This snapshot has been returned.</exception>
-    public bool TryAcquire<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceLease<T>? lease)
+    public bool TryPin<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceLease<T>? lease)
         where T : notnull
     {
         ResourceManager? manager = Volatile.Read(ref _manager);
@@ -40,20 +40,9 @@ public sealed class ResourceSnapshot : IDisposable
     /// <remarks>Fixes the resource generation, not a GC address. This does not copy the value or prevent runtime invalidation.</remarks>
     public ResourceLease<T> Pin<T>(ResourceHandle<T> handle)
         where T : notnull
-        => TryAcquire(handle, out ResourceLease<T>? lease)
+        => TryPin(handle, out ResourceLease<T>? lease)
             ? lease
             : throw new InvalidOperationException("The handle has no usable value in the captured publication.");
-
-    /// <summary>Attempts to retain a revision from the captured view without I/O or pipeline execution.</summary>
-    /// <typeparam name="T">The handle's exact resource output type.</typeparam>
-    /// <param name="handle">The nonowning handle to resolve.</param>
-    /// <param name="lease">The retained revision, or null if the handle or runtime is unavailable.</param>
-    /// <returns>Whether a usable revision was retained.</returns>
-    /// <exception cref="ObjectDisposedException">This snapshot has been returned.</exception>
-    /// <remarks>Fixes the resource generation, not a GC address. This does not copy the value or prevent runtime invalidation.</remarks>
-    public bool TryPin<T>(ResourceHandle<T> handle, [NotNullWhen(true)] out ResourceLease<T>? lease)
-        where T : notnull
-        => TryAcquire(handle, out lease);
 
     /// <summary>Returns the view's protection once without invalidating leases already issued from it.</summary>
     public void Dispose() => Interlocked.Exchange(ref _manager, null)?.ReturnReadView(_map);

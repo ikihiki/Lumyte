@@ -4,7 +4,7 @@
 `RetainAsync<T>(ResourceKey<T>)`は論理リソースを保持するReferenceを返します。
 必要なら初回ロードと構築を待ち、その後はHotReloadによる公開内容の差し替えを追従します。`TryRetain(handle, out reference)`はI/Oなしで論理所有を増やします。
 描画開始など値を固定したい時点でReference.Pin()から値とRevision付きのLeaseを取得します。
-既存の`AcquireAsync`・`Acquire`・`TryAcquire`も同じ契約で利用できます。
+取得APIは`RetainAsync`・`TryRetain`と`Pin`・`TryPin`に統一します。
 `ResourceSnapshot.Pin(handle)`・`TryPin(handle, out lease)`は捕捉した公開状態からLeaseを取得します。
 `Pin`は内容世代を固定する操作です。GCアドレスの固定や値の複製は行わず、デバイスロストなどによるruntime失効も防ぎません。
 Try取得は成功時の出力が非nullと注釈されているため、成功分岐でnull抑制は不要です。

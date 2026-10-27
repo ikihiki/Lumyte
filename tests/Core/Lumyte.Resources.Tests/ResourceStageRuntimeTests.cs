@@ -27,8 +27,8 @@ public sealed class ResourceStageRuntimeTests
             memory,
             fallback,
             stageRuntimes: [new(typeof(LeafValue), selected)]);
-        using ResourceReference<ParentValue> reference = await manager.AcquireAsync(new ResourceKey<ParentValue>("asset"));
-        using ResourceLease<ParentValue> lease = reference.Acquire();
+        using ResourceReference<ParentValue> reference = await manager.RetainAsync(new ResourceKey<ParentValue>("asset"));
+        using ResourceLease<ParentValue> lease = reference.Pin();
         ParentValue parent = lease.Value;
         Assert.Same(fallback, parent.Runtime);
         Assert.Same(selected, parent.Child.Runtime);
@@ -59,8 +59,8 @@ public sealed class ResourceStageRuntimeTests
             memory,
             execution.Resources,
             stageRuntimes: bindings);
-        using ResourceReference<LeafValue> reference = await manager.AcquireAsync(new ResourceKey<LeafValue>("asset"));
-        using ResourceLease<LeafValue> oldLease = reference.Acquire();
+        using ResourceReference<LeafValue> reference = await manager.RetainAsync(new ResourceKey<LeafValue>("asset"));
+        using ResourceLease<LeafValue> oldLease = reference.Pin();
         LeafValue old = oldLease.Value;
         Assert.Equal(1UL, old.Version);
         Assert.Equal(1, selected.Subscriptions);
@@ -71,7 +71,7 @@ public sealed class ResourceStageRuntimeTests
         Assert.False(reference.IsAvailable);
         ResourceReloadResult result = await manager.RebuildRuntimeAsync([selected.Id]);
         Assert.Equal(ResourceReloadStatus.Published, result.Status);
-        using ResourceLease<LeafValue> currentLease = reference.Acquire();
+        using ResourceLease<LeafValue> currentLease = reference.Pin();
         LeafValue current = currentLease.Value;
         Assert.Same(selected, current.Runtime);
         Assert.Equal(2UL, current.Version);
@@ -108,8 +108,8 @@ public sealed class ResourceStageRuntimeTests
             runtimeDependencies: [selected],
             stageRuntimes: [new(typeof(LeafValue), selected)]);
         Assert.Equal(1, selected.Subscriptions);
-        using ResourceReference<LeafValue> reference = await manager.AcquireAsync(new ResourceKey<LeafValue>("asset"));
-        using ResourceLease<LeafValue> lease = reference.Acquire();
+        using ResourceReference<LeafValue> reference = await manager.RetainAsync(new ResourceKey<LeafValue>("asset"));
+        using ResourceLease<LeafValue> lease = reference.Pin();
         Assert.Same(selected, lease.Value.Runtime);
     }
 
@@ -198,10 +198,10 @@ public sealed class ResourceStageRuntimeTests
         Assert.Same(manager, scope.ServiceProvider.GetRequiredService<ResourceManager>());
         for (int attempt = 0; attempt < 2; attempt++)
         {
-            using (ResourceReference<ParentValue> reference = await manager.AcquireAsync(new ResourceKey<ParentValue>("asset")))
-            using (ResourceLease<ParentValue> lease = reference.Acquire())
-            using (ResourceReference<DefaultValue> defaultReference = await manager.AcquireAsync(new ResourceKey<DefaultValue>("asset")))
-            using (ResourceLease<DefaultValue> defaultLease = defaultReference.Acquire())
+            using (ResourceReference<ParentValue> reference = await manager.RetainAsync(new ResourceKey<ParentValue>("asset")))
+            using (ResourceLease<ParentValue> lease = reference.Pin())
+            using (ResourceReference<DefaultValue> defaultReference = await manager.RetainAsync(new ResourceKey<DefaultValue>("asset")))
+            using (ResourceLease<DefaultValue> defaultLease = defaultReference.Pin())
             {
                 Assert.Same(factory, lease.Value.Runtime);
                 Assert.Same(typed, lease.Value.Child.Runtime);

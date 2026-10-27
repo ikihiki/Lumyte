@@ -122,7 +122,7 @@ internal static class Program
             canceled.Cancel();
             try
             {
-                Wait(manager.AcquireAsync(new ResourceKey<AudioPcmData>("canceled"), canceled.Token).AsTask());
+                Wait(manager.RetainAsync(new ResourceKey<AudioPcmData>("canceled"), canceled.Token).AsTask());
                 throw new InvalidOperationException("Canceled resource loading executed.");
             }
             catch (OperationCanceledException)
@@ -131,7 +131,7 @@ internal static class Program
 
             try
             {
-                Wait(manager.AcquireAsync(new ResourceKey<AudioClip>("invalid")).AsTask());
+                Wait(manager.RetainAsync(new ResourceKey<AudioClip>("invalid")).AsTask());
                 throw new InvalidOperationException("Invalid input was published.");
             }
             catch (InvalidDataException)
