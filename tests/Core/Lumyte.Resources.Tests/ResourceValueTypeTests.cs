@@ -23,10 +23,10 @@ public sealed class ResourceValueTypeTests
             memory,
             execution.Resources);
         var key = new ResourceKey<OutputValue>("asset");
-        using ResourceReference<OutputValue> first = await manager.AcquireAsync(key);
-        using ResourceReference<OutputValue> again = await manager.AcquireAsync(key);
-        using ResourceLease<OutputValue> firstLease = first.Acquire();
-        using ResourceLease<OutputValue> secondLease = again.Acquire();
+        using ResourceReference<OutputValue> first = await manager.RetainAsync(key);
+        using ResourceReference<OutputValue> again = await manager.RetainAsync(key);
+        using ResourceLease<OutputValue> firstLease = first.Pin();
+        using ResourceLease<OutputValue> secondLease = again.Pin();
         Assert.Same(firstLease.Value.Owner, secondLease.Value.Owner);
         Assert.Equal(1, state.InputBuilds);
         Assert.Equal(1, state.OutputBuilds);
@@ -34,16 +34,16 @@ public sealed class ResourceValueTypeTests
         Assert.Equal(16, Unsafe.SizeOf<ResourceHandle<OutputValue>>());
 
         ResourceHandle<OutputValue> handle = first.Handle;
-        Assert.True(manager.TryAcquire(handle, out ResourceReference<OutputValue>? recovered));
+        Assert.True(manager.TryRetain(handle, out ResourceReference<OutputValue>? recovered));
         Assert.NotNull(recovered);
         using (recovered)
-        using (ResourceLease<OutputValue> lease = recovered.Acquire())
+        using (ResourceLease<OutputValue> lease = recovered.Pin())
         {
             Assert.Same(firstLease.Value.Owner, lease.Value.Owner);
         }
 
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
-        Assert.True(snapshot.TryAcquire(handle, out ResourceLease<OutputValue>? retained));
+        Assert.True(snapshot.TryPin(handle, out ResourceLease<OutputValue>? retained));
         Assert.NotNull(retained);
         using (retained)
         {
@@ -52,7 +52,7 @@ public sealed class ResourceValueTypeTests
             secondLease.Dispose();
             first.Dispose();
             again.Dispose();
-            Assert.False(manager.TryAcquire(handle, out _));
+            Assert.False(manager.TryRetain(handle, out _));
             Assert.Equal(0, await manager.TrimAsync());
             Assert.Empty(state.Releases);
             Assert.Equal(42, retained.Value.Owner.Input.Number);
@@ -71,8 +71,8 @@ public sealed class ResourceValueTypeTests
         await using ResourceExecutionHost execution = new();
         var state = new TestState();
         await using ResourceManager manager = new("reads", new UnusedSource(), [new InputStage(state)], memory, execution.Resources);
-        using ResourceReference<InputValue> reference = await manager.AcquireAsync(new ResourceKey<InputValue>("asset"));
-        using ResourceLease<InputValue> lease = reference.Acquire();
+        using ResourceReference<InputValue> reference = await manager.RetainAsync(new ResourceKey<InputValue>("asset"));
+        using ResourceLease<InputValue> lease = reference.Pin();
         Assert.Equal(42_000, SumValues(lease, 1000));
 
         long before = GC.GetAllocatedBytesForCurrentThread();
@@ -91,8 +91,8 @@ public sealed class ResourceValueTypeTests
         await using MemoryManager memory = new();
         var stage = new ScalarStage();
         await using ResourceManager manager = new("zero", new UnusedSource(), [stage], memory, new InlineRuntime());
-        using ResourceReference<int> reference = await manager.AcquireAsync(new ResourceKey<int>("zero"));
-        using ResourceLease<int> lease = reference.Acquire();
+        using ResourceReference<int> reference = await manager.RetainAsync(new ResourceKey<int>("zero"));
+        using ResourceLease<int> lease = reference.Pin();
         Assert.Equal(0, lease.Value);
         Assert.True(lease.IsUsable);
         lease.Dispose();
@@ -116,8 +116,8 @@ public sealed class ResourceValueTypeTests
             [new InputStage(state), new OutputStage(state)],
             memory,
             execution.Resources);
-        using ResourceReference<OutputValue> reference = await manager.AcquireAsync(new ResourceKey<OutputValue>("asset"));
-        using ResourceLease<OutputValue> lease = reference.Acquire();
+        using ResourceReference<OutputValue> reference = await manager.RetainAsync(new ResourceKey<OutputValue>("asset"));
+        using ResourceLease<OutputValue> lease = reference.Pin();
         OutputOwner owner = lease.Value.Owner;
         lease.Dispose();
         reference.Dispose();

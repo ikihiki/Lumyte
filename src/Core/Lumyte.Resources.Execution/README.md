@@ -18,8 +18,8 @@ await execution.StartAsync();
 await using (var manager = new ResourceManager(
     "assets", source, stages, memory, resourceRuntime))
 {
-    using ResourceReference<Document> document = await manager.AcquireAsync(documentKey);
-    using ResourceLease<Document> lease = document.Acquire();
+    using ResourceReference<Document> document = await manager.RetainAsync(documentKey);
+    using ResourceLease<Document> lease = document.Pin();
     Consume(lease.Value);
 }
 

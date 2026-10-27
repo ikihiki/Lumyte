@@ -27,7 +27,7 @@ public sealed class GraphicsResourceTests
         await devices.InitializeAsync();
         ResourceManager resources = provider.GetRequiredService<ResourceManager>();
         using ResourceLease<CpuValue> cpu = await resources.AcquireLeaseForTestAsync(_cpuKey);
-        using ResourceReference<GpuValue> reference = await resources.AcquireAsync(_gpuKey);
+        using ResourceReference<GpuValue> reference = await resources.RetainAsync(_gpuKey);
         using ResourceLease<GpuValue> old = await resources.AcquireLeaseForTestAsync(_gpuKey);
         GpuValue oldValue = old.Value;
         Assert.Same(provider.GetRequiredService<GraphicsResourceRuntime>(), state.GpuRuntime);

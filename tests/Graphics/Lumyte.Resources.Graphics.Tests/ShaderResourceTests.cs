@@ -48,7 +48,7 @@ public sealed class ShaderResourceTests
         await devices.InitializeAsync();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
         var key = new ResourceKey<GraphicsShaderResource>("shader");
-        using ResourceReference<GraphicsShaderResource> reference = await manager.AcquireAsync(key);
+        using ResourceReference<GraphicsShaderResource> reference = await manager.RetainAsync(key);
         using var graph = new RenderGraphBuilder(state.Devices[0]);
         ResourceRenderGraphImports imports = graph.ImportResources(manager);
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
@@ -70,8 +70,8 @@ public sealed class ShaderResourceTests
         state.Devices[0].Lose();
         await devices.RecoverAsync();
         await manager.RebuildRuntimeAsync([provider.GetRequiredService<GraphicsResourceRuntime>().Id]);
-        using ResourceReference<GraphicsShaderResource> currentReference = await manager.AcquireAsync(key);
-        using ResourceLease<GraphicsShaderResource> current = currentReference.Acquire();
+        using ResourceReference<GraphicsShaderResource> currentReference = await manager.RetainAsync(key);
+        using ResourceLease<GraphicsShaderResource> current = currentReference.Pin();
         Assert.Same(artifact, current.Value.Shader.Artifact);
         Assert.NotSame(old.Device, current.Value.Device);
         plan.Dispose();
@@ -155,8 +155,8 @@ public sealed class ShaderResourceTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
         IMemoryManager memory = provider.GetRequiredService<IMemoryManager>();
-        using (ResourceReference<ShaderArtifact> reference = await manager.AcquireAsync(new ResourceKey<ShaderArtifact>("shader")))
-        using (ResourceLease<ShaderArtifact> lease = reference.Acquire())
+        using (ResourceReference<ShaderArtifact> reference = await manager.RetainAsync(new ResourceKey<ShaderArtifact>("shader")))
+        using (ResourceLease<ShaderArtifact> lease = reference.Pin())
         {
             Assert.Equal(binary.Length, lease.Value.BinaryLength);
             MemorySnapshot loaded = memory.GetSnapshot(new("cpu"));
@@ -185,7 +185,7 @@ public sealed class ShaderResourceTests
         await using ServiceProvider provider = services.BuildServiceProvider();
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        await Assert.ThrowsAsync<ArgumentException>(() => manager.AcquireAsync(new ResourceKey<ShaderArtifact>("broken")).AsTask());
+        await Assert.ThrowsAsync<ArgumentException>(() => manager.RetainAsync(new ResourceKey<ShaderArtifact>("broken")).AsTask());
         MemorySnapshot released = provider.GetRequiredService<IMemoryManager>().GetSnapshot(new("cpu"));
         Assert.Equal(0UL, released.CommittedBytes);
         Assert.Equal(0UL, released.ReservedBytes);

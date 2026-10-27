@@ -29,7 +29,7 @@ public sealed class ResourceRuntimeTests
             return ValueTask.CompletedTask;
         };
         using CooperativeHost host = new(stage);
-        Task<ResourceReference<Value>> loading = host.Manager.AcquireAsync(Key("value")).AsTask();
+        Task<ResourceReference<Value>> loading = host.Manager.RetainAsync(Key("value")).AsTask();
         Assert.False(built);
         host.Complete(loading).Dispose();
         Assert.True(built);
@@ -57,7 +57,7 @@ public sealed class ResourceRuntimeTests
         using CooperativeHost host = new(stage);
         try
         {
-            Task<ResourceReference<Value>> loading = host.Manager.AcquireAsync(Key("value")).AsTask();
+            Task<ResourceReference<Value>> loading = host.Manager.RetainAsync(Key("value")).AsTask();
             Assert.Equal(0, startedOn);
             Assert.False(loading.IsCompleted);
 
@@ -69,7 +69,7 @@ public sealed class ResourceRuntimeTests
             Assert.False(loading.IsCompleted);
 
             using ResourceReference<Value> reference = host.Complete(loading);
-            using ResourceLease<Value> lease = reference.Acquire();
+            using ResourceLease<Value> lease = reference.Pin();
             Assert.Equal(startedOn, resumedOn);
             Assert.Equal("complete", lease.Value.Label);
         }
@@ -105,16 +105,16 @@ public sealed class ResourceRuntimeTests
         using CooperativeHost host = new(stage);
         try
         {
-            Task<ResourceReference<Value>> parent = host.Manager.AcquireAsync(Key("parent")).AsTask();
+            Task<ResourceReference<Value>> parent = host.Manager.RetainAsync(Key("parent")).AsTask();
             host.Until(() => childStarted);
             Assert.False(parent.IsCompleted);
 
-            using ResourceReference<Value> independent = host.Complete(host.Manager.AcquireAsync(Key("independent")).AsTask());
+            using ResourceReference<Value> independent = host.Complete(host.Manager.RetainAsync(Key("independent")).AsTask());
             Assert.True(independentFinished);
             Assert.False(parent.IsCompleted);
             ready.SetResult();
             using ResourceReference<Value> reference = host.Complete(parent);
-            using ResourceLease<Value> lease = reference.Acquire();
+            using ResourceLease<Value> lease = reference.Pin();
             Assert.Equal("parent:child", lease.Value.Label);
         }
         finally
@@ -155,7 +155,7 @@ public sealed class ResourceRuntimeTests
             return ValueTask.CompletedTask;
         };
         using CooperativeHost host = new(stage, device);
-        using ResourceReference<Value> original = host.Complete(host.Manager.AcquireAsync(Key("value")).AsTask());
+        using ResourceReference<Value> original = host.Complete(host.Manager.RetainAsync(Key("value")).AsTask());
         using CancellationTokenSource cancellation = new();
         device.Advance();
         Task<ResourceReloadResult> rebuilding = host.Manager.RebuildRuntimeAsync([device.Id], cancellation.Token).AsTask();
@@ -169,7 +169,7 @@ public sealed class ResourceRuntimeTests
             ready.SetResult();
             Assert.ThrowsAny<OperationCanceledException>(() => host.Complete(rebuilding));
             Assert.True(replacementReleased);
-            using ResourceLease<Value> lease = original.Acquire();
+            using ResourceLease<Value> lease = original.Pin();
             Assert.Equal("original", lease.Value.Label);
         }
         finally
@@ -207,9 +207,9 @@ public sealed class ResourceRuntimeTests
             return ValueTask.CompletedTask;
         };
         using CooperativeHost host = new(stage, options: new ExecutionOptions { MaxCommands = 1 });
-        host.Complete(host.Manager.AcquireAsync(Key("value")).AsTask()).Dispose();
+        host.Complete(host.Manager.RetainAsync(Key("value")).AsTask()).Dispose();
         ResourceManager blockerManager = host.CreateSiblingManager(stage);
-        Task<ResourceReference<Value>> loading = blockerManager.AcquireAsync(Key("blocker")).AsTask();
+        Task<ResourceReference<Value>> loading = blockerManager.RetainAsync(Key("blocker")).AsTask();
         try
         {
             host.Until(() => blocked);
@@ -249,7 +249,7 @@ public sealed class ResourceRuntimeTests
             }
         };
         using CooperativeHost host = new(stage);
-        host.Complete(host.Manager.AcquireAsync(Key("value")).AsTask()).Dispose();
+        host.Complete(host.Manager.RetainAsync(Key("value")).AsTask()).Dispose();
         try
         {
             Task<int> trim = host.Manager.TrimAsync().AsTask();
@@ -278,8 +278,8 @@ public sealed class ResourceRuntimeTests
             return ValueTask.FromResult(new Value(device.Snapshot.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         });
         using CooperativeHost host = new(stage, device);
-        using ResourceReference<Value> reference = host.Complete(host.Manager.AcquireAsync(Key("value")).AsTask());
-        using (ResourceLease<Value> first = reference.Acquire())
+        using ResourceReference<Value> reference = host.Complete(host.Manager.RetainAsync(Key("value")).AsTask());
+        using (ResourceLease<Value> first = reference.Pin())
         {
             Assert.Equal("1", first.Value.Label);
             Assert.Equal(1, host.Dispatcher.Builds);
@@ -289,7 +289,7 @@ public sealed class ResourceRuntimeTests
         ResourceReloadResult rebuilt = host.Complete(host.Manager.RebuildRuntimeAsync([device.Id]).AsTask());
         Assert.Equal(ResourceReloadStatus.Published, rebuilt.Status);
         Assert.Equal(2, host.Dispatcher.Builds);
-        using (ResourceLease<Value> second = reference.Acquire())
+        using (ResourceLease<Value> second = reference.Pin())
         {
             Assert.Equal("2", second.Value.Label);
         }
@@ -326,8 +326,8 @@ public sealed class ResourceRuntimeTests
         Assert.NotEqual(firstManager.ManagerId, secondManager.ManagerId);
         foreach (ResourceManager manager in new[] { firstManager, secondManager })
         {
-            using (ResourceReference<Value> reference = await manager.AcquireAsync(Key("value")))
-            using (ResourceLease<Value> lease = reference.Acquire())
+            using (ResourceReference<Value> reference = await manager.RetainAsync(Key("value")))
+            using (ResourceLease<Value> lease = reference.Pin())
             {
                 Assert.Equal("constant", lease.Value.Label);
             }

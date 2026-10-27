@@ -18,7 +18,7 @@ public sealed class ResourceStreamJobTests
     public void CooperativeReaderLifecycleRequiresPumping()
     {
         using Host host = new();
-        using ResourceReference<Factory> reference = host.Complete(host.Manager.AcquireAsync(_key).AsTask());
+        using ResourceReference<Factory> reference = host.Complete(host.Manager.RetainAsync(_key).AsTask());
         Task<ResourceStreamSession<int>> opening = host.OpenAsync();
         Assert.Equal(0, host.State.Opened);
         Assert.False(opening.IsCompleted);
@@ -73,7 +73,7 @@ public sealed class ResourceStreamJobTests
         using Host host = new();
         _ = host.Track(host.Complete(host.OpenAsync()));
         int reads = host.State.Reads;
-        using ResourceReference<Factory> other = host.Complete(host.Manager.AcquireAsync(new ResourceKey<Factory>("other")).AsTask());
+        using ResourceReference<Factory> other = host.Complete(host.Manager.RetainAsync(new ResourceKey<Factory>("other")).AsTask());
         Assert.Equal(2, host.State.Builds);
         Assert.Equal(reads, host.State.Reads);
     }
@@ -94,7 +94,7 @@ public sealed class ResourceStreamJobTests
     public void SingleAdmissionSlotSupportsSeekAndDisposal()
     {
         using Host host = new(capacity: 1);
-        using ResourceReference<Factory> reference = host.Complete(host.Manager.AcquireAsync(_key).AsTask());
+        using ResourceReference<Factory> reference = host.Complete(host.Manager.RetainAsync(_key).AsTask());
         ResourceStreamSession<int> session = host.Track(host.Complete(host.OpenAsync()));
         host.Complete(session.SeekAsync(12).AsTask());
         Assert.Equal(12UL, session.Position);
@@ -108,7 +108,7 @@ public sealed class ResourceStreamJobTests
     public void AdmissionFailureDoesNotHangOrRetainAnUnopenedSession()
     {
         using Host host = new(capacity: 1);
-        using ResourceReference<Factory> reference = host.Complete(host.Manager.AcquireAsync(_key).AsTask());
+        using ResourceReference<Factory> reference = host.Complete(host.Manager.RetainAsync(_key).AsTask());
         ResourceStreamSession<int> first = host.Track(host.Complete(host.OpenAsync()));
         Task<ResourceStreamSession<int>> rejected = host.OpenAsync();
         host.Until(() => rejected.IsCompleted);
@@ -125,7 +125,7 @@ public sealed class ResourceStreamJobTests
     public void CancelingQueuedOpenReturnsOwnershipAndAdmission()
     {
         using Host host = new(capacity: 1);
-        using ResourceReference<Factory> reference = host.Complete(host.Manager.AcquireAsync(_key).AsTask());
+        using ResourceReference<Factory> reference = host.Complete(host.Manager.RetainAsync(_key).AsTask());
         ulong baseline = host.CommittedBytes;
         using var cancellation = new CancellationTokenSource();
         Task<ResourceStreamSession<int>> opening = host.OpenAsync(cancellationToken: cancellation.Token);
@@ -152,7 +152,7 @@ public sealed class ResourceStreamJobTests
     {
         var state = new State { SeekReadGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         using Host host = new(capacity: 1, state: state);
-        using ResourceReference<Factory> reference = host.Complete(host.Manager.AcquireAsync(_key).AsTask());
+        using ResourceReference<Factory> reference = host.Complete(host.Manager.RetainAsync(_key).AsTask());
         ResourceStreamSession<int> session = host.Track(host.Complete(host.OpenAsync()));
         using var cancellation = new CancellationTokenSource();
         Task seeking = session.SeekAsync(12, cancellation.Token).AsTask();
@@ -191,7 +191,7 @@ public sealed class ResourceStreamJobTests
     public void ThreadPoolDecodersShareCpuConcurrencyLimit()
     {
         using Host host = new(mode: CpuExecutionMode.ThreadPool, state: new State { DecodeMilliseconds = 3 });
-        using ResourceReference<Factory> reference = host.Complete(host.Manager.AcquireAsync(_key).AsTask());
+        using ResourceReference<Factory> reference = host.Complete(host.Manager.RetainAsync(_key).AsTask());
         Task<ResourceStreamSession<int>>[] opening = [host.OpenAsync(), host.OpenAsync(), host.OpenAsync()];
         ResourceStreamSession<int>[] sessions = host.Complete(Task.WhenAll(opening));
         foreach (ResourceStreamSession<int> session in sessions)

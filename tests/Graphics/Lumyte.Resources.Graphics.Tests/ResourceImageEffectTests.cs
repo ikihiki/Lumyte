@@ -165,7 +165,7 @@ public sealed class ResourceImageEffectTests
             .AddResources(manager).AddImageEffects(manager).BuildAsync();
         using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
-        using ResourceLease<ImageEffectShaderResource> old = reference.Acquire(snapshot);
+        using ResourceLease<ImageEffectShaderResource> old = reference.Pin(snapshot);
         AssertRevision(old.Value.Shaders, 1);
         TestDevice device = Assert.Single(state.Devices);
         TestShader[] oldModules = LiveModules(device, old.Value.Shaders);
@@ -193,7 +193,7 @@ public sealed class ResourceImageEffectTests
         source.Change(2);
         await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        using ResourceLease<ImageEffectShaderResource> current = reference.Acquire();
+        using ResourceLease<ImageEffectShaderResource> current = reference.Pin();
         Assert.NotSame(old.Value, current.Value);
         AssertRevision(current.Value.Shaders, changeDuringValidation ? (byte)3 : (byte)2);
         AssertRevision(old.Value.Shaders, 1);
@@ -248,7 +248,7 @@ public sealed class ResourceImageEffectTests
         using RenderGraphExtensions extensions = await new RenderGraphExtensionsBuilder()
             .AddResources(manager).AddImageEffects(manager).BuildAsync();
         using ResourceReference<ImageEffectShaderResource> reference = await manager.AcquireImageEffectShadersAsync();
-        using ResourceLease<ImageEffectShaderResource> old = reference.Acquire();
+        using ResourceLease<ImageEffectShaderResource> old = reference.Pin();
         ImageEffectShaderResource previous = old.Value;
         using var oldGraph = new RenderGraphBuilder(previous.Device, extensions: extensions);
         _ = oldGraph.AppendEffect(new OwningEffect(new(), []), Source(oldGraph));
@@ -259,7 +259,7 @@ public sealed class ResourceImageEffectTests
         await devices.RecoverAsync();
         ResourceReloadResult result = await manager.RebuildRuntimeAsync([provider.GetRequiredService<GraphicsResourceRuntime>().Id]);
         Assert.Equal(ResourceReloadStatus.Published, result.Status);
-        using ResourceLease<ImageEffectShaderResource> current = reference.Acquire();
+        using ResourceLease<ImageEffectShaderResource> current = reference.Pin();
         Assert.Same(previous.Shaders.Fullscreen, current.Value.Shaders.Fullscreen);
         Assert.Same(previous.Shaders.Effects, current.Value.Shaders.Effects);
         Assert.NotSame(previous.Device, current.Value.Device);

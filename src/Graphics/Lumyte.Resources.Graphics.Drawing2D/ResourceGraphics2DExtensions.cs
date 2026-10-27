@@ -12,7 +12,7 @@ public static class ResourceGraphics2DExtensions
     /// <param name="cancellationToken">Cancels this acquisition.</param>
     /// <returns>The renderer factory resource reference.</returns>
     public static ValueTask<ResourceReference<Renderer2DResource>> AcquireRenderer2DAsync(this ResourceManager manager, CancellationToken cancellationToken = default)
-        => manager.AcquireAsync(_key, cancellationToken);
+        => manager.RetainAsync(_key, cancellationToken);
 
     /// <summary>Creates an independent renderer retaining one exact shader and device generation.</summary>
     /// <param name="reference">The preloaded renderer factory resource.</param>
@@ -23,7 +23,7 @@ public static class ResourceGraphics2DExtensions
     public static Renderer2D CreateRenderer(this ResourceReference<Renderer2DResource> reference, DrawingCommandRenderers2D? renderers = null, ResourceSnapshot? snapshot = null)
     {
         ArgumentNullException.ThrowIfNull(reference);
-        ResourceLease<Renderer2DResource> lease = reference.Acquire(snapshot);
+        ResourceLease<Renderer2DResource> lease = reference.Pin(snapshot);
         try
         {
             Renderer2DResource resource = lease.Value;

@@ -50,7 +50,7 @@ public sealed class ResourcePerformanceLifetimeTests
                 return ValueTask.CompletedTask;
             });
         await using ResourceManager manager = new("disposable-cleanup", new EmptySource(), [stage], memory, new InlineRuntime());
-        ResourceReference<Output> reference = await manager.AcquireAsync(new ResourceKey<Output>("asset"));
+        ResourceReference<Output> reference = await manager.RetainAsync(new ResourceKey<Output>("asset"));
         Assert.Equal(["build-last", "build-first"], calls);
 
         reference.Dispose();
@@ -75,14 +75,14 @@ public sealed class ResourcePerformanceLifetimeTests
             return output;
         });
         await using ResourceManager manager = new("bulk-trim", new EmptySource(), [stage], memory, new InlineRuntime());
-        ResourceReference<Output> original = await manager.AcquireAsync(new ResourceKey<Output>("asset", "original"));
+        ResourceReference<Output> original = await manager.RetainAsync(new ResourceKey<Output>("asset", "original"));
         using ResourceSnapshot captured = manager.CaptureSnapshot();
         ulong capturedVersion = captured.PublicationVersion;
         original.Dispose();
         for (int index = 0; index < 32; index++)
         {
-            using ResourceReference<Output> added = await manager.AcquireAsync(new ResourceKey<Output>("asset", index.ToString(CultureInfo.InvariantCulture)));
-            Assert.False(added.TryAcquire(out ResourceLease<Output>? unexpected, captured));
+            using ResourceReference<Output> added = await manager.RetainAsync(new ResourceKey<Output>("asset", index.ToString(CultureInfo.InvariantCulture)));
+            Assert.False(added.TryPin(out ResourceLease<Output>? unexpected, captured));
             Assert.Null(unexpected);
         }
 
@@ -126,7 +126,7 @@ public sealed class ResourcePerformanceLifetimeTests
         await using ResourceManager manager = new("cancel-trim", new EmptySource(), [stage], memory, new InlineRuntime());
         for (int index = 0; index < 16; index++)
         {
-            using ResourceReference<Output> reference = await manager.AcquireAsync(new ResourceKey<Output>("asset", index.ToString(CultureInfo.InvariantCulture)));
+            using ResourceReference<Output> reference = await manager.RetainAsync(new ResourceKey<Output>("asset", index.ToString(CultureInfo.InvariantCulture)));
         }
 
         using CancellationTokenSource cancellation = new();
@@ -157,7 +157,7 @@ public sealed class ResourcePerformanceLifetimeTests
             ? [new RetentionRootStage(scenario, state), new RetentionInputStage()]
             : [new RetentionRootStage(scenario, state)];
         ResourceManager manager = new("retention", new PayloadSource(state), stages, memory, new InlineRuntime());
-        ResourceReference<Root> reference = manager.AcquireAsync(new ResourceKey<Root>("asset")).GetAwaiter().GetResult();
+        ResourceReference<Root> reference = manager.RetainAsync(new ResourceKey<Root>("asset")).GetAwaiter().GetResult();
         int trimmed = manager.TrimAsync().GetAwaiter().GetResult();
         return new(manager, memory, reference, state, trimmed);
     }

@@ -40,10 +40,10 @@ internal static class Program
             {
                 ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
                 Require(ReferenceEquals(manager, provider.GetRequiredService<ResourceManager>()), "Scopes must share one resource manager.");
-                Task<ResourceReference<Output>> acquisition = manager.AcquireAsync(new ResourceKey<Output>("value")).AsTask();
+                Task<ResourceReference<Output>> acquisition = manager.RetainAsync(new ResourceKey<Output>("value")).AsTask();
                 Wait(acquisition, execution);
                 using (ResourceReference<Output> reference = acquisition.GetAwaiter().GetResult())
-                using (ResourceLease<Output> lease = reference.Acquire())
+                using (ResourceLease<Output> lease = reference.Pin())
                 {
                     Require(lease.Value.Number == 42 && lease.IsUsable, "Typed pipeline returned the wrong value or runtime generation.");
                 }
