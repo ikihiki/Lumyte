@@ -35,7 +35,7 @@ public sealed class ModuleCollectionTests
         var fresh = new CommandPort<int, int>();
         var failed = new ExecutionRuntime([new PortModule(fresh, fixture.Module.Port)]);
         Assert.Throws<InvalidOperationException>(() => failed.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions()));
-        Assert.Equal(CommandEnqueueStatus.NotRunning, fresh.TryEnqueue(1, default, out _));
+        Assert.Equal(CommandEnqueueStatus.NotRunning, fresh.Enqueue(1, out _, default));
         var recovered = new ExecutionRuntime([new PortModule(fresh, null)]);
         recovered.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
         CompletedResult.Read(recovered.StartAsync());
