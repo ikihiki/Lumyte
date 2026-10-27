@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser(
     description="Verify independent server/game processes over HTTP and MagicOnion."
 )
 parser.add_argument("--dotnet", default="dotnet")
+parser.add_argument("--configuration", default="Release")
 parser.add_argument("--output", default="artifacts/diagnostics-communication/processes")
 args = parser.parse_args()
 dotnet = shutil.which(args.dotnet)
@@ -65,7 +66,7 @@ p = subprocess.Popen(
         "--project",
         "src/Diagnostics/Lumyte.Diagnostics.Server",
         "-c",
-        "Release",
+        args.configuration,
         "--no-build",
     ],
     cwd=root,
@@ -93,7 +94,7 @@ try:
                 "--project",
                 "samples/Lumyte.Diagnostics.Remote.Sample",
                 "-c",
-                "Release",
+                args.configuration,
                 "--no-build",
                 "--",
                 transport,

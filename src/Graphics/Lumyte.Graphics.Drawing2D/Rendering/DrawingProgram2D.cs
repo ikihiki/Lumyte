@@ -9,6 +9,7 @@ internal sealed class DrawingProgram2D
     private readonly IArgumentTable _table;
     private readonly IGpuRef<IGraphicsSampler> _nearest;
     private readonly Matrix3x2 _pixelTransform;
+    private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
     private uint _textureSlot;
 
     internal DrawingProgram2D(IArgumentTable table, IGpuRef<IGraphicsSampler> nearest, DrawingTargetInfo2D target)
@@ -197,35 +198,46 @@ internal sealed class DrawingProgram2D
             return Solid(default);
         }
 
+        if (_paintCache.TryGetValue(paint, out Dictionary<Matrix3x2, uint>? transforms) && transforms.TryGetValue(transform, out uint cached))
+        {
+            return cached;
+        }
+
+        uint result = CompilePaint(paint, transform, depth);
+        if (transforms is null)
+        {
+            transforms = [];
+            _paintCache.Add(paint, transforms);
+        }
+
+        transforms.Add(transform, result);
+        return result;
+    }
+
+    private uint CompilePaint(PaintNode2D paint, Matrix3x2 transform, int depth)
+    {
         switch (paint)
         {
             case SolidPaintNode2D node:
                 return Solid(Linear(node.Color));
             case LinearPaintNode2D node:
-                Vector2 delta = node.P2 - node.P0;
-                if (Vector2.Dot(node.P1 - node.P0, new(delta.Y, -delta.X)) == 0)
-                {
-                    throw new NotSupportedException("Degenerate linear gradients are not supported by the default renderer.");
-                }
-
                 return Gradient(Node(6, transform) with { A = new(node.P0, node.P1.X, node.P1.Y), B = new(node.P2, 0, 0), Mode = (uint)node.Extend }, node.Stops);
             case RadialPaintNode2D node:
-                if (node.C0 == node.C1 && node.R0 == node.R1)
-                {
-                    throw new NotSupportedException("Coincident identical radial circles are not supported by the default renderer.");
-                }
-
                 return Gradient(Node(7, transform) with { A = new(node.C0, node.R0, 0), B = new(node.C1, node.R1, 0), Mode = (uint)node.Extend }, node.Stops);
             case SweepPaintNode2D node:
-                if (node.StartAngle == node.EndAngle)
-                {
-                    throw new NotSupportedException("Zero-angle sweep gradients are not supported by the default renderer.");
-                }
-
                 return Gradient(Node(8, transform) with { A = new(node.Center, node.StartAngle, node.EndAngle), Mode = (uint)node.Extend }, node.Stops);
             case ImagePaintNode2D node:
                 ImagePattern2D p = node.Pattern;
                 return Image(p.View, p.Source, p.Alpha, p.TileX, p.TileY, p.Filter, p.PatternToLocal * transform);
+            case DistanceFieldPaintNode2D node:
+                ImagePattern2D field = node.Pattern;
+                uint child = Paint(node.Child, transform, depth + 1);
+                return Add(ImageInstruction(field.View, field.Source, field.Alpha, field.TileX, field.TileY, field.Filter, field.PatternToLocal * transform) with
+                {
+                    Kind = 15,
+                    First = child,
+                    D = new(node.DistanceRange, (float)node.Mode, 0, 0),
+                });
             case OpacityPaintNode2D node:
                 return Add(Node(10, Matrix3x2.Identity) with { First = Paint(node.Child, transform, depth + 1), A = new(node.Opacity) });
             case ClipPaintNode2D node:
@@ -234,9 +246,9 @@ internal sealed class DrawingProgram2D
                 return Paint(node.Child, node.Transform * transform, depth + 1);
             case LayersPaintNode2D node:
                 uint result = Solid(default);
-                foreach (PaintNode2D child in node.Children)
+                foreach (PaintNode2D layer in node.Children)
                 {
-                    result = Composite(Paint(child, transform, depth + 1), result, CompositeMode2D.SrcOver);
+                    result = Composite(Paint(layer, transform, depth + 1), result, CompositeMode2D.SrcOver);
                 }
 
                 return result;
@@ -283,11 +295,6 @@ internal sealed class DrawingProgram2D
 
     private uint Gradient(DrawingInstruction instruction, IReadOnlyList<ColorStop2D> stops)
     {
-        if (stops.Count > 0 && instruction.Mode != 0 && stops[0].Offset == stops[^1].Offset)
-        {
-            throw new NotSupportedException("Repeating zero-span color lines are not supported by the default renderer.");
-        }
-
         uint first = (uint)Data.Count;
         foreach (ColorStop2D stop in stops)
         {
@@ -299,16 +306,19 @@ internal sealed class DrawingProgram2D
     }
 
     private uint Image(IGraphicsTextureView view, Rect2D source, AlphaRepresentation2D alpha, ImageTileMode2D tileX, ImageTileMode2D tileY, ImageFilter2D filter, Matrix3x2 transform)
+        => Add(ImageInstruction(view, source, alpha, tileX, tileY, filter, transform));
+
+    private DrawingInstruction ImageInstruction(IGraphicsTextureView view, Rect2D source, AlphaRepresentation2D alpha, ImageTileMode2D tileX, ImageTileMode2D tileY, ImageFilter2D filter, Matrix3x2 transform)
     {
         (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
-        return Add(Node(9, transform) with
+        return Node(9, transform) with
         {
             A = Vector(source),
             B = new(width, height, (float)tileX, (float)tileY),
             C = new((float)filter, (float)alpha, 0, 0),
             Texture = Register(view),
             Sampler = _nearest,
-        });
+        };
     }
 
     private uint SampleMask(IGraphicsTextureView view, IGraphicsSampler sampler, Rect2D source, Rect2D destination, uint kind, uint mode, float range, Matrix3x2 transform)

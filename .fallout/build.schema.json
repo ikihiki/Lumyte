@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "definitions": {
+    "Host": {
+      "type": "string",
+      "enum": [
+        "Rider",
+        "Terminal",
+        "VisualStudio",
+        "VSCode"
+      ]
+    },
+    "ExecutableTarget": {
+      "type": "string",
+      "enum": [
+        "CheckFormat",
+        "CheckMarkdown",
+        "CheckNativeFormat",
+        "Ci",
+        "Clean",
+        "Compile",
+        "ConfigureLavapipe",
+        "DiagnosticGallery",
+        "DiagnosticPreviews",
+        "FormatMarkdown",
+        "FormatNative",
+        "NativeSmoke",
+        "Pack",
+        "ParleyNative",
+        "ParleyWasm",
+        "PipelineBenchmark",
+        "PreparePublish",
+        "PrepareWasmTools",
+        "Publish",
+        "PublishWindowSample",
+        "Restore",
+        "Samples",
+        "SetupParleyNative",
+        "SetupParleyWasm",
+        "SetupWasm",
+        "Test",
+        "TestAot",
+        "TestBrowserAudio",
+        "TestBrowserContracts",
+        "TestDiagnosticsProcesses",
+        "TestDiagnosticsUi",
+        "TestRust",
+        "TestText",
+        "TestWasm",
+        "TestWindowing",
+        "VerifyEnvironment",
+        "VerifySdk"
+      ]
+    },
+    "Verbosity": {
+      "type": "string",
+      "description": "",
+      "enum": [
+        "Verbose",
+        "Normal",
+        "Minimal",
+        "Quiet"
+      ]
+    },
+    "FalloutBuild": {
+      "properties": {
+        "Continue": {
+          "type": "boolean",
+          "description": "Indicates to continue a previously failed build attempt"
+        },
+        "Help": {
+          "type": "boolean",
+          "description": "Shows the help text for this build assembly"
+        },
+        "Host": {
+          "description": "Host for execution. Default is 'automatic'",
+          "$ref": "#/definitions/Host"
+        },
+        "NoLogo": {
+          "type": "boolean",
+          "description": "Disables displaying the NUKE logo"
+        },
+        "Partition": {
+          "type": "string",
+          "description": "Partition to use on CI"
+        },
+        "Plan": {
+          "type": "boolean",
+          "description": "Shows the execution plan (HTML)"
+        },
+        "Profile": {
+          "type": "array",
+          "description": "Defines the profiles to load",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Root": {
+          "type": "string",
+          "description": "Root directory during build execution"
+        },
+        "Skip": {
+          "type": "array",
+          "description": "List of targets to be skipped. Empty list skips all dependencies",
+          "items": {
+            "$ref": "#/definitions/ExecutableTarget"
+          }
+        },
+        "Target": {
+          "type": "array",
+          "description": "List of targets to be invoked. Default is '{default_target}'",
+          "items": {
+            "$ref": "#/definitions/ExecutableTarget"
+          }
+        },
+        "Verbosity": {
+          "description": "Logging verbosity during build execution. Default is 'Normal'",
+          "$ref": "#/definitions/Verbosity"
+        },
+        "BuildProjectFile": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "description": "Path to the build project (.csproj) relative to the repository root. Defaults to 'build/_build.csproj' when unset. Read by the Fallout global tool's in-tool runner."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "properties": {
+        "Cache": {
+          "type": "string",
+          "description": "Emscripten cache from the .NET wasm-tools workload"
+        },
+        "Cargo": {
+          "type": "string",
+          "description": "Cargo executable override; specify Rustc as well to use an existing compiler directly"
+        },
+        "Configuration": {
+          "type": "string",
+          "description": "Build configuration shared by repository targets"
+        },
+        "DotnetPath": {
+          "type": "string",
+          "description": "Explicit dotnet executable for child build commands"
+        },
+        "Emsdk": {
+          "type": "string",
+          "description": "Emscripten SDK tools directory from the .NET wasm-tools workload"
+        },
+        "GalleryRepository": {
+          "type": "string",
+          "description": "Repository whose successful diagnostic gallery artifacts are collected"
+        },
+        "NoBuild": {
+          "type": "boolean",
+          "description": "Skip compilation and use existing outputs"
+        },
+        "Node": {
+          "type": "string",
+          "description": "Node.js executable from the .NET wasm-tools workload"
+        },
+        "NoRestore": {
+          "type": "boolean",
+          "description": "Skip NuGet restoration"
+        },
+        "Output": {
+          "type": "string",
+          "description": "Output directory for native libraries and Cargo intermediates"
+        },
+        "Project": {
+          "type": "string",
+          "description": "Optional project for restore, compile, test, pack or publish"
+        },
+        "Python": {
+          "type": "string",
+          "description": "Explicit Python executable; otherwise a private verified runtime is provisioned"
+        },
+        "PythonPathFile": {
+          "type": "string",
+          "description": "File receiving the resolved private Python executable for MSBuild"
+        },
+        "RepositoryRoot": {
+          "type": "string",
+          "description": "Repository root when an isolated native worker uses a separate Fallout state directory"
+        },
+        "Runtime": {
+          "type": "string",
+          "description": "Optional target runtime identifier"
+        },
+        "Rustc": {
+          "type": "string",
+          "description": "Rustc executable override paired with Cargo"
+        },
+        "Rustup": {
+          "type": "string",
+          "description": "Rustup executable override for explicit setup targets"
+        },
+        "SkipParleyPackage": {
+          "type": "boolean",
+          "description": "Exclude Parley packaging until native assets from all supported RIDs have been collected"
+        },
+        "Solution": {
+          "type": "string",
+          "description": "Solution to restore, compile and test"
+        },
+        "Toolchain": {
+          "type": "string",
+          "description": "Rust toolchain override"
+        }
+      }
+    },
+    {
+      "$ref": "#/definitions/FalloutBuild"
+    }
+  ]
+}
