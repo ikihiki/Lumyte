@@ -24,7 +24,7 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
     public async ValueTask BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
     {
         var request = new BuildRequest(context);
-        CommandEnqueueStatus status = _build.TryEnqueue(in request, cancellationToken, out IValueTaskSource<Unit>? completion);
+        CommandEnqueueStatus status = _build.Enqueue(in request, out IValueTaskSource<Unit>? completion, cancellationToken);
         if (status != CommandEnqueueStatus.Accepted)
         {
             if (status == CommandEnqueueStatus.Canceled)
@@ -44,7 +44,7 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
     public async ValueTask ReleaseAsync(IResourceStage stage, IResourceRuntime runtime, object resource)
     {
         var request = new ReleaseRequest(stage, runtime, resource);
-        CommandEnqueueStatus status = _release.TryEnqueue(in request, CancellationToken.None, out IValueTaskSource<Unit>? completion);
+        CommandEnqueueStatus status = _release.Enqueue(in request, out IValueTaskSource<Unit>? completion, CancellationToken.None);
         if (status != CommandEnqueueStatus.Accepted)
         {
             throw status == CommandEnqueueStatus.QueueFull
@@ -59,7 +59,7 @@ public sealed class ResourceRuntime : IResourceRuntime, IResourceExecutor, IExec
     public async ValueTask StreamAsync(IResourceStreamWork work, CancellationToken cancellationToken)
     {
         var request = new StreamRequest(work);
-        CommandEnqueueStatus status = _stream.TryEnqueue(in request, cancellationToken, out IValueTaskSource<Unit>? completion);
+        CommandEnqueueStatus status = _stream.Enqueue(in request, out IValueTaskSource<Unit>? completion, cancellationToken);
         if (status != CommandEnqueueStatus.Accepted)
         {
             if (status == CommandEnqueueStatus.Canceled)

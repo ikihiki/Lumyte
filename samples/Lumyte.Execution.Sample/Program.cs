@@ -60,11 +60,11 @@ internal static class Program
             Wait(runtime.StartAsync().AsTask());
             async Task UseVoiceAsync()
             {
-                DemoVoiceData original = await audio.State.CreateVoice(7);
+                DemoVoiceData original = await audio.State.CreateVoiceAsync(7);
                 var voice = new DemoVoice(original);
-                await voice.Play();
-                await voice.Stop();
-                await voice.Destroy();
+                await voice.PlayAsync();
+                await voice.StopAsync();
+                await voice.DestroyAsync();
                 if (!original.Destroyed)
                 {
                     throw new InvalidOperationException("Destruction was not applied.");
@@ -79,7 +79,7 @@ internal static class Program
                     throw new ArgumentException("The allocation benchmark requires --host.");
                 }
 
-                ValueTask<DemoVoiceData> creation = audio.State.CreateVoice(9);
+                ValueTask<DemoVoiceData> creation = audio.State.CreateVoiceAsync(9);
                 Task<DemoVoiceData> created = creation.AsTask();
                 Wait(created);
                 ExecutionBenchmarks.Run(runtime, audio, created.GetAwaiter().GetResult());

@@ -117,12 +117,12 @@ internal static class ApiScenario
 
     private static void DefaultVoiceBus(AudioModule audio, TestFactory factory, Action<Task> wait)
     {
-        Task<IAudioClip> create = audio.Commands.CreateClip(new(48000, 1), new float[48]).AsTask();
+        Task<IAudioClip> create = audio.Commands.CreateClipAsync(new(48000, 1), new float[48]).AsTask();
         wait(create);
         var clip = new AudioClip(create.Result);
         try
         {
-            Task<AudioVoice> voice = clip.CreateVoice().AsTask();
+            Task<AudioVoice> voice = clip.CreateVoiceAsync().AsTask();
             wait(voice);
             Require(factory.Current.LastVoiceBus == AudioBus.Effects, "An omitted bus did not select Effects.");
             wait(voice.Result.Destroy().AsTask());
@@ -132,12 +132,12 @@ internal static class ApiScenario
             wait(asynchronous.Result.Destroy().AsTask());
             using var canceled = new CancellationTokenSource();
             canceled.Cancel();
-            ExpectCanceled(() => wait(clip.CreateVoice(canceled.Token).AsTask()));
+            ExpectCanceled(() => wait(clip.CreateVoiceAsync(canceled.Token).AsTask()));
             ExpectCanceled(() => wait(clip.CreateVoiceAsync(canceled.Token).AsTask()));
         }
         finally
         {
-            wait(clip.DestroyClip().AsTask());
+            wait(clip.DestroyClipAsync().AsTask());
         }
     }
 

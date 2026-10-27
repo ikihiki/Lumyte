@@ -13,8 +13,8 @@ internal static class CreationScenario
         var format = new AudioFormat(48000, 1);
         ReadOnlyMemory<float> samples = new float[48];
         device.FailNextClipCreation();
-        ExpectCreationFailure(() => wait(audio.Commands.CreateClipWithLease(format, samples).AsTask()));
-        Task<(AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError)> create = audio.Commands.CreateClipWithLease(format, samples).AsTask();
+        ExpectCreationFailure(() => wait(audio.Commands.CreateClipWithLeaseAsync(format, samples).AsTask()));
+        Task<(AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError)> create = audio.Commands.CreateClipWithLeaseAsync(format, samples).AsTask();
         wait(create);
         (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = create.GetAwaiter().GetResult();
         try
@@ -26,11 +26,11 @@ internal static class CreationScenario
 
             Require(lease.IsUsable, "A new clip unexpectedly belongs to an unavailable device.");
             device.FailNextVoiceCreation();
-            ExpectCreationFailure(() => wait(new AudioClip(clip).CreateVoice(AudioBus.Effects).AsTask()));
+            ExpectCreationFailure(() => wait(new AudioClip(clip).CreateVoiceAsync(AudioBus.Effects).AsTask()));
         }
         finally
         {
-            wait(new AudioClip(clip).DestroyClip().AsTask());
+            wait(new AudioClip(clip).DestroyClipAsync().AsTask());
             lease.Dispose();
         }
 
@@ -60,7 +60,7 @@ internal static class CreationScenario
 
             Require(device.CreatedClips == created + 1 && device.ReturnedClips == returned, "Failed native cleanup lost the unpublished clip.");
             device.SetOutput(AudioOutputState.Unavailable);
-            wait(audio.Commands.Refresh().AsTask());
+            wait(audio.Commands.RefreshAsync().AsTask());
             wait(audio.Devices.RecoverAsync().AsTask());
             Task<int> retained = audio.Devices.RetireAsync().AsTask();
             wait(retained);
@@ -119,13 +119,13 @@ internal static class CreationScenario
                     audio.Devices.State.Status == AudioDeviceServiceStatus.Lost && device.ReturnedClips == returned,
                     "Post-creation validation did not invalidate and retain the candidate.");
                 Require(!oldLease.IsUsable, "A query failure left a published resource generation usable.");
-                ExpectUnavailable(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()));
-                ExpectUnavailable(() => wait(oldVoice.Play().AsTask()));
-                ExpectUnavailable(() => wait(oldVoice.Seek(0).AsTask()));
+                ExpectUnavailable(() => wait(oldClip.CreateVoiceAsync(AudioBus.Effects).AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.PlayAsync().AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.SeekAsync(0).AsTask()));
                 wait(audio.Devices.RecoverAsync().AsTask());
-                ExpectUnavailable(() => wait(oldClip.CreateVoice(AudioBus.Effects).AsTask()));
-                ExpectUnavailable(() => wait(oldVoice.Play().AsTask()));
-                ExpectUnavailable(() => wait(oldVoice.Seek(0).AsTask()));
+                ExpectUnavailable(() => wait(oldClip.CreateVoiceAsync(AudioBus.Effects).AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.PlayAsync().AsTask()));
+                ExpectUnavailable(() => wait(oldVoice.SeekAsync(0).AsTask()));
                 Task<int> retained = audio.Devices.RetireAsync().AsTask();
                 wait(retained);
                 Require(
@@ -134,7 +134,7 @@ internal static class CreationScenario
             }
             finally
             {
-                wait(oldVoice.Destroy().AsTask());
+                wait(oldVoice.DestroyAsync().AsTask());
             }
 
             oldLease.Dispose();

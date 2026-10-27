@@ -103,7 +103,7 @@ public sealed class DedicatedLoopTests
         if (batched)
         {
             batch.Add(fixture.Module.Port, 1);
-            Assert.True(fixture.Runtime.TrySubmit(batch, out run, cancellation.Token));
+            Assert.True(fixture.Runtime.Submit(batch, out run, cancellation.Token) == CommandEnqueueStatus.Accepted);
             completion = run!.Completion;
         }
         else

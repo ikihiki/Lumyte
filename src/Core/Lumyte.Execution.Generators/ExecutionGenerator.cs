@@ -120,9 +120,9 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         }
 
         INamedTypeSymbol? portType = compilation.GetTypeByMetadataName(Prefix + "CommandPort`2");
-        if (portType?.GetMembers("TryEnqueue").OfType<IMethodSymbol>().Any(method => method.Parameters.Length == 3 && method.Parameters[2].RefKind == RefKind.Out) != true)
+        if (portType?.GetMembers("Enqueue").OfType<IMethodSymbol>().Any(method => method.Parameters.Length == 3 && method.Parameters[1].RefKind == RefKind.Out) != true)
         {
-            Error(8, type, "This generator requires the matching typed CommandPort.TryEnqueue runtime API.");
+            Error(8, type, "This generator requires the matching typed CommandPort.Enqueue runtime API.");
         }
 
         var models = new List<MethodModel>();
@@ -225,7 +225,7 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         foreach (MethodModel model in models)
         {
             string[] names = model.Kind == "ExecutionCommandAttribute"
-                ? [model.Name + "Work", "Declare" + model.Name, model.Name, "Add" + model.Name + "To"]
+                ? [model.Name + "Work", "Declare" + model.Name, model.Name.EndsWith("Async", StringComparison.Ordinal) ? model.Name : model.Name + "Async", "Add" + model.Name + "To"]
                 : [model.Name + "Work", "Declare" + model.Name];
             if (model.Kind == "ExecutionCommandAttribute")
             {
@@ -327,9 +327,10 @@ public sealed class ExecutionGenerator : IIncrementalGenerator
         text.Append("public readonly struct ").Append(model.Name).AppendLine("Work\n{");
         text.Append("internal ").Append(model.Name).Append("Work(").Append(Execution).Append("WorkKey<").Append(command).Append(", ").Append(result).AppendLine("> key) { Key = key; }");
         text.Append("public ").Append(Execution).Append("WorkKey<").Append(command).Append(", ").Append(result).AppendLine("> Key { get; }");
-        EmitSend(text, model, "ExecuteAsync", model.Payload, "context.TryEnqueue(Key, in __command, cancellationToken, out var __completion)", Execution + "ModuleContext context, " + Type(type) + " receiver");
+        EmitSend(text, model, "ExecuteAsync", model.Payload, "context.Enqueue(Key, in __command, out var __completion, cancellationToken)", Execution + "ModuleContext context, " + Type(type) + " receiver");
         text.AppendLine("}");
-        EmitSend(text, model, Escape(model.Name), model.Payload, queue + ".TryEnqueue(in __command, cancellationToken, out var __completion)", null);
+        EmitSend(text, model, Escape(model.Name.EndsWith("Async", StringComparison.Ordinal) ? model.Name : model.Name + "Async"), model.Payload, queue + ".Enqueue(in __command, out var __completion, cancellationToken)", null);
+
         EmitBatch(text, model, "Add" + model.Name + "To", model.Payload);
     }
 

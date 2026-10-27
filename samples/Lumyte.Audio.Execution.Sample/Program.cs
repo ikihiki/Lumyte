@@ -73,29 +73,29 @@ internal static class Program
                     pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
                 }
 
-                var clip = new AudioClip(await audio.Commands.CreateClip(new AudioFormat(48000, 1), pcm));
-                AudioVoice voice = await clip.CreateVoice(AudioBus.Effects);
+                var clip = new AudioClip(await audio.Commands.CreateClipAsync(new AudioFormat(48000, 1), pcm));
+                AudioVoice voice = await clip.CreateVoiceAsync(AudioBus.Effects);
                 try
                 {
-                    await clip.DestroyClip();
+                    await clip.DestroyClipAsync();
                     throw new InvalidOperationException("Borrowed clip destruction succeeded.");
                 }
                 catch (InvalidOperationException error) when (error.Message != "Borrowed clip destruction succeeded.")
                 {
                 }
 
-                await voice.Play();
-                await voice.Pause();
-                await audio.Commands.Refresh();
+                await voice.PlayAsync();
+                await voice.PauseAsync();
+                await audio.Commands.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Paused)
                 {
                     throw new InvalidOperationException("Real backend is not paused.");
                 }
 
-                await voice.SetGain(0.5f);
-                await voice.SetLoop(true);
-                await voice.Play();
-                await audio.Commands.Refresh();
+                await voice.SetGainAsync(0.5f);
+                await voice.SetLoopAsync(true);
+                await voice.PlayAsync();
+                await audio.Commands.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Playing)
                 {
                     throw new InvalidOperationException("Real backend is not playing.");
@@ -118,15 +118,15 @@ internal static class Program
                     }
                 }
 
-                await voice.Stop();
-                await audio.Commands.Refresh();
+                await voice.StopAsync();
+                await audio.Commands.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Stopped)
                 {
                     throw new InvalidOperationException("Real backend is not stopped.");
                 }
 
-                await voice.Destroy();
-                await clip.DestroyClip();
+                await voice.DestroyAsync();
+                await clip.DestroyClipAsync();
 
                 Console.WriteLine($"Real OpenAL controls passed; Host={host}, DI={useDi}");
             }

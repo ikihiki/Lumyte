@@ -54,7 +54,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     }
 
     public ValueTask<AudioDeviceLease> AcquireAsync(CancellationToken cancellationToken = default)
-        => new AudioDevice(this).AcquireLease(cancellationToken);
+        => new AudioDevice(this).AcquireLeaseAsync(cancellationToken);
 
     public ValueTask<AudioDeviceSnapshot> RecoverAsync(CancellationToken cancellationToken = default)
     {
@@ -82,7 +82,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     }
 
     public ValueTask<int> RetireAsync(CancellationToken cancellationToken = default)
-        => new AudioDevice(this).Retire(cancellationToken);
+        => new AudioDevice(this).RetireAsync(cancellationToken);
 
     internal AudioDeviceSnapshot? BeginRecoveryIfNeeded()
     {
@@ -453,7 +453,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
         try
         {
             var sender = new AudioDevice(this);
-            AudioDeviceSnapshot? current = await sender.BeginRecoveryIfNeeded().ConfigureAwait(false);
+            AudioDeviceSnapshot? current = await sender.BeginRecoveryIfNeededAsync().ConfigureAwait(false);
             if (current is { } available)
             {
                 completion.SetResult(available);
@@ -470,7 +470,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
                 // The owner observes the factory error while retaining any cleanup state.
             }
 
-            AudioDeviceSnapshot ready = await sender.CompleteCreate().ConfigureAwait(false);
+            AudioDeviceSnapshot ready = await sender.CompleteCreateAsync().ConfigureAwait(false);
             completion.SetResult(ready);
         }
         catch (Exception error)

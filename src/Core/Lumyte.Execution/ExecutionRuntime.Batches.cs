@@ -3,18 +3,28 @@ namespace Lumyte.Execution;
 /// <summary>Implements bounded execution scheduling and admission.</summary>
 public sealed partial class ExecutionRuntime
 {
-    /// <summary>Atomically admits all staged commands, preserving shared group FIFO.</summary>
-    /// <param name="batch">Single-producer staging.</param>
-    /// <param name="run">The accepted run, or null on capacity shortage.</param>
-    /// <param name="token">Cancellation before handler start.</param>
-    /// <returns>False only when retained capacity is exhausted.</returns>
-    public bool TrySubmit(CommandBatch batch, out CommandRun? run, CancellationToken token = default)
+    /// <summary>Atomically admits a batch, reporting stopped, canceled and full admission as statuses.</summary>
+    /// <param name="batch">Single-producer staging, retained unchanged on rejection.</param>
+    /// <param name="run">The accepted run, or null on rejection.</param>
+    /// <param name="cancellationToken">Cancellation before handler start.</param>
+    /// <returns>The admission status.</returns>
+    public CommandEnqueueStatus Submit(CommandBatch batch, out CommandRun? run, CancellationToken cancellationToken = default)
+        => SubmitCore(batch, out run, cancellationToken);
+
+    private CommandEnqueueStatus SubmitCore(CommandBatch batch, out CommandRun? run, CancellationToken token)
     {
         VerifyOutsideHandler();
-        token.ThrowIfCancellationRequested();
+        run = null;
+        ArgumentNullException.ThrowIfNull(batch);
+
         lock (Sync)
         {
-            RequireRunning();
+            CommandEnqueueStatus admission = GetNormalAdmissionStatus(token);
+            if (admission != CommandEnqueueStatus.Accepted)
+            {
+                return admission;
+            }
+
             batch.CheckMutable();
             if (batch.Items.Count == 0)
             {
@@ -37,7 +47,7 @@ public sealed partial class ExecutionRuntime
             if (!Reserve(1, batch.Items.Count, bytes, false, 0))
             {
                 run = null;
-                return false;
+                return CommandEnqueueStatus.QueueFull;
             }
 
             BatchItem[] items = batch.Items.ToArray();
@@ -51,15 +61,17 @@ public sealed partial class ExecutionRuntime
             }
 
             Notify(false);
-            return true;
+            return CommandEnqueueStatus.Accepted;
         }
     }
 
-    private void RequireRunning()
+    private CommandEnqueueStatus GetNormalAdmissionStatus(CancellationToken token)
     {
         if (_status != ExecutionStatus.Running)
         {
-            throw new InvalidOperationException("Normal admission requires a running runtime.");
+            return CommandEnqueueStatus.NotRunning;
         }
+
+        return token.IsCancellationRequested ? CommandEnqueueStatus.Canceled : CommandEnqueueStatus.Accepted;
     }
 }

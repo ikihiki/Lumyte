@@ -33,9 +33,8 @@ RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や�
      }
 +    public static class AudioClipExtensions
 +    {
-+        // Effectsへ配送する拡張メソッド。明示的なbusを受け取る既存instance methodも維持する。
-+        public static ValueTask<AudioVoice> CreateVoice(this AudioClip clip, CancellationToken cancellationToken = default);
-+        // Async命名からもbusを省略できる。同じ既存senderへ配送する。
++        // Effectsへ配送する拡張メソッド。明示的なbusを受け取るinstance methodへ配送する。
++        // Async命名からもbusを省略できる。同じAsync senderへ配送する。
 +        public static ValueTask<AudioVoice> CreateVoiceAsync(this AudioClip clip, CancellationToken cancellationToken = default);
 +    }
      public interface IAudioDeviceService

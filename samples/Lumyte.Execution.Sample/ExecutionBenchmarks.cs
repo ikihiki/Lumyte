@@ -19,7 +19,7 @@ internal static class ExecutionBenchmarks
         Print("captured_delegate", Measure(() => CreateCaptured(audio.State, original)(), Iterations));
         Action single = () =>
         {
-            ValueTask<Unit> result = voice.Play();
+            ValueTask<Unit> result = voice.PlayAsync();
             runtime.RunHostPhase(audio.HostPhase, 64, TimeSpan.FromMilliseconds(2));
             result.GetAwaiter().GetResult();
         };
@@ -32,7 +32,7 @@ internal static class ExecutionBenchmarks
                 voice.AddPlayTo(batch);
             }
 
-            if (!runtime.TrySubmit(batch, out CommandRun? run))
+            if (runtime.Submit(batch, out CommandRun? run) != CommandEnqueueStatus.Accepted)
             {
                 throw new InvalidOperationException("Unexpected benchmark capacity shortage.");
             }

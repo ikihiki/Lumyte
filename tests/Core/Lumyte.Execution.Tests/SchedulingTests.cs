@@ -47,7 +47,7 @@ public sealed class SchedulingTests
         {
             var data = new GraphData(128);
             var input = new GraphInput(data);
-            Assert.True(runtime.TrySchedule(graph, in input, out JobRun? run));
+            Assert.True(runtime.Schedule(graph, in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
             using (run)
             {
                 await run!.Completion.WaitAsync(TimeSpan.FromSeconds(30));
