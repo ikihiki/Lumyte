@@ -11,6 +11,9 @@ dotnet test tests/Tools/Lumyte.Text.Parley.Build.Tests
 The runner and fake tools are built once as project references. Each test uses
 an isolated directory whose paths contain spaces and Japanese characters, and
 passes child-process settings without changing the test process's environment.
+The helper projects follow the selected solution configuration even though they
+are not solution entries. Their outputs are staged during build, so the CI's
+separate `dotnet test --no-build --no-restore` invocation can run the same tests.
 
 Coverage includes argument boundaries, inherited environment variables, native
 builds with no Python on PATH, Cargo failures, missing outputs, exact toolchain

@@ -252,8 +252,8 @@ BrowserはPATHからPythonとglobalなCargoを外してpublishし、
 その成果物のChromium / WebGPU描画も確認しています。
 ビルド入口のプロセス統合テスト等は[ビルド手順の確認範囲](../../../tools/text-parley/README.md#確認した範囲)を参照してください。
 
-nativeの実行確認はLinux x64に限ります。Windows・macOS・他architecture、
-配布サイズと性能の比較は未検証です。
+2026-10-27のCIでは、LinuxとWindowsのx64 / arm64でnativeビルドとParleyの90ケースが成功しました。
+macOSでの実行、配布サイズと性能の比較は未検証です。
 
 主な依存はParley 0.12、Skrifa 0.44、build時のcsbindgen 1.9.8です。
 Parley・Fontique・Fontationsは主にMITまたはApache-2.0、HarfRustとcsbindgenはMIT、

@@ -17,10 +17,13 @@ X/Y sizes are 500/600, superscript sizes 550/650, and Y offsets 200/300 in
 1000 units per em. These nonzero metrics intentionally differ from DejaVu Sans
 to verify that fallback color glyphs use their actual face's script metrics.
 
-`ColorFontRenderingTests` exercises actual Skia color-font pixels, all 28 COLR
-composite operators, foreground alpha, bitmap placement and lifetime, registered
-v0/v1 fallback, and malformed table metadata. It uses the Linux native asset
-package explicitly; it does not require installed system fonts.
+`ColorFontRenderingTests` exercises actual Skia color-font pixels and all 28 COLR
+composite operators on the supported Linux/Browser FreeType backend. Named
+`SkiaColorRasterFact`/`SkiaColorRasterTheory` attributes report raster-only cases
+as skipped on other font backends. A separate test verifies explicit rejection
+of unsupported raster calls while vector paint remains available. Registered
+v0/v1 vector fallback, snapshot lifetime and malformed metadata tests run on every
+platform. The tests do not require installed system fonts.
 
 `DistanceFieldGenerationTests` checks independent colored edge channels, true
 distance alpha, contour holes and winding, sharp corners, quadratic/cubic curves,

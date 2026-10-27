@@ -12,7 +12,7 @@ public sealed class ColorFontRenderingTests
 {
     /// <summary>Linear, radial and sweep paints produce spatially varying colors from real font tables.</summary>
     /// <param name="glyphId">The known COLR v1 glyph in the bundled test fixture.</param>
-    [Theory]
+    [SkiaColorRasterTheory]
     [InlineData(90)]
     [InlineData(93)]
     [InlineData(12)]
@@ -36,7 +36,7 @@ public sealed class ColorFontRenderingTests
     }
 
     /// <summary>The 0xffff palette entry follows the caller's foreground and preserves font paint alpha.</summary>
-    [Fact]
+    [SkiaColorRasterFact]
     public void ForegroundPaletteEntryUsesRequestedStraightColorAndAlpha()
     {
         using ColorFont2D font = LoadFont();
@@ -58,7 +58,7 @@ public sealed class ColorFontRenderingTests
     }
 
     /// <summary>Every COLR composite mode renders and visually distinct operators are not flattened to source-over.</summary>
-    [Fact]
+    [SkiaColorRasterFact]
     public void CompositeModesRenderDistinctResults()
     {
         using ColorFont2D font = LoadFont();
@@ -77,7 +77,7 @@ public sealed class ColorFontRenderingTests
     }
 
     /// <summary>Affine transforms and nested clip/reference graphs retain different renderings and remain bounded.</summary>
-    [Fact]
+    [SkiaColorRasterFact]
     public void TransformsNestedGlyphClipsAndRepeatedReferencesRender()
     {
         using ColorFont2D font = LoadFont();
@@ -95,7 +95,7 @@ public sealed class ColorFontRenderingTests
     }
 
     /// <summary>A font containing a cyclic PaintColrGlyph graph cannot recurse indefinitely or allocate an unbounded bitmap.</summary>
-    [Fact]
+    [SkiaColorRasterFact]
     public void CyclicGlyphReferencesRemainBounded()
     {
         using ColorFont2D font = LoadFont();
@@ -103,6 +103,25 @@ public sealed class ColorFontRenderingTests
         {
             ColorGlyphBitmap2D bitmap = font.RenderGlyph(glyphId, 32, new Color2D(0, 0, 0, 1));
             AssertBitmap(bitmap);
+        }
+    }
+
+    /// <summary>The comparison raster API rejects unsupported font backends while vector COLR remains available.</summary>
+    [Fact]
+    public void RasterBackendPolicyDoesNotRestrictVectorColorPaint()
+    {
+        using ColorFont2D font = LoadFont();
+        ColorGlyphPaint2D vector = font.RenderPaintGlyph(90, 64);
+        Assert.True(vector.Bounds.Width > 0);
+        Assert.True(vector.Bounds.Height > 0);
+        Assert.NotNull(vector.Paint);
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsBrowser())
+        {
+            AssertBitmap(font.RenderGlyph(90, 64, new Color2D(0, 0, 0, 1)));
+        }
+        else
+        {
+            Assert.Throws<PlatformNotSupportedException>(() => font.RenderGlyph(90, 64, new Color2D(0, 0, 0, 1)));
         }
     }
 

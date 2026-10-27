@@ -77,12 +77,13 @@ public sealed class ColorFont2D : IDisposable
         return _colorGlyphs.Contains(glyphId);
     }
 
-    /// <summary>Renders one shaped COLR glyph relative to baseline (0,0), resolving paint graphs and blends in Skia.</summary>
+    /// <summary>Renders one shaped COLR glyph relative to baseline (0,0) using the bundled Skia FreeType backend on Linux or Browser.</summary>
     /// <param name="glyphId">The shaped glyph identifier in this registered face.</param>
     /// <param name="fontSize">The finite positive logical em size.</param>
     /// <param name="foreground">The opaque current foreground color used by palette index 0xFFFF.</param>
     /// <param name="pixelsPerUnit">The finite positive raster resolution per logical unit.</param>
     /// <returns>A CPU bitmap using the default font palette and default variation instance.</returns>
+    /// <exception cref="PlatformNotSupportedException">The platform uses a Skia font backend outside this comparison raster API's supported Linux/Browser boundary. Use <see cref="RenderPaintGlyph"/> for vector color rendering.</exception>
     public ColorGlyphBitmap2D RenderGlyph(ushort glyphId, float fontSize, Color2D foreground, float pixelsPerUnit = 2)
         => Render(glyphId, fontSize, 1, foreground, pixelsPerUnit, rotated: false);
 
@@ -324,6 +325,11 @@ public sealed class ColorFont2D : IDisposable
         if (!_colorGlyphs.Contains(glyphId))
         {
             throw new ArgumentException("The requested glyph does not contain COLR color data.", nameof(glyphId));
+        }
+
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsBrowser())
+        {
+            throw new PlatformNotSupportedException("The comparison bitmap renderer requires the bundled Skia FreeType backend on Linux or Browser. Use RenderPaintGlyph for platform-independent COLR rendering.");
         }
 
         using var font = new SKFont(_typeface, fontSize, scaleX) { Hinting = SKFontHinting.None, Subpixel = true, LinearMetrics = true, Edging = SKFontEdging.Antialias };

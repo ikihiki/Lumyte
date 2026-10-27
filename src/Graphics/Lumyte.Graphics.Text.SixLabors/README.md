@@ -199,6 +199,10 @@ COLR/CPAL仕様に従い、色stopの補間とblendはlinear-lightのpremultipli
 `RenderGlyph`とColorGlyphBitmap2Dは互換性と比較用の明示的なraster APIとして残ります。
 こちらはSkiaのpaint engineを呼び、指定解像度のstraight-alpha sRGB RGBAを返します。
 legacy raster APIでは既定palette/可変軸を使い、foreground alphaは1のみです。
+この比較用bitmap APIの対応範囲は、同梱SkiaがFreeTypeを使うLinuxとBrowserです。
+WindowsのDirectWriteやmacOSのCoreTextではCOLR v1の同じ描画結果を保証できないため、
+`RenderGlyph`は`PlatformNotSupportedException`を送出し、単色glyphへの暗黙の代替を防ぎます。
+この制限は`RenderPaintGlyph`と通常のvector描画には適用しません。
 通常のTextLayout2Dとcanvas.DrawTextはこのAPIを呼びません。
 
 COLR v1のpaint format 1～32を次のmodelへ対応させます。

@@ -37,6 +37,8 @@ Parleyは段落の配置・改行を担当し、Fontiqueは登録フォントの
 
 比較用の旧実装は`Lumyte.Graphics.Text.SixLabors`へ分離する。SixLabors.Fonts 2.1.3とSkiaSharp 3.119.4への依存はこの任意パッケージだけに置き、Parleyや共通Textからは参照しない。従来のfactoryは`SixLaborsTextLayout2D.Create`へ移し、共通`TextLayout2D`から外部の`TextOptions`を取り除く。`TextRun2D`と`ColorFont2D`等もこの比較用アダプターに属する。
 
+比較用の`ColorFont2D.RenderGlyph`は、COLR v1を解釈する同梱SkiaのFreeType backendを使うLinux / Browserに限定する。他の環境では`PlatformNotSupportedException`を送出し、単色glyphへの暗黙の代替を防ぐ。独自にCOLR paintを読む`RenderPaintGlyph`、通常のvector描画とParleyにはこの制限を適用しない。
+
 フォント取得、OSのフォント列挙、ResourceManager、DI、ファイルアクセスを必須経路にしない。Browserではアプリが配布フォントを非同期に取得し、同期のCPUレイアウト作成へ明示して供給する。OSのフォント一覧や暗黙のfallbackに依存しない。
 
 ### C ABI・生成・所有権
@@ -337,7 +339,7 @@ Drawing2Dの全compositeとgradient境界条件のCPU・GPU検証を維持する
 
 比較用SixLabors Browserサンプルも、同じPythonのないPATHでEmscriptenのcompile・link・wasm-optを含むpublishが成功した。
 
-nativeの実行確認はLinux x64に限り、Windows・macOS・他architectureでの実行、配布サイズ・性能の比較は未検証とする。
+2026-10-27のCIでは、Linux / Windowsのx64 / arm64でnativeビルドとParleyの90ケースが成功した。macOSでの実行、配布サイズ・性能の比較は未検証とする。
 
 ## 参考資料
 

@@ -4,6 +4,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Helpers are intentionally absent from the solution. Keep their configuration
+         aligned with this project so staging resolves the binaries actually built. -->
+    <ShouldUnsetParentConfigurationAndPlatform>false</ShouldUnsetParentConfigurationAndPlatform>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
@@ -26,6 +29,8 @@
     <ItemGroup>
       <_ParleyBuildFakeToolFiles Include="$(_ParleyBuildFakeToolDirectory)*" />
     </ItemGroup>
+    <Error Condition="!Exists('@(_ParleyBuildRunner)')" Text="The Parley build test runner was not built at @(_ParleyBuildRunner)." />
+    <Error Condition="'@(_ParleyBuildFakeToolFiles)' == ''" Text="The Parley build test fixture was not built in $(_ParleyBuildFakeToolDirectory)." />
     <WriteLinesToFile File="$(OutDir)runner-path.txt" Lines="@(_ParleyBuildRunner)" Overwrite="true" />
     <Copy SourceFiles="@(_ParleyBuildFakeToolFiles)" DestinationFolder="$(OutDir)fake-tool" SkipUnchangedFiles="true" />
   </Target>

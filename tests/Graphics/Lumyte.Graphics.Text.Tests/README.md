@@ -9,6 +9,12 @@ Parleyは[専用テスト](../Lumyte.Graphics.Text.Parley.Tests)で検証しま�
 snapshotの不変性、Canvasの状態保存を検証します。
 OSのフォントやGPUに依存しません。
 
+vector COLRとsnapshotのテストは全環境で実行します。
+Skiaの比較用bitmap oracleは同梱FreeTypeを使うLinux/Browserだけが対象です。
+`SkiaColorRasterFact`／`SkiaColorRasterTheory`は、それ以外の環境でraster専用ケースを理由付きでskipします。
+別の共通テストで、未対応環境の`RenderGlyph`が`PlatformNotSupportedException`となり、
+同じglyphの`RenderPaintGlyph`は引き続き有効なvector paintを返すことを確認します。
+
 ```sh
 dotnet test tests/Graphics/Lumyte.Graphics.Text.Tests
 ```
