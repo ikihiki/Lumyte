@@ -18,10 +18,10 @@ public sealed class CommandPort<TCommand, TResult> : ICommandEndpoint
 
     /// <summary>Attempts atomic admission without a batch, delegate, or task wrapper.</summary>
     /// <param name="command">The typed input.</param>
-    /// <param name="token">Cancellation before handler start.</param>
     /// <param name="completion">The single-use result source, only on acceptance.</param>
+    /// <param name="cancellationToken">Cancellation before handler start.</param>
     /// <returns>The admission status.</returns>
-    public CommandEnqueueStatus TryEnqueue(in TCommand command, CancellationToken token, out IValueTaskSource<TResult>? completion)
+    public CommandEnqueueStatus Enqueue(in TCommand command, out IValueTaskSource<TResult>? completion, CancellationToken cancellationToken = default)
     {
         ExecutionRuntime.VerifyCanSubmit();
         WorkDefinition<TCommand, TResult>? work = Work;
@@ -31,20 +31,20 @@ public sealed class CommandPort<TCommand, TResult> : ICommandEndpoint
             return CommandEnqueueStatus.NotRunning;
         }
 
-        return work.Module.Runtime.Enqueue(work, in command, token, null, out completion);
+        return work.Module.Runtime.Enqueue(work, in command, cancellationToken, null, out completion);
     }
 
     /// <summary>Submits one command and returns its actual execution result.</summary>
     /// <param name="command">The typed input.</param>
-    /// <param name="token">Cancellation before handler start.</param>
+    /// <param name="cancellationToken">Cancellation before handler start.</param>
     /// <returns>A result which must be observed once.</returns>
-    public ValueTask<TResult> ExecuteAsync(TCommand command, CancellationToken token = default)
+    public ValueTask<TResult> ExecuteAsync(TCommand command, CancellationToken cancellationToken = default)
     {
-        CommandEnqueueStatus status = TryEnqueue(in command, token, out IValueTaskSource<TResult>? completion);
+        CommandEnqueueStatus status = Enqueue(in command, out IValueTaskSource<TResult>? completion, cancellationToken);
         return status switch
         {
             CommandEnqueueStatus.Accepted => new ValueTask<TResult>(completion!, 0),
-            CommandEnqueueStatus.Canceled => ValueTask.FromCanceled<TResult>(token),
+            CommandEnqueueStatus.Canceled => ValueTask.FromCanceled<TResult>(cancellationToken),
             CommandEnqueueStatus.NotRunning => ValueTask.FromException<TResult>(new InvalidOperationException("Command admission is closed.")),
             CommandEnqueueStatus.QueueFull => ValueTask.FromException<TResult>(new ExecutionQueueFullException("Command capacity is exhausted.")),
             _ => throw new InvalidOperationException("Unknown enqueue status."),

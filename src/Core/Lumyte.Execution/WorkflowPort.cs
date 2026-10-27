@@ -16,10 +16,10 @@ public sealed class WorkflowPort<TCommand, TResult> : ICommandEndpoint
 
     /// <summary>Reserves one operation until its actual result is observed.</summary>
     /// <param name="command">The typed input.</param>
-    /// <param name="token">Cancellation before entry and cooperative cancellation thereafter.</param>
     /// <param name="completion">The single-use result source, only on acceptance.</param>
+    /// <param name="cancellationToken">Cancellation before entry and cooperative cancellation thereafter.</param>
     /// <returns>The admission status.</returns>
-    public CommandEnqueueStatus TryEnqueue(in TCommand command, CancellationToken token, out IValueTaskSource<TResult>? completion)
+    public CommandEnqueueStatus Enqueue(in TCommand command, out IValueTaskSource<TResult>? completion, CancellationToken cancellationToken = default)
     {
         ExecutionRuntime.VerifyCanSubmit();
         WorkflowDefinition<TCommand, TResult>? work = Volatile.Read(ref _work);
@@ -29,20 +29,20 @@ public sealed class WorkflowPort<TCommand, TResult> : ICommandEndpoint
             return CommandEnqueueStatus.NotRunning;
         }
 
-        return work.Module.Runtime.EnqueueWorkflow(work, in command, token, out completion);
+        return work.Module.Runtime.EnqueueWorkflow(work, in command, cancellationToken, out completion);
     }
 
     /// <summary>Submits an operation and returns its actual completion.</summary>
     /// <param name="command">The typed input.</param>
-    /// <param name="token">Cancellation before entry and cooperative cancellation thereafter.</param>
+    /// <param name="cancellationToken">Cancellation before entry and cooperative cancellation thereafter.</param>
     /// <returns>A result which must be observed once, including after cancellation.</returns>
-    public ValueTask<TResult> Execute(TCommand command, CancellationToken token = default)
+    public ValueTask<TResult> ExecuteAsync(TCommand command, CancellationToken cancellationToken = default)
     {
-        CommandEnqueueStatus status = TryEnqueue(in command, token, out IValueTaskSource<TResult>? completion);
+        CommandEnqueueStatus status = Enqueue(in command, out IValueTaskSource<TResult>? completion, cancellationToken);
         return status switch
         {
             CommandEnqueueStatus.Accepted => new ValueTask<TResult>(completion!, 0),
-            CommandEnqueueStatus.Canceled => ValueTask.FromCanceled<TResult>(token),
+            CommandEnqueueStatus.Canceled => ValueTask.FromCanceled<TResult>(cancellationToken),
             CommandEnqueueStatus.NotRunning => ValueTask.FromException<TResult>(new InvalidOperationException("Workflow admission is closed.")),
             CommandEnqueueStatus.QueueFull => ValueTask.FromException<TResult>(new ExecutionQueueFullException("Workflow capacity is exhausted.")),
             _ => throw new InvalidOperationException("Unknown enqueue status."),

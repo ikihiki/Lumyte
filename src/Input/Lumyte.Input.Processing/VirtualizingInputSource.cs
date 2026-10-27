@@ -18,7 +18,7 @@ public sealed class VirtualizingInputSource(IInputSource inner, Func<InputDevice
 
     /// <summary>Schedules replacement generators for the next source update.</summary>
     /// <param name = "factory">Creates one independent generator per physical device.</param>
-    public void SetGeneratorFactory(Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory)
+    public void QueueGeneratorFactory(Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory)
     {
         var prepared = _pairs.ToDictionary(pair => pair.Key, pair => factory(pair.Value.Raw.Descriptor) ?? throw new ArgumentException("Existing virtual devices require a generator.", nameof(factory)));
         _pending = prepared;

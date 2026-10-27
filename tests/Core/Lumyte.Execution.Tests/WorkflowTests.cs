@@ -27,7 +27,7 @@ public sealed class WorkflowTests
             return value;
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(12);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(12);
         Assert.Equal(0, entered);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
         Assert.Equal(1, entered);
@@ -62,7 +62,7 @@ public sealed class WorkflowTests
             return value;
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(12);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(12);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
         Assert.True(entered);
         Thread.Sleep(75);
@@ -88,7 +88,7 @@ public sealed class WorkflowTests
             return await fixture.Module.Cpu.ExecuteAsync(value);
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(9);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(9);
         Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
         try
         {
@@ -116,14 +116,14 @@ public sealed class WorkflowTests
         {
             if (value == 1)
             {
-                return await fixture.Module.Port.Execute(2);
+                return await fixture.Module.Port.ExecuteAsync(2);
             }
 
             int cpu = await fixture.Module.Cpu.ExecuteAsync(value);
             return await fixture.Module.Owner.ExecuteAsync(cpu);
         };
 
-        Assert.Equal(8, fixture.Wait(fixture.Module.Port.Execute(1)));
+        Assert.Equal(8, fixture.Wait(fixture.Module.Port.ExecuteAsync(1)));
         Assert.Equal(2, fixture.Module.Commands);
         if (placement == OwnerPlacement.Dedicated)
         {
@@ -145,15 +145,15 @@ public sealed class WorkflowTests
             return await fixture.Module.Owner.ExecuteAsync(value);
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(7);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(7);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
-        ValueTask<int> unstarted = fixture.Module.Port.Execute(99);
+        ValueTask<int> unstarted = fixture.Module.Port.ExecuteAsync(99);
         Task stop = fixture.Runtime.StopAsync().AsTask();
         fixture.Pump();
         Assert.False(stop.IsCompleted);
         Assert.Throws<OperationCanceledException>(() => CompletedResult.Read(unstarted));
         Assert.Equal(1, entered);
-        Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Module.Port.TryEnqueue(0, default, out _));
+        Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Module.Port.Enqueue(0, out _, default));
         ready.SetResult();
         fixture.Until(() => stop.IsCompleted);
         CompletedResult.Read(stop);
@@ -177,9 +177,9 @@ public sealed class WorkflowTests
             return value;
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(5, cancellation.Token);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(5, cancellation.Token);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
-        ValueTask<int> unstarted = fixture.Module.Port.Execute(99, cancellation.Token);
+        ValueTask<int> unstarted = fixture.Module.Port.ExecuteAsync(99, cancellation.Token);
         cancellation.Cancel();
         fixture.Pump();
         Assert.False(result.IsCompleted);
@@ -200,14 +200,14 @@ public sealed class WorkflowTests
             throw new OperationCanceledException("Domain failure.");
         };
 
-        Assert.Equal(CommandEnqueueStatus.Accepted, fixture.Module.Port.TryEnqueue(0, default, out IValueTaskSource<int>? source));
+        Assert.Equal(CommandEnqueueStatus.Accepted, fixture.Module.Port.Enqueue(0, out IValueTaskSource<int>? source, default));
         fixture.Until(() => source!.GetStatus(0) != ValueTaskSourceStatus.Pending);
         Assert.Equal(ValueTaskSourceStatus.Faulted, source!.GetStatus(0));
-        Assert.Equal(CommandEnqueueStatus.QueueFull, fixture.Module.Port.TryEnqueue(0, default, out _));
+        Assert.Equal(CommandEnqueueStatus.QueueFull, fixture.Module.Port.Enqueue(0, out _, default));
         Assert.Throws<OperationCanceledException>(() => CompletedResult.ReadSource(source));
         Assert.Throws<InvalidOperationException>(() => CompletedResult.ReadSource(source));
         fixture.Module.Handler = (value, _) => ValueTask.FromResult(value);
-        ValueTask<int> result = fixture.Module.Port.Execute(4);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(4);
         fixture.Until(() => result.IsCompleted);
         Task stop = fixture.Runtime.StopAsync().AsTask();
         fixture.Until(() => stop.IsCompleted);
@@ -222,7 +222,7 @@ public sealed class WorkflowTests
         using var fixture = new WorkflowFixture();
         var operation = new SingleResultSource();
         fixture.Module.Handler = (_, _) => new ValueTask<int>(operation, 0);
-        ValueTask<int> result = fixture.Module.Port.Execute(0);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(0);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
         Assert.Equal(0, operation.Observations);
         operation.Complete(17);
@@ -253,7 +253,7 @@ public sealed class WorkflowTests
             return new ValueTask<int>(operation, 0);
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(0);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(0);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
         Assert.NotNull(workflowContext);
         workflowContext.Post(
@@ -314,8 +314,8 @@ public sealed class WorkflowTests
             await Task.Yield();
             return await fixture.Module.Cpu.ExecuteAsync(2);
         };
-        fixture.Module.BeforeCommand = () => Assert.Throws<InvalidOperationException>(() => fixture.Module.Port.TryEnqueue(1, default, out _));
-        Assert.Equal(4, fixture.Wait(fixture.Module.Port.Execute(0)));
+        fixture.Module.BeforeCommand = () => Assert.Throws<InvalidOperationException>(() => fixture.Module.Port.Enqueue(1, out _, default));
+        Assert.Equal(4, fixture.Wait(fixture.Module.Port.ExecuteAsync(0)));
         fixture.Module.BeforeCommand = null;
         Assert.Equal(6, fixture.Wait(fixture.Module.Cpu.ExecuteAsync(3)));
     }
@@ -328,14 +328,14 @@ public sealed class WorkflowTests
         using var other = new WorkflowFixture(options: new ExecutionOptions { MaxInFlightRuns = 1, MaxCommands = 1 });
         fixture.Module.Handler = (_, _) =>
         {
-            Assert.Throws<InvalidOperationException>(() => other.Module.Cpu.TryEnqueue(1, default, out _));
-            Assert.Throws<InvalidOperationException>(() => other.Module.Port.TryEnqueue(1, default, out _));
+            Assert.Throws<InvalidOperationException>(() => other.Module.Cpu.Enqueue(1, out _, default));
+            Assert.Throws<InvalidOperationException>(() => other.Module.Port.Enqueue(1, out _, default));
             return ValueTask.FromResult(3);
         };
 
-        Assert.Equal(3, fixture.Wait(fixture.Module.Port.Execute(0)));
+        Assert.Equal(3, fixture.Wait(fixture.Module.Port.ExecuteAsync(0)));
         Assert.Equal(4, other.Wait(other.Module.Cpu.ExecuteAsync(2)));
-        Assert.Equal(5, other.Wait(other.Module.Port.Execute(5)));
+        Assert.Equal(5, other.Wait(other.Module.Port.ExecuteAsync(5)));
     }
 
     /// <summary>Previously accepted foreign results resume on the waiting workflow scheduler, including faults.</summary>
@@ -360,7 +360,7 @@ public sealed class WorkflowTests
             }
         };
 
-        ValueTask<int> foreign = workflow ? other.Module.Port.Execute(6) : other.Module.Cpu.ExecuteAsync(3);
+        ValueTask<int> foreign = workflow ? other.Module.Port.ExecuteAsync(6) : other.Module.Cpu.ExecuteAsync(3);
         int resumed = 0;
         fixture.Module.Handler = async (_, _) =>
         {
@@ -376,7 +376,7 @@ public sealed class WorkflowTests
             }
         };
 
-        ValueTask<int> result = fixture.Module.Port.Execute(0);
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(0);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
         other.Pump();
         Assert.Equal(0, resumed);

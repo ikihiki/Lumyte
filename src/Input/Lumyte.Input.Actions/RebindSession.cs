@@ -45,7 +45,7 @@ public sealed class RebindSession
     public void Confirm(RebindConflictPolicy policy)
     {
         ActionProfile profile = PrepareProfile(policy);
-        _owner.ApplyProfile(profile);
+        _owner.QueueProfile(profile);
         IsComplete = true;
     }
 

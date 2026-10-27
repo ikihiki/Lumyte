@@ -71,7 +71,7 @@ await using (var manager = new ResourceManager(
     "scene", source, [new CpuMeshStage(), new GpuMeshStage()], memory, jobs,
     stageRuntimes: [new(typeof(GpuMesh), graphics)]))
 {
-    using ResourceReference<GpuMesh> owner = await manager.AcquireAsync(meshKey);
+    using ResourceReference<GpuMesh> owner = await manager.RetainAsync(meshKey);
 }
 
 await execution.StopAsync();
@@ -133,11 +133,11 @@ importsは借用ビューで、DisposeやCompileを持ちません。compile前�
 ```csharp
 using ResourceSnapshot snapshot = manager.CaptureSnapshot();
 graph.ImportResources().UseSnapshot(snapshot);
-// imports.Acquire(reference)やEffectsを使ってGraphを構築する。
+// imports.Pin(reference)やEffectsを使ってGraphを構築する。
 // Compile後はSnapshotを返してよく、発行済みLeaseはPlanの解放まで保持される。
 ```
 
-`imports.Acquire(reference)`やEffectsなどの拡張も同じviewを使います。明示的な`imports.Acquire(snapshot, reference.Handle)`も利用でき、発行済みLeaseはsnapshotを返した後も有効です。個々のAcquireAsyncは暗黙にSnapshotを取得しません。
+`imports.Pin(reference)`やEffectsなどの拡張も同じviewを使います。明示的な`imports.Pin(snapshot, reference.Handle)`も利用でき、発行済みLeaseはsnapshotを返した後も有効です。個々のAcquireAsyncは暗黙にSnapshotを取得しません。
 
 ## ImageEffectsとの接続
 
@@ -189,8 +189,8 @@ services.AddResources(resources => resources.UseSource<AppSource>()
 services.AddResourceGraphics();
 
 // device・Execution起動後。生成やロードは取得時に行う。
-using var reference = await manager.AcquireAsync(pipeline);
-using var lease = reference.Acquire();
+using var reference = await manager.RetainAsync(pipeline);
+using var lease = reference.Pin();
 encoder.SetPipeline(lease.Value.Value);
 // GPU使用・command解放の後にleaseを返す。
 ```

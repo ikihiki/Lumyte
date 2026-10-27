@@ -48,7 +48,8 @@ public sealed class WindowSystem : IDisposable
     /// <summary>Asks the owner of a borrowed native window to close or detach it.</summary>
     public event Action<WindowNode>? CloseRequested;
 
-    /// <summary>Gets immutable snapshots of the managed windows.</summary>
+    /// <summary>Gets a read-only snapshot of the currently registered node references.</summary>
+    /// <remarks>The collection membership is fixed; each node's properties read its current managed state.</remarks>
     public IReadOnlyList<WindowNode> Windows
     {
         get

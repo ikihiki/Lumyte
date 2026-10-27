@@ -18,7 +18,7 @@ public sealed class InputDiagnosticsTests
     {
         using var inspection = new InputInspectionSession();
         using var actions = new ActionSystem(Profile(), bufferOptions: null, inspection);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputOverrideTarget target = inspection.GetActionTarget(actions, "game", "jump");
         var owner = new InputOverrideOwner(Guid.NewGuid(), "tester");
         InputOverrideResult acquired = inspection.Acquire(owner, target, new(InputOverrideMode.Replace, Vector2.UnitX, TimeSpan.FromMilliseconds(10)));
@@ -134,7 +134,7 @@ public sealed class InputDiagnosticsTests
     {
         using var inspection = new InputInspectionSession();
         using var actions = new ActionSystem(Profile(), bufferOptions: null, inspection);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputOverrideTarget target = inspection.GetActionTarget(actions, "game", "jump");
         var tape = new InputTape(
             1,
@@ -160,7 +160,7 @@ public sealed class InputDiagnosticsTests
     {
         using var inspection = new InputInspectionSession();
         using var actions = new ActionSystem(Profile(), bufferOptions: null, inspection);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputOverrideTarget target = inspection.GetActionTarget(actions, "game", "jump");
         var owner = new InputOverrideOwner(Guid.NewGuid(), "tester");
         InputLiveSession live = inspection.Begin(owner, [target]);
@@ -180,13 +180,13 @@ public sealed class InputDiagnosticsTests
     {
         using var inspection = new InputInspectionSession();
         using var actions = new ActionSystem(Profile(), bufferOptions: null, inspection);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputOverrideTarget target = inspection.GetActionTarget(actions, "game", "jump");
         var owner = new InputOverrideOwner(Guid.NewGuid(), "tester");
         InputOverrideResult lease = inspection.Acquire(owner, target, new(InputOverrideMode.Replace, Vector2.UnitX, TimeSpan.FromSeconds(1)));
 
         Assert.Equal("target-busy", inspection.Acquire(new(Guid.NewGuid(), "other"), target, new(InputOverrideMode.Replace, Vector2.Zero, TimeSpan.FromSeconds(1))).ErrorCode);
-        actions.ApplyProfile(Profile());
+        actions.QueueProfile(Profile());
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
 
         Assert.Equal("lease-not-found", inspection.GetLease(owner, lease.Lease!.Id).ErrorCode);
@@ -203,7 +203,7 @@ public sealed class InputDiagnosticsTests
         var source = new Source(device);
         using var input = new InputSystem([source], inspection);
         using var actions = new ActionSystem(Profile(), bufferOptions: null, inspection);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         device.Add(new FocusData(true));
         device.Add(new KeyData(Key.A, true, false));
         input.Update();
@@ -249,7 +249,7 @@ public sealed class InputDiagnosticsTests
     {
         using var inspection = new InputInspectionSession();
         using var actions = new ActionSystem(Profile(), bufferOptions: null, inspection);
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         InputOverrideTarget target = inspection.GetActionTarget(actions, "game", "jump");
         var set = new DiagnosticOperationSet(new InputDiagnostics(inspection));
         OperationDescriptor operation = Assert.Single(set.Catalog, item => item.Id == "override-acquire");

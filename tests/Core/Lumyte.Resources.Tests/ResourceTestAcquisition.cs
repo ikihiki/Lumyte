@@ -15,8 +15,8 @@ internal static class ResourceTestAcquisition
     internal static async ValueTask<ResourceLease<T>> AcquireLeaseForTestAsync<T>(this ResourceManager manager, ResourceKey<T> key, CancellationToken cancellationToken = default)
         where T : class
     {
-        using ResourceReference<T> reference = await manager.AcquireAsync(key, cancellationToken);
-        return reference.Acquire();
+        using ResourceReference<T> reference = await manager.RetainAsync(key, cancellationToken);
+        return reference.Pin();
     }
 
     /// <summary>Resolves a handle through a temporary owning reference.</summary>
@@ -29,14 +29,14 @@ internal static class ResourceTestAcquisition
         where T : class
     {
         lease = null;
-        if (!manager.TryAcquire(handle, out ResourceReference<T>? reference))
+        if (!manager.TryRetain(handle, out ResourceReference<T>? reference))
         {
             return false;
         }
 
         using (reference)
         {
-            return reference!.TryAcquire(out lease);
+            return reference!.TryPin(out lease);
         }
     }
 

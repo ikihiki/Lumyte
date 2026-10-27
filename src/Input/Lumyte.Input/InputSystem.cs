@@ -571,7 +571,18 @@ public sealed class InputSystem : IDisposable
             var entry = new Entry(device, this, info);
             system._entries.Add(id, entry);
             system._activeEntries.Add(entry);
-            system._inspection?.Registered(system, id, descriptor);
+            try
+            {
+                system._inspection?.Registered(system, id, descriptor);
+            }
+            catch
+            {
+                // Failed registration leaves ownership with the source, including observer failures.
+                system._activeEntries.Remove(entry);
+                system._entries.Remove(id);
+                throw;
+            }
+
             return id;
         }
 

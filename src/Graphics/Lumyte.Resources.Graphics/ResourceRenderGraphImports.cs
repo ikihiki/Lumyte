@@ -49,7 +49,7 @@ public sealed class ResourceRenderGraphImports
     {
         BeginAcquisition();
         ValidateManager(reference.Handle);
-        return Retain(reference.Acquire(_snapshot));
+        return Retain(reference.Pin(_snapshot));
     }
 
     /// <summary>Acquires a shader artifact or other pass input and retains its exact generation.</summary>
@@ -61,9 +61,9 @@ public sealed class ResourceRenderGraphImports
         where T : notnull
     {
         BeginAcquisition();
-        using ResourceReference<T> reference = await _manager.AcquireAsync(key, cancellationToken).ConfigureAwait(false);
+        using ResourceReference<T> reference = await _manager.RetainAsync(key, cancellationToken).ConfigureAwait(false);
         EnsureBuilding();
-        return Retain(reference.Acquire(_snapshot));
+        return Retain(reference.Pin(_snapshot));
     }
 
     /// <summary>Acquires a preloaded handle from one consistent publication snapshot without I/O.</summary>
@@ -81,7 +81,7 @@ public sealed class ResourceRenderGraphImports
             throw new ArgumentException("Use the publication view selected for this graph.", nameof(snapshot));
         }
 
-        if (!snapshot.TryAcquire(handle, out ResourceLease<T>? lease))
+        if (!snapshot.TryPin(handle, out ResourceLease<T>? lease))
         {
             throw new InvalidOperationException("The captured publication does not contain a usable resource for this handle.");
         }

@@ -58,15 +58,15 @@ public sealed class ImportLifetimeTests
         await using ServiceProvider provider = CreateProvider();
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(provider);
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();
-        using ResourceReference<CpuValue> first = await manager.AcquireAsync(new ResourceKey<CpuValue>("first"));
+        using ResourceReference<CpuValue> first = await manager.RetainAsync(new ResourceKey<CpuValue>("first"));
         using ResourceSnapshot snapshot = manager.CaptureSnapshot();
-        using ResourceReference<CpuValue> later = await manager.AcquireAsync(new ResourceKey<CpuValue>("later"));
+        using ResourceReference<CpuValue> later = await manager.RetainAsync(new ResourceKey<CpuValue>("later"));
         using ResourceSnapshot newer = manager.CaptureSnapshot();
         using var graph = new RenderGraphBuilder();
         ResourceRenderGraphImports imports = graph.ImportResources(manager).UseSnapshot(snapshot);
         CpuValue value = imports.Acquire(first);
 
-        using (ResourceLease<CpuValue> expected = first.Acquire(snapshot))
+        using (ResourceLease<CpuValue> expected = first.Pin(snapshot))
         {
             Assert.Same(expected.Value, value);
         }
@@ -94,7 +94,7 @@ public sealed class ImportLifetimeTests
         await using ServiceProvider first = CreateProvider();
         await using ServiceProvider second = CreateProvider();
         await using ResourceExecutionHost secondExecution = await ResourceExecutionHost.StartAsync(second);
-        using ResourceReference<CpuValue> reference = await second.GetRequiredService<ResourceManager>().AcquireAsync(new ResourceKey<CpuValue>("foreign"));
+        using ResourceReference<CpuValue> reference = await second.GetRequiredService<ResourceManager>().RetainAsync(new ResourceKey<CpuValue>("foreign"));
         using var graph = new RenderGraphBuilder();
         ResourceRenderGraphImports imports = graph.ImportResources(first.GetRequiredService<ResourceManager>());
 
