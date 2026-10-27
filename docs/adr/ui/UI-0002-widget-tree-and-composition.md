@@ -93,7 +93,7 @@ UiSurfaceは作成スレッド専用で、接続中のWidget操作にも同じ�
 
 内部phaseはIdle/Layout/Record/Dispatch/Disposedとし、後続PRが利用する。公開操作はtry/finallyでIdleへ復帰し、再入・別スレッドはInvalidOperationException、破棄後はObjectDisposedException。DisposeをLayout/Record/Dispatch中に呼ぶことも拒否する。Click中の通常の値・子の変更は許可するが、surface破棄はcallbackを抜けてから行う。
 
-Disposeは自身の入力状態をcallbackなしで解除するhookを持ち、全Widgetのsurface所属を外す。rootの内部親子関係、イベント購読、外部リソースには触れない。
+Disposeは自身の入力状態をcallbackなしで解除するhookを持ち、全Widgetのsurface所属を外す。rootの内部親子関係、保持しているコールバック参照、外部リソースには触れない。不要なdelegate参照は利用側がプロパティへnullを代入して解除する。
 
 ## 検討した代替案
 
