@@ -9,6 +9,16 @@ namespace Lumyte.Diagnostics;
 public sealed record DiagnosticOperationResult(
     string Status, IReadOnlyDictionary<string, DiagnosticValue>? Values = null, long? Revision = null, string? Code = null, string? Message = null)
 {
+    /// <summary>Reads the typed outcome without changing the original wire status.</summary>
+    /// <returns>The recognized outcome, or Unknown for an unrecognized status string.</returns>
+    public DiagnosticOperationStatus GetStatus() => Status switch
+    {
+        "success" => DiagnosticOperationStatus.Success,
+        "rejected" => DiagnosticOperationStatus.Rejected,
+        "conflict" => DiagnosticOperationStatus.Conflict,
+        _ => DiagnosticOperationStatus.Unknown,
+    };
+
     /// <summary>Returns success.</summary>
     /// <param name="values">The values argument.</param>
     /// <param name="revision">The revision argument.</param>

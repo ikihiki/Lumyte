@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -98,7 +99,7 @@ public sealed class DiagnosticTelemetry : IDisposable
     /// <summary>Reads one detached event without blocking.</summary>
     /// <param name="item">The item argument.</param>
     /// <returns>The computed result.</returns>
-    public bool TryRead(out DiagnosticEvent? item) => _events.Reader.TryRead(out item);
+    public bool TryRead([NotNullWhen(true)] out DiagnosticEvent? item) => _events.Reader.TryRead(out item);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -185,7 +186,7 @@ public sealed class DiagnosticTelemetry : IDisposable
         foreach (KeyValuePair<string, object?> pair in values)
         {
             CopyField(result, pair);
-            if (++copied == 32)
+            if (++copied == DiagnosticTelemetryLimits.MaximumUserFields)
             {
                 break;
             }
@@ -196,7 +197,7 @@ public sealed class DiagnosticTelemetry : IDisposable
 
     private static Dictionary<string, DiagnosticValue> CopyFields(ReadOnlySpan<KeyValuePair<string, object?>> values)
     {
-        values = values[..Math.Min(values.Length, 32)];
+        values = values[..Math.Min(values.Length, DiagnosticTelemetryLimits.MaximumUserFields)];
         var result = new Dictionary<string, DiagnosticValue>(values.Length, StringComparer.Ordinal);
         foreach (KeyValuePair<string, object?> pair in values)
         {

@@ -96,10 +96,20 @@ public sealed class StateMachineInstance<TContext, TTrigger>
         }
     }
 
+    /// <summary>Selects at most one transition using the stored context and executes its callbacks.</summary>
+    /// <param name="triggers">The triggers.</param>
+    /// <returns>True when a transition is taken, including a self-transition; otherwise, false.</returns>
+    public bool FireAny(IReadOnlyList<TTrigger> triggers) => FireAny(triggers, Context);
+
+    /// <summary>Evaluates a captured trigger set using the stored context without changing state or running transition callbacks.</summary>
+    /// <param name="triggers">The triggers.</param>
+    /// <returns>True when an eligible transition exists; otherwise, false.</returns>
+    public bool CanFireAny(IReadOnlyList<TTrigger> triggers) => CanFireAny(triggers, Context);
+
     /// <summary>Selects at most one transition from a captured set of triggers and executes its callbacks.</summary>
     /// <param name="triggers">The triggers.</param>
     /// <param name="context">The context.</param>
-    /// <returns>The operation result.</returns>
+    /// <returns>True when a transition is taken, including a self-transition; otherwise, false.</returns>
     public bool FireAny(IReadOnlyList<TTrigger> triggers, TContext context)
     {
         ArgumentNullException.ThrowIfNull(triggers);
@@ -126,10 +136,10 @@ public sealed class StateMachineInstance<TContext, TTrigger>
         }
     }
 
-    /// <summary>Evaluates guards for a captured trigger set without changing state or running callbacks.</summary>
+    /// <summary>Evaluates guards for a captured trigger set without changing state or running transition callbacks.</summary>
     /// <param name="triggers">The triggers.</param>
     /// <param name="context">The context.</param>
-    /// <returns>The operation result.</returns>
+    /// <returns>True when an eligible transition exists; otherwise, false.</returns>
     public bool CanFireAny(IReadOnlyList<TTrigger> triggers, TContext context)
     {
         ArgumentNullException.ThrowIfNull(triggers);

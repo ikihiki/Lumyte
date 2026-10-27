@@ -169,6 +169,17 @@ public sealed class StateMachineTests
         Assert.Equal(0, stored.Count);
         Assert.Equal(1, supplied.Count);
         Assert.False(machine.Fire(Trigger.Go));
+        Assert.True(machine.CanFireAny([Trigger.Go], supplied));
+        Assert.True(machine.FireAny([Trigger.Go], supplied));
+        Assert.False(machine.CanFireAny([Trigger.Go]));
+        Assert.False(machine.FireAny([Trigger.Go]));
+        stored.Enabled = true;
+        Assert.True(machine.CanFireAny([Trigger.Go]));
+        Assert.Equal(0, stored.Count);
+        Assert.True(machine.FireAny([Trigger.Go]));
+        Assert.Same(stored, machine.Context);
+        Assert.Equal(1, stored.Count);
+        Assert.Equal(2, supplied.Count);
     }
 
     /// <summary>Performs trigger sets are captured deduplicated and use transition priority.</summary>
@@ -187,11 +198,11 @@ public sealed class StateMachineTests
             return true;
         }).WithPriority(10));
         StateMachineInstance<Context, Trigger> machine = builder.Build(new Context());
-        Assert.False(machine.FireAny([], machine.Context));
-        Assert.True(machine.CanFireAny([Trigger.Go, Trigger.Other, Trigger.Other], machine.Context));
+        Assert.False(machine.FireAny([]));
+        Assert.True(machine.CanFireAny([Trigger.Go, Trigger.Other, Trigger.Other]));
         Assert.Same(state, machine.CurrentState);
         Assert.Equal(1, guards);
-        Assert.True(machine.FireAny([Trigger.Go, Trigger.Other, Trigger.Other], machine.Context));
+        Assert.True(machine.FireAny([Trigger.Go, Trigger.Other, Trigger.Other]));
         Assert.Same(selected, machine.CurrentState);
         Assert.Equal(2, guards);
     }

@@ -4,6 +4,8 @@
 - 日付: 2026-10-09
 - 置換元: [ADR-ANIMATION-0002](ANIMATION-0002-animation-state-machine.md)
 
+`Update` の戻り値の説明は [ADR-ANIMATION-0006](ANIMATION-0006-api-result-contracts.md) で補足する。
+
 ## 背景
 
 従来のアニメーション Builder の Build は不変定義を返すため、その後に実行者の生成と Start が必要だった。汎用状態機械の Build(context) は初期入場を終えた実行者を返しており、同じ Build という名前でも利用を開始できる段階が異なる。Composition ノードにも、ネストした Timeline の構築から再生開始までをまとめる入口が必要である。

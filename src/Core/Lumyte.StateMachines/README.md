@@ -21,4 +21,13 @@ if (machine.CanFire(Trigger.Activate))
 
 `FireAny` は複数入力から最大一遷移を選ぶ。トリガーを保留せず、未知・不成立の入力は false。定義確定後は状態と遷移の設定を変更できない。例外時にコールバックの副作用は巻き戻さない。実行者は一スレッドだけで操作する。
 
+`Fire`／`CanFire` と `FireAny`／`CanFireAny` は、Context を省略すると生成時の保持 Context を使う。明示した Context はその呼び出しだけで使い、保持 Context を置換しない。
+
+```csharp
+bool transitioned = machine.FireAny([Trigger.Activate]);
+bool canTransition = machine.CanFireAny([Trigger.Activate]);
+```
+
+`FireAny` の true は自己遷移を含む一遷移の実行、`CanFireAny` の true は実行可能な候補の存在を表す。[結果と Context の契約](../../../docs/adr/animation/ANIMATION-0006-api-result-contracts.md)も参照。
+
 [設計と契約](../../../docs/adr/core/CORE-0001-state-machine.md)と[実行サンプル](../../../samples/Lumyte.StateMachines.Sample/README.md)を参照。

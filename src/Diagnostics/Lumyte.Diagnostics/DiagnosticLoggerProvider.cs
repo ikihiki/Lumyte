@@ -61,7 +61,7 @@ internal sealed class DiagnosticLoggerProvider(TelemetryRouter router) : ILogger
                 foreach (KeyValuePair<string, object?> pair in state)
                 {
                     DiagnosticTelemetry.CopyField(this, pair);
-                    if (++_visited == 32)
+                    if (++_visited == DiagnosticTelemetryLimits.MaximumUserFields)
                     {
                         break;
                     }
@@ -95,13 +95,13 @@ internal sealed class DiagnosticLoggerProvider(TelemetryRouter router) : ILogger
                     InstanceId = id;
                 }
 
-                if (_visited < 32)
+                if (_visited < DiagnosticTelemetryLimits.MaximumUserFields)
                 {
                     DiagnosticTelemetry.CopyField(this, pair);
                     _visited++;
                 }
 
-                if (++visited == 32)
+                if (++visited == DiagnosticTelemetryLimits.MaximumUserFields)
                 {
                     break;
                 }

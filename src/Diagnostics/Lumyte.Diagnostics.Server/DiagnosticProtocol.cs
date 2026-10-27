@@ -56,7 +56,7 @@ internal static class DiagnosticProtocol
             foreach (DiagnosticEvent item in message.Events)
             {
                 ArgumentNullException.ThrowIfNull(item);
-                Require(item.Kind is "metric" or "span" or "log" && Text(item.Name, 256) && Scalar(item.Value) && Fields(item.Fields, 36)
+                Require(item.Kind is "metric" or "span" or "log" && Text(item.Name, 256) && Scalar(item.Value) && Fields(item.Fields, DiagnosticTelemetryLimits.MaximumEventFields)
                     && (item.TraceId == null || item.TraceId.Length <= 64) && (item.SpanId == null || item.SpanId.Length <= 32)
                     && (item.ParentSpanId == null || item.ParentSpanId.Length <= 32));
             }

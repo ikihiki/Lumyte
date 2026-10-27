@@ -176,7 +176,7 @@ public sealed class EncodingTests
                 writer.WriteNil();
                 writer.WriteNil();
                 writer.Write(0L);
-                writer.WriteMapHeader(37);
+                writer.WriteMapHeader(DiagnosticTelemetryLimits.MaximumEventFields + 1);
             }
         }
 
