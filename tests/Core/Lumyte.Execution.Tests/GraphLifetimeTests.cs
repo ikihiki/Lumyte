@@ -25,7 +25,7 @@ public sealed class GraphLifetimeTests
         JobNodeId dependent = builder.Add("Dependent", module.CpuWork);
         builder.DependsOn(dependent, range);
         int input = 0;
-        Assert.True(runtime.TrySchedule(builder.Build(), in input, out JobRun? run));
+        Assert.True(runtime.Schedule(builder.Build(), in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
         Task? stop = null;
         try
         {
@@ -71,17 +71,17 @@ public sealed class GraphLifetimeTests
         JobGraph<GraphInput> graph = builder.Build();
         var input = new GraphInput(new GraphData(3));
         CommandPort<GraphInput, Unit> port = runtime.Bind(module.Prepare);
-        Assert.True(runtime.TrySchedule(graph, in input, out JobRun? first));
+        Assert.True(runtime.Schedule(graph, in input, out JobRun? first) == CommandEnqueueStatus.Accepted);
         PumpUntil(runtime, module, () => first!.IsCompleted);
         first!.ThrowIfFailed();
-        Assert.Equal(CommandEnqueueStatus.QueueFull, port.TryEnqueue(in input, default, out _));
-        Assert.False(runtime.TrySchedule(graph, in input, out _));
+        Assert.Equal(CommandEnqueueStatus.QueueFull, port.Enqueue(in input, out _, default));
+        Assert.False(runtime.Schedule(graph, in input, out _) == CommandEnqueueStatus.Accepted);
 
         first.Dispose();
         ValueTask<Unit> command = port.ExecuteAsync(input);
         PumpUntil(runtime, module, () => command.IsCompleted);
         CompletedResult.Read(command);
-        Assert.True(runtime.TrySchedule(graph, in input, out JobRun? retained));
+        Assert.True(runtime.Schedule(graph, in input, out JobRun? retained) == CommandEnqueueStatus.Accepted);
         PumpUntil(runtime, module, () => retained!.IsCompleted);
         Task stop = runtime.StopAsync(ShutdownMode.Drain).AsTask();
         PumpUntil(runtime, module, () => stop.IsCompleted);
@@ -112,7 +112,7 @@ public sealed class GraphLifetimeTests
         for (int i = 0; i < data.Length; i++)
         {
             var input = new GraphInput(data[i]);
-            Assert.True(runtime.TrySchedule(graph, in input, out JobRun? run));
+            Assert.True(runtime.Schedule(graph, in input, out JobRun? run) == CommandEnqueueStatus.Accepted);
             runs[i] = run!;
         }
 

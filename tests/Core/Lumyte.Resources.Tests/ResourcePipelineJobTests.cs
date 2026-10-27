@@ -36,7 +36,7 @@ public sealed class ResourcePipelineJobTests
             return new Value(depth);
         });
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("96")).AsTask();
+        Task<ResourceReference<Value>> loading = manager.RetainAsync(Key("96")).AsTask();
         Assert.Empty(jobs);
         host.Until(() => jobs.Count >= 97);
         Assert.Equal(1, host.Default.Builds);
@@ -47,7 +47,7 @@ public sealed class ResourcePipelineJobTests
         }
 
         using ResourceReference<Value> reference = host.Complete(loading);
-        using ResourceLease<Value> lease = reference.Acquire();
+        using ResourceLease<Value> lease = reference.Pin();
         Assert.Equal(96, lease.Value.Number);
         Assert.NotNull(jobs[0]);
         Assert.All(jobs, job => Assert.Same(jobs[0], job));
@@ -66,8 +66,8 @@ public sealed class ResourcePipelineJobTests
         ResourceManager manager = host.Create(
             [new LeafStage(), new Transform<Leaf, Middle>(), new Transform<Middle, Root>()],
             [new(typeof(Node<Middle>), other)]);
-        using ResourceReference<Node<Root>> reference = host.Complete(manager.AcquireAsync(new ResourceKey<Node<Root>>("asset")).AsTask());
-        using ResourceLease<Node<Root>> lease = reference.Acquire();
+        using ResourceReference<Node<Root>> reference = host.Complete(manager.RetainAsync(new ResourceKey<Node<Root>>("asset")).AsTask());
+        using ResourceLease<Node<Root>> lease = reference.Pin();
         Node<Root> root = lease.Value;
         Node<Middle> middle = Assert.IsType<Node<Middle>>(root.Input);
         Node<Leaf> leaf = Assert.IsType<Node<Leaf>>(middle.Input);
@@ -102,7 +102,7 @@ public sealed class ResourcePipelineJobTests
             return new Value(child.Number + 1);
         });
         ResourceManager manager = host.Create([stage]);
-        using ResourceReference<Value> reference = host.Complete(manager.AcquireAsync(Key("root")).AsTask());
+        using ResourceReference<Value> reference = host.Complete(manager.RetainAsync(Key("root")).AsTask());
         Assert.NotSame(rootJob, childJob);
         Assert.Equal(2, host.Default.Builds);
     }
@@ -132,9 +132,9 @@ public sealed class ResourcePipelineJobTests
             return new Value(input.Number + 1);
         });
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> first = manager.AcquireAsync(Key("first")).AsTask();
+        Task<ResourceReference<Value>> first = manager.RetainAsync(Key("first")).AsTask();
         host.Until(() => jobs.ContainsKey("shared"));
-        Task<ResourceReference<Value>> second = manager.AcquireAsync(Key("second")).AsTask();
+        Task<ResourceReference<Value>> second = manager.RetainAsync(Key("second")).AsTask();
         host.Until(() => jobs.ContainsKey("second"));
         Assert.Equal(2, host.Default.Builds);
         Assert.Same(jobs["first"], jobs["shared"]);
@@ -146,7 +146,7 @@ public sealed class ResourcePipelineJobTests
         ready.SetResult();
 
         using ResourceReference<Value> reference = host.Complete(second);
-        using ResourceLease<Value> lease = reference.Acquire();
+        using ResourceLease<Value> lease = reference.Pin();
         host.Until(() => first.IsCompleted);
         Assert.ThrowsAny<OperationCanceledException>(() => first.GetAwaiter().GetResult());
         Assert.Equal(2, lease.Value.Number);
@@ -186,7 +186,7 @@ public sealed class ResourcePipelineJobTests
             releases++;
         };
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        Task<ResourceReference<Value>> loading = manager.RetainAsync(Key("root")).AsTask();
         host.Until(() => entered);
         Assert.False(loading.IsCompleted);
         ready.SetResult();
@@ -227,7 +227,7 @@ public sealed class ResourcePipelineJobTests
             return new Value(2);
         });
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        Task<ResourceReference<Value>> loading = manager.RetainAsync(Key("root")).AsTask();
         host.Until(() => entered);
         ready.SetResult();
         using ResourceReference<Value> reference = host.Complete(loading);
@@ -283,7 +283,7 @@ public sealed class ResourcePipelineJobTests
             return new Value(2);
         });
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        Task<ResourceReference<Value>> loading = manager.RetainAsync(Key("root")).AsTask();
         host.Until(() => entered);
         ready.SetResult();
         host.Until(() => loading.IsCompleted);
@@ -294,7 +294,7 @@ public sealed class ResourcePipelineJobTests
         else
         {
             using ResourceReference<Value> reference = host.Complete(loading);
-            using ResourceLease<Value> lease = reference.Acquire();
+            using ResourceLease<Value> lease = reference.Pin();
             Assert.Equal(2, lease.Value.Number);
         }
 
@@ -332,9 +332,9 @@ public sealed class ResourcePipelineJobTests
             return ValueTask.CompletedTask;
         };
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> parent = manager.AcquireAsync(Key("root")).AsTask();
+        Task<ResourceReference<Value>> parent = manager.RetainAsync(Key("root")).AsTask();
         host.Until(() => entered);
-        Task<ResourceReference<Value>> child = manager.AcquireAsync(Key("child")).AsTask();
+        Task<ResourceReference<Value>> child = manager.RetainAsync(Key("child")).AsTask();
         ready.SetResult();
         using ResourceReference<Value> childReference = host.Complete(child);
         host.Until(() => parent.IsCompleted);
@@ -369,7 +369,7 @@ public sealed class ResourcePipelineJobTests
             return new Value(leaf.Number + 1);
         });
         ResourceManager manager = host.Create([stage]);
-        Task<ResourceReference<Value>> loading = manager.AcquireAsync(Key("root")).AsTask();
+        Task<ResourceReference<Value>> loading = manager.RetainAsync(Key("root")).AsTask();
         host.Pump();
         Assert.False(rootBuilt);
         using ResourceReference<Value> reference = host.Complete(loading);

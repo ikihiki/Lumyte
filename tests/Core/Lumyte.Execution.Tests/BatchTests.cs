@@ -18,7 +18,7 @@ public sealed class BatchTests
         CommandResultKey<int> a = batch.Add(fixture.Module.Port, in first);
         CommandResultKey<long> b = batch.Add(fixture.Module.OtherPort, in second);
         CommandResultKey<int> c = batch.Add(fixture.Module.Port, in third);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? run));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? run) == CommandEnqueueStatus.Accepted);
         Assert.Throws<InvalidOperationException>(() => batch.Reset());
         fixture.Until(() => run!.IsCompleted);
         run!.ThrowIfFailed();
@@ -42,11 +42,11 @@ public sealed class BatchTests
         using var batch = new CommandBatch(2);
         batch.Add(fixture.Module.Port, 1);
         batch.Add(fixture.Module.Port, 2);
-        Assert.False(fixture.Runtime.TrySubmit(batch, out CommandRun? rejected));
+        Assert.False(fixture.Runtime.Submit(batch, out CommandRun? rejected) == CommandEnqueueStatus.Accepted);
         Assert.Null(rejected);
         Assert.Equal(new[] { 5 }, fixture.Module.Executed.ToArray());
         CompletedResult.Read(retained);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? accepted));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? accepted) == CommandEnqueueStatus.Accepted);
         fixture.Until(() => accepted!.IsCompleted);
         accepted!.ThrowIfFailed();
         accepted.Dispose();
@@ -62,7 +62,7 @@ public sealed class BatchTests
         CommandResultKey<int> first = batch.Add(fixture.Module.Port, 1);
         batch.Add(fixture.Module.Port, 999);
         batch.Add(fixture.Module.Port, 3);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? run));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? run) == CommandEnqueueStatus.Accepted);
         fixture.Until(() => run!.IsCompleted);
         Assert.Throws<InvalidOperationException>(() => run!.ThrowIfFailed());
         Assert.Equal(2, run!.GetResult(first));
@@ -79,7 +79,7 @@ public sealed class BatchTests
         using var batch = new CommandBatch(2);
         batch.Add(fixture.Module.Port, 1);
         batch.Add(fixture.Module.Port, 2);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? run));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? run) == CommandEnqueueStatus.Accepted);
         run!.RequestCancel();
         fixture.Until(() => run.IsCompleted);
         Assert.Throws<OperationCanceledException>(() => run.ThrowIfFailed());
@@ -95,12 +95,12 @@ public sealed class BatchTests
         fixture.Start();
         using var batch = new CommandBatch(1);
         CommandResultKey<int> old = batch.Add(fixture.Module.Port, 1);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? first));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? first) == CommandEnqueueStatus.Accepted);
         fixture.Until(() => first!.IsCompleted);
         first!.Dispose();
         batch.Reset();
         CommandResultKey<int> current = batch.Add(fixture.Module.Port, 2);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? second));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? second) == CommandEnqueueStatus.Accepted);
         fixture.Until(() => second!.IsCompleted);
         Assert.Throws<ArgumentException>(() => second!.GetResult(old));
         Assert.Equal(4, second!.GetResult(current));
@@ -115,7 +115,7 @@ public sealed class BatchTests
         fixture.Start();
         using var batch = new CommandBatch(1);
         batch.Add(fixture.Module.Port, -999);
-        Assert.True(fixture.Runtime.TrySubmit(batch, out CommandRun? run));
+        Assert.True(fixture.Runtime.Submit(batch, out CommandRun? run) == CommandEnqueueStatus.Accepted);
         fixture.Until(() => run!.IsCompleted);
         Assert.True(run!.Completion.IsFaulted);
         Assert.Throws<OperationCanceledException>(() => run.ThrowIfFailed());

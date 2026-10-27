@@ -89,7 +89,7 @@ internal static class Program
         Task<ResourceReference<ImageEffectShaderResource>> loading = manager.AcquireImageEffectShadersAsync().AsTask();
         Wait(loading, execution);
         using ResourceReference<ImageEffectShaderResource> reference = loading.Result;
-        using (ResourceLease<ImageEffectShaderResource> lease = reference.Acquire())
+        using (ResourceLease<ImageEffectShaderResource> lease = reference.Pin())
         {
             Require(ReferenceEquals(device, lease.Value.Device) && lease.Value.Epoch > 0);
             Require(lease.Value.Shaders.Fullscreen.GetTarget(ShaderTarget.Wgsl).Stage == ShaderStage.Vertex);

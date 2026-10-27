@@ -42,10 +42,10 @@ public sealed class ActionBehaviorTests
             [new InputContext("game"), new InputContext("chat")],
             [new RecognitionDefinition("game-press", "game", RecognitionKind.Press, ["a"], At(100)), new RecognitionDefinition("chat-press", "chat", RecognitionKind.Press, ["b"], At(100))]);
         var actions = new ActionSystem(profile);
-        actions.ActivateContext("game");
-        actions.ActivateContext("chat");
+        actions.QueueContextActivation("game");
+        actions.QueueContextActivation("chat");
         actions.Advance(new[] { KeyRecord(1, 0, Key.A, true), KeyRecord(2, 1, Key.B, true) }, At(1));
-        actions.DeactivateContext("chat");
+        actions.QueueContextDeactivation("chat");
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(2));
         Assert.True(actions.Buffer.TryConsume("game-press", At(2), out _));
         Assert.False(actions.Buffer.TryConsume("chat-press", At(2), out _));
@@ -57,7 +57,7 @@ public sealed class ActionBehaviorTests
     public void PlayerSelectionFiltersMappingAndCapture()
     {
         ActionSystem actions = Create(RecognitionKind.Sequence);
-        actions.SetDevices(new[] { new InputDeviceId(1) });
+        actions.QueueDevices(new[] { new InputDeviceId(1) });
         RebindSession session = actions.BeginRebind("a", new RebindOptions(At(100)));
         actions.Advance(new[] { KeyRecord(1, 0, Key.J, true, 2), KeyRecord(2, 1, Key.K, true, 1) }, At(1));
         Assert.Equal(InputControl.ForKey(Key.K), session.Candidate);
@@ -101,9 +101,9 @@ public sealed class ActionBehaviorTests
             []);
         var actions = new ActionSystem(profile);
         var recognizer = new TimerRecognizer();
-        actions.ActivateContext("game");
-        actions.SetValueProcessors("game", "move", new[] { new HalfValueProcessor() });
-        actions.SetRecognizers("game", new[] { recognizer });
+        actions.QueueContextActivation("game");
+        actions.QueueValueProcessors("game", "move", new[] { new HalfValueProcessor() });
+        actions.QueueRecognizers("game", new[] { recognizer });
         actions.Advance(new[] { KeyRecord(1, 0, Key.A, true) }, At(0));
         Assert.Equal(new Vector2(0.5f, 0), actions.GetState("move").Value);
         actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(10));
@@ -120,7 +120,7 @@ public sealed class ActionBehaviorTests
             [new ActionBinding("trigger", "fire", "game", new InputControl(InputControlKind.ControllerTrigger, (int)ControllerTrigger.Right), Vector2.UnitX)],
             [new InputContext("game")],
             []));
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         actions.Advance(new[] { Trigger(1, 0.6f, 1), Trigger(2, 0, 2), Trigger(3, 0.45f, 1) }, At(3));
         Assert.Equal(Vector2.UnitX, actions.GetState("fire").Value);
         actions.Advance(new[] { Trigger(4, 0.3f, 1) }, At(4));
@@ -183,7 +183,7 @@ public sealed class ActionBehaviorTests
             [new ActionBinding("a", "a", "game", InputControl.ForKey(Key.A), Vector2.UnitX), new ActionBinding("b", "b", "game", InputControl.ForKey(Key.B), Vector2.UnitX)],
             [new InputContext("game")],
             [new RecognitionDefinition("combo", "game", recognition, ["a", "b"], At(100))]));
-        actions.ActivateContext("game");
+        actions.QueueContextActivation("game");
         return actions;
     }
 

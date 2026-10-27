@@ -25,7 +25,7 @@ public sealed class ContextInheritanceTests
         var system = new ActionSystem(profile);
         var events = new List<ActionEvent>();
         system.Changed += events.Add;
-        system.ActivateContext("game");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.Equal(Vector2.Zero, system.GetState("move").Value);
         system.Advance(new InputRecord[] { Record(2, Key.J, true) }, TimeSpan.Zero);
@@ -45,10 +45,10 @@ public sealed class ContextInheritanceTests
         var system = new ActionSystem(profile);
         var recognized = new List<RecognizedAction>();
         system.Recognized += recognized.Add;
-        system.ActivateContext("base");
-        system.ActivateContext("game");
+        system.QueueContextActivation("base");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
-        system.DeactivateContext("game");
+        system.QueueContextDeactivation("game");
         system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.FromSeconds(1));
         RecognizedAction result = Assert.Single(recognized);
         Assert.Equal("base", result.ContextId);
@@ -64,7 +64,7 @@ public sealed class ContextInheritanceTests
             Recognitions = profile.Recognitions.Add(new RecognitionDefinition("hold", "game", RecognitionKind.Press, ["jump"], TimeSpan.FromSeconds(1))),
         };
         var system = new ActionSystem(profile);
-        system.ActivateContext("game");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.True(system.Buffer.TryConsume("hold", TimeSpan.Zero, out _));
         system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.FromSeconds(2));
@@ -86,7 +86,7 @@ public sealed class ContextInheritanceTests
         Assert.Single(rebuilt.Bindings);
         Assert.Single(rebuilt.Recognitions);
         var system = new ActionSystem(rebuilt);
-        system.ActivateContext("game");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.Equal(1, system.GetState("jump").Value.X);
     }
@@ -121,7 +121,7 @@ public sealed class ContextInheritanceTests
     {
         ActionProfile profile = NestedProfile();
         var system = new ActionSystem(profile);
-        system.ActivateContext("game");
+        system.QueueContextActivation("game");
         RebindSession session = system.BeginRebind("base-key", new RebindOptions(TimeSpan.FromSeconds(2)));
         system.Advance(new InputRecord[] { Record(1, Key.J, true) }, TimeSpan.Zero);
         ActionProfile prepared = session.PrepareProfile(RebindConflictPolicy.Allow);
@@ -139,9 +139,9 @@ public sealed class ContextInheritanceTests
     {
         ActionProfile profile = NestedProfile();
         var system = new ActionSystem(profile);
-        system.ActivateContext("game");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
-        system.ApplyProfile(profile with { Bindings = [profile.Bindings[0] with { Control = InputControl.ForKey(Key.J) }] });
+        system.QueueProfile(profile with { Bindings = [profile.Bindings[0] with { Control = InputControl.ForKey(Key.J) }] });
         system.Advance(new InputRecord[] { Record(2, Key.Space, false), Record(3, Key.J, true) }, TimeSpan.Zero);
         Assert.Equal(1, system.GetState("jump").Value.X);
         Assert.Single(system.ExportProfile().Bindings);
@@ -152,7 +152,7 @@ public sealed class ContextInheritanceTests
     public void InheritedIdleUpdatesDoNotAllocate()
     {
         var system = new ActionSystem(NestedProfile());
-        system.ActivateContext("game");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         for (int i = 0; i < 100; i++)
         {
@@ -193,8 +193,8 @@ public sealed class ContextInheritanceTests
         var system = new ActionSystem(profile);
         var notifications = new List<string>();
         system.Recognized += recognition => notifications.Add(recognition.RecognitionId);
-        system.ActivateContext("a");
-        system.ActivateContext("b");
+        system.QueueContextActivation("a");
+        system.QueueContextActivation("b");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.FromSeconds(1));
         Assert.Equal(new[] { "b-hold", "a-hold" }, notifications);
@@ -206,8 +206,8 @@ public sealed class ContextInheritanceTests
     {
         ActionProfile profile = NestedProfile();
         var system = new ActionSystem(profile);
-        system.ActivateContext("base");
-        system.ActivateContext("game");
+        system.QueueContextActivation("base");
+        system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
         Assert.Equal(1, system.GetState("game", "jump").Value.X);
         Assert.Equal(1, system.GetState("base", "jump").Value.X);
@@ -218,7 +218,7 @@ public sealed class ContextInheritanceTests
         Assert.True(system.Buffer.TryConsume("base", "hold", TimeSpan.FromSeconds(1), out RecognizedAction? parent));
         Assert.Equal("base", parent!.ContextId);
         Assert.False(system.Buffer.TryConsume("game", "hold", TimeSpan.FromSeconds(1), out _));
-        system.DeactivateContext("game");
+        system.QueueContextDeactivation("game");
         system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.FromSeconds(1));
         Assert.Equal(Vector2.Zero, system.GetState("game", "jump").Value);
         Assert.Equal(1, system.GetState("base", "jump").Value.X);

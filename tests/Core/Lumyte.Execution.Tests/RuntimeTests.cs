@@ -16,7 +16,7 @@ public sealed class RuntimeTests
         Assert.Equal(1, fixture.Module.ConfigureCalls);
         Assert.Equal(0, fixture.Module.OwnerThread);
         Assert.Equal(ExecutionStatus.Created, fixture.Runtime.Status);
-        Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Module.Port.TryEnqueue(1, default, out _));
+        Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Module.Port.Enqueue(1, out _, default));
         fixture.Start();
         Assert.Equal(Environment.CurrentManagedThreadId, fixture.Module.OwnerThread);
     }
@@ -40,7 +40,7 @@ public sealed class RuntimeTests
         using var fixture = new ExecutionFixture();
         fixture.Start();
         int value = 4;
-        Assert.Equal(CommandEnqueueStatus.Accepted, fixture.Module.Port.TryEnqueue(in value, default, out IValueTaskSource<int>? source));
+        Assert.Equal(CommandEnqueueStatus.Accepted, fixture.Module.Port.Enqueue(in value, out IValueTaskSource<int>? source, default));
         Assert.Empty(fixture.Module.Executed);
         Assert.Throws<InvalidOperationException>(() => CompletedResult.ReadSource(source!));
         fixture.Until(() => source!.GetStatus(0) != ValueTaskSourceStatus.Pending);
@@ -71,11 +71,11 @@ public sealed class RuntimeTests
         fixture.Start();
         ValueTask<int> result = fixture.Module.Port.ExecuteAsync(2);
         fixture.Until(() => result.IsCompleted);
-        Assert.Equal(CommandEnqueueStatus.QueueFull, fixture.Module.Port.TryEnqueue(3, default, out _));
+        Assert.Equal(CommandEnqueueStatus.QueueFull, fixture.Module.Port.Enqueue(3, out _, default));
         fixture.Wait(fixture.Runtime.StopAsync().AsTask());
         Assert.Equal(1, fixture.Module.CleanupCalls);
         Assert.Equal(4, CompletedResult.Read(result));
-        Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Module.Port.TryEnqueue(0, default, out _));
+        Assert.Equal(CommandEnqueueStatus.NotRunning, fixture.Module.Port.Enqueue(0, out _, default));
     }
 
     /// <summary>A failed cleanup is retried on the original owner without restarting resources.</summary>
@@ -155,7 +155,7 @@ public sealed class RuntimeTests
     {
         using var fixture = new ExecutionFixture();
         fixture.Start();
-        Assert.Throws<InvalidOperationException>(() => fixture.Module.StartupPort.TryEnqueue(0, default, out _));
+        Assert.Throws<InvalidOperationException>(() => fixture.Module.StartupPort.Enqueue(0, out _, default));
         Assert.Throws<InvalidOperationException>(() => fixture.Module.SavedContext!.GetGate(default));
         Assert.Throws<InvalidOperationException>(() => fixture.Module.SavedContext!.ExecuteAsync(fixture.Module.InitializeKey, 0));
     }
@@ -178,7 +178,7 @@ public sealed class RuntimeTests
     {
         using var fixture = new ExecutionFixture();
         fixture.Start();
-        Assert.Equal(CommandEnqueueStatus.Accepted, fixture.Module.Port.TryEnqueue(-999, default, out IValueTaskSource<int>? source));
+        Assert.Equal(CommandEnqueueStatus.Accepted, fixture.Module.Port.Enqueue(-999, out IValueTaskSource<int>? source, default));
         fixture.Until(() => source!.GetStatus(0) != ValueTaskSourceStatus.Pending);
         Assert.Equal(ValueTaskSourceStatus.Faulted, source!.GetStatus(0));
         Assert.Throws<OperationCanceledException>(() => CompletedResult.ReadSource(source!));

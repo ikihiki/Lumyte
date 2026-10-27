@@ -375,6 +375,11 @@ public sealed class WindowsWindow : IWindow
             throw new ArgumentException("Invalid window descriptor.", nameof(descriptor));
         }
 
+        if (descriptor.Kind == WindowKind.Popup && (descriptor.Owner is null || descriptor.Activation != WindowActivation.PreserveFocus))
+        {
+            throw new ArgumentException("A popup requires an owner and PreserveFocus activation.", nameof(descriptor));
+        }
+
         if (descriptor.Owner is not null && (descriptor.Owner is not WindowsWindow owner || owner._platform != platform
             || owner.State.Lifetime != WindowLifetime.Open || owner._close is not null))
         {

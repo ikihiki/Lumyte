@@ -20,8 +20,8 @@ voiceやラッパーのコピーはclipのleaseを取得しません。呼び出
 早くleaseを返してclipの解放が試みられると、backendが借用中の解放を拒否します。Managerはclipとdevice leaseを保持し、voice解放後のTrimAsyncで再試行できます。
 
 ```csharp
-using var reference = await resources.AcquireAsync(new ResourceKey<AudioClip>("sounds/theme.wav"));
-ResourceLease<AudioClip> lease = reference.Acquire();
+using var reference = await resources.RetainAsync(new ResourceKey<AudioClip>("sounds/theme.wav"));
+ResourceLease<AudioClip> lease = reference.Pin();
 AudioVoice voice = await lease.Value.CreateVoice(AudioBus.Effects);
 await voice.Play();
 // 再生中もleaseを保持し、終了時にvoiceから解放する。

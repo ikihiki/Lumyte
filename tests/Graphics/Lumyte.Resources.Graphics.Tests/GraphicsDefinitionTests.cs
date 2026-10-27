@@ -43,15 +43,15 @@ public sealed class GraphicsDefinitionTests
         TestDevice device = Assert.Single(state.Devices);
         Assert.Empty(device.Shaders);
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
-        using ResourceReference<GraphicsResource<IGraphicsPipeline>> first = await manager.AcquireAsync(_first);
-        using ResourceReference<GraphicsResource<IGraphicsPipeline>> second = await manager.AcquireAsync(_second);
-        using ResourceLease<GraphicsResource<IGraphicsPipeline>> lease = first.Acquire();
+        using ResourceReference<GraphicsResource<IGraphicsPipeline>> first = await manager.RetainAsync(_first);
+        using ResourceReference<GraphicsResource<IGraphicsPipeline>> second = await manager.RetainAsync(_second);
+        using ResourceLease<GraphicsResource<IGraphicsPipeline>> lease = first.Pin();
         GraphicsPipelineDesc desc = lease.Value.Value.Desc;
         Assert.Equal("selected", desc.Label);
         Assert.Equal(PrimitiveTopologyClass.Line, desc.TopologyClass);
         Assert.True(desc.AlphaToCoverageEnable);
         Assert.Equal(PipelineOptimizationMode.FullSpecialization, desc.Optimization);
-        using ResourceLease<GraphicsResource<IGraphicsPipeline>> other = second.Acquire();
+        using ResourceLease<GraphicsResource<IGraphicsPipeline>> other = second.Pin();
         Assert.Same(desc.VertexShader, other.Value.Value.Desc.VertexShader);
         Assert.Null(other.Value.Value.Desc.FragmentShader);
         Assert.Equal(2, device.Shaders.Count);
@@ -64,7 +64,7 @@ public sealed class GraphicsDefinitionTests
         other.Dispose();
         await manager.TrimAsync();
         Assert.All(device.Shaders, shader => Assert.Equal(1, shader.DisposeCount));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.AcquireAsync(new ResourceKey<GraphicsResource<IGraphicsPipeline>>("missing")).AsTask());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.RetainAsync(new ResourceKey<GraphicsResource<IGraphicsPipeline>>("missing")).AsTask());
     }
 
     /// <summary>Checks reusable definitions support arbitrary composite assets and retain dependencies through cleanup retry.</summary>
@@ -81,8 +81,8 @@ public sealed class GraphicsDefinitionTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
         await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
-        using ResourceReference<GraphicsResource<TrackedAsset>> reference = await manager.AcquireAsync(_asset);
-        using ResourceLease<GraphicsResource<TrackedAsset>> lease = reference.Acquire();
+        using ResourceReference<GraphicsResource<TrackedAsset>> reference = await manager.RetainAsync(_asset);
+        using ResourceLease<GraphicsResource<TrackedAsset>> lease = reference.Pin();
         TrackedAsset asset = lease.Value.Value;
         Assert.Equal(4u, asset.Sampler.Desc.MaxAnisotropy);
         asset.FailOnce = true;
@@ -111,14 +111,14 @@ public sealed class GraphicsDefinitionTests
         IGraphicsDeviceService devices = services.GetRequiredService<IGraphicsDeviceService>();
         await devices.InitializeAsync();
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
-        using ResourceReference<GraphicsResource<IGraphicsPipeline>> reference = await manager.AcquireAsync(_first);
-        using ResourceLease<GraphicsResource<IGraphicsPipeline>> old = reference.Acquire();
+        using ResourceReference<GraphicsResource<IGraphicsPipeline>> reference = await manager.RetainAsync(_first);
+        using ResourceLease<GraphicsResource<IGraphicsPipeline>> old = reference.Pin();
         ShaderArtifact vertex = old.Value.Value.Desc.VertexShader.Artifact;
         state.Devices[0].Lose();
         Assert.Throws<ResourceUnavailableException>(() => old.Value);
         await devices.RecoverAsync();
         Assert.Equal(ResourceReloadStatus.Published, (await manager.RebuildRuntimeAsync([services.GetRequiredService<GraphicsResourceRuntime>().Id])).Status);
-        using ResourceLease<GraphicsResource<IGraphicsPipeline>> current = reference.Acquire();
+        using ResourceLease<GraphicsResource<IGraphicsPipeline>> current = reference.Pin();
         Assert.Same(state.Devices[1], current.Value.Device);
         Assert.Same(vertex, current.Value.Value.Desc.VertexShader.Artifact);
         old.Dispose();
@@ -146,12 +146,12 @@ public sealed class GraphicsDefinitionTests
         await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
         await services.GetRequiredService<IGraphicsDeviceService>().InitializeAsync();
         ResourceManager manager = services.GetRequiredService<ResourceManager>();
-        using ResourceReference<GraphicsResource<IGraphicsComputePipeline>> compute = await manager.AcquireAsync(computeKey);
-        using ResourceLease<GraphicsResource<IGraphicsComputePipeline>> computeLease = compute.Acquire();
+        using ResourceReference<GraphicsResource<IGraphicsComputePipeline>> compute = await manager.RetainAsync(computeKey);
+        using ResourceLease<GraphicsResource<IGraphicsComputePipeline>> computeLease = compute.Pin();
         TestComputePipeline pipeline = Assert.IsType<TestComputePipeline>(computeLease.Value.Value);
         Assert.Equal("compute-label", pipeline.Desc.Label);
-        using ResourceReference<GraphicsResource<IGraphicsTextureView>> view = await manager.AcquireAsync(viewKey);
-        using ResourceLease<GraphicsResource<IGraphicsTextureView>> viewLease = view.Acquire();
+        using ResourceReference<GraphicsResource<IGraphicsTextureView>> view = await manager.RetainAsync(viewKey);
+        using ResourceLease<GraphicsResource<IGraphicsTextureView>> viewLease = view.Pin();
         TestTexture texture = Assert.IsType<TestTexture>(viewLease.Value.Value.Texture);
         Assert.Equal(8u, texture.Width);
         Assert.Equal(4u, texture.Height);

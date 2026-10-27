@@ -24,7 +24,7 @@ public static class ResourceGraphics2DRenderGraphExtensions
         ResourceSnapshot? snapshot = null)
     {
         ArgumentNullException.ThrowIfNull(reference);
-        ResourceLease<Renderer2DResource> lease = reference.Acquire(snapshot);
+        ResourceLease<Renderer2DResource> lease = reference.Pin(snapshot);
         try
         {
             return new RenderGraphRenderer2D(

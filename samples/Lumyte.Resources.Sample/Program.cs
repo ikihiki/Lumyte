@@ -54,8 +54,8 @@ internal static class Program
         {
             await using ResourceManager resources = provider.GetRequiredService<ResourceManager>();
             SampleCounters counters = provider.GetRequiredService<SampleCounters>();
-            using (ResourceReference<SceneResource> sceneReference = await resources.AcquireAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))
-            using (ResourceLease<SceneResource> scene = sceneReference.Acquire())
+            using (ResourceReference<SceneResource> sceneReference = await resources.RetainAsync(new ResourceKey<SceneResource>("scene.json")).ConfigureAwait(false))
+            using (ResourceLease<SceneResource> scene = sceneReference.Pin())
             {
                 Console.WriteLine($"Scene: {scene.Value.Mesh.VertexCount} vertices; material: {scene.Value.Material.Name}");
                 Console.WriteLine($"Projection builds: {counters.ProjectionBuilds}");
@@ -77,14 +77,14 @@ internal static class Program
     {
         var meshKey = new ResourceKey<MeshInfo>(sourceId, "mesh/0", "geometry:v1");
         var materialKey = new ResourceKey<MaterialInfo>(sourceId, "material/0", "preview:v1");
-        using ResourceReference<MeshInfo> meshOwner = await resources.AcquireAsync(meshKey).ConfigureAwait(false);
-        using ResourceReference<MaterialInfo> materialOwner = await resources.AcquireAsync(materialKey).ConfigureAwait(false);
+        using ResourceReference<MeshInfo> meshOwner = await resources.RetainAsync(meshKey).ConfigureAwait(false);
+        using ResourceReference<MaterialInfo> materialOwner = await resources.RetainAsync(materialKey).ConfigureAwait(false);
         ResourceHandle<MeshInfo> meshHandle = meshOwner.Handle;
         ResourceHandle<MaterialInfo> materialHandle = materialOwner.Handle;
 
-        using ResourceReference<SceneResource> sceneOwner = await resources.AcquireAsync(new ResourceKey<SceneResource>(sourceId)).ConfigureAwait(false);
-        using ResourceLease<SceneResource> oldScene = sceneOwner.Acquire();
-        using ResourceLease<MeshInfo> oldMesh = meshOwner.Acquire();
+        using ResourceReference<SceneResource> sceneOwner = await resources.RetainAsync(new ResourceKey<SceneResource>(sourceId)).ConfigureAwait(false);
+        using ResourceLease<SceneResource> oldScene = sceneOwner.Pin();
+        using ResourceLease<MeshInfo> oldMesh = meshOwner.Pin();
         using ResourceSnapshot originalSnapshot = resources.CaptureSnapshot();
         Console.WriteLine($"Initial mesh: {oldMesh.Value.VertexCount} vertices; shared document builds: {counters.DocumentBuilds}");
         const string UpdatedScene = """
@@ -145,7 +145,7 @@ internal static class Program
 
     private static ResourceLease<T> AcquireFrom<T>(ResourceSnapshot snapshot, ResourceHandle<T> handle)
         where T : class
-        => snapshot.TryAcquire(handle, out ResourceLease<T>? lease)
+        => snapshot.TryPin(handle, out ResourceLease<T>? lease)
             ? lease!
             : throw new InvalidOperationException("The sample's owned handle has no published generation.");
 }

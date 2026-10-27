@@ -19,7 +19,7 @@ public sealed class ResourceAcquisitionLifetimeTests
         Source source = new();
         Stage stage = new(provider);
         await using ResourceManager manager = new("pending-acquisition", source, [stage], memory, new Runtime(provider));
-        Task<ResourceReference<Value>> acquisition = manager.AcquireAsync(_key).AsTask();
+        Task<ResourceReference<Value>> acquisition = manager.RetainAsync(_key).AsTask();
         await stage.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         stage.Continue.TrySetResult();
         try
@@ -38,7 +38,7 @@ public sealed class ResourceAcquisitionLifetimeTests
 
         using ResourceReference<Value> reference = await acquisition.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.True(reference.IsAvailable);
-        using (ResourceLease<Value> lease = reference.Acquire())
+        using (ResourceLease<Value> lease = reference.Pin())
         {
             Assert.Equal("two", lease.Value.Revision);
             Assert.False(lease.Value.Released);
@@ -60,9 +60,9 @@ public sealed class ResourceAcquisitionLifetimeTests
         Stage stage = new();
         await using ResourceManager manager = new("shared-acquisition", new Source(), [stage], memory, new Runtime());
         using CancellationTokenSource cancellation = new();
-        Task<ResourceReference<Value>> canceled = manager.AcquireAsync(_key, cancellation.Token).AsTask();
+        Task<ResourceReference<Value>> canceled = manager.RetainAsync(_key, cancellation.Token).AsTask();
         await stage.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Task<ResourceReference<Value>> retained = manager.AcquireAsync(_key).AsTask();
+        Task<ResourceReference<Value>> retained = manager.RetainAsync(_key).AsTask();
         try
         {
             cancellation.Cancel();
@@ -92,16 +92,16 @@ public sealed class ResourceAcquisitionLifetimeTests
         await using MemoryManager memory = new();
         Stage stage = new(failFirst: true);
         await using ResourceManager manager = new("failed-acquisition", new Source(), [stage], memory, new Runtime());
-        Task<ResourceReference<Value>> first = manager.AcquireAsync(_key).AsTask();
+        Task<ResourceReference<Value>> first = manager.RetainAsync(_key).AsTask();
         await stage.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Task<ResourceReference<Value>> second = manager.AcquireAsync(_key).AsTask();
+        Task<ResourceReference<Value>> second = manager.RetainAsync(_key).AsTask();
         stage.Continue.TrySetResult();
         await Assert.ThrowsAsync<IOException>(async () => await first.WaitAsync(TimeSpan.FromSeconds(10)));
         await Assert.ThrowsAsync<IOException>(async () => await second.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Equal(1, stage.Builds);
         Assert.Empty(stage.Outputs);
         await manager.TrimAsync();
-        using ResourceReference<Value> reference = await manager.AcquireAsync(_key);
+        using ResourceReference<Value> reference = await manager.RetainAsync(_key);
         Assert.True(reference.IsAvailable);
         Assert.Equal(2, stage.Builds);
         reference.Dispose();

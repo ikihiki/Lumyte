@@ -37,8 +37,8 @@ public sealed class TypedStageRuntimeTests
         await using ResourceExecutionHost execution = new(provider);
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager manager = scope.ServiceProvider.GetRequiredService<ResourceManager>();
-        using ResourceReference<Parent> reference = await manager.AcquireAsync(new ResourceKey<Parent>("asset"));
-        using ResourceLease<Parent> lease = reference.Acquire();
+        using ResourceReference<Parent> reference = await manager.RetainAsync(new ResourceKey<Parent>("asset"));
+        using ResourceLease<Parent> lease = reference.Pin();
         IEnvironment expected = provider.GetRequiredService<IEnvironment>();
         Assert.Same(expected, lease.Value.Runtime);
         Assert.Same(expected, lease.Value.Input.Runtime);
@@ -81,8 +81,8 @@ public sealed class TypedStageRuntimeTests
         await using MemoryManager memory = new();
         await using ResourceExecutionHost execution = new();
         await using ResourceManager manager = new("default", new UnusedSource(), [new DefaultStage()], memory, execution.Resources);
-        using ResourceReference<DefaultValue> reference = await manager.AcquireAsync(new ResourceKey<DefaultValue>("asset"));
-        using ResourceLease<DefaultValue> lease = reference.Acquire();
+        using ResourceReference<DefaultValue> reference = await manager.RetainAsync(new ResourceKey<DefaultValue>("asset"));
+        using ResourceLease<DefaultValue> lease = reference.Pin();
         Assert.Same(execution.Resources, lease.Value.Runtime);
     }
 

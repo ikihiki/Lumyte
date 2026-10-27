@@ -45,9 +45,9 @@ public sealed class ModelResourceGpuTests
             IGraphicsDeviceService devices = provider.GetRequiredService<IGraphicsDeviceService>();
             await devices.InitializeAsync();
             using GraphicsDeviceLease device = await devices.AcquireAsync();
-            using ResourceReference<ModelMeshData> cpuReference = await manager.AcquireAsync(cpu);
-            using ResourceLease<ModelMeshData> originalCpu = cpuReference.Acquire();
-            using ResourceReference<GraphicsResource<ModelMesh>> reference = await manager.AcquireAsync(gpu);
+            using ResourceReference<ModelMeshData> cpuReference = await manager.RetainAsync(cpu);
+            using ResourceLease<ModelMeshData> originalCpu = cpuReference.Pin();
+            using ResourceReference<GraphicsResource<ModelMesh>> reference = await manager.RetainAsync(gpu);
             using var graph = new Graph(device.Device);
             GraphicsResource<ModelMesh> original = graph.ImportResources(manager).Acquire(reference);
             Assert.Equal(3u, original.Value.IndexCount);
@@ -66,13 +66,13 @@ public sealed class ModelResourceGpuTests
             await devices.RecoverAsync();
             ResourceReloadResult result = await manager.RebuildRuntimeAsync([runtime.Id]);
             Assert.Equal(ResourceReloadStatus.Published, result.Status);
-            using ResourceLease<GraphicsResource<ModelMesh>> current = reference.Acquire();
+            using ResourceLease<GraphicsResource<ModelMesh>> current = reference.Pin();
             Assert.NotSame(original.Value, current.Value.Value);
             Assert.Equal(3UL, original.Value.Vertices.Count);
             Assert.Equal(3UL, current.Value.Value.Vertices.Count);
             Assert.True(current.Value.Epoch > original.Epoch);
             Assert.NotSame(original.Device, current.Value.Device);
-            using ResourceLease<ModelMeshData> cpuLease = cpuReference.Acquire();
+            using ResourceLease<ModelMeshData> cpuLease = cpuReference.Pin();
             Assert.Same(originalCpu.Value, cpuLease.Value);
             Assert.Equal(3, cpuLease.Value.Indices16.Length);
         }
