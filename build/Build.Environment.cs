@@ -169,7 +169,7 @@ internal sealed partial class Build
             if (OperatingSystem.IsWindows())
             {
                 string loader = Path.Combine(nativeBuild, "vcpkg_installed", triplet, "bin", "vulkan-1.dll");
-                File.Copy(loader, Path.Combine(nativeBuild, "vulkan-1.dll"));
+                File.Copy(loader, Path.Combine(nativeBuild, "vulkan-1.dll"), overwrite: true);
             }
 
             string version = "0.0.0-smoke." + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) + "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
