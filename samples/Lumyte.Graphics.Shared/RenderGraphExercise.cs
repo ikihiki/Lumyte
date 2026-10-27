@@ -34,11 +34,11 @@ public static class RenderGraphExercise
         RenderGraphBuffer<uint> source = graph.ImportBuffer(upload, new(PipelineStage.Host, ResourceAccess.HostWrite), "upload");
         RenderGraphBuffer<uint> temporary = graph.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.CopySource | BufferUsage.CopyDestination }, "temporary");
         RenderGraphBuffer<uint> result = graph.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
-        graph.AddPass("upload-first-half", context => context.Commands.CopyBuffer(context.GetBuffer(source).Slice(0, 4), context.GetBuffer(temporary).Slice(0, 4)))
+        graph.AddPass("upload-first-half", context => context.Commands.CopyBuffer(context.GetBuffer(source).SliceElements(0, 4), context.GetBuffer(temporary).SliceElements(0, 4)))
             .UseBuffer(source, _copyRead).UseBuffer(temporary, _copyWrite);
-        graph.AddPass("upload-second-half", context => context.Commands.CopyBuffer(context.GetBuffer(source).Slice(4, 4), context.GetBuffer(temporary).Slice(4, 4)))
+        graph.AddPass("upload-second-half", context => context.Commands.CopyBuffer(context.GetBuffer(source).SliceElements(4, 4), context.GetBuffer(temporary).SliceElements(4, 4)))
             .UseBuffer(source, _copyRead).UseBuffer(temporary, _copyWrite);
-        graph.AddPass("readback", context => context.Commands.CopyBuffer(context.GetBuffer(temporary).Slice(0, 8), context.GetBuffer(result).Slice(0, 8)))
+        graph.AddPass("readback", context => context.Commands.CopyBuffer(context.GetBuffer(temporary).SliceElements(0, 8), context.GetBuffer(result).SliceElements(0, 8)))
             .UseBuffer(temporary, _copyRead).UseBuffer(result, _copyWrite);
         graph.ExportBuffer(result, _hostRead);
         using CompiledRenderGraph plan = graph.Compile();
@@ -80,7 +80,7 @@ public static class RenderGraphExercise
 
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
             new() { Texture = context.GetTexture(color), Width = 4, Height = 3, ArrayLayerCount = 2 },
-            new() { Buffer = context.GetBuffer(result).Slice(0, pitch * 6), BytesPerRow = pitch, RowsPerImage = 3 }))
+            new() { Buffer = context.GetBuffer(result).SliceElements(0, pitch * 6), BytesPerRow = pitch, RowsPerImage = 3 }))
             .UseTexture(color, TextureState.CopySource, _copyRead).UseBuffer(result, _copyWrite);
         graph.ExportBuffer(result, _hostRead);
         using CompiledRenderGraph plan = graph.Compile();
@@ -134,7 +134,7 @@ public static class RenderGraphExercise
             .UseTexture(color, TextureState.CopySource, _copyRead).UseTexture(copied, TextureState.CopyDestination, _copyWrite);
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
             new() { Texture = context.GetTexture(copied), Width = 4, Height = 3 },
-            new() { Buffer = context.GetBuffer(result).Slice(0, pitch * 3), BytesPerRow = pitch, RowsPerImage = 3 }))
+            new() { Buffer = context.GetBuffer(result).SliceElements(0, pitch * 3), BytesPerRow = pitch, RowsPerImage = 3 }))
             .UseTexture(copied, TextureState.CopySource, _copyRead).UseBuffer(result, _copyWrite);
         graph.ExportBuffer(result, _hostRead);
         using CompiledRenderGraph plan = graph.Compile();

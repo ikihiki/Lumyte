@@ -83,7 +83,7 @@ public sealed class ImageEffectsTests
         RenderGraphBuffer<byte> readback = graph.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
             new() { Texture = context.GetTexture(output.Texture), Width = width, Height = height },
-            new() { Buffer = context.GetBuffer(readback).Slice(0, byteCount), BytesPerRow = pitch, RowsPerImage = height }))
+            new() { Buffer = context.GetBuffer(readback).SliceElements(0, byteCount), BytesPerRow = pitch, RowsPerImage = height }))
             .UseTexture(output.Texture, TextureState.CopySource, new(PipelineStage.Copy, ResourceAccess.CopyRead))
             .UseBuffer(readback, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
         graph.ExportBuffer(readback, new(PipelineStage.Host, ResourceAccess.HostRead));

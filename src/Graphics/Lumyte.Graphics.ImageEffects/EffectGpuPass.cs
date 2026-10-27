@@ -65,7 +65,6 @@ internal static class EffectGpuPass
                 ColorAttachments = [new() { View = context.CreateTextureView(output), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }],
             });
             render.SetPipeline(pipeline);
-            render.SetArgumentTable(table);
             render.SetArguments(in arguments);
             render.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
             render.SetViewport(new(0, 0, descriptor.Width, descriptor.Height, 0, 1));

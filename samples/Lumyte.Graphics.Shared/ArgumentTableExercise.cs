@@ -21,7 +21,7 @@ public static class ArgumentTableExercise
         using IGraphicsBuffer<uint> buffer = device.CreateBuffer(new BufferDesc<uint> { Count = 16, Usage = BufferUsage.ShaderRead });
         IGpuRef<IGraphicsTextureView> image = table.WriteTexture(0, view);
         IGpuRef<IGraphicsSampler> sampling = table.WriteSampler(0, sampler);
-        IGpuRef<uint> range = table.WriteBuffer(0, buffer.Slice(3, 5));
+        IGpuRef<uint> range = table.WriteBuffer(0, buffer.SliceElements(3, 5));
         IGpuRef<uint> element = range.GetElement(4);
         Require(image.Count == 1 && sampling.Count == 1 && range.Count == 5 && element.Count == 1, "Logical element counts are incorrect.");
         Require(element.GetElement(0).Count == 1, "An element reference changed its range.");
@@ -31,7 +31,7 @@ public static class ArgumentTableExercise
         Expect<ArgumentOutOfRangeException>(() => image.GetElement(1));
         Expect<ArgumentOutOfRangeException>(() => table.WriteTexture(2, view));
         Expect<ArgumentOutOfRangeException>(() => table.WriteSampler(uint.MaxValue, sampler));
-        Expect<ArgumentOutOfRangeException>(() => table.WriteBuffer(2, buffer.Slice(0, 1)));
+        Expect<ArgumentOutOfRangeException>(() => table.WriteBuffer(2, buffer.SliceElements(0, 1)));
         Expect<ArgumentOutOfRangeException>(() => table.ReleaseTexture(2));
         Expect<ArgumentOutOfRangeException>(() => table.ReleaseSampler(2));
         Expect<ArgumentOutOfRangeException>(() => table.ReleaseBuffer(2));
@@ -39,7 +39,7 @@ public static class ArgumentTableExercise
         table.ReleaseTexture(1);
         Expect<ArgumentException>(() => table.WriteBuffer<uint>(1, default));
         using IGraphicsBuffer<uint> staging = device.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
-        Expect<ArgumentException>(() => table.WriteBuffer(1, staging.Slice(0, 1)));
+        Expect<ArgumentException>(() => table.WriteBuffer(1, staging.SliceElements(0, 1)));
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment });
         using IGraphicsTextureView attachment = target.CreateView();
         Expect<ArgumentException>(() => table.WriteTexture(1, attachment));
@@ -57,11 +57,11 @@ public static class ArgumentTableExercise
         view.Dispose();
 
         using IGraphicsBuffer<ushort> words = device.CreateBuffer(new BufferDesc<ushort> { Count = 8, Usage = BufferUsage.ShaderRead });
-        IGpuRef<ushort> differentlyTyped = table.WriteBuffer(0, words.Slice(1, 3));
+        IGpuRef<ushort> differentlyTyped = table.WriteBuffer(0, words.SliceElements(1, 3));
         Require(differentlyTyped.GetElement(2).Count == 1 && sampling.GetElement(0).Count == 1, "Replacement invalidated a different resource kind.");
         buffer.Dispose();
         table.ReleaseBuffer(0);
-        IGpuRef<ushort> fresh = table.WriteBuffer(0, words.Slice(2, 2));
+        IGpuRef<ushort> fresh = table.WriteBuffer(0, words.SliceElements(2, 2));
         Require(fresh.Count == 2, "New registration has an incorrect range.");
         table.Dispose();
         table.Dispose();
@@ -85,7 +85,7 @@ public static class ArgumentTableExercise
         using IGraphicsBuffer<uint> buffer = foreign.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.ShaderRead });
         Expect<ArgumentException>(() => table.WriteTexture(0, view));
         Expect<ArgumentException>(() => table.WriteSampler(0, sampler));
-        Expect<ArgumentException>(() => table.WriteBuffer(0, buffer.Slice(0, 1)));
+        Expect<ArgumentException>(() => table.WriteBuffer(0, buffer.SliceElements(0, 1)));
     }
 
     private static void Require(bool condition, string message)

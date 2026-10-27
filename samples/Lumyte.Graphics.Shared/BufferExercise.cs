@@ -25,8 +25,8 @@ public static class BufferExercise
         Require(upload.Count == 16 && upload.SizeInBytes == 64, "Allocation size was changed.");
         uint[] source = [11, 22, 33, 44];
         Expect<InvalidOperationException>(() => upload.CopyFrom(source));
-        Expect<ArgumentOutOfRangeException>(() => upload.Slice(16, 1));
-        Expect<ArgumentOutOfRangeException>(() => upload.Slice(ulong.MaxValue, 1));
+        Expect<ArgumentOutOfRangeException>(() => upload.SliceElements(16, 1));
+        Expect<ArgumentOutOfRangeException>(() => upload.SliceElements(ulong.MaxValue, 1));
         Expect<ArgumentException>(() => default(BufferSlice<uint>).CopyFrom(source));
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
@@ -35,7 +35,7 @@ public static class BufferExercise
         await upload.MapAsync();
         Require(upload.IsMapped, "Mapping did not complete.");
         upload.CopyFrom(source);
-        BufferSlice<uint> slice = upload.Slice(3, 2);
+        BufferSlice<uint> slice = upload.SliceElements(3, 2);
         Require(slice.OffsetInBytes == 12 && slice.SizeInBytes == 8, "Slice byte range is incorrect.");
         slice.CopyFrom(source.AsSpan(0, 2));
         Expect<ArgumentException>(() => slice.CopyFrom(source));
@@ -49,7 +49,7 @@ public static class BufferExercise
 
         using IGraphicsBuffer<byte> byteUpload = device.CreateBuffer(new BufferDesc<byte> { Count = 8, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         await byteUpload.MapAsync();
-        byteUpload.Slice(1, 3).CopyFrom([1, 2, 3]);
+        byteUpload.SliceElements(1, 3).CopyFrom([1, 2, 3]);
         byteUpload.Unmap();
 
         using IGraphicsBuffer<Triple> storage = device.CreateBuffer(new BufferDesc<Triple> { Count = 3, Usage = BufferUsage.ShaderRead });
@@ -60,17 +60,17 @@ public static class BufferExercise
         uint[] destination = Enumerable.Repeat(0xAABBCCDDU, 10).ToArray();
         Expect<InvalidOperationException>(() => readback.CopyTo(destination));
         await readback.MapAsync();
-        readback.Slice(1, 3).CopyTo(destination);
+        readback.SliceElements(1, 3).CopyTo(destination);
         Require(destination.Skip(3).All(value => value == 0xAABBCCDDU), "Readback changed bytes outside its destination range.");
         Expect<ArgumentException>(() => readback.CopyTo(destination.AsSpan(0, 1)));
         Expect<InvalidOperationException>(() => readback.CopyFrom(source));
         readback.Unmap();
 
-        BufferSlice<uint> stale = upload.Slice(0, 1);
+        BufferSlice<uint> stale = upload.SliceElements(0, 1);
         upload.Dispose();
         upload.Dispose();
         Expect<ObjectDisposedException>(() => stale.CopyFrom([1]));
-        Expect<ObjectDisposedException>(() => upload.Slice(0, 1));
+        Expect<ObjectDisposedException>(() => upload.SliceElements(0, 1));
         return "Buffer checks passed: typed sizes, explicit mapping, CPU copies, ranges and lifetime.";
     }
 

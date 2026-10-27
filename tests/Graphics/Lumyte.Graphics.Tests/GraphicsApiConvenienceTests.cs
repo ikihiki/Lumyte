@@ -65,10 +65,10 @@ public sealed class GraphicsApiConvenienceTests
         await mapping;
         Assert.True(buffer.IsMapped);
         Assert.Equal(0, buffer.UnmapCalls);
-        ShaderDataSlice<SampleData> slice = buffer.Slice(1, 2);
+        ShaderDataSlice<SampleData> slice = buffer.SliceElements(1, 2);
         Assert.Equal(1UL, slice.Offset);
         Assert.Equal(2UL, slice.Count);
-        Assert.Throws<ArgumentOutOfRangeException>(() => buffer.Slice(3, 2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => buffer.SliceElements(3, 2));
     }
 
     /// <summary>Native mapping failures are preserved without attempting to unmap nonexistent memory.</summary>
@@ -140,11 +140,17 @@ public sealed class GraphicsApiConvenienceTests
 
         public int UnmapCalls { get; private set; }
 
-        public async ValueTask MapAsync()
+        public async ValueTask MapAsync(CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             MapCalls++;
             await _mapping.Task;
             IsMapped = true;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Unmap();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
         }
 
         public void CompleteMapping() => _mapping.SetResult();
@@ -182,7 +188,7 @@ public sealed class GraphicsApiConvenienceTests
 
         public bool IsMapped => true;
 
-        public void ValidateRange(ulong offset, ulong length)
+        public void ValidateByteRange(ulong offset, ulong length)
         {
             if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
             {
@@ -190,19 +196,19 @@ public sealed class GraphicsApiConvenienceTests
             }
         }
 
-        public void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
+        public void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
         {
-            ValidateRange(offset, length);
+            ValidateByteRange(offset, length);
             source.CopyTo(Bytes.AsSpan(checked((int)offset), checked((int)length)));
         }
 
-        public void CopyTo(Span<byte> destination, ulong offset, ulong length)
+        public void CopyBytesTo(Span<byte> destination, ulong offset, ulong length)
         {
-            ValidateRange(offset, length);
+            ValidateByteRange(offset, length);
             Bytes.AsSpan(checked((int)offset), checked((int)length)).CopyTo(destination);
         }
 
-        public BufferSlice<uint> Slice(ulong offset, ulong count) => new(this, offset, count);
+        public BufferSlice<uint> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
         public void CopyFrom(ReadOnlySpan<uint> source) => MemoryMarshal.AsBytes(source).CopyTo(Bytes);
 

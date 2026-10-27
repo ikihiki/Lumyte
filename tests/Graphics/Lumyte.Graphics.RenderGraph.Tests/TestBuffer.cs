@@ -16,7 +16,7 @@ internal sealed class TestBuffer : IGraphicsBuffer<uint>
 
     public bool IsMapped => false;
 
-    public void ValidateRange(ulong offset, ulong length)
+    public void ValidateByteRange(ulong offset, ulong length)
     {
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -24,15 +24,15 @@ internal sealed class TestBuffer : IGraphicsBuffer<uint>
         }
     }
 
-    public BufferSlice<uint> Slice(ulong offset, ulong count) => new(this, offset, count);
+    public BufferSlice<uint> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
     public void Unmap() => throw new NotSupportedException();
 
-    public void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length) => throw new NotSupportedException();
+    public void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length) => throw new NotSupportedException();
 
-    public void CopyTo(Span<byte> destination, ulong offset, ulong length) => throw new NotSupportedException();
+    public void CopyBytesTo(Span<byte> destination, ulong offset, ulong length) => throw new NotSupportedException();
 
     public void CopyFrom(ReadOnlySpan<uint> source) => throw new NotSupportedException();
 

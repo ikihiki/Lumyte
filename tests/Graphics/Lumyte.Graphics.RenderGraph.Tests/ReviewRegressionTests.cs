@@ -22,9 +22,9 @@ public sealed class ReviewRegressionTests
         using var source = new TestBuffer();
         RenderGraphBuffer<uint> imported = graph.ImportBuffer(source, CopyRead);
         RenderGraphBuffer<uint> output = graph.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.CopyDestination | BufferUsage.CopySource });
-        graph.AddPass("first-half", context => context.Commands.CopyBuffer(context.GetBuffer(imported).Slice(0, 2), context.GetBuffer(output).Slice(0, 2)))
+        graph.AddPass("first-half", context => context.Commands.CopyBuffer(context.GetBuffer(imported).SliceElements(0, 2), context.GetBuffer(output).SliceElements(0, 2)))
             .UseBuffer(imported, CopyRead).UseBuffer(output, CopyWrite);
-        graph.AddPass("second-half", context => context.Commands.CopyBuffer(context.GetBuffer(imported).Slice(2, 2), context.GetBuffer(output).Slice(2, 2)))
+        graph.AddPass("second-half", context => context.Commands.CopyBuffer(context.GetBuffer(imported).SliceElements(2, 2), context.GetBuffer(output).SliceElements(2, 2)))
             .UseBuffer(imported, CopyRead).UseBuffer(output, CopyWrite);
         graph.ExportBuffer(output, CopyRead);
         using CompiledRenderGraph plan = graph.Compile();

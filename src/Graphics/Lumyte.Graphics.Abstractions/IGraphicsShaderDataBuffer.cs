@@ -26,8 +26,9 @@ public interface IGraphicsShaderDataBuffer<T> : IDisposable
     void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0);
 
     /// <summary>Maps idle upload staging for explicit CPU writes.</summary>
+    /// <param name="cancellationToken">Cancels retaining the mapping after native completion.</param>
     /// <returns>The mapping operation.</returns>
-    ValueTask MapAsync();
+    ValueTask MapAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Unmaps upload staging before command recording.</summary>
     void Unmap();

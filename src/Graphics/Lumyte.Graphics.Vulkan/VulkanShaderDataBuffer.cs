@@ -48,7 +48,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
 
     internal VulkanDevice Owner { get; }
 
-    public ValueTask MapAsync()
+    public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
         ValidateAlive();
         if (Memory != MemoryPreference.Upload)
@@ -56,7 +56,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
             throw new InvalidOperationException("Only upload staging can be mapped.");
         }
 
-        return Storage.MapAsync();
+        return Storage.MapAsync(cancellationToken);
     }
 
     public void Unmap()
@@ -100,7 +100,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
             Layout.Pack(snapshots[i], PackReference).CopyTo(bytes, i * Layout.Size);
         }
 
-        Storage.Slice(checked(elementOffset * (ulong)Layout.Size), (ulong)bytes.Length).CopyFrom(bytes);
+        Storage.SliceElements(checked(elementOffset * (ulong)Layout.Size), (ulong)bytes.Length).CopyFrom(bytes);
         snapshots.CopyTo(_values, checked((int)elementOffset));
     }
 

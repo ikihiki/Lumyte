@@ -87,6 +87,6 @@ public interface IGraphicDevice
     /// <param name="count">The positive logical element count.</param>
     /// <param name="memory">Automatic for GPU storage or Upload for CPU staging.</param>
     /// <returns>The backend's shader data allocation.</returns>
-    IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
+    IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData;
 }

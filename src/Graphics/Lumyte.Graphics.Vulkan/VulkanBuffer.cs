@@ -108,13 +108,13 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     internal VulkanDevice Owner => _owner;
 
-    public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);
+    public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-    public void CopyFrom(ReadOnlySpan<T> source) => Slice(0, Count).CopyFrom(source);
+    public void CopyFrom(ReadOnlySpan<T> source) => SliceElements(0, Count).CopyFrom(source);
 
-    public void CopyTo(Span<T> destination) => Slice(0, Count).CopyTo(destination);
+    public void CopyTo(Span<T> destination) => SliceElements(0, Count).CopyTo(destination);
 
-    public void ValidateRange(ulong offset, ulong length)
+    public void ValidateByteRange(ulong offset, ulong length)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
@@ -186,9 +186,9 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         _disposed = true;
     }
 
-    void IGraphicsBuffer<T>.CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
+    void IGraphicsBuffer<T>.CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
     {
-        ValidateRange(offset, length);
+        ValidateByteRange(offset, length);
         RequireMapping(MemoryPreference.Upload);
         if ((ulong)source.Length > length)
         {
@@ -198,9 +198,9 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         source.CopyTo(new Span<byte>(_pointer + checked((int)offset), source.Length));
     }
 
-    void IGraphicsBuffer<T>.CopyTo(Span<byte> destination, ulong offset, ulong length)
+    void IGraphicsBuffer<T>.CopyBytesTo(Span<byte> destination, ulong offset, ulong length)
     {
-        ValidateRange(offset, length);
+        ValidateByteRange(offset, length);
         RequireMapping(MemoryPreference.Readback);
         if ((ulong)destination.Length < length)
         {

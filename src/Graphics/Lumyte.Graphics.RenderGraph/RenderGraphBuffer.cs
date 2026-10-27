@@ -48,7 +48,7 @@ public sealed class RenderGraphBuffer<T> : RenderGraphResource
     internal override void Barrier(IGraphicsCommandBuffer commands, object allocation, TextureState beforeState, TextureState afterState, BarrierScope before, BarrierScope after)
         => commands.Barrier(new BufferBarrierDesc<T>
         {
-            Buffer = ((IGraphicsBuffer<T>)allocation).Slice(0, ((IGraphicsBuffer<T>)allocation).Count),
+            Buffer = ((IGraphicsBuffer<T>)allocation).SliceElements(0, ((IGraphicsBuffer<T>)allocation).Count),
             Before = before,
             After = after,
         });

@@ -10,18 +10,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
 
-    public void SetArgumentTable(IArgumentTable table)
-    {
-        owner.ValidatePass(this);
-        ArgumentNullException.ThrowIfNull(table);
-        if (table is not WgpuArgumentTable concrete || !concrete.BelongsTo(owner.Owner))
-        {
-            throw new ArgumentException("Argument table belongs to another device.", nameof(table));
-        }
-
-        concrete.ThrowIfDisposed();
-    }
-
     public void SetArguments<T>(in T value)
         where T : struct, IShaderArguments
     {

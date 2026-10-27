@@ -41,7 +41,7 @@ public interface IGraphicsBuffer<T> : IDisposable
     /// </summary>
     /// <param name="offset">The start offset in bytes.</param>
     /// <param name="length">The byte length of the backend range.</param>
-    void ValidateRange(ulong offset, ulong length);
+    void ValidateByteRange(ulong offset, ulong length);
 
     /// <summary>
     /// Copies caller bytes into idle Upload storage without GPU transfer.
@@ -49,7 +49,7 @@ public interface IGraphicsBuffer<T> : IDisposable
     /// <param name="source">The caller-owned source bytes.</param>
     /// <param name="offset">The start offset in bytes.</param>
     /// <param name="length">The byte length of the backend range.</param>
-    void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length);
+    void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length);
 
     /// <summary>
     /// Copies completed Readback bytes into caller storage without waiting.
@@ -57,7 +57,7 @@ public interface IGraphicsBuffer<T> : IDisposable
     /// <param name="destination">The caller-owned destination bytes.</param>
     /// <param name="offset">The start offset in bytes.</param>
     /// <param name="length">The byte length of the backend range.</param>
-    void CopyTo(Span<byte> destination, ulong offset, ulong length);
+    void CopyBytesTo(Span<byte> destination, ulong offset, ulong length);
 
     /// <summary>Explicitly maps the whole Upload or Readback allocation for CPU access.</summary>
     /// <param name="cancellationToken">Cancels retaining a mapping after the native request completes.</param>
@@ -73,7 +73,7 @@ public interface IGraphicsBuffer<T> : IDisposable
     /// <param name="offset">The start offset in elements.</param>
     /// <param name="count">The number of elements; no implicit padding or rounding is applied.</param>
     /// <returns>The non-owning element range; the allocation lifetime is unchanged.</returns>
-    BufferSlice<T> Slice(ulong offset, ulong count);
+    BufferSlice<T> SliceElements(ulong offset, ulong count);
 
     /// <summary>
     /// Copies into explicitly mapped Upload memory without GPU commands, staging allocation, or submission.

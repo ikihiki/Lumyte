@@ -32,7 +32,7 @@ using IGraphicsBuffer<uint> upload = device.CreateBuffer(new BufferDesc<uint>
     Memory = MemoryPreference.Upload,
 });
 await upload.MapAsync();
-upload.Slice(2, 3).CopyFrom(new uint[] { 10, 20, 30 });
+upload.SliceElements(2, 3).CopyFrom(new uint[] { 10, 20, 30 });
 upload.Unmap();
 ```
 
@@ -127,13 +127,13 @@ using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc
 });
 IGpuRef<IGraphicsTextureView> image = table.WriteTexture(0, sampledView);
 IGpuRef<IGraphicsSampler> sampling = table.WriteSampler(0, sampler);
-IGpuRef<uint> values = table.WriteBuffer(0, storage.Slice(3, 5));
+IGpuRef<uint> values = table.WriteBuffer(0, storage.SliceElements(3, 5));
 IGpuRef<uint> value = values.GetElement(2);
 ```
 
 slotは利用者が管理する論理位置です。種類ごとに独立し、同時shader binding数ではありません。IGpuRefのCountは論理要素数で、bufferのGetElementは登録範囲から単一要素を選びます。GPU addressやbinding番号への変換は公開しません。
 
-encoderのSetArgumentTableは互換性のために残すtableの検査で、binding状態を切り替えません。
+SetArgumentTableは削除しました。
 bindingは引数に含まれるIGpuRefの登録情報から生成します。一回のdraw／dispatchで使う参照が
 同じdeviceの同じtableに属し、有効であることは利用者が保証します。
 

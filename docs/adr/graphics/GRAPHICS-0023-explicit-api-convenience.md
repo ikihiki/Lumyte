@@ -1,80 +1,77 @@
-# ADR-GRAPHICS-0023: 明示的な操作を保つGraphics APIの補助
+# ADR-GRAPHICS-0023: 単位を明示するGraphics APIと描画初期化
 
 - 状態: 採用
 - 日付: 2026-10-26
 
 ## 背景
 
-raw bufferとshader data bufferは要素範囲を扱うが、SliceとSliceElements、MapAsyncのキャンセル引数が異なる。
-byte単位と要素単位の操作も同じoffsetという引数名を使う。
-描画では利用しないblendとstencilの値もpassごとに明示する必要があり、同じ初期化が繰り返される。
-既存の明示的な同期と所有権を維持しながら、単位と操作の意図を読み取りやすくする。
+byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw bufferも同じ生成名を使っていた。またArgument Tableのsetterは後続描画の状態を変更せず、互換入口として検査だけを行っていた。
 
 ## 決定
 
-既存interfaceのメンバーと型名を維持し、Abstractionsに拡張メソッドを追加する。
-新しいinterfaceメンバーを必須にせず、外部backend実装と既存binaryの契約を保つ。
-raw bufferはhost layout、shader data bufferはshader ABIのpackingという違いを維持する。
+単位と生成物を明示する名前を正式なinterfaceメンバーにする。旧名と転送専用の拡張メソッドは削除し、実装と利用側を移行する。
 
-比較元はmain `16d856a`。公開APIの追加は次のとおり。
+比較元はmainの`16d856a`。対象メンバーの変更は以下のとおり。
 
 ```diff
- namespace Lumyte.Graphics.Abstractions;
-+public static class GraphicsBufferExtensions
-+{
-+    // どちらも要素単位。非所有で、空・範囲外は既存Sliceと同じ例外。
-+    public static BufferSlice<T> SliceElements<T>(this IGraphicsBuffer<T> buffer, ulong elementOffset, ulong elementCount) where T : unmanaged;
-+    public static ShaderDataSlice<T> Slice<T>(this IGraphicsShaderDataBuffer<T> buffer, ulong elementOffset, ulong elementCount) where T : struct, IShaderData;
-+    // byte単位の明示名。既存のmapping・範囲・memory方向の条件を維持。
-+    public static void ValidateByteRange<T>(this IGraphicsBuffer<T> buffer, ulong byteOffset, ulong byteLength) where T : unmanaged;
-+    public static void CopyBytesFrom<T>(this IGraphicsBuffer<T> buffer, ReadOnlySpan<byte> source, ulong byteOffset, ulong byteLength) where T : unmanaged;
-+    public static void CopyBytesTo<T>(this IGraphicsBuffer<T> buffer, Span<byte> destination, ulong byteOffset, ulong byteLength) where T : unmanaged;
-+    // native mapping完了後にキャンセルを確認し、成功したmappingをUnmapしてからキャンセルを返す。
-+    // 待機だけを中断して進行中のmappingを残さない。
-+    public static ValueTask MapAsync<T>(this IGraphicsShaderDataBuffer<T> buffer, CancellationToken cancellationToken) where T : struct, IShaderData;
-+}
-+public static class GraphicsDeviceExtensions
-+{
-+    // artifactのABIを使うCreateBufferの明示名。所有権・制約は変更しない。
-+    public static IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(this IGraphicDevice device, ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : struct, IShaderData;
-+}
-+public static class RenderEncoderExtensions
-+{
-+    // 呼び出した時に4つのdynamic stateを明示設定する。後続の個別変更も可能。
-+    public static void SetDynamicState(this IRenderEncoder encoder, Viewport viewport, ScissorRect scissor, BlendConstant blendConstant = default, uint stencilReference = 0);
-+}
- public sealed record GraphicsRenderStateDesc
+ namespace Lumyte.Graphics.Abstractions
  {
-+    // 指定個数の既定color stateを持つ。0はdepth-only、負数はArgumentOutOfRangeException。
-+    public static GraphicsRenderStateDesc ForColorTargets(int colorAttachmentCount);
+     public interface IGraphicsBuffer<T> where T : unmanaged
+     {
+-        BufferSlice<T> Slice(ulong offset, ulong count);
++        BufferSlice<T> SliceElements(ulong offset, ulong count);
+-        void ValidateRange(ulong offset, ulong length);
++        void ValidateByteRange(ulong offset, ulong length);
+-        void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length);
++        void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length);
+-        void CopyTo(Span<byte> destination, ulong offset, ulong length);
++        void CopyBytesTo(Span<byte> destination, ulong offset, ulong length);
+     }
+     public interface IGraphicsShaderDataBuffer<T> where T : struct, IShaderData
+     {
+-        ValueTask MapAsync();
++        ValueTask MapAsync(CancellationToken cancellationToken = default);
+     }
+     public interface IGraphicDevice
+     {
+-        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : struct, IShaderData;
++        IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : struct, IShaderData;
+     }
+     public interface IRenderEncoder
+     {
+-        void SetArgumentTable(IArgumentTable table);
+     }
+     public interface IComputeEncoder
+     {
+-        void SetArgumentTable(IArgumentTable table);
+     }
++    public static class RenderEncoderExtensions
++    {
++        public static void SetDynamicState(this IRenderEncoder encoder, Viewport viewport, ScissorRect scissor, BlendConstant blendConstant = default, uint stencilReference = 0);
++    }
+     public sealed record GraphicsRenderStateDesc
+     {
++        public static GraphicsRenderStateDesc ForColorTargets(int colorAttachmentCount);
+     }
  }
 ```
 
-SetDynamicStateは既存setterの順に処理し、失敗した場合はそれ以前の設定を巻き戻さない。
-passの自動開始、GPU copy、barrier、submit、GPU待機は行わない。
-IGraphicDeviceは操作を借用するinterfaceとして維持し、所有者による解放をXML documentationで明示する。
+両bufferの要素範囲はSliceElementsに統一する。shader bufferのMapAsyncはraw storageのキャンセル契約を使用し、native完了後に取消を観測した場合はmappingを解放してから取消を返す。CopyFrom／CopyToの型付き要素操作はbyte操作と異なるため維持する。
 
-### Argument tableの役割
+SetDynamicStateはviewport、scissor、blend constant、stencil referenceを順に明示設定する。後続setterの失敗は先に設定した値を巻き戻さない。ForColorTargetsは指定個数の既定color stateを作り、負数は拒否する。暗黙のpass開始・copy・barrier・submit・GPU待機は追加しない。
 
-[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)のtable選択に関する決定だけを置き換える。
-SetArgumentTableは互換性のために残す現在操作の検査であり、後続の参照解決を切り替えない。
-bindingは引数に含まれるIGpuRefが保持する登録情報から生成する。
-一回のdraw/dispatchで参照する登録が同じdeviceの同じtableに属し、有効であることは利用者が保証する。
-[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)に従い、検証専用の参照再走査は追加しない。
-root引数がないpipelineへの切り替えでは以前のsnapshotを使わない。
-root引数がある別pipelineにはSetArgumentsを再度必要とし、既存の誤使用検出を維持する。
+### Argument Table
+
+[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)のtable選択契約だけを置き換える。SetArgumentTableは削除し、bindingは引数に含まれるIGpuRefが保持する登録情報から生成する。一回のdraw／dispatchの参照が同じdeviceの同じtableに属し、有効であることを利用者が保証する。[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)に従い検証専用の再走査は追加しない。
+
+root引数のないpipelineへ切り替えた場合は以前のsnapshotを使用しない。root引数のある別pipelineへはSetArgumentsを再度必要とする。
 
 ## 検討した代替案
 
-- 既存型名・メソッド名を一斉変更する: binaryと外部backendの移行が必要となるため、明示名を追加する。
-- 各passに暗黙のdynamic stateを挿入する: 初期化の有無が見えなくなるため、利用者が呼ぶ補助APIとする。
-- bufferの共通基底interfaceを作る: raw layoutとshader ABI、readback対応の違いを隠すため採用しない。
-- SetArgumentTableに登録検証を復活させる: GRAPHICS-0014の寿命・登録管理方針と矛盾する。
+- 旧interfaceと別名拡張を両方残す案は、同じ操作の入口が増えるため採用しない。
+- 暗黙の描画初期化は設定箇所が見えなくなるため、明示的なhelperとする。
+- bufferの共通基底interfaceはraw layoutとshader ABIやreadback対応の違いを隠すため作らない。
 
 ## 結果と影響
 
-既存コードを変更せず、要素単位・byte単位・shader ABIという操作意図を新規コードで明示できる。
-拡張メソッドを利用するにはAbstractions名前空間が必要になる。
-mappingキャンセルはnative完了まで返らない点をraw bufferと揃える。
-CPUのfake実装でキャンセル前後のmapping状態、範囲の単位、描画初期化を検証する。
-backendの描画設定とpipeline切り替えは別途backend契約テストで確認する。
+外部backendと利用側は新しいinterfaceへ移行する必要がある。単位・shader ABI・キャンセルの契約はAPI名と引数に表れる。範囲、mappingの取消と解放、描画初期化、backendのpipeline切り替えと未対応設定の拒否を検証する。
