@@ -1,8 +1,19 @@
 # Lumyte
 
 C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使用するゲームエンジン。
+文字組みにはRustのParleyを使い、COLR v1とMSDF/MTSDFを共通の2D描画へ接続します。
+
+ビルド・テスト・publish・packは、公式構成のFallout runnerから実行します。
+
+```sh
+dotnet run --project build -c Release -- --target Compile
+dotnet run --project build -c Release -- --target Test
+```
+
+必要なcompiler・SDKの準備は開発環境のセットアップを参照してください。
 
 - [開発環境のセットアップ](docs/development-environment.md)
+- [共通ビルド手順](build/README.md)／[ビルド工程の設計](docs/adr/0004-build-orchestration.md)
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
 - [リポジトリのフォルダ構成](docs/adr/0002-repository-layout.md)
 - [GraphicsのDI・デバイスロスト復旧](docs/adr/graphics/GRAPHICS-0016-device-di-and-loss-recovery.md)／[Hosting API](src/Graphics/Lumyte.Graphics.Hosting/README.md)
@@ -28,6 +39,7 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [Input 診断](src/Input/Lumyte.Input.Diagnostics/README.md)／[監視・Tape・マッピング編集の設計](docs/adr/input/INPUT-0004-diagnostics-and-overrides.md)
 - [コードスタイルと lint](docs/development-environment.md#コードスタイル)
 
+- [文字描画・MSDF/MTSDF](src/Graphics/Lumyte.Graphics.Text/README.md)／[Parleyによる文字組み](src/Graphics/Lumyte.Graphics.Text.Parley/README.md)／[文字描画の設計](docs/adr/graphics/GRAPHICS-0024-text-rendering.md)
 - [2D・3D共通画像エフェクトの設計](docs/adr/graphics/GRAPHICS-0017-image-effects.md)／[利用方法](src/Graphics/Lumyte.Graphics.ImageEffects/README.md)
 - 2D描画の設計
   - [基本図形・paint・描画資源](docs/adr/graphics/GRAPHICS-0018-2d-graphics-engine.md)
@@ -63,9 +75,9 @@ C# を中心に、DirectX／Vulkan の Native バックエンドに C++ を使�
 - [形式に依存しない補間・値ソースの合成](docs/adr/animation/ANIMATION-0004-format-independent-value-sources.md)
 - [アニメーションの利用例](samples/Lumyte.Animation.Sample/README.md)
 
-ソリューションは `Lumyte.slnx` を使用します。`mise exec -- dotnet test Lumyte.slnx -c Release`
-で `tests/` 内のソリューションに登録されたテストを実行できます。
-CI は Linux／Windows の x64／aarch64 で、mise セットアップ → 環境検証 → ビルド → テストの順に実行します。
+ソリューションは `Lumyte.slnx` を使用します。Falloutの`Test` targetで、
+`tests/` 内のソリューションに登録されたテストを実行します。
+CI は Linux／Windows の x64／aarch64 で、mise セットアップ後に同じFalloutの検証・ビルド・テスト工程を実行します。
 すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。
 
 - [デバイス補正・仮想デバイスの設計](docs/adr/input/INPUT-0002-processing-and-recognition.md)

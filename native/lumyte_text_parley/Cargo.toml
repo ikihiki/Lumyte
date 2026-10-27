@@ -1,0 +1,21 @@
+[package]
+name = "lumyte_text_parley"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+parley = { version = "0.12.0", default-features = false, features = ["std", "complex-scripts"] }
+skrifa = "0.44.0"
+parlance = "0.1.1"
+
+[build-dependencies]
+csbindgen = "1.9.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
