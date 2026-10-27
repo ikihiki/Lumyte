@@ -44,11 +44,11 @@ upload.Unmap();
 
 設計判断は [GRAPHICS-0002](../../../docs/adr/graphics/GRAPHICS-0002-typed-buffers.md) を参照してください。
 
-単位を名前で明示する場合は`SliceElements(elementOffset, elementCount)`、
+範囲操作は`SliceElements(elementOffset, elementCount)`、
 `CopyBytesFrom(source, byteOffset, byteLength)`、`CopyBytesTo(destination, byteOffset, byteLength)`、
-`ValidateByteRange(byteOffset, byteLength)`を使えます。既存メソッドと同じmapping・範囲条件を持ちます。
+`ValidateByteRange(byteOffset, byteLength)`へ統一します。mapping・範囲条件は各interfaceに定義します。
 shader ABIを使うbufferは`device.CreateShaderDataBuffer<T>(artifact, count, memory)`で生成でき、
-`Slice`と`SliceElements`はいずれも論理要素単位です。
+raw bufferとshader bufferの要素範囲はともに`SliceElements`で指定します。
 shader data bufferの`MapAsync(cancellationToken)`もraw bufferと同様、native mappingの完了後に
 キャンセルを確認し、成功したmappingをUnmapしてからキャンセルを返します。
 

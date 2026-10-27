@@ -171,9 +171,9 @@ public sealed class DistanceFieldText2D : IDisposable
 
         _uploaded = true;
         var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = _upload.Slice(0, _upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = _upload.SliceElements(0, _upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.Barrier(new TextureBarrierDesc { Texture = _texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.CopyDestination, Before = default, After = copyWrite });
-        commands.CopyBufferToTexture(new() { Buffer = _upload.Slice(0, _upload.Count), BytesPerRow = _pitch, RowsPerImage = _texture.Height }, new() { Texture = _texture, Width = _texture.Width, Height = _texture.Height });
+        commands.CopyBufferToTexture(new() { Buffer = _upload.SliceElements(0, _upload.Count), BytesPerRow = _pitch, RowsPerImage = _texture.Height }, new() { Texture = _texture, Width = _texture.Width, Height = _texture.Height });
         commands.Barrier(new TextureBarrierDesc { Texture = _texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopyDestination, AfterState = TextureState.Sampled, Before = copyWrite, After = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
     }
 

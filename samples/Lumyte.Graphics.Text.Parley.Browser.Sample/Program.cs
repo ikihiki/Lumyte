@@ -207,8 +207,8 @@ internal static partial class Program
             mtsdf.RecordUpload(commands);
             prepared.Record(commands);
             commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = color, After = copy });
-            commands.CopyTextureToBuffer(new() { Texture = texture, Width = Width, Height = Height }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = Height });
-            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+            commands.CopyTextureToBuffer(new() { Texture = texture, Width = Width, Height = Height }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = Height });
+            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
             commands.Finish();
             using IGraphicsSubmission submission = device.Queue.Submit([commands]);
             await submission.WaitAsync();
