@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Helpers are intentionally absent from the solution. Keep their configuration
+         aligned with this project so staging resolves the binaries actually built. -->
+    <ShouldUnsetParentConfigurationAndPlatform>false</ShouldUnsetParentConfigurationAndPlatform>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <ProjectReference Include="FakeTool/FakeTool.csproj" ReferenceOutputAssembly="false" />
+    <Compile Remove="FakeTool/**/*.cs" />
+  </ItemGroup>
+  <Target Name="CopyBuildTestExecutables" AfterTargets="Build">
+    <PropertyGroup>
+      <_LumyteBuildRunnerProject>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', '..', 'build', '_build.csproj'))</_LumyteBuildRunnerProject>
+      <_LumyteBuildRunnerArtifacts>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', 'artifacts', 'build-tests', '$(MSBuildProjectName)', '$(Configuration)'))</_LumyteBuildRunnerArtifacts>
+      <_LumyteBuildRunnerProperties>Configuration=$(Configuration);TargetFramework=net10.0;UseArtifactsOutput=true;ArtifactsPath=$(_LumyteBuildRunnerArtifacts)</_LumyteBuildRunnerProperties>
+      <_LumyteBuildRemoveProperties>OutDir;OutputPath;BaseOutputPath;IntermediateOutputPath;BaseIntermediateOutputPath;MSBuildProjectExtensionsPath</_LumyteBuildRemoveProperties>
+    </PropertyGroup>
+    <!-- An executing Fallout build supplies its assembly so the solution never
+         overwrites its loaded executable, especially on Windows. Standalone
+         test builds compile an isolated runner instead of relying on solution
+         configuration mappings for the excluded build project. -->
+    <MSBuild Projects="$(_LumyteBuildRunnerProject)" Targets="Restore;Build" BuildInParallel="false" Properties="$(_LumyteBuildRunnerProperties)" RemoveProperties="$(_LumyteBuildRemoveProperties)" Condition="'$(LUMYTE_BUILD_ASSEMBLY)' == ''" />
+    <MSBuild Projects="$(_LumyteBuildRunnerProject)" Targets="GetTargetPath" BuildInParallel="false" Properties="$(_LumyteBuildRunnerProperties)" RemoveProperties="$(_LumyteBuildRemoveProperties)" Condition="'$(LUMYTE_BUILD_ASSEMBLY)' == ''">
+      <Output TaskParameter="TargetOutputs" ItemName="_LumyteBuildRunner" />
+    </MSBuild>
+    <MSBuild Projects="FakeTool/FakeTool.csproj" Targets="GetTargetPath" BuildInParallel="false" Properties="Configuration=$(Configuration);TargetFramework=net10.0">
+      <Output TaskParameter="TargetOutputs" ItemName="_LumyteBuildFakeTool" />
+    </MSBuild>
+    <PropertyGroup>
+      <_LumyteBuildFakeToolDirectory>@(_LumyteBuildFakeTool->'%(RootDir)%(Directory)')</_LumyteBuildFakeToolDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <_LumyteBuildRunner Include="$(LUMYTE_BUILD_ASSEMBLY)" Condition="'$(LUMYTE_BUILD_ASSEMBLY)' != ''" />
+      <_LumyteBuildFakeToolFiles Include="$(_LumyteBuildFakeToolDirectory)*" />
+    </ItemGroup>
+    <Error Condition="!Exists('@(_LumyteBuildRunner)')" Text="The Fallout build test runner was not built at @(_LumyteBuildRunner)." />
+    <Error Condition="'@(_LumyteBuildFakeToolFiles)' == ''" Text="The Fallout build test fixture was not built in $(_LumyteBuildFakeToolDirectory)." />
+    <WriteLinesToFile File="$(OutDir)runner-path.txt" Lines="@(_LumyteBuildRunner->'%(FullPath)')" Overwrite="true" />
+    <Copy SourceFiles="@(_LumyteBuildFakeToolFiles)" DestinationFolder="$(OutDir)fake-tool" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

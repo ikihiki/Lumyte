@@ -73,6 +73,8 @@ CPUのPaintGraph2D factoryは深さ128・展開node65536を上限とする。標
 
 3点linearの分母0、同心同半径radial、0角度sweep、幅0のRepeat/Reflectは基本描画ADRと同じNotSupportedExceptionとする。COLRv1を表現できるモデルと、全てのfont入力に対する参照実装との一致は区別する。現行検証は合成fixtureと距離場fixtureであり、font adapterと実fontの網羅的な参照画像比較は本PRに含めない。
 
+退化gradient・空のColorLine・符号付きradial半径と共有DAGの展開規則は、[GRAPHICS-0024](GRAPHICS-0024-text-rendering.md#colrのための2d-paint拡張)で実fontのCOLR対応へ拡張する。同ADRでは本ADRの`DrawDistanceField`を維持し、MTSDFのalphaも利用する`PaintGraph2D.DistanceField`と、Parleyの文字組み・COLR adapterを追加する。
+
 ## 検討した代替案
 
 | 代替案 | 採用しない理由 |
