@@ -9,7 +9,7 @@ services.AddAudioResources();
 services.AddResources(r => r.UseSource<MyAudioSource>().AddAudioPipeline());
 ```
 
-無引数のAddAudioResourcesはAudioModuleとAudioResourceRuntimeだけをsingleton登録します。
+無引数のAddAudioResourcesはAudioModuleとAudioResourceRuntimeをsingleton登録し、AudioModule.Devicesと同じIAudioDeviceServiceを解決できるようにします。
 共通のAddResourcesが汎用ResourceRuntime、ExecutionRuntimeと、一つの名前なしsingleton ResourceManagerを登録します。
 同じmodule実体をIExecutionModuleへ接続し、SourceとStageもsingleton Managerの寿命で解決します。scopeや名前でManagerを選び分けません。
 

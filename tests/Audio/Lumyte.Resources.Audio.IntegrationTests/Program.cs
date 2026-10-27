@@ -55,7 +55,7 @@ internal static class Program
         else
         {
             runtime = new ResourceRuntime();
-            bridge = new AudioResourceRuntime(audio, runtime);
+            bridge = new AudioResourceRuntime(audio.Devices, runtime);
             execution = new ExecutionRuntime([audio, bridge, runtime]);
             manager = new ResourceManager(
                 "audio",
@@ -107,6 +107,7 @@ internal static class Program
             {
                 CreationScenario.Run(audio, runtime, bridge, factory, Wait);
                 ApiScenario.Run(audio, runtime, bridge, factory, Wait);
+                DeviceScenario.Run(audio.Devices, factory, Wait);
             }
 
             VoiceScenario.Run(audio, manager, source, host, args.Contains("--reload", StringComparer.Ordinal), Wait);
@@ -146,7 +147,7 @@ internal static class Program
             }
 
             Wait(execution.StopAsync().AsTask());
-            Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}, owner={audio.Commands.OwnerThreadId}");
+            Console.WriteLine($"Resource audio runtime passed: host={host}, di={di}");
         }
         finally
         {

@@ -94,7 +94,7 @@ internal static class ApiScenario
             wait(memory.DisposeAsync().AsTask());
         }
 
-        var other = new AudioResourceRuntime(audio, executor);
+        var other = new AudioResourceRuntime(audio.Devices, executor);
         var invalidMemory = new MemoryManager();
         var invalidManager = new ResourceManager("audio-api-wrong-runtime", new UnusedSource(), [new GenerationStage(other)], invalidMemory, executor, stageRuntimes: [new(typeof(AudioDeviceSnapshot), runtime)]);
         try
@@ -117,9 +117,10 @@ internal static class ApiScenario
 
     private static void DefaultVoiceBus(AudioModule audio, TestFactory factory, Action<Task> wait)
     {
-        Task<IAudioClip> create = audio.Commands.CreateClipAsync(new(48000, 1), new float[48]).AsTask();
+        using AudioDeviceLease lease = DeviceScenario.Acquire(audio.Devices, wait);
+        Task<AudioClip> create = lease.Device.CreateClipAsync(new(48000, 1), new float[48]).AsTask();
         wait(create);
-        var clip = new AudioClip(create.Result);
+        AudioClip clip = create.Result;
         try
         {
             Task<AudioVoice> voice = clip.CreateVoiceAsync().AsTask();

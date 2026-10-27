@@ -6,52 +6,70 @@
 
 ## 背景
 
-AudioModule.Stateは操作用senderを返す一方、Devices.Stateは状態のsnapshotを返す。同じStateという名前から役割を予測しにくい。GraphicsのResourceRuntimeは選択済みruntimeから世代を取得できるが、Audioの独自stageはdevice serviceを別途受け取る必要がある。復旧の要求がReadyへ遅れて到着した場合も、Audioだけが例外になる。
+AudioModuleの操作窓口とAudioVoiceの操作で呼び出し方が異なり、モジュール、世代サービス、実際のdeviceの責務を判別しにくい。Graphicsではserviceからleaseを取得し、そのDeviceを操作する。Audioのleaseは所有スレッド限定のbackendを返しており、そのまま呼ぶとスレッド制約にも違反する。
 
 ## 決定
 
-操作はCommands、状態はDevices.Stateから取得する。旧Stateプロパティは削除し、Commandsに統一する。AudioClipのbus省略はbackendと同じEffectsにする。
+Audioも`IAudioDeviceService.AcquireAsync` → `AudioDeviceLease.Device` → device操作の形に揃える。Deviceは取得した正確な物理世代へ配送するAudioDeviceであり、復旧後の現在deviceへ追随しない。AudioModuleは起動・更新・停止と安定したDevices serviceの提供を担当し、State／Commandsの操作窓口を公開しない。内部のライフサイクルcommandと公開deviceの操作を分離する。
 
-RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や状態変更をせず、そのsnapshotを返す。同時要求は従来どおり一つのoperationを共有する。Lost／Failedなら復旧し、生成途中の取消は呼び出し側の待機だけを取り消す。取消済み要求はReadyでも取消を返す。ownerでの確認後に起きたロストまでsnapshotの利用可能性を保証しない。
+AudioDevice、AudioClip、AudioVoiceはいずれも参照一本のreadonly struct senderとする。公開deviceはleaseを参照し、返却後の取得や操作はObjectDisposedException、失効した世代への生成・設定はAudioDeviceUnavailableExceptionで拒否する。実行前にも所有スレッドでleaseと世代を検証する。コピーはleaseを追加取得しない。voice → clipの解放を完了してからleaseを返す。RefreshAsyncは保持した世代だけを更新し、旧世代の失効後は新世代を操作しない。
 
-独自stageはAudioResourceRuntime.AcquireAsyncを使い、選択されたruntimeと同じdevice serviceのleaseをbuild contextへ登録する。別runtimeのcontextは取得前に拒否する。leaseを返すのはManagerであり、native操作の所有スレッド制約は変わらない。
+```csharp
+IAudioDeviceService service = audioModule.Devices;
+using AudioDeviceLease lease = await service.AcquireAsync();
+AudioDevice device = lease.Device;
+AudioClip clip = await device.CreateClipAsync(format, pcm);
+AudioVoice voice = await clip.CreateVoiceAsync();
+await voice.PlayAsync();
+await voice.DestroyAsync();
+await clip.DestroyClipAsync();
+```
 
-このADRは置換元のAPI入口とReady時の復旧契約を変更する。配送、clip／voiceの所有権、起動・停止、世代失効とcleanupの判断は置換元を引き継ぐ。
+AudioResourceRuntimeもAudioModuleではなくIAudioDeviceServiceを受け取り、GraphicsResourceRuntimeと同じくservice経由で世代を取得する。AddAudioResourcesはAudioModuleと同じservice実体をDIへ登録する。Resourcesの独自stageはruntime.AcquireAsyncを使い、選択されたruntimeと同じserviceのleaseをbuild contextへ登録する。別runtimeのcontextは取得前に拒否する。
 
-復旧開始のcommandもBeginRecoveryAsyncへ一本化し、Readyなら現在snapshot、それ以外は復旧を開始してnullを返す。旧void版と互換用のBeginRecoveryIfNeededは残さない。
+Resources向けの生成後検証は、deviceのCreateClipWithValidationAsyncでnative生成と同じowner command内で行う。検証例外を候補clipとともに返し、Resourcesがcleanupを登録してから元の例外を再送出する。これにより周期更新が先に障害を観測する競合を防ぎ、解放に失敗した候補と正確な世代をcleanup再試行まで保持する。serviceからの取得と生成は別commandだが、生成は取得済みleaseの世代を検証するため復旧先へ切り替わらない。
+
+RecoverAsyncはowner上で出力状態を確認し、Readyなら生成・通知を増やさず現在のsnapshotを返す。同時復旧は一つのoperationを共有し、取消は呼び出し側の待機だけを止める。復旧開始の内部commandもBeginRecoveryAsyncに一本化する。AudioClipのbus省略はEffectsとし、生成senderの公開名はAsyncのみとする。
 
 ### 公開API
 
-比較元はmainの`16d856a`。以下は変更対象の抜粋。
+比較元はmainの`16d856a`。変更対象の抜粋。生成senderの宣言は代表的なAsync入口を示す。
 
 ```diff
  namespace Lumyte.Audio.Execution
  {
      public sealed class AudioModule
      {
-+        // 操作用sender。Devices.Stateのsnapshotとは区別する。
-+        public AudioDevice Commands { get; }
 -        public AudioDevice State { get; }
+         public IAudioDeviceService Devices { get; }
+     }
+     public sealed class AudioDeviceLease
+     {
+-        public IAudioDevice Device { get; }
++        // 所有スレッドへ配送する、取得済み世代の窓口。返却・失効後は取得を拒否する。
++        public AudioDevice Device { get; }
+     }
+     public readonly partial struct AudioDevice
+     {
++        // backendではなくAudioDeviceLease.Deviceから取得する。
++        public ValueTask<AudioClip> CreateClipAsync(AudioFormat format, ReadOnlyMemory<float> samples, CancellationToken cancellationToken = default);
++        // 生成後検証の失敗でもclipを返す。呼び出し側はcleanup責任を確保してから例外を扱う。
++        public ValueTask<(AudioClip Clip, Exception? ValidationError)> CreateClipWithValidationAsync(AudioFormat format, ReadOnlyMemory<float> samples, CancellationToken cancellationToken = default);
++        public ValueTask<Unit> SetBusGainAsync(AudioBus bus, float gain, CancellationToken cancellationToken = default);
++        public ValueTask<Unit> RefreshAsync(CancellationToken cancellationToken = default);
      }
 +    public static class AudioClipExtensions
 +    {
-+        // Effectsへ配送する拡張メソッド。明示的なbusを受け取るinstance methodへ配送する。
-+        // Async命名からもbusを省略できる。同じAsync senderへ配送する。
++        // Effectsへ配送する。明示的なbus指定と同じAsync senderを使う。
 +        public static ValueTask<AudioVoice> CreateVoiceAsync(this AudioClip clip, CancellationToken cancellationToken = default);
 +    }
-     public interface IAudioDeviceService
-     {
-         // Readyではownerが確認したsnapshotを返す。Lost／Failedでは共有operationで復旧する。
-         // cancellationTokenはこの呼び出しの待機を取り消し、開始済み生成は継続する。
-         ValueTask<AudioDeviceSnapshot> RecoverAsync(CancellationToken cancellationToken = default);
-     }
  }
  namespace Lumyte.Resources.Audio
  {
      public sealed class AudioResourceRuntime
      {
-+        // 選択済みruntimeから取得したleaseをcontextへ渡す。違うcontext.RuntimeはInvalidOperationException。
-+        // lifetimeの既定はResident。native解放後にManagerがleaseを返す。
+-        public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime);
++        public AudioResourceRuntime(IAudioDeviceService devices, IResourceRuntime defaultRuntime);
 +        public ValueTask<AudioDeviceLease> AcquireAsync(ResourceBuildContext context, ResourceDependencyLifetime lifetime = ResourceDependencyLifetime.Resident, CancellationToken cancellationToken = default);
      }
  }
@@ -59,12 +77,13 @@ RecoverAsyncはowner上で出力状態を確認し、Readyなら新規生成や�
 
 ## 検討した代替案
 
-- Stateを互換入口として残す: 同じsenderに複数の名前が生じるため採用しない。利用側をCommandsへ移行する。
-- Ready判定を呼び出し側で行う: 判定とownerでの実行の間に状態が変わるため、service側で判定する。
-- 全device serviceに同じ初期化・破棄APIを追加する: GraphicsのscopeとAudioのExecutionModuleでは所有者が異なる。共通の役割だけを揃える。
+- AudioModule.StateをCommandsへ改名するだけ: 状態との混同は解消するが、Graphicsと異なる取得経路と世代を暗黙選択する操作窓口が残るため採用しない。
+- lease.Deviceからbackendを返し続ける: 通常の利用者が所有スレッド限定のAPIを直接呼べてしまうため採用しない。
+- 生成と生成後検証を別commandへ分ける: 周期更新が間に入り、検証時の元の例外や候補の解放責任を失う可能性があるため採用しない。
+- serviceにモジュールの起動・停止も揃える: GraphicsとAudioでは物理deviceの所有者が異なる。共有する取得と世代管理の契約を揃え、Audioの起動・停止はExecutionModuleに残す。
 
 ## 結果と影響
 
-既存の明示的bus指定、State利用、ResourcesのUseAudioAsyncは引き続き動作する。新規コードはCommandsとruntime.AcquireAsyncを選べる。生成器の命名規則は変更せず、この変更だけで利用できる。
+service → lease → device、device → clip → voiceの形で操作対象と寿命を明示できる。Module.State／Commands、deviceのライフサイクルsender、CreateClipWithLease／CreateClipForLeaseの旧入口は残さず、利用側を移行する。Resourcesの生成には世代取得と生成検証の二回のowner配送が必要になる。
 
-検証ではReady時の再要求、同時復旧、取消後も共有復旧が完了すること、取得した世代の失効とManagerによるlease返却、bus省略時のEffects配送を確認する。HostとDedicatedの両方で実行する。
+検証ではHost／Dedicated、DIあり／なしでdevice解決、キャンセル、旧世代の拒否、返却後の拒否、復旧、clip・voiceの生成・解放と保持世代のretirementを確認する。Resourcesの生成後検証例外、native解放失敗とcleanup再試行も維持する。

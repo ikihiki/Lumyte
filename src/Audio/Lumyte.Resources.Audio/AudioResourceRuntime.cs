@@ -9,14 +9,14 @@ namespace Lumyte.Resources.Audio;
 /// <remarks>The audio module owns physical device generations. This module declares its required startup dependency.</remarks>
 public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, IResourceRuntimeDependency
 {
-    private readonly AudioModule _audio;
+    private readonly IAudioDeviceService _devices;
 
     /// <summary>Initializes a new instance of the <see cref="AudioResourceRuntime"/> class.</summary>
-    /// <param name="audio">The same audio module collected by the execution runtime.</param>
+    /// <param name="devices">The stable service provided by the registered audio module.</param>
     /// <param name="defaultRuntime">The shared environment supplying stage execution and continuations.</param>
-    public AudioResourceRuntime(AudioModule audio, IResourceRuntime defaultRuntime)
+    public AudioResourceRuntime(IAudioDeviceService devices, IResourceRuntime defaultRuntime)
     {
-        _audio = audio;
+        _devices = devices;
         Executor = defaultRuntime.Executor;
         Dependencies = [this];
     }
@@ -24,8 +24,8 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <inheritdoc/>
     public event EventHandler? Changed
     {
-        add => _audio.Devices.StateChanged += value;
-        remove => _audio.Devices.StateChanged -= value;
+        add => _devices.StateChanged += value;
+        remove => _devices.StateChanged -= value;
     }
 
     /// <inheritdoc/>
@@ -41,14 +41,14 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     public string Id => "Audio";
 
     /// <inheritdoc/>
-    public object Identity => _audio.Devices;
+    public object Identity => _devices;
 
     /// <inheritdoc/>
     public ResourceRuntimeSnapshot Snapshot
     {
         get
         {
-            AudioDeviceSnapshot state = _audio.Devices.State;
+            AudioDeviceSnapshot state = _devices.State;
             return new(state.Version, state.Status == AudioDeviceServiceStatus.Ready, state.InvalidatedThroughVersion);
         }
     }
@@ -65,7 +65,7 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
             throw new InvalidOperationException("Use the audio runtime selected for this stage.");
         }
 
-        return context.UseAudioAsync(_audio.Devices, Id, lifetime, cancellationToken);
+        return context.UseAudioAsync(_devices, Id, lifetime, cancellationToken);
     }
 
     /// <summary>Creates a fully initialized clip on the audio owner.</summary>
@@ -75,7 +75,21 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <returns>A sender wrapping the fully created backend clip, never a placeholder.</returns>
     public async ValueTask<AudioClip> CreateClipAsync(AudioPcmData data, ResourceBuildContext context, CancellationToken cancellationToken = default)
     {
-        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = await _audio.Commands.CreateClipWithLeaseAsync(data.Format, data.Samples, cancellationToken);
+        AudioDeviceLease lease = await _devices.AcquireAsync(cancellationToken);
+        AudioDevice device;
+        AudioClip clip;
+        Exception? validationError;
+        try
+        {
+            device = lease.Device;
+            (clip, validationError) = await device.CreateClipWithValidationAsync(data.Format, data.Samples, cancellationToken);
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+
         var pending = new PendingCreation(lease, clip);
         try
         {
@@ -95,14 +109,21 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
             throw;
         }
 
+        // Register native cleanup before observing validation failure: a failed query must not
+        // lose the newly created clip or return its generation before cleanup succeeds.
         if (validationError is not null)
         {
             ExceptionDispatchInfo.Throw(validationError);
         }
 
-        context.TrackRuntimeDependency(Id, lease.State.Version, ResourceDependencyLifetime.Resident, _audio.Devices);
+        if (!lease.IsUsable)
+        {
+            throw new AudioDeviceUnavailableException();
+        }
+
+        context.TrackRuntimeDependency(Id, lease.State.Version, ResourceDependencyLifetime.Resident, _devices);
         pending.Transfer();
-        return new(clip);
+        return clip;
     }
 
     /// <summary>Destroys a clip through its original backend instance on the audio owner.</summary>
@@ -128,17 +149,17 @@ public sealed class AudioResourceRuntime : IResourceRuntime, IExecutionModule, I
     /// <inheritdoc/>
     public ValueTask StopAsync(ModuleContext context) => ValueTask.CompletedTask;
 
-    private sealed class PendingCreation(AudioDeviceLease lease, IAudioClip resource)
+    private sealed class PendingCreation(AudioDeviceLease lease, AudioClip resource)
     {
-        private IAudioClip? _resource = resource;
+        private AudioClip? _resource = resource;
 
         internal void Transfer() => _resource = null;
 
         internal async ValueTask DisposeAsync()
         {
-            if (_resource is IAudioClip clip)
+            if (_resource is AudioClip clip)
             {
-                await new AudioClip(clip).DestroyClipAsync();
+                await clip.DestroyClipAsync();
             }
 
             _resource = null;

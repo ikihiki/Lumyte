@@ -39,7 +39,7 @@ PCMはclipへのコピー完了までBuild依存として保持します。供�
 圧縮形式・ストリーミング・巨大ファイルのチャンク分割は独自Stageで追加します。
 
 AudioResourceRuntimeはAudioModuleにDependsOnを宣言し、起動完了後に利用可能になります。
-RuntimeはAudioModule.Devicesの世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
+RuntimeはIAudioDeviceServiceを受け取り、世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
 生成結果と正確なdevice leaseを受け取り、世代検証前に候補の解放責任をcontextへ渡します。
 検証失敗時はnative候補を解放してからleaseを返し、native解放に失敗した場合は両方を保持してTrimで再試行します。
 独自Stageは選択済みの`AudioResourceRuntime.AcquireAsync(context, cancellationToken: cancellationToken)`から世代を取得できます。取得した正確な世代を依存として記録し、deviceのleaseをcontextへ直接渡します。返されたleaseはManagerがnative解放後に返すため、StageからDisposeしません。別Runtimeのcontextは取得前に拒否します。低水準の`UseAudioAsync`も引き続き利用できます。
@@ -61,7 +61,7 @@ ManagerはAudioResourceRuntime.Dependenciesからdevice世代の依存先を収�
 ```csharp
 var audio = new AudioModule();
 var runtime = new ResourceRuntime();
-var audioResources = new AudioResourceRuntime(audio, runtime);
+var audioResources = new AudioResourceRuntime(audio.Devices, runtime);
 var execution = new ExecutionRuntime([audio, audioResources, runtime]);
 var resources = new ResourceManager("audio", source,
     [new AudioDecodeStage(), new AudioClipStage()],

@@ -16,6 +16,7 @@ public static class AudioResourceServiceCollectionExtensions
     public static IServiceCollection AddAudioResources(this IServiceCollection services)
     {
         AddModule<AudioModule>(services);
+        services.TryAddSingleton<IAudioDeviceService>(static provider => provider.GetRequiredService<AudioModule>().Devices);
         AddModule<AudioResourceRuntime>(services);
         return services;
     }

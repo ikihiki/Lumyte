@@ -3,62 +3,31 @@ using Lumyte.Execution;
 
 namespace Lumyte.Audio.Execution;
 
-/// <summary>A one-reference device sender with owner-driven lifecycle and updates.</summary>
+/// <summary>Sends operations to the exact device generation retained by a service lease.</summary>
+/// <remarks>Keep the lease until all clips and voices have been destroyed. Copies do not retain it.</remarks>
 public readonly partial struct AudioDevice
 {
-    private readonly AudioDeviceState _original;
+    private readonly AudioDeviceLease _lease;
 
-    internal AudioDevice(AudioDeviceState original)
+    internal AudioDevice(AudioDeviceLease lease)
     {
-        _original = original;
+        _lease = lease;
     }
 
-    /// <summary>Gets the thread which started backend creation.</summary>
-    public int OwnerThreadId => _original.OwnerThreadId;
-
-    internal IAudioDeviceService Devices => _original;
-
-    internal Task RecoveryCompletion => _original.RecoveryCompletion;
-
-    internal Task<IAudioDevice>? PendingCreation => _original.PendingCreation;
-
-    [ExecutionCommand(AllowAwaitableResult = true)]
-    private Task<IAudioDevice> BeginCreateCore() => _original.BeginCreate(false);
+    /// <summary>Gets the owning thread of this device generation.</summary>
+    public int OwnerThreadId => _lease.OwnerThreadId;
 
     [ExecutionCommand]
-    private AudioDeviceSnapshot? BeginRecoveryCore() => _original.BeginRecovery();
+    private AudioClip CreateClipCore(AudioFormat format, ReadOnlyMemory<float> samples)
+        => _lease.CreateClip(format, samples);
 
     [ExecutionCommand]
-    private AudioDeviceSnapshot CompleteCreateCore() => _original.CompleteCreate();
+    private (AudioClip Clip, Exception? ValidationError) CreateClipWithValidationCore(AudioFormat format, ReadOnlyMemory<float> samples)
+        => _lease.CreateClipWithValidation(format, samples);
 
     [ExecutionCommand]
-    private AudioDeviceLease AcquireLeaseCore() => _original.AcquireLease();
+    private void SetBusGainCore(AudioBus bus, float gain) => _lease.SetBusGain(bus, gain);
 
     [ExecutionCommand]
-    private int RetireCore() => _original.Retire();
-
-    [ExecutionCommand]
-    private void BeginCloseCore() => _original.BeginClose();
-
-    [ExecutionCommand]
-    private IAudioClip CreateClipCore(AudioFormat format, ReadOnlyMemory<float> samples) => _original.CreateClip(format, samples);
-
-    [ExecutionCommand]
-    private IAudioClip CreateClipForLeaseCore(AudioDeviceLease lease, AudioFormat format, ReadOnlyMemory<float> samples) => _original.CreateClipForLease(lease, format, samples);
-
-    [ExecutionCommand]
-    private (AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError) CreateClipWithLeaseCore(AudioFormat format, ReadOnlyMemory<float> samples)
-        => _original.CreateClipWithLease(format, samples);
-
-    [ExecutionCommand]
-    private void SetBusGainCore(AudioBus bus, float gain) => _original.SetBusGain(bus, gain);
-
-    [ExecutionCommand]
-    private void RefreshCore() => _original.Refresh();
-
-    [ExecutionUpdate]
-    private void Update(in UpdateTick tick) => _original.Update(in tick);
-
-    [ExecutionCommand]
-    private void CloseCore() => _original.Close();
+    private void RefreshCore() => _lease.Refresh();
 }
