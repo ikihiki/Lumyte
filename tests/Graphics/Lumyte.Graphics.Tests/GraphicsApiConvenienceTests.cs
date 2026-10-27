@@ -261,8 +261,6 @@ public sealed class GraphicsApiConvenienceTests
             SetterCalls++;
         }
 
-        public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();
-
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments => throw new NotSupportedException();
 
