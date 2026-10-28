@@ -2,7 +2,7 @@
 
 - 状態: 提案
 - 日付: 2026-10-26
-- 更新: 2026-10-27
+- 更新: 2026-10-28
 
 ## 背景
 
@@ -14,7 +14,7 @@
 
 ### 構築と依存方向
 
-`src/UI/Lumyte.UI`に.NET 10のmanagedライブラリを置く。assembly・名前空間・NuGet名は`Lumyte.UI`とし、実行時の直接依存はComposition、Input.Abstractions、Graphics.Drawing2Dに限定する。GeneratorはAnalyzer参照する。UIからPlatform、Windowing管理、InputSystem、RenderGraph、Resources、Animation、DI、Diagnosticsへ直接依存しない。
+`src/UI/Lumyte.UI`に.NET 10のmanagedライブラリを置く。assembly・名前空間・NuGet名は`Lumyte.UI`とし、実行時の直接依存はComposition、Input.Abstractions、Graphics.Drawing2Dに限定する。GeneratorはAnalyzer参照する。UI本体からPlatform、Windowing管理、InputSystem、RenderGraph、Resources、Animation、DI、Diagnosticsへ直接依存しない。任意の統合層がWindow managerを注入して利用し、UiSurfaceやWidgetに具象Windowの生成・管理を組み込まない。
 
 [COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md)の生成ファクトリ、with、子インデクサー、名前付きスロットを使う。UIは保持型Widgetツリーと値を所有し、毎frameの再生成・自動reconciliationは行わない。CompositionへUI保存領域や寿命管理を追加しない。
 
@@ -39,7 +39,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 3 | UI-0004 | 矩形、描画記録、clip、直接描画サンプル | PR 2 |
 | 4 | UI-0005・COMPOSITION-0002 | hit test、capture、callbackパラメーターと生成対応 | PR 3 |
 | 5 | UI-0006 | focus、Tab、キー押下、入力競合 | PR 4 |
-| 6 | UI-0007 | Window/Input接続、Hosted、DPI、環境検証 | PR 3・5 |
+| 6 | UI-0007・INPUT-0007 | 取得元Window付きInput、source順序、Window/Input接続、Hosted、DPI | PR 3・5 |
 | 7 | UI-0008 | 親RenderGraph、Resources、device世代の接続 | PR 3・6 |
 
 描画とhit testは同じBounds・座標・clip規則を使うため、PR 3で幾何走査を確定し、PR 4はそれを前提にする。全公開APIを先にstubで追加せず、動作が完成するPRで段階的に公開する。
@@ -48,11 +48,11 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 
 以下は全体の要約であり、詳細は対応ADRを正本とする。後続ADRは共通契約を参照し、その範囲で追加・変更する条件を記載する。
 
-ツリーは参照同一性を保つ単一親・単一surface・非循環の構造とする。所有権、作成スレッド、実行phase、破棄はUI-0002で定義する。WindowとGPU資源はホストが所有する。
+ツリーは参照同一性を保つ単一親・単一surface・非循環の構造とする。所有権、作成スレッド、実行phase、破棄はUI-0002で定義する。UI本体はWindowとGPU資源を所有せず、ホストと任意の統合層がその寿命を管理する。
 
 レイアウトはFlutter型の「制約を子へ渡す→子がサイズを返す→親が位置を決める」方式とする。一回の子layout、制約、公開Size/Bounds、拡張境界はUI-0003で定義する。描画とhit testは共通の幾何を使う。
 
-UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ集約し、PixelScale、Hosted原点・clip、入力座標の契約はUI-0007で定義する。
+UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ集約し、PixelScale、Hosted原点・clip、入力座標の契約はUI-0007で定義する。取得時に確定したInputWindowIdをINPUT-0007で保持し、後から決まるUI上の配送先Windowと分ける。
 
 各詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
 
@@ -60,7 +60,7 @@ UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ�
 
 - 全機能を一つのADR・実装PRへまとめると、親子関係からGPU接続までレビュー範囲が広がるため、主要な判断ごとに分割する。
 - 即時モードUIはCompositionの毎回新規生成に加えて状態照合が必要になるため、初期は保持型とする。
-- UIがWindow、入力pump、GPU実行を所有すると既存のホスト構成と寿命管理が重複するため、接続を利用側へ置く。
+- UI本体がWindow、入力pump、GPU実行を所有すると既存ホストの寿命管理と重複するため、接続は任意の統合層に置き、Window managerは利用側から注入する。
 
 ## 結果と影響
 
