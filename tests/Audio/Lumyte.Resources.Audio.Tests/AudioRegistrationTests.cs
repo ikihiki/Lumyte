@@ -17,6 +17,7 @@ public sealed class AudioRegistrationTests
     [Fact]
     public void AudioSendersContainOneReference()
     {
+        Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioDevice>());
         Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioClip>());
         Assert.Equal(IntPtr.Size, Unsafe.SizeOf<AudioVoice>());
     }
@@ -26,7 +27,7 @@ public sealed class AudioRegistrationTests
     public void MissingAudioModuleIsRejected()
     {
         var runtime = new ResourceRuntime();
-        var audioEnvironment = new AudioResourceRuntime(new AudioModule(), runtime);
+        var audioEnvironment = new AudioResourceRuntime(new AudioModule().Devices, runtime);
         Assert.Throws<ArgumentException>(() => new ExecutionRuntime([runtime, audioEnvironment]));
     }
 
@@ -51,6 +52,7 @@ public sealed class AudioRegistrationTests
         Assert.Same(runtime, Assert.Single(modules.OfType<ResourceRuntime>()));
         Assert.Same(runtime, provider.GetRequiredService<IResourceRuntime>());
         Assert.Same(runtime.Executor, audioEnvironment.Executor);
+        Assert.Same(provider.GetRequiredService<AudioModule>().Devices, provider.GetRequiredService<IAudioDeviceService>());
         Assert.Same(audioEnvironment, Assert.Single(audioEnvironment.Dependencies));
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
         ResourceManager manager = provider.GetRequiredService<ResourceManager>();

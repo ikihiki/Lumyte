@@ -20,14 +20,14 @@ internal static class RecoveryScenario
         try
         {
             oldDevice.SetOutput(AudioOutputState.Suspended);
-            wait(audio.State.RefreshAsync().AsTask());
+            DeviceScenario.Refresh(audio.Devices, wait);
             Require(audio.Devices.State == initial && old.IsUsable, "Suspension invalidated the device generation.");
             oldDevice.SetOutput(AudioOutputState.Running);
-            wait(audio.State.RefreshAsync().AsTask());
+            DeviceScenario.Refresh(audio.Devices, wait);
             Require(audio.Devices.State == initial, "Resuming output changed the device generation.");
 
             oldDevice.SetOutput(AudioOutputState.Unavailable);
-            wait(audio.State.RefreshAsync().AsTask());
+            DeviceScenario.Refresh(audio.Devices, wait);
             AudioDeviceSnapshot lost = audio.Devices.State;
             Require(lost.Status == AudioDeviceServiceStatus.Lost && lost.InvalidatedThroughVersion >= initial.Version, "Device loss did not invalidate the Ready version.");
             Require(!old.IsUsable && execution.Status == ExecutionStatus.Running, "Loss did not remain local to the Audio device.");
@@ -54,7 +54,7 @@ internal static class RecoveryScenario
             {
                 Require(currentVoice.State == AudioPlaybackState.Stopped, "Recovery unexpectedly restarted playback.");
                 wait(currentVoice.PlayAsync().AsTask());
-                wait(audio.State.RefreshAsync().AsTask());
+                DeviceScenario.Refresh(audio.Devices, wait);
                 Require(currentVoice.State == AudioPlaybackState.Playing, "Rebuilt voice could not play on the new device.");
 
                 Task<int> retained = audio.Devices.RetireAsync().AsTask();
@@ -95,7 +95,7 @@ internal static class RecoveryScenario
     internal static void StopDuringRecovery(AudioModule audio, ExecutionRuntime execution, TestFactory factory, Action<Task> wait)
     {
         factory.Current.SetOutput(AudioOutputState.Unavailable);
-        wait(audio.State.RefreshAsync().AsTask());
+        DeviceScenario.Refresh(audio.Devices, wait);
         PendingDeviceCreation pending = factory.DelayNextCreation();
         Task<AudioDeviceSnapshot> recovery = audio.Devices.RecoverAsync().AsTask();
         Task<AudioDeviceSnapshot> shared = audio.Devices.RecoverAsync().AsTask();
@@ -160,8 +160,10 @@ internal static class RecoveryScenario
 
     internal static void RetryCapacityFailure(AudioModule audio, ExecutionRuntime execution, TestFactory factory, Action<Task> wait, Action<Func<bool>> pumpUntil)
     {
+        using AudioDeviceLease lease = DeviceScenario.Acquire(audio.Devices, wait);
+        AudioDevice device = lease.Device;
         factory.Current.SetOutput(AudioOutputState.Unavailable);
-        wait(audio.State.RefreshAsync().AsTask());
+        DeviceScenario.Refresh(audio.Devices, wait);
         PendingDeviceCreation pending = factory.DelayNextCreation();
         Task<AudioDeviceSnapshot> recovery = audio.Devices.RecoverAsync().AsTask();
         wait(pending.Started.Task);
@@ -173,7 +175,7 @@ internal static class RecoveryScenario
         {
             while (accepted < retained.Length)
             {
-                ValueTask<Unit> command = audio.State.RefreshAsync();
+                ValueTask<Unit> command = device.RefreshAsync();
                 if (command.IsFaulted)
                 {
                     try
@@ -210,6 +212,7 @@ internal static class RecoveryScenario
         wait(audio.Devices.RecoverAsync().AsTask());
         Require(factory.CreationCount == creations && ReferenceEquals(factory.Current, candidate) && !candidate.IsDisposed, "Retry replaced or leaked the already created recovery candidate.");
         Require(audio.Devices.State.Status == AudioDeviceServiceStatus.Ready && execution.Status == ExecutionStatus.Running, "Capacity retry did not restore the audio device.");
+        lease.Dispose();
         wait(audio.Devices.RetireAsync().AsTask());
         Console.WriteLine("Resource audio recovery capacity passed: retained candidate and retried completion without another factory call.");
     }

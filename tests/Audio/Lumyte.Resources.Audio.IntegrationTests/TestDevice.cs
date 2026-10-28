@@ -40,6 +40,8 @@ internal sealed class TestDevice : IAudioDevice
 
     internal int ReturnedClips => Volatile.Read(ref _returnedClips);
 
+    internal AudioBus LastVoiceBus { get; private set; }
+
     public void Invalidate()
     {
         Verify();
@@ -102,6 +104,7 @@ internal sealed class TestDevice : IAudioDevice
         }
 
         original.Borrowers++;
+        LastVoiceBus = bus;
         _voices++;
         var voice = new TestVoice(this, original);
         _activeVoices.Add(voice);

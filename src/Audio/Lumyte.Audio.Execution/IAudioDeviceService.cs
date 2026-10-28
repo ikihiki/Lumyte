@@ -14,7 +14,7 @@ public interface IAudioDeviceService
     /// <returns>A lease retaining the exact device generation.</returns>
     ValueTask<AudioDeviceLease> AcquireAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Recreates a lost or failed device; concurrent callers share creation.</summary>
+    /// <summary>Returns the current Ready snapshot after checking output on the owner, or recreates a lost or failed device; concurrent callers share the operation.</summary>
     /// <param name="cancellationToken">Cancels this caller's wait without abandoning creation.</param>
     /// <returns>The new available generation.</returns>
     ValueTask<AudioDeviceSnapshot> RecoverAsync(CancellationToken cancellationToken = default);

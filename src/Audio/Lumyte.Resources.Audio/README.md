@@ -14,7 +14,7 @@ AudioClipStageは`IResourceTransform<AudioPcmData, AudioClip, AudioResourceRunti
 Stageは無引数で作れ、キャストは不要です。環境型の不一致はManager構築時に検出します。
 
 voiceは共有リソースではなく、再生ごとに呼び出し側が生成・制御・解放します。
-`AudioClip.CreateVoice(AudioBus.Effects)`は生成完了を待ってAudioVoiceを直接返します。
+`AudioClip.CreateVoiceAsync(AudioBus.Effects)`は生成完了を待ってAudioVoiceを直接返します。
 同じclipから複数の独立したvoiceを作れ、それぞれ再生位置・Gain・Loopを持ちます。
 voiceやラッパーのコピーはclipのleaseを取得しません。呼び出し側は**全voiceのDestroy完了まで`ResourceLease<AudioClip>`を保持**します。
 早くleaseを返してclipの解放が試みられると、backendが借用中の解放を拒否します。Managerはclipとdevice leaseを保持し、voice解放後のTrimAsyncで再試行できます。
@@ -22,10 +22,10 @@ voiceやラッパーのコピーはclipのleaseを取得しません。呼び出
 ```csharp
 using var reference = await resources.RetainAsync(new ResourceKey<AudioClip>("sounds/theme.wav"));
 ResourceLease<AudioClip> lease = reference.Pin();
-AudioVoice voice = await lease.Value.CreateVoice(AudioBus.Effects);
-await voice.Play();
+AudioVoice voice = await lease.Value.CreateVoiceAsync(AudioBus.Effects);
+await voice.PlayAsync();
 // 再生中もleaseを保持し、終了時にvoiceから解放する。
-await voice.Destroy();
+await voice.DestroyAsync();
 lease.Dispose();
 ```
 
@@ -39,10 +39,10 @@ PCMはclipへのコピー完了までBuild依存として保持します。供�
 圧縮形式・ストリーミング・巨大ファイルのチャンク分割は独自Stageで追加します。
 
 AudioResourceRuntimeはAudioModuleにDependsOnを宣言し、起動完了後に利用可能になります。
-RuntimeはAudioModule.Devicesの世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
+RuntimeはIAudioDeviceServiceを受け取り、世代と可用性をResourcesへ公開し、clipやvoiceを別の辞書で管理しません。
 生成結果と正確なdevice leaseを受け取り、世代検証前に候補の解放責任をcontextへ渡します。
 検証失敗時はnative候補を解放してからleaseを返し、native解放に失敗した場合は両方を保持してTrimで再試行します。
-独自Stage向けのUseAudioAsyncは取得した正確な世代を依存として記録し、deviceのleaseをcontextへ直接渡します。
+独自Stageは選択済みの`AudioResourceRuntime.AcquireAsync(context, cancellationToken: cancellationToken)`から世代を取得できます。取得した正確な世代を依存として記録し、deviceのleaseをcontextへ直接渡します。返されたleaseはManagerがnative解放後に返すため、StageからDisposeしません。別Runtimeのcontextは取得前に拒否します。低水準の`UseAudioAsync`も引き続き利用できます。
 
 DIでは`services.AddAudioResources()`でAudioModuleとAudioResourceRuntimeを登録し、共通の登録APIで一つのResourceManagerを構成します。
 [DI登録例](../Lumyte.Resources.Audio.DependencyInjection/README.md)を参照してください。
@@ -61,7 +61,7 @@ ManagerはAudioResourceRuntime.Dependenciesからdevice世代の依存先を収�
 ```csharp
 var audio = new AudioModule();
 var runtime = new ResourceRuntime();
-var audioResources = new AudioResourceRuntime(audio, runtime);
+var audioResources = new AudioResourceRuntime(audio.Devices, runtime);
 var execution = new ExecutionRuntime([audio, audioResources, runtime]);
 var resources = new ResourceManager("audio", source,
     [new AudioDecodeStage(), new AudioClipStage()],
@@ -80,7 +80,7 @@ native操作はAudio ownerへ送り、通常のawait後の継続は同じジョ�
 HotReloadは新しいclipを同じStageで構築し、検証後に公開します。
 取得済みLeaseは旧clipを保持するため、それを借用中のvoiceは引き続き旧clipを再生します。
 新しい音声を使う場合は、新clipのleaseから利用側がvoiceを明示的に生成します。
-再生状態・再生位置の移行やクロスフェードは自動で行いません。利用側は旧voiceの`FramePosition`から新voiceへ`Seek`できます。同じsample rateなら`await nextVoice.Seek(Math.Min(oldVoice.FramePosition, nextClip.FrameCount))`で長さに収めます。sample rateが変わる場合は再生時間を介してフレーム位置を換算し、ループや終了位置の方針も選びます。FramePositionは直近の更新結果であり、移行中の再生進行を止めたり、二つのvoiceを同時に切り替えたりする保証はありません。
+再生状態・再生位置の移行やクロスフェードは自動で行いません。利用側は旧voiceの`FramePosition`から新voiceへ`Seek`できます。同じsample rateなら`await nextVoice.SeekAsync(Math.Min(oldVoice.FramePosition, nextClip.FrameCount))`で長さに収めます。sample rateが変わる場合は再生時間を介してフレーム位置を換算し、ループや終了位置の方針も選びます。FramePositionは直近の更新結果であり、移行中の再生進行を止めたり、二つのvoiceを同時に切り替えたりする保証はありません。
 
 AudioModuleの更新は所有スレッドで出力状態を確認し、Unavailableになった世代を失効させます。
 BrowserのSuspended／interruptedは再開可能なため世代を失効させません。

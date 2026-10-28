@@ -54,7 +54,7 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     }
 
     public ValueTask<AudioDeviceLease> AcquireAsync(CancellationToken cancellationToken = default)
-        => new AudioDevice(this).AcquireLeaseAsync(cancellationToken);
+        => new AudioDeviceControl(this).AcquireLeaseAsync(cancellationToken);
 
     public ValueTask<AudioDeviceSnapshot> RecoverAsync(CancellationToken cancellationToken = default)
     {
@@ -82,7 +82,24 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     }
 
     public ValueTask<int> RetireAsync(CancellationToken cancellationToken = default)
-        => new AudioDevice(this).RetireAsync(cancellationToken);
+        => new AudioDeviceControl(this).RetireAsync(cancellationToken);
+
+    internal AudioDeviceSnapshot? BeginRecovery()
+    {
+        VerifyOwner();
+        PollAvailability();
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_closing, this);
+            if (_state.Status == AudioDeviceServiceStatus.Ready)
+            {
+                return _state;
+            }
+        }
+
+        BeginCreate(true);
+        return null;
+    }
 
     internal Task<IAudioDevice> BeginCreate(bool recovery)
     {
@@ -216,68 +233,39 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
         }
     }
 
-    internal IAudioClip CreateClip(AudioFormat format, ReadOnlyMemory<float> samples)
-    {
-        VerifyOwner();
-        PollAvailability();
-        IAudioDevice device;
-        lock (_gate)
-        {
-            device = RequireCurrent().Device;
-        }
-
-        return device.CreateClip(format, samples.Span);
-    }
-
     internal IAudioClip CreateClipForLease(AudioDeviceLease lease, AudioFormat format, ReadOnlyMemory<float> samples)
     {
         VerifyOwner();
+        _ = lease.GetDevice(this);
         PollAvailability();
         return lease.GetDevice(this).CreateClip(format, samples.Span);
     }
 
-    internal (AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError) CreateClipWithLease(AudioFormat format, ReadOnlyMemory<float> samples)
-    {
-        AudioDeviceLease lease = AcquireLease();
-        IAudioClip clip;
-        try
-        {
-            clip = lease.Device.CreateClip(format, samples.Span);
-        }
-        catch
-        {
-            lease.Dispose();
-            throw;
-        }
-
-        try
-        {
-            PollAvailability();
-            return (lease, clip, null);
-        }
-        catch (Exception error)
-        {
-            // Native creation succeeded. Transfer both owners so the caller can retain failed cleanup for retry.
-            return (lease, clip, error);
-        }
-    }
-
-    internal void SetBusGain(AudioBus bus, float gain)
+    internal void ValidateCreation()
     {
         VerifyOwner();
         PollAvailability();
-        IAudioDevice device;
-        lock (_gate)
-        {
-            device = RequireCurrent().Device;
-        }
-
-        device.SetBusGain(bus, gain);
     }
 
-    internal void Refresh()
+    internal void SetBusGain(AudioDeviceLease lease, AudioBus bus, float gain)
     {
         VerifyOwner();
+        _ = lease.GetDevice(this);
+        PollAvailability();
+        lease.GetDevice(this).SetBusGain(bus, gain);
+    }
+
+    internal void Refresh(AudioDeviceEntry? expected = null)
+    {
+        VerifyOwner();
+        lock (_gate)
+        {
+            if (expected is not null && !ReferenceEquals(expected, _current))
+            {
+                return;
+            }
+        }
+
         if (!PollAvailability())
         {
             return;
@@ -435,8 +423,14 @@ internal sealed class AudioDeviceState(IAudioDeviceFactory factory) : IAudioDevi
     {
         try
         {
-            var sender = new AudioDevice(this);
-            await sender.BeginRecoveryAsync().ConfigureAwait(false);
+            var sender = new AudioDeviceControl(this);
+            AudioDeviceSnapshot? current = await sender.BeginRecoveryAsync().ConfigureAwait(false);
+            if (current is { } available)
+            {
+                completion.SetResult(available);
+                return;
+            }
+
             Task<IAudioDevice> pending = PendingCreation ?? throw new InvalidOperationException("Audio creation is not pending.");
             try
             {

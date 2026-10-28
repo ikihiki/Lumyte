@@ -60,7 +60,11 @@ internal static class Program
         try
         {
             Wait(runtime.StartAsync().AsTask());
-            if ((audio.State.OwnerThreadId == Environment.CurrentManagedThreadId) != host)
+            Task<AudioDeviceLease> acquire = audio.Devices.AcquireAsync().AsTask();
+            Wait(acquire);
+            using AudioDeviceLease lease = acquire.Result;
+            AudioDevice device = lease.Device;
+            if ((device.OwnerThreadId == Environment.CurrentManagedThreadId) != host)
             {
                 throw new InvalidOperationException("The audio owner placement is incorrect.");
             }
@@ -73,7 +77,7 @@ internal static class Program
                     pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
                 }
 
-                var clip = new AudioClip(await audio.State.CreateClipAsync(new AudioFormat(48000, 1), pcm));
+                AudioClip clip = await device.CreateClipAsync(new AudioFormat(48000, 1), pcm);
                 AudioVoice voice = await clip.CreateVoiceAsync(AudioBus.Effects);
                 try
                 {
@@ -86,7 +90,7 @@ internal static class Program
 
                 await voice.PlayAsync();
                 await voice.PauseAsync();
-                await audio.State.RefreshAsync();
+                await device.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Paused)
                 {
                     throw new InvalidOperationException("Real backend is not paused.");
@@ -95,7 +99,7 @@ internal static class Program
                 await voice.SetGainAsync(0.5f);
                 await voice.SetLoopAsync(true);
                 await voice.PlayAsync();
-                await audio.State.RefreshAsync();
+                await device.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Playing)
                 {
                     throw new InvalidOperationException("Real backend is not playing.");
@@ -119,7 +123,7 @@ internal static class Program
                 }
 
                 await voice.StopAsync();
-                await audio.State.RefreshAsync();
+                await device.RefreshAsync();
                 if (voice.State != AudioPlaybackState.Stopped)
                 {
                     throw new InvalidOperationException("Real backend is not stopped.");

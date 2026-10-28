@@ -1,9 +1,10 @@
 # ADR-AUDIO-0002: 実行基盤とResourcesによるAudioの生成・制御・復旧
 
-- 状態: 採用
+- 状態: 置換済み
 - 日付: 2026-10-23
 - 更新日: 2026-10-26
 - 関連カテゴリ: core、resources
+- 変更日: 2026-10-26。操作の入口、独自stageの世代取得、Ready時の復旧契約を[ADR-AUDIO-0003](AUDIO-0003-consistent-api-entry-points.md)で更新する。他の判断は後継ADRへ引き継ぐ。
 
 ## 背景
 

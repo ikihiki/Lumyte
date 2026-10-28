@@ -33,10 +33,12 @@ internal static partial class Program
                 pcm[i] = (float)(0.1 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
             }
 
-            var clip = new AudioClip(await _audio.State.CreateClipAsync(new AudioFormat(48000, 1), pcm));
+            using AudioDeviceLease lease = await _audio.Devices.AcquireAsync();
+            AudioDevice device = lease.Device;
+            AudioClip clip = await device.CreateClipAsync(new AudioFormat(48000, 1), pcm);
             AudioVoice voice = await clip.CreateVoiceAsync(AudioBus.Effects);
             await voice.SeekAsync(1200);
-            await _audio.State.RefreshAsync();
+            await device.RefreshAsync();
             if (voice.State != AudioPlaybackState.Stopped || voice.FramePosition != 1200)
             {
                 throw new InvalidOperationException("Seeking the stopped Browser voice changed playback or lost its frame position.");
@@ -45,7 +47,7 @@ internal static partial class Program
             await voice.PlayAsync();
             await voice.PauseAsync();
             await voice.SeekAsync(2400);
-            await _audio.State.RefreshAsync();
+            await device.RefreshAsync();
             if (voice.State != AudioPlaybackState.Paused || voice.FramePosition != 2400)
             {
                 throw new InvalidOperationException("Seeking the paused Browser voice changed playback or lost its frame position.");
@@ -53,7 +55,7 @@ internal static partial class Program
 
             await voice.SetLoopAsync(true);
             await voice.SeekAsync(pcm.Length);
-            await _audio.State.RefreshAsync();
+            await device.RefreshAsync();
             if (voice.State != AudioPlaybackState.Paused || voice.FramePosition != 0)
             {
                 throw new InvalidOperationException("Seeking the looping Browser voice to its end did not wrap to frame zero.");
@@ -61,7 +63,7 @@ internal static partial class Program
 
             await voice.PlayAsync();
             await voice.StopAsync();
-            await _audio.State.RefreshAsync();
+            await device.RefreshAsync();
             if (voice.State != AudioPlaybackState.Stopped || voice.FramePosition != 0)
             {
                 throw new InvalidOperationException("Stopping the Browser voice did not reset its frame position.");

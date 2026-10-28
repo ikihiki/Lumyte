@@ -3,7 +3,8 @@
 出力型で選んだRuntimeからCPUジョブへ配送 → 非同期Source読み込みとWAVEデコード → Audio環境の所有スレッドでclip生成 → AudioClip公開を実行します。利用側はclipからAudioVoiceを直接作成し、制御・解放します。
 初期化・生成の実体が完成するまで待機し、キャンセル済みロードとデコード失敗の非公開も検証します。
 既定のテストbackendは全native操作のスレッドと、voice → clip → deviceの解放順を検証します。
-lease取得と生成を合わせたcommandについて、native生成失敗時のlease返却、世代依存登録失敗後の候補解放、解放失敗時の旧lease保持とTrimによる再試行も検証します。生成直後の使用可否確認に予期しない例外を注入し、元の例外と候補の解放責任を保持すること、公開済み旧clip／voiceの操作は拒否してDestroyを続行できることも確認します。
+通常のfake backend実行では、serviceから解決したAudioDeviceの所有スレッドへの配送、取消、失効・返却後の拒否と旧世代のretirementも確認します。Readyへの同時RecoverAsyncが生成・通知を増やさないこと、取消が共有復旧を止めないこと、選択済みAudioResourceRuntimeから取得した世代の追跡・返却、別Runtimeの拒否、CreateVoiceAsyncの既定Effectsと取消も確認します。
+serviceから取得したlease.Deviceの生成commandについて、native生成失敗時の所有権維持、世代依存登録失敗後の候補解放、解放失敗時の旧lease保持とTrimによる再試行も検証します。生成直後の使用可否確認に予期しない例外を注入し、元の例外と候補の解放責任を保持すること、公開済み旧clip／voiceの操作は拒否してDestroyを続行できることも確認します。
 
 ```sh
 dotnet run --project tests/Audio/Lumyte.Resources.Audio.IntegrationTests -c Release

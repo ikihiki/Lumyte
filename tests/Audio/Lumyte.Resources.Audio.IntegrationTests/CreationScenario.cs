@@ -12,26 +12,24 @@ internal static class CreationScenario
         TestDevice device = factory.Current;
         var format = new AudioFormat(48000, 1);
         ReadOnlyMemory<float> samples = new float[48];
-        device.FailNextClipCreation();
-        ExpectCreationFailure(() => wait(audio.State.CreateClipWithLeaseAsync(format, samples).AsTask()));
-        Task<(AudioDeviceLease Lease, IAudioClip Clip, Exception? ValidationError)> create = audio.State.CreateClipWithLeaseAsync(format, samples).AsTask();
-        wait(create);
-        (AudioDeviceLease lease, IAudioClip clip, Exception? validationError) = create.GetAwaiter().GetResult();
-        try
+        using (AudioDeviceLease lease = DeviceScenario.Acquire(audio.Devices, wait))
         {
-            if (validationError is not null)
+            AudioDevice sender = lease.Device;
+            device.FailNextClipCreation();
+            ExpectCreationFailure(() => wait(sender.CreateClipAsync(format, samples).AsTask()));
+            Task<AudioClip> create = sender.CreateClipAsync(format, samples).AsTask();
+            wait(create);
+            AudioClip clip = create.Result;
+            try
             {
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(validationError);
+                Require(lease.IsUsable, "A new clip unexpectedly belongs to an unavailable device.");
+                device.FailNextVoiceCreation();
+                ExpectCreationFailure(() => wait(clip.CreateVoiceAsync(AudioBus.Effects).AsTask()));
             }
-
-            Require(lease.IsUsable, "A new clip unexpectedly belongs to an unavailable device.");
-            device.FailNextVoiceCreation();
-            ExpectCreationFailure(() => wait(new AudioClip(clip).CreateVoiceAsync(AudioBus.Effects).AsTask()));
-        }
-        finally
-        {
-            wait(new AudioClip(clip).DestroyClipAsync().AsTask());
-            lease.Dispose();
+            finally
+            {
+                wait(clip.DestroyClipAsync().AsTask());
+            }
         }
 
         var memory = new MemoryManager();
@@ -60,7 +58,7 @@ internal static class CreationScenario
 
             Require(device.CreatedClips == created + 1 && device.ReturnedClips == returned, "Failed native cleanup lost the unpublished clip.");
             device.SetOutput(AudioOutputState.Unavailable);
-            wait(audio.State.RefreshAsync().AsTask());
+            DeviceScenario.Refresh(audio.Devices, wait);
             wait(audio.Devices.RecoverAsync().AsTask());
             Task<int> retained = audio.Devices.RetireAsync().AsTask();
             wait(retained);
@@ -70,7 +68,7 @@ internal static class CreationScenario
             Task<int> retired = audio.Devices.RetireAsync().AsTask();
             wait(retired);
             Require(device.ReturnedClips == returned + 1 && retired.GetAwaiter().GetResult() == 1 && device.IsDisposed, "Creation failure leaked a lease or cleanup retry did not release the original child exactly once.");
-            Console.WriteLine("Resource audio creation passed: one owner request, failed creation returns leases, failed tracking retains native cleanup and its generation until retry.");
+            Console.WriteLine("Resource audio creation passed: service-resolved generation, failed creation retains caller ownership, failed tracking retains native cleanup and its generation until retry.");
         }
         finally
         {
