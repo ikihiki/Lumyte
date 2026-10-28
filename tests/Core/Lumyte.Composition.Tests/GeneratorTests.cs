@@ -150,6 +150,26 @@ public sealed class GeneratorTests
         Assert.Contains(output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
+    /// <summary>Tests typed indexers inherited through generated containers without hiding warnings.</summary>
+    [Fact]
+    public void DerivedContentIndexerRetainsItsTypeWithoutWarnings()
+    {
+        const string Source = "using System.Collections.Generic; using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { public class Widget { [ComposeParameter] public float? Width { get; set; } } [Composable] public partial class Panel : Widget { [ComposeContent] public IReadOnlyList<Widget> Children { get; set; } = []; } [Composable] public partial class Stack : Panel { } [Composable] public partial class Column : Stack { } } } public class Usage { public Compose.Definitions.Column Build() => Compose.Column(width: 42)[Compose.Panel()]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning);
+    }
+
+    /// <summary>Tests that inaccessible base indexers do not introduce an unnecessary new modifier.</summary>
+    [Fact]
+    public void PrivateBaseIndexerDoesNotRequireHiding()
+    {
+        const string Source = "using System.Collections.Generic; using Lumyte.Composition; public class Container { [ComposeContent] public IReadOnlyList<object> Children { get; set; } = []; private object this[object[] children] => this; } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Child : Container { } } } public class Usage { public Compose.Definitions.Child Build() => Compose.Child()[new object()]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning);
+    }
+
     private static GeneratorDriverRunResult Run(string source, out Compilation output)
     {
         var options = new CSharpParseOptions(LanguageVersion.Latest);

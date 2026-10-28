@@ -93,7 +93,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 continue;
             }
 
-            string source = Render(component, propertyName);
+            string source = Render(component, propertyName, compilation);
             context.AddSource(component.ToDisplayString().Replace('.', '_').Replace('<', '_').Replace('>', '_').Replace(',', '_') + ".Composition.g.cs", SourceText.From(source, Encoding.UTF8));
         }
     }
@@ -263,7 +263,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static string Render(INamedTypeSymbol component, string propertyName)
+    private static string Render(INamedTypeSymbol component, string propertyName, Compilation compilation)
     {
         INamedTypeSymbol outer = component.ContainingType.ContainingType;
         ISymbol[] parameters = Members(component).Where(member => HasAttribute(member, "ComposeParameter"))
@@ -365,7 +365,8 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             builder.AppendLine("/// <summary>Replaces children and returns this same instance.</summary>");
             builder.AppendLine("/// <param name=\"content\">The ordered children.</param>");
             builder.AppendLine("/// <returns>This instance.</returns>");
-            builder.Append("public ").Append(type).Append(" this[params ").Append(TypeName(ContentItem(MemberType(content))!))
+            builder.Append(InheritsContentIndexer(component, ContentItem(MemberType(content))!, compilation) ? "public new " : "public ")
+                .Append(type).Append(" this[params ").Append(TypeName(ContentItem(MemberType(content))!))
                 .AppendLine("[] content]\n{\nget\n{");
             builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
             builder.Append("this.").Append(Escape(content.Name)).AppendLine(" = content;\nreturn this;\n}\n}");
@@ -514,6 +515,30 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
     private static string ActionArguments(IMethodSymbol method) => string.Join(", ", method.Parameters.Skip(1)
         .Select(parameter => Escape(parameter.Name)));
+
+    private static bool InheritsContentIndexer(INamedTypeSymbol component, ITypeSymbol itemType, Compilation compilation)
+    {
+        for (INamedTypeSymbol? ancestor = component.BaseType; ancestor is not null; ancestor = ancestor.BaseType)
+        {
+            if (ancestor.GetMembers().OfType<IPropertySymbol>().Any(property => property.IsIndexer
+                && compilation.IsSymbolAccessibleWithin(property, component)
+                && property.Parameters.Length == 1 && property.Parameters[0].Type is IArrayTypeSymbol array
+                && SymbolEqualityComparer.Default.Equals(array.ElementType, itemType)))
+            {
+                return true;
+            }
+
+            ISymbol? content = Members(ancestor).FirstOrDefault(member => HasAttribute(member, "ComposeContent"));
+            if (HasAttribute(ancestor, "Composable") && content is not null
+                && !ancestor.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))
+                && SymbolEqualityComparer.Default.Equals(ContentItem(MemberType(content)), itemType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static IEnumerable<ISymbol> Members(INamedTypeSymbol component)
     {
