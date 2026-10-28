@@ -7,7 +7,7 @@ public static partial class Compose
     public static partial class Definitions
     {
         /// <summary>A node with one parent and at most one connected surface.</summary>
-        public abstract class Widget
+        public abstract partial class Widget
         {
             private Widget? _parent;
             private ChildCollection? _parentCollection;
@@ -63,7 +63,7 @@ public static partial class Compose
             internal List<Widget> CollectSubtree()
             {
                 var result = new List<Widget>();
-                var pending = new Stack<Widget>();
+                var pending = new System.Collections.Generic.Stack<Widget>();
                 pending.Push(this);
                 while (pending.TryPop(out Widget? node))
                 {

@@ -1,6 +1,6 @@
 # Lumyte.UI
 
-Compositionで構築する保持型UIの基盤です。現在はPanel、Button、背景スロット、親子関係とUiSurfaceの接続を提供します。layout・描画・入力は後続PRで追加します。
+Compositionで構築する保持型UIの基盤です。Panel、Stack、Button、背景スロット、親子関係、UiSurfaceの接続と一方向layoutを提供します。描画と入力は後続PRで追加します。
 
 ```csharp
 using Lumyte.UI;
@@ -23,9 +23,33 @@ factory、子インデクサー、`Button.Background()`は既存Composition Gene
 - UiSurfaceとWidgetは作成threadへ固定しません。操作が重ならなければ、接続中も別threadで読取り・変更・Disposeできます。利用者が明示的に並行処理する場合の同期は利用者が管理します。ライブラリはlockや自動thread配送を追加しません。
 - surface.Disposeは冪等で、背景を含む全接続を解除します。部分木の内部親子関係や外部資源を破棄しません。元のrootは新しいsurfaceへ再接続できます。
 
-ライブラリはCompositionだけを参照し、Generatorはビルド時のAnalyzerとして使用します。OS、GPU、Windowや入力pumpは所有しません。
+ライブラリはCompositionと、既存のRect2Dを使うGraphics.Drawing2Dを参照し、Generatorはビルド時のAnalyzerとして使用します。OS、GPU、Windowや入力pumpは所有しません。
 
-[設計ADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)
+## 一方向レイアウト
+
+```csharp
+using System.Numerics;
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+var first = Panel(width: 80, height: 80);
+var second = Panel(width: 60, height: 80);
+var root = Stack(spacing: 8)[first, second];
+using var surface = new UiSurface(root);
+surface.SetViewport(new Vector2(200, 100));
+surface.UpdateLayout();
+// second.Boundsは(0, 88, 60, 80)。残り高さへ縮めない。
+```
+
+親は制約を渡し、子は制約内のサイズを返し、親は位置だけを決めます。Width/Heightは親制約内でtight化し、rootのサイズはviewportのtight制約を優先します。Stackは主軸をunboundedとして内容を一回ずつlayoutし、gapは可視の子同士の間だけに入れます。Buttonは内容から自身を決め、そのサイズで背景をlayoutします。
+
+寸法・可視性・子の置換・viewportが変わるとdirtyになり、次のUpdateLayoutでrootから更新します。同値の指定やcleanなUpdateLayoutは再実行しません。Size/Boundsの読取はlayoutを実行せず、pass全体の成功後だけ新しい値を公開します。失敗後は前回値と再試行可能なdirty状態を保ちます。
+
+カスタムの葉はWidgetのLayoutOverrideを、カスタムコンテナーはPanelのLayoutOverrideを拡張します。直接の可視子をLayoutChildで一回ずつ処理し、その返値を使ってSetChildOffsetで一回ずつ配置します。カスタム状態の変更はInvalidateLayoutをfield更新前に呼びます。layout中の値・子の変更や同じsurfaceの再入は拒否します。別threadへの順次移行は接続中も利用できます。
+
+ソースからのビルドには、既存Graphics.Drawing2Dが使うSlang環境を用意します。NuGetの利用者がlayoutを使うためにshaderを実行時コンパイルすることはありません。
+
+[ツリーのADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)／[layoutのADR](../../../docs/adr/ui/UI-0003-layout-and-invalidation.md)
 
 検証:
 

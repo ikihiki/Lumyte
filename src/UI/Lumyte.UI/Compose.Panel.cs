@@ -1,3 +1,4 @@
+using System.Numerics;
 using Lumyte.Composition;
 
 namespace Lumyte.UI;
@@ -24,6 +25,20 @@ public static partial class Compose
             {
                 get => ContentCollection!.Items;
                 set => ContentCollection!.Replace(value);
+            }
+
+            /// <inheritdoc/>
+            protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
+            {
+                Vector2 contentSize = Vector2.Zero;
+                foreach (Widget child in Children)
+                {
+                    Vector2 size = LayoutChild(child, constraints.Loosen());
+                    contentSize = Vector2.Max(contentSize, size);
+                    SetChildOffset(child, Vector2.Zero);
+                }
+
+                return UiLayoutMath.FillBounded(constraints, contentSize.X, contentSize.Y);
             }
         }
     }

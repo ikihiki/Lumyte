@@ -1,8 +1,9 @@
 # ADR-UI-0003: 制約を下へ渡す一方向レイアウト
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-27
 - 対応: 実装PR 2、前提: PR 1
+- 更新: 2026-10-28
 
 ## 背景
 
@@ -101,6 +102,8 @@ Width/Heightのnullはその軸へ追加の制約を与えない。指定値はf
 +}
 ```
 
+Rect2Dを公開するためLumyte.UIから既存Lumyte.Graphics.Drawing2Dへの参照を追加する。独自の矩形型やlayout専用の第二の所有treeは作らない。Stackの生成インデクサーはPanelの同じ引数形を明示的に隠してStack自身を返し、継承した値引数と内容を通常Composeから利用する。必要なGeneratorの修正は既存の型付き生成契約の不具合修正として同じPRへ含める。
+
 ### 一回の処理とカスタムコンテナー
 
 内部の非virtualなLayout入口が指定寸法、phase、返値、子の処理漏れを検証し、利用側はLayoutOverrideだけを拡張する。カスタムコンテナーはPanelを継承してChildrenを所有し、次の順で処理する。
@@ -113,6 +116,8 @@ Width/Heightのnullはその軸へ追加の制約を与えない。指定値はf
 サイズ決定は通常の再帰走査内で完結し、全ツリーの希望サイズ計算後に別の配置走査は行わない。親が子列を複数回ループして位置を計算することは許可するが、同じ可視子へ二回LayoutChildを呼んで別制約を試すことは初期契約では拒否する。公開Size/Boundsは前passの値なので、現在の子サイズはLayoutChildの返値を使う。
 
 直接の子以外、重複layout、位置の重複指定、layout前の位置指定、可視子の処理漏れ、phase違反はInvalidOperationException。nullはArgumentNullException、非finite offsetはArgumentOutOfRangeException。非表示の子はhelper内部で0として扱いoverrideを呼ばず、親が位置を指定しても公開Boundsは0へ正規化する。
+
+LayoutChild/SetChildOffsetの失敗はpassへ記録し、custom override内で例外を捕捉しても失敗したpassを公開しない。カスタム状態のsetterは、fieldを書き換える前にInvalidateLayoutを呼び、phase違反で途中の値変更を残さない。Size/Boundsのgetterと構築/子列変更は自動layoutを実行しない。
 
 ### 組み込みコンテナー
 
@@ -130,11 +135,11 @@ rootはviewportのtight制約とoffset0を持つ。非表示のrootだけはlayo
 
 ### 無効化と失敗時の公開状態
 
-寸法、可視性、子の置換、Stack設定、カスタムlayout値の変更でInvalidateLayoutを呼ぶ。自身からrootまでdirtyを伝播し、同値代入では無効化しない。viewport変更もdirtyにする。初期実装はdirtyなsurfaceをrootから再layoutし、子サイズへの依存を使ったrelayout boundaryや部分cacheは導入しない。
+寸法、可視性、子の置換、Stack設定、カスタムlayout値の変更でInvalidateLayoutを呼ぶ。自身からrootまでdirtyを伝播し、同値代入では無効化しない。viewport変更もdirtyにする。surfaceへの再接続も新しいviewportで再layoutする。同じ参照が同じ順序で指定された子列は変更なしとする。初期実装はdirtyなsurfaceをrootから再layoutし、子サイズへの依存を使ったrelayout boundaryや部分cacheは導入しない。
 
 一回のpassの確定サイズとoffsetを作業tableに保持する。全ノードの成功後、Size/Boundsをまとめて公開しdirtyを解除する。この公開処理は再layoutを行わず、ユーザーコードも呼ばない。overrideの例外、制約違反のサイズ、非finite値、子の処理漏れでは旧公開値を保ちdirtyを維持する。overrideが不正なサイズを返した場合は黙ってclampせずInvalidOperationExceptionとする。
 
-Layout中の値・子構成の変更とUpdateLayout再入を拒否する。幾何を使う通常のDispatchとRecordはIdle中に必要なUpdateLayoutを済ませてから自身のphaseへ移る。pointer Cancel、FocusLost、後続PRのUiKeyCancelInputは幾何を使わず、layoutを経由せず所有状態を解除する。別thread・再入・破棄後の検査は取消にも適用する。失敗したlayoutの作業値を入力や描画へ渡さない。取り外した部分木の公開値は最後の値で、未接続時の配置の有効性は保証しない。
+Layout中の値・子構成の変更とUpdateLayout再入を拒否する。幾何を使う通常のDispatchとRecordはIdle中に必要なUpdateLayoutを済ませてから自身のphaseへ移る。pointer Cancel、FocusLost、後続PRのUiKeyCancelInputは幾何を使わず、layoutを経由せず所有状態を解除する。再入・破棄後の検査は取消にも適用する。CPU上のWidget/UiSurfaceは作成threadに固定せず、操作が重ならなければ別threadで順次利用できる。利用者が明示的に行う並行操作の同期は利用者が管理する。失敗したlayoutの作業値を入力や描画へ渡さない。取り外した部分木の公開値は最後の値で、未接続時の配置の有効性は保証しない。
 
 通常Dispatchのlayout失敗時の系列取消は後続のpointer実装PRで具体化する。UpdateLayout/Recordの失敗でホストが入力配送を止める場合も、Idleへの復帰後にFocusLost等で清掃できる。取消は旧公開値も参照せず、dirtyとlayoutの再試行可能性を保つ。
 
@@ -167,6 +172,16 @@ one-passはサイズ決定の基本プロトコルであり、任意の制約問
 - resize・子差し替え・再表示の再layout、同値代入、clean passの呼び出し回数を確認する。
 - 非finiteサイズ・offset、制約違反、重複・処理漏れ、例外で旧公開値を保持し、修正後に再試行できることを確認する。
 - 後続の入力PRでは、例外を返すdirtyなlayoutでもCancel/FocusLost/UiKeyCancelInputがoverrideを再実行せず所有状態を解除し、修正後のlayoutが成功することを確認する。
+
+## 実装・検証記録
+
+2026-10-28、.NET SDK 10.0.401 / Linux x64で実装した。UIの87件がRelease/Debugの両方で成功した。先行のツリー・寿命の26件に、制約、継承した生成引数、縦横Stack、overflow、非表示部分木、Buttonの処理順、幅依存の高さ、無効化、失敗後の旧幾何保持と再試行、protocol/phase違反、別threadへの順次移行を含む61件を追加した。
+
+Compositionの49件もReleaseで成功した。派生したcontentインデクサーが自身の型を返して継承警告を出さないことと、非公開の基底インデクサーには不要なnewを付けないことを回帰検証した。source/test/GeneratorのC#書式、Markdown、相対リンク、差分の空白を確認した。
+
+UIと依存ライブラリのNuGet packを行い、ProjectReferenceを持たない二つのconsumerで確認した。一つは通常のusing staticからStackを構築し、overflowとworker上での順次layoutを実行した。もう一つはGenerator packageを明示参照し、別assemblyのPanelを継承した独自Composableコンテナーで、継承引数・型付きインデクサー・protectedなlayout helper・独自状態の無効化を実行した。Slangはリポジトリ指定の2026.19を使用し、GPU描画の実行・測定は行っていない。
+
+Windows/Browserでの実環境確認、描画/入力との接続、layoutの性能・割当量の測定は後続検証とする。本記録はそれらの完了を示さない。
 
 ## 参考資料
 

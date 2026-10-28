@@ -58,6 +58,11 @@ internal sealed class ChildCollection(Widget owner, int maximumCount)
             }
         }
 
+        if (_items.Count == replacement.Length && _items.Zip(replacement).All(pair => ReferenceEquals(pair.First, pair.Second)))
+        {
+            return;
+        }
+
         // Complete every allocation and traversal before changing any ownership.
         ReadOnlyCollection<Widget> view = Array.AsReadOnly(replacement);
         var removed = new List<Widget>();
@@ -109,5 +114,6 @@ internal sealed class ChildCollection(Widget owner, int maximumCount)
         }
 
         _items = view;
+        owner.MarkLayoutDirty();
     }
 }
