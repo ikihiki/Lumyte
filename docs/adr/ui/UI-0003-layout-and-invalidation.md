@@ -22,7 +22,7 @@ Width/Heightのnullはその軸へ追加の制約を与えない。指定値はf
 
 ### 公開API
 
-比較元は[UI-0001](UI-0001-composition-based-ui-system.md)に従う。Vector2はSystem.Numerics、Rect2DはGraphics.Drawing2Dを使う。以下は先行PRの型へ追加する宣言であり、未実装である。
+比較元は[UI-0001](UI-0001-composition-based-ui-system.md)に従う。Vector2はSystem.Numerics、Rect2DはGraphics.Drawing2Dを使う。
 
 ```diff
 +namespace Lumyte.UI
@@ -101,8 +101,6 @@ Width/Heightのnullはその軸へ追加の制約を与えない。指定値はf
 +}
 ```
 
-以前の提案のDesiredSize、MeasureOverride、ArrangeOverride、MeasureChild、ArrangeChild、GetMeasuredSize、InvalidateMeasureは公開しない。実装済みAPIの削除ではなく、未取り込みの設計案の整理である。
-
 ### 一回の処理とカスタムコンテナー
 
 内部の非virtualなLayout入口が指定寸法、phase、返値、子の処理漏れを検証し、利用側はLayoutOverrideだけを拡張する。カスタムコンテナーはPanelを継承してChildrenを所有し、次の順で処理する。
@@ -148,7 +146,7 @@ one-passはサイズ決定の基本プロトコルであり、任意の制約問
 
 ## 検討した代替案
 
-- Measure/Arrangeを分離すると、配置時に子サイズを変える場合に再計算の規則が必要になる。未実装の段階でサイズ確定を一つの入口へ集約する。
+- Measure/Arrangeを分離すると、配置時に子サイズを変える場合に再計算の規則が必要になるため、サイズ確定を一つの入口へ集約する。
 - 制約を最大値だけにすると、固定サイズと任意サイズを明示的に区別しにくいためmin/maxを持たせる。
 - 全制約をfiniteに限定すると、Stackの内容サイズや将来のscroll向けのunboundedな軸を表現できない。maxだけのPositiveInfinityを許可し、返値はfiniteに限定する。
 - 兄弟の最大値へ合わせるために暗黙の再layoutを行う案は、呼び出し回数とコストが不明確になるため初期には導入しない。
@@ -157,17 +155,17 @@ one-passはサイズ決定の基本プロトコルであり、任意の制約問
 
 制約下で子のサイズが確定するため、文字の折り返し等の幅依存計算と整合する。カスタムコンテナーの入口を一つにでき、Composition・所有権・描画先の依存方向を維持できる。
 
-一方、親のtight制約、unboundedな軸、overflowの理解が必要になる。以前の案の暗黙のstretchと後続子の縮小は行わない。初期の通常layoutはノード数と子数に対して線形だが、従来案も通常は線形であり、速度向上や割当削減を実測前に保証しない。作業tableと公開処理のコストは残る。
+一方、親のtight制約、unboundedな軸、overflowの理解が必要になる。通常layoutはノード数と子数に対して線形で、作業tableと公開処理のコストを伴う。性能と割当量は実測で評価する。
 
 ## 検証方針
 
-- `ConstraintTests`: tight/loose、default、Tighten、Constrain、親制約優先、min/max逆転、NaN、各Infinityの許可・拒否を確認する。
-- `LayoutTests`: rootのtightサイズ、縦横Stack、空列、gap、非表示、Panelのbounded/unbounded軸、Buttonの内容→背景の順と確定サイズを確認する。
-- `WidthDependentLayoutTests`: 幅で高さが変わるfixtureで、実際の幅制約がlayout前に渡り、後から幅や高さを変更しないことを確認する。
-- `OverflowTests`: 高さ100に80+80を配置して二つ目のサイズを保つこと、clipの有無で描画とhit testの領域だけが変わることを後続PRと確認する。
-- `CustomPanelTests`: 別assemblyのPanel派生型で継承パラメーター、LayoutChildの返値、offset指定を使い、各可視子が一度だけlayoutされることを確認する。
-- `InvalidationTests`: resize・子差し替え・再表示の再layout、同値代入、clean passの呼び出し回数を確認する。
-- `LayoutFailureTests`: 非finiteサイズ・offset、制約違反、重複・処理漏れ、例外で旧公開値を保持し、修正後に再試行できることを確認する。
+- tight/loose、default、Tighten、Constrain、親制約優先、min/max逆転、NaN、各Infinityの許可・拒否を確認する。
+- rootのtightサイズ、縦横Stack、空列、gap、非表示、Panelのbounded/unbounded軸、Buttonの内容→背景の順と確定サイズを確認する。
+- 幅で高さが変わるfixtureで、実際の幅制約がlayout前に渡り、後から幅や高さを変更しないことを確認する。
+- 高さ100に80+80を配置して二つ目のサイズを保つこと、clipの有無で描画とhit testの領域だけが変わることを後続PRと確認する。
+- 別assemblyのPanel派生型で継承パラメーター、LayoutChildの返値、offset指定を使い、各可視子が一度だけlayoutされることを確認する。
+- resize・子差し替え・再表示の再layout、同値代入、clean passの呼び出し回数を確認する。
+- 非finiteサイズ・offset、制約違反、重複・処理漏れ、例外で旧公開値を保持し、修正後に再試行できることを確認する。
 - 後続の入力PRでは、例外を返すdirtyなlayoutでもCancel/FocusLost/UiKeyCancelInputがoverrideを再実行せず所有状態を解除し、修正後のlayoutが成功することを確認する。
 
 ## 参考資料

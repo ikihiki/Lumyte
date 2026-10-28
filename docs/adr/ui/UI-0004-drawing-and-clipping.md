@@ -8,8 +8,6 @@
 
 [UI-0003](UI-0003-layout-and-invalidation.md)で確定した配置を既存Drawing2Dへ描画する。UI内部にrendererやGPU資源管理を作らず、直接描画と後続の親RenderGraph接続で同じ記録処理を使いたい。
 
-描画が読むBoundsは、一方向layoutで確定したSizeと親のoffsetから作る。Recordは子をtargetやclipの残り領域へ縮小・再layoutしない。特にStackのoverflowは確定サイズを保ち、clipだけで表示領域を制限する。
-
 ## 決定
 
 ### 公開APIと実装範囲
@@ -50,11 +48,17 @@
 +}
 ```
 
-Fill変更はレイアウトを無効化しない。RectangleのLayoutOverrideはUI-0003の規則どおりboundedな軸ではmax、unboundedな軸では0を選びConstrainする。Buttonの背景はButtonの確定サイズのtight制約でlayoutされる。初期は毎Recordで命令を作るので、描画dirty、DrawList cache、InvalidateVisual APIは追加しない。Panel/Stack/ButtonのOnRecordは空で、Buttonの見た目は背景スロットで明示する。IsPressedに応じた見た目の自動変更はテーマの後続設計で扱う。
+RectangleとButton背景のlayoutは[UI-0003の組み込みコンテナー規則](UI-0003-layout-and-invalidation.md#組み込みコンテナー)に従う。Fill変更はレイアウトを無効化しない。Panel/Stack/ButtonのOnRecordは空で、Buttonの見た目は背景スロットで明示する。IsPressedに応じた見た目の自動変更はテーマの後続設計で扱う。
 
-毎Recordで全可視要素の命令を再生成することと、描画先の前frameの画素を消すことは別の責務である。初期サンプルは描画するframeごとに描画先全体を再構成する。単独UIではホストがtargetをClearし、必要な背景とUIを描く。3D等へ重ねる場合は、そのframeで再構成した背景をLoadしてUIを合成する。前frameのUIを含む画素へ半透明UIを重ね続けず、移動・削除した要素の跡も背景から消す。Hostedを含む同じtargetのClearはホストが最初に一度だけ行い、surface.RecordはClearしない。damage領域だけの再描画・保持buffer・部分Presentは初期範囲に含めず、導入時は別途測定と契約を設ける。
+### 全体再描画とホストの責務
+
+初期は毎Recordで全可視要素の命令を再生成し、描画dirty、DrawList cache、InvalidateVisual APIは追加しない。
+
+命令の再生成と、描画先の前frameの画素を消すことは別の責務である。初期サンプルは描画するframeごとに描画先全体を再構成する。単独UIではホストがtargetをClearし、必要な背景とUIを描く。3D等へ重ねる場合は、そのframeで再構成した背景をLoadしてUIを合成する。前frameのUIを含む画素へ半透明UIを重ね続けず、移動・削除した要素の跡も背景から消す。Hostedを含む同じtargetのClearはホストが最初に一度だけ行い、surface.RecordはClearしない。damage領域だけの再描画・保持buffer・部分Presentは初期範囲に含めず、導入時は別途測定と契約を設ける。
 
 ### 記録手順と座標
+
+RecordはUI-0003で確定したSize/Boundsを使い、targetやclipの残り領域に合わせた子の縮小・再layoutを行わない。Stackのoverflowもサイズを保ち、clipで表示領域を制限する。
 
 1. IdleでUpdateLayoutを実行し、成功後にRecord phaseへ移る。
 2. 外側Saveを行い、surfaceローカル原点のviewport矩形をClipRectする。viewportが0なら描画を省略する。
@@ -86,9 +90,9 @@ UI専用の描画リストとrendererを作ると既存Canvasのclip・paint・G
 
 ## 検証方針
 
-- `DrawingRecordingTests`: 累積位置、背景→自身→内容、半透明順序、0寸法、非表示、外側Canvas状態の保持を命令snapshotで確認する。
-- `ClipRecordingTests`: 親子clip、親外の子、viewport clip、ホストのscale・Translateとの合成を確認する。
+- 累積位置、背景→自身→内容、半透明順序、0寸法、非表示、外側Canvas状態の保持を命令snapshotで確認する。
+- 親子clip、親外の子、viewport clip、ホストのscale・Translateとの合成を確認する。
 - Stackの高さ100に高さ80の子を二つ置き、二つ目のサイズ80を保ったまま、ClipToBoundsで描画領域だけが変わることを確認する。
-- `RecordingFailureTests`: callbackの例外、変更・再入の拒否、失敗後のCancelと次frame再試行を確認する。
+- callbackの例外、変更・再入の拒否、失敗後のCancelと次frame再試行を確認する。
 - 単独UIの連続frameで半透明要素が濃くならず、移動・削除後に旧領域が背景へ戻ることを確認する。複数Hosted surfaceの記録で先行surfaceをClearしないことも確認する。
 - 既存Graphics GPUテストへ小さな固定UIを追加し、Vulkan/wgpuで基準画素と照合する。座標・順序のCPUテストと役割を分ける。
