@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Graphics.Drawing2D;
 using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
 namespace Lumyte.UI;
@@ -88,6 +89,37 @@ public sealed class UiSurface : IDisposable
         }
     }
 
+    /// <summary>Updates layout and records every visible widget into an active borrowed canvas.</summary>
+    /// <param name="canvas">A begun canvas whose transform and clip are restored, including on callback failure.</param>
+    /// <remarks>Does not clear or submit the target. After a failure, cancel the caller's entire recording.</remarks>
+    public void Record(DrawingCanvas2D canvas)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(canvas);
+        if (_phase != UiSurfacePhase.Idle)
+        {
+            throw new InvalidOperationException("Recording can only start while the surface is idle.");
+        }
+
+        // Save also validates Begin before layout can invoke user code.
+        canvas.Save();
+        try
+        {
+            UpdateLayout();
+            _phase = UiSurfacePhase.Record;
+            if (_viewport.X > 0 && _viewport.Y > 0)
+            {
+                canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
+                RecordWidget(_root, canvas);
+            }
+        }
+        finally
+        {
+            _phase = UiSurfacePhase.Idle;
+            canvas.Restore();
+        }
+    }
+
     /// <summary>Disconnects the complete tree, preserving its structure and external resources.</summary>
     public void Dispose()
     {
@@ -117,6 +149,54 @@ public sealed class UiSurface : IDisposable
         if (_phase is not (UiSurfacePhase.Idle or UiSurfacePhase.Dispatch))
         {
             throw new InvalidOperationException("Widget changes are not allowed during layout or recording.");
+        }
+    }
+
+    private static void RecordWidget(Widget widget, DrawingCanvas2D canvas)
+    {
+        if (!widget.IsVisible)
+        {
+            return;
+        }
+
+        canvas.Save();
+        try
+        {
+            canvas.Translate(new(widget.Bounds.X, widget.Bounds.Y));
+            if (widget.ClipToBounds)
+            {
+                canvas.ClipRect(new(0, 0, widget.Size.X, widget.Size.Y));
+            }
+
+            RecordChildren(widget.BackgroundCollection);
+
+            // Custom drawing state must not leak into this widget's contents.
+            canvas.Save();
+            try
+            {
+                widget.InvokeRecord(canvas);
+            }
+            finally
+            {
+                canvas.Restore();
+            }
+
+            RecordChildren(widget.ContentCollection);
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+
+        void RecordChildren(ChildCollection? collection)
+        {
+            if (collection is not null)
+            {
+                foreach (Widget child in collection.Items)
+                {
+                    RecordWidget(child, canvas);
+                }
+            }
         }
     }
 
