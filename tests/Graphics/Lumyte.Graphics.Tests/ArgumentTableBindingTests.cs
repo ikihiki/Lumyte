@@ -13,7 +13,7 @@ public sealed class ArgumentTableBindingTests
     {
         using var table = new Table();
         var reference = new Reference(table, new object());
-        ShaderBindingSnapshot captured = ShaderBindingSnapshot.Capture(Snapshot(reference), table);
+        var captured = ShaderBindingSnapshot.Capture(Snapshot(reference), table);
         Assert.Same(reference, Assert.Single(captured.References));
     }
 
@@ -43,7 +43,7 @@ public sealed class ArgumentTableBindingTests
     public void ValueOnlyArgumentsDoNotRequireTable()
     {
         var root = new ShaderValueSnapshot("arguments", "Values", [new("Value", typeof(float), BitConverter.GetBytes(1f), null, false)]);
-        ShaderBindingSnapshot captured = ShaderBindingSnapshot.Capture(root, null);
+        var captured = ShaderBindingSnapshot.Capture(root, null);
         Assert.Empty(captured.References);
         Assert.Empty(captured.Elements);
     }
@@ -95,7 +95,7 @@ public sealed class ArgumentTableBindingTests
         var b = new Reference(table, second);
         first.Values[0] = Snapshot(b);
         second.Values[0] = Snapshot(a);
-        ShaderBindingSnapshot captured = ShaderBindingSnapshot.Capture(Snapshot(a), table);
+        var captured = ShaderBindingSnapshot.Capture(Snapshot(a), table);
         Assert.Equal(2, captured.References.Count);
         Assert.Equal(2, captured.Elements.Count);
         Assert.Equal(1, first.Reads);
