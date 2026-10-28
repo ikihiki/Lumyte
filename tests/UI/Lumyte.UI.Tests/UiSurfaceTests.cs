@@ -4,7 +4,7 @@ using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
 namespace Lumyte.UI.Tests;
 
-/// <summary>Tests surface connection, recursive ownership, thread affinity and resource lifetime.</summary>
+/// <summary>Tests surface ownership, sequential cross-thread access and resource lifetime.</summary>
 public sealed class UiSurfaceTests
 {
     /// <summary>Tests invalid roots without disconnecting their existing owner.</summary>
@@ -36,9 +36,9 @@ public sealed class UiSurfaceTests
         Assert.Empty(button.BackgroundChildren);
     }
 
-    /// <summary>Tests owner checks on the surface and on descendants in both child roles.</summary>
+    /// <summary>Tests serialized reads and changes across threads without disconnecting the surface.</summary>
     [Fact]
-    public void ConnectedTreeReadsWritesAndDisposalRequireTheOwnerThread()
+    public void ConnectedTreeCanBeUsedSequentiallyAcrossThreads()
     {
         Definitions.Panel content = Panel();
         Definitions.Panel background = Panel();
@@ -46,14 +46,39 @@ public sealed class UiSurfaceTests
         Definitions.Panel root = Panel()[button];
         using var surface = new UiSurface(root);
 
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => _ = surface.Root));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => root.Children = []));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => content.Children = [Panel()]));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => background.Children = [Panel()]));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => _ = content.Parent));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => _ = button.BackgroundChildren));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(surface.Dispose));
+        Assert.Null(OnOtherThread(() =>
+        {
+            Assert.Same(root, surface.Root);
+            Assert.Same(button, content.Parent);
+            Assert.Same(background, Assert.Single(button.BackgroundChildren));
+            content.Children = [Panel()];
+            background.Children = [Panel()];
+        }));
+
+        Assert.Same(content, Assert.Single(content.Children).Parent);
+        Assert.Same(background, Assert.Single(background.Children).Parent);
+        Assert.Null(OnOtherThread(() => root.Children = []));
+        Assert.Empty(root.Children);
+        Assert.Null(button.Parent);
         Assert.Same(root, surface.Root);
+    }
+
+    /// <summary>Tests an async caller using a worker sequentially without a dispatcher or a new surface.</summary>
+    /// <returns>A task representing the sequential updates and disposal.</returns>
+    [Fact]
+    public async Task ConnectedTreeRemainsUsableAcrossAwaitAndWorkerUpdatesAsync()
+    {
+        Definitions.Panel root = Panel();
+        using var surface = new UiSurface(root);
+        await Task.Run(() => root.Children = [Button()[Button.Background()[Panel()]]]);
+        Definitions.Button button = Assert.IsType<Definitions.Button>(Assert.Single(root.Children));
+        Assert.Same(root, button.Parent);
+        Assert.Same(button, Assert.Single(button.BackgroundChildren).Parent);
+
+        await Task.Run(surface.Dispose);
+        Assert.Throws<ObjectDisposedException>(() => _ = surface.Root);
+        using var replacement = new UiSurface(root);
+        Assert.Same(root, replacement.Root);
     }
 
     /// <summary>Tests recursive connection and disconnection after live tree replacement.</summary>
@@ -71,7 +96,7 @@ public sealed class UiSurfaceTests
         Assert.Null(old.Parent);
         Assert.Same(old, oldLeaf.Parent);
         Assert.Null(OnOtherThread(() => oldLeaf.Children = [Panel()]));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => newLeaf.Children = [Panel()]));
+        Assert.Null(OnOtherThread(() => newLeaf.Children = [Panel()]));
         Assert.Throws<ArgumentException>(() => new UiSurface(replacement));
         Assert.Same(root, replacement.Parent);
     }
@@ -89,7 +114,7 @@ public sealed class UiSurfaceTests
         Assert.Same(second, root.Children[0]);
         Assert.Same(first, root.Children[1]);
         Assert.Same(root, first.Parent);
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => first.Children = []));
+        Assert.Null(OnOtherThread(() => first.Children = []));
     }
 
     /// <summary>Tests that failed mixed replacements preserve every original connection.</summary>
@@ -107,7 +132,7 @@ public sealed class UiSurfaceTests
         Assert.Same(old, Assert.Single(root.Children));
         Assert.Same(root, old.Parent);
         Assert.Null(fresh.Parent);
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => old.Children = []));
+        Assert.Null(OnOtherThread(() => old.Children = []));
         Assert.Null(OnOtherThread(() => fresh.Children = []));
         Assert.Same(foreign, other.Root);
     }
@@ -127,7 +152,7 @@ public sealed class UiSurfaceTests
         Assert.Null(oldBackground.Parent);
         Assert.Same(oldBackground, oldLeaf.Parent);
         Assert.Null(OnOtherThread(() => oldLeaf.Children = []));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => newLeaf.Children = []));
+        Assert.Null(OnOtherThread(() => newLeaf.Children = []));
     }
 
     /// <summary>Tests idempotent disposal and preservation of internal parent links and external ownership.</summary>
@@ -140,7 +165,7 @@ public sealed class UiSurfaceTests
         Definitions.Panel root = Panel()[button];
         var surface = new UiSurface(root);
 
-        surface.Dispose();
+        Assert.Null(OnOtherThread(surface.Dispose));
         surface.Dispose();
         Assert.Throws<ObjectDisposedException>(() => _ = surface.Root);
         Assert.False(resource.IsDisposed);
@@ -148,10 +173,10 @@ public sealed class UiSurfaceTests
         Assert.Same(button, background.Parent);
         Assert.Same(root, button.Parent);
         Assert.Null(OnOtherThread(() => resource.Children = [Panel()]));
-        Assert.IsType<InvalidOperationException>(OnOtherThread(surface.Dispose));
+        Assert.Null(OnOtherThread(surface.Dispose));
     }
 
-    /// <summary>Tests transferring an entire disposed surface tree to a new owner thread.</summary>
+    /// <summary>Tests transferring an entire disposed surface tree on another thread.</summary>
     [Fact]
     public void DisconnectedRootCanBeReattachedOnAnotherThread()
     {
@@ -188,7 +213,7 @@ public sealed class UiSurfaceTests
         _ = second[Button.Background()[subtree]];
         Assert.Same(second, subtree.Parent);
         Assert.Same(subtree, leaf.Parent);
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => leaf.Children = []));
+        Assert.Null(OnOtherThread(() => leaf.Children = []));
         Assert.Empty(first.Children);
     }
 
@@ -204,7 +229,7 @@ public sealed class UiSurfaceTests
         }
 
         var surface = new UiSurface(root);
-        Assert.IsType<InvalidOperationException>(OnOtherThread(() => leaf.Children = []));
+        Assert.Null(OnOtherThread(() => leaf.Children = []));
         surface.Dispose();
         Assert.Null(OnOtherThread(() => leaf.Children = []));
         Assert.NotNull(leaf.Parent);

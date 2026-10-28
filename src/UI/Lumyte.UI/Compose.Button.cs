@@ -23,24 +23,12 @@ public static partial class Compose
             [ComposeContent]
             public IReadOnlyList<Widget> Children
             {
-                get
-                {
-                    VerifyAccess();
-                    return ContentCollection!.Items;
-                }
-
+                get => ContentCollection!.Items;
                 set => ContentCollection!.Replace(value);
             }
 
             /// <summary>Gets an immutable snapshot of the children owned by the background slot.</summary>
-            public IReadOnlyList<Widget> BackgroundChildren
-            {
-                get
-                {
-                    VerifyAccess();
-                    return BackgroundCollection!.Items;
-                }
-            }
+            public IReadOnlyList<Widget> BackgroundChildren => BackgroundCollection!.Items;
 
             [ComposeSlot]
             private static void Background(Button target, IReadOnlyList<Widget> children) =>

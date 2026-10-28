@@ -20,14 +20,7 @@ public static partial class Compose
             }
 
             /// <summary>Gets the owner of this node, including a background slot owner.</summary>
-            public Widget? Parent
-            {
-                get
-                {
-                    VerifyAccess();
-                    return _parent;
-                }
-            }
+            public Widget? Parent => _parent;
 
             internal ChildCollection? ContentCollection { get; set; }
 
@@ -40,8 +33,6 @@ public static partial class Compose
             internal UiSurface? Surface => _surface;
 
             internal bool IsMutating => _isMutating;
-
-            internal void VerifyAccess() => _surface?.VerifyAccess();
 
             internal MutationScope BeginMutation()
             {

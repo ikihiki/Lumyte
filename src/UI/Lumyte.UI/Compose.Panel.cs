@@ -22,12 +22,7 @@ public static partial class Compose
             [ComposeContent]
             public IReadOnlyList<Widget> Children
             {
-                get
-                {
-                    VerifyAccess();
-                    return ContentCollection!.Items;
-                }
-
+                get => ContentCollection!.Items;
                 set => ContentCollection!.Replace(value);
             }
         }
